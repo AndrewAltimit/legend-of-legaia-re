@@ -31,7 +31,7 @@ Most retail BGM is also **not** a bare SEQ file: it sits inside a
 `scene_vab_stream` entry as `[u32 chunk_header][VAB][chunk1_header][SEQ]`, so
 the SEQ starts at a non-zero offset. On the CLI, `seq find` locates the
 offset and `--offset` parses there; library-side,
-`legaia_engine_core::scene_assets::SceneAssets` carries the resolved
+`legaia_engine_scene::scene_assets::SceneAssets` carries the resolved
 locations (`seq_in_stream_entries`, plus `bgm_seq_offset` for a given BGM id)
 so callers slice past the wrapper.
 

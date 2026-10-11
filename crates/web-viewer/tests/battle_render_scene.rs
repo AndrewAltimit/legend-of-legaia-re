@@ -23,7 +23,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::input::PadButton;
+use legaia_engine_system::input::PadButton;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 fn loaded_in_town() -> Option<LegaiaRuntime> {
@@ -134,7 +134,7 @@ fn battle_render_builds_backdrop_grid_actors_and_camera() {
     //
     // The idle orbit itself is not asserted here: an auto-driven fight has no
     // settled idle window to observe it in. Its law lives in
-    // `engine-vm::battle_cam_script` (`ORBIT_STEP` + the phase predicate).
+    // `engine-battle-vm::battle_cam_script` (`ORBIT_STEP` + the phase predicate).
     // Retail lets nobody act before the round's last command commits, so the
     // walk has to drive the party: `Left` seats `Begin`, the ring's `Attack`
     // arm and the `Auto` chip on their prompts (spatial one-press commits),

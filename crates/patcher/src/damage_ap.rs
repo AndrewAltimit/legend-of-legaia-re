@@ -58,7 +58,7 @@
 //! ```
 //!
 //! The kernel is mirrored port-side by
-//! `legaia_engine_vm::battle_formulas::spirit_gauge_fill`.
+//! `legaia_engine_battle_vm::battle_formulas::spirit_gauge_fill`.
 //!
 //! ## What the patch rewrites
 //!
@@ -108,11 +108,11 @@ use anyhow::{Result, bail};
 
 /// PROT entry index of the battle-action overlay hosting both kernel copies.
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
-    legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+    legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
 
 /// Load base VA of the battle-action overlay (raw entry: file offset =
 /// `va - OVERLAY_BASE_VA`).
-pub const OVERLAY_BASE_VA: u32 = legaia_asset::move_power::BATTLE_OVERLAY_BASE;
+pub const OVERLAY_BASE_VA: u32 = legaia_game_tables::move_power::BATTLE_OVERLAY_BASE;
 
 /// The retail scale: a hit costing 100% of max HP grants 100 AP (a full gauge).
 pub const RETAIL_DAMAGE_AP: i16 = 100;

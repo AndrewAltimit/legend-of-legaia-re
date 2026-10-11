@@ -3,32 +3,39 @@
 The engine's PSX runtime-system layer that never touches `World`: pad input
 and the retail pad pump, the streaming-chunk installer and the MDEC DMA sync,
 the RAM-cell registry, the global sound state, the fade actor, the mode-entry
-initialisers and the codified capture observations. Free of wgpu, winit and
+initialisers, the menu cursor primitive and the BIOS `rand` generators. It is
+the bottom of the engine stack: no other engine crate is below it, and the
+only workspace crates it names are the two label crates `legaia-cheats` (the
+RAM-category taxonomy `ram_map` classifies cells with) and `legaia-gamedata`
+(the music table `music_labels` joins to the disc). Free of wgpu, winit and
 cpal, so it builds for native and `wasm32` alike.
 
 `legaia-engine-core` owns the composition - `World` drives the fade, ticks the
-sound state at frame begin and seats the mode-entry results - and re-exports
-every module here at its old path, so `legaia_engine_core::input` and
-`legaia_engine_system::input` name the same module.
+sound state at frame begin and seats the mode-entry results. Consumers name
+the modules here directly (`legaia_engine_system::input`).
 
 ## What belongs here
 
 A module moves here when its whole dependency closure inside the engine is in
-this crate or `legaia-engine-vm`, and it is system-shaped rather than a menu or
-field kernel (those are `legaia-engine-menus` and `legaia-engine-field`, which
+this crate, and it is system-shaped rather than a menu or field kernel (those are `legaia-engine-menus` and `legaia-engine-field`, which
 sit above this crate). Doc links that point back up at `engine-core` are plain
 code spans, since rustdoc cannot resolve a link into a dependent crate.
 
 ## Modules
 
-- **Input** - `input` (the PSX-shaped pad state, `input::Mapping`'s
-  host-agnostic key binding and the DOM key-code vocabulary) and `retail_pad`
-  (the per-frame libpad report to packed Legaia pad words, `FUN_8001822C`).
-- **Streaming + movie** - `chunk_install` (the `[type, size, data]` stream
-  chunk walker that routes sound-stream chunks), `mdec_dma_sync` (the FMV
-  overlay's MDEC DMA sync pair), `cutscene` (FMV index to `MV*.STR` mapping),
-  `movie_audio` (what a movie does to the score, one policy both hosts
-  consult).
+- **Input** - `pad` (the raw and packed PSX pad-word layouts), `input` (the
+  PSX-shaped pad state, `input::Mapping`'s host-agnostic key binding and the
+  DOM key-code vocabulary), `retail_pad` (the per-frame libpad report to
+  packed Legaia pad words, `FUN_8001822C`) and `menu_input` (the shared menu
+  cursor navigation `FUN_801D688C`).
+- **Random numbers** - `rand` (`BiosRand`, `psyq_rand_step` and
+  `bios_rand_shape`: the BIOS `rand()` LCG every kernel rolls through).
+- **Streaming** - `chunk_install` (the `[type, size, data]` stream chunk
+  walker that routes sound-stream chunks).
+- **Movies** - `movie::cutscene` (FMV index to `MV*.STR` mapping),
+  `movie::mdec_dma_sync` (the FMV overlay's MDEC DMA sync pair),
+  `movie::movie_audio` (what a movie does to the score, one policy both hosts
+  consult) and `movie::cutscene_trigger` (every retail FMV trigger site).
 - **Sound + music** - `sound_state` (the global sound-system state the
   frame-begin driver services) and `music_labels` (a global BGM id /
   `music_01` bank slot resolved to its curated sound-test label; see
@@ -38,13 +45,14 @@ code spans, since rustdoc cannot resolve a link into a dependent crate.
   fade to black around the pause menu).
 - **Mode + scene seams** - `mode_entry_init` (the one-time mode-entry
   initialisers: the field / town scene init `FUN_801D6704` and the duel-arena
-  overlay seeds `FUN_801CF00C`; see
+  overlay seeds `FUN_801CF00C`, plus the boot entry word `init.pak` leaves for
+  the title; see
   [`docs/subsystems/asset-loader.md`](../../docs/subsystems/asset-loader.md))
   and `scene_name_sync` (the name-based scene-change packet).
-- **RAM + capture pins** - `ram_map` (the registry of well-known PSX RAM
-  cells the cheat applier targets), `capture_observations` (codified
-  save-state capture findings) and `draw_census` (a per-draw census of a
-  host's frame keyed the way a retail display list is).
+- **RAM + frame census** - `ram_map` (the registry of well-known PSX RAM
+  cells the cheat applier targets) and `draw_census` (a per-draw census of a
+  host's frame keyed the way a retail display list is). The codified
+  save-state capture findings are `legaia_parity::capture_observations`.
 
 ## See also
 

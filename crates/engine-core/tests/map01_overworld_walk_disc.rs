@@ -6,8 +6,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {

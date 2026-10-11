@@ -1,6 +1,6 @@
 //! Browser seat of the battle draw's **Rot limb dimming** - the one
 //! per-object colour rule of the battle per-actor draw `FUN_80048A08`
-//! (kernel [`legaia_engine_vm::battle_actor_draw`], resolved against the
+//! (kernel [`legaia_engine_battle_vm::battle_actor_draw`], resolved against the
 //! world by `World::battle_limb_dim_plan`).
 //!
 //! A party member carrying a Rot limb bit draws that limb's object range
@@ -15,7 +15,10 @@ use crate::runtime::LegaiaRuntime;
 use wasm_bindgen::prelude::*;
 
 impl LegaiaRuntime {
-    fn limb_dim_plan(&self, i: u32) -> Option<legaia_engine_vm::battle_actor_draw::LimbDimPlan> {
+    fn limb_dim_plan(
+        &self,
+        i: u32,
+    ) -> Option<legaia_engine_battle_vm::battle_actor_draw::LimbDimPlan> {
         let br = self.battle_render.as_ref()?;
         let host = self.scene_host.host()?;
         let (actor_idx, _, ids) = br.actor_colour_stream(i as usize)?;

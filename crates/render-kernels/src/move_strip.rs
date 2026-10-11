@@ -19,11 +19,11 @@
 //! divide by the same `z`, which is the projector's own recipe
 //! ([`crate::billboard`]).
 
-use legaia_engine_vm::battle_cam_script::GTE_OFY;
+use legaia_engine_battle_vm::battle_cam_script::GTE_OFY;
+use legaia_engine_battle_vm::psx_camera::FieldCameraView;
 use legaia_engine_vm::move_ext_strip::{
     StripClip, StripEmit, StripProjection, StripQuad, StripRequest, emit_strip,
 };
-use legaia_engine_vm::psx_camera::FieldCameraView;
 
 use crate::gte::{psx_cos, psx_sin};
 use crate::screen_prim::{ScreenPrim, ScreenQuad};
@@ -104,7 +104,7 @@ pub fn strip_quad_prim(q: &StripQuad, ot_index: u32) -> ScreenPrim {
 ///
 /// Both play hosts call this from their draw path with the requests of the
 /// world's most recent tick
-/// (`legaia_engine_core::world::MoveVmGlobals::strip_frame`).
+/// (`legaia_engine_field::move_vm_globals::MoveVmGlobals::strip_frame`).
 pub fn move_strip_prims(requests: &[StripRequest], view: &FieldCameraView) -> Vec<ScreenPrim> {
     let mut out = Vec::new();
     for req in requests {

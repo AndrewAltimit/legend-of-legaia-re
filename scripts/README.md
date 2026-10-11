@@ -42,6 +42,17 @@ not analysis one-offs:
 Run from the repo root; the pre-commit hook (`git-hooks/pre-commit`) and CI
 invoke them by `scripts/ci/<name>` path.
 
+The five largest tools are an entry file over a package directory of the same
+name with underscores - `check-ui-host-drift.py` over `ui_host_drift/`,
+`port-catalog.py` over `port_catalog/`, `check-port-provenance.py` over
+`port_provenance/`, `disc-coverage.py` over `disc_coverage/`,
+`replay-port-coverage.py` over `replay_port_coverage/`. The entry file's
+docstring maps the package; the command line is the entry file's. In each, the
+tables a contributor edits sit apart from the analysis: `ui_host_drift/rows/`,
+`port_provenance/rows.py`, `replay_port_coverage/ladders.py`. A package
+directory is not a gate, and nothing discovers gates by listing this directory -
+the hook and CI name each one.
+
 Where each gate runs, and why a few are in only one place, is
 [`docs/tooling/host-drift.md`](../docs/tooling/host-drift.md#where-the-gates-run).
 The short version: hook and CI mirror each other, except that a gate whose
@@ -51,6 +62,7 @@ in the hook, and must self-skip everywhere else.
 - `install-hooks.sh` - point `core.hooksPath` at `git-hooks/` (run once per clone).
 - `install-tools.sh` - install the local toolchain (Ghidra container, capstone, emulators).
 - `check-doc-density.py` - doc legibility-density gate (long lines / over-budget table cells).
+- `check-crate-layering.py` (+ `crate-layering.toml`) - hard gate: each engine kernel crate's engine-layer dependencies equal its row in the table, kernel crates depend only on kernel crates, and no format / tool / patcher crate depends on an engine-layer crate. `--ranks` prints the derived stack. See [`engine.md`](../docs/subsystems/engine.md#the-layering-gate).
 - `check-integration-tests.py` - every `tests/*.rs` of a crate with `autotests = false` is declared in its `tests/integration.rs`; an undeclared file would never compile or run.
 - `check-md-links.py` - Markdown intra-repo link + heading-anchor gate (the docs-side sibling of `check-site-links.py`).
 - `check-site-links.py` - static-site internal-link + anchor gate.
@@ -67,19 +79,20 @@ in the hook, and must self-skip everywhere else.
 - `check-port-provenance.py` - asks whether a `// PORT:` address names the right
   routine, which no other gate does. Ranked worklist off the disassembly; not in
   the hook. Reviewed findings live in `port-provenance-waivers.toml`, each with
-  what was read and what it showed. See [`docs/tooling/port-provenance.md`](../docs/tooling/port-provenance.md).
-- `disc-coverage.py` (+ `disc-coverage-baseline.json`) - **hard gate**: coverage measured against the disc's own bytes rather than against our citations, ratcheted against a committed baseline. Self-skips without `extracted/` and the dump corpus, so it also runs in CI as a SKIPPED step. See [`docs/tooling/disc-coverage.md`](../docs/tooling/disc-coverage.md).
+  what was read and what it showed. Code in `port_provenance/`; the split-module
+  list and the other declared rows in `port_provenance/rows.py`. See [`docs/tooling/port-provenance.md`](../docs/tooling/port-provenance.md).
+- `disc-coverage.py` (+ `disc-coverage-baseline.json`) - **hard gate**: coverage measured against the disc's own bytes rather than against our citations, ratcheted against a committed baseline. Self-skips without `extracted/` and the dump corpus, so it also runs in CI as a SKIPPED step. Code in `disc_coverage/`. See [`docs/tooling/disc-coverage.md`](../docs/tooling/disc-coverage.md).
 - `byte-account-coverage.py` (+ `byte-account-baseline.json`) - **hard gate** (`--check`): ratchets the disc-wide byte accounting (`asset account` swept by `asset-investigation/byte-account-sweep.py`), the third denominator beside the code and recognition figures. Self-skips without disc data. See [`docs/tooling/byte-accounting.md`](../docs/tooling/byte-accounting.md).
 - `retail-compare.py` (+ `retail-compare-baseline.json`) - driver over `legaia-engine retail-compare`: resolves the save library and extracted disc (also from a worktree), builds the engine, writes the report; `--check` asserts the committed ratchet, `--bless` merges new values in. Skips without data. See [`docs/tooling/retail-compare.md`](../docs/tooling/retail-compare.md).
-- `replay-port-coverage.py` - joins `cargo llvm-cov` output for the replay ladders against the port catalog's anchors: what a pad-driven run actually executes, against what the static graph calls live. See [`docs/tooling/reach-triage.md`](../docs/tooling/reach-triage.md).
+- `replay-port-coverage.py` - joins `cargo llvm-cov` output for the replay ladders against the port catalog's anchors: what a pad-driven run actually executes, against what the static graph calls live. Code in `replay_port_coverage/`; the ladder list is `ladders.py` there. See [`docs/tooling/reach-triage.md`](../docs/tooling/reach-triage.md).
 - `update-progress-metrics.py` - refresh `progress-metrics.json` from `disc-coverage.py` + `port-catalog.py`. Run locally on a machine with disc data and commit the result; the site build has none and can only render what is committed.
 - `check-progress-metrics-freshness.py` - **warn-only** in the hook: compares the committed `progress-metrics.json` the landing-page tiles render against `port-catalog-baseline.json` beside it. Both files are committed, so it needs no disc, no corpus and no catalog pass; `--live` adds the expensive comparison and `--strict` exits 1. It never rewrites the JSON - that is a deliberate, reviewed commit. See [`docs/tooling/disc-coverage.md`](../docs/tooling/disc-coverage.md).
 - `progress-metrics.json` - that committed output, read by `site/_gen.py` for the landing page.
 - `image-port-status.json` (+ `image-scoped-verdicts.toml`) - the per-image port table `update-progress-metrics.py` also writes for `site/_gen.py`, and the per-image verdicts for VA-aliased addresses it reads (the ignore list keys by bare VA, so it cannot say what the routine is in one image). See [`docs/tooling/disc-coverage.md`](../docs/tooling/disc-coverage.md#per-image-port-status).
 - `check-shell-observer-traps.py` - hard gate over the shell corpus for the three "observer inside the observed" defects (pipe exit status, self-matching `pkill`/`pgrep`, `grep`'s no-match exit 1). Self-tests its detectors on every run. See [`docs/tooling/shell-observer-traps.md`](../docs/tooling/shell-observer-traps.md).
-- `check-ui-host-drift.py` (+ `ui-host-drift-waivers.toml`) - hard gate: every `engine-ui` draw builder must reach both hosts, paired host geometry constants must carry equal values, and paired simulation injection sites must name the same kernels. See [`docs/tooling/host-drift.md`](../docs/tooling/host-drift.md).
+- `check-ui-host-drift.py` (+ `ui-host-drift-waivers.toml`) - hard gate: every `engine-ui` draw builder must reach both hosts, paired host geometry constants must carry equal values, and paired simulation injection sites must name the same kernels. Code in `ui_host_drift/`: declared rows under `rows/` (host source paths in `rows/host_files.py`), analysis under `tiers/`. See [`docs/tooling/host-drift.md`](../docs/tooling/host-drift.md).
 - `check-trait-override-symmetry.py` (+ `trait-override-waivers.toml`) - hard gate: an `engine-core` trait whose methods all carry default bodies lets a host forget a hook with no compile error, so every host implementing one must override the same set. Same page.
-- `port-catalog.py` (+ `port-catalog-ignore.toml`, `features.toml`, `port-catalog-baseline.json`) - per-function port worklist, `--dashboard`, and a `--check` ratchet over the worklist / ported counts. Hard gate in the hook; a SKIPPED step in CI, since the `dumped` column reads the gitignored dump corpus.
+- `port-catalog.py` (+ `port-catalog-ignore.toml`, `features.toml`, `port-catalog-baseline.json`) - per-function port worklist, `--dashboard`, and a `--check` ratchet over the worklist / ported counts. Hard gate in the hook; a SKIPPED step in CI, since the `dumped` column reads the gitignored dump corpus. Code in `port_catalog/`.
 - `proposed-ignore-additions.toml` - generated by `ghidra-analysis/classify-worklist.py`, consumed by no gate. **Review row by row before merging any of it into `port-catalog-ignore.toml`** - the file's own header says why.
 - `function-coverage.py` - Ghidra-dump citation coverage report.
 - `build-wasm.sh` - web-viewer WASM build. `site/wasm/` is **not committed**; run this once to browse `site/` locally. It also stamps `site/wasm/SOURCE_STAMP.json` (untracked).
@@ -126,7 +139,7 @@ directory.
 - `check-dump-base-integrity.py` (+ `dump-base-baseline.json`) - **hard gate** (`--check`): a dump whose printed addresses are a constant delta from where its bytes actually live. `--shape` is the second axis (truncation / headerless), `--audit-dumpers` the third (which dump scripts still carry the defect).
 - `check-jal-target-integrity.py` (+ `jal-target-baseline.json`) - **hard gate** (`--check`): a decoded call target landing on no function entry, which localises a byte window whose link base is unrecovered.
 - `attribute-dump-extents.py` -> `dump-extent-attribution.csv` - which extracted image really holds each VA-ambiguous dump extent, decided by bytes. Committed, and consumed by `ci/disc-coverage.py`; without it every overlay extent stays ambiguous by address.
-- `slot_b_band.py` - the slot-B module band's own structure (frame partition, spawn records, the move-VM width walk that bounds the highest one, and each image's structural content end). Imported by `ci/disc-coverage.py`, `attribute-dump-extents.py` and `inherited_tail.py`, so the three answer identically; mirrors the authority `legaia_asset::slot_b_module`.
+- `slot_b_band.py` - the slot-B module band's own structure (frame partition, spawn records, the move-VM width walk that bounds the highest one, and each image's structural content end). Imported by `ci/disc-coverage.py`, `attribute-dump-extents.py` and `inherited_tail.py`, so the three answer identically; mirrors the authority `legaia_overlay_images::slot_b_module`.
 - `classify-worklist.py` -> `worklist-classification.csv` + `ci/proposed-ignore-additions.toml` - is a worklist address a portable function entry at all (`REAL` / `INTERIOR` / `DUPLICATE` / `VA_ALIASED` / ...). Both outputs are committed and neither is gated, so an empty one means "unrun" just as readily as "clean" - re-run before citing it.
 - `resolve-phantom-va.py` - byte-level owner resolution for a printed VA against named candidate readings; picks up the short bodies and data regions the base-integrity sweep declines to judge.
 - `locate-entry-image.py` - which based overlay image actually holds a worklist address's function entry, from disc bytes (stack-frame prologue + in-image `jal` sites). Disambiguates the VA aliasing at the shared `0x801CE818` / `0x801F69D8` bases; prints both signals rather than a verdict, because leaf entries have no frame and jump-table / SCUS-called entries have no in-overlay `jal`.

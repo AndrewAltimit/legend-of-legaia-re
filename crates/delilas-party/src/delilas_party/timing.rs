@@ -1,5 +1,4 @@
 //! Frame retiming: clip contacts, retimed hit frames and effect-script edits.
-//! Split out of `delilas_party.rs`.
 
 use super::*;
 
@@ -39,7 +38,7 @@ pub(super) struct Contact {
 /// `None` when the clip is too short to have a speed profile or never
 /// decelerates at all (a pure approach).
 pub(super) fn principal_impact(
-    clip: &legaia_asset::monster_archive::MonsterAnimation,
+    clip: &legaia_actor_formats::monster_archive::MonsterAnimation,
 ) -> Option<Contact> {
     if clip.part_count == 0 || clip.frame_count < 4 {
         return None;
@@ -94,11 +93,11 @@ pub(super) fn principal_impact(
 /// The per-stage length expression is the rebuild's own
 /// (`(frame_count * rate).div_ceil(stage.rate)`), and the front stages are
 /// the ones the rebuild drops when the slot is tight, so only the last
-/// [`RebuiltArtSlot::stages`](crate::party_swap::winpose::RebuiltArtSlot)
+/// [`RebuiltArtSlot::stages`](legaia_party_swap::winpose::RebuiltArtSlot)
 /// of the chain are walked.
 pub(super) fn chain_contacts(
-    chain: &[&legaia_asset::monster_archive::MonsterAnimation],
-    rebuilt: &crate::party_swap::winpose::RebuiltArtSlot,
+    chain: &[&legaia_actor_formats::monster_archive::MonsterAnimation],
+    rebuilt: &legaia_party_swap::winpose::RebuiltArtSlot,
 ) -> Vec<Contact> {
     let kept = chain.len().saturating_sub(rebuilt.stages);
     let rate = rebuilt.rate.max(1) as usize;
@@ -109,7 +108,7 @@ pub(super) fn chain_contacts(
     // for a stage whose beats are authored, because it is the yardstick the
     // wind-up filter below is measured against.
     struct Stage<'a> {
-        clip: &'a legaia_asset::monster_archive::MonsterAnimation,
+        clip: &'a legaia_actor_formats::monster_archive::MonsterAnimation,
         start: usize,
         len: usize,
         authored: Vec<u8>,
@@ -220,8 +219,8 @@ pub(super) fn ascending_within(frames: &[usize], last: usize) -> Vec<u8> {
 /// the extras ride the same impact on consecutive frames - retail's own
 /// multi-hit idiom (Burning Flare is `11 12 13 14` on one swing).
 pub(super) fn retimed_hit_frames(
-    host: &legaia_asset::battle_char_assembly::ArtAnimRecord,
-    rebuilt: &crate::party_swap::winpose::RebuiltArtSlot,
+    host: &legaia_actor_formats::battle_char_assembly::ArtAnimRecord,
+    rebuilt: &legaia_party_swap::winpose::RebuiltArtSlot,
     contacts: &[Contact],
 ) -> (Vec<(usize, u8)>, String) {
     if rebuilt.frames == rebuilt.retail_frames && rebuilt.stages == 1 {
@@ -345,10 +344,10 @@ pub(super) fn fx_live_count(script: &[u8]) -> usize {
 /// contact. The walker's gate rule is the hit rule (`frame + 1 >= gate`,
 /// `0x801decb4`), so a gate equal to a hit value fires on the same frame.
 pub(super) fn effect_script_edits(
-    host: &legaia_asset::battle_char_assembly::ArtAnimRecord,
-    clip: &legaia_asset::monster_archive::MonsterAnimation,
-    siblings_clips: &[legaia_asset::monster_archive::MonsterAnimation],
-    rebuilt: &crate::party_swap::winpose::RebuiltArtSlot,
+    host: &legaia_actor_formats::battle_char_assembly::ArtAnimRecord,
+    clip: &legaia_actor_formats::monster_archive::MonsterAnimation,
+    siblings_clips: &[legaia_actor_formats::monster_archive::MonsterAnimation],
+    rebuilt: &legaia_party_swap::winpose::RebuiltArtSlot,
     burst: Option<u8>,
     contacts: &[Contact],
 ) -> (Vec<(usize, u8)>, String) {

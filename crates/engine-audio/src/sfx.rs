@@ -45,7 +45,7 @@ use crate::vab_bind::VabBank;
 /// the entry up to drive the actual SPU note-on parameters.
 ///
 /// The fields mirror the retail static SFX descriptor
-/// (`legaia_asset::sfx_table::SfxDescriptor`): `program_index` is the
+/// (`legaia_game_tables::sfx_table::SfxDescriptor`): `program_index` is the
 /// descriptor `+0` program, `tone` is the descriptor `+1` **region index**
 /// (NOT a key-range window), `key` is the `+2` note-level attribute, and
 /// `voices` is the `+3 & 0x1F` voice count. The retail SFX path
@@ -221,7 +221,7 @@ impl SfxBank {
 
     /// Build a bank from decoded SFX descriptors - the
     /// `(id, program, tone, note, voice_count)` tuples the disc
-    /// `legaia_asset::sfx_table::SfxTable::active` iterator yields (program =
+    /// `legaia_game_tables::sfx_table::SfxTable::active` iterator yields (program =
     /// `SfxDescriptor::program`, tone = `SfxDescriptor::tone`, note =
     /// `SfxDescriptor::note`, voice_count = `SfxDescriptor::voice_count()`).
     /// Keeping the argument a plain tuple iterator avoids a dependency on the
@@ -476,9 +476,9 @@ pub fn classify_cue(id: u32) -> CueDispatch {
 /// that argument to `s0`, range-checks it against `0x2A31` (`slti
 /// v0,s0,0x2a31` at `0x8003d5c8`) and stops the drive `(span * 150 + 149) /
 /// 60` sectors past the clip's start. Neither routine touches a pitch
-/// register. The span is denominated in vsyncs (`legaia_asset::xa_cue_table`);
+/// register. The span is denominated in vsyncs (`legaia_game_tables::xa_cue_table`);
 /// `legaia_engine_shell::xa_clip::voice_clip_duration_sectors` and
-/// `legaia_engine_vm::battle_cast_cue::admit_voice_cue` carry the same
+/// `legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue` carry the same
 /// arithmetic.
 pub fn voice_clip_span(raw_span: u16) -> u16 {
     // Retail: `(value * 0x3C + 99) / 100`; the `+ 99` over `/ 100` is the
@@ -716,7 +716,7 @@ impl SfxScheduler {
 /// shape: a caller that already knows the program, tone, note and volume and
 /// wants a specific voice slot keyed - the Muscle Dome tally roll's per-lane
 /// cue (`FUN_801D1288`, whose resolved call
-/// `legaia_engine_core::other_game_overlay::VoiceAttrCue` carries) is one, and
+/// `legaia_engine_minigames::other_game_overlay::VoiceAttrCue` carries) is one, and
 /// the SCUS cue drainer `FUN_80016B6C` fills the same eight slots from a cue
 /// descriptor.
 ///
@@ -768,7 +768,7 @@ impl VoiceAttr {
     /// `FUN_80065034` takes, in the widths its callers compute them at - into
     /// this struct.
     ///
-    /// The arena tally cue (`legaia_engine_core::other_game_overlay`) resolves
+    /// The arena tally cue (`legaia_engine_minigames::other_game_overlay`) resolves
     /// its arguments as `u32` / `i32` because that is how the overlay computes
     /// them; every host then has to narrow the same eight slots the same way
     /// before it can key a voice. Three hosts each spelled that narrowing out

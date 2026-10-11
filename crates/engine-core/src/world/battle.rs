@@ -1,12 +1,11 @@
 //! Battle command flow, submenu ticks, monster AI, initiative, capture
-//! resolution, and battle teardown. Split out of `world.rs` as additional
-//! `impl World` blocks.
+//! resolution, and battle teardown.
 
 use super::*;
 
-use crate::battle_events::{BattleEvent, BattleHitFx};
+use legaia_engine_battle::battle_events::{BattleEvent, BattleHitFx};
+use legaia_engine_battle_vm::battle_action::{BattleEndCause, StepOutcome};
 use legaia_engine_vm as vm;
-use vm::battle_action::{BattleEndCause, StepOutcome};
 
 mod actor_draw;
 mod auto_combo;

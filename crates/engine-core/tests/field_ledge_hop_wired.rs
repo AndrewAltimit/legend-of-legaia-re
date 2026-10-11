@@ -19,8 +19,9 @@
 //! Disc-free: the world is synthetic, so nothing here is gated on
 //! `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 /// Collision-grid geometry (`World::terrain.collision_grid` is a `0x80 x 0x80`
 /// byte grid; the crate-private constants are mirrored here because this is an

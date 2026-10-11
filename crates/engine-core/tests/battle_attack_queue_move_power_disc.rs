@@ -5,7 +5,7 @@
 //! `World::step_actor_effect_script` keys the effect script's move-power
 //! lookup on the acting actor's action-stream head byte
 //! (`actor[+0x1DF]`, retail's `FUN_801DEA50` terminator sink). The lookup is
-//! `legaia_engine_core::action_effect_script::move_power_record_offset` over
+//! `legaia_engine_effects::action_effect_script::move_power_record_offset` over
 //! the id-index map at `0x801F4E63` (PROT 0898). An Attack that leaves that
 //! byte at `0` resolves nothing, `MoveFxStreak` is never installed, and
 //! `World::casting.move_fx_trail_texpage` stays `None` - the streak pass emits
@@ -19,15 +19,16 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::action_effect_script::move_power_record_offset;
-use legaia_engine_core::encounter::{
+use legaia_engine_battle::encounter::{
     EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
 };
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::move_power::MovePowerCatalog;
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_action::is_swing_command;
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_battle::move_power::MovePowerCatalog;
+use legaia_engine_battle_vm::battle_action::is_swing_command;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_effects::action_effect_script::move_power_record_offset;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 use legaia_prot::archive::Archive;
 
 fn extracted() -> Option<PathBuf> {
@@ -45,7 +46,7 @@ fn overlay_0898(dir: &std::path::Path) -> Vec<u8> {
     let mut archive = Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
     let entry = archive
         .entries
-        .get(legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .get(legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .cloned()
         .expect("PROT 0898 entry");
     let mut bytes = Vec::new();
@@ -131,7 +132,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     // opens on), then `Auto` on the attack-mode prompt, then the target
     // cursor's confirm. Phase-driven rather than a fixed press count so the
     // test says what it is steering, not how many frames that takes.
-    use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+    use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase};
     let cross = InputState::mask_of([PadButton::Cross]);
     let left = InputState::mask_of([PadButton::Left]);
     let mut release = false;
@@ -177,7 +178,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     let offset = move_power_record_offset(map, action).unwrap_or_else(|| {
         panic!("queued swing {action:#04X} resolved no move-power record offset")
     });
-    let index = offset / legaia_engine_core::action_effect_script::MOVE_POWER_STRIDE;
+    let index = offset / legaia_engine_effects::action_effect_script::MOVE_POWER_STRIDE;
     assert!(
         index < catalog.len(),
         "swing {action:#04X} -> offset {offset} -> record {index} is past the \

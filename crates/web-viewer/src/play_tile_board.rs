@@ -8,10 +8,10 @@
 //! still refuses its `CELL_WALL` cells, so the player walks into nothing and
 //! stops, which reads as a softlock rather than a missing decoration.
 //!
-//! The assembly itself is shared - [`legaia_engine_core::tile_board`]'s
+//! The assembly itself is shared - [`legaia_engine_core::world_views::tile_board`]'s
 //! `tile_board_actor_draws` / `tile_actor_slots_needing_mesh` /
-//! `is_tile_actor_slot`, the same three the native `redraw` pass calls
-//! through `legaia_engine_shell::tile_board_draws`. This module is only the
+//! `is_tile_actor_slot`, the same three the native `redraw` pass calls.
+//! This module is only the
 //! wasm boundary: the flat typed arrays the page's WebGL layer consumes,
 //! shaped like the NPC path (`play_npc_transforms` and friends) because a
 //! tile actor is drawn exactly like one - a scene mesh at a world position.
@@ -30,7 +30,7 @@
 //! serves; the port of it is in `engine-core`.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::tile_board;
+use legaia_engine_core::world_views::tile_board;
 use wasm_bindgen::prelude::*;
 
 /// Floats per cell in [`LegaiaRuntime::play_tile_board_transforms`]:

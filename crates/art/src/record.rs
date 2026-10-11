@@ -19,7 +19,7 @@ use crate::queue::{ActionConstant, Command};
 /// Status effect an art can apply to the target. Named with the game's
 /// in-game ailment terms; bytes 1/2 are `Toxic`/`Numb`, bytes 3..=8 arrive as
 /// `Other(_)` and map to Venom/Sleep/Confuse/Curse/Stone/Faint in
-/// `legaia_engine_vm::status_effects::StatusKind`.
+/// `legaia_engine_battle_vm::status_effects::StatusKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum EnemyEffect {
     #[default]

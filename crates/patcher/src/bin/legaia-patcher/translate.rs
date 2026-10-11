@@ -4,16 +4,17 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 use std::collections::BTreeMap;
 
-use legaia_patcher::translation::{
+use legaia_disc_patch::ppf;
+use legaia_patcher::apply;
+use legaia_translate::{
     LanguagePack, accents, diff, export_pack, fit, import::WritePath, import_pack, lift,
     markup::Target, space,
 };
-use legaia_patcher::{apply, ppf};
 
-use crate::util::{cue_contents, load_image};
+use crate::disc_io::{cue_contents, load_image};
 
 fn read_pack(path: &Path) -> Result<LanguagePack> {
     let text =
@@ -196,7 +197,7 @@ pub(crate) fn cmd_merge(base: &Path, packs: &[std::path::PathBuf], output: &Path
 }
 
 /// Pack sections whose names import moves when they outgrow their in-place
-/// budget (`legaia_patcher::translation::name_pool`).
+/// budget (`legaia_translate::name_pool`).
 const GROWABLE_NAME_SECTIONS: [&str; 5] = [
     "items",
     "item_types",
@@ -209,8 +210,8 @@ const GROWABLE_NAME_SECTIONS: [&str; 5] = [
 /// in-place budget. An arts-menu description never moves (the in-battle
 /// matcher reads the combo string after it); a distributable pack carries no
 /// context to tell one apart, so only a working pack's is flagged here.
-fn name_can_grow(section: &str, e: &legaia_patcher::translation::Entry, len: usize) -> bool {
-    use legaia_patcher::translation::monster_names::RETAIL_LONGEST_NAME;
+fn name_can_grow(section: &str, e: &legaia_translate::Entry, len: usize) -> bool {
+    use legaia_translate::monster_names::RETAIL_LONGEST_NAME;
     match section {
         "monster_names" => len <= RETAIL_LONGEST_NAME,
         "arts" => !e.context.contains("description"),
@@ -558,7 +559,7 @@ pub(crate) fn cmd_lift_official(
 
 pub(crate) fn cmd_coverage(input: &Path, json: bool, verbose: bool) -> Result<()> {
     let patcher = DiscPatcher::open(load_image(input)?).context("parse disc image")?;
-    let rep = legaia_patcher::translation::coverage::measure(&patcher)?;
+    let rep = legaia_translate::coverage::measure(&patcher)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&rep)?);
         return Ok(());
@@ -584,7 +585,7 @@ pub(crate) fn cmd_coverage(input: &Path, json: bool, verbose: bool) -> Result<()
     for (r, n) in &reasons {
         println!("  missing - {r}: {n}");
     }
-    let sum = |f: fn(&legaia_patcher::translation::coverage::CarrierCoverage) -> usize| {
+    let sum = |f: fn(&legaia_translate::coverage::CarrierCoverage) -> usize| {
         rep.carriers.iter().map(f).sum::<usize>()
     };
     println!(
@@ -709,7 +710,7 @@ pub(crate) fn cmd_import(
     let original = load_image(input)?;
     let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
     let report = if allow_relayout {
-        legaia_patcher::translation::import_pack_relayout(&mut patcher, &pack)?
+        legaia_translate::import_pack_relayout(&mut patcher, &pack)?
     } else {
         import_pack(&mut patcher, &pack)?
     };
@@ -786,13 +787,13 @@ pub(crate) fn cmd_import(
     if let Some(ppf_path) = patch {
         let runs = ppf::diff_runs(&original, &patched);
         let desc = format!("Legaia translation pack ({})", pack.language);
-        crate::util::note_overwrite(ppf_path);
+        crate::disc_io::note_overwrite(ppf_path);
         std::fs::write(ppf_path, ppf::write_ppf3(&desc, &runs))
             .with_context(|| format!("write PPF {}", ppf_path.display()))?;
         println!("wrote {} ({} change runs)", ppf_path.display(), runs.len());
     }
     if let Some(out) = output {
-        crate::util::note_overwrite(out);
+        crate::disc_io::note_overwrite(out);
         std::fs::write(out, &patched)
             .with_context(|| format!("write patched image {}", out.display()))?;
         let cue = out.with_extension("cue");

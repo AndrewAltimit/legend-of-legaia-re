@@ -4,7 +4,7 @@
  * visitor's disc at runtime by `LegaiaMinigames`
  * (crates/web-viewer/src/minigames_fishing.rs + minigames_fishing_scene.rs):
  *
- *   - the RULES are the ported retail loop (engine-core::fishing): the
+ *   - the RULES are the ported retail loop (engine-fishing::fishing): the
  *     casting-power oscillator, the per-frame band roll and its cutoffs, the
  *     four reel-cadence gesture templates read out of the overlay rodata
  *     (a match stores its template id AS the cast band and fires the
@@ -20,7 +20,7 @@
  *     idle, the other two their venue-bank clips), framed through the
  *     venue camera the same kernel composes (venue_camera_view);
  *   - the HUD layout is the ported overlay draw list
- *     (engine-ui::ui_fishing): the persistent best/points rows, the catch
+ *     (engine-ui::fishing): the persistent best/points rows, the catch
  *     readouts, the depth/tension/power gauge bars with the retail fill
  *     arithmetic and colour ramps, and the five banner animators on their
  *     traced slide/hold/fade ramps.
@@ -41,7 +41,7 @@ window.MgFishing = (function () {
   const A2R = (Math.PI * 2) / 4096;   /* PSX angle units -> radians */
 
   /* Labels for the undecoded HUD glyph ids (the one non-retail asset - the
-   * fishing sprite page - substituted by text; ids from ui_fishing). */
+   * fishing sprite page - substituted by text; ids from engine-ui::fishing). */
   const GLYPH_LABEL = {
     0x1a: 'BEST',   0x1c: 'POINTS',
     0x0b: 'LINE',   0x10: 'm',
@@ -383,7 +383,7 @@ window.MgFishing = (function () {
 
     /* The HUD's sprite half - plates, digits, gauge caps, banners - cut
      * from the overlay's own sprite table out of the venue's HUD page and
-     * rasterised by the engine (ui_fishing_sprite, the builder the play
+     * rasterised by the engine (engine-ui::fishing::sprite, the builder the play
      * hosts draw on their GPUs). Available when the table and the pond
      * decoded; the text stand-ins below then step aside. */
     let spriteCanvas = null;
@@ -619,7 +619,7 @@ window.MgFishing = (function () {
     }
 
     /* Placeholder letterform per effect-part sprite id. The ids and the
-     * table are the engine's (legaia_engine_core::minigame_fx); the overlay's
+     * table are the engine's (legaia_engine_minigames::minigame_fx); the overlay's
      * own sprite page is not staged on this page, so a part draws as its
      * glyph the same way it does on the other two hosts. */
     const FX_GLYPH = { 11: 'GOOD!', 22: '*', 256: '~', 257: 'o', 258: '*' };

@@ -37,17 +37,18 @@ use crate::{
     ScreenInputs, WIN_BUY_QUANTITY, WIN_EQUIP_TARGET, WIN_ITEM_INFO, WIN_POINT_CARD, WIN_PURSE,
     WIN_SELL_DETAIL, WIN_SELL_QUANTITY, WIN_VENDOR_PLATE, shop_item_description, shop_item_label,
 };
-use legaia_asset::menu_windows::MenuWindowTable;
-use legaia_engine_core::menu_runtime::{MenuRuntime, MenuState};
-use legaia_engine_core::shop::ShopSession;
+use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::world::World;
-use legaia_engine_ui::ui_menu_window_painters::{
+use legaia_engine_menus::menu::MenuState;
+use legaia_engine_menus::shop::ShopSession;
+use legaia_engine_ui::menu::window_painters::{
     POINT_CARD_HEADING, POINT_CARD_UNIT_LABEL, PainterPictogram, PainterRect, PainterSprite,
     SELL_QUANTITY_HEADING, amount_prompt_draws_for, buy_quantity_draws_for,
     counter_panel_draws_for, item_description_draws_for, record_title_tab_draws_for,
     sell_quantity_draws_for,
 };
 use legaia_engine_ui::{self as ui, TextDraw, shop_screen as ss};
+use legaia_game_tables::menu_windows::MenuWindowTable;
 
 /// The per-window painters' output for one shop frame: their texts in stage
 /// pixels, plus the sprite requests [`ss::shop_marker_draws`] resolves
@@ -70,7 +71,7 @@ pub struct ShopWindowDraws {
 /// starts the string at `record + record[2] + 3`. With the shop record's
 /// payload `[count][count x id][name\0]`, `record[2]` is `count`, so the
 /// string lands one past the last item id - the trailing ASCII name
-/// `legaia_asset::shop_stock` decodes.
+/// `legaia_scene_formats::shop_stock` decodes.
 ///
 /// `ShopSession` keeps the priced stock but not that name, so the name is
 /// recovered by matching the session's stock against the scene's decoded
@@ -270,11 +271,11 @@ pub fn shop_window_draws(
 /// It replaces window 34 while the sell list has focus.
 ///
 /// The pens are the shared kernel's
-/// ([`legaia_engine_core::shop::shop_sell_detail_panel`]). The passive chain
+/// ([`legaia_engine_menus::shop::shop_sell_detail_panel`]). The passive chain
 /// is the renderer's own (`0x801D5C5C..0x801D5CC8`): the item record's `+0`
 /// class byte picks which table the `+1` subtype indexes - equipment records'
 /// `+5`, everything else the item-effect record's `+3`. The equipment arm
-/// reads through [`legaia_engine_core::equipment::DiscEquipInfo::row_passive_index`]
+/// reads through [`legaia_engine_menus::equipment::DiscEquipInfo::row_passive_index`]
 /// off `MenuRuntime::equip_info`, which is row-keyed exactly as the
 /// renderer's `0x80074F68 + subtype*8` is.
 ///
@@ -284,7 +285,7 @@ pub fn sell_detail_window_draws(
     table: &MenuWindowTable,
     staged: Option<u8>,
 ) -> (Vec<TextDraw>, Option<PainterPictogram>) {
-    use legaia_engine_core::shop::PASSIVE_NONE;
+    use legaia_engine_menus::shop::PASSIVE_NONE;
     let mut out = Vec::new();
     let Some(d) = table
         .window(WIN_SELL_DETAIL)
@@ -306,7 +307,7 @@ pub fn sell_detail_window_draws(
         .map(|t| t.price(id))
         .unwrap_or(0);
     let passive = world.tables.item_effects.as_ref().and_then(|effects| {
-        legaia_engine_core::shop::item_passive_index(
+        legaia_engine_menus::shop::item_passive_index(
             effects.kind(id),
             effects.subtype(id),
             |sub| {
@@ -325,7 +326,7 @@ pub fn sell_detail_window_draws(
             },
         )
     });
-    let panel = legaia_engine_core::shop::shop_sell_detail_panel(
+    let panel = legaia_engine_menus::shop::shop_sell_detail_panel(
         (rect.x as i16, rect.y as i16),
         i32::from(id),
         price,
@@ -349,12 +350,14 @@ pub fn sell_detail_window_draws(
     // (`FUN_800337B0` / `FUN_8003CD00` -> `FUN_80036888`), so a `|` puts the
     // rest on the next row.
     let broken = |out: &mut Vec<TextDraw>, s: &str, pen: (i16, i16), ink: [f32; 4]| {
-        out.extend(ui::ui_menu_window_painters::broken_text_draws_for(
-            font,
-            s,
-            (i32::from(pen.0), i32::from(pen.1)),
-            ink,
-        ));
+        out.extend(
+            legaia_engine_ui::menu::window_painters::broken_text_draws_for(
+                font,
+                s,
+                (i32::from(pen.0), i32::from(pen.1)),
+                ink,
+            ),
+        );
     };
     let desc = shop_item_description(world, id);
     if !desc.is_empty() {
@@ -417,7 +420,7 @@ pub fn recipient_window_draws(inputs: &ScreenInputs<'_>) -> (Vec<TextDraw>, Vec<
     let Some(table) = inputs.table else {
         return (Vec::new(), Vec::new());
     };
-    let members = legaia_engine_core::shop::party_compare_members(
+    let members = legaia_engine_core::world_views::shop::party_compare_members(
         inputs.world,
         inputs.menu.equip_info.as_ref(),
         session.item_id,
@@ -467,7 +470,7 @@ pub fn gold_shop_screen(
     surface_w: u32,
     surface_h: u32,
 ) -> Option<ss::ShopScreenDraws> {
-    use legaia_engine_core::shop::ShopScreenPhase as P;
+    use legaia_engine_menus::shop::ShopScreenPhase as P;
     let menu = inputs.menu;
     let phase = menu.shop_screen_phase()?;
     // The field is still fading to black: no window is up yet.
@@ -484,9 +487,9 @@ pub fn gold_shop_screen(
     // after the markers of the windows it covers.
     let mut slides = menu.shop_slides();
     if slides.is_empty() {
-        slides = legaia_engine_core::shop::shop_screen_windows(phase, false)
+        slides = legaia_engine_menus::shop::shop_screen_windows(phase, false)
             .into_iter()
-            .map(|id| (id, legaia_engine_core::shop::SHOP_SLIDE_FRAMES))
+            .map(|id| (id, legaia_engine_menus::shop::SHOP_SLIDE_FRAMES))
             .collect();
     }
     let windows: Vec<usize> = slides.iter().map(|(id, _)| *id).collect();
@@ -558,7 +561,7 @@ pub fn gold_shop_screen(
                     .iter()
                     .enumerate()
                     .map(|(row, i)| {
-                        legaia_engine_core::shop::shop_buy_row_ink(
+                        legaia_engine_menus::shop::shop_buy_row_ink(
                             row < shop.inventory.featured_rows,
                             held_of(i.item_id),
                             gold,
@@ -602,7 +605,11 @@ pub fn gold_shop_screen(
     };
     let members = staged
         .map(|id| {
-            legaia_engine_core::shop::party_compare_members(world, menu.equip_info.as_ref(), id)
+            legaia_engine_core::world_views::shop::party_compare_members(
+                world,
+                menu.equip_info.as_ref(),
+                id,
+            )
         })
         .unwrap_or_default();
     let party: Vec<ss::ShopCompareMember<'_>> = members
@@ -638,7 +645,7 @@ pub fn gold_shop_screen(
     ss::apply_shop_slides(
         &ctx,
         &slides,
-        legaia_engine_core::shop::SHOP_SLIDE_FRAMES,
+        legaia_engine_menus::shop::SHOP_SLIDE_FRAMES,
         &mut out.texts,
         &mut out.sprites,
     );

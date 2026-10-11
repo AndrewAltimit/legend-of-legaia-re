@@ -25,7 +25,7 @@
     <tbody>
       <tr><td>LZS encoder</td><td><code>legaia_lzs::compress</code></td><td>Retail ships only a decoder. Monster records, scene MANs and art records are LZS streams, so editing one means producing a stream the retail decoder accepts - and packing it no larger than the original. <a href="../formats/lzs.html">LZS &rarr;</a></td></tr>
       <tr><td>Sector write-back</td><td><code>legaia_iso::write</code></td><td>Overwriting a sector's 2048-byte payload also means recomputing its 4-byte EDC and 276-byte P/Q ECC, or the drive reads it as corrupt. <a href="../formats/disc.html">Disc geometry &rarr;</a></td></tr>
-      <tr><td>Disc bridge</td><td><code>legaia_patcher::disc::DiscPatcher</code></td><td>Turns "byte <code>K</code> of PROT entry <code>N</code>" into physical sector writes through the <a href="../formats/prot.html">PROT.DAT</a> table of contents.</td></tr>
+      <tr><td>Disc bridge</td><td><code>legaia_disc_patch::disc::DiscPatcher</code></td><td>Turns "byte <code>K</code> of PROT entry <code>N</code>" into physical sector writes through the <a href="../formats/prot.html">PROT.DAT</a> table of contents.</td></tr>
     </tbody>
   </table>
   <ol class="steps">

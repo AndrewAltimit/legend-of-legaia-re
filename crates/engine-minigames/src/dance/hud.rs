@@ -1,5 +1,4 @@
 //! HUD widget quads and the HUD driver.
-//! Split out of `dance.rs`.
 
 use super::*;
 
@@ -38,14 +37,18 @@ pub struct DanceHudQuad {
 /// Parse the HUD widget table out of an overlay image, pairing each record
 /// with its `+0x13` ABR byte.
 ///
-/// `legaia_asset::dance_art::parse_widgets` decodes every field the emitter
+/// `legaia_minigame_formats::dance_art::parse_widgets` decodes every field the emitter
 /// reads **except** `+0x13`, the semi-transparency rate that folds into the
 /// texpage attribute. Until that parser carries it the byte is lifted here off
 /// the same committed offsets the parser uses, so there is one source for the
 /// table's geometry.
-pub fn dance_widgets_with_abr(overlay: &[u8]) -> Vec<(legaia_asset::dance_art::DanceWidget, u8)> {
-    use legaia_asset::dance_art::{DANCE_OVERLAY_BASE_VA, WIDGET_STRIDE, WIDGET_TABLE_VA};
-    let Ok(widgets) = legaia_asset::dance_art::parse_widgets(overlay) else {
+pub fn dance_widgets_with_abr(
+    overlay: &[u8],
+) -> Vec<(legaia_minigame_formats::dance_art::DanceWidget, u8)> {
+    use legaia_minigame_formats::dance_art::{
+        DANCE_OVERLAY_BASE_VA, WIDGET_STRIDE, WIDGET_TABLE_VA,
+    };
+    let Ok(widgets) = legaia_minigame_formats::dance_art::parse_widgets(overlay) else {
         return Vec::new();
     };
     let base = (WIDGET_TABLE_VA - DANCE_OVERLAY_BASE_VA) as usize;
@@ -63,7 +66,7 @@ pub fn dance_widgets_with_abr(overlay: &[u8]) -> Vec<(legaia_asset::dance_art::D
 }
 
 /// PROT entry carrying the dance hall's own TIM set - the last slot of the
-/// `other7` scene block, an `asset::pack` of 31 TIMs behind a `TIM_LIST` chunk
+/// `other7` scene block, an `container-formats::pack` of 31 TIMs behind a `TIM_LIST` chunk
 /// header.
 ///
 /// The HUD's texture page is one of them: the widget table's `tpage` resolves
@@ -114,14 +117,14 @@ pub(super) fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
 // frame regardless.
 //
 // A second, narrower gap is already closed here: the record's `+0x13` ABR byte
-// is not decoded by `legaia_asset::dance_art::parse_widgets`, so
+// is not decoded by `legaia_minigame_formats::dance_art::parse_widgets`, so
 // [`dance_widgets_with_abr`] lifts it and the caller passes it in.
 /// PORT: FUN_801d2f38 - the dance overlay's textured-quad emitter, the
 /// sibling of Baka Fighter's `FUN_801d5ed0`.
 ///
 /// `FUN_801d2f38(x, y, id, brightness, size)` draws one record of the
 /// 34-record widget table `DAT_801D46CC`
-/// ([`legaia_asset::dance_art::parse_widgets`]) as a quad **centred** on
+/// ([`legaia_minigame_formats::dance_art::parse_widgets`]) as a quad **centred** on
 /// `(x, y)`:
 ///
 /// - the id is two fields. `id & 0x3FF` is the widget index; `id >> 10`
@@ -140,10 +143,10 @@ pub(super) fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
 /// that slot to `3`, so every draw after the first shares one bucket. That
 /// scheduling is host-side; the port returns the quad.
 ///
-/// `abr` is the record's `+0x13` byte. [`legaia_asset::dance_art::DanceWidget`]
+/// `abr` is the record's `+0x13` byte. [`legaia_minigame_formats::dance_art::DanceWidget`]
 /// does not decode it yet, so the caller supplies it.
 pub fn dance_hud_widget_quad(
-    widget: &legaia_asset::dance_art::DanceWidget,
+    widget: &legaia_minigame_formats::dance_art::DanceWidget,
     abr: u8,
     x: i16,
     y: i16,

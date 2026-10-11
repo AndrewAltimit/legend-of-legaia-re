@@ -11,7 +11,7 @@
 //! `0x80089118/1C/20`. The ports below lift the global reads/writes into
 //! caller-owned parameters so the kernels are side-effect-free.
 //!
-//! REF: `engine-render::window::CutsceneCameraInterp` approximates the *field
+//! REF: `engine-battle-vm::psx_camera::CutsceneCameraInterp` approximates the *field
 //! cutscene* camera ease (`FUN_801DB510`) with float lerps toward op-`0x45`
 //! keyframe targets. The retail battle tween here is a different mechanism:
 //! table-driven fixed-point stepping - `FUN_801D829C` precomputes a 9-record
@@ -33,7 +33,7 @@
 //! `0x801E2134` (jump-table slot `0x801CEF58`) stores the operand byte and
 //! advances the PC by three
 //! (`overlay_0897_801de840.txt` `0x801E2134..0x801E2144`). The port models
-//! that opcode - [`crate::field::FieldHost::op4c_n8_sub4_set_b630`] - and the
+//! that opcode - [`crate::field::FieldCameraMotionHost::set_shake_amplitude`] - and the
 //! engine host keeps the value on the world for the camera to read.
 //!
 //! Retail's own callers of `FUN_801D9D30` are all in the **field-family**

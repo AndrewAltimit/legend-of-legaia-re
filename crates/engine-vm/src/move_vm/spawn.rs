@@ -277,7 +277,7 @@ pub const PART_ACTOR_HALT_FLAG: u32 = 0x8;
 /// PORT: FUN_80050e74 (`0x80050E90..0x80050EB8`)
 ///
 /// REPLACED-BY: `World::casting.active_summon`
-/// (`legaia_engine_core::summon::SummonScene::parts`), the engine list that
+/// (`legaia_engine_effects::summon::SummonScene::parts`), the engine list that
 /// holds the population `DAT_801C90F0` seats - the 89 `jal` sites to the flush
 /// are all in the summon / special-attack stager overlays (PROT 0911..0969).
 /// That scene is replaced or dropped whole when a cast ends, so every part is

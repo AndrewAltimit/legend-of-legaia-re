@@ -1,7 +1,6 @@
 //! The battle round: turn cycling, round begin / end and execution, party
 //! command commit and confirm, turn dispatch, dead-target redirects, the
 //! round-open prompt and the basic attack.
-//! Split out of `loop_driver.rs`; no logic change.
 
 use super::*;
 
@@ -36,7 +35,7 @@ impl World {
     /// `0x801E67E8`)
     pub(in crate::world) fn cycle_battle_turn(&mut self) {
         use crate::battle_round::RoundPhase;
-        use vm::battle_action::ActionState;
+        use legaia_engine_battle_vm::battle_action::ActionState;
         if self.battle_ctx.action_state != ActionState::EndOfAction.as_byte() {
             return;
         }
@@ -196,7 +195,7 @@ impl World {
         // `0x0B` reads the unlatched `+0x290` (round one's latch runs at its
         // `0xFE`, after this). A battle staged by `enter_battle` alone stepped
         // its parked Begin first, so its roll already sits in `+0x291`.
-        let back = vm::battle_formulas::FormationAdvantage::BackAttack;
+        let back = legaia_engine_battle_vm::battle_formulas::FormationAdvantage::BackAttack;
         let ambushed = first_round
             && (self.battle_formation() == back || self.battle_formation_latched() == back);
         if ambushed {
@@ -236,7 +235,7 @@ impl World {
     pub(in crate::world) fn begin_round_execution(&mut self) {
         use crate::battle_flow::BattleFlowState;
         use crate::battle_round::RoundPhase;
-        use vm::battle_action::ActionState;
+        use legaia_engine_battle_vm::battle_action::ActionState;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.battle.round_flow.flat_walk_last = None;
         self.battle.commit_log_launch = None;
@@ -270,11 +269,12 @@ impl World {
             .pending
             .iter()
             .any(|p| matches!(p, Some(crate::battle_round::PendingPartyAction::Run)));
-        self.battle.round_flow.leader_first = vm::battle_formulas::special_battle_run_forfeit(
-            self.special_battle_word(),
-            if run_round { 5 } else { 0 },
-            first_monster,
-        );
+        self.battle.round_flow.leader_first =
+            legaia_engine_battle_vm::battle_formulas::special_battle_run_forfeit(
+                self.special_battle_word(),
+                if run_round { 5 } else { 0 },
+                first_monster,
+            );
         self.battle.command = None;
         self.set_battle_flow(BattleFlowState::Idle);
         // A round entered without its start (a host or test that opened a
@@ -296,13 +296,13 @@ impl World {
     /// byte picks the picker row the spell's target resolution reads: `8` /
     /// `9` are the party / enemy group codes, anything else an absolute slot
     /// in **retail** numbering - party `0..3`, monsters from
-    /// [`MONSTER_SLOT_FIRST`](legaia_engine_vm::battle_cue_group::MONSTER_SLOT_FIRST)
+    /// [`MONSTER_SLOT_FIRST`](legaia_engine_battle_vm::battle_cue_group::MONSTER_SLOT_FIRST)
     /// whatever the party size, where the engine seats monsters at
     /// `party_count`.
     pub(in crate::world) fn dispatch_inflight_seed(&mut self, seed: InflightCastSeed) {
         use crate::battle_round::{PendingPartyAction, RoundPhase};
-        use crate::target_picker::CursorRow;
-        use legaia_engine_vm::battle_cue_group::MONSTER_SLOT_FIRST;
+        use legaia_engine_battle::target_picker::CursorRow;
+        use legaia_engine_battle_vm::battle_cue_group::MONSTER_SLOT_FIRST;
         let (target_row, target_slot) = match seed.target {
             8 => (CursorRow::Ally, 0),
             9 => (CursorRow::Enemy, 0),
@@ -397,7 +397,7 @@ impl World {
     /// REF: FUN_801D0748 (state `0x6E`, `0x801D3024..0x801D31E4`)
     pub(in crate::world) fn open_commit_confirm(&mut self, actor: u8) {
         use crate::battle_flow::BattleFlowState as Flow;
-        use crate::battle_input::BattleCommandSession;
+        use legaia_engine_menus::battle_input::BattleCommandSession;
         if !self.battle.player_driven {
             self.begin_round_execution();
             return;
@@ -489,7 +489,7 @@ impl World {
             } => {
                 // The arts target is row-relative; the redirect keeps the
                 // side, so it maps back into the same row.
-                use crate::target_picker::CursorRow;
+                use legaia_engine_battle::target_picker::CursorRow;
                 let party_count = self.party.party_count.max(1);
                 let target_slot = match target_row {
                     CursorRow::Enemy => {
@@ -569,8 +569,8 @@ impl World {
             0
         };
         let mut rng = || (self.next_rand() & 0x7FFF) as i32;
-        vm::battle_action::redirect_dead_target(
-            vm::battle_action::RedirectQuery {
+        legaia_engine_battle_vm::battle_action::redirect_dead_target(
+            legaia_engine_battle_vm::battle_action::RedirectQuery {
                 target_slot: to_retail(target),
                 category,
                 param0,
@@ -607,7 +607,7 @@ impl World {
     /// REF: FUN_801D0748 (states 0x14 / 0x1E)
     pub(super) fn arm_round_open_prompt(&mut self) {
         use crate::battle_flow::BattleFlowState;
-        use crate::battle_input::CommandPhase;
+        use legaia_engine_menus::battle_input::CommandPhase;
         if self.battle.flow != BattleFlowState::TurnPrompt {
             return;
         }
@@ -623,7 +623,7 @@ impl World {
     /// Apply one generic physical attack from the active attacker to its
     /// resolved target as an **immediate** combo: every swing of the AGL
     /// budget rolls through the retail melee kernel
-    /// ([`legaia_engine_vm::battle_formulas::physical_predamage`], the body
+    /// ([`legaia_engine_battle_vm::battle_formulas::physical_predamage`], the body
     /// of `FUN_801EC3E4`) and accumulates, then the total lands on live HP
     /// once - the retail accumulate / apply shape without a clip to pace it.
     ///

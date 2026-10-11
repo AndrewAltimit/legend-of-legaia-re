@@ -25,17 +25,17 @@ The whole minigame is one RAM overlay (code loaded at run time above `0x801C0000
 | Pot | casino prize accumulator `_DAT_80084440`, banked into the coin bank `0x800845A4` |
 | Port (rules) | `engine-minigames`: `baka_fighter`, `baka_cabinet`, `baka_fighter_chrome`, `baka_impact_fx`, `baka_duel` |
 | Port (3D duel) | `engine-minigame-scenes::baka_duel_scene` |
-| Port (parsers) | `legaia_asset::baka_opponents`, `legaia_asset::minigame_art` |
+| Port (parsers) | `legaia_minigame_formats::baka_opponents`, `legaia_minigame_formats::minigame_art` |
 
-The `engine-minigames` modules are re-exported at their old `legaia_engine_core::baka_*` paths. Provenance for every function named here is `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`. Read the two dispatchers from the disassembly: the decompiled C of `FUN_801CF388` renders most exit paths as fake `FUN_801Dxxxx()` label-calls.
+Provenance for every function named here is `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`. Read the two dispatchers from the disassembly: the decompiled C of `FUN_801CF388` renders most exit paths as fake `FUN_801Dxxxx()` label-calls.
 
 The field VM (`FUN_801DE840`), actor VM, move VM, world-map controller (`FUN_801E76D4`) and summon / effect paths that appear in RAM beside this overlay are not Baka-Fighter code; see [`script-vm.md`](script-vm.md), [`actor-vm.md`](actor-vm.md), [`move-vm.md`](move-vm.md) and [`world-map.md`](world-map.md).
 
 ## Entry from the field
 
-The cabinet is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 104` (`sub_id 4`), which sets game mode `0x18` and loads PROT 0976. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `legaia_engine_field::minigame_entry::MinigameSubId`.
+The cabinet is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 104` (`sub_id 4`), which sets game mode `0x18` and loads PROT 0976. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `legaia_engine_mode::minigame_entry::MinigameSubId`.
 
-A disc-wide walk of every scene MAN finds four sites: the three interchangeable cabinet placements in the Sol casino (`koin1` P1[51], P1[52], P1[53]) and one in `map03` P2[20]. The last is **dev residue** - a bare record with nothing but the warp, in a partition-2 slot no reachable script spawns. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+A disc-wide walk of every scene MAN finds four sites: the three interchangeable cabinet placements in the Sol casino (`koin1` P1[51], P1[52], P1[53]) and one in `map03` P2[20]. The last is **dev residue** - a bare record with nothing but the warp, in a partition-2 slot no reachable script spawns. Census test: `crates/engine-scene/tests/minigame_entry_census_disc.rs`.
 
 The `koin1` doors sit behind an entry gate: an `0x4E` inventory compare and a one-coin `0x4C 0xE5` debit before the fade and the warp. Failing it skips the warp.
 
@@ -56,7 +56,7 @@ Eight `0x18`-byte prototype records tile `0x801D75DC..0x801D769C`, ending immedi
 | `0x801D766C` | `FUN_801D4FC8` | developer keyframe editor | `0x801D1D68` |
 | `0x801D7684` | `FUN_801D49E8` | special afterimage | `0x801D4558` |
 
-Parser: `legaia_asset::baka_opponents::parse_actor_prototypes`, which refuses an image whose records break the band's uniform shape (a mis-based image would otherwise yield eight plausible pointers). Disc-gated in `crates/asset/tests/baka_presentation_real.rs`.
+Parser: `legaia_minigame_formats::baka_opponents::parse_actor_prototypes`, which refuses an image whose records break the band's uniform shape (a mis-based image would otherwise yield eight plausible pointers). Disc-gated in `crates/minigame-formats/tests/baka_presentation_real.rs`.
 
 ## Assets
 
@@ -82,7 +82,7 @@ Each ladder entry is a raw `[u32 (type<<24)|size][payload]` chain of `[TIM 256x2
 
 Record 0 of the bank is the idle; the attack / special / knockdown records follow in action-table order. The meshes are the same high-detail party TMDs the turn-based battle uses and render as full 3D TMDs through the registered-mesh pipeline. Pack layout and provenance: [`../formats/character-mesh.md`](../formats/character-mesh.md) and [`battle.md`](battle.md).
 
-Parser `legaia_asset::baka_opponents::parse_fighter_pack`. Disc-gated oracle `crates/asset/tests/baka_presentation_real.rs`: all fourteen packs decode, every anim rig covers its TMD, entry 1220 is refused. **Confirmed** (load path and entry indices traced in `overlay_baka_fighter_801cf00c.txt` + `overlay_baka_fighter_801d4c50.txt`).
+Parser `legaia_minigame_formats::baka_opponents::parse_fighter_pack`. Disc-gated oracle `crates/minigame-formats/tests/baka_presentation_real.rs`: all fourteen packs decode, every anim rig covers its TMD, entry 1220 is refused. **Confirmed** (load path and entry indices traced in `overlay_baka_fighter_801cf00c.txt` + `overlay_baka_fighter_801d4c50.txt`).
 
 ### HUD art and stage pack (PROT 1203)
 
@@ -110,7 +110,7 @@ Each fighter is driven by a per-character action table reached through `PTR_DAT_
 
 `FUN_801D6E5C(char, action, from, to)` returns the index of the first sub-keyframe whose frame falls in `[from, to]`, or `-1` when the range is inverted, the action has no sub-keyframes, or none match. The fixed point sits on the **query**: the function shifts `from` and `to` right by 4 (rounding toward zero) and compares `+0x26` raw, so callers pass a `<< 4` frame range against whole-frame keyframes. Port: `engine-minigames::baka_fighter::keyframe_in_range`.
 
-Parser: `legaia_asset::baka_opponents::parse_actions` (`BakaActionSet::{speed, sub_keyframes}`). Across all 17 tables every attack and special record carries at least one strike, every strike frame is in `0..=64`, and a record's strikes are in frame order (disc-gated in `crates/asset/tests/baka_opponents_real.rs`). Record-space labels: `legaia_asset::baka_opponents::action_slot_label`.
+Parser: `legaia_minigame_formats::baka_opponents::parse_actions` (`BakaActionSet::{speed, sub_keyframes}`). Across all 17 tables every attack and special record carries at least one strike, every strike frame is in `0..=64`, and a record's strikes are in frame order (disc-gated in `crates/minigame-formats/tests/baka_opponents_real.rs`). Record-space labels: `legaia_minigame_formats::baka_opponents::action_slot_label`.
 
 Confidence: **Confirmed** record-field usage; **Inferred** action-slot meanings, from how the per-fighter controller indexes them.
 
@@ -129,7 +129,7 @@ The per-fighter roster table is based at `0x801D769C`: **17 records**, `0x6C` st
 | `+0x44` | duel stand-off: the round setup stands the fighter at `X = ±(stand_off + 200)` |
 | `+0x4C` | CPU pattern: a NUL-terminated byte list |
 
-Roster ids `0..=2` are Vahn / Noa / Gala; `3..=16` are the fourteen ladder fighters. Parser `legaia_asset::baka_opponents::parse` (the 17 records with stats; `BakaOpponent::attack_at` is a forward view of the pattern). Names: `legaia_asset::minigame_art::baka_roster_names`. The names, gold values, stats and patterns decode from the disc (`baka_opponents_real`) and are not reproduced here.
+Roster ids `0..=2` are Vahn / Noa / Gala; `3..=16` are the fourteen ladder fighters. Parser `legaia_minigame_formats::baka_opponents::parse` (the 17 records with stats; `BakaOpponent::attack_at` is a forward view of the pattern). Names: `legaia_minigame_formats::minigame_art::baka_roster_names`. The names, gold values, stats and patterns decode from the disc (`baka_opponents_real`) and are not reproduced here.
 
 <a id="cabinet-state-machine-fun_801cf388"></a>
 ## Cabinet state machine (`FUN_801CF388`)
@@ -259,7 +259,7 @@ mesh_name_idx = stage + 5
 
 So the twelve rungs the cabinet serves first are roster ids **5..=16**, and across exactly those the prize gold is strictly monotonic. Every visit's first opponent is roster `5`. Roster ids `3` and `4` are the post-clear opponents the victory art promises ("ALL STAGE CLEAR! ... IT'S NOT OVER YET"); the roster's gold column is ordered so that those two sit outside the first lap's range, not by prize.
 
-Ids `3` and `4` are reachable two ways: the counter wrap serves them on a second lap (stage `0` / `1`), and the score gate below inserts them mid-run. Helper `legaia_asset::minigame_art::baka_ladder`. **Confirmed.**
+Ids `3` and `4` are reachable two ways: the counter wrap serves them on a second lap (stage `0` / `1`), and the score gate below inserts them mid-run. Helper `legaia_minigame_formats::minigame_art::baka_ladder`. **Confirmed.**
 
 <a id="the-secret-opponents-are-score-gated-not-lap-gated"></a>
 ### Secret opponents (score gate)
@@ -494,7 +494,7 @@ So a normal attack plays out once and idles; a hit reaction plays out, holds one
 
 The container is `[u32 count][u32 offsets[count]][records]`, so word `d` is `offsets[d - 1]`: display id `base + k` is bank **record `k - 1`**. Record 0 is the idle (display `base + 1`: the idle reset at `0x801D4144..50` and both round-start seeds in `overlay_baka_fighter_801d0fe4.txt` store `base + 1`). The party base is `_DAT_801DBFD0 = DAT_801DBF70 * 9`. The tally exits store `base + 9` - bank record 8, the win flourish.
 
-Port: `engine-minigames::baka_duel::FighterMotion` (re-exported through `baka_duel_scene`), one per seat (`BakaFight::motion`), stepped every tick after the rules. It feeds only the presentation; the exchange still books off the strike clock. **Confirmed** (disassembly).
+Port: `engine-minigames::baka_duel::FighterMotion`, one per seat (`BakaFight::motion`), stepped every tick after the rules. It feeds only the presentation; the exchange still books off the strike clock. **Confirmed** (disassembly).
 
 ### CPU move pick (`FUN_801D487C`)
 
@@ -557,8 +557,8 @@ The floor is `FUN_801CEB84`, the battle ground grid's emitter (`FUN_801D02C0` in
 
 `engine-minigame-scenes::baka_duel_scene` is the whole 3D surface, and every duel host draws through it:
 
-- `DuelCamera` (`engine-minigames::baka_duel`) holds the ten globals and runs the round setup's snap, the spin, the glides (through `engine-vm::camera_rel_actor` and `engine-vm::camera_rel_glide`) and the tally-exit close-up. It hands a host one view-projection (`vp_raw`) for raw Y-down world vertices - the same unmirrored projection as retail. `BakaFight` owns it and steps it every tick; `parse_special_cameras` reads the player's table.
-- `BakaDuelScene` builds one buffer set - both fighters, two darkened ghost copies of each, the four walls, the floor (`legaia_asset::battle_backdrop::build_ground_grid_sized`) - and poses it each frame from the display clips, the afterimage passes, the wall cull and the round-start [cameo](#the-round-start-cameo). The impact parts draw into reserved ranges of the same buffers.
+- `DuelCamera` (`engine-minigames::baka_duel`) holds the ten globals and runs the round setup's snap, the spin, the glides (through `engine-battle-vm::camera_rel_actor` and `engine-battle-vm::camera_rel_glide`) and the tally-exit close-up. It hands a host one view-projection (`vp_raw`) for raw Y-down world vertices - the same unmirrored projection as retail. `BakaFight` owns it and steps it every tick; `parse_special_cameras` reads the player's table.
+- `BakaDuelScene` builds one buffer set - both fighters, two darkened ghost copies of each, the four walls, the floor (`legaia_scene_formats::battle_backdrop::build_ground_grid_sized`) - and poses it each frame from the display clips, the afterimage passes, the wall cull and the round-start [cameo](#the-round-start-cameo). The impact parts draw into reserved ranges of the same buffers.
 - `BakaDuelSurface` is the per-host cache: it decodes the assets once (PROT 1203 / 1204 / 1205 and the ladder packs), rebuilds the buffers when a rung seats a new opponent, and poses them.
 
 The drop shadow `FUN_801D6BB8` is the one piece of the arena the surface does not draw.
@@ -624,7 +624,7 @@ The table pointer and the rect's `(w, h) = (6, 0x18)` (`0x801D6610` / `0x801D661
 
 The blit moves a cell up its own column: a 6-halfword-wide, 24-row strip (24 x 24 texels at 4bpp) copied into the live cell at `y = 0x86`. Each record's high half (`+2` / `+3`, `00 70` in both) is never read.
 
-Parser `legaia_asset::baka_opponents::parse_blit_rects` (disc-gated in `crates/asset/tests/baka_presentation_real.rs`); port `baka_fighter_chrome::sprite_blit`.
+Parser `legaia_minigame_formats::baka_opponents::parse_blit_rects` (disc-gated in `crates/minigame-formats/tests/baka_presentation_real.rs`); port `baka_fighter_chrome::sprite_blit`.
 
 ### The round-start cameo
 
@@ -684,14 +684,14 @@ Two records are patched live:
 
 `FUN_801D6F44` draws the coin strip through widget `0x2F`: `u = 0x58 + digit * 0x10`, `0x10` px stride. `FUN_801D6E04` is the screen-centre effect spawn that raises a banner widget as a sprite actor.
 
-Parser `legaia_asset::baka_opponents::parse_baka_hud`. Ports in `engine-minigames::baka_fighter`: `hud_widget_quad` (the whole quad computation), `center_effect_spawn`, `right_aligned_number_cells`, `coin_digit_cells`, `single_digit_cell`.
+Parser `legaia_minigame_formats::baka_opponents::parse_baka_hud`. Ports in `engine-minigames::baka_fighter`: `hud_widget_quad` (the whole quad computation), `center_effect_spawn`, `right_aligned_number_cells`, `coin_digit_cells`, `single_digit_cell`.
 
 ### Duel HUD (`FUN_801D2AFC`)
 
 Drawn per frame on the retail 320x240 frame, from the per-fighter block `&DAT_801DBFBC[slot * 0xA8]` (HP at `+0x08`, combo at `+0x8C`):
 
 - **VITAL fill bars** - raw `POLY_GT4`s, y `0x26..0x2B`, one pixel per 32 HP. The player's is right-anchored at x `0x89` and fills leftward; the opponent's is left-anchored at `0xB8` and fills rightward. The gouraud runs `(0xBC, hp >> 5, 0)` at the far end to `(0xBC, 0, 0)` at the anchor - the bar reddens toward the anchor and dims as HP drops.
-- **Bar frames** - 3 `POLY_FT4` cells per side (texpage 5 = `(320, 0)`, CLUT `0x7D80`, colour `0x808080`), laid left to right from x `0x1C` / `0xB0`, y `0x20..0x30`. The cells come from a 16-byte-stride table at `0x801DBC34` (`+0` screen width, `+8..+0xF` the four corner UVs), initialised data that only the HUD renderer reads. It holds an 8-wide cap, a 100-wide body stretched from 8 texels, and an 8-wide cap: a 116-pixel frame round the 100-pixel bar. Both land in one OT bucket with the frames linked after the bars, so the bars draw over them. Parser `legaia_asset::baka_opponents::parse_baka_bar_frame`, layout `baka_cabinet::vital_frame_cells`.
+- **Bar frames** - 3 `POLY_FT4` cells per side (texpage 5 = `(320, 0)`, CLUT `0x7D80`, colour `0x808080`), laid left to right from x `0x1C` / `0xB0`, y `0x20..0x30`. The cells come from a 16-byte-stride table at `0x801DBC34` (`+0` screen width, `+8..+0xF` the four corner UVs), initialised data that only the HUD renderer reads. It holds an 8-wide cap, a 100-wide body stretched from 8 texels, and an 8-wide cap: a 116-pixel frame round the 100-pixel bar. Both land in one OT bucket with the frames linked after the bars, so the bars draw over them. Parser `legaia_minigame_formats::baka_opponents::parse_baka_bar_frame`, layout `baka_cabinet::vital_frame_cells`.
 - **No "VITAL" label.** The duel HUD draws only widgets `0x12` and `0x14` plus digits. Widget `0x18` (the 32x8 VITAL cell) is drawn elsewhere, at `(0x5B, 0x60)` (`0x801D2450`, inside the tally `FUN_801D239C`).
 - **Round-win pips** - 16x16 cells at `u = 0x30` (filled) / `0x40` (empty), `v = 0` on the `(320, 0)` page; player at `x = 0x70 + i*16`, opponent at `0xC0 - i*16`, y `0x30`; `DAT_801DBED0` pips per side.
 - **Combo counters** - digit cells `(digit*16, 0x20)` and the "HIT!" label cell `(0, 0x10)` (32x16), y `0x40`, descending from x `0x30` / `0x100`, flashing as the count grows. The sides are **crossed**: the `(uVar8 & 1)` fold draws the *opponent's* hits-taken counter on the player's side (your streak) and vice versa.
@@ -800,10 +800,10 @@ Port: `BakaScoreTables::from_overlay` reads both tables out of a loaded PROT 097
 
 | Host | Widgets | Fallback |
 |---|---|---|
-| native play window, browser play page | `BakaDuelSurface::hud_quads` runs every cabinet cell and every `ChromeDraw` through `hud_widget_quad` (glyph draws paged through `glyph_u` on a copy of widget 5); `engine-ui::ui_baka_strips::baka_hud_prims` links them at OT bucket `3` as screen primitives against the duel VRAM, which carries the PROT 1203 pages (`BakaDuelAssets::vram`) | font labels (`chrome_labels`, `choice_sheet_labels`, drawn by `baka_widget_label_draws_for`) on a frame whose HUD art is not resident (`hud_art_resident`) |
+| native play window, browser play page | `BakaDuelSurface::hud_quads` runs every cabinet cell and every `ChromeDraw` through `hud_widget_quad` (glyph draws paged through `glyph_u` on a copy of widget 5); `engine-ui::baka_strips::baka_hud_prims` links them at OT bucket `3` as screen primitives against the duel VRAM, which carries the PROT 1203 pages (`BakaDuelAssets::vram`) | font labels (`chrome_labels`, `choice_sheet_labels`, drawn by `baka_widget_label_draws_for`) on a frame whose HUD art is not resident (`hud_art_resident`) |
 | minigames page | widget corners and inclusive UV spans from `baka_hud_quad_json`, drawn with the sheet art; chrome from `baka_chrome_json`; bar frames from `baka_bar_frame_json` | page-drawn banners only for a run with no engine chrome |
 
-The duel HUD's digit strips are still font glyphs at the ported pens on the play hosts (`baka_fighter_chrome::hud_digit_placements`, `ui_baka_strips::baka_digit_strip_draws_for`): the layout is retail's, the glyph source is not.
+The duel HUD's digit strips are still font glyphs at the ported pens on the play hosts (`baka_fighter_chrome::hud_digit_placements`, `engine-ui::baka_strips::baka_digit_strip_draws_for`): the layout is retail's, the glyph source is not.
 
 The chrome's announcer line plays through each play host's CD-XA clip path. The minigames page decodes every line the chrome can start (`baka_fighter_chrome::announcer_xa_prestage`, `XA32` / `XA33`) at disc load and plays them through the same XA output (`baka_xa_state_json` reports staged and fired lines).
 
@@ -1003,7 +1003,7 @@ The statically extracted Baka Fighter overlay stops at `0x801DC818` and cannot h
   `overlay_0897_801f0adc.txt` carries the whole discontiguous 264-instruction body.
 - `field_subsystem_enter.rs` diagnoses the same artifact at `FUN_801F1278`.
 
-`FUN_801F159C` is the family's dispatcher: the resume / close half of the field VM's op-`0x49` submode, whose enter half is `FUN_801F1278` ([`script-vm.md`](script-vm.md#the-op-0x49-party-cursor-submode-fun_801f1278--fun_801f159c)). The family is ported as `engine-vm::baka_hub_actors`, hosted by `engine-core::field_submode_screen`.
+`FUN_801F159C` is the family's dispatcher: the resume / close half of the field VM's op-`0x49` submode, whose enter half is `FUN_801F1278` ([`script-vm.md`](script-vm.md#the-op-0x49-party-cursor-submode-fun_801f1278--fun_801f159c)). The family is ported as `engine-field::submode_hub_actors`, hosted by `engine-core::field_submode_screen`.
 
 <a id="the-two-tables"></a>
 **Handler table.** `PTR_FUN_801F33B4` is the 52-slot table the dispatcher indexes by the actor's `+0x50` word:
@@ -1028,7 +1028,7 @@ The statically extracted Baka Fighter overlay stops at `0x801DC818` and cannot h
 | `13` / `14` | `3` | name-entry renderer `FUN_801E6B34` / `FUN_801E6984` |
 | `15` / `16` | `3` | `FUN_801F1AB0` / `FUN_801F1B64` |
 
-Not `0x801F2C0C` with the painter at `+0x14`: the records are periodic, so that frame lands on every painter but starts four records late. Port indices: `engine-vm::baka_hub_actors::window`.
+Not `0x801F2C0C` with the painter at `+0x14`: the records are periodic, so that frame lands on every painter but starts four records late. Port indices: `engine-field::submode_hub_actors::window`.
 
 Every handler shares one shape. It reads its sub-state `+0x54`, installs its panel, and - where it takes input - hands the actor back on a confirm: write `-1` into the cursor context's `+0x2E`, stash `+0x50` into its `+0x40`, then re-arm `+0x50` to `0x1A` and `+0x54` to `0`. Most confirm tests are `_DAT_8007BB80 == 0 && (pad_edge & (_DAT_800846D0 | _DAT_800846D4)) != 0`; the coin counter tests the two masks separately.
 
@@ -1053,7 +1053,7 @@ coin_bank(0x800845a4) += n          ; the credit is COINS
 gold(0x8008459c)      -= n * 100    ; the debit is GOLD
 ```
 
-Port `engine-vm::baka_hub_actors::coin_exchange`, whose `HubAction::BuyCoins` carries the two deltas separately.
+Port `engine-field::submode_hub_actors::coin_exchange`, whose `HubAction::BuyCoins` carries the two deltas separately.
 
 ### Other `0x801F` helpers
 
@@ -1097,7 +1097,7 @@ The port is from-scratch Rust. The rules crates carry no world, scene or rendere
 | chrome timelines, banners, afterimage, cameo | `baka_fighter_chrome::BakaChrome` and its kernels |
 | impact parts | `baka_impact_fx` |
 | camera, walls, floor, fighters | `baka_duel::DuelCamera`, `engine-minigame-scenes::baka_duel_scene` |
-| roster, action tables, widget table, packs | `legaia_asset::baka_opponents` |
+| roster, action tables, widget table, packs | `legaia_minigame_formats::baka_opponents` |
 
 **Nesting.** Retail's cabinet SM owns the frame and the fight resolution runs under it. The port's `BakaFight` owns one `BakaCabinet` and one `BakaChrome` and steps both once per tick. The state the cabinet occupies while a duel is live is retail's `0x64`, so the bracket is retail's: the round count, the win / lose exits, the score-gated secret rung, the stage advance and wrap, the shutout bonus and the pot.
 
@@ -1116,7 +1116,7 @@ The cabinet takes the live accumulator from the host (`BakaCabinet::set_pot`) an
 |---|---|---|
 | native play window | the casino door warp, or the `B` key (same mode-24 warp; `B` again aborts with no coins) | `SceneMode::BakaFighter`; `engine-shell` `window/minigames.rs` |
 | browser play page | the casino door warp | `crates/web-viewer/src/play_minigame_arena.rs`, `site/js/play-minigames.js` |
-| minigames page | `baka_start_cabinet`, stepped with `baka_frame` | `crates/web-viewer/src/minigames.rs` + `minigames_baka.rs`, `site/js/minigame-baka.js`; keeps the winnings accumulator the play hosts keep on the world, and no ladder of its own |
+| minigames page | `baka_start_cabinet`, stepped with `baka_frame` | `crates/web-viewer/src/minigames/baka_session.rs` + `minigames_baka.rs`, `site/js/minigame-baka.js`; keeps the winnings accumulator the play hosts keep on the world, and no ladder of its own |
 
 The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for the cameo and keeps ticking past the deciding exchange so the cabinet's tally, the result close-up and the pinned win flourish draw.
 
@@ -1128,7 +1128,7 @@ The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for th
 - The drop shadow `FUN_801D6BB8` is not drawn.
 - The developer menu, keyframe editor and slot helpers are not ported (`REPLACED-BY:` tags); the action-table dump is.
 
-**Tests.** World-level oracles in `crates/engine-core/tests/`: `baka_tally_world.rs` (disc-free: the tally, the accumulator and the return warp), `baka_front_end_world.rs`, `baka_ladder_world.rs`, and the disc-gated `baka_minigame_real.rs` (counter-play through the world tick beats a real ladder opponent and banks the parsed prize), `baka_duel_scene_real.rs`, `baka_impact_fx_real.rs`. Format and export oracles: `crates/asset/tests/baka_opponents_real.rs`, `crates/asset/tests/baka_presentation_real.rs`, and `crates/web-viewer/tests/baka_presentation_wasm_api.rs` (`a_cabinet_run_banks_the_rung_prize_on_pay_out`).
+**Tests.** World-level oracles in `crates/engine-core/tests/`: `baka_tally_world.rs` (disc-free: the tally, the accumulator and the return warp), `baka_front_end_world.rs`, `baka_ladder_world.rs`, and the disc-gated `baka_minigame_real.rs` (counter-play through the world tick beats a real ladder opponent and banks the parsed prize), `baka_duel_scene_real.rs`, `baka_impact_fx_real.rs`. Format and export oracles: `crates/minigame-formats/tests/baka_opponents_real.rs`, `crates/minigame-formats/tests/baka_presentation_real.rs`, and `crates/web-viewer/tests/baka_presentation_wasm_api.rs` (`a_cabinet_run_banks_the_rung_prize_on_pay_out`).
 
 ## See also
 

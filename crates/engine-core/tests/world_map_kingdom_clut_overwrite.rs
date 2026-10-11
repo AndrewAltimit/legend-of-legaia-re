@@ -11,8 +11,8 @@
 //!
 //! Skips (and passes) without `extracted/`.
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_assembly::assemble_field_scene;
+use legaia_engine_core::scene_staging::assemble_field_scene;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -38,8 +38,8 @@ fn kingdom_atlas_cluts_overwrite_the_boot_rows() {
             .entries
             .iter()
             .find_map(|e| {
-                let slot0 = legaia_asset::kingdom_bundle::decode_slot(&e.bytes, 0).ok()?;
-                let members = legaia_asset::pack::extract_pack(&slot0).ok()?;
+                let slot0 = legaia_scene_formats::kingdom_bundle::decode_slot(&e.bytes, 0).ok()?;
+                let members = legaia_container_formats::pack::extract_pack(&slot0).ok()?;
                 Some(members.iter().map(|m| m.to_vec()).collect::<Vec<_>>())
             })
             .expect("a kingdom bundle with a slot-0 atlas");

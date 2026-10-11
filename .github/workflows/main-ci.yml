@@ -151,6 +151,12 @@ jobs:
       - name: Integration-test declarations
         run: python3 scripts/ci/check-integration-tests.py
 
+      # The edges among the engine's kernel crates are a committed table
+      # (scripts/ci/crate-layering.toml); a Cargo.toml that departs from it
+      # in either direction fails.
+      - name: Crate layering
+        run: python3 scripts/ci/check-crate-layering.py
+
       - name: UI host drift
         run: python3 scripts/ci/check-ui-host-drift.py
 

@@ -30,10 +30,12 @@ clap = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
-legaia-art.workspace = true
 
 [dev-dependencies]
-legaia-asset.workspace = true
+legaia-art.workspace = true
+legaia-actor-formats.workspace = true
+legaia-game-tables.workspace = true
+legaia-scene-formats.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true, optional = true }

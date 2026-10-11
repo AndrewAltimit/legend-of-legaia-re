@@ -1,0 +1,18 @@
+[package]
+name = "legaia-delilas-challenge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_delilas_challenge"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+legaia-code-hooks.workspace = true
+legaia-disc-patch.workspace = true
+legaia-lzs.workspace = true
+legaia-mes.workspace = true
+legaia-game-tables.workspace = true
+legaia-scene-formats.workspace = true

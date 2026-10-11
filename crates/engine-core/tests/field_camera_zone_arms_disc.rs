@@ -27,11 +27,14 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::camera::Camera;
-use legaia_engine_core::man_field_scripts::{partition_record_span, scene_man_carriers};
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
-use legaia_engine_core::world::{CameraZoneRequest, ZONE_REQUERY_FLAG};
-use legaia_engine_vm::field_disasm::{CameraKind, InsnInfo, LinearWalker};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_core::world::ZONE_REQUERY_FLAG;
+use legaia_engine_field::camera::Camera;
+use legaia_engine_field::camera::CameraZoneRequest;
+use legaia_engine_field::man_field_scripts::partition_record_span;
+use legaia_engine_scene::man_census::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_scene_formats::field_disasm::{CameraKind, InsnInfo, LinearWalker};
 
 fn extracted_dir() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -72,7 +75,7 @@ fn scene_sites(index: &ProtIndex, scene: &Scene) -> [usize; 5] {
     };
     for carrier in scene_man_carriers(index, scene) {
         let man = &carrier.payload;
-        let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
             continue;
         };
         for partition in 0..3 {

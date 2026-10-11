@@ -1,0 +1,943 @@
+//! Battle-overlay per-move **power / parameter** table (runtime VA `0x801F4F5C`).
+//!
+//! The battle-action damage kernel `FUN_801dd0ac` (dumped at
+//! `ghidra/scripts/funcs/overlay_battle_action_801dd0ac.txt`) has two branches,
+//! selected by its attacker-slot argument `param_2`:
+//!
+//! - **summon branch** (`param_2 == 7`): the magnitude is derived from
+//!   caster/summon battle state, not a static table (see
+//!   [`legaia_overlay_images::summon_overlay`] and `docs/formats/spell-table.md`).
+//! - **non-summon branch** (`param_2 != 7`, the **arts / physical** path): the
+//!   attacker roll's modulus is read from a fixed-stride table based at
+//!   `0x801F4F5C`, indexed by the move-type byte `param_1`:
+//!
+//! ```text
+//! 801dd19c  lui   a1,0x801f
+//! 801dd1a0  addiu a1,a1,0x4f5c       ; a1 = table base 0x801F4F5C
+//! 801dd1a4  andi  a0,s5,0xff         ; a0 = param_1 (move-type byte)
+//! 801dd1a8..b8                       ; v1 = a0*26  (sll/addu chain: a0<<1+a0
+//!                                    ;   <<2 +a0 <<1 = 26*a0)
+//! 801dd1bc  addu  v1,v1,a1           ; v1 = &table[a0]
+//! 801dd1c0  lhu   a1,0x0(v1)         ; a1 = u16 at record +0
+//! 801dd1c8  sll   a1,a1,0x10
+//! 801dd1cc  sra   v1,a1,0x12         ; v1 = (i16)power >> 2   (the roll modulus)
+//! ```
+//!
+//! So each record is **26 bytes** and its first field (`+0`, signed 16-bit) is
+//! the move's **power**, which the kernel uses as `rand % (((i16)power >> 2) + 1)`.
+//!
+//! `FUN_801dd0ac` reads `+0x00` at **three** sites and derives four different
+//! shifts from them, and the shifts are not all used the same way - two are roll
+//! moduli, two are additive damage terms:
+//!
+//! | read | derived | at | role |
+//! |---|---|---|---|
+//! | `0x801dd1c0` | `>> 2` | `0x801dd1cc` (`sll 0x10; sra 0x12`) | roll modulus (`rand % (x + 1)`, `div` at `0x801dd1d4`) |
+//! | `0x801dd1c0` | `>> 0` | `0x801dd240` (`sra 0x10` on the same `<<16` value) | additive damage term (`addu` at `0x801dd254`) |
+//! | `0x801dd38c` | `>> 1` | `0x801dd39c` (`sll 0x10; sra 0x11`) | additive threshold term (`addu` at `0x801dd3a0`) |
+//! | `0x801dd3cc` | `>> 3` | `0x801dd3d8` (`sll 0x10; sra 0x13`) | roll modulus (`div` at `0x801dd3e0`) |
+//! | `0x801dd3cc` | `>> 1` | `0x801dd448` (`sra 0x11` on the same `<<16` value) | additive damage term (`addu` at `0x801dd454`) |
+//!
+//! There is no `>> 2`-only "quarter scale" reading and no single full/half/quarter
+//! ladder: the `>> 0` and `>> 1` values are *summed into* the damage accumulator,
+//! while `>> 2` and `>> 3` bound `rand`. There is only the one damage kernel -
+//! `0x801f3990` is a *different* function that reads no field of this record; see
+//! the note on `MOVE_POWER_TABLE_VA`.
+//!
+//! ## `param_1` is a *mapped* index, not the raw move id
+//!
+//! The kernel's `param_1` is not the battle move id directly - it is looked up
+//! through a 128-byte **id → index map** immediately before the table at
+//! [`MOVE_ID_INDEX_MAP_VA`] (`0x801F4E63`, raw-entry offset
+//! [`MOVE_ID_INDEX_MAP_FILE_OFFSET`]). The setup site passes
+//! `param_1 = map[actor[+0x1df]]` (`FUN_801dd0ac(*(byte*)(actor+0x1df) +
+//! 0x801F4E63, …)` in `overlay_battle_action_801e09f8`). The map covers move ids
+//! `0x00..=0x7F` and resolves the ids `0x04..=0x74` to power indices `0x01..=0x2b`
+//! (a `0x00` entry = the unused record 0, `0xFF` = a no-record sentinel). So the
+//! full resolution is `power_table[map[move_id]]` - see [`index_for_move_id`] /
+//! [`record_for_move_id`]. The map is static (byte-identical across the same two
+//! battle save states) and sits exactly `0x80` bytes before the 8-byte-record
+//! table at `0x801F4EE3`.
+//!
+//! ## Provenance - static overlay data, pinned on disc
+//!
+//! The table is **static** (loaded with the battle-action overlay image, not
+//! built per-battle): the `0x801F4F5C..0x801F69D8` window is byte-identical
+//! between two unrelated battle save states (a full-party Gobu Gobu fight and
+//! the Tetsu-tutorial command menu). Its bytes live in **PROT entry 0898** (the
+//! battle-action overlay, `overlay_0898` / `overlay_battle_action`) at raw-entry
+//! file offset [`MOVE_POWER_TABLE_FILE_OFFSET`] - pinned by byte-matching the
+//! raw PROT 0898 entry against the in-RAM table at VA `0x801F4F5C` (both the
+//! table window and the `FUN_801dd0ac` code body map with one consistent base).
+//!
+//! ## Extent
+//!
+//! The clean 26-byte-record structure holds for [`MOVE_POWER_TABLE_LEN`] entries
+//! (indices `0..=43`; index 0 is an all-zero/unused slot); past it the region
+//! transitions to other battle-overlay data (a float/transform table, then the
+//! `data\battle\summon.DAT` / `readef.DAT` filename strings).
+//!
+//! ## How the action SM reads a record
+//!
+//! The per-move record is consumed by three battle-action functions:
+//!
+//! - `FUN_801dd0ac` (the damage kernel) reads **only `+0x00`** (power), at three
+//!   load sites yielding the `>>0/1/2/3` shifts tabulated above. It is the *only*
+//!   damage kernel over this table.
+//! - `FUN_801dea50` (action setup) computes the record address **once**
+//!   (`&DAT_801f4f5c + map[actor+0x1df]*0x1a`) and stashes it in the per-battle
+//!   context at `ctx+0x1014` (`sw v0,0x1014(a0)` at `0x801df284`), then seeds
+//!   the move counter from `+0x04`.
+//! - `FUN_801e09f8` (per-frame action tick) dereferences that held pointer
+//!   (`lw …,0x1014(…)`) ~25× and reads the residual fields off it.
+//!
+//! Across the whole corpus the offsets any consumer touches are exactly
+//! `+0x00,02,04,06,08,09,0a,0b,0d,0e,12,16` - **never `+0x0c`**. That negative
+//! is swept over bytes, not dumps, and over four access shapes rather than one:
+//! absolute `lui`+`addiu` constants landing anywhere inside the table (which
+//! catches a *base-folded* reader, where `+0x0c` is folded into the `addiu` and
+//! the load displacement reads `0`), the `×26` index chain, the `ctx+0x1014`
+//! stashed pointer with offset-tracking propagation, and table-address words
+//! resident in data. The table base `0x801f4f5c` is materialised at **three**
+//! sites - `0x801dd1a0` and `0x801dd36c` (both `FUN_801dd0ac`) and `0x801df27c`
+//! (`FUN_801dea50`) - and no reference lands at a shifted offset.
+//!
+//! `0x801dd36c` is the one a linear `lui`+`addiu` pair matcher misses: its `lui`
+//! sits in the **branch delay slot** at `0x801dd2f8`, belonging to the
+//! `bne s0,v0,0x801dd36c` at `0x801dd2f4` whose target *is* the `addiu`. The two
+//! halves are 0x74 bytes apart with `a0` clobbered in between along the
+//! fall-through path, so only the taken-branch path pairs them. This does not
+//! move the `+0x0c` negative - the third site indexes the same base with the same
+//! `×26` chain and reads `+0x00` - but it is a real hole in any pairing heuristic
+//! that assumes `lui`/`addiu` are adjacent.
+//! `docs/formats/move-power.md` carries the coverage bound: which images were
+//! swept, and why the ones that were not cannot host a reader.
+//!
+//! ## Decoded record fields (each traced to a battle-action **load instruction**)
+//!
+//! Every citation below is the VA of the load that reads the field, so it can be
+//! checked against the overlay image byte-for-byte. Except for `+0x00` (read by
+//! `FUN_801dd0ac` off the freshly-indexed base) and `+0x04` (read by
+//! `FUN_801dea50` at the moment it stashes the pointer), every load is off the
+//! `ctx+0x1014` held record pointer.
+//!
+//! | off | load | meaning | confidence | reader VAs |
+//! |---|---|---|---|---|
+//! | `+0x00` | `lhu` | **power** - see the shift table above (`>>2`/`>>3` bound `rand`, `>>0`/`>>1` are additive) | Confirmed | `0x801dd1c0`, `0x801dd38c`, `0x801dd3cc` |
+//! | `+0x02` | `lhu` | **strike-position Y offset** - subtracted from the per-arm Y lane (`ctx + arm*8 + 0x1146`) and stored back, when the hit point is seeded from the target | Inferred | `0x801e0dc4`, `0x801e13b8` |
+//! | `+0x04` | `lhu` | **whole-move timing counter** → `sh` to `ctx+0x6c6`, decremented per frame | Confirmed | `0x801df288` (store `0x801df290`) |
+//! | `+0x06` | `lhu` | **per-arm phase duration** → `sh` to `ctx + arm*2 + 0x6c6` at the strike / re-arm transitions | Inferred | `0x801e0d70` (store `0x801e0d78`), `0x801e1360` |
+//! | `+0x08` | `lbu` | **homing / approach speed** - scales the per-frame XY step toward the target (`* DAT_1f800393 * 8`); `0x40 - x` reseeds the approach counter | Inferred | `0x801e1018`, `0x801e1074`, `0x801e1274` |
+//! | `+0x09` | `lbu` | **flag: effect tracks the strike** - when set, the live XY is copied into the spawned effect each frame | Confirmed reader | `0x801e10d4` |
+//! | `+0x0a` | `lbu` | **impact-effect selector** (enum 1..5) - stored at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4` (`(x-1)*4`) into `actor+0x04`, and switches (3/4/5) extra status-proc rolls | Confirmed reader | `0x801e1584`, `0x801e15c0`, `0x801e15f8` |
+//! | `+0x0b` | `lbu` | **trail / afterimage texture-page id** - passed to the streak draw helpers; becomes the GP0 texpage word `0x7700 + id` | Confirmed | `0x801e0ca0` (→ `jal 0x801e1ab0`, word formed at `0x801e1d54`), `0x801e0cd0` (→ `jal 0x801e1d98`) |
+//! | `+0x0c` | - | **designer category tag** - non-zero only on internal-tier records 1/2/3 (`'C'`), 9 (`'E'`), 12/15 (`'G'`); **no runtime reader** in SCUS or any extracted overlay (unused at runtime) | Unknown (no reader) | none |
+//! | `+0x0d` | `lbu` | **sound / voice cue id** → `FUN_8004fcc8` | Confirmed | `0x801e184c` (→ `jal 0x8004fcc8` at `0x801e1854`) |
+//! | `+0x0e` | `lbu` | **list-mode flag / effect-list head** - `0xFF` broadcasts the trail to all four arms; otherwise the head of a small id list the setup loop spawns | Confirmed reader | `0x801e0c54` (`0xFF` test at `0x801e0c58`); `0x801df408`, `0x801df4fc` (the indexed setup walk) |
+//! | `+0x12` | `lbu` | **on-contact effect-id list** (`0`/`0xFF`-terminated) dispatched via `0x801f6324`/`0x801f6418` on the hit branch | Confirmed | `0x801e0d00`, `0x801e114c`, `0x801e1250`, `0x801e12ac` |
+//! | `+0x16` | `lbu` | **launch-strike effect-id list** - same dispatch as `+0x12`, fired at the initial-strike transition | Confirmed | `0x801e0ddc`, `0x801e0f54`, `0x801e13d0`, `0x801e1550`, `0x801e1800` |
+//!
+//! The `+0x12` / `+0x16` sites that index the list (`0x801e1250`, `0x801e12ac`,
+//! `0x801e0f54`, `0x801e1550`, `0x801e1800`, and `0x801df4fc` for `+0x0e`) are
+//! preceded by `addu` of a loop counter onto the record pointer - that is what
+//! makes these fields *lists* rather than single bytes.
+//!
+//! Note `+0x02` is loaded with `lhu`, not a sign-extending `lh`; the accessor
+//! [`MoveRecord::strike_y_offset`] exposes it as `i16` for display, and the
+//! difference is unobservable in the halfword subtract-and-store the runtime does
+//! with it.
+//!
+//! The effect-id lists `+0x12`/`+0x16` index two auxiliary tables that live in
+//! the same overlay right after the power table - `0x801f6324` (effect
+//! prototypes) and `0x801f6418` (per-effect SFX); ids `< 100` index those, `==
+//! 100` spawns a fixed flash, the high bit (`& 0x80`) routes to `FUN_801dfdf0`,
+//! `0xFF` is the skip sentinel and `0x00` terminates the list.
+//!
+//! Still genuinely open (no clear reader): nothing - the remaining table bytes
+//! at the record tail past `+0x19` belong to the next record (stride 26). See
+//! `docs/formats/move-power.md` for the full write-up.
+//!
+//! ## What the records are (cross-referenced against the spell table)
+//!
+//! The move id (`actor[+0x1df]`) the id → index map is keyed on is the **same id
+//! space as the SCUS spell-name table** (`legaia_game_tables::spell_names`, `DAT_800754C8`),
+//! which the enemy name lookup also indexes by `actor[+0x1df]`. Joining the two
+//! labels every record:
+//!
+//! - **records `0x10..=0x2b`** (move ids `0x25..=0x74`) are the **named monster
+//!   special-attacks** - every one resolves to a non-empty spell-table name (Fire
+//!   Breath `0x25`, Tail Fire `0x27` (the enemy-Gimard move), … through the
+//!   late-game attacks at `0x61..=0x74`). This is their physical/special-attack
+//!   *power*, separate from the *name* the spell table carries.
+//! - **records `0x01..=0x0f`** (move ids `0x04..=0x1f`, all `< 0x24`) are the
+//!   spell table's unnamed **internal enemy-attack tiers** (escalating-power
+//!   triplets; these are the ids the spell-table docs call "internal enemy-attack
+//!   tiers with empty name strings").
+
+/// CDNAME / PROT index of the battle-action overlay holding the table.
+pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
+    legaia_overlay_images::static_overlay::BATTLE_ACTION_OVERLAY_PROT as usize;
+
+/// Runtime virtual address the table is loaded to (the `FUN_801dd0ac` base).
+///
+/// This base is materialised at three sites in the whole disassembled corpus -
+/// `0x801dd1a0` and `0x801dd36c` in `FUN_801dd0ac` (the latter's `lui` is in the
+/// delay slot at `0x801dd2f8`) and `0x801df27c` in `FUN_801dea50`.
+/// `0x801f3990` is **not** a third consumer and **not** a second damage kernel:
+/// in the resident battle overlay (PROT 0898, base [`BATTLE_OVERLAY_BASE`], file
+/// `0x25178`) that address is a clean function prologue (`addiu sp,sp,-0x20`)
+/// for an unrelated cast audio-cue dispatcher, reached by one `jal` at
+/// `0x801e3e04` inside `FUN_801e295c`, and it reads no field of this record.
+/// The historical "second damage kernel" reading came from the aliased
+/// `overlay_0897_801f3990` dump, whose bytes are `FUN_801dd0ac` reached through
+/// PROT 0897's over-read at a wrong load base.
+pub const MOVE_POWER_TABLE_VA: u32 = 0x801F_4F5C;
+
+/// Raw-entry file offset of the table within PROT 0898. Empirically pinned by
+/// byte-matching the entry against the in-RAM table at [`MOVE_POWER_TABLE_VA`].
+pub const MOVE_POWER_TABLE_FILE_OFFSET: usize = 0x26744;
+
+/// Load base of the battle-action overlay (PROT 0898), so a runtime VA in this
+/// overlay maps to a raw-entry file offset as `va − BATTLE_OVERLAY_BASE`. Derived
+/// from the table's own VA / file-offset pin (`0x801F4F5C − 0x26744`).
+pub const BATTLE_OVERLAY_BASE: u32 = MOVE_POWER_TABLE_VA - MOVE_POWER_TABLE_FILE_OFFSET as u32;
+
+// The table's own pin and the image-level base agree.
+const _: () = assert!(BATTLE_OVERLAY_BASE == legaia_overlay_images::static_overlay::SLOT_A_BASE);
+
+/// Per-record stride (the `26*param_1` index math in `FUN_801dd0ac`).
+pub const MOVE_POWER_RECORD_STRIDE: usize = 26;
+
+/// Observed clean record count before the region transitions to other overlay
+/// data. The intended count is a judgement (the structure degrades rather than
+/// ending on an explicit sentinel); callers wanting only confirmed entries
+/// should treat trailing empties as unused move ids.
+pub const MOVE_POWER_TABLE_LEN: usize = 44;
+
+/// Runtime VA of the id → power-index map (`0x80` bytes immediately before the
+/// power table). `FUN_801dd0ac`'s `param_1` = `map[actor[+0x1df]]`.
+pub const MOVE_ID_INDEX_MAP_VA: u32 = 0x801F_4E63;
+
+/// Raw-entry file offset of the id → index map within PROT 0898
+/// (= [`MOVE_POWER_TABLE_FILE_OFFSET`] − `0xF9`).
+pub const MOVE_ID_INDEX_MAP_FILE_OFFSET: usize = MOVE_POWER_TABLE_FILE_OFFSET - 0xF9;
+
+/// Length of the id → index map: move ids `0x00..=0x7F`.
+pub const MOVE_ID_INDEX_MAP_LEN: usize = 0x80;
+
+/// Map byte meaning "this move id has no power record" (the kernel never indexes
+/// the table with it).
+pub const MOVE_ID_INDEX_NONE: u8 = 0xFF;
+
+/// Runtime VA of the **effect-prototype table** the records' `+0x12` / `+0x16`
+/// effect-id lists index. Each `u32` entry is the spawn parameter `FUN_801e09f8`
+/// passes to the effect spawner `FUN_80050ed4` (→ the part-stager `FUN_80021B04`)
+/// - and it is a **pointer into this same overlay's data** at a move-VM part
+///   record `[i16 model_sel][u16 reserved][bytecode]` (the summon part-record format).
+///   So the table is the move-FX **part-record index**: every entry resolves to a
+///   scene-graph head the move VM then animates. Resolve entries with
+///   [`EffectAuxTables::proto_record_offset`] / [`parse_effect_proto_records`].
+pub const EFFECT_PROTO_TABLE_VA: u32 = 0x801F_6324;
+
+/// Runtime VA of the **per-effect SFX table** indexed by the same effect-list
+/// entry: a non-zero byte is the sound cue `FUN_801e09f8` plays when the effect
+/// spawns.
+pub const EFFECT_CLUT_TABLE_VA: u32 = 0x801F_6418;
+
+/// Raw-entry file offset of [`EFFECT_PROTO_TABLE_VA`] within PROT 0898 (derived
+/// from the move-power table's pinned base, the same overlay link mapping).
+pub const EFFECT_PROTO_TABLE_FILE_OFFSET: usize =
+    MOVE_POWER_TABLE_FILE_OFFSET + (EFFECT_PROTO_TABLE_VA - MOVE_POWER_TABLE_VA) as usize;
+
+/// Raw-entry file offset of [`EFFECT_CLUT_TABLE_VA`] within PROT 0898.
+pub const EFFECT_CLUT_TABLE_FILE_OFFSET: usize =
+    MOVE_POWER_TABLE_FILE_OFFSET + (EFFECT_CLUT_TABLE_VA - MOVE_POWER_TABLE_VA) as usize;
+
+/// Entry count shared by both effect tables. The `u32`-stride prototype table is
+/// immediately followed by the byte-stride SFX table, so its extent is exactly
+/// `(0x6418 - 0x6324) / 4 = 61`; the same index space bounds both (the runtime's
+/// `< 100` spawn guard is a loose safety check - an `index >= 61` would alias the
+/// SFX table into the prototype read).
+pub const EFFECT_AUX_TABLE_LEN: usize = (EFFECT_CLUT_TABLE_VA - EFFECT_PROTO_TABLE_VA) as usize / 4;
+
+/// Runtime VA of the **cue-group table** the battle overlay's cue expander
+/// `FUN_801E22C8` indexes (`addiu v1, v0, 0x6470` at `0x801E2374`). One record
+/// per group id, `[count: u8][id: u8; 4]`, and each id is either an actor cue
+/// (bit `0x80` set) or an effect cue indexing [`EFFECT_CLUT_TABLE_VA`] and
+/// [`EFFECT_PROTO_TABLE_VA`].
+pub const CUE_GROUP_TABLE_VA: u32 = 0x801F_6470;
+
+/// Raw-entry file offset of [`CUE_GROUP_TABLE_VA`] within PROT 0898.
+pub const CUE_GROUP_TABLE_FILE_OFFSET: usize =
+    MOVE_POWER_TABLE_FILE_OFFSET + (CUE_GROUP_TABLE_VA - MOVE_POWER_TABLE_VA) as usize;
+
+/// Byte stride of one cue-group record: the count byte plus four id bytes.
+pub const CUE_GROUP_STRIDE: usize = 5;
+
+/// Number of cue-group records. The table is bounded on the disc by the
+/// `data\battle\summon.DAT` path literal that follows it: 13 records fill
+/// `0x801F6470..0x801F64B5`, then three bytes of padding align the string to
+/// `0x801F64B8`. Retail's own callers agree - the eleven `jal 0x801E22C8` sites
+/// in `FUN_800402F4` pass group ids no higher than `0xC`.
+pub const CUE_GROUP_TABLE_LEN: usize = 13;
+
+/// Bit that marks a cue id as an **actor** cue rather than an effect cue
+/// (`andi v0, a0, 0x80` at `0x801E23C8`). Actor cues go to `FUN_801DFDF0` with
+/// the low seven bits and never touch either effect table.
+pub const CUE_ACTOR_FLAG: u8 = 0x80;
+
+/// Effect-list entry value that spawns the fixed screen-flash instead of a table
+/// effect (`FUN_801e09f8`'s `e == 100` arm: the `DAT_801c9070` flash struct +
+/// `FUN_80024e80`).
+pub const EFFECT_LIST_FIXED_FLASH: u8 = 100;
+
+/// Runtime VA of the **impact-effect config table** the record's `+0x0a`
+/// selector indexes. `FUN_801e09f8` reads `0x801f53d4[(impact_effect - 1)]`
+/// (1-based; `(id-1)*4`) into the strike actor's `+0x04` field at the impact
+/// transition. The entries are packed `u32` config words (`0x3FF`-masked lanes),
+/// **not** pointers.
+pub const IMPACT_EFFECT_TABLE_VA: u32 = 0x801F_53D4;
+
+/// Raw-entry file offset of [`IMPACT_EFFECT_TABLE_VA`] within PROT 0898.
+pub const IMPACT_EFFECT_TABLE_FILE_OFFSET: usize =
+    MOVE_POWER_TABLE_FILE_OFFSET + (IMPACT_EFFECT_TABLE_VA - MOVE_POWER_TABLE_VA) as usize;
+
+/// Entry count of the impact-effect table: the `+0x0a` selector is the enum
+/// `1..=5`, so the table is 5 `u32` pointers (it ends exactly where the
+/// element-affinity matrix at `0x801f53e8` begins).
+pub const IMPACT_EFFECT_TABLE_LEN: usize = 5;
+
+/// One 26-byte move record. Only the `+0` power field is interpreted; the raw
+/// bytes are retained for forward reference as the remaining fields are decoded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MoveRecord {
+    /// Move id = the record's index into the table (`param_1`).
+    pub index: usize,
+    /// The `+0` signed-16-bit field (`lhu` then sign-extended by the kernel).
+    pub power_raw: i16,
+    /// The full 26-byte record.
+    pub raw: [u8; MOVE_POWER_RECORD_STRIDE],
+}
+
+impl MoveRecord {
+    /// The first roll-modulus base `FUN_801dd0ac` derives from `+0`:
+    /// `(i16)power >> 2` (arithmetic shift - preserves sign), from the load at
+    /// `0x801dd1c0` / shift at `0x801dd1cc`. The kernel's second roll uses
+    /// `>> 3` and its two additive terms use `>> 1` / `>> 0`; this accessor is
+    /// the `>> 2` one because it is the modulus on the primary branch.
+    pub fn power(&self) -> i32 {
+        (self.power_raw as i32) >> 2
+    }
+
+    /// `+0x04` `u16` - the move's timing-window counter the action SM seeds at
+    /// `ctx+0x6c6` and decrements (`FUN_801dea50` → `801e09f8`).
+    pub fn counter_init(&self) -> u16 {
+        u16::from_le_bytes([self.raw[4], self.raw[5]])
+    }
+
+    /// `+0x02` - strike-position **Y offset**: subtracted from the per-arm Y lane
+    /// (`ctx + arm*8 + 0x1146`) and stored back, when the move's hit point is
+    /// seeded from the target's position (loads at `0x801e0dc4` / `0x801e13b8`,
+    /// `subu` at `0x801e0dcc` / `0x801e13c0`). Retail loads it with `lhu`; this
+    /// accessor reports `i16` for display, which the halfword subtract-and-store
+    /// makes indistinguishable. Inferred semantic; the read is confirmed.
+    pub fn strike_y_offset(&self) -> i16 {
+        i16::from_le_bytes([self.raw[2], self.raw[3]])
+    }
+
+    /// `+0x06` `u16` - **per-arm phase duration**: written into the per-arm
+    /// countdown slot `ctx + arm*2 + 0x6c6` at the strike / re-arm transitions,
+    /// distinct from the whole-move [`counter_init`](Self::counter_init) at
+    /// `+0x04`. Inferred semantic; the read is confirmed.
+    pub fn phase_duration(&self) -> u16 {
+        u16::from_le_bytes([self.raw[6], self.raw[7]])
+    }
+
+    /// `+0x08` `u8` - **homing / approach speed**: scales the per-frame XY step
+    /// toward the target (`* DAT_1f800393 * 8`) and reseeds the approach counter
+    /// as `0x40 - speed` (`801e09f8`). Inferred semantic; the read is confirmed.
+    pub fn homing_speed(&self) -> u8 {
+        self.raw[8]
+    }
+
+    /// `+0x09` `u8` - **flag**: when non-zero the move's live XY position is
+    /// copied into the spawned effect actor each frame (the effect tracks the
+    /// strike). Confirmed reader (`801e09f8`).
+    pub fn effect_tracks_strike(&self) -> bool {
+        self.raw[9] != 0
+    }
+
+    /// `+0x0a` `u8` - **impact-effect selector** (enum, typically 1..5): stored
+    /// at `actor+0x21f`, indexes the 5-entry packed-config table at `0x801f53d4`
+    /// (`(value-1)*4`) into `actor+0x04` ([`parse_impact_effect_table`]), and
+    /// values 3/4/5 branch to extra status-proc rolls. `0` = no impact effect.
+    /// Confirmed reader (`801e09f8`).
+    pub fn impact_effect(&self) -> u8 {
+        self.raw[0x0a]
+    }
+
+    /// `+0x0b` `u8` - **trail / afterimage texture-page id**: the streak draw
+    /// helper turns it into the GP0 texpage word `0x7700 + id` (`801e1ab0`).
+    /// Confirmed.
+    pub fn trail_texture_page(&self) -> u8 {
+        self.raw[0x0b]
+    }
+
+    /// `+0x0c` `u8` - a **designer category tag** (`'C'`/`'E'`/`'G'`/`0`) baked
+    /// into the unnamed internal-tier records only (records 1/2/3 = `'C'`,
+    /// 9 = `'E'`, 12/15 = `'G'`; every other record is `0`).
+    ///
+    /// **No runtime reader exists** for this byte in `SCUS_942.54` or in any
+    /// statically-extracted overlay image, under absolute, base-folded,
+    /// `×26`-indexed or `ctx+0x1014`-pointer-relative addressing - so it is
+    /// authored data that is unused at runtime. This accessor is a
+    /// parser-side descriptor for data inspection and has no engine consumer,
+    /// which is the correct shape for a field with no reader: exposing it lets
+    /// tooling surface the annotation without implying the game acts on it.
+    /// Returns `Some(c)` for a printable ASCII tag, else `None`.
+    pub fn annotation_tag(&self) -> Option<char> {
+        let b = self.raw[0x0c];
+        (b.is_ascii_graphic()).then_some(b as char)
+    }
+
+    /// `+0x0d` `u8` - the move's sound / voice cue id, handed to the cue
+    /// dispatcher `FUN_8004fcc8` by the action SM (`801e09f8`).
+    pub fn sound_cue_id(&self) -> u8 {
+        self.raw[0x0d]
+    }
+
+    /// `+0x0e` `u8` - **list-mode flag**: `0xFF` broadcasts the move's trail to
+    /// all four party arms (a sweeping / multi-target move); otherwise it is the
+    /// head of a small effect-id list the setup loop spawns. Confirmed reader
+    /// (`801e09f8` / `801dea50`).
+    pub fn list_mode(&self) -> u8 {
+        self.raw[0x0e]
+    }
+
+    /// `+0x12` `[u8;4]` - the raw **on-contact effect-id list**, dispatched on
+    /// the hit branch. Use [`contact_effects`](Self::contact_effects) for the
+    /// terminator-trimmed view.
+    pub fn contact_effects_raw(&self) -> [u8; 4] {
+        [
+            self.raw[0x12],
+            self.raw[0x13],
+            self.raw[0x14],
+            self.raw[0x15],
+        ]
+    }
+
+    /// `+0x16` `[u8;4]` - the raw **launch-strike effect-id list**, dispatched at
+    /// the initial-strike transition. Use [`launch_effects`](Self::launch_effects)
+    /// for the terminator-trimmed view.
+    pub fn launch_effects_raw(&self) -> [u8; 4] {
+        [
+            self.raw[0x16],
+            self.raw[0x17],
+            self.raw[0x18],
+            self.raw[0x19],
+        ]
+    }
+
+    /// On-contact effect ids up to the first list terminator. `0x00` ends the
+    /// list; `0xFF` is the skip sentinel (and ends collection here). See
+    /// [`contact_effects_raw`](Self::contact_effects_raw) for the untrimmed bytes.
+    pub fn contact_effects(&self) -> Vec<u8> {
+        trim_effect_list(&self.contact_effects_raw())
+    }
+
+    /// Launch-strike effect ids up to the first list terminator (same trimming
+    /// rule as [`contact_effects`](Self::contact_effects)).
+    pub fn launch_effects(&self) -> Vec<u8> {
+        trim_effect_list(&self.launch_effects_raw())
+    }
+
+    /// `true` when the whole record is zero (an unused move-id slot).
+    pub fn is_empty(&self) -> bool {
+        self.raw.iter().all(|&b| b == 0)
+    }
+}
+
+/// Collect a 4-byte effect-id list up to its first terminator: `0x00` ends the
+/// list and `0xFF` is the skip sentinel - both stop collection (matching the
+/// `id == -1` / `id == 0` loop guards in `FUN_801e09f8`).
+fn trim_effect_list(raw: &[u8; 4]) -> Vec<u8> {
+    raw.iter()
+        .take_while(|&&b| b != 0x00 && b != 0xFF)
+        .copied()
+        .collect()
+}
+
+/// Parse `count` records from `bytes` starting at `offset`. Returns `None` when
+/// the slice doesn't fit or the structural guard fails (record 0 must be the
+/// all-zero unused slot and at least the first few real records must be
+/// populated - a cheap check that the pinned offset still lands on the table).
+pub fn parse_at(bytes: &[u8], offset: usize, count: usize) -> Option<Vec<MoveRecord>> {
+    let end = offset.checked_add(count.checked_mul(MOVE_POWER_RECORD_STRIDE)?)?;
+    if end > bytes.len() {
+        return None;
+    }
+    let mut records = Vec::with_capacity(count);
+    for i in 0..count {
+        let base = offset + i * MOVE_POWER_RECORD_STRIDE;
+        let mut raw = [0u8; MOVE_POWER_RECORD_STRIDE];
+        raw.copy_from_slice(&bytes[base..base + MOVE_POWER_RECORD_STRIDE]);
+        let power_raw = i16::from_le_bytes([raw[0], raw[1]]);
+        records.push(MoveRecord {
+            index: i,
+            power_raw,
+            raw,
+        });
+    }
+    // Structural guard: id 0 is the unused all-zero slot; the table proper must
+    // carry several populated records right after it.
+    if !records[0].is_empty() {
+        return None;
+    }
+    let populated = records
+        .iter()
+        .skip(1)
+        .take(4)
+        .filter(|r| !r.is_empty())
+        .count();
+    if populated == 0 {
+        return None;
+    }
+    Some(records)
+}
+
+/// Parse the table out of the raw PROT 0898 (battle-action overlay) entry bytes
+/// at the pinned offset + length.
+pub fn parse(battle_overlay_0898: &[u8]) -> Option<Vec<MoveRecord>> {
+    parse_at(
+        battle_overlay_0898,
+        MOVE_POWER_TABLE_FILE_OFFSET,
+        MOVE_POWER_TABLE_LEN,
+    )
+}
+
+/// Read the 128-byte id → power-index map out of the raw PROT 0898 entry. Each
+/// byte `map[move_id]` is the power-table index the kernel uses for that battle
+/// move id (`actor[+0x1df]`); [`MOVE_ID_INDEX_NONE`] (`0xFF`) and `0` mean "no
+/// power record". Returns `None` if the slice is too short or the structural
+/// guard fails (`map[4] == 1`, the first mapped id).
+pub fn parse_id_index_map(battle_overlay_0898: &[u8]) -> Option<[u8; MOVE_ID_INDEX_MAP_LEN]> {
+    let end = MOVE_ID_INDEX_MAP_FILE_OFFSET + MOVE_ID_INDEX_MAP_LEN;
+    if end > battle_overlay_0898.len() {
+        return None;
+    }
+    let mut map = [0u8; MOVE_ID_INDEX_MAP_LEN];
+    map.copy_from_slice(&battle_overlay_0898[MOVE_ID_INDEX_MAP_FILE_OFFSET..end]);
+    // Guard: move id 4 is the first mapped move (-> power index 1).
+    if map[4] != 1 {
+        return None;
+    }
+    Some(map)
+}
+
+/// Resolve a battle move id (`actor[+0x1df]`) to its power-table index via the
+/// id → index map. Returns `None` for ids out of the map range or mapped to a
+/// "no record" sentinel (`0` or `0xFF`).
+pub fn index_for_move_id(map: &[u8; MOVE_ID_INDEX_MAP_LEN], move_id: u8) -> Option<u8> {
+    let idx = *map.get(move_id as usize)?;
+    if idx == 0 || idx == MOVE_ID_INDEX_NONE {
+        None
+    } else {
+        Some(idx)
+    }
+}
+
+/// Resolve a battle move id straight to its [`MoveRecord`] (map lookup + table
+/// index). `table` is the [`parse`] output, `map` the [`parse_id_index_map`]
+/// output.
+pub fn record_for_move_id<'a>(
+    table: &'a [MoveRecord],
+    map: &[u8; MOVE_ID_INDEX_MAP_LEN],
+    move_id: u8,
+) -> Option<&'a MoveRecord> {
+    let idx = index_for_move_id(map, move_id)? as usize;
+    table.get(idx)
+}
+
+/// One decoded entry of a record's `+0x12` (on-contact) / `+0x16` (launch)
+/// effect-id list, classified exactly as the `FUN_801e09f8` dispatch loop reads
+/// the byte. The two loops are the `+0x16` walk entered at the list load
+/// `0x801e0f54` and the `+0x12` walk entered at `0x801e1250`; both reach the same
+/// arms - the `0x80`-bit route `jal 0x801dfdf0` (`0x801e0e2c`, `0x801e1198`,
+/// `0x801e142c`), the prototype table `0x801f6324` (materialised at `0x801e0ea8`,
+/// `0x801e120c`, `0x801e14a8`) and its SFX sibling `0x801f6418` (`0x801e0e4c`,
+/// `0x801e11b0`, `0x801e144c`).
+///
+/// Both lists dispatch their bytes identically - the only difference is *when*
+/// they fire (on contact vs at the launch transition).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectListEntry {
+    /// `0x00` - terminates the list scan (no effect).
+    Terminator,
+    /// `0x01..=0x63` - spawn the effect prototype [`EffectAuxTables::effect_proto`]
+    /// at this index and, when non-zero, play its SFX
+    /// [`EffectAuxTables::effect_clut_x`].
+    Spawn(u8),
+    /// `0x64` (`== 100`) - the fixed screen-flash effect (no table lookup).
+    FixedFlash,
+    /// High bit set (and not `0xFF`) - routed to `FUN_801dfdf0` with the low 7
+    /// bits as the id.
+    AltEffect(u8),
+    /// `0xFF`, or an unused `0x65..=0x7F` byte - no effect, but the scan does not
+    /// terminate here (only `0x00` terminates).
+    Skip,
+}
+
+impl EffectListEntry {
+    /// Classify one effect-list byte exactly as `FUN_801e09f8` does: `0x00`
+    /// terminates; the `0x80` bit (except `0xFF`) routes to the alt path with
+    /// `id & 0x7F`; `0x01..=0x63` spawns a table effect; `0x64` is the fixed
+    /// flash; `0xFF` (and the unused `0x65..=0x7F`) produce no effect.
+    pub fn classify(entry: u8) -> EffectListEntry {
+        match entry {
+            0x00 => EffectListEntry::Terminator,
+            0xFF => EffectListEntry::Skip,
+            e if e & 0x80 != 0 => EffectListEntry::AltEffect(e & 0x7F),
+            EFFECT_LIST_FIXED_FLASH => EffectListEntry::FixedFlash,
+            e if (e as usize) < EFFECT_LIST_FIXED_FLASH as usize => EffectListEntry::Spawn(e),
+            _ => EffectListEntry::Skip,
+        }
+    }
+}
+
+/// The battle move id(s) that resolve to a given power-table **record index**
+/// via the id → index map - the inverse of [`index_for_move_id`]. Empty when no
+/// move id points at the record (the internal-tier records past the mapped id
+/// range have no owning move id). The list is sorted ascending.
+pub fn move_ids_of(map: &[u8; MOVE_ID_INDEX_MAP_LEN], record_idx: usize) -> Vec<u8> {
+    if record_idx > u8::MAX as usize {
+        return Vec::new();
+    }
+    (0..map.len())
+        .filter(|&mid| index_for_move_id(map, mid as u8) == Some(record_idx as u8))
+        .map(|mid| mid as u8)
+        .collect()
+}
+
+/// The **effect-pool identity** an effect-list byte resolves to, keyed on
+/// `(space, id)` - never the raw byte, because a record's `+0x12` / `+0x16`
+/// lists multiplex two disjoint id spaces via bit 7 (see
+/// [`EffectListEntry::classify`]). This is the stable name of a spawned effect
+/// (there is no symbolic effect-name table on disc).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EffectKey {
+    /// The 3D move-FX prototype space: [`EFFECT_PROTO_TABLE_VA`]`[id]`
+    /// (`0x801f6324`) scene-graph prototype, spawn ids `0x01..=0x63`.
+    Proto3D(u8),
+    /// The `efect.dat` 2D-effect pool space, id `= byte & 0x7F` (bit-7 bytes,
+    /// routed to `FUN_801dfdf0`).
+    Efect2D(u8),
+    /// The fixed screen-flash singleton (`0x64`, [`EFFECT_LIST_FIXED_FLASH`]); it
+    /// carries no id.
+    Flash,
+}
+
+impl EffectKey {
+    /// Resolve a classified effect-list entry to its `(space, id)` key, or
+    /// `None` for the non-spawning entries ([`EffectListEntry::Terminator`] /
+    /// [`EffectListEntry::Skip`]).
+    pub fn from_entry(entry: EffectListEntry) -> Option<EffectKey> {
+        match entry {
+            EffectListEntry::Spawn(id) => Some(EffectKey::Proto3D(id)),
+            EffectListEntry::AltEffect(id) => Some(EffectKey::Efect2D(id)),
+            EffectListEntry::FixedFlash => Some(EffectKey::Flash),
+            EffectListEntry::Terminator | EffectListEntry::Skip => None,
+        }
+    }
+}
+
+/// Which of a move record's two effect lists fired a trigger.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EffectFired {
+    /// The `+0x12` on-contact list.
+    Contact,
+    /// The `+0x16` launch-strike list.
+    Launch,
+}
+
+/// One triggering-move reference in the effect → move inverse index: the move
+/// record (and, when a move id resolves to it, that id) whose effect list cites
+/// an [`EffectKey`], plus which list ([`EffectFired`]) it fired from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Trigger {
+    /// The battle move id that owns this record, or `None` when no move id maps
+    /// to the record (an internal-tier record with no owning move id).
+    pub move_id: Option<u8>,
+    /// The power-table record index whose effect list cited the key.
+    pub record_idx: usize,
+    /// Whether the byte came from the contact (`+0x12`) or launch (`+0x16`) list.
+    pub fired: EffectFired,
+}
+
+/// Walk one 4-byte effect-id list, classifying each byte with
+/// [`EffectListEntry::classify`] and yielding its [`EffectKey`]. Stops at the
+/// [`EffectListEntry::Terminator`] (`0x00`); [`EffectListEntry::Skip`] bytes
+/// (`0xFF` / the unused `0x65..=0x7F`) produce no key but do not stop the walk.
+fn keys_in_list(raw: &[u8; 4]) -> Vec<EffectKey> {
+    let mut keys = Vec::new();
+    for &b in raw {
+        match EffectListEntry::classify(b) {
+            EffectListEntry::Terminator => break,
+            other => {
+                if let Some(k) = EffectKey::from_entry(other) {
+                    keys.push(k);
+                }
+            }
+        }
+    }
+    keys
+}
+
+/// Build the **effect-id → triggering-move inverse index**: a pure re-pivot of
+/// the parsed move-power table. For every populated record, its `+0x12`
+/// (contact) and `+0x16` (launch) effect-id lists are classified into
+/// `(space, id)` [`EffectKey`]s, and each key gains a [`Trigger`] for the
+/// record - one per owning move id ([`move_ids_of`]), or a single `move_id =
+/// None` trigger when no move id maps to the record. The two id spaces the lists
+/// multiplex are kept separate (Proto3D vs Efect2D); the `0x64` flash is a keyed
+/// singleton. Impact-effect (`+0x0a`), trail (`+0x0b`) and sound (`+0x0d`) are a
+/// **different id space** and never enter this index. Each key's trigger list is
+/// sorted and de-duplicated. No capture, no runtime state - disc-derivable only.
+pub fn effect_trigger_index(
+    table: &[MoveRecord],
+    id_index_map: &[u8; MOVE_ID_INDEX_MAP_LEN],
+) -> std::collections::BTreeMap<EffectKey, Vec<Trigger>> {
+    let mut index: std::collections::BTreeMap<EffectKey, Vec<Trigger>> =
+        std::collections::BTreeMap::new();
+    for record in table {
+        if record.is_empty() {
+            continue;
+        }
+        let move_ids = move_ids_of(id_index_map, record.index);
+        let lists = [
+            (record.contact_effects_raw(), EffectFired::Contact),
+            (record.launch_effects_raw(), EffectFired::Launch),
+        ];
+        for (raw, fired) in lists {
+            for key in keys_in_list(&raw) {
+                let bucket = index.entry(key).or_default();
+                if move_ids.is_empty() {
+                    bucket.push(Trigger {
+                        move_id: None,
+                        record_idx: record.index,
+                        fired,
+                    });
+                } else {
+                    for &mid in &move_ids {
+                        bucket.push(Trigger {
+                            move_id: Some(mid),
+                            record_idx: record.index,
+                            fired,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    for triggers in index.values_mut() {
+        triggers.sort();
+        triggers.dedup();
+    }
+    index
+}
+
+/// The three auxiliary effect tables in the battle overlay's data band, all of
+/// them consumed by the same cue id space.
+///
+/// A move-power record's `+0x12` / `+0x16` effect-id lists index the first two:
+/// each [`EffectListEntry::Spawn`] index `e` yields the spawn parameter
+/// [`Self::effect_proto`]`(e)` (`0x801F6324`, `u32`) and the SFX cue
+/// [`Self::effect_clut_x`]`(e)` (`0x801F6418`, `u8`; `0` = no palette copy).
+///
+/// The third is the **cue-group table** at `0x801F6470`
+/// ([`Self::cue_group_bytes`]), which the battle overlay's cue expander
+/// `FUN_801E22C8` indexes by group id to get the set of cues one action's
+/// presentation fires. Its member bytes are ids in the *same* space as the
+/// other two tables, so the three are parsed together or not at all.
+///
+/// All three are static PROT 0898 data, loaded with the battle-action overlay
+/// like the move-power table itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectAuxTables {
+    proto: [u32; EFFECT_AUX_TABLE_LEN],
+    clut: [u8; EFFECT_AUX_TABLE_LEN],
+    groups: [u8; CUE_GROUP_TABLE_LEN * CUE_GROUP_STRIDE],
+}
+
+impl EffectAuxTables {
+    /// Parse both tables out of the raw PROT 0898 (battle-action overlay) entry.
+    /// Returns `None` if the slice is too short or the overlay fails the
+    /// move-power table's structural guard (so a different build / wrong entry
+    /// can't silently yield garbage tables).
+    pub fn parse(battle_overlay_0898: &[u8]) -> Option<Self> {
+        // Tie validity to the move-power map guard in the same overlay.
+        parse_id_index_map(battle_overlay_0898)?;
+        let proto_end = EFFECT_PROTO_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN * 4;
+        let clut_end = EFFECT_CLUT_TABLE_FILE_OFFSET + EFFECT_AUX_TABLE_LEN;
+        if proto_end > battle_overlay_0898.len() || clut_end > battle_overlay_0898.len() {
+            return None;
+        }
+        let mut proto = [0u32; EFFECT_AUX_TABLE_LEN];
+        for (i, slot) in proto.iter_mut().enumerate() {
+            let b = EFFECT_PROTO_TABLE_FILE_OFFSET + i * 4;
+            *slot = u32::from_le_bytes([
+                battle_overlay_0898[b],
+                battle_overlay_0898[b + 1],
+                battle_overlay_0898[b + 2],
+                battle_overlay_0898[b + 3],
+            ]);
+        }
+        let mut clut = [0u8; EFFECT_AUX_TABLE_LEN];
+        clut.copy_from_slice(&battle_overlay_0898[EFFECT_CLUT_TABLE_FILE_OFFSET..clut_end]);
+
+        const GROUP_BYTES: usize = CUE_GROUP_TABLE_LEN * CUE_GROUP_STRIDE;
+        let groups_end = CUE_GROUP_TABLE_FILE_OFFSET + GROUP_BYTES;
+        if groups_end > battle_overlay_0898.len() {
+            return None;
+        }
+        let mut groups = [0u8; GROUP_BYTES];
+        groups.copy_from_slice(&battle_overlay_0898[CUE_GROUP_TABLE_FILE_OFFSET..groups_end]);
+        // Shape guard, so a build whose data band moved cannot yield a table of
+        // plausible-looking noise: a record names at most four cues, and every
+        // non-actor cue id has to index the two tables above.
+        for rec in groups.as_chunks::<CUE_GROUP_STRIDE>().0 {
+            let count = rec[0] as usize;
+            if count > CUE_GROUP_STRIDE - 1 {
+                return None;
+            }
+            for &id in &rec[1..=count] {
+                if id & CUE_ACTOR_FLAG == 0 && (id as usize) >= EFFECT_AUX_TABLE_LEN {
+                    return None;
+                }
+            }
+        }
+        Some(Self {
+            proto,
+            clut,
+            groups,
+        })
+    }
+
+    /// The effect-prototype params (`0x801F6324`), one per spawn index.
+    pub fn proto(&self) -> &[u32] {
+        &self.proto
+    }
+
+    /// The per-effect CLUT **source x** (`0x801F6418`), one per spawn index
+    /// (`0` = no palette copy). Not a sound-cue map: both readers hand the
+    /// byte to `MoveImage` as the `x` of a 16x1 `RECT` on VRAM row 476.
+    pub fn clut_map(&self) -> &[u8] {
+        &self.clut
+    }
+
+    /// The spawn parameter for a [`EffectListEntry::Spawn`] index, or `None` when
+    /// the index is outside the table.
+    pub fn effect_proto(&self, index: u8) -> Option<u32> {
+        self.proto.get(index as usize).copied()
+    }
+
+    /// The CLUT source x for a [`EffectListEntry::Spawn`] index (`0` = no
+    /// palette copy), or `None` when the index is outside the table.
+    pub fn effect_clut_x(&self, index: u8) -> Option<u8> {
+        self.clut.get(index as usize).copied()
+    }
+
+    /// The cue-group table (`0x801F6470`) as the flat `[count][id; 4]` byte
+    /// region the expander indexes - the shape
+    /// `legaia_engine_battle_vm::battle_cue_group::CueTables::groups` takes.
+    pub fn cue_group_bytes(&self) -> &[u8] {
+        &self.groups
+    }
+
+    /// One cue group's `(count, ids)` pair, or `None` for a group id outside
+    /// [`CUE_GROUP_TABLE_LEN`]. `count` is already bounded to four by the
+    /// parser's shape guard.
+    pub fn cue_group(&self, group_id: u8) -> Option<(u8, [u8; CUE_GROUP_STRIDE - 1])> {
+        let base = (group_id as usize).checked_mul(CUE_GROUP_STRIDE)?;
+        let rec = self.groups.get(base..base + CUE_GROUP_STRIDE)?;
+        let mut ids = [0u8; CUE_GROUP_STRIDE - 1];
+        ids.copy_from_slice(&rec[1..]);
+        Some((rec[0], ids))
+    }
+
+    /// Resolve a proto entry's `u32` (a runtime VA into the battle overlay) to its
+    /// move-FX part-record **file offset** within PROT 0898, or `None` when the
+    /// index is outside the table or the pointer does not land in this overlay.
+    /// The record there is the summon part-record format
+    /// (`[i16 model_sel][u16 reserved][move-VM bytecode]`).
+    pub fn proto_record_offset(&self, index: u8) -> Option<usize> {
+        let va = self.effect_proto(index)?;
+        va.checked_sub(BATTLE_OVERLAY_BASE).map(|o| o as usize)
+    }
+}
+
+/// Decode the move-FX part records the [`EFFECT_PROTO_TABLE_VA`] entries point at,
+/// straight out of the raw PROT 0898 (battle-action overlay) entry.
+///
+/// Each of the table's [`EFFECT_AUX_TABLE_LEN`] entries is a pointer into this
+/// overlay's own data at a `[i16 model_sel][u16 reserved][move-VM bytecode]` record
+/// - the same scene-graph part format the summon stagers use
+///   ([`legaia_overlay_images::summon_overlay`]). Entries can alias (several effect ids reuse one
+///   record), so the returned parts are the **unique** records, sorted by offset,
+///   each with its `bytecode` range bounded by the next record. Map a proto index
+///   back to its record with [`EffectAuxTables::proto_record_offset`].
+///
+/// Returns `None` if the overlay fails the move-power structural guard (so a
+/// wrong / different-build entry can't yield garbage). The `bytecode` ranges
+/// belong to the move VM ([`crate::move_power`] feeds `legaia-engine-vm`).
+pub fn parse_effect_proto_records(
+    battle_overlay_0898: &[u8],
+) -> Option<Vec<legaia_overlay_images::summon_overlay::SummonPart>> {
+    let aux = EffectAuxTables::parse(battle_overlay_0898)?;
+    let offsets: Vec<usize> = (0..EFFECT_AUX_TABLE_LEN as u8)
+        .filter_map(|i| aux.proto_record_offset(i))
+        .collect();
+    Some(legaia_overlay_images::summon_overlay::parse_records_at(
+        battle_overlay_0898,
+        &offsets,
+    ))
+}
+
+/// Parse the 5-entry **impact-effect config table** (`0x801f53d4`) out of the
+/// raw PROT 0898 entry. Each `u32` is a packed config word (`0x3FF`-masked lanes,
+/// **not** a pointer) that the strike actor's `+0x04` is set to; index it with a
+/// record's `+0x0a` [`MoveRecord::impact_effect`] minus one (the selector is
+/// 1-based, `0` = none). Returns `None` if the slice is too short or the overlay
+/// fails the move-power structural guard.
+///
+/// Beyond the pointer, `FUN_801e09f8` rolls a per-impact status proc keyed on the
+/// selector, dispatched from the `+0x0a` load at `0x801e15f8`: selector `3`
+/// (`beq` at `0x801e1610` → `0x801e1630`) has a `1/8` chance (`andi 7` /
+/// `bne` at `0x801e1638`) to set the actor's status bit `0` (`ori 1` at
+/// `0x801e1654`, `sh` to `+0x16e` at `0x801e165c`); selector `4` (`beq` at
+/// `0x801e1600` → `0x801e1660`) has the same odds for bit `1` (`ori 2` at
+/// `0x801e1684`); selector `5` (`beq` at `0x801e1620` → `0x801e1690`) rolls
+/// `rand % 3` to set one of bits `3..=5` on the *target* (gated on the target's
+/// character-record immunity flags). Selectors `1`/`2` carry no extra roll.
+pub fn parse_impact_effect_table(
+    battle_overlay_0898: &[u8],
+) -> Option<[u32; IMPACT_EFFECT_TABLE_LEN]> {
+    parse_id_index_map(battle_overlay_0898)?;
+    let end = IMPACT_EFFECT_TABLE_FILE_OFFSET + IMPACT_EFFECT_TABLE_LEN * 4;
+    if end > battle_overlay_0898.len() {
+        return None;
+    }
+    let mut table = [0u32; IMPACT_EFFECT_TABLE_LEN];
+    for (i, slot) in table.iter_mut().enumerate() {
+        let b = IMPACT_EFFECT_TABLE_FILE_OFFSET + i * 4;
+        *slot = u32::from_le_bytes([
+            battle_overlay_0898[b],
+            battle_overlay_0898[b + 1],
+            battle_overlay_0898[b + 2],
+            battle_overlay_0898[b + 3],
+        ]);
+    }
+    Some(table)
+}
+
+#[cfg(test)]
+mod tests;

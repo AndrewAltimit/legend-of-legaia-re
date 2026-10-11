@@ -32,9 +32,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost, is_world_map_scene};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::{DefaultMapIdResolver, is_world_map_scene};
+use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -107,7 +108,7 @@ fn cold_spawn_is_reachable_across_all_field_scenes() {
             .terrain
             .object_cells
             .iter()
-            .any(|c| *c & legaia_asset::field_objects::CELL_WALK_VISIBLE != 0);
+            .any(|c| *c & legaia_scene_formats::field_objects::CELL_WALK_VISIBLE != 0);
         if !has_floor || host.world.terrain.collision_grid.len() < 0x80 * 0x80 {
             // No walkability data (cutscene-only shells like `dream` /
             // `kor*`): the resolver keeps the retail seat, nothing to sweep.

@@ -13,13 +13,14 @@
 //! floor tier read as a step and fired a hop on a wall press - the player flew
 //! `96` units through the wall. `World::field_actor_footing` is the repair;
 //! these are its pins. The wall-press half is the disc-free twin of
-//! `engine-shell/tests/field_collision_discriminator.rs`, whose crate boundary
+//! `parity/tests/field_collision_discriminator.rs`, whose crate boundary
 //! is what hid the regression in the first place.
 //!
 //! Disc-free: every world here is synthetic.
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 /// `World::terrain.collision_grid` is a `0x80 x 0x80` byte grid; the crate
 /// constants are mirrored here because this is an integration test.

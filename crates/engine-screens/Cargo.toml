@@ -9,7 +9,14 @@ name = "legaia_engine_screens"
 path = "src/lib.rs"
 
 [dependencies]
-legaia-asset.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-scene.workspace = true
 legaia-engine-ui.workspace = true
 legaia-font.workspace = true
+legaia-engine-battle.workspace = true
+legaia-engine-effects.workspace = true
+legaia-engine-menus.workspace = true
+legaia-engine-mode.workspace = true
+legaia-game-tables.workspace = true
+legaia-minigame-formats.workspace = true
+legaia-render-kernels.workspace = true

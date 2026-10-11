@@ -36,7 +36,7 @@ local ACTORS = 0x801C9370
 local WINDOW_VA = 0x801E3568
 
 -- The nine replacement words (little-endian), byte-identical to
--- legaia_patcher::approach_fix::assemble_window().
+-- legaia_code_hooks::approach_fix::assemble_window().
 local GUARD = {
     0x926201DA, -- lbu v0,0x1da(s3)
     0x3C038008, -- lui v1,0x8008

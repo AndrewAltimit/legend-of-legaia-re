@@ -16,8 +16,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{Scene, SceneHost};
-use legaia_engine_core::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::Scene;
+use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 
 fn extracted_dir() -> Option<PathBuf> {
     let d = PathBuf::from("extracted");
@@ -88,7 +89,7 @@ fn world_map_scene_surfaces_slot4_pool() {
 
         // The decoded bank must yield a non-empty translation-path plot with
         // motion on more than one axis - the live overlay's geometry source.
-        let segs = legaia_asset::world_map_overlay::translation_path_segments(slot4);
+        let segs = legaia_scene_formats::world_map_overlay::translation_path_segments(slot4);
         assert!(
             !segs.is_empty(),
             "{map}: no slot-4 translation-path segments"

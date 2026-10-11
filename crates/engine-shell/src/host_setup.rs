@@ -3,10 +3,11 @@
 //! logic that was copy-pasted across the two `play` paths and the
 //! several scene-inspection commands.
 
-use crate::{BootConfig, BootSession};
 use anyhow::{Context, Result};
-use legaia_engine_core::scene::{CutsceneMap, ProtIndex, Scene};
-use legaia_engine_core::scene_resources::FIELD_SHARED_BLOCKS;
+use legaia_engine_scene::scene::{CutsceneMap, ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::FIELD_SHARED_BLOCKS;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 use std::path::{Path, PathBuf};
 
 /// Load every [`FIELD_SHARED_BLOCKS`] scene that resolves against `index`,
@@ -67,20 +68,20 @@ pub fn resolve_cutscene_map_and_str(
     Ok((cutscene_map, auto_str))
 }
 
-/// Open a [`BootSession`] for `scene`, selecting the disc-image or
+/// Open a [`NativeSession`] for `scene`, selecting the disc-image or
 /// extracted-root boot path from `disc`. Shared by both `play` entry points.
 pub fn open_boot_session(
     scene: &str,
     enable_audio: bool,
     extracted_root: &Path,
     disc: Option<&Path>,
-) -> Result<BootSession> {
+) -> Result<NativeSession> {
     let cfg = BootConfig {
         scene: scene.to_string(),
         enable_audio,
     };
     match disc {
-        Some(disc_path) => BootSession::open_disc(disc_path, &cfg),
-        None => BootSession::open(extracted_root, &cfg),
+        Some(disc_path) => NativeSession::open_disc(disc_path, &cfg),
+        None => NativeSession::open(extracted_root, &cfg),
     }
 }

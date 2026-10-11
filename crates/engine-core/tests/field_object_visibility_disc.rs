@@ -7,7 +7,7 @@
 //!
 //! Disc-gated: skips (and passes) without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 fn open_town01() -> Option<SceneHost> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;
@@ -47,7 +47,7 @@ fn town01_cold_entry_hides_gate_rocks_and_keeps_early_scenery() {
 
 #[test]
 fn town01_hidden_records_drop_placed_draws() {
-    use legaia_engine_core::field_env;
+    use legaia_engine_scene::field_env;
 
     let Some(host) = open_town01() else {
         eprintln!("skip: LEGAIA_DISC_BIN unset");

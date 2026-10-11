@@ -7,7 +7,7 @@ use super::*;
 
 #[test]
 fn shiny_roll_boosts_only_the_capturable_enemy() {
-    use crate::monster_catalog::{FormationDef, FormationSlot};
+    use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
     let mut world = capture_world(1);
     world.set_shiny_chance_pct(100); // force a shiny this battle
     // Killer Bee (id 7) is capturable (Seru 1); Wolf (id 9) is not.
@@ -27,7 +27,7 @@ fn shiny_roll_boosts_only_the_capturable_enemy() {
 
 #[test]
 fn shiny_disabled_when_chance_is_zero() {
-    use crate::monster_catalog::{FormationDef, FormationSlot};
+    use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
     let mut world = capture_world(1);
     world.set_shiny_chance_pct(0);
     let formation = FormationDef::new(1, vec![FormationSlot::new(7)]);
@@ -42,7 +42,7 @@ fn shiny_disabled_when_chance_is_zero() {
 #[test]
 fn shiny_capture_marks_spell_shiny_and_persists_through_save() {
     let mut world = capture_world(1);
-    world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
+    world.set_spell_catalog(legaia_engine_battle::spells::SpellCatalog::vanilla());
     // Killer Bee captured as shiny (Seru 1 -> spell 0x20).
     world.seru.battle_captures = vec![7];
     world.seru.shiny_captures = vec![7];

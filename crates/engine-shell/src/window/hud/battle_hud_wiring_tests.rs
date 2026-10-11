@@ -1,6 +1,6 @@
 use super::{BATTLE_HUD_PEN, battle_hud_popup_views, battle_hud_slot_views};
-use legaia_engine_core::battle_hud::{BattleHud, DamagePopup, SlotSyncInfo};
-use legaia_engine_render::{BattleHudDraws, BattleHudFrame, battle_hud_draws_for};
+use legaia_engine_battle::battle_hud_state::{BattleHud, DamagePopup, SlotSyncInfo};
+use legaia_engine_ui::{BattleHudDraws, BattleHudFrame, battle_hud_draws_for};
 
 /// A recognisable 1x1 solid src for the filled-rect draws.
 const SOLID: (u32, u32, u32, u32) = (7, 3, 1, 1);
@@ -15,9 +15,9 @@ const STAGE_SCALE: i32 = 2;
 const BATTLE_MIRROR_DIGITS: (u32, u32, u32, u32) = (0, 244, 80, 12);
 /// The minimum chrome set that puts the numerals on the sprite list, so
 /// a cell's screen seat is readable rather than inferred from a glyph.
-const BATTLE_MIRROR_RECTS: legaia_engine_render::SaveMenuAtlasRects =
-    legaia_engine_render::SaveMenuAtlasRects {
-        battle: Some(legaia_engine_render::BattleChromeRects {
+const BATTLE_MIRROR_RECTS: legaia_engine_ui::SaveMenuAtlasRects =
+    legaia_engine_ui::SaveMenuAtlasRects {
+        battle: Some(legaia_engine_ui::BattleChromeRects {
             panel_bg: (0, 0, 102, 48),
             plate_cap_l: (208, 0, 8, 20),
             plate_body: (192, 0, 16, 20),
@@ -33,9 +33,9 @@ const BATTLE_MIRROR_RECTS: legaia_engine_render::SaveMenuAtlasRects =
 
 /// `SaveMenuAtlasRects::default()` is not `const`, so spell the zeroed
 /// base out for [`BATTLE_MIRROR_RECTS`].
-const fn blank_rects() -> legaia_engine_render::SaveMenuAtlasRects {
+const fn blank_rects() -> legaia_engine_ui::SaveMenuAtlasRects {
     const Z: (u32, u32, u32, u32) = (0, 0, 0, 0);
-    legaia_engine_render::SaveMenuAtlasRects {
+    legaia_engine_ui::SaveMenuAtlasRects {
         panel_tl: Z,
         panel_tr: Z,
         panel_bl: Z,
@@ -115,7 +115,7 @@ fn frame_draws(hud: &BattleHud, diag: bool) -> BattleHudDraws {
 }
 
 /// Solid rects of exactly `(w, h)` stage pixels, by stage `(x, y)`.
-fn boxes_of(draws: &[legaia_engine_render::TextDraw], w: i32, h: i32) -> Vec<(i32, i32)> {
+fn boxes_of(draws: &[legaia_engine_ui::TextDraw], w: i32, h: i32) -> Vec<(i32, i32)> {
     draws
         .iter()
         .filter(|d| {
@@ -127,7 +127,7 @@ fn boxes_of(draws: &[legaia_engine_render::TextDraw], w: i32, h: i32) -> Vec<(i3
         .collect()
 }
 
-fn draws(hud: &BattleHud) -> Vec<legaia_engine_render::TextDraw> {
+fn draws(hud: &BattleHud) -> Vec<legaia_engine_ui::TextDraw> {
     frame_draws(hud, false).text
 }
 
@@ -175,12 +175,12 @@ fn native_battle_party_is_retail_shaped_and_barless() {
 /// HUD drawn at coordinates nothing pinned.
 #[test]
 fn engine_ui_seats_mirror_the_packet_pinned_battle_chrome() {
-    use legaia_engine_render::battle_chrome as bc;
+    use legaia_engine_ui::battle_chrome as bc;
     let font = legaia_font::synthetic_for_tests();
     let hud = hud_with_party_row(250, 300, 12, 30);
     // The two party surfaces are mutually exclusive, so each is measured
     // in the frame that owns it: the panels at rest, the bar acting.
-    let frame = |active: Option<u8>| -> Vec<legaia_engine_render::TextDraw> {
+    let frame = |active: Option<u8>| -> Vec<legaia_engine_ui::TextDraw> {
         battle_hud_draws_for(
             &font,
             &BattleHudFrame {
@@ -247,8 +247,8 @@ fn engine_ui_seats_mirror_the_packet_pinned_battle_chrome() {
 /// pinned. This window is again the only crate that can see both sides.
 #[test]
 fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
-    use legaia_engine_render::battle_chrome as bc;
-    use legaia_engine_render::battle_command_ui as bcu;
+    use legaia_engine_ui::battle_chrome as bc;
+    use legaia_engine_ui::battle_command_ui as bcu;
 
     let pairs = [
         (bcu::CLUSTER_COMMAND, bc::CLUSTER_COMMAND),
@@ -313,7 +313,7 @@ fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
     // arm - there is no invented seating left on this screen.
     assert_eq!(
         bcu::MENU_SEATS.len(),
-        legaia_engine_core::battle_input::BattleCommand::MENU.len(),
+        legaia_engine_menus::battle_input::BattleCommand::MENU.len(),
         "the seating table and the command ring disagree on entry count"
     );
     assert_eq!(
@@ -329,7 +329,7 @@ fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
     // left / right.
     assert_eq!(
         bcu::ROUND_PROMPT_SEATS.len(),
-        legaia_engine_core::battle_input::RoundChoice::PROMPT.len()
+        legaia_engine_menus::battle_input::RoundChoice::PROMPT.len()
     );
     assert!(
         bcu::ROUND_PROMPT_SEATS
@@ -338,7 +338,7 @@ fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
     );
     assert_eq!(
         bcu::ATTACK_MODE_SEATS.len(),
-        legaia_engine_core::battle_input::AttackMode::PROMPT.len()
+        legaia_engine_menus::battle_input::AttackMode::PROMPT.len()
     );
     assert_eq!(bcu::ATTACK_MODE_SEATS[0], bcu::MENU_SEATS[1]);
     assert_eq!(bcu::ATTACK_MODE_SEATS[1], bcu::MENU_SEATS[2]);
@@ -346,7 +346,7 @@ fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
     // the engine's `Begin`, `Reselect` order.
     assert_eq!(
         bcu::COMMIT_CONFIRM_SEATS.len(),
-        legaia_engine_core::battle_input::CommitChoice::PROMPT.len()
+        legaia_engine_menus::battle_input::CommitChoice::PROMPT.len()
     );
     assert_eq!(
         bcu::COMMIT_CONFIRM_SEATS,
@@ -368,11 +368,11 @@ fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
 /// inspect).
 #[test]
 fn direction_presses_land_on_the_chip_drawn_on_that_side() {
-    use legaia_engine_core::battle_input::{
+    use legaia_engine_battle::target_picker::SlotState;
+    use legaia_engine_menus::battle_input::{
         BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase, Resolution,
     };
-    use legaia_engine_core::target_picker::SlotState;
-    use legaia_engine_render::battle_command_ui as bcu;
+    use legaia_engine_ui::battle_command_ui as bcu;
 
     let party = [SlotState::alive(true, true); 3];
     let monsters = [
@@ -432,7 +432,7 @@ fn direction_presses_land_on_the_chip_drawn_on_that_side() {
 /// - a drift here is a four-digit HP drawn off the end of its panel.
 #[test]
 fn engine_ui_numeral_edges_mirror_the_packet_pinned_battle_chrome() {
-    use legaia_engine_render::battle_chrome as bc;
+    use legaia_engine_ui::battle_chrome as bc;
     let font = legaia_font::synthetic_for_tests();
     // Widest values every field is laid out against.
     let hud = hud_with_party_row(9999, 9999, 999, 999);
@@ -555,14 +555,14 @@ fn native_battle_hud_hp_tints_span_the_retail_tiers() {
             .collect()
     };
     // Retail's tier ids: 7 normal, 6 caution, 9 danger.
-    let caution = legaia_engine_render::gauge_fill_color(6);
-    let danger = legaia_engine_render::gauge_fill_color(9);
+    let caution = legaia_engine_ui::gauge_fill_color(6);
+    let danger = legaia_engine_ui::gauge_fill_color(9);
     // A law whose tiers collapsed to one colour would satisfy every
     // "contains" below while drawing a single flat readout.
     assert!(
         caution != danger
-            && caution != legaia_engine_render::READOUT_NORMAL
-            && danger != legaia_engine_render::READOUT_NORMAL,
+            && caution != legaia_engine_ui::READOUT_NORMAL
+            && danger != legaia_engine_ui::READOUT_NORMAL,
         "the three tiers must be visually distinct"
     );
     assert!(
@@ -581,8 +581,8 @@ fn native_battle_hud_hp_tints_span_the_retail_tiers() {
     );
 }
 
-/// The production path: `engine-ui`'s `party_panel_stage_x` (re-exported
-/// by `engine-render`, called by `battle_hud_draws_for`'s roster loop)
+/// The production path: `engine-ui`'s `party_panel_stage_x` (called by
+/// `battle_hud_draws_for`'s roster loop)
 /// reads the canonical `engine-vm` port of retail's `FUN_801D84C0`
 /// anchor table - `panel_anchors` - rather than mirroring it as
 /// literals. Assert the production function returns the kernel's values
@@ -591,18 +591,18 @@ fn native_battle_hud_hp_tints_span_the_retail_tiers() {
 /// plus the +5 name inset.
 #[test]
 fn panel_stage_x_production_path_returns_the_kernel_anchors() {
-    use legaia_engine_vm::battle_party_panel::panel_anchors;
+    use legaia_engine_battle_vm::battle_party_panel::panel_anchors;
     for size in 1usize..=3 {
         let (primary, secondary) =
             panel_anchors(size as u8).expect("party sizes 1..=3 take a build arm");
         assert_eq!(
-            legaia_engine_render::party_panel_stage_x(size, 0),
+            legaia_engine_ui::party_panel_stage_x(size, 0),
             i32::from(primary),
             "primary anchor for a party of {size}"
         );
         if let Some(sec) = secondary {
             assert_eq!(
-                legaia_engine_render::party_panel_stage_x(size, 1),
+                legaia_engine_ui::party_panel_stage_x(size, 1),
                 i32::from(sec),
                 "secondary anchor for a party of {size}"
             );
@@ -611,9 +611,9 @@ fn panel_stage_x_production_path_returns_the_kernel_anchors() {
     // The seat retail writes no anchor for (a full party's third
     // panel): its packet-pinned seat plus the +5 name inset.
     assert_eq!(
-        legaia_engine_render::party_panel_stage_x(3, 2),
-        i32::from(legaia_engine_render::battle_chrome::panel_seats(3)[2])
-            + i32::from(legaia_engine_render::battle_chrome::PANEL_TEXT_INSET),
+        legaia_engine_ui::party_panel_stage_x(3, 2),
+        i32::from(legaia_engine_ui::battle_chrome::panel_seats(3)[2])
+            + i32::from(legaia_engine_ui::battle_chrome::PANEL_TEXT_INSET),
         "unwritten third seat is not seat + inset"
     );
 }
@@ -637,7 +637,7 @@ fn live_world_battle_state_reaches_the_shared_builder() {
     world.actors[0].battle.mp = 12;
     world.set_character_max_mp(0, 30);
 
-    let mut hud = legaia_engine_core::battle_hud::BattleHud::new();
+    let mut hud = legaia_engine_battle::battle_hud_state::BattleHud::new();
     super::super::battle::sync_battle_hud_rows(&mut hud, &world);
     assert!(hud.slots[0].active, "party slot 0 did not sync");
     assert_eq!(
@@ -662,7 +662,7 @@ fn live_world_battle_state_reaches_the_shared_builder() {
 /// on a party row. The default surface no longer draws them at all:
 /// retail's landed-hit numeral is seated over the struck actor, which
 /// only a host holding the camera can place, so it is the window's own
-/// `battle_value_readout_prims` (see `engine-ui::battle_numerals`).
+/// `battle_value_readout_prims` (see `render-kernels::battle_numerals`).
 #[test]
 fn popup_anchors_track_absolute_actor_slot() {
     let mut hud = hud_with_party_row(100, 100, 0, 0);
@@ -699,7 +699,7 @@ fn popup_anchors_track_absolute_actor_slot() {
 /// does for the chip cluster.
 #[test]
 fn badge_atlas_seats_match_the_bake() {
-    use legaia_engine_core::save_menu_atlas as sma;
+    use legaia_engine_menus::save_menu_atlas as sma;
     for i in 0..sma::STATUS_BADGE_COUNT {
         assert_eq!(
             sma::status_badge_atlas_rect(i),

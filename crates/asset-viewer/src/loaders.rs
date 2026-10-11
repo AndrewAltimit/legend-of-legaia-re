@@ -20,7 +20,7 @@ pub(crate) fn load_tim_path(path: &Path, clut_idx: usize) -> Result<(Vec<u8>, u3
 /// containers (PROT entries) and for TIMs in the unindexed pre-
 /// `init_data` gap of `PROT.DAT` (e.g. the system-UI sprite sheet at
 /// offset `0x018E0` or the menu-glyph atlas at offset `0x11218` -
-/// see [`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`]).
+/// see [`legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`]).
 pub(crate) fn load_tim_path_at_offset(
     path: &Path,
     offset: u64,
@@ -53,14 +53,14 @@ pub(crate) fn load_save_icon_sheet(
     scale: u32,
 ) -> Result<(Vec<u8>, u32, u32)> {
     let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
-    let sheet = legaia_asset::save_icon::parse_entry(&bytes)
+    let sheet = legaia_ui_formats::save_icon::parse_entry(&bytes)
         .with_context(|| format!("locate the save-icon sheet in {}", path.display()))?;
 
     let scale = scale.max(1);
-    let size = legaia_asset::save_icon::TILE_SIZE as u32;
+    let size = legaia_ui_formats::save_icon::TILE_SIZE as u32;
     let tiles: Vec<usize> = match tile {
         Some(t) => vec![t],
-        None => (0..legaia_asset::save_icon::TILE_COUNT).collect(),
+        None => (0..legaia_ui_formats::save_icon::TILE_COUNT).collect(),
     };
     let gap = if tiles.len() > 1 { 1u32 } else { 0 };
     let cell = size * scale + gap;

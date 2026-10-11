@@ -4,16 +4,17 @@
 //! fight with `with_attract`).
 //!
 //! Disc-free: the roster and action tables are synthetic, shaped like the
-//! parsed overlay tables (`legaia_asset::baka_opponents`), with a distinct
+//! parsed overlay tables (`legaia_minigame_formats::baka_opponents`), with a distinct
 //! stand-off per record so the seated pick is observable.
 
-use legaia_asset::baka_opponents::{BakaActionSet, BakaOpponent, OPPONENT_COUNT};
-use legaia_engine_core::baka_cabinet::{
+use legaia_engine_core::world::World;
+use legaia_engine_minigames::baka_cabinet::{
     ST_ATTRACT, ST_ATTRACT_OUT, WIDGET_PLAYER_SELECT, WIDGET_PRESS_START,
 };
-use legaia_engine_core::baka_fighter::{BakaFight, HP_START, first_rung_roster};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_minigames::baka_fighter::{BakaFight, HP_START, first_rung_roster};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
+use legaia_minigame_formats::baka_opponents::{BakaActionSet, BakaOpponent, OPPONENT_COUNT};
 
 fn opp(i: usize) -> BakaOpponent {
     BakaOpponent {

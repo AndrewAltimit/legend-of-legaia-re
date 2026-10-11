@@ -75,6 +75,18 @@ pub const SUMMON_FLASH_OUT: SummonFadeTemplate = SummonFadeTemplate {
 /// the quad at.
 pub const SUMMON_FADE_ID: i16 = 1;
 
+/// The fade actor's [`legaia_engine_system::fade::FadeTemplate`] off the summon band's 13-word template layout
+/// (`DAT_801C9070`).
+pub fn summon_fade_template(t: &SummonFadeTemplate) -> legaia_engine_system::fade::FadeTemplate {
+    legaia_engine_system::fade::FadeTemplate {
+        kind: t.kind,
+        duration: t.duration,
+        start_rgb: t.start_rgb,
+        end_rgb: t.end_rgb,
+        mode: [t.delay, t.hold, 0],
+    }
+}
+
 /// The sound cue the flash-in arm fires the frame it spawns the fade
 /// (`li a0,0x63; jal 0x8004fcc8` at `0x801E4AA8..0x801E4AB8`, right after
 /// `ctx[7] = 0x34`).

@@ -2,7 +2,7 @@
 //! part, shared by every host.
 //!
 //! The pool itself is simulation and lives in
-//! `legaia_engine_core::minigame_fx`; this is only its projection onto a
+//! `legaia_engine_minigames::minigame_fx`; this is only its projection onto a
 //! surface. Both halves used to sit inside the play window, which is why the
 //! fishing splash, the wander ripples and the catch bursts existed on exactly
 //! one of the port's three surfaces.
@@ -37,7 +37,7 @@ pub struct FxPartView {
 /// Placeholder letterform for a part's sprite id.
 ///
 /// The three id bands the port spawns with are its own
-/// (`legaia_engine_core::minigame_fx`'s `*_SPRITE_ID` constants); the two
+/// (`legaia_engine_minigames::minigame_fx`'s `*_SPRITE_ID` constants); the two
 /// dance ids are retail's - `0xb` is the sequence-clear banner's widget and
 /// `0x16` a flanking star, which is why they read as words rather than marks.
 pub fn fx_part_glyph(sprite: u16) -> &'static str {
@@ -83,7 +83,7 @@ pub fn fx_part_draws(
 }
 
 /// One emitted **dance sprite part**, as a host hands it over: the arm
-/// `legaia_engine_core::dance::sprite_part_emit` (`FUN_801d387c`) resolved,
+/// `legaia_engine_minigames::dance::sprite_part_emit` (`FUN_801d387c`) resolved,
 /// already through its own `>> 3`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DanceSpritePartView {
@@ -107,7 +107,7 @@ pub const DANCE_SHADOW_WEIGHT: f32 = 0.5;
 ///
 /// Separate from [`fx_part_draws`] only in the shadowed arm: the dance
 /// overlay's emit dispatch has one, and the generic pool's parts do not go
-/// through that dispatch (see `legaia_engine_core::minigame_fx`).
+/// through that dispatch (see `legaia_engine_minigames::minigame_fx`).
 pub fn dance_sprite_part_draws(
     font: &legaia_font::Font,
     parts: &[DanceSpritePartView],

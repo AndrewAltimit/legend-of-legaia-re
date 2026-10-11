@@ -1,6 +1,6 @@
 //! Disc-gated: a **cold scene boot** (entering a scene directly with no New
 //! Game confirm and no save loaded) seeds the retail new-game defaults - the
-//! `SCUS_942.54` starting-party template ([`legaia_asset::new_game`]) and the
+//! `SCUS_942.54` starting-party template ([`legaia_game_tables::new_game`]) and the
 //! starting bag - so the pause menu always reads valid party data, and a
 //! subsequent `save_full` / `load_full` round-trips that seeded state.
 //!
@@ -10,10 +10,10 @@
 //!
 //! Skips silently when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_engine_core::Vfs;
 use legaia_engine_core::new_game::NewGameDefaults;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::NEW_GAME_STARTING_GOLD;
+use legaia_engine_scene::vfs::Vfs;
 
 fn disc_path() -> Option<std::path::PathBuf> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -27,17 +27,17 @@ fn disc_path() -> Option<std::path::PathBuf> {
 /// Read + parse the new-game defaults from the disc's own executable - the
 /// same source `BootSession::open_disc` wires into the host.
 fn defaults_from_disc(disc: &std::path::Path) -> Option<NewGameDefaults> {
-    let scus = legaia_engine_core::DiscVfs::open(disc)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(disc)
         .ok()?
         .read("SCUS_942.54")
         .ok()?;
-    let party = legaia_asset::new_game::StartingParty::from_scus(&scus)?;
-    let inventory = legaia_asset::new_game::StartingInventory::from_scus(&scus);
+    let party = legaia_game_tables::new_game::StartingParty::from_scus(&scus)?;
+    let inventory = legaia_game_tables::new_game::StartingInventory::from_scus(&scus);
     Some(NewGameDefaults {
         party,
         inventory,
         picker_party: false,
-        equip_stats: legaia_asset::equip_stats::EquipStatTable::from_scus(&scus),
+        equip_stats: legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus),
     })
 }
 

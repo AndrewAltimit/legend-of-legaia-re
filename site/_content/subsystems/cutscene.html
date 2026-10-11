@@ -9,7 +9,7 @@
   <dl class="kv">
     <dt>Movie player</dt><dd>PROT 0970 (<code>cutscene_str</code>), an overlay loaded at slot A <code>0x801CE818</code>; game modes 26 (<code>StrInit</code>) and 27 (<code>StrMode</code>)</dd>
     <dt>Movies</dt><dd>Six <code>MOV/MV*.STR</code> files, nine <code>fmv_id</code> slots (<code>MV3.STR</code> is split by frame range); <code>MV1.STR</code> is the title attract reel</dd>
-    <dt>Dispatch table</dt><dd>Overlay data at <code>0x801D0A6C</code>, 23 &times; 32-byte slots; parser <code>legaia_asset::fmv_dispatch</code> - <a href="../formats/str-fmv-table.html">STR FMV table</a></dd>
+    <dt>Dispatch table</dt><dd>Overlay data at <code>0x801D0A6C</code>, 23 &times; 32-byte slots; parser <code>legaia_game_tables::fmv_dispatch</code> - <a href="../formats/str-fmv-table.html">STR FMV table</a></dd>
     <dt>Bitstream</dt><dd>PSX <strong>Iki</strong> variant, not STRv2; 15 fps (10 sectors per frame); decoder <code>crates/mdec</code></dd>
     <dt>Audio</dt><dd>One XA-ADPCM track per movie at <code>(file 1, channel 0)</code>, stereo 37.8 kHz, interleaved sector by sector; decoder <code>crates/xa</code></dd>
     <dt>In the port</dt><dd><code>crates/mdec</code> (decoder, and the <code>str_av</code> demuxer both play hosts open a movie through), <code>crates/xa</code>, <code>engine-shell::cutscene_av</code>; opening timeline in <code>engine-core</code></dd>
@@ -199,7 +199,7 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
   <p>A confirm press after the first crawl arms story flag 26, which fires the <code>town01</code> packet - the <strong>intro skip</strong>. The engine drives the whole chain by executing the same records (<code>World::step_cutscene_timeline</code>), pinned against a cold-boot pixel capture.</p>
   <h3 id="narration-format">The narration crawl</h3>
   <ul class="bullets">
-    <li><strong>Text.</strong> Inline ASCII pages inside the timeline record, each framed <code>0x1F &hellip; 0x00</code>, introduced by <code>CC F8 80 N</code> (<code>N</code> = page count). A sibling op <code>CC F8 89</code> shows a static title card while the script continues. Parser <code>legaia_asset::cutscene_text</code>; no text is committed.</li>
+    <li><strong>Text.</strong> Inline ASCII pages inside the timeline record, each framed <code>0x1F &hellip; 0x00</code>, introduced by <code>CC F8 80 N</code> (<code>N</code> = page count). A sibling op <code>CC F8 89</code> shows a static title card while the script continues. Parser <code>legaia_scene_formats::cutscene_text</code>; no text is committed.</li>
     <li><strong>Presentation.</strong> A bottom-up roller actor (handler <code>FUN_80037174</code>) spawned as a child, so the camera cuts authored between crawl blocks play <em>under</em> the text. Retail's per-scene geometry (window top, visible lines, scroll cadence) comes from a 10-byte config op and is tabulated on <a href="cutscene-internals.html#roller">internals</a>.</li>
     <li><strong>&ldquo;It was the Seru.&rdquo;</strong> is not text at all: a pre-rendered 112&times;32 TIM in the <code>opdeene</code> geometry pack (PROT 0749), blitted as a screen-space quad.</li>
     <li><strong>Pacing.</strong> Retail counts every wait in display frames at 60 Hz; the engine sims at 100 Hz and drives the roller and the timeline off a 60 fps sub-clock, otherwise the crawl runs 1.67&times; fast.</li>
@@ -216,7 +216,7 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
 
 <section class="doc-section" id="battle-intro">
   <h2>Battle intro and script helpers</h2>
-  <p>The shatter or swirl before a fight is a third overlay, <strong>PROT 0979</strong>, sharing the movie player's slot. Its init picks a style from the battle flags byte, the formation's first monster id and (two arms) the scene index - style 2 is the ordinary shatter, 3 and 4 are reached by a handful of formations - and its per-frame tick owns the whole frame until the battle scene takes over. Port <code>engine-vm::battle_intro_styles</code> + <code>engine-ui::battle_intro</code>. The scripted <code>op*</code> / <code>ed*</code> scenes also lean on five shared per-frame helpers in the dialogue overlay (party-leader swap, position tween, teardown, particle emitter, colour rotate); both are tabulated on <a href="cutscene-internals.html#battle-intro">internals</a>.</p>
+  <p>The shatter or swirl before a fight is a third overlay, <strong>PROT 0979</strong>, sharing the movie player's slot. Its init picks a style from the battle flags byte, the formation's first monster id and (two arms) the scene index - style 2 is the ordinary shatter, 3 and 4 are reached by a handful of formations - and its per-frame tick owns the whole frame until the battle scene takes over. Port <code>engine-battle-vm::battle_intro_styles</code> + <code>render-kernels::battle_intro</code>. The scripted <code>op*</code> / <code>ed*</code> scenes also lean on five shared per-frame helpers in the dialogue overlay (party-leader swap, position tween, teardown, particle emitter, colour rotate); both are tabulated on <a href="cutscene-internals.html#battle-intro">internals</a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

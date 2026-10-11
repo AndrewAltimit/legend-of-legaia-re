@@ -11,7 +11,7 @@
     <dt>Shape</dt><dd>One 320 &times; 256 image, uploaded as four 320 &times; 64 bands to VRAM <code>(384, 0)</code></dd>
     <dt>Who reads it</dt><dd><code>FUN_801F6B24</code> in the PROT <code>0978</code> <code>field_back_read</code> overlay, at slot-B base <code>0x801F69D8</code></dd>
     <dt>Which entry</dt><dd>Chosen at load time from the party leader's live HP - <a href="#which-entry">below</a></dd>
-    <dt>Parser</dt><dd><code>legaia_asset::ringside_still</code></dd>
+    <dt>Parser</dt><dd><code>legaia_minigame_formats::ringside_still</code></dd>
   </dl>
   <p>The behavioural side - what the stills are for, which module owns them and what else is in that bundle - is on the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md"><code>minigame-muscle-dome.md</code></a>.</p>
 </section>
@@ -113,12 +113,12 @@
   <h2>What draws it, and when</h2>
   <p>The still is loaded at a battle's end and drawn a screen later, by the Muscle Dome's contest hub: two textured quads that address it by <em>texture page</em> (<code>0x106</code> and <code>0x109</code>, VRAM x 384 and 576) rather than by pixel column, one 320x240 image split at x = 192. The hub draws them only when it is <strong>re-entered</strong> after a finished leg, as the backdrop of the INTERVAL score tally and the ROUND card that follows - the first visit draws a different backdrop (a 3 &times; 2 tiling of a brick-wall sprite under a full-screen gradient quad). Its brightness is the hub's backdrop fade level, which climbs to full with the INTERVAL heading, dims to half while the tally rolls, returns to full, and fades out with the ROUND card. Checkpoints from a dome contest played through three hub visits show both packets in the frame's primitive pool on the second and third visits, at the level the first of those arms had reached.</p>
   <p>Why a search for the rectangle once found nothing: the draw never materialises 384. A textured primitive addresses VRAM by <em>page index</em> (<code>384 / 64 = 6</code>), so the constants in the code are <code>0x106</code> / <code>0x109</code> (<code>0x100</code> = 16-bit direct colour), not <code>0x180</code>.</p>
-  <p><strong>In the port:</strong> the format is <code>legaia_asset::ringside_still</code>; the hub draw, fade envelope and HP pick run in the engine on both play hosts.</p>
+  <p><strong>In the port:</strong> the format is <code>legaia_minigame_formats::ringside_still</code>; the hub draw, fade envelope and HP pick run in the engine on both play hosts.</p>
 </section>
 
 <section class="doc-section" id="why-no-magic">
   <h2>Why it has no magic</h2>
-  <p>Nothing in the entry identifies it. Length is the only structural statement it makes, and <code>0x28000</code> is not distinctive on its own, so <code>legaia_asset::ringside_still::has_still_shape</code> is a length test and the selection is by PROT index. That is not a shortcut around a detector - there is nothing to detect. A still and any other raw 16bpp VRAM region are the same bytes, and the only thing that distinguishes them is which code uploads them where.</p>
+  <p>Nothing in the entry identifies it. Length is the only structural statement it makes, and <code>0x28000</code> is not distinctive on its own, so <code>legaia_minigame_formats::ringside_still::has_still_shape</code> is a length test and the selection is by PROT index. That is not a shortcut around a detector - there is nothing to detect. A still and any other raw 16bpp VRAM region are the same bytes, and the only thing that distinguishes them is which code uploads them where.</p>
 </section>
 
 <section class="doc-section" id="see-also">

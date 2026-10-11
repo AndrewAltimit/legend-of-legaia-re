@@ -4,16 +4,16 @@
 //! per-spell-slot u32 XP array at `+0x8` (parallel to the spell-id list at
 //! `+0x13D` and the level bytes at `+0x161`); the battle damage finisher
 //! accrues into it (`FUN_801ddb30` tail, ported as
-//! [`legaia_engine_vm::battle_formulas::summon_spell_xp_gain`]) and the
+//! [`legaia_engine_battle_vm::battle_formulas::summon_spell_xp_gain`]) and the
 //! post-summon check `FUN_801e70bc` levels the spell up against the static
 //! `SCUS_942.54` threshold table at `0x8007656C` (ported as
-//! [`legaia_engine_vm::battle_formulas::summon_magic_levels_up`]).
+//! [`legaia_engine_battle_vm::battle_formulas::summon_magic_levels_up`]).
 //!
 //! This module owns the data plumbing both kernels need:
 //!
 //! - [`thresholds_from_scus`] decodes the threshold table off the user's
 //!   `SCUS_942.54` (no Sony bytes committed - same pattern as
-//!   `legaia_engine_core::shop_catalog::ShopItemData::from_scus`);
+//!   `legaia_engine_menus::shop_catalog::ShopItemData::from_scus`);
 //! - the record accessors read/write the `+0x8` XP array through
 //!   [`legaia_save::CharacterRecord::raw`], so the accrued XP round-trips
 //!   through saves for free.
@@ -205,7 +205,7 @@ pub fn learn_spell_prepend(record: &mut CharacterRecord, spell_id: u8) {
 ///
 /// REF: FUN_801F69D8 (PROT 0905 / 0911 / 0919 heal arms)
 pub fn module_heal_xp_gain(spell_id: u8, magic_level: u8, hp: u16, max_hp: u16) -> u32 {
-    use legaia_engine_vm::{cast_seru_ticks_a as a, cast_seru_ticks_b as b};
+    use legaia_engine_battle_vm::seru_magic_ticks::{self as a, self as b};
     let missing = i32::from(max_hp) - i32::from(hp);
     let (want, full, clamped) = match spell_id {
         0x83 => (
@@ -294,7 +294,7 @@ pub struct SpellLevelUp {
 /// REF: FUN_801e70bc) and the pause-menu cast (REF: FUN_800402F4, whose
 /// inline copy compares the raw table entry - byte-equal to the shared
 /// compare for every spell id the menu arms credit, since none of the
-/// [`legaia_engine_vm::battle_formulas::SUMMON_XP_TRIPLE_THRESHOLD_IDS`]
+/// [`legaia_engine_battle_vm::battle_formulas::SUMMON_XP_TRIPLE_THRESHOLD_IDS`]
 /// is a menu-heal id).
 ///
 /// Adds `gain` to the accumulator of `spell_id`'s slot, then (when a
@@ -315,7 +315,8 @@ pub fn accrue_and_level(
     let mut list = record.spell_list();
     let level = list.levels[slot];
     let xp = spell_xp(record, slot);
-    if !legaia_engine_vm::battle_formulas::summon_magic_levels_up(spell_id, level, xp, table) {
+    if !legaia_engine_battle_vm::battle_formulas::summon_magic_levels_up(spell_id, level, xp, table)
+    {
         return None;
     }
     list.levels[slot] = level + 1;

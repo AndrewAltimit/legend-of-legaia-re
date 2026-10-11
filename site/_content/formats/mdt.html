@@ -17,7 +17,7 @@
     <dt>Magic / marker</dt><dd>None - a 1024-entry offset table followed by records</dd>
     <dt>Lives in</dt><dd>Each scene's <code>scene_asset_table</code> entry (the second PROT entry of the scene's CDNAME block), descriptor 4, type byte <code>0x05</code>; loaded to the <code>MOVE</code> base <code>_DAT_8007B888</code> on area transition</dd>
     <dt>Retail reader</dt><dd><code>FUN_800204F8</code> (playhead advance), the move-VM dispatcher <code>FUN_80023070</code> for the per-frame bytecode</dd>
-    <dt>Parser</dt><dd><code>crates/mdt</code> (<code>MoveBuffer</code>), <code>legaia_asset::scene_asset_table::move_descriptor</code>, <code>engine-core::scene_bundle::extract_move_payload</code></dd>
+    <dt>Parser</dt><dd><code>crates/mdt</code> (<code>MoveBuffer</code>), <code>legaia_scene_formats::scene_asset_table::move_descriptor</code>, <code>engine-scene::scene_bundle::extract_move_payload</code></dd>
     <dt>Confidence</dt><dd>Confirmed - consumer disassembly for the layout; per-scene source verified by mednafen save-state diff against <code>_DAT_8007B888</code></dd>
   </dl>
 </section>
@@ -82,9 +82,9 @@
   </table>
   <p>The descriptor's <code>data_offset</code> is measured from the start of the bundle entry, and the payload lies
   inside that entry's own sectors (an entry's size is the <a href="prot.html">sector gap to the next TOC entry</a>).
-  In the port, <code>engine-core::scene_bundle::extract_move_payload</code> slices and decodes it, and
+  In the port, <code>engine-scene::scene_bundle::extract_move_payload</code> slices and decodes it, and
   <code>scene_asset_table::move_descriptor</code> is the typed slot accessor:</p>
-<pre><code>let s = legaia_asset::scene_asset_table::detect(&amp;prot_bytes)?;
+<pre><code>let s = legaia_scene_formats::scene_asset_table::detect(&amp;prot_bytes)?;
 let move_descriptor = s.move_descriptor()?; // type_byte = 0x05</code></pre>
   <p>The <code>MOVE2</code> base (<code>_DAT_8007B840</code>) is zero across every observed save state, and no Move2 payload has been observed in a retail
   <a href="scene-bundles.html">scene bundle</a> - the alternate table is rare or unused. (The <code>scene_scripted_asset_table</code>

@@ -1,5 +1,4 @@
 //! Framing-phase classification off the live battle state.
-//! Split out of `battle_cam_script.rs`.
 
 /// Battle-camera framing phase, derived from the live battle state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

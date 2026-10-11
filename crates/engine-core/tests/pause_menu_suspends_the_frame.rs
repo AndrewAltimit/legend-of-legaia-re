@@ -27,8 +27,9 @@
 //!
 //! Synthetic world, no disc gate, no Sony bytes.
 
-use legaia_engine_core::mode::{GameMode, runs_master_frame_driver};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_mode::mode::{GameMode, runs_master_frame_driver};
 
 /// The mode-table law the gate reads. Exactly one shipped per-frame mode does
 /// not run the master driver, and it is the one the pause menu runs under.

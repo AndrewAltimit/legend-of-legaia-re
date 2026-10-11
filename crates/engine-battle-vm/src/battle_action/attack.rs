@@ -96,7 +96,7 @@ pub(super) fn attack_face<H: BattleActionHost + ?Sized>(
         // queued anim alone.
         let pre = monster_action_by_tag(host, actor_slot, APPROACH_TRANSITION_TAG);
         let (anim, next) = match pre {
-            Some(legaia_asset::monster_archive::NO_ACTION_ENTRY) | None => (
+            Some(legaia_actor_formats::monster_archive::NO_ACTION_ENTRY) | None => (
                 monster_action_by_tag(host, actor_slot, WALK_TAG),
                 ActionState::AttackShortStep,
             ),
@@ -733,7 +733,7 @@ fn stage_ko_taunt<H: BattleActionHost + ?Sized>(host: &mut H, slot: u8) {
         return;
     }
     let Some(taunt) = monster_action_by_tag(host, slot, KO_TAUNT_TAG)
-        .filter(|&t| t != legaia_asset::monster_archive::NO_ACTION_ENTRY)
+        .filter(|&t| t != legaia_actor_formats::monster_archive::NO_ACTION_ENTRY)
     else {
         return;
     };

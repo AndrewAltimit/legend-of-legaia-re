@@ -4,8 +4,8 @@
 //! many scenes, the pinned town01 -> map01 exit present, every site carrying a
 //! clean CDNAME-shaped destination name. Skips + passes without `LEGAIA_DISC_BIN`.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

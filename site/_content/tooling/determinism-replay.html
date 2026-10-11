@@ -69,7 +69,7 @@ active_scene = "town01"</code></pre>
       <tr><td></td><td></td><td>Right</td><td><code>0x0020</code></td></tr>
     </tbody>
   </table>
-  <p>Pad bits match <code>legaia_engine_core::input::PadButton::mask</code>, stored as a plain <code>u16</code> so the on-disk form stays byte-readable. The dense per-frame stream is reconstructed by <code>ReplayFile::expand_pad_stream</code> - the mask in slot N is the mask in force on frame N. <code>ReplayFile::validate</code> rejects schema mismatches, out-of-order events, and frame indices past <code>meta.frames</code>; writers emit events in frame-ascending order, readers don't sort.</p>
+  <p>Pad bits match <code>legaia_engine_system::input::PadButton::mask</code>, stored as a plain <code>u16</code> so the on-disk form stays byte-readable. The dense per-frame stream is reconstructed by <code>ReplayFile::expand_pad_stream</code> - the mask in slot N is the mask in force on frame N. <code>ReplayFile::validate</code> rejects schema mismatches, out-of-order events, and frame indices past <code>meta.frames</code>; writers emit events in frame-ascending order, readers don't sort.</p>
 </section>
 
 <section class="doc-section" id="subcommands">
@@ -105,7 +105,7 @@ active_scene = "town01"</code></pre>
 
 <section class="doc-section" id="frontier">
   <h2>Scene-frontier ladder: the breadth-denominated sibling</h2>
-  <p>The critical-path ladder walks one route well; <code>crates/engine-core/tests/chapter1_frontier_ladder.rs</code> enumerates the whole chapter-1 reachable scene set and gives every member a verdict, against <code>scripts/replays/chapter1_frontier_baseline.toml</code> - because "the engine cannot get past the Ravine" and "no fixture drives past the Ravine" read identically until something scores the scenes one at a time. The set is the BFS closure of <code>town01</code> over each scene's decoded <code>0x3F</code> destinations, stopped at the kingdom boundary; scenes reached by the sibling <code>0x3E</code> door warp are outside it. Six rungs per scene, ordered and cumulative:</p>
+  <p>The critical-path ladder walks one route well; <code>crates/parity/tests/chapter1_frontier_ladder.rs</code> enumerates the whole chapter-1 reachable scene set and gives every member a verdict, against <code>scripts/replays/chapter1_frontier_baseline.toml</code> - because "the engine cannot get past the Ravine" and "no fixture drives past the Ravine" read identically until something scores the scenes one at a time. The set is the BFS closure of <code>town01</code> over each scene's decoded <code>0x3F</code> destinations, stopped at the kingdom boundary; scenes reached by the sibling <code>0x3E</code> door warp are outside it. Six rungs per scene, ordered and cumulative:</p>
   <table>
     <thead><tr><th>Rung</th><th>Verdict</th></tr></thead>
     <tbody>

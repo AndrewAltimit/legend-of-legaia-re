@@ -16,10 +16,10 @@
 //!
 //! Skips + passes without `LEGAIA_DISC_BIN`.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_iso::write::mode2_form1_sector_is_valid;
 use legaia_patcher::apply::{self, DoorSite, DoorSiteClass};
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::door::is_world_map_scene;
 use legaia_patcher::drops::DropMode;
 

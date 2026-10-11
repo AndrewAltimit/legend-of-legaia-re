@@ -1,5 +1,5 @@
 //! Disc-gated agreement oracle for the translation space report
-//! (`legaia_patcher::translation::space`).
+//! (`legaia_translate::space`).
 //!
 //! The report promises that every number is the importer's. This test holds
 //! it to that: it builds a synthetic pack that exercises every outcome -
@@ -19,12 +19,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::rng::SplitMix64;
-use legaia_patcher::translation::space::{
-    self, NameFitter, Outcome, RoomKind, SpaceOptions, SpaceReport,
-};
-use legaia_patcher::translation::{
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_disc_patch::rng::SplitMix64;
+use legaia_translate::space::{self, NameFitter, Outcome, RoomKind, SpaceOptions, SpaceReport};
+use legaia_translate::{
     IssueKind, LanguagePack, WritePath, export_pack, import_pack, import_pack_relayout,
 };
 

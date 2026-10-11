@@ -249,7 +249,7 @@ pub(crate) fn cmd_list_scenes(
 ) -> Result<()> {
     let map: cdname::IndexMap = if let Some(disc_path) = disc {
         // Pull CDNAME.TXT bytes out of the disc image once.
-        use legaia_engine_core::{DiscVfs, Vfs};
+        use legaia_engine_scene::vfs::{DiscVfs, Vfs};
         let vfs = DiscVfs::open(disc_path)?;
         let bytes = vfs
             .read("cdname.txt")

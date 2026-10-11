@@ -38,7 +38,7 @@ The instruction is `[4C, op0, operands...]`. The **outer high nibble** of
 `0x801E0C44`, bound `sltiu v0,v1,0x10` at `0x801E0C48`, base pair at
 `0x801E0C50`/`0x801E0C54` in `FUN_801DE840`). Most arms then index a second
 table on the low nibble, and each sub-op has its own width - so a linear walk
-of a script must know every width (the disassembler `legaia_asset::field_disasm`
+of a script must know every width (the disassembler `legaia_scene_formats::field_disasm`
 carries them for all sixteen nibbles).
 
 Three exits recur on this page:
@@ -633,7 +633,7 @@ A ctx with the inverted-Y bit `0x20000000` also gets `+0x8E = -src_y`, and
 only a **player** ctx refreshes the camera scroll (`0x801E3178..0x801E31AC`).
 Arm `0x801E3108..0x801E31B0`; PC += 3 (in the `j 0x801E00BC` delay slot on
 the player path, via the `0x801E00B8` entry on the NPC path).
-The port applies it in `FieldHostImpl::op4c_n_e_sub_3_actor_sync_camera`:
+The port applies it in `FieldHostImpl::teleport_to_actor`:
 a placement destination takes the source's live position and heading
 (`stone` `P2[6]` seats Noa and Gala on Vahn with `CC 09 E3 F8` /
 `CC 0A E3 F8`), a player destination moves the player actor; the player
@@ -928,7 +928,7 @@ scheduled actor; **the script never waits on it**.
 | 5 | `actor[+0x44].{0x9A,0x94,0x96,0x98}` | 11-byte instruction - [below](#4c-45-the-11-byte-form). |
 | 6 | `_DAT_8007B92C` | Gated by `_DAT_800845A8 == 0`; when set, the gate clears both 6 and 7. |
 | 7 | `_DAT_8007B930` | Sister of sub-6. |
-| 8 | `ctx[+0x26]` | Plain s16 write or ramp. The actor's drawn heading: nilboa's Delilas pair (`P1[4]` / `P1[5]`) stand at `0x300` from their spawn prologue's `4C 48 00 03 00 00`. Port: `FieldHost::op4c_n4_heading_write` and the sub-8 ramp into `World::npcs.heading_ramps`. |
+| 8 | `ctx[+0x26]` | Plain s16 write or ramp. The actor's drawn heading: nilboa's Delilas pair (`P1[4]` / `P1[5]`) stand at `0x300` from their spawn prologue's `4C 48 00 03 00 00`. Port: `FieldActorHost::set_actor_heading` and the sub-8 ramp into `World::npcs.heading_ramps`. |
 | 9 | `_DAT_801C6EA4 + 0x4A` *or* player-relative *or* delta-bank | Branched on two bits of `_DAT_1F800394` - see below. |
 | A | `_DAT_8007BCD0` | Plain global write or ramp. |
 | B | `_DAT_8007BCD4` | Sister of A. |
@@ -980,7 +980,7 @@ casino counter clerk's is turned `Y = -512`. The op is common - the
 [field-op census](../tooling/field-op-census.md) finds it in most town and
 dungeon scenes.
 
-Port: [`engine-core::actor_look`](../../crates/engine-field/src/actor_look.rs)
+Port: [`engine-field::actor_look`](../../crates/engine-field/src/actor_look.rs)
 holds each actor's look and its ramps (ticked at the frame step, reset on a
 scene entry); `CC F8 45 ..` lands on the player through the same stand-in
 context `CC F8 40` / `CC F8 C2` use. `World::actor_look` answers per actor,

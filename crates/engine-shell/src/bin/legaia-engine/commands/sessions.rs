@@ -7,10 +7,10 @@ use super::*;
 /// Drive a synthetic [`InventoryUseSession`] against a small world.
 /// Reports cursor moves + the final outcome.
 pub(crate) fn cmd_inventory(item: u8, party_size: u8, script: &str) -> Result<()> {
-    use legaia_engine_core::inventory_use::{
+    use legaia_engine_menus::inventory_use::{
         InventoryContext, InventoryUseInput, InventoryUseSession, TargetRow,
     };
-    use legaia_engine_core::items::ItemCatalog;
+    use legaia_engine_menus::items::ItemCatalog;
 
     let catalog = ItemCatalog::vanilla();
     if catalog.get(item).is_none() {
@@ -50,10 +50,10 @@ pub(crate) fn cmd_inventory(item: u8, party_size: u8, script: &str) -> Result<()
 /// Run an equip session that confirms `item` into `slot`. Useful as a
 /// smoke test for the SM and the BattleStats recompute path.
 pub(crate) fn cmd_equip(slot: u8, item: u8) -> Result<()> {
-    use legaia_engine_core::battle_stats::{
+    use legaia_engine_battle::battle_stats::{
         EquipmentTable, ItemModifier, StatRecord, StatusModifiers,
     };
-    use legaia_engine_core::equip_session::{EquipInput, EquipOutcome, EquipSession};
+    use legaia_engine_menus::equip_session::{EquipInput, EquipOutcome, EquipSession};
 
     let record = StatRecord {
         base_attack: 50,
@@ -65,7 +65,7 @@ pub(crate) fn cmd_equip(slot: u8, item: u8) -> Result<()> {
         base_int: 18,
         equip: [0; 8],
     };
-    let mut inv = legaia_engine_core::world::ItemBag::new();
+    let mut inv = legaia_engine_menus::item_bag::ItemBag::new();
     // Re-encode the item id so its implied slot matches the requested
     // slot - the synthetic test catalog uses `id >> 5` as the slot bits.
     let encoded_id = (slot << 5) | (item & 0x1F);
@@ -167,9 +167,9 @@ pub(crate) fn cmd_gte_replay(trace_path: &Path, verbose: bool) -> Result<()> {
     anyhow::bail!("trace replay produced mismatches");
 }
 
-/// Map an input letter to a [`legaia_engine_core::title::TitleInput`] mask.
-fn title_input_for(c: char) -> legaia_engine_core::title::TitleInput {
-    use legaia_engine_core::title::TitleInput;
+/// Map an input letter to a [`legaia_engine_menus::title::TitleInput`] mask.
+fn title_input_for(c: char) -> legaia_engine_menus::title::TitleInput {
+    use legaia_engine_menus::title::TitleInput;
     let mut i = TitleInput::default();
     match c {
         's' => i.start = true,
@@ -183,7 +183,7 @@ fn title_input_for(c: char) -> legaia_engine_core::title::TitleInput {
 }
 
 pub(crate) fn cmd_title(script: &str, no_save: bool, fade_frames: u16) -> Result<()> {
-    use legaia_engine_core::title::{TitleEvent, TitleSession};
+    use legaia_engine_menus::title::{TitleEvent, TitleSession};
     let mut s = if no_save {
         TitleSession::without_save_data()
     } else {
@@ -214,8 +214,8 @@ pub(crate) fn cmd_title(script: &str, no_save: bool, fade_frames: u16) -> Result
     Ok(())
 }
 
-fn select_input_for(c: char) -> legaia_engine_core::save_select::SelectInput {
-    use legaia_engine_core::save_select::SelectInput;
+fn select_input_for(c: char) -> legaia_engine_menus::save_select::SelectInput {
+    use legaia_engine_menus::save_select::SelectInput;
     let mut i = SelectInput::default();
     match c {
         'c' => i.cross = true,
@@ -231,7 +231,7 @@ fn select_input_for(c: char) -> legaia_engine_core::save_select::SelectInput {
 }
 
 pub(crate) fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<()> {
-    use legaia_engine_core::save_select::{
+    use legaia_engine_menus::save_select::{
         SaveSelectMode, SaveSelectSession, SelectEvent, SlotContent, SlotSnapshot,
     };
     let mode = match mode.to_ascii_lowercase().as_str() {
@@ -318,7 +318,7 @@ pub(crate) fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<(
 }
 
 pub(crate) fn cmd_encounter(rate: u8, steps: u32, seed: u32) -> Result<()> {
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("test_scene");
@@ -363,8 +363,8 @@ pub(crate) fn cmd_encounter(rate: u8, steps: u32, seed: u32) -> Result<()> {
     Ok(())
 }
 
-fn picker_input_for(c: char) -> legaia_engine_core::target_picker::PickerInput {
-    use legaia_engine_core::target_picker::PickerInput;
+fn picker_input_for(c: char) -> legaia_engine_battle::target_picker::PickerInput {
+    use legaia_engine_battle::target_picker::PickerInput;
     let mut i = PickerInput::default();
     match c {
         'c' => i.cross = true,
@@ -379,7 +379,7 @@ fn picker_input_for(c: char) -> legaia_engine_core::target_picker::PickerInput {
 }
 
 pub(crate) fn cmd_target_pick(kind: &str, actor: u8, script: &str) -> Result<()> {
-    use legaia_engine_core::target_picker::{
+    use legaia_engine_battle::target_picker::{
         PickerEvent, SlotState, TargetKind, TargetPickerSession,
     };
     let kind = match kind.to_ascii_lowercase().as_str() {
@@ -425,8 +425,8 @@ pub(crate) fn cmd_target_pick(kind: &str, actor: u8, script: &str) -> Result<()>
     Ok(())
 }
 
-fn editor_input_for(c: char) -> legaia_engine_core::tactical_arts_editor::EditInput {
-    use legaia_engine_core::tactical_arts_editor::EditInput;
+fn editor_input_for(c: char) -> legaia_engine_battle::tactical_arts_editor::EditInput {
+    use legaia_engine_battle::tactical_arts_editor::EditInput;
     let mut i = EditInput::default();
     match c {
         'L' => i.left = true,
@@ -443,7 +443,7 @@ fn editor_input_for(c: char) -> legaia_engine_core::tactical_arts_editor::EditIn
 }
 
 pub(crate) fn cmd_chain_editor(char_slot: u8, script: &str) -> Result<()> {
-    use legaia_engine_core::tactical_arts_editor::{ChainEditor, ChainLibrary, EditEvent};
+    use legaia_engine_battle::tactical_arts_editor::{ChainEditor, ChainLibrary, EditEvent};
     let lib = ChainLibrary::new();
     let mut ed = ChainEditor::new(char_slot, &lib);
     println!("chain-editor: char_slot={char_slot}");
@@ -475,7 +475,7 @@ pub(crate) fn cmd_chain_editor(char_slot: u8, script: &str) -> Result<()> {
 }
 
 pub(crate) fn cmd_seru_capture(seru: u16, count: u32, party: &str) -> Result<()> {
-    use legaia_engine_core::seru_learning::{SeruCaptureLog, SeruRegistry, record_capture};
+    use legaia_engine_battle::seru_learning::{SeruCaptureLog, SeruRegistry, record_capture};
     let registry = SeruRegistry::retail();
     let party: Vec<u8> = party
         .split(',')

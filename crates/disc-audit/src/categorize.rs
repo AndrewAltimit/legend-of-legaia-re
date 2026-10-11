@@ -1,0 +1,1360 @@
+//! Bulk classification of unknown PROT entries.
+//!
+//! Tries every known parser against a buffer; if none match, falls back to
+//! statistical features (entropy, byte distribution, leading-zero run).
+//!
+//! The point isn't to get every entry right - it's to shrink the
+//! "uncategorized" pile so we can see clusters worth reversing next.
+
+use serde::Serialize;
+
+use legaia_container_formats::{AssetType, parse_player_lzs, parse_streaming};
+
+/// Top-level classification result for one file.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum Class {
+    /// 0-byte file.
+    Empty,
+    /// < 32 bytes.
+    Tiny,
+    /// All bytes are 0x00.
+    AllZeros,
+    /// At least 95% of bytes are 0x00 (and at least one byte isn't).
+    /// Distinct from [`Class::AllZeros`] because the non-zero bytes might
+    /// signal a small terminator, count, or footer that's worth noting.
+    /// Captures the "this PROT slot is reserved but never populated" shape.
+    MostlyZeros,
+    /// All bytes are the same non-zero value.
+    ConstantByte,
+    /// Starts with the PSX TIM magic (0x10).
+    TimPassthrough,
+    /// Parses as a DATA_FIELD streaming container (FUN_8002541c 0x14 branch).
+    DataFieldStreaming,
+    /// **Retired - [`classify`] never returns this.** It was read as a
+    /// truncated [`Class::DataFieldStreaming`]: leading chunks parsing cleanly
+    /// and a final chunk whose declared `size` walks past EOF. Neither half of
+    /// that reading survived. The three entries its doc named as members
+    /// (`0157_rikuroa`, `0228_station`, `0373_taiku`) are ordinary four-chunk
+    /// `MAN / MES / MOVE / VDF` bundles that terminate cleanly against their
+    /// own sectors - they overran only while the superseded
+    /// `toc[p+5] - toc[p+3] + 4` span cut the buffer short. Its one real hit,
+    /// extraction `0892`, is an [`container-formats::pack`](legaia_container_formats::pack) of two whole TIMs
+    /// that the streaming reader mistook for chunk headers: the pack's
+    /// `count = 2` and `word_offsets = [3, 0x208B]` read as three chunks of
+    /// type `0x00`. See [`docs/formats/data-field.md`].
+    ///
+    /// The variant survives only because `legaia_engine_scene::scene_bundle`
+    /// still names it in a `matches!`; nothing produces it.
+    DataFieldTruncated,
+    /// The standalone TIM-pack heuristic - `byte[3]==0x01 && byte[2]<0x10`,
+    /// count at `+4`, members at `word_index * 4 + 4`
+    /// (`crates/prot/src/timpack.rs`).
+    ///
+    /// **Matches no retail PROT entry**, and the reason is the heuristic's own
+    /// shape: `byte[3]==0x01` with a small `byte[2]` is a `(TIM_LIST << 24) |
+    /// size` DATA_FIELD chunk header, and `word_index * 4 + 4` is the pack read
+    /// that skips it. Every entry it used to claim is a scene carrier at raw
+    /// TOC `+4` of its CDNAME block, which the scene-pack arm now classifies as
+    /// the single-chunk [`Class::DataFieldStreaming`] retail reads with
+    /// `FUN_8002541C` mode `0x14`. The reader stays - it is the correct reader
+    /// for that form, and `walk_tim_pack` / `prot-extract` still use it - but
+    /// nothing needs a class of its own for it. Kept so the shape stays named
+    /// and a detector-order regression that re-steals a carrier is visible.
+    TimPack,
+    /// Bare [`container-formats::pack`](legaia_container_formats::pack) - `[u32 count][u32 word_offset[count]]`
+    /// at offset 0, members packed back-to-back, every member carrying the
+    /// same magic (PSX TIM or Legaia TMD). This is the form retail walks with
+    /// `FUN_8002541C` mode `0x0A` (`count = base[0]`, then `FUN_800198E0` per
+    /// member), reached by a `Flag(0x0A)` descriptor in the scene's bundle.
+    /// See [`legaia_scene_formats::field_pack::scene_pack`] and [`docs/formats/pack.md`].
+    Pack,
+    /// Parses as a player.lzs-style descriptor container at some count
+    /// (1, 2, 3, 4, 8, 16) and at least one descriptor decodes via LZS.
+    LzsContainer,
+    /// Contains a stage-geometry table (12-byte fixed prefix + 8-byte
+    /// payload at 20-byte stride). See [`legaia_scene_formats::stage_geom`].
+    StageGeometry,
+    /// Effect-bundle container - magic `0x02018B0C` + constant header words +
+    /// 28-entry schema followed by packed TMD primitive groups + TIMs.
+    /// See [`legaia_container_formats::effect_bundle`].
+    EffectBundle,
+    /// PsyQ SEQ sequenced-music file - leads with the 4-byte ASCII magic
+    /// `pQES` (0x70 0x51 0x45 0x53) followed by a 9-byte header. Drives the
+    /// SsAPI sequencer at runtime. See [`docs/formats/seq.md`].
+    SeqContainer,
+    /// Legaia ANM animation pack - `[u32 count][u32 offset[count]][records...]`
+    /// where every record's `+4..+6` u16 equals `0x080C` (the per-record
+    /// marker_1). 8/8 hits across the title + town overlay corpus carry the
+    /// marker, so the detector is zero-false-positive against random data.
+    /// See [`docs/formats/anm.md`].
+    AnmContainer,
+    /// `[u32 size][bare TMD][streaming chunks]` - a streaming-format variant
+    /// where the first asset is a Legaia TMD without a typed chunk header.
+    /// See [`legaia_scene_formats::scene_tmd_stream`].
+    SceneTmdStream,
+    /// `[u32 claimed_total][TMD magic][TMD flags=0][nobj]` - a TMD-fronted
+    /// resource where the prefix u32 claims a total size *larger than the
+    /// on-disc bytes*. The on-disc file is a prefix of a logical TMD whose
+    /// remainder is supplied by the runtime (streaming tail elsewhere or
+    /// zero-fill). Sister to [`Class::SceneTmdStream`] - captures the
+    /// truncated subset that detector intentionally rejects.
+    /// See [`legaia_container_formats::tmd_size_prefix`].
+    TmdSizePrefix,
+    /// `[u32 chunk0_header (type=0x00, size=N)][VABp sound bank][...]` -
+    /// a streaming-format variant where the leading chunk is a Sony VAB
+    /// instrument bank instead of a TMD. The single largest distributed
+    /// VAB carrier in the corpus (200+ entries). See [`legaia_container_formats::scene_vab_stream`].
+    SceneVabStream,
+    /// Strict 8-word v12 header - `[N+4, 0x12, 0, 0x14, ?, N, 0, N+2]` - used
+    /// by 97 scene-named PROT entries (one per scene). Format meaning open;
+    /// likely candidates are per-scene navmesh / collision / event-trigger
+    /// data. See [`legaia_scene_formats::scene_v12_table`].
+    SceneV12Table,
+    /// Canonical 7-asset scene bundle - leads with `07 00 00 00`, then 7
+    /// descriptor pairs (`(type<<24)|size, data_offset`) covering the
+    /// `(TimList, Tmd, Man, Mes, Move, Anm, Vdf)` asset sequence. 80 PROT
+    /// entries match. See [`legaia_scene_formats::scene_asset_table`].
+    SceneAssetTable,
+    /// Composite shape: `[u16 count][u16 offsets[count]][record bodies]
+    /// [zero pad to next 0x800 sector][canonical scene_asset_table]`. The
+    /// leading prescript carries the word-aligned per-scene actor/event
+    /// record structure (NOT field-VM bytecode - see
+    /// [`legaia_scene_formats::scene_event_scripts`]) and the asset table at the next sector
+    /// boundary holds the standard 7-asset scene bundle. 77 PROT entries match.
+    /// See [`legaia_scene_formats::scene_scripted_asset_table`].
+    SceneScriptedAssetTable,
+    /// `[u16 count][u16 offsets[count]][record bodies]` - the prescript entry
+    /// a scene block seats between its `.PCH` header and its bundle. The
+    /// records are word-aligned move-VM stager records, NOT field-VM bytecode.
+    /// 101 PROT entries match, 100 of them at slot 2 of a CDNAME block.
+    /// Claimed in two tiers: `scene_event_scripts::detect` (prescript shape
+    /// plus a frame-opener-rate floor) runs early, and the shape-only
+    /// `detect_structural` runs last, after every other named detector.
+    /// See [`legaia_scene_formats::scene_event_scripts`].
+    SceneEventScripts,
+    /// MIPS code blob - the static disc copy of a runtime overlay. Leads
+    /// with `addiu sp, sp, -X` (a function prologue) and a plausible MIPS
+    /// follow-up instruction. 22 PROT entries match - all in the `0901..=0969`
+    /// `xxx_dat` cluster. See [`legaia_overlay_images::mips_overlay`].
+    MipsOverlay,
+    /// Sister cluster to [`Class::MipsOverlay`] - MIPS overlay code blob
+    /// that leads with a function/jump-table header (4-64 consecutive u32
+    /// values, each in the `0x801C0000..=0x801FFFFF` overlay window) instead
+    /// of a `addiu sp, sp, -X` prologue. 42 PROT entries match - all in the
+    /// `0900..=0968` `xxx_dat` cluster. See [`legaia_overlay_images::overlay_ptr_table`].
+    OverlayPtrTable,
+    /// Per-scene field map (`DATA\FIELD\<scene>.MAP`) - the fixed `0x12000`-byte
+    /// entry at slot 0 of every scene's CDNAME block. Four regions whose sizes
+    /// sum to exactly the footprint: object descriptors, the collision + floor
+    /// grid, the per-tile object-index map, and the per-tile trigger block.
+    /// Detected on the trigger block's self-consistent sub-table chain - the
+    /// `0x12000` footprint alone is 36 ordinary sectors and 111 entries have
+    /// it, only 101 of which are maps. 100 entries chain; the one carrier with
+    /// a zeroed trigger header is admitted only because its object table and
+    /// collision grid are empty too.
+    /// See [`legaia_scene_formats::field_map`] and [`docs/formats/field-map.md`].
+    FieldMap,
+    /// Runtime `efect.dat` 2-pack - `[u32 pack0_off][u32 pack1_off][sprite
+    /// atlas][pack0][pack1]`, the form battle code consumes (distinct from the
+    /// magic-prefixed [`Class::EffectBundle`]). See [`legaia_container_formats::efect_pack`] and
+    /// [`docs/formats/effect.md`].
+    EfectPack,
+    /// Battle side-band streaming file (`summon.dat` / `readef.DAT`) - a flat
+    /// array of `0x10800`-byte slots, each a texture slot, a summon-creature
+    /// actor record, or an `"ME"` art-animation archive. See
+    /// [`legaia_actor_formats::summon_readef`] and [`docs/formats/summon-readef.md`].
+    SummonReadef,
+    /// `bse.dat` - the master sound bank `FUN_8001FA88` loads once at
+    /// sound-init (`[u16 tag][u16 body_offset = 4][8-byte records]`). Two
+    /// entries: extraction 888 (the one the loader reaches through raw TOC
+    /// `0x37A`) and extraction 1195 (same format, no traced caller).
+    /// See [`legaia_container_formats::bse_bank`].
+    BseBank,
+    /// Boot `init.pak` - the publisher / warning logo TIMs at fixed offsets
+    /// plus the boot overlay's code and debug-string pool. See
+    /// [`legaia_ui_formats::init_pak`] and `docs/subsystems/boot.md`.
+    InitPak,
+    /// "pochi"-fill placeholder: the first 1926 bytes are the ASCII pattern
+    /// `pochipochipochi...\r\n` (Japanese dev fill, "ポチ" = generic dog name)
+    /// with `0x1A` (DOS EOF) at offset `0x786`. Marks an unused / reserved PROT
+    /// slot. Found at consistent offsets within each scene CDNAME block -
+    /// scenes reserve N asset slots but only fill some, leaving the rest as
+    /// dev-fill. Distinct from data: post-prefix bytes are scratch / leftover.
+    PochiFiller,
+    /// Multi-bank VAB archive - `[u32 reserved=0][u32 count][u32 sector_nums[count]]`
+    /// with VABp magic at `sector_nums[0] * 0x800 + 4`. One PROT entry:
+    /// extraction 891, the content the CDNAME `monster_se` define points at.
+    /// That entry is `h:\mpack\monster.snd`: the battle-start loader
+    /// `FUN_8003E104` fetches raw TOC index `0x37D` (`li v0,0x37d` at
+    /// `0x8003E174`) = extraction 891, next to the dev path string.
+    /// The extraction *filename* reads `level_up` - that is the +2 label shift
+    /// (see `docs/formats/cdname.md`), not the block it belongs to.
+    /// See [`legaia_container_formats::vab_multi_bank`].
+    VabMultiBank,
+    /// Player battle file (`data\battle\PLAYER1..4`) - head words + LZS
+    /// `record[0]` + a 12-byte `[id, offset, size]` descriptor table,
+    /// followed by a slot region of `[u32 dec_size][LZS stream]` entries.
+    /// Each decompressed slot holds a 32-byte header, a Legaia TMD, and a
+    /// texture/CLUT pool. The retail `battle_data` CDNAME block =
+    /// extraction entries 0863..0866 (the `0863/0864_edstati3` filename
+    /// labels are the +2 shift). See [`legaia_actor_formats::battle_data_pack`].
+    BattleDataPack,
+    /// Shape test for `[u32 format=2][u16 spu_addrs[256]][ADPCM...]` where all
+    /// 256 `u16`s have bit 15 set (>= `0x8000` = active SPU slot).
+    ///
+    /// **Matches no retail PROT entry.** It was introduced for
+    /// `h:\mpack\monster.snd` and landed on extraction 893 instead, which is
+    /// `summon.dat` - that file opens `[u32 mode = 2][256-entry CLUT]` and every
+    /// colour carries the STP bit, so all 256 `u16`s read as `>= 0x8000`. The
+    /// real `monster.snd` is extraction 891 and is a [`Class::VabMultiBank`]
+    /// archive. Kept as a distinct class so the shape stays named and cannot be
+    /// re-derived by accident; [`Class::SummonReadef`] runs first.
+    MonsterSoundBank,
+    /// File with >= 2 sectors (512 bytes) of leading zeros followed by a
+    /// high-entropy body (>= 7.0 bits/byte). Characteristic of cutscene / XA
+    /// audio files where the leading sector(s) are zeroed out on disc.
+    ZeroSectorHighEntropy,
+    /// Mid-entropy data blob with >= 18 % printable ASCII content.
+    /// Covers overlay string tables, text data dumps, and mixed game data
+    /// where the format is not yet identified but readable text is present.
+    OverlayDataBlob,
+    /// High entropy (>= 7.5 bits/byte). Likely already-compressed or encrypted.
+    UnknownHighEntropy,
+    /// Low entropy (< 4 bits/byte). Tabular data, sparse vectors, padding.
+    UnknownLowEntropy,
+    /// Mid-entropy and otherwise unidentified.
+    UnknownOther,
+}
+
+impl Class {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Class::Empty => "empty",
+            Class::Tiny => "tiny",
+            Class::AllZeros => "all_zeros",
+            Class::MostlyZeros => "mostly_zeros",
+            Class::ConstantByte => "constant_byte",
+            Class::TimPassthrough => "tim_passthrough",
+            Class::DataFieldStreaming => "data_field_streaming",
+            Class::DataFieldTruncated => "data_field_truncated",
+            Class::TimPack => "tim_pack",
+            Class::Pack => "pack",
+            Class::LzsContainer => "lzs_container",
+            Class::StageGeometry => "stage_geometry",
+            Class::EffectBundle => "effect_bundle",
+            Class::SeqContainer => "seq_container",
+            Class::AnmContainer => "anm_container",
+            Class::SceneTmdStream => "scene_tmd_stream",
+            Class::TmdSizePrefix => "tmd_size_prefix",
+            Class::SceneVabStream => "scene_vab_stream",
+            Class::SceneV12Table => "scene_v12_table",
+            Class::SceneAssetTable => "scene_asset_table",
+            Class::SceneScriptedAssetTable => "scene_scripted_asset_table",
+            Class::SceneEventScripts => "scene_event_scripts",
+            Class::MipsOverlay => "mips_overlay",
+            Class::OverlayPtrTable => "overlay_ptr_table",
+            Class::FieldMap => "field_map",
+            Class::EfectPack => "efect_pack",
+            Class::SummonReadef => "summon_readef",
+            Class::BseBank => "bse_bank",
+            Class::InitPak => "init_pak",
+            Class::PochiFiller => "pochi_filler",
+            Class::VabMultiBank => "vab_multi_bank",
+            Class::BattleDataPack => "battle_data_pack",
+            Class::MonsterSoundBank => "monster_sound_bank",
+            Class::ZeroSectorHighEntropy => "zero_sector_high_entropy",
+            Class::OverlayDataBlob => "overlay_data_blob",
+            Class::UnknownHighEntropy => "unknown_high_entropy",
+            Class::UnknownLowEntropy => "unknown_low_entropy",
+            Class::UnknownOther => "unknown_other",
+        }
+    }
+}
+
+/// Per-file feature dump.
+#[derive(Debug, Clone, Serialize)]
+pub struct FileReport {
+    pub class: Class,
+    pub size: usize,
+    /// First 16 bytes (or fewer), hex.
+    pub head: String,
+    /// First u32 LE (None if file < 4 bytes).
+    pub first_u32: Option<u32>,
+    /// Shannon entropy in bits/byte.
+    pub entropy_bits: f32,
+    /// Length of leading-zero run.
+    pub leading_zeros: usize,
+    /// Fraction of bytes equal to 0x00 across the whole buffer (0.0..=1.0).
+    /// Useful for downstream filtering even when the class doesn't depend on it.
+    pub zero_fraction: f32,
+    /// For data_field_streaming: chunk count.
+    pub stream_chunks: Option<usize>,
+    /// For lzs_container: descriptor count that worked.
+    pub lzs_descriptor_count: Option<usize>,
+    /// For stage_geometry: number of records found in the largest table.
+    pub stage_geom_records: Option<usize>,
+    /// For tmd_size_prefix: claimed total in-RAM size from the leading u32.
+    pub tmd_size_prefix_total: Option<u32>,
+}
+
+/// PSX TIM magic, as the leading u32 of a pack member.
+const MEMBER_MAGIC_TIM: u32 = 0x0000_0010;
+/// Legaia TMD magic, as the leading u32 of a pack member.
+const MEMBER_MAGIC_TMD: u32 = 0x8000_0002;
+
+/// A scene's streamed asset pack, admitted only when every member carries one
+/// magic and (chunk-headered form) that magic agrees with the chunk type byte.
+///
+/// [`legaia_scene_formats::field_pack::scene_pack`] gates on the pack's own anchor, which is
+/// enough to *read* a known carrier but not to *claim* an arbitrary entry: a
+/// two-word head of `[2, 3]` satisfies the anchor. Requiring uniform member
+/// magic is the identity test the disc actually supports - all 23 retail
+/// carriers are all-TIM under chunk type `0x01` or all-Legaia-TMD under `0x02`
+/// (`crates/scene-formats/tests/field_pack_real.rs`).
+fn scene_carrier_pack(buf: &[u8]) -> Option<legaia_scene_formats::field_pack::ScenePack> {
+    let pack = legaia_scene_formats::field_pack::scene_pack(buf)?;
+    let want = match pack.asset_type() {
+        Some(AssetType::TimList) => Some(MEMBER_MAGIC_TIM),
+        Some(AssetType::Tmd) => Some(MEMBER_MAGIC_TMD),
+        // A chunk header of any other type is not a carrier.
+        Some(_) => return None,
+        // Bare form: the members pick the magic, they just have to agree.
+        None => None,
+    };
+    let first = legaia_bytes::u32_le(buf, pack.members.first()?.start)?;
+    let want = want.unwrap_or(first);
+    if want != MEMBER_MAGIC_TIM && want != MEMBER_MAGIC_TMD {
+        return None;
+    }
+    for r in &pack.members {
+        if legaia_bytes::u32_le(buf, r.start) != Some(want) {
+            return None;
+        }
+    }
+    Some(pack)
+}
+
+/// Classify a single buffer.
+pub fn classify(buf: &[u8]) -> FileReport {
+    let size = buf.len();
+    let head = hex_head(buf, 16);
+    let first_u32 = if buf.len() >= 4 {
+        Some(u32::from_le_bytes(buf[..4].try_into().unwrap()))
+    } else {
+        None
+    };
+    let entropy_bits = entropy(buf);
+    let leading_zeros = buf.iter().take_while(|&&b| b == 0).count();
+    let zero_count = buf.iter().filter(|&&b| b == 0).count();
+    let zero_fraction = if buf.is_empty() {
+        0.0
+    } else {
+        zero_count as f32 / buf.len() as f32
+    };
+
+    // Run all detectors; pick the first one that fires in this priority order.
+    if size == 0 {
+        return mk(
+            Class::Empty,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+    if leading_zeros == size {
+        return mk(
+            Class::AllZeros,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+    if size < 32 {
+        return mk(
+            Class::Tiny,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+    if buf.iter().all(|&b| b == buf[0]) {
+        return mk(
+            Class::ConstantByte,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+    if first_u32 == Some(0x0000_0010) {
+        return mk(
+            Class::TimPassthrough,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // PsyQ SEQ - `pQES` magic + version `0x0001` + non-zero PPQN + non-zero
+    // tempo. Specific 4-byte signature with structural follow-up so a
+    // chance-match on the magic alone won't fire.
+    if buf.len() >= 13
+        && &buf[0..4] == b"pQES"
+        && u16::from_be_bytes([buf[4], buf[5]]) == 1
+        && u16::from_be_bytes([buf[6], buf[7]]) > 0
+        && (buf[8] != 0 || buf[9] != 0 || buf[10] != 0)
+    {
+        return mk(
+            Class::SeqContainer,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // ANM container - strict structural detector that requires every
+    // record's `marker_1` u16 to equal 0x080C. Runs early so the more
+    // permissive structural heuristics (TimPack / lzs_container) don't
+    // claim ANM payloads first.
+    if legaia_container_formats::anm_detect::detect(buf).is_some() {
+        return mk(
+            Class::AnmContainer,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // pochi-fill placeholder slot: ASCII "pochi" repeating up to byte 0x785,
+    // then `0x1A` (DOS EOF) at offset 0x786. Cheap to check and very specific.
+    if is_pochi_filler(buf) {
+        return mk(
+            Class::PochiFiller,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Per-scene field map - a hard size gate (`0x12000`) plus the trigger
+    // block's self-consistent sub-table chain. Runs early: the four regions
+    // are sparse by nature, so without a name of its own most of this class
+    // lands in `mostly_zeros` (a placeholder verdict) or `unknown_low_entropy`.
+    if legaia_scene_formats::field_map::detect(buf).is_some() {
+        return mk(
+            Class::FieldMap,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Boot `init.pak` - four publisher-logo TIMs at fixed offsets, each header
+    // validated. Cheap and specific; the rest of the entry is boot overlay code
+    // that no other detector models.
+    if legaia_ui_formats::init_pak::parse(buf).is_ok() {
+        return mk(
+            Class::InitPak,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Streaming format: don't accept just 1 chunk (too many false positives).
+    if let Ok(r) = parse_streaming(buf, 4096)
+        && r.terminated
+        && r.all_known_types
+        && r.all_magic_ok
+        && r.chunks.len() >= 2
+    {
+        let mut report = mk(
+            Class::DataFieldStreaming,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(r.chunks.len());
+        return report;
+    }
+
+    // A scene's streamed asset pack (`docs/formats/field-pack.md`) - one
+    // `container-formats::pack` of PSX TIMs or Legaia TMDs, in the two forms retail reads
+    // it: behind a `(type << 24) | size` DATA_FIELD chunk header (mode `0x14`,
+    // a single-chunk stream) or bare (mode `0x0A`). Both are gated on the
+    // pack's own anchor plus every member carrying one magic that agrees with
+    // the chunk type, which is what keeps this off the weaker `tim_pack` /
+    // `lzs_container` heuristics that used to split the 23 carriers four ways.
+    //
+    // Runs AFTER the multi-chunk streaming arm on purpose: a carrier whose
+    // trailing bytes parse as further chunks is a richer reading and keeps its
+    // real chunk count.
+    if let Some(p) = scene_carrier_pack(buf) {
+        let mut report = mk(
+            if p.chunk_header.is_some() {
+                Class::DataFieldStreaming
+            } else {
+                Class::Pack
+            },
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        if p.chunk_header.is_some() {
+            report.stream_chunks = Some(1);
+        }
+        return report;
+    }
+
+    // MIPS overlay-code blob - leads with `addiu sp, sp, -X`. Specific
+    // 4-byte signature with no overlap against any other detector. Runs early
+    // so we don't waste time on heavier structural checks.
+    if legaia_overlay_images::mips_overlay::detect(buf).is_some() {
+        return mk(
+            Class::MipsOverlay,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Sister of `mips_overlay` - leads with a 4–64 u32 run, each in the
+    // overlay window. Strict structural detector with no overlap against
+    // any other class.
+    if legaia_overlay_images::overlay_ptr_table::detect(buf).is_some() {
+        return mk(
+            Class::OverlayPtrTable,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Scripted scene-asset-table - `[u16 prescript][bodies][pad][scene_asset_table]`.
+    // Runs before plain `scene_asset_table` because the script-prefixed
+    // variant is strictly more specific.
+    if legaia_scene_formats::scene_scripted_asset_table::detect(buf).is_some() {
+        return mk(
+            Class::SceneScriptedAssetTable,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // 7-asset scene table - leads with `07 00 00 00`, then 7 descriptor pairs.
+    // Strict structural detector (no LZS-decode requirement) so it captures
+    // both the LZS-payload and raw-payload variants uniformly. Runs before
+    // lzs_container so the 26 entries that previously matched as `n=1`
+    // (a coincidental first-descriptor match) get the more specific class.
+    if legaia_scene_formats::scene_asset_table::detect(buf).is_some() {
+        return mk(
+            Class::SceneAssetTable,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Scene event-scripts, high-confidence tier: the `[u16 count][u16 offsets]`
+    // prescript shape plus a frame-opener-rate floor (records leading with the
+    // `model_sel = -1` transform-node sentinel). Runs after both
+    // scripted-and-asset-table and plain asset-table so the more specific
+    // layouts claim their entries first. The shape-only tier for the carriers
+    // whose records are not transform nodes runs near the end of this
+    // function - see `scene_event_scripts::detect_structural`.
+    if legaia_scene_formats::scene_event_scripts::detect(buf).is_some() {
+        return mk(
+            Class::SceneEventScripts,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Battle-data pack - `[header][record[0] LZS][descriptor table][slot
+    // region]`. The detector is strict (chained `[id, offset, size]`
+    // entries from offset 0 with sector-aligned sizes, all-zero
+    // terminator, every slot's dec_size prefix in range, data_base
+    // self-corrects to the right sector boundary) so it claims entries
+    // before weaker shape heuristics fire on them. The four player files
+    // are all > 0x10000 - skip the detector for small entries to avoid
+    // wasted work.
+    if buf.len() >= 0x10000 && legaia_actor_formats::battle_data_pack::detect(buf).is_some() {
+        return mk(
+            Class::BattleDataPack,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // v12 strict-magic header - `[N+4, 0x12, 0, 0x14, ?, N, 0, N+2]`. This
+    // outer-shape header at offset 0 is more authoritative than fieldpack
+    // magic that may appear deeper in the file (e.g. `0002_gameover_data.BIN`
+    // has v12 at offset 0 and a fieldpack-shaped region at 0x39800).
+    if legaia_scene_formats::scene_v12_table::detect(buf).is_some() {
+        return mk(
+            Class::SceneV12Table,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Effect-bundle: a strict-schema detector, gated before the weaker
+    // heuristics so the most-specific signature wins.
+    if legaia_container_formats::effect_bundle::detect(buf).is_some() {
+        return mk(
+            Class::EffectBundle,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // TMD-prefixed scene stream - `[u32 size][bare TMD][streaming chunks]`.
+    // Strict structural detector (TMD magic at +4, sane nobj, in-bounds size
+    // prefix, walkable streaming tail) - runs before the weaker LZS-container
+    // and stage-geometry heuristics so the most-specific schema wins.
+    if let Some(s) = legaia_scene_formats::scene_tmd_stream::detect(buf) {
+        let mut report = mk(
+            Class::SceneTmdStream,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(s.tail_chunks.len());
+        return report;
+    }
+
+    // TMD-with-size-prefix - sister of `scene_tmd_stream` for the truncated
+    // case (claimed_total > on-disc len). Runs immediately after
+    // `scene_tmd_stream` so any complete-on-disc TMD-stream files are claimed
+    // by the more permissive sister detector first.
+    if let Some(t) = legaia_container_formats::tmd_size_prefix::detect(buf) {
+        let mut report = mk(
+            Class::TmdSizePrefix,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.tmd_size_prefix_total = Some(t.claimed_total);
+        return report;
+    }
+
+    // VAB-prefixed scene stream - same outer wrapper as scene_tmd_stream, but
+    // chunk0 carries a Sony VAB sound bank (`VABp` magic at +4). Strict
+    // structural detector validates the magic + version + ps/ts counts.
+    if let Some(s) = legaia_container_formats::scene_vab_stream::detect(buf) {
+        let mut report = mk(
+            Class::SceneVabStream,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(s.tail_chunks);
+        return report;
+    }
+
+    // Multi-bank VAB archive - `[u32 reserved=0][u32 count][u32 sector_nums[count]]`
+    // with VABp magic at `sector_nums[0] * 0x800 + 4`. Covers the level_up
+    // cluster (206 VABp entries). Runs after scene_vab_stream so the more
+    // common streaming wrapper claims its entries first.
+    if legaia_container_formats::vab_multi_bank::detect(buf).is_some() {
+        return mk(
+            Class::VabMultiBank,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Battle side-band streaming files (`summon.dat` / `readef.DAT`): a flat
+    // array of `0x10800`-byte slots. **Must run before `monster_sound_bank`** -
+    // `summon.dat` opens with `[u32 mode=2]` followed by a 256-entry CLUT whose
+    // every colour has the STP bit set, which is byte-for-byte the shape that
+    // detector reads as "256 SPU addresses, all >= 0x8000".
+    if let Some(sb) = legaia_actor_formats::summon_readef::detect(buf) {
+        let mut report = mk(
+            Class::SummonReadef,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(sb.slots.len());
+        return report;
+    }
+
+    // Runtime `efect.dat` 2-pack. Runs after every magic-prefixed container so
+    // the specific schemas claim their entries first - the two leading words
+    // are plain offsets, so the shape alone is weaker than a magic word.
+    if legaia_container_formats::efect_pack::detect(buf).is_some() {
+        return mk(
+            Class::EfectPack,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Monster / actor SPU sound bank: `[u32 format=2][u16 spu_addrs[256]][ADPCM...]`.
+    // All 256 u16 address-table entries have bit 15 set (>= 0x8000 = active slot).
+    if first_u32 == Some(2) && buf.len() >= 4 + 256 * 2 {
+        let all_high = (0..256usize).all(|i| {
+            let p = 4 + i * 2;
+            let v = u16::from_le_bytes([buf[p], buf[p + 1]]);
+            v >= 0x8000
+        });
+        if all_high {
+            return mk(
+                Class::MonsterSoundBank,
+                size,
+                head,
+                first_u32,
+                entropy_bits,
+                leading_zeros,
+                zero_fraction,
+            );
+        }
+    }
+
+    // Large zero-padded header (>= 2 sectors of zeros) with high-entropy body.
+    // Typical of cutscene/XA audio files where the leading sector(s) are zeroed.
+    if leading_zeros >= 512 && entropy_bits >= 7.0 {
+        return mk(
+            Class::ZeroSectorHighEntropy,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Standalone TIM-pack heuristic (`byte[3]==0x01 && byte[2]<0x10`).
+    if legaia_prot::timpack::is_tim_pack(buf) {
+        return mk(
+            Class::TimPack,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Stage-geometry table (Cluster A successor). One run of >= 4
+    // consecutive records is enough - the 12-byte signature is too
+    // specific to coincide.
+    let geom_tables = legaia_scene_formats::stage_geom::scan(buf);
+    if let Some(largest) = geom_tables.iter().max_by_key(|t| t.records) {
+        let mut report = mk(
+            Class::StageGeometry,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stage_geom_records = Some(largest.records);
+        return report;
+    }
+
+    // player.lzs-style container. The count retail uses is the header's own
+    // word (`FUN_80020224`: `lw s3,0x0(s4)`), so that is tried first and is
+    // what the report carries when it fits. The fitted list behind it is a
+    // 1990s-vintage fallback that predates reading the walker, and it is the
+    // reason this class cannot be taken at face value: it never consults the
+    // count word, so a buffer whose first words merely *pass* the
+    // per-descriptor checks joins the class with a count nothing on the disc
+    // states. Three retail entries are in it for exactly that reason - see
+    // `docs/tooling/byte-accounting.md`. The fallback stays because dropping
+    // it would strand those three in `unknown_*` without making them any less
+    // recognised than they are now.
+    if let Some(n) = retail_descriptor_count(buf) {
+        let mut report = mk(
+            Class::LzsContainer,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.lzs_descriptor_count = Some(n);
+        return report;
+    }
+    for &n in &[1usize, 2, 3, 4, 8, 16] {
+        if let Some(_count) = try_lzs_container(buf, n) {
+            let mut report = mk(
+                Class::LzsContainer,
+                size,
+                head,
+                first_u32,
+                entropy_bits,
+                leading_zeros,
+                zero_fraction,
+            );
+            report.lzs_descriptor_count = Some(n);
+            return report;
+        }
+    }
+
+    // `bse.dat` master sound bank - `[u16 tag][u16 body_offset = 4][8-byte
+    // records]`. Runs before the statistical buckets: both carriers are sparse
+    // or dense enough to land in one of them otherwise (`overlay_data_blob`
+    // and `unknown_high_entropy` respectively).
+    if let Some(bank) = legaia_container_formats::bse_bank::detect(buf) {
+        let mut report = mk(
+            Class::BseBank,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(bank.records);
+        return report;
+    }
+
+    // Scene event-scripts, shape-only tier. Deliberately last among the named
+    // detectors: the prescript table is a weaker signature than any magic
+    // word, so it only gets to claim what nothing else recognised. Placed
+    // after `bse_bank` in particular, whose `[u16 tag][u16 body_offset = 4]`
+    // header is the degenerate one-record form of this very table.
+    if legaia_scene_formats::scene_event_scripts::detect_structural(buf).is_some() {
+        return mk(
+            Class::SceneEventScripts,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Overlay *data* image - a NUL-terminated ASCII pool (file paths, scene
+    // names) followed by a run of overlay-window pointers. Structural sibling
+    // of `mips_overlay` / `overlay_ptr_table`, which both require their
+    // signature at offset 0 and so miss an image whose string pool comes first.
+    //
+    // This must run **before** the `mostly_zeros` gate. An overlay data
+    // segment is mostly bss, so the zero-fraction test would otherwise file
+    // real content under a placeholder verdict, and the printable-ASCII test
+    // below cannot rescue it because the zeros dilute the ratio under its
+    // threshold.
+    if is_overlay_data_image(buf) {
+        return mk(
+            Class::OverlayDataBlob,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Mostly-zeros placeholder. Run after structural detectors so a sparse
+    // stage-geometry / streaming entry isn't shadowed. The 0.75 threshold
+    // catches near-empty PROT slots without sweeping in real (sparse) tables.
+    if zero_fraction >= 0.75 {
+        return mk(
+            Class::MostlyZeros,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Mid-entropy data blob with significant printable ASCII content.
+    // Covers overlay string tables, text data dumps, and mixed game data where
+    // the format is not yet identified but readable text content is present.
+    if entropy_bits < 7.0 {
+        let visible: f32 = buf
+            .iter()
+            .filter(|&&b| (0x20..=0x7E).contains(&b) || matches!(b, 9 | 10 | 13))
+            .count() as f32
+            / size as f32;
+        if visible >= 0.18 {
+            return mk(
+                Class::OverlayDataBlob,
+                size,
+                head,
+                first_u32,
+                entropy_bits,
+                leading_zeros,
+                zero_fraction,
+            );
+        }
+    }
+
+    // Statistical fallback.
+    let class = if entropy_bits >= 7.5 {
+        Class::UnknownHighEntropy
+    } else if entropy_bits < 4.0 {
+        Class::UnknownLowEntropy
+    } else {
+        Class::UnknownOther
+    };
+    mk(
+        class,
+        size,
+        head,
+        first_u32,
+        entropy_bits,
+        leading_zeros,
+        zero_fraction,
+    )
+}
+
+/// Minimum overlay-window pointer words a run must have to count as a table.
+const OVERLAY_PTR_RUN_MIN: usize = 8;
+
+/// How far past the string pool the pointer table / code may start.
+const OVERLAY_POOL_SCAN_BYTES: usize = 0x800;
+
+/// Recognises an overlay **data** image: a leading NUL-terminated ASCII pool
+/// (the overlay's file-path / scene-name / debug-format literals) followed,
+/// within the first sector, by *either* a run of at least
+/// [`OVERLAY_PTR_RUN_MIN`] consecutive words in the `0x801C0000..=0x801FFFFF`
+/// overlay load window, *or* a MIPS function prologue.
+///
+/// The sibling detectors [`legaia_overlay_images::mips_overlay`] and
+/// [`legaia_overlay_images::overlay_ptr_table`] both anchor their signature at offset 0, so
+/// neither reaches an image that opens with its string pool - and that
+/// argument applies to both of them, which is why there are two arms here.
+/// Requiring a printable first byte *and* one of the two genuine follow-ups
+/// keeps this from firing on ordinary sparse tables: across the PROT corpus
+/// the pair matches only entries in the `xxx_dat` / `other_game` overlay
+/// clusters.
+fn is_overlay_data_image(buf: &[u8]) -> bool {
+    if buf.len() < 0x200 || !(0x20..=0x7E).contains(&buf[0]) {
+        return false;
+    }
+    let word = |at: usize| u32::from_le_bytes(buf[at..at + 4].try_into().unwrap());
+    let scan_end = buf.len().min(OVERLAY_POOL_SCAN_BYTES);
+    let mut at = 0usize;
+    while at + 4 * OVERLAY_PTR_RUN_MIN <= scan_end {
+        let run = (0..)
+            .take_while(|k| {
+                let p = at + k * 4;
+                p + 4 <= buf.len() && (0x801C_0000..=0x801F_FFFF).contains(&word(p))
+            })
+            .count();
+        if run >= OVERLAY_PTR_RUN_MIN {
+            return true;
+        }
+        at += 4;
+    }
+    // Second arm: the pool is followed by code rather than by a pointer table.
+    // `0974_other_game.BIN` is the retail case - `"OTHER3 \n"`, three printf
+    // formats, then `addiu sp, sp, -0x40` at `+0x44`. Offset 0 is excluded
+    // because `mips_overlay` already owns it (and a prologue there would mean
+    // a non-printable first byte anyway).
+    (4..scan_end)
+        .step_by(4)
+        .take_while(|p| p + 8 <= scan_end)
+        .any(|p| legaia_overlay_images::mips_overlay::detect(&buf[p..]).is_some())
+}
+
+/// Length of the pochi fill **file** - every byte a filler slot declares.
+///
+/// 37 lines of `"pochi"` x 10 (50 ASCII bytes) each closed by CRLF, then one
+/// empty CRLF line, then the `0x1A` DOS EOF byte at `+0x786`: `0x787` bytes,
+/// byte-identical in all 266 filler slots and in the type-`0x14` descriptor
+/// slot of the count-4 / count-5 scene bundles (`docs/formats/pochi.md`).
+///
+/// The two bytes before the EOF marker are that empty line, not a truncated
+/// `"po"` - the earlier reading split `0x786 = 37 * 52 + 2` the other way and
+/// attributed the remainder to the fill word rather than to a line break.
+pub const POCHI_FILL_LEN: usize = 0x787;
+
+/// Detects the "pochi-fill" placeholder pattern used in unused PROT slots.
+///
+/// Layout:
+/// - `0x000..0x784`: 37 lines of `"pochi"` x 10 (50 ASCII bytes) + CRLF.
+/// - `0x784..0x786`: one empty line (CRLF).
+/// - `0x786`: `0x1A`, the DOS EOF marker. [`POCHI_FILL_LEN`] is one past it.
+/// - `0x787..end`: **not** fill - the mastering buffer's previous contents at
+///   the same file offset, which is why it differs from slot to slot.
+///
+/// The prefix is not validated byte by byte: the first five bytes plus the
+/// marker at `0x786` are already specific (no real format starts with five
+/// ASCII letters and puts `0x1A` at exactly that offset), and the whole-file
+/// identity is a corpus property the format page carries rather than a thing
+/// each call re-measures.
+pub fn is_pochi_filler(buf: &[u8]) -> bool {
+    buf.len() > 0x786 && buf.starts_with(b"pochi") && buf[0x786] == 0x1A
+}
+
+/// The descriptor count the **runtime walker** would use, when the buffer is a
+/// descriptor bundle by the walker's own rules
+/// ([`legaia_scene_formats::scene_asset_table::descriptor_bundle_walk`]) and at least one
+/// descriptor's stream really decodes.
+///
+/// [`try_lzs_container`] cannot answer this. It never reads the count word -
+/// it fits one from a fixed list - and its per-descriptor floor of 32 bytes
+/// rejects the 4-byte ANM slot that eleven retail count-4 bundles carry, so
+/// every one of them used to be reported as `n = 1`: a count no descriptor
+/// table on this disc states, arrived at because validating only the first
+/// descriptor is vacuously easy.
+fn retail_descriptor_count(buf: &[u8]) -> Option<usize> {
+    let descriptors = legaia_scene_formats::scene_asset_table::descriptor_bundle_walk(buf)?;
+    let decodes = descriptors.iter().any(|d| {
+        let desc = legaia_container_formats::Descriptor {
+            type_byte: d.type_byte,
+            size: d.size,
+            data_offset: d.data_offset,
+        };
+        legaia_container_formats::decode(buf, &desc, legaia_container_formats::DecodeMode::Lzs)
+            .is_ok()
+    });
+    decodes.then_some(descriptors.len())
+}
+
+fn try_lzs_container(buf: &[u8], count: usize) -> Option<usize> {
+    let header_end = (8 + count * 8) as u32;
+    let c = parse_player_lzs(buf, count).ok()?;
+    // All descriptors need: known type, sane size, in-bounds offset.
+    if !c.descriptors.iter().all(|d| {
+        !matches!(d.asset_type(), AssetType::Unknown(_))
+            && (32..=4 * 1024 * 1024).contains(&d.size)
+            && d.data_offset >= header_end
+            && (d.data_offset as usize) < buf.len()
+    }) {
+        return None;
+    }
+    // At least one must decode via LZS to count as evidence.
+    let any_lzs = c.descriptors.iter().any(|d| {
+        legaia_container_formats::decode(buf, d, legaia_container_formats::DecodeMode::Lzs).is_ok()
+    });
+    if any_lzs { Some(count) } else { None }
+}
+
+fn mk(
+    class: Class,
+    size: usize,
+    head: String,
+    first_u32: Option<u32>,
+    entropy_bits: f32,
+    leading_zeros: usize,
+    zero_fraction: f32,
+) -> FileReport {
+    FileReport {
+        class,
+        size,
+        head,
+        first_u32,
+        entropy_bits,
+        leading_zeros,
+        zero_fraction,
+        stream_chunks: None,
+        lzs_descriptor_count: None,
+        stage_geom_records: None,
+        tmd_size_prefix_total: None,
+    }
+}
+
+fn hex_head(buf: &[u8], n: usize) -> String {
+    buf.iter()
+        .take(n)
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn entropy(buf: &[u8]) -> f32 {
+    if buf.is_empty() {
+        return 0.0;
+    }
+    let mut counts = [0u32; 256];
+    for &b in buf {
+        counts[b as usize] += 1;
+    }
+    let n = buf.len() as f32;
+    let mut h = 0.0f32;
+    for c in counts.iter().filter(|&&c| c > 0) {
+        let p = (*c as f32) / n;
+        h -= p * p.log2();
+    }
+    h
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_all_zeros() {
+        let r = classify(&vec![0u8; 1024]);
+        assert_eq!(r.class, Class::AllZeros);
+        assert_eq!(r.zero_fraction, 1.0);
+    }
+
+    #[test]
+    fn detects_mostly_zeros_above_threshold() {
+        // 1024 zeros + 10 non-zero bytes = ~99% zeros.
+        let mut buf = vec![0u8; 1024];
+        for i in 0..10 {
+            buf.push(0xAA + i as u8);
+        }
+        let r = classify(&buf);
+        assert_eq!(r.class, Class::MostlyZeros);
+        assert!(r.zero_fraction >= 0.75);
+    }
+
+    #[test]
+    fn does_not_classify_50pct_zeros_as_mostly_zeros() {
+        // Sparse-but-real tables (< 75% zeros) must stay below the
+        // mostly_zeros threshold so they get reverse-engineered.
+        let mut buf = vec![0u8; 1024];
+        // 512 non-zero bytes scattered = 50% zeros - below 75% threshold.
+        for i in 0..512 {
+            buf[i * 2] = 0xAA;
+        }
+        let r = classify(&buf);
+        assert_ne!(r.class, Class::MostlyZeros);
+    }
+
+    /// `[u32 count][u32 word_offset[count]]` + `count` members of `member_len`
+    /// bytes each, every one opening with `magic`. `chunk_type` prepends the
+    /// `(type << 24) | payload_len` DATA_FIELD chunk header the chunk-headered
+    /// carriers lead with.
+    fn synthetic_scene_pack(
+        count: usize,
+        member_len: usize,
+        magic: u32,
+        chunk_type: Option<u8>,
+    ) -> Vec<u8> {
+        let mut pack = Vec::new();
+        pack.extend_from_slice(&(count as u32).to_le_bytes());
+        let table_end = 4 + 4 * count;
+        for i in 0..count {
+            let byte_off = table_end + i * member_len;
+            pack.extend_from_slice(&((byte_off / 4) as u32).to_le_bytes());
+        }
+        for _ in 0..count {
+            pack.extend_from_slice(&magic.to_le_bytes());
+            pack.resize(pack.len() + member_len - 4, 0x5A);
+        }
+        match chunk_type {
+            Some(t) => {
+                let mut out = Vec::new();
+                out.extend_from_slice(&(((t as u32) << 24) | pack.len() as u32).to_le_bytes());
+                out.extend_from_slice(&pack);
+                // Sector pad, as on disc - and the streaming walker's
+                // terminator.
+                out.resize(out.len().next_multiple_of(0x800), 0);
+                out
+            }
+            None => pack,
+        }
+    }
+
+    /// A carrier behind a `TIM_LIST` chunk header is a single-chunk DATA_FIELD
+    /// stream, which is what retail reads it as (`FUN_8002541C` mode `0x14`).
+    #[test]
+    fn chunk_headered_scene_pack_is_a_stream() {
+        let buf = synthetic_scene_pack(8, 0x40, MEMBER_MAGIC_TIM, Some(0x01));
+        let r = classify(&buf);
+        assert_eq!(r.class, Class::DataFieldStreaming);
+        assert_eq!(r.stream_chunks, Some(1));
+    }
+
+    /// The bare form - no chunk header - is the mode-`0x0A` pack.
+    #[test]
+    fn bare_scene_pack_is_a_pack() {
+        let buf = synthetic_scene_pack(8, 0x40, MEMBER_MAGIC_TMD, None);
+        assert_eq!(classify(&buf).class, Class::Pack);
+    }
+
+    /// The pack anchor alone is not enough to claim an entry: the members have
+    /// to agree on one magic, and (chunk-headered) agree with the type byte.
+    #[test]
+    fn scene_pack_needs_uniform_member_magic() {
+        let mut buf = synthetic_scene_pack(8, 0x40, MEMBER_MAGIC_TIM, None);
+        let table_end = 4 + 4 * 8;
+        buf[table_end..table_end + 4].copy_from_slice(&0xDEAD_BEEFu32.to_le_bytes());
+        assert_ne!(classify(&buf).class, Class::Pack);
+    }
+
+    /// A `TIM_LIST` header over Legaia TMD members is not a carrier - the type
+    /// byte and the member magic must agree, as they do in all 23 retail ones.
+    #[test]
+    fn scene_pack_rejects_a_type_byte_the_members_contradict() {
+        let buf = synthetic_scene_pack(8, 0x40, MEMBER_MAGIC_TMD, Some(0x01));
+        assert_ne!(classify(&buf).class, Class::DataFieldStreaming);
+    }
+
+    /// The two retired classes are produced by nothing.
+    #[test]
+    fn retired_classes_are_never_produced() {
+        for buf in [
+            synthetic_scene_pack(8, 0x40, MEMBER_MAGIC_TIM, Some(0x01)),
+            synthetic_scene_pack(2, 0x8220, MEMBER_MAGIC_TIM, None),
+        ] {
+            let c = classify(&buf).class;
+            assert_ne!(c, Class::DataFieldTruncated);
+            assert_ne!(c, Class::TimPack);
+        }
+    }
+
+    #[test]
+    fn detects_tim_passthrough() {
+        let mut buf = vec![0x10u8, 0, 0, 0, 0x08, 0, 0, 0];
+        buf.resize(64, 0xAA);
+        let r = classify(&buf);
+        assert_eq!(r.class, Class::TimPassthrough);
+    }
+
+    #[test]
+    fn detects_seq_container() {
+        // pQES + version 1 BE + ppqn 480 BE + tempo 500_000 us + 4/4
+        let mut buf = b"pQES".to_vec();
+        buf.extend_from_slice(&[0x00, 0x01]); // version
+        buf.extend_from_slice(&[0x01, 0xE0]); // ppqn
+        buf.extend_from_slice(&[0x07, 0xA1, 0x20]); // tempo
+        buf.push(0x04);
+        buf.push(0x02);
+        buf.resize(128, 0); // event stream filler
+        let r = classify(&buf);
+        assert_eq!(r.class, Class::SeqContainer);
+    }
+
+    #[test]
+    fn rejects_seq_with_wrong_version() {
+        let mut buf = b"pQES".to_vec();
+        buf.extend_from_slice(&[0x00, 0x02]); // version 2 - not the SsAPI shape
+        buf.resize(128, 0);
+        let r = classify(&buf);
+        assert_ne!(r.class, Class::SeqContainer);
+    }
+
+    #[test]
+    fn detects_constant_byte() {
+        let r = classify(&vec![0xAAu8; 1024]);
+        assert_eq!(r.class, Class::ConstantByte);
+    }
+
+    #[test]
+    fn detects_empty_and_tiny() {
+        assert_eq!(classify(&[]).class, Class::Empty);
+        assert_eq!(classify(&[1, 2, 3]).class, Class::Tiny);
+    }
+
+    #[test]
+    fn high_entropy_random_bytes() {
+        let buf: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
+        let r = classify(&buf);
+        // 256 symbols uniform → 8 bits of entropy
+        assert!(r.entropy_bits > 7.9);
+        assert_eq!(r.class, Class::UnknownHighEntropy);
+    }
+
+    #[test]
+    fn low_entropy_repetitive() {
+        // 4096-byte buffer at ~50% zeros (below the 75% MostlyZeros gate)
+        // with a 4-symbol alphabet - low entropy but real content.
+        let mut buf = vec![0u8; 4096];
+        // Alternate 0x00 / (1,2,3 cycling) every other byte → 50% zeros.
+        for i in 0..2048 {
+            buf[i * 2] = (i % 3 + 1) as u8;
+        }
+        let r = classify(&buf);
+        assert!(r.entropy_bits < 4.0, "entropy was {}", r.entropy_bits);
+        assert!(
+            r.zero_fraction < 0.75,
+            "zero_fraction was {}",
+            r.zero_fraction
+        );
+        assert_eq!(r.class, Class::UnknownLowEntropy);
+    }
+}

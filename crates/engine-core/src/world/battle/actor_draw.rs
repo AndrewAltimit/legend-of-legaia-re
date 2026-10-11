@@ -1,18 +1,19 @@
 //! The battle per-actor draw's per-object colour rule, resolved against
 //! live world state for the two hosts' battle actor passes.
 //!
-//! The kernel is [`legaia_engine_vm::battle_actor_draw`] (the port of
+//! The kernel is [`legaia_engine_battle_vm::battle_actor_draw`] (the port of
 //! `FUN_80048A08`); this block supplies what retail reads through its
 //! globals: the seat (`+0x5A`), the seated actor's status word (`+0x16E`),
 //! the present-party roster id (`0x8007BD10[seat]`) and the render node's
 //! colour word (`+0x74`).
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
-use legaia_engine_vm::battle_actor_draw::LimbDimPlan;
-use legaia_engine_vm::battle_actor_tick as tick;
-use legaia_engine_vm::battle_actor_tint as tint;
-use legaia_engine_vm::battle_cam_script::BattleCamPose;
+use legaia_engine_battle_vm::battle_actor_draw::LimbDimPlan;
+use legaia_engine_battle_vm::battle_actor_tick as tick;
+use legaia_engine_battle_vm::battle_actor_tint as tint;
+use legaia_engine_battle_vm::battle_cam_script::BattleCamPose;
 
 /// The body radius a party seat carries at `*(actor[+0x22C]) + 0x58`:
 /// `640` on 212 of the 213 party seats read across the catalogued battle
@@ -67,18 +68,18 @@ impl BattleActorDrawPlan {
     /// (`B + F/4`) for a body the near-camera ghost pass `FUN_8004DC68`
     /// flagged. `None` for an opaque body.
     pub fn semi_mode(&self) -> Option<u8> {
-        crate::battle_body_blend::draw_colour_semi_mode(self.draw_colour)
+        legaia_engine_battle::battle_body_blend::draw_colour_semi_mode(self.draw_colour)
     }
 
     /// Apply this body's whole-mesh semi-transparency
-    /// ([`crate::battle_body_blend::apply_body_blend`]) to a `[cba, tsb]`
+    /// ([`legaia_engine_battle::battle_body_blend::apply_body_blend`]) to a `[cba, tsb]`
     /// stream. Every stream the body draws takes it - a posed rebuild and
     /// the rest mesh alike - since retail's dispatcher ORs the word into
     /// every packet whatever pose the object is in. Both hosts call this:
     /// the native window on the per-frame posed mesh and on the rest mesh's
     /// blended override, the browser page on its blend re-upload.
     pub fn apply_body_blend(&self, cba_tsb: &mut [[u16; 2]]) {
-        crate::battle_body_blend::apply_body_blend(cba_tsb, self.semi_mode());
+        legaia_engine_battle::battle_body_blend::apply_body_blend(cba_tsb, self.semi_mode());
     }
 
     /// Whether the body takes the tint pass's cue (`cue_far` / `cue_ir0`)
@@ -90,7 +91,7 @@ impl BattleActorDrawPlan {
     /// ([`Self::apply_body_blend`]), so the answer does not depend on
     /// whether the body is posed.
     pub fn tint_cue_applies(&self, render_flag: u8) -> bool {
-        use legaia_engine_vm::battle_action as ba;
+        use legaia_engine_battle_vm::battle_action as ba;
         !matches!(
             render_flag,
             ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED
@@ -118,7 +119,7 @@ impl BattleActorDrawPlan {
     ) -> Option<([f32; 3], f32)> {
         match plan {
             Some(p) if p.tint_cue_applies(render_flag) => Some((p.cue_far(), p.cue_ir0())),
-            _ => legaia_engine_vm::battle_action::cursor_cue(render_flag, display_frames),
+            _ => legaia_engine_battle_vm::battle_action::cursor_cue(render_flag, display_frames),
         }
     }
 
@@ -188,10 +189,10 @@ impl World {
         let roster_id = u8::try_from(self.party_roster_slot(actor_idx) + 1).ok()?;
         let status = self.battle.status_effects.display_flags(actor_idx as u8);
         let word = match actor.battle.render_color {
-            0 => legaia_engine_vm::battle_impact_fx::IMPACT_NEUTRAL_STATE,
+            0 => legaia_engine_battle_vm::battle_impact_fx::IMPACT_NEUTRAL_STATE,
             w => w,
         };
-        let [r, g, b] = legaia_engine_vm::battle_impact_fx::unpack_actor_state_rgb(word);
+        let [r, g, b] = legaia_engine_battle_vm::battle_impact_fx::unpack_actor_state_rgb(word);
         let colour = u32::from(r) | (u32::from(g) << 8) | (u32::from(b) << 16);
         LimbDimPlan::resolve(
             colour,
@@ -257,7 +258,7 @@ impl World {
         };
         let b = &actor.battle;
         let view_z = match pose {
-            Some(p) => legaia_engine_vm::battle_cam_script::battle_view_depth(
+            Some(p) => legaia_engine_battle_vm::battle_cam_script::battle_view_depth(
                 p,
                 world_scale,
                 [
@@ -273,7 +274,7 @@ impl World {
         // presentation arm (the capture / defeat fade ramps the lanes down
         // with `+0x21C` raised).
         let lanes = match (b.render_color, b.render_flag) {
-            (0, 0) => legaia_engine_vm::battle_impact_fx::IMPACT_NEUTRAL_STATE,
+            (0, 0) => legaia_engine_battle_vm::battle_impact_fx::IMPACT_NEUTRAL_STATE,
             (w, _) => w,
         };
         let t = tint::battle_actor_tint(&tint::BattleTintInputs {
@@ -322,9 +323,9 @@ impl World {
     /// Retail draws it at the end of the per-actor draw `FUN_80048A08`
     /// (`0x80049034..0x800492BC`): the point under the actor (its height
     /// `+0x16` zeroed), a 24-column disc of radius `+0x58 * 4 / 10` built by
-    /// `FUN_80028158` in mode `1` ([`crate::effect_default_arm::ground_shadow_mesh`]),
+    /// `FUN_80028158` in mode `1` ([`legaia_engine_effects::effect_default_arm::ground_shadow_mesh`]),
     /// subtracted from the frame (flag word `0x8A000000`). The colours are
-    /// `legaia_engine_vm::battle_actor_draw::shadow_plan` over the draw
+    /// `legaia_engine_battle_vm::battle_actor_draw::shadow_plan` over the draw
     /// colour word. The skip flag `+0x6A` is not modelled (no engine actor
     /// carries it), so every drawn body casts one.
     ///
@@ -334,7 +335,7 @@ impl World {
         &self,
         actor_idx: usize,
         plan: &BattleActorDrawPlan,
-    ) -> Option<crate::effect_ribbon::RibbonDraw> {
+    ) -> Option<legaia_engine_effects::effect_ribbon::RibbonDraw> {
         if self.mode != SceneMode::Battle || !plan.drawn {
             return None;
         }
@@ -348,8 +349,9 @@ impl World {
         } else {
             actor_idx - pc + 3
         };
-        let skip = legaia_engine_vm::battle_actor_draw::body_shadow_skip(pool_slot as i16, false);
-        let shadow = legaia_engine_vm::battle_actor_draw::shadow_plan(
+        let skip =
+            legaia_engine_battle_vm::battle_actor_draw::body_shadow_skip(pool_slot as i16, false);
+        let shadow = legaia_engine_battle_vm::battle_actor_draw::shadow_plan(
             skip,
             plan.draw_colour,
             m.world_y,
@@ -360,12 +362,12 @@ impl World {
         if !shadow.drawn {
             return None;
         }
-        let mesh = crate::effect_default_arm::ground_shadow_mesh(
+        let mesh = legaia_engine_effects::effect_default_arm::ground_shadow_mesh(
             shadow.inner,
             shadow.outer,
             shadow.radius,
         );
-        Some(crate::effect_ribbon::RibbonDraw {
+        Some(legaia_engine_effects::effect_ribbon::RibbonDraw {
             mesh,
             world_pos: [
                 f32::from(m.world_x),
@@ -386,7 +388,7 @@ impl World {
     pub fn battle_ground_shadows(
         &self,
         plan_of: impl Fn(usize) -> Option<BattleActorDrawPlan>,
-    ) -> Vec<crate::effect_ribbon::RibbonDraw> {
+    ) -> Vec<legaia_engine_effects::effect_ribbon::RibbonDraw> {
         if self.mode != SceneMode::Battle {
             return Vec::new();
         }
@@ -424,8 +426,9 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_vm::battle_actor_draw::RotLimbTable;
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::battle_actor_draw::RotLimbTable;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
+    use legaia_engine_mode::mode::SceneMode;
 
     fn world_with_table() -> World {
         let mut world = World::default();
@@ -597,7 +600,9 @@ mod tests {
             world.tick_battle_animations();
         }
         assert_eq!(
-            vm::battle_ground_grid::ambient_base_rgb(world.battle_ctx.ambient_base),
+            legaia_engine_battle_vm::battle_ground_grid::ambient_base_rgb(
+                world.battle_ctx.ambient_base
+            ),
             [0x20; 3]
         );
         assert_eq!(world.battle_ambient_base(), [0x28; 3]);

@@ -14,7 +14,7 @@
 //!
 //! ## The actor contract
 //!
-//! The state machine is [`legaia_engine_vm::code_lock_actor::CodeLockActor`].
+//! The state machine is [`legaia_engine_field::code_lock_actor::CodeLockActor`].
 //! Retail keeps its phase in the driver actor's `+0x54` ([`HubActor::sub`]),
 //! the entry cursor in `_DAT_8007BB88`, and the entered symbols in the
 //! dispatcher context `DAT_801C6EA4 + 0x54..0x58` ([`HubGrid::columns`]). The
@@ -37,8 +37,10 @@
 //! have no system-UI sprite pass for those records, so a cell is drawn as the
 //! button's letter.
 
-use legaia_engine_vm::baka_hub_actors::{HubAction, HubActor, HubFrame, HubGrid, slot, window};
-use legaia_engine_vm::code_lock_actor::{CODE_LEN, CodeLockActor};
+use legaia_engine_field::code_lock_actor::{CODE_LEN, CodeLockActor};
+use legaia_engine_field::submode_hub_actors::{
+    HubAction, HubActor, HubFrame, HubGrid, slot, window,
+};
 
 use crate::field_submode_flag_window::{FIELD_OVERLAY_BASE, FlagWindowLine, FlagWrite};
 
@@ -175,7 +177,7 @@ impl crate::world::World {
     }
 }
 
-impl crate::scene::SceneHost {
+impl crate::scene_host::SceneHost {
     /// [`crate::world::World::code_lock_lines`] with the header read off the
     /// user's disc (the field overlay, extraction entry `0897`). The native
     /// window and the browser play page both draw this.
@@ -225,7 +227,7 @@ mod tests {
     }
 
     fn enter(w: &mut World, code: &[u8]) {
-        let pack = |m: u32| crate::dev_menu::retail_packed(m as u16);
+        let pack = |m: u32| legaia_engine_system::pad::retail_packed(m as u16);
         for &sym in code {
             w.input.set_pad(pack(bit_for(sym)));
             w.tick_submode_screen(1);

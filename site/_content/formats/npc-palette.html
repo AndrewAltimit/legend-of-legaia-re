@@ -16,7 +16,7 @@
     <dt>Where on disc</dt><dd>Tail of each scene's <a href="scene-bundles.html">scene_tmd_stream</a> PROT entries (town01: entries 0006..0009, one row-479 TIM each)</dd>
     <dt>Uploaded</dt><dd>At battle init only, by the <a href="#how-we-know">battle-init TIM walker</a>; a freshly loaded town has the row empty</dd>
     <dt>Sampled via</dt><dd>CBA cells <code>0x77C0..0x77CF</code> (sixteen 16-colour slots across the row)</dd>
-    <dt>Parser / engine</dt><dd><code>legaia_asset::scene_tmd_stream::battle_tim_chunks</code>, <code>legaia_tim::vram</code>, <code>legaia_tmd::vram_targeted</code></dd>
+    <dt>Parser / engine</dt><dd><code>legaia_scene_formats::scene_tmd_stream::battle_tim_chunks</code>, <code>legaia_tim::vram</code>, <code>legaia_tmd::vram_targeted</code></dd>
     <dt>Confidence</dt><dd>Confirmed - uploader chain traced; row contents byte-matched against emulator VRAM dumps before and after battle</dd>
     <dt>Used by</dt><dd><a href="../subsystems/renderer.html">Renderer</a>, <a href="../npcs.html">NPC browser</a></dd>
   </dl>
@@ -58,7 +58,7 @@
       (a <code>[count + offsets + TIMs]</code> pack), while the battle-init walker's case 1 means "single bare
       TIM via <code>LoadImage</code>". Feeding these chunks to the standard streaming walker mis-reads the TIM
       magic <code>0x10</code> as a 16-entry pack count and crashes.</p>
-      <p><code>legaia_asset::tim_scan</code> detects these TIMs by the inner magic alone;
+      <p><code>legaia_container_formats::tim_scan</code> detects these TIMs by the inner magic alone;
       <code>scene_tmd_stream::battle_tim_chunks</code> is the walker that understands the wrapper. It tags each
       chunk <code>WalkSource::Tail</code> (inside the walker's reach - every retail chunk) or
       <code>WalkSource::Continuation</code> (past the first terminator, i.e. an over-read into the next PROT entry).</p>
@@ -152,8 +152,8 @@
     <div class="disclosure-body">
       <p>The bundle lives at raw TOC entry 0 (CDNAME <code>init_data</code>, <code>PROT.DAT</code> sectors 3..55
       - the region the extraction index space skips, since extraction entry 0 is raw entry 2); a second
-      single-TIM pack sits at raw entry 1. Parser <code>legaia_asset::system_ui_bundle</code> reads both packs
-      straight out of <code>PROT.DAT</code> and reproduces the full upload (<code>legaia_asset::interior_page</code>
+      single-TIM pack sits at raw entry 1. Parser <code>legaia_ui_formats::system_ui_bundle</code> reads both packs
+      straight out of <code>PROT.DAT</code> and reproduces the full upload (<code>legaia_ui_formats::interior_page</code>
       is the atlas-only reader). The pack's six 532-byte non-TIM members are bare <strong>row patches</strong> -
       <code>[u32, u32]</code> preamble + TIM-style <code>[u32 bnum][u16 x,y,w,h]</code> blocks declaring
       <code>(960, 456..458/460..462, 256, 1)</code> - that overlay the atlas image rows in place, byte-exact vs

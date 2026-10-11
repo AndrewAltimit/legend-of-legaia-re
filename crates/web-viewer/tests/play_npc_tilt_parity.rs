@@ -21,8 +21,8 @@
 //! - a scene that authors neither (`town01`) reports an all-zero array, so
 //!   each host's cheap yaw-only model build stays the common path;
 //! - the two hosts' model builds agree on the composition. The native NPC
-//!   pass calls `legaia_engine_render::battle_intro::placement_rotation`,
-//!   which is a re-export of the `legaia_engine_ui` builder called here; the
+//!   pass calls `legaia_render_kernels::battle_intro::placement_rotation`,
+//!   the builder called here; the
 //!   page composes `placementModelEuler` (`site/js/webgl-math.js`), whose
 //!   linear part is transcribed below. A divergence between the two is
 //!   exactly the failure this file exists to catch, and no screenshot of one
@@ -152,8 +152,11 @@ fn both_hosts_compose_the_same_rotation_for_juui1s_live_tilt() {
 
         // Native: the shared kernel, in 12-bit units.
         let u = |v: f32| (v as i32).rem_euclid(4096) as u16;
-        let native =
-            legaia_engine_ui::battle_intro::placement_rotation(u(pitch), u(yaw_units), u(roll));
+        let native = legaia_render_kernels::battle_intro::placement_rotation(
+            u(pitch),
+            u(yaw_units),
+            u(roll),
+        );
         // Page: `placementModelEuler`, in radians.
         let page = page_euler_rows(pitch * A2R, yaw_units * A2R, roll * A2R);
 
@@ -170,7 +173,7 @@ fn both_hosts_compose_the_same_rotation_for_juui1s_live_tilt() {
         }
 
         // And the tilt is not a no-op: a yaw-only matrix would differ.
-        let yaw_only = legaia_engine_ui::battle_intro::placement_rotation(0, u(yaw_units), 0);
+        let yaw_only = legaia_render_kernels::battle_intro::placement_rotation(0, u(yaw_units), 0);
         let differs = (0..3).any(|c| (native.col(c) - yaw_only.col(c)).length() > 1e-4);
         assert!(
             differs,

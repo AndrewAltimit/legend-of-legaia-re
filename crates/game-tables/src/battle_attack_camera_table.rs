@@ -38,7 +38,7 @@
 //! The row *above* the table is the per-character height table
 //! ([`crate::battle_camera_table`], `0x801F4D2C`) and its trailing pointer
 //! list; the region below is the move-power table
-//! (`legaia_asset::move_power`, `0x801F4F5C`).
+//! (`legaia_game_tables::move_power`, `0x801F4F5C`).
 //!
 //! ## What a row means
 //!
@@ -48,7 +48,7 @@
 //! `2` to the yaw and row `3` to the eye-space Z (`0x801D7470`/`0x801D748C`).
 //! The rows are per-arm constants, not a column-typed record, so this parser
 //! exposes them as numbered tracks and leaves the meaning to the arm that
-//! reads them ([`legaia_engine_vm::battle_attack_camera`] on the engine side).
+//! reads them (`legaia_engine_battle_vm::battle_attack_camera` on the engine side).
 //!
 //! ## Provenance
 //!

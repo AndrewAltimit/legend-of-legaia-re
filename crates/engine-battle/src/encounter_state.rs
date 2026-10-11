@@ -1,0 +1,104 @@
+//! Random / scripted encounter state: the per-scene encounter session, the scripted-encounter arm and the roll gates.
+//!
+//! One subsystem's state, held as a unit on the composite `World`.
+//! Fields keep their retail provenance notes.
+
+/// Random / scripted encounter state: the per-scene encounter session, the scripted-encounter arm and the roll gates.
+pub struct EncounterState {
+    /// A tooling knob, not retail state: hold the world `rand()` stream at
+    /// this value at the head of every tick a forced encounter spends in its
+    /// field-side intro transition, and drop the hold once the fight is in
+    /// battle mode. The retail comparison corpus and `play-window --battle`
+    /// pin the stream at the entry so a fight's draws are a property of the
+    /// fight; the field keeps drawing through the transition (NPC and
+    /// ambient programs), so without the hold every field-side change to a
+    /// scene's draw count re-dealt the battle (`player_steal_skeleton_banner`
+    /// lost its phase to a dolk ambient-install fix).
+    pub rng_hold: Option<u32>,
+    /// Pending scripted-encounter install (field-VM bare arm-encounter op
+    /// `0x37`/`0x41`). When that op runs and [`EncounterState::scripted_armed`]
+    /// is set, the host records the bounded record window overlaying the opcode
+    /// here; the field-step driver drains it after the VM borrow ends and feeds
+    /// it to `World::install_scripted_encounter`. `None` between installs.
+    ///
+    /// Retail writes the install opcode pointer into `actor[+0x94]`
+    /// (`0x801DEEDC`) and the 5-state `FUN_801DA51C` SM reads it as a formation
+    /// record once it reaches the encounter-confirm state. There is no
+    /// dedicated encounter opcode - the consuming entity SM is the
+    /// discriminator. `scripted_encounter_armed` is the engine-side stand-in
+    /// for "the active entity is an encounter carrier" until the per-scene
+    /// carrier identity / SM-confirm trigger is pinned from disc bytecode.
+    pub pending_scripted: Option<Vec<u8>>,
+    /// When `true`, the field VM's bare arm-encounter op (`0x37`/`0x41`) is
+    /// treated as a scripted-encounter install: the record window overlaying
+    /// the opcode is parsed as an [`legaia_scene_formats::encounter_record::EncounterRecord`]
+    /// and installed via `World::install_scripted_encounter`, which then
+    /// disarms (fire-once). Default `false` so generic script yields are never
+    /// mistaken for encounter arms. See `World::arm_scripted_encounter`.
+    pub scripted_armed: bool,
+    /// One-shot override: a scripted/forced formation has been installed
+    /// (`World::install_man_formation` / `World::install_encounter_from_record`)
+    /// and the next `World::on_field_step` must fire it regardless of any
+    /// per-region random rate. Retail copies the carrier's `entity[+0x94]`
+    /// formation into the battle cell independent of the random-roll path
+    /// (`FUN_801D9E1C`), so a 0%-random scene (e.g. town01's Rim Elm tutorial)
+    /// still starts the scripted fight. Cleared when the step consumes it.
+    pub scripted_formation_pending: bool,
+    /// Active encounter session - bracketed transition + grace machine for
+    /// step-driven random battles. `Some` when an encounter table is
+    /// installed; `None` in scenes where encounters are disabled
+    /// (towns / cutscenes / world-map). Engines call
+    /// `World::on_field_step` from the field-step path (player walks one
+    /// tile) to advance the tracker; the resulting [`crate::encounter::EncounterPhase`]
+    /// drives the camera-shake / fade / battle-load chain.
+    pub session: Option<crate::encounter::EncounterSession>,
+    /// Cached answer to `World::scene_can_roll_encounters` for the scene
+    /// currently installed, refreshed by
+    /// `World::refresh_encounter_rollable` whenever the encounter tables
+    /// change. Hosts read it per frame (the underlying scan walks region
+    /// AABBs, so it is not a per-frame query) to tell the player that a
+    /// scene has no random encounters *by design* - several retail scenes,
+    /// `town01` among them, have every rollable region shadowed by an
+    /// earlier rate-0 row.
+    pub scene_rollable: bool,
+    /// Frames left on the "no random encounters in this scene" hint, armed by
+    /// `World::arm_live_loop` when the loop lands on such a scene and aged
+    /// by `World::tick`. Read through `World::show_encounter_hint`.
+    pub scene_hint_frames: u16,
+    /// `_DAT_8007B5FC` - the encounter step counter. One retail global, not
+    /// per scene: the region trackers (field + overworld) are seeded from it
+    /// when a scene installs them and write it back after every step, and the
+    /// non-roll writers (field-VM op `4C EC`, the op-`0x3E` formation arm,
+    /// the scene-entry top-up) set it through
+    /// `World::set_encounter_step_counter`.
+    pub step_counter: i32,
+    /// The last region battle setup `FUN_801D9E1C` applied - on a field step
+    /// that landed in a region, and on the op-`0x3E` scripted-battle install.
+    /// Its fields are the retail globals battle entry reads: the stage
+    /// variant `_DAT_8007BD60`, the backdrop keep bit `_DAT_8007B64B`, and
+    /// the two Door gates of scratchpad `0x1F800394`. `None` until a region
+    /// has been stood in; retail's globals are sticky, and so is this.
+    pub region_setup: Option<crate::region_encounter::RegionBattleSetup>,
+}
+
+impl EncounterState {
+    pub fn new() -> Self {
+        Self {
+            rng_hold: None,
+            pending_scripted: None,
+            scripted_armed: false,
+            scripted_formation_pending: false,
+            session: None,
+            scene_rollable: false,
+            scene_hint_frames: 0,
+            step_counter: crate::region_encounter::ENCOUNTER_COUNTER_BASE,
+            region_setup: None,
+        }
+    }
+}
+
+impl Default for EncounterState {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -11,8 +11,8 @@ use legaia_engine_core::glb_export::{
     export_scene_traversal, export_world_glb, world_manifest,
 };
 use legaia_engine_core::npc_catalog::catalog_scene_npcs;
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_assembly::assemble_field_scene;
+use legaia_engine_core::scene_staging::assemble_field_scene;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {

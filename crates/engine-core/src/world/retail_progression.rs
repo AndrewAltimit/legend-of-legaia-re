@@ -2,7 +2,7 @@
 //! through one entry point so every play host boots the same game.
 //!
 //! These six tables were installed by the native window's boot
-//! (`legaia_engine_shell::boot`) one read at a time, and the browser play page's
+//! (`legaia_engine_session::native`) one read at a time, and the browser play page's
 //! `load_disc` installed none of them. Nothing failed: each consumer has a
 //! disc-free fallback, so the page quietly ran a different game - the flat
 //! 10/5 placeholder growth, no Noa / Gala threshold correction, summon spells
@@ -56,7 +56,7 @@ impl World {
     /// the per-table installs did. The tracker and table state persist across
     /// New Game (`begin_new_game` resets neither).
     pub fn install_retail_progression_tables(&mut self, scus: &[u8]) -> RetailProgressionTables {
-        use legaia_asset::level_up_tables as lut;
+        use legaia_game_tables::level_up_tables as lut;
         let mut got = RetailProgressionTables::default();
 
         if let Some(curve) = lut::xp_thresholds_from_scus(scus) {
@@ -75,9 +75,10 @@ impl World {
         }
 
         self.tables.victory_pose_table =
-            legaia_asset::victory_pose::victory_pose_table_from_scus(scus);
+            legaia_game_tables::victory_pose::victory_pose_table_from_scus(scus);
         got.victory_pose = self.tables.victory_pose_table.is_some();
-        self.audio.xa_cue_durations = legaia_asset::xa_cue_table::xa_cue_durations_from_scus(scus);
+        self.audio.xa_cue_durations =
+            legaia_game_tables::xa_cue_table::xa_cue_durations_from_scus(scus);
         got.xa_cue_durations = self.audio.xa_cue_durations.is_some();
 
         got.magic_xp = self.install_magic_xp_thresholds(scus);
@@ -85,11 +86,12 @@ impl World {
         // hosts make: the dialog's `0xC7` names.
         self.tables.inline_names = inline_names_from_scus(scus);
 
-        if let Some(table) = legaia_asset::accessory_passive::AccessoryPassiveTable::from_scus(scus)
+        if let Some(table) =
+            legaia_game_tables::accessory_passive::AccessoryPassiveTable::from_scus(scus)
         {
-            self.set_accessory_passives(crate::accessory_passives::AccessoryPassives::from_disc(
-                &table,
-            ));
+            self.set_accessory_passives(
+                legaia_engine_battle::accessory_passives::AccessoryPassives::from_disc(&table),
+            );
             got.accessory_passives = true;
         }
         got
@@ -106,7 +108,8 @@ pub fn inline_names_from_scus(scus: &[u8]) -> Vec<Vec<u8>> {
     const TABLE_VA: u32 = 0x8007_3F24;
     let mut out = Vec::new();
     for i in 0..32u32 {
-        let Some(off) = legaia_asset::item_names::file_offset_for_va(scus, TABLE_VA + i * 8) else {
+        let Some(off) = legaia_game_tables::item_names::file_offset_for_va(scus, TABLE_VA + i * 8)
+        else {
             break;
         };
         let Some(entry) = scus.get(off..off + 8) else {

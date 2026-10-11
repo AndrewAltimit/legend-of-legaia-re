@@ -1,5 +1,4 @@
 //! The party-swap patch driver (`apply_delilas_party_with`) and the per-slot element retarget.
-//! Split out of `delilas_party.rs`.
 
 use super::*;
 
@@ -69,7 +68,7 @@ pub fn apply_delilas_party_with(
 
         // Enemy side: the sibling's block wears the character's model
         // and name.
-        let swapped = party_swap::swap_into_block(&player_file, rig, &archive, id)
+        let swapped = legaia_party_swap::swap_into_block(&player_file, rig, &archive, id)
             .with_context(|| format!("{who} -> monster {id}"))?;
         let mut block = swapped.block;
         rename_block(&mut block, who).with_context(|| format!("rename monster {id} to {who:?}"))?;
@@ -122,7 +121,7 @@ pub fn apply_delilas_party_with(
                 &player_file,
                 &archive,
                 id,
-                party_swap::playerize::kept_welded_hand(id, keep_hammer),
+                legaia_party_swap::playerize::kept_welded_hand(id, keep_hammer),
             )?;
             patcher.patch_prot_entry(READEF_ENTRY, off as u64, &rebuilt)?;
             Ok(clip.action_id)
@@ -139,7 +138,7 @@ pub fn apply_delilas_party_with(
         // New-game template name (fixed 10-byte NUL-padded field; only
         // affects new games - existing saves keep their stored names).
         let scus = patcher
-            .read_named_file(crate::arts::SCUS_NAME)
+            .read_named_file(legaia_arts_patch::arts::SCUS_NAME)
             .ok_or_else(|| anyhow::anyhow!("SCUS_942.54 not found"))?;
         let tmpl_off = new_game::party_template_file_offset(&scus)
             .ok_or_else(|| anyhow::anyhow!("starting-party template not found in SCUS"))?
@@ -148,7 +147,7 @@ pub fn apply_delilas_party_with(
         let mut field = vec![0u8; new_game::NAME_LEN];
         field[..sibling.display_name().len()].copy_from_slice(sibling.display_name().as_bytes());
         patcher
-            .patch_named_file(crate::arts::SCUS_NAME, name_off, &field)
+            .patch_named_file(legaia_arts_patch::arts::SCUS_NAME, name_off, &field)
             .with_context(|| format!("write template name for slot {template_slot}"))?;
 
         report.changed = true;
@@ -239,8 +238,12 @@ pub fn apply_delilas_party_with(
             (1, "Noa", mapping.noa),
             (2, "Gala", mapping.gala),
         ] {
-            crate::save_icon::swap_slot_portraits(patcher, hero_tile, sibling.portrait_tile())
-                .with_context(|| format!("save portrait {who} <-> {}", sibling.display_name()))?;
+            legaia_texture_replace::save_icon::swap_slot_portraits(
+                patcher,
+                hero_tile,
+                sibling.portrait_tile(),
+            )
+            .with_context(|| format!("save portrait {who} <-> {}", sibling.display_name()))?;
             report.notes.push(format!(
                 "save portraits: {who}'s face tile now shows {} (and {}'s shows {who})",
                 sibling.display_name(),
@@ -263,7 +266,7 @@ pub fn apply_delilas_party_with(
                 (mapping.gala.display_name(), "Gala"),
             ];
             let mut pack =
-                crate::translation::export_pack(patcher).context("export dialog corpus")?;
+                legaia_translate::export_pack(patcher).context("export dialog corpus")?;
             let mut lines = 0usize;
             for entry in pack
                 .sections
@@ -286,9 +289,9 @@ pub fn apply_delilas_party_with(
                     // drop the " Delilas" surname after a hero name -
                     // each only when the full line doesn't fit.
                     let fits = |t: &str| {
-                        crate::translation::markup::encode(
+                        legaia_translate::markup::encode(
                             t,
-                            crate::translation::markup::Target::Segment,
+                            legaia_translate::markup::Target::Segment,
                         )
                         .map(|b| b.len() <= entry.budget)
                         .unwrap_or(false)
@@ -337,7 +340,7 @@ pub fn apply_delilas_party_with(
                     lines += 1;
                 }
             }
-            let dialog = crate::translation::import_pack_relayout(patcher, &pack)
+            let dialog = legaia_translate::import_pack_relayout(patcher, &pack)
                 .context("rename sibling dialog mentions")?;
             report.notes.push(format!(
                 "dialog: {} of {lines} sibling-name line(s) now name the heroes{}",
@@ -542,7 +545,7 @@ pub fn apply_delilas_party_with(
                 rig,
                 retail_player: &retail_players[slot],
                 archive: &archive,
-                natural_wrist_hand: party_swap::playerize::kept_welded_hand(
+                natural_wrist_hand: legaia_party_swap::playerize::kept_welded_hand(
                     sibling.monster_id(),
                     options.keep_che_hammer && sibling == Sibling::Che,
                 ),
@@ -730,7 +733,7 @@ pub fn apply_delilas_party_with(
 ///
 /// The battle overlay's per-character element table
 /// (`0x801F5480`, one byte per 1-based character id;
-/// `legaia_asset::element_affinity::CHARACTER_ELEMENTS_FILE_OFFSET`) is the
+/// `legaia_game_tables::element_affinity::CHARACTER_ELEMENTS_FILE_OFFSET`) is the
 /// only per-character element on the disc, and retail seeds it Vahn = fire,
 /// Noa = wind, Gala = thunder. Two routines index it, both with
 /// `DAT_8007BD10[actor] - 1` (the slot's active member id), and both use the
@@ -756,7 +759,7 @@ pub(super) fn retarget_character_elements(
     mapping: &PartyMapping,
     archive: &[u8],
 ) -> Result<Vec<String>> {
-    use legaia_asset::element_affinity as ea;
+    use legaia_game_tables::element_affinity as ea;
     let mut notes = Vec::new();
     for (_, _, slot, who, sibling) in mapping.pairs() {
         let id = sibling.monster_id();

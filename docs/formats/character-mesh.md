@@ -20,13 +20,13 @@ indices unless marked "raw TOC" (raw = extraction + 2, see
 | | Field form | Battle form | Baka Fighter form |
 |---|---|---|---|
 | Source | PROT 0874 §0 (`player.lzs`) | `data\battle\PLAYER1..4` = PROT 0863..0866 | PROT 1204 (`other5`) + atlases in 1205 |
-| Stored as | LZS [`asset::pack`](pack.md) of 5 TMDs | per-equipment-id LZS sections, spliced at load | 5 raw TMD2 chunks (type `0x09`) |
+| Stored as | LZS [`container-formats::pack`](pack.md) of 5 TMDs | per-equipment-id LZS sections, spliced at load | 5 raw TMD2 chunks (type `0x09`) |
 | Objects (Vahn / Noa / Gala) | 12 on disc, capped to 10 live | 15 / 16 / 15 bones + 2 equipment extras | 15 / 16 / 15 |
 | Pool slots | `DAT_8007C018[0..=4]` | `DAT_8007C018[0..=2]` | loaded by the minigame overlay |
 | Textures | PROT 0874 §2 (8 TIMs) | the player file's own texture pools | PROT 1205 (8 TIMs) |
 | Palette rows (VRAM `y`) | 478 (+ 473 / 475 shared) | 481 / 482 / 483, one per party slot | 490..497 |
 | Pose source | PROT 0874 §1 locomotion ANM | `record[0]` action streams of the same file | PROT 1203 ANM banks |
-| Parser | [`legaia_asset::character_pack`](../../crates/asset/src/character_pack.rs) | [`battle_char_assembly`](../../crates/battle-models/src/battle_char_assembly.rs) | [`battle_char_pack`](../../crates/battle-models/src/battle_char_pack.rs) |
+| Parser | [`legaia_actor_formats::character_pack`](../../crates/actor-formats/src/character_pack.rs) | [`battle_char_assembly`](../../crates/actor-formats/src/battle_char_assembly.rs) | [`battle_char_pack`](../../crates/actor-formats/src/battle_char_pack.rs) |
 | Confidence | Confirmed | Confirmed | Confirmed |
 
 ```mermaid
@@ -96,7 +96,7 @@ LZS container ([`asset-descriptor.md`](asset-descriptor.md),
 
 | Section | Decoded size | Content |
 |---|---|---|
-| §0 | `0xB49C` (46 236) | [`asset::pack`](pack.md) of five Legaia TMDs |
+| §0 | `0xB49C` (46 236) | [`container-formats::pack`](pack.md) of five Legaia TMDs |
 | §1 | `0x41E0` | party locomotion ANM bundle ([§ Field rest pose](#field-rest-pose---the-locomotion-bundle-prot-0874-1)) |
 | §2 | `0x1D524` | pack of eight TIMs ([§ Textures](#textures-field-form)) |
 
@@ -151,7 +151,7 @@ means one entry in each index space, which is how the two were once fused.
 **The editing contract.** A rebuilt PROT 0874 must keep its first four words
 (`meta[0]`, `meta[1]`, `type<<24|size0`, `offset0`) byte-exact *and* keep §0
 decoding to retail's 46 236 bytes - pad the pack tail; retail itself pads
-~19 KB in slot 4. `legaia_patcher::party_swap::fieldize` does this. A rebuild
+~19 KB in slot 4. `legaia_party_swap::fieldize` does this. A rebuild
 that changed §0's decoded size hung the next battle load with a wild read at
 `0x808425F8` under PCSX-Redux. The mechanism:
 
@@ -273,7 +273,7 @@ The swap is **binary**: one visible group toggles between two pre-baked
 variants. It never changes `nobj`, adds no object and uploads no mesh. Item
 identity on the field model is carried by the
 [texture atlas](#textures-field-form), not by geometry. The Rust equivalent is
-`legaia_asset::character_pack::equipment_swap::apply`.
+`legaia_actor_formats::character_pack::equipment_swap::apply`.
 
 **Open: Vahn's row.** Applied literally, patched group `0` is Vahn's largest
 group (77 vertices / 132 primitives - the head), while both templates are 12-
@@ -287,7 +287,7 @@ Vahn's patched index against a live capture before applying the swap to slot
 ## Textures (field form)
 
 Field textures are **PROT 0874 §2**, parser
-[`legaia_asset::field_char_textures`](../../crates/asset/src/field_char_textures.rs).
+[`legaia_actor_formats::field_char_textures`](../../crates/actor-formats/src/field_char_textures.rs).
 (Not extraction 0876, whose `player_data` *filename label* is the +2 label
 shift; it is a VAB + empty TIM_LIST + SEQ stream.)
 
@@ -351,7 +351,7 @@ re-upload of the band (the battle effect-texture path) restores the disc
 bytes.
 
 Port: `asset field-disasm` decodes the op as `MenuCtrl op0=0x60`; the world
-host's `FieldHost::op4c_n6_sub0_emitter6` hook queues the six words
+host's `FieldScreenHost::vram_move_image` hook queues the six words
 (`World::queue_script_vram_move`) and the windowed host drains them into its
 software VRAM (`World::apply_script_vram_moves`, the `Vram::move_image`
 primitive the battle facial animator also uses).
@@ -433,7 +433,7 @@ the pool TMD (`FUN_80024D78`: `count = *(tmd+8)`, object `i` at
 `count == record_bone_count` before drawing. That is why the cap matters: 12
 disc groups minus 2 templates leaves the 10 objects the 10-bone clips
 animate. Each 8-byte (bone, frame) entry decodes via `FUN_8001BE80`
-(`legaia_asset::player_anm::BoneTransform`) to a flat `R·v + T` about the
+(`legaia_actor_formats::player_anm::BoneTransform`) to a flat `R·v + T` about the
 group's local origin, composed onto the actor's facing matrix.
 
 ## Battle form - assembled from the player files
@@ -525,7 +525,7 @@ Live-pinned against a full-party capture: each party render node's anim
 context (`node +0x4C`, consumed by `FUN_80047430` → `FUN_8004AD80`) points its
 `+0x88` stream pointer at `record0_image + action_table[0] + 0xAC`, and the
 stream byte-matches the disc decode
-(`crates/engine-shell/tests/battle_party_pose_live.rs`). No PROT 1203 record
+(`crates/parity/tests/battle_party_pose_live.rs`). No PROT 1203 record
 is resident in battle RAM.
 
 The inline `record[0]` streams are raw packed (`2 + parts * frames * 9`
@@ -617,7 +617,7 @@ design - and has no runtime texture band, so it is not drawn as a party member.
 The knockdown clip (action tag 4) ends at ~275-325 x, ~120-175 y, ~515-580 z:
 flat on the ground. That is correct for a hit reaction and wrong for an attack
 turn, so "is the party member upright" has a testable answer. Oracle:
-`crates/asset/tests/battle_pose_orientation_real.rs` (disc-gated;
+`crates/actor-formats/tests/battle_pose_orientation_real.rs` (disc-gated;
 `LEGAIA_POSE_DUMP_DIR` writes orthographic PNGs). The rule deciding which
 family plays is in
 [`battle.md` § One staged-anim channel](../subsystems/battle.md#one-staged-anim-channel-actor0x1da).
@@ -681,7 +681,7 @@ groups, gated on the group mode byte's TME (textured) bit:
 The assembled player-file meshes all author at texpages `0x15` / `0x16` =
 `(320, 256)` / `(384, 256)` and CLUT row 480, so on them the pass is a uniform
 `+3` texpage / `+0x40` CLUT-id rewrite. Port:
-[`battle_char_assembly::relocate_tsb_cba`](../../crates/battle-models/src/battle_char_assembly.rs)
+[`battle_char_assembly::relocate_tsb_cba`](../../crates/actor-formats/src/battle_char_assembly.rs)
 (disc-gated `battle_char_assembly_real::relocates_each_character_into_its_runtime_band`).
 
 Not involved: the `0x8007BEC0` texpage→row table
@@ -845,7 +845,7 @@ them in a battle only for a member that falls back to the 1204 mesh
 (`engine-core::battle_party_form`).
 
 Chunk type `0x09` (TMD2) is a distinct dispatcher tag from regular TMD
-(`0x02`) in [`AssetType`](../../crates/asset/src/lib.rs); the body shape is
+(`0x02`) in [`AssetType`](../../crates/container-formats/src/lib.rs); the body shape is
 identical (magic `0x80000002`).
 
 ## Animation
@@ -862,7 +862,7 @@ feed through a parallel consumer struct at `actor[+0x234]` - see `anm.md`
 
 | Function | Role |
 |---|---|
-| `FUN_80020224` → `FUN_8001F05C` case 2 → `FUN_80026B4C` | Descriptor walk installing PROT 0874 §0's five field TMDs into `DAT_8007C018[0..=4]`. Field caller: `FUN_801D6704` → `FUN_80020118` → `FUN_8001E890`. Port: [`seed_global_tmd_pool_from_befect_data`](../../crates/engine-core/src/scene.rs). |
+| `FUN_80020224` → `FUN_8001F05C` case 2 → `FUN_80026B4C` | Descriptor walk installing PROT 0874 §0's five field TMDs into `DAT_8007C018[0..=4]`. Field caller: `FUN_801D6704` → `FUN_80020118` → `FUN_8001E890`. Port: [`seed_global_tmd_pool_from_befect_data`](../../crates/engine-core/src/scene_host.rs). |
 | `FUN_8001ED60` / `FUN_8001E1B4` | Boot: size and allocate the §0 / §1 buffers from the container header. |
 | `FUN_8001E890` | Field player loader: decodes §0..§2, registers the pack, caps `nobj` to 10 for the three party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`, calls `FUN_8001EBEC`. |
 | `FUN_8001EBEC` | Field equipment swap: copies one of two template group descriptors over a visible group. |

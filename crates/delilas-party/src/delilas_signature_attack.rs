@@ -120,8 +120,8 @@
 
 use anyhow::{Context, Result, bail};
 
-use crate::disc::DiscPatcher;
-use crate::mips::{self as m, A0, A1, A3, S4, S7, T0, V0, V1, ZERO};
+use legaia_code_hooks::mips::{self as m, A0, A1, A3, S4, S7, T0, V0, V1, ZERO};
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// Battle overlay (PROT entry) hosting the AI picker `FUN_801E9FD4`.
 pub const BATTLE_OVERLAY_PROT: usize = 898;
@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn retail_arm_words_match_their_hand_decoded_encodings() {
-        use crate::mips::A2;
+        use legaia_code_hooks::mips::A2;
         let _ = A2; // (alias check only)
         assert_eq!(RETAIL_ARM[18], m::sb(A0, S4, 0x01DE));
         assert_eq!(RETAIL_ARM[19], m::lbu(V0, V0, 0));

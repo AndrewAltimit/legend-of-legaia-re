@@ -39,7 +39,7 @@
 //! not covered by any overlay: slot A ends at `0x801F7018` (PROT 0898's
 //! `0x28800` bytes from `0x801CE818`).
 //!
-//! So the block is **parked in the `DMY.DAT` annex** ([`crate::disc::DiscPatcher::annex_blob`])
+//! So the block is **parked in the `DMY.DAT` annex** ([`legaia_disc_patch::disc::DiscPatcher::annex_blob`])
 //! and streamed to `0x801FD000` at battle load by a 12-instruction stub in the
 //! verified-dead SCUS arena. The stub is entered from battle init
 //! (`FUN_80055B6C`) at [`LOAD_HOOK_VA`] - **after** the `FUN_8003DE7C(0)` that
@@ -100,11 +100,13 @@
 
 use anyhow::{Context, Result, bail};
 
-use crate::mips::{
+use legaia_code_hooks::arenas::{
+    ARENA1_END_VA, ARENA1_VA, Edit, OVERLAY_TABLE_RANGES, SCUS_TABLE_RANGES,
+};
+use legaia_code_hooks::mips::{
     A0, A1, A2, T1, T2, T5, T6, T8, V0, ZERO, addiu, j, jal, jalr, lui, nop, ori, read_word, sll,
     slti,
 };
-use crate::shiny_seru::{ARENA1_END_VA, ARENA1_VA, Edit, OVERLAY_TABLE_RANGES, SCUS_TABLE_RANGES};
 
 /// ZetaPhoenix's block, verbatim. See `crates/patcher/data/README.md` for its
 /// provenance and the licence note.
@@ -519,7 +521,7 @@ fn lo_of(va: u32) -> u16 {
 }
 
 fn scus_off(scus: &[u8], va: u32) -> Result<usize> {
-    legaia_asset::item_names::file_offset_for_va(scus, va)
+    legaia_game_tables::item_names::file_offset_for_va(scus, va)
         .ok_or_else(|| anyhow::anyhow!("super-arts-pack: can't resolve SCUS VA {va:#x}"))
 }
 
@@ -580,7 +582,7 @@ fn assert_zero(scus: &[u8], off: usize, len: usize, va: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mips_sim::Cpu;
+    use legaia_code_hooks::mips_sim::Cpu;
 
     #[test]
     fn block_is_the_pack_the_hooks_were_derived_from() {
@@ -681,8 +683,20 @@ mod tests {
         let mut cpu = Cpu::new();
         cpu.load_words(STUB_VA, &stub);
         // `FUN_8005E4D4` and the BIOS A-table entry both return immediately.
-        cpu.load_words(LOADER_FN, &[crate::mips::jr(crate::mips::RA), nop()]);
-        cpu.load_words(0xA0, &[crate::mips::jr(crate::mips::RA), nop()]);
+        cpu.load_words(
+            LOADER_FN,
+            &[
+                legaia_code_hooks::mips::jr(legaia_code_hooks::mips::RA),
+                nop(),
+            ],
+        );
+        cpu.load_words(
+            0xA0,
+            &[
+                legaia_code_hooks::mips::jr(legaia_code_hooks::mips::RA),
+                nop(),
+            ],
+        );
         cpu.pc = STUB_VA;
         cpu.run_until(&[LOAD_RET_VA]);
         assert_eq!(cpu.pc, LOAD_RET_VA, "stub must return to battle init");
@@ -857,7 +871,7 @@ mod tests {
 
     fn patched_images() -> Option<(Vec<u8>, Vec<u8>)> {
         let disc = disc_bytes()?;
-        let mut patcher = crate::disc::DiscPatcher::open(disc).expect("open disc");
+        let mut patcher = legaia_disc_patch::disc::DiscPatcher::open(disc).expect("open disc");
         let report = crate::apply::inject_super_arts_pack(&mut patcher).expect("inject");
         let overlay = patcher.read_entry(OVERLAY_PROT_INDEX).expect("PROT 0898");
         let block = patcher

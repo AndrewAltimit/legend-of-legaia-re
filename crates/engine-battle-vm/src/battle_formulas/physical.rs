@@ -1,5 +1,5 @@
 //! Melee (physical / direction-command) pre-damage - the roll pair and the
-//! underdog rewrite of `FUN_801EC3E4`. Split out of `battle_formulas.rs`.
+//! underdog rewrite of `FUN_801EC3E4`.
 //!
 //! This is the kernel every **melee** hit runs, and it is a different routine
 //! from the summon / arts roll [`super::arts_physical_predamage`]

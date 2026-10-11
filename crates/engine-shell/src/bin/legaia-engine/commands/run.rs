@@ -285,7 +285,7 @@ pub(crate) fn cmd_load(
 }
 
 pub(crate) fn cmd_config(cmd: ConfigCmd) -> Result<()> {
-    use legaia_engine_core::input::Mapping;
+    use legaia_engine_system::input::Mapping;
     match cmd {
         ConfigCmd::Show { config_file } => {
             let mapping = Mapping::load_or_default(&config_file);
@@ -306,7 +306,7 @@ pub(crate) fn cmd_config(cmd: ConfigCmd) -> Result<()> {
             let key = key.trim().to_string();
             let btn = btn.trim().to_string();
             // Validate that the button name is known.
-            if legaia_engine_core::input::PadButton::from_name(&btn).is_none() {
+            if legaia_engine_system::input::PadButton::from_name(&btn).is_none() {
                 anyhow::bail!(
                     "unknown pad button '{}'; valid names: Select L3 R3 Start Up Right Down Left L2 R2 L1 R1 Triangle Circle Cross Square",
                     btn
@@ -318,7 +318,7 @@ pub(crate) fn cmd_config(cmd: ConfigCmd) -> Result<()> {
             println!("binding saved: {key} → {btn} ({})", config_file.display());
         }
         ConfigCmd::DumpCutsceneMap { out } => {
-            let map = legaia_engine_core::scene::CutsceneMap::from_heuristic();
+            let map = legaia_engine_scene::scene::CutsceneMap::from_heuristic();
             let toml_doc = map.to_toml_string();
             if out.as_os_str() == "-" {
                 print!("{toml_doc}");

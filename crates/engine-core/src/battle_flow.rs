@@ -7,7 +7,7 @@
 //! struct (`ctx = _DAT_8007BD24`):
 //!
 //! * `ctx[+0x07]` - the per-actor **action** SM `FUN_801E295C`, ported as
-//!   [`legaia_engine_vm::battle_action`]. It executes an already-chosen action
+//!   [`legaia_engine_battle_vm::battle_action`]. It executes an already-chosen action
 //!   (swing, cast, flee).
 //! * `ctx[+0x06]` - the **command flow** SM `FUN_801D0748`, ported here. It is
 //!   the menu/UI half: whose turn it is, which window is open, what the player
@@ -25,7 +25,7 @@
 //! it is the player's command selection, and the states are **regular decimal
 //! multiples of ten**. The sequencing is documented in
 //! [`battle.md`](../../../docs/subsystems/battle.md); the surfaces are
-//! [`crate::battle_input`]'s three phases:
+//! [`legaia_engine_menus::battle_input`]'s three phases:
 //!
 //! | `ctx[+0x06]` | State | What is on screen |
 //! |---|---|---|
@@ -54,7 +54,7 @@
 //! band is `{30,40,50,60,70,80,90,100,110,120}` is the cross-check that pins
 //! the mapping.
 
-use crate::battle_input::CommandPhase;
+use legaia_engine_menus::battle_input::CommandPhase;
 
 /// The battle command-flow cursor, retail `ctx[+0x06]`.
 ///
@@ -121,8 +121,8 @@ impl BattleFlowState {
 
 /// Which host-owned battle submenu is open, if any. The engine splits the
 /// windows retail drives from inside `FUN_801D0748` into separate sessions
-/// ([`crate::inventory_use`] / [`crate::battle_magic`] /
-/// [`crate::battle_arts`]), so the flow state has to be recomposed from them.
+/// ([`legaia_engine_menus::inventory_use`] / [`legaia_engine_battle::battle_magic`] /
+/// [`legaia_engine_battle::battle_arts`]), so the flow state has to be recomposed from them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BattleMenuKind {
     /// No submenu open.
@@ -160,7 +160,7 @@ pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> Bat
         // A confirmed target commits the action: retail's target cursor (0x5A)
         // goes straight to the commit state (0x6E) once the last member has
         // picked. Its 0x64 "target confirm" is the *item window's* own target
-        // step, which the engine runs inside `crate::inventory_use` - so
+        // step, which the engine runs inside `legaia_engine_menus::inventory_use` - so
         // nothing here produces `TargetConfirm` yet.
         Some(CommandPhase::Confirmed { .. }) => BattleFlowState::CommitBegin,
         // The commit-confirm screen itself, and the two exits it resolves to

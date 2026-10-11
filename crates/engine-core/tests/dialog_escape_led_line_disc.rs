@@ -24,8 +24,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::placement_inline_prologue;
-use legaia_engine_core::scene::{SceneHost, is_world_map_scene};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_field::man_field_scripts::placement_inline_prologue;
+use legaia_engine_scene::scene::is_world_map_scene;
 
 fn extracted_dir() -> Option<PathBuf> {
     ["extracted", "../extracted", "../../extracted"]
@@ -145,7 +146,7 @@ fn census_of_escape_led_first_lines() {
         let Some(man) = host.world.field_vm.channels_man.clone() else {
             continue;
         };
-        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         for p in mf.actor_placements(&man) {

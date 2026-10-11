@@ -1,5 +1,5 @@
 //! Engine-side wrapper over the battle-action **move-power table**
-//! ([`legaia_asset::move_power`], runtime VA `0x801F4F5C`, PROT entry 0898).
+//! ([`legaia_game_tables::move_power`], runtime VA `0x801F4F5C`, PROT entry 0898).
 //!
 //! The table is the one true per-move power scalar in the battle system: the
 //! arts / physical damage kernel `FUN_801dd0ac` reads its `+0` power for the
@@ -9,7 +9,7 @@
 //! (`actor[+0x1df]`, carried on the engine side as a battle move id) resolves
 //! straight to its power record.
 //!
-//! Loaded lazily from PROT entry 0898 by `legaia_engine_core::scene::SceneHost` and parked
+//! Loaded lazily from PROT entry 0898 by `legaia_engine_core::scene_host::SceneHost` and parked
 //! on `legaia_engine_core::world::DiscTables::move_power`; the monster special-attack damage
 //! path consumes it (see `World::enemy_move_predamage`). Disc-free / synthetic
 //! battles leave it `None` and keep the placeholder damage path, so no
@@ -28,7 +28,7 @@
 //! This is the engine-side *descriptor* surface. The `0x01..=0x63` spawn entries
 //! resolve to a `0x801F6324` prototype param that is a **move-VM scene-graph
 //! record** in the same format the player Seru-magic summons use
-//! (`legaia_asset::summon_overlay`, staged by `FUN_80021B04` → the ported move
+//! (`legaia_overlay_images::summon_overlay`, staged by `FUN_80021B04` → the ported move
 //! VM, with `model_sel` indexing the `DAT_8007C018` TMD pool). The `gp[0x754]`
 //! additive base for `model_sel` is `party_count + 2` in battle (3 for the
 //! 1-member party, 5 for the full 3-member party; save-corpus-pinned by
@@ -37,7 +37,7 @@
 //! effect-model library, which the engine registers at a fixed
 //! `DAT_8007C018[3..]` (the equivalent 1-member layout). `legaia_engine_core::world::World::spawn_move_fx`
 //! renders it: it parses a move's spawn records and stages them as a
-//! `legaia_engine_core::summon::SummonScene` at that base, driven through the move VM
+//! `legaia_engine_effects::summon::SummonScene` at that base, driven through the move VM
 //! (`legaia_engine_core::world::World::tick_move_fx` / `active_move_fx_part_draws`). The
 //! high-bit (`0x80`) list bytes instead route to the 2D `efect.dat` pool:
 //! `legaia_engine_core::world::World::spawn_move_fx` spawns each `AltEffect` entry through
@@ -45,7 +45,7 @@
 //! (no-op when the `efect.dat` catalog isn't loaded). See
 //! `docs/formats/move-power.md`.
 
-use legaia_asset::move_power::{
+use legaia_game_tables::move_power::{
     self, EffectAuxTables, EffectListEntry, IMPACT_EFFECT_TABLE_LEN, MOVE_ID_INDEX_MAP_LEN,
     MoveRecord, parse_impact_effect_table,
 };
@@ -115,7 +115,7 @@ impl MovePowerCatalog {
 
     /// The roll-modulus base power `FUN_801dd0ac` derives from a move id's
     /// record (`(i16)power >> 2`), or `None` when the id has no record. This is
-    /// the `power` fed to [`legaia_engine_vm::battle_formulas::arts_physical_predamage`].
+    /// the `power` fed to [`legaia_engine_battle_vm::battle_formulas::arts_physical_predamage`].
     pub fn power_for_move_id(&self, move_id: u8) -> Option<i32> {
         self.record_for_move_id(move_id).map(|r| r.power())
     }
@@ -129,7 +129,7 @@ impl MovePowerCatalog {
     /// The raw 128-byte id → power-index map bytes, based at the parse VA
     /// `0x801F4E63` (`map[move_id]` = table index). Callers that mirror the
     /// effect-script terminator's read
-    /// (`legaia_engine_core::action_effect_script::move_power_record_offset`, whose map
+    /// (`legaia_engine_effects::action_effect_script::move_power_record_offset`, whose map
     /// argument is documented against the `0x801F4E64` base) pass
     /// `&bytes[1..]` - the two conventions address the same bytes.
     pub fn id_index_map_bytes(&self) -> &[u8] {
@@ -327,7 +327,7 @@ pub struct MoveFx {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::move_power::{
+    use legaia_game_tables::move_power::{
         MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
         MOVE_POWER_TABLE_LEN,
     };
@@ -400,7 +400,7 @@ mod tests {
     /// behavioural field and both cross-table joins.
     #[test]
     fn fx_descriptor_resolves_behavioural_fields_and_effect_lists() {
-        use legaia_asset::move_power::{
+        use legaia_game_tables::move_power::{
             CUE_GROUP_STRIDE, CUE_GROUP_TABLE_FILE_OFFSET, CUE_GROUP_TABLE_LEN,
             EFFECT_CLUT_TABLE_FILE_OFFSET, EFFECT_PROTO_TABLE_FILE_OFFSET,
             IMPACT_EFFECT_TABLE_FILE_OFFSET,

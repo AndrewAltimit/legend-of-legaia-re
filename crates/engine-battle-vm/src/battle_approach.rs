@@ -58,7 +58,7 @@
 //! The `requested` producer is pinned from the caller's
 //! disassembly (`overlay_battle_action_801dea50.txt`). `FUN_801DEA50` is the
 //! per-clip **battle effect-script walker** (ported as
-//! `engine-core::action_effect_script`), and this clamp is a placement rule
+//! `engine-effects::action_effect_script`), and this clamp is a placement rule
 //! of its **direct-spawn branch**: for an 8-byte record whose effect byte is
 //! `0x93` or `0x84` (`0x801DEDAC..0x801DEDD0`), the record's Z offset -
 //! already scaled by the actor's mesh scale, `requested =
@@ -70,7 +70,7 @@
 //! tick's root-motion term (`FUN_80047430`; engine
 //! `World::tick_battle_locomotion`), which never calls this.
 //!
-//! `engine-core::action_effect_script::step_effect_script` is that branch:
+//! `engine-effects::action_effect_script::step_effect_script` is that branch:
 //! a direct record whose whole effect byte is `0x93` or `0x84` has its
 //! scaled Z offset replaced by [`approach_distance`] over the attacker's live
 //! pair and the target's seat pair, before the facing rotation.
@@ -142,7 +142,7 @@ pub fn clamp_step(requested: i16, separation: i32) -> i16 {
 /// PORT: FUN_801DF570
 ///
 /// Called from the effect-script walker's direct-spawn branch for the effect
-/// bytes `0x93` / `0x84` (`engine-core::action_effect_script`, the
+/// bytes `0x93` / `0x84` (`engine-effects::action_effect_script`, the
 /// `0x801DEDC8` site), which `World::step_actor_effect_script` drives once
 /// per battle frame per actor with a committed clip - the approach
 /// *movement* is root motion and never calls this.

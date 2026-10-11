@@ -2,7 +2,7 @@
 //! `FUN_801D603C` (`choice_panel_draws_for`), reach row `801d603c` in
 //! `docs/tooling/reach-triage.md`.
 //!
-//! Both hosts draw the confirm through `ui_prize_exchange::prize_exchange_draws_for`
+//! Both hosts draw the confirm through `prize_exchange::prize_exchange_draws_for`
 //! whenever the session's confirm phase is up, so what reaches it is a prize
 //! walked past the coin and held-cap gates. The gate is seeded the way the
 //! page's cheat panel and a clerk's `49 07 <block>` seed it - coins, then the
@@ -20,7 +20,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::input::PadButton;
+use legaia_engine_system::input::PadButton;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 const W: u32 = 960;
@@ -45,7 +45,7 @@ fn tick(rt: &mut LegaiaRuntime, n: usize) {
 /// word a frame while it is up, and its fade / slide advance on that clock.
 fn settle(rt: &mut LegaiaRuntime) {
     let frames = legaia_engine_core::menu_runtime::SHOP_FADE_FRAMES as usize
-        + usize::from(legaia_engine_core::shop::SHOP_SLIDE_FRAMES)
+        + usize::from(legaia_engine_menus::shop::SHOP_SLIDE_FRAMES)
         + 2;
     for _ in 0..frames {
         rt.play_shop_input(0);

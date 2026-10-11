@@ -18,11 +18,12 @@
 //! defect it guards against is a host inventing a chooser between the flag
 //! and the title, which a session-only test cannot see.
 
-use legaia_engine_core::game_over::{
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_menus::game_over::{
     GameOverOutcome, GameOverPhase, GameOverSession, TITLE_HANDOFF_FRAMES,
 };
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_mode::mode::SceneMode;
 
 fn world_in_a_battle() -> World {
     let mut w = World::new();

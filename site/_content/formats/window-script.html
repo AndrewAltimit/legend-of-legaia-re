@@ -17,7 +17,7 @@
     <dt>Lives in</dt><dd>Menu overlay, PROT extraction entry <strong>0899</strong> (slot-A base <code>0x801CE818</code>): programs cluster at file <code>0x16260..0x16740</code>, VA <code>0x801E4A78..0x801E4F58</code></dd>
     <dt>Stride</dt><dd>4 bytes per instruction; programs are 2 to 7 instructions long on disc</dd>
     <dt>Retail reader</dt><dd><code>FUN_801D6628(&amp;program)</code>, 13-entry jump table at <code>0x801CED70</code></dd>
-    <dt>Parser</dt><dd><code>legaia_asset::widget_script</code> (parser + <code>jal</code>-site scanner)</dd>
+    <dt>Parser</dt><dd><code>legaia_game_tables::widget_script</code> (parser + <code>jal</code>-site scanner)</dd>
     <dt>Confidence</dt><dd>Confirmed - interpreter and caller disassembly, program bytes verified on the disc image</dd>
     <dt>Used by</dt><dd><a href="../subsystems/shop.html">Shop flow</a>, <a href="../subsystems/level-up.html">Level-up notice</a>, <a href="../subsystems/field-menu.html">Field menu</a></dd>
   </dl>
@@ -62,7 +62,7 @@
   at fixed addresses, the lookup is <strong>per boot, not per scene</strong>: the same programs are resident whenever
   the menu overlay is - pause menu, shop, save UI, every scene.</p>
   <ul class="bullets">
-    <li><code>legaia_asset::widget_script::scan</code> recovers the programs structurally: find every call into the interpreter, resolve the argument each site materialises, keep the targets that parse as terminated programs with in-range opcodes and window ids.</li>
+    <li><code>legaia_game_tables::widget_script::scan</code> recovers the programs structurally: find every call into the interpreter, resolve the argument each site materialises, keep the targets that parse as terminated programs with in-range opcodes and window ids.</li>
     <li>Call sites that forward the pointer through a saved register (the shop pair among them) are not resolvable by that pass; those programs are pinned by reading the caller's disassembly.</li>
   </ul>
 </section>
@@ -70,7 +70,7 @@
 <section class="doc-section" id="pinned">
   <h2>Pinned programs</h2>
   <p>Byte-verified on the disc image. The shop pair is additionally pinned by the randomizer's Seru-trading vendor,
-  which reuses exactly these scripts (<code>legaia_patcher::seru_overlay::consts</code>, <a
+  which reuses exactly these scripts (<code>legaia_code_hooks::seru_overlay::consts</code>, <a
   href="../subsystems/shop.html">shop flow</a>).</p>
   <table>
     <thead><tr><th>VA</th><th>File offset</th><th>Program</th><th>Caller</th></tr></thead>
@@ -99,7 +99,7 @@
     </tbody>
   </table></div>
   </details>
-  <p>In the port, <code>legaia_engine_core::menu_widget</code> resolves the same programs from the user's disc at boot and runs them through the interpreter in <code>legaia_engine_vm</code>.</p>
+  <p>In the port, <code>legaia_engine_menus::menu_widget</code> resolves the same programs from the user's disc at boot and runs them through the interpreter in <code>legaia_engine_vm</code>.</p>
   <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/window-script.md"><code>docs/formats/window-script.md</code></a>.</p>
 </section>
 

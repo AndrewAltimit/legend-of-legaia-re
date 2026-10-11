@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn main() -> anyhow::Result<()> {
     let extracted = PathBuf::from("extracted");
@@ -31,16 +31,16 @@ fn main() -> anyhow::Result<()> {
             println!("{name}: (no MAN)");
             continue;
         };
-        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         let (primary, fallback) = scene.field_tile_triggers(&p).unwrap_or_default();
         let mut triggers = primary.clone();
         triggers.extend(fallback.clone());
 
-        let dests = legaia_engine_core::man_field_scripts::scene_destinations(&mf, &man);
+        let dests = legaia_engine_field::man_field_scripts::scene_destinations(&mf, &man);
         let sites =
-            legaia_engine_core::man_field_scripts::overworld_portal_sites(&mf, &man, &triggers);
+            legaia_engine_field::man_field_scripts::overworld_portal_sites(&mf, &man, &triggers);
         if dests.is_empty() && sites.is_empty() {
             continue;
         }

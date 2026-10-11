@@ -43,7 +43,7 @@
 //! settle wait holds on is the hit's own.
 //!
 //! **Not ported**, and disclosed per body: the GPU-packet and camera arms
-//! (PROT 0948's beam excepted - `legaia_engine_ui::cast_beam`), and the
+//! (PROT 0948's beam excepted - `legaia_render_kernels::cast_beam`), and the
 //! party-row presentation stores (`+0x04` tint, `+0x21C` hide/show,
 //! per-seat `+0x21D` on a sweep).
 //!
@@ -707,7 +707,7 @@ pub const CROSS_BEAM_COUNTER_PER_TICK: i32 = 2;
 ///
 /// The beam is drawn: `World::run_cast_module_code` keeps the builder's
 /// counter and both hosts build its packets through
-/// `legaia_engine_ui::cast_beam`. The countdown gates are
+/// `legaia_render_kernels::cast_beam`. The countdown gates are
 /// `cast_module_camera::capture_countdown::CROSS_BEAM`. Not ported: the
 /// camera shots and the hide/show stores. Arm 5's settle:
 /// [`ChainSettle::VictimOrFaded`].

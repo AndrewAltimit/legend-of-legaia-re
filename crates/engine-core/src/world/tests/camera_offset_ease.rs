@@ -5,10 +5,11 @@
 //! The pairing is what these tests pin: sub-9 posts `scene_ctrl[+0x4A]`, and
 //! `World::tick` walks `_DAT_8007BCAC` toward
 //! `scene_ctrl[+0x4A] - player[+0x16]` at the step rule
-//! `crate::camera_ease::ease_step` encodes. Before the writer existed the
+//! `legaia_engine_field::camera_ease::ease_step` encodes. Before the writer existed the
 //! kernel had no target and no accumulator, so nothing exercised either half.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A field world with a live player actor standing on the `0` floor.
 fn world_with_player() -> World {
@@ -35,7 +36,7 @@ fn sub9_default(target: i16) -> Vec<u8> {
 fn the_accumulator_starts_at_the_initialisers_seed() {
     assert_eq!(
         World::new().camera.offset_ease,
-        crate::camera_ease::CAMERA_OFFSET_EASE_SEED
+        legaia_engine_field::camera_ease::CAMERA_OFFSET_EASE_SEED
     );
 }
 
@@ -106,7 +107,7 @@ fn the_settled_value_is_the_posted_offset_minus_the_players_footing() {
 fn the_bit_24_arm_posts_both_globals_because_the_easing_is_locked_out() {
     let mut world = world_with_player();
     world.actors[0].move_state.world_y = -192;
-    world.flags.story_flags = crate::camera_ease::PAD_INPUT_LOCKED;
+    world.flags.story_flags = legaia_engine_field::camera_ease::PAD_INPUT_LOCKED;
     world.load_field_script(sub9_default(0x200));
     let _ = world.tick();
     assert_eq!(

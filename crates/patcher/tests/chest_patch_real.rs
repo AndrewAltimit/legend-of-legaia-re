@@ -5,11 +5,11 @@
 //! EDC/ECC-valid, and a fixed seed is byte-deterministic. Skips without
 //! `LEGAIA_DISC_BIN`.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 use legaia_patcher::apply;
 use legaia_patcher::chest::SceneChests;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {

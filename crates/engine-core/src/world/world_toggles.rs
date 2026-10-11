@@ -1,7 +1,7 @@
 //! Engine behaviour toggles: the live gameplay loop, VM-driven dialogue, damage finish, monster targeting, select-attack option, flashing reduction and the entry pulse gate.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite [`World`].
+//! Fields keep their retail provenance notes.
 
 /// Engine behaviour toggles: the live gameplay loop, VM-driven dialogue, damage finish, monster targeting, select-attack option, flashing reduction and the entry pulse gate.
 pub struct WorldToggles {
@@ -28,7 +28,7 @@ pub struct WorldToggles {
     /// only takes effect at retail framing.
     pub(crate) view_window_crop: bool,
     /// The volumetric ground-fog **enhancement**
-    /// ([`crate::fog_volume`], stepped by `World::tick`), from
+    /// ([`legaia_render_kernels::fog_volume`], stepped by `World::tick`), from
     /// [`crate::options::OptionsState::volumetric_fog`]. Default **off** here
     /// so headless hosts (replays, oracles) carry no enhancement; the play
     /// hosts push their option (default on) through
@@ -45,7 +45,7 @@ pub struct WorldToggles {
     /// the automatic `Field -> Battle` flip resolving a real formation.
     ///
     /// The **battle side is not gated by this flag.** Once the world is in
-    /// [`crate::world::SceneMode::Battle`] - however it got there: this roll, a field
+    /// [`legaia_engine_mode::mode::SceneMode::Battle`] - however it got there: this roll, a field
     /// carrier's scripted `3E FF` fight, a world-map region encounter, or a
     /// direct [`crate::world::World::enter_battle`] - [`crate::world::World::tick`] always drives
     /// [`crate::world::World::live_battle_tick`], because a battle that cannot resolve is a
@@ -71,7 +71,7 @@ pub struct WorldToggles {
     /// by default - when off, behaviour is identical to before.
     pub use_vm_dialogue: bool,
     /// Route the live basic-attack damage through the retail damage
-    /// finisher ([`legaia_engine_vm::battle_formulas::damage_finish`], the port
+    /// finisher ([`legaia_engine_battle_vm::battle_formulas::damage_finish`], the port
     /// of `FUN_801ddb30`) instead of stopping at the raw roll. The finisher
     /// adds the universal post-stages - the party defender's equipment
     /// elemental-resistance ladder (live, off the character's ability words
@@ -85,25 +85,25 @@ pub struct WorldToggles {
     /// retail.
     pub use_damage_finish: bool,
     /// Battle "Select Attack" option - retail config word `0x800846C4`,
-    /// the pause menu's row ([`crate::options::SelectAttackOpt`]): whether
+    /// the pause menu's row ([`legaia_engine_menus::option_values::SelectAttackOpt`]): whether
     /// the ring's Attack arm shows the `Auto | Command` prompt (`0x78`), goes
     /// straight to the target cursor (`0x5A`) or straight to the directional
     /// arts entry (`0x50`) - `FUN_801D0748`'s `0x28` Left arm at
     /// `0x801D15E0..0x801D1650`. Hosts mirror their `OptionsState` onto this
     /// the way they mirror [`crate::world::FieldLocomotion::run_default`].
-    pub(crate) select_attack: crate::options::SelectAttackOpt,
+    pub(crate) select_attack: legaia_engine_menus::option_values::SelectAttackOpt,
     /// The options screen's **Battle Camera** row (config word
     /// `0x800846C0`, Close / Normal / Far), which the battle camera's action
     /// shots read (`BattleCamera::set_camera_option`). Hosts mirror their
     /// `OptionsState` onto this through `OptionsState::apply_to_world`.
-    pub battle_camera: crate::options::BattleCameraOpt,
+    pub battle_camera: legaia_engine_menus::option_values::BattleCameraOpt,
     /// The options screen's **Field HP Display** row (config word
     /// `0x800845C4`, Immediate / Gradual / Display Off). The field party
     /// HUD (`FUN_801D0D38`) reads it as its idle delay - `0x28` frames,
     /// `0xA0` frames, or never - so hosts mirror their `OptionsState` onto
     /// this through `OptionsState::apply_to_world` and both ask
     /// `world_map_panel_host::field_hud_view_mode`.
-    pub(crate) field_hp_display: crate::options::HpDisplayOpt,
+    pub(crate) field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt,
     /// Draw the overworld's per-placement **entity markers**
     /// ([`crate::world_map_markers`]: a cyan post at each portal, green at
     /// each NPC, red at each encounter zone). A port debug overlay, not a
@@ -132,9 +132,9 @@ impl WorldToggles {
             smarter_monster_targeting: false,
             use_vm_dialogue: false,
             use_damage_finish: true,
-            select_attack: crate::options::SelectAttackOpt::default(),
-            battle_camera: crate::options::BattleCameraOpt::default(),
-            field_hp_display: crate::options::HpDisplayOpt::Immediate,
+            select_attack: legaia_engine_menus::option_values::SelectAttackOpt::default(),
+            battle_camera: legaia_engine_menus::option_values::BattleCameraOpt::default(),
+            field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt::Immediate,
             overworld_marker_overlay: false,
             battle_pass_rand_draw: true,
         }

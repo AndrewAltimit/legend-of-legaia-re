@@ -369,7 +369,7 @@ pub fn spawn_arc_helper(
 /// `0x801DF5AC`, unconditionally on the success side of that arm's
 /// halt-acquire - so the op is **halt the script and arc this actor**, not a
 /// halt alone. The engine reaches it from both routes the arm has:
-/// `FieldHost::op43_arc_jump` (NPC channels) and the cutscene timeline's
+/// `FieldHost::spawn_arc_jump` (NPC channels) and the cutscene timeline's
 /// player-anchor `C3 F8` park, each through `World::start_field_script_arc`,
 /// which keeps one arc per actor in `World::script_actors`; the clip and the
 /// release watcher ([`release_watcher_tick`]) advance in

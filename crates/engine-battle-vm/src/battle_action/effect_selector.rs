@@ -16,7 +16,7 @@
 //! Selector `0x82` is not an arm either in any real sense: its slot points at
 //! `0x800421A0`, two instructions above the epilogue, which is one
 //! `jal 0x80046870` - the Incense window top-up (class `0x82` is Incense)
-//! already ported as [`crate::battle_helpers::top_up_cooldown`].
+//! already ported as [`legaia_engine_field::incense_window::top_up_cooldown`].
 //!
 //! So the applier's whole behavioural surface is selectors `0x00..=0x0E`, and
 //! `0x0B` / `0x0C` / `0x0D` share one arm - fourteen bodies over fifteen
@@ -164,12 +164,12 @@ pub const DISPLAYED_SKILL_CAP: usize = 16;
 /// PORT: FUN_800402F4 (selectors `0x0B`..`0x0D`, `0x80041FB4..0x80042098`)
 ///
 /// Wired: `World::use_item` runs this for a Hyper-Art **book**
-/// (`engine-core::items::ItemEffect::ArtsBook`, the class-`11`/`12`/`13`
+/// (`engine-menus::items::ItemEffect::ArtsBook`, the class-`11`/`12`/`13`
 /// descriptors on item ids `0x8F..=0x97`), writing the `+0x185`/`+0x186` list
 /// of roster slot `class - 11`. That list is not inert on the engine side
 /// either: `WorldFieldHost::learned_arts` reads it back for the battle AI's
 /// auto-fill queue. The separate **spell** list at `+0x13D`
-/// (`engine-core::magic_xp::learn_spell_prepend`, `FUN_801E92DC`) is a
+/// (`engine-battle::magic_xp::learn_spell_prepend`, `FUN_801E92DC`) is a
 /// different list with a different writer, which is what the earlier reading
 /// of this row conflated.
 pub fn selector_insert_displayed_skill(list: &mut [u8], count: &mut u8, id: u8) -> Option<usize> {

@@ -13,9 +13,9 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::man_field_scripts::walk_battle_entry_scores;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::walk_battle_entry_scores;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -34,13 +34,16 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
-fn scene_man(index: &ProtIndex, name: &str) -> (legaia_asset::man_section::ManFile, Vec<u8>) {
+fn scene_man(
+    index: &ProtIndex,
+    name: &str,
+) -> (legaia_scene_formats::man_section::ManFile, Vec<u8>) {
     let scene = Scene::load(index, name).expect("load scene");
     let man = scene
         .field_man_payload(index)
         .expect("man payload fetch")
         .expect("scene has a MAN payload");
-    let man_file = legaia_asset::man_section::parse(&man).expect("man parse");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("man parse");
     (man_file, man)
 }
 
@@ -92,7 +95,7 @@ fn boss_records_replay_their_theme_and_sound_set() {
         assert!(
             world.pending_field_events.iter().any(|e| matches!(
                 e,
-                legaia_engine_core::field_events::FieldEvent::Bgm { text_id, sub_op: 9 | 1 }
+                legaia_engine_field::field_events::FieldEvent::Bgm { text_id, sub_op: 9 | 1 }
                     if *text_id == track
             )),
             "{scene}: the start reaches the BGM director"

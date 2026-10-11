@@ -4,7 +4,8 @@
 
 use super::*;
 use crate::battle_round::PendingPartyAction;
-use legaia_engine_vm::battle_action::{ActionState, BattleActionHost};
+use legaia_engine_battle_vm::battle_action::{ActionState, BattleActionHost};
+use legaia_engine_mode::mode::SceneMode;
 
 /// Vahn (seat 0) committed a strike on the monster in seat 1, wearing the
 /// Counterattack passive when `counter` is set.

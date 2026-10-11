@@ -120,9 +120,9 @@ pub enum FieldEvent {
     /// `MV1`/`MV2`/four `MV3` frame-range segments/`MV4`/`MV5`/`MV6`,
     /// every movie on the disc. Engines that want to actually play
     /// the FMV should pop this event, resolve the index to a STR file
-    /// (via `legaia_asset::fmv_dispatch::FmvTable` when disc bytes are
+    /// (via `legaia_game_tables::fmv_dispatch::FmvTable` when disc bytes are
     /// available, else the static
-    /// `legaia_engine_core::cutscene::fmv_index_to_str_filename` map), and kick
+    /// `legaia_engine_system::movie::cutscene::fmv_index_to_str_filename` map), and kick
     /// whatever STR/MDEC playback path they have. Engines without an
     /// FMV path can drop the event - the field VM doesn't require any
     /// host-side response.
@@ -141,7 +141,7 @@ pub enum FieldEvent {
     /// the spawn request to engines. `records` is the list of child-actor
     /// bytecode streams split out of the script's `tail` via the retail
     /// `FUN_8003CA38` packet-length walker (mirrored by
-    /// [`legaia_engine_vm::field_helpers::packet_length`]). The parent
+    /// [`legaia_scene_formats::field_disasm::packet_length`]). The parent
     /// script's PC has already advanced past the opcode header; the records
     /// themselves remain embedded in the bytecode buffer and become the
     /// spawned actors' own bytecode (retail stores the pointer at
@@ -175,7 +175,7 @@ pub enum FieldEvent {
     /// dropped record is included so engines can log / diagnose.
     ActorSpawnFailed { record: Vec<u8> },
     /// An overworld town / dungeon entrance
-    /// (`legaia_engine_core::world::WorldMapEntityConfig::OverworldPortal`) reached its
+    /// (`crate::world_map_entity_config::WorldMapEntityConfig::OverworldPortal`) reached its
     /// scene-transition state. `slot` is the overworld entity index, whose
     /// config row carries the CDNAME destination + arrival tile; `dest_index`
     /// echoes that entrance's `0x3F` named-scene-change index so a host
@@ -183,7 +183,7 @@ pub enum FieldEvent {
     ///
     /// **Not a map id.** The `0x3E` door-warp id space is a mode-24 minigame
     /// sub-id and never reaches this event - a
-    /// `legaia_engine_core::world::WorldMapEntityConfig::MinigameDoor` arms
+    /// `crate::world_map_entity_config::WorldMapEntityConfig::MinigameDoor` arms
     /// `World::minigames.pending_warp` instead.
     WorldMapTransition { dest_index: u16, slot: u8 },
 }

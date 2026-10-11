@@ -90,7 +90,7 @@ a program table in PROT 0899's data segment (file `0x16260..0x16740`, VA
 `0x801E4A78..0x801E4F58`), byte-level spec in
 [`window-script.md`](../formats/window-script.md). Each caller materialises
 a program pointer (`lui`/`addiu`, or a saved register) and calls the VM;
-`legaia_asset::widget_script::scan` recovers the programs structurally from
+`legaia_game_tables::widget_script::scan` recovers the programs structurally from
 the `jal` sites. Because the table is overlay data at fixed VAs, program
 resolution is per-boot, not per-scene.
 
@@ -103,7 +103,7 @@ open script (`DAT_801E4E38`) on the picker entry edge and the slide-away
 script (`DAT_801E4E54`) on the Sell transition - the transitions retail's
 picker dispatcher `FUN_801DAFD4` drives ([shop.md](shop.md)) - through
 `legaia_engine_vm::run` over the `MenuWidgetState` window-list host.
-Disc-gated pins: `crates/asset/tests/widget_script_real.rs`,
+Disc-gated pins: `crates/game-tables/tests/widget_script_real.rs`,
 `crates/engine-core/tests/menu_widget_scripts_real.rs`.
 
 ## Why it's separate from the field VM
@@ -171,7 +171,7 @@ slot `[8]` of `FUN_801DE840` in `overlay_0897`) that the base-program dump
 renders as a standalone gauge-fill helper reading an uninitialised `v0`; its one
 `jal` caller (`FUN_80025980` mode switch) sets no arguments, confirming the alias.
 `0x801D5A68` and `0x801D7B50` are real functions in the *field* overlay - the
-ambient-motion direction resolver (`REF` in `engine-vm::ambient_motion`, see
+ambient-motion direction resolver (`REF` in `engine-motion-vm::ambient_motion`, see
 [motion-vm.md](motion-vm.md)) and the sub-area window rebuild
 ([field-locomotion.md](field-locomotion.md)) respectively - but their
 cutscene/menu-overlay dumps land mid-`FUN_801D5944` / `FUN_801D7B40`, so those

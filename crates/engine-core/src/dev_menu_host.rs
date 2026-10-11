@@ -12,10 +12,10 @@
 //! What is retail here and what is the port's:
 //!
 //! * **Retail** - every value transform. Row navigation and per-row stepping
-//!   run through [`legaia_engine_vm::world_map_dev_menu`]; the flag editor
+//!   run through [`legaia_engine_field::dev_menu_adjust`]; the flag editor
 //!   through [`crate::dev_menu`]; the character rows and the end-of-tick
-//!   stat clamp through [`crate::debug_char_editor`]; the equip write
-//!   through [`legaia_engine_vm::dev_equip_commit`].
+//!   stat clamp through [`legaia_engine_menus::debug_char_editor`]; the equip write
+//!   through [`legaia_engine_field::dev_equip_commit`].
 //! * **The port's** - which rows exist. Retail's list is 24 rows of
 //!   world-map debug tooling (`MAP CHANGE`, `CAMERA`, `ENCOUNT`, ...) whose
 //!   backing state is overlay-resident; [`DevMenuRow`] carries the subset
@@ -29,17 +29,18 @@
 //! This screen is a developer tool, so the shell keeps it behind an explicit
 //! opt-in rather than a menu row a player can reach.
 
-use crate::debug_char_editor::{DebugEditor, clamp_record_stats};
-use crate::dev_menu::{
-    EventFlagEditor, PACK_CIRCLE, PACK_CROSS, PACK_DOWN, PACK_LEFT, PACK_RIGHT, PACK_UP,
-};
-use legaia_engine_vm::dev_equip_commit::{EquipCommit, EquipCommitHost, commit_equip};
-use legaia_engine_vm::world_map_dev_menu::{clamp1_255_step, wrap12_step};
-use legaia_engine_vm::world_map_overlay::{
+use crate::dev_menu::EventFlagEditor;
+use legaia_engine_field::dev_equip_commit::{EquipCommit, EquipCommitHost, commit_equip};
+use legaia_engine_field::dev_menu_adjust::{clamp1_255_step, wrap12_step};
+use legaia_engine_field::dev_menu_leaves::{
     DevMenuRow as RetailRow, ListPickerPhase, PanelGeometry, decode_camera_readout,
     dev_menu_cursor_step, format_fixed_decimal, list_body_draws, panel_geometry,
 };
-use legaia_engine_vm::world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action};
+use legaia_engine_field::world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action};
+use legaia_engine_menus::debug_char_editor::{DebugEditor, clamp_record_stats};
+use legaia_engine_system::pad::{
+    PACK_CIRCLE, PACK_CROSS, PACK_DOWN, PACK_LEFT, PACK_RIGHT, PACK_UP,
+};
 
 /// A row of the engine's dev-menu list, named after the retail row it
 /// stands in for.
@@ -113,7 +114,7 @@ impl DevMenuRow {
     /// [`stale-not-wired-triage.md`](../../../docs/tooling/stale-not-wired-triage.md)
     /// for the sibling case on free-function names.
     pub fn retail_row(self) -> Option<RetailRow> {
-        use legaia_engine_vm::world_map_overlay::DevMenuRow;
+        use legaia_engine_field::dev_menu_leaves::DevMenuRow;
         DevMenuRow::from_index(self.retail_index())
     }
 }
@@ -181,7 +182,7 @@ pub struct DevMenuSession {
     /// `CARD OPTION` rows read `CLOSED` instead of their label.
     pub closed_gate: u32,
     /// The `CAMERA` row's switch - retail's `_DAT_8007B606`, mirrored from and
-    /// written back to [`crate::camera::ZoneFollow::follow_enabled`] by
+    /// written back to [`legaia_engine_field::camera::ZoneFollow::follow_enabled`] by
     /// [`Self::tick_host`].
     pub camera_follow: bool,
     /// The walk-region attribute box `0x1F800384..87` as the little-endian
@@ -405,11 +406,12 @@ impl DevMenuSession {
         // Retail's confirm row zeroes the `+0x185` span and cues an SFX
         // rather than stepping a field.
         if pad_edge & PACK_CROSS != 0
-            && self.chars.row == crate::debug_char_editor::CONFIRM_ROW
+            && self.chars.row == legaia_engine_menus::debug_char_editor::CONFIRM_ROW
             && let Some(record) = records.get_mut(self.chars.character as usize)
-            && crate::debug_char_editor::apply_confirm_clear(record)
+            && legaia_engine_menus::debug_char_editor::apply_confirm_clear(record)
         {
-            self.pending_sfx.push(crate::debug_char_editor::CONFIRM_SFX);
+            self.pending_sfx
+                .push(legaia_engine_menus::debug_char_editor::CONFIRM_SFX);
         }
     }
 
@@ -418,7 +420,7 @@ impl DevMenuSession {
     ///
     /// Wraps [`Self::tick`] with the state the `CAMERA` row reads and writes,
     /// so neither host has to know it exists: the switch is loaded from the
-    /// follow camera's [`crate::camera::ZoneFollow::follow_enabled`] (retail
+    /// follow camera's [`legaia_engine_field::camera::ZoneFollow::follow_enabled`] (retail
     /// `_DAT_8007B606`) and the box word from the world's published walk-region
     /// attributes (`0x1F800384..87`) before the tick, and the switch is written
     /// back after it. A switch turned on by this tick also queues the snap the
@@ -433,7 +435,7 @@ impl DevMenuSession {
     pub fn tick_host(
         &mut self,
         world: &mut crate::world::World,
-        camera: &mut crate::camera::Camera,
+        camera: &mut legaia_engine_field::camera::Camera,
         pad_edge: u16,
         pad_held: u16,
     ) -> Option<Option<EquipCommit>> {
@@ -548,7 +550,7 @@ pub fn camera_row_readout(follow: bool, box_word: u32) -> String {
 /// its own index here.
 pub struct WorldEquipHost<'a> {
     /// The engine bag.
-    pub inventory: &'a mut crate::world::ItemBag,
+    pub inventory: &'a mut legaia_engine_menus::item_bag::ItemBag,
     /// Cues the commit raised.
     pub sfx: Vec<u8>,
 }
@@ -557,7 +559,7 @@ impl EquipCommitHost for WorldEquipHost<'_> {
     fn find_in_bag(&self, item_id: u8) -> u16 {
         match self.inventory.get(&item_id) {
             Some(n) if *n > 0 => u16::from(item_id),
-            _ => legaia_engine_vm::dev_equip_commit::BAG_MISS,
+            _ => legaia_engine_field::dev_equip_commit::BAG_MISS,
         }
     }
 
@@ -587,7 +589,7 @@ impl EquipCommitHost for WorldEquipHost<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::debug_char_editor::offsets;
+    use legaia_engine_menus::debug_char_editor::offsets;
 
     fn records() -> Vec<Vec<u8>> {
         (0..4).map(|_| vec![0u8; 0x414]).collect()
@@ -693,7 +695,7 @@ mod tests {
     fn the_equip_row_commits_through_the_engine_bag() {
         let mut s = DevMenuSession::new();
         s.equip_item = 0x30;
-        let mut bag = crate::world::ItemBag::new();
+        let mut bag = legaia_engine_menus::item_bag::ItemBag::new();
         bag.insert(0x30, 1);
         let mut host = WorldEquipHost {
             inventory: &mut bag,
@@ -713,7 +715,7 @@ mod tests {
     fn a_missing_item_commits_nothing() {
         let mut s = DevMenuSession::new();
         s.equip_item = 0x77;
-        let mut bag = crate::world::ItemBag::new();
+        let mut bag = legaia_engine_menus::item_bag::ItemBag::new();
         let mut host = WorldEquipHost {
             inventory: &mut bag,
             sfx: Vec::new(),
@@ -788,7 +790,9 @@ mod tests {
         assert_eq!(s.route_sfx(&mut w), vec![SFX_CURSOR_MOVE as u8]);
         assert_eq!(
             w.take_sfx_ring_ops(),
-            vec![crate::world::SfxRingOp::Push(SFX_CURSOR_MOVE as i16)]
+            vec![legaia_engine_system::sound_state::SfxRingOp::Push(
+                SFX_CURSOR_MOVE as i16
+            )]
         );
         assert!(s.drain_sfx().is_empty(), "routing drains the queue");
     }
@@ -848,7 +852,7 @@ mod tests {
     #[test]
     fn the_camera_row_switches_the_follow_camera() {
         let mut w = crate::world::World::new();
-        let mut cam = crate::camera::Camera::default();
+        let mut cam = legaia_engine_field::camera::Camera::default();
         assert!(cam.zone.follow_enabled, "retail boots the switch on");
         let mut s = DevMenuSession::new();
         s.select(DevMenuRow::Camera);
@@ -882,7 +886,7 @@ mod tests {
         assert_eq!(camera_row_readout(true, word), "ON 032 048");
 
         let mut w = crate::world::World::new();
-        let mut cam = crate::camera::Camera::default();
+        let mut cam = legaia_engine_field::camera::Camera::default();
         w.terrain.region_attributes.box_bytes = [0x10, 0x20, 0x30, 0x40];
         let mut s = DevMenuSession::new();
         s.tick_host(&mut w, &mut cam, 0, 0);

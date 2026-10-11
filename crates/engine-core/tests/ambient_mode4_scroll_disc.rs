@@ -15,9 +15,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::scene_entry_ambient_installs;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::scene_entry_ambient_installs;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn extracted_root() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -87,7 +87,7 @@ fn row_values(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u1
 /// vertical scroll through `World::step_ambient_fx`.
 #[test]
 fn mode4_seat_rotates_a_vram_rect_through_step_ambient_fx() {
-    use legaia_asset::summon_overlay::SummonPart;
+    use legaia_overlay_images::summon_overlay::SummonPart;
 
     // [i16 model_sel = -1][u16 reserved] then: 0x1E period dx dy x y w h,
     // 0x1A 0x4000 (infinite loop latch), 0x09 wait, 0x1B (jump back).
@@ -100,7 +100,7 @@ fn mode4_seat_rotates_a_vram_rect_through_step_ambient_fx() {
     let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
 
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },
@@ -177,7 +177,7 @@ fn jou_record23_seats_the_scroller_and_rotates_its_rect_or_skip() {
     let scripts = scene.find_event_scripts().expect("jou event scripts");
 
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2, // town cadence
             ..Default::default()
         },
@@ -258,7 +258,7 @@ fn mode4_scene_entry_carrier_census_or_skip() {
         let Ok(Some(man_bytes)) = scene.field_man_payload(&index) else {
             continue;
         };
-        let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
+        let Ok(man) = legaia_scene_formats::man_section::parse(&man_bytes) else {
             continue;
         };
         let installs = scene_entry_ambient_installs(&man, &man_bytes);
@@ -266,7 +266,7 @@ fn mode4_scene_entry_carrier_census_or_skip() {
             continue;
         }
         let mut world = World {
-            clock: legaia_engine_core::world::FrameClock {
+            clock: legaia_engine_vm::frame_clock::FrameClock {
                 frame_step: 2,
                 ..Default::default()
             },

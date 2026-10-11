@@ -43,23 +43,26 @@
 
 use std::sync::Arc;
 
-use crate::battle_events::{BattleEvent, BattleHitEvent, BattleHitFx, BattleSfxCue};
-use crate::field_events::FieldEvent;
-use crate::input;
-use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
-use crate::man_field_scripts::WalkTouchEvent;
 use crate::move_buffer_host;
-use crate::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
-use crate::world_map::WorldMapController;
-pub use legaia_anm::{AnimPlayer, PoseFrame};
-use legaia_asset::monster_archive::MonsterAnimation;
+use legaia_actor_formats::monster_archive::MonsterAnimation;
+use legaia_anm::{AnimPlayer, PoseFrame};
+use legaia_engine_battle::battle_events::{BattleEvent, BattleHitEvent, BattleHitFx, BattleSfxCue};
+use legaia_engine_battle::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
+use legaia_engine_battle::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
+use legaia_engine_battle_vm::battle_action::{
+    BattleActionCtx, BattleActor, BattleEndCause, StepOutcome,
+};
+use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_field::man_field_scripts::WalkTouchEvent;
+use legaia_engine_field::world_map::WorldMapController;
+use legaia_engine_system::input;
 use legaia_engine_vm as vm;
+use legaia_engine_vm::MAX_ACTORS;
 use legaia_save;
 use vm::Position as ActorVmPosition;
-use vm::actor_tick::{ActorPhysics, ListenerState, TickEvent, TickResult, TickScalars};
-use vm::battle_action::{BattleActionCtx, BattleActor, BattleEndCause, StepOutcome};
+use vm::actor_tick::{ActorPhysics, ListenerState, TickEvent, TickScalars};
 use vm::effect_vm::Pool;
-use vm::field::{CameraParam, FieldCtx, StepResult as FieldStepResult};
+use vm::field::{FieldCtx, StepResult as FieldStepResult};
 use vm::move_buffer::{MoveBufferState, cursor_advance};
 use vm::move_vm::ActorState as MoveActorState;
 
@@ -73,32 +76,20 @@ mod audio_residency;
 mod audio_state;
 mod battle_state;
 mod camera_hooks;
-mod camera_rig;
 mod cast_fx_state;
 mod config;
 mod cutscene_state;
-mod dialog_state;
 mod disc_tables;
-mod encounter_state;
-mod field_carrier_state;
 mod field_locomotion;
 mod field_npc_state;
 mod field_prop_state;
-mod field_script_actor_state;
 mod field_terrain;
 mod field_vm_state;
-mod frame_clock;
 mod frame_step_floor;
 mod menu_state;
 mod minigame_state;
-mod move_vm_globals;
-mod party_state;
 mod screen_fx_state;
-mod seru_state;
-mod shop_state;
 mod state;
-mod story_flag_state;
-mod tile_board_state;
 mod types;
 mod world_map_state;
 mod world_toggles;
@@ -109,47 +100,51 @@ pub use audio_residency::{
     SLOT_MACHINE_SLOT2_PROT_INDEX, SfxBankResidency, SharedRegionBank, minigame_slot2_bank,
 };
 pub use audio_state::{
-    ARENA_SIDE_BAND_REQUEST, AudioState, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK, SfxRingOp,
+    ARENA_SIDE_BAND_REQUEST, AudioState, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK,
     SideBandBank, VAB_01_RAW_BASE, runtime_sfx_descriptor_in, side_band_bank_for_request,
 };
 pub use battle_state::{BattleState, ClipRibbon, INFLIGHT_GROUND_SLOTS, InflightCastSeed};
-pub use camera_hooks::CameraZoneRequest;
-pub use camera_rig::CameraRig;
 pub use cast_fx_state::{CastFxState, PendingBurst};
 pub use config::*;
 pub use cutscene_state::CutsceneState;
-pub use dialog_state::DialogState;
 pub use disc_tables::DiscTables;
-pub use encounter_state::EncounterState;
-pub use field_carrier_state::FieldCarrierState;
 pub use field_locomotion::FieldLocomotion;
 pub use field_npc_state::{FieldNpcState, SPAWN_HEADING};
 pub use field_prop_state::FieldPropState;
-pub use field_script_actor_state::{
-    FieldAttachedLight, FieldScriptActorState, FieldScriptArc, ScriptActorRef,
-};
 pub use field_terrain::{FieldTerrain, step_floor_ladder};
 pub use field_vm_state::FieldVmState;
-pub use frame_clock::FrameClock;
-pub use legaia_engine_menus::item_bag::{BagEntry, ItemBag};
+use legaia_engine_battle::encounter_state::EncounterState;
+use legaia_engine_battle::seru_state::SeruState;
+use legaia_engine_field::camera::CameraZoneRequest;
+use legaia_engine_field::camera_rig::CameraRig;
+use legaia_engine_field::dialog_state::{DialogRequest, DialogState, ThreeActorTalk};
+use legaia_engine_field::field_carrier_state::{CarrierMenu, FieldCarrierState, spar_menu_of};
+use legaia_engine_field::field_script_actor_state::{
+    FieldAttachedLight, FieldScriptActorState, FieldScriptArc, ScriptActorRef,
+};
+use legaia_engine_field::move_vm_globals::{FieldNpcMotion, MoveVmGlobals};
+use legaia_engine_field::world_map_entity_config::{WorldMapEncounterState, WorldMapEntityConfig};
+use legaia_engine_menus::party_state::PartyState;
+use legaia_engine_menus::shop_state::ShopState;
+use legaia_engine_minigames::tile_board_state::TileBoardState;
+use legaia_engine_system::sound_state::SfxRingOp;
+use legaia_engine_system::story_flag_state::StoryFlagState;
+use legaia_engine_vm::frame_clock::FrameClock;
 pub use menu_state::MenuState;
 pub use minigame_state::{FishingCaptionText, MinigameState, pond_event_cues};
-pub use move_vm_globals::{MOVE_STRIP_REQUEST_CAP, MoveVmGlobals};
-pub use party_state::PartyState;
 pub use screen_fx_state::{ClearColourRamp, ScreenFxState};
-pub use seru_state::SeruState;
-pub use shop_state::ShopState;
 pub use state::*;
-pub use story_flag_state::StoryFlagState;
-pub use tile_board_state::TileBoardState;
 pub use types::*;
 pub use world_map_state::WorldMapState;
 pub use world_toggles::WorldToggles;
 
 mod actors;
 pub mod ambient;
+mod camera_world;
 mod cutscene_elements;
 mod field_script_actors;
+mod fishing_hub_exits;
+pub mod mode_world;
 pub use field_script_actors::{FieldLightDraw, NpcDrawPose};
 mod drop_shadow_render;
 mod fog_render;

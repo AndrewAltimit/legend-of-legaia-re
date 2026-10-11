@@ -1,16 +1,14 @@
 //! Derived field-carrier menus (Rim Elm sparring carrier detection).
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use super::*;
 
 /// `true` when `p` is the Rim Elm sparring partner: the partition-1 placement
 /// pinned at [`RIM_ELM_SPARRING_CARRIER_TILE`] carrying
 /// [`RIM_ELM_SPARRING_CARRIER_MODEL`] (the NPC whose talk-menu installs the
-/// opening lone-Tetsu training fight). See [`crate::encounter_record`].
+/// opening lone-Tetsu training fight). See [`legaia_scene_formats::encounter_record`].
 pub fn is_rim_elm_sparring_carrier(p: &ActorPlacement) -> bool {
-    (p.tile_x, p.tile_z) == crate::encounter_record::RIM_ELM_SPARRING_CARRIER_TILE
-        && p.model_index == crate::encounter_record::RIM_ELM_SPARRING_CARRIER_MODEL
+    (p.tile_x, p.tile_z) == legaia_scene_formats::encounter_record::RIM_ELM_SPARRING_CARRIER_TILE
+        && p.model_index == legaia_scene_formats::encounter_record::RIM_ELM_SPARRING_CARRIER_MODEL
 }
 
 /// A field carrier derived from one MAN partition-1 placement: the placement it
@@ -34,7 +32,7 @@ pub struct DerivedFieldCarrier {
 ///
 /// - the pinned Rim Elm sparring partner ([`is_rim_elm_sparring_carrier`]) maps
 ///   to [`FieldCarrierConfig::ScriptedEncounter`] for the training formation
-///   ([`crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]);
+///   ([`legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]);
 /// - every other talk-to NPC maps to [`FieldCarrierConfig::Npc`] keyed by its
 ///   partition-1 record index (the retail interaction-script selector).
 ///
@@ -59,7 +57,7 @@ pub struct DerivedFieldCarrier {
 /// ([`record_battle_entry_rows`]) - the only way retail enters the fight -
 /// so talking to Tetsu in the mist-attack town stays a conversation.
 pub fn derive_field_carriers(man_file: &ManFile, man: &[u8]) -> Vec<DerivedFieldCarrier> {
-    let training_row = crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID as u8;
+    let training_row = legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID as u8;
     classify_placements(man_file, man)
         .into_iter()
         .filter_map(|(p, kind)| {
@@ -67,7 +65,8 @@ pub fn derive_field_carriers(man_file: &ManFile, man: &[u8]) -> Vec<DerivedField
                 && record_battle_entry_rows(man_file, man, 1, p.index).contains(&training_row)
             {
                 FieldCarrierConfig::ScriptedEncounter {
-                    formation_id: crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID,
+                    formation_id:
+                        legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID,
                 }
             } else if matches!(kind, PlacementKind::Npc { .. }) {
                 FieldCarrierConfig::Npc {
@@ -88,14 +87,14 @@ pub fn derive_field_carriers(man_file: &ManFile, man: &[u8]) -> Vec<DerivedField
 
 /// Per-field-carrier role. The retail engine builds one record per MAN-placed
 /// scene entity; this is the port's slice the field entity SM acts on.
-/// Paired by index with `legaia_engine_core::world::FieldCarrierState::entities`.
+/// Paired by index with `crate::field_carrier_state::FieldCarrierState::entities`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldCarrierConfig {
     /// A **scripted-encounter carrier**: engaging it (the dialogue-accept)
     /// advances its `FUN_801DA51C` SM to its scene-transition, which selects
     /// MAN formation `formation_id` (by index, so the scene's merged monster
     /// stats stand) and launches the battle. The Rim Elm Tetsu tutorial fight
-    /// is `formation_id` [`crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`].
+    /// is `formation_id` [`legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`].
     ScriptedEncounter { formation_id: u16 },
     /// A plain interactable NPC. Surfaces a
     /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.

@@ -35,7 +35,7 @@ The `0903..=0966` entries are the 64 slot-B cast / summon images, each one speci
 ## Reading the format
 
 ```rust
-use legaia_asset::mips_overlay;
+use legaia_overlay_images::mips_overlay;
 
 if let Some(m) = mips_overlay::detect(buf) {
     println!("MIPS overlay: stack frame = {} bytes; second op = {:#04x}",

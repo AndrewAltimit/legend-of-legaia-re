@@ -1,7 +1,6 @@
 //! Battle hit resolution: the per-frame hit-event tick, hit apply modes and
 //! power runs, zero-length clip hits, the melee landing, reaction, block roll
 //! and juggle window, combo totals and the melee impact cue.
-//! Split out of `loop_driver.rs`; no logic change.
 
 use super::*;
 
@@ -25,9 +24,11 @@ impl World {
     /// `FUN_801EC3E4(actor, entry, cursor >> 4)` call; `0x80047900..
     /// 0x80047A44`: the bit-1 event-path commit)
     /// REF: FUN_801EC3E4 (head guard chain ported as
-    /// `legaia_engine_vm::battle_action::hit_event_admits`)
+    /// `legaia_engine_battle_vm::battle_action::hit_event_admits`)
     pub(in crate::world) fn tick_battle_hit_events(&mut self) {
-        use vm::battle_action::{ActionState, ActorFlags, event_commit_due, hit_event_admits};
+        use legaia_engine_battle_vm::battle_action::{
+            ActionState, ActorFlags, event_commit_due, hit_event_admits,
+        };
         let state = self.battle_ctx.action_state;
         // A fresh action starts a fresh combo total on every target.
         if state == ActionState::Begin.as_byte() {
@@ -58,7 +59,8 @@ impl World {
                 let a = &mut self.actors[i];
                 if a.battle_monster_id.is_none()
                     && a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
-                    && a.battle.latched_anim >= vm::battle_action::LOOP_REZERO_LATCHED_MIN
+                    && a.battle.latched_anim
+                        >= legaia_engine_battle_vm::battle_action::LOOP_REZERO_LATCHED_MIN
                 {
                     a.battle.input_cursor = 0;
                     a.battle_effect_cursor = 0;
@@ -94,10 +96,13 @@ impl World {
                     let step = p.end_root_step();
                     if step != 0 {
                         let frames = p.frame_count().min(255) as u8;
-                        let (sin, cos) = vm::battle_action::motion::trig12(a.battle.facing_angle);
-                        let (dx, dz) = vm::battle_action::motion::event_cut_root_step(
-                            sin, cos, step, frame, frames,
+                        let (sin, cos) = legaia_engine_battle_vm::battle_action::motion::trig12(
+                            a.battle.facing_angle,
                         );
+                        let (dx, dz) =
+                            legaia_engine_battle_vm::battle_action::motion::event_cut_root_step(
+                                sin, cos, step, frame, frames,
+                            );
                         a.move_state.world_x = a.move_state.world_x.wrapping_add(dx as i16);
                         a.move_state.world_z = a.move_state.world_z.wrapping_add(dz as i16);
                     }
@@ -120,11 +125,11 @@ impl World {
     pub(super) fn resolve_hit_event(
         &mut self,
         attacker: u8,
-        hit: vm::battle_action::HitEvent,
+        hit: legaia_engine_battle_vm::battle_action::HitEvent,
         power_run: [u8; 4],
         event_frames: [u8; 4],
     ) {
-        use vm::battle_action::{
+        use legaia_engine_battle_vm::battle_action::{
             STRIKE_CURSOR_PARKED, fold_weapon_atk_on_hit, staged_art_constant,
         };
         let state = self.battle_ctx.action_state;
@@ -148,8 +153,11 @@ impl World {
         // `+0x1F4` bump (already taken by the caller). No accumulate, no
         // apply, no flinch, no hit event - the earlier hit's apply-mode
         // look-ahead has already landed any total this one could strand.
-        if vm::battle_action::limb_misses(party, hit.power_byte, self.attack_swing_class_of(target))
-        {
+        if legaia_engine_battle_vm::battle_action::limb_misses(
+            party,
+            hit.power_byte,
+            self.attack_swing_class_of(target),
+        ) {
             self.battle_ctx.effect_skip_strobe = 1;
             self.consume_effect_skip_strobe(attacker as usize);
             log::debug!(
@@ -180,8 +188,8 @@ impl World {
         // the kill check that sits between the two needs it.
         let mode = self.hit_apply_mode(attacker, target, &power_run, hit.hit_index);
         let applied = match mode {
-            vm::battle_action::APPLY_MODE_CARRY => false,
-            vm::battle_action::APPLY_MODE_EARLY => true,
+            legaia_engine_battle_vm::battle_action::APPLY_MODE_CARRY => false,
+            legaia_engine_battle_vm::battle_action::APPLY_MODE_EARLY => true,
             _ => cursor_parked && last_of_clip,
         };
         // The kill check's own gates (`0x801EE128..0x801EE1A4`) are the apply
@@ -212,7 +220,7 @@ impl World {
         );
         self.battle
             .hit_events
-            .push(crate::battle_events::BattleHitEvent {
+            .push(legaia_engine_battle::battle_events::BattleHitEvent {
                 attacker_slot: attacker,
                 target_slot: target,
                 hit_index: hit.hit_index,
@@ -247,7 +255,7 @@ impl World {
     }
 
     /// The apply mode of one admitted hit - retail's `s2`
-    /// (`legaia_engine_vm::battle_action::apply_mode`).
+    /// (`legaia_engine_battle_vm::battle_action::apply_mode`).
     ///
     /// The look-ahead it feeds walks the rest of this clip's power run and
     /// then every stream byte the strike cursor has not reached, resolving
@@ -265,7 +273,7 @@ impl World {
         hit_index: u8,
     ) -> u8 {
         let Some(a) = self.actors.get(attacker as usize) else {
-            return vm::battle_action::APPLY_MODE_NORMAL;
+            return legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL;
         };
         // **Both** copies of the kernel gate on a monster target before they
         // compute anything: `sltiu v0,a0,0x3` on the target slot at
@@ -275,11 +283,11 @@ impl World {
         // the ordinary arm - which is what makes the record-direct
         // `0x801C9348[target - 3]` read in the decision well-defined.
         if usize::from(target) < usize::from(self.party.party_count.clamp(1, 3)) {
-            return vm::battle_action::APPLY_MODE_NORMAL;
+            return legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL;
         }
         let cursor = a.battle.strike_index;
         let queue = a.battle.params;
-        let bits = vm::battle_action::remaining_hit_class_bits(
+        let bits = legaia_engine_battle_vm::battle_action::remaining_hit_class_bits(
             power_run,
             hit_index.wrapping_add(1),
             &queue,
@@ -298,7 +306,7 @@ impl World {
         } else {
             0
         };
-        vm::battle_action::apply_mode(
+        legaia_engine_battle_vm::battle_action::apply_mode(
             bits,
             self.attack_swing_class_of(target),
             ability,
@@ -358,7 +366,7 @@ impl World {
     /// command's own tier, the pre-clip reading. When the byte is the
     /// action's last (the terminator is next) the combo total lands.
     pub(super) fn resolve_zero_length_clip_hits(&mut self, attacker: u8, staged: u8) {
-        use vm::battle_action::staged_art_constant;
+        use legaia_engine_battle_vm::battle_action::staged_art_constant;
         let (party, chosen, next_is_end) = {
             let a = &self.actors[attacker as usize];
             (
@@ -381,7 +389,9 @@ impl World {
                     legaia_art::PowerByte::NoDamage => None,
                 }));
             }
-            hits.truncate(usize::from(vm::battle_action::HIT_EVENT_SLOTS));
+            hits.truncate(usize::from(
+                legaia_engine_battle_vm::battle_action::HIT_EVENT_SLOTS,
+            ));
         }
         // Any other byte is one hit with the byte itself as the power byte -
         // except the `0x19` / `0x1A` art starters, whose records carry no
@@ -403,7 +413,11 @@ impl World {
             // holds here too. Retail's apply-mode look-ahead lands a total
             // early when nothing after it connects; the fallback has no
             // look-ahead, so a missed last hit lands what is already there.
-            if vm::battle_action::limb_misses(party, power, self.attack_swing_class_of(target)) {
+            if legaia_engine_battle_vm::battle_action::limb_misses(
+                party,
+                power,
+                self.attack_swing_class_of(target),
+            ) {
                 if applied {
                     self.apply_combo_total(target);
                 }
@@ -419,7 +433,7 @@ impl World {
             let running_total = self.actors[target as usize].battle.damage_accum;
             self.battle
                 .hit_events
-                .push(crate::battle_events::BattleHitEvent {
+                .push(legaia_engine_battle::battle_events::BattleHitEvent {
                     attacker_slot: attacker,
                     target_slot: target,
                     hit_index: i as u8,
@@ -460,7 +474,7 @@ impl World {
                 .apply_from_enemy_effect(target, effect);
             // Rot's applier rolls the disabled limb (`rand % 3`, the retail
             // `1 << (rand%3 + 3)` bit pick).
-            if applied == Some(legaia_engine_vm::status_effects::StatusKind::Rot) {
+            if applied == Some(legaia_engine_battle_vm::status_effects::StatusKind::Rot) {
                 let limb = (self.next_rand() % 3) as u8;
                 self.battle.status_effects.set_rot_limb(target, limb);
             }
@@ -470,7 +484,7 @@ impl World {
         {
             self.audio
                 .battle_sfx_cues
-                .push(crate::battle_events::BattleSfxCue {
+                .push(legaia_engine_battle::battle_events::BattleSfxCue {
                     kind: cue.kind,
                     timing_frames: 0,
                     actor_slot: attacker,
@@ -510,7 +524,7 @@ impl World {
     /// they get here.
     ///
     /// PORT: FUN_801EC3E4 (the accumulating body; the head is
-    /// `legaia_engine_vm::battle_action::hit_event_admits`)
+    /// `legaia_engine_battle_vm::battle_action::hit_event_admits`)
     /// REF: FUN_800402F4 (selector 9 = the action-interrupt roll, ported as
     /// `battle_formulas::accuracy_roll`)
     pub(super) fn land_melee_hit(
@@ -533,12 +547,16 @@ impl World {
         if attacker < self.party.party_count
             && let Some(bonuses) = self.battle.equip_atk.get(attacker_i)
         {
-            let fold_command = if committed > vm::battle_formulas::ART_ANIM_THRESHOLD {
-                vm::battle_formulas::ARMS_ART_COMMAND
-            } else {
-                committed
-            };
-            if let Some(fold) = vm::battle_formulas::arms_weapon_atk_fold(fold_command, bonuses) {
+            let fold_command =
+                if committed > legaia_engine_battle_vm::battle_formulas::ART_ANIM_THRESHOLD {
+                    legaia_engine_battle_vm::battle_formulas::ARMS_ART_COMMAND
+                } else {
+                    committed
+                };
+            if let Some(fold) = legaia_engine_battle_vm::battle_formulas::arms_weapon_atk_fold(
+                fold_command,
+                bonuses,
+            ) {
                 attack = attack.saturating_add(fold);
             }
         }
@@ -559,8 +577,8 @@ impl World {
             // `0x801EE6D4..0x801EE6F8`: the attacker's anim cue cursor steps
             // over one cue - the impact sound a landed hit would have made.
             if let Some(a) = self.actors.get_mut(attacker_i) {
-                a.battle_anim_cue_cursor =
-                    (a.battle_anim_cue_cursor + 1).min(crate::anim_cue::ANIM_CUE_TRACK_LEN);
+                a.battle_anim_cue_cursor = (a.battle_anim_cue_cursor + 1)
+                    .min(legaia_engine_battle::anim_cue::ANIM_CUE_TRACK_LEN);
             }
             // The sound tail is reached through the apply arm only, and the
             // grunt compares the committed pose against `+0x1F3`.
@@ -578,11 +596,13 @@ impl World {
             .get(attacker_i)
             .map(|a| a.battle.hp)
             .unwrap_or_default();
-        let hit_inputs = vm::battle_formulas::PhysicalHit {
+        let hit_inputs = legaia_engine_battle_vm::battle_formulas::PhysicalHit {
             attacker_atk: attack,
             attacker_hp: hp,
             defender_def: defense,
-            command_scalar: vm::battle_formulas::command_power_scalar(power_byte),
+            command_scalar: legaia_engine_battle_vm::battle_formulas::command_power_scalar(
+                power_byte,
+            ),
             staged_anim: committed,
             defender_guarding: target_guarding,
             attack_ramp,
@@ -590,7 +610,9 @@ impl World {
             ..Default::default()
         };
         let mut raw =
-            vm::battle_formulas::physical_predamage(&hit_inputs, &mut || self.next_rand() as u16);
+            legaia_engine_battle_vm::battle_formulas::physical_predamage(&hit_inputs, &mut || {
+                self.next_rand() as u16
+            });
         if self.toggles.use_damage_finish {
             // The finisher's *post* stages only: the defender's equipment
             // elemental-guard / All-Guard ladder, the 9999 cap and the
@@ -603,18 +625,20 @@ impl World {
             let attacker_is_party = attacker < self.party.party_count;
             let target_is_party = target < self.party.party_count;
             let defender_resist = self.defender_resist(target);
-            raw = vm::battle_formulas::damage_finish(&vm::battle_formulas::DamageFinish {
-                predamage: u32::from(raw),
-                attacker_slot: if attacker_is_party { 0 } else { 3 },
-                defender_slot: if target_is_party { 0 } else { 3 },
-                attacker_element: 7, // basic attack is non-elemental
-                defender_resist,
-                defender_guarding: false,
-                enemy_defender_halve: self.mystic_shield_up(),
-                bypass_party_resist: false,
-                summon_power_pct: 100,
-                floor_rand,
-            }) as u16;
+            raw = legaia_engine_battle_vm::battle_formulas::damage_finish(
+                &legaia_engine_battle_vm::battle_formulas::DamageFinish {
+                    predamage: u32::from(raw),
+                    attacker_slot: if attacker_is_party { 0 } else { 3 },
+                    defender_slot: if target_is_party { 0 } else { 3 },
+                    attacker_element: 7, // basic attack is non-elemental
+                    defender_resist,
+                    defender_guarding: false,
+                    enemy_defender_halve: self.mystic_shield_up(),
+                    bypass_party_resist: false,
+                    summon_power_pct: 100,
+                    floor_rand,
+                },
+            ) as u16;
         }
         let dmg = raw;
         // Spirit accrues from the pre-nullify hit: retail's finisher fills the
@@ -661,7 +685,7 @@ impl World {
         // the record.
         // REF: FUN_801EC3E4 (`sltiu v0,v0,0x6` at 0x801EE3E0)
         let class = self.attacker_impact_class(attacker_i);
-        if class < crate::move_power::IMPACT_CLASS_LIMIT {
+        if class < legaia_engine_battle::move_power::IMPACT_CLASS_LIMIT {
             self.arm_impact_tint(target_i, class);
         }
         // The reaction this strike commits on the defender (retail's `s7`,
@@ -710,7 +734,7 @@ impl World {
             .battle
             .seat
             .unwrap_or((t.move_state.world_x, t.move_state.world_z));
-        let facing = vm::battle_action::bearing_12bit_approx(
+        let facing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
             bz,
             bx,
             a.move_state.world_z,
@@ -764,11 +788,12 @@ impl World {
         absorbed_now: bool,
     ) -> Option<u8> {
         let [high, low, knockdown, getup, _] = self.battle_reaction_map(target)?;
-        let mut s7 = if vm::battle_formulas::physical_defense_is_udf(power_byte) {
-            high
-        } else {
-            low
-        };
+        let mut s7 =
+            if legaia_engine_battle_vm::battle_formulas::physical_defense_is_udf(power_byte) {
+                high
+            } else {
+                low
+            };
         if low == 0 {
             s7 = high;
         }
@@ -833,7 +858,9 @@ impl World {
     ///
     /// PORT: FUN_801EC3E4 (`0x801EC5A8..0x801ECB60`, the block gates)
     pub(super) fn roll_block(&mut self, attacker: u8, target: u8, power_byte: u8) -> Option<u8> {
-        use vm::battle_formulas::{ABILITY_BLOCK_BREAK, BlockRoll, BlockSide, block_roll};
+        use legaia_engine_battle_vm::battle_formulas::{
+            ABILITY_BLOCK_BREAK, BlockRoll, BlockSide, block_roll,
+        };
         let ti = usize::from(target);
         let block_entry = self.battle_reaction_map(ti)?[4];
         if block_entry == 0 {
@@ -910,7 +937,7 @@ impl World {
             return false;
         };
         let list = [list[0], list[1], list[2], list[3]];
-        vm::battle_action::event_commit_gate_frame(&list)
+        legaia_engine_battle_vm::battle_action::event_commit_gate_frame(&list)
             .is_some_and(|gate| player.current_frame() < i16::from(gate))
     }
 
@@ -924,9 +951,9 @@ impl World {
     pub(in crate::world) fn track_block_approach_terms(
         &mut self,
         pre_state: u8,
-        out: &vm::battle_action::StepOutcome,
+        out: &legaia_engine_battle_vm::battle_action::StepOutcome,
     ) {
-        use vm::battle_action::{ActionState, StepOutcome};
+        use legaia_engine_battle_vm::battle_action::{ActionState, StepOutcome};
         if pre_state == ActionState::AttackFace.as_byte() {
             let slot = usize::from(self.battle_ctx.active_actor);
             let Some(a) = self.actors.get(slot) else {
@@ -1008,7 +1035,7 @@ impl World {
     ///   `0x801EEB60` and, still zero, skips the cue at `0x801EEB68`.
     /// * **non-zero**: `bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over
     ///   the grunt into the cue path - `0x10C` through the battle overlay's
-    ///   one sound funnel `FUN_8004FE5C` ([`crate::sfx_cue::route_sfx_cue`])
+    ///   one sound funnel `FUN_8004FE5C` ([`legaia_engine_battle::sfx_cue::route_sfx_cue`])
     ///   with the **target's actor-table index as the category**
     ///   (`0x801EEBD8`, `s4 = attacker[+0x1DD]`), so the two sides sound
     ///   different by construction: a struck party member takes the CD-XA
@@ -1070,7 +1097,7 @@ impl World {
                     _ => None,
                 };
                 if let Some((channel, duration_sectors)) = grunt {
-                    self.push_battle_xa_cue(crate::sfx_cue::XaVoiceClip {
+                    self.push_battle_xa_cue(legaia_engine_system::sound_state::XaVoiceClip {
                         clip: GRUNT_CLIP_SLOT,
                         channel,
                         duration_sectors,

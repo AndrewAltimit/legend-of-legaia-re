@@ -24,14 +24,14 @@
 //! These are disc-free: `World::default()` + `enter_battle` is enough, because
 //! the flow byte and the box queue are engine state.
 
+use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
 use legaia_engine_core::battle_flow::BattleFlowState;
-use legaia_engine_core::battle_input::{
+use legaia_engine_core::world::World;
+use legaia_engine_menus::battle_input::{
     BattleCommand, BattleCommandSession, CommandPhase, RoundChoice,
 };
-use legaia_engine_core::battle_open::{BANNER_FRAMES, FormationBanner};
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::world::World;
-use legaia_engine_vm::battle_formulas::FormationAdvantage;
+use legaia_engine_menus::battle_open::{BANNER_FRAMES, FormationBanner};
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// A 3-party / 2-monster battle with the player driving.
 fn player_driven_battle() -> World {
@@ -56,7 +56,7 @@ fn tap(world: &mut World, button: PadButton) {
 /// beginning (`0x6E -> 0xFE`). Nothing the earlier members committed lands
 /// before that.
 fn commit_attacks_for_rest_of_round(world: &mut World) {
-    use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+    use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase};
     for _ in 0..64 {
         let Some(session) = world.battle.command.as_ref() else {
             break;
@@ -279,7 +279,7 @@ fn the_round_prompt_is_up_on_the_frame_the_session_opens() {
 /// the ring and the applier.
 #[test]
 fn a_battle_item_heal_keeps_the_readout_and_the_turn_pump_alive() {
-    use legaia_engine_core::items::ItemCatalog;
+    use legaia_engine_menus::items::ItemCatalog;
 
     /// Healing Leaf - the retail id, from `ItemCatalog::vanilla`.
     const HEALING_LEAF: u8 = 0x77;

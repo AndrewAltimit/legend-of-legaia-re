@@ -15,8 +15,8 @@ named by instructions rather than by a statistic:
   record has no pointer above it; its **program** bounds it instead, via
   `move_program_end`.
 
-`legaia_asset::slot_b_module` is the authority for all of this and carries the
-disc-gated test (`crates/asset/tests/slot_b_record_bounds_real.rs`). This module
+`legaia_overlay_images::slot_b_module` is the authority for all of this and carries the
+disc-gated test (`crates/overlay-images/tests/slot_b_record_bounds_real.rs`). This module
 is its mirror for the host-side gates, which must run without a cargo build. It
 lives here rather than inside `scripts/ci/disc-coverage.py` because
 `attribute-dump-extents.py` and `inherited_tail.py` need the same answers and a
@@ -36,7 +36,7 @@ SLOT_B_LINK_BASE = 0x801F69D8
 # pool-tracked wrapper). Both take the record pointer in `$a2`.
 SPAWN_HELPERS = (0x80021B04, 0x80050ED4)
 # Instructions of `$a2` context scanned back from a spawn call - the window
-# `legaia_asset::summon_overlay::parse` uses.
+# `legaia_overlay_images::summon_overlay::parse` uses.
 A2_WINDOW_INSNS = 22
 # Backward reach while following a saved register (`s0`-`s8`); mirrors
 # `slot_b_module::SAVED_REG_WINDOW_INSNS`.
@@ -50,7 +50,7 @@ _RENDER_NODE_SELS = (0x4000, 0x4001)
 
 # Width in HALFWORDS of every move-VM opcode 0x00..=0x46 (`FUN_80023070`'s
 # per-arm `param_3`), and of every `0x2F` OVERLAY_EXT sub-opcode. Mirror of
-# `legaia_asset::slot_b_module`'s tables - that parser is the authority and this
+# `legaia_overlay_images::slot_b_module`'s tables - that parser is the authority and this
 # copy exists so the gate needs no cargo build. `0` marks the widths that are
 # not a constant of the opcode alone, handled by name in `move_program_end`.
 MOVE_OP_HALFWORDS = (

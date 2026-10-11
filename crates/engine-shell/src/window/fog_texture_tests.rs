@@ -18,7 +18,8 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` / `extracted/` are missing.
 
 use super::run::build_window_scene_resources;
-use crate::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use std::path::PathBuf;
 
 /// Retail hash of VRAM `x 448..464, y 0x40..0x70` - the fog wisps.
@@ -52,7 +53,7 @@ fn window_vram(extracted: &std::path::Path, scene: &str) -> legaia_tim::Vram {
         scene: scene.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(extracted, &cfg).expect("boot session");
+    let mut session = NativeSession::open(extracted, &cfg).expect("boot session");
     session
         .enter_field_live(scene, &FieldLiveOpts::default())
         .expect("enter field scene");
@@ -90,9 +91,9 @@ fn window_vram_holds_the_retail_fog_texels() {
 fn scene_texels_win_over_the_pool() {
     let Some(extracted) = extracted() else { return };
     let vram = window_vram(&extracted, "dolk");
-    let index = legaia_engine_core::scene::ProtIndex::open_extracted(&extracted).expect("index");
+    let index = legaia_engine_scene::scene::ProtIndex::open_extracted(&extracted).expect("index");
     let mut pool = legaia_tim::Vram::new();
-    legaia_engine_core::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
+    legaia_engine_scene::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
         .expect("effect pool");
     let differing = (0..256)
         .flat_map(|y| (448..512).map(move |x| (x, y)))

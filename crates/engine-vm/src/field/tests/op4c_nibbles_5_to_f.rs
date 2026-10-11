@@ -1,4 +1,4 @@
-//! 0x4C outer-nibbles 5..F sub-op coverage. Extracted verbatim from `field/tests.rs`.
+//! 0x4C outer-nibbles 5..F sub-op coverage.
 
 use super::*;
 
@@ -7,15 +7,43 @@ use super::*;
 /// cooperation, which `TestHost` (which records and answers) cannot show.
 struct InertHost;
 
-impl FieldHost for InertHost {
+impl FieldFlagsHost for InertHost {
     fn global_flags(&self) -> u32 {
         0
     }
+
     fn set_global_flags(&mut self, _value: u32) {}
+
     fn frame_delta(&self) -> u16 {
         1
     }
 }
+
+impl FieldSceneHost for InertHost {}
+
+impl FieldTerrainHost for InertHost {}
+
+impl FieldCameraHost for InertHost {}
+
+impl FieldCameraMotionHost for InertHost {}
+
+impl FieldScreenHost for InertHost {}
+
+impl FieldAudioHost for InertHost {}
+
+impl FieldPartyInventoryHost for InertHost {}
+
+impl FieldDialogMenuHost for InertHost {}
+
+impl FieldActorHost for InertHost {}
+
+impl FieldActorSpawnHost for InertHost {}
+
+impl FieldActorFxHost for InertHost {}
+
+impl FieldPlayerHost for InertHost {}
+
+impl FieldHaltHost for InertHost {}
 
 // -- 0x4C outer-nibbles 5..F ----------------------------------------
 
@@ -47,22 +75,51 @@ fn op_4c_n5_sub0_high_sets_flag_bit() {
 }
 
 // A host that uses the default `FieldHost` bodies (no overrides beyond the
-// three required methods), so the default `op4c_n5_sub0_set_actor_model`
+// three required methods), so the default `set_actor_model`
 // (the `FUN_80024e08` port) runs and mutates `ctx` itself. `WORLD_MAP` toggles
 // the `_DAT_8007B83C == 0xF` game-mode gate that mirrors the id into +0x60.
 struct DefaultModelHost<const WORLD_MAP: bool>;
-impl<const WORLD_MAP: bool> FieldHost for DefaultModelHost<WORLD_MAP> {
+impl<const WORLD_MAP: bool> FieldFlagsHost for DefaultModelHost<WORLD_MAP> {
     fn global_flags(&self) -> u32 {
         0
     }
+
     fn set_global_flags(&mut self, _value: u32) {}
+
     fn frame_delta(&self) -> u16 {
         1
     }
+}
+
+impl<const WORLD_MAP: bool> FieldSceneHost for DefaultModelHost<WORLD_MAP> {}
+
+impl<const WORLD_MAP: bool> FieldTerrainHost for DefaultModelHost<WORLD_MAP> {}
+
+impl<const WORLD_MAP: bool> FieldCameraHost for DefaultModelHost<WORLD_MAP> {}
+
+impl<const WORLD_MAP: bool> FieldCameraMotionHost for DefaultModelHost<WORLD_MAP> {}
+
+impl<const WORLD_MAP: bool> FieldScreenHost for DefaultModelHost<WORLD_MAP> {}
+
+impl<const WORLD_MAP: bool> FieldAudioHost for DefaultModelHost<WORLD_MAP> {}
+
+impl<const WORLD_MAP: bool> FieldPartyInventoryHost for DefaultModelHost<WORLD_MAP> {}
+
+impl<const WORLD_MAP: bool> FieldDialogMenuHost for DefaultModelHost<WORLD_MAP> {}
+
+impl<const WORLD_MAP: bool> FieldActorHost for DefaultModelHost<WORLD_MAP> {
     fn model_pool_is_world_map(&self) -> bool {
         WORLD_MAP
     }
 }
+
+impl<const WORLD_MAP: bool> FieldActorSpawnHost for DefaultModelHost<WORLD_MAP> {}
+
+impl<const WORLD_MAP: bool> FieldActorFxHost for DefaultModelHost<WORLD_MAP> {}
+
+impl<const WORLD_MAP: bool> FieldPlayerHost for DefaultModelHost<WORLD_MAP> {}
+
+impl<const WORLD_MAP: bool> FieldHaltHost for DefaultModelHost<WORLD_MAP> {}
 
 #[test]
 fn op_4c_n5_sub0_default_writes_model_state_no_world_map_mirror() {

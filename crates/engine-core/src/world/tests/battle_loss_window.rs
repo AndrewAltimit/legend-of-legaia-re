@@ -3,12 +3,13 @@
 //! replaces.
 
 use super::*;
-use legaia_engine_vm::battle_party_panel::DefeatText;
+use legaia_engine_battle_vm::battle_party_panel::DefeatText;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A battle with a named lead, `party` members and one monster.
 fn loss_world(party: u8, word: u32) -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: party,
             ..Default::default()
         },

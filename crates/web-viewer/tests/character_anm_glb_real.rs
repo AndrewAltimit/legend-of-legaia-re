@@ -35,17 +35,21 @@ fn locomotion_bundle_surfaces_in_the_corpus_with_labels() {
         eprintln!("LEGAIA_DISC_BIN unset; skipping");
         return;
     };
-    let raw = prot_entry(&prot, legaia_asset::character_pack::PROT_ENTRY_INDEX)
-        .expect("PROT 0874 present");
+    let raw = prot_entry(
+        &prot,
+        legaia_actor_formats::character_pack::PROT_ENTRY_INDEX,
+    )
+    .expect("PROT 0874 present");
     // The corpus detector cannot see this section (type byte 0x02)...
     for desc in [6, 3, 5, 7] {
         assert!(
-            legaia_asset::player_anm::find_in_entry(raw, desc).is_empty(),
+            legaia_actor_formats::player_anm::find_in_entry(raw, desc).is_empty(),
             "0874 must stay invisible to the 0x05 detector (desc {desc})"
         );
     }
     // ...the dedicated parser is what exposes it.
-    let b = legaia_asset::character_pack::field_locomotion_anm(raw).expect("locomotion bundle");
+    let b =
+        legaia_actor_formats::character_pack::field_locomotion_anm(raw).expect("locomotion bundle");
     let v = bundle_json(874, "party_locomotion", &b);
     assert_eq!(v["source"], "party_locomotion");
     assert_eq!(v["record_count"], 23);
@@ -79,7 +83,7 @@ fn battle_bank_corpus_records_carry_baka_labels() {
     let raw = prot_entry(&prot, 1203).expect("PROT 1203 present");
     let mut found = Vec::new();
     for desc in [6, 3, 5, 7] {
-        found = legaia_asset::player_anm::find_in_entry(raw, desc);
+        found = legaia_actor_formats::player_anm::find_in_entry(raw, desc);
         if !found.is_empty() {
             break;
         }
@@ -89,7 +93,7 @@ fn battle_bank_corpus_records_carry_baka_labels() {
     let v = bundle_json(1203, "battle_bank", b);
     let recs = v["records"].as_array().unwrap();
     // Bank slot 0 is the idle (display id base+1 through the container
-    // header - see legaia_asset::baka_opponents::action_slot_label).
+    // header - see legaia_minigame_formats::baka_opponents::action_slot_label).
     assert_eq!(recs[0]["label"], "Vahn - Idle");
     assert_eq!(recs[4]["label"], "Vahn - Special");
     assert_eq!(recs[8]["label"], "Vahn - Win");
@@ -107,10 +111,14 @@ fn field_glb_bakes_the_locomotion_bank() {
         eprintln!("LEGAIA_DISC_BIN unset; skipping");
         return;
     };
-    let raw = prot_entry(&prot, legaia_asset::character_pack::PROT_ENTRY_INDEX)
-        .expect("PROT 0874 present");
-    let pack = legaia_asset::character_pack::parse(raw).expect("character pack");
-    let bundle = legaia_asset::character_pack::field_locomotion_anm(raw).expect("locomotion");
+    let raw = prot_entry(
+        &prot,
+        legaia_actor_formats::character_pack::PROT_ENTRY_INDEX,
+    )
+    .expect("PROT 0874 present");
+    let pack = legaia_actor_formats::character_pack::parse(raw).expect("character pack");
+    let bundle =
+        legaia_actor_formats::character_pack::field_locomotion_anm(raw).expect("locomotion");
     // Vahn, disc form, retail 10-group cap (what `character_glb(0, -1, 0)`
     // builds wasm-side).
     let mut tmd_bytes = pack.slot(0).unwrap().tmd_bytes.clone();
@@ -119,10 +127,10 @@ fn field_glb_bakes_the_locomotion_bank() {
     let (mesh, object_ids, shading) =
         legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &tmd_bytes);
     let mut vram = legaia_tim::Vram::new();
-    legaia_asset::field_char_textures::parse(raw)
+    legaia_actor_formats::field_char_textures::parse(raw)
         .expect("field textures")
         .upload_to_vram(&mut vram, false);
-    use legaia_asset::character_pack as cp;
+    use legaia_actor_formats::character_pack as cp;
     let picks = [
         cp::locomotion_record_index(0, cp::LOCOMOTION_IDLE_SLOT),
         cp::locomotion_record_index(0, cp::LOCOMOTION_WALK_SLOT),
@@ -135,15 +143,17 @@ fn field_glb_bakes_the_locomotion_bank() {
             (cp::locomotion_slot_label(r % cp::LOCOMOTION_BANK_STRIDE), a)
         })
         .collect();
-    let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = anims
+    let clips: Vec<legaia_actor_formats::character_gltf::CharacterClip<'_>> = anims
         .iter()
-        .map(|(n, a)| legaia_asset::character_gltf::CharacterClip {
-            name: n.clone(),
-            fps: 14.0,
-            anim: a,
-        })
+        .map(
+            |(n, a)| legaia_actor_formats::character_gltf::CharacterClip {
+                name: n.clone(),
+                fps: 14.0,
+                anim: a,
+            },
+        )
         .collect();
-    let glb = legaia_asset::character_gltf::build_character_glb_hybrid(
+    let glb = legaia_actor_formats::character_gltf::build_character_glb_hybrid(
         "Vahn_field",
         &mesh,
         &object_ids,
@@ -174,19 +184,22 @@ fn battle_glb_bakes_the_1203_bank() {
         eprintln!("LEGAIA_DISC_BIN unset; skipping");
         return;
     };
-    let pack_raw = prot_entry(&prot, legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
-        .expect("PROT 1204 present");
-    let slots = legaia_asset::battle_char_pack::parse_slots(pack_raw).expect("1204 slots");
+    let pack_raw = prot_entry(
+        &prot,
+        legaia_actor_formats::battle_char_pack::PROT_ENTRY_INDEX,
+    )
+    .expect("PROT 1204 present");
+    let slots = legaia_actor_formats::battle_char_pack::parse_slots(pack_raw).expect("1204 slots");
     let bank_raw = prot_entry(&prot, 1203).expect("PROT 1203 present");
     let mut found = Vec::new();
     for desc in [6, 3, 5, 7] {
-        found = legaia_asset::player_anm::find_in_entry(bank_raw, desc);
+        found = legaia_actor_formats::player_anm::find_in_entry(bank_raw, desc);
         if !found.is_empty() {
             break;
         }
     }
     let bundle = found.first().expect("battle bank");
-    use legaia_asset::baka_opponents as bo;
+    use legaia_minigame_formats::baka_opponents as bo;
     for (slot, name) in [(0usize, "Vahn"), (1, "Noa"), (2, "Gala")] {
         let tmd_bytes = slots[slot].tmd_bytes.clone();
         let tmd = legaia_tmd::parse(&tmd_bytes).expect("battle TMD");
@@ -201,15 +214,17 @@ fn battle_glb_bakes_the_1203_bank() {
                 (bo::action_slot_label(k).unwrap().to_string(), a)
             })
             .collect();
-        let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = anims
+        let clips: Vec<legaia_actor_formats::character_gltf::CharacterClip<'_>> = anims
             .iter()
-            .map(|(n, a)| legaia_asset::character_gltf::CharacterClip {
-                name: n.clone(),
-                fps: 14.0,
-                anim: a,
-            })
+            .map(
+                |(n, a)| legaia_actor_formats::character_gltf::CharacterClip {
+                    name: n.clone(),
+                    fps: 14.0,
+                    anim: a,
+                },
+            )
             .collect();
-        let glb = legaia_asset::character_gltf::build_character_glb(
+        let glb = legaia_actor_formats::character_gltf::build_character_glb(
             name,
             &mesh,
             &object_ids,

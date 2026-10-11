@@ -7,7 +7,7 @@
 //! (`[gp[+0x2D2], gp[+0x2D4])`).
 
 use super::*;
-use legaia_engine_vm::cast_arm_ticks::StealOutcome;
+use legaia_engine_battle_vm::cast_arm_ticks::StealOutcome;
 use legaia_save::retail_inventory::{ITEM_SLOTS_TOTAL, ItemWindow, NOT_IN_WINDOW};
 
 /// A party-seat world whose bag holds exactly the given `(slot, id, count)`
@@ -15,7 +15,7 @@ use legaia_save::retail_inventory::{ITEM_SLOTS_TOTAL, ItemWindow, NOT_IN_WINDOW}
 /// its first roll.
 fn steal_world(cells: &[(usize, u8, u8)], rng_seed: u32) -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -26,10 +26,11 @@ fn steal_world(cells: &[(usize, u8, u8)], rng_seed: u32) -> World {
     for &(slot, id, count) in cells {
         slots[slot] = (id, count);
     }
-    world.party.inventory = crate::world::ItemBag::from_slots(&slots);
+    world.party.inventory = legaia_engine_menus::item_bag::ItemBag::from_slots(&slots);
     // Every id priced: the acceptance leg then depends only on the slot's
     // own two bytes, which is what the hole tests want to isolate.
-    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices([10; 256]));
+    world.shops.item_shop_data =
+        Some(legaia_engine_menus::shop_catalog::ShopItemData::from_prices([10; 256]));
     world
 }
 
@@ -111,7 +112,8 @@ fn a_zero_price_item_is_unstealable() {
     // rejects and nothing is taken.
     let mut prices = [10u16; 256];
     prices[0x77] = 0;
-    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data =
+        Some(legaia_engine_menus::shop_catalog::ShopItemData::from_prices(prices));
     assert_eq!(world.roll_cast_steal(0), Some(StealOutcome::BagEmpty));
 }
 
@@ -144,7 +146,7 @@ fn the_removal_is_window_bounded_and_the_draw_is_not() {
 
 #[test]
 fn the_consume_sentinel_is_the_retail_value() {
-    let mut bag = crate::world::ItemBag::new();
+    let mut bag = legaia_engine_menus::item_bag::ItemBag::new();
     bag.insert(0x77, 2);
     assert_eq!(bag.consume_returning_slot(0x99, 1), NOT_IN_WINDOW);
     assert_ne!(bag.consume_returning_slot(0x77, 1), NOT_IN_WINDOW);
@@ -192,7 +194,7 @@ impl World {
     /// price table and the RNG matter to `roll_cast_steal` on a party seat.
     fn clone_for_price_test(&self) -> World {
         let mut w = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: self.party.party_count,
                 ..Default::default()
             },

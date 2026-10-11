@@ -1,6 +1,6 @@
 //! The move projectile's **homing slots** - the per-slot flight of
 //! `FUN_801E09F8`'s effect-child driver
-//! ([`crate::action_effect_script::HomingSlots`]), seated on the world.
+//! ([`legaia_engine_effects::action_effect_script::HomingSlots`]), seated on the world.
 //!
 //! The effect script's terminator seeds them beside the move-FX streak;
 //! the battle frame flies them. What reads them is the cast camera: case `7`
@@ -9,7 +9,7 @@
 //! (`crate::battle_cam_inputs::spell_cam_inputs`).
 
 use super::*;
-use crate::action_effect_script::TargetBand;
+use legaia_engine_effects::action_effect_script::TargetBand;
 
 impl World {
     /// The terminator's seed (`FUN_801DEA50`, `0x801DF298..0x801DF3DC`):
@@ -34,8 +34,8 @@ impl World {
                 _ => Some(usize::from(retail)),
             }
         };
-        let mut seats = [None; crate::action_effect_script::HOMING_SLOTS];
-        let mut children = [0u8; crate::action_effect_script::HOMING_SLOTS];
+        let mut seats = [None; legaia_engine_effects::action_effect_script::HOMING_SLOTS];
+        let mut children = [0u8; legaia_engine_effects::action_effect_script::HOMING_SLOTS];
         for (i, retail) in (band.first..=band.last).enumerate() {
             let Some(e) = seat_of(retail) else {
                 continue;
@@ -83,8 +83,9 @@ impl World {
             return false;
         };
         let move_id = a.battle.params.first().copied().unwrap_or(0);
-        a.battle.action_category == vm::battle_action::ActionCategory::Magic.as_byte()
-            && !crate::summon::PLAYER_SUMMON_IDS.contains(&move_id)
+        a.battle.action_category
+            == legaia_engine_battle_vm::battle_action::ActionCategory::Magic.as_byte()
+            && !legaia_engine_effects::summon::PLAYER_SUMMON_IDS.contains(&move_id)
             && self
                 .tables
                 .move_power
@@ -96,7 +97,7 @@ impl World {
     /// record at or past its cursor - the record whose step seeds the homing
     /// slots ([`Self::seed_homing_slots`]).
     pub(in crate::world) fn effect_script_terminates(&self, slot: usize) -> bool {
-        use crate::action_effect_script as fx;
+        use legaia_engine_effects::action_effect_script as fx;
         let Some(a) = self.actors.get(slot) else {
             return false;
         };
@@ -181,15 +182,18 @@ impl World {
         // the `0x801F6324` prototype scene with its CLUT stage
         // (`0x801E1178..0x801E1238`).
         for s in spawns {
-            self.battle
-                .effect_spawns
-                .push(crate::battle_events::BattleEffectSpawn {
+            self.battle.effect_spawns.push(
+                legaia_engine_battle::battle_events::BattleEffectSpawn {
                     actor_slot: caster,
-                    effect: s.effect & !crate::action_effect_script::EFFECT_DIRECT_BIT,
-                    direct: s.effect & crate::action_effect_script::EFFECT_DIRECT_BIT != 0,
+                    effect: s.effect
+                        & !legaia_engine_effects::action_effect_script::EFFECT_DIRECT_BIT,
+                    direct: s.effect
+                        & legaia_engine_effects::action_effect_script::EFFECT_DIRECT_BIT
+                        != 0,
                     at: (s.at[0], s.at[1], s.at[2]),
                     facing: s.heading,
-                });
+                },
+            );
         }
     }
 }

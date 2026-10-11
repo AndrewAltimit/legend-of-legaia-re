@@ -24,7 +24,7 @@
 //! two XA consumers both read whole files up front - `play-str` demuxes the
 //! single track interleaved inside an `MV*.STR`, and the arts-shout bank
 //! pre-decodes `XA2`/`XA4`/`XA6.XA` into memory at boot (`read_arts_shout_bank`
-//! in `legaia_engine_session::boot`). Neither needs a slot, a filter channel or a sector
+//! in `legaia_engine_session::session`). Neither needs a slot, a filter channel or a sector
 //! duration.
 //!
 //! **A producer for this cue-id space.** Every cue the world raises today
@@ -32,7 +32,7 @@
 //! from a move-power record, so no id ever reaches the voice arm. The engine's
 //! one live XA-clip consumer, the arts shout, is **not** it: that path picks its
 //! channel out of a runtime candidate pool (`legaia_art::arts_voice`'s
-//! `ArtsVoiceTable`, driven by `AudioBgmDirector::play_art_shout`), not by the
+//! `ArtsVoiceTable`, driven by `NativeAudioDirector::play_art_shout`), not by the
 //! `(id - 0x100)` arithmetic below, and the two are separate retail paths - see
 //! the note on `legaia_art::arts_voice::StaticXaCue`.
 //!

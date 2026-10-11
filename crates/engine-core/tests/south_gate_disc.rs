@@ -31,8 +31,8 @@
 //! Structural assertions only (grid bits, tiles, opcodes) - no Sony bytes.
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md convention).
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
+use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
+use legaia_engine_system::input::PadButton;
 use std::path::PathBuf;
 
 /// The two flags `P0[20]` branches on: `327` = the gate scenery exists,
@@ -222,7 +222,7 @@ fn pad_walk_through_the_open_gate_leaves_for_map01() {
     );
     assert_eq!(
         host.world.mode,
-        legaia_engine_core::world::SceneMode::WorldMap,
+        legaia_engine_mode::mode::SceneMode::WorldMap,
         "map01 routes through the world-map entry"
     );
 }
@@ -280,10 +280,10 @@ fn record_10_is_a_content_free_park() {
         .field_man_payload(&host.index)
         .expect("town01 MAN read")
         .expect("town01 carries a bundle MAN");
-    let man_file = legaia_asset::man_section::parse(&man).expect("parse MAN");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
 
     let decode_ops = |record: usize| -> Vec<u8> {
-        let (start, pc0, len) = legaia_engine_core::man_field_scripts::partition_record_span(
+        let (start, pc0, len) = legaia_engine_field::man_field_scripts::partition_record_span(
             &man_file, &man, 2, record,
         )
         .expect("record span");
@@ -291,7 +291,7 @@ fn record_10_is_a_content_free_park() {
         let mut ops = Vec::new();
         let mut pc = pc0;
         while pc < body.len() {
-            let Ok(insn) = legaia_asset::field_disasm::decode(body, pc) else {
+            let Ok(insn) = legaia_scene_formats::field_disasm::decode(body, pc) else {
                 break;
             };
             if insn.size == 0 {

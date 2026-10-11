@@ -1,0 +1,1049 @@
+//! Baka Fighter **per-fighter roster table** (overlay VA `0x801D769C`).
+//!
+//! Each of the minigame's 17 roster fighters has a `0x6c`-byte record. The
+//! match code reaches the same record through two bases: the **stat pointer**
+//! (`DAT_801dc060[slot] = 0x801d769c + id*0x6c`, installed by the fighter-setup
+//! path in `FUN_801d0fe4`/siblings) and the historical "+0x20 table" view at
+//! `0x801d76bc` used by the gold read. The record base is `0x801d769c`; all
+//! offsets below are relative to it.
+//!
+//! | Offset | Field | Consumer |
+//! |---|---|---|
+//! | `+0x20` | gold reward (u32) | `FUN_801d0fe4` win payout → tally → `_DAT_80084440` |
+//! | `+0x24` | damage modifier (i32) | `FUN_801d3b18` defense term `mod + mod*def/100` |
+//! | `+0x28/+0x2c/+0x30` | DEF tier % (i32×3, HP-keyed high/mid/low) | `FUN_801d3b18` (defender side; the `def %d` debug operand) |
+//! | `+0x34` | critical chance % (i32) | `FUN_801d6660` comeback-crit roll (`rand()%100 < chance`, HP band `(0, 0x280)`) |
+//! | `+0x38/+0x3c/+0x40` | ATK tier % (i32×3, HP-keyed high/mid/low) | `FUN_801d3b18` (attacker side; the `atk %d` debug operand) |
+//! | `+0x44` | duel stand-off (i16) | the round setup stands the fighter at `X = ±(stand_off + 200)` (`0x801D005C..0x801D00F4`) |
+//! | `+0x4c` | AI move-pattern (NUL-terminated `1`/`2`/`3` symbols) | `FUN_801d487c` move picker |
+//!
+//! The HP keying picks tier `[0]` while the fighter's HP is `>= 0x8c1`, `[1]`
+//! in `[0x3c1, 0x8c0]`, `[2]` below - fighters hit and guard differently as
+//! their HP drops.
+//!
+//! ## AI pattern - consumed backward
+//!
+//! `FUN_801d487c` rolls `rand() % 6`. While no pattern run is active a roll
+//! `< 3` returns a uniformly random attack (`roll % 3`); a roll `>= 3` seeds
+//! the pattern cursor to the pattern **length** and each subsequent pick steps
+//! the cursor *down*, returning `pattern[cursor-1] - 1` (`% 3`) - the scripted
+//! loop plays back-to-front to exhaustion, then the picker is free again.
+//! [`BakaOpponent::attack_at`] is the forward-indexed convenience view; the
+//! faithful backward walk lives in the engine port
+//! (`legaia_engine_minigames::baka_fighter`).
+//!
+//! ## Action tables (power + keyframes)
+//!
+//! Per-exchange damage takes its base power from the winner's **action
+//! record**: a per-fighter table of [`ACTIONS_PER_FIGHTER`] = 9 `0x60`-byte
+//! action records reached through the pointer array `PTR_DAT_801db8b8[fighter]`
+//! ([`ACTION_PTR_TABLE_VA`]). `FUN_801d3b18` indexes it with the fighter's
+//! current-action id (`+0x10`): records **1/2/3 are the three attacks**
+//! (positive `+0x18` power corpus-wide) and **4 is the special** (power 0 -
+//! its payoff is the full-charge round win, gated on the `+0x1c` keyframe
+//! count). The *display*-anim id space (`actor+0x5c = char*9 + frame`) sits
+//! one higher (attacks `+2..+4`, special `+5`, knockdowns `+6..+8`) because
+//! the anim player resolves it through the ANM container header, whose word 0
+//! is the record count - so display id `base+k` is bank record `k-1` and the
+//! two index spaces are record-aligned (see [`action_slot_label`] for the
+//! resolved layout + disasm provenance); don't conflate the two. Per record
+//! the fight code reads `+0x04` (clip speed), `+0x18` (base attack power),
+//! `+0x1c` (sub-keyframe count) and the sub-keyframe slots from `+0x20`
+//! (strike offset + the `+0x26` whole-frame strike index, see
+//! [`BakaSubKeyframe`]). [`parse_actions`] decodes the 17 tables.
+//!
+//! ## Extent - 17 fighters
+//!
+//! The table holds [`OPPONENT_COUNT`] = 17 records (the same `0x11` count the
+//! action-table dump loop walks, see `docs/subsystems/minigame-baka-fighter.md`).
+//! Both duel slots index this one roster: the player fights *as* a roster
+//! fighter too (stats + actions), with the pad replacing the AI picker.
+//!
+//! ## Match length - best of 3
+//!
+//! Independent of this table, the match is **first to [`ROUND_WIN_TARGET`] = 2
+//! round wins** (best of 3): `FUN_801cf00c` inits `DAT_801dbed0 = 2`, and the
+//! match-over check in `FUN_801d0fe4` ends the match when a fighter's round-win
+//! count (`DAT_801dbff0` / `DAT_801dc098`) equals `DAT_801dbed0`.
+//!
+//! ## Provenance - baked overlay data, pinned on disc
+//!
+//! Both tables are static `.rodata` in the Baka Fighter overlay (PROT entry
+//! **0976**, base [`BAKA_OVERLAY_BASE_VA`]); reproducible from the user's
+//! `PROT.DAT` (disc-gated `baka_opponents_real`). No Sony bytes are committed -
+//! the values decode from the user's disc.
+
+/// CDNAME / PROT index of the Baka Fighter overlay (`data\OTHER5`).
+pub const BAKA_OVERLAY_PROT_INDEX: usize = 976;
+
+/// Extraction PROT entry of the duel's BGM (`music_01` sound-test #55 `M112`
+/// "Sol disco fever" - the Baka Fighter is a Sol minigame): the overlay init
+/// `FUN_801CF00C` loads it via `FUN_8001FC00(0x415, ...)` + `FUN_8001E54C(5,
+/// ...)` (raw loader index `0x415` = extraction 1043). The bank map is
+/// piecewise, so extraction 1043 = index 55, not 53; see
+/// `docs/subsystems/minigame-baka-fighter.md`.
+pub const BAKA_BGM_PROT_INDEX: usize = 1043;
+
+/// Load base of the Baka Fighter overlay (the shared slot-A minigame base).
+pub const BAKA_OVERLAY_BASE_VA: u32 = 0x801C_E818;
+
+/// Runtime VA of the roster-record base (`0x801d769c`, the stat-pointer base;
+/// the historical "+0x20" gold view is `DAT_801d76bc`).
+pub const OPPONENT_TABLE_VA: u32 = 0x801D_769C;
+
+/// File offset of the roster table within the as-loaded overlay image.
+pub const OPPONENT_TABLE_FILE_OFFSET: usize = (OPPONENT_TABLE_VA - BAKA_OVERLAY_BASE_VA) as usize;
+
+/// Per-fighter record stride (`id * 0x6c` index math).
+pub const OPPONENT_RECORD_STRIDE: usize = 0x6C;
+
+/// Byte offset of the gold-reward field within a record.
+pub const RECORD_GOLD_OFFSET: usize = 0x20;
+
+/// Byte offset of the damage-modifier field (the `mod` of the defense term).
+pub const RECORD_DAMAGE_MOD_OFFSET: usize = 0x24;
+
+/// Byte offset of the three HP-keyed DEF tier percentages.
+pub const RECORD_DEF_TIERS_OFFSET: usize = 0x28;
+
+/// Byte offset of the critical-chance percentage.
+pub const RECORD_CRIT_CHANCE_OFFSET: usize = 0x34;
+
+/// Byte offset of the three HP-keyed ATK tier percentages.
+pub const RECORD_ATK_TIERS_OFFSET: usize = 0x38;
+
+/// Byte offset of the AI move-pattern string within a record (`DAT_801d76e8`).
+pub const RECORD_AI_PATTERN_OFFSET: usize = 0x4C;
+
+/// Record `+0x44` - the fighter's **stand-off**: the round setup (cabinet
+/// state `0x32`) stores `-(stand_off + 200)` into the player actor's X
+/// (`lhu v0,0x44(v0); addiu v0,v0,0xc8; subu v0,zero,v0; sh v0,0x14(a3)` at
+/// `0x801D005C..0x801D006C`) and `stand_off + 200` into the opponent's
+/// (`0x801D00C0..0x801D00F4`). Actor `+0x14` is X - `+0x16` / `+0x18` are
+/// Y / Z, which the round-start cameo's animator writes as `0x8C` / `0x400`.
+pub const RECORD_STAND_OFF_OFFSET: usize = 0x44;
+
+/// Number of roster fighters (the `0x11` records the action-table loop walks).
+pub const OPPONENT_COUNT: usize = 17;
+
+/// Round wins needed to win a match (`DAT_801dbed0`): first to 2 = best of 3.
+pub const ROUND_WIN_TARGET: u32 = 2;
+
+/// Runtime VA of the per-fighter action-table pointer array
+/// (`PTR_DAT_801db8b8`).
+pub const ACTION_PTR_TABLE_VA: u32 = 0x801D_B8B8;
+
+/// Action records per fighter: idle (0), the three attacks (1..=3), the
+/// special (4), the hit / knockdown reactions (5..=7) and the win flourish
+/// (8). There is **no walk record** - an earlier reading listed one, but the
+/// display-id folds pin the layout (see [`action_slot_label`]).
+pub const ACTIONS_PER_FIGHTER: usize = 9;
+
+/// Byte stride of one action record.
+pub const ACTION_RECORD_STRIDE: usize = 0x60;
+
+/// Byte offset of the base attack power within an action record.
+pub const ACTION_POWER_OFFSET: usize = 0x18;
+
+/// Byte offset of the sub-keyframe count within an action record.
+pub const ACTION_KEYFRAME_COUNT_OFFSET: usize = 0x1C;
+
+/// Byte offset of the per-action clip speed within an action record: the
+/// combat tick `FUN_801D3F44` multiplies it by the frame-rate divisor
+/// `DAT_1F80037D` and shifts right three to get the actor's cursor step
+/// `+0x6A` (`0x801D4788..0x801D47CC`).
+pub const ACTION_SPEED_OFFSET: usize = 0x04;
+
+/// Byte offset of the first sub-keyframe within an action record.
+pub const ACTION_SUB_KEYFRAME_OFFSET: usize = 0x20;
+
+/// Byte stride of one sub-keyframe (`sll 3` in the lookup `FUN_801D6E5C`).
+pub const ACTION_SUB_KEYFRAME_STRIDE: usize = 8;
+
+/// Sub-keyframe slots one record has room for: `(0x60 - 0x20) / 8`.
+pub const ACTION_SUB_KEYFRAME_SLOTS: usize =
+    (ACTION_RECORD_STRIDE - ACTION_SUB_KEYFRAME_OFFSET) / ACTION_SUB_KEYFRAME_STRIDE;
+
+/// Action record of the first of the three attacks (types 1/2/3 → records
+/// 1/2/3 in the current-action id space the damage kernel indexes).
+pub const ACTION_ATTACK_BASE: usize = 1;
+
+/// Action record of the special / guard-break attack (type 4).
+pub const ACTION_SPECIAL: usize = 4;
+
+/// First of the three hit / knockdown reaction records (5..=7): the loser's
+/// launch playback after a lost exchange (`FUN_801d4df8` spawns it off the
+/// display ids `base + 6..base + 8`).
+pub const ACTION_HIT_BASE: usize = 5;
+
+/// The win-flourish record (8): the winner's post-match punch pose. The
+/// match-result state `0x6d` and the tally screen both seed
+/// `actor + 0x5c = base + 9` (`overlay_baka_fighter_801d0fe4.txt`), which
+/// resolves to bank record 8 (see [`action_slot_label`]).
+pub const ACTION_WIN: usize = 8;
+
+/// Display label for one slot of a fighter's 9-record action/animation bank
+/// (both the `0x60`-stride power table and the ANM bank use this index
+/// space - the two are index-aligned). `None` past the bank.
+///
+/// ## Why the display id sits one higher (the off-by-one, resolved)
+///
+/// The combat tick stores **display anim ids** at `actor + 0x5c`:
+/// `base + 1` idle (`overlay_baka_fighter_801d3f44.txt` `0x801d4144..50`,
+/// `overlay_baka_fighter_801d0fe4.txt` round start), `base + 2..base + 4`
+/// the attacks, `base + 5` the special, and `base + 9` the win flourish -
+/// where `base` is `fighter_id * 9` for the party/roster banks in PROT 1203
+/// (`_DAT_801dbfd0 = DAT_801dbf70 * 9`) or `0x400` for a ladder fighter's
+/// own pack bank. The anim player then resolves the id **through the ANM
+/// container header**: at `0x801d4794..0x801d47b4` it reads
+/// `word = container[(anim & 0x3ff) * 4]` and takes `container + word` as
+/// the record pointer. The container layout is `[u32 count]
+/// [u32 offsets[count]] [records]`, so word index 0 is the **count**, word
+/// index `d` is `offsets[d - 1]`, and display id `base + k` lands on bank
+/// **record `k - 1`**. Record 0 therefore *is* the idle (display `base+1`),
+/// records 1..=3 the attacks (identity with the damage kernel's
+/// `record[+0x10] = anim - base - 1` attack type), record 4 the special,
+/// 5..=7 the hit/knockdown family (display `base+6..+8`) and record 8 the
+/// win flourish (display `base+9`).
+pub fn action_slot_label(slot: usize) -> Option<&'static str> {
+    Some(match slot {
+        0 => "Idle",
+        1 => "Attack 1 (Square)",
+        2 => "Attack 2 (Circle)",
+        3 => "Attack 3 (Cross)",
+        4 => "Special",
+        5 => "Hit / Knockdown 1",
+        6 => "Hit / Knockdown 2",
+        7 => "Hit / Knockdown 3",
+        8 => "Win",
+        _ => return None,
+    })
+}
+
+/// Display label for one record of the PROT 1203 battle-form ANM bank
+/// (30 records: Vahn `0..=8`, Noa `9..=17`, Gala `18..=26` - the
+/// `fighter_id * 9` banks the duel indexes - plus the three 10-bone-rig
+/// records `27..=29`, whose actor is untriaged).
+pub fn party_bank_record_label(record: usize) -> String {
+    const NAMES: [&str; 3] = ["Vahn", "Noa", "Gala"];
+    let bank = record / ACTIONS_PER_FIGHTER;
+    if bank < NAMES.len() {
+        let slot = record % ACTIONS_PER_FIGHTER;
+        match action_slot_label(slot) {
+            Some(l) => format!("{} - {l}", NAMES[bank]),
+            None => format!("{} - record {slot}", NAMES[bank]),
+        }
+    } else {
+        format!("10-bone rig {}", record - 27)
+    }
+}
+
+/// One decoded Baka Fighter roster record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BakaOpponent {
+    /// Fighter id = index into the table.
+    pub index: usize,
+    /// `+0x20` - gold credited to the party on beating this fighter.
+    pub gold_reward: u32,
+    /// `+0x24` - damage modifier, the `mod` of `mod + mod*def/100`.
+    pub damage_mod: i32,
+    /// `+0x28..` - DEF tier % at HP high / mid / low.
+    pub def_tiers: [i32; 3],
+    /// `+0x34` - comeback-critical chance % (`rand()%100 < chance`).
+    pub crit_chance: i32,
+    /// `+0x38..` - ATK tier % at HP high / mid / low.
+    pub atk_tiers: [i32; 3],
+    /// `+0x44` - the duel stand-off ([`RECORD_STAND_OFF_OFFSET`]): the
+    /// fighter stands `stand_off + 200` units from the arena centre.
+    pub stand_off: i16,
+    /// `+0x4c` - the CPU attack-type loop (symbols `1`/`2`/`3`), NUL-terminated.
+    pub ai_pattern: Vec<u8>,
+}
+
+impl BakaOpponent {
+    /// The attack type (`0`/`1`/`2`) at a forward cycle cursor,
+    /// `pattern[cursor % len] - 1`. Convenience view - the retail picker
+    /// consumes the pattern backward (see the module notes).
+    pub fn attack_at(&self, cursor: usize) -> Option<u8> {
+        if self.ai_pattern.is_empty() {
+            return None;
+        }
+        self.ai_pattern
+            .get(cursor % self.ai_pattern.len())
+            .map(|&s| s - 1)
+    }
+}
+
+/// One sub-keyframe of an action record: the strike offset and the frame it
+/// lands on.
+///
+/// `+0x20 + i * 8`: three `i16` translation offsets, then the `i16` frame
+/// index in **whole** clip frames. The lookup `FUN_801D6E5C` reads the frame
+/// (`lh v1, 0x26(v0)` at `0x801D6EE0`); the impact pair `FUN_801D4DF8` reads
+/// the three offsets as the effect's position relative to the fighter.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BakaSubKeyframe {
+    /// `+0x00` / `+0x02` / `+0x04` - the strike offset from the fighter.
+    pub offset: [i16; 3],
+    /// `+0x06` (record `+0x26` for the first slot) - the whole-frame index
+    /// the strike lands on.
+    pub frame: i16,
+}
+
+/// One fighter's decoded action table: per-slot base power + keyframe count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BakaActionSet {
+    /// Fighter id = index into the pointer array.
+    pub index: usize,
+    /// `+0x18` per action record - the damage formula's base power.
+    pub power: [i32; ACTIONS_PER_FIGHTER],
+    /// `+0x1c` per action record - sub-keyframe count.
+    pub keyframes: [i32; ACTIONS_PER_FIGHTER],
+    /// `+0x04` per action record - the clip speed the combat tick turns into
+    /// the actor's cursor step ([`ACTION_SPEED_OFFSET`]).
+    pub speed: [i32; ACTIONS_PER_FIGHTER],
+    /// The live sub-keyframes per action record: the first `keyframes[a]`
+    /// of the record's [`ACTION_SUB_KEYFRAME_SLOTS`] slots (a count outside
+    /// `0..=8` is clamped - no record on the disc carries one).
+    pub sub_keyframes: [Vec<BakaSubKeyframe>; ACTIONS_PER_FIGHTER],
+}
+
+impl BakaActionSet {
+    /// Base power of attack type `1..=3` (action slots 2/3/4) or the special
+    /// (type `4`, slot 5). `None` for other type values.
+    pub fn attack_power(&self, attack_type: u8) -> Option<i32> {
+        match attack_type {
+            1..=3 => Some(self.power[ACTION_ATTACK_BASE + (attack_type as usize - 1)]),
+            4 => Some(self.power[ACTION_SPECIAL]),
+            _ => None,
+        }
+    }
+
+    /// The whole-frame strike indices of action `action`, in slot order -
+    /// the column `FUN_801D6E5C` scans.
+    pub fn strike_frames(&self, action: usize) -> Vec<i16> {
+        self.sub_keyframes
+            .get(action)
+            .map(|k| k.iter().map(|s| s.frame).collect())
+            .unwrap_or_default()
+    }
+}
+
+fn read_i16(overlay: &[u8], off: usize) -> i16 {
+    i16::from_le_bytes([overlay[off], overlay[off + 1]])
+}
+
+fn read_i32(overlay: &[u8], off: usize) -> i32 {
+    i32::from_le_bytes([
+        overlay[off],
+        overlay[off + 1],
+        overlay[off + 2],
+        overlay[off + 3],
+    ])
+}
+
+/// Parse the [`OPPONENT_COUNT`] roster records out of the as-loaded Baka
+/// Fighter overlay image (PROT entry [`BAKA_OVERLAY_PROT_INDEX`]).
+pub fn parse(overlay: &[u8]) -> Option<Vec<BakaOpponent>> {
+    parse_at(overlay, OPPONENT_TABLE_FILE_OFFSET, OPPONENT_COUNT)
+}
+
+/// Parse `count` records starting at file offset `off`.
+pub fn parse_at(overlay: &[u8], off: usize, count: usize) -> Option<Vec<BakaOpponent>> {
+    if overlay.len() < off + count * OPPONENT_RECORD_STRIDE {
+        return None;
+    }
+    let mut out = Vec::with_capacity(count);
+    for i in 0..count {
+        let b = off + i * OPPONENT_RECORD_STRIDE;
+        let gold = u32::from_le_bytes([
+            overlay[b + RECORD_GOLD_OFFSET],
+            overlay[b + RECORD_GOLD_OFFSET + 1],
+            overlay[b + RECORD_GOLD_OFFSET + 2],
+            overlay[b + RECORD_GOLD_OFFSET + 3],
+        ]);
+        let damage_mod = read_i32(overlay, b + RECORD_DAMAGE_MOD_OFFSET);
+        let def_tiers = [
+            read_i32(overlay, b + RECORD_DEF_TIERS_OFFSET),
+            read_i32(overlay, b + RECORD_DEF_TIERS_OFFSET + 4),
+            read_i32(overlay, b + RECORD_DEF_TIERS_OFFSET + 8),
+        ];
+        let crit_chance = read_i32(overlay, b + RECORD_CRIT_CHANCE_OFFSET);
+        let atk_tiers = [
+            read_i32(overlay, b + RECORD_ATK_TIERS_OFFSET),
+            read_i32(overlay, b + RECORD_ATK_TIERS_OFFSET + 4),
+            read_i32(overlay, b + RECORD_ATK_TIERS_OFFSET + 8),
+        ];
+        // AI pattern: NUL-terminated, bounded by the record tail.
+        let pat_start = b + RECORD_AI_PATTERN_OFFSET;
+        let pat_end = b + OPPONENT_RECORD_STRIDE;
+        let mut ai_pattern = Vec::new();
+        for &byte in &overlay[pat_start..pat_end] {
+            if byte == 0 {
+                break;
+            }
+            ai_pattern.push(byte);
+        }
+        out.push(BakaOpponent {
+            index: i,
+            gold_reward: gold,
+            damage_mod,
+            def_tiers,
+            crit_chance,
+            atk_tiers,
+            stand_off: read_i16(overlay, b + RECORD_STAND_OFF_OFFSET),
+            ai_pattern,
+        });
+    }
+    Some(out)
+}
+
+/// Decode the 17 per-fighter action tables through the `PTR_DAT_801db8b8`
+/// pointer array. `None` when the array or any pointed-to table falls outside
+/// the image.
+pub fn parse_actions(overlay: &[u8]) -> Option<Vec<BakaActionSet>> {
+    let ptr_off = (ACTION_PTR_TABLE_VA - BAKA_OVERLAY_BASE_VA) as usize;
+    if overlay.len() < ptr_off + OPPONENT_COUNT * 4 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(OPPONENT_COUNT);
+    for i in 0..OPPONENT_COUNT {
+        let p = ptr_off + i * 4;
+        let va = u32::from_le_bytes([overlay[p], overlay[p + 1], overlay[p + 2], overlay[p + 3]]);
+        if va < BAKA_OVERLAY_BASE_VA {
+            return None;
+        }
+        let table = (va - BAKA_OVERLAY_BASE_VA) as usize;
+        if overlay.len() < table + ACTIONS_PER_FIGHTER * ACTION_RECORD_STRIDE {
+            return None;
+        }
+        let mut power = [0i32; ACTIONS_PER_FIGHTER];
+        let mut keyframes = [0i32; ACTIONS_PER_FIGHTER];
+        let mut speed = [0i32; ACTIONS_PER_FIGHTER];
+        let mut sub_keyframes: [Vec<BakaSubKeyframe>; ACTIONS_PER_FIGHTER] = Default::default();
+        for a in 0..ACTIONS_PER_FIGHTER {
+            let r = table + a * ACTION_RECORD_STRIDE;
+            power[a] = read_i32(overlay, r + ACTION_POWER_OFFSET);
+            keyframes[a] = read_i32(overlay, r + ACTION_KEYFRAME_COUNT_OFFSET);
+            speed[a] = read_i32(overlay, r + ACTION_SPEED_OFFSET);
+            let live = keyframes[a].clamp(0, ACTION_SUB_KEYFRAME_SLOTS as i32) as usize;
+            sub_keyframes[a] = (0..live)
+                .map(|k| {
+                    let o = r + ACTION_SUB_KEYFRAME_OFFSET + k * ACTION_SUB_KEYFRAME_STRIDE;
+                    BakaSubKeyframe {
+                        offset: [
+                            read_i16(overlay, o),
+                            read_i16(overlay, o + 2),
+                            read_i16(overlay, o + 4),
+                        ],
+                        frame: read_i16(overlay, o + 6),
+                    }
+                })
+                .collect();
+        }
+        out.push(BakaActionSet {
+            index: i,
+            power,
+            keyframes,
+            speed,
+            sub_keyframes,
+        });
+    }
+    Some(out)
+}
+
+/// Whether a decoded AI pattern is a valid non-empty attack loop (every symbol
+/// is one of the three attack types `1`/`2`/`3`). A real opponent always has
+/// one; the field bounds the table.
+pub fn is_valid_pattern(pattern: &[u8]) -> bool {
+    !pattern.is_empty() && pattern.iter().all(|&s| (1..=3).contains(&s))
+}
+
+// ---------------------------------------------------------------------------
+// Presentation assets: the HUD widget table, the HUD/banner art entry, and the
+// per-rung fighter packs the duel actually draws with.
+// ---------------------------------------------------------------------------
+
+/// Extraction PROT entry of the minigame's HUD / banner art + stage meshes +
+/// battle-form ANM banks (`other5`): descriptor 0 is a `TIM_LIST` of 9 TIMs,
+/// descriptor 1 a pack of 4 Legaia TMDs (the title/duel stage set), descriptor
+/// 2 the 30-record battle-form ANM bank (see `docs/formats/anm.md`).
+pub const BAKA_HUD_ART_PROT_INDEX: usize = 1203;
+
+/// Extraction PROT entry of the first ladder fighter's pack. The per-fighter
+/// mesh installer `FUN_801D4C50` loads raw TOC `char_index + 0x4b6`, i.e.
+/// extraction `1206 + n` for roster id `3 + n` (`n` in `0..14`).
+pub const FIGHTER_PACK_FIRST_PROT_INDEX: usize = 1206;
+
+/// Roster id of the fighter carried by [`FIGHTER_PACK_FIRST_PROT_INDEX`].
+pub const FIGHTER_PACK_FIRST_ROSTER_ID: usize = 3;
+
+/// Number of per-fighter packs (roster ids `3..=16`; entry 1220 breaks the
+/// pattern).
+pub const FIGHTER_PACK_COUNT: usize = 14;
+
+/// Extraction PROT entry carrying ladder fighter `roster_id`'s own
+/// `[TIM][TMD][anim]` pack, or `None` for the three player-side records.
+pub fn fighter_pack_prot_index(roster_id: usize) -> Option<usize> {
+    if (FIGHTER_PACK_FIRST_ROSTER_ID..FIGHTER_PACK_FIRST_ROSTER_ID + FIGHTER_PACK_COUNT)
+        .contains(&roster_id)
+    {
+        Some(FIGHTER_PACK_FIRST_PROT_INDEX + roster_id - FIGHTER_PACK_FIRST_ROSTER_ID)
+    } else {
+        None
+    }
+}
+
+/// Runtime VA of the HUD widget descriptor table (`DAT_801d7160`), read by the
+/// overlay's textured-quad emitter `FUN_801d5ed0`. 20-byte stride, same family
+/// as the slot machine's `DAT_801d347c` but with per-quad gradient RGB fields.
+pub const HUD_WIDGET_TABLE_VA: u32 = 0x801D_7160;
+
+/// File offset of the HUD widget table within the as-loaded overlay image.
+pub const HUD_WIDGET_TABLE_FILE_OFFSET: usize =
+    (HUD_WIDGET_TABLE_VA - BAKA_OVERLAY_BASE_VA) as usize;
+
+/// Stride of one HUD widget descriptor.
+pub const HUD_WIDGET_STRIDE: usize = 0x14;
+
+/// Populated records in the widget table (record 51 onward is string rodata).
+pub const HUD_WIDGET_COUNT: usize = 51;
+
+/// One record of the Baka Fighter HUD widget table (`DAT_801d7160`).
+///
+/// `FUN_801d5ed0(x, y, id, brightness, size)` draws widget `id` as a textured
+/// quad **centred** on `(x, y)`: half-extent = `w * scale >> 13 * size >> 12`
+/// (so `scale = 0x1000`, `size = 0x1000` is pixel-exact `w/2`), texpage attr =
+/// `texpage + abr * 0x20` (the fold lands in the attribute's semi-transparency
+/// rate field, bits 5..6 - `abr = 1` is the additive `B + F` blend the banner
+/// glyphs glow with), and the quad's gouraud colours run `rgb_top` (verts 0/1)
+/// to `rgb_bottom` (verts 2/3), each scaled by `brightness / 256`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BakaHudWidget {
+    /// `+0x00` base-size scale, 20.12 fixed point (`0x1000` = 1.0).
+    pub scale: i32,
+    /// `+0x04` texpage attribute (before the `page_bank` fold).
+    pub texpage: u16,
+    /// `+0x06` CLUT id (PSX encoding: bits 0..=5 = `x/16`, bits 6..=14 = `y`).
+    pub clut: u16,
+    /// `+0x08` texture cell origin within the page.
+    pub u: u8,
+    pub v: u8,
+    /// `+0x0A` cell size.
+    pub w: u8,
+    pub h: u8,
+    /// `+0x0C` top-edge gouraud RGB.
+    pub rgb_top: [u8; 3],
+    /// `+0x0F` semi-transparency bit (`(bit << 1) | 0x3C` is the poly code).
+    pub semi: u8,
+    /// `+0x10` bottom-edge gouraud RGB.
+    pub rgb_bottom: [u8; 3],
+    /// `+0x13` semi-transparency rate: `* 0x20` is added to the texpage
+    /// attribute, landing in the ABR field (bits 5..6). `1` = additive.
+    pub abr: u8,
+}
+
+impl BakaHudWidget {
+    /// VRAM x of the page the widget samples.
+    pub fn page_x(&self) -> u16 {
+        (self.texpage & 0xF) * 64
+    }
+    /// VRAM y of the page the widget samples.
+    pub fn page_y(&self) -> u16 {
+        ((self.texpage >> 4) & 1) * 256
+    }
+    /// Palette column within a CLUT strip that starts at column 0 of its row.
+    pub fn palette_index(&self) -> usize {
+        (self.clut & 0x3F) as usize
+    }
+}
+
+/// Runtime VA of the VITAL bar **frame-cell table** the HUD renderer
+/// `FUN_801d2afc` walks (`lui 0x801e` / `addiu -0x43cc` at `0x801D2CA8`).
+///
+/// It is initialised data in the overlay image, not a runtime build: the HUD
+/// renderer is its only reference in the overlay, and it only reads it.
+pub const HUD_BAR_FRAME_TABLE_VA: u32 = 0x801D_BC34;
+
+/// File offset of [`HUD_BAR_FRAME_TABLE_VA`] within the as-loaded image.
+pub const HUD_BAR_FRAME_TABLE_FILE_OFFSET: usize =
+    (HUD_BAR_FRAME_TABLE_VA - BAKA_OVERLAY_BASE_VA) as usize;
+
+/// Stride of one frame-cell record.
+pub const HUD_BAR_FRAME_STRIDE: usize = 0x10;
+
+/// Cells per VITAL frame: the loop bound `slti v0,s3,0x3` at `0x801D2D98`.
+pub const HUD_BAR_FRAME_CELLS: usize = 3;
+
+/// One VITAL bar frame cell (`0x801DBC34 + i * 0x10`): a screen width and
+/// the four texture corners, sampled from texpage 5 (`(320, 0)`) through
+/// CLUT `0x7D80` at the neutral `0x808080`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BakaBarFrameCell {
+    /// `+0x00` the cell's screen width; the next cell starts this far right.
+    pub width: i32,
+    /// `+0x08..+0x0F` the `(u, v)` of corners 0..3 (top-left, top-right,
+    /// bottom-left, bottom-right), copied straight into the packet.
+    pub uv: [(u8, u8); 4],
+}
+
+/// Parse the [`HUD_BAR_FRAME_CELLS`] frame cells out of the as-loaded Baka
+/// Fighter overlay image.
+pub fn parse_baka_bar_frame(overlay: &[u8]) -> Option<[BakaBarFrameCell; HUD_BAR_FRAME_CELLS]> {
+    let end = HUD_BAR_FRAME_TABLE_FILE_OFFSET + HUD_BAR_FRAME_CELLS * HUD_BAR_FRAME_STRIDE;
+    if overlay.len() < end {
+        return None;
+    }
+    Some(std::array::from_fn(|i| {
+        let o = HUD_BAR_FRAME_TABLE_FILE_OFFSET + i * HUD_BAR_FRAME_STRIDE;
+        BakaBarFrameCell {
+            width: read_i32(overlay, o),
+            uv: std::array::from_fn(|c| (overlay[o + 8 + c * 2], overlay[o + 9 + c * 2])),
+        }
+    }))
+}
+
+/// Parse the [`HUD_WIDGET_COUNT`] widget descriptors out of the **as-loaded**
+/// Baka Fighter overlay image (PROT entry [`BAKA_OVERLAY_PROT_INDEX`]).
+pub fn parse_baka_hud(overlay: &[u8]) -> Option<Vec<BakaHudWidget>> {
+    let end = HUD_WIDGET_TABLE_FILE_OFFSET + HUD_WIDGET_COUNT * HUD_WIDGET_STRIDE;
+    if overlay.len() < end {
+        return None;
+    }
+    let rd16 = |o: usize| u16::from_le_bytes([overlay[o], overlay[o + 1]]);
+    Some(
+        (0..HUD_WIDGET_COUNT)
+            .map(|i| {
+                let o = HUD_WIDGET_TABLE_FILE_OFFSET + i * HUD_WIDGET_STRIDE;
+                BakaHudWidget {
+                    scale: read_i32(overlay, o),
+                    texpage: rd16(o + 4),
+                    clut: rd16(o + 6),
+                    u: overlay[o + 8],
+                    v: overlay[o + 9],
+                    w: overlay[o + 0x0A],
+                    h: overlay[o + 0x0B],
+                    rgb_top: [overlay[o + 0x0C], overlay[o + 0x0D], overlay[o + 0x0E]],
+                    semi: overlay[o + 0x0F],
+                    rgb_bottom: [overlay[o + 0x10], overlay[o + 0x11], overlay[o + 0x12]],
+                    abr: overlay[o + 0x13],
+                }
+            })
+            .collect(),
+    )
+}
+
+/// Runtime VA of the minigame's **actor-prototype band** - the eight
+/// `0x18`-byte templates the duel spawns its per-frame tick actors from.
+///
+/// The band is bounded on both sides by data of a different shape: an
+/// 8-byte-stride action-name string table below it, and the roster's own
+/// name pool ([`OPPONENT_TABLE_VA`]) immediately above its last record.
+pub const ACTOR_PROTOTYPE_TABLE_VA: u32 = 0x801D_75DC;
+
+/// File offset of [`ACTOR_PROTOTYPE_TABLE_VA`] within the as-loaded image.
+pub const ACTOR_PROTOTYPE_TABLE_FILE_OFFSET: usize =
+    (ACTOR_PROTOTYPE_TABLE_VA - BAKA_OVERLAY_BASE_VA) as usize;
+
+/// Stride of one actor prototype.
+pub const ACTOR_PROTOTYPE_STRIDE: usize = 0x18;
+
+/// Prototypes in the band - `(OPPONENT_TABLE_VA - ACTOR_PROTOTYPE_TABLE_VA) /
+/// ACTOR_PROTOTYPE_STRIDE`, i.e. the band tiles the gap to the roster pool
+/// exactly.
+pub const ACTOR_PROTOTYPE_COUNT: usize =
+    (OPPONENT_TABLE_VA - ACTOR_PROTOTYPE_TABLE_VA) as usize / ACTOR_PROTOTYPE_STRIDE;
+
+/// The `+0x04` word every prototype in the band carries.
+pub const ACTOR_PROTOTYPE_LIFETIME_WORD: u32 = 0xFFFF_0000;
+/// The `+0x0C` word every prototype in the band carries.
+pub const ACTOR_PROTOTYPE_CLASS_WORD: u32 = 0x0002_0080;
+
+/// One actor prototype: the record the shared spawn API `FUN_80020DE0` is
+/// handed, whose `+0x08` word is the spawned actor's **per-frame tick
+/// callback**.
+///
+/// Every record in the band has the same shape - `+0x00` and `+0x10` zero,
+/// `+0x04` [`ACTOR_PROTOTYPE_LIFETIME_WORD`], `+0x0C`
+/// [`ACTOR_PROTOTYPE_CLASS_WORD`] - so the two fields that vary are the
+/// callback and the `+0x14` flag. This is what makes the band the place a
+/// callback with no `jal` site is *reached from*: nothing calls
+/// `FUN_801D49E8` or `FUN_801D4FC8` directly, and their addresses sit here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BakaActorPrototype {
+    /// `+0x08` - runtime VA of the tick callback.
+    pub callback_va: u32,
+    /// `+0x14` - the one per-record flag (`0` on the first two records, `1`
+    /// on the rest).
+    pub flag: u32,
+}
+
+/// Parse the [`ACTOR_PROTOTYPE_COUNT`] actor prototypes out of the
+/// **as-loaded** Baka Fighter overlay image.
+///
+/// Returns `None` when the image is short, or when any record breaks the
+/// band's uniform shape - which is the check that keeps a mis-based image
+/// from yielding eight plausible-looking pointers.
+pub fn parse_actor_prototypes(overlay: &[u8]) -> Option<Vec<BakaActorPrototype>> {
+    let end = ACTOR_PROTOTYPE_TABLE_FILE_OFFSET + ACTOR_PROTOTYPE_COUNT * ACTOR_PROTOTYPE_STRIDE;
+    if overlay.len() < end {
+        return None;
+    }
+    let rd32 =
+        |o: usize| u32::from_le_bytes([overlay[o], overlay[o + 1], overlay[o + 2], overlay[o + 3]]);
+    let image_end = BAKA_OVERLAY_BASE_VA + overlay.len() as u32;
+    let mut out = Vec::with_capacity(ACTOR_PROTOTYPE_COUNT);
+    for i in 0..ACTOR_PROTOTYPE_COUNT {
+        let o = ACTOR_PROTOTYPE_TABLE_FILE_OFFSET + i * ACTOR_PROTOTYPE_STRIDE;
+        if rd32(o) != 0
+            || rd32(o + 4) != ACTOR_PROTOTYPE_LIFETIME_WORD
+            || rd32(o + 0x0C) != ACTOR_PROTOTYPE_CLASS_WORD
+            || rd32(o + 0x10) != 0
+        {
+            return None;
+        }
+        let callback_va = rd32(o + 8);
+        if !(BAKA_OVERLAY_BASE_VA..image_end).contains(&callback_va) {
+            return None;
+        }
+        out.push(BakaActorPrototype {
+            callback_va,
+            flag: rd32(o + 0x14),
+        });
+    }
+    Some(out)
+}
+
+/// Runtime VA of the sprite-blit source table (`DAT_801dbe84`) the chrome's
+/// VRAM-to-VRAM helper `FUN_801D65F8` indexes.
+///
+/// It is the **last initialised word pair in the whole image**: the overlay's
+/// own bytes end at `0x801DBE8B` and everything above is BSS, which is why a
+/// reader that sizes the table by scanning for a terminator finds one
+/// immediately and a reader that assumes a long table reads zeros.
+pub const BLIT_RECT_TABLE_VA: u32 = 0x801D_BE84;
+
+/// File offset of [`BLIT_RECT_TABLE_VA`] within the as-loaded overlay image.
+pub const BLIT_RECT_TABLE_FILE_OFFSET: usize = (BLIT_RECT_TABLE_VA - BAKA_OVERLAY_BASE_VA) as usize;
+
+/// Stride of one blit-source record (`sll v0,a1,0x2` at `0x801D661C`).
+pub const BLIT_RECT_STRIDE: usize = 4;
+
+/// Initialised records in [`BLIT_RECT_TABLE_VA`].
+pub const BLIT_RECT_COUNT: usize = 2;
+
+/// VRAM x the record's first byte is added to (`addiu v1,v1,0x340`).
+pub const BLIT_SRC_X_BASE: u16 = 0x340;
+/// VRAM y the record's second byte is added to (`addiu v0,v0,0x80`).
+pub const BLIT_SRC_Y_BASE: u16 = 0x80;
+/// Fixed source-rect width in VRAM halfwords (`li v0,0x6`).
+pub const BLIT_RECT_W: u16 = 6;
+/// Fixed source-rect height in VRAM rows (`li v0,0x18`).
+pub const BLIT_RECT_H: u16 = 0x18;
+/// Fixed destination the helper always blits to (`li a1,0x340` / `li a2,0x86`).
+pub const BLIT_DST: (u16, u16) = (0x340, 0x86);
+
+/// One resolved entry of the sprite-blit source table.
+///
+/// `FUN_801D65F8(0, index)` stacks a `RECT { x, y, w, h }` from record
+/// `index` and hands it to `MoveImage` with a fixed destination, so the
+/// record selects **which** source cell is copied into the live cell and
+/// nothing else. The record's high half (`+2` / `+3`) is never read by this
+/// routine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BakaBlitRect {
+    /// Source VRAM x: record byte `0` shifted right two, plus
+    /// [`BLIT_SRC_X_BASE`].
+    pub src_x: u16,
+    /// Source VRAM y: record byte `1` plus [`BLIT_SRC_Y_BASE`].
+    pub src_y: u16,
+    /// The two bytes this routine does not read, kept so a consumer can see
+    /// the record is not two-byte-wide.
+    pub unread: [u8; 2],
+}
+
+impl BakaBlitRect {
+    /// The rect's fixed size - the same `(w, h)` for every record.
+    pub const fn size(&self) -> (u16, u16) {
+        (BLIT_RECT_W, BLIT_RECT_H)
+    }
+}
+
+/// Parse the [`BLIT_RECT_COUNT`] blit-source records out of the **as-loaded**
+/// Baka Fighter overlay image (PROT entry [`BAKA_OVERLAY_PROT_INDEX`]).
+pub fn parse_blit_rects(overlay: &[u8]) -> Option<Vec<BakaBlitRect>> {
+    let end = BLIT_RECT_TABLE_FILE_OFFSET + BLIT_RECT_COUNT * BLIT_RECT_STRIDE;
+    if overlay.len() < end {
+        return None;
+    }
+    Some(
+        (0..BLIT_RECT_COUNT)
+            .map(|i| {
+                let o = BLIT_RECT_TABLE_FILE_OFFSET + i * BLIT_RECT_STRIDE;
+                BakaBlitRect {
+                    src_x: BLIT_SRC_X_BASE + u16::from(overlay[o] >> 2),
+                    src_y: BLIT_SRC_Y_BASE + u16::from(overlay[o + 1]),
+                    unread: [overlay[o + 2], overlay[o + 3]],
+                }
+            })
+            .collect(),
+    )
+}
+
+/// Chunk type byte of the fighter pack's TIM atlas (a standard PSX TIM).
+pub const FIGHTER_CHUNK_TIM: u8 = 0;
+/// Chunk type byte of the fighter pack's Legaia TMD (the `TMD2` streaming
+/// class, same as the PROT 1204 slots).
+pub const FIGHTER_CHUNK_TMD: u8 = 9;
+/// Chunk type byte of the fighter pack's animation bank (a canonical ANM
+/// container: `[u32 count][u32 offsets][records]`, records per
+/// `docs/formats/anm.md` - decode with `legaia_actor_formats::player_anm::parse`).
+pub const FIGHTER_CHUNK_ANIM: u8 = 11;
+
+/// One ladder fighter's decoded pack (extraction PROT `1206..=1219`): a raw
+/// `[u32 (type << 24) | size][payload]` chunk chain walked by `FUN_801D4C50`
+/// and dispatched through `FUN_8001F05C` with the already-decompressed flag.
+#[derive(Debug, Clone, Default)]
+pub struct BakaFighterPack {
+    /// The fighter's 256x256 4bpp texture atlas (chunk type 0). Standard PSX
+    /// TIM; its bundled 256x1 CLUT strip declares the row the TMD's CBAs
+    /// sample (496 / 497 / 498 across the corpus).
+    pub tim_bytes: Vec<u8>,
+    /// The fighter's Legaia TMD (chunk type 9, magic `0x80000002`).
+    pub tmd_bytes: Vec<u8>,
+    /// The fighter's 8-record animation bank (chunk type 11; record 0 = idle,
+    /// `bone_count` == the TMD's `nobj`).
+    pub anim_bytes: Vec<u8>,
+}
+
+/// Walk one fighter pack's chunk chain (raw PROT entry bytes). Stops at a zero
+/// word or the end of the buffer; returns `None` when any of the three
+/// expected chunks is missing.
+pub fn parse_fighter_pack(entry: &[u8]) -> Option<BakaFighterPack> {
+    let mut pack = BakaFighterPack::default();
+    let mut off = 0usize;
+    while off + 4 <= entry.len() {
+        let word = u32::from_le_bytes(entry[off..off + 4].try_into().unwrap());
+        if word == 0 {
+            break;
+        }
+        let typ = (word >> 24) as u8;
+        let size = (word & 0x00FF_FFFF) as usize;
+        let body = entry.get(off + 4..off + 4 + size)?;
+        match typ {
+            FIGHTER_CHUNK_TIM => pack.tim_bytes = body.to_vec(),
+            FIGHTER_CHUNK_TMD => pack.tmd_bytes = body.to_vec(),
+            FIGHTER_CHUNK_ANIM => pack.anim_bytes = body.to_vec(),
+            _ => {}
+        }
+        off += 4 + size;
+    }
+    if pack.tim_bytes.is_empty() || pack.tmd_bytes.is_empty() || pack.anim_bytes.is_empty() {
+        return None;
+    }
+    Some(pack)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_offset_and_consts() {
+        assert_eq!(OPPONENT_TABLE_FILE_OFFSET, 0x8E84);
+        assert_eq!(OPPONENT_RECORD_STRIDE, 0x6C);
+        assert_eq!(OPPONENT_COUNT, 17);
+        assert_eq!(ROUND_WIN_TARGET, 2);
+        // The historical "+0x20 view" base used by the gold read.
+        assert_eq!(OPPONENT_TABLE_VA + RECORD_GOLD_OFFSET as u32, 0x801D_76BC);
+        // The AI-pattern VA the move picker reads (`DAT_801d76e8`).
+        assert_eq!(
+            OPPONENT_TABLE_VA + RECORD_AI_PATTERN_OFFSET as u32,
+            0x801D_76E8
+        );
+    }
+
+    #[test]
+    fn parse_gold_stats_and_pattern() {
+        let off = 0x10;
+        let mut buf = vec![0u8; off + 2 * OPPONENT_RECORD_STRIDE];
+        // record 1: gold 25, stats, pattern [1,2,3] then NUL.
+        let b = off + OPPONENT_RECORD_STRIDE;
+        buf[b + RECORD_GOLD_OFFSET..b + RECORD_GOLD_OFFSET + 4]
+            .copy_from_slice(&25u32.to_le_bytes());
+        buf[b + RECORD_DAMAGE_MOD_OFFSET..b + RECORD_DAMAGE_MOD_OFFSET + 4]
+            .copy_from_slice(&40i32.to_le_bytes());
+        for (t, v) in [(0usize, 10i32), (1, 20), (2, 30)] {
+            buf[b + RECORD_DEF_TIERS_OFFSET + t * 4..b + RECORD_DEF_TIERS_OFFSET + t * 4 + 4]
+                .copy_from_slice(&v.to_le_bytes());
+            buf[b + RECORD_ATK_TIERS_OFFSET + t * 4..b + RECORD_ATK_TIERS_OFFSET + t * 4 + 4]
+                .copy_from_slice(&(v * 2).to_le_bytes());
+        }
+        buf[b + RECORD_CRIT_CHANCE_OFFSET..b + RECORD_CRIT_CHANCE_OFFSET + 4]
+            .copy_from_slice(&15i32.to_le_bytes());
+        buf[b + RECORD_AI_PATTERN_OFFSET..b + RECORD_AI_PATTERN_OFFSET + 3]
+            .copy_from_slice(&[1, 2, 3]);
+        let recs = parse_at(&buf, off, 2).expect("parses");
+        assert_eq!(recs[1].gold_reward, 25);
+        assert_eq!(recs[1].damage_mod, 40);
+        assert_eq!(recs[1].def_tiers, [10, 20, 30]);
+        assert_eq!(recs[1].atk_tiers, [20, 40, 60]);
+        assert_eq!(recs[1].crit_chance, 15);
+        assert_eq!(recs[1].ai_pattern, vec![1, 2, 3]);
+        assert!(is_valid_pattern(&recs[1].ai_pattern));
+        // cursor wraps and subtracts 1 → attack type.
+        assert_eq!(recs[1].attack_at(0), Some(0));
+        assert_eq!(recs[1].attack_at(3), Some(0)); // wraps
+        assert_eq!(recs[1].attack_at(2), Some(2));
+        // record 0 empty pattern → invalid / no attack.
+        assert!(!is_valid_pattern(&recs[0].ai_pattern));
+        assert_eq!(recs[0].attack_at(0), None);
+    }
+
+    #[test]
+    fn parse_actions_through_pointer_array() {
+        let base = BAKA_OVERLAY_BASE_VA;
+        let ptr_off = (ACTION_PTR_TABLE_VA - base) as usize;
+        let table_off = ptr_off + OPPONENT_COUNT * 4;
+        let mut buf = vec![0u8; table_off + OPPONENT_COUNT * ACTIONS_PER_FIGHTER * 0x60];
+        for i in 0..OPPONENT_COUNT {
+            let t = table_off + i * ACTIONS_PER_FIGHTER * ACTION_RECORD_STRIDE;
+            let va = base + t as u32;
+            buf[ptr_off + i * 4..ptr_off + i * 4 + 4].copy_from_slice(&va.to_le_bytes());
+            for a in 0..ACTIONS_PER_FIGHTER {
+                let r = t + a * ACTION_RECORD_STRIDE;
+                buf[r + ACTION_POWER_OFFSET..r + ACTION_POWER_OFFSET + 4]
+                    .copy_from_slice(&((i * 10 + a) as i32).to_le_bytes());
+                buf[r + ACTION_KEYFRAME_COUNT_OFFSET..r + ACTION_KEYFRAME_COUNT_OFFSET + 4]
+                    .copy_from_slice(&(a as i32 + 1).to_le_bytes());
+                buf[r + ACTION_SPEED_OFFSET..r + ACTION_SPEED_OFFSET + 4]
+                    .copy_from_slice(&(a as i32 + 3).to_le_bytes());
+                for k in 0..=a.min(ACTION_SUB_KEYFRAME_SLOTS - 1) {
+                    let o = r + ACTION_SUB_KEYFRAME_OFFSET + k * ACTION_SUB_KEYFRAME_STRIDE;
+                    buf[o..o + 2].copy_from_slice(&(-(k as i16) - 1).to_le_bytes());
+                    buf[o + 6..o + 8].copy_from_slice(&(k as i16 * 4 + 5).to_le_bytes());
+                }
+            }
+        }
+        let sets = parse_actions(&buf).expect("parses");
+        assert_eq!(sets[1].speed[2], 5);
+        // Record 2 carries three live slots; the strike frame is `+0x26`.
+        assert_eq!(sets[1].strike_frames(2), vec![5, 9, 13]);
+        assert_eq!(sets[1].sub_keyframes[2][1].offset, [-2, 0, 0]);
+        // A count past the record's eight slots is clamped, not over-read.
+        assert_eq!(sets[1].sub_keyframes[8].len(), ACTION_SUB_KEYFRAME_SLOTS);
+        assert_eq!(ACTION_SUB_KEYFRAME_SLOTS, 8);
+        assert_eq!(sets.len(), OPPONENT_COUNT);
+        assert_eq!(sets[1].power[2], 12);
+        assert_eq!(sets[1].attack_power(1), Some(11));
+        assert_eq!(sets[1].attack_power(3), Some(13));
+        assert_eq!(sets[1].attack_power(4), Some(14));
+        assert_eq!(sets[1].attack_power(0), None);
+        assert_eq!(sets[2].keyframes[ACTION_SPECIAL], 5);
+    }
+
+    #[test]
+    fn too_short_is_none() {
+        assert!(parse_at(&[0u8; 4], 0, 1).is_none());
+        assert!(parse_actions(&[0u8; 4]).is_none());
+    }
+
+    #[test]
+    fn hud_widget_table_offset_and_parse() {
+        // VA 0x801d7160 - base 0x801CE818 = 0x8948.
+        assert_eq!(HUD_WIDGET_TABLE_FILE_OFFSET, 0x8948);
+        let end = HUD_WIDGET_TABLE_FILE_OFFSET + HUD_WIDGET_COUNT * HUD_WIDGET_STRIDE;
+        let mut buf = vec![0u8; end];
+        let o = HUD_WIDGET_TABLE_FILE_OFFSET + 2 * HUD_WIDGET_STRIDE;
+        buf[o..o + 4].copy_from_slice(&0x1000i32.to_le_bytes());
+        buf[o + 4..o + 6].copy_from_slice(&0x0005u16.to_le_bytes());
+        buf[o + 6..o + 8].copy_from_slice(&0x7D84u16.to_le_bytes());
+        buf[o + 8] = 48; // u
+        buf[o + 9] = 48; // v
+        buf[o + 0x0A] = 112; // w
+        buf[o + 0x0B] = 16; // h
+        buf[o + 0x13] = 1; // abr -> additive blend
+        let widgets = parse_baka_hud(&buf).expect("parses");
+        assert_eq!(widgets.len(), HUD_WIDGET_COUNT);
+        let w = widgets[2];
+        assert_eq!(w.scale, 0x1000);
+        assert_eq!((w.u, w.v, w.w, w.h), (48, 48, 112, 16));
+        // texpage 5 -> page (320, 0); the abr byte is a blend mode, not a bank.
+        assert_eq!(w.page_x(), 320);
+        assert_eq!(w.page_y(), 0);
+        assert_eq!(w.abr, 1);
+        assert_eq!(w.palette_index(), 4);
+        assert!(parse_baka_hud(&buf[..end - 1]).is_none());
+    }
+
+    #[test]
+    fn fighter_pack_chain_walk() {
+        // [TIM][TMD][anim] chain with a trailing zero word.
+        let mut buf = Vec::new();
+        let chunk = |buf: &mut Vec<u8>, typ: u8, body: &[u8]| {
+            let word = ((typ as u32) << 24) | body.len() as u32;
+            buf.extend_from_slice(&word.to_le_bytes());
+            buf.extend_from_slice(body);
+        };
+        chunk(&mut buf, FIGHTER_CHUNK_TIM, &[0x10, 0, 0, 0, 8, 0, 0, 0]);
+        chunk(&mut buf, FIGHTER_CHUNK_TMD, &[0x02, 0, 0, 0x80, 0, 0, 0, 0]);
+        chunk(&mut buf, FIGHTER_CHUNK_ANIM, &[1, 0, 0, 0, 2, 0, 0, 0]);
+        buf.extend_from_slice(&[0u8; 4]);
+        let pack = parse_fighter_pack(&buf).expect("parses");
+        assert_eq!(pack.tim_bytes[0], 0x10);
+        assert_eq!(pack.tmd_bytes[3], 0x80);
+        assert_eq!(pack.anim_bytes[0], 1);
+        // A chain missing the TMD is refused.
+        let mut short = Vec::new();
+        chunk(&mut short, FIGHTER_CHUNK_TIM, &[0x10]);
+        short.extend_from_slice(&[0u8; 4]);
+        assert!(parse_fighter_pack(&short).is_none());
+    }
+
+    #[test]
+    fn action_slot_labels_cover_the_bank() {
+        // Record space (display id - base - 1): idle 0, attacks 1..=3,
+        // special 4 (= ACTION_SPECIAL), hits 5..=7, win 8. No walk record.
+        assert_eq!(action_slot_label(0), Some("Idle"));
+        assert_eq!(
+            action_slot_label(ACTION_ATTACK_BASE),
+            Some("Attack 1 (Square)")
+        );
+        assert_eq!(action_slot_label(3), Some("Attack 3 (Cross)"));
+        assert_eq!(action_slot_label(ACTION_SPECIAL), Some("Special"));
+        assert_eq!(
+            action_slot_label(ACTION_HIT_BASE),
+            Some("Hit / Knockdown 1")
+        );
+        assert_eq!(action_slot_label(ACTION_WIN), Some("Win"));
+        assert_eq!(action_slot_label(ACTIONS_PER_FIGHTER), None);
+        // Every in-bank label exists and is unique.
+        let labels: Vec<_> = (0..ACTIONS_PER_FIGHTER)
+            .map(|s| action_slot_label(s).expect("in-bank slot has a label"))
+            .collect();
+        let mut dedup = labels.clone();
+        dedup.sort_unstable();
+        dedup.dedup();
+        assert_eq!(dedup.len(), labels.len(), "labels must be unique");
+    }
+
+    #[test]
+    fn party_bank_record_labels_follow_the_9_record_banks() {
+        assert_eq!(party_bank_record_label(0), "Vahn - Idle");
+        assert_eq!(party_bank_record_label(4), "Vahn - Special");
+        assert_eq!(party_bank_record_label(9), "Noa - Idle");
+        assert_eq!(party_bank_record_label(17), "Noa - Win");
+        assert_eq!(party_bank_record_label(18), "Gala - Idle");
+        assert_eq!(party_bank_record_label(26), "Gala - Win");
+        assert_eq!(party_bank_record_label(27), "10-bone rig 0");
+        assert_eq!(party_bank_record_label(29), "10-bone rig 2");
+    }
+
+    #[test]
+    fn fighter_pack_prot_indices() {
+        assert_eq!(fighter_pack_prot_index(3), Some(1206));
+        assert_eq!(fighter_pack_prot_index(16), Some(1219));
+        assert_eq!(fighter_pack_prot_index(2), None);
+        assert_eq!(fighter_pack_prot_index(17), None);
+    }
+}

@@ -5,7 +5,7 @@
 //! two-page split the arm resolves, the ordering-table bounds check and
 //! back-buffer bias `FUN_800468A4` applies, and the GP0 `0x80` packet
 //! `FUN_80057914` builds. What it had no seat for was a GPU: the host hook
-//! `FieldHost::op43_vram_rect_copy` had a no-op default and no implementation,
+//! `FieldScreenHost::queue_vram_rect_copies` had a no-op default and no implementation,
 //! so a resolved call reached nothing.
 //!
 //! This module is that seat, built the same way the sibling `4C 60`
@@ -67,7 +67,7 @@ fn reads_framebuffer(c: &RectCopyCall) -> bool {
 
 impl World {
     /// Queue the one or two `FUN_800468A4` calls the field-VM arm resolved -
-    /// the `FieldHost::op43_vram_rect_copy` host hook.
+    /// the `FieldScreenHost::queue_vram_rect_copies` host hook.
     ///
     /// Drained by [`Self::apply_vram_rect_copies`].
     pub fn queue_vram_rect_copies(&mut self, calls: &[RectCopyCall]) {
@@ -81,7 +81,7 @@ impl World {
     /// `back_buffer` is the framebuffer-page flag `DAT_8007B74C`; a host that
     /// does not track a page passes `false`, which is the front-buffer case.
     ///
-    /// PORT: FUN_800468a4 (the consumer seat: `FieldHost::op43_vram_rect_copy`
+    /// PORT: FUN_800468a4 (the consumer seat: `FieldScreenHost::queue_vram_rect_copies`
     /// through `legaia_engine_vm::vram_rect_copy::enqueue`)
     pub fn apply_vram_rect_copies(
         &mut self,

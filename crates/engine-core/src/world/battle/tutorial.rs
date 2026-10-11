@@ -166,7 +166,7 @@ impl World {
     /// [`crate::battle_tutorial::TUTORIAL_ARM_FLAG`] within a few coherently
     /// decoded ops of a `3E FF` that enters `formation_id`
     /// ([`Self::scene_battle_entry_arms`], read off the MAN at carrier
-    /// install; the shape is [`crate::man_field_scripts::BattleEntryArm`]).
+    /// install; the shape is [`legaia_engine_field::man_field_scripts::BattleEntryArm`]).
     /// A disc-wide census finds that SET in exactly one record - town01's
     /// sparring record, `50 19` three ops before its `3E FF 04` - so this
     /// raises the flag for the Tetsu fight and for nothing else. Returns
@@ -190,7 +190,7 @@ impl World {
     /// Replay the op-`0x35` BGM words the record that enters formation row
     /// `formation_id` runs before its `3E FF <row>` battle-entry op - its
     /// last track start with the control words after it, then its battle
-    /// sound-set selection ([`crate::man_field_scripts::BattleEntryScore`]),
+    /// sound-set selection ([`legaia_engine_field::man_field_scripts::BattleEntryScore`]),
     /// for a direct entry into that row, which runs the entry without the
     /// record.
     ///
@@ -221,11 +221,11 @@ impl World {
     /// where a record executing those ops would have left them. The replay
     /// primitive behind [`Self::replay_scripted_battle_score`] and the retail
     /// comparison's resume of a spawned record
-    /// ([`crate::man_field_scripts::SpawnScore`]).
+    /// ([`legaia_engine_field::man_field_scripts::SpawnScore`]).
     pub fn replay_field_bgm_words(&mut self, words: &[(u16, u8)]) {
         let mut host = crate::world::vm_hosts::FieldHostImpl { world: self };
         for &(text_id, sub_op) in words {
-            legaia_engine_vm::field::FieldHost::bgm(&mut host, text_id, sub_op);
+            legaia_engine_vm::field::FieldAudioHost::bgm(&mut host, text_id, sub_op);
         }
     }
 
@@ -248,7 +248,7 @@ impl World {
     /// it and opens the round it was holding back
     /// (`world/battle/sideband.rs`).
     pub(in crate::world) fn tick_battle_tutorial_boxes(&mut self) -> bool {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
 
         let Some(group) = self.battle.tutorial_boxes.front().map(|b| b.group) else {
             return false;
@@ -399,7 +399,7 @@ impl World {
     /// detached from the World for the frame.
     pub(in crate::world) fn sync_battle_flow(
         &mut self,
-        phase: Option<&crate::battle_input::CommandPhase>,
+        phase: Option<&legaia_engine_menus::battle_input::CommandPhase>,
     ) -> bool {
         use crate::battle_flow::{BattleMenuKind, flow_state_for};
 

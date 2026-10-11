@@ -13,8 +13,8 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (no disc committed / CI).
 
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::translation::lift;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_translate::lift;
 
 fn load(var: &str) -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os(var)?);
@@ -30,7 +30,7 @@ fn lift_official_pairs_and_locates() {
     let usa = DiscPatcher::open(usa_bytes).expect("open USA disc");
 
     // Region detection on the USA disc.
-    let exe = lift::boot_exe_name(&usa).expect("read SYSTEM.CNF");
+    let exe = legaia_disc_patch::disc::boot_exe_name(&usa).expect("read SYSTEM.CNF");
     assert!(
         exe.starts_with("SCUS_942"),
         "expected the USA boot exe, got {exe}"
@@ -125,7 +125,7 @@ fn folded_lift_is_encodable_on_the_ntsc_glyph_set() {
 
     // Folded text is plain ASCII plus those symbol cells, so it encodes for
     // both target policies.
-    use legaia_patcher::translation::markup::{self, Target};
+    use legaia_translate::markup::{self, Target};
     for (_, entries) in pack.sections.iter() {
         for e in entries {
             if e.translation.is_empty() {
@@ -147,8 +147,8 @@ fn folded_lift_is_encodable_on_the_ntsc_glyph_set() {
 
 /// Count bare `{xx}` escapes with `xx >= 0x80` that are not 2-byte opcodes -
 /// i.e. accented / high glyph cells. Counts only, never text.
-fn count_high_escapes(pack: &legaia_patcher::translation::LanguagePack) -> usize {
-    use legaia_patcher::translation::markup;
+fn count_high_escapes(pack: &legaia_translate::LanguagePack) -> usize {
+    use legaia_translate::markup;
     let mut n = 0;
     for (_, entries) in pack.sections.iter() {
         for e in entries {
@@ -171,7 +171,7 @@ fn unpinned_search_recovers_the_pinned_pal_bases() {
     };
     let usa = DiscPatcher::open(usa_bytes).expect("open USA disc");
     let pal = DiscPatcher::open(pal_bytes).expect("open PAL disc");
-    let exe = lift::boot_exe_name(&pal).expect("read SYSTEM.CNF");
+    let exe = legaia_disc_patch::disc::boot_exe_name(&pal).expect("read SYSTEM.CNF");
     let Some((pinned_tables, pinned_party)) = lift::pinned_bases_for_exe(&exe) else {
         eprintln!("[skip] {exe} is not a hand-pinned build - nothing to vouch against");
         return;

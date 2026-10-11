@@ -32,7 +32,7 @@
 use anyhow::{Context, Result, bail};
 
 use crate::delilas_party::PartyMapping;
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// PROT entry of the always-resident battle voice/SFX bank (VAB slot 2).
 pub const BATTLE_BANK_ENTRY: usize = 869;

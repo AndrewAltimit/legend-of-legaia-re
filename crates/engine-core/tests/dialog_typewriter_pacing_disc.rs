@@ -26,7 +26,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 fn extracted_dir() -> Option<PathBuf> {
     ["extracted", "../extracted", "../../extracted"]

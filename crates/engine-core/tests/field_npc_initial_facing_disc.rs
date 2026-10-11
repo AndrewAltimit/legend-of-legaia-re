@@ -20,12 +20,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_asset::man_section::parse as parse_man;
-use legaia_engine_core::man_field_scripts::{
+use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::{
     facing_index_to_engine_heading, placement_initial_facing,
 };
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_scene_formats::man_section::parse as parse_man;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -161,24 +162,25 @@ fn town01_walk_legs_only_ever_face_the_eight_compass_points() {
 
     // Every compass heading the walk law may emit, and nothing else.
     let compass: Vec<u16> = (0..8u8)
-        .map(|i| legaia_engine_vm::motion_vm::heading_lut_engine(i).expect("direction slot"))
+        .map(|i| legaia_engine_motion_vm::motion_vm::heading_lut_engine(i).expect("direction slot"))
         .collect();
 
     let mut legs = 0usize;
     let mut cardinal_frames = 0usize;
     for p in &placements {
-        let route =
-            legaia_engine_core::man_field_scripts::placement_motion_route(&man_file, &man_bytes, p);
+        let route = legaia_engine_field::man_field_scripts::placement_motion_route(
+            &man_file, &man_bytes, p,
+        );
         if route.is_empty() {
             continue;
         }
         // The placement's own decoded walk-kernel step, so the pacing is the
         // disc's rather than a stand-in.
         let speed =
-            legaia_engine_core::man_field_scripts::placement_wander_step(&man_file, &man_bytes, p)
+            legaia_engine_field::man_field_scripts::placement_wander_step(&man_file, &man_bytes, p)
                 .map(|s| s.speed)
                 .unwrap_or(4);
-        let mut state = legaia_engine_vm::motion_vm::MotionState {
+        let mut state = legaia_engine_motion_vm::motion_vm::MotionState {
             world_x: p.world_x,
             world_z: p.world_z,
             speed: speed.max(1),
@@ -191,15 +193,15 @@ fn town01_walk_legs_only_ever_face_the_eight_compass_points() {
             // the same, so the harness must too.
             state.pc = 0;
             state.op_accum = 0;
-            let target = legaia_engine_vm::motion_vm::MotionTarget {
+            let target = legaia_engine_motion_vm::motion_vm::MotionTarget {
                 x: tx,
                 z: tz,
                 ..Default::default()
             };
-            let program = [legaia_engine_vm::motion_vm::MotionOp::MoveTowardTarget as u8];
+            let program = [legaia_engine_motion_vm::motion_vm::MotionOp::MoveTowardTarget as u8];
             for frame in 0..4096 {
                 let moved_from = (state.world_x, state.world_z);
-                let r = legaia_engine_vm::motion_vm::step(&mut state, target, &program);
+                let r = legaia_engine_motion_vm::motion_vm::step(&mut state, target, &program);
                 if (state.world_x, state.world_z) != moved_from {
                     assert!(
                         compass.contains(&state.yaw),
@@ -214,7 +216,7 @@ fn town01_walk_legs_only_ever_face_the_eight_compass_points() {
                         cardinal_frames += 1;
                     }
                 }
-                if r == legaia_engine_vm::motion_vm::StepResult::Done {
+                if r == legaia_engine_motion_vm::motion_vm::StepResult::Done {
                     break;
                 }
             }

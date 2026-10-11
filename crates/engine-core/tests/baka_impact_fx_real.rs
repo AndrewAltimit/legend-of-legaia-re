@@ -1,5 +1,5 @@
 //! Disc-gated: the Baka Fighter impact pair's effect parts
-//! ([`legaia_engine_core::baka_impact_fx`]) over the real disc.
+//! ([`legaia_engine_minigames::baka_impact_fx`]) over the real disc.
 //!
 //! Reads the four spawn templates out of PROT 0976, runs each one to its
 //! `HALT` inside the snapshot window, checks the sprite templates build a
@@ -9,16 +9,17 @@
 //! generation moves). Structure only - no Sony bytes are asserted. Skips +
 //! passes when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_asset::baka_opponents;
-use legaia_asset::static_overlay;
-use legaia_engine_core::baka_duel_scene::{BakaDuelAssets, BakaDuelSurface};
-use legaia_engine_core::baka_fighter::{BakaFight, roster_clip_headers};
-use legaia_engine_core::baka_impact_fx::{
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_core::world::World;
+use legaia_engine_minigame_scenes::baka_duel_scene::{BakaDuelAssets, BakaDuelSurface};
+use legaia_engine_minigames::baka_fighter::{BakaFight, roster_clip_headers};
+use legaia_engine_minigames::baka_impact_fx::{
     ImpactDraw, ImpactPart, ImpactTemplates, TEMPLATE_WINDOW_WORDS,
 };
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
+use legaia_minigame_formats::baka_opponents;
+use legaia_overlay_images::static_overlay;
 
 #[test]
 fn the_impact_templates_run_and_draw_on_the_duel_surface() {
@@ -99,7 +100,7 @@ fn the_impact_templates_run_and_draw_on_the_duel_surface() {
     // Through the world tick: a decided exchange seats parts the surface draws.
     let opponents = baka_opponents::parse(&loaded).expect("roster parses");
     let actions = baka_opponents::parse_actions(&loaded).expect("actions parse");
-    let opponent = legaia_engine_core::baka_fighter::first_rung_roster();
+    let opponent = legaia_engine_minigames::baka_fighter::first_rung_roster();
     let fight = BakaFight::from_tables(&opponents, &actions, 0, opponent, 0x5EED)
         .expect("fight builds")
         .with_roster_clip_headers(roster_clip_headers(read))

@@ -3,7 +3,7 @@
 
 The battle / menu chrome is drawn out of one **widget-class table** in
 `SCUS_942.54` (VA `0x800732A4`, `0x0C` stride - see
-`docs/subsystems/battle.md` and `legaia_asset::ui_widgets`). Every record is a
+`docs/subsystems/battle.md` and `legaia_ui_formats::ui_widgets`). Every record is a
 `(u, v, w, h)` source rect on the resident system-UI sheet plus a packed
 palette byte, and both SCUS draw routines copy those four bytes verbatim into
 the `SPRT` packet they queue.

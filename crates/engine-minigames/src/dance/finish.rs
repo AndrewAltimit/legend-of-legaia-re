@@ -71,7 +71,7 @@ const RUN_VSYNCS: u8 = 3;
 /// The four countdown programs, read out of the as-loaded dance overlay.
 /// Empty when the image is too short.
 pub fn finish_programs(overlay: &[u8]) -> Vec<(u16, Vec<u16>)> {
-    let base = legaia_asset::dance_chart::DANCE_OVERLAY_BASE_VA;
+    let base = legaia_minigame_formats::dance_chart::DANCE_OVERLAY_BASE_VA;
     FINISH_PARTS
         .iter()
         .filter_map(|&(sprite, va)| {

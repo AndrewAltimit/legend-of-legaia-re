@@ -17,7 +17,7 @@ pub(crate) struct LinesPayload {
 /// PSX is Y-down so we flip Y at upload so up-is-up in the viewer camera.
 pub(crate) fn load_stage_for_view(path: &Path) -> Result<LinesPayload> {
     let raw = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
-    let stage = legaia_asset::stage_geom::parse(&raw)
+    let stage = legaia_scene_formats::stage_geom::parse(&raw)
         .ok_or_else(|| anyhow::anyhow!("no stage table in {}", path.display()))?;
     let largest = stage
         .tables
@@ -60,7 +60,7 @@ pub(crate) fn load_stage_for_view(path: &Path) -> Result<LinesPayload> {
     let mut indices: Vec<u32> = Vec::with_capacity(largest.records * 8);
     let mut emitted = 0usize;
     let mut skipped = 0usize;
-    for rec in legaia_asset::stage_geom::records(&raw, largest) {
+    for rec in legaia_scene_formats::stage_geom::records(&raw, largest) {
         let Some(idx) = stage.quad_vertex_indices(&rec) else {
             skipped += 1;
             continue;
@@ -116,7 +116,7 @@ pub(crate) fn collect_stage_files(root: &Path) -> Vec<PathBuf> {
         let Ok(raw) = std::fs::read(&path) else {
             continue;
         };
-        if legaia_asset::stage_geom::parse(&raw).is_some() {
+        if legaia_scene_formats::stage_geom::parse(&raw).is_some() {
             out.push(path);
         }
     }

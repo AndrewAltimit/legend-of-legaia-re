@@ -18,9 +18,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::ambient_effect_installs;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::ambient_effect_installs;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn extracted_root() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -50,14 +50,14 @@ fn jou_ambient_tree_spawns_and_cycles_clut_cells_or_skip() {
         .field_man_payload(&index)
         .expect("man payload")
         .expect("jou has a MAN");
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("parse MAN");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("parse MAN");
 
     // One ambient install: the P1 effect script's `34 30 00`.
     let installs = ambient_effect_installs(&man_file, &man_bytes);
     assert_eq!(installs, vec![0], "jou ambient install census");
 
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2, // town cadence
             ..Default::default()
         },
@@ -162,7 +162,7 @@ fn jou_ambient_cyclers_pulse_forever_or_skip() {
     let scene = Scene::load(&index, "jou").expect("load jou");
     let scripts = scene.find_event_scripts().expect("jou event scripts");
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },

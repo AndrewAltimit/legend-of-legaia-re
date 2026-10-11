@@ -14,9 +14,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::scene::ProtIndex;
-use legaia_engine_core::scene_assembly::assemble_field_scene;
 use legaia_engine_core::scene_live::LiveScene;
+use legaia_engine_core::scene_staging::assemble_field_scene;
+use legaia_engine_scene::scene::ProtIndex;
 
 fn open_index() -> Option<(Arc<ProtIndex>, PathBuf)> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -65,14 +65,14 @@ fn concnow_is_shown_on_its_installed_ladder() {
     // at scene init, before the system script's install, and nothing
     // re-samples a placed actor's height. Several stand on the very rungs the
     // install raised (nibbles 1..3), so a lift here would be visible.
-    let binds = legaia_engine_core::scene::Scene::load(&live.host.index, "concnow")
+    let binds = legaia_engine_scene::scene::Scene::load(&live.host.index, "concnow")
         .unwrap()
         .field_object_binds(&live.host.index)
         .unwrap();
     let keys: Vec<_> = a
         .placements
         .iter()
-        .map(|d| legaia_engine_core::field_env::placed_window_key(d, binds.as_ref()))
+        .map(|d| legaia_engine_scene::field_env::placed_window_key(d, binds.as_ref()))
         .collect();
     let bound_on_raised = a
         .placements
@@ -189,7 +189,7 @@ fn concnow_rooms_keep_their_own_ladders() {
     );
     // A terrain draw in such a room resolves through that room's ladder, not
     // the live one.
-    let entry_wave = legaia_engine_core::field_env::FloorWave::from_scene_and_world(
+    let entry_wave = legaia_engine_scene::field_env::FloorWave::from_scene_and_world(
         live.scene_floor_lut(),
         &entry,
     );
@@ -241,7 +241,7 @@ fn map01_runs_live() {
     assert!(live.is_world_map());
     assert_eq!(
         live.host.world.mode,
-        legaia_engine_core::world::SceneMode::WorldMap
+        legaia_engine_mode::mode::SceneMode::WorldMap
     );
     assert!(live.rooms().is_empty(), "the overworld has no ladder rooms");
     for _ in 0..240 {

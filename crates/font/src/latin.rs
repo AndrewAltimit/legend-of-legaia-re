@@ -3,7 +3,7 @@
 //! accent font ([`crate::accent_font`]) builds its glyph.
 //!
 //! This is the **one** table every consumer reads - the translation codec's
-//! accent fold (`legaia_patcher::translation::markup`), the importer's accent
+//! accent fold (`legaia_translate::markup`), the importer's accent
 //! pass, the accent-font patch and the browser workbench's palette and
 //! one-click fixes. Nothing else keeps a byte-to-accent map.
 //!

@@ -3,7 +3,7 @@
 //!
 //! Builds Vahn's real battle clips the way the engine's battle entry does:
 //! record[0] action slots, the equipment-spliced swings (runtime slots
-//! `0xC..0xF`, `legaia_asset::battle_char_assembly::swing_battle_animations`)
+//! `0xC..0xF`, `legaia_actor_formats::battle_char_assembly::swing_battle_animations`)
 //! and the art-animation bank resolved through the `readef.DAT` `"ME"`
 //! archives (`art_animation_bank` / `art_me_archive` / `art_animation`).
 //! Installs them on a party actor, then drives a scripted attack
@@ -26,10 +26,11 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::battle_char_assembly;
-use legaia_asset::monster_archive::MonsterAnimation;
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, ActorFlags, StepOutcome};
+use legaia_actor_formats::battle_char_assembly;
+use legaia_actor_formats::monster_archive::MonsterAnimation;
+use legaia_engine_battle_vm::battle_action::{ActionState, ActorFlags, StepOutcome};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 
 fn extracted_prot_dir() -> Option<PathBuf> {
     [
@@ -64,7 +65,7 @@ fn vahn_clips_and_bank(
     Vec<Option<MonsterAnimation>>,
     MonsterAnimation,
 ) {
-    let pack = legaia_asset::battle_data_pack::parse(raw).expect("player-file pack");
+    let pack = legaia_actor_formats::battle_data_pack::parse(raw).expect("player-file pack");
     let equipped = [0u8; 5];
     let asm = battle_char_assembly::assemble_character(raw, &pack, &equipped).expect("assembly");
 
@@ -145,7 +146,7 @@ fn scripted_party_attack_plays_swings_then_returns_to_idle() {
     world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
     world.set_actor_battle_art_bank(0, std::sync::Arc::new(bank));
     // Idle loop running, exactly like battle entry.
-    world.apply_battle_pose(0, legaia_engine_vm::battle_action::Pose::Idle as u8);
+    world.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
 
     // Scripted two-swing attack: L (0x0C), R (0x0D), terminator.
     world.actors[0].battle.params[0] = 0x0C;
@@ -230,13 +231,15 @@ fn scripted_party_attack_plays_swings_then_returns_to_idle() {
     // resumes. Tick it through.
     for _ in 0..5000 {
         world.tick_battle_animations();
-        if world.actors[0].battle_pose == Some(legaia_engine_vm::battle_action::Pose::Idle as u8) {
+        if world.actors[0].battle_pose
+            == Some(legaia_engine_battle_vm::battle_action::Pose::Idle as u8)
+        {
             break;
         }
     }
     assert_eq!(
         world.actors[0].battle_pose,
-        Some(legaia_engine_vm::battle_action::Pose::Idle as u8),
+        Some(legaia_engine_battle_vm::battle_action::Pose::Idle as u8),
         "idle resumes after the band"
     );
     assert!(

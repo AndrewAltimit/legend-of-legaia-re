@@ -383,7 +383,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   // Seru-magic side-effects (the element debuffs). Order + labels follow the
   // side-effect table's element rows (earth DEF, water AGL, fire ATK, wind
   // SPD, thunder INT, dark MP); the JS fallback verdicts mirror
-  // legaia_asset::seru_side_effect::Susceptibility::for_record.
+  // legaia_game_tables::seru_side_effect::Susceptibility::for_record.
   const DEBUFF_KINDS = [
     { key: 'DEF', element: 'earth',   spells: 'Mushura / Kemaro / Iota' },
     { key: 'AGL', element: 'water',   spells: 'Gizam / Freed / Slippery' },
@@ -425,7 +425,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     // Prefer the wasm-computed battle_stats; fall back to the JS boost.
     const b = (r.battle_stats && r.battle_stats.length === 6) ? r.battle_stats : boostScripted(s);
     const n = (r.battle_stats_random && r.battle_stats_random.length === 6) ? r.battle_stats_random : boostRandom(s);
-    // Fight class from the disc's formation rows (legaia_asset::formation_census):
+    // Fight class from the disc's formation rows (legaia_disc_audit::formation_census):
     // scripted when only flagged rows (or no row at all - a script-placed
     // fight) name this id. Older wasm builds carry no census; treat as random.
     const fights = r.fights || { flagged: 0, clear: 1, random: 1, scripted: false };

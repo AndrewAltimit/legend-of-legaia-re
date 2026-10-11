@@ -17,13 +17,13 @@
 //!
 //! Disc-free: the field VM is driven over synthetic bytecode.
 
-use legaia_engine_core::field_menu::{
+use legaia_engine_core::world::World;
+use legaia_engine_menus::field_menu::{
     FieldMenuGate, FieldMenuInput, FieldMenuPhase, FieldMenuSession,
 };
-use legaia_engine_core::pause_screens::{
+use legaia_engine_menus::pause_screens::{
     ROOT_MENU_CONTEXT_LOCKED, RootMenuRoute, root_menu_cancel_route, root_menu_confirm_route,
 };
-use legaia_engine_core::world::World;
 
 /// Step one op-`0x49` instruction with `sub_op` through the world's own
 /// field-VM host, the way a scene script would.

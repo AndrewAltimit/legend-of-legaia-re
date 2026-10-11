@@ -4,7 +4,7 @@
 //! Unlike drops (which live in the LZS-packed PROT 867 record) the steal item
 //! is a plain byte in an executable table: entry `M` for monster id `M`
 //! (1-based) is `[steal_chance_pct: u8, steal_item_id: u8]` at
-//! `table_base + M*2` (see [`legaia_asset::steal_table`] and
+//! `table_base + M*2` (see [`legaia_game_tables::steal_table`] and
 //! `docs/formats/steal-table.md`). An edit is therefore a single same-size byte
 //! overwrite of the **item** byte (the chance is preserved) - no re-pack, no
 //! overflow risk, so nothing is ever skipped.
@@ -15,7 +15,7 @@
 //! vs. PROT record). `Shuffle` redistributes the existing steal-item multiset
 //! among the stealable monsters; `Random` draws each from the item pool.
 
-use legaia_asset::steal_table::{self, StealTable};
+use legaia_game_tables::steal_table::{self, StealTable};
 
 use crate::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
 
@@ -88,7 +88,7 @@ impl StealEdits {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::steal_table::StealEntry;
+    use legaia_game_tables::steal_table::StealEntry;
 
     fn synth() -> StealEdits {
         // ids: 0 sentinel, 1 = 30%/0x7e, 2 = 0%/0 (not stealable), 3 = 20%/0xf2.

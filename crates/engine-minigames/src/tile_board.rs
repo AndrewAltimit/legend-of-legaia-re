@@ -223,10 +223,10 @@ pub fn fade_exempt_value(cell_under_player: Option<u8>) -> Option<u8> {
 /// Where the quit prompt goes on a picker result (`FUN_801E9DC8`'s return
 /// read at `0x801EFBF0..0x801EFC24`): confirm on row `0` quits, confirm on
 /// row `1` and cancel go back to walking, anything else stays.
-pub fn prompt_next(nav: legaia_engine_vm::menu_input::CursorNav, cursor: u32) -> u8 {
-    use legaia_engine_vm::menu_input::CursorNav;
+pub fn prompt_next(nav: legaia_engine_system::menu_input::CursorNav, cursor: u32) -> u8 {
+    use legaia_engine_system::menu_input::CursorNav;
     match nav {
-        CursorNav::Confirm if cursor & legaia_engine_vm::menu_input::CURSOR_INDEX_MASK == 0 => {
+        CursorNav::Confirm if cursor & legaia_engine_system::menu_input::CURSOR_INDEX_MASK == 0 => {
             sm::QUIT
         }
         CursorNav::Confirm | CursorNav::Cancel => sm::WALK,

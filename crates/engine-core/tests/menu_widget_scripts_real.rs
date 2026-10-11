@@ -4,7 +4,7 @@
 //!
 //! Chain under test: PROT 0899 menu-overlay bytes →
 //! [`World::install_menu_overlay_tables`] resolves the widget programs
-//! ([`legaia_engine_core::menu_widget`]) → `MenuRuntime::open_shop_menu` +
+//! ([`legaia_engine_menus::menu_widget`]) → `MenuRuntime::open_shop_menu` +
 //! `tick` runs the shop open script on the picker entry edge and the
 //! slide-away script on the Sell transition - the two edges retail's
 //! `FUN_801DAFD4` drives (docs/subsystems/shop.md).
@@ -15,9 +15,9 @@
 //! [`World::install_menu_overlay_tables`]: legaia_engine_core::world::World::install_menu_overlay_tables
 
 use legaia_engine_core::menu_runtime::MenuRuntime;
-use legaia_engine_core::shop::{ShopInventory, ShopItem, ShopSession};
 use legaia_engine_core::world::World;
-use legaia_engine_vm::menu::{MenuInput, MenuState};
+use legaia_engine_menus::menu::{MenuInput, MenuState};
+use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
 use legaia_prot::archive::Archive;
 use std::path::PathBuf;
 
@@ -32,7 +32,7 @@ fn menu_overlay_bytes() -> Option<Vec<u8>> {
     let mut archive = Archive::open(&prot).ok()?;
     let entry = archive
         .entries
-        .get(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX)?
+        .get(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX)?
         .clone();
     let mut buf = Vec::new();
     archive.read_entry(&entry, &mut buf).ok()?;
@@ -140,7 +140,7 @@ fn every_scanned_program_executes_through_the_interpreter() {
     assert!(scripts.programs.len() >= 30);
     let mut executed = 0usize;
     for (va, bytes) in &scripts.programs {
-        let mut scratch = legaia_engine_core::menu_widget::MenuWidgetState::default();
+        let mut scratch = legaia_engine_menus::menu_widget::MenuWidgetState::default();
         let end = legaia_engine_vm::run(&mut scratch, bytes)
             .unwrap_or_else(|e| panic!("program {va:#010x} failed: {e}"));
         assert_eq!(end + 4, bytes.len(), "program {va:#010x} length mismatch");

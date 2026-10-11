@@ -15,10 +15,10 @@
 //!
 //! Each gate skips and passes when its variable is unset.
 
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::translation::export::SceneManText;
-use legaia_patcher::translation::stream_man::StreamManText;
-use legaia_patcher::translation::{LanguagePack, coverage, export_pack, import_pack, sjis};
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_translate::export::SceneManText;
+use legaia_translate::stream_man::StreamManText;
+use legaia_translate::{LanguagePack, coverage, export_pack, import_pack, sjis};
 
 fn load(var: &str) -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os(var)?);
@@ -35,10 +35,7 @@ fn source_filled(mut pack: LanguagePack) -> LanguagePack {
     pack
 }
 
-fn import_is_identity(
-    image: &[u8],
-    pack: &LanguagePack,
-) -> legaia_patcher::translation::ImportReport {
+fn import_is_identity(image: &[u8], pack: &LanguagePack) -> legaia_translate::ImportReport {
     let mut patcher = DiscPatcher::open(image.to_vec()).expect("open disc");
     let report = import_pack(&mut patcher, pack).expect("import");
     assert!(

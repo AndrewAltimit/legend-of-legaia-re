@@ -3,7 +3,7 @@
 //!
 //! The sub-screen itself is state on the world
 //! ([`crate::world::MinigameState::fishing_exchange`]) and a draw
-//! (`legaia_engine_ui::ui_fishing_exchange`). What was host-side was *holding
+//! (`legaia_engine_ui::fishing::exchange`). What was host-side was *holding
 //! it open*: the native window opened it on a key and kept it across frames,
 //! so its HUD composed the screen every frame, while the browser play page's
 //! only entry opened it, bought one row and closed it inside one call - so
@@ -16,8 +16,8 @@
 //! venue switch, and a buy at the cursor. Hosts map their own input onto
 //! [`ExchangeInput`] and hand over the two decoded venue pages.
 
-use crate::fishing::{PrizeExchange, PrizePurchase};
 use crate::world::World;
+use legaia_engine_fishing::fishing::{PrizeExchange, PrizePurchase};
 
 /// One input to the open (or closed) point-exchange sub-screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,7 +131,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::fishing_exchange::ExchangeRow;
+    use legaia_minigame_formats::fishing_exchange::ExchangeRow;
 
     fn venue(v: usize) -> PrizeExchange {
         let rows: Vec<ExchangeRow> = (0..6)

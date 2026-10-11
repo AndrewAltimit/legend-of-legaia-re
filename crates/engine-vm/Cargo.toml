@@ -11,21 +11,13 @@ name = "legaia_engine_vm"
 path = "src/lib.rs"
 
 [dependencies]
-legaia-art.workspace = true
 legaia-anm.workspace = true
-legaia-asset.workspace = true
-legaia-engine-battle-vm.workspace = true
-legaia-engine-motion-vm.workspace = true
+legaia-minigame-formats.workspace = true
+legaia-scene-formats.workspace = true
 
 [dev-dependencies]
-anyhow.workspace = true
+legaia-game-tables.workspace = true
 legaia-prot.workspace = true
-# The camera-mover recomp oracle parses the external frame-tagged JSONL
-# captures (env-gated via LEGAIA_RECOMP_TRACE_DIR; never committed).
-serde_json.workspace = true
-# The ambient-motion disc oracle LZS-decodes each scene bundle's MAN to
-# re-derive the facing-op census (disc-gated; no bytes committed).
-legaia-lzs.workspace = true
 
 [[test]]
 name = "integration"

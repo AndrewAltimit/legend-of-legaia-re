@@ -1,9 +1,9 @@
 //! Disc-gated: the **element channel**'s provenance, taken from the field
 //! overlay's own bytes rather than from a dump filename.
 //!
-//! `crate::cutscene_script_elements` used to say there was "no element-actor
-//! dispatch to hang these off". For the ambient emitter (`FUN_801D6058`) that
-//! is falsified by the disc: its `+0x08` handler word sits in a `0x18`-byte
+//! The reading that there is "no element-actor dispatch to hang these off"
+//! (`legaia_engine_field::ambient_emitter`) is, for the ambient emitter
+//! (`FUN_801D6058`), falsified by the disc: its `+0x08` handler word sits in a `0x18`-byte
 //! spawn descriptor at `0x801F271C`, inside the field overlay's own
 //! plain-template table - the same table, and byte-for-byte the same shape, as
 //! the three templates the engine already hosts:
@@ -23,9 +23,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::world::{
-    AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, SceneMode, World,
-};
+use legaia_engine_core::world::{AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, World};
+use legaia_engine_mode::mode::SceneMode;
 
 /// Load base of the field overlay (`crates/asset/data/static-overlays.toml`).
 const FIELD_BASE: u32 = 0x801C_E818;
@@ -134,8 +133,8 @@ fn the_emitter_spawn_site_selects_the_scene_arm() {
 fn the_channel_advances_from_the_worlds_own_frame_tick() {
     // Disc-free on purpose - this asserts the wiring, not the data - but it
     // lives here because it is the other half of the claim above.
-    use legaia_engine_core::cutscene_script_elements::SceneSpan;
-    use legaia_engine_core::mode_entry_init::FieldEntryMode;
+    use legaia_engine_field::ambient_emitter::SceneSpan;
+    use legaia_engine_system::mode_entry_init::FieldEntryMode;
     let mut w = World::new();
     w.mode = SceneMode::Field;
     w.clock.display_frame_step = 1;

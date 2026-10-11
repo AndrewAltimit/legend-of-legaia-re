@@ -12,7 +12,7 @@
 //! `site/js/play-app.js` constructs) into a real scene and asserts that what
 //! its camera exports hand back is the retail model the native window frames
 //! with: the pinned follow angles, the player anchor, the GTE `H`, and a
-//! view-projection that *is* [`legaia_engine_vm::psx_camera::psx_camera_vp`]
+//! view-projection that *is* [`legaia_engine_battle_vm::psx_camera::psx_camera_vp`]
 //! of those inputs.
 //!
 //! Non-vacuity is the point of the last rung: a test that only asserted "the
@@ -26,8 +26,8 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+use legaia_engine_battle_vm::psx_camera;
 use legaia_engine_core::camera_view::FIELD_H;
-use legaia_engine_vm::psx_camera;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 use std::env;
 
@@ -111,7 +111,7 @@ fn the_play_page_frames_the_field_with_the_engine_camera() {
 
     // ---- rung 2: its inputs are the engine camera's own live angles - the
     // zone-driven follow camera composed from town01's camera-region record
-    // (`engine-core::camera_zone`), which is what the native window frames
+    // (`engine-field::camera_zone`), which is what the native window frames
     // with. The pinned constants are only the terrain-less fallback: at this
     // entry seat the record's floor-height coupling tilts the pitch off the
     // anchor value (the seat stands on an elevated tier) and the yaw is the
@@ -267,9 +267,9 @@ fn the_world_map_top_view_camera_is_reachable_on_the_page() {
     // frame holds the two shoulders alone and the second adds Cross. Bits are
     // the engine's `PadButton` space - the packed retail literal `0x4A` byte-
     // swapped, not `0x4A` itself (which reads as Down | Start | L3).
-    const R1: u16 = legaia_engine_core::input::PadButton::R1 as u16;
-    const R2: u16 = legaia_engine_core::input::PadButton::R2 as u16;
-    const CROSS: u16 = legaia_engine_core::input::PadButton::Cross as u16;
+    const R1: u16 = legaia_engine_system::input::PadButton::R1 as u16;
+    const R2: u16 = legaia_engine_system::input::PadButton::R2 as u16;
+    const CROSS: u16 = legaia_engine_system::input::PadButton::Cross as u16;
     assert_eq!(R1 | R2 | CROSS, 0x4A00, "the chord word");
     rt.set_pad(R1 | R2);
     rt.tick_frame().expect("tick");

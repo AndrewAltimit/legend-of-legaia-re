@@ -1,5 +1,5 @@
 //! Disc-gated oracle for the Tactical-Art damage-power editor
-//! (`legaia_patcher::arts_power` + `apply::set_arts_power`).
+//! (`legaia_arts_patch::arts_power` + `apply::set_arts_power`).
 //!
 //! Pins the on-disc power bytes (`record0 +0x24` in the player battle files) for
 //! known arts on the real disc, applies a power edit on a scratch copy, and
@@ -9,10 +9,10 @@
 //! fixed edit is byte-deterministic. Skips + passes without `LEGAIA_DISC_BIN`.
 
 use legaia_art::queue::{Character, Command};
+use legaia_arts_patch::arts_power::{self, labeled_art_powers, parse_combo, player_entry_index};
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
-use legaia_patcher::arts_power::{self, labeled_art_powers, parse_combo, player_entry_index};
-use legaia_patcher::disc::DiscPatcher;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

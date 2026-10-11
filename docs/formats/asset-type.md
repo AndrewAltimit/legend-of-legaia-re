@@ -2,7 +2,7 @@
 
 Every asset the game loads is tagged with a one-byte **type** that says what it is - a texture, a mesh, dialog text, an animation bank. `FUN_8001F05C` is the one routine that turns that byte into an action: allocate a buffer, decompress or copy the bytes, and register the result with the right subsystem. Both containers on the disc ([asset descriptor tables](asset-descriptor.md) and [DATA_FIELD streams](data-field.md)) store the byte the same way, packed into a `type_size` word, and both reach this dispatcher.
 
-Implementation: `legaia_asset::AssetType` in [`crates/asset/src/lib.rs`](../../crates/asset/src/lib.rs). Source: `ghidra/scripts/funcs/8001f05c.txt`.
+Implementation: `legaia_container_formats::AssetType` in [`crates/container-formats/src/lib.rs`](../../crates/container-formats/src/lib.rs). Source: `ghidra/scripts/funcs/8001f05c.txt`.
 
 ## The `type_size` word
 
@@ -36,8 +36,8 @@ result = FUN_8001f05c(byte *src_data, u32 type_and_size, int param3, int copy_on
 | `0x03` | `MAN` | Raw load |
 | `0x04` | `MES` | Dialog text |
 | `0x05` | `MOVE` | Raw load. Also carries the **per-scene player ANM bundle** despite the "MOVE" label - see [`anm.md` § Disc source](anm.md#disc-source---per-scene-anm-bundle); content is a canonical ANM container with `marker_1 = 0x080C` records. Its arm allocates with the `move_malloc_err` string into `_DAT_8007B888` (store at `0x8001F3A8`), the buffer the clip driver `FUN_800204F8` binds clips from (`0x8002055C`). The `anm_malloc_err` string belongs to case 6, below. |
-| `0x06` | `ANM` | Reserved by the asset-type enum but **not the player ANM source** on disc - those are stored under type `0x05` (above). The type-`0x06` slot carries the **CLUT-walk `MoveImage` walker table** (case 6 installs it at `DAT_8007B7C8`; `FUN_8001ADA4` case 0xB steps it): populated in 12 bundles - the 3 kingdoms plus 9 water/waterfall field scenes - and a 4-byte `count = 0` placeholder everywhere else. See [`subsystems/field-ambient-fx.md`](../subsystems/field-ambient-fx.md); parser `legaia_asset::clut_walk::from_scene_bundle`. |
-| `0x07` | `VDF` | Vertex-deformation (morph-delta) pack, installed at `DAT_8007B7DC` and post-processed via `FUN_8001FBCC` per sub-entry (pointer table `0x80083E58`). Populated in 61 scene bundles; parser `legaia_asset::scene_vdf`. |
+| `0x06` | `ANM` | Reserved by the asset-type enum but **not the player ANM source** on disc - those are stored under type `0x05` (above). The type-`0x06` slot carries the **CLUT-walk `MoveImage` walker table** (case 6 installs it at `DAT_8007B7C8`; `FUN_8001ADA4` case 0xB steps it): populated in 12 bundles - the 3 kingdoms plus 9 water/waterfall field scenes - and a 4-byte `count = 0` placeholder everywhere else. See [`subsystems/field-ambient-fx.md`](../subsystems/field-ambient-fx.md); parser `legaia_scene_formats::clut_walk::from_scene_bundle`. |
+| `0x07` | `VDF` | Vertex-deformation (morph-delta) pack, installed at `DAT_8007B7DC` and post-processed via `FUN_8001FBCC` per sub-entry (pointer table `0x80083E58`). Populated in 61 scene bundles; parser `legaia_scene_formats::scene_vdf`. |
 | `0x08` | `SIN` | Raw load |
 | `0x09` | `TMD2` | Single bare TMD blob (no pack header). Hands directly to `FUN_80026B4C`; same on-disc format as a single member of the TMD-pack used by case 2. Parse with `crates/tmd::parse` directly. |
 | `0x0A` | `FLAG` (implicit) | Returns sentinel `0xA00` - no malloc, no decompress, no register |
@@ -154,5 +154,5 @@ image's `static`-graded base.
 
 - [Asset descriptor](asset-descriptor.md) - the descriptor-pair layout the dispatcher consumes.
 - [DATA_FIELD streaming](data-field.md) - the streaming container whose `0x14` branch reaches the dispatcher.
-- [asset::pack](pack.md) - the in-DATA_FIELD pack the type bytes resolve to.
+- [container-formats::pack](pack.md) - the in-DATA_FIELD pack the type bytes resolve to.
 - [LZS compression](lzs.md) - the decode path taken when `copy_only` is zero.

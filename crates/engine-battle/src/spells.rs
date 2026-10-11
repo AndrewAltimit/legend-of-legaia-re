@@ -3,7 +3,7 @@
 //! Tactical Arts are character-driven attack chains; spells are the
 //! magic-side of the same command menu (ActionConstant `Magic = 0x02`,
 //! followed by a per-character spell list). This module mirrors the shape
-//! of `legaia_engine_core::items`: a typed catalog keyed by spell id, plus a pure
+//! of `legaia_engine_menus::items`: a typed catalog keyed by spell id, plus a pure
 //! [`cast_spell`] function that consumes a [`SpellSnapshot`] and returns
 //! a [`SpellOutcome`].
 //!
@@ -20,7 +20,7 @@
 //! tables. Engines populate the catalog from disc data when the
 //! per-character spell list is known.
 
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 use std::collections::HashMap;
 
 /// Magic element. Matches the eight retail elemental columns plus a
@@ -112,13 +112,13 @@ pub enum SpellTarget {
 impl SpellTarget {
     /// The two target bits of retail's spell-table `+2` stats byte for this
     /// shape: `0x02` = ally side, `0x20` = all targets. The inverse of
-    /// [`legaia_asset::spell_names::SpellStats::target_shape`], which is how
+    /// `legaia_game_tables::spell_names::SpellStats::target_shape`, which is how
     /// [`crate::retail_magic`] fills the shape in the first place.
     ///
     /// It exists so the screens that branch on that byte can run retail's own
     /// predicate over it rather than re-deciding on the typed shape. The
     /// menu's `FUN_801D9110` confirm dispatch is one
-    /// (`legaia_engine_core::spell_menu::spell_targets_group`); the byte's other bits
+    /// (`legaia_engine_menus::spell_menu::spell_targets_group`); the byte's other bits
     /// (element / usability) belong to different readers and are not
     /// reconstructed here.
     ///
@@ -128,13 +128,13 @@ impl SpellTarget {
     pub const fn retail_target_flag_bits(self) -> u8 {
         match self {
             SpellTarget::OneEnemy => 0,
-            SpellTarget::AllEnemies => legaia_asset::spell_names::TARGET_ALL_BIT,
+            SpellTarget::AllEnemies => legaia_game_tables::spell_names::TARGET_ALL_BIT,
             SpellTarget::OneAlly | SpellTarget::SelfOnly => {
-                legaia_asset::spell_names::TARGET_ALLY_BIT
+                legaia_game_tables::spell_names::TARGET_ALLY_BIT
             }
             SpellTarget::AllAllies => {
-                legaia_asset::spell_names::TARGET_ALLY_BIT
-                    | legaia_asset::spell_names::TARGET_ALL_BIT
+                legaia_game_tables::spell_names::TARGET_ALLY_BIT
+                    | legaia_game_tables::spell_names::TARGET_ALL_BIT
             }
         }
     }
@@ -216,7 +216,7 @@ pub struct SpellDef {
     /// Spell-table `+0x01` **effect class** - the key `FUN_801F2160` bounds
     /// with `sltiu ..., 0x20` and dispatches a capture-class cast's module on
     /// (PROT `935 + class`, see
-    /// [`legaia_asset::cast_effect_pool::capture_module_prot`]). `0` on the
+    /// `legaia_overlay_images::cast_effect_pool::capture_module_prot`). `0` on the
     /// placeholder catalog and on any record built without the disc table;
     /// [`crate::retail_magic`] fills it from `SCUS_942.54`.
     pub effect_class: u8,
@@ -647,9 +647,9 @@ pub enum SpellOutcome {
 /// Every engine cast path routes through this function so none of them can
 /// compare one price and charge another.
 ///
-/// REF: FUN_80035394 (the fold is [`legaia_engine_vm::battle_formulas::mp_cost_after_ability_bits`])
+/// REF: FUN_80035394 (the fold is [`legaia_engine_battle_vm::battle_formulas::mp_cost_after_ability_bits`])
 pub fn caster_mp_cost(spell: &SpellDef, ability_bits: u32) -> u16 {
-    use legaia_engine_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
+    use legaia_engine_battle_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
     mp_cost_after_ability_bits(
         spell.mp_cost as u16,
         MpCostModifier::from_ability_flags(ability_bits),
@@ -777,347 +777,4 @@ pub fn cast_spell(spell: &SpellDef, target_slot: u8, snap: &SpellSnapshot) -> Sp
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn alive_enemy(mag_def: u16, hp: u16) -> SpellSnapshot {
-        SpellSnapshot {
-            caster_mag: 100,
-            caster_hp: 100,
-            caster_max_hp: 100,
-            caster_mp: 50,
-            caster_ability_bits: 0,
-            target_mdef: mag_def,
-            target_hp: hp,
-            target_hp_max: hp,
-            target_mp: 0,
-            target_alive: hp > 0,
-            target_weakness: ElementMask::empty(),
-        }
-    }
-
-    fn vanilla_spell(id: u8) -> SpellDef {
-        SpellCatalog::vanilla().get(id).cloned().unwrap()
-    }
-
-    #[test]
-    fn vanilla_catalog_has_expected_count() {
-        let cat = SpellCatalog::vanilla();
-        // 5 healing + 7 damage + 4 buff + 2 utility = 18.
-        assert!(cat.len() >= 16, "vanilla catalog has {} spells", cat.len());
-    }
-
-    #[test]
-    fn mp_cost_returns_zero_for_unknown_id() {
-        let cat = SpellCatalog::vanilla();
-        assert_eq!(cat.mp_cost(0xFF), 0);
-        assert_eq!(cat.mp_cost(0x10), 4);
-    }
-
-    #[test]
-    fn is_capture_marks_only_capture_spells() {
-        let cat = SpellCatalog::vanilla();
-        assert!(cat.is_capture(0x40));
-        assert!(!cat.is_capture(0x20));
-        assert!(!cat.is_capture(0x10));
-    }
-
-    #[test]
-    fn cast_damage_spell_fails_when_target_dead() {
-        let snap = alive_enemy(10, 0);
-        let s = vanilla_spell(0x20); // Flame
-        let outcome = cast_spell(&s, 3, &snap);
-        assert!(matches!(
-            outcome,
-            SpellOutcome::Failed {
-                reason: SpellFailReason::DeadTarget
-            }
-        ));
-    }
-
-    #[test]
-    fn cast_damage_spell_fails_when_caster_low_mp() {
-        let mut snap = alive_enemy(0, 100);
-        snap.caster_mp = 0;
-        let s = vanilla_spell(0x20);
-        let outcome = cast_spell(&s, 3, &snap);
-        assert!(matches!(
-            outcome,
-            SpellOutcome::Failed {
-                reason: SpellFailReason::NotEnoughMp
-            }
-        ));
-    }
-
-    #[test]
-    fn cast_damage_spell_returns_positive_amount() {
-        let snap = alive_enemy(5, 100);
-        let s = vanilla_spell(0x20); // Flame, base 80, fire
-        let outcome = cast_spell(&s, 3, &snap);
-        match outcome {
-            SpellOutcome::Damage {
-                target,
-                amount,
-                element,
-                weakness,
-            } => {
-                assert_eq!(target, 3);
-                // 100 * 80 / 8 - 5 = 995. Clamped to u16 (995).
-                assert_eq!(amount, 995);
-                assert_eq!(element, SpellElement::Fire);
-                assert!(!weakness);
-            }
-            _ => panic!("expected damage outcome"),
-        }
-    }
-
-    #[test]
-    fn cast_damage_spell_respects_element_weakness() {
-        let mut snap = alive_enemy(5, 100);
-        snap.target_weakness = ElementMask::empty().with(SpellElement::Fire);
-        let s = vanilla_spell(0x20);
-        let outcome = cast_spell(&s, 3, &snap);
-        match outcome {
-            SpellOutcome::Damage {
-                amount, weakness, ..
-            } => {
-                // 1.5x multiplier means roughly 1492 damage.
-                assert!(amount > 1400 && amount < 1600);
-                assert!(weakness);
-            }
-            _ => panic!("expected damage outcome"),
-        }
-    }
-
-    #[test]
-    fn cast_damage_spell_clamps_floor_at_one() {
-        // Target has more defense than caster has magic - formula goes
-        // negative; the floor clamps it to 1.
-        let snap = SpellSnapshot {
-            caster_mag: 1,
-            caster_mp: 50,
-            target_mdef: 9999,
-            target_hp: 100,
-            target_hp_max: 100,
-            target_alive: true,
-            ..Default::default()
-        };
-        let s = vanilla_spell(0x20);
-        let outcome = cast_spell(&s, 3, &snap);
-        match outcome {
-            SpellOutcome::Damage { amount, .. } => assert_eq!(amount, 1),
-            _ => panic!("expected damage outcome"),
-        }
-    }
-
-    #[test]
-    fn cast_heal_spell_caps_at_hp_max() {
-        // HP at 95, max 100; Heal would have given 60 but only 5 effective.
-        let snap = SpellSnapshot {
-            caster_mp: 50,
-            target_alive: true,
-            target_hp: 95,
-            target_hp_max: 100,
-            ..Default::default()
-        };
-        let s = vanilla_spell(0x10); // Heal
-        let outcome = cast_spell(&s, 1, &snap);
-        match outcome {
-            SpellOutcome::Heal { target, amount } => {
-                assert_eq!(target, 1);
-                assert_eq!(amount, 5);
-            }
-            _ => panic!("expected heal outcome"),
-        }
-    }
-
-    #[test]
-    fn cast_heal_spell_returns_no_change_when_full_hp() {
-        let snap = SpellSnapshot {
-            caster_mp: 50,
-            target_alive: true,
-            target_hp: 100,
-            target_hp_max: 100,
-            ..Default::default()
-        };
-        let s = vanilla_spell(0x10);
-        let outcome = cast_spell(&s, 1, &snap);
-        assert!(matches!(
-            outcome,
-            SpellOutcome::Failed {
-                reason: SpellFailReason::NoChange
-            }
-        ));
-    }
-
-    #[test]
-    fn cast_revive_returns_no_change_for_alive_target() {
-        let snap = SpellSnapshot {
-            caster_mp: 50,
-            target_alive: true,
-            target_hp: 50,
-            target_hp_max: 100,
-            ..Default::default()
-        };
-        let s = vanilla_spell(0x14);
-        let outcome = cast_spell(&s, 1, &snap);
-        assert!(matches!(
-            outcome,
-            SpellOutcome::Failed {
-                reason: SpellFailReason::NoChange
-            }
-        ));
-    }
-
-    #[test]
-    fn cast_revive_returns_correct_hp_for_dead_target() {
-        let snap = SpellSnapshot {
-            caster_mp: 50,
-            target_alive: false,
-            target_hp: 0,
-            target_hp_max: 100,
-            ..Default::default()
-        };
-        let s = vanilla_spell(0x14); // Vital - hp_pct: 50
-        let outcome = cast_spell(&s, 1, &snap);
-        match outcome {
-            SpellOutcome::Revive { target, hp } => {
-                assert_eq!(target, 1);
-                assert_eq!(hp, 50);
-            }
-            _ => panic!("expected revive outcome"),
-        }
-    }
-
-    #[test]
-    fn cast_buff_spell_returns_buff_outcome() {
-        let snap = SpellSnapshot {
-            caster_mp: 50,
-            target_alive: true,
-            ..Default::default()
-        };
-        let s = vanilla_spell(0x30); // Power Up
-        let outcome = cast_spell(&s, 0, &snap);
-        match outcome {
-            SpellOutcome::Buff {
-                target,
-                stat,
-                magnitude,
-                turns,
-            } => {
-                assert_eq!(target, 0);
-                assert_eq!(stat, BuffStat::Attack);
-                assert_eq!(magnitude, 20);
-                assert_eq!(turns, 4);
-            }
-            _ => panic!("expected buff outcome"),
-        }
-    }
-
-    #[test]
-    fn cast_debuff_returns_negative_magnitude() {
-        let snap = SpellSnapshot {
-            caster_mp: 50,
-            target_alive: true,
-            ..Default::default()
-        };
-        let s = vanilla_spell(0x33); // Power Down
-        let outcome = cast_spell(&s, 3, &snap);
-        match outcome {
-            SpellOutcome::Buff { magnitude, .. } => assert_eq!(magnitude, -20),
-            _ => panic!("expected buff outcome"),
-        }
-    }
-
-    #[test]
-    fn cast_capture_spell_returns_capture_roll() {
-        let snap = alive_enemy(5, 50);
-        let s = vanilla_spell(0x40); // Reseal
-        let outcome = cast_spell(&s, 3, &snap);
-        match outcome {
-            SpellOutcome::CaptureRoll { target, hit_pct } => {
-                assert_eq!(target, 3);
-                assert_eq!(hit_pct, 60);
-            }
-            _ => panic!("expected capture outcome"),
-        }
-    }
-
-    #[test]
-    fn cast_escape_spell_returns_escape() {
-        let snap = SpellSnapshot {
-            caster_mp: 50,
-            ..Default::default()
-        };
-        let s = vanilla_spell(0x41); // Warp
-        let outcome = cast_spell(&s, 0, &snap);
-        assert!(matches!(outcome, SpellOutcome::Escape));
-    }
-
-    #[test]
-    fn element_mask_with_and_contains_round_trip() {
-        let m = ElementMask::empty()
-            .with(SpellElement::Fire)
-            .with(SpellElement::Ice);
-        assert!(m.contains(SpellElement::Fire));
-        assert!(m.contains(SpellElement::Ice));
-        assert!(!m.contains(SpellElement::Water));
-    }
-
-    #[test]
-    fn element_neutral_never_matches_weakness() {
-        let m = ElementMask::empty().with(SpellElement::Fire);
-        // Neutral element passthrough means multiplier = 1.0.
-        assert_eq!(SpellElement::Neutral.multiplier_against(m), 1.0);
-    }
-
-    #[test]
-    fn cure_outcome_count_returns_placeholder_zero() {
-        let snap = SpellSnapshot {
-            caster_mp: 50,
-            target_alive: true,
-            ..Default::default()
-        };
-        let s = vanilla_spell(0x13);
-        let outcome = cast_spell(&s, 0, &snap);
-        match outcome {
-            SpellOutcome::Cure { removed, .. } => assert_eq!(removed, 0),
-            _ => panic!("expected cure outcome"),
-        }
-    }
-
-    #[test]
-    fn catalog_iter_yields_every_inserted_spell() {
-        let mut cat = SpellCatalog::new();
-        cat.insert(SpellDef {
-            id: 0x01,
-            name: "Spark".into(),
-            mp_cost: 3,
-            ..Default::default()
-        });
-        cat.insert(SpellDef {
-            id: 0x02,
-            name: "Mist".into(),
-            mp_cost: 4,
-            ..Default::default()
-        });
-        let names: Vec<&str> = cat.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"Spark"));
-        assert!(names.contains(&"Mist"));
-    }
-
-    #[test]
-    fn unknown_spell_id_returns_none() {
-        let cat = SpellCatalog::vanilla();
-        assert!(cat.get(0xFE).is_none());
-    }
-
-    #[test]
-    fn spell_def_default_is_neutral_one_enemy_zero_cost() {
-        let s = SpellDef::default();
-        assert_eq!(s.id, 0);
-        assert_eq!(s.mp_cost, 0);
-        assert_eq!(s.element, SpellElement::Neutral);
-        assert_eq!(s.target, SpellTarget::OneEnemy);
-    }
-}
+mod tests;

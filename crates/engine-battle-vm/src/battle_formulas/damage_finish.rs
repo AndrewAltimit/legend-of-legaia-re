@@ -1,5 +1,4 @@
 //! Post-roll damage finisher (`FUN_801ddb30`) + spirit-gauge fill.
-//! Split out of `battle_formulas.rs`.
 
 // ---------------------------------------------------------------------------
 // FUN_801ddb30 - damage finisher (post-roll finalisation)

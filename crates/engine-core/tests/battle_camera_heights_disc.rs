@@ -1,7 +1,7 @@
 //! Disc-gated: the battle-camera per-character height table reaches the
 //! `World` through the real `SceneHost` disc path.
 //!
-//! `legaia_asset::battle_camera_table` is pinned against raw PROT 0898 bytes
+//! `legaia_game_tables::battle_camera_table` is pinned against raw PROT 0898 bytes
 //! by the asset crate's own oracle; what this covers is the wiring - that
 //! entering a scene installs the parsed table on
 //! [`crate::world::DiscTables::battle_camera_heights`], so the battle camera frames a non-Vahn
@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 fn disc_path() -> Option<PathBuf> {
     let p = PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

@@ -10,17 +10,18 @@
 //! The first test is disc-free (synthetic catalog); the second is disc-gated
 //! and pins the chain to real records.
 
-use legaia_engine_core::battle_events::BattleEvent;
-use legaia_engine_core::monster_catalog::MonsterDef;
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::battle_action::ActionState;
-use legaia_engine_vm::battle_formulas::{CAMERA_HEIGHT_MAX, CAMERA_HEIGHT_MIN};
+use legaia_engine_battle::battle_events::BattleEvent;
+use legaia_engine_battle::monster_catalog::MonsterDef;
+use legaia_engine_battle_vm::battle_action::ActionState;
+use legaia_engine_battle_vm::battle_formulas::{CAMERA_HEIGHT_MAX, CAMERA_HEIGHT_MIN};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Seat 3 party + 5 monster slots, put `size_class` on the monster the
 /// attacker will frame on, and run the battle SM until it seeds an action.
 fn frame_height_for(size_class: u8) -> (i16, bool) {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -129,16 +130,16 @@ fn disc_records_carry_the_size_class_the_camera_frames_on() {
         (25, "Theeder", 14, CAMERA_HEIGHT_MIN),
     ];
     for &(id, name, size, height) in expected {
-        let rec = legaia_asset::monster_archive::record(&entry, id)
+        let rec = legaia_actor_formats::monster_archive::record(&entry, id)
             .expect("decode")
             .unwrap_or_else(|| panic!("monster id {id} ({name}) missing"));
         assert_eq!(rec.name, name, "id {id} name");
         assert_eq!(rec.size_class, size, "id {id} ({name}) record +0x1F");
 
-        let def = legaia_engine_core::monster_catalog::monster_def_from_record(&rec);
+        let def = legaia_engine_battle::monster_catalog::monster_def_from_record(&rec);
         assert_eq!(def.size_class, size, "id {id} ({name}) catalog size_class");
         assert_eq!(
-            legaia_engine_vm::battle_formulas::camera_height_from_size_class(def.size_class),
+            legaia_engine_battle_vm::battle_formulas::camera_height_from_size_class(def.size_class),
             height,
             "id {id} ({name}) framed height",
         );
@@ -146,10 +147,10 @@ fn disc_records_carry_the_size_class_the_camera_frames_on() {
 
     // Whole-roster shape: the byte is populated on every record and stays in a
     // narrow band. A zero or a wild outlier would mean the offset drifted.
-    let slots = legaia_asset::monster_archive::slot_count(&entry);
+    let slots = legaia_actor_formats::monster_archive::slot_count(&entry);
     let mut seen = 0usize;
     for id in 1..=slots as u16 {
-        let Ok(Some(rec)) = legaia_asset::monster_archive::record(&entry, id) else {
+        let Ok(Some(rec)) = legaia_actor_formats::monster_archive::record(&entry, id) else {
             continue;
         };
         seen += 1;

@@ -50,7 +50,7 @@
 //!   the depth-averaged ones sit at [`THEEDER_DEPTH_OT`].
 
 use crate::screen_prim::{FlatQuad, ScreenPrim, ScreenQuad};
-use legaia_engine_vm::cast_seru_ticks_a::TheederPacket;
+use legaia_engine_battle_vm::seru_magic_ticks::TheederPacket;
 
 /// Projected screen point.
 pub type Xy = (i16, i16);

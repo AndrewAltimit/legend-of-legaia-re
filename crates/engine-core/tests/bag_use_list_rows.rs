@@ -5,10 +5,11 @@
 //! Disc-free - the item-effect table is a synthetic `PS-X EXE` image, which is
 //! what lets the test put a chosen `(kind, class, flags)` behind a chosen id.
 
-use legaia_asset::item_effect::{
+use legaia_engine_core::world::World;
+use legaia_engine_menus::item_bag::ItemBag;
+use legaia_game_tables::item_effect::{
     HEAL_AMOUNT_TABLE_VA, ItemEffectTable, RECORD_COUNT, RECORD_STRIDE, TABLE_VA,
 };
-use legaia_engine_core::world::{ItemBag, World};
 
 const ITEM_TABLE_VA: u32 = 0x8007_4368;
 const ITEM_RECORD_STRIDE: u32 = 0x0C;

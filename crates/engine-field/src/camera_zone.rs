@@ -53,7 +53,7 @@
 //!    clear or `0x1F800394 & 0x400` set, the routine takes its pin leg
 //!    (`0x801DB820`) instead: focus = `-player`, no compose, no ease. The
 //!    three gates are applied by `Camera::zone_follow_tick`
-//!    (`legaia_engine_core::world::CAMERA_HOLD_FLAG`, `legaia_engine_core::world::CAMERA_FORCE_EASE_FLAG`,
+//!    (`crate::camera::CAMERA_HOLD_FLAG`, `crate::camera::CAMERA_FORCE_EASE_FLAG`,
 //!    `ZoneFollow::follow_enabled`).
 //! 4. **Snap** - `FUN_801DB8EC(player)` ([`snap`]) is the same compose + list
 //!    walk with a plain copy instead of the ease, then `FUN_8003D254(H)`;
@@ -79,10 +79,10 @@
 //! (descriptor list) and `0x801F2804` (shift table). The two LUT
 //! reproductions here ([`atan_q11`], [`sqrt0`]) are pinned entry-for-entry
 //! against `SCUS_942.54` by the disc-gated oracle in
-//! `crates/engine-shell/tests/field_camera_zone_oracle.rs`.
+//! `crates/parity/tests/field_camera_zone_oracle.rs`.
 
 use crate::field_regions::ZONE_RECORD_STRIDE;
-use legaia_engine_vm::battle_action::motion::trig12;
+use legaia_engine_battle_vm::battle_action::motion::trig12;
 
 /// `*(_DAT_8007B81C)[angle]` - the SCUS sine table (q3.12).
 fn sin12(angle: u16) -> i32 {
@@ -661,7 +661,7 @@ pub fn snap(target: &CameraTarget) -> (i32, i32, [i32; 3], i32) {
 /// `box` is the scratchpad attribute box `0x1F800384..87` in the retail
 /// store order (`[rec[0], rec[3], rec[2], rec[1]]`, unsigned bytes);
 /// `window` is `0x1F8003E8..EB` read as **signed** bytes, whose field
-/// default is `legaia_engine_core::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW` and
+/// default is `legaia_engine_system::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW` and
 /// whose per-record override is the mask-kind side-write
 /// [`CameraZoneConfig::load_record`] returns.
 // PORT: FUN_801DAA50

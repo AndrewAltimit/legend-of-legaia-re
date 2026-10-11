@@ -1,6 +1,6 @@
 # Pochi-filler placeholder slots
 
-**Not an asset format: a placeholder.** 266 of the 1233 PROT entries are reserved-but-unused slots holding a developer fill pattern, which the game never loads. Each is exactly one 2048-byte sector, and none carries a parseable TIM (measured over all 266, asserted as a test). Detection class `pochi_filler`; detector `legaia_asset::categorize::is_pochi_filler` in `crates/asset/src/categorize.rs`.
+**Not an asset format: a placeholder.** 266 of the 1233 PROT entries are reserved-but-unused slots holding a developer fill pattern, which the game never loads. Each is exactly one 2048-byte sector, and none carries a parseable TIM (measured over all 266, asserted as a test). Detection class `pochi_filler`; detector `legaia_disc_audit::categorize::is_pochi_filler` in `crates/disc-audit/src/categorize.rs`.
 
 ## Layout
 
@@ -14,7 +14,7 @@
 `pochi` (Japanese `ポチ`) is a generic dog name common in Japanese dev fill - uninitialised memory shows up obviously in a debugger this way.
 
 Detection: `buf.starts_with(b"pochi") && buf[0x786] == 0x1A`. Parser
-`legaia_asset::categorize::is_pochi_filler`; the file length is
+`legaia_disc_audit::categorize::is_pochi_filler`; the file length is
 `POCHI_FILL_LEN`.
 
 `0x786 = 37 * 52 + 2`: the two bytes before the EOF marker are the empty
@@ -35,7 +35,7 @@ dispatcher answers a `0x14` with `type << 8` without reading the payload
 ([`asset-type.md`](asset-type.md)), so those bytes are never decompressed at
 runtime: the authoring tool filled a reserved descriptor rather than dropping
 it, with the same file it fills a reserved PROT slot with. Pinned by
-`crates/asset/tests/byte_account_entries.rs`.
+`crates/disc-audit/tests/byte_account_entries.rs`.
 
 ### The 121-byte tail is another entry's bytes
 
@@ -83,7 +83,7 @@ The rendering hazard behind that reading is real, and belongs to the **`scene_tm
 - Uploaded last in a field build, those pages erase the atlas. Jeremi's floor becomes a grid of grey "tombstones", Mt. Dhini's a repeating vine / crack pattern.
 - A sweep that scans every entry of a CDNAME block for TIMs reaches them only by reading past the pochi slot's end, which the superseded entry-size expression allowed ([`prot.md`](prot.md)). Rim Elm is unaffected because its sibling slots are all `scene_tmd_stream` entries, which the field build already excludes.
 
-With an entry sized as the sector gap to its successor, a pochi slot has no reach. The engine's field VRAM pre-pass skips `Class::PochiFiller` entries outright (`legaia_engine_core::scene_resources`). The disc-gated regression `field_ground_texture_pages_disc` pins both halves: every pochi-filler entry is one sector carrying no TIM, and the built VRAM does not contain the neighbour's page.
+With an entry sized as the sector gap to its successor, a pochi slot has no reach. The engine's field VRAM pre-pass skips `Class::PochiFiller` entries outright (`legaia_engine_scene::scene_resources`). The disc-gated regression `field_ground_texture_pages_disc` pins both halves: every pochi-filler entry is one sector carrying no TIM, and the built VRAM does not contain the neighbour's page.
 
 ## See also
 

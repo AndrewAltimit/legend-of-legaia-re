@@ -1,10 +1,11 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 // --- battle pose -> action-clip switching -----------------------------------
 
 /// Synthetic one-part action clip: `frames` keyframes translating from `tx`.
 fn pose_test_clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
-    use legaia_asset::monster_archive::PartPose;
+    use legaia_actor_formats::monster_archive::PartPose;
     MonsterAnimation {
         action_id,
         rate: 2,
@@ -46,14 +47,14 @@ fn ready_and_recover_poses_play_the_idle_loop_not_the_downed_chain() {
     // ladder's knockdown -> 7 -> 8); the SM's pose 7 / 8 calls are camera
     // programs, so they leave the actor on its idle loop.
     for pose in [
-        vm::battle_action::Pose::Ready,
-        vm::battle_action::Pose::Recover,
+        legaia_engine_battle_vm::battle_action::Pose::Ready,
+        legaia_engine_battle_vm::battle_action::Pose::Recover,
     ] {
         let mut world = pose_test_world();
         world.apply_battle_pose(0, pose as u8);
         assert_eq!(
             world.actors[0].battle_pose,
-            Some(vm::battle_action::Pose::Idle as u8)
+            Some(legaia_engine_battle_vm::battle_action::Pose::Idle as u8)
         );
         world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
         world.tick_battle_animations();
@@ -71,7 +72,10 @@ fn ready_and_recover_poses_play_the_idle_loop_not_the_downed_chain() {
 #[test]
 fn battle_pose_defeat_holds_final_frame() {
     let mut world = pose_test_world();
-    world.apply_battle_pose(0, vm::battle_action::Pose::Defeat as u8);
+    world.apply_battle_pose(
+        0,
+        legaia_engine_battle_vm::battle_action::Pose::Defeat as u8,
+    );
     world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
     for _ in 0..5 {
         world.tick_battle_animations();
@@ -79,7 +83,7 @@ fn battle_pose_defeat_holds_final_frame() {
     // Defeat never falls back to idle: the downed pose holds.
     assert_eq!(
         world.actors[0].battle_pose,
-        Some(vm::battle_action::Pose::Defeat as u8)
+        Some(legaia_engine_battle_vm::battle_action::Pose::Defeat as u8)
     );
     assert!(
         world.actors[0]
@@ -98,10 +102,13 @@ fn battle_pose_missing_slot_falls_back_to_idle_loop() {
     let mut clips = (**world.actors[0].battle_action_clips.as_ref().unwrap()).clone();
     clips[9] = None;
     world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
-    world.apply_battle_pose(0, vm::battle_action::Pose::Defeat as u8);
+    world.apply_battle_pose(
+        0,
+        legaia_engine_battle_vm::battle_action::Pose::Defeat as u8,
+    );
     assert_eq!(
         world.actors[0].battle_pose,
-        Some(vm::battle_action::Pose::Defeat as u8)
+        Some(legaia_engine_battle_vm::battle_action::Pose::Defeat as u8)
     );
     world.tick_battle_animations();
     assert!(
@@ -116,12 +123,18 @@ fn battle_pose_missing_slot_falls_back_to_idle_loop() {
 #[test]
 fn battle_pose_repeat_request_keeps_playing_clip() {
     let mut world = pose_test_world();
-    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
+    world.apply_battle_pose(
+        0,
+        legaia_engine_battle_vm::battle_action::Pose::Recover as u8,
+    );
     world.actors[0].battle_animation.as_mut().unwrap().step = 7;
     world.tick_battle_animations();
     let phase_frame = world.actors[0].pose_frame.clone();
     // Re-requesting the same pose must not rewind the clip.
-    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
+    world.apply_battle_pose(
+        0,
+        legaia_engine_battle_vm::battle_action::Pose::Recover as u8,
+    );
     world.tick_battle_animations();
     assert_ne!(
         world.actors[0].pose_frame.as_ref().map(|f| f.factor),
@@ -134,7 +147,10 @@ fn battle_pose_repeat_request_keeps_playing_clip() {
 fn battle_pose_without_clips_is_inert() {
     let mut world = World::new();
     world.actors[0].active = true;
-    world.apply_battle_pose(0, vm::battle_action::Pose::Recover as u8);
+    world.apply_battle_pose(
+        0,
+        legaia_engine_battle_vm::battle_action::Pose::Recover as u8,
+    );
     assert_eq!(world.actors[0].battle_pose, None);
     assert!(world.actors[0].battle_animation.is_none());
 }
@@ -184,7 +200,7 @@ fn hit_reaction_knockdown_then_getup_then_idle() {
     assert_eq!(world.actors[0].battle_reaction, None);
     assert_eq!(
         world.actors[0].battle_pose,
-        Some(vm::battle_action::Pose::Idle as u8),
+        Some(legaia_engine_battle_vm::battle_action::Pose::Idle as u8),
         "reaction chain ends in the idle loop"
     );
 }
@@ -200,7 +216,7 @@ fn hit_reaction_light_flinch_without_getup() {
     assert_eq!(world.actors[0].battle_reaction, None);
     assert_eq!(
         world.actors[0].battle_pose,
-        Some(vm::battle_action::Pose::Idle as u8)
+        Some(legaia_engine_battle_vm::battle_action::Pose::Idle as u8)
     );
 }
 
@@ -230,7 +246,7 @@ fn reaction_outranks_pose_requests_until_done() {
     let mut world = reaction_test_world(true);
     world.queue_battle_reaction(0, true);
     // The SM keeps requesting poses every frame; an in-flight reaction wins.
-    world.apply_battle_pose(0, vm::battle_action::Pose::Idle as u8);
+    world.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
     assert_eq!(world.actors[0].battle_reaction, Some(4));
     assert_eq!(world.actors[0].battle_pose, None);
 }
@@ -246,9 +262,12 @@ fn monster_slots_only_honor_idle_pose() {
     clips[0] = Some(pose_test_clip(0, 2, 0));
     clips[9] = Some(pose_test_clip(0x0C, 2, 90));
     world.set_actor_battle_action_clips(3, std::sync::Arc::new(clips));
-    world.apply_battle_pose(3, vm::battle_action::Pose::Defeat as u8);
+    world.apply_battle_pose(
+        3,
+        legaia_engine_battle_vm::battle_action::Pose::Defeat as u8,
+    );
     assert_eq!(world.actors[3].battle_pose, None, "non-idle pose ignored");
-    world.apply_battle_pose(3, vm::battle_action::Pose::Idle as u8);
+    world.apply_battle_pose(3, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
     assert_eq!(world.actors[3].battle_pose, Some(6), "idle still maps");
 }
 
@@ -333,7 +352,7 @@ fn staged_id_without_art_bank_is_a_plain_entry_index() {
 
 #[test]
 fn staged_id_without_clip_converges_and_clears_advance_done() {
-    use vm::battle_action::ActorFlags;
+    use legaia_engine_battle_vm::battle_action::ActorFlags;
     let mut world = World::new();
     world.actors[0].active = true;
     world.actors[0].battle.queued_anim = 0x0C;
@@ -352,7 +371,7 @@ fn staged_id_without_clip_converges_and_clears_advance_done() {
 
 #[test]
 fn staged_swing_finish_clears_gate_and_resumes_idle() {
-    use vm::battle_action::ActorFlags;
+    use legaia_engine_battle_vm::battle_action::ActorFlags;
     let mut world = staged_anim_test_world();
     world.actors[0].battle.queued_anim = 0x0D;
     world.actors[0]
@@ -363,7 +382,7 @@ fn staged_swing_finish_clears_gate_and_resumes_idle() {
     assert_eq!(world.actors[0].battle_staged_anim, Some(0x0D));
     // While the swing plays, the SM's per-frame pose requests don't steal
     // the player.
-    world.apply_battle_pose(0, vm::battle_action::Pose::Idle as u8);
+    world.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
     assert_eq!(world.actors[0].battle_staged_anim, Some(0x0D));
     // Run the 3-frame clip to its end, then let the tick observe the
     // finish: gate cleared, ids back to idle 0, idle loop restored.
@@ -377,7 +396,7 @@ fn staged_swing_finish_clears_gate_and_resumes_idle() {
     assert_eq!(a.battle.current_anim, 0);
     assert_eq!(
         a.battle_pose,
-        Some(vm::battle_action::Pose::Idle as u8),
+        Some(legaia_engine_battle_vm::battle_action::Pose::Idle as u8),
         "idle loop resumes after the band"
     );
     assert!(!a.battle_animation.as_ref().unwrap().finished());
@@ -392,7 +411,7 @@ fn a_byte_restaged_behind_its_own_clip_replays_it_at_the_natural_end() {
     // `0x80047B30..0x80047B58` -> `FUN_8004AD80`): the clip replays. The
     // engine used to converge the pair to idle there, dropping the second
     // swing and the hit that lands the combo total on live HP.
-    use vm::battle_action::ActorFlags;
+    use legaia_engine_battle_vm::battle_action::ActorFlags;
     let mut world = staged_anim_test_world();
     world.actors[0].battle.queued_anim = 0x0C;
     world.commit_staged_battle_anim(0);
@@ -419,7 +438,10 @@ fn a_byte_restaged_behind_its_own_clip_replays_it_at_the_natural_end() {
         !a.battle_animation.as_ref().unwrap().finished(),
         "the replay runs from its first keyframe"
     );
-    assert_ne!(a.battle_pose, Some(vm::battle_action::Pose::Idle as u8));
+    assert_ne!(
+        a.battle_pose,
+        Some(legaia_engine_battle_vm::battle_action::Pose::Idle as u8)
+    );
     // Nothing staged behind the replay (the SM left the loop with
     // `+0x1DA = 0`): its end converges to idle as before.
     world.actors[0].battle.queued_anim = 0;
@@ -433,7 +455,7 @@ fn a_byte_restaged_behind_its_own_clip_replays_it_at_the_natural_end() {
 
 #[test]
 fn attack_chain_paces_strikes_by_staged_clip_completion() {
-    use vm::battle_action::{ActionState, ActorFlags, StepOutcome};
+    use legaia_engine_battle_vm::battle_action::{ActionState, ActorFlags, StepOutcome};
     // Full SM-driven check: a two-swing strike script holds in AttackChain
     // while each staged swing plays, reads the next byte only after the
     // clip-end signal, and exits to recovery on the terminator.
@@ -522,7 +544,7 @@ fn attack_chain_paces_strikes_by_staged_clip_completion() {
     );
     assert_eq!(
         world.actors[0].battle.strike_index,
-        vm::battle_action::STRIKE_CURSOR_PARKED
+        legaia_engine_battle_vm::battle_action::STRIKE_CURSOR_PARKED
     );
     assert_eq!(world.actors[0].battle.queued_anim, 0, "idle staged");
     assert_eq!(
@@ -537,7 +559,7 @@ fn attack_chain_paces_strikes_by_staged_clip_completion() {
 /// A clip whose entry head carries one effect-script record at cursor 0:
 /// `[frame_gate, effect, x, y, z]` at `+0x14` (RECORD_BASE).
 fn scripted_clip(action_id: u8, effect: (u8, u8, i16, i16, i16)) -> MonsterAnimation {
-    use crate::action_effect_script::{RECORD_BASE, RECORD_STRIDE};
+    use legaia_engine_effects::action_effect_script::{RECORD_BASE, RECORD_STRIDE};
     let mut clip = pose_test_clip(action_id, 4, 0);
     let mut head = vec![0u8; RECORD_BASE + 2 * RECORD_STRIDE];
     let (frame, id, x, y, z) = effect;
@@ -655,7 +677,7 @@ fn empty_effect_script_clips_step_nothing() {
     let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
     clips[0] = Some(pose_test_clip(0, 2, 0));
     world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
-    world.apply_battle_pose(0, vm::battle_action::Pose::Idle as u8);
+    world.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
     assert!(world.actors[0].battle_effect_script.is_none());
     world.tick_battle_animations();
     assert!(world.drain_battle_effect_spawns().is_empty());
@@ -669,7 +691,7 @@ fn empty_effect_script_clips_step_nothing() {
 /// dynamic art slot `0x11` gate of `FUN_80049348`).
 #[test]
 fn special_starter_commit_freezes_the_battle_and_ghosts_the_dash() {
-    use vm::battle_anim_rate::{RATE_FROZEN, RATE_QUARTER};
+    use legaia_engine_battle_vm::battle_anim_rate::{RATE_FROZEN, RATE_QUARTER};
     let mut world = pose_test_world();
     world.actors[1].active = true;
     let mut bank: Vec<Option<MonsterAnimation>> = vec![None; 16];
@@ -700,7 +722,7 @@ fn special_starter_commit_freezes_the_battle_and_ghosts_the_dash() {
 /// pose stops advancing while a normal-rate actor's keeps moving.
 #[test]
 fn art_constant_commit_slows_everyone_and_rate_zero_freezes_the_pose() {
-    use vm::battle_anim_rate::{AnimRate, RATE_HALF};
+    use legaia_engine_battle_vm::battle_anim_rate::{AnimRate, RATE_HALF};
     let mut world = pose_test_world();
     world.actors[1].active = true;
     let mut bank: Vec<Option<MonsterAnimation>> = vec![None; 16];
@@ -732,7 +754,7 @@ fn art_constant_commit_slows_everyone_and_rate_zero_freezes_the_pose() {
 /// at normal speed and no frame is ghost-eligible.
 #[test]
 fn direction_swing_commit_keeps_normal_speed_and_no_ghosts() {
-    use vm::battle_anim_rate::RATE_NORMAL;
+    use legaia_engine_battle_vm::battle_anim_rate::RATE_NORMAL;
     let mut world = pose_test_world();
     let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
     clips[0] = Some(pose_test_clip(0, 2, 0));
@@ -754,7 +776,7 @@ fn direction_swing_commit_keeps_normal_speed_and_no_ghosts() {
 /// translation at frame `f` is `(p, f, 0)` so the sweep's ring samples are
 /// distinguishable per point and per step.
 fn trail_test_clip(attach_key: u8, frames: usize) -> MonsterAnimation {
-    use legaia_asset::monster_archive::PartPose;
+    use legaia_actor_formats::monster_archive::PartPose;
     let parts = 16usize;
     MonsterAnimation {
         action_id: 0xC,
@@ -865,7 +887,7 @@ fn weapon_trail_sweep_stops_at_the_clip_boundary() {
     clips[0xC] = Some(trail_test_clip(0x29, 30));
     world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
     // Several idle frames first: the ring holds key-0 entries.
-    world.apply_battle_pose(0, vm::battle_action::Pose::Idle as u8);
+    world.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
     for _ in 0..6 {
         world.tick_battle_animations();
     }
@@ -890,7 +912,7 @@ fn weapon_trail_sweep_stops_at_the_clip_boundary() {
 /// stays untouched here (disc-free run).
 #[test]
 fn gala_clip_key_0x18_freezes_the_target_in_window() {
-    use vm::battle_anim_rate::{RATE_FROZEN, RATE_NORMAL};
+    use legaia_engine_battle_vm::battle_anim_rate::{RATE_FROZEN, RATE_NORMAL};
     let mut world = World::new();
     world.enter_battle(1, 0);
     // Seat Gala (roster slot 2 -> retail char id 3) at battle ordinal 0.
@@ -903,7 +925,7 @@ fn gala_clip_key_0x18_freezes_the_target_in_window() {
     let mut mclips: Vec<Option<MonsterAnimation>> = vec![None; 4];
     mclips[0] = Some(pose_test_clip(0, 8, 0));
     world.set_actor_battle_action_clips(1, std::sync::Arc::new(mclips));
-    world.apply_battle_pose(1, vm::battle_action::Pose::Idle as u8);
+    world.apply_battle_pose(1, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
     // Acting clip: identity byte 0x18 (rate 2 -> the staged advance is 8
     // sixteenths per tick, so the 0x40..=0x80 window opens around tick 8).
     let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
@@ -955,7 +977,7 @@ fn gala_clip_key_0x18_freezes_the_target_in_window() {
 /// `0xB0..=0xF0` (`FUN_8004CE2C` `0x8004D1E8..0x8004D248`).
 #[test]
 fn gala_clip_key_0x67_raises_the_ribbon_at_the_target_seat_in_window() {
-    use vm::battle_impact_fx as ifx;
+    use legaia_engine_battle_vm::battle_impact_fx as ifx;
     let mut world = World::new();
     world.enter_battle(1, 0);
     world.set_active_party(vec![2]);
@@ -1005,7 +1027,7 @@ fn gala_clip_key_0x67_raises_the_ribbon_at_the_target_seat_in_window() {
 /// the arrival frame itself, not a frame later.
 #[test]
 fn impact_tint_decays_to_neutral_and_clears() {
-    use vm::battle_impact_fx as ifx;
+    use legaia_engine_battle_vm::battle_impact_fx as ifx;
     let mut world = World::new();
     world.enter_battle(1, 0);
     world.actors[0].battle.impact_state = 2;
@@ -1069,7 +1091,7 @@ fn impact_tint_decays_to_neutral_and_clears() {
 /// step, and the emit. Asserted in that order.
 #[test]
 fn special_starter_commit_raises_the_arts_banner_and_the_ramp_emits_quads() {
-    use vm::battle_action::{BANNER_DEFAULT, BANNER_SEAT_FLAG, LEVEL_MAX};
+    use legaia_engine_battle_vm::battle_action::{BANNER_DEFAULT, BANNER_SEAT_FLAG, LEVEL_MAX};
     let mut world = pose_test_world();
     world.mode = SceneMode::Battle;
     let mut bank: Vec<Option<MonsterAnimation>> = vec![None; 16];
@@ -1123,10 +1145,16 @@ fn special_starter_commit_raises_the_arts_banner_and_the_ramp_emits_quads() {
     // marks land on their own banner positions: the build loop's `1` is
     // `NEW ARTS!!`, the Super tail-replace's `4` is `SUPER ARTS!!`.
     for (mark, banner) in [
-        (vm::battle_action::BUILD_STARTER_MARK, 1u8),
-        (vm::battle_action::SUPER_STARTER_MARK, 4),
+        (
+            legaia_engine_battle_vm::battle_action::BUILD_STARTER_MARK,
+            1u8,
+        ),
+        (
+            legaia_engine_battle_vm::battle_action::SUPER_STARTER_MARK,
+            4,
+        ),
     ] {
-        let mut marks = [0u32; vm::battle_action::ACTION_QUEUE_CAP];
+        let mut marks = [0u32; legaia_engine_battle_vm::battle_action::ACTION_QUEUE_CAP];
         marks[0] = mark;
         world.actors[0].battle.starter_marks = Some(marks);
         world.actors[0].battle.strike_index = 1;
@@ -1164,8 +1192,8 @@ fn special_starter_commit_raises_the_arts_banner_and_the_ramp_emits_quads() {
 /// A two-frame one-shot whose entry head carries an end-of-clip step
 /// (`+0x0E`), translating Z from `tz0` to `tz1`.
 fn end_step_clip(action_id: u8, tz0: i16, tz1: i16, end_step: i16) -> MonsterAnimation {
-    use legaia_asset::monster_archive::PartPose;
-    let mut head = vec![0u8; legaia_asset::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
+    use legaia_actor_formats::monster_archive::PartPose;
+    let mut head = vec![0u8; legaia_actor_formats::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
     head[0x0E..0x10].copy_from_slice(&end_step.to_le_bytes());
     let pose = |tz| {
         vec![PartPose {
@@ -1200,7 +1228,7 @@ fn end_step_world(end_step: i16) -> World {
     // step carries the actor the same 64 at the natural end.
     clips[10] = Some(end_step_clip(10, 0, 64, end_step));
     world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
-    world.apply_battle_pose(0, vm::battle_action::Pose::Idle as u8);
+    world.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
     world.actors[0].battle.queued_anim = 10;
     world.commit_staged_battle_anim(0);
     world
@@ -1247,9 +1275,9 @@ fn a_downed_actor_does_not_tween_or_step() {
 /// (`(frame, cue)` pairs, `FUN_800508DC`).
 fn cue_track_clip(action_id: u8, track: &[(u16, u16)]) -> MonsterAnimation {
     let mut clip = pose_test_clip(action_id, 8, 0);
-    let mut head = vec![0u8; legaia_asset::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
+    let mut head = vec![0u8; legaia_actor_formats::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
     for (k, &(frame, cue)) in track.iter().enumerate() {
-        let o = crate::anim_cue::ANIM_CUE_TRACK_OFFSET + k * 4;
+        let o = legaia_engine_battle::anim_cue::ANIM_CUE_TRACK_OFFSET + k * 4;
         head[o..o + 2].copy_from_slice(&frame.to_le_bytes());
         head[o + 2..o + 4].copy_from_slice(&cue.to_le_bytes());
     }
@@ -1263,7 +1291,7 @@ fn cue_track_clip(action_id: u8, track: &[(u16, u16)]) -> MonsterAnimation {
 /// literal `2` a party cue `>= 0xA7` gets. Each cue fires once, on its frame.
 #[test]
 fn a_committed_swing_plays_its_animation_cue_track() {
-    use crate::world::SfxRingOp;
+    use legaia_engine_system::sound_state::SfxRingOp;
     let mut world = World::new();
     world.enter_battle(1, 1);
     // A `bse.dat`-shaped bank: `[tag 1][body_offset 4]` + rows; row `0x43`
@@ -1303,7 +1331,8 @@ fn the_art_name_label_closes_when_the_art_clip_hands_off() {
     // that replaces that clip on slot 0x11 (attack command, latched id not
     // the SpecialStarter) destroys it, and the next art reopens it.
     let mut world = staged_anim_test_world();
-    world.actors[0].battle.action_category = vm::battle_action::ActionCategory::Attack.as_byte();
+    world.actors[0].battle.action_category =
+        legaia_engine_battle_vm::battle_action::ActionCategory::Attack.as_byte();
     world.battle.move_label_closed = true;
     world.actors[0].battle.queued_anim = 0x1B;
     world.commit_staged_battle_anim_at_boundary(0);

@@ -869,7 +869,8 @@ pub fn gold_tithe(gold: i32) -> i32 {
 /// button glyph is `CE 00` - so the walk steps over it, as the glyph-count
 /// walk does (`legaia_font::glyph_count`).
 pub fn module_string(image: &[u8], va: u32) -> Option<&[u8]> {
-    let off = va.checked_sub(legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE)? as usize;
+    let off =
+        va.checked_sub(legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE)? as usize;
     let tail = image.get(off..)?;
     let mut i = 0;
     while i < tail.len() && tail[i] != 0 {

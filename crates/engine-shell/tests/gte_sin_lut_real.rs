@@ -4,14 +4,14 @@
 //! pair inside `SCUS_942.54`: sine at VA `0x80070A2C + 2*angle`, "cosine" at
 //! `0x8007122C + 2*angle` (the same table read 0x400 entries / 90 degrees
 //! ahead - the combined span is 5120 entries, 1.25 turns). The engine's
-//! `legaia_engine_render::billboard::{psx_sin, psx_cos}` compute the values
+//! `legaia_render_kernels::billboard::{psx_sin, psx_cos}` compute the values
 //! trigonometrically instead of shipping the table; this oracle compares all
 //! 4096 angles of BOTH access patterns against the user's own executable.
 //!
 //! Skips and passes when `extracted/SCUS_942.54` isn't present - same gating
 //! pattern as the other disc-dependent tests.
 
-use legaia_engine_render::billboard::{psx_cos, psx_sin};
+use legaia_render_kernels::billboard::{psx_cos, psx_sin};
 use std::path::PathBuf;
 
 const SIN_VA: u32 = 0x8007_0A2C;

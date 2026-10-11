@@ -155,7 +155,7 @@ pub fn xp_threshold_for(level: usize, cum: u64) -> u32 {
 ///
 /// Returns `MAX_LEVEL − 1 = 98` entries where `table[level - 1]` is the total XP
 /// required to reach `level + 1` (so `table[0]` = XP to reach L2). This is the
-/// shape `engine_core::levelup::LevelUpTracker::with_xp_table` consumes.
+/// shape `legaia_engine_battle::levelup::LevelUpTracker::with_xp_table` consumes.
 ///
 /// `None` if the image isn't a `SCUS_942.54` (no `PS-X EXE` header / table out
 /// of range).
@@ -312,7 +312,7 @@ impl GrowthTables {
     /// Retail (`FUN_801E9504`) applies the jitter spread to this raw value and
     /// only then floors at 1: `gain = max(1, raw + rand() % (2×jitter+1) −
     /// jitter)`. Callers modelling the jitter (e.g.
-    /// `engine_core::levelup::LevelUpTracker` with a seeded BIOS-rand stream)
+    /// `legaia_engine_battle::levelup::LevelUpTracker` with a seeded BIOS-rand stream)
     /// need the raw term so the floor lands after the spread, matching the
     /// applier order exactly; the jitter-free [`Self::level_gain_core`] floors
     /// first, which is equivalent only because the jitter mean is 0.

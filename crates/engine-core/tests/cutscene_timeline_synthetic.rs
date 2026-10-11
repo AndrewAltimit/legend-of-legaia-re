@@ -7,8 +7,9 @@
 //! `LEGAIA_DISC_BIN`. The disc-gated `opdeene_timeline_execution` test drives
 //! the real `opdeene` record.
 
-use legaia_engine_core::cutscene_timeline::CutsceneTimeline;
-use legaia_engine_core::world::{PROLOGUE_HANDOFF_FLAG, SceneMode, World};
+use legaia_engine_core::world::{PROLOGUE_HANDOFF_FLAG, World};
+use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Tick the world until one **retail display frame** has elapsed.
 ///

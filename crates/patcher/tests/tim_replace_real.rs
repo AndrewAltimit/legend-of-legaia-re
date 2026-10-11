@@ -18,10 +18,12 @@
 //! Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. Patched images live
 //! only in memory.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::SECTOR_SIZE;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::texture::{TextureTarget, read_texture, replace_texture, texture_catalogs};
+use legaia_texture_replace::texture::{
+    TextureTarget, read_texture, replace_texture, texture_catalogs,
+};
 use legaia_tim::encode::{EncodeOptions, encode_replacement};
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -154,10 +156,11 @@ fn raw_replacement_round_trips_and_keeps_sectors_valid() {
     // Runtime-shaped assertion: the patched entry still classifies as the
     // same format class as before.
     let entry_after = patcher.read_entry(890).unwrap();
-    let class_after = legaia_asset::categorize::classify(&entry_after).class;
+    let class_after = legaia_disc_audit::categorize::classify(&entry_after).class;
     // (classify the pristine copy through a second patcher view)
     let pristine = DiscPatcher::open(before.clone()).unwrap();
-    let class_before = legaia_asset::categorize::classify(&pristine.read_entry(890).unwrap()).class;
+    let class_before =
+        legaia_disc_audit::categorize::classify(&pristine.read_entry(890).unwrap()).class;
     assert_eq!(class_after, class_before, "entry format class unchanged");
 
     // Every touched physical sector is EDC/ECC-valid, and the touch is

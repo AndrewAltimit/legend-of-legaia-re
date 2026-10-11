@@ -30,8 +30,9 @@
 
 use std::collections::{BTreeMap, HashSet, VecDeque};
 
-use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
+use legaia_engine_mode::mode::SceneMode;
 
 const TILE: i16 = 128;
 const SUBCELL: i16 = 32;
@@ -148,7 +149,7 @@ fn scene_doors(host: &SceneHost) -> SceneDoors {
         .ok()
         .flatten()
         .expect("man payload");
-    let mf = legaia_asset::man_section::parse(&man).expect("man parse");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("man parse");
     let (primary, fallback) = scene
         .field_tile_triggers(&host.index)
         .expect("tile triggers");
@@ -156,7 +157,7 @@ fn scene_doors(host: &SceneHost) -> SceneDoors {
     triggers.extend(fallback);
 
     let mut doors: BTreeMap<u8, Door> = BTreeMap::new();
-    for site in legaia_engine_core::man_field_scripts::overworld_portal_sites(&mf, &man, &triggers)
+    for site in legaia_engine_field::man_field_scripts::overworld_portal_sites(&mf, &man, &triggers)
     {
         doors
             .entry(site.record)

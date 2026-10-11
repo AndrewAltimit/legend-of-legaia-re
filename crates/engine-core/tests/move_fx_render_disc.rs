@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::move_power::MovePowerCatalog;
+use legaia_engine_battle::move_power::MovePowerCatalog;
 use legaia_engine_core::world::World;
 use legaia_prot::archive::Archive;
 
@@ -28,7 +28,7 @@ fn overlay_0898() -> Option<Vec<u8>> {
         let mut archive = Archive::open(&prot).ok()?;
         let entry = archive
             .entries
-            .get(legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+            .get(legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
             .cloned()?;
         let mut bytes = Vec::new();
         archive.read_entry(&entry, &mut bytes).ok()?;
@@ -87,7 +87,7 @@ fn move_fx_spawns_library_mesh_parts_from_real_overlay() {
     // The AltEffect (high-bit) entries spawned through the effect pool: count
     // them off the descriptor and assert the pool got exactly that many.
     let alt_count = {
-        use legaia_asset::move_power::EffectListEntry;
+        use legaia_game_tables::move_power::EffectListEntry;
         let fx = world
             .tables
             .move_power
@@ -231,7 +231,7 @@ fn alt_effect_only_moves_still_fire_the_2d_pool() {
 
     // Scan the real table for moves whose effect lists hold AltEffect entries
     // but no Spawn entry (the alt-only edge case).
-    use legaia_asset::move_power::EffectListEntry;
+    use legaia_game_tables::move_power::EffectListEntry;
     let alt_only: Vec<(u8, usize)> = {
         let cat = world.tables.move_power.as_ref().unwrap();
         (0x01..=0xFFu8)

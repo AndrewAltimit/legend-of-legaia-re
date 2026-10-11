@@ -1,6 +1,6 @@
 //! The play hosts' SPU RAM map, and the one track that does not fit it.
 //!
-//! Both play hosts (the native `AudioBgmDirector` and the browser page's
+//! Both play hosts (the native `AudioDirector` and the browser page's
 //! `WebBgmDirector`) split the 512 KiB of SPU RAM the same way:
 //!
 //! | range | holds |

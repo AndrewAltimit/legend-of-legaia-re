@@ -29,9 +29,9 @@
 //! Structural assertions only (scene names, tiles, mode) - no Sony bytes.
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {

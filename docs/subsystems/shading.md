@@ -96,7 +96,7 @@ things decide whether the palette you see in the file is the one a draw uses:
   row-479 band the same way ([`npc-palette.md`](../formats/npc-palette.md)).
 - **Sharing.** A sprite or polygon may name any cell. The system-UI sheet's
   sprites take their palettes from the widget-class table's palette byte
-  ([`ui_widgets`](../../crates/asset/src/ui_widgets.rs)): row 511 cells 0-15
+  ([`ui_widgets`](../../crates/ui-formats/src/ui_widgets.rs)): row 511 cells 0-15
   are the sheet's own sixteen, cells 16-18 belong to a separate CLUT-only
   TIM uploaded just before it, and the element badges read a 4x4 block at
   `(896.., 498..501)`.
@@ -115,12 +115,12 @@ palette paints all nine in a single colour scheme. That is not a decode bug; it 
 
 For the system-UI page (VRAM `(896, 256)`: the menu / battle sheet at
 `PROT.DAT` `0x18E0` and the smaller TIMs uploaded beside it) the mapping is
-disc data, and one kernel reads it: `legaia_asset::tim_palette_context::texel_palettes`.
+disc data, and one kernel reads it: `legaia_ui_formats::tim_palette_context::texel_palettes`.
 The asset viewer's **As the game draws it** view and the ROM patcher's
 texture editor (region list, in-game view, `tim-palette-map`) both call it.
 
 - **Who samples what.** Every rectangle comes from the widget-class table
-  (`SCUS_942.54` `0x800732A4`, [`ui_widgets`](../../crates/asset/src/ui_widgets.rs),
+  (`SCUS_942.54` `0x800732A4`, [`ui_widgets`](../../crates/ui-formats/src/ui_widgets.rs),
   [`battle.md`](battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from)),
   expanded per draw arm of `FUN_8002C69C` exactly as the arm emits it: a
   class-5 record is its own sprite; a class-3 plate run adds its cap pair
@@ -130,7 +130,7 @@ texture editor (region list, in-game view, `tim-palette-map`) both call it.
   piece is drawn through the record's palette byte. The portrait records
   sample the next page and are not part of the map.
 - **Which cell.** The palette byte decodes to a CLUT cell
-  ([`clut_fb`](../../crates/asset/src/ui_widgets.rs)): bit 6 clear is
+  ([`clut_fb`](../../crates/ui-formats/src/ui_widgets.rs)): bit 6 clear is
   `CBA = 0x7FC0 + (b & 0x3F)`, VRAM `(16 * (b & 0x3F), 511)` - "sub-palette
   `b & 0x3F`"; bit 6 set is the 4x4 badge block at `(896.., 498..501)`. The
   sheet's 16x16 CLUT block lands flattened on row 511, so sub-palette `k`
@@ -313,13 +313,13 @@ and [`textures-and-fonts.md`](../tooling/translation/textures-and-fonts.md).
 
 | Chain step | Port |
 |---|---|
-| Palette resolution for exports | `legaia_asset::tim_palette_context` (`texel_palettes`: which cell draws which texel; `BootClutVram`: what the cells hold), `legaia_tim::decode_rgba8_with_palette` |
+| Palette resolution for exports | `legaia_ui_formats::tim_palette_context` (`texel_palettes`: which cell draws which texel; `BootClutVram`: what the cells hold), `legaia_tim::decode_rgba8_with_palette` |
 | VRAM + CLUT decode | `engine-render` VRAM pipeline (1024x512 R16Uint, CLUT decode in the fragment shader); `legaia_tim::Vram` |
 | Colour word + depth cue | `psx_modulate` / `psx_depth_cue` in the shader prelude, CPU mirror `legaia_engine_render::psx_light` |
-| Battle ambient | `legaia_engine_vm::battle_ground_grid::ambient_base_step`, `World::tick_battle_ambient` |
-| Actor tint | `legaia_engine_vm::battle_actor_tint`, `battle_actor_draw` |
-| Animated palettes | `engine-core::clut_cell_fx`, `World::step_clut_fx`, `legaia_asset::clut_walk` |
-| Light-source rows | `engine-core::field_lit_mesh` over `engine-vm::field_light`; kernels `gte::lighting` |
+| Battle ambient | `legaia_engine_battle_vm::battle_ground_grid::ambient_base_step`, `World::tick_battle_ambient` |
+| Actor tint | `legaia_engine_battle_vm::battle_actor_tint`, `battle_actor_draw` |
+| Animated palettes | `engine-field::clut_cell_fx`, `World::step_clut_fx`, `legaia_scene_formats::clut_walk` |
+| Light-source rows | `engine-field::field_lit_mesh` over `render-kernels::field_light`; kernels `gte::lighting` |
 | Blend | `psx_blend` (`Renderer::set_semi_blend`, default on) |
 | Dither | `psx_dither` (`Renderer::set_psx_mode`, default off - the one step the port does not apply by default) |
 

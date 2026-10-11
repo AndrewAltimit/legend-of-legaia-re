@@ -4,6 +4,7 @@
 //! the original inline definitions.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 mod hits;
 mod round;
 
@@ -64,7 +65,7 @@ impl World {
     /// engine seats the party in the same low slots, so the same test holds.
     ///
     /// REF: FUN_80047430 (kernel + `// PORT:` tags in
-    /// `legaia_engine_vm::battle_hp_bar`)
+    /// `legaia_engine_battle_vm::battle_hp_bar`)
     pub(in crate::world) fn tick_battle_hp_bars(&mut self) {
         for (slot, a) in self.actors.iter_mut().enumerate() {
             a.battle.tick_hp_bar(slot as u8);
@@ -80,7 +81,7 @@ impl World {
     /// the same inert-gate shape the HP-bar settle check had.
     ///
     /// REF: FUN_801E09F8 (census head; kernel + `// PORT:` tag in
-    /// `legaia_engine_vm::battle_cast_census`)
+    /// `legaia_engine_battle_vm::battle_cast_census`)
     pub(in crate::world) fn tick_battle_cast_census(&mut self) {
         let ctx_ptr: *mut BattleActionCtx = &mut self.battle_ctx;
         let host = BattleHostImpl { world: self };
@@ -88,7 +89,7 @@ impl World {
         // reaches `world.battle_ctx` through its borrow, and the census reads
         // only the actor table.
         let ctx = unsafe { &mut *ctx_ptr };
-        vm::battle_action::tick_cast_census(&host, ctx);
+        legaia_engine_battle_vm::battle_action::tick_cast_census(&host, ctx);
     }
 
     /// Per-frame battle-side driver for the live gameplay loop. Gated by
@@ -141,7 +142,7 @@ impl World {
     /// monster slot dead + `DAT_8007BD0C == 0xB5` boss-transition arm,
     /// `0x801E6CE4..0x801E6D64`) is the second battle stage-id writer - the
     /// Cort form transition to stage 3 / entry 969 - ported separately as
-    /// [`crate::battle_stage_module::boss_transition_stage_id`], run at the
+    /// [`legaia_engine_battle::battle_stage_module::boss_transition_stage_id`], run at the
     /// head of cleanup state `0x50` by [`World::run_boss_transition_arm`].
     ///
     /// REF: FUN_800402F4 (the revive arm this calls - case 4, tier 1 = full
@@ -223,7 +224,7 @@ impl World {
     }
 
     pub(in crate::world) fn live_battle_tick(&mut self) -> Option<StepOutcome> {
-        use vm::battle_action::{ActionState, ActorFlags};
+        use legaia_engine_battle_vm::battle_action::{ActionState, ActorFlags};
 
         // A party wipe with the scripted-loss latch clear has left battle:
         // MAIN INIT's back-from-battle arm stores `game_mode = 0x16` (CARD
@@ -423,12 +424,12 @@ impl World {
         // check (`FUN_801E7250`) sees this frame's bar movement. Retail's
         // caller for `FUN_80047430` is not in the dumped corpus, so the
         // cadence is the port's choice; the arithmetic is not
-        // (`legaia_engine_vm::battle_hp_bar`).
+        // (`legaia_engine_battle_vm::battle_hp_bar`).
         // REF: FUN_80047430
         self.tick_battle_hp_bars();
 
         // The death-spoils caption (HUD element `0x5B`) holds for the rest of
-        // the action that raised it (`crate::battle_steal`).
+        // the action that raised it (`legaia_engine_battle::battle_steal`).
         self.tick_steal_caption();
 
         // Rebuild the cast-census bytes the magic band's exit states read.
@@ -477,7 +478,7 @@ impl World {
         // retail's exact slot (`FUN_80046A20` runs `jal 0x801E295C` then
         // `jal 0x80051078`, every live battle frame).
         // REF: FUN_80051078, FUN_80050BB8 (kernels in
-        // `legaia_engine_vm::battle_separation`; driver
+        // `legaia_engine_battle_vm::battle_separation`; driver
         // `World::tick_battle_separation`)
         self.tick_battle_separation();
 
@@ -521,7 +522,7 @@ impl World {
                 // REF: FUN_801EC3E4
                 if outcome.damage.is_some() {
                     let class = self.attacker_impact_class(usize::from(*actor_slot));
-                    if class < crate::move_power::IMPACT_CLASS_LIMIT {
+                    if class < legaia_engine_battle::move_power::IMPACT_CLASS_LIMIT {
                         self.arm_impact_tint(usize::from(*target_slot), class);
                     }
                 }
@@ -765,7 +766,10 @@ impl World {
     /// Queue one CD-XA clip start and hold the modelled drive busy for its
     /// read span (`dur` vsyncs - see [`crate::world::AudioState::battle_xa_busy_frames`]).
     /// REF: FUN_8003D53C
-    pub(in crate::world) fn push_battle_xa_cue(&mut self, cue: crate::sfx_cue::XaVoiceClip) {
+    pub(in crate::world) fn push_battle_xa_cue(
+        &mut self,
+        cue: legaia_engine_system::sound_state::XaVoiceClip,
+    ) {
         self.audio.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
         self.audio.battle_xa_cues.push(cue);
     }
@@ -833,7 +837,7 @@ impl World {
     /// arms a physical strike for the action SM to run.
     /// True if `slot` carries any status that blocks all actions (Sleep /
     /// Stone / Faint), so it loses its turn. The blocking set is defined
-    /// by [`legaia_engine_vm::status_effects::StatusKind::blocks_actions`]; the
+    /// by [`legaia_engine_battle_vm::status_effects::StatusKind::blocks_actions`]; the
     /// battle turn loop ([`Self::advance_battle_mode`]) enforces it here.
     pub(in crate::world) fn actor_blocked_from_acting(&self, slot: u8) -> bool {
         self.battle
@@ -861,7 +865,7 @@ impl World {
             .status_effects
             .statuses(slot)
             .iter()
-            .any(|s| s.kind == vm::status_effects::StatusKind::Stone)
+            .any(|s| s.kind == legaia_engine_battle_vm::status_effects::StatusKind::Stone)
     }
 
     /// True if `slot` is out of the fight for wipe-detection purposes: either
@@ -889,7 +893,7 @@ impl World {
     ///
     /// PORT: FUN_801F45A4 (the caller-side slot sweep)
     pub(in crate::world) fn tick_status_0x400_wakes(&mut self) {
-        use vm::battle_formulas::{STATUS_BIT_0X400, status_0x400_wakes};
+        use legaia_engine_battle_vm::battle_formulas::{STATUS_BIT_0X400, status_0x400_wakes};
         // Retail's `&DAT_801C9370` sweep runs seven slots.
         const RETAIL_ACTOR_SLOTS: usize = 7;
         let n = self.actors.len().min(RETAIL_ACTOR_SLOTS);
@@ -1009,7 +1013,7 @@ mod hp_delta_liveness_tests {
 /// raise it and is cued at once (the port's clip-less stand-in).
 // REF: FUN_801DEA50 (`0x801DEC08..0x801DEC48`), FUN_8004AD80
 fn summon_windup_cue(a: &Actor) -> u8 {
-    use crate::action_effect_script::EffectRecord;
+    use legaia_engine_effects::action_effect_script::EffectRecord;
     let Some(script) = a.battle_effect_script.as_ref() else {
         return 1;
     };

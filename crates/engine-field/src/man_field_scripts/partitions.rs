@@ -1,6 +1,4 @@
 //! MAN partition record-offset helpers + narration / g-flag site collection.
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use std::collections::BTreeMap;
 
@@ -13,7 +11,7 @@ use super::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlagBank {
     /// The 32-bit scratchpad story-flag word `_DAT_1F800394` (the engine's
-    /// `legaia_engine_core::world::StoryFlagState::story_flags`); reached by opcodes `0x2E`
+    /// `legaia_engine_system::story_flag_state::StoryFlagState::story_flags`); reached by opcodes `0x2E`
     /// (`SET`) / `0x2F` (`CLEAR`). Flag numbers are bit indices `0..31`.
     Scratchpad,
     /// The wide SYSTEM-flag bitmap reached by the `0x50..=0x7F` op family
@@ -70,7 +68,7 @@ pub struct GFlagSite {
     /// where operand/text bytes alias the `0x50..=0x7F` flag opcodes: e.g.
     /// the full-width digit run `82 54 82 4F` yields a phantom
     /// `SysFlag.Set idx=0x482`. Non-clean sites are byte noise until
-    /// verified by hand disasm or a live capture - the wave-8 `other7`-pool
+    /// verified by hand disasm or a live capture - the `other7`-pool
     /// "0x482 writers" were exactly this class (all 37 census sites for
     /// `0x482` are non-clean; the live-confirmed `0x142` writer ladders all
     /// stay clean).
@@ -454,7 +452,7 @@ pub fn flat_record_span(
 /// record-then-page order.
 ///
 /// Each record's bounded body is handed to
-/// [`legaia_asset::cutscene_text::parse_narration`], which finds the narration
+/// [`legaia_scene_formats::cutscene_text::parse_narration`], which finds the narration
 /// op + `0x1F`/`0x00` page framing structurally. The opening prologue scene
 /// (`opdeene`) carries its narration in the cutscene-timeline partition
 /// (partition 2); this returns those subtitle pages as plain text for the
@@ -479,7 +477,7 @@ pub fn collect_partition_narration(
             continue;
         };
         let body = &man[script_start..script_start + body_len];
-        for block in legaia_asset::cutscene_text::parse_narration(body) {
+        for block in legaia_scene_formats::cutscene_text::parse_narration(body) {
             pages.extend(block.pages.into_iter().map(|p| p.text));
         }
     }
@@ -998,7 +996,7 @@ where
         let name = name.as_ref();
         for carrier in carriers {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             for partition in 0..3 {
@@ -1180,7 +1178,7 @@ impl Op49WindowSite {
 /// Same contract as [`system_flag_census`] / [`motion_flag_census`]: scenes
 /// without a resolvable MAN are skipped (best-effort over the CDNAME scene
 /// set, all bundle forms incl. scripted-table + v12-embedded via
-/// `legaia_engine_core::scene::Scene::field_man_payload`); site order preserves scene /
+/// `legaia_engine_scene::scene::Scene::field_man_payload`); site order preserves scene /
 /// partition / record discovery order. Descriptor bytes are read from the
 /// full MAN buffer (the retail picker reads through `_DAT_8007B450` into the
 /// resident MAN, not the instruction footprint); sites whose descriptor
@@ -1196,7 +1194,7 @@ where
         let name = name.as_ref();
         for carrier in carriers {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             op49_walk_carrier(&mut out, name, &carrier, &man_file, man);
@@ -1264,7 +1262,7 @@ fn op49_walk_carrier(
 }
 
 /// One motion-VM system-flag site recovered by [`motion_flag_census`]:
-/// the scene plus the [`legaia_asset::man_motion::MotionFlagSite`] the
+/// the scene plus the [`legaia_scene_formats::man_motion::MotionFlagSite`] the
 /// scene's MAN tail-section 1 carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MotionCensusSite {
@@ -1277,9 +1275,9 @@ pub struct MotionCensusSite {
     /// the motion record's per-actor stream variant index.)
     pub carrier_variant: bool,
     /// The section-1 record / variant / gate / offset / kind detail.
-    pub site: legaia_asset::man_motion::MotionFlagSite,
+    pub site: legaia_scene_formats::man_motion::MotionFlagSite,
     /// The record's actor bindings (who the stream runs on).
-    pub bindings: Vec<legaia_asset::man_motion::MotionBinding>,
+    pub bindings: Vec<legaia_scene_formats::man_motion::MotionBinding>,
 }
 
 /// Disc-wide **motion-VM** flag census - the sibling of
@@ -1287,7 +1285,7 @@ pub struct MotionCensusSite {
 /// `DAT_80085758` system story-flag bank: `FUN_80038158` op `0x07` (SET) /
 /// `0x08` (CLEAR), whose scripts live in each scene MAN's tail **section 1**
 /// (installed on actors by `FUN_8003A9D4` at scene entry; see
-/// [`legaia_asset::man_motion`]). The MAN field-VM census is structurally
+/// [`legaia_scene_formats::man_motion`]). The MAN field-VM census is structurally
 /// blind to these writes - they are a different opcode space in a different
 /// carrier section.
 ///
@@ -1299,13 +1297,13 @@ where
     I: IntoIterator<Item = (S, Vec<ManCarrier>)>,
     S: AsRef<str>,
 {
-    use legaia_asset::man_motion;
+    use legaia_scene_formats::man_motion;
     let mut out: BTreeMap<u16, Vec<MotionCensusSite>> = BTreeMap::new();
     for (name, carriers) in scenes {
         let name = name.as_ref();
         for carrier in carriers {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             let records = man_motion::motion_records(man, &man_file);

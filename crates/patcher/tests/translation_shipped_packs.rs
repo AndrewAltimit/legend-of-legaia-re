@@ -19,11 +19,11 @@
 
 use std::path::{Path, PathBuf};
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
-use legaia_patcher::translation::markup::{self, Target};
-use legaia_patcher::translation::{LanguagePack, import_pack};
+use legaia_translate::markup::{self, Target};
+use legaia_translate::{LanguagePack, import_pack};
 
 /// Every language pack the repo ships.
 fn shipped_packs() -> Vec<(String, LanguagePack)> {
@@ -298,8 +298,8 @@ fn shipped_packs_apply_to_a_real_disc() {
         // name on the patched disc must equal a `scus:str` translation, and none
         // may be empty (an over-long write would have eaten a neighbour).
         let scus = legaia_iso::iso9660::read_file_in_image(&patched, "SCUS_942.54").expect("scus");
-        let items =
-            legaia_asset::item_names::ItemNameTable::from_scus(&scus).expect("item name table");
+        let items = legaia_game_tables::item_names::ItemNameTable::from_scus(&scus)
+            .expect("item name table");
         let translated: std::collections::BTreeSet<&str> = pack
             .sections
             .items
@@ -378,7 +378,8 @@ fn translated_then_randomized_composes_and_stays_valid() {
     let check = DiscPatcher::open(both.clone()).expect("re-parse composed image");
     let _ = legaia_patcher::apply::current_drops(&check).expect("drops still readable");
     let scus2 = legaia_iso::iso9660::read_file_in_image(&both, "SCUS_942.54").expect("scus");
-    let items = legaia_asset::item_names::ItemNameTable::from_scus(&scus2).expect("item table");
+    let items =
+        legaia_game_tables::item_names::ItemNameTable::from_scus(&scus2).expect("item table");
     let translated: std::collections::BTreeSet<&str> = pack
         .sections
         .items
@@ -423,7 +424,7 @@ fn shipped_pack_resumes_into_a_working_pack() {
         .find(|(n, _)| n == "fr")
         .expect("the French pack ships");
     let patcher = DiscPatcher::open(original).expect("open disc");
-    let base = legaia_patcher::translation::export_pack(&patcher).expect("export");
+    let base = legaia_translate::export_pack(&patcher).expect("export");
 
     let mut working = base.into_skeleton("fr", vec!["someone".into()]);
     let merged = working.merge_translations(&shipped);

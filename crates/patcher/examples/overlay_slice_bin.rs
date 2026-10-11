@@ -7,13 +7,13 @@
 //!
 //! Then boot `<output.bin>` and win one battle (the slice rides the battle-reward
 //! hook). The overlay should stream in from its pochi slot, run, and write the
-//! sentinel `0x5E2D7ADE` to RAM `0x8007AF20` (`legaia_patcher::seru_overlay::{SENTINEL,
+//! sentinel `0x5E2D7ADE` to RAM `0x8007AF20` (`legaia_code_hooks::seru_overlay::{SENTINEL,
 //! SENTINEL_ADDR}`). Check that cell with a debugger / cheat / save-state read; if
 //! it holds the sentinel and the game kept running, the mechanism works on hardware.
 
 use anyhow::{Context, Result};
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -33,7 +33,7 @@ fn main() -> Result<()> {
     //     mode switch wipes the menu actor op-0x49 awaits. Kept as a reference.]
     //   LEGAIA_SLICE_UNGATED=1  -> raw-stub diagnostic, fires on EVERY op-0x49 arm.
     //   (default)               -> raw-stub gated to shop sub-op 0.
-    use legaia_patcher::seru_overlay as ov;
+    use legaia_code_hooks::seru_overlay as ov;
     // PICKER = the shop-picker quiet-frame trigger (the real shop integration
     // path): mode-24 warp armed from FUN_801d4868 on SQUARE. Always draws.
     let picker = matches!(std::env::var("LEGAIA_SLICE_PICKER").as_deref(), Ok("1"));
@@ -81,11 +81,11 @@ fn main() -> Result<()> {
         emit(ov::ENTRY_STUB_VA, &ov::assemble_trade_entry_stub());
         emit(ov::TRADE_HANDLER_VA, &ov::assemble_trade_handler());
         // The precomputed bucket schedule as resident data words (128 bytes).
-        let table = legaia_asset::seru_trade::bucket_table_to_bytes(
-            &legaia_asset::seru_trade::bucket_offers(
+        let table = legaia_game_tables::seru_trade::bucket_table_to_bytes(
+            &legaia_game_tables::seru_trade::bucket_offers(
                 seed,
-                legaia_asset::seru_trade::BUCKET_COUNT,
-                &legaia_asset::seru_trade::default_pool(),
+                legaia_game_tables::seru_trade::BUCKET_COUNT,
+                &legaia_game_tables::seru_trade::default_pool(),
             ),
         );
         let table_words: Vec<u32> = table

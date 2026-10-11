@@ -8,10 +8,10 @@
 //! size, and the patch is byte-deterministic. The *runtime* behaviour (granted once
 //! at new game) needs a boot test. Skips + passes without `LEGAIA_DISC_BIN`.
 
-use legaia_asset::field_disasm::{self, FlagKind, InsnInfo};
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::starting_bag::{self, SceneBagInject};
+use legaia_scene_formats::field_disasm::{self, FlagKind, InsnInfo};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -179,8 +179,8 @@ fn empty_bag_is_a_no_op() {
 /// inject_offset)` - the offset `SceneBagInject` splices at (just past the entry
 /// script's BGM op), used here to re-read the injected bytecode.
 fn decode_entry_script(entry: &[u8], _ext: usize) -> (Vec<u8>, usize) {
-    use legaia_asset::field_disasm;
-    use legaia_asset::{man_section, scene_asset_table};
+    use legaia_scene_formats::field_disasm;
+    use legaia_scene_formats::{man_section, scene_asset_table};
     let table = scene_asset_table::detect(entry).expect("scene table");
     let man_idx = table.descriptor_index(0x03).expect("MAN descriptor");
     let man = table.used()[man_idx];

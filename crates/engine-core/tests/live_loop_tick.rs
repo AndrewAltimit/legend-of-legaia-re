@@ -15,12 +15,13 @@
 //! Disc-free: synthetic party + the vanilla monster/formation tables. Runs
 //! in CI unconditionally.
 
-use legaia_engine_core::encounter::{
+use legaia_engine_battle::encounter::{
     EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
 };
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// Build a field-ready world: a 3-member party with battle stats seeded,
 /// the vanilla tables installed, a player field actor placed on open

@@ -3,23 +3,23 @@
 //! **heroes'** field models, so the scene shows Vahn / Noa / Gala facing
 //! the swapped party instead of a second set of Delilas siblings.
 //!
-//! Thin disc adapter over [`crate::party_swap::nivora_field`]:
+//! Thin disc adapter over [`legaia_party_swap::nivora_field`]:
 //! reads the scene TMD pack (PROT 0639) + scene bundle (PROT 0638),
 //! rebuilds both same-size, and writes them back in place.
 //!
 //! **Ordering constraint (load-bearing):** the caller must capture the
 //! PROT 0874 entry bytes **before** `apply_delilas_party` runs - that
-//! pass rewrites 0874 with sibling geometry (`party_swap::fieldize`),
+//! pass rewrites 0874 with sibling geometry (`legaia_party_swap::fieldize`),
 //! and this pass sources the heroes' retail field meshes from it.
 //! Like the fieldize pass itself, run this only alongside a **fresh**
 //! swap apply: it is byte-deterministic but not self-detecting, so a
 //! second run over an already-heroized scene would bake garbage.
 
-use crate::party_swap::nivora_field::{self, SlotReport};
 use anyhow::{Context, Result};
+use legaia_party_swap::nivora_field::{self, SlotReport};
 
 use crate::delilas_party::PartyMapping;
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// Report of one [`apply_nivora_field`] run.
 #[derive(Debug, Default)]
@@ -74,7 +74,7 @@ pub fn apply_nivora_field(
 /// confrontation in `stone`, Zora's floating castle in `taiku2`, past
 /// Conkram in `conc2`) for the mapped heroes' field meshes - the
 /// scene-bundle sibling of [`apply_nivora_field`], driven by
-/// [`crate::party_swap::event_field::EVENT_SCENES`].
+/// [`legaia_party_swap::event_field::EVENT_SCENES`].
 ///
 /// Same ordering constraint as the nilboa pass: `prot_0874_retail` is
 /// the pre-fieldize PROT 0874 entry bytes.
@@ -83,7 +83,7 @@ pub fn apply_event_field(
     mapping: &PartyMapping,
     prot_0874_retail: &[u8],
 ) -> Result<NivoraFieldReport> {
-    use crate::party_swap::event_field;
+    use legaia_party_swap::event_field;
 
     let field_mapping = [
         mapping.vahn.monster_id(),

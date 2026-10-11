@@ -11,10 +11,10 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -71,7 +71,8 @@ fn shuffle_spell_costs_round_trips_on_disc() {
     let (scus_lba, _) = find_file_in_image(img, "SCUS_942.54").unwrap();
     let scus =
         legaia_iso::iso9660::read_file_in_image(&original, "SCUS_942.54").expect("read SCUS");
-    let table_off = legaia_asset::spell_names::stats_file_offset(&scus).expect("stats offset");
+    let table_off =
+        legaia_game_tables::spell_names::stats_file_offset(&scus).expect("stats offset");
     let table_sector = scus_lba as usize + table_off / USER_DATA_SIZE;
     let sb = table_sector * SECTOR_SIZE;
     assert!(

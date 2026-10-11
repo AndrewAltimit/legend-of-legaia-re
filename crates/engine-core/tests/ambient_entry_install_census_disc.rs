@@ -21,12 +21,12 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_env;
-use legaia_engine_core::man_field_scripts::{
+use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::{
     ambient_effect_installs, scene_entry_ambient_installs,
 };
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::World;
+use legaia_engine_scene::field_env;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn extracted_root() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -64,7 +64,7 @@ fn town0e_morph_tree_spawns_from_a_placed_actors_prologue_or_skip() {
     let Some((scene, stager_bytes, man_bytes)) = scene_parts(&index, "town0e") else {
         panic!("town0e carries a MAN + prescript bundle");
     };
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("parse MAN");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("parse MAN");
 
     // The gap, stated as a contrast: the shape filter sees nothing here.
     assert!(
@@ -78,14 +78,14 @@ fn town0e_morph_tree_spawns_from_a_placed_actors_prologue_or_skip() {
     );
 
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },
         ..Default::default()
     };
     world.install_field_stagers(&stager_bytes);
-    world.set_vdf_buffer(legaia_engine_core::scene_bundle::find_vdf_buffer(&scene));
+    world.set_vdf_buffer(legaia_engine_scene::scene_bundle::find_vdf_buffer(&scene));
     for arg in scene_entry_ambient_installs(&man_file, &man_bytes) {
         world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
     }
@@ -183,7 +183,7 @@ fn entry_census_is_a_strict_widening_of_the_shape_filter_or_skip() {
         let Ok(Some(man_bytes)) = scene.field_man_payload(&index) else {
             continue;
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man_bytes) else {
             continue;
         };
         checked += 1;
@@ -253,7 +253,7 @@ fn flag_gated_installs_past_the_unconditional_prefix_are_left_out_or_skip() {
     let Some((_, _, man_bytes)) = scene_parts(&index, "nilboa") else {
         panic!("nilboa loads");
     };
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("parse MAN");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("parse MAN");
     assert_eq!(
         scene_entry_ambient_installs(&man_file, &man_bytes),
         vec![0],
@@ -265,7 +265,7 @@ fn flag_gated_installs_past_the_unconditional_prefix_are_left_out_or_skip() {
     let Some((_, _, man_bytes)) = scene_parts(&index, "suimon") else {
         panic!("suimon loads");
     };
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("parse MAN");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("parse MAN");
     assert!(
         scene_entry_ambient_installs(&man_file, &man_bytes).is_empty(),
         "suimon: both installs sit behind entry flag tests"
@@ -276,7 +276,7 @@ fn flag_gated_installs_past_the_unconditional_prefix_are_left_out_or_skip() {
     let Some((_, _, man_bytes)) = scene_parts(&index, "edkorout") else {
         panic!("edkorout loads");
     };
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("parse MAN");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("parse MAN");
     assert_eq!(
         scene_entry_ambient_installs(&man_file, &man_bytes),
         vec![0],
@@ -289,11 +289,11 @@ fn env_pack_objects(scene: &Scene) -> (usize, Vec<Vec<usize>>) {
     let shared: Vec<Scene> = Vec::new();
     let shared_refs: Vec<&Scene> = shared.iter().collect();
     let (res, _) =
-        legaia_engine_core::scene_resources::SceneResources::build_targeted_with_options(
+        legaia_engine_scene::scene_resources::SceneResources::build_targeted_with_options(
             scene,
             &shared_refs,
-            legaia_engine_core::scene_resources::BuildOptions {
-                kind: legaia_engine_core::scene_resources::SceneLoadKind::Field,
+            legaia_engine_scene::scene_resources::BuildOptions {
+                kind: legaia_engine_scene::scene_resources::SceneLoadKind::Field,
                 upload_all_tims: false,
                 system_ui: None,
             },

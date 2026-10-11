@@ -1,6 +1,4 @@
 //! Actor-placement classification (portals, dialog, props) + inline-dialog prologue.
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use super::*;
 
@@ -40,7 +38,7 @@ pub enum PlacementKind {
     ///
     /// **`target_map` is a misnomer kept for compile compatibility.** The value
     /// is `op0 - 100`, the mode-24 `sub_id`
-    /// (`legaia_engine_core::minigame_entry::MinigameSubId`), and it selects a *code
+    /// (`legaia_engine_mode::minigame_entry::MinigameSubId`), and it selects a *code
     /// overlay*, not a scene - the arm calls no scene-change packet and the op
     /// carries no destination name. Routing it through a `MapIdResolver`
     /// resolves a code-overlay selector against a CDNAME ordinal and warps the
@@ -58,7 +56,7 @@ pub enum PlacementKind {
         interact_id: Option<u8>,
         /// Record bytes from the start of the first inline `0x1F`-lead text
         /// segment through the record's bounded end - the actual message text;
-        /// `legaia_engine_core::dialog::OwnedDialogPanel::from_inline_dialog` renders it
+        /// `legaia_engine_dialog::dialog::OwnedDialogPanel::from_inline_dialog` renders it
         /// (it re-finds the `0x1F` lead and types the first segment).
         dialog_inline: Option<Vec<u8>>,
     },

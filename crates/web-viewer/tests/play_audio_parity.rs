@@ -9,7 +9,7 @@
 //! 2. **Installing a shout file decodes real audio.** `XA2.XA`'s raw sectors,
 //!    sliced from the disc the way the page slices them, demux into Vahn's
 //!    channels and the capture-verified voiced art (Somersault, action
-//!    `0x27` - the anchor `engine-shell/tests/arts_shout_battle.rs` uses)
+//!    `0x27` - the anchor `engine-session/tests/arts_shout_battle.rs` uses)
 //!    resolves through the executable's cue pools to non-silent PCM.
 //! 3. **Installing a clip file stages the grunt bank** with the retail
 //!    read-span cut, and an un-installed slot stays unstaged.

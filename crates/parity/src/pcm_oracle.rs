@@ -28,7 +28,7 @@
 //!   at the captured amplitude rather than ramping up from silence.
 //! - [`build_engine_pcm_trace`] mirrors
 //!   [`crate::audio_trace_oracle::build_engine_audio_trace`] - it boots a
-//!   [`crate::BootSession`], runs a private headless SPU + sequencer in
+//!   [`legaia_engine_session::native::NativeSession`], runs a private headless SPU + sequencer in
 //!   parallel, routes field-VM BGM events through a
 //!   [`crate::audio_trace_oracle::TraceBgmDirector`], and per-frame
 //!   accumulates the rendered PCM into a returned buffer. The retail
@@ -64,7 +64,8 @@ use crate::audio_trace_oracle::{
     AudioTraceBuildOptions, AudioTraceFrame, TraceBgmDirector, enter_scene_for_trace,
     sample_engine_frame_for_pcm, start_bgm_id_directly,
 };
-use crate::{BootConfig, BootSession};
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 
 /// PSX SPU internal output rate (Hz). [`Spu::tick`] yields one stereo
 /// sample at this rate.
@@ -239,7 +240,7 @@ pub struct EnginePcmTrace {
 ///
 /// Sibling of
 /// [`crate::audio_trace_oracle::build_engine_audio_trace`]. The trace
-/// loops are structurally identical - both call [`BootSession::tick`],
+/// loops are structurally identical - both call [`NativeSession::tick`],
 /// route BGM events through a [`TraceBgmDirector`], tick the
 /// sequencer, and advance the SPU by one frame of samples. The
 /// difference is that this function keeps the rendered samples
@@ -254,8 +255,8 @@ pub fn build_engine_pcm_trace(
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     // Same field-live entry the voice-mask trace takes: without it the field
     // VM steps nothing and no op `0x35` ever reaches the director, so the

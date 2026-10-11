@@ -6,8 +6,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{grid_byte_to_world, placement_spawn_relocation};
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_field::man_field_scripts::{grid_byte_to_world, placement_spawn_relocation};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn main() -> anyhow::Result<()> {
     let extracted = PathBuf::from("extracted");
@@ -16,7 +16,7 @@ fn main() -> anyhow::Result<()> {
 
     let scene = Scene::load(&p, &name)?;
     let man = scene.field_man_payload(&p)?.expect("no MAN");
-    let mf = legaia_asset::man_section::parse(&man)?;
+    let mf = legaia_scene_formats::man_section::parse(&man)?;
 
     for pl in mf.actor_placements(&man) {
         let reloc = placement_spawn_relocation(&mf, &man, &pl, &|_| false);

@@ -22,8 +22,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuRow, FieldMenuSession};
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_menus::field_menu::{FieldMenuGate, FieldMenuRow, FieldMenuSession};
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -155,18 +155,18 @@ fn scene_entry_seeds_the_save_row_ink() {
     );
     assert!(view.rows[load_idx].enabled, "Load is not gated here");
 
-    menu.tick(legaia_engine_core::field_menu::FieldMenuInput {
+    menu.tick(legaia_engine_menus::field_menu::FieldMenuInput {
         up: true,
         ..Default::default()
     });
     assert_eq!(menu.cursor(), FieldMenuRow::Save.index(), "still navigable");
-    let evs = menu.tick(legaia_engine_core::field_menu::FieldMenuInput {
+    let evs = menu.tick(legaia_engine_menus::field_menu::FieldMenuInput {
         cross: true,
         ..Default::default()
     });
     assert!(
         evs.contains(
-            &legaia_engine_core::field_menu::FieldMenuEvent::InvalidConfirm {
+            &legaia_engine_menus::field_menu::FieldMenuEvent::InvalidConfirm {
                 row: FieldMenuRow::Save
             }
         ),
@@ -185,19 +185,19 @@ fn scene_entry_seeds_the_save_row_ink() {
         menu.view().rows[save_idx].enabled,
         "Save draws white on map01"
     );
-    menu.tick(legaia_engine_core::field_menu::FieldMenuInput {
+    menu.tick(legaia_engine_menus::field_menu::FieldMenuInput {
         up: true,
         ..Default::default()
     });
-    let evs = menu.tick(legaia_engine_core::field_menu::FieldMenuInput {
+    let evs = menu.tick(legaia_engine_menus::field_menu::FieldMenuInput {
         cross: true,
         ..Default::default()
     });
-    assert!(
-        evs.contains(&legaia_engine_core::field_menu::FieldMenuEvent::Confirmed {
+    assert!(evs.contains(
+        &legaia_engine_menus::field_menu::FieldMenuEvent::Confirmed {
             row: FieldMenuRow::Save
-        })
-    );
+        }
+    ));
 
     // Re-entering the field scene clears it again: the flag is per-scene, not
     // a latch.

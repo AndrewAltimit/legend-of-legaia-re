@@ -2,8 +2,8 @@
 //! retail keeps in the top-left of every walkable frame.
 //!
 //! Pure wiring, like the rest of the play page's overlays: the decision is
-//! [`legaia_engine_vm::world_map_panel_actors::field_hud_tick`] driven through
-//! [`legaia_engine_core::world_map_panel_host::FieldPartyHud`], the rows come
+//! [`legaia_engine_field::world_map_panel_actors::field_hud_tick`] driven through
+//! [`legaia_engine_field::world_map_panel_host::FieldPartyHud`], the rows come
 //! from `field_party_hud_members`, and the geometry is
 //! [`legaia_engine_ui::field_party_hud::field_party_hud_draws_for`] - the same
 //! three pieces the native window calls, so the two hosts cannot draw
@@ -33,7 +33,7 @@ use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 
 impl LegaiaRuntime {
     /// Retail's `_DAT_8007B868` suppress gate, asked of the shared kernel
-    /// [`legaia_engine_core::world_map_panel_host::field_hud_suppressed`].
+    /// [`legaia_engine_core::world_views::world_map_panel_host::field_hud_suppressed`].
     /// This host answers only the term the world cannot: whether a page-side
     /// panel owns the frame. The enumeration used to be spelled out here and
     /// again in the native window, and the two copies had drifted.
@@ -43,7 +43,7 @@ impl LegaiaRuntime {
         };
         // A movie owning the screen is the native window's `cutscene` term:
         // the readout must not sit over an in-game FMV.
-        legaia_engine_core::world_map_panel_host::field_hud_suppressed(
+        legaia_engine_core::world_views::world_map_panel_host::field_hud_suppressed(
             &h.world,
             self.menu.is_open() || self.fmv.is_open(),
         )
@@ -63,7 +63,7 @@ impl LegaiaRuntime {
         // too: a script or conversation that holds the player restarts the
         // idle countdown every frame.
         let held = self.scene_host.host().is_some_and(|h| {
-            legaia_engine_core::world_map_panel_host::field_hud_rearm_held(&h.world)
+            legaia_engine_core::world_views::world_map_panel_host::field_hud_rearm_held(&h.world)
         });
         // Asked one frame late, as retail's routine reads it
         // (`FieldPartyHud::rearm_term`).
@@ -77,8 +77,8 @@ impl LegaiaRuntime {
                 (
                     // The Field HP Display option (`_DAT_800845C4`), the
                     // one engine read the native window shares.
-                    legaia_engine_core::world_map_panel_host::field_hud_view_mode(w),
-                    legaia_engine_core::world_map_panel_host::packed_pad(w.input.pad()),
+                    legaia_engine_core::world_views::world_map_panel_host::field_hud_view_mode(w),
+                    legaia_engine_field::world_map_panel_host::packed_pad(w.input.pad()),
                     w.player_actor_slot
                         .map(usize::from)
                         .and_then(|s| w.actors.get(s))
@@ -212,7 +212,7 @@ impl LegaiaRuntime {
         if self.field_party_hud_suppressed() {
             return empty;
         }
-        let Some(legaia_engine_vm::world_map_panel_actors::HudDecision::Draw { y }) =
+        let Some(legaia_engine_field::world_map_panel_actors::HudDecision::Draw { y }) =
             self.field_party_hud.decision()
         else {
             return empty;
@@ -223,7 +223,9 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host() else {
             return empty;
         };
-        let rows = legaia_engine_core::world_map_panel_host::field_party_hud_members(&host.world);
+        let rows = legaia_engine_core::world_views::world_map_panel_host::field_party_hud_members(
+            &host.world,
+        );
         let members: Vec<fp::FieldHudMember<'_>> = rows
             .iter()
             .map(|m| fp::FieldHudMember {

@@ -1,15 +1,15 @@
 //! Inline-dialogue driving: start / step / drive, and the talk-facing legs.
-//! Split out of `narration.rs`.
 
 use super::*;
 
 impl World {
     /// Begin running an inline interaction script through the field VM (the
-    /// faithful dialogue path - see [`crate::inline_dialogue`]). `inline` is the
+    /// faithful dialogue path - see [`legaia_engine_field::inline_dialogue`]). `inline` is the
     /// actor's interaction-script bytes (e.g. [`DialogRequest::inline`]), which
     /// begin at the first `0x1F` text segment. Replaces any running script.
     pub fn start_inline_dialogue(&mut self, inline: Vec<u8>) {
-        self.dialog.inline = Some(crate::inline_dialogue::InlineDialogue::from_inline(inline));
+        self.dialog.inline =
+            Some(legaia_engine_field::inline_dialogue::InlineDialogue::from_inline(inline));
     }
 
     /// Start the inline-script runner on a full interaction record, executing the
@@ -17,18 +17,20 @@ impl World {
     /// segment at `first_segment`. The prologue's `SysFlag.Test`/`JmpRel` chain
     /// selects which segment the box opens at per story state; if it can't reach a
     /// segment the runner falls back to `first_segment`. See
-    /// [`crate::inline_dialogue::InlineDialogue::with_prologue`].
+    /// [`legaia_engine_field::inline_dialogue::InlineDialogue::with_prologue`].
     pub fn start_inline_dialogue_with_prologue(
         &mut self,
         body: Vec<u8>,
         entry_pc: usize,
         first_segment: usize,
     ) {
-        self.dialog.inline = Some(crate::inline_dialogue::InlineDialogue::with_prologue(
-            std::sync::Arc::new(body),
-            entry_pc,
-            first_segment,
-        ));
+        self.dialog.inline = Some(
+            legaia_engine_field::inline_dialogue::InlineDialogue::with_prologue(
+                std::sync::Arc::new(body),
+                entry_pc,
+                first_segment,
+            ),
+        );
     }
 
     /// Advance the running inline interaction script one tick. Between text
@@ -46,7 +48,7 @@ impl World {
     //      0x20`, with the raw-`0x21` execute-then-stop and the stalled-PC
     //      stop mapped to the loop's end paths)
     pub fn step_inline_dialogue(&mut self, confirm: bool, up: bool, down: bool) {
-        use crate::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
+        use legaia_engine_field::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
         let Some(mut id) = self.dialog.inline.take() else {
             return;
         };
@@ -150,7 +152,7 @@ impl World {
                     }
                 } else {
                     // Still typing or scrolling: the pager's skip latch
-                    // completes the page (`crate::dialog_window`).
+                    // completes the page (`legaia_engine_dialog::dialog_window`).
                     panel.confirm_while_typing();
                 }
             }
@@ -222,7 +224,7 @@ impl World {
                     }
                     // Same name-escape resolution as the prop-interaction and
                     // cutscene panels; this is the main NPC-talk path.
-                    let mut panel = crate::dialog::OwnedDialogPanel::at_segment(
+                    let mut panel = legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(
                         std::sync::Arc::clone(&id.bytecode),
                         id.pc,
                     );
@@ -268,7 +270,8 @@ impl World {
             // dispatcher's halted-target early-out (`0x801DE90C..0x801DE940`)
             // returns an extended op aimed at it at its own PC: the dialog SM
             // sees a PC that did not move and retries next frame.
-            if id.face_ramp.is_some() && ext_target == Some(crate::field_env::PLAYER_ANCHOR_TARGET)
+            if id.face_ramp.is_some()
+                && ext_target == Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
             {
                 break;
             }
@@ -286,7 +289,10 @@ impl World {
             // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C, FUN_8003BC08
             if let Some(slot) = host.world.dialog.stepping_inline_npc
                 && let Some(ramp) =
-                    crate::inline_dialogue::TalkFaceRamp::from_own_acquire(&id.bytecode, id.pc)
+                    legaia_engine_field::inline_dialogue::TalkFaceRamp::from_own_acquire(
+                        &id.bytecode,
+                        id.pc,
+                    )
             {
                 host.world.face_leg_npc(slot, ramp);
                 id.own_turn = Some(slot);
@@ -319,7 +325,7 @@ impl World {
                 && let Some(target) = ext_target
                 && let Some(&move_id) = id.bytecode.get(id.pc + 2)
             {
-                if target == crate::field_env::PLAYER_ANCHOR_TARGET {
+                if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET {
                     host.world.bind_player_script_clip(move_id);
                 } else {
                     let fallback = host.world.player_clip_frames_hint();
@@ -338,7 +344,7 @@ impl World {
             // writes.
             //
             // A field NPC never poked with a clip gets its cursor on first use
-            // ([`crate::field_env::PropAnimBank::actor_clip_or_live`]). Any
+            // ([`legaia_engine_scene::field_env::PropAnimBank::actor_clip_or_live`]). Any
             // other target the port has no cursor for falls through to the
             // record's own word - the op has to land somewhere, and the
             // spin's timeout net covers the rest.
@@ -347,7 +353,7 @@ impl World {
                 .filter(|_| matches!(b & 0x7F, 0x2B..=0x2D))
                 .filter(|&target| {
                     let hint = host.world.player_clip_frames_hint();
-                    let flags = if target == crate::field_env::PLAYER_ANCHOR_TARGET {
+                    let flags = if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET {
                         Some(host.world.props.bank.player_clip(hint).flags)
                     } else if let Some(live) = host.world.npc_live_clip_for_target(target) {
                         // A field NPC never poked with a clip: its own
@@ -414,7 +420,8 @@ impl World {
             // prop runner already take the seat arm.
             // REF: FUN_8003C83C, FUN_801DE840 (0x23 / 4C 51 / 4D arms)
             let op = b & 0x7F;
-            let player_seat = ext_target == Some(crate::field_env::PLAYER_ANCHOR_TARGET)
+            let player_seat = ext_target
+                == Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
                 && (op == 0x23
                     || op == 0x4D
                     || (op == 0x4C && id.bytecode.get(id.pc + 2) == Some(&0x51)));
@@ -434,7 +441,7 @@ impl World {
             if let Some(t) = run_target {
                 let view = host.world.channel_view();
                 host.world.dialog.stepping_inline_npc =
-                    crate::field_channels::resolve_target(view, t)
+                    legaia_engine_field::field_channels::resolve_target(view, t)
                         .map(|ci| &view[ci])
                         .filter(|ch| !ch.object_bind)
                         .and_then(|ch| u8::try_from(ch.placement_index).ok());
@@ -446,7 +453,7 @@ impl World {
                     .and_then(|slot| host.world.actors.get(usize::from(slot)))
                     .map_or((0, 0), |a| (a.move_state.world_x, a.move_state.world_z));
                 let mut player_ctx = legaia_engine_vm::field::FieldCtx {
-                    script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+                    script_id: u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET),
                     flags: 0x0100_0000,
                     world_x: px as u16,
                     world_z: pz as u16,
@@ -485,9 +492,10 @@ impl World {
                 // and that leg's terminal frame is what clears both bits
                 // (`0x80038004` / `0x80038028`). The runner models the window
                 // on `face_ramp` rather than on the stand-in context.
-                if let Some(ramp) =
-                    crate::inline_dialogue::TalkFaceRamp::from_acquire(&id.bytecode, id.pc)
-                {
+                if let Some(ramp) = legaia_engine_field::inline_dialogue::TalkFaceRamp::from_acquire(
+                    &id.bytecode,
+                    id.pc,
+                ) {
                     id.face_ramp = Some(ramp);
                     host.world.step_talk_face_ramp(&mut id);
                 }
@@ -637,7 +645,9 @@ impl World {
                 {
                     id.park_frames = id.park_frames.saturating_add(1);
                     id.pc = final_pc;
-                    if id.park_frames > crate::inline_dialogue::INLINE_SPIN_PARK_TIMEOUT {
+                    if id.park_frames
+                        > legaia_engine_field::inline_dialogue::INLINE_SPIN_PARK_TIMEOUT
+                    {
                         id.done = true;
                     }
                     break;
@@ -677,7 +687,7 @@ impl World {
     }
 
     /// One walk-kernel visit on a talk's halt window
-    /// ([`crate::inline_dialogue::TalkFaceRamp`]): turn the player toward the
+    /// ([`legaia_engine_field::inline_dialogue::TalkFaceRamp`]): turn the player toward the
     /// actor the acquire names and, on the leg's terminal frame, close the
     /// window. No-op without a window.
     ///
@@ -690,7 +700,7 @@ impl World {
     /// actor other than the record's own (often the neighbouring placement,
     /// sometimes a second actor the same talk turns to), and
     /// the 24 in object records and 861 in cutscene records have no own
-    /// actor at all (`crates/engine-core/tests/talk_face_acquire_bind_disc.rs`).
+    /// actor at all (`crates/engine-scene/tests/talk_face_acquire_bind_disc.rs`).
     /// A bind the channel set cannot resolve falls back to the conversation's
     /// own placement; a window with no player or nothing to face closes at
     /// once rather than holding the talk's player-targeted ops.
@@ -705,7 +715,7 @@ impl World {
     /// REF: FUN_8003774C (the 0x4C arm)
     pub fn step_player_face_leg(
         &mut self,
-        ramp: &mut crate::inline_dialogue::TalkFaceRamp,
+        ramp: &mut legaia_engine_field::inline_dialogue::TalkFaceRamp,
     ) -> bool {
         let target = self.talk_face_target(ramp.program[4]);
         let player = self
@@ -732,7 +742,7 @@ impl World {
     }
 
     /// One walk-kernel visit of an NPC face-at leg
-    /// ([`crate::cutscene_timeline::CutsceneTimeline::npc_faces`]): turn
+    /// ([`legaia_engine_field::cutscene_timeline::CutsceneTimeline::npc_faces`]): turn
     /// placement `slot` toward the actor the bind names - the player for
     /// `0xF8`. Returns `true` on the terminal frame, or when the NPC has no
     /// position or the bind resolves to nothing (the leg then ends at once).
@@ -741,7 +751,7 @@ impl World {
     pub fn step_npc_face_leg(
         &mut self,
         slot: u8,
-        ramp: &mut crate::inline_dialogue::TalkFaceRamp,
+        ramp: &mut legaia_engine_field::inline_dialogue::TalkFaceRamp,
     ) -> bool {
         let bind = ramp.program[4];
         let target = if bind == 0xF8 {
@@ -771,7 +781,7 @@ impl World {
             return None;
         }
         let view = self.channel_view();
-        crate::field_channels::resolve_target(view, t)
+        legaia_engine_field::field_channels::resolve_target(view, t)
             .map(|ci| &view[ci])
             .filter(|ch| !ch.object_bind)
             .and_then(|ch| u8::try_from(ch.placement_index).ok())
@@ -802,15 +812,17 @@ impl World {
                 self.npcs.rotate_legs.remove(&slot);
                 if op1 & 0x7F == 0 {
                     if let Some(h) =
-                        crate::man_field_scripts::facing_index_to_engine_heading(op0 & 0xF)
+                        legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(
+                            op0 & 0xF,
+                        )
                     {
                         self.npcs.headings.insert(slot, h);
                     }
                 } else {
                     let cur = self.npcs.headings.get(&slot).copied().unwrap_or(0x800);
-                    let mut leg = crate::cutscene_timeline::TimelineFacing {
+                    let mut leg = legaia_engine_field::cutscene_timeline::TimelineFacing {
                         slot: Some(slot),
-                        state: vm::motion_vm::MotionState {
+                        state: legaia_engine_motion_vm::motion_vm::MotionState {
                             yaw: (cur as u16) & 0x0FFF,
                             speed: 1,
                             ..Default::default()
@@ -826,7 +838,8 @@ impl World {
                 Some(pc + 4)
             }
             0x4C => {
-                let (_, ramp) = crate::inline_dialogue::TalkFaceRamp::from_npc_acquire(bc, pc)?;
+                let (_, ramp) =
+                    legaia_engine_field::inline_dialogue::TalkFaceRamp::from_npc_acquire(bc, pc)?;
                 self.face_leg_npc(slot, ramp);
                 Some(pc + 6)
             }
@@ -837,25 +850,29 @@ impl World {
     /// One frame of a free-standing `0x38` rotate leg; `true` once it snaps.
     pub(super) fn step_npc_rotate_leg(
         &mut self,
-        leg: &mut crate::cutscene_timeline::TimelineFacing,
+        leg: &mut legaia_engine_field::cutscene_timeline::TimelineFacing,
     ) -> bool {
         leg.frames += 1;
-        let r = vm::motion_vm::step(
+        let r = legaia_engine_motion_vm::motion_vm::step(
             &mut leg.state,
-            vm::motion_vm::MotionTarget::default(),
+            legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
             &leg.program,
         );
         if leg.state.yaw_written {
             self.set_timeline_facing(leg.slot, leg.state.yaw as i16);
         }
-        r == vm::motion_vm::StepResult::Done || leg.frames >= WALK_PARK_TIMEOUT
+        r == legaia_engine_motion_vm::motion_vm::StepResult::Done || leg.frames >= WALK_PARK_TIMEOUT
     }
 
     /// Arm a free-standing NPC face-at leg (a talk record's
     /// `CC <id> 85|8E|8F ..`): its first frame now, the rest on the field
     /// tick ([`Self::tick_field_npc_face_legs`]). A new leg replaces one the
     /// actor had in flight - retail overwrites `+0x94`.
-    pub fn face_leg_npc(&mut self, slot: u8, mut ramp: crate::inline_dialogue::TalkFaceRamp) {
+    pub fn face_leg_npc(
+        &mut self,
+        slot: u8,
+        mut ramp: legaia_engine_field::inline_dialogue::TalkFaceRamp,
+    ) {
         self.npcs.face_legs.remove(&slot);
         self.npcs.rotate_legs.remove(&slot);
         if !self.step_npc_face_leg(slot, &mut ramp) {
@@ -878,7 +895,10 @@ impl World {
         }
     }
 
-    pub fn step_talk_face_ramp(&mut self, id: &mut crate::inline_dialogue::InlineDialogue) {
+    pub fn step_talk_face_ramp(
+        &mut self,
+        id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
+    ) {
         let Some(mut ramp) = id.face_ramp else {
             return;
         };
@@ -917,7 +937,7 @@ impl World {
     // REF: FUN_8003C83C (the id resolve the kernel's FaceTarget arm shares)
     pub(super) fn talk_face_target(&self, bind: u8) -> Option<(i16, i16)> {
         let view = self.channel_view();
-        let ch = &view[crate::field_channels::resolve_target(view, bind)?];
+        let ch = &view[legaia_engine_field::field_channels::resolve_target(view, bind)?];
         let own = (ch.ctx.world_x as i16, ch.ctx.world_z as i16);
         if ch.object_bind {
             return Some(own);
@@ -928,7 +948,7 @@ impl World {
 
     /// Live-loop bridge for the inline-script runner: when [`crate::world::WorldToggles::use_vm_dialogue`]
     /// is set, this starts the runner the frame a field dialogue opens (from
-    /// [`crate::world::DialogState::current`]'s inline buffer), steps it from the current pad
+    /// [`legaia_engine_field::dialog_state::DialogState::current`]'s inline buffer), steps it from the current pad
     /// edges (Cross/Circle = confirm, Up/Down = menu cursor), and tears it down
     /// (clearing `current_dialog`) when the conversation ends. No-op when the
     /// flag is off, so the default simplified path is untouched.
@@ -953,11 +973,12 @@ impl World {
         // the first segment from the request's inline buffer.
         if self.dialog.inline.is_none() {
             if let Some(prologue) = self.dialog.active_inline_prologue.take() {
-                let mut runner = crate::inline_dialogue::InlineDialogue::with_prologue(
-                    std::sync::Arc::new(prologue.body),
-                    prologue.entry_pc,
-                    prologue.first_segment,
-                );
+                let mut runner =
+                    legaia_engine_field::inline_dialogue::InlineDialogue::with_prologue(
+                        std::sync::Arc::new(prologue.body),
+                        prologue.entry_pc,
+                        prologue.first_segment,
+                    );
                 runner.npc_slot = self.dialog.active_inline_slot.take();
                 self.dialog.inline = Some(runner);
             } else if let Some(req) = self.dialog.current.as_ref() {
@@ -1025,7 +1046,7 @@ impl World {
             self.dialog.active_inline_prologue = None;
             self.dialog.active_inline_slot = None;
             self.pending_field_events
-                .push(crate::field_events::FieldEvent::DialogDismissed);
+                .push(legaia_engine_field::field_events::FieldEvent::DialogDismissed);
         }
     }
 }

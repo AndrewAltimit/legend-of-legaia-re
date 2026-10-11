@@ -12,7 +12,7 @@
 //! sprite arm ([`crate::effect_sprite_arm`]) takes: scaled by
 //! `+0x72 / 0x1000`, turned by the rotation banks, the colour word `+0x74`
 //! and level `+0x78` ORing ABE / ABR into the packets and depth-cueing the
-//! packet colours ([`crate::baka_impact_fx::ColourWord`]). The builder is SCUS
+//! packet colours ([`legaia_render_kernels::sprite_arm::ColourWord`]). The builder is SCUS
 //! code, so it draws in every mode.
 //!
 //! The same builder has three direct callers besides the dispatcher: the
@@ -80,8 +80,8 @@
 
 use legaia_engine_vm::move_vm::ActorState;
 
-use crate::baka_impact_fx::ColourWord;
 use crate::effect_ribbon::TrigTable;
+use legaia_render_kernels::sprite_arm::ColourWord;
 
 /// Texture page word the untextured modes' packets carry (`li a3,0x1f` at
 /// `0x80028C74`) - the same 2x2 patch the ribbon samples.
@@ -988,7 +988,7 @@ pub fn ground_shadow_src(inner: u32, outer: u32, radius: i16) -> [u8; 0x24] {
 /// the builder in mode `1` (the XZ plane, shape `0`) over
 /// [`SHADOW_SEGMENTS`] columns, drawn through `FUN_80043390` with
 /// [`SHADOW_FLAG_WORD`] - semi-transparent, subtractive. `inner` / `outer` /
-/// `radius` come from `legaia_engine_vm::battle_actor_draw::shadow_plan`.
+/// `radius` come from `legaia_engine_battle_vm::battle_actor_draw::shadow_plan`.
 ///
 /// PORT: FUN_80048A08 (the ground-shadow build and draw, `0x800491FC..0x800492BC`)
 pub fn ground_shadow_mesh(inner: u32, outer: u32, radius: i16) -> legaia_tmd::mesh::VramMesh {

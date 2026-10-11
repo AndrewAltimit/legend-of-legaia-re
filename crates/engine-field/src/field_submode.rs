@@ -1,10 +1,10 @@
 //! The field overlay's **op-`0x49` submode** family: opening a sub-screen,
 //! spawning its driver actor, and laying out its list panel.
 //!
-//! PORT: FUN_801D9C3C, FUN_801DE478, FUN_801E6984, FUN_801D84B4
+//! PORT: FUN_801D9C3C, FUN_801DE478, FUN_801E6984
 //!
 //! A field script reaches a sub-screen through actor `+0x50` handler slots (see
-//! `legaia_engine_core::field_menu_dispatch` and `docs/subsystems/script-vm.md`). The four
+//! `legaia_engine_core::field_menu_dispatch` and `docs/subsystems/script-vm.md`). The three
 //! routines here are the entry side of that:
 //!
 //! - [`open_submode`] - `FUN_801D9C3C`: reset the submode's context block and
@@ -13,11 +13,10 @@
 //!   spawn one actor from a fixed template and seed its state byte.
 //! - [`submode_panel_rows`] - `FUN_801E6984`: the list panel's per-row layout +
 //!   colour selection.
-//! - [`request_card_mode`] - `FUN_801D84B4`: a six-store leaf that hands the
-//!   master mode to CARD.
 //!
 //! Provenance: the `overlay_cutscene_dialogue_*` / `overlay_cutscene_mapview_*`
-//! field captures, which agree byte for byte at all four addresses. **Do not
+//! field captures, which agree byte for byte at all three addresses (and at
+//! `FUN_801D84B4`, the CARD request leaf now in `legaia_engine_mode::card_request`). **Do not
 //! use the `overlay_0897_*` dumps for three of them** - `overlay_0897_801d9c3c`
 //! resolves `entry=801d9c0c` and `overlay_0897_801de478` resolves
 //! `entry=801de468` (the dumper names files after the *requested* address while
@@ -38,7 +37,6 @@
 //! [`submode_panel_rows`] stays disclosed and its note says why: the op-`0x49`
 //! sub-op-4 handler that installs its panel is ported only on the world-map
 //! panel host, not on the field submode screen the `kor` scripts reach.
-//! [`request_card_mode`] is wired through the mode seat.
 //!
 //! REF: FUN_80020DE0 (actor spawn), FUN_8003CF04 (actor-by-handler search),
 //! FUN_8003AEB0 (the MAN loader that calls the first two),
@@ -272,63 +270,6 @@ pub fn submode_panel_rows(
     }
     let _ = origin.0;
     out
-}
-
-/// Master game mode the CARD request leaf installs (`0x16` = 22, the
-/// memory-card / menu overlay pair's init half - `legaia_engine_core::mode::GameMode::CardInit`).
-pub const CARD_REQUEST_MODE: i16 = 0x16;
-
-/// What the CARD request leaf writes.
-///
-/// REF: FUN_801D84B4 (`0x801d84b4..0x801d84cc`) - the `PORT:` for this address
-/// sits on [`request_card_mode`], the free function that builds this record.
-/// This is a plain data struct and the file declares no `impl` block at all, so
-/// `port-catalog.py` widens the type anchor to the whole module - which is live
-/// through [`open_submode`], and that made a correct `NOT WIRED:` here read as
-/// a stale disclosure. The wiring verdict lives on the function instead.
-///
-/// Seven instructions, no `jal` at all - two stores and `jr ra` with the second
-/// store in the delay slot. It sets the master game mode word `_DAT_8007B83C`
-/// to [`CARD_REQUEST_MODE`] and raises `_DAT_8007BB00`.
-///
-/// It is worth knowing that this leaf is the other half of a gate already
-/// ported: the field initialiser's BGM wait barrier spins until the audio
-/// driver acknowledges the track **unless** the master mode is `0x16`
-/// (`legaia_engine_core::mode_entry_init::FIELD_BGM_WAIT_ABORT_MODE`). So a CARD request
-/// raised while a scene is loading is what lets that barrier give up.
-///
-/// This function was previously in the port catalog's **ignore list** under a
-/// "PADDING" reason. That reason holds for four minigame images that carry
-/// filler at this VA; it does not hold for field (897), where the address is a
-/// real entry with a real body. A six-store leaf is still a function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CardRequest {
-    /// Value written to the master game mode word `_DAT_8007B83C`.
-    pub game_mode: i16,
-    /// Value written to `_DAT_8007BB00`.
-    pub flag: u32,
-}
-
-/// The CARD request leaf's two stores.
-///
-/// PORT: FUN_801D84B4.
-///
-/// WIRED: `legaia_engine_core::mode::ModeSeat::request_card_mode` applies both stores,
-/// and `engine-shell`'s `BootSession` opens the pause menu through it - the
-/// seat is the production owner of the mode word this leaf writes.
-///
-/// The second store had "no engine counterpart at all, its consumer is not in
-/// the ported set" written on it. That was wrong on both halves: `0x8007BB00`
-/// is the front-end entry word, its two retail readers are `init.pak`'s
-/// hand-off arm (`0x801CF4B0`, ported at `legaia_engine_core::mode::ModeSeat::boot_handoff`)
-/// and the title dispatcher's `Init` routing (`0x801DD97C`, already ported as
-/// `legaia_engine_vm::title_overlay::ENTRY_WORD_ADDR`), and the seat now holds
-/// the word both of them read.
-pub const fn request_card_mode() -> CardRequest {
-    CardRequest {
-        game_mode: CARD_REQUEST_MODE,
-        flag: 1,
-    }
 }
 
 #[cfg(test)]

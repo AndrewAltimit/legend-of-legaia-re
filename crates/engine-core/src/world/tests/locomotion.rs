@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn locomotion_moves_player_on_dpad() {
@@ -278,7 +279,7 @@ fn locomotion_deterministic_across_identical_pad_stream() {
 
 #[test]
 fn cutscene_narration_roller_is_timer_driven_not_confirm_paced() {
-    use crate::cutscene_narration::OPENING_FRAME_STEP;
+    use legaia_engine_field::cutscene_narration::OPENING_FRAME_STEP;
     let mut world = World::new();
     world.mode = SceneMode::Title; // isolate the top-of-tick narration advance
     // The opening's cadence, which its prescript installs (ext `0x2F`).
@@ -329,7 +330,7 @@ fn locomotion_held_while_helper_context_active() {
     // the player's engaged bit for every context it steps
     // (`FUN_80039B7C` `0x80039DB8..0x80039DD4`), so the pad is refused until
     // the record ends. This test used to assert the opposite.
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.install_field_player(0);
@@ -371,7 +372,7 @@ fn locomotion_held_while_helper_context_active() {
 
 #[test]
 fn locomotion_gated_while_cutscene_timeline_active() {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.install_field_player(0);
@@ -836,7 +837,7 @@ fn locomotion_frozen_through_the_encounter_transition() {
     world.install_field_player(0);
     world.actors[0].move_state.world_z = 200;
     world.install_encounter_bracket();
-    let roll = crate::encounter::EncounterRoll {
+    let roll = legaia_engine_battle::encounter::EncounterRoll {
         formation_id: 0,
         row_index: 0,
         roll_q8: 0,
@@ -855,11 +856,13 @@ fn locomotion_frozen_through_the_encounter_transition() {
 
     // A prop run battle entry drops releases the engaged bit with it.
     world.actors[0].move_state.flags |= 0x0008_0000;
-    let mut runner =
-        crate::inline_dialogue::InlineDialogue::new(std::sync::Arc::new(vec![0x21]), 0);
+    let mut runner = legaia_engine_field::inline_dialogue::InlineDialogue::new(
+        std::sync::Arc::new(vec![0x21]),
+        0,
+    );
     runner.prop_anchor = Some((1, 1));
     world.dialog.inline = Some(runner);
-    let formation = crate::monster_catalog::FormationDef {
+    let formation = legaia_engine_battle::monster_catalog::FormationDef {
         formation_id: 0,
         slots: Vec::new(),
         label: String::new(),
@@ -937,7 +940,9 @@ fn the_menu_accept_honours_retails_pad_controller_gates_and_buzzes_on_the_lock()
     );
     assert_eq!(
         world.audio.sfx_ring_ops,
-        vec![crate::world::SfxRingOp::ReplaceLast(FIELD_MENU_DENY_CUE)],
+        vec![legaia_engine_system::sound_state::SfxRingOp::ReplaceLast(
+            FIELD_MENU_DENY_CUE
+        )],
         "and buzzes through the overwrite producer"
     );
     world.flags.story_flags &= !FIELD_MENU_LOCK_BIT;

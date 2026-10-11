@@ -1,14 +1,14 @@
 //! Disc-free runtime oracle for the fishing bring-up's rod scan: the live bag
 //! decides which rod a session runs on, and the persistent cell follows.
 //!
-//! The kernel is [`legaia_engine_core::fishing::entry_rod_index`] (retail
+//! The kernel is [`legaia_engine_fishing::fishing::entry_rod_index`] (retail
 //! `FUN_801CF070`, `0x801cf35c..0x801cf39c`); the host is
 //! [`World::resolve_fishing_entry_rod`], which the mode-24 door warp calls on
 //! the way into a venue. What the test pins is the part that bites: a stale
 //! index must not survive into the tension gauge's divisor.
 
-use legaia_engine_core::fishing::{ROD_KINDS, rod_item_id};
 use legaia_engine_core::world::World;
+use legaia_engine_fishing::fishing::{ROD_KINDS, rod_item_id};
 
 /// Rods are items `0xA0..=0xA2`; give the party exactly one of them.
 fn world_holding(rod: u32) -> World {

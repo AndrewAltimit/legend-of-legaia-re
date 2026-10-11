@@ -14,10 +14,10 @@ battle numeral sheet all live there.
 | Thing | Where | Parser |
 |---|---|---|
 | `efect.dat` 2-pack | extraction 0873; live at `_DAT_8007BD5C` | `legaia_engine_vm::effect_vm::EffectCatalog::from_efect_dat_bytes` |
-| `befect_data` cluster | extraction 0870..0873 (`etim` / `etmd` / `vdf` / `efect`) | `legaia_asset::befect_cluster`, CLI `asset befect-cluster` |
+| `befect_data` cluster | extraction 0870..0873 (`etim` / `etmd` / `vdf` / `efect`) | `legaia_actor_formats::befect_cluster`, CLI `asset befect-cluster` |
 | Runtime effect pool | `_DAT_8007BD30`, 5008 bytes | [`effect-vm.md`](../subsystems/effect-vm.md) |
 | Consumers | `FUN_801DE914` / `FUN_801DFDF8` / `FUN_801E0088`, battle overlay PROT 0898 | - |
-| On-disc bundle `0x02018B0C` | `0000_init_data` only | `legaia_asset::effect_bundle` |
+| On-disc bundle `0x02018B0C` | `0000_init_data` only | `legaia_container_formats::effect_bundle` |
 
 ```mermaid
 flowchart TD
@@ -54,7 +54,7 @@ consumer.
 | `pack1` | - | `u32 count, u32 entry_offsets[count]` | effect scripts (33; at `0x900`) |
 
 The pack offset tables hold **absolute file offsets**, not the `word*4`
-offsets of [`asset::pack`](pack.md).
+offsets of [`container-formats::pack`](pack.md).
 
 ### Sprite atlas entry (8 bytes)
 
@@ -144,7 +144,7 @@ through the **raw TOC index** (`FUN_8003e8a8`; raw = extraction + 2). Read off
 | Loader case | Dev-path string | Raw index | Extraction | Content |
 |---|---|---|---|---|
 | `0x8` | `h:\prot\battle\etim.dat` (`0x80015358`) | `0x368` | **0870** | effect texture pages (3-TIM pack) |
-| `0xb` | `h:\prot\battle\etmd.dat` (`0x80015370`) | `0x369` | **0871** | effect 3D-model library (30-TMD `asset::pack`, registered via `FUN_80026b4c`) |
+| `0xb` | `h:\prot\battle\etmd.dat` (`0x80015370`) | `0x369` | **0871** | effect 3D-model library (30-TMD `container-formats::pack`, registered via `FUN_80026b4c`) |
 | `0xb` | `h:\prot\battle\vdf.dat` (`0x80015388`) | `0x36A` | **0872** | VDF buffer (32-entry offset pack; asset type `0x07`, appended via `FUN_8001fbcc`) |
 | `0xc` | `data\battle\efect.dat` (`0x800153a0`) | `0x36B` | **0873** | the 2-pack; initialised by `FUN_801DE914` |
 | `0x4` | - (battle-type-conditional) | `0x367` / `0x36D` | 0869 / 0875 | streaming files `[type-0 VAB chunk][type-3 chunk]`; `0x36D` when `DAT_8007bd11 == 4`. Outside the block: these are the class-2 sound banks ([sfx-table.md](sfx-table.md)) |
@@ -160,7 +160,7 @@ character mesh pack, auxiliary models and field-character textures
 | Entry | Dev name | Structure |
 |---|---|---|
 | 0870 | `etim.dat` | 16-byte pack header `[u32 3][u32 word_offsets 0x4, 0x208C, 0x4114]` (×4 → `0x10`, `0x8230`, `0x10450`); three 64×256 4bpp TIMs targeting VRAM `(320,0)` / `(384,0)` / `(448,0)`, CLUTs `(0,474)` / `(0,475)` / `(0,476)`. The first TIM's flags word is `0x00010008` (bit 16 set; strict TIM parsers reject it) |
-| 0871 | `etmd.dat` | `asset::pack`, `word[0] = 30`, 30 Legaia-TMD magics at the declared word offsets |
+| 0871 | `etmd.dat` | `container-formats::pack`, `word[0] = 30`, 30 Legaia-TMD magics at the declared word offsets |
 | 0872 | `vdf.dat` | offset pack, 32 strictly-ascending entries (~96-byte records) |
 | 0873 | `efect.dat` | the 2-pack: 144 atlas entries, `pack0@0x488` (14 batches), `pack1@0x900` (33 scripts) |
 
@@ -207,7 +207,7 @@ not a full-screen flash
 
 A host with the battle effect atlas resident already has the digits. The
 per-hit numeral's geometry and pop / rise envelope are pinned in
-[`engine-vm::battle_value_readout`](../../crates/engine-battle-vm/src/battle_value_readout.rs).
+[`engine-battle-vm::battle_value_readout`](../../crates/engine-battle-vm/src/battle_value_readout.rs).
 
 ### Effect texels in VRAM - pixel-verified
 
@@ -229,7 +229,7 @@ Two texture pools serve battle effects:
 frame matches partially). Its pages sit at `fb_y = 0` in columns the field
 uses for town stage textures, so field captures hold unrelated texels there.
 The engine uploads it on battle entry
-(`engine-core::scene::upload_flame_atlas_into_vram`) into a throwaway VRAM copy
+(`engine-scene::scene::upload_flame_atlas_into_vram`) into a throwaway VRAM copy
 that battle exit discards.
 
 **The `player_data` §2 band** holds the three field-character atlases at
@@ -270,7 +270,7 @@ solo-party capture they occupy `DAT_8007C018[3..32]`; the library base is
 - Gimard's flame is `DAT_8007C018[26]` in that capture = pack entry 23
   ([`battle-action.md`](../subsystems/battle-action.md#seru-magic-summon-overlay-dispatch)).
 - The engine loads the library at scene entry
-  (`engine-core::scene::seed_effect_model_library_from_etmd`) into
+  (`engine-core::scene_host::seed_effect_model_library_from_etmd`) into
   `World::global_tmd_pool[3..=32]`, overwriting the two field-pack tail slots
   as retail's battle init does. `GIMARD_TAIL_FIRE_MODEL_INDEX = 26`.
 - None of the five TMDs of extraction 0874 §0 are resident in main RAM during
@@ -280,7 +280,7 @@ solo-party capture they occupy `DAT_8007C018[3..32]`; the library base is
   Its smallest TMD (2 objects / 18 verts / 25 prims) bakes
   `cba=0x778E@(224,478)` / `tsb=0x001D@(832,256)` and looks flame-like; the
   engine keeps it only as a preview fallback
-  (`engine-core::scene::ETMD_TAIL_FIRE_MODEL_INDEX`).
+  (`engine-core::scene_host::ETMD_TAIL_FIRE_MODEL_INDEX`).
 
 #### How the Gimard flame renders
 
@@ -290,7 +290,7 @@ attack is *Burning Attack*, → PROT 903), which supplies the summon's spawn
 logic.
 
 - **Primitives.** In a mid-cast capture (decoded with
-  `legaia_mednafen::prim_pool`) the flame is about 15 Gouraud-textured
+  `legaia_ram_image::prim_pool`) the flame is about 15 Gouraud-textured
   primitives (`POLY_GT3` / `POLY_GT4`) in a ~40×50 px region. All sample page
   `(832,256)` at 4bpp with CLUT **row 478**, across columns 0 / 16 / 32 at
   once - the `player_data` §2 band, not the 0870 pages. The `cba` / `tsb` are
@@ -312,7 +312,7 @@ logic.
   keyframes. The port is the battle TRS-keyframe draw in
   `engine-vm/anim_vm.rs`.
 - **Stager overlays.** Extraction 903..913 carry real move-VM part records,
-  recovered at link base `0x801F69D8` by `legaia_asset::summon_overlay` (the
+  recovered at link base `0x801F69D8` by `legaia_overlay_images::summon_overlay` (the
   `jal 0x80023070` is in the SCUS stager `FUN_80021B04`, not in the overlay).
   The stager spawns 8 flame part-actors via `FUN_80021B04`; that phase loop is
   decoded from extraction 905, the spell-`0x83` slot. The engine drives the
@@ -416,7 +416,7 @@ row's **source x** (values `0x00` / `0xB0` / `0xC0` / `0xD0`), not a sound id
 `FUN_801e22c8 in PROT entry 0898`,
 `ghidra/scripts/funcs/overlay_battle_action_801e22c8.txt` (disassembly).
 
-Engine: `engine-core::move_power::EffectListEntry` (`Spawn` vs `AltEffect`).
+Engine: `game-tables::move_power::EffectListEntry` (`Spawn` vs `AltEffect`).
 
 <a id="effect-id--triggering-move---the-join-run-against-the-disc"></a>
 
@@ -424,7 +424,7 @@ Engine: `engine-core::move_power::EffectListEntry` (`Spawn` vs `AltEffect`).
 
 There is no string table naming effects; an effect's identity is its
 `(space, id)` key plus the moves that cite it. The join derives from the disc:
-`legaia_asset::move_power::effect_trigger_index` builds it and
+`legaia_game_tables::move_power::effect_trigger_index` builds it and
 `asset move-power <PROT 0898 entry> --effect-index` prints it (`--json` for
 the machine form). On the retail disc, 38 of the 44 move-power records are
 populated and cite **28** distinct keys. "Fired from" is the union over a
@@ -476,7 +476,7 @@ What the table shows:
 - **Six of the fifteen `proto3d` keys swap a palette.** Nine carry CLUT
   source-x `0x00`; `0x1F` is `0xB0`; `0x1E`, `0x27`, `0x28`, `0x2A`, `0x2B`,
   `0x2C` are `0xD0`. Accessor
-  `legaia_asset::move_power::EffectAuxTables::effect_clut_x`; the CLI prints
+  `legaia_game_tables::move_power::EffectAuxTables::effect_clut_x`; the CLI prints
   the column under the stale label `sfx=`.
 
 Move ids resolve to names through the SCUS spell-name table
@@ -497,7 +497,7 @@ TOC index: `summon.dat` = `0x37F`, `readef.DAT` = `0x380`, i.e. **extraction
 entries 893 / 894** (raw − 2), 103 / 78 slots of `0x10800` bytes. Byte-verified
 in the `battle_gimard_tail_fire_a` save state (stream buffer ↔ disc slot;
 slot-0 CLUT + texture page ↔ VRAM `(0,488)` / `(512,0)`). Format and parser
-(`legaia_asset::summon_readef`): [`summon-readef.md`](summon-readef.md).
+(`legaia_actor_formats::summon_readef`): [`summon-readef.md`](summon-readef.md).
 
 <a id="open-questions"></a>
 
@@ -532,7 +532,7 @@ positions of sub-TMDs. What they index is not traced: no consumer has been
 reached.
 
 ```rust
-use legaia_asset::effect_bundle;
+use legaia_container_formats::effect_bundle;
 if let Some(eb) = effect_bundle::detect(&buf) {
     println!("magic @ 0x{:X}, asset region 0x{:X}..0x{:X}",
              eb.magic_offset, eb.assets_start, eb.file_size);
@@ -543,7 +543,7 @@ if let Some(eb) = effect_bundle::detect(&buf) {
 }
 ```
 
-Implementation: `crates/asset/src/effect_bundle.rs`.
+Implementation: `crates/container-formats/src/effect_bundle.rs`.
 
 ### The `0x01059B84` word is not this bundle's sibling magic
 

@@ -12,9 +12,12 @@
 //! Disc-free: the fighters are synthetic configs, so nothing here is gated
 //! on `LEGAIA_DISC_BIN` and no Sony bytes are touched.
 
-use legaia_engine_core::baka_fighter::{BakaFight, FighterConfig, MatchPhase, TALLY_FADE_GATE};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_minigames::baka_fighter::{
+    BakaFight, FighterConfig, MatchPhase, TALLY_FADE_GATE,
+};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 const PRIZE: u32 = 100;
 

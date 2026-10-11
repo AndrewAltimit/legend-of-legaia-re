@@ -1,7 +1,4 @@
 //! VDF/global-TMD registration, event/spawn drains, battle-event folding, and status-effect ticking.
-//!
-//! Split out of `world.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
 
 use super::*;
 
@@ -76,11 +73,11 @@ impl World {
     /// scene-bank index ([`Self::field_scene_bank`]); an operand in `-5..0`
     /// reaches the player head, which [`Self::global_tmd`] holds.
     pub fn field_pool_tmd(&self, operand: i16) -> Option<&Arc<GlobalTmd>> {
-        let slot = i32::from(operand) + i32::from(crate::model_bank::SCENE_BANK_BASE);
+        let slot = i32::from(operand) + i32::from(legaia_engine_scene::model_bank::SCENE_BANK_BASE);
         if slot < 0 {
             return None;
         }
-        let bank = slot - i32::from(crate::model_bank::SCENE_BANK_BASE);
+        let bank = slot - i32::from(legaia_engine_scene::model_bank::SCENE_BANK_BASE);
         if bank >= 0 {
             self.field_scene_bank.get(bank as usize)?.as_ref()
         } else {
@@ -198,7 +195,7 @@ impl World {
     /// `legaia_engine_audio::XaClipBank` plays each one; the request is a
     /// `(clip_slot, channel, duration_sectors)` triple in the retail
     /// starter's own terms.
-    pub fn drain_battle_xa_cues(&mut self) -> Vec<crate::sfx_cue::XaVoiceClip> {
+    pub fn drain_battle_xa_cues(&mut self) -> Vec<legaia_engine_system::sound_state::XaVoiceClip> {
         std::mem::take(&mut self.audio.battle_xa_cues)
     }
 
@@ -208,14 +205,18 @@ impl World {
     /// can resolve to, both candidates of a coin-flip module included. A host
     /// that decodes clips lazily stages these ahead; one that decodes on
     /// demand drains and drops them. Nothing plays from here.
-    pub fn drain_battle_xa_prestage(&mut self) -> Vec<crate::sfx_cue::XaVoiceClip> {
+    pub fn drain_battle_xa_prestage(
+        &mut self,
+    ) -> Vec<legaia_engine_system::sound_state::XaVoiceClip> {
         std::mem::take(&mut self.audio.battle_xa_prestage)
     }
 
     /// Drain the hit events the attack band resolved
-    /// ([`crate::battle_events::BattleHitEvent`]; one per damage-kernel
+    /// ([`legaia_engine_battle::battle_events::BattleHitEvent`]; one per damage-kernel
     /// resolution). Cosmetic: the accumulate / apply has already happened.
-    pub fn drain_battle_hit_events(&mut self) -> Vec<crate::battle_events::BattleHitEvent> {
+    pub fn drain_battle_hit_events(
+        &mut self,
+    ) -> Vec<legaia_engine_battle::battle_events::BattleHitEvent> {
         std::mem::take(&mut self.battle.hit_events)
     }
 
@@ -225,7 +226,7 @@ impl World {
 
     /// Drain the battle **effect-script spawn requests** queued this frame -
     /// one per effect record the per-actor effect-script walk consumed
-    /// ([`crate::action_effect_script::step_effect_script`], driven from
+    /// ([`legaia_engine_effects::action_effect_script::step_effect_script`], driven from
     /// [`World::tick_battle_animations`]). Cosmetic: each carries a world
     /// position already rotated by the acting actor's facing. The host routes
     /// the `direct` form into the 2D effect pool
@@ -237,7 +238,7 @@ impl World {
     /// Draining also queues each table-form spawn's **per-effect CLUT stage**
     /// onto [`crate::world::BattleState::clut_stages`], mirroring retail's table arm: only
     /// a plain code below
-    /// [`crate::action_effect_script::TABLE_CLUT_GATE`] consults the
+    /// [`legaia_engine_effects::action_effect_script::TABLE_CLUT_GATE`] consults the
     /// `0x801F6418` map, and only a non-zero byte performs the copy. The map
     /// comes off the installed move-power catalog's aux tables (the same PROT
     /// 0898 parse the table spawner reads its prototypes from), so a
@@ -249,11 +250,13 @@ impl World {
     /// sound-driver command lane. Both readings are false - the byte is a
     /// VRAM x and the call is `MoveImage` - so the SFX scheduler was being
     /// handed palette columns to look up in a sound bank. See
-    /// [`crate::battle_effect_clut`].
+    /// [`legaia_engine_battle::battle_effect_clut`].
     ///
     /// PORT: FUN_801DEA50 (`0x801df0d4..0x801df134`, the CLUT-stage arm)
     /// REF: FUN_80058490 (`MoveImage` - the blit the `RECT` reaches)
-    pub fn drain_battle_effect_spawns(&mut self) -> Vec<crate::battle_events::BattleEffectSpawn> {
+    pub fn drain_battle_effect_spawns(
+        &mut self,
+    ) -> Vec<legaia_engine_battle::battle_events::BattleEffectSpawn> {
         if let Some(aux) = self
             .tables
             .move_power
@@ -264,7 +267,10 @@ impl World {
                 .battle
                 .effect_spawns
                 .iter()
-                .filter(|s| !s.direct && s.effect < crate::action_effect_script::TABLE_CLUT_GATE)
+                .filter(|s| {
+                    !s.direct
+                        && s.effect < legaia_engine_effects::action_effect_script::TABLE_CLUT_GATE
+                })
                 .filter_map(|s| aux.effect_clut_x(s.effect).filter(|&b| b != 0))
                 .collect();
             self.battle.clut_stages.extend(stages);
@@ -275,7 +281,7 @@ impl World {
     /// Drain the battle **effect CLUT stages** queued this frame - one source
     /// x per table-form effect spawn whose `0x801F6418` map byte is non-zero.
     /// A host applies each with
-    /// [`crate::battle_effect_clut::stage_effect_clut`] against its battle
+    /// [`legaia_engine_battle::battle_effect_clut::stage_effect_clut`] against its battle
     /// VRAM and re-uploads; purely cosmetic, like the spawns themselves.
     pub fn drain_battle_clut_stages(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.battle.clut_stages)
@@ -285,7 +291,9 @@ impl World {
     /// party art with a real action constant, pushed at art start). The host
     /// resolves each against its arts-voice bank and plays the CD-XA shout
     /// clip; nothing here mutates gameplay state.
-    pub fn drain_battle_shout_cues(&mut self) -> Vec<crate::battle_events::BattleShoutCue> {
+    pub fn drain_battle_shout_cues(
+        &mut self,
+    ) -> Vec<legaia_engine_battle::battle_events::BattleShoutCue> {
         std::mem::take(&mut self.audio.battle_shout_cues)
     }
 
@@ -359,7 +367,7 @@ impl World {
                     let hp = target.battle.hp;
                     // Rot's applier rolls the disabled limb (`rand % 3`,
                     // the retail `1 << (rand%3 + 3)` bit pick).
-                    if applied == Some(legaia_engine_vm::status_effects::StatusKind::Rot) {
+                    if applied == Some(legaia_engine_battle_vm::status_effects::StatusKind::Rot) {
                         let limb = (self.next_rand() % 3) as u8;
                         self.battle.status_effects.set_rot_limb(*target_slot, limb);
                     }
@@ -378,8 +386,8 @@ impl World {
                 // Retail escape teardown (battle SM state 0x66): stage the
                 // 0x40-frame black→white screen fade the SM spawns through
                 // the fade primitive before the battle unloads.
-                self.presentation.fade = Some(crate::fade::FadeState::load(
-                    &crate::fade::escape_fade_template(),
+                self.presentation.fade = Some(legaia_engine_system::fade::FadeState::load(
+                    &legaia_engine_system::fade::escape_fade_template(),
                 ));
                 // A petrified member returns to normal when the party
                 // escapes (retail's run band floors every downed party
@@ -453,7 +461,7 @@ impl World {
 /// [body...]` buffer - the lookup [`World::vdf_record_bytes`] runs over the
 /// installed scene buffer, as a free function for callers that hold the
 /// buffer without a world (the fishing rod's bend morph,
-/// [`crate::fishing_actors::RodMesh`]). `None` on a short header, an index
+/// [`legaia_engine_fishing::fishing_actors::RodMesh`]). `None` on a short header, an index
 /// past `count`, or an offset past the end.
 pub fn vdf_entry(buf: &[u8], idx: u8) -> Option<&[u8]> {
     if buf.len() < 4 {

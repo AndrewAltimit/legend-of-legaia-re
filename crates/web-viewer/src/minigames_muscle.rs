@@ -8,11 +8,11 @@
 //! formation slot 0 is monster `0xB6` (Koru); the dome ladder tops out at
 //! `0xAA`, so no dome round raises it.
 //!
-//! The rules are the ported [`legaia_engine_core::muscle_dome`] engine (the
+//! The rules are the ported [`legaia_engine_core::world_views::muscle_dome`] engine (the
 //! four-direction deal, the AP-budget commit into the fighter's action queue,
 //! the turn counter, the opponent-HP-left readout and the
 //! win/lose bookkeeping). Damage resolves through the **shared retail
-//! kernel** [`legaia_engine_core::muscle_dome::DomeDamageModel`], which the
+//! kernel** [`legaia_engine_minigames::muscle_dome::DomeDamageModel`], which the
 //! native play-window host installs on its session too - the move-power
 //! record via the `0x801F4E63` id → index map, the arts/physical damage roll
 //! (`FUN_801dd0ac`), the element-affinity scale (`FUN_801dd864`) and the
@@ -22,14 +22,14 @@
 //! Fighter stats come from the visitor's own disc records:
 //!
 //! - the **opponent** is a monster of the PROT 867 archive
-//!   ([`legaia_asset::monster_archive`]); its battle stats are the record's
+//!   ([`legaia_actor_formats::monster_archive`]); its battle stats are the record's
 //!   `battle_stats()` boosted profile (the `FUN_80054CB0` load-time boost),
 //!   its round budget the record's AGL (the `+0x154` pool the dome's
 //!   `ctx+0x6dc` budget seeds from), its element the record's `+0x1D` byte.
 //! - the **player** fighter's record is built from the `SCUS_942.54`
-//!   new-game starting-party template ([`legaia_asset::new_game`]) leveled
+//!   new-game starting-party template ([`legaia_game_tables::new_game`]) leveled
 //!   through the per-level stat-growth curves
-//!   ([`legaia_asset::level_up_tables`], jitter-free core gains - see the
+//!   ([`legaia_game_tables::level_up_tables`], jitter-free core gains - see the
 //!   documented approximation on [`LegaiaMinigames::muscle_start_vs`]), then
 //!   seeded into a battle-actor stat block by the ported battle-load init
 //!   (`init_party_battle_stats`, `FUN_80053CB8`, no equipment). Card costs
@@ -47,18 +47,17 @@
 
 use super::*;
 
+use legaia_actor_formats::battle_char_assembly as bca;
+use legaia_actor_formats::monster_archive;
 use legaia_art::queue::{Character as ArtCharacter, Command as ArtCommand};
-use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::element_affinity::ElementAffinity;
-use legaia_asset::monster_archive;
-use legaia_asset::move_power;
-use legaia_asset::muscle_dome as md;
-use legaia_asset::scene_tmd_stream;
-use legaia_asset::sfx_table;
-use legaia_engine_core::muscle_dome::{
-    DomeCombatant, DomeDamageModel, MuscleCard, MuscleDomeSession, MusclePhase,
-};
-use legaia_engine_vm::battle_formulas::{RecordStats, init_party_battle_stats};
+use legaia_engine_battle_vm::battle_formulas::{RecordStats, init_party_battle_stats};
+use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
+use legaia_engine_minigames::muscle_dome::{DomeCombatant, DomeDamageModel};
+use legaia_game_tables::element_affinity::ElementAffinity;
+use legaia_game_tables::move_power;
+use legaia_game_tables::sfx_table;
+use legaia_minigame_formats::muscle_dome as md;
+use legaia_scene_formats::scene_tmd_stream;
 
 #[path = "minigames_muscle/exports.rs"]
 mod exports;
@@ -114,16 +113,16 @@ const FAVORED_COST: u16 = 0x1E;
 /// the shared battle-family cast-caption label table, resident in every
 /// battle overlay and read by any cast; the arena grants no Seru. A contest's
 /// reward is casino coins - see
-/// [`legaia_engine_core::muscle_dome::DomeContest`].
+/// [`legaia_engine_minigames::muscle_dome::DomeContest`].
 const WEB_CAPTION_SERU: u8 = 1;
 
 /// PROT entry the arena roster/init overlay lives in - the contest layer's
 /// course ladder and score table both come off it.
 const ARENA_OVERLAY_PROT_INDEX: u32 =
-    legaia_engine_core::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32;
+    legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32;
 
 /// Lift the page's two flag bitmasks into the shared
-/// [`ContestFlags`](legaia_engine_core::muscle_dome::ContestFlags) the rules
+/// [`ContestFlags`](legaia_engine_minigames::muscle_dome::ContestFlags) the rules
 /// kernel takes. The browser has no save file to read a flag bank out of, so
 /// the page states what it wants open and the kernel applies the same rule to
 /// it that the native host's real bank gets.
@@ -131,9 +130,9 @@ fn web_contest_flags(
     unlock: u32,
     gates: u32,
     prize_awarded: bool,
-) -> legaia_engine_core::muscle_dome::ContestFlags {
+) -> legaia_engine_minigames::muscle_dome::ContestFlags {
     let bit = |m: u32, i: usize| m & (1 << i) != 0;
-    legaia_engine_core::muscle_dome::ContestFlags {
+    legaia_engine_minigames::muscle_dome::ContestFlags {
         course_unlock: [bit(unlock, 0), bit(unlock, 1), bit(unlock, 2)],
         master_gates: [bit(gates, 0), bit(gates, 1), bit(gates, 2)],
         prize_awarded,
@@ -228,8 +227,10 @@ pub(crate) struct MuscleTables {
 const PLAYER_SERU_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8b;
 
 /// The refusal name the page shows for a rejected Ra-Seru pick.
-fn muscle_refusal_name(e: legaia_engine_core::muscle_dome::DomeCastRefusal) -> &'static str {
-    use legaia_engine_core::muscle_dome::DomeCastRefusal as R;
+fn muscle_refusal_name(
+    e: legaia_engine_menus::muscle_dome_session::DomeCastRefusal,
+) -> &'static str {
+    use legaia_engine_menus::muscle_dome_session::DomeCastRefusal as R;
     match e {
         R::NoLoadout => "no_loadout",
         R::NoRaSeru => "no_raseru",

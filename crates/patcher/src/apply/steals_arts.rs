@@ -85,7 +85,7 @@ pub struct ArtSite {
 /// per-character Miracle Art rows (flagged `is_miracle`), which the randomizer
 /// leaves untouched.
 pub fn current_arts(patcher: &DiscPatcher) -> Result<Vec<ArtSite>> {
-    let edits = crate::arts::ArtsEdits::locate(patcher.image())
+    let edits = legaia_arts_patch::arts::ArtsEdits::locate(patcher.image())
         .context("locate SCUS_942.54 arts-name table")?;
     Ok(edits
         .current()
@@ -120,9 +120,9 @@ pub struct ArtsApplyReport {
 pub fn randomize_arts(
     patcher: &mut DiscPatcher,
     seed: u64,
-    mode: crate::arts::ArtsMode,
-) -> Result<(Vec<crate::arts::ComboEdit>, ArtsApplyReport)> {
-    let edits = crate::arts::ArtsEdits::locate(patcher.image())
+    mode: legaia_arts_patch::arts::ArtsMode,
+) -> Result<(Vec<legaia_arts_patch::arts::ComboEdit>, ArtsApplyReport)> {
+    let edits = legaia_arts_patch::arts::ArtsEdits::locate(patcher.image())
         .context("locate SCUS_942.54 arts-name table")?;
     let plan = edits.plan(seed, mode);
     let report = ArtsApplyReport {
@@ -136,12 +136,12 @@ pub fn randomize_arts(
         if char_edits.is_empty() {
             continue;
         }
-        let index = crate::arts::player_entry_index(ch);
+        let index = legaia_arts_patch::arts::player_entry_index(ch);
         let entry = patcher
             .read_entry(index)
             .with_context(|| format!("read player file PROT {index}"))?;
         if let Some((lzs_off, recompressed)) =
-            crate::arts::patch_player_record0(&entry, &char_edits)
+            legaia_arts_patch::arts::patch_player_record0(&entry, &char_edits)
         {
             patcher
                 .patch_prot_entry(index, lzs_off as u64, &recompressed)
@@ -152,7 +152,7 @@ pub fn randomize_arts(
     //    so the shown arrows match the (now-patched) trigger.
     for (off, bytes) in edits.glyph_patches(&plan) {
         patcher
-            .patch_named_file(crate::arts::SCUS_NAME, off, &bytes)
+            .patch_named_file(legaia_arts_patch::arts::SCUS_NAME, off, &bytes)
             .with_context(|| format!("write art combo glyph at SCUS offset {off:#x}"))?;
     }
     Ok((plan, report))

@@ -24,7 +24,7 @@
 //! [`EncounterTracker::on_step`] from the field-step path and feed the
 //! resulting [`EncounterRoll`] into their battle-load routine.
 
-use legaia_engine_vm as vm;
+use legaia_engine_battle_vm as vm;
 use std::collections::HashMap;
 
 /// One row in an encounter table.

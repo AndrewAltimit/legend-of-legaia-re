@@ -1,9 +1,11 @@
 use std::path::Path;
 
 use crate::RenderTier;
-use crate::common::*;
+use crate::cli_io::*;
 use anyhow::Result;
-use legaia_asset::{battle_texture_catalog, tim_catalog, tim_deep_catalog, tim_scan, tmd_scan};
+use legaia_actor_formats::battle_texture_catalog;
+use legaia_container_formats::{tim_scan, tmd_scan};
+use legaia_disc_audit::{tim_catalog, tim_deep_catalog};
 use legaia_prot::cdname;
 
 pub(crate) fn tmd_scan_cmd(
@@ -41,7 +43,7 @@ pub(crate) fn tmd_scan_cmd(
     let mut tmds_written = 0usize;
 
     for path in &entries {
-        let raw = crate::common::read_input(path)?;
+        let raw = crate::cli_io::read_input(path)?;
         let scan = tmd_scan::scan_entry(&raw);
         if scan.hits.is_empty() && only_hits {
             continue;
@@ -145,7 +147,7 @@ pub(crate) fn tim_scan_cmd(
     let mut tims_written = 0usize;
 
     for path in &entries {
-        let raw = crate::common::read_input(path)?;
+        let raw = crate::cli_io::read_input(path)?;
         let scan = tim_scan::scan_entry(&raw);
         if scan.hits.is_empty() && only_hits {
             continue;
@@ -326,7 +328,7 @@ pub(crate) fn tim_deep_catalog_cmd(
 
 /// `asset battle-texture-catalog <PROT.DAT>` - catalog the headerless
 /// 4bpp character-art blocks in the player battle files. Not a TIM tier:
-/// see [`legaia_asset::battle_texture_catalog`] for why no magic scan can
+/// see [`legaia_actor_formats::battle_texture_catalog`] for why no magic scan can
 /// reach these.
 pub(crate) fn battle_texture_catalog_cmd(
     prot: &std::path::Path,
@@ -337,7 +339,7 @@ pub(crate) fn battle_texture_catalog_cmd(
     let names = match scus {
         Some(p) => {
             let bytes = std::fs::read(p)?;
-            legaia_asset::item_names::ItemNameTable::from_scus(&bytes)
+            legaia_game_tables::item_names::ItemNameTable::from_scus(&bytes)
         }
         None => None,
     };
@@ -421,7 +423,7 @@ pub(crate) fn tim_render_distinct_cmd(prot: &Path, out: &Path, tier: RenderTier)
     use std::collections::HashMap;
 
     std::fs::create_dir_all(out)?;
-    let prot_bytes = crate::common::read_input(prot)?;
+    let prot_bytes = crate::cli_io::read_input(prot)?;
 
     let want_raw = matches!(tier, RenderTier::Raw | RenderTier::Both);
     let want_deep = matches!(tier, RenderTier::Deep | RenderTier::Both);

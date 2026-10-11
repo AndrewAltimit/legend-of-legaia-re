@@ -31,7 +31,7 @@
 //! Corey vendor is the case that exposed this - its op is reached only past a
 //! Yes/No picker), so a walk silently misses those shops. The scan doesn't care
 //! how the script reaches the op. False positives are ruled out by a strict
-//! record validation ([`legaia_asset::shop_stock::parse_record`]): the byte after the opcode must be
+//! record validation ([`legaia_scene_formats::shop_stock::parse_record`]): the byte after the opcode must be
 //! `0x00` (sub-op 0 - this alone rejects almost every stray `0x49`, since ids,
 //! operands and `0x49`-lead names like "Items Shop" are followed by non-zero),
 //! the count is small and non-zero, every id is non-zero (and, with the SCUS
@@ -48,18 +48,13 @@
 //! exactly like the [encounter](crate::encounter) / [chest](crate::chest) paths.
 //! Global shuffle / random across all towns is orchestrated in [`crate::apply`].
 
-use legaia_asset::scene_asset_table;
+use legaia_scene_formats::scene_asset_table;
 
 /// One town-shop site located in a scene MAN: its declared item count, the
 /// absolute offsets (within [`SceneShops::decoded`]) of each item-id byte, and
-/// the shop's display name. The pure scanner lives in [`legaia_asset::shop_stock`]
+/// the shop's display name. The pure scanner lives in [`legaia_scene_formats::shop_stock`]
 /// (shared with the engine's read side); this is its alias.
-pub use legaia_asset::shop_stock::ShopRecord as ShopSite;
-
-/// Scan a decompressed MAN for every town-shop site (op `0x49` sub-op `0`). A
-/// re-export of the shared scanner [`legaia_asset::shop_stock::scan`]; `valid`
-/// optionally restricts shop ids to named items (the SCUS item mask).
-pub use legaia_asset::shop_stock::scan as shop_sites;
+use legaia_scene_formats::shop_stock::ShopRecord as ShopSite;
 
 /// A scene bundle's MAN located in a PROT entry, with its town-shop sites.
 pub struct SceneShops {
@@ -87,7 +82,7 @@ impl SceneShops {
     /// (a `256`-entry "id is priced `> 0`" mask from the SCUS item table), so a
     /// stray `0x49`-prefixed byte run can't be mistaken for a shop AND the
     /// trailing unsellable template-id padding is trimmed out of the stock (see
-    /// [`legaia_asset::shop_stock`]). The apply layer always uses this form.
+    /// [`legaia_scene_formats::shop_stock`]). The apply layer always uses this form.
     pub fn locate_with_items(entry: &[u8], entry_idx: usize, valid: &[bool; 256]) -> Option<Self> {
         Self::locate_inner(entry, entry_idx, Some(valid))
     }
@@ -95,12 +90,12 @@ impl SceneShops {
     fn locate_inner(entry: &[u8], entry_idx: usize, valid: Option<&[bool; 256]>) -> Option<Self> {
         // The decode + shop-record scan is the shared read side; the randomizer
         // adds only the recompress budget so a rewritten MAN can be bounded.
-        let located = legaia_asset::shop_stock::locate(entry, valid)?;
+        let located = legaia_scene_formats::shop_stock::locate(entry, valid)?;
         let table = scene_asset_table::detect(entry)?;
         Some(Self {
             entry_idx,
             man_offset: located.man_offset,
-            compressed_budget: crate::man_compressed_budget(
+            compressed_budget: legaia_disc_patch::man_compressed_budget(
                 &table,
                 located.man_offset,
                 entry.len(),
@@ -133,22 +128,22 @@ impl SceneShops {
 
     /// Recompress the (mutated) MAN; `None` if it would overflow the footprint.
     pub fn repack(&self) -> Option<Vec<u8>> {
-        crate::compress_within(&self.decoded, self.compressed_budget)
+        legaia_disc_patch::compress_within(&self.decoded, self.compressed_budget)
     }
 }
 
 // The shop-record scanner (`scan` / `parse_record` / name reader) and its unit
-// tests live in [`legaia_asset::shop_stock`]; `shop_sites` / `ShopSite` above
-// re-export them. This module keeps only the randomizer-specific MAN
-// locate-with-budget + repack wrapper.
+// tests live in [`legaia_scene_formats::shop_stock`]. This module keeps only
+// the randomizer-specific MAN locate-with-budget + repack wrapper.
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
-    /// The re-exported scanner finds an embedded shop even past arbitrary bytes
+    use legaia_scene_formats::shop_stock::scan as shop_sites;
+
+    /// The shared scanner finds an embedded shop even past arbitrary bytes
     /// (the randomizer relies on this for `SceneShops`). Full record-validation
-    /// coverage lives in `legaia_asset::shop_stock`.
+    /// coverage lives in `legaia_scene_formats::shop_stock`.
     #[test]
     fn shop_sites_reexport_scans() {
         let mut man = vec![0x2A, 0x0E, 0x00, 0x46, 0xFF, 0x1F, b'Y', 0x00];

@@ -15,28 +15,20 @@ straight out of a `.bin` image; `--extracted-root <dir>` reads the output of
 
 ## Library: the wiring layer
 
-The crate root (`src/lib.rs`) re-exports the glue every embedding shares:
+The session this host runs is `legaia-engine-session`'s, over the cpal
+output: `legaia_engine_session::native::NativeSession`
+(`BootSession<AudioOut>`) and `NativeAudioDirector`
+(`AudioDirector<AudioOut>`), opened from an extracted tree or a disc image
+([`native`](../engine-session/src/native.rs)). The crate root (`src/lib.rs`)
+holds the glue around it:
 
-- [`BootSession`](../engine-session/src/boot.rs) / `BootConfig` - the boot flow
-  (defined in `legaia-engine-session`, re-exported here over the cpal output). Opens the
-  PROT + CDNAME map, loads a starting scene (`town01` by default), uploads
-  the scene's primary VAB to the SPU, then drives world + camera + event
-  routing each frame. Mirrors the retail boot sequence.
-- [`AudioBgmDirector`](../engine-session/src/bgm.rs) - (defined in
-  `legaia-engine-session`, generic over the audio output) the
-  `legaia_engine_core::scene::BgmDirector` that parses the SEQ bytes the
-  field VM resolves through the BGM table, builds a sequencer, and feeds a
-  cpal-backed audio output. Field-VM op `0x35` (BGM start) routes here.
 - [`cutscene_av`](src/cutscene_av.rs) - STR (MDEC video + interleaved XA
   audio) windowed playback over the shared `legaia_mdec::str_av` demux (the
-  play page's too), paced by `engine-core::cutscene::MovieClock`.
+  play page's too), paced by `engine-system::movie::cutscene::MovieClock`.
 - [`replay`](src/replay.rs) - the `j-replay-v1` record/replay format
   (pad-transition capture + deterministic playback).
 - [`scenarios`](src/scenarios.rs) - the engine integration-scenario manifest
   runner (boot a scenario headlessly, assert the SHA-256 of its `SaveFile`).
-- [`tile_board_draws`](src/tile_board_draws.rs) - re-export of the
-  tile-board draw assembly, which lives in `legaia_engine_core::tile_board`
-  so the browser play page reaches it too.
 - [`xa_clip`](src/xa_clip.rs) - XA voice-clip dispatch arithmetic behind the
   `xa-cue` census.
 
@@ -118,11 +110,11 @@ scene when it ends; press the same key again to quit.
 
 | Key | Minigame | Rules engine | Table source | Controls |
 |---|---|---|---|---|
-| `K` / `U` | Noa dance rhythm (`U` = the how-to dance with the Disco King tutorial) | `legaia_engine_core::dance` | dance overlay PROT 0980 | Square/Circle/Triangle are the three arrows (the retail pad bits) |
-| `L` | Fishing | `legaia_engine_core::fishing` | fishing overlay PROT 0972 | Cross casts then reels, Square is the second reel button; `P` opens the point-exchange prize list |
-| `O` | Casino slot machine | `legaia_engine_core::slot_machine` | slot overlay PROT 0975 | Cross spins / stops each reel / collects |
-| `B` | Baka Fighter duel | `legaia_engine_core::baka_fighter` | Baka Fighter overlay PROT 0976 | Square / Circle / Cross throw the three rock-paper-scissors attacks (the special is the auto-finisher, no button); Left / Right pick NEXT GAME / PAY OUT after a win |
-| `M` | Muscle Dome contest | `legaia_engine_core::muscle_dome` | hand tables from battle overlay PROT 0898; card costs from the lead's player-file swing records | Left/Right/Up/Down queue the four direction commands under the AP budget, Cross confirms/continues |
+| `K` / `U` | Noa dance rhythm (`U` = the how-to dance with the Disco King tutorial) | `legaia_engine_minigames::dance` | dance overlay PROT 0980 | Square/Circle/Triangle are the three arrows (the retail pad bits) |
+| `L` | Fishing | `legaia_engine_fishing::fishing` | fishing overlay PROT 0972 | Cross casts then reels, Square is the second reel button; `P` opens the point-exchange prize list |
+| `O` | Casino slot machine | `legaia_engine_minigames::slot_machine` | slot overlay PROT 0975 | Cross spins / stops each reel / collects |
+| `B` | Baka Fighter duel | `legaia_engine_minigames::baka_fighter` | Baka Fighter overlay PROT 0976 | Square / Circle / Cross throw the three rock-paper-scissors attacks (the special is the auto-finisher, no button); Left / Right pick NEXT GAME / PAY OUT after a win |
+| `M` | Muscle Dome contest | `legaia_engine_minigames::muscle_dome` (the leg session is `legaia_engine_menus::muscle_dome_session`) | hand tables from battle overlay PROT 0898; card costs from the lead's player-file swing records | Left/Right/Up/Down queue the four direction commands under the AP budget, Cross confirms/continues |
 
 Payouts and rewards land in real party state: a slot spin is the retail flat
 3-coin bet across all five paylines (1 coin during a feature) and quitting

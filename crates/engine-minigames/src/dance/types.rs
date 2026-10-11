@@ -1,5 +1,4 @@
 //! Floor modes, step directions, judgements, events and the per-dancer run state.
-//! Split out of `dance.rs`.
 
 use super::*;
 
@@ -281,7 +280,7 @@ impl Dancer {
 
     /// Bind a clip into the actor's `+0x5C` / `+0x6A` pair, folding the anim
     /// word's `0x200` bit into the flag word the way `FUN_801d1358` does.
-    pub(super) fn bind_clip(&mut self, clip: &legaia_asset::dance_cast::DanceClip) {
+    pub(super) fn bind_clip(&mut self, clip: &legaia_minigame_formats::dance_cast::DanceClip) {
         let id = (clip.anim_id & 0x1FF) as i16;
         let show = super::DanceBodyClip::of(clip);
         // A loop that changes while no move plays restarts; the rebind the
@@ -301,7 +300,7 @@ impl Dancer {
 
     /// Bind a judge-returned move clip: always from its first frame, even when
     /// the same move is still playing (a fresh judge event restarts it).
-    pub(super) fn bind_move(&mut self, clip: &legaia_asset::dance_cast::DanceClip) {
+    pub(super) fn bind_move(&mut self, clip: &legaia_minigame_formats::dance_cast::DanceClip) {
         let standing = self.show_loop;
         self.bind_clip(clip);
         self.show_loop = standing;

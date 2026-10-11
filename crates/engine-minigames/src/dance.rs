@@ -6,7 +6,7 @@
 //! score / groove-gauge award, and the **three-dancer floor** (the human plus
 //! the two competitors, who score through the very same award routine off a
 //! chart auto-feed). Driven by the already-parsed step chart + scoring tables
-//! ([`legaia_asset::dance_chart`]). This is the *rules* layer: it consumes pad
+//! ([`legaia_minigame_formats::dance_chart`]). This is the *rules* layer: it consumes pad
 //! presses and produces judged results + running scores, exactly as the retail
 //! overlay does. The visible dance-floor / arrow rendering is a separate host
 //! concern and is not covered here.
@@ -38,7 +38,7 @@
 //! (per-dancer handler: latch decay, chart auto-feed) -> `FUN_801d1820` (AI
 //! chart lookup) -> `FUN_801d1960` (hit judge) -> `FUN_801d1af4` (score/award).
 
-use legaia_asset::dance_chart::{BEATS_PER_ROW, DanceChart, DanceScoreTables};
+use legaia_minigame_formats::dance_chart::{BEATS_PER_ROW, DanceChart, DanceScoreTables};
 
 mod bodies;
 mod camera_track;

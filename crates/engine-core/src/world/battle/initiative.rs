@@ -1,6 +1,5 @@
 //! Turn order: opponent scan, round-robin fallback, and SPD-seeded initiative
-//! keys. Split out of `battle.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
+//! keys.
 
 use super::*;
 
@@ -12,16 +11,21 @@ impl World {
     /// initiative seeder is the only consumer of the *unlatched* copy (it
     /// zeroes the disadvantaged side's keys, `0x801DAA40`); the action SM's
     /// state `0x00` consumes it and clears it
-    /// ([`vm::battle_action::begin_formation_arm`]).
+    /// ([`legaia_engine_battle_vm::battle_action::begin_formation_arm`]).
     ///
     /// REF: FUN_80051D84
-    pub fn battle_formation(&self) -> vm::battle_formulas::FormationAdvantage {
-        vm::battle_formulas::FormationAdvantage::from_byte(self.battle_ctx.formation_advantage)
+    pub fn battle_formation(&self) -> legaia_engine_battle_vm::battle_formulas::FormationAdvantage {
+        legaia_engine_battle_vm::battle_formulas::FormationAdvantage::from_byte(
+            self.battle_ctx.formation_advantage,
+        )
     }
 
     /// Write `ctx+0x290`. The roll ([`Self::roll_battle_formation`]) is its
     /// only production writer; tests use it to stage an advantage.
-    pub fn set_battle_formation(&mut self, advantage: vm::battle_formulas::FormationAdvantage) {
+    pub fn set_battle_formation(
+        &mut self,
+        advantage: legaia_engine_battle_vm::battle_formulas::FormationAdvantage,
+    ) {
         self.battle_ctx.formation_advantage = advantage.to_byte();
     }
 
@@ -34,15 +38,19 @@ impl World {
     /// `+0x290` without copying it silently disables them.
     ///
     /// REF: FUN_801E791C
-    pub fn battle_formation_latched(&self) -> vm::battle_formulas::FormationAdvantage {
-        vm::battle_formulas::FormationAdvantage::from_byte(self.battle_ctx.formation_latched)
+    pub fn battle_formation_latched(
+        &self,
+    ) -> legaia_engine_battle_vm::battle_formulas::FormationAdvantage {
+        legaia_engine_battle_vm::battle_formulas::FormationAdvantage::from_byte(
+            self.battle_ctx.formation_latched,
+        )
     }
 
     /// Write `ctx+0x291` directly, bypassing the latch. Tests only - production
     /// reaches it through [`Self::run_round_state_zero`].
     pub fn set_battle_formation_latched(
         &mut self,
-        advantage: vm::battle_formulas::FormationAdvantage,
+        advantage: legaia_engine_battle_vm::battle_formulas::FormationAdvantage,
     ) {
         self.battle_ctx.formation_latched = advantage.to_byte();
     }
@@ -120,7 +128,9 @@ impl World {
     /// PORT: FUN_801DA780 (the slot sweep + lockout; per-actor scoring in
     /// `battle_formulas::seed_initiative`)
     pub(in crate::world) fn reseed_initiative(&mut self) {
-        use vm::battle_formulas::{InitiativeActor, initiative_roll_modulus, seed_initiative};
+        use legaia_engine_battle_vm::battle_formulas::{
+            InitiativeActor, initiative_roll_modulus, seed_initiative,
+        };
         let party_count = self.party.party_count as usize;
         if !self.any_battle_speed() {
             // No SPD anywhere (the synthetic catalog, the disc-free tests):
@@ -190,11 +200,15 @@ impl World {
         let party_count = self.party.party_count as usize;
         for slot in 0..BATTLE_SLOTS {
             let locked = match lockout {
-                vm::battle_formulas::FormationAdvantage::None => false,
+                legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None => false,
                 // Back attack: the monsters got the drop, the party sits out.
-                vm::battle_formulas::FormationAdvantage::BackAttack => slot < party_count,
+                legaia_engine_battle_vm::battle_formulas::FormationAdvantage::BackAttack => {
+                    slot < party_count
+                }
                 // Pre-emptive strike: the party got the drop.
-                vm::battle_formulas::FormationAdvantage::Preemptive => slot >= party_count,
+                legaia_engine_battle_vm::battle_formulas::FormationAdvantage::Preemptive => {
+                    slot >= party_count
+                }
             };
             if locked && let Some(a) = self.actors.get_mut(slot) {
                 a.battle.init_key = 0;
@@ -252,9 +266,9 @@ impl World {
     /// `battle_formulas::roll_formation_advantage`)
     pub(in crate::world) fn roll_battle_formation(
         &mut self,
-        formation: &crate::monster_catalog::FormationDef,
+        formation: &legaia_engine_battle::monster_catalog::FormationDef,
     ) {
-        use vm::battle_formulas::{FormationInputs, roll_formation_advantage};
+        use legaia_engine_battle_vm::battle_formulas::{FormationInputs, roll_formation_advantage};
         let party_n = (self.party.party_count as usize).min(self.actors.len());
         let party_spd: Vec<u16> = (0..party_n)
             .filter(|&i| self.actors[i].battle.liveness != 0)
@@ -289,7 +303,10 @@ impl World {
         let rolled = roll_formation_advantage(&party_spd, &enemy_spd, &inputs, &mut rand);
         self.set_battle_formation(rolled);
         self.battle.special_word =
-            vm::battle_formulas::formation_roll_special_word(self.battle.special_word, &inputs);
+            legaia_engine_battle_vm::battle_formulas::formation_roll_special_word(
+                self.battle.special_word,
+                &inputs,
+            );
     }
 
     /// Flow state `0x0A`'s battle-open reads of the **unlatched** formation
@@ -331,7 +348,7 @@ impl World {
     pub(in crate::world) fn run_round_state_zero(&mut self) {
         let mut ctx = self.battle_ctx.clone();
         let mut host = crate::world::vm_hosts::BattleHostImpl { world: self };
-        vm::battle_action::round_state_zero(&mut host, &mut ctx);
+        legaia_engine_battle_vm::battle_action::round_state_zero(&mut host, &mut ctx);
         self.battle_ctx = ctx;
     }
 
@@ -350,7 +367,7 @@ impl World {
     /// PORT: FUN_801D9D3C (the `ctx+0x290` banner arm; the party-plate layout
     /// stays with the HUD)
     pub fn raise_battle_open_banner(&mut self) {
-        use crate::battle_open::{BANNER_BOX_STYLE, BANNER_FRAMES, FormationBanner};
+        use legaia_engine_menus::battle_open::{BANNER_BOX_STYLE, BANNER_FRAMES, FormationBanner};
         let Some(banner) =
             FormationBanner::for_formation(self.battle_formation(), self.party.party_count)
         else {
@@ -437,7 +454,9 @@ impl World {
             a.battle.spirit_gauge = a.battle.spirit_gauge.min(100);
             // `ctx[+0x25]`: one more combatant out of this round unacted.
             self.battle_ctx.round_skip = self.battle_ctx.round_skip.saturating_add(1);
-            if a.battle.action_category == vm::battle_action::ActionCategory::Item.as_byte() {
+            if a.battle.action_category
+                == legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte()
+            {
                 a.battle.action_category = 0;
                 if let Some(Some(PendingPartyAction::Item { item_id, .. })) =
                     self.battle.round_flow.pending.get_mut(i).map(Option::take)

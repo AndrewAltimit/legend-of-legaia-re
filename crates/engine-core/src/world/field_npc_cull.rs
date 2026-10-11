@@ -29,7 +29,7 @@
 
 use super::World;
 
-pub use crate::camera::FieldCullView;
+use legaia_engine_field::camera::FieldCullView;
 
 /// `FUN_801D79E8`'s decision: `true` = bit `1` set (the actor is outside the
 /// region box or the widened window), `false` = cleared.

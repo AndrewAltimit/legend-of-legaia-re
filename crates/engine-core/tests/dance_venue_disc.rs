@@ -26,15 +26,16 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::camera::Camera;
 use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
-use legaia_engine_core::dance::{DanceGame, DanceMode, dance_scene_entry};
 use legaia_engine_core::dance_venue::{
     DanceVenue, DanceVenueEdge, sync_dance_venue, venue_camera, venue_cdname_stub,
     venue_sfx_vab_index,
 };
-use legaia_engine_core::scene::{ProtIndex, SceneHost};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_field::camera::Camera;
+use legaia_engine_minigames::dance::{DanceGame, DanceMode, dance_scene_entry};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::ProtIndex;
 
 fn extracted_dir() -> Option<PathBuf> {
     let over = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from);
@@ -59,11 +60,11 @@ fn gate() -> Option<PathBuf> {
 }
 
 fn dance_overlay(index: &ProtIndex) -> Vec<u8> {
-    let rec = legaia_asset::static_overlay::overlay_map()
-        .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+    let rec = legaia_overlay_images::static_overlay::overlay_map()
+        .by_prot_index(legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
         .expect("0980 in the static-overlay map");
     let bytes = index.entry_bytes_extended(rec.prot_index).expect("0980");
-    legaia_asset::static_overlay::as_loaded(&bytes, rec).expect("0980 loaded form")
+    legaia_overlay_images::static_overlay::as_loaded(&bytes, rec).expect("0980 loaded form")
 }
 
 #[test]
@@ -74,7 +75,10 @@ fn the_entry_record_loads_and_stamps_the_venue() {
     let e = dance_scene_entry();
 
     let venue = DanceVenue::build(&index, Some(&overlay)).expect("venue builds");
-    assert_eq!(venue.scene.name, legaia_asset::dance_cast::DANCE_SCENE_NAME);
+    assert_eq!(
+        venue.scene.name,
+        legaia_minigame_formats::dance_cast::DANCE_SCENE_NAME
+    );
     assert_eq!(
         index.block_range(&venue.scene.name).map(|r| r.0),
         Some(u32::from(e.scene_block_base)),
@@ -98,8 +102,8 @@ fn the_entry_record_loads_and_stamps_the_venue() {
     // Each stamp's eye cell is a copy of its pose's source cell: re-read the
     // last stamp per rig (a later blit on the same rig wins).
     for s in venue.face_stamps.iter().rev() {
-        let rig = &legaia_asset::dance_art::FACE_RIGS[s.rig];
-        let frames = legaia_asset::dance_art::parse_face_frames(&overlay, rig).unwrap();
+        let rig = &legaia_minigame_formats::dance_art::FACE_RIGS[s.rig];
+        let frames = legaia_minigame_formats::dance_art::parse_face_frames(&overlay, rig).unwrap();
         let f = frames[usize::from(s.pose).min(frames.len() - 1)];
         let (sx, sy) = (
             rig.base.0 + u16::from(f[0] >> 2),
@@ -192,9 +196,8 @@ fn entering_the_dance_stages_the_venue_and_leaving_restores_the_scene() {
 /// dance camera then follows it beat by beat.
 #[test]
 fn the_dance_camera_follows_the_overlay_keyframe_track() {
-    use legaia_engine_core::dance_venue::{
-        DANCE_CAMERA_SEGMENT, DanceCameraPose, DanceCameraTrack, venue_camera_at,
-    };
+    use legaia_engine_core::dance_venue::venue_camera_at;
+    use legaia_engine_minigames::dance::{DANCE_CAMERA_SEGMENT, DanceCameraPose, DanceCameraTrack};
     let Some(dir) = gate() else { return };
     let mut host = SceneHost::open_extracted(&dir).expect("host");
     host.enter_field_scene("town01", 0).expect("town01");
@@ -246,7 +249,7 @@ fn the_dance_camera_follows_the_overlay_keyframe_track() {
     // One beat (`BEAT_PERIOD` = 0x119 frames) later the camera is part-way
     // along the first segment, on the half-cosine ease; at beat 2 it has
     // already started the second segment.
-    let period = legaia_engine_core::dance::BEAT_PERIOD as i32;
+    let period = legaia_engine_minigames::dance::BEAT_PERIOD as i32;
     let mut ticks = 1;
     for beat in 1..=2 {
         while ticks < 1 + beat * period {
@@ -306,9 +309,8 @@ fn the_dance_camera_follows_the_overlay_keyframe_track() {
 /// on the real hall.
 #[test]
 fn the_far_camera_poses_leave_the_curtain_to_the_gpu_limit() {
-    use legaia_engine_core::dance_venue::{
-        DanceCameraTrack, psx_gpu_visible_indices, psx_screen_xy,
-    };
+    use legaia_engine_core::dance_venue::{psx_gpu_visible_indices, psx_screen_xy};
+    use legaia_engine_minigames::dance::DanceCameraTrack;
     let Some(dir) = gate() else { return };
     let index = ProtIndex::open_extracted(&dir).expect("prot index");
     let overlay = dance_overlay(&index);
@@ -364,7 +366,7 @@ fn the_far_camera_poses_leave_the_curtain_to_the_gpu_limit() {
 
     // A triangle reaches the frame when its screen box overlaps 320 x 240
     // (a near panel covers the screen with every corner off it).
-    let on_screen = |v: &legaia_engine_vm::psx_camera::FieldCameraView, t: &[u32]| {
+    let on_screen = |v: &legaia_engine_battle_vm::psx_camera::FieldCameraView, t: &[u32]| {
         let s: Vec<[i64; 2]> = t
             .iter()
             .map(|&i| psx_screen_xy(v, positions[i as usize]))
@@ -421,12 +423,12 @@ fn the_choreography_bank_times_every_judge_move() {
     let index = ProtIndex::open_extracted(&dir).expect("prot index");
     let overlay = dance_overlay(&index);
     let bank = legaia_engine_core::dance_venue::dance_clip_bank(&index).expect("bank loads");
-    let cast = legaia_asset::dance_cast::parse(&overlay).expect("cast parses");
+    let cast = legaia_minigame_formats::dance_cast::parse(&overlay).expect("cast parses");
     let mut game =
         DanceGame::from_overlay_for_mode(&overlay, DanceMode::Qualifier, false).expect("run");
     game.attach_clip_bank(&bank);
-    let latch_ticks = (legaia_engine_core::dance::NOTE_LATCH_TIMER
-        / legaia_engine_core::dance::NOTE_LATCH_DECAY) as u32
+    let latch_ticks = (legaia_engine_minigames::dance::NOTE_LATCH_TIMER
+        / legaia_engine_minigames::dance::NOTE_LATCH_DECAY) as u32
         + 1;
     let mut timed = 0;
     for kind in cast.kinds.iter().take(4) {

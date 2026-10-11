@@ -3,12 +3,12 @@
 //! The ring-commit clip stamp is pinned through the pad in
 //! `crates/engine-core/tests/battle_command_arms_reachable.rs`; the
 //! disc-gated end-to-end twin (real clips, real cue tracks) is
-//! `crates/engine-shell/tests/battle_item_use_presentation.rs`.
+//! `crates/engine-session/tests/battle_item_use_presentation.rs`.
 
 use super::*;
 use crate::world::vm_hosts::BattleHostImpl;
-use legaia_engine_vm::battle_action::BattleActionHost;
-use legaia_engine_vm::battle_cast_cue::{CastCueOutcome, cast_audio_cue};
+use legaia_engine_battle_vm::battle_action::BattleActionHost;
+use legaia_engine_battle_vm::battle_cast_cue::{CastCueOutcome, cast_audio_cue};
 
 /// The party leg of the cast-cue band is `roster_id * 0x10 + 0xF8..0xFC`
 /// with a 1-based roster id, so every party cue is `>= 0x108` - a CD-XA clip.

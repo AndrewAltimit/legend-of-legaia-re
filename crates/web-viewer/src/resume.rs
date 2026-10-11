@@ -333,7 +333,7 @@ mod tests {
         rt.resume_parked_save().expect("landing");
         assert_eq!(
             rt.start_new_game(),
-            Some(legaia_asset::new_game::OPENING_CUTSCENE_SCENE)
+            Some(legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE)
         );
         assert_eq!(
             rt.world_mut().party.money,
@@ -341,7 +341,7 @@ mod tests {
         );
         assert_eq!(
             rt.running_scene().as_deref(),
-            Some(legaia_asset::new_game::OPENING_CUTSCENE_SCENE)
+            Some(legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE)
         );
         eprintln!("[ok] page new game after a resume");
     }

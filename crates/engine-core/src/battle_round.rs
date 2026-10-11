@@ -1,5 +1,5 @@
 //! Per-round battle lifecycle - wires the pure-code subsystems
-//! (`ap_gauge`, `battle_stats`, `legaia_engine_vm::status_effects`,
+//! (`ap_gauge`, `battle_stats`, `legaia_engine_battle_vm::status_effects`,
 //! `items`) into the actor / battle-action chain.
 //!
 //! A "round" in retail Legaia is one full pass through the turn-order
@@ -20,12 +20,11 @@
 //! ItemCatalog state - `BattleRound` is the orchestrator that drives
 //! them in retail order.
 
-use crate::battle_stats::{
+use crate::world::World;
+use legaia_engine_battle::battle_stats::{
     BattleStats, EquipmentTable, StatRecord, StatusModifiers, compute_battle_stats,
 };
-use crate::world::World;
-use legaia_engine_vm as vm;
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 /// One round of battle. Constructed by [`BattleRound::begin`]; consumed
 /// by [`BattleRound::end`].
@@ -120,13 +119,13 @@ impl BattleRound {
     ///
     /// - **Loop A** (`801d892c..801d89f4`) walks all 7 slots. Per actor it
     ///   restores the action gauge `+0x154` through the three arms of
-    ///   [`vm::battle_formulas::round_reset_agility`], then zeroes the 16-byte
+    ///   [`legaia_engine_battle_vm::battle_formulas::round_reset_agility`], then zeroes the 16-byte
     ///   action-parameter stream at `+0x1DF`
-    ///   ([`vm::battle_formulas::ACTION_STREAM_RANGE`]) - the clear that makes
+    ///   ([`legaia_engine_battle_vm::battle_formulas::ACTION_STREAM_RANGE`]) - the clear that makes
     ///   last round's action id unreadable.
     /// - **Loop B** (`801d8a00..801d8a70`) walks the **party band only** (the
     ///   loop bound is `s1+0xc`, three pointers). It re-picks a stale target
-    ///   ([`vm::battle_formulas::needs_retarget`]) and clears the action
+    ///   ([`legaia_engine_battle_vm::battle_formulas::needs_retarget`]) and clears the action
     ///   category byte `+0x1DE`.
     ///
     /// The re-pick itself is `FUN_801DB8B4`, which is a plain first-living-
@@ -162,7 +161,7 @@ impl BattleRound {
             let spirit_charged = a.action_category == 4 || a.spirit_shield != 0;
             // `+0x1DE == 3`, or any monster slot.
             let plain_reset = a.action_category == 3 || slot >= party_count;
-            a.agl = vm::battle_formulas::round_reset_agility(
+            a.agl = legaia_engine_battle_vm::battle_formulas::round_reset_agility(
                 a.agl,
                 a.agl_base,
                 spirit_charged,
@@ -170,7 +169,7 @@ impl BattleRound {
             );
             // `+0x1DF..+0x1EE`. `BattleActor::params` is based at `+0x1DF`, so
             // the retail range indexes it from zero.
-            let len = vm::battle_formulas::ACTION_STREAM_RANGE.len();
+            let len = legaia_engine_battle_vm::battle_formulas::ACTION_STREAM_RANGE.len();
             for b in a.params.iter_mut().take(len) {
                 *b = 0;
             }
@@ -184,7 +183,7 @@ impl BattleRound {
                 .get(target as usize)
                 .map(|a| a.battle.hp)
                 .unwrap_or(0);
-            if vm::battle_formulas::needs_retarget(target, target_hp) {
+            if legaia_engine_battle_vm::battle_formulas::needs_retarget(target, target_hp) {
                 world.actors[slot].battle.active_target = Self::first_living_monster(world);
             }
             world.actors[slot].battle.action_category = 0;
@@ -271,13 +270,13 @@ pub enum PendingPartyAction {
     /// built into retail's action queue at the dispatch.
     Art {
         sequence: Vec<u8>,
-        target_row: crate::target_picker::CursorRow,
+        target_row: legaia_engine_battle::target_picker::CursorRow,
         target_slot: u8,
     },
     /// A Ra-Seru spell (category `2`).
     Spell {
         spell_id: u8,
-        target_row: crate::target_picker::CursorRow,
+        target_row: legaia_engine_battle::target_picker::CursorRow,
         target_slot: u8,
     },
     /// An item (category `1`). The copy is consumed at the commit, as retail's
@@ -337,10 +336,10 @@ impl RoundFlow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ap_gauge::ApGauge;
-    use crate::battle_stats::{ItemModifier, StatRecord};
     use crate::world::World;
     use legaia_art::record::EnemyEffect;
+    use legaia_engine_battle::ap_gauge::ApGauge;
+    use legaia_engine_battle::battle_stats::{ItemModifier, StatRecord};
 
     /// Build a minimal World with three party members for round tests.
     fn world_with_party() -> World {
@@ -418,10 +417,10 @@ mod tests {
         // Mark slot 1 as Sleep before begin. No on-disc byte maps to Sleep
         // since the 4/5 remap (4 = Toxic, 5 = Rot per the pinned appliers),
         // so apply the host-driven kind directly.
-        world
-            .battle
-            .status_effects
-            .apply(1, legaia_engine_vm::status_effects::StatusKind::Sleep);
+        world.battle.status_effects.apply(
+            1,
+            legaia_engine_battle_vm::status_effects::StatusKind::Sleep,
+        );
 
         let mut per_slot: [Option<StatRecord>; 8] = Default::default();
         per_slot[1] = Some(StatRecord {
@@ -500,7 +499,7 @@ mod tests {
     /// monster is asleep so it never acts, and both sides carry enough HP to
     /// survive the tick budget.
     fn live_round_battle() -> World {
-        use legaia_engine_vm::status_effects::StatusKind;
+        use legaia_engine_battle_vm::status_effects::StatusKind;
         let mut world = World::new();
         world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
         world.toggles.live_gameplay_loop = true;
@@ -530,7 +529,7 @@ mod tests {
     /// tick budget and this fails.
     #[test]
     fn live_loop_clears_the_action_stream_at_the_round_boundary() {
-        use crate::world::SceneMode;
+        use legaia_engine_mode::mode::SceneMode;
         let mut world = live_round_battle();
         world.actors[0].battle.params[0] = 0x42;
         // Put the party member to sleep as well, so no turn of its own
@@ -565,7 +564,7 @@ mod tests {
     /// engine has no other writer that raises `agl`.
     #[test]
     fn live_loop_restores_the_action_gauge_at_the_round_boundary() {
-        use crate::world::SceneMode;
+        use legaia_engine_mode::mode::SceneMode;
         let mut world = live_round_battle();
         world.actors[1].battle.agl_base = 40;
         world.actors[1].battle.agl = 0;

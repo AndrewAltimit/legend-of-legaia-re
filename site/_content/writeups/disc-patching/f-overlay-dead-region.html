@@ -15,7 +15,7 @@
     <dt>Host</dt><dd>Menu overlay, PROT 0899, load base <code>0x801CE818</code>; dead region <code>0x801EA440</code>&ndash;<code>0x801EB340</code></dd>
     <dt>Picker edits</dt><dd>Row clamp 3&rarr;4, box height <code>0x26</code>&rarr;<code>0x34</code>, a label-draw detour, a confirm-dispatch detour, a per-frame entry detour</dd>
     <dt>The swap</dt><dd>Character record Seru id at <code>+0x13D</code>, level at <code>+0x161</code>; records at <code>0x80084708</code>, stride <code>0x414</code>; count never changes</dd>
-    <dt>Offers</dt><dd>64-bucket schedule, a pure function of the seed; kernel <code>legaia_asset::seru_trade</code> shared with the from-scratch engine</dd>
+    <dt>Offers</dt><dd>64-bucket schedule, a pure function of the seed; kernel <code>legaia_game_tables::seru_trade</code> shared with the from-scratch engine</dd>
     <dt>Edit class</dt><dd>In place, same size, entirely inside 0899 plus a 24-byte engine-facing config blob</dd>
     <dt>Confidence</dt><dd><span class="tag tag-done">Confirmed</span> - hardware-confirmed render &rarr; slide &rarr; cursor &rarr; confirm &rarr; swap</dd>
     <dt>Oracle</dt><dd><code>seru_trade_real.rs</code></dd>

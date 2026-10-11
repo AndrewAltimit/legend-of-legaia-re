@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use crate::common::*;
+use crate::cli_io::*;
 use anyhow::Result;
-use legaia_asset::stage_geom;
 use legaia_prot::cdname;
+use legaia_scene_formats::stage_geom;
 
 /// `asset stage <PATH>` - dump one entry's stage-geometry layout. Useful
 /// to confirm pool placement, sample resolved quad indices, and (with
@@ -14,7 +14,7 @@ pub(crate) fn stage_one(
     verts: usize,
     obj_out: Option<&Path>,
 ) -> Result<()> {
-    let raw = crate::common::read_input(input)?;
+    let raw = crate::cli_io::read_input(input)?;
     let stage = stage_geom::parse(&raw)
         .ok_or_else(|| anyhow::anyhow!("no stage-geometry tables in {}", input.display()))?;
     println!(

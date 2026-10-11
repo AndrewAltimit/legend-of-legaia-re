@@ -16,8 +16,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
+use legaia_engine_scene::scene::DefaultMapIdResolver;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -58,8 +59,8 @@ fn map01_man_carries_the_eight_row_498_clut_ops() {
         .field_man_payload(&host.index)
         .expect("man payload")
         .expect("map01 has a field MAN");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse map01 MAN");
-    let sites = legaia_engine_core::man_field_scripts::scene_clut_cell_fx(&mf, &man);
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse map01 MAN");
+    let sites = legaia_engine_field::man_field_scripts::scene_clut_cell_fx(&mf, &man);
     assert_eq!(sites.len(), 8, "map01 carries exactly eight 4C 61 ops");
     let one_shots: Vec<_> = sites.iter().filter(|s| s.op.frames == 0).collect();
     let fades: Vec<_> = sites.iter().filter(|s| s.op.frames != 0).collect();
@@ -114,8 +115,8 @@ fn map01_fade_completes_in_128_vsyncs_at_either_frame_step() {
         .field_man_payload(&host.index)
         .expect("man payload")
         .expect("map01 has a field MAN");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse map01 MAN");
-    let sites = legaia_engine_core::man_field_scripts::scene_clut_cell_fx(&mf, &man);
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse map01 MAN");
+    let sites = legaia_engine_field::man_field_scripts::scene_clut_cell_fx(&mf, &man);
     let fade = sites
         .iter()
         .find(|s| s.op.frames == 128 && s.op.dest == (0, 498))
@@ -213,8 +214,8 @@ fn map01_one_shots_copy_the_strip_cell_immediately() {
         .field_man_payload(&host.index)
         .expect("man payload")
         .expect("map01 has a field MAN");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse map01 MAN");
-    let sites = legaia_engine_core::man_field_scripts::scene_clut_cell_fx(&mf, &man);
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse map01 MAN");
+    let sites = legaia_engine_field::man_field_scripts::scene_clut_cell_fx(&mf, &man);
 
     let mut world = World::new();
     world.clock.frame_step = 3;

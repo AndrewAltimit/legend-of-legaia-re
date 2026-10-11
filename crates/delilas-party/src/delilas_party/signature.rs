@@ -1,5 +1,4 @@
 //! Signature arts: the host-art table, staged clip chains, authored cast rows and fanfares.
-//! Split out of `delilas_party.rs`.
 
 use super::*;
 
@@ -203,7 +202,7 @@ pub(super) struct StagedChain {
 ///   rate-2 schedule and its park window.
 /// * Che (module 959): the retail walk IS two stages - chain == fold.
 pub(super) fn staged_chain_full(sibling: Sibling) -> StagedChain {
-    use crate::party_swap::enemy_anim::{PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR as RF};
+    use legaia_party_swap::enemy_anim::{PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR as RF};
     match sibling {
         Sibling::Gi => StagedChain {
             clips: &[10, 11, 12, 13],
@@ -257,7 +256,7 @@ pub(super) fn staged_chain_full(sibling: Sibling) -> StagedChain {
 /// rides the restaged wind-up row, hence Lu's
 /// [`enemy_anim::PAYOFF_FLOOR_FRAMES`] floor on the charge).
 pub(super) fn staged_chain_folded(sibling: Sibling) -> StagedChain {
-    use crate::party_swap::enemy_anim::{PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR as RF};
+    use legaia_party_swap::enemy_anim::{PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR as RF};
     match sibling {
         Sibling::Gi | Sibling::Che => StagedChain {
             clips: &[10, 11],
@@ -307,7 +306,7 @@ pub(super) struct AuthoredCastRows {
 ///    FULL retail chain when the LZS budget takes it, the folded
 ///    wind-up + payoff pair otherwise ([`staged_chain_full`] /
 ///    [`staged_chain_folded`]), hosted below the loader's sub-record
-///    scratch ([`party_swap::cast_stage::build_staged_cast_rows`]), with
+///    scratch ([`legaia_party_swap::cast_stage::build_staged_cast_rows`]), with
 ///    the retail Block entry re-homed byte-unmoved onto placeholder row
 ///    `0x06`.
 /// 2. Files hosting no rows (Terra always) get the same one-word
@@ -322,8 +321,8 @@ pub(super) fn author_staged_cast_rows(
     archive: &[u8],
     options: &DelilasPartyOptions,
 ) -> Result<AuthoredCastRows> {
-    use legaia_asset::battle_char_assembly;
-    use party_swap::cast_stage;
+    use legaia_actor_formats::battle_char_assembly;
+    use legaia_party_swap::cast_stage;
 
     // Expand region writes into the offset-edit form
     // `patch_player_record0_full` consumes, dropping bytes that already
@@ -348,7 +347,7 @@ pub(super) fn author_staged_cast_rows(
             return Ok(Plan::NoChange);
         }
         Ok(
-            match crate::arts::patch_player_record0_full(entry, &[], &edits) {
+            match legaia_arts_patch::arts::patch_player_record0_full(entry, &[], &edits) {
                 Some((off, bytes)) => Plan::Fit(off, bytes),
                 None => Plan::Overflow,
             },
@@ -407,7 +406,7 @@ pub(super) fn author_staged_cast_rows(
             .with_context(|| format!("decode {who} record0"))?;
         let (clut_a_live, _) = cast_stage::record0_clut_offsets(&live)
             .with_context(|| format!("read {who} record0 header"))?;
-        let region = crate::arts::record0_lzs_region(&live)
+        let region = legaia_arts_patch::arts::record0_lzs_region(&live)
             .ok_or_else(|| anyhow::anyhow!("{who}'s record0 LZS region not found"))?;
         match cast_stage::staged_state(&decoded_live, clut_a_live)? {
             cast_stage::StagedState::Applied => {
@@ -495,7 +494,7 @@ pub(super) fn author_staged_cast_rows(
                         spec.identity,
                         spec.row_ids,
                         spec.binding,
-                        party_swap::playerize::kept_welded_hand(
+                        legaia_party_swap::playerize::kept_welded_hand(
                             source_id,
                             options.keep_che_hammer && sibling == Sibling::Che,
                         ),
@@ -662,11 +661,11 @@ pub(super) struct SignatureCtx<'a> {
     pub(super) slot: usize,
     /// The sibling mapped onto that slot.
     pub(super) sibling: Sibling,
-    pub(super) rig: &'a party_swap::PlayerRig,
+    pub(super) rig: &'a legaia_party_swap::PlayerRig,
     /// The hero's RETAIL player file, captured before the model loop.
     pub(super) retail_player: &'a [u8],
     pub(super) archive: &'a [u8],
     /// Canonical hand whose kept welded weapon plays the sibling's own
-    /// wrist relation ([`party_swap::kept_welded_hand`]).
+    /// wrist relation ([`legaia_party_swap::kept_welded_hand`]).
     pub(super) natural_wrist_hand: Option<usize>,
 }

@@ -3,7 +3,7 @@
 //! The Earth Ra-Seru Egg is *not* a row in the four-block casino
 //! prize-exchange table ([`crate::casino`]) - it is a **bespoke scripted
 //! exchange** in the `koin1` scene's field-VM script (the MAN, asset type
-//! `0x03` of that scene's [`legaia_asset::scene_asset_table`] bundle; retail
+//! `0x03` of that scene's [`legaia_scene_formats::scene_asset_table`] bundle; retail
 //! extraction entry 543). Talking to the prize girl runs a partition-1
 //! interaction script that, when the casino-coin bank exceeds a threshold,
 //! offers "exchange 100,000 tokens for the Earth Ra-Seru Egg?"; on *Yes* it
@@ -21,7 +21,7 @@
 //!   `+3` and `+7`. Retail value is **99999**: the compare is `cmp == 1`
 //!   (`stored < coins`), so the Earth Egg is offered only when
 //!   `coins > 99999`, i.e. `coins >= 100000`. (Decoder
-//!   [`legaia_asset::field_disasm`] `decode_inventory_cmp`; VM semantics
+//!   [`legaia_scene_formats::field_disasm`] `decode_inventory_cmp`; VM semantics
 //!   `legaia_engine_vm` `flow::op_4e`.)
 //! - **Coin debit** - field-VM op `0x4C` MENU_CTRL **nibble-E sub-5** (the
 //!   add-coins hook onto `_DAT_800845A4`; the menuctrl doc's "XP add" label is
@@ -49,7 +49,7 @@
 
 use anyhow::{Result, bail};
 
-use legaia_asset::scene_asset_table;
+use legaia_scene_formats::scene_asset_table;
 
 /// Item id of the Earth Ra-Seru Egg in the shared 256-entry item-name space.
 pub const EARTH_EGG_ITEM_ID: u8 = 0x6E;
@@ -153,7 +153,7 @@ impl EarthEggExchange {
                 return Some(Self {
                     entry_idx,
                     man_offset,
-                    compressed_budget: crate::man_compressed_budget(
+                    compressed_budget: legaia_disc_patch::man_compressed_budget(
                         &table,
                         man_offset,
                         entry.len(),
@@ -207,7 +207,7 @@ impl EarthEggExchange {
     /// Recompress the (possibly edited) MAN; `None` if it would overflow the
     /// zero-slack footprint.
     pub fn repack(&self) -> Option<Vec<u8>> {
-        crate::compress_within(&self.decoded, self.compressed_budget)
+        legaia_disc_patch::compress_within(&self.decoded, self.compressed_budget)
     }
 }
 

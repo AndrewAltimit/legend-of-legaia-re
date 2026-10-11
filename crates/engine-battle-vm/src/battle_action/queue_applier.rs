@@ -312,7 +312,7 @@ pub const SWING_HIGH: u8 = 0x0F;
 /// against `2` at `0x801EEFD0`.
 ///
 /// `+0x1E` sits between the record's element byte `+0x1D` and its size class
-/// `+0x1F`, and `legaia_asset::monster_archive` does not parse it. What the
+/// `+0x1F`, and `legaia_actor_formats::monster_archive` does not parse it. What the
 /// disassembly establishes is only its *effect*: a class-`2` target is struck
 /// with one `SWING_LOW` instead of two arm swings, which reads as the height /
 /// posture class behind retail's limb-vs-height "Miss".
@@ -663,7 +663,7 @@ pub fn check_and_learn_art(
 /// so. The list it scans - count at `0x80084140 + char*0x414 + 0x704`, ids
 /// from `+0x705` - is the **spell** list: `FUN_801E92DC` prepends there
 /// (`sb v1,0x705(v0)` at `0x801E93AC`, ported as
-/// `engine-core::magic_xp::learn_spell_prepend`), and the ids it holds are
+/// `engine-battle::magic_xp::learn_spell_prepend`), and the ids it holds are
 /// full `0x8x` spell ids, which is why the compare subtracts `0x80`
 /// (`addiu v0,v0,-0x80` at `0x801E92B0`). The token is monster record `+0x3E`,
 /// the Seru a killing blow can absorb. Its one caller is the arts resolver

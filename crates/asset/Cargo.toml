@@ -3,12 +3,9 @@ name = "legaia-asset"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "The `asset` command-line tool: inspection, scanning and export subcommands over the format crates. No library target."
 # tests/integration.rs gathers every tests/*.rs into one binary.
 autotests = false
-
-[lib]
-name = "legaia_asset"
-path = "src/lib.rs"
 
 [[bin]]
 name = "asset"
@@ -18,44 +15,31 @@ required-features = ["cli"]
 [features]
 default = ["cli"]
 # The command-line binary and its argument parser. On by default so
-# `cargo build` still builds every binary; library dependents take this
-# crate through [workspace.dependencies] with default features off, which
-# keeps clap out of library-only builds (the wasm bundle among them).
+# `cargo build` builds the binary; kept as a feature so the package follows
+# the same `cli` convention as every other crate with a binary.
 cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
-legaia-battle-models.workspace = true
-legaia-game-tables.workspace = true
-legaia-overlay-images.workspace = true
 anyhow.workspace = true
-clap = { workspace = true, optional = true }
+png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-legaia-anm.workspace = true
+clap = { workspace = true, optional = true }
+legaia-actor-formats.workspace = true
 legaia-bytes.workspace = true
+legaia-container-formats.workspace = true
+legaia-disc-audit.workspace = true
+legaia-game-tables.workspace = true
 legaia-lzs.workspace = true
-# `byte_account`'s MES walker: a scene bundle's type-0x04 section is a MES
-# dialog container, and its record extents are what the accounting claims.
-legaia-mes.workspace = true
-# `byte_account`'s STR/MDEC overlay claims: the VLC table's packed blob is the
-# entry's second-largest residue run, and `strv2_table` already walks it - the
-# accounting measures the extent with that walk rather than re-implementing it.
-legaia-mdec.workspace = true
+legaia-minigame-formats.workspace = true
+legaia-overlay-images.workspace = true
 legaia-prot.workspace = true
+legaia-scene-formats.workspace = true
 legaia-tim.workspace = true
 legaia-tmd.workspace = true
-# `minigame_sfx` decodes the minigame cue banks (efect.dat descriptors -> VAB
-# voices -> PCM), so the VAB reader is a real dependency, not just a test one.
-legaia-vab.workspace = true
-png.workspace = true
-sha2.workspace = true
-toml.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true, optional = true }
-
-[dev-dependencies]
-legaia-seq.workspace = true
 
 [[test]]
 name = "integration"

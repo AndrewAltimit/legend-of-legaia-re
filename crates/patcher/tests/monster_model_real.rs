@@ -13,10 +13,10 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::{monster_archive, monster_model};
+use legaia_actor_formats::{monster_archive, monster_model};
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_iso::write::mode2_form1_sector_is_valid;
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 const LU_ID: u16 = 164;
 const LU_PARTS: usize = 15;

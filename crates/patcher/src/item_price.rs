@@ -1,7 +1,7 @@
 //! Item shop-price edits + the shop-sellable item pool.
 //!
 //! A town shop's price for an item is the `u16` at `+2` of that item's record
-//! in the `SCUS_942.54` item table (`legaia_asset::item_names::price_slot`).
+//! in the `SCUS_942.54` item table (`legaia_game_tables::item_names::price_slot`).
 //! Quest / key / story / found-only items have price **0**, which is what makes
 //! `> 0` a clean "this item is something a shop sells" predicate - the shop
 //! randomizer draws its `Random` fill from that [`sellable_pool`], so no quest
@@ -15,8 +15,8 @@
 //! non-free and part of [`sellable_pool`].
 
 use anyhow::{Context, Result};
-use legaia_asset::item_names;
-use legaia_asset::item_names::ItemNameTable;
+use legaia_game_tables::item_names;
+use legaia_game_tables::item_names::ItemNameTable;
 use std::collections::BTreeSet;
 
 /// Chest-found equipment that ships with shop price `0`, paired with the value

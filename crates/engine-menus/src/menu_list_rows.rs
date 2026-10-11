@@ -5,7 +5,7 @@
 //! "Submenu state machines").
 //!
 //! The retail kind-4 list kernel (`FUN_80032A44`, navigation port at
-//! `legaia_engine_core::pause_screens::list_kernel_navigate`) only *reads* row entries;
+//! `crate::pause_screens::list_kernel_navigate`) only *reads* row entries;
 //! the entries themselves are built once, at window create / content refresh,
 //! by the SCUS content builder `FUN_80030628` (a per-content-id switch, jump
 //! table `0x80010D38`, index `content_id - 2`). This module ports the
@@ -32,7 +32,7 @@
 //!
 //! The shop buy list is the exception to everything below: its rows are keyed
 //! by **item id**, not by a bag slot, and its builder is live -
-//! `legaia_engine_core::shop::ShopInventory::from_stock_record` runs
+//! `crate::shop::ShopInventory::from_stock_record` runs
 //! [`build_shop_buy_rows`] over the stock record for the field-VM merchant
 //! both play hosts open and for the per-scene catalog.
 //!
@@ -47,12 +47,12 @@
 //!    [`record_string_glyph_count`]. No code path allocates the `gp+0x148`
 //!    node whose header the allocator seeds, and no screen measures a record
 //!    string to size a window - the rects are disc-parsed at boot from
-//!    [`legaia_asset::menu_windows`]. Adopting the sorted window list would
+//!    [`legaia_game_tables::menu_windows`]. Adopting the sorted window list would
 //!    be a change of representation, not a call insertion.
 //! 2. REPLACED-BY: the typed rows every pause-menu screen already carries -
-//!    `legaia_engine_core::pause_screens::PauseItemRow`,
+//!    `crate::pause_screens::PauseItemRow`,
 //!    [`crate::spell_menu::SpellRowView`],
-//!    `legaia_engine_core::equip_session::EquipItem`. That covers [`row_name_source`]
+//!    `crate::equip_session::EquipItem`. That covers [`row_name_source`]
 //!    and [`row_description_source`], which decode the class-tagged `u16`
 //!    entry word ([`CLASS_BAG`]..[`CLASS_SHOP_ALT`]). Nothing produces such a
 //!    word because the typed rows already carry the resolved name and
@@ -60,12 +60,12 @@
 //!    holds.
 //! 3. The three `FUN_80030628` bag builders. They want an **ordered bag-slot
 //!    array** and a per-row ink bit; the array exists now
-//!    (`legaia_engine_core::world::ItemBag` is retail's 256-slot physical array, indexed
+//!    (`crate::item_bag::ItemBag` is retail's 256-slot physical array, indexed
 //!    by slot, bounded by the same active window), so
 //!    [`build_use_list_rows`] is **wired**: `World::bag_use_rows` walks the
 //!    window and `legaia_engine_core::field_menu_dispatch::build_pause_items_session`
 //!    takes its row order, which is what both hosts' Items screen draws.
-//!    `legaia_engine_core::pause_screens::PauseItemRow` still carries no ink field, so
+//!    `crate::pause_screens::PauseItemRow` still carries no ink field, so
 //!    the dim bit is computed and dropped at the draw - the *order* is
 //!    retail's, the greying is not yet. The row's **payload** does survive:
 //!    it is a bag slot, and Use / Throw Out / Sell remove from that slot
@@ -76,7 +76,7 @@
 //!    The two siblings are wired too, on the tables the "no engine table
 //!    carries this" note was wrong about. [`build_price_gated_rows`] wants the
 //!    item record's `+2` price halfword for **every** id, which is exactly
-//!    what `legaia_engine_core::shop_catalog::ShopItemData` holds - both hosts install it
+//!    what `crate::shop_catalog::ShopItemData` holds - both hosts install it
 //!    at boot for the merchant-record scan - not the open shop's stock list,
 //!    whose answer for an unstocked id is a floor of `1`.
 //!    [`build_throw_out_rows`] wants the equipment record's `+7` flags byte
@@ -90,14 +90,14 @@
 //!    (`legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows`).
 //!
 //! Which window each builder fills is not a guess: the menu-overlay
-//! descriptor table ([`legaia_asset::menu_windows`]) carries the content id
+//! descriptor table ([`legaia_game_tables::menu_windows`]) carries the content id
 //! in each record's `+0x0`, and on the retail disc content `2` is window 38
 //! (the shop's **sell** list), content `3` is window 15 and content `0x22`
 //! window 16 (the Items screen's Use / Throw Out lists). All three are
 //! renderer-less containers the kind-4 list kernel draws from the entry
 //! words - which is why the builders and the resolvers close together.
 //!
-//! `legaia_engine_core::pause_screens::list_kernel_navigate` - the *navigation* half of
+//! `crate::pause_screens::list_kernel_navigate` - the *navigation* half of
 //! the same kernel - is the one piece that survived the flat-cursor
 //! translation and is live.
 
@@ -293,7 +293,7 @@ pub const LIST_MODE_PARKED: i32 = 4;
 /// window's `(+0xA, +0xC)` rect origin; the draw stays host-side here.
 ///
 /// The name is deliberately not the bare `description_source`:
-/// `legaia_engine_ui`'s `ui_menu_window_painters` declares a free function
+/// `legaia_engine_ui`'s `menu::window_painters` declares a free function
 /// of that name over a different id space, and the port catalog's call
 /// graph links a bare call to **every** in-tree free function of the name
 /// with no receiver to disambiguate. Sharing it would make this kernel read
@@ -326,8 +326,8 @@ pub fn row_description_source(
 /// Item-table fields the row builders consume. The retail sources are the
 /// 12-byte item record at `0x80074368` (`+0` kind, `+1` subtype, `+2`
 /// price), the item-effect flags byte `0x800752C0[subtype*4 + 2]`
-/// ([`legaia_asset::item_effect`]) and the equipment-record flags byte
-/// `0x80074F68[subtype*8 + 7]` ([`legaia_asset::equip_stats`]).
+/// ([`legaia_game_tables::item_effect`]) and the equipment-record flags byte
+/// `0x80074F68[subtype*8 + 7]` ([`legaia_game_tables::equip_stats`]).
 pub trait ItemRowTables {
     /// Item record kind byte (`+0`): 1 = equipment / key gear, 2 =
     /// effect-bearing consumable.
@@ -532,7 +532,7 @@ pub fn build_throw_out_rows(
 /// Wired through `World::bag_sell_rows` and
 /// `legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows`, which both the shop's
 /// sell-list draw and its sell commit read on both hosts. The price source is
-/// `legaia_engine_core::shop_catalog::ShopItemData` - the item record's `+2` halfword for
+/// `crate::shop_catalog::ShopItemData` - the item record's `+2` halfword for
 /// every id, already installed at boot - and **not** an open shop's stock
 /// list, whose answer for an id it does not sell is a floor of `1` that can
 /// never dim a row.
@@ -566,7 +566,7 @@ pub fn build_price_gated_rows(
 /// passive". The Goods candidate builder compares against it directly
 /// (`li v0,0x41` / `beq` at `0x800317F4..0x800317F8`), which is one past the
 /// 64-slot passive index space and one past the `0x40` sentinel
-/// [`legaia_asset::equip_stats::PASSIVE_NONE`] the equipment side uses; on
+/// [`legaia_game_tables::equip_stats::PASSIVE_NONE`] the equipment side uses; on
 /// retail data the two rules select the same ids, because every class-2 row
 /// carries either an index below `0x40` or exactly this byte.
 pub const GOODS_NO_PASSIVE_MARKER: u8 = 0x41;
@@ -593,11 +593,11 @@ pub fn goods_candidate_accepts(kind: u8, marker: u8) -> bool {
 /// (`0x15`..`0x18`) and the three Goods rows reach **these** - a separate
 /// family with its own filter.
 ///
-/// Wired: `legaia_engine_core::equip_session::EquipSession::items_for_slot` builds the
+/// Wired: `crate::equip_session::EquipSession::items_for_slot` builds the
 /// three Goods slots' candidate list through this whenever the session
 /// carries disc restrictions (a `GoodsIndexTables` adapter answers the two
 /// questions the filter asks from `DiscEquipInfo::install_goods`), and
-/// `legaia_engine_core::pause_screens` hands those rows to both hosts' equip screen. So
+/// `legaia_engine_core::world_views::pause_screens` hands those rows to both hosts' equip screen. So
 /// the Goods list is retail's shape - Remove always first, the equipped item
 /// second as a no-commit row, then bag slots in slot order - while the four
 /// armament lists keep the engine's id-sorted rows.
@@ -684,21 +684,21 @@ pub fn shop_buy_row_order(record_count: usize, walk: usize) -> Vec<usize> {
 /// PORT: FUN_80030628 (content-id-`0x0B` case, `0x80030D48..0x80030F98` -
 /// the shop **buy** list; `see ghidra/scripts/funcs/80030628.txt`).
 ///
-/// Wired: `legaia_engine_core::shop::ShopInventory::from_stock_record` runs it over the
+/// Wired: `crate::shop::ShopInventory::from_stock_record` runs it over the
 /// stock record's own id run, and both builders of a live buy list call that:
 /// `World::try_arm_field_shop` (the field-VM op-`0x49` merchant, which both
 /// play hosts open through `take_pending_field_shop`) with the party's
-/// [`shop_tail_rows_allowed`] probe, and `legaia_engine_core::shop_catalog::scene_shops`
+/// [`shop_tail_rows_allowed`] probe, and `crate::shop_catalog::scene_shops`
 /// for the per-scene listing. The word's row order, conditional tail and
 /// hoisted-band class reach both hosts' buy list; its class selects the row
-/// ink through `legaia_engine_core::shop::shop_buy_row_ink`.
+/// ink through `crate::shop::shop_buy_row_ink`.
 ///
 /// This, not [`build_price_gated_rows`], is the shop's buy row layout.
 /// Content id `2` is the price-gated *bag* list (the sell side); the buy
 /// list is its own case and reads a different source - the field-VM
 /// entry-context record `_DAT_8007B450` directly, `[+2]` = id count and
 /// `[+3 + i]` = the item ids, i.e. exactly the op-`0x49` sub-`0` stock
-/// record [`legaia_asset::shop_stock`] scans.
+/// record [`legaia_scene_formats::shop_stock`] scans.
 ///
 /// Three shapes the disassembly fixes:
 ///
@@ -830,7 +830,7 @@ pub struct LiveWindow {
 /// PORT: FUN_80032434 (glyph-count scan, `0x800324E8..0x80032528`).
 ///
 /// REPLACED-BY: the disc-parsed window rects
-/// ([`legaia_asset::menu_windows`]), which mean no screen measures a record
+/// ([`legaia_game_tables::menu_windows`]), which mean no screen measures a record
 /// string to size a window - see family 1 in the module heading.
 ///
 /// A record string is a sequence of `[len: u8][len * 2 bytes]` segments

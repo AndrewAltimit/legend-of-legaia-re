@@ -22,10 +22,10 @@
 //!
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md convention).
 
-use legaia_asset::man_section::{ManFile, parse as parse_man};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::man_field_scripts::{partition2_record_gates, scene_destinations};
-use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
+use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
+use legaia_engine_field::man_field_scripts::{partition2_record_gates, scene_destinations};
+use legaia_engine_system::input::PadButton;
+use legaia_scene_formats::man_section::{ManFile, parse as parse_man};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
@@ -211,8 +211,8 @@ fn sebucus_hub_sweep_advances_the_gate_spine() {
 /// streaming actor's `0x46`-frame countdown (`FUN_80021934`) and the host
 /// commits it on the hand-off tick, so the entry is the first event other
 /// than `Stepped` within the hold's span.
-fn tick_through_hold(host: &mut SceneHost) -> legaia_engine_core::scene::SceneTickEvent {
-    use legaia_engine_core::scene::SceneTickEvent;
+fn tick_through_hold(host: &mut SceneHost) -> legaia_engine_core::scene_host::SceneTickEvent {
+    use legaia_engine_core::scene_host::SceneTickEvent;
     for _ in 0..200 {
         match host.tick().expect("transition tick") {
             SceneTickEvent::Stepped => {}

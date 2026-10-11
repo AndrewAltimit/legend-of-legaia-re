@@ -163,7 +163,7 @@ impl PlayWindowApp {
         for s in sprites.iter().take(4) {
             // The same centre the billboard builder draws around.
             let c = if battle {
-                legaia_engine_render::effect_billboard::battle_billboard_centre(s.world_pos)
+                legaia_render_kernels::effect_billboard::battle_billboard_centre(s.world_pos)
             } else {
                 s.world_pos
             };
@@ -239,8 +239,8 @@ impl PlayWindowApp {
     /// so the cell, page and palette are the disc's rather than this host's.
     pub(super) fn dance_countin_prims(
         &self,
-    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
-        use legaia_engine_render::ui_dance as ud;
+    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_engine_ui::dance as ud;
         let mg = &self.session.host.world.minigames;
         if !mg.dance_hud_art_staged {
             return Vec::new();
@@ -284,8 +284,8 @@ impl PlayWindowApp {
     /// The dance HUD's textured quads as screen-space PSX primitives, off the
     /// world's one predicate (`MinigameState::dance_hud_quads`: HUD up and
     /// page resident). Empty otherwise, when `hud.rs` draws the text rows.
-    pub(super) fn dance_hud_prims(&self) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
-        use legaia_engine_render::ui_dance as ud;
+    pub(super) fn dance_hud_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_engine_ui::dance as ud;
         let views: Vec<ud::DanceHudQuadView> = self
             .session
             .host
@@ -311,9 +311,9 @@ impl PlayWindowApp {
     ///
     /// One run of digit cells per live popup, seated over the struck actor
     /// (`actor_stage_point`) and laid out by
-    /// `legaia_engine_vm::battle_value_readout::value_cells`, plus the combo
+    /// `legaia_engine_battle_vm::battle_value_readout::value_cells`, plus the combo
     /// counter cluster. The quads themselves come from the shared
-    /// `legaia_engine_ui::battle_numerals` builder the browser play page also
+    /// `legaia_render_kernels::battle_numerals` builder the browser play page also
     /// emits through - this host only supplies the camera-dependent seat.
     ///
     /// Empty outside battle, with no popups, or before the battle VRAM (which
@@ -322,8 +322,8 @@ impl PlayWindowApp {
     pub(super) fn battle_value_readout_prims(
         &self,
         cam: Mat4,
-    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
-        use legaia_engine_render::battle_numerals as bn;
+    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_render_kernels::battle_numerals as bn;
         // The retail-art half: only while the sheet the quads sample is
         // resident. Before that the frame takes the font fallback instead
         // ([`Self::battle_value_readout_draws`]); the two are mutually
@@ -358,7 +358,6 @@ impl PlayWindowApp {
     /// this host had the prim half and no fallback, which is a gap only a
     /// side-by-side of the first frames of a fight shows.
     pub(super) fn battle_value_readout_draws(&self, cam: Mat4, w: u32, h: u32) -> Vec<TextDraw> {
-        use legaia_engine_render as ui;
         if self.battle_vram.is_some() || w == 0 || h == 0 {
             return Vec::new();
         }
@@ -366,35 +365,37 @@ impl PlayWindowApp {
             return Vec::new();
         };
         let (origin, scale) = self.save_select_stage(w, h);
-        let view = |k: &legaia_engine_vm::battle_value_readout::ValueCell| ui::ValueCellView {
-            digit: k.digit,
-            x: k.x,
-            y: k.y,
-            w: k.w,
-            h: k.h,
+        let view = |k: &legaia_engine_battle_vm::battle_value_readout::ValueCell| {
+            legaia_engine_ui::ValueCellView {
+                digit: k.digit,
+                x: k.x,
+                y: k.y,
+                w: k.w,
+                h: k.h,
+            }
         };
         let mut out = Vec::new();
         if let Some(c) = cluster.as_ref() {
-            let labels: Vec<ui::ComboLabelView<'_>> = c
+            let labels: Vec<legaia_engine_ui::ComboLabelView<'_>> = c
                 .labels
                 .iter()
-                .map(|l| ui::ComboLabelView {
+                .map(|l| legaia_engine_ui::ComboLabelView {
                     word: l.word,
                     x: l.x,
                     y: l.y,
                 })
                 .collect();
-            let cells: Vec<ui::ValueCellView> = c.cells.iter().map(view).collect();
-            out.extend(ui::battle_combo_cluster_draws_for(
+            let cells: Vec<legaia_engine_ui::ValueCellView> = c.cells.iter().map(view).collect();
+            out.extend(legaia_engine_ui::battle_combo_cluster_draws_for(
                 &self.font, &labels, &cells, origin, scale,
             ));
         }
         for run in &runs {
-            let cells: Vec<ui::ValueCellView> = run.iter().map(view).collect();
-            out.extend(ui::battle_value_readout_draws_for(
+            let cells: Vec<legaia_engine_ui::ValueCellView> = run.iter().map(view).collect();
+            out.extend(legaia_engine_ui::battle_value_readout_draws_for(
                 &self.font,
                 &cells,
-                ui::VALUE_READOUT_FALLBACK_COLOR,
+                legaia_engine_ui::VALUE_READOUT_FALLBACK_COLOR,
                 origin,
                 scale,
             ));
@@ -425,10 +426,10 @@ impl PlayWindowApp {
         &self,
         cam: Mat4,
     ) -> Option<(
-        Option<legaia_engine_vm::battle_value_readout::ComboCluster>,
-        Vec<Vec<legaia_engine_vm::battle_value_readout::ValueCell>>,
+        Option<legaia_engine_battle_vm::battle_value_readout::ComboCluster>,
+        Vec<Vec<legaia_engine_battle_vm::battle_value_readout::ValueCell>>,
     )> {
-        use legaia_engine_vm::battle_value_readout as vr;
+        use legaia_engine_battle_vm::battle_value_readout as vr;
         if self.session.host.world.mode != SceneMode::Battle {
             return None;
         }
@@ -450,7 +451,7 @@ impl PlayWindowApp {
         // stacking beside it - and stacking is not cosmetic here: two runs
         // centred on the same point interleave into an unreadable third
         // number (a 9 landing inside a 10 reads as "190").
-        let mut newest: Vec<&legaia_engine_core::battle_hud::DamagePopup> = Vec::new();
+        let mut newest: Vec<&legaia_engine_battle::battle_hud_state::DamagePopup> = Vec::new();
         for p in &self.battle_hud.popups {
             if p.status.is_some() {
                 // Status applications have no numeral on the sheet.
@@ -478,7 +479,7 @@ impl PlayWindowApp {
                 continue;
             };
             let age = p.frames_total.saturating_sub(p.frames_remaining);
-            let cells = legaia_engine_render::battle_numerals::popup_value_cells(
+            let cells = legaia_render_kernels::battle_numerals::popup_value_cells(
                 &vp,
                 world_scale,
                 trio,

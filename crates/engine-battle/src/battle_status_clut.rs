@@ -57,7 +57,7 @@
 //! ramp but no window to apply it to. It stays out until the table has a
 //! reader.
 
-use legaia_engine_vm::scus_battle_helpers::bgr555_to_grey;
+use legaia_engine_battle_vm::bgr555_grey::bgr555_to_grey;
 
 /// First VRAM CLUT row of the battle party palettes - retail's
 /// `addiu v0,s3,0x1e1` (`0x8004D77C`), the same `481 + ordinal` the
@@ -77,9 +77,9 @@ pub const PARTY_CLUT_SLOTS: usize = 3;
 /// (`ctx[+0x894 + slot*0x1E0]`), the per-affliction latch (`actor[+0x220]`),
 /// and the staged row the upload comes from (`ctx[+0xE34]`).
 ///
-/// Lives on `legaia_engine_core::battle_hud::BattleHud` because that is the one
+/// Lives on `crate::battle_hud_state::BattleHud` because that is the one
 /// per-frame battle struct both hosts own; [`Self::arm`] is driven from
-/// `legaia_engine_core::battle_hud::BattleHud::sync_status`, which every host already
+/// `crate::battle_hud_state::BattleHud::sync_status`, which every host already
 /// calls once per slot per frame.
 #[derive(Debug, Clone, Default)]
 pub struct StatusClutState {

@@ -44,7 +44,7 @@ Terms used throughout: a scene's script records live in **partitions**, written 
 | Instrument | Question |
 |---|---|
 | [`critical_path_replay`](../../crates/engine-shell/tests/critical_path_replay.rs) | How far a pad run gets along the chapter-1 route, with no seating. |
-| `chapter1_frontier_ladder` (engine-core) | Which chapter-1 scenes load, script, walk and leave - breadth. |
+| `chapter1_frontier_ladder` (parity) | Which chapter-1 scenes load, script, walk and leave - breadth. |
 | chapter-2 / chapter-3 / boss spine oracles | Whether the pinned gates of one arc sequence through the engine. |
 | **this ladder** | How far each stretch of the **whole** story gets from a real save there, and how far a cold New Game gets without help. |
 

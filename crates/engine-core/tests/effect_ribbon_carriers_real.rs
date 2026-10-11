@@ -4,10 +4,10 @@
 //! Move-VM op `0x42` (arm `0x80023F94`) is the only writer of the ribbon arm's
 //! state - draw kind `+0x56 = 4` with `+0x9E & 0x2000` - and it occurs only in
 //! slot-B cast / summon images. This test stages every part record of each
-//! such image through [`legaia_engine_core::summon::SummonScene`], ticks the
+//! such image through [`legaia_engine_effects::summon::SummonScene`], ticks the
 //! scene, and for every part that reaches the ribbon state reads the emitter's
 //! arguments back off the live actor with the
-//! [`legaia_engine_core::effect_ribbon`] readers and builds the ribbon.
+//! [`legaia_engine_effects::effect_ribbon`] readers and builds the ribbon.
 //!
 //! What it pins is the chain *move program -> actor fields -> emitter
 //! arguments* on real bytes; it says nothing about how the ribbon draws.
@@ -15,12 +15,12 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
-use legaia_engine_core::effect_ribbon::{
+use legaia_engine_effects::effect_ribbon::{
     AnalyticTrig, RibbonParams, build_ribbon, ribbon_call_args, split_packed_count,
 };
-use legaia_engine_core::summon::SummonScene;
+use legaia_engine_effects::summon::SummonScene;
 use legaia_engine_vm::move_vm::MoveHost;
+use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
 use legaia_prot::archive::Archive;
 
 struct LutHost;
@@ -131,8 +131,9 @@ fn shipped_ribbon_carriers_arm_the_emitter_from_their_own_operands() {
 /// Also reports how the part tick's mode-2 channel moves `+0xC8`.
 #[test]
 fn shipped_ribbon_carriers_reach_the_battle_draw_list() {
-    use legaia_engine_core::effect_ribbon::{RIBBON_CLUT, RIBBON_TPAGE};
-    use legaia_engine_core::world::{SceneMode, World};
+    use legaia_engine_core::world::World;
+    use legaia_engine_effects::effect_ribbon::{RIBBON_CLUT, RIBBON_TPAGE};
+    use legaia_engine_mode::mode::SceneMode;
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;

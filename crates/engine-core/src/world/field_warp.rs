@@ -8,10 +8,10 @@
 //! runs, and the player is seated at the destination on the frame the timer
 //! runs out - the bottom of the fade to black - followed by a `0x28`-frame
 //! hold before the pad comes back. See
-//! [`legaia_engine_vm::field_warp_tile`] for the byte-level reading.
+//! [`legaia_engine_field::field_warp_tile`] for the byte-level reading.
 
 use super::*;
-use vm::field_warp_tile as warp_tile;
+use legaia_engine_field::field_warp_tile as warp_tile;
 
 /// What one frame of the warp timer did, for the scene host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,7 +34,7 @@ pub enum FieldWarpTick {
 }
 
 /// A `FUN_801D58F0` fade as the template `FUN_80024E80` loads. The trailing
-/// id word is left `0` for [`crate::fade::spawn_fade`] to stamp.
+/// id word is left `0` for [`legaia_engine_system::fade::spawn_fade`] to stamp.
 ///
 /// The field overlay's `FUN_801D58F0` is exactly this repack: it stores `a0`
 /// at `[0]`, its fifth argument at `[1]`, the bytes of `a1` / `a2` at
@@ -43,8 +43,11 @@ pub enum FieldWarpTick {
 /// slot-A images hold unrelated code at the same VA, hence the stem.
 ///
 /// PORT: overlay_field_0897_801d58f0
-fn warp_fade_template(f: &warp_tile::WarpFade, delay: i16) -> crate::fade::FadeTemplate {
-    crate::fade::FadeTemplate {
+fn warp_fade_template(
+    f: &warp_tile::WarpFade,
+    delay: i16,
+) -> legaia_engine_system::fade::FadeTemplate {
+    legaia_engine_system::fade::FadeTemplate {
         kind: f.kind,
         duration: f.duration,
         start_rgb: warp_tile::WarpFade::rgb(f.from_rgb),
@@ -66,7 +69,7 @@ impl World {
     /// REF: FUN_801D1EC4 (ported as [`warp_tile::arm_warp`]), FUN_801D58F0
     pub fn arm_field_warp(&mut self, dest: (u8, u8)) {
         let [out, fade_in] = warp_tile::arm_warp(&mut self.locomotion.warp, dest);
-        crate::fade::spawn_fade(
+        legaia_engine_system::fade::spawn_fade(
             &mut self.presentation.fade,
             &warp_fade_template(&out, out.delay),
             0,
@@ -116,7 +119,7 @@ impl World {
             *left -= i32::from(delta);
             if *left <= 0 {
                 self.locomotion.warp_fade_in_in = None;
-                crate::fade::spawn_fade(
+                legaia_engine_system::fade::spawn_fade(
                     &mut self.presentation.fade,
                     &warp_fade_template(&warp_tile::WARP_FADE_IN, 0),
                     0,
@@ -162,12 +165,13 @@ impl World {
                 // brings the interior's unbound placements into the list.
                 // REF: FUN_80017EC8
                 self.recentre_field_window(i32::from(world.0) >> 7, i32::from(world.1) >> 7);
-                self.pending_field_events
-                    .push(crate::field_events::FieldEvent::MoveTo {
+                self.pending_field_events.push(
+                    legaia_engine_field::field_events::FieldEvent::MoveTo {
                         world_x: world.0 as u16,
                         world_z: world.1 as u16,
                         is_player: true,
-                    });
+                    },
+                );
                 let tile = |w: i16| (i32::from(w) >> 7).clamp(0, 0x7F) as u8;
                 FieldWarpTick::Landed {
                     query_tile,
@@ -185,7 +189,7 @@ impl World {
     /// REF: FUN_801D1EC4
     pub fn field_walk_on_clip_reset(&mut self) {
         if self.party.scene_save_allowed {
-            self.locomotion.clip_base = vm::field_player_clip::BASE_IDLE;
+            self.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_IDLE;
             self.locomotion.player_party_bank = true;
         }
     }
@@ -196,9 +200,9 @@ impl World {
     /// op-`4C CE` clip override is dropped (SCUS `0x8003B6F0`,
     /// `sw zero, _DAT_8007B6AC`) - both inside the map init `FUN_8003AEB0`.
     pub fn reset_field_warp_and_clip(&mut self) {
-        self.locomotion.warp = vm::field_warp_tile::WarpTimer::default();
+        self.locomotion.warp = legaia_engine_field::field_warp_tile::WarpTimer::default();
         self.locomotion.warp_fade_in_in = None;
-        self.locomotion.clip_base = vm::field_player_clip::BASE_IDLE;
+        self.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_IDLE;
         self.locomotion.player_party_bank = true;
         self.locomotion.clip_override = 0;
         self.locomotion.player_live_model = None;
@@ -212,7 +216,7 @@ mod tests {
 
     fn world_with_player() -> World {
         let mut w = World::new();
-        w.mode = crate::world::SceneMode::Field;
+        w.mode = legaia_engine_mode::mode::SceneMode::Field;
         w.install_field_player(0);
         w
     }
@@ -278,7 +282,9 @@ mod tests {
             "sentinel cleared on the landing tick"
         );
         // The hold keeps the pad off after the landing.
-        assert!(vm::field_warp_tile::pad_suppressed(&w.locomotion.warp));
+        assert!(legaia_engine_field::field_warp_tile::pad_suppressed(
+            &w.locomotion.warp
+        ));
     }
 
     #[test]

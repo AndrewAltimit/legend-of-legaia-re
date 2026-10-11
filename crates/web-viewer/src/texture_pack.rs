@@ -36,7 +36,7 @@
 //! image, so a texture that has already been patched reports a fingerprint
 //! mismatch instead of being silently replaced twice.
 
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 use crate::texture_registry::{ReplaceOp, TexCoord, fnv1a64, replace_op, tier};
 
@@ -156,7 +156,7 @@ pub struct Ident {
 pub fn identify(patcher: &DiscPatcher, coord: &TexCoord) -> Result<Ident, String> {
     match replace_op(coord)? {
         ReplaceOp::Tim(target) => {
-            let orig = legaia_patcher::texture::read_texture(patcher, &target)
+            let orig = legaia_texture_replace::texture::read_texture(patcher, &target)
                 .map_err(|e| format!("{e:#}"))?;
             let bpp = match orig.tim.mode {
                 legaia_tim::PixelMode::Bpp4 => 4,
@@ -173,9 +173,9 @@ pub fn identify(patcher: &DiscPatcher, coord: &TexCoord) -> Result<Ident, String
             })
         }
         ReplaceOp::SaveIconSlot(slot) => {
-            use legaia_asset::save_icon as si;
-            let sheet =
-                legaia_patcher::save_icon::read_sheet(patcher).map_err(|e| format!("{e:#}"))?;
+            use legaia_ui_formats::save_icon as si;
+            let sheet = legaia_texture_replace::save_icon::read_sheet(patcher)
+                .map_err(|e| format!("{e:#}"))?;
             // Same identity bytes the scan fingerprints: palette then pixels.
             let mut ident = Vec::with_capacity(si::TILE_CLUT_BYTES + si::TILE_BLOCK_BYTES);
             ident.extend_from_slice(&sheet.tile_clut_bytes(slot).map_err(|e| format!("{e:#}"))?);
@@ -192,7 +192,7 @@ pub fn identify(patcher: &DiscPatcher, coord: &TexCoord) -> Result<Ident, String
             })
         }
         ReplaceOp::BattleEquip(target) => {
-            let block = legaia_patcher::battle_texture::read_block(patcher, &target)
+            let block = legaia_texture_replace::battle_texture::read_block(patcher, &target)
                 .map_err(|e| format!("{e:#}"))?;
             // The scan fingerprints the block's decoded bytes exactly as
             // stored - header, CLUT run, pixels - so the same window has to
@@ -210,7 +210,7 @@ pub fn identify(patcher: &DiscPatcher, coord: &TexCoord) -> Result<Ident, String
             })
         }
         ReplaceOp::MonsterPage(target) => {
-            let page = legaia_patcher::monster_texture::read_page(patcher, &target)
+            let page = legaia_texture_replace::monster_texture::read_page(patcher, &target)
                 .map_err(|e| format!("{e:#}"))?;
             // The same window the scan fingerprints: the pool as stored,
             // palettes then pixels.

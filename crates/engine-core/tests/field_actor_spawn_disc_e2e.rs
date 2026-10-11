@@ -16,7 +16,7 @@
 //! `0x4C` (`MENU_CTRL`) is a **field-VM** opcode, and the field VM's
 //! bytecode lives in the scene **MAN** - the asset-table bundle MAN plus
 //! each block's streaming variant carrier. This census therefore walks MAN
-//! records (see [`legaia_engine_core::man_field_scripts`]).
+//! records (see [`legaia_engine_scene::man_census`]).
 //!
 //! It used to walk `Scene::find_event_scripts` instead. Those entries carry
 //! **move-VM prescripts**, not field-VM bytecode, so a census over them was
@@ -40,13 +40,13 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::field_events::FieldEvent;
-use legaia_engine_core::man_field_scripts::{
-    CLEAN_RESYNC_INSNS, partition_record_span, scene_man_carriers,
-};
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{FIELD_SPAWN_START_SLOT, SceneMode, World};
-use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker};
+use legaia_engine_core::world::{FIELD_SPAWN_START_SLOT, World};
+use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::man_census::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
 fn extracted_dir() -> Option<PathBuf> {
     let d = PathBuf::from("extracted");
@@ -95,7 +95,7 @@ struct SpawnOpSite {
 ///
 /// Records are bounded and header-decoded per partition by
 /// [`partition_record_span`], then disassembled from the record's first
-/// opcode - the same instrument [`legaia_engine_core::man_field_scripts`]
+/// opcode - the same instrument [`legaia_engine_scene::man_census`]
 /// uses for the flag censuses.
 fn collect_0x4c_d8_sites(extracted: &std::path::Path) -> Vec<SpawnOpSite> {
     let index = ProtIndex::open_extracted(extracted).expect("open ProtIndex");
@@ -106,7 +106,7 @@ fn collect_0x4c_d8_sites(extracted: &std::path::Path) -> Vec<SpawnOpSite> {
         };
         for carrier in scene_man_carriers(&index, &scene) {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             for partition in 0..3 {
@@ -172,7 +172,7 @@ fn collect_0x4c_d8_sites(extracted: &std::path::Path) -> Vec<SpawnOpSite> {
 ///
 /// Within a scene the sites form a contiguous 9-byte-stride chain: that
 /// stride alignment is the structural proof that the encoding pinned in
-/// `World::op4c_n_d_sub8_call_d77f4` matches retail, since a wrong width
+/// `World::spawn_morph_actor` matches retail, since a wrong width
 /// would not land the next decode on a `0x4C` dispatch byte five times over.
 #[test]
 fn disc_corpus_contains_4c_d8_opcode_pattern() {
@@ -431,8 +431,8 @@ fn scene_host_loads_doman_vdf_buffer_and_spawn_resolves_body() {
         eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
         return;
     };
-    let mut host =
-        legaia_engine_core::scene::SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    let mut host = legaia_engine_core::scene_host::SceneHost::open_extracted(&extracted)
+        .expect("open SceneHost");
     if host.load_scene("doman").is_err() {
         eprintln!("[skip] doman scene not loadable");
         return;
@@ -566,8 +566,8 @@ fn scene_host_seeds_global_tmd_pool_head_from_befect_data() {
         eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
         return;
     };
-    let mut host =
-        legaia_engine_core::scene::SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    let mut host = legaia_engine_core::scene_host::SceneHost::open_extracted(&extracted)
+        .expect("open SceneHost");
     if host.load_scene("doman").is_err() {
         eprintln!("[skip] doman scene not loadable");
         return;
@@ -625,8 +625,8 @@ fn balden2_natural_drive_reaches_4c_d8_cluster_via_entry_script() {
         return;
     };
 
-    let mut host =
-        legaia_engine_core::scene::SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    let mut host = legaia_engine_core::scene_host::SceneHost::open_extracted(&extracted)
+        .expect("open SceneHost");
     if host.load_scene("balden2").is_err() {
         eprintln!("[skip] balden2 scene not loadable");
         return;
@@ -691,7 +691,7 @@ fn morph_weight_disc_blocks_are_single_record() {
             continue;
         };
         let mut world = World::default();
-        world.set_vdf_buffer(legaia_engine_core::scene_bundle::find_vdf_buffer(&scene));
+        world.set_vdf_buffer(legaia_engine_scene::scene_bundle::find_vdf_buffer(&scene));
         for s in scene_sites {
             let Some(block) = world.vdf_record_bytes(s.bytes[2]).map(<[u8]>::to_vec) else {
                 continue;
@@ -756,7 +756,7 @@ fn morph_weight_actor_seats_and_blends_on_a_shipped_carrier() {
         // One host per scene: a second `enter_field_scene` on the same host
         // leaves the previous scene's pool actors in the auto-spawn slots, so
         // the slot this drive lands in would not be this scene's.
-        let mut host = legaia_engine_core::scene::SceneHost::open_extracted(&extracted)
+        let mut host = legaia_engine_core::scene_host::SceneHost::open_extracted(&extracted)
             .expect("open SceneHost");
         if host.load_scene(scene).is_err() || host.enter_field_scene(scene, 0).is_err() {
             continue;
@@ -786,7 +786,7 @@ fn morph_weight_actor_seats_and_blends_on_a_shipped_carrier() {
         );
         assert_eq!(
             actor.handler,
-            legaia_engine_core::actor_handler::ActorHandler::MorphWeights,
+            legaia_engine_field::actor_handler::ActorHandler::MorphWeights,
             "{scene}: the 4C D8 allocator stamps the morph handler"
         );
         let morph = actor

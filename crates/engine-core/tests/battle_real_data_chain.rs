@@ -10,9 +10,10 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::effect_bundle;
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, StepOutcome};
+use legaia_container_formats::effect_bundle;
+use legaia_engine_battle_vm::battle_action::{ActionState, StepOutcome};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_prot::archive::Archive;
 use legaia_prot::cdname;
 
@@ -72,7 +73,7 @@ fn real_effect_bundle_parses_and_battle_sm_progresses() {
     // just confirm the asset bundle's existence doesn't break the world
     // construction path engines use to wire effect-VM pools.
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },

@@ -85,7 +85,7 @@
 //! production path rather than only under test.
 //!
 //! The engine's *other* cutscene path is separate and stays so:
-//! `legaia_engine_core::cutscene` and `legaia-engine play-str` demux through
+//! `legaia_engine_system::movie::cutscene` and `legaia-engine play-str` demux through
 //! [`StrFrameAssembler`](crate::str_sector::StrFrameAssembler), which is the
 //! simpler in-order assembler. This module remains the oracle that one is
 //! cross-checked against.

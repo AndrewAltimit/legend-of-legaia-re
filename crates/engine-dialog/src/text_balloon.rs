@@ -19,7 +19,7 @@
 //!   timer >= total it sets its own kill bit.
 //!
 //! **This is not the opening narration crawl** - the crawl is the `CC F8
-//! 80 N` roller actor (`FUN_80037174`, see `legaia_engine_core::cutscene_narration`).
+//! 80 N` roller actor (`FUN_80037174`, see `legaia_engine_field::cutscene_narration`).
 //! See `docs/subsystems/cutscene.md` and `docs/reference/functions.md`.
 //!
 //! ## The parent-link handshake

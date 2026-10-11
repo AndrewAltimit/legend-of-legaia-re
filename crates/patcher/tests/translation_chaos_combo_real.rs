@@ -23,12 +23,12 @@
 
 use std::collections::BTreeMap;
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 use legaia_patcher::items::valid_item_pool;
-use legaia_patcher::translation::{ImportPhase, import_pack_phase};
+use legaia_translate::{ImportPhase, import_pack_phase};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -77,7 +77,7 @@ fn run_chaos_passes(patcher: &mut DiscPatcher, seed: u64) {
     apply::inject_seru_bell_name(patcher).expect("seru bell name");
 
     apply::randomize_drops(patcher, &pool, seed, DropMode::Random).expect("drops");
-    apply::inject_equipment_bonus_drop(patcher, legaia_patcher::bonus_drop::DEFAULT_CHANCE_PCT)
+    apply::inject_equipment_bonus_drop(patcher, legaia_code_hooks::bonus_drop::DEFAULT_CHANCE_PCT)
         .expect("equipment drops");
     apply::randomize_encounters_full(
         patcher,
@@ -88,9 +88,10 @@ fn run_chaos_passes(patcher: &mut DiscPatcher, seed: u64) {
         Some(apply::SoloStrongConfig::default()),
     )
     .expect("encounters");
-    apply::inject_flee_exp(patcher, legaia_patcher::flee_exp::DEFAULT_PCT).expect("flee exp");
+    apply::inject_flee_exp(patcher, legaia_code_hooks::flee_exp::DEFAULT_PCT).expect("flee exp");
     apply::inject_enemy_ally(patcher, legaia_patcher::enemy_ally::DEFAULT_PCT).expect("enemy ally");
-    apply::inject_shiny_seru(patcher, legaia_patcher::shiny_seru::DEFAULT_PCT).expect("shiny seru");
+    apply::inject_shiny_seru(patcher, legaia_code_hooks::shiny_seru::DEFAULT_PCT)
+        .expect("shiny seru");
     apply::inject_trade_full(patcher, seed).expect("seru trade");
     let keep_static = legaia_patcher::items::default_static_chest_items(&scus);
     apply::randomize_chests(patcher, &pool, seed, DropMode::Random, &keep_static).expect("chests");
@@ -103,7 +104,7 @@ fn run_chaos_passes(patcher: &mut DiscPatcher, seed: u64) {
     apply::randomize_equip_bonuses(patcher, seed, DropMode::Random).expect("equip bonus");
     apply::randomize_weapon_specialty(patcher, seed).expect("weapon specialty");
     apply::randomize_steals(patcher, &pool, seed, DropMode::Random).expect("steals");
-    apply::randomize_arts(patcher, seed, legaia_patcher::arts::ArtsMode::Random).expect("arts");
+    apply::randomize_arts(patcher, seed, legaia_arts_patch::arts::ArtsMode::Random).expect("arts");
     apply::randomize_doors(
         patcher,
         seed,
@@ -150,7 +151,7 @@ fn language_pack_plus_chaos_preset_composes() {
     // are also the compression-friendly shape - a partially translated scene
     // loses cross-line LZS matches and overflows scenes a full fill fits).
     let src_patcher = DiscPatcher::open(original.clone()).expect("open disc");
-    let mut pack = legaia_patcher::translation::export_pack(&src_patcher).expect("export skeleton");
+    let mut pack = legaia_translate::export_pack(&src_patcher).expect("export skeleton");
     let mut expect: BTreeMap<String, String> = BTreeMap::new();
     for entries in pack.sections.each_mut() {
         for e in entries.iter_mut() {
@@ -211,7 +212,7 @@ fn language_pack_plus_chaos_preset_composes() {
     // key offset moves with the record), so they are matched by value - the
     // overwhelming majority must read back somewhere in the corpus.
     let post_patcher = DiscPatcher::open(patched.clone()).expect("open patched");
-    let re = legaia_patcher::translation::export_pack(&post_patcher).expect("re-export");
+    let re = legaia_translate::export_pack(&post_patcher).expect("re-export");
     let mut translated_back = 0usize;
     let mut scus_missing: Vec<&str> = Vec::new();
     let expected_values: std::collections::BTreeSet<&str> =

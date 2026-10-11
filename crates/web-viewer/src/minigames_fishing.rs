@@ -1,11 +1,11 @@
 //! Fishing-minigame methods of [`LegaiaMinigames`] - the browser twin of the
 //! play-window's `start_fishing_minigame` (`window/minigames.rs`).
 //!
-//! The rules are the ported [`legaia_engine_core::fishing`] engine - the one
+//! The rules are the ported [`legaia_engine_fishing::fishing`] engine - the one
 //! session type, [`PondSession`], that the native window and the browser play
 //! page also run through `World::tick_fishing`. All of it is driven by the
 //! tables decoded from the visitor's own disc (PROT 0972 rodata,
-//! [`legaia_asset::fishing_species`]). This file is the thin JSON shell over
+//! [`legaia_minigame_formats::fishing_species`]). This file is the thin JSON shell over
 //! it - it ticks the session, applies reel input and hands the state to the
 //! page. No table ships with the site.
 //!
@@ -15,11 +15,11 @@
 
 use super::*;
 
-use legaia_asset::fishing_species;
-use legaia_engine_core::fishing::{
+use legaia_engine_fishing::fishing::{
     self, FishingRecord, PondEvent, PondInput, PondPhase, PondSession, PrizeExchange,
 };
-// engine-ui re-exports its `ui_fishing` module's items at the crate root.
+use legaia_minigame_formats::fishing_species;
+// engine-ui re-exports its `fishing::hud` module's items at the crate root.
 use legaia_engine_ui as ui_fishing;
 use legaia_engine_ui::{BarAxis, CatchHudState, HudCaption, HudDraw};
 
@@ -53,15 +53,16 @@ impl LegaiaMinigames {
                 let ov = img.as_deref().unwrap_or_default();
                 self.fishing_spawn = fishing_species::parse_spawn_tables(ov);
                 self.fishing_cadence = fishing_species::parse_cadence_templates(ov);
-                self.fishing_exchange = legaia_asset::fishing_exchange::parse(ov);
-                self.fishing_sprites = legaia_asset::fishing_sprites::parse(ov);
+                self.fishing_exchange = legaia_minigame_formats::fishing_exchange::parse(ov);
+                self.fishing_sprites = legaia_minigame_formats::fishing_sprites::parse(ov);
                 let names = self.item_names.as_ref();
-                self.fishing_captions = legaia_asset::fishing_captions::parse(ov).map(|raw| {
-                    legaia_engine_core::world::FishingCaptionText::resolve(&raw, |id| {
-                        names.and_then(|n| n.name(id)).map(str::to_string)
-                    })
-                    .with_species_names(ov)
-                });
+                self.fishing_captions =
+                    legaia_minigame_formats::fishing_captions::parse(ov).map(|raw| {
+                        legaia_engine_core::world::FishingCaptionText::resolve(&raw, |id| {
+                            names.and_then(|n| n.name(id)).map(str::to_string)
+                        })
+                        .with_species_names(ov)
+                    });
                 let venue_ok = self.fishing_spawn.is_some() && self.fishing_cadence.is_some();
                 self.fishing_species = Some(species);
                 self.fishing_overlay = img;
@@ -335,7 +336,7 @@ impl LegaiaMinigames {
             // Anchored on the lead's seat, as retail's lure spawn reads the
             // lead actor's own position (`fishing_venue::lead_spawn`).
             let (anchor_x, _, anchor_z) = legaia_engine_core::fishing_venue::lead_spawn(venue);
-            p.attach_venue(legaia_engine_core::fishing::PondVenue {
+            p.attach_venue(legaia_engine_fishing::fishing::PondVenue {
                 map,
                 region_block: scene.region_block.clone(),
                 anchor_x,
@@ -422,7 +423,7 @@ impl LegaiaMinigames {
     /// "ot":n}, ...]` in retail 320x240 screen space, **in draw order** -
     /// the faces `PondSession::rod_faces` projects (the rod actor's pose,
     /// culled and bucketed the way `FUN_80043390`'s handlers do), wrapped by
-    /// the shared `ui_fishing_rod` builder and ordered by
+    /// the shared `fishing::rod` builder and ordered by
     /// `screen_prim::order_primitives`, the order the other two hosts' quad
     /// pass draws them in. A triangle repeats its third corner. `[]` with no
     /// rod out.
@@ -433,14 +434,14 @@ impl LegaiaMinigames {
     /// after it (the rod's packets are the earlier `AddPrim`s, so a shared
     /// bucket draws the line first).
     pub fn fishing_rod_json(&self) -> String {
-        use legaia_engine_ui::screen_prim::{ScreenPrim, order_primitives};
+        use legaia_render_kernels::screen_prim::{ScreenPrim, order_primitives};
         let Some(p) = self.fishing_pond.as_ref() else {
             return "[]".to_string();
         };
         let prims: Vec<ScreenPrim> = p
             .rod_faces()
             .into_iter()
-            .map(|f| legaia_engine_ui::ui_fishing_rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
+            .map(|f| legaia_engine_ui::fishing::rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
             .collect();
         let mut faces: Vec<String> = Vec::new();
         for i in order_primitives(&prims) {
@@ -473,7 +474,7 @@ impl LegaiaMinigames {
     /// this frame (`_DAT_8007B874` layout: `0x8000` D-pad left, `0x2000`
     /// D-pad right, `0x40` / `0x80` the reel buttons). The strike credit's pad
     /// nudge is counted from it by the shared kernel
-    /// [`legaia_engine_core::fishing_actors::bite_pad_nudge`] - the same count
+    /// [`legaia_engine_fishing::fishing_actors::bite_pad_nudge`] - the same count
     /// `World::tick_fishing` feeds the play hosts - rather than by this page's
     /// script, which used to add one per key event and so also counted the
     /// cast press and both reel buttons separately. Returns the events raised
@@ -492,7 +493,7 @@ impl LegaiaMinigames {
         let Some(p) = self.fishing_pond.as_mut() else {
             return "[]".to_string();
         };
-        let edge_bonus = legaia_engine_core::fishing_actors::bite_pad_nudge(pressed_mask);
+        let edge_bonus = legaia_engine_fishing::fishing_actors::bite_pad_nudge(pressed_mask);
         self.fx.tick(1);
         // The venue hub (Triangle / Select on the idle shore): the same
         // session-side kernel the two world hosts run through
@@ -506,10 +507,10 @@ impl LegaiaMinigames {
         let mut hub_events = Vec::new();
         let hub = p.hub_step(pressed_mask, |_| MINIGAMES_TACKLE_HELD);
         match hub.exit {
-            Some(legaia_engine_core::fishing_hub::HubExit::Leave) => {
+            Some(legaia_engine_fishing::fishing_hub::HubExit::Leave) => {
                 hub_events.push(r#"{"e":"hub_leave"}"#.to_string());
             }
-            Some(legaia_engine_core::fishing_hub::HubExit::OpenExchange) => {
+            Some(legaia_engine_fishing::fishing_hub::HubExit::OpenExchange) => {
                 p.hub_exchange_closed();
                 hub_events.push(r#"{"e":"hub_exchange"}"#.to_string());
             }
@@ -543,10 +544,10 @@ impl LegaiaMinigames {
                     // effect pool - the twin of the spawn
                     // `World::tick_fishing` makes for the other two hosts
                     // off the same strike edge.
-                    let parts = legaia_engine_core::fishing_chrome::splash_burst(
-                        legaia_engine_core::fishing_actors::SCREEN_CENTRE.0,
-                        legaia_engine_core::fishing_actors::SCREEN_CENTRE.1,
-                        legaia_engine_core::minigame_fx::SPLASH_SPRITE_ID,
+                    let parts = legaia_engine_fishing::fishing_chrome::splash_burst(
+                        legaia_engine_fishing::fishing_actors::SCREEN_CENTRE.0,
+                        legaia_engine_fishing::fishing_actors::SCREEN_CENTRE.1,
+                        legaia_engine_minigames::minigame_fx::SPLASH_SPRITE_ID,
                         SPLASH_SPREAD,
                     );
                     self.fx.spawn_splash(&parts);
@@ -707,7 +708,7 @@ impl LegaiaMinigames {
 
     /// The last [`Self::fishing_pond_hud_json`] frame's sprite half - every
     /// plate, digit, gauge cap and banner cut from the overlay's sprite table
-    /// (`FUN_801D63B0`, the shared `ui_fishing_sprite` builder the two play
+    /// (`FUN_801D63B0`, the shared `fishing::sprite` builder the two play
     /// hosts draw on their GPUs) - rasterised over the pond's VRAM into a
     /// `w x h` RGBA8 overlay, transparent where nothing drew. Empty when
     /// [`Self::fishing_hud_sprites_ready`] is false.
@@ -717,11 +718,11 @@ impl LegaiaMinigames {
         else {
             return Vec::new();
         };
-        let prims = legaia_engine_ui::ui_fishing_sprite::fishing_hud_sprite_prims(
+        let prims = legaia_engine_ui::fishing::sprite::fishing_hud_sprite_prims(
             &self.fishing_hud_last,
             table,
         );
-        legaia_engine_ui::screen_prim_raster::rasterize_rgba_overlay(
+        legaia_render_kernels::screen_prim_raster::rasterize_rgba_overlay(
             &prims,
             &scene.vram_words(),
             w,
@@ -748,7 +749,8 @@ impl LegaiaMinigames {
         if p.hub().is_none() {
             return r#"{"open":false}"#.to_string();
         }
-        let Some(text) = legaia_engine_core::fishing_hub::FishingHubText::from_overlay(ov) else {
+        let Some(text) = legaia_engine_fishing::fishing_hub::FishingHubText::from_overlay(ov)
+        else {
             return r#"{"open":false}"#.to_string();
         };
         let names = self.item_names.as_ref();
@@ -764,7 +766,7 @@ impl LegaiaMinigames {
             .map(|l| {
                 format!(
                     r#"{{"t":{},"x":{},"y":{},"m":{}}}"#,
-                    jstr(&legaia_engine_core::fishing_hub::hub_text_lossy(&l.text)),
+                    jstr(&legaia_engine_fishing::fishing_hub::hub_text_lossy(&l.text)),
                     l.x,
                     l.y,
                     l.marked

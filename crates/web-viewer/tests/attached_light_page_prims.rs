@@ -2,7 +2,7 @@
 //! VM's op `0x34` sub-1 darkness mask - for as long as the scene runs.
 //!
 //! `World::field_light_draws` is shared, and the native window's twin draw is
-//! pinned by `engine-core`'s `attached_light_retail_capture_disc`. What no
+//! pinned by `parity`'s `attached_light_retail_capture_disc`. What no
 //! page test asserted is that the page's per-tick screen-prim cache
 //! (`tick_battle_intro` -> `field_light_prims`) carries the mask as a
 //! **subtractive** run (class code `1 + abr` with `abr = 2`) on a field

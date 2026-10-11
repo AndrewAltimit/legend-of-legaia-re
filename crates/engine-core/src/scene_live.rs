@@ -2,7 +2,7 @@
 //! real [`SceneHost`] and ticked headless (no pad), so a viewer animates
 //! exactly what the play hosts animate on the same scene.
 //!
-//! A static full-map view ([`crate::scene_assembly`]) bakes the draw lists
+//! A static full-map view ([`legaia_engine_scene::scene_assembly`]) bakes the draw lists
 //! once, against the floor-height ladder the scene's MAN header ships. The
 //! running game moves several things the bake cannot see, all of them driven
 //! by the scene's own scripts on the world tick:
@@ -30,7 +30,7 @@
 //! and [`crate::world::World::placed_floor_offsets`] for placed objects (the
 //! ladder their actors spawned on),
 //! [`crate::field_ground::live_render_positions`] for the walk ground,
-//! [`crate::field_env::PropAnimBank::pose_key`] for props and
+//! [`legaia_engine_scene::field_env::PropAnimBank::pose_key`] for props and
 //! [`crate::world::World::step_field_vram_effects`] for VRAM.
 //!
 //! # Rooms
@@ -45,7 +45,7 @@
 //!
 //! So the preview keeps one ladder per room ([`RoomLadder`]), keyed by the
 //! region-type mask a tile carries (the `.MAP` region table,
-//! [`crate::field_regions::refresh_region_attributes`] - the same mask the
+//! [`legaia_engine_field::field_regions::refresh_region_attributes`] - the same mask the
 //! script tests). At entry a throwaway probe host seats a standing player in
 //! each room in turn ([`SceneHost::debug_seat_standing`]) and lets the
 //! scene's own script react; whatever it installs is that room's ladder,
@@ -64,15 +64,16 @@
 //! The overworld's ground does not follow the field ladder (its bulk
 //! continent is a separate pass), so a kingdom map reports no floor wave and
 //! has no rooms; its palette animation is the CLUT walker, which a viewer
-//! drives on its own ([`crate::clut_walk_anim`]).
+//! drives on its own ([`legaia_engine_scene::clut_walk_anim`]).
 
 use std::sync::Arc;
 
-use legaia_engine_vm::field_actor_timers::FloorTierBob;
+use legaia_engine_field::field_actor_timers::FloorTierBob;
 
-use crate::field_env::{EnvDraw, FloorWave, PlacedWindowKey, PropPoseKey};
-use crate::scene::{ProtIndex, SceneHost, SceneTickEvent};
-use crate::world::SceneMode;
+use crate::scene_host::{SceneHost, SceneTickEvent};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::field_env::{EnvDraw, FloorWave, PlacedWindowKey, PropPoseKey};
+use legaia_engine_scene::scene::ProtIndex;
 
 /// Re-entries of the viewed scene a preview performs before it stops
 /// ticking (see the module docs).
@@ -127,7 +128,7 @@ impl LiveScene {
     /// overworld maps) as a scene-picker visit. `Err` when the host refuses
     /// the scene.
     pub fn enter(index: Arc<ProtIndex>, name: &str) -> Result<Self, String> {
-        let world_map = crate::scene::is_world_map_scene(name);
+        let world_map = legaia_engine_scene::scene::is_world_map_scene(name);
         let mut host = SceneHost::new(index.clone());
         Self::enter_host(&mut host, name, world_map)?;
         let scene_lut = host
@@ -322,7 +323,7 @@ impl LiveScene {
     }
 
     /// Per-draw Y offsets of placed `draws` (with their window keys,
-    /// [`crate::field_env::placed_window_key`]): the world's
+    /// [`legaia_engine_scene::field_env::placed_window_key`]): the world's
     /// [`crate::world::World::placed_floor_offsets`], except a window-owned
     /// object in another room, which stands on the ladder that room's window
     /// re-plan spawned it on.
@@ -357,7 +358,7 @@ impl LiveScene {
     /// `cells` is [`crate::field_ground::vertex_cells`] of `hf`.
     pub fn ground_positions(
         &self,
-        hf: &legaia_asset::field_objects::WalkHeightfield,
+        hf: &legaia_scene_formats::field_objects::WalkHeightfield,
         cells: &[Option<(i32, i32)>],
     ) -> Vec<[f32; 3]> {
         crate::field_ground::live_render_positions_by_cell(hf, cells, |c| self.floor_lut_at(c))
@@ -396,9 +397,9 @@ fn man_moves_ladder(man: &[u8]) -> bool {
 /// but the live player's, capturing what the scene's script installed.
 fn probe_rooms(index: Arc<ProtIndex>, name: &str, live: &SceneHost) -> (Vec<u32>, Vec<RoomLadder>) {
     let none = || (Vec::new(), Vec::new());
-    let Some(table) =
-        crate::field_regions::RegionTable::parse(&live.world.terrain.map_region_block)
-    else {
+    let Some(table) = legaia_engine_field::field_regions::RegionTable::parse(
+        &live.world.terrain.map_region_block,
+    ) else {
         return none();
     };
     let moves = live
@@ -412,8 +413,15 @@ fn probe_rooms(index: Arc<ProtIndex>, name: &str, live: &SceneHost) -> (Vec<u32>
     let mut masks = Vec::with_capacity((GRID * GRID) as usize);
     for r in 0..GRID {
         for c in 0..GRID {
-            masks
-                .push(crate::field_regions::refresh_region_attributes(Some(&table), c, r, false).0);
+            masks.push(
+                legaia_engine_field::field_regions::refresh_region_attributes(
+                    Some(&table),
+                    c,
+                    r,
+                    false,
+                )
+                .0,
+            );
         }
     }
     let entry_mask = live.world.flags.extra_flags;

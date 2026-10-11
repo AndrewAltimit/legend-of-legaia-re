@@ -1,6 +1,6 @@
 //! Menu-glyph sprite atlas - RGBA decode + per-character draw helpers.
 //!
-//! Pairs with [`legaia_asset::menu_glyph_atlas`] (TIM source pin) and
+//! Pairs with [`legaia_ui_formats::menu_glyph_atlas`] (TIM source pin) and
 //! [`crate::title_screen_atlas`] (title-art bands). Decodes the 256×256
 //! 4bpp atlas at `PROT.DAT` offset `0x11218` into a tint-friendly
 //! "stencil" RGBA8 buffer the renderer uploads as a sprite atlas:
@@ -20,11 +20,11 @@
 //!
 //! Build once at boot via [`build_atlas_from_prot_dat`]; engines pin
 //! the resulting [`MenuGlyphAtlas`] in `play-window`-style state and
-//! emit one [`legaia_engine_render::SpriteRequest`] per character per
+//! emit one `legaia_engine_ui::SpriteRequest` per character per
 //! frame the title menu is visible.
 
 use anyhow::{Context, Result};
-use legaia_asset::menu_glyph_atlas as src;
+use legaia_ui_formats::menu_glyph_atlas as src;
 
 /// Atlas width in pixels.
 pub const ATLAS_WIDTH: u32 = src::ATLAS_WIDTH;
@@ -81,7 +81,7 @@ impl MenuGlyphAtlas {
 
 /// Build a [`MenuGlyphAtlas`] from raw `PROT.DAT` bytes.
 ///
-/// Validates the TIM header at [`legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET`],
+/// Validates the TIM header at [`legaia_ui_formats::menu_glyph_atlas::PROT_DAT_OFFSET`],
 /// decodes the 4bpp pixel block against CLUT row 0 to identify
 /// transparent vs. fill pixels, and produces an RGBA8 stencil
 /// (opaque white over transparent background). See the module-level
@@ -94,8 +94,8 @@ pub fn build_atlas_from_prot_dat(prot_dat: &[u8]) -> Result<MenuGlyphAtlas> {
 /// Build a [`MenuGlyphAtlas`] from a buffer that already contains the
 /// menu-glyph TIM bytes starting at offset 0. Use when the caller
 /// fetched only the TIM slice from PROT.DAT (see
-/// [`legaia_engine_core::scene::ProtIndex::prot_dat_raw_bytes`] +
-/// [`legaia_asset::menu_glyph_atlas::TIM_SIZE`]) rather than the full
+/// [`legaia_engine_scene::scene::ProtIndex::prot_dat_raw_bytes`] +
+/// [`legaia_ui_formats::menu_glyph_atlas::TIM_SIZE`]) rather than the full
 /// PROT.DAT image.
 pub fn build_atlas_from_prot_dat_slice(tim_bytes: &[u8]) -> Result<MenuGlyphAtlas> {
     let view = src::extract_from_tim_slice(tim_bytes).context("extract menu-glyph TIM slice")?;

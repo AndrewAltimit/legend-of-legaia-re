@@ -74,11 +74,11 @@ All offsets are file-relative.
 Details for each layer follow in file order.
 
 Implementations:
-[`battle_char_palette.rs`](../../crates/battle-models/src/battle_char_palette.rs) (the
+[`battle_char_palette.rs`](../../crates/actor-formats/src/battle_char_palette.rs) (the
 runtime-pinned `record[0]` + CLUT chain),
-[`battle_data_pack.rs`](../../crates/battle-models/src/battle_data_pack.rs) (the slot walker over
+[`battle_data_pack.rs`](../../crates/actor-formats/src/battle_data_pack.rs) (the slot walker over
 the descriptor table) and
-[`battle_char_assembly.rs`](../../crates/battle-models/src/battle_char_assembly.rs) (the
+[`battle_char_assembly.rs`](../../crates/actor-formats/src/battle_char_assembly.rs) (the
 battle-init consumer chain). See [Parser status](#parser-status).
 
 ## Contents
@@ -149,7 +149,7 @@ stub entry 0861 at window offset `0x1000` (entries 0859..0862 are 1-sector stubs
 ## Not the monster archive
 
 This format is distinct from the [monster stat archive](monster-animation.md) (extraction
-**0867**, retail `monster_data` = define 869, parser `legaia_asset::monster_archive`), the
+**0867**, retail `monster_data` = define 869, parser `legaia_actor_formats::monster_archive`), the
 [TIM-pack](tim-pack.md) reader, the [DATA_FIELD streaming format](data-field.md), the
 [field-pack](field-pack.md) chunk and the [effect bundle](effect.md).
 
@@ -181,7 +181,7 @@ the retail disc:
 padding. It is **not** header-derived. `FUN_80052770` opens each file with a fixed 16-sector
 prologue read - `FUN_800559EC(…, 0x8000)` → `FUN_8003E800(dst, 0x10, 1)` loads the first `0x10`
 sectors (header + `record[0]` + descriptor table) before the slot region is streamed - so
-`0x8000` is a hardcoded loader constant. `legaia_asset::battle_data_pack` reaches the same base
+`0x8000` is a hardcoded loader constant. `legaia_actor_formats::battle_data_pack` reaches the same base
 by probing sector boundaries until every slot's `dec_size` prefix reads sane.
 
 ## Descriptor table
@@ -256,7 +256,7 @@ Two readings that look right and are not:
   primitives classified by whether their corners fall outside it. That leaves 4-31 primitives
   straddling the boundary per weapon, which really do belong to both hand and weapon.
   Presentation aid
-  [`equip_diff`](../../crates/battle-models/src/battle_char_assembly/equip_diff.rs).
+  [`equip_diff`](../../crates/actor-formats/src/battle_char_assembly/equip_diff.rs).
 - **The `200+` extras are not weapon meshes.** They are usually byte-identical **duplicates** of
   the bone object they attach to, reached only through the equipment-variant track at entry
   `+0xA4`, so drawing one alongside its host z-fights a limb. Usually, not always - see
@@ -275,7 +275,7 @@ buckets apart is the **joint**: a TMD object is authored about its own bone orig
 half always reaches the origin and the held item never does.
 
 Classes over the 81 held-item records
-([`equip_item`](../../crates/battle-models/src/battle_char_assembly/equip_item.rs)):
+([`equip_item`](../../crates/actor-formats/src/battle_char_assembly/equip_item.rs)):
 
 | Class | Records | Shape |
 |---|---:|---|
@@ -307,8 +307,8 @@ hand object, and nothing says which primitives are the axe and which are Vahn's 
 (which the palette cut, being about material, claims as item). The item-alone export is therefore
 a stated **policy** plus a committed per-record override table, and every result says whether a
 rule touched it
-([`equip_isolate`](../../crates/battle-models/src/battle_char_assembly/equip_isolate.rs), table
-`crates/battle-models/data/equip-isolation.toml`).
+([`equip_isolate`](../../crates/actor-formats/src/battle_char_assembly/equip_isolate.rs), table
+`crates/actor-formats/data/equip-isolation.toml`).
 
 The policy: **the item is everything the section spliced in that is not the character's own flesh
 or an unchanged piece of them.** "Unchanged" is read two ways, chosen per section:
@@ -342,7 +342,7 @@ reports). Each rule carries a note. The cases the table exists for:
 - Gala's two headbands are dark leather that the colour diff loses and the identity reading finds.
 
 Every rule must name a record, a column, an object and primitives that exist -
-`crates/asset/tests/equip_isolate_real.rs` checks that, and that every one of the 132 records
+`crates/actor-formats/tests/equip_isolate_real.rs` checks that, and that every one of the 132 records
 still keeps something and (for a held item) leaves the hand behind.
 
 The item-alone cut is **not** the disc's answer - the palette cut is, and it stays the
@@ -354,7 +354,7 @@ call goes.
 
 A welded item leaves the item-alone cut with an open grip: Vahn's Great Axe comes away as an axe
 head on a stub of shaft plus a pommel end, each terminating in an open ring of vertices.
-[`equip_repair`](../../crates/battle-models/src/battle_char_assembly/equip_repair.rs) infers the
+[`equip_repair`](../../crates/actor-formats/src/battle_char_assembly/equip_repair.rs) infers the
 missing stretch:
 
 1. Weld the item-alone mesh by `(object, position)` and walk its boundary edges into closed loops.
@@ -380,10 +380,10 @@ rule refuses three things:
   blade on the hand object and the pommel block on the forearm, both *closed* at the fist, and a
   cross-object rule joins the elbow-facing rims of two Ra-Seru arm plates through the joint.
 
-`crates/asset/tests/equip_repair_real.rs` sweeps the 81 records (only ever additive, every bridge
+`crates/actor-formats/tests/equip_repair_real.rs` sweeps the 81 records (only ever additive, every bridge
 inside the section's objects, the Great Axe closes). With `LEGAIA_EQUIP_SHEETS=<dir>` it writes a
 before / after contact sheet per character through the software rasteriser in
-`legaia_asset::mesh_raster`, the renderer that draws the site's per-item cards.
+`legaia_actor_formats::mesh_raster`, the renderer that draws the site's per-item cards.
 
 ### The `200+` surplus is a duplicate, except when it is not
 
@@ -477,7 +477,7 @@ the end of the disc. Every table offset is displaced by the byte distance from t
 base to the annexed region. The entry's old record sectors stay where they were and nothing reads
 them.
 
-- `legaia_asset::player_file_annex` tells an annexed table from a retail one (the chain starts at
+- `legaia_actor_formats::player_file_annex` tells an annexed table from a retail one (the chain starts at
   a non-zero sector-aligned offset), splits a retail-shaped rebuilt file into the two halves, and
   materialises the retail-shaped file back for every existing parser.
 - `DiscPatcher::{annex_player_file, read_player_file, patch_player_file}` are the disc side, with
@@ -553,7 +553,7 @@ The post-TMD pool has no PSX TIM image-block headers. It is one upload block in 
 The CLUT struct is the same `[base][count][colours]` shape the palette chain STP-copies to VRAM
 rows 481..483; that RAM-side path is decoded in
 [`character-mesh.md`](character-mesh.md#battle-render-load-time-tsbcba-relocation) and ported as
-`legaia_asset::battle_char_palette`. Placement:
+`legaia_actor_formats::battle_char_palette`. Placement:
 [Texture-pool VRAM placement](#texture-pool-vram-placement).
 
 ## Battle animations (record[0])
@@ -573,7 +573,7 @@ battle-palette chain. Its layout:
 **Only the region below `clut_a_off` is battle-persistent.** The member init decodes `record[0]`
 into a single `0x19000`-byte allocation, uploads the two image blocks, then LZS-decodes the five
 equip-section sub-records *sequentially into the same buffer starting at `clut_a_off`* (cursor
-advancing per section - the walk `legaia_asset::battle_char_palette::parse_record` mirrors).
+advancing per section - the walk `legaia_actor_formats::battle_char_palette::parse_record` mirrors).
 Everything from `clut_a_off` on is load-time scratch. Anything that must stay readable per frame
 lives below it, and an edit that adds such data must grow that region (shifting `clut_a_off` /
 `clut_b_off` / `budget` and the paired `+0x5C` word up), never borrow payload space above it.
@@ -652,16 +652,16 @@ assembled blob's side tables. The retail consumers are the battle render node's 
 loader rewrites the in-RAM action table to absolute pointers and points the entry's `+0x88` at
 `entry + 0xAC`. In a full-party capture every party slot's anim context sits at
 `record0_image + action_table[0]` and the whole idle stream byte-matches the disc decode
-(`crates/engine-shell/tests/battle_party_pose_live.rs`).
+(`crates/parity/tests/battle_party_pose_live.rs`).
 
 **The PROT 1203 ANM bundle is not the battle pose source.** No 1203 record is resident in battle
 RAM, and its banks are authored against PROT 1204's own object order (see
 [`character-mesh.md` § Assembly](character-mesh.md#assembly---object-local-pieces-posed-by-the-characters-own-battle-streams)).
 
-Parsers: `legaia_asset::battle_char_assembly::{decode_record0, battle_animations,
+Parsers: `legaia_actor_formats::battle_char_assembly::{decode_record0, battle_animations,
 idle_battle_animation, expand_animation_for_objects, swing_battle_animations, art_animation_bank,
-art_me_archive, art_animation}`. The stream decode is shared with `legaia_asset::monster_archive`;
-the `"ME"` archive and codec live in `legaia_asset::me_archive`.
+art_me_archive, art_animation}`. The stream decode is shared with `legaia_actor_formats::monster_archive`;
+the `"ME"` archive and codec live in `legaia_actor_formats::me_archive`.
 
 ### Two container encodings, one pose format
 
@@ -727,7 +727,7 @@ the copied bytes is relocated - it is a plain `memcpy` whose extent the two nest
 `pair_count` is doubled before the copy, so it counts **pairs**, not words. The helper returns the
 advanced destination pointer, which the caller uses as the bump allocator's new high-water mark.
 
-Parser: `legaia_asset::battle_char_assembly::swing_battle_animations` (slots `0xC..=0xF` for a
+Parser: `legaia_actor_formats::battle_char_assembly::swing_battle_animations` (slots `0xC..=0xF` for a
 given equipped-id set).
 
 ### Art-animation bank (record[0] +0x58)
@@ -772,7 +772,7 @@ Ids `> 0x1A` also drive the HUD art-name display from `+0x10` and `FUN_8004C650(
 Retail banks: Vahn 33 / Noa 35 / Gala 32 / Terra 9 records; the named band (records 11+) carries
 the Hyper/Miracle Art names (`Vahn Rondo`, `Fiery Miyawaki`, `Mirage Lancer`, …).
 
-Parser: `legaia_asset::battle_char_assembly::art_animation_bank` (+ `art_animation` to resolve a
+Parser: `legaia_actor_formats::battle_char_assembly::art_animation_bank` (+ `art_animation` to resolve a
 record's keyframe stream through its archive).
 
 ### "ME" stream archives (readef.DAT)
@@ -815,9 +815,9 @@ the **channel-delta codec** `FUN_8002A9CC` (`8002a9cc.txt`):
 output is validated across the full corpus: every stream is length-exact (`2 + parts*frames*9`)
 with `parts` == the character's skeleton bone count.
 
-Parsers: `legaia_asset::me_archive` (`parse` + `decode_channel_delta`) and
-`legaia_asset::battle_char_assembly::art_me_archive` (the readef slot slicing);
-`legaia_asset::summon_readef` classifies these slots as `SlotKind::MeArchive`.
+Parsers: `legaia_actor_formats::me_archive` (`parse` + `decode_channel_delta`) and
+`legaia_actor_formats::battle_char_assembly::art_me_archive` (the readef slot slicing);
+`legaia_actor_formats::summon_readef` classifies these slots as `SlotKind::MeArchive`.
 
 #### Which archive is resident
 
@@ -941,7 +941,7 @@ stages the win pose and still clamped at `0xFE`; its per-frame incrementer is no
 corpus. The record shape and mouth-frame indexing are unchanged. The retail rows only ever select
 non-neutral in-range mouth frames, some held to end `0xFF` - the win-quote mouth flap.
 
-**Port.** `legaia_asset::face_anim` carries:
+**Port.** `legaia_actor_formats::face_anim` carries:
 
 - the track parser (`FaceTracks` / `battle_face_tracks`; the swing entries' tracks ride on
   `battle_char_assembly::SwingAnimation::face`, the art-bank embedded entries' on
@@ -960,10 +960,10 @@ the `0xFE` signal) while a member still plays a dynamic-art-slot clip, and clock
 `gp+0x9EA` mirror from 0; gates 2 and 3 are not consulted by the stamp tick, so "the won battle is
 still on screen" stands in for them.
 
-Disc-gated validation: `crates/asset/tests/face_anim_real.rs` (table anchors; track census over
+Disc-gated validation: `crates/actor-formats/tests/face_anim_real.rs` (table anchors; track census over
 `record[0]`, swing and art-bank entries; override-table census - 40 live records, in-range
 non-neutral frames, the empty rows where retail has no flap, in-band stamps for every reachable
-counter) and `crates/engine-shell/tests/battle_face_stamp_live.rs` (live battle VRAM holds a
+counter) and `crates/parity/tests/battle_face_stamp_live.rs` (live battle VRAM holds a
 byte-exact stamped frame at the documented rects).
 
 ### Equipment-variant track (entry `+0xA4`) + `FUN_8004CCD4`
@@ -1026,7 +1026,7 @@ objects empty therefore deletes the attach bone's whole part whenever a window o
 variant is that bone's mesh again: byte-equal vertices and prims on Vahn / Gala / Terra, same
 topology with alternate vertices on Noa. The two tags need opposite treatment - a `0xFE` extra has
 a pose channel of its own and draws *alongside* the bone, so emptying that one is correct.
-`legaia_patcher::party_swap::playerize` mirrors the attach bone's geometry into the variant by
+`legaia_party_swap::playerize` mirrors the attach bone's geometry into the variant by
 aliasing its object-table entry, which costs nothing because both the retail splice and the port
 address the data purely through that entry.
 
@@ -1116,7 +1116,7 @@ among the present battle party (the band selector - *not* the character id). The
 live-verified for all four playable characters: a Noa + Terra party capture
 (`terra_party_battle`) byte-matches both bands at 100% with Terra (char id 4, player file 0866)
 banding at her ordinal like any other member - there is no special "4th band"
-(`crates/engine-shell/tests/battle_char_texture_live.rs`).
+(`crates/parity/tests/battle_char_texture_live.rs`).
 
 Per member the loader issues up to seven upload blocks through `FUN_80053B9C`
 (`ghidra/scripts/funcs/80052fa0.txt` / `80053b9c.txt`):
@@ -1152,7 +1152,7 @@ precisely the pages and CLUT row the registration-time mesh relocation `FUN_8005
 ([`character-mesh.md` § Battle render](character-mesh.md#battle-render-load-time-tsbcba-relocation)).
 Unflagged sections upload nothing; their band area keeps whatever the other blocks wrote.
 
-**Validation** (disc + save-library gated `engine-shell/tests/battle_char_texture_live.rs`):
+**Validation** (disc + save-library gated `parity/tests/battle_char_texture_live.rs`):
 decoding the player files with the live party ids (`DAT_8007BD10`) and equipped item ids (char
 record `+0x196`) and comparing every block against captured battle VRAM reproduces the bands at
 **99.7-100 %** per member across the `party_battle_gobu_gobu` and `noa_levelup_fight_pre` captures
@@ -1161,7 +1161,7 @@ rows) - the facial animator's current frame, see
 [Facial animation tracks](#facial-animation-tracks-entry-0x8c--0x98). A first-battle-frame
 capture, before the upload pass runs, still shows field texels in the band.
 
-Typed port: `legaia_asset::battle_char_assembly` - `SECTION_TEXTURE_RECTS` /
+Typed port: `legaia_actor_formats::battle_char_assembly` - `SECTION_TEXTURE_RECTS` /
 `RECORD0_TEXTURE_RECTS` / `parse_upload_block` / `section_texture_upload` /
 `record0_texture_uploads` / `character_texture_uploads`. The engine battle path uploads these
 blocks for each assembled member (PROT 1204's atlases remain the fallback approximation).
@@ -1187,14 +1187,14 @@ Two traps follow:
   catalog LZS-decompresses first and then scans for the same magic. The deep tier reaches the
   right bytes, but there is no magic there and `legaia_tim::parse_strict` has nothing to parse.
   Both TIM catalogs contribute **zero** rows from entries 863..866
-  (`crates/asset/tests/battle_texture_catalog_real.rs`).
+  (`crates/disc-audit/tests/battle_texture_catalog_real.rs`).
 - **`clut_n` is commonly 32 or 48** - two or three 16-colour palettes in one run, with a mesh
   primitive's CBA column picking which one it samples. Decoding such a block as a single 16-entry
   CLUT produces a plausible image at roughly a 5 % pixel match against the real thing.
 
 ### The catalog tier
 
-[`legaia_asset::battle_texture_catalog`](../../crates/battle-models/src/battle_texture_catalog.rs)
+[`legaia_actor_formats::battle_texture_catalog`](../../crates/actor-formats/src/battle_texture_catalog.rs)
 is the third texture tier, alongside the raw and LZS TIM catalogs. It keys each block by
 `(PROT entry, record, section, pool offset)`, where `record = -1` marks the two header `record[0]`
 blocks and `section` then carries the block ordinal.
@@ -1231,7 +1231,7 @@ Because the descriptor ids are item ids, handing the builder an
 
 ### Replacing a block
 
-`legaia_patcher::battle_texture` writes one back. The fit budget is **different from the LZS
+`legaia_texture_replace::battle_texture` writes one back. The fit budget is **different from the LZS
 texture tier's**: a player file's records are addressed by the descriptor table, whose chain
 invariant pins every later record in place, so the edited record must recompress into its own slot
 allocation (`size - 4`, past the `dec_size` prefix) and nothing downstream may move. Retail leaves
@@ -1253,19 +1253,19 @@ PNG is the frame the write expects back.
 
 ## Parser status
 
-Every module below is re-exported through `legaia_asset`.
+Every module below is in `legaia_actor_formats` (`crates/actor-formats`).
 
 | Module | Role |
 |---|---|
-| [`battle_char_palette`](../../crates/battle-models/src/battle_char_palette.rs) | The runtime-pinned framing: header words, descriptor chain, `record[0]` + sub-record palette assembly. Byte-exact vs live battle VRAM. |
-| [`battle_char_assembly`](../../crates/battle-models/src/battle_char_assembly.rs) | The battle-init consumer chain: section selection (`select_sections`), mesh splice (`assemble_character`), TSB/CBA relocation (`relocate_tsb_cba`), texture-pool uploads (`character_texture_uploads` and friends). |
-| [`battle_char_assembly::equip_diff`](../../crates/battle-models/src/battle_char_assembly/equip_diff.rs) | Presentation aid: what one loadout changed against the all-defaults assembly, by the radius-envelope test. Approximate by construction, not a port - retail never compares two assemblies. |
-| [`battle_char_assembly::equip_item`](../../crates/battle-models/src/battle_char_assembly/equip_item.rs) | The exact cut: `item_partition` splits a weapon / Ra-Seru section into held item and limb by palette column, falling through to `fused`. Swept by `crates/asset/tests/equip_item_real.rs`. |
-| [`battle_char_assembly::equip_isolate`](../../crates/battle-models/src/battle_char_assembly/equip_isolate.rs) | The opinionated cut: `isolate_item` plus the override table. Swept by `crates/asset/tests/equip_isolate_real.rs`. |
-| [`battle_char_assembly::equip_repair`](../../crates/battle-models/src/battle_char_assembly/equip_repair.rs) | Grip bridging on the item-alone export. |
-| [`battle_texture_catalog`](../../crates/battle-models/src/battle_texture_catalog.rs) | The texture-pool blocks as a texture tier; `resolve_block` / `assemble_clut_row` read one back. |
-| [`battle_data_pack`](../../crates/battle-models/src/battle_data_pack.rs) | The slot walker over the `[id, offset, size]` table. |
-| [`me_archive`](../../crates/battle-models/src/me_archive.rs), [`face_anim`](../../crates/battle-models/src/face_anim.rs) | The `"ME"` archive + channel-delta codec; the facial tracks and stamp selection. |
+| [`battle_char_palette`](../../crates/actor-formats/src/battle_char_palette.rs) | The runtime-pinned framing: header words, descriptor chain, `record[0]` + sub-record palette assembly. Byte-exact vs live battle VRAM. |
+| [`battle_char_assembly`](../../crates/actor-formats/src/battle_char_assembly.rs) | The battle-init consumer chain: section selection (`select_sections`), mesh splice (`assemble_character`), TSB/CBA relocation (`relocate_tsb_cba`), texture-pool uploads (`character_texture_uploads` and friends). |
+| [`battle_char_assembly::equip_diff`](../../crates/actor-formats/src/battle_char_assembly/equip_diff.rs) | Presentation aid: what one loadout changed against the all-defaults assembly, by the radius-envelope test. Approximate by construction, not a port - retail never compares two assemblies. |
+| [`battle_char_assembly::equip_item`](../../crates/actor-formats/src/battle_char_assembly/equip_item.rs) | The exact cut: `item_partition` splits a weapon / Ra-Seru section into held item and limb by palette column, falling through to `fused`. Swept by `crates/actor-formats/tests/equip_item_real.rs`. |
+| [`battle_char_assembly::equip_isolate`](../../crates/actor-formats/src/battle_char_assembly/equip_isolate.rs) | The opinionated cut: `isolate_item` plus the override table. Swept by `crates/actor-formats/tests/equip_isolate_real.rs`. |
+| [`battle_char_assembly::equip_repair`](../../crates/actor-formats/src/battle_char_assembly/equip_repair.rs) | Grip bridging on the item-alone export. |
+| [`battle_texture_catalog`](../../crates/actor-formats/src/battle_texture_catalog.rs) | The texture-pool blocks as a texture tier; `resolve_block` / `assemble_clut_row` read one back. |
+| [`battle_data_pack`](../../crates/actor-formats/src/battle_data_pack.rs) | The slot walker over the `[id, offset, size]` table. |
+| [`me_archive`](../../crates/actor-formats/src/me_archive.rs), [`face_anim`](../../crates/actor-formats/src/face_anim.rs) | The `"ME"` archive + channel-delta codec; the facial tracks and stamp selection. |
 
 `battle_data_pack` detection validates the chain invariant (entry 0 at offset 0,
 `offset[i+1] == offset[i] + size[i]`, sector-aligned sizes, all-zero terminator) plus the
@@ -1303,7 +1303,7 @@ decoded slot of any player file (nor any raw PROT entry or `SCUS_942.54` as an 8
 They are plain PSX TIMs in each scene's own `scene_tmd_stream` entries, uploaded by
 `FUN_8001FE70` at battle init - see [`npc-palette.md`](npc-palette.md). The engine consequence
 (field scene-loads exclude these packs from VRAM entirely) is wired through
-[`SceneResources::SceneLoadKind`](../../crates/engine-core/src/scene_resources.rs).
+[`SceneResources::SceneLoadKind`](../../crates/engine-scene/src/scene_resources.rs).
 
 ## CLI
 
@@ -1330,7 +1330,7 @@ asset battle-texture-catalog extracted/PROT.DAT --out /tmp/battle_textures.tsv
 ```
 
 Off a user's disc image, the same family is the `battle` tier of the texture-modding commands
-(`legaia_patcher::battle_texture`). It is keyed by `--entry` + `--battle-slot` rather than by
+(`legaia_texture_replace::battle_texture`). It is keyed by `--entry` + `--battle-slot` rather than by
 `--offset`, because the blocks have no magic word for an offset to be *of*:
 
 ```bash

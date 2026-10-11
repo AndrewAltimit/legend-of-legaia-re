@@ -285,7 +285,7 @@ actor-band command loop script-vm.md documents, forming the actor band
 # writing their own reviewed rows into it - append these stanzas verbatim.
 #
 # Two rows are NOT here because they were defects and are fixed in code instead:
-# `crates/engine-ui/src/ui_menu_window_painters_large.rs:801db380` and
+# `crates/engine-ui/src/menu/equip_stat_compare.rs:801db380` and
 # `crates/engine-vm/src/field.rs:801dd9d4`, both retagged `PORT:` -> `REF:`.
 #
 # Every reason below rests on a fresh read of the routine's disassembly, not on
@@ -293,7 +293,7 @@ actor-band command loop script-vm.md documents, forming the actor band
 # these VAs are aliased across overlays.
 
 # ---------------------------------------------------------------------------
-# crates/engine-ui/src/ui_menu_window_painters.rs - 14 rows, one structural cause
+# crates/engine-ui/src/menu/window_painters.rs - 14 rows, one structural cause
 # ---------------------------------------------------------------------------
 # This module ports the menu overlay's window-descriptor content painters. Every
 # one of them is a leaf whose only distinctive datum is its OWN private overlay
@@ -433,7 +433,7 @@ row corrected: the sub-state switch on `+0x5A` is two switches, not one.
 
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/scene/host/scene_entry.rs:801d1ec4"
+key = "module-orphan:crates/engine-core/src/scene_host/scene_entry.rs:801d1ec4"
 reason = """
 The finding appeared when overlay_cutscene_str_0970_801cea3c.txt was dumped: the
 sibling tag 801cea3c now has a corroborating dump from PROT 0970 (cutscene_str),
@@ -915,7 +915,7 @@ rather than a size.
 # and the reason says what the words were.
 
 [[waiver]]
-key = "module-orphan:crates/asset/src/lib.rs:8001fe70"
+key = "module-orphan:crates/container-formats/src/lib.rs:8001fe70"
 reason = """
 Read the disassembly: FUN_8001FE70's one distinctive datum is 0x8007B864, the
 TMD staging pointer, and its module siblings (8001a8b0, 8001f05c, 80020224,
@@ -954,7 +954,7 @@ the routines that were inlined.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/cd_dma.rs:8005ea84"
+key = "module-orphan:crates/engine-scene/src/cd_dma.rs:8005ea84"
 reason = """
 A layer boundary, visible in the bytes. FUN_8005EA84 forms 0x800796E0
 (`lui s1,0x8008` / `addiu s1,s1,-0x6920` at 0x8005EA9C) - the libcd streaming-read
@@ -1011,7 +1011,7 @@ conflict.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/overlay_loader.rs:8003ebe4"
+key = "module-orphan:crates/engine-scene/src/overlay_loader.rs:8003ebe4"
 reason = """
 The two loaders are twins that deliberately share NO datum, which makes the
 orphan verdict structural. Read side by side: 8003EBE4 writes gp+0x924
@@ -1096,7 +1096,7 @@ base+0x18EBC.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/baka_hub_actors.rs:801f1b64"
+key = "module-orphan:crates/engine-field/src/submode_hub_actors.rs:801f1b64"
 reason = """
 The painter shape port-provenance.md documents, one level up: this is a
 label-painter module in the Baka hub image, every member draws one string plus a
@@ -1177,7 +1177,7 @@ bytes. The signal keys on the VA and cannot see the image.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/seru_side_effect.rs:801f3d3c"
+key = "module-orphan:crates/engine-battle-vm/src/seru_side_effect.rs:801f3d3c"
 reason = """
 The corroboration exists; the distinctiveness filter hides it. Read against
 the disassembly, `FUN_801F3D3C` and its module sibling `FUN_801F3C34` form two
@@ -1192,7 +1192,7 @@ the pair reads as unrelated.
 
 The rest of the stager's distinctive set is this routine's own and matches
 what the Rust implements: `0x801F6870` is the `[element][band]` percent table
-`legaia_asset::seru_side_effect` parses, `0x801F6964` takes the literal `0xB4`
+`legaia_game_tables::seru_side_effect` parses, `0x801F6964` takes the literal `0xB4`
 hold (`li v0,0xb4; sw v0,0x6964(a0)` at 0x801F4468/0x801F446C), and the tail
 fires banner id `0x66` through `jal 0x801d8de8` at 0x801F447C. The port's
 `StagerOutcome::Staged { kind, amount, band }` is exactly that install set
@@ -1284,7 +1284,7 @@ reason = """
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/field_warp_tile.rs:801da51c"
+key = "module-orphan:crates/engine-field/src/field_warp_tile.rs:801da51c"
 reason = "CORRECT. clear_landed_sentinel ports the tail of FUN_801DA51C (PROT 0897): lw v1,-0x4950(a0) / li v0,-0x3e8 / bne / sw zero,-0x4950(a0) at 0x801DA7C8..0x801DA7D8, the -1000 clear of _DAT_8007B6B0, read from the disassembly; it shares the warp timer global with its module siblings, which the lui+lw form hides from the data-address signal."
 
 [[waiver]]

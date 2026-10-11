@@ -48,7 +48,7 @@ where marked.
 
 The CLUT-walk `MoveImage` table documented for the world-map ocean
 ([`world-map.md`](world-map.md) "Ocean / water animation",
-[`clut_walk`](../../crates/asset/src/clut_walk.rs)) is **not kingdom-only**.
+[`clut_walk`](../../crates/scene-formats/src/clut_walk.rs)) is **not kingdom-only**.
 The asset-type dispatcher installs any bundle's type-byte `0x06` slot at
 `DAT_8007B7C8` (`FUN_8001F05C` case 6) and field init spawns one walker actor
 per entry. Each walker copies successive frames from a "park" CLUT row onto a
@@ -912,23 +912,24 @@ oscillators.
 
 ## Port notes
 
-- Walker tables: `legaia_asset::clut_walk::{from_scene_bundle, scene_park_strips}`
-  feeding `engine-core::clut_walk_anim`. VDF packs: `legaia_asset::scene_vdf`.
+- Walker tables: `legaia_scene_formats::clut_walk::{from_scene_bundle, scene_park_strips}`
+  feeding `engine-scene::clut_walk_anim`. VDF packs: `legaia_scene_formats::scene_vdf`.
 - Ambient tree: `engine-core::world::ambient` (pool capped at the retail 143,
   op-`0x25` record 0 refused), installed by the scene-entry prologue pre-run
   (`World::pre_run_field_channel_prologues` executing each op-`0x34` sub-3,
   once, at the executing context's position) - the static census
-  `engine-core::man_field_scripts::scene_entry_ambient_installs` names the
+  `engine-field::man_field_scripts::scene_entry_ambient_installs` names the
   same records and is a tool for tests and the `.glb` export, not a second
   installer; render tails
-  `engine-core::clut_cell_fx` (mode 3) and `world::ambient::vram_scroll`
-  (mode 4); morph kernels `engine-vm::vdf_morph` and
-  `engine-core::world::npc_morph`; enhancement pulse `engine-core::vdf_pulse`.
+  `engine-field::clut_cell_fx` (mode 3) and `world::ambient::vram_scroll`
+  (mode 4); morph kernels `scene-formats::vdf_morph` (record walk + delta
+  blend), `engine-vm::vdf_morph` (actor lanes + envelope) and
+  `engine-core::world::npc_morph`; enhancement pulse `engine-field::vdf_pulse`.
 - Fog: `engine-core::fog_particles::FogPool` (cap from the MAN header),
-  emitter `engine-core::cutscene_script_elements::AmbientEmitter`, overworld
-  flat bucket depth `engine-core::overworld_draw_order`, 5-bit blend
-  `engine-ui::screen_prim::psx_texture_blend`. World draws stand in for BIOS
-  `rand()` through `engine-vm::battle_formulas::bios_rand_shape`. The
+  emitter `engine-field::ambient_emitter::AmbientEmitter`, overworld
+  flat bucket depth `engine-field::overworld_draw_order`, 5-bit blend
+  `render-kernels::screen_prim::psx_texture_blend`. World draws stand in for BIOS
+  `rand()` through `engine-system::rand::bios_rand_shape`. The
   effect-texture pool is underlaid beneath each scene build on unwritten
   cells only. A separate non-retail volumetric ground fog never touches this
   pool ([renderer](renderer.md#volumetric-ground-fog-enhancement)).

@@ -22,7 +22,7 @@
 //! integration test. A surface can therefore be wired to nothing and stay
 //! green everywhere.
 //!
-//! So every rung here goes through `World::set_pad` + `BootSession::tick`.
+//! So every rung here goes through `World::set_pad` + `NativeSession::tick`.
 //! Nothing calls a battle internal, and nothing pokes a session into the
 //! state it is supposed to reach. Setup stocks the *player* (spells learned,
 //! items carried, MP available) because a player who has none cannot press
@@ -31,7 +31,7 @@
 //! ## The command model is three phases, not one menu
 //!
 //! Retail's `FUN_801D0748` walks `ctx[+0x06]` through three selection
-//! surfaces ([`legaia_engine_core::battle_input`]), and a driver that assumes
+//! surfaces ([`legaia_engine_menus::battle_input`]), and a driver that assumes
 //! a single flat menu never reaches half the ladder:
 //!
 //! | `ctx[+0x06]` | phase | chips |
@@ -117,11 +117,12 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::arts_command_input::ArtsInputScreen;
-use legaia_engine_core::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_battle::arts_command_input::ArtsInputScreen;
+use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// The opening town, and the only scene carrying the sparring formation the
 /// ladder fights.
@@ -178,7 +179,7 @@ fn extracted_dir() -> Option<PathBuf> {
 /// One press frame followed by one release frame. Every battle surface reads
 /// `just_pressed`, so a held mask is a single event no matter how long it is
 /// held - a driver that holds a direction enters one command, not four.
-fn tap(session: &mut BootSession, button: PadButton) {
+fn tap(session: &mut NativeSession, button: PadButton) {
     session.host.world.set_pad(InputState::mask_of([button]));
     let _ = session.tick();
     session.host.world.set_pad(0);
@@ -190,7 +191,11 @@ fn tap(session: &mut BootSession, button: PadButton) {
 /// turns and a held button would be re-read by whatever opens next. The one
 /// press a settle makes is `Begin` on the party's commit confirm (`0x6E`),
 /// which every rung's last commit raises before the round can play out.
-fn settle_until(session: &mut BootSession, ticks: usize, f: impl Fn(&BootSession) -> bool) -> bool {
+fn settle_until(
+    session: &mut NativeSession,
+    ticks: usize,
+    f: impl Fn(&NativeSession) -> bool,
+) -> bool {
     for _ in 0..ticks {
         if f(session) {
             return true;
@@ -209,7 +214,7 @@ fn settle_until(session: &mut BootSession, ticks: usize, f: impl Fn(&BootSession
     f(session)
 }
 
-fn monster_hp_total(session: &BootSession) -> u32 {
+fn monster_hp_total(session: &NativeSession) -> u32 {
     let w = &session.host.world;
     (w.party.party_count as usize..w.actors.len())
         .map(|i| w.actors[i].battle.hp as u32)
@@ -218,7 +223,7 @@ fn monster_hp_total(session: &BootSession) -> u32 {
 
 /// Which battle submenu surfaces are open, named rather than boolean so a
 /// stall report says which arm answered.
-fn open_surfaces(session: &BootSession) -> Vec<&'static str> {
+fn open_surfaces(session: &NativeSession) -> Vec<&'static str> {
     let w = &session.host.world;
     let mut out = Vec::new();
     if w.arts_input_active() {
@@ -240,7 +245,7 @@ fn open_surfaces(session: &BootSession) -> Vec<&'static str> {
 }
 
 /// A one-line description of what the pad is currently facing, for stalls.
-fn surface_report(session: &BootSession) -> String {
+fn surface_report(session: &NativeSession) -> String {
     let w = &session.host.world;
     let phase = w.battle.command.as_ref().map(|s| match s.phase {
         CommandPhase::RoundPrompt { .. } => format!("RoundPrompt({:?})", s.round_choice()),
@@ -267,7 +272,7 @@ fn surface_report(session: &BootSession) -> String {
 /// Stall text for "the next turn never opened", with the surface named. A
 /// bare "no command session" cannot distinguish a parked SM from a battle
 /// that ended, and those want opposite fixes.
-fn no_command(session: &BootSession, after: &str) -> String {
+fn no_command(session: &NativeSession, after: &str) -> String {
     format!(
         "no command session after {after} ({})",
         surface_report(session)
@@ -275,7 +280,7 @@ fn no_command(session: &BootSession, after: &str) -> String {
 }
 
 /// Wait for a party turn to hand the pad a command session.
-fn wait_for_command(session: &mut BootSession) -> bool {
+fn wait_for_command(session: &mut NativeSession) -> bool {
     // A pickable surface - not the commit confirm, which the settle itself
     // takes (`Begin`) on the way to the next round's prompt.
     settle_until(session, SETTLE_TICKS, |s| {
@@ -297,7 +302,7 @@ fn wait_for_command(session: &mut BootSession) -> bool {
 ///
 /// Returns `false` rather than panicking so the caller can report the stall
 /// with the surface named.
-fn pick_command(session: &mut BootSession, want: BattleCommand) -> bool {
+fn pick_command(session: &mut NativeSession, want: BattleCommand) -> bool {
     let ring_arm = match want {
         BattleCommand::Arts => BattleCommand::Attack,
         other => other,
@@ -359,7 +364,7 @@ fn pick_command(session: &mut BootSession, want: BattleCommand) -> bool {
 /// `Begin | Reselect` (`0x6E`) the last commit raises. Attack / Magic open a
 /// cursor after the arm is taken; the default seat is a live enemy, so a
 /// single confirm commits, and the confirm screen opens on `Begin`.
-fn confirm_target(session: &mut BootSession) {
+fn confirm_target(session: &mut NativeSession) {
     for _ in 0..8 {
         let up = session
             .host
@@ -382,7 +387,7 @@ fn confirm_target(session: &mut BootSession) {
 }
 
 /// Is the open command session showing the round prompt?
-fn at_round_prompt(session: &BootSession) -> bool {
+fn at_round_prompt(session: &NativeSession) -> bool {
     session
         .host
         .world
@@ -405,7 +410,7 @@ fn at_round_prompt(session: &BootSession) -> bool {
 /// that a park would cost rungs rather than be routed around. This is a
 /// host-level scene restart, the same call the boot path makes; it touches no
 /// battle internal and no command surface.
-fn reset_to_field(session: &mut BootSession) -> bool {
+fn reset_to_field(session: &mut NativeSession) -> bool {
     session
         .enter_field_live(
             SCENE,
@@ -422,14 +427,14 @@ fn reset_to_field(session: &mut BootSession) -> bool {
 /// Stock the player so every command class has something to select. This is
 /// progression the player would own, not a bypass: each rung still walks the
 /// ring and presses the button that uses it.
-fn stock_player(session: &mut BootSession) {
+fn stock_player(session: &mut NativeSession) {
     let w = &mut session.host.world;
     w.party.inventory.insert(ITEM_HEALING_LEAF, 9);
     for member in w.party.roster.members.iter_mut() {
         // Prepend order fixes the menu rows: the last one prepended sits at
         // row 0, so the summon is row 0 and the MP-rung spell is row 1.
-        legaia_engine_core::magic_xp::learn_spell_prepend(member, SPELL_FOR_MP_RUNG);
-        legaia_engine_core::magic_xp::learn_spell_prepend(member, SPELL_SUMMON);
+        legaia_engine_battle::magic_xp::learn_spell_prepend(member, SPELL_FOR_MP_RUNG);
+        legaia_engine_battle::magic_xp::learn_spell_prepend(member, SPELL_SUMMON);
     }
     // MP the casts are charged against, and a party that survives 999 HP of
     // sparring partner long enough to finish the ladder. (`BattleActor` has
@@ -463,7 +468,7 @@ fn stock_player(session: &mut BootSession) {
 }
 
 /// Boot the scene, stock the player, and drive into the sparring battle.
-fn enter_battle(session: &mut BootSession) -> bool {
+fn enter_battle(session: &mut NativeSession) -> bool {
     stock_player(session);
     if session
         .host
@@ -513,7 +518,7 @@ fn battle_depth_ladder() {
         scene: SCENE.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .enter_field_live(
             SCENE,

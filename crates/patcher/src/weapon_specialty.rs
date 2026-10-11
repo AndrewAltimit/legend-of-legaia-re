@@ -20,7 +20,7 @@
 //! off-class [`OFFCLASS_COST`]. The Astral Sword and other non-class weapons
 //! (no [`weapon_family`]) are left untouched, preserving their always-wide arm.
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// Arm cost of a favored-class weapon (single-width arm input).
 pub const FAVORED_COST: u8 = 0x1E;

@@ -4,17 +4,17 @@
 //! terrain-tile draws, the walk-ground heightfield, and the field VRAM.
 //!
 //! This is the browser twin of the play-window's static field layer: the
-//! same [`legaia_engine_core::scene_resources::SceneResources`] build (field
+//! same [`legaia_engine_scene::scene_resources::SceneResources`] build (field
 //! VRAM pre-pass + LZS-packed env TMD scan), the same
-//! [`legaia_engine_core::field_env`] pack vote + placement resolution, the
+//! [`legaia_engine_scene::field_env`] pack vote + placement resolution, the
 //! same floor-height-LUT world Y. A `scene_asset_table` entry viewed alone
 //! shows one object-local mesh at the origin; this path shows the map those
 //! meshes assemble into.
 
 use super::*;
-use legaia_engine_core::field_env::EnvDraw;
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::SceneResources;
+use legaia_engine_scene::field_env::EnvDraw;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::SceneResources;
 use std::sync::Arc;
 
 /// A fully-assembled field scene held by [`LegaiaViewer`] between
@@ -40,8 +40,8 @@ pub struct FieldScenePack {
     pub terrain: Vec<EnvDraw>,
     /// Walk-ground heightfield surface (`None` when the scene has no
     /// resolvable `.MAP` floor grid / floor LUT).
-    pub ground: Option<legaia_asset::field_objects::WalkHeightfield>,
-    /// Cross-draw coplanar lifts (`legaia_engine_core::coplanar_draws`) for
+    pub ground: Option<legaia_scene_formats::field_objects::WalkHeightfield>,
+    /// Cross-draw coplanar lifts (`legaia_engine_scene::coplanar_draws`) for
     /// the combined terrain + placement lists, applied by the position
     /// exporters so overlapping same-plane tiles resolve deterministically
     /// instead of z-fighting (mirrors the native play-window).
@@ -63,7 +63,7 @@ pub struct FieldScenePack {
     /// the host refuses the scene.
     pub live: Option<Box<legaia_engine_core::scene_live::LiveScene>>,
     /// The scene's ANM bundle - the clips placed props pose from.
-    pub scene_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    pub scene_anm: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     /// The live ladders (the live room's, then every other room's) the
     /// ground's drawn positions were last re-resolved against
     /// ([`LegaiaViewer::field_scene_ground_live_positions`]).
@@ -72,23 +72,23 @@ pub struct FieldScenePack {
     /// the key its room's ladder is looked up by.
     pub ground_cells: Vec<Option<(i32, i32)>>,
     /// Per-placement windowed-list identity
-    /// ([`legaia_engine_core::field_env::placed_window_key`]): which spawn
+    /// ([`legaia_engine_scene::field_env::placed_window_key`]): which spawn
     /// sweep owns each placed object, and so which ladder it stands on.
-    pub window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+    pub window_keys: Vec<Option<legaia_engine_scene::field_env::PlacedWindowKey>>,
     /// The PROT 0874 locomotion bundle - the clips the party / global-pool
     /// actors pose from.
-    pub locomotion_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    pub locomotion_anm: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     /// The scene's MAN-placed actors over the live world
     /// ([`crate::field_actors::FieldActors`], the play page's own actor
     /// layer), exported as `field_scene_npc_*`.
     pub(crate) actors: crate::field_actors::FieldActors,
 }
 
-/// The bundle type-6 **CLUT-walk table** runner (`legaia_asset::clut_walk`,
+/// The bundle type-6 **CLUT-walk table** runner (`legaia_scene_formats::clut_walk`,
 /// `FUN_8001ada4` case 0xB - water / waterfall shimmer, 12 carriers; see
 /// `docs/subsystems/field-ambient-fx.md`), shared by the map viewer and the
 /// play runtime. It runs on the retail game-tick clock: a game tick every
-/// [`legaia_engine_core::world::FrameClock::frame_step`] vsyncs
+/// [`legaia_engine_vm::frame_clock::FrameClock::frame_step`] vsyncs
 /// (`DAT_1F800393`; 2 in towns, 3 on the overworld).
 ///
 /// The other VRAM writers - the ambient move-VM tree and the scripted CLUT
@@ -99,26 +99,25 @@ pub struct FieldScenePack {
 pub struct FieldSceneAnim {
     /// The CLUT-walk shimmer (the slot-5 / type-6 walker or the legacy
     /// ocean-head fallback), stepped by the one engine kernel the native
-    /// window runs (`legaia_engine_core::clut_walk_anim`).
-    clut: Option<legaia_engine_core::clut_walk_anim::ClutWalkAnim>,
+    /// window runs (`legaia_engine_scene::clut_walk_anim`).
+    clut: Option<legaia_engine_scene::clut_walk_anim::ClutWalkAnim>,
     /// Vsyncs per game tick (retail `DAT_1F800393`).
     frame_step: u8,
     /// Vsyncs banked toward the next game tick.
     vsync_accum: u8,
 }
 
-/// Hybrid env-mesh builders - hoisted to the shared assembly kernel
-/// (`engine-core::scene_assembly`) so the browser pages and the native
-/// `export-glb` path bake identical meshes; re-exported under the old path
-/// for the crate's other pages.
-pub use legaia_engine_core::scene_assembly::{build_hybrid_env_mesh, build_hybrid_env_mesh_posed};
+// Hybrid env-mesh builders - in the shared assembly kernel
+// (`engine-scene::scene_assembly`) so the browser pages and the native
+// `export-glb` path bake identical meshes.
+use legaia_engine_scene::scene_assembly::{build_hybrid_env_mesh, build_hybrid_env_mesh_posed};
 
 /// Assemble a CDNAME scene's full static map: field-mode
 /// [`SceneResources`] (VRAM + env TMD pack) + the `.MAP` placement /
 /// terrain-tile draws resolved through [`field_env`] + the walk-ground
 /// heightfield. The engine-parity core of [`LegaiaViewer::set_scene_field`].
 pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack, String> {
-    let legaia_engine_core::scene_assembly::AssembledScene {
+    let legaia_engine_scene::scene_assembly::AssembledScene {
         name,
         res,
         env_tmds,
@@ -126,7 +125,7 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
         terrain,
         ground,
         coplanar_offsets,
-    } = legaia_engine_core::scene_assembly::assemble_field_scene(index, name)?;
+    } = legaia_engine_core::scene_staging::assemble_field_scene(index, name)?;
     Ok(FieldScenePack {
         name,
         res,
@@ -155,11 +154,11 @@ pub fn build_field_scene_anim(
     pack: &mut FieldScenePack,
 ) -> Option<FieldSceneAnim> {
     let scene = Scene::load(index, &pack.name).ok()?;
-    let is_world_map = legaia_engine_core::scene::is_world_map_scene(&pack.name);
+    let is_world_map = legaia_engine_scene::scene::is_world_map_scene(&pack.name);
     let frame_step: u8 = if is_world_map { 3 } else { 2 };
     // Resolved and parked by the engine kernel the play hosts call
     // (`ClutWalkAnim::install`), into the VRAM the page draws.
-    let clut = legaia_engine_core::clut_walk_anim::ClutWalkAnim::install(
+    let clut = legaia_engine_scene::clut_walk_anim::ClutWalkAnim::install(
         &scene,
         index,
         pack.display_vram_mut(),
@@ -189,7 +188,7 @@ pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) 
     pack.window_keys = pack
         .placements
         .iter()
-        .map(|d| legaia_engine_core::field_env::placed_window_key(d, binds.as_ref()))
+        .map(|d| legaia_engine_scene::field_env::placed_window_key(d, binds.as_ref()))
         .collect();
     pack.ground_lut_applied = None;
     pack.ground_cells = pack
@@ -198,9 +197,9 @@ pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) 
         .map(legaia_engine_core::field_ground::vertex_cells)
         .unwrap_or_default();
     pack.locomotion_anm = index
-        .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+        .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
         .ok()
-        .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+        .and_then(|b| legaia_actor_formats::character_pack::field_locomotion_anm(&b).ok());
     pack.live = legaia_engine_core::scene_live::LiveScene::enter(index.clone(), &pack.name)
         .map_err(|e| console_log(&format!("field scene {}: not live: {e}", pack.name)))
         .ok()
@@ -262,7 +261,7 @@ impl FieldScenePack {
 
     /// Per-draw Y offsets (retail frame, +Y down) of the terrain draws then
     /// the placement draws under the live floor-height ladder
-    /// ([`legaia_engine_core::field_env::FloorWave`]). Empty while the
+    /// ([`legaia_engine_scene::field_env::FloorWave`]). Empty while the
     /// ladder sits where the scene shipped it.
     ///
     /// The terrain / decoration cells follow the live rungs; a placed object
@@ -376,7 +375,7 @@ impl FieldSceneAnim {
     /// `World` carries the ambient move-VM tree (spawned at scene entry and
     /// drained per sim tick), so only the CLUT-walk half runs here.
     pub(crate) fn clut_only(
-        clut: legaia_engine_core::clut_walk_anim::ClutWalkAnim,
+        clut: legaia_engine_scene::clut_walk_anim::ClutWalkAnim,
         frame_step: u8,
     ) -> FieldSceneAnim {
         FieldSceneAnim {
@@ -390,7 +389,7 @@ impl FieldSceneAnim {
     /// ocean-head cycle, `0` none (the two are exclusive). Read by
     /// `LegaiaRuntime::play_field_anim_kind`.
     pub(crate) fn kind_code(&self) -> u32 {
-        use legaia_engine_core::clut_walk_anim::ClutWalkAnim;
+        use legaia_engine_scene::clut_walk_anim::ClutWalkAnim;
         match self.clut {
             Some(ClutWalkAnim::Walk { .. }) => 1,
             Some(ClutWalkAnim::Ocean { .. }) => 2,
@@ -439,7 +438,7 @@ impl FieldSceneAnim {
     /// CLUT-walk entry count, for the UI status line.
     pub fn walker_entries(&self) -> usize {
         match self.clut.as_ref() {
-            Some(legaia_engine_core::clut_walk_anim::ClutWalkAnim::Walk { table, .. }) => {
+            Some(legaia_engine_scene::clut_walk_anim::ClutWalkAnim::Walk { table, .. }) => {
                 table.entries.len()
             }
             _ => 0,
@@ -716,7 +715,7 @@ impl LegaiaViewer {
 
     /// Per-draw Y offsets (retail frame, +Y down) of the terrain draws then
     /// the placement draws, under the live floor-height ladder
-    /// ([`legaia_engine_core::field_env::FloorWave`], the kernel the play
+    /// ([`legaia_engine_scene::field_env::FloorWave`], the kernel the play
     /// page's `field_floor_wave_offsets` calls). Empty while the ladder sits
     /// where the scene shipped it.
     pub fn field_scene_floor_wave_offsets(&self) -> Vec<f32> {
@@ -781,10 +780,10 @@ impl LegaiaViewer {
         };
         let rtmd = &f.res.tmds[res_idx];
         let offsets = f.scene_anm.as_ref().and_then(|b| {
-            legaia_engine_core::field_env::posed_prop_offsets(
+            legaia_engine_scene::field_env::posed_prop_offsets(
                 b,
                 anim_id.min(u8::MAX as u32) as u8,
-                legaia_engine_core::field_env::PropPoseKey::REST,
+                legaia_engine_scene::field_env::PropPoseKey::REST,
                 rtmd.tmd.objects.len(),
             )
         });
@@ -802,7 +801,7 @@ impl LegaiaViewer {
     /// record `anim_id - 1` when `anim_id` is non-zero, as
     /// [`Self::field_scene_mesh_posed`] - with its **light-source rows**
     /// shaded for a draw at the record angles `(rot_x, rot_y, rot_z)`: the
-    /// `legaia_engine_core::field_lit_mesh` kernel both play hosts run, under
+    /// `legaia_engine_field::field_lit_mesh` kernel both play hosts run, under
     /// the live scene's field light (the scene-load light before the scene
     /// runs live). Returns whether the mesh has lit rows; the page keeps one
     /// shared upload for a slot without any.
@@ -824,39 +823,39 @@ impl LegaiaViewer {
                 f.env_tmds.len()
             )));
         };
-        let light = f
-            .live
-            .as_ref()
-            .map_or(legaia_engine_vm::field_light::FieldLight::SCENE_LOAD, |l| {
-                l.host.world.presentation.field_light
-            });
+        let light = f.live.as_ref().map_or(
+            legaia_render_kernels::field_light::FieldLight::SCENE_LOAD,
+            |l| l.host.world.presentation.field_light,
+        );
         let rtmd = &f.res.tmds[res_idx];
         let offsets = (anim_id != 0)
             .then(|| {
                 f.scene_anm.as_ref().and_then(|b| {
-                    legaia_engine_core::field_env::posed_prop_offsets(
+                    legaia_engine_scene::field_env::posed_prop_offsets(
                         b,
                         anim_id.min(u8::MAX as u32) as u8,
-                        legaia_engine_core::field_env::PropPoseKey::REST,
+                        legaia_engine_scene::field_env::PropPoseKey::REST,
                         rtmd.tmd.objects.len(),
                     )
                 })
             })
             .flatten();
         let (mut mesh, mut flat, lit) = match &offsets {
-            Some(o) => legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed_lit(rtmd, o),
+            Some(o) => {
+                legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed_lit(rtmd, o)
+            }
             None => {
-                legaia_engine_core::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &f.res.vram)
+                legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &f.res.vram)
             }
         };
-        let has_lit = legaia_engine_core::field_lit_mesh::has_lit_rows(&lit);
+        let has_lit = legaia_engine_field::field_lit_mesh::has_lit_rows(&lit);
         if has_lit {
-            let rot = legaia_engine_core::field_lit_mesh::draw_rotation(
+            let rot = legaia_engine_field::field_lit_mesh::draw_rotation(
                 rot_x as u16,
                 rot_y as u16,
                 rot_z as u16,
             );
-            legaia_engine_core::field_lit_mesh::shade_lit_rows_rgba(
+            legaia_engine_field::field_lit_mesh::shade_lit_rows_rgba(
                 &mut mesh.colors,
                 &mut flat,
                 &lit,
@@ -875,7 +874,7 @@ impl LegaiaViewer {
         };
         f.env_tmds.get(slot as usize).is_some_and(|&res_idx| {
             let (_, lit) = f.res.tmds[res_idx].build_filtered_vram_mesh_lit_vertices(&f.res.vram);
-            legaia_engine_core::field_lit_mesh::has_lit_rows(&lit)
+            legaia_engine_field::field_lit_mesh::has_lit_rows(&lit)
         })
     }
 
@@ -898,10 +897,10 @@ impl LegaiaViewer {
         };
         let rtmd = &f.res.tmds[res_idx];
         let Some(offsets) = f.scene_anm.as_ref().and_then(|b| {
-            legaia_engine_core::field_env::posed_prop_offsets(
+            legaia_engine_scene::field_env::posed_prop_offsets(
                 b,
                 anim_id.min(u8::MAX as u32) as u8,
-                legaia_engine_core::field_env::PropPoseKey::from_i32(frame as i32),
+                legaia_engine_scene::field_env::PropPoseKey::from_i32(frame as i32),
                 rtmd.tmd.objects.len(),
             )
         }) else {
@@ -956,7 +955,7 @@ impl LegaiaViewer {
     /// yaw-only `placementModelScaled*` path: that builder's negated-yaw
     /// convention is a cancellation specific to `Ry`. The page composes
     /// retail's `Rx * Ry * Rz` instead (`placementModelEuler`), which is what
-    /// `legaia_engine_render::battle_intro::placement_rotation` applies on the
+    /// `legaia_render_kernels::battle_intro::placement_rotation` applies on the
     /// native host. Not a rarity to skip: across the field corpus ~6% of
     /// placements tilt, and some scenes tilt every one of theirs.
     pub fn field_scene_placement_rot_x(&self) -> Vec<u16> {
@@ -1254,7 +1253,7 @@ impl LegaiaViewer {
         &self,
     ) -> Option<(
         &crate::field_actors::FieldActors,
-        &legaia_engine_core::scene::SceneHost,
+        &legaia_engine_core::scene_host::SceneHost,
         crate::field_actors::ActorBanks<'_>,
     )> {
         let p = self.field_scene.as_ref()?;

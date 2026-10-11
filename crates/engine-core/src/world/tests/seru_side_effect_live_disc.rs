@@ -45,17 +45,17 @@ const MONSTER_ARCHIVE_PROT: usize = 867;
 /// A monster record whose defence is large enough that the two boost profiles
 /// give different answers (`udf * 2 != udf + (udf>>1) + (udf>>2)` needs
 /// `udf >= 4`), and whose ATK is boosted by the scripted profile only.
-fn pick_record(archive: &[u8]) -> Option<legaia_asset::monster_archive::MonsterRecord> {
-    let slots = legaia_asset::monster_archive::slot_count(archive) as u16;
+fn pick_record(archive: &[u8]) -> Option<legaia_actor_formats::monster_archive::MonsterRecord> {
+    let slots = legaia_actor_formats::monster_archive::slot_count(archive) as u16;
     (1..=slots).find_map(|id| {
-        let r = legaia_asset::monster_archive::record(archive, id)
+        let r = legaia_actor_formats::monster_archive::record(archive, id)
             .ok()
             .flatten()?;
         let s = r.stats;
         // Both profiles must differ on UDF, LDF and ATK, or the assertion
         // below could not tell them apart.
-        let scripted = legaia_asset::monster_archive::boost_profile(s, true);
-        let random = legaia_asset::monster_archive::boost_profile(s, false);
+        let scripted = legaia_actor_formats::monster_archive::boost_profile(s, true);
+        let random = legaia_actor_formats::monster_archive::boost_profile(s, false);
         (r.hp > 0
             && scripted[1] != random[1]
             && scripted[2] != random[2]
@@ -66,14 +66,19 @@ fn pick_record(archive: &[u8]) -> Option<legaia_asset::monster_archive::MonsterR
 
 /// A battle world seating one real archive monster through the real entry
 /// path, for a fight of the given class.
-fn seat_monster(rec: &legaia_asset::monster_archive::MonsterRecord, scripted: bool) -> World {
+fn seat_monster(
+    rec: &legaia_actor_formats::monster_archive::MonsterRecord,
+    scripted: bool,
+) -> World {
     let mut w = World::default();
     w.party.party_count = 1;
-    let def = crate::monster_catalog::monster_def_from_record(rec);
+    let def = legaia_engine_battle::monster_catalog::monster_def_from_record(rec);
     w.tables.monster_catalog.insert(def);
-    let formation = crate::monster_catalog::FormationDef::new(
+    let formation = legaia_engine_battle::monster_catalog::FormationDef::new(
         0,
-        vec![crate::monster_catalog::FormationSlot::new(rec.id)],
+        vec![legaia_engine_battle::monster_catalog::FormationSlot::new(
+            rec.id,
+        )],
     )
     // `record[+0]` non-zero is exactly what raises the per-battle `0x80` the
     // scripted flag is derived from (`FUN_801DA51C`).
@@ -93,8 +98,8 @@ fn a_random_encounter_seats_the_x7_4_defence_profile() {
         eprintln!("[skip] no archive record separates the two boost profiles");
         return;
     };
-    let want_random = legaia_asset::monster_archive::boost_profile(rec.stats, false);
-    let want_scripted = legaia_asset::monster_archive::boost_profile(rec.stats, true);
+    let want_random = legaia_actor_formats::monster_archive::boost_profile(rec.stats, false);
+    let want_scripted = legaia_actor_formats::monster_archive::boost_profile(rec.stats, true);
 
     let w = seat_monster(&rec, false);
     assert!(
@@ -186,8 +191,12 @@ fn the_stat_bases_open_the_fight_equal_to_their_working_halves() {
 
 /// The element -> stat the finisher shaves, for the six damaging summon
 /// elements.
-fn shaved_stat(w: &World, slot: u8, kind: legaia_asset::seru_side_effect::SideEffectKind) -> u32 {
-    use legaia_asset::seru_side_effect::SideEffectKind as K;
+fn shaved_stat(
+    w: &World,
+    slot: u8,
+    kind: legaia_game_tables::seru_side_effect::SideEffectKind,
+) -> u32 {
+    use legaia_game_tables::seru_side_effect::SideEffectKind as K;
     let i = slot as usize;
     match kind {
         K::DefDown => u32::from(w.battle.defense_split[i].unwrap_or_default().0),
@@ -202,7 +211,7 @@ fn shaved_stat(w: &World, slot: u8, kind: legaia_asset::seru_side_effect::SideEf
 
 #[test]
 fn a_live_seru_cast_shaves_the_table_percentage_off_the_target() {
-    use legaia_asset::seru_side_effect::{SeruSideEffectTable, SideEffectKind};
+    use legaia_game_tables::seru_side_effect::{SeruSideEffectTable, SideEffectKind};
     let Some(dir) = extracted_dir() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
@@ -210,7 +219,7 @@ fn a_live_seru_cast_shaves_the_table_percentage_off_the_target() {
     let archive = prot_entry(&dir, MONSTER_ARCHIVE_PROT);
     let overlay = prot_entry(
         &dir,
-        legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX,
+        legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX,
     );
     let Some(table) = SeruSideEffectTable::parse(&overlay) else {
         eprintln!("[skip] PROT 0898 carries no side-effect table on this image");
@@ -246,14 +255,14 @@ fn a_live_seru_cast_shaves_the_table_percentage_off_the_target() {
     let before = shaved_stat(&w, m, SideEffectKind::AtkDown);
     assert!(before > 0, "the seated monster must carry a non-zero ATK");
 
-    let def = crate::spells::SpellDef {
+    let def = legaia_engine_battle::spells::SpellDef {
         id: SPELL_ID,
         name: "probe".into(),
         mp_cost: 0,
-        target: crate::spells::SpellTarget::OneEnemy,
-        effect: crate::spells::SpellEffect::Damage {
+        target: legaia_engine_battle::spells::SpellTarget::OneEnemy,
+        effect: legaia_engine_battle::spells::SpellEffect::Damage {
             base_power: 1,
-            element: crate::spells::SpellElement::Neutral,
+            element: legaia_engine_battle::spells::SpellElement::Neutral,
         },
         ..Default::default()
     };
@@ -280,7 +289,7 @@ fn a_live_seru_cast_shaves_the_table_percentage_off_the_target() {
 
 #[test]
 fn a_sub_level_three_cast_stages_nothing_and_draws_nothing() {
-    use legaia_asset::seru_side_effect::SeruSideEffectTable;
+    use legaia_game_tables::seru_side_effect::SeruSideEffectTable;
     let Some(dir) = extracted_dir() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
@@ -288,7 +297,7 @@ fn a_sub_level_three_cast_stages_nothing_and_draws_nothing() {
     let archive = prot_entry(&dir, MONSTER_ARCHIVE_PROT);
     let overlay = prot_entry(
         &dir,
-        legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX,
+        legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX,
     );
     let Some(table) = SeruSideEffectTable::parse(&overlay) else {
         eprintln!("[skip] PROT 0898 carries no side-effect table");
@@ -312,14 +321,14 @@ fn a_sub_level_three_cast_stages_nothing_and_draws_nothing() {
     let m = w.party.party_count;
     let atk_before = w.battle.attack[m as usize];
     let rng_before = w.rng_state;
-    let def = crate::spells::SpellDef {
+    let def = legaia_engine_battle::spells::SpellDef {
         id: 0x81,
         name: "probe".into(),
         mp_cost: 0,
-        target: crate::spells::SpellTarget::OneEnemy,
-        effect: crate::spells::SpellEffect::Damage {
+        target: legaia_engine_battle::spells::SpellTarget::OneEnemy,
+        effect: legaia_engine_battle::spells::SpellEffect::Damage {
             base_power: 1,
-            element: crate::spells::SpellElement::Neutral,
+            element: legaia_engine_battle::spells::SpellElement::Neutral,
         },
         ..Default::default()
     };
@@ -360,14 +369,14 @@ fn a_live_vera_cast_restores_the_module_amount() {
         (
             0x83u8,
             7u8,
-            u32::from(legaia_engine_vm::cast_seru_ticks_a::vera_heal_amount(
+            u32::from(legaia_engine_battle_vm::seru_magic_ticks::vera_heal_amount(
                 7, 100, 4000,
             )),
         ),
         (
             0x89u8,
             5u8,
-            legaia_engine_vm::cast_seru_ticks_b::orb_heal_amount(5),
+            legaia_engine_battle_vm::seru_magic_ticks::orb_heal_amount(5),
         ),
     ] {
         let mut w = seat_monster(&rec, false);
@@ -382,14 +391,14 @@ fn a_live_vera_cast_restores_the_module_amount() {
         w.actors[0].battle.hp = 100;
         w.actors[0].battle.liveness = 1;
 
-        let def = crate::spells::SpellDef {
+        let def = legaia_engine_battle::spells::SpellDef {
             id: spell_id,
             name: "heal probe".into(),
             mp_cost: 0,
-            target: crate::spells::SpellTarget::OneAlly,
+            target: legaia_engine_battle::spells::SpellTarget::OneAlly,
             // A deliberately wrong placeholder magnitude: the module's own
             // amount has to override it.
-            effect: crate::spells::SpellEffect::Heal { amount: 7 },
+            effect: legaia_engine_battle::spells::SpellEffect::Heal { amount: 7 },
             ..Default::default()
         };
         assert!(w.cast_spell_on_slots(0, &def, &[0]), "the heal folds");
@@ -415,7 +424,7 @@ fn the_scripted_header_byte_is_a_minority_of_the_formation_corpus() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
-    let Ok(mut host) = crate::scene::SceneHost::open_extracted(&dir) else {
+    let Ok(mut host) = crate::scene_host::SceneHost::open_extracted(&dir) else {
         eprintln!("[skip] SceneHost would not open");
         return;
     };
@@ -438,7 +447,7 @@ fn the_scripted_header_byte_is_a_minority_of_the_formation_corpus() {
         let Ok(Some(man)) = sc.field_man_payload(&host.index) else {
             continue;
         };
-        let defs = crate::encounter_man::formation_defs_from_man(&man);
+        let defs = legaia_engine_battle::encounter_man::formation_defs_from_man(&man);
         if defs.is_empty() {
             continue;
         }

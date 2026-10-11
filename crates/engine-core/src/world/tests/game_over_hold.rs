@@ -9,15 +9,16 @@
 //! the latch.
 
 use super::*;
-use crate::field_events::FieldEvent;
-use crate::monster_catalog::{FormationDef, FormationSlot};
-use vm::battle_action::BattleEndCause;
+use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+use legaia_engine_battle_vm::battle_action::BattleEndCause;
+use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A world one party member deep, mid-battle with the BGM swap active and
 /// a field snapshot captured, ready for `finish_battle`.
 fn wiped_battle_world() -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

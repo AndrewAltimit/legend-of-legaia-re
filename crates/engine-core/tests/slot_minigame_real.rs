@@ -1,8 +1,8 @@
 //! Disc-gated: drive the **real** parsed slot-machine payout table (PROT 0975)
 //! through the engine slot-machine rules engine
-//! ([`legaia_engine_core::slot_machine`]).
+//! ([`legaia_engine_minigames::slot_machine`]).
 //!
-//! The payout-table parser itself is pinned by `legaia-asset`'s
+//! The payout-table parser itself is pinned by `legaia-minigame-formats`'
 //! `slot_payout_real`; this closes the engine end - the play-window load path
 //! (`SceneHost::open_disc` -> `entry_bytes_extended(975)` ->
 //! `static_overlay::as_loaded` -> `parse`) resolves a real table, and a
@@ -10,14 +10,15 @@
 //! into the world's casino coin bank. No Sony bytes are asserted, only
 //! structural facts. Skips + passes when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_asset::slot_payout::BONUS_VALUE_BASE;
-use legaia_asset::static_overlay;
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::slot_machine::{
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_core::world::World;
+use legaia_engine_minigames::slot_machine::{
     BONUS_SPIN_UP_FRAMES, REEL_COUNT, SPIN_UP_FRAMES, SlotMachine, SlotPhase,
 };
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
+use legaia_minigame_formats::slot_payout::BONUS_VALUE_BASE;
+use legaia_overlay_images::static_overlay;
 
 #[test]
 fn playwindow_load_path_spins_the_real_payout_table() {
@@ -33,14 +34,15 @@ fn playwindow_load_path_spins_the_real_payout_table() {
         }
     };
     let rec = static_overlay::overlay_map()
-        .by_prot_index(legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32)
+        .by_prot_index(legaia_minigame_formats::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32)
         .expect("slot overlay in static map");
     let raw = host
         .index
         .entry_bytes_extended(rec.prot_index)
         .expect("read PROT 0975 (extended)");
     let loaded = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
-    let payouts = legaia_asset::slot_payout::parse(&loaded).expect("real payout table parses");
+    let payouts =
+        legaia_minigame_formats::slot_payout::parse(&loaded).expect("real payout table parses");
 
     // Drive the session through the World exactly like play-window's O key.
     let mut world = World::new();

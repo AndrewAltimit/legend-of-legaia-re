@@ -50,9 +50,9 @@ pub const CHAR_CELLS: usize = CHAR_ROWS * GRID_COLS;
 pub const NAV_CELLS: usize = NAV_ROWS * GRID_COLS;
 
 /// Longest name the entry accepts, in glyphs. The template name field is 10
-/// bytes NUL-padded ([`legaia_asset::new_game::NAME_LEN`]), so nine glyphs fit
+/// bytes NUL-padded ([`legaia_game_tables::new_game::NAME_LEN`]), so nine glyphs fit
 /// with the terminator.
-pub const NAME_MAX: usize = legaia_asset::new_game::NAME_LEN - 1;
+pub const NAME_MAX: usize = legaia_game_tables::new_game::NAME_LEN - 1;
 
 /// The six selectable glyph rows, exactly as laid out in the retail charset
 /// grid at `0x801F29F0`. `|` marks a non-selectable group separator (the
@@ -123,12 +123,12 @@ pub fn caret_on(frame: u64) -> bool {
 
 impl NameEntryInput {
     /// Decode one frame's **raw** just-pressed pad word (the
-    /// [`crate::input::PadButton`] layout both hosts feed `World::set_pad`)
+    /// [`legaia_engine_system::input::PadButton`] layout both hosts feed `World::set_pad`)
     /// into the overlay's semantic edges: the d-pad, Cross to confirm and
     /// Triangle to cancel. Both hosts route their naming-prompt edges through
     /// this one decode; each used to spell the six masks out locally.
     pub fn from_pad_edge(edge: u16) -> Self {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
         let pressed = |b: PadButton| edge & b.mask() != 0;
         Self {
             up: pressed(PadButton::Up),

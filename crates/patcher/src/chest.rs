@@ -11,7 +11,7 @@
 //! byte scan would hit literal `0x39` bytes inside dialogue / other operands.
 //! [`give_item_sites`] walks each partition-1 record's interaction script from
 //! its true entry PC with the Track-1 field-VM disassembler
-//! ([`legaia_asset::field_disasm`]).
+//! ([`legaia_scene_formats::field_disasm`]).
 //!
 //! A chest's give-item op almost always comes **after** the inline dialogue that
 //! announces it ("There is a {item} in the treasure chest!" → give → "{name} now
@@ -49,8 +49,8 @@
 //! is recompressed and written back exactly like the [encounter](crate::encounter)
 //! path.
 
-use legaia_asset::field_disasm::{self, InsnInfo};
-use legaia_asset::{man_section, scene_asset_table};
+use legaia_scene_formats::field_disasm::{self, InsnInfo};
+use legaia_scene_formats::{man_section, scene_asset_table};
 
 const MAN_TYPE: u8 = 0x03;
 
@@ -100,7 +100,8 @@ impl SceneChests {
         if decoded.len() != man.size as usize {
             return None;
         }
-        let compressed_budget = crate::man_compressed_budget(&table, man_offset, entry.len());
+        let compressed_budget =
+            legaia_disc_patch::man_compressed_budget(&table, man_offset, entry.len());
         Self::from_man_bytes(decoded, entry_idx, man_offset, compressed_budget, false)
     }
 
@@ -118,7 +119,7 @@ impl SceneChests {
     /// A chunk declaring more bytes than the entry holds (the
     /// `DataFieldTruncated` tail) is skipped rather than clamped.
     pub fn locate_streaming_mans(entry: &[u8], entry_idx: usize) -> Vec<Self> {
-        let Ok(report) = legaia_asset::parse_streaming(entry, 4096) else {
+        let Ok(report) = legaia_container_formats::parse_streaming(entry, 4096) else {
             return Vec::new();
         };
         let mut out = Vec::new();
@@ -214,7 +215,7 @@ impl SceneChests {
         if self.raw_in_place {
             return Some(self.decoded.clone());
         }
-        crate::compress_within(&self.decoded, self.compressed_budget)
+        legaia_disc_patch::compress_within(&self.decoded, self.compressed_budget)
     }
 }
 

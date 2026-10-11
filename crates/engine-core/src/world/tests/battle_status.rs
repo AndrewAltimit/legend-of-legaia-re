@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn enter_battle_populates_party_and_monsters() {
@@ -12,7 +13,7 @@ fn enter_battle_populates_party_and_monsters() {
     // Party slots sit at the retail 3-member seats (negative Z, facing
     // the monsters at positive Z).
     for i in 0..3 {
-        let s = crate::battle_seats::party_seat(3, i);
+        let s = legaia_engine_battle::battle_seats::party_seat(3, i);
         assert_eq!(world.actors[i].move_state.world_x, s.x);
         assert_eq!(world.actors[i].move_state.world_z, s.z);
         assert!(world.actors[i].move_state.world_z < 0);
@@ -26,7 +27,7 @@ fn enter_battle_populates_party_and_monsters() {
     // SM seeded at Begin.
     assert_eq!(
         world.battle_ctx.action_state,
-        vm::battle_action::ActionState::Begin.as_byte()
+        legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte()
     );
 }
 
@@ -63,7 +64,7 @@ fn enter_battle_caps_party_at_three() {
 
 #[test]
 fn status_block_helpers_classify_by_kind() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut world = World::new();
     // Sleep blocks all actions but not magic specifically.
     world
@@ -99,7 +100,7 @@ fn status_block_helpers_classify_by_kind() {
 
 #[test]
 fn confuse_retargets_a_monster_strike_to_its_own_band() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut world = World::new();
     world.party.party_count = 3;
     // Party slots 0..2 + monster slots 3,4 alive; everything else stays dead.
@@ -135,7 +136,7 @@ fn confuse_retargets_a_monster_strike_to_its_own_band() {
 
 #[test]
 fn confuse_retargets_a_party_strike_to_a_living_ally() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut world = World::new();
     world.party.party_count = 3;
     for i in 0..5 {
@@ -159,7 +160,7 @@ fn confuse_retargets_a_party_strike_to_a_living_ally() {
 
 #[test]
 fn confused_party_member_auto_acts_instead_of_opening_the_command_menu() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut world = World::new();
     world.party.party_count = 3;
     world.battle.player_driven = true;
@@ -187,7 +188,7 @@ fn confused_party_member_auto_acts_instead_of_opening_the_command_menu() {
 
 #[test]
 fn confuse_retargets_a_monster_cast_to_the_opposite_side() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut world = World::new();
     world.party.party_count = 3;
     for i in 0..5 {
@@ -225,7 +226,7 @@ fn confuse_retargets_a_monster_cast_to_the_opposite_side() {
 
 #[test]
 fn stone_counts_as_defeated_and_is_petrified() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut world = World::new();
     // A petrified actor stays "alive" (liveness != 0) but counts as defeated
     // for wipe detection, and reads as petrified.
@@ -249,8 +250,8 @@ fn stone_counts_as_defeated_and_is_petrified() {
 
 #[test]
 fn petrified_target_absorbs_art_strike_damage() {
-    use crate::art_strike::ArtStrikeOutcome;
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle::art_strike::ArtStrikeOutcome;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut world = World::new();
     world.party.party_count = 4;
     for slot in 0..4 {
@@ -287,8 +288,8 @@ fn petrified_target_absorbs_art_strike_damage() {
 /// from the pre-nullify amount (matching the basic-attack / finisher order).
 #[test]
 fn stone_absorbs_a_damage_spell() {
-    use crate::spells::{SpellElement, SpellOutcome};
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle::spells::{SpellElement, SpellOutcome};
+    use legaia_engine_battle_vm::status_effects::StatusKind;
 
     let mut world = World::new();
     world.enter_battle(3, 1);
@@ -323,7 +324,7 @@ fn stone_absorbs_a_damage_spell() {
 
 #[test]
 fn asleep_monster_loses_its_turn_and_never_attacks() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
 
     // Drive a 1-vs-1 auto-resolving battle for many ticks and report whether
     // the party member took any damage. With unseeded battle stats the monster
@@ -375,7 +376,7 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
 /// points - this pins the never-kill clamp end to end.
 #[test]
 fn dot_never_kills_actor_bottoms_out_at_one_hp() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
 
     let mut world = World::new();
     world.enter_battle(1, 1);
@@ -404,7 +405,7 @@ fn dot_never_kills_actor_bottoms_out_at_one_hp() {
 /// can never strike (asleep), so the only HP source is the DoT.
 #[test]
 fn live_loop_ticks_dot_at_the_round_boundary() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
 
     fn party_lost_hp(poisoned: bool) -> bool {
         let mut world = World::new();
@@ -457,12 +458,12 @@ fn live_loop_ticks_dot_at_the_round_boundary() {
 
 #[test]
 fn all_party_item_heals_every_living_party_actor_in_battle() {
-    use crate::inventory_use::{
+    use legaia_engine_menus::inventory_use::{
         InventoryContext, InventoryUseInput, InventoryUseSession, TargetRow,
     };
 
     let mut world = World::default();
-    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    world.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
     world.enter_battle(3, 1);
     // Wound the whole party; down the third member.
     for i in 0..3 {
@@ -490,7 +491,7 @@ fn all_party_item_heals_every_living_party_actor_in_battle() {
     s.input(InventoryUseInput::Confirm);
     assert!(matches!(
         s.state,
-        crate::inventory_use::InventoryUseState::Done(_)
+        legaia_engine_menus::inventory_use::InventoryUseState::Done(_)
     ));
     assert_eq!(s.used_item, Some(0x7A));
     assert_eq!(s.used_slots, vec![0, 1], "only the two living allies");

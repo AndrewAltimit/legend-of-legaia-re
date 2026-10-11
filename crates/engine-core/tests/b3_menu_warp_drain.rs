@@ -22,8 +22,9 @@
 //! the map `SceneHost` installs at construction. Skips + passes without
 //! `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::pause_screens::StagedWarp;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_menus::pause_screens::StagedWarp;
+use legaia_engine_mode::mode::SceneMode;
 use std::path::PathBuf;
 
 fn toc_map() -> legaia_prot::cdname::IndexMap {
@@ -61,7 +62,7 @@ fn run_until_transition(w: &mut World, max: usize) -> Option<usize> {
 #[test]
 fn a_staged_door_of_wind_warp_runs_rula_then_transitions() {
     use legaia_engine_core::world::pause_session::PauseSessionStage;
-    use legaia_engine_vm::travel_art_actor::TravelArt;
+    use legaia_engine_field::travel_art_actor::TravelArt;
     let mut w = world_with_player();
     w.menu.pending_warp = Some(StagedWarp {
         scene_id: 0x55,
@@ -167,7 +168,7 @@ fn a_head_define_word_is_a_miss() {
 #[test]
 fn a_staged_escape_runs_riremito_back_to_the_visited_kingdom_tile() {
     use legaia_engine_core::world::pause_session::PauseSessionStage;
-    use legaia_engine_vm::travel_art_actor::TravelArt;
+    use legaia_engine_field::travel_art_actor::TravelArt;
     let mut w = world_with_player();
     w.enter_world_map();
     w.world_map
@@ -243,21 +244,22 @@ fn disc_path() -> Option<PathBuf> {
 
 #[test]
 fn every_disc_placement_scene_id_resolves_through_the_installed_toc_map() {
-    use legaia_engine_core::Vfs;
+    use legaia_engine_scene::vfs::Vfs;
     let Some(path) = disc_path() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or not a file");
         return;
     };
-    let host = legaia_engine_core::scene::SceneHost::open_disc(&path).expect("open disc");
+    let host = legaia_engine_core::scene_host::SceneHost::open_disc(&path).expect("open disc");
     assert!(
         !host.world.tables.scene_toc_names.is_empty(),
         "SceneHost::new installed the CDNAME TOC map into the world"
     );
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc vfs")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
-    let menu = legaia_asset::worldmap_menu::parse_scus(&scus).expect("placement table parses");
+    let menu =
+        legaia_game_tables::worldmap_menu::parse_scus(&scus).expect("placement table parses");
     assert!(!menu.placements.is_empty());
     for p in &menu.placements {
         let name = host

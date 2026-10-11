@@ -1,6 +1,6 @@
 //! The [`Renderer`] struct field definitions plus its small state
 //! accessors (PSX-mode toggle, texture-window register, resize, surface
-//! size). Split out of `renderer/core.rs`.
+//! size).
 
 use super::*;
 
@@ -221,14 +221,15 @@ pub struct Renderer {
     pub(super) dyn_shadows: std::cell::Cell<bool>,
     /// The mood the enhancement lights the frame under (ambient, key light,
     /// lamp strength, emissive gain, glow) - see
-    /// [`crate::scene_lighting::LightingMood`]. Staged by the host per scene
+    /// [`legaia_render_kernels::scene_lighting::LightingMood`]. Staged by the host per scene
     /// / time-of-day change via [`Self::set_lighting_mood`]; defaults to
     /// daylight. Irrelevant while dynamic lighting is off.
-    pub(super) lighting_mood: std::cell::Cell<crate::scene_lighting::LightingMood>,
+    pub(super) lighting_mood: std::cell::Cell<legaia_render_kernels::scene_lighting::LightingMood>,
     /// This frame's glow sprites (halos + light shafts) in world space,
     /// expanded to camera-facing quads at stage time. Empty unless dynamic
     /// lighting is on and the host staged sprites.
-    pub(super) glow_sprites: std::cell::RefCell<Vec<crate::scene_lighting::GlowSprite>>,
+    pub(super) glow_sprites:
+        std::cell::RefCell<Vec<legaia_render_kernels::scene_lighting::GlowSprite>>,
     /// Camera-occlusion fade master toggle (the opt-in see-through-walls
     /// enhancement, NON-RETAIL - see [`crate::occlusion_fade`]). `false`
     /// (the default) keeps every mesh path bit-identical to the faithful
@@ -250,7 +251,8 @@ pub struct Renderer {
     pub(super) occl_env_counts: std::cell::Cell<(usize, usize)>,
     /// Derived per-scene point lights (world space), staged by the host
     /// via [`Self::set_scene_lights`]. Cleared on scene change.
-    pub(super) scene_lights: std::cell::RefCell<Vec<crate::scene_lights::ScenePointLight>>,
+    pub(super) scene_lights:
+        std::cell::RefCell<Vec<legaia_render_kernels::scene_lighting::ScenePointLight>>,
     /// The scene camera's view-projection registered with the lights -
     /// inverted per frame to recover each draw's model matrix from its MVP
     /// (`model = view_proj^-1 * mvp`).
@@ -268,7 +270,7 @@ pub struct Renderer {
     pub(super) shadow_vram_pipeline: wgpu::RenderPipeline,
     pub(super) shadow_color_pipeline: wgpu::RenderPipeline,
     /// Enhanced lighting's glow-sprite pipeline (additive camera-facing
-    /// halos + shafts, [`crate::scene_lighting::glow_vertices`]) and its
+    /// halos + shafts, [`legaia_render_kernels::scene_lighting::glow_vertices`]) and its
     /// view-projection uniform.
     pub(super) glow_pipeline: wgpu::RenderPipeline,
     pub(super) glow_uniforms_buf: wgpu::Buffer,
@@ -295,8 +297,9 @@ pub struct Renderer {
     pub(super) screen_overlay_vcap: std::cell::Cell<u32>,
     pub(super) screen_overlay_icap: std::cell::Cell<u32>,
     /// Draw runs staged for the current frame's screen overlay (one indexed
-    /// draw per run; see [`crate::screen_overlay::DrawRun`]).
-    pub(super) screen_overlay_runs: std::cell::RefCell<Vec<crate::screen_overlay::DrawRun>>,
+    /// draw per run; see [`legaia_render_kernels::screen_prim::DrawRun`]).
+    pub(super) screen_overlay_runs:
+        std::cell::RefCell<Vec<legaia_render_kernels::screen_prim::DrawRun>>,
     /// How many of [`Self::screen_overlay_runs`] belong to the list drawn
     /// under the 2D overlays (`SceneWithScreenPrims::under_overlay`).
     pub(super) screen_overlay_under_runs: std::cell::Cell<usize>,
@@ -370,7 +373,7 @@ impl Renderer {
     /// Toggle the **enhanced-lighting** enhancement (NON-RETAIL; default
     /// off, and off is the faithful baked-shading render, pixel-identical).
     /// When on, the VRAM / colour mesh shaders shade the baked colours under
-    /// the staged [`crate::scene_lighting::LightingMood`] (ambient floor +
+    /// the staged [`legaia_render_kernels::scene_lighting::LightingMood`] (ambient floor +
     /// soft key light off the smoothed normals + a screen-centred pool),
     /// add the per-scene point lights ([`Self::set_scene_lights`]), draw
     /// emissive-tagged prims at the mood's emissive gain, and composite the
@@ -385,22 +388,22 @@ impl Renderer {
     }
 
     /// Stage the mood the enhancement lights frames under (see
-    /// [`crate::scene_lighting::LightingMood`] / `TimeOfDay`).
-    pub fn set_lighting_mood(&self, mood: crate::scene_lighting::LightingMood) {
+    /// [`legaia_render_kernels::scene_lighting::LightingMood`] / `TimeOfDay`).
+    pub fn set_lighting_mood(&self, mood: legaia_render_kernels::scene_lighting::LightingMood) {
         self.lighting_mood.set(mood);
     }
 
     /// The staged lighting mood.
-    pub fn lighting_mood(&self) -> crate::scene_lighting::LightingMood {
+    pub fn lighting_mood(&self) -> legaia_render_kernels::scene_lighting::LightingMood {
         self.lighting_mood.get()
     }
 
     /// Stage this frame's glow sprites (halos + light shafts, world space -
-    /// [`crate::scene_lighting::glow_sprites`]). Drawn additively, depth
+    /// [`legaia_render_kernels::scene_lighting::glow_sprites`]). Drawn additively, depth
     /// tested, after the scene's blend pass, and only while dynamic
     /// lighting is on and a scene camera is registered
     /// ([`Self::set_scene_lights`]). Pass an empty slice to clear.
-    pub fn set_glow_sprites(&self, sprites: &[crate::scene_lighting::GlowSprite]) {
+    pub fn set_glow_sprites(&self, sprites: &[legaia_render_kernels::scene_lighting::GlowSprite]) {
         let mut cur = self.glow_sprites.borrow_mut();
         cur.clear();
         cur.extend_from_slice(sprites);
@@ -509,19 +512,23 @@ impl Renderer {
     /// shadow-map layer per light over the scene's opaque geometry, and
     /// the scene fragment shaders add the shadowed point-light gain on
     /// top of the global dynamic light. At most
-    /// [`crate::scene_lights::MAX_SCENE_LIGHTS`] lights are consumed.
+    /// [`legaia_render_kernels::scene_lighting::MAX_SCENE_LIGHTS`] lights are consumed.
     ///
     /// Call every frame the lights should apply (the camera moves);
     /// [`Self::clear_scene_lights`] drops them (scene change / non-field
     /// modes).
     pub fn set_scene_lights(
         &self,
-        lights: &[crate::scene_lights::ScenePointLight],
+        lights: &[legaia_render_kernels::scene_lighting::ScenePointLight],
         view_proj: Mat4,
     ) {
         let mut cur = self.scene_lights.borrow_mut();
         cur.clear();
-        cur.extend_from_slice(&lights[..lights.len().min(crate::scene_lights::MAX_SCENE_LIGHTS)]);
+        cur.extend_from_slice(
+            &lights[..lights
+                .len()
+                .min(legaia_render_kernels::scene_lighting::MAX_SCENE_LIGHTS)],
+        );
         self.scene_view_proj.set(Some(view_proj));
     }
 
@@ -735,7 +742,7 @@ impl Renderer {
     /// overworld prim leaves add the depth-indexed entry to each vertex's
     /// `SY`, so the continent falls away over the horizon. `sz_scale` is the
     /// frame's `clip.w`-to-`SZ` factor
-    /// (`legaia_engine_core::overworld_curvature::frame_curve_scale`); `0.0`
+    /// (`legaia_engine_core::camera_view::frame_curve_scale`); `0.0`
     /// (the default) is the identity, which every scene but the kingdom
     /// overworld (retail's overworld bit `_DAT_1F800394 & 1`) keeps.
     pub fn set_overworld_curvature(&self, sz_scale: f32) {
@@ -743,7 +750,7 @@ impl Renderer {
     }
 
     /// Arm retail's per-primitive near reject for the scene pass
-    /// ([`legaia_engine_ui::prim_near_reject`]): `Some((sz_per_w,
+    /// ([`legaia_render_kernels::prim_near_reject`]): `Some((sz_per_w,
     /// ot_shift))` drops every textured / colour mesh primitive whose mean
     /// corner `SZ` (the frame's clip `w` times `sz_per_w`) falls under
     /// `0x10 << ot_shift`; `None` (the default) never rejects. Hosts arm it
@@ -751,10 +758,10 @@ impl Renderer {
     /// cameras retail never had (the debug orbit) and for the viewers.
     ///
     /// `span_h` arms the GPU's polygon-size limit on top
-    /// ([`legaia_engine_ui::prim_near_reject::gpu_span_rejected`]).
+    /// ([`legaia_render_kernels::prim_near_reject::gpu_span_rejected`]).
     pub fn set_prim_near_reject(&self, cut: Option<(f32, u32)>, span_h: Option<f32>) {
         self.prim_near
-            .set(legaia_engine_ui::prim_near_reject::shader_params(
+            .set(legaia_render_kernels::prim_near_reject::shader_params(
                 cut, span_h,
             ));
     }

@@ -206,7 +206,7 @@ fn read_vector(buf: &[u8], off: usize) -> Result<Vector> {
 ///
 /// `FUN_80026b4c` is the per-submesh registrar (validates the `0x80000002`
 /// magic, then stores the blob pointer into the global `DAT_8007C018` table -
-/// that pointer-table install is ported in `engine-core::scene_resources`). It
+/// that pointer-table install is ported in `engine-scene::scene_resources`). It
 /// hands the validated blob to `FUN_800268dc`, the descriptor builder this
 /// function mirrors: it walks the `nobj` (`+0x8`) object table of `0x1C`-byte
 /// records at `+0xC` (`vert_top` / `n_vert` / `normal_top` / `n_normal` /

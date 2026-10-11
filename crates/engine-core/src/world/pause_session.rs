@@ -5,7 +5,7 @@
 //! The menu button (`FUN_801D01B0`, `0x801D0250..0x801D0328`) spawns it; its
 //! installer `FUN_801F1278` stores handler id `7` (`0x801F140C`), and handler
 //! `7` - `FUN_801F1F4C`, ported as
-//! [`legaia_engine_vm::field_state_pick::state_pick`] - moves it on to handler
+//! [`legaia_engine_field::field_state_pick::state_pick`] - moves it on to handler
 //! `0x30`, the session `FUN_801ED308`. The session ramps the screen, spawns the
 //! menu (`FUN_801D841C`) and parks until the menu's exit code
 //! `_DAT_8007B43C` reaches `6`. The menu's close adds `3` to the code its Use
@@ -19,10 +19,10 @@
 //! applies the closed menu's outcome. What this module runs is the rest:
 //! [`World::begin_pause_session_exit`] seeds the session at the park phase with
 //! the counter the close left, [`World::tick_pause_session`] runs the retail
-//! ramp-down ([`legaia_engine_vm::world_map_panel_actors::fade_flash_tick`])
+//! ramp-down ([`legaia_engine_field::world_map_panel_actors::fade_flash_tick`])
 //! to its terminal arm, installs the travel art the arm's handler id names
 //! ([`TravelArt::for_handler_id`]) and runs it
-//! ([`legaia_engine_vm::travel_art_actor::TravelArtActor::tick`]) until its
+//! ([`legaia_engine_field::travel_art_actor::TravelArtActor::tick`]) until its
 //! resolve issues the scene transition.
 //!
 //! The resolve reads three words retail keeps at `0x80084624` / `0x80084628`
@@ -49,8 +49,8 @@
 //! matches it, but it names no scene. A region record with an all-zero
 //! return triple (station3's, conc3's) stores exactly that word.
 
-use legaia_engine_vm::travel_art_actor::{self as ta, TravelArt, TravelArtActor};
-use legaia_engine_vm::world_map_panel_actors::{
+use legaia_engine_field::travel_art_actor::{self as ta, TravelArt, TravelArtActor};
+use legaia_engine_field::world_map_panel_actors::{
     self as wmpa, FadeFlashEffect, FadeFlashInput, fade_flash_tick,
 };
 
@@ -102,8 +102,8 @@ pub struct PauseSession {
 
 /// The fade the art's phase exit spawns (`FUN_80024E80` on the stack template
 /// at `0x801EE160..0x801EE1A0` / `0x801EE470..0x801EE4B0`).
-fn travel_fade_template() -> crate::fade::FadeTemplate {
-    crate::fade::FadeTemplate {
+fn travel_fade_template() -> legaia_engine_system::fade::FadeTemplate {
+    legaia_engine_system::fade::FadeTemplate {
         kind: ta::FLASH_FADE_KIND,
         duration: ta::FLASH_FADE_FRAMES,
         start_rgb: [0; 3],
@@ -112,7 +112,7 @@ fn travel_fade_template() -> crate::fade::FadeTemplate {
     }
 }
 
-fn is_travel_fade(f: &crate::fade::FadeState) -> bool {
+fn is_travel_fade(f: &legaia_engine_system::fade::FadeState) -> bool {
     f.kind == i32::from(ta::FLASH_FADE_KIND)
         && f.mode[1] == ta::FLASH_FADE_HOLD
         && f.mode[2] == ta::FLASH_FADE_ID
@@ -222,8 +222,9 @@ impl World {
                 if let Some(y) = self.player_world_y() {
                     actor.player_y = y;
                 }
-                let effect_busy =
-                    self.system_flag_test(u16::from(crate::field_actor_program::FLAG_PLAYER_BUSY));
+                let effect_busy = self.system_flag_test(u16::from(
+                    legaia_engine_field::field_actor_program::FLAG_PLAYER_BUSY,
+                ));
                 let target = session.target.clone();
                 let out = actor.tick(effect_busy, i16::from(frame_delta), || {
                     Some(ta::destination_for(
@@ -239,7 +240,7 @@ impl World {
                     out.restore_player,
                 );
                 if out.spawn_flash {
-                    crate::fade::spawn_fade(
+                    legaia_engine_system::fade::spawn_fade(
                         &mut self.presentation.fade,
                         &travel_fade_template(),
                         ta::FLASH_FADE_ID,

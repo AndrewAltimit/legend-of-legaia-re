@@ -1,6 +1,6 @@
 //! Disc bridge: apply same-size asset edits to a real disc image.
 //!
-//! Ties the editing primitives (e.g. `legaia_patcher::monster::set_drop`) to the
+//! Ties the editing primitives (e.g. `crate::monster::set_drop`) to the
 //! sector-level write-back in [`legaia_iso::write`]. The chain a PROT-entry edit
 //! travels:
 //!
@@ -23,7 +23,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
-use legaia_asset::monster_archive::SLOT_STRIDE;
+use legaia_actor_formats::monster_archive::SLOT_STRIDE;
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 use legaia_prot::archive::Archive as ProtArchive;
@@ -98,7 +98,7 @@ impl DiscPatcher {
 
     /// `(byte_offset, size_bytes, index)` for every PROT entry, in the same
     /// index space [`Self::patch_prot_entry`] takes - the span shape
-    /// `legaia_asset::tim_catalog::build_from_spans` and its deep sibling
+    /// `legaia_disc_audit::tim_catalog::build_from_spans` and its deep sibling
     /// consume, so a caller can catalog the flat `PROT.DAT` payload without
     /// re-parsing the TOC.
     pub fn entry_spans(&self) -> Vec<(u64, u64, u32)> {
@@ -442,60 +442,6 @@ impl DiscPatcher {
         bail!("{name}: channel {chan} has no Form 2 sectors")
     }
 
-    /// Demux and decode one channel of a Mode 2 Form 2 XA file to mono
-    /// PCM (stereo channels down-mix). Returns `(pcm, sample_rate)`.
-    /// Reads the file as it CURRENTLY stands on the image - callers that
-    /// need retail audio must read before muting the channel.
-    pub fn read_xa_channel_pcm(&self, name: &str, chan: u8) -> Result<(Vec<i16>, u32)> {
-        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
-            .with_context(|| format!("{name} not found in disc image"))?;
-        let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
-        let mut payload = Vec::new();
-        let mut coding = None;
-        for i in 0..sectors {
-            let base = (lba as usize + i) * SECTOR_SIZE;
-            let Some(sector) = self.image.get(base..base + SECTOR_SIZE) else {
-                break;
-            };
-            if legaia_iso::write::is_form2(sector)
-                && sector[0x12] & 0x04 != 0
-                && sector[0x11] == chan
-            {
-                coding.get_or_insert(sector[0x13]);
-                payload.extend_from_slice(&sector[0x18..0x18 + 2304]);
-            }
-        }
-        let coding =
-            coding.with_context(|| format!("{name}: channel {chan} has no audio sectors"))?;
-        let stereo = coding & 0x03 != 0;
-        let rate = if (coding >> 2) & 0x03 == 1 {
-            18900
-        } else {
-            37800
-        };
-        let opts = legaia_xa::DecodeOptions {
-            channels: if stereo {
-                legaia_xa::Channels::Stereo
-            } else {
-                legaia_xa::Channels::Mono
-            },
-            sample_rate: rate,
-            ..Default::default()
-        };
-        let (pcm, _) = legaia_xa::decode(&payload, opts)
-            .with_context(|| format!("decode {name} channel {chan}"))?;
-        let mono = if stereo {
-            pcm.as_chunks::<2>()
-                .0
-                .iter()
-                .map(|c| ((c[0] as i32 + c[1] as i32) / 2) as i16)
-                .collect()
-        } else {
-            pcm
-        };
-        Ok((mono, rate))
-    }
-
     /// Write encoded XA-ADPCM sound groups into one channel of a Mode 2
     /// Form 2 XA file: the channel's Form 2 sectors (in stream order)
     /// take 18 groups each from `groups` until it runs out; the rest of
@@ -635,7 +581,7 @@ impl DiscPatcher {
 
     /// Replace monster `id`'s `0x14000`-byte slot in the `battle_data` archive
     /// with `new_slot` (which must be exactly one slot). Use with a slot built
-    /// by `legaia_patcher::monster::set_drop` / `legaia_patcher::monster::repack_slot`.
+    /// by `crate::monster::set_drop` / `crate::monster::repack_slot`.
     pub fn patch_monster_slot(&mut self, id: u16, new_slot: &[u8]) -> Result<()> {
         if id == 0 {
             bail!("monster id is 1-based; 0 is invalid");
@@ -848,7 +794,7 @@ impl DiscPatcher {
     /// were annexed: the placement decoded from the in-place table.
     pub fn player_file_annex(&self, index: usize) -> Result<Option<AnnexPlacement>> {
         let head = self.read_entry_footprint(index)?;
-        let Some(chain) = legaia_asset::player_file_annex::chain(&head) else {
+        let Some(chain) = legaia_actor_formats::player_file_annex::chain(&head) else {
             return Ok(None);
         };
         if !chain.is_annexed() {
@@ -876,7 +822,7 @@ impl DiscPatcher {
         };
         let region = read_user_data(&self.image, place.lba, place.sectors as usize)
             .with_context(|| format!("read annexed records of PROT entry {index}"))?;
-        legaia_asset::player_file_annex::materialize(&head, PLAYER_FILE_DATA_BASE, &region)
+        legaia_actor_formats::player_file_annex::materialize(&head, PLAYER_FILE_DATA_BASE, &region)
             .with_context(|| format!("materialise annexed PROT entry {index}"))
     }
 
@@ -896,7 +842,7 @@ impl DiscPatcher {
         if (foot as usize) * USER_DATA_SIZE < PLAYER_FILE_DATA_BASE {
             bail!("PROT entry {index} is shorter than a player-file prologue");
         }
-        let chain = legaia_asset::player_file_annex::chain(file)
+        let chain = legaia_actor_formats::player_file_annex::chain(file)
             .with_context(|| format!("rebuilt file for PROT entry {index} is not a player file"))?;
         let sectors = (chain.region_len() / USER_DATA_SIZE) as u32;
         let lba = self.annex_alloc(sectors)?;
@@ -908,7 +854,7 @@ impl DiscPatcher {
         }
         let base = (lba - data_lba) * USER_DATA_SIZE as u32;
         let (header, region) =
-            legaia_asset::player_file_annex::split(file, PLAYER_FILE_DATA_BASE, base)?;
+            legaia_actor_formats::player_file_annex::split(file, PLAYER_FILE_DATA_BASE, base)?;
         self.patch_prot_entry(index, 0, &header)
             .with_context(|| format!("write annexed header of PROT entry {index}"))?;
         legaia_iso::write::patch_file_logical(&mut self.image, lba, 0, &region)
@@ -1081,6 +1027,30 @@ pub mod synth {
     }
 }
 
+/// Detect the source disc's boot exe from `SYSTEM.CNF` (`BOOT = cdrom:\NAME;1`).
+/// Returns the bare ISO filename (`SCES_019.45`).
+pub fn boot_exe_name(patcher: &DiscPatcher) -> Result<String> {
+    let cnf = patcher
+        .read_named_file("SYSTEM.CNF")
+        .context("SYSTEM.CNF not found in disc image")?;
+    let text = String::from_utf8_lossy(&cnf);
+    for line in text.lines() {
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        if k.trim().eq_ignore_ascii_case("BOOT") {
+            // v = ` cdrom:\SCES_019.45;1`
+            let v = v.trim();
+            let after = v.rsplit(['\\', ':', '/']).next().unwrap_or(v);
+            let name = after.split(';').next().unwrap_or(after).trim();
+            if !name.is_empty() {
+                return Ok(name.to_string());
+            }
+        }
+    }
+    bail!("no BOOT line in SYSTEM.CNF")
+}
+
 #[cfg(test)]
 mod tests {
     use super::synth::{synth_disc, synth_prot};
@@ -1216,7 +1186,7 @@ mod annex_tests {
 
         // In place: the header, table displaced; the old records untouched.
         let head = patcher.read_entry_footprint(1).unwrap();
-        let chain = legaia_asset::player_file_annex::chain(&head).unwrap();
+        let chain = legaia_actor_formats::player_file_annex::chain(&head).unwrap();
         assert_eq!(chain.base, place.base);
         assert_eq!(
             head[PLAYER_FILE_DATA_BASE..PLAYER_FILE_DATA_BASE + 0x800],

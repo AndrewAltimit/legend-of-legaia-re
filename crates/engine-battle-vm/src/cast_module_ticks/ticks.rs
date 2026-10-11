@@ -1,5 +1,4 @@
 //! The six tick bodies, plus PROT 0942 Power Up and PROT 0964 Element Change.
-//! Split out of `cast_module_ticks.rs`.
 
 use super::*;
 

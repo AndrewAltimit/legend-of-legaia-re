@@ -19,7 +19,7 @@ The Rust port carries the whole graph in `crates/engine-battle-vm` and both play
 | Timer | `ctx[+0x6D8]`, an `i16` countdown decremented by the frame step `DAT_1F800393` |
 | Turn cursor | `ctx[+0x1A]`, a position in this round's battle order |
 | Battle end | Signalled through `DAT_8007BD71 = 0xFE`, never through the state byte |
-| Port | `legaia_engine_vm::battle_action` (`crates/engine-battle-vm/src/battle_action/`), hosted by `engine-core`'s `World::step_battle` |
+| Port | `legaia_engine_battle_vm::battle_action` (`crates/engine-battle-vm/src/battle_action/`), hosted by `engine-core`'s `World::step_battle` |
 
 Three nested keys drive an action:
 
@@ -173,7 +173,7 @@ Unhandled values are listed under [Unhandled states](#unhandled-states).
 
 Slot `0xFF` of the jump table at `0x801CED44` points at `0x801E67E8`, whose whole body is two context writes: `ctx[+0x06] = 0x14` (`0x801E67F4`), handing the round back to the command-flow SM's round-start arm, and `ctx[+0x28A] += 1` (`0x801E6810`) around a call to `FUN_801F45A4` (the per-round status-`0x400` waker). The only way in is the `jr v0` at `0x801E2AAC`, so a decompiler pass that does not resolve the table reports `Removing unreachable block (ram,0x801E67E8)` and the round bump is absent from the C. The command-flow side of the handshake is in [`battle-command-flow.md`](battle-command-flow.md#the-round-loop---what-re-arms-0x1e); `0x14` then stores `0x1E` unconditionally, which is why the `Begin` / `Run` prompt belongs to the round and not to a battle's first turn.
 
-**Port.** `engine_vm::battle_action` maps `0xFF` to `ActionState::RoundEnd`, whose handler rewinds the turn cursor and hands control back through `EndOfAction`, the state the arming driver keys the next turn on. The retail `0xFF` body (`ctx[+0x28A]` bump, `FUN_801F45A4` wake sweep) runs host-side in `engine-core`'s live loop at its round boundary. The rewind is the engine's own: retail reseeds by re-entering `0x00`. `battle_end(..)` is raised only by the paths that raise `DAT_8007BD71 = 0xFE` in retail - the `0x5A` wipe arms and the escape teardown. Regressions: `engine-vm` `full_round_with_both_sides_alive_does_not_end_the_battle`, `engine-core` `round_boundary_state_is_not_a_spurious_victory`.
+**Port.** `engine_battle_vm::battle_action` maps `0xFF` to `ActionState::RoundEnd`, whose handler rewinds the turn cursor and hands control back through `EndOfAction`, the state the arming driver keys the next turn on. The retail `0xFF` body (`ctx[+0x28A]` bump, `FUN_801F45A4` wake sweep) runs host-side in `engine-core`'s live loop at its round boundary. The rewind is the engine's own: retail reseeds by re-entering `0x00`. `battle_end(..)` is raised only by the paths that raise `DAT_8007BD71 = 0xFE` in retail - the `0x5A` wipe arms and the escape teardown. Regressions: `engine-vm` `full_round_with_both_sides_alive_does_not_end_the_battle`, `engine-core` `round_boundary_state_is_not_a_spurious_victory`.
 
 #### Attack chain - strike loop (`0x1E`)
 
@@ -483,7 +483,7 @@ Two camera arms on the outcome (`_DAT_8007726C == ctx + 0x189` = failed). **Fail
 
 #### State `0x66` - Run - successful-escape teardown
 
-Writes the fade template at `DAT_801C9070` - kind 2, time `0x40`, start `(0,0,0)` → end `(0xFF,0xFF,0xFF)` (a black→white ramp drawn with kind 2 = ABR `B - F`, i.e. a fade to **black**; ramped by the `FUN_80020B00` fade-state loader) - and spawns it via `func_0x80024E80(&DAT_801C9070, 0)`. Sets `DAT_8007BD71 = 0xFE` - the **battle-end signal**, the same byte the `0x5A` wipe gate sets - so the party leaves the battle. (The earlier "run failed, battle continues" reading of this state is falsified by that signal byte; the failed-run path is `0x65 → 0x50`.) Engine: `ActionState::RunEscape` → `BattleEndCause::Escaped`; the fade is the `engine_core::fade` kernel.
+Writes the fade template at `DAT_801C9070` - kind 2, time `0x40`, start `(0,0,0)` → end `(0xFF,0xFF,0xFF)` (a black→white ramp drawn with kind 2 = ABR `B - F`, i.e. a fade to **black**; ramped by the `FUN_80020B00` fade-state loader) - and spawns it via `func_0x80024E80(&DAT_801C9070, 0)`. Sets `DAT_8007BD71 = 0xFE` - the **battle-end signal**, the same byte the `0x5A` wipe gate sets - so the party leaves the battle. (The earlier "run failed, battle continues" reading of this state is falsified by that signal byte; the failed-run path is `0x65 → 0x50`.) Engine: `ActionState::RunEscape` → `BattleEndCause::Escaped`; the fade is the `engine_system::fade` kernel.
 
 **Next:** `0x67` (terminal hold; no case body - falls through to default no-op).
 
@@ -555,7 +555,7 @@ monster spell) is `FUN_801DC0A0`'s, a 20-way jump table (`0x801CECAC`) keyed on
 the queue byte the arm passes. The monster pick `FUN_801E9FD4` stages that byte
 behind the clip: `+0x1DF` spell id, `+0x1E0` clip, `+0x1E1` opening shot, then
 `0xFF` (`0x801EA53C..0x801EA588`) - case `7` below id `0x25`, else the byte at
-`0x801F66D8 + id - 0x25` in PROT 0898 (`legaia_asset::spell_anim_pairs`).
+`0x801F66D8 + id - 0x25` in PROT 0898 (`legaia_game_tables::spell_anim_pairs`).
 
 Each case may rewrite the queue byte it was called with
 (`s3 = actor + 0x1DF + ctx[+0x15]`), so the selector is a state machine the
@@ -567,7 +567,7 @@ counter `ctx[+0x6C6]` drops below `0x21`. `battle_gimard_tail_fire_a` holds
 `[0x27, 8, 8, 0xFF]` - Tail Fire's table byte `7`, already rewritten to `8` by
 the live flame - and its camera reads case 8 exactly: pitch `0x40`,
 `TR (0, 0x400, 0x800)`, yaw `0x200 - actor[+0x46]`, focus the flame's position
-`ctx[+0x1144]`. Port: `legaia_engine_vm::battle_cam_script::spell_cam_case`
+`ctx[+0x1144]`. Port: `legaia_engine_battle_vm::battle_cam_script::spell_cam_case`
 (the nineteen non-summon cases), fed by `engine-core`'s
 `battle_cam_inputs::spell_cam_inputs` from the host's `spell_anim_sustain`.
 The engine flies the effect slots (`action_effect_script::HomingSlots`, below),
@@ -607,7 +607,7 @@ with the live globals `14` / `14` / `37` short of the endpoints. A capture on a
 dropped frame (`frame_step = 3`: `nighto_summon_mid_cast`,
 `theeder_summon_mid_cast`, `gizam_summon_mid_cast`) walks `3 * 16` and lands.
 The port steps it as `battle_cam_script::Glide::chase`: the builder's increment times the camera step's two frames.
-Port: `legaia_engine_vm::battle_cam_script::summon_cast_framing`, stepped by
+Port: `legaia_engine_battle_vm::battle_cam_script::summon_cast_framing`, stepped by
 the shared battle camera both hosts drive. The focus is the **body pair**
 (`lhu v0,0x3c(s2)` / `lhu v0,0x40(s2)` at `0x801DCD74..0x801DCD84`), not the
 live `+0x34` / `+0x38`: the camera input carries it as
@@ -670,7 +670,7 @@ elemental tiers `0x00..=0x24` are the band that can take `0x3C`. Either way
 the cast is charged - `0x3C` runs the same ability-bit MP fold for a non-Item
 category - so the discriminator picks the animation/timing band, not the cost.
 
-**Port.** `magic_seed_band` in `legaia_engine_vm::battle_action::dispatch`,
+**Port.** `magic_seed_band` in `legaia_engine_battle_vm::battle_action::dispatch`,
 over `BattleActionHost::spell_class_byte`. A host with no spell table reports
 `None` and keeps `0x28`, which is retail's own non-override branch.
 
@@ -697,7 +697,7 @@ summon-invoking items: they enter the cast band already staged as a summon, so
 state `0x29`'s sub-route test sends them to `0x32`; that arm also re-stamps
 `ctx[+0xD] = 0` (`sb zero,0xd(v0)` at `0x801E2E94`).
 
-**Port.** `item_seed_band` in `legaia_engine_vm::battle_action::dispatch`,
+**Port.** `item_seed_band` in `legaia_engine_battle_vm::battle_action::dispatch`,
 including the draw and both stores.
 
 ### `ctx[+0xD]` - the per-action camera-angle variant
@@ -753,7 +753,7 @@ Tactical-Arts / Magic zeroes, the Spirit arm's draw at `0x801E2FFC`
 (`battle_action::dispatch`'s `spirit_seed_band`), state `0x14`'s bit-0 mask
 at `0x801E3224` (`attack_face`'s in-range arm) and the capture band's `= 1` at
 `0x801E50CC` (`magic_capture_phase2`). The consumer is
-`legaia_engine_vm::battle_cam_script` - `action_framing`, `recover_framing`
+`legaia_engine_battle_vm::battle_cam_script` - `action_framing`, `recover_framing`
 and `action_end_framing` each carry the two-bit fork of their own site - and
 both hosts feed it the live byte, so the four variants produce four framings.
 
@@ -858,7 +858,7 @@ disassembly (`overlay_battle_action_801dbf9c.txt`):
 - `spell_id < 0x25`: the byte at `0x801F4E64 + id - 1` indexes an 8-byte
   anim-pair list at `0x801F4EDC`, copied pairwise into `+0x1E0..` until its
   `0xFF` terminator (`0x801DBFAC..0x801DC060`). The engine parses that table
-  (`legaia_asset::spell_anim_pairs`, held on `World::battle.spell_anim_pairs`)
+  (`legaia_game_tables::spell_anim_pairs`, held on `World::battle.spell_anim_pairs`)
   and its `spell_anim_trigger` copies the pairs into the stream the same way;
   without a disc read the list is empty and the cast folds at once.
 
@@ -872,7 +872,7 @@ SM's own `+0x1DA` store at `0x29` / `0x2A`.
 
 `FUN_801F1ED4` dispatches into the streamed per-summon stager (extraction
 PROT `903..=934` at slot B), overlay code the engine cannot run. The engine's
-`World::summon_stager_tick` (`world/battle/cast_band.rs`) answers the same
+`World::summon_stager_tick` (`world/battle/cast_band/summon_stager.rs`) answers the same
 seam with its own choreography and reports busy where retail reads the
 stager's return. The choreography is capture-pinned on the player Gimard cast
 (`gimard_summon_start` / `_visible` / `_burning_attack`, RAM of the PCSX-Redux
@@ -983,7 +983,7 @@ modelled too: `BattleActionCtx::round_skip` is `ctx[+0x25]`, cleared by
 `World::begin_battle_round` every round and bumped by the dead-slot sweep in
 `World::next_combatant_by_initiative`, and `end_of_action` compares the turn cursor against the seated party plus the seated monsters (a monster seat the battle loaded, `max_hp != 0`) less that skip.
 
-The cursor itself is `legaia_engine_vm::battle_action::BattleActionCtx::turn_cursor`. `ctx[+0x00]` / `ctx[+0x01]` are not modelled on the port's context; the host's party count and the slots above it stand in.
+The cursor itself is `legaia_engine_battle_vm::battle_action::BattleActionCtx::turn_cursor`. `ctx[+0x00]` / `ctx[+0x01]` are not modelled on the port's context; the host's party count and the slots above it stand in.
 
 ### A dead actor never dispatches - and where each side enforces it
 
@@ -1030,11 +1030,11 @@ The group codes come from the monster-AI target resolver `FUN_801E7320`, whose
 class-`8` arm writes `9` (the enemy row) and class-`7` arm writes `8` (the
 party) - so the group arm is the ordinary all-target cast, not an edge case.
 
-**Port.** `magic_cast_begin` in `legaia_engine_vm::battle_action`, over the
+**Port.** `magic_cast_begin` in `legaia_engine_battle_vm::battle_action`, over the
 `BattleActionHost::actor_position` accessor (`+0x34` / `+0x38`);
 `engine-core`'s `BattleHostImpl` answers it from the seat
 `World::enter_battle` stamps out of the retail stage tables. Covered by
-`crates/engine-vm/tests/battle_cast_facing.rs` and
+`crates/engine-battle-vm/tests/battle_cast_facing.rs` and
 `crates/engine-core/tests/battle_cast_facing_chain.rs`.
 
 ## Per-actor sub-state surface
@@ -1162,7 +1162,7 @@ is in the middle of a character-record lookup and is not a function.
 
 ## Engine port
 
-`crates/engine-battle-vm/src/battle_action.rs` (and the `battle_action/` modules beside it; re-exported as `legaia_engine_vm::battle_action`) ports the state graph as a per-frame edge-triggered state machine. It is live: both play hosts run every battle action through it. Surface:
+`crates/engine-battle-vm/src/battle_action.rs` (and the `battle_action/` modules beside it; `legaia_engine_battle_vm::battle_action`) ports the state graph as a per-frame edge-triggered state machine. It is live: both play hosts run every battle action through it. Surface:
 
 - `ActionState` - symbolic enum for every named state byte; `from_byte` returns `None` for unmapped values (so the dispatcher can surface them as `StepOutcome::UnknownState` for engine logging).
 - `ActionCategory` - symbolic enum for the action-category byte at `actor[+0x1DE]`.
@@ -1369,7 +1369,7 @@ knockdown - raises none; it goes out as a `(clip, channel, dur)` request on
 `World::audio.battle_xa_cues`. The cue arm routes `0x10C` through the shared funnel
 seat `World::route_battle_cue` with a modelled drive-busy flag (`dur` vsyncs after
 any clip start: `dur * 2.5` sectors at 150/s is `dur / 60` s) and the `0x800788B8`
-duration table parsed off the user's SCUS (`legaia_asset::xa_cue_table`). The native
+duration table parsed off the user's SCUS (`legaia_game_tables::xa_cue_table`). The native
 window plays the clip requests off a boot-staged `XaClipBank` (`XA27` / `XA30`
 demuxed + decoded, `crate::boot::read_battle_xa_clip_bank`) through the same XA
 mixing path as the arts shouts; the browser play page's `play_xa` demuxes the raw
@@ -1480,7 +1480,7 @@ is `0x00`, `0xB0`, `0xC0` and `0xD0` - four values, three of them non-zero,
 every one a plausible VRAM x and none a plausible cue id. An SFX map would not
 be three-valued.
 
-Port: `legaia_engine_vm::battle_cue_group` (`CueTables::clut_map`, `CueSpawn::Effect::clut_x`) carries the table as a CLUT source x. The effect-script drain queues one stage per table-form spawn (`World::drain_battle_effect_spawns` -> `World::drain_battle_clut_stages`), and the native window applies each through `battle_effect_clut::stage_effect_clut` against its battle VRAM.
+Port: `legaia_engine_battle_vm::battle_cue_group` (`CueTables::clut_map`, `CueSpawn::Effect::clut_x`) carries the table as a CLUT source x. The effect-script drain queues one stage per table-form spawn (`World::drain_battle_effect_spawns` -> `World::drain_battle_clut_stages`), and the native window applies each through `battle_effect_clut::stage_effect_clut` against its battle VRAM.
 
 The walker's prologue (`0x801DEA50..0x801DEBEC`) services the
 `ctx[+0x1028]` handle those table codes installed: it drops the handle when
@@ -1507,11 +1507,11 @@ purple ones (`battle_melee_hit_spark`'s Somersault draws pool `9`'s colours,
 `(120, 0, 255)` cued to the captured `(52, 0, 111)`). The port applies it
 where the walk queues the spawn (`World::step_actor_effect_script`).
 
-Engine port: kernel `action_effect_script` (in `crates/engine-effects`, re-exported by `engine-core`) (stepper, rotation,
+Engine port: kernel `action_effect_script` (in `crates/engine-effects`) (stepper, rotation,
 terminator maths, `RetailRotationLut`), driven per battle frame by
 `World::tick_battle_animations`; spawn requests drain via
 `World::drain_battle_effect_spawns` and route into the effect pool (direct
-form) / `World::spawn_action_table_effect` (table form), and the drain queues the table arm's `0x801F6418` CLUT stage under the retail `< 0x32` gate. The table spawn carries the arm's pose and scale (`action_fx_base_scale`: `0xC00` for code 4, `0x2000` for code 6, times the mesh-header `+0x72`) and the two twin records for codes `4..=6` (`engine-core` `world/effects.rs`). The terminator's `ctx[+0x1014]` / `+0x1144` block is consumed by the afterimage streak (`action_effect_script::MoveFxStreak`) and the homing slots.
+form) / `World::spawn_action_table_effect` (table form), and the drain queues the table arm's `0x801F6418` CLUT stage under the retail `< 0x32` gate. The table spawn carries the arm's pose and scale (`action_fx_base_scale`: `0xC00` for code 4, `0x2000` for code 6, times the mesh-header `+0x72`) and the two twin records for codes `4..=6` (`engine-core` `world/effects/move_fx.rs`). The terminator's `ctx[+0x1014]` / `+0x1144` block is consumed by the afterimage streak (`action_effect_script::MoveFxStreak`) and the homing slots.
 
 Not modelled: the prologue's follow-the-actor re-seat (`BattleEffectSpawn` carries no raw-offset channel, and a staged scene is not identified back to its record).
 

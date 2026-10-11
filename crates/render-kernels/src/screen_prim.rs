@@ -184,7 +184,7 @@ impl ScreenQuad {
 /// Per-corner depth of a depth-tested screen quad, in the **shared
 /// view-projection's** normalised depth: `clip.z / clip.w` of the corner's
 /// world point through the same matrix the scene meshes draw with
-/// (`legaia_engine_vm::psx_camera::psx_projection` maps the near plane to
+/// (`legaia_engine_battle_vm::psx_camera::psx_projection` maps the near plane to
 /// `0` and the far plane to `1`). Each host maps it exactly the way its 3D
 /// pass maps that matrix's output - the native renderer through its
 /// reversed-Z remap (`1 - z`), the play page straight into `gl_Position.z` -
@@ -487,7 +487,7 @@ pub fn world_map_marker_prim(
 /// primitive drawn.
 pub const WORLD_MAP_SKY_OT: u32 = u32::MAX;
 
-/// The overworld sky band's `SPRT`s ([`legaia_engine_vm::world_map_sky`]) as
+/// The overworld sky band's `SPRT`s ([`crate::world_map_sky`]) as
 /// opaque textured quads, both hosts' one wrapper.
 ///
 /// Retail draws the band first and the terrain over it. A screen primitive
@@ -498,8 +498,8 @@ pub const WORLD_MAP_SKY_OT: u32 = u32::MAX;
 /// The sprite's `u + w` / `v + h` edge can reach `256`, one past a `u8`
 /// corner: it is held at `255`, the same edge the other full-tile `SPRT`
 /// wrappers use.
-pub fn sky_band_prims(sprites: &[legaia_engine_vm::world_map_sky::SkySprite]) -> Vec<ScreenPrim> {
-    use legaia_engine_vm::world_map_sky::{SKY_CLUT, SKY_TPAGE};
+pub fn sky_band_prims(sprites: &[crate::world_map_sky::SkySprite]) -> Vec<ScreenPrim> {
+    use crate::world_map_sky::{SKY_CLUT, SKY_TPAGE};
     sprites
         .iter()
         .map(|s| {
@@ -666,7 +666,7 @@ pub const CINEMATIC_BAR_OT: u32 = 8;
 /// REF: FUN_801DD784 (`0x801DD8F8..0x801DD9B4`) - two `POLY_F4` (`GP0 0x28`)
 /// packets whose colour bytes are zeroed after the immediate is stored, so
 /// the fill is black; the envelope that feeds `bar` is
-/// [`legaia_engine_vm::field_actor_timers::ShutterBars`].
+/// [`legaia_engine_field::field_actor_timers::ShutterBars`].
 ///
 /// **Both hosts call this.** The bars are the one draw a cinematic beat is
 /// made of, so a host that hand-rolls the two rects is how one of them ends
@@ -680,7 +680,7 @@ pub fn cinematic_bar_prims(bar: i16, screen_h: i16) -> Vec<ScreenPrim> {
     if bar <= 0 {
         return Vec::new();
     }
-    legaia_engine_vm::field_actor_timers::shutter_bar_rects(bar, screen_h)
+    crate::shutter_bars::shutter_bar_rects(bar, screen_h)
         .into_iter()
         .map(|r| {
             ScreenPrim::Flat(FlatQuad {
@@ -999,7 +999,7 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
 ///
 /// The prim set has no two-point variant because no renderer needs one: this
 /// constructor is the line kind, and the slot machine's paylines
-/// (`legaia_engine_ui::ui_slot_paylines`) are its first consumer.
+/// (`legaia_engine_ui::slot_paylines`) are its first consumer.
 pub fn line_quad(
     a: (f32, f32),
     b: (f32, f32),
@@ -1461,7 +1461,7 @@ mod tests {
 
     #[test]
     fn sky_band_quads_sit_on_the_far_plane_behind_the_scene() {
-        use legaia_engine_vm::world_map_sky::{SKY_CLUT, SKY_TPAGE, SkySprite};
+        use crate::world_map_sky::{SKY_CLUT, SKY_TPAGE, SkySprite};
         let s = SkySprite {
             x: 0,
             y: 0,

@@ -1,5 +1,5 @@
 //! Disc-gated oracle for **oscillating AP costs** (see
-//! `legaia_patcher::oscillating_ap`): every battle each Tactical Art is dealt
+//! `legaia_arts_patch::oscillating_ap`): every battle each Tactical Art is dealt
 //! onto the cost side (retail) or the grant side (admitted at any AP, adds the
 //! AP it would have cost, deals a fraction of its damage). Four same-size
 //! detours into PROT 0898 (the arts AP override's `0x801EF410` / `0x801EF490` /
@@ -26,20 +26,22 @@
 //! shipping.
 
 use legaia_art::queue::Character;
-use legaia_asset::item_names::file_offset_for_va;
-use legaia_iso::iso9660::read_file_in_image;
-use legaia_patcher::apply;
-use legaia_patcher::arts_ap_grant::{
+use legaia_arts_patch::arts_ap_grant::{
     ApMode, ArtApSpec, HOOK_A_VA, HOOK_B_VA, HOOK_C_VA, HOOK_D_VA, OVERLAY_BASE_VA,
     OVERLAY_PROT_INDEX,
 };
-use legaia_patcher::arts_power::parse_combo;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::oscillating_ap::{BITS_LEN, HOOK_DMG_VA, HOOK_LIST_VA, OscillatingApInjection};
-use legaia_patcher::shiny_seru::{
+use legaia_arts_patch::arts_power::parse_combo;
+use legaia_arts_patch::oscillating_ap::{
+    BITS_LEN, HOOK_DMG_VA, HOOK_LIST_VA, OscillatingApInjection,
+};
+use legaia_code_hooks::arenas::{
     ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, HOOK_SETUP_VA, SCUS_GAP_END_VA,
     SCUS_GAP_VA, SLOT6_END_VA, SLOT6_VA,
 };
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
+use legaia_iso::iso9660::read_file_in_image;
+use legaia_patcher::apply;
 
 const PCT: u8 = 20;
 
@@ -409,7 +411,7 @@ fn mutually_exclusive_with_the_other_arena_features() {
     }];
     // Whichever runs second finds a region no longer all-zero and refuses.
     let mut p = DiscPatcher::open(disc.clone()).expect("open");
-    apply::inject_shiny_seru(&mut p, legaia_patcher::shiny_seru::DEFAULT_PCT).expect("shiny");
+    apply::inject_shiny_seru(&mut p, legaia_code_hooks::shiny_seru::DEFAULT_PCT).expect("shiny");
     assert!(
         apply::inject_oscillating_ap(&mut p, PCT).is_err(),
         "refused after shiny-Seru"
@@ -425,7 +427,7 @@ fn mutually_exclusive_with_the_other_arena_features() {
     let mut r = DiscPatcher::open(disc).expect("open");
     apply::inject_oscillating_ap(&mut r, PCT).expect("oscillating");
     assert!(
-        apply::inject_shiny_seru(&mut r, legaia_patcher::shiny_seru::DEFAULT_PCT).is_err(),
+        apply::inject_shiny_seru(&mut r, legaia_code_hooks::shiny_seru::DEFAULT_PCT).is_err(),
         "shiny-Seru refused after oscillating AP"
     );
     assert!(

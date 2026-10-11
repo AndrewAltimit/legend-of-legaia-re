@@ -28,7 +28,7 @@
 //!
 //! Nothing here is uploaded; the bytes live in the tab for the session.
 
-use legaia_engine_core::save_select::SlotSnapshot;
+use legaia_engine_menus::save_select::SlotSnapshot;
 use legaia_save::SaveResume;
 use legaia_save::emu;
 use wasm_bindgen::prelude::*;
@@ -65,7 +65,7 @@ pub fn formatted_memory_card() -> Vec<u8> {
 /// rather than re-detecting on every access, carries the dirty bit, and
 /// answers `save_at` / `block_is_save_start` / `dir_frame` off its own bytes.
 /// The two hosts used to carry near-identical copies that drifted.
-pub use legaia_save::emu::MountedCard;
+use legaia_save::emu::MountedCard;
 
 impl LegaiaRuntime {
     /// The card in rack slot `slot`, if one is inserted.
@@ -104,11 +104,11 @@ impl LegaiaRuntime {
     /// location rows come off the real save, exactly as retail reads them
     /// out of its per-slot buffer at `0x801EF1B8 + N * 0x100`.
     /// The card's fifteen blocks as the 5x3 preview grid reads them, through
-    /// the shared `engine_core::save_select::card_block_snapshots` kernel the
+    /// the shared `legaia_engine_menus::save_select::card_block_snapshots` kernel the
     /// native window calls too.
     pub(crate) fn card_block_snapshots(&self, slot: usize) -> Vec<SlotSnapshot> {
         match self.card(slot) {
-            Some(card) => legaia_engine_core::save_select::card_block_snapshots(card),
+            Some(card) => legaia_engine_menus::save_select::card_block_snapshots(card),
             None => (0..CARD_BLOCKS).map(SlotSnapshot::empty).collect(),
         }
     }
@@ -340,7 +340,7 @@ impl LegaiaRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_core::save_select::SlotContent;
+    use legaia_engine_menus::save_select::SlotContent;
     use legaia_save::card;
 
     /// A raw 128 KiB card with every block free - the same formatted image
@@ -817,8 +817,8 @@ mod cross_host {
         }
     }
 
-    fn native_opts() -> legaia_engine_session::boot::FieldLiveOpts {
-        legaia_engine_session::boot::FieldLiveOpts {
+    fn native_opts() -> legaia_engine_session::session::FieldLiveOpts {
+        legaia_engine_session::session::FieldLiveOpts {
             live_loop: false,
             player_battle: true,
             battle_bgm: None,
@@ -960,7 +960,7 @@ mod cross_host {
     fn write_save_into_card_native(
         card: &mut MountedCard,
         s: &mut NativeSession,
-        index: &legaia_engine_core::scene::ProtIndex,
+        index: &legaia_engine_scene::scene::ProtIndex,
     ) {
         let sf = s.host.world.save_full();
         let resume = s.current_resume();

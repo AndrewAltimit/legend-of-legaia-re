@@ -36,7 +36,7 @@
 
 use std::sync::OnceLock;
 
-pub use legaia_gamedata::MusicTrack;
+use legaia_gamedata::MusicTrack;
 
 /// Extraction-space PROT base for sound-test indices `0..=67` (`988 + index`).
 pub const MUSIC_BANK_LOW_BASE: u32 = 988;

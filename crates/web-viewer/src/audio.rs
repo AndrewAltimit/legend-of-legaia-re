@@ -67,7 +67,7 @@ pub fn enumerate_vabs(disc: &[u8], entries: &[EntryMeta]) -> Vec<VabSummary> {
 /// One BGM pair (VAB + SEQ co-located in a single PROT entry).
 ///
 /// The `sound_test_*` fields carry the curated `music_01` sound-test join
-/// (`legaia_engine_core::music_labels`): when this entry falls inside the
+/// (`legaia_engine_system::music_labels`): when this entry falls inside the
 /// global BGM bank (extraction 990..=1071) it resolves to a debug sound-test
 /// row - id, human title, in-game context. The boot/battle `sound_data2`
 /// copies and the dev banks carry a SEQ but no catalogued name, so those
@@ -89,7 +89,7 @@ pub struct BgmPair {
 
 /// Best single human name for a curated music row: where it's heard in-game,
 /// else the debug title's English gloss, else the OST gloss.
-fn track_title(t: &legaia_engine_core::music_labels::MusicTrack) -> Option<String> {
+fn track_title(t: &legaia_gamedata::MusicTrack) -> Option<String> {
     t.context
         .clone()
         .or_else(|| t.debug_gloss.clone())
@@ -120,8 +120,8 @@ pub fn enumerate_bgm_pairs(disc: &[u8], entries: &[EntryMeta]) -> Vec<BgmPair> {
         let Ok(hdr) = legaia_seq::parse_header(&buf[seq_off..]) else {
             continue;
         };
-        let track = legaia_engine_core::music_labels::sound_test_index_for_prot_entry(e.index)
-            .and_then(legaia_engine_core::music_labels::track_for_sound_test_index);
+        let track = legaia_engine_system::music_labels::sound_test_index_for_prot_entry(e.index)
+            .and_then(legaia_engine_system::music_labels::track_for_sound_test_index);
         out.push(BgmPair {
             prot_index: e.index,
             vab_offset: vab_off as u32,
@@ -167,11 +167,11 @@ pub struct SoundTestEntry {
 }
 
 /// Build the full game Sound Test in catalogue order: every curated
-/// `music_01` row (`legaia_engine_core::music_labels`), each joined to its
+/// `music_01` row (`legaia_engine_system::music_labels`), each joined to its
 /// on-disc BGM pair when one exists. Presents the score the way the game's own
 /// sound-test menu does - by name and sound-test number, not by disc address.
 pub fn sound_test_entries(disc: &[u8], entries: &[EntryMeta]) -> Vec<SoundTestEntry> {
-    use legaia_engine_core::music_labels as ml;
+    use legaia_engine_system::music_labels as ml;
     // Playable pairs keyed by their PROT entry, so each catalogue row can look
     // up the vab/seq offsets it plays from.
     let pairs: std::collections::HashMap<u32, BgmPair> = enumerate_bgm_pairs(disc, entries)

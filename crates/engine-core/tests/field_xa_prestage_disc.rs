@@ -22,7 +22,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -50,7 +50,7 @@ fn every_scene_lists_its_field_xa_one_shots_at_load() {
     names.sort();
     names.dedup();
 
-    let hub: Vec<legaia_engine_core::sfx_cue::XaVoiceClip> =
+    let hub: Vec<legaia_engine_system::sound_state::XaVoiceClip> =
         legaia_engine_core::muscle_ringside::hub_xa_prestage()
             .into_iter()
             .map(Into::into)

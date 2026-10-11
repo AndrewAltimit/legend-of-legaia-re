@@ -4,23 +4,13 @@
 
 use anyhow::{Result, bail};
 
-use legaia_asset::item_names;
+use legaia_game_tables::item_names;
 
 use super::encode::{j, nop};
 use super::layout::*;
 use super::routines::*;
+use crate::arenas::*;
 use crate::mips::read_word;
-
-/// One same-size write into a target file.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Edit {
-    /// `None` = `SCUS_942.54`; `Some(idx)` = PROT entry `idx` (raw).
-    pub prot_index: Option<usize>,
-    /// File offset within that target.
-    pub file_off: usize,
-    /// Little-endian bytes to write.
-    pub bytes: Vec<u8>,
-}
 
 /// A planned shiny-Seru injection: all the same-size writes + the chosen `pct`.
 #[derive(Debug, Clone, PartialEq, Eq)]

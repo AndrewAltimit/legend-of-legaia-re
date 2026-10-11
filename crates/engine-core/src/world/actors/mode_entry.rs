@@ -1,14 +1,14 @@
 //! The party roster and the mode entries that start from the field: the
 //! present-party list, battle entry, world-map entry and the FMV cutscene
 //! hand-off and return.
-//! Split out of `actors.rs`; no logic change.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Resolve a battle/party ordinal (actor slot, HUD row, VRAM texture
     /// band) to the **roster slot** of the character occupying it, per
-    /// [`crate::world::PartyState::active_party`]. Identity when no composition is installed
+    /// [`legaia_engine_menus::party_state::PartyState::active_party`]. Identity when no composition is installed
     /// or the ordinal runs past it - the historical slot-`i`-is-character-`i`
     /// behaviour every synthetic test relies on.
     pub fn party_roster_slot(&self, member: usize) -> usize {
@@ -22,12 +22,12 @@ impl World {
     /// The field party list - retail's `0x80084598` member ids for
     /// `DAT_80084594` entries - as the field VM's party ops see it.
     ///
-    /// [`crate::world::PartyState::party_actor_slots`] carries it once a
+    /// [`legaia_engine_menus::party_state::PartyState::party_actor_slots`] carries it once a
     /// save or a party op has installed it. Before that (a New Game, or a
     /// save whose composition is the roster's identity order) the list is
     /// the installed battle composition: `active_party` when set, else the
     /// identity `0..party_count`. A list the party ops emptied stays empty
-    /// ([`crate::world::PartyState::field_list_emptied`]).
+    /// ([`legaia_engine_menus::party_state::PartyState::field_list_emptied`]).
     pub fn present_party_list(&self) -> Vec<u8> {
         if self.party.party_actor_slots.is_empty() && self.party.field_list_emptied {
             return Vec::new();
@@ -63,7 +63,7 @@ impl World {
     /// battle ordinal `i` (the engine mirror of retail's present-party
     /// list at `0x8007BD10`). The list caps at the 3 on-screen party
     /// positions (the runtime texture-band count). Sets
-    /// [`crate::world::PartyState::party_count`] to the resulting length and, for each ordinal
+    /// [`legaia_engine_menus::party_state::PartyState::party_count`] to the resulting length and, for each ordinal
     /// whose mapped roster record exists, reseeds the party actor's HP /
     /// MP / liveness / SPD mirror from it - the same projection
     /// [`Self::load_party`] performs for the identity mapping. Ordinals
@@ -126,7 +126,7 @@ impl World {
     /// `monster_count` monster slots, mirroring the layout
     /// `FUN_800520F0` produces (slots 0..2 = party, 3..7 = monsters; total
     /// caps at 8). Actors are seated at the retail stage seats
-    /// ([`crate::battle_seats`]): the party at negative Z facing the
+    /// ([`legaia_engine_battle::battle_seats`]): the party at negative Z facing the
     /// monsters at positive Z, both rows selected by combatant count
     /// exactly like the setup `FUN_800513F0`.
     ///
@@ -138,7 +138,7 @@ impl World {
     /// `battle-scene` subcommand.
     ///
     /// The battle-action state machine is seeded at
-    /// [`legaia_engine_vm::battle_action::ActionState::Begin`].
+    /// [`legaia_engine_battle_vm::battle_action::ActionState::Begin`].
     // PORT: FUN_800513F0 (battle setup: seat stamping from the SCUS tables)
     pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
@@ -160,7 +160,7 @@ impl World {
         let actor_count =
             ((self.party.party_count as usize) + (monster_count as usize)).min(MAX_ACTORS);
         for i in 0..(self.party.party_count as usize).min(actor_count) {
-            let s = crate::battle_seats::party_seat(self.party.party_count, i);
+            let s = legaia_engine_battle::battle_seats::party_seat(self.party.party_count, i);
             let actor = self.spawn_actor(i);
             actor.move_state.world_x = s.x;
             actor.move_state.world_y = s.y;
@@ -172,7 +172,7 @@ impl World {
             actor.battle.facing_angle = 0;
         }
         for i in (self.party.party_count as usize)..actor_count {
-            let s = crate::battle_seats::monster_seat(
+            let s = legaia_engine_battle::battle_seats::monster_seat(
                 monster_count,
                 i - self.party.party_count as usize,
                 false,
@@ -199,14 +199,17 @@ impl World {
         }
         // Reset the battle ctx and seed at Begin via the public byte API to
         // avoid pulling battle_action::ActionState into world.rs imports.
-        self.battle_ctx = vm::battle_action::BattleActionCtx::new();
-        self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+        self.battle_ctx = legaia_engine_battle_vm::battle_action::BattleActionCtx::new();
+        self.battle_ctx.action_state =
+            legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte();
         // Battle init's ambient seed (`0x80051C70..0x80051C84`): the floor,
         // which the per-frame ramp lifts to the settled `0x80` while no cast
         // holds `ctx[+0x243]` - the fight's floor fades in from dark.
-        self.battle_ctx.ambient_base = vm::battle_ground_grid::AMBIENT_BASE_FLOOR;
-        self.battle.ambient_stored =
-            vm::battle_ground_grid::ambient_base_rgb(vm::battle_ground_grid::AMBIENT_BASE_FLOOR);
+        self.battle_ctx.ambient_base =
+            legaia_engine_battle_vm::battle_ground_grid::AMBIENT_BASE_FLOOR;
+        self.battle.ambient_stored = legaia_engine_battle_vm::battle_ground_grid::ambient_base_rgb(
+            legaia_engine_battle_vm::battle_ground_grid::AMBIENT_BASE_FLOOR,
+        );
         // Battle init spawns the backdrop records fresh: `+0x78` starts at 0.
         self.battle.backdrop_cue = 0;
         self.battle.end = None;
@@ -288,7 +291,7 @@ impl World {
     /// Only fires from [`SceneMode::Field`] (the only mode that runs the
     /// field VM and so the only one that can set the trigger). The pending
     /// id is always drained; an id whose runtime FMV slot points at a
-    /// cut/missing path ([`crate::cutscene::fmv_index_to_str_filename`]
+    /// cut/missing path ([`legaia_engine_system::movie::cutscene::fmv_index_to_str_filename`]
     /// returns `None`) is a no-op transition - the field continues - which
     /// matches the engine's documented "treat a cut slot as a no-op" rule.
     pub(crate) fn maybe_enter_pending_cutscene(&mut self) {
@@ -298,7 +301,7 @@ impl World {
         if self.mode != SceneMode::Field {
             return;
         }
-        if crate::cutscene::fmv_index_to_str_filename(fmv_id).is_some() {
+        if legaia_engine_system::movie::cutscene::fmv_index_to_str_filename(fmv_id).is_some() {
             self.cutscene.return_mode = Some(self.mode);
             self.mode = SceneMode::Cutscene;
             self.cutscene.active_fmv = Some(fmv_id);
@@ -314,11 +317,11 @@ impl World {
 
     /// The retail `MV*.STR` path of the active cutscene FMV, or `None` when
     /// no STR FMV is active. Convenience over
-    /// [`crate::cutscene::fmv_index_to_str_filename`].
+    /// [`legaia_engine_system::movie::cutscene::fmv_index_to_str_filename`].
     pub fn active_fmv_str_filename(&self) -> Option<&'static str> {
         self.cutscene
             .active_fmv
-            .and_then(crate::cutscene::fmv_index_to_str_filename)
+            .and_then(legaia_engine_system::movie::cutscene::fmv_index_to_str_filename)
     }
 
     /// End the active STR-FMV cutscene and return to the scene mode that was
@@ -335,7 +338,7 @@ impl World {
     /// `0x80084548` (+ spawn/door word `0x80084540`), e.g. `town01` triggers
     /// fmv 1 and lands in `town0b`. That transfer needs the host's asset
     /// index, so this parks the finished id in [`crate::world::CutsceneState::finished_fmv`] and
-    /// [`crate::scene::SceneHost::apply_pending_fmv_handoff`] performs it -
+    /// [`crate::scene_host::SceneHost::apply_pending_fmv_handoff`] performs it -
     /// one drain, whichever host polls.
     // REF: FUN_801CEA3C
     pub fn finish_cutscene(&mut self) {
@@ -352,7 +355,7 @@ impl World {
     /// The world half of the post-play hand-off: a host with no scene loader
     /// (a headless world test, the `sim-trace` emitter) can consume the edge
     /// without one, and the scene host's
-    /// [`apply_pending_fmv_handoff`](crate::scene::SceneHost::apply_pending_fmv_handoff)
+    /// [`apply_pending_fmv_handoff`](crate::scene_host::SceneHost::apply_pending_fmv_handoff)
     /// is the only production caller. `take` semantics are what stop two
     /// hosts - or one host polling twice - from transferring control twice.
     pub fn take_finished_fmv(&mut self) -> Option<i16> {

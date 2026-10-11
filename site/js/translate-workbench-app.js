@@ -651,7 +651,7 @@ function renderPalette() {
 }
 
 // The {ce:NN} symbol palette: buttons and icons drawn from the disc's own
-// sprites (names from legaia_patcher::translation::symbols). Inserts the
+// sprites (names from legaia_translate::symbols). Inserts the
 // hex token the export writes; the name alias is shown as a hint.
 function renderSymbols() {
   const el = $('wb-symbols');

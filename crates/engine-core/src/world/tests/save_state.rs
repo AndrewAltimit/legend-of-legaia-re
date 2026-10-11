@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 // --- Save / load round-trip ----------------------------------------
 
@@ -370,8 +371,8 @@ fn a_retail_saves_audio_levels_are_honoured_on_import() {
 /// left empty until the first battle entry re-derives it.
 #[test]
 fn a_loaded_save_rebuilds_the_accessory_passive_mask() {
-    use crate::accessory_passives::AccessoryPassives;
-    use legaia_engine_vm::field_passive_hud::ability_bit;
+    use legaia_engine_battle::accessory_passives::AccessoryPassives;
+    use legaia_engine_field::field_passive_hud::ability_bit;
     let mut src = World::new();
     let mut party = legaia_save::Party::zeroed(1);
     let mut eq = party.members[0].equipment();

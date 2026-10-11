@@ -5,9 +5,9 @@
 //! weapon-trail / cast-beam / scanline-strip emitters, the battle-intro
 //! transition emitter, the battle numerals and the enhanced scene lighting.
 //!
-//! `legaia-engine-ui` re-exports every module here at its old path. Doc links
-//! that pointed back up at it are plain code spans, since rustdoc cannot
-//! resolve a link into a dependent crate.
+//! `legaia-engine-ui` sits one crate up. Doc comments here name its items in
+//! plain code spans, since rustdoc cannot resolve a link into a dependent
+//! crate.
 
 #![forbid(unsafe_code)]
 
@@ -18,12 +18,21 @@ pub mod battle_trail;
 pub mod billboard;
 pub mod cast_beam;
 pub mod cast_theeder;
+pub mod display_mirror;
+pub mod drop_shadow;
 pub mod effect_billboard;
+pub mod field_light;
+pub mod fog_volume;
 pub mod gte;
 pub mod move_strip;
+pub mod overworld_curvature;
+pub mod prim_dispatch;
 pub mod prim_near_reject;
 pub mod scene_lighting;
 pub mod screen_prim;
 pub mod screen_prim_raster;
+pub mod shutter_bars;
+pub mod sprite_arm;
 pub mod streak_pass;
 pub mod vram_capture;
+pub mod world_map_sky;

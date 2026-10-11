@@ -30,10 +30,10 @@
 //! applier's two texture uploads)
 
 use crate::battle_party_form::VramSink;
-use crate::scene::ProtIndex;
-use legaia_asset::summon_readef::{
+use legaia_actor_formats::summon_readef::{
     READEF_PROT_INDEX, SLOT_BYTES, SlotKind, TEXTURE_SLOT_VRAM_TARGETS, aux_slot_is_texture_upload,
 };
+use legaia_engine_scene::scene::ProtIndex;
 
 /// The monster archive's PROT entry, which carries each record's group byte.
 const MONSTER_ARCHIVE_PROT: u32 = 867;
@@ -70,7 +70,7 @@ pub fn write_readef_group_textures(readef: &[u8], group: u8, sink: &mut impl Vra
 
 /// The texture uploads a player summon's cast streams: `FUN_801E295C` case
 /// `0x32` seeds the applier's base byte from the action id
-/// ([`legaia_asset::summon_readef::base_byte_for_action`] - bit 7 set for
+/// ([`legaia_actor_formats::summon_readef::base_byte_for_action`] - bit 7 set for
 /// the whole `0x81..=0xA0` band, so the file is `summon.dat`), and
 /// `FUN_801F12D0` uploads the group's first slot to CLUT `(0, 488)` / page
 /// `(512, 0)` and its second to `(0, 490)` / `(640, 0)` (every summon base
@@ -86,7 +86,7 @@ pub fn record_cast_sideband_textures(
     spell_id: u8,
     sink: &mut impl VramSink,
 ) -> usize {
-    let Some((first, _)) = legaia_asset::summon_readef::group_slots(spell_id) else {
+    let Some((first, _)) = legaia_actor_formats::summon_readef::group_slots(spell_id) else {
         return 0;
     };
     let mut written = 0;
@@ -112,8 +112,8 @@ pub fn record_cast_sideband_textures(
     written
 }
 
-fn texture_slot_of(slot: &[u8]) -> Option<legaia_asset::summon_readef::TextureSlot> {
-    let parsed = legaia_asset::summon_readef::parse(slot).ok()?;
+fn texture_slot_of(slot: &[u8]) -> Option<legaia_actor_formats::summon_readef::TextureSlot> {
+    let parsed = legaia_actor_formats::summon_readef::parse(slot).ok()?;
     match parsed.slots.first()?.kind {
         SlotKind::Texture(t) => Some(t),
         _ => None,
@@ -124,7 +124,7 @@ fn texture_slot_of(slot: &[u8]) -> Option<legaia_asset::summon_readef::TextureSl
 pub fn formation_readef_groups(entry867: &[u8], monster_ids: &[u16]) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::new();
     for &id in monster_ids {
-        if let Ok(Some(rec)) = legaia_asset::monster_archive::record(entry867, id)
+        if let Ok(Some(rec)) = legaia_actor_formats::monster_archive::record(entry867, id)
             && !out.contains(&rec.readef_group)
         {
             out.push(rec.readef_group);

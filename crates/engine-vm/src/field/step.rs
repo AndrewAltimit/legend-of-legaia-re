@@ -1,5 +1,5 @@
 //! Field VM instruction dispatch: the single-instruction `step` executor and
-//! its cross-context `step_with_caller` wrapper. Split out of `field.rs`.
+//! its cross-context `step_with_caller` wrapper.
 
 use super::*;
 
@@ -321,7 +321,7 @@ pub fn step<H: FieldHost>(
         //   `switchD_801e00f4::default()`; for op 0x38 that path is not in the
         //   0x50/0x60/0x70 system-flag arm, so the dispatcher halts at PC.
         //
-        // [`field_halt_acquire_predicate`]: FieldHost::field_halt_acquire_predicate
+        // [`field_halt_acquire_predicate`]: FieldHaltHost::field_halt_acquire_predicate
         0x38 => {
             let Some(&op0) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -332,7 +332,7 @@ pub fn step<H: FieldHost>(
             if op1 & 0x7F == 0 {
                 let player = extended && bytecode.get(pc + 1) == Some(&0xF8);
                 host.face_compass(ctx, op0 & 0x0F, player);
-                if let Some(value) = host.cam_cfg_lookup(op0 & 0x0F) {
+                if let Some(value) = host.compass_heading(op0 & 0x0F) {
                     ctx.field_26 = value;
                 }
                 StepResult::Advance {
@@ -431,8 +431,8 @@ pub fn step<H: FieldHost>(
         //
         // Mode 1: screen-mode test. `[42, 1, op1, lo, hi]`. The original at
         //   `case 0x42` of FUN_801de840 (line 5176 of the dump) tests
-        //   `host.screen_mode()` against:
-        //     - `host.screen_mode_table(op1)` for `op1 < 8` (high-nibble check)
+        //   `host.held_pad()` against:
+        //     - `host.pad_compass_entry(op1)` for `op1 < 8` (high-nibble check)
         //     - bit `0x20` for `op1 == 8`
         //     - bit `0x40` for `op1 == 9`
         //     - bit `0x80` for `op1 == 10`
@@ -465,12 +465,12 @@ pub fn step<H: FieldHost>(
                 0 => host.extra_flags() & (1u32 << (op1 & 0x1F)) != 0,
                 1 => match op1 {
                     0..=7 => host
-                        .screen_mode_table(op1)
-                        .is_some_and(|tbl| host.screen_mode() & 0xF000 == tbl),
-                    8 => host.screen_mode() & 0x20 != 0,
-                    9 => host.screen_mode() & 0x40 != 0,
-                    10 => host.screen_mode() & 0x80 != 0,
-                    11 => host.screen_mode() & 0x10 != 0,
+                        .pad_compass_entry(op1)
+                        .is_some_and(|tbl| host.held_pad() & 0xF000 == tbl),
+                    8 => host.held_pad() & 0x20 != 0,
+                    9 => host.held_pad() & 0x40 != 0,
+                    10 => host.held_pad() & 0x80 != 0,
+                    11 => host.held_pad() & 0x10 != 0,
                     // op1 >= 0xC: unconditional take-jump path.
                     _ => true,
                 },
@@ -609,7 +609,7 @@ pub fn step<H: FieldHost>(
             let Some(&global_index) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op44_spawn_scene_record(global_index);
+            host.spawn_scene_record(global_index);
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -771,7 +771,7 @@ pub fn step<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             }
             let raw = &bytecode[name_start..name_start + name_len];
-            if let Some(name) = crate::field_disasm::clean_scene_name(raw) {
+            if let Some(name) = legaia_scene_formats::field_disasm::clean_scene_name(raw) {
                 let entry_x = bytecode[name_start + name_len];
                 let entry_z = bytecode[name_start + name_len + 1];
                 let dir = bytecode[name_start + name_len + 2];
@@ -823,7 +823,7 @@ pub fn step<H: FieldHost>(
         // (0 = state < scaled, 1 = scaled < state).
         //
         // Sub-ops 0/1 read `(state, factor)` from the inventory page via
-        // `host.inventory_compare_pair(page, sub_op)`, compute
+        // `host.char_hp_mp_pair(page, sub_op)`, compute
         // `scaled = (factor * arg) >> 8` (signed; the original rounds toward
         // zero for negative results), then compare per the operator. On
         // success, jump to `pc + header_size + 4 + LE_u16(operand[4..6])`;
@@ -832,16 +832,16 @@ pub fn step<H: FieldHost>(
         // Sub-ops 2..=9 share the same 7-byte compare-and-skip shape
         // without the `>> 8` scaling; each has a dedicated value loader
         // (raw jump table `0x801CEE30`): 2 = char level byte `+0x130`
-        // ([`FieldHost::op4e_char_level`]), 3 / 9 = gold / coin bank
-        // ([`FieldHost::party_bank_value`]), 4 = BIOS `Rand() & 0xFF`
-        // ([`FieldHost::op4e_sub4_bios_rand`], a random-chance branch),
+        // ([`FieldPartyInventoryHost::char_level`]), 3 / 9 = gold / coin bank
+        // ([`FieldPartyInventoryHost::party_bank_value`]), 4 = BIOS `Rand() & 0xFF`
+        // ([`FieldFlagsHost::bios_rand`], a random-chance branch),
         // 5..=8 = slot table `0x801C6460[sub - 5]`
-        // ([`FieldHost::slot_table_read`]). Sub-ops 10/11 are the
+        // ([`FieldFlagsHost::slot_table_read`]). Sub-ops 10/11 are the
         // party-bank comparison (9-byte u32 encoding).
         0x4E => flow::op_4e(host, bytecode, pc, opcode, header_size, operand),
 
         // 0x49 - STATE_RESUME. Multi-frame state machine on `_DAT_8007B450`.
-        // The host surfaces the tristate via [`FieldHost::op49_state`].
+        // The host surfaces the tristate via [`FieldDialogMenuHost::op49_state`].
         //
         // - `Idle`: arm a new resume. Sub-op 1 also captures `ctx.field_90`
         //   into `_DAT_8007B44C` (the original's actor-handle save). The

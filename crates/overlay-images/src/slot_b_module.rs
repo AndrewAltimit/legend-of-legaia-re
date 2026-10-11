@@ -754,7 +754,7 @@ pub fn parse_at(bytes: &[u8], link_base: u32) -> SlotBLayout {
 /// The cut and this measurement are mutually recursive, so the band-level
 /// caller iterates them rather than taking the first estimate: see
 /// `scripts/ghidra-analysis/inherited_tail.py`'s `tail_starts_fixpoint`, and
-/// `crates/asset/tests/slot_b_record_bounds_real.rs` for the same loop on this
+/// `crates/overlay-images/tests/slot_b_record_bounds_real.rs` for the same loop on this
 /// side. It settles in two rounds and moves no tail cut - the asymmetry this
 /// comment used to argue for (an overshoot can only make an image look less
 /// like a recipient, never invent a tail) is now measured rather than asserted.

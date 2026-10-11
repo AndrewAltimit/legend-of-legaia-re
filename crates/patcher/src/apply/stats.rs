@@ -19,7 +19,7 @@ pub struct MonsterStatsReport {
     /// so the edit was skipped (the original stats are kept). Our LZS re-packer
     /// isn't byte-identical to Sony's, so a record already near the slot limit
     /// can rarely overflow; skipping keeps the rest of the patch valid (mirrors
-    /// the drop randomizer, see [`crate::monster`]).
+    /// the drop randomizer, see [`legaia_disc_patch::monster`]).
     pub skipped: Vec<u16>,
 }
 
@@ -30,8 +30,8 @@ pub fn current_monster_stats(patcher: &DiscPatcher) -> Result<Vec<monster_stats:
     let entry = patcher
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .context("read monster battle_data archive")?;
-    let records =
-        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
+    let records = legaia_actor_formats::monster_archive::records(&entry)
+        .context("decode monster archive records")?;
     Ok(records
         .iter()
         .map(|r| monster_stats::StatAssignment {
@@ -125,7 +125,7 @@ pub struct AttackCountReport {
     pub entries_changed: usize,
     /// Monster ids whose re-packed slot would overflow the `0x14000` footprint,
     /// so the edit was skipped (the original costs are kept). Same rare LZS
-    /// re-pack guard as the drop / stat passes (see [`crate::monster`]).
+    /// re-pack guard as the drop / stat passes (see [`legaia_disc_patch::monster`]).
     pub skipped: Vec<u16>,
 }
 
@@ -148,8 +148,8 @@ pub fn scale_enemy_attack_count(
     let entry = patcher
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .context("read monster battle_data archive")?;
-    let records =
-        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
+    let records = legaia_actor_formats::monster_archive::records(&entry)
+        .context("decode monster archive records")?;
     for rec in &records {
         if monster_stats::SCALE_PINNED_MONSTER_IDS.contains(&rec.id) {
             continue;

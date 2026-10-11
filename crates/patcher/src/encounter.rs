@@ -4,7 +4,7 @@
 //! The formations live in the per-scene MAN asset (type `0x03`, descriptor
 //! index 2 of a scene bundle), inside an LZS stream. Each formation record is
 //! `[3 reserved][u8 count 0..4][u8 ids...]` (see
-//! [`legaia_asset::man_section`] and `docs/formats/encounter.md`). An edit is
+//! [`legaia_scene_formats::man_section`] and `docs/formats/encounter.md`). An edit is
 //! therefore: locate the MAN inside the scene's PROT entry, decompress, rewrite
 //! the id bytes (same length - count is preserved), recompress, and write the
 //! stream back over the original (the LZS decoder stops at the descriptor's
@@ -35,11 +35,11 @@
 //! donor pool, so the fight ships exactly as authored regardless of the region
 //! layout.
 
-use legaia_asset::man_section::{self, EncounterSection};
-use legaia_asset::scene_asset_table;
+use legaia_scene_formats::man_section::{self, EncounterSection};
+use legaia_scene_formats::scene_asset_table;
 
 use crate::drops::DropMode;
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// MAN asset type byte in a scene bundle's descriptor table.
 const MAN_TYPE: u8 = 0x03;
@@ -189,7 +189,7 @@ impl MonsterCostTable {
 /// `rate_increment == 0` never advances the counter, so it never triggers a
 /// random encounter - it can reference formations without ever rolling them
 /// (the retail position-aware roll `FUN_801D9E1C`; mirrored in
-/// `engine_core::region_encounter`).
+/// `legaia_engine_battle::region_encounter`).
 ///
 /// So a formation is a random encounter iff some region with **`rate_increment >
 /// 0`** reaches it. Formations reached only by rate-0 regions (or by no region)
@@ -309,7 +309,8 @@ impl SceneEncounters {
         if decoded.len() != man.size as usize {
             return None;
         }
-        let compressed_budget = crate::man_compressed_budget(&table, man_offset, entry.len());
+        let compressed_budget =
+            legaia_disc_patch::man_compressed_budget(&table, man_offset, entry.len());
         Self::from_man_bytes(decoded, entry_idx, man_offset, compressed_budget, false)
     }
 
@@ -331,7 +332,7 @@ impl SceneEncounters {
     /// continuation - is skipped rather than clamped: a partial MAN would
     /// re-pack over bytes that are not ours.
     pub fn locate_streaming_mans(entry: &[u8], entry_idx: usize) -> Vec<Self> {
-        let Ok(report) = legaia_asset::parse_streaming(entry, 4096) else {
+        let Ok(report) = legaia_container_formats::parse_streaming(entry, 4096) else {
             return Vec::new();
         };
         let mut out = Vec::new();
@@ -810,7 +811,7 @@ impl SceneEncounters {
         if self.raw_in_place {
             return Some(self.decoded.clone());
         }
-        crate::compress_within(&self.decoded, self.compressed_budget)
+        legaia_disc_patch::compress_within(&self.decoded, self.compressed_budget)
     }
 }
 

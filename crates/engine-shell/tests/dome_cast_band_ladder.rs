@@ -13,7 +13,7 @@
 //! dispatch is table arithmetic and the tick kernels are pure - so it runs in
 //! CI unconditionally and is the non-vacuous half when no disc is present.
 
-use legaia_engine_core::muscle_dome::{
+use legaia_engine_menus::muscle_dome_session::{
     DomeCastRefusal, DomeMagic, DomeRing, DomeRingChip, MuscleCard, MuscleDomeSession, MusclePhase,
 };
 
@@ -63,7 +63,7 @@ fn a_dome_fighter_with_a_seru_casts_and_pays_in_mp_not_ap() {
         eprintln!("[skip] no LEGAIA_DISC_BIN / extracted SCUS - the rung needs disc spell prices");
         return;
     };
-    let catalog = legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+    let catalog = legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(&scus)
         .expect("the player Seru block parses off SCUS_942.54");
     let mut spells: Vec<_> = catalog.iter().cloned().collect();
     spells.sort_by_key(|s| s.id);
@@ -78,7 +78,7 @@ fn a_dome_fighter_with_a_seru_casts_and_pays_in_mp_not_ap() {
         .find(|s| {
             matches!(
                 s.effect,
-                legaia_engine_core::spells::SpellEffect::Damage { .. }
+                legaia_engine_battle::spells::SpellEffect::Damage { .. }
             ) && s.mp_cost > 0
         })
         .cloned()
@@ -144,7 +144,7 @@ fn a_dome_cast_the_gauge_cannot_cover_is_refused() {
         eprintln!("[skip] no LEGAIA_DISC_BIN / extracted SCUS - the refusal rung needs it");
         return;
     };
-    let catalog = legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+    let catalog = legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(&scus)
         .expect("the player Seru block parses");
     let mut spells: Vec<_> = catalog.iter().cloned().collect();
     spells.sort_by_key(|s| s.id);
@@ -193,7 +193,7 @@ fn a_player_seru_cast_reaches_a_ported_module_kernel() {
     // Two combatants is all the seam needs: the caster and something to
     // retarget onto.
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -208,7 +208,7 @@ fn a_player_seru_cast_reaches_a_ported_module_kernel() {
         a.battle.max_hp = 400;
         a.battle.liveness = 1;
     }
-    world.tables.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
+    world.tables.spell_catalog = legaia_engine_battle::retail_magic::retail_seru_magic_catalog();
     world.battle_ctx.active_actor = 0;
 
     // The band's own arming seam, the one `spell_anim_trigger` runs for a

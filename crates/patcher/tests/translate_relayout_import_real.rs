@@ -22,13 +22,13 @@
 //! skips + passes when either is unset (no Sony bytes are committed; CI has no
 //! disc).
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_iso::write::{is_form2, mode2_form1_sector_is_valid};
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::translation::export::SceneManText;
-use legaia_patcher::translation::markup::{self, Target};
-use legaia_patcher::translation::stream_man::StreamManText;
-use legaia_patcher::translation::{import_pack, import_pack_relayout, lift};
+use legaia_translate::export::SceneManText;
+use legaia_translate::markup::{self, Target};
+use legaia_translate::stream_man::StreamManText;
+use legaia_translate::{import_pack, import_pack_relayout, lift};
 
 fn load(var: &str) -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os(var)?);
@@ -37,7 +37,7 @@ fn load(var: &str) -> Option<Vec<u8>> {
 
 /// Count man-dialog lines the import had to abbreviate / roll back (the messages
 /// the same-size path emits when a line won't fit its budget).
-fn abbreviation_issues(report: &legaia_patcher::translation::ImportReport) -> usize {
+fn abbreviation_issues(report: &legaia_translate::ImportReport) -> usize {
     report
         .issues
         .iter()

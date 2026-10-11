@@ -1,6 +1,4 @@
 //! Field-NPC grid geometry, motion routes, and walk-touch event derivation.
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use super::*;
 
@@ -164,7 +162,7 @@ pub fn placement_wander_step(
     man: &[u8],
     p: &ActorPlacement,
 ) -> Option<PlacementWalkStep> {
-    use legaia_asset::man_motion;
+    use legaia_scene_formats::man_motion;
     let n0 = man_file.partitions.first()?.len();
     let bind_id = u8::try_from(n0.checked_add(p.index)?).ok()?;
     if bind_id >= man_motion::ACTOR_PLAYER {
@@ -353,7 +351,7 @@ fn facing_nibble_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement)
 /// Retail: `[0x17, b1, b2]` writes `DAT_801C6470[actor_id*4] = b1` /
 /// `[actor_id*4 + 1] = b2` (guarded `actor_id < 0x8C`) - the per-actor
 /// default-move table the interaction motion-pause kick `FUN_8003C9AC`
-/// (ported at `legaia_engine_vm::motion_pause`) reloads every moving-class
+/// (ported at `crate::motion_pause`) reloads every moving-class
 /// actor's `+0x88`/`+0x5C` requested-move pair from, and the wander/step ops
 /// consult for their move-anim override. The variant-swap preamble reseeds a
 /// record to the `0x8C` sentinel, so a stream's own `0x17` (always its first
@@ -363,7 +361,7 @@ fn facing_nibble_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement)
 // PORT: FUN_80038158 (case 0x17)
 // REF: FUN_8003C9AC (table consumer), FUN_8003A9D4 (binding installer)
 pub fn motion_default_move_writes(man_file: &ManFile, man: &[u8]) -> Vec<(u8, [u8; 2])> {
-    use legaia_asset::man_motion;
+    use legaia_scene_formats::man_motion;
     let Some(n0) = man_file.partitions.first().map(|p| p.len()) else {
         return Vec::new();
     };
@@ -503,7 +501,7 @@ pub fn placement_initial_facing(man_file: &ManFile, man: &[u8], p: &ActorPlaceme
 pub fn facing_index_to_engine_heading(idx: u8) -> Option<i16> {
     // One law, one place: the same LUT the motion VM's `0x38` / `0x47` arms
     // resolve their headings through.
-    legaia_engine_vm::motion_vm::heading_lut_engine(idx).map(|h| h as i16)
+    legaia_engine_motion_vm::motion_vm::heading_lut_engine(idx).map(|h| h as i16)
 }
 
 /// The spawn tile the placement's prologue **relocates** the actor to under
@@ -559,7 +557,7 @@ pub fn placement_spawn_relocation(
         if op == 0x21 || (op & 0x7F) < 0x20 {
             return None; // prologue end before any run leg (retail loop guard)
         }
-        let insn = legaia_asset::field_disasm::decode(region, pc).ok()?;
+        let insn = legaia_scene_formats::field_disasm::decode(region, pc).ok()?;
         if insn.size == 0 {
             return None;
         }
@@ -615,7 +613,7 @@ pub enum WalkTouchEvent {
     /// code overlay `sub_id = op0 - 100` selects.
     ///
     /// `sub_id` is **not** a map id, and reading it as one is the trap
-    /// `legaia_engine_core::minigame_entry` documents: the arm calls no scene-change
+    /// `legaia_engine_mode::minigame_entry` documents: the arm calls no scene-change
     /// packet, and resolving the small dense integer through a CDNAME
     /// ordinal warps the player to an unrelated scene instead of into the
     /// venue. The field-VM arm and this walk-on arm are the same opcode
@@ -846,7 +844,7 @@ pub fn player_moves_in_region(body: &[u8], pc0: usize) -> Vec<PlayerMove> {
 /// Rapid Transport switches P0[32..34] move the player to (44, 47) to watch
 /// the car, then return it to the switch.
 // REF: FUN_801DE840 (op 0x4C nibble 14 sub 3)
-fn is_player_restore(insn: &legaia_asset::field_disasm::Insn) -> bool {
+fn is_player_restore(insn: &legaia_scene_formats::field_disasm::Insn) -> bool {
     insn.extended == Some(PLAYER_CHANNEL)
         && matches!(insn.info, InsnInfo::MenuCtrl { op0: 0xE3, .. })
 }
@@ -992,7 +990,7 @@ pub fn object_walk_touch_binds(
 ///
 /// [`object_walk_touch_binds`] is the door-classified subset (records
 /// carrying a player teleport); this one feeds
-/// `legaia_engine_core::field_channels::spawn_object_channels`. Duplicate
+/// `crate::field_channels::spawn_object_channels`. Duplicate
 /// `(record, contact)` pairs collapse to one bind.
 // REF: FUN_8003A55C
 pub fn object_script_binds(
@@ -1026,7 +1024,7 @@ pub fn object_script_binds(
 /// landmark (record 8) is keyed two tiles north of where it stands, and the
 /// credits walk's `A3 08 60 17` - which seats it back on its own tile - read
 /// as a 256-unit move. This is what the object-bind script contexts are
-/// seated on (`legaia_engine_core::field_channels::spawn_object_channels`); the portal
+/// seated on (`crate::field_channels::spawn_object_channels`); the portal
 /// and walk-touch layers keep the contact centre.
 // REF: FUN_8003A55C
 pub fn object_script_bind_seats(
@@ -1169,7 +1167,7 @@ pub fn resolve_walk_touch_arm(
         if !seen.insert(pc) {
             return Some(pending); // looped back: the record's idle loop
         }
-        let insn = legaia_asset::field_disasm::decode(body, pc).ok()?;
+        let insn = legaia_scene_formats::field_disasm::decode(body, pc).ok()?;
         if insn.size == 0 {
             return None;
         }
@@ -1272,7 +1270,9 @@ pub fn record_exempted_objects(man_file: &ManFile, man: &[u8], flat: usize) -> V
         return Vec::new();
     };
     let mut out = Vec::new();
-    for insn in legaia_asset::field_disasm::LinearWalker::new(body, pc0).map_while(Result::ok) {
+    for insn in
+        legaia_scene_formats::field_disasm::LinearWalker::new(body, pc0).map_while(Result::ok)
+    {
         if let (
             InsnInfo::CFlag {
                 kind: FlagKind::Set,

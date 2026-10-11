@@ -1,6 +1,7 @@
 //! Unit tests for `levelup`, extracted verbatim.
 
 use super::*;
+use legaia_engine_system::rand::BiosRand;
 use legaia_save::CharacterRecord;
 
 #[test]
@@ -66,7 +67,7 @@ fn xp_corrections_shift_slots_one_and_two_only() {
 
 #[test]
 fn growth_tables_drive_deterministic_per_level_hp_mp() {
-    use legaia_asset::level_up_tables::{
+    use legaia_game_tables::level_up_tables::{
         GROWTH_PARAM_LEN, GROWTH_ROW_COUNT, GROWTH_ROW_STRIDE, GrowthTables,
     };
     // A curve of all 0x60 sums to 98 × 96 = 9408 = 0x24C0, so the divide is
@@ -97,8 +98,8 @@ fn growth_tables_drive_deterministic_per_level_hp_mp() {
 /// Build a synthetic `GrowthTables` whose every curve is the flat `0x60`
 /// ramp (sums to `0x24C0`, so the divide is exact), with slot-0 HP/MP params
 /// `start/max/jitter` configurable. HP is stat 0, MP stat 1.
-fn synth_growth(hp_jitter: u8, mp_jitter: u8) -> legaia_asset::level_up_tables::GrowthTables {
-    use legaia_asset::level_up_tables::{
+fn synth_growth(hp_jitter: u8, mp_jitter: u8) -> legaia_game_tables::level_up_tables::GrowthTables {
+    use legaia_game_tables::level_up_tables::{
         GROWTH_PARAM_LEN, GROWTH_ROW_COUNT, GROWTH_ROW_STRIDE, GrowthTables,
     };
     let curves = vec![vec![0x60u8; GROWTH_ROW_STRIDE]; GROWTH_ROW_COUNT];

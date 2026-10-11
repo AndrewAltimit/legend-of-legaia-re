@@ -1,12 +1,12 @@
 //! The bag's **retail row order**: `World`'s seat at the SCUS list-content
 //! builder `FUN_80030628`.
 //!
-//! [`crate::menu_list_rows`] ports the builder's per-content-id cases; this
+//! [`legaia_engine_menus::menu_list_rows`] ports the builder's per-content-id cases; this
 //! module is what hands them a bag and turns their class-tagged `u16` entry
 //! words back into rows a menu screen can draw. The two halves were written
 //! apart because the engine's bag used to be a `HashMap<u8, u8>` keyed by item
 //! id, which has no slot coordinate for the builders' `slot | ink` payload to
-//! carry. [`crate::world::ItemBag`] is retail's 256-slot array now, so the
+//! carry. [`legaia_engine_menus::item_bag::ItemBag`] is retail's 256-slot array now, so the
 //! payload has an index again.
 //!
 //! What a row order is worth: retail's Items screen does **not** list a
@@ -16,12 +16,12 @@
 //! not let you confirm. Sorting by id instead produces a list whose rows are in
 //! an order no retail screen ever shows.
 
-use crate::menu_list_rows::{
+use crate::world::World;
+use legaia_engine_menus::menu_list_rows::{
     EFFECT_FLAG_BATTLE_USABLE, ITEM_DOOR_OF_LIGHT, ITEM_DOOR_OF_WIND, ItemRowTables, ROW_ALT_INK,
     ROW_DISABLED, ROW_NAME_PAYLOAD_MASK, UseListCtx, build_price_gated_rows, build_throw_out_rows,
     build_use_list_rows,
 };
-use crate::world::World;
 
 /// One decoded list row: the bag slot the entry word carried, the id in it,
 /// and the two ink bits.
@@ -49,9 +49,9 @@ pub struct BagRow {
 /// byte, read off the raw stat-bonus table by **bonus row**, because that is
 /// the index retail's own readers form (`0x80074F68 + subtype * 8`).
 struct WorldRowTables<'a> {
-    effects: &'a legaia_asset::item_effect::ItemEffectTable,
-    prices: Option<&'a crate::shop_catalog::ShopItemData>,
-    equip: Option<&'a legaia_asset::equip_stats::EquipStatTable>,
+    effects: &'a legaia_game_tables::item_effect::ItemEffectTable,
+    prices: Option<&'a legaia_engine_menus::shop_catalog::ShopItemData>,
+    equip: Option<&'a legaia_game_tables::equip_stats::EquipStatTable>,
 }
 
 impl ItemRowTables for WorldRowTables<'_> {
@@ -74,7 +74,7 @@ impl ItemRowTables for WorldRowTables<'_> {
         self.effects
             .descriptor(subtype)
             .map(|d| d.marker)
-            .unwrap_or(crate::menu_list_rows::GOODS_NO_PASSIVE_MARKER)
+            .unwrap_or(legaia_engine_menus::menu_list_rows::GOODS_NO_PASSIVE_MARKER)
     }
     fn equip_flags(&self, subtype: u8) -> u8 {
         self.equip
@@ -85,7 +85,7 @@ impl ItemRowTables for WorldRowTables<'_> {
 }
 
 impl World {
-    /// The row tables every builder in [`crate::menu_list_rows`] reads.
+    /// The row tables every builder in [`legaia_engine_menus::menu_list_rows`] reads.
     fn row_tables(&self) -> Option<WorldRowTables<'_>> {
         Some(WorldRowTables {
             effects: self.tables.item_effects.as_ref()?,
@@ -116,10 +116,10 @@ fn decode(world: &World, words: &[u16]) -> Vec<BagRow> {
 impl World {
     /// The item-id byte of every slot in the bag's **active window**, plus the
     /// window's first slot index - the `(bag_ids, slot_base)` pair every
-    /// [`crate::menu_list_rows`] builder walks.
+    /// [`legaia_engine_menus::menu_list_rows`] builder walks.
     ///
     /// Retail bounds the walk with `gp+0x2D2..gp+0x2D4`, which is exactly what
-    /// [`crate::world::ItemBag::window_bounds`] answers.
+    /// [`legaia_engine_menus::item_bag::ItemBag::window_bounds`] answers.
     fn bag_window_ids(&self) -> (Vec<u8>, u16) {
         let (start, end) = self.party.inventory.window_bounds();
         let slots = self.party.inventory.slots();
@@ -151,11 +151,11 @@ impl World {
         // them through.
         if matches!(
             entry.effect,
-            crate::items::ItemEffect::StatUp
-                | crate::items::ItemEffect::BattleBuff
-                | crate::items::ItemEffect::ActionGauge
-                | crate::items::ItemEffect::ArtsBook
-                | crate::items::ItemEffect::PointCardStrike
+            legaia_engine_menus::items::ItemEffect::StatUp
+                | legaia_engine_menus::items::ItemEffect::BattleBuff
+                | legaia_engine_menus::items::ItemEffect::ActionGauge
+                | legaia_engine_menus::items::ItemEffect::ArtsBook
+                | legaia_engine_menus::items::ItemEffect::PointCardStrike
         ) {
             return true;
         }
@@ -167,8 +167,10 @@ impl World {
                 .status_effects
                 .statuses(i as u8)
                 .iter()
-                .fold(0u8, |m, s| m | crate::items::status_bit(s.kind));
-            let snap = crate::items::TargetSnapshot {
+                .fold(0u8, |m, s| {
+                    m | legaia_engine_menus::items::status_bit(s.kind)
+                });
+            let snap = legaia_engine_menus::items::TargetSnapshot {
                 hp: hms.hp_cur,
                 hp_max: hms.hp_max,
                 mp: hms.mp_cur,
@@ -177,8 +179,8 @@ impl World {
                 status_mask,
             };
             !matches!(
-                crate::items::apply_effect(entry.effect, &snap),
-                crate::items::ItemOutcome::NoEffect
+                legaia_engine_menus::items::apply_effect(entry.effect, &snap),
+                legaia_engine_menus::items::ItemOutcome::NoEffect
             )
         })
     }
@@ -195,7 +197,7 @@ impl World {
     /// caller keeps its id-sorted fallback rather than inventing a grouping.
     ///
     /// REF: FUN_80030628 (content id 3; the builder itself is
-    /// `crate::menu_list_rows::build_use_list_rows`)
+    /// `legaia_engine_menus::menu_list_rows::build_use_list_rows`)
     pub fn bag_use_rows(&self, battle: bool) -> Option<Vec<BagRow>> {
         let tables = self.row_tables()?;
         let (ids, slot_base) = self.bag_window_ids();
@@ -203,7 +205,7 @@ impl World {
         // The two scratchpad scene gates (`0x1F800394` bits `0x100000` /
         // `0x200000`) are the region reader's: every region hit raises both
         // and the long record layout drops them per `region[+8]` bits 7 / 6
-        // ([`crate::region_encounter::region_battle_setup`]). Open until a
+        // ([`legaia_engine_battle::region_encounter::region_battle_setup`]). Open until a
         // region has been stood in.
         let (door_light_blocked, door_wind_blocked) = self.region_door_gates();
         let ctx = UseListCtx {
@@ -228,7 +230,7 @@ impl World {
     /// keeps its own ordering.
     ///
     /// REF: FUN_80030628 (content id 2; the builder itself is
-    /// `crate::menu_list_rows::build_price_gated_rows`)
+    /// `legaia_engine_menus::menu_list_rows::build_price_gated_rows`)
     pub fn bag_sell_rows(&self) -> Option<Vec<BagRow>> {
         self.shops.item_shop_data.as_ref()?;
         let tables = self.row_tables()?;
@@ -252,7 +254,7 @@ impl World {
     /// rather than a claim about the disc.
     ///
     /// REF: FUN_80030628 (content id `0x22`; the builder itself is
-    /// `crate::menu_list_rows::build_throw_out_rows`)
+    /// `legaia_engine_menus::menu_list_rows::build_throw_out_rows`)
     pub fn bag_throw_out_rows(&self) -> Option<Vec<BagRow>> {
         let tables = self.row_tables()?;
         let (ids, slot_base) = self.bag_window_ids();

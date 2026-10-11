@@ -96,7 +96,7 @@ pub const TUTORIAL_STAGE_ID: u8 = 1;
 /// ```
 ///
 /// (`-0x49b6` off a `lui 0x8008` base is `_DAT_8007B64A`, the stage-id byte
-/// [`crate::overlay_loader::battle_stage_overlay_entry`] maps.)
+/// [`legaia_engine_scene::overlay_loader::battle_stage_overlay_entry`] maps.)
 ///
 /// The setter is disc data, not code: a disc-wide field-VM flag census finds
 /// exactly **one** site writing this flag, in town01's own Tetsu sparring
@@ -167,7 +167,7 @@ impl TutorialLesson {
         self as u8
     }
 
-    /// The [`ActionCategory`](crate::battle_input) byte (`actor[+0x1DE]`) the
+    /// The [`ActionCategory`](legaia_engine_menus::battle_input) byte (`actor[+0x1DE]`) the
     /// player is expected to commit for this lesson - the flow-state `110`
     /// validator at `0x801F7088`.
     ///
@@ -436,7 +436,7 @@ pub const SPARRING_CAPTION_STYLE: u8 = 9;
 
 /// The screen-element placement record HUD element `0x5A` raises - row
 /// `0x5A` of the table at `0x80076C10`
-/// (`legaia_asset::screen_elements`).
+/// (`legaia_ui_formats::screen_elements`).
 pub const SPARRING_CAPTION_RECORD: usize = 0x5A;
 
 /// The sparring caption's content box `(x, y, w, h)` in 320x240 stage
@@ -471,13 +471,14 @@ pub const COMPLETION_COUNTDOWN_VSYNCS: i16 = 360;
 /// kind `2`, `0x40` frames, `0 -> 0xFF`, no start delay, held (`+0x16 = -1`).
 /// Kind 2 is the `B - F` blend, so the scene fades to black - the same
 /// template the escape teardown spawns.
-pub const COMPLETION_FADE: crate::fade::FadeTemplate = crate::fade::FadeTemplate {
-    kind: 2,
-    duration: 0x40,
-    start_rgb: [0, 0, 0],
-    end_rgb: [0xFF, 0xFF, 0xFF],
-    mode: [0, -1, 0],
-};
+pub const COMPLETION_FADE: legaia_engine_system::fade::FadeTemplate =
+    legaia_engine_system::fade::FadeTemplate {
+        kind: 2,
+        duration: 0x40,
+        start_rgb: [0, 0, 0],
+        end_rgb: [0xFF, 0xFF, 0xFF],
+        mode: [0, -1, 0],
+    };
 
 /// What one frame of the hook's countdown section (`0x801F71F0..0x801F72A8`)
 /// asks the battle host to do.
@@ -953,15 +954,16 @@ impl BattleTutorialScript {
     /// Returns an empty script (not an error) when the entry can't be read, so
     /// a host booted against a partial disc still runs the battle - it just
     /// shows no boxes.
-    pub fn from_prot(index: &crate::scene::ProtIndex) -> Self {
-        let Some(rec) = legaia_asset::static_overlay::overlay_map().by_label("battle_tutorial")
+    pub fn from_prot(index: &legaia_engine_scene::scene::ProtIndex) -> Self {
+        let Some(rec) =
+            legaia_overlay_images::static_overlay::overlay_map().by_label("battle_tutorial")
         else {
             return Self::default();
         };
         let Ok(bytes) = index.entry_bytes(rec.prot_index) else {
             return Self::default();
         };
-        match legaia_asset::static_overlay::as_loaded(&bytes, rec) {
+        match legaia_overlay_images::static_overlay::as_loaded(&bytes, rec) {
             Ok(loaded) => Self::from_overlay(&loaded, rec.base_va),
             Err(_) => Self::default(),
         }

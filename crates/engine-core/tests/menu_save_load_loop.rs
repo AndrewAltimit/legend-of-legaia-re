@@ -1,10 +1,10 @@
 //! Menu input → save / load round-trip integration: drive the
-//! `engine-vm::menu` state machine through Idle → StatusTop → save commit
+//! `engine-legaia_engine_menus::menu` state machine through Idle → StatusTop → save commit
 //! → write bytes → load bytes back into a fresh World and assert party
 //! state survived the round-trip.
 //!
 //! What this proves:
-//!  - `engine-vm::menu::step` reaches every transition the integration
+//!  - `engine-legaia_engine_menus::menu::step` reaches every transition the integration
 //!    needs (Idle → StatusTop → SavePickSlot via host-driven state mutation,
 //!    SavePickSlot → SaveWriting → SaveDone).
 //!  - A `MenuHost` impl can use the save crate to serialise + deserialise a
@@ -17,7 +17,7 @@
 //! the serialised save bytes.
 
 use legaia_engine_core::world::World;
-use legaia_engine_vm::menu::{MenuCtx, MenuHost, MenuInput, MenuState, open, step};
+use legaia_engine_menus::menu::{MenuCtx, MenuHost, MenuInput, MenuState, open, step};
 use legaia_save::{CharacterRecord, Party};
 
 /// A menu host that:

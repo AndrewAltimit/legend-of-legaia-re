@@ -1,4 +1,4 @@
-//! Disc-gated oracle for `party_swap::monsterize_player`: every playable
+//! Disc-gated oracle for `legaia_party_swap::monsterize_player`: every playable
 //! character's default-equipment battle model rebuilds on every Delilas
 //! monster rig, the result splices into the retail block, re-encodes into
 //! the archive slot, and re-parses with the retail part count.
@@ -7,9 +7,8 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::{battle_char_assembly, battle_data_pack, monster_archive};
-use legaia_patcher::party_swap;
-use legaia_patcher::party_swap::playerize;
+use legaia_actor_formats::{battle_char_assembly, battle_data_pack, monster_archive};
+use legaia_party_swap::playerize;
 
 fn prot_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -30,14 +29,14 @@ fn every_pairing_monsterizes_and_splices() {
     let pairs = [
         (
             "0863_edstati3.BIN",
-            &party_swap::RIG_VAHN_GALA,
+            &legaia_party_swap::RIG_VAHN_GALA,
             "Vahn",
             0usize,
         ),
-        ("0864_edstati3.BIN", &party_swap::RIG_NOA, "Noa", 1),
+        ("0864_edstati3.BIN", &legaia_party_swap::RIG_NOA, "Noa", 1),
         (
             "0865_battle_data.BIN",
-            &party_swap::RIG_VAHN_GALA,
+            &legaia_party_swap::RIG_VAHN_GALA,
             "Gala",
             2,
         ),
@@ -45,7 +44,7 @@ fn every_pairing_monsterizes_and_splices() {
     for (file, rig, who, _slot) in pairs {
         let player_file = std::fs::read(dir.join(file)).expect("read player file");
         for target_id in [162u16, 163, 164] {
-            let out = party_swap::swap_into_block(&player_file, rig, &archive, target_id)
+            let out = legaia_party_swap::swap_into_block(&player_file, rig, &archive, target_id)
                 .unwrap_or_else(|e| panic!("{who} -> {target_id}: {e:#}"));
             // The swapped mesh keeps the Delilas part count (the streams
             // pose parts by index).
@@ -54,7 +53,7 @@ fn every_pairing_monsterizes_and_splices() {
                 .unwrap_or_else(|e| panic!("{who} -> {target_id}: TMD reparse: {e:#}"));
             assert_eq!(
                 mesh.objects.len(),
-                party_swap::CANONICAL_PARTS,
+                legaia_party_swap::CANONICAL_PARTS,
                 "{who} -> {target_id}: part count"
             );
             assert!(
@@ -88,7 +87,7 @@ fn every_pairing_monsterizes_and_splices() {
             assert!(
                 anims
                     .iter()
-                    .all(|a| a.part_count == party_swap::CANONICAL_PARTS),
+                    .all(|a| a.part_count == legaia_party_swap::CANONICAL_PARTS),
                 "{who} -> {target_id}: retail stream part counts"
             );
             for w in &out.warnings {
@@ -113,14 +112,14 @@ fn every_pairing_playerizes_and_reassembles() {
     let pairs = [
         (
             "0863_edstati3.BIN",
-            &party_swap::RIG_VAHN_GALA,
+            &legaia_party_swap::RIG_VAHN_GALA,
             "Vahn",
             0usize,
         ),
-        ("0864_edstati3.BIN", &party_swap::RIG_NOA, "Noa", 1),
+        ("0864_edstati3.BIN", &legaia_party_swap::RIG_NOA, "Noa", 1),
         (
             "0865_battle_data.BIN",
-            &party_swap::RIG_VAHN_GALA,
+            &legaia_party_swap::RIG_VAHN_GALA,
             "Gala",
             2,
         ),

@@ -22,14 +22,14 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use legaia_asset::sfx_table::{
-    SLOT0_SYSTEM_BANK_PROT_INDEX, SLOT6_FIELD_BANK_PROT_INDEX, SfxTable,
-};
 use legaia_engine_audio::spu_layout::{
     BGM_REGION_BYTES, OwnedBankPlacement, SFX_REGION_BASE, SPU_RAM_BYTES, SPU_RESERVED_BYTES,
     bank_used_end, sfx_region_free, upload_owned_bank, upload_resident_sfx, vab_body_bytes,
 };
 use legaia_engine_audio::{SPU_INTERNAL_RATE, SfxBank, Spu, VabBank};
+use legaia_game_tables::sfx_table::{
+    SLOT0_SYSTEM_BANK_PROT_INDEX, SLOT6_FIELD_BANK_PROT_INDEX, SfxTable,
+};
 use legaia_prot::archive::Archive;
 use legaia_prot::cdname;
 use legaia_vab::VabReport;

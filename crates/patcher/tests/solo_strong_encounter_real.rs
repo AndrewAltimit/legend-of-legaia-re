@@ -16,10 +16,10 @@
 
 use std::collections::HashMap;
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 use legaia_patcher::apply::{self, EncounterScope, SoloStrongConfig};
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 use legaia_patcher::encounter::{MonsterPowerTable, SceneEncounters};
 

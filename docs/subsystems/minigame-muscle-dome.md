@@ -29,10 +29,10 @@ Three things it is **not**:
 | Data file | `data\field\other6.lzs` = extraction 1220..=1225 (hub art, ringside stills, arena backdrop) |
 | Ladder + score tables | PROT 0977: roster `0x801D1920`, course descriptors `0x801D1A08`, score table `0x801D1860` |
 | Ringside still loader | `FUN_801F6B24`, PROT 0978 (`field_back_read`, slot-B base `0x801F69D8`) |
-| Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-menus::muscle_dome`, `engine-core::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-viewer::minigames_muscle` |
-| Disc parsers | `legaia_asset::muscle_dome` (deck tables), `muscle_dome::parse_course_ladder` / `parse_score_table` |
+| Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-menus::muscle_dome_session`, `engine-core::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-viewer::minigames_muscle` |
+| Disc parsers | `legaia_minigame_formats::muscle_dome` (deck tables), `muscle_dome::parse_course_ladder` / `parse_score_table` |
 
-Throughout, "ctx" is the shared battle context at `_DAT_8007BD24` and "actor" is a battle actor record reached through `&DAT_801C9370`. Port paths written `muscle_dome::X` resolve as `legaia_engine_core::muscle_dome::X`.
+Throughout, "ctx" is the shared battle context at `_DAT_8007BD24` and "actor" is a battle actor record reached through `&DAT_801C9370`. Port paths written `muscle_dome::X` resolve as `legaia_engine_minigames::muscle_dome::X`; the leg session is `legaia_engine_menus::muscle_dome_session`.
 
 ```mermaid
 flowchart TD
@@ -54,9 +54,9 @@ flowchart TD
 
 ## Entry from the field
 
-The arena is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 105` (`sub_id 5`), which sets game mode `0x18` and loads the door/init slot PROT 0977. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `engine-field::minigame_entry::MinigameSubId`.
+The arena is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 105` (`sub_id 5`), which sets game mode `0x18` and loads the door/init slot PROT 0977. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `engine-mode::minigame_entry::MinigameSubId`.
 
-Every dome door on the disc is in `koin1` P1[9] - three sites in one record, which is the **course menu**: each arm debits its entry fee through `0x4C 0xE5` and latches one of the course flags before its own `0x3E 0x69`. `taiku` carries none (its only `0x3E` sites are `0xFF` interacts), so it is not the arena's door despite the label. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+Every dome door on the disc is in `koin1` P1[9] - three sites in one record, which is the **course menu**: each arm debits its entry fee through `0x4C 0xE5` and latches one of the course flags before its own `0x3E 0x69`. `taiku` carries none (its only `0x3E` sites are `0xFF` interacts), so it is not the arena's door despite the label. Census test: `crates/engine-scene/tests/minigame_entry_census_disc.rs`.
 
 **How the two routines are reached.**
 
@@ -195,7 +195,7 @@ No turn boundary reaches the table above. The two boundaries are written by diff
 
 While a leg runs the game is in battle mode, so the hub - the only thing that draws INTERVAL and the tally - is not executing. Retail has no beat between turns: the command cluster comes straight back.
 
-Both boundaries reach a port host as "the turn's playback ended", so the verdict lives in one shared place: `muscle_dome::leg_boundary_raises_interval` (`engine-minigames`), called at the leg boundary by the hub timer kernel both play hosts drive (`engine-core::muscle_ringside::HubTimers`) and by the browser dome page (the `muscle_leg_shows_interval` binding). `MusclePhase::ends_turn` / `ends_leg` name the same split on the session side. Locked by `engine-core/tests/muscle_intermission_cadence.rs` and `web-viewer/tests/muscle_page_cadence.rs`.
+Both boundaries reach a port host as "the turn's playback ended", so the verdict lives in one shared place: `muscle_dome::leg_boundary_raises_interval` (`engine-minigames`), called at the leg boundary by the hub timer kernel both play hosts drive (`engine-core::muscle_ringside::HubTimers`) and by the browser dome page (the `muscle_leg_shows_interval` binding). `MusclePhase::ends_turn` / `ends_leg` name the same split on the session side. Locked by `engine-menus/tests/muscle_intermission_cadence.rs` and `web-viewer/tests/muscle_page_cadence.rs`.
 
 <a id="course-ladder-the-opponent-per-course-round"></a>
 
@@ -318,7 +318,7 @@ Each hub screen is a **fade-in at its own rate, a hold, and a fade-out**, and tw
 - **Other seats.** The Welcome strip (record 3) is centred on `(160, 120)`, the course-title art (record 4) at `(160, 64)` with a variant-2 shadow at `(168, 72)`, the INTERVAL heading (record 16) at `(160, 32)`.
 - **Tally roll.** The four lanes' tick counters `DAT_801D1AB8 / 1ABC / 1AC0 / 1AC4` each test `slti 0x11` (a 17-tick lead-in) and reseed to `0x10`.
 
-Port: `muscle_dome::HubScreen` (`engine-minigames`, envelope literals), `other_game_hud::course_card_draws`, `muscle_ringside::FirstVisitHub` for the first visit ([`ringside-still.md`](../formats/ringside-still.md#in-the-port)), and `muscle_ringside::HubTimers`, armed and ticked once per world tick by `World::tick_muscle_hub` from the shared scene host. Each play host's own `tick_muscle_hub` only sounds what fired (`World::take_muscle_hub_sounds`); the minigames page samples the same kernel through `muscle_hub_screen_json`. No host picks a count or a brightness of its own.
+Port: `muscle_dome::HubScreen` (`engine-minigames`, envelope literals), `muscle_dome_hud::course_card_draws`, `muscle_ringside::FirstVisitHub` for the first visit ([`ringside-still.md`](../formats/ringside-still.md#in-the-port)), and `muscle_ringside::HubTimers`, armed and ticked once per world tick by `World::tick_muscle_hub` from the shared scene host. Each play host's own `tick_muscle_hub` only sounds what fired (`World::take_muscle_hub_sounds`); the minigames page samples the same kernel through `muscle_hub_screen_json`. No host picks a count or a brightness of its own.
 
 <a id="the-tally-cues-key-the-arenas-own-bank"></a>
 
@@ -337,7 +337,7 @@ Both ids are `>= 0x200`, so the drainer resolves them against the current-bundle
 
 Category `3` is VAB slot 3, which the same init fills with extraction **1157** (`vab_01 + 0x57`, one program of six tones). Only `0x202` and `0x203` have a writer in the arena image.
 
-Port: the scene host stages the bundle on the warp (`legaia_asset::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`), `World::runtime_sfx_bundle` returns it in `SceneMode::MuscleDome`, and `World::tail_side_band_bank` names the slot-3 bank for both hosts' BGM-tail stagers. `HubTimers` emits the four slot writes on the INTERVAL arm's first frame as `SfxRingOp::ArmSlot`, replayed by both hosts onto their cue ring.
+Port: the scene host stages the bundle on the warp (`legaia_minigame_formats::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`), `World::runtime_sfx_bundle` returns it in `SceneMode::MuscleDome`, and `World::tail_side_band_bank` names the slot-3 bank for both hosts' BGM-tail stagers. `HubTimers` emits the four slot writes on the INTERVAL arm's first frame as `SfxRingOp::ArmSlot`, replayed by both hosts onto their cue ring.
 
 <a id="the-arenas-per-frame-voice-cue-fun_801d1288"></a>
 
@@ -355,7 +355,7 @@ In the port the in-world dome's decided leg closes on Cross through `World::tick
 
 While the hub owns the frame neither host draws the field or battle chrome, and a decided leg puts no text up. Start between legs is the give-up arm (the contest ends and the tally is void). Locked by `engine-core/tests/muscle_contest_world.rs` and `web-viewer/tests/play_ringside_still_disc.rs`.
 
-Both hosts draw the hub screens through the shared `engine-ui::other_game_hud` emitters: the browser dome page via `muscle_hub_quads_json`, the native play-window by baking the two hub page TIMs per referenced sub-palette into a sprite atlas and running the same builders (`crates/engine-shell/src/window/minigames.rs`, `muscle_hub_sprite_draws`).
+Both hosts draw the hub screens through the shared `engine-ui::muscle_dome_hud` emitters: the browser dome page via `muscle_hub_quads_json`, the native play-window by baking the two hub page TIMs per referenced sub-palette into a sprite atlas and running the same builders (`crates/engine-shell/src/window/minigames.rs`, `muscle_hub_sprite_draws`).
 
 <a id="arena-backdrop-extraction-1225"></a>
 
@@ -552,14 +552,14 @@ A knockout, and nothing else. The arena has no battle loop of its own to bound.
 
 ### Direction commands (the "deck")
 
-The fighter's four selectable actions are its four direction commands, laid out by `FUN_801D388C` case `9` / `0x2C`. Tables in the battle-overlay rodata (parser `legaia_asset::muscle_dome`: `hand_command_ids` / `hand_sprite_ids` / `victory_message_count`; disc-gated `muscle_dome_real`):
+The fighter's four selectable actions are its four direction commands, laid out by `FUN_801D388C` case `9` / `0x2C`. Tables in the battle-overlay rodata (parser `legaia_minigame_formats::muscle_dome`: `hand_command_ids` / `hand_sprite_ids` / `victory_message_count`; disc-gated `muscle_dome_real`):
 
 | Table | Content |
 |---|---|
 | `DAT_801F4B8C[0..4]` | the four command ids `0xC..=0xF` (the weapon-swing runtime slots); the commit path appends the id verbatim into `actor+0x1DF` |
 | `DAT_801F4B94[0..4]` | per-slot chip sprite ids `[0D 10 11 0C]`, with a `+2` "unlearned" face variant gated on the character record's per-move flag at `record+0x18C+move_id` |
 | `DAT_801F4B84[move_id]` | per-move display lookup used by the sub-draw path |
-| `DAT_801C9360[char][cmd]+0x74` | the command's **AP cost** - the byte the Arts gauge reads as the arm width, copied at battle load from the equipment sections' swing records (`FUN_800557B8`; `legaia_asset::battle_char_assembly::SwingAnimation::cost`). Retail values: favored `0x1E` / off-class `0x2A` / far `0x36` |
+| `DAT_801C9360[char][cmd]+0x74` | the command's **AP cost** - the byte the Arts gauge reads as the arm width, copied at battle load from the equipment sections' swing records (`FUN_800557B8`; `legaia_actor_formats::battle_char_assembly::SwingAnimation::cost`). Retail values: favored `0x1E` / off-class `0x2A` / far `0x36` |
 
 - The deal is a four-iteration loop (`uVar17 < 4`); each slot's cost byte is cached in `ctx[slot + 0x14]` and normalised against a `0x1E` baseline to size the chip. The per-slot screen layout is read from a parallel table walked at stride 6.
 - For party character index `2` slots `0` and `3` exchange (the layout is mirrored for that fighter).
@@ -609,7 +609,7 @@ Its numeric work is four `func_0x8003563c` registrations at `0x801D959C..0x801D9
 Per-frame helpers the driver also calls:
 
 - `FUN_801D3444` - a 0..`0xC` meter counter `DAT_801F4E0A`, ramped up by the frame delta while `ctx+6 == 0x50` and an enable flag is set, drained otherwise, mapped to a bar Y of `counter * 160 / 12 - 0x92`. Port: `muscle_dome::time_meter_step`, ticked by the session.
-- `FUN_801D9BBC` - advances every active sprite handle (`ctx+0x1074[]`, up to `0x28`) one linear-ease step toward its target over a per-handle frame count (`ctx+0x11B4 + i*0xC` records: total / elapsed frames + target / start positions; arrival snaps and deactivates). Port: `muscle_dome::SpriteGlide::step`. The kernel has **no producer** in the engine - no host spawns the pennant / chip sprites this table animates; its contract is pinned by `crates/engine-core/tests/w1b_dome_leg_ladder.rs`.
+- `FUN_801D9BBC` - advances every active sprite handle (`ctx+0x1074[]`, up to `0x28`) one linear-ease step toward its target over a per-handle frame count (`ctx+0x11B4 + i*0xC` records: total / elapsed frames + target / start positions; arrival snaps and deactivates). Port: `muscle_dome::SpriteGlide::step`. The kernel has **no producer** in the engine - no host spawns the pennant / chip sprites this table animates; its contract is pinned by `crates/engine-core/tests/dome_leg_ladder.rs`.
 
 ## Retail presentation
 
@@ -662,7 +662,7 @@ The four command anchors run through the plate law (`plate = (rec.x - 8, rec.y -
 | Damage numerals + words | `(448,0)`; sub-pal 3 | digits 24×24 at `v=64`, `u=(d−1)*24`, `0` at `u=216`; DAMAGE `(0,224)` 52×14, HIT `(0,240)` 32×16, TOTAL `(32,240)` 48×16; hit numbers drawn 24×23, tally row 16×15 | same `etim` TIM |
 | Hub strips + digits | `(320,0)` + `(320,256)`; rows 502 / 503 | PROT 0977 sprite descriptor table at VA `0x801D170C` (file `+0x2EF4`, 17 × `0x14`-byte records): record 3 = Welcome `(0,224)` 240×18, 16 = INTERVAL `(0,192)` 192×32, 0 = ROUND `(0,0)` 144×32, 1 = the 24×32 digit strip | extraction **1220**: LZS section 0 = `[12-byte header][TIM -> (320,0), row 502][TIM -> (320,256), row 503]`, byte-identical to live VRAM |
 
-A gap TIM's 16-row CLUT block uploads **packed into one VRAM row** as 16 side-by-side sub-palettes (widget bank -> row 511, menu-atlas bank -> row 510), which is what the packets' CLUT words address (`0x7FC4` = `(64,511)`, `0x7FCC` = `(192,511)`, `0x7F8D` = `(208,510)`). Sprite-table parser: `legaia_engine_ui::other_game_hud::parse_sprite_table`.
+A gap TIM's 16-row CLUT block uploads **packed into one VRAM row** as 16 side-by-side sub-palettes (widget bank -> row 511, menu-atlas bank -> row 510), which is what the packets' CLUT words address (`0x7FC4` = `(64,511)`, `0x7FCC` = `(192,511)`, `0x7F8D` = `(208,510)`). Sprite-table parser: `legaia_engine_ui::muscle_dome_hud::parse_sprite_table`.
 
 **The AP meter has no source rect.** Retail draws it as two untextured 3-px gouraud strips - the `FUN_8002C0B0` fill the status screen's AP gauge uses, dark `(0x80,0x20,0x10)` to gold `(0xC0,0xA0,0x40)` and back. Only the value is art: the 6-px digit strip has no 3-digit seat, so the sheet carries one baked "100" tile for the end box. That tile is not a fill tile. Both callers of the plate (command menu, direction entry) take their fill from `legaia_engine_ui::arts_input`'s span + gouraud endpoints.
 
@@ -743,7 +743,7 @@ The array's `+0` halfword goes to the record's seat A `x` (`sh v0,0x2(a1)` at `0
 
 Inferred, not measured: the bar's record is anchored at seat-B `y = 194` and the pennant lands on `192`, so with the captured `BAR_Y = 188` the pennant top edge should be 186. Confirming it (and off-class widths) wants a placement-table read on `arts_bar_offclass_gala_nail` / `arts_bar_astral_sword_vahn` diffed against `arts_bar_ideal_gala_club`.
 
-Port: `engine-ui::arts_input` (`ArtsInputFrame::chip_anchor` / `chip_w` / `pennant_w`, `CHIP_WIDEN_K`, `COST_WIDTH_BIAS`), fed the per-(character, weapon) cost row both hosts resolve through `legaia_asset::battle_char_assembly::swing_command_costs` ([`arts-command-gauge.md`](arts-command-gauge.md#reading-it)).
+Port: `engine-ui::arts_input` (`ArtsInputFrame::chip_anchor` / `chip_w` / `pennant_w`, `CHIP_WIDEN_K`, `COST_WIDTH_BIAS`), fed the per-(character, weapon) cost row both hosts resolve through `legaia_actor_formats::battle_char_assembly::swing_command_costs` ([`arts-command-gauge.md`](arts-command-gauge.md#reading-it)).
 
 <a id="the-auto-arm-reloads-a-saved-string-and-the-round-rebuilds-it"></a>
 
@@ -793,7 +793,7 @@ The member gate `ctx[+0x25F + member]` is written once by the party battle-actor
 
 **A cast spends MP, not AP.** Taking the chip writes `ctx+6 = 0x46` and, at the confirm, the spell id into `actor+0x1DF[0]` with `actor+0x1DE = 2` and `actor+0x1E7 = 9` (`0x801D1A14..0x801D1A34`, `0x801D14A4`, `0x801D14C0`). Nothing on that path reads `ctx+0x6D8` / `ctx+0x6DC`; the cast replaces the direction string. The cost is the static spell table's `+3` byte (`DAT_800754C8 + id*12`) discounted by the record's ability bitfield `+0xF4` - bit `0x20` halves it, bit `0x10` takes a quarter off (`0x801D1A38..0x801D1B70`) - and the confirm arm refuses when `actor+0x150` is short (`0x801D1C0C..0x801D1C28`). The debit is the shared band's (`FUN_801E295C` state `0x28`).
 
-Port (`crates/engine-menus/src/muscle_dome/ring.rs`, `session.rs`): `DomeRing` / `ChipMark` / `DomeMagic` carry the gates, marks and the learned list with its ability-bit price; `MuscleDomeSession::commit_cast` is the pick; the cast resolves through `engine-battle::spells::cast_spell`, the rule the regular battle's cast band uses. The special word is the session's (`set_special_word`, overlaid by `MuscleDomeSession::ring`), seeded on both hosts through `contest_entry_word` - the play hosts from the world's flag bank (`World::dome_special_word`), the minigames page from the `unlock` mask its `muscle_contest_start` is handed (`muscle_special_word` reads it back). A standalone leg opened without a contest keeps the word at `0`, which forbids nothing.
+Port (`crates/engine-menus/src/muscle_dome_session/ring.rs`, `session.rs`): `DomeRing` / `ChipMark` / `DomeMagic` carry the gates, marks and the learned list with its ability-bit price; `MuscleDomeSession::commit_cast` is the pick; the cast resolves through `engine-battle::spells::cast_spell`, the rule the regular battle's cast band uses. The special word is the session's (`set_special_word`, overlaid by `MuscleDomeSession::ring`), seeded on both hosts through `contest_entry_word` - the play hosts from the world's flag bank (`World::dome_special_word`), the minigames page from the `unlock` mask its `muscle_contest_start` is handed (`muscle_special_word` reads it back). A standalone leg opened without a contest keeps the word at `0`, which forbids nothing.
 
 <a id="the-dd0ac-chain-is-not-a-direction-swings"></a>
 <a id="the-queue-the-dome-resolves-is-the-tokenizers"></a>
@@ -858,7 +858,7 @@ The `Turns Left / HP Left` strip lives in the battle overlay and its phase-`0x14
 | HP-Left number | `DAT_801F6959 = DAT_801C937C[+0x14c] * 100 / DAT_801C937C[+0x14e]`, drawn at x=`0xD2`, 3 digits |
 | Draw calls | `func_0x8003541c` registers the label (key `1`, `addiu a0,zero,1` at `0x801D0F98`); one `func_0x8003563c` per number - the per-actor draw-record queue append ([`script-vms.md`](../reference/functions/script-vms.md)), not a gauge routine |
 
-- `0x8007BD0C` is the four-slot **formation cell** the encounter reader fills ([`encounter.md`](../formats/encounter.md), `engine-battle::encounter_record`, `capture_observations::battle_init_overlay::FORMATION_CELL_ADDR`). Monster `0xB6` is **Koru** (PROT 867 slot `(0xB6-1) * 0x14000`); the neighbouring `0xB5` tested at `0x801D0DEC` is the final-form Cort, which `engine-core::overlay_loader` special-cases.
+- `0x8007BD0C` is the four-slot **formation cell** the encounter reader fills ([`encounter.md`](../formats/encounter.md), `scene-formats::encounter_record`, `capture_observations::battle_init_overlay::FORMATION_CELL_ADDR`). Monster `0xB6` is **Koru** (PROT 867 slot `(0xB6-1) * 0x14000`); the neighbouring `0xB5` tested at `0x801D0DEC` is the final-form Cort, which `engine-scene::overlay_loader` special-cases.
 - The dome cannot satisfy the gate: its highest roster id is `0xAA`, the cell has one writer in the arena overlay (`FUN_801D1510`) and none in the battle overlay.
 - The `× 100` is a shift-add chain at `0x801D0F38..0x801D0F4C` (`sll 1`, `addu`, `sll 3`, `addu`, `sll 2`); an independently based dump (`overlay_0896_801f04b0.txt`) reproduces it. `DAT_801C937C` is actor-table index 3, the first **enemy** slot, so the percentage is the opponent's and there is one number on screen.
 - Phase `0x14` computes and stamps; phase `0x6E` (and the input arm around `0x801D2900`) only re-stamps the two globals. The function contains exactly two ratio computations, both in the `0x14` arm.
@@ -874,7 +874,7 @@ The `Turns Left / HP Left` strip lives in the battle overlay and its phase-`0x14
 - The strip is one framed window across the top: gold border from framebuffer column `9` to `309`, top edge on row `11`. The per-actor name plate sits in the same top-left seat, from column `9`, rows `13..28`.
 - They never share a frame. Of 27 checkpoints, the three at a `Begin / Run` prompt show the strip, and the plate shows only in action frames (phase `0xFF`).
 
-Port: `engine-menus::timed_fight` (gate, numbers, lifetime; re-exported by `engine-core`) and `legaia_engine_ui::battle_timed_fight_strip` (the format string off the user's PROT 0898, the two numbers at `+0x68` / `+0xD2`), drawn by both hosts. The port draws all chrome sprites, then all text, so while the strip is up both hosts park the plaque (`plaque_seat_taken`). `TIMED_FIGHT_TURN_LIMIT` is the numerator of `timed_fight_turns_left`, reachable by no dome session.
+Port: `engine-menus::timed_fight` (gate, numbers, lifetime) and `legaia_engine_ui::battle_timed_fight_strip` (the format string off the user's PROT 0898, the two numbers at `+0x68` / `+0xD2`), drawn by both hosts. The port draws all chrome sprites, then all text, so while the strip is up both hosts park the plaque (`plaque_seat_taken`). `TIMED_FIGHT_TURN_LIMIT` is the numerator of `timed_fight_turns_left`, reachable by no dome session.
 
 <a id="the-dump-set-is-the-whole-battle-overlay---a-filename-prefix-is-not-dome-evidence"></a>
 
@@ -900,7 +900,7 @@ Port: `engine-menus::timed_fight` (gate, numbers, lifetime; re-exported by `engi
 - `FUN_801F3D3C` runs at cast time from the spell's summon module and **stages**: it selects the `[summon element][level band]` record of the table at `0x801F6870`, writes its percent to `0x801F6960` (shaved off the target per hit by the damage finisher's element switch) and its banner-string pointer to `0x800775B4`, and seeds the hold `0x801F6964 = 0xB4`.
 - `FUN_801F3C34` runs at the summon's return-from-fade, **reads** `0x801F6960`, and when it is still zero installs the "No effect." string (`0x801CFA20`) instead.
 
-The stager's gates (the scripted-fight suppression roll on `ctx[+0x287]`, the per-element base-vs-record compare) and the table are on [`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch). Port: `engine-battle-vm::move_no_effect_guard` (the banner pass, live from state `0x36`) and `engine-vm::seru_side_effect` (stager + finisher switch). See `ghidra/scripts/funcs/overlay_muscle_dome_801f3d3c.txt`.
+The stager's gates (the scripted-fight suppression roll on `ctx[+0x287]`, the per-element base-vs-record compare) and the table are on [`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch). Port: `engine-battle-vm::move_no_effect_guard` (the banner pass, live from state `0x36`) and `engine-battle-vm::seru_side_effect` (stager + finisher switch). See `ghidra/scripts/funcs/overlay_muscle_dome_801f3d3c.txt`.
 
 ## RAM state
 
@@ -1020,9 +1020,9 @@ The port models the same two layers and shares every rule between the native `pl
 | Contest | `engine-minigames::muscle_dome` (`contest.rs`) | `DomeContest` (cursor, unlock seed, Master clamp, tally rows, start restore), `settle_contest`, `leg_boundary_raises_interval` |
 | Damage | `engine-minigames::muscle_dome` (`damage.rs`) | `DomeDamageModel`: move-power row via the id map, predamage roll (`FUN_801DD0AC`), element affinity (`FUN_801DD864`), finisher (`FUN_801DDB30`), on a PsyQ `rand()` stream in retail call order; defender's `+0x170` gauge accrues per hit |
 | Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-core::muscle_ringside` | `HubScreen`, `HubTimers`, `HubBackdrop`, `FirstVisitHub` |
-| Leg session | `engine-menus::muscle_dome` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
-| Command flow | `engine-menus::muscle_dome` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-core::muscle_dome::magic_loadout_for` |
-| World | `engine-core` (`world/frame_tick/minigame_sessions.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |
+| Leg session | `engine-menus::muscle_dome_session` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
+| Command flow | `engine-menus::muscle_dome_session` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-core::world_views::muscle_dome::magic_loadout_for` |
+| World | `engine-core` (`world/frame_tick/minigame_sessions/muscle_dome.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |
 | 3D surface | `engine-minigame-scenes::muscle_dome_scene` | `MuscleDomeSurface`, `arena_ring`, `DomeCamera`, `turn_timeline` |
 | Minigames page | `web-viewer::minigames_muscle` | `muscle_*` wasm bindings; `site/js/minigame-muscle.js` |
 
@@ -1038,7 +1038,7 @@ The port models the same two layers and shares every rule between the native `pl
 
 <a id="the-leg-is-filmed-by-the-battle-camera"></a>
 
-**Camera.** A leg's camera is the battle camera director `FUN_801D5854`. `MuscleDomeSurface` seats the fighter and the monster on the lone formation seats `(0, -800)` / `(0, 800)` (`engine-minigame-scenes::battle_seats`, facings `0` / `0x800`) at the battle world scale and steps the shared `engine-battle-vm::battle_cam_script` once a frame:
+**Camera.** A leg's camera is the battle camera director `FUN_801D5854`. `MuscleDomeSurface` seats the fighter and the monster on the lone formation seats `(0, -800)` / `(0, 800)` (`engine-battle::battle_seats`, facings `0` / `0x800`) at the battle world scale and steps the shared `engine-battle-vm::battle_cam_script` once a frame:
 
 | Dome moment | Battle state | Framing |
 |---|---|---|

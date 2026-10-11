@@ -1,9 +1,9 @@
 //! Disc-gated oracle for the **arts AP override** feature (see
-//! `legaia_patcher::arts_ap_grant`): make a Tactical Art *grant* AP (Spirit,
+//! `legaia_arts_patch::arts_ap_grant`): make a Tactical Art *grant* AP (Spirit,
 //! `actor[+0x170]`, clamped at 100) or charge a flat cost, instead of retail's
 //! computed `multiplier x command_count`. Three same-size detours into the party
 //! arts queue-builder (PROT 0898) at `0x801EF410` / `0x801EF490` / `0x801EF988`,
-//! the routines in the verified-dead SCUS arenas `shiny_seru::ARENA1_VA` /
+//! the routines in the verified-dead SCUS arenas `arenas::ARENA1_VA` /
 //! `ARENA2_VA`, a per-(character, row) `i8` config table in `SCUS_GAP_VA`, and a
 //! same-size rewrite of each targeted art's menu AP byte in the static
 //! arts-name table.
@@ -27,16 +27,16 @@
 //! shipping.
 
 use legaia_art::queue::Character;
-use legaia_asset::item_names::file_offset_for_va;
-use legaia_iso::iso9660::read_file_in_image;
-use legaia_patcher::apply;
-use legaia_patcher::arts_ap_grant::{
+use legaia_arts_patch::arts_ap_grant::{
     self, ApMode, ArtApSpec, ArtsApGrantInjection, HOOK_A_VA, HOOK_B_VA, HOOK_C_VA, HOOK_D_VA,
     OVERLAY_BASE_VA, OVERLAY_PROT_INDEX, ROW_STRIDE, TABLE_LEN,
 };
-use legaia_patcher::arts_power::parse_combo;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::shiny_seru::{ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, SCUS_GAP_VA};
+use legaia_arts_patch::arts_power::parse_combo;
+use legaia_code_hooks::arenas::{ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, SCUS_GAP_VA};
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
+use legaia_iso::iso9660::read_file_in_image;
+use legaia_patcher::apply;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -342,7 +342,7 @@ fn mutually_exclusive_with_shiny_seru() {
     // up front; the apply layer also enforces it structurally: whichever runs
     // second finds a region no longer all-zero and refuses.
     let mut p = DiscPatcher::open(disc.clone()).expect("open");
-    apply::inject_shiny_seru(&mut p, legaia_patcher::shiny_seru::DEFAULT_PCT).expect("shiny");
+    apply::inject_shiny_seru(&mut p, legaia_code_hooks::shiny_seru::DEFAULT_PCT).expect("shiny");
     assert!(
         apply::inject_arts_ap_grant(&mut p, &specs()).is_err(),
         "arts-ap override refused after shiny-Seru (shared regions)"
@@ -351,7 +351,7 @@ fn mutually_exclusive_with_shiny_seru() {
     let mut q = DiscPatcher::open(disc).expect("open");
     apply::inject_arts_ap_grant(&mut q, &specs()).expect("ap override");
     assert!(
-        apply::inject_shiny_seru(&mut q, legaia_patcher::shiny_seru::DEFAULT_PCT).is_err(),
+        apply::inject_shiny_seru(&mut q, legaia_code_hooks::shiny_seru::DEFAULT_PCT).is_err(),
         "shiny-Seru refused after the arts-ap override (shared regions)"
     );
 }

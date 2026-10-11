@@ -48,7 +48,7 @@ fn chest_carriers(entry: &[u8], idx: usize, named: Option<&[bool; 256]>) -> Vec<
 /// quest items, so the predicate here is "has a name", not "has a price".
 fn named_item_mask(patcher: &DiscPatcher) -> Option<[bool; 256]> {
     let scus = patcher.read_named_file("SCUS_942.54")?;
-    let names = legaia_asset::item_names::ItemNameTable::from_scus(&scus)?;
+    let names = legaia_game_tables::item_names::ItemNameTable::from_scus(&scus)?;
     let mut mask = [false; 256];
     for (id, slot) in mask.iter_mut().enumerate() {
         *slot = names.name(id as u8).is_some_and(|n| !n.is_empty());

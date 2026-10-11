@@ -1,7 +1,7 @@
-//! Party load / save and full LGSF save-file round-trip. Split out of
-//! `world.rs` as an additional `impl World` block.
+//! Party load / save and full LGSF save-file round-trip.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Byte offset of the system-flag bank (`0x80085758`) inside the saved
 /// story-flag window (`0x80085600`).
@@ -60,7 +60,7 @@ impl World {
     ///   ([`Self::party_mirror_activates`]),
     /// - copies HP / MP from the record's [`HpMpSp`] block into the
     ///   `BattleActor` mirrors,
-    /// - stows the full record bytes via [`crate::world::PartyState::roster`] for later
+    /// - stows the full record bytes via [`legaia_engine_menus::party_state::PartyState::roster`] for later
     ///   round-trip via [`World::save_party`].
     ///
     /// The `legaia-save` crate's [`legaia_save::CharacterRecord::parse`] is
@@ -144,7 +144,7 @@ impl World {
             return self.party.roster.clone();
         }
         // Actor slot -> roster record follows the present-party composition:
-        // under an [`crate::world::PartyState::active_party`] mapping, actor ordinal `i` mirrors
+        // under an [`legaia_engine_menus::party_state::PartyState::active_party`] mapping, actor ordinal `i` mirrors
         // the character at `active_party[i]`, and characters NOT in the
         // present party keep their record values untouched. The identity
         // default resyncs every record from its same-index actor, the
@@ -173,7 +173,7 @@ impl World {
     /// The narrow sibling of [`Self::save_party`], for
     /// [`Self::finish_battle`]. Two differences, both deliberate:
     ///
-    /// - It stops at [`crate::world::PartyState::party_count`]. In battle the actor slots past
+    /// - It stops at [`legaia_engine_menus::party_state::PartyState::party_count`]. In battle the actor slots past
     ///   the party band hold *monsters*, and `save_party`'s identity default
     ///   walks the whole roster - so running it verbatim at battle end would
     ///   copy a monster's HP into the fourth character's record.
@@ -211,7 +211,7 @@ impl World {
     /// records (just written by [`Self::persist_battle_party_hp`]) hold the
     /// post-battle truth.
     ///
-    /// Bounded by [`crate::world::PartyState::party_count`]: in the restored *field* table the
+    /// Bounded by [`legaia_engine_menus::party_state::PartyState::party_count`]: in the restored *field* table the
     /// slots past the party band are NPCs, and pushing a character record's
     /// HP onto an NPC's mirrors is never right.
     pub fn resync_party_actors_from_roster(&mut self) {
@@ -474,7 +474,8 @@ impl World {
             }
         } else {
             let window = self.party.inventory.window();
-            self.party.inventory = crate::world::ItemBag::from_slots(&sf.ext.item_slots);
+            self.party.inventory =
+                legaia_engine_menus::item_bag::ItemBag::from_slots(&sf.ext.item_slots);
             self.party.inventory.set_window(window);
         }
         // (The level-up tracker's per-slot XP + level are hydrated from the
@@ -485,7 +486,7 @@ impl World {
         self.party.per_char_ext = sf.ext_v2.per_char.clone();
         // Reset trackers so reloads don't accumulate stale state.
         self.party.tactical_arts = TacticalArtsTracker::new();
-        self.seru.log = crate::seru_learning::SeruCaptureLog::new();
+        self.seru.log = legaia_engine_battle::seru_learning::SeruCaptureLog::new();
         for (slot, ce) in &sf.ext_v2.per_char {
             // Re-mark learned arts so the tracker doesn't re-fire the
             // "first time learned" event for arts the save already has.
@@ -535,7 +536,7 @@ impl World {
 /// gate inputs the retail root command picker reads before it lets a row
 /// through.
 impl World {
-    /// Seed [`crate::world::PartyState::scene_save_allowed`] from the scene MAN just loaded.
+    /// Seed [`legaia_engine_menus::party_state::PartyState::scene_save_allowed`] from the scene MAN just loaded.
     ///
     /// Retail's MAN loader does this inline, one instruction after it takes
     /// the header's status word: it reads byte `+1` of the resident MAN
@@ -560,7 +561,7 @@ impl World {
     /// PORT: FUN_8003aeb0 (`0x8003AF48..0x8003AF54`)
     pub fn install_scene_save_permission(
         &mut self,
-        man: Option<&legaia_asset::man_section::ManFile>,
+        man: Option<&legaia_scene_formats::man_section::ManFile>,
     ) {
         self.party.scene_save_allowed = man.is_some_and(|m| m.header.low_flag);
     }
@@ -593,7 +594,7 @@ impl World {
         let Some(kind) = self.field_vm.submode_screen.park_sub_op else {
             return false;
         };
-        if crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS.contains(&kind) {
+        if legaia_engine_field::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS.contains(&kind) {
             self.field_vm.submode_screen.done = true;
         }
         self.clear_op49_park();
@@ -639,7 +640,7 @@ impl World {
     ///
     /// (`FUN_801DC6B4` at `0x801dc88c..0x801dc8e4`.) Which of those a real
     /// disc ever arms is measured by
-    /// `crates/engine-core/tests/op49_sub_op_census.rs`.
+    /// `crates/engine-scene/tests/op49_sub_op_census.rs`.
     ///
     /// REF: FUN_801de840 (op `0x49` Idle arm, `_DAT_8007B450 = operand`)
     /// REF: FUN_801dc6b4 (the routing consumer)
@@ -683,11 +684,11 @@ impl World {
     /// arm - it is the top-view debug renderer, and it branches straight to
     /// its epilogue (`0x801E9B14`) whenever `DAT_801F2B94 == 0`. Entering
     /// top view at all needs the debug flag `_DAT_8007B98C`, which retail
-    /// leaves clear. See [`crate::world_map::WorldMapController`].
+    /// leaves clear. See [`legaia_engine_field::world_map::WorldMapController`].
     ///
     /// The port splits the one retail mode in two -
-    /// [`SceneMode::Field`](crate::world::SceneMode::Field) for towns and
-    /// fields, [`SceneMode::WorldMap`](crate::world::SceneMode::WorldMap)
+    /// [`SceneMode::Field`](legaia_engine_mode::mode::SceneMode::Field) for towns and
+    /// fields, [`SceneMode::WorldMap`](legaia_engine_mode::mode::SceneMode::WorldMap)
     /// for the kingdom overworlds - so the predicate has to name both. Every
     /// other mode (battle, cutscene, the minigames, an already-open menu)
     /// suspends field dispatch and never reaches the accept.
@@ -698,7 +699,8 @@ impl World {
     pub fn scene_mode_takes_menu_open(&self) -> bool {
         matches!(
             self.mode,
-            crate::world::SceneMode::Field | crate::world::SceneMode::WorldMap
+            legaia_engine_mode::mode::SceneMode::Field
+                | legaia_engine_mode::mode::SceneMode::WorldMap
         )
     }
 
@@ -731,7 +733,7 @@ impl World {
     ///
     /// Note this is the *open* gate only. Whether the opened menu's **Save**
     /// row then accepts is a separate, per-scene question answered by
-    /// [`crate::world::PartyState::scene_save_allowed`](crate::world::PartyState::scene_save_allowed)
+    /// [`legaia_engine_menus::party_state::PartyState::scene_save_allowed`](legaia_engine_menus::party_state::PartyState::scene_save_allowed)
     /// at the row's confirm, exactly as retail keeps `_DAT_800846D8` (which
     /// button opens the menu) and `_DAT_8007B6A8` (whether Save is legal
     /// here) as two independent globals.
@@ -756,7 +758,7 @@ impl World {
     ///    (`0x801D16A8..0x801D16B8`), while a kind-0 warp's timer
     ///    `_DAT_8007B6B0` runs, and while its post-warp pad hold
     ///    `_DAT_8007B6B4` drains (`0x801D16C8..0x801D16E4`,
-    ///    [`legaia_engine_vm::field_warp_tile::pad_suppressed`]). The engine
+    ///    [`legaia_engine_field::field_warp_tile::pad_suppressed`]). The engine
     ///    already held the player still through the warp; the menu button
     ///    stayed live through it. No shipped script issues `2E 0A`, so the
     ///    lock's writer is not a field-VM op.
@@ -808,7 +810,7 @@ impl World {
     fn field_menu_press_reaches_accept(&self) -> bool {
         self.scene_mode_takes_menu_open()
             && self.flags.story_flags & FIELD_SYSTEM_LOCK_BIT == 0
-            && !legaia_engine_vm::field_warp_tile::pad_suppressed(&self.locomotion.warp)
+            && !legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp)
             && !self.cutscene.opening_chain_active
             && !self.dialogue_owns_input()
             && !self.script_context_engages_player()
@@ -816,7 +818,7 @@ impl World {
             && !self.shops.prize_exchange_open
             && !self.cutscene_narration_active()
             && self.cutscene.card.is_none()
-            && self.field_menu_button_state() == legaia_engine_vm::field_state_pick::STATE_NORMAL
+            && self.field_menu_button_state() == legaia_engine_field::field_state_pick::STATE_NORMAL
     }
 
     /// The handler id the menu button's subsystem actor moves on to.
@@ -829,14 +831,14 @@ impl World {
     /// debug word `_DAT_8007B98C` is set and the packed pad holds `0x100` -
     /// then `0x13`, a debug screen the engine does not have. The engine's
     /// debug word is the overworld controller's
-    /// [`crate::world_map::WorldMapController::debug_enabled`] (the same
+    /// [`legaia_engine_field::world_map::WorldMapController::debug_enabled`] (the same
     /// `_DAT_8007B98C` gate the top-view toggle reads); in a field scene it is
     /// retail's zero.
     ///
     /// PORT driver for FUN_801F1F4C (the kernel is
-    /// `legaia_engine_vm::field_state_pick::state_pick`)
+    /// `legaia_engine_field::field_state_pick::state_pick`)
     pub fn field_menu_button_state(&self) -> u16 {
-        use legaia_engine_vm::field_state_pick::{StatePickInputs, state_pick};
+        use legaia_engine_field::field_state_pick::{StatePickInputs, state_pick};
         let debug = self
             .world_map
             .ctrl
@@ -845,11 +847,13 @@ impl World {
         let inputs = StatePickInputs {
             script_resume_slot: u32::from(self.field_vm.submode_screen.park_sub_op.is_some()),
             debug_mode: u32::from(debug),
-            pad_mask: u32::from(crate::world_map_panel_host::packed_pad(self.input.pad())),
+            pad_mask: u32::from(legaia_engine_field::world_map_panel_host::packed_pad(
+                self.input.pad(),
+            )),
         };
         state_pick(
             inputs,
-            legaia_engine_vm::field_subsystem_enter::STATE_PICK_HANDLER,
+            legaia_engine_field::field_subsystem_enter::STATE_PICK_HANDLER,
         )
         .actor_state
     }

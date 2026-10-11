@@ -11,13 +11,13 @@
 //!    overlay writes.
 //! 2. **The descriptor.** The ring drainer `FUN_80016B6C` indexes
 //!    `&DAT_8006F198 + ring_value * 8` - so the ring value **is** the static
-//!    SFX-descriptor index ([`legaia_asset::sfx_table`],
+//!    SFX-descriptor index ([`legaia_game_tables::sfx_table`],
 //!    [`docs/formats/sfx-table.md`]). Each descriptor gives program + tone +
 //!    note + voice count.
 //! 3. **The bank, which the cue names itself.** The descriptor's program/tone
 //!    index a loaded VAB, and its `+4` **category** picks *which* VAB: the
 //!    category selects a 12-byte mixer record whose `+8` is a VAB slot id
-//!    (`legaia_asset::sfx_table::slot_for_category`). All four slots retail's
+//!    (`legaia_game_tables::sfx_table::slot_for_category`). All four slots retail's
 //!    descriptors reach name PROT entries; this page stages two of them,
 //!    which is an SPU-region budget rather than a gap in the map - slot `0` = the
 //!    system bank PROT [`SFX_SYSTEM_BANK_PROT_INDEX`] behind the shared UI
@@ -35,21 +35,23 @@
 
 use super::*;
 
-use legaia_asset::sfx_table::{FALLBACK_VAB_SLOT, SfxTable};
+use legaia_game_tables::sfx_table::{FALLBACK_VAB_SLOT, SfxTable};
 use std::collections::BTreeMap;
 
 /// Class-2 sound bank (raw loader index `0x367`): the SFX VAB both the battle
 /// scene loader `FUN_800520F0` and the Baka Fighter init `FUN_801CF00C` load.
 /// This is VAB slot `2`, the bank a **category-2** cue keys.
-pub const SFX_BANK_PROT_INDEX: u32 = legaia_asset::sfx_table::SLOT2_CLASS2_BANK_PROT_INDEX;
+pub const SFX_BANK_PROT_INDEX: u32 = legaia_game_tables::sfx_table::SLOT2_CLASS2_BANK_PROT_INDEX;
 /// The alternate class-2 bank `FUN_800520F0` swaps in on `DAT_8007BD11 == 4`
 /// (raw `0x36D`). Used as a fallback when [`SFX_BANK_PROT_INDEX`] doesn't
 /// parse on a given image.
-pub const SFX_BANK_ALT_PROT_INDEX: u32 = legaia_asset::sfx_table::SLOT2_CLASS2_BANK_ALT_PROT_INDEX;
+pub const SFX_BANK_ALT_PROT_INDEX: u32 =
+    legaia_game_tables::sfx_table::SLOT2_CLASS2_BANK_ALT_PROT_INDEX;
 /// VAB slot `0`, the system bank a **category-0** cue keys - which is every
 /// shared UI blip this page fires (`0x1A`, `0x20`, `0x21`, `0x37`), the duel's
 /// own menu included.
-pub const SFX_SYSTEM_BANK_PROT_INDEX: u32 = legaia_asset::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX;
+pub const SFX_SYSTEM_BANK_PROT_INDEX: u32 =
+    legaia_game_tables::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX;
 
 /// Exchange hit - disc-sourced: `FUN_801D3B18` writes `_DAT_8007b6d8 = 9`
 /// when it applies an exchange's damage.
@@ -159,7 +161,7 @@ const MAX_CUE_SAMPLES: usize = legaia_engine_audio::SPU_INTERNAL_RATE as usize *
 fn render_cue(
     bank_buf: &[u8],
     report: &legaia_vab::VabReport,
-    desc: &legaia_asset::sfx_table::SfxDescriptor,
+    desc: &legaia_game_tables::sfx_table::SfxDescriptor,
     id: u8,
 ) -> Option<RenderedCue> {
     use legaia_engine_audio::{Spu, VabBank, spu::ram::SpuAllocator};
@@ -233,7 +235,10 @@ struct SlotBank {
 /// the map, which routes its cues to the fallback.
 fn read_slot_banks(prot: &[u8], entries: &[disc::EntryMeta]) -> BTreeMap<u8, SlotBank> {
     let mut banks = BTreeMap::new();
-    for (slot, index) in legaia_asset::sfx_table::PINNED_SLOT_BANKS.iter().copied() {
+    for (slot, index) in legaia_game_tables::sfx_table::PINNED_SLOT_BANKS
+        .iter()
+        .copied()
+    {
         let alt = if slot == FALLBACK_VAB_SLOT {
             SFX_BANK_ALT_PROT_INDEX
         } else {

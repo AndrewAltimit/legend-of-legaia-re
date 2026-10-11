@@ -20,10 +20,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_env;
-use legaia_engine_core::man_field_scripts::ambient_effect_installs;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::ambient_effect_installs;
+use legaia_engine_scene::field_env;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn extracted_root() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -54,17 +54,17 @@ fn ambient_world(
     let scripts = scene.find_event_scripts()?;
     let stager_bytes = scripts.bytes.to_vec();
     let man_bytes = scene.field_man_payload(&index).ok()??;
-    let man_file = legaia_asset::man_section::parse(&man_bytes).ok()?;
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).ok()?;
 
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },
         ..Default::default()
     };
     world.install_field_stagers(&stager_bytes);
-    world.set_vdf_buffer(legaia_engine_core::scene_bundle::find_vdf_buffer(&scene));
+    world.set_vdf_buffer(legaia_engine_scene::scene_bundle::find_vdf_buffer(&scene));
     for &f in flags {
         world.system_flag_set(f);
     }
@@ -75,11 +75,11 @@ fn ambient_world(
     let shared: Vec<Scene> = Vec::new();
     let shared_refs: Vec<&Scene> = shared.iter().collect();
     let (res, _) =
-        legaia_engine_core::scene_resources::SceneResources::build_targeted_with_options(
+        legaia_engine_scene::scene_resources::SceneResources::build_targeted_with_options(
             &scene,
             &shared_refs,
-            legaia_engine_core::scene_resources::BuildOptions {
-                kind: legaia_engine_core::scene_resources::SceneLoadKind::Field,
+            legaia_engine_scene::scene_resources::BuildOptions {
+                kind: legaia_engine_scene::scene_resources::SceneLoadKind::Field,
                 upload_all_tims: false,
                 system_ui: None,
             },
@@ -241,7 +241,7 @@ fn jou_entry_pulse_moves_the_flesh_ground_deltas_or_skip() {
 #[test]
 fn entry_pulse_leaves_retail_static_geometry_still_or_skip() {
     let Some(root) = extracted_root() else { return };
-    let mut host = legaia_engine_core::scene::SceneHost::open_extracted(&root).expect("host");
+    let mut host = legaia_engine_core::scene_host::SceneHost::open_extracted(&root).expect("host");
     for scene in ["chitei2", "balden", "balden2"] {
         host.enter_field_scene(scene, 0).expect("enter scene");
         assert!(

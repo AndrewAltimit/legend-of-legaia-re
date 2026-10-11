@@ -5,7 +5,7 @@
 //! sections are spliced into one TMD, relocated into the present-party
 //! ordinal's runtime texture band, posed from the file's own idle stream, and
 //! the band's pixels and palette come off the same file
-//! ([`legaia_asset::battle_char_assembly`], `docs/formats/character-mesh.md`).
+//! ([`legaia_actor_formats::battle_char_assembly`], `docs/formats/character-mesh.md`).
 //! The port keeps the static PROT 1204 pack (posed from PROT 1203) as a
 //! per-member fallback when the file does not assemble.
 //!
@@ -31,11 +31,11 @@
 //! palette, art bank), the party **ordinal** picks the runtime band
 //! (`relocate_tsb_cba` x = `0x200 + i*0x80`, CLUT row `481 + i`).
 
-use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::face_anim::FaceTracks;
-use legaia_asset::monster_archive::MonsterAnimation;
+use legaia_actor_formats::battle_char_assembly as bca;
+use legaia_actor_formats::face_anim::FaceTracks;
+use legaia_actor_formats::monster_archive::MonsterAnimation;
 
-use crate::scene::ProtIndex;
+use legaia_engine_scene::scene::ProtIndex;
 
 /// Extraction PROT of Vahn's player battle file; character `c` is `+ c`.
 pub const PLAYER_BATTLE_FILE_BASE: u32 = 863;
@@ -54,8 +54,8 @@ pub type BonePose = ([i16; 3], [i16; 3]);
 /// The per-battle sources every member draws from: the PROT 1204 fallback
 /// pack and the PROT 1203 rest-pose banks.
 pub struct PartyFormSources {
-    pub pack: legaia_asset::battle_char_pack::BattleCharPack,
-    pub fallback_poses: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    pub pack: legaia_actor_formats::battle_char_pack::BattleCharPack,
+    pub fallback_poses: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
 }
 
 impl PartyFormSources {
@@ -72,18 +72,18 @@ impl PartyFormSources {
     /// ([`build_party_battle_form`]).
     pub fn load(index: &ProtIndex) -> Option<Self> {
         let mesh = index
-            .entry_bytes(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
+            .entry_bytes(legaia_actor_formats::battle_char_pack::PROT_ENTRY_INDEX)
             .ok()?;
         let atlas = index
-            .entry_bytes(legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX)
+            .entry_bytes(legaia_actor_formats::battle_char_pack::ATLAS_PROT_ENTRY_INDEX)
             .ok()?;
-        let pack = legaia_asset::battle_char_pack::parse(&mesh, &atlas).ok()?;
+        let pack = legaia_actor_formats::battle_char_pack::parse(&mesh, &atlas).ok()?;
         let fallback_poses = index
             .entry_bytes_extended(FALLBACK_POSE_PROT_INDEX)
             .ok()
             .and_then(|raw| {
                 [6usize, 3, 5, 7].iter().find_map(|&dc| {
-                    legaia_asset::player_anm::find_in_entry(&raw, dc)
+                    legaia_actor_formats::player_anm::find_in_entry(&raw, dc)
                         .into_iter()
                         .next()
                 })
@@ -197,7 +197,7 @@ impl VramSink for VramWriteLog {
 }
 
 /// A battle's whole party form set, built and installed once per fight by
-/// the engine ([`crate::scene::SceneHost::ensure_battle_party_forms`]) and
+/// the engine ([`crate::scene_host::SceneHost::ensure_battle_party_forms`]) and
 /// kept for the renderers: the forms carry the meshes, rest poses and face
 /// tracks a host draws, [`Self::vram_writes`] the pixels it samples. By the
 /// time a host reads this, the clips, art bank and art records have already
@@ -215,7 +215,7 @@ pub struct BattlePartyForms {
 /// VRAM writes are recorded, not applied; a renderer replays them.
 ///
 /// This is the injection point for a session that holds a [`World`] but no
-/// [`crate::scene::SceneHost`] (and so no disc index): it calls this itself
+/// [`crate::scene_host::SceneHost`] (and so no disc index): it calls this itself
 /// after [`crate::world::World::enter_battle`]. A world with no disc behind
 /// it has no player files to assemble, and its party fights with no clips
 /// and no arts.
@@ -354,7 +354,7 @@ fn assemble(
     let warn = |what: &str, e: &dyn std::fmt::Display| {
         log::warn!("battle party {cslot}: {what}: {e:#} (PROT 1204 fallback)");
     };
-    let file_pack = legaia_asset::battle_data_pack::parse(raw)
+    let file_pack = legaia_actor_formats::battle_data_pack::parse(raw)
         .map_err(|e| warn("player-file pack", &e))
         .ok()?;
     let mut asm = bca::assemble_character(raw, &file_pack, equipped)
@@ -414,7 +414,7 @@ fn assemble(
     // `0xC..=0xF`; the face tracks follow the same keys.
     let mut clips: Vec<Option<MonsterAnimation>> = vec![None; bca::ACTION_SLOT_COUNT];
     let mut faces: Vec<Option<FaceTracks>> = vec![None; bca::ACTION_SLOT_COUNT];
-    match legaia_asset::face_anim::battle_face_tracks(raw) {
+    match legaia_actor_formats::face_anim::battle_face_tracks(raw) {
         Ok(t) => faces = t,
         Err(e) => log::warn!("battle party {cslot}: face-track decode: {e:#}"),
     }
@@ -453,8 +453,8 @@ fn assemble(
         })
         .unwrap_or_default();
     let face_tracks = (real_band
-        && cslot < legaia_asset::face_anim::FACE_CHAR_COUNT
-        && member < legaia_asset::face_anim::FACE_SLOT_COUNT)
+        && cslot < legaia_actor_formats::face_anim::FACE_CHAR_COUNT
+        && member < legaia_actor_formats::face_anim::FACE_SLOT_COUNT)
         .then_some(faces);
     let form = PartyBattleForm {
         member,
@@ -536,9 +536,10 @@ fn overlay_battle_palette(
     cols.sort_unstable();
     cols.dedup();
     let pal = match cslot {
-        0 => legaia_asset::battle_char_palette::find_record0(raw)
-            .and_then(|rec0| legaia_asset::battle_char_palette::parse_record(raw, rec0).ok()),
-        1..=3 => legaia_asset::battle_char_palette::collect_palette(raw, 0, &cols).ok(),
+        0 => legaia_actor_formats::battle_char_palette::find_record0(raw).and_then(|rec0| {
+            legaia_actor_formats::battle_char_palette::parse_record(raw, rec0).ok()
+        }),
+        1..=3 => legaia_actor_formats::battle_char_palette::collect_palette(raw, 0, &cols).ok(),
         _ => None,
     };
     let Some(pal) = pal else { return };
@@ -633,7 +634,7 @@ impl crate::world::World {
     pub fn install_party_battle_form(&mut self, form: &mut PartyBattleForm) {
         let member = form.member;
         if let Some(anim) = &form.idle
-            && let Some(player) = crate::battle_anim::MonsterAnimPlayer::new(anim)
+            && let Some(player) = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(anim)
         {
             self.set_actor_battle_animation(member, player);
         }
@@ -671,7 +672,7 @@ impl crate::world::World {
             .get(actor)
             .is_some_and(|a| a.battle_animation.is_none())
             && let Some(anim) = idle
-            && let Some(player) = crate::battle_anim::MonsterAnimPlayer::new(anim)
+            && let Some(player) = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(anim)
         {
             self.set_actor_battle_animation(actor, player);
         }

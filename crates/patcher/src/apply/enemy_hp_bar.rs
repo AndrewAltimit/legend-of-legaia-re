@@ -1,4 +1,4 @@
-//! Enemy HP bars. See [`crate::enemy_hp_bar`] for the routine, its four
+//! Enemy HP bars. See [`legaia_code_hooks::enemy_hp_bar`] for the routine, its four
 //! unreferenced host bodies and the hook site.
 
 use super::*;
@@ -29,9 +29,9 @@ pub fn inject_enemy_hp_bar(patcher: &mut DiscPatcher) -> Result<EnemyHpBarReport
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for enemy HP bars")?;
     let overlay = patcher
-        .read_entry(crate::enemy_hp_bar::OVERLAY_PROT_INDEX)
+        .read_entry(legaia_code_hooks::enemy_hp_bar::OVERLAY_PROT_INDEX)
         .context("read battle-action overlay (0898) for enemy HP bars")?;
-    let plan = crate::enemy_hp_bar::EnemyHpBarInjection::plan(&scus, &overlay)?;
+    let plan = legaia_code_hooks::enemy_hp_bar::EnemyHpBarInjection::plan(&scus, &overlay)?;
     for edit in &plan.edits {
         match edit.prot_index {
             None => patcher

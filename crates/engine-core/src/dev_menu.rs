@@ -38,7 +38,7 @@
 //! The dev overlay reads the **packed** pad words `_DAT_8007bb84` (edge)
 //! and `_DAT_8007b850` (held), built by the pad-mask packer `FUN_8001822C`
 //! from pad-1's low 16 bits. That packing is **not** the raw-BIOS
-//! [`crate::input::PadButton`] layout - it is the fishing/tile-board/dance
+//! [`legaia_engine_system::input::PadButton`] layout - it is the fishing/tile-board/dance
 //! layout: `0x10` Triangle, `0x20` Circle, `0x40` Cross, `0x80` Square,
 //! `0x1000` Up, `0x2000` Right, `0x4000` Down, `0x8000` Left. The
 //! [`PACK_*`](PACK_UP) constants below are that layout; do not substitute
@@ -52,12 +52,9 @@
 //! through [`flag_list_tags`] when they open the screen
 //! (`SceneHost::dev_flag_list_tags`); a host that cannot read the entry
 //! leaves the list empty, and the raw value editor works without it.
-/// The packed pad layout and its converter live in `legaia_engine_vm::pad`
+/// The packed pad layout and its converter live in `legaia_engine_system::pad`
 /// so the minigame crate shares them.
-pub use legaia_engine_vm::pad::{
-    PACK_CIRCLE, PACK_CROSS, PACK_DOWN, PACK_LEFT, PACK_RIGHT, PACK_SQUARE, PACK_TRIANGLE, PACK_UP,
-    retail_packed,
-};
+use legaia_engine_system::pad::{PACK_DOWN, PACK_LEFT, PACK_RIGHT, PACK_TRIANGLE, PACK_UP};
 
 /// Fine value step (Up/Down without the Triangle modifier).
 pub const FLAG_STEP_FINE: i32 = 0x8;
@@ -224,6 +221,8 @@ impl EventFlagEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_engine_system::pad::PACK_CIRCLE;
+    use legaia_engine_system::pad::PACK_CROSS;
 
     #[test]
     fn the_flag_list_projection_ends_on_the_sentinel() {

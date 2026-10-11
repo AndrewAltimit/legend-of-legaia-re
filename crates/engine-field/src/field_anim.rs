@@ -1,29 +1,29 @@
 //! Field-player locomotion clip playback.
 //!
 //! Drives the party locomotion ANM bundle (PROT 0874 §1,
-//! [`legaia_asset::character_pack::field_locomotion_anm`]) at runtime: the
+//! [`legaia_actor_formats::character_pack::field_locomotion_anm`]) at runtime: the
 //! standing **idle** loop (bank slot
-//! [`legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT`]) while the player
+//! [`legaia_actor_formats::character_pack::LOCOMOTION_IDLE_SLOT`]) while the player
 //! stands, the **walk** loop (bank slot
-//! [`legaia_asset::character_pack::LOCOMOTION_WALK_SLOT`]) while pad / nav
+//! [`legaia_actor_formats::character_pack::LOCOMOTION_WALK_SLOT`]) while pad / nav
 //! locomotion moves the player - the same two records the retail player
 //! actor's `+0x4C` anim pointer alternates between (pinned live via
 //! `scripts/pcsx-redux/autorun_locomotion_clip_pin.lua`).
 //!
 //! REF: FUN_8001B964 - the retail per-actor animated renderer walks the
 //! record's per-(bone, frame) 8-byte entries each draw; the per-entry decode
-//! is ported at [`legaia_asset::player_anm::BoneTransform::decode`]
+//! is ported at [`legaia_actor_formats::player_anm::BoneTransform::decode`]
 //! (`FUN_8001BE80`). This module owns the playhead: it pre-decodes every
 //! frame of a clip and emits one [`PoseFrame`] per engine tick, which the
 //! host's posed-mesh rebuild consumes exactly like the battle
-//! `legaia_engine_core::battle_anim::MonsterAnimPlayer` output. A clip whose record
+//! `legaia_engine_battle::battle_anim::MonsterAnimPlayer` output. A clip whose record
 //! carries the blend gate is posed between two keyframes on the ticks that
 //! fall inside a frame, through the same blender
-//! ([`legaia_asset::player_anm::blend_bone_transform`]) the prop path samples
+//! ([`legaia_actor_formats::player_anm::blend_bone_transform`]) the prop path samples
 //! through.
 
+use legaia_actor_formats::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transform};
 use legaia_anm::PoseFrame;
-use legaia_asset::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transform};
 
 /// The clip rate `actor+0x6A` a field actor plays at: the placed-object
 /// template's `0x10` halved by `FUN_8003A55C`, and the value the player's
@@ -32,9 +32,7 @@ use legaia_asset::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transf
 /// every two engine ticks (one tick = one vsync, the frame step `1`).
 pub const CLIP_RATE: u16 = 8;
 
-/// The clip step and clip-end timing live in `legaia_engine_vm::field_player_clip`
-/// so the minigame crate shares them.
-pub use legaia_engine_vm::field_player_clip::{clip_end_ticks, clip_step};
+use legaia_engine_vm::actor_tick::clip_step;
 
 /// Looping playback over one field clip: all frames pre-decoded to the
 /// `(translation, rotation)` pairs [`PoseFrame`] carries, walked by retail's
@@ -49,7 +47,7 @@ pub struct FieldClipPlayer {
     cursor: u32,
     /// Cursor units added per engine tick ([`clip_step`]).
     step: u32,
-    /// The record's blend gate ([`legaia_asset::player_anm::PlayerAnmRecord::blends`]):
+    /// The record's blend gate ([`legaia_actor_formats::player_anm::PlayerAnmRecord::blends`]):
     /// set, a cursor that falls inside a frame poses between it and the next.
     blend: bool,
     /// The clamp bit (`actor+0x62 & 8`) the frame blender reads on the last
@@ -117,7 +115,7 @@ impl FieldClipPlayer {
     }
 
     /// Engine ticks one pass of the clip takes: bind to end latch, which is
-    /// also the loop period. See [`clip_end_ticks`].
+    /// also the loop period. See [`legaia_engine_vm::actor_tick::clip_end_ticks`].
     pub fn loop_ticks(&self) -> u32 {
         let span = self.frames.len() as u32 * 16;
         if span == 0 {
@@ -160,7 +158,7 @@ impl FieldClipPlayer {
     }
 
     /// Pose from an externally ticked cursor - the world-owned
-    /// `legaia_engine_core::field_env::PropAnim` an NPC actor's `+0x62` word drives
+    /// `legaia_engine_scene::field_env::PropAnim` an NPC actor's `+0x62` word drives
     /// (`legaia_engine_core::world::World::sync_npc_clip`) - instead of this player's own
     /// free-running loop. `clamp` is the cursor's clamp bit (`+0x62 & 8`).
     pub fn set_cursor(&mut self, cursor: u32, clamp: bool) {
@@ -343,7 +341,7 @@ impl FieldPlayerAnim {
     /// Both play hosts build the player's clips here, so a bank slot one host
     /// can play the other can too.
     pub fn from_locomotion_bank(bundle: &PlayerAnmBundle, leader: usize) -> Option<Self> {
-        use legaia_asset::character_pack::{
+        use legaia_actor_formats::character_pack::{
             LOCOMOTION_BANK_STRIDE, LOCOMOTION_IDLE_SLOT, LOCOMOTION_WALK_SLOT,
             locomotion_record_index,
         };
@@ -494,7 +492,7 @@ impl FieldPlayerAnim {
         if !script_moved && let Some(slot) = self.retail_slot.filter(|&s| self.has_bank_slot(s)) {
             let rewind = self.playing_slot != Some(slot);
             self.playing_slot = Some(slot);
-            self.walking = slot == legaia_asset::character_pack::LOCOMOTION_WALK_SLOT;
+            self.walking = slot == legaia_actor_formats::character_pack::LOCOMOTION_WALK_SLOT;
             let clip = self.bank[slot].as_mut().expect("has_bank_slot");
             if rewind {
                 clip.rewind();
@@ -526,7 +524,7 @@ impl FieldPlayerAnim {
 /// `r * 100 + f * 10 + b` (low byte).
 #[doc(hidden)]
 pub fn synth_anm_bundle(records: &[(u16, u8)]) -> PlayerAnmBundle {
-    use legaia_asset::player_anm::{ANM_MARKER_1, parse};
+    use legaia_actor_formats::player_anm::{ANM_MARKER_1, parse};
     let mut buf = Vec::new();
     buf.extend_from_slice(&(records.len() as u32).to_le_bytes());
     let mut off = (4 + 4 * records.len()) as u32;
@@ -553,7 +551,7 @@ pub fn synth_anm_bundle(records: &[(u16, u8)]) -> PlayerAnmBundle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::player_anm::{ANM_MARKER_1, parse};
+    use legaia_actor_formats::player_anm::{ANM_MARKER_1, parse};
 
     /// Synthetic 2-record bundle: record 0 = "walk" (2 bones, 3 frames),
     /// record 1 = "idle" (2 bones, 2 frames). Frame f bone b tags t_x with
@@ -677,54 +675,6 @@ mod tests {
         q.advance(1);
         assert_eq!(q.pose_key(), 0);
         assert_eq!(q.current_pose().bone_outputs[0].0[0], 100);
-    }
-
-    /// The step select of `FUN_800204F8` at the template rate: ungated
-    /// clips step by the rate, gated ones by `(rate*2 + div - 1) / div`.
-    #[test]
-    fn clip_step_matches_the_retail_select() {
-        assert_eq!(
-            clip_step(CLIP_RATE, false, 4),
-            8,
-            "ungated ignores the divisor"
-        );
-        let gated: Vec<u16> = [1u8, 2, 3, 4, 6]
-            .iter()
-            .map(|&d| clip_step(CLIP_RATE, true, d))
-            .collect();
-        assert_eq!(gated, vec![16, 8, 6, 4, 3]);
-        assert_eq!(clip_step(CLIP_RATE, true, 0), CLIP_RATE, "div 0 falls back");
-        // A script's `4C 41` rate (`16` = a door's one frame a tick).
-        assert_eq!(clip_step(16, true, 4), 8);
-    }
-
-    /// The end latch lands on the first tick whose cursor reaches the last
-    /// position; at the ungated step that is the old two-ticks-a-frame length,
-    /// at divisor 4 twice it, and the player's loop period agrees.
-    #[test]
-    fn clip_end_ticks_is_the_first_tick_at_the_last_position() {
-        for frames in 1u16..=20 {
-            for step in [16u16, 8, 6, 4, 3] {
-                let last = u32::from(frames) * 16 - 1;
-                let mut cursor = 0u32;
-                let mut ticks = 0u32;
-                loop {
-                    cursor += u32::from(step);
-                    ticks += 1;
-                    if cursor >= last {
-                        break;
-                    }
-                }
-                assert_eq!(
-                    clip_end_ticks(frames, step),
-                    ticks,
-                    "{frames} frames, step {step}"
-                );
-            }
-            assert_eq!(clip_end_ticks(frames, 8), u32::from(frames) * 2);
-            assert_eq!(clip_end_ticks(frames, 4), u32::from(frames) * 4);
-        }
-        assert_eq!(clip_end_ticks(0, 8), 0);
     }
 
     /// A gated divisor-4 record plays at half the ungated speed: four ticks a

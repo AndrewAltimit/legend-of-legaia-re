@@ -68,8 +68,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost, SceneTickEvent};
-use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig};
+use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
+use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -99,8 +101,8 @@ fn open_host() -> Option<SceneHost> {
     // refuses to read hollow slots as a dead party; see
     // `BattleActionHost::slot_seated`).
     let scus = std::fs::read(extracted.join("SCUS_942.54")).expect("read SCUS_942.54");
-    let party =
-        legaia_asset::new_game::StartingParty::from_scus(&scus).expect("SCUS new-game template");
+    let party = legaia_game_tables::new_game::StartingParty::from_scus(&scus)
+        .expect("SCUS new-game template");
     host.world.seed_starting_party(&party);
     Some(host)
 }
@@ -174,7 +176,7 @@ fn assert_scene_man(index: &ProtIndex, name: &str, want_counts: [i16; 3]) {
         .field_man_payload(index)
         .unwrap_or_else(|e| panic!("{name}: field_man_payload: {e:#}"))
         .unwrap_or_else(|| panic!("{name}: no MAN resolves"));
-    let mf = legaia_asset::man_section::parse(&man)
+    let mf = legaia_scene_formats::man_section::parse(&man)
         .unwrap_or_else(|e| panic!("{name}: parse MAN: {e:#}"));
     assert_eq!(
         mf.header.partition_counts, want_counts,
@@ -228,7 +230,7 @@ fn drive_map01_portal_into_with_flags(dest: &str, flags: &[u16]) -> Option<Scene
     host.world.set_pad(0);
     let mut entered = None;
     // + the scene-change hold (`FUN_80021934`'s countdown).
-    for _ in 0..8 + legaia_engine_core::scene_transition_actor::HOLD_TICKS {
+    for _ in 0..8 + legaia_engine_field::scene_transition_actor::HOLD_TICKS {
         if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
             entered = Some(name);
             break;
@@ -370,7 +372,7 @@ fn part_c_rikuroa_arms_and_fights_the_caruban_scripted_boss() {
     host.world.toggles.live_gameplay_loop = true;
     host.world
         .seat_player_at_tile(RIKUROA_STAGER_STATION_TILE.0, RIKUROA_STAGER_STATION_TILE.1);
-    let cross = legaia_engine_core::input::PadButton::Cross.mask();
+    let cross = legaia_engine_system::input::PadButton::Cross.mask();
     let mut reached_battle = false;
     let mut ticks = 0u32;
     while ticks < 4000 {

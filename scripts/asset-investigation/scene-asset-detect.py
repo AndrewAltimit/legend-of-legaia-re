@@ -47,7 +47,7 @@ def main() -> int:
 
     cat_path = EXTRACTED / "PROT" / "categorize.json"
     if not cat_path.exists():
-        print(f"missing {cat_path}; run `legaia-asset categorize` first")
+        print(f"missing {cat_path}; run `asset categorize` first")
         return 1
 
     cat = json.load(cat_path.open())

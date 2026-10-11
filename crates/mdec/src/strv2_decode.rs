@@ -71,7 +71,7 @@
 //! that selects this decoder. The overlay's master dispatch picks a bitstream
 //! per `fmv_id` and only slots 9 and 10 - `MV1A.STR` and `MOV15.STR` - clear
 //! the Iki flag; the disc's `MOV` directory holds `MV1.STR`..`MV6.STR` and
-//! neither of those two, so `legaia_engine_core::cutscene::fmv_bitstream`
+//! neither of those two, so `legaia_engine_system::movie::cutscene::fmv_bitstream`
 //! returns `Iki` for every reachable id and the STR player's
 //! [`Bitstream::Strv2`] arm never comes up. Retail's own playback path never
 //! runs this either, which is what puts the row in the replaced class rather

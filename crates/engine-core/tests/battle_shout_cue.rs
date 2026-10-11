@@ -4,7 +4,7 @@
 //! character slot and that art's record action constant - and a synthetic
 //! entry with no matched record queues none (the retail silent-art
 //! degradation). The disc-gated sibling
-//! (`engine-shell/tests/arts_shout_battle.rs`) carries the cue through the XA
+//! (`engine-session/tests/arts_shout_battle.rs`) carries the cue through the XA
 //! clip bank into the audio mix.
 //!
 //! The pad path here is the one a player actually walks under the retail
@@ -14,12 +14,13 @@
 //! something the player *types* with the d-pad, which is why a driver that
 //! only presses Cross reaches no art at all.
 //!
-//! [`BattleShoutCue`]: legaia_engine_core::battle_events::BattleShoutCue
+//! [`BattleShoutCue`]: legaia_engine_battle::battle_events::BattleShoutCue
 
-use legaia_engine_core::arts_command_input::ArtsInputScreen;
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::arts_command_input::ArtsInputScreen;
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// Vahn's Somersault (`0x27`) with its real `↑↓↑` command - the queue-builder
 /// is byte-exact, so the entry has to be typed the way retail types it.
@@ -73,7 +74,7 @@ fn build_world(with_record: bool) -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("shout_cue_test");
@@ -112,8 +113,8 @@ fn walk_into_battle(w: &mut World) {
 fn drive_arts_entry_and_collect_shouts(
     w: &mut World,
     entry: &[PadButton],
-) -> Vec<legaia_engine_core::battle_events::BattleShoutCue> {
-    use legaia_engine_core::battle_input::BattleCommand;
+) -> Vec<legaia_engine_battle::battle_events::BattleShoutCue> {
+    use legaia_engine_menus::battle_input::BattleCommand;
 
     walk_into_battle(w);
 
@@ -153,7 +154,7 @@ fn drive_arts_entry_and_collect_shouts(
             // whatever the cursor is on; the other presses are the spatial
             // seatings - Left onto the `Attack` arm, Left/Right onto the
             // `Auto`/`Command` chip.
-            use legaia_engine_core::battle_input::{AttackMode, CommandPhase};
+            use legaia_engine_menus::battle_input::{AttackMode, CommandPhase};
             match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
                     InputState::mask_of([PadButton::Left])
@@ -241,7 +242,7 @@ fn synthetic_art_without_record_emits_no_shout_cue() {
 /// no-confirm path end to end.
 #[test]
 fn every_art_in_a_multi_art_entry_gets_its_own_shout_cue() {
-    use PadButton::{Down, Up};
+    use legaia_engine_system::input::PadButton::{Down, Up};
     let mut w = build_world(true);
     w.battle.swing_costs[0] = [11; 4];
     let shouts =

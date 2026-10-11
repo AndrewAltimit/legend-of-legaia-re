@@ -37,7 +37,7 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::battle_tutorial::{self as tut, BattleTutorialScript};
-use legaia_engine_core::input::PadButton;
+use legaia_engine_system::input::PadButton;
 use legaia_prot::archive::Archive;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
@@ -62,12 +62,12 @@ fn extracted_dir() -> Option<PathBuf> {
 /// is checked against the disc rather than against itself.
 fn disc_corpus() -> Option<BattleTutorialScript> {
     let extracted = extracted_dir()?;
-    let rec = legaia_asset::static_overlay::overlay_map().by_label("battle_tutorial")?;
+    let rec = legaia_overlay_images::static_overlay::overlay_map().by_label("battle_tutorial")?;
     let mut archive = Archive::open(&extracted.join("PROT.DAT")).ok()?;
     let entry = archive.entries.get(rec.prot_index as usize)?.clone();
     let mut bytes = Vec::new();
     archive.read_entry(&entry, &mut bytes).ok()?;
-    let loaded = legaia_asset::static_overlay::as_loaded(&bytes, rec).ok()?;
+    let loaded = legaia_overlay_images::static_overlay::as_loaded(&bytes, rec).ok()?;
     Some(BattleTutorialScript::from_overlay(&loaded, rec.base_va))
 }
 
@@ -204,8 +204,8 @@ fn the_play_page_shows_the_sparring_tutorial_under_the_disc_condition() {
     // first box the page composes; the lesson-0 intro is the second.
     let scus = legaia_web_viewer::disc::extract_scus(&std::fs::read(&disc).expect("disc"))
         .expect("SCUS_942.54 in disc image");
-    let caption = legaia_asset::battle_ui_strings::BattleUiStrings::from_scus(&scus)
-        .get(legaia_asset::battle_ui_strings::BattleUiLabel::SparringIntro)
+    let caption = legaia_ui_formats::battle_ui_strings::BattleUiStrings::from_scus(&scus)
+        .get(legaia_ui_formats::battle_ui_strings::BattleUiLabel::SparringIntro)
         .expect("sparring caption string in SCUS")
         .to_string();
     let norm = |t: &str| -> String {

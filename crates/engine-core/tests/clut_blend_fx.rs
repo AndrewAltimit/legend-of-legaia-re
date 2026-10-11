@@ -5,7 +5,7 @@
 //! the shape jouine's MAN carries (`[DB, x, y, R, G, B, frac, duration]`).
 
 use legaia_engine_core::world::World;
-use legaia_engine_vm::world_map_clut_fade::{ClutBlendFade, FadeRecord, FadeStep};
+use legaia_engine_field::clut_fade_actor::{ClutBlendFade, FadeRecord, FadeStep};
 
 fn record(x: u16, y: u16, rgb: [u8; 3], frac: u16, duration: u16) -> [u8; 12] {
     let mut r = [0u8; 12];

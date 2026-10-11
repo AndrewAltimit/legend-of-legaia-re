@@ -14,7 +14,7 @@
 //!
 //! [`still_sheet_rgba`] is the upload: it lays the entry's four bands down at
 //! the rectangles the loader's own rect stores name
-//! ([`legaia_engine_vm::panel_backread_loader::backread_slice_rect`]),
+//! ([`legaia_engine_battle_vm::panel_backread_loader::backread_slice_rect`]),
 //! relative to the region's origin, so the sheet's pixel `(x, y)` is VRAM
 //! `(384 + x, y)`. [`ringside_still_quads`] is the draw, and
 //! [`StillDraw::from_quad`] turns a quad's texture-page address back into a
@@ -27,9 +27,9 @@
 //! more sheet. What makes it the still and not an arbitrary picture is that
 //! the quads name it by texture page, exactly as retail's do.
 
-use crate::other_game_hud::{HudQuad, HudSprite};
-use legaia_asset::ringside_still as still;
-use legaia_engine_vm::panel_backread_loader::{BACKREAD_RECT_X, backread_slice_rect};
+use crate::muscle_dome_hud::{HudQuad, HudSprite};
+use legaia_engine_battle_vm::panel_backread_loader::{BACKREAD_RECT_X, backread_slice_rect};
+use legaia_minigame_formats::ringside_still as still;
 
 /// GP0 command byte of the two packets: `0x2C`, a flat-shaded, textured,
 /// opaque, modulated four-point polygon (`POLY_FT4`).
@@ -123,14 +123,14 @@ pub const FIRST_VISIT_TILE_RECORD: i32 = 2;
 /// emitter `FUN_801D08EC`, top-left `(i << 7, j << 7)`, at scale `0x1000` and
 /// the caller's fade level, rows outermost (`0x801D0148..0x801D0194`).
 ///
-/// The draws carry no brightness: [`crate::other_game_hud::hub_screen_quads`]
+/// The draws carry no brightness: [`crate::muscle_dome_hud::hub_screen_quads`]
 /// takes the level, which is the same `*(0x801D1A7C)` the still arm reads.
 /// The arm's last packet, the full-screen shade, is [`first_visit_shade`].
 ///
 /// PORT: FUN_801d00f8 (the `_DAT_801D1AE0 == 0` arm's tile grid,
 /// `0x801D0148..0x801D0194`)
-pub fn first_visit_tile_draws() -> Vec<crate::other_game_hud::HubDraw> {
-    use crate::other_game_hud::{HubAnchor, HubDraw};
+pub fn first_visit_tile_draws() -> Vec<crate::muscle_dome_hud::HubDraw> {
+    use crate::muscle_dome_hud::{HubAnchor, HubDraw};
     let mut out = Vec::with_capacity(6);
     for j in 0..2i16 {
         for i in 0..3i16 {
@@ -249,7 +249,7 @@ pub fn first_visit_hub_draw(
     course: i32,
     round: i32,
 ) -> FirstVisitDraw {
-    use crate::other_game_hud as hud;
+    use crate::muscle_dome_hud as hud;
     let mut out = FirstVisitDraw::default();
     if levels.backdrop != 0 {
         out.tiles = hud::hub_screen_quads(table, &first_visit_tile_draws(), levels.backdrop);
@@ -301,7 +301,7 @@ pub fn first_visit_hub_draw(
 /// is called with, so a variant-1 packet carries ABR 1 (`B + F`) and a
 /// variant-2 packet ABR 2 (`B - F`) through `clut + 1`. The GPU applies
 /// that equation only to texels whose CLUT colour has STP set. Classify the
-/// CLUTs **as uploaded** (`legaia_asset::muscle_dome::hub_page_tims`): the
+/// CLUTs **as uploaded** (`legaia_minigame_formats::muscle_dome::hub_page_tims`): the
 /// arena raises the upload STP flag before loading the pages, so every
 /// non-empty palette on both rows is all-STP in VRAM even though the file
 /// carries it on four. The variant-2 pass therefore subtracts its white
@@ -309,39 +309,40 @@ pub fn first_visit_hub_draw(
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HubPaletteStp {
     /// `[sheet][sub-palette]`, sheet `0` = tpage bit 4 clear.
-    pages: [Vec<crate::screen_prim::PaletteStp>; 2],
+    pages: [Vec<legaia_render_kernels::screen_prim::PaletteStp>; 2],
 }
 
 impl HubPaletteStp {
     /// Classify both pages' sub-palettes.
     pub fn from_tims(page0: &legaia_tim::Tim, page1: &legaia_tim::Tim) -> Self {
-        let classify = |t: &legaia_tim::Tim| -> Vec<crate::screen_prim::PaletteStp> {
-            (0..t.palette_count())
-                .map(|i| {
-                    t.clut
-                        .as_ref()
-                        .and_then(|c| c.palette(t.mode, i))
-                        .map_or(crate::screen_prim::PaletteStp::None, |p| {
-                            crate::screen_prim::palette_stp(p)
-                        })
-                })
-                .collect()
-        };
+        let classify =
+            |t: &legaia_tim::Tim| -> Vec<legaia_render_kernels::screen_prim::PaletteStp> {
+                (0..t.palette_count())
+                    .map(|i| {
+                        t.clut
+                            .as_ref()
+                            .and_then(|c| c.palette(t.mode, i))
+                            .map_or(legaia_render_kernels::screen_prim::PaletteStp::None, |p| {
+                                legaia_render_kernels::screen_prim::palette_stp(p)
+                            })
+                    })
+                    .collect()
+            };
         HubPaletteStp {
             pages: [classify(page0), classify(page1)],
         }
     }
 
     /// The ABR equation a hub quad's texels go through, or `None` when it
-    /// draws opaque ([`crate::screen_prim::textured_semi_abr`]). A palette
+    /// draws opaque ([`legaia_render_kernels::screen_prim::textured_semi_abr`]). A palette
     /// the pages do not hold classifies as STP-free.
     pub fn quad_abr(&self, q: &HudQuad) -> Option<u8> {
         let sheet = usize::from(q.tpage & 0x10 != 0);
         let stp = self.pages[sheet]
             .get(usize::from(q.clut & 0x3F))
             .copied()
-            .unwrap_or(crate::screen_prim::PaletteStp::None);
-        crate::screen_prim::textured_semi_abr(q.semi_transparent, q.tpage, stp)
+            .unwrap_or(legaia_render_kernels::screen_prim::PaletteStp::None);
+        legaia_render_kernels::screen_prim::textured_semi_abr(q.semi_transparent, q.tpage, stp)
     }
 }
 
@@ -521,7 +522,7 @@ mod tests {
         assert!(draws.iter().all(|d| {
             d.sel == FIRST_VISIT_TILE_RECORD
                 && d.scale == 0x1000
-                && d.anchor == crate::other_game_hud::HubAnchor::Corner
+                && d.anchor == crate::muscle_dome_hud::HubAnchor::Corner
         }));
     }
 

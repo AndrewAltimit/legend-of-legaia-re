@@ -29,10 +29,10 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` or `extracted/` is missing.
 
-use legaia_asset::field_disasm as census;
-use legaia_asset::man_section;
-use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::SfxRingOp;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_system::sound_state::SfxRingOp;
+use legaia_scene_formats::field_disasm as census;
+use legaia_scene_formats::man_section;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -207,12 +207,12 @@ fn every_scripted_cue_resolves_in_its_own_scene() {
         }
         // The motion VM's op `0x09` sites (MAN tail-section 1), walked by
         // op width the way `ambient_motion_disc_oracle` walks them.
-        for rec in legaia_asset::man_motion::motion_records(&man, &man_file) {
-            for var in legaia_asset::man_motion::stream_variants(&man, &rec) {
+        for rec in legaia_scene_formats::man_motion::motion_records(&man, &man_file) {
+            for var in legaia_scene_formats::man_motion::stream_variants(&man, &rec) {
                 let (a, b) = (var.code_offset, var.code_end.min(man.len()));
                 let mut pc = a;
                 while pc < b {
-                    let Some(w) = legaia_asset::man_motion::op_width(man[pc]) else {
+                    let Some(w) = legaia_scene_formats::man_motion::op_width(man[pc]) else {
                         break;
                     };
                     if man[pc] == 0x09 && pc + 3 <= b {

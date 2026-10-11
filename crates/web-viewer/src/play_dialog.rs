@@ -19,11 +19,11 @@
 //!   pages grow it to a 4th row. The drawn skin extends 8 px beyond the
 //!   centre rect on every side (the chrome builder's inflation).
 //! - Picker box: the engine's slide rect
-//!   ([`legaia_engine_core::dialog::OwnedDialogPanel::picker_rect`]), the
+//!   ([`legaia_engine_dialog::dialog::OwnedDialogPanel::picker_rect`]), the
 //!   same one the native window reads - the box slides in from off screen
 //!   and rests at `(0xD8, 0x4A, 0x58, 0x1A)` for a `0x2A` menu, or at
 //!   `(0x26, 0x94 + ((4-n)*0xF)/2, 0xF4, 0x38 - (4-n)*0xF)` for the N-option
-//!   lists ([`legaia_engine_core::dialog_picker_slide`]).
+//!   lists ([`legaia_engine_dialog::dialog_picker_slide`]).
 //! - Text pen = box origin exactly (`FUN_80036888(line, 0, 0, ctx+0x12,
 //!   ctx+0x14 + i*0xF)`), 15-px row pitch, body ink the staged CLUT-7
 //!   (206,206,206) menu white; picker labels at `box_x + 0x10`.
@@ -86,7 +86,7 @@ fn to_ascii(bytes: &[u8]) -> String {
 }
 
 fn from_panel(
-    panel: &legaia_engine_core::dialog::OwnedDialogPanel,
+    panel: &legaia_engine_dialog::dialog::OwnedDialogPanel,
     require_text: bool,
 ) -> Option<DialogSnapshot> {
     let page = ui::dialog_page_string(&panel.page_bytes());
@@ -246,7 +246,7 @@ impl LegaiaRuntime {
             texts.extend(ui::text_balloon_text_draws_for(font, text, *pen));
         }
         if let Some((cursor, lines)) = prompt.as_ref() {
-            let (frame, rows, cursor_x) = legaia_engine_core::tile_board::prompt_layout();
+            let (frame, rows, cursor_x) = legaia_engine_minigames::tile_board::prompt_layout();
             let lay = ui::TileBoardPromptLayout {
                 frame,
                 rows,
@@ -310,7 +310,7 @@ impl LegaiaRuntime {
             } else if let Some(frame) = snap.advance_icon {
                 // The two-frame page mark at the lower-right rim while the
                 // pager waits for confirm (FUN_8002B994 kind 1).
-                let icon = legaia_engine_core::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON
+                let icon = legaia_engine_menus::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON
                     [usize::from(frame) & 1];
                 sprites.push(ui::dialog_page_mark_sprite(icon, lay.main, origin, scale));
             }
@@ -384,7 +384,7 @@ mod tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn text_balloon_reaches_the_page_draw_channel() {
-        use legaia_engine_core::text_balloon::{BALLOON_TOTAL, TextBalloon, balloon_center_x};
+        use legaia_engine_dialog::text_balloon::{BALLOON_TOTAL, TextBalloon, balloon_center_x};
 
         let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
             eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

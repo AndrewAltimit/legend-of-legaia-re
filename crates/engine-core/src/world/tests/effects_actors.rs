@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Accessors round-trip: `set_global_tmd` + `global_tmd` agree on
 /// installed slots, negative indices return `None`, and the pool
@@ -280,7 +281,7 @@ fn notify_art_used_emits_event_and_sets_banner() {
     assert!(banner.text.contains("Art #3"));
     assert_eq!(
         banner.frames_remaining,
-        crate::tactical_arts::ArtLearnedBanner::DEFAULT_FRAMES
+        legaia_engine_battle::tactical_arts::ArtLearnedBanner::DEFAULT_FRAMES
     );
 }
 
@@ -306,7 +307,7 @@ fn banner_countdown_clears_after_frames() {
     // Banner starts at DEFAULT_FRAMES.
     assert!(world.party.current_art_banner.is_some());
     // Tick DEFAULT_FRAMES times; banner should reach 0 and clear.
-    for _ in 0..=crate::tactical_arts::ArtLearnedBanner::DEFAULT_FRAMES {
+    for _ in 0..=legaia_engine_battle::tactical_arts::ArtLearnedBanner::DEFAULT_FRAMES {
         world.tick();
     }
     assert!(
@@ -319,7 +320,7 @@ fn banner_countdown_clears_after_frames() {
 
 /// Field-VM `4C 60` (literal-operand VRAM `MoveImage`): the executing VM
 /// decodes the six LE16 words, the world host queues the stamp
-/// (`op4c_n6_sub0_emitter6` -> `queue_script_vram_move`), and
+/// (`vram_move_image` -> `queue_script_vram_move`), and
 /// `apply_script_vram_moves` performs the `w x h` halfword rect copy against
 /// software VRAM. Operands are the retail town01 opening-record Noa
 /// face-frame stamp `(852, 336, 6, 16) -> (852, 268)`.
@@ -455,7 +456,7 @@ fn a_battle_effect_part_in_render_mode_4_scrolls_the_battle_vram() {
     state.anim_block_u16_set(at(0xD2), 0x70);
     state.anim_block_u16_set(at(0xD4), 8);
     state.anim_block_u16_set(at(0xD6), 0x80);
-    let mut parts = vec![crate::summon::SummonPartRuntime {
+    let mut parts = vec![legaia_engine_effects::summon::SummonPartRuntime {
         model_sel: -1,
         reserved: 0,
         buf: Vec::new(),

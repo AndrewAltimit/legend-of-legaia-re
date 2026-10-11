@@ -2,7 +2,7 @@
 //! retail floats over the player's head while an accessory passive is active
 //! (`FUN_801d095c`).
 //!
-//! `legaia_engine_vm::field_passive_hud` carries both halves of the routine:
+//! `legaia_engine_field::field_passive_hud` carries both halves of the routine:
 //! the three head-relative lifts, and the icon list a resolved anchor
 //! produces. Neither had a caller, and the reason was never a missing
 //! subsystem - the ability bits, the world-to-screen projection and the
@@ -21,7 +21,7 @@
 //! * the encounter badge driven by the **parity** of the two encounter bits,
 //!   so a party carrying both High and Low Encounter shows neither.
 
-use legaia_engine_vm::field_passive_hud::{HudIcon, hud_anchor_offsets, passive_hud_icons};
+use legaia_engine_field::field_passive_hud::{HudIcon, hud_anchor_offsets, passive_hud_icons};
 
 use crate::world::World;
 
@@ -40,7 +40,7 @@ impl World {
     /// subtracts from is retail's own `+0x16`.
     ///
     /// REF: FUN_801d095c (`0x801D098C..0x801D09F4`, ported as
-    /// `legaia_engine_vm::field_passive_hud::hud_anchor_offsets`)
+    /// `legaia_engine_field::field_passive_hud::hud_anchor_offsets`)
     pub fn passive_hud_points(&self) -> Option<PassiveHudPoints> {
         let slot = self.player_actor_slot? as usize;
         let a = self.actors.get(slot)?;
@@ -66,7 +66,7 @@ impl World {
     /// `0x3C`.
     ///
     /// REF: FUN_801d095c (ported as
-    /// `legaia_engine_vm::field_passive_hud::passive_hud_icons`)
+    /// `legaia_engine_field::field_passive_hud::passive_hud_icons`)
     pub fn passive_hud_icons(&self, anchor: (i32, i32)) -> Vec<HudIcon> {
         passive_hud_icons(anchor, |bit| self.party_has_ability(bit))
     }
@@ -75,7 +75,7 @@ impl World {
     /// host can skip the projection entirely on a frame that would draw
     /// nothing.
     pub fn passive_hud_active(&self) -> bool {
-        use legaia_engine_vm::field_passive_hud::ability_bit as b;
+        use legaia_engine_field::field_passive_hud::ability_bit as b;
         [
             b::STACK_A,
             b::STACK_B,
@@ -92,7 +92,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_vm::field_passive_hud::{ability_bit, icon};
+    use legaia_engine_field::field_passive_hud::{ability_bit, icon};
 
     fn world_with_bits(bits: &[u8]) -> World {
         let mut w = World::new();

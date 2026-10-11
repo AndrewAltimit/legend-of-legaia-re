@@ -13,7 +13,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -291,7 +291,7 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
 /// the per-scene MOVE pool (descriptor 4 = `Asset(0x05) = Move`) extracts
 /// to a slice whose length matches `descriptor.size` and which parses as
 /// a [`legaia_mdt::MoveBuffer`] with positive fitness. Catches regressions
-/// in [`legaia_engine_core::scene_bundle::extract_move_payload`] - the
+/// in [`legaia_engine_scene::scene_bundle::extract_move_payload`] - the
 /// install site for retail `_DAT_8007B888` (see `docs/formats/mdt.md`).
 ///
 /// The corpus has 79 scenes with a Move slot (the `(1, 2, 3, 4, 6, 7,
@@ -328,7 +328,7 @@ fn extract_move_payload_yields_real_data_across_corpus() {
             continue;
         };
         let scene = host.scene.as_ref().expect("scene loaded");
-        let Some(bundle) = legaia_engine_core::scene_bundle::find_bundle(scene) else {
+        let Some(bundle) = legaia_engine_scene::scene_bundle::find_bundle(scene) else {
             continue;
         };
         scenes_with_bundle += 1;
@@ -348,7 +348,7 @@ fn extract_move_payload_yields_real_data_across_corpus() {
             .index
             .entry_bytes_extended(bundle.entry_idx())
             .expect("read extended");
-        match legaia_engine_core::scene_bundle::extract_move_payload(&bundle, &extended) {
+        match legaia_engine_scene::scene_bundle::extract_move_payload(&bundle, &extended) {
             Ok(Some(payload)) => {
                 assert_eq!(
                     payload.len(),

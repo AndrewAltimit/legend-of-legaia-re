@@ -2,8 +2,8 @@
 //! the bundle the fishing overlay belongs to) with the party seated on the
 //! shore where the overlay's setup spawns them, framed by the venue camera -
 //! the one kernel both play hosts draw while the world is in
-//! [`crate::world::SceneMode::Fishing`], the way
-//! [`crate::muscle_dome_scene::MuscleDomeSurface`] serves the dome.
+//! [`legaia_engine_mode::mode::SceneMode::Fishing`], the way
+//! [`legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface`] serves the dome.
 //!
 //! Retail's fishing is a scene of its own: the mode-24 door warp
 //! (`FUN_80025980`) swaps the field for the overlay, whose setup state
@@ -15,7 +15,7 @@
 //!
 //! - the **pond** is the `other1` scene's environment pack instanced by its
 //!   `.MAP` placements and terrain layers plus the walk ground, through the
-//!   shared [`crate::field_env`] resolution;
+//!   shared [`legaia_engine_scene::field_env`] resolution;
 //! - the **party** is three field bodies (global character pack slots
 //!   `0..=2`) at [`crate::fishing_venue::party_placements`], the lead on his
 //!   party-bank idle, the others on their venue-bank clips; the lead's
@@ -26,16 +26,16 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use legaia_asset::field_objects::FLAG_PLACED;
-use legaia_asset::player_anm::PlayerAnmBundle;
-use legaia_asset::{character_pack, field_char_textures};
-use legaia_engine_vm::psx_camera::FieldCameraView;
+use legaia_actor_formats::player_anm::PlayerAnmBundle;
+use legaia_actor_formats::{character_pack, field_char_textures};
+use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_scene_formats::field_objects::FLAG_PLACED;
 use legaia_tmd::mesh::VramMesh;
 
 use crate::fishing_venue::{FishingPartyMember, party_placements, venue_camera_view};
-use crate::scene::{ProtIndex, Scene};
-use crate::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 use crate::world::MinigameState;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 
 /// CDNAME label of the fishing venue bundle.
 pub const FISHING_VENUE_SCENE: &str = "other1";
@@ -189,7 +189,7 @@ impl FishingSceneAssets {
             let bones = tmd.objects.len();
             let (mesh, oids, shading) =
                 legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &tmd_bytes);
-            let flat = crate::packet_color::hybrid(&mesh, &shading);
+            let flat = legaia_engine_field::packet_color::hybrid(&mesh, &shading);
             let frames = (!seat.party_bank)
                 .then(|| {
                     anm.as_ref()
@@ -233,7 +233,7 @@ fn bake_env(
     res: &SceneResources,
     anm: Option<&PlayerAnmBundle>,
 ) -> (VramMesh, Vec<u8>) {
-    use crate::field_env;
+    use legaia_engine_scene::field_env;
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
     let binds = scene.field_object_binds(index).ok().flatten();
@@ -260,8 +260,8 @@ fn bake_env(
     let mut ranked: Vec<field_env::EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
     ranked.extend(terrain.iter().copied());
     ranked.extend(placements.iter().copied());
-    let planes = crate::coplanar_draws::draw_plane_summaries(&ranked, res);
-    let lifts = crate::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
+    let planes = legaia_engine_scene::coplanar_draws::draw_plane_summaries(&ranked, res);
+    let lifts = legaia_engine_scene::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
 
     let mut out = empty_mesh();
     let mut flat_out = Vec::new();
@@ -279,8 +279,12 @@ fn bake_env(
                     })
                     .flatten();
                 match &offsets {
-                    Some(o) => crate::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o),
-                    None => crate::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram),
+                    Some(o) => {
+                        legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o)
+                    }
+                    None => {
+                        legaia_engine_scene::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram)
+                    }
                 }
             });
         let lift = lifts.get(draw).copied().unwrap_or([0.0; 3]);
@@ -298,8 +302,11 @@ fn bake_env(
     {
         let base = out.positions.len() as u32;
         for p in &hf.positions {
-            out.positions
-                .push([p[0], p[1] + crate::coplanar_draws::GROUND_SINK, p[2]]);
+            out.positions.push([
+                p[0],
+                p[1] + legaia_engine_scene::coplanar_draws::GROUND_SINK,
+                p[2],
+            ]);
             out.normals.push([0.0, -1.0, 0.0]);
         }
         out.uvs.extend_from_slice(&hf.uvs);
@@ -327,7 +334,7 @@ pub const SKY_CLEAR_RGB: [u8; 3] = [0x17, 0x50, 0xA0];
 
 /// GTE screen centre the backdrop projects through (`OFX`, `OFY`).
 const SKY_OFX: f32 = 160.0;
-const SKY_OFY: f32 = legaia_engine_vm::battle_cam_script::GTE_OFY;
+const SKY_OFY: f32 = legaia_engine_battle_vm::battle_cam_script::GTE_OFY;
 
 /// Eye-space depths the backdrop's world-space stand-ins sit at: far behind
 /// any venue geometry, inside the projection's far plane, the clear colour
@@ -412,7 +419,7 @@ fn unproject(view: &FieldCameraView, x: f32, y: f32, z: f32) -> [f32; 3] {
         e[1] - view.tr_eye[1],
         e[2] - view.tr_eye[2],
     ];
-    let r = legaia_engine_vm::psx_camera::camera_rotation(view.pitch, view.yaw, view.roll);
+    let r = legaia_engine_battle_vm::psx_camera::camera_rotation(view.pitch, view.yaw, view.roll);
     // `R^T d`; column-major `r[c*4 + row]` stores `R[row][c]`.
     let mut out = view.focus;
     for (i, o) in out.iter_mut().enumerate() {
@@ -456,7 +463,7 @@ pub fn sky_mesh(view: &FieldCameraView, lead_x: i16, yaw_units: i16) -> (VramMes
         [r, g, b, 0],
     );
     for q in sky_quads(view, lead_x, yaw_units) {
-        let n = crate::packet_color::NEUTRAL;
+        let n = legaia_engine_field::packet_color::NEUTRAL;
         push(
             &mut m,
             q.xy.map(|p| unproject(view, p[0], p[1], SKY_DEPTH)),
@@ -517,14 +524,14 @@ impl FishingScene {
     /// world vertex by: the camera's Y-up-frame matrix with the single world
     /// flip folded in.
     pub fn vp_raw(&self, aspect: f32) -> [f32; 16] {
-        use legaia_engine_vm::psx_camera::{WORLD_FLIP, mat4_mul};
+        use legaia_engine_battle_vm::psx_camera::{WORLD_FLIP, mat4_mul};
         mat4_mul(&self.camera.vp(aspect), &WORLD_FLIP)
     }
 }
 
 /// The camera yaw global a lead facing publishes (`_DAT_8007B792`).
 fn fa_yaw(facing: i16) -> i16 {
-    crate::fishing_actors::fish_camera(0, 0, 0, facing).yaw
+    legaia_engine_fishing::fishing_actors::fish_camera(0, 0, 0, facing).yaw
 }
 
 /// Pose a body's `base` into `out` at clip frame `frame`, then place it at
@@ -627,9 +634,10 @@ impl FishingSurface {
             session
                 .venue_map()
                 .map(|v| {
-                    let ramp = crate::minigame_floor::height_ramp();
-                    let grid = crate::minigame_floor::FloorGrid::new(&v.map);
-                    crate::fishing_chrome::float_actor_tick(grid, x, z, 0, &ramp).y as f32
+                    let ramp = legaia_engine_fishing::minigame_floor::height_ramp();
+                    let grid = legaia_engine_fishing::minigame_floor::FloorGrid::new(&v.map);
+                    legaia_engine_fishing::fishing_chrome::float_actor_tick(grid, x, z, 0, &ramp).y
+                        as f32
                 })
                 .unwrap_or(0.0)
         };

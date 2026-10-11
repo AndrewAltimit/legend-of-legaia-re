@@ -5,13 +5,15 @@
 //! of the SCUS and overlay regions the code mods claim, and the MAN
 //! re-pack budget helpers.
 //!
-//! `legaia-patcher` re-exports every module here at its old path. Doc links
-//! that pointed back up at it are plain code spans, since rustdoc cannot
-//! resolve a link into a dependent crate.
+//! `legaia-patcher` sits above this crate. Doc comments name its items in
+//! plain code spans, since rustdoc cannot resolve a link into a dependent
+//! crate.
 
 #![forbid(unsafe_code)]
 
 pub mod disc;
+pub mod field_script;
+pub mod monster;
 pub mod ppf;
 pub mod rng;
 pub mod space_ledger;
@@ -32,7 +34,7 @@ pub mod space_ledger;
 /// budget. The descriptors' `data_offset`s never move (all edits are same-size
 /// in place), so the boundary is constant across passes.
 pub fn man_compressed_budget(
-    table: &legaia_asset::scene_asset_table::SceneAssetTable,
+    table: &legaia_scene_formats::scene_asset_table::SceneAssetTable,
     man_data_offset: usize,
     entry_len: usize,
 ) -> usize {

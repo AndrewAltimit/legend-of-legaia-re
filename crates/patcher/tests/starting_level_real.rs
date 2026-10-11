@@ -10,8 +10,9 @@
 //! sector stays EDC/ECC-valid, and the patch is byte-deterministic. Skips + passes
 //! without `LEGAIA_DISC_BIN`.
 
-use legaia_asset::level_up_tables::GROWTH_CHAR_COUNT;
-use legaia_asset::new_game::{
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::level_up_tables::GROWTH_CHAR_COUNT;
+use legaia_game_tables::new_game::{
     CURRENT_XP_PRELOAD_VA, CURRENT_XP_STORE_VA, GALA_XP_STORE_VA, LEVEL_SEED_VA,
     LEVEL_STORE_REDUNDANT_VA, LEVEL_STORE_VA, NOA_XP_STORE_VA, RECORD_STRIDE, StartingParty,
     live_record_xp_offset, party_template_file_offset, scus_file_offset,
@@ -20,7 +21,6 @@ use legaia_asset::new_game::{
 use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::starting_level::{
     DEFAULT_STARTING_LEVEL, MAX_STARTING_LEVEL, MIN_STARTING_LEVEL, plan,
 };

@@ -160,7 +160,7 @@ impl World {
                     let Some(entry) = self.vdf_record_bytes(vdf_idx) else {
                         continue;
                     };
-                    for rec in vdf_morph::parse_vdf_morph_records(entry) {
+                    for rec in legaia_scene_formats::vdf_morph::parse_vdf_morph_records(entry) {
                         for &slot in &slots {
                             dirty.push((slot, rec.group_id));
                         }

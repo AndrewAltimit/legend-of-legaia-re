@@ -20,8 +20,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::muscle_dome as md;
-use legaia_engine_ui::other_game_hud as hud;
+use legaia_engine_ui::muscle_dome_hud as hud;
 
 /// The three retail emitters a draw row can name.
 const EMITTER_CENTRED: u32 = 0x801D_050C;
@@ -32,7 +31,7 @@ const EMITTER_ROUND_DIGIT: u32 = 0x801D_15C8;
 
 fn prot_entry(index: u32) -> Option<Vec<u8>> {
     let disc = std::env::var_os("LEGAIA_DISC_BIN")?;
-    let host = match legaia_engine_core::scene::SceneHost::open_disc(&disc) {
+    let host = match legaia_engine_core::scene_host::SceneHost::open_disc(&disc) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("[skip] open_disc failed: {e:#}");
@@ -43,7 +42,7 @@ fn prot_entry(index: u32) -> Option<Vec<u8>> {
 }
 
 fn arena_entry() -> Option<Vec<u8>> {
-    prot_entry(md::ARENA_OVERLAY_PROT_INDEX as u32)
+    prot_entry(legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32)
 }
 
 fn monster_archive() -> Option<Vec<u8>> {
@@ -56,7 +55,7 @@ fn monster_archive() -> Option<Vec<u8>> {
 /// the target is a property of the bytes and independent of the load base
 /// (see `docs/tooling/call-target-integrity.md`).
 fn jal_target(entry: &[u8], va: u32) -> Option<u32> {
-    let off = va.checked_sub(md::ARENA_OVERLAY_BASE_VA)? as usize;
+    let off = va.checked_sub(legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_BASE_VA)? as usize;
     let w = u32::from_le_bytes(entry.get(off..off + 4)?.try_into().ok()?);
     if w >> 26 != 3 {
         return None;
@@ -70,22 +69,31 @@ fn the_course_ladder_pins_a_real_monster_per_round() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let ladder = md::parse_course_ladder(&entry).expect("PROT 0977 course descriptor decodes");
-    assert_eq!(ladder.len(), md::COURSE_COUNT);
+    let ladder = legaia_engine_minigames::muscle_dome::parse_course_ladder(&entry)
+        .expect("PROT 0977 course descriptor decodes");
+    assert_eq!(
+        ladder.len(),
+        legaia_engine_minigames::muscle_dome::COURSE_COUNT
+    );
     let counts: Vec<usize> = ladder.iter().map(|c| c.rounds.len()).collect();
 
     // The score table is an independent table with the same (course, round)
     // shape; its populated cells must agree with the descriptor's counts.
     for (course, &n) in counts.iter().enumerate() {
         for round in 1..=n as u32 {
-            let cell = md::course_score_cell(&entry, course, round)
-                .unwrap_or_else(|| panic!("course {course} round {round} has a score cell"));
+            let cell =
+                legaia_engine_minigames::muscle_dome::course_score_cell(&entry, course, round)
+                    .unwrap_or_else(|| panic!("course {course} round {round} has a score cell"));
             assert!(cell > 0, "course {course} round {round} scores nothing");
         }
         // The cell one past the last round is the table's zero padding.
-        if (n as u32) < md::MAX_ROUNDS_PER_COURSE as u32 {
+        if (n as u32) < legaia_engine_minigames::muscle_dome::MAX_ROUNDS_PER_COURSE as u32 {
             assert_eq!(
-                md::course_score_cell(&entry, course, n as u32 + 1),
+                legaia_engine_minigames::muscle_dome::course_score_cell(
+                    &entry,
+                    course,
+                    n as u32 + 1
+                ),
                 Some(0),
                 "course {course} has exactly {n} scored rounds"
             );
@@ -99,8 +107,9 @@ fn the_course_ladder_pins_a_real_monster_per_round() {
     let mut ids = Vec::new();
     for course in &ladder {
         for round in &course.rounds {
-            let rec = legaia_asset::monster_archive::record(&archive, round.monster_id as u16)
-                .unwrap_or_else(|e| panic!("monster {:#04x}: {e:#}", round.monster_id));
+            let rec =
+                legaia_actor_formats::monster_archive::record(&archive, round.monster_id as u16)
+                    .unwrap_or_else(|e| panic!("monster {:#04x}: {e:#}", round.monster_id));
             let rec = rec.unwrap_or_else(|| {
                 panic!("monster {:#04x} has no archive record", round.monster_id)
             });
@@ -118,9 +127,9 @@ fn the_course_ladder_pins_a_real_monster_per_round() {
     // monster id, and no dome round is that monster - which is the whole
     // reason the four-turn strip is not this minigame's.
     assert!(
-        !ids.contains(&md::TIMED_FIGHT_MONSTER_ID),
+        !ids.contains(&legaia_engine_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID),
         "no arena round fields monster {:#04x}",
-        md::TIMED_FIGHT_MONSTER_ID
+        legaia_engine_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID
     );
 }
 

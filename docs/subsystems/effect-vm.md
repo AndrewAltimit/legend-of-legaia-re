@@ -29,7 +29,7 @@ the three procedural emitters behind the render dispatcher's draw kind 4
 | Input data | [`efect.dat`](../formats/effect.md) (PROT entry 873): pack1 = effect-id scripts, pack0 = frame-batch animations, plus the inline sprite atlas |
 | Dumps | `overlay_battle_801e0088.txt` (walker), `overlay_battle_801dfdf8.txt` (spawn), `overlay_battle_action_801e0080.txt` |
 | Port | [`legaia_engine_vm::effect_vm`](../../crates/engine-vm/src/effect_vm.rs): `Pool`, `EffectCatalog`, `EffectHost` |
-| Engine drive | `World::tick_effects`, `World::active_effect_sprites` (`crates/engine-core/src/world/effects.rs`) |
+| Engine drive | `World::tick_effects`, `World::active_effect_sprites` (`crates/engine-core/src/world/effects/effect_pool.rs`) |
 | Draw-kind-4 emitters | `engine-effects`: `effect_ribbon`, `effect_sprite_arm`, `effect_default_arm` |
 
 **Entry addresses.** Both the spawn API and the walker begin two words ahead
@@ -178,7 +178,7 @@ and discards either way).
 Port: `EffectSprite::packet_tsb` (`crates/engine-core/src/world/types.rs`),
 called by the native window's billboard builder and the play page's battle and
 field FX builders. Pinned by `packet_tsb_forces_the_prim_semi_enable` and a
-`SIM_PAIRS` row in `check-ui-host-drift.py`.
+`SIM_PAIRS` row of the host-drift gate (`scripts/ci/ui_host_drift/rows/sim_pairs.py`).
 
 ### The half-extent is a view-space quantity
 
@@ -193,7 +193,7 @@ a **4x uniform scale**. A port that offsets the corners in world space under
 the same scaled MVP applies the 4x to the half-extents as well: a 32-texel
 puff reaches 1280 view units either side instead of 320. The shared correction
 is `effect_billboard::world_half_extents(size, view_scale)`
-(`crates/render-kernels`, re-exported by `engine-ui`); the native window
+(`crates/render-kernels`); the native window
 passes its `fx_scale` into `effect_sprite_corners`.
 
 ### A battle billboard's centre is Y-flipped
@@ -334,7 +334,7 @@ the same state by name:
 
 - `World::teardown_battle_effects` runs at battle entry, at battle exit (`World::finish_battle`, or `World::resolve_game_over_hold` when a wipe holds the frozen frame) and at every scene load (`SceneHost::load_scene`).
 - It resets the `efect.dat` pool and every battle-scoped member of `World::casting`: the summon / cast-module, move-FX and effect-script scene-graphs, the streak block and its trail texpage, the cast band's pending requests and stager. Only the installed cast-effect data pool is kept.
-- `World::battle_effect_residue` names whatever of that is still live. The soak harness's `effect_residue` detector and `engine-shell/tests/battle_effect_teardown_disc.rs` read it on the first frame past each exit and scene load.
+- `World::battle_effect_residue` names whatever of that is still live. The soak harness's `effect_residue` detector and `engine-session/tests/battle_effect_teardown_disc.rs` read it on the first frame past each exit and scene load.
 
 One teardown is earlier than the mode switch. The engine stages a cast
 module's spawn records as data and runs its tick body separately
@@ -365,9 +365,9 @@ case -> index -> entry map is in
 
 ### Effect-model library
 
-`engine-core::scene::seed_effect_model_library_from_etmd` reads extraction
+`engine-core::scene_host::seed_effect_model_library_from_etmd` reads extraction
 0871 (`etmd.dat`, raw index `0x369`) at scene entry: an uncompressed 30-entry
-`asset::pack` of Legaia TMDs spanning the entry's *extended* footprint. It
+`container-formats::pack` of Legaia TMDs spanning the entry's *extended* footprint. It
 registers all 30 into `World::global_tmd_pool[3..=32]`, the same
 `DAT_8007C018[3..=32]` window retail fills at battle init (`FUN_800520F0` ->
 `FUN_80026B4C`), overwriting the two trailing slots of the field character
@@ -445,7 +445,7 @@ Every packet samples the same 2x2 texel patch, UVs `(0..2, 0xF0..0xF2)` in
 texture page `0x001F` (`(960, 256)`, 4bpp) through CLUT `0x7F84`
 (`(64, 510)`), and the chain ends in twenty zero words.
 
-Port: `engine-effects::effect_ribbon` (re-exported from `legaia_engine_core`).
+Port: `engine-effects::effect_ribbon`.
 `World::active_effect_ribbons` rebuilds each live ribbon node's mesh every
 frame. In play that is **Gilium**'s summon (spell `0x95`, PROT 0923). Ozma
 (`0xA0`, PROT 0934) and the two capture-class carriers (PROT 0957, 0964) are
@@ -477,7 +477,7 @@ call, so those per-call scales are not carried.
 
 Port: `engine-effects::effect_sprite_arm` turns every live sprite-arm node
 into a one-quad mesh. The quad geometry is
-`engine-minigames::baka_impact_fx::sprite_arm_quad`, the one Baka Fighter's
+`render-kernels::sprite_arm::sprite_arm_quad`, the one Baka Fighter's
 impact flash draws through.
 `crates/engine-core/tests/effect_sprite_arm_carriers_real.rs` reports the
 slot-B images whose programs reach the arm and pins that each lands on the
@@ -543,11 +543,10 @@ The live default-arm nodes in the catalogued states use modes `0x00`, `0x01`,
 `0x08`, `0x10`, `0x18` and `0x100` - shapes `0..3` and texture mode `1` - and
 none of shapes `4..7`.
 
-**Port.** `engine-effects::effect_default_arm` (re-exported from
-`engine-core`). `build` transliterates the routine onto a byte buffer - every
+**Port.** `engine-effects::effect_default_arm`. `build` transliterates the routine onto a byte buffer - every
 word retail stores, at the offset it stores it, with a record of which bytes
 it wrote - and `decode` reads the object back the way the TMD renderer reads
-it. `crates/engine-core/tests/effect_default_arm_retail_capture.rs` holds it
+it. `crates/parity/tests/effect_default_arm_retail_capture.rs` holds it
 to the scratch blocks the save library captured:
 
 - every ground-shadow build (`+0x62400`) reproduces byte for byte, whole or up to a later overwrite of its last four packets;
@@ -580,7 +579,7 @@ move-VM scene-graph.
 - **Measured rates.** `scripts/pcsx-redux/autorun_enemy_move_render_path.lua` on the catalogued `gimard_burning_attack` state (400 vsyncs): `FUN_80048A08` = 213, `FUN_8004998C` = 213, `FUN_80023070` = 11, `FUN_801F7088` = 0. The draw never exceeds **2** per rendered frame (Vahn solo against one monster); the same probe reads 6 per frame in a 3-vs-3 (`rim_elm_queen_bee_battle`) and 2 in a 1-vs-1 (`rim_elm_gimard_victory`): one call per live actor.
 - **Not `FUN_801F7088`.** That address is the world-map top-view tile renderer aliasing the same `0x801Fxxxx` band.
 - **The flame motion is geometric, not palette.** Two animation-distinct Tail Fire frames have a **byte-identical** CLUT band (VRAM rows 470..499) while the framebuffer differs ~21%. The static flame renders with the baked row-478 CLUT.
-- **The stager overlays hold real move-VM part records.** Extraction PROT 903..913, recovered under the link base `0x801F69D8` by `legaia_asset::summon_overlay`. The `jal 0x80023070` that runs them lives in the SCUS stager `FUN_80021B04`, not inside the overlay. The engine drives them as a **stand-in** (`summon::SummonScene`).
+- **The stager overlays hold real move-VM part records.** Extraction PROT 903..913, recovered under the link base `0x801F69D8` by `legaia_overlay_images::summon_overlay`. The `jal 0x80023070` that runs them lives in the SCUS stager `FUN_80021B04`, not inside the overlay. The engine drives them as a **stand-in** (`summon::SummonScene`).
 - **The enemy move is a different move.** The player summon `0x81` performs *Burning Attack*; the enemy Gimard's boss move is *Tail Fire*, spell id `0x27` in the SCUS spell table. It seats the move-FX module PROT 0900 in slot B and renders as a single move-VM part actor in `DAT_801C90F0` ticked by `FUN_80021DF4` -> `FUN_80023070`. In both captures above `FUN_80023070`'s per-frame hits equal the part pool's live-slot count, with `FUN_80021DF4` 1:1 beside it. See [`battle-action-helpers.md`](battle-action-helpers.md#enemy-fire-tail---move-vm-part-not-the-widget-path).
 
 Full reconciliation:
@@ -608,8 +607,7 @@ colour `0x808080`, so retail neither modulates nor fades the numeral. Port:
 Placing it is a **host** job: the seat is the struck actor's projected screen
 position, which only the layer holding the camera knows. Both hosts project
 the actor under the FX camera and emit the cells as screen-space VRAM quads
-through one builder, `battle_numerals` (`crates/render-kernels`, re-exported
-by `engine-ui`), using retail's own texels. Before the battle VRAM exists a
+through one builder, `battle_numerals` (`crates/render-kernels`), using retail's own texels. Before the battle VRAM exists a
 host falls back to `engine-ui::battle_value_readout_draws_for`: retail's cells
 and pitch in the dialog font. `engine-ui`'s HUD builder draws the popup queue
 only under `LEGAIA_DIAG_HUD`.
@@ -630,7 +628,7 @@ array of `0x10800`-byte slots (103 / 78) carrying per-special-attack CLUT rows
 + 4bpp texture pages and summon-creature actor records, byte-verified RAM to
 disc and VRAM to disc in a mid-cast save state. Format:
 [`summon-readef.md`](../formats/summon-readef.md); parser
-`legaia_asset::summon_readef`.
+`legaia_actor_formats::summon_readef`.
 
 ## See also
 

@@ -7,14 +7,14 @@ native and `wasm32` alike.
 The stateful half stays in `legaia-engine-core`: `World`'s battle state and
 the `world::battle` submodules (the round loop driver, command flow, cast
 band, monster turn picker, victory and teardown) own the composition and call
-down into this crate. `engine-core` re-exports every module here at its old
-path, so `legaia_engine_core::monster_ai` and `legaia_engine_battle::monster_ai`
-name the same module.
+down into this crate. Consumers name the kernels here directly
+(`legaia_engine_battle::monster_ai`).
 
 ## What belongs here
 
 A module moves here when its whole dependency closure inside the engine is
-itself in this crate - it may use `legaia-engine-vm`, the asset crates and
+itself in this crate - it may use `legaia-engine-battle-vm`,
+`legaia-engine-system`, the asset crates and
 its siblings, but nothing that reaches `World`. A kernel tangled with `World`
 stays in `engine-core` until its pure half is split out. Doc links that point
 back up at `engine-core` are written as plain code spans, since rustdoc cannot
@@ -43,7 +43,7 @@ resolve a link into a dependent crate.
 - `spells` / `retail_magic` - spell catalog and cast resolver; the retail
   player Seru-magic table pinned from `SCUS_942.54`.
 - `monster_catalog` - monster definitions and formation tables.
-- `encounter` / `encounter_man` / `encounter_record` / `encounter_registry`
+- `encounter` / `encounter_man` / `encounter_formation` / `encounter_registry`
   / `region_encounter` - per-scene encounter tables (built from MAN bytes),
   the retail encounter record, and the step- and region-keyed triggers
   (`FUN_801D9E1C`).
@@ -80,6 +80,13 @@ resolve a link into a dependent crate.
 - `battle_seats` - the authored stage seats battle setup stamps into every
   combatant (`FUN_800513F0`).
 - `battle_return_flags` - MAIN INIT's back-from-battle story-flag arm.
+- `anim_cue` - `walk_anim_cues` / `AnimCueState`, the per-frame walker
+  over a playing battle action's 8-slot `(frame, cue)` track
+  (`FUN_800508DC`): swing, hit, footstep and knockdown SFX, the party
+  `0xC8..=0xFF` band resolved into the arts-voice namespace, and the
+  CD-busy fallback ring cue. It emits `AnimCueEmit` decisions; engine-core's battle
+  actor tick (`world::actors`) drains them into the SFX ring.
+- `sfx_cue` - cue id to the 4-slot pending ring / XA clip (`FUN_8004FE5C`).
 
 ## See also
 

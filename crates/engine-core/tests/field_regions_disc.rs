@@ -1,5 +1,5 @@
 //! Disc-gated structural oracle for the per-tile field-region ports
-//! (`crates/engine-vm/src/field_regions.rs` - FUN_80017FBC /
+//! (`crates/engine-field/src/field_regions.rs` - FUN_80017FBC /
 //! FUN_800180EC / FUN_801DBA20).
 //!
 //! Walks every CDNAME scene and asserts the retail data matches the shapes
@@ -16,8 +16,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_regions::{REGION_RECORD_STRIDE, RegionTable, ZONE_RECORD_STRIDE};
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_field::field_regions::{REGION_RECORD_STRIDE, RegionTable, ZONE_RECORD_STRIDE};
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {

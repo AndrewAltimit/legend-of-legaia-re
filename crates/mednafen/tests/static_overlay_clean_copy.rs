@@ -1,7 +1,7 @@
 //! Disc + save-state-gated clean-copy proof for the static overlay pipeline.
 //!
 //! This is the decisive experiment behind the static overlay-extraction
-//! pipeline (`legaia_asset::static_overlay`, `docs/tooling/static-overlay-pipeline.md`):
+//! pipeline (`legaia_overlay_images::static_overlay`, `docs/tooling/static-overlay-pipeline.md`):
 //! a runtime overlay extracted statically from `PROT.DAT` is byte-identical to
 //! the image the runtime DMAs into the `0x801C0000+` overlay window. PSX
 //! overlays are clean copies of a fixed-VA-linked blob (FlushCache + jump, no
@@ -24,10 +24,10 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::static_overlay::{self, OverlayRecord};
 use legaia_mednafen::container::SaveState;
-use legaia_mednafen::extract::ram_slice;
+use legaia_overlay_images::static_overlay::{self, OverlayRecord};
 use legaia_prot::archive::Archive;
+use legaia_ram_image::extract::ram_slice;
 
 const OVERLAY_LO: u32 = 0x801C_0000;
 const OVERLAY_HI: u32 = 0x8020_0000;
@@ -160,13 +160,13 @@ fn menu_overlay_is_a_clean_copy() {
     // field VM at 0x801DE840 must NOT be a prologue here while the equip
     // aggregator FUN_801CF650 IS -- the proof these are swapping VA-alias
     // siblings, not the same overlay.
-    let field_vm = legaia_mednafen::extract::read_u32_le(ram, 0x801D_E840).expect("ram word");
+    let field_vm = legaia_ram_image::extract::read_u32_le(ram, 0x801D_E840).expect("ram word");
     assert_ne!(
         field_vm & 0xFFFF_0000,
         0x27BD_0000,
         "field VM is a prologue -- field overlay resident, not the menu overlay"
     );
-    let equip_agg = legaia_mednafen::extract::read_u32_le(ram, 0x801C_F650).expect("ram word");
+    let equip_agg = legaia_ram_image::extract::read_u32_le(ram, 0x801C_F650).expect("ram word");
     assert_eq!(
         equip_agg & 0xFFFF_0000,
         0x27BD_0000,
@@ -216,7 +216,7 @@ fn field_overlay_head_and_base_match_ram() {
     // the live RAM word there equals the disc word (code byte-matches).
     let off = (0x801D_6704u32 - rec.base_va) as usize;
     let disc_word = u32::from_le_bytes(disc[off..off + 4].try_into().unwrap());
-    let ram_word = legaia_mednafen::extract::read_u32_le(ram, 0x801D_6704).expect("ram word");
+    let ram_word = legaia_ram_image::extract::read_u32_le(ram, 0x801D_6704).expect("ram word");
     assert_eq!(
         disc_word, ram_word,
         "field MAIN_INIT word diverges: disc 0x{disc_word:08x} != RAM 0x{ram_word:08x}"

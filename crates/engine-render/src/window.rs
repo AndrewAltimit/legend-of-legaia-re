@@ -287,7 +287,7 @@ pub fn world_map_camera_mvp(
     pan_z: i32,
     aspect: f32,
 ) -> Mat4 {
-    Mat4::from_cols_array(&legaia_engine_vm::psx_camera::world_map_top_view_vp(
+    Mat4::from_cols_array(&legaia_engine_battle_vm::psx_camera::world_map_top_view_vp(
         aabb_lo, aabb_hi, azimuth, zoom, pan_x, pan_z, aspect,
     ))
 }
@@ -458,18 +458,10 @@ pub fn cutscene_camera_mvp(
     proj * view
 }
 
-/// Glides the cutscene camera between op-`0x45` Camera Configure beats.
-///
-/// Lives in [`legaia_engine_vm::psx_camera`] - the wgpu-free leaf both the
-/// native window and the browser play page link - and is re-exported here so
-/// this crate's call sites and tests read unchanged. A host that reads the
-/// staged params straight out of the world snaps every `apply > 0` beat; the
-/// browser page did exactly that while this type sat behind a wgpu link.
-pub use legaia_engine_vm::psx_camera::CutsceneCameraInterp;
-
 #[cfg(test)]
 mod camera_tests {
     use super::*;
+    use legaia_engine_battle_vm::psx_camera::CutsceneCameraInterp;
 
     const LO: [f32; 3] = [-100.0, -100.0, -100.0];
     const HI: [f32; 3] = [100.0, 100.0, 100.0];

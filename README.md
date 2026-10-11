@@ -54,7 +54,7 @@ One engine runs behind every host. The simulation crates carry no GPU, windowing
 ```mermaid
 flowchart LR
     subgraph sim["Shared simulation"]
-        vm["engine-vm: field, move, motion, effect, battle VMs"]
+        vm["The ported VMs and World-free kernels:<br/>engine-vm, engine-battle-vm, engine-motion-vm, engine-field, engine-battle, ..."]
         core["engine-core: World, scenes, battle, menus, saves"]
         session["engine-session: per-frame order, BGM director"]
         vm --> core --> session
@@ -201,12 +201,14 @@ A Cargo workspace; each crate has a one-page `README.md`. [`CLAUDE.md`](CLAUDE.m
 
 | Path | Holds |
 |---|---|
-| `crates/iso`, `prot`, `lzs`, `asset` and the per-format crates | Disc reader, PROT archive, LZS, the format hub, and a parser per format (`tim`, `tmd`, `vab`, `seq`, `xa`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`). |
+| `crates/iso`, `prot`, `lzs` and the per-format crates | Disc reader, PROT archive, LZS, and a parser per format (`tim`, `tmd`, `vab`, `seq`, `xa`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`). |
+| `crates/container-formats`, `scene-formats`, `actor-formats`, `minigame-formats`, `ui-formats`, `game-tables`, `overlay-images` | The Legaia-specific format families over those parsers. |
+| `crates/asset`, `disc-audit` | The `asset` command-line binary and the whole-disc measurement it fronts. |
 | `crates/extract` | `legaia-extract`, the one-shot pipeline. |
-| `crates/engine-*`, `render-kernels` | The port: simulation (`engine-core`, `engine-vm` and the kernels split out of them), rendering, audio, and the `legaia-engine` binary (`engine-shell`). |
+| `crates/engine-*`, `render-kernels` | The port: simulation (`engine-core`, `engine-vm` and the kernel crates under them), rendering, audio, and the `legaia-engine` binary (`engine-shell`). |
 | `crates/asset-viewer`, `web-viewer` | The native viewer, and the WASM build behind the site. |
-| `crates/patcher` over `disc-patch`, `translate`, `code-hooks`, `arts-patch`, `texture-replace`, `party-swap`, `delilas-party` | `legaia-patcher` and the layers under it. |
-| `crates/mednafen`, `pcsxr`, `parity` | Emulator save-state readers and the retail parity oracles. |
+| `crates/patcher` over `disc-patch`, `translate`, `code-hooks`, `arts-patch`, `texture-replace`, `party-swap`, `delilas-party`, `delilas-challenge` | `legaia-patcher` and the layers under it. |
+| `crates/mednafen`, `pcsx-redux`, `ram-image`, `parity` | Emulator save-state readers and the retail parity oracles. |
 | `crates/gamedata`, `cheats`, and `data/` | Curated, non-Sony reference tables. |
 | `docs/`, `site/` | The technical reference, and the project site's sources. |
 | `ghidra/`, `scripts/` | Analysis scripts (dumps are gitignored), CI gates, capture automation ([map](scripts/README.md)). |
@@ -240,7 +242,7 @@ These licenses apply *only* to the code and documentation in this repository. **
 - [**PSXRecomp**](https://github.com/mstan/psxrecomp) (mstan / [SamSteProjects](https://github.com/SamSteProjects)) - a PlayStation 1 static recompiler (MIPS R3000A -> C -> native, recompiled SCPH1001 BIOS as the kernel, no HLE), and its [Legaia-specific fork](https://github.com/SamSteProjects/psxrecomp/tree/codex/legaia-recompile-fixes) whose runtime work carries the game from boot through field, battle, and the CD/XA cutscene path. We run it as a live cross-reference oracle - a second, independent execution of the retail code to validate the from-scratch port against (GTE registers, overlay identity, render-dispatch and sound-driver behaviour) - never as a source of Sony bytes. Built on the [N64Recomp](https://github.com/N64Recomp/N64Recomp) static-recompilation model (RT64 team).
 - [**ZetaPhoenix's "Legaia Arts Data" spreadsheet**](https://docs.google.com/spreadsheets/d/1_U_AKdEncylFwE0lXkvPG-OhMWpNXgUdoaSGZ6vSUg0/edit?usp=drive_link) - public Google Sheets catalog of the Tactical Arts / Miracle Arts / Super Arts trigger strings and finisher replacements. The `legaia-art` `MiracleMatcher` / `SuperMatcher` tables (`crates/art/src/miracle.rs`, `super_art.rs`) cross-reference and validate against it. His damage-formula analysis - the Offense Value / Defense Value shape, the per-command equipment selection and halving, and the Vahn vs Evil Fly worked example - organises [`docs/subsystems/battle-formulas.md`](docs/subsystems/battle-formulas.md), where each claim is checked against the disassembly.
 - [**Meth962's "Legend of Legaia 100% Walkthrough"** (GameFAQs)](https://gamefaqs.gamespot.com/ps/197766-legend-of-legaia/faqs/53721) and his damage-formula threads on the old legendoflegaia.net forums (archived [thread 800](https://web.archive.org/web/20161205053304/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&t=800&sid=b9049876cd2bcdd56c9eb66fe8614cf4&start=30), [thread 941](https://web.archive.org/web/20161203095801/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&t=941&sid=10471c996f5bab205174f85853bf65e7)) - the original community damage analysis, and the v1.10 "all Enemy stats section" + Seru-magic + magic-leveling tables ground three layers of `legaia-gamedata`:
-  - `enemies.toml` carries Meth's per-enemy HP / MP / EXP / Gold / ATK / SPD / UDF / LDF / INT / AGL / element columns for every entry (extracted from in-RAM memory, so fan-recorded values rather than retail-binary-extracted constants - useful as labels for the binary monster records `crates/battle-models/src/monster_archive.rs` decodes from PROT 0867).
+  - `enemies.toml` carries Meth's per-enemy HP / MP / EXP / Gold / ATK / SPD / UDF / LDF / INT / AGL / element columns for every entry (extracted from in-RAM memory, so fan-recorded values rather than retail-binary-extracted constants - useful as labels for the binary monster records `crates/actor-formats/src/monster_archive.rs` decodes from PROT 0867).
   - `bosses.toml` is rewritten around the per-fight layer (named attacks + MP cost, XP / gold / item rewards, recommended party level) for all 18 main-story B-code bosses plus the Lapis superboss.
   - `magic.toml` grows `absorb_lv1` / `absorb_lv2` / `absorb_lv3` integer-percent fields per Seru spell (Gimard 55/60/80, Gilium 1/1/1, the full 21-spell table); the per-cast XP curve and damage-scaling multipliers live in `legaia_gamedata::magic_leveling`.
 - **ZetaPhoenix** - the **Super Arts Pack**, a mod adding five Super Arts per character with their own names, hit counts and animations, contributed as a 3764-byte RAM block. The disc patcher installs those bytes unmodified behind `--super-arts-pack` ([`crates/patcher/data`](crates/patcher/data/README.md), [randomizer.md](docs/tooling/randomizer.md#super-arts-pack-by-zetaphoenix)). Same author as the "Legaia Arts Data" spreadsheet above.

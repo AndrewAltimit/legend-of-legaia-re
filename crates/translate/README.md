@@ -2,11 +2,11 @@
 
 The language-pack pipeline behind `legaia-patcher translate`: a user-supplied
 disc's text out to an editable YAML pack, and a filled pack back in as an
-in-place reimport. Split out of [`legaia-patcher`](../patcher/README.md), which
-re-exports it at its old path (`legaia_patcher::translation`) and keeps the
-CLI.
+in-place reimport. [`legaia-patcher`](../patcher/README.md) keeps the CLI;
+every consumer names this crate directly.
 
-Everything lives under the one `translation` module:
+The crate root is the pipeline (`legaia_translate::lift`,
+`legaia_translate::import_pack`, ...):
 
 - **Pack + markup** - `pack` (the YAML schema and coverage stats), `markup`
   (the reversible text <-> game-byte codec), `symbols` (the `0xCE` escape
@@ -26,8 +26,9 @@ Everything lives under the one `translation` module:
   drawable line).
 
 It writes through [`legaia-disc-patch`](../disc-patch/README.md)
-(`DiscPatcher`, the space ledger, the MAN re-pack budget). Exported packs
-carry game text: they are gitignored and never committed.
+(`DiscPatcher`, the space ledger, the MAN re-pack budget) and names it
+directly. It depends on no other patcher crate. Exported packs carry game
+text: they are gitignored and never committed.
 
 ## See also
 

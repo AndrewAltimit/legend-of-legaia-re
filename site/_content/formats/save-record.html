@@ -150,7 +150,7 @@
   ticks - the record carries the live in-battle condition. The battle HUD reads the same halfword through a
   second base (details in <a href="#how-we-know">How we know</a>); the per-bit map is on the
   <a href="accessory-passive-table.html">accessory-passive page</a>, engine mirror
-  <code>engine-vm::status_effects::display_flags</code>.</p>
+  <code>engine-battle-vm::status_effects::display_flags</code>.</p>
 
   <h3 id="level-byte"><code>+0x130</code> is the displayed character level</h3>
   <p>The status screen reads it as "LV" directly; the shown level is <em>not</em> re-derived from XP. The

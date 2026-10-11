@@ -6,7 +6,7 @@
 //! `screen_overlay::tests` + naga validation coverage.
 
 use super::*;
-use crate::screen_overlay::{
+use legaia_render_kernels::screen_prim::{
     BlendClass, FlatQuad, SCREEN_VERTEX_STRIDE, ScreenPrim, ScreenQuad, build_geometry,
 };
 use wgpu::util::DeviceExt;
@@ -64,7 +64,7 @@ fn vram_attributes() -> [wgpu::VertexAttribute; 6] {
             format: wgpu::VertexFormat::Uint32,
         },
         wgpu::VertexAttribute {
-            offset: crate::screen_overlay::SCREEN_VERTEX_OFF_DEPTH,
+            offset: legaia_render_kernels::screen_prim::SCREEN_VERTEX_OFF_DEPTH,
             shader_location: 5,
             format: wgpu::VertexFormat::Float32,
         },

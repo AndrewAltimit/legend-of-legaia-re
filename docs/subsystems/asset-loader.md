@@ -13,8 +13,9 @@ indices; the retail branch resolves the same dev path strings through
 the descriptor walker they both feed (`FUN_80020224` → `FUN_8001F05C`).
 
 **Port counterpart.** `engine-core`'s `SceneResources::build_targeted` (see
-[CLUT-data scattering](#clut-data-scattering)) plus the `legaia_asset` parsers -
-`scene_asset_table`, `scene_tmd_stream`, `battle_data_pack`.
+[CLUT-data scattering](#clut-data-scattering)) plus the format parsers -
+`legaia_scene_formats::{scene_asset_table, scene_tmd_stream}` and
+`legaia_actor_formats::battle_data_pack`.
 
 **The thing that catches people out:** the slot→asset mapping is **positional**.
 There is no slot→asset indirection table anywhere; the descriptor's own
@@ -78,7 +79,7 @@ The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 s
 
 One battle-scene state (in `FUN_800513F0`, around `0x80051a50`) calls `FUN_8001FA88(scene_base + slot, 0, dst_buf)` to load a per-scene PROT entry into the working buffer, then `FUN_8001FE70(dst_buf)` to walk its chunk list. The walker is the dispatch path for the [`scene_tmd_stream`](../formats/scene-bundles.md) layout - leading TMD body followed by streaming chunks - and is *different* from the standard `FUN_8002541C` streaming walker:
 
-- First chunk: read `chunk0_header = u32 LE` at offset 0. Low 24 bits = TMD body size. Round up to 32-byte alignment, allocate a buffer of that size at `_DAT_8007B864`, copy the TMD body in via `FUN_8003D26C` (32-byte-block copier; port `engine-vm::scus_core_helpers::copy_blocks_32`).
+- First chunk: read `chunk0_header = u32 LE` at offset 0. Low 24 bits = TMD body size. Round up to 32-byte alignment, allocate a buffer of that size at `_DAT_8007B864`, copy the TMD body in via `FUN_8003D26C` (32-byte-block copier; port `engine-vm::block_copy_32::copy_blocks_32`).
 - Loop: advance by `(prev_size & ~3) + 4` to the next chunk header. Read `header`; if `header & 0xFFFFFF == 0`, exit (terminator). Otherwise:
   - If `(header >> 24) == 0x01` -> call `FUN_800198E0(payload_ptr)` (LoadImage).
   - If `(header >> 24) == 0x02` -> exit (explicit terminator).
@@ -93,7 +94,7 @@ A scene_tmd_stream entry holds **exactly one** complete `[chunk0 TMD][type-0x01 
 
 Not two concatenated sub-streams: an apparent "second sub-stream with its own leading TMD at `0x14000`" in `0006_town01` is PROT entry **0007**, read by the superseded entry-size expression that ran every entry into its successor ([`prot.md`](../formats/prot.md)). Entry 0006 is exactly `0x14000` bytes; entry 0007's own leading TMD is `0x2c20` and its tail TIMs are at `0x2c24` / `0xae48`.
 
-`legaia_asset::scene_tmd_stream::sub_streams` returns one block per entry and `battle_tim_chunks` reports every chunk as `Tail`; both keep their post-terminator scan as a regression detector for a buffer that spans more than one entry. The engine's field-mode loader uses `battle_tim_chunks` to **skip** these battle-only TIMs (row-479 palettes aren't field-resident - matching retail).
+`legaia_scene_formats::scene_tmd_stream::sub_streams` returns one block per entry and `battle_tim_chunks` reports every chunk as `Tail`; both keep their post-terminator scan as a regression detector for a buffer that spans more than one entry. The engine's field-mode loader uses `battle_tim_chunks` to **skip** these battle-only TIMs (row-479 palettes aren't field-resident - matching retail).
 
 ## Field / town scene loader (`FUN_8001F7C0` + `FUN_800255B8`)
 
@@ -120,7 +121,7 @@ Key globals:
 - `DAT_8007ba34` - pending warp sub_id (0–6); read by `FUN_80025980`  
 - `DAT_8007bae8` - WARP handler's backup of the previous scene name (8 bytes)  
 
-The `DefaultMapIdResolver` in `engine-core::scene` uses CDNAME blocks in ascending PROT-index order as a positional approximation. The actual retail warp only supports 7 destinations, not the full CDNAME scene list.
+The `DefaultMapIdResolver` in `engine-scene::scene` uses CDNAME blocks in ascending PROT-index order as a positional approximation. The actual retail warp only supports 7 destinations, not the full CDNAME scene list.
 
 ### Name-based scene change (`FUN_8001FD44`) + the transition streamer (`FUN_80021934`)
 
@@ -133,7 +134,7 @@ It then spawns the **scene-transition streaming actor** into the system pool at 
 - **States 1/3**: poll stream progress via `FUN_8003DE7C(1)`.
 - **State 2** (dev): stream **raw TOC entry `DAT_8007B768 + 3`** - the destination block's `.LZS` / [`scene_asset_table`](../formats/scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) slot - into `_DAT_8007B85C` by index (`FUN_8001EEF0` → `FUN_8003EB98` → `FUN_8003E8A8`); byte size cached at `gp+0x73C`.
 
-`FUN_8001EEF0` returns a **sector** count, not a byte count: it biases its byte result by `0x7FF` and arithmetic-shifts right by 11, but re-biases by a further `0x7FF` first when the sum went negative. That second bias makes the shift truncate toward zero instead of flooring, so a negative error return stays an error rather than becoming `-1` sectors of apparent payload. Ported as `legaia_asset::boot_overlay::bytes_to_sectors`. In a retail build the dev/index branches are unreachable and the whole routine collapses to the path-based resolver plus that rounding.
+`FUN_8001EEF0` returns a **sector** count, not a byte count: it biases its byte result by `0x7FF` and arithmetic-shifts right by 11, but re-biases by a further `0x7FF` first when the sum went negative. That second bias makes the shift truncate toward zero instead of flooring, so a negative error return stays an error rather than becoming `-1` sectors of apparent payload. Ported as `legaia_overlay_images::boot_overlay::bytes_to_sectors`. In a retail build the dev/index branches are unreachable and the whole routine collapses to the path-based resolver plus that rounding.
 - **State 4** (retail, once the countdown lapses): rotate the name buffers (`0x80084558` ← `0x80084548` ← `0x800915C8`), set `DAT_8007B768 = _DAT_8007B9A0`, build the literal path `DATA_FIELD\<scene>.LZS` (base string `0x800106C4`, suffix `0x8007B3CC`) and stream it into `_DAT_8007B85C` by name, then hand off with `_DAT_8007B9EC = 1` and **`_DAT_8007B83C = 2`** (mode 2 MAIN INIT).
 
 So the descriptor table `FUN_80020224` walks at `_DAT_8007B85C` is the **raw `.LZS` bundle streamed there at transition time** - the count word lands at the buffer base because the whole file starts with it; there is no relocation step. Dev and retail converge on the same content: raw `scene_base + 3` **is** the `.LZS` entry (extraction index `define + 1`, e.g. `map01` → extraction `0086`, verified descriptor heads across the corpus). Sibling descriptors in the same family include `0x800705FC` (handler `FUN_801D1344`, the intro-skip dialog actor) and `0x8007065C` (the op-`0x49` name-entry setup record, `see boot.md`).
@@ -146,7 +147,7 @@ The port keeps the actor's timing and drops its streaming. `SceneHost::tick` par
 
 Walks the [asset descriptor format](../formats/asset-descriptor.md) and calls the asset-type dispatcher per descriptor. Its sole runtime caller in retail is the town overlay's `FUN_801D6704` (MAIN_INIT) at `0x801D6B0C` with `a0 = 0`. The result is stored at `0x80087AF8`. So the walker IS exercised by retail gameplay, just not from a static call site inside `SCUS_942.54`.
 
-`FUN_801D6704`'s own step order, the BGM-slot resolve it does on the way, and the player seat it ends with are ported as `legaia_engine_core::mode_entry_init` (`FIELD_INIT_STEPS` / `field_bgm_plan` / `field_spawn`); the spawn arms are detailed in [`field-locomotion.md`](field-locomotion.md#spawn-position-on-scene-entry). Two things about the function are easy to get wrong from the corpus:
+`FUN_801D6704`'s own step order, the BGM-slot resolve it does on the way, and the player seat it ends with are ported as `legaia_engine_system::mode_entry_init` (`FIELD_INIT_STEPS` / `field_bgm_plan` / `field_spawn`); the spawn arms are detailed in [`field-locomotion.md`](field-locomotion.md#spawn-position-on-scene-entry). Two things about the function are easy to get wrong from the corpus:
 
 - **Cite the live-RAM captures, not `overlay_0897_801d6704.txt`.** The static-base dump is correctly based but has a gap - it jumps `0x801d71b4 -> 0x801d72d4` and carries no `jr ra`. The base-`0x801C0000` captures agree with each other across all 901 instructions.
 - **The BGM id is not the slot.** At or above `0x7D0` (= 2000) `_DAT_8007BAC8` is an offset into the `music_01` bank. Below it the change-test index is `id + _DAT_80084540 + 6`, but the index the loader reads is overwritten with `*(0x8007BC64) + 2` - a scene-local id plays a fallback track, never a scene-block entry ([`audio.md`](audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank)). A global id passes through, which is the same `2000 + track` global space [`music-tracks.md`](../reference/music-tracks.md) describes. Id `0x814` is special-cased into a **two-stream** load (asset ids `0x428` then `0x422`), latched by `_DAT_8007B9B8` so a re-entry does not re-read them.
@@ -158,18 +159,18 @@ The mapping a scene loads is **positional** - there is no separate slot→asset 
 3. **`descriptor_pair_walker` (`FUN_80020224`)** reads `count = *base`, then for `slot in 0..count` it advances an 8-byte (2-word) cursor and calls `asset_type_dispatch(base + descriptor[slot].data_offset, descriptor[slot].type_size, scene, 0)`, OR-ing the per-slot return codes into a status word. Descriptors live at `base + 8 + slot*8`.
 4. **`asset_type_dispatch` (`FUN_8001F05C`)** splits `type = type_size >> 24` and `size = type_size & 0x00FF_FFFF`, then jumps via the dispatch table at `0x80010638 + type*4` (type bound: `< 0x15`). For LZS-payload types it `FUN_8001A55C`-decompresses from the `base + data_offset` source into a fresh malloc'd target.
 
-So **slot `i` ⇒ the `i`-th 8-byte descriptor; payload at `base + data_offset`; handler keyed by `type_size >> 24`.** `legaia_asset::scene_asset_table::resolve` returns the table plus the base it is relative to for **both** the bare variant (count word at offset 0) and the prescript-prefixed [`SceneScriptedAssetTable`](../formats/scene-bundles.md) variant (count word at a 0x800-aligned offset past the event prescript); `SceneAssetTable::slots` reproduces the positional walk and `SceneAssetTable::payload_range(slot, base)` resolves a slot's payload span. A disc-gated corpus test (`scene_asset_table_walk_real`) verifies the walk against every classified entry (88 bare + 79 scripted): the first slot anchors at `base + header_end` and every slot's type is a legal dispatcher type.
+So **slot `i` ⇒ the `i`-th 8-byte descriptor; payload at `base + data_offset`; handler keyed by `type_size >> 24`.** `legaia_scene_formats::scene_asset_table::resolve` returns the table plus the base it is relative to for **both** the bare variant (count word at offset 0) and the prescript-prefixed [`SceneScriptedAssetTable`](../formats/scene-bundles.md) variant (count word at a 0x800-aligned offset past the event prescript); `SceneAssetTable::slots` reproduces the positional walk and `SceneAssetTable::payload_range(slot, base)` resolves a slot's payload span. A disc-gated corpus test (`scene_asset_table_walk_real`) verifies the walk against every classified entry (88 bare + 79 scripted): the first slot anchors at `base + header_end` and every slot's type is a legal dispatcher type.
 The base the walker receives is `_DAT_8007b85c` because the transition streamer put the raw bundle there (statically pinned); for the scripted variant the count word sits at its 0x800-aligned in-file offset past the prescript, which the static resolver reconstructs structurally.
 
 ### The walk is what fills the mesh pool
 
-Two dispatcher cases register into the runtime TMD pointer table `DAT_8007C018`, and the walk above is the only path to them: type `0x02` (`TMD`) decodes its payload to an [`asset::pack`](../formats/pack.md) and calls `FUN_80026B4C` once per member, type `0x09` (`TMD2`) registers a single bare mesh. `FUN_80026B4C` stores at `DAT_8007C018 + DAT_8007b774 * 4` and post-increments, so the pool is those registrations in walk order, past the resident 5-mesh head. Byte-level detail, and why a magic sweep of a scene block is not equivalent, in [`scene-bundles.md` § The mesh pool is the descriptor walk](../formats/scene-bundles.md#the-mesh-pool-is-the-descriptor-walk). Engine side: `legaia_asset::scene_asset_table::mesh_pool` feeding `legaia-engine-core::scene_resources`.
+Two dispatcher cases register into the runtime TMD pointer table `DAT_8007C018`, and the walk above is the only path to them: type `0x02` (`TMD`) decodes its payload to an [`container-formats::pack`](../formats/pack.md) and calls `FUN_80026B4C` once per member, type `0x09` (`TMD2`) registers a single bare mesh. `FUN_80026B4C` stores at `DAT_8007C018 + DAT_8007b774 * 4` and post-increments, so the pool is those registrations in walk order, past the resident 5-mesh head. Byte-level detail, and why a magic sweep of a scene block is not equivalent, in [`scene-bundles.md` § The mesh pool is the descriptor walk](../formats/scene-bundles.md#the-mesh-pool-is-the-descriptor-walk). Engine side: `legaia_scene_formats::scene_asset_table::mesh_pool` feeding `legaia-engine-scene::scene_resources`.
 
 ## CLUT-data scattering
 
 Many character meshes reference CLUT rows that live in **different PROT entries** from their TMD source. The runtime asset chain stitches them together - the loader puts the relevant TIMs into VRAM before the TMD is rendered.
 
-Engines that drive a from-scratch scene loop call [`SceneResources::build_targeted`](../../crates/engine-core/src/scene_resources.rs) once per scene transition. The builder:
+Engines that drive a from-scratch scene loop call [`SceneResources::build_targeted`](../../crates/engine-scene/src/scene_resources.rs) once per scene transition. The builder:
 
 1. Builds the scene's mesh pool from the descriptor walk (above), and the shared blocks' contribution from the `player_data` character pack - the 5-mesh head. The walk accepts any descriptor count retail does, including the MAN-less count-4 tables of the v12-family and chapter-2 dungeons; only a block with no walkable table falls back to a TMD-magic sweep of its entries.
 2. Collects the union of all prim-target rectangles (CLUT rows + texture-page UV bboxes the meshes will sample).
@@ -200,7 +201,7 @@ The block sweep walks *entries*, and two classes in a scene's CDNAME block are n
 - **v12 trigger sidecars** (`Class::SceneV12Table`) - streamed through the conditional `.PCH` trigger channel, never the VRAM/TMD pre-pass. The exception is a sidecar that *hosts* the scene's v12-embedded asset bundle (`rikuroa` / `dolk2`).
 - **pochi-filler slots** (`Class::PochiFiller`) - reserved-but-unused slots (`pochipochi...`). A pochi slot is **one 2048-byte sector** and carries no TIM: all 266 of them are that one size, and a TIM-header sweep over the whole corpus returns nothing. The pages that erase a scene's **ground-tile atlas** at tpage `0x0C` are real, but they belong to the `scene_tmd_stream` entry that *follows* the slot, reached by the superseded entry-size expression ([`prot.md`](../formats/prot.md)); a slot sized as the sector gap to its successor has no reach at all (see [`pochi.md`](../formats/pochi.md) and [`world-map.md`](world-map.md#ground-texturing)). Retail never dispatches a reserved slot; neither does the build, which is what keeps the neighbour's pages out of field VRAM.
 
-Both skips apply in every `SceneLoadKind`. Regression: `crates/engine-core/tests/field_ground_texture_pages_disc.rs`.
+Both skips apply in every `SceneLoadKind`. Regression: `crates/engine-scene/tests/field_ground_texture_pages_disc.rs`.
 
 ### Battle-boot pre-load (`build_battle_boot_vram`)
 
@@ -208,7 +209,7 @@ Both skips apply in every `SceneLoadKind`. Regression: `crates/engine-core/tests
 
 This builder's CLUT pass is a no-op: `battle_data_pack::clut_uploads` returns no placements, because the `battle_data` post-TMD descriptor at `u32[3..0x20]` does not yield a confident `(fb_x, fb_y)` per record from the on-disc bytes (see [`battle-data-pack.md`](../formats/battle-data-pack.md)). The call still walks the pack and uploads the TIM-shaped textures it carries. The returned VRAM is intentionally separate from the scene's field VRAM - battle init merges it with the scene-specific upload pass; field rendering does not.
 
-The legacy [`SceneResources::build`](../../crates/engine-core/src/scene_resources.rs) (no shared blocks, unfiltered upload) is preserved for tests + diagnostic surfaces; engines should prefer `build_targeted` for production scene loads. The asset-viewer's `--vram-extra-dir` flag remains the manual workaround for browsing extracted `tim_scan/` dirs that aren't tied to a CDNAME scene.
+The legacy [`SceneResources::build`](../../crates/engine-scene/src/scene_resources.rs) (no shared blocks, unfiltered upload) is preserved for tests + diagnostic surfaces; engines should prefer `build_targeted` for production scene loads. The asset-viewer's `--vram-extra-dir` flag remains the manual workaround for browsing extracted `tim_scan/` dirs that aren't tied to a CDNAME scene.
 
 To find which PROT entry provides a missing CLUT row, run:
 
@@ -226,7 +227,7 @@ The four town01 NPC TMDs at field intersections sample CLUT row y=479 slots x=12
 
 `SceneResources::build_targeted_with_options(.. SceneLoadKind::Field)` matches this dispatch boundary: it excludes both the leading TMD and the type-0x01 TIMs from every `scene_tmd_stream` entry, so the field-mode TMD pool drops the battle character meshes that retail wouldn't render either. A field scene built in battle mode reports a block of "MissingClut" prims for exactly this reason: they belong to meshes field mode does not load, so their CLUTs are legitimately absent rather than lost.
 
-The [player battle file](../formats/battle-data-pack.md) parser remains the entry point for battle-init: `legaia_asset::battle_data_pack` decompresses every TMD slot's LZS stream and exposes the embedded Legaia TMDs + 32-byte layout header. The post-TMD texture / CLUT pool descriptor at `u32[3..0x20]` points at specific palette positions, but its encoding is not pinned (see [`battle-data-pack.md`](../formats/battle-data-pack.md#open-questions)).
+The [player battle file](../formats/battle-data-pack.md) parser remains the entry point for battle-init: `legaia_actor_formats::battle_data_pack` decompresses every TMD slot's LZS stream and exposes the embedded Legaia TMDs + 32-byte layout header. The post-TMD texture / CLUT pool descriptor at `u32[3..0x20]` points at specific palette positions, but its encoding is not pinned (see [`battle-data-pack.md`](../formats/battle-data-pack.md#open-questions)).
 
 ### VRAM oracle (engine vs runtime)
 

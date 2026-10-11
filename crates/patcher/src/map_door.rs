@@ -8,7 +8,7 @@
 //! `[tile_x][tile_z][dest_x][dest_z]` records. Crossing onto `(tile_x,
 //! tile_z)` repositions the player outright - no object, no script, no record
 //! name (retail arm `FUN_801D1EC4` at `0x801d21c0` → `FUN_801D5630`; the
-//! engine port is `legaia_engine_core::field_regions::IntraSceneTeleport`).
+//! engine port is `legaia_engine_field::field_regions::IntraSceneTeleport`).
 //! **Most house EXITS are this class**: the way into Vahn's house in Rim Elm
 //! is a script door, the way back out is a kind-0 record at the tile just
 //! inside the doorway.
@@ -57,11 +57,11 @@
 //! The edit is a same-size 2-byte in-place write per record (the `.MAP` is
 //! raw, not LZS) - no relocation, and the trigger tiles never move.
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// On-disc footprint of a per-scene `.MAP` field-map file (PROT entry sized
 /// exactly this; the trigger block occupies the last `0x2000` bytes). Mirrors
-/// `legaia_engine_core::scene::FIELD_MAP_LEN`.
+/// `legaia_engine_scene::scene::FIELD_MAP_LEN`.
 pub const FIELD_MAP_LEN: usize = 0x12000;
 /// Byte offset of the `.MAP` trigger block (retail `*(_DAT_1F8003EC) + 0x10000`).
 pub const TRIGGER_BLOCK_OFFSET: usize = 0x10000;
@@ -460,7 +460,7 @@ fn walk_components(entry: &[u8]) -> (Vec<u16>, u16) {
 
 /// Is the 64-unit sub-cell `(sx, sz)` an open standing spot - on the authored
 /// walk-visible floor (object-grid cell bit
-/// [`legaia_asset::field_objects::CELL_WALK_VISIBLE`]) **and** clear of the
+/// [`legaia_scene_formats::field_objects::CELL_WALK_VISIBLE`]) **and** clear of the
 /// collision grid's wall bits? Ports the engine's two spawn-validity samplers
 /// verbatim, including the wall read's retail index bias.
 fn subcell_open(entry: &[u8], sx: i32, sz: i32) -> bool {
@@ -474,7 +474,7 @@ fn subcell_open(entry: &[u8], sx: i32, sz: i32) -> bool {
     let (tx, tz) = ((x >> 7) as usize, (z >> 7) as usize);
     let cell_off = OBJECT_GRID_OFFSET + (tz * GRID_STRIDE + tx) * 2;
     let cell = u16::from_le_bytes([entry[cell_off], entry[cell_off + 1]]);
-    if cell & legaia_asset::field_objects::CELL_WALK_VISIBLE == 0 {
+    if cell & legaia_scene_formats::field_objects::CELL_WALK_VISIBLE == 0 {
         return false;
     }
     // Collision wall bit: the engine's biased read (out-of-grid reads open).
@@ -513,7 +513,7 @@ mod tests {
                 for tx in x0..=x1 {
                     let off = OBJECT_GRID_OFFSET + (tz * GRID_STRIDE + tx) * 2;
                     e[off..off + 2].copy_from_slice(
-                        &legaia_asset::field_objects::CELL_WALK_VISIBLE.to_le_bytes(),
+                        &legaia_scene_formats::field_objects::CELL_WALK_VISIBLE.to_le_bytes(),
                     );
                 }
             }

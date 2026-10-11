@@ -4,7 +4,7 @@
 //!
 //! PORT: FUN_80020f88
 //!
-//! REPLACED-BY: `legaia_asset::field_objects` placement resolution (each
+//! REPLACED-BY: `legaia_scene_formats::field_objects` placement resolution (each
 //! object's mesh = placement record `+0x10` plus the kingdom-TMD prefix,
 //! resolved once per placement at scene build) feeding the hosts' typed
 //! per-placement draw lists, in place of per-actor `0x9C`-byte render nodes.

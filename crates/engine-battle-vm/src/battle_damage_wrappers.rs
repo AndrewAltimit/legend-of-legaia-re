@@ -227,7 +227,7 @@ fn scale(
 /// An earlier note here disclosed this entry point as inert, on the grounds
 /// that "nothing in the engine can tell a capture-class cast from an ordinary
 /// move-power special: the class byte lives at `+0` of the `DAT_800754C8`
-/// spell record, which `legaia_asset::spell_names` does not decode". Both
+/// spell record, which `legaia_game_tables::spell_names` does not decode". Both
 /// halves were wrong. That
 /// parser has decoded the class byte all along - `capture_class_records`
 /// enumerates every `'c'` record with its module sub-id - and the engine

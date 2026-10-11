@@ -1,13 +1,14 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn field_tile_crossing_refreshes_region_state() {
     // Wiring oracle for the per-tile region ports (FUN_80017FBC /
-    // FUN_800180EC / FUN_801DBA20 in `crate::field_regions`): install a
+    // FUN_800180EC / FUN_801DBA20 in `legaia_engine_field::field_regions`): install a
     // synthetic `.MAP` region block + MAN zone table, cross a tile in a
     // live field tick, and assert the op-0x42 mask (`extra_flags`) and the
     // camera-zone record refresh.
-    use crate::field_regions::ZONE_RECORD_STRIDE;
+    use legaia_engine_field::field_regions::ZONE_RECORD_STRIDE;
 
     // .MAP region block: one type-4 region covering tiles x [0,8), z [0,8),
     // one type-5 region covering x [8,16), z [0,8).
@@ -66,10 +67,12 @@ fn summon_cast_accrues_spell_xp_from_dealt_damage() {
     assert!(damage > 0, "the placeholder cast deals damage");
     // Non-kill single-target accrual: damage * 12 / max_hp
     // (FUN_801ddb30 tail; kernel summon_spell_xp_gain).
-    let expected = vm::battle_formulas::summon_spell_xp_gain(damage, 4000, 4000, false);
-    let slot = crate::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
+    let expected =
+        legaia_engine_battle_vm::battle_formulas::summon_spell_xp_gain(damage, 4000, 4000, false);
+    let slot =
+        legaia_engine_battle::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
     assert_eq!(
-        crate::magic_xp::spell_xp(&world.party.roster.members[0], slot),
+        legaia_engine_battle::magic_xp::spell_xp(&world.party.roster.members[0], slot),
         expected
     );
     // No thresholds installed: XP accrues but the spell never levels.
@@ -83,14 +86,15 @@ fn summon_kill_accrues_flat_unit_and_levels_up_past_threshold() {
     // Tiny live HP: the cast kills -> flat 12 XP (single-target).
     world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
     // Pre-bank XP just below the level-1 threshold: 6 + 12 = 18 > 17.
-    let slot = crate::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
-    crate::magic_xp::add_spell_xp(&mut world.party.roster.members[0], slot, 6);
+    let slot =
+        legaia_engine_battle::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
+    legaia_engine_battle::magic_xp::add_spell_xp(&mut world.party.roster.members[0], slot, 6);
 
     let def = gimard_spell_def();
     world.cast_spell_on_slots(0, &def, &[1]);
     assert_eq!(world.actors[1].battle.hp, 0, "the cast kills the target");
     assert_eq!(
-        crate::magic_xp::spell_xp(&world.party.roster.members[0], slot),
+        legaia_engine_battle::magic_xp::spell_xp(&world.party.roster.members[0], slot),
         18,
         "kill grants the flat 12-XP unit"
     );
@@ -129,12 +133,13 @@ fn summon_xp_threshold_compare_is_strict() {
     let mut world = summon_xp_world(50, 4000);
     world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
     // 5 + 12 = 17 == threshold: strict compare -> no level.
-    let slot = crate::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
-    crate::magic_xp::add_spell_xp(&mut world.party.roster.members[0], slot, 5);
+    let slot =
+        legaia_engine_battle::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
+    legaia_engine_battle::magic_xp::add_spell_xp(&mut world.party.roster.members[0], slot, 5);
     let def = gimard_spell_def();
     world.cast_spell_on_slots(0, &def, &[1]);
     assert_eq!(
-        crate::magic_xp::spell_xp(&world.party.roster.members[0], slot),
+        legaia_engine_battle::magic_xp::spell_xp(&world.party.roster.members[0], slot),
         17
     );
     assert_eq!(world.party.roster.members[0].spell_list().levels[0], 1);
@@ -151,9 +156,10 @@ fn non_summon_spell_accrues_no_spell_xp() {
     list.ids[0] = 0x27;
     world.party.roster.members[0].set_spell_list(list);
     world.cast_spell_on_slots(0, &def, &[1]);
-    let slot = crate::magic_xp::spell_slot(&world.party.roster.members[0], 0x27).unwrap();
+    let slot =
+        legaia_engine_battle::magic_xp::spell_slot(&world.party.roster.members[0], 0x27).unwrap();
     assert_eq!(
-        crate::magic_xp::spell_xp(&world.party.roster.members[0], slot),
+        legaia_engine_battle::magic_xp::spell_xp(&world.party.roster.members[0], slot),
         0
     );
 }
@@ -163,7 +169,7 @@ fn summon_xp_world_for(
     id: u8,
     enemy_hp: u16,
     enemy_max_hp: u16,
-) -> (World, crate::spells::SpellDef) {
+) -> (World, legaia_engine_battle::spells::SpellDef) {
     let mut world = summon_xp_world(enemy_hp, enemy_max_hp);
     let mut list = world.party.roster.members[0].spell_list();
     list.ids[0] = id;
@@ -174,8 +180,9 @@ fn summon_xp_world_for(
 }
 
 fn xp_of(world: &World, id: u8) -> u32 {
-    let slot = crate::magic_xp::spell_slot(&world.party.roster.members[0], id).unwrap();
-    crate::magic_xp::spell_xp(&world.party.roster.members[0], slot)
+    let slot =
+        legaia_engine_battle::magic_xp::spell_slot(&world.party.roster.members[0], id).unwrap();
+    legaia_engine_battle::magic_xp::spell_xp(&world.party.roster.members[0], slot)
 }
 
 /// The high block strikes through the same slot-7 body (`FUN_801DD0AC(0x12,
@@ -188,7 +195,9 @@ fn high_block_damage_cast_accrues_spell_xp() {
         let before = world.actors[1].battle.hp;
         world.cast_spell_on_slots(0, &def, &[1]);
         let damage = (before - world.actors[1].battle.hp) as u32;
-        let expected = vm::battle_formulas::summon_spell_xp_gain(damage, 4000, 4000, false);
+        let expected = legaia_engine_battle_vm::battle_formulas::summon_spell_xp_gain(
+            damage, 4000, 4000, false,
+        );
         assert!(expected > 0, "id {id:#x}");
         assert_eq!(xp_of(&world, id), expected, "id {id:#x}");
     }
@@ -198,8 +207,8 @@ fn high_block_damage_cast_accrues_spell_xp() {
 #[test]
 fn horn_credits_per_party_seat() {
     let (mut world, mut def) = summon_xp_world_for(0x9C, 4000, 4000);
-    def.target = crate::spells::SpellTarget::AllAllies;
-    def.effect = crate::spells::SpellEffect::HealAll { amount: 10 };
+    def.target = legaia_engine_battle::spells::SpellTarget::AllAllies;
+    def.effect = legaia_engine_battle::spells::SpellEffect::HealAll { amount: 10 };
     world.actors[0].battle.hp = 300;
     world.cast_spell_on_slots(0, &def, &[0]);
     assert_eq!(xp_of(&world, 0x9C), 3);
@@ -220,7 +229,8 @@ fn jedo_credits_per_living_monster_outside_a_scripted_fight() {
     let before = world.actors[1].battle.hp;
     world.cast_spell_on_slots(0, &def, &[1]);
     let damage = (before - world.actors[1].battle.hp) as u32;
-    let expected = vm::battle_formulas::summon_spell_xp_gain(damage, 4000, 4000, false);
+    let expected =
+        legaia_engine_battle_vm::battle_formulas::summon_spell_xp_gain(damage, 4000, 4000, false);
     assert_eq!(xp_of(&world, 0x9D), expected);
 }
 
@@ -228,7 +238,7 @@ fn jedo_credits_per_living_monster_outside_a_scripted_fight() {
 fn final_heal_revives_and_consumes_one_lost_grail() {
     use legaia_save::Party;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -281,7 +291,7 @@ fn final_heal_revives_and_consumes_one_lost_grail() {
 fn final_heal_mid_drain_settles_on_max_hp() {
     use legaia_save::Party;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -317,7 +327,7 @@ fn final_heal_mid_drain_settles_on_max_hp() {
 fn final_heal_keeps_bit_when_second_grail_is_equipped() {
     use legaia_save::Party;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -352,7 +362,7 @@ fn final_heal_keeps_bit_when_second_grail_is_equipped() {
 fn final_heal_ignores_members_without_the_bit() {
     use legaia_save::Party;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -377,8 +387,9 @@ fn final_heal_ignores_members_without_the_bit() {
 fn battle_entry_bounds_the_magic_level_up_record() {
     let mut world = summon_xp_world(50, 4000);
     world.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
-    let slot = crate::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
-    crate::magic_xp::add_spell_xp(&mut world.party.roster.members[0], slot, 6);
+    let slot =
+        legaia_engine_battle::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
+    legaia_engine_battle::magic_xp::add_spell_xp(&mut world.party.roster.members[0], slot, 6);
     world.cast_spell_on_slots(0, &gimard_spell_def(), &[1]);
     assert_eq!(
         world.seru.magic_level_ups.len(),

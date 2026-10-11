@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::common::*;
+use crate::cli_io::*;
 use anyhow::{Context, Result};
 use legaia_prot::cdname;
 
@@ -10,7 +10,7 @@ pub(crate) fn character_pack_one(
     equip: Option<u8>,
     out: Option<&Path>,
 ) -> Result<()> {
-    use legaia_asset::character_pack;
+    use legaia_actor_formats::character_pack;
     let bytes = std::fs::read(input)
         .with_context(|| format!("read PROT 874 entry from {}", input.display()))?;
     let pack = character_pack::parse(&bytes)?;
@@ -91,7 +91,7 @@ pub(crate) fn field_char_tex_one(
     entry: Option<usize>,
     out_tim: Option<&Path>,
 ) -> Result<()> {
-    use legaia_asset::field_char_textures;
+    use legaia_actor_formats::field_char_textures;
     let bytes = std::fs::read(input)
         .with_context(|| format!("read PROT 874 entry from {}", input.display()))?;
     let pack = field_char_textures::parse(&bytes)?;
@@ -134,11 +134,17 @@ pub(crate) fn field_char_tex_one(
         if let Some(out_path) = out_tim {
             // Re-extract the raw TIM bytes by re-walking the pack (the parsed
             // `Tim` is lossy on exact block padding; the raw slice is exact).
-            let container =
-                legaia_asset::parse_player_lzs(&bytes, field_char_textures::CONTAINER_DESCRIPTORS)?;
+            let container = legaia_container_formats::parse_player_lzs(
+                &bytes,
+                field_char_textures::CONTAINER_DESCRIPTORS,
+            )?;
             let section = &container.descriptors[field_char_textures::CONTAINER_SECTION];
-            let decoded = legaia_asset::decode(&bytes, section, legaia_asset::DecodeMode::Lzs)?;
-            let bodies = legaia_asset::pack::extract_pack(&decoded)?;
+            let decoded = legaia_container_formats::decode(
+                &bytes,
+                section,
+                legaia_container_formats::DecodeMode::Lzs,
+            )?;
+            let bodies = legaia_container_formats::pack::extract_pack(&decoded)?;
             std::fs::write(out_path, bodies[idx])?;
             println!("  wrote entry {idx} TIM -> {}", out_path.display());
         } else {
@@ -159,7 +165,7 @@ pub(crate) fn battle_char_pack_one(
     atlas: Option<usize>,
     out_tim: Option<&Path>,
 ) -> Result<()> {
-    use legaia_asset::battle_char_pack;
+    use legaia_actor_formats::battle_char_pack;
     let bytes = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
     let slots = battle_char_pack::parse_slots(&bytes)?;
     let atlases = match atlas_entry {
@@ -237,7 +243,7 @@ pub(crate) fn battle_char_pack_one(
 }
 
 pub(crate) fn player_anm_one(input: &Path, desc_count: usize, out: Option<&Path>) -> Result<()> {
-    use legaia_asset::player_anm;
+    use legaia_actor_formats::player_anm;
     let bytes = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
     let bundles = player_anm::find_in_entry(&bytes, desc_count);
     if bundles.is_empty() {
@@ -280,7 +286,7 @@ pub(crate) fn player_anm_scan(
     cdname_path: Option<&Path>,
     desc_count: usize,
 ) -> Result<()> {
-    use legaia_asset::player_anm;
+    use legaia_actor_formats::player_anm;
     let cdname = cdname_path
         .map(|p| std::fs::read_to_string(p).with_context(|| format!("read CDNAME {}", p.display())))
         .transpose()?;
@@ -344,8 +350,8 @@ pub(crate) fn monster_archive_one(
     dump_block: Option<&Path>,
     write_block: Option<&Path>,
 ) -> Result<()> {
-    use legaia_asset::monster_archive;
-    let bytes = crate::common::read_input(input)?;
+    use legaia_actor_formats::monster_archive;
+    let bytes = crate::cli_io::read_input(input)?;
     println!(
         "monster archive: {} bytes, {} slots of 0x{:X}",
         bytes.len(),
@@ -496,7 +502,7 @@ pub(crate) fn monster_archive_one(
         let Some(id) = id else {
             anyhow::bail!("--glb requires --id <N>");
         };
-        match legaia_asset::monster_gltf::export_glb(&bytes, id)? {
+        match legaia_actor_formats::monster_gltf::export_glb(&bytes, id)? {
             Some(glb) => {
                 std::fs::write(glb_path, &glb)?;
                 println!(
@@ -552,7 +558,9 @@ pub(crate) fn monster_archive_one(
 
 /// The palette index (`cba & 0x3F`) of the first textured primitive in the
 /// monster's mesh, so a baked texture PNG uses the colours that prim expects.
-pub(crate) fn first_prim_palette(m: &legaia_asset::monster_archive::MonsterMesh) -> Option<usize> {
+pub(crate) fn first_prim_palette(
+    m: &legaia_actor_formats::monster_archive::MonsterMesh,
+) -> Option<usize> {
     let tbuf = m.tmd_bytes();
     let tmd = legaia_tmd::parse(tbuf).ok()?;
     let vm = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, tbuf);
@@ -587,9 +595,9 @@ pub(crate) fn man_one(
     max_formations: usize,
     max_regions: usize,
 ) -> Result<()> {
-    let buf = crate::common::read_input(input)?;
+    let buf = crate::cli_io::read_input(input)?;
     let (man_bytes, desc) = load_man_bytes(&buf)?;
-    let man = legaia_asset::man_section::parse(&man_bytes)
+    let man = legaia_scene_formats::man_section::parse(&man_bytes)
         .map_err(|e| anyhow::anyhow!("MAN parse: {e}"))?;
 
     println!(
@@ -649,7 +657,7 @@ pub(crate) fn man_one(
         let body = man
             .encounter_section_body(&man_bytes)
             .ok_or_else(|| anyhow::anyhow!("encounter section body out of range"))?;
-        let es = legaia_asset::man_section::parse_encounter_section(body)
+        let es = legaia_scene_formats::man_section::parse_encounter_section(body)
             .map_err(|e| anyhow::anyhow!("encounter-section parse: {e}"))?;
         println!("encounter section (FUN_8003A110):");
         println!(
@@ -667,7 +675,7 @@ pub(crate) fn man_one(
 
         let f_take = (es.formation_count as usize).min(max_formations);
         println!("  formations [{}/{}]", f_take, es.formation_count);
-        for (i, f) in legaia_asset::man_section::formation_records(body, &es)
+        for (i, f) in legaia_scene_formats::man_section::formation_records(body, &es)
             .take(f_take)
             .enumerate()
         {
@@ -692,14 +700,14 @@ pub(crate) fn man_one(
         // The region array is partitioned by the condition array into
         // story-flag-gated groups; only one is live at a time, so print the
         // regions under the group that owns them rather than as one list.
-        let active = legaia_asset::man_section::active_region_group(body, &es, |_| false);
+        let active = legaia_scene_formats::man_section::active_region_group(body, &es, |_| false);
         println!(
             "  conditions [{}] (region groups; '*' = the group a cleared flag bank selects)",
             es.condition_count
         );
         let mut first = 0usize;
         let mut printed = 0usize;
-        for (i, c) in legaia_asset::man_section::condition_records(body, &es).enumerate() {
+        for (i, c) in legaia_scene_formats::man_section::condition_records(body, &es).enumerate() {
             let Some(c) = c else {
                 println!("    [{i:3}] (malformed)");
                 break;
@@ -718,7 +726,7 @@ pub(crate) fn man_one(
                 "   {mark}[{i:3}] {gate} -> regions[{first}..{})",
                 first + c.region_count as usize
             );
-            for (k, r) in legaia_asset::man_section::region_records_in(
+            for (k, r) in legaia_scene_formats::man_section::region_records_in(
                 body,
                 &es,
                 first,
@@ -791,7 +799,7 @@ pub(crate) fn man_scan(dir: &Path, cdname_path: Option<&Path>, json: bool) -> Re
         let Ok((man_bytes, _)) = load_man_bytes(&buf) else {
             continue;
         };
-        let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
+        let Ok(man) = legaia_scene_formats::man_section::parse(&man_bytes) else {
             continue;
         };
         let stem = path
@@ -802,7 +810,7 @@ pub(crate) fn man_scan(dir: &Path, cdname_path: Option<&Path>, json: bool) -> Re
         let display = display_name_for(&stem, names.as_ref());
 
         let (f_n, r_n) = match man.encounter_section_body(&man_bytes) {
-            Some(body) => match legaia_asset::man_section::parse_encounter_section(body) {
+            Some(body) => match legaia_scene_formats::man_section::parse_encounter_section(body) {
                 Ok(es) => (Some(es.formation_count), Some(es.region_count)),
                 Err(_) => (None, None),
             },
@@ -867,7 +875,7 @@ pub(crate) fn befect_cluster_cmd(
     out: Option<&Path>,
     json: bool,
 ) -> Result<()> {
-    use legaia_asset::befect_cluster::{self, Component};
+    use legaia_actor_formats::befect_cluster::{self, Component};
     use legaia_prot::archive::Archive;
 
     let mut archive = Archive::open(prot)?;

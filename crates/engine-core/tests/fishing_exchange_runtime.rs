@@ -1,10 +1,10 @@
 //! Disc-free runtime oracle for the fishing point-exchange grant kernel:
 //! [`World::fishing_exchange_buy`] against synthetic venue rows shaped like
 //! the retail tables (a one-time top prize + repeatable stock; see
-//! `legaia_asset::fishing_exchange` for the on-disc layout the shapes mirror).
+//! `legaia_minigame_formats::fishing_exchange` for the on-disc layout the shapes mirror).
 
-use legaia_engine_core::fishing::{FishingTables, PrizeExchange};
 use legaia_engine_core::world::World;
+use legaia_engine_fishing::fishing::{FishingTables, PrizeExchange};
 
 fn venue(page: usize) -> PrizeExchange {
     let rows: Vec<_> = [
@@ -15,7 +15,7 @@ fn venue(page: usize) -> PrizeExchange {
     .iter()
     .enumerate()
     .map(
-        |(row, &(limit, price, item_id))| legaia_asset::fishing_exchange::ExchangeRow {
+        |(row, &(limit, price, item_id))| legaia_minigame_formats::fishing_exchange::ExchangeRow {
             row,
             limit,
             price,

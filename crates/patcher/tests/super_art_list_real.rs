@@ -1,5 +1,5 @@
 //! Disc-gated oracle for **show Super Arts on the in-battle move list**
-//! (`legaia_patcher::super_art_list` + `apply::inject_super_art_list`).
+//! (`legaia_arts_patch::super_art_list` + `apply::inject_super_art_list`).
 //!
 //! The feature lists a character's *performed* Super Arts on the Tactical-Arts
 //! list `FUN_80034358` draws, sorted in by AP, through two same-size detours into
@@ -37,26 +37,26 @@
 //! name, AP and arrows, and see Terra's list stay empty - is still required
 //! before calling the feature done.
 
-use legaia_asset::item_names::file_offset_for_va;
-use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
-use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
-use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::shiny_seru::{
-    ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SLOT6_END_VA,
-    SLOT6_VA,
-};
-use legaia_patcher::super_art_list::{
+use legaia_arts_patch::super_art_list::{
     APPLIER_VA, ARROW_BITS, ARROWS_COUNT_SHIFT, ARROWS_STRIDE, ART_CONSTANT_BIAS, ARTS_CHARACTERS,
     FIRST_NORMAL_ORDINAL, GLYPH_BUF_BYTES, HOOK_COUNT_VA, HOOK_ID_VA, HOOK_PERFORMED_VA,
     MARKERS_SHIFT, MAX_MARKERS, OVERLAY_BASE_VA, OVERLAY_PROT_INDEX, PAGER_VA, PAGER_WORDS,
     PERFORMED_COUNT_SHIFT, PERFORMED_MASK, PERFORMED_RET_VA, SCAN_HEAD_VA, SCAN_HIT_VA,
     SCRATCH_BYTES, SUP_STRIDE, SUPER_ARTS_PER_CHAR, SuperArtListInjection, super_art_rows,
 };
-use legaia_patcher::super_art_menu::{
+use legaia_arts_patch::super_art_menu::{
     HOOK_BOUND_VA, HOOK_CURSOR_VA, HOOK_MARK_VA, HOOK_ROW_VA, MENU_BASE_VA, MENU_DESC_END_VA,
     MENU_DESC_VA, MENU_PROT_INDEX, MENU_RUN_END_VA, MENU_RUN_VA, SuperArtMenuInjection,
 };
+use legaia_code_hooks::arenas::{
+    ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SLOT6_END_VA,
+    SLOT6_VA,
+};
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
+use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
+use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
+use legaia_patcher::apply;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -336,9 +336,9 @@ fn the_runtime_name_chase_lands_on_the_super_arts_own_record() {
     let patcher = DiscPatcher::open(disc.clone()).expect("open");
     let mut found = 0usize;
     for ch in legaia_art::queue::Character::all() {
-        let idx = legaia_patcher::super_art_power::player_entry_index(ch);
+        let idx = legaia_arts_patch::super_art_power::player_entry_index(ch);
         let entry = patcher.read_entry(idx).expect("player battle file");
-        let rows = legaia_patcher::super_art_power::super_art_powers(&scus, &entry, ch)
+        let rows = legaia_arts_patch::super_art_power::super_art_powers(&scus, &entry, ch)
             .expect("decode record0");
         assert_eq!(
             rows.len(),
@@ -435,7 +435,7 @@ fn the_tables_read_back_exactly_as_planned() {
             let f = (w >> (k as u32 * ARROW_BITS)) & 7;
             assert_eq!(
                 (f & 3) as u8,
-                legaia_patcher::super_art_list::arrow_code(*c),
+                legaia_arts_patch::super_art_list::arrow_code(*c),
                 "{} arrow {k}",
                 r.name
             );
@@ -630,8 +630,8 @@ fn the_menu_side_lands_in_0899_and_reads_back() {
         // No edit lands in a save-screen card buffer or other runtime data:
         // a pause-menu Save returns to the menu with 0899 still resident.
         let va = MENU_BASE_VA + e.file_off as u32;
-        let hit = legaia_patcher::space_ledger::overlapping_buffer(
-            legaia_patcher::space_ledger::Image::Prot(MENU_PROT_INDEX),
+        let hit = legaia_disc_patch::space_ledger::overlapping_buffer(
+            legaia_disc_patch::space_ledger::Image::Prot(MENU_PROT_INDEX),
             va,
             va + e.bytes.len() as u32,
         );
@@ -894,7 +894,7 @@ fn re_applying_or_stacking_a_dead_space_feature_is_refused() {
     // Stacking on shiny-Seru: the bytes are already taken, so the plan refuses
     // rather than silently writing over another feature's routine.
     let mut patcher = DiscPatcher::open(disc).expect("open");
-    apply::inject_shiny_seru(&mut patcher, legaia_patcher::shiny_seru::DEFAULT_PCT)
+    apply::inject_shiny_seru(&mut patcher, legaia_code_hooks::shiny_seru::DEFAULT_PCT)
         .expect("shiny-seru");
     let err = apply::inject_super_art_list(&mut patcher).expect_err("must refuse on shiny-seru");
     assert!(

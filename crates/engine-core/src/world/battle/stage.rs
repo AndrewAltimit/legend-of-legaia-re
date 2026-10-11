@@ -1,6 +1,6 @@
 //! The battle **stage-id** byte `_DAT_8007B64A`: which stage overlay slot the
 //! current fight reads, and so which arm the side-band tick
-//! ([`crate::battle_sideband`]) takes.
+//! ([`legaia_engine_battle::battle_sideband`]) takes.
 //!
 //! Retail treats the byte as last-writer-wins across five writers, each
 //! ported at its own seat and writing [`crate::world::BattleState::stage_id`]:
@@ -17,7 +17,7 @@
 //! Stage `1`'s behaviour is the sparring-prompt machine
 //! (`world/battle/tutorial.rs`); stages `2` / `3` - the two phases of the
 //! Cort fight - are the two stage modules
-//! ([`crate::battle_stage_module`]), driven from the side-band.
+//! ([`legaia_engine_battle::battle_stage_module`]), driven from the side-band.
 
 use super::*;
 
@@ -55,7 +55,7 @@ impl World {
     /// Returns `true` when the arm fired.
     ///
     /// REF: FUN_801E6968 (the arm's kernel is
-    /// [`crate::battle_stage_module::boss_transition_stage_id`])
+    /// [`legaia_engine_battle::battle_stage_module::boss_transition_stage_id`])
     pub(in crate::world) fn run_boss_transition_arm(&mut self) -> bool {
         let Some(id) = self.formation_slot0_monster_id() else {
             return false;
@@ -64,7 +64,9 @@ impl World {
         let Some(liveness) = self.actors.get(first_seat).map(|a| a.battle.liveness) else {
             return false;
         };
-        let Some(stage) = crate::battle_stage_module::boss_transition_stage_id(id, liveness) else {
+        let Some(stage) =
+            legaia_engine_battle::battle_stage_module::boss_transition_stage_id(id, liveness)
+        else {
             return false;
         };
         self.battle.stage_id = stage;

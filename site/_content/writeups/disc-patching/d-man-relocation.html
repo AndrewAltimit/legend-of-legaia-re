@@ -13,7 +13,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Target</dt><dd>A MAN record whose length changes - the <code>0x3F</code> scene-transition's inline destination name, or an inserted block of instructions</dd>
-    <dt>Engine</dt><dd><code>legaia_asset::man_edit</code> - rebuild, resize, fix every disturbed offset</dd>
+    <dt>Engine</dt><dd><code>legaia_scene_formats::man_edit</code> - rebuild, resize, fix every disturbed offset</dd>
     <dt>Fix-ups</dt><dd>Partition tables &middot; partition-2 record-offset table &middot; the <code>u24</code> length at <code>+0x28</code> &middot; intra-record jump deltas &middot; the external descriptor size word</dd>
     <dt>Bound</dt><dd>Recompressed stream must fit the asset footprint; otherwise the scene is skipped</dd>
     <dt>Mods</dt><dd><code>--doors</code> &middot; <code>--starting-items</code> (variant: splice)</dd>
@@ -83,7 +83,7 @@
   <table>
     <thead><tr><th>Claim</th><th>Evidence</th><th>Reference</th></tr></thead>
     <tbody>
-      <tr><td>MAN partition layout + the <code>+0x28</code> length</td><td>Scene-bundle loader walk; parser <code>legaia_asset::man_edit</code></td><td><a href="../../formats/man-relocation.html">man-relocation</a>, <a href="../../formats/scene-bundles.html">scene-bundles</a></td></tr>
+      <tr><td>MAN partition layout + the <code>+0x28</code> length</td><td>Scene-bundle loader walk; parser <code>legaia_scene_formats::man_edit</code></td><td><a href="../../formats/man-relocation.html">man-relocation</a>, <a href="../../formats/scene-bundles.html">scene-bundles</a></td></tr>
       <tr><td>Door op <code>0x3F</code> carries the name inline</td><td>Field-VM dispatcher <code>FUN_801DE840</code></td><td><a href="../../subsystems/script-vm.html">script-vm</a></td></tr>
       <tr><td>Grant block ops <code>0x70</code> / <code>0x39</code> / <code>0x50</code></td><td>Same dispatcher; the engine's field VM executes the inserted block in the runtime oracle</td><td><code>starting_bag_real.rs</code></td></tr>
       <tr><td>Every fix-up is sufficient</td><td>Door oracle re-decodes each relocated scene and walks every record to its terminator</td><td><code>door_patch_real.rs</code></td></tr>

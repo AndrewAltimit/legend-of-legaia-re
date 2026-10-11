@@ -7,15 +7,15 @@
 //! the painter directly would prove the kernel computes, not that a running
 //! session ever asks it to.
 
-use legaia_engine_core::actor_handler::ActorHandler;
 use legaia_engine_core::world::World;
-use legaia_engine_vm::baka_hub_actors::{HubDraw, HubPainter, slot};
-use legaia_engine_vm::world_map_overlay::EquipPanelDraw;
+use legaia_engine_field::actor_handler::ActorHandler;
+use legaia_engine_field::dev_menu_leaves::EquipPanelDraw;
+use legaia_engine_field::submode_hub_actors::{HubDraw, HubPainter, slot};
 
-/// Panel-window record the entry list paints. Taken from `baka_hub_actors`
+/// Panel-window record the entry list paints. Taken from `submode_hub_actors`
 /// rather than spelled here: the record table's base was off by four records,
 /// and a literal at every call site is what hid it.
-const ENTRY_LIST_WINDOW: usize = legaia_engine_vm::baka_hub_actors::window::ENTRY_LIST;
+const ENTRY_LIST_WINDOW: usize = legaia_engine_field::submode_hub_actors::window::ENTRY_LIST;
 
 fn field_world() -> World {
     let mut w = World::new();
@@ -84,7 +84,7 @@ fn a_live_frame_loop_paints_the_per_entry_equipment_panel() {
 /// populated world prints.
 #[test]
 fn the_painted_rows_carry_retails_column_geometry() {
-    use legaia_engine_vm::world_map_overlay::{
+    use legaia_engine_field::dev_menu_leaves::{
         EQUIP_COL_CURRENT, EQUIP_COL_LABEL, EQUIP_LABEL_VAS, EQUIP_ROW_PITCH,
     };
 

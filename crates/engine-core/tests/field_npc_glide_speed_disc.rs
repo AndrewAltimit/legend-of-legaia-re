@@ -29,12 +29,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_asset::man_section::parse as parse_man;
-use legaia_engine_core::man_field_scripts::{
+use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::{
     placement_glide_speed, placement_wander_step, placement_yield_step,
 };
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_scene_formats::man_section::parse as parse_man;
 
 /// The stand-in `FIELD_NPC_MOTION_SPEED` (pub(crate) in the engine): base step
 /// 8. The whole point of the change is that a placement's decoded speed need

@@ -1,5 +1,4 @@
 //! Count-in banner, clip / face-rig gates, scene entry and stage, and the sprite-part emitter.
-//! Split out of `dance.rs`.
 
 use super::*;
 
@@ -358,7 +357,7 @@ pub fn dance_face_rig(mode: DanceMode, dancer: usize) -> Option<usize> {
 
 /// The dance venue's own PROT block base, the raw-TOC index the overlay's
 /// init writes into `_DAT_80084540` (`0x801CF100`). It is the block the dance
-/// scene lives in - see [`legaia_asset::dance_cast`], whose
+/// scene lives in - see [`legaia_minigame_formats::dance_cast`], whose
 /// `DANCE_SCENE_NAME` (`other7`) is the venue's real scene name.
 ///
 /// There is no dance-side scene-name literal. `0x801D518C` - once read here
@@ -418,7 +417,7 @@ pub struct DanceSceneEntry {
     /// Scratchpad bytes `0x1F8003E8..EB` - the camera's visible tile window,
     /// as `(min_x, min_z, max_x, max_z)` signed tiles. **Symmetric** about the
     /// camera on both axes, where the field's default
-    /// (`legaia_engine_core::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`) is offset
+    /// (`legaia_engine_system::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`) is offset
     /// forward and to the left; the dance floor is also two tiles wider and
     /// four deeper.
     pub view_window: (i8, i8, i8, i8),
@@ -670,7 +669,7 @@ pub enum SpritePartEmit {
 // off-screen.
 //
 // The old tag's second prerequisite, "a quad sink", was **wrong about the
-// engine**: `legaia_engine_ui::screen_prim` has carried a PSX screen-space
+// engine**: `legaia_render_kernels::screen_prim` has carried a PSX screen-space
 // quad (`ScreenQuad` / `FlatQuad`, per-vertex gouraud, CLUT + texpage, ABR
 // mode, ordering-table bucket) with both hosts consuming its `build_geometry`
 // output since the battle-intro work. What genuinely has no sink is the

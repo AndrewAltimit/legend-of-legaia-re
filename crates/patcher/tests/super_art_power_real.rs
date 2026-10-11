@@ -1,5 +1,5 @@
 //! Disc-gated oracle for the Super Art damage-power editor
-//! (`legaia_patcher::super_art_power` + `apply::set_super_art_power`).
+//! (`legaia_arts_patch::super_art_power` + `apply::set_super_art_power`).
 //!
 //! The load-bearing claim under test is the **addressing**: a Super Art has no
 //! input combo and no row in the SCUS arts-name table, so it is reached through
@@ -10,11 +10,13 @@
 //! idempotent and byte-deterministic. Skips + passes without `LEGAIA_DISC_BIN`.
 
 use legaia_art::queue::{Character, Command};
+use legaia_arts_patch::arts_power::labeled_art_powers;
+use legaia_arts_patch::super_art_power::{
+    self, find_super_art, player_entry_index, super_art_powers,
+};
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
-use legaia_patcher::arts_power::labeled_art_powers;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::super_art_power::{self, find_super_art, player_entry_index, super_art_powers};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -73,9 +75,9 @@ fn all_fifteen_super_arts_resolve_and_carry_their_own_name() {
             // The address is derived from the finisher, and the record's own
             // name field is what validates it - so a match here is the pin.
             assert_eq!(
-                row.record_off % legaia_patcher::arts_power::ART_RECORD_STRIDE,
+                row.record_off % legaia_arts_patch::arts_power::ART_RECORD_STRIDE,
                 found.values().next().unwrap().record_off
-                    % legaia_patcher::arts_power::ART_RECORD_STRIDE,
+                    % legaia_arts_patch::arts_power::ART_RECORD_STRIDE,
                 "{} sits on the shared 0xD0 grid",
                 s.name
             );
@@ -289,7 +291,7 @@ fn the_combo_keyed_editors_still_cannot_reach_a_super_art() {
     let entry = patcher
         .read_entry(player_entry_index(Character::Vahn))
         .unwrap();
-    let dec = legaia_patcher::arts::player_record0_decoded(&entry).unwrap();
+    let dec = legaia_arts_patch::arts::player_record0_decoded(&entry).unwrap();
     let located = super_art_power::super_art_powers_in(&scus_img, &dec, Character::Vahn);
     assert_eq!(located.len(), 5);
     let super_offs: Vec<usize> = located.iter().map(|r| r.record_off).collect();
@@ -311,7 +313,7 @@ fn the_combo_keyed_editors_still_cannot_reach_a_super_art() {
             continue;
         }
         let cmds: Vec<Command> = r.commands.clone();
-        for off in legaia_patcher::arts_power::find_records_by_combo(&dec, &cmds) {
+        for off in legaia_arts_patch::arts_power::find_records_by_combo(&dec, &cmds) {
             assert!(
                 !super_offs.contains(&off),
                 "combo-keyed lookup must never land on a Super Art record"

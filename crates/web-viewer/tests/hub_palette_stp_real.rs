@@ -19,20 +19,20 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_ui::other_game_hud as hud;
+use legaia_engine_ui::muscle_dome_hud as hud;
 use legaia_engine_ui::ringside_backdrop::HubPaletteStp;
-use legaia_engine_ui::screen_prim::{PaletteStp, palette_stp};
+use legaia_render_kernels::screen_prim::{PaletteStp, palette_stp};
 
 fn hub() -> Option<(Vec<u8>, Vec<u8>)> {
     let disc = std::env::var_os("LEGAIA_DISC_BIN")?;
-    let host = legaia_engine_core::scene::SceneHost::open_disc(&disc).ok()?;
+    let host = legaia_engine_core::scene_host::SceneHost::open_disc(&disc).ok()?;
     let arena = host
         .index
-        .entry_bytes_extended(legaia_engine_core::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32)
+        .entry_bytes_extended(legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32)
         .ok()?;
     let container = host
         .index
-        .entry_bytes_extended(legaia_asset::muscle_dome::HUB_CONTAINER_PROT_INDEX)
+        .entry_bytes_extended(legaia_minigame_formats::muscle_dome::HUB_CONTAINER_PROT_INDEX)
         .ok()?;
     Some((arena, container))
 }
@@ -74,7 +74,8 @@ fn hub_clut_stp_is_the_uploads_and_variant_two_passes_subtract() {
     assert_eq!(file_all, vec![0, 2, 6, 8], "the file's STP palettes");
 
     // The upload: every non-empty palette on both rows is all-STP.
-    let (t0, t1) = legaia_asset::muscle_dome::hub_page_tims(&container).expect("hub pages");
+    let (t0, t1) =
+        legaia_minigame_formats::muscle_dome::hub_page_tims(&container).expect("hub pages");
     for t in [&t0, &t1] {
         for (i, c) in classes(t).iter().enumerate() {
             if is_empty_palette(t, i) {

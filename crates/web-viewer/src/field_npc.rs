@@ -24,12 +24,11 @@
 
 use super::*;
 use crate::field_scene::FieldScenePack;
-use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_scene::scene::ProtIndex;
 
-/// One catalogued placement - the shared kernel's record
-/// ([`legaia_engine_core::npc_catalog::NpcEntry`]), re-exported so the
-/// viewer's accessors keep their old path.
-pub use legaia_engine_core::npc_catalog::NpcEntry;
+// One catalogued placement - the shared kernel's record
+// (`legaia_engine_core::npc_catalog::NpcEntry`).
+use legaia_engine_core::npc_catalog::NpcEntry;
 
 /// The NPC catalog for one loaded field scene. Built by
 /// [`LegaiaViewer::set_scene_npcs`]; the meshes resolve against the
@@ -86,14 +85,14 @@ pub fn build_npc_catalog(
 }
 
 /// [`build_npc_catalog`] against an already-built
-/// [`SceneResources`](legaia_engine_core::scene_resources::SceneResources) - the
+/// [`SceneResources`](legaia_engine_scene::scene_resources::SceneResources) - the
 /// form the play page uses, whose resources come from the running
-/// [`SceneHost`](legaia_engine_core::scene::SceneHost) rather than a viewer-side
+/// [`SceneHost`](legaia_engine_core::scene_host::SceneHost) rather than a viewer-side
 /// scene build. `res.tmds` is the model-byte index space either way.
 pub fn build_npc_catalog_res(
     index: &ProtIndex,
     name: &str,
-    res: &legaia_engine_core::scene_resources::SceneResources,
+    res: &legaia_engine_scene::scene_resources::SceneResources,
 ) -> Result<FieldNpcPack, String> {
     build_npc_catalog_impl(index, name, res, None)
 }
@@ -117,7 +116,7 @@ pub fn build_npc_catalog_res(
 pub fn build_npc_catalog_play(
     index: &ProtIndex,
     name: &str,
-    res: &legaia_engine_core::scene_resources::SceneResources,
+    res: &legaia_engine_scene::scene_resources::SceneResources,
     global_pool: &[Option<std::sync::Arc<legaia_engine_core::world::GlobalTmd>>],
 ) -> Result<FieldNpcPack, String> {
     build_npc_catalog_impl(index, name, res, Some(global_pool))
@@ -129,7 +128,7 @@ pub fn build_npc_catalog_play(
 fn build_npc_catalog_impl(
     index: &ProtIndex,
     name: &str,
-    res: &legaia_engine_core::scene_resources::SceneResources,
+    res: &legaia_engine_scene::scene_resources::SceneResources,
     play_pool: Option<&[Option<std::sync::Arc<legaia_engine_core::world::GlobalTmd>>]>,
 ) -> Result<FieldNpcPack, String> {
     let legaia_engine_core::npc_catalog::NpcCatalog {

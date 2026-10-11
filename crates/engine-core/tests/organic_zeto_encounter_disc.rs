@@ -28,7 +28,7 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -78,11 +78,11 @@ fn garmel_man_carries_the_zeto_formation_row_and_beat_record() {
         .field_man_payload(&host.index)
         .expect("MAN payload read")
         .expect("garmel resolves its bundle MAN");
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("MAN parses");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("MAN parses");
 
     // Formation row 9 = lone monster 0x4B (count 1). Read straight off the
     // encounter section.
-    let record = legaia_engine_core::encounter_man::formation_record_for_row(
+    let record = legaia_engine_battle::encounter_man::formation_record_for_row(
         &man_bytes,
         ZETO_FORMATION_ROW as usize,
     )
@@ -95,9 +95,10 @@ fn garmel_man_carries_the_zeto_formation_row_and_beat_record() {
 
     // The row sits OUTSIDE every region's rollable slice: it can never come
     // from the random roll, only from the scripted op.
-    let region_table =
-        legaia_engine_core::region_encounter::region_encounter_table_from_man("garmel", &man_bytes)
-            .expect("garmel region table decodes");
+    let region_table = legaia_engine_battle::region_encounter::region_encounter_table_from_man(
+        "garmel", &man_bytes,
+    )
+    .expect("garmel region table decodes");
     for region in &region_table.regions {
         let base = u16::from(region.formation_base);
         let end = base + u16::from(region.formation_count);
@@ -109,7 +110,7 @@ fn garmel_man_carries_the_zeto_formation_row_and_beat_record() {
 
     // The beat record P2[12]: C1 gate [0x198], and its body carries the
     // `3E FF 09` scripted-battle op exactly once.
-    let (c1, c2) = legaia_engine_core::man_field_scripts::partition2_record_gates(
+    let (c1, c2) = legaia_engine_field::man_field_scripts::partition2_record_gates(
         &man_file,
         &man_bytes,
         ZETO_BEAT_RECORD,
@@ -117,7 +118,7 @@ fn garmel_man_carries_the_zeto_formation_row_and_beat_record() {
     .expect("P2[12] gates decode");
     assert_eq!(c1, vec![ZETO_GATE_FLAG], "P2[12] C1 gate is [0x198]");
     assert!(c2.is_empty(), "P2[12] has no C2 gate");
-    let (start, pc0, len) = legaia_engine_core::man_field_scripts::partition_record_span(
+    let (start, pc0, len) = legaia_engine_field::man_field_scripts::partition_record_span(
         &man_file,
         &man_bytes,
         2,
@@ -175,7 +176,7 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
         .field_man_payload(&host.index)
         .expect("MAN payload read")
         .expect("garmel resolves its bundle MAN");
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("MAN parses");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("MAN parses");
     assert!(
         host.world
             .install_gated_p2_record(&man_file, &man_bytes, ZETO_BEAT_RECORD),
@@ -185,7 +186,7 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
     // Drive the record. Toggle confirm across ticks so its inline dialog
     // pages advance on fresh press edges (the record is a conversation-heavy
     // cutscene).
-    let cross_mask = legaia_engine_core::input::PadButton::Cross.mask();
+    let cross_mask = legaia_engine_system::input::PadButton::Cross.mask();
     let mut ticks = 0u32;
     let mut entered_battle = false;
     while ticks < 8000 {
@@ -196,10 +197,7 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
         });
         host.tick().expect("tick");
         ticks += 1;
-        if matches!(
-            host.world.mode,
-            legaia_engine_core::world::SceneMode::Battle
-        ) {
+        if matches!(host.world.mode, legaia_engine_mode::mode::SceneMode::Battle) {
             entered_battle = true;
             break;
         }
@@ -270,7 +268,7 @@ fn zeto_beat_record_is_blocked_by_its_own_c1_gate_once_set() {
         .field_man_payload(&host.index)
         .expect("MAN payload read")
         .expect("garmel resolves its bundle MAN");
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("MAN parses");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("MAN parses");
     assert!(
         !host
             .world

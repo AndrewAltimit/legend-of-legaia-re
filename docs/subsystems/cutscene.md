@@ -28,16 +28,16 @@ master clock, and the scripted scenes execute their retail bytecode.
 
 | Piece | Retail home | Port home |
 |---|---|---|
-| FMV dispatch + play loop | STR overlay, PROT 0970 (`FUN_801CEA3C`, `FUN_801CF098`) | `legaia_engine_core::cutscene`, `legaia_mdec::str_player` |
+| FMV dispatch + play loop | STR overlay, PROT 0970 (`FUN_801CEA3C`, `FUN_801CF098`) | `legaia_engine_system::movie::cutscene`, `legaia_mdec::str_player` |
 | Sector demux (ring) | SCUS `St` library (`FUN_8005ECD4` / `FUN_8005F024`) | `legaia_mdec::st_ring`, `str_sector::StrFrameAssembler`, `str_av::StrAvDemuxer` |
 | Bitstream decode | `FUN_801D0378` (Iki), `FUN_801D070C` (STRv2/v3, dev slots only) | `legaia_mdec::MdecDecoder`, `strv2_decode` |
 | IDCT + colour conversion | MDEC hardware | `legaia_mdec::MdecDecoder` (software) |
 | Movie audio | drive plays XA sectors in hardware into the SPU CD input | `crates/xa` decode into `AudioOut::play_xa` |
 | FMV trigger | field-VM op `4C E2`, title attract countdown | `legaia_engine_vm::field`, `World::cutscene.pending_fmv_trigger` |
-| Dispatch table | `0x801D0A6C`, 23 slots of 32 bytes | `legaia_asset::fmv_dispatch` |
+| Dispatch table | `0x801D0A6C`, 23 slots of 32 bytes | `legaia_game_tables::fmv_dispatch` |
 | Scripted scenes | field VM `FUN_801DE840` + record dispatcher `FUN_8003BDE0` | `engine-core` `world/narration.rs`, `engine-dialog` `cutscene_timeline` |
 | Narration crawl | roller actor `FUN_80037174` | `engine-field` `cutscene_narration` |
-| Battle-intro transition | PROT 0979 (`FUN_801CF5BC` + five style emitters) | `engine-vm` `battle_intro_*`, `engine-ui::battle_intro` |
+| Battle-intro transition | PROT 0979 (`FUN_801CF5BC` + five style emitters) | `engine-vm` `battle_intro_*`, `render-kernels::battle_intro` |
 
 ### Movie pipeline
 
@@ -93,7 +93,7 @@ flowchart LR
 
 `StrInit` opens the STR stream, initialises the MDEC and starts the XA audio. `StrMode` runs the
 per-frame loop: read the next batch of sectors, decode a frame, blit it full-screen. Both map to
-`SceneMode::Cutscene` in the port (`crates/engine-field/src/mode.rs`). The mode table lists
+`SceneMode::Cutscene` in the port (`crates/engine-mode/src/mode.rs`). The mode table lists
 `ConfigInit` (index 1) as mode 27's `next`; the hand-off a movie takes is written by the master
 dispatch per `fmv_id` ([below](#master-dispatch---fun_801cea3c-overlay)).
 
@@ -164,8 +164,8 @@ table in [`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-
 `see ghidra/scripts/funcs/overlay_cutscene_str_0970_801cea3c.txt` (`0x801CECA0` is a body address
 inside this function, not a sibling entry point).
 
-**Port.** Both `switch`es live in `legaia_engine_core::cutscene` (defined in
-`crates/engine-system/src/cutscene.rs`): `fmv_post_play_handoff` returns the control transfer as
+**Port.** Both `switch`es live in `legaia_engine_system::movie::cutscene` (defined in
+`crates/engine-system/src/movie/cutscene.rs`): `fmv_post_play_handoff` returns the control transfer as
 an `FmvHandoff` (field scene + spawn word / resume-in-place / card init / mode 0), and
 `fmv_bitstream`, `fmv_is_skippable` and `fmv_clear_rects` carry the three pre-play decisions.
 
@@ -495,7 +495,7 @@ the SPU callback registration `FUN_8006A0E0`, which calls the same PsyQ entry wi
 It is byte-identical, at the same VA, in PROT 0970 and PROT 0971 (`debug_menu`; file offset
 `0x1680`, inside 0971's own `0x1800` bytes).
 
-The two sync wrappers are ported for shape in `legaia_engine_system::mdec_dma_sync`, which
+The two sync wrappers are ported for shape in `legaia_engine_system::movie::mdec_dma_sync`, which
 records them as retail-unreachable rather than as a wiring gap: no host call could make them
 correspond to something the game does. Sweep commands:
 [`find-address-word-refs.py`](../../scripts/ghidra-analysis/find-address-word-refs.py)
@@ -723,7 +723,7 @@ legaia-engine play-str cutscene.str
 ## CDNAME → STR override map
 
 The retail mapping is decoded straight from the disc: `fmv_id -> movie + frame range` via
-`legaia_asset::fmv_dispatch`, per-scene trigger ids via `man_field_scripts::scene_fmv_triggers`,
+`legaia_game_tables::fmv_dispatch`, per-scene trigger ids via `man_field_scripts::scene_fmv_triggers`,
 and the post-play return scene via the master dispatch (see
 [`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-mapping)).
 
@@ -751,7 +751,7 @@ legaia-engine play-window --scene opdeene --cutscene-map legaia-cutscene-map.tom
 ```
 
 Explicit entries win; missing keys fall through to `cutscene_str_for`. API:
-[`CutsceneMap::from_toml_path`](../../crates/engine-core/src/scene/cutscene.rs) /
+[`CutsceneMap::from_toml_path`](../../crates/engine-scene/src/scene/cutscene.rs) /
 `from_toml_str` / `to_toml_string`.
 
 ## STR/MDEC FMV overlay residency
@@ -767,7 +767,7 @@ match PROT 0970 loaded at `0x801CE818`):
 | `0x801CE8AC` | ~50 B | variable | Post-FMV return-scene labels (CDNAME shape) |
 
 The residency check and pinned addresses are in
-`legaia_engine_core::capture_observations::str_fmv_overlay`.
+`legaia_parity::capture_observations::str_fmv_overlay`.
 
 ### Directory-record cache
 
@@ -777,7 +777,7 @@ searched, not an FMV structure. Not a "compact MV table at `0x801CAE40`": that n
 is phase-shifted 8 bytes and pairs each name with the *next* record's location. Details and the
 title-capture cross-check (the same cache holding `XA1.XA..XA34.XA`) are in
 [`str-fmv-table.md`](../formats/str-fmv-table.md#directory-record-cache-0x801cae08-24-b-cdlfile-records).
-`legaia_asset::str_fmv_table::parse_entries` keeps the name-first window parse as a
+`legaia_game_tables::str_fmv_table::parse_entries` keeps the name-first window parse as a
 capture-forensics helper.
 
 ### Post-FMV return scenes
@@ -791,7 +791,7 @@ town0b  map01  chitei2  map02  jou  uru2  town0e
 These are the **destinations the master dispatch hands control to after playback**, one per
 mid-game `fmv_id` (1..4, 6..8). They are *not* the trigger-scene set - the `4C E2` ops live in a
 different scene set, with only `chitei2` in both (a scene that returns to itself).
-[`cutscene_str_for`](../../crates/engine-core/src/scene/cutscene.rs) covers the `op*` / `ed*`
+[`cutscene_str_for`](../../crates/engine-scene/src/scene/cutscene.rs) covers the `op*` / `ed*`
 scenes in CDNAME order; its sibling constant `FMV_TRIGGER_FIELD_SCENES` records this label list.
 
 ## Field-VM FMV-trigger op
@@ -827,7 +827,7 @@ The two globals it writes are the only side-effects:
   `0x801D0A6C`. The table has 23 slots; the nine retail movies occupy `fmv_id 0..=8`, and every
   `MVn.STR` on the disc is dispatched (`MV3.STR` carries four segments by frame range; slots 9+
   are dev files absent from the disc). It is static overlay data, decoded from the disc by
-  `legaia_asset::fmv_dispatch`; mapping in
+  `legaia_game_tables::fmv_dispatch`; mapping in
   [`str-fmv-table.md`](../formats/str-fmv-table.md#fmv-dispatch-table-0x801d0a6c-23--32-b).
 - **`_DAT_8007B83C`** - next-game-mode global. `0x1A` kicks the main mode dispatcher
   (`FUN_80017714`) into `StrInit` on the next frame, which loads the STR overlay.
@@ -870,13 +870,13 @@ Coverage limits of the sweep:
 
 Every one of the dispatch slot's eight words is read by the play loop and by nothing else - see
 [the consumer sweep](../formats/str-fmv-table.md#every-word-of-the-record-is-a-play-loop-input).
-`legaia_asset::fmv_dispatch` keeps six of the eight; the two it drops (`fb_x`, `fb_y`) are the
+`legaia_game_tables::fmv_dispatch` keeps six of the eight; the two it drops (`fb_x`, `fb_y`) are the
 decode rect's VRAM origin, resolved in `legaia_mdec::str_player`.
 
 ### Static FMV-trigger sites - exhaustive
 
 Three sites write `_DAT_8007B83C = 0x1A` in retail, all codified in
-[`legaia_engine_vm::cutscene_trigger`](../../crates/engine-vm/src/cutscene_trigger.rs) as
+[`legaia_engine_system::movie::cutscene_trigger`](../../crates/engine-system/src/movie/cutscene_trigger.rs) as
 `FMV_TRIGGER_SITES`:
 
 | Site | Function | Mode-write addr | FMV-id source | Trigger condition |
@@ -932,13 +932,13 @@ the trigger-side state across the full retail range:
 The states were produced through the **debug menu**, not by stepping a scene's trigger op: the
 `4C E2 lo hi` byte sequence appears in no save's field-pack RAM. So the corpus pins the
 `(fmv_id, game_mode)` tuple, and the per-scene assignment comes from the disc walk above. It is
-codified at `legaia_engine_core::capture_observations::cutscene_trigger_corpus` and exercised by
+codified at `legaia_parity::capture_observations::cutscene_trigger_corpus` and exercised by
 the disc-gated test
-`crates/mednafen/tests/real_saves.rs::cutscene_trigger_corpus_pins_fmv_id_across_nine_saves`.
+`crates/parity/tests/real_saves.rs::cutscene_trigger_corpus_pins_fmv_id_across_nine_saves`.
 
 ### Engine port of the trigger flow
 
-The field-VM port handles the op as `op4c_n_e_sub2_fmv_trigger(fmv_id: i16)` in
+The field-VM port handles the op as `trigger_fmv(fmv_id: i16)` in
 [`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs); the world's
 [`FieldHostImpl`](../../crates/engine-core/src/world.rs) records the request as
 `World::cutscene.pending_fmv_trigger` plus a `FieldEvent::FmvTrigger { fmv_id }`.
@@ -971,7 +971,7 @@ sequenceDiagram
 - `fmv_index_to_str_filename` mirrors the retail nine-slot map - `fmv_id 0..=8`, `MV3.STR`
   shared by slots `2..=5`, dev slots `9..=22` returning `None` - and its sibling
   `fmv_post_play_return_scene` carries the `0x801CE8AC` list. The disc-parsed
-  `legaia_asset::fmv_dispatch::FmvTable` is the authoritative source.
+  `legaia_game_tables::fmv_dispatch::FmvTable` is the authoritative source.
 
 Per host:
 
@@ -985,7 +985,7 @@ When booting from a **disc image** the movie is read from the ISO with its inter
 and the video is paced off the audio cursor; from an **extracted root** it plays video only (the
 extract truncates the audio). What the movie does to the BGM - retail's movie path never touches
 the sequencer, the title attract releases the title theme and `CARD INIT` restarts it - is one
-engine policy both hosts consult (`legaia_engine_core::movie_audio`), described in
+engine policy both hosts consult (`legaia_engine_system::movie::movie_audio`), described in
 [`audio.md`](audio.md#movies-and-the-score).
 
 ## In-engine 3D opening (the five-scene New-Game chain)
@@ -1039,7 +1039,7 @@ An exec-breakpoint on the record dispatcher `FUN_8003BDE0` across the whole open
   record counts (`- N0 - N1`). See
   [`script-vm.md`](script-vm.md#0x44-0x4f-record-spawn--camera--render--state--move-block).
   Engine: `legaia_engine_vm` decodes it as `SpawnRecord` and the host installs the record
-  ([`FieldHost::op44_spawn_scene_record`](../../crates/engine-vm/src/field/host.rs) →
+  ([`FieldActorSpawnHost::spawn_scene_record`](../../crates/engine-vm/src/field/host/actor_spawn.rs) →
   [`World::install_spawned_record`](../../crates/engine-core/src/world/narration.rs)).
 - **Walk-on tile trigger** (`map01` / `town01`). The per-frame tile trigger `FUN_801D1EC4` →
   `FUN_801D5630(1, x, z)` → `FUN_8003BDE0(x, z, rec[2], rec[3])` (ra `0x801D218C`): kind-1
@@ -1050,8 +1050,8 @@ An exec-breakpoint on the record dispatcher `FUN_8003BDE0` across the whole open
   same tick, so an arrival spawns the opening record immediately. `gate = 1` spawns the P2
   record; `gate = 0` records are object-binds consumed at scene init (`FUN_8003A55C`) and never
   spawn. Engine:
-  [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-vm/src/field_regions.rs),
-  [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs), `SceneHost`'s
+  [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-field/src/field_regions.rs),
+  [`Scene::field_tile_triggers`](../../crates/engine-scene/src/scene/scene_ty.rs), `SceneHost`'s
   `spawn_arrival_trigger_record`.
 
 Before spawning, `FUN_8003BDE0` checks the P2 record's **C1/C2 story-flag gates** against the
@@ -1095,7 +1095,7 @@ an optional short placement word) but presents differently: the pages show **sim
 centered, while the parent script continues; a later card block whose pages are blank clears the
 card. `map01`'s fly-in uses it for the "twilight of humanity" card and its clear.
 
-The parser is [`legaia_asset::cutscene_text`](../../crates/asset/src/cutscene_text.rs)
+The parser is [`legaia_scene_formats::cutscene_text`](../../crates/scene-formats/src/cutscene_text.rs)
 (`parse_narration` / `narration_pages`), which distinguishes `NarrationKind::Crawl`
 (`op0 = 0x80`) from `NarrationKind::Card` (`op0 = 0x89`); the engine surfaces a card via
 `World::cutscene.card`. It decodes the runtime disc bytes - no narration text is in the repo.
@@ -1106,7 +1106,7 @@ legaia-engine man-scripts --scene opdeene --disc "<disc>.bin" \
   --narration --disasm-partition 2
 ```
 
-The disc-gated test `crates/engine-core/tests/opdeene_narration.rs` checks the structure (two
+The disc-gated test `crates/engine-scene/tests/opdeene_narration.rs` checks the structure (two
 blocks, 14 + 8 pages, every page non-empty ASCII, declared count matches decoded).
 
 ### Narration playback - the crawl roller (`FUN_80037174`)
@@ -1266,10 +1266,10 @@ Evidence (cold-boot probes in `scripts/pcsx-redux/`):
   interleaved) - the pixels live only in VRAM.
 
 **Port.** On entering `opdeene`,
-[`cutscene_caption::decode_opdeene_caption`](../../crates/engine-core/src/cutscene_caption.rs)
+[`cutscene_caption::decode_opdeene_caption`](../../crates/engine-scene/src/cutscene_caption.rs)
 locates the TIM in PROT 0749's LZS sections and decodes it to RGBA (its background palette entry
 is `0x0000`, so `legaia_tim::decode_rgba8` gives it alpha 0), stored on
-`World::cutscene.caption`. [`World::tick`](../../crates/engine-core/src/world/frame_tick.rs)
+`World::cutscene.caption`. [`World::tick`](../../crates/engine-core/src/world/frame_tick/mode_tick.rs)
 fades `caption_alpha` in after the first crawl block scrolls out
 (`World::cutscene.narration_seq == 1` and narration inactive) and back out after a ~2 s hold
 (`CAPTION_HOLD_FRAMES`) or when the second crawl opens, whichever comes first. The host uploads
@@ -1398,7 +1398,7 @@ camera (a `srav` lerp toward `_DAT_801F2798`-table targets), a different mode of
 globals.
 
 **Port and validation.**
-[`legaia_engine_vm::camera_mover`](../../crates/engine-battle-vm/src/camera_mover.rs) is the
+[`legaia_engine_battle_vm::camera_mover`](../../crates/engine-battle-vm/src/camera_mover.rs) is the
 integer law verbatim, plus `curve_unit` as the normalized `f32` shape the renderer-side
 [`CutsceneCameraInterp`](../../crates/engine-battle-vm/src/psx_camera.rs) evaluates.
 
@@ -1407,7 +1407,7 @@ integer law verbatim, plus `curve_unit` as the normalized `f32` shape the render
   1-6 display-frame read skew, except the two frames on which a new beat re-armed the block
   mid-read.
 - The env-gated oracle
-  [`camera_mover_recomp_oracle`](../../crates/engine-vm/tests/camera_mover_recomp_oracle.rs)
+  [`camera_mover_recomp_oracle`](../../crates/engine-battle-vm/tests/camera_mover_recomp_oracle.rs)
   (`LEGAIA_RECOMP_TRACE_DIR`; see [recomp differential](../tooling/recomp-differential.md))
   replays whole staged beats against per-display-frame captures of the opening chain and
   reproduces the snap, mode-1, mode-2 and mode-4 beats **bit-exact** per frame within the
@@ -1533,7 +1533,7 @@ and the scene chain all happen by execution, not by a static walk of the MAN.
 
 | Record kind | Installed by | Behaviour |
 |---|---|---|
-| `opdeene` opening | [`World::load_cutscene_timeline_from_man`](../../crates/engine-core/src/world/narration.rs): finds the P2 record that issues `GFLAG_SET 26` (via `man_field_scripts::walk_partition_gflag_sites`) and resolves its named-record span | modal [`CutsceneTimeline`](../../crates/engine-dialog/src/cutscene_timeline.rs): camera seize + locomotion lock |
+| `opdeene` opening | [`World::load_cutscene_timeline_from_man`](../../crates/engine-core/src/world/narration.rs): finds the P2 record that issues `GFLAG_SET 26` (via `man_field_scripts::walk_partition_gflag_sites`) and resolves its named-record span | modal [`CutsceneTimeline`](../../crates/engine-field/src/cutscene_timeline.rs): camera seize + locomotion lock |
 | `opstati` / `opurud` | the op-`0x44` spawn, [`World::install_spawned_record`](../../crates/engine-core/src/world/narration.rs) | modal timeline |
 | `map01` / `town01`, gated walk-on beat records | the walk-on tile trigger / `install_gated_p2_record` | modal timeline |
 | an ordinary scene's mid-play op-`0x44` spawn | [`World::install_spawned_helper_record`](../../crates/engine-core/src/world/narration.rs) | **concurrent helper context** in `World::field_vm.helper_contexts` (a bounded table mirroring retail's small fixed context set), stepped by `step_helper_contexts`; no camera seize, does not read as `cutscene_timeline_active()` |
@@ -1565,7 +1565,7 @@ a per-frame step budget and a frame cap:
 the VM into them.
 [`World::install_cutscene_timeline_record`](../../crates/engine-core/src/world/narration.rs)
 parses each block into a `NarrationSite` (`op_offset` +
-[`byte_span`](../../crates/asset/src/cutscene_text.rs) end + pages + kind). When the PC reaches
+[`byte_span`](../../crates/scene-formats/src/cutscene_text.rs) end + pages + kind). When the PC reaches
 a crawl site the stepper installs the pages on the roller and **advances the PC past the
 block** - for every block, the last included. The two holds are the retail ones
 ([above](#where-a-record-waits-for-its-crawl)): `CutsceneTimeline::narration_pc` /
@@ -1751,7 +1751,7 @@ sequenceDiagram
     Note over T: timeline advances
 ```
 
-**Port.** [`legaia_engine_core::field_channels`](../../crates/engine-core/src/field_channels.rs):
+**Port.** [`legaia_engine_field::field_channels`](../../crates/engine-field/src/field_channels.rs):
 `spawn_channels` builds one `FieldChannel` per placement (with the retail script-id rule),
 spawned alongside a cutscene timeline in
 [`World::install_cutscene_timeline_record`](../../crates/engine-core/src/world.rs).
@@ -1827,10 +1827,10 @@ disassembly:
   `+3` / `+5` are `FUN_801D25EC` tween arguments read by `FUN_8003CE9C`, not a jump target.
 
 The engine spawns no player channel, so
-[`field_channels::resolve_target`](../../crates/engine-core/src/field_channels.rs) returns
+[`field_channels::resolve_target`](../../crates/engine-field/src/field_channels.rs) returns
 `None` for `0xF8` and `run_spawned_record_slice` models the two ops directly. The ExecMove emits
 the `ExecMove` field event and arms an in-flight countdown
-([`CutsceneTimeline::player_move_frames`](../../crates/engine-dialog/src/cutscene_timeline.rs),
+([`CutsceneTimeline::player_move_frames`](../../crates/engine-field/src/cutscene_timeline.rs),
 standing in for the playout, since engine player pokes complete synchronously). The halt-acquire
 **parks** at the op (`CutsceneTimeline::player_wait`) until the countdown drains, then steps
 past it by encoded width, so the record flows on to its trailing scene change. A halt-acquire
@@ -1914,7 +1914,7 @@ step and the draw
   of the capture.
 
 The beat is a `(a0, a1, packed)` triple per frame, which is the shape of the port's
-[`ScreenTintPush`](../../crates/engine-field/src/field_actor_kernels.rs) triples emitted by
+[`ScreenTintPush`](../../crates/engine-field/src/actor_colour_tween.rs) triples emitted by
 [`step_colour_tween`]. Both arguments are live selectors, not constants a scalar fade factor
 could stand in for.
 
@@ -1934,9 +1934,9 @@ The port names `a0` `ScreenTintPush::kind`, after the spawner argument it arrive
 OT bucket, not a quad family.
 
 Both hosts composite the frame's pushes through one emitter - `World::screen_tint_push_args`
-into `legaia_engine_ui::screen_prim::screen_effect_push_prims`, which applies the floor, the
+into `legaia_render_kernels::screen_prim::screen_effect_push_prims`, which applies the floor, the
 two-bit mask and the red/blue swap. The page-side consumer is pinned by
-`crates/web-viewer/tests/w4b_screen_effect_page_prims.rs` (the `town0e` entry script issues the
+`crates/web-viewer/tests/screen_effect_page_prims.rs` (the `town0e` entry script issues the
 instruction), the native call site by the `SIM_PAIRS` row in
 `scripts/ci/check-ui-host-drift.py`.
 
@@ -1981,7 +1981,7 @@ One conditional touches the duration: a pure-white target under blend `2` loses 
 (`sra v0,s1,3` / `subu s1,s1,v0` at `0x801DFE60`), which is why the captured template reads `57`
 where the instruction's own word is `0x41`.
 
-[`step_colour_tween`]: ../../crates/engine-field/src/field_actor_kernels.rs
+[`step_colour_tween`]: ../../crates/engine-field/src/actor_colour_tween.rs
 
 ### Full-scene sepia grade (the gold prologue look)
 
@@ -2026,7 +2026,7 @@ V = max(min(max(r, g, b), 0xF8) - 30, 0)   ->   (V, V*246 >> 8, V*112 >> 8)
 (`FUN_8001A8DC`'s sector-0 arm at hue `0x38`: `f = 238`, `t = V*(256 - (0x90*18 >> 8)) >> 8`,
 `p = V*(256 - 0x90) >> 8`.) The retail state `s1_newgame_field` (`opdeene` at field-run) holds
 all 18425 baked colour words of its 77 resident TMDs on that curve with none off it, an authored
-`0x80` word at `(98, 94, 42)` - `crates/engine-core/tests/prologue_sepia_retail_capture.rs`.
+`0x80` word at `(98, 94, 42)` - `crates/parity/tests/prologue_sepia_retail_capture.rs`.
 `G/R` is `246/256` and `B/R` is `112/256`, with a value drop of 30. Only baked-colour rows are
 touched: the colour counts at `0x801F26F0` are non-zero for `flags >> 1` in `12..=19` alone
 (flags `0x18..=0x27`), so the light-source rows `0x10..=0x17` keep their GTE colour.
@@ -2096,8 +2096,8 @@ un-darkened **neutral** packets in the sampled region:
   `opdeene`'s `0x00202020` is unusually dim, which is why the prologue shows the gap, and the
   port's lack of distance culling widens the sampled far region.
 
-Both play hosts shade light-source rows through `engine-core::field_lit_mesh` (over
-`engine-vm::field_light`), replacing the builder's neutral `0x80`; the engine figures above are
+Both play hosts shade light-source rows through `engine-field::field_lit_mesh` (over
+`render-kernels::field_light`), replacing the builder's neutral `0x80`; the engine figures above are
 those prims at the neutral packet.
 
 ## Field-to-battle transition (the battle-intro overlay)
@@ -2163,9 +2163,9 @@ the `FUN_801CF5BC` row of [`functions.md`](../reference/functions.md).
 `see ghidra/scripts/funcs/overlay_field_battle_intro_801cf5bc.txt`.
 
 **Port.** This state machine is the encounter session's `Transition` phase:
-`legaia_engine_vm::battle_intro_transition::tick_transition`, driven once per frame by
+`legaia_engine_battle_vm::battle_intro_transition::tick_transition`, driven once per frame by
 `legaia_engine_core::World::tick_encounter`. The style and fade switches are
-`engine-vm::battle_intro_styles::{IntroStyle, intro_fade}`.
+`engine-battle-vm::battle_intro_styles::{IntroStyle, intro_fade}`.
 
 | Effect | Engine handling |
 |---|---|
@@ -2194,7 +2194,7 @@ Any allocation failure bumps the error counter `_DAT_8007B828` by ten.
 **Port.** The per-record simulation each style runs - seeding, gating, integration - is in
 `legaia-engine-vm`: `battle_intro_particles` (the two seeders), `battle_intro_styles` (styles 0,
 1, 3), `battle_intro_tiles` (style 2), `battle_intro_swirl` (style 4). All five styles **draw**
-through the engine's screen-overlay path; the packet builders are in `engine-ui::battle_intro`
+through the engine's screen-overlay path; the packet builders are in `render-kernels::battle_intro`
 (`emit_particle_field`, `emit_tile`, `intro_quad_to_screen`, `emit_swirl_band`,
 `emit_spinup_ring`). Two retail nuances are not carried, because the screen-overlay path has no
 depth-cue channel: a moving tile's opaque faces and the late-phase swirl fade toward a far
@@ -2212,7 +2212,7 @@ the current map/scene index `DAT_80084540`.
 The default is style 2, so an ordinary random encounter shatters; style 3 is reached by three
 formations and style 4 by one. Two of the eleven stores are delay-slot stores that land on both
 arms of their branch, which is why the flags-set path defaults to style 1 rather than the
-initial style 2. Port: `engine-vm::battle_intro_styles::select_intro_style`, whose doc comment
+initial style 2. Port: `engine-battle-vm::battle_intro_styles::select_intro_style`, whose doc comment
 carries the full override table in retail's evaluation order.
 
 `FUN_801D1CD4` is an inert stub - it writes a 12-byte local (`0, 0, 0x7D0, 0, 0, 0`) that never
@@ -2226,7 +2226,7 @@ The same init block seeds the duration two instructions before the style switch:
 whose jump-table arm (slot `4` of the table at `0x801CE840`, body `0x801CEFEC`) re-stores `0xFC`
 at `0x801CEFF4` / `0x801CEFFC` - **252 frames**. Both stores are read off the overlay image's
 instruction words (the decompiler's rendering of the init reaches past the dumped window). Port:
-`engine-vm::battle_intro_styles::intro_duration_frames`.
+`engine-battle-vm::battle_intro_styles::intro_duration_frames`.
 
 That number is the denominator of everything time-shaped in the transition: each
 `INTRO_FADE_RAMPS` entry is a *lead* before it (the longest is the curtain's `0x40`, so `0x84`
@@ -2246,7 +2246,7 @@ dozen frames and its primitive count decays as records retire. `engine-render`'s
 A degenerate seeder RNG parks the grid the same way: the delays come from 256 consecutive draws,
 so a generator that converges hands every record the same delay (an LCG with an even multiplier
 walks its state to a fixed point within a handful of draws). The port's stand-in,
-`engine-vm::battle_intro_particles::IntroRng`, is shared by every host.
+`engine-battle-vm::battle_intro_particles::IntroRng`, is shared by every host.
 
 #### The transition owns the whole frame
 
@@ -2268,7 +2268,7 @@ the rest-pose patches read at double brightness, and the window's tail shows a s
 field once the last particle has expired.
 
 The port composites the transition's screen primitives over a live scene
-(`RenderTarget::SceneWithScreenPrims`), so it emits `engine-ui::battle_intro::backdrop_prim` -
+(`RenderTarget::SceneWithScreenPrims`), so it emits `render-kernels::battle_intro::backdrop_prim` -
 an opaque display-rect quad at the farthest OT bucket - on **every** frame of the window to
 stand in for the cleared frame.
 
@@ -2424,7 +2424,7 @@ outer bands stop being circular and become the screen rectangle.
 `0x80043390`. It is a *packet-descriptor builder*: it assembles a synthetic Legaia TMD object in
 the scratch block at `_DAT_8007B85C + 0x5DC00` and hands it to the generic per-prim dispatcher.
 All projection, culling, depth cue and OT linking happen inside the SCUS dispatch handler, which
-the engine already models (`engine-vm::prim_dispatch` + `engine-ui::gte`). The emitter never
+the engine already models (`render-kernels::prim_dispatch` + `render-kernels::gte`). The emitter never
 writes the tile record; the integration in the same function does.
 
 The object: 8 vertices (the record's `+0x14` corner array), 10 primitives at `0x18` stride,
@@ -2469,7 +2469,7 @@ primitive six pixels low. Oracle: `crates/mednafen/tests/gte_projection_real.rs`
 
 **The shade page is disc data the engine already parses.** The 4bpp page at VRAM `(448, 0)` that
 the four semi-transparent side faces stretch over is the top-left `64 x 64` texel corner of the
-**field-character texture pack's entry 0** (`legaia_asset::field_char_textures`, PROT 0874
+**field-character texture pack's entry 0** (`legaia_actor_formats::field_char_textures`, PROT 0874
 section 2): a `256 x 256` 4bpp TIM whose declared destination is `(448, 0)`, uploaded at field
 init and resident for the whole field session. `clut 0x7641` decodes to `(16, 473)` - CLUT index
 1 of that entry's 16-CLUT block, which the field uploader lands as a `256 x 1` strip on row 473:
@@ -2497,7 +2497,7 @@ log) pins the rest:
   average.
 
 **Port.** `battle_intro_tiles::tile_face_quads` is the ten-primitive packet,
-`engine-ui::battle_intro::emit_tile` the projection + accept chain (with `euler_rot_psx` as the
+`render-kernels::battle_intro::emit_tile` the projection + accept chain (with `euler_rot_psx` as the
 `FUN_80026988` port), and the capture path re-lands pack entry 0 in the transition's cloned VRAM
 page. Not carried: a moving tile's record (`progress != 0`) dispatches through the depth-cue
 alpha bank in retail (fade toward a zeroed far colour); in the port receding tiles keep their
@@ -2589,7 +2589,7 @@ stateDiagram-v2
 - Both fades are kind `2`, `0x20` frames, black-to-white then white-to-black, so the swap
   happens behind a white flash.
 
-Port: `legaia_engine_core::cutscene_script_elements::LeaderSwap` (defined in
+Port: `legaia_engine_field::leader_swap::LeaderSwap` (defined in
 `crates/engine-field`).
 
 **The request is a pad edge, which makes it player-reachable.** `801d2998..801d29a8` is
@@ -2631,13 +2631,14 @@ TMD's packed colour words**: for every primitive it converts each colour to HSV
 The disc's only callers are the prologue's six `4C E6` sites; what their two-op pair does to a
 word is under [the sepia grade](#full-scene-sepia-grade-the-gold-prologue-look).
 
-Port: `legaia_engine_core::cutscene_script_elements::shift_primitive_colours`; the renderers'
+Port: `legaia_engine_field::primitive_colour_grade::shift_primitive_colours`; the renderers'
 `prologue_sepia_word` is its two-op result in closed form.
 
 ### What the tween and the emitter do beyond the one-line role
 
 Three details of these bodies are visible only in the disassembly; the port
-(`legaia_engine_core::cutscene_script_elements`) carries all three.
+(`legaia_engine_field::ambient_emitter`, `leader_swap` and
+`primitive_colour_grade`) carries all three.
 
 - **The tween's entry test is on the linked object.** `0x801D5C1C` loads `linked[+0x10]` and
   branches on bit `8`, and the taken branch lands on the store that sets the *element's own* bit
@@ -2695,7 +2696,7 @@ Three details of these bodies are visible only in the disassembly; the port
 | XA sector layout + demux | `crates/xa/src/demux.rs`; [`formats/xa.md`](../formats/xa.md) |
 | Interleaved STR A/V decode + sync clock | `crates/engine-shell/src/cutscene_av.rs`; browser twin `crates/web-viewer/src/play_fmv.rs` |
 | Audio-cursor playback clock | `crates/engine-audio/src/lib.rs` (`AudioOut::xa_cursor_secs`) |
-| Game modes 26 / 27 | `crates/engine-field/src/mode.rs` |
+| Game modes 26 / 27 | `crates/engine-mode/src/mode.rs` |
 | `play-str` frame loop | `crates/engine-shell/src/window/str_player.rs` (`cmd_play_str` / `StrPlayerApp`) |
 
 ## See also

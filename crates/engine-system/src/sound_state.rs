@@ -271,6 +271,19 @@ pub enum SfxRingOp {
     ArmSlot(u8, i16, i16),
 }
 
+/// One CD-XA voice clip request (the `FUN_8003D53C` call, decoded): the
+/// shape the battle cue router, the field scripts and the minigame chrome
+/// all hand a host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct XaVoiceClip {
+    /// Clip-table index (`0x801C6ED8` table).
+    pub clip: u32,
+    /// XA channel within the clip file.
+    pub channel: u32,
+    /// Play length in sectors: `(raw*60 + 99) / 100`.
+    pub duration_sectors: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

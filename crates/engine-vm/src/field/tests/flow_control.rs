@@ -1,4 +1,4 @@
-//! Core flow control: NOP/JMP_REL, flag triplets, YIELD, DATA_BLOCK, WAIT_FRAMES, peek_extended, cross-context extended dispatch. Extracted verbatim from `field/tests.rs`.
+//! Core flow control: NOP/JMP_REL, flag triplets, YIELD, DATA_BLOCK, WAIT_FRAMES, peek_extended, cross-context extended dispatch.
 
 use super::*;
 
@@ -289,7 +289,7 @@ fn wait_frames_accumulates_until_target() {
 #[test]
 fn op_4c_n8_sub_3_no_longer_pending() {
     // Sanity-check that the rectangular tile-fill case (`0x4C n8 sub-3`,
-    // host hook [`FieldHost::op4c_n_8_sub_3_rect_tile_fill`]) is fully
+    // host hook [`FieldTerrainHost::rect_tile_fill`]) is fully
     // ported. The dispatcher previously returned `Pending` for this
     // opcode; it now invokes the host and advances PC by 7. There are
     // no remaining `0x4C` sub-ops that return `Pending`.

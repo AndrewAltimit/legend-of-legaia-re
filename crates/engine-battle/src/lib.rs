@@ -9,12 +9,11 @@
 //! `world::battle` submodules) calls in and owns the composition, so this
 //! crate sits strictly below `legaia-engine-core` with no cycle.
 //!
-//! `legaia-engine-core` re-exports each module at its old path
-//! (`legaia_engine_core::monster_ai`, ...), so a consumer may name either.
 //! See the crate README for the module map and the rule for what belongs
 //! here.
 
 pub mod accessory_passives;
+pub mod anim_cue;
 pub mod ap_gauge;
 pub mod art_strike;
 pub mod arts_command_input;
@@ -24,17 +23,20 @@ pub mod battle_arts;
 pub mod battle_body_blend;
 pub mod battle_effect_clut;
 pub mod battle_events;
+pub mod battle_hud_state;
 pub mod battle_magic;
 pub mod battle_return_flags;
 pub mod battle_seats;
 pub mod battle_sideband;
+pub mod battle_stage_module;
 pub mod battle_stats;
 pub mod battle_status_clut;
 pub mod battle_steal;
 pub mod encounter;
+pub mod encounter_formation;
 pub mod encounter_man;
-pub mod encounter_record;
 pub mod encounter_registry;
+pub mod encounter_state;
 pub mod levelup;
 pub mod magic_xp;
 pub mod monster_ai;
@@ -43,8 +45,10 @@ pub mod move_power;
 pub mod region_encounter;
 pub mod retail_magic;
 pub mod seru_learning;
+pub mod seru_state;
 pub mod seru_stats;
 pub mod seru_trade;
+pub mod sfx_cue;
 pub mod spells;
 pub mod tactical_arts;
 pub mod tactical_arts_editor;

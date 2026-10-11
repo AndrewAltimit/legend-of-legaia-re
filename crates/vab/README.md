@@ -56,7 +56,7 @@ is in hand. Layout + the six entries with a larger skew:
 
 Exactly one entry holds more than one bank: extraction 0891 (`monster.snd`),
 206 banks addressed by a sector index in its own first sector
-([`legaia_asset::vab_multi_bank`](../asset/README.md)).
+([`legaia_container_formats::vab_multi_bank`](../asset/README.md)).
 
 ## VAG body (SPU ADPCM)
 
@@ -68,8 +68,10 @@ byte 1:  flag                      (1 = loop end+jump, 2 = sustain, 4 = start)
 bytes 2..16: 14 nibble pairs, low nibble first = 28 4-bit samples
 ```
 
-The F0/F1 filter constants are shared with [`legaia-xa`] - the algorithm
-is identical to XA-ADPCM, only the block packaging differs.
+The F0/F1 filter constants (`ADPCM_F0` / `ADPCM_F1`) equal [`legaia-xa`]'s -
+the algorithm is identical to XA-ADPCM, only the block packaging differs. The
+crate keeps its own copy, pinned equal by a test, so it does not link the
+disc reader `legaia-xa` depends on.
 
 ## CLI
 

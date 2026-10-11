@@ -1,12 +1,11 @@
 # legaia-engine-dialog
 
-The field dialog layer's `World`-free kernels, split out of
-`legaia-engine-menus`: the dialog pager and the state of the script contexts
-that drive it. `engine-menus` depends on this crate, never the other way
-round, and re-exports every module at its old path
-(`legaia_engine_menus::dialog`, and through `engine-core`,
-`legaia_engine_core::dialog`), so hosts and tests name the same paths they
-always did.
+The field dialog layer's `World`-free kernels: the dialog pager, its row window, pacing and picker
+slide, and the text balloon. The state of the script contexts that drive the
+pager (`inline_dialogue`, `cutscene_timeline`) is field-VM context and lives
+in `legaia-engine-field`. `engine-menus` depends on this crate, never the other way
+round. Hosts and tests name its modules directly
+(`legaia_engine_dialog::dialog`).
 
 ## What lives here
 
@@ -17,15 +16,12 @@ always did.
 | `dialog_pacing` | The typewriter reveal clock. |
 | `dialog_picker_slide` | How a picker box enters. |
 | `text_balloon` | The `4C E1` one-line balloon. |
-| `inline_dialogue` | The resumable state of an actor's inline interaction script run through the field VM. |
-| `cutscene_timeline` | The spawned partition-2 record context: the modal cutscene timeline. See [`cutscene.md`](../../docs/subsystems/cutscene.md). |
 
 ## The split line
 
-These modules name each other, the MES interpreter (`legaia-mes`), the dialog
-font's layout (`legaia-font`), the field VM's context and motion state
-(`legaia-engine-vm`) and one narration enum from `legaia-asset` - and nothing
-in the menu front end. No menu module names them either: the dialog pager and
+These modules name each other, the MES interpreter (`legaia-mes`) and the
+dialog font's layout (`legaia-font`) - no other engine crate, and nothing in
+the menu front end. No menu module names them either: the dialog pager and
 the pause / shop / save screens share no state, which is what makes this a
 leaf.
 
@@ -36,6 +32,6 @@ These modules hold the state those steps advance. Drawing is `engine-ui`'s.
 ## See also
 
 - [`crates/engine-menus`](../engine-menus/README.md) - the menu, title and
-  memory-card front end this was split from.
+  memory-card front end above this crate.
 - [`docs/subsystems/script-vm.md`](../../docs/subsystems/script-vm.md) - the
   field VM whose ops open these panels.

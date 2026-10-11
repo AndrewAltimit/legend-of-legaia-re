@@ -67,8 +67,8 @@
 //! [`World::finish_battle`] folds.
 
 use super::*;
-use crate::battle_events::BattleSfxCue;
-use legaia_asset::victory_pose::VictoryPoseTable;
+use legaia_engine_battle::battle_events::BattleSfxCue;
+use legaia_game_tables::victory_pose::VictoryPoseTable;
 
 /// Vsyncs the pose-8 hold lasts while retail streams the hero voice clip and
 /// the reward bank (phases `0 -> 2 -> 4 -> 5`). Measured once on
@@ -262,7 +262,7 @@ impl World {
     pub const VICTORY_FADE_PHASE_SEED: u16 = VICTORY_FADE_PHASE_SEED;
 
     /// The battle-end presentation is up: the scene is still in
-    /// [`SceneMode::Battle`] but the action SM no longer runs.
+    /// [`SceneMode::Battle`](legaia_engine_mode::mode::SceneMode::Battle) but the action SM no longer runs.
     pub fn battle_end_sequence_active(&self) -> bool {
         self.battle.victory.is_some()
     }
@@ -320,8 +320,8 @@ impl World {
                 // The command-flow escape paths (spell / item) reach here
                 // without the SM's `0x66` arm; give them its fade.
                 if self.presentation.fade.is_none() {
-                    self.presentation.fade = Some(crate::fade::FadeState::load(
-                        &crate::fade::escape_fade_template(),
+                    self.presentation.fade = Some(legaia_engine_system::fade::FadeState::load(
+                        &legaia_engine_system::fade::escape_fade_template(),
                     ));
                 }
             }
@@ -359,7 +359,10 @@ impl World {
         match seq.phase {
             VictoryPhase::Loading { frames_left } => {
                 // `FUN_801D5854(seat, 8)` every load frame (`0x8004EE0C..`).
-                self.victory_frame_pose(seq.pose_actor, vm::battle_action::Pose::Recover);
+                self.victory_frame_pose(
+                    seq.pose_actor,
+                    legaia_engine_battle_vm::battle_action::Pose::Recover,
+                );
                 if frames_left > 1 {
                     seq.phase = VictoryPhase::Loading {
                         frames_left: frames_left - 1,
@@ -370,15 +373,18 @@ impl World {
             }
             VictoryPhase::Results { hold } => {
                 // `FUN_801D5854(seat, 6)` every results frame (`0x8004FC90`).
-                self.victory_frame_pose(seq.pose_actor, vm::battle_action::Pose::Idle);
+                self.victory_frame_pose(
+                    seq.pose_actor,
+                    legaia_engine_battle_vm::battle_action::Pose::Idle,
+                );
                 let hold = hold.saturating_add(1);
                 if hold >= VICTORY_RESULTS_HOLD_FRAMES {
                     // The exit fade (`0x8004F7B4..0x8004F7F0` / the wipe
                     // twin at `0x8004FB1C`): the same kind-2 template the
                     // escape teardown spawns - `B - F`, black -> white, a
                     // fade to black both hosts draw off `screen_fade`.
-                    self.presentation.fade = Some(crate::fade::FadeState::load(
-                        &crate::fade::escape_fade_template(),
+                    self.presentation.fade = Some(legaia_engine_system::fade::FadeState::load(
+                        &legaia_engine_system::fade::escape_fade_template(),
                     ));
                     if seq.cause == BattleEndCause::PartyWipe {
                         // The annihilated arm floors EVERY member at 1 HP
@@ -410,7 +416,11 @@ impl World {
 
     /// The per-frame camera / pose request the sequencer makes for its pose
     /// actor - the same host path the action SM's `pose()` takes.
-    fn victory_frame_pose(&mut self, seat: usize, pose: vm::battle_action::Pose) {
+    fn victory_frame_pose(
+        &mut self,
+        seat: usize,
+        pose: legaia_engine_battle_vm::battle_action::Pose,
+    ) {
         if seat >= self.actors.len() {
             return;
         }
@@ -439,7 +449,7 @@ impl World {
         // (`FUN_801D8DE8`'s default tail arms `FUN_801DB7B0`).
         self.battle.result_windows_glide = seq
             .window_opened
-            .then(|| vm::battle_commit_log::LogLaunch::new(false));
+            .then(|| legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false));
         match seq.cause {
             BattleEndCause::MonsterWipe => {
                 // `FUN_8003CE08(0x35)` + the round bump (`0x8004EEE4`).
@@ -452,7 +462,7 @@ impl World {
                     a.battle.queued_anim = id;
                     a.battle
                         .flag_bits
-                        .set(vm::battle_action::ActorFlags::ADVANCE_DONE);
+                        .set(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE);
                 }
                 // A downed member leaves a won battle standing at 1 HP
                 // (`0x8004F390..0x8004F398`).

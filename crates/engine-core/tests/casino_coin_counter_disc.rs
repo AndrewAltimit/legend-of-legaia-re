@@ -10,8 +10,8 @@
 //! Only structural facts are asserted - counts, positions and non-emptiness,
 //! never text. Skips and passes without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::slot_machine::{COIN_ENTRY_LABEL_VAS, COIN_ENTRY_ORIGIN};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_minigames::slot_machine::{COIN_ENTRY_LABEL_VAS, COIN_ENTRY_ORIGIN};
 
 fn host() -> Option<SceneHost> {
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
@@ -69,7 +69,7 @@ fn koin1_lists_the_dome_hub_lines_on_load() {
     };
     host.enter_field_scene("koin1", 0).expect("koin1 loads");
     let listed = host.world.drain_field_xa_prestage();
-    let hub: Vec<legaia_engine_core::sfx_cue::XaVoiceClip> =
+    let hub: Vec<legaia_engine_system::sound_state::XaVoiceClip> =
         legaia_engine_core::muscle_ringside::hub_xa_prestage()
             .into_iter()
             .map(Into::into)

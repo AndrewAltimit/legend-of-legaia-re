@@ -11,7 +11,7 @@ nothing at all.
 
 This sweep answers it from the bytes: both `mednafen-state identify` and
 `pcsxr-state identify` read the same Legaia anchors out of the state's main RAM
-(`legaia_mednafen::game_anchors`), so the two corpora index into one table. That
+(`legaia_ram_image::game_anchors`), so the two corpora index into one table. That
 makes "is there a state inside scene X?" a lookup instead of a play session,
 which is the question that gates every display-list read.
 
@@ -184,7 +184,7 @@ def main() -> int:
         if not b.exists():
             print(
                 f"[state-index] missing {b} - build with:\n"
-                f"    cargo build --release -p legaia-mednafen -p legaia-pcsxr",
+                f"    cargo build --release -p legaia-mednafen -p legaia-pcsx-redux",
                 file=sys.stderr,
             )
             return 2

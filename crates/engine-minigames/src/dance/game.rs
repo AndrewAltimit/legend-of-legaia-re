@@ -1,5 +1,4 @@
 //! The dance floor (`DanceGame`): beat clock, chart feed, hit judge and scoring.
-//! Split out of `dance.rs`.
 
 use super::*;
 
@@ -23,13 +22,13 @@ pub struct DanceGame {
     pub(super) mode: DanceMode,
     /// The overlay's HUD widget table with each record's `+0x13` ABR byte
     /// alongside it, when the run was started from a real overlay image.
-    pub(super) widgets: Vec<(legaia_asset::dance_art::DanceWidget, u8)>,
+    pub(super) widgets: Vec<(legaia_minigame_formats::dance_art::DanceWidget, u8)>,
     /// The five kind descriptors, when the run was started from a real overlay
     /// image. This is what supplies the clip ids the dancer actors bind into
     /// their `+0x5C`; without it a dancer actor carries no clip and the clip
     /// driver gate reports `false` for it (which is what retail would do too -
     /// an actor with nothing bound is not handed to `FUN_800204F8`).
-    pub(super) kinds: Vec<legaia_asset::dance_cast::DanceKind>,
+    pub(super) kinds: Vec<legaia_minigame_formats::dance_cast::DanceKind>,
     /// The dancer actor pool - one [`crate::minigame_actor::MinigameActor`]
     /// per floor slot, rebuilt from the dancers every [`DanceGame::advance`].
     pub(super) actors: crate::minigame_actor::MinigameActorPool,
@@ -40,13 +39,13 @@ pub struct DanceGame {
     pub(super) parts: crate::minigame_actor::MinigameActorPool,
     /// The overlay's step-marker flipbook script (`0x801D44CC`), when the run
     /// was started from a real overlay image.
-    pub(super) marker_script: legaia_engine_vm::dance_marker::MarkerScript,
+    pub(super) marker_script: legaia_engine_fishing::dance_marker::MarkerScript,
     /// One flipbook cursor per marker class (clip `6..=9`). Retail runs one
     /// actor per drawn marker **cell**; every cell of a class reads the same
     /// row from the same cursor, so the engine keeps the four cursors rather
     /// than one per cell and a marker draw asks its class.
-    pub(super) markers: [legaia_engine_vm::dance_marker::MarkerActor;
-        legaia_engine_vm::dance_marker::MARKER_SCRIPT_ROWS],
+    pub(super) markers: [legaia_engine_fishing::dance_marker::MarkerActor;
+        legaia_engine_fishing::dance_marker::MARKER_SCRIPT_ROWS],
     /// The tick's camera keyframe track (`FUN_801CF470` at
     /// `0x801CF51C..0x801CF7D8`), when the run was started from a real
     /// overlay image.
@@ -131,7 +130,7 @@ impl DanceGame {
 
     /// Parse the baked step chart + scoring tables + qualifier cast out of the
     /// dance overlay image (PROT 0980) and start a run. `None` when the chart
-    /// doesn't decode (see [`legaia_asset::dance_chart::parse`]).
+    /// doesn't decode (see [`legaia_minigame_formats::dance_chart::parse`]).
     ///
     /// Starts the **qualifier** floor; [`DanceGame::from_overlay_for_mode`] is
     /// the per-mode entry point.
@@ -152,9 +151,10 @@ impl DanceGame {
     /// [`SONG_LEN_SHORT`] regardless.
     // PORT: FUN_801d0190 (per-mode spawn-table + cast-size selection)
     pub fn from_overlay_for_mode(overlay: &[u8], mode: DanceMode, long_song: bool) -> Option<Self> {
-        let chart = legaia_asset::dance_chart::parse(overlay)?;
-        let tables = legaia_asset::dance_chart::parse_tables(overlay).unwrap_or_default();
-        let cast = legaia_asset::dance_cast::parse(overlay);
+        let chart = legaia_minigame_formats::dance_chart::parse(overlay)?;
+        let tables =
+            legaia_minigame_formats::dance_chart::parse_tables(overlay).unwrap_or_default();
+        let cast = legaia_minigame_formats::dance_cast::parse(overlay);
         // The spawn record carries the dancer's kind **and** its floor
         // position; the position is what `FUN_801d0190` stores into the
         // spawned actor's `+0x14` / `+0x16` / `+0x18`, so it is kept here
@@ -188,9 +188,9 @@ impl DanceGame {
         game.mode = mode;
         game.widgets = dance_widgets_with_abr(overlay);
         game.kinds = cast.map(|c| c.kinds).unwrap_or_default();
-        game.marker_script = legaia_engine_vm::dance_marker::MarkerScript::from_overlay(
+        game.marker_script = legaia_engine_fishing::dance_marker::MarkerScript::from_overlay(
             overlay,
-            legaia_asset::dance_chart::DANCE_OVERLAY_BASE_VA,
+            legaia_minigame_formats::dance_chart::DANCE_OVERLAY_BASE_VA,
         )
         .unwrap_or_default();
         for (class, m) in game.markers.iter_mut().enumerate() {
@@ -208,7 +208,7 @@ impl DanceGame {
 
     /// Attach the dance hall's choreography bank (the `other7` scene's MOVE
     /// ANM bundle, `legaia_engine_core::dance_venue::dance_clip_bank`): every descriptor
-    /// clip's length in ticks - [`legaia_engine_vm::field_player_clip::clip_end_ticks`] on the
+    /// clip's length in ticks - [`legaia_engine_vm::actor_tick::clip_end_ticks`] on the
     /// record's frame count and the rate's per-record step - so a judge move
     /// holds the dancer for exactly as long as retail's clip driver plays it.
     ///
@@ -218,7 +218,7 @@ impl DanceGame {
     /// the bound clip **is** the idle or dance loop (`0x801D168C..0x801D16B4`).
     /// So a move - a miss reaction included - runs to its last frame, and no
     /// press of that dancer is judged until it has.
-    pub fn attach_clip_bank(&mut self, bank: &legaia_asset::player_anm::PlayerAnmBundle) {
+    pub fn attach_clip_bank(&mut self, bank: &legaia_actor_formats::player_anm::PlayerAnmBundle) {
         let mut map = std::collections::HashMap::new();
         for k in &self.kinds {
             for c in [&k.idle, &k.dance].into_iter().chain(k.moves.iter()) {
@@ -229,15 +229,14 @@ impl DanceGame {
                 else {
                     continue;
                 };
-                let step = legaia_engine_vm::field_player_clip::clip_step(
+                let step = legaia_engine_vm::actor_tick::clip_step(
                     c.rate,
                     rec.blends(),
                     (rec.flag & 0xFF) as u8,
                 );
                 map.insert(
                     (id, c.rate),
-                    legaia_engine_vm::field_player_clip::clip_end_ticks(rec.frame_count, step)
-                        .max(1),
+                    legaia_engine_vm::actor_tick::clip_end_ticks(rec.frame_count, step).max(1),
                 );
             }
         }
@@ -245,7 +244,7 @@ impl DanceGame {
     }
 
     /// Ticks `clip` plays before its end flag, when the bank is attached.
-    pub fn clip_len(&self, clip: &legaia_asset::dance_cast::DanceClip) -> Option<u32> {
+    pub fn clip_len(&self, clip: &legaia_minigame_formats::dance_cast::DanceClip) -> Option<u32> {
         self.clip_ticks
             .as_ref()?
             .get(&(clip.anim_id & 0x1FF, clip.rate))
@@ -287,13 +286,20 @@ impl DanceGame {
     /// by the kernel and left alone here: no host draws the floor's marker
     /// meshes yet, so there is no clip player to hand the actor to.
     ///
-    /// REF: FUN_801D0640 (kernel `legaia_engine_vm::dance_marker::step_marker`),
+    /// REF: FUN_801D0640 (kernel `legaia_engine_fishing::dance_marker::step_marker`),
     /// FUN_801D2A10 (the floor pass that spawns the actors)
     pub(super) fn advance_step_markers(&mut self, frame_delta: u32) {
         let delta = frame_delta.min(u32::from(u8::MAX)) as u8;
-        let bias = legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
+        let bias = legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
         for m in self.markers.iter_mut() {
-            legaia_engine_vm::dance_marker::step_marker(m, &self.marker_script, delta, bias, 0, 0);
+            legaia_engine_fishing::dance_marker::step_marker(
+                m,
+                &self.marker_script,
+                delta,
+                bias,
+                0,
+                0,
+            );
         }
     }
 
@@ -686,7 +692,10 @@ impl DanceGame {
     /// real overlay returns `None` and a host falls back to its placeholder.
     /// Both hosts reach the count-in banner's record (index `0`) through this
     /// rather than baking its cell, CLUT and page in twice.
-    pub fn widget(&self, index: usize) -> Option<(legaia_asset::dance_art::DanceWidget, u8)> {
+    pub fn widget(
+        &self,
+        index: usize,
+    ) -> Option<(legaia_minigame_formats::dance_art::DanceWidget, u8)> {
         self.widgets.get(index).map(|(w, a)| (*w, *a))
     }
 
@@ -1240,11 +1249,11 @@ impl DanceGame {
         // `FUN_801d1af4`'s return value is a **move-pair index** into the
         // dancer's kind descriptor, which `FUN_801d1358` binds into the
         // actor's `+0x5C` / `+0x6A`. The mapping is the one
-        // `legaia_asset::dance_cast` documents: pair 0/1 = the Square/Circle
+        // `legaia_minigame_formats::dance_cast` documents: pair 0/1 = the Square/Circle
         // miss reaction, pair `lane*2 + 2 (+1)` = the closed-chain move, pair
         // `8 + lane` = the on-beat / timing-button step. A plain matched note
         // that does not close the chain returns nothing and binds nothing.
-        use legaia_asset::dance_cast as dc;
+        use legaia_minigame_formats::dance_cast as dc;
         let circle = dir.symbol() == 2;
         match ev {
             DanceEvent::Miss => {

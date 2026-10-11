@@ -1,5 +1,5 @@
 //! The field actor drop shadows as a `World` method - the seam both play
-//! hosts draw the blob through ([`crate::drop_shadow`]).
+//! hosts draw the blob through ([`legaia_render_kernels::drop_shadow`]).
 //!
 //! Retail emits the blob from inside the animated-actor renderer
 //! (`FUN_8001B964` -> `FUN_8001C394`), once per drawn actor that passes the
@@ -8,15 +8,16 @@
 //! MAN partition-1 placement's field-VM channel.
 
 use super::*;
-use crate::drop_shadow::{
+use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_render_kernels::drop_shadow::{
     DropShadowQuad, SHADOW_NEAR_BIT, ShadowVertex, casts_shadow, drop_shadow,
 };
-use legaia_engine_vm::psx_camera::FieldCameraView;
 
 /// The OT-resolution byte `DAT_1F8003A4` the port sorts the blobs with.
 /// The engine keeps no ordering table of its own depth resolution; the blob
 /// only has to sort among the other screen primitives (see
-/// `legaia_engine_ui::move_strip::FIELD_OT_SHIFT`, the same choice).
+/// `legaia_render_kernels::move_strip::FIELD_OT_SHIFT`, the same choice).
 pub const DROP_SHADOW_OT_SHIFT: u8 = 0;
 
 /// How far above the actor's floor (retail units, `-Y`) the blob's **depth**

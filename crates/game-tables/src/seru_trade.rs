@@ -36,7 +36,7 @@ pub const CONFIG_VERSION: u8 = 1;
 
 /// Virtual address the config blob is written to inside the preserved 1028-byte
 /// rodata zero gap at `0x8007AB38` (see [`item_names`] /
-/// `legaia_asset::move_power`). Placed near the top of the gap, clear of the two
+/// `legaia_game_tables::move_power`). Placed near the top of the gap, clear of the two
 /// MIPS-injection routines that live lower in it (the bonus-equipment routine at
 /// `0x8007AB80` and the flee-EXP routine at `0x8007AD00`), so the seru-trade
 /// config and those features coexist without overlap.
@@ -235,7 +235,7 @@ pub struct OwnerTrade {
 
 /// SplitMix64, duplicated here (instead of depending on the randomizer's copy)
 /// so this kernel stays a leaf both `legaia-patcher` and `engine-core` can share.
-/// Same constants as `legaia_patcher::rng::SplitMix64`, so the streams match.
+/// Same constants as `legaia_disc_patch::rng::SplitMix64`, so the streams match.
 struct Rng(u64);
 
 impl Rng {
@@ -468,7 +468,7 @@ pub fn bucket_index_for(play_time_seconds: u32, vendor_offset: u8) -> usize {
 /// Expand one bucket's `(want, give)` preference against the live party: one
 /// [`OwnerTrade`] per party member who currently owns the wanted seru, in party
 /// order. `owned` is the cross-party enumeration (e.g.
-/// `engine_core::seru_trade::party_owned_seru`). Empty when nobody owns the want
+/// `legaia_engine_battle::seru_trade::party_owned_seru`). Empty when nobody owns the want
 /// or the bucket has no offer (`want_id == 0`).
 ///
 /// Owners who **already own the give-back seru** are filtered out - trading the

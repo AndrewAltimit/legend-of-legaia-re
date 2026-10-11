@@ -1,8 +1,11 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn apply_battle_loot_never_drops_when_rate_zero() {
-    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{
+        FormationDef, FormationSlot, MonsterCatalog, MonsterDef,
+    };
     let mut cat = MonsterCatalog::new();
     let mut def = MonsterDef::new(7, "Slime", 10, 5);
     def.drop_item = Some(0x42);
@@ -10,7 +13,7 @@ fn apply_battle_loot_never_drops_when_rate_zero() {
     cat.insert(def);
     let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -62,7 +65,7 @@ fn load_full_zero_level_record_clamps_to_one() {
 #[test]
 fn apply_battle_xp_scales_three_quarters_and_ceils() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -83,7 +86,7 @@ fn apply_battle_xp_scales_three_quarters_and_ceils() {
 #[test]
 fn level_up_banner_countdown_clears() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -92,7 +95,7 @@ fn level_up_banner_countdown_clears() {
     world.actors[0].battle.hp = 100;
     world.apply_battle_xp(161); // 3/4-scaled to 121 >= the 121 L2 threshold
     assert!(world.party.current_level_up_banner.is_some());
-    for _ in 0..=crate::levelup::LevelUpBanner::DEFAULT_FRAMES {
+    for _ in 0..=legaia_engine_battle::levelup::LevelUpBanner::DEFAULT_FRAMES {
         world.tick();
     }
     assert!(
@@ -104,7 +107,7 @@ fn level_up_banner_countdown_clears() {
 #[test]
 fn no_level_up_banner_when_xp_insufficient() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -124,7 +127,7 @@ fn art_strike_applier_pushes_apply_art_strike_event() {
     use legaia_art::power::PowerByte;
     use legaia_art::queue::ActionConstant;
     use legaia_art::record::EnemyEffect;
-    use legaia_engine_vm::battle_action::{ArtStrikeInfo, BattleActionHost};
+    use legaia_engine_battle_vm::battle_action::{ArtStrikeInfo, BattleActionHost};
 
     let mut world = World::new();
     world.set_battle_attack(0, 64);
@@ -177,7 +180,7 @@ fn art_strike_split_defense_picks_udf_or_ldf() {
     use legaia_art::power::PowerByte;
     use legaia_art::queue::ActionConstant;
     use legaia_art::record::EnemyEffect;
-    use legaia_engine_vm::battle_action::{ArtStrikeInfo, BattleActionHost};
+    use legaia_engine_battle_vm::battle_action::{ArtStrikeInfo, BattleActionHost};
 
     let mut world = World::new();
     world.set_battle_attack(0, 64);
@@ -222,7 +225,7 @@ fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
     use legaia_art::power::{PowerByte, PowerTarget};
     use legaia_art::queue::{ActionConstant, Character};
     use legaia_art::record::EnemyEffect;
-    use legaia_engine_vm::battle_action::ArtStrikeInfo;
+    use legaia_engine_battle_vm::battle_action::ArtStrikeInfo;
 
     let mut world = World::new();
     world.party.party_count = 4;
@@ -273,7 +276,7 @@ fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
 
 #[test]
 fn fold_battle_event_surfaces_art_strike_sound_cues() {
-    use crate::art_strike::{ArtStrikeOutcome, ScheduledCue};
+    use legaia_engine_battle::art_strike::{ArtStrikeOutcome, ScheduledCue};
 
     let mut world = World::new();
     world.party.party_count = 4;
@@ -421,7 +424,7 @@ fn use_item_heals_hp_clamped_to_max() {
     let outcome = world.use_item(1, 0);
     assert!(matches!(
         outcome,
-        crate::items::ItemOutcome::HealedHp { .. }
+        legaia_engine_menus::items::ItemOutcome::HealedHp { .. }
     ));
     // HP raised but clamped at max.
     assert!(world.actors[0].battle.hp > 50);
@@ -439,7 +442,7 @@ fn use_item_heal_all_fills_to_max() {
     let outcome = world.use_item(4, 0);
     assert!(matches!(
         outcome,
-        crate::items::ItemOutcome::HealedHp { .. }
+        legaia_engine_menus::items::ItemOutcome::HealedHp { .. }
     ));
     assert_eq!(world.actors[0].battle.hp, 300);
 }
@@ -450,7 +453,10 @@ fn use_item_unknown_id_returns_no_effect() {
     world.party.party_count = 1;
     world.set_item_catalog(full_test_catalog());
     let outcome = world.use_item(99, 0);
-    assert!(matches!(outcome, crate::items::ItemOutcome::NoEffect));
+    assert!(matches!(
+        outcome,
+        legaia_engine_menus::items::ItemOutcome::NoEffect
+    ));
 }
 
 #[test]
@@ -462,7 +468,10 @@ fn use_item_revive_writes_hp_after() {
     world.set_item_catalog(full_test_catalog());
     // Resurrection Leaf is id 0x0C (50% revive).
     let outcome = world.use_item(0x0C, 0);
-    assert!(matches!(outcome, crate::items::ItemOutcome::Revived { .. }));
+    assert!(matches!(
+        outcome,
+        legaia_engine_menus::items::ItemOutcome::Revived { .. }
+    ));
     // 50% of 400 = 200.
     assert_eq!(world.actors[0].battle.hp, 200);
 }
@@ -481,7 +490,7 @@ fn use_item_hp_max_boost_raises_record_and_live_actor() {
     let outcome = world.use_item(0x0F, 0);
     assert!(matches!(
         outcome,
-        crate::items::ItemOutcome::StatRaised { .. }
+        legaia_engine_menus::items::ItemOutcome::StatRaised { .. }
     ));
     // Persistent record raised, current HP refilled by the gained amount.
     let rec_hms = world.party.roster.members[0].hp_mp_sp();
@@ -506,7 +515,7 @@ fn use_item_attack_boost_raises_persistent_record_and_live_stat() {
     let outcome = world.use_item(0x0E, 0);
     assert!(matches!(
         outcome,
-        crate::items::ItemOutcome::StatRaised { .. }
+        legaia_engine_menus::items::ItemOutcome::StatRaised { .. }
     ));
     assert_eq!(
         world.party.roster.members[0].live_stats().atk,
@@ -530,12 +539,12 @@ fn use_item_stat_boost_caps_at_cap_constant() {
     world.load_party(party);
     world.set_battle_attack(0, 99);
     // A custom big-boost item to exercise the cap.
-    let mut cat = crate::items::ItemCatalog::new();
-    cat.insert(crate::items::ItemEntry {
+    let mut cat = legaia_engine_menus::items::ItemCatalog::new();
+    cat.insert(legaia_engine_menus::items::ItemEntry {
         id: 0x50,
         name: "Mega Tonic",
-        effect: crate::items::ItemEffect::StatBoost {
-            target: crate::items::StatBoostTarget::Attack,
+        effect: legaia_engine_menus::items::ItemEffect::StatBoost {
+            target: legaia_engine_menus::items::StatBoostTarget::Attack,
             delta: 50,
         },
         usable_in_battle: false,
@@ -555,20 +564,26 @@ fn use_item_fury_boost_extends_ap_gauge_and_reverts_at_battle_end() {
     let mut world = World::new();
     // Seed a Fury Boost catalog entry directly (the disc seeder installs the
     // same `ActionGauge` marker; this exercises the apply path without a disc).
-    world.tables.item_catalog.insert(crate::items::ItemEntry {
-        id: 0x81,
-        name: "Fury Boost",
-        effect: crate::items::ItemEffect::ActionGauge,
-        usable_in_battle: true,
-        usable_in_field: false,
-    });
-    world.battle.ap_gauges[0] = crate::ap_gauge::ApGauge::with_base(10);
+    world
+        .tables
+        .item_catalog
+        .insert(legaia_engine_menus::items::ItemEntry {
+            id: 0x81,
+            name: "Fury Boost",
+            effect: legaia_engine_menus::items::ItemEffect::ActionGauge,
+            usable_in_battle: true,
+            usable_in_field: false,
+        });
+    world.battle.ap_gauges[0] = legaia_engine_battle::ap_gauge::ApGauge::with_base(10);
     world.battle.ap_gauges[0].current_ap = 6; // mid-turn, some AP already spent
 
     // Fury Boost extends the gauge by the retail ×7/5 ratio: base 10 -> 14, and
     // the live gauge gains the +4 delta immediately.
     let out = world.use_item(0x81, 0);
-    assert_eq!(out, crate::items::ItemOutcome::ActionGaugeExtended);
+    assert_eq!(
+        out,
+        legaia_engine_menus::items::ItemOutcome::ActionGaugeExtended
+    );
     assert_eq!(world.battle.ap_gauges[0].base_ap, 14);
     assert_eq!(world.battle.ap_gauges[0].current_ap, 10);
     assert_eq!(world.battle.fury_boost[0], Some(4));
@@ -581,7 +596,7 @@ fn use_item_fury_boost_extends_ap_gauge_and_reverts_at_battle_end() {
     // Idempotent within the battle: a second Fury Boost does not compound.
     assert_eq!(
         world.use_item(0x81, 0),
-        crate::items::ItemOutcome::ActionGaugeExtended
+        legaia_engine_menus::items::ItemOutcome::ActionGaugeExtended
     );
     assert_eq!(world.battle.ap_gauges[0].base_ap, 14);
     assert_eq!(world.battle.fury_boost[0], Some(4));
@@ -600,13 +615,16 @@ fn use_item_fury_boost_extends_ap_gauge_and_reverts_at_battle_end() {
 #[test]
 fn fury_boost_extends_the_live_arts_gauge_at_the_round_boundary() {
     let mut world = World::new();
-    world.tables.item_catalog.insert(crate::items::ItemEntry {
-        id: 0x81,
-        name: "Fury Boost",
-        effect: crate::items::ItemEffect::ActionGauge,
-        usable_in_battle: true,
-        usable_in_field: false,
-    });
+    world
+        .tables
+        .item_catalog
+        .insert(legaia_engine_menus::items::ItemEntry {
+            id: 0x81,
+            name: "Fury Boost",
+            effect: legaia_engine_menus::items::ItemEffect::ActionGauge,
+            usable_in_battle: true,
+            usable_in_field: false,
+        });
     world.party.party_count = 1;
     world.actors[0].battle.agl_base = 150;
     world.actors[0].battle.agl = 150;
@@ -621,15 +639,21 @@ fn fury_boost_extends_the_live_arts_gauge_at_the_round_boundary() {
 #[test]
 fn use_item_fury_boost_on_non_party_slot_is_noop() {
     let mut world = World::new();
-    world.tables.item_catalog.insert(crate::items::ItemEntry {
-        id: 0x81,
-        name: "Fury Boost",
-        effect: crate::items::ItemEffect::ActionGauge,
-        usable_in_battle: true,
-        usable_in_field: false,
-    });
+    world
+        .tables
+        .item_catalog
+        .insert(legaia_engine_menus::items::ItemEntry {
+            id: 0x81,
+            name: "Fury Boost",
+            effect: legaia_engine_menus::items::ItemEffect::ActionGauge,
+            usable_in_battle: true,
+            usable_in_field: false,
+        });
     // Slot 3+ is not a party AP-gauge slot (gauges are 0..=2).
-    assert_eq!(world.use_item(0x81, 5), crate::items::ItemOutcome::NoEffect);
+    assert_eq!(
+        world.use_item(0x81, 5),
+        legaia_engine_menus::items::ItemOutcome::NoEffect
+    );
 }
 
 #[test]
@@ -648,7 +672,10 @@ fn use_item_cure_clears_status() {
     world.set_item_catalog(full_test_catalog());
     // Antidote Flower is id 0x09 (CureAll).
     let outcome = world.use_item(0x09, 0);
-    assert!(matches!(outcome, crate::items::ItemOutcome::CuredAll));
+    assert!(matches!(
+        outcome,
+        legaia_engine_menus::items::ItemOutcome::CuredAll
+    ));
     assert!(!world.battle.status_effects.is_afflicted(0));
 }
 
@@ -657,7 +684,7 @@ fn fold_battle_event_clamps_to_zero_hp() {
     use legaia_art::power::PowerByte;
     use legaia_art::queue::{ActionConstant, Character};
     use legaia_art::record::EnemyEffect;
-    use legaia_engine_vm::battle_action::ArtStrikeInfo;
+    use legaia_engine_battle_vm::battle_action::ArtStrikeInfo;
 
     let mut world = World::new();
     world.party.party_count = 4;
@@ -694,8 +721,8 @@ fn fold_battle_event_pushes_status_into_tracker() {
     use legaia_art::power::PowerByte;
     use legaia_art::queue::{ActionConstant, Character};
     use legaia_art::record::EnemyEffect;
-    use legaia_engine_vm::battle_action::ArtStrikeInfo;
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::battle_action::ArtStrikeInfo;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
 
     let mut world = World::new();
     world.party.party_count = 4;
@@ -727,7 +754,7 @@ fn fold_battle_event_pushes_status_into_tracker() {
 
 #[test]
 fn tick_status_effects_drains_hp() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut world = World::new();
     world.actors[0].battle.hp = 100;
     world.actors[0].battle.max_hp = 160;
@@ -788,7 +815,7 @@ fn field_heal_lands_on_the_roster_record() {
     let outcome = world.use_item(0x01, 1); // Heal { amount: 100 }
     assert!(matches!(
         outcome,
-        crate::items::ItemOutcome::HealedHp { .. }
+        legaia_engine_menus::items::ItemOutcome::HealedHp { .. }
     ));
     let hms = world.party.roster.members[1].hp_mp_sp();
     assert!(
@@ -812,7 +839,10 @@ fn field_revive_lands_on_the_roster_record() {
     world.actors[2].battle.liveness = 0;
 
     let outcome = world.use_item(0x0C, 2); // Revive { factor: 128 }
-    assert!(matches!(outcome, crate::items::ItemOutcome::Revived { .. }));
+    assert!(matches!(
+        outcome,
+        legaia_engine_menus::items::ItemOutcome::Revived { .. }
+    ));
     let hms = world.party.roster.members[2].hp_mp_sp();
     assert!(hms.hp_cur > 0, "roster record revived");
     assert_eq!(world.actors[2].battle.hp, hms.hp_cur);
@@ -832,7 +862,7 @@ fn battle_heal_writes_the_mirror_not_the_roster() {
     let outcome = world.use_item(0x01, 0);
     assert!(matches!(
         outcome,
-        crate::items::ItemOutcome::HealedHp { .. }
+        legaia_engine_menus::items::ItemOutcome::HealedHp { .. }
     ));
     assert!(world.actors[0].battle.hp > 20, "mirror healed");
     assert_eq!(

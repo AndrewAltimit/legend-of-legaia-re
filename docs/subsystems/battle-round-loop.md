@@ -114,7 +114,7 @@ So the formation is the scene's own MAN encounter-section row, selected by index
 
 **Carriers.** The garmel fights ride partition-2 beat records, spawned by the gated record dispatch. The Caruban op lives in a partition-1 boss-stager placement: `P1[3]` of the rikuroa streaming carrier is a parked special-model placement (SJIS locals ノア / Noa). Its record opens on a `SysFlag.Test 0x142` park gate, stations its actor at the nest tile via its own `0x4C 0x51` leg, self-suspends on a `4C 85` halt-acquire, and carries the beat body (`52 89` staged-marker SET -> `3E FF 11`). No script-side un-halt poke to the stager channel (`B2 10 0A`) exists in the MAN, so the resume is the engine-side approach dispatch: the locomotion touch (`FUN_801d5b5c`) or the interaction probe (`FUN_801cf9f4`) runs the placed actor's record.
 
-**Port.** `World::trigger_scripted_battle(row)` ([`world/encounters.rs`](../../crates/engine-core/src/world/encounters.rs)) is reached from the field-VM host's `scripted_battle` arm for `op0 == 0xFF` and every `op0 < 100`. 
+**Port.** `World::trigger_scripted_battle(row)` ([`world/encounters/scripted_battles.rs`](../../crates/engine-core/src/world/encounters/scripted_battles.rs)) is reached from the field-VM host's `scripted_battle` arm for `op0 == 0xFF` and every `op0 < 100`. 
 
 - The formation resolves against the rows `install_man_encounter` registered at scene entry, with the PROT 867 archive stats merged. The v12 dungeons resolve their encounter section from the streaming variant MAN, their only carrier.
 - The battle enters through the same immediate latch the field-carrier SM uses - no field step, no synthetic boss formation id.
@@ -145,7 +145,7 @@ A pre / post encounter save pair on `map01` (one frame walking, the next with ba
 
 The active scene-name table at `0x80084540` (CDNAME label + scene index) is identical across the pair: the battle is layered on the field scene rather than swapping it out. The port likewise preserves the active-scene state and resolves only the formation and battle assets.
 
-Constants: `capture_observations::encounter_trigger` ([`crates/engine-system`](../../crates/engine-system/src/capture_observations.rs)); disc-gated test `encounter_trigger_diff_loads_battle_overlay` in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs).
+Constants: `capture_observations::encounter_trigger` ([`crates/parity`](../../crates/parity/src/capture_observations.rs)); disc-gated test `encounter_trigger_diff_loads_battle_overlay` in [`crates/parity/tests/real_saves.rs`](../../crates/parity/tests/real_saves.rs).
 
 ### Scenes that cannot roll
 
@@ -243,7 +243,7 @@ Coverage: `crates/engine-core/tests/battle_player_driven.rs` asserts no strike l
 Three action-SM gates are retired in retail by the render / animation systems. `World::live_battle_tick` retires each on the frame its state is reached:
 
 - `ADVANCE_DONE` at `AttackRecovery` - retail clears it when the recovery animation finishes.
-- The caster's `spell_iter` (`actor+0x1FA`) at `MagicSustain` (`0x2B`). The SM only sets this byte; retail's cast-animation system counts it down. Regression: `a_monster_cast_does_not_park_the_action_sm` in `battle_always_resolves.rs`; the real-data version is `crates/engine-shell/tests/scene_encounter_rollable.rs`, which drives a `map03` encounter from the disc's own region table to a resolved battle.
+- The caster's `spell_iter` (`actor+0x1FA`) at `MagicSustain` (`0x2B`). The SM only sets this byte; retail's cast-animation system counts it down. Regression: `a_monster_cast_does_not_park_the_action_sm` in `battle_always_resolves.rs`; the real-data version is `crates/engine-session/tests/scene_encounter_rollable.rs`, which drives a `map03` encounter from the disc's own region table to a resolved battle.
 - `ADVANCE_DONE` at `attack_chain` (retail `0x1E`), which stages one strike-script byte per clip into `queued_anim` and holds until the animation retires the flag. The anim commit `World::commit_staged_battle_anim` retires it for a clip-less swing only past its `queued_anim == current_anim` early-out, so `live_battle_tick` also retires the flag whenever the id pair has converged with no clip in flight.
 
 A related invariant: the monster-AI picker writes the chosen spell id into the action-parameter stream (`params[0]`, retail `+0x1DF`) before `take_monster_turn` learns the cast cannot fold. `World::clear_action_stream` zeroes the stream when a physical action is armed (the per-action sibling of `FUN_801D88CC`'s round-boundary clear) so the fallback strike never walks a stale spell id as a swing byte. Regressions: `battle_attack_chain_stall.rs` and `a_starting_party_can_fell_a_real_early_enemy` in `battle_physical_damage.rs` (both under `crates/engine-core/tests/`).
@@ -315,7 +315,7 @@ Port: `battle_cam_inputs::battle_end_cam_inputs` folds both framings over the ca
 
 The results frame opens one framed window per outcome through the battle HUD's element spawner `FUN_801D8DE8`: element `0x41` on a win (`0x8004F65C`), `0x42` on a wipe (`0x8004F900`), both skipped while the special-battle word is set.
 
-- An element id indexes the SCUS screen-element placement table (`0x80076C10 + id * 0x18`, `legaia_asset::screen_elements`), not the pause menu's window descriptor table.
+- An element id indexes the SCUS screen-element placement table (`0x80076C10 + id * 0x18`, `legaia_ui_formats::screen_elements`), not the pause menu's window descriptor table.
 - Neither id has a labelled arm in the spawner's jump table (`0x801CEB68`, indexed by `id - 0xA`). Both take the default post-switch tail (`0x801D91D4..0x801D93DC`), which registers the record's box through `FUN_8003541C` and slides it with `FUN_801DB7B0`.
 - Records `0x41` and `0x42` are byte-identical on the disc: widget pair `(3, 3)` (the corner-framed window), content box `288 x 42`, node kind `0x0D` (which the layout dispatcher `FUN_80030628` fills with nothing), sliding from `(16, 236)` to `(16, 160)`. Outset by the frame's six pixels, that box matches the band measured off a retail framebuffer.
 
@@ -346,7 +346,7 @@ Port: the two defeat pieces are read off PROT 0898 (`battle_party_panel::DefeatT
 
 ### Battle rewards composite
 
-`World::apply_battle_loot(formation, catalog) -> BattleRewards` (`crates/engine-core/src/world/items_arts.rs`) turns a defeated formation into its side-effects:
+`World::apply_battle_loot(formation, catalog) -> BattleRewards` (`crates/engine-core/src/world/items_arts/battle_spoils.rs`) turns a defeated formation into its side-effects:
 
 - Sums each `MonsterDef::exp` and distributes it via `World::apply_battle_xp`: an equal split among surviving party members (integer divide, remainder dropped; dead members get zero), with per-character level-up checks against `LevelUpTracker::xp_table`.
 - Sums each `MonsterDef::gold` into `World::party.money` (saturating).
@@ -442,7 +442,7 @@ Regression: `crates/engine-core/tests/game_over_routes_to_title.rs`.
 
 ## Status effects
 
-Each battle actor carries its ailments as the packed halfword `actor[+0x16E]`, mirrored for party slots to the character record (`+0x6F6` off `0x80084140`). The port keeps a typed instance list per actor (`StatusEffectTracker`, [`crates/engine-vm/src/status_effects.rs`](../../crates/engine-vm/src/status_effects.rs)) and packs the same word for the HUD (`display_flags`, `pack_display_flags`).
+Each battle actor carries its ailments as the packed halfword `actor[+0x16E]`, mirrored for party slots to the character record (`+0x6F6` off `0x80084140`). The port keeps a typed instance list per actor (`StatusEffectTracker`, [`crates/engine-battle-vm/src/status_effects.rs`](../../crates/engine-battle-vm/src/status_effects.rs)) and packs the same word for the HUD (`display_flags`, `pack_display_flags`).
 
 | Status | `+0x16E` bits | Kind byte | Retail effect | Port |
 |---|---|---|---|---|
@@ -514,7 +514,7 @@ Kinds `1..5` additionally latch `actor[+0x21F] = kind` and stage the effect word
 
 **The two ladders differ in length.** The hit leg tests `4`, `< 5`, `3`, `5`, then `6` (`li v0,0x6` / `beq` at `0x801EE478..0x801EE47C`). The special leg stops at `5`: `0x801E1620` compares against `5` and otherwise jumps to the join at `0x801E178C`. An enemy special attack therefore cannot inflict Curse; only the physical / arts leg can. (The special leg's `3` comparison reuses register `a2`, which still holds the impact-phase byte the `bne` at `0x801E1574` proved equal to `3`.)
 
-**Port.** The special leg's ladder is `enemy_impact_status_proc` (`crates/engine-core/src/world/battle/monster_ai.rs`), driven by `World::apply_enemy_move_status` off the installed `MovePowerCatalog` at the end of a monster cast. The id -> index map is special-attack-only, so a monster's basic attack resolves to the all-zero record 0 and inflicts nothing.
+**Port.** The special leg's ladder is `enemy_impact_status_proc` (`crates/engine-core/src/world/battle/monster_ai/status_procs.rs`), driven by `World::apply_enemy_move_status` off the installed `MovePowerCatalog` at the end of a monster cast. The id -> index map is special-attack-only, so a monster's basic attack resolves to the all-zero record 0 and inflicts nothing.
 
 **Other setters.** `ori 0x4` at `0x80041CF4` / `0x80041DE4` and `ori 0x1000` at `0x80041EE8` / `0x80041F84` (SCUS band `0x80041...`); the each-frame delegation `ori 0x380` at `0x8004D118` (`FUN_8004CE2C`) and `0x80047F88` (`FUN_80047430`); and `ori 0x380` / `ori 0x1` copies of the same shapes in the slot-B battle-support images (PROT 0902 / 0903 / 0905 / 0907, e.g. `0x801F7F50` in 0907's image).
 
@@ -568,7 +568,7 @@ Retail monster AI is two routines in the battle overlay (dumps `ghidra/scripts/f
 3. Otherwise it picks magic id `magic[roll-1]`, gates on affordability (`actor[+0x150]` MP `< spell_table[id*0xC + 3]` cost), and resolves the target by the spell's shape byte `spell_table[id*0xC + 2] & 0x60`: `0x40` = one enemy -> random party member; `0x60` = all enemies -> class `8`; `0x20` = all allies -> class `9`; `0x00` = one ally -> most-weakened-ally HP scan.
 4. A large `switch` on `DAT_8007BD0C[slot]` can then override the choice with bespoke scripted casts (hard-coded ids `0x50` / `0x51` / `0x52` / `0x53` / `0x6f` / `0x40`, cooldowns in `DAT_801C8FE0`). `DAT_8007BD0C[slot]` is the per-slot monster id, filled by `FUN_801DA51C` from the encounter record's `[+4 + slot]` ids, so each case is AI for one monster id.
 
-A data constraint hides in the cast path. After a magic choice the picker counts the block's rollable castable entries (record `+0x4C` entries with id `0x0C..=0x1F` and AGL cost `!= 0xFF`) into `sp+0x10` and rolls `rand % count` (`div` at `0x801EA30C`). A count of zero executes the divide-by-zero guard, `break 0x1C00` at `0x801EA318`, and the BIOS parks the machine (vsync alive, pads dead). Retail data never has that shape. It constrains rebuilt blocks: a modded block whose `+0x21` magic array is live must keep at least one rollable castable entry, which `legaia_asset::monster_archive::slim_castables` enforces (see [randomizer.md](../tooling/randomizer.md)).
+A data constraint hides in the cast path. After a magic choice the picker counts the block's rollable castable entries (record `+0x4C` entries with id `0x0C..=0x1F` and AGL cost `!= 0xFF`) into `sp+0x10` and rolls `rand % count` (`div` at `0x801EA30C`). A count of zero executes the divide-by-zero guard, `break 0x1C00` at `0x801EA318`, and the BIOS parks the machine (vsync alive, pads dead). Retail data never has that shape. It constrains rebuilt blocks: a modded block whose `+0x21` magic array is live must keep at least one rollable castable entry, which `legaia_actor_formats::monster_archive::slim_castables` enforces (see [randomizer.md](../tooling/randomizer.md)).
 
 **`FUN_801E7320` - target resolver.** Called from the action SM at `ActionSeed` as the `monster_setup` hook, only for actors with `actor[+0x16e] & 0x380 != 0`. It expands the targeting class the picker left in `actor[+0x1DD]`:
 
@@ -584,7 +584,7 @@ Context fields: `ctx[+0]` = party count, `ctx[+1]` = monster count, `ctx[+0x13]`
 
 | Port symbol | Retail piece |
 |---|---|
-| `World::pick_monster_action` (`engine-core/src/world/battle/monster_ai.rs`) | The picker's generic core: real RNG, real `magic_attacks`, spell-shape targeting through the catalog's `SpellTarget`. |
+| `World::pick_monster_action` (`engine-core/src/world/battle/monster_ai/action_pick.rs`) | The picker's generic core: real RNG, real `magic_attacks`, spell-shape targeting through the catalog's `SpellTarget`. |
 | `monster_ai::decide` (`crates/engine-battle/src/monster_ai.rs`) | The per-monster-id `switch`: low-HP self-heal, MP-gated nukes, multi-phase boss scripts. |
 | `MonsterAiState` | Battle-scoped state: the `DAT_801C8FE0` cooldown latches, the `DAT_801C8FE4` phase counter, the recent-target ring. |
 | `monster_ai::apply_recent_target_ring` | The post-switch anti-repeat ring. |
@@ -674,7 +674,7 @@ Small modules the loop composes. Each mirrors one retail piece; detail that does
 | [`engine-battle::monster_ai`](../../crates/engine-battle/src/monster_ai.rs) | Per-monster-id scripted AI. | `FUN_801E9FD4` |
 | [`engine-battle::seru_learning`](../../crates/engine-battle/src/seru_learning.rs) | Capture-point accumulator + banner session. | - |
 | [`engine-battle::levelup`](../../crates/engine-battle/src/levelup.rs) | `LevelUpTracker`, growth curves ([level-up.md](level-up.md)). | `FUN_801E9504` |
-| [`engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs) | Typed statuses + the packed `+0x16E` word. | `FUN_801E752C`, appliers |
+| [`engine-battle-vm::status_effects`](../../crates/engine-battle-vm/src/status_effects.rs) | Typed statuses + the packed `+0x16E` word. | `FUN_801E752C`, appliers |
 | `engine-battle::battle_return_flags` | Story-flag fold on battle return. | `FUN_8003AEB0` block `0x8003B530..0x8003B60C` |
 | [`engine-menus::game_over`](../../crates/engine-menus/src/game_over.rs) | Title hand-off after a wipe. | Stores at `0x8003B5D4` |
 
@@ -703,7 +703,7 @@ The bank maps cue ids (the `kind` byte the art-record `HitCue` and the overlay s
 | `0x80..=0xFE` | Reserved per-character / per-art SFX ids. |
 
 - The bank is decoded from the user's `SCUS_942.54` descriptor table `DAT_8006F198` at boot (`SfxTable::from_scus` -> `SfxBank::from_descriptors`, see [`sfx-table.md`](../formats/sfx-table.md)) and plays through the per-scene music VAB. `SfxBank::play_one_shot` delegates to `VabBank::play_note` for tone lookup, pitch math and ADSR.
-- The live battle loop drives it: each `BattleSfxCue` drained from `World::drain_battle_sfx_cues` is enqueued at its `timing_frames` delay, and one `tick_sfx_frame` per simulation tick keys matured cues on. The host side is `AudioBgmDirector::{set_sfx_bank, enqueue_sfx, tick_sfx_frame}` in `crates/engine-session`, used by both the native window and the browser page (`crates/web-viewer/src/play_sfx.rs`).
+- The live battle loop drives it: each `BattleSfxCue` drained from `World::drain_battle_sfx_cues` is enqueued at its `timing_frames` delay, and one `tick_sfx_frame` per simulation tick keys matured cues on. The host side is `AudioDirector::{set_sfx_bank, enqueue_sfx, tick_sfx_frame}` in `crates/engine-session`, used by both the native window and the browser page (`crates/web-viewer/src/play_sfx.rs`).
 - Cues touch only the SPU (no RNG), so battle determinism is unaffected. A missing bank / VAB / free voice drops the cue silently.
 
 ### Item catalog
@@ -742,14 +742,14 @@ A magic-rank-up + character-level-up save triplet, diffed with the `mednafen-sta
 | Level-up | `+0x11C..+0x12C` | six per-byte +1..+4 | per-stat increments at byte stride 2 |
 | Level-up | `+0x130` | `0x02 -> 0x03` | displayed character level (+1) |
 
-The growth source is in `SCUS_942.54`: the per-stat 98-entry curves at `DAT_800769CC` (stride `0x62`) and the parameter block at `DAT_80076918` that selects each stat's curve row, read and applied by the overlay level-up function `FUN_801E9504` (see [`level-up.md`](level-up.md#stat-gains)). `legaia_asset::level_up_tables::growth_tables_from_scus` parses them, and `LevelUpTracker::with_growth_tables` installs per-character `StatGrowthCurve::PerLevel` (all 8 stats) at boot, byte-validated against the captured Noa L2 -> L3 single-level deltas.
+The growth source is in `SCUS_942.54`: the per-stat 98-entry curves at `DAT_800769CC` (stride `0x62`) and the parameter block at `DAT_80076918` that selects each stat's curve row, read and applied by the overlay level-up function `FUN_801E9504` (see [`level-up.md`](level-up.md#stat-gains)). `legaia_game_tables::level_up_tables::growth_tables_from_scus` parses them, and `LevelUpTracker::with_growth_tables` installs per-character `StatGrowthCurve::PerLevel` (all 8 stats) at boot, byte-validated against the captured Noa L2 -> L3 single-level deltas.
 
 Not a stat grant: the actor `+0x74` reads once suspected as a "Seru struct" growth source are the actor's colour word, which `FUN_800480D8` stamps with the 24-bit mid-grey `0x00808080` under the mask `0x00FFFFFF` (see [`functions/renderer.md`](../reference/functions/renderer.md#800480d8)).
 
 A captured observation can also be installed directly, for tests:
 
 ```rust
-let obs = legaia_engine_core::levelup::LevelUpObservation::vahn_4_level_jump();
+let obs = legaia_engine_battle::levelup::LevelUpObservation::vahn_4_level_jump();
 let tracker = LevelUpTracker::new().with_observed_curve(0, &obs);
 ```
 
@@ -759,7 +759,7 @@ let tracker = LevelUpTracker::new().with_observed_curve(0, &obs);
 
 ### CDNAME -> MV STR label map
 
-`engine_core::scene::cutscene_str_for(scene_label)` (`crates/engine-core/src/scene/cutscene.rs`) is a static label -> file helper derived from CDNAME ordering; `cutscene_label_for_str(filename)` is its inverse (case-insensitive on the basename).
+`engine_scene::scene::cutscene_str_for(scene_label)` (`crates/engine-scene/src/scene/cutscene.rs`) is a static label -> file helper derived from CDNAME ordering; `cutscene_label_for_str(filename)` is its inverse (case-insensitive on the basename).
 
 | CDNAME | STR file | Scene context |
 |---|---|---|

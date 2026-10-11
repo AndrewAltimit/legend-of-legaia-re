@@ -16,18 +16,18 @@
 //! live command flow writes for a sweep (`World::cast_target_code`) and assert
 //! the cast-begin facing actually moves to the group's bearing.
 
-use legaia_engine_core::world::World;
-use legaia_engine_vm::battle_action::{ActionState, BattleActor};
-use legaia_engine_vm::battle_target_group::{
+use legaia_engine_battle_vm::battle_action::{ActionState, BattleActor};
+use legaia_engine_battle_vm::battle_target_group::{
     GroupSlot, TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY, target_group_aim,
 };
+use legaia_engine_core::world::World;
 
 /// The facing an actor that has never been aimed carries.
 const UNAIMED: u16 = 0;
 
 /// A seated 3v2 battle.
 fn seated_battle() -> World {
-    use legaia_engine_core::ap_gauge::ApGauge;
+    use legaia_engine_battle::ap_gauge::ApGauge;
 
     let mut world = World::default();
     world.enter_battle(3, 2);
@@ -77,7 +77,7 @@ fn expected_facing(world: &World, caster: u8, code: u8) -> u16 {
     }
     let aim = target_group_aim(code, &slots).expect("the group has live seats");
     let caster = &world.actors[caster as usize];
-    let bearing = legaia_engine_vm::battle_action::bearing_12bit_approx(
+    let bearing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
         aim.centroid_z.wrapping_neg(),
         aim.centroid_x.wrapping_neg(),
         caster.move_state.world_z,

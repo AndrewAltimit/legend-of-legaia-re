@@ -10,7 +10,7 @@
     <dt>Dispatcher</dt><dd><code>FUN_801DE840(buffer, pc, ctx)</code> in PROT 0897, returns the new PC. Dump <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code>.</dd>
     <dt>Three exits</dt><dd><strong>Advance</strong> (add the op's width), <strong>halt at PC</strong> (return the PC unchanged, so the op re-runs next frame - how every wait works), <strong>halt-acquire</strong> (freeze another actor by setting its halt bit and parking its resume pointer).</dd>
     <dt>PC</dt><dd>A signed 16-bit halfword at <code>ctx+0x9E</code>: every relative jump is <code>(base + delta) mod 0x10000</code>, so <code>0xFFFE</code> is "back 2".</dd>
-    <dt>In the port</dt><dd><code>engine-vm::field</code> (<code>step.rs</code> per opcode), <code>engine-vm::field_helpers</code> (the pure leaf helpers), <code>legaia_asset::field_disasm</code> (widths for every opcode and every <code>0x4C</code> nibble).</dd>
+    <dt>In the port</dt><dd><code>engine-vm::field</code> (<code>step.rs</code> per opcode), <code>engine-vm::field::dispatch_leaves</code> (the pure leaf helpers), <code>legaia_scene_formats::field_disasm</code> (widths for every opcode and every <code>0x4C</code> nibble).</dd>
   </dl>
 </section>
 
@@ -272,7 +272,7 @@
     <li><strong>Label-calls.</strong> Ghidra renders the shared epilogue as a call. In the assembly each arm exits with <code>addiu s8, s8, N</code> in the delay slot of <code>j 0x801df09c</code>, and that <code>N</code> is the op's PC advance. Labels promoted to fake functions: <code>0x801df098</code> (+2), <code>0x801df09c</code> (+0), <code>0x801df8dc</code> (+6), <code>0x801e00b8</code> (+3), <code>0x801e212c</code> (+7), <code>0x801e3614</code> (BBOX outside), <code>0x801e3620</code> (+4). Grep the address in the dump before treating it as a callee.</li>
     <li><strong>Delay slots hide advances.</strong> The motion ops advance past themselves for every target (<code>li s7, 4</code> in a delay slot); only a player target also parks the caller. The decompiled C hides this.</li>
     <li><strong>16-bit jumps.</strong> <code>[21] [26 FE FF]</code> is the park-here idiom. A port that adds the delta in a wider integer turns every backward jump into a forward overrun.</li>
-    <li><strong>Pure helpers.</strong> <code>packet_length</code> (<code>FUN_8003CA38</code>), <code>party_flag_test</code> (<code>FUN_8003CE64</code>), <code>small_table_search</code> (<code>FUN_80042EE0</code>), the little-endian loaders (<code>FUN_8003CE9C / CEB8 / CED8</code>) and the inlined <code>tile_center</code> are ported as functions in <code>engine-vm::field_helpers</code>.</li>
+    <li><strong>Pure helpers.</strong> <code>packet_length</code> (<code>FUN_8003CA38</code>), <code>party_flag_test</code> (<code>FUN_8003CE64</code>), <code>small_table_search</code> (<code>FUN_80042EE0</code>), the little-endian loaders (<code>FUN_8003CE9C / CEB8 / CED8</code>) and the inlined <code>tile_center</code> are ported as functions in <code>engine-vm::field::dispatch_leaves</code>.</li>
   </ul>
 </section>
 

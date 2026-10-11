@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn field_vm_extra_flags_op42_reads_world() {
@@ -248,11 +249,14 @@ fn ext_sub_op_2c_captures_a_strip_request_for_the_draw() {
     assert_eq!(reqs[0].slab.half_w, 24);
     assert!(world.move_vm.take_strip_requests().is_empty(), "drained");
     // The queue is capped for a host that never draws.
-    for _ in 0..(MOVE_STRIP_REQUEST_CAP + 8) {
+    for _ in 0..(legaia_engine_field::move_vm_globals::MOVE_STRIP_REQUEST_CAP + 8) {
         world.actors[0].move_state.pc = 0;
         let _ = world.step_move_vm(0, &bc);
     }
-    assert_eq!(world.move_vm.strip_requests.len(), MOVE_STRIP_REQUEST_CAP);
+    assert_eq!(
+        world.move_vm.strip_requests.len(),
+        legaia_engine_field::move_vm_globals::MOVE_STRIP_REQUEST_CAP
+    );
 }
 
 /// The strip set on screen is one tick's: reading it does not drain it (an

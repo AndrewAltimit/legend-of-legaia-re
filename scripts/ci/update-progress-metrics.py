@@ -280,7 +280,9 @@ def load_port_catalog(funcs=None):
     spec.loader.exec_module(mod)
     if funcs:
         from pathlib import Path
-        mod.FUNCS_DIR = Path(funcs).expanduser()
+        # The corpus path lives in the package's `paths` module, which every
+        # collector reads at call time; the entry file only re-exports it.
+        mod.paths.FUNCS_DIR = Path(funcs).expanduser()
     return mod
 
 

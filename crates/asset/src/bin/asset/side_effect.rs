@@ -5,8 +5,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use legaia_asset::formation_census::FormationCensus;
-use legaia_asset::seru_side_effect::{
+use legaia_disc_audit::formation_census::FormationCensus;
+use legaia_game_tables::seru_side_effect::{
     SIDE_EFFECT_BANDS, SIDE_EFFECT_TABLE_FILE_OFFSET, SeruSideEffectTable, SideEffectKind,
 };
 
@@ -15,7 +15,7 @@ const ELEMENT_NAMES: [&str; 8] = [
 ];
 
 pub(crate) fn seru_side_effect_cmd(input: &Path, json: bool) -> Result<()> {
-    let bytes = crate::common::read_input(input)?;
+    let bytes = crate::cli_io::read_input(input)?;
     let Some(table) = SeruSideEffectTable::parse(&bytes) else {
         anyhow::bail!(
             "no side-effect table at the pinned offset {:#x} in {} ({} bytes) - is this the \

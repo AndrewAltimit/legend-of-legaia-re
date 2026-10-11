@@ -7,7 +7,7 @@
 //! one rectangle:
 //!
 //! - the **decoration pass** `FUN_801F7088` - the `0x2000`-gated per-cell pack
-//!   meshes (the port's terrain [`EnvDraw`](crate::field_env::EnvDraw) list);
+//!   meshes (the port's terrain [`EnvDraw`](legaia_engine_scene::field_env::EnvDraw) list);
 //! - the **ground emitters** `FUN_801F6D48` / `FUN_801F69EC` it calls at the
 //!   end (one or the other on `_DAT_8007BB4C`, same loop) - the `0x1000`-gated
 //!   textured ground quads (the port's walk-ground heightfield).
@@ -41,9 +41,10 @@
 //! Hosts reach this through [`field_view_cells`], which adds the port's policy:
 //! the crop only holds at retail's own framing (see its docs).
 
-use crate::camera::{Camera, CameraDistance};
-use crate::world::field_npc_cull::FieldCullView;
-use crate::world::{SceneMode, World};
+use crate::world::World;
+use legaia_engine_field::camera::FieldCullView;
+use legaia_engine_field::camera::{Camera, CameraDistance};
+use legaia_engine_mode::mode::SceneMode;
 
 /// The cell rectangle one frame of `FUN_801F7088` walks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -261,15 +262,15 @@ pub fn field_view_cells(world: &World, retail_framing: bool) -> Option<ViewCells
 /// `(mesh, matrix)` pairs keep one of these beside each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct CellKey {
-    /// [`crate::field_env::EnvDraw::cell`].
+    /// [`legaia_engine_scene::field_env::EnvDraw::cell`].
     pub cell: (u8, u8),
-    /// [`crate::field_env::EnvDraw::cull_radius`].
+    /// [`legaia_engine_scene::field_env::EnvDraw::cull_radius`].
     pub cull_radius: u8,
 }
 
 impl CellKey {
     /// The key of one resolved draw.
-    pub fn of_draw(d: &crate::field_env::EnvDraw) -> Self {
+    pub fn of_draw(d: &legaia_engine_scene::field_env::EnvDraw) -> Self {
         CellKey {
             cell: d.cell,
             cull_radius: d.cull_radius,
@@ -575,7 +576,7 @@ mod tests {
             ..town01()
         };
         cam.reset_globals_for_scene_entry();
-        let (x0, z0, x1, z1) = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
+        let (x0, z0, x1, z1) = legaia_engine_system::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
         assert_eq!(cam.zone.view_window, [x0, z0, x1, z1]);
         let entry = FieldCullView {
             window: cam.zone.view_window,

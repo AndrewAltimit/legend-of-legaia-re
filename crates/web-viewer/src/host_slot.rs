@@ -9,10 +9,10 @@
 //! disjoint from the runtime's other fields.
 
 use crate::play_sfx::PageDirector;
-use legaia_engine_core::camera::Camera;
-use legaia_engine_core::mode::ModeSeat;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
+use legaia_engine_field::camera::Camera;
+use legaia_engine_mode::mode::ModeSeat;
 use legaia_engine_session::BootConfig;
 
 /// The engine session the page runs, over the page's audio output.
@@ -34,7 +34,7 @@ pub(crate) type PageSession = legaia_engine_session::BootSession<crate::play_sfx
 /// the scaffold world before any disc is loaded.
 ///
 /// And so does the audio director ([`crate::play_sfx::PageDirector`], the
-/// native `AudioBgmDirector`): `BootSession::bgm` once a session exists, the
+/// native `AudioDirector`): `BootSession::bgm` once a session exists, the
 /// slot's before (off wasm one is built on first use, disc or no disc).
 pub(crate) struct HostSlot {
     session: Option<PageSession>,

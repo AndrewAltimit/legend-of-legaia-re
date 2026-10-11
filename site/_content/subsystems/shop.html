@@ -12,7 +12,7 @@
     <dt>Screens</dt><dd>Menu overlay (PROT 0899) window-descriptor table; no separate shop overlay</dd>
     <dt>Purses</dt><dd>Gold <code>_DAT_8008459C</code>; Point Card <code>_DAT_800845B4</code>; casino coins <code>_DAT_800845A4</code> - all capped at 9,999,999</dd>
     <dt>Stack cap</dt><dd>99 per item id, enforced by the list ink and the quantity clamp</dd>
-    <dt>In the port</dt><dd><code>engine-core::shop</code>, <code>engine-screens</code>, <code>legaia_asset::shop_stock</code></dd>
+    <dt>In the port</dt><dd><code>engine-menus::shop</code>, <code>engine-screens</code>, <code>legaia_scene_formats::shop_stock</code></dd>
     <dt>Confidence</dt><dd>Confirmed - stock scan validated disc-wide; every screen traced in the menu overlay</dd>
     <dt>Used by</dt><dd><a href="../shops.html">Shops browser</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a> shop shuffle, <a href="inventory.html">inventory</a></dd>
   </dl>
@@ -112,7 +112,7 @@
   <details class="disclosure">
     <summary>Details: cursor word bits and the window choreography</summary>
     <div class="disclosure-body">
-      <p>The picker cursor word (<code>DAT_801E46BC</code>): low 12 bits = selected row; bit <code>0x1000</code> = blink phase; bit <code>0x2000</code> = parked presentation (every row drawn, keyed to blink); bit <code>0x4000</code> = cursor suppressed. The stock list re-runs the same decode against <code>_DAT_8007BB98</code>; shared kernel <code>engine-core::shop::shop_cursor_mode</code>.</p>
+      <p>The picker cursor word (<code>DAT_801E46BC</code>): low 12 bits = selected row; bit <code>0x1000</code> = blink phase; bit <code>0x2000</code> = parked presentation (every row drawn, keyed to blink); bit <code>0x4000</code> = cursor suppressed. The stock list re-runs the same decode against <code>_DAT_8007BB98</code>; shared kernel <code>engine-menus::shop::shop_cursor_mode</code>.</p>
       <p>Opening and closing slide the windows through <a href="../formats/window-script.html">widget scripts</a>: the open script (<code>DAT_801E4E38</code>) brings in vendor name <code>0x21</code>, mode panel <code>0x2A</code>, gold <code>0x20</code>, <code>0x28</code> and <code>0x22</code>; the Sell transition (<code>DAT_801E4E54</code>) slides away <code>0x28</code> / <code>0x2A</code> / <code>0x22</code> and keeps the gold and name plates. The randomizer&rsquo;s Seru-trading vendor patches exactly these seams to grow the panel to four rows.</p>
       <p>Every equipment bonus record on the disc carries the <code>0x40</code> no-passive sentinel, so the sell panel&rsquo;s passive lines always come from the item-effect table arm.</p>
     </div>
@@ -121,7 +121,7 @@
 
 <section class="doc-section" id="engine-port">
   <h2>In the port</h2>
-  <p>The stock scan is <code>legaia_asset::shop_stock</code>; the session, quantity stepper, recipient picker, Point Card bank and row-ink rules live in <code>engine-core::shop</code>; and the screens - every window above, the prize exchange and the coin counter - are composed once in <code>engine-screens</code> and drawn by both play hosts. The grant kernel refuses a buy past 99, as the retail clamp does. The literal restore amounts of consumables stay curated, because they live in overlay code rather than in the item-effect table.</p>
+  <p>The stock scan is <code>legaia_scene_formats::shop_stock</code>; the session, quantity stepper, recipient picker, Point Card bank and row-ink rules live in <code>engine-menus::shop</code>; and the screens - every window above, the prize exchange and the coin counter - are composed once in <code>engine-screens</code> and drawn by both play hosts. The grant kernel refuses a buy past 99, as the retail clamp does. The literal restore amounts of consumables stay curated, because they live in overlay code rather than in the item-effect table.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

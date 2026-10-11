@@ -17,7 +17,7 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -41,7 +41,7 @@ fn opdeene_channels_spawn_and_execute() {
         return;
     };
 
-    let cutscene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    let cutscene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.enter_field_scene(cutscene, 0).expect("enter opdeene");
 

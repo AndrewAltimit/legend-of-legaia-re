@@ -15,7 +15,7 @@
 //!
 //! 1. the weapon's own primitives are cut out of the **donor** record with
 //!    the same curated item-alone cut the equipment viewer and the Delilas
-//!    swap use ([`party_swap::weapon_fuse`]): retail prims verbatim, CBA
+//!    swap use ([`legaia_party_swap::weapon_fuse`]): retail prims verbatim, CBA
 //!    columns remapped onto the target section's CLUT columns;
 //! 2. they are merged into the **target's** own weapon-section default
 //!    record (its bare arm, its swing records, its attach list) channel by
@@ -36,7 +36,7 @@
 //!    weapon keeps its retail price on the new owner's Arts bar.
 //!
 //! The rebuilt record is appended to the target's weapon section and the
-//! file re-packed through [`party_swap::playerize::rebuild_player_file`];
+//! file re-packed through [`legaia_party_swap::playerize::rebuild_player_file`];
 //! whether it fits the PROT entry is the caller's problem (the retail
 //! player files tile their footprints exactly, so a transplant usually
 //! needs room from a neighbouring entry).
@@ -44,14 +44,14 @@
 use anyhow::{Context, Result, bail};
 use legaia_tmd::encode::{ModelObject, decode_model, encode};
 
-use crate::party_swap::playerize::{
+use legaia_actor_formats::battle_char_assembly::{SECTION_COUNT, SECTION_TEXTURE_RECTS};
+use legaia_actor_formats::battle_data_pack::{self, BattleDataPack};
+use legaia_party_swap::playerize::{
     alias_variant_onto_bone, rebuild_player_file, splice_record_tmd, variant_object,
 };
-use crate::party_swap::weapon_fuse::{
+use legaia_party_swap::weapon_fuse::{
     BareFrame, WEAPON_PALETTE_MAX, merge_into, weapon_fusion_record,
 };
-use legaia_asset::battle_char_assembly::{SECTION_COUNT, SECTION_TEXTURE_RECTS};
-use legaia_asset::battle_data_pack::{self, BattleDataPack};
 
 /// The two held-item sections of a player file.
 const HELD_SECTIONS: [usize; 2] = [2, 3];

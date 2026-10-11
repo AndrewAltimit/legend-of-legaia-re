@@ -11,7 +11,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{SceneHost, is_world_map_scene};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::is_world_map_scene;
 
 /// CBA word for the ocean CLUT at VRAM `(0, 506)`: `(506 << 6) | (0 >> 4)`.
 const OCEAN_CLUT_CBA: u16 = 0x7E80;
@@ -47,8 +48,8 @@ fn world_map_ocean_clut_is_referenced_by_terrain_or_skip() {
         .entries
         .iter()
         .find_map(|e| {
-            let slot0 = legaia_asset::kingdom_bundle::decode_slot(&e.bytes, 0).ok()?;
-            legaia_asset::ocean::find_ocean_assets(&slot0).map(|o| o.animation_frames)
+            let slot0 = legaia_scene_formats::kingdom_bundle::decode_slot(&e.bytes, 0).ok()?;
+            legaia_scene_formats::ocean::find_ocean_assets(&slot0).map(|o| o.animation_frames)
         })
         .expect("ocean animation table present in the map01 kingdom bundle");
     assert_eq!(frames.len(), 13 * 32, "13 frames x 32 bytes");

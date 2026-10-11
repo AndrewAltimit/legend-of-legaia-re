@@ -1,7 +1,7 @@
 //! WebAssembly bindings for browsing a Legend of Legaia disc image in the browser.
 //!
 //! Auto-detects: full Mode2/2352 .bin disc, raw PROT.DAT, or a single TIM.
-//! After loading a disc, classifies every PROT entry via `legaia_asset::categorize`
+//! After loading a disc, classifies every PROT entry via `legaia_disc_audit::categorize`
 //! and pre-scans them for embedded TIMs so the UI shows a filtered, browsable
 //! list of viewable entries instead of every raw entry.
 
@@ -77,11 +77,11 @@ pub mod translate_workbench;
 mod viewer_render;
 
 use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
-use legaia_asset::categorize::{Class, classify};
-use legaia_asset::tim_catalog;
-use legaia_asset::tim_deep_catalog;
-use legaia_asset::tim_scan;
-use legaia_asset::worldmap_menu;
+use legaia_container_formats::tim_scan;
+use legaia_disc_audit::categorize::{Class, classify};
+use legaia_disc_audit::tim_catalog;
+use legaia_disc_audit::tim_deep_catalog;
+use legaia_game_tables::worldmap_menu;
 use wasm_bindgen::Clamped;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -115,10 +115,10 @@ fn json_label(label: Option<&str>) -> String {
 fn parse_axes(
     s: &str,
 ) -> (
-    legaia_asset::world_map_overlay::Axis,
-    legaia_asset::world_map_overlay::Axis,
+    legaia_scene_formats::world_map_overlay::Axis,
+    legaia_scene_formats::world_map_overlay::Axis,
 ) {
-    use legaia_asset::world_map_overlay::Axis;
+    use legaia_scene_formats::world_map_overlay::Axis;
     let pick = |c: char| -> Axis {
         match c {
             'x' | 'X' => Axis::X,
@@ -135,13 +135,13 @@ fn parse_axes(
 
 /// Project a decoded slot-4 translation `[tx, ty, tz]` onto one [`Axis`].
 ///
-/// [`legaia_asset::world_map_overlay::Axis::pick`] selects out of the raw
+/// [`legaia_scene_formats::world_map_overlay::Axis::pick`] selects out of the raw
 /// four-`i16` byte view of an entry, which is not what the runtime reads; the
 /// slot-4 emitters project the decoded transform instead, so they need this.
 ///
-/// [`Axis`]: legaia_asset::world_map_overlay::Axis
-fn axis_of(t: [i16; 3], axis: legaia_asset::world_map_overlay::Axis) -> i16 {
-    use legaia_asset::world_map_overlay::Axis;
+/// [`Axis`]: legaia_scene_formats::world_map_overlay::Axis
+fn axis_of(t: [i16; 3], axis: legaia_scene_formats::world_map_overlay::Axis) -> i16 {
+    use legaia_scene_formats::world_map_overlay::Axis;
     match axis {
         Axis::X => t[0],
         Axis::Y => t[1],
@@ -174,7 +174,7 @@ enum TmdSource {
     ///
     /// These are battle-stage backdrop shells, and every one is authored as
     /// **half** a bowl that retail closes by drawing the same mesh a second
-    /// time under a per-stage transform (`legaia_asset::battle_backdrop`).
+    /// time under a per-stage transform (`legaia_scene_formats::battle_backdrop`).
     /// This variant is therefore both the one `LegaiaViewer::tmd_note`
     /// labels and the one whose mesh gets placed rather than drawn raw.
     SceneTmdStream { offset: usize, len: usize },
@@ -205,7 +205,7 @@ enum TimSource {
     Lzs { section: usize, offset: usize },
 }
 
-use legaia_asset::ocean::{OceanAssets, find_ocean_assets};
+use legaia_scene_formats::ocean::{OceanAssets, find_ocean_assets};
 
 /// Loaded kingdom bundle (slot 0 = TIM_LIST -> VRAM, slot 1 = TMD pack ->
 /// per-slot TMD bodies). Built by [`LegaiaViewer::set_scene_kingdom`] and
@@ -232,7 +232,7 @@ struct KingdomPack {
     /// The kingdom's slot-5 **CLUT-walk** shimmer (ocean head + the seven
     /// shoreline / river cells), installed into [`Self::vram`] by the engine
     /// kernel every play host runs
-    /// (`legaia_engine_core::clut_walk_anim::ClutWalkAnim::install`) and
+    /// (`legaia_engine_scene::clut_walk_anim::ClutWalkAnim::install`) and
     /// stepped by [`LegaiaViewer::kingdom_clut_tick`]. `None` until
     /// `set_scene_kingdom` resolves it (raw PROT.DAT loads have no CDNAME
     /// block to resolve against).
@@ -279,22 +279,22 @@ pub struct LegaiaViewer {
     /// load time. Resolves a monster record's raw `drop_item` id into a
     /// readable name for the enemy table. `None` on raw PROT.DAT loads (no
     /// SCUS) - the page then falls back to the raw id.
-    item_names: Option<legaia_asset::item_names::ItemNameTable>,
+    item_names: Option<legaia_game_tables::item_names::ItemNameTable>,
     /// Spell-name table (`DAT_800754C8` / `DAT_800754D0`) decoded from
     /// `SCUS_942.54` at load time. Resolves a monster record's global
     /// magic-attack ids into the on-screen spell names (`0x27` -> `Tail Fire`).
     /// `None` on raw PROT.DAT loads.
-    spell_names: Option<legaia_asset::spell_names::SpellNameTable>,
+    spell_names: Option<legaia_game_tables::spell_names::SpellNameTable>,
     /// Per-monster steal table (`DAT_80077828`) decoded from `SCUS_942.54` at
     /// load time. Resolves what the Evil God Icon steals from each monster (item
     /// + chance) for the enemy table. `None` on raw PROT.DAT loads (no SCUS).
-    steal_table: Option<legaia_asset::steal_table::StealTable>,
+    steal_table: Option<legaia_game_tables::steal_table::StealTable>,
     /// Per-stage battle-backdrop mirror table (`DAT_80078B50`) decoded from
     /// `SCUS_942.54` at load time. Selects which of the two transforms a
     /// `scene_tmd_stream` backdrop's **second** copy gets. `None` on raw
     /// PROT.DAT loads - the preview then uses retail's default (half turn)
     /// and says the transform is unresolved.
-    backdrop_mirror: Option<legaia_asset::battle_backdrop::MirrorXTable>,
+    backdrop_mirror: Option<legaia_scene_formats::battle_backdrop::MirrorXTable>,
     /// Flat catalog of every standard PSX TIM in the loaded PROT.DAT image,
     /// built at load time from the TOC (see [`tim_catalog`]). Drives the
     /// "TIM Catalog" browse mode: page through every TIM by id with its CLUT
@@ -316,11 +316,11 @@ pub struct LegaiaViewer {
     /// catalog say when a TIM's own palette never reaches VRAM and offer the
     /// palettes VRAM really holds on its row. `None` when the bundle does not
     /// parse (single-TIM loads, foreign PROT.DAT).
-    boot_cluts: Option<legaia_asset::tim_palette_context::BootClutVram>,
+    boot_cluts: Option<legaia_ui_formats::tim_palette_context::BootClutVram>,
     /// Per-rectangle palette map of the system-UI texture page, from the SCUS
     /// widget-class table (full-disc loads only). Drives the catalog's
     /// "as the game draws it" composite.
-    sheet_regions: Option<Vec<legaia_asset::tim_palette_context::SheetRegion>>,
+    sheet_regions: Option<Vec<legaia_ui_formats::tim_palette_context::SheetRegion>>,
     /// Walk-view continent ground for the currently-loaded kingdom: the
     /// procedural heightfield surface built from the walk `.MAP` floor grid,
     /// per-cell-textured from the terrain-type-keyed multi-page atlas. Built by
@@ -328,7 +328,7 @@ pub struct LegaiaViewer {
     /// by the `walk_ground_*` accessors so the world-overview viewer draws the
     /// same continent terrain the native engine does. `None` until a kingdom is
     /// loaded, or when the walk `.MAP` / floor LUT can't be resolved.
-    walk_ground: Option<legaia_asset::field_objects::WalkHeightfield>,
+    walk_ground: Option<legaia_scene_formats::field_objects::WalkHeightfield>,
     /// Walk-frame placed landmarks for the currently-loaded kingdom: the
     /// `flags & 0x4` slot-1 pack objects (`FUN_8003A55C`), resolved into the
     /// same `col*128` world frame as [`LegaiaViewer::walk_ground`]. Built by
@@ -348,7 +348,7 @@ pub struct LegaiaViewer {
     field_npcs: Option<field_npc::FieldNpcPack>,
     /// Cached engine-core PROT index over the loaded disc (built on the
     /// first `set_scene_field`; cleared on `load_disc`).
-    prot_index: Option<std::sync::Arc<legaia_engine_core::scene::ProtIndex>>,
+    prot_index: Option<std::sync::Arc<legaia_engine_scene::scene::ProtIndex>>,
     /// CDNAME.TXT contents captured at `load_disc` time (the stored `disc`
     /// buffer only retains PROT.DAT, but the full-scene assembler needs the
     /// scene-name -> block map). `None` on raw PROT.DAT / single-TIM loads.
@@ -362,7 +362,7 @@ pub struct LegaiaViewer {
     /// `SCUS_942.54` at load time. The equipment viewer reads each record's
     /// slot byte to label a player file's five sections, which are **not** in
     /// the same order for every character. `None` on raw PROT.DAT loads.
-    equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
+    equip_stats: Option<legaia_game_tables::equip_stats::EquipStatTable>,
     /// The battle model the equipment viewer currently shows: one character
     /// assembled at one loadout, with its band VRAM, clip bank and diff
     /// against the unequipped default. See [`equipment_view`].
@@ -519,7 +519,7 @@ pub fn find_asset_table_offset(buf: &[u8]) -> Option<usize> {
 /// Extended on-disc footprint of a field `.MAP` file (object-record table +
 /// collision/floor grid at `+0x4000` + object-index grid at `+0x8000`). The
 /// walk-view `.MAP` entry is identified by this exact footprint, matching
-/// `legaia_engine_core::scene::FIELD_MAP_LEN`.
+/// `legaia_engine_scene::scene::FIELD_MAP_LEN`.
 const WALK_FIELD_MAP_LEN: usize = 0x12000;
 
 /// Resolve + build the walk-view continent ground heightfield for the kingdom
@@ -539,19 +539,19 @@ const WALK_FIELD_MAP_LEN: usize = 0x12000;
 ///   bundle's MAN slot (slot 2), the same bytes `Scene::field_floor_height_lut`
 ///   reads.
 ///
-/// Reuses [`legaia_asset::field_objects::build_ground_heightfield`] for the grid
+/// Reuses [`legaia_scene_formats::field_objects::build_ground_heightfield`] for the grid
 /// math, with the overworld's cell gate. Returns `None` when either source can't be resolved.
 pub fn build_walk_ground(
     disc: &[u8],
     entries: &[EntryMeta],
     prot_base: u32,
-) -> Option<legaia_asset::field_objects::WalkHeightfield> {
+) -> Option<legaia_scene_formats::field_objects::WalkHeightfield> {
     let (map_bytes, lut) = resolve_walk_map_and_lut(disc, entries, prot_base)?;
     // A kingdom's ground is `FUN_801F89B8`'s, which tests no `0x1000` bit.
-    let hf = legaia_asset::field_objects::build_ground_heightfield(
+    let hf = legaia_scene_formats::field_objects::build_ground_heightfield(
         map_bytes,
         &lut,
-        legaia_asset::field_objects::GroundCellGate::TerrainRecord,
+        legaia_scene_formats::field_objects::GroundCellGate::TerrainRecord,
     );
     (!hf.indices.is_empty()).then_some(hf)
 }
@@ -562,7 +562,7 @@ pub fn build_walk_ground(
 ///
 /// Mirrors the native engine's `resolve_placement_draws` world transform: the
 /// placement anchor sits at the floor height the shared
-/// [`legaia_asset::field_objects::Placement::world_y`] kernel resolves (the
+/// [`legaia_scene_formats::field_objects::Placement::world_y`] kernel resolves (the
 /// corner-block average for decoration cells, the single placement-tile
 /// nibble for placed objects, plus `y_off`; the runtime stores the floor LUT
 /// negated) and the JS renderer applies the shared
@@ -578,7 +578,7 @@ pub struct WalkPlacement {
     pub pack_index: u32,
     /// World X in the `col*128` walk frame.
     pub world_x: i32,
-    /// World Y from [`legaia_asset::field_objects::Placement::world_y`]
+    /// World Y from [`legaia_scene_formats::field_objects::Placement::world_y`]
     /// (pre-Y-flip, same frame as the heightfield's stored positions).
     pub world_y: i32,
     /// World Z in the `row*128` walk frame.
@@ -598,12 +598,12 @@ pub struct WalkPlacement {
 /// the continent terrain. Two disjoint layers, concatenated:
 ///
 /// - the **placed landmarks** (the `flags & 0x4` slot-1 pack objects
-///   `FUN_8003A55C` draws; [`legaia_asset::field_objects::parse_placements`]),
+///   `FUN_8003A55C` draws; [`legaia_scene_formats::field_objects::parse_placements`]),
 /// - the **decoration layer** (draw-gated `0x2000` cells stamping the record
 ///   `+0x10` mesh without the placed flag - the crossed-quad billboard trees,
 ///   mountain groups, props, and the big enterable mountains whose cells carry
 ///   no walkable ground at all;
-///   [`legaia_asset::field_objects::parse_walk_decorations`]).
+///   [`legaia_scene_formats::field_objects::parse_walk_decorations`]).
 ///
 /// Reads the same walk `.MAP` + floor-height LUT [`build_walk_ground`] does
 /// (see `resolve_walk_map_and_lut`) and resolves each placement's world Y from
@@ -617,8 +617,8 @@ pub fn build_walk_placements(
     prot_base: u32,
 ) -> Option<Vec<WalkPlacement>> {
     let (map_bytes, lut) = resolve_walk_map_and_lut(disc, entries, prot_base)?;
-    let mut placements = legaia_asset::field_objects::parse_placements(map_bytes);
-    placements.extend(legaia_asset::field_objects::parse_walk_decorations(
+    let mut placements = legaia_scene_formats::field_objects::parse_placements(map_bytes);
+    placements.extend(legaia_scene_formats::field_objects::parse_walk_decorations(
         map_bytes,
     ));
     let resolved = placements
@@ -694,7 +694,7 @@ fn kingdom_floor_lut(disc: &[u8], entries: &[EntryMeta], idx: u32) -> Option<[i1
     let off = meta.byte_offset as usize;
     let end = (meta.byte_offset + meta.size_bytes) as usize;
     let buf = disc.get(off..end)?;
-    let man = legaia_asset::kingdom_bundle::decode_slot(buf, 2).ok()?;
+    let man = legaia_scene_formats::kingdom_bundle::decode_slot(buf, 2).ok()?;
     let lut_bytes = man.get(0x02..0x22)?;
     let mut lut = [0i16; 16];
     for (i, slot) in lut.iter_mut().enumerate() {
@@ -732,7 +732,7 @@ fn resolve_canvas(canvas_id: &str) -> Result<HtmlCanvasElement, JsValue> {
 /// in the entry (0 unless the geometry lives in LZS sections).
 fn detect_tmd_in_entry(buf: &[u8], class: Class) -> (Option<TmdSource>, usize) {
     if class == Class::SceneTmdStream
-        && let Some(s) = legaia_asset::scene_tmd_stream::detect(buf)
+        && let Some(s) = legaia_scene_formats::scene_tmd_stream::detect(buf)
     {
         let r = s.tmd_range();
         // Validate the TMD actually parses; the detector is structural only.
@@ -757,13 +757,13 @@ fn detect_tmd_in_entry(buf: &[u8], class: Class) -> (Option<TmdSource>, usize) {
     // scanners above can't see these, so the viewer reported "no TMD" for
     // whole towns. `scan_entry` walks the LZS sections; render the first and
     // surface the total count.
-    let scan = legaia_asset::tmd_scan::scan_entry(buf);
+    let scan = legaia_container_formats::tmd_scan::scan_entry(buf);
     let lzs_hits: Vec<_> = scan
         .hits
         .iter()
         .filter_map(|(src, hit)| match src {
-            legaia_asset::tmd_scan::Source::Lzs(idx) => Some((*idx, hit)),
-            legaia_asset::tmd_scan::Source::Raw => None,
+            legaia_container_formats::tmd_scan::Source::Lzs(idx) => Some((*idx, hit)),
+            legaia_container_formats::tmd_scan::Source::Raw => None,
         })
         .collect();
     if let Some((section, hit)) = lzs_hits.first() {

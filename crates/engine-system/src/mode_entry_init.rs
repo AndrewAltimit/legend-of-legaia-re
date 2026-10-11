@@ -168,8 +168,8 @@ fn tile_of(v: i32) -> i32 {
 ///
 /// WIRED, and the chain is: the `legaia-engine` binary
 /// (`commands/run.rs`, and the `play-window` redraw path) and
-/// `engine_shell::BootSession::…` (`boot.rs`) both call
-/// `legaia_engine_core::scene::SceneHost::enter_field_scene`, which calls this to seat the
+/// `engine_session::BootSession::…` (`session.rs`) both call
+/// `legaia_engine_core::scene_host::SceneHost::enter_field_scene`, which calls this to seat the
 /// player on a cold field entry. Every other kernel in this module is inert and
 /// says so individually - being in a live module is not itself evidence.
 pub fn field_spawn(
@@ -545,12 +545,12 @@ pub struct FieldDrawContext {
 /// PORT: FUN_801DE37C (`0x801de37c..0x801de3dc`)
 ///
 /// WIRED: through the camera's scene-entry reset
-/// (`legaia_engine_core::camera::Camera::reset_globals_for_scene_entry`), which both
+/// (`legaia_engine_field::camera::Camera::reset_globals_for_scene_entry`), which both
 /// hosts run on every field entry - the native window on the `SceneEntered`
 /// tick, the browser play page from `reset_for_scene_entry` after
 /// `enter_field_scene`. The consumer is [`Self::view_window`]: it seeds the
 /// camera's visible-tile window, which the focus edge clamp
-/// (`legaia_engine_core::camera_zone::clamp_focus`) widens the latched walk region by, and
+/// (`legaia_engine_field::camera_zone::clamp_focus`) widens the latched walk region by, and
 /// which field-VM op `0x46` and a camera-region record's mask-kind side-write
 /// then replace. Re-stamping it per entry is what stops one scene's scripted
 /// window leaking into the next.
@@ -625,7 +625,7 @@ pub struct DuelOverlayInit {
 ///
 /// PORT: FUN_801CF00C (`0x801cf00c..0x801cf384`).
 ///
-/// Read by the duel's 3D surface: `legaia_engine_core::baka_duel_scene::BakaDuelScene`
+/// Read by the duel's 3D surface: `legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelScene`
 /// sizes the arena floor from `window_tiles` - the `0x1F8003F8` /
 /// `0x1F8003FA` pair the floor emitter `FUN_801CEB84` loops over - so the
 /// seed is live on both play hosts through `BakaDuelSurface::frame`. The
@@ -648,6 +648,27 @@ pub const fn duel_overlay_init() -> DuelOverlayInit {
         voice_stream_id: 0x415,
     }
 }
+
+// ---------------------------------------------------------------------------
+// The boot entry word `init.pak` leaves for the title overlay
+// ---------------------------------------------------------------------------
+
+/// Address of the boot entry word retail's `init.pak` raises before the
+/// title overlay's first tick (`FUN_801CE9C0`, `sw s2,-0x4500(s0)` at
+/// `0x801CEB84` with `s0 = 0x80080000`). The title dispatcher's `Init` reads it at `0x801DD968`
+/// and the shared epilogue reads it again at `0x801DFED8`; both send the
+/// tick past sub-mode `0x02`.
+pub const ENTRY_WORD_ADDR: u32 = 0x8007_BB00;
+
+/// The value `init.pak` leaves in [`ENTRY_WORD_ADDR`] on a cold boot.
+/// `Init` takes the `0x11` arm on any non-zero value, and additionally
+/// streams the title assets when it reads exactly this.
+pub const ENTRY_WORD_COLD_BOOT: u32 = 1;
+
+/// The value the word carries when the title is re-entered from the
+/// attract movie (capture; see `docs/subsystems/boot.md`). Still non-zero,
+/// so the `0x11` arm holds, but the asset stream is skipped.
+pub const ENTRY_WORD_FROM_ATTRACT: u32 = 2;
 
 #[cfg(test)]
 mod tests {

@@ -1,6 +1,4 @@
 //! MAN partition-1 script-record walking + arm-site / script-record types.
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use super::*;
 
@@ -31,7 +29,7 @@ impl ArmSite {
         matches!(
             self.record,
             Some(EncounterRecord { count: 1, monster_ids })
-                if monster_ids[0] == crate::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID
+                if monster_ids[0] == legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID
         )
     }
 }

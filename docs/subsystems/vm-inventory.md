@@ -57,7 +57,7 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 | [Battle-action SM](battle-action.md) | `FUN_801E295C` | 256-slot JT `0x801CED44`, sparse handled bands, no default arm | partial | yes - `battle_action` | yes |
 | [World-map entity SM](world-map.md) | `FUN_801DA51C` | 5 states | resolved | yes - `world_map` | yes |
 | [Tile-board walk SM](tile-board.md) | `overlay_0897_801EF2B0` | 15 states, JT at `0x801CF65C` | resolved | yes - `engine-minigames::tile_board` | yes |
-| [Cast-module phase machine](cast-module.md#the-module-phase-byte-ctx--0x279) | one tick body per PROT 0903..0966 image, named by 0898's `0x801CF4EC` / `0x801CF56C` | per-image: the `ctx+0x279` phase byte through a word table or a `beq`/`slti` chain | resolved | yes - `cast_module_ticks` + `cast_arm_ticks` + `cast_seru_ticks_a` / `_b` | yes - `World::run_cast_module_code` |
+| [Cast-module phase machine](cast-module.md#the-module-phase-byte-ctx--0x279) | one tick body per PROT 0903..0966 image, named by 0898's `0x801CF4EC` / `0x801CF56C` | per-image: the `ctx+0x279` phase byte through a word table or a `beq`/`slti` chain | resolved | yes - `cast_module_ticks` + `cast_arm_ticks` + `seru_magic_ticks` | yes - `World::run_cast_module_code` |
 | Per-actor anim dispatch | `FUN_80021DF4` | 7 dispatch bytes `0x01..=0x07` at `actor[+0x5A]` | resolved | yes - `anim_vm` / `actor_tick` | yes |
 | Ambient facing channel | `FUN_80038158` ops `0x04` / `0x0D` | 2 of the 32-slot table | resolved | yes - `ambient_motion` (the same interpreter as the row above) | yes |
 | [Title-screen tick](#one-function-two-ports) | `FUN_801DD35C` | 25-slot JT `0x801CF244`, sub-mode word `+0x204` | resolved | yes - `title_overlay` | yes - `TitleSession`; see [below](#one-function-two-ports) |
@@ -113,13 +113,13 @@ bytecode arrives as MAN tail-section 1 rather than through the actor tick's own
 buffer, so a *static* decode of the same bytes exists alongside the running VM.
 The two are not rival ports:
 
-- **The interpreter** is `legaia_engine_vm::ambient_motion`, whose loop reaches
+- **The interpreter** is `legaia_engine_motion_vm::ambient_motion`, whose loop reaches
   all twenty-four case bodies the table's twenty-six defined op bytes select.
   The bodies are split across two files for length only - the facing ramps, the
   walk ops, the waits and the ramp scheduler in `ambient_motion.rs`, the rest in
   `ambient_motion_ops.rs` as further `impl` blocks on the same type. Nothing is
   stepped over by width.
-- **The static decoder** is `legaia_engine_core::man_field_scripts::npc_motion`,
+- **The static decoder** is `legaia_engine_field::man_field_scripts::npc_motion`,
   which answers questions about a stream without running it: which placement a
   record binds to, what pace its walk ops carry, what its first `0x17`
   default-move write is. The scene loader uses it to seed the channels the
@@ -231,7 +231,7 @@ Live, and worth knowing why:
 - **Actor / sprite VM** (`legaia_engine_vm::run`). Its programs are data
   resident in the menu overlay
   ([`window-script.md`](../formats/window-script.md), parser
-  `legaia_asset::widget_script`). `MenuRuntime::tick` runs the shop open /
+  `legaia_game_tables::widget_script`). `MenuRuntime::tick` runs the shop open /
   Sell slide-away programs through the interpreter over `MenuWidgetState`
   (`engine-menus::menu_widget`) on the transitions retail's `FUN_801DAFD4`
   drives. Triage:
@@ -240,7 +240,7 @@ Live, and worth knowing why:
   menu half ([`TitleMenuState`](#what-of-the-tick-runs-on-both-hosts)) and a
   `TitleTickState`.
 - **`vram_rect_copy`** (called from `engine-core::world::vram_rect_fx`) and
-  **`cutscene_trigger`** (called from `engine-field::mode` and the native
+  **`cutscene_trigger`** (called from `engine-mode::mode` and the native
   boot-cutscene path).
 
 Reading `port-catalog.py --live-audit`: `move_vm_overlay_ext`'s `step` and

@@ -79,7 +79,7 @@ Consequence for measurement: a whole line's pixel width is exactly the sum of
 its per-byte advances, with no per-line fudge term. `"Do not remove MEMORY
 CARD"` (the save screen's memory-card warning) measures **164 px**; the engine
 asserts that number against a disc-decoded font in
-`engine-shell/tests/dialog_font_metrics.rs`.
+`engine-session/tests/dialog_font_metrics.rs`.
 
 Bytes `widths[0x00..=0x1F]` overlap with three actor-name strings ("Meta", "Terra", "Ozma") that live at `0x80073F24..0x80073F3B`; only entries `0x20..=0xFF` are meaningful for glyph advance.
 
@@ -150,7 +150,7 @@ The advance column is the retail table's; the measurer (`legaia_font::measure`) 
 
 ### Symbol names and aliases
 
-The translation pipeline names every entry once, in `legaia_patcher::translation::symbols::SYMBOLS`: a human name for the translation workbench's symbol palette and a readable alias a pack may type in place of the hex token (`{btn:x}` = `{ce:00}`, `{icon:fire}` = `{ce:14}`, `{num:0}` = `{ce:0b}`). The alias encodes to the same two bytes, and export always writes `{ce:NN}`; the alias list is on [the pack-format page](../tooling/translation/pack-format.md#symbols).
+The translation pipeline names every entry once, in `legaia_translate::symbols::SYMBOLS`: a human name for the translation workbench's symbol palette and a readable alias a pack may type in place of the hex token (`{btn:x}` = `{ce:00}`, `{icon:fire}` = `{ce:14}`, `{num:0}` = `{ce:0b}`). The alias encodes to the same two bytes, and export always writes `{ce:NN}`; the alias list is on [the pack-format page](../tooling/translation/pack-format.md#symbols).
 
 The first list of these symbols was contributed by **Henrique Stanke Scandelari (Stann0x, [github.com/Stann0xus](https://github.com/Stann0xus))** while working on a Brazilian Portuguese translation. Checked sprite by sprite against the disc, it agrees on every icon it names; the disc adds three things it does not say:
 
@@ -242,9 +242,9 @@ The pager `FUN_801D84D0` runs once per game tick, every `DAT_1F800393` vsyncs (`
 
 A PCSX-Redux trace of `town01` placement `P1[16]`'s conversation (`scripts/pcsx-redux/autorun_dialog_typewriter_trace.lua`, one CSV row per vsync of those words) shows exactly this: the counter runs `1, 3, 5, ...` on a box's first row and `2, 4, 6, ...` after a finish, a count-25 row finishes on the call whose counter would be 27 and holds `36` for one call, and a count-11 row holds `92`, then `28`, then `0`.
 
-The engine types every pager page this way (`crates/engine-dialog`, re-exported at the `engine-core` paths): `legaia_engine_core::dialog::OwnedDialogPanel` counts each row with `legaia_font::typewriter_glyph_count` and `legaia_engine_core::dialog_pacing` runs the gate, one pager call every `frame_step` ticks, on the path both play hosts drive. `crates/engine-core/tests/dialog_typewriter_pacing_disc.rs` pins the traced row counts and the first box's per-vsync counter and hold against the engine.
+The engine types every pager page this way (`crates/engine-dialog`): `legaia_engine_dialog::dialog::OwnedDialogPanel` counts each row with `legaia_font::typewriter_glyph_count` and `legaia_engine_dialog::dialog_pacing` runs the gate, one pager call every `frame_step` ticks, on the path both play hosts drive. `crates/engine-core/tests/dialog_typewriter_pacing_disc.rs` pins the traced row counts and the first box's per-vsync counter and hold against the engine.
 
-The rows the counter types into belong to a scrolling window, not a page buffer: a page turn keeps the previous page's rows and types beneath them, a line after a full window scrolls it a row with no button press, and a confirm press while a row types or holds sets the skip latch `_DAT_801F2750 = 0x25` and completes the page (state `0x0D`, `0x801D89B8..0x801D8A04`; `0x801D86BC` for the hold). The states and the trace that pins them are in [`mes.md` § Row window and scrolling](mes.md#row-window-and-scrolling); the engine's port is `legaia_engine_core::dialog_window`, and both hosts draw its rows through `legaia_engine_ui::dialog_reading_box_text_draws_for`, offset by the scroll and clipped to the box's rows band.
+The rows the counter types into belong to a scrolling window, not a page buffer: a page turn keeps the previous page's rows and types beneath them, a line after a full window scrolls it a row with no button press, and a confirm press while a row types or holds sets the skip latch `_DAT_801F2750 = 0x25` and completes the page (state `0x0D`, `0x801D89B8..0x801D8A04`; `0x801D86BC` for the hold). The states and the trace that pins them are in [`mes.md` § Row window and scrolling](mes.md#row-window-and-scrolling); the engine's port is `legaia_engine_dialog::dialog_window`, and both hosts draw its rows through `legaia_engine_ui::dialog_reading_box_text_draws_for`, offset by the scroll and clipped to the box's rows band.
 
 The port is `legaia_font::Font::measure` (`crates/font/src/measure.rs`), which takes the surface's `DAT_800740E8` and a resolver for the runtime substitutions, and reports any token it could not resolve so a width is never silently a lower bound.
 

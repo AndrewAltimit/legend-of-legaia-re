@@ -5,9 +5,10 @@
 
 use super::*;
 use crate::battle_hud::battle_readout_bar_slot;
-use crate::battle_input::{BattleCommandSession, CommandPhase};
-use crate::input::PadButton;
-use vm::battle_action::ActionState;
+use legaia_engine_battle_vm::battle_action::ActionState;
+use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 fn spirit_world() -> World {
     let mut world = World::new();

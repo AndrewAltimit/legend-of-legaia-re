@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn world_starts_with_inactive_actors() {
@@ -74,13 +75,14 @@ fn world_tick_in_battle_mode_runs_state_machine() {
     for a in &mut world.actors {
         a.battle.liveness = 1;
     }
-    world.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+    world.battle_ctx.action_state =
+        legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte();
     world.battle_ctx.queued_action = 5;
     let out = world.tick();
     assert!(matches!(out, Some(StepOutcome::Transition { .. })));
     assert_eq!(
         world.battle_ctx.action_state,
-        vm::battle_action::ActionState::PreActionWait.as_byte()
+        legaia_engine_battle_vm::battle_action::ActionState::PreActionWait.as_byte()
     );
 }
 
@@ -140,7 +142,8 @@ fn battle_party_wipe_signals_end_via_world() {
     for i in 3..8 {
         world.actors[i].battle.liveness = 1;
     }
-    world.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
+    world.battle_ctx.action_state =
+        legaia_engine_battle_vm::battle_action::ActionState::EndOfAction.as_byte();
     let out = world.tick();
     assert_eq!(out, Some(StepOutcome::BattleComplete));
     // `tick` drives the battle to resolution unconditionally (see
@@ -211,7 +214,8 @@ fn battle_party_wipe_raises_party_wipe_cause_on_the_step() {
     for i in 3..8 {
         world.actors[i].battle.liveness = 1;
     }
-    world.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
+    world.battle_ctx.action_state =
+        legaia_engine_battle_vm::battle_action::ActionState::EndOfAction.as_byte();
     assert_eq!(world.step_battle(), StepOutcome::BattleComplete);
     assert_eq!(world.battle.end, Some(BattleEndCause::PartyWipe));
 }

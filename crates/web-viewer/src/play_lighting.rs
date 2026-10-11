@@ -1,6 +1,6 @@
 //! The play page's **enhanced lighting** - the browser twin of the native
 //! window's `I` / `F8` lighting, fed from the same engine-side source of
-//! truth (`legaia_engine_ui::scene_lighting`).
+//! truth (`legaia_render_kernels::scene_lighting`).
 //!
 //! # This is NOT retail
 //!
@@ -29,8 +29,8 @@
 //! [`OptionsState::lighting_time_of_day`]: legaia_engine_core::options::OptionsState::lighting_time_of_day
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_ui::scene_lighting::{self as sl, PropLights, ScenePointLight, TimeOfDay};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_render_kernels::scene_lighting::{self as sl, PropLights, ScenePointLight, TimeOfDay};
 use wasm_bindgen::prelude::*;
 
 /// The scene's derived lights, built once per scene entry.
@@ -85,7 +85,7 @@ impl LegaiaRuntime {
                         return Vec::new();
                     };
                     let (mut mesh, flat) =
-                        crate::field_scene::build_hybrid_env_mesh(rtmd, &res.vram);
+                        legaia_engine_scene::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram);
                     let hit = sl::tag_emissive_hybrid(&rtmd.raw, &mut mesh, &flat, &res.vram);
                     let mut em = sl::hybrid_mesh_emitters(
                         &mesh.positions,

@@ -4,7 +4,7 @@ The field VM is the bytecode interpreter behind everything scripted outside batt
 
 In retail it is one function, `FUN_801DE840`, in the town/field code overlay (PROT entry **`0897_xxx_dat`**; an *overlay* is code the game loads into RAM at `0x801C0000+` rather than keeping in the main executable `SCUS_942.54`). It decodes **43 opcodes** (`0x21..0x4F`, with a gap at `0x27..0x2A`) plus a `0x5x` / `0x6x` / `0x7x` route for the story-flag bank. The function is 19 992 bytes / 4998 instructions / 334 `jal` sites over 93 distinct targets - one of the largest in the corpus (the dance overlay's `FUN_801F90DC` is larger, at 22 288 bytes).
 
-The Rust port is [`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs): `step` executes one instruction per call and returns a `StepResult`, with every side effect routed through the `FieldHost` trait that `engine-core` implements. Every opcode has an executing arm, and both play hosts (native and browser) run scenes, cutscenes and conversations through it. The side-effect-free static decoder is `legaia_asset::field_disasm` ([tool](#disassembler-tool-asset-field-disasm)).
+The Rust port is [`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs): `step` executes one instruction per call and returns a `StepResult`, with every side effect routed through the `FieldHost` trait that `engine-core` implements. Every opcode has an executing arm, and both play hosts (native and browser) run scenes, cutscenes and conversations through it. The side-effect-free static decoder is `legaia_scene_formats::field_disasm` ([tool](#disassembler-tool-asset-field-disasm)).
 
 Three things catch people out:
 
@@ -97,7 +97,7 @@ The rest of the page, in order: [on-disc form](#on-disc-form-the-scene-man---not
 The on-disc carrier for field-VM bytecode is the **scene MAN** sub-asset
 (asset type `0x03`, the third descriptor in each scene's asset-table bundle;
 see [`formats/man-relocation.md`](../formats/man-relocation.md) and
-`legaia_asset::man_section`). `FUN_8003A1E4` walks the MAN's partition-1
+`legaia_scene_formats::man_section`). `FUN_8003A1E4` walks the MAN's partition-1
 actor-placement records, derives each actor's script pointer, installs it at
 `actor[+0x90]`, and runs the field VM (`FUN_801DE840`) on the body that begins
 `1 + N*2 + 4` bytes into the record (after the `[u8 N][N*2 locals][4-byte
@@ -154,7 +154,7 @@ jump table ([`mes.md`](../formats/mes.md#picker-control-region-layout)). A
 linear walk that treats the `0x1F` as an unknown opcode ends at the first line
 of every record, and everything behind it - the picker jump tables, the branch
 handlers, the closing park loop, the shop record - is never reached. The
-disassembler (`legaia_asset::field_disasm`) therefore decodes both as
+disassembler (`legaia_scene_formats::field_disasm`) therefore decodes both as
 pseudo-instructions of the stream: `TextSegment` spans the lead, the glyphs
 (two-byte tokens per the MES stride table) and the terminator; `Picker` spans
 the open byte and its table, each entry's target being `entry_offset + delta`
@@ -170,7 +170,7 @@ says which is which (`man_edit::text_site`).
 ### Placement header: model + animation resolution
 
 The 4-byte header after the locals block is `[model][anim_id][bx][bz]`
-(`legaia_asset::man_section::ActorPlacement`). Runtime-pinned against the
+(`legaia_scene_formats::man_section::ActorPlacement`). Runtime-pinned against the
 town01 field anchor (live actor pool at stride `0xD8`, 53/53 animated actors
 byte-consistent):
 
@@ -189,7 +189,7 @@ byte-consistent):
 - Placements parked at world `(16320, 16320)` (tile `(127, 127)` + half-tile
   bits) are conditional spawns the scripts place later.
 
-Disc-gated pin: `engine-core/tests/field_npc_placements_disc.rs`.
+Disc-gated pin: `engine-scene/tests/field_npc_placements_disc.rs`.
 
 **The `scene_event_scripts` prescript is a move-VM stager table, not field-VM
 bytecode.** Its `[u16 count][u16 offsets[count]]` records are **move-VM
@@ -202,7 +202,7 @@ reaches them through the installer **`FUN_800252EC(id)`**, which resolves
 **`FUN_80021B04`** (`actor[+0x48] = record`, `actor[+0x70] = 2` PC, tick fn
 `FUN_80021DF4`); the move VM then runs `record+4` each frame. So the prescript
 is the per-scene sibling of the summon stagers: same record format, same
-consumer. Parser `legaia_asset::scene_event_scripts` (`move_stager_records`);
+consumer. Parser `legaia_scene_formats::scene_event_scripts` (`move_stager_records`);
 disc-gated tests `scene_event_records_word_aligned_real` and
 `prescript_move_stager_records_real` (78 entries / 1855 records, 100 % valid
 stager-kind leads). Where the prescript sits relative to the `.PCH` sidecar:
@@ -378,7 +378,7 @@ scripted menu press (a save point's `49 01`) or an op-`0x44` spawn
 the spawn arm reaches a handful of placements disc-wide - most seated on the
 parked sentinel `(127, 127)` - and none of the records they spawn changes
 scene; the set is printed by
-`crates/engine-core/tests/field_text_free_spawn_touch_disc.rs`.
+`crates/engine-scene/tests/field_text_free_spawn_touch_disc.rs`.
 
 The **scene system script** (ctx `0xFB`, MAN `P1[0]`) is an ordinary context
 too. `FUN_8003AB2C` binds it to an actor whose tick is the SYSTEM entity SM
@@ -598,7 +598,7 @@ return is a yield, and a host that reads it as "this script is finished"
 truncates every scripted gesture beat at its first wait. Doors and cupboards
 reach the latch through the prop's own `PropAnim` tick; an NPC conversation
 poking the **player** channel (`0xF8`) needs the player's clip player to be
-the one that latches (`engine-core::inline_dialogue`, and see
+the one that latches (`engine-field::inline_dialogue`, and see
 [`inn.md`](inn.md#the-trigger-the-pickers-own-jump-table) for the flow this
 gates).
 
@@ -650,7 +650,7 @@ restart, `0x00` retire - the lamp pools breathe.
 The engine seats the light on the op's target (the player for channel `0xF8`,
 else the running placement's NPC) in `World::script_actors`
 (`engine-core::world::field_script_actors`) and both play hosts draw it
-through `legaia_engine_ui::screen_prim::light_pool_prims`. The ports:
+through `legaia_render_kernels::screen_prim::light_pool_prims`. The ports:
 `legaia_engine_vm::field_actor_billboard`. `34 10` has 415 clean sites in 43
 scenes (`asset field-op-census`).
 
@@ -693,8 +693,8 @@ the player at the state's position, the engine puts the rim at `201` px round
 the party HUD, as the capture's frame shows it, sorted in one ordering-table
 list with the fog sheets and move strips (the page's single screen-prim pass;
 the native window's `under_overlay` list). Pinned, retail side and engine
-side, by `crates/engine-core/tests/attached_light_retail_capture_disc.rs` and
-`crates/engine-core/tests/attached_light_cave01_retail_capture_disc.rs`.
+side, by `crates/parity/tests/attached_light_retail_capture_disc.rs` and
+`crates/parity/tests/attached_light_cave01_retail_capture_disc.rs`.
 `jiji`'s one attached-light site (`P1[0]` `+0x73`, a white
 `B4 F8 11 FF FF FF ...`) is unpinned: it did not spawn on two retail entries
 from `map02` (story flag `0x2AD` set as the card left it, then cleared by a
@@ -713,7 +713,7 @@ poke), and no `FUN_801E4470` actor sat in the lists.
 | 5 | **Arm the timed sound-source auto-release** for `signed16(operand0, operand1)` vsyncs: `func_0x800267A8(0, operand)` at `0x801E01B4`, whose tick half `FUN_800267FC` runs from the frame-begin driver. Not a volume set - the volume the arm applies is a *side effect* of the libsnd wrapper it tail-calls, and the operand is a deadline. Port: `engine-core::World::arm_sound_release`. |
 | 6 | Flag set. |
 | 7 | Target-sound-set (`_DAT_8007B880`). |
-| 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-core::scene::bgm_reattach_volume`. |
+| 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-core::scene_host::bgm_reattach_volume`. |
 | 9 | **Start behind a load barrier** - stalls the script until the previous BGM load has settled, then makes sub-op 1's own track select. [Detail](#sub-op-9-is-a-start-not-a-queue). |
 | 10 | **Swap-commit** - waits on flag bit 3 (the resolver's load-settle bit), releases the paused BGM slot (`FUN_800266E0` + `FUN_80026520`), sets ack bit 4, clears pause bit 1. [Detail](#sub-op-0xa-is-the-swap-commit). Port: `BgmDirector::unhalt_pause` via `SceneHost::route_bgm_events`. |
 | 11 | `_DAT_8007BA9C = -1` - arms sub-op 9's barrier (no resolved index equals `-1`). |
@@ -799,7 +799,7 @@ later sub-op `0xA` (`town01`'s opening records carry the op;
 
 `[36, lo0, hi0, lo1, hi1]`, PC += 5. Reads two signed-16 operands through `FUN_8003CE9C`:
 `sel` (first) and `arg` (second). Despite the historical `SCENE_FADE` label - which the
-engine's `FieldHost::scene_fade` hook still carries - **every arm of this op is sound**.
+engine's `FieldScreenHost::scene_fade` hook still carries - **every arm of this op is sound**.
 Read off the disassembly at `0x801E02CC..0x801E0444` in `FUN_801DE840`.
 
 `sel == 0xFFFF` waits on the load flag `_DAT_8007BC20` (zero falls through, non-zero halts
@@ -859,7 +859,7 @@ script parks - the same "satisfied on arrival" shape the BGM barrier has.
 | Op | Mnemonic | Encoding | Effect |
 |---|---|---|---|
 | 0x37 / 0x41 / 0x47 | `YIELD` family (**motion ops**) | `[op, b0, b1]` (resume pc+3); `[47, xb, zb, b2]` (pc+4) | Park the script and hand the op to the walk kernel. [Detail](#0x37--0x41--0x47-yield-family-motion-ops). |
-| 0x38 | `CAM_CFG` | `[38, op0, op1]` | Actor facing. If `op1 & 0x7F == 0`: simple path - copy `*(short*)(0x80073F04 + (op0 & 0xF) * 2)` into the resolved actor's `+0x26` (`0xF8` = the player; port hook `FieldHost::face_compass`). Else: halt-acquire path - same predicate as op 0x43 sub-0/1/A/B (`saved_pc != 0 \|\| ctx==player`) AND (`!(flags & 0x400) \|\| scene_busy`); on success set HALT + saved_pc + wait_accum=0 (mirror to caller when ctx is player) and advance by 3 for every target (`li s7,3` in the delay slot at `0x801DEEFC`) - only a player target parks the record; an NPC turns while the record runs on. On fail the PC stays on the op. |
+| 0x38 | `CAM_CFG` | `[38, op0, op1]` | Actor facing. If `op1 & 0x7F == 0`: simple path - copy `*(short*)(0x80073F04 + (op0 & 0xF) * 2)` into the resolved actor's `+0x26` (`0xF8` = the player; port hook `FieldActorHost::face_compass`). Else: halt-acquire path - same predicate as op 0x43 sub-0/1/A/B (`saved_pc != 0 \|\| ctx==player`) AND (`!(flags & 0x400) \|\| scene_busy`); on success set HALT + saved_pc + wait_accum=0 (mirror to caller when ctx is player) and advance by 3 for every target (`li s7,3` in the delay slot at `0x801DEEFC`) - only a player target parks the record; an NPC turns while the record runs on. On fail the PC stays on the op. |
 | 0x39 | `GIVE_ITEM` | `[39, item_id]` | Adds one inline item `item_id` to the inventory; the **treasure-chest item-give** path (the granted item is this single operand byte, **not** a per-scene table). Full behaviour in [§ 0x39 GIVE_ITEM](#0x39-give_item) below. |
 | 0x3A | `ADD_MONEY` | `[3A, b0, b1, b2]` | 24-bit signed delta: `_DAT_8008459C += sext24(operand)`. Clamp to `[0, 9999999]`. |
 | 0x3B | `SET_ITEM_COUNT` | `[3B, slot, count]` | Set inventory entry: `*(byte*)(0x80084340 + (slot & 0xF) + (slot >> 4) * 0x414) = count`, then `func_0x80042558()` to refresh inventory display. Inventory pages of 0x414 bytes. |
@@ -1010,7 +1010,7 @@ The disc carries ten clean non-`0xFF` sites (`asset field-op-census --only
 3E`): `town0b` `3E 00 02` five times, `stone` `3E 00 03` four times and
 `jagaroom` `3E 01 00` once, each behind a flag SET and a wait or a battle
 BGM cue - the shape of every `3E FF` boss entry. Engine:
-`FieldHost::scripted_battle` → `World::trigger_scripted_battle` for every
+`FieldSceneHost::scripted_battle` → `World::trigger_scripted_battle` for every
 `op0`; `engine-core/tests/scripted_battle_low_op0_disc.rs` steps one site per
 scene into `SceneMode::Battle` against the named MAN row.
 
@@ -1193,7 +1193,7 @@ channel, and all but six sit in partition-2 cutscene records.
 
 The engine runs the arc. `legaia_engine_vm::field_ledge_hop_arc::ScriptArcRequest`
 decodes the operand from the arm's loads; the cutscene timeline's `C3 F8` park
-and `FieldHost::op43_arc_jump` (NPC channels) both reach
+and `FieldActorHost::spawn_arc_jump` (NPC channels) both reach
 `World::start_field_script_arc`, and `World::tick_field_script_arcs` advances
 the clip and the watcher. An NPC's height lives in
 `World::script_actors.npc_heights` for as long as it stands where the arc put
@@ -1221,7 +1221,7 @@ is non-zero only while a placement's spawn section is being pre-run (set and
 cleared around the spawn loop at SCUS `0x8003B73C` / `0x8003B928` and around
 the two field-VM re-runs at `0x801E2820` / `0x801E2BBC`). The engine reads the
 halt it can see - an arc still in flight on that actor
-(`World::script_arc_target_halted`, the `FieldHost::op43_arc_target_halted`
+(`World::script_arc_target_halted`, the `FieldHaltHost::arc_target_halted`
 hook) - and the VM returns `Halt` at the op on any refusal. The acquire's
 other clause (an NPC target with no `+0x94` owner) is not modelled.
 
@@ -1253,8 +1253,8 @@ height, not the extremum.
 | 3..6 | 10 bytes (`[43, sub, x_lo, z_lo, x_hi, z_hi, start:i16, end:i16]`) | **Camera-register zone ramp** into `_DAT_8007B610` (sub-6) / `B614` (sub-4) / `B60C` (sub-5) / `B618` (sub-3) - see below. |
 | 7 | 17 bytes | Face / body rotation setup. Writes a 12-byte struct at `&DAT_80087E68 + face_id * 12`, schedules a `func_0x8003C5F0` ramp. |
 | 8 | 2 bytes | Face / rotation reset: clears `+0x6D` and `+0x7A`. |
-| 9 | 10 bytes (`[43, 9, x, y, z, ticks]`) | Explicit position. `ticks == 0` writes immediately (skipping the `0xFFFF` sentinel); otherwise `FUN_801DE698` spawns a `0x801F2840` actor whose tick `FUN_801DD4C4` eases the target from its **live** position by `t^2/d^2`. Port `legaia_engine_vm::field_actor_timers::EasedMove`. |
-| 0xC | 5 bytes `[43, 0C, close, hold, open]` | **Shutter blackout.** `FUN_801DE754` → `FUN_80020DE0(&DAT_801F2858, _DAT_8007C34C)`, whose tick `FUN_801DD784` emits two black quads whose height envelope closes / holds / opens over the three operands. At full envelope the two bars cover the whole 320x224 screen, so the beat is a shutter blackout rather than a letterbox crop. 31 sites land at real opcode boundaries disc-wide, in two flavours - see [`runtime-libs.md`](../reference/functions/runtime-libs.md#fun_801dd784---the-shutter-blackout). Port `legaia_engine_vm::field_actor_timers::ShutterBars`. |
+| 9 | 10 bytes (`[43, 9, x, y, z, ticks]`) | Explicit position. `ticks == 0` writes immediately (skipping the `0xFFFF` sentinel); otherwise `FUN_801DE698` spawns a `0x801F2840` actor whose tick `FUN_801DD4C4` eases the target from its **live** position by `t^2/d^2`. Port `legaia_engine_field::field_actor_timers::EasedMove`. |
+| 0xC | 5 bytes `[43, 0C, close, hold, open]` | **Shutter blackout.** `FUN_801DE754` → `FUN_80020DE0(&DAT_801F2858, _DAT_8007C34C)`, whose tick `FUN_801DD784` emits two black quads whose height envelope closes / holds / opens over the three operands. At full envelope the two bars cover the whole 320x224 screen, so the beat is a shutter blackout rather than a letterbox crop. 31 sites land at real opcode boundaries disc-wide, in two flavours - see [`runtime-libs.md`](../reference/functions/runtime-libs.md#fun_801dd784---the-shutter-blackout). Port `legaia_engine_field::field_actor_timers::ShutterBars`. |
 | 0xD / 0xF | 6 bytes | Allocate actor via `FUN_801DE7BC` with mode (3 for 0xD, 0 for 0xF). |
 | 0xE | 2 bytes | Mark currently-iterating actor with flag bit 0x8 (`*(int *)(actor + 0x10) \|= 0x8`). |
 | 0x16+ | - | No `case` arm in the original `case 0x43` inner switch; falls through with `iVar45 = param_2` (the dispatcher-default initialiser at line 4511 of the dump) - halts at PC. |
@@ -1285,7 +1285,7 @@ camera descriptor whose ten fields are the retail camera globals:
 The pitch default is the same `0x1B8` `FUN_80025C24` seeds at field entry,
 which is what identifies the register. Every decoded on-disc site is sub-3,
 i.e. a **projection ramp** - the field of view opens or closes as the player
-crosses the zone. Ports: `engine-core::register_ramp` (spawn + record) +
+crosses the zone. Ports: `engine-field::register_ramp` (spawn + record) +
 `World::tick_register_ramps` (the handler) + `Camera::tick_globals` (the
 consumer).
 
@@ -1297,7 +1297,7 @@ duration with a `curve`; see
 
 These sub-ops are the script-side drivers of the PROT-0900 **screen-effect
 widget family** ([move-vm.md § consumers](move-vm.md); engine port
-`engine-core::screen_fx`) plus one VRAM rect-copy op. Dispatch: the op-0x43
+`engine-effects::screen_fx`) plus one VRAM rect-copy op. Dispatch: the op-0x43
 arm (`0x801DF354`, main-JT slot for opcode 0x43 at `0x801CECC0`)
 bounds-checks the sub-op (`< 0x16`) and jumps through the 22-entry JT at
 `0x801CEDA8` (PROT 0897 file `0x590`, base `0x801CE818`); entries
@@ -1400,7 +1400,7 @@ photo, shrinking it into a corner beside the credit names. On the console
 the framebuffer is VRAM; the port's frame lives in a GPU attachment, so the
 copy waits on a frame-grab handshake (`World::framebuffer_grab_pending` /
 `land_framebuffer`, `crate::world::FrameGrab`): a play host reads its drawn
-frame back into the display page (`legaia_engine_ui::vram_capture::land_display_frame`),
+frame back into the display page (`legaia_render_kernels::vram_capture::land_display_frame`),
 and the next drain (`World::apply_vram_rect_copies`) runs the copy. Both play
 hosts take part; a host that cannot read back leaves the handshake off and
 the copy runs at once.
@@ -1448,7 +1448,7 @@ MES-shape payload via `func_0x8003CA38` (`length = pbVar47[2]`, PC +=
 `5 + length + walked`).
 
 The town-shop form of the sub-0 payload - `[count][ids..][ASCII name\0]`
-([`shop.md`](shop.md#gold-shop-stock-source), parser `legaia_asset::shop_stock`)
+([`shop.md`](shop.md#gold-shop-stock-source), parser `legaia_scene_formats::shop_stock`)
 - is **not** measured by that walk: its count byte is a terminator to the glyph
 walker, so the arithmetic above stops at zero. The menu overlay that runs the
 shop is what moves the script past the record. The disassembler recognises the
@@ -1502,8 +1502,8 @@ After the Done resume the timeline's post-naming beats animate the lead:
 land the player's `+0x4C` anim pointer on the scene ANM bundle's records
 47/48 (`record = move_id - 1`, the same record space as op-`0x4B` NPC
 cues) for one playthrough each before the walk-out moves resume the
-locomotion clips. Engine port: `engine-core::name_entry` (SM),
-`engine-ui::ui_menu::name_entry` (draw builders + traced constants), and
+locomotion clips. Engine port: `engine-menus::name_entry` (SM),
+`engine-ui::menu::screens::name_entry` (draw builders + traced constants), and
 the scripted-clip queue `World::locomotion.player_move_cues`.
 
 #### `0x4E` INVENTORY_CMP
@@ -1516,7 +1516,7 @@ shared compare:
 |---|---|
 | 0 / 1 | char HP / MP `(cur, max)` pair - the only `max * arg >> 8`-scaled form |
 | 2 | level byte `+0x130` |
-| 3 | gold vs u16 (the inn gold gate, `legaia_asset::inn_costs`) |
+| 3 | gold vs u16 (the inn gold gate, `legaia_scene_formats::inn_costs`) |
 | 4 | **BIOS `Rand() & 0xFF`** (random-chance branch) |
 | 5..8 | **slot table `0x801C6460[sub - 5]`** (read side of the `4C CA/CB/CC` writes) |
 | 9 | coins vs u16 |
@@ -1692,7 +1692,7 @@ Three things follow:
 
 ### Disc-wide SYSTEM-flag census tooling
 
-An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but the **setter** that opens it (`0x5x` SET / `0x6x` CLEAR) almost always lives in a *different* scene's MAN. To resolve a gate to its writer, `legaia_engine_core::man_field_scripts` walks the flag ops out of the decoded MAN:
+An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but the **setter** that opens it (`0x5x` SET / `0x6x` CLEAR) almost always lives in a *different* scene's MAN. To resolve a gate to its writer, `legaia_engine_scene::man_census` walks the flag ops out of the decoded MAN:
 
 - `walk_partition_gflag_sites` reports every flag site in a MAN partition at real opcode boundaries, tagging each with its bank (`FlagBank::Scratchpad` for the `0x2E`/`0x2F` global ops, `FlagBank::System` for the `0x50..=0x7F` ops), the full flag number (`(lead & 0x8F) << 8 | operand` for system flags), and the SET/CLEAR/TEST kind.
 - `system_flag_census` runs that walk over **every** CDNAME scene's MAN across all three partitions and returns `flag -> [(scene, partition, record, op, kind)]`, sorted by flag number - the setter-vs-gate map the progress-gate RE consumes.
@@ -1752,7 +1752,7 @@ which can write any index. These menus are per-scene and write named flags.
 A live whole-playthrough capture (PCSX-Redux exec-bps on `0x8003CE08`/`0x8003CE34`, probe `autorun_flag_firehose.lua`) shows every story-flag write across the chapter-1 scenes returning to the dispatcher's own `0x5x`/`0x6x` arms (`ra 0x801E3598` / `0x801E35C0`, field overlay resident) - the ops above are the **only** story-flag writers observed. The remaining callers touch only low system indices: `0`/`3` staged by the world-map entity SM (`FUN_801DA51C`), `0x35` set at battle-end victory (`FUN_8004E568`) and cleared by the entity SM, `0xB`/`0xC`/`0x18` interaction/engagement locks, `0xE` by two dispatcher spawn ops.
 That result is chapter-1-scoped: the mode-24 minigame overlays add native story-flag writers that are simply not resident in chapter 1 ([below](#native-flag-bank-writers-the-minigame-result-toggle-0x50a--the-0x5d6-negative)).
 
-The executed script bytes at the Mt. Rikuroa post-Caruban beat live in a heap-resident carrier that is **not** the scene's asset-table bundle MAN: it is a second, plain MAN shipped as the type-3 chunk of a standalone `data_field_streaming` PROT entry (the chunk header is the ordinary sub-asset descriptor `[u24 size][u8 type=0x03]`; the payload parses with `legaia_asset::man_section` like any MAN).
+The executed script bytes at the Mt. Rikuroa post-Caruban beat live in a heap-resident carrier that is **not** the scene's asset-table bundle MAN: it is a second, plain MAN shipped as the type-3 chunk of a standalone `data_field_streaming` PROT entry (the chunk header is the ordinary sub-asset descriptor `[u24 size][u8 type=0x03]`; the payload parses with `legaia_scene_formats::man_section` like any MAN).
 The resident copy byte-matches PROT `0157_rikuroa`'s chunk, and the story-flag `0x142` SET (`51 42`) it carries as a *beat* is the post-victory cutscene record `P2[50]`, whose C1 gate is `0x142` itself (the self-latching one-shot). The carrier's `P1[10..12]` hold the same `51 42`, but each is one arm of a `Clear`-labelled developer flag menu ([above](#shipped-scene-scripts-carry-developer-flag-setting-menus)) - a nine-flag Set ladder and its mirrored Clear ladder, not the beat.
 The carrier's records also pin **how** `P2[50]` runs: the boss stager `P1[3]` SETs the transient marker `0x289` (`52 89`) right before its battle-entry op (`3E FF 11`),
 and the scene-entry system script `P1[0]` tests that marker on the post-battle scene re-entry (`72 89` at `+0x13A`) - its taken arm (`+0x7E6`: fade, BGM, `44 5C`) issues the op-`0x44` spawn of global record `0x5C` = `P2[50]`, C1-gate-checked by the dispatcher.
@@ -1760,7 +1760,7 @@ The same shape sits one branch level up: `P1[0]`'s first-arrival arm spawns `P2[
 The from-scratch engine executes this chain organically - the host re-runs the entry script on the battle-to-field mode edge (`SceneHost::tick`) and the spawned record's own script bytes land `0x142`; disc-gated oracle `engine-core/tests/organic_beat_records_disc.rs`.
 Thirteen retail blocks ship such a **streaming variant MAN** (extraction indices: `dolk2` 70, `rikuroa2` 122, `rikuroa` 157, `rayman` 201, `station` 228, `balden2` 320, `ropeway2` 339, `taiku` 373, `doman` 401, `taiku2` 427, `nilboa2` 648, `edbalden` 792, `eddoman` 817); for the v12-family dungeons (`rikuroa` / `dolk2`, whose own bundle is the MAN-less `count=4` form) the streaming carrier is the scene's **only** MAN.
 
-`system_flag_census` (and the motion / op-`0x49` censuses) walk **every** carrier per scene - the bundle MAN plus the streaming variants, enumerated by `legaia_engine_core::man_field_scripts::scene_man_carriers` - so the variant-resident writers surface: the `0x142` setters above, the `0x63A` beat writers. Disc-gated pins: `crates/engine-core/tests/man_variant_carrier_census_disc.rs`. CLI: `legaia-engine man-scripts --scene <name> --variant <entry_idx>` targets a variant carrier directly (census rows tag them `VARIANT-MAN`); `--p2-gates` prints every partition-2 record's C1/C2 header gate lists + name (the `FUN_8003BDE0` spawn-condition surface the inline-op censuses cannot see).
+`system_flag_census` (and the motion / op-`0x49` censuses) walk **every** carrier per scene - the bundle MAN plus the streaming variants, enumerated by `legaia_engine_scene::man_census::scene_man_carriers` - so the variant-resident writers surface: the `0x142` setters above, the `0x63A` beat writers. Disc-gated pins: `crates/engine-scene/tests/man_variant_carrier_census_disc.rs`. CLI: `legaia-engine man-scripts --scene <name> --variant <entry_idx>` targets a variant carrier directly (census rows tag them `VARIANT-MAN`); `--p2-gates` prints every partition-2 record's C1/C2 header gate lists + name (the `FUN_8003BDE0` spawn-condition surface the inline-op censuses cannot see).
 
 **Carriers are byte-unique, and every per-scene count depends on it.**
 No two MAN carriers on the disc share bytes, so walking every carrier of every
@@ -1859,7 +1859,7 @@ the expected site decode with known widths. A sub-op family whose width
 depends on the sub must be decoded per-sub, and the executing VM
 (`legaia-engine-vm`, which decodes the raw stream and never consults the
 disassembler) is the reference when the two disagree. A width defect in
-`legaia_asset::field_disasm::decode_subops` is static-walker-only: it corrupts
+`legaia_scene_formats::field_disasm::decode_subops` is static-walker-only: it corrupts
 the `LinearWalker` consumers (`scene_destinations`, `scene_bgm_starts`,
 `scene_fmv_triggers`, `scene_stager_installs`, `boss_stager_placements`, the
 door randomizer's MAN edits) and leaves runtime behaviour alone.
@@ -2002,7 +2002,7 @@ same sweep twice at `0x8003B3C8` and `0x8003B414`, against `LAB_801DA930` and
 either sweep marked is invisible to the open's find.
 
 Ports: `engine-core::World::{find_actor_by_handler, retire_actors_by_handler}`,
-over the handler identity `engine-core::actor_handler::ActorHandler`.
+over the handler identity `engine-field::actor_handler::ActorHandler`.
 
 **ASCII text aliases survive the `clean` tag - outside a framed segment.** A
 `0x1F <text> 0x00` dialogue line is one decoded stride to the walk
@@ -2174,14 +2174,14 @@ There isn't really a "BGM → file" lookup table - a global BGM id is an offset 
 - `_DAT_8007BAB8` - the index the swap compares against the resident one (`_DAT_8007BA9C`); it decides *whether* the track changes, not what loads.
 
 So:
-- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000`. The global pool is the **`music_01` bank**, whose pool order is the **debug sound-test order** - so `2000 + i` plays sound-test track `i` and every global id resolves to a curated human name. Pinned by the per-scene op-`0x35` census joining ids to their scenes' known music (`town01` starts `2016` = "Rim Elm theme"). The physical bank is piecewise in extraction space (a 2-entry gap); the resolver `legaia_engine_core::music_labels::prot_entry_for_bgm_id` owns the id→entry map. See [music-tracks](../reference/music-tracks.md#the-disc-side-join-the-music_01-bank-in-sound-test-order).
+- `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000`. The global pool is the **`music_01` bank**, whose pool order is the **debug sound-test order** - so `2000 + i` plays sound-test track `i` and every global id resolves to a curated human name. Pinned by the per-scene op-`0x35` census joining ids to their scenes' known music (`town01` starts `2016` = "Rim Elm theme"). The physical bank is piecewise in extraction space (a 2-entry gap); the resolver `legaia_engine_system::music_labels::prot_entry_for_bgm_id` owns the id→entry map. See [music-tracks](../reference/music-tracks.md#the-disc-side-join-the-music_01-bank-in-sound-test-order).
 - `bgm_id < 2000`: **not** a scene-block entry. The block index `current_scene + 6 + id` is only the change-test index; the load arm replaces it with `*(0x8007BC64) + 2` - extraction `990`, global slot `2`, the track id `2002` plays - and parks the id in `gp+0x728`, whose only reader is the `WARNING BGM NO %d` debug print. Retail stages no scene bank. Engine: `SCENE_LOCAL_BGM_FALLBACK_ID`. Detail and captures: [`audio.md`](audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank).
 
 The stored index is not the loaded one: a scene-local id does **not** load PROT `current_scene + 6 + id` from the scene's own block. There is no separate BGM index in `SCUS_942.54`.
 
 ## Helper functions
 
-The small leaf helpers in the dispatcher's call graph are pure arithmetic - no globals, no overlay calls - so they are ported as plain functions in [`crates/engine-vm/src/field_helpers.rs`](../../crates/engine-vm/src/field_helpers.rs) instead of host hooks. The dispatcher arms call into them directly.
+The small leaf helpers in the dispatcher's call graph are pure arithmetic - no globals, no overlay calls - so they are ported as plain functions in [`crates/engine-vm/src/field/dispatch_leaves.rs`](../../crates/engine-vm/src/field/dispatch_leaves.rs) instead of host hooks. The dispatcher arms call into them directly.
 
 | Helper                  | Original          | Source dump                              | Used by                                    |
 |-------------------------|-------------------|------------------------------------------|--------------------------------------------|
@@ -2196,12 +2196,12 @@ The small leaf helpers in the dispatcher's call graph are pure arithmetic - no g
 Behaviour worth knowing beyond the signatures:
 
 - **`packet_length(buf)`** measures one variable-length packet of the in-game text encoding. It walks `buf` until any byte `<= 0x1E` (terminator); bytes `>= 0x1F` count as 1; bytes whose top nibble is `0xC` consume the next byte unconditionally and count as 2 (escape sequence). The count excludes the terminator; the dispatcher adds the opcode-prefix bytes and terminator itself when computing the PC delta.
-- **`party_flag_test(idx, flags)`** reads bit `idx` of a packed bit array, MSB-first per byte (bit 7 of `flags[0]` is index 0), returning `0xFF` when set and `0` otherwise. Out-of-range indices return `0` (the original would read past the array). `0x4C nC sub-5/6` reach the trigger-flag bank through the `op4c_n_c_party_flag_test(flag_idx)` host hook, with the index read via `load_u16_le`.
-- **`small_table_search(needle, table, lo, hi)`** searches `table[i * 2]` (stride 2, low byte of each short) across indices `[lo, hi)` and returns the matching index or [`SEARCH_NOT_FOUND`](../../crates/engine-vm/src/field_helpers.rs) (`0x100`). Negative bounds or `lo >= hi` return `SEARCH_NOT_FOUND` without scanning.
+- **`party_flag_test(idx, flags)`** reads bit `idx` of a packed bit array, MSB-first per byte (bit 7 of `flags[0]` is index 0), returning `0xFF` when set and `0` otherwise. Out-of-range indices return `0` (the original would read past the array). `0x4C nC sub-5/6` reach the trigger-flag bank through the `op4c_nc_sub56_flag_test(flag_idx)` host hook, with the index read via `load_u16_le`.
+- **`small_table_search(needle, table, lo, hi)`** searches `table[i * 2]` (stride 2, low byte of each short) across indices `[lo, hi)` and returns the matching index or [`SEARCH_NOT_FOUND`](../../crates/engine-vm/src/field/dispatch_leaves.rs) (`0x100`). Negative bounds or `lo >= hi` return `SEARCH_NOT_FOUND` without scanning.
 - **`load_u16_le` / `load_u24_le` / `load_u32_le`** assemble little-endian values from sequential bytes and return 0 for missing bytes. The 24-bit form pairs with `sign_extend_24(value)` for the opcodes that take a signed 24-bit immediate (`0x4C nE sub-5`).
 - **`tile_center(b)`** is the grid-byte to world-coordinate conversion: `b == 0` returns 0; otherwise `(b & 0x7F) << 7 | 0x40`, plus `0x40` if the high bit is set. Retail inlines it in nine dispatcher arms (`0x4C nE sub-3/4`, `MOVE_TO` at op `0x23`, the scene-change entry tile at op `0x3F`, the position-broadcast `0x4C nC sub-F`, ...).
 
-Unit tests sit beside the ports in `field_helpers.rs`.
+Unit tests sit beside the ports in `field/dispatch_leaves.rs`.
 
 ## Overlay-0897 command / submenu support functions
 
@@ -2238,7 +2238,7 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 | `0x801D32BC` | REAL (small) | Field opcode-arm helper: `if ((v0 >> 16) == 0x100) func_0x800430AC(*(u8*)(s6+1)); return pc + 3`. Aliases a 98-insn `battle_action(898)` body. | `overlay_0897_801d32bc.txt` |
 | `0x801DBC30` / `0x801DBB8C` | WRONG IMAGE | Real entries, but in PROT 0898 (the party-panel pair). The `overlay_0897_*` dumps at these VAs list PROT 0897's `0x801EA448` / `0x801EA3A4` (the `0xE818` re-key) and then a PROT 0898 loop. See [§ below](#the-overlay_0897_801dbc30-dump-is-a-chimera-of-two-prot-entries). | dumps as named |
 | `0x801D0D38` | REAL, render-track | Party-roster panel renderer (op-`0x49` submode family) - see [§ below](#party-roster-panel-renderers). Its direct `overlay_0897_801d0d38` dump is a truncated alias; the full body is in the cutscene-dialogue / mapview field captures. | `overlay_cutscene_dialogue_801d0d38.txt` |
-| `0x801D095C` | REAL, render-track | Passive-ability indicator HUD above the player - **not** a roster panel; see [§ below](#the-passive-ability-indicator-hud-fun_801d095c). Ported: `legaia_engine_vm::field_passive_hud`. | `overlay_cutscene_dialogue_801d095c.txt` |
+| `0x801D095C` | REAL, render-track | Passive-ability indicator HUD above the player - **not** a roster panel; see [§ below](#the-passive-ability-indicator-hud-fun_801d095c). Ported: `legaia_engine_field::field_passive_hud`. | `overlay_cutscene_dialogue_801d095c.txt` |
 | `0x801E4470` | REAL, render-track | Attached-sprite projection tick - documented in [`actor-vm.md`](actor-vm.md). Ported: `legaia_engine_vm::field_actor_billboard`. | `overlay_cutscene_dialogue_801e4470.txt` |
 
 `FUN_801F2098` is a byte-for-byte VA-aliased duplicate of the living-slot scanner already documented as `FUN_801DB8B4` in [`battle-formulas.md`](battle-formulas.md) (Rust `battle_formulas::round::needs_retarget`): starting at `&DAT_801C937C` it returns the lowest actor slot `3..=6` whose HP field `+0x14C` is nonzero, else `7`. It is not re-ported.
@@ -2252,13 +2252,13 @@ Two structural facts about it are worth stating where the address is first met, 
 - **The dedup is positional, not a set operation.** It walks the four-byte formation-id table `_DAT_8007BD0C` and collapses *consecutive* identical ids into one row, resetting its run counter on any id change. So a formation `A A B A` produces **three** rows, not two.
 - **The row suffix overwrites, it does not append.** The second member of a run replaces the label's **final character** with a one-glyph dedup literal (the store at `0x801d9e54` zeroes that byte before the concat), and the third and later members increment that character in place. Labels therefore stay the same byte length as the plain name - there is no `" x2"`-style growth, and the row rect never has to widen.
 
-Its layout half - average the members' projected screen X, centre, then relax overlaps pairwise and clamp inside `[0x06, 0x13A - width]`, repeating until a pass clamps nothing - shares its inner loop with the `0x801F07AC` / `0x801F0ADC` de-overlap fragment two rows up in the table. Ported as `legaia_engine_core::target_picker::enemy_menu_rows` + `layout_enemy_menu_rows`.
+Its layout half - average the members' projected screen X, centre, then relax overlaps pairwise and clamp inside `[0x06, 0x13A - width]`, repeating until a pass clamps nothing - shares its inner loop with the `0x801F07AC` / `0x801F0ADC` de-overlap fragment two rows up in the table. Ported as `legaia_engine_battle::target_picker::enemy_menu_rows` + `layout_enemy_menu_rows`.
 
 <a id="the-op-0x49-party-cursor-submode-fun_801f1278--fun_801f159c"></a>
 
 ### The op-`0x49` subsystem actor (`FUN_801F1278` / `FUN_801F159C`)
 
-The STATE_RESUME "Done writer (field-overlay `FUN_801F159C`-class)" named above is the dispatcher of the subsystem actor that op `0x49` and the field menu button both spawn. It is not a party picker: its default handler is slot `7` of the table `PTR_FUN_801F33B4`, the state pick `FUN_801F1F4C`, which moves the actor on to the pause-menu session `0x30`; a sub-op whose `0x801F33A4` byte is not `-1` replaces that `7` with its own screen. Ported as `legaia_engine_vm::field_subsystem_enter` (the installer) and `field_state_pick` (slot `7`).
+The STATE_RESUME "Done writer (field-overlay `FUN_801F159C`-class)" named above is the dispatcher of the subsystem actor that op `0x49` and the field menu button both spawn. It is not a party picker: its default handler is slot `7` of the table `PTR_FUN_801F33B4`, the state pick `FUN_801F1F4C`, which moves the actor on to the pause-menu session `0x30`; a sub-op whose `0x801F33A4` byte is not `-1` replaces that `7` with its own screen. Ported as `legaia_engine_field::field_subsystem_enter` (the installer) and `field_state_pick` (slot `7`).
 
 - **Enter** `FUN_801F1278(actor)`: suspends field input (`FUN_801DE190`, sets `_DAT_8007C364+0x10` bit `0x80000`, clears pad latch `_DAT_1F800394` bit `0x8000`), forces the submode context `_DAT_801C6EA4+0x3E = 1`, saves the caller's `+0x50` into `+0x40` and installs handler `7` (the state pick), seeds three roster cells `_DAT_801C6EA4+0x36/+0x38/+0x3A` from the roster `DAT_80084594` (count) / `DAT_80084598..A` (member ids), homes the cursor (`+0x46=0xA0`,`+0x48=0x58`), and if a parked op-`0x49` operand `_DAT_8007B450` is live remaps `+0x50` through the sub-op table `&DAT_801F33A4` (below).
 - **Resume / close** `FUN_801F159C(actor)`: active only while submode state `DAT_801F2734 ∈ {1,4,7}`; re-arms via `FUN_801F1278` when a pad flag is set, dispatches the per-frame handler `PTR_FUN_801F33B4[actor+0x50]`, and on confirm (`_DAT_801C6EA4+0x3E == 0`) sets the actor yield bit (`+0x10 |= 8`), releases the pad latch, and drops the field/tile-board busy flag (`_DAT_8007B450` / `_DAT_8007C364+0x10 &= ~0x80000`).
@@ -2309,8 +2309,8 @@ real caller is not a script: the walk tick `FUN_801D0B90` stores the static
 record `0x801F2278`, whose first byte is `0x0B`, into `_DAT_8007B450` on the
 tick the Incense window reaches zero, so the enter half's table read lands on
 this row ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)). The "sub-menu"
-name described the state machine's shape, not what it draws. Port: `legaia_engine_vm::baka_hub_actors::OP49_SUBOP_SLOTS`, with
-the disc pin in `crates/engine-core/tests/w1b_hub_tables_disc.rs`.
+name described the state machine's shape, not what it draws. Port: `legaia_engine_field::submode_hub_actors::OP49_SUBOP_SLOTS`, with
+the disc pin in `crates/engine-core/tests/hub_tables_disc.rs`.
 
 #### Sub-op `2`: the code lock
 
@@ -2336,7 +2336,7 @@ at `(0x40, 0x90)`, whose painter `FUN_801F17D8` prints the prompt string
 `0x801CF09C` and one system-UI cell `0x37 + symbol` per entered symbol, `0x20`
 apart, `0x10` below and right of the window origin.
 
-Port: `legaia_engine_vm::code_lock_actor` (the state machine),
+Port: `legaia_engine_field::code_lock_actor` (the state machine),
 `legaia_engine_core::field_submode_code_lock` (the slot on the submode
 driver, the flag write, the window's lines), drawn on both play hosts through
 `SceneHost::code_lock_lines`; the disc-gated `code_lock_doman_disc` runs
@@ -2371,7 +2371,7 @@ Which descriptor a state machine installs is therefore what selects its
 painter, not the caller: the coin counter's confirm installs the record whose
 painter is `FUN_801F1890` (the three-line panel), and the sub-menu's idle and
 confirm both install `FUN_801F1B64` (the single label). Port:
-`legaia_engine_vm::baka_hub_actors::{PANEL_WINDOW_TABLE, window, panel_windows}`.
+`legaia_engine_field::submode_hub_actors::{PANEL_WINDOW_TABLE, window, panel_windows}`.
 
 The install sites, read from the dispatchers' own instructions: the coin
 counter builds `a0 = 0x801F3360` and calls `FUN_801E9B3C` at `0x801F0CC0`
@@ -2433,7 +2433,7 @@ function. `see ghidra/scripts/funcs/overlay_0897_801da0f0.txt`.
 are the command ring's chip cross-out mark and the battle message box's open
 half (the "party-name panel" reading is
 [falsified](../reference/re-do-not-re-walk.md#battle--arts--level-up)), ported as
-`engine-vm::battle_party_panel` ([`functions/battle.md`](../reference/functions/battle.md)).
+`engine-battle-vm::battle_party_panel` ([`functions/battle.md`](../reference/functions/battle.md)).
 What is not real is the *routine the `overlay_0897_*` dumps print at those
 addresses*. Resolved from the bytes, that listing is stitched out of two
 different PROT entries and neither piece is a field-VM entry:
@@ -2506,7 +2506,7 @@ drawing per-member numerics through `func_0x80034B78` and screen-projecting
 cell anchors through the GTE wrapper `func_0x800195A8`. It builds GPU
 primitives, so its packet half is **render-track** - but the routine is
 **ported**, split across the two crates that own its halves:
-`engine-vm::world_map_panel_actors::HudDecision` carries the
+`engine-field::world_map_panel_actors::HudDecision` carries the
 suppress / rearm / count-down / draw decision, and
 `engine-ui::field_party_hud::field_party_hud_draws_for` carries the layout.
 (`locate-entry-image.py 801d0d38` confirms the entry is PROT 0897's, so the
@@ -2544,7 +2544,7 @@ is an immediate:
   `0x49` at `x + 2` on a 10-pixel pitch, starting at `y + (5 - 5*n)` for `n`
   set bits - i.e. the column is centred on the anchor.
 
-Ported: [`legaia_engine_vm::field_passive_hud`](../../crates/engine-vm/src/field_passive_hud.rs).
+Ported: [`legaia_engine_field::field_passive_hud`](../../crates/engine-field/src/field_passive_hud.rs).
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_801d095c.txt`.
 
 ## Field dialogue has no opcode
@@ -2574,7 +2574,7 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
    `&DAT_801f3540[line]`, line count `_DAT_801f2740`). `FUN_80039b7c` runs per
    frame, per entity, from the entity SM `FUN_801DA51C`'s interaction tail.
 
-   The engine ports this SM as `engine_core::inline_dialogue` /
+   The engine ports this SM as `engine_field::inline_dialogue` /
    `World::step_inline_dialogue` (PORT `FUN_80039b7c`): it drives the actor's
    inline interaction script through the **real field VM** (`vm::field::step`),
    executing the control bytecode between text segments (story-flag tests,
@@ -2703,7 +2703,7 @@ PCs 18 vsyncs later, the player's `+0x54` cursor stepping 2 per game tick to
 window over the open box: the player turns to face the speaker, and a
 cross-context op aimed at the player inside it returns at its own PC. The
 engine carries the window as `InlineDialogue::face_ramp`
-(`legaia_engine_core::inline_dialogue::TalkFaceRamp`), stepped once a frame
+(`legaia_engine_field::inline_dialogue::TalkFaceRamp`), stepped once a frame
 through the ported motion VM by `World::step_talk_face_ramp`; the runner
 parks a player-targeted op while it is open.
 
@@ -2722,7 +2722,7 @@ records and 861 in cutscene records have no own actor to fall back on. The
 port resolves the bind through the scene's channel set
 (`World::talk_face_target`), falling back to the conversation's own placement
 only for an id no channel carries. The census is
-`crates/engine-core/tests/talk_face_acquire_bind_disc.rs`.
+`crates/engine-scene/tests/talk_face_acquire_bind_disc.rs`.
 
 **The end rule is the dialog SM's, not the acquire's.** Once a box's lines are
 scanned, `FUN_80039B7C` hands the byte after them to `FUN_80038050`
@@ -2740,7 +2740,7 @@ talk ends: parked on that jump, which the next talk then runs. The capture above
 is one instance.
 
 The engine ports the classification as
-`legaia_engine_core::inline_dialogue::talk_dispatch`: when a dismissed box's
+`legaia_engine_field::inline_dialogue::talk_dispatch`: when a dismissed box's
 next byte parks, the runner ends the talk with the cursor recorded
 (`InlineDialogue::parked_pc`), and `World::drive_inline_dialogue` stores it as
 the placement's interaction entry, so the next talk on the same actor resumes
@@ -2775,10 +2775,44 @@ fight option is disc-derived by scanning each option branch for that `3E FF`
 install rather than matching an English menu label, so it holds under the PAL
 discs and translation packs.
 
+## Host surface
+
+`step` is generic over one bound, [`FieldHost`](../../crates/engine-vm/src/field/host.rs). It declares
+no method of its own: it is the sum of the supertraits below, each in its own file under
+`crates/engine-vm/src/field/host/`, and it is implemented for every type that implements all of
+them. A supertrait groups the methods one owner of host state answers for, not the methods of one
+opcode, so op `0x4C` `MENU_CTRL` and op `0x43` each spread over several.
+
+| Supertrait | File | Host state it speaks for |
+|---|---|---|
+| `FieldFlagsHost` | `flags.rs` | Global, region and system flag banks, the scene slot table, the frame delta, `rand`, the timed-flag schedule. |
+| `FieldSceneHost` | `scene.rs` | Scene changes, the minigame door-warp, scripted battles and encounters, the FMV and game-over handoffs. |
+| `FieldTerrainHost` | `terrain.rs` | Tile flags, the region and fog tables, the floor-height ladder, footing and box tests. |
+| `FieldCameraHost` | `camera.rs` | Camera registers (op `0x45`), camera zones, snap and clamp, the view window. |
+| `FieldCameraMotionHost` | `camera_motion.rs` | The cutscene glide, the vertical-offset ease, zoom and shake. |
+| `FieldScreenHost` | `screen.rs` | Fades and tints, the PROT 0900 screen widgets, VRAM edits, the field light, the particle gate. |
+| `FieldAudioHost` | `audio.rs` | BGM dispatch (op `0x35`) and sound-effect cues. |
+| `FieldPartyInventoryHost` | `party_inventory.rs` | Roster, character records, the bag, gold and coins. |
+| `FieldDialogMenuHost` | `dialog_menu.rs` | Dialogue boxes, text balloons, talk staging, the op `0x49` menu request. |
+| `FieldActorHost` | `actor.rs` | The stepped actor's moves, teleports, heading, slot ramps, model and arcs. |
+| `FieldActorSpawnHost` | `actor_spawn.rs` | The actor list: record spawn, clone, allocation, id resolve. |
+| `FieldActorFxHost` | `actor_fx.rs` | Lights, tint, reflections and emitters attached to an actor. |
+| `FieldPlayerHost` | `player.rs` | The player object the VM reaches through channel `0xF8`. |
+| `FieldHaltHost` | `halt.rs` | The halt-acquire park and its release. |
+
+Only `FieldFlagsHost` has required methods (the global flag word and the frame delta). Every other
+method has a default body, so a host implements what it has state for and leaves the rest as empty
+`impl` blocks. One bound exists between supertraits: `FieldCameraMotionHost: FieldFlagsHost`, for
+the default `camera_offset_mode`, which reads the global flag word.
+
+`engine-core`'s `FieldHostImpl` mirrors the layout: `world/vm_hosts/field_host/<group>_host.rs`
+holds its impl of one supertrait, and the sibling files hold the `World` bodies those impls route
+into.
+
 ## Connection to other crates
 
-- [`crates/engine-vm`](../../crates/engine-vm/src/field.rs) - the port. `legaia_engine_vm::field::step` executes one instruction per call and returns a `StepResult` (`Advance` / `Yield` / `Halt`); side effects go through the `FieldHost` trait, implemented in `engine-core` (`world/vm_hosts/field_host.rs`). The per-frame runners, the dialogue SM and the cutscene timeline that drive it live in `engine-core`, `engine-field` and `engine-dialog`.
-- [`crates/asset`](../../crates/asset/README.md) - `legaia_asset::field_disasm`, the static decoder ([below](#disassembler-tool-asset-field-disasm)), and `man_section` / `man_edit`, the MAN parser and relocator.
+- [`crates/engine-vm`](../../crates/engine-vm/src/field.rs) - the port. `legaia_engine_vm::field::step` executes one instruction per call and returns a `StepResult` (`Advance` / `Yield` / `Halt`); side effects go through the `FieldHost` trait, implemented in `engine-core` (`world/vm_hosts/field_host.rs`) - see [§ Host surface](#host-surface). The per-frame runners, the dialogue SM and the cutscene timeline that drive it live in `engine-core`, `engine-field` and `engine-dialog`.
+- [`crates/asset`](../../crates/asset/README.md) - `legaia_scene_formats::field_disasm`, the static decoder ([below](#disassembler-tool-asset-field-disasm)), and `man_section` / `man_edit`, the MAN parser and relocator.
 - [`crates/mdt`](../formats/mdt.md) - opcode `0x22` `EXEC_MOVE` drives the move-table consumer at `FUN_800204F8`. Move IDs in scripts feed straight into the .mdt parsers.
 - [`crates/mes`](../formats/mes.md) - parses the inline `0x1F` / glyph text stream that field dialogue shows (see [§ Field dialogue](#field-dialogue-has-no-opcode)).
 - [`crates/anm`](../formats/anm.md) - opcode `0x34` sub-op 3 spawns an effect record through `func_0x800252EC`; the buffer's offset-table layout matches the ANM container shape.
@@ -2887,7 +2921,7 @@ asset field-disasm scene-event-scripts <PATH> [--summary]
 asset field-disasm scan-prot --prot <PROT.DAT> --cdname <CDNAME.TXT> --bytewise
 ```
 
-The library is `legaia_asset::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}` (re-exported as `legaia_engine_vm::field_disasm`). `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
+The library is `legaia_scene_formats::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}`. `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
 
 > **CAVEAT - `scene-event-scripts` / `scan-prot` walk a NON-field-VM
 > structure.** The `0xFFFF 0x0000` lead is the stager-record header
@@ -2904,7 +2938,7 @@ The library is `legaia_asset::field_disasm::{decode, LinearWalker, find_fmv_trig
 
 ## FMV-trigger sites - exhaustive backward sweep
 
-A grep across every Ghidra dump in the corpus for writes to the global game-mode word `_DAT_8007B83C = 0x1A` (the `StrInit` mode that boots the str_fmv overlay) finds only the field-VM op plus the title-attract path (pinned at two PCs in the title overlay). The sites are codified in [`legaia_engine_vm::cutscene_trigger`](../../crates/engine-vm/src/cutscene_trigger.rs) as `FMV_TRIGGER_SITES`:
+A grep across every Ghidra dump in the corpus for writes to the global game-mode word `_DAT_8007B83C = 0x1A` (the `StrInit` mode that boots the str_fmv overlay) finds only the field-VM op plus the title-attract path (pinned at two PCs in the title overlay). The sites are codified in [`legaia_engine_system::movie::cutscene_trigger`](../../crates/engine-system/src/movie/cutscene_trigger.rs) as `FMV_TRIGGER_SITES`:
 
 | Label | Function | Mode-write addr | FMV-id source | Trigger condition |
 |---|---|---|---|---|

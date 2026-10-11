@@ -35,7 +35,7 @@ fn the_retail_comparison_corpus_holds_its_baseline() {
     };
     let manifest_path = repo().join("scripts/scenarios.toml");
     let manifest =
-        legaia_mednafen::ScenarioManifest::from_path(&manifest_path).expect("scenario manifest");
+        legaia_ram_image::ScenarioManifest::from_path(&manifest_path).expect("scenario manifest");
     let images = std::env::var_os("LEGAIA_RETAIL_COMPARE_IMAGES").is_some();
     let exe = PathBuf::from(env!("CARGO_BIN_EXE_legaia-engine"));
     let out = std::env::temp_dir().join("legaia-retail-compare-test");

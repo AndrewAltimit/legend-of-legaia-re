@@ -26,7 +26,8 @@
 //! (`LEGAIA_EXTRACTED_DIR` first, then repo-relative).
 
 use legaia_engine_core::fog_particles::{FOG_CAP_DEFAULT, FOG_CAP_RAISED, fog_cap_for_man};
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::PathBuf;
 
 const RETAIL_FOG_CELLS_FNV: u64 = 0xe9d8_110d_1eec_6070;
@@ -65,7 +66,7 @@ fn host_field_entry_underlays_the_effect_pool() {
     let Some(extracted) = extracted() else { return };
     let index = ProtIndex::open_extracted(&extracted).expect("index");
     let mut pool = legaia_tim::Vram::new();
-    legaia_engine_core::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
+    legaia_engine_scene::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
         .expect("effect pool");
 
     // dolk: the scene's own texels win on the (448, 0) page.
@@ -103,17 +104,19 @@ fn a_caption_tims_transparent_words_stay_transparent_over_the_pool() {
     let Some(extracted) = extracted() else { return };
     let index = ProtIndex::open_extracted(&extracted).expect("index");
     let mut pool = legaia_tim::Vram::new();
-    legaia_engine_core::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
+    legaia_engine_scene::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
         .expect("effect pool");
     let scene = Scene::load(&index, "edteien").expect("edteien");
     let mut caption = None;
     for entry in &scene.entries {
         let bytes: &[u8] = &entry.bytes;
-        let scan = legaia_asset::tim_scan::scan_entry(bytes);
+        let scan = legaia_container_formats::tim_scan::scan_entry(bytes);
         for (source, hit) in &scan.hits {
             let src: &[u8] = match source {
-                legaia_asset::tim_scan::Source::Raw => bytes,
-                legaia_asset::tim_scan::Source::Lzs(i) => scan.lzs_sections[*i].as_slice(),
+                legaia_container_formats::tim_scan::Source::Raw => bytes,
+                legaia_container_formats::tim_scan::Source::Lzs(i) => {
+                    scan.lzs_sections[*i].as_slice()
+                }
             };
             let end = (hit.offset + hit.byte_len).min(src.len());
             if let Ok(t) = legaia_tim::parse(&src[hit.offset..end])

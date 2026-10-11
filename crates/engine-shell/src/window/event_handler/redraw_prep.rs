@@ -1,7 +1,7 @@
 //! The redraw's pre-render half: the capture harness's per-frame seating,
 //! the field view sync, the windowed movie, the battle render edge, the
 //! cutscene camera and the frame-local draw inputs taken out of `self`
-//! before the renderer borrow - split out of `handle_redraw`.
+//! before the renderer borrow.
 
 use super::super::*;
 use super::redraw_passes::CutsceneCam;
@@ -18,17 +18,17 @@ pub(super) struct FramePrep {
         Option<(legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh)>,
     )>,
     /// The field-to-battle transition emitter, put back after the render.
-    pub battle_intro: Option<legaia_engine_render::battle_intro::BattleIntro>,
+    pub battle_intro: Option<legaia_render_kernels::battle_intro::BattleIntro>,
     /// The transition's screen primitives.
-    pub battle_intro_prims: Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
+    pub battle_intro_prims: Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
     /// The field fog sheets.
-    pub field_fog_prims: Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
+    pub field_fog_prims: Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
     /// The move-VM strip spans.
-    pub move_strip_prims: Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
+    pub move_strip_prims: Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
     /// The fishing line and the fishing HUD's sprites.
-    pub fishing_line_prims: Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
+    pub fishing_line_prims: Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
     /// The slot machine's cabinet.
-    pub slot_prims: Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
+    pub slot_prims: Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
 }
 
 impl PlayWindowApp {
@@ -313,7 +313,7 @@ impl PlayWindowApp {
             // beats first (retail order: the mover snaps to an `apply 0` beat,
             // then glides from there when a same-tick follow-up beat
             // re-stages - the map01 fly-in pair).
-            let target = legaia_engine_vm::psx_camera::FieldCameraView {
+            let target = legaia_engine_battle_vm::psx_camera::FieldCameraView {
                 focus,
                 pitch,
                 yaw,

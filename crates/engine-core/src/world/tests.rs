@@ -1,13 +1,14 @@
-//! Unit tests for [`World`]. Split out of `world.rs`.
+//! Unit tests for [`World`].
 
 use super::*;
+use legaia_engine_battle_vm::battle_action::BattleActionHost;
+use legaia_engine_mode::mode::SceneMode;
 use vm::Insn;
-use vm::battle_action::BattleActionHost;
 
 /// Take `Begin` on the party's commit-confirm screen (`0x6E`) when the last
 /// commit raised it, so the round plays out. Returns whether it was up.
 fn take_commit_begin(w: &mut World) -> bool {
-    use crate::battle_input::CommandPhase;
+    use legaia_engine_menus::battle_input::CommandPhase;
     let Some(cmd) = w.battle.command.as_mut() else {
         return false;
     };
@@ -59,8 +60,18 @@ fn tile_board_world() -> World {
     w.mode = SceneMode::Field;
     w.player_actor_slot = Some(0);
     w.actors[0].active = true;
-    let cells = vec![1, 1, 1, 1, crate::tile_board::CELL_WALL, 1, 1, 1, 1];
-    let board = crate::tile_board::TileBoard::new(3, 3, 0, 0, cells);
+    let cells = vec![
+        1,
+        1,
+        1,
+        1,
+        legaia_engine_minigames::tile_board::CELL_WALL,
+        1,
+        1,
+        1,
+        1,
+    ];
+    let board = legaia_engine_minigames::tile_board::TileBoard::new(3, 3, 0, 0, cells);
     w.board.grid = Some(board);
     let (x, z) = w.board.grid.as_ref().unwrap().player_world();
     w.actors[0].move_state.world_x = x as i16;
@@ -73,14 +84,14 @@ fn tile_board_world() -> World {
 /// A purpose-built item catalog covering every effect *type* at stable test
 /// ids, for the world item-apply tests. These exercise the apply/grant kernels,
 /// not the shipped consumable list, so they use fixed ids rather than
-/// [`crate::items::ItemCatalog::vanilla`]'s real retail ids (which only models a
+/// [`legaia_engine_menus::items::ItemCatalog::vanilla`]'s real retail ids (which only models a
 /// faithful subset; stat-boost / capture / damage / battle-escape consumables
 /// aren't shipped yet). `vanilla()`'s real-id correctness is pinned in `items.rs`
 /// + the disc-gated `item_catalog_disc` test.
 #[cfg(test)]
-fn full_test_catalog() -> crate::items::ItemCatalog {
-    use crate::items::{ItemCatalog, ItemEffect, ItemEntry, StatBoostTarget};
-    use legaia_engine_vm::status_effects::StatusKind;
+fn full_test_catalog() -> legaia_engine_menus::items::ItemCatalog {
+    use legaia_engine_battle_vm::status_effects::StatusKind;
+    use legaia_engine_menus::items::{ItemCatalog, ItemEffect, ItemEntry, StatBoostTarget};
     let mut c = ItemCatalog::new();
     let mut add = |id, name, effect, b, f| {
         c.insert(ItemEntry {
@@ -160,7 +171,7 @@ fn full_test_catalog() -> crate::items::ItemCatalog {
 #[cfg(test)]
 fn offensive_item_world(monster_hp: u16, monster_id: u16) -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -184,11 +195,11 @@ fn offensive_item_world(monster_hp: u16, monster_id: u16) -> World {
 /// monster catalog linking monster id 7 -> Seru 1.
 #[cfg(test)]
 fn capture_world(party_count: u8) -> World {
-    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
-    use crate::seru_learning::{SeruDef, SeruRegistry};
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::seru_learning::{SeruDef, SeruRegistry};
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count,
             ..Default::default()
         },
@@ -233,7 +244,7 @@ fn capture_world(party_count: u8) -> World {
 fn summon_xp_world(enemy_hp: u16, enemy_max_hp: u16) -> World {
     use legaia_save::Party;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -260,8 +271,8 @@ fn summon_xp_world(enemy_hp: u16, enemy_max_hp: u16) -> World {
     world
 }
 
-fn gimard_spell_def() -> crate::spells::SpellDef {
-    use crate::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
+fn gimard_spell_def() -> legaia_engine_battle::spells::SpellDef {
+    use legaia_engine_battle::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
     SpellDef {
         id: 0x81,
         name: "Gimard".into(),
@@ -287,7 +298,6 @@ mod battle_capture_bgm;
 mod battle_capture_class_disc;
 mod battle_clip_ladder;
 mod battle_dead_target;
-mod battle_effects_ai2;
 mod battle_item_use_cue;
 mod battle_items_magic;
 mod battle_loot_use_item;
@@ -309,6 +319,7 @@ mod commit_confirm;
 mod core;
 mod counterattack;
 mod dialogue_runner_fx;
+mod effect_playback;
 mod effects_actors;
 mod encounters;
 mod fatal_decision;
@@ -329,6 +340,7 @@ mod locomotion;
 mod minigames;
 mod model_rebind;
 mod monster_flee_disc;
+mod monster_scripted_ai;
 mod move_vm_ext;
 mod move_vm_flags;
 mod party_composition;

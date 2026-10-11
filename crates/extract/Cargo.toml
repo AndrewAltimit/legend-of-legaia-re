@@ -16,12 +16,16 @@ serde_json.workspace = true
 sha2.workspace = true
 legaia-iso.workspace = true
 legaia-prot.workspace = true
-legaia-asset.workspace = true
-legaia-lzs.workspace = true
+legaia-container-formats.workspace = true
+legaia-disc-audit.workspace = true
 legaia-tim.workspace = true
-legaia-tmd.workspace = true
 legaia-xa.workspace = true
 legaia-font.workspace = true
+
+[dev-dependencies]
+legaia-scene-formats.workspace = true
+legaia-lzs.workspace = true
+legaia-tmd.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

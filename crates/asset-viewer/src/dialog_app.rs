@@ -3,9 +3,8 @@
 //! blits it into a centered dialog box via the extracted font.
 
 use anyhow::{Context, Result};
-use legaia_engine_render::{
-    RenderTarget, Renderer, TextDraw, TextOverlay, UploadedFontAtlas, text_draws_for,
-};
+use legaia_engine_render::{RenderTarget, Renderer, TextOverlay, UploadedFontAtlas};
+use legaia_engine_ui::{TextDraw, text_draws_for};
 use legaia_font::Font;
 use std::path::Path;
 use std::sync::Arc;

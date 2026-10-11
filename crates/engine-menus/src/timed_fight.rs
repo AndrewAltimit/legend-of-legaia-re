@@ -21,7 +21,7 @@
 //! (`sltiu v0,v1,5` at `0x801EB540`, table `0x801CF49C`): rounds `0..=3` cast
 //! Koru's four set pieces (spell ids `0xA2`, `0xA3`, `0xA4`, `0xA5`) and round
 //! `4` casts `0xA1`, the all-party finisher. That arm is already the engine's
-//! (`legaia_engine_core::monster_ai::decide`, case `0xB6`), driven off the same round
+//! (`legaia_engine_battle::monster_ai::decide`, case `0xB6`), driven off the same round
 //! counter (`World::battle_mode`), so the limit runs wherever a Koru fight
 //! runs; what this module adds is the readout.
 //!
@@ -51,7 +51,7 @@
 //! `FUN_801D99BC` (`0x801D9A24`), which the `0xFE` arm calls as the round
 //! starts to play out (`0x801D31E8`). So the strip is up from each round's
 //! start until `Begin` is taken - the whole command phase - and gone for the
-//! round's action playback. That is `legaia_engine_core::timed_fight::strip_visible`.
+//! round's action playback. That is `legaia_engine_core::world_views::timed_fight::strip_visible`.
 //!
 //! PORT: FUN_801D0748 (state `0x14`'s strip arm, `0x801D0F0C..0x801D1028`)
 
@@ -75,7 +75,7 @@ pub const HP_LEFT_SCALE: u32 = 100;
 ///
 /// Retail stores the byte `4 - turn` unclamped; the fight never reaches a
 /// counter above four with Koru standing, because round `4` is the finisher
-/// (`legaia_engine_core::monster_ai::decide`, case `0xB6`), so the floor only shows on a
+/// (`legaia_engine_battle::monster_ai::decide`, case `0xB6`), so the floor only shows on a
 /// party that survives it.
 pub fn timed_fight_turns_left(turn: u32) -> u32 {
     TIMED_FIGHT_TURN_LIMIT.saturating_sub(turn)

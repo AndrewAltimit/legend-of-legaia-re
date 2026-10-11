@@ -31,9 +31,9 @@
 //! `field_player_occluded` export (the page passes its orbit-camera eye,
 //! converted to retail Y-down).
 
-use crate::field_env::EnvDraw;
-use crate::scene_resources::SceneResources;
 use crate::world::World;
+use legaia_engine_scene::field_env::EnvDraw;
+use legaia_engine_scene::scene_resources::SceneResources;
 
 /// Half a standing character's height, world units (the mesh is ~130 tall).
 ///
@@ -55,7 +55,7 @@ pub const HALF_CHAR_HEIGHT: f32 = 65.0;
 /// the page excluded only battle and the minigames, so a pause menu or a
 /// scripted shot kept dissolving the walls behind them.
 pub fn fade_armed(world: &World, cutscene_camera_owns_frame: bool) -> bool {
-    world.mode == crate::world::SceneMode::Field && !cutscene_camera_owns_frame
+    world.mode == legaia_engine_mode::mode::SceneMode::Field && !cutscene_camera_owns_frame
 }
 
 /// The host's own arming terms of the fade, beside [`fade_armed`]'s world
@@ -499,7 +499,7 @@ fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field_env::EnvDraw;
+    use legaia_engine_scene::field_env::EnvDraw;
 
     fn draw_at(x: i32, y: i32, z: i32, rot_y: u16) -> EnvDraw {
         EnvDraw {

@@ -1,5 +1,5 @@
 //! The per-frame driver of the field overlay's **scripted-scene actor**
-//! (`FUN_801D4A60`, ported as [`crate::field_actor_program`]): the travel-art
+//! (`FUN_801D4A60`, ported as [`legaia_engine_field::field_actor_program`]): the travel-art
 //! choreography programs the MAN loader resumes after a scene change.
 //!
 //! The kernel is a pure function of the two actors it touches and a handful of
@@ -11,7 +11,7 @@
 //! | `DAT_1F800393` | the actor-tick cadence [`World::tick_handler_actors`] runs on |
 //! | `_DAT_8007BABC` / `_DAT_8007BAA0` | [`crate::world::AudioState::sound_stream`] - the side-band bank request / acknowledge pair, **not** a BGM track (see below) |
 //! | `_DAT_8007B868` | [`crate::world::AudioState::dual_mode_gate`] |
-//! | `_DAT_1F800394` | [`crate::world::StoryFlagState::story_flags`] |
+//! | `_DAT_1F800394` | [`legaia_engine_system::story_flag_state::StoryFlagState::story_flags`] |
 //! | flag `0x18` | [`World::system_flag_test`] |
 //! | player `+0x14..+0x18` / `+0x24..+0x28` / `+0x10` / `+0x72` | the player actor's move state |
 //! | player `+0x8E` | [`crate::world::FieldLocomotion::eased_mirror_y`], the halfword the height arm's mirror branch reads |
@@ -43,15 +43,15 @@
 
 use super::*;
 
-use crate::actor_handler::ActorHandler;
-use crate::field_actor_kernels::ACTOR_FLAG_YIELD;
-use crate::field_actor_program::{
+use legaia_engine_field::actor_handler::ActorHandler;
+use legaia_engine_field::field_actor_program::{
     PLAYER_LIFTING, ProgramEffect, ProgramEnv, ProgramPlayer, step_scene_program,
 };
+use legaia_engine_field::scene_transition_sweep::ACTOR_FLAG_YIELD;
 
 /// Flag id the closers test before releasing the player
 /// (`FUN_8003CE64(0x18)`).
-const RELEASE_GUARD_FLAG: u16 = crate::field_actor_program::FLAG_RELEASE_GUARD as u16;
+const RELEASE_GUARD_FLAG: u16 = legaia_engine_field::field_actor_program::FLAG_RELEASE_GUARD as u16;
 
 /// What one [`World::tick_scene_programs`] pass did, summed over every live
 /// program actor.
@@ -72,7 +72,7 @@ impl World {
     /// Step every live scripted-scene program actor once.
     ///
     /// PORT driver for FUN_801D4A60 (the kernel is
-    /// [`crate::field_actor_program::step_scene_program`])
+    /// [`legaia_engine_field::field_actor_program::step_scene_program`])
     ///
     /// Run from [`Self::tick_handler_actors`] with the actor-tick cadence, the
     /// retail `DAT_1F800393` every accumulate state adds. A program whose
@@ -178,7 +178,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field_actor_program::{
+    use legaia_engine_field::field_actor_program::{
         FLAG_PLAYER_BUSY, FLAG_PROGRAM_1, FLAG_SCENE_ACTIVE, PLAYER_ENGAGED, PLAYER_MOTION_HELD,
         SFX_BEAT, STORY_FLAG_BIT, VOICE_CHANNEL, VOICE_CLIP, VOICE_DURATION,
     };
@@ -229,7 +229,9 @@ mod tests {
         assert!(
             w.audio
                 .sfx_ring_ops
-                .contains(&crate::world::SfxRingOp::Push(SFX_BEAT as i16)),
+                .contains(&legaia_engine_system::sound_state::SfxRingOp::Push(
+                    SFX_BEAT as i16
+                )),
             "the beat reaches the host SFX ring"
         );
     }
@@ -309,7 +311,7 @@ mod tests {
         }
         assert_eq!(
             clips,
-            vec![crate::sfx_cue::XaVoiceClip {
+            vec![legaia_engine_system::sound_state::XaVoiceClip {
                 clip: u32::from(VOICE_CLIP),
                 channel: u32::from(VOICE_CHANNEL),
                 duration_sectors: u32::from(VOICE_DURATION),

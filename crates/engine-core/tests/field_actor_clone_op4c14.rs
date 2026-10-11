@@ -14,10 +14,10 @@
 //!
 //! REF: FUN_801D835C (the clone helper), FUN_801D820C (the clone's tick)
 
-use legaia_engine_core::actor_handler::ActorHandler;
-use legaia_engine_core::field_actor_clone::{CLONE_HANDLER, clone_plan, modulation_rgb};
-use legaia_engine_core::field_channels::FieldChannel;
 use legaia_engine_core::world::World;
+use legaia_engine_field::actor_handler::ActorHandler;
+use legaia_engine_field::field_actor_clone::{CLONE_HANDLER, clone_plan, modulation_rgb};
+use legaia_engine_field::field_channels::FieldChannel;
 use legaia_engine_vm::field::FieldCtx;
 
 const CLONE_INSN: [u8; 8] = [0x4C, 0x14, 0x32, 0x28, 0x1E, 0x99, 0x01, 0x08];

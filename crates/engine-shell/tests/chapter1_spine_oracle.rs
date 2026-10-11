@@ -4,7 +4,7 @@
 //!
 //! **Part A - retail anchors.** The cataloged playthrough anchors codify the
 //! retail progression through the spine; each is loaded from `saves/library/`
-//! (pcsx-redux `.sstate` via [`legaia_pcsxr`], mednafen `.mcr` via
+//! (pcsx-redux `.sstate` via [`legaia_pcsx_redux`], mednafen `.mcr` via
 //! [`legaia_mednafen`] through
 //! [`legaia_parity::mode_trace_oracle::load_runtime_mode_trace_from_save`])
 //! and its recorded scene / mode (/ position where the loader exposes it) is
@@ -38,7 +38,7 @@
 //!     host's transition drain loads `keikoku` in `SceneMode::Field`. The portal
 //!     set is seeded from the disc's `.MAP` walk-on tile-trigger -> partition-2
 //!     record -> `0x3F` bridge (see
-//!     [`legaia_engine_core::man_field_scripts::overworld_portal_sites`]).
+//!     [`legaia_engine_field::man_field_scripts::overworld_portal_sites`]).
 //!
 //! **Replay fixture.** `scripts/replays/chapter1_spine.toml` (`j-replay-v1`)
 //! carries the `[[expected]]` spine rows; the disc-gated replay test builds the
@@ -51,12 +51,15 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_events::FieldEvent;
-use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
-use legaia_engine_core::world::{Actor, SceneMode, World, WorldMapEntityConfig};
+use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::mode_trace::ModeTraceFrame;
 use legaia_engine_shell::replay::ReplayFile;
-use legaia_mednafen::ScenarioManifest;
-use legaia_parity::mode_trace_oracle::{ModeTraceFrame, load_runtime_mode_trace_from_save};
+use legaia_parity::mode_trace_oracle::load_runtime_mode_trace_from_save;
+use legaia_ram_image::ScenarioManifest;
 
 // ---------------------------------------------------------------------
 // Discovery helpers
@@ -156,7 +159,7 @@ fn part_a_spine_anchors_codify_retail_progression() {
         eprintln!("[skip] saves/library missing (capture-gated)");
         return;
     }
-    // legaia_pcsxr resolves runtime VAs off the SCUS anchor; point LEGAIA_SCUS
+    // legaia_pcsx_redux resolves runtime VAs off the SCUS anchor; point LEGAIA_SCUS
     // at the extracted copy if the harness didn't set it.
     if std::env::var_os("LEGAIA_SCUS").is_none() {
         // SAFETY: single-threaded test setup before any save load.
@@ -194,7 +197,7 @@ fn part_a_spine_anchors_codify_retail_progression() {
             eprintln!("[skip] {}: no pcsx save", a.label);
             continue;
         };
-        let st = legaia_pcsxr::SaveState::from_path(&path).expect("load .sstate");
+        let st = legaia_pcsx_redux::SaveState::from_path(&path).expect("load .sstate");
         eprintln!(
             "[{}] scene={:?} mode=0x{:02X} pos={:?}",
             a.label,
@@ -413,7 +416,7 @@ fn part_b_leg2_map01_portal_to_keikoku() {
         host.world.set_pad(0);
         let mut entered = None;
         // + the scene-change hold (`FUN_80021934`'s countdown).
-        for _ in 0..8 + legaia_engine_core::scene_transition_actor::HOLD_TICKS {
+        for _ in 0..8 + legaia_engine_field::scene_transition_actor::HOLD_TICKS {
             if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
                 entered = Some(name);
                 break;
@@ -566,7 +569,7 @@ fn build_chain_trace() -> Option<Vec<ModeTraceFrame>> {
     // (WorldMap) within a few ticks; the tail idles on the overworld.
     host.world
         .seat_player_at_tile(TOWN01_SOUTH_GATE.0, TOWN01_SOUTH_GATE.1);
-    for _ in 0..11 + legaia_engine_core::scene_transition_actor::HOLD_TICKS {
+    for _ in 0..11 + legaia_engine_field::scene_transition_actor::HOLD_TICKS {
         host.tick().expect("tick");
         push(&host, &mut fi);
     }
@@ -576,7 +579,7 @@ fn build_chain_trace() -> Option<Vec<ModeTraceFrame>> {
     let keikoku_tile = find_portal_tile(&host, "keikoku").expect("keikoku portal on map01");
     host.world
         .seat_player_at_tile(keikoku_tile.0, keikoku_tile.1);
-    for _ in 0..12 + legaia_engine_core::scene_transition_actor::HOLD_TICKS {
+    for _ in 0..12 + legaia_engine_field::scene_transition_actor::HOLD_TICKS {
         host.tick().expect("tick");
         push(&host, &mut fi);
     }

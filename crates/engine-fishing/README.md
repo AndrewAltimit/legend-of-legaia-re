@@ -1,10 +1,8 @@
 # legaia-engine-fishing
 
-The fishing minigame's rules engine, split out of `legaia-engine-minigames`.
-`engine-minigames` depends on this crate, never the other way round, and
-re-exports every module at its old path (`legaia_engine_minigames::fishing`,
-and through `engine-core`, `legaia_engine_core::fishing`), so hosts and tests
-name the same paths they always did.
+The fishing minigame's rules engine. `legaia-engine-minigames` depends on
+this crate, never the other way round. Hosts and tests name its modules
+directly (`legaia_engine_fishing::fishing`).
 
 ## What lives here
 
@@ -15,15 +13,18 @@ name the same paths they always did.
 | `fishing_chrome` | The venue chrome: the float actor, splash and ripple spawn geometry, the reel cadence ring. |
 | `fishing_hub` | The hub screen a venue's idle shore opens. |
 | `minigame_floor` | The venue floor grid: ground height, the polar tables, the water tile class. |
+| `dance_marker` | The step-marker flipbook every marker tile actor on a venue floor runs (the Sol dance floor and the pond). |
 
 All of it is documented in
 [`minigame-fishing.md`](../../docs/subsystems/minigame-fishing.md).
 
 ## The split line
 
-The five modules name each other, the disc-parsed fishing tables in
-`legaia-asset`, the field-region, pad and projection kernels in
-`legaia-engine-vm` and the mesh walker in `legaia-tmd` - and no other minigame. That makes fishing the one
+The modules here name each other, the disc-parsed fishing tables in
+`legaia-minigame-formats`, the field-region queries in `legaia-engine-field`, pad input
+and the BIOS `rand` in `legaia-engine-system`, the GTE divide in
+`legaia-render-kernels`, the vertex-morph stager in `legaia-scene-formats` and
+the mesh walker in `legaia-tmd` - and no other minigame. That makes fishing the one
 game in the overlay band that separates as a leaf: the dance, the Baka
 Fighter duel, the slot machine and the Muscle Dome ladder share the band's
 overlay chrome and effect-spawn types with each other.

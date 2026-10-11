@@ -6,14 +6,14 @@
 //!
 //! * **mesh** - assembled per character from the player battle file's
 //!   equipment-id sections (extraction PROT `863 + char`,
-//!   `legaia_asset::battle_char_assembly::assemble_character`), relocated into
+//!   `legaia_actor_formats::battle_char_assembly::assemble_character`), relocated into
 //!   runtime VRAM band 0 (`relocate_tsb_cba`, the `FUN_800513F0`
 //!   registration-time TSB/CBA pass);
 //! * **texture** - the equipped sections' texture pools + record[0] image
 //!   blocks at the pinned `FUN_80052FA0` placement
 //!   (`character_texture_uploads`), with the character's decoded battle
 //!   palette overlaid on the CLUT rows the mesh samples
-//!   (`legaia_asset::battle_char_palette`);
+//!   (`legaia_actor_formats::battle_char_palette`);
 //! * **idle** - the character's own record[0] action-slot-0 keyframe stream
 //!   (`idle_battle_animation`), the loop retail holds between commands;
 //! * **arts** - the art-animation bank at record[0] `+0x58`
@@ -31,10 +31,10 @@
 
 use super::*;
 
+use legaia_actor_formats::battle_char_assembly as bca;
+use legaia_actor_formats::monster_archive::MonsterAnimation;
 use legaia_art::arts_voice::ArtsVoiceTable;
 use legaia_art::hyper_fanfare;
-use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::monster_archive::MonsterAnimation;
 
 /// Log a decode degradation. Browser console on wasm; stderr natively (the
 /// disc-gated tests drive this module natively).
@@ -398,8 +398,8 @@ fn build_character(
     let prot_index = PLAYER_FILE_BASE + cslot as u32;
     let raw = entry_bytes(prot, entries, prot_index)
         .ok_or_else(|| format!("player file (PROT {prot_index}) not present"))?;
-    let pack =
-        legaia_asset::battle_data_pack::parse(raw).map_err(|e| format!("player-file pack: {e}"))?;
+    let pack = legaia_actor_formats::battle_data_pack::parse(raw)
+        .map_err(|e| format!("player-file pack: {e}"))?;
     // All-default (unequipped) sections: the arts showcase has no roster, and
     // every section id 0 is the section's default variant.
     let equipped = [0u8; 5];
@@ -436,10 +436,11 @@ fn build_character(
     // Vahn (863) = the byte-exact fixed-stride record parse; the others
     // (864..866, incl. Terra) = the equipment-robust collector.
     let pal = if cslot == 0 {
-        legaia_asset::battle_char_palette::find_record0(raw)
-            .and_then(|rec0| legaia_asset::battle_char_palette::parse_record(raw, rec0).ok())
+        legaia_actor_formats::battle_char_palette::find_record0(raw).and_then(|rec0| {
+            legaia_actor_formats::battle_char_palette::parse_record(raw, rec0).ok()
+        })
     } else {
-        legaia_asset::battle_char_palette::collect_palette(raw, 0, &cols).ok()
+        legaia_actor_formats::battle_char_palette::collect_palette(raw, 0, &cols).ok()
     };
     if let Some(pal) = pal {
         for &row in &rows {
@@ -908,9 +909,9 @@ impl LegaiaArts {
                 15.0
             }
         };
-        let mut clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = Vec::new();
+        let mut clips: Vec<legaia_actor_formats::character_gltf::CharacterClip<'_>> = Vec::new();
         for (label, anim) in &c.actions {
-            clips.push(legaia_asset::character_gltf::CharacterClip {
+            clips.push(legaia_actor_formats::character_gltf::CharacterClip {
                 name: label.clone(),
                 fps: fps_for_rate(anim.rate),
                 anim,
@@ -921,7 +922,7 @@ impl LegaiaArts {
         {
             // Action bank failed to decode: fall back to the idle alone so
             // the export still carries the rest pose.
-            clips.push(legaia_asset::character_gltf::CharacterClip {
+            clips.push(legaia_actor_formats::character_gltf::CharacterClip {
                 name: "Idle".to_string(),
                 fps: fps_for_rate(idle.rate),
                 anim: idle,
@@ -939,13 +940,13 @@ impl LegaiaArts {
                 name = format!("{name} (0x{:02X})", a.anim_id);
             }
             used_names.push(name.clone());
-            clips.push(legaia_asset::character_gltf::CharacterClip {
+            clips.push(legaia_actor_formats::character_gltf::CharacterClip {
                 name,
                 fps: fps_for_rate(a.rate),
                 anim,
             });
         }
-        legaia_asset::character_gltf::build_character_glb(
+        legaia_actor_formats::character_gltf::build_character_glb(
             CHARACTER_LABELS[c.cslot],
             &c.mesh,
             &c.object_ids,

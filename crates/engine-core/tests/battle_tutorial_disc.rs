@@ -27,7 +27,7 @@ fn extracted_dir() -> Option<PathBuf> {
 /// Overlay 967's as-loaded bytes, straight out of `PROT.DAT`.
 fn overlay_967() -> Option<Vec<u8>> {
     let extracted = extracted_dir()?;
-    let rec = legaia_asset::static_overlay::overlay_map()
+    let rec = legaia_overlay_images::static_overlay::overlay_map()
         .by_label("battle_tutorial")
         .expect("battle_tutorial row in static-overlays.toml");
     assert_eq!(rec.prot_index, tut::OVERLAY_967_PROT_INDEX);
@@ -39,7 +39,7 @@ fn overlay_967() -> Option<Vec<u8>> {
     archive
         .read_entry(&entry, &mut bytes)
         .expect("read PROT 967");
-    Some(legaia_asset::static_overlay::as_loaded(&bytes, rec).expect("as-loaded slice"))
+    Some(legaia_overlay_images::static_overlay::as_loaded(&bytes, rec).expect("as-loaded slice"))
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn the_prot_index_loader_returns_the_same_corpus() {
         eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
         return;
     };
-    let index = legaia_engine_core::scene::ProtIndex::open_extracted(&extracted)
+    let index = legaia_engine_scene::scene::ProtIndex::open_extracted(&extracted)
         .expect("open extracted PROT index");
     let via_host = BattleTutorialScript::from_prot(&index);
     let via_archive =
@@ -182,8 +182,8 @@ fn the_prot_index_loader_returns_the_same_corpus() {
 #[test]
 fn a_live_battle_shows_the_real_prompts_in_order() {
     use legaia_engine_core::battle_flow::BattleFlowState;
-    use legaia_engine_core::input::PadButton;
     use legaia_engine_core::world::World;
+    use legaia_engine_system::input::PadButton;
 
     let Some(bytes) = overlay_967() else {
         eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
@@ -246,11 +246,11 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
 
     // Running is refused for the whole sparring fight.
     world.battle.tutorial_boxes.clear();
-    world.battle.command = Some(legaia_engine_core::battle_input::BattleCommandSession {
+    world.battle.command = Some(legaia_engine_menus::battle_input::BattleCommandSession {
         actor: 0,
         party_slot: 0,
         no_escape: false,
-        phase: legaia_engine_core::battle_input::CommandPhase::RunAway,
+        phase: legaia_engine_menus::battle_input::CommandPhase::RunAway,
     });
     world.tick();
     assert_eq!(
@@ -307,7 +307,7 @@ fn the_sparring_caption_box_is_placement_record_0x5a() {
         return;
     };
     let scus = std::fs::read(scus).expect("read SCUS");
-    let table = legaia_asset::screen_elements::ScreenElementTable::from_scus(&scus)
+    let table = legaia_ui_formats::screen_elements::ScreenElementTable::from_scus(&scus)
         .expect("screen-element table");
     let rec = table
         .get(tut::SPARRING_CAPTION_RECORD)

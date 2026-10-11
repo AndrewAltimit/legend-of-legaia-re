@@ -1,16 +1,16 @@
 //! Minigame sessions (dance, fishing, slot machine, Baka Fighter, Muscle Dome) plus the casino coin / point-card wallet.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite [`World`].
+//! Fields keep their retail provenance notes.
 
-use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Minigame sessions (dance, fishing, slot machine, Baka Fighter, Muscle Dome) plus the casino coin / point-card wallet.
 pub struct MinigameState {
     /// Noa dance (rhythm) minigame state. `Some` while `mode ==
     /// SceneMode::Dance`; the beat clock + hit judge run each tick. See
-    /// [`crate::dance::DanceGame`] and [`crate::world::World::enter_dance`].
-    pub dance: Option<crate::dance::DanceGame>,
+    /// [`legaia_engine_minigames::dance::DanceGame`] and [`crate::world::World::enter_dance`].
+    pub dance: Option<legaia_engine_minigames::dance::DanceGame>,
     /// The scene mode to restore when the dance minigame ends
     /// ([`crate::world::World::enter_dance`] snapshots the mode it interrupted). Mirrors the
     /// pause-menu suspend/restore contract.
@@ -18,17 +18,17 @@ pub struct MinigameState {
     /// The most recent dance-press judgement, kept for the host HUD (the
     /// score/gauge banner). Reset to `None` on [`crate::world::World::enter_dance`]; updated
     /// each frame a directional press is judged.
-    pub dance_last_judge: Option<crate::dance::Judge>,
+    pub dance_last_judge: Option<legaia_engine_minigames::dance::Judge>,
     /// Fishing minigame session. `Some` while `mode == SceneMode::Fishing`; the
     /// retail cast / wait / strike / fight / score loop runs each tick. See
-    /// [`crate::fishing::PondSession`] and [`crate::world::World::enter_fishing`].
-    pub fishing: Option<crate::fishing::PondSession>,
-    /// The [`crate::fishing::PondEvent`]s the last
+    /// [`legaia_engine_fishing::fishing::PondSession`] and [`crate::world::World::enter_fishing`].
+    pub fishing: Option<legaia_engine_fishing::fishing::PondSession>,
+    /// The [`legaia_engine_fishing::fishing::PondEvent`]s the last
     /// [`crate::world::World::tick`] raised (hook, landed, snapped, cadence
     /// splash, recast). Refreshed every fishing frame; the play hosts seed
     /// their HUD banner one-shots from it, the way the minigames page does
     /// from its own tick's return.
-    pub fishing_events: Vec<crate::fishing::PondEvent>,
+    pub fishing_events: Vec<legaia_engine_fishing::fishing::PondEvent>,
     /// The scene mode to restore when the fishing minigame ends
     /// ([`crate::world::World::enter_fishing`] snapshots the interrupted mode).
     pub(crate) fishing_return_mode: SceneMode,
@@ -36,9 +36,9 @@ pub struct MinigameState {
     /// counter: [`crate::world::World::exit_fishing`] banks the session record's points
     /// here, and the point exchange spends from it
     /// ([`crate::world::World::fishing_exchange_buy`]). Hosts seed a new session's
-    /// [`crate::fishing::FishingRecord`] from this cell.
+    /// [`legaia_engine_fishing::fishing::FishingRecord`] from this cell.
     pub fishing_points: i32,
-    /// Persistent rod index (`0..`[`crate::fishing::ROD_KINDS`]), mirroring
+    /// Persistent rod index (`0..`[`legaia_engine_fishing::fishing::ROD_KINDS`]), mirroring
     /// retail's `_DAT_80084454`: the cell the rod / lure select screen writes
     /// and the tension gauge divides by. The fishing bring-up re-points a
     /// stale value at an owned rod before a session reads it - see
@@ -47,11 +47,11 @@ pub struct MinigameState {
     /// Persistent lifetime cast counter, mirroring retail's `_DAT_80084460`.
     /// The band-4 gate reads it, and its low bit picks the sign of the cast
     /// lure's walk-grid drift
-    /// ([`crate::fishing_actors::LureActor::probe`]).
+    /// ([`legaia_engine_fishing::fishing_actors::LureActor::probe`]).
     pub(crate) fishing_casts: i32,
     /// Persistent one-time prize bitmask, mirroring retail's `_DAT_8008446C`:
     /// bit `row + venue * 8` latches when a `limit == 1` exchange row is
-    /// bought (see [`legaia_asset::fishing_exchange`]).
+    /// bought (see [`legaia_minigame_formats::fishing_exchange`]).
     pub fishing_prizes_purchased: u32,
     /// Persistent equipped-lure row (`0..=2`), mirroring retail's
     /// `_DAT_80084450`: the spawn-table row, the HUD's lure label and the
@@ -65,32 +65,32 @@ pub struct MinigameState {
     /// Fishing point-exchange (prize shop) session. `Some` while the exchange
     /// list is open on the host's fishing screen; purchases commit through
     /// [`crate::world::World::fishing_exchange_buy`].
-    pub fishing_exchange: Option<crate::fishing::PrizeExchange>,
+    pub fishing_exchange: Option<legaia_engine_fishing::fishing::PrizeExchange>,
     /// The two point-exchange venue pages (`0` Buma, `1` Vidna) PROT 0972
     /// carries beside the session tables, decoded by
-    /// [`crate::scene::SceneHost::enter_fishing_from_overlay`] - the one
+    /// [`crate::scene_host::SceneHost::enter_fishing_from_overlay`] - the one
     /// entry the door warp and both play hosts' launchers share. `None` until
     /// a fishing session has been entered on a disc whose pages decode.
-    pub fishing_prize_venues: Option<[crate::fishing::PrizeExchange; 2]>,
+    pub fishing_prize_venues: Option<[legaia_engine_fishing::fishing::PrizeExchange; 2]>,
     /// The venue hub's text (menu rows, help pages) off PROT 0972, decoded by
     /// the same entry as [`Self::fishing_prize_venues`]
-    /// ([`crate::fishing_hub::FishingHubText::from_overlay`]).
-    pub fishing_hub_text: Option<crate::fishing_hub::FishingHubText>,
+    /// ([`legaia_engine_fishing::fishing_hub::FishingHubText::from_overlay`]).
+    pub fishing_hub_text: Option<legaia_engine_fishing::fishing_hub::FishingHubText>,
     /// The fishing HUD's sprite table off PROT 0972
-    /// ([`legaia_asset::fishing_sprites`]), decoded by the same entry as
+    /// ([`legaia_minigame_formats::fishing_sprites`]), decoded by the same entry as
     /// [`Self::fishing_prize_venues`]. Every HUD glyph, digit and gauge cap
     /// is one of its records drawn out of the venue's HUD page; `None` leaves
     /// a host on its text fallback.
-    pub fishing_sprites: Option<Vec<legaia_asset::fishing_sprites::FishingSprite>>,
+    pub fishing_sprites: Option<Vec<legaia_minigame_formats::fishing_sprites::FishingSprite>>,
     /// The lure row's captions off PROT 0972, resolved against the item
     /// table ([`FishingCaptionText`]); `None` leaves a host on its
     /// placeholders.
     pub fishing_captions: Option<FishingCaptionText>,
     /// Slot-machine minigame session. `Some` while
     /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
-    /// tick. See [`crate::slot_machine::SlotMachine`] and
+    /// tick. See [`legaia_engine_minigames::slot_machine::SlotMachine`] and
     /// [`crate::world::World::enter_slot_machine`].
-    pub slot_machine: Option<crate::slot_machine::SlotMachine>,
+    pub slot_machine: Option<legaia_engine_minigames::slot_machine::SlotMachine>,
     /// The scene mode to restore when the slot-machine minigame ends
     /// ([`crate::world::World::enter_slot_machine`] snapshots the interrupted mode).
     pub(crate) slot_return_mode: SceneMode,
@@ -112,17 +112,17 @@ pub struct MinigameState {
     pub dance_sfx_bundle: Vec<u8>,
     /// Baka Fighter duel state. `Some` while `mode ==
     /// SceneMode::BakaFighter`; the exchange / round / match state machine
-    /// runs each tick. See [`crate::baka_fighter::BakaFight`] and
+    /// runs each tick. See [`legaia_engine_minigames::baka_fighter::BakaFight`] and
     /// [`crate::world::World::enter_baka_fighter`].
-    pub baka_fighter: Option<crate::baka_fighter::BakaFight>,
+    pub baka_fighter: Option<legaia_engine_minigames::baka_fighter::BakaFight>,
     /// The scene mode to restore when the Baka Fighter match ends
     /// ([`crate::world::World::enter_baka_fighter`] snapshots the interrupted mode).
     pub(crate) baka_return_mode: SceneMode,
     /// Muscle Dome contest state. `Some` while `mode ==
     /// SceneMode::MuscleDome`; the hand-select / commit / resolve loop runs
-    /// each tick. See [`crate::muscle_dome::MuscleDomeSession`] and
+    /// each tick. See [`legaia_engine_menus::muscle_dome_session::MuscleDomeSession`] and
     /// [`crate::world::World::enter_muscle_dome`].
-    pub muscle_dome: Option<crate::muscle_dome::MuscleDomeSession>,
+    pub muscle_dome: Option<legaia_engine_menus::muscle_dome_session::MuscleDomeSession>,
     /// The scene mode to restore when the Muscle Dome contest ends
     /// ([`crate::world::World::enter_muscle_dome`] snapshots the interrupted mode).
     pub(crate) muscle_return_mode: SceneMode,
@@ -130,11 +130,11 @@ pub struct MinigameState {
     /// legs: which `(course, round)` is staged, the running coin tally, and
     /// whether the run continues. `Some` for as long as a contest is open,
     /// which outlives any one `muscle_dome` session. See
-    /// [`crate::muscle_dome::DomeContest`].
-    pub muscle_contest: Option<crate::muscle_dome::DomeContest>,
+    /// [`legaia_engine_minigames::muscle_dome::DomeContest`].
+    pub muscle_contest: Option<legaia_engine_minigames::muscle_dome::DomeContest>,
     /// The last Muscle Dome contest's settlement, kept after the contest
     /// itself is gone so a host can put the payout on screen.
-    pub muscle_settlement: Option<crate::muscle_dome::ContestSettlement>,
+    pub muscle_settlement: Option<legaia_engine_minigames::muscle_dome::ContestSettlement>,
     /// The **ringside still** the last dome leg left resident in VRAM
     /// (`(384, 0)`), as an extraction PROT index - `1221` or `1222`, picked
     /// off the lead's HP at the leg's end by
@@ -150,7 +150,7 @@ pub struct MinigameState {
     /// Ticks left of the resolved turn's **playback** - retail's action
     /// phases `0xFE` / `0xFF`, during which the queued plays animate before
     /// the round driver returns to its command cluster. The leg holds at
-    /// [`crate::muscle_dome::MusclePhase::TurnOver`] until it drains
+    /// [`legaia_engine_menus::muscle_dome_session::MusclePhase::TurnOver`] until it drains
     /// ([`crate::world::World::muscle_playback_frames`]).
     pub(crate) muscle_playback_frames: u32,
     /// The arena hub's screen timers - the first visit, the leg-open ROUND
@@ -168,13 +168,13 @@ pub struct MinigameState {
     /// ([`crate::world::World::open_coin_counter`]) credits it as a delta instead.
     pub casino_coins: u32,
     /// The **Point Card** bank (`_DAT_800845B4`), the third purse beside
-    /// [`crate::world::PartyState::money`] and [`crate::world::MinigameState::casino_coins`]. A shop buy credits 5% of
+    /// [`legaia_engine_menus::party_state::PartyState::money`] and [`crate::world::MinigameState::casino_coins`]. A shop buy credits 5% of
     /// the gold spent while the party holds the Point Card
-    /// ([`crate::shop::POINT_CARD_ITEM_ID`]); the total is what the pause
+    /// ([`legaia_engine_menus::shop::POINT_CARD_ITEM_ID`]); the total is what the pause
     /// Items screen's "Points Left" line and the shop's window-31 toast
-    /// print, and it is clamped to [`crate::shop::POINT_CARD_CAP`].
+    /// print, and it is clamped to [`legaia_engine_menus::shop::POINT_CARD_CAP`].
     ///
-    /// See [`crate::shop::point_card_credit`] for the accrual and
+    /// See [`legaia_engine_menus::shop::point_card_credit`] for the accrual and
     /// `docs/subsystems/shop.md` for the retail chain.
     pub point_card: i32,
     /// The mode-24 minigame door-warp's backup of the active scene name
@@ -189,24 +189,24 @@ pub struct MinigameState {
     pub winnings: u32,
     /// Pending **mode-24 minigame door-warp** (field-VM op `0x3E`, `op0 >=
     /// 100`): `Some(sub_id)` for the frame the arm ran on. Drained by
-    /// [`crate::scene::SceneHost::tick`], which decodes it with
-    /// [`crate::minigame_entry::MinigameSubId`] and enters that minigame.
+    /// [`crate::scene_host::SceneHost::tick`], which decodes it with
+    /// [`legaia_engine_mode::minigame_entry::MinigameSubId`] and enters that minigame.
     ///
     /// **Not a map id.** `sub_id` selects a code overlay, not a scene - the op
     /// carries no destination name at all. It reads like a map id (a small
     /// dense integer on a warp opcode), which is exactly why the engine used
     /// to resolve it through a CDNAME-ordinal scene table and warp the player
     /// somewhere unrelated instead of into the minigame. See
-    /// [`crate::minigame_entry`] for the arm's disassembly.
+    /// [`legaia_engine_mode::minigame_entry`] for the arm's disassembly.
     pub pending_warp: Option<u8>,
     /// The dance's **pre-song count-in** (`FUN_801cf470`'s below-10 states),
     /// armed by [`crate::world::World::enter_dance`] and played out by the
     /// world's dance tick, which holds the beat clock off until it finishes.
     /// `None` once the song is running.
-    pub(crate) dance_countin: Option<crate::dance::CountIn>,
+    pub(crate) dance_countin: Option<legaia_engine_minigames::dance::CountIn>,
     /// The count-in banner envelope the last dance tick produced, for a
     /// host's draw list. `None` outside the count-in.
-    pub dance_countin_banner: Option<crate::dance::CountInBanner>,
+    pub dance_countin_banner: Option<legaia_engine_minigames::dance::CountInBanner>,
     /// The `GO!` banner's brightness (`acc * 2`, `FUN_801cf470` states 4 / 5)
     /// the last dance tick produced. `None` outside those states.
     pub dance_countin_go: Option<i32>,
@@ -216,11 +216,11 @@ pub struct MinigameState {
     pub(crate) dance_pending_bgm: Option<u16>,
     /// The Disco King **how-to** tutorial actor, installed by
     /// [`crate::world::World::enter_dance`] when the parsed game is a
-    /// [`crate::dance::DanceMode::HowTo`] run and stepped beside the session.
-    pub(crate) dance_tutorial: Option<crate::dance_tutorial::DanceTutorial>,
+    /// [`legaia_engine_minigames::dance::DanceMode::HowTo`] run and stepped beside the session.
+    pub(crate) dance_tutorial: Option<legaia_engine_minigames::dance_tutorial::DanceTutorial>,
     /// The tutorial frame the last dance tick produced (captions / options /
     /// cursor seats), for a host's draw list.
-    pub dance_tutorial_frame: Option<crate::dance_tutorial::TutorialFrame>,
+    pub dance_tutorial_frame: Option<legaia_engine_minigames::dance_tutorial::TutorialFrame>,
     /// SFX cue ids the minigame sessions queued this frame (the fishing hub's
     /// and point exchange's blips). Drained by
     /// [`crate::world::World::drain_minigame_sfx_cues`]; cosmetic.
@@ -229,7 +229,7 @@ pub struct MinigameState {
     /// drawing with?
     ///
     /// The dance samples one 4bpp page and one CLUT strip that belong to the
-    /// hall scene (`crate::dance::DANCE_HUD_ART_PROT_ENTRY`), and retail has
+    /// hall scene (`legaia_engine_minigames::dance::DANCE_HUD_ART_PROT_ENTRY`), and retail has
     /// them because the dance **is** that scene. The port suspends whichever
     /// scene the player entered from, so each host has to stage those rects
     /// itself and says so here.
@@ -249,14 +249,14 @@ pub struct MinigameState {
     /// The **effect-part pool** every minigame overlay's one-shot
     /// presentation spawns land in (the fishing venue's splash, ripples and
     /// catch bursts). Aged once per world tick, so every host that ticks the
-    /// world drains the same parts - see [`crate::minigame_fx`] for why the
+    /// world drains the same parts - see [`legaia_engine_minigames::minigame_fx`] for why the
     /// pool is world state rather than a host's.
     ///
     /// The dance run keeps its own pool inside
-    /// [`crate::dance::DanceGame`], because its spawns are gameplay
+    /// [`legaia_engine_minigames::dance::DanceGame`], because its spawns are gameplay
     /// (the sequence-clear banner fires from the judge) rather than
     /// presentation the host drives.
-    pub fx: crate::minigame_fx::MinigameFxPool,
+    pub fx: legaia_engine_minigames::minigame_fx::MinigameFxPool,
     /// The fishing **venue actors** (wander fish, reeling line, sub-screen
     /// sway), stepped by [`crate::fishing_venue::tick_fishing_venue`] from
     /// each host's minigame frame so the ripples, bursts, venue camera and
@@ -283,13 +283,13 @@ impl MinigameState {
     }
 
     /// The dance HUD's retail textured quads for this frame
-    /// ([`crate::dance::DanceGame::hud_draw_quads`]) when a host can draw
+    /// ([`legaia_engine_minigames::dance::DanceGame::hud_draw_quads`]) when a host can draw
     /// them: the HUD is up ([`Self::dance_status_visible`]) and the hall's
     /// HUD page is resident ([`Self::dance_hud_art_staged`]). Empty
     /// otherwise, which is when a host draws the frame's text rows
     /// (`DanceGame::hud_frame_rows`) instead - the either/or the count-in
     /// banner takes, off the same flag, on every host.
-    pub fn dance_hud_quads(&self) -> Vec<crate::dance::DanceHudQuad> {
+    pub fn dance_hud_quads(&self) -> Vec<legaia_engine_minigames::dance::DanceHudQuad> {
         if !self.dance_hud_art_staged || !self.dance_status_visible() {
             return Vec::new();
         }
@@ -350,7 +350,7 @@ impl MinigameState {
             dance_hud_art_staged: false,
             dance_venue: None,
             dance_venue_generation: 0,
-            fx: crate::minigame_fx::MinigameFxPool::new(),
+            fx: legaia_engine_minigames::minigame_fx::MinigameFxPool::new(),
             fishing_venue: crate::fishing_venue::FishingVenue::default(),
         }
     }
@@ -365,14 +365,14 @@ impl Default for MinigameState {
 /// The fishing HUD's lure-row text as `FUN_801D13F0` prints it: the three
 /// lure labels (each the item name its `0xC2` token names), the caption
 /// before the count and the one after it - all off the user's disc
-/// ([`legaia_asset::fishing_captions`]).
+/// ([`legaia_minigame_formats::fishing_captions`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FishingCaptionText {
     pub lure_names: [String; 3],
     pub lures_left: String,
     pub suffix: String,
     /// The species names, by species id - each record's `+0x00` string
-    /// (`legaia_asset::fishing_species`), which the landed catch's result
+    /// (`legaia_minigame_formats::fishing_species`), which the landed catch's result
     /// plate draws (`FUN_801D5298` -> `FUN_801D73B8`). Empty until
     /// [`Self::with_species_names`] resolves them.
     pub species_names: Vec<String>,
@@ -383,7 +383,7 @@ impl FishingCaptionText {
     /// outside printable ASCII are dropped (the HUD draws with the ASCII
     /// font layout).
     pub fn resolve(
-        raw: &legaia_asset::fishing_captions::FishingCaptionsRaw,
+        raw: &legaia_minigame_formats::fishing_captions::FishingCaptionsRaw,
         item_name: impl Fn(u8) -> Option<String>,
     ) -> Self {
         let ascii = |b: &[u8]| {
@@ -409,7 +409,7 @@ impl FishingCaptionText {
     /// fishing overlay. A record whose name pointer does not resolve keeps
     /// an empty name, so the indices stay species ids.
     pub fn with_species_names(mut self, overlay: &[u8]) -> Self {
-        use legaia_asset::fishing_species;
+        use legaia_minigame_formats::fishing_species;
         self.species_names = fishing_species::parse(overlay)
             .unwrap_or_default()
             .iter()
@@ -425,17 +425,19 @@ impl FishingCaptionText {
 /// snap and recast raise none here (the splash is a spawn into the effect
 /// pool, not a cue).
 ///
-/// One answer for every host that runs a pond: [`World::tick`] queues these
+/// One answer for every host that runs a pond: `World::tick` queues these
 /// for both play hosts, and the standalone minigames page keys them off its
 /// own session's events - which played no hook or catch sound at all before.
-pub fn pond_event_cues(e: &crate::fishing::PondEvent) -> Vec<u16> {
-    use crate::fishing::PondEvent;
+pub fn pond_event_cues(e: &legaia_engine_fishing::fishing::PondEvent) -> Vec<u16> {
+    use legaia_engine_fishing::fishing::PondEvent;
     match *e {
-        PondEvent::Hooked(_) => vec![u16::from(crate::fishing_actors::HOOK_CUE)],
+        PondEvent::Hooked(_) => vec![u16::from(legaia_engine_fishing::fishing_actors::HOOK_CUE)],
         PondEvent::Landed(points) => {
-            let mut cues = vec![u16::from(crate::fishing_actors::CELEBRATE_CUE)];
+            let mut cues = vec![u16::from(
+                legaia_engine_fishing::fishing_actors::CELEBRATE_CUE,
+            )];
             cues.extend(
-                crate::fishing_actors::celebration_bursts(points)
+                legaia_engine_fishing::fishing_actors::celebration_bursts(points)
                     .filter_map(|b| b.cue)
                     .map(u16::from),
             );

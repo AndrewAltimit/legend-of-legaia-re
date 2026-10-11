@@ -31,13 +31,13 @@
 //!
 //! Everything that advances in retail-frame time counts ticks, never
 //! redraws. The cutscene glide ([`CutsceneGlide`]) diffs
-//! [`crate::world::FrameClock::display_frames`], so a redraw on which no tick
+//! [`legaia_engine_vm::frame_clock::FrameClock::display_frames`], so a redraw on which no tick
 //! ran advances it by nothing.
 
-use legaia_engine_vm::psx_camera::{CutsceneCameraInterp, FieldCameraView};
+use legaia_engine_battle_vm::psx_camera::{CutsceneCameraInterp, FieldCameraView};
 
-use crate::camera::Camera;
 use crate::world::World;
+use legaia_engine_field::camera::Camera;
 
 /// One sim tick, in seconds: the retail NTSC vsync period the engine's tick
 /// is denominated in (`SIM_HZ == RETAIL_FPS`).
@@ -104,7 +104,7 @@ impl SimStepper {
 /// engine camera cannot know (VR first-person gaze, the page's debug orbit),
 /// else the camera's own ([`Camera::compass_azimuth_units`]).
 ///
-/// The native session always ran this before [`crate::scene::SceneHost::tick`];
+/// The native session always ran this before [`crate::scene_host::SceneHost::tick`];
 /// the browser page ran it after, so its locomotion read the azimuth the
 /// camera had one tick earlier.
 pub fn camera_before_world_tick(
@@ -149,7 +149,7 @@ pub fn camera_after_world_tick(camera: &mut Camera, world: &mut World, scene_ent
 #[derive(Debug, Clone, Default)]
 pub struct CutsceneGlide {
     interp: CutsceneCameraInterp,
-    /// [`crate::world::FrameClock::display_frames`] at the previous advance.
+    /// [`legaia_engine_vm::frame_clock::FrameClock::display_frames`] at the previous advance.
     mark: u64,
     /// A capture alignment the next [`Self::advance`] lands after its step:
     /// every gliding component this many display frames short of its target

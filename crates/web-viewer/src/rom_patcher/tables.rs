@@ -1,5 +1,4 @@
 //! Read-only table exports for the page's editors (equipment, manual edits).
-//! Split out of `rom_patcher.rs`.
 
 use super::*;
 
@@ -90,7 +89,7 @@ pub fn read_manual_edit_tables(image: Vec<u8>) -> Result<JsValue, JsValue> {
         .ok_or_else(|| err("SCUS_942.54 not found in disc image"))?;
     let locations = legaia_patcher::location_name::list_names(&scus)
         .map_err(|e| err(format!("location-name table: {e}")))?;
-    let item_names = legaia_asset::item_names::ItemNameTable::from_scus(&scus);
+    let item_names = legaia_game_tables::item_names::ItemNameTable::from_scus(&scus);
     drop(scus);
     let patcher = DiscPatcher::open(image).map_err(|e| err(format!("open disc image: {e}")))?;
     let overlay = patcher

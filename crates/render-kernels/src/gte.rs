@@ -64,6 +64,7 @@ pub use mem::*;
 mod trig;
 pub use trig::*;
 
+pub mod divide;
 pub mod raster;
 
 #[cfg(test)]

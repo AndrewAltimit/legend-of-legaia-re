@@ -40,8 +40,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost, is_world_map_scene};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::FIELD_COLD_SPAWN_XZ;
+use legaia_engine_scene::scene::{DefaultMapIdResolver, is_world_map_scene};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -62,7 +63,7 @@ fn open_host() -> Option<SceneHost> {
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
     if let Ok(scus) = std::fs::read(extracted.join("SCUS_942.54"))
-        && let Some(party) = legaia_asset::new_game::StartingParty::from_scus(&scus)
+        && let Some(party) = legaia_game_tables::new_game::StartingParty::from_scus(&scus)
     {
         host.world.seed_starting_party(&party);
     }

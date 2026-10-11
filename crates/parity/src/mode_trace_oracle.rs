@@ -4,13 +4,13 @@
 //! Mirrors the shape of [`crate::vram_oracle`] but the diff axis is the
 //! engine's high-level dispatch state instead of VRAM bytes: per-frame
 //! `(game_mode, scene_mode, active_scene)`. The retail side reads a
-//! mednafen save state; the engine side ticks a [`BootSession`] and
+//! mednafen save state; the engine side ticks a [`NativeSession`] and
 //! samples each frame.
 //!
-//! **Both sides emit the mode word.** [`BootSession`] holds a
-//! [`ModeSeat`](legaia_engine_core::mode::ModeSeat) - the port's copy of
+//! **Both sides emit the mode word.** [`NativeSession`] holds a
+//! [`ModeSeat`](legaia_engine_mode::mode::ModeSeat) - the port's copy of
 //! `_DAT_8007B83C` - written where retail's code stores that word and
-//! reconciled with [`world.mode`](legaia_engine_core::world::SceneMode) once
+//! reconciled with [`world.mode`](legaia_engine_mode::mode::SceneMode) once
 //! per tick, so every engine-sampled frame carries a `game_mode` and
 //! [`first_mode_trace_divergence`]'s `game_mode` compare is live rather than
 //! skipped. It used to be `None` for every frame except an open pause menu,
@@ -36,45 +36,12 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
 
-use crate::{BootConfig, BootSession};
+use legaia_engine_session::mode_trace::ModeTraceFrame;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 
-/// One sample of the engine's (or retail's) high-level dispatch state.
-/// A field the sampler cannot fill is left as `None` rather than zeroed, so a
-/// downstream diff tool can tell "didn't observe" from "observed 0".
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ModeTraceFrame {
-    /// Frame counter. Engine: wall-clock frame from
-    /// [`BootSession::frames`]. Retail snapshot: always 0 (save states
-    /// are single-frame).
-    pub frame: u64,
-    /// `_DAT_8007B83C` byte (an index into the 28-mode table). Retail:
-    /// read directly. Engine: the session's
-    /// [`ModeSeat`](legaia_engine_core::mode::ModeSeat) word, on every frame.
-    /// `None` only for a sampler that holds no seat.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub game_mode: Option<u8>,
-    /// Debug name from `mode::TABLE` (e.g. `"MAPDISP MODE"`).
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub game_mode_name: Option<String>,
-    /// [`SceneMode`](legaia_engine_core::world::SceneMode) variant name:
-    /// `"Title"` / `"Field"` / `"Battle"` / `"Cutscene"` / `"WorldMap"` /
-    /// `"Menu"` / the five minigames. Both emitters fill this. Retail derives
-    /// it from the `(game_mode, warp sub-id)` pair via
-    /// [`GameMode::scene_mode_with_warp`](legaia_engine_core::mode::GameMode::scene_mode_with_warp),
-    /// because the mode word alone cannot separate the five minigames: they all
-    /// run under `0x19`.
-    pub scene_mode: String,
-    /// CDNAME label of the currently-loaded scene, e.g. `"town01"`.
-    /// Engine reads from `host.scene.as_ref().map(|s| s.name)`. Retail
-    /// reads from the scene-bundle pool at `0x80084540` slot 0 via
-    /// [`legaia_engine_core::capture_observations::field_pack_intra_transition::read_pool_slot_name`].
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub active_scene: Option<String>,
-}
-
-/// Run a [`BootSession`] on `scene_name`, sampling `(scene_mode,
+/// Run a [`NativeSession`] on `scene_name`, sampling `(scene_mode,
 /// active_scene)` immediately after boot and again after every tick.
 /// Returns `frames + 1` records. No pad input is fed; the engine is
 /// effectively idle except for self-driving tick logic (e.g. field-VM
@@ -91,7 +58,7 @@ pub fn build_engine_mode_trace(
 }
 
 /// Variant of [`build_engine_mode_trace`] that drives the
-/// [`BootSession`] with a scripted pad timeline. `pad_stream[i]` is
+/// [`NativeSession`] with a scripted pad timeline. `pad_stream[i]` is
 /// installed onto `World.input` just before tick `i+1`; frame `0` is
 /// sampled pre-tick with an all-zeros pad. `frames + 1` records are
 /// returned, same shape as the no-input variant.
@@ -119,8 +86,8 @@ pub fn build_engine_mode_trace_with_inputs(
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     let mut out = Vec::with_capacity((frames as usize).saturating_add(1));
     out.push(sample_engine_frame(&session));
@@ -135,7 +102,7 @@ pub fn build_engine_mode_trace_with_inputs(
 
 /// Variant of [`build_engine_mode_trace_with_inputs`] that drops the
 /// session into a *live field scene* before sampling - it calls
-/// [`BootSession::enter_field_live`] (run record 0, install the encounter
+/// [`NativeSession::enter_field_live`] (run record 0, install the encounter
 /// table, arm the live loop) so the engine reaches `SceneMode::Field` the way
 /// the windowed host does, instead of sitting in `Title` like the plain
 /// `load_scene` path.
@@ -157,12 +124,12 @@ pub fn build_engine_mode_trace_field_live(
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     session.enter_field_live(
         scene_name,
-        &crate::boot::FieldLiveOpts {
+        &legaia_engine_session::session::FieldLiveOpts {
             live_loop: true,
             ..Default::default()
         },
@@ -189,15 +156,15 @@ pub fn build_engine_mode_trace_field_live(
 /// fixture, not just converge against the bracketing retail anchors. The
 /// sequence is:
 ///
-/// 1. [`BootSession::begin_new_game`] seeds the opening party (Vahn, the
+/// 1. [`NativeSession::begin_new_game`] seeds the opening party (Vahn, the
 ///    game's pre-Tetsu story state - there is no earlier save).
-/// 2. [`BootSession::enter_field_live`] drops into `scene_name` with the live
+/// 2. [`NativeSession::enter_field_live`] drops into `scene_name` with the live
 ///    loop armed; the cold boot auto-installs the town's sparring carrier.
 /// 3. A real interaction on the carrier's slot opens its dialogue; a
 ///    just-pressed confirm (Cross) advances/dismisses it, which engages the
 ///    scripted lone-Tetsu encounter and flips Field → Battle.
 ///
-/// Sampled through [`BootSession::tick`] (so the trace is the same shape the
+/// Sampled through [`NativeSession::tick`] (so the trace is the same shape the
 /// other builders emit). The Field → Battle transition is a scene-*mode* flip
 /// on the same loaded scene, not a scene change, so `active_scene` stays
 /// `scene_name` across the boundary. Returns `frames + 1` records; ticking
@@ -209,20 +176,20 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
     disc: Option<&Path>,
     frames: u64,
 ) -> Result<Vec<ModeTraceFrame>> {
-    use legaia_engine_core::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let cfg = BootConfig {
         scene: scene_name.to_string(),
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     session.begin_new_game();
     session.enter_field_live(
         scene_name,
-        &crate::boot::FieldLiveOpts {
+        &legaia_engine_session::session::FieldLiveOpts {
             live_loop: true,
             ..Default::default()
         },
@@ -269,9 +236,9 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
     Ok(out)
 }
 
-fn sample_engine_frame(session: &BootSession) -> ModeTraceFrame {
+fn sample_engine_frame(session: &NativeSession) -> ModeTraceFrame {
     // The engine's mode word, read off the session's seat at the mode table
-    // ([`BootSession::mode_seat`]). Every frame carries one now: the seat is
+    // ([`NativeSession::mode_seat`]). Every frame carries one now: the seat is
     // written where retail's code stores `_DAT_8007B83C` (field entry through
     // `MAIN INIT`, the pause menu through `CARD INIT`) and reconciled with the
     // world's `SceneMode` once per tick, so the field is no longer `None`
@@ -287,8 +254,8 @@ fn sample_engine_frame(session: &BootSession) -> ModeTraceFrame {
     }
 }
 
-fn scene_mode_name(m: legaia_engine_core::world::SceneMode) -> &'static str {
-    use legaia_engine_core::world::SceneMode;
+fn scene_mode_name(m: legaia_engine_mode::mode::SceneMode) -> &'static str {
+    use legaia_engine_mode::mode::SceneMode;
     match m {
         SceneMode::Title => "Title",
         SceneMode::Field => "Field",
@@ -309,11 +276,11 @@ fn scene_mode_name(m: legaia_engine_core::world::SceneMode) -> &'static str {
 /// pulls:
 ///
 /// - `game_mode` from `_DAT_8007B83C`
-///   ([`capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR`](legaia_engine_core::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR)).
+///   ([`capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR`](crate::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR)).
 /// - `scene_mode` derived from the **pair** `(game_mode, warp sub-id)` via
-///   [`GameMode::scene_mode_with_warp`](legaia_engine_core::mode::GameMode::scene_mode_with_warp),
+///   [`GameMode::scene_mode_with_warp`](legaia_engine_mode::mode::GameMode::scene_mode_with_warp),
 ///   with the sub-id read from
-///   [`WARP_SUB_ID_ADDR`](legaia_engine_core::mode::WARP_SUB_ID_ADDR).
+///   [`WARP_SUB_ID_ADDR`](legaia_engine_mode::mode::WARP_SUB_ID_ADDR).
 /// - `active_scene` from the scene-bundle pool slot 0 at `0x80084540`.
 ///
 /// **The sub-id is not optional here.** The retail mode word alone cannot tell
@@ -339,9 +306,9 @@ pub fn load_runtime_mode_trace_from_save(save: &Path) -> Result<ModeTraceFrame> 
 /// the `(game_mode, warp sub-id) -> scene_mode` resolution is testable without
 /// a save state (and therefore without Sony bytes).
 pub fn mode_trace_frame_from_ram(ram: &[u8]) -> ModeTraceFrame {
-    use legaia_engine_core::capture_observations::cutscene_trigger_corpus::read_game_mode;
-    use legaia_engine_core::capture_observations::field_pack_intra_transition::read_pool_slot_name;
-    use legaia_engine_core::mode::{GameMode, read_warp_sub_id};
+    use crate::capture_observations::cutscene_trigger_corpus::read_game_mode;
+    use crate::capture_observations::field_pack_intra_transition::read_pool_slot_name;
+    use legaia_engine_mode::mode::{GameMode, read_warp_sub_id};
 
     let game_mode = read_game_mode(ram);
     let warp_sub_id = read_warp_sub_id(ram);
@@ -360,8 +327,8 @@ pub fn mode_trace_frame_from_ram(ram: &[u8]) -> ModeTraceFrame {
     }
 }
 
-fn game_mode_label(gm: legaia_engine_core::mode::GameMode) -> &'static str {
-    legaia_engine_core::mode::TABLE[gm.as_index()].name
+fn game_mode_label(gm: legaia_engine_mode::mode::GameMode) -> &'static str {
+    legaia_engine_mode::mode::TABLE[gm.as_index()].name
 }
 
 /// Number of leading main-RAM bytes the manifest's `ram_fingerprint_sha256`
@@ -641,8 +608,8 @@ mod tests {
     /// Synthesise a main-RAM image holding a `(game_mode, warp sub-id)` pair.
     /// No Sony bytes - a zeroed buffer with two words poked in.
     fn ram_at(game_mode: u8, warp_sub_id: i16) -> Vec<u8> {
-        use legaia_engine_core::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR;
-        use legaia_engine_core::mode::WARP_SUB_ID_ADDR;
+        use crate::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR;
+        use legaia_engine_mode::mode::WARP_SUB_ID_ADDR;
         let mut ram = vec![0u8; 0x20_0000];
         ram[(GAME_MODE_ADDR - 0x8000_0000) as usize] = game_mode;
         let off = (WARP_SUB_ID_ADDR - 0x8000_0000) as usize;

@@ -241,7 +241,7 @@ Every handler in `FUN_801D0748` tests `s2`, and `s2` is built two different ways
 before the state switch runs.
 
 The masks are **packed** throughout - byte-swapped against the raw BIOS word
-(`engine-core::world_map_panel_host::packed_pad`), so the four directions are
+(`engine-field::world_map_panel_host::packed_pad`), so the four directions are
 Left `0x8000`, Right `0x2000`, Down `0x4000`, Up `0x1000`. Read raw they look like face buttons ([`arts-command-gauge.md`](arts-command-gauge.md) notes the same).
 
 **With a selection widget up** (`_DAT_800846C8 != 0` and `ctx[+0x275] != 0`), the
@@ -327,7 +327,7 @@ re-scans with `FUN_801DBA04` and re-enters `0x28` through
 (`0x801D3040..0x801D30C8`, `0x801D4750`).
 
 The port runs the ring's cancel as `World::step_back_battle_command` over the
-ported cursor step (`legaia_engine_vm::battle_cursor_pose::step_actor_cursor`),
+ported cursor step (`legaia_engine_battle_vm::battle_cursor_pose::step_actor_cursor`),
 dropping the landed member's typed commit and its Spirit stance and refunding
 an item. It stages no `0x6E` screen - the last commit begins the round - so the
 `Reselect` entry has no seat.
@@ -433,7 +433,7 @@ The capture `party_basic_attack_vs_gobu_gobu` (solo Vahn at `0x6E`,
 `(16, 170)` / `(59, 170)` / `(123, 170)` - `Vahn` (width 27), `Attack`,
 `Gobu Gobu` - which is the one-row case of the layout above.
 
-**Port.** `legaia_engine_vm::battle_commit_log` stages the rows over a
+**Port.** `legaia_engine_battle_vm::battle_commit_log` stages the rows over a
 scratch placement array (`stage_commit_row`, with `FUN_801D5718` as
 `battle_cursor_pose::element_placement_land` and `FUN_801D57E8` for the
 all-target labels); `engine-core::battle_hud::battle_commit_log` lists the
@@ -455,7 +455,7 @@ inferred from the ring's arm order, not read off a commit arm.
 
 Two pools, and which one a label lives in follows from who writes it into the
 placement record's `+0x14` payload pointer. Parser
-`legaia_asset::battle_ui_strings`; the coordinates are pinned, never the text.
+`legaia_ui_formats::battle_ui_strings`; the coordinates are pinned, never the text.
 
 | Chip | Record | Source |
 |---|---|---|
@@ -520,7 +520,7 @@ Drives the post-action target cursor. Parameterised on a `TargetKind` enum const
 | `AllEnemies` / `AllAllies` | Sweep target - auto-confirm. |
 | `Self_` | The actor itself - auto-confirm. |
 
-Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead. Implementation: [`crates/engine-core::target_picker`](../../crates/engine-battle/src/target_picker.rs).
+Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead. Implementation: [`engine-battle::target_picker`](../../crates/engine-battle/src/target_picker.rs).
 
 The **enemy** row is not a slot-order walk. Each picker row carries the slot's battle-world seat (`actor[+0x34]` / `+0x38`, filled by `World::battle_target_rows` from the actor's `move_state`), and a `SingleEnemy` cursor steps through retail's attack-target ring - `FUN_801D8A88` builds the ring and `FUN_801D8D00` steps it, so Left/Right move to the *angularly* nearest live monster. Retail seats at most four monsters, so a fifth engine slot has no ring entry; that slot, an un-seated host (all seats at the origin), and a ring entry that is not a live monster each fall the cursor back to the plain scan. See [`battle-action.md`](battle-action-helpers.md#actor-pool-leaf-helpers) for the two kernels.
 
@@ -530,9 +530,9 @@ A sweep reaches the action SM as retail's target-group code, not a sentinel: the
 
 ### Phases and input map
 
-`engine-core::battle_input` carries the three phases (`CommandPhase::RoundPrompt`
+`engine-menus::battle_input` carries the three phases (`CommandPhase::RoundPrompt`
 / `Menu` / `AttackMode`) and `engine-ui::battle_command_ui::ChipPhase` the
-seating for each; `engine-core::battle_open` composes the banner and
+seating for each; `engine-core::disc_readers::battle_open` composes the banner and
 `World::raise_battle_open_banner` queues it onto the shared battle message box
 (retail's `ctx[+0x6B2]` surface). The round-scoped prompt is armed from
 `World::arm_round_open_prompt`, keyed on the flow byte parking at
@@ -848,7 +848,7 @@ does not run until the caption has gone, and the prompt machine only ticks in
 phase `2`. The retail frame (`v0_1_battle_start_tetsu`) is the caption
 centred on the bottom anchor `0xCC`, the same corner as emitter style `9`.
 
-Engine port: the side-band kernel is `engine-core::battle_sideband`, and
+Engine port: the side-band kernel is `engine-battle::battle_sideband`, and
 `World::tick_battle_sideband` (`world/battle/sideband.rs`) runs it at the top
 of every live battle frame, for both play hosts. The round start asks it first
 (`World::battle_sideband_holds_round`): on stage 1 it runs the kernel with the
@@ -1006,7 +1006,7 @@ spoils are shown or credited. The form transition's phase 3 ends the
 battle itself: mode word `2` (back to the field) and `DAT_8007BD60 = 0x80`,
 the won bit MAIN INIT turns into story flag 1 (`0x8003B570..0x8003B590`).
 
-**Engine port.** `engine-core::battle_stage_module` ports both phase
+**Engine port.** `engine-battle::battle_stage_module` ports both phase
 machines as pure kernels over the state they touch (`arrival_tick`,
 `form_transition_tick`), and `World::tick_battle_sideband` hosts them: the
 battle-init override writes stage `2` at entry, the round start holds until

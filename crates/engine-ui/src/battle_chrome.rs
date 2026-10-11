@@ -13,7 +13,7 @@
 //! ## One sprite sheet, one 3-slice, four palettes
 //!
 //! The whole battle chrome samples the **resident system-UI TIM**
-//! ([`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`], `PROT.DAT`
+//! ([`legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`], `PROT.DAT`
 //! `0x18E0`), which uploads its pixels to VRAM page `(896, 256)` and its
 //! 16-row CLUT block packed into VRAM row **511** as 16 side-by-side
 //! sub-palettes. Text comes from the neighbouring menu-glyph atlas at page
@@ -29,7 +29,7 @@
 //! | `v = 64` | `(208,64)` / `(192,64)` / `(216,64)` | 12 (carved gold) | actor-name plaque |
 //!
 //! The `v = 64` row is the same art
-//! [`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_L`] pins for the
+//! [`legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_L`] pins for the
 //! field menu's tab banner, which is why the battle plaque and the pause
 //! menu's title tab look like the same object: they are.
 //!
@@ -40,7 +40,7 @@
 //! HP or MP bar primitive anywhere in the strip's packet run. A filled gauge
 //! in the party HUD is an engine invention, not retail.
 
-use legaia_asset::title_pak;
+use legaia_ui_formats::title_pak;
 
 /// VRAM page the system-UI sprite sheet uploads to.
 pub const WIDGET_PAGE: (u16, u16) = (896, 256);
@@ -246,7 +246,7 @@ pub const fn plate_width(interior_w: u16) -> u16 {
 
 /// The plaque, the party bar and every command chip are one law over one data
 /// source. Each is a record of the **screen-element placement table** at
-/// `0x80076C10` ([`legaia_engine_vm::battle_party_panel::ELEMENT_PLACEMENT_TABLE`],
+/// `0x80076C10` ([`legaia_engine_battle_vm::battle_party_panel::ELEMENT_PLACEMENT_TABLE`],
 /// layout in `docs/reference/memory-map.md`), and the plate is derived from
 /// the record's content box rather than stored:
 ///
@@ -259,7 +259,7 @@ pub const fn plate_width(interior_w: u16) -> u16 {
 /// tall, and `rec.w` **is** the interior width - which is why a plate is
 /// sized to its content with the final body tile clipped. The same `-8` / `-4`
 /// content-to-plate bias appears in
-/// [`legaia_engine_vm::battle_party_panel::cross_out_mark`], the other overlay leaf that
+/// [`legaia_engine_battle_vm::battle_party_panel::cross_out_mark`], the other overlay leaf that
 /// frames a content box.
 ///
 /// The law is packet-verified on four surfaces at once: plaque `(16, 12)` w=63
@@ -283,11 +283,6 @@ pub const RECORD_PEN_DY: i16 = -2;
 /// therefore slides in from above the screen, and `+0x14` points at the name
 /// scratch buffer the string was measured out of.
 pub const PLAQUE_PLACEMENT_RECORD: usize = 68;
-
-/// The table itself is disc data - parser
-/// [`legaia_asset::screen_elements`], which also carries the corrected extent
-/// (103 records, not 200) and the per-family box heights.
-pub use legaia_asset::screen_elements;
 
 /// Glyph pen and plate rect for a placement record's `(x, y, w)`.
 ///
@@ -579,7 +574,7 @@ impl ChipCluster {
 
 /// The four battle rects the `engine-core` atlas bakes are these same rects.
 ///
-/// `legaia_asset::title_pak` owns the *source* side (which texels of the
+/// `legaia_ui_formats::title_pak` owns the *source* side (which texels of the
 /// system-UI sheet to copy); this module owns the *draw* side (where they
 /// land and how a run composes). They have to name one set of numbers.
 pub const fn battle_chrome_source_rects_match() -> bool {
@@ -852,7 +847,7 @@ mod tests {
 
     #[test]
     fn panel_seats_match_the_text_anchors_the_overlay_publishes() {
-        use legaia_engine_vm::battle_party_panel::panel_anchors;
+        use legaia_engine_battle_vm::battle_party_panel::panel_anchors;
         for size in 1..=3u8 {
             let seats = panel_seats(size);
             let (primary, secondary) = panel_anchors(size).unwrap();

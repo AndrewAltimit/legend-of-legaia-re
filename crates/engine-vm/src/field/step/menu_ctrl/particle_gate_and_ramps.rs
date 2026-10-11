@@ -1,0 +1,359 @@
+//! `0x4C` MENU_CTRL outer-nibble 3 + 4 handlers.
+
+use super::*;
+
+pub(super) fn op_4c_n3<H: FieldHost>(
+    host: &mut H,
+    ctx: &mut FieldCtx,
+    _bytecode: &[u8],
+    pc: usize,
+    _opcode: u8,
+    header_size: usize,
+    _operand: usize,
+    op0: u8,
+) -> StepResult {
+    match op0 & 0x0F {
+        0 => {
+            // sub-0 (0x801E0F38): raise the ambient-particle master gate
+            // `_DAT_8007B854`, exit via STATE_RESUME.
+            host.set_ambient_particle_gate(true);
+            StepResult::Yield {
+                resume_pc: pc + header_size + 1,
+            }
+        }
+        1 => {
+            // sub-1 (0x801E0F44): clear the same gate.
+            host.set_ambient_particle_gate(false);
+            StepResult::Yield {
+                resume_pc: pc + header_size + 1,
+            }
+        }
+        2 => {
+            host.clear_party_state_region();
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        4 | 0xB | 0xC => {
+            // sub-4 / sub-B / sub-C: original `goto code_r0x801df098`
+            // which falls through to `LAB_801df09c: switchD_801e00f4::default()`.
+            // The asm at 0x801df208 jumps with delay slot
+            // `_addiu s8, s8, 0x2` → PC += 2 from the opcode.
+            // No host hook fires; the original writes
+            // `_DAT_8007b5f0 = uVar31` (current view-index slot)
+            // before falling through, but `uVar31` was just read
+            // from the same slot a few lines earlier - net effect
+            // is a no-op write.
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        3 => {
+            host.rebuild_party_roster();
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        5 => {
+            ctx.local_flags = (ctx.local_flags & 0xFF7F) | 0x020A;
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        6 => {
+            ctx.local_flags |= 0x028A;
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        7 => {
+            // sub-3 sub-7: copy player coords onto non-player ctx.
+            // The host gates on `ctx == player_ctx`; returning
+            // `None` means "no copy" (either the player ctx is
+            // unset OR ctx IS the player), in which case we
+            // fall through to a regular advance.
+            if let Some(p) = host.fetch_player_coords(ctx) {
+                ctx.world_x = p.world_x;
+                ctx.world_y = p.world_y;
+                ctx.world_z = p.world_z;
+                ctx.field_26 = p.field_26;
+                if ctx.flags & 0x2000_0000 != 0 {
+                    let inverted_y = (p.world_y as i16).wrapping_neg();
+                    host.set_inverted_y_mirror(ctx, inverted_y);
+                    // Original returns via `caseD_4()` - the
+                    // STATE_RESUME exit. We surface that as a
+                    // Yield so the host's state-resume layer
+                    // decides whether the next caller resumes.
+                    return StepResult::Yield {
+                        resume_pc: pc + header_size + 1,
+                    };
+                }
+            }
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        8 => {
+            // sub-8 (0x801E1048): camera-zone query + load at the player's
+            // tile (`FUN_801DE3E0`). The ease walks the globals to the new
+            // block; nothing snaps.
+            host.camera_zone_query_at_player();
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        0xD => {
+            // sub-D (0x801E10F8): the walk-region attribute refresh
+            // (`FUN_800180EC`) - the same tile arithmetic as sub-8 but a
+            // different helper, so it is a separate hook.
+            host.region_attributes_refresh_at_player();
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        9 => {
+            // sub-9 (0x801E1078): query + footing conform, then fall into
+            // sub-E's snap + focus clamp at 0x801E10BC.
+            host.camera_zone_query_conform_and_snap(ctx);
+            host.camera_snap_and_clamp();
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        0xA => {
+            host.apply_arrival_facing();
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        0xE => {
+            // sub-E (0x801E10BC): the snap + focus-clamp tail of sub-9,
+            // reached directly by the jump table - no query.
+            host.camera_snap_and_clamp();
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        0xF => {
+            host.copy_party_tmd_poses();
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
+        }
+        // All 16 sub-ops covered above; this arm is dead code
+        // but the compiler can't prove it because the value is
+        // narrowed to `op0 & 0x0F` in this match's scrutinee.
+        16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),
+    }
+}
+
+pub(super) fn op_4c_n4<H: FieldHost>(
+    host: &mut H,
+    ctx: &mut FieldCtx,
+    bytecode: &[u8],
+    pc: usize,
+    opcode: u8,
+    header_size: usize,
+    operand: usize,
+    op0: u8,
+) -> StepResult {
+    {
+        // 0x4C outer nibble 4 - immediate-or-ramp cluster.
+        // 6-byte instruction `[4C, op0, val_lo, val_hi,
+        // ticks_lo, ticks_hi]`. The original at line ~5901 of
+        // FUN_801DE840 reads: target = signed_16(op+1..3),
+        // ticks = signed_16(op+3..5), then dispatches on
+        // `op0 & 0x0F`. PC advance = 6 (= header_size + 5)
+        // for every sub-op that returns (the error arms E / F halt).
+        if operand + 5 > bytecode.len() {
+            return StepResult::Unknown { opcode, pc };
+        }
+        let target_lo = bytecode[operand + 1];
+        let target_hi = bytecode[operand + 2];
+        let ticks_lo = bytecode[operand + 3];
+        let ticks_hi = bytecode[operand + 4];
+        let target = i16::from_le_bytes([target_lo, target_hi]);
+        let ticks = u16::from_le_bytes([ticks_lo, ticks_hi]);
+        let advance = StepResult::Advance {
+            next_pc: pc + header_size + 5,
+        };
+        let sub = op0 & 0x0F;
+        match sub {
+            0 => {
+                // ctx[+0x72] write or ramp.
+                if ticks == 0 {
+                    ctx.field_72 = target as u16;
+                } else {
+                    host.ramp_ctx_slot(ctx, sub, target, ticks);
+                }
+                advance
+            }
+            1 => {
+                // ctx[+0x6A] write or ramp. The input is halved
+                // (s16 arithmetic shift right 1) with a floor of
+                // 1 - see FUN_801DE840 line ~5923:
+                //   `iVar46 = signed_16(operand[0..2]);`
+                //   `uVar31 = iVar46 >> 1;`
+                //   `if (uVar31 == 0) uVar31 = 1;`
+                let halved = (target >> 1).max(1);
+                if ticks == 0 {
+                    ctx.field_6a = halved;
+                } else {
+                    host.ramp_ctx_slot(ctx, sub, halved, ticks);
+                }
+                advance
+            }
+            2 => {
+                // ctx[+0x8E] write or ramp; immediate-write
+                // path also mirrors `world_y = -value` when
+                // `flags & 0x20000000` is set.
+                if ticks == 0 {
+                    ctx.field_8e = target;
+                    if ctx.flags & 0x2000_0000 != 0 {
+                        ctx.world_y = (-target) as u16;
+                    }
+                } else {
+                    host.ramp_ctx_slot(ctx, sub, target, ticks);
+                }
+                advance
+            }
+            3 | 4 => {
+                // sub-3 `+0x24` / sub-4 `+0x28`: write or ramp, like every
+                // other ctx slot. Both arms (`0x801E1234` / `0x801E126C` in
+                // PROT 0897) test the ticks word, then either `jal
+                // 0x8003CE9C` and `j 0x801E3624` with the `sh v0,0x24(s5)` /
+                // `sh v0,0x28(s5)` in its delay slot - the shared advancing
+                // exit, `v0 = s8` already `+6` - or tail into the ramp
+                // scheduler `0x801E205C`. Neither returns the operand as a
+                // PC: that "absolute jump" was the decompiler's rendering of
+                // the `j 0x801E3624` exit. Read as a jump, `taiku` P2[16]'s
+                // `CC 25 43 00 00 00 00` sent Zora Castle's post-boss
+                // cutscene back to its own first byte every pass.
+                if ticks == 0 {
+                    if sub == 3 {
+                        ctx.field_24 = target;
+                    } else {
+                        ctx.field_28 = target;
+                    }
+                } else {
+                    host.ramp_ctx_slot(ctx, sub, target, ticks);
+                }
+                advance
+            }
+            6 | 7 => {
+                // sub-6 (`_DAT_8007B92C`) / sub-7 (`_DAT_8007B930`)
+                // - paired global writes gated by `_DAT_800845A8`.
+                // When the gate is set, the original short-circuits
+                // both ports of the pair and clears them together;
+                // otherwise the regular global-write/ramp dispatch
+                // proceeds with the per-sub slot.
+                if host.event_vibration_off() {
+                    host.clear_rumble();
+                } else {
+                    host.write_or_ramp_global_slot(sub, target as i32, ticks);
+                }
+                advance
+            }
+            8 => {
+                // ctx[+0x26] (`field_26`) write or ramp.
+                if ticks == 0 {
+                    ctx.field_26 = target as u16;
+                    host.set_actor_heading(ctx, target as u16);
+                } else {
+                    host.ramp_ctx_slot(ctx, sub, target, ticks);
+                }
+                advance
+            }
+            0xA..=0xD => {
+                // Global slot ramp/write. Sub-D additionally
+                // multiplies by `_DAT_8008457C` and shifts
+                // right 12; the host owns the transform.
+                host.write_or_ramp_global_slot(sub, target as i32, ticks);
+                advance
+            }
+            5 => {
+                // sub-5 has a wider 11-byte encoding instead of 6.
+                // Override the operand-length precheck made above.
+                // `[4C, 0x45, b1, w94_lo, w94_hi, w96_lo, w96_hi,
+                //   w98_lo, w98_hi, ticks_lo, ticks_hi]`.
+                // Bytecode boundary: pc + 11 must fit.
+                if operand + 10 > bytecode.len() {
+                    return StepResult::Unknown { opcode, pc };
+                }
+                let b1 = bytecode[operand + 1];
+                let w94 = i16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
+                let w96 = i16::from_le_bytes([bytecode[operand + 4], bytecode[operand + 5]]);
+                let w98 = i16::from_le_bytes([bytecode[operand + 6], bytecode[operand + 7]]);
+                let sub5_ticks = u16::from_le_bytes([bytecode[operand + 8], bytecode[operand + 9]]);
+                if sub5_ticks == 0 {
+                    host.write_actor_look(ctx, b1, w94, w96, w98);
+                    StepResult::Advance {
+                        next_pc: pc + header_size + 10,
+                    }
+                } else {
+                    host.ramp_actor_look(ctx, b1, w94, w96, w98, sub5_ticks);
+                    // The ramp is scheduled, not waited on: the arm adds
+                    // its extra 5 bytes (`addiu s8,s8,0x5` at 0x801E12A4)
+                    // over the nibble-4 head's 6, schedules one
+                    // `FUN_8003C5F0` ramp per changed field, and leaves
+                    // through the common exit 0x801E3624 or the shared
+                    // scheduler exit 0x801E2054 - the sub-9 shape. A
+                    // per-vsync capture of `opdeene` sees the record run a
+                    // block of eight `CC <id> 45 .. 28 00` ramps inside one
+                    // frame.
+                    // REF: FUN_801DE840 (0x801E12A4..0x801E138C)
+                    StepResult::Advance {
+                        next_pc: pc + header_size + 10,
+                    }
+                }
+            }
+            9 => {
+                // sub-9: dispatch on two bits of the global story
+                // flag word. See `FieldCameraMotionHost::camera_offset_mode`.
+                //
+                // Every arm advances the 6 bytes, the ramp arms included:
+                // the nibble-4 head advances first (`addiu s8,s8,6` at
+                // 0x801E1138, before the `jr` into the sub table) and the
+                // sub-9 ramp arms tail into the shared scheduler exit
+                // 0x801E205C (`jal 0x8003C5F0` then `j 0x801E3628` with
+                // `v0 = s8`) - the same exit sub-8's ramp takes. The ramp
+                // is a scheduled actor, not a park. Yielding at the op
+                // instead re-ran it forever (conc3 `P2[10]` never reached
+                // its `SET 0x3E5`).
+                // REF: FUN_801DE840 (0x801E1480..0x801E1628)
+                match host.camera_offset_mode() {
+                    Sub9State::PlayerRelative => {
+                        // Player-relative write: `+0x4A = target +
+                        // player_anchor[+0x16]` (ramped when ticks != 0).
+                        // This arm never jumps (cutscene-dialogue overlay
+                        // `case 9`, live-probe-pinned over the opening).
+                        host.write_camera_offset_player_relative(target, ticks);
+                        advance
+                    }
+                    Sub9State::Default => {
+                        if ticks == 0 {
+                            host.write_camera_offset(target);
+                        } else {
+                            host.ramp_camera_offset(target, ticks);
+                        }
+                        advance
+                    }
+                    Sub9State::Delta => {
+                        host.write_camera_offset_delta(target, ticks);
+                        advance
+                    }
+                }
+            }
+            // Sub-ops 0xE/0xF have no `case` arm in the original
+            // case-4 inner switch (line 6188 of the dump): they
+            // hit `default: func_0x8001a068(s_SUB_40_ERROR_801cec88);
+            // iVar18 = switchD_801e00f4::default(); return iVar18;`
+            // - the dispatcher's default returns `param_2` ⇒ halt
+            // at PC.
+            0xE..=0xF => StepResult::Halt { final_pc: pc },
+            // `op0 & 0x0F` is at most 0xF; the arms above cover
+            // every value, so this arm is dead code.
+            16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),
+        }
+    }
+}

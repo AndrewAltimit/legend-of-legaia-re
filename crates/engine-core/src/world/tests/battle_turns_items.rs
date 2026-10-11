@@ -1,10 +1,11 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn monsters_take_turns_and_can_wipe_the_party() {
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle_vm::battle_action::ActionState;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -60,9 +61,9 @@ fn monsters_take_turns_and_can_wipe_the_party() {
 
 #[test]
 fn multi_monster_battle_all_monsters_act_and_party_can_win() {
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle_vm::battle_action::ActionState;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -119,11 +120,11 @@ fn multi_monster_battle_all_monsters_act_and_party_can_win() {
 
 #[test]
 fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
-    use crate::input::PadButton;
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle_vm::battle_action::ActionState;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 2,
             ..Default::default()
         },
@@ -184,7 +185,9 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     // execution band walks the party in slot order, so slot 0's item lands
     // first.
     {
-        use crate::battle_input::{BattleCommand, BattleCommandSession, CommandPhase};
+        use legaia_engine_menus::battle_input::{
+            BattleCommand, BattleCommandSession, CommandPhase,
+        };
         let next = world
             .battle
             .command
@@ -197,7 +200,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
             no_escape: false,
             phase: CommandPhase::Confirmed {
                 command: BattleCommand::Attack,
-                target_row: crate::target_picker::CursorRow::Enemy,
+                target_row: legaia_engine_battle::target_picker::CursorRow::Enemy,
                 target_slot: 0,
             },
         });
@@ -219,7 +222,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     );
     assert_eq!(
         world.actors[0].battle.action_category,
-        legaia_engine_vm::battle_action::ActionCategory::Item.as_byte()
+        legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte()
     );
     assert_eq!(world.actors[0].battle.params[0], 0x01);
     let fx = world.drain_battle_hit_fx();
@@ -231,10 +234,10 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
 
 #[test]
 fn battle_item_menu_cancel_reopens_command_menu() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -273,10 +276,10 @@ fn battle_item_menu_cancel_reopens_command_menu() {
 #[test]
 fn opening_the_item_window_moves_the_flow_byte_onto_it() {
     use crate::battle_flow::BattleFlowState;
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

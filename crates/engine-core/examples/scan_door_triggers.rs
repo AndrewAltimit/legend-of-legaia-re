@@ -17,8 +17,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{self as mfs, PlayerMoveKind};
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_field::man_field_scripts::PlayerMoveKind;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn main() -> anyhow::Result<()> {
     let extracted = PathBuf::from("extracted");
@@ -41,7 +41,7 @@ fn main() -> anyhow::Result<()> {
         let Ok(Some(man)) = scene.field_man_payload(&p) else {
             continue;
         };
-        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         let (primary, fallback) = scene.field_tile_triggers(&p).unwrap_or_default();
@@ -61,9 +61,17 @@ fn main() -> anyhow::Result<()> {
         }
         for ((gate, record), tiles) in &by {
             let moves = if *gate == 0 {
-                mfs::p0_record_player_moves(&mf, &man, *record as usize)
+                legaia_engine_field::man_field_scripts::p0_record_player_moves(
+                    &mf,
+                    &man,
+                    *record as usize,
+                )
             } else {
-                mfs::p2_record_player_moves(&mf, &man, *record as usize)
+                legaia_engine_field::man_field_scripts::p2_record_player_moves(
+                    &mf,
+                    &man,
+                    *record as usize,
+                )
             };
             let class = match moves.first().map(|m| m.kind) {
                 Some(PlayerMoveKind::MoveTo) => "teleport-0x23",

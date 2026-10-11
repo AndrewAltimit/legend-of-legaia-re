@@ -1,5 +1,7 @@
 use super::*;
-use legaia_asset::dance_chart::{DANCE_BONUS_LANES, DANCE_SCHEDULE_SLOTS, DANCE_SKILL_ROWS};
+use legaia_minigame_formats::dance_chart::{
+    DANCE_BONUS_LANES, DANCE_SCHEDULE_SLOTS, DANCE_SKILL_ROWS,
+};
 
 /// A 3-row chart with a known step layout for judging.
 fn chart() -> DanceChart {
@@ -621,7 +623,7 @@ fn scene_teardown_restores_the_caller_and_forces_a_bgm_reload() {
     assert!(s.restores_scene_block_base);
     assert_eq!(DANCE_SCENE_BLOCK_BASE, 0x4CC);
     assert_eq!(
-        legaia_asset::dance_cast::DANCE_SCENE_NAME,
+        legaia_minigame_formats::dance_cast::DANCE_SCENE_NAME,
         "other7",
         "the dance venue's scene name lives in the asset crate"
     );
@@ -777,8 +779,8 @@ fn clip_driver_gate_fires_on_spin_or_flag() {
     assert!(!dance_clip_driver_gate(-1, 0x2000));
 }
 
-fn probe_widget() -> legaia_asset::dance_art::DanceWidget {
-    legaia_asset::dance_art::DanceWidget {
+fn probe_widget() -> legaia_minigame_formats::dance_art::DanceWidget {
+    legaia_minigame_formats::dance_art::DanceWidget {
         scale: 0x1000,
         tpage: 0x0008,
         clut: 0x7D08,
@@ -1099,8 +1101,8 @@ fn the_emit_dispatch_rounds_a_negative_pair_toward_zero() {
 
 /// Five kinds whose clips carry distinct ids: idle `10 + k`, dance `20 + k`,
 /// move pair `p` = `100 + p` (pair 1 in the party bank).
-fn synthetic_kinds() -> Vec<legaia_asset::dance_cast::DanceKind> {
-    use legaia_asset::dance_cast::{DanceClip, DanceKind, MOVE_PAIRS};
+fn synthetic_kinds() -> Vec<legaia_minigame_formats::dance_cast::DanceKind> {
+    use legaia_minigame_formats::dance_cast::{DanceClip, DanceKind, MOVE_PAIRS};
     let clip = |anim_id: u16, party_bank: bool| DanceClip {
         anim_id,
         party_bank,
@@ -1170,7 +1172,7 @@ fn without_clip_lengths_the_note_latch_times_the_move() {
 /// covered every score on both hosts.
 #[test]
 fn hud_digits_are_emitted_before_their_score_boxes() {
-    use legaia_asset::dance_art::DanceWidget;
+    use legaia_minigame_formats::dance_art::DanceWidget;
     let mut g = game();
     // A synthetic widget table: each record's cell row `v` is its own index,
     // so a quad's source widget reads straight off its UVs.

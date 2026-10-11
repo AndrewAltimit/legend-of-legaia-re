@@ -10,7 +10,7 @@
 //! offset by `(op[5] * sin[yaw] + op[4] * cos[yaw]) >> 12`. No Sony bytes
 //! asserted beyond those derived halfwords.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 /// `(scene, partition-2 record, expected row 0)`.
@@ -38,7 +38,7 @@ fn a_raising_beat_writes_row_zero_and_clips_its_actors() {
             .as_ref()
             .and_then(|s| s.field_man_payload(&host.index).ok().flatten())
             .expect("MAN");
-        let mf = legaia_asset::man_section::parse(&man).expect("parse MAN");
+        let mf = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
         let flat = mf.header.partition_counts[0].max(0) as usize
             + mf.header.partition_counts[1].max(0) as usize
             + record;

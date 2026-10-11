@@ -1,11 +1,11 @@
 //! Two small simulation kernels of the PROT 0977 `other_game` overlay - the
 //! mode-24 sub-id-5 **arena door/init slot** whose contest settlement is
-//! `legaia_engine_core::muscle_dome::settle_contest`.
+//! `crate::muscle_dome::settle_contest`.
 //!
 //! The overlay's per-frame update drives a set of counters, scales each
 //! frame's step through [`step_scale`], and keys one rotating SPU voice
 //! through [`arena_voice_cue`]; the visible half is the sprite/decimal HUD in
-//! `legaia_engine_ui::other_game_hud`.
+//! `legaia_engine_ui::muscle_dome_hud`.
 //!
 //! Provenance: `ghidra/scripts/funcs/overlay_0977_other_game_801d14b0.txt`
 //! and `..._801d1288.txt`; ported from the disassembly.
@@ -17,20 +17,20 @@
 //! rolls four pending lanes into their sinks, one [`step_scale`] step per
 //! lane per frame with an [`arena_voice_cue`] blip per step.
 //!
-//! The lanes are `legaia_engine_core::muscle_dome::LegScoreRows`, and they do not all
+//! The lanes are `crate::muscle_dome::LegScoreRows`, and they do not all
 //! mean the same thing. Three of them - `round * 2`, `min(turns, 8)` and
 //! the outcome-table cell, each scaled `× max_hp / 100` - drain into the
 //! **same** accumulator `DAT_801D1AC8`, which the hub's restore state then
 //! adds to the fighter's HP: they are between-leg healing, not score. Only
 //! the fourth, the `(course, round)` score-table cell, drains into the
-//! running tally `_DAT_80084440` that `legaia_engine_core::muscle_dome::settle_contest`
+//! running tally `_DAT_80084440` that `crate::muscle_dome::settle_contest`
 //! settles into casino coins.
 //!
 //! So the scoring and the healing are one mechanism, which is why a dome
 //! contest costs no permanent HP. The values are computed by
-//! `legaia_engine_core::muscle_dome::leg_score_rows` and carried by
-//! `legaia_engine_core::muscle_dome::DomeContest`; the screen's geometry is
-//! `other_game_hud::HUB_SCORE_TALLY_LABELS` / `score_tally_quads`.
+//! `crate::muscle_dome::leg_score_rows` and carried by
+//! `crate::muscle_dome::DomeContest`; the screen's geometry is
+//! `muscle_dome_hud::HUB_SCORE_TALLY_LABELS` / `score_tally_quads`.
 //!
 //! # Wiring status is per item, not per module
 //!
@@ -183,7 +183,7 @@ pub fn cue_volume(word: u32) -> i32 {
 /// masks with `3` only when picking the voice, so it is a free-running u32.
 ///
 /// Named `arena_voice_cue` rather than `sfx_cue` on purpose:
-/// `MenuInput::sfx_cue` in `legaia_engine_core::menu_input` already holds that name, and a
+/// `MenuInput::sfx_cue` in `legaia_engine_system::menu_input` already holds that name, and a
 /// free function sharing a name with anything else is never receiver-gated by
 /// the reachability pass - the collision would eventually manufacture a false
 /// live edge onto this inert port. See
@@ -199,14 +199,14 @@ pub fn cue_volume(word: u32) -> i32 {
 // [`ScoreTallyStep::cues`]. `legaia-engine-audio` grew the explicit key-on
 // that takes it (`VoiceAttr` / `key_on_voice_attr`, the port of
 // `FUN_80065034`), and the native window drains the queue into it through
-// `AudioBgmDirector::key_on_voice_attr`. The browser minigames page owns a
+// `AudioDirector::key_on_voice_attr`. The browser minigames page owns a
 // live `WebAudioOut` of its own now and keys the same set through
 // `LegaiaMinigames::muscle_tally_voice`, driven off the INTERVAL screen's tick
 // because that page replays the ramp from the screen rather than stepping it
 // per frame.
 // The tally screen's audible per-lane "ka-ching" is a different mechanism
 // anyway: the hub's INTERVAL arm pre-schedules four cue ids on the staggered
-// vsync countdown (`legaia_engine_core::muscle_dome::HUB_TALLY_CUE_STAGGER`).
+// vsync countdown (`crate::muscle_dome::HUB_TALLY_CUE_STAGGER`).
 pub fn arena_voice_cue(counter: &mut u32, volume_word: u32) -> VoiceAttrCue {
     let voice = CUE_VOICE_BASE | (*counter & (CUE_VOICE_SLOTS - 1));
     let v = cue_volume(volume_word);
@@ -231,7 +231,7 @@ pub const TALLY_ROWS: usize = 6;
 
 /// A lane's fade counter must *exceed* this before the lane starts draining,
 /// and is reseeded to it on every draining frame
-/// (`legaia_engine_core::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS` is the `0x11` the
+/// (`crate::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS` is the `0x11` the
 /// `slti` compares against; this is the `0x10` the delay slot stores).
 pub const LANE_FADE_FULL: i32 = 0x10;
 
@@ -283,7 +283,7 @@ impl ScoreTallyRamp {
     /// Arm the roll from a finished leg's four lane values.
     ///
     /// The lane order is the drain order, which is
-    /// `legaia_engine_core::muscle_dome::LegScoreRows`'s own field order: `DAT_801D1ACC`
+    /// `crate::muscle_dome::LegScoreRows`'s own field order: `DAT_801D1ACC`
     /// takes the round lane and `DAT_801D1AD0` the turn lane. The arming
     /// routine computes them in the other order and stores the turn lane
     /// first, which reads as a swap until the two `lui` reloads in between
@@ -327,7 +327,7 @@ impl ScoreTallyRamp {
     /// only assignment of `0` in the routine.
     ///
     /// PORT: FUN_801cf074 (`0x801CF074..0x801CF294`, the simulation half; the
-    /// two emitter loops below it are `legaia_engine_ui::other_game_hud`)
+    /// two emitter loops below it are `legaia_engine_ui::muscle_dome_hud`)
     pub fn tick(&mut self, frame_delta: u8, boost: bool, volume_word: u32) -> ScoreTallyStep {
         let dt = i32::from(frame_delta);
         let mut out = ScoreTallyStep {

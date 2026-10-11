@@ -3,7 +3,7 @@
 
 Reads a `<category>_selection.txt` from `scripts/asset-investigation/build_tim_review.py` (a header
 `# category=<cat>` plus one fingerprint per line) and rewrites the coarse
-section of `crates/asset/src/data/tim_categories.tsv`:
+section of `crates/disc-audit/src/data/tim_categories.tsv`:
 
   - fingerprint in the selection            -> label = <category>   (promote)
   - currently <category> but NOT selected   -> label = "other"      (demote, so
@@ -35,7 +35,7 @@ COARSE_MARKER = "# --- Coarse"
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("selection")
-    ap.add_argument("--table", default="crates/asset/src/data/tim_categories.tsv")
+    ap.add_argument("--table", default="crates/disc-audit/src/data/tim_categories.tsv")
     ap.add_argument("--category", default=None, help="override category (else read from file header)")
     ap.add_argument(
         "--allow-demotions",

@@ -256,7 +256,7 @@ pub(crate) enum Cmd {
     ///     `scripts/scenarios.toml`. The scene comes from
     ///     `expected_active_scene`, the VRAM is read live from the
     ///     scenario's `.mc{slot}` save via `legaia-mednafen`'s GPU
-    ///     section parser. Optional `--frames N` boots a `BootSession`
+    ///     section parser. Optional `--frames N` boots a `NativeSession`
     ///     and ticks the engine before sampling, so dynamic VRAM
     ///     uploads land before the diff. `--strict` asserts byte-exact
     ///     match in the texpage region (y ≥ 256) and fails with the
@@ -323,7 +323,7 @@ pub(crate) enum Cmd {
         clut_regions: bool,
     },
     /// Mode-trace parity oracle (development diagnostic; Phase E3).
-    /// Boots a `BootSession` on the
+    /// Boots a `NativeSession` on the
     /// resolved scene, ticks it `--frames` times sampling
     /// `(scene_mode, active_scene)` per frame, emits the engine trace
     /// as JSONL, and (in scenario mode) compares the engine's settled
@@ -382,7 +382,7 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         strict: bool,
     },
-    /// Recomp-differential sim trace. Boots a `BootSession` on the scene,
+    /// Recomp-differential sim trace. Boots a `NativeSession` on the scene,
     /// ticks it `--frames` times, and emits the canonical frame-tagged
     /// state-trace JSONL (camera pose, player, per-actor positions +
     /// headings) in RETAIL units (PSX 12-bit angles, retail world units).
@@ -415,7 +415,7 @@ pub(crate) enum Cmd {
         #[arg(long, default_value = "-")]
         out: PathBuf,
     },
-    /// Audio-trace parity oracle. Boots a `BootSession` on the
+    /// Audio-trace parity oracle. Boots a `NativeSession` on the
     /// resolved scene, runs a private headless SPU + sequencer in
     /// parallel, ticks for `--frames` frames sampling
     /// `(voice_mask, voices[24], master_volume)` per frame, emits the
@@ -526,7 +526,7 @@ pub(crate) enum Cmd {
     ///
     /// Emits stereo PCM windows from both sides at 44.1 kHz:
     ///
-    ///   - **Engine**: boots a headless `BootSession`, runs a private
+    ///   - **Engine**: boots a headless `NativeSession`, runs a private
     ///     SPU + sequencer in parallel, routes field-VM op `0x35`
     ///     events through a `TraceBgmDirector`, accumulates per-frame
     ///     PCM over the trace window.
@@ -793,7 +793,7 @@ pub(crate) enum Cmd {
     /// When `--str-file` is provided the STR video is pre-decoded headlessly
     /// (frame count logged) before scene ticking begins. The scene label
     /// patterns that identify in-engine cutscenes (as opposed to FMV) are
-    /// described by `engine_core::scene::is_cutscene_label`.
+    /// described by `engine_scene::scene::is_cutscene_label`.
     #[command(display_order = 20)]
     Play {
         /// Starting scene name. Default: `town01`.
@@ -1132,7 +1132,7 @@ pub(crate) enum Cmd {
         /// Start from an LGSF save file (the `save` / save-screen shape,
         /// resume trailer included) instead of a door entry into `--scene`:
         /// the save lands the way a card Load does
-        /// (`BootSession::resume_save` - the save's own scene entered with the
+        /// (`NativeSession::resume_save` - the save's own scene entered with the
         /// save's position as the entry operand and no free-roam picker
         /// staging, then the world hydrated from the save). `--scene` is the
         /// fallback when the file carries no resume scene. The retail comparison corpus's

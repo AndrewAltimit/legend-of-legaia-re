@@ -4,10 +4,10 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (CI has no Sony disc).
 
-use legaia_engine_core::music_labels::{
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_system::music_labels::{
     BATTLE_BANK_BASE_ENTRY, BATTLE_BANK_BGM_IDS, battle_bank_bgm_id,
 };
-use legaia_engine_core::scene::SceneHost;
 
 /// The first `len` bytes of an entry's SEQ chunk (`pQES` onward).
 fn seq_head(bytes: &[u8], len: usize) -> Option<Vec<u8>> {

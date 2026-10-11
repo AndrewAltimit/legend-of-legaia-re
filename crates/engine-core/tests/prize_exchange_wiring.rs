@@ -10,9 +10,12 @@
 //! the park unparked, and no window ever opened at the koin1 / balden
 //! prize counters.
 
-use legaia_engine_core::menu_runtime::{MenuInput, MenuRuntime};
-use legaia_engine_core::prize_exchange::{PRIZE_EXCHANGE_VISITED_FLAG, PrizeRecord, parse_blocks};
+use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::world::World;
+use legaia_engine_menus::menu::MenuInput;
+use legaia_engine_minigames::prize_exchange::{
+    PRIZE_EXCHANGE_VISITED_FLAG, PrizeRecord, parse_blocks,
+};
 
 fn prize_world() -> World {
     let mut w = World::new();
@@ -185,8 +188,8 @@ fn parse_blocks_reads_the_table_at_its_file_offset() {
 /// held-count gate reads the bag's count.
 #[test]
 fn apply_redeem_grants_into_the_engine_bag() {
-    use legaia_engine_core::prize_exchange::apply_redeem;
-    use legaia_engine_core::world::ItemBag;
+    use legaia_engine_menus::item_bag::ItemBag;
+    use legaia_engine_minigames::prize_exchange::apply_redeem;
 
     let mut bag = ItemBag::new();
     bag.insert(0x20, 2);

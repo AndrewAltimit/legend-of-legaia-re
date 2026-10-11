@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Tool</dt><dd><code>asset account &lt;entry&gt;</code>; whole-TOC sweep <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/asset-investigation/byte-account-sweep.py"><code>scripts/asset-investigation/byte-account-sweep.py</code></a></dd>
-    <dt>Module</dt><dd><code>legaia_asset::byte_account</code></dd>
+    <dt>Module</dt><dd><code>legaia_disc_audit::byte_account</code></dd>
     <dt>Question</dt><dd>Not "what is this entry" but "which of its bytes does anything here consume, and what is the rest"</dd>
     <dt>Two figures</dt><dd><code>structural</code> (a walker followed the container's own layout) and <code>accounted</code> (that, plus what a magic sweep found in the residue)</dd>
     <dt>Output</dt><dd>Per-owner claims, per-shape residue, and the largest unclaimed runs - a worklist</dd>

@@ -62,7 +62,7 @@ The twelve sections, in the order a pack lists them:
 | `inline_text` | dialog/narration in raw carriers (v12 event-script prescripts, streaming-MAN dungeon scenes) | `raw:<prot>:0x<off>` | space-padded same-size overwrite directly in the PROT entry; in a streaming dungeon scene a longer line grows the uncompressed MAN chunk instead |
 | `ui_menu` | overlay-resident UI strings ([`ui-strings.md`](ui-strings.md)) | `ui:<prot>:0x<va>` | overwrite the NUL-terminated string in the PROT **overlay** entry in place at `file offset = va - base_va`, re-terminate (short writes zero-fill the old span) |
 | `system_text` | `SCUS_942.54` system strings outside the name tables ([`ui-strings.md`](ui-strings.md#system_text)) | `scus:str:0x<va>` | same as the name tables (span + alignment padding), from pinned VA windows (`translation::ui::SCUS_STRING_POOLS`) |
-| `place_names` | world-map quick-travel place names (`legaia_asset::worldmap_menu`) | `scus:cell:0x<va>` | fixed `0x20`-byte NUL-padded cell |
+| `place_names` | world-map quick-travel place names (`legaia_game_tables::worldmap_menu`) | `scus:cell:0x<va>` | fixed `0x20`-byte NUL-padded cell |
 | `monster_names` | enemy names: the battle name plaque and every battle line that names the enemy | `mon:<id>` | rewrite the name inside monster `id`'s record in the monster archive (PROT 867) and re-pack its fixed slot; a longer one grows the record |
 
 How much each mechanism allows, and what happens past it, is tabulated on
@@ -194,7 +194,7 @@ aliases imports byte-identically, and a re-export of the patched disc reads
 | `{ce:24}` | `{icon:monster2}` | the monster plate, 28 px wide |
 | `{ce:25}` | `{icon:fire-wide}` | the fire plate, 28 px wide |
 
-The table lives in one place, `legaia_patcher::translation::symbols::SYMBOLS`;
+The table lives in one place, `legaia_translate::symbols::SYMBOLS`;
 the translation workbench's symbol palette and preview read it, drawing each
 symbol from the sprites on the user's own disc
 (`legaia_font::escape_icons`). The first list of these symbols was contributed

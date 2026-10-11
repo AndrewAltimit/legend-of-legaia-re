@@ -6,16 +6,17 @@
 //! remaining count into the MM:SS.ff readout in the same pass.
 //!
 //! This exercises the join the two ports make through `World`: the installer
-//! hook (`FieldHost::op4c_n_d_sub3_party_setup` ->
+//! hook (`FieldFlagsHost::schedule_timed_flags` ->
 //! `World::schedule_timed_flags`) and the per-frame drain
 //! (`World::tick_escape_timer`, driving
-//! `legaia_engine_vm::escape_timer::EscapeTimer`).
+//! `legaia_engine_field::escape_timer::EscapeTimer`).
 //!
 //! Bytecode is hand-authored and the world is synthetic - no Sony bytes, no
 //! disc gate.
 
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::escape_timer::TimerInk;
+use legaia_engine_core::world::World;
+use legaia_engine_field::escape_timer::TimerInk;
+use legaia_engine_mode::mode::SceneMode;
 
 /// The retail-frame sub-clock only fires on ~60 % of sim ticks, so a test that
 /// wants `n` drained frames has to run more ticks than that. Run until the
@@ -130,7 +131,7 @@ fn a_modal_dialog_freezes_the_countdown() {
     let before = world.battle.escape_timer.remaining;
     assert!(before < 600);
 
-    world.dialog.current = Some(legaia_engine_core::world::DialogRequest {
+    world.dialog.current = Some(legaia_engine_field::dialog_state::DialogRequest {
         text_id: 0,
         inline: Vec::new(),
         world_x: 0,

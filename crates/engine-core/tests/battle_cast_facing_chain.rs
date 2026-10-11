@@ -1,7 +1,7 @@
 //! The cast-begin facing store, end to end through the live world.
 //!
 //! Chain under test: `World::enter_battle` seats every combatant from the
-//! retail stage tables (`legaia_engine_core::battle_seats`, `FUN_800513F0`) ->
+//! retail stage tables (`legaia_engine_battle::battle_seats`, `FUN_800513F0`) ->
 //! `World::tick` -> `World::step_battle` -> `BattleHostImpl::actor_position`
 //! (the `+0x34`/`+0x38` read) -> the action SM's `MagicCastBegin` arm ->
 //! `BattleActor::facing_angle` (`+0x46`).
@@ -12,9 +12,9 @@
 //!
 //! REF: FUN_801E295C, FUN_801DCEAC, FUN_80019B28
 
-use legaia_engine_core::battle_seats::{monster_seat, party_seat};
+use legaia_engine_battle::battle_seats::{monster_seat, party_seat};
+use legaia_engine_battle_vm::battle_action::{ActionState, bearing_12bit_approx};
 use legaia_engine_core::world::World;
-use legaia_engine_vm::battle_action::{ActionState, bearing_12bit_approx};
 
 /// A three-versus-four battle at the authored seats, with party slot 0 armed
 /// to cast at `target`, ticked until the SM leaves `MagicCastBegin`.

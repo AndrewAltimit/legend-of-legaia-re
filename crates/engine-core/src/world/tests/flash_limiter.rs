@@ -12,8 +12,8 @@ use super::*;
 
 const RECT: (u16, u16, u16, u16) = (0x20, 0x1FB, 16, 1);
 
-fn strobe_fx(v_add: i16) -> crate::clut_cell_fx::ClutCellFx {
-    crate::clut_cell_fx::ClutCellFx {
+fn strobe_fx(v_add: i16) -> legaia_engine_field::clut_cell_fx::ClutCellFx {
+    legaia_engine_field::clut_cell_fx::ClutCellFx {
         rect: RECT,
         h_add: 0,
         s_add: 0,
@@ -23,7 +23,9 @@ fn strobe_fx(v_add: i16) -> crate::clut_cell_fx::ClutCellFx {
     }
 }
 
-fn part_with(fx: crate::clut_cell_fx::ClutCellFx) -> crate::world::ambient::AmbientPart {
+fn part_with(
+    fx: legaia_engine_field::clut_cell_fx::ClutCellFx,
+) -> crate::world::ambient::AmbientPart {
     crate::world::ambient::AmbientPart {
         record_off: 0,
         model_sel: 0x4000,
@@ -95,7 +97,7 @@ fn guard_on_writes_the_limited_texels() {
     assert!(w.step_ambient_fx(&mut vram));
     // First application snapped to the target.
     let src = w.ambient.cell_captures[&RECT].clone();
-    let expect = crate::clut_cell_fx::apply_hsv_cell(&src, &strobe_fx(-256));
+    let expect = legaia_engine_field::clut_cell_fx::apply_hsv_cell(&src, &strobe_fx(-256));
     assert_eq!(row_at(&vram), expect);
     assert_eq!(w.ambient.flash_applied[&RECT], (-256, 0));
 }
@@ -112,7 +114,7 @@ fn guard_off_applies_retail_exact_targets_and_keeps_no_state() {
     assert_eq!(src, pristine);
     assert_eq!(
         row_at(&vram),
-        crate::clut_cell_fx::apply_hsv_cell(&src, &strobe_fx(-256))
+        legaia_engine_field::clut_cell_fx::apply_hsv_cell(&src, &strobe_fx(-256))
     );
     // Back to the other strobe phase: applied verbatim (pristine row).
     w.ambient.fx[0].cell_fx = Some(strobe_fx(0));

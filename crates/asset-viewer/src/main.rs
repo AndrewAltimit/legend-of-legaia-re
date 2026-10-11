@@ -33,16 +33,20 @@
 //! browser modes in [`browser`], the field / battle / world / dialog demos
 //! in [`field_app`] / [`battle_app`] / [`world_app`] / [`dialog_app`], SEQ
 //! playback in [`seq_play`], and the shared loaders / view payloads in
-//! [`loaders`] / [`tmd_view`] / [`stage_view`] / [`display`] / [`common`].
+//! [`loaders`] / [`tmd_view`] / [`stage_view`] / [`display`] / [`mesh_bounds`] /
+//! [`pad_keymap`] / [`scene_files`].
 
 mod battle_app;
 mod browser;
 mod cli;
-mod common;
+
 mod dialog_app;
 mod display;
 mod field_app;
 mod loaders;
+mod mesh_bounds;
+mod pad_keymap;
+mod scene_files;
 mod seq_play;
 mod stage_view;
 mod tmd_view;
@@ -58,13 +62,13 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use crate::battle_app::run_battle_scene;
 use crate::browser::{App, Browser, MeshBrowser, StageBrowser};
 use crate::cli::{Bundle, ShapeFilter, parse_hex_u64, scene_bundle_dirs};
-use crate::common::collect_tmds;
 use crate::dialog_app::run_dialog;
 use crate::display::Display;
 use crate::field_app::run_field;
 use crate::loaders::{
     load_save_icon_sheet, load_tim_path, load_tim_path_at_offset, load_vab_sample,
 };
+use crate::scene_files::collect_tmds;
 use crate::seq_play::run_seq_playback;
 use crate::stage_view::{collect_stage_files, load_stage_for_view};
 use crate::tmd_view::{TmdViewData, load_tmd_for_view};
@@ -260,7 +264,7 @@ enum Cmd {
     },
     /// Boot a CDNAME scene as a playable field-mode demo: opens a window,
     /// uploads the scene's TMDs as actors, wires keyboard / gamepad input
-    /// through `engine-core::input`, and overlays HUD text rendered via the
+    /// through `engine-system::input`, and overlays HUD text rendered via the
     /// extracted dialog font. When the scene carries an event-script PROT
     /// entry (`SceneEventScripts` or `SceneScriptedAssetTable`), the field
     /// VM is wired to drive its records - the HUD shows VM PC, last
@@ -273,7 +277,7 @@ enum Cmd {
         scene: String,
         /// Maximum actors to spawn. Capped at the number of distinct TMDs
         /// the scene's tmd_scan dir provides, then at
-        /// `engine-core::world::MAX_ACTORS` (64).
+        /// `legaia_engine_vm::MAX_ACTORS` (64).
         #[arg(long, default_value_t = 6)]
         max_actors: usize,
         /// `extracted/` root containing PROT.DAT + CDNAME.TXT + tmd_scan/
@@ -340,7 +344,7 @@ enum Cmd {
         scene: String,
         /// Number of actors to spawn. Capped at the number of distinct
         /// TMDs found in the scene's `tmd_scan/` dir, then at
-        /// `engine-core::world::MAX_ACTORS` (64).
+        /// `legaia_engine_vm::MAX_ACTORS` (64).
         #[arg(long, default_value_t = 6)]
         max_actors: usize,
         /// `extracted/` root containing PROT.DAT + CDNAME.TXT + tmd_scan/
@@ -367,13 +371,13 @@ enum Cmd {
 fn load_backdrop_mirror_table(
     explicit: Option<&std::path::Path>,
     prot_dat: &std::path::Path,
-) -> Option<legaia_asset::battle_backdrop::MirrorXTable> {
+) -> Option<legaia_scene_formats::battle_backdrop::MirrorXTable> {
     let path = match explicit {
         Some(p) => p.to_path_buf(),
         None => prot_dat.parent()?.join("SCUS_942.54"),
     };
     let bytes = std::fs::read(&path).ok()?;
-    let table = legaia_asset::battle_backdrop::MirrorXTable::from_scus(&bytes);
+    let table = legaia_scene_formats::battle_backdrop::MirrorXTable::from_scus(&bytes);
     match &table {
         Some(t) => log::info!(
             "battle-backdrop mirror table: {} stage(s) from {}",

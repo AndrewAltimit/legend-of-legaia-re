@@ -38,14 +38,12 @@ All retail routines here are resident in `SCUS_942.54` unless marked as battle-o
 
 | Port piece | Where |
 |---|---|
-| Party assembly, monster mesh + texture relocation | `crates/battle-models` (`battle_char_assembly`, `monster_archive`), re-exported by `legaia_asset` |
+| Party assembly, monster mesh + texture relocation | `crates/actor-formats` (`battle_char_assembly`, `monster_archive`) |
 | Per-fight form install | `engine-core::battle_party_form` |
 | Staged clip commit, ladder, rate arms | `engine-core` `world/actors/battle_anim.rs`, `world/battle/clip_ladder.rs`; `engine-battle-vm::battle_anim_rate` |
 | Tint pass, draw tick, ghost pass | `engine-battle-vm::{battle_actor_tint, battle_actor_tick, battle_action::camera_ghost}`, `engine-battle::battle_body_blend` |
 | Trails, streaks, after-images | `engine-battle-vm::battle_trail`, `engine-battle::battle_afterimage`, `render-kernels::{battle_trail, streak_pass, afterimage}` |
 | Hosts | `crates/engine-shell/src/window/battle.rs`; `crates/web-viewer/src/play_battle_render.rs`, `play_battle.rs`, `play_battle_fx.rs` |
-
-`engine-vm` re-exports the `engine-battle-vm` modules, `engine-core` re-exports `engine-battle`, and `engine-ui` re-exports `render-kernels`, so code and older prose name the same modules under either crate.
 
 ## Draw pipeline
 
@@ -76,7 +74,7 @@ flowchart TD
 
 The party draws the **battle-form meshes**, built per character the way the retail loader builds the blobs it installs into `DAT_8007C018[0..=2]`.
 
-- **Source.** Each member's mesh is spliced from the equipment-id sections of their player battle file (extraction PROT 863..865), selected by the equipped ids in the roster record's `+0x196..+0x19A` bytes. Parser: `legaia_asset::battle_char_assembly`.
+- **Source.** Each member's mesh is spliced from the equipment-id sections of their player battle file (extraction PROT 863..865), selected by the equipped ids in the roster record's `+0x196..+0x19A` bytes. Parser: `legaia_actor_formats::battle_char_assembly`.
 - **Relocation.** `battle_char_assembly::relocate_tsb_cba` is the registration-time TSB/CBA pass `FUN_80053A28`: texpages `x ∈ [512, 896), y = 256`, CLUT row `481 + slot`. See [`character-mesh.md` § Battle render](../formats/character-mesh.md#battle-render-load-time-tsbcba-relocation).
 - **Fallback.** PROT 1204 (the Baka Fighter / default-equipment sibling pack) is the per-member fallback when assembly fails. It also supplies the atlas pixel pages, uploaded at their authoring rects and, when an assembled mesh is bound, into the runtime band the relocated meshes sample.
 - **Fourth slot.** The runtime texture band and CLUT rows cover party slots `0..=2` only, so Terra (player file 866, idle stream 17 parts) has no relocation target and is not drawn.
@@ -90,13 +88,13 @@ The battle TMD is a set of object-local pieces (head, torso, limbs), not one pre
 - `expand_animation_for_objects` duplicates each `200+` equipment extra's **attach-bone** channel onto it (the assembler's `anm_bones` map), so duplicate weapon / Ra-Seru pieces coincide with their attach piece.
 - The PROT 1203 ANM (`other5`) is not this pose source. Its banks (Vahn @ 0 / Noa @ 9 / Gala @ 18) are authored against PROT 1204's own object order, which differs from the assembled tag order, so it is the rest pose of the **1204 fallback mesh only** (identity object→bone).
 
-Pinned live and cross-pipeline in `crates/engine-shell/tests/battle_party_pose_live.rs`.
+Pinned live and cross-pipeline in `crates/parity/tests/battle_party_pose_live.rs`.
 
 #### Palette
 
 Every upload block is `[CLUT struct][pixels]` and `FUN_80053B9C` writes both halves. The band uploads of `record[0]` and the five **equipped** sections therefore already put the character's palette on row `481 + slot`, with the equipped pieces in their own colours (a Ra-Seru armour set is not the unequipped default).
 
-The separator-default collectors (Vahn `parse_record`, Noa / Gala `collect_palette`) only paint a fallback picture: a PROT 1204 mesh, or an assembled mesh whose pool decode failed. Running them over a real band repaints every equipped piece in default colours. Pinned against two late-game captures in `crates/engine-core/tests/battle_party_palette_retail_capture.rs`.
+The separator-default collectors (Vahn `parse_record`, Noa / Gala `collect_palette`) only paint a fallback picture: a PROT 1204 mesh, or an assembled mesh whose pool decode failed. Running them over a real band repaints every equipped piece in default colours. Pinned against two late-game captures in `crates/parity/tests/battle_party_palette_retail_capture.rs`.
 
 #### Engine install
 
@@ -163,7 +161,7 @@ The mesh's primitives are textured through per-prim CBA / TSB. The palette and p
 
 #### Parser and tools
 
-`legaia_asset::monster_archive::mesh(entry, id) -> Option<MonsterMesh>` returns the decoded block plus the TMD / pool offsets; `MonsterMesh::texture()` decodes the pool into `MonsterTexture { palettes, indices, width, height }`.
+`legaia_actor_formats::monster_archive::mesh(entry, id) -> Option<MonsterMesh>` returns the decoded block plus the TMD / pool offsets; `MonsterMesh::texture()` decodes the pool into `MonsterTexture { palettes, indices, width, height }`.
 
 - CLI: `asset monster-archive --id N --obj <out>` exports Wavefront OBJ, `--texture-png <out>` bakes the texture page.
 - WASM: the `LegaiaViewer::monster_mesh_{positions,normals,indices,bounds,uvs,palette_index}` and `monster_texture_{indices,palette_rgba,dims}` accessors feed the WebGL viewer on the site's enemy-table page, which textures the model with the index→palette lookup the PSX GPU does in VRAM.
@@ -187,7 +185,7 @@ The commit `FUN_8004AD80` snaps `+0x1D9 = +0x1DA` and copies `+0x1DB` unconditio
 
 **Flinch or knockdown.** Decided at `0x800420F4..0x80042124`: flinch when `actor[+0x1F2] == 0` (no get-up entry) **and** the damage is survivable, knockdown otherwise. The `+0x1EF..+0x1F3` map is filled by `FUN_80054CB0` (`0x80055360..0x800553F0`), one slot per action tag `2/3/4/5/0xB`, with the tag-4 → tag-2 fallback at `0x80055428`. Every player battle file carries a tag-5 entry, so a party member takes the knockdown arm on any hit.
 
-**Engine.** The port models the reaction with an `Actor::battle_reaction` latch (`engine-core::world`), because its per-frame `pose(Idle)` hook is an engine-local channel with no retail counterpart and would otherwise cancel a reaction the frame after it starts. The latch does not outrank the staged channel: `commit_staged_battle_anim` clears it whenever it installs a staged clip, so a struck party member still plays its approach and swings on its own turn. Regressions: `crates/engine-core/tests/battle_reaction_stage_precedence.rs`, and the GPU-free pose oracle `crates/asset/tests/battle_pose_orientation_real.rs` (the upright family is upright, the reaction family prone).
+**Engine.** The port models the reaction with an `Actor::battle_reaction` latch (`engine-core::world`), because its per-frame `pose(Idle)` hook is an engine-local channel with no retail counterpart and would otherwise cancel a reaction the frame after it starts. The latch does not outrank the staged channel: `commit_staged_battle_anim` clears it whenever it installs a staged clip, so a struck party member still plays its approach and swings on its own turn. Regressions: `crates/engine-core/tests/battle_reaction_stage_precedence.rs`, and the GPU-free pose oracle `crates/actor-formats/tests/battle_pose_orientation_real.rs` (the upright family is upright, the reaction family prone).
 
 ### The commit's clip-tag ladder
 
@@ -268,7 +266,7 @@ The `0x1A` arm also raises the `ARTS!!` banner byte `ctx[+0x28B]` (from the queu
 
 **Restore.** `FUN_801E93C8` is `jal`ed from the shared tail at `0x801E5F64`, which the Done arm falls into and which states `0x1E`, `0x1F` and `0x20` jump to on nearly every pass (`0x801E39AC`, `0x801E3A68`, `0x801E3A80`, `0x801E3AF8`, `0x801E3B18`, `0x801E56C8`, `0x801E55A0..0x801E5658`). Once the acting actor's materialised art clip has ended (party: `+0x1D9 < 0x10`; monster: committed record flag `+0x87 == 0`), every slot returns to `8` and `ctx[+0x243]` clears. The battle is back at full speed the pass the last art clip ends, so a monster an art killed plays the rest of its knockdown at normal speed.
 
-**Port.** Kernel `legaia_engine_vm::battle_anim_rate` (`BattleActor::anim_rate`, default 8); commit arms in `engine-core`'s `commit_staged_battle_anim`; the rate-scaled advance in `battle_anim::MonsterAnimPlayer::tick_rated`; the restore in `battle_gauge_rearm::restore_anim_rates`.
+**Port.** Kernel `legaia_engine_battle_vm::battle_anim_rate` (`BattleActor::anim_rate`, default 8); commit arms in `engine-core`'s `commit_staged_battle_anim`; the rate-scaled advance in `battle_anim::MonsterAnimPlayer::tick_rated`; the restore in `battle_gauge_rearm::restore_anim_rates`.
 
 ### The after-image ghost walk (`FUN_80049348`)
 
@@ -288,11 +286,11 @@ The per-actor draw tick `FUN_800480D8` runs `FUN_80049348`, which draws **two gh
 **Gate.** Ring id `> 0x10` (`sltiu 0x11` at `0x80049460`). The anim tick stamps the ring id from the committed record's own bytes, never from staging state:
 
 - A party seat copies the committed dynamic slot `+0x1D9` (`0x80047FCC`). A party art materialises at dynamic slot `0x10`, except the `0x1A` / re-staged-`0x10` commits, which land at `0x11`. Party mesh ghosts therefore belong to the **SpecialStarter dash** and to **chained** arts (a re-staged `0x10`); an ordinary art swing leaves the 2D weapon trail instead. Capture `battle_melee_hit_spark` holds Vahn at `+0x1D9 = +0x1FB = 0x11` mid-Somersault with his ghosts drawn, and Gimard at ring id `0x10` with none.
-- A monster seat stamps `record[+0x77] + 0x10`, or `0x11` when the record's `+0x87` solo byte is `1` (`0x80048044..0x80048060`). A monster ghosts only on a clip whose record carries a non-zero `+0x77` or `+0x87 == 1`: the solo / special entries (Tetsu's tag-`0x0F` special carries both; Gobu Gobu has none). No idle entry qualifies, so an idle or walking monster never ghosts. Not "any non-idle clip tag": see [re-do-not-re-walk.md](../reference/re-do-not-re-walk.md#battle--arts--level-up); disc census `crates/engine-core/tests/battle_afterimage_gate_real.rs`.
+- A monster seat stamps `record[+0x77] + 0x10`, or `0x11` when the record's `+0x87` solo byte is `1` (`0x80048044..0x80048060`). A monster ghosts only on a clip whose record carries a non-zero `+0x77` or `+0x87 == 1`: the solo / special entries (Tetsu's tag-`0x0F` special carries both; Gobu Gobu has none). No idle entry qualifies, so an idle or walking monster never ghosts. Not "any non-idle clip tag": see [re-do-not-re-walk.md](../reference/re-do-not-re-walk.md#battle--arts--level-up); disc census `crates/engine-battle/tests/battle_afterimage_gate_real.rs`.
 
 **Colour.** Flat additive. The draw wrapper `FUN_80043390` decodes the colour word's mode byte (`0x85`): bit `0x80` → the GP0 ABE bit, low bits → ABR mode 1 (B + F), bit `0x04` → the flat-colour prim bank with the GTE far colour as the RGB. The base colour is per character, from the SCUS word table `0x80076908` (Vahn red `0x60/0x30/0x30`, Noa green, Gala blue; monsters `0x80076914` olive `0x50/0x50/0x30`), stepped down `0x101010` per drawn ghost. The ghost's OT depth is pushed `0x50` buckets deeper than the live body (`FUN_80048A08`, the `+0x10` bit-`0x800000` arms).
 
-**Port.** Kernel `engine-core::battle_afterimage` (schedule / gate / colour law, file `crates/engine-battle/src/battle_afterimage.rs`), history ring on `Actor::battle_pose_history`, plan API `World::battle_ghost_draws`.
+**Port.** Kernel `engine-battle::battle_afterimage` (schedule / gate / colour law, file `crates/engine-battle/src/battle_afterimage.rs`), history ring on `Actor::battle_pose_history`, plan API `World::battle_ghost_draws`.
 
 - The native window draws each ghost as a flat-coloured additive posed mesh on the colour pipeline.
 - The browser play page uploads per-actor ghost mesh copies on its flat + additive path and poses them from `play_battle_actor_ghost_pose`.
@@ -315,10 +313,10 @@ and the GPU still multiplies the texel through it (`texel * colour / 128`). A hi
 Facts pinned by capture and data:
 
 - `battle_gimard_tail_fire_a` / `_b` (Tail Fire striking Vahn) hold `+0x21F = 1`, `+0x0C = 0x1000` and a red `+0x04` word eight lane-units apart between the two frames (the arm-0 ease at `1 * 8` per frame). The struck Vahn reads red `160..248` over green / blue `8..80` across his texture.
-- The impact table's five words are red, two blues, a violet and white (`0x801F53D4`, parsed by `legaia_asset::move_power::parse_impact_effect_table`).
+- The impact table's five words are red, two blues, a violet and white (`0x801F53D4`, parsed by `legaia_game_tables::move_power::parse_impact_effect_table`).
 - A colour word of `0` is the summon-hide's "not drawn" value (`FUN_800480D8`'s word-zero arm), not a black tint.
 
-**Engine.** Both hosts render the whole tint pass through the per-draw depth-cue seam, one rule for every writer. `World::battle_actor_draw_plan` runs `engine-vm::battle_actor_tint` (the port of `FUN_8004A908`) and the draw tick `engine-vm::battle_actor_tick` (`FUN_800480D8`) per body per frame; both hosts take the far colour and `IR0` from it and skip the bodies it does not draw.
+**Engine.** Both hosts render the whole tint pass through the per-draw depth-cue seam, one rule for every writer. `World::battle_actor_draw_plan` runs `engine-battle-vm::battle_actor_tint` (the port of `FUN_8004A908`) and the draw tick `engine-battle-vm::battle_actor_tick` (`FUN_800480D8`) per body per frame; both hosts take the far colour and `IR0` from it and skip the bodies it does not draw.
 
 The capture / defeat fade (`+0x21C == 2`, arm 2) additionally ORs `0x81000000` into the node's mode word, so the fading actor draws additive (ABR 1, `B + F`). `BattleActorDrawPlan::semi_mode` decodes that top byte and `apply_body_blend` (`engine-battle::battle_body_blend`) raises the blend on every stream the body draws, on both hosts. The fade takes the tint cue only while its word raises ABE (`tint_cue_applies`), so it is never drawn as an opaque black silhouette, and the body drops out once its lanes reach zero.
 
@@ -356,7 +354,7 @@ The action SM's `0x5A` end-of-action sweep clears the bits on every slot (`0x801
 
 **`ctx[+0x26B]`** is the battle's side-band stream request. `FUN_80055B4C` stores `a0 + 1` there (`0x80055B58`) for the victory hook's win-pose archive and the summon stagers' streams; the stream tick `FUN_801F17F8` clears it once the stream lands (`0x801F19D8`). The pass reads it only with the battle-end signal `0xFE` up, where the request is the win-pose archive the results sequencer also waits on (`0x8004E5C0`). It reads `0` on the one results-frame state (`noa_levelup_banner`). The command-flow byte `ctx[+6]` reads `0x1E`, `0x28` and `0x14` in the library's command-band and round-start states, and `0xFF` in every state of a running action.
 
-**Engine.** `engine-vm::battle_action::camera_ghost_pass` is the kernel. `World::tick_battle_camera_ghost` runs it every frame after the battle camera tick, converting the engine's compacted seating to retail's fixed pool slots, and keeps the word in `BattleActor::flag_word`. `battle_actor_draw_plan` hands that to the tint pass as its top byte (`BattleActorDrawPlan::semi_mode`). Both hosts draw the ghost: `engine-core::battle_body_blend` ORs the word's ABE / ABR into the body's TSB words, as `FUN_80043390` does into its packets.
+**Engine.** `engine-battle-vm::battle_action::camera_ghost_pass` is the kernel. `World::tick_battle_camera_ghost` runs it every frame after the battle camera tick, converting the engine's compacted seating to retail's fixed pool slots, and keeps the word in `BattleActor::flag_word`. `battle_actor_draw_plan` hands that to the tint pass as its top byte (`BattleActorDrawPlan::semi_mode`). Both hosts draw the ghost: `engine-battle::battle_body_blend` ORs the word's ABE / ABR into the body's TSB words, as `FUN_80043390` does into its packets.
 
 - `ctx[+6]` is the engine's flow mirror `BattleFlowState` (the selection band byte for byte) while the command band runs, `0xFF` while the action SM owns the round, and `0x14` before the first round executes. Retail's one-frame `0xFE` hand-off has no engine frame.
 - `ctx[+0x26B]` follows the measured span, since the engine streams nothing. On `rim_elm_gimard_victory` the request rises with the battle-end signal (v322) and clears 28 vsyncs later (v350); the phase walk's own two CD waits then run the rest of the 80-vsync load hold (`autorun_victory_timeline.lua`, columns `req26b` / `prog26c`). Bodies near the camera ghost again for the last 52 vsyncs, and the engine raises the byte for exactly the first 28 (`VictorySequence::side_band_request_up`).
@@ -401,7 +399,7 @@ The swept `POLY_G4` streak an ordinary arts swing leaves behind a party characte
 3. Projects each vertex through `FUN_800195A8`.
 4. Drops `0x3B808080` packets into the OT - a `POLY_G4`: four-point gouraud, semi-transparent, untextured. `0x808080` is a placeholder the per-vertex fill overwrites; `v0/v2` are the leading step's pair carrying the band's lead colour, `v1/v3` trailing. The OT slot is the average of the four corner depths with the same rounding fixup.
 
-**Port.** Trigger table and sweep / band schedule: `engine-vm::battle_trail`. Projected band packets: `engine-ui::battle_trail` (a gouraud `FlatQuad` through the shared screen-prim pass, ABR 1). `World::battle_weapon_trail_draws` samples the sweep off the pose-history ring (step `k` = the pose `2k` frames ago, the retail rewind under a constant rate), bounded by the ring's per-frame clip key. Both hosts project with their own battle camera and composite the bands over the scene; retail's OT interleave with scene depth is not reproduced.
+**Port.** Trigger table and sweep / band schedule: `engine-battle-vm::battle_trail`. Projected band packets: `render-kernels::battle_trail` (a gouraud `FlatQuad` through the shared screen-prim pass, ABR 1). `World::battle_weapon_trail_draws` samples the sweep off the pose-history ring (step `k` = the pose `2k` frames ago, the retail rewind under a constant rate), bounded by the ring's per-frame clip key. Both hosts project with their own battle camera and composite the bands over the scene; retail's OT interleave with scene depth is not reproduced.
 
 <a id="weapon-trail-afterimage-streak"></a>
 
@@ -413,7 +411,7 @@ The terminator stages both in one block (`FUN_801DEA50`, `0x801DF284..0x801DF2E0
 
 The launch position is not the bare actor position. Retail re-seeds its stack pair from `actor[+0x34..+0x3B]` at the top of every record iteration and runs the scale + facing rotation on it before the terminator test, so the seed loop copies out the terminator record's own placement.
 
-**Port.** `engine-core::action_effect_script::MoveFxStreak` (file `crates/engine-effects/src/action_effect_script.rs`) is the block: record id rather than pointer, one shared launch point rather than four identical copies. The live per-frame walk `World::step_actor_effect_script` installs it and `World::move_fx_streak` reads it back. `engine-ui::streak_pass` projects it once per frame and hands the corners to the packet builder `afterimage::build_afterimage_quad`, whose jitter law, brightness band, UVs, CLUT (`0x7700 + trail id`) and texpage (`0x0027`) are retail's.
+**Port.** `engine-effects::action_effect_script::MoveFxStreak` (file `crates/engine-effects/src/action_effect_script.rs`) is the block: record id rather than pointer, one shared launch point rather than four identical copies. The live per-frame walk `World::step_actor_effect_script` installs it and `World::move_fx_streak` reads it back. `render-kernels::streak_pass` projects it once per frame and hands the corners to the packet builder `afterimage::build_afterimage_quad`, whose jitter law, brightness band, UVs, CLUT (`0x7700 + trail id`) and texpage (`0x0027`) are retail's.
 
 Both hosts draw it: the native window appends the quads to its screen-space textured batch (`move_fx_streak_quads` in `redraw_passes.rs`), the play page emits them as screen prims at `streak_pass::MOVE_FX_STREAK_OT` (`play_battle.rs`).
 
@@ -422,7 +420,7 @@ Differences from retail:
 - **Projection** is the engine camera's, not the GTE's. `project_streak_corners_mvp` takes the screen-space gradient of the battle MVP and fans the corners out along the screen axes - the operation `FUN_800195A8` performs in view space. The exact port `billboard::project_billboard` needs a GTE rotation / translation pair the engine's battle camera does not carry.
 - **Depth.** Retail links each packet at the projected billboard's own OT bucket, inside the scene. The hosts draw the streak over the actors, not interleaved with them.
 
-**When it draws.** The pass is gated on `World::active_move_fx_trail_texpage()`, which is set while a move-FX scene is staged: `World::spawn_move_fx` surfaces the move-power record's `+0x0b` trail id when it stages the record's Spawn prototypes, and drops it when the scene drains. The spawn is requested from the cast path (`World::request_move_fx_spawn`, `world/battle/casting.rs`). A plain weapon swing (the `0x0C..0x0F` bytes of the actor's `+0x1DF` action queue) stages no move-FX scene, so it draws the weapon-trail bands and no streak.
+**When it draws.** The pass is gated on `World::active_move_fx_trail_texpage()`, which is set while a move-FX scene is staged: `World::spawn_move_fx` surfaces the move-power record's `+0x0b` trail id when it stages the record's Spawn prototypes, and drops it when the scene drains. The spawn is requested from the cast path (`World::request_move_fx_spawn`, `world/battle/casting/spell_resolution.rs`). A plain weapon swing (the `0x0C..0x0F` bytes of the actor's `+0x1DF` action queue) stages no move-FX scene, so it draws the weapon-trail bands and no streak.
 
 <a id="the-streak-emitter-schedule-decoded-dispatcher"></a>
 
@@ -437,7 +435,7 @@ Which 2D emitter runs is not per-move data. The phase driver `FUN_801E09F8` walk
 | Party | `< 0x201` | chained ribbon `FUN_801E1D98` | `0x801E0CD0` |
 | Monster | any | chained ribbon | `0x801E0CD0` |
 
-Port: `engine-ui::streak_pass::streak_quads_scheduled` + `MoveFxStreak::tick_counter`.
+Port: `render-kernels::streak_pass::streak_quads_scheduled` + `MoveFxStreak::tick_counter`.
 
 The ribbon has a second caller outside that dispatcher: the per-clip pass of `FUN_8004CE2C` (SCUS). Its Gala tag-`0x67` arm (`0x8004D1E8..0x8004D248`) calls `FUN_801E1D98(&target[+0x3C], 0xC)` on every frame the committed clip's cursor sits in `0xB0..=0xF0` (`addiu a0,s1,0x3c` in the branch delay slot at `0x8004D220`, `li a1,0xc` at `0x8004D224`). The anchor is the target's seat vector (`+0x3C..+0x43`, copied verbatim from the spawn node by the battle setup at `0x8005158C..0x80051598`), not the launch point `ctx[+0x1144]`, and the trail id is the literal `0xC`, not the move record's `+0x0B`. Port: the impact pass stores the frame's source in `BattleState::clip_ribbon` and both hosts draw it through `streak_pass::clip_ribbon_quads`.
 
@@ -463,7 +461,7 @@ Because the X wobble is shared inside an edge, the strip keeps its width and sna
 
 Retail links every segment at the **same** OT bucket, the depth `FUN_800195A8` returned for the bottom billboard, so the strip is depth-flat.
 
-Port: `legaia_engine_ui::afterimage::build_streak_ribbon` (injected rng, unit-tested); projection `project_ribbon_corners`. Arena allocation and OT linking belong to the retail renderer the port replaces.
+Port: `legaia_render_kernels::afterimage::build_streak_ribbon` (injected rng, unit-tested); projection `project_ribbon_corners`. Arena allocation and OT linking belong to the retail renderer the port replaces.
 
 ## Port hosts
 
@@ -471,7 +469,7 @@ Both hosts tick the same `World` and draw from the same kernels; each owns only 
 
 ### Native renderer bridge (from-scratch engine)
 
-The engine draws the decoded monster through its standard PSX-VRAM texture path. `MonsterMesh::battle_render_mesh(slot, &mut vram)` (`crates/battle-models/src/monster_archive/mesh.rs`) reproduces the loader's per-slot relocation:
+The engine draws the decoded monster through its standard PSX-VRAM texture path. `MonsterMesh::battle_render_mesh(slot, &mut vram)` (`crates/actor-formats/src/monster_archive/mesh.rs`) reproduces the loader's per-slot relocation:
 
 - writes the CLUT region to VRAM row `484 + slot`, with the loader's STP bit on every non-zero entry (`battle_clut_region`). Without that bit the near-camera ghost and the defeat fade, both semi-transparent draws, blend nothing and draw the body solid;
 - writes the 4bpp page to `((5 + slot) * 64, 256)`;
@@ -490,6 +488,6 @@ The browser play page runs the same `Field → Battle` edge through `legaia_web_
 - **Actors.** Each actor's idle / action / swing / art-bank clips are installed on the world so the shared battle SM poses them. Meshes are exported object-local, and the page poses them per frame from `play_battle_actor_pose` (the engine's live `pose_frame`). Actor draws compose the same live-facing yaw and retail 4× world scale as the native window.
 - **Per-tick VRAM re-stamps.** Facial animation, the Stone CLUT recolour and the effect CLUT stage run the same three drains against the battle VRAM copy; the page re-uploads on `play_battle_vram_take_dirty`.
 
-Shared with the native window from one kernel: the phase-scripted camera (`battle_cam_script`), the ground grid's per-draw depth cue, the battle-intro screen-prim emitter (`tick_battle_intro`), the mid-battle summon-creature spawn (`spawn_summon_creature_web`), the tint / ghost / blend plan (`play_battle_body_blend`), the weapon trail, the move-FX streak and clip ribbon, the after-image ghosts, and the floating damage numerals and `N HIT` / `TOTAL` counter (`engine-ui::battle_numerals`, sampling retail's 24x24 cells off the resident battle effect atlas; the page falls back to font-atlas text only on frames before the battle VRAM exists).
+Shared with the native window from one kernel: the phase-scripted camera (`battle_cam_script`), the ground grid's per-draw depth cue, the battle-intro screen-prim emitter (`tick_battle_intro`), the mid-battle summon-creature spawn (`spawn_summon_creature_web`), the tint / ghost / blend plan (`play_battle_body_blend`), the weapon trail, the move-FX streak and clip ribbon, the after-image ghosts, and the floating damage numerals and `N HIT` / `TOTAL` counter (`render-kernels::battle_numerals`, sampling retail's 24x24 cells off the resident battle effect atlas; the page falls back to font-atlas text only on frames before the battle VRAM exists).
 
 Remaining host difference: the field move-VM stager parts resolve against the scene TMD pack, which the page does not upload while a battle is on screen, so they are drawn on field frames (`build_field_fx`) and not during a battle.

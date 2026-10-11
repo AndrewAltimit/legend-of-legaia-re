@@ -19,7 +19,7 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 /// Prefer an already-extracted tree; fall back to opening the disc `.bin`
@@ -46,7 +46,7 @@ fn freeroam_channels_seed_and_execute() {
         return;
     };
 
-    let scene = legaia_asset::new_game::OPENING_SCENE; // town01, free-roam
+    let scene = legaia_game_tables::new_game::OPENING_SCENE; // town01, free-roam
     host.enter_field_scene(scene, 0).expect("enter town01");
 
     // 1. Free-roam path: no cutscene timeline drives this scene.

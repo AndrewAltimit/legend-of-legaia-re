@@ -112,7 +112,7 @@ ground truth.
 
 ## Provenance + parser
 
-`legaia_asset::equip_stats::EquipStatTable::from_scus` resolves the property +
+`legaia_game_tables::equip_stats::EquipStatTable::from_scus` resolves the property +
 bonus tables from a `SCUS_942.54` image at runtime (`t_addr -> file-offset` map,
 identical to the [item-name table](item-table.md) resolver). The disc-gated
 `equip_stats_real` test pins the attack / defense bytes, equip masks, and slot
@@ -124,11 +124,11 @@ equip-screen gate (`a3 = 1 << char_index`).
 
 ## Engine consumption
 
-`legaia_engine_core::equipment::DiscEquipInfo` lifts the `+6` character mask and
+`legaia_engine_menus::equipment::DiscEquipInfo` lifts the `+6` character mask and
 the `+7` slot category off the parsed table, keyed by real item ids:
 `can_equip(id, party_slot)` answers the per-character equip gate, `category(id)`
 returns the disc slot category. The equip session
-(`legaia_engine_core::equip_session::EquipSession::new_with_restrictions`)
+(`legaia_engine_menus::equip_session::EquipSession::new_with_restrictions`)
 filters each character's per-slot item list on it - a Vahn-only weapon no longer
 appears in Noa's weapon picker. For the four UI slots the `+7` byte resolves
 cleanly (weapon / body armor / helmet / boots) the list is also category-gated;
@@ -182,9 +182,9 @@ and not the data will go looking for equipment passives that are not missing.
 The disc-gated `equip_stats_real` pins the column at the sentinel across all
 parsed rows so the premise stays measured rather than assumed.
 
-Parser side: `legaia_asset::equip_stats::EquipBonus::passive_index` /
+Parser side: `legaia_game_tables::equip_stats::EquipBonus::passive_index` /
 `has_passive`, mirrored row-keyed at
-`legaia_engine_core::equipment::DiscEquipInfo::row_passive_index`.
+`legaia_engine_menus::equipment::DiscEquipInfo::row_passive_index`.
 
 ## See also
 

@@ -21,8 +21,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use legaia_asset::field_disasm::{OpCensus, OpKey};
 use legaia_prot::cdname;
+use legaia_scene_formats::field_disasm::{OpCensus, OpKey};
 
 /// One carrier's census plus enough provenance to reduce a hit to bytes.
 struct CarrierCensus {
@@ -85,14 +85,14 @@ pub(crate) fn field_op_census(
             if !seen.insert(man.clone()) {
                 continue;
             }
-            let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
                 continue;
             };
             man_payloads_seen += 1;
             let mut c = OpCensus::default();
-            legaia_asset::field_disasm::tally_man(&man_file, &man, &mut c, None);
+            legaia_scene_formats::field_disasm::tally_man(&man_file, &man, &mut c, None);
             let bodies = if context {
-                legaia_asset::field_disasm::man_script_spans(&man_file, &man)
+                legaia_scene_formats::field_disasm::man_script_spans(&man_file, &man)
                     .into_iter()
                     .map(|(p, r, start, pc0, len)| {
                         (format!("p{p}[{r}]"), man[start..start + len].to_vec(), pc0)
@@ -111,9 +111,11 @@ pub(crate) fn field_op_census(
             });
         }
 
-        let is_event = legaia_asset::scene_event_scripts::detect(&buf).is_some()
-            || legaia_asset::scene_event_scripts::detect_structural(&buf).is_some();
-        if is_event && let Some(ranges) = legaia_asset::scene_event_scripts::record_ranges(&buf) {
+        let is_event = legaia_scene_formats::scene_event_scripts::detect(&buf).is_some()
+            || legaia_scene_formats::scene_event_scripts::detect_structural(&buf).is_some();
+        if is_event
+            && let Some(ranges) = legaia_scene_formats::scene_event_scripts::record_ranges(&buf)
+        {
             let mut c = OpCensus::default();
             for &(a, b) in &ranges {
                 if let Some(body) = buf.get(a..b) {
@@ -238,7 +240,7 @@ pub(crate) fn field_op_census(
 /// descriptors (LZS-packed) and every `type 0x03` DATA_FIELD stream chunk.
 fn man_payloads(buf: &[u8]) -> Vec<(&'static str, Vec<u8>)> {
     let mut out: Vec<(&'static str, Vec<u8>)> = Vec::new();
-    if let Some(table) = legaia_asset::scene_asset_table::detect(buf) {
+    if let Some(table) = legaia_scene_formats::scene_asset_table::detect(buf) {
         for d in table.descriptors.iter().filter(|d| d.type_byte == 0x03) {
             let start = d.data_offset as usize;
             if start >= buf.len() {
@@ -250,14 +252,14 @@ fn man_payloads(buf: &[u8]) -> Vec<(&'static str, Vec<u8>)> {
             }
         }
     }
-    if let Ok(report) = legaia_asset::parse_streaming(buf, 4096) {
+    if let Ok(report) = legaia_container_formats::parse_streaming(buf, 4096) {
         for chunk in &report.chunks {
             if chunk.type_byte != 0x03 {
                 continue;
             }
             let start = chunk.header_offset + 4;
             if let Some(payload) = buf.get(start..start.saturating_add(chunk.size as usize))
-                && legaia_asset::man_section::parse(payload).is_ok()
+                && legaia_scene_formats::man_section::parse(payload).is_ok()
             {
                 out.push(("stream", payload.to_vec()));
             }
@@ -287,7 +289,7 @@ fn parse_op_key(s: &str) -> Result<OpKey> {
 /// read rather than trusted. A linear walk can stay error-free through message
 /// text and re-sync on a byte that is no opcode; this is the check for that.
 fn print_hit_context(c: &CarrierCensus, key: OpKey) {
-    use legaia_asset::field_disasm::{LinearWalker, clean_hit_offsets, format_instruction};
+    use legaia_scene_formats::field_disasm::{LinearWalker, clean_hit_offsets, format_instruction};
     for (label, body, pc0) in &c.bodies {
         for hit in clean_hit_offsets(body, *pc0, key) {
             println!("    {label} @ 0x{hit:04X}");

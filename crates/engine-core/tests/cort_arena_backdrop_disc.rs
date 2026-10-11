@@ -16,12 +16,13 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::battle_backdrop::{GROUND_TSB, ground_grid_drawable};
-use legaia_engine_core::battle_stage_module::{ARRIVAL_GROUND_BLANK, StageEffect};
-use legaia_engine_core::scene::{Scene, SceneHost};
-use legaia_engine_core::scene_resources::{
+use legaia_engine_battle::battle_stage_module::{ARRIVAL_GROUND_BLANK, StageEffect};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::Scene;
+use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
+use legaia_scene_formats::battle_backdrop::{GROUND_TSB, ground_grid_drawable};
 
 fn extracted() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -42,7 +43,7 @@ fn extracted() -> Option<PathBuf> {
 
 /// The distinct `(CBA, TSB)` pairs the textured prims of `objects` sample.
 fn sampled(tmd: &legaia_tmd::Tmd, raw: &[u8], objects: &[usize]) -> Vec<(u16, u16)> {
-    let sub = legaia_asset::battle_backdrop::objects_tmd(tmd, objects);
+    let sub = legaia_scene_formats::battle_backdrop::objects_tmd(tmd, objects);
     let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&sub, raw);
     let mut v: Vec<(u16, u16)> = mesh.cba_tsb.iter().map(|c| (c[0], c[1])).collect();
     v.sort_unstable();
@@ -107,7 +108,7 @@ fn the_cort_arena_draws_the_flesh_shell_after_the_arrival() {
     // The ground tile the grid samples is resident in the stage VRAM until
     // the hand-back's `MoveImage` blanks it.
     let mut vram = res.vram.clone();
-    legaia_engine_core::scene::upload_battle_stage_tims_into_vram(&scene, stage, &mut vram);
+    legaia_engine_scene::scene::upload_battle_stage_tims_into_vram(&scene, stage, &mut vram);
     assert!(
         ground_grid_drawable(&vram),
         "the stage carries a ground tile"

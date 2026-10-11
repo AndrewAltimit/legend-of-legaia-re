@@ -1,7 +1,7 @@
 //! Equipment classification: recover which item ids are equippable gear
 //! (weapons / armor / accessories) from the disc's own item-name table.
 //!
-//! This is the id pool the **bonus equipment drop** ([`crate::bonus_drop`])
+//! This is the id pool the **bonus equipment drop** ([`legaia_code_hooks::bonus_drop`])
 //! embeds in its injected reward-routine table - the low-chance extra drop picks
 //! uniformly from it. A monster has a single drop slot, so equipment is not a
 //! data edit of that slot (which would destroy the normal drop) but an additive
@@ -10,7 +10,7 @@
 //! ## Classification (no committed Sony bytes)
 //!
 //! The retail item id space is one flat 256-entry table shared by consumables,
-//! key items, and equipment (see [`legaia_asset::item_names`]). Nothing on the
+//! key items, and equipment (see [`legaia_game_tables::item_names`]). Nothing on the
 //! disc cleanly flags "this id is a weapon" in a single byte, so we classify by
 //! **name**: every weapon / armor / accessory in the curated, public
 //! [`legaia_gamedata`] tables is matched (case-insensitively) against the
@@ -22,7 +22,7 @@
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 
-use legaia_asset::item_names::ItemNameTable;
+use legaia_game_tables::item_names::ItemNameTable;
 use legaia_gamedata::Database;
 
 /// One equippable item eligible to be granted as the bonus equipment drop.

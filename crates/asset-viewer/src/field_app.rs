@@ -3,21 +3,19 @@
 //! the field VM over the scene's event-script records, and overlays a HUD
 //! with VM telemetry + a dialog panel.
 
-use crate::common::{
-    WorldActorMesh, collect_scene_tim_dirs, collect_scene_tmds, keymap_pad, mesh_aabb,
-    pad_button_label,
-};
+use crate::mesh_bounds::{WorldActorMesh, mesh_aabb};
+use crate::pad_keymap::{keymap_pad, pad_button_label};
+use crate::scene_files::{collect_scene_tim_dirs, collect_scene_tmds};
 use anyhow::{Context, Result};
-use legaia_engine_core::input::{InputState, PadButton};
 use legaia_engine_render::glam::{Mat4, Vec3};
 use legaia_engine_render::{
-    RenderTarget, Scene as RenderScene, SceneDraw, TextDraw, TextOverlay, UploadedFontAtlas,
-    UploadedVram,
-    legaia_tim::Vram,
-    text_draws_for,
+    RenderTarget, Scene as RenderScene, SceneDraw, TextOverlay, UploadedFontAtlas, UploadedVram,
     window::{EngineWindow, orbit_camera_mvp},
 };
+use legaia_engine_system::input::{InputState, PadButton};
+use legaia_engine_ui::{TextDraw, text_draws_for};
 use legaia_font::Font;
+use legaia_tim::Vram;
 use std::path::PathBuf;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -32,8 +30,9 @@ pub(crate) fn run_field(
     initial_record: usize,
     cycle_records: bool,
 ) -> Result<()> {
-    use legaia_engine_core::scene::{ProtIndex, Scene};
-    use legaia_engine_core::world::{SceneMode, World};
+    use legaia_engine_core::world::World;
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_scene::scene::{ProtIndex, Scene};
 
     if max_actors == 0 {
         anyhow::bail!("max_actors must be >= 1");
@@ -105,7 +104,7 @@ pub(crate) fn run_field(
     // Pull the MES container if the scene has one. Cloning the SceneMes
     // (which owns its bytes) decouples the FieldApp from `scene`'s
     // borrow lifetime so the panel can outlive the loader's local data.
-    let scene_assets = legaia_engine_core::scene_assets::SceneAssets::build(&scene);
+    let scene_assets = legaia_engine_scene::scene_assets::SceneAssets::build(&scene);
     let scene_mes = scene_assets.mes.clone();
     if scene_mes.is_some() {
         log::info!("field scene: scene MES container present - dialog opcodes will render");
@@ -227,11 +226,11 @@ impl Default for FieldVmStats {
     }
 }
 
-/// Short kind tag for a [`legaia_engine_core::field_events::FieldEvent`].
+/// Short kind tag for a [`legaia_engine_field::field_events::FieldEvent`].
 ///
 /// Used as the histogram key in [`FieldVmStats::field_event_counts`].
-fn field_event_tag(e: &legaia_engine_core::field_events::FieldEvent) -> &'static str {
-    use legaia_engine_core::field_events::FieldEvent as E;
+fn field_event_tag(e: &legaia_engine_field::field_events::FieldEvent) -> &'static str {
+    use legaia_engine_field::field_events::FieldEvent as E;
     match e {
         E::Bgm { .. } => "Bgm",
         E::GiveItem { .. } => "GiveItem",
@@ -322,11 +321,11 @@ struct FieldApp {
     /// Snapshot of the scene's MES container, used to build a dialog
     /// panel when the field VM emits an `OpenDialog` request. `None` when
     /// the scene has no MES entry.
-    scene_mes: Option<legaia_engine_core::scene_assets::SceneMes>,
+    scene_mes: Option<legaia_engine_dialog::dialog::SceneMes>,
     /// Live dialog panel - populated when the field VM hits opcode 0x3F
     /// and cleared when the user dismisses the box. Drives the
     /// per-frame dialog-window text under the HUD.
-    active_dialog: Option<legaia_engine_core::dialog::OwnedDialogPanel>,
+    active_dialog: Option<legaia_engine_dialog::dialog::OwnedDialogPanel>,
     /// Edge-trigger cache for Cross - used to advance one page per press
     /// instead of "advance every frame Cross is held."
     prev_input_pad: u16,
@@ -508,7 +507,7 @@ impl FieldApp {
             return;
         };
         if let Some(mut panel) =
-            legaia_engine_core::dialog::OwnedDialogPanel::from_scene_mes(mes, req.text_id)
+            legaia_engine_dialog::dialog::OwnedDialogPanel::from_scene_mes(mes, req.text_id)
         {
             panel.set_glyphs_per_frame(2);
             self.active_dialog = Some(panel);

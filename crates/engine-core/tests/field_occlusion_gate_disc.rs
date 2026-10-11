@@ -12,10 +12,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::field_env;
 use legaia_engine_core::field_occlusion::FieldOccluders;
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::{
+use legaia_engine_scene::field_env;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 
@@ -72,7 +72,7 @@ fn keikoku_corridor_walk_does_not_arm_the_gate() {
         .flatten()
         .unwrap_or_default()
         .into_iter()
-        .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+        .filter(|p| p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0)
         .collect();
     let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &tiles, floor_lut);
     let placements_rec = scene

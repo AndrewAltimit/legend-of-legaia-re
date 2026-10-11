@@ -1,13 +1,8 @@
 # legaia-arts-patch
 
-The disc patcher's Tactical Arts layer, split out of
-[`legaia-patcher`](../patcher/README.md): every edit whose subject is an art -
+The disc patcher's Tactical Arts layer: every edit whose subject is an art -
 the combo that triggers it, the damage it deals, the AP it grants and costs,
-and the Super Arts' list, menu and power. `legaia-patcher` depends on this
-crate, never the other way round, and re-exports every module at its old path
-(`legaia_patcher::arts`, `legaia_patcher::super_art_list`, ...), so the CLI,
-the browser patcher and the disc-gated tests name the same paths they always
-did.
+and the Super Arts' list, menu and power.
 
 No Sony bytes: the data edits mutate a player battle file's `record[0]` handed
 in as bytes, the code mods are assembled from the
@@ -32,22 +27,21 @@ and [`docs/formats/art-data.md`](../../docs/formats/art-data.md); the flags
 and their exclusions are in
 [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md).
 
-## The split line
+## What decides that a module sits here
 
-A module sits here when it closes over only the arts tables of
-[`legaia-art`](../art/README.md), the encoders and arena bounds of
-`legaia-code-hooks`, and the seeded generator of
-[`legaia-disc-patch`](../disc-patch/README.md). The crate root aliases `mips`,
-`mips_sim`, `shiny_seru`, `seru_overlay` and `rng` at the `crate::<module>`
-paths the files were written against.
+Its subject is a Tactical Art, and it needs only the arts tables of
+[`legaia-art`](../art/README.md), the encoders and the arena map of
+[`legaia-code-hooks`](../code-hooks/README.md) (`mips`, `arenas`), and the
+seeded generator of [`legaia-disc-patch`](../disc-patch/README.md). It names
+those crates directly and depends on no other feature crate.
 
-What stays in `legaia-patcher`: the `apply` layer that sequences these edits
-onto a disc and enforces which flags exclude each other, and the two arts
-mods whose builders reach into it - the Super Arts Pack (`super_arts_pack`)
-and the arts-name fix (`arts_name_fix`). The disc-gated oracles
-(`crates/patcher/tests/arts_*_real.rs`, `super_art_*_real.rs`,
-`oscillating_ap_real.rs`) stay with the patcher too, since they drive the
-edits through `apply`.
+What stays in [`legaia-patcher`](../patcher/README.md): the `apply` layer
+that sequences these edits onto a disc and enforces which flags exclude each
+other, and the two arts mods whose builders reach into it - the Super Arts
+Pack (`super_arts_pack`) and the arts-name fix (`arts_name_fix`). The
+disc-gated oracles (`crates/patcher/tests/arts_*_real.rs`,
+`super_art_*_real.rs`, `oscillating_ap_real.rs`) stay with the patcher too,
+since they drive the edits through `apply`.
 
 ## See also
 

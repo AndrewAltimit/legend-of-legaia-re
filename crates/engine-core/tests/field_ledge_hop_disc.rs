@@ -18,9 +18,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::DefaultMapIdResolver;
+use legaia_engine_system::input::PadButton;
 
 /// Retail's movement-disabled / hop-lock bit on the player actor's `+0x10`.
 const MOVE_LOCK: u32 = 0x0008_0000;

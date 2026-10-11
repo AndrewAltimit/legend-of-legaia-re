@@ -6,32 +6,27 @@
 //! the `World`-free system layer under the engine.
 //!
 //! Every module's whole dependency closure inside the engine is in this
-//! crate or below it, so it sits strictly below `legaia-engine-core`,
-//! which re-exports each module at its old path. Doc links that pointed
-//! back up at `engine-core` are plain code spans, since rustdoc cannot
-//! resolve a link into a dependent crate. See the crate README for the
-//! module map.
+//! crate or below it, so it sits strictly below `legaia-engine-core`. Doc
+//! comments name `engine-core` items in plain code spans, since rustdoc
+//! cannot resolve a link into a dependent crate. See the crate README for
+//! the module map.
 
 #![forbid(unsafe_code)]
 
-#[cfg(test)]
-use legaia_engine_battle::retail_magic;
-#[cfg(test)]
-use legaia_engine_battle::spells;
-
-pub mod capture_observations;
 pub mod chunk_install;
-pub mod cutscene;
 pub mod draw_census;
 pub mod fade;
 pub mod fade_ramp;
 pub mod input;
-pub mod mdec_dma_sync;
+pub mod menu_input;
 pub mod mode_entry_init;
-pub mod movie_audio;
+pub mod movie;
 pub mod music_labels;
+pub mod pad;
 pub mod pause_wipe;
 pub mod ram_map;
+pub mod rand;
 pub mod retail_pad;
 pub mod scene_name_sync;
 pub mod sound_state;
+pub mod story_flag_state;

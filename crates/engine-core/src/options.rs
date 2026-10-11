@@ -65,13 +65,13 @@
 //! Browsing -> Done` - commits happen at popup confirm (retail writes the
 //! config word immediately; backing out of the screen never reverts).
 
-use crate::input::{Mapping, PadButton};
-use crate::key_rebind::{KeyRebindEvent, KeyRebindInput, KeyRebindSession};
 use anyhow::Result;
+use legaia_engine_menus::key_rebind::{KeyRebindEvent, KeyRebindInput, KeyRebindSession};
+use legaia_engine_system::input::{Mapping, PadButton};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-pub use legaia_engine_menus::option_values::{
+use legaia_engine_menus::option_values::{
     AudioMode, BattleCameraOpt, BattleCommandOpt, FieldMoveOpt, HpDisplayOpt, SelectAttackOpt,
 };
 
@@ -124,7 +124,7 @@ pub struct OptionsState {
     /// of the scene than retail. Pure render framing: never feeds the
     /// world simulation, so replays / oracles are unaffected (headless
     /// hosts don't read options and keep the engine-core `Retail` default).
-    pub camera_distance: crate::camera::CameraDistance,
+    pub camera_distance: legaia_engine_field::camera::CameraDistance,
     /// Opt-in precise-movement toggle (engine-only, non-retail): mirrors
     /// into [`crate::world::FieldLocomotion::precise_movement`](crate::world::FieldLocomotion::precise_movement)
     /// by windowed hosts. Default off = retail's quantised 4/8-way remap.
@@ -161,14 +161,14 @@ pub struct OptionsState {
     pub retail_view_window: bool,
     /// Volumetric ground fog (engine-only, non-retail): a low drifting mist
     /// bank over the scenes that read as misty or night, parted by the
-    /// characters walking through it ([`crate::fog_volume`]). Mirrors into
+    /// characters walking through it ([`legaia_render_kernels::fog_volume`]). Mirrors into
     /// [`crate::world::WorldToggles::volumetric_fog`]. **Default on**; off is
     /// the frame without the feature, pixel for pixel. Presentation only -
     /// the bank reads the actors and never writes back.
     pub volumetric_fog: bool,
     /// Enhanced lighting (engine-only, non-retail): the scene mood's ambient
     /// and key light, the derived lamp point lights, emissive surfaces and
-    /// their glow (`legaia_engine_ui::scene_lighting`). Both windowed hosts
+    /// their glow (`legaia_render_kernels::scene_lighting`). Both windowed hosts
     /// read it (`I` in `play-window`, the play page's checkbox). **Default
     /// on** - the enhanced side is the better experience, and its daylight
     /// mood stays close to the baked brightness; off is the faithful
@@ -177,7 +177,7 @@ pub struct OptionsState {
     pub enhanced_lighting: bool,
     /// The time of day enhanced lighting lights scenes under: `auto` (the
     /// scene's own mood - daylight outdoors, dim interiors and caves),
-    /// `day`, `dusk` or `night` (`legaia_engine_ui::scene_lighting::TimeOfDay`
+    /// `day`, `dusk` or `night` (`legaia_render_kernels::scene_lighting::TimeOfDay`
     /// names; an unknown name reads as `auto`). `F8` in `play-window`, the
     /// page's selector.
     pub lighting_time_of_day: String,
@@ -199,7 +199,7 @@ impl Default for OptionsState {
             sfx_volume: 8,
             message_speed: 5,
             muted: false,
-            camera_distance: crate::camera::CameraDistance::Far,
+            camera_distance: legaia_engine_field::camera::CameraDistance::Far,
             precise_movement: false,
             reduce_flashing: true,
             retail_static_window: true,
@@ -242,7 +242,7 @@ impl OptionsState {
     /// a cycle that wrote only the camera was undone by the next apply and
     /// never reached the store. The native window's `T` and the page's
     /// camera-distance control both step through here.
-    pub fn cycle_camera_distance(&mut self) -> crate::camera::CameraDistance {
+    pub fn cycle_camera_distance(&mut self) -> legaia_engine_field::camera::CameraDistance {
         self.camera_distance = self.camera_distance.cycle();
         self.camera_distance
     }
@@ -785,7 +785,7 @@ impl OptionsSession {
             cursor: k.cursor(),
             awaiting: matches!(
                 k.phase(),
-                crate::key_rebind::KeyRebindPhase::AwaitingKey { .. }
+                legaia_engine_menus::key_rebind::KeyRebindPhase::AwaitingKey { .. }
             ),
         });
         OptionsScreenModel {
@@ -821,7 +821,7 @@ impl OptionsSession {
     ///
     /// `key_pressed` is consumed only while the key-rebind sub-screen is
     /// awaiting a key, and it is the engine's own key-name vocabulary
-    /// (`"Z"`, `"RShift"`, ... - [`crate::input::KEY_NAME_DOM_CODES`] maps it
+    /// (`"Z"`, `"RShift"`, ... - [`legaia_engine_system::input::KEY_NAME_DOM_CODES`] maps it
     /// to the browser's `KeyboardEvent.code`), so both hosts hand over the
     /// same strings the TOML config and `legaia-engine config set --binding`
     /// speak.
@@ -975,7 +975,7 @@ mod tests {
     /// on its camera and persists agrees with the next apply.
     #[test]
     fn camera_distance_cycle_steps_the_stored_option() {
-        use crate::camera::CameraDistance;
+        use legaia_engine_field::camera::CameraDistance;
         let mut o = OptionsState::default();
         assert_eq!(o.camera_distance, CameraDistance::Far);
         assert_eq!(o.cycle_camera_distance(), CameraDistance::Farther);

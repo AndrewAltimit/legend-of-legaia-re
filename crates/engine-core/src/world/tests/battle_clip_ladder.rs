@@ -3,10 +3,10 @@
 //! and the monster-death arm `0x8004B094..0x8004B6A0`).
 
 use super::*;
-use vm::battle_action::ActorFlags;
+use legaia_engine_battle_vm::battle_action::ActorFlags;
 
 fn clip(action_id: u8) -> MonsterAnimation {
-    use legaia_asset::monster_archive::PartPose;
+    use legaia_actor_formats::monster_archive::PartPose;
     MonsterAnimation {
         action_id,
         rate: 2,

@@ -12,7 +12,7 @@
 //!   - `build_engine_vram_bytes_prepass` - pure `SceneResources` build,
 //!     no engine ticking. Fast, deterministic, what the scene-bundle
 //!     loader produces at load time.
-//!   - `build_engine_vram_bytes_with_frames` - wraps `BootSession` and
+//!   - `build_engine_vram_bytes_with_frames` - wraps `NativeSession` and
 //!     ticks `frames` times before sampling, so dynamic uploads (CLUT
 //!     swaps, fog ramps) land in the snapshot.
 //!
@@ -22,12 +22,13 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::{
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 
-use crate::{BootConfig, BootSession};
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 
 /// PSX VRAM dimensions in BGR555 cells.
 pub const VRAM_WIDTH: usize = 1024;
@@ -58,7 +59,7 @@ pub fn vram_to_le_bytes(vram: &legaia_tim::Vram) -> Vec<u8> {
 /// oracle would report the terrain pages (grass / water) as a phantom gap the
 /// engine doesn't actually have.
 pub fn oracle_load_kind(scene_name: &str) -> SceneLoadKind {
-    if legaia_engine_core::scene::is_world_map_scene(scene_name) {
+    if legaia_engine_scene::scene::is_world_map_scene(scene_name) {
         SceneLoadKind::WorldMap
     } else {
         SceneLoadKind::Field
@@ -66,7 +67,7 @@ pub fn oracle_load_kind(scene_name: &str) -> SceneLoadKind {
 }
 
 /// Build engine-side VRAM via the targeted-upload pre-pass. No
-/// `BootSession` involvement - fast and stateless. Picks the load kind via
+/// `NativeSession` involvement - fast and stateless. Picks the load kind via
 /// [`oracle_load_kind`] so the standalone build matches what the engine
 /// uploads live.
 pub fn build_engine_vram_bytes_prepass(
@@ -126,7 +127,7 @@ pub fn build_engine_vram_bytes_prepass_with_kind(
     // effect *pixels* field-resident but uploads their CLUTs (rows 473..=478)
     // at battle entry, so writing the CLUTs here would be a wrong static upload.
     // Soft-fail: a scene without the cluster just stays as-is.
-    let _ = legaia_engine_core::scene::upload_effect_textures_into_vram(
+    let _ = legaia_engine_scene::scene::upload_effect_textures_into_vram(
         &index,
         &mut resources.vram,
         false,
@@ -134,7 +135,7 @@ pub fn build_engine_vram_bytes_prepass_with_kind(
     Ok(vram_to_le_bytes(&resources.vram))
 }
 
-/// Boot a `BootSession` on `scene_name`, tick it `frames` times, then
+/// Boot a `NativeSession` on `scene_name`, tick it `frames` times, then
 /// sample its VRAM. Use this when the oracle needs to catch dynamic
 /// uploads that the pre-pass doesn't see.
 pub fn build_engine_vram_bytes_with_frames(
@@ -151,8 +152,8 @@ pub fn build_engine_vram_bytes_with_frames(
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     for _ in 0..frames {
         let _ = session.tick()?;
@@ -161,7 +162,7 @@ pub fn build_engine_vram_bytes_with_frames(
         .host
         .resources
         .as_ref()
-        .context("BootSession did not produce SceneResources after ticking")?;
+        .context("NativeSession did not produce SceneResources after ticking")?;
     Ok(vram_to_le_bytes(&resources.vram))
 }
 
@@ -225,12 +226,12 @@ pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 /// CLUT cells the **world-map walk-view runtime rewrites** (water / shoreline
 /// palette cycling). Disc-derived: the exclusion set is the eight 16x1
 /// `MoveImage` **destination cells of the kingdom-bundle slot-5 CLUT-walk
-/// table** (`legaia_asset::clut_walk`, byte-identical across PROT 0085 /
+/// table** (`legaia_scene_formats::clut_walk`, byte-identical across PROT 0085 /
 /// 0244 / 0391) - `(0/16/32, 506)`, `(0/16/32, 508)`, `(32, 509)`,
 /// `(48, 500)` - folded per row. The walker (`FUN_8001ada4` case 0xB, one
 /// actor per entry) rewrites each whole 16-entry cell every few game ticks,
 /// so a capture holds an arbitrary animation phase there, never the disc
-/// base CLUT. The disc-gated `clut_walk_real` test in `legaia-asset` pins
+/// base CLUT. The disc-gated `clut_walk_real` test in `legaia-scene-formats` pins
 /// the destination fold against this constant's cell values.
 ///
 /// The ten-state map01 capture census that originally pinned these columns
@@ -251,7 +252,7 @@ pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 /// The destination-cell set is kingdom-universal (the operand table is the
 /// same file in all three bundles): the resident Sebucus / Karisto captures
 /// hold strip-frame content at the same cells
-/// (`crates/engine-shell/tests/world_map_ocean_clut_live.rs`).
+/// (`crates/parity/tests/world_map_ocean_clut_live.rs`).
 pub const WORLD_MAP_CLUT_CYCLE_CELLS: [(usize, std::ops::Range<usize>); 4] =
     [(500, 48..64), (506, 0..48), (508, 0..48), (509, 32..48)];
 
@@ -266,7 +267,7 @@ pub fn clear_world_map_clut_cycle_rows(mask: &mut [bool]) {
 
 /// Refine a per-scene static mask with **cross-scene** evidence for the
 /// global shared effect-texture band (`befect_data`, see
-/// [`legaia_engine_core::scene::effect_texture_image_rects`]): a cell inside
+/// [`legaia_engine_scene::scene::effect_texture_image_rects`]): a cell inside
 /// those rects stays static only if every capture of **every** scene holds
 /// the same word there. The band is one global disc source uploaded
 /// identically for all field scenes, but a few of its pixels are
@@ -372,7 +373,7 @@ pub fn first_static_upload_divergence(
 
 fn open_index(extracted_root: &Path, disc: Option<&Path>) -> Result<ProtIndex> {
     if let Some(disc_path) = disc {
-        use legaia_engine_core::{DiscVfs, Vfs};
+        use legaia_engine_scene::vfs::{DiscVfs, Vfs};
         let vfs = DiscVfs::open(disc_path)
             .with_context(|| format!("open disc image {}", disc_path.display()))?;
         let prot_bytes = vfs

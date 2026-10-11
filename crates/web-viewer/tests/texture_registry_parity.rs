@@ -69,8 +69,8 @@ impl From<&TexRow> for Row {
 /// entry, then the save-slot portrait loop. Copied, not called.
 fn legacy_rows(prot: &[u8], spans: &[(u64, u64, u32)]) -> Vec<Row> {
     let mut out = Vec::new();
-    let raw = legaia_asset::tim_catalog::build_from_spans(prot, spans);
-    let deep = legaia_asset::tim_deep_catalog::build_from_spans(prot, spans);
+    let raw = legaia_disc_audit::tim_catalog::build_from_spans(prot, spans);
+    let deep = legaia_disc_audit::tim_deep_catalog::build_from_spans(prot, spans);
 
     for t in &raw {
         // A catalog row that no longer strict-parses emitted no grid row.
@@ -119,12 +119,12 @@ fn legacy_rows(prot: &[u8], spans: &[(u64, u64, u32)]) -> Vec<Row> {
     }
 
     // Save-slot portraits: fifteen, not sixteen.
-    let entry = legaia_asset::save_icon::PROT_ENTRY as u32;
+    let entry = legaia_ui_formats::save_icon::PROT_ENTRY as u32;
     if let Some(&(off, len, _)) = spans.iter().find(|&&(_, _, idx)| idx == entry)
         && let Some(bytes) = prot.get(off as usize..(off + len) as usize)
-        && let Ok(sheet) = legaia_asset::save_icon::parse_entry(bytes)
+        && let Ok(sheet) = legaia_ui_formats::save_icon::parse_entry(bytes)
     {
-        for slot in 0..legaia_asset::save_icon::USABLE_TILE_COUNT {
+        for slot in 0..legaia_ui_formats::save_icon::USABLE_TILE_COUNT {
             if sheet.tile_rgba(slot).is_err() {
                 continue;
             }
@@ -133,12 +133,12 @@ fn legacy_rows(prot: &[u8], spans: &[(u64, u64, u32)]) -> Vec<Row> {
                 entry: entry as i64,
                 section: slot as i64,
                 offset: sheet.tile_clut_offset(slot) as u64,
-                width: legaia_asset::save_icon::TILE_SIZE as u32,
-                height: legaia_asset::save_icon::TILE_SIZE as u32,
+                width: legaia_ui_formats::save_icon::TILE_SIZE as u32,
+                height: legaia_ui_formats::save_icon::TILE_SIZE as u32,
                 bpp: 4,
                 cluts: 1,
-                bytes: legaia_asset::save_icon::TILE_BLOCK_BYTES
-                    + legaia_asset::save_icon::TILE_CLUT_BYTES,
+                bytes: legaia_ui_formats::save_icon::TILE_BLOCK_BYTES
+                    + legaia_ui_formats::save_icon::TILE_CLUT_BYTES,
                 label: Some("save-slot portrait".to_string()),
             });
         }
@@ -483,7 +483,7 @@ fn the_browsers_own_disc_reader_reaches_the_equipment_name_table() {
 
     // The anchor, at the id the descriptor table carries: item `0x13` is
     // Gala's first-tier Ra-Seru weapon.
-    let names = legaia_asset::item_names::ItemNameTable::from_scus(&browser)
+    let names = legaia_game_tables::item_names::ItemNameTable::from_scus(&browser)
         .expect("item-name table from the browser's bytes");
     assert_eq!(names.name(0x13), Some("Ra-Seru Ozma $1"));
 
@@ -524,7 +524,7 @@ fn the_browsers_own_disc_reader_reaches_the_equipment_name_table() {
     // merely happens to read that way.
     let file = entry_bytes(&prot, &spans, 865);
     let mut id = 0u32;
-    let blocks = legaia_asset::battle_texture_catalog::build_from_file_with_names(
+    let blocks = legaia_actor_formats::battle_texture_catalog::build_from_file_with_names(
         865,
         &file,
         &mut id,

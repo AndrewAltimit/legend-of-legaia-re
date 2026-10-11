@@ -24,7 +24,7 @@
 //! `+0x1DF`, the cast clip at `+0x1E0` and the opening shot at `+0x1E1` -
 //! case `7` for an id below `0x25`, otherwise the byte at
 //! `0x801F66D8 + id - 0x25` (`0x801EA548..0x801EA574`), then `0xFF`
-//! (`legaia_asset::spell_anim_pairs::SpellAnimPairs::opening_shot`).
+//! (`legaia_game_tables::spell_anim_pairs::SpellAnimPairs::opening_shot`).
 //! `battle_gimard_tail_fire_a` holds `[0x27, 8, 8, 0xFF]`: the table's `7`
 //! for Tail Fire, already rewritten to `8` by the live flame, and retail's
 //! camera reads case 8 exactly - pitch `0x40`, `TR (0, 0x400, 0x800)`, yaw

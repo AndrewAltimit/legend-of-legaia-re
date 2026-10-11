@@ -27,16 +27,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::actor_handler::ActorHandler;
-use legaia_engine_core::field_actor_clone::{CloneSource, clone_plan, modulation_rgb};
-use legaia_engine_core::field_channels::FieldChannel;
-use legaia_engine_core::man_field_scripts::{
-    CLEAN_RESYNC_INSNS, partition_record_span, scene_man_carriers,
-};
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
+use legaia_engine_field::actor_handler::ActorHandler;
+use legaia_engine_field::field_actor_clone::{CloneSource, clone_plan, modulation_rgb};
+use legaia_engine_field::field_channels::FieldChannel;
+use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
+use legaia_engine_scene::man_census::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_vm::field::FieldCtx;
-use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker};
+use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
 /// One decoded clone instruction, with the bytes it consumed.
 #[derive(Debug, Clone)]
@@ -102,7 +101,7 @@ fn census(root: &Path) -> Vec<Site> {
         };
         for carrier in scene_man_carriers(&index, &scene) {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             for partition in 0..3 {

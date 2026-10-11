@@ -5,13 +5,13 @@
 //! The composition itself - which windows a screen frames, which painter
 //! draws its title tab, where the modals sit in the sprite order and the
 //! final stage scale - lives in
-//! [`legaia_engine_ui::pause_menu`](legaia_engine_render::pause_menu), so the
+//! [`legaia_engine_ui::pause_menu`](legaia_engine_ui::pause_menu), so the
 //! browser play page runs the same one. This module used to own a private
 //! copy of it, which is both a tier-7 drift risk and the reason no library
 //! test could enter a single pause-menu draw builder.
 
 use super::*;
-use legaia_engine_render::pause_menu::{
+use legaia_engine_ui::pause_menu::{
     EquipComposeInput, GenericContent, ItemsScreenView, KeyRebindView, MagicScreenView, MenuRects,
     OptionsScreenView, PauseMenuCtx, PauseMenuDraws, PauseScreen, SpecialConfirmView,
     StatusScreenView, TopLevelView, art_learned_notice_draws, equip_screen_compose,
@@ -43,7 +43,7 @@ impl PlayWindowApp {
     /// widget VM a one-command open script - `[open window 6]` and
     /// `[open window 5]`. Both are content-only draws off the disc-parsed
     /// rect, and both take their text from the overlay's own string pool
-    /// via [`legaia_engine_core::pause_screens::ContextLockedLabels`], so
+    /// via [`legaia_engine_menus::pause_screens::ContextLockedLabels`], so
     /// no label is invented here.
     pub(super) fn context_locked_screen_draws(
         &self,
@@ -114,26 +114,26 @@ impl PlayWindowApp {
     /// Top-level pause menu: the command list, the money / play-time box and
     /// the party overview panel.
     ///
-    /// The menu session lives on the `BootSession` (the headless host of the
+    /// The menu session lives on the `NativeSession` (the headless host of the
     /// CARD/menu mode); the window only renders it.
     pub(super) fn field_menu_root_draws(&self, surface_w: u32, surface_h: u32) -> PauseMenuDraws {
         let Some(menu) = self.session.field_menu.as_ref() else {
             return PauseMenuDraws::default();
         };
         let view = menu.view();
-        let rows: Vec<legaia_engine_render::FieldMenuRowView<'_>> = view
+        let rows: Vec<legaia_engine_ui::FieldMenuRowView<'_>> = view
             .rows
             .iter()
-            .map(|r| legaia_engine_render::FieldMenuRowView {
+            .map(|r| legaia_engine_ui::FieldMenuRowView {
                 label: r.label,
                 enabled: r.enabled,
             })
             .collect();
         let snaps =
             legaia_engine_core::field_menu_dispatch::status_snapshots(&self.session.host.world);
-        let party: Vec<legaia_engine_render::FieldMenuPartyView<'_>> = snaps
+        let party: Vec<legaia_engine_ui::FieldMenuPartyView<'_>> = snaps
             .iter()
-            .map(|s| legaia_engine_render::FieldMenuPartyView {
+            .map(|s| legaia_engine_ui::FieldMenuPartyView {
                 name: &s.name,
                 level: s.level,
                 hp: s.hp,
@@ -178,7 +178,7 @@ impl PlayWindowApp {
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
         let sprites = match self.save_menu.as_ref() {
-            Some(menu) => legaia_engine_render::save_refusal_panel_draws_for(
+            Some(menu) => legaia_engine_ui::save_refusal_panel_draws_for(
                 &menu.rects,
                 stage_origin,
                 stage_scale,
@@ -187,7 +187,7 @@ impl PlayWindowApp {
         };
         PauseMenuDraws {
             sprites,
-            texts: legaia_engine_render::save_refusal_text_draws_for(
+            texts: legaia_engine_ui::save_refusal_text_draws_for(
                 &self.font,
                 reason.message(),
                 stage_origin,
@@ -215,11 +215,11 @@ impl PlayWindowApp {
             // screen's spell rows (Square). Twin of the browser page's arm
             // in `web-viewer::play_menu`.
             FieldMenuSubsession::ListOrder(s) => {
-                let rows: Vec<legaia_engine_render::ListOrderRowView<'_>> = s
+                let rows: Vec<legaia_engine_ui::ListOrderRowView<'_>> = s
                     .rows()
                     .iter()
                     .enumerate()
-                    .map(|(i, r)| legaia_engine_render::ListOrderRowView {
+                    .map(|(i, r)| legaia_engine_ui::ListOrderRowView {
                         label: r.label.as_str(),
                         latched: s.latched() == Some(i),
                     })
@@ -227,12 +227,12 @@ impl PlayWindowApp {
                 pause_screen_draws(
                     &ctx,
                     PauseScreen::Generic(GenericContent::ListOrder(
-                        legaia_engine_render::ListOrderDrawArgs {
+                        legaia_engine_ui::ListOrderDrawArgs {
                             title: LIST_ORDER_TITLE,
                             rows: &rows,
                             cursor: s.cursor(),
                             scroll_top: s.scroll_top(),
-                            page_rows: legaia_engine_core::list_order::LIST_ORDER_PAGE_ROWS,
+                            page_rows: legaia_engine_menus::list_order::LIST_ORDER_PAGE_ROWS,
                             reorderable: s.reorderable(),
                         },
                     )),
@@ -242,11 +242,11 @@ impl PlayWindowApp {
                 let Some(snap) = s.current() else {
                     return PauseMenuDraws::default();
                 };
-                let stat_rows: Vec<legaia_engine_render::StatusStatRow<'_>> = snap
+                let stat_rows: Vec<legaia_engine_ui::StatusStatRow<'_>> = snap
                     .stats
                     .iter()
                     .zip(snap.stat_labels.iter())
-                    .map(|((live, growth), l)| legaia_engine_render::StatusStatRow {
+                    .map(|((live, growth), l)| legaia_engine_ui::StatusStatRow {
                         label: l,
                         value: *live as u32,
                         growth: *growth as u32,
@@ -257,7 +257,7 @@ impl PlayWindowApp {
                     .iter()
                     .map(|e| (e.label, e.item_name.as_str()))
                     .collect();
-                let panel = legaia_engine_render::StatusPanelView {
+                let panel = legaia_engine_ui::StatusPanelView {
                     name: &snap.name,
                     level: snap.level,
                     xp: snap.xp,
@@ -273,7 +273,7 @@ impl PlayWindowApp {
                     status: snap.status_flags,
                 };
                 let names: Vec<&str> = s.snapshots().iter().map(|m| m.name.as_str()).collect();
-                let satellite = legaia_engine_render::StatusSatelliteView {
+                let satellite = legaia_engine_ui::StatusSatelliteView {
                     party_names: &names,
                     cursor: s.cursor() as usize,
                     name: &snap.name,
@@ -298,17 +298,17 @@ impl PlayWindowApp {
                 // this host only borrows it into the renderer's views and
                 // places the popup.
                 let m = s.screen_model();
-                let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = m
+                let row_views: Vec<legaia_engine_ui::OptionsRowView<'_>> = m
                     .rows
                     .iter()
-                    .map(|r| legaia_engine_render::OptionsRowView {
+                    .map(|r| legaia_engine_ui::OptionsRowView {
                         label: r.label,
                         value: r.value,
                         teal: r.teal,
                         advance: r.advance,
                     })
                     .collect();
-                let popup = m.popup.map(|p| legaia_engine_render::OptionsPopupDraw {
+                let popup = m.popup.map(|p| legaia_engine_ui::OptionsPopupDraw {
                     rect: self.options_popup_rect(&p),
                     choices: p.choices,
                     cursor: p.cursor,
@@ -359,7 +359,7 @@ impl PlayWindowApp {
     /// must not scale it again.
     pub(super) fn field_save_sub_draws(
         &self,
-        s: &legaia_engine_core::save_select::SaveSelectSession,
+        s: &legaia_engine_menus::save_select::SaveSelectSession,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<TextDraw> {
@@ -374,19 +374,19 @@ impl PlayWindowApp {
     /// window layout is unpinned).
     pub(super) fn pause_magic_draws(
         &self,
-        s: &legaia_engine_core::spell_menu::SpellMenuSession,
+        s: &legaia_engine_menus::spell_menu::SpellMenuSession,
         ctx: &PauseMenuCtx<'_>,
     ) -> PauseMenuDraws {
-        use legaia_engine_core::spell_menu::SpellMenuPhase;
+        use legaia_engine_menus::spell_menu::SpellMenuPhase;
         let world = &self.session.host.world;
         let model =
-            legaia_engine_core::pause_screens::magic_screen_model(s, world.menu.text.as_ref());
+            legaia_engine_menus::pause_screens::magic_screen_model(s, world.menu.text.as_ref());
         if !model.target_select {
-            let casters: Vec<legaia_engine_render::PauseMagicCaster<'_>> = model
+            let casters: Vec<legaia_engine_ui::PauseMagicCaster<'_>> = model
                 .casters
                 .iter()
                 .map(
-                    |(name, level, mp, mp_max)| legaia_engine_render::PauseMagicCaster {
+                    |(name, level, mp, mp_max)| legaia_engine_ui::PauseMagicCaster {
                         name,
                         level: *level as u16,
                         mp: *mp,
@@ -394,10 +394,10 @@ impl PlayWindowApp {
                     },
                 )
                 .collect();
-            let rows: Vec<legaia_engine_render::PauseMagicRow<'_>> = model
+            let rows: Vec<legaia_engine_ui::PauseMagicRow<'_>> = model
                 .page_rows
                 .iter()
-                .map(|(name, ra_seru)| legaia_engine_render::PauseMagicRow {
+                .map(|(name, ra_seru)| legaia_engine_ui::PauseMagicRow {
                     name,
                     ra_seru: *ra_seru,
                 })
@@ -405,21 +405,21 @@ impl PlayWindowApp {
             let info = model
                 .info
                 .as_ref()
-                .map(|i| legaia_engine_render::PauseMagicInfo {
+                .map(|i| legaia_engine_ui::PauseMagicInfo {
                     name: &i.name,
                     level: i.level,
                     desc: &i.desc,
                     mp_cost: i.mp_cost,
                 });
-            let view = legaia_engine_render::PauseMagicView {
+            let view = legaia_engine_ui::PauseMagicView {
                 casters: &casters,
                 rows: &rows,
                 page: model.page,
                 pages: model.pages,
                 phase: if model.focus_list {
-                    legaia_engine_render::PauseMagicPhase::List
+                    legaia_engine_ui::PauseMagicPhase::List
                 } else {
-                    legaia_engine_render::PauseMagicPhase::Caster
+                    legaia_engine_ui::PauseMagicPhase::Caster
                 },
                 caster_cursor: model.caster_cursor,
                 list_cursor: model.list_cursor_on_page,
@@ -443,18 +443,18 @@ impl PlayWindowApp {
         let hp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.hp, c.hp)).collect();
         let mp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.mp, c.mp)).collect();
         let spell_rows = s.current_spell_rows();
-        let spell_views: Vec<legaia_engine_render::SpellRowView<'_>> = spell_rows
+        let spell_views: Vec<legaia_engine_ui::SpellRowView<'_>> = spell_rows
             .iter()
-            .map(|sr| legaia_engine_render::SpellRowView {
+            .map(|sr| legaia_engine_ui::SpellRowView {
                 name: sr.name.as_str(),
                 mp_cost: sr.mp_cost,
                 admissible: sr.admissible,
             })
             .collect();
-        let target_views: Vec<legaia_engine_render::SpellTargetView<'_>> = s
+        let target_views: Vec<legaia_engine_ui::SpellTargetView<'_>> = s
             .targets()
             .iter()
-            .map(|t| legaia_engine_render::SpellTargetView {
+            .map(|t| legaia_engine_ui::SpellTargetView {
                 name: t.name.as_str(),
                 hp: t.hp,
                 hp_max: t.hp_max,
@@ -479,7 +479,7 @@ impl PlayWindowApp {
             } => (Some(*caster), Some(*spell_id), 1u8, *cursor),
             SpellMenuPhase::Done(_) => return PauseMenuDraws::default(),
         };
-        let args = legaia_engine_render::SpellMenuDrawArgs {
+        let args = legaia_engine_ui::SpellMenuDrawArgs {
             party_names: &names,
             party_hp: &hp,
             party_mp: &mp,
@@ -503,16 +503,16 @@ impl PlayWindowApp {
     /// only stands in when that panel has no roster to draw.
     pub(super) fn pause_items_draws(
         &self,
-        s: &legaia_engine_core::pause_screens::PauseItemsSession,
+        s: &legaia_engine_menus::pause_screens::PauseItemsSession,
         ctx: &PauseMenuCtx<'_>,
     ) -> PauseMenuDraws {
-        let model = legaia_engine_core::pause_screens::items_screen_model(s);
+        let model = legaia_engine_menus::pause_screens::items_screen_model(s);
         if model.target_select {
             if let Some(panel) = self.pause_target_panel_view(s) {
                 let members = Self::target_panel_members(&panel);
-                let view = legaia_engine_render::TargetPanelView {
+                let view = legaia_engine_ui::TargetPanelView {
                     members: &members,
-                    mode: legaia_engine_render::TargetPanelMode::from_preview_word(panel.mode),
+                    mode: legaia_engine_ui::TargetPanelMode::from_preview_word(panel.mode),
                     cursor: Self::target_panel_cursor(&panel),
                     // The LV / HP / MP tags come from the UI atlas whenever
                     // the sprite pass runs; without it the ASCII stand-ins
@@ -527,10 +527,10 @@ impl PlayWindowApp {
                 PauseScreen::Generic(GenericContent::Prebuilt(self.items_session_draws(&s.inner))),
             );
         }
-        let rows: Vec<legaia_engine_render::PauseItemsRow<'_>> = model
+        let rows: Vec<legaia_engine_ui::PauseItemsRow<'_>> = model
             .page_rows
             .iter()
-            .map(|(name, count)| legaia_engine_render::PauseItemsRow {
+            .map(|(name, count)| legaia_engine_ui::PauseItemsRow {
                 name,
                 count: *count,
             })
@@ -538,20 +538,20 @@ impl PlayWindowApp {
         let info = model
             .info
             .as_ref()
-            .map(|i| legaia_engine_render::PauseItemInfo {
+            .map(|i| legaia_engine_ui::PauseItemInfo {
                 name: &i.name,
                 count: i.count,
                 desc: &i.desc,
                 passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
             });
-        let view = legaia_engine_render::PauseItemsView {
+        let view = legaia_engine_ui::PauseItemsView {
             rows: &rows,
             page: model.page,
             pages: model.pages,
             phase: if model.focus_list {
-                legaia_engine_render::PauseItemsPhase::List
+                legaia_engine_ui::PauseItemsPhase::List
             } else {
-                legaia_engine_render::PauseItemsPhase::Command
+                legaia_engine_ui::PauseItemsPhase::Command
             },
             command_cursor: model.command_cursor,
             list_cursor: model.list_cursor_on_page,
@@ -559,16 +559,15 @@ impl PlayWindowApp {
             info,
             text_cursor: !ctx.chrome_present(),
         };
-        let throw =
-            model
-                .throw_confirm
-                .as_ref()
-                .map(|c| legaia_engine_render::PauseThrowConfirmView {
-                    name: &c.name,
-                    count: c.count,
-                    cursor: c.cursor,
-                    text_cursor: !ctx.chrome_present(),
-                });
+        let throw = model
+            .throw_confirm
+            .as_ref()
+            .map(|c| legaia_engine_ui::PauseThrowConfirmView {
+                name: &c.name,
+                count: c.count,
+                cursor: c.cursor,
+                text_cursor: !ctx.chrome_present(),
+            });
         // Retail's own Use-route prompt strings live in the menu overlay's
         // data segment (the `0x801CEA94` block the renderer's `lui`/`addiu`
         // pairs point at) and are not recovered, so the port stages the item
@@ -582,7 +581,7 @@ impl PlayWindowApp {
             (Some(sc), Some(one)) => {
                 if matches!(
                     sc.route,
-                    legaia_engine_core::pause_screens::UseRoute::Incense
+                    legaia_engine_menus::pause_screens::UseRoute::Incense
                 ) {
                     vec![sc.item_name.as_str(), "Use it?"]
                 } else {
@@ -614,12 +613,12 @@ impl PlayWindowApp {
 
     /// Map the engine-core target-panel model onto the engine-ui view.
     pub(super) fn target_panel_members(
-        model: &legaia_engine_core::pause_screens::TargetPanelModel,
-    ) -> Vec<legaia_engine_render::TargetPanelMember<'_>> {
+        model: &legaia_engine_menus::pause_screens::TargetPanelModel,
+    ) -> Vec<legaia_engine_ui::TargetPanelMember<'_>> {
         model
             .members
             .iter()
-            .map(|m| legaia_engine_render::TargetPanelMember {
+            .map(|m| legaia_engine_ui::TargetPanelMember {
                 name: m.name.as_str(),
                 level: m.level,
                 hp: m.hp,
@@ -636,12 +635,12 @@ impl PlayWindowApp {
 
     /// Cursor decode shared by the panel's text + sprite builders.
     pub(super) fn target_panel_cursor(
-        model: &legaia_engine_core::pause_screens::TargetPanelModel,
-    ) -> legaia_engine_render::TargetPanelCursor {
+        model: &legaia_engine_menus::pause_screens::TargetPanelModel,
+    ) -> legaia_engine_ui::TargetPanelCursor {
         if model.all_targets {
-            legaia_engine_render::TargetPanelCursor::All { pressed: false }
+            legaia_engine_ui::TargetPanelCursor::All { pressed: false }
         } else {
-            legaia_engine_render::TargetPanelCursor::Single {
+            legaia_engine_ui::TargetPanelCursor::Single {
                 row: model.cursor_row,
                 pressed: false,
             }
@@ -652,10 +651,13 @@ impl PlayWindowApp {
     /// select, or `None` when the flow is not there or has no rows to draw.
     pub(super) fn pause_target_panel_view(
         &self,
-        s: &legaia_engine_core::pause_screens::PauseItemsSession,
-    ) -> Option<legaia_engine_core::pause_screens::TargetPanelModel> {
-        legaia_engine_core::pause_screens::target_panel_view_model(s, &self.session.host.world)
-            .filter(|m| !m.members.is_empty())
+        s: &legaia_engine_menus::pause_screens::PauseItemsSession,
+    ) -> Option<legaia_engine_menus::pause_screens::TargetPanelModel> {
+        legaia_engine_core::world_views::pause_screens::target_panel_view_model(
+            s,
+            &self.session.host.world,
+        )
+        .filter(|m| !m.members.is_empty())
     }
 
     /// Build draws for the inventory item-use overlay. Resolves item
@@ -667,9 +669,9 @@ impl PlayWindowApp {
     /// stage transform ([`GenericContent::Prebuilt`]).
     pub(super) fn items_session_draws(
         &self,
-        s: &legaia_engine_core::inventory_use::InventoryUseSession,
+        s: &legaia_engine_menus::inventory_use::InventoryUseSession,
     ) -> Vec<TextDraw> {
-        use legaia_engine_core::inventory_use::InventoryUseState;
+        use legaia_engine_menus::inventory_use::InventoryUseState;
         // Each visible item row needs its name + count + admissibility.
         // The session's `filtered_items` already lists indices into
         // `items` that pass the context filter; we render every owned
@@ -698,18 +700,18 @@ impl PlayWindowApp {
             let admissible = filter_set.contains(&i);
             row_data.push((name, count, admissible));
         }
-        let item_rows: Vec<legaia_engine_render::InventoryItemRow<'_>> = row_data
+        let item_rows: Vec<legaia_engine_ui::InventoryItemRow<'_>> = row_data
             .iter()
-            .map(|(n, c, a)| legaia_engine_render::InventoryItemRow {
+            .map(|(n, c, a)| legaia_engine_ui::InventoryItemRow {
                 name: n,
                 count: *c,
                 admissible: *a,
             })
             .collect();
-        let target_rows: Vec<legaia_engine_render::InventoryTargetRow<'_>> = s
+        let target_rows: Vec<legaia_engine_ui::InventoryTargetRow<'_>> = s
             .targets
             .iter()
-            .map(|t| legaia_engine_render::InventoryTargetRow {
+            .map(|t| legaia_engine_ui::InventoryTargetRow {
                 name: &t.name,
                 hp: t.hp,
                 hp_max: t.hp_max,
@@ -726,9 +728,9 @@ impl PlayWindowApp {
         let selected_item_name = s.current_item().map(|e| e.name);
         let in_battle = matches!(
             s.context,
-            legaia_engine_core::inventory_use::InventoryContext::Battle
+            legaia_engine_menus::inventory_use::InventoryContext::Battle
         );
-        let args = legaia_engine_render::InventoryUseDrawArgs {
+        let args = legaia_engine_ui::InventoryUseDrawArgs {
             items: &item_rows,
             targets: &target_rows,
             in_battle,
@@ -736,7 +738,7 @@ impl PlayWindowApp {
             phase,
             selected_item_name,
         };
-        legaia_engine_render::inventory_use_draws_for(&self.font, args, (16, 32))
+        legaia_engine_ui::inventory_use_draws_for(&self.font, args, (16, 32))
     }
 
     /// Build draws for the equip screen in the retail multi-window layout:
@@ -746,7 +748,7 @@ impl PlayWindowApp {
     /// the shared `engine-core` model.
     pub(super) fn equip_session_draws(
         &self,
-        session: &legaia_engine_core::equip_session::EquipSession,
+        session: &legaia_engine_menus::equip_session::EquipSession,
         char_slot: u8,
         ctx: &PauseMenuCtx<'_>,
     ) -> PauseMenuDraws {
@@ -760,12 +762,12 @@ impl PlayWindowApp {
         // record (HP / MP maxima) and the two disc tables the compare
         // category is looked up in.
         let record = world.party.roster.members.get(char_slot as usize);
-        let compare = record.map(|r| legaia_engine_core::pause_screens::EquipCompareCtx {
+        let compare = record.map(|r| legaia_engine_menus::pause_screens::EquipCompareCtx {
             record: r,
             equip_info: self.menu_runtime.equip_info.as_ref(),
             item_effects: world.tables.item_effects.as_ref(),
         });
-        let model = legaia_engine_core::pause_screens::equip_screen_model(
+        let model = legaia_engine_menus::pause_screens::equip_screen_model(
             session,
             char_slot,
             &names,
@@ -784,20 +786,20 @@ impl PlayWindowApp {
     /// play page - only the borrow into `ArtsEditorDrawArgs` is per host.
     pub(super) fn arts_session_draws(
         &self,
-        s: &legaia_engine_core::tactical_arts_editor::ChainEditor,
+        s: &legaia_engine_battle::tactical_arts_editor::ChainEditor,
         ctx: &PauseMenuCtx<'_>,
     ) -> PauseMenuDraws {
         let view =
             legaia_engine_core::field_menu_dispatch::arts_editor_view(s, &self.session.host.world);
-        let saved_rows: Vec<legaia_engine_render::ArtsChainRow<'_>> = view
+        let saved_rows: Vec<legaia_engine_ui::ArtsChainRow<'_>> = view
             .saved
             .iter()
-            .map(|(name, pretty)| legaia_engine_render::ArtsChainRow {
+            .map(|(name, pretty)| legaia_engine_ui::ArtsChainRow {
                 name,
                 pretty_sequence: pretty,
             })
             .collect();
-        let args = legaia_engine_render::ArtsEditorDrawArgs {
+        let args = legaia_engine_ui::ArtsEditorDrawArgs {
             character_name: &view.character_name,
             phase: arts_phase_tag(view.phase),
             saved: &saved_rows,
@@ -821,10 +823,10 @@ impl PlayWindowApp {
 /// does not depend on `engine-core`. The browser twin is
 /// `web-viewer/src/play_menu.rs::equip_compose_input`.
 fn equip_compose_input(
-    m: &legaia_engine_core::pause_screens::EquipScreenModel,
+    m: &legaia_engine_menus::pause_screens::EquipScreenModel,
     text_cursor: bool,
 ) -> EquipComposeInput<'_> {
-    use legaia_engine_core::pause_screens::EquipScreenPhase as Tag;
+    use legaia_engine_menus::pause_screens::EquipScreenPhase as Tag;
     EquipComposeInput {
         party_names: &m.party_names,
         slot_labels: &m.slot_labels,
@@ -834,9 +836,9 @@ fn equip_compose_input(
         stat_compare: &m.stat_compare,
         best_changes: &m.best_changes,
         phase: match m.phase {
-            Tag::SlotPicker => legaia_engine_render::EquipDrawPhase::SlotPicker,
-            Tag::ItemPicker => legaia_engine_render::EquipDrawPhase::ItemPicker,
-            Tag::Confirm => legaia_engine_render::EquipDrawPhase::Confirm,
+            Tag::SlotPicker => legaia_engine_ui::EquipDrawPhase::SlotPicker,
+            Tag::ItemPicker => legaia_engine_ui::EquipDrawPhase::ItemPicker,
+            Tag::Confirm => legaia_engine_ui::EquipDrawPhase::Confirm,
         },
         cursor: m.cursor,
         active_slot: m.active_slot,
@@ -848,7 +850,7 @@ fn equip_compose_input(
         info: m
             .info
             .as_ref()
-            .map(|i| legaia_engine_render::pause_menu::EquipInfoInput {
+            .map(|i| legaia_engine_ui::pause_menu::EquipInfoInput {
                 name: i.name.as_str(),
                 count: i.count,
                 desc: i.desc.as_str(),
@@ -862,12 +864,12 @@ fn equip_compose_input(
 /// browser twin is `web-viewer/src/play_menu.rs::equip_compare_input`; the
 /// two exist for the same reason the screen's other borrow does.
 fn equip_compare_input(
-    c: &legaia_engine_core::pause_screens::EquipCompareModel,
-) -> legaia_engine_render::pause_menu::EquipCompareInput<'_> {
-    legaia_engine_render::pause_menu::EquipCompareInput {
+    c: &legaia_engine_menus::pause_screens::EquipCompareModel,
+) -> legaia_engine_ui::pause_menu::EquipCompareInput<'_> {
+    legaia_engine_ui::pause_menu::EquipCompareInput {
         name: c.name.as_str(),
-        current: legaia_engine_render::EquipStatBlock::from_words(&c.current),
-        candidate: legaia_engine_render::EquipStatBlock::from_words(&c.candidate),
+        current: legaia_engine_ui::EquipStatBlock::from_words(&c.current),
+        candidate: legaia_engine_ui::EquipStatBlock::from_words(&c.candidate),
         hp_max: c.hp_max,
         mp_max: c.mp_max,
         slot_row: c.slot_row,
@@ -884,12 +886,12 @@ fn equip_compare_input(
 /// native side.
 fn arts_phase_tag(
     phase: legaia_engine_core::field_menu_dispatch::ArtsEditorPhaseTag,
-) -> legaia_engine_render::ArtsEditorPhase {
+) -> legaia_engine_ui::ArtsEditorPhase {
     use legaia_engine_core::field_menu_dispatch::ArtsEditorPhaseTag as Tag;
     match phase {
-        Tag::Browsing => legaia_engine_render::ArtsEditorPhase::Browsing,
-        Tag::Editing => legaia_engine_render::ArtsEditorPhase::Editing,
-        Tag::Naming => legaia_engine_render::ArtsEditorPhase::Naming,
+        Tag::Browsing => legaia_engine_ui::ArtsEditorPhase::Browsing,
+        Tag::Editing => legaia_engine_ui::ArtsEditorPhase::Editing,
+        Tag::Naming => legaia_engine_ui::ArtsEditorPhase::Naming,
     }
 }
 

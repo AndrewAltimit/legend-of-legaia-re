@@ -1,5 +1,4 @@
 //! Texture replacement: scan, preview, apply, and change packs.
-//! Split out of `rom_patcher.rs`.
 
 use super::*;
 
@@ -14,9 +13,9 @@ use super::*;
 // are a translation layer to JS values and nothing else, so adding a texture
 // family does not touch this file.
 
-use legaia_patcher::texture::{ExportFormat, replace_texture_png};
-use legaia_patcher::texture_palettes::texture_palettes;
-use legaia_patcher::{battle_texture, monster_texture, save_icon};
+use legaia_texture_replace::texture::{ExportFormat, replace_texture_png};
+use legaia_texture_replace::texture_palettes::texture_palettes;
+use legaia_texture_replace::{battle_texture, monster_texture, save_icon};
 use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
 use legaia_tim::multi_palette::{ImportKind, View};
 
@@ -353,7 +352,7 @@ pub fn preview_texture_replace(
 
     match op {
         ReplaceOp::SaveIconSlot(slot) => {
-            use legaia_asset::save_icon as si;
+            use legaia_ui_formats::save_icon as si;
             let size = si::TILE_SIZE;
             Reflect::set(&out, &"width".into(), &num(size as f64))?;
             Reflect::set(&out, &"height".into(), &num(size as f64))?;
@@ -396,14 +395,15 @@ pub fn preview_texture_replace(
             }
         }
         ReplaceOp::Tim(target) => {
-            let orig = legaia_patcher::texture::read_texture(&patcher, &target)
+            let orig = legaia_texture_replace::texture::read_texture(&patcher, &target)
                 .map_err(|e| err(format!("read texture: {e:#}")))?;
             let pals = texture_palettes(&patcher, &orig.tim)
                 .map_err(|e| err(format!("palette map: {e:#}")))?;
             let (ow, oh) = (orig.tim.pixel_width(), orig.tim.pixel_height());
             let base_view = view_of(view);
-            let orig_rgba = legaia_patcher::texture::decode_view(&orig.tim, &pals, base_view)
-                .map_err(|e| err(format!("decode original: {e}")))?;
+            let orig_rgba =
+                legaia_texture_replace::texture::decode_view(&orig.tim, &pals, base_view)
+                    .map_err(|e| err(format!("decode original: {e}")))?;
             Reflect::set(&out, &"original".into(), &rgba_js(ow, oh, &orig_rgba)?)?;
             Reflect::set(&out, &"width".into(), &num(ow as f64))?;
             Reflect::set(&out, &"height".into(), &num(oh as f64))?;
@@ -434,7 +434,7 @@ pub fn preview_texture_replace(
                 ImportKind::Indexed(p) => View::Palette(p),
                 ImportKind::PaletteStrip => base_view,
             };
-            let prgba = legaia_patcher::texture::decode_view(&ptim, &pals, shown)
+            let prgba = legaia_texture_replace::texture::decode_view(&ptim, &pals, shown)
                 .map_err(|e| err(format!("decode encoded TIM: {e}")))?;
             Reflect::set(&out, &"preview".into(), &rgba_js(ow, oh, &prgba)?)?;
             Reflect::set(&out, &"import_kind".into(), &imp.kind.to_string().into())?;
@@ -632,7 +632,7 @@ pub async fn apply_texture_replacements(
             decode_png_rgba(&spec.png).map_err(|e| err(format!("texture {i} ({at}): {e}")))?;
         match op {
             ReplaceOp::SaveIconSlot(slot) => {
-                let size = legaia_asset::save_icon::TILE_SIZE;
+                let size = legaia_ui_formats::save_icon::TILE_SIZE;
                 if (w, h) != (size, size) {
                     return Err(err(format!(
                         "save-icon {i} (slot {slot}): portrait must be {size}x{size}, got {w}x{h}"
@@ -787,7 +787,7 @@ fn view_of(v: Option<i32>) -> View {
     }
 }
 
-fn tim_target(coord: &TexCoord) -> Result<legaia_patcher::texture::TextureTarget, JsValue> {
+fn tim_target(coord: &TexCoord) -> Result<legaia_texture_replace::texture::TextureTarget, JsValue> {
     match reg::replace_op(coord).map_err(err)? {
         ReplaceOp::Tim(t) => Ok(t),
         _ => Err(err(
@@ -816,7 +816,7 @@ pub fn texture_palette_info(
         return Ok(out.into());
     };
     let patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
-    let orig = legaia_patcher::texture::read_texture(&patcher, &target)
+    let orig = legaia_texture_replace::texture::read_texture(&patcher, &target)
         .map_err(|e| err(format!("read texture: {e:#}")))?;
     let pals = texture_palettes(&patcher, &orig.tim).map_err(|e| err(format!("{e:#}")))?;
     Reflect::set(&out, &"count".into(), &num(orig.tim.palette_count() as f64))?;
@@ -838,7 +838,10 @@ pub fn texture_palette_info(
     }
     Reflect::set(&out, &"notes".into(), &notes)?;
     // One row per distinct (rect, palette, part), with every widget id.
-    let mut rows: Vec<(&legaia_patcher::texture_palettes::PaletteRegion, Vec<u8>)> = Vec::new();
+    let mut rows: Vec<(
+        &legaia_texture_replace::texture_palettes::PaletteRegion,
+        Vec<u8>,
+    )> = Vec::new();
     for r in &pals.regions {
         match rows
             .iter_mut()
@@ -887,10 +890,10 @@ pub fn decode_texture_view(
     let coord = coord_of(tier, entry, section, offset)?;
     let target = tim_target(&coord)?;
     let patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
-    let orig = legaia_patcher::texture::read_texture(&patcher, &target)
+    let orig = legaia_texture_replace::texture::read_texture(&patcher, &target)
         .map_err(|e| err(format!("read texture: {e:#}")))?;
     let pals = texture_palettes(&patcher, &orig.tim).map_err(|e| err(format!("{e:#}")))?;
-    let rgba = legaia_patcher::texture::decode_view(&orig.tim, &pals, view_of(Some(view)))
+    let rgba = legaia_texture_replace::texture::decode_view(&orig.tim, &pals, view_of(Some(view)))
         .map_err(|e| err(format!("decode: {e}")))?;
     rgba_js(orig.tim.pixel_width(), orig.tim.pixel_height(), &rgba)
 }
@@ -913,9 +916,13 @@ pub fn export_texture_as(
     let target = tim_target(&coord)?;
     let format: ExportFormat = format.parse().map_err(err)?;
     let patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
-    let ex =
-        legaia_patcher::texture::export_texture_png(&patcher, &target, format, view_of(Some(view)))
-            .map_err(|e| err(format!("{e:#}")))?;
+    let ex = legaia_texture_replace::texture::export_texture_png(
+        &patcher,
+        &target,
+        format,
+        view_of(Some(view)),
+    )
+    .map_err(|e| err(format!("{e:#}")))?;
     let o = Object::new();
     let arr = Uint8Array::new_with_length(ex.png.len() as u32);
     arr.copy_from(&ex.png);

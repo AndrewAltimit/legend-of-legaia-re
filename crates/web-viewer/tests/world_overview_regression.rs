@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 
 /// Per-kingdom: (PROT bundle entry, classification-TOML section name).
 ///
-/// These are the **bundle** entries (`legaia_asset::kingdom_bundle::
+/// These are the **bundle** entries (`legaia_scene_formats::kingdom_bundle::
 /// BUNDLE_ENTRIES`). They were `85` / `244` / `391` while the PROT entry size
 /// over-read into the following entries: scanning entry 85's 134-sector window
 /// found the 7-asset table at `0x1800`, which is entry 86's offset 0. The

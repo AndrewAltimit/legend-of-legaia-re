@@ -1,6 +1,6 @@
 //! The redraw's render-state staging, mesh-upload drains and per-frame
 //! skinning - the steps of the render block that run before the draw lists
-//! borrow the uploaded meshes - split out of `handle_redraw`.
+//! borrow the uploaded meshes.
 //!
 //! Each step re-borrows the renderer itself: the render block only enters
 //! when the renderer, the scene VRAM and the font atlas are all present.
@@ -78,7 +78,7 @@ impl PlayWindowApp {
         // uses the orbit camera.
         let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
         let cam = self.compute_scene_camera(aspect, in_world_map, cutscene_cam);
-        // The volumetric ground-fog enhancement (`engine-core::fog_volume`,
+        // The volumetric ground-fog enhancement (`render-kernels::fog_volume`,
         // `F9` / `--no-volumetric-fog`): the engine's bank for this tick,
         // drawn after the 3D scene and before the HUD. Its space is the
         // field's retail Y-down world (`cam` already carries the field
@@ -126,7 +126,11 @@ impl PlayWindowApp {
             if world.board.draw_list.is_empty() {
                 self.tile_slots_queued.clear();
             } else {
-                for slot in crate::tile_board_draws::tile_actor_slots_needing_mesh(world) {
+                for slot in
+                    legaia_engine_core::world_views::tile_board::tile_actor_slots_needing_mesh(
+                        world,
+                    )
+                {
                     if self.tile_slots_queued.insert(slot) {
                         self.drained_spawn_slots.remove(&slot);
                         self.pending_dynamic_mesh_slots.push(slot);
@@ -251,7 +255,7 @@ impl PlayWindowApp {
         let (posed_overrides, player_color_posed) = self.build_posed_actor_overrides(r);
         // Arts after-image ghosts: the actor's mesh at rate-scheduled
         // historical poses, flat-coloured additive (retail FUN_80049348;
-        // kernel `engine-core::battle_afterimage`). Empty outside a
+        // kernel `engine-battle::battle_afterimage`). Empty outside a
         // battle / outside a SpecialStarter dash.
         let battle_ghost_uploads = self.build_battle_ghost_uploads(r);
         legaia_engine_render::profile::mark("pose:actor");
@@ -276,7 +280,7 @@ impl PlayWindowApp {
                 if let Some(d) = self.draw_census.as_mut() {
                     d.morph.insert(
                         *mesh_idx,
-                        legaia_engine_core::draw_census::MeshCensus::from_mesh(
+                        legaia_engine_system::draw_census::MeshCensus::from_mesh(
                             &vmesh.positions,
                             &vmesh.cba_tsb,
                             &vmesh.colors,
@@ -441,7 +445,7 @@ impl PlayWindowApp {
                 r.set_scene_lights(&picked, cam);
                 // Halos + soft light shafts around the picked lights (the
                 // bloom stand-in), scaled by the mood's glow.
-                r.set_glow_sprites(&legaia_engine_render::scene_lighting::glow_sprites(
+                r.set_glow_sprites(&legaia_render_kernels::scene_lighting::glow_sprites(
                     &picked, &mood,
                 ));
             }
@@ -628,15 +632,15 @@ impl PlayWindowApp {
                 // the head - on top of the keyframe, so it is part of
                 // the pose the cache keys: its angles ride the key's
                 // high bits.
-                let look = world.actor_look(legaia_engine_core::actor_look::LookKey::Npc(*slot));
+                let look = world.actor_look(legaia_engine_field::actor_look::LookKey::Npc(*slot));
                 // The one packing both hosts key on (`ActorLook::pose_key_bits`).
                 let look_bits =
-                    legaia_engine_core::actor_look::ActorLook::pose_key_bits(look.as_ref())
+                    legaia_engine_field::actor_look::ActorLook::pose_key_bits(look.as_ref())
                         as usize;
                 let key = (*slot, player.pose_key() | look_bits);
                 let mut pose = player.current_pose();
                 if let Some(l) = look {
-                    legaia_engine_core::actor_look::apply_look(&mut pose.bone_outputs, l);
+                    legaia_engine_field::actor_look::apply_look(&mut pose.bone_outputs, l);
                 }
                 if !world_driven {
                     player.advance(field_tail_ticks);
@@ -688,7 +692,7 @@ impl PlayWindowApp {
                 // Enhanced lighting's emissive tags, as the spawn build
                 // set them (a re-pose would otherwise drop them).
                 if let Some(v) = tag_vram {
-                    legaia_engine_render::scene_lighting::tag_emissive_meshes(
+                    legaia_render_kernels::scene_lighting::tag_emissive_meshes(
                         raw, &mut vmesh, &mut cmesh, v,
                     );
                 }

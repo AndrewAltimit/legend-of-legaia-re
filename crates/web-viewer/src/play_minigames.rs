@@ -46,8 +46,8 @@
 //! Per-game exports live in the sibling modules
 //! [`crate::play_minigame_slots`] and [`crate::play_minigame_arena`].
 
-use legaia_engine_core::scene::ProtIndex;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 
 use crate::minigames::LegaiaMinigames;
@@ -112,16 +112,16 @@ pub(crate) struct MinigameUi {
     /// the field texture back. Drained by `play_mg_take_vram_restore`.
     pub(crate) vram_restore_pending: bool,
     /// The Baka duel's 3D surface - the engine cache the native window
-    /// drives too (`legaia_engine_core::baka_duel_scene::BakaDuelSurface`).
-    pub(crate) baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
+    /// drives too (`legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface`).
+    pub(crate) baka_surface: legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface,
     /// The dance floor's bodies - the engine cache the native window drives
     /// too (`legaia_engine_core::dance_cast_scene::DanceCastSurface`) - and
     /// the hall origin its positions are re-based on for this page.
     pub(crate) dance_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
     pub(crate) dance_origin: (f32, f32, f32),
     /// The Muscle Dome's 3D arena surface - the engine cache the native
-    /// window drives too (`legaia_engine_core::muscle_dome_scene`).
-    pub(crate) muscle_surface: legaia_engine_core::muscle_dome_scene::MuscleDomeSurface,
+    /// window drives too (`legaia_engine_minigame_scenes::muscle_dome_scene`).
+    pub(crate) muscle_surface: legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface,
     /// The fishing pond surface - the engine cache the native window drives
     /// too (`legaia_engine_core::fishing_scene`).
     pub(crate) fishing_surface: legaia_engine_core::fishing_scene::FishingSurface,
@@ -228,7 +228,7 @@ impl LegaiaRuntime {
         // resident system-UI sheet (its submenu box border) comes off the
         // real PROT.DAT.
         if let Some(c) = art.slot_cabinet.take() {
-            use legaia_asset::title_pak as tp;
+            use legaia_ui_formats::title_pak as tp;
             art.slot_cabinet = Some(
                 match host.index.prot_dat_raw_bytes(
                     tp::OVERLAY_SYSTEM_UI_TIM_OFFSET as u64,
@@ -406,7 +406,7 @@ impl LegaiaRuntime {
     /// The minigame effect parts this frame, in **stage** space.
     ///
     /// Two pools, one builder. The shared
-    /// [`legaia_engine_core::minigame_fx::MinigameFxPool`] on
+    /// [`legaia_engine_minigames::minigame_fx::MinigameFxPool`] on
     /// `World::minigames.fx` carries the fishing venue's splash, ripples and
     /// catch bursts; the dance run carries its own, because its sequence-clear
     /// banner is spawned by the judge rather than by a host. Both used to be
@@ -414,7 +414,7 @@ impl LegaiaRuntime {
     /// that window, the dance parts because this page had no emit site for
     /// them at all.
     fn minigame_fx_stage_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        use legaia_engine_core::dance::SpritePartEmit;
+        use legaia_engine_minigames::dance::SpritePartEmit;
         use legaia_engine_ui::minigame_fx as fx;
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
@@ -463,14 +463,14 @@ impl LegaiaRuntime {
     /// tutorial's captions, in **stage** space (the caller applies the
     /// transform with the rest of the minigame chrome).
     ///
-    /// Both come out of `legaia_engine_ui::ui_dance`, the builders the native
+    /// Both come out of `legaia_engine_ui::dance`, the builders the native
     /// window's HUD draws them with, off the world state
     /// `World::tick_dance` produces - so the banner slides on the same frames
     /// on both hosts. Neither existed on this page, and the count-in did not
     /// exist on *either* host for a door-warp entry: the native window ran
     /// one only from its own debug launcher.
     fn dance_countin_and_tutorial_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        use legaia_engine_ui::ui_dance;
+        use legaia_engine_ui::dance as ui_dance;
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
@@ -570,7 +570,7 @@ impl LegaiaRuntime {
             "baka": {
                 "opponent": opponent,
                 "opponent_side": u32::from(
-                    opponent >= legaia_engine_core::baka_fighter::FIGHTER_PACK_FOLD
+                    opponent >= legaia_engine_minigames::baka_fighter::FIGHTER_PACK_FOLD
                 ),
                 "player_char": ui.baka.player_char,
             },

@@ -25,13 +25,13 @@
 //!
 //! `engine-core` is deliberately *not* a dependency: `engine-render` is
 //! documented as a leaf presentation crate that does not depend on the
-//! simulation (`docs/subsystems/engine.md`), and it re-exports this crate
-//! wholesale, so a dependency here would be one there. The cost is that each
+//! simulation (`docs/subsystems/engine.md`), and it depends on this crate,
+//! so a dependency here would be one there. The cost is that each
 //! host still writes the session -> view projection; the benefit is that the
 //! composition below is reachable from a plain library test with no disc, no
 //! GPU and no host.
 
-use crate::ui_menu_window_painters::{
+use crate::menu::window_painters::{
     ChoiceFlags, char_prompt_draws_for, label_list_draws_for, notify_prompt_draws_for,
     title_tab_draws_for, two_line_choice_panel_draws_for,
 };
@@ -42,7 +42,7 @@ use crate::{
     StatusSatelliteView, TargetPanelView, TextDraw,
 };
 use crate::{MenuWindowPainter, painter_at, painter_rect};
-use legaia_asset::menu_windows::{MenuWindowTable, window_ids};
+use legaia_game_tables::menu_windows::{MenuWindowTable, window_ids};
 
 /// Menu-overlay descriptor id of the **spell level-up notice** window
 /// (renderer `FUN_801DCCB4`, the [`MenuWindowPainter::CharPrompt`] painter).
@@ -95,7 +95,7 @@ pub const TARGET_SELECT_WINDOWS: [usize; 2] = [window_ids::TAB_ITEMS, 14];
 /// ([`MenuRects::frame_rect`]).
 ///
 /// How retail-true these numbers are, said exactly: the disc-gated
-/// `legaia-asset` test `menu_windows_real` pins the parsed disc table against
+/// `legaia-game-tables` test `menu_windows_real` pins the parsed disc table against
 /// its own literal list of the same rects (RAM-matched to six catalogued
 /// menu-open captures). It does **not** read this constant, so the two are
 /// verified separately rather than against each other - a third copy of the
@@ -415,7 +415,7 @@ pub struct OptionsScreenView<'a> {
 
 /// The key-rebind sub-screen's model: one `(button label, bound key)` pair
 /// per row, plus which row the cursor is on and whether it is waiting for a
-/// keypress ([`legaia_engine_core::key_rebind::KeyRebindSession`]).
+/// keypress (`legaia_engine_menus::key_rebind::KeyRebindSession`).
 pub struct KeyRebindView<'a> {
     pub rows: &'a [(&'a str, &'a str)],
     pub cursor: u8,
@@ -513,7 +513,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 v.party,
                 ctx.rects.pen(window_ids::TOP_INFO_PANEL),
             ));
-            sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::TOP_LEVEL_WINDOWS));
+            sprites.extend(ctx.window_chrome(&legaia_game_tables::menu_windows::TOP_LEVEL_WINDOWS));
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::field_menu_icon_sprites_for(
                     rects,
@@ -544,7 +544,9 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 ctx.chrome_present(),
             ));
             texts.extend(ctx.tab_title(window_ids::TAB_STATUS, "Status"));
-            sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::STATUS_SCREEN_WINDOWS));
+            sprites.extend(
+                ctx.window_chrome(&legaia_game_tables::menu_windows::STATUS_SCREEN_WINDOWS),
+            );
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::status_icon_sprites_for(
                     rects,
@@ -663,7 +665,8 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             // the two hosts disagreed about (the browser emitted the Use
             // confirm's frame *before* the window set, so the item list's
             // frame painted over it).
-            sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::ITEMS_SCREEN_WINDOWS));
+            sprites
+                .extend(ctx.window_chrome(&legaia_game_tables::menu_windows::ITEMS_SCREEN_WINDOWS));
             sprites.extend(ctx.frame_around(crate::ITEMS_INFO_EXTRA_BOX_RECT));
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::items_screen_sprites_for(
@@ -722,7 +725,8 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 ctx.rects.pen(window_ids::MAGIC_INFO),
             ));
             texts.extend(ctx.tab_title(window_ids::TAB_MAGIC, "Magic"));
-            sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::MAGIC_SCREEN_WINDOWS));
+            sprites
+                .extend(ctx.window_chrome(&legaia_game_tables::menu_windows::MAGIC_SCREEN_WINDOWS));
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::magic_screen_sprites_for(
                     rects,
@@ -754,8 +758,9 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             // `equip_screen_draws_for`).
             let browse = v.view.phase == crate::EquipDrawPhase::SlotPicker;
             if browse {
-                sprites
-                    .extend(ctx.window_chrome(&legaia_asset::menu_windows::EQUIP_SCREEN_WINDOWS));
+                sprites.extend(
+                    ctx.window_chrome(&legaia_game_tables::menu_windows::EQUIP_SCREEN_WINDOWS),
+                );
             } else {
                 sprites.extend(ctx.window_chrome(&[window_ids::TAB_EQUIP, window_ids::EQUIP_LIST]));
             }
@@ -784,7 +789,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 // ...and window 24's own delta over that panel: the
                 // two-digit count in the accent pen, plus the reserved
                 // sub-rect the renderer frames either way.
-                let (count_draws, reserved) = crate::ui_menu_window_painters::count_panel_draws_for(
+                let (count_draws, reserved) = crate::menu::window_painters::count_panel_draws_for(
                     ctx.font,
                     r,
                     v.info.as_ref().map(|info| u64::from(info.count)),
@@ -906,7 +911,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
 }
 
 /// Owned-string flavour of the Equip screen's inputs, as
-/// `engine-core::pause_screens::equip_screen_model` hands them over.
+/// `engine-menus::pause_screens::equip_screen_model` hands them over.
 ///
 /// The borrow from owned model to `EquipScreenView` was written out twice -
 /// once per host - so it lives here beside the composition instead. This
@@ -930,7 +935,7 @@ pub struct EquipInfoInput<'a> {
 /// blocks, the record's HP / MP maxima and the four values the compare
 /// category is resolved from.
 ///
-/// It mirrors `engine-core::pause_screens::EquipCompareModel` field for
+/// It mirrors `engine-menus::pause_screens::EquipCompareModel` field for
 /// field. The resolution itself stays here, in
 /// [`crate::active_compare_category`], because the two guards that decide it
 /// are part of the renderer's own control flow rather than of the model.

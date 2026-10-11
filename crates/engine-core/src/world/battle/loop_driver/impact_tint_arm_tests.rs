@@ -1,6 +1,6 @@
 use super::*;
-use crate::battle_anim::MonsterAnimPlayer;
-use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
+use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
+use legaia_engine_battle::battle_anim::MonsterAnimPlayer;
 
 /// A one-part, two-frame clip whose entry head carries `impact_class`.
 fn clip(impact_class: u8) -> MonsterAnimation {
@@ -51,7 +51,7 @@ fn a_connecting_swing_arms_the_impact_triple_from_the_attackers_clip() {
     assert_eq!(w.actors[1].battle.impact_state, 1);
     assert_eq!(
         w.actors[1].battle.render_blend,
-        legaia_engine_vm::battle_formulas::TINT_BLEND_FULL
+        legaia_engine_battle_vm::battle_formulas::TINT_BLEND_FULL
     );
     assert_eq!(
         w.actors[0].battle.impact_state, 0,
@@ -76,7 +76,11 @@ fn a_monster_swing_arms_the_party_target_the_same_way() {
 /// `0x801EE3E0`) arm nothing - the swing still lands.
 #[test]
 fn class_zero_and_out_of_table_classes_arm_nothing() {
-    for class in [0u8, crate::move_power::IMPACT_CLASS_LIMIT, 0xFF] {
+    for class in [
+        0u8,
+        legaia_engine_battle::move_power::IMPACT_CLASS_LIMIT,
+        0xFF,
+    ] {
         let mut w = duel_with_attacker_clip(0, class);
         let hp_before = w.actors[1].battle.hp;
         w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);

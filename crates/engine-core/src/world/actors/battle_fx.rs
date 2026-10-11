@@ -1,9 +1,9 @@
 //! Battle actor effects: the per-actor effect-script step, the animation cue
 //! walk and its SFX routing, ghost / burn / weapon-trail draws, impact tint and
 //! impact FX, the stage ambient, the defeat sink and the tween target.
-//! Split out of `actors.rs`; no logic change.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Walk actor `i`'s committed effect script for one frame and queue the
@@ -13,15 +13,15 @@ impl World {
     /// committed clip's disc entry head, the cursor persists at
     /// [`Actor::battle_effect_cursor`], the facing comes from the SM's
     /// bearing writes (`BattleActor::facing_angle`), and the move-power map
-    /// is the installed [`crate::move_power::MovePowerCatalog`]'s id-index
+    /// is the installed [`legaia_engine_battle::move_power::MovePowerCatalog`]'s id-index
     /// map when present.
     ///
     /// The terminator's context writes land in [`crate::world::CastFxState::move_fx_streak`] -
     /// the `ctx[+0x1014]` / `+0x6C6` / `+0x1144` block the afterimage streak
-    /// projects from ([`crate::action_effect_script::MoveFxStreak`]).
+    /// projects from ([`legaia_engine_effects::action_effect_script::MoveFxStreak`]).
     // REF: FUN_80047430 (the retail caller this substitutes for)
     pub(super) fn step_actor_effect_script(&mut self, i: usize, frame: i16) {
-        use crate::action_effect_script as fx;
+        use legaia_engine_effects::action_effect_script as fx;
         let Some(actor) = self.actors.get(i) else {
             return;
         };
@@ -49,7 +49,7 @@ impl World {
             suppressed: actor
                 .battle
                 .flag_bits
-                .has(vm::battle_action::ActorFlags::FX_SUPPRESSED),
+                .has(legaia_engine_battle_vm::battle_action::ActorFlags::FX_SUPPRESSED),
             // `FUN_801DF570`'s inputs: this actor's live pair and its
             // target's seat pair. A scope byte naming no seated actor (the
             // `8` / `9` whole-side codes) leaves the clamp without a
@@ -60,7 +60,7 @@ impl World {
                 .map(|_| {
                     let (ref_x, ref_z) =
                         self.battle_seat_of(usize::from(actor.battle.active_target));
-                    vm::battle_approach::ApproachPose {
+                    legaia_engine_battle_vm::battle_approach::ApproachPose {
                         x: actor.move_state.world_x,
                         z: actor.move_state.world_z,
                         ref_x,
@@ -78,7 +78,7 @@ impl World {
             .and_then(|cat| cat.id_index_map_bytes().get(1..))
             .unwrap_or(&[]);
         let step = fx::step_effect_script(
-            crate::action_effect_script::retail_rotation_lut(),
+            legaia_engine_effects::action_effect_script::retail_rotation_lut(),
             script,
             script_actor,
             frame,
@@ -103,15 +103,15 @@ impl World {
             if !s.direct && effect == 0 && art_slot_active {
                 effect = ACTION_FX_ART_CODE;
             }
-            self.battle
-                .effect_spawns
-                .push(crate::battle_events::BattleEffectSpawn {
+            self.battle.effect_spawns.push(
+                legaia_engine_battle::battle_events::BattleEffectSpawn {
                     actor_slot: i as u8,
                     effect,
                     direct: s.direct,
                     at: s.at,
                     facing: script_actor.facing,
-                });
+                },
+            );
         }
         // Terminator sink: install the staged move-power record's `+0x04`
         // word and the launch position into the move-FX streak block. The
@@ -146,7 +146,7 @@ impl World {
     /// [`Actor::battle_anim_cue_cursor`].
     ///
     /// Every fired cue goes through the battle sound funnel `FUN_8004FE5C`
-    /// ([`crate::sfx_cue::route_sfx_cue`]) with the actor's **retail**
+    /// ([`legaia_engine_battle::sfx_cue::route_sfx_cue`]) with the actor's **retail**
     /// actor-table index as the category: the `>= 0x100` party arm starts a
     /// CD-XA clip ([`AudioState::battle_xa_cues`]), everything else lands in
     /// the SFX ring both hosts drain ([`World::take_sfx_ring_ops`]) - a
@@ -160,23 +160,26 @@ impl World {
     /// battle-action SM or the melee kernel.
     // REF: FUN_80047430 (the retail caller this substitutes for)
     pub(super) fn step_actor_anim_cues(&mut self, i: usize, frame: i16) {
-        use crate::anim_cue::{AnimCueActor, AnimCueEmit, AnimCueSlot, walk_anim_cues};
+        use legaia_engine_battle::anim_cue::{
+            AnimCueActor, AnimCueEmit, AnimCueSlot, walk_anim_cues,
+        };
         let Some(actor) = self.actors.get(i) else {
             return;
         };
         let Some(head) = actor.battle_effect_script.as_ref() else {
             return;
         };
-        let track: Vec<AnimCueSlot> = (0..usize::from(crate::anim_cue::ANIM_CUE_TRACK_LEN))
-            .map_while(|k| {
-                let o = crate::anim_cue::ANIM_CUE_TRACK_OFFSET + k * 4;
-                let b = head.get(o..o + 4)?;
-                Some(AnimCueSlot {
-                    frame: u16::from_le_bytes([b[0], b[1]]),
-                    cue: u16::from_le_bytes([b[2], b[3]]),
+        let track: Vec<AnimCueSlot> =
+            (0..usize::from(legaia_engine_battle::anim_cue::ANIM_CUE_TRACK_LEN))
+                .map_while(|k| {
+                    let o = legaia_engine_battle::anim_cue::ANIM_CUE_TRACK_OFFSET + k * 4;
+                    let b = head.get(o..o + 4)?;
+                    Some(AnimCueSlot {
+                        frame: u16::from_le_bytes([b[0], b[1]]),
+                        cue: u16::from_le_bytes([b[2], b[3]]),
+                    })
                 })
-            })
-            .collect();
+                .collect();
         if track.first().is_none_or(|s| s.cue == 0) {
             return;
         }
@@ -218,7 +221,7 @@ impl World {
             match emit {
                 AnimCueEmit::Route { id, slot } => self.route_battle_cue(id, slot),
                 AnimCueEmit::Dispatch { id } => {
-                    if let Some(rid) = crate::anim_cue::dispatch_ring_id(id) {
+                    if let Some(rid) = legaia_engine_battle::anim_cue::dispatch_ring_id(id) {
                         self.audio.sfx_ring_ops.push(SfxRingOp::Push(rid as i16));
                     }
                 }
@@ -228,7 +231,7 @@ impl World {
     }
 
     /// One call into the battle sound funnel `FUN_8004FE5C(id, category)`
-    /// ([`crate::sfx_cue::route_sfx_cue`]), with its two outputs placed where
+    /// ([`legaia_engine_battle::sfx_cue::route_sfx_cue`]), with its two outputs placed where
     /// both hosts read them: the CD-XA leg on
     /// [`AudioState::battle_xa_cues`], the ring id on the SFX ring ops - after
     /// the runtime row's `+4` category write the funnel makes first.
@@ -242,14 +245,15 @@ impl World {
                 .and_then(|t| t.get(n as usize).copied())
                 .unwrap_or(0)
         };
-        let src = crate::sfx_cue::SfxCueSources {
+        let src = legaia_engine_battle::sfx_cue::SfxCueSources {
             element_of: &element_of,
             xa_duration_raw: &xa_duration_raw,
             side_band_streaming: false,
             cd_read_busy: self.audio.battle_xa_busy_frames > 0,
         };
-        let mut ring = crate::sfx_cue::SfxCueRing::default();
-        let out = crate::sfx_cue::route_sfx_cue(&mut ring, u32::from(id), category, &src);
+        let mut ring = legaia_engine_battle::sfx_cue::SfxCueRing::default();
+        let out =
+            legaia_engine_battle::sfx_cue::route_sfx_cue(&mut ring, u32::from(id), category, &src);
         if let Some(xa) = out.xa
             && xa.duration_sectors > 0
         {
@@ -329,13 +333,13 @@ impl World {
     /// retail's `ctx[+0x1014]` / `+0x6C6` / `+0x24E` / `+0x1144` quartet.
     /// The render layer projects the afterimage streak from it; `is_armed()`
     /// is `false` until a terminator has run.
-    pub fn move_fx_streak(&self) -> crate::action_effect_script::MoveFxStreak {
+    pub fn move_fx_streak(&self) -> legaia_engine_effects::action_effect_script::MoveFxStreak {
         self.casting.move_fx_streak
     }
 
     /// Plan this frame's arts after-image ghosts - the engine seat of the
     /// retail per-actor walk `FUN_80049348` (see
-    /// [`crate::battle_afterimage`]). For every battle actor with a pose
+    /// [`legaia_engine_battle::battle_afterimage`]). For every battle actor with a pose
     /// history, sample the two rate-scheduled ring depths, keep the
     /// ghost-eligible ones, and resolve each ghost's flat additive colour
     /// (per-character base from the SCUS `0x80076908` table via the
@@ -343,9 +347,9 @@ impl World {
     /// drawn ghost decays by `0x101010`). Hosts draw each returned pose as
     /// a flat-coloured additive copy of the actor's mesh, behind the live
     /// body (retail pushes the ghost `0x50` OT buckets deeper).
-    // REF: FUN_80049348 (the walk; kernel in `crate::battle_afterimage`)
+    // REF: FUN_80049348 (the walk; kernel in `legaia_engine_battle::battle_afterimage`)
     pub fn battle_ghost_draws(&self) -> Vec<BattleGhostDraw> {
-        use crate::battle_afterimage as ai;
+        use legaia_engine_battle::battle_afterimage as ai;
         let mut out = Vec::new();
         for (i, actor) in self.actors.iter().enumerate() {
             if actor.battle_pose_history.is_empty() {
@@ -385,10 +389,10 @@ impl World {
     /// writes both impact arms perform when a hit lands. The melee / arts
     /// routine `FUN_801EC3E4` (`0x801EE3D4..0x801EE43C`) reads the selector
     /// off the acting actor's action record `+0x7A`
-    /// ([`crate::battle_anim::MonsterAnimPlayer::impact_class`]) and gates it
+    /// ([`legaia_engine_battle::battle_anim::MonsterAnimPlayer::impact_class`]) and gates it
     /// `0 < sel < 6` (`sltiu v0,v0,0x6` at `0x801EE3E0` - a class past the
     /// table skips all three writes; callers apply that gate, see
-    /// [`crate::move_power::IMPACT_CLASS_LIMIT`]). The monster special-attack arm
+    /// [`legaia_engine_battle::move_power::IMPACT_CLASS_LIMIT`]). The monster special-attack arm
     /// `FUN_801E09F8` (`0x801E15AC..0x801E15EC`, at each arm's impact phase)
     /// reads the move-power record's `+0x0A` and stamps unguarded (its
     /// selector ladder ends at `5`, so that byte never carries a `6`); a
@@ -425,20 +429,20 @@ impl World {
             a.battle.render_color = word;
         }
         a.battle.impact_state = selector;
-        a.battle.render_blend = vm::battle_formulas::TINT_BLEND_FULL;
+        a.battle.render_blend = legaia_engine_battle_vm::battle_formulas::TINT_BLEND_FULL;
     }
 
     /// Per-frame **battle ambient ramp**: the trailing block of
     /// `FUN_80050120` (`0x800505B0..0x8005083C`). The packed base
     /// `ctx[+0x890]` steps down while the summon close-up holds
     /// `ctx[+0x243]` and back up while it is clear
-    /// (`legaia_engine_vm::battle_ground_grid::ambient_base_step`), and the
+    /// (`legaia_engine_battle_vm::battle_ground_grid::ambient_base_step`), and the
     /// pass stores the base the grid's near and far colours derive from
     /// unless it skips on the floor. One call per vsync, so `dt = 1`.
     // PORT: FUN_80050120 (the trailing ambient / far-colour block; the
     // backdrop pair's `+0x78` / `+0x56` ramp is not modelled)
     pub(super) fn tick_battle_ambient(&mut self) {
-        use vm::battle_ground_grid as grid;
+        use legaia_engine_battle_vm::battle_ground_grid as grid;
         if self.mode != SceneMode::Battle {
             return;
         }
@@ -472,7 +476,8 @@ impl World {
     /// Both battle hosts cue their backdrop draw with it.
     pub fn battle_backdrop_cue(&self) -> Option<f32> {
         let w = self.battle.backdrop_cue;
-        (w != vm::battle_ground_grid::BACKDROP_CUE_FULL).then(|| f32::from(w) / 4096.0)
+        (w != legaia_engine_battle_vm::battle_ground_grid::BACKDROP_CUE_FULL)
+            .then(|| f32::from(w) / 4096.0)
     }
 
     /// The battle ambient base the ground grid is coloured from this frame,
@@ -485,9 +490,9 @@ impl World {
 
     /// Per-frame **presentation tint + impact freeze** maintenance: the
     /// per-actor arms of `FUN_80050120` (kernel
-    /// `legaia_engine_vm::battle_formulas::tint_sm_step`) followed by
+    /// `legaia_engine_battle_vm::battle_formulas::tint_sm_step`) followed by
     /// `FUN_8004CE2C` pass 2's per-clip impact arms (kernel
-    /// `legaia_engine_vm::battle_impact_fx`).
+    /// `legaia_engine_battle_vm::battle_impact_fx`).
     ///
     /// The SM runs on every seated battle actor and dispatches on the
     /// render flag `+0x21C` exactly as retail's jump table does: `0` eases
@@ -505,7 +510,7 @@ impl World {
     /// frame - the retail order (`FUN_80046A20` calls `FUN_8004CE2C`, then
     /// the presentation tick, then the next frame's arms re-stamp).
     // PORT: FUN_8004CE2C (pass 2 - per-clip impact arms; pass 4 is
-    // `crate::battle_status_clut`)
+    // `legaia_engine_battle::battle_status_clut`)
     // REF: FUN_80050120 (the per-actor arms, ported as `tint_sm_step`; this is
     // the per-frame walk over the actor table that drives them)
     /// The defeat fade's **sink** (`FUN_80050120` arm 2,
@@ -541,7 +546,8 @@ impl World {
             let a = &self.actors[slot];
             if !a.active
                 || a.battle_monster_id.is_none()
-                || a.battle.render_flag != vm::battle_formulas::STATE_DEFEAT_FADE
+                || a.battle.render_flag
+                    != legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
                 || a.battle.capture_state != 0
                 || a.battle.render_color & 0x00FF_FFFF == 0
             {
@@ -579,8 +585,8 @@ impl World {
     ///
     /// PORT: FUN_8004998C (`0x8004A5FC..0x8004A8D8`, the selector emit loop)
     pub(in crate::world) fn emit_battle_burn_sprites(&mut self) {
-        use crate::action_effect_script::RotationLut;
-        use vm::battle_impact_fx as ifx;
+        use legaia_engine_battle_vm::battle_impact_fx as ifx;
+        use legaia_engine_effects::action_effect_script::RotationLut;
         let acc = (self.battle.burn_emit_accum & 0xF) + 8;
         self.battle.burn_emit_accum = acc;
         let emits = acc / ifx::BURN_EMIT_QUANTUM;
@@ -612,7 +618,7 @@ impl World {
             ];
             let facing = a.battle.facing_angle;
             let red = plan.tint.colour as u8;
-            let lut = crate::action_effect_script::retail_rotation_lut();
+            let lut = legaia_engine_effects::action_effect_script::retail_rotation_lut();
             for _ in 0..emits {
                 let idx = self.next_rand() as usize % objects.len();
                 let rands = [
@@ -639,8 +645,8 @@ impl World {
     }
 
     pub(super) fn tick_battle_impact_fx(&mut self) {
-        use vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
-        use vm::battle_impact_fx as ifx;
+        use legaia_engine_battle_vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
+        use legaia_engine_battle_vm::battle_impact_fx as ifx;
         // The tag-`0x67` ribbon is a per-frame call in retail: re-derived
         // below every tick, so it drops the frame the window closes.
         self.battle.clip_ribbon = None;
@@ -692,8 +698,9 @@ impl World {
                 // `+0x1DC` fade-done bit, blend `0x800` (already in `next`).
                 b.render_flag = 0;
                 b.queued_anim = 0;
-                b.flag_bits =
-                    vm::battle_action::ActorFlags(vm::battle_action::ActorFlags::WINDUP_DONE);
+                b.flag_bits = legaia_engine_battle_vm::battle_action::ActorFlags(
+                    legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE,
+                );
             }
         }
         self.tick_battle_defeat_sink();
@@ -758,7 +765,7 @@ impl World {
         // `+0x3C..+0x43` is the spawn node's seat copied verbatim by the
         // battle setup (`0x8005158C..0x80051598`); the engine keeps its
         // `x`/`z` as `BattleActor::seat` and every retail seat row has
-        // `y = 0` (`crate::battle_seats`), so the seat's Y is `0`.
+        // `y = 0` (`legaia_engine_battle::battle_seats`), so the seat's Y is `0`.
         if w.effect_at_target
             && let Some(t) = self.actors.get(target)
         {
@@ -781,7 +788,9 @@ impl World {
             return;
         };
         if w.freeze_target {
-            t.battle.anim_rate = vm::battle_anim_rate::AnimRate(vm::battle_anim_rate::RATE_FROZEN);
+            t.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+                legaia_engine_battle_vm::battle_anim_rate::RATE_FROZEN,
+            );
         }
         if let Some(word) = tint {
             t.battle.render_color = word;
@@ -791,7 +800,7 @@ impl World {
         // arm stamps `+0x0C = 0x1000` (`sw v0,0xc(s1)` at `0x8004D180` /
         // `0x8004D1DC` / `0x8004D234` / `0x8004D294`).
         t.battle.impact_state = w.impact_selector;
-        t.battle.render_blend = vm::battle_formulas::TINT_BLEND_FULL;
+        t.battle.render_blend = legaia_engine_battle_vm::battle_formulas::TINT_BLEND_FULL;
     }
 
     /// The acting actor's impact-effect class for a landing hit - the
@@ -808,8 +817,8 @@ impl World {
 
     /// Plan this frame's weapon-trail sweeps - the engine seat of the
     /// retail trigger `FUN_8005112C` + sweep driver `FUN_80048310`
-    /// (kernels in `legaia_engine_vm::battle_trail`; geometry emission in
-    /// `legaia_engine_ui::battle_trail`).
+    /// (kernels in `legaia_engine_battle_vm::battle_trail`; geometry emission in
+    /// `legaia_render_kernels::battle_trail`).
     ///
     /// For each party battle actor whose committed clip's `+0x77`
     /// identity byte matches its character's trigger row, sample the pose
@@ -819,11 +828,11 @@ impl World {
     /// 16-step budget, or a pose without the trigger's control points.
     /// A sweep below two steps draws nothing (`FUN_80048310`'s
     /// `slti 0x2` gate).
-    // PORT: FUN_8005112C (trigger; table in `engine-vm::battle_trail`)
+    // PORT: FUN_8005112C (trigger; table in `engine-battle-vm::battle_trail`)
     // REF: FUN_80048310 (sweep capture - the ring sampling here replaces
-    // the rewound re-decode; see `engine-vm::battle_trail` module docs)
+    // the rewound re-decode; see `engine-battle-vm::battle_trail` module docs)
     pub fn battle_weapon_trail_draws(&self) -> Vec<BattleWeaponTrailDraw> {
-        use vm::battle_trail as wt;
+        use legaia_engine_battle_vm::battle_trail as wt;
         let mut out = Vec::new();
         for (i, actor) in self.actors.iter().enumerate() {
             // Party-only: retail's trigger gates on seat < 3; the engine
@@ -914,9 +923,9 @@ impl World {
     pub(in crate::world) fn battle_tween_target(
         &self,
         slot: usize,
-    ) -> Option<crate::battle_anim::TweenTarget> {
-        use crate::battle_anim::TweenTarget;
-        use vm::battle_action::ActorFlags;
+    ) -> Option<legaia_engine_battle::battle_anim::TweenTarget> {
+        use legaia_engine_battle::battle_anim::TweenTarget;
+        use legaia_engine_battle_vm::battle_action::ActorFlags;
         let a = self.actors.get(slot)?;
         let player = a.battle_animation.as_ref()?;
         let queued: u8 = if a.battle_reaction.is_some() {

@@ -9,7 +9,7 @@
   <dl class="kv">
     <dt>Magic</dt><dd>none - three carriers: a static table in <code>SCUS_942.54</code>, the trailer of each kingdom MAN, and section 2 of each scene MAN</dd>
     <dt>Where</dt><dd>site 1: <code>0x80073B18</code> (16 cells); site 2: pointer <code>DAT_80073EE0</code> into the kingdom MAN trailer (29 records); site 3: <code>_DAT_801C6EA0</code> into the scene MAN</dd>
-    <dt>Parsers</dt><dd><code>legaia_asset::worldmap_menu</code> (site 1), <code>legaia_asset::place_names</code> (sites 2 and 3); editor <code>legaia-patcher --rename-location</code> edits all three together</dd>
+    <dt>Parsers</dt><dd><code>legaia_game_tables::worldmap_menu</code> (site 1), <code>legaia_scene_formats::place_names</code> (sites 2 and 3); editor <code>legaia-patcher --rename-location</code> edits all three together</dd>
     <dt>Confidence</dt><dd>Confirmed - layouts read off the disc, both MAN consumers pinned live, and a rename read back out of RAM on a patched disc</dd>
     <dt>Used by</dt><dd><a href="../world-overview.html">World overview</a> (quick-travel table), <a href="../world.html">Game world</a>, <a href="../tooling/randomizer.html#location-names">Randomizer</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a></dd>
   </dl>

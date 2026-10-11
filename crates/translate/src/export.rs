@@ -1,0 +1,689 @@
+//! Export: walk a user-supplied disc and build the source language pack.
+//!
+//! Coverage (see `docs/tooling/translation/index.md` for the map):
+//!
+//! - `SCUS_942.54` name pools: item names + shared item-type strings
+//!   (`legaia_game_tables::item_names`), spell names (`legaia_game_tables::spell_names`),
+//!   Tactical Arts names (`legaia_art::arts_table`), accessory passive
+//!   names + descriptions (`legaia_game_tables::accessory_passive`), and the
+//!   new-game party name fields (`legaia_game_tables::new_game`). Strings are
+//!   pointer-addressed and deduplicated by target VA; interior pointers
+//!   (another table slot pointing into a string's span) clamp the budget.
+//! - Scene dialog: `0x1F`-lead segments in every scene-bundle MAN
+//!   (LZS-decompressed; keys carry the decompressed-domain offset).
+//! - Inline text: the same segments in raw PROT carriers (v12 event-script
+//!   prescripts, streaming-MAN dungeon scenes), scanned across every PROT
+//!   entry with the quality gate in [`super::segments`].
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use anyhow::{Context, Result};
+
+use legaia_game_tables::{accessory_passive, item_names, new_game, spell_names, worldmap_menu};
+use legaia_scene_formats::scene_asset_table;
+
+use legaia_disc_patch::disc::DiscPatcher;
+
+use super::build::TextCodec;
+use super::markup;
+use super::monster_names;
+use super::pack::{Entry, LanguagePack};
+use super::segments;
+use super::sjis;
+use super::stream_man::StreamManText;
+use super::ui;
+
+/// MAN asset type byte in a scene bundle's descriptor table.
+const MAN_TYPE: u8 = 0x03;
+
+/// Longest SCUS string we will follow before deciding a pointer is bogus.
+const MAX_SCUS_STRLEN: usize = 512;
+
+/// Slots of the spell-description pointer table
+/// (`spell_names::DESC_PTR_TABLE_VA`): it runs from the end of the spell
+/// records to the arts-name table (`0x80075EC4 - 0x80075DB0 = 0x114` bytes).
+pub const DESC_TABLE_SLOTS: u32 = 0x45;
+
+/// A located scene-bundle MAN, shared by export and import: the compressed
+/// stream's placement inside the PROT entry plus the decompressed bytes.
+pub struct SceneManText {
+    /// Byte offset of the compressed MAN stream within the entry.
+    pub man_offset: usize,
+    /// Length of the compressed stream on disc (what the repack overwrites).
+    pub compressed_len: usize,
+    /// Bytes the recompressed MAN must fit within (descriptor-boundary
+    /// budget - see [`legaia_disc_patch::man_compressed_budget`]).
+    pub compressed_budget: usize,
+    /// Byte offset, within the PROT entry, of the MAN descriptor's
+    /// `(type<<24)|size` word - rewritten when the generalized rewriter grows
+    /// the decompressed MAN (see `legaia_scene_formats::scene_asset_table`).
+    pub man_descriptor_off: usize,
+    /// Decompressed MAN (dialog edits mutate this in place, same-size).
+    pub decoded: Vec<u8>,
+}
+
+impl SceneManText {
+    /// Locate a scene bundle's MAN, or `None` if the entry isn't a scene
+    /// bundle / has no MAN / the stream doesn't decode.
+    pub fn locate(entry: &[u8]) -> Option<Self> {
+        let table = scene_asset_table::detect(entry)?;
+        let man_idx = table.descriptor_index(MAN_TYPE)?;
+        let man = table.used()[man_idx];
+        if man.size == 0 || man.data_offset == 0 {
+            return None;
+        }
+        let man_offset = man.data_offset as usize;
+        let body = entry.get(man_offset..)?;
+        let (decoded, consumed) = legaia_lzs::decompress_tracked(body, man.size as usize).ok()?;
+        if decoded.len() != man.size as usize {
+            return None;
+        }
+        Some(Self {
+            man_offset,
+            compressed_len: consumed,
+            compressed_budget: legaia_disc_patch::man_compressed_budget(
+                &table,
+                man_offset,
+                entry.len(),
+            ),
+            man_descriptor_off: scene_asset_table::SceneAssetTable::size_word_offset(man_idx),
+            decoded,
+        })
+    }
+
+    /// Byte range the compressed stream occupies in the PROT entry. Text found
+    /// *inside* it by the raw scanner is a coincidence of the LZS bytes, not a
+    /// string: writing there would corrupt the stream, and a MAN repack moves
+    /// those bytes anyway. Export excludes the range.
+    pub fn compressed_span(&self) -> std::ops::Range<usize> {
+        self.man_offset..self.man_offset + self.compressed_len
+    }
+
+    /// Recompress the (mutated) MAN; `None` if it would overflow the
+    /// original compressed footprint. Falls back to the optimal-parse
+    /// encoder when the fast greedy parse just misses the budget (a couple
+    /// of retail MANs have zero compressed slack, and translated text is
+    /// less repetitive than the source).
+    pub fn repack(&self) -> Option<Vec<u8>> {
+        self.repack_measured().ok()
+    }
+
+    /// [`Self::repack`], saying by how much it missed: `Err(n)` = the
+    /// optimal-parse stream is `n` bytes past the footprint.
+    pub fn repack_measured(&self) -> Result<Vec<u8>, usize> {
+        let stream = legaia_lzs::compress(&self.decoded);
+        if stream.len() <= self.compressed_budget {
+            return Ok(stream);
+        }
+        let stream = legaia_lzs::compress_optimal(&self.decoded);
+        if stream.len() <= self.compressed_budget {
+            Ok(stream)
+        } else {
+            Err(stream.len() - self.compressed_budget)
+        }
+    }
+}
+
+/// Collects `(string VA, contexts)` per section, then materializes entries
+/// with interior-pointer-aware budgets. Deduplication is **global**: several
+/// tables point into one string pool (e.g. Tactical Arts are also named in
+/// the spell-id space), so a VA is owned by the first section that claims it
+/// and later claims only merge their context. One VA = one entry = one write.
+struct ScusCollector<'a> {
+    scus: &'a [u8],
+    /// VA -> (owning section, joined context).
+    strings: BTreeMap<u32, (&'static str, String)>,
+    /// VA -> every table slot that points at it (see [`NameRefs`]).
+    refs: BTreeMap<u32, NameRefs>,
+}
+
+/// The pointer-table slots that reach one SCUS name string, as the export walk
+/// found them - what the import-side relocator ([`super::name_pool`]) repoints
+/// when a translation outgrows the string's own span.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NameRefs {
+    /// VAs of the pointer words that hold this string's VA.
+    pub slots: Vec<u32>,
+    /// `false` when any slot reaches the string by something other than its
+    /// pointer - the arts-menu description, whose trailing bytes are where the
+    /// in-battle matcher finds the combo string - so the string must stay put.
+    pub movable: bool,
+}
+
+impl<'a> ScusCollector<'a> {
+    fn new(scus: &'a [u8]) -> Self {
+        Self {
+            scus,
+            strings: BTreeMap::new(),
+            refs: BTreeMap::new(),
+        }
+    }
+
+    /// Record that the pointer word at `slot` reaches the string at `va`.
+    /// `movable = false` pins the string (see [`NameRefs::movable`]).
+    fn add(&mut self, section: &'static str, slot: u32, va: u32, context: String, movable: bool) {
+        let r = self.refs.entry(va).or_insert(NameRefs {
+            slots: Vec::new(),
+            movable: true,
+        });
+        if !r.slots.contains(&slot) {
+            r.slots.push(slot);
+        }
+        r.movable &= movable;
+        let (_, slot) = self.strings.entry(va).or_insert((section, String::new()));
+        if slot.is_empty() {
+            *slot = context;
+        } else if !slot.contains(&context) && slot.len() < 120 {
+            slot.push_str(", ");
+            slot.push_str(&context);
+        }
+    }
+
+    /// Raw string bytes at `va` (up to, not including, the NUL). `None` for
+    /// unmappable pointers, missing terminators, or empty strings.
+    fn read_str(&self, va: u32) -> Option<Vec<u8>> {
+        let off = item_names::file_offset_for_va(self.scus, va)?;
+        let tail = self.scus.get(off..)?;
+        let len = tail
+            .iter()
+            .take(MAX_SCUS_STRLEN)
+            .position(|&b| b == 0)
+            .filter(|&l| l > 0)?;
+        Some(tail[..len].to_vec())
+    }
+
+    /// Bytes of **alignment padding** usable past this string's terminator.
+    ///
+    /// The name pools are 4-byte aligned, so a string of length `n` occupies
+    /// `align4(n + 1)` bytes and the 0..3 bytes after its NUL are zero filler
+    /// (verified per string, not assumed: the run must actually be zeros).
+    /// Those bytes are dead - nothing reads past a terminator - so a
+    /// translation may spill into them as long as it re-terminates, which buys
+    /// the tight name tables an extra ~1.5 bytes on average. The window never
+    /// crosses another pointed-to string: any collected VA inside it clamps
+    /// the run, and `all_vas` includes the VAs of empty strings (a pointer to
+    /// a bare NUL), which is the only thing that could legally live in there.
+    fn padding_slack(&self, va: u32, strlen: usize, all_vas: &BTreeSet<u32>) -> usize {
+        let Some(off) = item_names::file_offset_for_va(self.scus, va) else {
+            return 0;
+        };
+        let end = off + strlen; // the NUL
+        let aligned = (end + 4) & !3; // first offset past the terminator, 4-aligned
+        let mut u = end + 1;
+        while u < aligned
+            && self.scus.get(u) == Some(&0)
+            && !all_vas.contains(&(va + (u - off) as u32))
+        {
+            u += 1;
+        }
+        u - 1 - end
+    }
+
+    /// Materialize one section's entries (the VAs it owns), clamping each
+    /// budget at the nearest interior pointer (any collected VA that lands
+    /// inside the string's span - overwriting past it would corrupt the
+    /// other slot's string) and widening it across the zero alignment padding
+    /// that follows the terminator (see [`Self::padding_slack`]).
+    fn entries_for(&self, section: &str, all_vas: &BTreeSet<u32>) -> Vec<Entry> {
+        let mut out = Vec::new();
+        for (&va, (owner, context)) in &self.strings {
+            if *owner != section {
+                continue;
+            }
+            let Some(bytes) = self.read_str(va) else {
+                continue;
+            };
+            let strlen = bytes.len();
+            let interior = all_vas
+                .range(va + 1..va + strlen as u32 + 1)
+                .next()
+                .map(|&v| (v - va - 1) as usize);
+            // An interior pointer means another slot's string starts inside
+            // this one's span: the budget stops there, and there is no padding
+            // to reclaim (the pool continues).
+            let budget = match interior {
+                Some(clamped) => clamped,
+                None => strlen + self.padding_slack(va, strlen, all_vas),
+            };
+            if budget == 0 {
+                continue;
+            }
+            out.push(Entry {
+                key: format!("scus:str:0x{va:08x}"),
+                context: context.clone(),
+                source: markup::decode(&bytes),
+                translation: String::new(),
+                budget,
+            });
+        }
+        out
+    }
+
+    fn all_vas(&self) -> BTreeSet<u32> {
+        self.strings.keys().copied().collect()
+    }
+}
+
+fn read_u32(buf: &[u8], off: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(buf.get(off..off + 4)?.try_into().ok()?))
+}
+
+/// Pointer word at `va` inside the loaded data segment.
+fn ptr_at(scus: &[u8], va: u32) -> Option<u32> {
+    read_u32(scus, item_names::file_offset_for_va(scus, va)?)
+}
+
+fn walk_name_tables(scus: &[u8], col: &mut ScusCollector) {
+    // Item names + the shared type strings (record = [name_ptr][type_ptr][meta]).
+    let items = item_names::ItemNameTable::from_scus(scus);
+    for id in 0..=255u8 {
+        let rec = item_names::TABLE_VA + id as u32 * 12;
+        if let Some(ptr) = ptr_at(scus, rec)
+            && ptr != 0
+        {
+            col.add("items", rec, ptr, format!("item 0x{id:02x}"), true);
+        }
+        if let Some(tp) = ptr_at(scus, rec + 4)
+            && tp != 0
+        {
+            let name = items
+                .as_ref()
+                .and_then(|t| t.name(id))
+                .unwrap_or("?")
+                .to_string();
+            col.add(
+                "item_types",
+                rec + 4,
+                tp,
+                format!("type of 0x{id:02x} {name}"),
+                true,
+            );
+        }
+    }
+
+    // Spell names (stats record +8 = display-name pointer).
+    let spells = spell_names::SpellNameTable::from_scus(scus);
+    for id in 0..=255u16 {
+        let va = spell_names::STATS_VA + id as u32 * spell_names::RECORD_STRIDE as u32 + 8;
+        if let Some(ptr) = ptr_at(scus, va)
+            && ptr != 0
+        {
+            let name = spells
+                .as_ref()
+                .and_then(|t| t.name(id as u8))
+                .unwrap_or("?")
+                .to_string();
+            col.add("spells", va, ptr, format!("spell 0x{id:02x} {name}"), true);
+        }
+    }
+
+    // Spell descriptions: the info window's `Name|effect` strings, reached
+    // through the flat pointer table the record's `+4` byte indexes (index 0
+    // = none). Walked by table slot, so every string the window can draw is
+    // collected once.
+    for idx in 1..DESC_TABLE_SLOTS {
+        let va = spell_names::DESC_PTR_TABLE_VA + idx * 4;
+        if let Some(ptr) = ptr_at(scus, va)
+            && ptr != 0
+        {
+            col.add(
+                "spells",
+                va,
+                ptr,
+                format!("spell description {idx} ('|' = line break)"),
+                true,
+            );
+        }
+    }
+
+    // Tactical Arts names (record +0xC = name pointer) and the arts-menu
+    // descriptions (+0x10). The description is also where the in-battle
+    // matcher finds the combo string (the bytes right after its NUL), so it
+    // stays a same-size in-place rewrite that never moves - see
+    // `legaia_art::arts_table`.
+    if let Some(arts) = legaia_art::arts_table::parse_from_scus(scus) {
+        for (i, art) in arts.iter().enumerate() {
+            let rec = legaia_art::arts_table::TABLE_VA
+                + (i * legaia_art::arts_table::RECORD_STRIDE) as u32;
+            if let Some(ptr) = ptr_at(scus, rec + 0xC)
+                && ptr != 0
+            {
+                col.add("arts", rec + 0xC, ptr, format!("art '{}'", art.name), true);
+            }
+            if let Some(ptr) = ptr_at(scus, rec + 0x10)
+                && ptr != 0
+            {
+                col.add(
+                    "arts",
+                    rec + 0x10,
+                    ptr,
+                    format!("art '{}' description ('|' = line break)", art.name),
+                    false,
+                );
+            }
+        }
+    }
+
+    // Accessory passive names (+4) and descriptions (+8).
+    for idx in 0..accessory_passive::PASSIVE_COUNT as u32 {
+        let rec =
+            accessory_passive::PASSIVE_TABLE_VA + idx * accessory_passive::PASSIVE_STRIDE as u32;
+        if let Some(ptr) = ptr_at(scus, rec + 4)
+            && ptr != 0
+        {
+            col.add(
+                "accessory_passives",
+                rec + 4,
+                ptr,
+                format!("passive 0x{idx:02x} name"),
+                true,
+            );
+        }
+        if let Some(ptr) = ptr_at(scus, rec + 8)
+            && ptr != 0
+        {
+            col.add(
+                "accessory_passives",
+                rec + 8,
+                ptr,
+                format!("passive 0x{idx:02x} description ('|' = line break)"),
+                true,
+            );
+        }
+    }
+}
+
+/// Every pointer-addressed SCUS name string the export walks, keyed by string
+/// VA, with the table slots that reach it. The import-side relocator's input.
+pub fn name_table_refs(scus: &[u8]) -> BTreeMap<u32, NameRefs> {
+    let mut col = ScusCollector::new(scus);
+    walk_name_tables(scus, &mut col);
+    col.refs
+}
+
+fn collect_scus_sections(scus: &[u8], pack: &mut LanguagePack) -> Result<()> {
+    let mut col = ScusCollector::new(scus);
+    walk_name_tables(scus, &mut col);
+    let all = col.all_vas();
+    pack.sections.items = col.entries_for("items", &all);
+    pack.sections.item_types = col.entries_for("item_types", &all);
+    pack.sections.spells = col.entries_for("spells", &all);
+    pack.sections.arts = col.entries_for("arts", &all);
+    pack.sections.accessory_passives = col.entries_for("accessory_passives", &all);
+
+    // New-game party names: fixed 10-byte NUL-padded fields, not pointers.
+    for n in 0..new_game::PARTY_RECORDS {
+        let va = new_game::PARTY_TEMPLATE_VA + (n * new_game::RECORD_STRIDE) as u32 + 16;
+        let Some(off) = item_names::file_offset_for_va(scus, va) else {
+            continue;
+        };
+        let Some(field) = scus.get(off..off + new_game::NAME_LEN) else {
+            continue;
+        };
+        let len = field.iter().position(|&b| b == 0).unwrap_or(field.len());
+        if len == 0 {
+            continue;
+        }
+        pack.sections.party_names.push(Entry {
+            key: format!("scus:party:{n}"),
+            context: format!("new-game roster slot {n} (10-byte field)"),
+            source: markup::decode(&field[..len]),
+            translation: String::new(),
+            budget: new_game::NAME_LEN - 1,
+        });
+    }
+    Ok(())
+}
+
+/// Overlay UI menu strings: the pinned menu / battle overlay string pools
+/// (`ui:<prot>:0x<va>` keys). Each pool is read once from its PROT overlay
+/// entry and scanned NUL-to-NUL inside its VA window (see [`ui`]).
+fn collect_ui_sections(patcher: &DiscPatcher, pack: &mut LanguagePack) {
+    for pool in ui::UI_STRING_POOLS {
+        let Ok(entry) = patcher.read_entry(pool.prot_index) else {
+            continue;
+        };
+        for s in ui::scan_pool(&entry, pool) {
+            pack.sections.ui_menu.push(Entry {
+                key: format!("ui:{}:0x{:08x}", pool.prot_index, s.va),
+                context: format!("{} overlay UI label", pool.label),
+                source: markup::decode(&s.bytes),
+                translation: String::new(),
+                budget: s.budget,
+            });
+        }
+    }
+}
+
+/// `SCUS_942.54` system strings outside the name tables (`scus:str:` keys in
+/// the `system_text` section) and the world-map quick-travel place-name cells
+/// (`scus:cell:` keys, fixed `0x20`-byte fields). See [`ui::SCUS_STRING_POOLS`]
+/// and `legaia_game_tables::worldmap_menu`.
+fn collect_scus_system_sections(scus: &[u8], pack: &mut LanguagePack) {
+    for pool in ui::SCUS_STRING_POOLS {
+        for s in ui::scan_pool(scus, pool) {
+            pack.sections.system_text.push(Entry {
+                key: format!("scus:str:0x{:08x}", s.va),
+                context: format!("{} (SCUS system string)", pool.label),
+                source: markup::decode(&s.bytes),
+                translation: String::new(),
+                budget: s.budget,
+            });
+        }
+    }
+    for n in 0..worldmap_menu::NAME_COUNT {
+        let va = worldmap_menu::NAME_TABLE_ADDR + (n * worldmap_menu::NAME_STRIDE) as u32;
+        let Some(off) = item_names::file_offset_for_va(scus, va) else {
+            continue;
+        };
+        let Some(cell) = scus.get(off..off + worldmap_menu::NAME_STRIDE) else {
+            continue;
+        };
+        let len = cell.iter().position(|&b| b == 0).unwrap_or(cell.len());
+        if len == 0 {
+            continue;
+        }
+        pack.sections.place_names.push(Entry {
+            key: format!("scus:cell:0x{va:08x}"),
+            context: format!("world-map quick-travel place name {n} (0x20-byte cell)"),
+            source: markup::decode(&cell[..len]),
+            translation: String::new(),
+            budget: worldmap_menu::NAME_STRIDE - 1,
+        });
+    }
+}
+
+/// Monster names (`mon:<id>` keys): each populated record of the monster
+/// archive, budgeted by [`monster_names::budgets`].
+fn collect_monster_names(patcher: &DiscPatcher, pack: &mut LanguagePack) {
+    let Ok(entry) = patcher.read_entry(legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY) else {
+        return;
+    };
+    let fields = monster_names::fields(&entry);
+    for ((id, f), (_, budget)) in fields.iter().zip(monster_names::budgets(&fields)) {
+        pack.sections.monster_names.push(Entry {
+            key: format!("mon:{id}"),
+            context: format!(
+                "monster {id} name (battle plaque; keep a leading {{5e:xx}} badge and a \
+                 trailing ' $N')"
+            ),
+            source: monster_names::decode(&f.bytes),
+            translation: String::new(),
+            budget,
+        });
+    }
+}
+
+/// Per-PROT-entry scan length: the entry's footprint clamped to the next
+/// entry's start, so overlapping extended footprints don't export the same
+/// disc bytes twice under two keys.
+fn clamped_entry_lens(patcher: &DiscPatcher) -> Vec<usize> {
+    let n = patcher.entry_count();
+    let lbas: BTreeSet<u32> = (0..n).filter_map(|i| patcher.entry_disc_lba(i)).collect();
+    (0..n)
+        .map(|i| {
+            let (Some(lba), Some(size)) = (patcher.entry_disc_lba(i), patcher.entry_footprint(i))
+            else {
+                return 0;
+            };
+            let cap = lbas
+                .range(lba + 1..)
+                .next()
+                .map(|&next| (next - lba) as usize * 2048)
+                .unwrap_or(usize::MAX);
+            (size as usize).min(cap)
+        })
+        .collect()
+}
+
+/// One exported dialog line: its disc coordinate, byte length and decoded
+/// source text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DialogLine {
+    /// First text byte (the byte after the `0x1F` lead / the count byte).
+    pub off: usize,
+    /// Text bytes (Latin: up to the terminator; Japanese: `2 * count`).
+    pub len: usize,
+    /// Pack markup of the text bytes.
+    pub source: String,
+}
+
+/// The dialog lines of one PROT entry's **scene-bundle MAN** (`man:` keys,
+/// decompressed-MAN offsets), for the build's text codec.
+pub fn scene_man_lines(man: &SceneManText, codec: TextCodec) -> Vec<DialogLine> {
+    lines_of(&man.decoded, codec, 0)
+}
+
+/// The dialog lines of one PROT entry's **raw bytes** (`raw:` keys, entry
+/// offsets): the Latin raw-carrier scan ([`segments::scan_raw_carrier`]), or
+/// on the Japanese build the script walk of a streaming scene's leading MAN
+/// chunk.
+pub fn raw_lines(entry: &[u8], codec: TextCodec) -> Vec<DialogLine> {
+    match codec {
+        TextCodec::Latin { allow_high } => segments::scan_raw_carrier(entry, allow_high)
+            .into_iter()
+            .map(|seg| DialogLine {
+                off: seg.text_off,
+                len: seg.len,
+                source: markup::decode(&entry[seg.text_off..seg.text_off + seg.len]),
+            })
+            .collect(),
+        TextCodec::ShiftJis => match StreamManText::locate_structural(entry) {
+            Some(sm) => lines_of(&sm.man, codec, sm.man_range().start),
+            None => Vec::new(),
+        },
+    }
+}
+
+/// Lines of a decompressed MAN, offsets shifted by `base`.
+fn lines_of(man: &[u8], codec: TextCodec, base: usize) -> Vec<DialogLine> {
+    type Decode = fn(&[u8]) -> String;
+    let (segs, decode): (Vec<segments::Segment>, Decode) = match codec {
+        TextCodec::Latin { allow_high } => (segments::scan_man(man, allow_high), markup::decode),
+        TextCodec::ShiftJis => (sjis::man_lines(man), sjis::decode),
+    };
+    segs.into_iter()
+        .map(|seg| DialogLine {
+            off: base + seg.text_off,
+            len: seg.len,
+            source: decode(&man[seg.text_off..seg.text_off + seg.len]),
+        })
+        .collect()
+}
+
+/// Export the full language pack from an opened disc.
+///
+/// Every build exports its dialog (scene MANs and raw carriers) and, on a
+/// Latin build, its monster names - disc coordinates that mean the same thing
+/// on every build. The executable-keyed sections (name tables, system text,
+/// overlay UI, place-name cells) are exported from the USA build only: their
+/// `scus:` / `ui:` keys are USA virtual addresses (see [`super::build`]).
+pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
+    let build = super::build::detect(patcher);
+    let mut pack = LanguagePack::new(build.language());
+    pack.game = build.label();
+    pack.notes = "Source export - fill `translation:` fields (markup: printable ASCII, \
+                  {xx}/{xx:yy} byte escapes, '|' = newline glyph) and run \
+                  `legaia-patcher translate import`."
+        .to_string();
+
+    if build.is_usa() {
+        let scus = patcher
+            .read_named_file("SCUS_942.54")
+            .context("SCUS_942.54 not found in disc image")?;
+        collect_scus_sections(&scus, &mut pack)?;
+        collect_ui_sections(patcher, &mut pack);
+        collect_scus_system_sections(&scus, &mut pack);
+    } else {
+        pack.notes = format!(
+            "Source export of {} - dialog only: the name tables, system text and \
+             menu labels are keyed to the USA executable and are exported from the \
+             USA disc only.{}",
+            build.label(),
+            if build.codec == TextCodec::ShiftJis {
+                " Japanese lines are count-led Shift-JIS; this pack is a reading \
+                 reference - `import` does not write to a Japanese disc."
+            } else {
+                ""
+            }
+        );
+    }
+    if matches!(build.codec, TextCodec::Latin { .. }) {
+        collect_monster_names(patcher, &mut pack);
+    }
+
+    let cdname = patcher.cdname();
+    let scene_of = |idx: usize| -> String {
+        cdname
+            .as_ref()
+            .and_then(|m| legaia_prot::cdname::block_for_extraction_index(m, idx as u32))
+            .unwrap_or("?")
+            .to_string()
+    };
+
+    let mut seen_lba = BTreeSet::new();
+    for (idx, &clamped_len) in clamped_entry_lens(patcher).iter().enumerate() {
+        let Some(lba) = patcher.entry_disc_lba(idx) else {
+            continue;
+        };
+        if !seen_lba.insert(lba) {
+            continue; // duplicate TOC entry over the same disc bytes
+        }
+        let Ok(mut entry) = patcher.read_entry(idx) else {
+            continue;
+        };
+        entry.truncate(clamped_len);
+        let scene = scene_of(idx);
+
+        // Scene-bundle MAN (LZS domain).
+        if let Some(man) = SceneManText::locate(&entry) {
+            for line in scene_man_lines(&man, build.codec) {
+                pack.sections.scene_dialog.push(Entry {
+                    key: format!("man:{idx}:0x{:x}", line.off),
+                    context: scene.clone(),
+                    source: line.source,
+                    translation: String::new(),
+                    budget: line.len,
+                });
+            }
+        }
+
+        // Raw carriers (v12 prescripts, streaming MANs, ...). The `0x1F <text>
+        // 0x00` framing also occurs by coincidence throughout binary asset
+        // banks (sequenced music, VAB, the battle-character packs, monster
+        // archives), and inside this entry's own compressed MAN stream; the
+        // scanner gates on a genuine dialog carrier and drops those hits (see
+        // [`segments::scan_raw_carrier`]) - writing over a coincidental hit in
+        // a binary bank corrupts the asset and freezes the game.
+        for line in raw_lines(&entry, build.codec) {
+            pack.sections.inline_text.push(Entry {
+                key: format!("raw:{idx}:0x{:x}", line.off),
+                context: scene.clone(),
+                source: line.source,
+                translation: String::new(),
+                budget: line.len,
+            });
+        }
+    }
+    Ok(pack)
+}

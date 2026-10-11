@@ -4,10 +4,10 @@
 
 use crate::{ScreenInputs, shop_item_label};
 use legaia_engine_core::field_submode_screen::SubmodeLine;
-use legaia_engine_ui::{self as ui, TextDraw, shop_screen as ss, ui_prize_exchange as px};
+use legaia_engine_ui::{self as ui, TextDraw, prize_exchange as px, shop_screen as ss};
 
 /// The casino **prize-exchange** windows while a
-/// `legaia_engine_core::prize_exchange::PrizeExchangeSession` owns the pad -
+/// `legaia_engine_minigames::prize_exchange::PrizeExchangeSession` owns the pad -
 /// the shared `engine-ui` composition, framed, with its hand / coin
 /// pictogram resolved to atlas sprites (`shop_screen::prize_screen_draws`).
 /// Texts in stage pixels, sprites in surface pixels. Empty without a session
@@ -35,7 +35,7 @@ pub fn prize_window_draws(
                     price: r.price,
                     held,
                     // FUN_801D5DE0's ink arm, over the coin bank.
-                    ink: legaia_engine_core::shop::shop_stock_row_ink(
+                    ink: legaia_engine_menus::shop::shop_stock_row_ink(
                         i16::from(held),
                         r.gate as i16,
                         world.minigames.casino_coins as i32,
@@ -66,7 +66,7 @@ pub fn prize_window_draws(
 /// (`SceneHost::coin_counter_lines`, labels read off the disc) and drawn
 /// through the shared pen composition. Stage pixels.
 pub fn coin_counter_window_draws(font: &legaia_font::Font, lines: &[SubmodeLine]) -> Vec<TextDraw> {
-    ui::ui_text_lines::pen_line_draws_for(
+    legaia_engine_ui::text_lines::pen_line_draws_for(
         font,
         lines
             .iter()

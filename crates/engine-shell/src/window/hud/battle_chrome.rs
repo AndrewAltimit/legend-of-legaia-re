@@ -1,7 +1,6 @@
 //! The battle HUD chrome the play window draws: the frame and badge rects,
 //! the banner message, the item / command menu chips, the Muscle Dome chrome
 //! gate and the enemy target strip.
-//! Split out of `hud.rs`; no logic change.
 
 use super::*;
 
@@ -12,7 +11,7 @@ impl PlayWindowApp {
     pub(in crate::window) fn battle_hud_solid_src(&self) -> Option<(u32, u32, u32, u32)> {
         use std::sync::OnceLock;
         static SOLID: OnceLock<Option<(u32, u32, u32, u32)>> = OnceLock::new();
-        *SOLID.get_or_init(|| legaia_engine_render::font_solid_src(&self.font))
+        *SOLID.get_or_init(|| legaia_engine_ui::font_solid_src(&self.font))
     }
 
     /// One battle-HUD frame from the shared builder: the party strip, the
@@ -25,13 +24,13 @@ impl PlayWindowApp {
         &self,
         w: u32,
         h: u32,
-    ) -> legaia_engine_render::BattleHudDraws {
+    ) -> legaia_engine_ui::BattleHudDraws {
         use legaia_engine_core::battle_hud as bh;
         // The result screen draws neither the party card nor the pill
         // (retail `noa_levelup_banner`: the two framed windows over the
         // bare battle scene) - the readout comes down with the last action.
         if self.session.host.world.battle_result_screen_active() {
-            return legaia_engine_render::BattleHudDraws {
+            return legaia_engine_ui::BattleHudDraws {
                 text: Vec::new(),
                 sprites: Vec::new(),
             };
@@ -60,7 +59,7 @@ impl PlayWindowApp {
         let banner = self.battle_banner_message();
         battle_hud_draws_for(
             &self.font,
-            &legaia_engine_render::BattleHudFrame {
+            &legaia_engine_ui::BattleHudFrame {
                 slots: &slots,
                 popups: &popups,
                 log: &[],
@@ -91,7 +90,7 @@ impl PlayWindowApp {
                     // sits under the strip's fill. This host composites
                     // every text run above every sprite and cannot put the
                     // plaque's name under the strip's frame - it parks it.
-                    || legaia_engine_core::timed_fight::timed_fight_strip(w_ref).is_some(),
+                    || legaia_engine_core::world_views::timed_fight::timed_fight_strip(w_ref).is_some(),
                 badges: badges.as_ref(),
                 // The same box, tested against the party surfaces' own rows:
                 // a bottom-anchored prompt lands on the active-actor bar
@@ -113,7 +112,7 @@ impl PlayWindowApp {
                 commit_log: &commit_log,
                 intro_names: &intro_names,
                 stage_banner: stage_banner.as_ref().map(|(l, x, y)| (l.as_str(), *x, *y)),
-                diag: legaia_engine_render::diag_hud_enabled(),
+                diag: legaia_engine_ui::diag_hud_enabled(),
             },
             BATTLE_HUD_PEN,
         )
@@ -125,7 +124,7 @@ impl PlayWindowApp {
     /// built from, and the HUD falls back to its labelled tag.
     pub(in crate::window) fn battle_badge_rects(
         &self,
-    ) -> Option<legaia_engine_render::battle_hud_chrome::BattleBadgeRects> {
+    ) -> Option<legaia_engine_ui::battle_hud_chrome::BattleBadgeRects> {
         self.save_menu.as_ref().map(|a| a.badges)
     }
 
@@ -148,7 +147,7 @@ impl PlayWindowApp {
     /// frame via [`with_battle_item_frame`]).
     pub(in crate::window) fn battle_item_menu_model(
         &self,
-    ) -> Option<legaia_engine_core::inventory_use::BattleItemMenuModel> {
+    ) -> Option<legaia_engine_menus::inventory_use::BattleItemMenuModel> {
         self.session.host.world.battle_item_menu_model()
     }
 
@@ -171,8 +170,9 @@ impl PlayWindowApp {
     }
 
     pub(in crate::window) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
-        use legaia_engine_core::battle_hud::{CommandChipPhase, battle_command_chips};
-        use legaia_engine_render::battle_command_ui::ChipPhase;
+        use legaia_engine_core::battle_hud::battle_command_chips;
+        use legaia_engine_menus::battle_input::CommandChipPhase;
+        use legaia_engine_ui::battle_command_ui::ChipPhase;
         let chips = battle_command_chips(&self.session.host.world)?;
         // The two enums are separate types because `engine-ui` is a leaf
         // that does not link `engine-core`; the browser page carries the
@@ -199,28 +199,28 @@ impl PlayWindowApp {
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
+    ) -> Vec<legaia_engine_ui::SpriteDraw> {
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
         if self.boot_ui.is_active() {
             return Vec::new();
         }
-        if self.session.host.world.mode == legaia_engine_core::world::SceneMode::MuscleDome
+        if self.session.host.world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
             && !self.dome_battle_chrome_up()
         {
             return Vec::new();
         }
         if !matches!(
             self.session.host.world.mode,
-            legaia_engine_core::world::SceneMode::Battle
-                | legaia_engine_core::world::SceneMode::MuscleDome
+            legaia_engine_mode::mode::SceneMode::Battle
+                | legaia_engine_mode::mode::SceneMode::MuscleDome
         ) {
             let Some(message) = self.battle_banner_message() else {
                 return Vec::new();
             };
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-            use legaia_engine_render::battle_hud_chrome as bhc;
+            use legaia_engine_ui::battle_hud_chrome as bhc;
             return bhc::message_banner_chrome_draws_for(
                 &assets.rects,
                 bhc::message_banner_content(&self.font, &message),
@@ -235,7 +235,7 @@ impl PlayWindowApp {
         if let Some(model) = self.battle_item_menu_model() {
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
             out.extend(with_battle_item_frame(&model, |frame| {
-                legaia_engine_render::battle_item_ui::battle_item_window_sprites(
+                legaia_engine_ui::battle_item_ui::battle_item_window_sprites(
                     &self.font,
                     &assets.rects,
                     frame,
@@ -249,7 +249,7 @@ impl PlayWindowApp {
         if let (Some(rects), Some((chips, cursor, phase))) =
             (assets.rects.battle, self.battle_command_menu_chips())
         {
-            use legaia_engine_render::battle_command_ui as bcu;
+            use legaia_engine_ui::battle_command_ui as bcu;
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
             let views = bcu::command_chip_views(&chips);
             // The plates, and on top of them every mark the ring wears -
@@ -289,11 +289,11 @@ impl PlayWindowApp {
     /// column.
     pub(in crate::window) fn enemy_target_strip_draws(
         &self,
-        picker: &legaia_engine_core::target_picker::TargetPickerSession,
+        picker: &legaia_engine_battle::target_picker::TargetPickerSession,
         _w: u32,
         _h: u32,
     ) -> Option<Vec<TextDraw>> {
-        use legaia_engine_core::target_picker::{CursorRow, PickerState};
+        use legaia_engine_battle::target_picker::{CursorRow, PickerState};
         matches!(
             picker.state(),
             PickerState::Cursor {

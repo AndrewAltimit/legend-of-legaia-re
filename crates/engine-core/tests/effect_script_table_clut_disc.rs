@@ -15,10 +15,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::action_effect_script::TABLE_CLUT_GATE;
-use legaia_engine_core::battle_events::BattleEffectSpawn;
-use legaia_engine_core::move_power::MovePowerCatalog;
+use legaia_engine_battle::battle_events::BattleEffectSpawn;
+use legaia_engine_battle::move_power::MovePowerCatalog;
 use legaia_engine_core::world::World;
+use legaia_engine_effects::action_effect_script::TABLE_CLUT_GATE;
 use legaia_prot::archive::Archive;
 
 fn extracted() -> Option<PathBuf> {
@@ -36,7 +36,7 @@ fn overlay_0898(dir: &std::path::Path) -> Vec<u8> {
     let mut archive = Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
     let entry = archive
         .entries
-        .get(legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .get(legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .cloned()
         .expect("PROT 0898 entry");
     let mut bytes = Vec::new();
@@ -116,7 +116,7 @@ fn draining_table_spawns_stages_the_real_clut_map_bytes_under_the_retail_gates()
     let mut vram = legaia_tim::Vram::new();
     let src: Vec<u8> = (0..32).collect();
     vram.write_clut_row(u16::from(expected_x), 476, &src);
-    assert!(legaia_engine_core::battle_effect_clut::stage_effect_clut(
+    assert!(legaia_engine_battle::battle_effect_clut::stage_effect_clut(
         &mut vram, expected_x
     ));
     assert_eq!(vram.pixel(224, 476), u16::from_le_bytes([src[0], src[1]]));

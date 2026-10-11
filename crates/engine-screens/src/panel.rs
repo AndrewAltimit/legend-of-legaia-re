@@ -10,7 +10,7 @@
 //! or the transient exit beat.
 
 use crate::{SHOP_PEN, ScreenInputs, shop_window_draws};
-use legaia_engine_core::menu_runtime::MenuState;
+use legaia_engine_menus::menu::MenuState;
 use legaia_engine_ui::{self as ui, ShopRow, TextDraw, shop_screen as ss};
 
 /// The fallback panel's output for one frame.
@@ -116,7 +116,7 @@ fn shop_trade_draws(
 ) -> Vec<TextDraw> {
     let menu = inputs.menu;
     let pending = menu.pending_trade_offer();
-    let text = legaia_engine_core::seru_trade::trade_screen_text(
+    let text = legaia_engine_battle::seru_trade::trade_screen_text(
         menu.trade_session.as_ref(),
         pending.as_ref(),
         state == Some(MenuState::ShopTradeConfirm),

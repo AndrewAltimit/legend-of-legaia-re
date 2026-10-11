@@ -1,0 +1,401 @@
+use crate::*;
+
+// -----------------------------------------------------------------------
+// Generic 9-slice panel composition + "Now checking" dialog + slot-preview
+// grid + slot-info panel rendering.
+//
+// All positions are stage pixels (32x240 boot-UI stage); `stage_scale`
+// upscales to surface pixels. Pinned against the captured retail
+// framebuffer in `captures/slot_info_dump/.../now_checking_fb.png`
+// (sstate9 → CROSS → ~30 vsyncs) and `slot_info_fb.png` (~170 vsyncs).
+// -----------------------------------------------------------------------
+
+/// Compose a 9-slice panel at arbitrary `(dst_x, dst_y, dst_w, dst_h)`
+/// stage pixels into `out`. Tiles the top/bottom 24-wide edges with a
+/// remainder, and tiles the left/right 4×21 edges vertically with a
+/// remainder. Used by both [`save_select_chrome_draws_for`] (which has
+/// its own legacy code path that retains byte-exact behaviour) and
+/// [`now_checking_panel_draws_for`].
+///
+/// Interior fill: a horizontal tiling of `rects.panel_interior` with
+/// the per-tile width narrowed on the last (partial) column. The
+/// retail engine emits the interior FIRST (3 gouraud-shaded quads
+/// covering 32+32+17 of the 81-wide panel), then the border on top.
+pub(crate) fn nine_slice_panel_into(
+    out: &mut Vec<SpriteDraw>,
+    rects: &SaveMenuAtlasRects,
+    dst_stage: (i32, i32, i32, i32), // (x, y, w, h)
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+    // `true` = tile the raw filigree in 2D (the pause-menu windows, which
+    // fill with navy damask). `false` = the save-screen behaviour: a single
+    // gradient-baked interior tile stretched to the panel height (byte-pinned
+    // against `now_checking_fb.png` / `slot_info_fb.png`; those panels are not
+    // filigree-filled - the empty preview panel shows dark title-art bleed).
+    tile_filigree: bool,
+) {
+    let scale = stage_scale.max(1) as i32;
+    let white = [1.0, 1.0, 1.0, 1.0];
+    let (px, py, pw, ph) = dst_stage;
+
+    let push_c = |out: &mut Vec<SpriteDraw>,
+                  src: (u32, u32, u32, u32),
+                  sx: i32,
+                  sy: i32,
+                  sw: i32,
+                  sh: i32,
+                  color: [f32; 4]| {
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + sx * scale,
+                stage_origin.1 + sy * scale,
+                (sw as u32) * scale as u32,
+                (sh as u32) * scale as u32,
+            ),
+            src,
+            color,
+        });
+    };
+    let push = |out: &mut Vec<SpriteDraw>,
+                src: (u32, u32, u32, u32),
+                sx: i32,
+                sy: i32,
+                sw: i32,
+                sh: i32| { push_c(out, src, sx, sy, sw, sh, white) };
+
+    if tile_filigree {
+        // Pause-menu interior: the class-0 fill retail's window drawer runs
+        // under every menu frame (`FUN_8002BDC4`) - 32-texel columns and
+        // bands of the marbled patch, each band a gouraud grey ramp from
+        // `0x40` at the frame's top to `0x88` at its bottom in steps of
+        // `0x900 / h`. The `menu_status_town` display list holds exactly
+        // that: its 204-tall status window draws seven bands
+        // `64, 75, 86, 97, 108, 119, 130 -> 136`, neutral grey on all three
+        // channels. One kernel with the battle banners' frame fill.
+        out.extend(crate::battle_hud_chrome::class0_fill_draws_at(
+            rects,
+            (px, py, pw, ph),
+            stage_origin,
+            stage_scale,
+        ));
+    } else {
+        // Save-screen interior: a single gradient-baked tile, tiled
+        // horizontally and stretched to the panel height (byte-pinned).
+        let int_w = rects.panel_interior.2 as i32;
+        let int_h = rects.panel_interior.3 as i32;
+        let interior_h = ph.min(int_h.max(ph));
+        let mut x_int = px;
+        while x_int < px + pw {
+            let remaining = px + pw - x_int;
+            let this_w = remaining.min(int_w);
+            let (sx, sy, _, sh) = rects.panel_interior;
+            let actual_sh = sh.min(interior_h as u32);
+            let src = (sx, sy, this_w as u32, actual_sh);
+            push(out, src, x_int, py, this_w, interior_h);
+            x_int += this_w;
+        }
+    }
+
+    nine_slice_border_into(out, rects, (px, py, pw, ph), stage_origin, stage_scale);
+}
+
+/// Emit only the 9-slice **border** (4 corners + tiled edges) for a
+/// stage rect - the shared frame pass under both the filigree-filled
+/// pause-menu windows and the gradient-filled dialog boxes.
+pub(crate) fn nine_slice_border_into(
+    out: &mut Vec<SpriteDraw>,
+    rects: &SaveMenuAtlasRects,
+    dst_stage: (i32, i32, i32, i32), // (x, y, w, h)
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) {
+    let scale = stage_scale.max(1) as i32;
+    let white = [1.0, 1.0, 1.0, 1.0];
+    let (px, py, pw, ph) = dst_stage;
+
+    let push = |out: &mut Vec<SpriteDraw>,
+                src: (u32, u32, u32, u32),
+                sx: i32,
+                sy: i32,
+                sw: i32,
+                sh: i32| {
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + sx * scale,
+                stage_origin.1 + sy * scale,
+                (sw as u32) * scale as u32,
+                (sh as u32) * scale as u32,
+            ),
+            src,
+            color: white,
+        });
+    };
+
+    let cw = rects.panel_tl.2 as i32;
+    let ch = rects.panel_tl.3 as i32;
+    let edge_w = rects.panel_top.2 as i32;
+    let edge_h = rects.panel_top.3 as i32;
+    let v_edge_h = rects.panel_left.3 as i32;
+
+    // Four corners.
+    push(out, rects.panel_tl, px, py, cw, ch);
+    push(out, rects.panel_tr, px + pw - cw, py, cw, ch);
+    push(out, rects.panel_bl, px, py + ph - ch, cw, ch);
+    push(out, rects.panel_br, px + pw - cw, py + ph - ch, cw, ch);
+
+    // Top + bottom edges with remainder.
+    let edge_span = pw - 2 * cw;
+    let full_tiles = edge_span / edge_w;
+    let remainder = edge_span - full_tiles * edge_w;
+    let edge_y_top = py;
+    let edge_y_bot = py + ph - edge_h;
+    let mut x = px + cw;
+    for _ in 0..full_tiles {
+        push(out, rects.panel_top, x, edge_y_top, edge_w, edge_h);
+        push(out, rects.panel_bot, x, edge_y_bot, edge_w, edge_h);
+        x += edge_w;
+    }
+    if remainder > 0 {
+        let (ux, uy, _, uh) = rects.panel_top;
+        let top_rem = (ux, uy, remainder as u32, uh);
+        let (bx, by, _, bh) = rects.panel_bot;
+        let bot_rem = (bx, by, remainder as u32, bh);
+        push(out, top_rem, x, edge_y_top, remainder, edge_h);
+        push(out, bot_rem, x, edge_y_bot, remainder, edge_h);
+    }
+
+    // Left + right edges. The source tile is 4x21; tile vertically
+    // with a remainder for taller-than-21 interiors.
+    let vert_span = ph - 2 * ch;
+    let v_full = vert_span / v_edge_h;
+    let v_rem = vert_span - v_full * v_edge_h;
+    let mut y = py + ch;
+    for _ in 0..v_full {
+        push(out, rects.panel_left, px, y, cw, v_edge_h);
+        push(out, rects.panel_right, px + pw - cw, y, cw, v_edge_h);
+        y += v_edge_h;
+    }
+    if v_rem > 0 {
+        let (lx, ly, lw, _) = rects.panel_left;
+        let left_rem = (lx, ly, lw, v_rem as u32);
+        let (rx, ry, rw, _) = rects.panel_right;
+        let right_rem = (rx, ry, rw, v_rem as u32);
+        push(out, left_rem, px, y, cw, v_rem);
+        push(out, right_rem, px + pw - cw, y, cw, v_rem);
+    }
+}
+
+/// Inset of the shop / inn panel's frame from the panel's own pen, and the
+/// padding its height carries past the last row.
+///
+/// The panel is not a retail window descriptor - the shop UI lives in the
+/// menu overlay's own windows and this is the port's bottom-of-screen stand
+/// in - so these are the port's numbers, kept in one place because two hosts
+/// draw the same box and the frame is sized from the text.
+pub const SHOP_PANEL_INSET: i32 = 8;
+/// Width of the shop / inn panel frame, in stage pixels.
+pub const SHOP_PANEL_WIDTH: i32 = 200;
+/// Row pitch the shop row builder lays its rows out at.
+pub const SHOP_PANEL_ROW_PITCH: i32 = 14;
+/// Slack the frame's height carries past the last row.
+pub const SHOP_PANEL_HEIGHT_PAD: i32 = 12;
+
+/// How many rows a shop / inn panel's text occupies - the count of distinct
+/// baselines in its draw list.
+///
+/// Sizing the frame off the text rather than off the session means a screen
+/// that grows a row grows its frame, on both hosts, without either one
+/// re-deriving the row count from a session shape it does not share.
+pub fn shop_panel_rows(draws: &[TextDraw]) -> i32 {
+    draws
+        .iter()
+        .map(|d| d.dst.1)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        .max(1) as i32
+}
+
+/// Stage rect of the gold 9-slice frame around a shop / inn panel whose text
+/// starts at `pen` and occupies `rows` rows.
+pub fn shop_panel_frame_rect(pen: (i32, i32), rows: i32) -> (i32, i32, i32, i32) {
+    (
+        pen.0 - SHOP_PANEL_INSET,
+        pen.1 - SHOP_PANEL_INSET,
+        SHOP_PANEL_WIDTH,
+        rows * SHOP_PANEL_ROW_PITCH + SHOP_PANEL_HEIGHT_PAD,
+    )
+}
+
+/// Compose the retail 9-slice window chrome (interior fill + border) for
+/// **any** menu window at an arbitrary `(x, y, w, h)` stage rect.
+///
+/// This is the reusable primitive shared by every faithful menu panel.
+/// All of Legaia's pause-menu windows (field menu, item list, status,
+/// equipment, spell list) are framed by the same bordered-window sprite:
+/// the 9-slice tiles of the system-UI sprite sheet at `PROT.DAT[0x018E0]`
+/// (CLUT row 2). They all pull chrome from the same [`SaveMenuAtlasRects`]
+/// the save screen already builds; the tile composition (4 corners +
+/// tiled edges + tiled interior) is identical and only the destination
+/// rect changes per window.
+///
+/// `dst_stage` is `(x, y, w, h)` in stage pixels; `stage_origin` +
+/// `stage_scale` place and upscale the stage into the surface exactly as
+/// [`save_select_chrome_draws_for`] does. Returns the border/interior
+/// [`SpriteDraw`]s only - text, cursors, and portraits are layered on top
+/// by the caller.
+pub fn menu_window_chrome_draws_for(
+    rects: &SaveMenuAtlasRects,
+    dst_stage: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let mut out = Vec::with_capacity(24);
+    nine_slice_panel_into(&mut out, rects, dst_stage, stage_origin, stage_scale, true);
+    out
+}
+
+/// Compose the retail **dialog window** chrome (NPC dialogue box,
+/// dialogue option picker, item-received box) at an arbitrary
+/// `(x, y, w, h)` stage rect.
+///
+/// PORT: FUN_8002C69C - the window/box emitter the dialog pager
+/// (`FUN_801D84D0`) calls per frame with `(x, y, 0xF4, lines*0xF - 3)`
+/// after staging the box skin via `FUN_80034B6C`. Two layers:
+///
+/// - **Interior**: retail fills the body with two stacked
+///   semi-transparent (mode 0, `B/2 + F/2`) gouraud `POLY_G4` quads,
+///   top vertices RGB `(0x18,0x18,0x28)`, bottom RGB `(0x40,0x40,0xA0)`;
+///   the two passes compose to `0.25*back + 0.75*gradient`. The
+///   engine draws one alpha-blended sprite stretching the pre-baked
+///   alpha-191 gradient column (`rects.dialog_fill`) over the rect,
+///   which reproduces the same arithmetic.
+/// - **Border**: the same system-UI 9-slice sprite family as the menu
+///   windows (4 corners + tiled edges from the skin's tile records),
+///   drawn on top of the fill exactly like retail.
+///
+/// `dst_stage` is the retail **centre rect** - the `(x, y, w, h)` the
+/// pager passes to the emitter. The drawn skin extends beyond it: the
+/// `v0_1_tetsu_dialogue_accept` framebuffer puts the reading box's
+/// centre rect at `(38, 16, 244, 42)` with the visible footprint
+/// `x 30..289, y 8..65` (centre inflated by 8 on every side; the 4-px
+/// tan border band is the outermost ring, the gradient fill spans the
+/// rest, centre inflated by 4).
+///
+/// Returns [`SpriteDraw`]s only - text and hand cursors layer on top.
+pub fn dialog_window_chrome_draws_for(
+    rects: &SaveMenuAtlasRects,
+    dst_stage: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let scale = stage_scale.max(1) as i32;
+    let (px, py, pw, ph) = dst_stage;
+    // Footprint = centre rect inflated by the skin border (8 px each
+    // side); the translucent gradient fill spans the footprint minus
+    // the 4-px border band.
+    let footprint = (px - 8, py - 8, pw + 16, ph + 16);
+    let fill = (px - 4, py - 4, pw + 8, ph + 8);
+    let mut out = Vec::with_capacity(24);
+    out.push(SpriteDraw {
+        dst: (
+            stage_origin.0 + fill.0 * scale,
+            stage_origin.1 + fill.1 * scale,
+            (fill.2.max(0) as u32) * scale as u32,
+            (fill.3.max(0) as u32) * scale as u32,
+        ),
+        src: rects.dialog_fill,
+        color: [1.0, 1.0, 1.0, 1.0],
+    });
+    nine_slice_border_into(&mut out, rects, footprint, stage_origin, stage_scale);
+    out
+}
+
+/// The dialog **option-picker hand cursor**: retail draws the
+/// pointing-finger sprite (`FUN_8002B994` kind 0) at `(box_x - 6,
+/// box_y + cursor*0xF)` on the selected option row of a `0x27..0x29`
+/// picker box (`FUN_801D84D0` picker arm). Same 16x16 CLUT-row-7
+/// sprite the save-select / options screens use.
+pub fn dialog_option_hand_sprite(
+    rects: &SaveMenuAtlasRects,
+    box_pos: (i32, i32),
+    cursor_row: usize,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let scale = stage_scale.max(1) as i32;
+    let (_, _, w, h) = rects.cursor;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + (box_pos.0 - 6) * scale,
+            stage_origin.1 + (box_pos.1 + cursor_row as i32 * 0xF) * scale,
+            w * stage_scale,
+            h * stage_scale,
+        ),
+        src: rects.cursor,
+        color: [1.0, 1.0, 1.0, 1.0],
+    }
+}
+
+/// The dialogue **page mark**: the two-frame "press" icon the pager draws
+/// (`FUN_8002B994` kind 1, mode 1) at `(0x10A, box_y + lines*0xF - 0x13)` -
+/// the lower-right rim of the standard 244-wide box - while a page waits for
+/// confirm (state `0x19`) and no automatic press is counting down. `icon` is
+/// the atlas cell of the frame to draw
+/// (`legaia_engine_menus::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON[frame]`,
+/// the frame from `OwnedDialogPanel::advance_icon`); the strip flips every
+/// sixteen vsyncs. Drawn untinted: the primitive's colour word is the
+/// neutral `0x808080` and the record's CLUT is row 7, the hand's.
+///
+/// With the standard centre rect `(x, y, 0xF4, lines*0xF - 3)`,
+/// `0x10A = x + w - 0x10` and the y lands `0x10` above the centre-rect
+/// bottom; the anchor is kept relative so a non-standard width stays
+/// attached. `dst_stage` is the centre rect the chrome pass receives.
+///
+/// REF: FUN_8002B994, FUN_801D84D0
+pub fn dialog_page_mark_sprite(
+    icon: (u32, u32, u32, u32),
+    dst_stage: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let scale = stage_scale.max(1) as i32;
+    let (px, py, pw, ph) = dst_stage;
+    let (_, _, w, h) = icon;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + (px + pw - 0x10) * scale,
+            stage_origin.1 + (py + ph - 0x10) * scale,
+            w * stage_scale,
+            h * stage_scale,
+        ),
+        src: icon,
+        color: [1.0, 1.0, 1.0, 1.0],
+    }
+}
+
+/// The page-advance mark drawn as the pointing hand's cell, tinted gold - a
+/// stand-in kept for the callers that have not moved to
+/// [`dialog_page_mark_sprite`] (the sparring tutorial box). Retail draws
+/// the kind-1 strip there too. Same anchor as [`dialog_page_mark_sprite`].
+pub fn dialog_advance_hand_sprite(
+    rects: &SaveMenuAtlasRects,
+    dst_stage: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let scale = stage_scale.max(1) as i32;
+    let (px, py, pw, ph) = dst_stage;
+    let (_, _, w, h) = rects.cursor;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + (px + pw - 0x10) * scale,
+            // Retail: y = box_y + lines*0xF - 0x13 with centre h =
+            // lines*0xF - 3, i.e. 0x10 above the centre-rect bottom.
+            stage_origin.1 + (py + ph - 0x10) * scale,
+            w * stage_scale,
+            h * stage_scale,
+        ),
+        src: rects.cursor,
+        color: [1.0, 0.82, 0.35, 1.0],
+    }
+}

@@ -25,7 +25,7 @@ item path in one function (it branches on `game_mode == 0x15`, walking either th
 char records or the battle-actor table `0x801C9370`). The HP / MP heal arms size
 the restore by reading a tier-indexed `u16` table at `0x8007655C` (HP) /
 `0x80076564` (MP) - so the numbers **are** on the disc, decoded by
-`legaia_asset::item_effect` (`ItemEffectTable::heal_amounts` / `restore_amount`).
+`legaia_game_tables::item_effect` (`ItemEffectTable::heal_amounts` / `restore_amount`).
 The amounts are not a switch of immediates inside an overlay handler.
 
 ## Table base + record layout
@@ -264,7 +264,7 @@ class + tier straight into the actor's action context (`overlay_battle_action_80
 
 ## Provenance + parser
 
-`legaia_asset::item_effect::ItemEffectTable::from_scus` resolves both tables from
+`legaia_game_tables::item_effect::ItemEffectTable::from_scus` resolves both tables from
 a `SCUS_942.54` image at runtime (`t_addr -> file-offset` map, identical to the
 [item-name table](item-table.md) resolver). The disc-gated `item_effect_real`
 test pins the `(class, tier, flags)` bytes for a span of consumables against the
@@ -272,10 +272,10 @@ real executable and cross-checks each against its on-disc description.
 
 ## Engine consumption
 
-`legaia_engine_core::items::ItemCatalog::apply_effect_flags` installs three of
+`legaia_engine_menus::items::ItemCatalog::apply_effect_flags` installs three of
 the flag bits over the curated catalog from disc: the `0x02`/`0x04` usability
 gates (per item id) and the `0x20` all-party flag (`ItemCatalog::is_all_party`).
-The item-use session ([`legaia_engine_core::inventory_use::InventoryUseSession`])
+The item-use session ([`legaia_engine_menus::inventory_use::InventoryUseSession`])
 reads `is_all_party`: a flagged restorative item (Healing Bloom `0x7A`, Healing
 Fruit `0x7B`) skips target-select and fans its effect across every living ally
 in one use, consuming one copy. The disc-gated `item_effect_flags_disc` test

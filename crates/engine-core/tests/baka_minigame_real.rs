@@ -1,8 +1,8 @@
 //! Disc-gated: drive the **real** parsed Baka Fighter roster + action tables
 //! (PROT 0976) through the engine duel rules engine
-//! ([`legaia_engine_core::baka_fighter`]).
+//! ([`legaia_engine_minigames::baka_fighter`]).
 //!
-//! The table parsers are pinned by `legaia-asset`'s `baka_opponents_real`;
+//! The table parsers are pinned by `legaia-minigame-formats`' `baka_opponents_real`;
 //! this closes the engine end - the play-window load path
 //! (`SceneHost::open_disc` -> `entry_bytes_extended(976)` ->
 //! `static_overlay::as_loaded` -> `parse` / `parse_actions`) resolves the
@@ -11,12 +11,13 @@
 //! asserted, only structural facts. Skips + passes when `LEGAIA_DISC_BIN`
 //! is absent.
 
-use legaia_asset::baka_opponents;
-use legaia_asset::static_overlay;
-use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, HP_START, MatchPhase};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_core::world::World;
+use legaia_engine_minigames::baka_fighter::{BakaAttack, BakaFight, HP_START, MatchPhase};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
+use legaia_minigame_formats::baka_opponents;
+use legaia_overlay_images::static_overlay;
 
 fn real_tables() -> Option<(
     Vec<baka_opponents::BakaOpponent>,

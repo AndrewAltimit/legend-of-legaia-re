@@ -157,7 +157,7 @@ impl LegaiaViewer {
         let mut out = Vec::with_capacity(hf.positions.len() * 3);
         for p in &hf.positions {
             out.push(p[0]);
-            out.push(p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK);
+            out.push(p[1] + legaia_engine_scene::coplanar_draws::GROUND_SINK);
             out.push(p[2]);
         }
         out
@@ -544,11 +544,11 @@ impl LegaiaViewer {
         let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
             return Vec::new();
         };
-        let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
+        let Ok(slot) = legaia_scene_formats::world_map_overlay::parse(&decoded) else {
             return Vec::new();
         };
         let (ah, av) = parse_axes(axes);
-        let segs = legaia_asset::world_map_overlay::translation_path_segments(&slot);
+        let segs = legaia_scene_formats::world_map_overlay::translation_path_segments(&slot);
 
         let mut out = Vec::with_capacity(4 + segs.len() * 12);
         out.extend_from_slice(&(segs.len() as u32).to_le_bytes());
@@ -588,7 +588,7 @@ impl LegaiaViewer {
         let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
             return Vec::new();
         };
-        let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
+        let Ok(slot) = legaia_scene_formats::world_map_overlay::parse(&decoded) else {
             return Vec::new();
         };
         let (ah, av) = parse_axes(axes);
@@ -631,7 +631,7 @@ impl LegaiaViewer {
         let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
             return Vec::new();
         };
-        let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
+        let Ok(slot) = legaia_scene_formats::world_map_overlay::parse(&decoded) else {
             return Vec::new();
         };
         let (ah, av) = parse_axes(axes);
@@ -661,7 +661,7 @@ impl LegaiaViewer {
         let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
             return "[]".into();
         };
-        let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
+        let Ok(slot) = legaia_scene_formats::world_map_overlay::parse(&decoded) else {
             return "[]".into();
         };
         let mut s = String::from("[");
@@ -669,19 +669,19 @@ impl LegaiaViewer {
             if i > 0 {
                 s.push(',');
             }
-            let (xlo, xhi) = legaia_asset::world_map_overlay::body_axis_range(
+            let (xlo, xhi) = legaia_scene_formats::world_map_overlay::body_axis_range(
                 b,
-                legaia_asset::world_map_overlay::Axis::X,
+                legaia_scene_formats::world_map_overlay::Axis::X,
             )
             .unwrap_or((0, 0));
-            let (ylo, yhi) = legaia_asset::world_map_overlay::body_axis_range(
+            let (ylo, yhi) = legaia_scene_formats::world_map_overlay::body_axis_range(
                 b,
-                legaia_asset::world_map_overlay::Axis::Y,
+                legaia_scene_formats::world_map_overlay::Axis::Y,
             )
             .unwrap_or((0, 0));
-            let (zlo, zhi) = legaia_asset::world_map_overlay::body_axis_range(
+            let (zlo, zhi) = legaia_scene_formats::world_map_overlay::body_axis_range(
                 b,
-                legaia_asset::world_map_overlay::Axis::Z,
+                legaia_scene_formats::world_map_overlay::Axis::Z,
             )
             .unwrap_or((0, 0));
             s.push_str(&format!(
@@ -704,7 +704,7 @@ impl LegaiaViewer {
     /// and return per-vertex attribute arrays for replay in WebGL2 against
     /// the save state's VRAM.
     ///
-    /// Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
+    /// Pool location is per `legaia_ram_image::prim_pool::POOL_BASE_DEFAULT`
     /// (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
     /// top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
     /// POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
@@ -766,13 +766,13 @@ impl LegaiaViewer {
         };
         k.clut_anim = None;
         for name in ["map01", "map02", "map03"] {
-            let Ok(scene) = legaia_engine_core::scene::Scene::load(&index, name) else {
+            let Ok(scene) = legaia_engine_scene::scene::Scene::load(&index, name) else {
                 continue;
             };
             if !(scene.start..scene.end).contains(&prot_base) {
                 continue;
             }
-            if let Some(install) = legaia_engine_core::clut_walk_anim::ClutWalkAnim::install(
+            if let Some(install) = legaia_engine_scene::clut_walk_anim::ClutWalkAnim::install(
                 &scene,
                 &index,
                 &mut k.vram,

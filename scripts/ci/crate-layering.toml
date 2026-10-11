@@ -1,0 +1,166 @@
+# Allowed dependencies among the engine's `World`-free kernel crates.
+# Read by scripts/ci/check-crate-layering.py; described in
+# docs/subsystems/engine.md ("The layering gate").
+#
+# Each [crates.<dir>] row is one crate under crates/<dir>:
+#
+#   deps    - the engine-layer crates it may name in [dependencies]. The row
+#             is exact: a declared edge missing here fails, and so does a row
+#             entry the Cargo.toml no longer declares.
+#   dev     - extra engine-layer crates allowed in [dev-dependencies] only.
+#   foreign - when present, the exact set of non-engine workspace crates the
+#             crate may name in [dependencies]. Only a crate whose role is
+#             "takes nothing but X" carries it.
+#
+# "Engine-layer" means every crates/engine-*, plus render-kernels, parity,
+# asset-viewer and web-viewer. Format, tool and patcher crates are outside
+# the layer: any kernel crate may depend on them, and none of them may depend
+# on an engine-layer crate.
+#
+# An engine-layer crate with no row here (engine-core, the session, the
+# screens, the renderer, the audio stack, the hosts) is above the kernels. It
+# may depend on anything, and no kernel crate may depend on it.
+#
+# Rank is derived, not written: a crate's rank is one more than the highest
+# rank among its `deps`, so the table has to be acyclic and
+# `check-crate-layering.py --ranks` prints the resulting stack.
+
+[crates.engine-system]
+role = "pad input, BIOS rand, fades, FMV, sound state, RAM-cell map"
+deps = []
+foreign = ["cheats", "gamedata"]
+
+[crates.engine-dialog]
+role = "dialog pager and text balloon"
+deps = []
+
+[crates.engine-vm]
+role = "window-widget, field, move and effect VMs, the actor tick"
+deps = []
+
+[crates.engine-mode]
+role = "game-mode seat and the 28-mode driver"
+deps = ["engine-system"]
+
+[crates.engine-battle-vm]
+role = "battle action SM, formulas, battle camera, cast-module ticks"
+deps = ["engine-system"]
+
+[crates.engine-motion-vm]
+role = "the two per-actor motion VMs"
+deps = ["engine-system"]
+
+[crates.engine-battle]
+role = "World-free battle kernels"
+deps = ["engine-battle-vm", "engine-system"]
+
+[crates.render-kernels]
+role = "GTE math, screen prims, VRAM capture, effect emitters; no wgpu"
+deps = ["engine-battle-vm", "engine-vm"]
+
+[crates.engine-ui]
+role = "renderer-agnostic draw-list builders"
+deps = ["engine-battle-vm", "render-kernels"]
+dev = ["engine-field"]
+
+[crates.engine-effects]
+role = "World-free effect kernels"
+deps = ["engine-battle", "engine-battle-vm", "engine-vm", "render-kernels"]
+
+[crates.engine-field]
+role = "World-free field kernels"
+deps = [
+    "engine-battle-vm",
+    "engine-dialog",
+    "engine-mode",
+    "engine-motion-vm",
+    "engine-system",
+    "engine-vm",
+    "render-kernels",
+]
+
+[crates.engine-fishing]
+role = "fishing rules engine and the shared minigame venue floor"
+deps = ["engine-field", "engine-system", "render-kernels"]
+
+[crates.engine-minigames]
+role = "minigame rules engines"
+deps = [
+    "engine-battle-vm",
+    "engine-fishing",
+    "engine-system",
+    "engine-vm",
+    "render-kernels",
+]
+
+[crates.engine-menus]
+role = "menu, title and memory-card front end"
+deps = [
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-dialog",
+    "engine-field",
+    "engine-minigames",
+    "engine-system",
+    "engine-vm",
+]
+
+[crates.engine-minigame-scenes]
+role = "the minigames' 3D scene surfaces"
+deps = [
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-field",
+    "engine-menus",
+    "engine-minigames",
+    "engine-system",
+    "render-kernels",
+]
+
+# Edges the table allows that the crates' roles alone do not explain: each is
+# held by a small set of items in the lower crate, and cutting it means moving
+# those items to a home below both ends. `items` is what holds the edge;
+# `reason` is why it stands. The gate fails a row whose edge is gone, so a
+# coupling that gets cut has to be deleted here in the same change.
+
+[[coupling]]
+from = "engine-field"
+to = "engine-battle-vm"
+items = ["camera_mover", "retail_cam", "psx_camera", "battle_camera::apply_shake", "battle_action::motion::trig12"]
+reason = "the shared GTE camera, its mover and the 12-bit trig live with the battle camera script that calls them"
+
+[[coupling]]
+from = "engine-minigames"
+to = "engine-battle-vm"
+items = ["psx_camera", "retail_cam", "camera_rel_actor", "camera_rel_glide", "battle_action::motion::sin12"]
+reason = "the Baka Fighter duel runs on the same camera kernels; only battle_formulas is the Muscle Dome's by role"
+
+[[coupling]]
+from = "render-kernels"
+to = "engine-battle-vm"
+items = ["psx_camera", "battle_cam_script", "battle_intro_*"]
+reason = "the projection constants and the battle-intro model types the draw kernels consume are defined beside the battle camera"
+
+[[coupling]]
+from = "engine-effects"
+to = "engine-battle"
+items = ["retail_magic::get"]
+reason = "the summon catalogue resolves a spell id to its name through the battle spell mirror"
+
+[[coupling]]
+from = "engine-menus"
+to = "engine-field"
+items = ["dev_equip_commit", "dev_menu_leaves::resolve_equip_slot", "incense_window::top_up_cooldown"]
+reason = "the equip commit is a field-overlay dev-menu body the pause menu's equip session shares"
+
+[[coupling]]
+from = "engine-fishing"
+to = "engine-field"
+items = ["field_regions"]
+reason = "a venue floor is a field .MAP walk grid with tile triggers, read through the field's region queries"
+
+[[coupling]]
+from = "engine-ui"
+to = "engine-battle-vm"
+items = ["battle_party_panel", "battle_commit_log", "panel_backread_loader"]
+reason = "the battle HUD model the draw-list builders project is defined with the battle kernels that fill it"

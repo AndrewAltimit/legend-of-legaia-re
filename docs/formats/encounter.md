@@ -89,7 +89,7 @@ The carriers are the per-scene field-VM script bundles ([`scene-v12-table.md`](s
 
 The reader copies `monster_ids[0..count]` into the formation cell `0x8007BD0C..0x8007BD0F`, one byte per slot. Slots beyond `count` stay zero, and `monster_count == 0` leaves the whole cell clear (no monsters spawn).
 
-Parsers: `legaia_asset::man_section::FormationRecord` (the MAN row, keeps `+0..+2` as `header_bytes`) and [`EncounterRecord`](../../crates/engine-battle/src/encounter_record.rs) (the runtime window: `COUNT_OFFSET = 3`, `IDS_OFFSET = 4`). Both reject `count > 4`.
+Parsers: `legaia_scene_formats::man_section::FormationRecord` (the MAN row, keeps `+0..+2` as `header_bytes`) and [`EncounterRecord`](../../crates/scene-formats/src/encounter_record.rs) (the runtime window: `COUNT_OFFSET = 3`, `IDS_OFFSET = 4`). Both reject `count > 4`.
 
 ## Reader
 
@@ -150,7 +150,7 @@ There is no dedicated "encounter" opcode.
 
 **Engine port.** The field VM mirrors the split:
 
-- The bare arm op (`0x37` / `0x41`) calls `FieldHost::is_scripted_encounter_armed()` and, only when armed, hands `FieldHost::install_scripted_encounter()` the bounded window overlaying the opcode (`[opcode][op1][op2][count][<=4 ids]`).
+- The bare arm op (`0x37` / `0x41`) calls `FieldSceneHost::is_scripted_encounter_armed()` and, only when armed, hands `FieldSceneHost::install_scripted_encounter()` the bounded window overlaying the opcode (`[opcode][op1][op2][count][<=4 ids]`).
 - `World` parses the window as an `EncounterRecord`, registers the formation and forces the next `on_field_step` roll (`World::install_scripted_encounter` / `arm_scripted_encounter`). A successful install disarms, matching the retail `entity[+0x94]` clear.
 - `World::encounters.scripted_armed` stands in for "the active entity's state machine reached the confirm state".
 
@@ -203,7 +203,7 @@ The cell keeps its last formation until the next install; victory does not clear
 
 One byte carries two unrelated things, written by the two halves of the encounter path:
 
-- **Low bits - the stage id.** The random roll overwrites the whole byte with `region[+8] & 0x1F` (`FUN_801D9E1C`, `0x801DA064..0x801DA070`). The backdrop picker reads `word[0x80084540] + (byte[0x8007BD60] & 0x7F)` to select the battle stage; see [`legaia_asset::battle_backdrop`](../../crates/asset/src/battle_backdrop.rs).
+- **Low bits - the stage id.** The random roll overwrites the whole byte with `region[+8] & 0x1F` (`FUN_801D9E1C`, `0x801DA064..0x801DA070`). The backdrop picker reads `word[0x80084540] + (byte[0x8007BD60] & 0x7F)` to select the battle stage; see [`legaia_scene_formats::battle_backdrop`](../../crates/scene-formats/src/battle_backdrop.rs).
 - **Bit `0x80` - "this fight is scripted".** Raised by the confirm state when `record[+0]` is non-zero. The roll writes the byte first and the confirm state ORs into it afterwards, so the two never race.
 
 Consumers of bit `0x80`:
@@ -212,12 +212,12 @@ Consumers of bit `0x80`:
 |---|---|
 | Battle-intro style selector (`FUN_801CE8CC`) | Selects `SpinUpParticles` instead of the `TileShatter` default (or `TileShatter` sub-style 1 for slot-0 ids `0x13..=0x15`). |
 | Intro transition phase 0 (`FUN_801CF5BC`) | Overwrites the battle-start cue `0x1F` with `0x4D` in SFX-ring slot 0 ([`cutscene.md`](../subsystems/cutscene.md#transition-tick--battle-handoff---fun_801cf5bc)). |
-| Enemy stat-boost profile (`FUN_80054CB0` via `ctx[+0x287]`) | Picks the boost profile; see [`legaia_asset::monster_archive`](../../crates/battle-models/src/monster_archive.rs). |
+| Enemy stat-boost profile (`FUN_80054CB0` via `ctx[+0x287]`) | Picks the boost profile; see [`legaia_actor_formats::monster_archive`](../../crates/actor-formats/src/monster_archive.rs). |
 | Seru-magic side-effect stager (`FUN_801F3D3C` via `ctx[+0x287]`) | Enables the 80% suppression roll and the base-vs-record compare that keeps ATK / DEF / INT debuffs off a boss ([battle-formulas.md](../subsystems/battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)). |
 | Escape roll (`FUN_801E791C` via `ctx[+0x287]`) | Blocks the party's escape ([battle-action.md](../subsystems/battle-action.md)). |
 | Summon instant-death / status resist (PROT 0907 / 0908 / 0916 via `ctx[+0x287]`) | Lets a monster whose record `+0x20` is set abandon the summon's outcome ([battle.md](../subsystems/battle.md#the-instant-death--status-resist-gate-record-0x20)). |
 
-The engine carries the bit on the *formation row* rather than as a global: `legaia_engine_core::monster_catalog::FormationDef` keeps the row's `record[+0]` as `header_flags` and derives `per_battle_flags()` from it.
+The engine carries the bit on the *formation row* rather than as a global: `legaia_engine_battle::monster_catalog::FormationDef` keeps the row's `record[+0]` as `header_flags` and derives `per_battle_flags()` from it.
 
 ### Worked example: the Rim Elm training fight
 
@@ -232,13 +232,13 @@ The id is **not** an inline script literal. It is **town01 MAN formation index 4
 [3] 00 00 00 04 3f 3e 3e 3e
 ```
 
-A live save state's table is byte-identical to the engine's MAN parse (`legaia_asset::man_section` → `encounter_man::scene_encounter_from_man`, 7 formations). The carrier points `actor[+0x94]` at row 4 and `FUN_801DA51C` copies it on the dialogue accept.
+A live save state's table is byte-identical to the engine's MAN parse (`legaia_scene_formats::man_section` → `encounter_man::scene_encounter_from_man`, 7 formations). The carrier points `actor[+0x94]` at row 4 and `FUN_801DA51C` copies it on the dialogue accept.
 
-Not an inline `[count=1][0x4F]` operand: an opcode-aware walk of town01's partition-1 scripts finds none, and a naive `0x37` / `0x41` byte scan only lands inside embedded dialog text (`crates/engine-core/tests/town01_p1_arm_sites.rs`; survey CLI `legaia-engine man-scripts --scene <name>`).
+Not an inline `[count=1][0x4F]` operand: an opcode-aware walk of town01's partition-1 scripts finds none, and a naive `0x37` / `0x41` byte scan only lands inside embedded dialog text (`crates/engine-scene/tests/town01_p1_arm_sites.rs`; survey CLI `legaia-engine man-scripts --scene <name>`).
 
 ### The carrier entity
 
-The actor that installs this fight is the one town01 partition-1 placement at **tile (76, 65)** with **model byte `0x6A`**, mirrored as `RIM_ELM_SPARRING_CARRIER_TILE` / `RIM_ELM_SPARRING_CARRIER_MODEL` in [`encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs) and locked by `crates/engine-core/tests/rim_elm_sparring_carrier.rs`.
+The actor that installs this fight is the one town01 partition-1 placement at **tile (76, 65)** with **model byte `0x6A`**, mirrored as `RIM_ELM_SPARRING_CARRIER_TILE` / `RIM_ELM_SPARRING_CARRIER_MODEL` in [`encounter_record.rs`](../../crates/scene-formats/src/encounter_record.rs) and locked by `crates/engine-scene/tests/rim_elm_sparring_carrier.rs`.
 
 **The install is disc-visible.** The sparring prompt is an ordinary MES-embedded **option picker** (`legaia_mes::scan_pickers` / `Picker::jump_target`; runner in [`script-vm.md`](../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)), four options wide. The fight option's branch runs `3E FF 04`: partition-1 **record 10**, offset `+0x07F7`, three instructions past the `4A 10 00` `WaitFrames 16` at `+0x07EE`. It is the only `3E FF` in the scene's talk records. The other three options run a talk reply and no fight.
 
@@ -247,7 +247,7 @@ Interaction records are mostly message text whose bytes alias opcodes (a literal
 **Engine port.**
 
 - `man_field_scripts::derive_field_carriers` walks the partition-1 placements and maps each interactable actor to a `FieldCarrierConfig`: the sparring partner becomes a `ScriptedEncounter` for formation `4`, every other talk NPC a plain `Npc`.
-- Tile and model alone do not make the carrier. `town0b`, `town0c` and `town0d` place Tetsu on the same tile with talk-only records, so the carrier is installed only when the placement's own record names row `4` in a scripted-battle op (`man_field_scripts::record_battle_entry_rows`; `crates/engine-shell/tests/town0b_battle_softlock.rs`).
+- Tile and model alone do not make the carrier. `town0b`, `town0c` and `town0d` place Tetsu on the same tile with talk-only records, so the carrier is installed only when the placement's own record names row `4` in a scripted-battle op (`man_field_scripts::record_battle_entry_rows`; `crates/parity/tests/town0b_battle_softlock.rs`).
 - `World::install_field_carriers_from_man` installs the set on every field entry (`enter_field_scene`).
 - Talking to the carrier opens its dialogue. `spar_menu_of` scans each option's branch for the `3E FF` prefix, and `World::carriers.menu` engages only when the cursor sits on the fight option (`world/types.rs`, `world/field_carriers.rs`). Keying on the disc op rather than a label keeps it correct on PAL discs and translation packs.
 - `World::install_man_formation(RIM_ELM_TRAINING_FORMATION_ID)` installs the existing row as the forced next encounter, so the scene's merged stats stand (Tetsu's HP 999). `EncounterRecord::rim_elm_training()` is the equivalent hand-built window for the arm-seam path.
@@ -380,7 +380,7 @@ The roll is ported as [`region_encounter`](../../crates/engine-battle/src/region
 - `RegionEncounterTracker::select_group(flag_test)` re-runs the condition walk each step from the live flag bank, so a flag set mid-scene swaps the region set on the next step.
 - `RegionEncounterTracker::on_step(world_x, world_z, rng)` reduces the position to a tile, picks the first matching region of the active group, subtracts the scaled rate and, at `<= 0`, rolls uniformly from `[base, base + count)` with the one-step anti-repeat and the `0x3ce + rng%0x1e7 - rng%0x1e7` reset. The no-trigger path consumes no RNG, as in retail.
 - The **overworld** installs the tracker through `World::set_world_map_regions` (rolled in `live_world_map_tick`). A **field** scene installs it at entry through `World::set_field_regions`; `World::on_field_step` feeds a trigger into the [`EncounterSession`](../../crates/engine-battle/src/encounter.rs) transition / grace state machine. A MAN with no region section falls back to the mean-rate session. Pinned by `crates/engine-core/tests/field_region_encounter_disc.rs`.
-- **Scripted formations override the roll.** `World::install_man_formation` and `World::install_encounter_from_record` set `scripted_formation_pending`, which `on_field_step` checks before the region path. That is what starts the Tetsu fight in town01, whose effective random rate is 0% (`crates/engine-shell/tests/training_battle.rs`).
+- **Scripted formations override the roll.** `World::install_man_formation` and `World::install_encounter_from_record` set `scripted_formation_pending`, which `on_field_step` checks before the region path. That is what starts the Tetsu fight in town01, whose effective random rate is 0% (`crates/engine-session/tests/training_battle.rs`).
 
 ### Encounter control block (`_DAT_801C6EA4`)
 
@@ -397,7 +397,7 @@ A 100-byte block allocated by `FUN_8003A024` and filled per scene by `FUN_8003A1
 
 ## The MAN header and section chain
 
-The encounter data is the `Man` asset in each scene's [`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) bundle, descriptor index 2. The asset dispatcher `FUN_8001F05C` LZS-decompresses it into the heap buffer at `_DAT_8007B898`. `FUN_8003AEB0` (called from `FUN_801D6704` and the sibling scene loaders) walks the header, writes the section-0 pointer into `ctrl[+0x20]` and calls `FUN_8003A110`. The header is byte-exact across all 80 retail `scene_asset_table` bundles. Parser: [`legaia_asset::man_section`](../../crates/asset/src/man_section.rs).
+The encounter data is the `Man` asset in each scene's [`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) bundle, descriptor index 2. The asset dispatcher `FUN_8001F05C` LZS-decompresses it into the heap buffer at `_DAT_8007B898`. `FUN_8003AEB0` (called from `FUN_801D6704` and the sibling scene loaders) walks the header, writes the section-0 pointer into `ctrl[+0x20]` and calls `FUN_8003A110`. The header is byte-exact across all 80 retail `scene_asset_table` bundles. Parser: [`legaia_scene_formats::man_section`](../../crates/scene-formats/src/man_section.rs).
 
 | Offset | Size | Field | Meaning |
 |---|---|---|---|
@@ -430,7 +430,7 @@ flowchart LR
 | Index | Install target | Role |
 |---|---|---|
 | 0 | `_DAT_801C6EA4[+0x20]` | Encounter section: formation, condition and region tables. |
-| 1 | `_DAT_801C6EA4[+0x00]` | Motion-VM script table, the per-actor `FUN_80038158` bytecode ([`motion-vm.md`](../subsystems/motion-vm.md); decoder `legaia_asset::man_motion`). Pointer advanced past the 3-byte prefix. |
+| 1 | `_DAT_801C6EA4[+0x00]` | Motion-VM script table, the per-actor `FUN_80038158` bytecode ([`motion-vm.md`](../subsystems/motion-vm.md); decoder `legaia_scene_formats::man_motion`). Pointer advanced past the 3-byte prefix. |
 | 2 | `_DAT_801C6EA0` | Scene display name, a NUL-terminated string ([`place-names.md`](place-names.md)). Same advance-by-3. |
 | 3 | `_DAT_801C6EA4[+0x04]` | [Camera-region table](#man-section-3-the-camera-region-table). |
 | 4 | `DAT_80073ED8` | Open. Advances by 4; the byte at `+3` is copied to `DAT_80073EDC`, and a zero there detaches the pointer. |
@@ -541,7 +541,7 @@ Roll has no entry; the follow camera never rolls. Each value steps by `delta >> 
 
 ### Engine port
 
-[`camera_zone`](../../crates/engine-field/src/camera_zone.rs) (`legaia_engine_core::camera_zone`) carries the loader (`CameraZoneConfig::load_record`), the composer, the ease step and the snap. `Camera::zone` owns the block and runs them from the per-frame camera tick. Both hosts read the result through `camera_view::field_follow_view`, so the native window and the browser play page frame each scene from the same record.
+[`camera_zone`](../../crates/engine-field/src/camera_zone.rs) (`legaia_engine_field::camera_zone`) carries the loader (`CameraZoneConfig::load_record`), the composer, the ease step and the snap. `Camera::zone` owns the block and runs them from the per-frame camera tick. Both hosts read the result through `camera_view::field_follow_view`, so the native window and the browser play page frame each scene from the same record.
 
 - **Query sites are retail's.** The four `0x4C` arms queue a `CameraZoneRequest` (`engine-core::world::camera_hooks`) the camera tick drains; the player seat arms the same query-conform-snap; the per-frame re-query honours scratchpad flag bit `22` ([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#0x4c-nibble-0x380x3e---the-camera-zone-arms)). Nothing re-queries on a bare tile crossing.
 - **Floor sampling** goes through the MAN-header ladder, so a scripted floor-tier bob never shakes the camera; a `4C 9E` whole-ladder install writes that copy too, so the camera does follow it.
@@ -550,7 +550,7 @@ Roll has no entry; the follow camera never rolls. Each value steps by `delta >> 
 - **One divergence:** a scripted shot handing the camera back snaps, as a backstop for a script that ends a shot without a `[4C 39]` / `[4C 3E]` arm.
 - **The visible tile window** follows retail's order: re-stamped from the field draw-context primer `FUN_801DE37C` (`mode_entry_init::field_draw_context`) on every field entry through `Camera::reset_globals_for_scene_entry`, then replaced by a mask-kind record's side-write or by op `0x46` (`Camera::route_camera_events` → `ZoneFollow::view_window`).
 
-Oracles: `crates/engine-shell/tests/field_camera_zone_oracle.rs` grades the port per walkable save state in three tiers (zone selection, compose against retail's staging descriptor, live pose with mid-glide states classified separately). `crates/engine-core/tests/field_camera_zone_arms_disc.rs` censuses the arms disc-wide and asserts the hold-across-a-walk rule on `edbylon`.
+Oracles: `crates/parity/tests/field_camera_zone_oracle.rs` grades the port per walkable save state in three tiers (zone selection, compose against retail's staging descriptor, live pose with mid-glide states classified separately). `crates/engine-core/tests/field_camera_zone_arms_disc.rs` censuses the arms disc-wide and asserts the hold-across-a-walk rule on `edbylon`.
 
 ### The scratchpad window `0x1F8003E8..EB`
 
@@ -628,8 +628,8 @@ The encounter randomizer relies on this to leave boss fights untouched (`legaia_
 
 ## Files referencing this format
 
-- [`crates/asset/src/man_section.rs`](../../crates/asset/src/man_section.rs) - MAN header walker, section chain, formation / condition / region record parsers.
-- [`crates/engine-battle/src/encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs) - the runtime `EncounterRecord` parser and `expand_battle_id`.
+- [`crates/scene-formats/src/man_section.rs`](../../crates/scene-formats/src/man_section.rs) - MAN header walker, section chain, formation / condition / region record parsers.
+- [`crates/scene-formats/src/encounter_record.rs`](../../crates/scene-formats/src/encounter_record.rs) - the runtime `EncounterRecord` parser and `expand_battle_id`.
 - [`crates/engine-battle/src/region_encounter.rs`](../../crates/engine-battle/src/region_encounter.rs) - the `FUN_801D9E1C` roll.
 - [`crates/engine-field/src/camera_zone.rs`](../../crates/engine-field/src/camera_zone.rs) - camera-region loader, composer, ease, snap, focus clamp.
 - [`crates/engine-vm`](../../crates/engine-vm/) - the field-VM dispatcher port that reads the operand and writes the actor pointer slot.

@@ -156,7 +156,7 @@ arithmetic:
 [`battle.md`](../subsystems/battle.md#the-battle-heap-budget---why-a-formation-of-large-distinct-bosses-cannot-load)).
 The fix streams **slim clones** without touching the originals.
 
-- **What a clone drops.** `legaia_asset::monster_archive::slim_castables`
+- **What a clone drops.** `legaia_actor_formats::monster_archive::slim_castables`
   rebuilds Che's and Lu's blocks minus most castable spell entries
   (policy: `delilas_dome::slim_policy`). Mesh, stats, name and reactions stay
   byte-identical. The entry count and index space are preserved: a kept entry
@@ -376,7 +376,7 @@ therefore inherits every clip - the same law `monster-model` replacement rides.
 
 | Pass | What it rewrites | Code | Disc oracle |
 |---|---|---|---|
-| Battle models, both directions | every equipment-section record of `PLAYER1..3`; monster blocks 162-164 | `legaia_patcher::party_swap` (`playerize`, `weapon_fuse`) | `party_swap_real`, `party_swap_variant_object_real`, `delilas_party_real` |
+| Battle models, both directions | every equipment-section record of `PLAYER1..3`; monster blocks 162-164 | `legaia_party_swap` (`playerize`, `weapon_fuse`) | `party_swap_real`, `party_swap_variant_object_real`, `delilas_party_real` |
 | Field form | PROT 0874 field mesh + atlas window | `party_swap` | `delilas_party_real` |
 | Victory poses and battle idle | `readef.DAT` base "ME" archives; inline `record0` idle | `party_swap::winpose` | `party_swap_idle_continuity_real` |
 | Voices | battle bank programs 7/8/9, XA banks, `monster.snd` clip bands | `delilas_voice`, `delilas_xa_voice`, `delilas_voice_fx` | `delilas_party_real` |
@@ -398,7 +398,7 @@ Still retail: menu portraits and battle HUD faces.
 
 ### Battle model: permutation, bake and relayout
 
-Mechanics (`legaia_patcher::party_swap`):
+Mechanics (`legaia_party_swap`):
 
 - **Anatomy permutation.** Players order bones `torso, pelvis, head, arms,
   legs`; every Delilas mesh orders parts `head, torso, pelvis, arms, legs`.
@@ -1024,7 +1024,7 @@ picks how much of the hero's Tactical Arts kit becomes the sibling's.
 | Mode | Behaviour |
 |---|---|
 | `hybrid` (default) | every art keeps the animation retail authored for it; only the reskinned Hyper plays a Delilas motion |
-| `delilas` | the rest of the kit is re-authored (`delilas_party::apply_delilas_moveset` + `legaia_patcher::party_swap::moveset`) |
+| `delilas` | the rest of the kit is re-authored (`delilas_party::apply_delilas_moveset` + `legaia_party_swap::moveset`) |
 
 **The archive is rebuilt, not extended.** A character's art streams live in one
 `0x10800`-byte `readef.DAT` slot and retail fills most of it: the three main
@@ -1109,7 +1109,7 @@ The swapped monster blocks already wear the mapped hero's model and name. Three
 passes complete the mirror.
 
 **Enemy-side clips** (`party_swap::enemy_anim` via
-`legaia_patcher::enemy_anim_mirror`). Each swapped block's archive entries are
+`legaia_delilas_party::enemy_anim_mirror`). Each swapped block's archive entries are
 rewritten with the hero's own clips: idle, walk, reactions and swings, the
 hero's 50-AP Hyper split wind-up-to-strike across the entries the signature
 stages by raw index, and the hero's victory flourish in the tag-`0x22` close.
@@ -1152,8 +1152,8 @@ mirrored hero does not perform the boss cast.
 
 **Field forms in `nilboa`.** The Delilas field forms are scene-resident: MAN
 placements carry `model = 106/107/108`, pack-member indices into PROT entry
-`0639`. The scene mirror (`legaia_patcher::party_swap::nivora_field::heroize_nilboa`
-via `legaia_patcher::nivora_field`) rebuilds those three members as the mapped
+`0639`. The scene mirror (`legaia_party_swap::nivora_field::heroize_nilboa`
+via `legaia_delilas_party::nivora_field`) rebuilds those three members as the mapped
 heroes' field rigs, pivot-baked onto the siblings' scene-idle rest frames so
 the scene's own ANM records pose them, and repaints the three sibling head TIMs
 in PROT `0638` with the heroes' faces.
@@ -1169,7 +1169,7 @@ in PROT `0638` with the heroes' faces.
 
 **The other three story appearances** mirror through the same bake, driven by a
 per-scene coordinate table (`party_swap::event_field::EVENT_SCENES` via
-`legaia_patcher::nivora_field::apply_event_field`):
+`legaia_delilas_party::nivora_field::apply_event_field`):
 
 | Scene | Bundle | Members | Anchor ANM records |
 |---|---|---|---|
@@ -1429,7 +1429,7 @@ two-row shape is the per-module budget fallback).
   rows LZS-compress to repeat tokens).
 - **Loop windows carry over.** Each entry carries its source clip's loop window
   (`+0x84..+0x86`, rescaled; reader
-  `legaia_asset::monster_archive::animation_loop_windows`). The retail cast
+  `legaia_actor_formats::monster_archive::animation_loop_windows`). The retail cast
   clips park or cycle inside their windows through each stage's dwell (Gi's
   crouch holds `[9,10]`, his finale parks on its last frame; Lu's charge parks,
   her flourish loops its tail sway). A zeroed window replays whole clips.

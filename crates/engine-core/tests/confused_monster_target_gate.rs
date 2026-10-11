@@ -1,0 +1,412 @@
+//! Reach conversion: the **monster-AI target resolver** `FUN_801E7320`
+//! (`world/battle/monster_ai.rs` `801e7320`), a GATED-(b) row whose gate is
+//! "a monster whose `field_flags & 0x380` is set".
+//!
+//! That bitfield is retail's confuse class. The engine does not model
+//! `+0x16E` bit-for-bit, so `World::maybe_confuse_retarget` bridges from
+//! [`StatusKind::Confuse`] instead - which means the gate is seeded by
+//! *landing Confuse on a monster*, and no pad ladder does: nothing in a
+//! from-boot playthrough puts Confuse on the enemy side (the party learns no
+//! confusing magic in the reachable spine, and a monster never confuses its
+//! own ally).
+//!
+//! So the status is seeded directly, exactly as the Stone-gaze conversion
+//! seeded Stone, and the fight is then driven through the ordinary live
+//! battle loop (`World::tick`), not by calling the resolver.
+//!
+//! ## What the resolver has to be checked for
+//!
+//! "It ran" is not the observable. A confused monster must **act
+//! uncontrollably against its own side**: the resolver rewrites the
+//! `+0x1DD` target class the picker left behind into a living slot on the
+//! *caster's* band. A retarget that silently picked another party member, or
+//! that never fired, is indistinguishable from an unwired resolver unless the
+//! test contrasts a confused monster against an unconfused one in the same
+//! fight - which is what the assertions below do.
+//!
+//! ## What the first execution found (since fixed)
+//!
+//! Checking the *damage* rather than the target byte turned up a defect the
+//! whole confuse mechanic sat on: `World::resolve_attack_target`
+//! (`world/battle/loop_driver.rs`) clamped an armed target to the **opposing**
+//! side, so a confused actor's rewritten byte failed the range test and the
+//! swing fell back to `first_living_opponent_of`. Retail has no such clamp -
+//! `FUN_801EC3E4` fetches the target as `actor_table[+0x1DD]` with no side
+//! test (`overlay_0898` dump, `0x801EC5A8..0x801EC5B4`). The clamp is gone;
+//! `the_retarget_lands_the_damage_on_an_ally_not_on_the_party` pins the
+//! now-correct behaviour.
+//!
+//! Disc-free: synthetic party + the vanilla monster / formation tables.
+
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_battle_vm::status_effects::StatusKind;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+
+const PARTY: u8 = 3;
+const MONSTERS: u8 = 3;
+
+/// A battle-ready world: three party members, three monsters, all alive, the
+/// live loop on so `World::tick` actually cycles turns.
+fn battle_world(seed: u32) -> World {
+    let mut w = World::new();
+    while w.actors.len() < (PARTY + MONSTERS) as usize {
+        w.actors.push(Actor::default());
+    }
+    w.party.party_count = PARTY;
+    w.load_party(legaia_save::Party::zeroed(PARTY as usize));
+    w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
+    w.enter_battle(PARTY, MONSTERS);
+    for i in 0..(PARTY + MONSTERS) as usize {
+        w.actors[i].active = true;
+        w.actors[i].battle.hp = 400;
+        w.actors[i].battle.max_hp = 400;
+        w.actors[i].battle.liveness = 1;
+        w.set_battle_attack(i as u8, 40);
+    }
+    w.mode = SceneMode::Battle;
+    w.toggles.live_gameplay_loop = true;
+    w.rng_state = seed;
+    w
+}
+
+/// Every distinct `(action_category, active_target)` the actor at `slot`
+/// carried, sampled once per frame.
+///
+/// The category is kept rather than filtered on, because the resolver has a
+/// terminal arm that **zeroes** it: `class < 3` re-rolling onto the caster's
+/// own slot takes retail's `clear_category_self` path (`sb zero, 0x1DE`,
+/// target = self). Filtering on `category == 3` therefore drops exactly the
+/// outcome that proves the arm ran, and reads as "the monster never acted".
+fn armed_actions(w: &mut World, slot: u8, frames: usize) -> Vec<(u8, u8)> {
+    use legaia_engine_menus::battle_input::CommandPhase;
+    let mut seen: Vec<(u8, u8)> = Vec::new();
+    for frame in 0..frames {
+        // A party nobody can command still raises the party-wide screens
+        // (`Begin | Run`, then `0x6E`); press Begin through them on every
+        // other frame so the round plays, as a player would.
+        let party_screen = w.battle.command.as_ref().is_some_and(|c| {
+            matches!(
+                c.phase,
+                CommandPhase::RoundPrompt { .. } | CommandPhase::CommitConfirm { .. }
+            )
+        });
+        let cross = legaia_engine_system::input::PadButton::Cross.mask();
+        w.set_pad(if party_screen && frame % 2 == 0 {
+            cross
+        } else {
+            0
+        });
+        w.tick();
+        if w.mode != SceneMode::Battle {
+            break;
+        }
+        // Sample only while the action SM is executing this slot's turn. The
+        // round-start sweep (`FUN_801D88CC`, loop B) parks every party slot
+        // on category 0 between rounds, its target left where the last turn
+        // put it - retail's idle, not an armed action, and not the retarget
+        // arm this measures.
+        if w.battle_ctx.active_actor != slot
+            || w.battle_ctx.action_state
+                == legaia_engine_battle_vm::battle_action::ActionState::EndOfAction.as_byte()
+        {
+            continue;
+        }
+        let a = &w.actors[slot as usize];
+        let rec = (a.battle.action_category, a.battle.active_target);
+        // Skip the pre-turn idle: category 0 targeting slot 0 is the state a
+        // fresh actor table starts in, not an armed action.
+        if rec == (0, 0) || seen.contains(&rec) {
+            continue;
+        }
+        seen.push(rec);
+    }
+    seen
+}
+
+/// The seeds every case sweeps. A single seed measures one draw of a re-roll
+/// loop, and the resolver's arms are chosen by that draw. The self-target arm
+/// is a one-in-three draw per confused swing and a seed yields only a few
+/// swings in its tick budget, so four seeds did not reach it on every stream;
+/// the last four are golden-ratio steps (`i * 0x9E3779B9`) spread over the
+/// state space.
+const SEEDS: [u32; 8] = [
+    0x1234_5678,
+    0x0BAD_F00D,
+    0xDEAD_BEEF,
+    0x5EED_0001,
+    0x9E37_79B9,
+    0x3C6E_F372,
+    0xDAA6_6D2B,
+    0x78DD_E6E4,
+];
+
+#[test]
+fn an_unconfused_monster_only_ever_arms_a_party_target() {
+    // The contrast half. Without it, "a confused monster targets its own
+    // band" could be true of every monster and measure nothing.
+    let mut armed = 0usize;
+    for seed in SEEDS {
+        let mut w = battle_world(seed);
+        let actions = armed_actions(&mut w, PARTY, 600);
+        assert!(
+            !actions.is_empty(),
+            "seed {seed:#x}: monster slot {PARTY} never armed an action"
+        );
+        for (cat, t) in &actions {
+            assert_eq!(
+                *cat, 3,
+                "seed {seed:#x}: an unconfused monster's category must stay 3 \
+                 - only the retarget's self arm clears it"
+            );
+            assert!(
+                *t < PARTY,
+                "seed {seed:#x}: an unconfused monster armed slot {t}, which \
+                 is not on the party band"
+            );
+        }
+        armed += actions.len();
+    }
+    assert!(armed > 0);
+}
+
+#[test]
+fn a_confused_monster_swings_at_its_own_band() {
+    // Seed the gate: Confuse on the monster in the first enemy slot.
+    let mut any_ally_target = false;
+    let mut any_self_clear = false;
+    for seed in SEEDS {
+        let mut w = battle_world(seed);
+        w.battle.status_effects.apply(PARTY, StatusKind::Confuse);
+        assert!(
+            w.battle
+                .status_effects
+                .statuses(PARTY)
+                .iter()
+                .any(|s| s.kind == StatusKind::Confuse),
+            "the fixture must actually land Confuse, or every assertion below \
+             is vacuous"
+        );
+
+        let actions = armed_actions(&mut w, PARTY, 600);
+        assert!(
+            !actions.is_empty(),
+            "seed {seed:#x}: the confused monster never armed an action"
+        );
+        for (cat, t) in &actions {
+            assert!(
+                *t >= PARTY,
+                "seed {seed:#x}: a confused monster armed party slot {t} - the \
+                 retarget is not rewriting every uncontrolled swing"
+            );
+            if *t == PARTY {
+                // The re-roll landed on the caster itself: retail's arm clears
+                // the category and keeps self as the target.
+                assert_eq!(
+                    *cat, 0,
+                    "seed {seed:#x}: a self-target must clear the action \
+                     category (retail `sb zero, 0x1DE`)"
+                );
+                any_self_clear = true;
+            } else {
+                assert_eq!(*cat, 3, "seed {seed:#x}: an ally swing stays armed");
+                any_ally_target = true;
+            }
+        }
+    }
+    assert!(
+        any_ally_target,
+        "the confuse retarget never moved a swing onto another monster - the \
+         resolver did not run, or every draw landed on self"
+    );
+    assert!(
+        any_self_clear,
+        "the self-target arm was never taken across the seeds - the branch \
+         that clears the action category is unmeasured here"
+    );
+}
+
+/// HP across the monster band / the party.
+fn band_hp(w: &World) -> u32 {
+    (PARTY as usize..(PARTY + MONSTERS) as usize)
+        .map(|i| w.actors[i].battle.hp as u32)
+        .sum()
+}
+fn party_hp(w: &World) -> u32 {
+    (0..PARTY as usize)
+        .map(|i| w.actors[i].battle.hp as u32)
+        .sum()
+}
+
+/// Drive a fight in which **only monsters can act**: every party member is
+/// asleep, so `actor_blocked_from_acting` skips its turn before either the
+/// command menu or the auto-attack arm can run. Returns
+/// `(monster-band HP lost, party HP lost)`.
+///
+/// Without that gate the party's own auto-attacks damage the band and "the
+/// monster band took damage" is true whether or not anything was confused -
+/// the vacuous shape this test exists to avoid.
+fn damage_with_only_monsters_acting(seed: u32, confuse_first_monster: bool) -> (u32, u32) {
+    let mut w = battle_world(seed);
+    for slot in 0..PARTY {
+        w.battle.status_effects.apply(slot, StatusKind::Sleep);
+        assert!(
+            w.battle
+                .status_effects
+                .statuses(slot)
+                .iter()
+                .any(|s| s.kind == StatusKind::Sleep && s.kind.blocks_actions()),
+            "the fixture must actually park the party, or the contrast is lost"
+        );
+    }
+    if confuse_first_monster {
+        w.battle.status_effects.apply(PARTY, StatusKind::Confuse);
+    }
+    let band_before = band_hp(&w);
+    let party_before = party_hp(&w);
+    for _ in 0..1200 {
+        w.tick();
+        if w.mode != SceneMode::Battle {
+            break;
+        }
+        if band_hp(&w) < band_before || party_hp(&w) < party_before {
+            break;
+        }
+    }
+    (
+        band_before.saturating_sub(band_hp(&w)),
+        party_before.saturating_sub(party_hp(&w)),
+    )
+}
+
+#[test]
+fn an_unconfused_band_never_lands_friendly_fire() {
+    // The control half of the repro below: with nothing confused, monsters
+    // hit the party and never each other. Without this, "the band took
+    // damage" could be true of every fight and measure nothing.
+    for seed in SEEDS {
+        let (band, party) = damage_with_only_monsters_acting(seed, false);
+        assert_eq!(band, 0, "seed {seed:#x}: unconfused friendly fire");
+        assert!(party > 0, "seed {seed:#x}: no monster swing landed at all");
+    }
+}
+
+/// The repro that found the clamp, now pinning the fix: **confusion moves
+/// where the damage lands.**
+///
+/// `World::resolve_monster_target` (`FUN_801E7320`) rewrites the armed
+/// `+0x1DD` byte onto the caster's own band, and `resolve_attack_target`
+/// honors it - retail's `FUN_801EC3E4` fetches the target actor as
+/// `actor_table[+0x1DD]` with no side test (`overlay_0898` dump,
+/// `0x801EC5A8..0x801EC5B4`), so a friendly-fire byte must land friendly-fire
+/// damage. The opposing-side fallback survives only for an unset-dead target.
+///
+/// Not every seed lands an ally hit (the retarget's re-roll can land on self,
+/// which clears the action category), so the assertion is over the sweep, not
+/// per seed - the control test above holds `band == 0` per seed, which keeps
+/// a single hit here non-vacuous.
+#[test]
+fn the_retarget_lands_the_damage_on_an_ally_not_on_the_party() {
+    let mut confused_hits = 0usize;
+    for seed in SEEDS {
+        let (band, _) = damage_with_only_monsters_acting(seed, true);
+        if band > 0 {
+            confused_hits += 1;
+        }
+    }
+    assert!(
+        confused_hits > 0,
+        "a confused monster must be able to hit its own band"
+    );
+}
+
+#[test]
+fn a_confused_party_member_is_flipped_the_other_way() {
+    // The same resolver, entered from the party side: a confused member is
+    // never handed the command menu - it auto-swings and the class-3..6 arm
+    // flips it onto the party band. Retail's `+0x1DD` class space is one
+    // space for both sides, so a port that only handled the monster branch
+    // would pass every assertion above and fail here.
+    //
+    // All three members are confused: a *player-driven* battle parks on the
+    // first unconfused member's command menu and never reaches anyone else's
+    // turn, so a single confused member is unobservable through this host.
+    let mut any = false;
+    for seed in SEEDS {
+        let mut w = battle_world(seed);
+        w.battle.player_driven = true;
+        for slot in 0..PARTY {
+            w.battle.status_effects.apply(slot, StatusKind::Confuse);
+        }
+        // The contrast: with no confusion the same world parks on a command
+        // session instead of arming anything.
+        let mut control = battle_world(seed);
+        control.battle.player_driven = true;
+        for _ in 0..600 {
+            control.tick();
+            if control.battle.command.is_some() {
+                break;
+            }
+        }
+        assert!(
+            control.battle.command.is_some(),
+            "seed {seed:#x}: an unconfused player-driven party must open the \
+             command menu - otherwise the auto-act below is not the \
+             confusion's doing"
+        );
+
+        for slot in 0..PARTY {
+            let actions = armed_actions(&mut w, slot, 600);
+            for (cat, t) in &actions {
+                assert!(
+                    *t < PARTY,
+                    "seed {seed:#x}: confused party slot {slot} armed slot {t} \
+                     - the retarget did not flip it onto the party band"
+                );
+                // The asymmetry the two branches really have, read off
+                // `FUN_801E7320`'s instruction stream: the class-`0..2` arm
+                // ends with `bne v0,v1` against `ctx[+0x13]` and clears
+                // `+0x1DE` on a self-hit (`0x801E73E0..0x801E73FC`); the
+                // class-`3..6` arm at `0x801E7484` jumps straight to the
+                // epilogue with **no** self test. So a confused party member
+                // that rolls itself keeps an armed swing at itself, and a
+                // port that "fixed" that symmetry would be wrong.
+                assert_eq!(
+                    *cat, 3,
+                    "seed {seed:#x}: the party-band arm must never clear the \
+                     action category, self-target or not"
+                );
+                any = true;
+            }
+        }
+        // Every round start ticks the status durations (retail `FUN_801E752C`
+        // from `0x14`), so a confusion can wear off inside the sampling
+        // window and the cured member owes the next round a command. The menu
+        // is off-limits only while the member holds the status. The party-wide
+        // screens are not a member's menu: with every member confused nobody
+        // can act, and retail still raises `Begin | Run` (`0x14` stores `0x1E`
+        // unconditionally) and takes `Begin` straight to `0x6E`.
+        if let Some(session) = w.battle.command.as_ref().filter(|s| {
+            !matches!(
+                s.phase,
+                legaia_engine_menus::battle_input::CommandPhase::RoundPrompt { .. }
+                    | legaia_engine_menus::battle_input::CommandPhase::CommitConfirm { .. }
+            )
+        }) {
+            let still_confused = w
+                .battle
+                .status_effects
+                .statuses(session.actor)
+                .iter()
+                .any(|s| s.kind == StatusKind::Confuse);
+            assert!(
+                !still_confused,
+                "seed {seed:#x}: a still-confused member was handed the command menu"
+            );
+        }
+    }
+    assert!(
+        any,
+        "no confused party member ever armed an action across the seeds"
+    );
+}

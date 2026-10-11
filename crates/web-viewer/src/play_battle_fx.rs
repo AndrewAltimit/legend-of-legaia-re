@@ -39,7 +39,7 @@
 //! one.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
 use wasm_bindgen::prelude::*;
 
 /// Retail 4x uniform battle world scale - the same constant
@@ -144,7 +144,7 @@ pub(crate) struct BattleFxFrame {
 }
 
 /// Column-major 4x4 multiply, `out = a * b` (WebGL `mat4` layout - the same
-/// convention [`legaia_engine_vm::battle_cam_script::battle_vp`] emits).
+/// convention [`legaia_engine_battle_vm::battle_cam_script::battle_vp`] emits).
 fn mat_mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
     let mut out = [0.0f32; 16];
     for c in 0..4 {
@@ -260,7 +260,7 @@ fn transform_dir(m: &[f32; 16], v: [f32; 3]) -> [f32; 3] {
 /// `EFFECT_TEXEL_WORLD` extra scale is `1.0` (the sprite's `size` is already
 /// the retail pass-2 world size), so it does not appear here.
 ///
-/// The half-extents come through [`legaia_engine_ui::effect_billboard`]
+/// The half-extents come through [`legaia_render_kernels::effect_billboard`]
 /// because retail forms the corners in **view** space, after the camera
 /// transform (`FUN_800195A8`), so they must not take the battle base matrix's
 /// `BATTLE_WORLD_SCALE` a second time - the module carries the instruction
@@ -272,8 +272,10 @@ fn sprite_corners(
     up: [f32; 3],
 ) -> [[f32; 3]; 4] {
     let c = sprite.world_pos;
-    let (hw, hh) =
-        legaia_engine_ui::effect_billboard::world_half_extents(sprite.size, BATTLE_WORLD_SCALE);
+    let (hw, hh) = legaia_render_kernels::effect_billboard::world_half_extents(
+        sprite.size,
+        BATTLE_WORLD_SCALE,
+    );
     let mut out = [[0.0f32; 3]; 4];
     // TL, TR, BL, BR: (-r +u), (+r +u), (-r -u), (+r -u).
     for (i, (sr, su)) in [(-1.0f32, 1.0f32), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)]
@@ -382,7 +384,7 @@ impl LegaiaRuntime {
             // and a billboard has no model matrix to carry the flip - the
             // native window builds around the same flipped centre.
             sprite.world_pos =
-                legaia_engine_ui::effect_billboard::battle_billboard_centre(sprite.world_pos);
+                legaia_render_kernels::effect_billboard::battle_billboard_centre(sprite.world_pos);
             let [u0, v0] = sprite.uv;
             let u1 = u0
                 .saturating_add(sprite.uv_size[0].saturating_sub(1))
@@ -477,7 +479,8 @@ impl LegaiaRuntime {
         // battle camera, the native `part_camera_pose` selection); every
         // other part keeps `T(world_pos)`. Battle models carry the per-model
         // Y-flip, the frame flip the prefix conjugates by.
-        let part_cam = legaia_engine_ui::gte::PartCameraPose::from_battle(&self.battle_cam_pose());
+        let part_cam =
+            legaia_render_kernels::gte::PartCameraPose::from_battle(&self.battle_cam_pose());
         let flip: [f32; 16] = [
             1.0, 0.0, 0.0, 0.0, //
             0.0, -1.0, 0.0, 0.0, //
@@ -528,7 +531,7 @@ impl LegaiaRuntime {
         // The native battle pass's placement kernel: the frame flip on the
         // translation as well as on the camera-relative prefix.
         let place = |flags: u16, pos: [f32; 3]| -> [f32; 16] {
-            legaia_engine_ui::gte::part_model_place(flags, pos, Some(&part_cam), true)
+            legaia_render_kernels::gte::part_model_place(flags, pos, Some(&part_cam), true)
         };
         for em in world.active_effect_models() {
             if world.global_tmd(em.tmd_index as i16).is_none() {
@@ -704,7 +707,8 @@ impl LegaiaRuntime {
                 std::mem::swap(&mut v0, &mut v1);
             }
             let c = flip(sprite.world_pos);
-            let (hw, hh) = legaia_engine_ui::effect_billboard::world_half_extents(sprite.size, 1.0);
+            let (hw, hh) =
+                legaia_render_kernels::effect_billboard::world_half_extents(sprite.size, 1.0);
             let mut corners = [[0.0f32; 3]; 4];
             for (i, (sr, su)) in [(-1.0f32, 1.0f32), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)]
                 .into_iter()
@@ -783,13 +787,13 @@ impl LegaiaRuntime {
             .engine_camera
             .filter(|(m, _)| *m == vp)
             .and_then(|(_, frame)| frame.field_view())
-            .map(|v| legaia_engine_ui::gte::PartCameraPose::from_field_view(&v));
+            .map(|v| legaia_render_kernels::gte::PartCameraPose::from_field_view(&v));
         // Native field composition is `T * Ry * Rx * Rz` with an identity
         // `fx_model_flip`; the page-space flip goes on the outside. A
         // camera-relative part (`+0x52 & 0x780`) takes the `FUN_8001CF50`
         // prefix in place of `T`, on the raw retail frame (no flip).
         let part_model = |flags: u16, pos: [f32; 3], rot: [f32; 3]| -> [f32; 16] {
-            let place = legaia_engine_ui::gte::camera_relative_model_prefix(
+            let place = legaia_render_kernels::gte::camera_relative_model_prefix(
                 flags,
                 pos,
                 part_cam.as_ref(),
@@ -919,9 +923,11 @@ impl LegaiaRuntime {
         // window's resolution, through the same kernel.
         let summon_dat = host
             .index
-            .entry_bytes(u32::from(legaia_asset::summon_readef::SUMMON_PROT_INDEX))
+            .entry_bytes(u32::from(
+                legaia_actor_formats::summon_readef::SUMMON_PROT_INDEX,
+            ))
             .ok();
-        let Some(asset) = legaia_engine_core::summon::summon_spawn_asset(
+        let Some(asset) = legaia_engine_effects::summon::summon_spawn_asset(
             spell_id,
             &archive,
             summon_dat.as_ref().map(|b| b.as_slice()),
@@ -983,7 +989,7 @@ impl LegaiaRuntime {
             a.move_state.world_z = -350;
         }
         if let Some(idle) = idle.as_ref()
-            && let Some(player) = legaia_engine_core::battle_anim::MonsterAnimPlayer::new(idle)
+            && let Some(player) = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(idle)
         {
             host.world.set_actor_battle_animation(slot, player);
         }
@@ -1248,9 +1254,12 @@ mod tests {
     /// re-multiplied must land on the identity.
     #[test]
     fn fx_camera_inverse_round_trips() {
-        let pose = legaia_engine_vm::battle_cam_script::BOOT_POSE;
-        let vp =
-            legaia_engine_vm::battle_cam_script::battle_vp(&pose, BATTLE_WORLD_SCALE, 4.0 / 3.0);
+        let pose = legaia_engine_battle_vm::battle_cam_script::BOOT_POSE;
+        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(
+            &pose,
+            BATTLE_WORLD_SCALE,
+            4.0 / 3.0,
+        );
         let scale: [f32; 16] = [
             4.0, 0.0, 0.0, 0.0, //
             0.0, 4.0, 0.0, 0.0, //
@@ -1300,8 +1309,10 @@ mod tests {
         // would otherwise apply that scale twice. This assertion used to read
         // `== size[0]`, which is what the oversize looked like from inside the
         // browser host.
-        let (hw, hh) =
-            legaia_engine_ui::effect_billboard::world_half_extents(sprite.size, BATTLE_WORLD_SCALE);
+        let (hw, hh) = legaia_render_kernels::effect_billboard::world_half_extents(
+            sprite.size,
+            BATTLE_WORLD_SCALE,
+        );
         assert!((tr[0] - tl[0] - 2.0 * hw).abs() < 1e-4, "width = 2 * hw");
         assert!((tl[1] - bl[1] - 2.0 * hh).abs() < 1e-4, "height = 2 * hh");
         // Non-vacuity: the kernel really does shrink, so a host that skipped

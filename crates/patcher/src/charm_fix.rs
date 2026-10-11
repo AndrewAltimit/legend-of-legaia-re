@@ -29,7 +29,7 @@
 //!
 //! ## The fix (mirrors the engine `victory_pose_fixup`)
 //!
-//! The engine port (`engine-vm::battle_action`) already carries the corrected
+//! The engine port (`engine-battle-vm::battle_action`) already carries the corrected
 //! invariant: keep the acting slot only when it is a **living party slot**;
 //! otherwise re-pick a valid party slot. Retail already has the re-pick machinery:
 //! the dead-acting-actor path at `0x801E66A4..0x801E6724` rolls `rand % party_count`
@@ -74,7 +74,7 @@
 //! preserved 1028-byte rodata gap the other code hooks use, at [`ROUTINE_VA`] =
 //! `0x8007AB50` - the unused word-aligned window between the Seru-Bell name string
 //! (`0x8007AB40`, <= 16 bytes) and the bonus-equipment routine
-//! ([`crate::bonus_drop::ROUTINE_VA`] = `0x8007AB80`). So it composes with every
+//! ([`legaia_code_hooks::bonus_drop::ROUTINE_VA`] = `0x8007AB80`). So it composes with every
 //! other gap feature (name injection, bonus drop, flee-EXP, shiny Seru) and the
 //! charm feature it fixes. The overlay is resident whenever this code runs and
 //! `SCUS_942.54` is resident throughout, so a `j` reaches the guard and back.
@@ -87,9 +87,9 @@
 
 use anyhow::{Result, bail};
 
-use legaia_asset::item_names;
+use legaia_game_tables::item_names;
 
-use crate::mips::*;
+use legaia_code_hooks::mips::*;
 
 /// PROT entry index of the battle-action overlay that hosts the victory arm.
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
@@ -121,7 +121,7 @@ pub const REROLL_VA: u32 = 0x801E_6698;
 pub const ROUTINE_VA: u32 = 0x8007_AB50;
 /// First VA used by the next gap occupant (the bonus-equipment routine); the
 /// guard must end at or below this.
-pub const ROUTINE_REGION_END_VA: u32 = crate::bonus_drop::ROUTINE_VA;
+pub const ROUTINE_REGION_END_VA: u32 = legaia_code_hooks::bonus_drop::ROUTINE_VA;
 
 /// `ctx[+0x13]` reached as `0x2(s5)` (`s5 = ctx + 0x11`) - the active-actor index.
 const CTX_SLOT_OFF: u16 = 0x2;
@@ -293,7 +293,7 @@ mod tests {
         // ...and starts clear of the Seru-Bell name string (0x8007AB40, <= 16 B).
         assert!(start >= crate::item_name::SERU_BELL_STRING_VA + 0x10);
         // ...and below the bonus-equipment routine (the next gap occupant).
-        assert_eq!(end, crate::bonus_drop::ROUTINE_VA);
+        assert_eq!(end, legaia_code_hooks::bonus_drop::ROUTINE_VA);
     }
 
     #[test]

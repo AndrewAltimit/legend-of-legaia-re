@@ -247,7 +247,7 @@ pub fn card_icon_rgba(bytes: Vec<u8>, block: u8) -> Result<Vec<u8>, JsValue> {
 #[wasm_bindgen]
 pub fn disc_portrait_rgba(bytes: Vec<u8>, char_id: usize) -> Vec<u8> {
     use crate::disc::{extract_prot_dat, is_mode2_2352_disc};
-    use legaia_asset::title_pak::{
+    use legaia_ui_formats::title_pak::{
         OVERLAY_LOAD_PORTRAIT_COUNT, OVERLAY_LOAD_PORTRAIT_STRIDE, OVERLAY_LOAD_PORTRAIT_TIM_OFFSET,
     };
     if char_id >= OVERLAY_LOAD_PORTRAIT_COUNT {

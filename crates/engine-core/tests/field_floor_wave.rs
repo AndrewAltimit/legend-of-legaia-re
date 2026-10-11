@@ -13,7 +13,7 @@
 //! once per scene, against the scene's MAN-header ladder, so the wave was
 //! invisible: only the floor sampler (`World::sample_field_floor_height`, which
 //! reads the live array) moved. These tests pin the two kernels that close that
-//! gap - [`legaia_engine_core::field_env::FloorWave`] for the translated env
+//! gap - [`legaia_engine_scene::field_env::FloorWave`] for the translated env
 //! draws and [`legaia_engine_core::field_ground::live_render_positions`] for the
 //! per-vertex ground (PROT 0900's ground pass `FUN_801F6D48`) - end to end
 //! through the real field VM.
@@ -26,9 +26,10 @@
 //! therefore inverts the wave. `FloorWave::from_scene_and_world` is where that
 //! conversion lives so no host has to pick a sign.
 
-use legaia_asset::field_objects::Placement;
-use legaia_engine_core::field_env::{self, EnvDraw, FloorWave};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::field_env::{self, EnvDraw, FloorWave};
+use legaia_scene_formats::field_objects::Placement;
 
 /// A placement standing on floor tier `nibble`, at pack slot 0.
 fn placed(nibble: u8) -> Placement {
@@ -224,7 +225,7 @@ fn op_4c_9e_reinstalls_the_ladder_and_the_draws_follow() {
 /// and a cell straddling both tilts - the drawn ground the floor sampler walks.
 #[test]
 fn op_4c_90_deforms_the_ground_heightfield_per_vertex() {
-    use legaia_asset::field_objects::{GROUND_PRIM_COLOR, WalkHeightfield};
+    use legaia_scene_formats::field_objects::{GROUND_PRIM_COLOR, WalkHeightfield};
     let mut man = [0i16; 16];
     man[4] = 0x40;
     man[5] = 0x80;
@@ -284,7 +285,7 @@ fn a_placed_object_keeps_its_spawn_ladder() {
     let d = draws(&[terrain([4, 4, 4, 4]), placed(4)], man);
     let mut world = world_on_ladder(man, arm_rung(4));
     world.terrain.placed_spawn_lut = world.terrain.floor_height_lut;
-    let key = legaia_engine_core::field_env::PlacedWindowKey::of_draw(&d[1]);
+    let key = legaia_engine_scene::field_env::PlacedWindowKey::of_draw(&d[1]);
     let (mut terrain_moved, mut bound_moved, mut windowed_moved) = (false, false, false);
     for _ in 0..64 {
         let _ = world.tick();

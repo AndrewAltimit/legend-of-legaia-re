@@ -26,7 +26,7 @@
 //! [`apply_look`] folds the rotation into a pose's bone list - the shape
 //! both hosts already pose from - so neither needs a second matrix path.
 
-use legaia_engine_vm::ambient_motion::{Ramp, RampKind, RampScheduler};
+use legaia_engine_motion_vm::ambient_motion::{Ramp, RampKind, RampScheduler};
 
 /// One actor's side-buffer look state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

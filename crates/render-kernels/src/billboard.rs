@@ -157,7 +157,7 @@ pub struct BillboardCorners {
 ///
 /// REPLACED-BY: the engine's own billboard surfaces - a 3D quad mesh in the
 /// wgpu path (`engine-shell`'s `effect_billboard_mesh`) and a typed
-/// screen-space draw in `engine_ui::screen_prim` - each of which produces the
+/// screen-space draw in `legaia_render_kernels::screen_prim` - each of which produces the
 /// finished quad rather than the GTE screen corners retail composes it from.
 /// No host is owed a call.
 ///

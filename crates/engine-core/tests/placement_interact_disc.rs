@@ -49,13 +49,14 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::man_field_scripts::{
+use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::{
     PlacementKind, classify_placements, placement_interaction_entry_pc,
 };
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::field_disasm::{FlagKind, InsnInfo, LinearWalker};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_system::input::PadButton;
+use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker};
 
 /// Every CDNAME scene that carries a genuine mode-24 door placement, per the
 /// corpus census (`minigame_entry_census_disc`).
@@ -104,7 +105,7 @@ fn doors(index: &ProtIndex) -> Vec<(String, Vec<u8>, Vec<Door>)> {
         let Ok(Some(man)) = scene.field_man_payload(index) else {
             continue;
         };
-        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         let mut found = Vec::new();
@@ -116,7 +117,7 @@ fn doors(index: &ProtIndex) -> Vec<(String, Vec<u8>, Vec<Door>)> {
                 continue;
             };
             let Some(pr) =
-                legaia_engine_core::man_field_scripts::placement_interaction_record(&mf, &man, &p)
+                legaia_engine_field::man_field_scripts::placement_interaction_record(&mf, &man, &p)
             else {
                 found.push(Door {
                     slot,
@@ -224,7 +225,7 @@ fn the_action_probe_reaches_a_door_placement() {
     let scenes = doors(&index);
     let mut probed = 0usize;
     for (scene, man, found) in &scenes {
-        let mf = legaia_asset::man_section::parse(man).expect("parse MAN");
+        let mf = legaia_scene_formats::man_section::parse(man).expect("parse MAN");
         for d in found {
             let mut world = World::new();
             world.mode = SceneMode::Field;
@@ -313,7 +314,7 @@ fn interacting_with_a_door_runs_its_record() {
     let mut reached_a_decision = 0usize;
     let mut flag_probes = 0usize;
     for (scene, man, found) in &scenes {
-        let mf = legaia_asset::man_section::parse(man).expect("parse MAN");
+        let mf = legaia_scene_formats::man_section::parse(man).expect("parse MAN");
         for d in found {
             total += 1;
             let mut world = World::new();

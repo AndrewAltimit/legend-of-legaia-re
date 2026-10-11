@@ -7,20 +7,20 @@
 //!   *course* (Che & Lu double-team, then Gi) installed into the arena overlay
 //!   (PROT 0977), a `SCUS_942.54` routine cave + stream-map hook, and the two
 //!   slim-clone archive slots the double-team round streams (see
-//!   [`crate::delilas_dome`]).
+//!   [`legaia_delilas_challenge::dome`]).
 //! - the koin1 half: a fourth "who will enter" enrollment option that warps
-//!   into the arena requesting that course (see [`crate::delilas_challenge`]).
+//!   into the arena requesting that course (see [`legaia_delilas_challenge::enrollment`]).
 
 use super::*;
 
-use legaia_asset::monster_archive;
-use legaia_asset::scene_asset_table::encode_size_word;
+use legaia_actor_formats::monster_archive;
+use legaia_scene_formats::scene_asset_table::encode_size_word;
 
-use crate::delilas_challenge::DelilasSites;
-use crate::delilas_dome::{
+use legaia_delilas_challenge::dome::{
     ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, BATTLE_OVERLAY_PROT_INDEX, CLONE_IDS,
     DELILAS_PAIR_IDS, DomeInjection, ROUTINE_VA, SEED_HOOK_VA,
 };
+use legaia_delilas_challenge::enrollment::DelilasSites;
 
 /// Outcome of a Delilas Challenge application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +45,7 @@ pub struct DelilasChallengeReport {
 /// except each sibling's probe-traced special-move choreography entries
 /// (`delilas_dome::slim_policy`) - encoded as slots for [`CLONE_IDS`]
 /// (190/191). The originals are read from - and never written back to -
-/// the user's own disc; see `legaia_asset::monster_archive::slim_castables`
+/// the user's own disc; see `legaia_actor_formats::monster_archive::slim_castables`
 /// for what is dropped and why the fight cannot tell.
 fn build_clone_slots(patcher: &DiscPatcher) -> Result<[(u16, Vec<u8>); 2]> {
     let mut out: Vec<(u16, Vec<u8>)> = Vec::with_capacity(2);
@@ -56,7 +56,7 @@ fn build_clone_slots(patcher: &DiscPatcher) -> Result<[(u16, Vec<u8>); 2]> {
         let size = u32::from_le_bytes(slot[..4].try_into().unwrap()) as usize;
         let block = legaia_lzs::decompress(&slot[4..], size)
             .with_context(|| format!("decode monster block {src}"))?;
-        let (protected, extra_drop) = crate::delilas_dome::slim_policy(src);
+        let (protected, extra_drop) = legaia_delilas_challenge::dome::slim_policy(src);
         let slim = monster_archive::slim_castables(&block, protected, extra_drop)
             .with_context(|| format!("slim monster block {src}"))?;
         let encoded = monster_archive::encode_slot(&slim.bytes)
@@ -70,7 +70,7 @@ fn build_clone_slots(patcher: &DiscPatcher) -> Result<[(u16, Vec<u8>); 2]> {
 /// Dome course - Che & Lu together, then Gi - installed into the arena
 /// overlay (PROT 0977), a `SCUS_942.54` routine cave + stream-map hook, and
 /// the two slim-clone archive slots the double-team round streams. See
-/// [`crate::delilas_dome`] for the byte-level design.
+/// [`legaia_delilas_challenge::dome`] for the byte-level design.
 ///
 /// Idempotent: if the seed hook is already the injected `j ROUTINE_VA`, the
 /// course is present and this is a no-op returning `false`. Fails (without
@@ -93,8 +93,8 @@ pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
     let cur = overlay
         .get(seed_off..seed_off + 4)
         .map(|w| u32::from_le_bytes(w.try_into().unwrap()));
-    if cur == Some(crate::mips::j(ROUTINE_VA)) {
-        if let Some(w) = crate::delilas_dome::plan_routine_refresh(&scus)? {
+    if cur == Some(legaia_code_hooks::mips::j(ROUTINE_VA)) {
+        if let Some(w) = legaia_delilas_challenge::dome::plan_routine_refresh(&scus)? {
             patcher
                 .patch_named_file(SCUS_NAME, w.off as u64, &w.bytes)
                 .context("refresh delilas-dome seed routine")?;
@@ -134,20 +134,24 @@ pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
     Ok(true)
 }
 
-/// Install the **custom item set alone** (see [`crate::custom_items`]): the
+/// Install the **custom item set alone** (see [`legaia_delilas_challenge::custom_items`]): the
 /// three item records + effect machinery in `SCUS_942.54` and the
 /// battle-overlay conversion + MP-skip hooks - no reward grant and no arena
 /// writes. This is the standalone shape (usable without the Delilas
 /// Challenge; the randomizer's random drop / chest / steal pools are how a
 /// player obtains the items). Idempotent on the applier jump-table word.
 pub fn inject_custom_item_set(patcher: &mut DiscPatcher) -> Result<bool> {
-    use crate::custom_items::{APPLY_JT_VA, CustomItemsInjection, ELIXIR_ARM_VA, ELIXIR_CLASS};
+    use legaia_delilas_challenge::custom_items::{
+        APPLY_JT_VA, CustomItemsInjection, ELIXIR_ARM_VA, ELIXIR_CLASS,
+    };
     let scus = patcher
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for custom-items injection")?;
-    let jt_off =
-        legaia_asset::item_names::file_offset_for_va(&scus, APPLY_JT_VA + ELIXIR_CLASS as u32 * 4)
-            .context("resolve applier jump-table offset")?;
+    let jt_off = legaia_game_tables::item_names::file_offset_for_va(
+        &scus,
+        APPLY_JT_VA + ELIXIR_CLASS as u32 * 4,
+    )
+    .context("resolve applier jump-table offset")?;
     let cur = scus
         .get(jt_off..jt_off + 4)
         .map(|w| u32::from_le_bytes(w.try_into().unwrap()));
@@ -173,10 +177,10 @@ pub fn inject_custom_item_set(patcher: &mut DiscPatcher) -> Result<bool> {
 
 /// Install the course-3 reward grant handing out one of each `items` id -
 /// the arena-settle hook plus the grant cave
-/// ([`crate::custom_items::plan_grant`]). Idempotent on the arena hook word,
+/// ([`legaia_delilas_challenge::custom_items::plan_grant`]). Idempotent on the arena hook word,
 /// so whichever grant variant lands first wins a re-run.
 fn inject_reward_grant(patcher: &mut DiscPatcher, items: &[u8]) -> Result<bool> {
-    use crate::custom_items::{GRANT_HOOK_VA, GRANT_VA, plan_grant};
+    use legaia_delilas_challenge::custom_items::{GRANT_HOOK_VA, GRANT_VA, plan_grant};
     let overlay = patcher
         .read_entry(ARENA_OVERLAY_PROT_INDEX)
         .context("read arena overlay (0977) for reward-grant injection")?;
@@ -184,7 +188,7 @@ fn inject_reward_grant(patcher: &mut DiscPatcher, items: &[u8]) -> Result<bool> 
     let cur = overlay
         .get(hook_off..hook_off + 4)
         .map(|w| u32::from_le_bytes(w.try_into().unwrap()));
-    if cur == Some(crate::mips::j(GRANT_VA)) {
+    if cur == Some(legaia_code_hooks::mips::j(GRANT_VA)) {
         return Ok(false);
     }
     let scus = patcher
@@ -211,7 +215,10 @@ fn inject_reward_grant(patcher: &mut DiscPatcher, items: &[u8]) -> Result<bool> 
 /// item set landed standalone and the Delilas Challenge came later).
 pub fn inject_custom_items(patcher: &mut DiscPatcher) -> Result<bool> {
     let set = inject_custom_item_set(patcher)?;
-    let grant = inject_reward_grant(patcher, crate::custom_items::CUSTOM_ITEM_IDS)?;
+    let grant = inject_reward_grant(
+        patcher,
+        legaia_delilas_challenge::custom_items::CUSTOM_ITEM_IDS,
+    )?;
     Ok(set || grant)
 }
 
@@ -222,7 +229,10 @@ pub fn inject_custom_items(patcher: &mut DiscPatcher) -> Result<bool> {
 /// is also why it no-ops when the full custom-item grant is already
 /// installed - the hook is shared).
 pub fn inject_honey_reward(patcher: &mut DiscPatcher) -> Result<bool> {
-    inject_reward_grant(patcher, &[crate::custom_items::HONEY_ITEM_ID])
+    inject_reward_grant(
+        patcher,
+        &[legaia_delilas_challenge::custom_items::HONEY_ITEM_ID],
+    )
 }
 
 /// Install the **Delilas Challenge** on the Muscle Dome enrollment menu: a
@@ -233,7 +243,7 @@ pub fn inject_honey_reward(patcher: &mut DiscPatcher) -> Result<bool> {
 ///
 /// Installs both halves: the arena dome course ([`inject_delilas_dome`]) and
 /// the koin1 menu + warp (a script edit inside the `koin1` scene bundle; see
-/// [`crate::delilas_challenge`]). The koin1 MAN is built (and validated)
+/// [`legaia_delilas_challenge::enrollment`]). The koin1 MAN is built (and validated)
 /// before either half is written, so an unbuildable edit aborts without
 /// touching the disc.
 ///
@@ -300,14 +310,14 @@ pub fn apply_delilas_challenge(
     // award-ceremony narration announces the actual full-clear reward, so
     // the item list follows the reward toggle.
     let rewards: &[&str] = if custom_items {
-        &crate::custom_items::REWARD_ANNOUNCE_NAMES
+        &legaia_delilas_challenge::custom_items::REWARD_ANNOUNCE_NAMES
     } else {
-        &[crate::custom_items::HONEY_ANNOUNCE_NAME]
+        &[legaia_delilas_challenge::custom_items::HONEY_ANNOUNCE_NAME]
     };
     let (new_man, grown) = sites
         .build(rewards)
         .map_err(|e| anyhow::anyhow!("delilas-challenge build: {e}"))?;
-    let Some(stream) = crate::compress_within(&new_man, sites.compressed_budget) else {
+    let Some(stream) = legaia_disc_patch::compress_within(&new_man, sites.compressed_budget) else {
         anyhow::bail!(
             "recompressed koin1 MAN overflows its {}-byte footprint",
             sites.compressed_budget

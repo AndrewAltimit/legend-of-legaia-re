@@ -4,12 +4,13 @@
 
 use super::*;
 use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
-use crate::monster_catalog::{FormationDef, FormationSlot};
-use vm::battle_action::BattleEndCause;
+use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+use legaia_engine_battle_vm::battle_action::BattleEndCause;
+use legaia_engine_mode::mode::SceneMode;
 
 fn full_party_world() -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             active_party: vec![1, 0, 2],
             ..Default::default()

@@ -86,7 +86,7 @@
 //! departing scene keeps running, and commits the switch on the tick the
 //! actor writes the mode-2 hand-off. The streaming half (the `.LZS` stream
 //! into `_DAT_8007B85C`, the name-buffer rotation) is done by the
-//! `legaia_engine_core::scene::Scene` load the commit runs, so those effects are read
+//! `legaia_engine_scene::scene::Scene` load the commit runs, so those effects are read
 //! and dropped.
 //!
 //! The hold is what makes a door look like retail. Retail keeps the
@@ -297,7 +297,7 @@ impl HeldTransition {
 /// Retail's scene-change packet spawns the actor and returns; the departing
 /// scene keeps running under it while state 0 seeds the [`TRANSITION_COUNTDOWN`]
 /// and state 4 waits for it to go negative, and only then does MAIN INIT
-/// load the destination. `legaia_engine_core::scene::SceneHost::tick` parks every
+/// load the destination. `legaia_engine_core::scene_host::SceneHost::tick` parks every
 /// transition here, ticks the actor once per world tick with the frame step,
 /// and commits the switch on the tick the actor writes the mode-2 hand-off.
 /// While a hold is parked the departing scene's player is engaged

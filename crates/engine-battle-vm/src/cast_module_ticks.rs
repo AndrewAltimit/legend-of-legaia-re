@@ -6,7 +6,7 @@
 //! The band's DATA half - the arm switches whose arms do nothing but call
 //! `FUN_80021B04` / `FUN_80050ED4` / `FUN_801DFDF0` / `FUN_80024E80` with a
 //! module-resident record pointer - is already the engine's
-//! (`legaia_asset::cast_effect_pool`, staged by
+//! (`legaia_overlay_images::cast_effect_pool`, staged by
 //! `World::spawn_cast_module_fx`). What no record can express, and what this
 //! module carries, is the state those routines touch:
 //!
@@ -91,25 +91,25 @@ use crate::battle_damage_wrappers::{
 };
 
 mod arms;
-mod arms_0955;
 mod capture;
 mod caster_stages;
 mod chain_bodies;
 mod evil_seru_magic;
 mod idioms;
 mod power;
+mod six_spell_cell;
 mod stagers;
 mod state;
 mod ticks;
 
 pub use arms::*;
-pub use arms_0955::*;
 pub use capture::*;
 pub use caster_stages::*;
 pub use chain_bodies::*;
 pub use evil_seru_magic::*;
 pub use idioms::*;
 pub use power::*;
+pub use six_spell_cell::*;
 pub use stagers::*;
 pub use state::*;
 pub use ticks::*;

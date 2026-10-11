@@ -29,8 +29,9 @@
 //! does not assert the count or the list, so a drift in either shows up in the
 //! output rather than as a failure.
 
-use legaia_engine_core::screen_fx::{OT_LETTERBOX, OT_MASK, OT_PANEL, OT_SPRITE, ScreenFxQuad};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_effects::screen_fx::{OT_LETTERBOX, OT_MASK, OT_PANEL, OT_SPRITE, ScreenFxQuad};
+use legaia_engine_mode::mode::SceneMode;
 
 /// The five op-`0x43` sub-ops that spawn or drive a widget, with the
 /// instruction length each one's decoder consumes.
@@ -150,7 +151,7 @@ fn op_43_15_letterbox_links_in_front_of_the_mask_not_beside_it() {
     };
     assert_eq!(
         *abr_mode,
-        legaia_engine_core::screen_fx::ABR_SUBTRACTIVE,
+        legaia_engine_effects::screen_fx::ABR_SUBTRACTIVE,
         "the white edge subtracts to black"
     );
     assert_ne!(g[0], g[2], "top and bottom edges differing is the gradient");
@@ -204,9 +205,10 @@ fn an_idle_scene_emits_nothing() {
 
 mod on_disc {
     use super::*;
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
-    use legaia_engine_core::man_field_scripts::{partition_record_span, scene_man_carriers};
-    use legaia_engine_core::scene::{ProtIndex, Scene};
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_engine_scene::man_census::scene_man_carriers;
+    use legaia_engine_scene::scene::{ProtIndex, Scene};
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -249,7 +251,8 @@ mod on_disc {
                 continue;
             };
             for carrier in scene_man_carriers(index, &scene) {
-                let Ok(man_file) = legaia_asset::man_section::parse(&carrier.payload) else {
+                let Ok(man_file) = legaia_scene_formats::man_section::parse(&carrier.payload)
+                else {
                     continue;
                 };
                 for (partition, count) in man_file.header.partition_counts.iter().enumerate() {

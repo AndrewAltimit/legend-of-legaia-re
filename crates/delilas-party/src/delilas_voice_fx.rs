@@ -830,7 +830,7 @@ impl Biquad {
 /// dashboard chain. `reference` is the sibling's reference clip
 /// (their longest grunt - the dashboard's default reference pick),
 /// used by the timbre / carrier / graft stages. Deterministic: the
-/// breath noise runs on a fixed-seed [`SplitMix64`](crate::rng::SplitMix64).
+/// breath noise runs on a fixed-seed [`SplitMix64`](legaia_disc_patch::rng::SplitMix64).
 pub fn process_clip(
     pcm: &[i16],
     rate: u32,
@@ -896,7 +896,7 @@ pub fn process_clip(
         }
     }
     if fx.breath > 0.01 {
-        let mut rng = crate::rng::SplitMix64::new(0x5EED_B4EA_7B0C_E501);
+        let mut rng = legaia_disc_patch::rng::SplitMix64::new(0x5EED_B4EA_7B0C_E501);
         let a = (-1.0f32 / (0.005 * rate as f32)).exp();
         let (mut env, mut n1) = (0.0f32, 0.0f32);
         for v in y.iter_mut() {

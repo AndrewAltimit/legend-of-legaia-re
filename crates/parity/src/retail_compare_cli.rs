@@ -57,7 +57,7 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
     let manifest_path = args.manifest.or(m).context("no scripts/scenarios.toml")?;
     let library = args.library.or(l).context("no save library")?;
     let extracted = args.extracted_root.or(e).context("no extracted disc")?;
-    let manifest = legaia_mednafen::ScenarioManifest::from_path(&manifest_path)?;
+    let manifest = legaia_ram_image::ScenarioManifest::from_path(&manifest_path)?;
     let exe = std::env::current_exe()?;
     std::fs::create_dir_all(&args.out)?;
     let out = std::fs::canonicalize(&args.out)?;

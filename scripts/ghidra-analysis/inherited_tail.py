@@ -55,7 +55,7 @@ encoded the opposite and each lost real residue:
   content. That case is settled by a measurement, not by the extent: the
   `own_ends` argument carries each image's structural own-content end (for a
   slot-B module, the top of its spawn-record chain -
-  `legaia_asset::slot_b_module::content_end`), and an equal-extent donor is
+  `legaia_overlay_images::slot_b_module::content_end`), and an equal-extent donor is
   admitted only when its own content reaches ABOVE the shared suffix while the
   recipient's does not. That is what breaks the symmetry the old rule refused
   to break: on PROT 0917 / 0918 it names 0917 the donor, because 0917's record
@@ -180,7 +180,7 @@ tail_starts_fixpoint_rounds = 0
 # `k` of an entry's last sector is the byte the NEAREST EARLIER ENTRY whose
 # extent reaches `k` holds there - an overlay or not. That prediction has no
 # free parameter (the donor is fixed by the TOC order and the entry lengths),
-# and it is the Python side of `legaia_asset::inherited_tail::buffer_run` /
+# and it is the Python side of `legaia_disc_audit::inherited_tail::buffer_run` /
 # `buffer_suffix_start`.
 #
 # It is what cuts the two images no sibling can: PROT 0898's and 0895's last

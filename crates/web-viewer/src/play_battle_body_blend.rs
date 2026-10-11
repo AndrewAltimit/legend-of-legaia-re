@@ -1,6 +1,6 @@
 //! Browser seat of a battle body's **whole-mesh semi-transparency** - the
 //! colour word's ABE + ABR applied to every prim the body draws
-//! ([`legaia_engine_core::battle_body_blend`]): the near-camera ghost pass
+//! ([`legaia_engine_battle::battle_body_blend`]): the near-camera ghost pass
 //! `FUN_8004DC68` (`B + F/4`) and the capture / defeat fade (`B + F`).
 //!
 //! The page uploads each actor's `[cba, tsb]` stream once per battle, and

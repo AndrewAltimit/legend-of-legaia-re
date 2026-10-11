@@ -18,7 +18,7 @@ cue ring that carries ids to the voice programmer.
 | Stride / count | 8 bytes, **100** descriptors (ids `0x00..=0x63`) |
 | Runtime rows | ids `>= 0x200`: record 0 of the bundle at `_DAT_8007B8D0` |
 | Readers | `FUN_800250D4` (per-actor trigger), `FUN_80016B6C` (cue-ring drainer) |
-| Parser | `legaia_asset::sfx_table` (`crates/game-tables/src/sfx_table.rs`) |
+| Parser | `legaia_game_tables::sfx_table` (`crates/game-tables/src/sfx_table.rs`) |
 | CLI | `asset sfx-table <SCUS> [--json]` |
 | Confidence | Confirmed - disc parse is byte-identical to the same window in live save-state RAM |
 
@@ -172,7 +172,7 @@ sub-`0` sites and 2 690 sub-`4` sites across 133 carriers. Static ids span
 `0x2D`, `0x2A` lead); runtime ids span `0x200..=0x25F`. `rugi` alone carries 587
 sites; `opdeene`'s cutscene timeline pushes `0x2A` and `0x29` with no input.
 
-Port: each call queues a `legaia_engine_core::world::SfxRingOp`
+Port: each call queues a `legaia_engine_system::sound_state::SfxRingOp`
 (`World::take_sfx_ring_ops`). The native `BootSession` and the browser play page
 replay the queue onto their `SfxScheduler`'s ring every tick. A ring id is the
 drainer's input, so it never goes through `classify_cue`. A runtime id keys the
@@ -448,7 +448,7 @@ Port: `legaia_engine_core::world::World::sync_sfx_residency` models the latch,
 each slot's enable (`SfxBankResidency::slot_open`) and the region's occupant off
 the world's mode edges; op `0x36` sub `3` runs `World::release_field_audio`.
 Both play hosts restage the region from it every tick through the shared
-`AudioBgmDirector::sync_shared_region`, above the slot-0 bank inside the
+`AudioDirector::sync_shared_region`, above the slot-0 bank inside the
 reserved SFX window, and resolve a routed cue to its own slot or to silence.
 Known differences from retail:
 
@@ -533,17 +533,17 @@ Both play hosts stage slot 0 plus whichever bank the current mode holds in the
 shared region, and route each cue through
 `slot_for_category(descriptor.category)`:
 
-- `AudioBgmDirector::stage_resident_slot0` uploads the slot-0 bank into the
+- `AudioDirector::stage_resident_slot0` uploads the slot-0 bank into the
   bottom of the reserved top region of SPU RAM; the scene-BGM allocator is
   capped below the region.
-- `AudioBgmDirector::tick_sfx_frame` fires each cue against the bank its slot
+- `AudioDirector::tick_sfx_frame` fires each cue against the bank its slot
   names - silent when that slot is closed - and falls back to the scene's BGM
   `VabBank` only when nothing is staged at all.
 - The 30 category-`6` descriptors key PROT 0876 in the field and are silent in
   battle. The strike cue `0x1A` sounds out of the system bank; the Baka Fighter
   exchange-hit cue `0x09` out of PROT 0869.
 - The category-`11` cue (`0x50`, the level-up jingle) is staged at results
-  time: `AudioBgmDirector::ensure_reward_bank` uploads PROT 0889 into the free
+  time: `AudioDirector::ensure_reward_bank` uploads PROT 0889 into the free
   tail of the BGM region when the results frame queues the cue; before that it
   is silent. The bank is dropped when a track's samples overrun it or the world
   returns to a field-family mode (whose init closes slot `11`), not on every
@@ -557,9 +557,9 @@ shared region, and route each cue through
   table, PROT → the bank each cue's category names, then descriptor → a
   one-shot through the from-scratch SPU.
 
-Tests (disc-gated): `sfx_cue_resident_bank` (engine-shell) - routed cues key a
+Tests (disc-gated): `sfx_cue_resident_bank` (engine-session) - routed cues key a
 voice via the tone-index path and both banks pack inside the reserved region.
-`sfx_shared_region` (engine-shell) - walks the residency through field, battle
+`sfx_shared_region` (engine-session) - walks the residency through field, battle
 and three minigames, checks every named bank fits above slot 0, and keys
 `0x2E` / `0x2F` out of PROT 0876. `play_sfx_channel` (web-viewer) - in town a
 category-`0` cue sounds out of PROT 0868 and a category-`6` cue out of PROT
@@ -607,7 +607,7 @@ tone 0 / note 67, and `0x4C` = program 3 / tone 8 (voice count 2).
 
 ## Parser
 
-`legaia_asset::sfx_table::SfxTable::from_scus` resolves the table from a
+`legaia_game_tables::sfx_table::SfxTable::from_scus` resolves the table from a
 `SCUS_942.54` image (PSX-EXE `t_addr` → file-offset map, as the
 [item-name table](item-table.md) resolver does); `from_table_bytes` parses a raw
 window out of save-state RAM. `SfxDescriptor` exposes the fields plus
@@ -629,8 +629,8 @@ The per-mode occupant of the shared region is engine state, not a table
 (`World::sync_sfx_residency`).
 
 Tests: `sfx_table_real` pins layout + anchors against the real executable;
-`sfx_table_live` (engine-shell) validates the parse against live RAM and feeds
-`SfxBank::from_descriptors`; `sfx_vab_bank` (engine-shell) checks the slot-1
+`sfx_table_live` (parity) validates the parse against live RAM and feeds
+`SfxBank::from_descriptors`; `sfx_vab_bank` (parity) checks the slot-1
 side - SFX programs resolve in the `music_01` bank, the live bank is
 byte-identical to the disc bank, and the bank varies per scene.
 

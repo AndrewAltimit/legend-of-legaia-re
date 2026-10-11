@@ -104,7 +104,7 @@ every `captures/**/snap_*.sstate` and `autosave_*.sstate` in this repo is.
 Any reader that assumes gzip therefore rejects most of the capture corpus with
 `invalid gzip header` while working fine on the handful of quicksaves - a
 failure shaped like "that state is corrupt" rather than "my reader handles one
-of two formats". `legaia_pcsxr::SaveState` dispatches on the `1f 8b` magic and
+of two formats". `legaia_pcsx_redux::SaveState` dispatches on the `1f 8b` magic and
 opens both.
 
 The corpus-wide consequence is worth stating plainly: a gzip-only reader indexes
@@ -127,7 +127,7 @@ run whose first `0x400` bytes are dense and whose remaining `0xFC00` are almost
 all zero - the scratchpad-plus-I/O-map shape. On a `teien` field-run state that
 lands one blob, and reading `+0x3E8` out of it returns the same visible-tile
 window the live probe logged. What is missing is only a reader:
-`legaia_pcsxr::SaveState` exposes `main_ram()` and nothing else, so a
+`legaia_pcsx_redux::SaveState` exposes `main_ram()` and nothing else, so a
 scratchpad-dependent question still needs either a live probe (which reads it
 directly) or a new accessor.
 

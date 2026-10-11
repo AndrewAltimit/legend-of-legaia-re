@@ -1,7 +1,7 @@
 //! Field NPC state: positions, headings, motions, ambient anims, dialog bindings and the solid / animate toggles.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite [`World`].
+//! Fields keep their retail provenance notes.
 
 use super::*;
 
@@ -37,11 +37,11 @@ pub struct FieldNpcState {
     /// the first `0x1F` - instead of starting at the first segment. The default
     /// simplified path ignores this and uses `field_npc_dialog` unchanged.
     pub dialog_prologue:
-        std::collections::HashMap<u8, crate::man_field_scripts::InlineDialogPrologue>,
+        std::collections::HashMap<u8, legaia_engine_field::man_field_scripts::InlineDialogPrologue>,
     /// Talk proxies: placement `slot` -> (the placement whose conversation
     /// its interaction runs, the proxy's own spawn position). A proxy is an
     /// undrawn actor the facing probe can reach where the real speaker
-    /// cannot be reached ([`crate::man_field_scripts::placement_talk_proxy_target`]).
+    /// cannot be reached ([`legaia_engine_field::man_field_scripts::placement_talk_proxy_target`]).
     /// The probe admits the proxy's position and answers with the target.
     pub talk_proxies: std::collections::HashMap<u8, (u8, (i16, i16))>,
     /// Per-talkable-NPC spawn world position `(world_x, world_z)`, keyed by the
@@ -53,7 +53,7 @@ pub struct FieldNpcState {
     ///
     /// The runtime actor frame **is** the MAN placement frame: `FUN_8003A1E4`
     /// spawns each actor at `world = tile*128 + 0x40` (the placement's
-    /// [`world_x`](legaia_asset::man_section::ActorPlacement::world_x)), stored
+    /// [`world_x`](legaia_scene_formats::man_section::ActorPlacement::world_x)), stored
     /// straight into `actor[+0x14/+0x18]` by `FUN_80024C88` with no anchor, and
     /// the player cold-spawn `0xA40` is `tile 20*128 + 0x40` in that same frame.
     /// So these placement positions compare directly against the player's
@@ -82,8 +82,8 @@ pub struct FieldNpcState {
     pub headings: std::collections::HashMap<u8, i16>,
     /// Live per-NPC **pitch / roll** - retail `actor+0x24` and `actor+0x28`,
     /// the X and Z Euler angles the scripted-motion VM's `0x15` / `0x16`
-    /// tween ([`legaia_engine_vm::ambient_motion::AmbientMotion::pitch`] /
-    /// [`roll`](legaia_engine_vm::ambient_motion::AmbientMotion::roll)),
+    /// tween ([`legaia_engine_motion_vm::ambient_motion::AmbientMotion::pitch`] /
+    /// [`roll`](legaia_engine_motion_vm::ambient_motion::AmbientMotion::roll)),
     /// keyed by placement slot in the same 12-bit angle space as
     /// [`crate::world::FieldNpcState::headings`].
     ///
@@ -120,13 +120,13 @@ pub struct FieldNpcState {
     /// Heading tweens a script scheduled with `4C 48 <value> <ticks>` (the
     /// field VM's nibble-4 sub-8 ramp on `+0x26`, `FUN_8003C5F0`), owner =
     /// placement slot. Ticked by `World::tick_npc_heading_ramps`.
-    pub heading_ramps: legaia_engine_vm::ambient_motion::RampScheduler,
+    pub heading_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler,
     /// Per-NPC glide speed, keyed by the same placement `slot` as
     /// [`crate::world::FieldNpcState::dialog`]: the per-frame world-unit step
     /// `Self::start_field_npc_motion` writes into a leg's motion-VM
-    /// [`legaia_engine_vm::motion_vm::MotionState::speed`], decoded from the
+    /// [`legaia_engine_motion_vm::motion_vm::MotionState::speed`], decoded from the
     /// placement's real walk-kernel operands
-    /// ([`crate::man_field_scripts::placement_glide_speed`]: the bound MAN
+    /// ([`legaia_engine_field::man_field_scripts::placement_glide_speed`]: the bound MAN
     /// tail-section-1 wander/step ops first, then the record's own field-VM
     /// `0x37`/`0x41`/`0x47` yield ops, then the facing-nibble heuristic as a
     /// last resort). A slot with no decodable motion leg is absent and the
@@ -137,9 +137,9 @@ pub struct FieldNpcState {
     /// Per-NPC default-move pair `[move_id, anim_id]`, keyed by placement
     /// `slot`: the motion op-`0x17` writes into the retail per-actor table at
     /// `0x801C6470`, statically harvested from the scene MAN's tail-section-1
-    /// streams ([`crate::man_field_scripts::motion_default_move_writes`]).
+    /// streams ([`legaia_engine_field::man_field_scripts::motion_default_move_writes`]).
     /// The table the interaction motion-pause kick (`FUN_8003C9AC`, ported at
-    /// [`legaia_engine_vm::motion_pause`]) reloads a moving-class actor's
+    /// [`legaia_engine_field::motion_pause`]) reloads a moving-class actor's
     /// requested-move pair from.
     pub default_moves: std::collections::BTreeMap<u8, [u8; 2]>,
     /// In-flight field-NPC walk legs, keyed by placement `slot`. Stepped once
@@ -153,16 +153,17 @@ pub struct FieldNpcState {
     /// (`CC <id> 85|8E|8F <lo> <hi> <bind>` outside a cutscene timeline,
     /// which keeps its own), keyed by slot and stepped once per field tick
     /// ([`crate::world::World::tick_field_npc_face_legs`]).
-    pub(crate) face_legs: std::collections::BTreeMap<u8, crate::inline_dialogue::TalkFaceRamp>,
+    pub(crate) face_legs:
+        std::collections::BTreeMap<u8, legaia_engine_field::inline_dialogue::TalkFaceRamp>,
     /// Budgeted `B8 <id> ..` rotate legs the same contexts armed, keyed and
     /// stepped alongside [`Self::face_legs`].
     pub(crate) rotate_legs:
-        std::collections::BTreeMap<u8, crate::cutscene_timeline::TimelineFacing>,
+        std::collections::BTreeMap<u8, legaia_engine_field::cutscene_timeline::TimelineFacing>,
     /// **Live per-slot model id**, keyed by placement `slot`: what the
     /// scripted-motion VM's op `0x0E` re-bound this actor's mesh to, in the
     /// raw operand space both model-pool consumers share (`< 0xF0` = the
     /// scene bank, `>= 0xF0` = the player bank at `operand - 0xF0`; see
-    /// [`crate::model_bank::resolve_model_id`]).
+    /// [`legaia_engine_scene::model_bank::resolve_model_id`]).
     ///
     /// Absent = the actor still draws the mesh its placement's
     /// `model_index` named, which is every actor until a script swaps one.
@@ -174,7 +175,7 @@ pub struct FieldNpcState {
     /// Per-NPC **ambient facing** channels, keyed by placement `slot`: the
     /// second motion VM's idle turn-in-place behaviour (`FUN_80038158` ops
     /// `0x04` / `0x0D`, ported at
-    /// [`legaia_engine_vm::ambient_motion::AmbientMotion`]). Seeded at scene
+    /// [`legaia_engine_motion_vm::ambient_motion::AmbientMotion`]). Seeded at scene
     /// load from the MAN's tail-section-1 streams
     /// ([`crate::world::World::seed_field_npc_ambient`]) and stepped once per actor game
     /// tick by [`crate::world::World::tick_field_npc_ambient`]. Without it a standing town
@@ -192,8 +193,8 @@ pub struct FieldNpcState {
     /// placed objects with that mesh instead of the `.MAP` pack slot.
     pub(crate) object_models: std::collections::BTreeMap<usize, i16>,
     /// Every animated actor's side-buffer look rotation (field-VM `4C 45`)
-    /// and the ramps driving it - [`crate::actor_look`].
-    pub looks: crate::actor_look::ActorLooks,
+    /// and the ramps driving it - [`legaia_engine_field::actor_look`].
+    pub looks: legaia_engine_field::actor_look::ActorLooks,
     /// Publish the ambient tail-section-1 streams' walk steps
     /// ([`crate::world::World::tick_field_npc_ambient`]) - the villagers'
     /// authored wandering. The bare `World` default is off (NPCs rest at their
@@ -238,7 +239,7 @@ pub struct FieldNpcState {
     pub(crate) clip_current: std::collections::HashMap<u8, u8>,
     /// Each animated NPC actor's live clip cursor (`actor+0x68`) under its
     /// own `+0x62` control word, keyed by placement slot. The hosts own the
-    /// decoded clip frames ([`crate::field_anim::FieldClipPlayer`]) but not
+    /// decoded clip frames ([`legaia_engine_field::field_anim::FieldClipPlayer`]) but not
     /// the playhead: [`crate::world::World::tick_npc_clips`] advances these
     /// through the retail anim tick once per field frame, reading and writing
     /// the slot's channel `ctx.local_flags`, so an actor whose script holds
@@ -246,7 +247,7 @@ pub struct FieldNpcState {
     /// touch's play-once-and-clamp lid, the `4C 36` already-opened snap -
     /// poses that way instead of looping. Bound by
     /// [`crate::world::World::bind_npc_clip_cursor`].
-    pub clip_cursors: std::collections::BTreeMap<u8, crate::field_env::PropAnim>,
+    pub clip_cursors: std::collections::BTreeMap<u8, legaia_engine_scene::field_env::PropAnim>,
     /// Slots whose [`Self::clip_cursors`] entry the world bound itself, from
     /// the scene bundle's record header at the poke
     /// ([`crate::world::World::bind_npc_scene_clip`]): their cursor keeps the
@@ -269,9 +270,9 @@ pub struct FieldNpcState {
     pub(crate) glide_y: std::collections::HashMap<u8, i16>,
     /// The camera state the visibility cull `FUN_801D79E8` reads (focus,
     /// region box, visible tile window), as the camera last left it.
-    /// Published by [`crate::camera::Camera::route_camera_events`], which
+    /// Published by [`legaia_engine_field::camera::Camera::route_camera_events`], which
     /// both play hosts call every frame; `None` culls nothing.
-    pub cull_view: Option<crate::world::field_npc_cull::FieldCullView>,
+    pub cull_view: Option<legaia_engine_field::camera::FieldCullView>,
 }
 
 /// The heading a placement stands in before anything turns it, in the
@@ -298,7 +299,7 @@ impl FieldNpcState {
             headings: std::collections::HashMap::new(),
             tilts: std::collections::HashMap::new(),
             facing_save: None,
-            heading_ramps: legaia_engine_vm::ambient_motion::RampScheduler::new(),
+            heading_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
             glide_speeds: std::collections::BTreeMap::new(),
             default_moves: std::collections::BTreeMap::new(),
             motions: std::collections::BTreeMap::new(),

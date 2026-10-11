@@ -5,7 +5,7 @@
 //! per-draw `(translation, rotY, scale)` triples it builds model matrices
 //! from, then asks for the baked glTF. Texture indirection (page-local UVs +
 //! per-vertex `(cba, tsb)` sampled against VRAM) is baked into a single RGBA
-//! atlas by [`legaia_asset::scene_gltf`].
+//! atlas by [`legaia_actor_formats::scene_gltf`].
 //!
 //! Typical JS flow:
 //!
@@ -19,7 +19,7 @@
 //! ```
 
 use super::*;
-use legaia_asset::scene_gltf::{SceneInstance, SceneMesh, build_scene_glb};
+use legaia_actor_formats::scene_gltf::{SceneInstance, SceneMesh, build_scene_glb};
 
 /// Accumulated export session: registered meshes, placements, target VRAM.
 pub struct SceneExportState {
@@ -155,7 +155,7 @@ impl LegaiaViewer {
 /// (`-angle`, what `scene_export_add_instance` receives) plus the full
 /// render-frame quaternion, which the baker emits in its place.
 fn euler_instance(mesh: usize, translation: [f32; 3], rot: [u16; 3], scale: f32) -> SceneInstance {
-    use legaia_engine_core::scene_assembly::{draw_rot_y_radians, placement_rotation_quat};
+    use legaia_engine_scene::scene_assembly::{draw_rot_y_radians, placement_rotation_quat};
     SceneInstance {
         mesh,
         translation,

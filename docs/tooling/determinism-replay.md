@@ -53,7 +53,7 @@ active_scene = "town01"
 ```
 
 Pad bits match
-[`legaia_engine_core::input::PadButton::mask`](../../crates/engine-system/src/input.rs):
+[`legaia_engine_system::input::PadButton::mask`](../../crates/engine-system/src/input.rs):
 Cross = `0x4000`, Circle = `0x2000`, Up = `0x0010`, Down = `0x0040`,
 Left = `0x0080`, Right = `0x0020`, etc. Stored as a plain `u16` so the
 on-disk wire form stays byte-readable.
@@ -148,10 +148,10 @@ Runs in CI without `LEGAIA_DISC_BIN`.
 
 The replay format is a peer to the existing parity gates:
 
-- [`vram_oracle_e1`](../../crates/engine-shell/tests/vram_oracle_e1.rs)
+- [`vram_oracle_e1`](../../crates/parity/tests/vram_oracle_e1.rs)
   compares engine VRAM against retail mednafen captures (byte-exact in
   the texpage region).
-- [`mode_trace_e3`](../../crates/engine-shell/tests/mode_trace_e3.rs)
+- [`mode_trace_e3`](../../crates/parity/tests/mode_trace_e3.rs)
   compares engine `(scene_mode, active_scene)` per frame against retail
   snapshots.
 - `determinism_j2` compares engine traces against *themselves*, no
@@ -283,7 +283,7 @@ the ladder skips.
 
 ## Scene-frontier ladder: the breadth-denominated sibling
 
-[`crates/engine-core/tests/chapter1_frontier_ladder.rs`](../../crates/engine-core/tests/chapter1_frontier_ladder.rs)
+[`crates/parity/tests/chapter1_frontier_ladder.rs`](../../crates/parity/tests/chapter1_frontier_ladder.rs)
 asks the other question. The critical-path ladder walks one route well and
 reports one number; this one enumerates the whole chapter-1 reachable scene
 set and gives every member a verdict, against a ratcheted baseline in

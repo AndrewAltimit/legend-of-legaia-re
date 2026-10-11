@@ -9,73 +9,16 @@
  */
 
 (async function () {
-  /* ---------- PROT ranges per kingdom (from CDNAME map) ----------- */
-  const KINGDOM_PROT = {
-    drake:   { start: 85,  end: 93,  label: 'Drake Kingdom',   cdname: 'map01' },
-    sebucus: { start: 244, end: 253, label: 'Sebucus Islands', cdname: 'map02' },
-    karisto: { start: 391, end: 398, label: 'Karisto Kingdom', cdname: 'map03' },
-  };
+  /* ---------- Per-kingdom data (world-overview-kingdoms.js) ----------- */
+  const {
+    KINGDOM_PROT, KINGDOM_CAM, KINGDOM_TOPVIEW_CAM, UNPLACED_TARGET_FOOTPRINT,
+    KINGDOM_FOG_TINT, DEFAULT_FOG_PARAMS, LIST_NAMES, LIST_COLORS,
+  } = window.LegaiaWorldOverviewKingdoms;
+  /* ---------- Quick-travel menu panel (world-overview-quick-travel.js) -- */
+  const { renderQuickTravel } = window.LegaiaWorldOverviewQuickTravel;
+  /* ---------- Ground sampler + camera framing (world-overview-ground.js) */
+  const { buildSampler, frameCamera } = window.LegaiaWorldOverviewGround;
 
-  /* ---------- Retail camera defaults (from .mc{1,2,3}) -------------
-   * Captured per-kingdom from mednafen save states in walk-view mode.
-   * The X/Z scrolls live at `_DAT_80089120` / `_DAT_80089118` and are
-   * stored as negated map-origin coordinates - the engine writes
-   * `_DAT_80089118 = -(int)*(short *)(actor + 0x14)` etc., so the world
-   * camera target is the negation of the raw cell. The captured saves
-   * are all in walk-view (DAT_801F2B94 = 0), so these reflect the
-   * load-time spawn rather than an interactively-scrolled dev-menu
-   * camera; they're still useful as per-kingdom anchor points.
-   *   mednafen-state world-map-camera --table <save> ...
-   * regenerates these values. */
-  const KINGDOM_CAM = {
-    drake:   { centerX: 8832, centerZ: 8832, zoom: 0x170 },
-    sebucus: { centerX: 7936, centerZ: 9344, zoom: 0x170 },
-    karisto: { centerX: 7936, centerZ: 9088, zoom: 0x170 },
-  };
-  /* Top-view camera anchors per kingdom. The "lock to retail top-view"
-   * button slams the world-cam to these centres + sets the zoom so the
-   * frame matches the in-game world-map camera. Values mirror the
-   * walk-view load-time spawn anchors decoded by `mednafen-state
-   * world-map-camera --table <save>` against per-kingdom saves; the
-   * dev-menu's free-camera top-view (DAT_801F2B94 != 0) starts from the
-   * same anchor before user input scrolls it, so these double as
-   * top-view defaults until a captured dev-menu state refines them. */
-  const KINGDOM_TOPVIEW_CAM = {
-    drake:   { centerX: 8832, centerZ: 8832, azimuth: 0x0000, zoom: 0x0170 },
-    sebucus: { centerX: 7936, centerZ: 9344, azimuth: 0x0000, zoom: 0x0170 },
-    karisto: { centerX: 7936, centerZ: 9088, azimuth: 0x0000, zoom: 0x0170 },
-  };
-  /* Class-conditional target footprints for the unplaced-slot1 grid.
-   * Each unplaced TMD is normalised so its larger XZ extent maps to this
-   * target, then centroid-anchored at its assigned grid slot. Numbers
-   * are world units (Drake is 16320x16320). The renderer falls back to
-   * MESH_SCALE when normalisation is disabled or the AABB collapses to
-   * zero. Matches the four classes in slot1_classification.toml. */
-  const UNPLACED_TARGET_FOOTPRINT = {
-    landmark:   600,
-    decoration: 200,
-    ground_tile: 1200,
-    unknown:    600,
-  };
-  /* Per-kingdom baseline fog tint (BGR555 -> linear RGB). Used as the
-   * fragment shader's fallback when a captured LUT entry is zero, so the
-   * "fog" toggle still produces a kingdom-flavoured gradient before the
-   * user supplies fog_probe.lut.bin. The values are mid-tier samples of
-   * each kingdom's dev-menu top-view sky colour. */
-  const KINGDOM_FOG_TINT = {
-    drake:   { r: 0.18, g: 0.22, b: 0.34 },
-    sebucus: { r: 0.16, g: 0.26, b: 0.32 },
-    karisto: { r: 0.26, g: 0.20, b: 0.22 },
-  };
-  /* Initial fog defaults: matches the retail probe shape (Z_far = Z >> 5
-   * over a ~16384-unit reference). Overwritten when the user uploads a
-   * fog_probe.lut.bin via the fog-LUT picker. */
-  const DEFAULT_FOG_PARAMS = { enable: 0, zShift: 5, farRef: 12000, color: null };
-  const LIST_NAMES = {
-    0: 'player/system', 1: 'entities', 2: 'background',
-    3: 'reserve_3', 4: 'reserve_4', 5: 'reserve_5', 6: 'extra',
-  };
-  const LIST_COLORS = { 0: '#56B6F5', 1: '#79D279', 2: '#C0C0C0', 6: '#E07028' };
 
   /* ---------- DOM refs ----------- */
   const $file       = document.getElementById('wo-disc-file');
@@ -158,43 +101,13 @@
   let worldDrawState = null; /* { draws, ext } of the assembled kingdom */
   let groundSampler = null;  /* (x, z) -> terrain surface Y (world up), or null */
 
-  /* Bilinear terrain-height sampler over the walk heightfield the kingdom
-   * load uploaded: vertices sit on the 128-unit cell grid at
-   * `(col*128, -lut, row*128)` (pre-Y-flip frame - world-up Y is the
-   * negation), so bucketing by grid node and lerping the enclosing four
-   * reproduces the surface the GPU rasterises. Cells outside the visible
-   * continent fall back to the sea plane (y = 0). This is what lets the VR
-   * ground mode STAND on the map: the rig's floor origin snaps to this
-   * height every frame. */
+  /* The terrain-height sampler over the walk heightfield the kingdom load
+   * uploaded (world-overview-ground.js), or null without one. */
   function buildGroundSampler() {
     if (!viewer || typeof viewer.walk_ground_positions !== 'function') return null;
     let pos;
     try { pos = viewer.walk_ground_positions(); } catch (e) { return null; }
-    if (!pos || pos.length < 12) return null;
-    const TILE = 128;
-    const nodes = new Map();
-    for (let i = 0; i + 2 < pos.length; i += 3) {
-      const key = Math.round(pos[i] / TILE) * 4096 + Math.round(pos[i + 2] / TILE);
-      const y = -pos[i + 1];
-      const cur = nodes.get(key);
-      if (cur === undefined || y > cur) nodes.set(key, y);
-    }
-    return (x, z) => {
-      const gx = x / TILE, gz = z / TILE;
-      const x0 = Math.floor(gx), z0 = Math.floor(gz);
-      const fx = gx - x0, fz = gz - z0;
-      let sum = 0, wsum = 0;
-      for (let dx = 0; dx <= 1; dx++) {
-        for (let dz = 0; dz <= 1; dz++) {
-          const v = nodes.get((x0 + dx) * 4096 + (z0 + dz));
-          if (v === undefined) continue;
-          const w = (dx ? fx : 1 - fx) * (dz ? fz : 1 - fz);
-          sum += v * w;
-          wsum += w;
-        }
-      }
-      return wsum > 1e-6 ? sum / wsum : 0;
-    };
+    return buildSampler(pos);
   }
   /* Headless-verification hook (same spirit as `__woCam`): the mock-XR
    * harness asserts the VR ground mode stands ON this surface. Not used by
@@ -572,7 +485,7 @@
   }
   /* Hand the disc-side ocean assets (texture + 13-frame CLUT animation
    * table) to the renderer. Called after `viewer.set_scene_kingdom`
-   * has decompressed slot 0 and `legaia_web_viewer::ocean::find_ocean_assets`
+   * has decompressed slot 0 and `legaia_scene_formats::ocean::find_ocean_assets`
    * has run. When the kingdom isn't a world-map one (or the disc isn't
    * loaded yet), the accessors return empty buffers and we leave the
    * solid-colour fallback in place. */
@@ -1299,51 +1212,10 @@
    * the retail spawn (where the kingdom's exit drops the player onto
    * the world map) while still showing every placed landmark. */
   function frameWorldCam(drawPlacements, ext, groundAabb) {
-    const retail = KINGDOM_CAM[currentKingdom];
-    /* When the continent ground heightfield is present it's the dominant
-     * geometry, so frame the whole continent (centred on its XZ centroid,
-     * sized to cover its extent + a margin) rather than the sparse
-     * landmark cluster. The "lock to retail top-view" button still gives
-     * the retail spawn framing on demand. */
-    if (groundAabb && groundAabb.sx > 0 && groundAabb.sz > 0) {
-      worldCam.centerX = groundAabb.cx;
-      worldCam.centerZ = groundAabb.cz;
-      worldCam.halfWidth  = groundAabb.sx / 2 + 1000;
-      worldCam.halfHeight = groundAabb.sz / 2 + 1000;
-      return;
-    }
-    if (drawPlacements && drawPlacements.length > 0) {
-      let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
-      for (const p of drawPlacements) {
-        if (p.x < xmin) xmin = p.x;
-        if (p.x > xmax) xmax = p.x;
-        if (p.z < zmin) zmin = p.z;
-        if (p.z > zmax) zmax = p.z;
-      }
-      if (retail) {
-        worldCam.centerX = retail.centerX;
-        worldCam.centerZ = retail.centerZ;
-        const dx = Math.max(retail.centerX - xmin, xmax - retail.centerX);
-        const dz = Math.max(retail.centerZ - zmin, zmax - retail.centerZ);
-        worldCam.halfWidth  = Math.max(dx, 1500) + 1500;
-        worldCam.halfHeight = Math.max(dz, 1500) + 1500;
-      } else {
-        worldCam.centerX = (xmin + xmax) / 2;
-        worldCam.centerZ = (zmin + zmax) / 2;
-        worldCam.halfWidth  = Math.max((xmax - xmin) / 2, 1500) + 1500;
-        worldCam.halfHeight = Math.max((zmax - zmin) / 2, 1500) + 1500;
-      }
-    } else if (retail) {
-      worldCam.centerX = retail.centerX;
-      worldCam.centerZ = retail.centerZ;
-      worldCam.halfWidth = ext[0] / 2 + 1000;
-      worldCam.halfHeight = ext[1] / 2 + 1000;
-    } else {
-      worldCam.centerX = ext[0] / 2;
-      worldCam.centerZ = ext[1] / 2;
-      worldCam.halfWidth = ext[0] / 2 + 1000;
-      worldCam.halfHeight = ext[1] / 2 + 1000;
-    }
+    Object.assign(
+      worldCam,
+      frameCamera(KINGDOM_CAM[currentKingdom], drawPlacements, ext, groundAabb),
+    );
   }
 
   /* Pan / orbit / zoom controls for the world camera. Left-drag pans the
@@ -1492,122 +1364,6 @@
       scatterDots.push({ x, y, p });
     });
   }
-
-  /* ---------- Quick-travel menu overlay (whole Legaia) ---------- */
-  /* Visual style guide for the 20-record overlay - subtle but readable. */
-  const QT_DOT_COLOR = '#F4B41A';
-  const QT_DOT_RADIUS = 5;
-  let qtRecords = null;  /* { names: string[], placements: [{name_idx, ...}] } */
-  let qtScreen = [];     /* [{ x, y, p, name }] hit-test entries in canvas coords */
-
-  function renderQuickTravel(menu) {
-    qtRecords = menu;
-    const $qtCanvas   = document.getElementById('wo-qt-canvas');
-    const $qtNameList = document.getElementById('wo-qt-namelist');
-    if (!$qtCanvas || !$qtNameList) return;
-    /* Sidebar: 16 names with placement counts (sub-entries per landmark). */
-    const counts = new Array(menu.names.length).fill(0);
-    menu.placements.forEach(p => { counts[p.name_idx]++; });
-    $qtNameList.innerHTML = menu.names.map((name, i) => {
-      const c = counts[i];
-      const tag = c === 0
-        ? '<span style="color:#888">(no record)</span>'
-        : `<span class="wo-coord">x${c}</span>`;
-      return `<li><span class="wo-name">[0x${i.toString(16).padStart(2,'0').toUpperCase()}] ${escapeHtml(name)}</span> ${tag}</li>`;
-    }).join('');
-    /* Canvas: scale menu_x/menu_y (PSX menu screen space, ~128x128) to
-     * canvas pixels. menu_x range observed 22..102, menu_y 13..108. */
-    drawQuickTravelCanvas();
-  }
-  function drawQuickTravelCanvas() {
-    const $qtCanvas = document.getElementById('wo-qt-canvas');
-    if (!$qtCanvas || !qtRecords) return;
-    const ctx = $qtCanvas.getContext('2d');
-    const W = $qtCanvas.width, H = $qtCanvas.height;
-    ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, W, H);
-    /* Margin + scale from a 0..128 menu-coord box to canvas. */
-    const margin = 30;
-    const aW = W - margin * 2;
-    const aH = H - margin * 2;
-    const sx = aW / 128;
-    const sy = aH / 128;
-    /* Grid */
-    ctx.strokeStyle = 'rgba(120,130,200,0.12)';
-    for (let i = 0; i <= 8; i++) {
-      ctx.beginPath();
-      ctx.moveTo(margin + (i/8)*aW, margin);
-      ctx.lineTo(margin + (i/8)*aW, margin + aH);
-      ctx.moveTo(margin, margin + (i/8)*aH);
-      ctx.lineTo(margin + aW, margin + (i/8)*aH);
-      ctx.stroke();
-    }
-    qtScreen = [];
-    /* Draw dots first so labels render on top. */
-    qtRecords.placements.forEach(p => {
-      const x = margin + p.menu_x * sx;
-      const y = margin + p.menu_y * sy;
-      ctx.beginPath();
-      ctx.arc(x, y, QT_DOT_RADIUS, 0, 2*Math.PI);
-      ctx.fillStyle = QT_DOT_COLOR; ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
-      qtScreen.push({ x, y, p, name: qtRecords.names[p.name_idx] || '?' });
-    });
-    /* Label one entry per landmark (the first record we see for each
-     * name_idx). De-dupes the closely-grouped sub-entry triplets. */
-    ctx.font = '11px monospace';
-    ctx.fillStyle = '#ddd';
-    ctx.textBaseline = 'middle';
-    const labeled = new Set();
-    qtScreen.forEach(d => {
-      if (labeled.has(d.p.name_idx)) return;
-      labeled.add(d.p.name_idx);
-      const label = d.name;
-      const tx = d.x + QT_DOT_RADIUS + 4;
-      const tw = ctx.measureText(label).width;
-      /* Background pill so labels stay readable over the grid. */
-      ctx.fillStyle = 'rgba(10,10,26,0.78)';
-      ctx.fillRect(tx - 2, d.y - 7, tw + 4, 14);
-      ctx.fillStyle = '#ddd';
-      ctx.fillText(label, tx, d.y);
-    });
-  }
-  /* Hover tooltip over the quick-travel canvas. */
-  const $qtCanvasEl = document.getElementById('wo-qt-canvas');
-  const $qtHover    = document.getElementById('wo-qt-hover');
-  if ($qtCanvasEl && $qtHover) {
-    $qtCanvasEl.addEventListener('mousemove', ev => {
-      const rect = $qtCanvasEl.getBoundingClientRect();
-      const mx = (ev.clientX - rect.left) * ($qtCanvasEl.width / rect.width);
-      const my = (ev.clientY - rect.top) * ($qtCanvasEl.height / rect.height);
-      let best = null, bestD = Infinity;
-      for (const d of qtScreen) {
-        const dx = d.x - mx, dy = d.y - my;
-        const r2 = dx*dx + dy*dy;
-        if (r2 < bestD) { bestD = r2; best = d; }
-      }
-      if (best && bestD < 96) {
-        const p = best.p;
-        $qtHover.textContent =
-          `${best.name}  -  rec ${p.index}  menu (${p.menu_x}, ${p.menu_y})  ` +
-          `scene_id=0x${p.scene_id.toString(16).padStart(4,'0').toUpperCase()}  ` +
-          `flag=0x${p.discovery_flag.toString(16).padStart(2,'0').toUpperCase()}`;
-      } else {
-        $qtHover.innerHTML = '&nbsp;';
-      }
-    });
-    $qtCanvasEl.addEventListener('mouseleave', () => { $qtHover.innerHTML = '&nbsp;'; });
-  }
-  /* Initial placeholder. */
-  (function paintQtPlaceholder() {
-    const $c = document.getElementById('wo-qt-canvas');
-    if (!$c) return;
-    const ctx = $c.getContext('2d');
-    ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, $c.width, $c.height);
-    ctx.fillStyle = '#888'; ctx.font = '13px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('Load a disc above to see the in-game world-map menu', $c.width / 2, $c.height / 2 - 10);
-    ctx.fillText('(parsed live from SCUS_942.54)', $c.width / 2, $c.height / 2 + 10);
-  })();
 
   /* Hover tooltip over the scatter */
   if ($canvas2d) {

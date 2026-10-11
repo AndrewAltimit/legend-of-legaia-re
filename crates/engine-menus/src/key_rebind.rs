@@ -3,7 +3,7 @@
 //! Drives the per-key rebind sub-screen reachable from
 //! `legaia_engine_core::options::OptionsSession`: pick a [`PadButton`], then press the
 //! desired keyboard key. The session swaps the new key into the
-//! [`crate::input::Mapping`] table, evicting the previous binding (if any
+//! [`legaia_engine_system::input::Mapping`] table, evicting the previous binding (if any
 //! key was already bound to the same button, it gets cleared so two keys
 //! never report the same button).
 //!
@@ -11,7 +11,7 @@
 //! with a [`KeyRebindInput`] bundle (cursor moves + the most-recent key
 //! press as a string) and consume the [`KeyRebindEvent`] stream.
 
-use crate::input::{Mapping, PadButton};
+use legaia_engine_system::input::{Mapping, PadButton};
 
 /// One row in the rebind list.
 #[derive(Debug, Clone, PartialEq, Eq)]

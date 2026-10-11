@@ -21,9 +21,10 @@
 //!
 //! Disc-free: synthetic party + the vanilla monster/formation tables.
 
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_action::ActionState;
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_battle_vm::battle_action::ActionState;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 
 /// A live-loop world seated for a battle against the vanilla Goblin
 /// formation (id 1). The monster is given an overwhelming initiative key

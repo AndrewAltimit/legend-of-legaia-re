@@ -6,7 +6,7 @@
 //! could reach:
 //!
 //! * **Level** grants exactly the XP that reaches the target level through
-//!   the party's [`crate::levelup::LevelUpTracker`], so the gains are the
+//!   the party's [`legaia_engine_battle::levelup::LevelUpTracker`], so the gains are the
 //!   retail per-character growth (`FUN_801E9504`'s tables, installed at boot
 //!   by [`World::install_retail_progression_tables`]) and the record's XP,
 //!   next-level threshold and displayed level all agree. **Lowering** a level
@@ -15,24 +15,24 @@
 //!   keeps ([`World::cheat_rebuild_level`]) - growth is not reversible, so the
 //!   only honest way down is to replay it from level 1.
 //! * **Seru magic** goes through retail's learn edge
-//!   ([`crate::magic_xp::learn_spell_prepend`], `FUN_801E92DC`) and the
+//!   ([`legaia_engine_battle::magic_xp::learn_spell_prepend`], `FUN_801E92DC`) and the
 //!   capture log the menus list from; levels are clamped to retail's cap of 9.
 //! * **Arts** go through retail's ordered learned-art insert
 //!   (`check_and_learn_art`, `FUN_801EFBFC`) into the record's `+0x185` list
-//!   and the [`crate::tactical_arts::TacticalArtsTracker`] beside it.
+//!   and the [`legaia_engine_battle::tactical_arts::TacticalArtsTracker`] beside it.
 //! * **AP** is the Spirit gauge (record `+0x10E`, battle actor `spirit_gauge`)
 //!   filled to its ceiling of 100.
-//! * **Items** go through the bag's retail add helper ([`crate::world::ItemBag::add`]):
+//! * **Items** go through the bag's retail add helper ([`legaia_engine_menus::item_bag::ItemBag::add`]):
 //!   they stack to 99 and land inside the installed active window, so a full
 //!   window refuses rather than writing past it.
 //! * **Gold** and **coins** clamp to the purses' retail ceilings
-//!   ([`crate::shop::GOLD_CAP`], [`crate::casino_coin_bank::COIN_BANK_CEILING`]).
+//!   ([`legaia_engine_menus::shop::GOLD_CAP`], [`crate::casino_coin_bank::COIN_BANK_CEILING`]).
 //!
 //! Hosts own only the controls; this module owns every write.
 
-use crate::levelup::{LevelUpTracker, MAX_LEVEL, MAX_PARTY};
 use crate::world::World;
-use legaia_asset::new_game::{StartingChar, StartingParty};
+use legaia_engine_battle::levelup::{LevelUpTracker, MAX_LEVEL, MAX_PARTY};
+use legaia_game_tables::new_game::{StartingChar, StartingParty};
 
 /// The Spirit (AP) gauge ceiling - the value
 /// [`World::spirit_gauge_full`] tests and the battle clamps to.
@@ -203,10 +203,10 @@ impl World {
         self.cheat_set_party_level_with(level, None)
     }
 
-    /// Set the gold purse, clamped to `0..=`[`crate::shop::GOLD_CAP`].
+    /// Set the gold purse, clamped to `0..=`[`legaia_engine_menus::shop::GOLD_CAP`].
     /// Returns the purse afterwards.
     pub fn cheat_set_gold(&mut self, gold: i64) -> i32 {
-        self.party.money = gold.clamp(0, i64::from(crate::shop::GOLD_CAP)) as i32;
+        self.party.money = gold.clamp(0, i64::from(legaia_engine_menus::shop::GOLD_CAP)) as i32;
         self.party.money
     }
 
@@ -398,13 +398,13 @@ impl World {
             // Descending, so retail's prepend leaves the new block ascending.
             for &id in ids.iter().rev() {
                 let rec = &mut self.party.roster.members[rslot];
-                if crate::magic_xp::spell_slot(rec, id).is_some() {
+                if legaia_engine_battle::magic_xp::spell_slot(rec, id).is_some() {
                     continue;
                 }
                 if usize::from(rec.spell_list().count) >= legaia_save::MAX_SPELLS {
                     break;
                 }
-                crate::magic_xp::learn_spell_prepend(rec, id);
+                legaia_engine_battle::magic_xp::learn_spell_prepend(rec, id);
                 learned += 1;
                 let seru = self
                     .seru
@@ -424,8 +424,8 @@ impl World {
                 (2.., Some(t)) => u32::from(t[usize::from(level) - 2]) + 1,
                 _ => 0,
             };
-            for slot in 0..known.min(crate::magic_xp::SPELL_SEARCH_BOUND) {
-                let off = crate::magic_xp::SPELL_XP_OFFSET + slot * 4;
+            for slot in 0..known.min(legaia_engine_battle::magic_xp::SPELL_SEARCH_BOUND) {
+                let off = legaia_engine_battle::magic_xp::SPELL_XP_OFFSET + slot * 4;
                 rec.raw[off..off + 4].copy_from_slice(&xp.to_le_bytes());
             }
             out.push(SeruGrant {
@@ -441,7 +441,7 @@ impl World {
     /// Teach every present member every art the executable's arts table
     /// lists for it (Miracle Art included), through retail's ordered
     /// learned-art insert into the record's `+0x185` list and the
-    /// [`crate::tactical_arts::TacticalArtsTracker`] beside it. Returns
+    /// [`legaia_engine_battle::tactical_arts::TacticalArtsTracker`] beside it. Returns
     /// `(roster slot, arts newly learned, arts known)`; empty without the
     /// table (a disc-free build).
     pub fn cheat_learn_all_arts(&mut self) -> Vec<(u8, u8, u8)> {
@@ -459,14 +459,14 @@ impl World {
             let mut list = rec.displayed_skills();
             let mut learned = 0u8;
             for e in table.iter().filter(|e| e.character as usize == rslot) {
-                let verdict = legaia_engine_vm::battle_action::check_and_learn_art(
+                let verdict = legaia_engine_battle_vm::battle_action::check_and_learn_art(
                     &mut list.count,
                     &mut list.ids,
                     e.index,
                     true,
                     0,
                 );
-                if verdict == legaia_engine_vm::battle_action::ArtUseCheck::Learned {
+                if verdict == legaia_engine_battle_vm::battle_action::ArtUseCheck::Learned {
                     learned += 1;
                 }
                 self.party.tactical_arts.mark_known(rslot as u8, e.index);
@@ -808,9 +808,9 @@ mod tests {
         let mut w = world_with_trio();
         // A per-level gain with an ATK term (the disc-free default grows
         // HP / MP only; boot installs the retail tables over it).
-        w.party.level_up_tracker.stat_gains = [crate::levelup::StatGain {
+        w.party.level_up_tracker.stat_gains = [legaia_engine_battle::levelup::StatGain {
             atk: 2,
-            ..crate::levelup::StatGain::hp_mp(10, 5)
+            ..legaia_engine_battle::levelup::StatGain::hp_mp(10, 5)
         }; MAX_PARTY];
         let hp_before = w.party.roster.members[0].hp_mp_sp().hp_max;
         let atk_before = w.party.roster.members[0].live_stats().atk;
@@ -844,7 +844,7 @@ mod tests {
         assert_eq!(w.party.roster.members[0].level(), 40);
         assert_eq!(
             w.battle.ap_gauges[0].base_ap,
-            crate::ap_gauge::ap_base_for_level(40)
+            legaia_engine_battle::ap_gauge::ap_base_for_level(40)
         );
     }
 
@@ -868,7 +868,10 @@ mod tests {
         let mut w = World::new();
         assert_eq!(w.cheat_set_gold(-5), 0);
         assert_eq!(w.cheat_set_gold(1234), 1234);
-        assert_eq!(w.cheat_set_gold(i64::MAX), crate::shop::GOLD_CAP);
+        assert_eq!(
+            w.cheat_set_gold(i64::MAX),
+            legaia_engine_menus::shop::GOLD_CAP
+        );
         assert_eq!(w.cheat_set_coins(500), 500);
         assert_eq!(
             w.cheat_set_coins(u64::MAX),
@@ -929,9 +932,9 @@ mod tests {
     #[test]
     fn lowering_rebuilds_from_the_template_plus_growth() {
         let mut w = world_with_trio();
-        w.party.level_up_tracker.stat_gains = [crate::levelup::StatGain {
+        w.party.level_up_tracker.stat_gains = [legaia_engine_battle::levelup::StatGain {
             atk: 2,
-            ..crate::levelup::StatGain::hp_mp(10, 5)
+            ..legaia_engine_battle::levelup::StatGain::hp_mp(10, 5)
         }; MAX_PARTY];
         let t = trio_templates();
         w.cheat_set_party_level(30);
@@ -1016,7 +1019,7 @@ mod tests {
             commands: Vec::new(),
             is_miracle: i == 0,
         };
-        let text = crate::pause_screens::MenuTextTables {
+        let text = legaia_engine_menus::pause_screens::MenuTextTables {
             arts: Some(vec![
                 row(legaia_art::Character::Vahn, 5),
                 row(legaia_art::Character::Vahn, 0),

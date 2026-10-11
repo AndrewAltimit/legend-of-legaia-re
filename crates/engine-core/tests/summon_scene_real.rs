@@ -2,7 +2,7 @@
 //! ported move VM.
 //!
 //! Pins, on real disc bytes, that the summon scene-graph driver
-//! ([`legaia_engine_core::summon`]) seeds one move-VM actor per parsed part and
+//! ([`legaia_engine_effects::summon`]) seeds one move-VM actor per parsed part and
 //! advances every part each frame through `legaia_engine_vm::move_vm` without
 //! hitting an unimplemented opcode - the faithful per-part animation
 //! computation. Skips when `LEGAIA_DISC_BIN` / `extracted/` is absent.
@@ -28,10 +28,10 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_asset::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
-use legaia_engine_core::summon::{SummonScene, summon_stager_prot_entry};
 use legaia_engine_core::world::World;
+use legaia_engine_effects::summon::{SummonScene, summon_stager_prot_entry};
 use legaia_engine_vm::move_vm::MoveHost;
+use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
 use legaia_prot::archive::Archive;
 
 /// Minimal host with a real sin/cos LUT so rotation/tween ops produce nonzero
@@ -178,7 +178,8 @@ fn summon_stagers_spawn_and_tick_through_the_move_vm() {
             .parts
             .iter()
             .filter(|p| {
-                !p.finished && (0..legaia_engine_core::summon::MAX_MESH_SEL).contains(&p.model_sel)
+                !p.finished
+                    && (0..legaia_engine_effects::summon::MAX_MESH_SEL).contains(&p.model_sel)
             })
             .count();
         assert_eq!(

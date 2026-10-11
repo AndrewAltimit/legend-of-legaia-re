@@ -94,17 +94,18 @@ except ModuleNotFoundError:  # Python < 3.11
 
 REPO = Path(__file__).resolve().parent.parent.parent
 CORE_SRC = REPO / "crates" / "engine-core" / "src"
-# Crates split out of engine-core whose traits engine-core re-exports.
+# Kernel crates under engine-core whose traits engine-core implements.
 SPLIT_SRCS = [
     REPO / "crates" / "engine-field" / "src",
+    REPO / "crates" / "engine-scene" / "src",
     REPO / "crates" / "engine-menus" / "src",
     REPO / "crates" / "engine-dialog" / "src",
     REPO / "crates" / "engine-system" / "src",
 ]
 WAIVERS = Path(__file__).resolve().parent / "trait-override-waivers.toml"
 
-# Same host split as check-ui-host-drift.py: engine-render re-exports engine-ui
-# and hosts native-side adapters, so an impl there is the native window's.
+# Same host split as check-ui-host-drift.py: engine-render hosts the
+# native-side adapters, so an impl there is the native window's.
 # engine-session holds the session and BGM director the native window runs
 # (the browser page runs the director too), and parity holds the oracles'
 # recording directors.
@@ -124,7 +125,7 @@ FN_RE = re.compile(r"\bfn\s+(?P<name>[a-z0-9_]+)\s*[<(]")
 
 # `impl [<generics>] [path::]Trait[<args>] for Type {`. The trait path is
 # allowed to be qualified because a host can write
-# `impl legaia_engine_core::scene::BgmDirector for SomeDirector<'_>`, and a
+# `impl legaia_engine_core::scene_host::BgmDirector for SomeDirector<'_>`, and a
 # pattern that only matched the bare name would silently drop exactly the
 # host this gate exists to compare.
 IMPL_RE = re.compile(
@@ -297,13 +298,13 @@ SELFTEST_SIGNATURES: list[tuple[str, str, bool]] = [
 
 SELFTEST_IMPLS: list[tuple[str, str, str | None, str | None]] = [
     ("bare trait name",
-     "impl BgmDirector for AudioBgmDirector {", "BgmDirector", "AudioBgmDirector"),
+     "impl BgmDirector for AudioDirector {", "BgmDirector", "AudioDirector"),
     ("fully qualified trait path",
-     "impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_> {",
+     "impl legaia_engine_core::scene_host::BgmDirector for WebBgmDirector<'_> {",
      "BgmDirector", "WebBgmDirector<'_>"),
     ("lifetime generics on the impl",
      "impl<'a> CdDmaHost for DiscHost<'a> {", "CdDmaHost", "DiscHost<'a>"),
-    ("inherent impl is not a trait impl", "impl AudioBgmDirector {", None, None),
+    ("inherent impl is not a trait impl", "impl AudioDirector {", None, None),
     ("trait definition is not a trait impl", "pub trait BgmDirector {", None, None),
 ]
 

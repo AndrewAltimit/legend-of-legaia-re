@@ -4,7 +4,7 @@ Extraction PROT `1221` and `1222` are each exactly `0x28000` bytes of raw
 15-bit BGR555 with **no TIM header**. The rectangle that gives them a shape is
 not in the file - it is four immediates in the routine that uploads them, so
 this page exists to write those immediates down. Parser
-`legaia_asset::ringside_still`.
+`legaia_minigame_formats::ringside_still`.
 
 The behavioural side - what the stills are for, which module owns them, and the
 rest of that bundle's slots - is on
@@ -290,7 +290,7 @@ GPU's drew the knockout opaque instead, as solid white plates, and the
 additive face over white stayed white: the "white blocks" the INTERVAL tally
 labels showed on every host.
 
-`legaia_asset::muscle_dome::hub_page_tims` is the one decoder all three hosts
+`legaia_minigame_formats::muscle_dome::hub_page_tims` is the one decoder all three hosts
 use, and it applies the upload STP; `ringside_backdrop::HubPaletteStp`
 classifies its palettes and resolves each quad's equation. The browser pages
 have no subtractive canvas composite, so they draw an ABR 2 hub quad as the
@@ -322,7 +322,7 @@ variant-1 copy (marked ABR 1) of the same record: emitted variant 1 first,
 they paint variant 2 underneath. The marks are what the GPU draws: the uploaded
 CLUTs carry STP, so the variant-2 copy knocks the area out to black and the
 variant-1 face adds over it
-([which hub packets blend](#which-hub-packets-blend)). `other_game_hud::hub_screen_quads` takes draws in
+([which hub packets blend](#which-hub-packets-blend)). `muscle_dome_hud::hub_screen_quads` takes draws in
 emit order and returns paint order. Before this, the hosts painted in emit
 order - the shadow over the face - and the title art was
 listed shadow-first, which left the face inheriting the shadow's write-back
@@ -338,7 +338,7 @@ then walks into through the dome door no longer raises it a second time
 
 Nothing in the entry identifies it. Length is the only structural statement it
 makes, and `0x28000` is not distinctive on its own, so
-`legaia_asset::ringside_still::has_still_shape` is a length test and the
+`legaia_minigame_formats::ringside_still::has_still_shape` is a length test and the
 selection is by PROT index. That is not a shortcut around a detector - there is
 nothing to detect. A still and any other raw 16bpp VRAM region are the same
 bytes.

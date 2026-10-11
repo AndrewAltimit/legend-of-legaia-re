@@ -12,21 +12,21 @@
 //! Mirrors the dispatch flow in `legaia-engine-shell::play-window` so the
 //! plumbing is verified without spinning a wgpu surface.
 
-use legaia_engine_core::battle_stats::EquipmentTable;
-use legaia_engine_core::field_menu::{
-    FieldMenuInput, FieldMenuPhase, FieldMenuRow, FieldMenuSession,
-};
+use legaia_engine_battle::battle_stats::EquipmentTable;
+use legaia_engine_battle::spells::SpellCatalog;
+use legaia_engine_battle::tactical_arts_editor::{ChainEditor, ChainLibrary};
 use legaia_engine_core::field_menu_dispatch::{
     FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome, apply_inventory_outcome,
     apply_spell_outcome,
 };
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::items::ItemCatalog;
 use legaia_engine_core::options::OptionsState;
-use legaia_engine_core::save_select::{SaveRack, SaveSelectMode, SlotSnapshot};
-use legaia_engine_core::spells::SpellCatalog;
-use legaia_engine_core::tactical_arts_editor::{ChainEditor, ChainLibrary};
 use legaia_engine_core::world::World;
+use legaia_engine_menus::field_menu::{
+    FieldMenuInput, FieldMenuPhase, FieldMenuRow, FieldMenuSession,
+};
+use legaia_engine_menus::items::ItemCatalog;
+use legaia_engine_menus::save_select::{SaveRack, SaveSelectMode, SlotSnapshot};
+use legaia_engine_system::input::PadButton;
 
 fn fresh_world() -> World {
     let mut world = World::new();
@@ -215,7 +215,7 @@ fn apply_equip_outcome_writes_back_to_roster() {
     let mut equip_table = EquipmentTable::new();
     equip_table.set(
         0x25,
-        legaia_engine_core::battle_stats::ItemModifier::default(),
+        legaia_engine_battle::battle_stats::ItemModifier::default(),
     );
     let mut sub = FieldMenuSubsession::build(
         FieldMenuRow::Equip,
@@ -392,9 +392,9 @@ fn menu_heal_cast_accrues_spell_xp_and_levels_with_notice() {
     spells.ids[0] = 0x10;
     spells.levels[0] = 1;
     world.party.roster.members[0].set_spell_list(spells);
-    legaia_engine_core::magic_xp::add_spell_xp(&mut world.party.roster.members[0], 0, 12);
+    legaia_engine_battle::magic_xp::add_spell_xp(&mut world.party.roster.members[0], 0, 12);
 
-    let cast = |world: &mut World| -> Option<legaia_engine_core::magic_xp::SpellLevelNotice> {
+    let cast = |world: &mut World| -> Option<legaia_engine_battle::magic_xp::SpellLevelNotice> {
         let mut sub = build(FieldMenuRow::Magic, world, &OptionsState::default());
         sub.tick_pad_edge(PadButton::Cross.mask()); // pick caster 0
         sub.tick_pad_edge(PadButton::Cross.mask()); // pick the Heal row
@@ -416,7 +416,7 @@ fn menu_heal_cast_accrues_spell_xp_and_levels_with_notice() {
     // Both writes are in the SAVED record bytes (LGSF round-trips them):
     // the +0x8 XP accumulator and the +0x161 level byte.
     let rec = &world.party.roster.members[0];
-    assert_eq!(legaia_engine_core::magic_xp::spell_xp(rec, 0), 24);
+    assert_eq!(legaia_engine_battle::magic_xp::spell_xp(rec, 0), 24);
     assert_eq!(rec.spell_list().levels[0], 2);
     assert_eq!(rec.raw[0x161], 2);
 
@@ -427,7 +427,7 @@ fn menu_heal_cast_accrues_spell_xp_and_levels_with_notice() {
     world.party.roster.members[1].set_hp_mp_sp(hms);
     assert!(cast(&mut world).is_none());
     assert_eq!(
-        legaia_engine_core::magic_xp::spell_xp(&world.party.roster.members[0], 0),
+        legaia_engine_battle::magic_xp::spell_xp(&world.party.roster.members[0], 0),
         36
     );
     assert_eq!(world.party.roster.members[0].spell_list().levels[0], 2);
@@ -458,7 +458,7 @@ fn menu_heal_cast_accrues_partial_grant_when_clipped() {
     assert!(s.is_done());
     assert!(apply_spell_outcome(s, &mut world).is_none(), "4 < 17");
     assert_eq!(
-        legaia_engine_core::magic_xp::spell_xp(&world.party.roster.members[0], 0),
+        legaia_engine_battle::magic_xp::spell_xp(&world.party.roster.members[0], 0),
         4
     );
 }
@@ -511,11 +511,11 @@ fn the_rack_kind_carries_card_slots_mode_through_the_dispatcher() {
 /// off the record's `+0x13D` / `+0x161` pair **in record order**, so moving
 /// those bytes moves what the player sees. The screen that offers the
 /// exchange is `list_order::ListOrderSession`, pinned end-to-end in
-/// `w4a_list_order_reorder`; this stays the narrower claim about the data
+/// `list_order_reorder`; this stays the narrower claim about the data
 /// under it.
 #[test]
 fn spell_swap_permutes_the_magic_screen_order() {
-    use legaia_engine_core::save_subscreen::sub15_swap_rows;
+    use legaia_engine_menus::save_subscreen::sub15_swap_rows;
     let mut world = fresh_world();
     let member = &mut world.party.roster.members[0];
     let mut list = member.spell_list();
@@ -539,7 +539,7 @@ fn spell_swap_permutes_the_magic_screen_order() {
         };
         // Step into the caster's spell list: Cross on the char picker.
         s.tick(
-            legaia_engine_core::spell_menu::SpellMenuInput::from_pad_edge(PadButton::Cross.mask()),
+            legaia_engine_menus::spell_menu::SpellMenuInput::from_pad_edge(PadButton::Cross.mask()),
         );
         s.current_spell_rows().iter().map(|r| r.spell_id).collect()
     };

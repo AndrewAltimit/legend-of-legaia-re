@@ -1,6 +1,6 @@
 //! Disc-gated cross-validation of curated magic against the static spell table
 //! in `SCUS_942.54` (`DAT_800754C8` stats / `DAT_800754D0` names, 12-byte
-//! stride; parsed by `legaia_asset::spell_names`).
+//! stride; parsed by `legaia_game_tables::spell_names`).
 //!
 //! The spell table is the single source the battle-action SM reads a cast's
 //! on-screen name, MP cost (`stats +3`) and target shape (`stats +2`) from -
@@ -37,7 +37,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use legaia_asset::spell_names::{SpellNameTable, SpellTargetShape};
+use legaia_game_tables::spell_names::{SpellNameTable, SpellTargetShape};
 use legaia_gamedata::Database;
 
 fn scus_bytes() -> Option<Vec<u8>> {

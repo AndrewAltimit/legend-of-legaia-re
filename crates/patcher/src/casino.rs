@@ -39,7 +39,7 @@
 //! is involved.
 
 use crate::drops::DropMode;
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// Bytes per prize record (`[u16 id][u16 gate][u32 price]`).
 pub const RECORD_SIZE: usize = 8;

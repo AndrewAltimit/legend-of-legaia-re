@@ -3,7 +3,7 @@
 //!
 //! Each monster's combat stats live as `u16` halfwords at fixed offsets in the
 //! decoded `battle_data` block (PROT entry 867; offsets pinned in
-//! [`legaia_asset::monster_archive`]). [`plan_stats`] collects each field's
+//! [`legaia_actor_formats::monster_archive`]). [`plan_stats`] collects each field's
 //! value across the whole populated roster into a *column*, then either permutes
 //! the column ([`StatMode::Shuffle`] - a 1:1 reassignment, so the multiset of
 //! each stat is preserved) or draws each cell from the column pool with
@@ -34,7 +34,7 @@
 //! scripted formations fixed (`crate::encounter`); this is the matching guard on
 //! the stat side.
 //!
-//! Each edit re-packs the monster's slot through [`crate::monster::repack_slot`]:
+//! Each edit re-packs the monster's slot through [`legaia_disc_patch::monster::repack_slot`]:
 //! the decoded block length is unchanged, so the slot stays its original
 //! `0x14000`-byte footprint and every other monster's slot offset is fixed - a
 //! same-size, in-place byte edit, exactly like the drop randomizer.
@@ -88,14 +88,14 @@
 //!
 //! The scale lands on the **record**, and the battle loader applies its own
 //! fixed boost on top when it copies a record into a live actor (`FUN_80054cb0`
-//! multiplies ATK / DEF / INT - see [`legaia_asset::monster_archive`]). The two
+//! multiplies ATK / DEF / INT - see [`legaia_actor_formats::monster_archive`]). The two
 //! compose multiplicatively, so an `Nx` record really is an `Nx` fight, up to
 //! the loader's own integer rounding.
 
-use crate::monster::repack_slot;
 use crate::monster_class::{MonsterClass, MonsterClasses};
-use crate::rng::SplitMix64;
 use anyhow::Result;
+use legaia_disc_patch::monster::repack_slot;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// How a randomizer reassigns values. Re-exported [`crate::drops::DropMode`] so
 /// the monster-stat pass shares the CLI's `shuffle` / `random` vocabulary.
@@ -767,7 +767,7 @@ pub fn plan_scale_profile(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::monster_archive::SLOT_STRIDE;
+    use legaia_actor_formats::monster_archive::SLOT_STRIDE;
 
     /// `[u32 size][LZS]` slot padded to `SLOT_STRIDE`, like a real archive slot.
     fn fake_slot(block: &[u8]) -> Vec<u8> {

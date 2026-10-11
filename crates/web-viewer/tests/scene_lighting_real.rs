@@ -1,5 +1,5 @@
 //! Disc-gated pin for enhanced lighting's curated emissive table
-//! (`legaia_engine_ui::scene_lighting::EMISSIVE_MESHES`): every entry's
+//! (`legaia_render_kernels::scene_lighting::EMISSIVE_MESHES`): every entry's
 //! content signature must name a model the disc actually ships, and tagging
 //! it must find glowing prims - otherwise the Genesis Tree silently stops
 //! glowing on both hosts. Also checks the blend rule finds the authored glow
@@ -8,9 +8,10 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_engine_core::scene::ProtIndex;
-use legaia_engine_core::scene_assembly::{assemble_field_scene, build_hybrid_env_mesh};
-use legaia_engine_ui::scene_lighting as sl;
+use legaia_engine_core::scene_staging::assemble_field_scene;
+use legaia_engine_scene::scene::ProtIndex;
+use legaia_engine_scene::scene_assembly::build_hybrid_env_mesh;
+use legaia_render_kernels::scene_lighting as sl;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {

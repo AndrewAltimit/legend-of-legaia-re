@@ -8,7 +8,7 @@
 //! `other1` scene name on teardown - the string literal lives in this
 //! overlay and nowhere else, which is what pins the venue to fishing rather
 //! than to the dance hall (`other7`); see the note on
-//! `engine-core::dance::DANCE_SCENE_BLOCK_BASE`
+//! `engine-minigames::dance::DANCE_SCENE_BLOCK_BASE`
 //! and `docs/subsystems/minigame-fishing.md`). The pond, the wooden pier, the
 //! shore props and the water sheets are that scene's environment mesh pack
 //! instanced by its `.MAP` placement + terrain layers - the same
@@ -28,12 +28,12 @@
 
 use super::*;
 
-use legaia_asset::field_objects::{FLAG_PLACED, WalkHeightfield};
-use legaia_asset::player_anm::PlayerAnmBundle;
-use legaia_asset::{character_pack, field_char_textures};
-use legaia_engine_core::field_env;
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
+use legaia_actor_formats::player_anm::PlayerAnmBundle;
+use legaia_actor_formats::{character_pack, field_char_textures};
+use legaia_engine_scene::field_env;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
+use legaia_scene_formats::field_objects::{FLAG_PLACED, WalkHeightfield};
 use legaia_tmd::mesh::{VramMesh, tmd_to_vram_mesh_field_hybrid};
 use std::collections::HashMap;
 
@@ -91,9 +91,9 @@ impl FishingEnv {
             // `packet_color::textured`'s walk of `mesh.colors`, parallel to
             // `mesh.positions`.)
             let neutral = [
-                legaia_engine_core::packet_color::NEUTRAL,
-                legaia_engine_core::packet_color::NEUTRAL,
-                legaia_engine_core::packet_color::NEUTRAL,
+                legaia_engine_field::packet_color::NEUTRAL,
+                legaia_engine_field::packet_color::NEUTRAL,
+                legaia_engine_field::packet_color::NEUTRAL,
                 255,
             ];
             self.flat
@@ -170,7 +170,7 @@ pub(crate) struct FishingScene {
     pub(crate) region_block: Option<Vec<u8>>,
     /// The venue's three rods and their bend, off the same scene bank - the
     /// geometry the fishing line's rod end is a vertex of.
-    pub(crate) rod_mesh: Option<legaia_engine_core::fishing_actors::RodMesh>,
+    pub(crate) rod_mesh: Option<legaia_engine_fishing::fishing_actors::RodMesh>,
 }
 
 /// Frame-0 rigid transforms of scene-ANM record `anim_id - 1` for a bound
@@ -236,8 +236,8 @@ fn bake_env(
     let mut ranked: Vec<field_env::EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
     ranked.extend(terrain.iter().copied());
     ranked.extend(placements.iter().copied());
-    let planes = legaia_engine_core::coplanar_draws::draw_plane_summaries(&ranked, res);
-    let lifts = legaia_engine_core::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
+    let planes = legaia_engine_scene::coplanar_draws::draw_plane_summaries(&ranked, res);
+    let lifts = legaia_engine_scene::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
 
     let mut out = FishingEnv::default();
     let mut built: HashMap<(usize, u8), (VramMesh, Vec<u8>)> = HashMap::new();
@@ -253,8 +253,10 @@ fn bake_env(
                 })
                 .flatten();
             match &offsets {
-                Some(o) => crate::field_scene::build_hybrid_env_mesh_posed(rtmd, o),
-                None => crate::field_scene::build_hybrid_env_mesh(rtmd, &res.vram),
+                Some(o) => {
+                    legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o)
+                }
+                None => legaia_engine_scene::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram),
             }
         });
         let (mesh, flat) = (&entry.0, &entry.1);
@@ -278,7 +280,7 @@ fn bake_env(
             // (`fishing_scene_height_at`, `fishing_scene_ground_json`) read.
             out.positions.extend_from_slice(&[
                 p[0],
-                p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK,
+                p[1] + legaia_engine_scene::coplanar_draws::GROUND_SINK,
                 p[2],
             ]);
         }
@@ -341,9 +343,9 @@ impl FishingScene {
     /// Falls back to the drawn walk ground without a map.
     fn seat_floor(&self, x: i16, z: i16) -> f32 {
         if let Some(buf) = self.map.as_deref() {
-            let ramp = legaia_engine_core::minigame_floor::height_ramp();
-            let grid = legaia_engine_core::minigame_floor::FloorGrid::new(buf);
-            return legaia_engine_core::fishing_chrome::float_actor_tick(grid, x, z, 0, &ramp).y
+            let ramp = legaia_engine_fishing::minigame_floor::height_ramp();
+            let grid = legaia_engine_fishing::minigame_floor::FloorGrid::new(buf);
+            return legaia_engine_fishing::fishing_chrome::float_actor_tick(grid, x, z, 0, &ramp).y
                 as f32;
         }
         self.ground
@@ -471,7 +473,8 @@ impl LegaiaMinigames {
             .field_map_index(&index)
             .and_then(|i| index.entry_bytes_extended(i).ok());
         let region_block = scene.field_map_region_block(&index).ok().flatten();
-        let rod_mesh = legaia_engine_core::fishing_actors::rod_mesh_from_scene(&scene);
+        let rod_mesh =
+            legaia_engine_core::disc_readers::fishing_actors::rod_mesh_from_scene(&scene);
 
         Some(FishingScene {
             env,
@@ -697,7 +700,7 @@ impl LegaiaMinigames {
             lead.z,
             lead.facing,
         );
-        let yaw = legaia_engine_core::fishing_actors::fish_camera(0, 0, 0, lead.facing).yaw;
+        let yaw = legaia_engine_fishing::fishing_actors::fish_camera(0, 0, 0, lead.facing).yaw;
         Some(legaia_engine_core::fishing_scene::sky_mesh(
             &view, lead.x, yaw,
         ))

@@ -12,7 +12,7 @@
 //!
 //! This is the table the **enemy** name lookup uses too. An enemy's cast is
 //! resolved to a *global* spell id (the monster record's magic-attack id at
-//! `legaia_asset::monster_archive` record `+0x21..=+0x23`), written into the live
+//! `legaia_actor_formats::monster_archive` record `+0x21..=+0x23`), written into the live
 //! actor at `+0x1DF`, and named through `&DAT_800754D0 + id*0xC` - exactly the
 //! party path. So this parser turns a monster's magic-attack id into the same
 //! name the game prints (`0x27` -> `Tail Fire`).
@@ -233,7 +233,7 @@ pub struct SpellEntry {
     /// non-Item category (`0x801E3B70..0x801E3CB0`). It selects which cue group
     /// an executing cast expands to; the Item leg reads the same pair off the
     /// item-effect table instead. See
-    /// `engine-vm::battle_cue_group` and `docs/subsystems/battle-action.md`.
+    /// `engine-battle-vm::battle_cue_group` and `docs/subsystems/battle-action.md`.
     pub sub_class: u8,
     /// Display name, or `None` for an empty / internal-tier slot.
     pub name: Option<String>,
@@ -380,7 +380,8 @@ pub const CAPTURE_CLASS: u8 = 0x63;
 /// `FUN_8003EC70(k + 0x28)` and the loader resolves extraction `param + 0x37F`,
 /// so sub-id `k`'s module is extraction entry `935 + k`
 /// (`0x28 + 0x37F = 0x3A7 = 935`). See `docs/formats/spell-table.md`.
-pub const CAPTURE_MODULE_PROT_BASE: u32 = 935;
+pub const CAPTURE_MODULE_PROT_BASE: u32 =
+    legaia_overlay_images::cast_effect_pool::CAPTURE_MODULE_PROT_FIRST;
 
 /// Extraction PROT entry hosting capture-class sub-id `k`'s cast module.
 pub fn capture_module_prot(k: u8) -> u32 {

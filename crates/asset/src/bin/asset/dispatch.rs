@@ -2,10 +2,12 @@ use std::path::PathBuf;
 
 use crate::ModeArg;
 use anyhow::Result;
-use legaia_asset::{AssetType, DecodeMode, Descriptor, decode, parse_player_lzs, parse_streaming};
+use legaia_container_formats::{
+    AssetType, DecodeMode, Descriptor, decode, parse_player_lzs, parse_streaming,
+};
 
 pub(crate) fn describe(input: &PathBuf, count: usize) -> Result<()> {
-    let raw = crate::common::read_input(input)?;
+    let raw = crate::cli_io::read_input(input)?;
     let c = parse_player_lzs(&raw, count)?;
     println!("meta: 0x{:08X}, 0x{:08X}", c.meta[0], c.meta[1]);
     println!(
@@ -33,7 +35,7 @@ pub(crate) fn decode_one(
     mode: ModeArg,
     out: Option<&PathBuf>,
 ) -> Result<()> {
-    let raw = crate::common::read_input(input)?;
+    let raw = crate::cli_io::read_input(input)?;
     let desc = Descriptor::from_pair(type_size, offset);
     let mode = match mode {
         ModeArg::Lzs => DecodeMode::Lzs,
@@ -121,7 +123,7 @@ pub(crate) fn scan(dir: &PathBuf, count: usize) -> Result<()> {
 }
 
 pub(crate) fn stream_one(input: &PathBuf, max_chunks: usize) -> Result<()> {
-    let raw = crate::common::read_input(input)?;
+    let raw = crate::cli_io::read_input(input)?;
     let r = parse_streaming(&raw, max_chunks)?;
     println!(
         "chunks={}  terminated={}  all_known_types={}  all_magic_ok={}  bytes_consumed={} / {}",
@@ -236,7 +238,7 @@ pub(crate) fn detect_extension(asset_type: AssetType, data: &[u8]) -> &'static s
 }
 
 pub(crate) fn extract_streaming(input: &PathBuf, out: &PathBuf, save_trailer: bool) -> Result<()> {
-    let raw = crate::common::read_input(input)?;
+    let raw = crate::cli_io::read_input(input)?;
     let report = parse_streaming(&raw, 4096)?;
     if !report.terminated {
         eprintln!(
@@ -263,7 +265,7 @@ pub(crate) fn extract_streaming(input: &PathBuf, out: &PathBuf, save_trailer: bo
         std::fs::create_dir_all(&chunk_dir)?;
 
         if is_pack {
-            match legaia_asset::pack::extract_pack(chunk_data) {
+            match legaia_container_formats::pack::extract_pack(chunk_data) {
                 Ok(items) => {
                     println!(
                         "chunk @ 0x{:08X}  type={:<8}  size={:>9}  ->  {} sub-assets",

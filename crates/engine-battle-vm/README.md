@@ -4,25 +4,25 @@ The battle-side VM kernels: the per-actor battle action state machine
 (`FUN_801E295C`), the battle formulas, the phase-scripted battle camera and
 the shared retail GTE camera, the cast-module tick bodies, and the
 battle-overlay leaves around them. Ported from the routines' disassembly like
-the rest of [`legaia-engine-vm`](../engine-vm/README.md), with no bytes from
+the VMs in [`legaia-engine-vm`](../engine-vm/README.md), with no bytes from
 the original executable.
 
-This crate sits strictly **below** `legaia-engine-vm`: every module's whole
-dependency closure inside the engine is in this crate (plus `legaia-asset` /
-`legaia-art`), and `legaia-engine-vm` re-exports each module at its old path,
-so `legaia_engine_vm::battle_action` and `legaia_engine_battle_vm::battle_action`
-name the same module. Free of wgpu, winit and cpal, so it builds for native
-and `wasm32` alike.
+This crate does not depend on `legaia-engine-vm`: every module's whole
+dependency closure inside the engine is in this crate (plus the format
+crates, `legaia-art` and `legaia-engine-system`, for the BIOS `rand` and the fade
+template the summon flash converts into). Consumers name the modules here
+directly (`legaia_engine_battle_vm::battle_action`). Free of wgpu, winit and
+cpal, so it builds for native and `wasm32` alike.
 
 ## What belongs here
 
 A battle-side module moves here when nothing in its closure reaches back into
-`legaia-engine-vm`. `battle_burst` (named by `move_vm`'s host) and
-`battle_party_panel` (whose test reads the field subsystem cursor) stay in
+`legaia-engine-vm`. `battle_burst` (named by `move_vm`'s host) stays in
 `legaia-engine-vm` for that reason; `psx_camera` and `camera_mover` are here
 because the battle camera script and the GTE camera build call each other.
-Doc links that point back up at `legaia-engine-vm` modules are plain code
-spans, since rustdoc cannot resolve a link into a dependent crate.
+Doc links that point at `legaia-engine-vm` modules are plain code
+spans, since rustdoc cannot resolve a link into a crate this one does not
+depend on.
 
 ## Contents
 
@@ -63,7 +63,7 @@ overwrite from the resident Miracle row at `0x801F64F4`), `clear_queue_msb`
 `apply_super_tail_replace` (`FUN_801EF9E4`, first-matching-row tail replace
 from `0x801F6524` / `0x801F65E8`), plus `preseed_action_queue` /
 `save_action_queue` (called from `engine-core`'s auto-command path) and
-`check_and_learn_art` (called from `engine-core::tactical_arts`). (`learned_seru_position`, the
+`check_and_learn_art` (called from `engine-battle::tactical_arts`). (`learned_seru_position`, the
 `FUN_801E91E8` port beside them, is not a queue routine: it is the
 already-learned check of the killing-blow Seru absorb, and it is live.)
 `resolve_action_queue` - the entry point `engine-core` calls once per committed
@@ -131,7 +131,7 @@ lands on the same net transform.
 (`PORT: FUN_801DC0BC`, the `f32` rendition of `camera_mover`'s integer law) -
 lives here rather than in the wgpu-linked renderer crate, which is what lets
 the browser play page ease a scripted shot instead of snapping every
-`apply > 0` beat. `engine-render::window` re-exports it at its old path.
+`apply > 0` beat.
 
 Which camera owns a given frame, and what its inputs are, is one layer up:
 `engine-core::camera_view`.
@@ -157,9 +157,24 @@ More `0898` bodies whose kernels are ported here, each reached from
 |---|---|---|
 | `battle_ground_grid` | `FUN_801D02C0` | The procedural battle floor's CPU side: grid origin, the three-valued per-cell depth class, the `3x3` projection lattice, the four-corner screen reject and the 2x2 sub-tile UVs. |
 | `battle_arts_auto_combo` | `FUN_801F0450` | The AI-side Arts assembler's two arms - the learned-arts auto-fill and the weighted candidate pool with its AP-gauge spend loop. |
-| `battle_attack_camera` | `FUN_801D71B8` | The per-art attack camera: gate, pose seed, character / art dispatch and animation-frame push. Dispatch is three per-character jump tables (17 / 20 / 17 slots) reaching 13 distinct arms; the row folds come from `legaia_asset::battle_attack_camera_table`. |
+| `battle_attack_camera` | `FUN_801D71B8` | The per-art attack camera: gate, pose seed, character / art dispatch and animation-frame push. Dispatch is three per-character jump tables (17 / 20 / 17 slots) reaching 13 distinct arms; the row folds come from `legaia_game_tables::battle_attack_camera_table`. |
 | `battle_value_readout` | `FUN_801E805C` | The battle value readout: the landed-hit numeral's sheet, cells and pop/rise envelope, plus the multi-cast half's decimal split, teardown pairing, slot-to-widget indirection and label quad. |
 | `battle_approach` | `FUN_801DF570` | The attack-approach distance clamp: the projected attacker/target separation and the `[3d/4, d]` band a requested step is clamped into. |
+| `battle_party_panel` | `FUN_801DBB8C`, `FUN_801DBC30`, `FUN_801DBD04`, `FUN_801DBDDC`, `FUN_801DBEC4`, `FUN_801D84C0` | The label-actor open (`FUN_801DBB8C`, handle at `0x801F4E0C`), the cross-out mark blit (`FUN_801DBC30`), the command ring's Rot stamp / Curse plate and the arts-entry Rot stamp (`RingMarks`), the per-party-size anchors, and `FUN_801D84C0`'s battle-result message buffers (victory with spoils, defeat, escaped, escape failed) - not party-name panels. |
+
+## `status_effects`
+
+Per-actor status-effect tracker. `StatusKind` covers the retail
+condition kinds, named with the game's in-game ailment terms (Toxic /
+Numb / Venom / Rot / Curse / Stone / Faint, plus host-driven Sleep /
+Confuse). The tracker maintains per-instance turn counters, drains
+queued `StatusEvent`s into the engine's HUD pipeline, and bridges from
+art-record `EnemyEffect` bytes through `StatusKind::from_enemy_effect` -
+the byte map follows the pinned appliers (3 = Venom, 4 = Toxic, 5 = Rot,
+6 = Curse). Rot carries a per-instance rolled limb (`set_rot_limb` /
+`rot_limb`) whose attack command the battle session refuses.
+Damage-over-time formulas (Toxic = `max_hp / 16`, Venom = `current_hp /
+8`) live alongside.
 
 ## `battle_formulas`
 
@@ -198,11 +213,15 @@ consumption-site mirrors remain where they are used - liveness/kind gating in
 The crate's remaining modules are leaf kernels; by family:
 
 - **Cameras** - `camera_mover` (the op-`0x45` cutscene glide,
-  `FUN_801DC0BC`), `battle_camera` (tween step table and shake jitter).
+  `FUN_801DC0BC`), `battle_camera` (tween step table and shake jitter),
+  `retail_cam` (the ten live camera globals as one value) and
+  `camera_rel_actor` / `camera_rel_glide` (the camera-relative effect-actor
+  spawn `FUN_80021248` and its glide tick) - here, beside the mover, because
+  the field camera and the Baka Fighter duel camera both use them.
 - **Battle transition** - `battle_intro_transition` (+ `battle_intro_styles`
   / `battle_intro_tiles` / `battle_intro_swirl` / `battle_intro_particles`):
   the field-to-battle overlay's state machine and per-style kernels;
-  `engine-ui::battle_intro` is its draw half.
+  `render-kernels::battle_intro` is its draw half.
 - **Battle presentation** - `battle_actor_draw` (`FUN_80048A08`'s per-object decisions),
   `battle_pose_blend`, `battle_anim_rate` (arts slow-motion),
   `battle_impact_fx`, `battle_trail` (the weapon trail's schedule),
@@ -210,13 +229,16 @@ The crate's remaining modules are leaf kernels; by family:
   `battle_gauge_rearm`, `battle_commit_log`, `battle_cursor_pose`,
   `battle_record_writer`, `battle_cue_group`, `move_no_effect_guard` (the
   "No effect." banner).
-- **Casts** - `cast_module_ticks` / `cast_arm_ticks` / `cast_seru_ticks_a` /
-  `cast_seru_ticks_b` (the slot-B cast-module tick bodies, PROT 0903..0966),
+- **Casts** - `cast_module_ticks` / `cast_arm_ticks` / `seru_magic_ticks`
+  (the slot-B cast-module tick bodies, PROT 0903..0966, one file per module),
   `cast_module_camera` (the summon modules' own camera and countdown),
   `cast_fatal_decision` (PROT 0954), `battle_cast_census`,
   `battle_cast_cue`, `battle_cast_dispatch`; see
   [`cast-module.md`](../../docs/subsystems/cast-module.md).
-- **Battle rules leaves** - `battle_helpers`,
+- **Battle rules leaves** - `seru_side_effect` (the Seru-magic side-effect
+  stager), `nested_record_copy`, `rgb_wash_scale` and `bgr555_grey` (the nested
+  record copy, the RGB modulate and the petrify grey), `mes_escape_append` (the caption's item-name token
+  splice), `panel_backread_loader` (PROT 0978's staged loader),
   `battle_damage_wrappers` (`FUN_801DD4B0` / `FUN_801DD6B4`),
   `battle_target_group` (`FUN_801DCEAC`), `battle_separation`,
   `battle_stream_slot` (the `summon.dat` / `readef.DAT`

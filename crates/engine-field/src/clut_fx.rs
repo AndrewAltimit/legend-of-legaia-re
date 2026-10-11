@@ -23,7 +23,7 @@
 //!   per-channel deltas `(B - A) / frames` (MIPS `div` - signed, truncating
 //!   toward zero). Every tick the counter advances by the scratchpad
 //!   frame-step byte `DAT_1F800393` (`dt`, vsyncs per game tick - see
-//!   `legaia_engine_core::world::FrameClock::frame_step`); while `counter < frames` each
+//!   `legaia_engine_vm::frame_clock::FrameClock::frame_step`); while `counter < frames` each
 //!   channel accumulates `delta * dt` and the repacked row is `LoadImage`d to
 //!   the destination, so the fade completes in `frames` *vsyncs* regardless
 //!   of the frame-skip factor. On `counter >= frames`: `MoveImage` cell B to
@@ -62,7 +62,7 @@ pub struct ClutCellFxOp {
 
 impl ClutCellFxOp {
     /// Decode from the 14-byte operand slice the field VM hands
-    /// `op4c_n6_sub_61_emitter` (instruction bytes `+2..+16`, i.e. operand
+    /// `spawn_clut_cell_fx` (instruction bytes `+2..+16`, i.e. operand
     /// offsets `+1..+15` relative to the `0x61` sub-byte).
     pub fn from_payload(payload: &[u8; 14]) -> Self {
         let w = |o: usize| i16::from_le_bytes([payload[o], payload[o + 1]]);

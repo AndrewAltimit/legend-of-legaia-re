@@ -3,6 +3,7 @@
 //! for the player; one without it does.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A field world with the player standing one probe ahead of an ambient
 /// walker in slot 5, whose stream is a `+Z` directional step.
@@ -18,9 +19,10 @@ fn walker_world(flags: u32) -> World {
         FieldNpcAmbient {
             defers: false,
             walks: true,
-            variants: vec![(legaia_asset::man_motion::SELECTOR_DEFAULT, code)],
+            variants: vec![(legaia_scene_formats::man_motion::SELECTOR_DEFAULT, code)],
             live: None,
-            vm: vm::ambient_motion::AmbientMotion::new(5, 0).with_position(1000, 2000),
+            vm: legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(5, 0)
+                .with_position(1000, 2000),
         },
     );
     // The +Z probe is `(x, z + 64)`: stand the player there.
@@ -28,7 +30,7 @@ fn walker_world(flags: u32) -> World {
     w.actors[0].move_state.world_z = 2064;
     w.field_vm
         .channels
-        .push(crate::field_channels::FieldChannel {
+        .push(legaia_engine_field::field_channels::FieldChannel {
             placement_index: 5,
             ctx: FieldCtx {
                 flags,
@@ -82,7 +84,8 @@ fn a_deferring_stream_waits_out_the_engagement() {
         w.npcs.ambient.get_mut(&5).unwrap().defers = defers;
         w
     };
-    let talk = || crate::inline_dialogue::InlineDialogue::from_inline(vec![0x1F, b'K', 0]);
+    let talk =
+        || legaia_engine_field::inline_dialogue::InlineDialogue::from_inline(vec![0x1F, b'K', 0]);
     let run = |w: &mut World| {
         for _ in 0..4 {
             w.tick_field_npc_ambient();

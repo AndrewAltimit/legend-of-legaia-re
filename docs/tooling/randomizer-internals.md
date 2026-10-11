@@ -35,7 +35,7 @@ flowchart TD
 |---|---|---|
 | LZS encoder | `legaia_lzs::compress` | produces a stream the retail decoder `FUN_8001A55C` accepts |
 | Sector write-back | `legaia_iso::write` | overwrites user data, recomputes EDC and P/Q ECC |
-| Disc bridge | `legaia_patcher::disc::DiscPatcher` ([`crates/disc-patch`](../../crates/disc-patch/README.md)) | maps a PROT-entry-relative edit to sectors; PPF writer; space ledger |
+| Disc bridge | `legaia_disc_patch::disc::DiscPatcher` ([`crates/disc-patch`](../../crates/disc-patch/README.md)) | maps a PROT-entry-relative edit to sectors; PPF writer; space ledger |
 | MIPS layer | [`crates/code-hooks`](../../crates/code-hooks/README.md) | instruction encoders, R3000 test simulator, injection arenas, hook mods |
 | Feature modules | `crates/patcher/src/*.rs` | one module per randomizer / hook, named in each section below |
 
@@ -56,7 +56,7 @@ extraction side (which only reads the disc) does not need:
    2048-byte user payload of a CD sector also requires recomputing its 4-byte
    EDC and 276-byte P/Q ECC, or the sector reads as corrupt. See
    [PSX disc geometry](../formats/disc.md).
-3. **A disc bridge** - `legaia_patcher::disc::DiscPatcher`, which ties the editing
+3. **A disc bridge** - `legaia_disc_patch::disc::DiscPatcher`, which ties the editing
    primitives to the sector write-back through the PROT.DAT TOC.
 
 ### Editing model: same-size in place, except doors
@@ -165,7 +165,7 @@ words) and claim no dead space at all.
 
 The instruction encoders and an R3000 simulator the tests run hooks under live
 in [`crates/code-hooks`](../../crates/code-hooks/README.md). Every region a hook
-may occupy is listed once, with its owner, in `legaia_patcher::space_ledger`.
+may occupy is listed once, with its owner, in `legaia_disc_patch::space_ledger`.
 
 ### Hooks at a glance
 
@@ -299,7 +299,7 @@ overlay has paged there. Scan:
 for `80031d00` (see [address-reference-scan.md](address-reference-scan.md)).
 
 **The ledger.** Every region above, and the menu overlay's, is listed once with
-its owner in `legaia_patcher::space_ledger`, the table language packs consult
+its owner in `legaia_disc_patch::space_ledger`, the table language packs consult
 too: a translation never writes a mod's region, and the one region reserved for
 relocated translation strings is never a mod's
 ([`space-and-budgets.md`](translation/space-and-budgets.md#sharing-room-with-mods-the-space-ledger)).
@@ -527,7 +527,7 @@ body is fingerprinted at plan time - its prologue words and its own `jr ra` -
 and a fragment that would overrun its body refuses, so a differing build, a
 body some later mod has claimed, or a second application all fail closed. The
 hosts are code, not zero padding: the
-["zero is not dead"](../../crates/patcher/README.md#region-placement---zero-is-not-dead-three-times)
+["zero is not dead"](patcher-modules.md#region-placement---zero-is-not-dead-three-times)
 trap does not apply, and the evidence is the reference scan, not the bytes. No
 arena byte is claimed, so `--enemy-hp-bar` composes with every other code hook.
 
@@ -543,7 +543,7 @@ arena byte is claimed, so `--enemy-hp-bar` composes with every other code hook.
   geometry probe reads the routine's frame through the scratchpad reader.
 
 **Verified by** the module's interpreter tests
-([`legaia_patcher::enemy_hp_bar`](../../crates/code-hooks/src/enemy_hp_bar.rs));
+([`legaia_code_hooks::enemy_hp_bar`](../../crates/code-hooks/src/enemy_hp_bar.rs));
 the disc oracle `crates/patcher/tests/enemy_hp_bar_real.rs`; and the runtime
 probe
 [`autorun_enemy_hp_bar_inject.lua`](../../scripts/pcsx-redux/autorun_enemy_hp_bar_inject.lua),
@@ -606,7 +606,7 @@ the frontmost **capturable** enemy spawns as a rare *shiny* variant
   "+35% DMG!" caption shows one glyph line **below** the native "Magic effect:"
   box.
 
-It mirrors the engine implementation (`legaia_engine_core::seru_learning`'s
+It mirrors the engine implementation (`legaia_engine_battle::seru_learning`'s
 shiny set + `SHINY_DAMAGE_BONUS_PCT`). On by default in the web Full Chaos /
 Balanced presets. It applies to Seru captured *after* patching: the shiny byte
 is set at capture, so a Seru already owned is not retroactively shiny.
@@ -675,7 +675,7 @@ different one. The offer is time-bucketed and deterministic from the run's
 seed, so a preview and the game always agree. `--seru-trade-offers` caps the
 trades one vendor lists.
 
-**The offer model (`legaia_asset::seru_trade`, the kernel both hosts share).**
+**The offer model (`legaia_game_tables::seru_trade`, the kernel both hosts share).**
 
 - Each time bucket has one `(want, give, give_level)` preference: the vendor
   wants a seru *type* and hands back a different one at a fixed level, shown
@@ -717,7 +717,7 @@ minutes) and the full schedule cycles in ~9.6 h. The kernel's seconds-based
 - **Writes.** The injector writes handler + stubs + strings + the seed-derived
   bucket table via `patch_prot_entry(899, …)`, each guarded as all-zero.
 - **The swap** rewrites the chosen owner's spell list in place (id at `+0x13D`,
-  level at `+0x161`), mirroring `engine_core::seru_trade::apply_trade`.
+  level at `+0x161`), mirroring `engine_battle::seru_trade::apply_trade`.
 - **Composition.** Nothing lands in the SCUS rodata gap, so it composes with
   every gap feature ([equipment drops](#equipment-drops),
   [flee-EXP](#run-away-exp), the Seru-Bell
@@ -948,7 +948,7 @@ Routines, names, the scratch record and the glyph buffer sit in the dead run
 (`0x801EB400..`). Both satisfy
 [where menu-overlay hooks may live](#where-menu-overlay-hooks-may-live). No SCUS
 bytes, so this half composes with everything. Module
-[`legaia_patcher::super_art_menu`](../../crates/arts-patch/src/super_art_menu.rs).
+[`legaia_arts_patch::super_art_menu`](../../crates/arts-patch/src/super_art_menu.rs).
 
 #### Placement + exclusivity
 
@@ -971,7 +971,7 @@ contents are correct.
 
 **Verified by** the disc oracle `crates/patcher/tests/super_art_list_real.rs`
 (module
-[`legaia_patcher::super_art_list`](../../crates/arts-patch/src/super_art_list.rs)),
+[`legaia_arts_patch::super_art_list`](../../crates/arts-patch/src/super_art_list.rs)),
 which also checks every derived input against the curated walkthrough table,
 and by PCSX-Redux probes:
 
@@ -1201,7 +1201,7 @@ replacing the value retail computes. Seedless targeted edit; no Sony bytes.
   features; enforced in the CLI and the web patcher.
 
 **Verification state.** Module
-[`legaia_patcher::arts_ap_grant`](../../crates/arts-patch/src/arts_ap_grant.rs);
+[`legaia_arts_patch::arts_ap_grant`](../../crates/arts-patch/src/arts_ap_grant.rs);
 disc oracle `crates/patcher/tests/arts_ap_grant_real.rs`. The disc oracle proves
 where the bytes land. A live battle playtest (a configured art grants or costs
 what it says, admits at the right AP level, clamps at 100, the refund is not
@@ -1256,7 +1256,7 @@ damage** slider in the Gameplay group.
 
 **Two copies, always both.** The retail scale lives in the spirit-gauge fill:
 `pct = max(1, damage * 100 / max_hp)` added into `actor[+0x170]` and clamped at
-100 (kernel mirror: `legaia_engine_vm::battle_formulas::spirit_gauge_fill`).
+100 (kernel mirror: `legaia_engine_battle_vm::battle_formulas::spirit_gauge_fill`).
 Overlay 0898 carries **two inlined copies** of that kernel, and a hit reaches
 one or the other: `FUN_801DDB30`, the closed-form finisher, for magic / summon /
 special-attack hits, and `FUN_801EC3E4`, the arms execution resolver, for
@@ -1441,7 +1441,7 @@ counter stay zero on disc; the roll fills them per battle.
 **Verified by:**
 
 - unit tests in
-  [`legaia_patcher::oscillating_ap`](../../crates/arts-patch/src/oscillating_ap.rs)
+  [`legaia_arts_patch::oscillating_ap`](../../crates/arts-patch/src/oscillating_ap.rs)
   that execute every routine on the crate's R3000 model (guard, debit, list,
   roll against a fake `rand`, damage across every fall-through shape);
 - the disc oracle `crates/patcher/tests/oscillating_ap_real.rs` (independently
@@ -1499,18 +1499,18 @@ counter stay zero on disc; the roll fills them per battle.
 | `crates/patcher` `equip_bonuses_real` | disc-gated | equipment stat-bonus shuffle: re-read the patched `SCUS_942.54` bonus table, assert each slot category's `+0..+4` stat-tuple multiset preserved (no tuple crosses categories) + every row's `+5/+6/+7` tail (passive/mask/slot) byte-identical + the table sectors EDC/ECC-valid + deterministic |
 | `crates/patcher` `equip_masks_real` | disc-gated | equip-mask shuffle: re-read the patched bonus table, assert each slot category's `+6` equip-mask multiset preserved (no mask crosses categories) + every non-`+6` byte untouched + no referenced row left unequippable + sectors EDC/ECC-valid + deterministic + composes with the stat pass |
 | `crates/patcher` `seru_trade_real` | disc-gated | seru-trade config write: assert an unpatched disc reports no config, then off the patched image the embedded blob decodes back to the written `(enabled, seed, offer cap)`, the write is same-size + a tiny localized edit, re-running with a new seed overwrites the prior blob, and a fixed seed is byte-deterministic |
-| `crates/engine-core` `seru_trade_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch the seru-trade config onto the disc, re-decode it from the patched SCUS, install it into a `World` holding a known party, open a vendor session, confirm the first offer, assert the owner's spell list swaps give→receive, and that advancing past a two-in-game-hour boundary reseeds the offers (baseline: an unpatched disc reports trading disabled) |
-| `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
-| `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
-| `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
-| `crates/engine-core` `steal_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's steal item byte in `SCUS_942.54`, re-decode the steal table off the patched image, drive the engine steal-grant kernel (`World::apply_steal`), assert the runtime steals the patched id (not the original); chance preserved |
-| `crates/engine-core` `arts_randomizer_runtime_e2e` | disc-gated | runtime oracle: shuffle the arts combos (in-place glyph-byte edits), re-decode them off the patched image, and drive the real combo-recognition kernel (`battle_arts::chain_matches_record`) - assert every changed art fires on the new combo bytes and no longer on the old one (baseline: each art fires on its original combo) |
-| `crates/engine-core` `door_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch Rim Elm's exit (the `0x3F` op → map01) to a differently-named scene, re-decode the patched MAN off the patched image, drive the patched op through the real field VM (`World::load_field_script` + `tick`), assert the runtime warps to the patched destination (not the original) |
-| `crates/engine-core` `house_door_randomizer_runtime_e2e` | disc-gated | runtime oracle: baseline town01's Mei's-house entry warp (`0xA3 0xF8`) through the real field VM at the live-captured world coords `(0x30C0, 0x1B40)`, shuffle the house doors on a scratch copy, re-decode the patched MAN, drive the same op offset and assert the runtime warps to the patched interior tile (not Mei's) |
-| `crates/engine-core` `starting_items_randomizer_runtime_e2e` | disc-gated | runtime oracle: confirm a New Game off the unpatched disc seeds Healing Leaf ×5 (baseline), randomize the seed on a scratch copy, re-decode it off the patched image, seed a fresh world via `World::seed_starting_inventory`, assert the bag holds exactly the patched items (not the vanilla Healing Leaf ×5) |
-| `crates/engine-core` `unused_enemy_randomizer_runtime_e2e` | disc-gated | runtime oracle: run the `--unused-enemies` toggle path until it places an unused Evil Bat id at a formation slot, re-decode off the patched image, force that row into a battle, assert the spawned enemy actor carries an unused-enemy id (baseline spawns the vanilla monster) |
-| `crates/engine-core` `unused_item_randomizer_runtime_e2e` | disc-gated | runtime oracle: apply the "Seru Bell" name injection and assert the item table resolves `0xFD` to it (others stay blank), then patch a monster's drop to `0xFD` and drive `apply_battle_loot`, asserting the bag receives the unused accessory (baseline grants the original) |
-| `crates/engine-core` `shop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch a town-shop slot (scene MAN op `0x49`) and a casino prize (PROT 899 table), re-decode the patched stock, drive `World::buy_from_shop` (shared with the menu `ShopConfirm` commit), assert the runtime sells/grants the patched id (not the original) |
+| `crates/parity` `seru_trade_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch the seru-trade config onto the disc, re-decode it from the patched SCUS, install it into a `World` holding a known party, open a vendor session, confirm the first offer, assert the owner's spell list swaps give→receive, and that advancing past a two-in-game-hour boundary reseeds the offers (baseline: an unpatched disc reports trading disabled) |
+| `crates/parity` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
+| `crates/parity` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
+| `crates/parity` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
+| `crates/parity` `steal_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's steal item byte in `SCUS_942.54`, re-decode the steal table off the patched image, drive the engine steal-grant kernel (`World::apply_steal`), assert the runtime steals the patched id (not the original); chance preserved |
+| `crates/parity` `arts_randomizer_runtime_e2e` | disc-gated | runtime oracle: shuffle the arts combos (in-place glyph-byte edits), re-decode them off the patched image, and drive the real combo-recognition kernel (`battle_arts::chain_matches_record`) - assert every changed art fires on the new combo bytes and no longer on the old one (baseline: each art fires on its original combo) |
+| `crates/parity` `door_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch Rim Elm's exit (the `0x3F` op → map01) to a differently-named scene, re-decode the patched MAN off the patched image, drive the patched op through the real field VM (`World::load_field_script` + `tick`), assert the runtime warps to the patched destination (not the original) |
+| `crates/parity` `house_door_randomizer_runtime_e2e` | disc-gated | runtime oracle: baseline town01's Mei's-house entry warp (`0xA3 0xF8`) through the real field VM at the live-captured world coords `(0x30C0, 0x1B40)`, shuffle the house doors on a scratch copy, re-decode the patched MAN, drive the same op offset and assert the runtime warps to the patched interior tile (not Mei's) |
+| `crates/parity` `starting_items_randomizer_runtime_e2e` | disc-gated | runtime oracle: confirm a New Game off the unpatched disc seeds Healing Leaf ×5 (baseline), randomize the seed on a scratch copy, re-decode it off the patched image, seed a fresh world via `World::seed_starting_inventory`, assert the bag holds exactly the patched items (not the vanilla Healing Leaf ×5) |
+| `crates/parity` `unused_enemy_randomizer_runtime_e2e` | disc-gated | runtime oracle: run the `--unused-enemies` toggle path until it places an unused Evil Bat id at a formation slot, re-decode off the patched image, force that row into a battle, assert the spawned enemy actor carries an unused-enemy id (baseline spawns the vanilla monster) |
+| `crates/parity` `unused_item_randomizer_runtime_e2e` | disc-gated | runtime oracle: apply the "Seru Bell" name injection and assert the item table resolves `0xFD` to it (others stay blank), then patch a monster's drop to `0xFD` and drive `apply_battle_loot`, asserting the bag receives the unused accessory (baseline grants the original) |
+| `crates/parity` `shop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch a town-shop slot (scene MAN op `0x49`) and a casino prize (PROT 899 table), re-decode the patched stock, drive `World::buy_from_shop` (shared with the menu `ShopConfirm` commit), assert the runtime sells/grants the patched id (not the original) |
 | `crates/patcher` `delilas_party_real` | disc-gated | Delilas party swap: apply / re-decode both battle directions / idempotence / determinism / mapping rearrangement, plus a hybrid-mode contrast against retail pinning every coordinate the pass owns |
 | `crates/asset` `party_swap_real` | disc-gated | the nine sibling-to-host conversions round-trip: part permutation, rest-pose bake, texel re-layout, on every equipment variant |
 | `crates/patcher` `delilas_cast_stage_real` | disc-gated | staged caster rows: the Che-mapped file's rows `0x0A`/`0x0B` decode as real whole-skeleton streams below `clut_a_off`, Block re-homed on row `0x06` in all four files, the `+0x5C` sibling word tracks, and the palette walk still parses |
@@ -1522,7 +1522,7 @@ counter stay zero on disc; the roll fills them per battle.
 
 Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
 
-The `engine-core` runtime oracles answer a question the `crates/patcher`
+The `parity` runtime oracles answer a question the `crates/patcher`
 patch tests don't: not just that the patched byte is *written* faithfully, but
 that a runtime actually *reads it and acts on it* - grants the new item, spawns
 the new monster, or warps to the new scene. A savestate can't prove this - the

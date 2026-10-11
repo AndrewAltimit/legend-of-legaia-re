@@ -1,6 +1,4 @@
 //! Retail cumulative-XP threshold table (and the test placeholder table).
-//!
-//! Extracted verbatim from `levelup.rs`.
 
 #[cfg(test)]
 use super::MAX_LEVEL;
@@ -20,7 +18,7 @@ use super::MAX_LEVEL;
 /// helper adapts it to the `Vec<u32>` shape `LevelUpTracker` consumes.
 ///
 /// `BootSession` still installs the disc-parsed curve at boot
-/// (`legaia_asset::level_up_tables::xp_thresholds_from_scus`) - byte-identical
+/// (`legaia_game_tables::level_up_tables::xp_thresholds_from_scus`) - byte-identical
 /// to this table, kept as a live cross-validation - and the slots-1/2
 /// (Noa/Gala) ± sin-divisor threshold corrections via
 /// [`LevelUpTracker::with_xp_corrections`]. Validated against the record

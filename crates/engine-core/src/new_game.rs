@@ -1,5 +1,5 @@
 //! New Game seeding: turn the `SCUS_942.54` starting-party template
-//! ([`legaia_asset::new_game`]) into live engine party records.
+//! ([`legaia_game_tables::new_game`]) into live engine party records.
 //!
 //! This is the engine side of the New Game boot chain (see
 //! `docs/subsystems/boot.md` and `docs/formats/new-game-table.md`). The title
@@ -14,7 +14,7 @@
 //! each character is later introduced, so [`World::seed_starting_party`] seeds
 //! Vahn alone.
 
-use legaia_asset::new_game::{
+use legaia_game_tables::new_game::{
     LIVE_RECORD_0_XP_OFFSET, StartingChar, StartingInventory, StartingParty, seed_live_records,
 };
 use legaia_save::{CharacterRecord, Party};
@@ -29,7 +29,7 @@ use crate::world::World;
 /// pause menu always has valid party data to read.
 #[derive(Debug, Clone)]
 pub struct NewGameDefaults {
-    /// Starting-party template (`legaia_asset::new_game::StartingParty`,
+    /// Starting-party template (`legaia_game_tables::new_game::StartingParty`,
     /// SCUS `0x80078C4C`).
     pub party: StartingParty,
     /// Starting-inventory seed (`FUN_80034A6C`; vanilla = Healing Leaf ×5).
@@ -47,7 +47,7 @@ pub struct NewGameDefaults {
     /// starter loadout is chosen from ([`starter_loadout`]). `None` falls
     /// back to the world's installed table, and with neither the members
     /// stay unequipped (the battle file's default look).
-    pub equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
+    pub equip_stats: Option<legaia_game_tables::equip_stats::EquipStatTable>,
 }
 
 impl NewGameDefaults {
@@ -60,7 +60,7 @@ impl NewGameDefaults {
             party: StartingParty::from_scus(scus)?,
             inventory: StartingInventory::from_scus(scus),
             picker_party: false,
-            equip_stats: legaia_asset::equip_stats::EquipStatTable::from_scus(scus),
+            equip_stats: legaia_game_tables::equip_stats::EquipStatTable::from_scus(scus),
         })
     }
 }
@@ -90,10 +90,10 @@ pub const WEAPON_SLOT_BYTE: [usize; 3] = [2, 3, 2];
 /// past those points would otherwise put three unarmed characters into a
 /// fight. Accessory slots (5..7) stay empty.
 pub fn starter_loadout(
-    table: &legaia_asset::equip_stats::EquipStatTable,
+    table: &legaia_game_tables::equip_stats::EquipStatTable,
     char_slot: u8,
 ) -> legaia_save::EquipmentSlots {
-    use legaia_asset::equip_stats::EquipSlot as Cat;
+    use legaia_game_tables::equip_stats::EquipSlot as Cat;
     let mut eq = legaia_save::EquipmentSlots::default();
     let Some(&weapon_byte) = WEAPON_SLOT_BYTE.get(char_slot as usize) else {
         return eq;
@@ -248,7 +248,7 @@ impl World {
     /// three-member fight staged for testing is then unplayable.
     ///
     /// This fills the gap from the **same** SCUS template
-    /// ([`legaia_asset::new_game::StartingParty`], `0x80078C4C`) whose rows
+    /// ([`legaia_game_tables::new_game::StartingParty`], `0x80078C4C`) whose rows
     /// retail seeds Noa / Gala / Terra from when they later join, so each
     /// named member arrives with its own level-1 record and template name
     /// rather than a fabricated one. The roster is grown to cover the highest
@@ -312,7 +312,7 @@ impl World {
     pub fn seed_picker_party(
         &mut self,
         starting: &StartingParty,
-        equip: Option<&legaia_asset::equip_stats::EquipStatTable>,
+        equip: Option<&legaia_game_tables::equip_stats::EquipStatTable>,
     ) -> usize {
         let table = equip.cloned().or_else(|| self.tables.equip_stats.clone());
         let mut members = Vec::new();
@@ -358,7 +358,7 @@ impl World {
 
     /// Cold-boot guard: seed the retail new-game defaults **only when no
     /// party or save was ever loaded** (the roster is empty). Fired by
-    /// [`crate::scene::SceneHost::enter_field_scene`] when the host carries a
+    /// [`crate::scene_host::SceneHost::enter_field_scene`] when the host carries a
     /// [`NewGameDefaults`], so entering a scene directly - native
     /// `play-window --scene X` or the browser play page's scene picker -
     /// never leaves the pause menu reading a zeroed scaffold party.
@@ -420,7 +420,7 @@ impl World {
 /// | `brightness_ref` | `_DAT_8008457C` | `0xD7` (full-brightness reference the battle fades clamp against) |
 /// | `voice_volume` | `_DAT_80084580` | `200` (voice/SFX volume config) |
 /// | `audio_level` | `_DAT_8007B910` | `0xD7` - the live **audio level**: `FUN_800267A8` reads it at `0x800267B0` and passes `(level << 15) >> 16` to the libsnd volume shim `FUN_80062004`. The field was called `screen_brightness`, which the cell never was |
-/// | `bgm_volume_raw` | `DAT_8007B6EC` | `-1` (field-BGM volume; see [`crate::scene::bgm_reattach_volume`]) |
+/// | `bgm_volume_raw` | `DAT_8007B6EC` | `-1` (field-BGM volume; see [`crate::scene_host::bgm_reattach_volume`]) |
 ///
 /// REF: FUN_800267A8, FUN_80062004
 ///
@@ -472,7 +472,7 @@ mod tests {
         assert_eq!(d.bgm_volume_raw, -1);
         // The level the BGM re-attach (FUN_80019898) derives from the
         // boot-value raw global.
-        assert_eq!(crate::scene::bgm_reattach_volume(d.bgm_volume_raw), -1);
+        assert_eq!(crate::scene_host::bgm_reattach_volume(d.bgm_volume_raw), -1);
     }
 
     fn vahn() -> StartingChar {
@@ -539,12 +539,12 @@ mod tests {
         let rec = starting_record(&noa);
         assert_eq!(
             rec.hp_mp_sp().sp_max,
-            legaia_asset::new_game::SEEDED_CAP_CONSTANT,
+            legaia_game_tables::new_game::SEEDED_CAP_CONSTANT,
             "+0x10C is the seed literal, not the template agility"
         );
         assert_eq!(
             rec.stat_cap(),
-            legaia_asset::new_game::SEEDED_CAP_CONSTANT,
+            legaia_game_tables::new_game::SEEDED_CAP_CONSTANT,
             "+0x120 is the same literal"
         );
         assert_eq!(rec.live_stats().agl, 120, "agility still lands at +0x110");
@@ -607,8 +607,8 @@ mod tests {
         // End-to-end (synthetic, no disc): after a New Game seeds Vahn into
         // slot 0, the scene-entry player install makes that same slot the
         // free-movement field player, so pressing a direction walks Vahn.
-        use crate::input::PadButton;
-        use crate::world::SceneMode;
+        use legaia_engine_mode::mode::SceneMode;
+        use legaia_engine_system::input::PadButton;
 
         let mut world = World::new();
         world.begin_new_game();
@@ -632,7 +632,7 @@ mod tests {
 
     #[test]
     fn name_entry_overwrites_the_seeded_lead_name() {
-        use crate::name_entry::{NameEntryInput, NameEntryState};
+        use legaia_engine_menus::name_entry::{NameEntryInput, NameEntryState};
         let mut world = World::new();
         world.begin_new_game();
         world.seed_starting_party(&StartingParty::from_members(vec![vahn()]));
@@ -666,7 +666,7 @@ mod tests {
             });
         }
         // Move to End and confirm twice (End -> Confirm -> Done).
-        let end = crate::name_entry::CHAR_CELLS + 16;
+        let end = legaia_engine_menus::name_entry::CHAR_CELLS + 16;
         world.party.name_entry.as_mut().unwrap().cursor = end;
         world.step_name_entry(NameEntryInput {
             confirm: true,
@@ -802,12 +802,12 @@ mod tests {
     /// `+7` byte per category: Body `0x00`, Head `0x20`, Weapon `0x40`,
     /// Footwear `0x60`; `| 1` marks Ra-Seru gear.
     fn bonus(atk: u8, udf: u8, mask: u8, cat: u8) -> [u8; 8] {
-        let none = legaia_asset::equip_stats::PASSIVE_NONE;
+        let none = legaia_game_tables::equip_stats::PASSIVE_NONE;
         [0, atk, udf, 0, 0, none, mask, cat]
     }
 
-    fn synthetic_equip_table() -> legaia_asset::equip_stats::EquipStatTable {
-        legaia_asset::equip_stats::EquipStatTable::from_entries(&[
+    fn synthetic_equip_table() -> legaia_game_tables::equip_stats::EquipStatTable {
+        legaia_game_tables::equip_stats::EquipStatTable::from_entries(&[
             // Weapons: Vahn-only 10, Vahn-only 4 (weakest), Noa-only 6,
             // Gala-only 9, a Ra-Seru weapon with 1 that must never be picked.
             (0x10, bonus(10, 0, 1, 0x40)),
@@ -1106,6 +1106,9 @@ mod tests {
         // volume rather than a coordinate.
         let boot = GAME_STATE_COLD_RESET.voice_volume;
         assert_eq!(boot, 200);
-        assert_eq!(crate::other_game_overlay::cue_volume(boot as u32), 100);
+        assert_eq!(
+            legaia_engine_minigames::other_game_overlay::cue_volume(boot as u32),
+            100
+        );
     }
 }

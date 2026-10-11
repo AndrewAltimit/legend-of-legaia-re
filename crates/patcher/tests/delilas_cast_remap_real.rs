@@ -4,12 +4,12 @@
 //! partially-patched module refuses, and every touched sector stays
 //! EDC/ECC-valid. Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_patcher::delilas_cast::{
+use legaia_delilas_party::delilas_cast::{
     CastRoute, assemble_delilas_arena, assemble_hook, install_cast_hook, install_cast_label_gate,
     install_delilas_arena, install_stage_caves, install_strike_morph, patch_module_958,
     patch_module_960,
 };
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 fn load_disc() -> Option<Vec<u8>> {
     let path = std::env::var("LEGAIA_DISC_BIN").ok()?;
@@ -339,7 +339,7 @@ fn stage_caves_land_in_the_scus_pools() {
     let mut reopened = DiscPatcher::open(image).expect("re-open patched");
     let scus = reopened.read_named_file("SCUS_942.54").expect("read SCUS");
     for &(va, words) in PIECES {
-        let off = legaia_asset::item_names::file_offset_for_va(&scus, va).expect("VA offset");
+        let off = legaia_game_tables::item_names::file_offset_for_va(&scus, va).expect("VA offset");
         for (k, &w) in words.iter().enumerate() {
             let got = u32::from_le_bytes(scus[off + k * 4..off + k * 4 + 4].try_into().unwrap());
             assert_eq!(got, w, "cave word {va:#010x}+{:#x}", k * 4);
@@ -407,7 +407,7 @@ fn arena_and_strike_morph_land() {
     let code_len = (assemble_hook(SCUS_GAP_VA, &[]).len() - 8) as u32;
     let want = assemble_delilas_arena(SCUS_GAP_VA + code_len - 16, SCUS_GAP_VA + code_len);
     let scus = p.read_named_file("SCUS_942.54").expect("scus");
-    let off = legaia_asset::item_names::file_offset_for_va(&scus, ARENA1_VA).expect("va");
+    let off = legaia_game_tables::item_names::file_offset_for_va(&scus, ARENA1_VA).expect("va");
     assert_eq!(&scus[off..off + want.len()], want.as_slice(), "arena bytes");
 
     // The 0898 detour words.
@@ -440,7 +440,7 @@ fn arena_and_strike_morph_land() {
     // A dirty arena refuses.
     let mut dirty = DiscPatcher::open(original).expect("patcher");
     let scus0 = dirty.read_named_file("SCUS_942.54").expect("scus");
-    let off0 = legaia_asset::item_names::file_offset_for_va(&scus0, ARENA1_VA).expect("va");
+    let off0 = legaia_game_tables::item_names::file_offset_for_va(&scus0, ARENA1_VA).expect("va");
     dirty
         .patch_named_file("SCUS_942.54", off0 as u64, &[0xAA])
         .expect("dirty byte");
@@ -490,7 +490,7 @@ fn cast_label_gate_lands() {
         (0x7A, b"Megaton Press"),
         (0x7B, b"Plasma Strike"),
     ] {
-        let field = legaia_asset::spell_names::name_field(&scus, id).expect("name field");
+        let field = legaia_game_tables::spell_names::name_field(&scus, id).expect("name field");
         assert_eq!(
             &scus[field.file_offset..field.file_offset + name.len()],
             name,
@@ -514,7 +514,8 @@ fn chain_admission_tier_lands() {
 
     let mut p = DiscPatcher::open(original).expect("patcher");
     assert!(
-        legaia_patcher::delilas_cast::install_chain_admission_tier(&mut p).expect("tier installs")
+        legaia_delilas_party::delilas_cast::install_chain_admission_tier(&mut p)
+            .expect("tier installs")
     );
     let entry = p.read_entry(898).expect("prot 898");
     let w = u32::from_le_bytes(entry[TIER_OFF..TIER_OFF + 4].try_into().unwrap());
@@ -527,6 +528,7 @@ fn chain_admission_tier_lands() {
 
     // Idempotence.
     assert!(
-        !legaia_patcher::delilas_cast::install_chain_admission_tier(&mut p).expect("tier re-apply")
+        !legaia_delilas_party::delilas_cast::install_chain_admission_tier(&mut p)
+            .expect("tier re-apply")
     );
 }

@@ -101,7 +101,7 @@ impl GteMat3 {
     // `+0x52 & 0x780` part is drawn under on both play hosts - the same job
     // retail's `jal 0x8004629c` at `0x8001CFC0` does. The full camera and
     // the hosts' model matrices use f32 axis factors instead
-    // (`legaia_engine_vm::psx_camera::camera_rotation`, `Mat4::from_rotation_y`).
+    // (`legaia_engine_battle_vm::psx_camera::camera_rotation`, `Mat4::from_rotation_y`).
     // The radian argument is a deviation: retail takes a 12-bit angle and
     // reads the LUT, which `billboard::rot_z_psx` models for Z and
     // `battle_intro::euler_rot_psx` (the `FUN_80026988` port) for all three.
@@ -232,7 +232,7 @@ pub mod view_rot_flags {
 /// camera matrix is built by `FUN_800172C0` through `FUN_80026988` over the
 /// same angle globals - ported retail-exact as
 /// `crate::battle_intro::euler_rot_psx` - and the hosts' f32 rendition of it
-/// is `legaia_engine_vm::psx_camera::camera_rotation`.
+/// is `legaia_engine_battle_vm::psx_camera::camera_rotation`.
 ///
 /// Across the 98 catalogued mednafen states, 334 of the 3956 nodes on the
 /// actor lists `0x8007C34C..` carry a bit of `0x780`, all but four of them
@@ -351,12 +351,12 @@ pub struct ProjectedVertex {
 
 // ---- Perspective divide: Unsigned Newton-Raphson (UNR) reciprocal. --------
 //
-// The divide itself lives in `legaia_engine_vm::gte_divide`, the leaf the
+// The divide itself lives in `crate::gte::divide`, the leaf the
 // simulation links too, so a screen point `engine-core` needs and one this
 // crate draws divide identically. See docs/subsystems/renderer.md.
 #[cfg(test)]
-use legaia_engine_vm::gte_divide::GTE_DIV_TABLE;
-pub use legaia_engine_vm::gte_divide::gte_divide;
+use crate::gte::divide::GTE_DIV_TABLE;
+pub use crate::gte::divide::gte_divide;
 
 /// Apply a `gte_divide` quotient to one screen axis: multiply by the
 /// i16-saturated numerator (IR1 for X, IR2 for Y) and drop the 16 fractional

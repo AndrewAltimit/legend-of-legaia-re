@@ -2,7 +2,7 @@
 //! every region's byte 0 becomes "its story flag is clear".
 
 use super::*;
-use crate::fog_particles::FogRegion;
+use legaia_render_kernels::fog_volume::FogRegion;
 
 fn region(enabled: bool, flag_index: u16) -> FogRegion {
     FogRegion {

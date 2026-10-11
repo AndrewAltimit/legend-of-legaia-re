@@ -86,15 +86,16 @@
 //! the PRNG call. On the overworld (`_DAT_1F800394 & 1`) the routine also
 //! culls a half whose depth is under `0x310`, links it at `(SZ - 0x10) >> 5`,
 //! and adds the per-depth screen-Y table `*_DAT_8007BB04` (the curvature
-//! table `FUN_800271A8` builds, [`crate::overworld_curvature`]) to both
+//! table `FUN_800271A8` builds, [`legaia_render_kernels::overworld_curvature`]) to both
 //! corners. The overworld's mesh dispatch hands the same table to its prim
 //! leaves, and both hosts' mesh shaders bend the continent by it per vertex.
 //! The link key puts the sheet in the one ordering table the continent's
-//! cells link into; [`crate::overworld_draw_order`] turns both keys into the
+//! cells link into; [`legaia_engine_field::overworld_draw_order`] turns both keys into the
 //! flat depths the hosts draw with.
 
-use crate::action_effect_script::RotationLut;
-use legaia_engine_vm::psx_camera::FieldCameraView;
+use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_effects::action_effect_script::RotationLut;
+use legaia_render_kernels::fog_volume::FogRegion;
 
 /// Pool capacity - `pool[+2]`, `addiu a2,zero,0x50` at `0x801D7374`.
 pub const FOG_POOL_SLOTS: usize = 0x50;
@@ -147,10 +148,6 @@ pub const FOG_OVERWORLD_MAX_DEPTH: i32 = 0x4000;
 /// The overworld spawner's extra height (`addiu v0,v0,-0x28` at `0x801D6538`).
 pub const FOG_OVERWORLD_LIFT: i16 = 0x28;
 
-/// One fog-region record's stride in the MAN section-4 table (`addiu v1,v1,0xb`
-/// at `0x801D63B4`).
-pub const FOG_REGION_STRIDE: usize = 0xB;
-
 /// GP0 texpage word every fog quad carries (`0x8007322C` row word 1, high
 /// halfword): page `(448, 0)` (bit 4, the Y-base bit, is clear), 4bpp, ABR 1.
 pub const FOG_TPAGE: u16 = 0x0027;
@@ -199,76 +196,6 @@ pub const FOG_PLAYER_BOX: [i32; 3] = [0x180, 0x80, 0x80];
 /// the proximity boost is three times stronger again.
 pub const FOG_DPAD_MASK: u32 = 0xF000;
 
-/// One fog-region record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FogRegion {
-    /// `+0` - the spawner keeps a match only when this is non-zero.
-    pub enabled: bool,
-    /// `+1` / `+2` - open lower bounds (`rec < tile`).
-    pub x0: u8,
-    pub z0: u8,
-    /// `+3` / `+4` - open upper bounds (`tile < rec`).
-    pub x1: u8,
-    pub z1: u8,
-    /// `+5` - angle base, in sixteenths of the 4096-step circle.
-    pub angle_base: u8,
-    /// `+6` - angle spread, same units; the random term is `rand & 0xFFF`
-    /// scaled by it.
-    pub angle_spread: u8,
-    /// `+7` - drift speed; `sin/cos * speed >> 14` per axis.
-    pub speed: u8,
-    /// `+8` - read by nothing traced here.
-    pub byte_8: u8,
-    /// `+9..+10` - the story-flag index the nibble-C sub-1 reset tests.
-    pub flag_index: u16,
-}
-
-impl FogRegion {
-    /// Decode one `0xB`-byte record.
-    pub fn parse(rec: &[u8]) -> Option<Self> {
-        if rec.len() < FOG_REGION_STRIDE {
-            return None;
-        }
-        Some(Self {
-            enabled: rec[0] != 0,
-            x0: rec[1],
-            z0: rec[2],
-            x1: rec[3],
-            z1: rec[4],
-            angle_base: rec[5],
-            angle_spread: rec[6],
-            speed: rec[7],
-            byte_8: rec[8],
-            flag_index: u16::from_le_bytes([rec[9], rec[10]]),
-        })
-    }
-
-    /// The spawner's box test - strict on all four sides
-    /// (`0x801D6340..0x801D6388`: `slt rec,tile` then `slt tile,rec`).
-    pub fn contains(&self, tile_x: i32, tile_z: i32) -> bool {
-        i32::from(self.x0) < tile_x
-            && tile_x < i32::from(self.x1)
-            && i32::from(self.z0) < tile_z
-            && tile_z < i32::from(self.z1)
-    }
-}
-
-/// Parse a MAN section-4 payload (the bytes after its `u24` length:
-/// `[count][records]`) into fog regions.
-pub fn parse_fog_regions(section_body: &[u8]) -> Vec<FogRegion> {
-    let Some(&count) = section_body.first() else {
-        return Vec::new();
-    };
-    (0..usize::from(count))
-        .filter_map(|i| {
-            let at = 1 + i * FOG_REGION_STRIDE;
-            section_body
-                .get(at..at + FOG_REGION_STRIDE)
-                .and_then(FogRegion::parse)
-        })
-        .collect()
-}
-
 /// One pool record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FogParticle {
@@ -314,7 +241,7 @@ impl FogParticle {
     /// fade-out tail (the kill).
     ///
     /// Pinned record for record against a retail frame by
-    /// `crates/engine-core/tests/fog_sheet_colour_retail_capture_disc.rs`.
+    /// `crates/parity/tests/fog_sheet_colour_retail_capture_disc.rs`.
     pub fn sheet_rgb(&self, tint: [u8; 3]) -> Option<[u8; 3]> {
         let bright = Self::brightness(self.age)?;
         Some(tint.map(|t| ((i32::from(self.grey) * i32::from(t) * bright) >> 15) as u8))
@@ -354,9 +281,9 @@ pub struct FogQuad {
     /// billboard has and the one [`Self::ot_index`] is taken from.
     pub sz: f32,
     /// The sheet's scene depth for a depth-tested draw, in the mesh frame's
-    /// normalised depth (`legaia_engine_ui::screen_prim::CornerDepth`'s
+    /// normalised depth (`legaia_render_kernels::screen_prim::CornerDepth`'s
     /// convention): its **bucket's**, flat across the sheet
-    /// ([`crate::overworld_draw_order::fog_flat_sz`]), so the continent -
+    /// ([`legaia_engine_field::overworld_draw_order::fog_flat_sz`]), so the continent -
     /// which draws at its own cells' bucket depths - covers it exactly where
     /// retail's ordering table draws a cell after it.
     /// That bucket depth is the overworld arm's ([`FogPool::overworld`]),
@@ -434,18 +361,18 @@ impl FogView {
         let v = [p[0] as f32, -(p[1] as f32), p[2] as f32, 1.0];
         let w = m[3] * v[0] + m[7] * v[1] + m[11] * v[2] + m[15] * v[3];
         (w.is_finite() && w > 0.5)
-            .then(|| crate::overworld_draw_order::ndc_at_w(m, w * self.depth_scale))
+            .then(|| legaia_engine_field::overworld_draw_order::ndc_at_w(m, w * self.depth_scale))
     }
 
     /// The `(a, b)` of `ndc = a + b / w` that [`Self::ndc_at_sz`] and
     /// [`Self::ndc_depth`] evaluate, bit for bit
-    /// ([`crate::overworld_draw_order::depth_affine`] of this matrix).
+    /// ([`legaia_engine_field::overworld_draw_order::depth_affine`] of this matrix).
     /// A host that compares depths in `w` rather than in normalised depth
     /// inverts a depth it was handed through exactly this pair: the browser
     /// play page, whose 24-bit depth buffer cannot hold the quarter-bucket
     /// margin between a fog sheet and the overworld cells of its bucket.
     pub fn depth_affine(&self) -> (f32, f32) {
-        crate::overworld_draw_order::depth_affine(&self.vp)
+        legaia_engine_field::overworld_draw_order::depth_affine(&self.vp)
     }
 
     /// The mesh frame's normalised depth of a point at retail view depth
@@ -453,7 +380,8 @@ impl FogView {
     /// [`crate::camera_view::CUTSCENE_WORLD_SCALE`]); `None` for `sz <= 0`.
     pub fn ndc_at_sz(&self, sz: f32) -> Option<f32> {
         let w = sz / crate::camera_view::CUTSCENE_WORLD_SCALE * self.depth_scale;
-        (w.is_finite() && w > 0.5).then(|| crate::overworld_draw_order::ndc_at_w(&self.vp, w))
+        (w.is_finite() && w > 0.5)
+            .then(|| legaia_engine_field::overworld_draw_order::ndc_at_w(&self.vp, w))
     }
 
     /// Project a raw retail world point (Y-down). Returns `(sx, sy, sz)` in
@@ -724,8 +652,10 @@ impl FogPool {
             }
         }
         // 0x801D647C..0x801D649C: pop a slot; none -> nothing spawns.
-        let Some(slot) = crate::cutscene::sprite_stack_pop(&mut self.free_top, &self.free_table)
-        else {
+        let Some(slot) = legaia_engine_system::movie::cutscene::sprite_stack_pop(
+            &mut self.free_top,
+            &self.free_table,
+        ) else {
             return false;
         };
         let Some(rec) = self.records.get_mut(slot as usize) else {
@@ -761,7 +691,11 @@ impl FogPool {
     /// Return a record's slot to the free stack (`FUN_8001FA68` at
     /// `0x8003F800`).
     fn free_slot(&mut self, slot: u8) {
-        crate::cutscene::sprite_stack_push(&mut self.free_top, &mut self.free_table, slot as i16);
+        legaia_engine_system::movie::cutscene::sprite_stack_push(
+            &mut self.free_top,
+            &mut self.free_table,
+            slot as i16,
+        );
     }
 
     /// One rendered frame of the pool - `FUN_8003F348` walking every slot and
@@ -881,7 +815,7 @@ fn emit_half(
     // 0x8003F98C..0x8003F9A0: the overworld's curvature term, added to both
     // corners' `SY` before the row tests.
     let nudge = if overworld {
-        crate::overworld_curvature::curvature_at(sz as i32) as f32
+        legaia_render_kernels::overworld_curvature::curvature_at(sz as i32) as f32
     } else {
         0.0
     };
@@ -934,13 +868,13 @@ fn emit_half(
             ot_index: (bucket_z.max(0.0) as u32) >> 5,
             sz,
             // Overworld: the bucket's flat depth, a quarter bucket behind
-            // the cells that link there (crate::overworld_draw_order).
+            // the cells that link there (legaia_engine_field::overworld_draw_order).
             // Field: the particle's own depth - retail links the sheet at
             // `SZ >> 5` in the ordering table the field meshes sort into,
             // so a nearer ledge, trunk or prop draws over it.
             depth: if overworld {
-                view.ndc_at_sz(crate::overworld_draw_order::fog_flat_sz(
-                    crate::overworld_draw_order::fog_ot_index(sz),
+                view.ndc_at_sz(legaia_engine_field::overworld_draw_order::fog_flat_sz(
+                    legaia_engine_field::overworld_draw_order::fog_ot_index(sz),
                 ))
             } else {
                 view.ndc_at_sz(sz)
@@ -987,8 +921,8 @@ mod tests {
         assert_eq!(fog_cap_for_man(&[0x05]), FOG_CAP_DEFAULT);
     }
 
-    fn lut() -> &'static crate::action_effect_script::RetailRotationLut {
-        crate::action_effect_script::retail_rotation_lut()
+    fn lut() -> &'static legaia_engine_effects::action_effect_script::RetailRotationLut {
+        legaia_engine_effects::action_effect_script::retail_rotation_lut()
     }
 
     /// A view that looks straight down -Z... expressed as the identity-ish
@@ -1018,26 +952,6 @@ mod tests {
             byte_8: 0,
             flag_index: 0,
         }
-    }
-
-    #[test]
-    fn region_table_parses_count_prefixed_records() {
-        let mut body = vec![2u8];
-        body.extend_from_slice(&[1, 2, 3, 40, 50, 0x10, 0x20, 0x30, 0, 0x34, 0x12]);
-        body.extend_from_slice(&[0, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0]);
-        let regs = parse_fog_regions(&body);
-        assert_eq!(regs.len(), 2);
-        assert!(regs[0].enabled);
-        assert_eq!(
-            (regs[0].x0, regs[0].z0, regs[0].x1, regs[0].z1),
-            (2, 3, 40, 50)
-        );
-        assert_eq!(regs[0].flag_index, 0x1234);
-        assert!(!regs[1].enabled);
-        // Strict on every side.
-        assert!(regs[0].contains(3, 4));
-        assert!(!regs[0].contains(2, 4));
-        assert!(!regs[0].contains(40, 4));
     }
 
     #[test]

@@ -18,7 +18,7 @@
 //! `switch` inside the (overlay-resident, undumped) item-use *apply* handler.
 //! So the numeric heal/restore amounts are **not** recoverable from this table
 //! alone - the engine keeps curated walkthrough amounts for those (see
-//! `legaia_engine_core::items`). What this table *does* give faithfully is the
+//! `legaia_engine_menus::items`). What this table *does* give faithfully is the
 //! effect class, the per-class tier selector, the all-party flag, and the
 //! field-vs-battle usability flags.
 //!
@@ -61,7 +61,7 @@
 //! on-disc item *description* strings (item record `+8` pointer): e.g. class 0
 //! items read "Recover NHP. Ally.", class 1 "...All allies.", class 2
 //! "Recover NMP.", class 4 "Restore life.", class 128 "Teleport out of
-//! dungeons.". The `legaia_asset::item_effect` resolver mirrors the same
+//! dungeons.". The `legaia_game_tables::item_effect` resolver mirrors the same
 //! `t_addr -> file-offset` map as [`crate::item_names`].
 
 /// RAM address of the effect-descriptor table (`DAT_800752C0`).

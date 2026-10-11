@@ -255,7 +255,7 @@
           <tr><td><code>+0x12</code></td><td>u16</td><td>flags; <code>0x4</code> = placed</td></tr>
         </tbody>
       </table>
-      <p>A placed record becomes an actor through exactly one of two sweeps. The scene-init sweep resolves the record's <strong>bind</strong> (the gate-0 trigger on its footprint anchor) and skips unbound records; the sub-area window rebuild spawns from the tile words with no bind lookup. The sets are complementary (Rim Elm: 37 bound + 9 unbound = 46), so every placed record draws. A bound record with a clip id is posed by that clip's frame 0 - the cupboard's hinge doors hang through the floor without it. Parser <code>legaia_asset::field_objects</code>.</p>
+      <p>A placed record becomes an actor through exactly one of two sweeps. The scene-init sweep resolves the record's <strong>bind</strong> (the gate-0 trigger on its footprint anchor) and skips unbound records; the sub-area window rebuild spawns from the tile words with no bind lookup. The sets are complementary (Rim Elm: 37 bound + 9 unbound = 46), so every placed record draws. A bound record with a clip id is posed by that clip's frame 0 - the cupboard's hinge doors hang through the floor without it. Parser <code>legaia_scene_formats::field_objects</code>.</p>
     </div>
   </details>
 

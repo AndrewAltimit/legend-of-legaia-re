@@ -21,7 +21,7 @@
 //!
 //! So the field has to do two jobs at once. It must compare equal to a raw
 //! retail VA (that is what the scene-transition sweep
-//! [`crate::field_actor_kernels::sweep_actor`], the submode open
+//! [`crate::scene_transition_sweep::sweep_actor`], the submode open
 //! [`crate::field_submode::open_submode`] and the field VM's own
 //! find/retire opcodes are written against), and it must **select a ported
 //! Rust kernel** so the dispatcher has something to run. [`ActorHandler`]
@@ -50,11 +50,11 @@
 //! `battle_gimard_tail_fire` save reads it straight out of a running part
 //! actor's `+0x0C` (`crates/mednafen/tests/firetail_movefx_liveness.rs`) - and
 //! the four `0x801F****` widget handlers are the PROT 0900 descriptor words at
-//! `0x801F8FE4/8FFC/9014/902C` (`legaia_engine_core::screen_fx`).
+//! `0x801F8FE4/8FFC/9014/902C` (`legaia_engine_effects::screen_fx`).
 //!
 //! REF: FUN_80020DE0 (installs the handler), FUN_8002519C (dispatches it)
 
-use crate::field_actor_kernels::{MOVE_VM_HANDLER, RETIRED_HANDLERS};
+use crate::scene_transition_sweep::{MOVE_VM_HANDLER, RETIRED_HANDLERS};
 
 /// `FUN_80021DF4` - the generic SCUS per-actor tick (drains the wait timer,
 /// steps the move VM, emits the render/audio events). Identical to
@@ -92,7 +92,7 @@ pub const VA_SUBMODE_DRIVER: u32 = crate::field_submode::SUBMODE_DRIVER_HANDLER;
 /// 16-entry `i16` floor-elevation LUT (`sh v1,0x48(v0)` at `0x801DAA2C`,
 /// with `t1 = 0x1F800314` from the `lui`/`ori` pair at `0x801DA96C`), so
 /// `4C 9x` animates one rung of the ground the field walks on. See
-/// [`legaia_engine_vm::field_actor_timers`] and
+/// [`crate::field_actor_timers`] and
 /// `docs/subsystems/script-vm-menuctrl.md`.
 ///
 /// The field VM's `4C 9F` "register callback" op is really a teardown:
@@ -104,7 +104,7 @@ pub const VA_SUBMODE_DRIVER: u32 = crate::field_submode::SUBMODE_DRIVER_HANDLER;
 ///
 /// `4C 87` was named alongside it and is a different teardown: its arm
 /// `0x801E2284` materialises `0x801E5154`, the reflection-callback tick
-/// ([`legaia_engine_vm::field_actor_reflect`]), not this handler. The two
+/// ([`crate::field_actor_reflect`]), not this handler. The two
 /// ops share only the tail at `0x801E2DC4`. Its install sibling is `4C 86`
 /// (`0x801E2250`, through the spawner `FUN_801E573C`) - the nibble-8
 /// sub-table at `0x801CEF48` puts the pair at consecutive slots 6 and 7.
@@ -123,8 +123,8 @@ pub const VA_CLIP_FADE: u32 = crate::field_actor_clone::CLONE_HANDLER;
 /// `FUN_801E5154` - the **reflection controller** tick, the handler on the
 /// field-overlay descriptor `0x801F2948` that the field VM's `4C 86` spawner
 /// `FUN_801E573C` allocates from (and that `4C 87` retires). Its body is
-/// [`legaia_engine_vm::field_actor_reflect::tick_reflection`].
-pub const VA_REFLECTION: u32 = legaia_engine_vm::field_actor_reflect::REFLECT_HANDLER;
+/// [`crate::field_actor_reflect::tick_reflection`].
+pub const VA_REFLECTION: u32 = crate::field_actor_reflect::REFLECT_HANDLER;
 
 /// `FUN_801DBE9C` - the handler on the fixed scene-actor template
 /// `0x801F2810` that `FUN_801DE478` spawns from (field `0x023FF8`, word `+8`).
@@ -204,7 +204,7 @@ pub enum HandlerKernel {
     /// `legaia_engine_core::world::World::tick_actor_physics` - the same special case
     /// `FUN_8002519C` makes for this one handler.
     ActorTick,
-    /// [`crate::field_actor_kernels::step_colour_tween`], run by
+    /// [`crate::actor_colour_tween::step_colour_tween`], run by
     /// `legaia_engine_core::world::World::tick_handler_actors`.
     ColourTween,
     /// [`crate::cutscene_narration::CutsceneNarration`] - driven by the
@@ -212,13 +212,13 @@ pub enum HandlerKernel {
     /// engine spawns the roller as host state (`World::cutscene.narration`)
     /// and not as a pool node.
     NarrationRoller,
-    /// `legaia_engine_core::text_balloon::TextBalloon` - same shape as
+    /// `legaia_engine_dialog::text_balloon::TextBalloon` - same shape as
     /// [`Self::NarrationRoller`]: ported, but hosted off the actor pool.
     TextBalloon,
-    /// `engine-vm::camera_mover::CameraMover`, driven by
-    /// `legaia_engine_core::camera`.
+    /// `engine-battle-vm::camera_mover::CameraMover`, driven by
+    /// `legaia_engine_core::world::camera_world`.
     CameraMover,
-    /// One of the four `legaia_engine_core::screen_fx` widget handlers.
+    /// One of the four `legaia_engine_effects::screen_fx` widget handlers.
     ScreenWidget,
     /// [`crate::field_actor_program::step_scene_program`], run by
     /// `legaia_engine_core::world::World::tick_handler_actors` over the programs the MAN
@@ -228,7 +228,7 @@ pub enum HandlerKernel {
     /// `legaia_engine_core::world::World::tick_handler_actors` over the clones the field
     /// VM's op `0x4C` sub-1 sub-op `0x14` spawns.
     ClipFade,
-    /// [`legaia_engine_vm::field_actor_reflect::tick_reflection`], run by
+    /// [`crate::field_actor_reflect::tick_reflection`], run by
     /// `legaia_engine_core::world::World::tick_handler_actors` over the mirror pairs the
     /// field VM's `4C 86` arm installs.
     Reflection,
@@ -421,7 +421,7 @@ mod tests {
 
     #[test]
     fn the_colour_tween_is_one_of_the_retired_classes() {
-        // The cross-link between the two ports in `field_actor_kernels`,
+        // The cross-link between `scene_transition_sweep` and `actor_colour_tween`,
         // restated on the identity type: the sweep names the tween's entry.
         assert!(ActorHandler::ColourTween.retired_by_scene_transition());
         assert_eq!(

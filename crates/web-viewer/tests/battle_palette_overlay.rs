@@ -29,9 +29,12 @@ fn vahn_battle_palette_lands_on_mesh_rows() {
     let prot = extract_prot_dat(&disc).expect("PROT.DAT");
 
     // Vahn's battle mesh = PROT 1204 slot 0 -> distinct CLUT rows it samples.
-    let pack_raw = prot_entry(&prot, legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
-        .expect("PROT 1204 present");
-    let slots = legaia_asset::battle_char_pack::parse_slots(pack_raw).expect("parse 1204");
+    let pack_raw = prot_entry(
+        &prot,
+        legaia_actor_formats::battle_char_pack::PROT_ENTRY_INDEX,
+    )
+    .expect("PROT 1204 present");
+    let slots = legaia_actor_formats::battle_char_pack::parse_slots(pack_raw).expect("parse 1204");
     let tmd_bytes = slots.first().expect("slot 0").tmd_bytes.clone();
     let tmd = legaia_tmd::parse(&tmd_bytes).expect("Vahn battle TMD");
     let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_bytes);
@@ -47,8 +50,9 @@ fn vahn_battle_palette_lands_on_mesh_rows() {
     // ever found Vahn's record0 in it because the pre-correction entry size
     // gave 0861 a 343-sector window that ran into 0863.
     let player1 = prot_entry(&prot, 863).expect("PROT 0863 present");
-    let rec0 = legaia_asset::battle_char_palette::find_record0(player1).expect("record0");
-    let pal = legaia_asset::battle_char_palette::parse_record(player1, rec0).expect("palette");
+    let rec0 = legaia_actor_formats::battle_char_palette::find_record0(player1).expect("record0");
+    let pal =
+        legaia_actor_formats::battle_char_palette::parse_record(player1, rec0).expect("palette");
     assert_eq!(pal.bands.len(), 3, "Vahn has 3 effective bands");
 
     // Overlaying onto a fresh VRAM, each band's STP colours land at (row, base+i)
@@ -90,9 +94,12 @@ fn noa_gala_collected_palettes_cover_mesh_columns() {
     };
     let disc = std::fs::read(&path).expect("disc image");
     let prot = extract_prot_dat(&disc).expect("PROT.DAT");
-    let pack_raw =
-        prot_entry(&prot, legaia_asset::battle_char_pack::PROT_ENTRY_INDEX).expect("1204");
-    let slots = legaia_asset::battle_char_pack::parse_slots(pack_raw).expect("parse 1204");
+    let pack_raw = prot_entry(
+        &prot,
+        legaia_actor_formats::battle_char_pack::PROT_ENTRY_INDEX,
+    )
+    .expect("1204");
+    let slots = legaia_actor_formats::battle_char_pack::parse_slots(pack_raw).expect("parse 1204");
 
     for &(slot, prot_index, name) in &[(1usize, 864u32, "Noa"), (2, 865, "Gala")] {
         let tmd_bytes = slots.get(slot).expect("slot").tmd_bytes.clone();
@@ -103,7 +110,7 @@ fn noa_gala_collected_palettes_cover_mesh_columns() {
         cols.dedup();
 
         let entry = prot_entry(&prot, prot_index).expect("PROT entry present");
-        let pal = legaia_asset::battle_char_palette::collect_palette(entry, 0, &cols)
+        let pal = legaia_actor_formats::battle_char_palette::collect_palette(entry, 0, &cols)
             .unwrap_or_else(|e| panic!("collect {name} palette: {e}"));
 
         use std::collections::BTreeSet;

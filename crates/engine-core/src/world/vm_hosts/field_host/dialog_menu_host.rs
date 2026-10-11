@@ -1,0 +1,87 @@
+//! `FieldDialogMenuHost` for [`FieldHostImpl`].
+
+use super::*;
+
+impl<'a> FieldDialogMenuHost for FieldHostImpl<'a> {
+    // Op-0x49 STATE_RESUME, scoped to the `town01` opening cutscene timeline.
+    // The pinned name-entry handoff (P2[3] body `0x02c6`, `49 03 00`) suspends
+    // the script here; the engine opens the name-entry overlay on the Idle->arm
+    // edge and keeps the op Armed (parked) until the player commits, then Done
+    // (resume). Any other `49 03 <slot>` does the same in the context that
+    // ran it (`CutsceneState::naming_owner`); a context with no naming
+    // prompt pending falls back to the default Idle.
+    // REF: FUN_801F03F0 (name-entry overlay) / op49_invoke_setup func_0x80020de0
+    fn op49_state(&self) -> Op49State {
+        Self::op49_state(self)
+    }
+
+    fn op49_arm(&mut self, sub_op: u8, _pc: usize, _field_90: u32) {
+        // Retail's `sw s6,-0x4bb0(s0)`: the park holds the operand pointer,
+        // whose first byte is this sub-op. Recording it is what lets
+        // `World::menu_entry_context_kind` answer with anything other than
+        // the two sub-ops the port could previously infer from its own
+        // dedicated host paths.
+        self.world.record_op49_park(sub_op);
+    }
+
+    fn op49_clear(&mut self) {
+        Self::op49_clear(self)
+    }
+
+    fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
+        Self::op49_menu_request(self, sub_op, instr)
+    }
+
+    fn op49_invoke_setup(&mut self) {
+        if self.world.cutscene.prologue_naming_pending
+            && !self.world.cutscene.prologue_naming_armed
+            && self.world.cutscene.naming_owner == Some(self.world.op49_park_owner())
+            && !self.world.name_entry_active()
+        {
+            // The slot is the operand's byte after the sub-op (retail's
+            // char-record pointer `_DAT_8007B450 + 1`): `00` = Vahn at the
+            // opening, `01` = Noa in `cave01`.
+            self.world.open_name_entry(self.world.cutscene.naming_slot);
+            self.world.cutscene.prologue_naming_armed = true;
+        }
+    }
+
+    fn stage_three_actor_talk(&mut self, actor_ids: [u8; 3], arg_word: u16, arg_byte: u8) {
+        Self::stage_three_actor_talk(self, actor_ids, arg_word, arg_byte)
+    }
+
+    fn spawn_text_balloon(&mut self, text_buf: &[u8], script_id: u16) {
+        // Field-VM op `4C E1` - spawn the single-line text balloon
+        // (`FUN_8003C764`). Replacing the Option is the retail
+        // predecessor-kill (the handler's first lines kill any live
+        // sibling balloon). The X centering waits for a host-side font
+        // measurement; the tick lives in `World::tick`
+        // (`legaia_engine_dialog::text_balloon::TextBalloon::tick`).
+        let _ = script_id;
+        self.world.cutscene.text_balloon = Some(
+            legaia_engine_dialog::text_balloon::TextBalloon::spawn(text_buf),
+        );
+    }
+
+    fn open_dialog(
+        &mut self,
+        text_id: u16,
+        inline: &[u8],
+        world_x: u16,
+        world_z: u16,
+        depth_id: u8,
+    ) {
+        Self::open_dialog(self, text_id, inline, world_x, world_z, depth_id)
+    }
+
+    fn op4c_n5_sub4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
+        Self::op4c_n5_sub4_dialog_advance(self, _ctx)
+    }
+
+    /// `[4C, 0x89, lo, hi]` - the pager's automatic-press countdown
+    /// `_DAT_80073F00`, which a waiting box page counts down and then
+    /// presses through ([`legaia_engine_dialog::dialog::OwnedDialogPanel::tick_at_auto`]).
+    fn set_dialog_auto_press(&mut self, value: i16) {
+        self.world.dialog.auto_press = value;
+    }
+}

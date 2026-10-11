@@ -18,9 +18,9 @@
 //!
 //! * `0x59`: the spawner's own `0x59` arm, on `mode == 0` only
 //!   (`bne s5,zero` at `0x801D914C`), composes `prefix[char - 1] +
-//!   spell_name[seru + 0x80] + suffix` ([`legaia_asset::absorb_caption`]).
+//!   spell_name[seru + 0x80] + suffix` ([`legaia_game_tables::absorb_caption`]).
 //! * `0x65`: `FUN_801F452C` composes `<spell>'s magic level increased.`
-//!   before the raise ([`crate::magic_xp::magic_level_increased_message`]).
+//!   before the raise ([`legaia_engine_battle::magic_xp::magic_level_increased_message`]).
 //!
 //! A third element shares the widget: `0x66`, the **timed** message. Its
 //! raisers point record `0x66`'s content word (`0x800775B4`) at a fixed

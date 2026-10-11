@@ -1,9 +1,9 @@
 //! Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite [`World`].
+//! Fields keep their retail provenance notes.
 
-use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.
 pub struct CutsceneState {
@@ -11,10 +11,10 @@ pub struct CutsceneState {
     /// the field VM has signalled that the next-game-mode global should
     /// transition to game mode 26 (StrInit) with the given index. Engines
     /// drain this after [`crate::world::World::tick`] to actually open the corresponding
-    /// `MV*.STR` (use [`crate::cutscene::fmv_index_to_str_filename`] for
+    /// `MV*.STR` (use [`legaia_engine_system::movie::cutscene::fmv_index_to_str_filename`] for
     /// the retail mapping). `None` between triggers.
     pub pending_fmv_trigger: Option<i16>,
-    /// The FMV currently playing in [`crate::world::SceneMode::Cutscene`]. Set when the
+    /// The FMV currently playing in [`legaia_engine_mode::mode::SceneMode::Cutscene`]. Set when the
     /// world consumes a [`crate::world::CutsceneState::pending_fmv_trigger`] at the top of a
     /// [`crate::world::World::tick`] and flips into the cutscene mode (mirroring retail's
     /// next-game-mode dispatch to game mode 26 one frame after the field-VM
@@ -30,10 +30,10 @@ pub struct CutsceneState {
     pub return_mode: Option<SceneMode>,
     /// The `fmv_id` whose playback just ended, parked here by
     /// [`crate::world::World::finish_cutscene`] for exactly one drain by
-    /// [`crate::scene::SceneHost::apply_pending_fmv_handoff`].
+    /// [`crate::scene_host::SceneHost::apply_pending_fmv_handoff`].
     ///
     /// Retail's post-play control transfer is not a world-only decision - the
-    /// [`FmvHandoff::Field`](crate::cutscene::FmvHandoff::Field) arm loads a
+    /// [`FmvHandoff::Field`](legaia_engine_system::movie::cutscene::FmvHandoff::Field) arm loads a
     /// *different scene*, which needs the host's asset index. So the world
     /// records "an FMV finished, and which one" and the scene host performs
     /// the transfer. Draining it is a `take`: the transfer runs once however
@@ -54,7 +54,7 @@ pub struct CutsceneState {
     /// current page. It gates the prologue hand-off: while it is active the
     /// confirm press skips narration pages, and only once it completes does a
     /// confirm reach [`crate::world::World::take_prologue_handoff`].
-    pub narration: Option<crate::cutscene_narration::CutsceneNarration>,
+    pub narration: Option<legaia_engine_field::cutscene_narration::CutsceneNarration>,
     /// Monotonic counter incremented each time [`crate::world::World::open_cutscene_narration`]
     /// installs a crawl block. Lets observers distinguish back-to-back crawl
     /// blocks (a non-blocking crawl opens the next block the same tick the prior
@@ -62,22 +62,22 @@ pub struct CutsceneState {
     pub narration_seq: u32,
     /// The crawl config block (`*0x801C6EA4 +0x4C..+0x52`) the next roller
     /// reads: the scene reset's values until a timeline `CC F8 E8` seed op
-    /// overwrites them. See [`crate::cutscene_narration::RollerSeed`].
-    pub(crate) narration_seed: crate::cutscene_narration::RollerSeed,
+    /// overwrites them. See [`legaia_engine_field::cutscene_narration::RollerSeed`].
+    pub(crate) narration_seed: legaia_engine_field::cutscene_narration::RollerSeed,
     /// Active opening-cutscene timeline executor, or `None` when no cutscene
     /// timeline is running. Installed by
     /// [`crate::world::World::load_cutscene_timeline_from_man`] (the `opdeene` opening
     /// prologue) with the partition-2 record that issues `GFLAG_SET 26`;
     /// stepped each frame by [`crate::world::World::step_cutscene_timeline`] so the cutscene's
     /// camera path + actor moves play and the hand-off bit fires by execution.
-    /// See [`crate::cutscene_timeline::CutsceneTimeline`].
+    /// See [`legaia_engine_field::cutscene_timeline::CutsceneTimeline`].
     ///
     /// This is the single **modal** context slot: while it is active the
     /// cutscene camera owns the frame and pad locomotion is locked
     /// ([`crate::world::World::cutscene_timeline_active`] gates). Ordinary mid-play spawned
     /// records execute concurrently in [`crate::world::FieldVmState::helper_contexts`] instead and
     /// never seize either.
-    pub timeline: Option<crate::cutscene_timeline::CutsceneTimeline>,
+    pub timeline: Option<legaia_engine_field::cutscene_timeline::CutsceneTimeline>,
     /// `true` only while [`crate::world::World::step_cutscene_timeline`] is executing the
     /// spawned cutscene context. The field-VM host reads it to suppress the
     /// actor-allocator hook (op `0x4C` n8 sub-0), which in the cutscene context
@@ -116,19 +116,19 @@ pub struct CutsceneState {
     /// roller [`crate::world::CutsceneState::narration`].
     pub card: Option<Vec<String>>,
     /// The `opdeene` "It was the Seru." caption, decoded to RGBA at scene
-    /// entry ([`crate::cutscene_caption::decode_opdeene_caption`]). `Some`
+    /// entry ([`legaia_engine_scene::cutscene_caption::decode_opdeene_caption`]). `Some`
     /// only while `opdeene` is loaded; the host uploads it once as a sprite
     /// atlas and blits it, faded by [`crate::world::CutsceneState::caption_alpha`]. Unlike
     /// the crawl / card this is a pre-rendered image, not font text - retail
     /// draws it as a scene textured quad, so the engine blits the scene
-    /// texture rather than rendering a string. See [`crate::cutscene_caption`].
-    pub caption: Option<crate::cutscene_caption::CaptionImage>,
+    /// texture rather than rendering a string. See [`legaia_engine_scene::cutscene_caption`].
+    pub caption: Option<legaia_engine_scene::cutscene_caption::CaptionImage>,
     /// The live `4C E1` single-line text balloon, spawned by the field-VM
     /// menu-ctrl sub-op (`FUN_8003C764`) and ticked per frame
-    /// ([`crate::text_balloon::TextBalloon::tick`], the `FUN_801DA7F0`
+    /// ([`legaia_engine_dialog::text_balloon::TextBalloon::tick`], the `FUN_801DA7F0`
     /// handler). Spawning replaces any live balloon - the retail
     /// predecessor-kill. Hosts render `text` at `(x, y)` while it runs.
-    pub text_balloon: Option<crate::text_balloon::TextBalloon>,
+    pub text_balloon: Option<legaia_engine_dialog::text_balloon::TextBalloon>,
     /// Fade level (0..=1) of [`crate::world::CutsceneState::caption`], ramped each
     /// [`crate::world::World::tick`]. Target-visible in the gap after the first narration
     /// crawl block scrolls out and before the second opens (retail shows the
@@ -151,7 +151,7 @@ pub struct CutsceneState {
     /// `town01` opening entry.
     pub opening_chain_active: bool,
     /// The New Game's destination-entry operand
-    /// ([`legaia_asset::new_game::NEW_GAME_ENTRY_SEAT`]), armed by
+    /// ([`legaia_game_tables::new_game::NEW_GAME_ENTRY_SEAT`]), armed by
     /// [`crate::world::World::begin_new_game`] - retail's seed
     /// `FUN_80034A6C` writes `_DAT_80073EF4` / `_DAT_80073EF8` - and taken by
     /// the next field entry, which seats the player on it when that entry is
@@ -172,7 +172,7 @@ impl CutsceneState {
             finished_fmv: None,
             narration: None,
             narration_seq: 0,
-            narration_seed: crate::cutscene_narration::RollerSeed::SCENE_RESET,
+            narration_seed: legaia_engine_field::cutscene_narration::RollerSeed::SCENE_RESET,
             timeline: None,
             in_timeline: false,
             prologue_naming_pending: false,

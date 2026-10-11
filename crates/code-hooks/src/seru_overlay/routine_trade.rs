@@ -108,7 +108,7 @@ pub fn assemble_trade_entry_stub() -> Vec<u32> {
 /// sub-mode. Runs in mode 0x17 with the shop fully intact.
 ///
 /// Renders the **want-a-type / offer-a-partner** offer (see
-/// [`legaia_asset::seru_trade`]): it reads the current `(want, give)` pair from the
+/// [`legaia_game_tables::seru_trade`]): it reads the current `(want, give)` pair from the
 /// precomputed [`BUCKET_TABLE_VA`] indexed by `(play_time / `[`RESEED_PERIOD_FRAMES`]`)
 /// & `[`BUCKET_INDEX_MASK`], draws a two-row labelled header - `Wants <want>` over
 /// `Offers <give> <lvl>`, so both sides of the offer are always visible - then scans

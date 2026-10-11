@@ -183,7 +183,7 @@ Background: [cutscene.md](../subsystems/cutscene.md).
 ## Game-data tables from the executable
 
 The game executable `extracted/SCUS_942.54` carries the static stat tables.
-The `asset` hub prints them as readable, joined listings:
+The `asset` binary prints them as readable, joined listings:
 
 ```bash
 ./asset item-tables extracted/SCUS_942.54     # item names + effects/stat bonuses

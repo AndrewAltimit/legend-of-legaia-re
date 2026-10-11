@@ -1,5 +1,4 @@
 //! State views: the actor and module-context slices a cast routine reads and writes.
-//! Split out of `cast_module_ticks.rs`.
 
 // ---------------------------------------------------------------------------
 // State views
@@ -219,7 +218,7 @@ pub struct CastModuleCtx {
     pub ctx_27a: u8,
     /// `ctx+0x6D8` as a module drives it - the action SM's frame timer word,
     /// which PROT 0904's arms reuse as the ring sweep's ramp and ray
-    /// ([`crate::cast_seru_ticks_a::theeder_tick`]). The host keeps the
+    /// ([`crate::seru_magic_ticks::theeder_tick`]). The host keeps the
     /// module's copy apart from the SM's own timer.
     pub ctx_6d8: u16,
 }

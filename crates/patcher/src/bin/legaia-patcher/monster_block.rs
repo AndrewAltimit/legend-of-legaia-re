@@ -3,7 +3,7 @@
 //! name string without doing any slot-offset or LZS math by hand.
 //!
 //! Dump reads the slot off the disc image and LZS-decodes it; write re-packs
-//! an edited block with [`legaia_asset::monster_archive::encode_slot`] and
+//! an edited block with [`legaia_actor_formats::monster_archive::encode_slot`] and
 //! patches it back through [`DiscPatcher::patch_monster_slot`] - a same-size
 //! in-place sector write with the EDC/ECC re-encoded, exactly like the
 //! randomizer's own monster edits.
@@ -12,11 +12,11 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::monster_archive;
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
-use legaia_patcher::ppf;
+use legaia_actor_formats::monster_archive;
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_disc_patch::ppf;
 
-use crate::util::{cue_contents, load_image, note_overwrite};
+use crate::disc_io::{cue_contents, load_image, note_overwrite};
 
 pub(crate) fn cmd_monster_block(
     input: &Path,

@@ -10,7 +10,7 @@
 //! the top `224` rows of the display crop are the drawn frame and the rest
 //! is the unused tail of the `240`-line display. The engine renders the PSX
 //! screen at an integer scale with the retail viewport map
-//! (`ndc.y = 1 - 2 * screen_y / 240`, `engine-vm::battle_cam_script`), so
+//! (`ndc.y = 1 - 2 * screen_y / 240`, `engine-battle-vm::battle_cam_script`), so
 //! engine row `s * y` is retail row `y`: the comparison takes the engine
 //! capture's top `224 * s` rows and box-filters them down by `s`.
 //!
@@ -95,7 +95,7 @@ impl Frame {
     /// fixed 3x would compare the bars and a misscaled picture.
     pub fn from_engine_capture(rgba: &[u8], width: usize, height: usize) -> Result<Self> {
         let ((x0, y0), s) =
-            legaia_engine_render::pause_menu::stage_transform(width as u32, height as u32);
+            legaia_engine_ui::pause_menu::stage_transform(width as u32, height as u32);
         let (x0, y0, s) = (x0.max(0) as usize, y0.max(0) as usize, s as usize);
         if x0 + FRAME_W * s > width || y0 + FRAME_H * s > height || rgba.len() < width * height * 4
         {
@@ -223,7 +223,7 @@ fn read_png_rgba(path: &Path) -> Result<(Vec<u8>, usize, usize)> {
 #[derive(Clone, Copy)]
 pub enum FrameEntry<'a> {
     /// A card-load resume of the retail save (`--resume-save`), the order
-    /// the headless channels seed with ([`crate::boot::BootSession::resume_save`]):
+    /// the headless channels seed with ([`legaia_engine_session::native::NativeSession::resume_save`]):
     /// the save's scene entered at the save's position with no free-roam
     /// picker staging, then the world hydrated from the save. Live NPCs
     /// stay on, as in the headless session: a placement's script runs only
@@ -264,7 +264,7 @@ pub fn engine_frame(
     label: &str,
     save: &legaia_save::SaveFile,
     hud_countdown: Option<i16>,
-    camera_block: Option<&legaia_engine_core::camera_zone::CameraZoneConfig>,
+    camera_block: Option<&legaia_engine_field::camera_zone::CameraZoneConfig>,
     seat_focus: Option<[i32; 2]>,
     extra_env: &[(&str, String)],
 ) -> Result<Frame> {
@@ -274,7 +274,7 @@ pub fn engine_frame(
         .chain(camera_block.map(|b| {
             (
                 "LEGAIA_SEAT_CAMERA_BLOCK",
-                crate::retail_compare::camera_block_env(b),
+                legaia_engine_capture::field_seeds::camera_block_env(b),
             )
         }))
         .chain(seat_focus.map(|[fx, fz]| ("LEGAIA_SEAT_FOCUS", format!("{fx},{fz}"))))

@@ -59,7 +59,7 @@
 //! disc** - mode word `1`, its shape-`0` ring laid in the XZ plane with inner
 //! radius `0` - into the asset buffer at `_DAT_8007B85C + 0x62400`, radius
 //! `(actor+0x58 * 4) / 10`, x/z scale `0x1000`
-//! (`legaia_engine_core::effect_default_arm::ground_shadow_mesh`). It is drawn through
+//! (`legaia_engine_effects::effect_default_arm::ground_shadow_mesh`). It is drawn through
 //! `FUN_80043390` with flag word `0x8A000000` - semi-transparent, blend mode
 //! `2` (subtractive) - and only while the actor is neither pitched nor
 //! rolled (`actor+0x24 == 0 && actor+0x28 == 0`, `0x80049284..0x8004929C`).
@@ -110,7 +110,7 @@ impl RotLimbTable {
     /// Decode the table from a `SCUS_942.54` image. `None` when the image is
     /// not a PSX-EXE or is too short to hold the rows.
     pub fn from_scus(scus: &[u8]) -> Option<Self> {
-        let off = legaia_asset::new_game::scus_file_offset(scus, ROT_LIMB_TABLE_VA)?;
+        let off = legaia_game_tables::new_game::scus_file_offset(scus, ROT_LIMB_TABLE_VA)?;
         let bytes = scus.get(off..off + ROT_LIMB_ROW_LEN * ROT_LIMB_ROWS)?;
         let mut rows = [[0u8; ROT_LIMB_ROW_LEN]; ROT_LIMB_ROWS];
         for (row, chunk) in rows.iter_mut().zip(bytes.as_chunks::<ROT_LIMB_ROW_LEN>().0) {

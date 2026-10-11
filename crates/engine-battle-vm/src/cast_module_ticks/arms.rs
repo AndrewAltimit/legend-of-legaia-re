@@ -1,5 +1,4 @@
 //! The trampoline-reached tick bodies of PROT 0938 / 0951 / 0952 / 0965.
-//! Split out of `cast_module_ticks.rs`.
 
 use super::*;
 

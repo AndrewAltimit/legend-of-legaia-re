@@ -1,7 +1,7 @@
 //! Disc oracle for the event-scene field mirrors of `--delilas-party`
 //! (`stone` map-stone confrontation, `taiku2` floating castle, `conc2`
 //! past Conkram): apply
-//! [`legaia_patcher::nivora_field::apply_event_field`] on a scratch
+//! [`legaia_delilas_party::nivora_field::apply_event_field`] on a scratch
 //! copy and prove, per scene:
 //!
 //! - the rebuilt bundle keeps its footprint and every section decodes
@@ -19,11 +19,11 @@
 //!
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_asset::monster_archive::PartPose;
-use legaia_patcher::delilas_party::PartyMapping;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::nivora_field::apply_event_field;
-use legaia_patcher::party_swap::event_field::{EVENT_SCENES, EventSceneSpec};
+use legaia_actor_formats::monster_archive::PartPose;
+use legaia_delilas_party::delilas_party::PartyMapping;
+use legaia_delilas_party::nivora_field::apply_event_field;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_party_swap::event_field::{EVENT_SCENES, EventSceneSpec};
 
 fn load_disc() -> Option<Vec<u8>> {
     let path = std::env::var("LEGAIA_DISC_BIN").ok()?;
@@ -47,13 +47,14 @@ fn rot(p: &PartPose) -> [[f32; 3]; 3] {
 
 /// Decode one bundle section by asset-type byte.
 fn section(bundle: &[u8], type_byte: u8) -> Vec<u8> {
-    let c = legaia_asset::parse_player_lzs(bundle, 7).expect("bundle container");
+    let c = legaia_container_formats::parse_player_lzs(bundle, 7).expect("bundle container");
     let d = c
         .descriptors
         .iter()
         .find(|d| d.type_byte == type_byte)
         .expect("section present");
-    legaia_asset::decode(bundle, d, legaia_asset::DecodeMode::Lzs).expect("section decodes")
+    legaia_container_formats::decode(bundle, d, legaia_container_formats::DecodeMode::Lzs)
+        .expect("section decodes")
 }
 
 /// Per-part posed world centroids + posed height of one TMD-section
@@ -64,12 +65,12 @@ fn posed_stats(
     member: usize,
     record: usize,
 ) -> (Vec<[f32; 3]>, f32) {
-    let entries = legaia_asset::pack::parse_pack(tmd_sec).expect("pack parses");
+    let entries = legaia_container_formats::pack::parse_pack(tmd_sec).expect("pack parses");
     let e = &entries[member];
     let bytes = &tmd_sec[e.byte_offset..e.byte_offset + e.size];
     let tmd = legaia_tmd::parse(bytes).expect("member TMD parses");
     let model = legaia_tmd::encode::decode_model(&tmd, bytes).expect("member decodes");
-    let anm = legaia_asset::player_anm::find_in_entry(bundle, 7)
+    let anm = legaia_actor_formats::player_anm::find_in_entry(bundle, 7)
         .into_iter()
         .next()
         .expect("scene ANM bundle");
@@ -122,7 +123,7 @@ fn head_tim_ranges(tims: &[u8], cluts: &[(u16, u16)]) -> Vec<(usize, usize)> {
 
 /// The members' first-CLUT VRAM coordinates, read off their own prims.
 fn member_clut_coords(tmd_sec: &[u8], members: &[usize]) -> Vec<(u16, u16)> {
-    let entries = legaia_asset::pack::parse_pack(tmd_sec).expect("pack");
+    let entries = legaia_container_formats::pack::parse_pack(tmd_sec).expect("pack");
     let mut out = Vec::new();
     for &m in members {
         let e = &entries[m];
@@ -179,8 +180,8 @@ fn verify_scene(spec: &EventSceneSpec, base_img: &[u8], patched_img: &[u8]) {
     let base_tmd = section(&base_bundle, 0x02);
     let new_tmd = section(&new_bundle, 0x02);
     assert_eq!(base_tmd.len(), new_tmd.len(), "{}: TMD size", spec.scene);
-    let base_entries = legaia_asset::pack::parse_pack(&base_tmd).expect("base pack");
-    let new_entries = legaia_asset::pack::parse_pack(&new_tmd).expect("new pack");
+    let base_entries = legaia_container_formats::pack::parse_pack(&base_tmd).expect("base pack");
+    let new_entries = legaia_container_formats::pack::parse_pack(&new_tmd).expect("new pack");
     assert_eq!(
         base_entries.len(),
         new_entries.len(),
@@ -361,7 +362,7 @@ fn event_mapping_permutation_is_honored_and_deterministic() {
         let p = DiscPatcher::open(image.to_vec()).expect("open");
         let bundle = p.read_entry_footprint(175).expect("stone bundle");
         let sec = section(&bundle, 0x02);
-        let entries = legaia_asset::pack::parse_pack(&sec).expect("pack");
+        let entries = legaia_container_formats::pack::parse_pack(&sec).expect("pack");
         let e = &entries[33];
         sec[e.byte_offset..e.byte_offset + e.size].to_vec()
     };

@@ -1,5 +1,5 @@
 //! Disc-gated tests for the **three-site** place rename
-//! (`legaia_asset::place_names` + `legaia_patcher::location_name::ManPlaceNames`
+//! (`legaia_scene_formats::place_names` + `legaia_patcher::location_name::ManPlaceNames`
 //! + `apply::rename_locations_by_target`).
 //!
 //! The three carriers a place name lives at:
@@ -14,12 +14,12 @@
 //! EDC/ECC-valid, and is idempotent. Gates on `LEGAIA_DISC_BIN`; skips + passes
 //! when unset.
 
-use legaia_asset::place_names::{WORLD_MAP_NAME_CAPACITY, WORLD_MAP_RECORD_STRIDE};
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_iso::write::{is_form2, mode2_form1_sector_is_valid};
 use legaia_patcher::apply::{self, RenameTarget};
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::location_name::ManPlaceNames;
+use legaia_scene_formats::place_names::{WORLD_MAP_NAME_CAPACITY, WORLD_MAP_RECORD_STRIDE};
 
 /// The three kingdom bundles whose MAN trails the world-map location table.
 const KINGDOM_ENTRIES: [usize; 3] = [86, 245, 392];

@@ -12,8 +12,8 @@
 //! host places it - so this pass keeps only the glide's.
 
 use super::World;
-use legaia_engine_vm::motion_pause::MOVING_CLASS;
-use legaia_engine_vm::motion_vm::{
+use legaia_engine_field::motion_pause::MOVING_CLASS;
+use legaia_engine_motion_vm::motion_vm::{
     FieldActorHeight, FieldActorInputs, field_actor_plan, rotate_toward_clamped,
 };
 
@@ -120,14 +120,17 @@ mod tests {
     /// A placement channel whose context carries `0x2000` - the glide arm.
     fn glide_npc(w: &mut World, slot: u8, x: i16, z: i16) {
         w.npcs.positions.insert(slot, (x, z));
-        let mut m = legaia_engine_vm::ambient_motion::AmbientMotion::new(u32::from(slot), 0);
+        let mut m = legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(u32::from(slot), 0);
         m.actor_flags = MOVING_CLASS | 0x2000;
         w.npcs.ambient.insert(
             slot,
             crate::world::FieldNpcAmbient {
                 defers: false,
                 walks: false,
-                variants: vec![(legaia_asset::man_motion::SELECTOR_DEFAULT, vec![0x01])],
+                variants: vec![(
+                    legaia_scene_formats::man_motion::SELECTOR_DEFAULT,
+                    vec![0x01],
+                )],
                 live: None,
                 vm: m,
             },

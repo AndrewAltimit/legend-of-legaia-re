@@ -15,17 +15,17 @@
 //! holds one field-VM script per record:
 //!
 //! - record `0` is the scene-entry **system script** - the one
-//!   `legaia_engine_core::scene::Scene::field_man_entry_script` resolves and
+//!   `legaia_engine_scene::scene::Scene::field_man_entry_script` resolves and
 //!   `enter_field_scene` loads via `load_field_script_at`;
 //! - records `1..` are per-actor **interaction scripts**, dispatched when
 //!   the player interacts with the placed actor.
 //!
 //! Each record opens with the same `[u8 N][N*2 locals][4-byte header]`
 //! prefix as the entry script, so the first opcode sits `1 + N*2 + 4`
-//! bytes in (see [`legaia_asset::man_section::ManFile::scene_entry_script`]).
+//! bytes in (see [`legaia_scene_formats::man_section::ManFile::scene_entry_script`]).
 //!
 //! This module pairs the MAN partition walk with the field-VM disassembler
-//! ([`legaia_engine_vm::field_disasm`]) so callers get a faithful,
+//! ([`legaia_scene_formats::field_disasm`]) so callers get a faithful,
 //! opcode-aware instruction stream per record instead of a byte scan. The
 //! distinction matters for the scripted-encounter hunt: a naive search for
 //! a "yield" byte (`0x37` / `0x41`) hits every yield opcode **and** every
@@ -46,20 +46,20 @@
 //! whether any P1 script carries an inline `[count=1][id=0x4F]` Tetsu
 //! literal at a real yield boundary - which adjudicates the inline-literal
 //! hypothesis against the indexed-formation-table hypothesis
-//! (see [`crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
+//! (see [`legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
 
-use legaia_asset::man_section::{ActorPlacement, ManFile};
-use legaia_engine_vm::field_disasm::{
+use legaia_scene_formats::field_disasm::{
     EffectKind, FlagKind, InsnInfo, LinearWalker, MenuCtrlKind, YieldKind, scene_change_name,
 };
+use legaia_scene_formats::man_section::{ActorPlacement, ManFile};
 
-use crate::encounter_record::EncounterRecord;
+use legaia_scene_formats::encounter_record::EncounterRecord;
 
 /// Inclusive `op0` range a genuine field-VM warp (`scene_transition`) uses.
 ///
 /// The WARP opcode is `0x3E` with `op0 = map_id + 100`, and only **7** door-warp
 /// destinations exist - `map_id 0..=6` (each selects a scene-*type* code overlay
-/// at PROT `0x4d + map_id`; see `legaia_engine_core::scene::DefaultMapIdResolver` and
+/// at PROT `0x4d + map_id`; see `legaia_engine_scene::scene::DefaultMapIdResolver` and
 /// `docs/subsystems/asset-loader.md`). So a real warp's `op0` is `100..=106`.
 ///
 /// This range matters for [`classify_placement`]: the per-actor walk is an

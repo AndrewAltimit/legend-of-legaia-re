@@ -9,7 +9,7 @@
 /// quat / euler / position delta) is renderer-side; on the data side
 /// they're just two signed-12-bit triplets per bone.
 ///
-/// PORT: FUN_8004998C (the 9-byte nibble unpack at `0x80049C18..` only; the pose blend - short-arc angles and the Euler-flip retry - is `crate::battle_pose_blend::blend_part_pose`, and [`BoneFrame::lerp16`] is a plain component lerp that no host poses through)
+/// PORT: FUN_8004998C (the 9-byte nibble unpack at `0x80049C18..` only; the pose blend - short-arc angles and the Euler-flip retry - is `legaia_engine_battle_vm::battle_pose_blend::blend_part_pose`, and [`BoneFrame::lerp16`] is a plain component lerp that no host poses through)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoneFrame {
     /// First 12-bit triplet (`puVar14[0..3]` after sign extension).

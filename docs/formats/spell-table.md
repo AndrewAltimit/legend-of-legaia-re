@@ -8,8 +8,8 @@ A static table in `SCUS_942.54` with one 12-byte record per spell id. It gives e
 | Name-pointer base | `DAT_800754D0 + id * 0xC` (the same records, viewed at `+8`) |
 | Extent | 190 records, ids `0x00..=0xBD`; ends exactly where the description-pointer table `0x80075DB0` begins |
 | Readers | battle-action SM `FUN_801E295C` states `0x28` / `0x3C` ([battle-action.md](../subsystems/battle-action.md)); menu info window `FUN_801D2E74` |
-| Parser | `legaia_asset::spell_names` (crate `game-tables`); CLI `asset spell-names <SCUS> [--json]` |
-| Engine mirror | `legaia_engine_core::retail_magic` |
+| Parser | `legaia_game_tables::spell_names` (crate `game-tables`); CLI `asset spell-names <SCUS> [--json]` |
+| Engine mirror | `legaia_engine_battle::retail_magic` |
 | Confidence | Confirmed (byte-pinned against the executable; disc-gated `spell_names_real`, `spell_catalog_disc`) |
 
 ```mermaid
@@ -71,9 +71,9 @@ class either: in the player Seru block (`0x32` cast class) the nine enemy-side
 spells carry `+1 = 0`, while the two ally-side ones carry a different `+0` as
 well - `0x83` Vera is `0x00 / 0x03` and `0x89` Orb is `0x01 / 0x04`.
 
-Decoders: `legaia_asset::spell_names::SpellEntry::sub_class` (the byte),
-`legaia_asset::cast_effect_pool::capture_module_prot` (the byte -> PROT entry),
-`legaia_engine_core::retail_magic::RetailSpell::effect_class` (the pinned
+Decoders: `legaia_game_tables::spell_names::SpellEntry::sub_class` (the byte),
+`legaia_overlay_images::cast_effect_pool::capture_module_prot` (the byte -> PROT entry),
+`legaia_engine_battle::retail_magic::RetailSpell::effect_class` (the pinned
 player-block column). See
 [cast-module.md](../subsystems/cast-module.md#what-the-port-runs).
 
@@ -97,7 +97,7 @@ extraction PROT entry `935 + sub_id` into the slot-B overlay buffer
 Because the sub-id is static spell-table data, the per-entry identity of the
 whole module band is a disc fact readable straight out of `SCUS_942.54` -
 enumerate every `'c'`-class record and group by sub-id
-(`legaia_asset::spell_names::capture_class_records` /
+(`legaia_game_tables::spell_names::capture_class_records` /
 `capture_module_prot`; disc-gated test `spell_names_real`). Modules are
 shared: a multi-spell cell dispatches per spell id at the module-head switch
 ([battle-formulas.md](../subsystems/battle-formulas.md#the-bypass-wrappers-heavy-defence-fold-does-not-mitigate-more)).
@@ -147,7 +147,7 @@ The strings use the MES `0x7C` line-break token; the retail shape for the
 player block is two lines - a title line then an effect line. The byte is
 not an animation id: the summon effect / animation is dispatched by
 `spell_id - 0x81` (see the summon section below).
-Parser: `legaia_asset::spell_names` (`SpellEntry::desc`).
+Parser: `legaia_game_tables::spell_names` (`SpellEntry::desc`).
 
 ### Name field (record `+8`) - a pointer into NUL-padded slack
 
@@ -157,7 +157,7 @@ whole edit budget, and it is **word alignment, not a fixed slot**: across the
 named block every extent is `4 * ceil((len + 1) / 4)` bytes, so a 13-byte name
 has three spare bytes and a 15-byte name one. A replacement of the same length
 always fits, a slightly longer one sometimes does, and the difference is
-per-row. `legaia_asset::spell_names::name_field` measures the run rather than
+per-row. `legaia_game_tables::spell_names::name_field` measures the run rather than
 assuming it - the slack ends at the first non-zero byte after the terminator -
 and returns `(file_offset, len, budget)` with `budget` counting the string
 plus its padding, one byte of which the replacement needs for its own NUL.
@@ -194,7 +194,7 @@ either coordinate is one write, not two - which is a trap for anything that
 enumerates "every spell id" and a shortcut for nothing, since ids that far up
 name no cast.
 
-`legaia_asset::spell_names` stops at the extent (`SPELL_COUNT = 190`). A reader
+`legaia_game_tables::spell_names` stops at the extent (`SPELL_COUNT = 190`). A reader
 that sweeps a full 256 ids prints the aliased rows too: `Spin Combo`,
 `Hurricane Kick`, `Mirage Lancer` and their description strings all appear
 above `0xD4`. They are Tactical Art names read through the wrong table, not
@@ -235,10 +235,10 @@ it pinned and corrected one curated target error, Mushura / "Crazy Driver" =
 single-enemy) plus target shape (agreeing everywhere except the Horn
 exception, which it checks explicitly).
 
-Decoded by `legaia_asset::spell_names::SpellEntry::target_shape`
+Decoded by `legaia_game_tables::spell_names::SpellEntry::target_shape`
 (`SpellTargetShape`). The engine sources the player Seru-magic catalog's MP +
 target from the user's `SCUS_942.54` via
-`legaia_engine_core::retail_magic::seru_magic_catalog_from_scus` (falling back
+`legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus` (falling back
 to the pinned `retail_seru_magic_catalog` on a disc-free build); the disc-gated
 `spell_catalog_disc` test confirms the decode reproduces all 11 pinned targets
 + MP byte-for-byte.
@@ -263,7 +263,7 @@ named exactly like a party caster: the AI spell picker (`FUN_801E9FD4`,
 magic-attack array at [`+0x21..=+0x23`](../subsystems/battle.md) (values `> 1`
 are live), writes it into the live actor at `+0x1DF`, and the battle-action SM
 prints `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). The enemy spell name
-is in this shared table, keyed by the record's global id, not the local entry id. Decoder: [`legaia_asset::spell_names`](../../crates/asset/README.md);
+is in this shared table, keyed by the record's global id, not the local entry id. Decoder: [`legaia_game_tables::spell_names`](../../crates/asset/README.md);
 CLI `asset spell-names <SCUS> [--json]`.
 
 ### The hardcoded special-cast switch (the second selection mechanism)
@@ -351,7 +351,7 @@ spells.)
 MP cost + target shape are byte-exact from `SCUS_942.54`; the element column
 is the cross-reference against the curated [`gamedata`](../reference/gamedata.md)
 magic table (every MP value matches). Spell id `0x81` = Gimard also matches
-the save-state pin recorded in `legaia_engine_core::capture_observations::seru_capture`.
+the save-state pin recorded in `legaia_parity::capture_observations::seru_capture`.
 
 | Id | Name | Element | MP | Target |
 |---|---|---|---|---|
@@ -398,7 +398,7 @@ The damage a summon deals is the `attacker_roll - defender_roll` margin after th
 2. **Scale** - `FUN_801dd864` scales the attacker roll by the element-affinity percent from the 8x8 byte matrix at `0x801F53E8`, then by the status-weaken bits (`+0x16e & 1` → 9/10, `& 2` → 7/10; a defender guard `+0x1de == 4` doubles its roll first), and - summon only - by the caster's magic level byte: `roll += roll*(level - 1) >> 3`. `FUN_801dd0ac` then re-rolls the attacker as `defender_roll + rand % ((summon_AGL >> 1) + 1) + summon_HP` whenever the scaled attacker has not already overwhelmed the defender.
 3. **Finish** - `FUN_801ddb30` applies the per-element resistance bits (the defender's ability words `+0x6bc` / `+0x6c0`), a `rand % 9 + 8` floor, the 9999 cap, the spirit-gauge fill, the damage-popup accumulator, MP drain, and the per-element stat debuff for the active field type (`*(DAT_801c9358 + 0x1d)`).
 
-Stages 1 and 2 are pure kernels in [`legaia_engine_vm::battle_formulas`](../subsystems/battle-formulas.md) (`summon_attacker_roll` / `summon_defender_roll` / `summon_predamage` / `apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` / `heal_summon_amount`). Stage 3 reads about twenty battle globals and mutates live battle state, so it lives in the battle context. The summon roll runs in the live battle (`World::player_summon_predamage`), so the `base_power` figures in `legaia_engine_core::retail_magic` are not what a cast deals. `FUN_801dd0ac` is dumped at `ghidra/scripts/funcs/overlay_battle_action_801dd0ac.txt`; see also the `FUN_801dd0ac` / `FUN_801dd864` / `FUN_801ddb30` rows in [`reference/functions.md`](../reference/functions.md).
+Stages 1 and 2 are pure kernels in [`legaia_engine_battle_vm::battle_formulas`](../subsystems/battle-formulas.md) (`summon_attacker_roll` / `summon_defender_roll` / `summon_predamage` / `apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` / `heal_summon_amount`). Stage 3 reads about twenty battle globals and mutates live battle state, so it lives in the battle context. The summon roll runs in the live battle (`World::player_summon_predamage`), so the `base_power` figures in `legaia_engine_battle::retail_magic` are not what a cast deals. `FUN_801dd0ac` is dumped at `ghidra/scripts/funcs/overlay_battle_action_801dd0ac.txt`; see also the `FUN_801dd0ac` / `FUN_801dd864` / `FUN_801ddb30` rows in [`reference/functions.md`](../reference/functions.md).
 
 #### Where a per-move power scalar does exist
 
@@ -406,7 +406,7 @@ Stages 1 and 2 are pure kernels in [`legaia_engine_vm::battle_formulas`](../subs
 
 Because the move id is this table's id space, joining the two labels every power record. Records `0x10..=0x2b` (move ids `0x25..=0x74`) are the **named monster special attacks** - each resolves to a non-empty name here. Records `0x01..=0x0f` (move ids `0x04..=0x1f`) are the unnamed **internal enemy-attack tiers**. The disc-gated `move_power_real` test pins that boundary against the live spell table.
 
-The engine mirror of the player block is `legaia_engine_core::retail_magic` (`SERU_MAGIC` + `retail_seru_magic_catalog`); the Seru that teach these ids are wired in `legaia_engine_core::seru_learning::SeruRegistry::retail`.
+The engine mirror of the player block is `legaia_engine_battle::retail_magic` (`SERU_MAGIC` + `retail_seru_magic_catalog`); the Seru that teach these ids are wired in `legaia_engine_battle::seru_learning::SeruRegistry::retail`.
 
 ## See also
 

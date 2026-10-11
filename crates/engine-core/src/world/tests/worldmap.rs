@@ -1,6 +1,7 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
-/// The raw ([`crate::input::PadButton`]) word that reaches the world-map
+/// The raw ([`legaia_engine_system::input::PadButton`]) word that reaches the world-map
 /// controller as the retail **packed** word `packed`. `FUN_801E76D4`'s
 /// literals are all packed bits; `WorldMapController::tick` converts, so a
 /// test that wants a named retail chord has to convert too.
@@ -163,11 +164,13 @@ fn world_map_without_entities_never_encounters() {
 /// returns to the world map.
 #[test]
 fn world_map_region_walk_triggers_battle() {
-    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
-    use crate::region_encounter::{EncounterRegion, RegionEncounterTable};
+    use legaia_engine_battle::monster_catalog::{
+        FormationDef, FormationSlot, MonsterCatalog, MonsterDef,
+    };
+    use legaia_engine_battle::region_encounter::{EncounterRegion, RegionEncounterTable};
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -326,10 +329,12 @@ fn world_map_without_regions_or_entities_never_encounters() {
 /// the battle is tagged to return to the overworld - not the field.
 #[test]
 fn world_map_encounter_flips_to_battle_returning_to_world_map() {
-    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{
+        FormationDef, FormationSlot, MonsterCatalog, MonsterDef,
+    };
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -399,7 +404,7 @@ fn world_map_idle_entity_interacts_only_when_player_stationary() {
     world.set_world_map_encounter(false, 50, 0, 64);
 
     // Player moving (d-pad direction held): no interaction.
-    world.set_pad(crate::input::PadButton::Up.mask());
+    world.set_pad(legaia_engine_system::input::PadButton::Up.mask());
     let _ = world.tick();
     assert!(
         !world
@@ -423,10 +428,12 @@ fn world_map_idle_entity_interacts_only_when_player_stationary() {
 /// shared one.
 #[test]
 fn world_map_encounter_zone_uses_its_own_formation() {
-    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{
+        FormationDef, FormationSlot, MonsterCatalog, MonsterDef,
+    };
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -761,7 +768,7 @@ fn world_map_npc_config_surfaces_interact_id() {
 /// later confirm/cancel press dismisses it (emits `DialogDismissed`).
 #[test]
 fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
-    let cross = crate::input::PadButton::Cross.mask();
+    let cross = legaia_engine_system::input::PadButton::Cross.mask();
     let mut world = World::default();
     world.enter_world_map();
     world.install_field_player(0);
@@ -833,10 +840,10 @@ fn world_map_npc_talk_to_opens_and_dismisses_dialogue() {
 /// [`world_map_region_walk_triggers_battle`], the same walk with no window.
 #[test]
 fn an_open_incense_window_drains_and_suppresses_overworld_rolls() {
-    use crate::region_encounter::{EncounterRegion, RegionEncounterTable};
+    use legaia_engine_battle::region_encounter::{EncounterRegion, RegionEncounterTable};
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -925,7 +932,7 @@ fn the_incense_wear_off_notice_raises_on_the_overworld() {
 /// step, the same as a straight one. Sampling per vsync made it two.
 #[test]
 fn a_diagonal_split_across_one_game_tick_drains_one_step() {
-    use crate::region_encounter::{EncounterRegion, RegionEncounterTable};
+    use legaia_engine_battle::region_encounter::{EncounterRegion, RegionEncounterTable};
 
     let mut world = World::default();
     world.toggles.live_gameplay_loop = true;

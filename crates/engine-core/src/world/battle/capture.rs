@@ -1,6 +1,5 @@
 //! Seru capture, shiny-enemy roll, summon spell-XP accrual, and seru-registry /
-//! trade install. Split out of `battle.rs` as additional `impl World` blocks; no
-//! logic change from the original inline definitions.
+//! trade install.
 
 use super::*;
 
@@ -13,7 +12,8 @@ impl World {
     /// Default chance (percent) that a capturable enemy spawns shiny.
     /// Matches the `--shiny-seru` randomizer default and the rare-encounter
     /// feel the feature is named for.
-    pub const DEFAULT_SHINY_CHANCE_PCT: u8 = 2;
+    pub const DEFAULT_SHINY_CHANCE_PCT: u8 =
+        legaia_engine_battle::seru_state::DEFAULT_SHINY_CHANCE_PCT;
 
     /// Set the per-battle shiny-enemy chance (percent, clamped to `0..=100`).
     /// `0` disables shiny enemies.
@@ -22,10 +22,10 @@ impl World {
     }
 
     /// Roll for a shiny capturable enemy at battle entry. On a hit (chance
-    /// [`crate::world::SeruState::shiny_chance_pct`]) one capturable monster slot (a monster the
+    /// [`legaia_engine_battle::seru_state::SeruState::shiny_chance_pct`]) one capturable monster slot (a monster the
     /// catalog maps to a Seru) is chosen, its battle stats boosted by
-    /// [`crate::seru_learning::SHINY_DAMAGE_BONUS_PCT`]% (HP / ATK / DEF /
-    /// SPD), and its slot recorded in [`crate::world::SeruState::shiny_enemy_slots`] so a capture
+    /// [`legaia_engine_battle::seru_learning::SHINY_DAMAGE_BONUS_PCT`]% (HP / ATK / DEF /
+    /// SPD), and its slot recorded in [`legaia_engine_battle::seru_state::SeruState::shiny_enemy_slots`] so a capture
     /// marks the learned spell shiny. Mirrors the retail `--shiny-seru` battle
     /// hook (`FUN_800513F0` → cave routine). Idempotent per battle; the slot
     /// sets are cleared by [`Self::enter_battle_from_formation`] first.
@@ -59,7 +59,7 @@ impl World {
 
     /// Apply the shiny +35% stat boost to one battle slot's combat stats.
     fn boost_shiny_stats(&mut self, slot: u8) {
-        let pct = crate::seru_learning::SHINY_DAMAGE_BONUS_PCT;
+        let pct = legaia_engine_battle::seru_learning::SHINY_DAMAGE_BONUS_PCT;
         let bump = |v: u16| (((v as u32) * (100 + pct)) / 100).min(u16::MAX as u32) as u16;
         let s = slot as usize;
         if let Some(a) = self.actors.get_mut(s) {
@@ -82,7 +82,7 @@ impl World {
     /// `hit_pct` only near death, zero at full HP) - mirroring retail capture,
     /// which is reliable only on a weakened Seru. On success the monster is
     /// downed (so it counts toward the wipe) and its id is logged into
-    /// [`crate::world::SeruState::battle_captures`] for post-battle Seru learning.
+    /// [`legaia_engine_battle::seru_state::SeruState::battle_captures`] for post-battle Seru learning.
     pub(in crate::world) fn resolve_capture(&mut self, target: u8, hit_pct: u8) {
         let (hp, max, monster_id, alive) = match self.actors.get(target as usize) {
             Some(a) => (
@@ -124,24 +124,28 @@ impl World {
         }
     }
 
-    /// Drain the monster ids captured this battle (see [`crate::world::SeruState::battle_captures`]).
+    /// Drain the monster ids captured this battle (see [`legaia_engine_battle::seru_state::SeruState::battle_captures`]).
     pub fn drain_battle_captures(&mut self) -> Vec<u16> {
         std::mem::take(&mut self.seru.battle_captures)
     }
 
-    /// Install the master [`crate::seru_learning::SeruRegistry`]. Boot wires
+    /// Install the master [`legaia_engine_battle::seru_learning::SeruRegistry`]. Boot wires
     /// this once; `Self::finish_battle` consults it to bank capture points.
-    pub fn set_seru_registry(&mut self, registry: crate::seru_learning::SeruRegistry) {
+    pub fn set_seru_registry(
+        &mut self,
+        registry: legaia_engine_battle::seru_learning::SeruRegistry,
+    ) {
         self.seru.registry = registry;
     }
 
     /// Install the magic-XP threshold table from `SCUS_942.54` bytes
-    /// ([`crate::magic_xp::thresholds_from_scus`], the static table at
+    /// ([`legaia_engine_battle::magic_xp::thresholds_from_scus`], the static table at
     /// `0x8007656C`). Boot wires this once; without it summon casts accrue
     /// spell XP but never level the spell up. Returns whether the table
     /// decoded.
     pub fn install_magic_xp_thresholds(&mut self, scus: &[u8]) -> bool {
-        self.tables.magic_xp_thresholds = crate::magic_xp::thresholds_from_scus(scus);
+        self.tables.magic_xp_thresholds =
+            legaia_engine_battle::magic_xp::thresholds_from_scus(scus);
         self.tables.magic_xp_thresholds.is_some()
     }
 
@@ -149,9 +153,10 @@ impl World {
     /// `--seru-trade` blob in preserved rodata). Boot wires this once from the
     /// booted disc; returns whether an *enabled* config was found. When absent
     /// or disabled, [`Self::open_seru_trade`] yields `None` and vendors don't
-    /// offer trades. See [`crate::seru_trade`].
+    /// offer trades. See [`legaia_engine_battle::seru_trade`].
     pub fn install_seru_trade_config(&mut self, scus: &[u8]) -> bool {
-        self.tables.seru_trade_config = legaia_asset::seru_trade::SeruTradeConfig::from_scus(scus);
+        self.tables.seru_trade_config =
+            legaia_game_tables::seru_trade::SeruTradeConfig::from_scus(scus);
         self.tables.seru_trade_config.is_some_and(|c| c.enabled)
     }
 
@@ -164,14 +169,14 @@ impl World {
     /// time. `vendor_offset` is the trader's phase into the bucket schedule
     /// (`ShopSession::vendor_bucket_offset`), so each merchant shows its own
     /// offer. `None` when seru trading isn't enabled. The host renders the
-    /// returned [`crate::seru_trade::SeruTradeSession`] and applies a confirmed
+    /// returned [`legaia_engine_battle::seru_trade::SeruTradeSession`] and applies a confirmed
     /// trade via [`Self::apply_seru_trade`].
     pub fn open_seru_trade(
         &self,
         vendor_offset: u8,
-    ) -> Option<crate::seru_trade::SeruTradeSession> {
+    ) -> Option<legaia_engine_battle::seru_trade::SeruTradeSession> {
         let config = self.tables.seru_trade_config.filter(|c| c.enabled)?;
-        Some(crate::seru_trade::SeruTradeSession::open(
+        Some(legaia_engine_battle::seru_trade::SeruTradeSession::open(
             config,
             vendor_offset,
             self.clock.play_time_seconds,
@@ -181,13 +186,13 @@ impl World {
 
     /// Apply a confirmed trade to the persistent roster (the spell list the next
     /// battle loads). Returns the outcome; on success the caller should
-    /// [`crate::seru_trade::SeruTradeSession::refresh`] its open session so the
+    /// [`legaia_engine_battle::seru_trade::SeruTradeSession::refresh`] its open session so the
     /// offer list reflects the new owned set.
     pub fn apply_seru_trade(
         &mut self,
-        trade: &legaia_asset::seru_trade::OwnerTrade,
-    ) -> crate::seru_trade::TradeResult {
-        crate::seru_trade::apply_trade(&mut self.party.roster.members, trade)
+        trade: &legaia_game_tables::seru_trade::OwnerTrade,
+    ) -> legaia_engine_battle::seru_trade::TradeResult {
+        legaia_engine_battle::seru_trade::apply_trade(&mut self.party.roster.members, trade)
     }
 
     /// Drain the summon-magic level-up events (`(party_slot, spell_id,
@@ -221,7 +226,7 @@ impl World {
     /// so at most one level is gained per cast - mirrored here. The leveled
     /// byte is what the next cast's magic-power stage reads
     /// ([`Self::caster_magic_power_byte`]). A level-up is recorded in
-    /// [`crate::world::SeruState::magic_level_ups`] (the banner the retail check fires as UI
+    /// [`legaia_engine_battle::seru_state::SeruState::magic_level_ups`] (the banner the retail check fires as UI
     /// element `0x65`).
     ///
     /// The special-battle word gates the accrual: the finisher's tail
@@ -247,7 +252,7 @@ impl World {
         // (REF: FUN_800402F4); a spell the roster doesn't carry accrues
         // nothing (retail falls through with slot 0x20 and touches bytes
         // past the arrays; the engine skips).
-        if let Some(up) = crate::magic_xp::accrue_and_level(
+        if let Some(up) = legaia_engine_battle::magic_xp::accrue_and_level(
             record,
             spell_id,
             gain,
@@ -260,7 +265,7 @@ impl World {
             // banner element on the battle context, and the action state
             // machine's Done band reads it - the `0x50` seed takes `0x96`
             // frames instead of `0x3C`
-            // (`legaia_engine_vm::battle_action::done`), so the banner this
+            // (`legaia_engine_battle_vm::battle_action::done`), so the banner this
             // level-up raises is on screen long enough to read. Cleared by
             // the next `ActionSeed`, exactly as retail clears it.
             //
@@ -273,21 +278,21 @@ impl World {
             // builder points at that buffer. The Done band's teardown unloads
             // it through `levelup_banner_element`, which retires the line.
             let spell_name = self.spell_banner_name(spell_id);
-            self.raise_magic_level_banner(crate::magic_xp::magic_level_increased_message(
-                &spell_name,
-            ));
+            self.raise_magic_level_banner(
+                legaia_engine_battle::magic_xp::magic_level_increased_message(&spell_name),
+            );
         }
     }
 
     /// Resolve this battle's captured monsters into Seru-learning progress.
     ///
-    /// Drains [`crate::world::SeruState::battle_captures`] (so the list is always cleared), maps
+    /// Drains [`legaia_engine_battle::seru_state::SeruState::battle_captures`] (so the list is always cleared), maps
     /// each captured monster id to its Seru id via [`crate::world::DiscTables::monster_catalog`],
-    /// and banks capture points against [`crate::world::SeruState::log`] for every active
-    /// party slot through [`crate::seru_learning::record_capture`]. Any Seru
+    /// and banks capture points against [`legaia_engine_battle::seru_state::SeruState::log`] for every active
+    /// party slot through [`legaia_engine_battle::seru_learning::record_capture`]. Any Seru
     /// that crosses its learn threshold adds its spell to the character's
     /// learned list (which [`Self::build_battle_spell_session`] then offers).
-    /// Accepted outcomes are stashed in [`crate::world::SeruState::last_capture_outcomes`] for the
+    /// Accepted outcomes are stashed in [`legaia_engine_battle::seru_state::SeruState::last_capture_outcomes`] for the
     /// host to drive the capture / learned banner. Monsters with no Seru, or
     /// any capture when the registry is empty, bank nothing.
     pub(super) fn resolve_captures(&mut self) {
@@ -306,9 +311,10 @@ impl World {
             .iter()
             .filter_map(|&mid| self.tables.monster_catalog.get(mid).and_then(|d| d.seru_id))
             .collect();
-        let mut first_accepted: Option<(u16, crate::seru_learning::CaptureOutcome)> = None;
+        let mut first_accepted: Option<(u16, legaia_engine_battle::seru_learning::CaptureOutcome)> =
+            None;
         for sid in seru_ids {
-            let outcome = crate::seru_learning::record_capture(
+            let outcome = legaia_engine_battle::seru_learning::record_capture(
                 &self.seru.registry,
                 &mut self.seru.log,
                 sid,
@@ -323,7 +329,7 @@ impl World {
                 // level / XP slots.
                 for learn in &outcome.learns {
                     if let Some(rec) = self.party.roster.members.get_mut(learn.char_slot as usize) {
-                        crate::magic_xp::learn_spell_prepend(rec, learn.spell_id);
+                        legaia_engine_battle::magic_xp::learn_spell_prepend(rec, learn.spell_id);
                     }
                 }
                 if first_accepted.is_none() {
@@ -343,7 +349,7 @@ impl World {
                 .map(|s| s.name.clone())
                 .unwrap_or_else(|| format!("Seru {sid:#04X}"));
             let spell_catalog = &self.tables.spell_catalog;
-            let banner = crate::seru_learning::SeruCaptureSession::new(
+            let banner = legaia_engine_battle::seru_learning::SeruCaptureSession::new(
                 seru_name,
                 sid,
                 outcome,
@@ -400,7 +406,9 @@ impl World {
     /// Drain the capture outcomes from the most recently finished battle.
     /// The line hosts draw is `PartyState::current_capture_banner` (source 3
     /// of `battle_hud::battle_banner_message`); this is the record behind it.
-    pub fn drain_last_capture_outcomes(&mut self) -> Vec<crate::seru_learning::CaptureOutcome> {
+    pub fn drain_last_capture_outcomes(
+        &mut self,
+    ) -> Vec<legaia_engine_battle::seru_learning::CaptureOutcome> {
         std::mem::take(&mut self.seru.last_capture_outcomes)
     }
 }

@@ -1,7 +1,7 @@
 //! Disc-gated: drive the **real** parsed dance step chart (PROT 0980) through
-//! the engine dance rules engine ([`legaia_engine_core::dance`]).
+//! the engine dance rules engine ([`legaia_engine_core::disc_readers::dance`]).
 //!
-//! The chart parser itself is pinned by `legaia-asset`'s `dance_chart_real`;
+//! The chart parser itself is pinned by `legaia-minigame-formats`' `dance_chart_real`;
 //! this closes the engine end - that [`DanceGame::from_overlay`] loads the baked
 //! chart off the user's disc and a full beat-clock + judge run is driveable on
 //! it (no synthetic fixture). No Sony bytes are asserted, only structural facts:
@@ -12,10 +12,10 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::static_overlay;
-use legaia_engine_core::dance::{
+use legaia_engine_minigames::dance::{
     DANCE_SCORE_BOX_X, DanceDir, DanceEvent, DanceGame, DanceHudDraw, Judge, SpritePartEmit,
 };
+use legaia_overlay_images::static_overlay;
 use legaia_prot::archive::Archive;
 
 fn prot_dat() -> Option<PathBuf> {
@@ -33,7 +33,7 @@ fn dance_overlay() -> Option<Vec<u8>> {
     let prot = prot_dat()?;
     let mut archive = Archive::open(&prot).expect("open PROT.DAT");
     let rec = static_overlay::overlay_map()
-        .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+        .by_prot_index(legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
         .expect("dance overlay in static map");
     let entry = archive
         .entries
@@ -127,7 +127,8 @@ fn real_tables_drive_the_rival_dancers() {
         eprintln!("[skip] dance overlay unavailable (disc-gated)");
         return;
     };
-    let tables = legaia_asset::dance_chart::parse_tables(&overlay).expect("scoring tables decode");
+    let tables = legaia_minigame_formats::dance_chart::parse_tables(&overlay)
+        .expect("scoring tables decode");
     // Every kind's bonus row is the retail `k, 2k, 3k` shape - the (lane + 1)
     // scaling is baked into the data, not applied by the code.
     for kind in 0..4 {
@@ -188,9 +189,10 @@ fn real_tables_drive_the_rival_dancers() {
 /// locks that the runtime entry point resolves a real, scoreable chart.
 #[test]
 fn playwindow_load_path_enters_and_scores_a_dance() {
-    use legaia_engine_core::input::PadButton;
-    use legaia_engine_core::scene::SceneHost;
-    use legaia_engine_core::world::{SceneMode, World};
+    use legaia_engine_core::scene_host::SceneHost;
+    use legaia_engine_core::world::World;
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_system::input::PadButton;
 
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
@@ -204,7 +206,7 @@ fn playwindow_load_path_enters_and_scores_a_dance() {
         }
     };
     let rec = static_overlay::overlay_map()
-        .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+        .by_prot_index(legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
         .expect("dance overlay in static map");
     let raw = host
         .index
@@ -270,7 +272,7 @@ fn playwindow_load_path_enters_and_scores_a_dance() {
 /// what this pins - off the real table, not a fixture.
 #[test]
 fn each_mode_spawns_its_own_floor() {
-    use legaia_engine_core::dance::DanceMode;
+    use legaia_engine_minigames::dance::DanceMode;
 
     let Some(overlay) = dance_overlay() else {
         eprintln!("[skip] dance overlay unavailable (disc-gated)");
@@ -320,7 +322,7 @@ fn each_mode_spawns_its_own_floor() {
     let demo = DanceGame::from_overlay_for_mode(&overlay, DanceMode::HowTo, true).unwrap();
     assert_eq!(
         demo.song_len(),
-        legaia_engine_core::dance::SONG_LEN_SHORT,
+        legaia_engine_minigames::dance::SONG_LEN_SHORT,
         "the how-to demo's song length is fixed short"
     );
 }
@@ -390,7 +392,7 @@ fn the_hud_driver_and_emitter_produce_real_draws_off_the_disc() {
     // Plus the human's beat track (`FUN_801D2524`): the arrow and caps, the
     // clipped notes and body, the stock markers (submission order).
     let frame = game.hud_draw_quads(false);
-    let (tx, ty) = legaia_engine_core::dance::DANCE_TRACK_XY;
+    let (tx, ty) = legaia_engine_minigames::dance::DANCE_TRACK_XY;
     let track = game.beat_track_quads(0, tx, ty);
     assert!(
         track.len() >= 3 + 12 + 3,
@@ -435,7 +437,7 @@ fn real_dance_cast_populates_the_dancer_actor_records() {
     };
     let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
 
-    let cast = legaia_asset::dance_cast::parse(&overlay).expect("cast tables decode");
+    let cast = legaia_minigame_formats::dance_cast::parse(&overlay).expect("cast tables decode");
     assert_eq!(game.dancer_actors().len(), game.dancer_count());
     assert_eq!(
         game.dancer_actors().len(),
@@ -482,7 +484,7 @@ fn real_dance_cast_populates_the_dancer_actor_records() {
     assert!(matches!(ev, DanceEvent::Miss), "{ev:?}");
     let after = game.dancer_actors()[0].field_5c;
     let miss = cast.kinds[cast.qualifier[0].kind as usize].moves
-        [legaia_asset::dance_cast::MOVE_MISS_SQUARE]
+        [legaia_minigame_formats::dance_cast::MOVE_MISS_SQUARE]
         .anim_id
         & 0x1FF;
     assert_eq!(after, miss as i16, "the miss reaction clip is now bound");
@@ -490,7 +492,7 @@ fn real_dance_cast_populates_the_dancer_actor_records() {
     assert_eq!(
         game.dancer_clip_frames()[0].clip_rate,
         cast.kinds[cast.qualifier[0].kind as usize].moves
-            [legaia_asset::dance_cast::MOVE_MISS_SQUARE]
+            [legaia_minigame_formats::dance_cast::MOVE_MISS_SQUARE]
             .rate,
         "+0x6A takes the pair's rate word"
     );

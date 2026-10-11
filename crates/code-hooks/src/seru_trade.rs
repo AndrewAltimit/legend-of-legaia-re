@@ -8,19 +8,19 @@
 //! deterministic function of `(master_seed, vendor_id, in-game-time bucket,
 //! the character party's currently-owned seru)`, evaluated identically by the
 //! randomizer's preview and the engine's live UI (the shared kernel
-//! [`legaia_asset::seru_trade`]). So all the randomizer embeds on the disc is a
+//! [`legaia_game_tables::seru_trade`]). So all the randomizer embeds on the disc is a
 //! tiny config blob - an *enabled* flag plus the run's master seed - and the
 //! engine recomputes the per-vendor offers at runtime, reseeding as the retail
 //! play-time counter crosses each two-hour boundary.
 //!
 //! ## Where the blob lives
 //!
-//! The blob ([`legaia_asset::seru_trade::SeruTradeConfig::to_blob`], 24 bytes)
+//! The blob ([`legaia_game_tables::seru_trade::SeruTradeConfig::to_blob`], 24 bytes)
 //! is written into the preserved 1028-byte rodata zero gap at `0x8007AB38` in
 //! `SCUS_942.54` - the same loaded-and-preserved padding the
 //! [`crate::item_name`] string and the [`crate::bonus_drop`] / [`crate::flee_exp`]
 //! code hooks use, but at a higher, non-overlapping offset
-//! ([`legaia_asset::seru_trade::CONFIG_VA`] = `0x8007AF00`). It is plain data,
+//! ([`legaia_game_tables::seru_trade::CONFIG_VA`] = `0x8007AF00`). It is plain data,
 //! not code: nothing in the retail executable reads it (retail has no trade UI),
 //! so on a real console the patch is inert; the engine is what gives
 //! it meaning.
@@ -33,8 +33,8 @@
 
 use anyhow::{Result, bail};
 
-use legaia_asset::item_names;
-use legaia_asset::seru_trade::{CONFIG_LEN, CONFIG_MAGIC, CONFIG_VA, SeruTradeConfig};
+use legaia_game_tables::item_names;
+use legaia_game_tables::seru_trade::{CONFIG_LEN, CONFIG_MAGIC, CONFIG_VA, SeruTradeConfig};
 
 /// A planned seru-trade config write: the resolved `SCUS_942.54` file offset and
 /// the serialized blob to drop there.
@@ -84,7 +84,7 @@ impl SeruTradePlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::seru_trade::DEFAULT_MAX_OFFERS;
+    use legaia_game_tables::seru_trade::DEFAULT_MAX_OFFERS;
 
     /// Minimal PSX-EXE whose `t_addr` segment spans [`CONFIG_VA`] so the planner
     /// can be exercised without any Sony bytes.

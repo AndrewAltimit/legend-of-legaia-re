@@ -31,7 +31,7 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -64,8 +64,8 @@ fn gated() -> Option<PathBuf> {
 /// made every battle in this file resolve as an instant PartyWipe.
 fn seed_new_game_party(world: &mut legaia_engine_core::world::World, extracted: &std::path::Path) {
     let scus = std::fs::read(extracted.join("SCUS_942.54")).expect("read SCUS_942.54");
-    let party =
-        legaia_asset::new_game::StartingParty::from_scus(&scus).expect("SCUS new-game template");
+    let party = legaia_game_tables::new_game::StartingParty::from_scus(&scus)
+        .expect("SCUS new-game template");
     world.seed_starting_party(&party);
 }
 
@@ -105,13 +105,13 @@ fn rikuroa_man_carries_the_caruban_stager_placement_and_formation_row() {
         .field_man_payload(&host.index)
         .expect("MAN payload read")
         .expect("rikuroa resolves its streaming carrier MAN");
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("MAN parses");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("MAN parses");
 
     // The stager detection recovers exactly one site: P1[3], formation row
     // 17, park gate 0x142, stationed at the nest tile (69, 75) by its own
     // `0x4C 0x51` leg.
     let sites =
-        legaia_engine_core::man_field_scripts::boss_stager_placements(&man_file, &man_bytes);
+        legaia_engine_field::man_field_scripts::boss_stager_placements(&man_file, &man_bytes);
     assert_eq!(sites.len(), 1, "rikuroa carries one boss-stager placement");
     let site = sites[0];
     assert_eq!(site.placement_index, CARUBAN_STAGER_SLOT as usize);
@@ -127,7 +127,7 @@ fn rikuroa_man_carries_the_caruban_stager_placement_and_formation_row() {
 
     // Formation row 17 = lone monster 0x49 (count 1), read straight off the
     // variant MAN's encounter section.
-    let record = legaia_engine_core::encounter_man::formation_record_for_row(
+    let record = legaia_engine_battle::encounter_man::formation_record_for_row(
         &man_bytes,
         CARUBAN_FORMATION_ROW as usize,
     )
@@ -140,7 +140,7 @@ fn rikuroa_man_carries_the_caruban_stager_placement_and_formation_row() {
 
     // The record body carries the staged-marker SET and the battle op as
     // adjacent script bytes (`52 89` .. `3E FF 11`).
-    let (start, _pc0, len) = legaia_engine_core::man_field_scripts::partition_record_span(
+    let (start, _pc0, len) = legaia_engine_field::man_field_scripts::partition_record_span(
         &man_file,
         &man_bytes,
         1,
@@ -241,7 +241,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
     // own bytes stage + enter the fight. Toggle confirm so the record's
     // inline dialog pages advance on fresh press edges.
     host.world.seat_player_at_tile(69, 75);
-    let cross_mask = legaia_engine_core::input::PadButton::Cross.mask();
+    let cross_mask = legaia_engine_system::input::PadButton::Cross.mask();
     let mut ticks = 0u32;
     let mut entered_battle = false;
     while ticks < 4000 {
@@ -252,10 +252,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
         });
         host.tick().expect("tick");
         ticks += 1;
-        if matches!(
-            host.world.mode,
-            legaia_engine_core::world::SceneMode::Battle
-        ) {
+        if matches!(host.world.mode, legaia_engine_mode::mode::SceneMode::Battle) {
             entered_battle = true;
             break;
         }
@@ -336,11 +333,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
         }
     }
     let mut ticks = 0u32;
-    while matches!(
-        host.world.mode,
-        legaia_engine_core::world::SceneMode::Battle
-    ) && ticks < 2000
-    {
+    while matches!(host.world.mode, legaia_engine_mode::mode::SceneMode::Battle) && ticks < 2000 {
         // This phase forces the VICTORY outcome - the subject is the flag
         // chain, not the fight's balance. The Caruban's battle-entry action
         // was staged before the harness zeroed it, and that staged strike
@@ -364,7 +357,7 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
         ticks += 1;
     }
     assert!(
-        matches!(host.world.mode, legaia_engine_core::world::SceneMode::Field),
+        matches!(host.world.mode, legaia_engine_mode::mode::SceneMode::Field),
         "battle tears down to the field"
     );
     let mut ticks = 0u32;
@@ -438,7 +431,7 @@ fn rikuroa_stager_and_p2_50_are_blocked_by_the_gate_flag_once_set() {
         .field_man_payload(&host.index)
         .expect("MAN payload read")
         .expect("rikuroa resolves its streaming carrier MAN");
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("MAN parses");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("MAN parses");
     assert!(
         !host
             .world
@@ -462,7 +455,7 @@ fn town01_p2_3_sets_flag_549_by_record_execution() {
     // New-game prologue hand-off into Rim Elm (the path that installs the
     // opening cutscene timeline record P2[3]).
     host.world.cutscene.entering_town01_opening = true;
-    host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
     assert!(
         host.world.cutscene_timeline_active(),

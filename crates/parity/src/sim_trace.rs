@@ -18,7 +18,7 @@
 //! Retail-unit mapping on the engine side:
 //!
 //! - Every `cam.*` channel is the corresponding **live retail camera global**
-//!   off [`Camera::globals`](legaia_engine_core::camera::Camera), which is the
+//!   off [`Camera::globals`](legaia_engine_field::camera::Camera), which is the
 //!   same word `trace_capture.py` reads out of the recomp:
 //!
 //!   | channel | global | note |
@@ -41,7 +41,7 @@
 //!   minigame sessions), so a diff flags them as absent instead of faking a
 //!   match.
 //!
-//! [`legaia_engine_core::world::CameraRig::state`]: legaia_engine_core::world::World
+//! [`legaia_engine_field::camera_rig::CameraRig::state`]: legaia_engine_core::world::World
 
 use std::f32::consts::TAU;
 use std::path::Path;
@@ -49,8 +49,9 @@ use std::path::Path;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::{BootConfig, BootSession};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 
 /// Camera pose sample in retail units.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,18 +123,18 @@ pub fn radians_to_units(rad: f32) -> u16 {
 /// for a mode.
 ///
 /// Delegates to
-/// [`GameMode::for_scene_mode`](legaia_engine_core::mode::GameMode::for_scene_mode)
+/// [`GameMode::for_scene_mode`](legaia_engine_mode::mode::GameMode::for_scene_mode)
 /// instead of carrying its own table:
 /// the five minigame variants all answer `0x19` (`OTHER MODE`) because in
 /// retail they *are* one mode, told apart by the warp sub-id register and not
 /// by the mode word. Spelling that out a second time here is how the trace
 /// channel came to report `None` for every minigame frame.
 pub fn scene_mode_to_retail(mode: SceneMode) -> Option<u16> {
-    legaia_engine_core::mode::GameMode::for_scene_mode(mode).map(|gm| gm.as_index() as u16)
+    legaia_engine_mode::mode::GameMode::for_scene_mode(mode).map(|gm| gm.as_index() as u16)
 }
 
-/// Sample one canonical frame from a live [`BootSession`].
-pub fn sample_frame(session: &BootSession) -> SimTraceFrame {
+/// Sample one canonical frame from a live [`NativeSession`].
+pub fn sample_frame(session: &NativeSession) -> SimTraceFrame {
     let world = &session.host.world;
     let cam = &session.camera;
 
@@ -204,7 +205,7 @@ pub fn sample_frame(session: &BootSession) -> SimTraceFrame {
 /// Boot a scene and tick `frames` sim frames, sampling the canonical trace
 /// after boot and after every tick (`frames + 1` records). With
 /// `field_live`, the session drops into a live field scene first
-/// ([`BootSession::enter_field_live`]) so the field VM + locomotion +
+/// ([`NativeSession::enter_field_live`]) so the field VM + locomotion +
 /// camera events actually run, the same way the windowed host arms them.
 pub fn build_sim_trace(
     scene_name: &str,
@@ -218,11 +219,14 @@ pub fn build_sim_trace(
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     if field_live {
-        session.enter_field_live(scene_name, &crate::boot::FieldLiveOpts::default())?;
+        session.enter_field_live(
+            scene_name,
+            &legaia_engine_session::session::FieldLiveOpts::default(),
+        )?;
     }
     let mut out = Vec::with_capacity((frames as usize).saturating_add(1));
     out.push(sample_frame(&session));

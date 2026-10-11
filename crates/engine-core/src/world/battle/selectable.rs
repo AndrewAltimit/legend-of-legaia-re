@@ -5,14 +5,14 @@
 //! the two never met. `BattleActor::field_flags` is the raw `+0x16E` word, and
 //! the cast band writes it directly (a Seru debuff ORs its bit in); the status
 //! tracker holds the same conditions as a typed
-//! [`vm::status_effects::StatusInstance`] list, and the turn loop reads that.
+//! [`legaia_engine_battle_vm::status_effects::StatusInstance`] list, and the turn loop reads that.
 //! Retail has one representation, so a scan that asks the raw word and a loop
 //! that asks the typed list can disagree about the same actor.
 //!
 //! [`World::raw_status_word`] is the bridge, and it is a *composition* rather
 //! than a choice: the typed list packs to its retail bits through
-//! [`vm::status_effects::pack_display_flags`], whose bit map is pinned
-//! bit-by-bit in `vm::status_effects::display_flags`, and the raw word is
+//! [`legaia_engine_battle_vm::status_effects::pack_display_flags`], whose bit map is pinned
+//! bit-by-bit in `legaia_engine_battle_vm::status_effects::display_flags`, and the raw word is
 //! OR-ed in unchanged. Nothing is dropped in either direction, so the result
 //! is the word retail would be holding - including the `0x380` delegation
 //! group, which is an equipment passive rather than an ailment and therefore
@@ -22,13 +22,15 @@
 //! [`docs/subsystems/battle-action.md`](../../../../../docs/subsystems/battle-action.md).
 
 use super::*;
-use vm::battle_action::{PoolActor, first_selectable_target, next_selectable_actor};
+use legaia_engine_battle_vm::battle_action::{
+    PoolActor, first_selectable_target, next_selectable_actor,
+};
 
 impl World {
     /// Actor `slot`'s retail `+0x16E` status word.
     ///
     /// The raw field the cast band writes, OR the typed status list packed
-    /// through [`vm::status_effects::pack_display_flags`]. Faint contributes
+    /// through [`legaia_engine_battle_vm::status_effects::pack_display_flags`]. Faint contributes
     /// no bit (retail has no KO flag - a dead actor is one whose `+0x14C` is
     /// zero), which is why every consumer pairs this with liveness.
     ///
@@ -39,7 +41,9 @@ impl World {
             .get(usize::from(slot))
             .map(|a| a.battle.field_flags)
             .unwrap_or(0);
-        raw | vm::status_effects::pack_display_flags(self.battle.status_effects.statuses(slot))
+        raw | legaia_engine_battle_vm::status_effects::pack_display_flags(
+            self.battle.status_effects.statuses(slot),
+        )
     }
 
     /// The party rows as the two pool scans read them: liveness halfword plus

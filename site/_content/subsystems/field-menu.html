@@ -7,11 +7,11 @@
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Window table</dt><dd>52 records at menu-overlay VA <code>0x801E4738</code> (PROT 0899 file <code>0x15F20</code>); parser <code>legaia_asset::menu_windows</code></dd>
+    <dt>Window table</dt><dd>52 records at menu-overlay VA <code>0x801E4738</code> (PROT 0899 file <code>0x15F20</code>); parser <code>legaia_game_tables::menu_windows</code></dd>
     <dt>Record</dt><dd>0x10 bytes: content id, park edge, window class (2 tab / 3 standard / 4 list), content rect <code>x,y,w,h</code>, renderer VA</dd>
     <dt>Choreography</dt><dd>Windows slide in / out via the <a href="actor-vm.html">window-widget VM</a>; a closed window parks offscreen at its park edge</dd>
     <dt>Data read</dt><dd>The live <code>0x414</code>-byte character records at <code>0x80084708</code> - the same block the save file copies</dd>
-    <dt>In the port</dt><dd><code>engine-ui</code> draw builders (wgpu-free, shared by native window and browser) over <code>engine-core::pause_screens</code></dd>
+    <dt>In the port</dt><dd><code>engine-ui</code> draw builders (wgpu-free, shared by native window and browser) over <code>engine-core::world_views::pause_screens</code></dd>
     <dt>Confidence</dt><dd>Confirmed - table byte-matched disc-vs-RAM; layouts pinned by GPU-prim scans of menu captures (<a href="#how-we-know">how we know</a>)</dd>
   </dl>
   <table class="data-table">
@@ -177,7 +177,7 @@
     <li>Left / Right are the only scroll, one whole page at a time.</li>
     <li>Confirming a disabled (grey) row buzzes; a list parked behind the command window draws every row white.</li>
   </ul>
-  <p>The menu overlay builds each row as a packed u16 - class nibble, disabled bit, alt-ink bit, 12-bit payload - and the kernel only reads them; a small global protocol carries mode, selection and scroll between the two. The per-row draw switches on the class nibble: bag rows with counts, equip candidates with slot pictograms, shop rows with prices, plain names. Engine port: <code>engine-core::pause_screens::list_kernel_navigate</code> + <code>engine-ui::pause_lists</code>.</p>
+  <p>The menu overlay builds each row as a packed u16 - class nibble, disabled bit, alt-ink bit, 12-bit payload - and the kernel only reads them; a small global protocol carries mode, selection and scroll between the two. The per-row draw switches on the class nibble: bag rows with counts, equip candidates with slot pictograms, shop rows with prices, plain names. Engine port: <code>engine-menus::pause_screens::list_kernel_navigate</code> + <code>engine-ui::menu::screens</code>.</p>
 </section>
 
 <section class="doc-section" id="items-use-flows">
@@ -201,7 +201,7 @@
 
 <section class="doc-section" id="engine-port">
   <h2>In the port</h2>
-  <p>The engine parses the window table off the player's disc at boot and frames each screen with the same 9-slice chrome. The menu's two-level stack lives on the session (<code>engine-core::field_menu</code>, <code>pause_screens</code>), so both hosts walk identical screens; every draw builder lives in <code>engine-ui</code>, the wgpu-free leaf, which is what lets the browser play page draw the same menus without linking wgpu. Panels are drawn at the byte-pinned offsets and checked against menu captures pixel by pixel.</p>
+  <p>The engine parses the window table off the player's disc at boot and frames each screen with the same 9-slice chrome. The menu's two-level stack lives on the session (<code>engine-menus::field_menu</code>, <code>pause_screens</code>), so both hosts walk identical screens; every draw builder lives in <code>engine-ui</code>, the wgpu-free leaf, which is what lets the browser play page draw the same menus without linking wgpu. Panels are drawn at the byte-pinned offsets and checked against menu captures pixel by pixel.</p>
   <p>Opening and closing are one rule too. A Start press goes through the same engine call on the native window, the browser page and a headless run, so a press that retail refuses (during a conversation, say) is refused everywhere. Retail does not cut straight to the menu: the field fades toward black for a few frames and the first window appears only once the fade is deep enough, and on the way out the fade lifts with the field running again. Both hosts keep drawing the field until the menu exists, send it no input before then, and draw the fade as the same subtractive quad the shop's opening uses.</p>
   <details class="disclosure">
     <summary>Deep dive: shared draw primitives and CLUT staging</summary>

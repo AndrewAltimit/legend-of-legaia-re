@@ -21,11 +21,10 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{
-    CLEAN_RESYNC_INSNS, partition_record_span, scene_man_carriers,
-};
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker};
+use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
+use legaia_engine_scene::man_census::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
 /// One decoded `0x4C 0xD8` instruction site in a scene MAN.
 struct Site {
@@ -67,7 +66,7 @@ fn main() -> anyhow::Result<()> {
             if raw > 0 {
                 raw_pairs.insert((name.clone(), carrier.entry_idx), raw);
             }
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             for partition in 0..3 {

@@ -23,7 +23,8 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_mednafen::{SaveState, ScenarioManifest, extract::ram_slice, scenarios};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::{ScenarioManifest, extract::ram_slice, scenarios};
 
 /// PSX address of the active-formation cell (`u8[4]`, one monster id per slot).
 const FORMATION_CELL: u32 = 0x8007_BD0C;

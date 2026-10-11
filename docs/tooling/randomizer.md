@@ -395,7 +395,7 @@ partition-1 per-actor interaction scripts (a chest is an interactable actor).
 
 `chest::give_item_sites` finds them with a **dialogue-skipping opcode-aware
 walk** - it walks each partition-1 record's interaction script from its true
-entry PC with the field-VM disassembler ([`legaia_asset::field_disasm`], moved
+entry PC with the field-VM disassembler ([`legaia_scene_formats::field_disasm`], moved
 into Track 1 for exactly this reuse). A chest's give op almost always sits
 **after** the inline dialogue that announces it ("There is a {item} in the
 treasure chest!" → give → "{name} now has the {item}!"). That dialogue is a
@@ -524,7 +524,7 @@ current table (the audit surface).
 The fishing minigame's prize counters (the **Buma** and **Vidna** ponds) sell
 accessories and consumables for **fishing points** rather than gold. Each prize
 is a 12-byte row `[u32 limit][u32 price][u32 item_id]` in the raw fishing
-overlay (PROT entry **972**, `legaia_asset::fishing_exchange`). `--fishing-price
+overlay (PROT entry **972**, `legaia_minigame_formats::fishing_exchange`). `--fishing-price
 ITEM=POINTS` sets the `price` of every row granting `ITEM` (id in decimal or
 `0xHH`) - e.g. `--fishing-price 0x6F=500` drops the Buma Water Egg from 20,000
 to 500 points. The price is **both** the point cost and the "only appears once
@@ -1108,7 +1108,7 @@ gear in a slot); `Random` draws each row's mask from its category pool. Like the
 stat pass it edits bonus **rows** (not item ids) and skips rows no equippable item
 references, so a garbage row can't hand a real item an unequippable (zero) mask.
 The engine reads the same `+6` byte
-(`legaia_engine_core::equipment::DiscEquipInfo::can_equip`), so a patched disc
+(`legaia_engine_menus::equipment::DiscEquipInfo::can_equip`), so a patched disc
 re-gates each character's equip picker. `legaia-patcher equip-bonuses` lists the
 current mask (`V/N/G` / `any`) beside each row.
 
@@ -1303,7 +1303,7 @@ byte, e.g. Gala's spirit-only Biron Rage, is skipped), then recompresses to fit.
 no menu display). A combo shared across characters (e.g. `UDU`) edits the
 matching art in each file. `legaia-patcher arts` lists every art's combo, AP, and
 current power tiers. Seedless targeted edit; no Sony bytes. Module
-[`legaia_patcher::arts_power`](../../crates/arts-patch/src/arts_power.rs); disc oracle
+[`legaia_arts_patch::arts_power`](../../crates/arts-patch/src/arts_power.rs); disc oracle
 `crates/patcher/tests/arts_power_real.rs`. The web patcher exposes this (and the
 AP override below) as a per-art picker - "Tactical-Art overrides": choose the art
 by name, pick a per-hit damage tier or "no damage", and a note under the row
@@ -1317,7 +1317,7 @@ spells out any combo-sharing art the edit also reaches; the raw
 (`0x0C..=0x1F`, or `0` to disable the hits), sets every active per-strike byte of
 the named Super Art (hit count preserved), and is a same-size `record0` edit with
 no display copy to sync. Module
-[`legaia_patcher::super_art_power`](../../crates/arts-patch/src/super_art_power.rs);
+[`legaia_arts_patch::super_art_power`](../../crates/arts-patch/src/super_art_power.rs);
 disc oracle `crates/patcher/tests/super_art_power_real.rs`. Browser: the fifteen
 Super Arts are options in the "Tactical-Art overrides" **picker**, in a per-
 character `... - Super Arts` group beside that character's regular arts. A Super
@@ -1513,7 +1513,7 @@ frontmost **capturable** enemy spawns as a rare *shiny* variant: +35% combat
 stats and a translucent render, and the Seru captured from it deals **+35%
 damage** on every future cast, permanently. A shiny cast draws the summoned
 creature semi-transparent with a "+35% DMG!" caption. The project's engine
-implements the same rule (`legaia_engine_core::seru_learning`).
+implements the same rule (`legaia_engine_battle::seru_learning`).
 [Internals](randomizer-internals.md#shiny-seru).
 
 ### Seru trading
@@ -1524,7 +1524,7 @@ screen where a party member swaps a learned Seru-magic for a different one at a
 stated level. Offers rotate every two in-game hours and are deterministic from
 the run's seed; `--seru-trade-offers N` caps offers per vendor. The project's
 engine reads the same embedded config and runs the same offer kernel
-(`legaia_asset::seru_trade`). [Internals](randomizer-internals.md#seru-trading).
+(`legaia_game_tables::seru_trade`). [Internals](randomizer-internals.md#seru-trading).
 
 ### Jewel fix
 
@@ -1721,7 +1721,7 @@ sub-table** of `[tile_x][tile_z][dest_x][dest_z]` records - crossing onto the
 trigger tile repositions the player outright, with no object, no MAN record
 and no name (retail arm `FUN_801D1EC4` at `0x801d21c0` → `FUN_801D5630`; the
 engine dispatch is `SceneHost::dispatch_intra_scene_teleport` over
-`legaia_engine_core::field_regions::IntraSceneTeleport`). **Most house exits
+`legaia_engine_field::field_regions::IntraSceneTeleport`). **Most house exits
 are this class** - Vahn's house in Rim Elm is entered through a script door
 and left through the kind-0 record at the tile just inside the doorway - and
 it is by far the largest door population on the disc: 2319 records inside the
@@ -1961,7 +1961,7 @@ level 1 / experience 0; a coherent level-`N` start takes same-size in-place edit
    reading **LV N** with level-1 stats; step 4 seeds them.)
 2. **Experience** - seed **each growth-capable slot's** `+0x0` to the **midpoint of
    level `N`'s XP band** (between the disc's own thresholds to reach `N` and `N+1`,
-   `legaia_asset::level_up_tables::xp_thresholds_from_scus`), so every character's
+   `legaia_game_tables::level_up_tables::xp_thresholds_from_scus`), so every character's
    "Experience" readout and the level-up applier's progression are coherent - not just
    the lead's. The seed routine does not write `+0x0` natively, so the randomizer feeds
    one `addiu $t0, midpoint` preload (at `0x800560FC`, the old Terra threshold store)
@@ -2176,8 +2176,8 @@ Two rules of its own, both consequences of the format:
   each texel within the colours its own region already holds, exactly or -
   with `--quantize` - through the nearest one. The fit budget is the fixed
   `0x14000` archive slot; an overage is reported with its byte count and
-  nothing is written. Port `legaia_patcher::monster_texture`; page decode
-  `legaia_asset::monster_archive::MonsterPage`.
+  nothing is written. Port `legaia_texture_replace::monster_texture`; page decode
+  `legaia_actor_formats::monster_archive::MonsterPage`.
 
 ### Custom monster models
 

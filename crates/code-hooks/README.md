@@ -1,12 +1,8 @@
 # legaia-code-hooks
 
-The disc patcher's MIPS code-injection layer, split out of `legaia-patcher`:
-the instruction encoders, the test simulator, the injection arenas and the
-hook mods that need nothing above them. `legaia-patcher` depends on this
-crate, never the other way round, and re-exports every module at its old path
-(`legaia_patcher::shiny_seru`, `legaia_patcher::enemy_hp_bar`, ...), so the
-CLI, the browser patcher and the disc-gated tests name the same paths they
-always did.
+The disc patcher's MIPS code-injection toolkit: the instruction encoders, the
+test simulator, the shared injection-arena map, and the hook mods that need
+nothing else.
 
 No Sony bytes: every routine is assembled from the encoders here, and nothing
 in this crate embeds game data.
@@ -17,46 +13,48 @@ in this crate embeds game data.
 |---|---|
 | `mips` | The R3000 instruction encoders, register aliases and `lui` / `ori` immediate-split helpers every hand-assembled routine is built from. |
 | `mips_sim` | A tiny R3000 subset simulator (delay slots and `hi` / `lo` included) that unit tests run assembled words against. |
-| `shiny_seru` | The Shiny Seru hook, and the `Edit` type plus the SCUS-gap and overlay arena bounds the other hooks seat themselves against. |
-| `seru_overlay` | The custom loadable overlay: the loader routine, the Seru-trade UI routine and their layout constants. |
+| `arenas` | The injection map every code mod plans against: the same-size `Edit`, the verified-dead SCUS regions and the menu-overlay run that host injected code, the live-table ranges a region must stay out of, and the retail sites several mods share. |
+| `shiny_seru` | The Shiny Seru hook. |
+| `seru_overlay` | The in-shop Seru-trade screen hosted in the menu overlay: the loader routine, the trade UI routine and their layout constants. |
 | `seru_trade` | The Seru-trade config blob the overlay reads. |
 | `enemy_hp_bar` | The enemy HP gauge drawn with the game's own AP-gauge primitives. |
 | `bonus_drop` | The battle-end bonus equipment drop routine. |
 | `flee_exp` | The run-away EXP reward spliced into the escape teardown. |
 | `approach_fix` | The attack-approach softlock fix. |
 | `jewel_fix` | Boss cinematic casts made to respect elemental guards. |
-| `delilas_cast` | Routing a swapped hero's signature art into the retail enemy cast module. |
-| `item_name` | The injected display name for the unnamed accessory, and the string region the hooks above must stay clear of. |
-| `monster` | The monster-archive slot re-pack (`[u32 size][LZS]`, padded to the slot) the drop hook's table edits go through. |
 
 The techniques are described in
-[`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md).
+[`docs/tooling/randomizer-internals.md`](../../docs/tooling/randomizer-internals.md).
 
-## The split line
+## What decides that a module sits here
 
-A hook module sits here when its builder closes over only the encoders, the
-arena bounds, table addresses from `legaia-asset` and - for `delilas_cast` -
-the `DiscPatcher` of [`legaia-disc-patch`](../disc-patch/README.md). The crate
-root aliases `disc` and `space_ledger` at the `crate::<module>` paths the
-files were written against.
+Two things live in this crate:
 
-What stays in `legaia-patcher`: the `apply` layer that sequences every edit
-onto a disc, the randomizer's data shuffles, and the hook mods that reach into
-those - `enemy_ally` / `charm_fix`, `custom_items` and the Delilas dome.
-Their builders use `mips` and `mips_sim` from here through the patcher's
-crate-private re-exports. The Tactical Arts hooks (`arts_ap_grant`,
-`oscillating_ap`, `super_art_*`) sit in
-[`legaia-arts-patch`](../arts-patch/README.md), which builds on this crate. The disc-gated oracles (`crates/patcher/tests`) stay
-with the patcher too, since they drive hooks through `apply`.
+- **The toolkit** (`mips`, `mips_sim`, `arenas`) - what any crate that
+  injects code needs. A feature finds free space by naming `arenas`; it never
+  imports another feature to do so.
+- **A hook mod that is only a plan.** Its builder takes image bytes as slices
+  and returns `arenas::Edit`s, using the encoders, the arena map and table
+  addresses from `legaia-game-tables`. It belongs to no larger feature family.
 
-## Visibility
+A hook that is part of a feature family lives with that family instead:
+the Tactical Arts hooks in [`legaia-arts-patch`](../arts-patch/README.md), the
+swapped hero's cast route in
+[`legaia-delilas-party`](../delilas-party/README.md), the dome course in
+[`legaia-delilas-challenge`](../delilas-challenge/README.md). A hook whose
+builder reaches into the randomizer's own modules (`enemy_ally`, `charm_fix`,
+`super_arts_pack`) stays in [`legaia-patcher`](../patcher/README.md).
 
-`mips` and `mips_sim` are `pub` here because their callers sit on both sides
-of the crate boundary. The patcher re-exports them `pub(crate)`, so they are
-not part of its public surface.
+This crate must not depend on any other patcher crate - it opens no disc, so
+it does not even need [`legaia-disc-patch`](../disc-patch/README.md). Which
+flag owns which arena region is recorded there, in `space_ledger`; a test in
+`legaia-patcher` holds the ledger rows and the constants here in step. The
+`apply` layer in `legaia-patcher` writes each plan onto a disc, and the
+disc-gated oracles (`crates/patcher/tests`) stay there because they drive the
+hooks through it.
 
 ## See also
 
-- [`crates/patcher`](../patcher/README.md) - the patcher this was split from.
+- [`crates/patcher`](../patcher/README.md) - the `apply` layer and the CLI.
 - [`crates/disc-patch`](../disc-patch/README.md) - the sector write-back and
   the free-space ledger the arenas are recorded in.

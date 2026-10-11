@@ -21,18 +21,18 @@ The port runs the whole game as one session type, `PondSession`, on all three ho
 | Spawn tables | `0x801D8334` (Buma) / `0x801D8434` (Vidna), `8 x 8` u32 |
 | Prize tables | `0x801D8088` (Buma) / `0x801D80D0` (Vidna), 6 rows, stride 12 |
 | Persistent state | `_DAT_8008444C..0x8008446C` in the save block ([RAM state](#ram-state)) |
-| Parsers | `legaia_asset::fishing_species`, `fishing_exchange`, `fishing_sprites`, `fishing_captions` |
-| Rules port | crate [`engine-fishing`](../../crates/engine-fishing/README.md), re-exported as `legaia_engine_core::fishing*` |
+| Parsers | `legaia_minigame_formats::fishing_species`, `fishing_exchange`, `fishing_sprites`, `fishing_captions` |
+| Rules port | crate [`engine-fishing`](../../crates/engine-fishing/README.md) (`legaia_engine_fishing::fishing*`) |
 | World / scene port | `engine-core`: `fishing_venue`, `fishing_scene`, `fishing_hub`, `fishing_exchange_input`, `World::tick_fishing` |
-| Draw port | `engine-ui`: `ui_fishing`, `ui_fishing_sprite`, `ui_fishing_hub`, `ui_fishing_exchange`, `ui_fishing_line`, `ui_fishing_rod` |
+| Draw port | `engine-ui`: `fishing`, `fishing::sprite`, `fishing::hub`, `fishing::exchange`, `fishing::line`, `fishing::rod` |
 
 Dump files are `ghidra/scripts/funcs/overlay_fishing_<addr>.txt` for every `FUN_801cxxxx` / `FUN_801dxxxx` named on this page.
 
 ## Entry from the field
 
-The pond is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 100` (`sub_id 0`), which sets game mode `0x18` (`OTHER INIT`) and loads PROT 0972. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `legaia_engine_core::minigame_entry::MinigameSubId`; the mode pair is `GameMode::OtherInit` / `OtherMode` (`crates/engine-field/src/mode.rs`).
+The pond is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 100` (`sub_id 0`), which sets game mode `0x18` (`OTHER INIT`) and loads PROT 0972. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `legaia_engine_mode::minigame_entry::MinigameSubId`; the mode pair is `GameMode::OtherInit` / `OtherMode` (`crates/engine-mode/src/mode.rs`).
 
-The op is the only way in: there is no menu entry and no dedicated opcode, and the venue bundle `other1` carries essentially no field-VM script of its own. A disc-wide walk of every scene MAN finds the fishing door at exactly two sites, both signboard placements on the overworld: `map02` P1[7] and `map03` P1[19]. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+The op is the only way in: there is no menu entry and no dedicated opcode, and the venue bundle `other1` carries essentially no field-VM script of its own. A disc-wide walk of every scene MAN finds the fishing door at exactly two sites, both signboard placements on the overworld: `map02` P1[7] and `map03` P1[19]. Census test: `crates/engine-scene/tests/minigame_entry_census_disc.rs`.
 
 The entry is the ordinary scene-backup -> overlay-load -> return-to-field sequence of any mode-24 minigame, so the game returns to the exact field state it suspended.
 
@@ -159,7 +159,7 @@ Rows 2 and 3 copy the persistent lure index `_DAT_80084450` into `0x801D90DC` be
 
 Rows are named by the `0xC2 id` item-name escape over lure ids `0x9D..0x9F` and rod ids `0xA0..0xA2`, at `x = 0x89` from `y = 0x50` on a 16 px pitch, lure counts at `x = 0xF1`, the equipped row in palette `7` (`_DAT_8007b454 = 7`), rods only when owned, cursor at `x = 0x78`.
 
-Port: `fishing_hub` - `FishingHubText` reads the text off the user's disc; `FishingHub` runs the screens over the ported picker (`FishingMenu`), help layout (`help_panel_layout`) and tackle kernel (`RodLureSelect`); `PondSession::hub_step` opens it from the idle phase. The native window and the browser play page reach it through `World::tick_fishing_hub` / `World::fishing_hub_lines` and draw it with `engine-ui::ui_fishing_hub`; the minigames page steps the same kernel and draws its `fishing_hub_json` lines. The help footers' `0xCE` button escapes are consumed without a glyph on every host.
+Port: `fishing_hub` - `FishingHubText` reads the text off the user's disc; `FishingHub` runs the screens over the ported picker (`FishingMenu`), help layout (`help_panel_layout`) and tackle kernel (`RodLureSelect`); `PondSession::hub_step` opens it from the idle phase. The native window and the browser play page reach it through `World::tick_fishing_hub` / `World::fishing_hub_lines` and draw it with `engine-ui::fishing::hub`; the minigames page steps the same kernel and draws its `fishing_hub_json` lines. The help footers' `0xCE` button escapes are consumed without a glyph on every host.
 
 ## Reel input
 
@@ -190,7 +190,7 @@ The pad-mask packer `FUN_8001822C` builds the held mask `_DAT_8007b850` (and the
 
 `FUN_801d746c` zeroes `DAT_801d91dc` and both words of all sixteen 8-byte records of `DAT_801d91e4`. Retail unrolls the loop two words at a time, so the table is `16 * 8` bytes.
 
-Port: `ReelInput::from_pad_mask`, `ReelCadence`. The templates are decoded from the user's disc by `legaia_asset::fishing_species::parse_cadence_templates`.
+Port: `ReelInput::from_pad_mask`, `ReelCadence`. The templates are decoded from the user's disc by `legaia_minigame_formats::fishing_species::parse_cadence_templates`.
 
 The port's cast input differs from retail by choice: **Circle (`0x20`) casts and locks the meter**, Cross reels (reel A), Square reels harder (reel B).
 
@@ -364,7 +364,7 @@ The lure tick `FUN_801d26cc` ends the in-water state from its tail (`0x801D3AFC.
 
 `TensionGauge` ports the divisors, the release decrement and the clamp; `FishAi` ports the per-field pull / dart / sink formulas of the species table. `PondSession` composes them with glue that is an engine-side reconstruction, marked at each call site and listed under [Open](#open).
 
-The port snaps the line on the first frame the gauge reaches `0x1000`, where retail rolls one-in-ten per frame and spends a lure. Under the port's rule the two reel buttons are a risk choice: reel A (Cross) recovers line faster and divides the pull harder. Measured over the whole `PondSession` parameter space (both venues, three lures, three rods, reel held throughout), reel A never reaches the ceiling (peak `2017` of `0x1000`); reel B does, on the hardest-pulling common fish. Ladder: `crates/web-viewer/tests/w1f1_fishing_banner_ladder.rs`.
+The port snaps the line on the first frame the gauge reaches `0x1000`, where retail rolls one-in-ten per frame and spends a lure. Under the port's rule the two reel buttons are a risk choice: reel A (Cross) recovers line faster and divides the pull harder. Measured over the whole `PondSession` parameter space (both venues, three lures, three rods, reel held throughout), reel A never reaches the ceiling (peak `2017` of `0x1000`); reel B does, on the hardest-pulling common fish. Ladder: `crates/web-viewer/tests/fishing_banner_ladder.rs`.
 
 ## Per-species parameter table
 
@@ -387,7 +387,7 @@ Each record is 10 words. Every field has a reader in `FUN_801d4004` (fish AI) or
 
 The `+0x04` score value and `+0x08` pull factor both climb with rarity, so a higher-value fish is also the harder fight.
 
-Parser: [`legaia_asset::fishing_species`](../../crates/asset/src/fishing_species.rs) - `parse` decodes the 10 records, `FishingSpecies::score_for` reproduces the award, `name` resolves the `+0x00` pointer. Values and names decode from the user's disc (disc-gated `fishing_species_real`).
+Parser: [`legaia_minigame_formats::fishing_species`](../../crates/minigame-formats/src/fishing_species.rs) - `parse` decodes the 10 records, `FishingSpecies::score_for` reproduces the award, `name` resolves the `+0x00` pointer. Values and names decode from the user's disc (disc-gated `fishing_species_real`).
 
 ## Catch scoring and the result plate
 
@@ -456,7 +456,7 @@ The shop branch (states `0x78..0x7a`) spends the fishing-point pool `_DAT_800844
 
 Both venues spend and latch against the same globals. The rows match the curated walkthrough prize lists ([`gamedata.md`](../reference/gamedata.md)) row for row, plus one entry the walkthroughs miss: **Vidna's row 0 is a 50,000-point one-time War God Icon**, invisible until the pool exceeds its price. Row contents decode from the user's disc.
 
-Parser: [`legaia_asset::fishing_exchange`](../../crates/asset/src/fishing_exchange.rs); disc-gated `fishing_exchange_real` pins the structural invariants. Engine: `fishing::PrizeExchange` (list floor, availability, quantity cap, confirm), with the grant committed by `World::fishing_exchange_buy` against `World::minigames.fishing_points` and `fishing_prizes_purchased`; disc-free oracle `fishing_exchange_runtime`. Both play hosts route input through `engine-core::fishing_exchange_input` and draw `engine-ui::ui_fishing_exchange`. The patcher edits prices in place (`--fishing-price`, [`randomizer.md`](../tooling/randomizer.md)).
+Parser: [`legaia_minigame_formats::fishing_exchange`](../../crates/minigame-formats/src/fishing_exchange.rs); disc-gated `fishing_exchange_real` pins the structural invariants. Engine: `fishing::PrizeExchange` (list floor, availability, quantity cap, confirm), with the grant committed by `World::fishing_exchange_buy` against `World::minigames.fishing_points` and `fishing_prizes_purchased`; disc-free oracle `fishing_exchange_runtime`. Both play hosts route input through `engine-core::fishing_exchange_input` and draw `engine-ui::fishing::exchange`. The patcher edits prices in place (`--fishing-price`, [`randomizer.md`](../tooling/randomizer.md)).
 
 In the port the exchange opens from the hub's row 3 (or the native window's `P`) and owns the pad while open: Up / Down move, Cross or L1 trades one, Circle or L2 closes back to the hub, and Left / Right switch the venue page (a port affordance).
 
@@ -507,9 +507,9 @@ The rod actor is posed in **view space**:
 
 A hooked rod bent past its cap with the countdown `_DAT_801D90C4` spent raises the creak cue `0x201` into ring slot 1 (`0x801D2BD0`), then re-arms at `rand() % 200 + 60` vsyncs.
 
-Port: `fishing_actors` - `RodMesh` (the three rods and the bend, lifted off the venue scene's bank), `RodActor` (`tick` = `FUN_801D1C5C`, `drive` = the lure tick's rod writes), `rod_tip_screen` (the integer matrix chain and `RTPS` with the UNR divide, `legaia_engine_vm::gte_divide`) and `fishing_line` (the clip and the packet).
+Port: `fishing_actors` - `RodMesh` (the three rods and the bend, lifted off the venue scene's bank), `RodActor` (`tick` = `FUN_801D1C5C`, `drive` = the lure tick's rod writes), `rod_tip_screen` (the integer matrix chain and `RTPS` with the UNR divide, `legaia_render_kernels::gte::divide`) and `fishing_line` (the clip and the packet).
 
-`PondSession` spawns the rod at the cast lock and exposes `line_frame`, which every host calls once a frame with its own projection of the fish end. The native window and the browser play page project through the venue camera (`fishing_venue::fishing_line_frame`) and wrap the packet with `engine-ui::ui_fishing_line`; the minigames page projects its own lure and strokes the endpoints `fishing_line_json` returns. The port's lure exists from the landing, so the line is out while waiting and hooked, not during the flight.
+`PondSession` spawns the rod at the cast lock and exposes `line_frame`, which every host calls once a frame with its own projection of the fish end. The native window and the browser play page project through the venue camera (`fishing_venue::fishing_line_frame`) and wrap the packet with `engine-ui::fishing::line`; the minigames page projects its own lure and strokes the endpoints `fishing_line_json` returns. The port's lure exists from the landing, so the line is out while waiting and hooked, not during the flight.
 
 ### The rod model
 
@@ -524,7 +524,7 @@ All three rods are untextured: rods 0 and 1 are 8 flat triangles, 18 flat quads 
 
 The dispatcher loads `ZSF3 = 0x555 >> s` and `ZSF4 = 0x400 >> s` with `s` the scratch byte `0x1F8003A4` (`0x80043568..0x8004357C`), `3` in the `minigame_fishing` state. A primitive whose `OTZ` is below the scratch halfword `0x1F80037E` (`0x10` in the same state) is dropped; the packet links at `OTZ >> 2` (the word index `OTZ & 0xFFFC` addresses). With `s = 3` that bucket is the mean depth `/ 32`, the scale the line's `IR3 >> 5` links at, so the rod's far end and the line share buckets. The rod actor runs ahead of the lure tick, so in a shared bucket its packets draw after the line: the line meets the rod under its tip.
 
-Port: `fishing_actors::rod_faces` (per-vertex projection, both culls, the two averages, the cutoff and the bucket) over `RodMesh::prims`, off the pose the rod actor records each tick (`RodActor::pose`), reached through `PondSession::rod_faces`. The native window and the browser play page wrap each face with `engine-ui::ui_fishing_rod::fishing_rod_prim` and submit them ahead of the line in the same screen-prim pass. The minigames page fills the faces `fishing_rod_json` returns in the same draw order, each face in its corners' mean colour (its canvas has no per-vertex colour, so Gouraud quads lose their gradient there).
+Port: `fishing_actors::rod_faces` (per-vertex projection, both culls, the two averages, the cutoff and the bucket) over `RodMesh::prims`, off the pose the rod actor records each tick (`RodActor::pose`), reached through `PondSession::rod_faces`. The native window and the browser play page wrap each face with `engine-ui::fishing::rod::fishing_rod_prim` and submit them ahead of the line in the same screen-prim pass. The minigames page fills the faces `fishing_rod_json` returns in the same draw order, each face in its corners' mean colour (its canvas has no per-vertex colour, so Gouraud quads lose their gradient there).
 
 ### The shore party and the venue camera
 
@@ -651,7 +651,7 @@ The strike splash sits at `x = 0xa0`, rising one pixel every 32 frames from `y =
 
 The two styles use two emitters: `FUN_801D7DD8` patches sprite record `6` to `u = digit * 8 + 0x28`; `FUN_801D7D44` patches record `0x18` to `u = digit << 4` and draws it twice, as ids `0x418` / `0x818`.
 
-The fill loop is shared with `FUN_801D1308`, the Muscle Dome door/init overlay's decimal readout (same `-1` init, pre-seeded units slot, `!= 0` store gate, eight `/10` steps by the `0x66666667` magic multiply). The emit halves differ: `FUN_801D1308` has one emitter, one pen and one widget id (`9`), and passes the digit by patching that widget descriptor's texture column (`digit * 8 - 0x80`) and CLUT in place, restoring the CLUT on return. The port shares the fill - `number_digit_cells` takes its slots from `engine-ui::other_game_hud::decimal_slots` - and keeps the emit halves apart.
+The fill loop is shared with `FUN_801D1308`, the Muscle Dome door/init overlay's decimal readout (same `-1` init, pre-seeded units slot, `!= 0` store gate, eight `/10` steps by the `0x66666667` magic multiply). The emit halves differ: `FUN_801D1308` has one emitter, one pen and one widget id (`9`), and passes the digit by patching that widget descriptor's texture column (`digit * 8 - 0x80`) and CLUT in place, restoring the CLUT on return. The port shares the fill - `number_digit_cells` takes its slots from `engine-ui::muscle_dome_hud::decimal_slots` - and keeps the emit halves apart.
 
 ### Sprite emitter
 
@@ -735,7 +735,7 @@ FUN_801D7BB8(angle, radius, &out_a, &out_b, scale)
 ```
 
 - **Tables.** The pointers live at `_DAT_8007B81C` (sine) and `_DAT_8007B7F8` (cosine). `FUN_80026BE0` installs the pair at boot from the SCUS statics `0x80070A2C` and `0x8007122C` (4096 entries, amplitude `0x1000`; [`functions/runtime-libs.md`](../reference/functions/runtime-libs.md)). They are `0x800` bytes apart - a quarter turn of an `i16` table - so the pair is one 5120-entry run read at two phases.
-- **Entries** are `trunc(0x1000 * sin)`, truncating toward zero. An analytic stand-in that rounds differs on about half the table by one LSB, and `radius` multiplies that error. Oracle: `engine-core/tests/minigame_polar_trig_tables_disc.rs`.
+- **Entries** are `trunc(0x1000 * sin)`, truncating toward zero. An analytic stand-in that rounds differs on about half the table by one LSB, and `radius` multiplies that error. Oracle: `engine-scene/tests/minigame_polar_trig_tables_disc.rs`.
 - **Shift.** Both products are formed at full 32-bit width and folded by a plain arithmetic `sra`, which rounds toward minus infinity - unlike the `bgez`-biased shifts the HUD emitters use. A 12.12 `scale` gives a 12.12 result.
 
 Port: `minigame_floor::polar_offset`. **Confirmed** arithmetic.
@@ -840,7 +840,7 @@ The pad globals `_DAT_8007b850` (held) and `_DAT_8007b874` (edge) and the frame 
 
 ## Engine port
 
-The rules engine is the crate [`engine-fishing`](../../crates/engine-fishing/README.md), re-exported as `legaia_engine_minigames::fishing*` and `legaia_engine_core::fishing*`. Entry point: [`fishing.rs`](../../crates/engine-fishing/src/fishing.rs).
+The rules engine is the crate [`engine-fishing`](../../crates/engine-fishing/README.md), modules `legaia_engine_fishing::fishing*`. Entry point: [`fishing.rs`](../../crates/engine-fishing/src/fishing.rs).
 
 | Retail | Port |
 |---|---|
@@ -855,10 +855,10 @@ The rules engine is the crate [`engine-fishing`](../../crates/engine-fishing/REA
 | `FUN_801d0474` / `FUN_801d72a0` / `FUN_801d0f5c` | `FishingMenu`, `help_panel_layout`, `RodLureSelect`, `FishingHub` |
 | `FUN_801d0c3c` / `FUN_801d092c` / `FUN_801d06c8` | `PrizeExchange` |
 | `FUN_801d6028` / `FUN_801d79e0` / `FUN_801d7bb8` | `minigame_floor::ground_height`, `step_patch_lookup`, `polar_offset` |
-| `FUN_801d13f0` / `FUN_801d1580` | `ui_fishing::persistent_hud_draws`, `catch_hud_draws` (+ `length_display` / `extent_display` / `cast_power_percent`) |
+| `FUN_801d13f0` / `FUN_801d1580` | `engine-ui::fishing::hud::persistent_hud_draws`, `catch_hud_draws` (+ `length_display` / `extent_display` / `cast_power_percent`) |
 | `FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` / `FUN_801d6f10` / `FUN_801d7528` | `banner_from_left_draw` / `banner_from_right_draw` / `strike_splash_draws` / `banner_miss_draw` / `banner_converge_draws`, `BannerTimer` |
 | `FUN_801d1870` / `FUN_801d1a90` / `FUN_801d76e0` | `bar_frame` / `power_bar_frame` / `number_digit_cells` |
-| `FUN_801D63B0` | `ui_fishing_sprite` over `legaia_asset::fishing_sprites` |
+| `FUN_801D63B0` | `engine-ui::fishing::sprite` over `legaia_minigame_formats::fishing_sprites` |
 
 **Session.** `PondSession` composes the kernels into the cast -> wait -> strike -> fight -> score loop. It is the only fishing session: the minigames page drives it directly (`crates/web-viewer/src/minigames_fishing.rs`), and the native window and the browser play page run it through `World::tick_fishing`. No Sony bytes are baked in; the species, spawn, cadence, sprite, prize and caption tables decode from the user's disc.
 
@@ -876,9 +876,9 @@ The session seeds from the persistent words the world keeps between sessions (`W
 - the reeling-line actor (`LineActorSim`): armed on the hook (the `HOOK_CUE` arm phase), tracked through the fight, and run through the staged catch celebration on a landed fish - the `CELEBRATION_STAGE_FRAMES` timer firing `CELEBRATE_CUE` plus every unlocked `celebration_bursts` tier into the effect pool and SFX scheduler;
 - the strike splash (`fishing_chrome::splash_burst`) on the cadence-match event, the point-exchange panel framed by `centred_panel` and swayed by `sway_vector`, and the overlay's developer readout (`debug_tile` / `debug_readout_visible`) when the dev-menu session is up and the pad modifier is held.
 
-**HUD consumer.** `fishing_hud_draws_for` (in [`ui_fishing`](../../crates/engine-ui/src/ui_fishing.rs)) renders the `HudDraw` list - the fishing sibling of `battle_hud_draws_for`. It draws `Number` and `Count` items through the ported digit field as font-atlas text, resolves `Caption` items against host-supplied strings (read from the disc by `legaia_asset::fishing_captions`), resolves `Glyph` ids and gauge fills through a host-supplied atlas lookup, and routes `Bar` / `PowerBar` through `bar_frame` / `power_bar_frame`. An id the host cannot place is dropped.
+**HUD consumer.** `fishing_hud_draws_for` (in [`engine-ui::fishing::hud`](../../crates/engine-ui/src/fishing/hud.rs)) renders the `HudDraw` list - the fishing sibling of `battle_hud_draws_for`. It draws `Number` and `Count` items through the ported digit field as font-atlas text, resolves `Caption` items against host-supplied strings (read from the disc by `legaia_minigame_formats::fishing_captions`), resolves `Glyph` ids and gauge fills through a host-supplied atlas lookup, and routes `Bar` / `PowerBar` through `bar_frame` / `power_bar_frame`. An id the host cannot place is dropped.
 
-The sprite half - the HI SCORE / POINT plates, gauge labels and caps, banners, score digits - goes through `ui_fishing_sprite`. The native window and the browser play page draw the quads in their screen-primitive pass; the minigames page rasterises them over its pond VRAM (`screen_prim_raster::rasterize_rgba_overlay`) onto its HUD canvas. With the table decoded, `FishingHudAtlas::sprites_drawn` leaves the text consumer the captions, the lure count and the gauge fills; the native window fills the gauges from its font's solid texel and the play page from the `bars` payload.
+The sprite half - the HI SCORE / POINT plates, gauge labels and caps, banners, score digits - goes through `engine-ui::fishing::sprite`. The native window and the browser play page draw the quads in their screen-primitive pass; the minigames page rasterises them over its pond VRAM (`screen_prim_raster::rasterize_rgba_overlay`) onto its HUD canvas. With the table decoded, `FishingHudAtlas::sprites_drawn` leaves the text consumer the captions, the lure count and the gauge fills; the native window fills the gauges from its font's solid texel and the play page from the `bars` payload.
 
 ## Open
 

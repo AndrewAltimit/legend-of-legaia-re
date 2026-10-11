@@ -8,10 +8,10 @@
 //! mode, no quest item is moved out of its chest and none is dropped into a
 //! chest that didn't already hold it. Skips without `LEGAIA_DISC_BIN`.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::chest::SceneChests;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -85,7 +85,7 @@ fn default_keep_static_covers_every_quest_item() {
     // The Silver Compass (0xf3) is a shop-tradeable accessory (lowers the
     // battle-start ambush rate; price > 0), so it must stay randomizable.
     assert!(
-        legaia_asset::item_names::item_price(&scus, 0xf3).is_some_and(|p| p > 0),
+        legaia_game_tables::item_names::item_price(&scus, 0xf3).is_some_and(|p| p > 0),
         "Silver Compass (0xf3) is expected to be a buyable item on this disc"
     );
     assert!(

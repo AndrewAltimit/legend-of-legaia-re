@@ -8,7 +8,7 @@
 //! and a `+0x4C` table of per-part entries whose packed `[u8 parts][u8 frames]`
 //! keyframe streams sit at entry `+0x8C` - the same shape the monster archive
 //! uses, which is why the whole thing renders through the ordinary battle
-//! relocation ([`legaia_asset::monster_archive::MonsterMesh::battle_render_mesh`]).
+//! relocation ([`legaia_actor_formats::monster_archive::MonsterMesh::battle_render_mesh`]).
 //! Retail agrees: the installer `FUN_801F19EC` hands the record's TMD and
 //! texture pool to `FUN_80055468`, the monster mesh installer.
 //!
@@ -17,7 +17,7 @@
 //!
 //! * `0x81..=0x99` (three-slot groups) reuse an ordinary `battle_data` enemy
 //!   body - their actor-record TMD is byte-identical to an archive record, and
-//!   [`legaia_asset::summon_creatures`] maps each to its creature.
+//!   [`legaia_actor_formats::summon_creatures`] maps each to its creature.
 //! * `0x9A..=0xA0` (four-slot groups - Palma, Mule, Horn, Jedo, Meta, Terra,
 //!   Ozma) carry a **bespoke** mesh that matches no archive record, so the
 //!   creature-id route resolves nothing for them. Their texture pool and their
@@ -31,9 +31,9 @@
 
 use super::*;
 
-use legaia_asset::monster_archive::MonsterAnimation;
-use legaia_asset::summon_readef::{self, SummonCast};
-use legaia_engine_core::summon as summon_core;
+use legaia_actor_formats::monster_archive::MonsterAnimation;
+use legaia_actor_formats::summon_readef::{self, SummonCast};
+use legaia_engine_effects::summon as summon_core;
 
 /// `summon.dat` in extraction PROT index space.
 const SUMMON_PROT_INDEX: u32 = summon_readef::SUMMON_PROT_INDEX as u32;
@@ -336,7 +336,7 @@ impl Default for LegaiaSummons {
 
 /// Element names in actor-record `+0x1D` id order.
 fn element_name(id: u8) -> &'static str {
-    legaia_asset::element_affinity::Element::from_id(id).map_or("unknown", |e| e.name())
+    legaia_game_tables::element_affinity::Element::from_id(id).map_or("unknown", |e| e.name())
 }
 
 /// Build the JSON row describing one cast, without decoding its mesh - the
@@ -344,7 +344,7 @@ fn element_name(id: u8) -> &'static str {
 fn cast_row(summon_dat: &[u8], spell_id: u8) -> Option<serde_json::Value> {
     let cast = summon_readef::parse_cast(summon_dat, spell_id).ok()?;
     let big = summon_core::big_summon(spell_id);
-    let spell = legaia_engine_core::retail_magic::get(spell_id);
+    let spell = legaia_engine_battle::retail_magic::get(spell_id);
     Some(serde_json::json!({
         "spell_id": spell_id,
         // The summon's own name: the creature for the reused-body bands, the
@@ -360,7 +360,7 @@ fn cast_row(summon_dat: &[u8], spell_id: u8) -> Option<serde_json::Value> {
         // true = bespoke body (the seven big summons); false = a reused
         // battle_data enemy body, named by `creature`.
         "bespoke": cast.bespoke,
-        "creature": legaia_asset::summon_creatures::creature_for_spell(spell_id)
+        "creature": legaia_actor_formats::summon_creatures::creature_for_spell(spell_id)
             .map(|c| c.creature_id),
         "ra_seru": big.is_some(),
         "clips": cast.clips.iter().enumerate().map(|(i, c)| serde_json::json!({
@@ -695,7 +695,7 @@ impl LegaiaSummons {
     /// [`Self::mesh_flat_rgba`] hands the canvas. It is not decoration on
     /// these meshes - a summon's sword blade is a near-white texture ramp
     /// whose whole colour is the word, so an export without it is a white
-    /// blade. See `legaia_asset::gltf_color`.
+    /// blade. See `legaia_actor_formats::gltf_color`.
     ///
     /// Everything is baked client-side off the visitor's own disc; nothing is
     /// uploaded. Empty until [`Self::set_cast`] (or if the mesh has nothing
@@ -711,18 +711,20 @@ impl LegaiaSummons {
                 15.0
             }
         };
-        let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
+        let clips: Vec<legaia_actor_formats::character_gltf::CharacterClip<'_>> = c
             .cast
             .clips
             .iter()
             .enumerate()
-            .map(|(i, k)| legaia_asset::character_gltf::CharacterClip {
-                name: format!("phase {} (tag 0x{:02X})", i + 1, k.action_id),
-                fps: fps_for_rate(k.rate),
-                anim: k,
-            })
+            .map(
+                |(i, k)| legaia_actor_formats::character_gltf::CharacterClip {
+                    name: format!("phase {} (tag 0x{:02X})", i + 1, k.action_id),
+                    fps: fps_for_rate(k.rate),
+                    anim: k,
+                },
+            )
             .collect();
-        legaia_asset::character_gltf::build_character_glb(
+        legaia_actor_formats::character_gltf::build_character_glb(
             &self.export_name(),
             &c.mesh,
             &c.object_ids,

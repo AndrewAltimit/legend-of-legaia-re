@@ -1,5 +1,4 @@
 //! Delilas move mode: the whole art kit re-animated from the sibling's own clips.
-//! Split out of `delilas_party.rs`.
 
 use super::*;
 
@@ -117,7 +116,7 @@ pub(super) fn retained_bank_rows(
 }
 
 /// Menu labels for the sibling's swing clips, in the archive order
-/// [`crate::party_swap::moveset::swing_entries`] returns.
+/// [`legaia_party_swap::moveset::swing_entries`] returns.
 ///
 /// [`LABEL_MAX`] bytes at most, for every sibling. The SCUS arts-name
 /// field is rewritten in place over the retail string plus its measured
@@ -169,11 +168,11 @@ pub(super) fn clamp_charge_loop_windows(
     slot: usize,
     who: &str,
 ) -> Result<Vec<String>> {
-    use crate::party_swap::moveset;
-    use legaia_asset::battle_char_assembly;
+    use legaia_actor_formats::battle_char_assembly;
+    use legaia_party_swap::moveset;
 
     let character = slot_character(slot);
-    let index = crate::arts::player_entry_index(character);
+    let index = legaia_arts_patch::arts::player_entry_index(character);
     let entry = patcher
         .read_entry(index)
         .with_context(|| format!("read player file PROT {index}"))?;
@@ -224,10 +223,10 @@ pub(super) fn clamp_charge_loop_windows(
     if edits.is_empty() {
         return Ok(notes);
     }
-    let (lzs_off, recompressed) = crate::arts::patch_player_record0_full(&entry, &[], &edits)
-        .ok_or_else(|| {
-            anyhow::anyhow!("{who}'s record0 will not fit with the charge-loop guard applied")
-        })?;
+    let (lzs_off, recompressed) =
+        legaia_arts_patch::arts::patch_player_record0_full(&entry, &[], &edits).ok_or_else(
+            || anyhow::anyhow!("{who}'s record0 will not fit with the charge-loop guard applied"),
+        )?;
     patcher
         .patch_prot_entry(index, lzs_off as u64, &recompressed)
         .context("write the charge-loop guarded art bank")?;
@@ -243,7 +242,7 @@ pub(super) fn clamp_charge_loop_windows(
 /// Four coordinated edits, all same-size:
 ///
 /// 1. the main `"ME"` slot is re-authored from the sibling's motions
-///    ([`crate::party_swap::moveset`]) - the retail streams are
+///    ([`legaia_party_swap::moveset`]) - the retail streams are
 ///    dropped, which is the only way Noa's slot (2446 free bytes) has
 ///    room for anything new;
 /// 2. every art record that reads that archive is repointed at one of
@@ -260,8 +259,8 @@ pub(super) fn apply_delilas_moveset(
     patcher: &mut DiscPatcher,
     ctx: &SignatureCtx<'_>,
 ) -> Result<Vec<String>> {
-    use crate::party_swap::moveset;
-    use legaia_asset::battle_char_assembly;
+    use legaia_actor_formats::battle_char_assembly;
+    use legaia_party_swap::moveset;
 
     let &SignatureCtx {
         slot,
@@ -276,7 +275,7 @@ pub(super) fn apply_delilas_moveset(
     let character = slot_character(slot);
     let mut notes = Vec::new();
 
-    let index = crate::arts::player_entry_index(character);
+    let index = legaia_arts_patch::arts::player_entry_index(character);
     let entry = patcher
         .read_entry(index)
         .with_context(|| format!("read player file PROT {index}"))?;
@@ -434,13 +433,15 @@ pub(super) fn apply_delilas_moveset(
     }
 
     let (lzs_off, recompressed) =
-        crate::arts::patch_player_record0_full(&entry, &[], &offset_edits).ok_or_else(|| {
-            anyhow::anyhow!(
-                "{who}'s record0 will not fit its LZS footprint with the Delilas \
+        legaia_arts_patch::arts::patch_player_record0_full(&entry, &[], &offset_edits).ok_or_else(
+            || {
+                anyhow::anyhow!(
+                    "{who}'s record0 will not fit its LZS footprint with the Delilas \
                  moveset applied"
-            )
-        })?;
-    let region = crate::arts::record0_lzs_region(&entry)
+                )
+            },
+        )?;
+    let region = legaia_arts_patch::arts::record0_lzs_region(&entry)
         .ok_or_else(|| anyhow::anyhow!("{who} record0 LZS region"))?;
 
     // Both halves fit - commit them together.
@@ -506,7 +507,7 @@ pub(super) fn rename_retained_arts(
     assignments: &[(usize, usize, &'static str)],
 ) -> Result<(usize, usize)> {
     let scus = patcher
-        .read_named_file(crate::arts::SCUS_NAME)
+        .read_named_file(legaia_arts_patch::arts::SCUS_NAME)
         .ok_or_else(|| anyhow::anyhow!("SCUS_942.54 not found"))?;
     let records = legaia_art::arts_table::raw_records_from_scus(&scus)
         .ok_or_else(|| anyhow::anyhow!("arts-name table not parseable"))?;
@@ -539,7 +540,11 @@ pub(super) fn rename_retained_arts(
         let mut bytes = label.as_bytes().to_vec();
         bytes.resize(field.budget, 0);
         patcher
-            .patch_named_file(crate::arts::SCUS_NAME, field.file_offset as u64, &bytes)
+            .patch_named_file(
+                legaia_arts_patch::arts::SCUS_NAME,
+                field.file_offset as u64,
+                &bytes,
+            )
             .context("write a retained art's name")?;
         n += 1;
     }

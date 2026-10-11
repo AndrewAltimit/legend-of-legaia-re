@@ -12,8 +12,9 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use legaia_asset::{item_names, shop_stock};
+use legaia_game_tables::item_names;
 use legaia_prot::{archive::Archive, cdname};
+use legaia_scene_formats::shop_stock;
 
 /// A CD sector's 12-byte sync pattern, for the "you fed me the disc image"
 /// guard - the same mix-up `field-disasm scan-prot` catches.
@@ -61,7 +62,7 @@ pub(crate) fn shop_stock_cmd(
         }
     }
 
-    let scus_bytes = crate::common::read_input(scus)?;
+    let scus_bytes = crate::cli_io::read_input(scus)?;
     let names = item_names::ItemNameTable::from_scus(&scus_bytes).ok_or_else(|| {
         anyhow::anyhow!(
             "no item-name table at VA {:#x} in {} - is this SCUS_942.54?",

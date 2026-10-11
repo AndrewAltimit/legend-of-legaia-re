@@ -1,0 +1,51 @@
+//! In-game menu UI draw builders: encounter banner, field/status/spell
+//! panels, game-over, options + key-rebind, name entry, cutscene
+//! narration, item use, equipment, and the tactical-arts editor.
+
+mod battle_spoils;
+pub use battle_spoils::*;
+
+mod field_menu;
+pub use field_menu::*;
+
+mod menu_ink;
+pub use menu_ink::*;
+
+mod status_screen;
+pub use status_screen::*;
+
+mod tab_banner;
+pub use tab_banner::*;
+
+mod list_order;
+pub use list_order::*;
+
+mod spell;
+pub use spell::*;
+
+mod system_menus;
+pub use system_menus::*;
+
+mod name_entry;
+pub use name_entry::*;
+
+mod inventory;
+pub use inventory::*;
+
+mod pause_lists;
+pub use pause_lists::*;
+
+mod equipment;
+pub use equipment::*;
+
+mod target_panel;
+pub use target_panel::*;
+
+mod arts_editor;
+pub use arts_editor::*;
+
+mod records_screen;
+pub use records_screen::*;
+
+mod dev_menu_list;
+pub use dev_menu_list::*;

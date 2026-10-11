@@ -5,8 +5,11 @@ comparison corpus. Each drives the native engine session
 (`legaia_engine_session::BootSession` over the cpal output) and scores it
 against an emulator save state's own RAM, VRAM or SPU, or against a recorded
 trace. Tool code - it reads mednafen / PCSX-Redux states and links the wgpu
-renderer for frame captures - so no play host ships it; `legaia-engine`'s
-trace subcommands and the retail-compare window seeding call into it.
+renderer for frame captures - so no play host ships it: only
+`legaia-engine`'s oracle subcommands call into it. The seed vocabulary a
+capture's `play-window` child reads back from its environment is
+[`legaia-engine-capture`](../engine-capture/README.md), which this crate
+fills from retail RAM.
 
 ## Retail comparison corpus
 

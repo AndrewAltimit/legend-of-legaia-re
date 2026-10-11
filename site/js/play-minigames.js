@@ -180,7 +180,7 @@
   /* ================================================================== */
   /* Slot machine. The engine draws the whole frame - cabinet mesh, reels,
    * furniture, dot matrix, coin HUD and paylines - through the shared
-   * `ui_slot_cabinet` builder into the page's screen-prim pass, the same
+   * `engine-ui::slot_cabinet` builder into the page's screen-prim pass, the same
    * primitive list the native window draws, sampling the machine's art pack.
    * This file only puts that art pack up as the renderer's VRAM for the
    * visit (the teardown hands the field's back) and clears the 3D view. A
@@ -430,7 +430,7 @@
   }
 
   /* ================================================================== */
-  /* Baka Fighter: the engine's duel surface (`engine-core::baka_duel_scene`
+  /* Baka Fighter: the engine's duel surface (`engine-minigame-scenes::baka_duel_scene`
    * through the `play_mg_baka_scene_*` exports) - the fighters posed by the
    * duel's own clip clocks, the special's afterimage ghosts, the four arena
    * walls and the floor grid, drawn under the arena camera's ready

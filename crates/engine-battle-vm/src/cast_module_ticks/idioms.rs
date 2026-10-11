@@ -1,5 +1,4 @@
 //! The idioms every routine in the band is built out of.
-//! Split out of `cast_module_ticks.rs`.
 
 use super::*;
 

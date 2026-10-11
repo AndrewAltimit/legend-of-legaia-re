@@ -6,15 +6,9 @@
 //! `cargo test -p legaia-mednafen --test integration <name>::`.
 
 mod dispatch_table;
-mod enemy_stager_binding;
-mod evolved_summon_binding;
-mod firetail_movefx_liveness;
 mod gte_projection_real;
 mod rage_delegated_pick;
-mod real_saves;
 mod real_spu_smoke;
 mod static_overlay_clean_copy;
-mod summon_binding_base_high;
 mod summon_model_base;
-mod summon_render_mode_node;
 mod training_formation;

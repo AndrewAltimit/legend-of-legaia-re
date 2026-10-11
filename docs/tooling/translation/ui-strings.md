@@ -23,7 +23,7 @@ the Delilas-bout preamble, the memory-card messages, the sparring-tutorial
 prompts, and the steal and fatal-decision result lines.
 
 The pools are pinned by disc-coordinate VA windows in
-`legaia_patcher::translation::ui`. Every load base is the slot the overlay
+`legaia_translate::ui`. Every load base is the slot the overlay
 occupies (see [`field-menu.md`](../../subsystems/field-menu.md) and
 [`static-overlay-pipeline.md`](../static-overlay-pipeline.md)). A string is
 written at `file offset = va - base_va` in its PROT overlay entry.

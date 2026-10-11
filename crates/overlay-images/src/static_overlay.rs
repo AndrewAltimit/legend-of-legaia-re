@@ -338,6 +338,18 @@ pub fn pointer_resolution(as_loaded: &[u8], base_va: u32) -> (u32, u32) {
 /// two-slot base cross-checks.
 pub const SLOT_A_BASE: u32 = 0x801C_E818;
 
+/// Extraction PROT index of the battle-action overlay image, a slot-A
+/// occupant ([`SLOT_A_BASE`]). The data tables resident in it are decoded by
+/// `legaia-game-tables`, which takes the image's identity from here.
+pub const BATTLE_ACTION_OVERLAY_PROT: u32 = 898;
+
+/// Extraction PROT index of the menu overlay image, a slot-A occupant.
+pub const MENU_OVERLAY_PROT: u32 = 899;
+
+/// Extraction PROT index of the STR / MDEC cutscene overlay image, a slot-A
+/// occupant.
+pub const STR_OVERLAY_PROT: u32 = 970;
+
 /// Count the overlay's absolute pointers that land on the **start of an
 /// in-file NUL-terminated ASCII string** (>= 6 printable bytes, not preceded
 /// by a printable byte) when the blob is placed at `base_va`.
@@ -627,6 +639,19 @@ pub fn verify_fingerprint(rec: &OverlayRecord, as_loaded_bytes: &[u8]) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The named slot-A images are the ones the map records at that base.
+    #[test]
+    fn named_slot_a_images_match_the_map() {
+        for prot in [
+            BATTLE_ACTION_OVERLAY_PROT,
+            MENU_OVERLAY_PROT,
+            STR_OVERLAY_PROT,
+        ] {
+            let rec = overlay_map().by_prot_index(prot).expect("in the map");
+            assert_eq!(rec.base_va, SLOT_A_BASE, "PROT {prot}");
+        }
+    }
 
     #[test]
     fn embedded_map_parses() {

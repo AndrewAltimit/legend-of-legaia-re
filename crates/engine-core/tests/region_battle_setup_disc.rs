@@ -14,8 +14,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::region_encounter::{region_battle_setup, region_encounter_table_from_man};
-use legaia_engine_core::scene::{Scene, SceneHost};
+use legaia_engine_battle::region_encounter::{
+    region_battle_setup, region_encounter_table_from_man,
+};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::Scene;
 
 fn open_host() -> Option<(SceneHost, PathBuf)> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -36,7 +39,7 @@ fn open_host() -> Option<(SceneHost, PathBuf)> {
 fn setups(
     host: &SceneHost,
     scene: &str,
-) -> Vec<legaia_engine_core::region_encounter::RegionBattleSetup> {
+) -> Vec<legaia_engine_battle::region_encounter::RegionBattleSetup> {
     let Ok(s) = Scene::load(&host.index, scene) else {
         return Vec::new();
     };
@@ -144,7 +147,7 @@ fn the_door_gates_split_overworld_dungeon_and_town() {
         );
         assert_eq!(
             s.world_map_return,
-            Some(legaia_engine_core::region_encounter::WorldMapReturn {
+            Some(legaia_engine_battle::region_encounter::WorldMapReturn {
                 map_word: 0,
                 tile_x: 0,
                 tile_z: 0,

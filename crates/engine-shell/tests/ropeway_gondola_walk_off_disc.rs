@@ -21,8 +21,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -82,7 +82,7 @@ fn ropeway_arrival_player_steps_off_gondola() {
         .channels_man
         .clone()
         .expect("ropeway's MAN is seeded on scene entry");
-    let man_file = legaia_asset::man_section::parse(&man).expect("parse ropeway MAN");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("parse ropeway MAN");
     host.world.cutscene.timeline = None;
     assert!(
         host.world

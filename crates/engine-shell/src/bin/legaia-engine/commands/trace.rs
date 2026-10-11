@@ -21,12 +21,13 @@ pub(crate) fn cmd_man_scripts(
     op49_window_census: bool,
     p2_gates: bool,
 ) -> Result<()> {
-    use legaia_engine_core::man_field_scripts::{
-        FlagBank, partition_record_span, scene_man_carriers,
-        system_flag_census as run_system_flag_census, walk_partition_gflag_sites,
-        walk_partition1_scripts,
+    use legaia_engine_field::man_field_scripts::{
+        FlagBank, partition_record_span, walk_partition_gflag_sites, walk_partition1_scripts,
     };
-    use legaia_engine_vm::field_disasm::FlagKind;
+    use legaia_engine_scene::man_census::{
+        scene_man_carriers, system_flag_census as run_system_flag_census,
+    };
+    use legaia_scene_formats::field_disasm::FlagKind;
 
     let index = open_index_from_args(extracted_root, disc)?;
     let scene =
@@ -52,7 +53,7 @@ pub(crate) fn cmd_man_scripts(
     };
     let entry_idx = carrier.entry_idx;
     let man = carrier.payload.clone();
-    let man_file = legaia_asset::man_section::parse(&man)?;
+    let man_file = legaia_scene_formats::man_section::parse(&man)?;
     if carrier.is_variant() {
         println!(
             "using VARIANT MAN from PROT[{entry_idx}] (chunk offset 0x{:X})",
@@ -129,7 +130,7 @@ pub(crate) fn cmd_man_scripts(
     );
 
     if p2_gates {
-        use legaia_engine_core::man_field_scripts::{
+        use legaia_engine_field::man_field_scripts::{
             partition2_record_gates, partition2_record_name,
         };
         let n2 = *man_file.header.partition_counts.get(2).unwrap_or(&0) as usize;
@@ -168,7 +169,7 @@ pub(crate) fn cmd_man_scripts(
     }
 
     if let Some(target) = disasm_record {
-        use legaia_engine_vm::field_disasm::{LinearWalker, format_instruction};
+        use legaia_scene_formats::field_disasm::{LinearWalker, format_instruction};
         let (script_start, pc0, body_len) =
             partition_record_span(&man_file, &man, disasm_partition, target).with_context(
                 || format!("partition {disasm_partition} record {target} has no decodable span"),
@@ -262,7 +263,7 @@ pub(crate) fn cmd_man_scripts(
     }
 
     if motion_flag_census {
-        use legaia_engine_core::man_field_scripts::motion_flag_census as run_motion_flag_census;
+        use legaia_engine_scene::man_census::motion_flag_census as run_motion_flag_census;
         let scenes = index.cdname_scene_names();
         let census = run_motion_flag_census(&index, &scenes);
         let total: usize = census.values().map(Vec::len).sum();
@@ -275,7 +276,7 @@ pub(crate) fn cmd_man_scripts(
         for (flag, hits) in &census {
             println!("flag 0x{flag:04X} ({flag:>5}): {} site(s)", hits.len());
             for h in hits {
-                use legaia_asset::man_motion::MotionFlagKind;
+                use legaia_scene_formats::man_motion::MotionFlagKind;
                 let kind = match h.site.kind {
                     MotionFlagKind::Set => "Set  ",
                     MotionFlagKind::Clear => "Clear",
@@ -308,7 +309,7 @@ pub(crate) fn cmd_man_scripts(
     }
 
     if op49_window_census {
-        use legaia_engine_core::man_field_scripts::op49_window_census as run_op49_window_census;
+        use legaia_engine_scene::man_census::op49_window_census as run_op49_window_census;
         let scenes = index.cdname_scene_names();
         let sites = run_op49_window_census(&index, &scenes);
         println!(
@@ -345,7 +346,7 @@ pub(crate) fn cmd_man_scripts(
         const MARGIN: u32 = 8;
         for target in TARGETS {
             let contained = sites.iter().filter(|s| s.covers(target)).count();
-            let near: Vec<&legaia_engine_core::man_field_scripts::Op49WindowSite> = sites
+            let near: Vec<&legaia_engine_field::man_field_scripts::Op49WindowSite> = sites
                 .iter()
                 .filter(|s| !s.covers(target) && s.min_distance(target) <= MARGIN)
                 .collect();
@@ -372,7 +373,7 @@ pub(crate) fn cmd_man_scripts(
     }
 
     if narration {
-        use legaia_asset::cutscene_text::parse_narration;
+        use legaia_scene_formats::cutscene_text::parse_narration;
         // Either a specific `--disasm-record` in `--disasm-partition`, or a
         // sweep of every record in `disasm_partition` (defaulting to 2, the
         // cutscene-timeline partition).
@@ -435,7 +436,7 @@ struct ResolvedModeTrace {
 }
 
 fn resolve_mode_trace_inputs(args: &ModeTraceArgs<'_>) -> Result<ResolvedModeTrace> {
-    use legaia_mednafen::ScenarioManifest;
+    use legaia_ram_image::ScenarioManifest;
 
     match (args.scenario, args.scene) {
         (Some(label), _) => {
@@ -597,7 +598,7 @@ struct ResolvedAudioTrace {
 }
 
 fn resolve_audio_trace_inputs(args: &AudioTraceArgs<'_>) -> Result<ResolvedAudioTrace> {
-    use legaia_mednafen::ScenarioManifest;
+    use legaia_ram_image::ScenarioManifest;
 
     // The retail-JSONL path is the multi-frame mode; it doesn't require a
     // scenario lookup because the JSONL is self-contained.
@@ -843,7 +844,7 @@ struct ResolvedPcmTrace {
 }
 
 fn resolve_pcm_trace_inputs(args: &PcmTraceArgs<'_>) -> Result<ResolvedPcmTrace> {
-    use legaia_mednafen::ScenarioManifest;
+    use legaia_ram_image::ScenarioManifest;
 
     // Explicit `--retail-save` always wins; needs `--scene` to know what
     // to boot.

@@ -38,7 +38,7 @@ fn menu_overlay() -> Option<Vec<u8>> {
         return None;
     }
     let disc = std::env::var_os("LEGAIA_DISC_BIN")?;
-    let host = match legaia_engine_core::scene::SceneHost::open_disc(&disc) {
+    let host = match legaia_engine_core::scene_host::SceneHost::open_disc(&disc) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("[skip] open_disc failed: {e:#}");
@@ -75,8 +75,8 @@ fn koin1_prize_counter_interact_arms_the_exchange_through_the_runner() {
     let Some(overlay) = menu_overlay() else {
         return;
     };
-    let mut host =
-        legaia_engine_core::scene::SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    let mut host = legaia_engine_core::scene_host::SceneHost::open_extracted(&extracted)
+        .expect("open SceneHost");
     host.enter_field_scene("koin1", 0).expect("enter koin1");
     host.world.install_menu_overlay_tables(&overlay);
     assert!(
@@ -147,13 +147,13 @@ fn koin1_prize_counter_interact_arms_the_exchange_through_the_runner() {
 
 /// The four exchange windows (43 tab / 44 list / 45 coin counter / 46
 /// confirm) carry sane on-stage rects in the disc descriptor table - the
-/// rects `engine-ui::ui_prize_exchange` anchors every draw on.
+/// rects `engine-ui::prize_exchange` anchors every draw on.
 #[test]
 fn the_exchange_windows_rects_are_on_stage() {
     let Some(overlay) = menu_overlay() else {
         return;
     };
-    let table = legaia_asset::menu_windows::parse(&overlay).expect("window table parses");
+    let table = legaia_game_tables::menu_windows::parse(&overlay).expect("window table parses");
     for id in [43usize, 44, 45, 46] {
         let d = table.window(id).unwrap_or_else(|| panic!("window {id}"));
         let (x, y, w, h) = d.rect();
@@ -177,7 +177,7 @@ fn the_retail_prize_table_arms_both_counters() {
     w.install_menu_overlay_tables(&overlay);
     assert_eq!(
         w.shops.prize_blocks.len(),
-        legaia_engine_core::prize_exchange::PRIZE_BLOCK_COUNT,
+        legaia_engine_minigames::prize_exchange::PRIZE_BLOCK_COUNT,
         "the extended PROT 899 read reaches the table at 0x15D00"
     );
 

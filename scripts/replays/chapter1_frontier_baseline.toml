@@ -1,6 +1,6 @@
 # Chapter-1 scene-frontier baseline.
 #
-# What `crates/engine-core/tests/chapter1_frontier_ladder.rs` reached over
+# What `crates/parity/tests/chapter1_frontier_ladder.rs` reached over
 # the whole chapter-1 reachable scene set, rather than along one route. The
 # test asserts `>=` on every number below, so each is a ratchet: it may go up
 # in a reviewed edit, and a drop fails the run.

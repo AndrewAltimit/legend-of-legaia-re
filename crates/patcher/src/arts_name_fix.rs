@@ -38,15 +38,15 @@
 //! produced the Healing-Leaf freeze (zero *padding between live tables* is
 //! reachable by indexed reads a static scan cannot see). This carrier holds
 //! injection sites to the read-watch standard, so it parks the routine in
-//! **verified-dead arena 1** instead ([`crate::shiny_seru::ARENA1_VA`],
+//! **verified-dead arena 1** instead ([`legaia_code_hooks::arenas::ARENA1_VA`],
 //! read-watch-verified unreferenced across a live battle with an item use, a
 //! victory pose and a summon cast) and re-targets only the hook's `j` word.
 //! The pack parks it directly behind its battle-load stub.
 
 use anyhow::{Result, bail};
 
-use crate::mips::{A1, addiu, j, lui};
-use crate::shiny_seru::{ARENA1_END_VA, ARENA1_VA, Edit, SCUS_TABLE_RANGES};
+use legaia_code_hooks::arenas::{ARENA1_END_VA, ARENA1_VA, Edit, SCUS_TABLE_RANGES};
+use legaia_code_hooks::mips::{A1, addiu, j, lui};
 
 /// The hook site: the banner path's `li a0,0x4C` at `0x8004BC3C`.
 pub const HOOK_VA: u32 = 0x8004_BC3C;
@@ -131,7 +131,7 @@ impl ArtsNameFixInjection {
 
         let hook_off = scus_off(scus, HOOK_VA)?;
         for (i, &want) in HOOK_DISPLACED.iter().enumerate() {
-            let got = crate::mips::read_word(scus, hook_off + i * 4)?;
+            let got = legaia_code_hooks::mips::read_word(scus, hook_off + i * 4)?;
             if got != want {
                 bail!(
                     "arts-name-fix: SCUS {va:#x} = {got:#010x}, expected {want:#010x} \
@@ -171,14 +171,14 @@ impl ArtsNameFixInjection {
 }
 
 fn scus_off(scus: &[u8], va: u32) -> Result<usize> {
-    legaia_asset::item_names::file_offset_for_va(scus, va)
+    legaia_game_tables::item_names::file_offset_for_va(scus, va)
         .ok_or_else(|| anyhow::anyhow!("arts-name-fix: can't resolve SCUS VA {va:#x}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mips_sim::Cpu;
+    use legaia_code_hooks::mips_sim::Cpu;
 
     /// The routine replays exactly the words the hook displaces, and its
     /// return jump targets the word after the hook - the pairing that pins
@@ -224,14 +224,20 @@ mod tests {
             // measure stub: v0 = width; redraw stub: return immediately.
             cpu.load_words(
                 MEASURE,
-                &[crate::mips::addiu(
-                    crate::mips::V0,
-                    crate::mips::ZERO,
+                &[legaia_code_hooks::mips::addiu(
+                    legaia_code_hooks::mips::V0,
+                    legaia_code_hooks::mips::ZERO,
                     width as u16,
                 )],
             );
-            cpu.load_words(MEASURE + 4, &[crate::mips::jr(crate::mips::RA), 0]);
-            cpu.load_words(REDRAW, &[crate::mips::jr(crate::mips::RA), 0]);
+            cpu.load_words(
+                MEASURE + 4,
+                &[legaia_code_hooks::mips::jr(legaia_code_hooks::mips::RA), 0],
+            );
+            cpu.load_words(
+                REDRAW,
+                &[legaia_code_hooks::mips::jr(legaia_code_hooks::mips::RA), 0],
+            );
             cpu.wr32(BANNER + 0x74C, NAME);
             cpu.r[29] = 0x801F_F000; // sp
             cpu.pc = HOOK_VA;

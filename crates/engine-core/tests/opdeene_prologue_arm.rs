@@ -11,9 +11,9 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::man_field_scripts::walk_partition_gflag_sites;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::{PROLOGUE_HANDOFF_BIT, PROLOGUE_HANDOFF_FLAG, World};
+use legaia_engine_field::man_field_scripts::walk_partition_gflag_sites;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -37,14 +37,14 @@ fn opdeene_partition2_carries_the_gflag_set_26_handoff_arm() {
         return;
     };
 
-    let cutscene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    let cutscene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
     let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
     let scene = Scene::load(&index, cutscene).expect("load opdeene");
     let man = scene
         .field_man_payload(&index)
         .expect("man payload fetch")
         .expect("opdeene has a MAN payload");
-    let man_file = legaia_asset::man_section::parse(&man).expect("man parse");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("man parse");
 
     eprintln!(
         "{cutscene} MAN: {} bytes, partition counts {:?}",
@@ -111,7 +111,7 @@ fn opdeene_partition2_carries_the_gflag_set_26_handoff_arm() {
     // The confirm-press gate then hands off to Rim Elm exactly once.
     assert_eq!(
         world.take_prologue_handoff(true),
-        Some(legaia_asset::new_game::OPENING_SCENE),
+        Some(legaia_game_tables::new_game::OPENING_SCENE),
     );
     assert_eq!(
         world.flags.story_flags & PROLOGUE_HANDOFF_FLAG,
@@ -137,7 +137,7 @@ fn town01_partition2_has_no_prologue_handoff_arm() {
         .field_man_payload(&index)
         .expect("man payload fetch")
         .expect("town01 has a MAN payload");
-    let man_file = legaia_asset::man_section::parse(&man).expect("man parse");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("man parse");
 
     // The interactive scene must NOT carry the prologue arm - otherwise the
     // data-driven arm would fire a spurious hand-off back into town01.

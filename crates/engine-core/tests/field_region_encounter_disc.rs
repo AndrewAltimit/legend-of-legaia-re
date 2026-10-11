@@ -24,11 +24,12 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::encounter::EncounterPhase;
-use legaia_engine_core::region_encounter::{
+use legaia_engine_battle::encounter::EncounterPhase;
+use legaia_engine_battle::region_encounter::{
     EncounterRegion, RegionEncounterTable, region_encounter_table_from_man,
 };
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost, is_world_map_scene};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::{DefaultMapIdResolver, is_world_map_scene};
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {

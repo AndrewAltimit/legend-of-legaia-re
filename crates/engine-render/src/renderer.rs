@@ -10,19 +10,21 @@ use legaia_tim::{VRAM_HEIGHT, VRAM_WIDTH, Vram};
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
-mod core;
+mod construct;
+mod depth;
 mod fog_volume;
-mod helpers;
+mod letterbox;
 mod render;
 mod state;
 mod upload;
 mod uploaded;
 
-/// Re-exported for `tests::color_space`; `new_async` calls it via `core`.
+/// Re-exported for `tests::color_space`; `new_async` calls it via `construct`.
 #[cfg(test)]
-pub(crate) use core::choose_surface_format;
+pub(crate) use construct::choose_surface_format;
+use depth::*;
 pub use fog_volume::FogVolumeDraw;
-pub(crate) use helpers::*;
+pub(crate) use letterbox::letterbox_scale;
 pub use render::CaptureImage;
 pub use state::*;
 pub use uploaded::*;
@@ -31,8 +33,12 @@ pub use uploaded::*;
 /// colour, the two-vec4 flat bucket-depth reference
 /// ([`Renderer::upload_vram_mesh_with_flat_refs`]), and the primitive's
 /// corners for retail's per-primitive near reject
-/// ([`legaia_engine_ui::prim_near_reject`], [`PRIM_REF_BYTES`]).
+/// ([`legaia_render_kernels::prim_near_reject`], [`PRIM_REF_BYTES`]).
 pub(crate) const VRAM_VERTEX_STRIDE: u64 = 68 + PRIM_REF_BYTES;
+
+/// Byte stride of one glow-sprite vertex: position (3 x f32) + falloff uv
+/// (2 x f32) + additive colour / kind (4 x f32).
+const GLOW_VERTEX_STRIDE: u64 = 36;
 
 /// Bytes per vertex of a colour mesh: position, colour, blend word, and the
 /// primitive-corner record.

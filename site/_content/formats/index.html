@@ -167,11 +167,11 @@
   <div class="card-grid">
     <a class="card" href="spell-table.html">
       <div class="card-title"><span>Spell table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Static spell stats + name pointers, 12-byte stride. Player Seru-magic block <code>0x81..=0x8B</code>; named monster attacks from <code>0x25</code>. Parser <code>legaia_asset::spell_names</code>.</div>
+      <div class="card-body">Static spell stats + name pointers, 12-byte stride. Player Seru-magic block <code>0x81..=0x8B</code>; named monster attacks from <code>0x25</code>. Parser <code>legaia_game_tables::spell_names</code>.</div>
     </a>
     <a class="card" href="item-table.html">
       <div class="card-title"><span>Item-name table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">256 item ids, 12-byte stride - the id space monster drops, steals and equipment all index. Parser <code>legaia_asset::item_names</code>.</div>
+      <div class="card-body">256 item ids, 12-byte stride - the id space monster drops, steals and equipment all index. Parser <code>legaia_game_tables::item_names</code>.</div>
     </a>
     <a class="card" href="item-effect-table.html">
       <div class="card-title"><span>Item-effect table</span> <span class="tag tag-done">Confirmed</span></div>
@@ -179,19 +179,19 @@
     </a>
     <a class="card" href="equipment-table.html">
       <div class="card-title"><span>Equipment stat-bonus table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">8-byte records per equippable item: INT / ATK / UDF / LDF / SPD bonuses, equip-character mask, slot type, Ra-Seru flag. Parser <code>legaia_asset::equip_stats</code>.</div>
+      <div class="card-body">8-byte records per equippable item: INT / ATK / UDF / LDF / SPD bonuses, equip-character mask, slot type, Ra-Seru flag. Parser <code>legaia_game_tables::equip_stats</code>.</div>
     </a>
     <a class="card" href="accessory-passive-table.html">
       <div class="card-title"><span>Accessory passive table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">64-slot passive-index space mapping accessories ("Goods") to per-character ability bits, with stat-percent magnitudes inline. Parser <code>legaia_asset::accessory_passive</code>.</div>
+      <div class="card-body">64-slot passive-index space mapping accessories ("Goods") to per-character ability bits, with stat-percent magnitudes inline. Parser <code>legaia_game_tables::accessory_passive</code>.</div>
     </a>
     <a class="card" href="steal-table.html">
       <div class="card-title"><span>Steal table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Per-monster <code>[chance, item]</code> pairs - chance first, the reverse of the drop fields. What the Evil God Icon steals. Parser <code>legaia_asset::steal_table</code>.</div>
+      <div class="card-body">Per-monster <code>[chance, item]</code> pairs - chance first, the reverse of the drop fields. What the Evil God Icon steals. Parser <code>legaia_game_tables::steal_table</code>.</div>
     </a>
     <a class="card" href="new-game-table.html">
       <div class="card-title"><span>New-game starting party</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Four 26-byte records (Vahn / Noa / Gala / Terra) that seed the live character records; opening scene <code>town01</code>. Parser <code>legaia_asset::new_game</code>.</div>
+      <div class="card-body">Four 26-byte records (Vahn / Noa / Gala / Terra) that seed the live character records; opening scene <code>town01</code>. Parser <code>legaia_game_tables::new_game</code>.</div>
     </a>
     <a class="card" href="summon-readef.html">
       <div class="card-title"><span>summon.dat / readef.DAT</span> <span class="tag tag-done">Confirmed</span></div>
@@ -218,7 +218,7 @@
     </a>
     <a class="card" href="place-names.html">
       <div class="card-title"><span>Place names</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">One place name, three carriers: the executable's quick-travel cells, the label table trailing every kingdom MAN, and each scene MAN's banner name. Parser <code>legaia_asset::place_names</code>.</div>
+      <div class="card-body">One place name, three carriers: the executable's quick-travel cells, the label table trailing every kingdom MAN, and each scene MAN's banner name. Parser <code>legaia_scene_formats::place_names</code>.</div>
     </a>
     <a class="card" href="world-map-overlay.html">
       <div class="card-title"><span>World-map slot-4 records</span> <span class="tag tag-done">Confirmed</span></div>

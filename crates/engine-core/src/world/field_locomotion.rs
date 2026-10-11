@@ -1,7 +1,7 @@
 //! Player field-locomotion state: run / slow / precise-movement gates, step deltas, ledge hop, vertical settle, wall probes and the per-tick movement cues.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite [`World`].
+//! Fields keep their retail provenance notes.
 
 use super::*;
 
@@ -30,7 +30,7 @@ pub struct FieldLocomotion {
     /// the locomotion step and folds the output into the player actor's
     /// `pose_frame`, so hosts rebuild the posed mesh exactly like the battle
     /// animation path. `None` = static rest pose.
-    pub player_anim: Option<crate::field_anim::FieldPlayerAnim>,
+    pub player_anim: Option<legaia_engine_field::field_anim::FieldPlayerAnim>,
     /// When set, pad locomotion blocks a direction with retail's
     /// **three-probe leading-edge footprint** (`FIELD_WALL_PROBES`, the
     /// `DAT_801f2214` table `FUN_801cfe4c` walks) instead of a single
@@ -39,13 +39,13 @@ pub struct FieldLocomotion {
     /// the existing locomotion oracles (and BFS nav drivers, which keep the
     /// centre test regardless) are bit-identical; enable it for
     /// retail-faithful wall standoff. Validated against the wall-press
-    /// captures by `engine-shell/tests/field_collision_discriminator.rs`.
+    /// captures by `parity/tests/field_collision_discriminator.rs`.
     pub leading_edge_wall_probes: bool,
     /// Accumulated walked amount the field walk-regen tick drains (retail
     /// `_DAT_801F2274`). [`crate::world::World::step_field_locomotion`] bumps it on every
     /// retail frame whose locomotion step actually committed;
     /// [`crate::world::World::tick_field_walk_regen`] consumes
-    /// [`crate::walk_regen::WALK_REGEN_STEP_COST`] per regen tick. The drain
+    /// [`legaia_engine_field::walk_regen::WALK_REGEN_STEP_COST`] per regen tick. The drain
     /// is retail-pinned, the fill unit is the engine's - see
     /// [`crate::world::World::tick_field_walk_regen`].
     pub walk_regen_steps: i32,
@@ -84,14 +84,14 @@ pub struct FieldLocomotion {
     /// **continuously** instead of through retail's 4/8-way quantisation:
     /// the camera azimuth is applied at full angular resolution (not
     /// snapped to the nearest 90°), key diagonals walk true 45° vectors at
-    /// full speed, and an analog stick ([`crate::input::InputState::lstick`])
+    /// full speed, and an analog stick ([`legaia_engine_system::input::InputState::lstick`])
     /// passes its angle through untouched. Off by default - the default
     /// path stays bit-identical to the retail-faithful quantised remap
     /// (replays / oracles are unaffected unless a host opts in).
     pub precise_movement: bool,
     /// Field Move option: `false` = Walk, `true` = Run (retail config word
     /// `0x800846CC`, the pause menu's "Field Move" row - see
-    /// [`crate::options::FieldMoveOpt`]). Hosts mirror their
+    /// [`legaia_engine_menus::option_values::FieldMoveOpt`]). Hosts mirror their
     /// [`crate::options::OptionsState`] onto this the way they mirror
     /// [`crate::world::FieldLocomotion::precise_movement`].
     ///
@@ -128,7 +128,7 @@ pub struct FieldLocomotion {
     /// run check entirely** - a forced walk cannot be run out of.
     ///
     /// Retail's arm reads `_DAT_8007B6A8`, which the port carries as
-    /// [`crate::world::PartyState::scene_save_allowed`] (set on the kingdom
+    /// [`legaia_engine_menus::party_state::PartyState::scene_save_allowed`] (set on the kingdom
     /// world maps) and [`crate::world::World::field_base_step`] tests
     /// directly; this flag forces the same arm on any scene, for tests and
     /// debug drivers.
@@ -147,7 +147,7 @@ pub struct FieldLocomotion {
     /// slot lives here: it is the one `+0x72` both play hosts read
     /// ([`crate::world::World::player_render_scale`]). Cleared at scene entry
     /// with the rest of the pool (`FUN_8003CDA8`).
-    pub(crate) player_scale_ramps: legaia_engine_vm::ambient_motion::RampScheduler,
+    pub(crate) player_scale_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler,
     /// Last frame's field position for every actor the motion detector
     /// tracks - the player (from its [`crate::vm::ActorMoveState`]) and every
     /// entry of [`crate::world::FieldNpcState::positions`]. Rewritten each field tick by
@@ -173,7 +173,7 @@ pub struct FieldLocomotion {
     /// *motion* is what made script-driven actors glide.
     ///
     /// The player's own bit is folded straight into
-    /// [`crate::field_anim::FieldPlayerAnim::moved_this_frame`] rather than
+    /// [`legaia_engine_field::field_anim::FieldPlayerAnim::moved_this_frame`] rather than
     /// left here for a host to read.
     pub(crate) actor_moving: std::collections::HashSet<u8>,
     /// The post-remap direction bits of this tick's movement attempt
@@ -230,7 +230,7 @@ pub struct FieldLocomotion {
     /// besides the position triple.
     ///
     /// `FUN_801DD4C4` stores `-Y` here on every frame of a move whose target
-    /// carries [`EASE_TARGET_INVERT_Y`](legaia_engine_vm::field_actor_timers::EASE_TARGET_INVERT_Y)
+    /// carries [`EASE_TARGET_INVERT_Y`](legaia_engine_field::field_actor_timers::EASE_TARGET_INVERT_Y)
     /// (`0x801DD6A4..0x801DD6B8`: `lw v0,0x10(a2)` / `lui v1,0x2000` / `and` /
     /// `subu v0,zero,a1` / `sh v0,0x8e(a2)`). The consumer is the field-actor
     /// driver `FUN_8003BC08`, whose height arm tests the same flag **first**
@@ -248,7 +248,7 @@ pub struct FieldLocomotion {
     /// Player-only, and that is a real limit rather than a simplification:
     /// retail's `+0x8E` is per-actor, but a scene NPC in this engine is a
     /// placement slot with an `(x, z)` pair and a scene-build Y from
-    /// [`legaia_asset::field_objects::Placement::world_y`] - it has no
+    /// [`legaia_scene_formats::field_objects::Placement::world_y`] - it has no
     /// per-frame height controller for a mirror to override.
     pub(crate) eased_mirror_y: Option<i16>,
     /// Scripted player-move cues raised by cutscene-timeline `A2 F8
@@ -261,9 +261,9 @@ pub struct FieldLocomotion {
     pub player_move_cues: Vec<u8>,
     /// End-latch length, in engine ticks, of every record of the loaded
     /// scene's own ANM bundle (retail `*(0x8007B888)`), indexed by record:
-    /// [`crate::field_anim::clip_end_ticks`] of the record's frame count at
-    /// its own step ([`crate::field_anim::clip_step`] - the gated records
-    /// play slower). Seeded by [`crate::scene::SceneHost::load_scene`]; read
+    /// [`legaia_engine_vm::actor_tick::clip_end_ticks`] of the record's frame count at
+    /// its own step ([`legaia_engine_vm::actor_tick::clip_step`] - the gated records
+    /// play slower). Seeded by [`crate::scene_host::SceneHost::load_scene`]; read
     /// by the cutscene timeline to time the end latch of a scene-bank clip it
     /// pokes onto the player without a host-owned clip player. Empty when the
     /// scene carries no bundle; `0` for a record with no frames.
@@ -279,13 +279,13 @@ pub struct FieldLocomotion {
     /// clip id. Written by the pad step (idle `2` / walk `1` / run `3`, or
     /// the scene sentinel `99`), the hop phase machine (`6` / `7` / `1`) and
     /// the walk-on dispatcher; seeded `2` on scene entry. See
-    /// [`legaia_engine_vm::field_player_clip`].
+    /// [`legaia_engine_field::field_player_clip`].
     pub clip_base: u16,
     /// The player actor's clip id `+0x5C`, as the settle tail last stored it.
     /// The pad step writes a base only while it is positive.
     pub player_clip: i16,
     /// The player actor's party-bank bit `+0x10 & 0x01000000`
-    /// ([`legaia_engine_vm::field_player_clip::PARTY_BANK_FLAG`]): raised by
+    /// ([`legaia_engine_field::field_player_clip::PARTY_BANK_FLAG`]): raised by
     /// every pad step that writes a base, dropped by the scene-sentinel pick.
     pub player_party_bank: bool,
     /// The clip override `_DAT_8007B6AC`: field-VM op `4C CE <value>`
@@ -309,8 +309,8 @@ pub struct FieldLocomotion {
     pub(crate) player_rig_dirty: bool,
     /// The kind-0 warp's globals `_DAT_8007B6B0` (timer), `_DAT_8007B6B4`
     /// (post-warp pad hold) and the destination pair - see
-    /// [`legaia_engine_vm::field_warp_tile`].
-    pub(crate) warp: legaia_engine_vm::field_warp_tile::WarpTimer,
+    /// [`legaia_engine_field::field_warp_tile`].
+    pub(crate) warp: legaia_engine_field::field_warp_tile::WarpTimer,
     /// Frames left before the warp's fade-in (the second `FUN_801D58F0`,
     /// delayed `0x29` frames from the crossing) replaces the fade-out in the
     /// one fade slot the port has.
@@ -334,7 +334,7 @@ impl FieldLocomotion {
             run_button_mask: crate::world::config::FIELD_RUN_BUTTON_MASK_DEFAULT,
             forced_slow: false,
             precise_move_carry: (0.0, 0.0),
-            player_scale_ramps: legaia_engine_vm::ambient_motion::RampScheduler::new(),
+            player_scale_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
             motion_prev: std::collections::HashMap::new(),
             actor_moving: std::collections::HashSet::new(),
             last_move_dir_bits: 0,
@@ -346,13 +346,13 @@ impl FieldLocomotion {
             player_move_cues: Vec::new(),
             scene_clip_ticks: Vec::new(),
             scene_clip_meta: Vec::new(),
-            clip_base: legaia_engine_vm::field_player_clip::BASE_IDLE,
-            player_clip: legaia_engine_vm::field_player_clip::BASE_IDLE as i16,
+            clip_base: legaia_engine_field::field_player_clip::BASE_IDLE,
+            player_clip: legaia_engine_field::field_player_clip::BASE_IDLE as i16,
             player_party_bank: true,
             clip_override: 0,
             player_live_model: None,
             player_rig_dirty: false,
-            warp: legaia_engine_vm::field_warp_tile::WarpTimer::default(),
+            warp: legaia_engine_field::field_warp_tile::WarpTimer::default(),
             warp_fade_in_in: None,
             arrival_facing: 0,
         }

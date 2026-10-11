@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use legaia_asset::{AssetType, pack, parse_streaming};
+use legaia_container_formats::{AssetType, pack, parse_streaming};
 use legaia_iso::{
     iso9660,
     raw::{RawDisc, USER_DATA_SIZE},
@@ -222,15 +222,15 @@ fn step_tim_catalog(prot: &Path, out: &Path) -> Result<(usize, usize)> {
     if !prot.exists() {
         bail!("PROT.DAT not found at {}", prot.display());
     }
-    let raw = legaia_asset::tim_catalog::build_from_path(prot)?;
+    let raw = legaia_disc_audit::tim_catalog::build_from_path(prot)?;
     std::fs::write(
         out.join("prot_tim_catalog.tsv"),
-        legaia_asset::tim_catalog::to_tsv(&raw),
+        legaia_disc_audit::tim_catalog::to_tsv(&raw),
     )?;
-    let deep = legaia_asset::tim_deep_catalog::build_from_path(prot)?;
+    let deep = legaia_disc_audit::tim_deep_catalog::build_from_path(prot)?;
     std::fs::write(
         out.join("prot_tim_deep_catalog.tsv"),
-        legaia_asset::tim_deep_catalog::to_tsv(&deep),
+        legaia_disc_audit::tim_deep_catalog::to_tsv(&deep),
     )?;
     Ok((raw.len(), deep.len()))
 }
@@ -331,7 +331,7 @@ fn step_prot_extract(
 }
 
 fn step_categorize(dir: &Path, out: &Path) -> Result<CategorizeSummary> {
-    use legaia_asset::categorize::classify;
+    use legaia_disc_audit::categorize::classify;
 
     // Collect .BIN paths first so we can hand them to rayon.
     let paths: Vec<PathBuf> = std::fs::read_dir(dir)?

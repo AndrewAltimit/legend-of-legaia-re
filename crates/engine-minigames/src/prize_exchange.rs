@@ -54,7 +54,7 @@
 //! The op-`0x49` park stays Armed until `World::finish_prize_exchange`
 //! flips it Done, exactly the gold shop's shape.
 
-use legaia_engine_vm::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
+use legaia_engine_system::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
 
 /// File offset of the prize table inside the menu overlay's PROT entry
 /// (899): retail VA `0x801E4518`, the base `FUN_801D5DE0` indexes with
@@ -225,7 +225,7 @@ impl PrizeExchangeSession {
     /// this in place after every redeem).
     pub fn rebuild(&mut self, flag_set: impl FnMut(u16) -> bool) {
         self.rows = visible_rows(&self.block, flag_set);
-        self.cursor = (self.cursor & legaia_engine_vm::menu_input::CURSOR_INDEX_MASK)
+        self.cursor = (self.cursor & legaia_engine_system::menu_input::CURSOR_INDEX_MASK)
             .min(self.rows.len().saturating_sub(1) as u32);
     }
 
@@ -236,12 +236,12 @@ impl PrizeExchangeSession {
 
     /// Browse-cursor row index.
     pub fn cursor(&self) -> usize {
-        (self.cursor & legaia_engine_vm::menu_input::CURSOR_INDEX_MASK) as usize
+        (self.cursor & legaia_engine_system::menu_input::CURSOR_INDEX_MASK) as usize
     }
 
     /// Yes/No cursor (0 = Yes, 1 = No).
     pub fn confirm_cursor(&self) -> u8 {
-        (self.confirm_cursor & legaia_engine_vm::menu_input::CURSOR_INDEX_MASK) as u8
+        (self.confirm_cursor & legaia_engine_system::menu_input::CURSOR_INDEX_MASK) as u8
     }
 
     /// Selected visible row's record, if any.
@@ -293,7 +293,7 @@ impl PrizeExchangeSession {
             }
             Phase::Confirm => match menu_cursor_nav(&mut self.confirm_cursor, 2, true, nav) {
                 CursorNav::Confirm => {
-                    self.cursor &= legaia_engine_vm::menu_input::CURSOR_INDEX_MASK;
+                    self.cursor &= legaia_engine_system::menu_input::CURSOR_INDEX_MASK;
                     self.phase = Phase::Browse;
                     if self.confirm_cursor() == 1 {
                         return PrizeEvent::BackToList;
@@ -308,7 +308,7 @@ impl PrizeExchangeSession {
                     }
                 }
                 CursorNav::Cancel => {
-                    self.cursor &= legaia_engine_vm::menu_input::CURSOR_INDEX_MASK;
+                    self.cursor &= legaia_engine_system::menu_input::CURSOR_INDEX_MASK;
                     self.phase = Phase::Browse;
                     PrizeEvent::BackToList
                 }
@@ -322,7 +322,7 @@ impl PrizeExchangeSession {
 /// The two bag operations the state-3 commit needs: the held count the
 /// `< 0x63` gate reads (`FUN_80042F4C(id)`) and the one-copy grant
 /// (`FUN_800421D4(id, 1)`). The engine's party bag
-/// (`legaia_engine_core::world::ItemBag`) implements it; this crate keeps
+/// (`legaia_engine_menus::item_bag::ItemBag`) implements it; this crate keeps
 /// the rules free of the bag type.
 pub trait RedeemBag {
     /// Copies of `item_id` currently held (0 when absent).

@@ -1,5 +1,5 @@
 //! The volumetric ground-fog **enhancement** pass
-//! (`legaia_engine_core::fog_volume`): the bank drawn as horizontal
+//! (`legaia_render_kernels::fog_volume`): the bank drawn as horizontal
 //! alpha-blended sheets over the walk ground, depth-tested against the scene
 //! already in the frame (no depth write), after every 3D draw and before the
 //! HUD overlays.
@@ -12,14 +12,14 @@
 //! The browser play page draws the same bank through
 //! `site/js/webgl-fog-volume.js`, a GLSL transcription of [`FOG_SHADER_SRC`]
 //! over the same frame data; both read the recipe's numbers from the frame
-//! (`legaia_engine_core::fog_volume::FOG_SHADER_CONSTANTS`). This crate does
+//! (`legaia_render_kernels::fog_volume::FOG_SHADER_CONSTANTS`). This crate does
 //! not depend on `engine-core`, so the host hands the frame over as a
 //! [`FogVolumeDraw`] of plain fields.
 
 use super::*;
 
 /// One frame's bank, as the host hands it over - the fields of
-/// `legaia_engine_core::fog_volume::FogVolumeFrame` plus the world -> clip
+/// `legaia_render_kernels::fog_volume::FogVolumeFrame` plus the world -> clip
 /// matrix of the bank's space.
 pub struct FogVolumeDraw<'a> {
     /// Bank space (retail Y-down world units for a field scene, raw battle
@@ -478,7 +478,7 @@ impl FogVolumePass {
 
 impl Renderer {
     /// Stage (or clear) this frame's volumetric ground-fog bank - the
-    /// enhancement layer `legaia_engine_core::fog_volume` simulates.
+    /// enhancement layer `legaia_render_kernels::fog_volume` simulates.
     ///
     /// [`FogVolumeDraw::world_to_clip`] maps the bank's space to clip space,
     /// before the reversed-Z remap the renderer applies itself - the host's

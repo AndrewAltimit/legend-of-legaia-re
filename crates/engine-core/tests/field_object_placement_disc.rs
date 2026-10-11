@@ -1,13 +1,14 @@
 //! Disc-gated: the field static-object placement table (`FUN_8003A55C`)
 //! parsed from `town01`'s field map file reproduces the known building
-//! anchors. Validates [`legaia_asset::field_objects`] + the
+//! anchors. Validates [`legaia_scene_formats::field_objects`] + the
 //! [`Scene::field_object_placements`] wiring against real disc bytes.
 //!
 //! Skips silently when `extracted/` or `LEGAIA_DISC_BIN` is missing.
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{Scene, SceneHost};
-use legaia_engine_core::scene_resources::{
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::Scene;
+use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 
@@ -94,7 +95,7 @@ fn town01_placements_reproduce_building_anchors() {
     // Every placement lands on-grid with the placed flag set, and within the
     // ~16384-unit town extent (128 tiles * 128 units).
     for p in &placements {
-        assert!(p.flags & legaia_asset::field_objects::FLAG_PLACED != 0);
+        assert!(p.flags & legaia_scene_formats::field_objects::FLAG_PLACED != 0);
         assert!((0..128).contains(&p.col) && (0..128).contains(&p.row));
         assert!(
             (0..0x4040).contains(&p.world_x) && (0..0x4040).contains(&p.world_z),
@@ -136,7 +137,7 @@ fn town01_placement_pack_indices_resolve_in_loaded_pack() {
     // The environment meshes are the scene bundle entry's TMD pack, in scan
     // order (the same indexing `pack_index` uses).
     let bundle =
-        legaia_engine_core::scene_bundle::find_bundle(&scene).expect("town01 has a scene bundle");
+        legaia_engine_scene::scene_bundle::find_bundle(&scene).expect("town01 has a scene bundle");
     let bundle_entry = bundle.entry_idx();
 
     let mut shared: Vec<Scene> = Vec::new();
@@ -203,7 +204,7 @@ fn town01_placement_pack_indices_resolve_in_loaded_pack() {
 ///     CLUT row no scene TIM uploads. town01's instance (pack[74], obj 347,
 ///     6 placements) samples CBA `(64,510)` / texpage `(960,256)` - the
 ///     **boot-resident system-UI bundle** (raw PROT TOC entries 0/1,
-///     `FUN_800198E0` flat-strip CLUT upload; `legaia_asset::system_ui_bundle`).
+///     `FUN_800198E0` flat-strip CLUT upload; `legaia_ui_formats::system_ui_bundle`).
 ///     With [`BuildOptions::system_ui`] layered under the field build those
 ///     prims now keep: **zero missing-CLUT drops** is the pinned invariant.
 ///
@@ -228,7 +229,7 @@ fn town01_dropped_placements_split_untextured_vs_missing_clut() {
         .expect("read placements")
         .expect("field map");
     let bundle =
-        legaia_engine_core::scene_bundle::find_bundle(&scene).expect("town01 has a scene bundle");
+        legaia_engine_scene::scene_bundle::find_bundle(&scene).expect("town01 has a scene bundle");
     let bundle_entry = bundle.entry_idx();
     let mut shared: Vec<Scene> = Vec::new();
     for name in FIELD_SHARED_BLOCKS {

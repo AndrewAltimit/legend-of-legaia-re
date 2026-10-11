@@ -1,9 +1,8 @@
 //! Field carrier install/engage/tick, field interaction probing, carrier menus, and carrier/world-map encounter entry.
-//!
-//! Split out of `world.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
 
 use super::*;
+use legaia_engine_field::man_field_scripts::FieldCarrierConfig;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// First synthetic [`crate::world::FieldPropState::walk_touch`] slot for gate-0
@@ -13,7 +12,7 @@ impl World {
     pub const TRIGGER_WALK_TOUCH_SLOT_BASE: u8 = 0xC0;
 
     /// Place the scene's field entity SMs (all Idle). One
-    /// [`vm::world_map::WorldMapEntityCtx`] per [`FieldCarrierConfig`], so a
+    /// [`legaia_engine_field::world_map_entity::WorldMapEntityCtx`] per [`FieldCarrierConfig`], so a
     /// scripted-encounter carrier can be advanced via
     /// [`Self::engage_field_carrier`] and ticked by
     /// `Self::tick_field_carriers`. Replaces any previously installed set.
@@ -23,7 +22,7 @@ impl World {
     /// same per-entity records from the scene's MAN actor-placement partition.
     pub fn install_field_carriers(&mut self, configs: Vec<FieldCarrierConfig>) {
         self.carriers.entities = (0..configs.len())
-            .map(|_| vm::world_map::WorldMapEntityCtx::default())
+            .map(|_| legaia_engine_field::world_map_entity::WorldMapEntityCtx::default())
             .collect();
         self.carriers.configs = configs;
         self.carriers.pending_battle = None;
@@ -49,7 +48,7 @@ impl World {
     }
 
     /// Install the scene's field carriers **derived from its MAN actor-placement
-    /// partition** ([`crate::man_field_scripts::derive_field_carriers`]) rather
+    /// partition** ([`legaia_engine_field::man_field_scripts::derive_field_carriers`]) rather
     /// than from a hand-built list, replacing any previously installed set.
     ///
     /// Returns the carrier-Vec index of the Rim Elm sparring partner (the
@@ -62,7 +61,7 @@ impl World {
     /// carrier's identity within it, come from the real scene data.
     pub fn install_field_carriers_from_man(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
     ) -> Option<usize> {
         // The MAN loader `FUN_8003AEB0` zeroes the battle sound set on every
@@ -74,7 +73,7 @@ impl World {
         self.audio.start_pending_commit = false;
         // ... and the pause bit 1 with it.
         self.audio.bgm_script_paused = false;
-        let derived = crate::man_field_scripts::derive_field_carriers(man_file, man);
+        let derived = legaia_engine_field::man_field_scripts::derive_field_carriers(man_file, man);
         let sparring_idx = derived
             .iter()
             .position(|d| matches!(d.config, FieldCarrierConfig::ScriptedEncounter { .. }));
@@ -103,9 +102,9 @@ impl World {
         // just past the record's dialogue bytes, where the linear walk is
         // still resynchronising and the clean bit is structurally false.
         self.scene_battle_entry_arms =
-            crate::man_field_scripts::walk_battle_entry_arms(man_file, man);
+            legaia_engine_field::man_field_scripts::walk_battle_entry_arms(man_file, man);
         self.scene_battle_entry_scores =
-            crate::man_field_scripts::walk_battle_entry_scores(man_file, man);
+            legaia_engine_field::man_field_scripts::walk_battle_entry_scores(man_file, man);
         if !self.scene_battle_entry_arms.is_empty() {
             let arms: Vec<String> = self
                 .scene_battle_entry_arms
@@ -136,13 +135,15 @@ impl World {
         self.npcs.glide_y.clear();
         self.npcs.entry_positions.clear();
         self.npcs.headings.clear();
-        self.npcs.heading_ramps = legaia_engine_vm::ambient_motion::RampScheduler::new();
+        self.npcs.heading_ramps = legaia_engine_motion_vm::ambient_motion::RampScheduler::new();
         // Motion state is per-scene: a snapshot carried across a scene change
         // would diff the warp itself as one enormous step and start every
         // actor - the player included - walking on the landing frame.
         self.locomotion.motion_prev.clear();
         self.locomotion.actor_moving.clear();
-        for (placement, kind) in crate::man_field_scripts::classify_placements(man_file, man) {
+        for (placement, kind) in
+            legaia_engine_field::man_field_scripts::classify_placements(man_file, man)
+        {
             let Ok(slot) = u8::try_from(placement.index) else {
                 continue;
             };
@@ -173,8 +174,11 @@ impl World {
             // record was only ever reached by the walk-touch arm's decoded
             // effect, never executed.
             // REF: FUN_80039B7C, FUN_801d5b5c
-            if matches!(kind, crate::man_field_scripts::PlacementKind::Portal { .. })
-                && let Some(record) = crate::man_field_scripts::placement_interaction_record(
+            if matches!(
+                kind,
+                legaia_engine_field::man_field_scripts::PlacementKind::Portal { .. }
+            ) && let Some(record) =
+                legaia_engine_field::man_field_scripts::placement_interaction_record(
                     man_file, man, &placement,
                 )
             {
@@ -188,7 +192,9 @@ impl World {
             // ran nothing.
             // REF: FUN_80039B7C
             if let Some(record) =
-                crate::man_field_scripts::placement_scripted_menu_record(man_file, man, &placement)
+                legaia_engine_field::man_field_scripts::placement_scripted_menu_record(
+                    man_file, man, &placement,
+                )
             {
                 self.npcs.dialog_prologue.insert(slot, record);
                 self.npcs
@@ -202,14 +208,16 @@ impl World {
             // (`concnow` P1[26] for the gate guard P1[13]).
             // REF: FUN_801D5B5C, FUN_80039B7C
             if let Some(target) =
-                crate::man_field_scripts::placement_talk_proxy_target(man_file, man, &placement)
+                legaia_engine_field::man_field_scripts::placement_talk_proxy_target(
+                    man_file, man, &placement,
+                )
                 && let Ok(target) = u8::try_from(target)
             {
                 self.npcs
                     .talk_proxies
                     .insert(slot, (target, (placement.world_x, placement.world_z)));
             }
-            if let crate::man_field_scripts::PlacementKind::Npc {
+            if let legaia_engine_field::man_field_scripts::PlacementKind::Npc {
                 dialog_inline: Some(inline),
                 ..
             } = kind
@@ -222,9 +230,11 @@ impl World {
                 // `actor[+0x9E]` - never at `script_pc0`, which would re-run
                 // the spawn section on every talk. The simplified path keeps
                 // using `field_npc_dialog`.
-                if let Some(prologue) = crate::man_field_scripts::placement_interaction_record(
-                    man_file, man, &placement,
-                ) {
+                if let Some(prologue) =
+                    legaia_engine_field::man_field_scripts::placement_interaction_record(
+                        man_file, man, &placement,
+                    )
+                {
                     self.npcs.dialog_prologue.insert(slot, prologue);
                 }
                 // The interaction probe box-tests the player against this spawn
@@ -247,18 +257,18 @@ impl World {
                 // facing-nibble heuristic as a last resort; absent = the
                 // leg falls back to `FIELD_NPC_MOTION_SPEED`. Scripted legs
                 // (cutscene walk pokes) look the pace up.
-                if let Some(speed) =
-                    crate::man_field_scripts::placement_glide_speed(man_file, man, &placement)
-                {
+                if let Some(speed) = legaia_engine_field::man_field_scripts::placement_glide_speed(
+                    man_file, man, &placement,
+                ) {
                     self.npcs.glide_speeds.insert(slot, speed);
                 }
             }
             // Walk-touch events ride any non-parked placement (door warps are
             // Portal-classified, throw-back teleports are usually on guard
             // NPCs) - the locomotion's touch dispatch posts them on contact.
-            if let Some(event) =
-                crate::man_field_scripts::placement_walk_touch_event(man_file, man, &placement)
-            {
+            if let Some(event) = legaia_engine_field::man_field_scripts::placement_walk_touch_event(
+                man_file, man, &placement,
+            ) {
                 self.props
                     .walk_touch
                     .insert(slot, ((placement.world_x, placement.world_z), event));
@@ -268,9 +278,11 @@ impl World {
         // Per-NPC default-move pairs: the motion op-`0x17` writes into the
         // retail per-actor table at `0x801C6470`, statically harvested from
         // the MAN's tail-section-1 streams. Feeds the interaction
-        // motion-pause kick (`legaia_engine_vm::motion_pause`) a real table.
+        // motion-pause kick (`legaia_engine_field::motion_pause`) a real table.
         // REF: FUN_80038158 (case 0x17), FUN_8003C9AC
-        for (slot, pair) in crate::man_field_scripts::motion_default_move_writes(man_file, man) {
+        for (slot, pair) in
+            legaia_engine_field::man_field_scripts::motion_default_move_writes(man_file, man)
+        {
             self.npcs.default_moves.insert(slot, pair);
         }
 
@@ -305,7 +317,10 @@ impl World {
     // REF: FUN_8003A55C, FUN_801CFC40, FUN_801d5b5c
     pub fn install_trigger_walk_touch(
         &mut self,
-        binds: &[((i16, i16), crate::man_field_scripts::WalkTouchEvent)],
+        binds: &[(
+            (i16, i16),
+            legaia_engine_field::man_field_scripts::WalkTouchEvent,
+        )],
     ) {
         self.install_trigger_walk_touch_with_records(
             &binds.iter().map(|&(p, e)| (p, e, None)).collect::<Vec<_>>(),
@@ -319,7 +334,7 @@ impl World {
         &mut self,
         binds: &[(
             (i16, i16),
-            crate::man_field_scripts::WalkTouchEvent,
+            legaia_engine_field::man_field_scripts::WalkTouchEvent,
             Option<usize>,
         )],
     ) {
@@ -371,8 +386,9 @@ impl World {
         // stage the fight (`52 89` marker SET -> `3E FF <row>` battle entry),
         // so no dialog panel opens here.
         if self.props.boss_stagers.contains_key(&slot) && self.run_boss_stager_record(slot) {
-            self.pending_field_events
-                .push(crate::field_events::FieldEvent::FieldInteract { interact_id, slot });
+            self.pending_field_events.push(
+                legaia_engine_field::field_events::FieldEvent::FieldInteract { interact_id, slot },
+            );
             return;
         }
         // Stash this slot's untruncated record (if any) so the opt-in VM-dialogue
@@ -408,13 +424,14 @@ impl World {
                 self.carriers.pending_engage = Some(carrier_idx);
             }
         }
-        self.pending_field_events
-            .push(crate::field_events::FieldEvent::FieldInteract { interact_id, slot });
+        self.pending_field_events.push(
+            legaia_engine_field::field_events::FieldEvent::FieldInteract { interact_id, slot },
+        );
     }
 
     /// Open a field dialogue box from an inline interaction-script buffer (the
     /// text is the buffer itself; the retail box geometry isn't pinned, so the
-    /// box coords are zero). Sets [`crate::world::DialogState::current`] and surfaces a
+    /// box coords are zero). Sets [`legaia_engine_field::dialog_state::DialogState::current`] and surfaces a
     /// [`FieldEvent::OpenDialog`].
     fn open_field_dialog(&mut self, inline: Vec<u8>) {
         self.dialog.current = Some(DialogRequest {
@@ -425,7 +442,7 @@ impl World {
             depth_id: 0,
         });
         self.pending_field_events
-            .push(crate::field_events::FieldEvent::OpenDialog {
+            .push(legaia_engine_field::field_events::FieldEvent::OpenDialog {
                 text_id: 0,
                 inline,
                 world_x: 0,
@@ -442,7 +459,7 @@ impl World {
     /// not run); **Circle** cancels (closes, no engage); Up/Down move the cursor
     /// without closing. Mirrors the retail inline-picker cursor.
     pub(crate) fn handle_carrier_menu(&mut self) -> bool {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
         if self.dialog.current.is_none() {
             // Box closed elsewhere; drop a stale menu.
             self.carriers.menu = None;
@@ -461,7 +478,7 @@ impl World {
             self.carriers.menu = None;
             self.dialog.current = None;
             self.pending_field_events
-                .push(crate::field_events::FieldEvent::DialogDismissed);
+                .push(legaia_engine_field::field_events::FieldEvent::DialogDismissed);
             if confirm && menu.cursor == menu.fight_option {
                 self.engage_field_carrier(menu.carrier_idx);
             }
@@ -505,13 +522,13 @@ impl World {
     ///   [`Self::trigger_field_interact`] and turns the player toward it
     ///   ([`Self::face_field_npc`]).
     ///
-    /// The [`crate::world::DialogState::input_consumed`] per-tick guard keeps this and the
+    /// The [`legaia_engine_field::dialog_state::DialogState::input_consumed`] per-tick guard keeps this and the
     /// field VM's `0x4C` dialog poll from both acting on the same button edge.
     /// No-op without a player actor or installed NPC positions.
     ///
     /// REF: FUN_801cf9f4, FUN_8003A1E4, FUN_80024C88
     pub(crate) fn tick_field_interaction_probe(&mut self) {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
         let confirm = self.input.just_pressed(PadButton::Cross);
         let cancel = self.input.just_pressed(PadButton::Circle);
 
@@ -557,7 +574,7 @@ impl World {
                 self.dialog.input_consumed = true;
                 self.dialog.current = None;
                 self.pending_field_events
-                    .push(crate::field_events::FieldEvent::DialogDismissed);
+                    .push(legaia_engine_field::field_events::FieldEvent::DialogDismissed);
                 if let Some(idx) = self.carriers.pending_engage.take() {
                     self.engage_field_carrier(idx);
                 }
@@ -627,9 +644,9 @@ impl World {
     /// REF: FUN_801DA51C
     pub fn engage_field_carrier(&mut self, idx: usize) {
         if let Some(ctx) = self.carriers.entities.get_mut(idx)
-            && ctx.state == vm::world_map::EntityState::Idle as u16
+            && ctx.state == legaia_engine_field::world_map_entity::EntityState::Idle as u16
         {
-            ctx.state = vm::world_map::EntityState::Activating as u16;
+            ctx.state = legaia_engine_field::world_map_entity::EntityState::Activating as u16;
         }
     }
 
@@ -646,7 +663,7 @@ impl World {
             let mut carriers = std::mem::take(&mut self.carriers.entities);
             for (idx, ctx) in carriers.iter_mut().enumerate() {
                 let mut host = FieldCarrierHostImpl { world: self };
-                vm::world_map::step(idx, ctx, &mut host);
+                legaia_engine_field::world_map_entity::step(idx, ctx, &mut host);
             }
             self.carriers.entities = carriers;
         }
@@ -663,12 +680,12 @@ impl World {
     /// `formation_id`. A carrier battle is a forced encounter against a
     /// registered MAN formation, and retail runs the intro overlay (the
     /// screen-shatter transition) for it exactly as for a step roll - so it
-    /// enters through the same [`crate::encounter::EncounterPhase::Transition`]
+    /// enters through the same [`legaia_engine_battle::encounter::EncounterPhase::Transition`]
     /// bracket instead of flipping `Field -> Battle` on the spot. The
     /// per-frame field tick drains `Triggered` into
     /// [`Self::begin_encounter_battle`] once the transition elapses.
     fn begin_field_carrier_battle(&mut self, formation_id: u16) {
-        let roll = crate::encounter::EncounterRoll {
+        let roll = legaia_engine_battle::encounter::EncounterRoll {
             formation_id,
             row_index: 0,
             roll_q8: 0,
@@ -681,7 +698,10 @@ impl World {
         // A post-battle grace window suppresses step rolls, never a story
         // fight - reset it and arm.
         if let Some(s) = self.encounters.session.as_mut()
-            && matches!(s.phase(), crate::encounter::EncounterPhase::Grace { .. })
+            && matches!(
+                s.phase(),
+                legaia_engine_battle::encounter::EncounterPhase::Grace { .. }
+            )
         {
             s.reset();
         }
@@ -700,7 +720,7 @@ impl World {
     /// Arm the field-to-battle transition for a world-map encounter against
     /// `formation_id`. Retail runs the same intro overlay (the screen-shatter
     /// transition) for an overworld contact as for a field step roll, so the
-    /// entry defers through [`crate::encounter::EncounterPhase::Transition`];
+    /// entry defers through [`legaia_engine_battle::encounter::EncounterPhase::Transition`];
     /// the world-map tick drains `Triggered` into
     /// [`Self::enter_world_map_battle`] when it elapses.
     ///
@@ -722,7 +742,7 @@ impl World {
             );
             return;
         }
-        let roll = crate::encounter::EncounterRoll {
+        let roll = legaia_engine_battle::encounter::EncounterRoll {
             formation_id,
             row_index: 0,
             roll_q8: 0,
@@ -735,7 +755,10 @@ impl World {
         // A post-battle grace window suppresses step rolls, not a contact
         // the entity SM already committed to - reset it and arm.
         if let Some(s) = self.encounters.session.as_mut()
-            && matches!(s.phase(), crate::encounter::EncounterPhase::Grace { .. })
+            && matches!(
+                s.phase(),
+                legaia_engine_battle::encounter::EncounterPhase::Grace { .. }
+            )
         {
             s.reset();
         }
@@ -753,10 +776,13 @@ impl World {
         }
     }
 
-    /// Resolve a drained world-map [`crate::encounter::EncounterRoll`] and
+    /// Resolve a drained world-map [`legaia_engine_battle::encounter::EncounterRoll`] and
     /// flip into the battle, snapshotting the world-map context so
     /// [`Self::finish_battle`] returns to [`SceneMode::WorldMap`].
-    pub(crate) fn enter_world_map_battle(&mut self, roll: crate::encounter::EncounterRoll) {
+    pub(crate) fn enter_world_map_battle(
+        &mut self,
+        roll: legaia_engine_battle::encounter::EncounterRoll,
+    ) {
         let Some(formation) = self
             .tables
             .formation_table

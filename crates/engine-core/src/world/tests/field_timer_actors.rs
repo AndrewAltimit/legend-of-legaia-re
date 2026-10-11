@@ -7,6 +7,7 @@
 //! the operand triples are quoted from the on-disc sites named in each test.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Give the world the frame cadence the field tick reads (`DAT_1F800393`).
 fn field_world() -> World {
@@ -36,7 +37,7 @@ fn op_43_0c_runs_the_camera_shutter_wipe_to_full_and_back() {
     let peak = *heights.iter().max().unwrap();
     assert_eq!(
         peak,
-        legaia_engine_vm::field_actor_timers::SHUTTER_FULL_BAR,
+        legaia_engine_field::field_actor_timers::SHUTTER_FULL_BAR,
         "the envelope must reach the full 0x73: {heights:?}"
     );
     assert_eq!(
@@ -52,8 +53,9 @@ fn op_43_0c_runs_the_camera_shutter_wipe_to_full_and_back() {
 /// the reading cannot drift back.
 #[test]
 fn the_full_envelope_blacks_out_the_whole_screen() {
-    use legaia_engine_vm::field_actor_timers as t;
-    let [top, bottom] = t::shutter_bar_rects(t::SHUTTER_FULL_BAR, t::SHUTTER_RETAIL_SCREEN_H);
+    use legaia_engine_field::field_actor_timers as t;
+    use legaia_render_kernels::shutter_bars::{SHUTTER_RETAIL_SCREEN_H, shutter_bar_rects};
+    let [top, bottom] = shutter_bar_rects(t::SHUTTER_FULL_BAR, SHUTTER_RETAIL_SCREEN_H);
     assert!(bottom.y0 <= top.y1, "{top:?} / {bottom:?} leave a gap");
 }
 
@@ -226,7 +228,7 @@ fn the_man_load_sweep_drops_every_live_timer_record() {
 /// an unmirrored move would be dragged onto it every frame.
 #[test]
 fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
-    use legaia_engine_vm::field_actor_timers::EASE_TARGET_INVERT_Y;
+    use legaia_engine_field::field_actor_timers::EASE_TARGET_INVERT_Y;
 
     let script = vec![0x43, 0x09, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x08, 0x00];
 

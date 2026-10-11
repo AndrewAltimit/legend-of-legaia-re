@@ -2,7 +2,7 @@
 //! spells in the static `SCUS_942.54` spell table.
 //!
 //! The spell table (`DAT_800754C8`, 12-byte stride) carries each spell's MP cost
-//! at record `+3` (see [`legaia_asset::spell_names`]). The randomizable
+//! at record `+3` (see [`legaia_game_tables::spell_names`]). The randomizable
 //! population is the spells that are both **named** and carry a **non-zero** MP
 //! cost - i.e. real castable magic, not the unnamed internal enemy-attack tiers
 //! (which read cost `0`). [`plan_costs`] either permutes that cost column
@@ -15,7 +15,7 @@
 //! internal-tier entry never gains a cost. The table lives in `SCUS_942.54`, so
 //! the edit is a same-size in-place SCUS patch (like the steal randomizer).
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// Re-exported [`crate::drops::DropMode`] so the MP-cost pass shares the CLI's
 /// `shuffle` / `random` vocabulary.

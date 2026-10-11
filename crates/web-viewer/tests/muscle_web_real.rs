@@ -479,10 +479,10 @@ fn muscle_hud_chrome_decodes_from_the_disc() {
             hundred["r"][3].as_u64().unwrap() as u32,
         ],
         [
-            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.0,
-            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.1,
-            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.2,
-            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.3,
+            legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.0,
+            legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.1,
+            legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.2,
+            legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_GAUGE_100.3,
         ],
         "the end-box numeral is the shared GAUGE_100 rect"
     );
@@ -498,7 +498,7 @@ fn muscle_hud_chrome_decodes_from_the_disc() {
     );
     assert_eq!(
         ai["ap_input_fill"]["rgb"][0][0],
-        legaia_asset::title_pak::OVERLAY_SYSTEM_UI_GAUGE_FILL_GOLD_RGB.0
+        legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_GAUGE_FILL_GOLD_RGB.0
     );
 }
 

@@ -8,11 +8,11 @@
 //! static item rows through the effect descriptors finds no class-`14` row, see
 //! `docs/formats/item-effect-table.md`).
 
-use legaia_asset::item_effect::{
+use legaia_engine_core::world::World;
+use legaia_engine_menus::items::ItemOutcome;
+use legaia_game_tables::item_effect::{
     HEAL_AMOUNT_TABLE_VA, ItemEffectTable, RECORD_COUNT, RECORD_STRIDE, TABLE_VA,
 };
-use legaia_engine_core::items::ItemOutcome;
-use legaia_engine_core::world::World;
 
 /// `0x80074368` - the static item record table (12-byte stride, `+0` kind,
 /// `+1` subtype).
@@ -101,7 +101,7 @@ fn world_with(rows: &[Row], members: usize) -> World {
     let mut world = World::new();
     world.load_party(legaia_save::Party::zeroed(members));
     world.set_item_effects(table(rows));
-    world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+    world.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
     world
 }
 
@@ -322,7 +322,7 @@ fn a_table_without_a_class_14_row_seeds_no_strike_item() {
         .filter(|e| {
             matches!(
                 e.effect,
-                legaia_engine_core::items::ItemEffect::PointCardStrike
+                legaia_engine_menus::items::ItemEffect::PointCardStrike
             )
         })
         .count();
@@ -335,7 +335,7 @@ fn a_table_without_a_class_14_row_seeds_no_strike_item() {
 /// zero HP (`beq v0,zero` at `0x80041BCC`) before touching the word.
 #[test]
 fn the_status_clear_arm_lifts_both_poisons_and_skips_a_dead_target() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let rows = [Row {
         id: 0x7E,
         kind: 2,
@@ -395,10 +395,10 @@ fn a_pause_menu_book_use_composes_the_window_8_notice() {
     use legaia_art::arts_table::ArtTableEntry;
     use legaia_art::queue::Character;
     use legaia_engine_core::field_menu_dispatch::apply_inventory_outcome;
-    use legaia_engine_core::inventory_use::{
+    use legaia_engine_menus::inventory_use::{
         InventoryContext, InventoryUseSession, InventoryUseState,
     };
-    use legaia_engine_core::pause_screens::MenuTextTables;
+    use legaia_engine_menus::pause_screens::MenuTextTables;
 
     let finished = |world: &World| {
         let mut s = InventoryUseSession::new(

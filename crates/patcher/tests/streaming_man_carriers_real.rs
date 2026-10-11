@@ -12,9 +12,9 @@
 //!
 //! Every test skips and passes without `LEGAIA_DISC_BIN`.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply::{self, EncounterScope};
 use legaia_patcher::chest::SceneChests;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 use legaia_patcher::encounter::SceneEncounters;
 use legaia_prot::cdname::{self, RAW_TOC_INDEX_OFFSET};

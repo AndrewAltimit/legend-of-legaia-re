@@ -32,7 +32,7 @@
 //!   the seat position as an argument instead of resolving it.
 //!
 //! REF: FUN_800195a8 - the billboard projector, ported as
-//! [`crate::billboard::project_billboard`]; this pass is one of its riders.
+//! [`legaia_render_kernels::billboard::project_billboard`]; this pass is one of its riders.
 //!
 //! # The test is horizontal only
 //!
@@ -61,8 +61,8 @@
 //!
 //! Source: `ghidra/scripts/funcs/8005126c.txt` (disassembly).
 
-use crate::billboard::{BillboardCorners, project_billboard};
-use crate::gte::{GteMat3, GteVec3};
+use legaia_render_kernels::billboard::{BillboardCorners, project_billboard};
+use legaia_render_kernels::gte::{GteMat3, GteVec3};
 
 /// Exclusive right bound of the accepted screen-X band: retail's `slti 0x141`
 /// accepts `x <= 0x140` (320), so a 320-wide frame accepts its right edge.

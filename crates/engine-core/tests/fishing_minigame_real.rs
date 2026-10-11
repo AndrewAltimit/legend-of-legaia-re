@@ -1,7 +1,7 @@
 //! Disc-gated: drive the **real** fishing overlay tables (PROT 0972) through
-//! the one engine fishing session ([`legaia_engine_core::fishing::PondSession`]).
+//! the one engine fishing session ([`legaia_engine_fishing::fishing::PondSession`]).
 //!
-//! The species parser itself is pinned by `legaia-asset`'s `fishing_species_real`;
+//! The species parser itself is pinned by `legaia-minigame-formats`' `fishing_species_real`;
 //! this closes the engine end - the load path every host takes
 //! (`SceneHost::open_disc` -> `entry_bytes_extended(972)` ->
 //! `static_overlay::as_loaded` -> `SceneHost::enter_fishing_from_overlay`)
@@ -10,11 +10,12 @@
 //! resolution. No Sony bytes are asserted, only structural facts. Skips +
 //! passes when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_asset::static_overlay;
-use legaia_engine_core::fishing::{FLIGHT_FRAMES, PondEvent, PondPhase, WINDUP_FRAMES};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_core::world::World;
+use legaia_engine_fishing::fishing::{FLIGHT_FRAMES, PondEvent, PondPhase, WINDUP_FRAMES};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
+use legaia_overlay_images::static_overlay;
 
 fn frame(world: &mut World, mask: u16) {
     world.set_pad(mask);
@@ -52,7 +53,7 @@ fn the_warp_load_path_fishes_a_real_species() {
         }
     };
     let rec = static_overlay::overlay_map()
-        .by_prot_index(legaia_asset::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
+        .by_prot_index(legaia_minigame_formats::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
         .expect("fishing overlay in static map");
     let raw = host
         .index
@@ -69,7 +70,7 @@ fn the_warp_load_path_fishes_a_real_species() {
     assert_eq!(world.mode, SceneMode::Fishing);
     assert_eq!(
         world.minigames.fishing.as_ref().unwrap().species.len(),
-        legaia_asset::fishing_species::SPECIES_COUNT
+        legaia_minigame_formats::fishing_species::SPECIES_COUNT
     );
 
     // Hold reel A through the pre-hook loop, recasting whenever the empty
@@ -92,7 +93,7 @@ fn the_warp_load_path_fishes_a_real_species() {
         }
     }
     let hooked = hooked.expect("a real species strikes within the budget");
-    assert!(hooked < legaia_asset::fishing_species::SPECIES_COUNT);
+    assert!(hooked < legaia_minigame_formats::fishing_species::SPECIES_COUNT);
 
     for _ in 0..60_000 {
         if phase(world) != PondPhase::Hooked {

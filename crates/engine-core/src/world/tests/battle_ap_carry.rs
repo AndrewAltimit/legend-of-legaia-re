@@ -6,7 +6,8 @@
 //! costing AP could fire until the gauge had been refilled in that battle.
 
 use super::*;
-use crate::monster_catalog::{FormationDef, FormationSlot};
+use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+use legaia_engine_mode::mode::SceneMode;
 
 fn world_with_saved_ap(ap: u16) -> World {
     let mut party = legaia_save::Party::zeroed(3);

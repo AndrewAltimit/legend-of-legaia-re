@@ -10,11 +10,11 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_mednafen::ScenarioManifest;
 use legaia_parity::vram_oracle::{
     NPC_CLUT_BAND_ROWS, TEXPAGE_Y_START, VRAM_HEIGHT, VRAM_WIDTH, build_engine_vram_bytes_prepass,
     compute_static_mask, load_runtime_vram_from_save,
 };
+use legaia_ram_image::ScenarioManifest;
 
 fn word(buf: &[u8], x: usize, y: usize) -> u16 {
     let off = (y * VRAM_WIDTH + x) * 2;
@@ -125,11 +125,11 @@ fn main() -> anyhow::Result<()> {
         }
 
         // Which engine TIM covers the queried cell (image or CLUT rect)?
-        use legaia_engine_core::scene::Scene;
-        use legaia_engine_core::scene_resources::FIELD_SHARED_BLOCKS;
+        use legaia_engine_scene::scene::Scene;
+        use legaia_engine_scene::scene_resources::FIELD_SHARED_BLOCKS;
         let prot = std::fs::read(extracted.join("PROT.DAT"))?;
         let cdname = std::fs::read_to_string(extracted.join("CDNAME.TXT"))?;
-        let index = legaia_engine_core::scene::ProtIndex::from_bytes(prot, Some(&cdname))?;
+        let index = legaia_engine_scene::scene::ProtIndex::from_bytes(prot, Some(&cdname))?;
         let mut scenes: Vec<(String, Scene)> =
             vec![(scene_name.clone(), Scene::load(&index, &scene_name)?)];
         for name in FIELD_SHARED_BLOCKS {
@@ -164,18 +164,18 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
                 };
-                if let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(bytes, 0)
-                    && let Ok(tim_slices) = legaia_asset::pack::extract_pack(&slot0)
+                if let Ok(slot0) = legaia_scene_formats::kingdom_bundle::decode_slot(bytes, 0)
+                    && let Ok(tim_slices) = legaia_container_formats::pack::extract_pack(&slot0)
                 {
                     for (i, tslice) in tim_slices.iter().enumerate() {
                         report(&format!("kingdom-slot0[{i}]"), tslice, 0);
                     }
                 }
-                let scan = legaia_asset::tim_scan::scan_entry(bytes);
+                let scan = legaia_container_formats::tim_scan::scan_entry(bytes);
                 for (source, hit) in &scan.hits {
                     let src: &[u8] = match source {
-                        legaia_asset::tim_scan::Source::Raw => bytes,
-                        legaia_asset::tim_scan::Source::Lzs(idx) => {
+                        legaia_container_formats::tim_scan::Source::Raw => bytes,
+                        legaia_container_formats::tim_scan::Source::Lzs(idx) => {
                             scan.lzs_sections[*idx].as_slice()
                         }
                     };
@@ -207,13 +207,13 @@ fn main() -> anyhow::Result<()> {
     // Which upload writes the first divergence? Rebuild the scene resources
     // without the effect-texture pass and compare the word before/after.
     if let Some(&(dx, dy, ..)) = divergences.first() {
-        use legaia_engine_core::scene::{Scene, upload_effect_textures_into_vram};
-        use legaia_engine_core::scene_resources::{
+        use legaia_engine_scene::scene::{Scene, upload_effect_textures_into_vram};
+        use legaia_engine_scene::scene_resources::{
             BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
         };
         let prot = std::fs::read(extracted.join("PROT.DAT"))?;
         let cdname = std::fs::read_to_string(extracted.join("CDNAME.TXT"))?;
-        let index = legaia_engine_core::scene::ProtIndex::from_bytes(prot, Some(&cdname))?;
+        let index = legaia_engine_scene::scene::ProtIndex::from_bytes(prot, Some(&cdname))?;
         let scene = Scene::load(&index, &scene_name)?;
         let mut shared = Vec::new();
         for name in FIELD_SHARED_BLOCKS {
@@ -222,7 +222,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
         let shared_refs: Vec<&Scene> = shared.iter().collect();
-        let kind = if legaia_engine_core::scene::is_world_map_scene(&scene_name) {
+        let kind = if legaia_engine_scene::scene::is_world_map_scene(&scene_name) {
             SceneLoadKind::WorldMap
         } else {
             SceneLoadKind::Field
@@ -245,10 +245,14 @@ fn main() -> anyhow::Result<()> {
         // Enumerate the befect cluster's TIM rects; flag every TIM whose image
         // rect covers the divergence cell.
         let raw = index.entry_bytes(874)?;
-        let container = legaia_asset::parse_player_lzs(&raw, 3)?;
+        let container = legaia_container_formats::parse_player_lzs(&raw, 3)?;
         let section = &container.descriptors[2];
-        let decoded = legaia_asset::decode(&raw, section, legaia_asset::DecodeMode::Lzs)?;
-        for target in legaia_asset::befect_cluster::scan_tims(&decoded) {
+        let decoded = legaia_container_formats::decode(
+            &raw,
+            section,
+            legaia_container_formats::DecodeMode::Lzs,
+        )?;
+        for target in legaia_actor_formats::befect_cluster::scan_tims(&decoded) {
             if let Ok(tim) = legaia_tim::parse(&decoded[target.offset..]) {
                 let img = &tim.image;
                 let covers = (img.fb_x as usize..img.fb_x as usize + img.fb_w as usize)

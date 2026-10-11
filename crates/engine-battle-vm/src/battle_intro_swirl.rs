@@ -233,7 +233,7 @@ fn clamp(v: i32, bound: i32) -> i32 {
 ///
 /// PORT: FUN_801D1564
 ///
-/// WIRED. `legaia_engine_render::battle_intro::BattleIntro` owns the
+/// WIRED. `legaia_render_kernels::battle_intro::BattleIntro` owns the
 /// [`SwirlMesh`] between frames, ticks it from the live transition clock, and
 /// **draws it** through `emit_swirl_band`; `select_intro_style` reaches this
 /// style for one formation on the disc.

@@ -53,7 +53,7 @@ terrain-type-keyed multi-page atlas. This is the bulk ground (grass /
 mountain / water / forest), distinct from the sparse slot-1 landmark
 meshes layered on top. The heightfield model and per-cell texturing are
 pinned in [`world-map.md`](world-map.md) "Ground texturing"; the surface
-math is `legaia_asset::field_objects::build_ground_heightfield` with the
+math is `legaia_scene_formats::field_objects::build_ground_heightfield` with the
 overworld's cell gate (`FUN_80019278` bilinear floor sampler).
 
 The WASM viewer builds the same surface from the raw PROT.DAT it already
@@ -157,7 +157,7 @@ over its heightfield:
 PROT.DAT the viewer already holds, sharing the walk `.MAP` + floor-LUT
 resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
 
-- Runs `legaia_asset::field_objects::parse_placements` +
+- Runs `legaia_scene_formats::field_objects::parse_placements` +
   `parse_walk_decorations` on the walk `.MAP` and concatenates.
 - Each placement's mesh is the record's `+0x10` field (`pack_index`) - a
   slot into the kingdom's slot-1 TMD pack the `pack_mesh_*` accessors expose.
@@ -181,7 +181,7 @@ resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
 
 - Each stamped mesh is uploaded **whole**: the `pack_mesh_*` accessors
   build the slot through the shared pack kernel
-  `legaia_engine_core::scene_assembly::build_hybrid_pack_mesh` - the
+  `legaia_engine_scene::scene_assembly::build_hybrid_pack_mesh` - the
   textured prims first, then the untextured `F*`/`G*` vertex-colour prims
   appended with `(cba, tsb) = (0, blend)` - and `pack_mesh_flat_rgba` is the
   index-aligned `[r, g, b, flag]` packet-colour stream (`flag` 255 =
@@ -250,7 +250,7 @@ animation, both shipped on disc:
   256 rows (= 256 × 256 logical pixels in 4bpp), inside slot 0
   (TIM_LIST) of each world-map kingdom bundle (PROT 0086 Drake / 0245
   Sebucus / 0392 Karisto - the bundle entry, one past the block's
-  prescript; see [`legaia_asset::kingdom_bundle`](../../crates/asset/src/kingdom_bundle.rs)). The kingdom-specific TIM is the one with
+  prescript; see [`legaia_scene_formats::kingdom_bundle`](../../crates/scene-formats/src/kingdom_bundle.rs)). The kingdom-specific TIM is the one with
   CLUT block fb_xy ``(0, 506)`` and image block fb_xy ``(768, 256)``.
   Texture bytes vary per kingdom (each ships its own variant).
 - **Wave-ramp region:** the ocean data fills the **top-left 96 × 96
@@ -292,7 +292,7 @@ parseable slot 5, which no retail bundle is. See
 
 ## Web-overview shader plumbing
 
-[`legaia_asset::ocean::find_ocean_assets`](../../crates/asset/src/ocean.rs)
+[`legaia_scene_formats::ocean::find_ocean_assets`](../../crates/scene-formats/src/ocean.rs)
 decompresses the kingdom bundle's slot 0, locates the ocean TIM by VRAM coords, and
 signature-scans the slot for the animation table. The disc-gated
 test ``crates/web-viewer/tests/ocean_assets.rs`` verifies extraction
@@ -455,7 +455,7 @@ The page's "Download .glb" button bakes the assembled world view - the
 continent ground heightfield plus every walk-frame landmark / decoration
 stamp on screen - into a single binary glTF via the WASM
 `scene_export_*` session (`legaia_web_viewer::scene_export`, bake in
-`legaia_asset::scene_gltf`). The page hands the exporter the same mesh
+`legaia_actor_formats::scene_gltf`). The page hands the exporter the same mesh
 buffers it uploads to WebGL and the same per-draw
 `(translation, rotY, scale)` triples it builds model matrices from, so
 the file matches the render; the PSX VRAM+CLUT texture indirection is

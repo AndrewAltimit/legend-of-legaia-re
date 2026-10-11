@@ -3,14 +3,14 @@
 //! The fishing prize counters (Buma / Vidna ponds) sell accessories and
 //! consumables for **fishing points** rather than gold. Each prize is a 12-byte
 //! row `[u32 limit][u32 price][u32 item_id]` in the raw fishing overlay
-//! ([`legaia_asset::fishing_exchange`], PROT entry
-//! [`legaia_asset::fishing_species::FISHING_OVERLAY_PROT_INDEX`] = 972). The
+//! ([`legaia_minigame_formats::fishing_exchange`], PROT entry
+//! [`legaia_minigame_formats::fishing_species::FISHING_OVERLAY_PROT_INDEX`] = 972). The
 //! `price` field is both the point cost *and* the "only appears once you can
 //! afford it" gate (row 0 is hidden until `price < points`), so lowering a
 //! prize's price both cheapens it and makes it show up sooner.
 //!
 //! This module edits those `price` u32s in place. PROT 972 is a **raw** overlay
-//! (no LZS), so an edit is a direct same-size [`crate::disc::DiscPatcher::patch_prot_entry`]
+//! (no LZS), so an edit is a direct same-size [`legaia_disc_patch::disc::DiscPatcher::patch_prot_entry`]
 //! write - no recompression. A prize is targeted by its **item id** (the SCUS
 //! item-name id space), which is stable across the two venue pages, so
 //! e.g. the Buma **Water Egg** (id `0x6F`) is found by id rather than a fixed
@@ -19,8 +19,10 @@
 
 use anyhow::{Result, bail};
 
-use legaia_asset::fishing_exchange::{self, EXCHANGE_ROW_STRIDE};
-use legaia_asset::fishing_species::{FISHING_OVERLAY_BASE_VA, FISHING_OVERLAY_PROT_INDEX};
+use legaia_minigame_formats::fishing_exchange::{self, EXCHANGE_ROW_STRIDE};
+use legaia_minigame_formats::fishing_species::{
+    FISHING_OVERLAY_BASE_VA, FISHING_OVERLAY_PROT_INDEX,
+};
 
 /// The fishing overlay's PROT entry (re-exported for callers/tests).
 pub const OVERLAY_PROT_INDEX: usize = FISHING_OVERLAY_PROT_INDEX;
@@ -131,7 +133,7 @@ pub fn list_prizes(overlay: &[u8]) -> Result<Vec<PrizeInfo>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::fishing_exchange::EXCHANGE_ROWS;
+    use legaia_minigame_formats::fishing_exchange::EXCHANGE_ROWS;
 
     /// Build a synthetic raw overlay with a known two-page exchange table.
     fn synthetic() -> Vec<u8> {

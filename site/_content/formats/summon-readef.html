@@ -10,7 +10,7 @@
     <dt>In the game</dt><dd>Every Seru summon and every Art's mid-cast textures; the seven big summons' bespoke creatures</dd>
     <dt>Where</dt><dd><code>summon.dat</code> = extraction PROT 893 (raw TOC <code>0x37F</code>); <code>readef.DAT</code> = extraction PROT 894 (raw TOC <code>0x380</code>); CDNAME block <code>bat_back_dat</code></dd>
     <dt>Size / stride</dt><dd>Fixed <code>0x10800</code>-byte slots: 103 in summon.dat, 78 in readef.DAT, both tiling their entry exactly. No magic; texture slots start with a <code>u32 mode</code>, art archives with <code>'M' 'E'</code></dd>
-    <dt>Parser</dt><dd><code>legaia_asset::summon_readef</code> (+ <code>summon_creatures</code>, <code>me_archive</code>); CLI <code>asset summon-readef</code></dd>
+    <dt>Parser</dt><dd><code>legaia_actor_formats::summon_readef</code> (+ <code>summon_creatures</code>, <code>me_archive</code>); CLI <code>asset summon-readef</code></dd>
     <dt>Confidence</dt><dd>Confirmed - slot math read from the battle-action state machine; a mid-cast save state's stream buffer and VRAM byte-match the disc (<a href="#how-we-know">how we know</a>)</dd>
     <dt>Used by</dt><dd><a href="../subsystems/battle-action.html">battle action SM</a>, <a href="../magic.html">Seru magic &amp; summons</a>, <a href="../arts.html">Arts</a></dd>
   </dl>
@@ -96,7 +96,7 @@
 <section class="doc-section" id="animation">
   <h2>Creature meshes and animation</h2>
   <ul class="bullets">
-    <li><strong>Base and evolved-Seru summons (<code>0x81..=0x95</code>)</strong> reuse an enemy: the actor-record TMD is byte-identical to a record in the monster archive (extraction 867), which recovers the spell &rarr; creature map (Gimard <code>0x81</code> &rarr; archive id 10). Map in <code>legaia_asset::summon_creatures</code>.</li>
+    <li><strong>Base and evolved-Seru summons (<code>0x81..=0x95</code>)</strong> reuse an enemy: the actor-record TMD is byte-identical to a record in the monster archive (extraction 867), which recovers the spell &rarr; creature map (Gimard <code>0x81</code> &rarr; archive id 10). Map in <code>legaia_actor_formats::summon_creatures</code>.</li>
     <li><strong>Big summons (<code>0x9A..=0xA0</code>)</strong> carry a bespoke mesh matching no archive record; their texture pool and animation entries live in the group's raw slot.</li>
     <li>Each per-part entry is a <a href="monster-animation.html">monster-animation</a> record: a packed keyframe stream at entry <code>+0x8C</code>, <code>[u8 parts][u8 frames]</code> then nine-byte TRS records, playback rate at <code>+0x78</code>. No decoder of its own is needed.</li>
     <li>Offsets are relative to the <strong>actor-record slot</strong> for three-slot groups and to the <strong>raw slot's part pool</strong> (<code>+0x81E0</code>) for four-slot groups; in both cases the streams tile contiguously.</li>
@@ -127,7 +127,7 @@
     <div class="bm-cell" style="--w:6"><span class="bm-off">+3</span><span class="bm-name">entry_sizes[count]</span><span class="bm-size">u16, bit 15 = compressed</span></div>
     <div class="bm-cell bm-dim" style="--w:8"><span class="bm-off">&hellip;</span><span class="bm-name">bodies back to back</span><span class="bm-size">&nbsp;</span></div>
   </div>
-  <p>The low 15 bits of each size sum to the body offsets. Each decompresses through the channel-delta codec into the same packed TRS stream (see <a href="battle-data-pack.html">player battle files</a>). Parser <code>legaia_asset::me_archive</code>. The consumer is <code>FUN_8002B28C</code>, called once on the disc &mdash; from <code>0x8004BCA8</code> in <code>FUN_8004AD80</code>, which expands the selected entry into the scratch at <code>gp[0xA24]</code> and installs that pointer as the art entry&rsquo;s <code>+0x88</code> keyframe stream. The streamed buffer <code>*0x8007BD74</code> has twelve references disc-wide and that is the only content read outside the applier, so the consumer set is closed. The read is gated to party seats <code>0..2</code>, so a fourth character&rsquo;s group is decoded only when that character sits in a seat below 3 - which happens (a Terra-in-party battle puts her at seat 1), so readef group 3 is not a dead lane.</p>
+  <p>The low 15 bits of each size sum to the body offsets. Each decompresses through the channel-delta codec into the same packed TRS stream (see <a href="battle-data-pack.html">player battle files</a>). Parser <code>legaia_actor_formats::me_archive</code>. The consumer is <code>FUN_8002B28C</code>, called once on the disc &mdash; from <code>0x8004BCA8</code> in <code>FUN_8004AD80</code>, which expands the selected entry into the scratch at <code>gp[0xA24]</code> and installs that pointer as the art entry&rsquo;s <code>+0x88</code> keyframe stream. The streamed buffer <code>*0x8007BD74</code> has twelve references disc-wide and that is the only content read outside the applier, so the consumer set is closed. The read is gated to party seats <code>0..2</code>, so a fourth character&rsquo;s group is decoded only when that character sits in a seat below 3 - which happens (a Terra-in-party battle puts her at seat 1), so readef group 3 is not a dead lane.</p>
   <details class="disclosure">
     <summary>Which slot is resident when</summary>
     <div class="disclosure-body">

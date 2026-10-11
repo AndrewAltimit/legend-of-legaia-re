@@ -4,22 +4,19 @@ The engine's menu, title and memory-card front end, minus `World`: the item
 and equipment catalogs, the inventory-use and spell-menu sessions, the SCUS
 list-row model every pause-menu list window shares, the menu overlay's widget
 choreography and tables, the title and boot screens, the card write flow and
-`bu` I/O layer. The field dialog pager and the spawned script contexts'
-state sit one crate down, in
-[`legaia-engine-dialog`](../engine-dialog/README.md), and are re-exported
-here at their old paths. Free of
+`bu` I/O layer. The field dialog pager sits one crate down, in
+[`legaia-engine-dialog`](../engine-dialog/README.md). Free of
 wgpu, winit and cpal, so it builds for native and `wasm32` alike.
 
 `legaia-engine-core` owns the composition - `MenuRuntime`, the pause-menu
 dispatch, `World::use_item` and the stepping of the dialog and cutscene
-contexts - and re-exports every
-module here at its old path, so `legaia_engine_core::items` and
-`legaia_engine_menus::items` name the same module. Two are re-exported by
-glob from a thin engine-core module of the same name instead (`shop`,
+contexts. Consumers name the modules here directly
+(`legaia_engine_menus::items`). Two have an engine-core module of the same
+name beside them (`shop`,
 `pause_screens`): each screen here takes the slice of the world it reads
 (the roster, the equipment stat table, the item-effect table) as plain
 arguments (`party_compare_members_of`, `target_panel_view_model_of`), and
-the engine-core module adds the `World`-taking entry that passes them.
+the engine-core module holds the `World`-taking entry that passes them.
 
 ## What belongs here
 
@@ -41,8 +38,7 @@ link into a dependent crate.
   item category / weapon-favor table) and `menu_arrange` (the Arrange rank
   table at menu-overlay `0x801E4A88` and the bag-sort kernel
   `FUN_801D64A8`), `item_bag` (`ItemBag`, retail's 256-slot bag array and
-  its active window, with a map-shaped adapter; `World` holds one and
-  engine-core re-exports it as `world::ItemBag`) and `equip_session` (the
+  its active window, with a map-shaped adapter; `World` holds one) and `equip_session` (the
   pause-menu Equip screen's session, which borrows the bag rather than the
   world).
 - **Pause + shop screens** - `field_menu` (the pause root's session),
@@ -55,12 +51,12 @@ link into a dependent crate.
   player-driven command picker the live battle loop opens per party turn,
   and the chip-cluster model both it and the dome project), `battle_open`
   (the formation open banner and its hold timers), `timed_fight` (Koru's
-  turn-limit gate and strip readout) and `muscle_dome` (one Muscle Dome leg:
+  turn-limit gate and strip readout) and `muscle_dome_session` (one Muscle Dome leg:
   `MuscleDomeSession`, its command menu, ring and loadout kernels, over the
   contest ladder `legaia-engine-minigames` carries)
   and `option_values` (the options screen's value enums - Select Attack,
   battle camera, field HP display, ... - which engine-core's `options`
-  session re-exports).
+  session stores).
 - **Spells** - `spell_menu` (the out-of-battle cast flow) and
   `spell_party_broadcast` (`FUN_8003053C`).
 - **Menu overlay** - `menu_widget` (the window-widget choreography:
@@ -83,14 +79,28 @@ link into a dependent crate.
   (the menu overlay's sub-screen dispatcher and its routed-id table), and the
   two pages it reaches without `World`: `status_screen` and `list_order`; see
   [`docs/subsystems/save-screen.md`](../../docs/subsystems/save-screen.md).
-- **Dialog presentation + spawned script contexts** - `dialog`,
-  `dialog_window`, `dialog_pacing`, `dialog_picker_slide`, `text_balloon`,
-  `inline_dialogue` and `cutscene_timeline` are re-exports of
-  [`legaia-engine-dialog`](../engine-dialog/README.md), which holds the
-  pager and the context state. The stepping of both contexts stays on
+- **Dialog presentation + spawned script contexts** - not in this crate. The
+  pager (`dialog`, `dialog_window`, `dialog_pacing`, `dialog_picker_slide`,
+  `text_balloon`) is
+  [`legaia-engine-dialog`](../engine-dialog/README.md); the
+  `inline_dialogue` and `cutscene_timeline` context state is
+  `legaia-engine-field`. The stepping of both contexts is on
   engine-core's `World`, which holds the field host borrow.
 - **Inn** - `inn` (the rest confirmation and HP / MP restore session; see
   [`docs/subsystems/inn.md`](../../docs/subsystems/inn.md)).
+
+## Title overlay, game-over banner and menu state machine
+
+- `title_overlay` - the title-screen tick `FUN_801DD35C` (the sub-mode
+  dispatcher, its menu and transitions) and `title_overlay::title_draw_list`,
+  the sub-mode -> screen selector both hosts ask.
+- `title_prim` - the SCUS-side GPU primitive helpers the title overlay calls.
+- `gameover_banner` - the game-over banner letter stager `FUN_801CE844`.
+- `menu` - the engine's pause / shop / inn menu state machine.
+
+`muscle_dome_session` is the Muscle Dome match session (the deal, the commit
+and the ring) over this crate's battle-input and arts-input models; the
+World-free ladder and contest tables are `legaia_engine_minigames::muscle_dome`.
 
 ## See also
 

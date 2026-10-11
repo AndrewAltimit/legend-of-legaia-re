@@ -61,7 +61,7 @@
    * record k-1. Record 0 IS the idle (display base+1), 1..3 the attacks,
    * 4 the special, 5..7 the hit/knockdown family, 8 the win flourish.
    * Full derivation + disasm cites:
-   * legaia_asset::baka_opponents::action_slot_label. */
+   * legaia_minigame_formats::baka_opponents::action_slot_label. */
   const ACT = { IDLE: 0, ATTACK1: 1, ATTACK2: 2, ATTACK3: 3, SPECIAL: 4, HIT: 5, WIN: 8 };
 
   class MinigameBakaView {
@@ -102,7 +102,7 @@
        * player stands LEFT and faces RIGHT; the opponent stands RIGHT and
        * faces LEFT - so each looks at the other. */
       /* The engine's duel surface, when the bundle carries it: the same
-       * kernel (`engine-core::baka_duel_scene::BakaDuelSurface`) the native
+       * kernel (`engine-minigame-scenes::baka_duel_scene::BakaDuelSurface`) the native
        * window and the play page pose the duel through - the fighters at the
        * round setup's traced stand-offs, posed by the duel's own display
        * clips, the special's ghosts, the four arena walls, the floor grid,
@@ -328,7 +328,7 @@
     /* ---------------- the cabinet's front end ----------------
      *
      * The attract card and the PLAYER SELECT screen, run by the engine's
-     * cabinet (`engine-core::baka_cabinet`, the FUN_801CF388 port) and drawn
+     * cabinet (`engine-minigames::baka_cabinet`, the FUN_801CF388 port) and drawn
      * by its duel surface: the select camera and the three-fighter lineup
      * (`baka_duel_scene::SELECT_CAMERA` / `SELECT_LINEUP`, read off the
      * overlay) with the cursor's fighter lit and the other two at half depth

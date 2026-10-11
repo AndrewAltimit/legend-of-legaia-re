@@ -4,18 +4,18 @@
 //! game-over flows, asserting state machines compose into a single playable
 //! shell.
 
-use legaia_engine_core::field_menu::{
+use legaia_engine_battle::spells::{SpellCatalog, SpellOutcome};
+use legaia_engine_core::options::{OptionsInput, OptionsOutcome, OptionsSession, OptionsState};
+use legaia_engine_menus::field_menu::{
     FieldMenuInput, FieldMenuOutcome, FieldMenuRow, FieldMenuRowMask, FieldMenuSession,
 };
-use legaia_engine_core::game_over::{GameOverOutcome, GameOverPhase, GameOverSession};
-use legaia_engine_core::input::{Mapping, PadButton};
-use legaia_engine_core::key_rebind::{KeyRebindInput, KeyRebindOutcome, KeyRebindSession};
-use legaia_engine_core::options::{OptionsInput, OptionsOutcome, OptionsSession, OptionsState};
-use legaia_engine_core::spell_menu::{
+use legaia_engine_menus::game_over::{GameOverOutcome, GameOverPhase, GameOverSession};
+use legaia_engine_menus::key_rebind::{KeyRebindInput, KeyRebindOutcome, KeyRebindSession};
+use legaia_engine_menus::spell_menu::{
     CasterSlot, SpellMenuInput, SpellMenuOutcome, SpellMenuSession, TargetRow,
 };
-use legaia_engine_core::spells::{SpellCatalog, SpellOutcome};
-use legaia_engine_core::status_screen::{StatusScreenSession, StatusSnapshot};
+use legaia_engine_menus::status_screen::{StatusScreenSession, StatusSnapshot};
+use legaia_engine_system::input::{Mapping, PadButton};
 
 fn empty_input() -> FieldMenuInput {
     FieldMenuInput::default()
@@ -67,7 +67,7 @@ fn status_screen_cycles_party() {
         StatusSnapshot::placeholder(1, "Noa"),
         StatusSnapshot::placeholder(2, "Gala"),
     ]);
-    use legaia_engine_core::status_screen::StatusInput;
+    use legaia_engine_menus::status_screen::StatusInput;
     let _ = s.tick(StatusInput {
         r1: true,
         ..Default::default()
@@ -171,7 +171,7 @@ fn options_session_round_trip_persists_changes() {
     assert_eq!(s.outcome(), Some(OptionsOutcome::Closed));
     assert_eq!(
         s.state().battle_camera,
-        legaia_engine_core::options::BattleCameraOpt::Normal
+        legaia_engine_menus::option_values::BattleCameraOpt::Normal
     );
 }
 
@@ -241,7 +241,7 @@ fn the_options_screen_reaches_the_key_rebind_sub_screen_and_commits_a_bind() {
     });
     assert!(matches!(
         s.key_rebind().unwrap().phase(),
-        legaia_engine_core::key_rebind::KeyRebindPhase::AwaitingKey { cursor: 0 }
+        legaia_engine_menus::key_rebind::KeyRebindPhase::AwaitingKey { cursor: 0 }
     ));
     let events = s.tick_with_key(OptionsInput::default(), Some("K"));
     assert!(events.iter().any(|e| matches!(
@@ -312,7 +312,7 @@ fn options_session_popup_cancel_leaves_value() {
     assert!(!s.is_done());
     assert_eq!(
         s.state().battle_camera,
-        legaia_engine_core::options::BattleCameraOpt::Close
+        legaia_engine_menus::option_values::BattleCameraOpt::Close
     );
 }
 
@@ -344,7 +344,7 @@ fn game_over_default_hold_matches_the_traced_title_fade() {
     // sub-mode 0x11 at 0x801DDAEC).
     assert_eq!(
         GameOverSession::new().frames_remaining(),
-        legaia_engine_core::game_over::TITLE_HANDOFF_FRAMES
+        legaia_engine_menus::game_over::TITLE_HANDOFF_FRAMES
     );
 }
 

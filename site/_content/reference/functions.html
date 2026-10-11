@@ -104,7 +104,7 @@
     <summary>Deep dive: motion-VM flag writes and NPC initial facing</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><code>FUN_80038158</code> is dispatched by <code>FUN_8003BC08</code> when actor <code>+0x10 &amp; 0x80</code>. Its bytecode is MAN tail-section 1 (installer <code>FUN_8003A9D4</code>, parser <code>legaia_asset::man_motion</code>). The chapter-spine gates <code>0x142</code> / <code>0x482</code> / <code>0x1BE</code> and the town01 one-shot <code>549</code> appear in no motion stream: the first three are field-VM script bytes, <code>549</code> is a direct code path.</li>
+        <li><code>FUN_80038158</code> is dispatched by <code>FUN_8003BC08</code> when actor <code>+0x10 &amp; 0x80</code>. Its bytecode is MAN tail-section 1 (installer <code>FUN_8003A9D4</code>, parser <code>legaia_scene_formats::man_motion</code>). The chapter-spine gates <code>0x142</code> / <code>0x482</code> / <code>0x1BE</code> and the town01 one-shot <code>549</code> appear in no motion stream: the first three are field-VM script bytes, <code>549</code> is a direct code path.</li>
         <li><code>FUN_8003A1E4</code> reads <code>[model, anim, tile_x, tile_z]</code> - no facing byte. Its tail (<code>0x8003A474..0x8003A4F8</code>) executes a script's leading ops through <code>FUN_801DE840</code> when the script opens with op <code>0x24</code> / <code>0x25</code>, until a <code>0x21</code> NOP or a sub-<code>0x20</code> byte; ops <code>0x4C 0x51</code> sub-1 and <code>0x38</code> write <code>actor+0x26</code> from the 8-direction heading LUT at <code>0x80073F04</code>. Port <code>man_field_scripts::placement_initial_facing</code> + <code>World::seed_field_npc_facings</code>; see <a href="../subsystems/field-locomotion.html#npc-initial-facing">field locomotion</a>.</li>
       </ul>
     </div>
@@ -126,7 +126,7 @@
       <tr><td>FUN_8003C83C</td><td>Field-VM cross-context resolver (<code>0xF8</code> player / camera anchor, <code>0xFB</code> system)</td></tr>
       <tr><td>FUN_801DB8EC</td><td>Camera focus + projection setter (ops <code>0x4C 0x39</code> / <code>0x3E</code>) - focus and FOV, not eye position</td></tr>
       <tr><td>FUN_801DBC20</td><td>Camera-zone config loader: splits the 18-byte camera-region record into the camera globals</td></tr>
-      <tr><td>0x801D0A6C (data)</td><td>FMV dispatch table, 23 &times; 32 B (<code>legaia_asset::fmv_dispatch</code>)</td></tr>
+      <tr><td>0x801D0A6C (data)</td><td>FMV dispatch table, 23 &times; 32 B (<code>legaia_game_tables::fmv_dispatch</code>)</td></tr>
       <tr><td>0x801CAE08 (data)</td><td>libcd <code>CdlFILE</code> directory cache</td></tr>
     </tbody>
   </table>
@@ -222,7 +222,7 @@
     <tbody>
       <tr><td>FUN_801DD35C</td><td>Title-overlay per-frame tick; attract countdown underflow starts <code>MV1.STR</code></td></tr>
       <tr><td>FUN_801D33D8</td><td>Per-character status / party panel renderer (Status / Magic / Moves / Skills), window descriptor 28</td></tr>
-      <tr><td>0x801E4738 (data)</td><td>Window descriptor table: 52 &times; 16 B <code>[content_id][park_edge][class][x,y,w,h][renderer]</code> (parser <code>legaia_asset::menu_windows</code>)</td></tr>
+      <tr><td>0x801E4738 (data)</td><td>Window descriptor table: 52 &times; 16 B <code>[content_id][park_edge][class][x,y,w,h][renderer]</code> (parser <code>legaia_game_tables::menu_windows</code>)</td></tr>
       <tr><td>FUN_801E1C1C</td><td>Shared menu-element renderer</td></tr>
       <tr><td>FUN_801CF650</td><td>Equipment stat aggregator: 5 slots at <code>+0x196</code> &rarr; <code>DAT_801EF08C..09C</code></td></tr>
       <tr><td>FUN_801DD0C0</td><td>Item category / slot validity check</td></tr>

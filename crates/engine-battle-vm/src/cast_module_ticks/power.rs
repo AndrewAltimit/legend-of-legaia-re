@@ -1,5 +1,4 @@
 //! Baked per-hit power constants and the per-module damage shapes.
-//! Split out of `cast_module_ticks.rs`.
 
 use super::*;
 

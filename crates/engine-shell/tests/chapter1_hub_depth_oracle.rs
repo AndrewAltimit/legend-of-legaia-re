@@ -50,14 +50,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{
+use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
+use legaia_engine_field::man_field_scripts::{
     FlagBank, overworld_portal_sites, partition_record_span, partition2_record_gates,
-    scene_destinations, system_flag_census, walk_partition_gflag_sites,
+    scene_destinations, walk_partition_gflag_sites,
 };
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost, SceneTickEvent};
-use legaia_engine_core::scene_bundle::{extract_man_payload, find_bundle};
-use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig};
-use legaia_engine_vm::field_disasm::{FlagKind, InsnInfo, LinearWalker, scene_change_name};
+use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::man_census::system_flag_census;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_bundle::{extract_man_payload, find_bundle};
+use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, scene_change_name};
 
 // ---------------------------------------------------------------------
 // Discovery + shared drive helpers (patterned on chapter1_hub_sweep_oracle)
@@ -151,7 +154,7 @@ fn drive_to_leg(dest: &str) -> Option<SceneHost> {
     host.world.set_pad(0);
     let mut entered = None;
     // + the scene-change hold (`FUN_80021934`'s countdown).
-    for _ in 0..12 + legaia_engine_core::scene_transition_actor::HOLD_TICKS {
+    for _ in 0..12 + legaia_engine_field::scene_transition_actor::HOLD_TICKS {
         if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
             entered = Some(name);
             break;
@@ -176,7 +179,7 @@ fn load_man(index: &ProtIndex, name: &str) -> Vec<u8> {
 
 fn scene_dest_names(index: &ProtIndex, name: &str) -> BTreeSet<String> {
     let man = load_man(index, name);
-    let mf = legaia_asset::man_section::parse(&man).expect("parse MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
     scene_destinations(&mf, &man)
         .into_iter()
         .map(|d| d.scene_name)
@@ -188,7 +191,7 @@ fn scene_dest_names(index: &ProtIndex, name: &str) -> BTreeSet<String> {
 /// [`LinearWalker`] (the strict pre-scan `overworld_portal_sites` uses can
 /// bail on an undecodable byte before the op; see the jou `P2[5]` finding).
 fn p2_scene_changes(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     record: usize,
 ) -> Vec<(usize, String, i16)> {
@@ -222,7 +225,7 @@ fn part_v_vozz_flag_0x193_sites_pinned() {
     };
     let index = host.index.clone();
     let man = load_man(&index, "vozz");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse vozz MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse vozz MAN");
     assert_eq!(mf.header.partition_counts, [4, 24, 20], "vozz MAN shape");
 
     let sites = walk_partition_gflag_sites(&mf, &man, 1);
@@ -271,7 +274,7 @@ fn part_v_vozz_destinations_and_gate_census() {
     };
     let index = host.index.clone();
     let man = load_man(&index, "vozz");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse vozz MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse vozz MAN");
 
     // (1) The 0x3F chain offers two destinations: back to map01, and the
     // upper-case `BYLON` (Biron Monastery) that the lower-case-only label
@@ -370,7 +373,7 @@ fn part_v_drive_map01_to_vozz_and_back() {
     };
     let index = host.index.clone();
     let man = load_man(&index, "vozz");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse vozz MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse vozz MAN");
     assert_eq!(mf.header.partition_counts, [4, 24, 20]);
 
     // Interior hop: walk onto the exit band at (61, 2) -> back to map01.
@@ -493,7 +496,7 @@ fn part_j_jou_jouina_door_decode() {
     };
     let index = host.index.clone();
     let man = load_man(&index, "jou");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse jou MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse jou MAN");
     assert_eq!(mf.header.partition_counts, [15, 8, 7], "jou MAN shape");
 
     // (1) 0x3F destination set: the castle interior + the overworld exit.
@@ -604,7 +607,7 @@ fn part_j_jou_jouina_door_decode() {
 /// it runs the retail halt-acquire handshake against the **player anchor
 /// channel** `0xF8` (`A2 F8 06` ExecMove + `C3 F8 00 5E E2 50` HaltAcquire at
 /// +0x60, whose operand s16 state-resumes BACKWARD at +0x50).
-/// [`legaia_engine_core::field_channels::resolve_target`] keeps its `None`
+/// [`legaia_engine_field::field_channels::resolve_target`] keeps its `None`
 /// contract for the special `0xF8` target (retail resolves it to the live
 /// player object, `FUN_8003C83C`); the timeline stepper instead models the
 /// two ops directly: the ExecMove arms a short in-flight countdown
@@ -711,7 +714,7 @@ fn part_j_jouina_loads_and_chains_deeper() {
     }
     let index = host.index.clone();
     let man = load_man(&index, "jouina");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse jouina MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse jouina MAN");
     assert_eq!(mf.header.partition_counts, [18, 5, 23], "jouina MAN shape");
     let dests = scene_dest_names(&index, "jouina");
     assert_eq!(

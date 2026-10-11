@@ -9,8 +9,8 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` / the extracted disc are
 //! missing (`LEGAIA_EXTRACTED_DIR` first, then repo-relative).
 
-use legaia_engine_core::field_events::FieldEvent;
-use legaia_engine_core::scene::{BgmDirector, SceneHost};
+use legaia_engine_core::scene_host::{BgmDirector, SceneHost};
+use legaia_engine_field::field_events::FieldEvent;
 use std::path::PathBuf;
 
 #[derive(Default)]

@@ -1,4 +1,4 @@
-//! Disc-gated oracle for [`legaia_patcher::monster_texture`] - the enemy and
+//! Disc-gated oracle for [`legaia_texture_replace::monster_texture`] - the enemy and
 //! boss battle skins inside the monster archive (PROT 867).
 //!
 //! What this proves on a scratch copy of the user's own disc: every
@@ -15,8 +15,8 @@
 //! equality against what was read back. Skips + passes without
 //! `LEGAIA_DISC_BIN`.
 
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::monster_texture::{self as mt, MonsterTextureTarget};
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_texture_replace::monster_texture::{self as mt, MonsterTextureTarget};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

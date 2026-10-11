@@ -38,9 +38,9 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 
-use legaia_patcher::battle_texture::BattleTextureTarget;
-use legaia_patcher::monster_texture::MonsterTextureTarget;
-use legaia_patcher::texture::TextureTarget;
+use legaia_texture_replace::battle_texture::BattleTextureTarget;
+use legaia_texture_replace::monster_texture::MonsterTextureTarget;
+use legaia_texture_replace::texture::TextureTarget;
 
 /// A VRAM rectangle: `(x, y, width in framebuffer units, height)`.
 pub type VramRect = (u16, u16, u16, u16);
@@ -90,7 +90,7 @@ pub struct TexRow {
     /// `None` when the family has nothing to say about this row.
     ///
     /// Borrowed for the families whose labels are curated constants (the TIM
-    /// tiers key [`legaia_asset::tim_labels`] by content fingerprint, so those
+    /// tiers key [`legaia_disc_audit::tim_labels`] by content fingerprint, so those
     /// are `&'static str`); owned for a family that *composes* a label per row
     /// from disc data, which the battle-equipment tier does - it joins the
     /// character to the equipment's own item name.
@@ -121,21 +121,21 @@ pub fn fnv1a64(bytes: &[u8]) -> u64 {
 /// families exist.
 #[derive(Debug)]
 pub enum ReplaceOp {
-    /// A standard TIM, written through `legaia_patcher::texture` (same-size
+    /// A standard TIM, written through `legaia_texture_replace::texture` (same-size
     /// raw write, or recompress-into-budget on the compressed tier).
     Tim(TextureTarget),
-    /// A save-slot portrait, written through `legaia_patcher::save_icon` -
+    /// A save-slot portrait, written through `legaia_texture_replace::save_icon` -
     /// the generic TIM path would repaint every portrait, because the sheet
     /// stores one tile as sixteen scattered runs sharing a strip.
     SaveIconSlot(usize),
     /// A headerless battle-equipment block, written through
-    /// `legaia_patcher::battle_texture`. Not a TIM write and not a
+    /// `legaia_texture_replace::battle_texture`. Not a TIM write and not a
     /// same-size write: the block is the tail of an LZS record whose slot
     /// allocation is pinned by the descriptor chain, so the whole record is
     /// re-compressed into that allocation or the write is refused.
     BattleEquip(BattleTextureTarget),
     /// A monster's 4bpp battle-skin page, written through
-    /// `legaia_patcher::monster_texture`. The whole monster block is
+    /// `legaia_texture_replace::monster_texture`. The whole monster block is
     /// re-compressed into its fixed `0x14000` archive slot, and the pool's
     /// palettes are never rewritten - see that module for why.
     MonsterPage(MonsterTextureTarget),
@@ -185,7 +185,7 @@ pub struct ScanCtx<'a> {
     /// executable to hand. Not derivable from `prot` - it lives in
     /// `SCUS_942.54` - and a family that names its rows after equipment
     /// needs it, so it is scan state rather than a parameter of one family.
-    names: Option<legaia_asset::item_names::ItemNameTable>,
+    names: Option<legaia_game_tables::item_names::ItemNameTable>,
     /// Last decompressed entry. Deliberately one slot - see the module docs.
     lzs: RefCell<LzsCache>,
 }
@@ -207,13 +207,13 @@ impl<'a> ScanCtx<'a> {
     /// image; an unparseable one is the same as none.
     pub fn with_scus(prot: &'a [u8], spans: &'a [(u64, u64, u32)], scus: Option<&[u8]>) -> Self {
         Self {
-            names: scus.and_then(legaia_asset::item_names::ItemNameTable::from_scus),
+            names: scus.and_then(legaia_game_tables::item_names::ItemNameTable::from_scus),
             ..Self::new(prot, spans)
         }
     }
 
     /// The item-name table, when one was supplied.
-    pub fn item_names(&self) -> Option<&legaia_asset::item_names::ItemNameTable> {
+    pub fn item_names(&self) -> Option<&legaia_game_tables::item_names::ItemNameTable> {
         self.names.as_ref()
     }
 
@@ -407,7 +407,7 @@ fn tim_rgba(tim: &legaia_tim::Tim) -> Option<Rgba> {
 /// A catalog row whose bytes no longer strict-parse emits no grid row - the
 /// grid only offers what the writer can round-trip.
 fn scan_raw(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Result<(), String> {
-    for t in legaia_asset::tim_catalog::build_from_spans(ctx.prot, ctx.spans) {
+    for t in legaia_disc_audit::tim_catalog::build_from_spans(ctx.prot, ctx.spans) {
         let Some(bytes) = ctx.prot.get(t.abs_offset as usize..) else {
             continue;
         };
@@ -444,7 +444,7 @@ fn scan_raw(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Result
 /// decode fails - the coordinate is still valid and the writer still reaches
 /// it; only the thumbnail is missing.
 fn scan_lzs(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Result<(), String> {
-    for t in legaia_asset::tim_deep_catalog::build_from_spans(ctx.prot, ctx.spans) {
+    for t in legaia_disc_audit::tim_deep_catalog::build_from_spans(ctx.prot, ctx.spans) {
         let (vram, clut_vram, rgba) = ctx.with_lzs_sections(t.entry_index, |sections| {
             let tim = sections.and_then(|s| {
                 s.get(t.lzs_section as usize)
@@ -491,7 +491,7 @@ fn scan_save_icons(
     want_pixels: bool,
     sink: &mut Sink<'_>,
 ) -> Result<(), String> {
-    use legaia_asset::save_icon as si;
+    use legaia_ui_formats::save_icon as si;
 
     let entry = si::PROT_ENTRY as u32;
     let Some(bytes) = ctx.entry_bytes(entry) else {
@@ -592,7 +592,7 @@ struct SummonPage {
 /// the entry, which is what makes this family byte-addressable despite being
 /// slot-structured.
 fn summon_page(entry_bytes: &[u8], page_offset: usize) -> Option<SummonPage> {
-    use legaia_asset::summon_readef as sr;
+    use legaia_actor_formats::summon_readef as sr;
     let slot_index = page_offset / sr::SLOT_BYTES;
     let file = sr::parse(entry_bytes).ok()?;
     let slot = file.slots.iter().find(|s| s.index == slot_index)?;
@@ -639,7 +639,7 @@ fn summon_rgba(entry_bytes: &[u8], p: &SummonPage, clut_sub: usize) -> Option<Rg
 }
 
 fn scan_summon(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Result<(), String> {
-    use legaia_asset::summon_readef as sr;
+    use legaia_actor_formats::summon_readef as sr;
 
     for entry in [sr::SUMMON_PROT_INDEX as u32, sr::READEF_PROT_INDEX as u32] {
         let Some(bytes) = ctx.entry_bytes(entry) else {
@@ -723,7 +723,7 @@ fn scan_summon(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Res
 /// descriptor index is itself, and `record[0]` block `n` is `-1 - n`.
 /// `offset` stays the block's byte offset inside its decoded record, so the
 /// coordinate carries both an addressable slot and a checkable position.
-fn battle_section(block: &legaia_asset::battle_texture_catalog::BattleTextureBlock) -> i64 {
+fn battle_section(block: &legaia_actor_formats::battle_texture_catalog::BattleTextureBlock) -> i64 {
     if block.is_record0() {
         -1 - block.section as i64
     } else {
@@ -734,8 +734,8 @@ fn battle_section(block: &legaia_asset::battle_texture_catalog::BattleTextureBlo
 /// The inverse: the slot selector a coordinate's `section` names.
 fn battle_slot(
     section: i64,
-) -> Result<legaia_asset::battle_texture_catalog::BattleTextureSlot, String> {
-    use legaia_asset::battle_texture_catalog::BattleTextureSlot;
+) -> Result<legaia_actor_formats::battle_texture_catalog::BattleTextureSlot, String> {
+    use legaia_actor_formats::battle_texture_catalog::BattleTextureSlot;
     let bad = || format!("{section} is not a battle-equipment slot");
     if section < 0 {
         u8::try_from(-1 - section)
@@ -754,8 +754,8 @@ fn battle_slot(
 fn battle_blocks_of_entry(
     ctx: &ScanCtx<'_>,
     entry: u32,
-) -> Vec<legaia_asset::battle_texture_catalog::BattleTextureBlock> {
-    use legaia_asset::battle_texture_catalog as btc;
+) -> Vec<legaia_actor_formats::battle_texture_catalog::BattleTextureBlock> {
+    use legaia_actor_formats::battle_texture_catalog as btc;
     let Some(file) = ctx.entry_bytes(entry) else {
         return Vec::new();
     };
@@ -765,9 +765,9 @@ fn battle_blocks_of_entry(
 
 fn battle_rgba(
     ctx: &ScanCtx<'_>,
-    block: &legaia_asset::battle_texture_catalog::BattleTextureBlock,
+    block: &legaia_actor_formats::battle_texture_catalog::BattleTextureBlock,
 ) -> Option<Rgba> {
-    use legaia_asset::battle_texture_catalog as btc;
+    use legaia_actor_formats::battle_texture_catalog as btc;
     btc::decode_block(ctx.prot, ctx.spans, block, BATTLE_PREVIEW_PALETTE)
         .ok()
         .map(|d| Rgba {
@@ -782,7 +782,7 @@ fn scan_battle_equip(
     want_pixels: bool,
     sink: &mut Sink<'_>,
 ) -> Result<(), String> {
-    use legaia_asset::battle_texture_catalog as btc;
+    use legaia_actor_formats::battle_texture_catalog as btc;
 
     for entry in btc::PLAYER_FILE_ENTRIES {
         for b in battle_blocks_of_entry(ctx, entry) {
@@ -859,7 +859,7 @@ fn op_battle_equip(c: &TexCoord) -> Result<ReplaceOp, String> {
 //     searchable.
 //   * There is no single palette to decode a page through. A prim picks one
 //     with its CBA column, so the page decodes through a per-texel ownership
-//     map instead (`legaia_asset::monster_archive::MonsterPage`). Decoding
+//     map instead (`legaia_actor_formats::monster_archive::MonsterPage`). Decoding
 //     id 179 through palette 0 instead paints 44% of its page pure red and
 //     green - a plausible-looking wrong image.
 
@@ -872,16 +872,19 @@ fn monster_id(section: i64) -> Result<u16, String> {
 }
 
 /// One monster's page, loaded from the archive entry.
-fn monster_page(ctx: &ScanCtx<'_>, id: u16) -> Option<legaia_asset::monster_archive::MonsterPage> {
+fn monster_page(
+    ctx: &ScanCtx<'_>,
+    id: u16,
+) -> Option<legaia_actor_formats::monster_archive::MonsterPage> {
     let entry = ctx.entry_bytes(MONSTER_ARCHIVE_ENTRY as u32)?;
-    legaia_asset::monster_archive::page(entry, id)
+    legaia_actor_formats::monster_archive::page(entry, id)
         .ok()
         .flatten()
 }
 
 /// The row one page emits. Split out so the scan and the single-row read
 /// agree about coordinates and dimensions by construction.
-fn monster_row(page: &legaia_asset::monster_archive::MonsterPage) -> TexRow {
+fn monster_row(page: &legaia_actor_formats::monster_archive::MonsterPage) -> TexRow {
     TexRow {
         coord: TexCoord {
             tier: TIER_MONSTER,
@@ -907,7 +910,7 @@ fn monster_row(page: &legaia_asset::monster_archive::MonsterPage) -> TexRow {
 }
 
 fn scan_monster(ctx: &ScanCtx<'_>, want_pixels: bool, sink: &mut Sink<'_>) -> Result<(), String> {
-    use legaia_asset::monster_archive as ma;
+    use legaia_actor_formats::monster_archive as ma;
     let Some(entry) = ctx.entry_bytes(MONSTER_ARCHIVE_ENTRY as u32) else {
         return Ok(());
     };
@@ -998,7 +1001,7 @@ fn read_tim(ctx: &ScanCtx<'_>, c: &TexCoord) -> Result<Rgba, String> {
 }
 
 fn read_save_icon(ctx: &ScanCtx<'_>, c: &TexCoord) -> Result<Rgba, String> {
-    use legaia_asset::save_icon as si;
+    use legaia_ui_formats::save_icon as si;
     let bytes = ctx
         .entry_bytes(si::PROT_ENTRY as u32)
         .ok_or("save-icon sheet entry is missing")?;
@@ -1128,7 +1131,7 @@ mod tests {
 
     #[test]
     fn the_battle_slot_field_names_both_of_its_slot_spaces() {
-        use legaia_asset::battle_texture_catalog::BattleTextureSlot;
+        use legaia_actor_formats::battle_texture_catalog::BattleTextureSlot;
         // A descriptor index is itself ...
         for i in [0usize, 1, 14, 51] {
             assert_eq!(
@@ -1152,7 +1155,7 @@ mod tests {
 
     #[test]
     fn battle_coordinates_resolve_to_the_battle_writer() {
-        use legaia_asset::battle_texture_catalog::BattleTextureSlot;
+        use legaia_actor_formats::battle_texture_catalog::BattleTextureSlot;
         for (section, want) in [
             (14i64, BattleTextureSlot::Section(14)),
             (-1, BattleTextureSlot::Record0(0)),

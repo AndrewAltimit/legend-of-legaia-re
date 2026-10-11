@@ -1,6 +1,5 @@
 //! Effect sprite-atlas + animation catalog: [`SpriteAtlasEntry`],
-//! [`AnimFrame`], [`AnimBatch`], and the [`EffectCatalog`]. Split out of
-//! `effect_vm.rs`.
+//! [`AnimFrame`], [`AnimBatch`], and the [`EffectCatalog`].
 
 use super::*;
 
@@ -146,7 +145,7 @@ impl EffectCatalog {
     /// ```
     ///
     /// The pack tables hold **absolute file offsets** (not the `word*4`
-    /// offsets of `asset::pack`). Returns an empty catalog on any structural
+    /// offsets of `container-formats::pack`). Returns an empty catalog on any structural
     /// failure so a malformed buffer just yields nothing to spawn or draw.
     pub fn from_efect_dat_bytes(buf: &[u8]) -> Self {
         Self::try_parse_efect_dat(buf).unwrap_or_default()
@@ -290,7 +289,7 @@ impl EffectCatalog {
         )
     }
 
-    /// Parse from a raw pack1 byte slice using the abstract `asset::pack`
+    /// Parse from a raw pack1 byte slice using the abstract `container-formats::pack`
     /// `word*4` offset convention. Retained for the abstract-pack path; the
     /// runtime `efect.dat` file uses absolute offsets - see
     /// [`Self::from_efect_dat_bytes`].

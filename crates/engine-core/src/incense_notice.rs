@@ -16,7 +16,7 @@
 //! The driver's enter half `FUN_801F1278` maps the record's kind byte through
 //! the sub-op table at `0x801F33A4` (`lb v0,0(v0)` at `0x801F1468`): kind
 //! `0x0B` -> handler slot `0x32`, which is `FUN_801F1E48`. That handler is a
-//! three-state notice (`legaia_engine_vm::baka_hub_actors::submenu`):
+//! three-state notice (`legaia_engine_field::submode_hub_actors::submenu`):
 //!
 //! - state `0` installs descriptor `0x801F3294` (show window record `16`) and
 //!   clears `_DAT_8007B888`;
@@ -50,7 +50,7 @@
 //!
 //! REF: FUN_801D0B90, FUN_801F1278, FUN_801F1E48, FUN_801F1B64
 
-use legaia_engine_vm::baka_hub_actors::{self as hub, HubAction, HubActor, HubEnv, HubGrid};
+use legaia_engine_field::submode_hub_actors::{self as hub, HubAction, HubActor, HubEnv, HubGrid};
 
 use crate::world::World;
 
@@ -75,7 +75,7 @@ pub const NOTICE_CONTENT_RECT: (i32, i32, i32, i32) = (0x22, 0x20, 0xFC, 0x0C);
 /// `0x801F1B98`).
 pub const NOTICE_TEXT_INSET: i32 = 0x0C;
 /// The caller-drawn frame extends past the content rect by this much on
-/// every side (the window-system convention `legaia_asset::menu_windows`
+/// every side (the window-system convention `legaia_game_tables::menu_windows`
 /// pins for the menu overlay's records).
 pub const NOTICE_FRAME_PAD: i32 = 8;
 
@@ -206,15 +206,17 @@ impl World {
     /// panel installs and confirm cue, and close the notice (releasing the
     /// movement lock) once it hands back. No-op with no notice up.
     ///
-    /// REF: FUN_801F1E48 (body: [`legaia_engine_vm::baka_hub_actors::submenu`])
+    /// REF: FUN_801F1E48 (body: [`legaia_engine_field::submode_hub_actors::submenu`])
     pub fn tick_incense_notice(&mut self) {
         let Some(mut notice) = self.locomotion.incense_notice.take() else {
             return;
         };
         // The handler tests the **packed** retail pad word against packed
         // masks; the world's input holds the raw word.
-        let pad = u32::from(crate::dev_menu::retail_packed(self.input.pad()));
-        let prev = u32::from(crate::dev_menu::retail_packed(self.input.pad_prev()));
+        let pad = u32::from(legaia_engine_system::pad::retail_packed(self.input.pad()));
+        let prev = u32::from(legaia_engine_system::pad::retail_packed(
+            self.input.pad_prev(),
+        ));
         let env = HubEnv {
             pad_edge: pad & !prev,
             pad_held: pad,

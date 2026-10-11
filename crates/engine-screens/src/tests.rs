@@ -1,7 +1,7 @@
 use super::*;
-use legaia_asset::menu_windows::{MenuWindowDescriptor, MenuWindowTable};
-use legaia_engine_core::menu_runtime::MenuState;
-use legaia_engine_core::shop_catalog::ShopItemData;
+use legaia_engine_menus::menu::MenuState;
+use legaia_engine_menus::shop_catalog::ShopItemData;
+use legaia_game_tables::menu_windows::{MenuWindowDescriptor, MenuWindowTable};
 
 fn table_with(id: usize, renderer_va: u32) -> MenuWindowTable {
     let blank = MenuWindowDescriptor {
@@ -91,7 +91,7 @@ fn sell_detail_prices_a_sellable_item() {
     let table = table_with(WIN_SELL_DETAIL, RENDERER_SELL_DETAIL);
     let i = inputs(&world, &menu, &font, Some(&table), None, &[]);
     let (texts, pic) = sell_detail_window_draws(&i, &table, Some(5));
-    let panel = legaia_engine_core::shop::shop_sell_detail_panel((100, 60), 5, 200, None);
+    let panel = legaia_engine_menus::shop::shop_sell_detail_panel((100, 60), 5, 200, None);
     let row = panel.sell.expect("a priced item has a price row");
     let pic = pic.expect("the currency pictogram rides the price row");
     assert_eq!(

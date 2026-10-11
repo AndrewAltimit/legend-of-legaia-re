@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Field move-VM stager spawn (op 0x34 sub-3 / `FUN_800252EC` → `spawn_field_stager`):
 /// a stager record spawns a one-part field scene-graph effect, and the
@@ -6,8 +7,8 @@ use super::*;
 /// the render-node channel (the `FUN_80021DF4` `+0x5A` classification).
 #[test]
 fn field_stager_spawn_splits_sound_node_off_the_mesh_draws() {
-    use crate::summon::RenderMode;
-    use legaia_asset::summon_overlay::{RENDER_NODE_MODE_B, SummonPart};
+    use legaia_engine_effects::summon::RenderMode;
+    use legaia_overlay_images::summon_overlay::{RENDER_NODE_MODE_B, SummonPart};
 
     let mut world = World::new();
 
@@ -103,11 +104,12 @@ fn vm_dialogue_drives_inline_runner_via_tick_and_tears_down() {
             0
         });
         let _ = world.tick();
-        if world
-            .drain_field_events()
-            .iter()
-            .any(|e| matches!(e, crate::field_events::FieldEvent::DialogDismissed))
-        {
+        if world.drain_field_events().iter().any(|e| {
+            matches!(
+                e,
+                legaia_engine_field::field_events::FieldEvent::DialogDismissed
+            )
+        }) {
             dismissed = true;
         }
         if world.dialog.current.is_none() && world.dialog.inline.is_none() {
@@ -173,10 +175,10 @@ fn simple_dialogue_opt_out_leaves_runner_untouched() {
 /// is proven on real data by `move_fx_render_disc`.
 #[test]
 fn battle_special_attack_requests_move_fx_spawn() {
-    use crate::monster_catalog::vanilla_monster_catalog;
-    use crate::move_power::MovePowerCatalog;
-    use crate::spells::SpellCatalog;
-    use legaia_asset::move_power::{
+    use legaia_engine_battle::monster_catalog::vanilla_monster_catalog;
+    use legaia_engine_battle::move_power::MovePowerCatalog;
+    use legaia_engine_battle::spells::SpellCatalog;
+    use legaia_game_tables::move_power::{
         MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
         MOVE_POWER_TABLE_LEN,
     };
@@ -202,7 +204,7 @@ fn battle_special_attack_requests_move_fx_spawn() {
 
     fn run(with_fx: bool) -> Option<(u8, [i16; 3])> {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },

@@ -3,8 +3,9 @@
 //! the band seam with the player stopping the wheel.
 
 use super::*;
-use legaia_engine_vm::cast_fatal_decision::{self as fd, FatalOutcome};
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::cast_fatal_decision::{self as fd, FatalOutcome};
+use legaia_engine_battle_vm::status_effects::StatusKind;
+use legaia_engine_mode::mode::SceneMode;
 
 const VICTIM: u8 = 0;
 const CASTER: u8 = 1;
@@ -13,7 +14,7 @@ const CASTER: u8 = 1;
 /// aimed at the member).
 fn fd_world() -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -96,7 +97,7 @@ fn status_outcomes_install_through_the_tracker() {
 
 #[test]
 fn numb_and_stone_hand_a_queued_item_back_and_cancel_the_action() {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     for o in [FatalOutcome::Numb, FatalOutcome::Stone] {
         let mut w = fd_world();
         w.actors[0].battle.action_category = ActionCategory::Item.as_byte();
@@ -173,7 +174,7 @@ fn the_whole_body_runs_and_the_player_stops_the_wheel() {
             six += 1;
         }
         w.input.set_pad(if press {
-            crate::input::PadButton::Cross.mask()
+            legaia_engine_system::input::PadButton::Cross.mask()
         } else {
             0
         });
@@ -236,7 +237,7 @@ fn the_wheel_draws_its_icons_off_the_disc_records() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
-    use legaia_asset::cast_effect_pool::{
+    use legaia_overlay_images::cast_effect_pool::{
         CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST, CastEffectPool,
     };
     let mut archive =
@@ -291,7 +292,8 @@ fn the_wheel_draws_its_icons_off_the_disc_records() {
         "the icons are sprite-arm nodes"
     );
     // Stop it, and walk to the banner.
-    w.input.set_pad(crate::input::PadButton::Cross.mask());
+    w.input
+        .set_pad(legaia_engine_system::input::PadButton::Cross.mask());
     for _ in 0..2_000 {
         w.run_fatal_decision(fd::FATAL_DECISION_ENTRY);
         w.input.set_pad(0);

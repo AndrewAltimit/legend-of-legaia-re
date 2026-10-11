@@ -8,7 +8,7 @@ It is not the only animation format on the disc, and picking the wrong one is th
 - The party's *battle* poses come from the player battle files' own streams: [battle-data-pack](battle-data-pack.md#battle-animations-record0).
 - The dispatcher's type byte is crossed with its label. Clip banks arrive as asset type **`0x05`** (labelled "MOVE", buffer `_DAT_8007B888`). Type `0x06` (labelled "ANM", buffer `_DAT_8007B7C8`) holds the scene's CLUT-walk table ([`asset-type.md`](asset-type.md#type-table)).
 
-Parsers: `legaia_asset::player_anm` (the disc-pinned record layout, sampler and blender) and `crates/anm` (the outer container, the allocator preamble, CLI sweeps).
+Parsers: `legaia_actor_formats::player_anm` (the disc-pinned record layout, sampler and blender) and `crates/anm` (the outer container, the allocator preamble, CLI sweeps).
 
 ## At a glance
 
@@ -46,7 +46,7 @@ Record (a clip), `record_size = 16 + 8 * bones * frames`:
 
 As `u16` words the header reads `(a, b, marker_1, flag)`: bone count = `a & 0xFF`, gate = `a >> 8`, frames = `b`. The Baka Fighter bundle's `flag` values are `0x0201` / `0x0401` / `0x0402`.
 
-The size formula holds byte-exact across all 310 records of the five pinned bundles below and across every other bundle the corpus sweep finds. `legaia_asset::player_anm::find_in_entry` validates it on every record before declaring a bundle parsed; the disc-gated `crates/asset/tests/player_anm_real.rs` pins it.
+The size formula holds byte-exact across all 310 records of the five pinned bundles below and across every other bundle the corpus sweep finds. `legaia_actor_formats::player_anm::find_in_entry` validates it on every record before declaring a bundle parsed; the disc-gated `crates/actor-formats/tests/player_anm_real.rs` pins it.
 
 ## Disc source - the party locomotion bundle (PROT 0874 §1)
 
@@ -72,11 +72,11 @@ The bone count is the **runtime-capped 10**. The consuming actor's object-pointe
 
 This walk is the **town** walk only. On a kingdom world map the pad step stores the scene-sentinel base `99`, so the overworld walk binds body `leader` of the kingdom's own ANM bank (three 10-part clips, byte-identical across the kingdoms; see [`world-map-overlay.md`](world-map-overlay.md#per-kingdom-clip-inventory)). The standing idle there is still this bank's slot 1.
 
-Parser: `legaia_asset::character_pack::field_locomotion_anm` and the `LOCOMOTION_*` bank constants. `locomotion_slot_label` names only the two capture-pinned slots ("Walk" / "Idle") and keeps the rest neutral ("Locomotion N"); `locomotion_record_label` adds the character banks and the savepoint / aux records.
+Parser: `legaia_actor_formats::character_pack::field_locomotion_anm` and the `LOCOMOTION_*` bank constants. `locomotion_slot_label` names only the two capture-pinned slots ("Walk" / "Idle") and keeps the rest neutral ("Locomotion N"); `locomotion_record_label` adds the character banks and the savepoint / aux records.
 
 ## Disc source - per-scene ANM bundle
 
-The clip set a scene's **NPC actors** and scripted scene animations play ships inside the scene's own asset bundle, not as a dedicated PROT entry. The bundle is a [`parse_player_lzs`](../../crates/asset/src/lib.rs)-shaped container ([scene_asset_table](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)); its type-`0x05` descriptor LZS-decodes to an ANM container. The dispatcher allocates it into `_DAT_8007B888` with the `move_malloc_err` string (`ghidra/scripts/funcs/8001f05c.txt`, store at `0x8001F3A8`).
+The clip set a scene's **NPC actors** and scripted scene animations play ships inside the scene's own asset bundle, not as a dedicated PROT entry. The bundle is a [`parse_player_lzs`](../../crates/container-formats/src/lib.rs)-shaped container ([scene_asset_table](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)); its type-`0x05` descriptor LZS-decodes to an ANM container. The dispatcher allocates it into `_DAT_8007B888` with the `move_malloc_err` string (`ghidra/scripts/funcs/8001f05c.txt`, store at `0x8001F3A8`).
 
 Byte-equality against the live clip bank in the [`v0_1_pre_battle_tetsu`](../../scripts/scenarios.toml) field-mode save state confirms:
 
@@ -90,7 +90,7 @@ Byte-equality against the live clip bank in the [`v0_1_pre_battle_tetsu`](../../
 
 The field-form bundles carry 69-72 records. Other scenes either hold a smaller bank or resolve to one of these.
 
-**A stream-borne bank.** A scene whose MAN arrives in a DATA_FIELD stream can ship its clip bank the same way: as the stream's type-`0x05` chunk, stored raw (the stream walker hands every chunk to the dispatcher with `copy_only = 1`). `rikuroa` is the case: its 72-record bank is the type-`0x05` chunk of PROT 157, between the MAN (type `0x03`) and the type-`0x07` chunk, and no entry of its block holds a container with an ANM section. One resolver serves every host: `legaia_asset::player_anm::find_scene_bundle`, through `engine-core::npc_catalog::scene_anm_bundle`, tries the container sections first (entry-major), then a stream chunk.
+**A stream-borne bank.** A scene whose MAN arrives in a DATA_FIELD stream can ship its clip bank the same way: as the stream's type-`0x05` chunk, stored raw (the stream walker hands every chunk to the dispatcher with `copy_only = 1`). `rikuroa` is the case: its 72-record bank is the type-`0x05` chunk of PROT 157, between the MAN (type `0x03`) and the type-`0x07` chunk, and no entry of its block holds a container with an ANM section. One resolver serves every host: `legaia_actor_formats::player_anm::find_scene_bundle`, through `engine-core::npc_catalog::scene_anm_bundle`, tries the container sections first (entry-major), then a stream chunk.
 
 ### Which clip an NPC plays
 
@@ -115,7 +115,7 @@ PROT `1203_other5` is the battle-form animation set **for the PROT 1204 pack's o
 
 Roles within a bank, pinned through the Baka Fighter duel's display-anim ids: `0` idle, `1..=3` the three attacks, `4` the special, `5..=7` the hit / knockdown family, `8` the win flourish (the match-result pose).
 
-The combat tick stores `base + k` at `actor + 0x5C` (`base = fighter_id * 9`), and the anim player resolves the id **through the container header**: `container + id*4` reads word `id`, where word 0 is the record count and word `d` is `offsets[d-1]`. So display id `base + k` lands on bank record `k - 1`. Derivation and disassembly cites: `legaia_asset::baka_opponents::action_slot_label` (`party_bank_record_label` for the absolute-record view) and [`minigame-baka-fighter.md` § Player input + actions](../subsystems/minigame-baka-fighter.md#player-input--actions).
+The combat tick stores `base + k` at `actor + 0x5C` (`base = fighter_id * 9`), and the anim player resolves the id **through the container header**: `container + id*4` reads word `id`, where word 0 is the record count and word `d` is `offsets[d-1]`. So display id `base + k` lands on bank record `k - 1`. Derivation and disassembly cites: `legaia_minigame_formats::baka_opponents::action_slot_label` (`party_bank_record_label` for the absolute-record view) and [`minigame-baka-fighter.md` § Player input + actions](../subsystems/minigame-baka-fighter.md#player-input--actions).
 
 ## Per-(bone, frame) 8-byte encoding
 
@@ -134,11 +134,11 @@ Each entry decodes to a `(T, R)` transform in `FUN_8001BE80` (`ghidra/scripts/fu
 
 - `T0..T2` are **signed 12-bit** translations (`if (v & 0x800) v |= 0xFFFFF000`): the joint offset in actor-local space. The runtime pushes them through the GTE's `MVMVA` with the actor's rotation matrix, then loads the result into the GTE `TR` registers as the per-object world-space translation.
 - The three rotations build into the GTE rotation matrix in the order Z, Y, X (post-multiplication) via the PsyQ-shape builders (`ghidra/scripts/funcs/8004638c.txt`, `8004629c.txt`, `800461a4.txt`), which read the global sin / cos tables at `DAT_80070A2C` / `DAT_8007122C`.
-- `high4(T2)` is the **low** nibble of byte 4: `lbu v0,0x4(t3); andi v0,v0,0xf; sll v0,v0,0x8` at `0x8001BF30..0x8001BF3C`. The unit test `bone_transform_decode_signed_12bit` (`crates/asset/src/player_anm.rs`, town01 record 17) pins the decode.
+- `high4(T2)` is the **low** nibble of byte 4: `lbu v0,0x4(t3); andi v0,v0,0xf; sll v0,v0,0x8` at `0x8001BF30..0x8001BF3C`. The unit test `bone_transform_decode_signed_12bit` (`crates/actor-formats/src/player_anm.rs`, town01 record 17) pins the decode.
 
 Frame 0 of an idle clip is the rest-pose assembly transform: it places each TMD object at its joint position with its rest orientation.
 
-`legaia_asset::player_anm::BoneTransform::decode` returns `(t_x, t_y, t_z, r_x, r_y, r_z)`. The WASM [`LegaiaViewer::player_anm_record_pose_frames`](../../crates/web-viewer/src/lib.rs) emits per-frame absolute transforms in that shape for the site's character viewer.
+`legaia_actor_formats::player_anm::BoneTransform::decode` returns `(t_x, t_y, t_z, r_x, r_y, r_z)`. The WASM [`LegaiaViewer::player_anm_record_pose_frames`](../../crates/web-viewer/src/lib.rs) emits per-frame absolute transforms in that shape for the site's character viewer.
 
 ## Playback
 
@@ -173,7 +173,7 @@ The cursor `actor+0x68` is in **1/16-frame units**: `FUN_8001B964` poses from `f
 | `0x0100` | End latch, set by the tick on reaching either end |
 | `0x0200` | Restart request, consumed by the next tick |
 
-Scripts drive all of it through the field-VM ops `0x22 <id>` (SET_ANIM), `0x2B` / `0x2C` / `0x2D` (set / clear / spin on a bit of `actor+0x62`), `0x4C` nibble-4 sub-1 (the rate) and `0x4C` nibble-3 sub-5 / sub-6 (the two pose snaps). This is what swings a town's house doors open; see [`field-locomotion.md`](../subsystems/field-locomotion.md#the-door-swing-how-a-bind-script-drives-the-clip). Engine port: `legaia_engine_core::field_env::PropAnim`.
+Scripts drive all of it through the field-VM ops `0x22 <id>` (SET_ANIM), `0x2B` / `0x2C` / `0x2D` (set / clear / spin on a bit of `actor+0x62`), `0x4C` nibble-4 sub-1 (the rate) and `0x4C` nibble-3 sub-5 / sub-6 (the two pose snaps). This is what swings a town's house doors open; see [`field-locomotion.md`](../subsystems/field-locomotion.md#the-door-swing-how-a-bind-script-drives-the-clip). Engine port: `legaia_engine_scene::field_env::PropAnim`.
 
 The driver reads four header bytes (`ghidra/scripts/funcs/800204f8.txt`): the bone count at clip `+0`, the gate at `+1`, the frame count at `+2` and the divisor at `+6`.
 
@@ -190,7 +190,7 @@ The driver reads four header bytes (`ghidra/scripts/funcs/800204f8.txt`): the bo
 
 Results are written to scratchpad `0x1F8002C0` (`T` at `+0x0..0x6`, angles at `+0x8..0xE`) before the GTE load. At `frac == 0` every lane returns the current entry exactly, the flip retry included, so a whole-frame cursor poses exactly as the single-entry decode.
 
-**Census.** 2243 of the 3634 records the ANM detector finds across every PROT entry carry the gate, spread over 78 entries; 1560 of those use step divisor `4`. It is set per clip, not by record index: 327 of the 755 records at index `0..=8` carry it and 963 of those at `9+` do not. `crates/asset/tests/player_anm_sampler_real.rs` prints the census and checks every keyframe of every record against the single-entry decode.
+**Census.** 2243 of the 3634 records the ANM detector finds across every PROT entry carry the gate, spread over 78 entries; 1560 of those use step divisor `4`. It is set per clip, not by record index: 327 of the 755 records at index `0..=8` carry it and 963 of those at `9+` do not. `crates/actor-formats/tests/player_anm_sampler_real.rs` prints the census and checks every keyframe of every record against the single-entry decode.
 
 **Cadence: the gate also slows the clip.** The step for a gated clip is `(rate * 2 + div - 1) / div` (`0x800205C8..0x800205E0`), against the plain `rate` otherwise, and the result is multiplied by the frame step `DAT_1F800393` (`0x80020654..0x80020690`). At the field rate `8` that is `16 / 8 / 6 / 4 / 3` sixteenths for divisors `1 / 2 / 3 / 4 / 6`, so the divisor-4 clips run at half the ungated speed and the blender fills the ticks in between.
 
@@ -199,9 +199,9 @@ A live capture on the Rim Elm free-roam state (`scripts/pcsx-redux/autorun_gated
 ### Engine port
 
 - `BoneTransform::decode` is the entry decode. `PlayerAnmBundle::sample_bone` / `sample_pose` is the two-frame sampler (next-entry rule, gate, fraction). `blend_bone_transform` is the blend including the flip retry. `lerp_angle_12` / `lerp_angle_12_journaled` are the angle interpolator, the latter returning the journal and counter as values. `PlayerAnmRecord::blends` reads the gate.
-- Both hosts pose a placed prop through one kernel, `legaia_engine_core::field_env::prop_bone_offsets`, keyed on `PropAnim::pose_key` (the live cursor plus the clamp bit).
-- The NPC / player clip player `FieldClipPlayer` walks the same cursor and blends a gated clip on the ticks that fall inside a frame. `field_anim::clip_step` picks the step from the record's gate and divisor; the cursor wraps to `0` on the tick that reaches `frames * 16 - 1`. `PropAnim::tick` takes its step from the same function.
-- `field_anim::clip_end_ticks` is the bind-to-latch length the cutscene timeline times a player clip's end-latch spin with (`FieldLocomotion::scene_clip_ticks`).
+- Both hosts pose a placed prop through one kernel, `legaia_engine_scene::field_env::prop_bone_offsets`, keyed on `PropAnim::pose_key` (the live cursor plus the clamp bit).
+- The NPC / player clip player `FieldClipPlayer` walks the same cursor and blends a gated clip on the ticks that fall inside a frame. `actor_tick::clip_step` picks the step from the record's gate and divisor; the cursor wraps to `0` on the tick that reaches `frames * 16 - 1`. `PropAnim::tick` takes its step from the same function.
+- `actor_tick::clip_end_ticks` is the bind-to-latch length the cutscene timeline times a player clip's end-latch spin with (`FieldLocomotion::scene_clip_ticks`).
 - Both hosts memoise a posed mesh on `FieldClipPlayer::pose_key` rather than on the frame index.
 
 ## The actor tick's kind ladder (`actor[+0x5A]`)
@@ -272,7 +272,7 @@ Battle actor records are `0x2D4` bytes; slot 0 is at `0x800EC9E8`. A quiet-frame
 | `+0x1F4` | 18 B | Per-clip counters; zero pre-anim, a stamped run of `0x11` bytes mid-anim |
 | `+0x234` | 16 B | 4-deep **history queue** of entry pointers (4 x `u32`). Pre-anim `0x8015CC30`, mid-anim `0x801621D0` (`+0x55A0`: a different entry, paged in for the strike) |
 
-`FUN_80047430` implements the queue's back-shift: when a new entry activates, `actor[+0x234]` receives the new pointer and the previous values shift down through `+0x238..+0x244`. `FUN_80049348` shadows the head into the render context (`ctx+0x4C = actor[+0x234 + i*4]`). The offsets are codified as [`engine_core::capture_observations::battle_action_animation`](../../crates/engine-system/src/capture_observations.rs) and exercised by `battle_action_anim_pair_pins_dispatch_pointer_table_and_anim_pc_window` in `crates/mednafen/tests/real_saves.rs`.
+`FUN_80047430` implements the queue's back-shift: when a new entry activates, `actor[+0x234]` receives the new pointer and the previous values shift down through `+0x238..+0x244`. `FUN_80049348` shadows the head into the render context (`ctx+0x4C = actor[+0x234 + i*4]`). The offsets are codified as [`parity::capture_observations::battle_action_animation`](../../crates/parity/src/capture_observations.rs) and exercised by `battle_action_anim_pair_pins_dispatch_pointer_table_and_anim_pc_window` in `crates/parity/tests/real_saves.rs`.
 
 The entry at the mid-strike pointer opens `u32 0x18, 0, 0, 4, 5, 0x00299307, 0x0140017E`. Its first byte `0x18` is the action tag and falls in the "other" row below.
 
@@ -308,7 +308,7 @@ The entry-head fields (`+0x0E`, `+0x14..+0x53`, `+0x76`, `+0x77`, `+0x78`, `+0x8
 
 The entry's `+0x56` is a sub-state counter ticked during the `0x02 -> 0x04` rewrite. `FUN_8004AD80` stamps `(frame_count - 1) * 16` from the byte at `*(entry+0x88) + 1` into the actor's cursor cap. The same byte is a divisor in `FUN_80047430`'s root-motion step, so a zero frame count divides by zero at runtime.
 
-`crates/engine-vm::anim_vm` holds typed views over this state: `OpaqueAnimRecord` (the entry at `actor[+0x234]`), `NestedFrameData` (the packed stream: `bones_per_frame` / `frame_count` / `frame(i)` / `bone(f, b)` / `interpolate`), `BoneFrame` (`from_9_bytes` / `to_9_bytes`) and `ActorAnimState` (`+0x21D`, `+0x21B`, `+0x176`, `+0x68`). Two of its readings differ from the decoder disassembly, which [monster-animation.md](monster-animation.md#packed-stream-entry-0x8c) follows: `BoneFrame` sign-extends all six 12-bit fields, where `FUN_8004998C` sign-extends the three translations and masks the three angles with `andi 0xfff`; and `ActorAnimState` names `+0x21D` an LOD step. The battle player the hosts run is `legaia_engine_core::battle_anim`, not these views.
+`crates/engine-vm::anim_vm` holds typed views over this state: `OpaqueAnimRecord` (the entry at `actor[+0x234]`), `NestedFrameData` (the packed stream: `bones_per_frame` / `frame_count` / `frame(i)` / `bone(f, b)` / `interpolate`), `BoneFrame` (`from_9_bytes` / `to_9_bytes`) and `ActorAnimState` (`+0x21D`, `+0x21B`, `+0x176`, `+0x68`). Two of its readings differ from the decoder disassembly, which [monster-animation.md](monster-animation.md#packed-stream-entry-0x8c) follows: `BoneFrame` sign-extends all six 12-bit fields, where `FUN_8004998C` sign-extends the three translations and masks the three angles with `andi 0xfff`; and `ActorAnimState` names `+0x21D` an LOD step. The battle player the hosts run is `legaia_engine_battle::battle_anim`, not these views.
 
 ## Allocator preamble
 

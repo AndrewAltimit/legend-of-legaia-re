@@ -1,6 +1,5 @@
 //! GPU-resident data types: the uniform blocks, all `Uploaded*` GPU
 //! resources, and the [`RenderTarget`] / [`Scene`] draw descriptors.
-//! Split out of `renderer.rs`.
 
 use super::*;
 
@@ -170,7 +169,7 @@ pub(super) fn pack_draw_clip(clip: Option<DrawClip>) -> [u32; 3] {
 /// kept while `lo <= m . p <= hi` for mesh-space point `p`. Retail clips
 /// the primitives of an actor whose `+0x42` is raised against the bound of
 /// its object-effect row (`FUN_8001C204` / `FUN_80027F00`); the engine-core
-/// kernel `legaia_engine_core::object_effect` hands the host this slab per
+/// kernel `legaia_engine_effects::object_effect` hands the host this slab per
 /// draw, and the textured / colour mesh shaders discard outside it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DrawClip {
@@ -238,13 +237,14 @@ pub(super) struct SceneLightsUniform {
     pub(super) occl_lift: [f32; 4],
     /// The enhanced-lighting mood's `(ambient_r, ambient_g, ambient_b,
     /// emissive_gain)` - the third word of
-    /// [`crate::scene_lighting::LightingMood::uniforms`].
+    /// [`legaia_render_kernels::scene_lighting::LightingMood::uniforms`].
     pub(super) ambient: [f32; 4],
     /// Retail's per-primitive near reject, read by the mesh vertex stages:
-    /// [`legaia_engine_ui::prim_near_reject::shader_params`]. All-zero (the
+    /// [`legaia_render_kernels::prim_near_reject::shader_params`]. All-zero (the
     /// `Zeroable` default) never rejects.
     pub(super) prim_near: [f32; 4],
-    pub(super) lights: [ScenePointLightUniform; crate::scene_lights::MAX_SCENE_LIGHTS],
+    pub(super) lights:
+        [ScenePointLightUniform; legaia_render_kernels::scene_lighting::MAX_SCENE_LIGHTS],
 }
 
 /// Per-(light, draw) shadow-pass uniform: the light-space MVP.
@@ -509,12 +509,12 @@ pub enum RenderTarget<'a> {
     /// to background, then draw a list of PSX `POLY_FT4` textured quads +
     /// flat quads in ordering-table order (back-to-front by OT index) with
     /// per-ABR semi-transparency, sampling `vram`. This is the draw path the
-    /// afterimage streak ([`crate::afterimage`]) and future engine-core
+    /// afterimage streak ([`legaia_render_kernels::afterimage`]) and future engine-core
     /// `screen_fx` widgets ride; `prims` are typically produced by
     /// [`crate::screen_overlay::afterimage_screen_quad`] et al.
     ScreenOverlay {
         vram: &'a UploadedVram,
-        prims: &'a [crate::screen_overlay::ScreenPrim],
+        prims: &'a [legaia_render_kernels::screen_prim::ScreenPrim],
     },
     /// A [`Scene`] with a screen-space ordering-table pass **composited over
     /// it in the same frame**, sampling the scene's own VRAM.
@@ -533,12 +533,12 @@ pub enum RenderTarget<'a> {
     /// variant is where they meet.
     SceneWithScreenPrims {
         scene: &'a Scene<'a>,
-        prims: &'a [crate::screen_overlay::ScreenPrim],
+        prims: &'a [legaia_render_kernels::screen_prim::ScreenPrim],
         /// Prims drawn after the scene's meshes but **before** its 2D sprite
         /// and text overlays - the field attached-light pools, whose
         /// darkness mask retail draws beneath the party HUD. Ordered on its
         /// own by the same builder.
-        under_overlay: &'a [crate::screen_overlay::ScreenPrim],
+        under_overlay: &'a [legaia_render_kernels::screen_prim::ScreenPrim],
     },
 }
 

@@ -9,7 +9,7 @@
 //! Reads the per-entry file the extractor writes under `extracted/PROT/`; skips
 //! and passes when it is absent.
 
-use legaia_asset::monster_archive::{self, SLOT_STRIDE};
+use legaia_actor_formats::monster_archive::{self, SLOT_STRIDE};
 
 fn entry_867() -> Option<Vec<u8>> {
     for p in ["extracted/PROT", "../../extracted/PROT"] {
@@ -45,8 +45,9 @@ fn set_drop_is_surgical_on_real_records() {
         let new_item = orig.drop_item.wrapping_add(1);
         let new_chance = (orig.drop_chance_pct % 100) + 1; // 1..=100
 
-        let patched = legaia_patcher::monster::set_drop(slot_for(&entry, id), new_item, new_chance)
-            .expect("re-pack slot");
+        let patched =
+            legaia_disc_patch::monster::set_drop(slot_for(&entry, id), new_item, new_chance)
+                .expect("re-pack slot");
         assert_eq!(patched.len(), SLOT_STRIDE, "slot id {id} changed size");
 
         // Re-parse the patched slot as a standalone single-slot archive.

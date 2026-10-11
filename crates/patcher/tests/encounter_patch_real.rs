@@ -5,10 +5,10 @@
 //! every id still within the scene's own pool, sectors EDC/ECC-valid, and a
 //! fixed seed byte-deterministic. Skips + passes without `LEGAIA_DISC_BIN`.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 use legaia_patcher::encounter::{self, SceneEncounters};
 
@@ -23,14 +23,14 @@ fn snapshot(patcher: &DiscPatcher, idx: usize) -> Option<(Vec<u8>, Vec<u8>, Vec<
     // Presence guard (a scene with no decodable encounter section is skipped).
     SceneEncounters::locate(&entry, idx)?;
     // Re-derive counts + ids without exposing internals: parse again here.
-    let table = legaia_asset::scene_asset_table::detect(&entry)?;
+    let table = legaia_scene_formats::scene_asset_table::detect(&entry)?;
     let man = table.used().iter().find(|d| d.type_byte == 0x03).copied()?;
     let (decoded, _) =
         legaia_lzs::decompress_tracked(&entry[man.data_offset as usize..], man.size as usize)
             .ok()?;
-    let mf = legaia_asset::man_section::parse(&decoded).ok()?;
+    let mf = legaia_scene_formats::man_section::parse(&decoded).ok()?;
     let body = mf.encounter_section_body(&decoded)?;
-    let sec = legaia_asset::man_section::parse_encounter_section(body).ok()?;
+    let sec = legaia_scene_formats::man_section::parse_encounter_section(body).ok()?;
     let base = mf.encounter_section().body_offset() + sec.formation_range.0;
     let mut ids = Vec::new();
     let mut counts = Vec::new();

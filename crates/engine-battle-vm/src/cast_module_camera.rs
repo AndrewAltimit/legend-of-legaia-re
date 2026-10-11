@@ -1,6 +1,6 @@
 //! The slot-B summon modules' **own camera** and the **countdown** that paces
 //! their arms - the half of a player Seru-magic choreography the phase-chain
-//! ports in [`crate::cast_seru_ticks_a`] / [`crate::cast_seru_ticks_b`] leave
+//! ports in [`crate::seru_magic_ticks`] / [`crate::seru_magic_ticks`] leave
 //! out.
 //!
 //! From the summon band's actor freeze `0x34` on, the battle action SM calls
@@ -529,12 +529,12 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             seat_arm: module_seat_arm(903),
         }),
         // PROT 0904's tick body paces the band through its ported ramps
-        // (arms 10..12, `crate::cast_seru_ticks_a::theeder_tick`); its camera
+        // (arms 10..12, `crate::seru_magic_ticks::theeder_tick`); its camera
         // arms are not ported, so the director only passes and case 6 keeps
         // the caster. The outcome lands once the sweep has turned.
         904 => Some(ModuleProfile {
             direct: theeder_direct,
-            hit_arm: Some(crate::cast_seru_ticks_a::THEEDER_SWEEP_ARM),
+            hit_arm: Some(crate::seru_magic_ticks::THEEDER_SWEEP_ARM),
             walk_arm: None,
             owns_phase: false,
             stages_spawns: false,

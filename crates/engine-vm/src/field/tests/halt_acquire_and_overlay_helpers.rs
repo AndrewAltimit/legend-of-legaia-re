@@ -1,4 +1,4 @@
-//! 0x43 sub-0/1/A/B halt-acquire plus the Round 16/17 overlay-helper-driven 0x4C sub-ops. Extracted verbatim from `field/tests.rs`.
+//! 0x43 sub-0/1/A/B halt-acquire plus the overlay-helper-driven 0x4C sub-ops.
 
 use super::*;
 
@@ -94,7 +94,7 @@ fn op_43_waits_while_the_target_is_still_arcing() {
     assert!(host.halt_acquire_calls.is_empty(), "no acquire, no arc");
 }
 
-// -- Round 16: helper-driven sub-ops --------------------------------
+// -- helper-driven sub-ops --------------------------------
 
 #[test]
 fn op_4c_n_c_sub_1_flag_loop_reset_advances_2_bytes() {
@@ -324,7 +324,7 @@ fn op_4c_n_e_sub_1_text_actor_truncated_returns_unknown() {
 }
 
 // -----------------------------------------------------------------
-// Round 17 - five new 0x4C nC sub-ops + two 0x4C nE sub-ops.
+// Five 0x4C nC sub-ops + two 0x4C nE sub-ops.
 // -----------------------------------------------------------------
 
 #[test]
@@ -511,15 +511,43 @@ fn op_4c_n_e_sub_4_bbox_zero_byte_is_not_special() {
 #[test]
 fn op_4c_n_e_sub_4_default_host_runs_retails_test() {
     struct Plain;
-    impl FieldHost for Plain {
+    impl FieldFlagsHost for Plain {
         fn global_flags(&self) -> u32 {
             0
         }
+
         fn set_global_flags(&mut self, _value: u32) {}
+
         fn frame_delta(&self) -> u16 {
             1
         }
     }
+
+    impl FieldSceneHost for Plain {}
+
+    impl FieldTerrainHost for Plain {}
+
+    impl FieldCameraHost for Plain {}
+
+    impl FieldCameraMotionHost for Plain {}
+
+    impl FieldScreenHost for Plain {}
+
+    impl FieldAudioHost for Plain {}
+
+    impl FieldPartyInventoryHost for Plain {}
+
+    impl FieldDialogMenuHost for Plain {}
+
+    impl FieldActorHost for Plain {}
+
+    impl FieldActorSpawnHost for Plain {}
+
+    impl FieldActorFxHost for Plain {}
+
+    impl FieldPlayerHost for Plain {}
+
+    impl FieldHaltHost for Plain {}
     // Box bytes 1..2 on both axes: x, z in [0xA0, 0x160].
     let bytecode = [0x4Cu8, 0xE4, 0x01, 0x01, 0x02, 0x02, 0x04, 0x00];
     let mut ctx = FieldCtx {

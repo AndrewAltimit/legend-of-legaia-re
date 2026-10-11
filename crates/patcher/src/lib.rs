@@ -20,106 +20,58 @@
 //! a stream the retail decoder accepts. Where the data sits in a fixed-size
 //! slot (the monster archive's `0x14000`-byte records), the re-packed stream is
 //! padded back to the original slot size so no offset downstream moves - see
-//! [`monster`].
+//! `legaia_disc_patch::monster`.
 //!
-//! ## Modules
+//! ## Where things live
 //!
-//! - [`rng`] - a version-stable seeded PRNG so a seed always reproduces a run.
-//! - [`arts`] - reassign each Tactical Art's button combo (the `+8`
-//!   command-glyph pointer in the SCUS arts-name table) so every art has a new,
-//!   unique-within-character combo.
-//! - [`items`] - the valid item-id pool (from the SCUS item-name table).
-//! - [`unused`] - curated "unused content" sets (Evil Bat enemy ids, the
-//!   Something Good / unnamed-accessory items) the opt-in toggles re-introduce.
-//! - [`drops`] - the drop-table planner (shuffle / random).
-//! - [`equipment`] - classify equipment ids + tier them, turning each monster's
-//!   drop slot into a rare random weapon / armor / accessory drop.
-//! - [`equip_bonus`] - redistribute the equipment passive stat tuples within
-//!   each slot category (the SCUS `DAT_80074F68` bonus table).
-//! - [`equip_mask`] - redistribute the equip-character mask (`+6`) of that same
-//!   bonus table - who can wear each piece of gear - disjoint from the stat pass.
-//! - [`shop`] - reassign what town stores sell (the gold-merchant stock is
-//!   inline in each scene's field-VM script, op `0x49`).
-//! - [`casino`] - reassign the casino prize-exchange table (a static overlay
-//!   table that spends casino coins).
-//! - [`monster`] - re-pack a monster slot in the `battle_data` archive.
-//! - [`encounter`] - per-scene random-encounter formation-id shuffle.
-//! - [`chest`] - treasure-chest item-give (field-VM op `0x39`) rewrite.
-//! - [`disc`] - apply same-size PROT-entry edits to a real disc image
-//!   (`DiscPatcher`), via the Mode 2/2352 sector write-back in `legaia_iso`.
-//! - [`apply`] - high-level orchestration (`randomize_*`) the CLI drives.
-//! - [`ppf`] - PPF 3.0 patch writer/reader (the portable deliverable).
-//! - [`translation`] - language-pack export / import (community translations;
-//!   YAML packs, same-size in-place text patching).
+//! This crate is the top of the disc-patching family: the `apply` layer that
+//! sequences every edit onto a disc ([`apply`]), the `legaia-patcher` CLI,
+//! and the randomizer's own data shuffles and standalone mods (the `pub mod`
+//! lines below). Everything those are built on sits in a crate underneath:
+//!
+//! - `legaia-disc-patch` - the write foundation (`DiscPatcher`, PPF, the
+//!   free-space ledger, re-pack budgets, the seeded `rng`).
+//! - `legaia-code-hooks` - the MIPS toolkit, the injection-arena map and the
+//!   hook mods that need nothing else.
+//! - `legaia-arts-patch`, `legaia-texture-replace`, `legaia-translate`,
+//!   `legaia-delilas-party`, `legaia-delilas-challenge` - one crate per
+//!   feature family.
+//! - `legaia-party-swap` - the disc-free model-transform kernels.
+//!
+//! Every consumer, inside the family or outside it (the browser patcher,
+//! the engine's runtime oracles), names the owning crate directly.
 
 pub mod apply;
-pub use legaia_arts_patch::arts;
-pub use legaia_arts_patch::arts_ap_grant;
-pub use legaia_code_hooks::approach_fix;
 pub mod arts_name_fix;
-pub use legaia_arts_patch::arts_power;
 pub mod attack_count;
-pub use legaia_code_hooks::bonus_drop;
-pub use legaia_texture_replace::battle_texture;
 pub mod casino;
 pub mod charm_fix;
 pub mod chest;
-pub mod custom_items;
 pub mod damage_ap;
-pub use legaia_code_hooks::delilas_cast;
-pub mod delilas_challenge;
-pub mod delilas_dome;
-pub use legaia_delilas_party::delilas_effects;
-pub use legaia_delilas_party::delilas_party;
-pub use legaia_delilas_party::delilas_signature_attack;
-pub use legaia_delilas_party::delilas_voice;
-pub use legaia_delilas_party::delilas_voice_fx;
-pub use legaia_delilas_party::delilas_xa_voice;
-pub use legaia_disc_patch::disc;
-pub(crate) use legaia_disc_patch::{compress_within, man_compressed_budget};
 pub mod door;
 pub mod drops;
 pub mod earth_egg;
 pub mod element_affinity;
 pub mod encounter;
 pub mod enemy_ally;
-pub use legaia_code_hooks::enemy_hp_bar;
-pub use legaia_delilas_party::enemy_anim_mirror;
 pub mod equip_bonus;
 pub mod equip_hand_frame;
 pub mod equip_mask;
 pub mod equip_transplant;
 pub mod equipment;
 pub mod fishing_price;
-pub use legaia_code_hooks::flee_exp;
 pub mod house_door;
-pub use legaia_code_hooks::item_name;
+pub mod item_name;
 pub mod item_price;
 pub mod items;
-pub use legaia_code_hooks::jewel_fix;
 pub mod kingdom;
 pub mod location_name;
 pub mod map_door;
-pub(crate) use legaia_code_hooks::mips;
-#[cfg(test)]
-pub(crate) use legaia_code_hooks::mips_sim;
-pub use legaia_code_hooks::monster;
 pub mod monster_class;
 pub mod monster_stats;
-pub use legaia_texture_replace::monster_texture;
 pub mod move_power;
-pub use legaia_arts_patch::oscillating_ap;
-pub use legaia_delilas_party::nivora_field;
-pub use legaia_disc_patch::ppf;
-pub use legaia_party_swap::party_swap;
 pub mod rewards;
-pub use legaia_code_hooks::seru_overlay;
-pub use legaia_code_hooks::seru_trade;
-pub use legaia_code_hooks::shiny_seru;
-pub use legaia_disc_patch::rng;
-pub use legaia_texture_replace::save_icon;
 pub mod shop;
-pub use legaia_disc_patch::space_ledger;
 #[cfg(test)]
 mod space_ledger_rows_tests;
 pub mod spell_cost;
@@ -128,12 +80,6 @@ pub mod starting_bag;
 pub mod starting_items;
 pub mod starting_level;
 pub mod steal;
-pub use legaia_arts_patch::super_art_list;
-pub use legaia_arts_patch::super_art_menu;
-pub use legaia_arts_patch::super_art_power;
 pub mod super_arts_pack;
-pub use legaia_texture_replace::texture;
-pub use legaia_texture_replace::texture_palettes;
-pub use legaia_translate::translation;
 pub mod unused;
 pub mod weapon_specialty;

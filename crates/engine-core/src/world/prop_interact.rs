@@ -5,10 +5,10 @@
 //! runs it on the touched actor through the per-actor dialog SM
 //! (`FUN_80039B7C` state 0 loops the dispatcher `FUN_801DE840` on
 //! `actor[+0x90]`/`+0x9E`). The engine mirrors that by running the record
-//! through the inline field-VM runner ([`crate::inline_dialogue`]) with a
+//! through the inline field-VM runner ([`legaia_engine_field::inline_dialogue`]) with a
 //! **prop binding**: the executing context's `local_flags`/`flags`/`field_6a`
 //! are the prop actor's `+0x62` / `+0x10` / `+0x6A`, synced into the
-//! [`crate::field_env::PropAnimBank`] entry around every VM slice - so
+//! [`legaia_engine_scene::field_env::PropAnimBank`] entry around every VM slice - so
 //!
 //! - the record's `2B`/`2C` LFlag ops drive the clip (the swing),
 //! - its `2D 08` end-latch spin **parks** the run until the per-frame anim
@@ -223,7 +223,7 @@ impl World {
         if prop.collision_exempt() {
             return false;
         }
-        let mut runner = crate::inline_dialogue::InlineDialogue::new(
+        let mut runner = legaia_engine_field::inline_dialogue::InlineDialogue::new(
             std::sync::Arc::clone(&prop.record_body),
             prop.parked_pc,
         );
@@ -291,7 +291,7 @@ impl World {
     /// end. The retail counterpart is the dialog SM (`FUN_80039B7C`) driving
     /// the dispatcher on the touched actor each frame.
     pub(crate) fn step_prop_interaction(&mut self) {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
         let is_prop_run = self
             .dialog
             .inline
@@ -384,7 +384,7 @@ impl World {
                     }
                 } else {
                     // Still typing or scrolling: the pager's skip latch
-                    // completes the page (`crate::dialog_window`).
+                    // completes the page (`legaia_engine_dialog::dialog_window`).
                     panel.confirm_while_typing();
                 }
             }
@@ -424,7 +424,7 @@ impl World {
         });
         {
             let mut host = FieldHostImpl { world: self };
-            let mut budget = crate::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
+            let mut budget = legaia_engine_field::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
             while budget > 0 {
                 budget -= 1;
                 let b = id.bytecode.get(id.pc).copied().unwrap_or(0);
@@ -432,7 +432,7 @@ impl World {
                     if b == 0x1F {
                         // A text segment: open the real dialog panel here,
                         // with the record's name escapes resolved.
-                        let mut panel = crate::dialog::OwnedDialogPanel::at_segment(
+                        let mut panel = legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(
                             std::sync::Arc::clone(&id.bytecode),
                             id.pc,
                         );
@@ -462,9 +462,9 @@ impl World {
                 // REF: FUN_8003C83C, FUN_801DE840 (the halted-target early-out)
                 let player_target = b & 0x80 != 0
                     && vm::field::peek_extended(&id.bytecode, id.pc)
-                        == Some(crate::field_env::PLAYER_ANCHOR_TARGET);
+                        == Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET);
                 let mut player_ctx = legaia_engine_vm::field::FieldCtx {
-                    script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+                    script_id: u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET),
                     flags: 0x0100_0000,
                     ..Default::default()
                 };
@@ -533,8 +533,8 @@ impl World {
                     && let (Some(&body0), Some(&body1)) =
                         (id.bytecode.get(id.pc + 2), id.bytecode.get(id.pc + 3))
                 {
-                    let mut glide = crate::cutscene_timeline::TimelinePlayerGlide {
-                        state: vm::motion_vm::MotionState {
+                    let mut glide = legaia_engine_field::cutscene_timeline::TimelinePlayerGlide {
+                        state: legaia_engine_motion_vm::motion_vm::MotionState {
                             speed: 1,
                             ..Default::default()
                         },
@@ -560,15 +560,18 @@ impl World {
                     )
                 {
                     id.pc += 5;
-                    if (b0 & 0x7F, b1 & 0x7F) != crate::man_field_scripts::PARKED_SENTINEL_TILE {
+                    if (b0 & 0x7F, b1 & 0x7F)
+                        != legaia_engine_field::man_field_scripts::PARKED_SENTINEL_TILE
+                    {
                         let decode = |b: u8| -> i16 {
                             i16::from(b & 0x7F) * 0x80 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 }
                         };
-                        id.player_walk = Some(crate::inline_dialogue::PropPlayerWalk {
-                            target: (decode(b0), decode(b1)),
-                            speed: crate::world::field_npc_walk_step_speed(0x80, b2 & 7),
-                            frames: 0,
-                        });
+                        id.player_walk =
+                            Some(legaia_engine_field::inline_dialogue::PropPlayerWalk {
+                                target: (decode(b0), decode(b1)),
+                                speed: crate::world::field_npc_walk_step_speed(0x80, b2 & 7),
+                                frames: 0,
+                            });
                         break;
                     }
                     continue;
@@ -650,7 +653,7 @@ impl World {
     /// the player (the dialog SM teardown clears the `0x80000` engaged flag).
     fn finish_prop_interaction(
         &mut self,
-        id: &mut crate::inline_dialogue::InlineDialogue,
+        id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
         anchor: (u8, u8),
     ) {
         self.sync_prop_from_ctx(anchor, &id.ctx);
@@ -753,9 +756,11 @@ impl World {
     /// REF: FUN_800204F8
     pub(crate) fn bind_player_script_clip(&mut self, move_id: u8) {
         let fallback = self.player_clip_frames_hint();
-        self.props
-            .bank
-            .bind_actor_clip(crate::field_env::PLAYER_ANCHOR_TARGET, move_id, fallback);
+        self.props.bank.bind_actor_clip(
+            legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET,
+            move_id,
+            fallback,
+        );
         let pick = self.field_player_script_clip(move_id);
         if let Some(id) = self.player_move_cue(&pick) {
             self.locomotion.player_move_cues.push(id);
@@ -775,7 +780,7 @@ impl World {
     pub(crate) fn dialog_substitutions(
         &self,
         record: &[u8],
-    ) -> Option<crate::dialog::PanelSubstitutions> {
+    ) -> Option<legaia_engine_dialog::dialog::PanelSubstitutions> {
         let mut map: std::collections::HashMap<(u8, u8), Vec<u8>> = Default::default();
         for w in record.windows(2) {
             let (esc, arg) = (w[0], w[1]);
@@ -811,10 +816,12 @@ impl World {
                 // (`lh` at `0x80036A8C`) - the same table `4C CA/CB/CC`
                 // write and op `0x4E` sub-`5..=8` compares.
                 0xCE => {
-                    if let Some(slot) = crate::dialog::script_counter_slot(arg) {
+                    if let Some(slot) = legaia_engine_dialog::dialog::script_counter_slot(arg) {
                         let value = self.field_vm.slot_table[slot];
-                        map.entry((crate::dialog::SCRIPT_COUNTER_KEY, arg))
-                            .or_insert_with(|| crate::dialog::script_counter_digits(value));
+                        map.entry((legaia_engine_dialog::dialog::SCRIPT_COUNTER_KEY, arg))
+                            .or_insert_with(|| {
+                                legaia_engine_dialog::dialog::script_counter_digits(value)
+                            });
                     }
                 }
                 _ => {}
@@ -831,7 +838,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field_env::{PropAnim, PropAnimState, PropProgram};
+    use legaia_engine_scene::field_env::{PropAnim, PropAnimState, PropProgram};
 
     /// A prop whose run makes the **player** play a clip and waits for it -
     /// the shape of `chitei2` P0[33], the transport switch: `A2 F8 04`
@@ -873,7 +880,7 @@ mod tests {
     /// touched.
     #[test]
     fn clip_word_pokes_swing_a_placed_objects_bound_clip() {
-        use crate::field_env::{ANIM_CLAMP, ANIM_END, ANIM_HOLD, ANIM_REVERSE};
+        use legaia_engine_scene::field_env::{ANIM_CLAMP, ANIM_END, ANIM_HOLD, ANIM_REVERSE};
         let mut w = World::new();
         let prop = |record: usize| {
             let mut anim = PropAnim::spawned(2, 6, false, 0);
@@ -937,7 +944,7 @@ mod tests {
         w.field_vm.slot_table[3] = -4;
         let record = [0x1F, 0xCE, 0x0B, b' ', 0xCE, 0x0E, 0xCE, 0x05, 0x00];
         let subs = w.dialog_substitutions(&record).expect("two number escapes");
-        let key = crate::dialog::SCRIPT_COUNTER_KEY;
+        let key = legaia_engine_dialog::dialog::SCRIPT_COUNTER_KEY;
         assert_eq!(subs.get(&(key, 0x0B)), Some(&b"12".to_vec()));
         assert_eq!(subs.get(&(key, 0x0E)), Some(&b"0".to_vec()));
         assert_eq!(
@@ -969,7 +976,7 @@ mod tests {
         assert_eq!(
             w.props
                 .bank
-                .actor_clip(crate::field_env::PLAYER_ANCHOR_TARGET)
+                .actor_clip(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
                 .map(|a| a.anim_id),
             Some(4),
             "the ExecMove binds the player's clip cursor"

@@ -15,14 +15,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_disc_patch::space_ledger::{self, Image, Owner};
 use legaia_iso::raw::SECTOR_SIZE;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::space_ledger::{self, Image, Owner};
-use legaia_patcher::translation::code_refs::{self, RETAIL_GP};
-use legaia_patcher::translation::code_strings::{self, CodeStrings};
-use legaia_patcher::translation::markup::{self, Target};
-use legaia_patcher::translation::ui;
-use legaia_patcher::translation::{LanguagePack, export_pack, import_pack};
+use legaia_translate::code_refs::{self, RETAIL_GP};
+use legaia_translate::code_strings::{self, CodeStrings};
+use legaia_translate::markup::{self, Target};
+use legaia_translate::ui;
+use legaia_translate::{LanguagePack, export_pack, import_pack};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

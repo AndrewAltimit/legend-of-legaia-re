@@ -37,7 +37,7 @@ Options:
 
 The runtime patches CLUT_x / CLUT_y at +0x0C..+0x0F of each TIM
 when relocating CLUTs at upload time - see the publisher-logo case
-in `crates/asset/src/init_pak.rs`. Both signature modes work on
+in `crates/ui-formats/src/init_pak.rs`. Both signature modes work on
 their respective input populations; use `--sig-mode pixel` when
 `full` finds no matches.
 """

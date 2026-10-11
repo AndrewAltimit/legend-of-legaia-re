@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 // --- field collision grid + free-movement locomotion ---------------
 
@@ -53,7 +54,7 @@ fn field_tile_is_wall_matches_retail_subcell_derivation() {
     // wall bits - proven by the `rimelm_wall_press_down` capture, where the
     // live player legally stands at a position whose plain floor-indexed
     // cell is an all-quads wall byte (see
-    // `engine-shell/tests/field_collision_discriminator.rs`). Sweep a span
+    // `parity/tests/field_collision_discriminator.rs`). Sweep a span
     // of world points and assert the engine reads exactly the cell+quad the
     // reference derivation names.
     let mut world = World::new();
@@ -110,7 +111,7 @@ fn leading_edge_wall_probes_rest_at_retail_standoff() {
     // where the candidate-centre test walks right up to it. Synthetic grids
     // mirroring the two wall-press captures' geometry (the real-grid rest
     // positions are pinned by the disc-gated
-    // `engine-shell/tests/field_collision_discriminator.rs`).
+    // `parity/tests/field_collision_discriminator.rs`).
 
     // X- press against a full-height wall column at grid col 13
     // (world x in [1665, 1793) under the biased X mapping).

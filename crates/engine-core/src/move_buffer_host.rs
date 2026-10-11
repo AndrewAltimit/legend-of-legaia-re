@@ -6,10 +6,10 @@
 //! three retail MOVE pool roots that the engine carries on
 //! [`crate::world::World`]:
 //!
-//! - [`crate::world::MoveVmGlobals::buffer_root`] mirrors retail `_DAT_8007B888` (MOVE).
-//! - [`crate::world::MoveVmGlobals::buffer2_root`] mirrors retail `_DAT_8007B840` (MOVE2).
+//! - [`legaia_engine_field::move_vm_globals::MoveVmGlobals::buffer_root`] mirrors retail `_DAT_8007B888` (MOVE).
+//! - [`legaia_engine_field::move_vm_globals::MoveVmGlobals::buffer2_root`] mirrors retail `_DAT_8007B840` (MOVE2).
 //!   Selected when the actor's `cursor_requested` is `>= 0x400`.
-//! - [`crate::world::MoveVmGlobals::buffer_alt_root`] mirrors retail `_DAT_8007B75C`.
+//! - [`legaia_engine_field::move_vm_globals::MoveVmGlobals::buffer_alt_root`] mirrors retail `_DAT_8007B75C`.
 //!   Selected when the actor's status-flag word has
 //!   [`STATUS_FLAG_ALT_POOL`] set.
 //!
@@ -34,9 +34,9 @@
 //! module; the spec is `ghidra/scripts/funcs/800204f8.txt` plus the
 //! per-record reader in `legaia-mdt`.
 //!
-//! [`crate::world::MoveVmGlobals::buffer_root`]: crate::world::MoveVmGlobals::buffer_root
-//! [`crate::world::MoveVmGlobals::buffer2_root`]: crate::world::MoveVmGlobals::buffer2_root
-//! [`crate::world::MoveVmGlobals::buffer_alt_root`]: crate::world::MoveVmGlobals::buffer_alt_root
+//! [`legaia_engine_field::move_vm_globals::MoveVmGlobals::buffer_root`]: legaia_engine_field::move_vm_globals::MoveVmGlobals::buffer_root
+//! [`legaia_engine_field::move_vm_globals::MoveVmGlobals::buffer2_root`]: legaia_engine_field::move_vm_globals::MoveVmGlobals::buffer2_root
+//! [`legaia_engine_field::move_vm_globals::MoveVmGlobals::buffer_alt_root`]: legaia_engine_field::move_vm_globals::MoveVmGlobals::buffer_alt_root
 //! [`STATUS_FLAG_ALT_POOL`]: legaia_engine_vm::move_buffer::STATUS_FLAG_ALT_POOL
 //! [`vm::move_buffer::MoveBufferHost::resolve_record`]:
 //! legaia_engine_vm::move_buffer::MoveBufferHost::resolve_record

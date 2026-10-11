@@ -13,11 +13,11 @@
 //! the header string is non-empty, never the code or the text.
 //! Skips and passes without `LEGAIA_DISC_BIN` or `extracted/`.
 
-use legaia_asset::field_disasm::{self as fd, InsnInfo};
 use legaia_engine_core::field_submode_code_lock::{
     CODE_LOCK_RECORD, CODE_LOCK_RESULT_FLAG, CODE_LOCK_SLOT,
 };
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_scene_formats::field_disasm::{self as fd, InsnInfo};
 use std::path::PathBuf;
 
 /// `doman`'s streaming MAN carrier (extraction index).
@@ -58,7 +58,7 @@ fn find_site(host: &SceneHost) -> Site {
         .index
         .entry_bytes(DOMAN_STREAM_ENTRY)
         .expect("read the doman stream entry");
-    let report = legaia_asset::parse_streaming(&raw, 4096).expect("DATA_FIELD stream");
+    let report = legaia_container_formats::parse_streaming(&raw, 4096).expect("DATA_FIELD stream");
     let key = fd::OpKey {
         opcode: 0x49,
         sub: Some(0x02),
@@ -69,7 +69,7 @@ fn find_site(host: &SceneHost) -> Site {
         let Some(man) = raw.get(start..start + chunk.size as usize) else {
             continue;
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
             continue;
         };
         for (_p, _r, s, pc0, len) in fd::man_script_spans(&man_file, man) {
@@ -121,7 +121,7 @@ fn run(host: &mut SceneHost, site: &Site, code: &[u8]) -> (bool, usize) {
     let w = &mut host.world;
     w.man_load_actor_reset();
     w.load_field_script_at(site.body.clone(), site.pc);
-    let pack = |m: u16| legaia_engine_core::dev_menu::retail_packed(m);
+    let pack = |m: u16| legaia_engine_system::pad::retail_packed(m);
     // Let the op arm and the slot's phase 0 install its window.
     for _ in 0..4 {
         w.set_pad(0);

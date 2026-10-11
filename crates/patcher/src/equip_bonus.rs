@@ -2,7 +2,7 @@
 //! static `SCUS_942.54` equipment bonus table (`DAT_80074F68`).
 //!
 //! Every equippable item resolves through the shared item table to an 8-byte
-//! bonus record (see [`legaia_asset::equip_stats`]): `+0..+4` are the five stat
+//! bonus record (see [`legaia_game_tables::equip_stats`]): `+0..+4` are the five stat
 //! bonuses `[INT, ATK, UDF, LDF, SPD]`, `+5` the accessory-passive slot, `+6`
 //! the equip-character mask, and `+7` the slot type (`0x00` body / `0x20` head /
 //! `0x40` weapon / `0x60` footwear, plus a Ra-Seru bit). This pass moves only
@@ -19,7 +19,7 @@
 //! [`StatMode::Random`] it draws each row's tuple from its category pool. The
 //! table lives in `SCUS_942.54`, so the edit is a same-size in-place SCUS patch.
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// Re-exported [`crate::drops::DropMode`] so the bonus pass shares the CLI's
 /// `shuffle` / `random` vocabulary.

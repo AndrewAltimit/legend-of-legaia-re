@@ -4,19 +4,19 @@
 //! A Rim Elm house door is an intra-scene warp: the rooms are walk areas of
 //! the same `town0b` map, at their own tiles. The bank follows the retail
 //! fog pool's spawn gate - the MAN section-4 region table, first containing
-//! box decides (`legaia_engine_core::fog_volume::region_weight`) - and
+//! box decides (`legaia_render_kernels::fog_volume::region_weight`) - and
 //! `town0b`'s one region covers the streets and none of the rooms. Seat the
 //! player in a room and every sheet-mesh vertex around them carries no bank;
 //! back on the street the bank is there.
 //!
 //! Where the table keeps one region over the whole map (`dolk`), the rooms
 //! are told apart by the door warp that reaches them
-//! (`legaia_engine_core::fog_volume::InteriorTracker`).
+//! (`legaia_render_kernels::fog_volume::InteriorTracker`).
 //!
 //! Disc-gated: skips (and passes) without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::fog_volume::region_weight;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_render_kernels::fog_volume::region_weight;
 
 fn open_host() -> Option<SceneHost> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;

@@ -9,10 +9,11 @@
 //! - **Party `battle_speed` dropped equipment SPD.** The aggregator resolved it
 //!   into `BattleStats::spd` and the caller threw it away.
 
-use legaia_engine_core::monster_catalog::{
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, MonsterCatalog, MonsterDef,
 };
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 
 /// A three-member party seated in battle against one monster from `catalog`,
 /// with each party slot's SPD set to `party_spd`.

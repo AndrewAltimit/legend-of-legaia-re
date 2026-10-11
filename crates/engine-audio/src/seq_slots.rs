@@ -11,7 +11,7 @@
 //! `+0x4` staging - owned by the loader, not modeled here), a sign-extended
 //! id byte at `+0x8` (which doubles as the VAB-close access id), and a
 //! loaded flag at `+0xB`. The installer walker (`FUN_8001E54C`, ported as
-//! `engine-core::chunk_install`) sets the flag when a VAB/SEQ upload lands
+//! `engine-system::chunk_install`) sets the flag when a VAB/SEQ upload lands
 //! in the slot; the release below is its teardown counterpart. The hardware
 //! side of the close (the VAB close `FUN_80068C80`: `SpuFree` the resident
 //! body, clear the bank's open-state slot, drop the open-bank count) stays
@@ -20,7 +20,7 @@
 //! // REF: FUN_8001E54C // REF: FUN_80068C80
 
 /// One record of the `0x80091508` table, reduced to the two fields the
-/// release path touches. Mirrors `engine-core::chunk_install::SeqSlot`
+/// release path touches. Mirrors `engine-system::chunk_install::SeqSlot`
 /// (the installer's view of the same record).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SeqResourceSlot {

@@ -23,10 +23,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use legaia_engine_render::window::EngineWindow;
-use legaia_engine_render::{RenderTarget, TextDraw, TextOverlay, UploadedFontAtlas};
+use legaia_engine_render::{RenderTarget, TextOverlay, UploadedFontAtlas};
 use legaia_engine_shell::launcher::{
     self, DiscInfo, DiscProblem, LaunchDecision, LauncherSettings,
 };
+use legaia_engine_ui::TextDraw;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -345,7 +346,7 @@ impl PickerApp {
         for (i, (text, ink)) in self.lines(cols).iter().enumerate() {
             let layout = self.font.layout_ascii(text);
             let pen = (MARGIN, MARGIN + i as i32 * LINE);
-            for d in legaia_engine_render::text_draws_for(&layout, pen, *ink) {
+            for d in legaia_engine_ui::text_draws_for(&layout, pen, *ink) {
                 draws.push(TextDraw {
                     dst: (
                         d.dst.0 * scale,

@@ -315,6 +315,25 @@ Output goes to `target/port-catalog/` (gitignored):
 | `open-work.md` | The [dashboard](#open-work-dashboard). |
 | `live-audit.md` | The [audit](#the-audit), with `--live-audit`. |
 
+## Where the code lives
+
+`scripts/ci/port-catalog.py` is an entry point over the `port_catalog` package beside it. Other scripts (`update-progress-metrics.py`, `replay-port-coverage.py`, `pcsx-redux/build_gap_worklist.py`) load the entry file by path and read the catalog's functions off it, so it re-exports the package's public names.
+
+| Module | Holds |
+|---|---|
+| [`paths.py`](../../scripts/ci/port_catalog/paths.py) | the dump corpus (`FUNCS_DIR`, rebound by `--funcs`), `docs/`, `crates/`, the output directory, and the three data files |
+| [`citations.py`](../../scripts/ci/port_catalog/citations.py) | the address grammars and the collectors for dumps, dump citations, doc citations and `// PORT:` tags |
+| [`rust_source.py`](../../scripts/ci/port_catalog/rust_source.py), [`rust_graph.py`](../../scripts/ci/port_catalog/rust_graph.py) | one parsed Rust file and the host roots; the call graph (permissive and receiver-gated) and reachability |
+| [`disclosure.py`](../../scripts/ci/port_catalog/disclosure.py) | the `NOT WIRED` / `WIRED:` / `REPLACED-BY:` grammar |
+| [`anchors.py`](../../scripts/ci/port_catalog/anchors.py), [`live.py`](../../scripts/ci/port_catalog/live.py) | tag-to-item anchor resolution; the `live` verdict |
+| [`features.py`](../../scripts/ci/port_catalog/features.py) | feature views over `features.toml` |
+| [`rows.py`](../../scripts/ci/port_catalog/rows.py) | the catalog rows, the ignore list, the row filters |
+| [`render/`](../../scripts/ci/port_catalog/render/__init__.py) | one module per output: `catalog` (CSV / markdown), `summary`, `live_audit`, `dashboard` |
+| [`ratchet.py`](../../scripts/ci/port_catalog/ratchet.py) | `--check` / `--update-baseline` |
+| [`selftest.py`](../../scripts/ci/port_catalog/selftest.py), [`cli.py`](../../scripts/ci/port_catalog/cli.py) | `--selftest`; the command line |
+
+The catalog carries no table of Rust paths: every source it reads is discovered under `crates/`, so a moved file needs no edit here. The data a contributor edits is the three files beside the entry point (`features.toml`, `port-catalog-ignore.toml`, `port-catalog-baseline.json`).
+
 ## The ratchet
 
 The catalog's figures reach the site's landing page through `scripts/ci/progress-metrics.json`, so they are gated. `--check` compares against `scripts/ci/port-catalog-baseline.json` and is a hard pre-commit gate. The same step runs in CI but reports `SKIPPED` there, because the `dumped` column reads the gitignored Ghidra corpus. **The pre-commit hook is therefore the only place these figures are compared.**
@@ -448,7 +467,9 @@ Everything above is a static graph answering *could this be reached*. It cannot 
 
 ### The denominator is a union of ladders, not one binary
 
-`--json` is repeatable, and joining only one test binary is the trap. The repo drives a set of pad-only ladders, each its own test target: the world spine, the pause menu and save UI, the minigame doors, the cold-boot field anchor, the browser draw-composition ladder, and per-area ladders. The canonical membership is `CANONICAL_LADDERS` in the script, printed by `--list-ladders` as `<test> <package>` pairs; read it there, because a ladder absent from that constant is a ladder nobody exports.
+`--json` is repeatable, and joining only one test binary is the trap. The repo drives a set of pad-only ladders, each its own test target: the world spine, the pause menu and save UI, the minigame doors, the cold-boot field anchor, the browser draw-composition ladder, and per-area ladders. The canonical membership is `CANONICAL_LADDERS` in `scripts/ci/replay_port_coverage/ladders.py`, printed by `--list-ladders` as `<test> <package>` pairs; read it there, because a ladder absent from that constant is a ladder nobody exports.
+
+A row there has to name a test that exists: `replay_port_coverage/ladder_check.py` resolves each package to its crate and requires `tests/<test>.rs`, and both `--list-ladders` and the join stop with exit 1 on a miss, so a renamed test cannot turn into a union with a silent hole.
 
 Menus and minigames are among the largest clusters in `live-unentered`, so a join over the spine alone reports exactly the subsystems the other ladders walk as never-entered.
 
@@ -481,7 +502,7 @@ The script **names any canonical ladder whose export is absent**, on stdout and 
 The `engine-shell` ladders drive the headless `BootSession`, which constructs no renderer and no draw list, so they cannot execute the draw-list builders in `engine-ui` however far they walk. Two ladders cover that, from opposite sides:
 
 - **`crates/web-viewer/tests/play_compose_ladder.rs`** drives `LegaiaRuntime` - the object `site/js/play-app.js` constructs - with pad words per tick and calls the browser play page's per-frame read surface (`play_overlay_draws_json`, the menu / battle / fishing / dev-menu / name-entry overlays, the screen-prim route, the battle 3D + FX exports) across a ratchet in `scripts/replays/play_compose_baseline.toml`. Still pad-only, but every frame is composed. It cannot carry a wgpu link, so `engine-render` stays outside it.
-- **`crates/engine-shell/tests/w5_native_minigame_ladder.rs`** spawns `legaia-engine play-window` per rung. `cargo llvm-cov --test` links only the crate's *library*, which bounds what a test can **call** but not what it can **measure**: `LLVM_PROFILE_FILE` is inherited, so the spawned binary's profile merges into the export. The native window's composition layer - the `engine-shell` `bin/` tree and the `engine-render` link under it - executes here and nowhere else in the union. It needs a display as well as a disc, and it asserts on the captured frame rather than the child's exit status, because an empty draw list would pass "did it run". Almost all of its yield lands in crates other than the one `-p` names, which is what the build/report split above is for.
+- **`crates/engine-shell/tests/native_minigame_ladder.rs`** spawns `legaia-engine play-window` per rung. `cargo llvm-cov --test` links only the crate's *library*, which bounds what a test can **call** but not what it can **measure**: `LLVM_PROFILE_FILE` is inherited, so the spawned binary's profile merges into the export. The native window's composition layer - the `engine-shell` `bin/` tree and the `engine-render` link under it - executes here and nowhere else in the union. It needs a display as well as a disc, and it asserts on the captured frame rather than the child's exit status, because an empty draw list would pass "did it run". Almost all of its yield lands in crates other than the one `-p` names, which is what the build/report split above is for.
 
 ### Why this stays a manual step
 

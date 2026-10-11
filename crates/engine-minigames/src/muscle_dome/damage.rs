@@ -1,5 +1,4 @@
 //! Fighter stat profiles and the damage model.
-//! Split out of `muscle_dome.rs`.
 
 use super::*;
 
@@ -39,7 +38,7 @@ pub struct DomePlay {
 ///
 /// A queued direction resolves exactly as retail plays a battle action - the
 /// move-power record via the `0x801F4E63` id → index map
-/// ([`legaia_asset::move_power`]), the arts/physical predamage roll
+/// ([`legaia_game_tables::move_power`]), the arts/physical predamage roll
 /// (`FUN_801dd0ac`), the element-affinity scale (`FUN_801dd864`) and the
 /// damage finisher (`FUN_801ddb30`), drawing from the `rand()` stream in
 /// retail call order (3 draws, +2 when the bonus arm fires, +1 when
@@ -56,7 +55,7 @@ pub struct DomePlay {
 /// damage in the same order, so the mirror stays in step with it.
 ///
 /// PORT: FUN_801dd0ac / FUN_801dd864 / FUN_801ddb30 (through
-/// [`legaia_engine_vm::battle_formulas`])
+/// [`legaia_engine_battle_vm::battle_formulas`])
 #[derive(Debug, Clone)]
 pub struct DomeDamageModel {
     pub(super) move_power: Vec<MoveRecord>,
@@ -104,7 +103,7 @@ impl DomeDamageModel {
     ) -> Option<Self> {
         let table = move_power::parse(raw)?;
         let map = move_power::parse_id_index_map(raw)?;
-        let affinity = legaia_asset::element_affinity::parse(raw);
+        let affinity = legaia_game_tables::element_affinity::parse(raw);
         Some(Self::new(table, map, affinity, combatants, hp, rng_seed))
     }
 
@@ -164,7 +163,7 @@ impl DomeDamageModel {
         // power zero.
         let power = match move_power::record_for_move_id(&self.move_power, &self.move_map, cmd) {
             Some(r) => r.power(),
-            None => legaia_engine_vm::battle_formulas::command_power_scalar(cmd) as i32,
+            None => legaia_engine_battle_vm::battle_formulas::command_power_scalar(cmd) as i32,
         };
         let hp = self.hp;
         let combatants = self.combatants;

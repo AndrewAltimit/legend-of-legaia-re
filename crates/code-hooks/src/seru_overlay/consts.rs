@@ -97,7 +97,7 @@ pub const SYSFLAG_WARP_ARG: u16 = 0x000E;
 // the raw slice. The loader then requests field mode again to return. Keeps all
 // 7 minigames; the only SCUS edits are one mode-table handler word + the gap.
 
-/// Mode-table base VA (`crate`-local mirror of `legaia_asset::mode_table`).
+/// Mode-table base VA (`crate`-local mirror of `legaia_game_tables::mode_table`).
 pub const MODE_TABLE_VA: u32 = 0x8007_078C;
 /// Mode-table entry stride (bytes).
 pub const MODE_ENTRY_STRIDE: u32 = 24;
@@ -567,29 +567,11 @@ pub const TRADE_ACTIVE_VA: u32 = RUN_C_VA + 0x940;
 pub const ENTRY_STUB_VA: u32 = RUN_C_VA + 0x970;
 /// Reorder dispatch stub (cursor 2 → Trade sub-mode, 3 → Quit, 0/1 → Buy/Sell).
 pub const TRADE_DISPATCH_STUB_VA: u32 = RUN_C_VA + 0x9D0;
-/// Base of the 0899 run every seru-trade piece (and `--show-super-arts`'s menu
-/// half, past [`WANTS_STR_VA`]'s strings) lives in.
-///
-/// It is the blank lower band of the save-menu atlas TIM the overlay carries at
-/// `0x801E5120` (pixels `0x801E5340..0x801ED340`, 256x256 4bpp, uploaded to VRAM
-/// `(960, 0)` when the card screen opens): atlas rows 162..223, all-zero in the
-/// file. Nothing samples those rows (a card-screen capture's draw list reads rows
-/// 0..160 of that page, and 224..239 come from the save-icon sheet uploaded over
-/// them), no instruction in any image forms an address in them, both save-screen
-/// card buffers (`0x801E5120..0x801E9120`) end below them, and they read zero in
-/// every library capture with the overlay resident. See
-/// [`crate::space_ledger`], which also refuses any region overlapping a runtime
-/// buffer.
-///
-/// The run once sat at `0x801E74E0`, inside the save compose buffer - which a
-/// save from the pause menu fills and then returns to the root menu with the
-/// overlay still resident.
-pub const RUN_C_VA: u32 = 0x801E_A440;
+/// The menu-overlay run the trade screen is hosted in:
+/// [`crate::arenas::MENU_RUN_C_VA`], whose head this feature owns.
+pub const RUN_C_VA: u32 = crate::arenas::MENU_RUN_C_VA;
 /// Length of the run.
-pub const RUN_C_LEN: u32 = 0xF00;
-// Every cell and string is reached through one shared `lui` of its page, so the
-// whole run must sit inside one `%hi` page.
-const _: () = assert!(crate::mips::hi(RUN_C_VA) == crate::mips::hi(RUN_C_VA + RUN_C_LEN - 1));
+pub const RUN_C_LEN: u32 = crate::arenas::MENU_RUN_C_LEN;
 
 /// The in-shop trade-screen handler (draws + input + swap; runs in mode 0x17).
 ///
@@ -607,16 +589,16 @@ pub const TRADE_HANDLER_END: u32 = RUN_C_VA + RUN_C_LEN;
 pub const HANDLER_OVL_PROT_INDEX: usize = PICKER_MENU_PROT_INDEX;
 
 /// The randomizer's precomputed vendor schedule (one `[want_id, give_id]` pair per
-/// time bucket; see [`legaia_asset::seru_trade::bucket_offers`] /
-/// [`legaia_asset::seru_trade::bucket_table_to_bytes`]). `[want, give, give_level]`
-/// per entry = [`legaia_asset::seru_trade::BUCKET_TABLE_LEN`] (192) bytes, placed in
+/// time bucket; see [`legaia_game_tables::seru_trade::bucket_offers`] /
+/// [`legaia_game_tables::seru_trade::bucket_table_to_bytes`]). `[want, give, give_level]`
+/// per entry = [`legaia_game_tables::seru_trade::BUCKET_TABLE_LEN`] (192) bytes, placed in
 /// the freed handler region of the SCUS rodata gap (the handler now lives in 0899),
 /// above the dispatch stub and below the old handler end; resident always, so the
 /// 0899-hosted handler reads it by absolute address. The handler indexes it by
 /// `(play_time / `[`RESEED_PERIOD_FRAMES`]`) & `[`BUCKET_INDEX_MASK`]`, ×3`.
 pub const BUCKET_TABLE_VA: u32 = RUN_C_VA + 0x880;
 /// Byte length of the on-disc bucket schedule (mirrors the shared kernel).
-pub const BUCKET_TABLE_LEN: usize = legaia_asset::seru_trade::BUCKET_TABLE_LEN;
+pub const BUCKET_TABLE_LEN: usize = legaia_game_tables::seru_trade::BUCKET_TABLE_LEN;
 
 /// Retail play-time counter `_DAT_80084570` (u32 game-time seconds). The handler
 /// reads it to pick the current bucket; the engine mirrors it as
@@ -627,7 +609,7 @@ pub const PLAY_TIME_VA: u32 = 0x8008_4570;
 /// (retail's own vendor-name reader `FUN_801DCF14` uses `record + record[2] + 3`).
 /// The handler sums `count + ids + name` bytes from it as the vendor's phase
 /// offset into the bucket schedule, so each trader shows its own offer -
-/// mirrored by `legaia_asset::seru_trade::vendor_bucket_offset`.
+/// mirrored by `legaia_game_tables::seru_trade::vendor_bucket_offset`.
 pub const SHOP_MENU_STATE_VA: u32 = 0x8007_B450;
 /// Reseed period in **play-time ticks** (the unit of `_DAT_80084570`). HW-pinned:
 /// the counter advances ~per-frame (≈60/s), NOT per-second as the memory-map label
@@ -638,9 +620,9 @@ pub const SHOP_MENU_STATE_VA: u32 = 0x8007_B450;
 /// `addiu` immediate (`0x7E90 < 0x8000`); the full 64-bucket cycle is then ~9.6 h.
 pub const RESEED_PERIOD_FRAMES: u16 = 32400;
 /// Mask folding the raw bucket into the precomputed schedule
-/// (`BUCKET_COUNT - 1`; [`BUCKET_COUNT`](legaia_asset::seru_trade::BUCKET_COUNT) is a
+/// (`BUCKET_COUNT - 1`; [`BUCKET_COUNT`](legaia_game_tables::seru_trade::BUCKET_COUNT) is a
 /// power of two, so the runtime modulo is a single `andi`).
-pub const BUCKET_INDEX_MASK: u16 = (legaia_asset::seru_trade::BUCKET_COUNT as u16) - 1;
+pub const BUCKET_INDEX_MASK: u16 = (legaia_game_tables::seru_trade::BUCKET_COUNT as u16) - 1;
 
 /// Character-record stride (`0x80084708 + slot*0x414`); mirrors
 /// `legaia_save::character`.

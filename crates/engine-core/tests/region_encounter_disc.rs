@@ -12,10 +12,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::region_encounter::{
+use legaia_engine_battle::region_encounter::{
     EncounterRateSetting, RegionEncounterTracker, region_encounter_table_from_man,
 };
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::DefaultMapIdResolver;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -95,7 +96,7 @@ fn region_table_builds_from_real_scene_man() {
         // A region triggers only with both a non-zero rate increment and a
         // non-empty formation slice; scan for a region whose centre resolves
         // (first-AABB-match) to such a region.
-        let rollable = |r: &legaia_engine_core::region_encounter::EncounterRegion| {
+        let rollable = |r: &legaia_engine_battle::region_encounter::EncounterRegion| {
             r.formation_count > 0 && r.rate_increment > 0
         };
         let mut trigger_pos = None;

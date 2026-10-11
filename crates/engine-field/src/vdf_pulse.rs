@@ -17,7 +17,7 @@
 //! sub-entry's deltas onto the pack meshes it targets.
 //!
 //! The delta *arithmetic* is the retail kernel chain
-//! (`legaia_engine_vm::vdf_morph` + `move_buffer::envelope_tick` -
+//! (`legaia_scene_formats::vdf_morph` + `move_buffer::envelope_tick` -
 //! Confirmed from `8001c604.txt` / `8005b038.txt` / `80020740.txt`); the
 //! *arming* (which lanes, which velocities, at scene entry) is the
 //! engine's own and is documented as an enhancement in
@@ -28,7 +28,6 @@
 //! REF: FUN_8001C604, FUN_80020740
 
 use legaia_engine_vm::move_buffer::{self, MoveBufferState, env_flag};
-use legaia_engine_vm::vdf_morph;
 
 /// Per-lane ramp velocity (raw envelope units per tick unit). `0x1000 /
 /// 0x140 = ~13` envelope steps per rise; with the field `frame_step = 2`
@@ -88,7 +87,7 @@ pub struct EntryVdfPulse {
 
 /// A parsed view of one sub-entry's records: `(group_id, dst, count)`.
 fn record_shapes(entry: &[u8]) -> Vec<(u32, usize, usize)> {
-    vdf_morph::parse_vdf_morph_records(entry)
+    legaia_scene_formats::vdf_morph::parse_vdf_morph_records(entry)
         .iter()
         .map(|r| (r.group_id, r.dst_index as usize, r.len()))
         .collect()
@@ -175,7 +174,7 @@ impl EntryVdfPulse {
 
     /// The `(sub_entry_index, weight)` lanes currently targeting
     /// `(pack_slot, group)` - the same shape as a retail part's armed
-    /// morph lanes, ready for `vdf_morph::sum_group_deltas`.
+    /// morph lanes, ready for `legaia_scene_formats::vdf_morph::sum_group_deltas`.
     pub fn lanes_for(&self, pack_slot: usize, group: u32) -> Vec<(u8, u16)> {
         (0..self.env.bone_count as usize)
             .filter(|&lane| self.targets[lane].contains(&(pack_slot, group)))
@@ -221,7 +220,7 @@ impl EntryVdfPulse {
 /// op stream is linear and `0x0A` sits in straight-line record bodies in
 /// the corpus).
 pub fn stager_records_arm_morphs(
-    records: &[legaia_asset::summon_overlay::SummonPart],
+    records: &[legaia_overlay_images::summon_overlay::SummonPart],
     bytes: &[u8],
 ) -> bool {
     for rec in records {

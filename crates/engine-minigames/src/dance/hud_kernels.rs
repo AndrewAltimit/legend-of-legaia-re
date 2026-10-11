@@ -1,5 +1,4 @@
 //! HUD kernels: the step-mark spawn, digit glyphs, beat track, hit stings and the GOOD banner.
-//! Split out of `dance.rs`.
 
 use super::*;
 
@@ -65,7 +64,7 @@ pub fn score_thousands_glyph_u(score: i32) -> i8 {
 /// it. This is the split: `Some(digit)` per drawn slot, `None` for a
 /// suppressed leading zero - so `0` draws a single `0` in the units slot, the
 /// same fill the fishing and dome digit fields share
-/// (`legaia_engine_ui::other_game_hud::decimal_slots`).
+/// (`legaia_engine_ui::muscle_dome_hud::decimal_slots`).
 ///
 /// Wired: the dance HUD's score readout in the play window runs through this,
 /// so a blank slot really does draw nothing there.

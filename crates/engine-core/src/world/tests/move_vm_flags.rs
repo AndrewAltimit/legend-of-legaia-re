@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn effect_pool_tick_decrements_state_byte() {

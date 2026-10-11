@@ -53,7 +53,7 @@ window.MgDance = (function () {
 
   const SCALE = 2;                 /* retail 320x240 -> 640x480 canvas */
 
-  /* Widget ids, as named in legaia_asset::dance_art (traced draw sites). */
+  /* Widget ids, as named in legaia_minigame_formats::dance_art (traced draw sites). */
   const W = {
     READY: 0, DIGIT: 1, LV_LABEL: 6, LV_DIGIT: 7, SCORE_BOX: 8,
     MISS: 10, GOOD: 11, GO: 12, NOTE_BASE: 13,

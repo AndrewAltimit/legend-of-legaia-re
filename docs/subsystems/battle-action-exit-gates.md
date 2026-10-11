@@ -323,7 +323,7 @@ The seed and the skip together make the tail a banner: `0x96 - 0x5B` = 59 frames
 
 The `0x801E6D3C` increment is a make-non-zero idiom, not element selection. `ActionSeed` has cleared the byte, so the result is `1` (or `0x66` after a level-up) - neither an element retail raises. The arm is a one-shot, gated on the first monster slot being dead **and** `first_monster_id == 0xB5` (`0x801E6CFC..0x801E6D0C`); its neighbours are `_DAT_8007B64A = 3` and `ctx[+0x07] = 0xFD`, a state byte outside the state machine's own range. What the arm gets from `ctx[+0x26]` is the long `0x96` hold plus the skip window; the unload that follows is `FUN_801D8DE8(1, 1)` on an element that was never raised.
 
-Port: `legaia_engine_vm::battle_action::done`'s `DONE_LEVELUP_BANNER_FRAMES` / `DONE_BANNER_SKIP_BELOW`, over `BattleActionHost::pad_word`. The writer is `World::accrue_summon_spell_xp` (`engine-core`), the port of `FUN_801E70BC`. The id round-trips: raised with the element, carried through the `0x50` seed, unloaded by `done::done_band_ui_teardown`, cleared by the next `ActionSeed`.
+Port: `legaia_engine_battle_vm::battle_action::done`'s `DONE_LEVELUP_BANNER_FRAMES` / `DONE_BANNER_SKIP_BELOW`, over `BattleActionHost::pad_word`. The writer is `World::accrue_summon_spell_xp` (`engine-core`), the port of `FUN_801E70BC`. The id round-trips: raised with the element, carried through the `0x50` seed, unloaded by `done::done_band_ui_teardown`, cleared by the next `ActionSeed`.
 
 ### The `0x51` teardown block
 
@@ -358,7 +358,7 @@ The tail past the latch increment is **inside** the latch. Nothing branches to `
 - `FUN_801E92DC` takes a **spell id**. It resolves the acting slot through `_DAT_8007BD10`, indexes the live game-state window at `0x80084140 + char*0x414 + 0x704` and prepends there. So `ctx[+0x269]` is the spell a capture granted, and element `0x59` is that grant's banner.
 - The capture arm's window is narrow. A non-zero `ctx[+0x269]` on the exit pass re-seeds the countdown to `0xB4` (`0x801E6138`) before the teardown reloads it at `0x801E614C`, so that pass fails the `< 0xC` gate; the menu-flag floor writes `0xC` exactly, which fails it too. The frames with both a live capture byte and a running teardown are the last twelve of the countdown, before it crosses zero.
 
-Port: `done::done_band_capture_and_banner_sweep` carries the `0x59` raise and the `0x51` close. The multi-cast loop stays with `battle_value_readout` (`engine-battle-vm`), which owns the value window and the queued count. `FUN_801E92DC` is `magic_xp::learn_spell_prepend` (`engine-battle`, re-exported by `engine-core`).
+Port: `done::done_band_capture_and_banner_sweep` carries the `0x59` raise and the `0x51` close. The multi-cast loop stays with `battle_value_readout` (`engine-battle-vm`), which owns the value window and the queued count. `FUN_801E92DC` is `magic_xp::learn_spell_prepend` (`engine-battle`).
 
 ## The item / restore applier `FUN_800402F4`
 
@@ -402,7 +402,7 @@ Arguments at every site are `(a0 = tint, a1 = actor-state word, a2 = actor slot,
 - `a0` and `a1` are literals, one pair per site: the tint, and the actor-state word the expander writes to `actor[+0x04]`. The class-0 / class-1 restore arms and the class-7 tier-1 / tier-2 buff arms pass the neutral tint `0x00808080` and recolour nothing.
 - The revive arm (`0x800410B8`) is the one site whose `a1` is `0x20080200`, the word the expander tests for, so revive is the only arm that leaves `actor[+0x0C]` alone.
 
-Port: the selection is a `(class, param_2)` table plus one loop, carried as `battle_cue_group::cue_group_for` (`engine-battle-vm`, re-exported by `engine-vm`) rather than a port of the applier's 1976 instructions. The acting actor's `+0x1E8` / `+0x1E9` pair selects the site, the expander runs, and each cue goes to the effect pool / SFX scheduler through the host.
+Port: the selection is a `(class, param_2)` table plus one loop, carried as `battle_cue_group::cue_group_for` (`engine-battle-vm`) rather than a port of the applier's 1976 instructions. The acting actor's `+0x1E8` / `+0x1E9` pair selects the site, the expander runs, and each cue goes to the effect pool / SFX scheduler through the host.
 
 <a id="fun_800402f4s-stone-and-curse-arms-classes-9--10"></a>
 ### The Stone and Curse arms (classes 9 / 10)
@@ -421,7 +421,7 @@ Both arms share one roll, in a single-target form (`sltiu v0,s0,0x3` - party sea
 
 The group arm also zeroes a landed target's queued action category (`sb zero,0x1de`) and refunds a reserved battle item (`jal 0x800421d4` with `a1 = 1` when `+0x1DE == 1` and the initiative key `+0x16C` is live). Neither arm reads a guard accessory: retail writes the bit unconditionally, and the per-frame guard sweep (`FUN_8004CE2C`'s guard-clear half) removes it next frame for a protected wearer.
 
-Port: roll kernel `legaia_engine_vm::status_effects::agl_status_inflict_roll`; live wiring `World::apply_enemy_agl_status` on the monster cast fold. The guard gate is applied at infliction, which is steady-state-equivalent to retail's clear-next-frame. The move-id list is an inference: Glare `0x3C` is capture-pinned; Stone Circle `0xB9`, Curse `0x40` and Curse All `0x53` come from record names and published behaviour. A landed Stone arms the status-CLUT recolour (`FUN_8004CE2C`'s fourth pass, `engine-battle`'s `battle_status_clut`).
+Port: roll kernel `legaia_engine_battle_vm::status_effects::agl_status_inflict_roll`; live wiring `World::apply_enemy_agl_status` on the monster cast fold. The guard gate is applied at infliction, which is steady-state-equivalent to retail's clear-next-frame. The move-id list is an inference: Glare `0x3C` is capture-pinned; Stone Circle `0xB9`, Curse `0x40` and Curse All `0x53` come from record names and published behaviour. A landed Stone arms the status-CLUT recolour (`FUN_8004CE2C`'s fourth pass, `engine-battle`'s `battle_status_clut`).
 
 <a id="the-0x19-attack-approach-park---a-second-distinct-softlock-class"></a>
 ## The `0x19` attack-approach park
@@ -497,7 +497,7 @@ Any action between the flinch and the melee gives the flinch time to end and con
 
 - **The caught park** (poll-only probe `scripts/pcsx-redux/autorun_gaza2_park_hunter.lua`; replay probe `autorun_gaza2_range_wedge.lua`). The acting actor is the boss (seat 3, category 3 physical attack, 871/15000 HP) targeting Gala (seat 2) across ~556 units; the metric returns 554-557 every poll and the position never changes. The state trace is `0x0C -> 0x14 -> 0x19` within ~3 vsyncs. Gaza's anim bytes sit at idle (`+0x1DA = +0x1D9 = 0`).
 - **The rest of the queue.** Vahn polls his own queued attack against Gaza (metric ~458 against his 256 reach). Noa and Gala hold `+0x1DD == 8`, stale all-target sentinels on actors that never got their turn. The round is stuck on the boss's action alone.
-- **The action table** (RAM read via `legaia-pcsxr`, example `gaza2_walk_tag`). Gaza's seat-3 record holds 12 actions with tags `[00 01 02 03 04 05 0B 0E 13 0C 23 23]` - no `0x20`.
+- **The action table** (RAM read via `legaia-pcsx-redux`, example `gaza2_walk_tag`). Gaza's seat-3 record holds 12 actions with tags `[00 01 02 03 04 05 0B 0E 13 0C 23 23]` - no `0x20`.
 - **The trigger** (`autorun_gaza2_summon_displacement.lua`, scenario `battle_gaza2_park_0x19_summon_melee`). The summon stages Gaza to `(0, -2048)` and back while his damage-reaction clip plays. His melee starts directly next; the Move clip engages and dies ~12 vsyncs later, ~236 units in. With any other action in between, the same clip runs 28-67 vsyncs and arrives (e.g. 64 vsyncs / 1,260 units). Parked gaps of 556 / 786 units are ordinary formation spacing.
 - **Causal check** (`scripts/pcsx-redux/autorun_gaza2_stale_flag_repro.lua`, write-watchpoints on `+0x1DA` / `+0x1D9` / `+0x1DC`). Control: bounce the state byte to `0x14`. The arm re-stages Move (`0x801E3270` stores the `0xFF` tag-`0x20` miss, `0x801E32B0` the fallback index), the first natural end 12 vsyncs later re-commits with the pair still `1/1` (`0x80047B58` + `0x8004BDE0`), and the boss walks in and strikes. Experiment: the same bounce with `+0x1DC |= 4` re-armed dies at its first natural end via the `0x80047B44` idle write and parks in `0x19`.
 - **Core independence.** The recipe parks under both PCSX-Redux cores (recompiler and interpreter, `run_probe.sh --timing`) with the same onset: Move clip dead ~12-16 vsyncs in. Emulators with a substantially different CD latency model may schedule the summon's streamed staging restore differently and rarely land in the window.
@@ -505,7 +505,7 @@ Any action between the flinch and the melee gives the flinch time to end and con
 
 ### The disc patch
 
-`legaia-patcher --approach-softlock-fix` (`crates/code-hooks/src/approach_fix.rs`, re-exported as `legaia_patcher::approach_fix`; off by default, also offered by the site's ROM patcher). The `0x19` arm spends nine words at `0x801E3568` re-deriving facing every frame, which is redundant: the target does not move during an approach, and states `0x14` and `0x1E` derive facing themselves. The patch replaces those nine words with a guard: if the staged clip is dead (`+0x1DA == 0`) while the poll still fails, set the state byte back to `0x14`.
+`legaia-patcher --approach-softlock-fix` (`legaia_code_hooks::approach_fix`, `crates/code-hooks/src/approach_fix.rs`; off by default, also offered by the site's ROM patcher). The `0x19` arm spends nine words at `0x801E3568` re-deriving facing every frame, which is redundant: the target does not move during an approach, and states `0x14` and `0x1E` derive facing themselves. The patch replaces those nine words with a guard: if the staged clip is dead (`+0x1DA == 0`) while the poll still fails, set the state byte back to `0x14`.
 
 Retail's own `0x14` arm then re-runs the staging next frame and the monster resumes walking. By the time the guard fires, the commit that killed the clip has consumed the stale bit, so the re-staged clip loops cleanly. The same bounce rescues a party attacker whose run clip dies. Healthy approaches never see a dead clip and are unaffected.
 

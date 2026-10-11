@@ -8,7 +8,7 @@
 //! Retail has no inn cost table: each cost is a field-VM script literal in
 //! the scene MAN (op-`0x4E` gold gate + `0x3A` debit pair - see
 //! `docs/subsystems/inn.md`). The scene host scans those pairs at load
-//! (`SceneHost::scene_inn_cost`, via [`legaia_asset::inn_costs`]) and
+//! (`SceneHost::scene_inn_cost`, via [`legaia_scene_formats::inn_costs`]) and
 //! `MenuRuntime::open_scene_inn` opens the prompt with the scanned cost;
 //! `open_inn(cost)` remains the direct entry for tests and tooling.
 

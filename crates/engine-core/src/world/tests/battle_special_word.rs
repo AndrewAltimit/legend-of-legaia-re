@@ -5,13 +5,14 @@
 
 use super::*;
 use crate::battle_round::{PendingPartyAction, RoundPhase};
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A battle with a party of `party` standing members and one living monster
 /// seated behind them.
 fn special_world(party: u8, word: u32) -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: party,
             ..Default::default()
         },
@@ -42,7 +43,8 @@ fn a_leader_rotted_in_every_limb_loses_a_special_battle() {
             world.battle.status_effects.apply(0, StatusKind::Rot);
             world.battle.status_effects.set_rot_limb(0, limb);
         }
-        world.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
+        world.battle_ctx.action_state =
+            legaia_engine_battle_vm::battle_action::ActionState::EndOfAction.as_byte();
         (world.step_battle(), world.battle.end)
     };
     assert_eq!(
@@ -76,10 +78,13 @@ fn a_special_battle_run_hands_the_leader_the_first_turn() {
     // The arm itself: raised on a Run commit, not for the Ra-Seru fights.
     let arm = |word: u32, first_monster: u16| {
         let mut world = special_world(1, word);
-        world.battle.active_formation = Some(crate::monster_catalog::FormationDef::new(
-            1,
-            vec![crate::monster_catalog::FormationSlot::new(first_monster)],
-        ));
+        world.battle.active_formation =
+            Some(legaia_engine_battle::monster_catalog::FormationDef::new(
+                1,
+                vec![legaia_engine_battle::monster_catalog::FormationSlot::new(
+                    first_monster,
+                )],
+            ));
         world.actors[0].battle.init_key = 10;
         world.actors[1].battle.init_key = 50;
         world.battle.round_flow.pending[0] = Some(PendingPartyAction::Run);

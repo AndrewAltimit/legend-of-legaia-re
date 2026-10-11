@@ -1,6 +1,6 @@
 //! End-to-end battle-action integration: drive the SM through one full
 //! Attack action with a host that applies damage via the
-//! `legaia_engine_vm::battle_formulas` math, and assert the target HP
+//! `legaia_engine_battle_vm::battle_formulas` math, and assert the target HP
 //! actually goes down.
 //!
 //! What this proves:
@@ -13,16 +13,18 @@
 //!
 //! Stays disc-free: no disc data, no Sony bytes, no PROT lookups.
 
-use legaia_engine_core::battle_events::BattleEvent;
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
-use legaia_engine_vm::battle_formulas::{
-    MpCostModifier, accuracy_roll, mp_cost_after_ability_bits, psyq_rand_step,
+use legaia_engine_battle::battle_events::BattleEvent;
+use legaia_engine_battle_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
+use legaia_engine_battle_vm::battle_formulas::{
+    MpCostModifier, accuracy_roll, mp_cost_after_ability_bits,
 };
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::rand::psyq_rand_step;
 
 fn build_world() -> World {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },

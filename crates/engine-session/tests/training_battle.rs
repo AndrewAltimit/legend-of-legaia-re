@@ -1,0 +1,595 @@
+//! Disc-gated: the opening Rim Elm training fight is reachable end-to-end.
+//!
+//! Cold-boots into Rim Elm (`town01`), seeds the training opponent's real
+//! stats from the disc monster archive (PROT 867), installs the scripted
+//! training encounter through the engine's scripted-encounter seam, and drives
+//! the live loop until it flips `Field -> Battle` with the genuine monster
+//! (id `0x4F`, "Tetsu") in the enemy slot.
+//!
+//! This exercises the same path retail uses (a scripted single-monster
+//! formation installed at battle entry), short of the per-scene field-VM
+//! dialogue state machine that arms it automatically; the arm is driven via
+//! the public API here. See `docs/formats/encounter.md`.
+//!
+//! Disc-gated per the `LEGAIA_DISC_BIN` skip-pass convention: skip-passes
+//! without disc data / extracted assets so CI works without Sony bytes.
+
+use std::path::PathBuf;
+
+use legaia_engine_battle::monster_catalog::catalog_from_monster_archive;
+use legaia_engine_field::man_field_scripts::FieldCarrierConfig;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
+use legaia_scene_formats::encounter_record::{
+    RIM_ELM_TRAINING_FORMATION_ID, RIM_ELM_TRAINING_OPPONENT_ID,
+};
+
+const SCENE: &str = "town01";
+
+fn extracted_dir() -> Option<PathBuf> {
+    for c in ["extracted", "../extracted", "../../extracted"] {
+        let d = PathBuf::from(c);
+        if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
+            return Some(d);
+        }
+    }
+    None
+}
+
+#[test]
+fn training_encounter_reaches_battle_with_real_monster() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    // The training opponent's stats live in the monster archive's extended
+    // footprint (PROT 867). Use the extracted extended-footprint file the
+    // pipeline writes.
+    let archive_path = extracted.join("PROT").join("0867_battle_data.BIN");
+    if !archive_path.exists() {
+        eprintln!(
+            "[skip] {} missing - run `legaia-extract`",
+            archive_path.display()
+        );
+        return;
+    }
+
+    let cfg = BootConfig {
+        scene: SCENE.to_string(),
+        enable_audio: false,
+    };
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
+    session
+        .enter_field_live(
+            SCENE,
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+    assert_eq!(
+        session.host.world.mode,
+        SceneMode::Field,
+        "cold boot reaches the field"
+    );
+
+    // Seed the training opponent's real stats from the disc archive so the
+    // battle spawns Tetsu (not a synthetic placeholder).
+    let archive = std::fs::read(&archive_path).expect("read monster archive");
+    let catalog = catalog_from_monster_archive(&archive, &[RIM_ELM_TRAINING_OPPONENT_ID as u16]);
+    let tetsu = catalog
+        .get(RIM_ELM_TRAINING_OPPONENT_ID as u16)
+        .expect("archive carries the training opponent");
+    assert_eq!(tetsu.hp, 999, "training opponent (Tetsu) HP is 999");
+    session.host.world.set_monster_catalog(catalog);
+
+    // Install the training encounter through the scripted-encounter seam: arm
+    // the consumer, then forward the record window overlaying the arm opcode
+    // (`[opcode][op1][op2][count=1][id]`).
+    session.host.world.arm_scripted_encounter(true);
+    let window = [0x37u8, 0x00, 0x00, 0x01, RIM_ELM_TRAINING_OPPONENT_ID];
+    let formation_id = session
+        .host
+        .world
+        .install_scripted_encounter(&window)
+        .expect("non-empty record installs a formation");
+    {
+        let formation = session
+            .host
+            .world
+            .tables
+            .formation_table
+            .formation(formation_id)
+            .expect("formation registered");
+        assert_eq!(formation.slots.len(), 1, "lone training monster");
+        assert_eq!(
+            formation.slots[0].monster_id,
+            RIM_ELM_TRAINING_OPPONENT_ID as u16
+        );
+    }
+
+    // Force the encounter roll, then drive the live loop until it flips into
+    // Battle (the forced-rate session triggers, the transition counts down,
+    // and the world enters BattleMode).
+    assert!(
+        session.host.world.on_field_step(),
+        "forced-rate roll triggers the encounter"
+    );
+    let mut reached_battle = false;
+    for _ in 0..240 {
+        let _ = session.tick().expect("tick");
+        if session.host.world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+    }
+    assert!(
+        reached_battle,
+        "training encounter flips Field -> Battle within the budget"
+    );
+
+    // The enemy slot carries the training opponent with its real HP.
+    let world = &session.host.world;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        world.actors[monster_slot].battle_monster_id,
+        Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
+        "enemy slot tagged with the training monster id"
+    );
+    assert_eq!(
+        world.actors[monster_slot].battle.max_hp, 999,
+        "enemy slot seeded with Tetsu's real HP"
+    );
+}
+
+/// The faithful by-index path: the Rim Elm Tetsu fight is town01 MAN
+/// `formation_id` 4, which a cold boot already loads from the scene's MAN asset
+/// (with the monster archive's real stats merged). The scripted carrier selects
+/// that formation by index; `install_man_formation` models exactly that, with
+/// no hand-built record and no manual catalog seeding. This is the same battle
+/// the test above reaches, but driven through the actual per-scene formation
+/// table rather than a re-encoded `[count][id]` window.
+#[test]
+fn training_reaches_battle_via_man_formation_index() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: SCENE.to_string(),
+        enable_audio: false,
+    };
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
+    session
+        .enter_field_live(
+            SCENE,
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+    assert_eq!(session.host.world.mode, SceneMode::Field);
+
+    // Cold boot loaded town01's MAN formation table. The Tetsu row is index 4,
+    // a lone monster id 0x4F.
+    {
+        let formation = session
+            .host
+            .world
+            .tables
+            .formation_table
+            .formation(RIM_ELM_TRAINING_FORMATION_ID)
+            .expect("town01 MAN carries formation_id 4");
+        assert_eq!(
+            formation.slots.len(),
+            1,
+            "Tetsu is a lone-monster formation"
+        );
+        assert_eq!(
+            formation.slots[0].monster_id, RIM_ELM_TRAINING_OPPONENT_ID as u16,
+            "town01 formation_id 4 = monster 0x4F (Tetsu)"
+        );
+    }
+
+    // Install the formation by index (the carrier's mechanism) and drive to
+    // Battle.
+    assert_eq!(
+        session
+            .host
+            .world
+            .install_man_formation(RIM_ELM_TRAINING_FORMATION_ID),
+        Some(RIM_ELM_TRAINING_FORMATION_ID),
+    );
+    assert!(
+        session.host.world.on_field_step(),
+        "forced-rate roll triggers the scripted formation"
+    );
+    let mut reached_battle = false;
+    for _ in 0..240 {
+        let _ = session.tick().expect("tick");
+        if session.host.world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+    }
+    assert!(
+        reached_battle,
+        "MAN-formation install flips Field -> Battle"
+    );
+
+    // The enemy slot is Tetsu with the real archive HP (999) merged at scene
+    // entry - no manual catalog seeding needed on this path.
+    let world = &session.host.world;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        world.actors[monster_slot].battle_monster_id,
+        Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
+    );
+    assert_eq!(
+        world.actors[monster_slot].battle.max_hp, 999,
+        "Tetsu's real HP merged from the disc archive at scene entry"
+    );
+}
+
+/// The field-resident carrier SM path, driven from the **real MAN actor**:
+/// entering town01 auto-installs the carrier set derived from its
+/// actor-placement partition (`enter_field_scene` ->
+/// `install_field_carriers_from_man`), so the Rim Elm sparring partner's
+/// identity comes from the scene data rather than a hand-built config. Advance
+/// the derived carrier via `engage_field_carrier` (the dialogue-accept
+/// stand-in), and let the per-frame `tick_field_carriers` run the state-1
+/// formation copy + the `case 2/3` fall-through battle handoff. This drives the
+/// transition through the actual entity SM (the field-mode use of
+/// `FUN_801DA51C`) rather than a manual `install_man_formation` +
+/// `on_field_step`, against the real per-scene MAN formation table.
+#[test]
+fn training_reaches_battle_via_field_carrier_sm() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: SCENE.to_string(),
+        enable_audio: false,
+    };
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
+    session
+        .enter_field_live(
+            SCENE,
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+    assert_eq!(session.host.world.mode, SceneMode::Field);
+
+    // Entering the field auto-installed the carrier set derived from town01's
+    // real MAN actor-placement partition (no hand-built config): the pinned Rim
+    // Elm sparring partner is the scripted-encounter carrier for formation 4,
+    // every other talk NPC a plain carrier. Find the sparring carrier's slot.
+    let sparring_idx = session
+        .host
+        .world
+        .carriers
+        .configs
+        .iter()
+        .position(|c| {
+            matches!(
+                c,
+                FieldCarrierConfig::ScriptedEncounter {
+                    formation_id: RIM_ELM_TRAINING_FORMATION_ID
+                }
+            )
+        })
+        .expect("field entry auto-installs the Rim Elm sparring carrier from the MAN");
+
+    // Idle carriers never self-fire (town01 is 0% random): several ticks stay
+    // in the field.
+    for _ in 0..16 {
+        let _ = session.tick().expect("tick");
+        assert_eq!(
+            session.host.world.mode,
+            SceneMode::Field,
+            "idle carriers wait"
+        );
+    }
+
+    // The dialogue-accept advances the sparring carrier; the SM latches the
+    // fight, the field-to-battle intro transition runs its 132 display
+    // frames, and only then does the mode flip Field -> Battle.
+    session.host.world.engage_field_carrier(sparring_idx);
+    let mut reached_battle = false;
+    for _ in 0..220 {
+        let _ = session.tick().expect("tick");
+        if session.host.world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+    }
+    assert!(
+        reached_battle,
+        "engaging the field carrier flips Field -> Battle via the SM"
+    );
+
+    // The enemy slot is Tetsu with the real archive HP merged at scene entry.
+    let world = &session.host.world;
+    assert_eq!(world.battle.return_mode, SceneMode::Field);
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        world.actors[monster_slot].battle_monster_id,
+        Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
+    );
+    assert_eq!(
+        world.actors[monster_slot].battle.max_hp, 999,
+        "Tetsu's real HP via the carrier SM path"
+    );
+}
+
+/// The fully field-VM-driven path: no manual `engage_field_carrier`. A cold boot
+/// auto-installs the town01 carriers **and** their interact-slot map, so a real
+/// interaction (the talk probe's `World::trigger_field_interact`) on the
+/// sparring partner's placement slot opens its dialogue and arms the engage;
+/// accepting the prompt (the `0x4C` n5 sub-4 dialog dismiss on a just-pressed
+/// Cross) engages the carrier and the SM flips Field -> Battle against the real
+/// per-scene MAN formation, with Tetsu (`0x4F`) in the enemy slot. This is the
+/// dialogue-accept auto-arm end to end on disc data - the field-VM bytecode now
+/// drives the engage the manual API stood in for.
+#[test]
+fn training_reaches_battle_via_field_vm_dialogue_accept() {
+    use legaia_engine_system::input::PadButton;
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: SCENE.to_string(),
+        enable_audio: false,
+    };
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
+    session
+        .enter_field_live(
+            SCENE,
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+    assert_eq!(session.host.world.mode, SceneMode::Field);
+
+    let world = &mut session.host.world;
+
+    // Cold boot auto-installed the carrier slot map from town01's MAN: exactly
+    // one scripted-encounter (sparring) carrier carries an interact-slot entry,
+    // and that slot holds the sparring partner's inline dialogue.
+    let slot = {
+        let mut slots: Vec<u8> = world.carriers.slots.keys().copied().collect();
+        slots.sort_unstable();
+        assert_eq!(
+            slots.len(),
+            1,
+            "town01 derives exactly one scripted-encounter carrier slot, got {slots:?}"
+        );
+        slots[0]
+    };
+    assert!(
+        world.npcs.dialog.contains_key(&slot),
+        "the sparring carrier's slot carries inline dialogue"
+    );
+
+    // Drive a real interaction on that slot (the talk probe's entry), then a
+    // dialog-advance poll.
+    world.trigger_field_interact(0, slot);
+    world.load_field_script(vec![0x4C, 0x54]);
+    world.input.set_pad(0);
+    let _ = world.tick();
+    assert!(
+        world.dialog.current.is_some(),
+        "the field-interact opens the sparring partner's dialogue"
+    );
+    // The carrier presents its real 4-option spar menu (the faithful path); the
+    // engage is gated on the index-2 fight option, not on any accept.
+    let menu = world
+        .carriers
+        .menu
+        .expect("the sparring partner's 4-option spar menu is up");
+    assert_eq!(menu.n, 4, "4-option picker");
+    assert_eq!(
+        menu.fight_option, 2,
+        "fight option = index 2 (\"...practice...\")"
+    );
+    assert!(
+        world.carriers.pending_engage.is_none(),
+        "the menu gates the engage; the any-accept arm is not used"
+    );
+    assert_eq!(
+        world.mode,
+        SceneMode::Field,
+        "still in the field while the menu is up"
+    );
+
+    // Navigate down to the fight option (one fresh Down edge per step).
+    for _ in 0..menu.fight_option {
+        world.input.set_pad(0);
+        let _ = world.tick();
+        world.input.set_pad(PadButton::Down.mask());
+        let _ = world.tick();
+    }
+    assert_eq!(
+        world.carriers.menu.expect("menu still up").cursor,
+        2,
+        "cursor moved to the fight option"
+    );
+
+    // Confirm the fight option: the SM latches the fight, the intro
+    // transition runs its 132 display frames, and the mode flips.
+    world.input.set_pad(0);
+    let _ = world.tick();
+    world.input.set_pad(PadButton::Cross.mask());
+    let mut reached_battle = false;
+    for _ in 0..220 {
+        let _ = world.tick();
+        if world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+        // Release the button so a later tick doesn't re-trigger a confirm.
+        world.input.set_pad(0);
+    }
+    assert!(
+        reached_battle,
+        "confirming the fight option (\"...practice...\") flips Field -> Battle"
+    );
+
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        world.actors[monster_slot].battle_monster_id,
+        Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
+        "enemy slot tagged with the training monster id"
+    );
+    assert_eq!(
+        world.actors[monster_slot].battle.max_hp, 999,
+        "Tetsu's real HP merged from the disc archive at scene entry"
+    );
+}
+
+/// The fully input-driven path via the interaction probe (retail `FUN_801cf9f4`):
+/// standing next to the sparring partner and pressing the action button talks to
+/// it, and pressing again accepts - starting the fight with no script injection
+/// and no manual engage. The runtime actor frame is the MAN placement frame
+/// (`FUN_8003A1E4` spawns at `tile*128 + 0x40`, the placement's `world_x`), so
+/// the probe box-tests the player against the carrier's stored placement
+/// position. Positioning the player on the carrier's tile stands in for walking
+/// there (the cold spawn is tile 20; the carrier is across the map).
+#[test]
+fn training_reaches_battle_via_interaction_probe() {
+    use legaia_engine_system::input::PadButton;
+
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+
+    let cfg = BootConfig {
+        scene: SCENE.to_string(),
+        enable_audio: false,
+    };
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
+    session.begin_new_game();
+    session
+        .enter_field_live(
+            SCENE,
+            &FieldLiveOpts {
+                live_loop: true,
+                ..Default::default()
+            },
+        )
+        .expect("enter field live");
+    assert_eq!(session.host.world.mode, SceneMode::Field);
+
+    // The sparring carrier's slot (the one scripted-encounter slot) and its
+    // stored placement position - what the probe box-tests against.
+    let (slot, cx, cz) = {
+        let w = &session.host.world;
+        let slot = *w
+            .carriers
+            .slots
+            .keys()
+            .next()
+            .expect("town01 installs the scripted-encounter carrier slot");
+        let &(cx, cz) = w
+            .npcs
+            .positions
+            .get(&slot)
+            .expect("the carrier slot carries a placement position");
+        (slot, cx, cz)
+    };
+
+    // Stand the player on the carrier's tile (stands in for walking across the
+    // map from the tile-20 cold spawn).
+    let pslot = session.host.world.player_actor_slot.expect("player actor") as usize;
+    session.host.world.actors[pslot].move_state.world_x = cx;
+    session.host.world.actors[pslot].move_state.world_z = cz;
+
+    // Talk: the probe opens the carrier's dialogue and arms the engage.
+    session.host.world.input.set_pad(PadButton::Cross.mask());
+    let _ = session.host.world.tick();
+    assert!(
+        session.host.world.dialog.current.is_some(),
+        "the interaction probe opens the sparring partner's dialogue (slot {slot})"
+    );
+    // The carrier presents its 4-option spar menu; the engage is gated on the
+    // index-2 fight option, not on any accept.
+    let fight = session
+        .host
+        .world
+        .carriers
+        .menu
+        .expect("the spar's 4-option menu is up")
+        .fight_option;
+    assert_eq!(fight, 2, "fight option = index 2 (\"...practice...\")");
+    assert!(
+        session.host.world.carriers.pending_engage.is_none(),
+        "the menu gates the engage (no any-accept arm)"
+    );
+
+    // Navigate down to the fight option, then confirm -> Battle.
+    for _ in 0..fight {
+        session.host.world.input.set_pad(0);
+        let _ = session.host.world.tick();
+        session.host.world.input.set_pad(PadButton::Down.mask());
+        let _ = session.host.world.tick();
+    }
+    session.host.world.input.set_pad(0);
+    let _ = session.host.world.tick();
+    session.host.world.input.set_pad(PadButton::Cross.mask());
+    let mut reached_battle = false;
+    // Through the 132-frame intro transition to the flip.
+    for _ in 0..220 {
+        let _ = session.host.world.tick();
+        if session.host.world.mode == SceneMode::Battle {
+            reached_battle = true;
+            break;
+        }
+        session.host.world.input.set_pad(0);
+    }
+    assert!(
+        reached_battle,
+        "the interaction probe (talk + navigate to the fight option + confirm) flips Field -> Battle"
+    );
+    let world = &session.host.world;
+    let monster_slot = world.party.party_count.clamp(1, 3) as usize;
+    assert_eq!(
+        world.actors[monster_slot].battle_monster_id,
+        Some(RIM_ELM_TRAINING_OPPONENT_ID as u16),
+        "the probe-driven fight is against Tetsu (0x4F)"
+    );
+}

@@ -216,7 +216,7 @@ pub(crate) fn find_overlay(dir: &PathBuf, top: usize, lzs_sizes: &str) -> Result
     Ok(())
 }
 
-use legaia_asset::static_overlay::{
+use legaia_overlay_images::static_overlay::{
     self, Eligibility, OverlayForm, OverlayRecord, ghidra_import_driver, ghidra_import_jython,
     overlay_map, recover_base, verify_fingerprint,
 };

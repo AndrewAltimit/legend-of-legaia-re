@@ -7,11 +7,13 @@ PNG against the same palettes and page budget, re-packs any LZS carrier and
 writes the result through `legaia-disc-patch`'s `DiscPatcher`, refusing an
 edit that does not fit before it writes anything.
 
-[`legaia-patcher`](../patcher/README.md) re-exports every module at its old
-path (`legaia_patcher::texture`, `legaia_patcher::save_icon`, ...), so its
-CLI, the web viewer and the patcher's disc-gated tests are unchanged. The
-per-module write-ups stay in the patcher README's
-[texture replacement](../patcher/README.md#texture-replacement-texture-module)
+It depends on [`legaia-disc-patch`](../disc-patch/README.md) and the parser
+crates, and on no other patcher crate.
+[`legaia-patcher`](../patcher/README.md), `legaia-delilas-party` and the web
+viewer name its modules directly (`legaia_texture_replace::texture`,
+`legaia_texture_replace::save_icon`, ...). The per-module
+write-ups stay in the patcher README's
+[texture replacement](../../docs/tooling/patcher-modules.md#texture-replacement-texture-module)
 sections.
 
 - `texture` - swap any TIM on the disc (raw and deep catalogs), with the

@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 fn live_battle_world_3v2() -> World {
     let mut world = World::new();
@@ -17,7 +18,7 @@ fn live_battle_world_3v2() -> World {
 
 #[test]
 fn spirit_command_charges_ap_and_raises_the_guard_stance() {
-    use crate::battle_input::{BattleCommandSession, CommandPhase};
+    use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
     let mut world = live_battle_world_3v2();
     world.battle.command = Some(BattleCommandSession {
         actor: 0,
@@ -118,7 +119,7 @@ fn guard_stance_reduces_basic_attack_damage() {
 
 #[test]
 fn enemy_agl_budget_drives_multi_strike_and_gates_on_agl() {
-    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
 
     // A monster whose per-round AGL gauge (60) affords three 20-cost swings.
     let mut cat = MonsterCatalog::new();
@@ -176,7 +177,7 @@ fn enemy_agl_budget_drives_multi_strike_and_gates_on_agl() {
 
 #[test]
 fn run_command_arms_the_run_band() {
-    use crate::battle_input::{BattleCommandSession, CommandPhase};
+    use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
     let mut world = live_battle_world_3v2();
     world.battle.command = Some(BattleCommandSession {
         actor: 0,
@@ -191,14 +192,14 @@ fn run_command_arms_the_run_band() {
     assert_eq!(world.battle_ctx.queued_action, 5);
     assert_eq!(
         world.battle_ctx.action_state,
-        legaia_engine_vm::battle_action::ActionState::Begin.as_byte()
+        legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte()
     );
     assert!(world.battle_ctx.absorbed_seru <= 1, "roll outcome staged");
 }
 
 #[test]
 fn successful_run_escapes_the_battle_without_loot() {
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle_vm::battle_action::ActionState;
     let mut world = live_battle_world_3v2();
     // A downed member (slot 1) is floored at 1 HP by the successful escape.
     world.actors[1].battle.hp = 0;
@@ -215,7 +216,7 @@ fn successful_run_escapes_the_battle_without_loot() {
     for _ in 0..0x100 {
         if matches!(
             world.live_battle_tick(),
-            Some(legaia_engine_vm::battle_action::StepOutcome::BattleComplete)
+            Some(legaia_engine_battle_vm::battle_action::StepOutcome::BattleComplete)
         ) {
             completed = true;
             break;
@@ -235,7 +236,7 @@ fn successful_run_escapes_the_battle_without_loot() {
 
 #[test]
 fn round_boundary_state_is_not_a_spurious_victory() {
-    use legaia_engine_vm::battle_action::{ActionState, StepOutcome};
+    use legaia_engine_battle_vm::battle_action::{ActionState, StepOutcome};
     let mut world = live_battle_world_3v2();
     // The SM reaches state 0xFF through the 0x5A gate's non-wipe arm - e.g.
     // the tick after a folded monster cast leaves the SM parked at
@@ -262,7 +263,7 @@ fn round_boundary_state_is_not_a_spurious_victory() {
 
 #[test]
 fn failed_run_consumes_the_turn_and_the_battle_continues() {
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle_vm::battle_action::ActionState;
     let mut world = live_battle_world_3v2();
     world.actors[0].battle.action_category = 5;
     world.battle_ctx.active_actor = 0;
@@ -272,7 +273,7 @@ fn failed_run_consumes_the_turn_and_the_battle_continues() {
     for _ in 0..0x100 {
         if matches!(
             world.live_battle_tick(),
-            Some(legaia_engine_vm::battle_action::StepOutcome::BattleComplete)
+            Some(legaia_engine_battle_vm::battle_action::StepOutcome::BattleComplete)
         ) {
             panic!("a failed run must not end the battle");
         }
@@ -291,14 +292,14 @@ fn shop_buy_fills_the_stack_at_99_and_refuses_past_it() {
     // 0x801db8d0, FUN_801DB7F4) - so a stack tops off at exactly 99.
     let mut world = World::new();
     world.party.money = 1_000_000;
-    let inv = crate::shop::ShopInventory::new(
+    let inv = legaia_engine_menus::shop::ShopInventory::new(
         0,
-        vec![crate::shop::ShopItem {
+        vec![legaia_engine_menus::shop::ShopItem {
             item_id: 0x77,
             price: 10,
         }],
     );
-    let mut session = crate::shop::ShopSession::new(inv);
+    let mut session = legaia_engine_menus::shop::ShopSession::new(inv);
     session.select_buy_item(0);
 
     // 95 held + 4 more = 99: allowed, exactly at the cap.
@@ -316,8 +317,14 @@ fn shop_buy_fills_the_stack_at_99_and_refuses_past_it() {
     assert_eq!(world.party.money, money);
 
     // The retail quantity kernel agrees: at 95 held the picker maxes at 4.
-    assert_eq!(crate::shop::buy_qty_max(1_000_000, 10, Some(95)), 4);
-    assert_eq!(crate::shop::buy_qty_max(1_000_000, 10, Some(99)), 0);
+    assert_eq!(
+        legaia_engine_menus::shop::buy_qty_max(1_000_000, 10, Some(95)),
+        4
+    );
+    assert_eq!(
+        legaia_engine_menus::shop::buy_qty_max(1_000_000, 10, Some(99)),
+        0
+    );
 }
 
 #[test]
@@ -379,8 +386,8 @@ fn npc_walk_steps_track_heading_and_keep_it_after_arrival() {
 /// refusal the flag's alone - the same fight without it escapes.
 #[test]
 fn run_in_a_no_escape_fight_rolls_and_fails() {
-    use crate::battle_input::{BattleCommandInput, BattleCommandSession, Resolution};
-    use crate::target_picker::SlotState;
+    use legaia_engine_battle::target_picker::SlotState;
+    use legaia_engine_menus::battle_input::{BattleCommandInput, BattleCommandSession, Resolution};
     let run = |no_escape: bool| -> (World, bool, bool) {
         let mut world = live_battle_world_3v2();
         world.battle.no_escape = no_escape;
@@ -420,10 +427,10 @@ fn run_in_a_no_escape_fight_rolls_and_fails() {
         let mut run_band = false;
         for _ in 0..0x400 {
             run_band |= world.battle_ctx.action_state
-                == legaia_engine_vm::battle_action::ActionState::RunWait.as_byte();
+                == legaia_engine_battle_vm::battle_action::ActionState::RunWait.as_byte();
             if matches!(
                 world.live_battle_tick(),
-                Some(legaia_engine_vm::battle_action::StepOutcome::BattleComplete)
+                Some(legaia_engine_battle_vm::battle_action::StepOutcome::BattleComplete)
             ) {
                 escaped = true;
                 break;
@@ -489,7 +496,7 @@ fn a_granted_flee_turns_the_standing_party_around_and_regroups_it() {
 /// `09 09 08`; the strike loop then stages each as its own swing clip.
 #[test]
 fn a_physical_ai_pick_writes_its_swing_entries_into_the_stream() {
-    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
 
     let mut cat = MonsterCatalog::new();
     let mut def = MonsterDef::new(42, "Multi", 500, 30);
@@ -517,7 +524,7 @@ fn a_physical_ai_pick_writes_its_swing_entries_into_the_stream() {
 /// old record's entries for the new monster's swings.
 #[test]
 fn reseating_a_different_monster_drops_the_old_clips() {
-    use crate::monster_catalog::{FormationDef, FormationSlot};
+    use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World::new();
     world.party.party_count = 1;
@@ -541,7 +548,7 @@ fn reseating_a_different_monster_drops_the_old_clips() {
 /// band's animation census open and parked `0x2E` on the first cast.
 #[test]
 fn a_new_fight_starts_the_party_on_idle() {
-    use crate::monster_catalog::{FormationDef, FormationSlot};
+    use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World::new();
     world.party.party_count = 1;

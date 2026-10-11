@@ -14,7 +14,7 @@
 //! cross-checked against a full-VRAM dump of the same moment) - see
 //! `docs/subsystems/minigame-muscle-dome.md` § "Arts command input
 //! (packet-pinned)". The source rects themselves live in
-//! [`legaia_asset::title_pak`] (`OVERLAY_SYSTEM_UI_ARTS_*`); this module
+//! [`legaia_ui_formats::title_pak`] (`OVERLAY_SYSTEM_UI_ARTS_*`); this module
 //! holds the *composition*: which piece sits where on the 320x240 stage,
 //! and how the entered buffer maps onto pennant seats.
 //!
@@ -36,7 +36,7 @@
 //! REF: FUN_801D388C
 
 use crate::SpriteDraw;
-use legaia_asset::title_pak;
+use legaia_ui_formats::title_pak;
 
 // ------------------------------------------------------------ screen seats
 
@@ -211,7 +211,7 @@ impl ChipDirection {
 /// Where each arts-input piece sits in the host's sprite atlas.
 ///
 /// Both shipped hosts upload the same baked sheet
-/// (`legaia_engine_core::save_menu_atlas`), so [`Self::BAKED`] is what
+/// (`legaia_engine_menus::save_menu_atlas`), so [`Self::BAKED`] is what
 /// they pass; the struct stays explicit so a host sampling VRAM directly
 /// (the browser dome page reads the widget page in texel space) can pass
 /// the natural sheet rects instead via [`Self::SHEET`].
@@ -306,7 +306,7 @@ pub fn chip_icon_label_v(icon: u8) -> Option<u32> {
 // ------------------------------------------------------------------ frame
 
 /// Which surface the input session is showing. Mirrors
-/// `legaia_engine_core::arts_command_input::ArtsInputScreen`; kept local
+/// `legaia_engine_battle::arts_command_input::ArtsInputScreen`; kept local
 /// so this crate stays a leaf under `engine-core`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArtsInputScreen {
@@ -592,8 +592,8 @@ pub fn arts_input_chrome_draws(
 /// chips are (`0x801D1D84..0x801D1E54`).
 ///
 /// Each stamp is `FUN_801DBDDC`'s quad
-/// ([`legaia_engine_vm::battle_party_panel::rot_stamp_on_arts_chip`]) at the
-/// anchor [`legaia_engine_vm::battle_party_panel::arts_entry_rot_stamps`]
+/// ([`legaia_engine_battle_vm::battle_party_panel::rot_stamp_on_arts_chip`]) at the
+/// anchor [`legaia_engine_battle_vm::battle_party_panel::arts_entry_rot_stamps`]
 /// picks from the limb bits and this caster's chip costs, so a stamp keeps
 /// the edge nearest the D-pad pinned as an off-class chip widens - the same
 /// law the chips follow. Bit `0x08` stamps Left, `0x10` Right, `0x20` both
@@ -605,7 +605,7 @@ pub fn arts_input_rot_stamp_draws(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    use legaia_engine_vm::battle_party_panel as bpp;
+    use legaia_engine_battle_vm::battle_party_panel as bpp;
     if !frame.chips_visible() {
         return Vec::new();
     }

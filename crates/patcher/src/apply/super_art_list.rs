@@ -1,5 +1,5 @@
 //! Show Super Arts on the in-battle Tactical-Arts list. See
-//! [`crate::super_art_list`] for the hook sites, what "performed" means and
+//! [`legaia_arts_patch::super_art_list`] for the hook sites, what "performed" means and
 //! where it is stored, and how a row's name, AP, arrows and position are made.
 
 use super::*;
@@ -60,7 +60,7 @@ impl SuperArtListReport {
 /// from the Super applier's match arm into that writer - and, for the pause
 /// menu's status screen Moves page, four detours into the menu overlay (PROT
 /// 0899) with their routines, names and descriptions in that overlay's own dead
-/// space ([`crate::super_art_menu`]).
+/// space ([`legaia_arts_patch::super_art_menu`]).
 ///
 /// **Mutually exclusive with `--shiny-seru`, `--arts-ap-grant` / `--arts-ap-cost`
 /// and `--delilas-challenge`** - they all reuse the same dead-space bytes. Fails
@@ -73,14 +73,14 @@ pub fn inject_super_art_list(patcher: &mut DiscPatcher) -> Result<SuperArtListRe
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for show-super-arts injection")?;
     let ov0898 = patcher
-        .read_entry(crate::super_art_list::OVERLAY_PROT_INDEX)
+        .read_entry(legaia_arts_patch::super_art_list::OVERLAY_PROT_INDEX)
         .context("read battle-action overlay (0898) for show-super-arts injection")?;
-    let plan = crate::super_art_list::SuperArtListInjection::plan(&scus, &ov0898)?;
+    let plan = legaia_arts_patch::super_art_list::SuperArtListInjection::plan(&scus, &ov0898)?;
     // The menu half: the status screen's Moves page, hosted in PROT 0899.
     let ov0899 = patcher
-        .read_entry(crate::super_art_menu::MENU_PROT_INDEX)
+        .read_entry(legaia_arts_patch::super_art_menu::MENU_PROT_INDEX)
         .context("read menu overlay (0899) for show-super-arts injection")?;
-    let menu = crate::super_art_menu::SuperArtMenuInjection::plan(
+    let menu = legaia_arts_patch::super_art_menu::SuperArtMenuInjection::plan(
         &ov0899,
         &plan.rows,
         plan.sup_va,
@@ -95,12 +95,12 @@ pub fn inject_super_art_list(patcher: &mut DiscPatcher) -> Result<SuperArtListRe
     // running it here proves, on the user's disc, that the chase lands on the
     // right record before a single byte is written.
     for ch in Character::all() {
-        let index = crate::super_art_power::player_entry_index(ch);
+        let index = legaia_arts_patch::super_art_power::player_entry_index(ch);
         let entry = patcher
             .read_entry(index)
             .with_context(|| format!("read player battle file PROT {index}"))?;
-        let located =
-            crate::super_art_power::super_art_powers(&scus, &entry, ch).unwrap_or_default();
+        let located = legaia_arts_patch::super_art_power::super_art_powers(&scus, &entry, ch)
+            .unwrap_or_default();
         for row in plan.rows.iter().filter(|r| r.character == ch) {
             if !located.iter().any(|l| l.finisher == row.finisher) {
                 anyhow::bail!(

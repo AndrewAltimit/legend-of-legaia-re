@@ -124,12 +124,12 @@ use crate::arts_ap_grant::{
     HOOK_C_W0, HOOK_D_VA, HOOK_D_W0, NUM_CHARS, NUM_ROWS, OVERLAY_BASE_VA, RET_A_VA, RET_D_VA,
     assemble_refund, assert_not_in_tables, assert_zero, ov_hook, words_to_bytes,
 };
-use crate::mips::*;
-use crate::shiny_seru::{
+use legaia_code_hooks::arenas::{
     ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, Edit, HOOK_SETUP_VA, HOOK_SETUP_W0,
     OVERLAY_TABLE_RANGES, RAND_FUNC_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SCUS_TABLE_RANGES,
     SLOT6_END_VA, SLOT6_VA,
 };
+use legaia_code_hooks::mips::*;
 
 /// PROT entry index of the battle-action overlay (0898) hosting the detours.
 pub use crate::arts_ap_grant::OVERLAY_PROT_INDEX;
@@ -506,7 +506,7 @@ impl OscillatingApInjection {
 
         // --- SCUS fingerprints: setup site, list site, the anim commit ------
         let scus_off = |va: u32| -> Result<usize> {
-            legaia_asset::item_names::file_offset_for_va(scus, va)
+            legaia_game_tables::item_names::file_offset_for_va(scus, va)
                 .ok_or_else(|| anyhow::anyhow!("can't resolve SCUS VA {va:#x}"))
         };
         let setup_off = scus_off(HOOK_SETUP_VA)?;
@@ -701,7 +701,7 @@ impl OscillatingApInjection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mips_sim::Cpu;
+    use legaia_code_hooks::mips_sim::Cpu;
 
     const BITS: u32 = SCUS_GAP_VA + 39 * 4;
     const CNT: u32 = BITS + 16;
@@ -1247,12 +1247,12 @@ mod tests {
         bad[off..off + 4].copy_from_slice(&nop().to_le_bytes());
         assert!(OscillatingApInjection::plan(&scus, &bad, 20).is_err());
         let mut bad = scus.clone();
-        let off = legaia_asset::item_names::file_offset_for_va(&bad, HOOK_LIST_VA).unwrap();
+        let off = legaia_game_tables::item_names::file_offset_for_va(&bad, HOOK_LIST_VA).unwrap();
         bad[off..off + 4].copy_from_slice(&nop().to_le_bytes());
         assert!(OscillatingApInjection::plan(&bad, &ov, 20).is_err());
         // A dirty slot 6 (another feature's bytes) is refused.
         let mut dirty = scus.clone();
-        let off = legaia_asset::item_names::file_offset_for_va(&dirty, SLOT6_VA).unwrap();
+        let off = legaia_game_tables::item_names::file_offset_for_va(&dirty, SLOT6_VA).unwrap();
         dirty[off] = 1;
         assert!(OscillatingApInjection::plan(&dirty, &ov, 20).is_err());
     }
@@ -1268,7 +1268,7 @@ mod tests {
         img[0x18..0x1C].copy_from_slice(&base.to_le_bytes());
         img[0x1C..0x20].copy_from_slice(&size.to_le_bytes());
         let mut put = |va: u32, w: u32| {
-            let off = legaia_asset::item_names::file_offset_for_va(&img, va).unwrap();
+            let off = legaia_game_tables::item_names::file_offset_for_va(&img, va).unwrap();
             img[off..off + 4].copy_from_slice(&w.to_le_bytes());
         };
         put(HOOK_SETUP_VA, HOOK_SETUP_W0);

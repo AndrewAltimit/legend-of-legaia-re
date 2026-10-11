@@ -266,9 +266,9 @@ is the tie-breaker when the two disagree:
   [`battle.md`](../subsystems/battle.md#monster-record-source-layout) (the
   *Battle-load stat boost* note),
   [`battle-formulas.md`](../subsystems/battle-formulas.md) and
-  `legaia_asset::monster_archive`.
+  `legaia_actor_formats::monster_archive`.
 - `magic_vs_disc` - joins `magic.toml` to the static spell table in
-  `SCUS_942.54` (`legaia_asset::spell_names`) by spell name. All **21** Seru
+  `SCUS_942.54` (`legaia_game_tables::spell_names`) by spell name. All **21** Seru
   spells (ids `0x81..=0x95`) and **7** of the 8 Ra-Seru summons (`0x9a..=0xa0`;
   the hidden `Juggernaut` isn't in the contiguous named region) name-join, and
   every one's **MP cost is byte-exact** against the disc `+2…+3` record. Target
@@ -278,7 +278,7 @@ is the tie-breaker when the two disagree:
   "Crazy Driver" is single-enemy, not all-enemies - corrected to the disc value.
   See [`spell-table.md`](../formats/spell-table.md).
 - `shop_inventory_vs_disc` - scans every PROT entry for the gold-shop stock
-  records embedded inline in each scene MAN (`legaia_asset::shop_stock`, op
+  records embedded inline in each scene MAN (`legaia_scene_formats::shop_stock`, op
   `0x49` sub-op `0`), decodes each record's sellable item ids to names, and
   joins disc shops to curated shops by the **item-name set** (order-independent;
   the item set is far more distinctive than the shop title, which repeats as
@@ -290,7 +290,7 @@ is the tie-breaker when the two disagree:
   was curated as "Power Earrings", which broke the Wind Cave and
   Biron-after-mist joins until corrected to the disc spelling (the price oracle
   missed it - a name-mismatch is a tolerated miss there). The shop-record format
-  is documented in `legaia_asset::shop_stock`.
+  is documented in `legaia_scene_formats::shop_stock`.
 - `casino_prizes_vs_disc` - joins `casino.toml` to the coin prize-exchange table
   in the menu/save/shop overlay's data segment (PROT entry 0899, stored raw; the
   canonical reader is `legaia_patcher::casino::CasinoExchange`). Each prize is an
@@ -370,7 +370,7 @@ records being reverse-engineered:
   if the formulas predict the player needing N hits to defeat Jette
   at level 50, that result has to land near Meth's HP-34,567 /
   ATK-277 / UDF-412 / SPD-274 stat block. Same direction for the
-  monster-stat records `crates/battle-models/src/monster_archive.rs` lifts
+  monster-stat records `crates/actor-formats/src/monster_archive.rs` lifts
   from PROT 0867 - the gamedata stat columns are the labels.
 - **Per-Seru absorption rates** ground the capture-roll reverse
   engineering: a kill against a Gimard rolls capture at 55% per

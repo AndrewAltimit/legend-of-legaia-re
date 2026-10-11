@@ -13,18 +13,19 @@
 //! Disc-free: the monster is a synthetic one-HP record under the real id, so
 //! this runs in CI.
 
-use legaia_engine_core::battle_stage_module::{
+use legaia_engine_battle::battle_stage_module::{
     ARRIVAL_CUE, ARRIVAL_DROP_HEIGHT, FORM_TRANSITION_ACTION_STATE, FORM_TRANSITION_CUE,
 };
-use legaia_engine_core::encounter::{
+use legaia_engine_battle::encounter::{
     EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
 };
-use legaia_engine_core::encounter_record::BOSS_TRANSITION_MONSTER_ID;
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, MonsterCatalog, MonsterDef,
 };
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
+use legaia_scene_formats::encounter_record::BOSS_TRANSITION_MONSTER_ID;
 
 const BOSS_NAME: &str = "Boss";
 
@@ -162,7 +163,7 @@ fn the_cort_fight_walks_the_arrival_then_the_form_transition_back_to_the_field()
     assert_eq!(w.actors[boss].battle.liveness, 0);
     assert_eq!(
         w.battle_ctx.action_state,
-        legaia_engine_vm::battle_action::ActionState::IdleHold.as_byte(),
+        legaia_engine_battle_vm::battle_action::ActionState::IdleHold.as_byte(),
         "the tail parks the action SM"
     );
 

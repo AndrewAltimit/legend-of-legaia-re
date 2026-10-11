@@ -85,9 +85,9 @@ This is the family to check first when an asset stops resolving. A constant of t
 
 | Over-read coordinate | Real coordinate | What the over-read looked like |
 |---|---|---|
-| World-map kingdom bundle at PROT `0085` / `0244` / `0391` | `0086` / `0245` / `0392` ([`kingdom_bundle`](../../crates/asset/src/kingdom_bundle.rs)) | The bundle's 7-asset table appeared to be "at `0x1800` of the prescript entry". It is at offset 0 of the next entry. |
-| Battle-form character atlases at PROT `1204` offset `0x25804 + k*0x8224`, seven of them, the last truncated | PROT `1205` offset `4 + k*0x8224`, **eight**, none truncated ([`battle_char_pack`](../../crates/battle-models/src/battle_char_pack.rs)) | `0x25800` is 1204's exact length, so `0x25804` is 1205 offset `4`. The window ended between atlas 6 and 7, so the eighth atlas was invisible and its CLUT row (496) read as "intentionally skipped". |
-| Title TIM at PROT `0888` `0x1AA28`, with duplicates at `0889` `0x19A28` and `0890` `0x14228` | PROT `0890` `0x14228`, one copy ([`title_pak`](../../crates/asset/src/title_pak.rs)) | All three expressions resolve to the same absolute offset. A whole-archive byte scan for the TIM header finds one hit. |
+| World-map kingdom bundle at PROT `0085` / `0244` / `0391` | `0086` / `0245` / `0392` ([`kingdom_bundle`](../../crates/scene-formats/src/kingdom_bundle.rs)) | The bundle's 7-asset table appeared to be "at `0x1800` of the prescript entry". It is at offset 0 of the next entry. |
+| Battle-form character atlases at PROT `1204` offset `0x25804 + k*0x8224`, seven of them, the last truncated | PROT `1205` offset `4 + k*0x8224`, **eight**, none truncated ([`battle_char_pack`](../../crates/actor-formats/src/battle_char_pack.rs)) | `0x25800` is 1204's exact length, so `0x25804` is 1205 offset `4`. The window ended between atlas 6 and 7, so the eighth atlas was invisible and its CLUT row (496) read as "intentionally skipped". |
+| Title TIM at PROT `0888` `0x1AA28`, with duplicates at `0889` `0x19A28` and `0890` `0x14228` | PROT `0890` `0x14228`, one copy ([`title_pak`](../../crates/ui-formats/src/title_pak.rs)) | All three expressions resolve to the same absolute offset. A whole-archive byte scan for the TIM header finds one hit. |
 
 Two properties make the corrected form checkable, and both are asserted by the disc-gated tests for those modules: the offset plus the asset's length must fit inside the entry, and a payload's own framing (a streaming chunk chain, a descriptor count in the header) must terminate inside it rather than run to the buffer end. A constant that needs a wider buffer than its entry is naming the wrong entry.
 
@@ -112,7 +112,7 @@ The in-RAM copy is **raw `PROT.DAT` from byte 0**: `FUN_8003E4E8` reads the firs
 
 So `resolver idx = extraction index + 2`: a PROT index recovered from a `FUN_8003E8A8` argument must subtract 2 to land in extraction space. The battle side-band files byte-verify it - TOC indices `0x37F` / `0x380` resolve to extraction entries 893 / 894 ([`summon-readef.md`](summon-readef.md)).
 
-Raw-TOC entries 0 and 1 cover the boot-UI region (LBA 3..120) that extraction indexing leaves unindexed. They are two TIM packs holding the boot-resident **system-UI bundle** (menu-glyph atlas, sprite sheets, cursor parts), uploaded once at boot by `FUN_800198E0` with flat-strip CLUT semantics; parser `legaia_asset::system_ui_bundle`, layout in [`tim-pack.md`](tim-pack.md#boot-resident-system-ui-instance-raw-toc-entries-0-and-1).
+Raw-TOC entries 0 and 1 cover the boot-UI region (LBA 3..120) that extraction indexing leaves unindexed. They are two TIM packs holding the boot-resident **system-UI bundle** (menu-glyph atlas, sprite sheets, cursor parts), uploaded once at boot by `FUN_800198E0` with flat-strip CLUT semantics; parser `legaia_ui_formats::system_ui_bundle`, layout in [`tim-pack.md`](tim-pack.md#boot-resident-system-ui-instance-raw-toc-entries-0-and-1).
 
 Because `CDNAME.TXT` is authored in raw-TOC space, the extractor's filename labels are shifted +2 relative to the content the defines name. [`cdname.md` § numbering space](cdname.md#numbering-space) has the evidence and the relabelings that follow.
 

@@ -68,7 +68,7 @@ fn walk_view_mvp(azimuth: i32, aspect: f32) -> Mat4 {
         Vec4::new(0.0, -h / 120.0, 0.0, 0.0),
         Vec4::new(
             0.0,
-            legaia_engine_vm::battle_cam_script::GTE_OFY_NDC_BIAS,
+            legaia_engine_battle_vm::battle_cam_script::GTE_OFY_NDC_BIAS,
             a,
             1.0,
         ),

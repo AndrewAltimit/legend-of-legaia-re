@@ -16,8 +16,8 @@ so the inn you reach in game is the retail script, not an engine routine.
 | What marks a dialogue as an inn? | Nothing. The option picker's Yes jump simply lands on the gate. |
 | What restores the party? | Three `4C 82 <slot>` ops, one per party slot, in the same record. |
 | Port entry | `World::trigger_field_interact` -> `step_inline_dialogue` -> `legaia_engine_vm::field::step`. |
-| Cost scanner | `legaia_asset::inn_costs`, run at scene load into `SceneHost::scene_inn_cost`. |
-| Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/asset/tests/inn_costs_disc.rs`, `crates/engine-core/tests/inn_cost_scene_disc.rs` (all disc-gated). |
+| Cost scanner | `legaia_scene_formats::inn_costs`, run at scene load into `SceneHost::scene_inn_cost`. |
+| Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/scene-formats/tests/inn_costs_disc.rs`, `crates/engine-core/tests/inn_cost_scene_disc.rs` (all disc-gated). |
 
 ```mermaid
 flowchart TD
@@ -132,7 +132,7 @@ own local flags.
 
 The engine path is `World::trigger_field_interact` ->
 `World::drive_inline_dialogue` -> `World::step_inline_dialogue`
-([`inline_dialogue`](../../crates/engine-dialog/src/inline_dialogue.rs)) ->
+([`inline_dialogue`](../../crates/engine-field/src/inline_dialogue.rs)) ->
 `legaia_engine_vm::field::step`.
 
 - **Cross-context clip words.** The runner binds the poked actor's `+0x62`
@@ -148,9 +148,9 @@ The engine path is `World::trigger_field_interact` ->
   spins on it before the scene goes on.) A spin on such a resolved cursor
   parks even before the talk's first box opens.
 - **Gate, debit, restore.** The gate reads the live purse through
-  `FieldHost::party_bank_value`; the debit is the record's own `ADD_MONEY`;
+  `FieldPartyInventoryHost::party_bank_value`; the debit is the record's own `ADD_MONEY`;
   the restore is its own `4C 82 <slot>` ops
-  (`FieldHost::op4c_n8_sub2_restore_party_slot`).
+  (`FieldPartyInventoryHost::restore_party_slot`).
 - **Pool mirroring.** Retail's character record is the only copy of a member's
   pools. The port also keeps them on the party actor, which a battle seats
   from and writes back over the record, so the restore projects the record
@@ -162,11 +162,11 @@ and can't-afford branches.
 
 ### The cost scanner
 
-The shared scanner is [`legaia_asset::inn_costs`]: a byte scan (robust to the
+The shared scanner is [`legaia_scene_formats::inn_costs`]: a byte scan (robust to the
 dialogue-picker jump tables that desync a linear walk) for a gold compare
 whose literal reappears as the magnitude of a negative `ADD_MONEY` within a
 few ops of the gate (retail sites sit 7..~16 bytes apart). Swept disc-wide
-by `crates/asset/tests/inn_costs_disc.rs`: the pair resolves in the inn /
+by `crates/scene-formats/tests/inn_costs_disc.rs`: the pair resolves in the inn /
 paid-lodging scenes (e.g. the 200 G innkeeper sites in the `ropeway` and
 `balden` blocks, `rayman2`'s 200 G stay, `retock`'s 240 G stay), the paid
 tours and the 3,000 G `station3` train ticket (sub-3, u16 costs), and the
@@ -188,7 +188,7 @@ are not covered by an oracle.
 
 ## The engine-side `InnSession` prompt
 
-`engine-menus::inn` (re-exported as `engine-core::inn`) also carries a
+`engine-menus::inn` also carries a
 menu-style prompt with its own cost window. **Retail has no such screen and no
 play host opens it**: the reachable stay is the field-VM record above, and
 routing a host into the prompt would replace the innkeeper's real dialogue
@@ -205,7 +205,7 @@ one, both hosts draw it through the shared fallback panel
 | Commit | - | Deducts gold, restores all active party members' HP / MP. |
 | Exit | - | Returns to field without resting on No or insufficient gold. |
 
-The menu state machine (`engine-vm::menu`) routes the prompt: `InnConfirm` Yes
+The menu state machine (`engine-menus::menu`) routes the prompt: `InnConfirm` Yes
 (slot 0) commits the rest and routes to the transient `InnSleep` fade, which
 auto-advances to the menu's `Closing` state after `transient_hold_frames`;
 `InnConfirm` No (slot 1) and Triangle route straight to `Closing`. Either way the

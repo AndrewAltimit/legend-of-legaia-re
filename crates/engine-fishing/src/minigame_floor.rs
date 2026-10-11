@@ -260,7 +260,7 @@ pub const STEP_LAYER_KIND: usize = 2;
 /// Record stride of [`STEP_LAYER_KIND`]: the resident byte `DAT_8007B31A`
 /// (the per-kind stride table at `0x8007B318` reads `04 04 04 08 ..` in the
 /// library states; kind `3`'s `8` is
-/// [`legaia_engine_vm::field_regions::REGION_RECORD_STRIDE`]).
+/// [`legaia_engine_field::field_regions::REGION_RECORD_STRIDE`]).
 pub const STEP_RECORD_STRIDE: usize = 4;
 
 /// Find the step-layer record for grid cell `(gx, gz)` in one layer block
@@ -545,24 +545,24 @@ pub enum MarkerTemplate {
 /// `+4k+2`, count `s16` at `+4k+4`, stride `_DAT_8007B318[kind]` - for the
 /// first record whose `rec[0]`/`rec[1]` match the cell, primary `+0x10000`
 /// first and `+0x12000` on a miss. At `kind == 1` that is exactly the
-/// [`legaia_engine_vm::field_regions::TileTrigger`] table, so the marker's clip index is
+/// [`legaia_engine_field::field_regions::TileTrigger`] table, so the marker's clip index is
 /// [`TileTrigger::record`] `+ 1` of the record
-/// [`legaia_engine_vm::field_regions::lookup_tile_trigger`] already returns.
+/// [`legaia_engine_field::field_regions::lookup_tile_trigger`] already returns.
 ///
 /// The `6 ..= 9` window is an unsigned `clip - 6 < 4` test, so it is exactly
 /// the four marker clips; everything else falls through to the plain template.
 ///
-/// [`TileTrigger::record`]: legaia_engine_vm::field_regions::TileTrigger::record
+/// [`TileTrigger::record`]: legaia_engine_field::field_regions::TileTrigger::record
 // PORT: FUN_801d2a10 (template + `+0x50` sub-index selection)
 // REF: FUN_801d3ec0, FUN_801d3f54 (the two-layer kind-N record lookup the clip
 // index comes out of)
 // WIRED: [`MarkerFloor::build`] calls this for every drawn cell of a venue's
 // floor rect, resolving the clip index through the same kind-1
-// primary-then-fallback tile scan `legaia_engine_vm::field_regions` ports, and the browser
+// primary-then-fallback tile scan `legaia_engine_field::field_regions` ports, and the browser
 // minigames page draws the tiles it classes as markers. Measured on the real
 // venue: `other7` yields ten marker tiles, classes `[2, 2, 2, 4]`, and all ten
 // swap mesh inside 240 frames
-// (`crates/engine-core/tests/dance_marker_floor_disc.rs`).
+// (`crates/engine-scene/tests/dance_marker_floor_disc.rs`).
 pub fn marker_template(marker: u16) -> Option<MarkerTemplate> {
     match marker {
         0 => None,
@@ -579,7 +579,7 @@ pub fn marker_template(marker: u16) -> Option<MarkerTemplate> {
 /// flipbook state the tick advances.
 ///
 /// The three fields the retail actor carries for this handler are exactly the
-/// three [`legaia_engine_vm::dance_marker::MarkerActor`] holds - `+0x50` the
+/// three [`crate::dance_marker::MarkerActor`] holds - `+0x50` the
 /// marker class (the script row), `+0x9C` the script cursor in halfwords,
 /// `+0x54` the ticks left on the current mesh - so the pool adds only the
 /// per-cell placement the floor pass already resolves.
@@ -592,7 +592,7 @@ pub struct MarkerTile {
     /// The tile record's rotation trio.
     pub rot: [u16; 3],
     /// The flipbook.
-    pub actor: legaia_engine_vm::dance_marker::MarkerActor,
+    pub actor: crate::dance_marker::MarkerActor,
 }
 
 /// The per-cell **step-marker actor pool** - the sink `floor_tile_spawns` and
@@ -611,14 +611,14 @@ pub struct MarkerTile {
 #[derive(Debug, Clone, Default)]
 pub struct MarkerFloor {
     tiles: Vec<MarkerTile>,
-    script: legaia_engine_vm::dance_marker::MarkerScript,
+    script: crate::dance_marker::MarkerScript,
 }
 
 impl MarkerFloor {
     /// Resolve every marker cell of the floor rect.
     ///
     /// `triggers_primary` / `triggers_fallback` are the `.MAP` trigger block's
-    /// kind-1 sub-tables ([`legaia_engine_vm::field_regions::parse_tile_triggers`] over
+    /// kind-1 sub-tables ([`legaia_engine_field::field_regions::parse_tile_triggers`] over
     /// `+0x10000` then `+0x12000`) - the same two-layer scan
     /// `FUN_801D3F54(1, x, z)` performs, which is where the marker's clip index
     /// comes from ([`marker_template`]).
@@ -634,9 +634,9 @@ impl MarkerFloor {
         width: i32,
         height: i32,
         neighbour_block: bool,
-        triggers_primary: &[legaia_engine_vm::field_regions::TileTrigger],
-        triggers_fallback: &[legaia_engine_vm::field_regions::TileTrigger],
-        script: legaia_engine_vm::dance_marker::MarkerScript,
+        triggers_primary: &[legaia_engine_field::field_regions::TileTrigger],
+        triggers_fallback: &[legaia_engine_field::field_regions::TileTrigger],
+        script: crate::dance_marker::MarkerScript,
     ) -> Self {
         let mut tiles = Vec::new();
         for spawn in floor_tile_spawns(grid, ramp, x0, z0, width, height, neighbour_block) {
@@ -646,7 +646,7 @@ impl MarkerFloor {
             // Retail spells the clip index `rec[2] + 1`, with `0` standing for
             // "no record here" - so an absent record and a record whose byte is
             // `0xFF` stay distinguishable.
-            let marker = legaia_engine_vm::field_regions::lookup_tile_trigger(
+            let marker = legaia_engine_field::field_regions::lookup_tile_trigger(
                 triggers_primary,
                 triggers_fallback,
                 tx,
@@ -660,7 +660,7 @@ impl MarkerFloor {
                 cell: (spawn.cell_x, spawn.cell_z),
                 pos: spawn.pos,
                 rot: spawn.rot,
-                actor: legaia_engine_vm::dance_marker::MarkerActor {
+                actor: crate::dance_marker::MarkerActor {
                     class: sub_index,
                     ..Default::default()
                 },
@@ -670,10 +670,7 @@ impl MarkerFloor {
     }
 
     /// Build a pool from explicit tiles (hosts with no `.MAP`, and tests).
-    pub fn from_tiles(
-        tiles: Vec<MarkerTile>,
-        script: legaia_engine_vm::dance_marker::MarkerScript,
-    ) -> Self {
+    pub fn from_tiles(tiles: Vec<MarkerTile>, script: crate::dance_marker::MarkerScript) -> Self {
         MarkerFloor { tiles, script }
     }
 
@@ -695,7 +692,7 @@ impl MarkerFloor {
     /// Advance every marker actor one frame.
     ///
     /// `pack_bias` is retail's `_DAT_8007B6F8`
-    /// ([`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`]) - added to the
+    /// (`legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS`) - added to the
     /// table value before it reaches the set-model primitive, so the staged
     /// value is a **global pool** index. A host indexing the scene's own mesh
     /// pack passes `0` and gets the unbiased index instead.
@@ -704,7 +701,7 @@ impl MarkerFloor {
             // The clip-selector gate is the host's (`FUN_800204F8`), and a
             // marker tile carries no clip: pass the never-armed pair so the
             // report stays false rather than inventing a cursor.
-            legaia_engine_vm::dance_marker::step_marker(
+            crate::dance_marker::step_marker(
                 &mut t.actor,
                 &self.script,
                 frame_delta,
@@ -750,8 +747,8 @@ pub const POLAR_SHIFT: u32 = 12;
 // [`crate::fishing_actors::water_tile_class`]) closed with it, as that note
 // predicted they would.
 //
-// [`SIN_TABLE_VA`]: legaia_asset::minigame_slot_scene::SIN_TABLE_VA
-// [`COS_TABLE_VA`]: legaia_asset::minigame_slot_scene::COS_TABLE_VA
+// [`SIN_TABLE_VA`]: legaia_minigame_formats::minigame_slot_scene::SIN_TABLE_VA
+// [`COS_TABLE_VA`]: legaia_minigame_formats::minigame_slot_scene::COS_TABLE_VA
 /// PORT: FUN_801d7bb8 - the hub overlays' **polar offset** helper.
 ///
 /// One of the small shared routines in the band above `0x801D0018`: the dumps
@@ -814,11 +811,11 @@ pub fn polar_offset(
 /// [`SIN_TABLE_VA`] / [`COS_TABLE_VA`]. No engine boot path extracts SCUS
 /// rodata, so the entries are recomputed analytically with the retail table's
 /// truncate-toward-zero rounding - the same stand-in
-/// `legaia_asset::minigame_slot_scene` uses, and the disc is its oracle
-/// (`engine-core/tests/minigame_polar_trig_tables_disc.rs`).
+/// `legaia_minigame_formats::minigame_slot_scene` uses, and the disc is its oracle
+/// (`engine-scene/tests/minigame_polar_trig_tables_disc.rs`).
 ///
-/// [`SIN_TABLE_VA`]: legaia_asset::minigame_slot_scene::SIN_TABLE_VA
-/// [`COS_TABLE_VA`]: legaia_asset::minigame_slot_scene::COS_TABLE_VA
+/// [`SIN_TABLE_VA`]: legaia_minigame_formats::minigame_slot_scene::SIN_TABLE_VA
+/// [`COS_TABLE_VA`]: legaia_minigame_formats::minigame_slot_scene::COS_TABLE_VA
 pub fn polar_tables() -> (&'static [i16], &'static [i16]) {
     use std::sync::OnceLock;
     static TABLES: OnceLock<(Vec<i16>, Vec<i16>)> = OnceLock::new();
@@ -826,10 +823,10 @@ pub fn polar_tables() -> (&'static [i16], &'static [i16]) {
         let n = POLAR_ANGLE_MASK as usize + 1;
         (
             (0..n)
-                .map(|i| legaia_asset::minigame_slot_scene::sin_4096(i as i32) as i16)
+                .map(|i| legaia_minigame_formats::minigame_slot_scene::sin_4096(i as i32) as i16)
                 .collect(),
             (0..n)
-                .map(|i| legaia_asset::minigame_slot_scene::cos_4096(i as i32) as i16)
+                .map(|i| legaia_minigame_formats::minigame_slot_scene::cos_4096(i as i32) as i16)
                 .collect(),
         )
     });
@@ -1005,7 +1002,7 @@ mod tests {
 
     #[test]
     fn a_marker_pool_flips_each_tile_through_its_own_class_row() {
-        use legaia_engine_vm::dance_marker::{MarkerActor, MarkerScript};
+        use crate::dance_marker::{MarkerActor, MarkerScript};
 
         // Two tiles on different class rows, so the test can tell a per-tile
         // cursor from a shared one.
@@ -1054,9 +1051,9 @@ mod tests {
 
     #[test]
     fn the_pack_bias_reaches_the_staged_index_through_the_pool() {
-        use legaia_engine_vm::dance_marker::{MarkerActor, MarkerScript};
+        use crate::dance_marker::{MarkerActor, MarkerScript};
         let script = MarkerScript::from_rows([vec![(7, 4)], vec![], vec![], vec![]]);
-        let bias = legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
+        let bias = legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
         let mut floor = MarkerFloor::from_tiles(
             vec![MarkerTile {
                 cell: (0, 0),

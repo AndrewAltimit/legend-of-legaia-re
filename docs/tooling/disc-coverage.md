@@ -290,7 +290,7 @@ The "structural own-content end" is a parser's answer, not a statistic: for a
 slot-B module it is the top of the spawn-record chain, otherwise the end of the
 frame-matched code partition
 ([`slot_b_band.content_end`](../../scripts/ghidra-analysis/slot_b_band.py), the
-host-side mirror of `legaia_asset::slot_b_module::content_end`). It is
+host-side mirror of `legaia_overlay_images::slot_b_module::content_end`). It is
 deliberately *not* the frame partition alone, because a donor's whole function
 can sit in the tail and frame-match there: PROT 0949's code partition reaches
 file `0x1B8C` while its own content stops at `0x1828`, and the body at
@@ -344,9 +344,9 @@ at all: the packer wrote every entry from one buffer in TOC order, so the byte
 at offset `k` of a tail is the byte of the **nearest earlier entry reaching
 `k`** - overlay or not. `inherited_tail.tail_cuts` runs the sibling fixpoint and
 then takes that prediction's suffix wherever it cuts lower or the sibling cuts
-nothing; the byte account (`legaia_asset::inherited_tail::tails_in`), this gate
+nothing; the byte account (`legaia_disc_audit::inherited_tail::tails_in`), this gate
 and the [attribution sweep](#byte-level-attribution) all use it, and
-`crates/asset/tests/inherited_tail_real.rs` holds the Rust and Python sides to
+`crates/disc-audit/tests/inherited_tail_real.rs` holds the Rust and Python sides to
 each other cut for cut.
 
 The prediction reproduces 82 of the sibling rule's 83 cuts offset for offset,
@@ -565,7 +565,7 @@ the image stops holding them at all. Every MIPS body ends in `jr ra`, so the
 word after an image's **last** `jr ra` and its delay slot is the floor of that
 image's data segment: below it a body may sit un-dumped, at or above it none can
 end. That floor is a decode of the bytes, not a threshold - `data_floor` in
-`scripts/ci/disc-coverage.py`.
+`scripts/ci/disc_coverage/gaps.py`.
 
 The floor alone is not enough, because one case it cannot exclude is a body the
 **entry boundary cut short**. Two measured images end exactly that way: PROT
@@ -608,8 +608,8 @@ at file `+0x21C4` / `+0xD3E4` / `+0x18E04` / `+0x1CE44`.
 
 Every shape above is a property of MIPS - where a body can end, which words
 delimit one, what a `nop` decodes to. This one is not: it is a range a parser
-in this workspace claims, `legaia_asset::slot_b_module`, and the mirror in
-`scripts/ci/disc-coverage.py` is that parser's rule rather than a test over the
+in this workspace claims, `legaia_overlay_images::slot_b_module`, and the mirror in
+`scripts/ghidra-analysis/slot_b_band.py` is that parser's rule rather than a test over the
 bytes' distribution. The full layout is
 [`slot-b-module-layout.md`](../formats/slot-b-module-layout.md); what matters
 here is the evidence and the seam.
@@ -621,7 +621,7 @@ The next record's pointer is the current one's end, so both ends of a claim are
 addresses the module's own code computes. The image's **highest** record has no
 pointer above it and is bounded by its own move-VM program's terminator instead
 (`slot_b_band.move_program_end`, mirroring
-`legaia_asset::slot_b_module::move_program_end`); where that walk does not
+`legaia_overlay_images::slot_b_module::move_program_end`); where that walk does not
 terminate the record is left unclaimed. Four filters keep a spurious pointer
 out, and the load-bearing one is that the **call site** must lie inside a framed
 body of this image: a band image's tail is a byte-identical, same-offset copy of

@@ -10,7 +10,7 @@
     <dt>In the game</dt><dd>Every UI, field-script and battle sound effect that is not a voice clip or music</dd>
     <dt>Where</dt><dd><code>SCUS_942.54</code> rodata at RAM <code>0x8006F198</code> (file offset <code>0x5F998</code>); no magic</dd>
     <dt>Size / stride</dt><dd>100 rows &times; 8 bytes, ids <code>0x00..=0x63</code>; ids <code>&ge; 0x200</code> come from the current sound bundle instead</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::sfx_table</code>; CLI <code>asset sfx-table &lt;SCUS&gt; [--json]</code>; engine <code>legaia_engine_audio::SfxBank</code> + <code>sfx_ring</code></dd>
+    <dt>Parser</dt><dd><code>legaia_game_tables::sfx_table</code>; CLI <code>asset sfx-table &lt;SCUS&gt; [--json]</code>; engine <code>legaia_engine_audio::SfxBank</code> + <code>sfx_ring</code></dd>
     <dt>Confidence</dt><dd>Confirmed - disc table parses identically to live RAM; bank routing pinned by the initialiser's own writes and byte matches against the extracted VABs (<a href="#how-we-know">how we know</a>)</dd>
     <dt>Used by</dt><dd><a href="../subsystems/audio.html">audio stack</a>, <a href="move-power.html">move-power cue path</a>, <a href="../subsystems/field-menu.html">field menu</a>, <a href="../media.html">media browser cue player</a></dd>
   </dl>

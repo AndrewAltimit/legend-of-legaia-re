@@ -12,7 +12,7 @@ fn a_reused_slot_does_not_inherit_its_previous_occupant() {
     {
         let a = &mut w.actors[first];
         a.active = false;
-        a.handler = crate::actor_handler::ActorHandler::Reflection;
+        a.handler = legaia_engine_field::actor_handler::ActorHandler::Reflection;
         a.state_54 = 7;
         a.move_state.world_x = 1234;
         a.move_state.flags = 0x0008_0000;
@@ -21,7 +21,10 @@ fn a_reused_slot_does_not_inherit_its_previous_occupant() {
     assert_eq!(slot, first);
     let a = &w.actors[slot];
     assert!(a.active);
-    assert_eq!(a.handler, crate::actor_handler::ActorHandler::default());
+    assert_eq!(
+        a.handler,
+        legaia_engine_field::actor_handler::ActorHandler::default()
+    );
     assert_eq!(a.state_54, 0);
     assert_eq!(a.move_state.world_x, 0);
     assert_eq!(a.move_state.flags, 0);

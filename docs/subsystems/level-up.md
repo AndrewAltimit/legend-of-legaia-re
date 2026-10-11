@@ -16,8 +16,8 @@ The page also covers what the player sees: the two framed windows the results se
 | Growth parameters | `DAT_80076918`, stride `0x3C`, 8 × `{u16 start, u16 max, u8 jitter, u8 row}` per character |
 | Record fields | cumulative XP `+0x0`, next threshold `+0x4`, HP / MP max + six stats `+0x11C..+0x12D`, level byte `+0x130` (record base `0x80084708 + slot×0x414`) |
 | Results windows | screen elements `0x41` (report), `0x42` (loss), `0x44 + mask` (level-up), drawn by `FUN_8002C69C` |
-| Parser | `legaia_asset::level_up_tables` (`crates/game-tables/src/level_up_tables.rs`) |
-| Port | `LevelUpTracker` in `crates/engine-battle/src/levelup/` (re-exported as `engine_core::levelup`), driven by `World::apply_battle_xp` |
+| Parser | `legaia_game_tables::level_up_tables` (`crates/game-tables/src/level_up_tables.rs`) |
+| Port | `LevelUpTracker` in `crates/engine-battle/src/levelup/`, driven by `World::apply_battle_xp` |
 
 Provenance: `ghidra/scripts/funcs/overlay_battle_action_801e9504.txt` (identical `overlay_magic_level_up_801e9504.txt` / `overlay_muscle_dome_801e9504.txt`), caller in `ghidra/scripts/funcs/8004e568.txt`.
 
@@ -88,8 +88,8 @@ threshold = threshold + corr                 slot 2 (Gala)
 
 **In the engine.** The curve ships twice and the two agree byte for byte:
 
-- `legaia_save::RETAIL_XP_CUMULATIVE` / `engine_core::levelup::retail_xp_table()` carry the derived base curve (`121, 365, 730, 1338, 2190, …, 9_646_483`), computed from the closed form plus the scaling arithmetic. No table bytes are copied.
-- `legaia_asset::level_up_tables::xp_thresholds_from_scus` reads `DAT_80076AF4` and applies the formula from the user's `SCUS_942.54` at boot; `legaia_engine_session::BootSession` installs it over `LevelUpTracker::xp_table`.
+- `legaia_save::RETAIL_XP_CUMULATIVE` / `engine_battle::levelup::retail_xp_table()` carry the derived base curve (`121, 365, 730, 1338, 2190, …, 9_646_483`), computed from the closed form plus the scaling arithmetic. No table bytes are copied.
+- `legaia_game_tables::level_up_tables::xp_thresholds_from_scus` reads `DAT_80076AF4` and applies the formula from the user's `SCUS_942.54` at boot; `legaia_engine_session::BootSession` installs it over `LevelUpTracker::xp_table`.
 - `xp_correction_divisors_from_scus` parses the divisors; `LevelUpTracker::threshold_for` applies them (slot 1 earlier, slot 2 later).
 
 ### Record fields + status display
@@ -123,7 +123,7 @@ The `0x80084140`-based block is the same RAM as the record's `+0x11C..+0x12D` st
 | `+4` | u8 | `jitter`: half-range of the random spread |
 | `+5` | u8 | `row`: which growth curve |
 
-The block has no length word; its leading `0x00B4` is Vahn's HP `start` (180). `start` matches the new-game starting template (`legaia_asset::new_game`): Gala on all 8 stats, Vahn and Noa on HP / MP / AGL (their late-join templates are lightly retuned).
+The block has no length word; its leading `0x00B4` is Vahn's HP `start` (180). `start` matches the new-game starting template (`legaia_game_tables::new_game`): Gala on all 8 stats, Vahn and Noa on HP / MP / AGL (their late-join templates are lightly retuned).
 
 ### Per-level gain arithmetic (decoded + validated)
 
@@ -140,7 +140,7 @@ record[stat] += gain                                  ; then caps: HP ≤ 9999, 
 
 The divisor `0x24C0` is the curve normalizer. Because each curve sums to exactly `0x24C0`, the term `(max − start) × byte / Σcurve` accumulates to `(max − start)` across all 98 levels, so a stat lands on its `max` at level 99 (before jitter).
 
-**Validation.** The `noa_levelup_field_pre` / `noa_levelup_field_post` library saves (Noa, growth slot 1, L2 → L3; the `noa_levelup_*` scenarios in `scripts/scenarios.toml`) give byte-exact single-level deltas: HP +39, MP +5, and the six record stats +2 / +4 / +4 / +3 / +4 / +3. Leveling from L2 reads `curve[row][1]`, and all 8 deltas land within `[core − jitter, core + jitter]` (for example HP core `(4500 − 150) × 82 / 9408 = 37`, observed +39, jitter half-range 4). Decoded and checked in `legaia_asset::level_up_tables` (`GrowthTables::char_params` / `level_gain_core`) by the disc-gated `crates/asset/tests/level_up_tables_real.rs`, which also pins the first correction divisors.
+**Validation.** The `noa_levelup_field_pre` / `noa_levelup_field_post` library saves (Noa, growth slot 1, L2 → L3; the `noa_levelup_*` scenarios in `scripts/scenarios.toml`) give byte-exact single-level deltas: HP +39, MP +5, and the six record stats +2 / +4 / +4 / +3 / +4 / +3. Leveling from L2 reads `curve[row][1]`, and all 8 deltas land within `[core − jitter, core + jitter]` (for example HP core `(4500 − 150) × 82 / 9408 = 37`, observed +39, jitter half-range 4). Decoded and checked in `legaia_game_tables::level_up_tables` (`GrowthTables::char_params` / `level_gain_core`) by the disc-gated `crates/game-tables/tests/level_up_tables_real.rs`, which also pins the first correction divisors.
 
 ### A level-up is not a heal
 
@@ -185,7 +185,7 @@ The level-up event splits the character record write across frames. Noa's triple
 
 Gala's runs in two phases: record write, then live copy and settle collapsed into one frame.
 
-The slot indices holding each frame live in [`scripts/scenarios.toml`](../../scripts/scenarios.toml). The phase split and the per-character record bases (Vahn `0x80084708`, Noa `0x80084B1C`, Gala `0x80084F30`, slot 3 `0x80085344`, stride `0x414`) are in [`engine_core::capture_observations::char_level_up`](../../crates/engine-system/src/capture_observations.rs) with helpers `read_record_stats` / `read_rank_counter` / `read_xp_u16`.
+The slot indices holding each frame live in [`scripts/scenarios.toml`](../../scripts/scenarios.toml). The phase split and the per-character record bases (Vahn `0x80084708`, Noa `0x80084B1C`, Gala `0x80084F30`, slot 3 `0x80085344`, stride `0x414`) are in [`parity::capture_observations::char_level_up`](../../crates/parity/src/capture_observations.rs) with helpers `read_record_stats` / `read_rank_counter` / `read_xp_u16`.
 
 ### Per-character semantic findings
 
@@ -251,7 +251,7 @@ The captured overlay data section (`overlay_magic_level_up_full.bin`, `0x801C000
 
 | Address | Content |
 |---|---|
-| `0x801F4B8C` | Muscle Dome hand-command id table, 4 bytes `0C 0F 0E 0D` (`legaia_asset::muscle_dome::DECK_TABLE_VA`) - not a magic-slot table. Its sibling `0x801F4B94` holds the 4 card-sprite ids `0D 10 11 0C`. |
+| `0x801F4B8C` | Muscle Dome hand-command id table, 4 bytes `0C 0F 0E 0D` (`legaia_minigame_formats::muscle_dome::DECK_TABLE_VA`) - not a magic-slot table. Its sibling `0x801F4B94` holds the 4 card-sprite ids `0D 10 11 0C`. |
 | `0x801F4B98` | Magic-type name strings: Spirit / Defense / Meta / Terra / Ozma |
 | `0x801F4C28+` | Battle-result text strings (win / annihilated / escaped / …) |
 | `0x801F5CF8`, `0x801F5D90` | 18-byte **move-VM trigger programs** (`WAIT_SET 0 / 0x17 <mode> / WAIT_SET 0 / HALT`), one per burst arm. Not tables, and they do not call `FUN_80050ED4` - the `0x17` in them escapes to `FUN_801F30C4`, which does. Each precedes its arm's stager record one alignment word later (`0x801F5DA4` / `0x801F5D0C`); the constant `-0x14` skew between the two address pairs is the tell. See [`functions/battle.md`](../reference/functions/battle.md#801f30c4). |
@@ -275,13 +275,13 @@ The victory text is one buffer (`ctx + 0xA9`). The second row is the overlay's `
 
 A drop appends the SCUS template `gp + 0x384` points at: a `0x7C` row break and a `0xC2` item escape that the results frame patches with the item id (`0x8004F5C4..0x8004F600`). It becomes a third row inside the same fixed `288 x 42` box.
 
-Port: `engine-ui::battle_spoils_windows` + `battle_spoils_draws_for`. The template is read off the user's executable (`legaia_asset::screen_elements::drop_line_template`) and the item name spliced in by `World::drop_line`. The two window rects, the text pen and the two numeral columns come from the `noa_levelup_banner` capture at 320x240.
+Port: `engine-ui::battle_spoils_windows` + `battle_spoils_draws_for`. The template is read off the user's executable (`legaia_ui_formats::screen_elements::drop_line_template`) and the item name spliced in by `World::drop_line`. The two window rects, the text pen and the two numeral columns come from the `noa_levelup_banner` capture at 320x240.
 
 ### The level-up window is one element per party mask
 
 The mask is built from the three per-character level-up bytes `ctx[+0xE..=+0x10]` (bit `k` = character `k`, `0x8004F6F8..0x8004F728`). The seven records `0x45..=0x4B` share one box - content `280 x 12`, sliding from `(16, -24)` to `(16, 14)`, so the band ends at column `302` where the report window's `288`-wide `0x41` ends at `310`. They differ only in the string their `+0x14` word points at: one line naming the masked characters through the `0xC1 k` name escape (character record `k`), or, for all three, a line that names nobody.
 
-Port: the seven strings are read off the user's executable (`legaia_asset::screen_elements::payload_string`, held as `MenuTextTables::level_up_lines`), the names spliced in `World::level_up_line`, and the window drawn at `SPOILS_LEVELUP_RECT`. A disc-free host falls back to one `<name>'s level increased!` line per member.
+Port: the seven strings are read off the user's executable (`legaia_ui_formats::screen_elements::payload_string`, held as `MenuTextTables::level_up_lines`), the names spliced in `World::level_up_line`, and the window drawn at `SPOILS_LEVELUP_RECT`. A disc-free host falls back to one `<name>'s level increased!` line per member.
 
 ### Window glide
 
@@ -333,7 +333,7 @@ Kind `0` is jump-table slot `0` at `0x8002C800`, which outsets the caller's rect
 
 After a battle win with `BattleEndCause::MonsterWipe`:
 
-1. The engine calls `World::apply_battle_xp(xp_reward)` (`crates/engine-core/src/world/items_arts.rs`).
+1. The engine calls `World::apply_battle_xp(xp_reward)` (`crates/engine-core/src/world/items_arts/battle_spoils.rs`).
 2. It enumerates the surviving party members (slots whose `BattleActor::hp > 0`), scales the summed reward by 3/4 (`v - (v >> 2)`) and ceiling-divides it among them (`battle_formulas::victory_exp_per_member`). Dead members receive zero XP and leave the divisor.
 3. It calls `LevelUpTracker::grant_xp(char_id, share)` for each survivor.
 4. `grant_xp` accumulates XP and checks the XP table for threshold crossings. A multi-level jump collapses into a single `LevelUpResult` with summed gains.
@@ -344,7 +344,7 @@ After a battle win with `BattleEndCause::MonsterWipe`:
 
 ### Growth curves
 
-`StatGain` carries the full eight-stat gain (HP, MP, AGL, ATK, UDF, LDF, SPD, INT). `LevelUpTracker::with_growth_tables` builds a per-character `StatGrowthCurve::PerLevel` from the parsed SCUS tables (`legaia_asset::level_up_tables::growth_tables_from_scus`, the jitter-free `level_gain_core` for each stat). `BootSession` installs it from the user's `SCUS_942.54` at boot, alongside the XP curve, for Vahn / Noa / Gala.
+`StatGain` carries the full eight-stat gain (HP, MP, AGL, ATK, UDF, LDF, SPD, INT). `LevelUpTracker::with_growth_tables` builds a per-character `StatGrowthCurve::PerLevel` from the parsed SCUS tables (`legaia_game_tables::level_up_tables::growth_tables_from_scus`, the jitter-free `level_gain_core` for each stat). `BootSession` installs it from the user's `SCUS_942.54` at boot, alongside the XP curve, for Vahn / Noa / Gala.
 
 Without a disc the tracker falls back to `StatGain::default()`, a flat placeholder of +10 HP / +5 MP per level with no battle-stat growth. `with_stat_gains([StatGain; 4])` / `with_stat_curves` override per slot, and `with_seru_roster` (flat table in `crates/engine-battle/src/seru_stats.rs`) is the legacy Seru-roster convenience path. No per-level character stat table exists in `crates/gamedata`; the ground truth is the new-game seed plus the single-level capture.
 
@@ -360,7 +360,7 @@ It is off by default: with no jitter RNG installed the tracker applies only the 
 
 Besides the two retail windows, the port raises a text banner per levelled character. `LevelUpBanner` carries `char_id`, `new_level`, `hp_gained`, `mp_gained` and a `frames_remaining` countdown (`DEFAULT_FRAMES` = 180 frames, 3 s at 60 Hz). `World::tick` decrements it each frame. `ArtLearnedBanner` uses the same tick pattern.
 
-`legaia_engine_ui::ui_overlay::level_up_draws_for` (re-exported by `engine-render`) returns two text draw calls. It takes the font, the four banner scalars and a pen rather than the banner struct, so it stays renderer- and world-agnostic:
+`legaia_engine_ui::battle_hud::level_up_draws_for` returns two text draw calls. It takes the font, the four banner scalars and a pen rather than the banner struct, so it stays renderer- and world-agnostic:
 
 - Line 1 (yellow): `LEVEL UP! (char N -> Lv M)`
 - Line 2 (green): `HP +X  MP +Y`
@@ -410,9 +410,9 @@ The banner shows HP and MP only. The other six gains are applied to the record b
 
 | Test | Covers |
 |---|---|
-| `crates/asset/tests/level_up_tables_real.rs` (disc-gated) | Parser, `start` vs new-game seed, correction divisors, the captured-L3 threshold |
-| `crates/engine-core/tests/growth_curve_disc.rs` (disc-gated) | Engine install vs seed, Noa L2 → L3 capture |
-| `crates/engine-shell/tests/new_game_seed.rs` (disc-gated) | `boot_installs_the_real_retail_xp_curve_from_disc`, `boot_installs_the_real_per_character_growth_curves_from_disc` (Noa's curve produces the L2 → L3 core, HP 37 / MP 6) |
+| `crates/game-tables/tests/level_up_tables_real.rs` (disc-gated) | Parser, `start` vs new-game seed, correction divisors, the captured-L3 threshold |
+| `crates/engine-scene/tests/growth_curve_disc.rs` (disc-gated) | Engine install vs seed, Noa L2 → L3 capture |
+| `crates/engine-session/tests/new_game_seed.rs` (disc-gated) | `boot_installs_the_real_retail_xp_curve_from_disc`, `boot_installs_the_real_per_character_growth_curves_from_disc` (Noa's curve produces the L2 → L3 core, HP 37 / MP 6) |
 
 <a id="fire-book-i---captured-write-footprint"></a>
 
@@ -430,7 +430,7 @@ Using an arts book writes the character record's displayed-skill list. It is an 
 | `+0x186` | `0x0C` | `0x03` | first list entry - the new id |
 | `+0x187` | `0x00` | `0x0C` | second list entry - the previous entry shifted right |
 
-**It is an ordered insert, ascending by id**, not a head insert. The sample alone cannot tell (`0x03 < 0x0C`); the writer does. The applier's `0x0B`..`0x0D` arm (`0x80041FB4`, ported as `legaia_engine_vm::battle_action::selector_insert_displayed_skill`) walks down from the count shifting entries up only while the new id compares smaller (`sltu` at `0x8004200C`, loop `0x80041FFC`..`0x8004202C`).
+**It is an ordered insert, ascending by id**, not a head insert. The sample alone cannot tell (`0x03 < 0x0C`); the writer does. The applier's `0x0B`..`0x0D` arm (`0x80041FB4`, ported as `legaia_engine_battle_vm::battle_action::selector_insert_displayed_skill`) walks down from the count shifting entries up only while the new id compares smaller (`sltu` at `0x8004200C`, loop `0x80041FFC`..`0x8004202C`).
 
 ### Reader
 
@@ -448,7 +448,7 @@ The only reader cluster in the menu overlays (`overlay_menu_801d33d8.txt` and th
 
 The menu's spell table at `0x801E472C` is indexed by these ids (stride `0x14`; `record[+0]` = sort key, `record[+1]` = id, `record[+0xC]` = name pointer). Display is capped at 7 by `slti v0,t2,0x7` later in the loop.
 
-Engine accessor: `legaia_save::character::CharacterRecord::displayed_skills` (`DisplayedSkillList { count: u8, ids: [u8; MAX_DISPLAYED_SKILLS = 16] }`). `engine_core::capture_observations::vahn_fire_book_use` carries `MENU_READER_ADDR` (`0x801D4440`) and `MENU_OVERLAY_FN` (`0x801D33D8`).
+Engine accessor: `legaia_save::character::CharacterRecord::displayed_skills` (`DisplayedSkillList { count: u8, ids: [u8; MAX_DISPLAYED_SKILLS = 16] }`). `parity::capture_observations::vahn_fire_book_use` carries `MENU_READER_ADDR` (`0x801D4440`) and `MENU_OVERLAY_FN` (`0x801D33D8`).
 
 ### Writer
 
@@ -464,7 +464,7 @@ The arm is entered from the pause menu's Item command (`jal 0x800402F4` at `0x80
 
 Which character it writes comes from the class alone. See [item-effect-table.md](../formats/item-effect-table.md#arts-books-class-111213-the-tier-is-an-art-id) for the roster-slot derivation and for why the picked target is ignored.
 
-Tests: the disc-gated `fire_book_use_diff_pins_vahn_record_write` in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) asserts exactly one record-internal region at the documented offset; three unit tests in `legaia_save::character` (`displayed_skills_*`) exercise the accessor's round-trip and the `MAX_DISPLAYED_SKILLS` clamp.
+Tests: the disc-gated `fire_book_use_diff_pins_vahn_record_write` in [`crates/parity/tests/real_saves.rs`](../../crates/parity/tests/real_saves.rs) asserts exactly one record-internal region at the documented offset; three unit tests in `legaia_save::character` (`displayed_skills_*`) exercise the accessor's round-trip and the `MAX_DISPLAYED_SKILLS` clamp.
 
 <a id="open-items"></a>
 <a id="cross-character-delta-search-negative-finding"></a>

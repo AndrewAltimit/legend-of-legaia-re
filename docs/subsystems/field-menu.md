@@ -19,7 +19,7 @@ draw builders; the remaining differences from retail are listed under
 
 | Thing | Where |
 |---|---|
-| Window descriptor table | VA `0x801E4738`, 52 records x `0x10` bytes (PROT 0899 file `0x15F20`); parser `legaia_asset::menu_windows` |
+| Window descriptor table | VA `0x801E4738`, 52 records x `0x10` bytes (PROT 0899 file `0x15F20`); parser `legaia_game_tables::menu_windows` |
 | Window creator / per-frame walker | SCUS `FUN_800326AC` / `FUN_80031D00` |
 | Window-script runner | `FUN_801D6628` (programs in [`window-script.md`](../formats/window-script.md), VM in [`actor-vm.md`](actor-vm.md)) |
 | Master menu tick + sub-screen table | `FUN_801DC6B4`, pointer table `0x801E4F40` (ids `0x00..=0x20`), selector `DAT_801E46A4` |
@@ -27,11 +27,10 @@ draw builders; the remaining differences from retail are listed under
 | Status / party panel renderer | `FUN_801D33D8` (window 28) |
 | Live party records | `0x80084708 + n*0x414` ([`save-record.md`](../formats/save-record.md)) |
 | Port: session | `engine-menus` (`field_menu`, `pause_screens`, `equip_session`, `spell_menu`, `menu_list_rows`), driven by `engine-session::BootSession` |
-| Port: drawing | `engine-ui` (`pause_menu`, `ui_menu::*`, `ui_menu_window_painters`, `ui_menu_window_dispatch`) |
+| Port: drawing | `engine-ui` (`pause_menu`, `menu::*`, `menu::window_painters`, `menu::window_dispatch`) |
 
-`engine-core` re-exports the `engine-menus` modules at their old paths, so
-`engine-core::pause_screens::X` and `engine-menus::pause_screens::X` name the
-same item. Dumps cited as `overlay_menu_<addr>.txt` live in
+`engine-core::world_views::pause_screens` holds only the functions that read a `World`;
+the screen models are `engine-menus::pause_screens`. Dumps cited as `overlay_menu_<addr>.txt` live in
 `ghidra/scripts/funcs/`.
 
 Every content renderer draws **content only**: the window frame is drawn by
@@ -237,7 +236,7 @@ calls it indirectly (`lw v0,0x28(s4); beq v0,zero,..; jalr v0; move a0,s4` at
 `0x80031E30..0x80031E44`). A `0` is a renderer-less list window.
 
 The port mirrors that step in
-[`engine-ui::ui_menu_window_dispatch`](../../crates/engine-ui/src/ui_menu_window_dispatch.rs):
+[`engine-ui::menu::window_dispatch`](../../crates/engine-ui/src/menu/window_dispatch.rs):
 `painter_for_renderer_va` maps a renderer VA to its painter, `painter_at`
 resolves one id through a parsed table and refuses a descriptor whose renderer
 is not the painter the caller expected, and `menu_window_painters` reports
@@ -339,8 +338,8 @@ save point carries no text, so its interaction record is installed by
 The table's content renderers for windows 5 (`FUN_801D61B0`), 6
 (`FUN_801D6360`), 7, 8, 24, 31, 32, 33, 34, 36, 37, 43, 45 and 46, plus the
 bottom-clipped box emit `FUN_801E4140`, are draw-list builders in
-[`engine-ui::ui_menu_window_painters`](../../crates/engine-ui/src/ui_menu_window_painters.rs)
-(windows 25 and 41 in `ui_menu_window_painters_large`). Every window painter
+[`engine-ui::menu::window_painters`](../../crates/engine-ui/src/menu/window_painters.rs)
+(windows 25 and 41 in `menu::equip_stat_compare`). Every window painter
 is reached by a screen on both hosts. The port keeps the pen arithmetic and the
 state-word rules and drops two globals every painter touches - the ink word
 `DAT_8007B454` and the glyph-advance byte `DAT_80073F20` - because a host that
@@ -472,7 +471,7 @@ applies the same two gates in the same order, so no row draws white and then
 buzzes.
 
 `DAT_8007b6a8` is per-scene: the MAN header bit `[0x01] & 1`
-(`legaia_asset::man_section::ManHeader::low_flag`) seeds it. The bit is set on
+(`legaia_scene_formats::man_section::ManHeader::low_flag`) seeds it. The bit is set on
 the three kingdom world maps and clear on every field scene, so Save is grey
 everywhere but the overworld.
 
@@ -900,8 +899,8 @@ wrap, page flip) and `engine-menus::menu_list_rows` - the allocator
 (`list_alloc`), row-entry bit constants, row-name resolver (`row_name_source`,
 `FUN_8002FF8C`), content-builder cases (below) and the live-window upsert
 (`LiveWindowSet`, `FUN_80032434`). The description dispatcher is
-`engine-ui::ui_menu_window_painters::description_source`. Row and header draws
-are in `engine-ui::ui_menu::pause_lists`.
+`engine-ui::menu::window_painters::description_source`. Row and header draws
+are in `engine-ui::menu::screens::pause_lists`.
 
 ### Use-list row build (content id 3, `FUN_80030628`)
 
@@ -1102,7 +1101,7 @@ the kernel and saves the Use-list scroll (`_DAT_8007BB98/90 ->
 DAT_801EF070/74`, `801d8bd8..801d8bf8`); phase 1 zeroes the scroll and opens
 **window 11**, the destination list (same rect as list 15, content id
 `0x19`); phase 2 re-arms the kernel; phase 3 on a pick reads the 6-byte
-quick-travel record `0x80073A98 + slot*6` (`legaia_asset::worldmap_menu`) and
+quick-travel record `0x80073A98 + slot*6` (`legaia_game_tables::worldmap_menu`) and
 stages `+2 -> 0x80084628`, `+4 -> 0x80084624`, `+5 -> 0x8008462C`
 (`801d8c88..801d8ccc`), consumes one `0x89` and exits with code
 `_DAT_8007B43C = 5`, the world-map warp. Cancel restores the scroll -> 6.
@@ -1182,7 +1181,7 @@ Specifics:
   `World::drain_staged_menu_warp` resolves the scene on the next tick (a miss
   logs retail's `UNFIND MAP NUMBER %d` and drops the use).
 - **Incense**: each commit tops `FieldLocomotion::walk_regen_window` up through
-  `engine-vm::battle_helpers::top_up_cooldown`; `World::on_field_step` and
+  `engine-field::incense_window::top_up_cooldown`; `World::on_field_step` and
   `World::tick_world_map` skip the region roll while it is open; the zero edge
   raises `World::raise_incense_notice` (the ported `FUN_801F1E48`), drawn by
   `engine-ui::incense_notice_sprites_for` / `incense_notice_text_draws_for`
@@ -1520,7 +1519,7 @@ its `j` targets print correctly - see
   re-ordered before a routine that indexes in retail's space walks it
   (`field_submode_screen::hub_panel_slots`).
 - **Commit**: `EquipSession::commit` runs
-  `engine-vm::dev_equip_commit::commit_equip` (the `FUN_801E5A08` body) over
+  `engine-field::dev_equip_commit::commit_equip` (the `FUN_801E5A08` body) over
   `world_map_overlay::resolve_equip_slot`, staging the record's `+0x196`
   window in retail order; `retail_destination_slot` exposes the routing.
 - **Candidate lists**: Goods slots use
@@ -1646,7 +1645,7 @@ re-aggregate. A non-equipment id draws current values with no arrows.
 
 Port: `engine-ui::equip_compare_panel_fields` (window 25, from
 `pause_screens::EquipCompareModel`) and `party_compare_panel_fields` (window
-41, from `engine-menus::shop::party_compare_members`, drawn for the whole buy
+41, from `engine-core::world_views::shop::party_compare_members`, drawn for the whole buy
 flow through `engine-ui::shop_screen`). The port installs the staged id in a
 copy of the equip bytes and re-runs the aggregator rather than swapping
 blocks.
@@ -1777,7 +1776,7 @@ drivers, and `0x801DB510` is interior to `FUN_801DB380`.
 starts at `_DAT_8007B450 + record[2] + 3`, where `record[2]` is a skip count
 the record owns. For a shop record `[count][count x item_id][ASCII name]` that
 lands on the vendor name
-([`legaia_asset::shop_stock`](../../crates/asset/src/shop_stock.rs)), which is
+([`legaia_scene_formats::shop_stock`](../../crates/scene-formats/src/shop_stock.rs)), which is
 why window 33 is the vendor plate in a shop and a prompt line here.
 
 Small sub-screen ticks on the same phase protocol:
@@ -1791,7 +1790,7 @@ Small sub-screen ticks on the same phase protocol:
 - **`FUN_801DD310`** only pumps the window engine `FUN_80031D00`.
 
 Port: `engine-minigames::prize_exchange` (the `FUN_801DC1CC` session) drawn by
-`engine-ui::ui_prize_exchange::prize_exchange_draws_for` on both hosts.
+`engine-ui::prize_exchange::prize_exchange_draws_for` on both hosts.
 
 ## Two more descriptor-table renderers (windows 34 and 46)
 
@@ -1891,8 +1890,8 @@ from generic field-VM ops (dialogue, an option picker, the `0x4E` gold gate,
 The slot is a literal operand against the `0x80084708` records, one op per
 party member. Charge and restore are decoupled, so a free rest is the same
 tail without the gate, and the price is a script literal - there is no inn
-cost table. The full flow, the cost scanner (`legaia_asset::inn_costs`) and
-the port (`op4c_n8_sub2_restore_party_slot`; `MenuRuntime::open_inn` is an
+cost table. The full flow, the cost scanner (`legaia_scene_formats::inn_costs`) and
+the port (`restore_party_slot`; `MenuRuntime::open_inn` is an
 engine-side convenience session, not a port of a retail screen) are on
 [`inn.md`](inn.md).
 
@@ -1991,13 +1990,13 @@ worklist row from that band falls in one of these buckets (vocabulary of
 The pause menu is fully playable on both hosts: all seven root rows, every
 sub-flow above, the scripted save-point and pre-battle entries, and the shop
 and prize counter that share the window pool. The table is parsed from the
-user's disc at boot (`legaia_asset::menu_windows`, with `MENU_WINDOW_FALLBACK`
+user's disc at boot (`legaia_game_tables::menu_windows`, with `MENU_WINDOW_FALLBACK`
 as a pinned mirror when no disc table is available) and each section above
 names its session and draw builders.
 
 All draw builders live in **`legaia-engine-ui`**, the wgpu-free leaf.
-`engine-render` re-exports the crate (`pub use legaia_engine_ui::*`), which is
-what lets the browser play page build the same menus without linking wgpu.
+The browser play page links the crate directly, so it builds the same menus
+without linking wgpu.
 Screens are placed on the shared 320x240 stage via
 `engine-ui::scale_stage_text_draws`. Labels, gauges, pictograms, cursors and
 element icons are UI-icon sprites whose source rects are the `0x800732a4`

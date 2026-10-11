@@ -11,9 +11,9 @@
 //!
 //! Requires `LEGAIA_DISC_BIN`; skips (and passes) without it.
 
+use legaia_delilas_challenge::enrollment::DelilasSites;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
-use legaia_patcher::delilas_challenge::DelilasSites;
-use legaia_patcher::disc::DiscPatcher;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

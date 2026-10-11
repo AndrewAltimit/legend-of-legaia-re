@@ -20,10 +20,10 @@
 //! the data-edit randomizers this feature has no engine runtime oracle -
 //! verification is the byte/disassembly checks here plus an emulator playtest.
 
-use legaia_asset::item_names::file_offset_for_va;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::enemy_ally::{
     self, BATTLE_ACTION_OVERLAY_PROT_INDEX, DISPLACED, EnemyAllyInjection, HOOK_VA,
     OVERLAY_BASE_VA, ROUTINE_VA, VICTORY_ORIG, VICTORY_PATCHED, VICTORY_VA, assemble_routine,
@@ -206,7 +206,7 @@ fn composes_with_flee_exp_in_the_same_gap() {
     // below flee-EXP at 0x8007AD00, so enabling both must succeed and each routine
     // must land intact.
     let mut patcher = DiscPatcher::open(disc).expect("open disc");
-    apply::inject_flee_exp(&mut patcher, legaia_patcher::flee_exp::DEFAULT_PCT).expect("flee");
+    apply::inject_flee_exp(&mut patcher, legaia_code_hooks::flee_exp::DEFAULT_PCT).expect("flee");
     apply::inject_enemy_ally(&mut patcher, enemy_ally::DEFAULT_PCT).expect("ally after flee");
 
     let scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("patched SCUS");
@@ -220,8 +220,8 @@ fn composes_with_flee_exp_in_the_same_gap() {
         "enemy-ally routine intact alongside flee-EXP"
     );
     assert_eq!(
-        scus_words(&scus, legaia_patcher::flee_exp::ROUTINE_VA, 4)[0],
-        legaia_patcher::flee_exp::assemble_routine(legaia_patcher::flee_exp::DEFAULT_PCT)[0],
+        scus_words(&scus, legaia_code_hooks::flee_exp::ROUTINE_VA, 4)[0],
+        legaia_code_hooks::flee_exp::assemble_routine(legaia_code_hooks::flee_exp::DEFAULT_PCT)[0],
         "flee-EXP routine still intact"
     );
 }

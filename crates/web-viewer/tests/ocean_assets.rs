@@ -6,7 +6,9 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_asset::ocean::{OCEAN_ANIM_FRAME_COUNT, OCEAN_ANIM_FRAME0_HEAD, find_ocean_assets};
+use legaia_scene_formats::ocean::{
+    OCEAN_ANIM_FRAME_COUNT, OCEAN_ANIM_FRAME0_HEAD, find_ocean_assets,
+};
 use legaia_web_viewer::disc::{extract_prot_dat, parse_prot_toc};
 use sha2::{Digest, Sha256};
 use std::env;
@@ -49,8 +51,8 @@ fn ocean_assets_extract_from_every_world_map_kingdom() {
 
     // The bundle entries (0086 / 0245 / 0392), not the prescript entries the
     // pre-correction PROT entry size made them look like - see
-    // `legaia_asset::kingdom_bundle`.
-    for prot_index in legaia_asset::kingdom_bundle::BUNDLE_ENTRIES {
+    // `legaia_scene_formats::kingdom_bundle`.
+    for prot_index in legaia_scene_formats::kingdom_bundle::BUNDLE_ENTRIES {
         let entry = entries
             .iter()
             .find(|e| e.index == prot_index)

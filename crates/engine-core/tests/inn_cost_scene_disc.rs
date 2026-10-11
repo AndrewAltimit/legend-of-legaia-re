@@ -1,6 +1,6 @@
 //! Disc-gated: the engine resolves **per-scene inn costs from the disc** -
 //! the op-`0x4E` gold-gate + `0x3A` debit pair scanned from the scene MAN at
-//! load ([`legaia_asset::inn_costs`], cached as
+//! load ([`legaia_scene_formats::inn_costs`], cached as
 //! `SceneHost::scene_gold_charges`) - and `MenuRuntime::open_scene_inn`
 //! opens the inn prompt with that scanned cost instead of a host-supplied
 //! constant.
@@ -11,8 +11,9 @@
 //! so no inn session opens). Skips without `LEGAIA_DISC_BIN` (CLAUDE.md
 //! convention).
 
-use legaia_engine_core::menu_runtime::{MenuRuntime, MenuState};
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::menu_runtime::MenuRuntime;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_menus::menu::MenuState;
 use std::path::PathBuf;
 
 fn disc_path() -> Option<PathBuf> {

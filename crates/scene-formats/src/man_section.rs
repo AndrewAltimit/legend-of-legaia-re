@@ -1,0 +1,955 @@
+//! Per-scene MAN (asset type `0x03`) multi-section header walker.
+//!
+//! PORT: FUN_8003AEB0, FUN_8003A1E4, FUN_8003A110
+//!
+//! (`FUN_8003A110` is the section-0 carve: it reads the three stride bytes that
+//! follow the section-0 pointer and walks `count * stride + 1` past each
+//! sub-table to derive the formation / condition / region table bases - the
+//! exact layout the [`EncounterSection`] parse + `region_records` reproduce.)
+//!
+//! The MAN sub-asset is the third descriptor in every scene's
+//! [`scene_asset_table`](crate::scene_asset_table) bundle. After the asset
+//! dispatcher LZS-decompresses it into a heap buffer addressed by
+//! `_DAT_8007B898`, `FUN_8003AEB0` walks a fixed-shape multi-section header
+//! and installs section pointers into the encounter control block
+//! (`_DAT_801C6EA4`) and three sibling globals. Per
+//! [`docs/formats/encounter.md`](../../../docs/formats/encounter.md),
+//! `ctrl[+0x20]` lands on **section 0**, which `FUN_8003A110` then carves
+//! up into formation/condition/region sub-tables.
+//!
+//! ## On-disc layout
+//!
+//! ```text
+//! 0x00..0x02   u16   status_flags                 ; copied to the function's
+//!                                                ; return value (carries the
+//!                                                ; `& 0x400` "world-map
+//!                                                ; wireframe" hint that the
+//!                                                ; bulk-terrain emit
+//!                                                ; mechanism consumes)
+//! 0x01         u8    low bit -> DAT_8007B6A8     ; secondary scene flag
+//! 0x02..0x22   16 x s16  depth_lut               ; written negated into the
+//!                                                ; GTE scratchpad at
+//!                                                ; 0x1F800314+0x48, the
+//!                                                ; per-scene perspective /
+//!                                                ; fog depth-sample table
+//! 0x22..0x24   s16   N0                          ; count of partition-0
+//!                                                ; records in the 3-byte
+//!                                                ; record table
+//! 0x24..0x26   s16   N1                          ; partition-1 (consumed
+//!                                                ; by FUN_8003A1E4 as the
+//!                                                ; per-scene NPC / actor
+//!                                                ; placement list)
+//! 0x26..0x28   s16   N2                          ; partition-2
+//! 0x28..0x2B   u24LE u24_at_28                   ; in-table byte offset of
+//!                                                ; section 0's length
+//!                                                ; prefix within the data
+//!                                                ; region that begins
+//!                                                ; after the 3-byte record
+//!                                                ; table
+//! 0x2B..0x2B+3*(N0+N1+N2)  3-byte records       ; concatenated [P0..P1..P2]
+//!                                                ; partitions; each record
+//!                                                ; is a u24LE byte offset
+//!                                                ; into the data region
+//!                                                ; (used by FUN_8003A1E4
+//!                                                ; for actor placement)
+//! 0x2B + 3*N + u24_at_28                        ; <-- section 0 begins here
+//!
+//! sections [0..4] are linked-list length-prefixed:
+//!   [u24LE byte_length][byte_length bytes]
+//! the chain reader advances `next = section + 3 + byte_length`. Section 5
+//! is universally a 3-byte zero terminator across all 80 retail scene
+//! bundles.
+//! ```
+//!
+//! The five sections install into different globals (per FUN_8003AEB0):
+//!
+//! | Index | Install target                | Role (where known)              |
+//! |-------|-------------------------------|----------------------------------|
+//! | 0     | `_DAT_801C6EA4[+0x20]`         | Encounter / formation tables. The first three bytes after this pointer are the strides FUN_8003A110 uses to carve `+0x20/+0x24/+0x28` into formation / condition / region table bases. The condition table gates the region table into story-flag variants ([`active_region_group`]). See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md). |
+//! | 1     | `_DAT_801C6EA4[+0x00]`         | **Motion-VM script table** - the per-actor `FUN_80038158` bytecode streams `FUN_8003A9D4` installs at actor `+0x80` at scene entry (player = id `0xF8`, world-map entity = `0xFB`, else field-actor `+0x50` match). Decoder: [`crate::man_motion`]. The pointer is advanced past its 3-byte length prefix immediately after walking. |
+//! | 2     | `_DAT_801C6EA0`                | **Scene display name** - the NUL-terminated string the on-entry banner draws (and the save-screen location row). Exactly `strlen + 1` bytes, unpadded. See [`crate::place_names`] and [`docs/formats/place-names.md`](../../../docs/formats/place-names.md). |
+//! | 3     | `_DAT_801C6EA4[+0x04]`         | Zone / camera-region records (18-byte, count-prefixed; queried per tile by `FUN_801DBA20`) - same advance-by-3 treatment. |
+//! | 4     | `DAT_80073ED8`                 | (Open) - advances by 4 (skipping length + 1 byte); the byte at `+3` is copied into `DAT_80073EDC` and a zero terminator there detaches the pointer (`DAT_80073ED8 = NULL`). |
+//! | 5     | `DAT_80073EE0`                 | Chain terminator (length 0) in every scene MAN - but the pointer is live: the **kingdom** MANs park the [world-map location table](../../../docs/formats/place-names.md) in the trailing bytes, and the world-map label pass walks it from here. See [`crate::place_names`]. |
+//!
+//! Cracking the remaining open sections in full is downstream of having this
+//! header walker. This module provides the byte-exact section locator so engines
+//! and scripts can lift each section's bytes by name without re-reading
+//! the disassembly.
+
+use serde::Serialize;
+
+/// Number of sections the chain walk produces (encounter + 4 siblings +
+/// terminator).
+pub const SECTION_COUNT: usize = 6;
+
+/// Number of partitions in the 3-byte record table (consumed by
+/// FUN_8003A1E4 with `param_1` indexing into partition 1).
+pub const RECORD_PARTITIONS: usize = 3;
+
+/// Number of s16 entries in the depth LUT at MAN[0x02..0x22].
+pub const DEPTH_LUT_LEN: usize = 16;
+
+/// Byte offset where partition counts start.
+pub const PARTITION_COUNTS_OFFSET: usize = 0x22;
+
+/// Byte offset of the u24LE section-0 offset.
+pub const U24_AT_28_OFFSET: usize = 0x28;
+
+/// Byte offset where the 3-byte record table begins.
+pub const RECORDS_BEGIN_OFFSET: usize = 0x2B;
+
+/// Bit `0x400` of [`ManHeader::status_flags`] - hint consumed by the
+/// world-map bulk-terrain emit path.
+pub const STATUS_FLAG_WORLD_MAP_BULK_TERRAIN: u16 = 0x0400;
+
+/// Decoded MAN multi-section file.
+#[derive(Debug, Clone, Serialize)]
+pub struct ManFile {
+    /// Fixed-shape 0x2B-byte header.
+    pub header: ManHeader,
+    /// Three partitions of 3-byte u24LE record offsets. Each offset is a
+    /// byte position into the data region that begins right after the
+    /// concatenated record table.
+    pub partitions: [Vec<u32>; RECORD_PARTITIONS],
+    /// Byte offset (in the MAN buffer) where the data region begins. This
+    /// equals `RECORDS_BEGIN_OFFSET + 3 * total_records`.
+    pub data_region_offset: usize,
+    /// Byte offsets of each section's length-prefix header.
+    ///
+    /// `sections[0..=4]` index real sections; `sections[5]` is the
+    /// terminator position. A section with `length == 0` is the
+    /// chain-terminator sentinel and has no payload.
+    pub sections: [SectionRef; SECTION_COUNT],
+}
+
+/// Header at MAN offset 0.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ManHeader {
+    /// `MAN[0x00..0x02]` little-endian.
+    pub status_flags: u16,
+    /// `MAN[0x01] & 1`, copied to the per-scene `DAT_8007B6A8` flag.
+    pub low_flag: bool,
+    /// `MAN[0x02..0x22]` as 16 s16 values. Written negated to the GTE
+    /// scratchpad at scene-init; the unnegated values are returned here.
+    pub depth_lut: [i16; DEPTH_LUT_LEN],
+    /// `MAN[0x22..0x24]`, `[0x24..0x26]`, `[0x26..0x28]`.
+    pub partition_counts: [i16; RECORD_PARTITIONS],
+    /// `MAN[0x28..0x2B]` as a 24-bit little-endian unsigned int.
+    pub u24_at_28: u32,
+}
+
+impl ManHeader {
+    /// Total number of records across all three partitions.
+    pub fn total_records(&self) -> usize {
+        self.partition_counts
+            .iter()
+            .map(|&c| c.max(0) as usize)
+            .sum()
+    }
+
+    /// `true` when the world-map bulk-terrain flag is set.
+    pub fn world_map_bulk_terrain(&self) -> bool {
+        (self.status_flags & STATUS_FLAG_WORLD_MAP_BULK_TERRAIN) != 0
+    }
+}
+
+/// One entry in the MAN section chain.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SectionRef {
+    /// Byte offset of the length prefix in the MAN buffer (the same value
+    /// FUN_8003AEB0 installs into the section pointer).
+    pub offset: usize,
+    /// Decoded u24LE length read from `MAN[offset..offset+3]`. `0`
+    /// means the section is the chain terminator.
+    pub length: u32,
+}
+
+impl SectionRef {
+    /// Byte offset where the section body starts (right after the 3-byte
+    /// length prefix). Mirrors the runtime advance applied by
+    /// FUN_8003AEB0 after the walk (`section += 3`).
+    pub fn body_offset(&self) -> usize {
+        self.offset + 3
+    }
+
+    /// Byte offset one past the last payload byte.
+    pub fn end_offset(&self) -> usize {
+        self.offset + 3 + self.length as usize
+    }
+
+    /// `true` when this section is the universal terminator (length == 0).
+    pub fn is_terminator(&self) -> bool {
+        self.length == 0
+    }
+
+    /// Slice the section body out of the MAN buffer (or `None` if the
+    /// section runs past the buffer end).
+    pub fn body<'a>(&self, man: &'a [u8]) -> Option<&'a [u8]> {
+        man.get(self.body_offset()..self.end_offset())
+    }
+}
+
+/// Errors the MAN walker can produce.
+#[derive(Debug)]
+pub enum ManError {
+    BufferTooSmall {
+        needed: usize,
+        have: usize,
+    },
+    NegativePartitionCount {
+        idx: usize,
+        value: i16,
+    },
+    RecordTablePastEnd {
+        records_end: usize,
+        man_len: usize,
+    },
+    SectionStartsPastEnd {
+        idx: usize,
+        offset: usize,
+        man_len: usize,
+    },
+    SectionPayloadPastEnd {
+        idx: usize,
+        offset: usize,
+        length: u32,
+        man_len: usize,
+    },
+}
+
+impl std::fmt::Display for ManError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BufferTooSmall { needed, have } => write!(
+                f,
+                "MAN buffer too small: need at least {needed} bytes, have {have}"
+            ),
+            Self::NegativePartitionCount { idx, value } => {
+                write!(f, "partition count {idx} is negative ({value})")
+            }
+            Self::RecordTablePastEnd {
+                records_end,
+                man_len,
+            } => write!(
+                f,
+                "record table runs past MAN end (records_end=0x{records_end:X}, len={man_len})"
+            ),
+            Self::SectionStartsPastEnd {
+                idx,
+                offset,
+                man_len,
+            } => write!(
+                f,
+                "section {idx} starts past MAN end (offset=0x{offset:X}, len={man_len})"
+            ),
+            Self::SectionPayloadPastEnd {
+                idx,
+                offset,
+                length,
+                man_len,
+            } => write!(
+                f,
+                "section {idx} payload runs past MAN end (offset=0x{offset:X}, length=0x{length:X}, len={man_len})"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ManError {}
+
+/// Parse a MAN buffer.
+pub fn parse(man: &[u8]) -> Result<ManFile, ManError> {
+    if man.len() < RECORDS_BEGIN_OFFSET {
+        return Err(ManError::BufferTooSmall {
+            needed: RECORDS_BEGIN_OFFSET,
+            have: man.len(),
+        });
+    }
+
+    let header = ManHeader {
+        status_flags: u16::from_le_bytes([man[0], man[1]]),
+        low_flag: (man[1] & 1) != 0,
+        depth_lut: {
+            let mut out = [0i16; DEPTH_LUT_LEN];
+            for (i, slot) in out.iter_mut().enumerate() {
+                let p = 2 + i * 2;
+                *slot = i16::from_le_bytes([man[p], man[p + 1]]);
+            }
+            out
+        },
+        partition_counts: {
+            let mut out = [0i16; RECORD_PARTITIONS];
+            for (i, slot) in out.iter_mut().enumerate() {
+                let p = PARTITION_COUNTS_OFFSET + i * 2;
+                *slot = i16::from_le_bytes([man[p], man[p + 1]]);
+            }
+            out
+        },
+        u24_at_28: u24_le(man, U24_AT_28_OFFSET),
+    };
+
+    // Reject negative partition counts. The runtime treats them as
+    // unsigned in practice (the read is a `lhu` then a sign-extending
+    // shift, but every retail MAN is non-negative), but a parser exposed
+    // to untrusted bytes should refuse them rather than `as usize`-cast.
+    for (idx, &c) in header.partition_counts.iter().enumerate() {
+        if c < 0 {
+            return Err(ManError::NegativePartitionCount { idx, value: c });
+        }
+    }
+
+    let total = header.total_records();
+    let records_end = RECORDS_BEGIN_OFFSET + total * 3;
+    if records_end > man.len() {
+        return Err(ManError::RecordTablePastEnd {
+            records_end,
+            man_len: man.len(),
+        });
+    }
+
+    // Concatenated record bytes are partitioned in [P0..P1..P2] order.
+    let mut partitions: [Vec<u32>; RECORD_PARTITIONS] = Default::default();
+    let mut cursor = RECORDS_BEGIN_OFFSET;
+    for (idx, slot) in partitions.iter_mut().enumerate() {
+        let n = header.partition_counts[idx] as usize;
+        slot.reserve(n);
+        for _ in 0..n {
+            slot.push(u24_le(man, cursor));
+            cursor += 3;
+        }
+    }
+    debug_assert_eq!(cursor, records_end);
+
+    let data_region_offset = records_end;
+
+    // Section 0's offset is `data_region + u24_at_28`. Sections 1..=5
+    // chain via length prefix from there.
+    let mut sections = [SectionRef {
+        offset: 0,
+        length: 0,
+    }; SECTION_COUNT];
+
+    let s0_offset = data_region_offset.saturating_add(header.u24_at_28 as usize);
+    if s0_offset + 3 > man.len() {
+        return Err(ManError::SectionStartsPastEnd {
+            idx: 0,
+            offset: s0_offset,
+            man_len: man.len(),
+        });
+    }
+    sections[0] = SectionRef {
+        offset: s0_offset,
+        length: u24_le(man, s0_offset),
+    };
+    if sections[0].end_offset() > man.len() {
+        return Err(ManError::SectionPayloadPastEnd {
+            idx: 0,
+            offset: sections[0].offset,
+            length: sections[0].length,
+            man_len: man.len(),
+        });
+    }
+
+    for i in 1..SECTION_COUNT {
+        let prev = sections[i - 1];
+        let next_offset = prev.end_offset();
+        // Even the terminator (length == 0) has a real 3-byte slot for
+        // its zero length; require it to fit.
+        if next_offset + 3 > man.len() {
+            return Err(ManError::SectionStartsPastEnd {
+                idx: i,
+                offset: next_offset,
+                man_len: man.len(),
+            });
+        }
+        let length = u24_le(man, next_offset);
+        sections[i] = SectionRef {
+            offset: next_offset,
+            length,
+        };
+        if sections[i].end_offset() > man.len() {
+            return Err(ManError::SectionPayloadPastEnd {
+                idx: i,
+                offset: next_offset,
+                length,
+                man_len: man.len(),
+            });
+        }
+    }
+
+    Ok(ManFile {
+        header,
+        partitions,
+        data_region_offset,
+        sections,
+    })
+}
+
+impl ManFile {
+    /// Section 0 - the encounter section. `ctrl[+0x20]` in the retail
+    /// control block.
+    pub fn encounter_section(&self) -> &SectionRef {
+        &self.sections[0]
+    }
+
+    /// Body bytes of section 0 (encounter section), or `None` if the
+    /// MAN buffer is truncated. Suitable for feeding to
+    /// [`parse_encounter_section`].
+    pub fn encounter_section_body<'a>(&self, man: &'a [u8]) -> Option<&'a [u8]> {
+        self.encounter_section().body(man)
+    }
+
+    /// Sibling sections (1..=4). Index 0 of the returned slice is
+    /// section 1, index 1 is section 2, etc. Section 5 (terminator)
+    /// is excluded.
+    pub fn sibling_sections(&self) -> &[SectionRef] {
+        &self.sections[1..5]
+    }
+
+    /// Section 5 (the terminator). Universally a zero-length sentinel
+    /// across the retail corpus.
+    pub fn terminator(&self) -> &SectionRef {
+        &self.sections[5]
+    }
+
+    /// Resolve one partition-1 record (the "actor-placement" partition)
+    /// to an absolute MAN byte offset. Mirrors
+    /// `FUN_8003A1E4`'s `(iVar11 + param_1)` indexing where `iVar11 = N0`
+    /// and `param_1` is the loop index `1..N1`.
+    ///
+    /// Returns `None` when `index >= N1` or when the resolved offset
+    /// runs past the MAN buffer.
+    pub fn actor_placement_record_offset(&self, index: usize, man_len: usize) -> Option<usize> {
+        let n1 = self.header.partition_counts[1].max(0) as usize;
+        if index >= n1 {
+            return None;
+        }
+        let off = self.partitions[1][index] as usize;
+        let abs = self.data_region_offset.checked_add(off)?;
+        if abs >= man_len {
+            return None;
+        }
+        Some(abs)
+    }
+
+    /// Resolve the field-VM **scene-entry system script** (context channel
+    /// `0xFB`) within the MAN buffer.
+    ///
+    /// PORT: FUN_8003ab2c
+    ///
+    /// `FUN_8003ab2c` is the per-frame field-VM driver. At scene entry it
+    /// builds the system script from partition 1's first record: the script
+    /// block begins at `data_region_offset + partitions[1][0]` and opens
+    /// with a `[u8 local_count N][N*2 bytes][4-byte record header]` prefix,
+    /// so the first opcode is `1 + N*2 + 4` bytes in (the original computes
+    /// `pcVar12 + 4 - pcVar11` after walking the `N` two-byte local
+    /// entries).
+    ///
+    /// Returns `(script_start, pc0)` where `script_start` is the script
+    /// block's byte offset in `man` and `pc0` is the first opcode's offset
+    /// **relative to `script_start`** (the VM's `buffer_base` is
+    /// `script_start`, matching the retail `iVar2[+0x90] = pcVar11`). Returns
+    /// `None` when partition 1 is empty or the offsets run past the buffer.
+    pub fn scene_entry_script(&self, man: &[u8]) -> Option<(usize, usize)> {
+        let script_start = self.actor_placement_record_offset(0, man.len())?;
+        let n = *man.get(script_start)? as usize;
+        let pc0 = 1 + n * 2 + 4;
+        if script_start.checked_add(pc0)? >= man.len() {
+            return None;
+        }
+        Some((script_start, pc0))
+    }
+
+    /// Decode every NPC / actor placement in partition 1 (`FUN_8003A1E4`).
+    ///
+    /// PORT: FUN_8003A1E4
+    ///
+    /// The scene-init routine `FUN_8003AEB0` runs `FUN_8003A1E4` over
+    /// partition-1 records `1..N1` (record `0` is the scene-entry controller
+    /// whose script is the [`Self::scene_entry_script`]; it is not a placed
+    /// entity). Each placed record shares the same prefix shape as the entry
+    /// script - `[u8 local_count N][N × 2 bytes][4-byte placement header][script]`
+    /// - and the 4-byte header is the actor's spawn data:
+    ///
+    /// | byte | meaning |
+    /// |---|---|
+    /// | +0 | model index. `< 0xF0` indexes the kingdom-TMD pool from base `DAT_8007b6f8`; `>= 0xF0` selects a special model from `_DAT_8007b824` (and sets the actor's `0x1000000` flag). |
+    /// | +1 | move/action count (installed into actor `+0x5c`). |
+    /// | +2 | tile X: `(b & 0x7F)` tile column; bit 7 shifts the spawn a half-tile. |
+    /// | +3 | tile Z: same encoding for the row. |
+    ///
+    /// World position is `(b & 0x7F) * 128 + (if bit7 { 128 } else { 64 })` per
+    /// axis (the actor sits at tile centre, or the next half-tile when bit 7 is
+    /// set). The actor's field-VM script starts at `record + 1 + 2*N + 4` with
+    /// the record base as its buffer; that script is what later installs the
+    /// entity's encounter record (`actor[+0x94]`, initialised to `-1` here) or
+    /// portal behaviour, so the placement gives **position + model + script
+    /// pointer**, not the entity's kind. Returns one entry per readable record,
+    /// in partition order.
+    pub fn actor_placements(&self, man: &[u8]) -> Vec<ActorPlacement> {
+        let n1 = self.header.partition_counts[1].max(0) as usize;
+        (1..n1)
+            .filter_map(|index| self.actor_placement(man, index))
+            .collect()
+    }
+
+    /// Decode a single partition-1 placement record, or `None` when the index
+    /// is out of range / the 4-byte placement header runs past the buffer.
+    /// `index` is partition-1-relative (index `0` is the scene-entry
+    /// controller; see [`Self::actor_placements`]).
+    pub fn actor_placement(&self, man: &[u8], index: usize) -> Option<ActorPlacement> {
+        let record_offset = self.actor_placement_record_offset(index, man.len())?;
+        let local_count = *man.get(record_offset)? as usize;
+        let header = record_offset.checked_add(1 + local_count * 2)?;
+        let model_index = *man.get(header)?;
+        let anim_id = *man.get(header + 1)?;
+        let bx = *man.get(header + 2)?;
+        let bz = *man.get(header + 3)?;
+        let pos = |b: u8| -> i16 {
+            let tile = ((b & 0x7F) as i16) * 0x80;
+            tile + if b & 0x80 != 0 { 0x80 } else { 0x40 }
+        };
+        Some(ActorPlacement {
+            index,
+            record_offset,
+            local_count,
+            model_index,
+            special_model: model_index >= 0xF0,
+            anim_id,
+            tile_x: bx & 0x7F,
+            tile_z: bz & 0x7F,
+            world_x: pos(bx),
+            world_z: pos(bz),
+            script_pc0: 1 + local_count * 2 + 4,
+        })
+    }
+}
+
+/// One placed NPC / actor decoded from the MAN partition-1 list
+/// (`FUN_8003A1E4`). See [`ManFile::actor_placements`] for the byte layout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ActorPlacement {
+    /// Partition-1 record index (`1..N1`; index 0 is the scene controller).
+    pub index: usize,
+    /// Absolute byte offset of the record in the MAN buffer. This is also the
+    /// actor's script buffer base (retail `actor[+0x90]`).
+    pub record_offset: usize,
+    /// `N` two-byte local entries preceding the placement header.
+    pub local_count: usize,
+    /// Raw model byte (`>= 0xF0` selects a special model; see
+    /// [`Self::special_model`]).
+    pub model_index: u8,
+    /// `true` when `model_index >= 0xF0` (special-model base + `0x1000000`
+    /// actor flag).
+    pub special_model: bool,
+    /// Animation id installed into actor `+0x5C`: **scene-bundle ANM record
+    /// index + 1** (`0` = no animation). Runtime-pinned: every animated town01
+    /// actor's `+0x5C` halfword equals its live anim-record pointer's bundle
+    /// index + 1, and the disc byte seeds it (walkers drift +/-1 as scripts
+    /// switch clips). For special models (`>= 0xF0`, the party/savepoint
+    /// global-pool head) the id indexes the PROT 0874 section-1 locomotion
+    /// bundle instead (Noa placement carries id 9 = locomotion record 8 =
+    /// Noa's idle; Gala id 16 = record 15).
+    pub anim_id: u8,
+    /// Tile column (`world_x >> 7`).
+    pub tile_x: u8,
+    /// Tile row (`world_z >> 7`).
+    pub tile_z: u8,
+    /// Spawn world X (tile centre, or next half-tile when the X bit-7 is set).
+    pub world_x: i16,
+    /// Spawn world Z.
+    pub world_z: i16,
+    /// Byte offset (relative to `record_offset`) of the actor's first field-VM
+    /// opcode (`1 + 2*local_count + 4`).
+    pub script_pc0: usize,
+}
+
+fn u24_le(buf: &[u8], pos: usize) -> u32 {
+    buf[pos] as u32 | ((buf[pos + 1] as u32) << 8) | ((buf[pos + 2] as u32) << 16)
+}
+
+// ============================================================================
+// Encounter section (section 0) interior layout.
+//
+// `FUN_8003A110` reads the 4-byte header at the start of section 0's body,
+// then walks three count-prefixed record arrays:
+//
+//   +0x00  u8  formation_stride
+//   +0x01  u8  condition_stride
+//   +0x02  u8  region_stride
+//   +0x03  u8  formation_count
+//   +0x04  formation_count * formation_stride bytes
+//   +0x04 + formation_count * formation_stride
+//          u8  condition_count
+//          condition_count * condition_stride bytes
+//   ...    u8  region_count
+//          region_count * region_stride bytes
+//
+// Per the existing docs/formats/encounter.md mapping, each formation
+// record carries an `encounter_record` shape at `+0x3..` (count + ids),
+// each region record carries a 4-byte AABB + rate + formation range.
+// This parser surfaces the strides and slices so callers can apply the
+// per-row decoders without re-walking the bytes.
+//
+// The region array is NOT one flat list. The condition array partitions it
+// into consecutive story-flag-gated groups, and only one group is live at a
+// time - see `active_region_group` and `docs/formats/encounter.md`.
+
+/// Decoded section-0 interior.
+#[derive(Debug, Clone, Serialize)]
+pub struct EncounterSection {
+    pub formation_stride: u8,
+    pub condition_stride: u8,
+    pub region_stride: u8,
+    pub formation_count: u8,
+    pub condition_count: u8,
+    pub region_count: u8,
+
+    /// Byte range (relative to the section *body* slice passed in) where
+    /// the formation array lives.
+    pub formation_range: (usize, usize),
+    /// Same for the condition array.
+    pub condition_range: (usize, usize),
+    /// Same for the region array.
+    pub region_range: (usize, usize),
+}
+
+impl EncounterSection {
+    /// Number of bytes consumed by the parser (header + all three arrays).
+    pub fn total_bytes(&self) -> usize {
+        self.region_range.1
+    }
+}
+
+/// Errors for the section-0 interior walk.
+#[derive(Debug)]
+pub enum EncounterSectionError {
+    HeaderTooSmall(usize),
+    FormationArrayPastEnd { needed: usize, have: usize },
+    ConditionArrayPastEnd { needed: usize, have: usize },
+    RegionArrayPastEnd { needed: usize, have: usize },
+}
+
+impl std::fmt::Display for EncounterSectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::HeaderTooSmall(have) => write!(
+                f,
+                "section-0 body too small: need at least 4 bytes for header, have {have}"
+            ),
+            Self::FormationArrayPastEnd { needed, have } => write!(
+                f,
+                "formation array runs past section-0 body (need {needed}, have {have})"
+            ),
+            Self::ConditionArrayPastEnd { needed, have } => write!(
+                f,
+                "condition array runs past section-0 body (need {needed}, have {have})"
+            ),
+            Self::RegionArrayPastEnd { needed, have } => write!(
+                f,
+                "region array runs past section-0 body (need {needed}, have {have})"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for EncounterSectionError {}
+
+/// Parse the section-0 interior. `body` is the slice returned by
+/// [`SectionRef::body`] for section 0.
+pub fn parse_encounter_section(body: &[u8]) -> Result<EncounterSection, EncounterSectionError> {
+    if body.len() < 4 {
+        return Err(EncounterSectionError::HeaderTooSmall(body.len()));
+    }
+    let formation_stride = body[0];
+    let condition_stride = body[1];
+    let region_stride = body[2];
+    let formation_count = body[3];
+
+    let f_start = 4usize;
+    let f_end = f_start + formation_count as usize * formation_stride as usize;
+    if f_end > body.len() {
+        return Err(EncounterSectionError::FormationArrayPastEnd {
+            needed: f_end,
+            have: body.len(),
+        });
+    }
+
+    let cond_count_pos = f_end;
+    if cond_count_pos + 1 > body.len() {
+        return Err(EncounterSectionError::ConditionArrayPastEnd {
+            needed: cond_count_pos + 1,
+            have: body.len(),
+        });
+    }
+    let condition_count = body[cond_count_pos];
+    let c_start = cond_count_pos + 1;
+    let c_end = c_start + condition_count as usize * condition_stride as usize;
+    if c_end > body.len() {
+        return Err(EncounterSectionError::ConditionArrayPastEnd {
+            needed: c_end,
+            have: body.len(),
+        });
+    }
+
+    let reg_count_pos = c_end;
+    if reg_count_pos + 1 > body.len() {
+        return Err(EncounterSectionError::RegionArrayPastEnd {
+            needed: reg_count_pos + 1,
+            have: body.len(),
+        });
+    }
+    let region_count = body[reg_count_pos];
+    let r_start = reg_count_pos + 1;
+    let r_end = r_start + region_count as usize * region_stride as usize;
+    if r_end > body.len() {
+        return Err(EncounterSectionError::RegionArrayPastEnd {
+            needed: r_end,
+            have: body.len(),
+        });
+    }
+
+    Ok(EncounterSection {
+        formation_stride,
+        condition_stride,
+        region_stride,
+        formation_count,
+        condition_count,
+        region_count,
+        formation_range: (f_start, f_end),
+        condition_range: (c_start, c_end),
+        region_range: (r_start, r_end),
+    })
+}
+
+/// Per-formation decoded fields.
+///
+/// Mirrors the [`EncounterRecord`](crate)-shaped slot the formation
+/// record carries at `+0x3..`. Bytes `+0..+3` are passed through as
+/// `header_bytes` for callers that want to peek at them (the random-
+/// encounter trigger path stores extra state there).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct FormationRecord {
+    pub header_bytes: [u8; 3],
+    pub monster_count: u8,
+    pub monster_ids: [u8; 4],
+    /// Bytes after `+4 + monster_count` (stride-dependent; the runtime
+    /// reader copies only `monster_ids[0..monster_count]` into the
+    /// formation cell - trailing bytes are stride padding / other
+    /// per-formation state).
+    pub trailing_byte_count: u8,
+}
+
+impl FormationRecord {
+    /// Parse a single formation record. Requires the slice to be exactly
+    /// `formation_stride` bytes long; returns `None` if the slice is too
+    /// short for `(4 + monster_count)` or claims more than 4 monsters.
+    pub fn parse(record: &[u8]) -> Option<Self> {
+        if record.len() < 4 {
+            return None;
+        }
+        let monster_count = record[3];
+        if monster_count as usize > 4 {
+            return None;
+        }
+        let payload_end = 4 + monster_count as usize;
+        if payload_end > record.len() {
+            return None;
+        }
+        let mut monster_ids = [0u8; 4];
+        let n = monster_count as usize;
+        monster_ids[..n].copy_from_slice(&record[4..4 + n]);
+        Some(Self {
+            header_bytes: [record[0], record[1], record[2]],
+            monster_count,
+            monster_ids,
+            trailing_byte_count: (record.len() - payload_end) as u8,
+        })
+    }
+}
+
+/// The condition `flag_id` that marks a record as the **unconditional
+/// default** group: the roll's condition walk stops at it without testing a
+/// story flag (`FUN_801D9E1C` `0x801d9f40..0x801d9f50`). Every retail scene's
+/// condition list ends with exactly one such record and carries no other.
+pub const CONDITION_DEFAULT_FLAG: u16 = 0xFFFF;
+
+/// One condition record: a story-flag id plus the number of consecutive
+/// region records that flag selects.
+///
+/// The condition array is what turns the region array into a set of
+/// **story-state variants** of the same scene. `FUN_801D9E1C` walks the
+/// conditions in order holding a cursor that starts at region 0; a condition
+/// whose flag is clear advances the cursor past its own `region_count`
+/// regions, and the first condition whose flag is *set* (or the
+/// [`CONDITION_DEFAULT_FLAG`] sentinel) stops the walk and owns the region
+/// slice the roll then searches. Regions outside that slice are invisible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ConditionRecord {
+    /// Story-flag id tested through `FUN_8003CE64` (the `DAT_80085758`
+    /// bank), or [`CONDITION_DEFAULT_FLAG`] for the unconditional tail.
+    pub flag_id: u16,
+    /// How many consecutive region records this condition owns. Retail
+    /// sign-extends the halfword; a negative value is not present in the
+    /// retail corpus and is reported as `0` here.
+    pub region_count: u16,
+}
+
+impl ConditionRecord {
+    /// Parse one condition record (at least 4 bytes; the retail stride is 4).
+    pub fn parse(record: &[u8]) -> Option<Self> {
+        if record.len() < 4 {
+            return None;
+        }
+        let flag_id = u16::from_le_bytes([record[0], record[1]]);
+        let signed = i16::from_le_bytes([record[2], record[3]]);
+        Some(Self {
+            flag_id,
+            region_count: signed.max(0) as u16,
+        })
+    }
+
+    /// `true` for the unconditional tail record.
+    pub fn is_default(&self) -> bool {
+        self.flag_id == CONDITION_DEFAULT_FLAG
+    }
+}
+
+/// Per-region decoded fields. Mirrors the random-encounter trigger reader
+/// at `FUN_801D9E1C` (see [`docs/formats/encounter.md`](../../../docs/formats/encounter.md)).
+///
+/// Only the well-understood prefix is decoded; bytes after `+0x08` are
+/// stride-dependent extras kept as a raw tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct RegionRecord {
+    pub aabb_x_min: u8,
+    pub aabb_y_min: u8,
+    pub aabb_x_max: u8,
+    pub aabb_y_max: u8,
+    /// Per-step rate increment.
+    pub rate_increment: u8,
+    /// `region[+5]` - role currently unknown (rate? terrain class?).
+    pub reserved_5: u8,
+    /// First formation index this region rolls into.
+    pub formation_range_base: u8,
+    /// Number of formations in the roll range.
+    pub formation_range_count: u8,
+}
+
+impl RegionRecord {
+    /// Parse a single region record (at least 8 bytes).
+    pub fn parse(record: &[u8]) -> Option<Self> {
+        if record.len() < 8 {
+            return None;
+        }
+        Some(Self {
+            aabb_x_min: record[0],
+            aabb_y_min: record[1],
+            aabb_x_max: record[2],
+            aabb_y_max: record[3],
+            rate_increment: record[4],
+            reserved_5: record[5],
+            formation_range_base: record[6],
+            formation_range_count: record[7],
+        })
+    }
+}
+
+/// Iterator over the formation records inside a parsed encounter
+/// section's `formation_range`.
+pub fn formation_records<'a>(
+    body: &'a [u8],
+    sec: &EncounterSection,
+) -> impl Iterator<Item = Option<FormationRecord>> + 'a {
+    let stride = sec.formation_stride as usize;
+    let (start, end) = sec.formation_range;
+    let slice = &body[start..end];
+    (0..sec.formation_count as usize).map(move |i| {
+        let p = i * stride;
+        FormationRecord::parse(&slice[p..p + stride])
+    })
+}
+
+/// Iterator over the condition records inside a parsed encounter section.
+pub fn condition_records<'a>(
+    body: &'a [u8],
+    sec: &EncounterSection,
+) -> impl Iterator<Item = Option<ConditionRecord>> + 'a {
+    let stride = sec.condition_stride as usize;
+    let (start, end) = sec.condition_range;
+    let slice = &body[start..end];
+    (0..sec.condition_count as usize).map(move |i| {
+        let p = i * stride;
+        ConditionRecord::parse(&slice[p..p + stride])
+    })
+}
+
+/// Iterator over **every** region record in the section, ignoring the
+/// condition partition.
+///
+/// This is the preservation view - a tool that wants to see all of a scene's
+/// authored region variants at once. A *runtime* consumer wants
+/// [`active_region_group`] first and then [`region_records_in`]: retail only
+/// ever searches one group, and the groups routinely start with a whole-map
+/// `rate 0` row that would shadow every later group's real regions.
+pub fn region_records<'a>(
+    body: &'a [u8],
+    sec: &EncounterSection,
+) -> impl Iterator<Item = Option<RegionRecord>> + 'a {
+    region_records_in(body, sec, 0, sec.region_count as usize)
+}
+
+/// Iterator over `count` region records starting at region index `first`.
+/// Out-of-range indices are clamped to the section's region array.
+pub fn region_records_in<'a>(
+    body: &'a [u8],
+    sec: &EncounterSection,
+    first: usize,
+    count: usize,
+) -> impl Iterator<Item = Option<RegionRecord>> + 'a {
+    let stride = sec.region_stride as usize;
+    let (start, end) = sec.region_range;
+    let slice = &body[start..end];
+    let total = sec.region_count as usize;
+    let first = first.min(total);
+    let last = first.saturating_add(count).min(total);
+    (first..last).map(move |i| {
+        let p = i * stride;
+        RegionRecord::parse(&slice[p..p + stride])
+    })
+}
+
+/// Resolve the condition walk: which slice of the region array is live for a
+/// given story-flag state.
+///
+/// `flag_test(flag_id)` must answer the `FUN_8003CE64` question - "is story
+/// flag `flag_id` set in the `DAT_80085758` bank?". Returns
+/// `Some((first_region_index, region_count))` for the selected group, or
+/// `None` when the walk falls off the end of the condition list without a
+/// match - which is retail's "no encounter this step" exit
+/// (`FUN_801D9E1C` `0x801d9fc8`), *not* "use everything".
+///
+/// A section with **zero** conditions also yields `None`: retail's
+/// `s1 == condition_count` test is `0 == 0` there, so it returns before ever
+/// touching a region. No retail scene has a zero-length condition array.
+pub fn active_region_group(
+    body: &[u8],
+    sec: &EncounterSection,
+    mut flag_test: impl FnMut(u16) -> bool,
+) -> Option<(usize, usize)> {
+    let mut first = 0usize;
+    for cond in condition_records(body, sec) {
+        // A malformed record can't be walked past; retail would read
+        // garbage, we stop instead of inventing a cursor advance.
+        let cond = cond?;
+        if cond.is_default() || flag_test(cond.flag_id) {
+            return Some((first, cond.region_count as usize));
+        }
+        first = first.saturating_add(cond.region_count as usize);
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests;

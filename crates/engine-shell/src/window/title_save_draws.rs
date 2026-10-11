@@ -3,14 +3,14 @@
 use super::*;
 
 impl PlayWindowApp {
-    /// Build the per-quad [`legaia_engine_render::SpriteDraw`] list for
+    /// Build the per-quad [`legaia_engine_ui::SpriteDraw`] list for
     /// the active publisher logo.
     ///
     /// Neither the layout nor the letterboxing is computed here: `LOGO_QUADS`
     /// carries retail's own per-logo rects in the 640x480 stage the boot pass
     /// runs in (`FUN_801CE9C0` selects it with `FUN_8001DAF8(0x400)`), and the
     /// stage-into-surface fit is the shared
-    /// `legaia_engine_ui::ui_boot_logos::publisher_logo_sprite_draws` the
+    /// `legaia_engine_ui::boot_logos::publisher_logo_sprite_draws` the
     /// browser play page's own logo stage draws through. This only resolves
     /// which logo is up. Returns an empty vec when boot-UI isn't
     /// `PublisherLogos` or the atlas wasn't uploaded.
@@ -18,9 +18,9 @@ impl PlayWindowApp {
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
-        use legaia_engine_core::publisher_logos::STAGE;
-        use legaia_engine_render::ui_boot_logos::{LogoQuadView, publisher_logo_sprite_draws};
+    ) -> Vec<legaia_engine_ui::SpriteDraw> {
+        use legaia_engine_menus::publisher_logos::STAGE;
+        use legaia_engine_ui::boot_logos::{LogoQuadView, publisher_logo_sprite_draws};
 
         let BootUiState::PublisherLogos(session) = &self.boot_ui else {
             return Vec::new();
@@ -29,7 +29,7 @@ impl PlayWindowApp {
             return Vec::new();
         };
         let idx = session.current_logo();
-        if idx >= legaia_engine_core::publisher_logos::LOGO_COUNT {
+        if idx >= legaia_engine_menus::publisher_logos::LOGO_COUNT {
             return Vec::new();
         }
         let quads: Vec<LogoQuadView> = session
@@ -61,10 +61,10 @@ impl PlayWindowApp {
         // Shared with the browser play page rather than mirrored - the two
         // copies of this arithmetic were a paired constant with no gate over
         // them.
-        legaia_engine_render::pause_menu::stage_transform(surface_w, surface_h)
+        legaia_engine_ui::pause_menu::stage_transform(surface_w, surface_h)
     }
 
-    /// Build the [`legaia_engine_render::SpriteDraw`] list for the
+    /// Build the [`legaia_engine_ui::SpriteDraw`] list for the
     /// retail save-screen chrome (panel frame + slot pills). Anchored
     /// at the same 256×256 stage origin the title atlas uses so the
     /// chrome overlays the title art at retail-equivalent positions.
@@ -81,11 +81,11 @@ impl PlayWindowApp {
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> (Vec<legaia_engine_render::SpriteDraw>, Option<usize>) {
+    ) -> (Vec<legaia_engine_ui::SpriteDraw>, Option<usize>) {
         if self.save_menu.is_none() {
             return (Vec::new(), None);
         }
-        use legaia_engine_core::save_select::SaveSelectSession;
+        use legaia_engine_menus::save_select::SaveSelectSession;
         // The save-select session (or field-menu Save sub-session) that
         // drives both pill chrome and any retail Load-mode overlays.
         let session: &SaveSelectSession = match &self.boot_ui {
@@ -115,17 +115,17 @@ impl PlayWindowApp {
     /// pause menu's Load / Save rows alike.
     pub(super) fn save_select_overlay(
         &self,
-        s: &legaia_engine_core::save_select::SaveSelectSession,
+        s: &legaia_engine_menus::save_select::SaveSelectSession,
         surface_w: u32,
         surface_h: u32,
-    ) -> legaia_engine_render::SaveSelectOverlayDraws {
+    ) -> legaia_engine_ui::SaveSelectOverlayDraws {
         let Some(m) = self.save_flow.overlay_model(s) else {
             return Default::default();
         };
-        let rows: Vec<legaia_engine_render::SaveSelectRow<'_>> = s
+        let rows: Vec<legaia_engine_ui::SaveSelectRow<'_>> = s
             .slots()
             .iter()
-            .map(|snap| legaia_engine_render::SaveSelectRow {
+            .map(|snap| legaia_engine_ui::SaveSelectRow {
                 label: &snap.label,
                 present: snap.present,
                 party_lv: snap.party_lv,
@@ -134,11 +134,11 @@ impl PlayWindowApp {
                 location: &snap.location,
             })
             .collect();
-        let cells: Vec<legaia_engine_render::SlotGridCell> = m
+        let cells: Vec<legaia_engine_ui::SlotGridCell> = m
             .preview
             .iter()
             .flat_map(|p| p.cells.iter())
-            .map(|c| legaia_engine_render::SlotGridCell {
+            .map(|c| legaia_engine_ui::SlotGridCell {
                 present: c.present,
                 portrait_char_id: c.portrait_char_id,
             })
@@ -146,10 +146,10 @@ impl PlayWindowApp {
         let preview = m
             .preview
             .as_ref()
-            .map(|p| legaia_engine_render::SaveSelectPreviewView {
+            .map(|p| legaia_engine_ui::SaveSelectPreviewView {
                 cells: &cells,
                 cell: p.cell,
-                info: p.info.map(|b| legaia_engine_render::SlotInfoView {
+                info: p.info.map(|b| legaia_engine_ui::SlotInfoView {
                     slot_no: b.slot.saturating_add(1),
                     location: &b.location,
                     play_time: &p.play_time,
@@ -162,7 +162,7 @@ impl PlayWindowApp {
                 caption: p.caption,
                 panel_y_offset: p.panel_y_offset,
             });
-        let view = legaia_engine_render::SaveSelectOverlayView {
+        let view = legaia_engine_ui::SaveSelectOverlayView {
             title: m.title,
             rows: &rows,
             cursor: m.cursor,
@@ -172,7 +172,7 @@ impl PlayWindowApp {
             slide_t: m.slide_t,
             info_t: m.info_t,
             now_checking: m.now_checking,
-            banner: m.banner.map(|b| legaia_engine_render::CardBannerView {
+            banner: m.banner.map(|b| legaia_engine_ui::CardBannerView {
                 lines: b.lines,
                 note: b.note,
                 work: b.work,
@@ -183,7 +183,7 @@ impl PlayWindowApp {
             confirm: m.confirm,
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-        legaia_engine_render::save_select_overlay_draws(
+        legaia_engine_ui::save_select_overlay_draws(
             &self.font,
             self.save_menu.as_ref().map(|a| &a.rects),
             &view,
@@ -211,7 +211,7 @@ impl PlayWindowApp {
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
+    ) -> Vec<legaia_engine_ui::SpriteDraw> {
         use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
         if self.save_menu.is_none() {
             return Vec::new();
@@ -237,7 +237,7 @@ impl PlayWindowApp {
         }
     }
 
-    /// Build the [`legaia_engine_render::SpriteDraw`] list for the
+    /// Build the [`legaia_engine_ui::SpriteDraw`] list for the
     /// title-screen quad. Composes the retail title screen by drawing
     /// per-band sub-rects of the PROT 0888 title TIM: orb + wordmark
     /// always, "PRESS START BUTTON" only during the PressStart phase,
@@ -250,12 +250,12 @@ impl PlayWindowApp {
     /// Each band is positioned at its source `y` within a centred,
     /// integer-scaled 256×256 stage. Returns an empty vec when
     /// boot-UI isn't `Title`, the atlas wasn't uploaded, or the title
-    /// session has reached [`legaia_engine_core::title::TitlePhase::Done`].
+    /// session has reached [`legaia_engine_menus::title::TitlePhase::Done`].
     pub(super) fn title_screen_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
+    ) -> Vec<legaia_engine_ui::SpriteDraw> {
         // Everything below the composition is state, not geometry: which
         // bands draw and how bright ([`boot_title_band_state`]). The
         // composition itself is `legaia_engine_ui::title_band_sprites`,
@@ -276,7 +276,7 @@ impl PlayWindowApp {
         // the save-select panel, slot pills, and cursor - all of
         // which use retail-pinned framebuffer coords.
         let (stage_origin, scale) = self.save_select_stage(surface_w, surface_h);
-        legaia_engine_render::title_band_sprites(state, stage_origin, scale)
+        legaia_engine_ui::title_band_sprites(state, stage_origin, scale)
     }
 
     /// **Deprecated path** kept as a no-disc fallback. The retail title
@@ -289,7 +289,7 @@ impl PlayWindowApp {
     /// Returns an empty vec when:
     /// - boot UI isn't [`BootUiState::Title`], or
     /// - the title session has already reached
-    ///   [`legaia_engine_core::title::TitlePhase::Done`], or
+    ///   [`legaia_engine_menus::title::TitlePhase::Done`], or
     /// - the title-screen atlas IS uploaded (retail-faithful path
     ///   covers the menu rows itself), or
     /// - the menu-glyph atlas wasn't uploaded, or
@@ -298,7 +298,7 @@ impl PlayWindowApp {
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
+    ) -> Vec<legaia_engine_ui::SpriteDraw> {
         let BootUiState::Title(session) = &self.boot_ui else {
             return Vec::new();
         };
@@ -312,7 +312,7 @@ impl PlayWindowApp {
         if self.title_screen.is_some() {
             return Vec::new();
         }
-        use legaia_engine_core::title::TitlePhase;
+        use legaia_engine_menus::title::TitlePhase;
         // Same one selector as the font path and as the browser page: the
         // rows are drawn for whatever sub-mode word `title_draw_list` calls a
         // menu, and the session's phase only supplies the cursor row.
@@ -320,7 +320,10 @@ impl PlayWindowApp {
             TitlePhase::MainMenu { cursor } => (true, cursor),
             _ => (false, 0),
         };
-        let phase_id = legaia_engine_render::title_text_phase(session.retail_submode(), menu_open);
+        let phase_id = legaia_engine_menus::title_overlay::title_text_phase(
+            session.retail_submode(),
+            menu_open,
+        );
         if phase_id != 2 {
             return Vec::new();
         }
@@ -352,7 +355,7 @@ impl PlayWindowApp {
             stage_x0 + pen_src_x * title_scale_i32,
             stage_y0 + pen_src_y * title_scale_i32,
         );
-        legaia_engine_render::title_menu_draws_for(
+        legaia_engine_ui::title_menu_draws_for(
             phase_id,
             cursor,
             session.continue_enabled,
@@ -376,9 +379,9 @@ impl PlayWindowApp {
 /// black, never the title art. The browser play page makes the same two cuts
 /// (`boot_title_backdrop_visible`).
 ///
-/// [`TitleBandState::backdrop`]: legaia_engine_render::TitleBandState::backdrop
-fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_render::TitleBandState> {
-    use legaia_engine_core::title::TitlePhase;
+/// [`TitleBandState::backdrop`]: legaia_engine_ui::TitleBandState::backdrop
+fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_ui::TitleBandState> {
+    use legaia_engine_menus::title::TitlePhase;
     match boot_ui {
         BootUiState::Title(session) => {
             let alpha = match session.phase() {
@@ -389,7 +392,7 @@ fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_render::
                 }
                 _ => 1.0,
             };
-            let mut st = legaia_engine_render::TitleBandState::card(alpha);
+            let mut st = legaia_engine_ui::TitleBandState::card(alpha);
             st.press_start = matches!(session.phase(), TitlePhase::PressStart { .. });
             // Main-menu rows: selected row bright, unselected dim.
             if let TitlePhase::MainMenu { cursor } = session.phase() {
@@ -401,7 +404,7 @@ fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_render::
             if !s.phase().shows_title_backdrop() {
                 return None;
             }
-            Some(legaia_engine_render::TitleBandState::backdrop())
+            Some(legaia_engine_ui::TitleBandState::backdrop())
         }
         _ => None,
     }
@@ -410,7 +413,7 @@ fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_render::
 #[cfg(test)]
 mod title_backdrop_tests {
     use super::*;
-    use legaia_engine_core::save_select::{SaveSelectMode, SaveSelectSession, SlotSnapshot};
+    use legaia_engine_menus::save_select::{SaveSelectMode, SaveSelectSession, SlotSnapshot};
 
     /// The native half of the save-select backdrop parity: the boot
     /// save-select resolves to the retail backdrop state, and that state
@@ -424,12 +427,12 @@ mod title_backdrop_tests {
         let session = SaveSelectSession::new(SaveSelectMode::Load, vec![SlotSnapshot::empty(1)]);
         let state = boot_title_band_state(&BootUiState::SaveSelect(session))
             .expect("the save-select keeps the title behind it");
-        assert_eq!(state, legaia_engine_render::TitleBandState::backdrop());
+        assert_eq!(state, legaia_engine_ui::TitleBandState::backdrop());
         let origin = (7, 11);
-        let drawn = legaia_engine_render::title_band_sprites(state, origin, 3);
+        let drawn = legaia_engine_ui::title_band_sprites(state, origin, 3);
         // Brightness is TITLE_BACKDROP_LUM of the neutral 0x80, CONTINUE lit.
-        let b = (legaia_engine_render::TITLE_BACKDROP_LUM * 128.0).round() as u8;
-        let strips = legaia_engine_render::title_strip_sprites(true, b, 1.0, origin, 3);
+        let b = (legaia_engine_ui::TITLE_BACKDROP_LUM * 128.0).round() as u8;
+        let strips = legaia_engine_ui::title_strip_sprites(true, b, 1.0, origin, 3);
         assert_eq!(
             drawn.len(),
             5,

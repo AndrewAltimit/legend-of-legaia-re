@@ -5,10 +5,12 @@
 
 use super::*;
 use crate::battle_flow::BattleFlowState;
-use crate::battle_hud::{CommandChipPhase, battle_command_chips};
-use crate::battle_input::{BattleCommandSession, CommandPhase};
+use crate::battle_hud::battle_command_chips;
 use crate::battle_round::PendingPartyAction;
-use crate::input::PadButton;
+use legaia_engine_menus::battle_input::CommandChipPhase;
+use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 fn party_world(party: u8) -> World {
     let mut world = World::new();
@@ -174,8 +176,9 @@ fn nobody_able_to_act_still_gets_the_prompt_then_the_confirm() {
 
 #[test]
 fn the_commit_log_lists_every_member_the_cursor_walked_past() {
-    use crate::battle_hud::{CommitLogTarget, battle_commit_log};
-    use legaia_engine_vm::battle_commit_log as log;
+    use crate::battle_hud::battle_commit_log;
+    use legaia_engine_battle_vm::battle_commit_log as log;
+    use legaia_engine_battle_vm::battle_commit_log::CommitLogTarget;
     let mut world = party_world(3);
     world.battle.round_flow.phase = crate::battle_round::RoundPhase::Command;
     assert!(battle_commit_log(&world).is_empty());
@@ -225,7 +228,7 @@ fn the_round_skip_count_bumps_for_a_combatant_that_died_holding_its_turn() {
 #[test]
 fn the_commit_log_launches_off_screen_for_the_attack_prompt_and_back() {
     use crate::battle_hud::battle_commit_log;
-    use crate::battle_input::BattleCommand;
+    use legaia_engine_menus::battle_input::BattleCommand;
     let mut world = party_world(2);
     // One vsync a frame, so each step is one of the glide's sixteen.
     world.clock.frame_step = 1;
@@ -284,8 +287,8 @@ fn the_commit_log_launches_off_screen_for_the_attack_prompt_and_back() {
 #[test]
 fn the_seed_glides_the_readout_bar_in_over_sixteen_ticks() {
     use crate::battle_hud::{battle_action_plaque_dy, battle_readout_bar_dy};
-    use legaia_engine_vm::battle_action::ActionCategory;
-    use legaia_engine_vm::battle_cue_group::HUD_CASTER_BANNER;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::HUD_CASTER_BANNER;
     let mut world = party_world(1);
     world.clock.frame_step = 2;
     world.battle.command = None;
@@ -322,8 +325,8 @@ fn the_seed_glides_the_readout_bar_in_over_sixteen_ticks() {
 #[test]
 fn landing_the_hud_glides_puts_every_plate_at_rest() {
     use crate::battle_hud::{battle_action_plaque_dy, battle_readout_bar_dy};
-    use legaia_engine_vm::battle_action::ActionCategory;
-    use legaia_engine_vm::battle_cue_group::HUD_CASTER_BANNER;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::HUD_CASTER_BANNER;
     let mut world = party_world(1);
     world.battle.command = None;
     world.battle_ctx.active_actor = 1;
@@ -344,8 +347,8 @@ fn landing_the_hud_glides_puts_every_plate_at_rest() {
 #[test]
 fn seating_a_hud_glide_matches_the_widget_by_its_target_seat() {
     use crate::battle_hud::{battle_action_plaque_dy, battle_readout_bar_dy};
-    use legaia_engine_vm::battle_action::ActionCategory;
-    use legaia_engine_vm::battle_cue_group::HUD_CASTER_BANNER;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::HUD_CASTER_BANNER;
     let mut world = party_world(1);
     world.battle.command = None;
     world.battle_ctx.active_actor = 1;

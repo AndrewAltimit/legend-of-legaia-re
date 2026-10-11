@@ -17,9 +17,9 @@
 
 use std::path::Path;
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
 use legaia_patcher::chest::SceneChests;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::encounter::SceneEncounters;
 
 const EVIL_BAT: u8 = 176; // unused Evil Bat clone
@@ -124,7 +124,7 @@ fn main() {
             MAX_STARTING_ITEMS, build_seed_patch, plan_starting_items,
         };
         let scus = patcher.read_named_file("SCUS_942.54").expect("read SCUS");
-        let off = legaia_asset::new_game::starting_inv_seed_file_offset(&scus)
+        let off = legaia_game_tables::new_game::starting_inv_seed_file_offset(&scus)
             .expect("locate starting-inventory seed region");
         let mut items = vec![(SOMETHING_GOOD, 1u8)];
         for it in plan_starting_items(ITEMS_SEED, MAX_STARTING_ITEMS) {

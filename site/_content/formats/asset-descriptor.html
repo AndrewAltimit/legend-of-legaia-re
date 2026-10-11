@@ -11,7 +11,7 @@
     <dt>Magic / marker</dt><dd>None - a leading <code>u32 count</code> and a header word, then the pairs.</dd>
     <dt>Lives in</dt><dd>In RAM, at the head of a decoded buffer; PROT 0874 (<code>player.lzs</code>, extraction-index space) is the three-descriptor instance the <a href="character-mesh.html">character mesh pack</a> is read through.</dd>
     <dt>Retail reader</dt><dd>The descriptor walker, reached from the town overlay's init (<a href="#how-we-know">how we know</a>).</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::parse_player_lzs</code> (<code>crates/asset/src/lib.rs</code>).</dd>
+    <dt>Parser</dt><dd><code>legaia_container_formats::parse_player_lzs</code> (<code>crates/container-formats/src/lib.rs</code>).</dd>
     <dt>Confidence</dt><dd>Confirmed - walker disassembled, overlay caller traced, and the second header word measured across every carrier on the disc.</dd>
   </dl>
 </section>

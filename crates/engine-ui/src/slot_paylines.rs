@@ -1,0 +1,112 @@
+//! Slot-machine **payline** segments as screen-space primitives.
+//!
+//! Retail draws each of the five paylines as one GP0 `0x43` packet - a flat,
+//! semi-transparent two-point line - after `RTPS`-projecting both endpoints
+//! (`FUN_801D3380`, ported as `legaia_engine_minigames::slot_machine::payline_prims`
+//! with the projection in `slot_machine::projected_paylines`). The overlay
+//! framebuffer this module feeds carries quads, not lines, so each segment
+//! becomes the prim set's line kind, [`legaia_render_kernels::screen_prim::line_quad`]: a
+//! one-pixel-thick flat quad along the line.
+//!
+//! Input coordinates are on the machine's own **640x240** framebuffer (the
+//! slot overlay sets video mode `0x280`, see
+//! `legaia_minigame_formats::minigame_slot_scene::SCREEN_W`); the output is in the
+//! `PSX_DISPLAY_W` x `PSX_DISPLAY_H` space every screen primitive is authored
+//! in, so x is halved on the way through.
+
+use legaia_render_kernels::screen_prim::{PSX_DISPLAY_W, ScreenPrim, line_quad};
+
+/// Ordering-table bucket the payline quads link at: over the reels, under
+/// every UI overlay the host composites later.
+pub const PAYLINE_OT: u32 = 2;
+
+/// Width of the framebuffer the segment endpoints are expressed on.
+pub const SLOT_FRAMEBUFFER_W: f32 = 640.0;
+
+/// One payline segment, projected.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PaylineSegment {
+    /// Endpoints on the 640x240 slot framebuffer.
+    pub a: [f32; 2],
+    pub b: [f32; 2],
+    /// Packet colour.
+    pub rgb: [u8; 3],
+    /// GP0 `0x43` carries the semi-transparency bit, so every payline blends.
+    pub semi: bool,
+}
+
+/// Turn projected payline segments into flat one-pixel quads in display
+/// space. A zero-length segment produces nothing.
+pub fn payline_screen_prims(segments: &[PaylineSegment]) -> Vec<ScreenPrim> {
+    let sx = PSX_DISPLAY_W as f32 / SLOT_FRAMEBUFFER_W;
+    segments
+        .iter()
+        .filter_map(|s| {
+            let a = (s.a[0] * sx, s.a[1]);
+            let b = (s.b[0] * sx, s.b[1]);
+            // ABR 0: `0.5 * back + 0.5 * front`, the texpage default the
+            // slot overlay's draw environment leaves in place.
+            line_quad(
+                a,
+                b,
+                [s.rgb[0], s.rgb[1], s.rgb[2], 0xFF],
+                s.semi,
+                0,
+                PAYLINE_OT,
+            )
+            .map(ScreenPrim::Flat)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_horizontal_segment_is_one_display_pixel_tall_and_half_as_wide() {
+        let prims = payline_screen_prims(&[PaylineSegment {
+            a: [100.0, 50.0],
+            b: [300.0, 50.0],
+            rgb: [0x80, 0x80, 0x80],
+            semi: true,
+        }]);
+        assert_eq!(prims.len(), 1);
+        let ScreenPrim::Flat(q) = prims[0] else {
+            panic!("flat quad");
+        };
+        let xs: Vec<i16> = q.xy.iter().map(|c| c.0).collect();
+        let ys: Vec<i16> = q.xy.iter().map(|c| c.1).collect();
+        assert_eq!(*xs.iter().min().unwrap(), 50);
+        assert_eq!(*xs.iter().max().unwrap(), 150);
+        assert_eq!(ys.iter().max().unwrap() - ys.iter().min().unwrap(), 1);
+        assert!(q.semi_transparent);
+        assert_eq!(q.abr_mode, 0);
+        assert_eq!(q.ot_index, PAYLINE_OT);
+    }
+
+    #[test]
+    fn a_diagonal_keeps_its_endpoints_and_a_degenerate_one_draws_nothing() {
+        let prims = payline_screen_prims(&[
+            PaylineSegment {
+                a: [0.0, 0.0],
+                b: [200.0, 100.0],
+                rgb: [0xFF, 0xFF, 0x80],
+                semi: true,
+            },
+            PaylineSegment {
+                a: [7.0, 7.0],
+                b: [7.0, 7.0],
+                rgb: [0; 3],
+                semi: true,
+            },
+        ]);
+        assert_eq!(prims.len(), 1);
+        let ScreenPrim::Flat(q) = prims[0] else {
+            panic!("flat quad");
+        };
+        assert_eq!(q.color, [0xFF, 0xFF, 0x80, 0xFF]);
+        let far = q.xy.iter().map(|c| c.0).max().unwrap();
+        assert_eq!(far, 100, "x halves onto the 320-wide display");
+    }
+}

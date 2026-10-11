@@ -4,7 +4,7 @@
 //!
 //! Two tiers:
 //!
-//! 1. **Census.** `legaia_engine_vm::battle_cast_cue::module_head_cue` over
+//! 1. **Census.** `legaia_engine_battle_vm::battle_cast_cue::module_head_cue` over
 //!    all 64 images of PROT `0903..=0966` reproduces the per-module cue
 //!    column of `docs/subsystems/cast-module.md` ("Per-module cue census"):
 //!    62 literals and the two coin flips (`0936` base `0x1B0`, `0937` base
@@ -19,11 +19,12 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_asset::cast_effect_pool::{
+use legaia_engine_battle_vm::battle_cast_cue::{ModuleHeadCue, module_head_cue};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_overlay_images::cast_effect_pool::{
     CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST, CastEffectPool,
 };
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_cast_cue::{ModuleHeadCue, module_head_cue};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -168,7 +169,7 @@ fn every_band_image_names_the_head_cue_the_doc_census_carries() {
 /// three monster seats.
 fn battle_world(dir: &std::path::Path) -> World {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -189,8 +190,9 @@ fn battle_world(dir: &std::path::Path) -> World {
     }
     world.install_cast_effect_pool(Arc::new(pool));
     let scus = std::fs::read(dir.join("SCUS_942.54")).expect("read SCUS");
-    world.audio.xa_cue_durations =
-        Some(legaia_asset::xa_cue_table::xa_cue_durations_from_scus(&scus).expect("span table"));
+    world.audio.xa_cue_durations = Some(
+        legaia_game_tables::xa_cue_table::xa_cue_durations_from_scus(&scus).expect("span table"),
+    );
     world
 }
 
@@ -253,8 +255,8 @@ fn without_a_span_table_a_cast_raises_no_clip() {
 /// A coin-flip module lists both candidates; the list plays nothing.
 #[test]
 fn a_rounds_committed_spells_list_their_cast_voices_ahead() {
+    use legaia_engine_battle::target_picker::CursorRow;
     use legaia_engine_core::battle_round::PendingPartyAction;
-    use legaia_engine_core::target_picker::CursorRow;
     let Some(dir) = extracted_dir() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;

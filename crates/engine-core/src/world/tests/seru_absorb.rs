@@ -2,6 +2,7 @@
 //! staging its Seru, and the Done band's grant teaching it.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 const GIMARD: u16 = 0x40;
 
@@ -16,7 +17,7 @@ fn absorb_world(chance: u8, ra_seru: bool) -> World {
     // Vahn's Ra-Seru marker reads equipment slot 3 (`FUN_80053CB8`).
     eq.slots[3] = if ra_seru { 0x30 } else { 0 };
     rec.set_equipment(eq);
-    let mut def = crate::monster_catalog::MonsterDef::new(GIMARD, "Seru", 50, 10);
+    let mut def = legaia_engine_battle::monster_catalog::MonsterDef::new(GIMARD, "Seru", 50, 10);
     def.absorb_seru = 1;
     def.absorb_chance_pct = chance;
     world.tables.monster_catalog.insert(def);
@@ -105,9 +106,9 @@ fn magic_boost_adds_thirty_points() {
 /// matching unload retires it.
 #[test]
 fn the_absorb_raise_carries_the_caption_line_until_its_unload() {
-    use legaia_engine_vm::battle_action::BattleActionHost;
+    use legaia_engine_battle_vm::battle_action::BattleActionHost;
     let mut world = absorb_world(100, true);
-    world.tables.absorb_caption = Some(legaia_asset::absorb_caption::AbsorbCaption {
+    world.tables.absorb_caption = Some(legaia_game_tables::absorb_caption::AbsorbCaption {
         prefixes: vec!["A0 ".into(), "A1 ".into(), "A2 ".into()],
         suffix: "!".into(),
     });
@@ -137,7 +138,7 @@ fn the_absorb_raise_carries_the_caption_line_until_its_unload() {
 /// spawner, so a raise must not seat an `efect.dat` script in the pool.
 #[test]
 fn a_hud_element_raise_spawns_no_effect_script() {
-    use legaia_engine_vm::battle_action::BattleActionHost;
+    use legaia_engine_battle_vm::battle_action::BattleActionHost;
     let mut world = World {
         mode: SceneMode::Battle,
         ..World::default()

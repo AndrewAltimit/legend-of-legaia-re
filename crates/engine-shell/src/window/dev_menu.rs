@@ -20,19 +20,19 @@
 //! world-map dev menu, so this host is where it belongs. Square swaps the row
 //! list for it while the list has the pad. The six per-character counters come
 //! straight out of the live `0x414`-byte character records through
-//! [`legaia_engine_render::record_counters`], which rebases the retail
+//! [`legaia_engine_ui::record_counters`], which rebases the retail
 //! save-block displacements onto a bare record; the clamping and the H:MM:SS
 //! decomposition are the ported model
-//! (`legaia_engine_vm::world_map_overlay::records_screen`).
+//! (`legaia_engine_field::dev_menu_leaves::records_screen`).
 //!
 //! The lifetime battle / escape counters and the treasure census are state the
 //! engine does not keep, so those read zero and the treasure line stays hidden
 //! - the same page retail draws off a save that never incremented them.
 
 use super::*;
-use legaia_engine_core::dev_menu::retail_packed;
 use legaia_engine_core::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage};
-use legaia_engine_render::RecordsLabels;
+use legaia_engine_system::pad::retail_packed;
+use legaia_engine_ui::RecordsLabels;
 
 /// Pen the dev-menu list draws from - clear of the field HUD's own rows.
 const DEV_MENU_PEN: (i32, i32) = (16, 24);
@@ -44,7 +44,7 @@ const DEV_RECORDS_PEN: (i32, i32) = (24, 40);
 
 /// Pad bit that swaps the row list for the Records page (unused by every
 /// [`DevMenuSession`] row, so it steals nothing).
-const RECORDS_TOGGLE: u16 = legaia_engine_core::dev_menu::PACK_SQUARE;
+const RECORDS_TOGGLE: u16 = legaia_engine_system::pad::PACK_SQUARE;
 
 /// The page's heading strings. Retail keeps them in the world-map overlay's
 /// data segment; the builder takes them from the caller so no game text
@@ -137,7 +137,7 @@ impl PlayWindowApp {
     /// and the play clock is the world's own second counter scaled back to
     /// retail's 1/60 s tick. Everything past that (the display caps, the
     /// H:MM:SS split, the treasure percentage) is the ported model.
-    fn build_dev_records_draws(&self) -> Vec<legaia_engine_render::TextDraw> {
+    fn build_dev_records_draws(&self) -> Vec<legaia_engine_ui::TextDraw> {
         self.records_draws_at(DEV_RECORDS_PEN)
     }
 
@@ -145,7 +145,7 @@ impl PlayWindowApp {
     /// the dev Records page and the end-of-game soft reset
     /// (`World::soft_reset_records_pen`) draw the same screen at different
     /// origins.
-    pub(super) fn records_draws_at(&self, pen: (i32, i32)) -> Vec<legaia_engine_render::TextDraw> {
+    pub(super) fn records_draws_at(&self, pen: (i32, i32)) -> Vec<legaia_engine_ui::TextDraw> {
         let world = &self.session.host.world;
         let records: Vec<&[u8]> = world
             .party
@@ -156,7 +156,7 @@ impl PlayWindowApp {
             .map(|m| m.raw.as_slice())
             .collect();
         let model = dev_records_model(&records, world.clock.play_time_seconds);
-        legaia_engine_render::records_screen_draws_for(&self.font, &records_view(&model), pen)
+        legaia_engine_ui::records_screen_draws_for(&self.font, &records_view(&model), pen)
     }
 
     /// Build the row list's draws through the ported list-body renderer.
@@ -172,8 +172,8 @@ impl PlayWindowApp {
     fn build_dev_menu_draws(
         session: &DevMenuSession,
         font: &legaia_font::Font,
-    ) -> Vec<legaia_engine_render::TextDraw> {
-        use legaia_engine_render::{
+    ) -> Vec<legaia_engine_ui::TextDraw> {
+        use legaia_engine_ui::{
             DevMenuListRow, dev_menu_cursor_xy, dev_menu_list_draws_for, text_draws_for,
         };
         let values: Vec<String> = DevMenuRow::ALL
@@ -194,7 +194,7 @@ impl PlayWindowApp {
             out.extend(text_draws_for(
                 &font.layout_ascii(">"),
                 xy,
-                legaia_engine_render::MENU_TEXT_WHITE,
+                legaia_engine_ui::MENU_TEXT_WHITE,
             ));
         }
         out
@@ -210,13 +210,13 @@ impl PlayWindowApp {
 fn dev_records_model(
     records: &[&[u8]],
     play_time_seconds: u32,
-) -> legaia_engine_vm::world_map_overlay::RecordsScreen {
-    use legaia_engine_vm::world_map_overlay::{CharRecordStats, records_screen};
+) -> legaia_engine_field::dev_menu_leaves::RecordsScreen {
+    use legaia_engine_field::dev_menu_leaves::{CharRecordStats, records_screen};
     let mut chars = [CharRecordStats::default(); 3];
     for (slot, out) in chars.iter_mut().enumerate() {
         let Some(c) = records
             .get(slot)
-            .and_then(|r| legaia_engine_render::record_counters(r))
+            .and_then(|r| legaia_engine_ui::record_counters(r))
         else {
             continue;
         };
@@ -240,9 +240,9 @@ fn dev_records_model(
 /// Project the ported model onto the draw builder's view, with the caller-owned
 /// heading strings attached.
 fn records_view(
-    model: &legaia_engine_vm::world_map_overlay::RecordsScreen,
-) -> legaia_engine_render::RecordsScreenView<'static> {
-    legaia_engine_render::RecordsScreenView {
+    model: &legaia_engine_field::dev_menu_leaves::RecordsScreen,
+) -> legaia_engine_ui::RecordsScreenView<'static> {
+    legaia_engine_ui::RecordsScreenView {
         battles: model.battles,
         escapes: model.escapes,
         play_hours: model.play_hours,
@@ -266,18 +266,18 @@ fn records_view(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_render::{RecordsField, record_offset, records_screen_fields};
+    use legaia_engine_ui::{RecordsField, record_offset, records_screen_fields};
 
     /// The raw-to-packed pad conversion, checked on every button whose two
     /// encodings are documented independently (`retail_pad`'s module table
     /// and the `dev_menu` `PACK_*` constants).
     #[test]
     fn pad_repack_matches_both_documented_layouts() {
-        use legaia_engine_core::dev_menu::{
+        use legaia_engine_system::input::PadButton as B;
+        use legaia_engine_system::pad::{
             PACK_CIRCLE, PACK_CROSS, PACK_DOWN, PACK_LEFT, PACK_RIGHT, PACK_SQUARE, PACK_TRIANGLE,
             PACK_UP,
         };
-        use legaia_engine_core::input::PadButton as B;
         let cases = [
             (B::Up, PACK_UP),
             (B::Down, PACK_DOWN),
@@ -399,11 +399,8 @@ mod tests {
         // footprint has to fit the retail 320x240 stage from this pen or it
         // would spill past the framebuffer on a 1x window.
         let font = legaia_font::Font::placeholder();
-        let draws = legaia_engine_render::records_screen_draws_for(
-            &font,
-            &records_view(&m),
-            DEV_RECORDS_PEN,
-        );
+        let draws =
+            legaia_engine_ui::records_screen_draws_for(&font, &records_view(&m), DEV_RECORDS_PEN);
         assert!(!draws.is_empty());
         for d in &draws {
             assert!(d.dst.0 >= 0 && d.dst.1 >= 0, "draw off the top/left: {d:?}");

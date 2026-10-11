@@ -9,15 +9,16 @@
 //! `legaia_engine_vm` ports ([`hop_arc`], [`billboard`]); this file resolves
 //! targets, advances the records once per field frame, and projects the
 //! lights for the two play hosts, which draw them through
-//! `legaia_engine_ui::screen_prim::light_pool_prims`.
+//! `legaia_render_kernels::screen_prim::light_pool_prims`.
 //!
 //! REF: FUN_801DE840 (op `0x43` arm `0x801DF384..0x801DF5B8`, op `0x34` sub-1 arm
 //! `0x801DFEFC..0x801E0018`), FUN_8003CF04, FUN_80019278
 
 use super::*;
+use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_vm::field_actor_billboard as billboard;
 use legaia_engine_vm::field_ledge_hop_arc as hop_arc;
-use legaia_engine_vm::psx_camera::FieldCameraView;
 
 /// One attached light, projected for this frame: the blend mode and the
 /// light pool's primitives in link order.
@@ -103,7 +104,7 @@ impl World {
     /// that never moved), at [`Self::field_npc_render_y`]. `None` while it is
     /// not drawn - render scale `0` ([`Self::field_npc_render_scale`]) or
     /// parked in the off-map hide box. The anchor enhanced lighting moves a
-    /// prop's lamp set to (`legaia_engine_ui::scene_lighting::place_prop_lights`).
+    /// prop's lamp set to (`legaia_render_kernels::scene_lighting::place_prop_lights`).
     pub fn field_npc_live_anchor(&self, slot: u8, spawn: (i16, i16)) -> Option<[f32; 3]> {
         let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
         let (x, z) = self.npcs.positions.get(&slot).copied().unwrap_or(spawn);
@@ -223,7 +224,7 @@ impl World {
     /// which `FUN_801D5D60` calls the follow ease `FUN_801DB510(player)` and
     /// the focus clamp `FUN_801DAA50` every frame the arc flies - a cutscene
     /// that owns the shot included. The camera reads this to run its follow
-    /// step through the cutscene ([`crate::camera::Camera`]).
+    /// step through the cutscene ([`legaia_engine_field::camera::Camera`]).
     ///
     /// REF: FUN_801D5D60 (ported as [`hop_arc::release_watcher_tick`])
     pub fn script_arc_follow_camera(&self) -> bool {

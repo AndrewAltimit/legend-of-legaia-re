@@ -1,0 +1,615 @@
+//! One segment of the ladder: its tier and report, the traversal from one
+//! milestone toward the next, and `run_segment` which scores it.
+
+use super::*;
+
+// ---------------------------------------------------------------------------
+// Segments
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Tier {
+    None = 0,
+    Loads = 1,
+    Enters = 2,
+    Progresses = 3,
+    Pad = 4,
+}
+
+impl Tier {
+    pub(super) fn name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Loads => "loads",
+            Self::Enters => "enters",
+            Self::Progresses => "progresses",
+            Self::Pad => "pad",
+        }
+    }
+}
+
+pub(super) struct SegmentReport {
+    pub(super) key: String,
+    pub(super) from: String,
+    pub(super) to: String,
+    pub(super) route: String,
+    pub(super) tier: Tier,
+    /// Why the first tier that did not clear failed.
+    pub(super) stall: Option<String>,
+    /// Story flags the next anchor carries that the engine had not set where
+    /// the seated run stopped.
+    pub(super) missing_flags: Vec<u16>,
+}
+
+/// Is `target` reached in the session's current state?
+pub(super) fn reached(session: &NativeSession, target: &Milestone) -> bool {
+    if scene_name(session) != target.scene || !walking(session) {
+        return false;
+    }
+    match target.reach.as_str() {
+        "control" => released(session),
+        "flags" => target
+            .reach_flags
+            .iter()
+            .all(|&f| session.host.world.system_flag_test(f)),
+        _ => true,
+    }
+}
+
+/// A party wipe on a pad walk leaves the game-over screen up; nothing after
+/// it is play.
+pub(super) fn wiped(session: &NativeSession) -> Option<String> {
+    let w = &session.host.world;
+    (w.game_over_hold || w.game_over).then(|| format!("party wiped: {}", battle_snapshot(session)))
+}
+
+pub(super) fn flags_of_world(session: &NativeSession) -> BTreeSet<u16> {
+    let mut out = BTreeSet::new();
+    for (i, b) in session.host.world.flags.system_flags.iter().enumerate() {
+        for k in 0..8 {
+            if b & (0x80 >> k) != 0 {
+                out.insert((i * 8 + k) as u16);
+            }
+        }
+    }
+    out
+}
+
+/// Drive from the seeded state toward `target`, hop by hop, by seated
+/// traversal (with the beats pass) or by the pad. `Ok(())` when reached.
+pub(super) fn traverse(
+    session: &mut NativeSession,
+    graph: &DiscGraph,
+    target: &Milestone,
+    pad: bool,
+    trail: &mut Vec<String>,
+) -> Result<(), String> {
+    let mut beaten: BTreeSet<String> = BTreeSet::new();
+    // The flags each scene's beats pass left behind (pad tier): a scene
+    // the story came back to with new flags has new beats to play.
+    // `retona`: the Songi fight, the P2[17] hop to `map02` and back, and
+    // the summit scene P2[18] all come before the party can work the
+    // summit's wall switches (P2[4] / P2[5]) toward the way down.
+    let mut beaten_flags: BTreeMap<String, BTreeSet<u16>> = BTreeMap::new();
+    // Crossing detours taken per (scene, goal). A detour that ends in a
+    // third scene (`rikuroa` turns the party away and the walk out lands
+    // by `cave01`) leaves the player on another side of `cur`, from which
+    // a further crossing is the way on (`keikoku`'s west mouth); a detour
+    // that came back to `cur`, or found no crossing at all, is not retried.
+    let mut crossed: BTreeMap<(String, String), usize> = BTreeMap::new();
+    // Both tiers play the same beats and waypoints; the pad tier plays them
+    // with pad input only ([`PAD_HAND`]).
+    PAD_HAND.with(|h| h.set(pad));
+    RESTED.with(|r| r.borrow_mut().clear());
+    REFUSED_DOORS.with(|r| r.borrow_mut().clear());
+    TURNBACK.with(|t| t.borrow_mut().clear());
+    RAN_ON_WALK.with(|t| t.borrow_mut().clear());
+    PLAYING_BEAT.with(|b| b.set(None));
+    // Each pass answers pickers from a fresh rotation: a count carried over
+    // from the seated pass (or an earlier segment) made the pad hand's
+    // first answer depend on what else had run in the process (`nilboa`
+    // P2[0]'s "are you ready?" opened on its second option, "No").
+    PICKS.with(|p| *p.borrow_mut() = (HashMap::new(), None));
+    let mut via = 0usize;
+    let vias: &[String] = &target.via;
+    // Edges whose hop failed even after the scene's beats ran: the ladder
+    // routes around them (see the `dead` arm below).
+    let mut dead: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut steps = 0usize;
+    while steps < MAX_HOPS + vias.len() * 4 + dead.len() * 4 {
+        steps += 1;
+        pad_budget(session)?;
+        // Let whatever the last landing started finish first.
+        let here = scene_name(session);
+        match run_while_moving(session, SCRIPT_CEILING) {
+            Run::Entered(s) => {
+                // A waypoint whose own arrival script carries the party on
+                // (`concend`'s P2[0] ends in the hop to `town0d`) was
+                // visited: its beat is that script.
+                if vias.get(via).is_some_and(|w| *w == here) {
+                    via += 1;
+                    trail.push(format!("[via {here}: arrival script]"));
+                }
+                trail.push(format!("{s}(scripted)"));
+                // A milestone scene a scripted chain passes through is
+                // reached: the ending's `edteien` is one link of the credits
+                // chain (`edteien > edbylon > ... > edlast`), and its anchor
+                // is a state taken mid-cutscene there, not a walkable stop.
+                if via >= vias.len() && reached(session, target) {
+                    return Ok(());
+                }
+                continue;
+            }
+            Run::Released => {}
+            Run::Parked(p) => {
+                if via >= vias.len() && reached(session, target) {
+                    return Ok(());
+                }
+                return Err(format!("in {}: parked - {p}", scene_name(session)));
+            }
+            other => return Err(format!("in {}: {other:?}", scene_name(session))),
+        }
+        if via >= vias.len() && reached(session, target) {
+            return Ok(());
+        }
+        let cur = scene_name(session);
+        // A waypoint reached: play its beats once, then head for the next.
+        if let Some(w) = vias.get(via)
+            && *w == cur
+        {
+            via += 1;
+            let mut log = Vec::new();
+            let left = play_beats(session, &mut log)
+                .map_err(|b| format!("in {cur} (via), playing beats: {b}"))?;
+            trail.push(format!("[via {}]", log.join("; ")));
+            if let Some(s) = left {
+                trail.push(format!("{s}(beat)"));
+            }
+            continue;
+        }
+        let goal = vias.get(via).unwrap_or(&target.scene).clone();
+        // In the target scene with its beat unplayed, or stuck on a door:
+        // play the scene's walkable beats once, then look again.
+        let stuck_here = cur == target.scene && via >= vias.len();
+        let mut next = String::new();
+        let hop = if stuck_here {
+            Err(String::new())
+        } else {
+            let Some(route) = graph.route_avoiding(&cur, &goal, &dead) else {
+                return Err(format!("no scene route from {cur} to {goal}"));
+            };
+            next = route[1].clone();
+            let hop = if pad {
+                pad_hop(session, graph, &next)
+            } else {
+                seated_hop(session, graph, &next)
+            };
+            hop.map_err(|e| {
+                let (x, z) = player_xz(session);
+                format!("hop {cur} -> {next} at tile {:?}: {e}", tile_of(x, z))
+            })
+        };
+        match hop {
+            Ok(entered) => {
+                if pad && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [hop] {cur} -> {entered} (frame {})", session.frames);
+                }
+                trail.push(entered)
+            }
+            Err(e)
+                if pad && e.contains("no walkable path") && {
+                    let n = crossed.entry((cur.clone(), goal.clone())).or_insert(0);
+                    *n += 1;
+                    *n <= MAX_CROSS_OVERS
+                } =>
+            {
+                match cross_over(
+                    session,
+                    graph,
+                    &cur,
+                    &goal,
+                    &CrossTarget::Door(next.clone()),
+                ) {
+                    Ok(s) => {
+                        // Only a detour that ended in a third scene earns
+                        // another: one that came back to `cur` already
+                        // played every crossing its lattice named.
+                        if s == cur {
+                            crossed.insert((cur.clone(), goal.clone()), MAX_CROSS_OVERS);
+                        }
+                        trail.push(format!("{s}(crossing)"));
+                    }
+                    Err(why) => {
+                        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                            eprintln!("    [cross] {e}; {why}");
+                        }
+                        // Try the scene's beats next, as for any failed hop.
+                        beaten.remove(&cur);
+                        crossed.insert((cur.clone(), goal.clone()), MAX_CROSS_OVERS);
+                        continue;
+                    }
+                }
+            }
+            Err(e) => {
+                if pad
+                    && beaten.contains(&cur)
+                    && beaten_flags
+                        .get(&cur)
+                        .is_some_and(|f| *f != flags_of_world(session))
+                {
+                    beaten.remove(&cur);
+                }
+                if beaten.insert(cur.clone()) {
+                    if !e.is_empty() && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!(
+                            "    [hop] {e}; playing {cur}'s beats (frame {})",
+                            session.frames
+                        );
+                    }
+                    let mut log = Vec::new();
+                    // Only the milestone's own beats pass may stop short of
+                    // a fight it committed (see [`fight_committed`]).
+                    let aim = (via >= vias.len()).then(|| target.clone());
+                    BEAT_TARGET.with(|t| *t.borrow_mut() = aim);
+                    let left = play_beats(session, &mut log);
+                    BEAT_TARGET.with(|t| *t.borrow_mut() = None);
+                    let left =
+                        left.map_err(|b| format!("in {cur}, playing beats (after {e}): {b}"))?;
+                    beaten_flags.insert(cur.clone(), flags_of_world(session));
+                    trail.push(format!("[{}]", log.join("; ")));
+                    if let Some(s) = left {
+                        trail.push(format!("{s}(beat)"));
+                    }
+                    continue;
+                }
+                // The beats did not open the hop either: the edge is one
+                // the story no longer takes (a one-shot transport - `station`
+                // P2[23], the chapter-3 cart crash into `map03`, spawns only
+                // while `0x36C` is clear), or one it has not opened yet (the
+                // `rikuroa` P2[57] warp to `uru` waits on `0x3BC`). Route
+                // around it when another way exists.
+                if !stuck_here
+                    && dead.insert((cur.clone(), next.clone()))
+                    && graph.route_avoiding(&cur, &goal, &dead).is_some()
+                {
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!("    [hop] {cur} -> {next} is dead; rerouting: {e}");
+                    }
+                    trail.push(format!("[{cur}->{next} dead]"));
+                    continue;
+                }
+                // The beat that sets a missing reach flag lies in another walk
+                // component of the scene: a round trip through a neighbouring
+                // scene that lands on its side (`chitei2`'s junction band
+                // P2[3] is reached by re-entering from `deroa` at (93, 108)),
+                // then the beats again.
+                if stuck_here && pad {
+                    let flags: Vec<u16> = target
+                        .reach_flags
+                        .iter()
+                        .copied()
+                        .filter(|&f| !session.host.world.system_flag_test(f))
+                        .collect();
+                    // The bands of the flags no reachable beat sets.
+                    let bands: Vec<(i16, i16)> = flags
+                        .iter()
+                        .map(|&f| reach_flag_bands(session, &[f]))
+                        .filter(|b| !tiles_in_reach(session, b))
+                        .flatten()
+                        .collect();
+                    let n = crossed
+                        .entry((cur.clone(), String::from("<band>")))
+                        .or_insert(0);
+                    *n += 1;
+                    if !bands.is_empty() && *n <= MAX_CROSS_OVERS {
+                        let t = CrossTarget::Tiles(bands);
+                        match cross_over(session, graph, &cur, "", &t) {
+                            Ok(s) => {
+                                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                                    eprintln!("    [cross] {cur} to the reach band: landed in {s}");
+                                }
+                                trail.push(format!("{s}(band crossing)"));
+                                beaten.remove(&s);
+                                continue;
+                            }
+                            Err(why) => {
+                                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                                    eprintln!("    [cross] {cur} to the reach band: {why}");
+                                }
+                            }
+                        }
+                    }
+                }
+                if stuck_here {
+                    let missing: Vec<String> = target
+                        .reach_flags
+                        .iter()
+                        .filter(|&&f| !session.host.world.system_flag_test(f))
+                        .map(|f| format!("0x{f:03X}"))
+                        .collect();
+                    return Err(format!(
+                        "in {cur} with control, but reach flag(s) {} never set",
+                        missing.join(",")
+                    ));
+                }
+                return Err(e);
+            }
+        }
+    }
+    // The last hop's landing is read like every other: the loop tests
+    // `reached` at the top of a pass, and a hop that lands on the milestone
+    // as the budget runs out (`kor5`, the Sol Tower summit, entered on the
+    // sixteenth) would otherwise be called lost on arrival.
+    if via >= vias.len() && reached(session, target) {
+        return Ok(());
+    }
+    Err(format!("gave up after {MAX_HOPS} hops"))
+}
+
+pub(super) fn panic_text(p: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = p.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = p.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "non-string panic".into()
+    }
+}
+
+/// Run segment `from -> to`.
+pub(super) fn run_segment(
+    inp: &Inputs,
+    graph: &DiscGraph,
+    from: &Milestone,
+    from_anchor: Option<&Anchor>,
+    to: &Milestone,
+    to_anchor: Option<&Anchor>,
+    with_pad: bool,
+) -> SegmentReport {
+    let route = graph
+        .route(&from.scene, &to.scene)
+        .map_or_else(|| "(no route)".to_string(), |r| graph.show(&r));
+    let mut rep = SegmentReport {
+        key: to.id.clone(),
+        from: from.id.clone(),
+        to: to.id.clone(),
+        route,
+        tier: Tier::None,
+        stall: None,
+        missing_flags: Vec::new(),
+    };
+
+    NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = to_anchor.map(|a| a.flags.clone()));
+    // -- seated pass: loads, enters, progresses -----------------------------
+    // A seated pass that a boss wipes is played once more from the same seed
+    // with the bag's guard against that boss's element equipped, the pad
+    // pass's guard retry: the player's reload after a game over. Without it
+    // a seated boss the unguarded hand wins about half the time (`chitei2`
+    // P2[13], Jette) decided both the `progresses` and the `pad` tier on one
+    // hand of the rand stream, so any change to how long a battle action
+    // runs moved the segment.
+    // A wipe after the guard retry (or with no element to guard) is reloaded
+    // with a fresh hand, as the pad pass does, up to `PAD_WIPE_ATTEMPTS`
+    // attempts in all: Koru (`nilboa` P2[20]) is a race the party wins or
+    // loses by a few dozen HP on a given stream.
+    let mut seated_prepare: Option<u8> = None;
+    let mut seated_attempt = 0u32;
+    LEARNED_CADENCE.with(|l| l.set(None));
+    let seated = loop {
+        seated_attempt += 1;
+        let attempt = seated_attempt;
+        LOST_TO_ELEMENT.with(|l| l.set(None));
+        let prepare = seated_prepare;
+        let seated = catch_unwind(AssertUnwindSafe(|| {
+            let mut session = open_session(&inp.extracted);
+            let opts = live_opts(false);
+            let mut tier = Tier::None;
+            let landed = match seed(&mut session, from, from_anchor, &opts) {
+                Ok(s) => s,
+                Err(e) => return (tier, Some(format!("seed: {e}")), None),
+            };
+            if landed != from.scene || !walking(&session) {
+                return (
+                    tier,
+                    Some(format!(
+                        "seed landed {landed} in {:?}, milestone scene is {}",
+                        session.host.world.mode, from.scene
+                    )),
+                    None,
+                );
+            }
+            tier = Tier::Loads;
+            // `LEGAIA_FGL_SEATED_RNG_SEED=<u32>`: deal the seated pass another
+            // hand, as `LEGAIA_FGL_RNG_SEED` does the pad pass - a seated boss
+            // fight (`chitei2` P2[13], Jette) is checked across streams with it.
+            if let Some(s) = std::env::var("LEGAIA_FGL_SEATED_RNG_SEED")
+                .ok()
+                .and_then(|s| s.trim().parse().ok())
+            {
+                session.host.world.rng_state = s;
+            }
+            // A reload other than the guard retry plays another hand (see
+            // the pad pass's reload).
+            if attempt > 1 && !(attempt == 2 && prepare.is_some()) {
+                let w = &mut session.host.world;
+                w.rng_state = w.rng_state.wrapping_add(attempt.wrapping_mul(0x9E37_79B9));
+            }
+            let mut trail = vec![landed];
+            match run_while_moving(&mut session, SCRIPT_CEILING) {
+                Run::Released => tier = Tier::Enters,
+                Run::Entered(s) => {
+                    trail.push(format!("{s}(scripted)"));
+                    tier = Tier::Enters;
+                }
+                Run::Parked(p) => {
+                    // A parked entry script can still be the segment's success
+                    // (a milestone reached mid-cutscene), but the tier stops here.
+                    let flags = session.host.world.flags.system_flags.clone();
+                    return (
+                        tier,
+                        Some(format!("entry script never released: {p}")),
+                        Some(flags),
+                    );
+                }
+                other => {
+                    let flags = session.host.world.flags.system_flags.clone();
+                    return (tier, Some(format!("entry: {other:?}")), Some(flags));
+                }
+            }
+            if let Some(element) = prepare {
+                let n = pad_equip_guard(&mut session, element);
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [seated] retry: equipped {n} element-{element} guard(s)");
+                }
+            }
+            let res = traverse(&mut session, graph, to, false, &mut trail);
+            let flags = session.host.world.flags.system_flags.clone();
+            match res {
+                Ok(()) => {
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!("    [seated] trail {}", trail.join(">"));
+                    }
+                    (Tier::Progresses, None, Some(flags))
+                }
+                Err(e) => (
+                    tier,
+                    Some(match prepare {
+                        Some(el) => format!(
+                            "seated (element-{el} guards): {e} [trail {}]",
+                            trail.join(">")
+                        ),
+                        None => format!("{e} [trail {}]", trail.join(">")),
+                    }),
+                    Some(flags),
+                ),
+            }
+        }));
+        let wiped = matches!(&seated, Ok((_, Some(e), _)) if e.contains("party wiped"));
+        match LOST_TO_ELEMENT.with(std::cell::Cell::get) {
+            Some(el) if wiped && seated_prepare.is_none() => seated_prepare = Some(el),
+            _ if wiped && seated_attempt < PAD_WIPE_ATTEMPTS => {}
+            _ => break seated,
+        }
+    };
+    let (tier, stall, flags_after) = match seated {
+        Ok(r) => r,
+        Err(p) => (
+            Tier::None,
+            Some(format!("PANIC: {}", panic_text(&*p))),
+            None,
+        ),
+    };
+    rep.tier = tier;
+    rep.stall = stall;
+    if let (Some(bank), Some(next)) = (flags_after, to_anchor)
+        && rep.tier < Tier::Progresses
+    {
+        let have = |f: u16| {
+            bank.get((f >> 3) as usize)
+                .is_some_and(|b| b & (0x80 >> (f & 7)) != 0)
+        };
+        let prev: BTreeSet<u16> = from_anchor.map(|a| a.flags.clone()).unwrap_or_default();
+        rep.missing_flags = next
+            .flags
+            .iter()
+            .copied()
+            .filter(|&f| !have(f) && !prev.contains(&f))
+            .collect();
+    }
+
+    // -- pad pass ---------------------------------------------------------------
+    // A party wiped by a boss whose element a Goods item in the bag guards
+    // is played again from the same seed with that guard equipped: the
+    // player's reload after a game over, preparing for the fight that ended
+    // the last attempt (see "A boss the anchor's party cannot outlast" in
+    // the ladder docs). A wipe after that - a boss with the guard on, or a
+    // fight with no element to guard - is reloaded again with a fresh hand of
+    // the rand stream, up to `PAD_WIPE_ATTEMPTS` attempts in all.
+    if with_pad && rep.tier >= Tier::Progresses {
+        let mut prepare: Option<u8> = None;
+        let mut attempt = 0u32;
+        LEARNED_CADENCE.with(|l| l.set(None));
+        loop {
+            attempt += 1;
+            LOST_TO_ELEMENT.with(|l| l.set(None));
+            let padded = catch_unwind(AssertUnwindSafe(|| {
+                let mut session = open_session(&inp.extracted);
+                let opts = live_opts(true);
+                seed(&mut session, from, from_anchor, &opts)?;
+                PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+                PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
+                // `LEGAIA_FGL_RNG_SEED=<u32>`: deal the pad tier another hand.
+                // Every random draw it meets comes off the world rand stream,
+                // so a re-seeded run is how a pad route is checked for
+                // depending on one stream's luck (see "A pad wipe that moves
+                // with an unrelated change" in the ladder docs).
+                if let Some(s) = std::env::var("LEGAIA_FGL_RNG_SEED").ok().and_then(|s| {
+                    let s = s.trim();
+                    s.strip_prefix("0x")
+                        .map_or_else(|| s.parse().ok(), |h| u32::from_str_radix(h, 16).ok())
+                }) {
+                    session.host.world.rng_state = s;
+                }
+                // A reload other than the guard retry plays another hand:
+                // the rand stream advances with the time a player spends on
+                // the game-over screen and the card menu, which the reseat
+                // does not replay. (The guard retry keeps the stream, so it
+                // measures the guard alone.)
+                if attempt > 1 && !(attempt == 2 && prepare.is_some()) {
+                    let w = &mut session.host.world;
+                    w.rng_state = w.rng_state.wrapping_add(attempt.wrapping_mul(0x9E37_79B9));
+                }
+                if let Some(element) = prepare {
+                    let n = pad_equip_guard(&mut session, element);
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!("    [pad] retry: equipped {n} element-{element} guard(s)");
+                    }
+                }
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [pad] seeded {} at {:?} (anchor seat {:?})",
+                        scene_name(&session),
+                        player_xz(&session),
+                        from_anchor.and_then(|a| a.seat)
+                    );
+                }
+                let start = session.frames;
+                let mut trail = vec![scene_name(&session)];
+                let r = traverse(&mut session, graph, to, true, &mut trail)
+                    .map_err(|e| format!("{e} [trail {}]", trail.join(">")));
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    let (n, cells) = PLAN_STATS.with(std::cell::Cell::take);
+                    eprintln!(
+                        "    [pad] {} frames, {n} plans over {cells} cells",
+                        session.frames - start
+                    );
+                }
+                r
+            }));
+            let wiped = matches!(&padded, Ok(Err(e)) if e.contains("party wiped"));
+            let retry = prepare.is_none() && wiped;
+            match padded {
+                Ok(Ok(())) => {
+                    rep.tier = Tier::Pad;
+                    rep.stall = None;
+                }
+                Ok(Err(e)) => {
+                    rep.stall = Some(match prepare {
+                        Some(el) => {
+                            format!("pad (attempt {attempt}, element-{el} guards): {e}")
+                        }
+                        None if attempt > 1 => format!("pad (attempt {attempt}): {e}"),
+                        None => format!("pad: {e}"),
+                    })
+                }
+                Err(p) => rep.stall = Some(format!("pad PANIC: {}", panic_text(&*p))),
+            }
+            match LOST_TO_ELEMENT.with(std::cell::Cell::get) {
+                Some(el) if retry => prepare = Some(el),
+                _ if wiped && attempt < PAD_WIPE_ATTEMPTS => {}
+                _ => break,
+            }
+        }
+    }
+    rep
+}

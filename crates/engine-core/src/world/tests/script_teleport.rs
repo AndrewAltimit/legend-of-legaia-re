@@ -5,7 +5,7 @@
 //! The record a context re-seats itself at is its own **partition-1 actor
 //! placement** (`+0x50 = N0 + placement_index`, flat-indexed), not a
 //! partition-0 object record - see
-//! [`crate::man_field_scripts::flat_record_span`].
+//! [`legaia_engine_field::man_field_scripts::flat_record_span`].
 
 use super::*;
 use crate::world::vm_hosts::apply_script_table_teleport;
@@ -51,7 +51,7 @@ fn man_bytes_with_scripted_records(records: &[([u8; 4], Vec<u8>)]) -> Vec<u8> {
 fn teleport_reseats_ctx_at_its_own_placement_record_header() {
     // Record 0: anim 9, tile (3, 4) with no half-tile bits.
     let man = man_bytes_with_placement_records(&[[0x00, 9, 0x03, 0x04]]);
-    let man_file = legaia_asset::man_section::parse(&man).expect("fixture parses");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("fixture parses");
     let mut ctx = FieldCtx {
         script_id: 0,
         flags: 0xFFFF_FFFF,
@@ -83,7 +83,7 @@ fn teleport_reseats_ctx_at_its_own_placement_record_header() {
 fn coord_high_bit_adds_the_half_tile_offset() {
     // bx = 0x83 -> tile 3 + half (0x40 extra); bz = 0x04 plain.
     let man = man_bytes_with_placement_records(&[[0x00, 0, 0x83, 0x04]]);
-    let man_file = legaia_asset::man_section::parse(&man).expect("fixture parses");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("fixture parses");
     let mut ctx = FieldCtx::default();
     assert!(apply_script_table_teleport(&man_file, &man, &mut ctx));
     assert_eq!(ctx.world_x, 3 * 0x80 + 0x40 + 0x40);
@@ -95,7 +95,7 @@ fn coord_high_bit_adds_the_half_tile_offset() {
 #[test]
 fn unresolvable_script_id_leaves_ctx_untouched() {
     let man = man_bytes_with_placement_records(&[[0x00, 9, 0x03, 0x04]]);
-    let man_file = legaia_asset::man_section::parse(&man).expect("fixture parses");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("fixture parses");
     let mut ctx = FieldCtx {
         script_id: 5, // out of range: only record 0 exists
         world_x: 0x1234,

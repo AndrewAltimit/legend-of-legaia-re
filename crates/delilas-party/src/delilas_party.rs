@@ -1,7 +1,7 @@
 //! Delilas party swap: play as Gi / Lu / Che while the story's ravine
 //! duels (and the Muscle Dome Master legs) field Vahn / Noa / Gala.
 //!
-//! A pure model-and-name identity swap over `crate::party_swap`:
+//! A pure model-and-name identity swap over `legaia_party_swap`:
 //! each playable character's battle files rebuild around the mapped
 //! sibling's model (their own animations, arts, stats and story are
 //! untouched), each sibling's monster block rebuilds around the mapped
@@ -13,14 +13,14 @@
 //! characters.
 //!
 //! Field-map visuals swap too: PROT 0874's party field meshes + atlas
-//! rebuild from the same monster models (`party_swap::fieldize`), so
+//! rebuild from the same monster models (`legaia_party_swap::fieldize`), so
 //! walking around towns shows the same siblings the battles do.
 
 use anyhow::{Context, Result, bail};
 
-use crate::party_swap::{self, PlayerRig, fieldize, playerize, winpose};
-use legaia_asset::monster_archive;
-use legaia_asset::new_game;
+use legaia_actor_formats::monster_archive;
+use legaia_game_tables::new_game;
+use legaia_party_swap::{PlayerRig, fieldize, playerize, winpose};
 
 /// PROT entry of `readef.DAT` (the battle side-band streaming slots).
 pub const READEF_ENTRY: usize = 894;
@@ -30,7 +30,7 @@ pub const READEF_ENTRY: usize = 894;
 /// per-character element table live.
 const BATTLE_OVERLAY_ENTRY: usize = 898;
 
-use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 mod apply;
 mod moveset;
@@ -113,7 +113,7 @@ impl Sibling {
     }
 
     /// The sibling's tile in the save-slot portrait sheet (PROT 899
-    /// `0x1F908`, [`crate::save_icon`]), in the sheet's character order
+    /// `0x1F908`, [`legaia_texture_replace::save_icon`]), in the sheet's character order
     /// (0 Vahn, 1 Noa, 2 Gala, ...). Gi's tile matches his masked field
     /// head TIM (stone bundle, CLUT (128,481)) - in the field events the
     /// siblings wear masks, which is why an unmasked-face guess misreads
@@ -194,9 +194,9 @@ impl PartyMapping {
     /// playable character.
     pub fn pairs(&self) -> [(usize, &'static PlayerRig, usize, &'static str, Sibling); 3] {
         [
-            (863, &party_swap::RIG_VAHN_GALA, 0, "Vahn", self.vahn),
-            (864, &party_swap::RIG_NOA, 1, "Noa", self.noa),
-            (865, &party_swap::RIG_VAHN_GALA, 2, "Gala", self.gala),
+            (863, &legaia_party_swap::RIG_VAHN_GALA, 0, "Vahn", self.vahn),
+            (864, &legaia_party_swap::RIG_NOA, 1, "Noa", self.noa),
+            (865, &legaia_party_swap::RIG_VAHN_GALA, 2, "Gala", self.gala),
         ]
     }
 }

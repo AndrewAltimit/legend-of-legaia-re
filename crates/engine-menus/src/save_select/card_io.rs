@@ -1,5 +1,4 @@
 //! Save-block checksum, the memory-card status poll and I/O machine, and the card snapshots a host feeds the screen.
-//! Split out of `save_select.rs`.
 
 use super::*;
 

@@ -14,7 +14,7 @@
     <dt>Size</dt><dd>Always <code>0x800</code> bytes (one sector); <code>param</code> records of 4 bytes at <code>+0x14</code></dd>
     <dt>In RAM</dt><dd>At <code>*(0x1F8003EC) + 0x12000</code>, right after the scene's <code>.MAP</code> - on retail because one 40-sector read covers both</dd>
     <dt>Marker</dt><dd>No magic - a header algebra (<a href="#header">below</a>)</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::scene_v12_table</code>; CLI <code>asset scene-v12</code> / <code>asset scene-v12-scan</code></dd>
+    <dt>Parser</dt><dd><code>legaia_scene_formats::scene_v12_table</code>; CLI <code>asset scene-v12</code> / <code>asset scene-v12-scan</code></dd>
     <dt>Confidence</dt><dd>Confirmed - header, record shape, one-sector size and the next-entry prescript hold across all 97 entries; loader and consumers traced statically</dd>
     <dt>Used by</dt><dd><a href="../subsystems/field-locomotion.html#grid-source">field locomotion (trigger block)</a>, <a href="../subsystems/cutscene.html">cutscene routing</a>, <a href="../tooling/randomizer.html">door shuffle</a></dd>
   </dl>
@@ -93,7 +93,7 @@
     <li><b>Every step</b><span>The tile lookup (field overlay 0897) scans the <code>.MAP</code> trigger block first, then falls back to the <code>.PCH</code> window; a hit spawns the partition-2 record.</span></li>
     <li><b>Event runs</b><span>The spawned record is a field-VM script: cutscene, door, story beat (<a href="../subsystems/script-vm.html">script VM</a>).</span></li>
   </ol>
-  <p><strong>In the port:</strong> parser <code>legaia_asset::scene_v12_table</code>; the lookup is <code>field_regions</code>; the <a href="../subsystems/field-locomotion.html#grid-source">field locomotion page</a> has the runtime contract.</p>
+  <p><strong>In the port:</strong> parser <code>legaia_scene_formats::scene_v12_table</code>; the lookup is <code>field_regions</code>; the <a href="../subsystems/field-locomotion.html#grid-source">field locomotion page</a> has the runtime contract.</p>
 </section>
 
 <section class="doc-section" id="event-script-prescript">
@@ -161,7 +161,7 @@
   <details class="disclosure" id="reading-parsed-structure">
     <summary>Reading the parsed structure</summary>
     <div class="disclosure-body">
-<pre><code class="language-rust">use legaia_asset::scene_v12_table;
+<pre><code class="language-rust">use legaia_scene_formats::scene_v12_table;
 
 let buf = std::fs::read("extracted/PROT/0093_map01.BIN")?;
 let t = scene_v12_table::detect(&amp;buf).expect("v12 header valid");

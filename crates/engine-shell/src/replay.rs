@@ -22,7 +22,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use legaia_parity::mode_trace_oracle::ModeTraceFrame;
+use legaia_engine_session::mode_trace::ModeTraceFrame;
 
 /// Current replay-file schema version. Bumped whenever the layout adds
 /// or removes a field; readers reject anything that doesn't match so a
@@ -60,7 +60,7 @@ pub struct ReplayMeta {
     pub scenario: Option<String>,
     /// Initial battle/effect-VM RNG seed. The PsyQ PRNG is `seed =
     /// seed * 1103515245 + 12345; (seed >> 16) & 0x7FFF`. See
-    /// `legaia_engine_vm::battle_formulas::psyq_rand_step`.
+    /// `legaia_engine_system::rand::psyq_rand_step`.
     pub rng_seed: u32,
     /// Total frame count to drive. The expanded pad stream has length
     /// `frames + 1` (frame 0 + the next `frames` ticks).
@@ -70,7 +70,7 @@ pub struct ReplayMeta {
 /// One pad-mask transition.
 ///
 /// `pad` is the PSX pad bitmask. Layout matches
-/// [`legaia_engine_core::input::PadButton::mask`]: Cross = `0x4000`,
+/// [`legaia_engine_system::input::PadButton::mask`]: Cross = `0x4000`,
 /// Circle = `0x2000`, Up = `0x0010`, Down = `0x0040`, Left = `0x0080`,
 /// Right = `0x0020`, etc. Stored as a plain `u16` so the wire form is
 /// `pad = 0x4000` rather than `pad = ["Cross"]`. Future writers can
@@ -86,7 +86,7 @@ pub struct PadEvent {
 /// Subset of [`ModeTraceFrame`] - keeps only the fields both engine
 /// and retail emitters populate (`scene_mode` + `active_scene`).
 /// `game_mode` is engine-side `None` today so it would always
-/// false-mismatch (see [`legaia_parity::mode_trace_oracle`] for the asymmetry
+/// false-mismatch (see `legaia_parity::mode_trace_oracle` for the asymmetry
 /// note).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExpectedFrame {
@@ -248,7 +248,7 @@ impl ReplayFile {
         for ex in &self.expected {
             // Pick the recorded row whose `frame` equals the expected
             // frame. The recorded trace from
-            // `build_engine_mode_trace` carries `frame = BootSession::frames`,
+            // `build_engine_mode_trace` carries `frame = NativeSession::frames`,
             // monotonically increasing from 0, with one row per tick - so
             // index = frame for the common path. Fall back to a linear
             // search for replays that started with a non-zero frame.

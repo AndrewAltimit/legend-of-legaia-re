@@ -1,6 +1,4 @@
 //! Scene-level trigger tables: destinations, FMV triggers, BGM starts, stager installs.
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use super::*;
 
@@ -9,7 +7,7 @@ use super::*;
 /// A field/overworld scene's controller script lists every place it can warp to
 /// as a `0x3F` op that carries the destination scene **name** directly in the
 /// bytecode (plus an `index` id and an entry tile). This is the disc-sourced
-/// counterpart to `legaia_engine_core::scene::DefaultMapIdResolver`'s positional guess: the
+/// counterpart to `legaia_engine_scene::scene::DefaultMapIdResolver`'s positional guess: the
 /// destination names are *in the data*, not in an uncaptured overlay. (The
 /// separate `0x3E` door-warp carries only a 7-id scene-*type* selector, whose
 /// name resolution does still live in an uncaptured handler.)
@@ -39,7 +37,7 @@ pub struct SceneDestination {
 /// stable indices across the controller's records; phantoms don't survive the
 /// gate.
 pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestination> {
-    // Delegates to the shared kernel in `legaia_asset::man_edit`: the P1
+    // Delegates to the shared kernel in `legaia_scene_formats::man_edit`: the P1
     // destination-table pass (next-P1-record-start bound so the trailing table
     // is reachable; clean-name gate + `(name, index)` dedup absorb the
     // over-walk) runs verbatim as the prefix, then a partition-2 pass appends
@@ -47,7 +45,7 @@ pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestinatio
     // retail P2-only class is the town/dungeon **exit door** (a P2
     // door-choreography record): `town01`'s overworld exit to `map01` is
     // entirely P2-carried - its P1 pass alone sees zero destinations.
-    legaia_asset::man_edit::scene_destinations(man_file, man)
+    legaia_scene_formats::man_edit::scene_destinations(man_file, man)
         .into_iter()
         .map(|d| SceneDestination {
             scene_name: d.scene_name,
@@ -70,9 +68,9 @@ pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestinatio
 /// referenced partition-2 record supplies the **destination**. Both are
 /// byte-exact disc data (verified against `map01`'s trailing `0x3F` table).
 ///
-/// See `legaia_engine_core::world::WorldMapEntityConfig::OverworldPortal` (the runtime
+/// See `crate::world_map_entity_config::WorldMapEntityConfig::OverworldPortal` (the runtime
 /// entity this seeds) and the drain in
-/// `legaia_engine_core::scene::SceneHost::tick`.
+/// `legaia_engine_core::scene_host::SceneHost::tick`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverworldPortalSite {
     /// Overworld trigger tile X the player walks onto (the `.MAP` kind-1
@@ -210,7 +208,7 @@ pub fn record_path_walk(
     pc: usize,
     flag_set: &dyn Fn(u16) -> bool,
 ) -> (RecordPathEnd, Vec<(bool, u16)>) {
-    use legaia_engine_vm::field_disasm::decode;
+    use legaia_scene_formats::field_disasm::decode;
     let mut writes: Vec<(bool, u16)> = Vec::new();
     let mut pc = pc;
     for _ in 0..4096 {
@@ -352,7 +350,7 @@ fn partition2_scene_changes(
     for insn in LinearWalker::new(body, pc0).flatten() {
         match insn.info {
             InsnInfo::SystemFlag {
-                kind: legaia_asset::field_disasm::FlagKind::Test,
+                kind: legaia_scene_formats::field_disasm::FlagKind::Test,
                 idx,
                 target: Some(target),
                 ..
@@ -380,7 +378,7 @@ fn partition2_scene_changes(
     for insn in LinearWalker::new(body, pc0).flatten() {
         match insn.info {
             InsnInfo::SystemFlag {
-                kind: legaia_asset::field_disasm::FlagKind::Test,
+                kind: legaia_scene_formats::field_disasm::FlagKind::Test,
                 idx,
                 target: Some(target),
                 ..
@@ -492,7 +490,7 @@ pub fn overworld_portal_sites(
 /// next game mode to `StrInit`), so the per-scene movie assignment is
 /// disc-sourced script data, not a runtime value. See
 /// [`docs/formats/str-fmv-table.md`] and the `MenuCtrlKind::FmvTrigger`
-/// decoder in `legaia_asset::field_disasm`.
+/// decoder in `legaia_scene_formats::field_disasm`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SceneFmvTrigger {
     /// Partition-1 record index whose script carries the op.

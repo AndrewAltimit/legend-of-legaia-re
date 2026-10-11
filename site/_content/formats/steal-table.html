@@ -9,7 +9,7 @@
   <dl class="kv">
     <dt>Magic</dt><dd>none - static data in <code>SCUS_942.54</code></dd>
     <dt>Where</dt><dd><code>DAT_80077828</code> (file offset <code>0x68028</code>), 2-byte stride, 1-based monster id; <strong>not</strong> in the PROT 867 monster record</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::steal_table::StealTable</code>; randomizer <code>legaia_patcher::steal</code></dd>
+    <dt>Parser</dt><dd><code>legaia_game_tables::steal_table::StealTable</code>; randomizer <code>legaia_patcher::steal</code></dd>
     <dt>Confidence</dt><dd>Confirmed - pinned from a live steal capture and byte-exact against the complete published steal table</dd>
     <dt>Used by</dt><dd><a href="../monsters.html">Enemy table</a> (steal column), <a href="../tooling/randomizer.html">Randomizer</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a></dd>
   </dl>
@@ -65,8 +65,8 @@
 
 <section class="doc-section" id="parser">
   <h2>In the port</h2>
-  <p><code>legaia_asset::steal_table::StealTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map, identical to the <a href="item-table.html">item-name table</a> resolver). <code>entry(monster_id)</code> returns the <code>[chance, item]</code> pair; <code>steal_item(monster_id)</code> returns the item only when the entry is stealable. CLI: <code>asset steal-table &lt;SCUS&gt; [--all] [--json]</code>, with the item id joined to its name.</p>
-  <p>The randomizer (<code>legaia_patcher::steal</code>) edits this table on a user-supplied disc to reassign steal items. The steal roll and the thief's return run in <code>legaia_engine_core::battle_steal</code>.</p>
+  <p><code>legaia_game_tables::steal_table::StealTable::from_scus</code> resolves the table from a <code>SCUS_942.54</code> image (PSX-EXE <code>t_addr</code> &rarr; file-offset map, identical to the <a href="item-table.html">item-name table</a> resolver). <code>entry(monster_id)</code> returns the <code>[chance, item]</code> pair; <code>steal_item(monster_id)</code> returns the item only when the entry is stealable. CLI: <code>asset steal-table &lt;SCUS&gt; [--all] [--json]</code>, with the item id joined to its name.</p>
+  <p>The randomizer (<code>legaia_patcher::steal</code>) edits this table on a user-supplied disc to reassign steal items. The steal roll and the thief's return run in <code>legaia_engine_battle::battle_steal</code>.</p>
 </section>
 
 <section class="doc-section" id="retail-steal-capture">

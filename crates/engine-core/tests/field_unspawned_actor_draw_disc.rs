@@ -10,7 +10,7 @@
 //!
 //! Disc-gated: skips (and passes) without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 #[test]
 fn uru_draws_no_unspawned_bound_actor() {

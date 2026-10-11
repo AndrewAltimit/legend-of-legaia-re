@@ -7,17 +7,15 @@ object-effect table and a move-VM part's motion block. Free of wgpu, winit and
 cpal, so it builds for native and `wasm32` alike.
 
 `legaia-engine-core` owns the composition - `World`'s cast / move-FX scene
-graph, the field VM's screen-effect ops and the battle animation tick - and
-re-exports every module here at its old path, so
-`legaia_engine_core::summon` and `legaia_engine_effects::summon` name the same
-module.
+graph, the field VM's screen-effect ops and the battle animation tick.
+Consumers name the kernels here directly (`legaia_engine_effects::summon`).
 
 ## What belongs here
 
 A module moves here when its whole dependency closure inside the engine is in
 this crate, `legaia-engine-vm`, or the other `World`-free crates below
 `engine-core` (`legaia-engine-battle` for the spell table,
-`legaia-engine-minigames` for the shared colour word). Doc links that point
+`legaia-render-kernels` for the shared colour word). Doc links that point
 back up at `engine-core` are plain code spans, since rustdoc cannot resolve a
 link into a dependent crate.
 

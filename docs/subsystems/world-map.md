@@ -31,7 +31,7 @@ VRAM; **OT** = the GPU ordering table.
 | Walk frame | Field chain `FUN_801D1344` -> `FUN_801D01B0`, collision `FUN_801CFE4C` | `World::tick_world_map`, `step_world_map_locomotion`, `advance_with_collision` |
 | Walk camera | Field zone camera (`FUN_801DAB90` / `FUN_801DB510`) | `camera::zone_camera_scene`, `FieldCameraFrame::WorldMapWalk` |
 | Random encounters | Region roll `FUN_801D9E1C` | `World::live_world_map_tick`, `set_world_map_regions` |
-| Entity / encounter SM | `FUN_801DA51C` | `legaia_engine_vm::world_map::step` |
+| Entity / encounter SM | `FUN_801DA51C` | `legaia_engine_field::world_map_entity::step` |
 | Town / dungeon entrances | `.MAP` walk-on trigger -> MAN `P2` record -> field-VM `0x3F` | `OverworldPortal` entities, `overworld_portal_sites` |
 | Ground | `FUN_801F89B8` (PROT 0901), heights via `FUN_80019278` | `Scene::walk_heightfield`, `build_ground_heightfield` |
 | Decorations / landmarks | `FUN_801F69D8` cell sweep; `FUN_8003A55C` placed actors | `parse_walk_decorations`, `walk_object_placements` |
@@ -263,7 +263,7 @@ The bytes are at PROT 0897 file offset `0x18DC4`. The single call site is the
 branch pair at `0x801E7794..0x801E77B8` inside `FUN_801E76D4` (top view on
 **and** `DAT_801F2B95 & 1`), so retail reaches it only behind the debug flag.
 
-Port: `legaia_engine_vm::world_map_dim::emit_screen_dim`, gated by
+Port: `legaia_engine_field::world_map_dim::emit_screen_dim`, gated by
 `WorldMapController::run_screen_dim` and called once per frame from the
 world-map tick.
 
@@ -388,7 +388,7 @@ exits through `move v0,s1`).
 #### Engine port
 
 The renderer-free dev-menu leaves live in
-`legaia_engine_vm::world_map_overlay`:
+`legaia_engine_field::dev_menu_leaves`:
 
 - `panel_geometry`, `dev_menu_cursor_step` (swap-wrap), `list_body_draws` (the
   phase x gate draw gate);
@@ -401,7 +401,7 @@ The renderer-free dev-menu leaves live in
   `resolve_equip_slot` / `stat_deltas`, from `FUN_801E5B4C`).
 
 The cursor step is named `dev_menu_cursor_step` rather than `cursor_step`
-because `legaia_engine_core::baka_cabinet` has a free function of that name
+because `legaia_engine_minigames::baka_cabinet` has a free function of that name
 and the port catalog's reachability pass identifies free functions by name
 ([`stale-not-wired-triage.md`](../tooling/stale-not-wired-triage.md)).
 
@@ -427,7 +427,7 @@ the `0x17` clamp). The per-character portrait / separator icons
 status page's LV/HP/MP icons.
 
 The escape-timer scheduler `FUN_801D2EBC`, a leaf of the same overlay, has its
-own module `legaia_engine_vm::escape_timer`: the field VM's `0x4C 0xD3`
+own module `legaia_engine_field::escape_timer`: the field VM's `0x4C 0xD3`
 installer reaches `World::schedule_timed_flags` and
 `World::tick_escape_timer` drains the counter once per retail frame
 ([`script-vm-menuctrl.md`](script-vm-menuctrl.md#0x4c-nibble-0xd00xdf---party-state--inverted-y-mirror-cluster)).
@@ -531,13 +531,13 @@ linear flow. It is the same body.
 
 #### Engine port
 
-`legaia_engine_vm::world_map_panel` carries all three: `PanelCommand` /
+`legaia_engine_field::world_map_panel` carries all three: `PanelCommand` /
 `PanelEffect` / `decode_panel_command` / `run_panel_script` /
 `party_panel_geometry` for `FUN_801E9B3C`, `list_cursor_input` for
 `FUN_801E9DC8`, and `dev_menu_action` for `FUN_801EA9B0`'s bound, park-phase
 and constant-return contract. The cheat arms' global pokes are not modelled.
 
-`legaia_engine_core::world_map_panel_host::PanelWindowHost` owns the
+`legaia_engine_field::world_map_panel_host::PanelWindowHost` owns the
 `0x801F2B98` descriptor array and one window object per slot; `run_script`
 decodes a script through `run_panel_script` and applies every effect.
 `dev_menu_action` is hosted by the dev-menu screen's cancel leg.
@@ -675,14 +675,14 @@ primitives.
 
 #### Engine port
 
-`legaia_engine_vm::world_map_panel_actors` carries all seven as pure
+`legaia_engine_field::world_map_panel_actors` carries all seven as pure
 phase-transition kernels: `fade_flash_tick`, `sub_list_tick`,
 `soft_reset_tick`, `fill_fade_tick`, `text_box_tick`, `flag_window_tick` and
 `field_hud_tick`. Each returns its next phase plus an effect list naming the
 retail calls (post the fill primitive, capture or restore the tint triple, run
 a panel script, set a story flag); the host applies them.
 
-The host is `legaia_engine_core::world_map_panel_host::PanelActorHost`, on
+The host is `legaia_engine_field::world_map_panel_host::PanelActorHost`, on
 `WorldMapController::panels`, stepped once a frame by `World::tick_world_map`.
 It owns the state the phases read - the brightness accumulator and flash
 counter, the shared cursor, the records slide, the tint triple and its saved
@@ -713,7 +713,7 @@ Three inputs are the **port's**, not retail's:
 - **The handler-id table.** `FUN_801F159C` turns a retiring actor's new
   `ctx[+0x50]` into a function pointer through the 52-entry
   `PTR_FUN_801F33B4`. The dispatcher is ported
-  (`legaia_engine_vm::baka_hub_actors::hub_dispatch`) but takes the resolved
+  (`legaia_engine_field::submode_hub_actors::hub_dispatch`) but takes the resolved
   handler as a closure, and seven of the table's slots are read out of the
   image. The sub-list, text-box and flag-window exits hand back to slot
   `0x1A`, one of the seven; the fade/flash exits pick `0x29` and `0x2B`, which
@@ -772,9 +772,9 @@ Rows step `0x0E`, or `0x0D` while the op-`0x49` descriptor cell
   `(x + 0x0C, y + 8)` under ink `9`. Kind `2` draws the plain three rows. Any
   other kind draws nothing (the arm at `0x801E6280` branches to the epilogue).
 
-Port: `legaia_engine_vm::world_map_overlay::equip_stat_panel` is the whole
+Port: `legaia_engine_field::dev_menu_leaves::equip_stat_panel` is the whole
 sub-draw, composing `aggregate_slot_stats` (twice), `can_equip`,
-`resolve_equip_slot` and `stat_deltas`. `baka_hub_actors::entry_list` calls it
+`resolve_equip_slot` and `stat_deltas`. `submode_hub_actors::entry_list` calls it
 where the `jal` sits and splices its rows in as `HubDraw::EntrySubPanel`. The
 painter dispatch is `World::tick_submode_screen` -> `HubPainter::for_window`
 -> `EntryList`; which record index that dispatch gets is covered on
@@ -894,7 +894,7 @@ overlay data region `0x801F28F0..0x801F2Fxx` and the context `_DAT_801C6EA4`.
   `FUN_8003CE34`) and runs `FUN_801E9DC8` over the rows: a numbered choice
   list used by the `kor` / `kor3` / `kor4` scripts only
   (`asset field-op-census --only "49 04"`). Port:
-  `legaia_engine_core::field_submode::submode_panel_rows` (layout) and
+  `legaia_engine_field::field_submode::submode_panel_rows` (layout) and
   `flag_window_tick` (handler), hosted on the field path by
   `engine-core::field_submode_flag_window` and drawn on both hosts.
 - **`FUN_801E6B34`** (1084 bytes) - the **name-entry renderer**: the `6 x 17`
@@ -927,7 +927,7 @@ overlay data region `0x801F28F0..0x801F2Fxx` and the context `_DAT_801C6EA4`.
   `_DAT_801F2E8C` clamps to `[1, 255]`, the BGM index `_DAT_801F2E90` cycles
   the sentinel-terminated (`0x58`) table at `0x801F2E94`, and later arms poke
   per-character party records. Port: the two integer bounding kernels and the
-  pad-edge decode, `legaia_engine_vm::world_map_dev_menu` (`wrap12_step`,
+  pad-edge decode, `legaia_engine_field::dev_menu_adjust` (`wrap12_step`,
   `clamp1_255_step`, `pad_step`); the table-cycle and party-record arms are
   not ported.
 
@@ -964,8 +964,8 @@ More `+0x54`-keyed actor state machines share the band (`ctx[+0x54]` = phase,
 |---|---|---|---|
 | `FUN_801E5338` | `801e5338.txt` | Sparkle emitter: up to 8 `SPRT` particles at `rand()` offsets (`FUN_80056798`) around `ctx[+0x14/+0x16]`, each through a 10-frame sprite anim, posted via `AddPrim`; phase `2` waits for all to retire, then sets bit `0x8`. | None - [retail never runs it](#the-sparkle-burst-has-no-spawner) |
 | `FUN_801EA9B0` | `overlay_cutscene_dialogue_801ea9b0.txt` | Dev-menu row-action dispatcher ([above](#fun_801ea9b0---dev-menu-row-action-dispatcher-1000-bytes)). | `world_map_panel::dev_menu_action` |
-| `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the CDNAME define table (`0x80088758`, count `_DAT_8007B806`, `0x10` stride, `s16` define number at `+0xC`) for the TOC index `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"`. | `engine-vm::travel_art_actor` |
-| `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same define-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a hold-at-black fade via `FUN_80024E80`. | `engine-vm::travel_art_actor` |
+| `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the CDNAME define table (`0x80088758`, count `_DAT_8007B806`, `0x10` stride, `s16` define number at `+0xC`) for the TOC index `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"`. | `engine-field::travel_art_actor` |
+| `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same define-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a hold-at-black fade via `FUN_80024E80`. | `engine-field::travel_art_actor` |
 | `FUN_801EF014` | `801ef014.txt` | Flag-window picker over the tile descriptor `_DAT_8007B450`: counts selectable cells (`+1`), drives `FUN_801E9DC8`, commits the pick into `_DAT_8007BB88`, exits via `ctx[+0x50] = 0x1A`. | `flag_window_tick` |
 | `FUN_801E3E00` | `overlay_world_map_walk_801e3e00.txt` | The attached light's keyframe script, a subroutine of `FUN_801E4470` ([below](#the-fog-rgb-script-is-the-attached-lights)). | `attached_sprite_script_tick` |
 
@@ -1107,7 +1107,7 @@ battle stage packs
 
 #### From-scratch port - both overworld and field
 
-The port is `legaia_engine_vm::world_map::step` (host trait
+The port is `legaia_engine_field::world_map_entity::step` (host trait
 `WorldMapEntityHost`). `legaia_engine_core::World` ticks it in two modes:
 
 - **`SceneMode::WorldMap`** (`tick_world_map`): one `WorldMapEntityCtx` per
@@ -1379,7 +1379,7 @@ against the per-scene walkability grid at `*(_DAT_1F8003EC) + 0x4000`
 wall data there: the `.MAP`'s `+0x4000..+0x8000` region holds thousands of
 wall sub-cells (high-nibble bits: `map01` about 7968, `map02` about 2283,
 `map03` about 3837). The engine loads it through
-[`Scene::field_collision_grid`](../../crates/engine-core/src/scene.rs) and
+[`Scene::field_collision_grid`](../../crates/engine-scene/src/scene.rs) and
 steps the player through `World::advance_with_collision`, as on the field.
 
 The world-map capture's copy of `FUN_801CFE4C` matches the field overlay's
@@ -1538,7 +1538,7 @@ world-map arm hands both hosts the pose as `FieldCameraFrame::WorldMapWalk`
 (the eye trio in retail GTE units, the 6x scale applied as a world transform
 about the player). `camera_view::world_map_walk_view` is the fallback pose for
 a world with no field terrain loaded. Oracle:
-`crates/engine-shell/tests/world_map_zone_camera_oracle.rs` enters each
+`crates/parity/tests/world_map_zone_camera_oracle.rs` enters each
 library overworld state's scene, seats the player on the state's position and
 asserts the live pose and resolved frame equal retail's words.
 
@@ -1602,9 +1602,9 @@ world-map frame arm steps the same slice the field arm does
 
 The overworld shares game mode `0x03` with towns, so retail distinguishes it
 by the loaded scene; the engine uses
-[`is_world_map_scene`](../../crates/engine-core/src/scene.rs) (the three
+[`is_world_map_scene`](../../crates/engine-scene/src/scene.rs) (the three
 kingdom `mapNN` labels). When a scene transition resolves to an overworld
-scene, [`SceneHost::tick`](../../crates/engine-core/src/scene.rs) routes it
+scene, [`SceneHost::tick`](../../crates/engine-core/src/scene_host.rs) routes it
 through `SceneHost::enter_world_map_scene`: `enter_field_scene` (resources,
 walkability grid, player), then the region-keyed encounter table from the
 scene's MAN, the typed entities, and the switch into `SceneMode::WorldMap`.
@@ -1617,8 +1617,8 @@ routine.
 
 A scene's on-map entities are the **MAN partition-1 actor-placement records**,
 decoded by `FUN_8003A1E4` and ported as
-[`ManFile::actor_placements`](../../crates/asset/src/man_section.rs) /
-[`Scene::field_actor_placements`](../../crates/engine-core/src/scene.rs). The
+[`ManFile::actor_placements`](../../crates/scene-formats/src/man_section.rs) /
+[`Scene::field_actor_placements`](../../crates/engine-scene/src/scene.rs). The
 scene-init routine `FUN_8003AEB0` runs `FUN_8003A1E4` over records `1..N1`
 (record `0` is the scene-entry controller, the
 [system script](field-locomotion.md)). Each record is:
@@ -1706,7 +1706,7 @@ see them.
 (`SceneHost::destination_resolver()`). The `0x3F` op's `i16 index` is a
 story / entry id in its own space (observed past `u8` range, e.g. `630`), so
 the resolver keys on `i16` and is not the `u8`-keyed
-[`MapIdResolver`](../../crates/engine-core/src/scene/resolvers.rs) (which
+[`MapIdResolver`](../../crates/engine-scene/src/scene/resolvers.rs) (which
 serves the `0x3E` door-warp's selectors `0..=6`). The field-VM executor drives
 `0x3F` as a live named scene change: it decodes the name, calls
 `host.scene_transition_named`, and `SceneHost::tick` drains
@@ -1925,7 +1925,7 @@ evolved-Cort boss fight) whose tail fades, stops the BGM and fires the
 FMV-trigger op `4C E2 08`. `fmv_id 8` plays `MOV/MV6.STR` and returns to
 `town0e` with door word `0x2E5`
 ([`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-mapping));
-port `engine-core::cutscene::fmv_post_play_handoff`.
+port `engine-system::movie::cutscene::fmv_post_play_handoff`.
 
 **Decoding notes.** Every exit here is a `P2` record, and three sit `0x124C`,
 `0x1A8F` and `0x2034` bytes into their bodies past kilobytes of `0x1F` text,
@@ -1999,7 +1999,7 @@ and overview pools are mutually exclusive sets.
 selects `SceneLoadKind::WorldMap`, and
 `SceneResources::build_targeted_with_options` decodes the scene's
 kingdom-bundle slot 1 (Drake 40, Sebucus 36, Karisto 56 TMDs; via
-`legaia_asset::kingdom_bundle` + `legaia_asset::pack`) into the TMD pool and
+`legaia_scene_formats::kingdom_bundle` + `legaia_container_formats::pack`) into the TMD pool and
 slot 0 into the VRAM upload set, instead of the generic raw/LZS `tmd_scan`
 sweep, which cannot follow the LZS-compressed descriptor table. Only the
 scene's primary kingdom entry contributes; sibling sub-area entries are
@@ -2014,7 +2014,7 @@ dispatch `FUN_80043390` selects the renderer by the group header's
 `flags >> 1` (`0x80043614`), and the untextured slots 12..=15 (F3 / F4 / G3 /
 G4, descriptor rows 2/3 of `DAT_8007326C`) are populated in the SCUS row
 `0x8007657C` and the overlay row `0x801F8968` alike. The port's shared pack
-kernel `legaia_engine_core::scene_assembly::build_hybrid_pack_mesh` builds
+kernel `legaia_engine_scene::scene_assembly::build_hybrid_pack_mesh` builds
 both.
 
 #### Which PROT entry is the walk `.MAP`
@@ -2097,7 +2097,7 @@ actor+0x64 = *(s16*)(_DAT_1f8003ec + (actor+0x60)*0x20 + 0x10) + DAT_8007b6f8
            = .MAP_record[obj_idx].+0x10 (model) + prefix          (prefix = 5)
 ```
 
-The port's `legaia_asset::field_objects::pack_mesh_index` plus
+The port's `legaia_scene_formats::field_objects::pack_mesh_index` plus
 `FIELD_ACTOR_PACK_BIAS` is that rule. A live `map01` render-list walk (head
 `*(0x8007C354) = 0x80083BCC`, live `.MAP` buffer `_DAT_1F8003EC =
 0x80139530`) matches 14 of 14 actors: records `414 / 430 / 349 / 411 / 474`
@@ -2136,7 +2136,7 @@ capture at the gate holds both actors at `(0x3FC0, 0x3FC0)` with meshes
 resolved. The port pre-runs the prologues at scene entry
 (`World::hidden_object_records`; `map01` hides partition-0 records 9 and 11)
 and all three hosts drop each placed record whose bind is hidden
-(`legaia_engine_core::field_env::retain_visible_landmark_placements`). The
+(`legaia_engine_scene::field_env::retain_visible_landmark_placements`). The
 decoration sweep runs no script and is never filtered. `map02` and `map03`
 park no landmark on a cold entry.
 
@@ -2218,8 +2218,8 @@ The field sibling `FUN_801F7088` (PROT 0900, the town static-object pass,
 body `0x801F7668..0x801F76E0`) is instruction-identical over this cell kernel.
 Sampling only the cell's own nibble instead of the corner mean snaps edge
 cells a whole tier and shears a terraced town (Vidna / `balden`). Port:
-`legaia_asset::field_objects` carries the corner block on each terrain
-`Placement`, `engine-core::field_env` applies the mean, and
+`legaia_scene_formats::field_objects` carries the corner block on each terrain
+`Placement`, `engine-scene::field_env` applies the mean, and
 `parse_walk_decorations` is the sweep.
 
 After the cell loop the routine sets the far colour and calls the ground
@@ -2260,9 +2260,9 @@ band top `-60`, sprites at `x = 0 / 41 / 169 / 297`). The band is mostly
 hidden at the walk camera's pitch and shows where the visible-tile window or
 the coast leaves the top of the frame open.
 
-Port: `legaia_engine_vm::world_map_sky` (the packets),
-`legaia_engine_core::world_map_sky` (the gate both hosts call), and
-`legaia_engine_ui::screen_prim::sky_band_prims`, which depth-tests each quad
+Port: `legaia_render_kernels::world_map_sky` (the packets),
+`legaia_engine_core::world_views::world_map_sky` (the gate both hosts call), and
+`legaia_render_kernels::screen_prim::sky_band_prims`, which depth-tests each quad
 at the far plane so it lands only where the scene drew nothing.
 `engine_screens::screen_layers::compose_screen_prims` puts the band first in
 the under-text list, so the party HUD draws over it.
@@ -2270,7 +2270,7 @@ the under-text list, so the party HUD draws over it.
 #### What the port draws
 
 - **Ground**: `Scene::walk_heightfield` ->
-  `legaia_asset::field_objects::build_ground_heightfield` emits one quad per
+  `legaia_scene_formats::field_objects::build_ground_heightfield` emits one quad per
   cell (on the overworld every cell with a terrain record; in a field scene
   the `0x1000` cells), each corner's Y from the `+0x4000` nibble grid through
   the floor LUT. The baked corner height is `-lut[nibble]`, already the world
@@ -2284,7 +2284,7 @@ the under-text list, so the party HUD draws over it.
 - **Overview terrain**: `Scene::field_terrain_tiles` ->
   `resolve_world_map_terrain_draws`, the `0x2000` cells of the *within-block*
   `.MAP` with mesh from `+0x10`
-  (`legaia_asset::field_objects::parse_terrain_tiles`). That entry is the next
+  (`legaia_scene_formats::field_objects::parse_terrain_tiles`). That entry is the next
   scene's map, not the kingdom's (for `map01` it is `garmel`'s, 970 visible
   cells), and it targets the overview pack; against the 40-mesh walk pool the
   high indices resolve to no mesh.
@@ -2363,7 +2363,7 @@ A PCSX-Redux capture on `karisto_sol_pre_encounter`
 676 and climb to about `0x9F9F9F` by bucket 950 (a bucket keys the farthest
 corner while `IR0` reads `(x1, z0)`, so bucket fits read low).
 
-Port: `engine-core::overworld_ground_cue` holds the arithmetic and the capture
+Port: `engine-field::overworld_ground_cue` holds the arithmetic and the capture
 rows; the mesh vertex stages apply it per cell from the flat-depth corner
 references (`overworld_ground_cue` in `engine-render`'s VRAM-mesh WGSL,
 `overworldGroundCue` in the play page's GLSL).
@@ -2393,7 +2393,7 @@ byte, which makes the dispatcher OR `1` into `a2` (`0x800433C0..0x800433CC`) -
 under one colour step, and not modelled. Placed landmarks are not this sweep's
 and take no cue from it.
 
-Port: `engine-core::overworld_ground_cue::decoration_draw_cue` turns the draw
+Port: `engine-field::overworld_ground_cue::decoration_draw_cue` turns the draw
 origin's clip `w` (times the frame's `clip.w`-to-`SZ` factor) into a far
 colour and `IR0`; each host stages it as a per-draw constant on the
 decoration draws only - the native window from `world_map_deco_start`, the
@@ -2416,7 +2416,7 @@ cells shows as the clear colour; see the mesh-id rule in
 into `WalkHeightfield::cba_tsb`, so one ground mesh samples all pages.
 `GROUND_ATLAS_TPAGE` / `_CLUT` remain as the grass fallback for cells whose
 record carries no terrain run. Pin:
-`crates/engine-core/tests/field_ground_surface_disc.rs`.
+`crates/engine-scene/tests/field_ground_surface_disc.rs`.
 
 **The atlas page is contested VRAM.** `0x0C` = fb `(768, 0)` is also where a
 scene block's battle-side character pages land: two `64 x 256` pages at
@@ -2426,7 +2426,7 @@ the scene's own atlas, and the ground then samples character texels (Jeremi
 renders a grid of grey tiles, Mt. Dhini a vine pattern). The source and the
 build rule are on
 [`pochi.md`](../formats/pochi.md#the-stale-scratch-hazard-belongs-to-the-next-entry);
-regression `crates/engine-core/tests/field_ground_texture_pages_disc.rs`.
+regression `crates/engine-scene/tests/field_ground_texture_pages_disc.rs`.
 
 ### Water and CLUT animation
 
@@ -2438,7 +2438,7 @@ seven more shoreline / terrain shimmer cells. The operand source is the
 kingdom bundle's **slot 5** (the type-byte `0x06` slot of PROT 0086 / 0245 /
 0392): an LZS-compressed 516-byte **CLUT-walk animation table**,
 byte-identical across the three kingdoms. Format (parser
-`legaia_asset::clut_walk`):
+`legaia_scene_formats::clut_walk`):
 
 ```text
 [u32 count = 8][u32 entry_offsets[8]]
@@ -2470,7 +2470,7 @@ wrap-around. The real interval is `ceil(hold / dt) * dt` vsyncs.
 | `(48, 500)` | 4 | 6 | row 498, `x = 160..208` |
 
 The cycle is live-verified on all three kingdoms
-(`crates/engine-shell/tests/world_map_ocean_clut_live.rs`); `clut_walk_real`
+(`crates/parity/tests/world_map_ocean_clut_live.rs`); `clut_walk_real`
 pins the entry set against all three bundles. A ten-state `map01` capture
 census agrees: every animating column falls inside a destination cell, and
 row 507, which no entry targets, is static. Row 508's `[32..47] == [0..15]`
@@ -2485,7 +2485,7 @@ plus TIM CLUTs for rows 500 / 501 / 508. **`map02` / `map03` ship only rows
 from the Drake upload - `map01` is always the first world map, and the
 resident Sebucus / Karisto captures hold `map01`'s bytes on those rows.
 
-**Port.** `legaia_engine_core::clut_walk_anim::ClutWalkAnim` is the one
+**Port.** `legaia_engine_scene::clut_walk_anim::ClutWalkAnim` is the one
 stepper both hosts and the field-scene viewer run: `install` resolves the
 table (the kingdom's slot 5 on an overworld, the scene bundle's type-6 table
 on a field scene), parks the strips, and parks the Drake complement for rows
@@ -2493,7 +2493,7 @@ the scene's own bundle lacks. All eight entries run as independent
 accumulators with the retail semantics, clocked in retail vsync units (a game
 tick every `World::clock.frame_step` vsyncs); each fire is a CPU-VRAM 16x1
 `move_image` and re-upload. A single-cell ocean-head cycle
-(`legaia_asset::ocean`) is the fallback for a bundle without a parseable
+(`legaia_scene_formats::ocean`) is the fallback for a bundle without a parseable
 slot 5, which no retail bundle is. The VRAM parity oracle excludes the
 destination cells for world-map scenes
 (`vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS`).
@@ -2521,8 +2521,8 @@ The row-498 park-cell fades are a separate family: event-triggered MAN
   destination, frees the scratch, and clears the spawning script context's
   halt bit (`*(ctx+0x94)+0x10 &= ~0x400`).
 
-Port: `legaia_engine_core::clut_fx` (arithmetic) + `World::step_clut_fx` (the
-VRAM driver), fed by the `op4c_n6_sub_61_emitter` field-VM host hook.
+Port: `legaia_engine_field::clut_fx` (arithmetic) + `World::step_clut_fx` (the
+VRAM driver), fed by the `spawn_clut_cell_fx` field-VM host hook.
 
 `map01`'s field MAN holds exactly eight `4C 61` ops, all on row 498: four
 one-shots (`frames = 0`) copying cell `(112, 499)` onto `(0/16/32/48, 498)`,
@@ -2542,7 +2542,7 @@ interpolates `base + (end - base) * acc / duration` per channel and
 bytes, frees the scratch and sets flag bit `0x8`. Two retail quirks are kept:
 the endpoint uses a **logical** shift over a possibly-negative product, and
 the per-tick term an **unsigned** `divu`. Port (arithmetic):
-`legaia_engine_vm::world_map_clut_fade::ClutBlendFade`.
+`legaia_engine_field::clut_fade_actor::ClutBlendFade`.
 
 Both families end in the statically-linked libgpu (`MoveImage`
 `FUN_80058490`, which patches the static 5-word GP0 packet template at
@@ -2593,7 +2593,7 @@ rigid transforms ([`world-map-overlay.md`](../formats/world-map-overlay.md)).
 It carries no geometry. It is decoded onto `SceneResources::world_map_slot4`
 for every `SceneLoadKind::WorldMap` scene. With `LEGAIA_WORLDMAP_SLOT4=1`,
 `play-window` draws
-`legaia_asset::world_map_overlay::translation_path_segments` - one polyline
+`legaia_scene_formats::world_map_overlay::translation_path_segments` - one polyline
 per (clip, part) through the decoded 12-bit translations - as a debug line
 list about the world origin (the paths are object-local).
 `wireframe_segments_3d` plots raw `i16` field pairs straddling the entries'
@@ -2617,7 +2617,7 @@ reach the render tick:
 
 | Address | Mode-table role | Tick call |
 |---|---|---|
-| `FUN_80025EEC` | Default per-frame handler (used by 12 of the 14 per-frame modes - not world-map-specific; disc-confirmed by `legaia_asset::mode_table`). | `FUN_8001698C` → `FUN_80016444(1)` → `FUN_80016B6C`. |
+| `FUN_80025EEC` | Default per-frame handler (used by 12 of the 14 per-frame modes - not world-map-specific; disc-confirmed by `legaia_game_tables::mode_table`). | `FUN_8001698C` → `FUN_80016444(1)` → `FUN_80016B6C`. |
 | `FUN_80025F2C` | Mode 13 (MAPDSIP MODE) - field/world-map display per-frame handler. | `FUN_8001698C` → `func_0x801CE850` (overlay entry) → `FUN_80016444(0)`. |
 
 `a0` controls whether `FUN_80016444` skips its early `FUN_8005FB84` block
@@ -2729,7 +2729,7 @@ advances only by `tick * step` per call; the per-row `+= 0x10` is loop scratch.
 The emitter is called by a direct `jal` from SCUS. A reference sweep of the
 overlay alone misses the cross-program call; sweep SCUS to find the caller.
 
-Port: `legaia_engine_vm::world_map_horizon::emit_horizon`, driven from the
+Port: `legaia_engine_field::world_map_horizon::emit_horizon`, driven from the
 controller's gate consumer (`WorldMapController::run_horizon_emitter`).
 
 ### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`
@@ -2822,7 +2822,7 @@ character / NPC mesh chains in `_DAT_8007C354` and siblings.
 `mednafen-state prim-dispatch-table <save>` decodes both tables out of a save
 state's main RAM; `--overlay-targets-only` emits the eight addresses for a
 Ghidra `dump_funcs.py` `TARGETS` list
-([`legaia_mednafen::prim_dispatch`](../../crates/mednafen/src/prim_dispatch.rs)).
+([`legaia_ram_image::prim_dispatch`](../../crates/ram-image/src/prim_dispatch.rs)).
 
 #### Per-slot delta vs SCUS sibling
 
@@ -2910,7 +2910,7 @@ overworld test.
     `0x3C` / `0x9`) when `(param_2 >> 3) & 7 == 0`, otherwise a shorter
     semi-transparent gouraud quad (GP0 `0x22`, 6-word stride, `0x2C`); colour
     from record `+0xC..+0x12`. Ends by zeroing a `0x14`-word tail. Port:
-    `engine-core::effect_sprite_arm::sprite_arm_draws` (the `PORT:` tag sits
+    `engine-effects::effect_sprite_arm::sprite_arm_draws` (the `PORT:` tag sits
     on `engine-minigames::baka_impact_fx`).
   - bit `0x2000` -> `FUN_801CFA48`, a function entry (`addiu sp,sp,-0x70`) in
     the **battle-action** overlay PROT 0898 and in no other image. It is the
@@ -2985,8 +2985,8 @@ most of it under the party HUD.
 
 **Port.** Both hosts draw the kind-4 list on the overworld
 (`World::active_effect_kind4_draws`), one quad per posed part
-(`engine-core::effect_sprite_arm::sprite_arm_draws`). The ambient tick runs
-the part tick's motion block (`engine-core::part_motion`, `FUN_80021DF4`
+(`engine-effects::effect_sprite_arm::sprite_arm_draws`). The ambient tick runs
+the part tick's motion block (`engine-effects::part_motion`, `FUN_80021DF4`
 `0x800228A0..0x80022B90`), which reproduces the population: six to eight live
 sprite-arm nodes, half of them drifting. Pin:
 `crates/engine-core/tests/overworld_puff_column_disc.rs`. The hosts' other FX

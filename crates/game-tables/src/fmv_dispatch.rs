@@ -68,9 +68,9 @@ pub const MDEC_IDCT_PACKET_HEADER: u32 = 0x6000_0000;
 pub const MDEC_PACKET_BYTES: usize = 4 + 0x20 * 4;
 
 /// Load base of the STR/MDEC overlay (PROT 0970), from the static-overlay map.
-pub const STR_OVERLAY_BASE_VA: u32 = 0x801C_E818;
+pub const STR_OVERLAY_BASE_VA: u32 = legaia_overlay_images::static_overlay::SLOT_A_BASE;
 /// PROT entry index of the STR/MDEC cutscene overlay this table lives in.
-pub const STR_OVERLAY_PROT_INDEX: u32 = 970;
+pub const STR_OVERLAY_PROT_INDEX: u32 = legaia_overlay_images::static_overlay::STR_OVERLAY_PROT;
 /// Sectors per STR video frame - the fixed 15 fps cadence (2x speed / 150
 /// sectors-per-second) every Legaia movie runs at. The play loop seeks
 /// `(start_frame - 1) * SECTORS_PER_FRAME` into the file.
@@ -112,7 +112,7 @@ impl FmvEntry {
     }
 
     /// Engine-shape path: forward slashes, no version, no leading slash - e.g.
-    /// `MOV/MV1.STR`. Matches `legaia_engine_core::cutscene::fmv_index_to_str_filename`.
+    /// `MOV/MV1.STR`. Matches `legaia_engine_system::movie::cutscene::fmv_index_to_str_filename`.
     pub fn engine_path(&self) -> String {
         let no_ver = self.path.split(';').next().unwrap_or(&self.path);
         no_ver.trim_start_matches(['\\', '/']).replace('\\', "/")
@@ -198,7 +198,7 @@ impl FmvTable {
 
     /// Engine-shape movie path for `fmv_id`, restricted to retail-disc movies
     /// (`None` for the dev-only `MOV*.STR` slots). Mirrors
-    /// `legaia_engine_core::cutscene::fmv_index_to_str_filename`.
+    /// `legaia_engine_system::movie::cutscene::fmv_index_to_str_filename`.
     pub fn engine_path(&self, fmv_id: i16) -> Option<String> {
         let e = self.entry(fmv_id)?;
         e.on_retail_disc().then(|| e.engine_path())

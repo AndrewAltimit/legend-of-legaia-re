@@ -244,7 +244,7 @@ impl FadeState {
     /// `0x80024FB0`). Kind `1` is `B + F` (a ramp to white brightens to a
     /// white-out), kind `2` is `B - F` (the same ramp darkens to black).
     /// Hosts draw the quad through
-    /// `legaia_engine_ui::screen_prim::screen_fade_prim`.
+    /// `legaia_render_kernels::screen_prim::screen_fade_prim`.
     // REF: FUN_80024EE4, FUN_80025000
     pub fn abr(&self) -> u8 {
         (self.kind & 3) as u8
@@ -302,18 +302,6 @@ pub fn spawn_fade(seat: &mut Option<FadeState>, template: &FadeTemplate, id: i16
     let mut t = *template;
     t.mode[2] = id;
     *seat = Some(FadeState::load(&t));
-}
-
-/// [`FadeTemplate`] off the summon band's 13-word template layout
-/// (`DAT_801C9070`).
-pub fn summon_template(t: &legaia_engine_vm::battle_action::SummonFadeTemplate) -> FadeTemplate {
-    FadeTemplate {
-        kind: t.kind,
-        duration: t.duration,
-        start_rgb: t.start_rgb,
-        end_rgb: t.end_rgb,
-        mode: [t.delay, t.hold, 0],
-    }
 }
 
 /// A persistent full-scene colour grade - the warm gold/sepia the opening
@@ -548,7 +536,7 @@ pub const PROLOGUE_LIT_AMBIENT: u8 = 0x20;
 /// [`PROLOGUE_LIT_AMBIENT`]. The baked rows keep their own words (the
 /// `4C E6` rewrite grades them in the renderer's palette mode). `lit` is the
 /// per-vertex mask from
-/// `legaia_engine_core::scene_resources::ResolvedTmd::build_filtered_vram_mesh_lit`,
+/// `legaia_engine_scene::scene_resources::ResolvedTmd::build_filtered_vram_mesh_lit`,
 /// parallel to `colors`.
 ///
 /// The mask is the point: a lit row and a baked word authored at exactly

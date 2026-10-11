@@ -20,9 +20,10 @@
 //! Run: `cargo run -p legaia-engine-shell --release --example field_static_actor_probe`
 //! Requires `extracted/`, `scripts/scenarios.toml`, `saves/library`.
 
-use legaia_engine_core::capture_observations::field_pack_intra_transition::read_pool_slot_name;
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_mednafen::SaveState;
+use legaia_parity::capture_observations::field_pack_intra_transition::read_pool_slot_name;
+use legaia_ram_image::ScenarioManifest;
 use std::path::PathBuf;
 
 fn rd32(ram: &[u8], va: u32) -> u32 {

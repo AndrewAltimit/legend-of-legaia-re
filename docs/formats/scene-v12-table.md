@@ -2,7 +2,7 @@
 
 Each field scene ships a small **walk-on tile-trigger file**, dev filename `DATA\FIELD\<scene>.PCH`. It lists tiles that fire a scripted event when the player steps on them, and it extends the trigger block inside the scene's `.MAP` file: same header shape, same record forms, consulted second. Every one of the 97 retail files is exactly one `0x800`-byte sector and populates a single record kind.
 
-Parser: [`crates/asset/src/scene_v12_table.rs`](../../crates/asset/src/scene_v12_table.rs) (`legaia_asset::scene_v12_table`). CLI: `asset scene-v12 <PROT-entry>` (single), `asset scene-v12-scan <dir>` (bulk).
+Parser: [`crates/scene-formats/src/scene_v12_table.rs`](../../crates/scene-formats/src/scene_v12_table.rs) (`legaia_scene_formats::scene_v12_table`). CLI: `asset scene-v12 <PROT-entry>` (single), `asset scene-v12-scan <dir>` (bulk).
 
 ## At a glance
 
@@ -34,7 +34,7 @@ flowchart TD
     t2 --> spawn
 ```
 
-The suffix pool is in `SCUS_942.54`: `0x8007B3BC` `.MAP`, `0x8007B3C4` `.PCH`, `0x8007B3CC` `.LZS`. The position law is asserted by the disc-gated `scene_v12_position_law_and_lzs_sibling` in `crates/asset/tests/scene_v12_corpus.rs`; defines are raw indices ([`cdname.md` § numbering space](cdname.md#numbering-space)). Three scenes have no `.PCH` at slot 1: `opurud`, `opkorout`, `edson` - op-`0x44`-driven cutscene scenes with no trigger tiles.
+The suffix pool is in `SCUS_942.54`: `0x8007B3BC` `.MAP`, `0x8007B3C4` `.PCH`, `0x8007B3CC` `.LZS`. The position law is asserted by the disc-gated `scene_v12_position_law_and_lzs_sibling` in `crates/scene-formats/tests/scene_v12_corpus.rs`; defines are raw indices ([`cdname.md` § numbering space](cdname.md#numbering-space)). Three scenes have no `.PCH` at slot 1: `opurud`, `opkorout`, `edson` - op-`0x44`-driven cutscene scenes with no trigger tiles.
 
 **Naming caveat.** Extraction *filename* labels apply defines as extraction indices and are shifted +2, so a filename names the wrong scene:
 
@@ -113,7 +113,7 @@ Across the 1233-entry PROT corpus this matches **97** entries with zero false po
 
 ## Event-script prescript - the next PROT entry
 
-The prescript is the next TOC row: extraction `define` (the `.PCH` is `define - 1`, the `.LZS` `scene_asset_table` bundle `define + 1`). `0x800` is one past the `.PCH`'s end, not an offset inside it. Parser: `legaia_asset::scene_v12_table::parse_prescript_entry`, which takes the **next entry's** bytes.
+The prescript is the next TOC row: extraction `define` (the `.PCH` is `define - 1`, the `.LZS` `scene_asset_table` bundle `define + 1`). `0x800` is one past the `.PCH`'s end, not an offset inside it. Parser: `legaia_scene_formats::scene_v12_table::parse_prescript_entry`, which takes the **next entry's** bytes.
 
 It has the same shape as the standalone [scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only) format:
 
@@ -207,7 +207,7 @@ So the raw scene block layout is `n+0` `.MAP` (`0x12000` footprint), `n+1` `.PCH
 ## Reading the parsed structure
 
 ```rust
-use legaia_asset::scene_v12_table;
+use legaia_scene_formats::scene_v12_table;
 
 let buf = std::fs::read("extracted/PROT/0093_map01.BIN")?;       // garmel's .PCH
 let next = std::fs::read("extracted/PROT/0094_garmel.BIN")?;     // its prescript
@@ -229,7 +229,7 @@ A `.PCH` embeds nothing. Read with the superseded entry size, extraction entries
 
 What is true of `dolk2` and `rikuroa`: they are the two scenes whose **own** base+3 bundle is the MAN-less `count = 4` form (types `[1, 2, 6, 0x14]`; the type-`0x14` slot is a small LZS filler, not a MAN carrier). Their partition scripts come from a standalone `data_field_streaming` entry in each block whose type-3 chunk is a plain MAN (`dolk2` extraction 70, partitions `[29, 73, 17]`; `rikuroa` extraction 157, `[13, 29, 64]`).
 
-The live script heap at the Mt. Rikuroa Caruban beat byte-matches the `0157` chunk ([script-vm.md](../subsystems/script-vm.md#a-second-script-byte-carrier-the-streaming-variant-man)). The engine resolves it via the `field_man_payload` streaming fallback (`legaia_engine_core::scene_bundle::streaming_man_payloads`, disc-gated `crates/engine-core/tests/v12_bundle_man_disc.rs`).
+The live script heap at the Mt. Rikuroa Caruban beat byte-matches the `0157` chunk ([script-vm.md](../subsystems/script-vm.md#a-second-script-byte-carrier-the-streaming-variant-man)). The engine resolves it via the `field_man_payload` streaming fallback (`legaia_engine_scene::scene_bundle::streaming_man_payloads`, disc-gated `crates/engine-scene/tests/v12_bundle_man_disc.rs`).
 
 ## Ruled out
 

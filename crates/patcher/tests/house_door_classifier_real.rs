@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::house_door::{DoorSide, SceneHouseDoors};
 
 fn load_disc() -> Option<Vec<u8>> {

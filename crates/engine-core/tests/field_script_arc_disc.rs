@@ -15,8 +15,8 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::ScriptActorRef;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_field::field_script_actor_state::ScriptActorRef;
 use legaia_engine_vm::field_ledge_hop_arc::ScriptArcRequest;
 use std::path::PathBuf;
 
@@ -49,20 +49,20 @@ fn town0b_cutscene_arcs_an_npc_to_its_landing_tile_and_releases_it() {
         .field_man_payload(&host.index)
         .expect("MAN read")
         .expect("town0b carries a MAN");
-    let man_file = legaia_asset::man_section::parse(&man).expect("MAN parses");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("MAN parses");
 
     // Every arc the record carries decodes from the operand alone.
     let (start, pc0, len) =
-        legaia_asset::field_disasm::partition_record_span(&man_file, &man, 2, 26)
+        legaia_scene_formats::field_disasm::partition_record_span(&man_file, &man, 2, 26)
             .expect("p2[26] span");
     let body = &man[start..start + len];
     let mut sites = Vec::new();
     for sub in [0u8, 1, 0xA, 0xB] {
-        let key = legaia_asset::field_disasm::OpKey {
+        let key = legaia_scene_formats::field_disasm::OpKey {
             opcode: 0x43,
             sub: Some(sub),
         };
-        for pc in legaia_asset::field_disasm::clean_hit_offsets(body, pc0, key) {
+        for pc in legaia_scene_formats::field_disasm::clean_hit_offsets(body, pc0, key) {
             let hdr = if body[pc] & 0x80 != 0 { 2 } else { 1 };
             let req = ScriptArcRequest::decode(&body[pc + hdr..])
                 .unwrap_or_else(|| panic!("arc at 0x{pc:04X} decodes"));
@@ -90,7 +90,7 @@ fn town0b_cutscene_arcs_an_npc_to_its_landing_tile_and_releases_it() {
         // Page through the record's dialog boxes: a confirm edge every
         // eighth frame, released in between.
         let pad = if t % 8 == 0 {
-            legaia_engine_core::input::PadButton::Cross.mask()
+            legaia_engine_system::input::PadButton::Cross.mask()
         } else {
             0
         };

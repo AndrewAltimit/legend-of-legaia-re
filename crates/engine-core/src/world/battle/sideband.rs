@@ -2,8 +2,8 @@
 //! `FUN_80056208`, run once per live battle frame by both play hosts through
 //! [`World::live_battle_tick`].
 //!
-//! The kernel is [`crate::battle_sideband`]; the two stage modules it drives
-//! for the Cort fight are [`crate::battle_stage_module`]. This file builds
+//! The kernel is [`legaia_engine_battle::battle_sideband`]; the two stage modules it drives
+//! for the Cort fight are [`legaia_engine_battle::battle_stage_module`]. This file builds
 //! their inputs from live world state and applies what they return:
 //!
 //! * **stage 1** (the sparring tutorial): the round start runs the kernel with
@@ -22,9 +22,10 @@
 //!   until it takes the battle back to the field.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
-use crate::battle_sideband::{self as sb, BattleSidebandEffect as Fx};
-use crate::battle_stage_module::{self as stage, StageCamera, StageEffect};
+use legaia_engine_battle::battle_sideband::{self as sb, BattleSidebandEffect as Fx};
+use legaia_engine_battle::battle_stage_module::{self as stage, StageCamera, StageEffect};
 
 impl World {
     /// The side-band's inputs this frame. `ctx_mode` overrides the command
@@ -192,7 +193,9 @@ impl World {
                 // `0x801F72B4..0x801F72C0`: phase 3, the teardown staging.
                 self.battle.sideband.phase = self.battle.sideband.phase.wrapping_add(1);
                 // `FUN_80024E80(0x801C9070, 0)` at `0x801F72F4`.
-                self.presentation.fade = Some(crate::fade::FadeState::load(&COMPLETION_FADE));
+                self.presentation.fade = Some(legaia_engine_system::fade::FadeState::load(
+                    &COMPLETION_FADE,
+                ));
                 // `FUN_800355F0` at `0x801F7374`: the floating-element list
                 // (the sign-off box with it) is drained.
                 self.battle.tutorial_boxes.clear();
@@ -287,7 +290,7 @@ impl World {
                 .camera
                 .as_ref()
                 .map(|c| c.framing_pose())
-                .unwrap_or(legaia_engine_vm::battle_cam_script::BOOT_POSE);
+                .unwrap_or(legaia_engine_battle_vm::battle_cam_script::BOOT_POSE);
             StageCamera {
                 pitch: p.pitch as i32,
                 yaw: p.yaw as i32,
@@ -346,7 +349,7 @@ impl World {
         a.move_state.world_y = v.seat.y;
         a.battle.render_blend = v.seat.blend;
         a.battle.render_flag = v.seat.render_flag;
-        a.battle.anim_rate = legaia_engine_vm::battle_anim_rate::AnimRate(v.seat.anim_rate);
+        a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(v.seat.anim_rate);
         for e in effects {
             match e {
                 StageEffect::HandBack => {
@@ -446,17 +449,17 @@ impl World {
     fn apply_stage_effect(&mut self, e: StageEffect, seat_idx: usize) {
         match e {
             StageEffect::Cue(id) => {
-                self.audio
-                    .battle_sfx_cues
-                    .push(crate::battle_events::BattleSfxCue {
+                self.audio.battle_sfx_cues.push(
+                    legaia_engine_battle::battle_events::BattleSfxCue {
                         kind: id,
                         timing_frames: 0,
                         actor_slot: seat_idx as u8,
                         target_slot: seat_idx as u8,
-                    });
+                    },
+                );
             }
             StageEffect::Fade(t) => {
-                self.presentation.fade = Some(crate::fade::FadeState::load(&t));
+                self.presentation.fade = Some(legaia_engine_system::fade::FadeState::load(&t));
             }
             StageEffect::Banner => {
                 // `**0x801C9348`: the first enemy record's name.
@@ -499,7 +502,7 @@ impl World {
             }
             // Not staged (every record is a meshless `model_sel = -1` part)
             // and the HUD handle list is derived per frame, so its hard reset
-            // has nothing to clear - see `crate::battle_stage_module`.
+            // has nothing to clear - see `legaia_engine_battle::battle_stage_module`.
             StageEffect::Spawn { .. } | StageEffect::HudReset => {}
             // Consumed by the arrival's own loop above.
             StageEffect::HandBack => {}
@@ -522,7 +525,7 @@ impl World {
         let Some(text) = self
             .battle
             .ui_strings
-            .get(legaia_asset::battle_ui_strings::BattleUiLabel::SparringIntro)
+            .get(legaia_ui_formats::battle_ui_strings::BattleUiLabel::SparringIntro)
             // The SCUS string carries the text engine's `'|'` hard break; the
             // box queue holds newlines (`ActiveTutorialBox::text`), and its
             // line count sizes the rect - left as `'|'` the two-line caption
@@ -565,8 +568,8 @@ impl World {
 }
 
 /// A stage camera as the phase-scripted camera's pose type.
-fn stage_camera_pose(c: &StageCamera) -> legaia_engine_vm::battle_cam_script::BattleCamPose {
-    legaia_engine_vm::battle_cam_script::BattleCamPose {
+fn stage_camera_pose(c: &StageCamera) -> legaia_engine_battle_vm::battle_cam_script::BattleCamPose {
+    legaia_engine_battle_vm::battle_cam_script::BattleCamPose {
         pitch: c.pitch as f32,
         yaw: c.yaw as f32,
         tr: c.tr.map(|v| v as f32),

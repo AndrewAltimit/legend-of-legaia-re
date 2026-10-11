@@ -1,7 +1,7 @@
 //! The walk-ground heightfield **as a render surface** - the one kernel both
 //! hosts feed their ground draw through.
 //!
-//! [`legaia_asset::field_objects::WalkHeightfield`] is the `.MAP` floor grid
+//! [`legaia_scene_formats::field_objects::WalkHeightfield`] is the `.MAP` floor grid
 //! as data: authored heights, and triangles in whatever order its builder
 //! emits them. Two things change on the way to the screen, and both are
 //! render-site decisions rather than facts about the grid:
@@ -22,17 +22,23 @@
 //! culled the whole floor under the Genesis-tree vignette, which the native
 //! window and retail both draw.
 //!
-//! [`GROUND_SINK`]: crate::coplanar_draws::GROUND_SINK
+//! [`GROUND_SINK`]: legaia_engine_scene::coplanar_draws::GROUND_SINK
 
-use legaia_asset::field_objects::WalkHeightfield;
+use legaia_scene_formats::field_objects::WalkHeightfield;
 
 /// The heightfield's vertex positions as drawn: authored positions sunk by
-/// [`crate::coplanar_draws::GROUND_SINK`] (retail Y-down frame, so the sink
+/// [`legaia_engine_scene::coplanar_draws::GROUND_SINK`] (retail Y-down frame, so the sink
 /// is added).
 pub fn render_positions(hf: &WalkHeightfield) -> Vec<[f32; 3]> {
     hf.positions
         .iter()
-        .map(|p| [p[0], p[1] + crate::coplanar_draws::GROUND_SINK, p[2]])
+        .map(|p| {
+            [
+                p[0],
+                p[1] + legaia_engine_scene::coplanar_draws::GROUND_SINK,
+                p[2],
+            ]
+        })
         .collect()
 }
 
@@ -64,7 +70,11 @@ pub fn live_render_positions(hf: &WalkHeightfield, world_lut: &[i16; 16]) -> Vec
         .zip(&hf.corner_tiers)
         .map(|(p, &tier)| {
             let y = f32::from(world_lut[usize::from(tier & 0x0F)]);
-            [p[0], y + crate::coplanar_draws::GROUND_SINK, p[2]]
+            [
+                p[0],
+                y + legaia_engine_scene::coplanar_draws::GROUND_SINK,
+                p[2],
+            ]
         })
         .collect()
 }
@@ -113,7 +123,11 @@ pub fn live_render_positions_by_cell<'a>(
         .map(|(i, (p, &tier))| {
             let lut = lut_of(cells.get(i).copied().flatten());
             let y = f32::from(lut[usize::from(tier & 0x0F)]);
-            [p[0], y + crate::coplanar_draws::GROUND_SINK, p[2]]
+            [
+                p[0],
+                y + legaia_engine_scene::coplanar_draws::GROUND_SINK,
+                p[2],
+            ]
         })
         .collect()
 }
@@ -131,7 +145,7 @@ pub fn render_indices(hf: &WalkHeightfield) -> Vec<u32> {
 }
 
 /// The per-vertex flat-depth references both hosts upload beside the ground
-/// mesh: [`crate::overworld_draw_order::ground_flat_refs`] over the drawn
+/// mesh: [`legaia_engine_field::overworld_draw_order::ground_flat_refs`] over the drawn
 /// `positions` (same vertex order as `hf`), plus the field ground pass's
 /// **far-bucket** marker.
 ///
@@ -164,7 +178,7 @@ pub fn render_indices(hf: &WalkHeightfield) -> Vec<u32> {
 ///
 /// REF: FUN_801F6D48
 pub fn flat_refs(hf: &WalkHeightfield, positions: &[[f32; 3]]) -> Vec<[f32; 8]> {
-    let mut refs = crate::overworld_draw_order::ground_flat_refs(positions);
+    let mut refs = legaia_engine_field::overworld_draw_order::ground_flat_refs(positions);
     if hf.far_bucket.len() != positions.len() {
         return refs;
     }
@@ -262,7 +276,7 @@ mod tests {
             tile_ids: vec![0; 4],
             uvs: vec![[0, 0]; 4],
             cba_tsb: vec![[0, 0]; 4],
-            colors: vec![legaia_asset::field_objects::GROUND_PRIM_COLOR; 4],
+            colors: vec![legaia_scene_formats::field_objects::GROUND_PRIM_COLOR; 4],
             indices: vec![0, 1, 2, 1, 3, 2],
             corner_tiers: vec![0, 0, 1, 1],
             far_bucket: Vec::new(),
@@ -280,7 +294,7 @@ mod tests {
         // The script swells tier 1 to 80 up: only the tier-1 corners move.
         lut[1] = -80;
         let live = live_render_positions(&hf, &lut);
-        let sink = crate::coplanar_draws::GROUND_SINK;
+        let sink = legaia_engine_scene::coplanar_draws::GROUND_SINK;
         assert_eq!(live[0][1], sink);
         assert_eq!(live[1][1], sink);
         assert_eq!(live[2][1], -80.0 + sink);
@@ -302,7 +316,10 @@ mod tests {
         assert_eq!(pos.len(), hf.positions.len());
         for (a, b) in pos.iter().zip(&hf.positions) {
             assert_eq!(a[0], b[0]);
-            assert_eq!(a[1], b[1] + crate::coplanar_draws::GROUND_SINK);
+            assert_eq!(
+                a[1],
+                b[1] + legaia_engine_scene::coplanar_draws::GROUND_SINK
+            );
             assert_eq!(a[2], b[2]);
         }
     }
@@ -322,7 +339,7 @@ mod tests {
         }
         let indices = vec![0, 2, 1, 1, 2, 3, 4, 6, 5, 5, 6, 7];
         assert_eq!(crop_indices(&positions, &indices, None), indices);
-        let view = crate::world::field_npc_cull::FieldCullView {
+        let view = legaia_engine_field::camera::FieldCullView {
             // Focus tile (4, 3) with a (-2, 0, 4, 2) window: first cell
             // (2, 3), so the ground walks columns 2..=7 by rows 2..=3.
             focus_stored: [-(4 * 128), -(3 * 128)],
@@ -342,7 +359,7 @@ mod tests {
         // `grid()` is one sloped cell (two corners 32 up).
         let mut hf = grid();
         let pos = render_positions(&hf);
-        let overworld = crate::overworld_draw_order::ground_flat_refs(&pos);
+        let overworld = legaia_engine_field::overworld_draw_order::ground_flat_refs(&pos);
         // No far-bucket data (an overworld / older build): the overworld refs.
         assert_eq!(flat_refs(&hf, &pos), overworld);
         // Depth-sorted cell: unmarked.

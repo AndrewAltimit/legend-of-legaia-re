@@ -30,10 +30,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_asset::man_section::parse as parse_man;
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_system::input::PadButton;
+use legaia_scene_formats::man_section::parse as parse_man;
 
 /// Damaged pools the stay has to repair, so a "restore" that never ran is
 /// visible as an unchanged value rather than as an accidental full bar.
@@ -62,7 +62,7 @@ fn extracted_dir() -> Option<PathBuf> {
 /// record starts at or before the gate, which is the record the gate is in.
 fn innkeeper_site(man: &[u8]) -> Option<(u32, u8)> {
     let mf = parse_man(man).ok()?;
-    let charge = legaia_asset::inn_costs::scan(man)
+    let charge = legaia_scene_formats::inn_costs::scan(man)
         .into_iter()
         .find(|c| c.sub_op == 3)?;
     let slot = mf
@@ -384,7 +384,7 @@ fn two_talks_in_a_row_both_open_the_innkeepers_greeting() {
 /// twentieth visit, the first of which is the acquire's own frame.
 #[test]
 fn the_acquire_turns_the_player_to_the_innkeeper_and_then_releases() {
-    use legaia_engine_core::world::SceneMode;
+    use legaia_engine_mode::mode::SceneMode;
     let Some((mut world, _cost, slot)) = retock_world() else {
         return;
     };

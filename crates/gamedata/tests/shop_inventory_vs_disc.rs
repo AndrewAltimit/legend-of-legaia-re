@@ -1,6 +1,6 @@
 //! Disc-gated cross-validation of curated shop inventories against the real
 //! gold-shop stock records embedded in each scene's MAN
-//! (`legaia_asset::shop_stock`, op `0x49` sub-op `0`).
+//! (`legaia_scene_formats::shop_stock`, op `0x49` sub-op `0`).
 //!
 //! A town merchant's stock is defined inline in the scene field-VM script, not
 //! in a static table, so it is the authoritative ground truth for the curated
@@ -28,9 +28,9 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use legaia_asset::item_names::{self, ItemNameTable};
-use legaia_asset::shop_stock;
+use legaia_game_tables::item_names::{self, ItemNameTable};
 use legaia_gamedata::Database;
+use legaia_scene_formats::shop_stock;
 
 fn workspace() -> Option<PathBuf> {
     Some(

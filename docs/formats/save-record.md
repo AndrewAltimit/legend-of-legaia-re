@@ -48,7 +48,7 @@ Field offsets are pinned by a fusion of three sources:
   ability-bitmap reader, `FUN_80042DBC` spell-list pop, and the
   level-up overlay applier);
 - captured save-state observations in
-  `engine_core::capture_observations::char_level_up` and the
+  `parity::capture_observations::char_level_up` and the
   `levelup::observations::{noa,gala}_4_level_jump` triplets;
 - the GameShark cheat database under [`data/cheats/`](../../data/cheats/)
   whose every effect is a labelled `(addr, value)` write.
@@ -230,7 +230,7 @@ element selector `FUN_8002C2E4` indexes `0x80084140 + slot * 0x414`, and
 `+0x6CE` is `+0x106` (current HP) and its `+0x6F8` is `+0x130` below. The
 per-bit map, and the accessory-guard clear masks that pin it, are in
 [`accessory-passive-table.md`](accessory-passive-table.md#status-guard-clear-masks)
-and mirrored at `engine-vm::status_effects::display_flags`.
+and mirrored at `engine-battle-vm::status_effects::display_flags`.
 
 ### `+0x130` is the displayed character level.
 
@@ -242,7 +242,7 @@ next-level threshold (`+0x4`) but `+0x130 == 1` still displays **LV 1**, and set
 directly, *not* re-derived from cumulative XP at a New Game.
 
 The retail level-up applier maintains `+0x130` by incrementing it `+1` per level-up
-event (the captured `engine_core::levelup::observations::{noa,gala}_4_level_jump`
+event (the captured `engine_battle::levelup::observations::{noa,gala}_4_level_jump`
 bumped it by one across a four-level grant, so it can momentarily lag the XP-derived
 level after a rare multi-level jump), but for single-level play and the new-game seed
 it equals the level. `+0x130` is not a "Magic Rank", and the adjacent `+0x131`

@@ -33,7 +33,7 @@
 //! quad has no such order, so under the walk camera each quad carries its
 //! corners' **scene depth** through the same matrix
 //! ([`MarkerQuad::depth`]), and both hosts depth-test it against the terrain
-//! they already drew (`legaia_engine_ui::screen_prim::FLAG_DEPTH_TESTED`).
+//! they already drew (`legaia_render_kernels::screen_prim::FLAG_DEPTH_TESTED`).
 //! The depth is taken [`DEPTH_PULL`] units nearer the eye than the segment
 //! itself, so a base cross lying on the ground does not z-fight the ground it
 //! lies on. The top-view debug camera has no retail eye and keeps drawing
@@ -203,7 +203,7 @@ pub fn marker_segments(world: &World, draw_player: bool) -> Vec<MarkerSegment> {
 
 /// Project raw Y-down world points through a Y-up `vp` onto the display,
 /// bent down by the overworld curvature at `curve` (the frame's
-/// `clip.w`-to-`SZ` factor, [`crate::overworld_curvature::frame_curve_scale`];
+/// `clip.w`-to-`SZ` factor, [`crate::camera_view::frame_curve_scale`];
 /// `0` is flat) - the bend the hosts' mesh shaders give the continent the
 /// marker stands on. `None` behind the lens or absurdly far off-screen.
 fn project(vp: &[f32; 16], p: [f32; 3], curve: f32) -> Option<[f32; 2]> {
@@ -215,8 +215,8 @@ fn project(vp: &[f32; 16], p: [f32; 3], curve: f32) -> Option<[f32; 2]> {
         return None;
     }
     let sx = (cx / cw + 1.0) * 0.5 * DISPLAY_W;
-    let sy =
-        (1.0 - cy / cw) * 0.5 * DISPLAY_H + crate::overworld_curvature::clip_bend_rows(cw, curve);
+    let sy = (1.0 - cy / cw) * 0.5 * DISPLAY_H
+        + legaia_render_kernels::overworld_curvature::clip_bend_rows(cw, curve);
     (sx.abs() < OFFSCREEN_LIMIT && sy.abs() < OFFSCREEN_LIMIT).then_some([sx, sy])
 }
 
@@ -297,7 +297,9 @@ pub fn marker_quads(
     aabb: ([f32; 3], [f32; 3]),
     draw_player: bool,
 ) -> Vec<MarkerQuad> {
-    if world.mode != crate::world::SceneMode::WorldMap || world.cutscene_timeline_active() {
+    if world.mode != legaia_engine_mode::mode::SceneMode::WorldMap
+        || world.cutscene_timeline_active()
+    {
         return Vec::new();
     }
     if matches!(frame, FieldCameraFrame::Cutscene(_)) {
@@ -307,7 +309,7 @@ pub fn marker_quads(
         return Vec::new();
     };
     let eye = camera_view::frame_eye(frame);
-    let curve = crate::overworld_curvature::frame_curve_scale(world.overworld_bit(), frame);
+    let curve = crate::camera_view::frame_curve_scale(world.overworld_bit(), frame);
     marker_segments(world, draw_player)
         .iter()
         .filter_map(|s| segment_quad_depth(&vp, s, eye, curve))
@@ -317,7 +319,7 @@ pub fn marker_quads(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::SceneMode;
+    use legaia_engine_mode::mode::SceneMode;
 
     fn world_map_world() -> World {
         let mut w = World {
@@ -339,7 +341,7 @@ mod tests {
         let w = world_map_world();
         let frame = camera_view::resolve_field_camera(
             &w,
-            &crate::camera::Camera::default(),
+            &legaia_engine_field::camera::Camera::default(),
             None,
             [0.0, 0.0],
         );
@@ -362,7 +364,7 @@ mod tests {
         let w = world_map_world();
         let frame = camera_view::resolve_field_camera(
             &w,
-            &crate::camera::Camera::default(),
+            &legaia_engine_field::camera::Camera::default(),
             None,
             [0.0, 0.0],
         );
@@ -420,7 +422,7 @@ mod tests {
         let w = world_map_world();
         let frame = camera_view::resolve_field_camera(
             &w,
-            &crate::camera::Camera::default(),
+            &legaia_engine_field::camera::Camera::default(),
             None,
             [0.0, 0.0],
         );

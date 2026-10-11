@@ -1,11 +1,12 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 // --- Noa dance (rhythm) minigame wiring ------------------------------------
 
 /// A 3-row chart whose beat 0 (every lane) wants symbol 1 (`DanceDir::A` =
 /// pad Square), for deterministic judging.
-fn dance_test_chart() -> legaia_asset::dance_chart::DanceChart {
-    use legaia_asset::dance_chart::{BEATS_PER_ROW, DanceChart};
+fn dance_test_chart() -> legaia_minigame_formats::dance_chart::DanceChart {
+    use legaia_minigame_formats::dance_chart::{BEATS_PER_ROW, DanceChart};
     let mut rows = Vec::new();
     for _ in 0..3 {
         let mut row = [0u8; BEATS_PER_ROW];
@@ -23,7 +24,7 @@ fn dance_test_chart() -> legaia_asset::dance_chart::DanceChart {
 /// `DanceGame::advance` off until it clears, so a test that pressed on the
 /// entry frame would be pressing into the banner.
 fn run_dance_countin(world: &mut World) {
-    for _ in 0..crate::dance::COUNTIN_TOTAL_VSYNCS {
+    for _ in 0..legaia_engine_minigames::dance::COUNTIN_TOTAL_VSYNCS {
         world.set_pad(0);
         let _ = world.tick();
     }
@@ -41,7 +42,10 @@ fn run_dance_countin(world: &mut World) {
 fn enter_dance_counts_in_before_the_beat_clock_runs() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    world.enter_dance(legaia_engine_minigames::dance::DanceGame::new(
+        dance_test_chart(),
+        false,
+    ));
     assert!(world.minigames.dance_countin.is_some());
     // A judged button during the count-in scores nothing.
     world.set_pad(0);
@@ -56,12 +60,12 @@ fn enter_dance_counts_in_before_the_beat_clock_runs() {
     // The intro cue fires once, on the hold-segment entry, stored straight
     // into ring slot 0 as `FUN_801d2d98` does - not through the cue
     // dispatcher, which would classify `0x200` as a CD-XA voice.
-    let intro = crate::world::SfxRingOp::WriteSlot(
-        crate::dance::STAGE_CUE_RING_SLOT,
-        crate::dance::COUNTIN_INTRO_CUE as i16,
+    let intro = legaia_engine_system::sound_state::SfxRingOp::WriteSlot(
+        legaia_engine_minigames::dance::STAGE_CUE_RING_SLOT,
+        legaia_engine_minigames::dance::COUNTIN_INTRO_CUE as i16,
     );
     let mut ops = world.take_sfx_ring_ops();
-    for _ in 0..crate::dance::COUNTIN_TOTAL_VSYNCS {
+    for _ in 0..legaia_engine_minigames::dance::COUNTIN_TOTAL_VSYNCS {
         world.set_pad(0);
         let _ = world.tick();
         ops.extend(world.take_sfx_ring_ops());
@@ -77,19 +81,17 @@ fn enter_dance_counts_in_before_the_beat_clock_runs() {
     // And the song started: the chart loop is queued as an op-0x35 start, the
     // same event both hosts' BGM directors consume.
     assert!(world.audio.minigame_bgm_active);
-    assert!(
-        world
-            .pending_field_events
-            .iter()
-            .any(|e| matches!(e, crate::field_events::FieldEvent::Bgm { sub_op: 1, .. }))
-    );
+    assert!(world.pending_field_events.iter().any(|e| matches!(
+        e,
+        legaia_engine_field::field_events::FieldEvent::Bgm { sub_op: 1, .. }
+    )));
 }
 
 #[test]
 fn enter_dance_suspends_mode_and_exit_restores_it() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    let game = crate::dance::DanceGame::new(dance_test_chart(), false);
+    let game = legaia_engine_minigames::dance::DanceGame::new(dance_test_chart(), false);
     world.enter_dance(game);
     assert_eq!(world.mode, SceneMode::Dance);
     assert!(world.minigames.dance.is_some());
@@ -109,12 +111,15 @@ fn enter_dance_consumes_the_mode_request_and_raises_the_pass_flag() {
     for f in [0x133, 0x134, 0x135, 0x428] {
         world.system_flag_set(f);
     }
-    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    world.enter_dance(legaia_engine_minigames::dance::DanceGame::new(
+        dance_test_chart(),
+        false,
+    ));
     for f in [0x133, 0x134, 0x135] {
         assert!(!world.system_flag_test(f), "flag {f:#x} consumed");
     }
     assert!(world.system_flag_test(0x428));
-    assert!(world.system_flag_test(crate::dance::WIN_FLAG));
+    assert!(world.system_flag_test(legaia_engine_minigames::dance::WIN_FLAG));
 }
 
 /// Both hosts poll `exit_dance` from their frame path on every non-`Dance`
@@ -124,7 +129,7 @@ fn enter_dance_consumes_the_mode_request_and_raises_the_pass_flag() {
 /// after the poll (on the play page, the developer menu).
 #[test]
 fn exit_dance_without_a_run_does_not_eat_the_frame_s_pad_edges() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.set_pad(0);
@@ -144,10 +149,13 @@ fn exit_dance_without_a_run_does_not_eat_the_frame_s_pad_edges() {
 /// the hall must not carry into the restored field mode.
 #[test]
 fn exit_dance_with_a_run_still_clears_the_pad_latch() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    world.enter_dance(legaia_engine_minigames::dance::DanceGame::new(
+        dance_test_chart(),
+        false,
+    ));
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
     assert!(world.input.just_pressed(PadButton::Cross));
@@ -162,7 +170,10 @@ fn exit_dance_with_a_run_still_clears_the_pad_latch() {
 fn dance_tick_judges_a_correct_press() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    world.enter_dance(legaia_engine_minigames::dance::DanceGame::new(
+        dance_test_chart(),
+        false,
+    ));
     run_dance_countin(&mut world);
     // Rising edge on Square (DanceDir::A) - beat 0 of lane 0 wants symbol 1.
     world.set_pad(0);
@@ -174,7 +185,8 @@ fn dance_tick_judges_a_correct_press() {
     // covers the scoring end on the real tables.
     assert!(matches!(
         world.minigames.dance_last_judge,
-        Some(crate::dance::Judge::Hit { .. }) | Some(crate::dance::Judge::Sequence { .. })
+        Some(legaia_engine_minigames::dance::Judge::Hit { .. })
+            | Some(legaia_engine_minigames::dance::Judge::Sequence { .. })
     ));
     assert!(world.minigames.dance.as_ref().unwrap().gauge() > 0);
 }
@@ -182,7 +194,10 @@ fn dance_tick_judges_a_correct_press() {
 #[test]
 fn dance_wrong_direction_misses() {
     let mut world = World::new();
-    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    world.enter_dance(legaia_engine_minigames::dance::DanceGame::new(
+        dance_test_chart(),
+        false,
+    ));
     run_dance_countin(&mut world);
     // Beat 0 wants Square; press Circle instead -> miss.
     world.set_pad(0);
@@ -190,7 +205,7 @@ fn dance_wrong_direction_misses() {
     let _ = world.tick();
     assert_eq!(
         world.minigames.dance_last_judge,
-        Some(crate::dance::Judge::Miss)
+        Some(legaia_engine_minigames::dance::Judge::Miss)
     );
     assert_eq!(world.minigames.dance.as_ref().unwrap().score(), 0);
 }
@@ -200,13 +215,16 @@ fn dance_wrong_direction_misses() {
 /// dpad press is not a dance input at all.
 #[test]
 fn dance_judges_the_retail_pad_bits_not_the_dpad() {
-    use crate::dance::DanceDir;
+    use legaia_engine_minigames::dance::DanceDir;
     // The bit map itself, straight off `FUN_801d4040`.
     assert_eq!(DanceDir::A.pad_bit(), 0x80);
     assert_eq!(DanceDir::B.pad_bit(), 0x20);
     assert_eq!(DanceDir::C.pad_bit(), 0x10);
     let mut world = World::new();
-    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    world.enter_dance(legaia_engine_minigames::dance::DanceGame::new(
+        dance_test_chart(),
+        false,
+    ));
     run_dance_countin(&mut world);
     // Dpad Left used to be direction A; it is not a judged bit.
     world.set_pad(0);
@@ -222,7 +240,8 @@ fn dance_judges_the_retail_pad_bits_not_the_dpad() {
     let _ = world.tick();
     assert!(matches!(
         world.minigames.dance_last_judge,
-        Some(crate::dance::Judge::Hit { .. }) | Some(crate::dance::Judge::Sequence { .. })
+        Some(legaia_engine_minigames::dance::Judge::Hit { .. })
+            | Some(legaia_engine_minigames::dance::Judge::Sequence { .. })
     ));
 }
 
@@ -230,7 +249,10 @@ fn dance_judges_the_retail_pad_bits_not_the_dpad() {
 fn dance_song_end_auto_restores_mode() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    world.enter_dance(legaia_engine_minigames::dance::DanceGame::new(
+        dance_test_chart(),
+        false,
+    ));
     // Run enough neutral-pad frames to exhaust the short song. tick_dance
     // advances the beat clock 10 phase units/frame; the short song ends at
     // SONG_LEN_SHORT (0x41dc) so a few thousand frames guarantees the timeout.
@@ -262,8 +284,8 @@ fn dance_song_end_auto_restores_mode() {
 fn fishing_test_species(
     index: usize,
     pull_factor: i32,
-) -> legaia_asset::fishing_species::FishingSpecies {
-    legaia_asset::fishing_species::FishingSpecies {
+) -> legaia_minigame_formats::fishing_species::FishingSpecies {
+    legaia_minigame_formats::fishing_species::FishingSpecies {
         index,
         name_ptr_va: 0,
         score_value: 10_000,
@@ -281,12 +303,12 @@ fn fishing_test_species(
 /// Synthetic overlay tables: ten species, every lure row spawning species
 /// 3 / 5 so any band hooks something, and no cadence templates (the slow,
 /// held-reel strike path).
-fn fishing_test_tables(pull_factor: i32) -> crate::fishing::FishingTables {
+fn fishing_test_tables(pull_factor: i32) -> legaia_engine_fishing::fishing::FishingTables {
     let mut page = vec![[0u32; 8]; 8];
     for row in page.iter_mut().take(3) {
         *row = [3, 5, 3, 5, 5, 0, 0, 0];
     }
-    crate::fishing::FishingTables {
+    legaia_engine_fishing::fishing::FishingTables {
         species: (0..10)
             .map(|i| fishing_test_species(i, pull_factor))
             .collect(),
@@ -295,7 +317,7 @@ fn fishing_test_tables(pull_factor: i32) -> crate::fishing::FishingTables {
     }
 }
 
-fn fishing_phase(world: &World) -> crate::fishing::PondPhase {
+fn fishing_phase(world: &World) -> legaia_engine_fishing::fishing::PondPhase {
     world.minigames.fishing.as_ref().unwrap().phase()
 }
 
@@ -308,7 +330,7 @@ fn fishing_frame(world: &mut World, mask: u16) {
 /// Circle edge -> wind-up -> power sweep -> Circle lock -> flight -> the lure
 /// lands in the pre-hook loop.
 fn fishing_cast(world: &mut World) {
-    use crate::fishing::{FLIGHT_FRAMES, PondPhase, WINDUP_FRAMES};
+    use legaia_engine_fishing::fishing::{FLIGHT_FRAMES, PondPhase, WINDUP_FRAMES};
     let circle = input::PadButton::Circle.mask();
     fishing_frame(world, 0);
     fishing_frame(world, circle);
@@ -327,8 +349,8 @@ fn fishing_cast(world: &mut World) {
 /// Hold Cross (reel A) through the pre-hook loop, re-casting whenever the
 /// empty line is fully reeled in, until a fish strikes. Returns the frame's
 /// events on the hook frame.
-fn fishing_hold_until_hooked(world: &mut World) -> Vec<crate::fishing::PondEvent> {
-    use crate::fishing::PondPhase;
+fn fishing_hold_until_hooked(world: &mut World) -> Vec<legaia_engine_fishing::fishing::PondEvent> {
+    use legaia_engine_fishing::fishing::PondPhase;
     for _ in 0..40_000 {
         fishing_frame(world, input::PadButton::Cross.mask());
         match fishing_phase(world) {
@@ -391,7 +413,7 @@ fn a_session_seeds_from_and_banks_back_the_persistent_words() {
 
 #[test]
 fn fishing_casts_hooks_and_reels_to_a_resolution() {
-    use crate::fishing::{PondEvent, PondPhase};
+    use legaia_engine_fishing::fishing::{PondEvent, PondPhase};
     let mut world = World::new();
     world.enter_fishing_session(&fishing_test_tables(64), 0, None);
     for _ in 0..3 {
@@ -432,8 +454,8 @@ fn fishing_casts_hooks_and_reels_to_a_resolution() {
 /// browsers.
 #[test]
 fn the_strike_and_catch_edges_queue_their_cues_on_the_world() {
-    use crate::fishing::PondPhase;
-    use crate::fishing_actors::{CELEBRATE_CUE, HOOK_CUE};
+    use legaia_engine_fishing::fishing::PondPhase;
+    use legaia_engine_fishing::fishing_actors::{CELEBRATE_CUE, HOOK_CUE};
     let mut world = World::new();
     world.enter_fishing_session(&fishing_test_tables(16), 0, None);
     let _ = world.drain_minigame_sfx_cues();
@@ -478,7 +500,7 @@ fn the_strike_and_catch_edges_queue_their_cues_on_the_world() {
 /// was held, because the two divisors differ (`rod*9 + 0x23` / `rod*6 + 0x19`).
 #[test]
 fn fishing_reel_buttons_are_cross_and_square_with_cross_winning() {
-    use crate::fishing::PondPhase;
+    use legaia_engine_fishing::fishing::PondPhase;
     let run = |mask: u16| -> i32 {
         let mut world = World::new();
         world.enter_fishing_session(&fishing_test_tables(4000), 0, None);
@@ -510,14 +532,18 @@ fn fishing_tick_without_session_falls_back_to_return_mode() {
     assert_eq!(world.mode, SceneMode::Field);
 }
 
-fn slot_test_machine(balance: i32) -> crate::slot_machine::SlotMachine {
-    use legaia_asset::slot_payout::SlotPayoutTable;
+fn slot_test_machine(balance: i32) -> legaia_engine_minigames::slot_machine::SlotMachine {
+    use legaia_minigame_formats::slot_payout::SlotPayoutTable;
     // Synthetic payout table: symbol id i pays (i+1)*2 coins.
-    let mut payouts = [0u8; legaia_asset::slot_payout::SLOT_SYMBOL_COUNT];
+    let mut payouts = [0u8; legaia_minigame_formats::slot_payout::SLOT_SYMBOL_COUNT];
     for (i, p) in payouts.iter_mut().enumerate() {
         *p = ((i + 1) * 2) as u8;
     }
-    crate::slot_machine::SlotMachine::new(SlotPayoutTable { payouts }, 0xC0FFEE, balance)
+    legaia_engine_minigames::slot_machine::SlotMachine::new(
+        SlotPayoutTable { payouts },
+        0xC0FFEE,
+        balance,
+    )
 }
 
 #[test]
@@ -539,7 +565,7 @@ fn enter_slot_machine_suspends_mode_and_exit_commits_the_bank() {
 
 #[test]
 fn slot_machine_spins_stops_and_collects_through_the_pad() {
-    use crate::slot_machine::{SPIN_UP_FRAMES, SlotPhase};
+    use legaia_engine_minigames::slot_machine::{SPIN_UP_FRAMES, SlotPhase};
     let mut world = World::new();
     world.enter_slot_machine(slot_test_machine(50));
     // Confirm (Cross rising edge) charges the bet and starts the spin.
@@ -583,7 +609,10 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
     let _ = world.tick();
     let m = world.minigames.slot_machine.as_ref().unwrap();
     assert_eq!(m.phase(), SlotPhase::Payout);
-    assert_eq!(m.reels_stopped(), crate::slot_machine::REEL_COUNT);
+    assert_eq!(
+        m.reels_stopped(),
+        legaia_engine_minigames::slot_machine::REEL_COUNT
+    );
     let result = m.last_result().expect("spin evaluated");
     let before = m.balance();
     // A fresh Cross edge collects the (possibly zero) payout back to Idle.
@@ -602,7 +631,7 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
 /// the submenu's cues in ring slot 0.
 #[test]
 fn slot_machine_cash_out_menu_quits_through_the_pad() {
-    use crate::slot_machine::{CUE_MENU_CONFIRM, CUE_MENU_CURSOR, SlotPhase};
+    use legaia_engine_minigames::slot_machine::{CUE_MENU_CONFIRM, CUE_MENU_CURSOR, SlotPhase};
     let mut world = World::new();
     let before = world.mode;
     world.enter_slot_machine(slot_test_machine(41));
@@ -619,7 +648,7 @@ fn slot_machine_cash_out_menu_quits_through_the_pad() {
     press(&mut world, input::PadButton::Down);
     press(&mut world, input::PadButton::Cross);
     let ring = std::mem::take(&mut world.audio.sfx_ring_ops);
-    use crate::world::SfxRingOp::WriteSlot;
+    use legaia_engine_system::sound_state::SfxRingOp::WriteSlot;
     assert!(ring.contains(&WriteSlot(0, CUE_MENU_CONFIRM)));
     assert!(ring.contains(&WriteSlot(0, CUE_MENU_CURSOR)));
     assert_eq!(
@@ -638,7 +667,7 @@ fn slot_machine_cash_out_menu_quits_through_the_pad() {
 
 #[test]
 fn slot_machine_spin_accrues_the_net_take() {
-    use crate::slot_machine::NET_TAKE_NORMAL_SPIN;
+    use legaia_engine_minigames::slot_machine::NET_TAKE_NORMAL_SPIN;
     let mut world = World::new();
     world.enter_slot_machine(slot_test_machine(50));
     assert_eq!(world.minigames.slot_machine.as_ref().unwrap().net_take(), 0);
@@ -755,7 +784,10 @@ fn entering_the_dance_drops_the_confirm_press_edge() {
     // of a script confirm that launches the minigame.
     world.set_pad(0);
     world.set_pad(input::PadButton::Square.mask());
-    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    world.enter_dance(legaia_engine_minigames::dance::DanceGame::new(
+        dance_test_chart(),
+        false,
+    ));
     let _ = world.tick();
     assert_eq!(
         world.minigames.dance_last_judge, None,
@@ -778,7 +810,10 @@ fn entering_the_dance_drops_the_confirm_press_edge() {
 fn leaving_the_dance_drops_the_press_edge_too() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
-    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    world.enter_dance(legaia_engine_minigames::dance::DanceGame::new(
+        dance_test_chart(),
+        false,
+    ));
     world.set_pad(0);
     world.set_pad(input::PadButton::Circle.mask());
     let _ = world.exit_dance();
@@ -812,12 +847,12 @@ fn minigame_frames_clear_to_black_over_the_suspended_field_colour() {
 /// dance's VAB (`a1 = 2`), program 1, at a note in the random band.
 #[test]
 fn dance_award_sounds_reach_the_ring_and_the_voice_queue() {
-    use crate::dance::{AWARD_CUE_RING_SLOT, AWARD_MISS_CUE, DanceAwardSound};
+    use legaia_engine_minigames::dance::{AWARD_CUE_RING_SLOT, AWARD_MISS_CUE, DanceAwardSound};
     let mut world = World::new();
     world.route_dance_award_sounds(&[DanceAwardSound::Cue(AWARD_MISS_CUE)]);
     assert_eq!(
         world.take_sfx_ring_ops(),
-        vec![crate::world::SfxRingOp::WriteSlot(
+        vec![legaia_engine_system::sound_state::SfxRingOp::WriteSlot(
             AWARD_CUE_RING_SLOT,
             AWARD_MISS_CUE as i16
         )]
@@ -850,19 +885,22 @@ fn the_lure_landing_stores_its_cue_into_ring_slot_two() {
     fishing_frame(&mut world, 0);
     fishing_frame(&mut world, circle);
     ops.extend(world.take_sfx_ring_ops());
-    for _ in 0..crate::fishing::WINDUP_FRAMES + 24 {
+    for _ in 0..legaia_engine_fishing::fishing::WINDUP_FRAMES + 24 {
         fishing_frame(&mut world, 0);
         ops.extend(world.take_sfx_ring_ops());
     }
     fishing_frame(&mut world, circle);
     ops.extend(world.take_sfx_ring_ops());
-    let landing = crate::world::SfxRingOp::WriteSlot(2, 0x204);
+    let landing = legaia_engine_system::sound_state::SfxRingOp::WriteSlot(2, 0x204);
     assert!(!ops.contains(&landing), "nothing before the lure flies");
-    for _ in 0..crate::fishing::FLIGHT_FRAMES {
+    for _ in 0..legaia_engine_fishing::fishing::FLIGHT_FRAMES {
         fishing_frame(&mut world, 0);
         ops.extend(world.take_sfx_ring_ops());
     }
-    assert_eq!(fishing_phase(&world), crate::fishing::PondPhase::Waiting);
+    assert_eq!(
+        fishing_phase(&world),
+        legaia_engine_fishing::fishing::PondPhase::Waiting
+    );
     assert_eq!(ops.iter().filter(|o| **o == landing).count(), 1);
 }
 
@@ -879,11 +917,11 @@ fn a_hooked_rod_bent_past_its_cap_creaks() {
     fishing_cast(&mut world);
     let _ = fishing_hold_until_hooked(&mut world);
     let _ = world.take_sfx_ring_ops();
-    let creak = crate::world::SfxRingOp::WriteSlot(1, 0x201);
+    let creak = legaia_engine_system::sound_state::SfxRingOp::WriteSlot(1, 0x201);
     let cross = input::PadButton::Cross.mask();
     let mut frames_with_creak = Vec::new();
     for f in 0..120 {
-        if fishing_phase(&world) != crate::fishing::PondPhase::Hooked {
+        if fishing_phase(&world) != legaia_engine_fishing::fishing::PondPhase::Hooked {
             break;
         }
         fishing_frame(&mut world, cross);

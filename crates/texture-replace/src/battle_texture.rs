@@ -18,7 +18,7 @@
 //! So the raw tier's magic scan cannot see them, the LZS tier's magic scan
 //! cannot see them either (they *are* LZS-compressed - the magic is simply
 //! not there to find), and `legaia_tim::parse_strict` has nothing to parse.
-//! Format detail in [`legaia_asset::battle_texture_catalog`] and
+//! Format detail in [`legaia_actor_formats::battle_texture_catalog`] and
 //! [`docs/formats/battle-data-pack.md`](../../../docs/formats/battle-data-pack.md).
 //!
 //! ## The fit budget is a slot allocation, not a stream length
@@ -43,12 +43,12 @@
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::battle_char_assembly::CLUT_ENTRIES_PER_PALETTE;
-use legaia_asset::battle_texture_catalog::{
+use legaia_actor_formats::battle_char_assembly::CLUT_ENTRIES_PER_PALETTE;
+use legaia_actor_formats::battle_texture_catalog::{
     self as catalog, BattleTextureBlock, BattleTextureSlot, ResolvedBlock,
 };
-use legaia_asset::item_names::ItemNameTable;
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::ItemNameTable;
 
 /// The PROT entries that carry a player battle file.
 pub const PLAYER_FILE_ENTRIES: [u32; 4] = catalog::PLAYER_FILE_ENTRIES;

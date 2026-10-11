@@ -46,7 +46,6 @@
 //! REF: FUN_801E08D8 (the info-panel renderer the grid feeds)
 //! REF: FUN_801E1208 (per-card block enumeration - the read a host answers)
 
-use crate::input::PadButton;
 use crate::save_select::{
     CardIoMachine, CardStatus, CommitReport, SaveSelectMode, SaveSelectSession, SelectOutcome,
     SelectPhase, SlotSnapshot, card_frame_tick,
@@ -55,6 +54,7 @@ use crate::save_subscreen::{
     FADE_OPAQUE, SaveEntryContext, SaveScreenMachine, SaveSubScreen, SubScreenEffect,
     SubScreenInput,
 };
+use legaia_engine_system::input::PadButton;
 
 /// Columns in retail's slot-preview grid.
 ///

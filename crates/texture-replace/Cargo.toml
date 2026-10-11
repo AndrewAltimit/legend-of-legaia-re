@@ -10,9 +10,11 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
-legaia-asset.workspace = true
 legaia-disc-patch.workspace = true
 legaia-iso.workspace = true
 legaia-lzs.workspace = true
 legaia-tim.workspace = true
-legaia-translate.workspace = true
+legaia-actor-formats.workspace = true
+legaia-disc-audit.workspace = true
+legaia-game-tables.workspace = true
+legaia-ui-formats.workspace = true

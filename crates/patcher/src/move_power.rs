@@ -2,7 +2,7 @@
 //! the battle-action overlay's move-power table.
 //!
 //! The table (`0x801F4F5C`, PROT entry 898 at file offset
-//! [`legaia_asset::move_power::MOVE_POWER_TABLE_FILE_OFFSET`]) holds 44
+//! [`legaia_game_tables::move_power::MOVE_POWER_TABLE_FILE_OFFSET`]) holds 44
 //! 26-byte records; the damage kernel reads each record's `+0x00` halfword as
 //! the move's **power** (the `rand % ((power >> shift) + 1)` roll modulus). This
 //! is the *special-attack* power space - enemy specials and Seru-magic, NOT
@@ -16,7 +16,7 @@
 //! its own animation and effects; only how hard it hits changes. PROT 0898 is
 //! stored raw (no LZS), so the write is strictly same-size and in place.
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// Re-exported [`crate::drops::DropMode`] so the move-power pass shares the
 /// CLI's `shuffle` / `random` vocabulary.

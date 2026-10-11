@@ -3,10 +3,6 @@
 
 use super::*;
 
-/// Maximum simultaneous actors in the world. Mirrors the battle-side cap of
-/// 8 + 32 spare slots for field-side NPCs / cutscene actors.
-pub const MAX_ACTORS: usize = 64;
-
 /// Number of stat-bearing battle slots (party + monsters). Indexes
 /// [`crate::world::BattleState::attack`] / [`crate::world::BattleState::defense`] / [`crate::world::BattleState::speed`]
 /// and bounds the turn-order initiative scan.
@@ -33,7 +29,7 @@ pub const MOVE_VM_BUDGET: usize = 4096;
 /// per-frame delta from the frame-speed scalar `DAT_1f800393`
 /// (`overlay_0897_801ef2b0` case 2); the engine uses a fixed cadence of
 /// `TILE / 8` (16 units) - eight frames to cross one 128-unit tile.
-pub(crate) const TILE_BOARD_SPEED: i32 = crate::tile_board::TILE / 8;
+pub(crate) const TILE_BOARD_SPEED: i32 = legaia_engine_minigames::tile_board::TILE / 8;
 
 /// Bytes per row of the field collision grid (retail `0x80`-byte rows at
 /// `*(_DAT_1F8003EC) + 0x4000`).
@@ -63,8 +59,8 @@ pub(crate) const SEAT_RESCUE_RADIUS_SUBCELLS: i32 = 8;
 /// See [`field-locomotion.md`](../../../../docs/subsystems/field-locomotion.md).
 ///
 /// REF: FUN_80034A6C
-pub const FIELD_RUN_BUTTON_MASK_RETAIL: u16 =
-    crate::input::PadButton::Cross as u16 | crate::input::PadButton::R1 as u16;
+pub const FIELD_RUN_BUTTON_MASK_RETAIL: u16 = legaia_engine_system::input::PadButton::Cross as u16
+    | legaia_engine_system::input::PadButton::R1 as u16;
 
 /// The engine's default run-button mask: retail's two buttons plus **Square**
 /// as an alternate.
@@ -77,7 +73,7 @@ pub const FIELD_RUN_BUTTON_MASK_RETAIL: u16 =
 /// assigns [`FIELD_RUN_BUTTON_MASK_RETAIL`] to
 /// [`crate::world::FieldLocomotion::run_button_mask`].
 pub const FIELD_RUN_BUTTON_MASK_DEFAULT: u16 =
-    FIELD_RUN_BUTTON_MASK_RETAIL | crate::input::PadButton::Square as u16;
+    FIELD_RUN_BUTTON_MASK_RETAIL | legaia_engine_system::input::PadButton::Square as u16;
 
 /// Base walk step (retail `base_step = 8` in `FUN_801d01b0`). Scaled by the
 /// player's `+0x72` speed multiplier and the per-frame delta scalar.
@@ -113,7 +109,7 @@ pub(crate) const FIELD_BASE_STEP_DEBUG_TURBO: i32 = 0x18;
 /// The port ticks once per vsync, so the overworld walk spreads one retail
 /// frame's displacement - `((5 * 0xC00) >> 12) * 3 = 9`, rounded up to `10`
 /// by the 2-unit stepper - across three ticks
-/// ([`crate::world::WorldMapState::walk_carry`]). Ticking at `dt = 1` instead
+/// ([`legaia_engine_field::world_map_entity_config::WorldMapState::walk_carry`]). Ticking at `dt = 1` instead
 /// rounds every tick's `3` up to `4`: `4` units a vsync against retail's
 /// `10 / 3`.
 pub(crate) const WORLD_MAP_FRAME_STEP: i32 = 3;
@@ -311,7 +307,7 @@ pub(crate) const FIELD_SLIDE_LATERAL: i32 = 0x21;
 /// motion VM cannot decode the base step from the program itself; instead the
 /// engine derives each placement's glide speed from the placement's **real
 /// walk-kernel operands** off the disc
-/// ([`crate::man_field_scripts::placement_glide_speed`]: the MAN
+/// ([`legaia_engine_field::man_field_scripts::placement_glide_speed`]: the MAN
 /// tail-section-1 wander/step ops first, then the record's own field-VM
 /// `0x37`/`0x41`/`0x47` yield ops) and writes it into the leg's
 /// [`vm::motion_vm::MotionState::speed`]. This constant is the **fallback**
@@ -322,37 +318,23 @@ pub(crate) const FIELD_SLIDE_LATERAL: i32 = 0x21;
 pub(crate) const FIELD_NPC_MOTION_SPEED: u16 = 8;
 
 #[cfg(test)]
-use crate::man_field_scripts::field_npc_glide_speed;
-pub(crate) use crate::man_field_scripts::field_npc_walk_step_speed;
+use legaia_engine_field::man_field_scripts::field_npc_glide_speed;
+pub(crate) use legaia_engine_field::man_field_scripts::field_npc_walk_step_speed;
 
 /// Motion-VM bytecode for one field-NPC walk leg: a single `0x47`
 /// `MoveTowardTarget` op (the pursue/glide opcode of `FUN_8003774C`). The
 /// engine resets the cursor per leg, so the one-op program is the whole
 /// script.
 pub(crate) const FIELD_NPC_MOTION_PROGRAM: [u8; 1] =
-    [vm::motion_vm::MotionOp::MoveTowardTarget as u8];
-
-/// One in-flight field-NPC walk leg, stepped through the ported motion VM
-/// ([`legaia_engine_vm::motion_vm::step`], the `FUN_8003774C` port) by
-/// `World::tick_field_npc_motions`. The live position lives in
-/// [`crate::world::FieldNpcState::positions`] (so collision / interact probes follow the
-/// walking NPC automatically); this carries the VM cursor + target.
-#[derive(Debug, Clone)]
-pub struct FieldNpcMotion {
-    /// Motion-VM state (cursor, per-frame speed, accumulated budget). The
-    /// `world_x` / `world_z` fields mirror the NPC's live position.
-    pub state: vm::motion_vm::MotionState,
-    /// World-space walk target of the current leg.
-    pub target: (i16, i16),
-}
+    [legaia_engine_motion_vm::motion_vm::MotionOp::MoveTowardTarget as u8];
 
 /// One NPC's **ambient facing** channel - the idle turn-in-place behaviour of
 /// the second motion VM (`FUN_80038158` ops `0x04` / `0x0D`), driven by the
-/// [`legaia_engine_vm::ambient_motion::AmbientMotion`] port.
+/// [`legaia_engine_motion_vm::ambient_motion::AmbientMotion`] port.
 ///
 /// The stream arrives as MAN tail-section 1: one motion record per bound
 /// actor, each carrying a table of gated *variants*
-/// ([`legaia_asset::man_motion::stream_variants`]). Retail's interpreter
+/// ([`legaia_scene_formats::man_motion::stream_variants`]). Retail's interpreter
 /// preamble re-selects the live variant every tick - the first variant whose
 /// `DAT_80085758` system flag is set, else the `0xFFFF` default - so the
 /// selection is re-run per tick here too rather than frozen at scene load,
@@ -368,7 +350,7 @@ pub struct FieldNpcAmbient {
     pub live: Option<usize>,
     /// The ambient facing interpreter (PC, cursor, raw `+0x26` heading, and
     /// the actor's own slice of the `0x801C66A0` ramp pool).
-    pub vm: vm::ambient_motion::AmbientMotion,
+    pub vm: legaia_engine_motion_vm::ambient_motion::AmbientMotion,
     /// Any variant of this stream carries a walk op (`0x03`/`0x19`/`0x20`
     /// directional step or `0x18` AABB wander), so this placement's motion
     /// is the ambient VM's business.
@@ -402,12 +384,12 @@ impl FieldNpcAmbient {
         self.variants
             .iter()
             .position(|(sel, _)| {
-                *sel != legaia_asset::man_motion::SELECTOR_DEFAULT && flag(*sel & 0x0FFF)
+                *sel != legaia_scene_formats::man_motion::SELECTOR_DEFAULT && flag(*sel & 0x0FFF)
             })
             .or_else(|| {
                 self.variants
                     .iter()
-                    .position(|(sel, _)| *sel == legaia_asset::man_motion::SELECTOR_DEFAULT)
+                    .position(|(sel, _)| *sel == legaia_scene_formats::man_motion::SELECTOR_DEFAULT)
             })
     }
 }
@@ -615,7 +597,7 @@ pub const SPAWNED_CONTEXT_SLOTS: usize = 8;
 /// Frame budget for a cutscene-timeline channel-completion PARK (the
 /// cross-context `CFLAG_TST` handshake, `B3 <id> <bit>`; see
 /// [`World::step_cutscene_timeline`] and
-/// [`crate::cutscene_timeline::ChannelWait`]).
+/// [`legaia_engine_field::cutscene_timeline::ChannelWait`]).
 ///
 /// Retail's op-`0x33` arm parks the timeline at the flag-test while the poked
 /// channel's bit is set and releases it once the bit is clear - normally a
@@ -636,7 +618,7 @@ pub(crate) const CHANNEL_WAIT_PARK_TIMEOUT: u32 = 30;
 pub(crate) const STRANDED_COLLISION_REACH: usize = 1024;
 
 /// Park bound for a cross-context **walk-to-tile yield**
-/// (`C7 <id> <tx> <tz> <mode>`, [`crate::cutscene_timeline::TimelineWalk`]).
+/// (`C7 <id> <tx> <tz> <mode>`, [`legaia_engine_field::cutscene_timeline::TimelineWalk`]).
 /// A walk park is a real playout - the longest authored legs cross a dozen
 /// tiles at the slowest operand speed (1 unit/tick ≈ 1500 ticks) - so this is
 /// sized as a safety net, not a beat length; on expiry the walker snaps to
@@ -644,7 +626,7 @@ pub(crate) const STRANDED_COLLISION_REACH: usize = 1024;
 pub(crate) const WALK_PARK_TIMEOUT: u32 = 2400;
 
 /// Spin bound for a cutscene record waiting on an NPC's clip end latch
-/// (`AD <id> 08`, [`crate::cutscene_timeline::CutsceneTimeline::npc_clip_spin_frames`]).
+/// (`AD <id> 08`, [`legaia_engine_field::cutscene_timeline::CutsceneTimeline::npc_clip_spin_frames`]).
 /// A looping clip latches once per wrap and a clamped one on its last frame,
 /// so a live latch lands within one clip length (the scene banks' longest
 /// records run a few hundred frames); only a held clip never latches, and
@@ -691,8 +673,6 @@ pub(crate) fn tile_board_held_mask(input: &input::InputState) -> u16 {
 /// (`0x801D2110..0x801D2120`). Field-VM op `2E 13` is its only setter and
 /// `2F 13` its script clear.
 pub const WALK_ON_REPOLL_FLAG: u32 = 0x0008_0000;
-
-pub use crate::camera::{CAMERA_FORCE_EASE_FLAG, CAMERA_HOLD_FLAG, CAMERA_LOCKED_EASE_FLAG};
 
 #[cfg(test)]
 mod tests {

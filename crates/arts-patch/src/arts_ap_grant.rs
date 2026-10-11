@@ -122,11 +122,11 @@ use anyhow::{Result, bail};
 use legaia_art::arts_table::{self, RawArtRecord};
 use legaia_art::queue::{Character, Command};
 
-use crate::mips::*;
-use crate::shiny_seru::{
+use legaia_code_hooks::arenas::{
     ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, Edit, OVERLAY_TABLE_RANGES,
     SCUS_GAP_END_VA, SCUS_GAP_VA, SCUS_TABLE_RANGES,
 };
+use legaia_code_hooks::mips::*;
 
 /// Number of reachable config rows per character (`s3 - 0x0B` over art rows
 /// `0x0B..=0x24`).
@@ -149,9 +149,10 @@ pub const AP_CAP: u16 = 100;
 pub type ApConfig = [i8; TABLE_LEN];
 
 /// PROT entry index of the battle-action overlay (0898) hosting the detour sites.
-pub const OVERLAY_PROT_INDEX: usize = legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+pub const OVERLAY_PROT_INDEX: usize =
+    legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
 /// Load base VA of the slot-A overlays; overlay file offset = `va - BASE`.
-pub const OVERLAY_BASE_VA: u32 = legaia_asset::move_power::BATTLE_OVERLAY_BASE;
+pub const OVERLAY_BASE_VA: u32 = legaia_game_tables::move_power::BATTLE_OVERLAY_BASE;
 
 // --- Pinned hook sites (VA, expected first word, return VA) ------------------
 
@@ -633,7 +634,7 @@ impl ArtsApGrantInjection {
         // verified unreferenced on a live battle - the part a static check
         // can't prove).
         let scus_off = |va: u32| -> Result<usize> {
-            legaia_asset::item_names::file_offset_for_va(scus, va)
+            legaia_game_tables::item_names::file_offset_for_va(scus, va)
                 .ok_or_else(|| anyhow::anyhow!("can't resolve SCUS VA {va:#x}"))
         };
         for (va, len) in [

@@ -32,8 +32,8 @@
 //! host can drift on the packed-pad conversion, the equip commit or the
 //! record-counter reads without the gate failing.
 
-use legaia_engine_core::dev_menu::retail_packed;
 use legaia_engine_core::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage};
+use legaia_engine_system::pad::retail_packed;
 use legaia_engine_ui::{self as ui, RecordsLabels, TextDraw};
 use wasm_bindgen::prelude::*;
 
@@ -50,7 +50,7 @@ const DEV_RECORDS_PEN: (i32, i32) = (24, 40);
 
 /// Pad bit that swaps the row list for the Records page (unused by every
 /// [`DevMenuSession`] row, so it steals nothing).
-const RECORDS_TOGGLE: u16 = legaia_engine_core::dev_menu::PACK_SQUARE;
+const RECORDS_TOGGLE: u16 = legaia_engine_system::pad::PACK_SQUARE;
 
 /// The records page's heading strings. Retail keeps them in the world-map
 /// overlay's data segment; the builder takes them from the caller so no game
@@ -243,8 +243,8 @@ fn build_dev_menu_draws(session: &DevMenuSession, font: &legaia_font::Font) -> V
 fn dev_records_model(
     records: &[&[u8]],
     play_time_seconds: u32,
-) -> legaia_engine_vm::world_map_overlay::RecordsScreen {
-    use legaia_engine_vm::world_map_overlay::{CharRecordStats, records_screen};
+) -> legaia_engine_field::dev_menu_leaves::RecordsScreen {
+    use legaia_engine_field::dev_menu_leaves::{CharRecordStats, records_screen};
     let mut chars = [CharRecordStats::default(); 3];
     for (slot, out) in chars.iter_mut().enumerate() {
         let Some(c) = records.get(slot).and_then(|r| ui::record_counters(r)) else {
@@ -270,7 +270,7 @@ fn dev_records_model(
 /// Project the ported model onto the draw builder's view, with the host-owned
 /// heading strings attached.
 fn records_view(
-    model: &legaia_engine_vm::world_map_overlay::RecordsScreen,
+    model: &legaia_engine_field::dev_menu_leaves::RecordsScreen,
 ) -> ui::RecordsScreenView<'static> {
     ui::RecordsScreenView {
         battles: model.battles,

@@ -19,10 +19,10 @@ virtual address; **SCUS** is the main executable `SCUS_942.54`.
 |---|---|---|---|
 | Entry + init | `FUN_80026C28` → `main()` `FUN_80015E90` | SCUS | `engine-session`'s `BootSession` construction |
 | TOC load | `FUN_8003E4E8` → RAM `0x801C70F0` | SCUS | `legaia_prot` reads the disc image directly |
-| Mode dispatch | table at `0x8007078C`, word `_DAT_8007B83C` | SCUS | `engine-field::mode` (`ModeSeat`, `GameMode`); parser `legaia_asset::mode_table` |
+| Mode dispatch | table at `0x8007078C`, word `_DAT_8007B83C` | SCUS | `engine-mode::mode` (`ModeSeat`, `GameMode`); parser `legaia_game_tables::mode_table` |
 | Publisher logos | `FUN_801CE9C0` + sequencer `FUN_801CEFD4` | PROT 0895 (`init.pak`) | `engine-menus::publisher_logos` |
-| Title screen | tick `FUN_801DD35C`, modes 22/23 | PROT 0899 (menu overlay) | `engine-menus::title` (`TitleSession`) over `engine-vm::title_overlay` |
-| New-game seed | `FUN_80034A6C` → `FUN_800560B4` | SCUS | `World::begin_new_game`, `legaia_asset::new_game` |
+| Title screen | tick `FUN_801DD35C`, modes 22/23 | PROT 0899 (menu overlay) | `engine-menus::title` (`TitleSession`) over `engine-menus::title_overlay` |
+| New-game seed | `FUN_80034A6C` → `FUN_800560B4` | SCUS | `World::begin_new_game`, `legaia_game_tables::new_game` |
 | Field entry | mode 2 `FUN_80025B64` → `FUN_801D6704` | SCUS + PROT 0897 | `BootSession::enter_field_live` |
 | Opening chain | scene scripts; skip in `FUN_801D1344` | PROT 0897 + scene MANs | `engine-core` `world/narration.rs` |
 | Name entry | `FUN_801F03F0` / `FUN_801E6B34` | field/dialog overlay | `engine-menus::name_entry` |
@@ -178,7 +178,7 @@ The current mode is the halfword `_DAT_8007B83C`. See also
 
 <a id="full-handler-map-recovered-from-the-disc"></a>
 
-**The whole table**, as [`legaia_asset::mode_table`](../../crates/game-tables/src/mode_table.rs)
+**The whole table**, as [`legaia_game_tables::mode_table`](../../crates/game-tables/src/mode_table.rs)
 reads it out of `SCUS_942.54` (`asset mode-table SCUS_942.54`; disc-gated
 `mode_table_real`):
 
@@ -218,7 +218,7 @@ Notes on the table:
   field asset loader `FUN_8001F7C0` and the MAN decoder `FUN_8003AEB0`).
   `CONFIG` is the dev debug menu, not game config. `CARD` covers the title
   screen, the memory-card manager and the in-field pause menu. The port's
-  `GameMode` enum (`crates/engine-field/src/mode.rs`) keeps the dev names and
+  `GameMode` enum (`crates/engine-mode/src/mode.rs`) keeps the dev names and
   documents the real roles.
 
 ### Overlay loaders and index spaces
@@ -334,7 +334,7 @@ Modes 4, 16 and 20 carry no overlay request at all.
 - **Mode 20 is an ordinary call.** `FUN_80055B6C` is the battle scene setup
   entry and is linked into SCUS, so battle needs no overlay swap here.
 
-All three are mirrored as `mode_init_bare` in `engine-field::mode`, beside
+All three are mirrored as `mode_init_bare` in `engine-mode::mode`, beside
 `mode_init_stage` for the staging rows.
 
 ##### Two debug modes that cannot run on a retail console
@@ -390,7 +390,7 @@ whole frame. That handler ends `move v0,zero`, so the caller's abort test never
 fires and the frame-end pass always runs - which is why the timed sound-source
 release and the cadence resolver keep working under the menu.
 
-Port: `engine-field::mode::runs_master_frame_driver`, which `World::tick`
+Port: `engine-mode::mode::runs_master_frame_driver`, which `World::tick`
 consults to suspend its actor / effect / move-VM passes. `BootSession` hosts
 the pause-menu session (`open_field_menu` and the Start edge in
 `BootSession::tick`), holding the world in `SceneMode::Menu`, which `GameMode`
@@ -443,7 +443,7 @@ the boot mode initializer `FUN_8001DCF8`:
 - **Story flags.** A ~`0x200`-byte story-flag region is zeroed.
 - **Starting party.** `FUN_800560B4` expands a static SCUS template -
   `[8×u16 stats][10-byte name]` per record (Vahn, Noa, Gala, Terra), parsed by
-  [`legaia_asset::new_game`](../formats/new-game-table.md) - into the live
+  [`legaia_game_tables::new_game`](../formats/new-game-table.md) - into the live
   per-character records (stride `0x414`). Vahn's row (HP 180 / MP 20 / AGL 100 /
   ATK 24 / uDEF 16 / lDEF 12 / SPD 19 / INT 9) is byte-validated against an
   early `town01` save state.
@@ -453,7 +453,7 @@ the boot mode initializer `FUN_8001DCF8`:
   `_DAT_8007B8C2` is clear, which retail never is. The title's `LaunchGame` then
   overrides it with `opdeene` for a real New Game.
 
-**Record expansion** (ported as `legaia_asset::new_game::seed_live_records`).
+**Record expansion** (ported as `legaia_game_tables::new_game::seed_live_records`).
 Each template row fans into two stat blocks per live record: a current-stat
 block at `+0x104`, where HP and MP each occupy a current *and* a max cell so a
 New Game starts at full health, and a max-stat block at `+0x11C`. `+0x130` (the
@@ -472,7 +472,7 @@ apart; Noa (`120`) and Gala (`80`) seed the cap at `100` while their agility
 cells carry the per-character value.
 
 **Port.** The control flow is mirrored in
-`crates/engine-vm/src/title_overlay/state_layout.rs`
+`crates/engine-menus/src/title_overlay/state_layout.rs`
 (`MASTER_GAME_MODE_FIELD_LAUNCH` = 2, `MASTER_GAME_MODE_FIELD_RUN` = 3,
 `FIELD_SCENE_INIT_PC`, `MENU_INDEX_NEW_GAME`) and `World::begin_new_game`
 (`crates/engine-core/src/world/state.rs`), which clears the story flags and
@@ -569,7 +569,7 @@ sub-mode `0x11`.
 #### The port's seat at the mode table
 
 The engine's counterpart of `_DAT_8007B83C` is `ModeSeat`
-(`crates/engine-field/src/mode.rs`, re-exported as `engine-core::mode`), owned
+(`crates/engine-mode/src/mode.rs`), owned
 by `engine-session`'s `BootSession` and driven once per frame from
 `BootSession::tick`. It is a seat rather than a mirror because its **writes are
 the port's own transitions**: the session enters `MAIN INIT` where retail's
@@ -626,7 +626,7 @@ The SCUS-side CD I/O is layered. Bottom-up:
 | `FUN_8005E788` | Streaming-read **starter**: copies `DAT_800796C8` → `DAT_800796CC` and `DAT_800796C4` → `DAT_800796D8`, registers `FUN_8005E574`, sets the initial LBA via `FUN_8005C42C(FUN_8005BD70())`. |
 | `FUN_8005E9A4` | Public streaming-read API: `(sector_count, dest_buffer, mode_flags)`. Sets the streaming globals and calls `FUN_8005E788(0)`; the caller must SetLoc first. Sector size from `mode_flags & 0x30`: `0` → `0x200` (2048, data), `0x20` → `0x249` (2336, XA), else `0x246`. |
 | `FUN_8005E4D4` | Sync LBA-based reader: `(sector_count, lba, dest_buffer)`. Wraps `FUN_8005C328` + `CdControl(SetLoc)` + `FUN_8005E9A4` + the block-mode completion poll `FUN_8005EA84(0, …)`. |
-| `FUN_8005EA84` | Streaming-read completion sync: `(poll_once, result)` → sectors remaining, `0` = complete, `-1` = timed out. Detail below the table. Port: `engine-core::cd_dma::stream_read_sync`. |
+| `FUN_8005EA84` | Streaming-read completion sync: `(poll_once, result)` → sectors remaining, `0` = complete, `-1` = timed out. Detail below the table. Port: `engine-scene::cd_dma::stream_read_sync`. |
 | `FUN_8003D3C4` | Path-based ISO9660 file loader: `(path, dest)`. Wraps `FUN_8005DBB4` + SetLoc + `FUN_8005E9A4`. Used for `.STR` / `.XA` filesystem files. |
 | `FUN_8003E4E8` | Boot-time TOC loader: `(filename_str, do_read_flag)`; reads 3 sectors into `0x801C70F0`. |
 | `FUN_8003E800` | Async sector-count loader: `(dest, sector_count, flags)`. Queues via `gp+0x97c` (**count**) / `gp+0x894` (dest) and kicks `FUN_8003F128`, which forms the LBA from the `CdlLOC` at `0x8008BC5C`. Used by both overlay loaders. |
@@ -655,7 +655,7 @@ callback code, not the PsyQ `libcd` BIOS path. It splits into two tiers with
 different port status.
 
 **The queue tier is arithmetic over the PROT TOC and is ported** in
-`engine-core::cd_dma` (`FUN_8003E800`, `FUN_8003F128`, `FUN_8003E8A8` and the
+`engine-scene::cd_dma` (`FUN_8003E800`, `FUN_8003F128`, `FUN_8003E8A8` and the
 enqueue below):
 
 - **`FUN_8003DDA0`** - index-based streaming **enqueue**. Reads the in-RAM TOC:
@@ -699,14 +699,14 @@ each `li t2,0xB0; jr t2; _li t1,N`) are syscall shims with no game logic.
 #### Side-band loader constants
 
 Three boot-path call sites resolve an entry from a hardcoded constant rather
-than from a scene name. `legaia_asset::boot_overlay` ports the arithmetic. Each
+than from a scene name. `legaia_overlay_images::boot_overlay` ports the arithmetic. Each
 index is pinned by **content**, because CDNAME labels inherit forward and name a
 neighbouring block on two of the three.
 
 | Call site | Constant | Extraction entry | Pinned by |
 |---|---|---|---|
 | `FUN_8003E360` (effect data) | raw `0x3D5` | 979 | `efect init` / `battle bgm %d` at the entry's head |
-| `FUN_8002574C` (CARD-mode init) | raw `0x37E` | 892 | parses as an `asset::pack` of PSX TIMs |
+| `FUN_8002574C` (CARD-mode init) | raw `0x37E` | 892 | parses as a `container-formats::pack` of PSX TIMs |
 | `FUN_80025BA0` (slot-B default) | param `5` / `6` | 900 / 901 | the summon-render pair |
 
 Reading either raw constant *as* an extraction index lands two entries high on
@@ -779,7 +779,7 @@ to a stencil (pixel index 0 → transparent, 1..15 → opaque white) and applies
 `SpriteDraw::color` tint at draw time
 (`crates/engine-menus/src/menu_glyph_atlas.rs`).
 
-**Extraction.** `legaia_asset::menu_glyph_atlas::extract_from_prot_dat(&prot_dat)`
+**Extraction.** `legaia_ui_formats::menu_glyph_atlas::extract_from_prot_dat(&prot_dat)`
 returns the 33312-byte slice; the engine reads it through
 `ProtIndex::prot_dat_raw_bytes(byte_offset, len)`.
 
@@ -977,8 +977,8 @@ counter has three stepping writers in the title tick and two more in `init.pak`
 never reset, so a later title (after a party wipe or a backed-out Continue)
 opens on whichever row it last held this power-on.
 
-**Port.** `legaia_engine_vm::title_overlay`
-([source](../../crates/engine-vm/src/title_overlay.rs)) pins the jump table,
+**Port.** `legaia_engine_menus::title_overlay`
+([source](../../crates/engine-menus/src/title_overlay.rs)) pins the jump table,
 the state-struct offsets, every handler body and all 56 `state[+0x204] = N`
 stores; `TitleTickState::step` executes the graph one arm per sub-mode plus the
 shared epilogue. Exported launch constants: `MASTER_GAME_MODE_FIELD_LAUNCH`,
@@ -1113,7 +1113,7 @@ runs `BootSession::enter_field_live` on it.
   false skip. Disc-gated `opdeene_prologue_arm.rs` pins the `GFLAG_SET 26` at
   the partition-2 record-18 offset `0xA5E` and asserts `town01` carries no arm.
 - **The narration plays from the timeline records by execution.** Each leg's
-  inline subtitle pages (`legaia_asset::cutscene_text`) roll through the crawl
+  inline subtitle pages (`legaia_scene_formats::cutscene_text`) roll through the crawl
   roller (`FUN_80037174`; engine
   [`CutsceneNarration`](../../crates/engine-field/src/cutscene_narration.rs)) as
   a child context, so the parent timeline and its camera cuts keep running under
@@ -1197,7 +1197,7 @@ Two functions carry the screen:
 (`NameEntry` + `NameEntryState` + `Control`), driven on the world by
 `World::open_name_entry` / `step_name_entry` (committing into
 `World::party.party_names`) and rendered through
-[`legaia_engine_ui::ui_menu::name_entry`](../../crates/engine-ui/src/ui_menu/name_entry.rs).
+[`legaia_engine_ui::menu::screens::name_entry`](../../crates/engine-ui/src/menu/screens/name_entry.rs).
 
 - **It is reached by executing the scene's own bytecode.** The `town01` entry
   installs P2[3] as a spawned cutscene timeline: on the natural chain arrival via
@@ -1231,7 +1231,7 @@ Two functions carry the screen:
 
 The title tick reaches three SCUS-side helpers to emit GPU primitives:
 
-| Helper | Role | Port (`legaia_engine_vm::title_prim`) |
+| Helper | Role | Port (`legaia_engine_menus::title_prim`) |
 |---|---|---|
 | `FUN_80058298` | `ClearImage` rect-fill queue (37 instructions) | `exec_clear_image(host, rect, r, g, b)` |
 | `FUN_80058490` | `MoveImage` VRAM-to-VRAM copy (49 instructions) | `exec_move_image(host, src, dst_x, dst_y)`, early-out on zero extent like the original's `li v0, -1` path |
@@ -1246,13 +1246,13 @@ logging). `init.pak` uses the same helper for its logo uploads.
 `Rect12 { x, y, w, h }` capture the wire shapes; the `PrimHost` trait abstracts
 the engine callbacks (`queue_clear_rect`, `queue_move_image`, `emit_sprite`,
 `stp_or_gate_set`, plus the defaulted `stp_or_pixels`). The module
-([source](../../crates/engine-vm/src/title_prim.rs)) also carries ports of the
+([source](../../crates/engine-menus/src/title_prim.rs)) also carries ports of the
 menu overlay's box / centred-text drawers `FUN_801E36C4`, `FUN_801E3EE0` and
 `FUN_801E373C`.
 
 `title_prim` is the decoded packet protocol, **not the live draw path**: the
 renderer has no packet-level ingest, and both hosts draw the title and card
-screens through the draw-list builders in `engine-ui` (`ui_title_save`).
+screens through the draw-list builders in `engine-ui` (`title_save`).
 
 ### State struct (extended)
 
@@ -1338,7 +1338,7 @@ rather than blitting the full quad:
   colour-coded - bright for the cursor row, dim otherwise - with no arrow or
   cursor mark.
 
-**Port.** [`legaia_asset::title_pak`](../../crates/asset/src/title_pak.rs)
+**Port.** [`legaia_ui_formats::title_pak`](../../crates/ui-formats/src/title_pak.rs)
 parses the entry: `extract_title_tim(&prot_0890_bytes, TITLE_TIM_OFFSET)`
 returns a zero-copy slice + decoded VRAM rects, and the `TITLE_BAND_*` constants
 pin the sub-rects above (disc-gated `extracts_real_title_tim_when_disc_extracted`).
@@ -1372,7 +1372,7 @@ face / shoulder byte (`pad[3]`) is bits 0..7 and the d-pad / system byte
 Masks the title tick uses: `0x44 = L1|Cross` (confirm), `0x21 = L2|Circle`
 (cancel), `0x844 = Start|L1|Cross` (press-start / confirm), `0xf5` = all face
 buttons + L1 + L2 (generic "any interaction" filter).
-The port carries both layouts in `crates/engine-vm/src/pad.rs`: `PadButton` is
+The port carries both layouts in `crates/engine-system/src/pad.rs`: `PadButton` is
 the raw PSX word (used for host keyboard / gamepad plumbing, re-exported by
 `engine-system`'s `input`), and `retail_packed` + the `PACK_*` constants are
 this packed word, which kernels ported from retail input code read.
@@ -1413,7 +1413,7 @@ CLUT and pixel data are byte-identical to live RAM after boot; only the `RECT`
 fields are rewritten at runtime. On disc each TIM has CLUT `fb=(0, 480+N)` and
 pixel `fb=(640..800, 0..256)`.
 
-Parser: [`legaia_asset::init_pak`](../../crates/asset/src/init_pak.rs) -
+Parser: [`legaia_ui_formats::init_pak`](../../crates/ui-formats/src/init_pak.rs) -
 `parse(&prot_0895_bytes)` returns a struct view over the four logos (disc-gated
 `parses_real_init_pak_when_disc_extracted`).
 
@@ -1565,7 +1565,7 @@ fade-down of the logo over the same 65 frames rather than compositing the white
 blend quad. Both hosts play the pass - the native `play-window --boot-ui` chain
 and the browser play page, which opens its logo stage ahead of the title card -
 through the shared quad builder
-`legaia_engine_ui::ui_boot_logos::publisher_logo_sprite_draws`.
+`legaia_engine_ui::boot_logos::publisher_logo_sprite_draws`.
 
 ### The code region, and where it ends
 

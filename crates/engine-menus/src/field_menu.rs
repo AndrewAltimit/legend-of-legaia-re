@@ -25,7 +25,7 @@
 //! so a row cannot draw white and then buzz.
 //!
 //! The engine's Tactical Arts chain editor
-//! (`legaia_engine_core::tactical_arts_editor::ChainEditor`) is an engine extension
+//! (`legaia_engine_battle::tactical_arts_editor::ChainEditor`) is an engine extension
 //! with no retail pause-menu row; it stays reachable through the
 //! dedicated arts session commands.
 //!
@@ -153,7 +153,7 @@ impl Default for FieldMenuRowMask {
 /// **Save**). The port has no globals, so a host samples both at menu-open and
 /// hands them over - see `BootSession::open_field_menu`, which reads
 /// `legaia_engine_core::world::World::menu_entry_context_kind` and
-/// `legaia_engine_core::world::PartyState::scene_save_allowed`.
+/// `crate::party_state::PartyState::scene_save_allowed`.
 ///
 /// Both the greying and the buzz come from one call to
 /// [`root_menu_confirm_route`] per row, which is what keeps them from
@@ -262,10 +262,10 @@ pub struct FieldMenuInput {
 
 impl FieldMenuInput {
     /// Decode one frame's **raw** just-pressed pad word
-    /// ([`crate::input::PadButton`] layout) into the root picker's edges.
+    /// ([`legaia_engine_system::input::PadButton`] layout) into the root picker's edges.
     /// Every host drives the root list through this decode.
     pub fn from_pad_edge(edge: u16) -> Self {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
         let pressed = |b: PadButton| edge & b.mask() != 0;
         Self {
             up: pressed(PadButton::Up),
@@ -650,7 +650,7 @@ impl FieldMenuSession {
 }
 
 /// Plain-data view for the renderer. Engines call [`FieldMenuSession::view`]
-/// once per frame and feed the result into `engine-render::field_menu_draws_for`.
+/// once per frame and feed the result into `engine-ui::field_menu_draws_for`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldMenuView {
     pub rows: [FieldMenuRowView; 7],

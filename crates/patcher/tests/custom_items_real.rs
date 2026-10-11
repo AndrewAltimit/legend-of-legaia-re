@@ -6,14 +6,14 @@
 //! US build, then the whole injection round-trips onto a scratch copy.
 //! Requires `LEGAIA_DISC_BIN`; skips (and passes) without it.
 
-use legaia_asset::item_names::file_offset_for_va;
-use legaia_iso::iso9660::read_file_in_image;
-use legaia_patcher::apply::inject_custom_items;
-use legaia_patcher::custom_items::{
+use legaia_delilas_challenge::custom_items::{
     ARENA_OVERLAY_PROT_INDEX, BATTLE_OVERLAY_PROT_INDEX, CustomItemsInjection, ELIXIR_ITEM_ID,
     FURY_ITEM_ID, SERU_TEAR_ITEM_ID,
 };
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
+use legaia_iso::iso9660::read_file_in_image;
+use legaia_patcher::apply::inject_custom_items;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -55,7 +55,8 @@ fn injection_round_trips_and_is_idempotent() {
     );
     // The patched image parses: the three items now carry their names.
     let scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS in patched image");
-    let names = legaia_asset::item_names::ItemNameTable::from_scus(&scus).expect("parse names");
+    let names =
+        legaia_game_tables::item_names::ItemNameTable::from_scus(&scus).expect("parse names");
     assert_eq!(names.name(ELIXIR_ITEM_ID), Some("Nature's Elixir"));
     assert_eq!(names.name(SERU_TEAR_ITEM_ID), Some("Ra-Seru Tear"));
     assert_eq!(names.name(FURY_ITEM_ID), Some("Fury Bloom"));
@@ -75,8 +76,11 @@ fn free_cast_flag_starts_clear_on_the_patched_image() {
     let mut patcher = DiscPatcher::open(disc).expect("open disc");
     inject_custom_items(&mut patcher).expect("inject custom items");
     let scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS in patched image");
-    let off = file_offset_for_va(&scus, legaia_patcher::custom_items::FREECAST_FLAG_VA)
-        .expect("resolve flag VA");
+    let off = file_offset_for_va(
+        &scus,
+        legaia_delilas_challenge::custom_items::FREECAST_FLAG_VA,
+    )
+    .expect("resolve flag VA");
     assert_eq!(
         &scus[off..off + 4],
         &[0, 0, 0, 0],
@@ -108,9 +112,9 @@ fn item_set_plan_carries_no_arena_writes() {
 /// --delilas-challenge` run takes.
 #[test]
 fn item_set_alone_leaves_the_arena_untouched_and_composes_with_the_grant() {
+    use legaia_delilas_challenge::custom_items::{GRANT_HOOK_ORIG, GRANT_HOOK_VA, GRANT_VA};
+    use legaia_delilas_challenge::dome::ARENA_BASE_VA;
     use legaia_patcher::apply::inject_custom_item_set;
-    use legaia_patcher::custom_items::{GRANT_HOOK_ORIG, GRANT_HOOK_VA, GRANT_VA};
-    use legaia_patcher::delilas_dome::ARENA_BASE_VA;
 
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -134,7 +138,8 @@ fn item_set_alone_leaves_the_arena_untouched_and_composes_with_the_grant() {
     // Items are named; the arena overlay is byte-identical to retail and the
     // grant cave still carries its retail head.
     let scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS in patched image");
-    let names = legaia_asset::item_names::ItemNameTable::from_scus(&scus).expect("parse names");
+    let names =
+        legaia_game_tables::item_names::ItemNameTable::from_scus(&scus).expect("parse names");
     assert_eq!(names.name(ELIXIR_ITEM_ID), Some("Nature's Elixir"));
     let arena = patcher
         .read_entry(ARENA_OVERLAY_PROT_INDEX)

@@ -207,7 +207,7 @@ pub const ENEMY_BOSS_STAGER_PROT: [u32; 6] = [938, 940, 944, 961, 962, 966];
 /// (`FUN_80021B04` also special-cases `0x4001`, unobserved on disc). Any other
 /// out-of-band first word indicates the input wasn't trimmed to its TOC-gap
 /// footprint (see [`unique_content_len`]). Mirrors
-/// `engine_core::summon::MAX_MESH_SEL`.
+/// `legaia_engine_effects::summon::MAX_MESH_SEL`.
 pub const LIBRARY_MESH_SEL_MAX: i16 = 0x100;
 
 /// `model_sel == 0x4000`: a special render-mode node - `FUN_80021B04` seats the
@@ -391,7 +391,7 @@ pub fn parse(bytes: &[u8], link_base: u32) -> SummonOverlay {
 /// `jal FUN_80021B04` scan - notably the battle-action move-power effect-prototype
 /// pointer table (`0x801f6324`), whose `0x01..=0x63` entries spawn records in this
 /// exact format through the same stager (see
-/// [`crate::move_power`] / `docs/formats/move-power.md`).
+/// `legaia_game_tables::move_power` / `docs/formats/move-power.md`).
 ///
 /// `offsets` are file offsets into `bytes`; out-of-range or sub-header offsets are
 /// dropped. The returned parts are sorted by offset and deduped.

@@ -116,7 +116,7 @@
       <tr>
         <td><strong>Preservation</strong></td>
         <td>Every asset off the disc as PNG / WAV / OBJ / glTF / JSON, a format spec per file type with the game function that reads it named as evidence, and round-trip parsers that can write assets back.</td>
-        <td>The container crates (<code>iso</code>, <code>prot</code>, <code>lzs</code>, <code>asset</code>), one crate per format, the static tables (<code>game-tables</code>), battle model formats (<code>battle-models</code>) and code-overlay image formats (<code>overlay-images</code>) <code>asset</code> re-exports, the <code>extract</code> driver, and the <code>patcher</code> over <code>disc-patch</code>, <code>translate</code>, <code>code-hooks</code>, <code>arts-patch</code>, <code>texture-replace</code>, <code>party-swap</code> and <code>delilas-party</code>.</td>
+        <td>The disc crates (<code>iso</code>, <code>prot</code>, <code>lzs</code>), one crate per format, the format families over them (<code>container-formats</code>, <code>scene-formats</code>, <code>minigame-formats</code>, <code>ui-formats</code>, the static tables in <code>game-tables</code>, the character and monster model formats in <code>actor-formats</code>, the code-overlay image formats in <code>overlay-images</code>), the <code>asset</code> command-line tool over <code>disc-audit</code>, the <code>extract</code> driver, and the <code>patcher</code> over <code>disc-patch</code>, <code>translate</code>, <code>code-hooks</code>, <code>arts-patch</code>, <code>texture-replace</code>, <code>party-swap</code> and <code>delilas-party</code>.</td>
       </tr>
       <tr>
         <td><strong>Reimplementation</strong></td>

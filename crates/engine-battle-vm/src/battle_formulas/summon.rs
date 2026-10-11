@@ -1,5 +1,5 @@
 //! Summon-magic damage roll + scale kernels (`FUN_801dd0ac` summon branch,
-//! `FUN_801dd864` modifiers). Split out of `battle_formulas.rs`.
+//! `FUN_801dd864` modifiers).
 
 // ---------------------------------------------------------------------------
 // Summon-magic damage roll (FUN_801dd0ac summon branch + FUN_801dd864 modifiers)
@@ -88,7 +88,7 @@ pub fn summon_defender_roll(defender: &SummonRollActor, rand: u16) -> u32 {
 /// indexed `matrix[attacker_element][defender_element]` (the disasm computes
 /// `def_elem + atk_elem*8`, so the **row is the attacker**, the column the
 /// defender). The matrix is parsed off the disc by
-/// [`legaia_asset::element_affinity`]; retail values are a small nudge -
+/// [`legaia_game_tables::element_affinity`]; retail values are a small nudge -
 /// 100 = neutral, 96 = same-element self-resist, 104 = opposite-element bonus.
 pub fn apply_element_affinity(roll: u32, affinity_pct: u8) -> u32 {
     roll.saturating_mul(affinity_pct as u32) / 100
@@ -223,7 +223,7 @@ pub fn summon_predamage_lazy(
 /// Only **one** module in the band pages this formula. The band's heals are
 /// PROT 0905 (Vera, this one) and PROT 0911 (Orb), and Orb's is its own
 /// closed form `(magic_level << 6) + 0x1C0` on its tick body
-/// (`crate::cast_seru_ticks_b::orb_heal_amount`). PROT 0903 / 0910 / 0913
+/// (`crate::seru_magic_ticks::orb_heal_amount`). PROT 0903 / 0910 / 0913
 /// were listed here as heal stagers and are not: all three roll damage
 /// through `FUN_801DD0AC(0x12, 7, seat)`.
 pub fn heal_summon_amount(magic_level: u8) -> u16 {

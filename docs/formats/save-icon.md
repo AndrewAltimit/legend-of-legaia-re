@@ -4,9 +4,9 @@ The 16x16 character faces the save UI draws and the PSX memory-card block
 icon is cut from. One 4bpp TIM in the **menu overlay** (PROT entry 899)
 carries all of them as a single horizontal strip.
 
-Parser: `legaia_asset::save_icon`. Disc pins in
-`crates/asset/tests/save_icon_real.rs`. Modding path:
-`legaia_patcher::save_icon` (`legaia-patcher save-icon-list` /
+Parser: `legaia_ui_formats::save_icon`. Disc pins in
+`crates/ui-formats/tests/save_icon_real.rs`. Modding path:
+`legaia_texture_replace::save_icon` (`legaia-patcher save-icon-list` /
 `save-icon-export` / `save-icon-replace`).
 
 ## Contents
@@ -31,7 +31,7 @@ Parser: `legaia_asset::save_icon`. Disc pins in
 
 The flag word sets reserved bit 16, so a jPSXdec-strict TIM reader rejects
 it; the lenient reader plus the rect fingerprint is the parse path. The
-offset is not the location mechanism - `legaia_asset::save_icon::find_in_entry`
+offset is not the location mechanism - `legaia_ui_formats::save_icon::find_in_entry`
 scans the entry for a 4bpp TIM with exactly those two rects, so the sheet is
 found from the bytes. The constant is exported for patchers and pinned
 against the scan by test.
@@ -150,7 +150,7 @@ Tiles 0, 1 and 2 also ship as three standalone 16x16 TIMs, already in
 contiguous tile layout because each is its own image rect. They are members
 16, 17 and 18 of the boot-resident system-UI TIM-pack at **raw PROT TOC
 entry 0** ([`tim-pack.md`](tim-pack.md), parser
-`legaia_asset::system_ui_bundle`):
+`legaia_ui_formats::system_ui_bundle`):
 
 | Member | `PROT.DAT` offset | Image rect | CLUT rect | Tile |
 |---|---|---|---|---|

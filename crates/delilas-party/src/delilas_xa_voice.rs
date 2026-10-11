@@ -49,7 +49,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::delilas_party::PartyMapping;
 use crate::delilas_voice::{MONSTER_SND_ENTRY, monster_vab_offset};
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// Playback rate a tone's pitch attrs imply, from the PsyQ convention:
 /// keying the center note plays the sample at 44100 Hz, and these banks
@@ -248,7 +248,7 @@ fn spirit_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static st
 /// Idempotence: retail is digitally silent through +0.8 s; a stream
 /// already carrying energy at +0.15..0.6 s is left alone (guard, not a
 /// byte compare - re-shifting a shifted stream would stack).
-pub fn boost_cast_bed_intro(patcher: &mut crate::disc::DiscPatcher) -> Result<bool> {
+pub fn boost_cast_bed_intro(patcher: &mut legaia_disc_patch::disc::DiscPatcher) -> Result<bool> {
     const FILE: &str = "XA/XA20.XA";
     const CHAN: u8 = 2;
     /// Stereo frames per audio sector (18 groups x 112 frames).
@@ -353,6 +353,41 @@ pub struct VictoryLines {
     spirit: [Option<(Vec<i16>, u32)>; 3],
 }
 
+/// Demux and decode one channel of a Mode 2 Form 2 XA file to mono
+/// PCM (stereo channels down-mix). Returns `(pcm, sample_rate)`.
+/// Reads the file as it CURRENTLY stands on the image - callers that
+/// need retail audio must read before muting the channel.
+pub fn read_xa_channel_pcm(patcher: &DiscPatcher, name: &str, chan: u8) -> Result<(Vec<i16>, u32)> {
+    let (payload, coding) = patcher.read_xa_channel_payload(name, chan)?;
+    let stereo = coding & 0x03 != 0;
+    let rate = if (coding >> 2) & 0x03 == 1 {
+        18900
+    } else {
+        37800
+    };
+    let opts = legaia_xa::DecodeOptions {
+        channels: if stereo {
+            legaia_xa::Channels::Stereo
+        } else {
+            legaia_xa::Channels::Mono
+        },
+        sample_rate: rate,
+        ..Default::default()
+    };
+    let (pcm, _) = legaia_xa::decode(&payload, opts)
+        .with_context(|| format!("decode {name} channel {chan}"))?;
+    let mono = if stereo {
+        pcm.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| ((c[0] as i32 + c[1] as i32) / 2) as i16)
+            .collect()
+    } else {
+        pcm
+    };
+    Ok((mono, rate))
+}
+
 /// Capture every mapped sibling's XA lines (victory bark, Spirit sting)
 /// off the (still retail) image. MUST run before any XA mute touches
 /// the reels.
@@ -362,7 +397,7 @@ pub fn capture_victory_lines(patcher: &DiscPatcher, mapping: &PartyMapping) -> V
     let mut spirit: [Option<(Vec<i16>, u32)>; 3] = [None, None, None];
     for (slot, sibling) in siblings.iter().enumerate() {
         if let Some((file, chan)) = victory_xa_pick(*sibling)
-            && let Ok((pcm, rate)) = patcher.read_xa_channel_pcm(file, chan)
+            && let Ok((pcm, rate)) = read_xa_channel_pcm(patcher, file, chan)
         {
             let cut = first_utterance(&pcm, rate);
             if cut.len() > rate as usize / 10 {
@@ -370,7 +405,7 @@ pub fn capture_victory_lines(patcher: &DiscPatcher, mapping: &PartyMapping) -> V
             }
         }
         if let Some((file, chan)) = spirit_xa_pick(*sibling)
-            && let Ok((pcm, rate)) = patcher.read_xa_channel_pcm(file, chan)
+            && let Ok((pcm, rate)) = read_xa_channel_pcm(patcher, file, chan)
             && pcm.len() > rate as usize / 10
         {
             spirit[slot] = Some((pcm, rate));
@@ -746,7 +781,7 @@ pub fn capture_hero_shouts(patcher: &DiscPatcher) -> HeroShoutCapture {
                 continue;
             };
             for chan in chans {
-                if let Ok((pcm, rate)) = patcher.read_xa_channel_pcm(file, chan) {
+                if let Ok((pcm, rate)) = read_xa_channel_pcm(patcher, file, chan) {
                     out[slot].push((chan, pcm, rate));
                 }
             }

@@ -1,7 +1,7 @@
 //! Per-scene field terrain: walkability grid, map-region block, zone table, floor-height LUT, object cells, elevation overrides and the region / tile trackers.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite [`World`].
+//! Fields keep their retail provenance notes.
 
 /// One frame of the floor-height ladder's oscillators (field-VM op `0x4C`
 /// nibble-9 sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`):
@@ -14,7 +14,7 @@
 /// spawned ([`crate::scene_live::LiveScene`]), so every room animates on the
 /// one kernel.
 pub fn step_floor_ladder(
-    bobs: &mut [legaia_engine_vm::field_actor_timers::FloorTierBob],
+    bobs: &mut [legaia_engine_field::field_actor_timers::FloorTierBob],
     lut: &mut [i16; 16],
     frame_delta: u8,
 ) {
@@ -48,29 +48,29 @@ pub struct FieldTerrain {
     pub collision_grid: Vec<u8>,
     /// Per-scene `.MAP` region-table block (the file's `+0x10000..+0x12000`
     /// region - retail `*(_DAT_1F8003EC) + 0x10000`). Scanned per tile by
-    /// the [`crate::field_regions`] ports to rebuild [`crate::world::StoryFlagState::extra_flags`]
+    /// the [`legaia_engine_field::field_regions`] ports to rebuild [`legaia_engine_system::story_flag_state::StoryFlagState::extra_flags`]
     /// (the `_DAT_8007B8F4` mirror) and the scratch attribute box. Empty for
     /// scenes without a field map.
     pub map_region_block: Vec<u8>,
     /// Per-scene MAN section-3 zone table (the camera-region records the
     /// boot walk installs at the control block `_DAT_801C6EA4 + 0x4`):
     /// a count byte + 18-byte records, queried per tile by
-    /// [`crate::field_regions::zone_query`]. Empty for scenes whose MAN has
+    /// [`legaia_engine_field::field_regions::zone_query`]. Empty for scenes whose MAN has
     /// no section 3.
     pub zone_table: Vec<u8>,
     /// The scratchpad region-attribute block (`0x1F800384..87` +
     /// `0x1F80037C`) latched by the per-tile refresh; read by the zone
     /// query's kind-0 arm.
-    pub(crate) region_attributes: crate::field_regions::RegionAttributes,
+    pub(crate) region_attributes: legaia_engine_field::field_regions::RegionAttributes,
     /// The 18-byte zone record the player currently stands in (the camera-
     /// region payload `FUN_801DBC20` consumes), refreshed on tile crossing.
     /// `None` when no zone record matches (retail loads the default camera
     /// parameter set).
-    pub(crate) zone_record: Option<[u8; crate::field_regions::ZONE_RECORD_STRIDE]>,
+    pub(crate) zone_record: Option<[u8; legaia_engine_field::field_regions::ZONE_RECORD_STRIDE]>,
     /// The 16-entry floor-height LUT the collision grid's low nibble indexes
     /// (retail `DAT_1F80035C`, filled from the MAN header by `FUN_8003AEB0` as
     /// 16 negated `s16` elevation tiers). Resolved per-scene into here from
-    /// [`crate::scene::SceneAssets::field_floor_height_lut`]; consumed by
+    /// [`crate::scene_host::SceneAssets::field_floor_height_lut`]; consumed by
     /// [`crate::world::World::sample_field_floor_height`] (the port of `FUN_80019278`). All
     /// zero until a field scene supplies it.
     pub floor_height_lut: [i16; 16],
@@ -105,8 +105,8 @@ pub struct FieldTerrain {
     /// plain bilinear tile, the pre-override behaviour.
     pub object_cells: Vec<u16>,
     /// Which object-grid cell bit this scene records its **standable floor**
-    /// with - [`legaia_asset::field_objects::CELL_WALK_VISIBLE`] (`0x1000`) for
-    /// the scenes that set it, [`legaia_asset::field_objects::CELL_VISIBLE`]
+    /// with - [`legaia_scene_formats::field_objects::CELL_WALK_VISIBLE`] (`0x1000`) for
+    /// the scenes that set it, [`legaia_scene_formats::field_objects::CELL_VISIBLE`]
     /// (`0x2000`) for the ones that never do.
     ///
     /// Both bits are draw gates on the same `u16`; `0x1000` is the walk view's
@@ -139,7 +139,7 @@ pub struct FieldTerrain {
     /// Live floor-height-ladder oscillators (field-VM op `0x4C` nibble-9
     /// sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`). Each
     /// drives one rung of [`crate::world::FieldTerrain::floor_height_lut`].
-    pub floor_tier_bobs: Vec<legaia_engine_vm::field_actor_timers::FloorTierBob>,
+    pub floor_tier_bobs: Vec<legaia_engine_field::field_actor_timers::FloorTierBob>,
     /// Player tile `(col, row)` on the previous live-loop field tick. A
     /// change between ticks is one "step" and drives the encounter roll,
     /// mirroring the retail per-step counter rather than a per-frame roll.
@@ -147,25 +147,25 @@ pub struct FieldTerrain {
     /// loop.
     pub(crate) last_tile: Option<(i16, i16)>,
     /// Player tile the region encounter reader last compared, sampled only
-    /// on the actor game tick ([`crate::world::FrameClock::game_tick_fired`]):
+    /// on the actor game tick ([`legaia_engine_vm::frame_clock::FrameClock::game_tick_fired`]):
     /// retail's `FUN_801D9E1C` tile cache (the entity's `+0x8E` / `+0x8F`),
     /// which its caller `FUN_801DA51C` refreshes once per game tick. Kept
     /// apart from [`crate::world::FieldTerrain::last_tile`], which the
     /// per-tile region refresh samples every vsync.
     pub(crate) step_tile: Option<(i16, i16)>,
     /// Region-keyed random-encounter state for the current FIELD scene (the
-    /// same [`crate::region_encounter`] `FUN_801D9E1C` port the overworld
-    /// uses, [`crate::world::WorldMapState::region_tracker`]). When set,
+    /// same [`legaia_engine_battle::region_encounter`] `FUN_801D9E1C` port the overworld
+    /// uses, [`legaia_engine_field::world_map_entity_config::WorldMapState::region_tracker`]). When set,
     /// [`crate::world::World::on_field_step`] rolls against the player's *active region*
     /// (per-region rate increment + formation-range pick) and drives the
-    /// trigger through the [`crate::encounter::EncounterSession`]'s
+    /// trigger through the [`legaia_engine_battle::encounter::EncounterSession`]'s
     /// transition / grace SM, instead of the session's mean-rate tracker.
     /// `None` on scenes whose MAN has no encounter-region section (towns,
     /// or any engine that hasn't routed per-region data) - those fall back
     /// to the aggregated mean-rate `EncounterSession`.
     ///
     /// REF: FUN_801D9E1C
-    pub region_tracker: Option<crate::region_encounter::RegionEncounterTracker>,
+    pub region_tracker: Option<legaia_engine_battle::region_encounter::RegionEncounterTracker>,
     /// The scene's **windowed static-object list** and the `.MAP`
     /// object-descriptor region it is planned from - the actors the sub-area
     /// window sweep (`FUN_801D7B50`) keeps, re-planned on every camera
@@ -180,13 +180,13 @@ impl FieldTerrain {
             collision_grid: Vec::new(),
             map_region_block: Vec::new(),
             zone_table: Vec::new(),
-            region_attributes: crate::field_regions::RegionAttributes::DEFAULT_FILL,
+            region_attributes: legaia_engine_field::field_regions::RegionAttributes::DEFAULT_FILL,
             zone_record: None,
             floor_height_lut: [0i16; 16],
             floor_height_lut_static: [0i16; 16],
             placed_spawn_lut: [0i16; 16],
             object_cells: Vec::new(),
-            floor_cell_bit: legaia_asset::field_objects::CELL_WALK_VISIBLE,
+            floor_cell_bit: legaia_scene_formats::field_objects::CELL_WALK_VISIBLE,
             elevation_overrides: Vec::new(),
             floor_tier_bobs: Vec::new(),
             last_tile: None,

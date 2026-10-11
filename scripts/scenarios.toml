@@ -864,7 +864,7 @@ topics = ["chest", "give-item", "field-VM 0x39", "randomizer", "keikoku"]
 # from the patched disc. Captured on the overworld BEFORE the load, the
 # patched MAN is read on scene entry, so a patched chest is actually
 # observed. Companion to the deterministic engine oracle in
-# crates/engine-core/tests/chest_randomizer_runtime_e2e.rs (which proves
+# crates/parity/tests/chest_randomizer_runtime_e2e.rs (which proves
 # the same thing disc-free, by driving the patched MAN through the field VM).
 # ----------------------------------------------------------------
 
@@ -1261,7 +1261,7 @@ ram_fingerprint_sha256 = "1f5dfa67b5baff5b2b903859529c364f90626aedf76ad48e94768d
 backup_fingerprint = "57657d067b1cbe91121f0f131683312d39d77070a0e86f1582f94a9ab2441050"
 phase = "field"
 expected_active_scene = "town0c"
-description = "Rim Elm (town0c variant session holding the town01 field buffer), player holding LEFT (screen-left = world X-) pressed against a wall, resting at (1838,2526) against the full-height wall column at grid col 13. Cheat-free re-capture (an earlier take had a walk-through-walls GameShark code active). RESULT: validates the retail derivation + 47-unit leading edge at step granularity (probe 1791 = the column's last wall sub-cell; one 2-unit step shallower reads clear). Consumed by engine-shell/tests/field_collision_discriminator.rs."
+description = "Rim Elm (town0c variant session holding the town01 field buffer), player holding LEFT (screen-left = world X-) pressed against a wall, resting at (1838,2526) against the full-height wall column at grid col 13. Cheat-free re-capture (an earlier take had a walk-through-walls GameShark code active). RESULT: validates the retail derivation + 47-unit leading edge at step granularity (probe 1791 = the column's last wall sub-cell; one 2-unit step shallower reads clear). Consumed by parity/tests/field_collision_discriminator.rs."
 topics = ["field", "collision", "locomotion", "walkability grid", "FUN_801cfe4c", "RE"]
 
 [[scenarios]]
@@ -1311,7 +1311,7 @@ ram_fingerprint_sha256 = "37218ba4fa31810f9115a68fd740138fdf3ccf077334883d8f2453
 backup_fingerprint = "5461e7a0f28d55f805b298f5c97185fdf25d7b9fc1cc6571f5d50bee97065813"
 phase = "field"
 expected_active_scene = "town0c"
-description = "Rim Elm (town0c variant session holding the town01 field buffer), player holding DOWN (screen-down = world Z-, toward the camera) pressed against a lower wall, resting at (3386,2606). THE DECISIVE Z-row discriminator, cheat-free: the plain floor-indexed standing cell (26,20) is an all-quads wall byte (the position would be unreachable under floor indexing) while the retail biased derivation reads it clear and blocks at the z-47 leading-edge probes with a step-exact standoff. PROVED the +2 Z bias is authored into the wall bits; World::field_tile_is_wall realigned on this evidence. Consumed by engine-shell/tests/field_collision_discriminator.rs."
+description = "Rim Elm (town0c variant session holding the town01 field buffer), player holding DOWN (screen-down = world Z-, toward the camera) pressed against a lower wall, resting at (3386,2606). THE DECISIVE Z-row discriminator, cheat-free: the plain floor-indexed standing cell (26,20) is an all-quads wall byte (the position would be unreachable under floor indexing) while the retail biased derivation reads it clear and blocks at the z-47 leading-edge probes with a step-exact standoff. PROVED the +2 Z bias is authored into the wall bits; World::field_tile_is_wall realigned on this evidence. Consumed by parity/tests/field_collision_discriminator.rs."
 topics = ["field", "collision", "locomotion", "walkability grid", "FUN_801cfe4c", "RE"]
 
 [[scenarios]]
@@ -1320,7 +1320,7 @@ label = "rimelm_npc_press_tetsu"
 ram_fingerprint_sha256 = "aa2711168c6af4466b9894dedd80f53212d85c7c0a742d88adad30d955a7d250"
 backup_fingerprint = "05f218afdec9dd4d0c400f51ef3d1730219b1a7baf2c706f52b6d1f65f19d793"
 phase = "field"
-description = "Rim Elm tutorial area, player holding the d-pad pressed INTO the sparring partner Tetsu (player 0x80083794 at (2762,1782) facing 0x800, Tetsu actor 0x80083284 at (2752,1856)). The MUTUAL +0x98 collision link is LIVE in-frame both ways (player+0x98 = 0x80083284, actor+0x98 = 0x80083794) - direct evidence of FUN_801cfc40's hit path. Tetsu's flags+0x10 = 0x08020884 carry the 0x20000 class bit: the village NPC takes the MOVING-actor arm (result bit 1, +/-40-unit box around live position, caller extents 0), NOT the static record-anchor arm - the ground truth that re-classed the engine's NPC box. Active-actor table _DAT_8007b6b8 = 1 (Tetsu alone). Consumed by engine-shell/tests/field_collision_discriminator.rs (npc-press leg)."
+description = "Rim Elm tutorial area, player holding the d-pad pressed INTO the sparring partner Tetsu (player 0x80083794 at (2762,1782) facing 0x800, Tetsu actor 0x80083284 at (2752,1856)). The MUTUAL +0x98 collision link is LIVE in-frame both ways (player+0x98 = 0x80083284, actor+0x98 = 0x80083794) - direct evidence of FUN_801cfc40's hit path. Tetsu's flags+0x10 = 0x08020884 carry the 0x20000 class bit: the village NPC takes the MOVING-actor arm (result bit 1, +/-40-unit box around live position, caller extents 0), NOT the static record-anchor arm - the ground truth that re-classed the engine's NPC box. Active-actor table _DAT_8007b6b8 = 1 (Tetsu alone). Consumed by parity/tests/field_collision_discriminator.rs (npc-press leg)."
 topics = ["field", "collision", "NPC", "FUN_801cfc40", "actor probe", "Tetsu", "RE"]
 
 # ----------------------------------------------------------------
@@ -2301,7 +2301,7 @@ topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x91", "ev
 # retargeted to the owning character's table index). One state per
 # character, each a previously-unexecuted Super; the full 15/15 sweep's
 # CSV lives with the capture run. Checked by
-# crates/pcsxr/tests/super_art_queue_replace.rs.
+# crates/parity/tests/super_art_queue_replace.rs.
 # ----------------------------------------------------------------------
 [[scenarios]]
 label = "super_queue_replace_vahn_rolling_combo"

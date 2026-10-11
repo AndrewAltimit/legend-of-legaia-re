@@ -1,16 +1,16 @@
 //! Disc-gated: the pause-menu Items / Magic screen sessions resolve their
 //! window text - names, real bag counts, info-window descriptions,
 //! per-caster MP maxima, learned spell levels - from the user's
-//! `SCUS_942.54` via [`legaia_engine_core::pause_screens::MenuTextTables`].
+//! `SCUS_942.54` via [`legaia_engine_menus::pause_screens::MenuTextTables`].
 //! Structural assertions only (the description strings are Sony text and
 //! stay uncommitted). Skips without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::Vfs;
-use legaia_engine_core::field_menu::FieldMenuRow;
 use legaia_engine_core::field_menu_dispatch::{FieldMenuSubsession, build_pause_items_session};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::pause_screens::{items_screen_model, magic_screen_model};
 use legaia_engine_core::world::World;
+use legaia_engine_menus::field_menu::FieldMenuRow;
+use legaia_engine_menus::pause_screens::{items_screen_model, magic_screen_model};
+use legaia_engine_scene::vfs::Vfs;
+use legaia_engine_system::input::PadButton;
 use std::path::PathBuf;
 
 fn disc_scus() -> Option<Vec<u8>> {
@@ -18,7 +18,7 @@ fn disc_scus() -> Option<Vec<u8>> {
     if !path.is_file() {
         return None;
     }
-    legaia_engine_core::DiscVfs::open(&path)
+    legaia_engine_scene::vfs::DiscVfs::open(&path)
         .ok()?
         .read("SCUS_942.54")
         .ok()
@@ -36,7 +36,7 @@ fn world_with_disc_text(scus: &[u8]) -> World {
     member.set_hp_mp_sp(hms);
     member.set_magic_rank(7);
     world.install_menu_text(scus);
-    world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+    world.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
     world
 }
 
@@ -101,17 +101,17 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
         member.set_spell_list(list);
     }
     world.tables.spell_catalog =
-        legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+        legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(&scus)
             .expect("disc spell catalog");
 
     let sub = FieldMenuSubsession::build(
         FieldMenuRow::Magic,
         &world,
         &legaia_engine_core::options::OptionsState::default(),
-        &legaia_engine_core::save_select::SaveRack::Blocks(Vec::new()),
-        &legaia_engine_core::tactical_arts_editor::ChainLibrary::new(),
+        &legaia_engine_menus::save_select::SaveRack::Blocks(Vec::new()),
+        &legaia_engine_battle::tactical_arts_editor::ChainLibrary::new(),
         &world.tables.spell_catalog,
-        &legaia_engine_core::battle_stats::EquipmentTable::new(),
+        &legaia_engine_battle::battle_stats::EquipmentTable::new(),
     );
     let FieldMenuSubsession::Spells(mut s) = sub else {
         panic!("expected Spells subsession");
@@ -130,7 +130,7 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
 
     // Enter the list: the staged spell's info carries the learned level,
     // the disc MP cost, and the two-line disc description.
-    let _ = s.tick(legaia_engine_core::spell_menu::SpellMenuInput {
+    let _ = s.tick(legaia_engine_menus::spell_menu::SpellMenuInput {
         cross: true,
         ..Default::default()
     });
@@ -146,7 +146,7 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
 }
 
 /// The Items screen's Arrange rank table parses from the menu overlay
-/// (PROT 0899, `DAT_801E4A88` - `legaia_engine_core::menu_arrange`) and
+/// (PROT 0899, `DAT_801E4A88` - `legaia_engine_menus::menu_arrange`) and
 /// carries the retail ordering invariants: a full permutation of the
 /// 8-bit id space, the empty id (0) ordered last, and the healing
 /// consumables leading (Healing Berry before Healing Leaf).
@@ -165,11 +165,12 @@ fn arrange_rank_table_parses_from_menu_overlay() {
         return;
     };
     let prot =
-        legaia_engine_core::scene::ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+        legaia_engine_scene::scene::ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
     let overlay = prot
-        .entry_bytes_extended(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
         .expect("menu overlay entry bytes");
-    let rank = legaia_engine_core::menu_arrange::parse_arrange_rank_table(&overlay).expect("parse");
+    let rank =
+        legaia_engine_menus::menu_arrange::parse_arrange_rank_table(&overlay).expect("parse");
     // Full permutation: every id owns exactly one rank slot.
     let mut seen = [false; 0x100];
     for id in 0..=0xFFu8 {
@@ -185,6 +186,6 @@ fn arrange_rank_table_parses_from_menu_overlay() {
 
     // The kernel over a synthetic bag honors the retail order.
     let mut bag = [(0x77u8, 2u8), (0x00, 0), (0x79, 5)];
-    legaia_engine_core::menu_arrange::arrange_bag_slots(&mut bag, &rank);
+    legaia_engine_menus::menu_arrange::arrange_bag_slots(&mut bag, &rank);
     assert_eq!(&bag[..2], &[(0x79, 5), (0x77, 2)]);
 }

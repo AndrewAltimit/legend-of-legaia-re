@@ -7,7 +7,7 @@
 //! word and no geometry (the loader's `StoreImage` rect supplies that), so
 //! the raw TIM catalog finds nothing in entry 867 and the compressed catalog
 //! finds a single 64x64 effect texture. Layout and provenance in
-//! [`legaia_asset::monster_archive`].
+//! [`legaia_actor_formats::monster_archive`].
 //!
 //! ## The palettes are not ours to rewrite
 //!
@@ -41,7 +41,7 @@
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::monster_archive::{
+use legaia_actor_formats::monster_archive::{
     self as archive, CLUT_COUNT, MonsterPage, PALETTE_COLOURS, SLOT_STRIDE,
 };
 

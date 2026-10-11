@@ -6,7 +6,7 @@
 -- screen you thought, and this tells you in one run instead of by guessing
 -- at pad taps.
 --
--- Reads the same anchors the legaia-pcsxr crate uses (GAME_MODE_VA /
+-- Reads the same anchors the legaia-pcsx-redux crate uses (GAME_MODE_VA /
 -- SCENE_NAME_VA), which is the host-side reader for .sstate files; use this
 -- when that reader cannot parse the state (e.g. a newer PCSX-Redux payload
 -- layout) and you need the answer from inside the emulator.

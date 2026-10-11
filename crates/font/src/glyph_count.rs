@@ -104,8 +104,8 @@ fn string_units(s: &[u8]) -> u32 {
 /// Its consumer is the field dialog pager's row gate (`0x801D8A6C..0x801D8AA8`:
 /// the count against the reveal counter `_DAT_801F2748`, then the short-row
 /// hold `_DAT_801F275C`). The engine's pager counts each packed-box row with
-/// it (`legaia_engine_core::dialog::OwnedDialogPanel`, lead byte included and
-/// the rest of the buffer after it), and `legaia_engine_core::dialog_pacing`
+/// it (`legaia_engine_dialog::dialog::OwnedDialogPanel`, lead byte included and
+/// the rest of the buffer after it), and `legaia_engine_dialog::dialog_pacing`
 /// runs the gate: the row ends on the call whose counter passes the count,
 /// and a row under `0x22` units holds before the next. Both play hosts reach
 /// it through `World::step_inline_dialogue`, the cutscene timeline's dialog

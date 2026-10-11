@@ -230,10 +230,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 <script src="js/webgl-math.js"></script>
 <script src="js/webgl-shaders.js"></script>
 <script src="js/webgl-tmd.js"></script>
+<script src="js/webgl-tmd-frame-state.js"></script>
+<script src="js/webgl-tmd-assembled-scene.js"></script>
 <script src="js/audio-toggle.js"></script>
 <script src="js/minigame-bgm.js"></script>
 <script src="js/minigame-baka.js"></script>
 <script src="js/minigame-dance.js"></script>
+<script src="js/canvas-abr.js"></script>
+<script src="js/minigame-muscle-sound.js"></script>
+<script src="js/minigame-muscle-canvas-chrome.js"></script>
 <script src="js/minigame-muscle.js"></script>
 <script src="js/minigame-fishing.js"></script>
 <script src="js/legaia-sfx.js"></script>
@@ -1408,7 +1413,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   }
 
   /* The tutorial's captions / options / cursor through the shared
-   * ui_dance::dance_tutorial_draws_for, composited over the HUD canvas. */
+   * engine-ui::dance::dance_tutorial_draws_for, composited over the HUD canvas. */
   let danceTutCanvas = null;
   function danceTutorialOverlay() {
     const c = $('dance-canvas');
@@ -1767,7 +1772,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * actor. The projection is the GTE's own, read out of a retail save state.
    *
    * This page draws none of it itself: `slot_frame_rgba` is the engine's
-   * `ui_slot_cabinet` primitive list - the one the native window and the play
+   * `engine-ui::slot_cabinet` primitive list - the one the native window and the play
    * page draw - rasterised over the art pack's VRAM. See slotRender. */
   const SLOT_START_COINS = 60;
   const SYM_PX = 64;              /* a reel symbol cell, in texels */
@@ -2043,7 +2048,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   /* ---------------- the machine ---------------- */
 
   /* The retail machine, on its own 640x240 framebuffer - drawn by the ENGINE.
-   * `slot_frame_rgba` rasterises the same `ui_slot_cabinet` primitive list the
+   * `slot_frame_rgba` rasterises the same `engine-ui::slot_cabinet` primitive list the
    * native window and the play page draw on their GPUs (the cabinet mesh, the
    * reels, the glass furniture, the dot matrix, the coin readout, the paylines
    * and the cash-out submenu), through the one projection the engine owns - the
@@ -2468,7 +2473,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   /* ================= fishing ================= */
 
-  /* The rules are the ported retail pond loop (engine-core::fishing's
+  /* The rules are the ported retail pond loop (engine-fishing::fishing's
    * PondSession: cast -> band roll / cadence -> strike -> tension fight ->
    * score) over the venue tables decoded from the visitor's disc; the 3D
    * pond + retail HUD render through js/minigame-fishing.js (window.

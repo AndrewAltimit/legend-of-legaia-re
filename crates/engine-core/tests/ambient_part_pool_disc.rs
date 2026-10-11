@@ -17,10 +17,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::scene_entry_ambient_installs;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
 use legaia_engine_core::world::ambient::MAX_AMBIENT_PARTS;
+use legaia_engine_field::man_field_scripts::scene_entry_ambient_installs;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 /// Game ticks per scene. Every retail tree settles inside the first ~200; the
 /// rest is headroom for a slow-cadence emitter to show growth if it has any.
@@ -55,20 +55,20 @@ fn run_scene(index: &ProtIndex, name: &str) -> Option<Run> {
     let scene = Scene::load(index, name).ok()?;
     let scripts = scene.find_event_scripts()?;
     let man_bytes = scene.field_man_payload(index).ok()??;
-    let man_file = legaia_asset::man_section::parse(&man_bytes).ok()?;
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).ok()?;
     let installs = scene_entry_ambient_installs(&man_file, &man_bytes);
     if installs.is_empty() {
         return None;
     }
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },
         ..Default::default()
     };
     world.install_field_stagers(scripts.bytes);
-    world.set_vdf_buffer(legaia_engine_core::scene_bundle::find_vdf_buffer(&scene));
+    world.set_vdf_buffer(legaia_engine_scene::scene_bundle::find_vdf_buffer(&scene));
     for arg in installs {
         world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
     }

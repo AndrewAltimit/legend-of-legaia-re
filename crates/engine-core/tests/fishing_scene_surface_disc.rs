@@ -8,10 +8,10 @@
 //! Only structural facts are asserted. Skips and passes without
 //! `LEGAIA_DISC_BIN`.
 
-use legaia_asset::static_overlay;
 use legaia_engine_core::fishing_scene::FishingSurface;
-use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_overlay_images::static_overlay;
 
 #[test]
 fn the_pond_surface_seats_the_party_under_the_venue_camera() {
@@ -22,7 +22,7 @@ fn the_pond_surface_seats_the_party_under_the_venue_camera() {
     let mut host = SceneHost::open_disc(&disc).expect("open disc");
     host.load_scene("town01").expect("town01");
     let rec = static_overlay::overlay_map()
-        .by_prot_index(legaia_asset::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
+        .by_prot_index(legaia_minigame_formats::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
         .expect("fishing overlay in static map");
     let raw = host.index.entry_bytes_extended(rec.prot_index).unwrap();
     let loaded = static_overlay::as_loaded(&raw, rec).unwrap();
@@ -53,7 +53,7 @@ fn the_pond_surface_seats_the_party_under_the_venue_camera() {
         .expect("sprite table");
     assert_eq!(
         sprites.len(),
-        legaia_asset::fishing_sprites::FISHING_SPRITE_COUNT
+        legaia_minigame_formats::fishing_sprites::FISHING_SPRITE_COUNT
     );
     for r in sprites {
         assert_eq!(r.tpage & 0x1F, 0x0D, "page (832, 0)");

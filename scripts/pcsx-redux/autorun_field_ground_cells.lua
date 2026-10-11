@@ -47,7 +47,7 @@ local SETTLE   = probe.getenv_num("LEGAIA_SETTLE", 0)
 local DUMP_RAM = probe.getenv_num("LEGAIA_DUMP_RAM", 0)
 local SAVE_ST  = probe.getenv("LEGAIA_SAVE_STATE", "")
 
--- game anchors (legaia_mednafen::game_anchors)
+-- game anchors (legaia_ram_image::game_anchors)
 local SCENE_VA = 0x8007050C
 local MODE_VA  = 0x8007B83C
 -- scratchpad

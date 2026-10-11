@@ -19,7 +19,7 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -50,7 +50,7 @@ fn town01_arrival_stages_snap_then_two_mode4_glides() {
         return;
     };
     host.world.begin_new_game();
-    host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
 
     let man_bytes = host
@@ -60,7 +60,7 @@ fn town01_arrival_stages_snap_then_two_mode4_glides() {
         .field_man_payload(&host.index)
         .expect("man payload result")
         .expect("town01 has a field MAN");
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("parse town01 MAN");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("parse town01 MAN");
     assert!(
         host.world
             .install_cutscene_timeline_record(&man_file, &man_bytes, 2, 3, true),
@@ -77,7 +77,7 @@ fn town01_arrival_stages_snap_then_two_mode4_glides() {
     for _ in 0..4_000u32 {
         let _ = host.tick();
         for ev in host.world.drain_field_events() {
-            if let legaia_engine_core::field_events::FieldEvent::CameraConfigure {
+            if let legaia_engine_field::field_events::FieldEvent::CameraConfigure {
                 params,
                 apply_trigger,
                 mode,

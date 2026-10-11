@@ -12,13 +12,13 @@
     <thead><tr><th>VM</th><th>Entry</th><th>Runs when</th><th>What a player sees</th><th>Bytecode source</th></tr></thead>
     <tbody>
       <tr><td>Pursue / walk kernel</td><td><code>FUN_8003774C</code></td><td><code>+0x10 &amp; 0x400</code></td><td>A scripted walk or glide, "walk here and face that", camera follow paths</td><td>The field-VM motion op itself, read in place through <code>+0x94</code></td></tr>
-      <tr><td>Ambient motion / flags</td><td><code>FUN_80038158</code></td><td><code>+0x10 &amp; 0x80</code></td><td>Town wandering, idle turns, model swaps, fades - and the story flags a scene flips as it plays</td><td>MAN tail-section 1 (parser <code>legaia_asset::man_motion</code>)</td></tr>
+      <tr><td>Ambient motion / flags</td><td><code>FUN_80038158</code></td><td><code>+0x10 &amp; 0x80</code></td><td>Town wandering, idle turns, model swaps, fades - and the story flags a scene flips as it plays</td><td>MAN tail-section 1 (parser <code>legaia_scene_formats::man_motion</code>)</td></tr>
     </tbody>
   </table>
   </div>
   <div class="notice">
     <p class="notice-title">Two traps</p>
-    <p>The NPC turning to look at you when you press the action button is <strong>neither</strong> VM - it is a single store in the dialog state machine (<a href="#talk-facing">talk-time facing</a>). And the ambient VM's bytecode arrives as disc data, so it has a static decoder beside its interpreter: <code>engine-vm::ambient_motion</code> runs it, <code>engine-core::man_field_scripts::npc_motion</code> answers questions about a stream without running it, and <code>engine-vm::motion_vm</code> is the other VM entirely.</p>
+    <p>The NPC turning to look at you when you press the action button is <strong>neither</strong> VM - it is a single store in the dialog state machine (<a href="#talk-facing">talk-time facing</a>). And the ambient VM's bytecode arrives as disc data, so it has a static decoder beside its interpreter: <code>engine-motion-vm::ambient_motion</code> runs it, <code>engine-field::man_field_scripts::npc_motion</code> answers questions about a stream without running it, and <code>engine-motion-vm::motion_vm</code> is the other VM entirely.</p>
   </div>
   <p>Both are distinct from the <a href="actor-vm.html">window-widget VM</a> and the <a href="move-vm.html">move-table VM</a>; the whole family is on the <a href="move-vm.html#vm-family">VM family table</a>.</p>
 </section>
@@ -152,8 +152,8 @@
 <section class="doc-section" id="port">
   <h2>In the port</h2>
   <ul class="bullets">
-    <li><code>engine-vm::motion_vm</code> is the pursue VM, with one LUT module for the facing law so spawn-time and runtime facings cannot drift apart. Two deliberate departures: LUT indices <code>8..=15</code> are no-ops rather than retail's over-read into adjacent executable data, and an unrecognised Face-target sub-mode ends the leg instead of yielding forever.</li>
-    <li><code>engine-vm::ambient_motion</code> runs the whole ambient op table.</li>
+    <li><code>engine-motion-vm::motion_vm</code> is the pursue VM, with one LUT module for the facing law so spawn-time and runtime facings cannot drift apart. Two deliberate departures: LUT indices <code>8..=15</code> are no-ops rather than retail's over-read into adjacent executable data, and an unrecognised Face-target sub-mode ends the leg instead of yielding forever.</li>
+    <li><code>engine-motion-vm::ambient_motion</code> runs the whole ambient op table.</li>
     <li>NPC pacing is decoded, not guessed: each placement's glide speed comes from its real walk operands (<a href="field-locomotion.html#npc-glide-speed">field locomotion</a>).</li>
   </ul>
 </section>

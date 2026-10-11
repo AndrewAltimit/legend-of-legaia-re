@@ -15,7 +15,7 @@
 //! Every export here is prefixed `play_mg_slot_` and is a thin delegate;
 //! nothing about the machine's presentation is decided in this file.
 
-use legaia_engine_core::slot_machine::{REEL_COUNT, STRIP_LEN, SlotMachine, SlotPhase};
+use legaia_engine_minigames::slot_machine::{REEL_COUNT, STRIP_LEN, SlotMachine, SlotPhase};
 use legaia_engine_ui::TextDraw;
 use wasm_bindgen::prelude::*;
 
@@ -35,7 +35,7 @@ pub(crate) struct SlotUi {
     pub(crate) tick: u32,
     /// The marquee's legend / blink counters for the shared cabinet builder
     /// - the native window's `slot_marquee_clock` twin.
-    pub(crate) clock: legaia_engine_ui::ui_slot_cabinet::SlotMarqueeClock,
+    pub(crate) clock: legaia_engine_ui::slot_cabinet::SlotMarqueeClock,
     /// This frame's composed dot buffer.
     pub(crate) dots: Vec<u8>,
 }
@@ -91,10 +91,10 @@ impl LegaiaRuntime {
     }
 
     /// The whole machine as screen primitives through the shared
-    /// `ui_slot_cabinet::slot_cabinet_prims` - the native window's
+    /// `slot_cabinet::slot_cabinet_prims` - the native window's
     /// `slot_cabinet_screen_prims` twin. Empty outside a session.
-    pub(crate) fn slot_cabinet_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
-        use legaia_engine_ui::ui_slot_cabinet as usc;
+    pub(crate) fn slot_cabinet_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_engine_ui::slot_cabinet as usc;
         let (Some(m), Some(c)) = (
             self.slot_session(),
             self.minigame_art().and_then(|a| a.slot_cabinet.as_ref()),
@@ -106,14 +106,14 @@ impl LegaiaRuntime {
         let menu = usc::slot_menu_prims(c, m.screen(), m.fade_level());
         if matches!(
             m.screen(),
-            legaia_engine_core::slot_machine::SlotScreen::Instructions { .. }
+            legaia_minigame_formats::minigame_slot_scene::SlotScreen::Instructions { .. }
         ) {
             return menu;
         }
         let strips = m.strips();
         let clear;
         let dots: &[u8] = if self.minigame_ui.slot.dots.is_empty() {
-            clear = legaia_asset::minigame_slot_scene::clear_dots();
+            clear = legaia_minigame_formats::minigame_slot_scene::clear_dots();
             &clear
         } else {
             &self.minigame_ui.slot.dots
@@ -132,10 +132,10 @@ impl LegaiaRuntime {
         });
         // The paylines over it: the machine's own ported pass + projection
         // (`SlotMachine::payline_segments`) through the shared
-        // `ui_slot_paylines` builder - the native window's
+        // `slot_paylines` builder - the native window's
         // `slot_payline_screen_prims` twin. The 2D-canvas fallback strokes
         // them itself, so they join the prim pass only with the cabinet.
-        use legaia_engine_ui::ui_slot_paylines as usp;
+        use legaia_engine_ui::slot_paylines as usp;
         let segments: Vec<usp::PaylineSegment> = m
             .payline_segments()
             .iter()
@@ -161,13 +161,13 @@ impl LegaiaRuntime {
         };
         if let Some(c) = self.minigame_art().and_then(|a| a.slot_cabinet.as_ref()) {
             // The machine draws itself; the rules pages' text is the one
-            // text draw it owes (`ui_slot_cabinet::slot_rules_text_draws_for`,
+            // text draw it owes (`slot_cabinet::slot_rules_text_draws_for`,
             // the native window's twin).
             return c
                 .rules
                 .as_ref()
                 .map(|r| {
-                    legaia_engine_ui::ui_slot_cabinet::slot_rules_text_draws_for(
+                    legaia_engine_ui::slot_cabinet::slot_rules_text_draws_for(
                         font,
                         r,
                         m.screen(),
@@ -177,7 +177,7 @@ impl LegaiaRuntime {
                 .unwrap_or_default();
         }
         let rows = legaia_engine_core::minigame_status::slot_status_rows(m);
-        legaia_engine_ui::ui_text_lines::status_row_draws_for(
+        legaia_engine_ui::text_lines::status_row_draws_for(
             font,
             rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
         )
@@ -273,7 +273,7 @@ impl LegaiaRuntime {
     /// over the world's session: the two jackpot triggers, and while a round
     /// is live the reel numbers, the claimed-column tally and its product.
     pub fn play_mg_slot_bonus_json(&self) -> String {
-        use legaia_asset::slot_payout as sp;
+        use legaia_minigame_formats::slot_payout as sp;
         let head = serde_json::json!({
             "kick_symbol": sp::KICK_SYMBOL_ID,
             "kick_rounds": sp::KICK_BONUS_ROUNDS,

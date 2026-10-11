@@ -22,7 +22,7 @@ solid in the port as they are in retail.
 | Dispatch | 22-slot jump table `0x80010EE0`, index `(op & 0x7F) - 0x37` | 32-slot jump table `0x80010FE8`, ops `0x01..=0x20` |
 | Bytecode source | the payload pointer a field-VM halt-acquire writes to `+0x94` | MAN tail-section 1, read at `*(actor+0x80) + *(u16*)(actor+0x84)` |
 | Opcode table | [Opcodes](#opcodes) | [The op table](#the-op-table) |
-| Port | [`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) | [`ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs) + [`ambient_motion_ops`](../../crates/engine-motion-vm/src/ambient_motion_ops.rs) |
+| Port | [`legaia_engine_motion_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) | [`ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs) + [`ambient_motion_ops`](../../crates/engine-motion-vm/src/ambient_motion_ops.rs) |
 
 ```mermaid
 flowchart TD
@@ -63,7 +63,7 @@ Three things that catch people out:
 The per-actor tick that gates and dispatches both VMs is itself two
 independently-gated halves (see `ghidra/scripts/funcs/8003bc08.txt`; ported
 as `field_actor_plan` in
-[`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs)).
+[`legaia_engine_motion_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs)).
 
 **Height arm** - runs only when the actor is live (`+0x5C >= 0`, which also
 gates the `FUN_801D79E8` pre-update) and not culled (`+0x10 & 2` clear).
@@ -391,7 +391,7 @@ scripted `0x3E` interact get the same behaviour.
 
 ## From-scratch port
 
-[`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) is the from-scratch port. All six opcodes are implemented: `0x37` `CompassWalkFast`, `0x38` `RotateToAngle`, `0x41` `CompassWalkSlow`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
+[`legaia_engine_motion_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) is the from-scratch port. All six opcodes are implemented: `0x37` `CompassWalkFast`, `0x38` `RotateToAngle`, `0x41` `CompassWalkSlow`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
 
 The facing law above is `heading_lut_engine` (the eight compass entries, carried in the engine's `0` = +Z space), `walk_facing_index` / `walk_facing_yaw` (the `0x47` sign-to-index table), and `rotate_step` (the shared ramp arithmetic, widened to 32-bit so a large speed cannot overflow the increment, raw wrapping write-back). `engine-core`'s `facing_index_to_engine_heading` delegates to the same LUT, so the spawn-prologue facings and the runtime ones cannot drift apart. `MotionState` carries the once-per-leg walk-facing latch (`walk_facing`) and a per-step `yaw_written` signal; engine hosts gate their render-heading mirror on the latter, so a heading another writer posed (the interact bearing) is not clobbered by an idle leg's stale VM yaw.
 
@@ -420,7 +420,7 @@ the carrier/channel install): one field-VM frame slice per placement channel, ru
 unconditionally - load-time behaviour, not the opt-in free-roam liveliness - with
 position write-through, and no heading derivation (facings come from
 `seed_field_npc_facings`). Disc + save-library oracle:
-`crates/engine-core/tests/field_npc_entry_positions_disc.rs`.
+`crates/parity/tests/field_npc_entry_positions_disc.rs`.
 
 `World::tick_field_npc_motions` (`engine-core`) drives MAN-placed field NPCs through the `0x47` `MoveTowardTarget` pursue step, one motion-VM step per field tick, writing the live position back into `World::npcs.positions` so the moving NPC's ±40-unit collision box and its interact box follow it (retail probes the live `+0x14`/`+0x18`, not the spawn anchor). Every leg it steps is scripted and ends where it lands; the start paths are listed below.
 
@@ -428,7 +428,7 @@ position write-through, and no heading derivation (facings come from
 Looping the seats as a patrol walks an NPC between story stations retail never connects: town01's gate guards (placements 32 and 33, beside the exit to the world map) stand on their seats in every catalogued town01 field-run state, across both emulators and the whole chapter, while the ambient-stream wanderers beside them move.
 A villager's free-roam movement is its [tail-section-1 stream](#the-walk-half---the-directional-steps-and-the-aabb-wander) and nothing else. `man_field_scripts::placement_motion_route` still decodes the seats, but nothing in the live path reads it (only its tests do); glide pace comes from `placement_glide_speed` below. Disc oracle: [`field_npc_motion_disc.rs`](../../crates/engine-core/tests/field_npc_motion_disc.rs) (town01's guards hold still; across every field scene, nothing without a walking ambient stream moves in free roam).
 
-- **Not interaction-prologue `0x4C 0x51`s.** When the field-VM dialogue runner executes an NPC's record and the prologue hits a `0x4C 0x51` with the NPC arm, the host hook (`vm_hosts::FieldHostImpl::op4c_n5_sub1_npc_run`) seats the actor on the tile, exactly as the entry pre-run and a spawned-record poke do: the case-5 sub-1 body stores the tile into `+0x14` / `+0x18` (`0x801E1880`, `0x801E1898`) and the LUT heading into `+0x26` (`0x801E1900`) and arms no walk kernel.
+- **Not interaction-prologue `0x4C 0x51`s.** When the field-VM dialogue runner executes an NPC's record and the prologue hits a `0x4C 0x51` with the NPC arm, the host hook (`vm_hosts::FieldHostImpl::run_to_tile`) seats the actor on the tile, exactly as the entry pre-run and a spawned-record poke do: the case-5 sub-1 body stores the tile into `+0x14` / `+0x18` (`0x801E1880`, `0x801E1898`) and the LUT heading into `+0x26` (`0x801E1900`) and arms no walk kernel.
 - **Window-script VM `slide_to`** (ops `0x01` / `0x02`, retail `FUN_800357fc`): on the field-actor demo host, `World::start_actor_motion` records the glide target and steps the actor's sprite position toward it through the same pursue kernel (`World::tick_actor_motions`). The snap ops (`0x09` / `0x0A`, `FUN_800358c0`) write the position directly.
 - **Cutscene-timeline cross-context walks** (`C7 <id> <tx> <tz> <mode>`, the targeted `0x47` yield): a spawned partition-2 record walking a cast member. The timeline arms the leg with the op's own speed (`0x80 >> (2 + (mode & 7))`) into `CutsceneTimeline::npc_walks` and the record runs on (`li s7,4` in the delay slot at `0x801DF030`) - the retail shape where the yield-op pointer lands in the target's `+0x94` and the walk kernel moves it in place, the record's next op on that actor waiting at the halted-target refusal. Only the player-anchor form (`C7 F8 …`) parks the record, on `CutsceneTimeline::walk_wait`, stepping the player actor directly. Scripted legs keep stepping while a timeline is active.
 - **Cutscene-timeline cross-context turns** (`B8 <id> <dir|flags> <budget|dir>`, the targeted `0x38` yield - the field-VM CAM_CFG halt-acquire arm): the same shape for the rotate op. The timeline arms a `0x38` RotateToAngle leg on the NPC into `CutsceneTimeline::npc_facings` and the record runs on (`li s7,3` in the delay slot at `0x801DEEFC`), stepping the leg once per tick into `World::npcs.headings` until the terminal compass snap - one tick per budget frame, the 1:1 retail duration. Only a player target parks the record, on `CutsceneTimeline::facing_wait`. The simple path (`op1 & 0x7F == 0`) is an instant compass write, no park.
@@ -441,7 +441,7 @@ A villager's free-roam movement is its [tail-section-1 stream](#the-walk-half---
 
   The finished beat arms `rayman`'s guide rail: the P2[4] / P2[5] / P2[6] walk-ons return a player who strays to (31, 20), and after three strays Kina gives up and raises `0x1EC..0x1EE`. The way on to `tunnelb` is Hari's permission chain: talks P1[44..46] raise `0x1FD..0x1FF`, the P2[18] walk-on then raises `0x200`, P2[19] raises `0x1FC`, and only then does the gate guard's P2[16] open the door. A P2[18] stepped on before the three talks runs and gains nothing; it takes a second visit.
 
-  The player (`B8 F8 ..`) takes both paths on its own heading (`move_state.render_26`, `TimelineFacing::slot = None`); the story beats turn the hero this way well over a thousand times across the disc. Outside the timeline, a simple-path `0x38` reaches the actor through `FieldHost::face_compass`: the player for `0xF8`, the stepping placement channel, or the NPC whose talk record is running.
+  The player (`B8 F8 ..`) takes both paths on its own heading (`move_state.render_26`, `TimelineFacing::slot = None`); the story beats turn the hero this way well over a thousand times across the disc. Outside the timeline, a simple-path `0x38` reaches the actor through `FieldActorHost::face_compass`: the player for `0xF8`, the stepping placement channel, or the NPC whose talk record is running.
 
 The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` shape - write the target, reset the glide cursor - and the per-frame consumer is this VM.
 
@@ -473,7 +473,7 @@ story-flag bank `DAT_80085758` directly: op-`7` `[07, lo, hi]` **sets** flag
 ### Disc carrier - MAN tail-section 1
 
 The only disc source of this bytecode is **MAN tail-section 1** (parser
-`legaia_asset::man_motion`):
+`legaia_scene_formats::man_motion`):
 
 - `FUN_8003AEB0` (scene-entry map-init) computes `tail_base = MAN + 0x2B +
   3*(N0+N1+N2) + u24_at_0x28`, walks the u24-length-prefixed section chain,
@@ -709,7 +709,7 @@ PC; a blocked wander drops back to the pick phase.
 
 #### From-scratch port + wiring
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
+[`legaia_engine_motion_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 executes all four walk ops alongside the facing ones, plus `0x17`. The
 collision service is the `AmbientBlocking` trait the host supplies, and
 `engine-core`'s implementation is the player box test above.
@@ -900,7 +900,7 @@ backwards when he walks back; the actor never finishes. What clears these is
 the scene MAN loader's second inlined retire sweep (`FUN_8003AEB0` at
 `0x8003B414`), which is keyed on this VA - see
 [`script-vm.md`](script-vm.md). Ported as
-`legaia_engine_vm::ambient_motion::zone_ramp_tick`.
+`legaia_engine_motion_vm::ambient_motion::zone_ramp_tick`.
 
 Its **spawner** is `FUN_8003C6A4`, i.e. field-VM op `0x43` sub-3..6
 ([`script-vm.md`](script-vm.md#0x43-sub-36---the-camera-register-zone-ramp)):
@@ -909,12 +909,12 @@ op fills in exactly the `+0x80..+0xCA` fields read above. So the
 "destination pointer" is never arbitrary - it is one of four named field
 camera-configuration registers, and the routine is the mechanism behind a
 camera parameter that tracks the player across an authored zone. The engine's
-spawn side is `legaia_engine_core::register_ramp`; `World::tick_register_ramps`
+spawn side is `legaia_engine_field::register_ramp`; `World::tick_register_ramps`
 runs this tick per frame and `Camera::tick_globals` consumes the result.
 
 #### From-scratch port
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
+[`legaia_engine_motion_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 executes both ops plus the `0x05` wait, the `0x01` restart, the `0x17`
 default-move write and the four [walk ops](#the-walk-half---the-directional-steps-and-the-aabb-wander),
 and carries the scheduler as `RampScheduler`; the other seventeen case bodies are in
@@ -959,7 +959,7 @@ wait must not re-stamp its stale heading over a pose another writer set (the
 interact face-the-speaker bearing being the case that regressed before).
 
 Disc oracle:
-[`crates/engine-vm/tests/ambient_motion_disc_oracle.rs`](../../crates/engine-vm/tests/ambient_motion_disc_oracle.rs)
+[`crates/engine-motion-vm/tests/ambient_motion_disc_oracle.rs`](../../crates/engine-motion-vm/tests/ambient_motion_disc_oracle.rs)
 re-derives the disc-wide census (every scene bundle's MAN → tail-section 1 →
 every record → every gated variant → every `0x04`/`0x0D` site) and replays
 each site from four start headings at three frame scalars, asserting the
@@ -975,7 +975,7 @@ arc, and the raw out-of-range hold on every wrap-crossing leg.
 record to). The walk/anim ops (`0x02`, `0x03`/`0x19`/`0x20`, `0x18` phase
 1/3) reload the actor's requested-move pair `+0x88`/`+0x5C` from the
 record while it is set, and the motion-pause kick `FUN_8003C9AC` (ported at
-`legaia_engine_vm::motion_pause`) sweeps the same table - see
+`legaia_engine_field::motion_pause`) sweeps the same table - see
 [the motion-pause kick](#the-motion-pause-kick). The engine statically harvests each
 stream's first `0x17` per bound placement
 (`man_field_scripts::motion_default_move_writes` →
@@ -1048,7 +1048,7 @@ without ever waking a script waiting on a touch. The mailbox keeps its
 previous contents in that case; the post is dropped, not cleared.
 
 Retail does no bounds check on the index. The port
-(`legaia_engine_vm::motion_vm::post_touch`) returns "no post" for an
+(`legaia_engine_motion_vm::motion_vm::post_touch`) returns "no post" for an
 out-of-range index rather than reading past the table, which is the safe
 reading of the same outcome.
 
@@ -1062,7 +1062,7 @@ expires the wait on that frame, then stores the `0xFF` sentinel back
 (`sw a0,0x3f1c(a1)` at `0x8003887C`).
 
 Both halves are wired. `AmbientMotion::take_touch_wake`
-(`legaia_engine_vm::ambient_motion`) is the head, replaying retail's three
+(`legaia_engine_motion_vm::ambient_motion`) is the head, replaying retail's three
 gates in retail's order, and `AmbientMotion::pending_touch` is the mailbox -
 a per-channel `Option` rather than one global word, which carries the same
 information because every actor's arm tests the word against its own `+0x50`
@@ -1252,13 +1252,13 @@ packs LZS-decodes and every member's first word is `0x80000002`. The ten
 bundles with no type-`0x02` descriptor take their models from a type-`0x02`
 DATA_FIELD chunk instead (`bubu1` 173 members, `edbubu` 160).
 
-Parser: `legaia_engine_core::model_bank` (`SceneModelBank::build` walks a
+Parser: `legaia_engine_scene::model_bank` (`SceneModelBank::build` walks a
 scene the way the loader registers it; `resolve_model_id` applies the `0xF0`
 split). `SceneHost` holds one per loaded scene, rebuilt on every field entry,
 and it is what both hosts resolve a live op-`0x0E` re-bind through -
 `World::field_npc_live_model` for the id, `SceneModelBank::tmd_bytes` for the
 bytes. Disc-gated oracles:
-[`model_bank_disc.rs`](../../crates/engine-core/tests/model_bank_disc.rs) for
+[`model_bank_disc.rs`](../../crates/engine-scene/tests/model_bank_disc.rs) for
 the bank against the `DAT_8007B774` counter, and
 [`model_rebind_live_disc.rs`](../../crates/engine-core/tests/model_rebind_live_disc.rs)
 for every authored operand in `koin3` resolving to a parseable mesh.
@@ -1329,7 +1329,7 @@ in this repo's docs are both right about one field with two consumers.
 
 ### The whole table has one executing home
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
+[`legaia_engine_motion_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 runs all twenty-four case bodies. They are split across two files for length
 only - the facing ramps, the walk ops, the waits, the restart and the ramp
 scheduler in `ambient_motion.rs`; `0x02`, `0x06`..`0x0C` and `0x0E`..`0x16` in
@@ -1374,7 +1374,7 @@ are field-VM script bytes in the streaming variant MAN carriers
 [`script-vm.md`](script-vm.md#a-second-script-byte-carrier-the-streaming-variant-man))
 or, for the town01 opening one-shot `549`, a direct code path (see
 [`world-map.md`](world-map.md), "Gate-flag setters beyond a scene's bundle MAN").
-Disc-gated anchor test: `crates/engine-core/tests/motion_flag_census_disc.rs`.
+Disc-gated anchor test: `crates/engine-scene/tests/motion_flag_census_disc.rs`.
 
 ## Provenance
 

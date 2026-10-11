@@ -5,18 +5,19 @@ use super::*;
 /// descriptor type byte is `0x02`, not the `0x05` the corpus detector
 /// filters on, so it needs the dedicated `character_pack` parser rather than
 /// `player_anm::find_in_entry`.
-const LOCOMOTION_PROT_INDEX: u32 = legaia_asset::character_pack::PROT_ENTRY_INDEX;
+const LOCOMOTION_PROT_INDEX: u32 = legaia_actor_formats::character_pack::PROT_ENTRY_INDEX;
 
 /// PROT entry of the battle-form (Baka Fighter) 30-record ANM bank whose
 /// per-character banks + slot roles are pinned
-/// (`legaia_asset::baka_opponents::party_bank_record_label`).
+/// (`legaia_minigame_formats::baka_opponents::party_bank_record_label`).
 const BATTLE_BANK_PROT_INDEX: u32 = 1203;
 
 /// The per-record display metadata the corpus can attach where the bundle's
 /// bank structure is pinned: `(label, character slot, bank-relative slot)`.
 /// `None` for the per-scene NPC pools (their record roles are unpinned).
 pub fn corpus_record_meta(prot_index: u32, i: usize) -> Option<(String, Option<u32>, Option<u32>)> {
-    use legaia_asset::{baka_opponents, character_pack};
+    use legaia_actor_formats::character_pack;
+    use legaia_minigame_formats::baka_opponents;
     match prot_index {
         LOCOMOTION_PROT_INDEX => {
             let stride = character_pack::LOCOMOTION_BANK_STRIDE;
@@ -49,7 +50,7 @@ pub fn corpus_record_meta(prot_index: u32, i: usize) -> Option<(String, Option<u
 pub fn bundle_json(
     prot_index: u32,
     source: &str,
-    b: &legaia_asset::player_anm::PlayerAnmBundle,
+    b: &legaia_actor_formats::player_anm::PlayerAnmBundle,
 ) -> serde_json::Value {
     let recs: Vec<serde_json::Value> = (0..b.record_count as usize)
         .map(|i| {
@@ -157,7 +158,7 @@ impl LegaiaViewer {
                 // The locomotion section's descriptor type byte is 0x02
                 // (TMD), so the 0x05 detector below can never see it - route
                 // it through its own parser.
-                if let Ok(b) = legaia_asset::character_pack::field_locomotion_anm(buf) {
+                if let Ok(b) = legaia_actor_formats::character_pack::field_locomotion_anm(buf) {
                     bundles.push(bundle_json(meta.index, "party_locomotion", &b));
                 }
                 continue;
@@ -166,7 +167,7 @@ impl LegaiaViewer {
             // detector spread the disc-gated test pins. Lower counts catch a
             // handful of `befect_data` / `other5` variants.
             for desc_count in [6, 3, 5, 7] {
-                let found = legaia_asset::player_anm::find_in_entry(buf, desc_count);
+                let found = legaia_actor_formats::player_anm::find_in_entry(buf, desc_count);
                 if !found.is_empty() {
                     let source = if meta.index == BATTLE_BANK_PROT_INDEX {
                         "battle_bank"
@@ -202,12 +203,12 @@ impl LegaiaViewer {
             return Vec::new();
         };
         if prot_index == LOCOMOTION_PROT_INDEX {
-            return legaia_asset::character_pack::field_locomotion_anm(buf)
+            return legaia_actor_formats::character_pack::field_locomotion_anm(buf)
                 .map(|b| b.decoded)
                 .unwrap_or_default();
         }
         for desc_count in [6, 3, 5, 7] {
-            let found = legaia_asset::player_anm::find_in_entry(buf, desc_count);
+            let found = legaia_actor_formats::player_anm::find_in_entry(buf, desc_count);
             if let Some(b) = found.into_iter().next() {
                 return b.decoded;
             }
@@ -221,7 +222,7 @@ impl LegaiaViewer {
     /// `(frame_count × bone_count × 8)` byte frame table.
     pub fn player_anm_record_bytes(&self, prot_index: u32, record_index: u32) -> Vec<u8> {
         let decoded = self.player_anm_decoded(prot_index);
-        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+        let Ok(bundle) = legaia_actor_formats::player_anm::parse(&decoded) else {
             return Vec::new();
         };
         bundle.record_bytes(record_index as usize).to_vec()
@@ -235,7 +236,7 @@ impl LegaiaViewer {
     /// Returns an empty Vec on out-of-range record or size-invariant failure.
     pub fn player_anm_record_header(&self, prot_index: u32, record_index: u32) -> Vec<i32> {
         let decoded = self.player_anm_decoded(prot_index);
-        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+        let Ok(bundle) = legaia_actor_formats::player_anm::parse(&decoded) else {
             return Vec::new();
         };
         let Ok(rec) = bundle.record(record_index as usize) else {
@@ -270,7 +271,7 @@ impl LegaiaViewer {
     /// what motion the bytes describe.
     pub fn player_anm_record_frames(&self, prot_index: u32, record_index: u32) -> Vec<u8> {
         let decoded = self.player_anm_decoded(prot_index);
-        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+        let Ok(bundle) = legaia_actor_formats::player_anm::parse(&decoded) else {
             return Vec::new();
         };
         let Ok(rec) = bundle.record(record_index as usize) else {
@@ -320,7 +321,7 @@ impl LegaiaViewer {
         target_part_count: u32,
     ) -> Vec<i32> {
         let decoded = self.player_anm_decoded(prot_index);
-        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+        let Ok(bundle) = legaia_actor_formats::player_anm::parse(&decoded) else {
             return Vec::new();
         };
         let Ok(rec) = bundle.record(record_index as usize) else {
@@ -356,7 +357,7 @@ impl LegaiaViewer {
     /// Empty `[0, 0]` if the record doesn't exist or fails size invariants.
     pub fn player_anm_record_dims(&self, prot_index: u32, record_index: u32) -> Vec<u32> {
         let decoded = self.player_anm_decoded(prot_index);
-        let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) else {
+        let Ok(bundle) = legaia_actor_formats::player_anm::parse(&decoded) else {
             return vec![0, 0];
         };
         match bundle.record(record_index as usize) {

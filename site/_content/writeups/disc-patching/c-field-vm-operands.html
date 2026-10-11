@@ -13,7 +13,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Target</dt><dd>An opcode's inline operand in a scene's MAN (the per-scene script-and-data bundle, LZS-compressed)</dd>
-    <dt>Find</dt><dd>Opcode-aware, dialogue-skipping walk with the field-VM disassembler (<code>legaia_asset::field_disasm</code>)</dd>
+    <dt>Find</dt><dd>Opcode-aware, dialogue-skipping walk with the field-VM disassembler (<code>legaia_scene_formats::field_disasm</code>)</dd>
     <dt>Write</dt><dd>Same-size operand overwrite &rarr; recompress &rarr; must fit the footprint budget</dd>
     <dt>Budget</dt><dd>Distance from the MAN's <code>data_offset</code> to the next descriptor's - read from the boundary, never from a rewritten stream</dd>
     <dt>Mods</dt><dd><code>--chests</code> &middot; <code>--shops</code> &middot; <code>--encounters</code> &middot; <code>--house-doors</code></dd>

@@ -1,5 +1,4 @@
 //! The battle-action SM's `BattleActionHost` bridge (`BattleHostImpl`).
-//! Split out of `vm_hosts.rs`.
 
 use super::*;
 
@@ -36,7 +35,8 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         if !a.active {
             return Some((0, false));
         }
-        let gone = a.battle.render_flag == vm::battle_formulas::STATE_DEFEAT_FADE
+        let gone = a.battle.render_flag
+            == legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
             && a.battle.render_color & 0x00FF_FFFF == 0;
         // Engine choice: a target whose animation rate `+0x21D` is `0` is
         // frozen - a starter commit stopped every slot - and its clip cannot
@@ -56,7 +56,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// Retail reads `_DAT_8007B874 | _DAT_8007B938` and only tests it for
     /// zero-vs-non-zero (`0x801E6088..0x801E609C`). The port models the first
     /// of the pair - the newly-pressed mask the retail pad pump writes
-    /// (`crate::retail_pad::RetailPadState::pressed`) - and has no analogue
+    /// (`legaia_engine_system::retail_pad::RetailPadState::pressed`) - and has no analogue
     /// for the second, so this is the press edge alone. That is the stricter
     /// half: it can only ever *decline* to cut the banner short.
     fn pad_word(&self) -> u16 {
@@ -69,7 +69,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.audio.sound_bank_ready
     }
     /// The disc spell table's class byte, read off the same
-    /// [`crate::pause_screens::MenuTextTables`] copy the live cast path
+    /// [`legaia_engine_menus::pause_screens::MenuTextTables`] copy the live cast path
     /// classifies capture-class moves from (`World::spell_table_class`).
     ///
     /// `is_capture_spell` is deliberately **not** overridden: the trait's
@@ -85,7 +85,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// before the shared ability-bit fold the SM applies on top.
     ///
     /// `World::tables.spell_catalog` is seeded from the user's `SCUS_942.54` at boot
-    /// ([`crate::retail_magic::seru_magic_catalog_from_scus`]), so on a real
+    /// ([`legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus`]), so on a real
     /// disc this *is* the retail `+3` byte; disc-free it is the port's
     /// catalog. Either way there is one price per spell in this engine, and
     /// this is where the state machine reads it.
@@ -119,7 +119,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
     /// Retail's **live** position pair `actor[+0x34]` / `actor[+0x38]`. The
     /// engine keeps it on the actor's move state, where `World::enter_battle`
-    /// puts it from [`crate::battle_seats`] and the locomotion drive
+    /// puts it from [`legaia_engine_battle::battle_seats`] and the locomotion drive
     /// (`World::tick_battle_locomotion`, the root-motion port) plus the
     /// separation pass move it - the same numbers `World::battle_target_rows`
     /// hands the target picker's angular enemy cursor.
@@ -216,7 +216,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 .iter()
                 .map(|a| a.battle.flag_word)
                 .collect();
-            vm::battle_action::clear_pool_flag_words(&mut words);
+            legaia_engine_battle_vm::battle_action::clear_pool_flag_words(&mut words);
             for (a, w) in self.world.actors.iter_mut().zip(words) {
                 a.battle.flag_word = w;
             }
@@ -387,7 +387,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ///
     /// PORT: FUN_801DBF9C
     fn spell_anim_trigger(&mut self, party_slot: u8, spell_id: u8) {
-        use vm::battle_action::{SPELL_TRIGGER_SUMMON_MIN_ID, SUMMON_CAST_EFFECT_ID};
+        use legaia_engine_battle_vm::battle_action::{
+            SPELL_TRIGGER_SUMMON_MIN_ID, SUMMON_CAST_EFFECT_ID,
+        };
         self.world
             .pending_battle_events
             .push(BattleEvent::SpellAnimTrigger {
@@ -434,14 +436,18 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// live fade, which both hosts composite through
     /// [`World::screen_fade_draw`]. Retail's spawn allocates a pool actor
     /// and runs the loader on its `+0x7C` block; the engine's
-    /// [`crate::fade::FadeState`] is that block.
+    /// [`legaia_engine_system::fade::FadeState`] is that block.
     ///
-    /// REF: FUN_80024E80 (ported as [`crate::fade::spawn_fade`], which
+    /// REF: FUN_80024E80 (ported as [`legaia_engine_system::fade::spawn_fade`], which
     /// stamps `id` into the template's last word)
-    fn spawn_screen_fade(&mut self, template: &vm::battle_action::SummonFadeTemplate, id: i16) {
-        crate::fade::spawn_fade(
+    fn spawn_screen_fade(
+        &mut self,
+        template: &legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
+        id: i16,
+    ) {
+        legaia_engine_system::fade::spawn_fade(
             &mut self.world.presentation.fade,
-            &crate::fade::FadeTemplate {
+            &legaia_engine_system::fade::FadeTemplate {
                 kind: template.kind,
                 duration: template.duration,
                 start_rgb: template.start_rgb,
@@ -476,7 +482,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .pending_battle_events
             .push(BattleEvent::SpellAnimSustain { actor_id, anim_id });
         let inputs = crate::battle_cam_inputs::spell_cam_inputs(self.world, actor_id, anim_id);
-        let step = vm::battle_cam_script::spell_cam_case(&inputs);
+        let step = legaia_engine_battle_vm::battle_cam_script::spell_cam_case(&inputs);
         if let Some(a) = self.world.actors.get_mut(usize::from(actor_id)) {
             if let Some(next) = step.next_case {
                 let i = usize::from(a.battle.strike_index);
@@ -488,7 +494,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 a.battle.hit_count_bound = 0;
             }
         }
-        if vm::battle_cam_script::SPELL_CAM_STATES.contains(&self.world.battle_ctx.action_state) {
+        if legaia_engine_battle_vm::battle_cam_script::SPELL_CAM_STATES
+            .contains(&self.world.battle_ctx.action_state)
+        {
             self.world.battle.spell_cam = Some(inputs);
         }
     }
@@ -531,7 +539,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.spell_table_sub_class(spell_id)
     }
     /// The two cue-group tables off PROT 0898, through the installed
-    /// move-power catalog's [`EffectAuxTables`](legaia_asset::move_power::EffectAuxTables) -
+    /// move-power catalog's [`EffectAuxTables`](legaia_game_tables::move_power::EffectAuxTables) -
     /// the same holder `World::spawn_action_table_effect` reads the effect
     /// prototypes from, so the group ids, the SFX map and the prototypes all
     /// come from one parse of one overlay.
@@ -553,13 +561,17 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// here: `0x801F6418` is a CLUT source x and `FUN_80058490` is
     /// `MoveImage`, so retail's arm is a palette-row blit, not a sound
     /// submit. See the `CueSpawn::Effect` arm below and
-    /// [`crate::battle_effect_clut`].
+    /// [`legaia_engine_battle::battle_effect_clut`].
     ///
     /// The spawn position is the cue actor's own live position, which is what
     /// retail builds the transform from (`actor[+0x34]`/`+0x38` for the
     /// translation, `+0x44..+0x4A` for the rotation).
-    fn spawn_cue(&mut self, actor_slot: u8, spawn: vm::battle_cue_group::CueSpawn) {
-        use vm::battle_cue_group::CueSpawn;
+    fn spawn_cue(
+        &mut self,
+        actor_slot: u8,
+        spawn: legaia_engine_battle_vm::battle_cue_group::CueSpawn,
+    ) {
+        use legaia_engine_battle_vm::battle_cue_group::CueSpawn;
         let at = self
             .world
             .actors
@@ -615,18 +627,19 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 .xa_cue_durations
                 .as_deref()
                 .and_then(|t| t.get(usize::from(cue_id - 0x100)).copied());
-            let gates = vm::battle_cast_cue::VoiceCueGates {
+            let gates = legaia_engine_battle_vm::battle_cast_cue::VoiceCueGates {
                 side_band_stage: 0,
                 clip_span_left: self.world.audio.battle_xa_busy_frames,
             };
-            if let vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
-                vm::battle_cast_cue::admit_voice_cue(cue_id, gates, raw)
+            if let legaia_engine_battle_vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
+                legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue(cue_id, gates, raw)
             {
-                self.world.push_battle_xa_cue(crate::sfx_cue::XaVoiceClip {
-                    clip: req.clip_slot,
-                    channel: req.channel,
-                    duration_sectors: req.duration_sectors,
-                });
+                self.world
+                    .push_battle_xa_cue(legaia_engine_system::sound_state::XaVoiceClip {
+                        clip: req.clip_slot,
+                        channel: req.channel,
+                        duration_sectors: req.duration_sectors,
+                    });
             }
             return;
         }
@@ -634,7 +647,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world
             .audio
             .battle_sfx_cues
-            .push(crate::battle_events::BattleSfxCue {
+            .push(legaia_engine_battle::battle_events::BattleSfxCue {
                 kind: cue_id,
                 timing_frames: 0,
                 actor_slot: slot,
@@ -685,7 +698,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// per-strike power profile out of.
     ///
     /// The record supplies an art hit's side data - the status effect and
-    /// the per-hit cue (`legaia_engine_vm::battle_action::art_strike_info_for_hit`,
+    /// the per-hit cue (`legaia_engine_battle_vm::battle_action::art_strike_info_for_hit`,
     /// `World::apply_art_hit_side_data`); the power byte itself is the clip
     /// entry's, so an art whose record is not loaded still resolves its
     /// damage. The trait default answers `None` for every pair.
@@ -696,7 +709,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ) -> Option<&legaia_art::ArtRecord> {
         self.world.tables.art_records.get(&(character, action))
     }
-    fn apply_art_strike(&mut self, info: legaia_engine_vm::battle_action::ArtStrikeInfo) {
+    fn apply_art_strike(&mut self, info: legaia_engine_battle_vm::battle_action::ArtStrikeInfo) {
         // Resolve per-slot weapon attack and the defense the art targets.
         // Base ATK plus the art arm of the execution-time equipment fold:
         // command `0x11` adds half the sum of all five equipment slots'
@@ -709,15 +722,15 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .copied()
             .unwrap_or(0);
         if let Some(bonuses) = self.world.battle.equip_atk.get(info.actor_slot as usize)
-            && let Some(fold) = legaia_engine_vm::battle_formulas::arms_weapon_atk_fold(
-                legaia_engine_vm::battle_formulas::ARMS_ART_COMMAND,
+            && let Some(fold) = legaia_engine_battle_vm::battle_formulas::arms_weapon_atk_fold(
+                legaia_engine_battle_vm::battle_formulas::ARMS_ART_COMMAND,
                 bonuses,
             )
         {
             attack = attack.saturating_add(fold);
         }
         let defense = self.world.resolve_battle_defense(info.target_slot, &info);
-        let outcome = crate::art_strike::apply_art_strike(attack, defense, &info);
+        let outcome = legaia_engine_battle::art_strike::apply_art_strike(attack, defense, &info);
         // Seed the target's HP-bar ramp the way every other damage entry
         // point does (`World::apply_battle_hp_delta`). The HP itself is
         // applied downstream by `fold_battle_event`, so only the *bar* side

@@ -9,8 +9,10 @@
 //! the navigation logic depends on the GPU backend.
 //!
 //! Modules:
-//! * [`ui_overlay`] - dialog box, cutscene narration, battle HUD, encounter
-//!   banner, stage-scale text, per-glyph sprite emit helpers.
+//! * `battle_hud` (items at the crate root) - sprite / text batching, shop
+//!   rows, level-up and capture banners, the battle HUD, encounter banner,
+//!   stage-scale text, per-glyph sprite emit helpers. The dialog and
+//!   notice boxes sit beside it in their own root-level modules.
 //! * [`battle_command_ui`] - the battle command menu's packet-pinned chip
 //!   cluster: the plate 3-slice, the four-arm diamond and its D-pad glyph,
 //!   and the `-` chip an unavailable command draws.
@@ -19,109 +21,76 @@
 //!   banner and the intro enemy-name labels (a marbled fill under a gold
 //!   border; the banner shares its seat with the actor-name plaque) and the
 //!   status / element badge cells.
-//! * [`ui_fishing`] - fishing-minigame HUD: the ported draw-list layout plus
+//! * [`fishing`] - fishing-minigame HUD: the ported draw-list layout plus
 //!   the consumer that renders it.
-//! * [`ui_menu`] - pause-menu field/status/spell/inventory/equipment panels,
+//! * [`menu`] - pause-menu field/status/spell/inventory/equipment panels,
 //!   options + key-rebind, name entry, game-over, tactical-arts editor.
-//! * [`ui_menu_window_painters`] - content painters for the menu-overlay
+//! * [`menu::window_painters`] - content painters for the menu-overlay
 //!   window-descriptor table's prompt / counter / tab / shop-panel block, and
-//!   `ui_menu_window_painters_large` for the equip screen's two stat-compare
+//!   [`menu::equip_stat_compare`] for the equip screen's two stat-compare
 //!   painters (descriptor ids 25 and 41).
-//! * [`ui_menu_window_dispatch`] - which painter draws a given descriptor,
+//! * [`menu::window_dispatch`] - which painter draws a given descriptor,
 //!   keyed on its `renderer_va` the way the retail window walker keys on the
 //!   live window's `+0x28`.
-//! * [`ui_title_save`] - title menu, 9-slice window chrome, save-select,
-//!   save-slot grid + info panel, "Now checking" dialog.
+//! * `title_save` (items at the crate root) - title menu, 9-slice window
+//!   chrome, save-select, save-slot grid + info panel, "Now checking" dialog.
 //! * [`minigame_fx`] - the minigame effect-part pool's draw builder (the
-//!   pool itself is `legaia_engine_core::minigame_fx`) plus the dance run's
+//!   pool itself is `legaia_engine_minigames::minigame_fx`) plus the dance run's
 //!   own sprite-part emit, both shared by every host.
-//! * [`screen_prim`] - screen-space PSX primitives (`POLY_FT4`/`POLY_GT4`
-//!   corners, CLUT/texpage, ABR mode, ordering-table bucket) plus the shared
-//!   OT sort and vertex builder. The one draw record here that is *not* a
-//!   [`TextDraw`] in disguise.
-//! * [`gte`] / [`vram_capture`] / [`battle_intro`] - the shared wgpu-free
-//!   render kernels: fixed-point GTE arithmetic (incl. the port's own
-//!   `psx_sin`/`psx_cos` LUT), the RGBA-to-BGR555 frame blit, and the
-//!   field-to-battle transition emitter both hosts arm. Here for the same
-//!   reason as `screen_prim`: this crate is the leaf both hosts link.
 //!
-//! Extracted from `legaia-engine-render`, which re-exports the items its
-//! native callers name at their old path through an explicit list. The GPU-resident
-//! batch wrappers ([`TextOverlay`]/`SpriteOverlay`/`UploadedSpriteAtlas`) stay
-//! in `legaia-engine-render` because they hold wgpu handles.
+//! The wgpu-free render kernels both hosts share - fixed-point GTE
+//! arithmetic, the screen-space PSX primitive record with its OT sort and
+//! vertex builder, the RGBA-to-BGR555 frame blit, the field-to-battle
+//! transition emitter - are `legaia-render-kernels`, one crate down. The
+//! GPU-resident batch wrappers ([`TextOverlay`]/`SpriteOverlay`/
+//! `UploadedSpriteAtlas`) are in `legaia-engine-render` because they hold
+//! wgpu handles.
 //!
 //! [`TextOverlay`]: https://docs.rs/legaia-engine-render
 
-pub use legaia_font;
-pub use legaia_tim;
-
-pub use legaia_render_kernels::afterimage;
 pub mod arts_input;
+pub mod baka_strips;
 pub mod battle_chrome;
 pub mod battle_command_ui;
+mod battle_hud;
 pub mod battle_hud_chrome;
-pub use legaia_render_kernels::battle_intro;
 pub mod battle_item_ui;
 pub mod battle_name_banner;
-pub use legaia_render_kernels::battle_numerals;
 pub mod battle_stage_clear;
 mod battle_timed_fight_strip;
-pub use legaia_render_kernels::battle_trail;
 mod battle_tutorial_box;
-pub use legaia_render_kernels::billboard;
-pub use legaia_render_kernels::cast_beam;
-pub use legaia_render_kernels::cast_theeder;
+pub mod boot_logos;
+pub mod dance;
 mod dialog_reading_box;
-pub use legaia_render_kernels::effect_billboard;
 pub mod field_party_hud;
-pub use legaia_render_kernels::gte;
+pub mod fishing;
 mod incense_notice_box;
+pub mod menu;
 pub mod minigame_fx;
-pub use legaia_render_kernels::move_strip;
-pub mod other_game_hud;
+pub mod muscle_dome_hud;
 pub mod pause_menu;
-pub use legaia_render_kernels::prim_near_reject;
+pub mod prize_exchange;
 pub mod ringside_backdrop;
-pub use legaia_render_kernels::scene_lighting;
-pub use legaia_render_kernels::screen_prim;
-pub use legaia_render_kernels::screen_prim_raster;
 pub mod shop_screen;
-pub use legaia_render_kernels::streak_pass;
+pub mod slot_cabinet;
+pub mod slot_paylines;
 mod text_balloon_box;
+pub mod text_lines;
 mod tile_board_prompt;
-pub mod ui_baka_strips;
-pub mod ui_boot_logos;
-pub mod ui_dance;
-mod ui_fishing;
-pub mod ui_fishing_exchange;
-pub mod ui_fishing_hub;
-pub mod ui_fishing_line;
-pub mod ui_fishing_rod;
-pub mod ui_fishing_sprite;
-mod ui_menu;
-pub mod ui_menu_window_dispatch;
-pub mod ui_menu_window_painters;
-mod ui_menu_window_painters_large;
-mod ui_overlay;
-pub mod ui_prize_exchange;
-pub mod ui_slot_cabinet;
-pub mod ui_slot_paylines;
-pub mod ui_text_lines;
-mod ui_title_save;
-pub use legaia_render_kernels::vram_capture;
+mod title_save;
 
+pub use battle_hud::*;
 pub use battle_timed_fight_strip::*;
 pub use battle_tutorial_box::*;
 pub use dialog_reading_box::*;
+pub use fishing::hud::*;
 pub use incense_notice_box::*;
+pub use menu::equip_stat_compare::*;
+pub use menu::screens::*;
+pub use menu::window_dispatch::*;
 pub use text_balloon_box::*;
 pub use tile_board_prompt::*;
-pub use ui_fishing::*;
-pub use ui_menu::*;
-pub use ui_menu_window_dispatch::*;
-pub use ui_menu_window_painters_large::*;
-pub use ui_overlay::*;
-pub use ui_title_save::*;
+pub use title_save::*;
 
 /// One textured quad in screen space. Coordinates are pixel-space relative
 /// to the top-left of the surface; the renderer converts to NDC at draw

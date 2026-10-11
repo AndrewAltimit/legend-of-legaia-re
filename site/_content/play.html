@@ -151,7 +151,8 @@
 /* Retail pause menu (Start): the real window-descriptor draw path. The engine
    serves the byte-pinned gold 9-slice chrome + proportional font glyphs as
    textured quads; this overlay canvas sits pixel-for-pixel over the GL view and
-   the quads blit onto it (see play-app.js `_drawMenu` / `AtlasBlitter`). */
+   the quads blit onto it (see play-view-overlay.js `_drawOverlay` and the
+   `AtlasBlitter` in play-atlas-blitter.js). */
 .play-menu-overlay {
   position: absolute; inset: 0; width: 100%; height: 100%;
   pointer-events: none; image-rendering: pixelated;
@@ -647,10 +648,20 @@
 <script src="js/webgl-shaders.js"></script>
 <script src="js/webgl-math.js"></script>
 <script src="js/webgl-tmd.js"></script>
+<script src="js/webgl-tmd-frame-state.js"></script>
+<script src="js/webgl-tmd-assembled-scene.js"></script>
 <script src="js/webgl-fog-volume.js"></script>
 <script src="js/pad-bindings.js"></script>
 <script src="js/field-actors.js"></script>
+<script src="js/play-view-constants.js"></script>
+<script src="js/play-atlas-blitter.js"></script>
 <script src="js/play-app.js"></script>
+<script src="js/play-view-scene-build.js"></script>
+<script src="js/play-view-input.js"></script>
+<script src="js/play-view-overlay.js"></script>
+<script src="js/play-view-field-sync.js"></script>
+<script src="js/play-view-frame.js"></script>
+<script src="js/play-view-battle.js"></script>
 <script src="js/play-fmv.js"></script>
 <script src="js/play-minigames.js"></script>
 <script>
@@ -707,7 +718,7 @@
   let recoveryTimes = [];
 
   /* The scene the disc's new-game table names as the opening (Rim Elm). Kept in
-   * sync with `legaia_asset::new_game::OPENING_SCENE`. */
+   * sync with `legaia_game_tables::new_game::OPENING_SCENE`. */
   const OPENING_SCENE = 'town01';
 
   /* Only categories whose scenes are actually walkable are offered: towns,
@@ -1020,7 +1031,7 @@
    * was Circle here and Square in the native window, `S` walked down here and
    * pressed Circle there, and Select / L1 / R1 / L2 / R2 existed in neither
    * page table. The title loop now shares the one table play-app.js reads out
-   * of the engine (`legaia_engine_core::input::Mapping::default` via
+   * of the engine (`legaia_engine_system::input::Mapping::default` via
    * `pad_bindings_json`), so a rebind reaches the title card too. */
   function runBootTitle(then) {
     if (!runtime) { then('new_game'); return; }
@@ -1120,7 +1131,7 @@
      * has opened a menu yet. Asking once at title entry therefore always got
      * `false` and left these two screens skinless. The same trap cost the
      * running page every chrome sprite once a per-frame caller was added; see
-     * `_ensureMenuBlitters` in play-app.js. */
+     * `_ensureMenuBlitters` in play-view-overlay.js. */
     let chromeBlit = null;
     const ensureChrome = () => {
       if (chromeBlit) return chromeBlit;
@@ -1331,7 +1342,8 @@
   /* ---------------- field pause menu overlay (Bug 1) ---------------- */
 
   /* The pause menu is drawn by the view itself (engine-driven retail chrome +
-   * font glyphs blitted onto the overlay canvas - see play-app.js `_drawMenu`),
+   * font glyphs blitted onto the overlay canvas - see play-view-overlay.js
+   * `_drawOverlay`),
    * so the HUD no longer renders a DOM menu. */
 
   /* ---------------- per-frame HUD ---------------- */

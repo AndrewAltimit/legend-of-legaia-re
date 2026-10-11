@@ -17,7 +17,7 @@
 //!   `ctx[+0x6C6] - 0x200` (`0x801E1B44`, hence [`streak_half_width`]). Both
 //!   words are written by the action effect script `FUN_801DEA50`, whose
 //!   terminator arm is ported at
-//!   `legaia_engine_core::action_effect_script::MoveFxStreak` - installed by
+//!   `legaia_engine_effects::action_effect_script::MoveFxStreak` - installed by
 //!   the live per-frame walk and read back through `World::casting.move_fx_streak`.
 //! * **The trail id reaches a pass.** It used to be printed as a log line;
 //!   [`crate::streak_pass::streak_quads`] now turns

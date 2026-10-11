@@ -8,7 +8,7 @@
 //! an equipped item's index becomes a **bit position** in the per-character
 //! 4x`u32` ability bitfield at char record `+0xF4..+0x103` (the same word the
 //! engine's MP-cost ability bits `0x10`/`0x20` live in - see
-//! `legaia_engine_vm::battle_formulas::mp_cost_after_ability_bits`).
+//! `legaia_engine_battle_vm::battle_formulas::mp_cost_after_ability_bits`).
 //!
 //! ## Indexing (Ghidra-traced)
 //!

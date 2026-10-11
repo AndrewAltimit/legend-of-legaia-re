@@ -48,7 +48,7 @@
 //!
 //! Skip-passes without disc data (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 /// Engine sim ticks per second - the rate both hosts drive `World::tick` at,
@@ -98,7 +98,7 @@ fn opening_chain_legs_run_at_retail_wall_time() {
         return;
     };
     host.world.begin_new_game();
-    host.enter_field_scene(legaia_asset::new_game::OPENING_CUTSCENE_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE, 0)
         .expect("enter opdeene");
 
     // Drive the chain with zero input, recording the tick count each leg

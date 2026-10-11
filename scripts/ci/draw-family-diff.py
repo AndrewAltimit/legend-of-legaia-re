@@ -8,7 +8,7 @@ RETAIL is a `mednafen-state display-list --json` file, or a save state
 (`.mcr` / `.mc0..9` / `.sstate`), which is run through
 `scripts/mednafen/display-list.py --json` first. ENGINE.jsonl is what
 `play-window` writes under `LEGAIA_DIAG_DRAWS=<path>`
-(`legaia_engine_core::draw_census`): one line per texture family of the
+(`legaia_engine_system::draw_census`): one line per texture family of the
 frame it captured.
 
 A family is `(CLUT, tpage & 0x1FF)`. For each, the report gives the

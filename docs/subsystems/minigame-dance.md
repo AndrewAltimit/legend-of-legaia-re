@@ -23,17 +23,17 @@ Provenance is `ghidra/scripts/funcs/overlay_dance_<addr>.txt` unless a section s
 | Key RAM | score `DAT_801d53cc[]`, groove gauge `DAT_801d544c[]`, triangle stock `DAT_801d534c[]`, beat phase `DAT_801d581c` |
 | Scene block | `other7` (CDNAME raw `0x4CC`, extraction 1226..1232): hall geometry, art pack 1230, SFX 1228 / 1231 |
 | Win flag | story flag `0x50a` - set on entry, cleared on a loss |
-| Parsers | `legaia_asset::dance_chart`, `dance_cast`, `dance_art` |
-| Rules port | `legaia_engine_minigames::dance` (re-exported as `legaia_engine_core::dance`) |
+| Parsers | `legaia_minigame_formats::dance_chart`, `dance_cast`, `dance_art` |
+| Rules port | `legaia_engine_minigames::dance` |
 | Hosts | native `play-window`, browser play page, browser minigames page - see [Engine port](#engine-port) |
 
 ## Entry from the field
 
-The contest is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 106` (`sub_id 6`), which sets game mode `0x18` and loads PROT 0980. The mechanism, its `sub_id` → overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `legaia_engine_core::minigame_entry::MinigameSubId` (`crates/engine-field`).
+The contest is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 106` (`sub_id 6`), which sets game mode `0x18` and loads PROT 0980. The mechanism, its `sub_id` → overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `legaia_engine_mode::minigame_entry::MinigameSubId` (`crates/engine-field`).
 
 The `sub_id` → PROT arithmetic is the one place retail's loader steps: `prot_index = sub_id + (2 if sub_id >= 6) + 0x4D + 0x37F`, so `sub_id 6` resolves to 0980 rather than 0978.
 
-A disc-wide walk of every scene MAN puts every dance door in `koin3`: P1[16] plus the partition-2 contest records P2[6] and P2[9]. A fourth site sits in P2[5], inside a record whose walk desyncs upstream in dialogue, so only its raw byte window resolves. The hall's own scene module `other7` carries **no** genuine warp; its `0x3E` hits are cross-context text phantoms. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+A disc-wide walk of every scene MAN puts every dance door in `koin3`: P1[16] plus the partition-2 contest records P2[6] and P2[9]. A fourth site sits in P2[5], inside a record whose walk desyncs upstream in dialogue, so only its raw byte window resolves. The hall's own scene module `other7` carries **no** genuine warp; its `0x3E` hits are cross-context text phantoms. Census test: `crates/engine-scene/tests/minigame_entry_census_disc.rs`.
 
 `FUN_801cf470` has no `jal` caller. It is the `+0x08` tick word of the static 24-byte actor template at `0x801D42E4`. The sub-id-6 init `FUN_801CEF54` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CF210`), and the per-frame pool walk reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`.
 
@@ -127,7 +127,7 @@ State `0x14` also copies the three scores into display halfwords (`DAT_801c6460.
 
 ## Step chart and scoring tables
 
-All three tables are **baked into the overlay's static image**; nothing is loaded per song. Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) (`parse` for the chart, `parse_tables` for the two scoring tables).
+All three tables are **baked into the overlay's static image**; nothing is loaded per song. Parser: [`legaia_minigame_formats::dance_chart`](../../crates/minigame-formats/src/dance_chart.rs) (`parse` for the chart, `parse_tables` for the two scoring tables).
 
 | Table | VA | File offset | Shape | Index |
 |---|---|---|---|---|
@@ -270,13 +270,13 @@ Mode 2 is driven by a dedicated actor script: the Disco King's per-frame state m
 
 **Timers.** Case `7`'s scold window `DAT_801d5140` counts **up** and snaps back to zero past `0x20` (a blink). Case `0xd`'s feedback window `DAT_801d5144` counts **down** to a floor of zero (a decay). Both countdown holds seed `DAT_801d6080 = 0x3c` and advance only once it goes **negative**, so they run one frame longer than the seed reads.
 
-**Port.** The script's output is Sony dialogue, so only its shape is ported: `legaia_engine_core::dance_tutorial` (`crates/engine-minigames/src/dance_tutorial.rs`) carries the step classification, the option prompt, the advance tails and the two free-dance steps. `DanceTutorial` is the actor as one advancing object - one `step` per frame, fed the live session's score, feedback window and combo latch. Hosts draw placeholder captions at the retail line positions; the strings stay unread.
+**Port.** The script's output is Sony dialogue, so only its shape is ported: `legaia_engine_minigames::dance_tutorial` (`crates/engine-minigames/src/dance_tutorial.rs`) carries the step classification, the option prompt, the advance tails and the two free-dance steps. `DanceTutorial` is the actor as one advancing object - one `step` per frame, fed the live session's score, feedback window and combo latch. Hosts draw placeholder captions at the retail line positions; the strings stay unread.
 
 ## Dancers
 
 ### Dancer bodies: the retail cast + choreography tables
 
-The overlay issues no mesh load, but it names every dancer. The spawner `FUN_801d0190` reads a per-mode **spawn table** of `0x10`-byte records `[u32 kind, x, y, z]` and a **kind descriptor table** of 5 records x `0x80` bytes at `0x801D4E1C`. Parser: `legaia_asset::dance_cast`.
+The overlay issues no mesh load, but it names every dancer. The spawner `FUN_801d0190` reads a per-mode **spawn table** of `0x10`-byte records `[u32 kind, x, y, z]` and a **kind descriptor table** of 5 records x `0x80` bytes at `0x801D4E1C`. Parser: `legaia_minigame_formats::dance_cast`.
 
 | Mode | Spawn table | Count (`$s3`) | Cast |
 |---|---|---|---|
@@ -343,7 +343,7 @@ Per floor slot, `FUN_801d0190` writes:
 
 **Clip end and judging.** A dancer's clip returns to its loop when the clip driver raises its end flag (`+0x62 & 0x100`, tested at `0x801D14C8`). `FUN_801d1af4` is called only while the bound clip **is** the idle or the dance loop (`0x801D168C..0x801D16B4`), so that same end flag re-opens judging: a move, the miss reaction included, locks its dancer's presses out for its whole length, far past the eight-frame note latch.
 
-Port: `minigame_actor::MinigameActor` is the record, `DanceGame::dancer_actors` the per-slot pool, `DanceGame::dancer_clip_frames` the gate's per-frame output (`dance_clip_driver_gate`). `DanceGame::attach_clip_bank` reads every descriptor clip's length from the hall's MOVE bundle (`field_anim::clip_end_ticks` over the record's frame count and the rate's per-record step), and a bound move holds `+0x5C` and the lock until it runs out. A chart-only run has no clip lengths and falls back to the note latch.
+Port: `minigame_actor::MinigameActor` is the record, `DanceGame::dancer_actors` the per-slot pool, `DanceGame::dancer_clip_frames` the gate's per-frame output (`dance_clip_driver_gate`). `DanceGame::attach_clip_bank` reads every descriptor clip's length from the hall's MOVE bundle (`actor_tick::clip_end_ticks` over the record's frame count and the rate's per-record step), and a bound move holds `+0x5C` and the lock until it runs out. A chart-only run has no clip lengths and falls back to the note latch.
 
 <a id="the-party-bank-bit-not-a-draw-mode"></a>
 ### The party-bank bit
@@ -380,7 +380,7 @@ Several interior addresses of `FUN_801d2a10` (`0x801d2b44`, `0x801d2c98`, `0x801
 
 ### The floor pass
 
-`FUN_801d3a2c` and `FUN_801d2a10` are the same walk over the scene floor buffer, and the byte-identical `FUN_801d6bbc` in the shared overlay band is a third copy (see [`minigame-fishing.md`](minigame-fishing.md#fishing-actors-and-scene-render)). Port: `legaia_engine_core::minigame_floor` (`crates/engine-fishing/src/minigame_floor.rs`).
+`FUN_801d3a2c` and `FUN_801d2a10` are the same walk over the scene floor buffer, and the byte-identical `FUN_801d6bbc` in the shared overlay band is a third copy (see [`minigame-fishing.md`](minigame-fishing.md#fishing-actors-and-scene-render)). Port: `legaia_engine_fishing::minigame_floor` (`crates/engine-fishing/src/minigame_floor.rs`).
 
 Three regions of the scene buffer are involved:
 
@@ -416,11 +416,11 @@ The clip index is the record's `record` byte plus one:
 
 **Tick.** Each marker runs `FUN_801d0640`, a mesh flipbook. It counts `+0x54` down by the frame delta and, on expiry, stages the next `[mesh, duration]` pair from `0x801D44CC + class * 0x80` through the set-model primitive `FUN_80024E08`, biased by the field actor pack base `_DAT_8007B6F8`. There are four `0x80`-byte rows of 25 pairs each, `[-1, -1]`-terminated, and the four rows are the same loop at four phase offsets, so the four marker classes flip out of step. Full read: [`minigames-debug.md`](../reference/functions/minigames-debug.md#801d0640-is-a-mesh-flipbook-on-the-marker-tiles).
 
-**Measured on the venue.** `other7`'s `.MAP` carries sixty kind-1 trigger records, ten of which land on drawn floor cells with a clip in `6..=9`, spread over the classes as `[2, 2, 2, 4]`; all ten swap mesh inside 240 frames (`crates/engine-core/tests/dance_marker_floor_disc.rs`).
+**Measured on the venue.** `other7`'s `.MAP` carries sixty kind-1 trigger records, ten of which land on drawn floor cells with a clip in `6..=9`, spread over the classes as `[2, 2, 2, 4]`; all ten swap mesh inside 240 frames (`crates/engine-scene/tests/dance_marker_floor_disc.rs`).
 
 **Port.**
 
-- Kernel: `legaia_engine_vm::dance_marker::step_marker`, with `MarkerActor` carrying the three fields the retail actor does (`+0x50` class, `+0x9C` script cursor, `+0x54` countdown). `DanceGame::advance` steps one cursor per class.
+- Kernel: `legaia_engine_fishing::dance_marker::step_marker`, with `MarkerActor` carrying the three fields the retail actor does (`+0x50` class, `+0x9C` script cursor, `+0x54` countdown). `DanceGame::advance` steps one cursor per class.
 - Pool: `minigame_floor::MarkerFloor` runs the `floor_tile_spawns` sweep over a venue's floor rect, keeps the cells `marker_template` classes as markers, advances every tile in `MarkerFloor::step`, and reports the staged meshes through `draws`.
 - Both browser pages draw the tiles. `bake_dance_markers` in `web-viewer::minigames_dance` bakes every candidate mesh of every tile into the page's static-topology buffer; each frame `dance_marker_step` (`play_mg_dance_marker_step` on the play page) returns positions with the non-current meshes collapsed to a point, so the index buffer stays static.
 - The native play window builds and draws the hall but does not draw the marker tiles. See [`host-drift.md`](../tooling/host-drift.md).
@@ -560,7 +560,7 @@ sequenceDiagram
 
 ### The art pack (PROT 1230)
 
-Extraction PROT 1230 is a `prot::timpack` of **31 TIMs** - parser [`legaia_asset::dance_art`](../../crates/asset/src/dance_art.rs):
+Extraction PROT 1230 is a `prot::timpack` of **31 TIMs** - parser [`legaia_minigame_formats::dance_art`](../../crates/minigame-formats/src/dance_art.rs):
 
 | VRAM rect | Content |
 |---|---|
@@ -599,7 +599,7 @@ Every HUD element goes through the textured-quad emitter `FUN_801d2f38`, which i
 | non-zero | semi-transparency forced on, the mode value itself used as the ABR rate |
 | `2` | additionally replaces the record's CLUT with the fixed `0x7D0F` (palette 15 of the row-500 strip) |
 
-The ABR rate folds into the texpage attribute as `tpage + abr * 0x20`, so `abr = 1` is the additive `B + F` blend, and since all rows carry `1` the whole HUD draws additively. `legaia_asset::dance_art::parse_widgets` does not decode `+0x13`; the port lifts it separately (`dance_widgets_with_abr`) and passes it to `dance::dance_hud_widget_quad`.
+The ABR rate folds into the texpage attribute as `tpage + abr * 0x20`, so `abr = 1` is the additive `B + F` blend, and since all rows carry `1` the whole HUD draws additively. `legaia_minigame_formats::dance_art::parse_widgets` does not decode `+0x13`; the port lifts it separately (`dance_widgets_with_abr`) and passes it to `dance::dance_hud_widget_quad`.
 
 **In-place patches.** Callers rewrite records before emitting:
 
@@ -629,13 +629,13 @@ The `(960, 256)` page is not in any PROT entry. It is boot-resident system UI, u
 - `PROT.DAT[0x11218]` - the **menu-glyph atlas**, image origin `(960, 256)`, `64 x 256` halfwords. That rect is texpage `0x001F`.
 - `PROT.DAT[0x1AED0]` - image origin `(976, 272)`, `8 x 32` halfwords, one of the four cursor-part TIMs that patch sub-rects of the atlas page. The three CLUT ids decode to `(976, 272)` / `(976, 273)` / `(976, 274)` (column `61 * 16 = 976`, rows `272..274`): the first three rows of that patch, read as palettes.
 
-So no second staging step exists: the page is up before the hall loads. Parser + uploader for the atlas half: `legaia_asset::interior_page` (see [`formats/tim.md`](../formats/tim.md#flat-strip-clut-uploads)).
+So no second staging step exists: the page is up before the hall loads. Parser + uploader for the atlas half: `legaia_ui_formats::interior_page` (see [`formats/tim.md`](../formats/tim.md#flat-strip-clut-uploads)).
 
 ### Where the HUD's texels come from
 
 In retail the dance **is** the `other7` scene, so the whole art pack is resident before the minigame starts. The port hosts the session over whichever scene the player walked in from and keeps that scene's VRAM, so it stages the HUD art **selectively**: only the rects the run's own widget table names. The pack's eleven other 256x256 members target `(576, 0)` through `(768, 256)`, the columns a field scene's texture pack occupies.
 
-Port: `engine-core::dance::stage_dance_hud_vram`, driven from `DanceGame::hud_vram_rects`. The residency flag is `World::minigames.dance_hud_art_staged`; both play hosts read it to choose between the retail sprites and placeholder font text.
+Port: `engine-core::disc_readers::dance::stage_dance_hud_vram`, driven from `DanceGame::hud_vram_rects`. The residency flag is `World::minigames.dance_hud_art_staged`; both play hosts read it to choose between the retail sprites and placeholder font text.
 
 ### HUD render driver (`FUN_801d231c`)
 
@@ -674,7 +674,7 @@ Port: `dance::{dance_hud_draws, dance_score_box_slots}` behind `DanceGame::hud_d
 
 Widget 0's cell is the word **`READY...`** alone: `u = 0x48`, `v = 0x90`, `0xA0 x 0x20` on the `(512, 0)` page, palette column `0x0A` of the row-500 strip. The `1 2 3`, `GO!` and `FINISH!` beside it on the sheet belong to other draws.
 
-Port: `dance_countin_banner_envelope` + `engine-ui::ui_dance::dance_countin_prims`.
+Port: `dance_countin_banner_envelope` + `engine-ui::dance::dance_countin_prims`.
 
 ### The count-in, state by state
 
@@ -833,27 +833,27 @@ The dance is fully playable in the port on all three surfaces. The rules, the ca
 
 | Layer | Where | What it carries |
 |---|---|---|
-| Parsers | `legaia_asset::dance_chart`, `dance_cast`, `dance_art` | chart + scoring tables, spawn + descriptor tables, art pack + widget table |
-| Rules engine | [`legaia_engine_minigames::dance`](../../crates/engine-minigames/src/dance.rs) (re-exported as `legaia_engine_core::dance`) | beat clock, per-dancer handler, judge, CPU feed, award, count-in, finish countdown, camera track, HUD layout |
+| Parsers | `legaia_minigame_formats::dance_chart`, `dance_cast`, `dance_art` | chart + scoring tables, spawn + descriptor tables, art pack + widget table |
+| Rules engine | [`legaia_engine_minigames::dance`](../../crates/engine-minigames/src/dance.rs) | beat clock, per-dancer handler, judge, CPU feed, award, count-in, finish countdown, camera track, HUD layout |
 | Tutorial | `legaia_engine_minigames::dance_tutorial` | the Disco King script's shape |
-| Marker kernel | `legaia_engine_vm::dance_marker`, `minigame_floor::MarkerFloor` | marker flipbook + floor sweep |
+| Marker kernel | `legaia_engine_fishing::dance_marker`, `minigame_floor::MarkerFloor` | marker flipbook + floor sweep |
 | World wiring | `engine-core`: `World::enter_dance` / `tick_dance` / `exit_dance`, `SceneMode::Dance` | suspending scene mode, flag writes, count-in, SFX |
 | Venue | `engine-core::dance_venue`, `dance_cast_scene` | hall build, staging, camera, face stamps, posed cast surface |
-| Draw builders | `engine-ui::ui_dance` | HUD / count-in / tutorial screen primitives |
+| Draw builders | `engine-ui::dance` | HUD / count-in / tutorial screen primitives |
 | Hosts | `engine-shell` (`window/minigames.rs`, `window/hud.rs`), `web-viewer` (`minigames_dance.rs`, `play_minigame_arena.rs`) | upload and input |
 
 **Rules.** `DanceGame::press` returns the full event (Miss / Hit / Sequence with its points / Groovy with its landed flag, lock frames and remaining stock / NoCharge / Ignored-while-spinning) and applies the score, gauge and latch side effects. `judge_press` folds it to a three-way Miss / Hit / Sequence result. `advance` steps the clock and runs the competitors' auto-fed presses through the same award path; `dancer_score(i)` / `dancer_triangles(i)` expose their runs.
 
 **Floor size is a property of the mode.** `DanceGame::from_overlay_for_mode` ports `FUN_801d0190`'s selection (three dancers in the competitive modes, one in the how-to, six in free play) and `DanceMode` carries the mapping; the how-to mode also forces the short song. `DanceGame::from_overlay` is the qualifier entry point. The disc-gated `dance_minigame_real` test auto-plays the real chart end to end and drives a hands-off run to watch the rivals score.
 
-**Entry and exit.** The door warp picks the mode through `dance::dance_mode_from_flags`, `World::enter_dance` runs state 1's flag writes, and the song's end applies `DanceGame::results_clear_win_flag`. These live in `engine-core`, so every host that drains the warp gets them. A `DanceMode::HowTo` run installs `minigames.dance_tutorial` in the same call; the dance tick steps it beside the session and publishes `dance_tutorial_frame` for `ui_dance::dance_tutorial_draws_for`.
+**Entry and exit.** The door warp picks the mode through `dance::dance_mode_from_flags`, `World::enter_dance` runs state 1's flag writes, and the song's end applies `DanceGame::results_clear_win_flag`. These live in `engine-core`, so every host that drains the warp gets them. A `DanceMode::HowTo` run installs `minigames.dance_tutorial` in the same call; the dance tick steps it beside the session and publishes `dance_tutorial_frame` for `engine-ui::dance::dance_tutorial_draws_for`.
 
-**HUD.** Each frame the host lays the HUD out from `DanceGame::hud_draws` at its 320x240 stage positions and builds the textured-quad frame (`hud_draw_quads`, `beat_track_quads`) with the glyph-U patches applied. With the HUD page staged, both play hosts emit the quads as `POLY_GT4` screen primitives through `ui_dance::dance_hud_prims` off `MinigameState::dance_hud_quads`; without it they fall back to `DanceGame::hud_frame_rows` as font text. The count-in banner makes the same either / or off the same flag, with `dance_countin_draws_for` as its placeholder. A disc-gated oracle pins the layout and quads against the real widget table.
+**HUD.** Each frame the host lays the HUD out from `DanceGame::hud_draws` at its 320x240 stage positions and builds the textured-quad frame (`hud_draw_quads`, `beat_track_quads`) with the glyph-U patches applied. With the HUD page staged, both play hosts emit the quads as `POLY_GT4` screen primitives through `engine-ui::dance::dance_hud_prims` off `MinigameState::dance_hud_quads`; without it they fall back to `DanceGame::hud_frame_rows` as font text. The count-in banner makes the same either / or off the same flag, with `dance_countin_draws_for` as its placeholder. A disc-gated oracle pins the layout and quads against the real widget table.
 
 The HUD kernels kept in the rules crate: `dance_number_digits` / `dance_score_digit_u` / `dance_level_digit_u` (`FUN_801d32f8`), `dance_combo_window_bright` / `dance_beat_track_note_x` (`FUN_801d2524`), `dance_hit_sting_voices` (`FUN_801d3d78`), `good_banner_spawn` (`FUN_801d40dc`), `dance_face_rig` (`FUN_801d03c4`), `dance_countin_banner_envelope` (`FUN_801d2d98`), `dance_clip_driver_gate` (`FUN_801d4098`), `dance_hud_widget_quad` (`FUN_801d2f38`) and `dance_hud_draws` / `dance_score_box_slots` (`FUN_801d231c`).
 
 <a id="drawing-the-floor-one-cast-surface"></a>
-**Cast surface.** `DanceGame::body_frames` lists every body the spawner seats for the run's mode, each with a display track (the standing loop, the last judge move, the ticks since the track restarted), advanced every dance frame including the count-in. `legaia_engine_core::dance_cast_scene::DanceCastSurface` turns that into one posed vertex buffer in raw world coordinates: the meshes off the venue's scene TMD pool plus Noa's resident mesh (PROT 0874, capped to the ten live groups), the cursor through `field_anim::clip_step` / `clip_end_ticks`, the record's sub-frame blend, `Rz.Ry.Rx . v + T` per object, then the render scale, the spin yaw and the position. The buffers rebuild when the run's model list changes.
+**Cast surface.** `DanceGame::body_frames` lists every body the spawner seats for the run's mode, each with a display track (the standing loop, the last judge move, the ticks since the track restarted), advanced every dance frame including the count-in. `legaia_engine_core::dance_cast_scene::DanceCastSurface` turns that into one posed vertex buffer in raw world coordinates: the meshes off the venue's scene TMD pool plus Noa's resident mesh (PROT 0874, capped to the ten live groups), the cursor through `actor_tick::clip_step` / `clip_end_ticks`, the record's sub-frame blend, `Rz.Ry.Rx . v + T` per object, then the render scale, the spin yaw and the position. The buffers rebuild when the run's model list changes.
 
 **Hosts.**
 

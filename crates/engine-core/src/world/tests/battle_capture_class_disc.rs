@@ -12,7 +12,7 @@
 //!
 //! The routing assertion is arithmetic, not structural: with the world RNG
 //! pinned, the folded damage must equal the WRAPPER's roll (the pure kernels
-//! in `legaia_engine_vm::battle_damage_wrappers`, fed the same stat bridge
+//! in `legaia_engine_battle_vm::battle_damage_wrappers`, fed the same stat bridge
 //! and the same draw stream) and differ from the shared kernel's roll over
 //! the same seed - so a regression that re-routes these casts to the shared
 //! kernel moves a number, not just a call graph.
@@ -38,7 +38,7 @@ fn overlay_0898(dir: &std::path::Path) -> Vec<u8> {
         legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
     let entry = archive
         .entries
-        .get(legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .get(legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .cloned()
         .expect("PROT 0898 entry");
     let mut bytes = Vec::new();
@@ -54,8 +54,10 @@ fn capture_world(scus: &[u8], overlay: &[u8]) -> World {
     let mut w = World::default();
     w.enter_battle(3, 2);
     w.install_menu_text(scus);
-    w.tables.move_power =
-        Some(crate::move_power::MovePowerCatalog::from_overlay_0898(overlay).expect("catalog"));
+    w.tables.move_power = Some(
+        legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(overlay)
+            .expect("catalog"),
+    );
     for i in 0..3usize {
         w.actors[i].battle.hp = 400;
         w.actors[i].battle.max_hp = 400;
@@ -71,15 +73,15 @@ fn capture_world(scus: &[u8], overlay: &[u8]) -> World {
     w
 }
 
-fn synthetic_def(move_id: u8) -> crate::spells::SpellDef {
-    crate::spells::SpellDef {
+fn synthetic_def(move_id: u8) -> legaia_engine_battle::spells::SpellDef {
+    legaia_engine_battle::spells::SpellDef {
         id: move_id,
         name: format!("move {move_id:#04X}"),
         mp_cost: 0,
-        target: crate::spells::SpellTarget::OneEnemy,
-        effect: crate::spells::SpellEffect::Damage {
+        target: legaia_engine_battle::spells::SpellTarget::OneEnemy,
+        effect: legaia_engine_battle::spells::SpellEffect::Damage {
             base_power: 50,
-            element: crate::spells::SpellElement::Neutral,
+            element: legaia_engine_battle::spells::SpellElement::Neutral,
         },
         ..Default::default()
     }
@@ -126,11 +128,11 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
 
     // Guilty Cross (0x37): one of the seven bypass-wrapper signature casts.
     // Premise checks off the disc: capture-class record + a move-power row.
-    let table =
-        legaia_asset::spell_names::SpellNameTable::from_scus(&scus).expect("spell table decodes");
+    let table = legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus)
+        .expect("spell table decodes");
     assert_eq!(
         table.entry(0x37).map(|e| e.class),
-        Some(legaia_asset::spell_names::CAPTURE_CLASS),
+        Some(legaia_game_tables::spell_names::CAPTURE_CLASS),
         "Guilty Cross is capture-class on the disc"
     );
 
@@ -145,7 +147,7 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
         eprintln!("[skip] no move-power record for 0x37 on this image");
         return;
     };
-    // --- W1-D: the fourteen trampoline arms ---
+    // --- the fourteen trampoline arms ---
     // PROT 0944's `0x37` body now has a decoded damage shape, so the engine
     // hands the wrapper the module's **baked** `a0` (`li a0, 0x38e` at
     // `0x801F6AD0`, `jal 0x801DD6B4` at `0x801F6AD8`) rather than the
@@ -156,9 +158,12 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
     // scalar: at the baked `0x38E` both kernels land on the same number, so
     // reusing it there would make the control stop discriminating.
     let baked = i32::from(
-        vm::cast_arm_ticks::arm_damage_shape_for(944, vm::cast_arm_ticks::GUILTY_CROSS_TICK)
-            .and_then(|s| s.powers.first().copied())
-            .expect("PROT 0944's 0x37 body has a baked power"),
+        legaia_engine_battle_vm::cast_arm_ticks::arm_damage_shape_for(
+            944,
+            legaia_engine_battle_vm::cast_arm_ticks::GUILTY_CROSS_TICK,
+        )
+        .and_then(|s| s.powers.first().copied())
+        .expect("PROT 0944's 0x37 body has a baked power"),
     );
     assert_ne!(
         baked, power,
@@ -168,16 +173,15 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
     // victim's live HP - and the baked power is large enough to reach it,
     // where the table scalar was not.
     let victim_hp = w.actors[0].battle.hp;
-    // --- end W1-D ---
     let dealt = folded_damage(&mut w, 0x37);
 
     // Mirror: the bypass wrapper's exact roll over the same stat bridge and
     // the same draw stream (FUN_801DD6B4 - one attacker draw + one defender
     // draw, lazy bonus, then the finisher's lazy floor draw).
-    use legaia_engine_vm::battle_damage_wrappers::{
+    use legaia_engine_battle_vm::battle_damage_wrappers::{
         ATK_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender, atk_wrapper_predamage,
     };
-    use vm::battle_formulas::{DamageFinish, damage_finish_lazy};
+    use legaia_engine_battle_vm::battle_formulas::{DamageFinish, damage_finish_lazy};
     let mut ds = DrawStream::new();
     let a = WrapperAttacker {
         hp: 500,
@@ -215,7 +219,7 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
 
     // Non-vacuity: the shared kernel over the SAME seed lands elsewhere, so
     // the equality above really is routing, not coincidence.
-    use vm::battle_formulas::{SummonRollActor, arts_physical_predamage_lazy};
+    use legaia_engine_battle_vm::battle_formulas::{SummonRollActor, arts_physical_predamage_lazy};
     let mut ds2 = DrawStream::new();
     let atk_roll = SummonRollActor {
         hp: 500,
@@ -257,11 +261,11 @@ fn a_respecting_capture_cast_rolls_the_physical_wrapper() {
 
     // Neo Star Slash (0xA6): capture-class, guard-RESPECTING wrapper (the
     // census's majority arm - deliberately not in CAPTURE_BYPASS_MOVE_IDS).
-    let table =
-        legaia_asset::spell_names::SpellNameTable::from_scus(&scus).expect("spell table decodes");
+    let table = legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus)
+        .expect("spell table decodes");
     assert_eq!(
         table.entry(0xA6).map(|e| e.class),
-        Some(legaia_asset::spell_names::CAPTURE_CLASS),
+        Some(legaia_game_tables::spell_names::CAPTURE_CLASS),
         "Neo Star Slash is capture-class on the disc"
     );
 
@@ -278,10 +282,10 @@ fn a_respecting_capture_cast_rolls_the_physical_wrapper() {
     };
     let dealt = folded_damage(&mut w, 0xA6);
 
-    use legaia_engine_vm::battle_damage_wrappers::{
+    use legaia_engine_battle_vm::battle_damage_wrappers::{
         INT_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender, int_wrapper_predamage,
     };
-    use vm::battle_formulas::{DamageFinish, damage_finish_lazy};
+    use legaia_engine_battle_vm::battle_formulas::{DamageFinish, damage_finish_lazy};
     let mut ds = DrawStream::new();
     let a = WrapperAttacker {
         hp: 500,

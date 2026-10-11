@@ -52,8 +52,9 @@
 //!
 //! See `docs/subsystems/world-map.md#overworld-axis-convention`.
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::{SceneMode, World, world_map_camera_relative_bits};
+use legaia_engine_core::world::{World, world_map_camera_relative_bits};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 /// Unit world-XZ step for a post-remap direction-bit set.
 fn bits_to_axis(bits: u16) -> (i32, i32) {

@@ -16,8 +16,8 @@
 //! was ported, and runs against the live record in
 //! `legaia_engine_core::field_menu_dispatch::apply_list_order_outcome`.
 
-use crate::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
 use crate::save_subscreen::{Sub15Frame, Sub15ListSource, sub15_frame, sub15_list_source};
+use legaia_engine_system::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
 
 /// Rows the page shows at once.
 ///
@@ -148,7 +148,7 @@ impl ListOrderSession {
     /// clamping row picker, the page steps, the latch/exchange confirm and
     /// the two-stage cancel; `see ghidra/scripts/funcs/overlay_save_ui_801da2a0.txt`)
     pub fn tick(&mut self, pressed: u16) -> ListOrderEvent {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
         if self.done || self.rows.is_empty() {
             return ListOrderEvent::None;
         }
@@ -277,7 +277,7 @@ mod tests {
             .collect()
     }
 
-    fn pad(b: crate::input::PadButton) -> u16 {
+    fn pad(b: legaia_engine_system::input::PadButton) -> u16 {
         b.mask()
     }
 
@@ -289,10 +289,10 @@ mod tests {
     #[test]
     fn the_hand_clamps_instead_of_wrapping() {
         let mut s = ListOrderSession::open(LIST_ORDER_STEP_MAGIC, 0, rows(3)).unwrap();
-        s.tick(pad(crate::input::PadButton::Up));
+        s.tick(pad(legaia_engine_system::input::PadButton::Up));
         assert_eq!(s.cursor(), 0, "up at the top stays put");
         for _ in 0..5 {
-            s.tick(pad(crate::input::PadButton::Down));
+            s.tick(pad(legaia_engine_system::input::PadButton::Down));
         }
         assert_eq!(s.cursor(), 2, "down past the end stays put");
     }
@@ -300,21 +300,21 @@ mod tests {
     #[test]
     fn a_page_step_moves_the_window_and_the_last_page_moves_only_the_hand() {
         let mut s = ListOrderSession::open(LIST_ORDER_STEP_MAGIC, 0, rows(20)).unwrap();
-        s.tick(pad(crate::input::PadButton::Right));
+        s.tick(pad(legaia_engine_system::input::PadButton::Right));
         assert_eq!((s.scroll_top(), s.cursor()), (7, 7));
-        s.tick(pad(crate::input::PadButton::Right));
+        s.tick(pad(legaia_engine_system::input::PadButton::Right));
         assert_eq!(
             (s.scroll_top(), s.cursor()),
             (13, 13),
             "the partial page advances by the remainder"
         );
-        s.tick(pad(crate::input::PadButton::Right));
+        s.tick(pad(legaia_engine_system::input::PadButton::Right));
         assert_eq!(
             (s.scroll_top(), s.cursor()),
             (13, 19),
             "with no page left the hand jumps to the last row"
         );
-        s.tick(pad(crate::input::PadButton::Left));
+        s.tick(pad(legaia_engine_system::input::PadButton::Left));
         assert_eq!((s.scroll_top(), s.cursor()), (6, 12));
     }
 
@@ -322,14 +322,14 @@ mod tests {
     fn confirm_latches_then_exchanges() {
         let mut s = ListOrderSession::open(LIST_ORDER_STEP_MAGIC, 0, rows(4)).unwrap();
         assert_eq!(
-            s.tick(pad(crate::input::PadButton::Cross)),
+            s.tick(pad(legaia_engine_system::input::PadButton::Cross)),
             ListOrderEvent::Latched(0)
         );
         assert_eq!(s.latched(), Some(0));
-        s.tick(pad(crate::input::PadButton::Down));
-        s.tick(pad(crate::input::PadButton::Down));
+        s.tick(pad(legaia_engine_system::input::PadButton::Down));
+        s.tick(pad(legaia_engine_system::input::PadButton::Down));
         assert_eq!(
-            s.tick(pad(crate::input::PadButton::Cross)),
+            s.tick(pad(legaia_engine_system::input::PadButton::Cross)),
             ListOrderEvent::Swapped(0, 2)
         );
         assert_eq!(s.swaps(), &[(0, 2)]);
@@ -341,14 +341,14 @@ mod tests {
     #[test]
     fn cancel_drops_the_latch_before_it_drops_the_page() {
         let mut s = ListOrderSession::open(LIST_ORDER_STEP_MAGIC, 0, rows(4)).unwrap();
-        s.tick(pad(crate::input::PadButton::Cross));
+        s.tick(pad(legaia_engine_system::input::PadButton::Cross));
         assert_eq!(
-            s.tick(pad(crate::input::PadButton::Circle)),
+            s.tick(pad(legaia_engine_system::input::PadButton::Circle)),
             ListOrderEvent::Unlatched
         );
         assert!(!s.is_done());
         assert_eq!(
-            s.tick(pad(crate::input::PadButton::Circle)),
+            s.tick(pad(legaia_engine_system::input::PadButton::Circle)),
             ListOrderEvent::Closed
         );
         assert!(s.is_done());
@@ -360,7 +360,7 @@ mod tests {
         let mut s = ListOrderSession::open(5, 0, rows(4)).unwrap();
         assert!(!s.reorderable());
         assert_eq!(
-            s.tick(pad(crate::input::PadButton::Cross)),
+            s.tick(pad(legaia_engine_system::input::PadButton::Cross)),
             ListOrderEvent::None
         );
         assert!(s.latched().is_none());

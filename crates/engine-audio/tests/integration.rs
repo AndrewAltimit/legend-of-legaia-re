@@ -5,6 +5,7 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-engine-audio --test integration <name>::`.
 
+mod audio_session_ladder;
 mod bgm_director_chain;
 mod credits_bank_spu_layout_disc;
 mod real_bgm_chain;
@@ -16,4 +17,3 @@ mod real_vab_program_mapping;
 mod real_vab_tone_attributes;
 mod seq_vab_spu_chain;
 mod vab_smoke;
-mod w1e_audio_session_ladder;

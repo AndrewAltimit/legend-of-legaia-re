@@ -1,6 +1,6 @@
 //! Disc-gated cross-validation of the accessory passive-effect indexing: the
 //! static `SCUS_942.54` descriptor-`+3` passive index (parsed by
-//! `legaia_asset::accessory_passive`) against the curated gamedata accessory
+//! `legaia_game_tables::accessory_passive`) against the curated gamedata accessory
 //! table (`data/gamedata/accessories.toml`).
 //!
 //! Every curated accessory with a structured `effect_class` is name-matched
@@ -14,8 +14,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use legaia_asset::accessory_passive::AccessoryPassiveTable;
-use legaia_asset::item_names::ItemNameTable;
+use legaia_game_tables::accessory_passive::AccessoryPassiveTable;
+use legaia_game_tables::item_names::ItemNameTable;
 use legaia_gamedata::{Accessory, Database};
 
 fn scus_bytes() -> Option<Vec<u8>> {

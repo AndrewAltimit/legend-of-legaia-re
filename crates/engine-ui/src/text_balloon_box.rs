@@ -2,7 +2,7 @@
 //! one-caption presenter, shared by both hosts.
 //!
 //! The record, its tick and its geometry live in `engine-core`
-//! ([`legaia_engine_core::text_balloon`], ported from `FUN_8003C764` +
+//! ([`legaia_engine_dialog::text_balloon`], ported from `FUN_8003C764` +
 //! `FUN_801DA7F0`); this module is what puts it on screen. Nothing drew it
 //! before, which is also why the record's `x` stayed `None`: retail measures
 //! the line at spawn (`FUN_80035F04`) and the engine's font atlas is

@@ -4,7 +4,7 @@
 -- (mesh = DAT_8007C018[model_sel + gp[0x754]]) -- at the moment the
 -- shared spawn stager FUN_80021B04 stages a part. This is the one
 -- residual blocking BOTH render threads that share the stager:
---   * player Seru-magic SUMMONS (legaia_asset::summon_overlay), and
+--   * player Seru-magic SUMMONS (legaia_overlay_images::summon_overlay), and
 --   * battle move-power effect-FX (the 0x801f6324 prototype records,
 --     which are byte-identical summon-format move-VM records --
 --     see docs/formats/move-power.md).

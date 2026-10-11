@@ -1,7 +1,7 @@
 //! Field ambient animation state: the CLUT-walk / CLUT-cell cyclers, VDF pulse, script VRAM moves and their vsync accumulators.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite [`World`].
+//! Fields keep their retail provenance notes.
 
 /// One captured VRAM rect `(x, y, w, h)` and its `w * h` texels
 /// ([`AmbientFxState::vram_rect_seed`]).
@@ -37,14 +37,14 @@ pub struct AmbientFxState {
     /// [`crate::world::World::install_entry_vdf_pulse`], ticked with the ambient bank,
     /// surfaced through [`crate::world::World::current_morph_deltas`]. `None` = retail
     /// behaviour (see `docs/subsystems/field-ambient-fx.md`).
-    pub entry_vdf_pulse: Option<crate::vdf_pulse::EntryVdfPulse>,
+    pub entry_vdf_pulse: Option<legaia_engine_field::vdf_pulse::EntryVdfPulse>,
     /// `(pack_slot, group)` pairs whose morph deltas changed during the last
     /// ambient drain - the renderer-facing dirty set
     /// ([`crate::world::World::take_morph_dirty_slots`]).
     pub(crate) morph_dirty_slots: std::collections::BTreeSet<(usize, u32)>,
     /// Vsyncs accumulated toward the next retail *game tick* (a game tick
-    /// spans [`crate::world::FrameClock::frame_step`] vsyncs). Advanced by [`crate::world::World::tick`] on the
-    /// sim ticks that map to a retail vsync ([`crate::world::FrameClock::display_frame_step`]).
+    /// spans [`legaia_engine_vm::frame_clock::FrameClock::frame_step`] vsyncs). Advanced by [`crate::world::World::tick`] on the
+    /// sim ticks that map to a retail vsync ([`legaia_engine_vm::frame_clock::FrameClock::display_frame_step`]).
     pub(crate) clut_vsync_accum: u8,
     /// Retail game ticks elapsed since the host last drained the scripted
     /// CLUT effects ([`crate::world::World::step_clut_fx`] consumes these). Only
@@ -54,7 +54,7 @@ pub struct AmbientFxState {
     pub clut_pending_game_ticks: u32,
     /// Live scripted CLUT-cell effects (field-VM `0x4C` n6 sub-`0x61`):
     /// pending one-shot cell writes and in-flight cross-fades. Spawned by
-    /// [`crate::world::World::spawn_clut_cell_fx`] (the `op4c_n6_sub_61_emitter` host
+    /// [`crate::world::World::spawn_clut_cell_fx`] (the `spawn_clut_cell_fx` host
     /// hook), stepped + applied against the host's software VRAM by
     /// [`crate::world::World::step_clut_fx`], cleared on scene entry.
     pub clut_fx: Vec<crate::world::ClutCellFx>,
@@ -66,7 +66,7 @@ pub struct AmbientFxState {
     /// Queued field-VM `4C 60` literal-operand VRAM `MoveImage` stamps (the
     /// sibling of [`crate::world::AmbientFxState::clut_fx`] - retail's one-shot face-frame stamps
     /// onto the player texture atlas). Queued by
-    /// [`crate::world::World::queue_script_vram_move`] (the `op4c_n6_sub0_emitter6` host
+    /// [`crate::world::World::queue_script_vram_move`] (the `vram_move_image` host
     /// hook), drained against the host's software VRAM by
     /// [`crate::world::World::apply_script_vram_moves`], cleared on scene entry.
     pub script_vram_moves: Vec<crate::world::ScriptVramMove>,
@@ -81,7 +81,7 @@ pub struct AmbientFxState {
     /// emission order the arm resolved them (one call, or two for a copy
     /// wider than a VRAM page). Queued by
     /// [`crate::world::World::queue_vram_rect_copies`] (the
-    /// `FieldHost::op43_vram_rect_copy` host hook), drained against the
+    /// `FieldScreenHost::queue_vram_rect_copies` host hook), drained against the
     /// host's software VRAM by
     /// [`crate::world::World::apply_vram_rect_copies`].
     pub(crate) vram_rect_copies: Vec<legaia_engine_vm::vram_rect_copy::RectCopyCall>,
@@ -96,7 +96,7 @@ pub struct AmbientFxState {
     /// cannot reproduce; `jouine`'s flesh walls hue-cycle through green, so
     /// the same frame scored by luck of the phase. Empty everywhere but the
     /// comparison's `play-window` child (`LEGAIA_SEAT_CLUT_FX`).
-    pub cell_fx_seed: Vec<crate::clut_cell_fx::ClutCellFx>,
+    pub cell_fx_seed: Vec<legaia_engine_field::clut_cell_fx::ClutCellFx>,
     /// Capture alignment, the scroller sibling of [`Self::cell_fx_seed`]: a
     /// retail state's mode-4 scroller rects `(x, y, w, h)` with the texels
     /// its VRAM held there, written over the engine's after every field

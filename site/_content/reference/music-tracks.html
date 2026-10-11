@@ -14,7 +14,7 @@
     <dt>Naming spaces</dt><dd>Debug sound-test ID + title &middot; in-game context &middot; official OST title &middot; proposed relocalization.</dd>
     <dt>Disc join</dt><dd>Global BGM id <code>2000 + i</code> plays sound-test track <code>i</code>.</dd>
     <dt>Bank layout</dt><dd>Piecewise: extraction entry <code>988 + i</code> for tracks <code>0..=67</code>, <code>990 + i</code> for <code>68..=80</code>, two-entry gap at <code>1056</code>/<code>1057</code>.</dd>
-    <dt>Resolver</dt><dd><code>legaia_engine_core::music_labels</code> - the engine HUD and viewers name tracks through it.</dd>
+    <dt>Resolver</dt><dd><code>legaia_engine_system::music_labels</code> - the engine HUD and viewers name tracks through it.</dd>
     <dt>Confidence</dt><dd><span class="tag tag-partial">Inferred</span>; OST columns <span class="tag tag-done">Confirmed</span> against the published listing.</dd>
   </dl>
 </section>
@@ -63,7 +63,7 @@
   </figure>
   <p>The low range starts at extraction <strong>988</strong>: the first two tracks (<code>M01</code>/<code>M02</code>) live in the entries whose extraction filename reads <code>monster_test</code>, because CDNAME <code>#define</code> numbers are raw TOC indices and the named content sits two entries earlier (<a href="../formats/cdname.html">the +2 filename skew</a>).</p>
   <p>Scenes carry <strong>no local SEQ data</strong>: apart from a dev bank and one scene-local copy of <code>M01</code>, every music sequence on the disc lives in this bank plus the boot/battle banks, so the scene-local id space (<code>&lt; 2000</code>) is the rare exception.</p>
-  <p class="hint">In the port: <code>legaia_engine_core::music_labels</code> holds the piecewise map.</p>
+  <p class="hint">In the port: <code>legaia_engine_system::music_labels</code> holds the piecewise map.</p>
   <details class="disclosure" id="how-we-know">
     <summary>How we know: script census, on-disc residency, runtime corroboration</summary>
     <div class="disclosure-body">

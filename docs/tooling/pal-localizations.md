@@ -25,7 +25,7 @@ legaia-patcher translate lift-official --from <PAL-FR.bin> --target <USA.bin> -o
 | Will it fit? | [Fit rate against the USA target](#fit-rate-against-the-usa-target) |
 
 The cross-region measurement tool is `legaia-patcher translate diff-disc`
-(`legaia_patcher::translation::diff`); it is region-agnostic and emits counts and
+(`legaia_translate::diff`); it is region-agnostic and emits counts and
 byte values only. Its two discs are named `--input` (the target the importer
 would patch, i.e. USA) and `--other` (the disc aligned against it) - not the
 `--from` / `--target` pair its `lift-official` / `fit-report` siblings take:
@@ -214,7 +214,7 @@ not the small-caps menu atlas at `PROT.DAT` `0x11218`.
 
 `legaia-patcher translate lift-official --from <PAL.bin> --target <USA.bin>
 -o <pack.yaml>` re-keys the official localized text onto the USA coordinate space
-the importer patches (`legaia_patcher::translation::lift`):
+the importer patches (`legaia_translate::lift`):
 
 1. Detect the source build from `SYSTEM.CNF`'s `BOOT` line (the table under
    [Region ids](#region-ids)); a measured build brings pinned bases, an

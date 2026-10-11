@@ -19,19 +19,18 @@
 //! title-tab painter and the modal sprite order - come out the same way
 //! whichever host asks. It is not a pixel oracle; the per-panel geometry is
 //! pinned by the builders' own unit tests, and the disc table it falls back
-//! from by `legaia-asset`'s disc-gated `menu_windows_real` - which asserts the
+//! from by `legaia-game-tables`' disc-gated `menu_windows_real` - which asserts the
 //! same rects against its own literal list rather than against
 //! [`MENU_WINDOW_FALLBACK`], so the two are separate pins of one set of
 //! numbers.
 
-use legaia_asset::menu_windows::{MenuWindowDescriptor, MenuWindowTable, window_ids};
+use legaia_engine_ui::menu::window_dispatch as dispatch;
 use legaia_engine_ui::pause_menu::{
     EquipComposeInput, GenericContent, ItemsScreenView, MENU_WINDOW_FALLBACK, MagicScreenView,
     MenuRects, OptionsScreenView, PauseMenuCtx, PauseMenuDraws, PauseScreen, SpecialConfirmView,
     StatusScreenView, TopLevelView, equip_screen_compose, pause_screen_draws,
     spell_level_notice_draws, stage_transform,
 };
-use legaia_engine_ui::ui_menu_window_dispatch as dispatch;
 use legaia_engine_ui::{
     ArtsChainRow, ArtsEditorDrawArgs, ArtsEditorPhase, EquipDrawPhase, FieldMenuPartyView,
     FieldMenuRowView, InventoryItemRow, InventoryUseDrawArgs, OptionsPopupDraw, OptionsRowView,
@@ -40,6 +39,7 @@ use legaia_engine_ui::{
     SpellMenuDrawArgs, SpellRowView, StatusPanelView, StatusSatelliteView, StatusStatRow,
     TargetPanelCursor, TargetPanelMember, TargetPanelMode, TargetPanelView,
 };
+use legaia_game_tables::menu_windows::{MenuWindowDescriptor, MenuWindowTable, window_ids};
 
 /// A 960x720 window is what `play-window` opens; the browser play page runs
 /// the same stage maths off its canvas size.

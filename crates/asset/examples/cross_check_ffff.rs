@@ -1,6 +1,6 @@
 //! Cross-check: of the PROT entries with first u32 = 0xFFFFFFFF,
 //! how many classify as `stage_geometry` vs other classes?
-use legaia_asset::categorize;
+use legaia_disc_audit::categorize;
 use std::collections::BTreeMap;
 
 fn main() {

@@ -63,11 +63,10 @@ required-features = ["cli"]
 [dev-dependencies]
 legaia-prot.workspace = true
 # Disc-gated session ladder only: the SFX descriptor table (`DAT_8006F198`)
-# and its cue -> VAB-slot routing live in the asset crate, and the ladder
-# drives the same decode the hosts do. `legaia-asset` depends on
-# prot/lzs/tim/tmd/vab/seq and never on engine-audio, so this dev-only edge is
-# acyclic.
-legaia-asset.workspace = true
+# and its cue -> VAB-slot routing live in `legaia-game-tables`, and the ladder
+# drives the same decode the hosts do. That crate sits below every engine
+# crate, so this dev-only edge is acyclic.
+legaia-game-tables.workspace = true
 
 [[test]]
 name = "integration"

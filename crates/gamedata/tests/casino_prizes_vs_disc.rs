@@ -28,7 +28,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use legaia_asset::item_names::ItemNameTable;
+use legaia_game_tables::item_names::ItemNameTable;
 use legaia_gamedata::Database;
 
 /// Mirror of `legaia_patcher::casino` constants (kept inline to avoid a

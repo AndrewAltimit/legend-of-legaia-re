@@ -55,8 +55,8 @@ is `-1` for a transform node, `0x4000` / `0x4001` for a render-mode node, and
 `>= 0` for a library mesh. Bytecode ends at op `0x08` Halt.
 
 1. **`FUN_800204F8`** - the `EXEC_MOVE` path: a per-actor move record from the runtime root (`_DAT_8007B888` MOVE / `_DAT_8007B840` MOVE2). Per-actor offsets are baked in at setup time.
-2. **Per-summon stagers** - `FUN_80021B04` spawns parts from a stager overlay's records (see [`formats/effect.md`](../formats/effect.md), `legaia_asset::summon_overlay`).
-3. **Per-scene prescript stager table** - the `scene_event_scripts` / `scene_v12_table` prescript: a `[u16 count][u16 offsets]` table of these records, loaded into `_DAT_8007b8d0`. The field VM installs a record by id via **`FUN_800252EC`** (`record = _DAT_8007b8d0 + offsets[id]`) -> `FUN_80021B04` -> this VM. See [`formats/scene-bundles.md`](../formats/scene-bundles.md#scene_event_scripts---prescript-only) (parser `legaia_asset::scene_event_scripts::move_stager_records`).
+2. **Per-summon stagers** - `FUN_80021B04` spawns parts from a stager overlay's records (see [`formats/effect.md`](../formats/effect.md), `legaia_overlay_images::summon_overlay`).
+3. **Per-scene prescript stager table** - the `scene_event_scripts` / `scene_v12_table` prescript: a `[u16 count][u16 offsets]` table of these records, loaded into `_DAT_8007b8d0`. The field VM installs a record by id via **`FUN_800252EC`** (`record = _DAT_8007b8d0 + offsets[id]`) -> `FUN_80021B04` -> this VM. See [`formats/scene-bundles.md`](../formats/scene-bundles.md#scene_event_scripts---prescript-only) (parser `legaia_scene_formats::scene_event_scripts::move_stager_records`).
 
 ## Fetch / dispatch loop
 
@@ -475,7 +475,7 @@ zero (`0x80021E78..0x80021FA0`), ahead of its move-VM call.
 Port: `move_vm::integrate_draw_channels`; stores go through
 `ActorState::set_actor_u16` (absolute offsets). The emitters and their readers
 are `engine-effects::effect_ribbon`, `effect_sprite_arm` and
-`effect_default_arm` (re-exported from `legaia_engine_core`); see
+`effect_default_arm`; see
 [`effect-vm.md`](effect-vm.md#the-three-render-mode-4-emitters-and-which-one-the-disc-uses).
 
 ## Part render-tail: the `+0x5A` render modes (`FUN_80021DF4`)
@@ -520,7 +520,7 @@ value clamp to `0..=0xFF`.
 - **The optional blend targets the colour's inverse, not white.** The expression is `c + (((~c & 0xFF) - c) * amount >> 8)`; `~c & 0xFF` is `255 - c`, so at full weight the image is a photographic negative.
 
 Port: `engine-field::clut_cell_fx` (`mode3_integrate`, texel kernel
-`apply_hsv_cell`; re-exported from `engine-core`), driven by
+`apply_hsv_cell`), driven by
 `engine-core::world::ambient` from the field scenes' CLUT-cell effect tree.
 The RGB / HSV conversions are `move_vm::color`. See
 [`field-ambient-fx.md`](field-ambient-fx.md).
@@ -592,8 +592,8 @@ mask, scripted sprites, image panel, letterbox bands). It is documented here
 because its handlers share the slot-B address band and the tween helper with
 move-VM part records.
 
-**Port.** `crates/engine-effects/src/screen_fx.rs` (re-exported as
-`engine-core::screen_fx`), layout pinned on disc bytes by the disc-gated
+**Port.** `engine-effects::screen_fx`
+(`crates/engine-effects/src/screen_fx.rs`), layout pinned on disc bytes by the disc-gated
 `screen_fx_disc` test. The field-VM op-`0x43` sub-op handlers route to
 `screen_fx::ScreenFxHost` on `World::presentation.fx`; one `tick` per Field /
 Cutscene frame publishes `World::presentation.fx_frame`.
@@ -732,7 +732,7 @@ base), with `model_sel` reading `-1` (transform node) / `5` (library mesh):
 the summon part-record format, sourced from the battle overlay rather than a
 per-spell stager. The widget family is therefore **ending-scene-exclusive**,
 and `FUN_80021DF4` is the live part render-tail. Disc + library gated test
-`firetail_movefx_liveness` (crate `legaia-mednafen`).
+`firetail_movefx_liveness` (crate `legaia-parity`).
 
 ### Interior addresses in the widget band
 

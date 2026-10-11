@@ -11,12 +11,12 @@
 //! Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. Patched images live
 //! only in memory.
 
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::texture::{
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_texture_replace::texture::{
     ExportFormat, TextureTarget, export_texture_png, read_texture, replace_texture_png,
     texture_catalogs,
 };
-use legaia_patcher::texture_palettes::texture_palettes;
+use legaia_texture_replace::texture_palettes::texture_palettes;
 use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
 use legaia_tim::multi_palette::{ImportKind, View, rgba_png};
 

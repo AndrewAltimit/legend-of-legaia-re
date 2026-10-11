@@ -16,12 +16,11 @@
 //! No Sony bytes are asserted, only structural facts and arithmetic. Skips +
 //! passes when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_engine_core::muscle_dome as md;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 /// Every gate open, so a course runs its declared length.
-fn open_flags() -> md::ContestFlags {
-    md::ContestFlags {
+fn open_flags() -> legaia_engine_minigames::muscle_dome::ContestFlags {
+    legaia_engine_minigames::muscle_dome::ContestFlags {
         course_unlock: [false; 3],
         master_gates: [true; 3],
         prize_awarded: false,
@@ -39,7 +38,7 @@ fn arena_overlay() -> Option<Vec<u8>> {
     };
     match host
         .index
-        .entry_bytes_extended(md::ARENA_OVERLAY_PROT_INDEX as u32)
+        .entry_bytes_extended(legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32)
     {
         Ok(b) => Some(b),
         Err(e) => {
@@ -51,19 +50,24 @@ fn arena_overlay() -> Option<Vec<u8>> {
 
 /// Clear `course` end to end, stepping the between-leg hub as the arena
 /// does, and return the settled payout.
-fn run_course(raw: &[u8], course: usize, flags: &md::ContestFlags) -> md::ContestSettlement {
+fn run_course(
+    raw: &[u8],
+    course: usize,
+    flags: &legaia_engine_minigames::muscle_dome::ContestFlags,
+) -> legaia_engine_minigames::muscle_dome::ContestSettlement {
     let mut unlock = *flags;
     // The unlock seed is what picks the course, so ask for exactly this one.
     unlock.course_unlock = [false; 3];
     for slot in unlock.course_unlock.iter_mut().take(course + 1) {
         *slot = true;
     }
-    let mut c = md::DomeContest::from_overlay(raw, &unlock).expect("PROT 0977 decodes");
+    let mut c = legaia_engine_minigames::muscle_dome::DomeContest::from_overlay(raw, &unlock)
+        .expect("PROT 0977 decodes");
     assert_eq!(c.course(), course, "the unlock seed staged this course");
     assert_eq!(c.round(), 0, "a fresh contest opens on its first leg");
-    for _ in 0..md::MAX_ROUNDS_PER_COURSE {
+    for _ in 0..legaia_engine_minigames::muscle_dome::MAX_ROUNDS_PER_COURSE {
         c.finish_leg(
-            md::LegReport {
+            legaia_engine_minigames::muscle_dome::LegReport {
                 survived: true,
                 outcome: 0,
                 turns_taken: 3,
@@ -75,7 +79,10 @@ fn run_course(raw: &[u8], course: usize, flags: &md::ContestFlags) -> md::Contes
             break;
         }
         // The hub's three between-leg states: rows in, rows drained, HP back.
-        while !matches!(c.state(), md::ContestState::Fight) {
+        while !matches!(
+            c.state(),
+            legaia_engine_minigames::muscle_dome::ContestState::Fight
+        ) {
             c.advance();
         }
     }
@@ -87,16 +94,21 @@ fn run_course(raw: &[u8], course: usize, flags: &md::ContestFlags) -> md::Contes
 #[test]
 fn a_cleared_course_pays_its_whole_score_row_into_coins() {
     let Some(raw) = arena_overlay() else { return };
-    let ladder = md::parse_course_ladder(&raw).expect("course ladder decodes");
-    let score = md::parse_score_table(&raw).expect("score table decodes");
+    let ladder = legaia_engine_minigames::muscle_dome::parse_course_ladder(&raw)
+        .expect("course ladder decodes");
+    let score =
+        legaia_engine_minigames::muscle_dome::parse_score_table(&raw).expect("score table decodes");
     let flags = open_flags();
 
     // The disc declares three courses; their lengths are the ladder's own.
-    assert_eq!(ladder.len(), md::COURSE_COUNT);
+    assert_eq!(
+        ladder.len(),
+        legaia_engine_minigames::muscle_dome::COURSE_COUNT
+    );
     let mut coins = 0u32;
     for (course, decl) in ladder.iter().enumerate() {
         let len = decl.rounds.len();
-        assert!(len > 0 && len <= md::MAX_ROUNDS_PER_COURSE);
+        assert!(len > 0 && len <= legaia_engine_minigames::muscle_dome::MAX_ROUNDS_PER_COURSE);
         let out = run_course(&raw, course, &flags);
         // Every cell of the row banked exactly once: the cleared legs through
         // the tally screen, the final one at settlement.
@@ -109,7 +121,7 @@ fn a_cleared_course_pays_its_whole_score_row_into_coins() {
         assert!(!out.set_gave_up_flag);
         // And it lands in the coin bank.
         let before = coins;
-        coins = md::credit_casino_coins(coins, out.score);
+        coins = legaia_engine_minigames::muscle_dome::credit_casino_coins(coins, out.score);
         assert_eq!(coins as i32 - before as i32, row_sum);
     }
     assert!(coins > 0, "the run banked something");
@@ -118,13 +130,15 @@ fn a_cleared_course_pays_its_whole_score_row_into_coins() {
 #[test]
 fn the_curated_course_rewards_are_the_disc_score_rows() {
     let Some(raw) = arena_overlay() else { return };
-    let ladder = md::parse_course_ladder(&raw).expect("course ladder decodes");
-    let score = md::parse_score_table(&raw).expect("score table decodes");
+    let ladder = legaia_engine_minigames::muscle_dome::parse_course_ladder(&raw)
+        .expect("course ladder decodes");
+    let score =
+        legaia_engine_minigames::muscle_dome::parse_score_table(&raw).expect("score table decodes");
     let db = legaia_gamedata::Database::load();
     let curated = db.muscle_dome();
     assert_eq!(
         curated.len(),
-        md::COURSE_COUNT,
+        legaia_engine_minigames::muscle_dome::COURSE_COUNT,
         "curated table has one row per arena course"
     );
     for (course, row) in curated.iter().enumerate() {
@@ -154,14 +168,16 @@ fn the_curated_course_rewards_are_the_disc_score_rows() {
 #[test]
 fn losing_a_course_halves_the_tally_and_running_voids_it() {
     let Some(raw) = arena_overlay() else { return };
-    let score = md::parse_score_table(&raw).expect("score table decodes");
+    let score =
+        legaia_engine_minigames::muscle_dome::parse_score_table(&raw).expect("score table decodes");
     let flags = open_flags();
 
     // Clear two legs of course 0, then lose the third.
-    let mut c = md::DomeContest::from_overlay(&raw, &flags).expect("decodes");
+    let mut c = legaia_engine_minigames::muscle_dome::DomeContest::from_overlay(&raw, &flags)
+        .expect("decodes");
     for leg in 0..3 {
         c.finish_leg(
-            md::LegReport {
+            legaia_engine_minigames::muscle_dome::LegReport {
                 survived: leg < 2,
                 outcome: 0,
                 turns_taken: 2,
@@ -172,7 +188,10 @@ fn losing_a_course_halves_the_tally_and_running_voids_it() {
         if c.over() {
             break;
         }
-        while !matches!(c.state(), md::ContestState::Fight) {
+        while !matches!(
+            c.state(),
+            legaia_engine_minigames::muscle_dome::ContestState::Fight
+        ) {
             c.advance();
         }
     }
@@ -182,10 +201,11 @@ fn losing_a_course_halves_the_tally_and_running_voids_it() {
     assert_eq!(c.settle(&flags).score, banked / 2, "a lost run pays half");
 
     // The same two legs, then run: nothing at all.
-    let mut c = md::DomeContest::from_overlay(&raw, &flags).expect("decodes");
+    let mut c = legaia_engine_minigames::muscle_dome::DomeContest::from_overlay(&raw, &flags)
+        .expect("decodes");
     for _ in 0..2 {
         c.finish_leg(
-            md::LegReport {
+            legaia_engine_minigames::muscle_dome::LegReport {
                 survived: true,
                 outcome: 0,
                 turns_taken: 2,
@@ -193,15 +213,18 @@ fn losing_a_course_halves_the_tally_and_running_voids_it() {
             500,
             &flags,
         );
-        while !matches!(c.state(), md::ContestState::Fight) {
+        while !matches!(
+            c.state(),
+            legaia_engine_minigames::muscle_dome::ContestState::Fight
+        ) {
             c.advance();
         }
     }
     assert_eq!(c.tally(), banked, "two legs banked before the give-up");
     c.finish_leg(
-        md::LegReport {
+        legaia_engine_minigames::muscle_dome::LegReport {
             survived: true,
-            outcome: md::LEG_OUTCOME_RAN,
+            outcome: legaia_engine_minigames::muscle_dome::LEG_OUTCOME_RAN,
             turns_taken: 1,
         },
         500,
@@ -216,8 +239,11 @@ fn losing_a_course_halves_the_tally_and_running_voids_it() {
 #[test]
 fn the_master_course_is_story_gated_and_pays_the_one_shot_prize() {
     let Some(raw) = arena_overlay() else { return };
-    let ladder = md::parse_course_ladder(&raw).expect("course ladder decodes");
-    let master = ladder[md::MASTER_COURSE].rounds.len() as u32;
+    let ladder = legaia_engine_minigames::muscle_dome::parse_course_ladder(&raw)
+        .expect("course ladder decodes");
+    let master = ladder[legaia_engine_minigames::muscle_dome::MASTER_COURSE]
+        .rounds
+        .len() as u32;
     assert!(
         master > 8,
         "the Master course is the one long enough to be clamped"
@@ -225,16 +251,20 @@ fn the_master_course_is_story_gated_and_pays_the_one_shot_prize() {
 
     // With none of the three gate flags set the run stops at round 8 - short
     // of the prize - even though the descriptor declares more.
-    let closed = md::ContestFlags {
+    let closed = legaia_engine_minigames::muscle_dome::ContestFlags {
         course_unlock: [true, true, true],
         master_gates: [false; 3],
         prize_awarded: false,
     };
-    let mut c = md::DomeContest::from_overlay(&raw, &closed).expect("decodes");
-    assert_eq!(c.course(), md::MASTER_COURSE);
-    for _ in 0..md::MAX_ROUNDS_PER_COURSE {
+    let mut c = legaia_engine_minigames::muscle_dome::DomeContest::from_overlay(&raw, &closed)
+        .expect("decodes");
+    assert_eq!(
+        c.course(),
+        legaia_engine_minigames::muscle_dome::MASTER_COURSE
+    );
+    for _ in 0..legaia_engine_minigames::muscle_dome::MAX_ROUNDS_PER_COURSE {
         c.finish_leg(
-            md::LegReport {
+            legaia_engine_minigames::muscle_dome::LegReport {
                 survived: true,
                 outcome: 0,
                 turns_taken: 2,
@@ -245,7 +275,10 @@ fn the_master_course_is_story_gated_and_pays_the_one_shot_prize() {
         if c.over() {
             break;
         }
-        while !matches!(c.state(), md::ContestState::Fight) {
+        while !matches!(
+            c.state(),
+            legaia_engine_minigames::muscle_dome::ContestState::Fight
+        ) {
             c.advance();
         }
     }
@@ -253,29 +286,41 @@ fn the_master_course_is_story_gated_and_pays_the_one_shot_prize() {
     assert!(!c.settle(&closed).award_prize);
 
     // Every gate open: the full run, and the War God Icon exactly once.
-    let open = md::ContestFlags {
+    let open = legaia_engine_minigames::muscle_dome::ContestFlags {
         course_unlock: [true, true, true],
         master_gates: [true; 3],
         prize_awarded: false,
     };
-    let out = run_course(&raw, md::MASTER_COURSE, &open);
+    let out = run_course(
+        &raw,
+        legaia_engine_minigames::muscle_dome::MASTER_COURSE,
+        &open,
+    );
     assert_eq!(c_round_of(&raw, &open), master);
     assert!(out.award_prize, "the full Master run awards the prize");
     // Re-running with the one-shot flag already latched awards nothing.
-    let latched = md::ContestFlags {
+    let latched = legaia_engine_minigames::muscle_dome::ContestFlags {
         prize_awarded: true,
         ..open
     };
-    assert!(!run_course(&raw, md::MASTER_COURSE, &latched).award_prize);
+    assert!(
+        !run_course(
+            &raw,
+            legaia_engine_minigames::muscle_dome::MASTER_COURSE,
+            &latched
+        )
+        .award_prize
+    );
 }
 
 /// The round a fully-open Master run settles on, so the prize assertion above
 /// is anchored to the disc's own course length rather than to a literal.
-fn c_round_of(raw: &[u8], flags: &md::ContestFlags) -> u32 {
-    let mut c = md::DomeContest::from_overlay(raw, flags).expect("decodes");
-    for _ in 0..md::MAX_ROUNDS_PER_COURSE {
+fn c_round_of(raw: &[u8], flags: &legaia_engine_minigames::muscle_dome::ContestFlags) -> u32 {
+    let mut c = legaia_engine_minigames::muscle_dome::DomeContest::from_overlay(raw, flags)
+        .expect("decodes");
+    for _ in 0..legaia_engine_minigames::muscle_dome::MAX_ROUNDS_PER_COURSE {
         c.finish_leg(
-            md::LegReport {
+            legaia_engine_minigames::muscle_dome::LegReport {
                 survived: true,
                 outcome: 0,
                 turns_taken: 2,
@@ -286,7 +331,10 @@ fn c_round_of(raw: &[u8], flags: &md::ContestFlags) -> u32 {
         if c.over() {
             break;
         }
-        while !matches!(c.state(), md::ContestState::Fight) {
+        while !matches!(
+            c.state(),
+            legaia_engine_minigames::muscle_dome::ContestState::Fight
+        ) {
             c.advance();
         }
     }

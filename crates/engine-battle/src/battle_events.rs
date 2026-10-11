@@ -1,7 +1,7 @@
 //! Event queue emitted by the battle action state machine through the
 //! world's `BattleActionHost` implementation.
 //!
-//! Mirrors `legaia_engine_core::field_events` but for battle. Visual side-effects
+//! Mirrors `legaia_engine_field::field_events` but for battle. Visual side-effects
 //! (pose changes, UI element spawns, spell animations, screen shake,
 //! brightness ramps) and gameplay primitives (damage application,
 //! capture-archive load, party / monster setup) are pushed onto a
@@ -9,11 +9,11 @@
 //! `legaia_engine_core::world::World::tick` each frame.
 
 use crate::art_strike::ArtStrikeOutcome;
-use legaia_engine_vm::battle_action::{BattleEndCause, Pose};
+use legaia_engine_battle_vm::battle_action::{BattleEndCause, Pose};
 
 /// One side-effect the battle action state machine requested this frame.
 /// Variants mirror the `BattleActionHost` callbacks one-to-one - see
-/// [`legaia_engine_vm::battle_action::BattleActionHost`] for the per-state
+/// [`legaia_engine_battle_vm::battle_action::BattleActionHost`] for the per-state
 /// citation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BattleEvent {
@@ -150,7 +150,7 @@ pub struct BattleShoutCue {
 
 /// One battle **effect-script spawn request** - a record the per-actor
 /// effect-script walk consumed this frame
-/// (`legaia_engine_core::action_effect_script::step_effect_script`, the `FUN_801DEA50`
+/// (`legaia_engine_effects::action_effect_script::step_effect_script`, the `FUN_801DEA50`
 /// port driven from the battle animation tick). Cosmetic, in the
 /// [`BattleHitFx`] "drain and present" pattern: `at` is already the
 /// world-space position (the record's local offset scaled and rotated by the
@@ -185,7 +185,7 @@ pub struct BattleEffectSpawn {
 
 /// One **hit event** the attack band resolved this tick - the retail
 /// `FUN_801EC3E4` call the anim tick made on the frame a committed clip
-/// reached one of its `+0x10..+0x13` beats (`legaia_engine_vm::battle_action::hit_event`).
+/// reached one of its `+0x10..+0x13` beats (`legaia_engine_battle_vm::battle_action::hit_event`).
 ///
 /// This is the channel the impact-FX and HIT / TOTAL counter layers consume:
 /// one entry per resolved hit, in resolution order, carrying the hit's index

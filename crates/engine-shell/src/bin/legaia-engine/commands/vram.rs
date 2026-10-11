@@ -24,7 +24,7 @@ pub(crate) fn cmd_clut_trace(
     runtime_vram: Option<&Path>,
     max_sources: usize,
 ) -> Result<()> {
-    use legaia_asset::tim_scan;
+    use legaia_container_formats::tim_scan;
     use legaia_tim::vram::PrimTextureStatus;
     use std::collections::BTreeMap;
 
@@ -280,12 +280,12 @@ fn row_has_data(blob: &[u8], x: usize, y: usize, w: usize) -> bool {
 /// no temp file is needed.
 ///
 /// In scenario mode with `frames > 0`, additionally boots a
-/// `BootSession` on the resolved scene and ticks it `frames` times
+/// `NativeSession` on the resolved scene and ticks it `frames` times
 /// before returning the sampled engine VRAM. This catches dynamic
 /// uploads (NPC palette swaps, fog ramps, per-frame CLUT mutations)
 /// that the pure pre-pass doesn't see.
 fn resolve_vram_inputs(args: &VramOracleArgs<'_>) -> Result<ResolvedVram> {
-    use legaia_mednafen::ScenarioManifest;
+    use legaia_ram_image::ScenarioManifest;
 
     match (args.scenario, args.scene, args.runtime_vram) {
         (Some(label), _, _) => {

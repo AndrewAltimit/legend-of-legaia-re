@@ -1,0 +1,844 @@
+//! Disc-gated regression test: decode the monster stat archive (PROT entry
+//! `0867_battle_data`) and assert known monster ids decode to the expected
+//! name + HP/MP. These values were byte-validated against live battle RAM
+//! (Gimard id 10, Killer Bee id 62, Queen Bee id 63 match the actor stats a
+//! PCSX-Redux watchpoint captured during the Rim Elm scripted fights).
+//!
+//! Skips silently when `extracted/PROT/` or `LEGAIA_DISC_BIN` is missing.
+//!
+//! What this catches:
+//! - The `(id-1)*0x14000` slot stride or the `[u32 dec_size][LZS]` slot
+//!   framing regresses.
+//! - The record byte layout (name offset / HP / MP) drifts.
+//! - PROT entry 867 stops being the monster archive (e.g. an extractor
+//!   change truncates it).
+
+use legaia_actor_formats::monster_archive;
+use std::path::PathBuf;
+
+fn entry_867() -> Option<Vec<u8>> {
+    std::env::var_os("LEGAIA_DISC_BIN")?;
+    for p in ["extracted/PROT", "../../extracted/PROT"] {
+        let f = PathBuf::from(p).join("0867_battle_data.BIN");
+        if f.is_file() {
+            return std::fs::read(f).ok();
+        }
+    }
+    None
+}
+
+#[test]
+fn known_monster_ids_decode_to_expected_records() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // (id, name, hp, mp) - the Rim Elm scripted-battle monster set; HP/MP
+    // for Gimard/Killer Bee/Queen Bee are byte-exact vs live battle RAM.
+    let expected: &[(u16, &str, u16, u16)] = &[
+        (4, "Gobu Gobu", 76, 15),
+        (7, "Green Slime", 69, 24),
+        (10, "Gimard", 99, 20),
+        (61, "Hornet", 188, 88),
+        (62, "Killer Bee", 288, 288),
+        (63, "Queen Bee", 888, 888),
+        (79, "Tetsu", 999, 999),
+    ];
+
+    for &(id, name, hp, mp) in expected {
+        let rec = monster_archive::record(&entry, id)
+            .unwrap_or_else(|e| panic!("id {id}: decode error {e:#}"))
+            .unwrap_or_else(|| panic!("id {id}: expected a record, got None"));
+        assert_eq!(rec.name, name, "id {id} name");
+        assert_eq!(rec.hp, hp, "id {id} HP");
+        assert_eq!(rec.mp, mp, "id {id} MP");
+    }
+
+    // The archive holds 194 fixed slots; a healthy fraction decode to real
+    // records (the rest are filler / unused ids - e.g. index 78 "Comm").
+    let all = monster_archive::records(&entry).expect("archive walk");
+    assert!(
+        all.len() > 100,
+        "expected >100 populated monster records, got {}",
+        all.len()
+    );
+}
+
+/// Record `+0x1D` is the enemy element id the affinity scale `FUN_801dd864`
+/// reads **record-direct** (via the per-enemy record-pointer table
+/// `0x801C9348[slot-3]`, not a copied live-actor field). Pinned here on real
+/// disc bytes: every populated record's element is in the 8-element space
+/// (`0..=7`) - the invariant the unchecked `matrix[elem*8 + elem]` index relies
+/// on - and Gimard's element is fire.
+#[test]
+fn monster_element_byte_is_in_range_and_pins_gimard_fire() {
+    use legaia_game_tables::element_affinity::Element;
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let all = monster_archive::records(&entry).expect("archive walk");
+    assert!(!all.is_empty());
+    for r in &all {
+        assert!(
+            r.element <= 7,
+            "monster {} ({}) element {} out of the 0..=7 id space",
+            r.id,
+            r.name,
+            r.element
+        );
+    }
+    // Gimard (id 10) is a fire monster.
+    let gimard = monster_archive::record(&entry, 10).unwrap().unwrap();
+    assert_eq!(gimard.element, Element::Fire as u8, "Gimard = fire");
+}
+
+#[test]
+fn spell_list_decodes_from_record_offset_array() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Gimard (id 10): magic_count 9; the +0x4C offsets resolve to the
+    // passive/affinity prefix (ids 0,1,2,4,5,0x0B at cost 0), two offensive
+    // castable spells (0x0D @ 28 AGL, 0x0F @ 32 AGL, both <= its AGL stat 60),
+    // and the 0x23 ('#') special slot. AGL (stats[0], the action gauge) gates casting.
+    let gimard = monster_archive::record(&entry, 10).unwrap().unwrap();
+    assert_eq!(gimard.magic_count as usize, gimard.spells.len());
+    assert_eq!(gimard.magic_count, 9);
+    let castable: Vec<(u8, u8)> = gimard
+        .spells
+        .iter()
+        .filter(|s| s.is_castable())
+        .map(|s| (s.id, s.agl_cost))
+        .collect();
+    assert_eq!(castable, vec![(0x0D, 28), (0x0F, 32)]);
+    for (id, cost) in &castable {
+        assert!(
+            (*cost as u16) <= gimard.agility(),
+            "Gimard spell 0x{id:02X} cost {cost} should be <= AGL {}",
+            gimard.agility()
+        );
+    }
+
+    // Every populated record's spell list length matches its declared count,
+    // and no offset escaped the block (the parser would have dropped it).
+    for r in monster_archive::records(&entry).unwrap() {
+        assert_eq!(
+            r.magic_count as usize,
+            r.spells.len(),
+            "id {} magic_count {} != decoded spells {}",
+            r.id,
+            r.magic_count,
+            r.spells.len()
+        );
+    }
+}
+
+#[test]
+fn monster_mesh_is_an_embedded_tmd_at_record_plus_4() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Gimard (id 10): the embedded mesh sits at block +0x7c (= the value of
+    // stat record +0x04), parses as a Legaia TMD, and has real geometry.
+    let m = monster_archive::mesh(&entry, 10)
+        .expect("mesh decode")
+        .expect("Gimard has a mesh");
+    assert_eq!(m.id, 10);
+    assert_eq!(m.tmd_offset, 0x7c);
+    let tmd = legaia_tmd::parse(m.tmd_bytes()).expect("Gimard TMD parses");
+    let st = tmd.stats();
+    assert_eq!(st.total_vertices, 200, "Gimard vertex count");
+    assert!(st.total_primitives > 0, "Gimard has primitives");
+    // The texture/CLUT pool pointer (+0x08) lands inside the block.
+    assert!(
+        m.texture_pool_bytes().is_some(),
+        "Gimard has a texture pool"
+    );
+
+    // Almost every populated stat record carries a parseable mesh; only a
+    // handful of slots are empty/filler. Assert the overwhelming majority of
+    // the roster has a TMD at +0x04 that the parser walks without error.
+    let mut with_mesh = 0usize;
+    let mut total = 0usize;
+    for id in 1..=monster_archive::slot_count(&entry) as u16 {
+        if monster_archive::record(&entry, id).unwrap().is_none() {
+            continue; // empty / filler slot
+        }
+        total += 1;
+        if let Some(mesh) = monster_archive::mesh(&entry, id).unwrap()
+            && legaia_tmd::parse(mesh.tmd_bytes()).is_ok()
+        {
+            with_mesh += 1;
+        }
+    }
+    assert!(total > 100, "expected >100 populated records, got {total}");
+    assert!(
+        with_mesh as f64 / total as f64 > 0.95,
+        "expected >95% of populated records to carry a parseable mesh, got {with_mesh}/{total}"
+    );
+}
+
+#[test]
+fn monster_texture_pool_decodes_palettes_and_4bpp_page() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // The texture-pool layout (`FUN_80055468`): 0x1E0-byte CLUT region of 15
+    // sixteen-colour palettes, then a 4bpp page that is always 256 rows tall
+    // and 128 (narrow) or 256 (wide) texels across. The byte arithmetic is
+    // exact: pool_len == 0x1E0 + width_texels * 256 / 2.
+    let gimard = monster_archive::mesh(&entry, 10).unwrap().unwrap();
+    let gt = gimard.texture().expect("Gimard has a texture pool");
+    assert_eq!(gt.height, 256, "page is 256 rows tall");
+    assert_eq!(gt.width, 128, "Gimard is a narrow (128-texel) page");
+    assert_eq!(gt.palettes.len(), 15, "15 palettes");
+    assert_eq!(
+        gt.indices.len(),
+        gt.width * gt.height,
+        "one index per texel"
+    );
+    assert!(
+        gt.indices.iter().all(|&i| i < 16),
+        "every texel index fits a 16-colour palette"
+    );
+    let pool_len = gimard.texture_pool_bytes().unwrap().len();
+    assert_eq!(
+        pool_len,
+        0x1E0 + gt.width * gt.height / 2,
+        "pool length is exactly CLUT region + 4bpp page"
+    );
+
+    // Tetsu (id 79) is a wide humanoid: a 256-texel page (double the bytes).
+    let tetsu = monster_archive::mesh(&entry, 79).unwrap().unwrap();
+    let tt = tetsu.texture().expect("Tetsu has a texture pool");
+    assert_eq!(tt.width, 256, "Tetsu is a wide (256-texel) page");
+    assert_eq!(tt.height, 256);
+    assert_eq!(
+        tetsu.texture_pool_bytes().unwrap().len(),
+        0x1E0 + tt.width * tt.height / 2
+    );
+
+    // The baked RGBA image is the right size and carries opaque texels.
+    let rgba = gt.to_rgba(0);
+    assert_eq!(rgba.len(), gt.width * gt.height * 4);
+    assert!(
+        rgba.as_chunks::<4>().0.iter().any(|p| p[3] == 255),
+        "atlas has opaque texels"
+    );
+    // PSX transparency is per-palette: a texel is transparent when its palette
+    // colour is 0x0000. At least one of Gimard's palettes uses index 0 as the
+    // transparent background (e.g. palette 1 starts `00 00`).
+    assert!(
+        gt.palettes.iter().any(|p| p[0] == [0, 0, 0, 0]),
+        "some palette uses a transparent index-0"
+    );
+}
+
+#[test]
+fn animation_streams_decode_one_part_per_tmd_object() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Gimard (id 10): action index 0 is the idle animation. Its packed stream
+    // at entry +0x8c carries one part per TMD object (11) across 40 frames.
+    let mesh = monster_archive::mesh(&entry, 10).unwrap().unwrap();
+    let nobj = legaia_tmd::parse(mesh.tmd_bytes()).unwrap().objects.len();
+    assert_eq!(nobj, 11, "Gimard TMD object count");
+
+    let idle = monster_archive::idle_animation(&entry, 10)
+        .unwrap()
+        .expect("Gimard has an idle animation");
+    assert_eq!(idle.action_id, 0, "action index 0 is the idle action");
+    assert_eq!(idle.part_count, nobj, "one animated part per TMD object");
+
+    // The site animates per object, so the VRAM mesh must expose a per-vertex
+    // object id parallel to its positions, every id within the object count.
+    let (vmesh, object_ids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(
+        &legaia_tmd::parse(mesh.tmd_bytes()).unwrap(),
+        mesh.tmd_bytes(),
+    );
+    assert_eq!(
+        object_ids.len(),
+        vmesh.positions.len(),
+        "one object id per vertex"
+    );
+    assert!(
+        object_ids.iter().all(|&o| (o as usize) < nobj),
+        "object ids in range"
+    );
+    assert_eq!(idle.frame_count, 40, "Gimard idle has 40 frames");
+    assert_eq!(idle.frames.len(), 40);
+    assert!(idle.frames.iter().all(|f| f.len() == nobj));
+    // Rotations are 12-bit angles (< 4096); the idle has some motion.
+    assert!(
+        idle.frames
+            .iter()
+            .flatten()
+            .all(|p| p.rx < 4096 && p.ry < 4096 && p.rz < 4096)
+    );
+    let f0 = &idle.frames[0];
+    let f_mid = &idle.frames[idle.frame_count / 2];
+    assert!(
+        f0.iter().zip(f_mid).any(|(a, b)| a != b),
+        "idle animation actually moves between frame 0 and the midpoint"
+    );
+
+    // Across the whole roster: every monster with a mesh decodes at least one
+    // action animation, and (with one known exception) each action's part count
+    // matches the monster's TMD object count.
+    let (mut with_anim, mut total_mesh, mut part_match, mut action_total) = (0, 0, 0, 0);
+    for id in 1..=monster_archive::slot_count(&entry) as u16 {
+        let Some(mesh) = monster_archive::mesh(&entry, id).unwrap() else {
+            continue;
+        };
+        let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
+            continue;
+        };
+        total_mesh += 1;
+        let nobj = tmd.objects.len();
+        let anims = monster_archive::animations(&entry, id).unwrap().unwrap();
+        if !anims.is_empty() {
+            with_anim += 1;
+        }
+        for a in &anims {
+            action_total += 1;
+            if a.part_count == nobj {
+                part_match += 1;
+            }
+        }
+    }
+    assert!(total_mesh > 100, "expected >100 meshes, got {total_mesh}");
+    assert!(
+        with_anim as f64 / total_mesh as f64 > 0.95,
+        "expected >95% of meshes to carry action animations, got {with_anim}/{total_mesh}"
+    );
+    assert!(
+        part_match as f64 / action_total as f64 > 0.98,
+        "expected >98% of actions to animate one part per TMD object, got {part_match}/{action_total}"
+    );
+}
+
+#[test]
+fn battle_render_mesh_injects_pool_and_relocates_cba_tsb() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    use legaia_tim::Vram;
+
+    // Render Gimard (id 10) into battle slot 2: inject its texture pool into a
+    // fresh VRAM at the loader's per-slot coords and relocate every prim's
+    // CBA/TSB to match. This is the bridge the native battle renderer uses.
+    let slot = 2u8;
+    let mesh = monster_archive::mesh(&entry, 10).unwrap().unwrap();
+    let mut vram = Vram::new();
+    let vmesh = mesh
+        .battle_render_mesh(slot, &mut vram)
+        .expect("Gimard renders");
+
+    assert!(!vmesh.indices.is_empty(), "Gimard has textured prims");
+    assert_eq!(vmesh.cba_tsb.len(), vmesh.positions.len());
+
+    // Every relocated CBA points at the slot's CLUT row; every relocated TSB
+    // at the slot's 4bpp page column with tpage_y=256.
+    let (page_x, page_y) = monster_archive::monster_page_origin(slot);
+    for ct in &vmesh.cba_tsb {
+        assert_eq!(
+            (ct[0] >> 6) & 0x1FF,
+            monster_archive::MONSTER_CLUT_ROW_BASE + slot as u16,
+            "CBA relocated to CLUT row 484 + slot"
+        );
+        assert_eq!((ct[1] & 0xF) * 64, page_x, "TSB page x = (5+slot)*64");
+        assert_eq!((ct[1] >> 4) & 1, 1, "tpage_y = 256");
+        assert_eq!((ct[1] >> 7) & 0x3, 0, "4bpp depth");
+    }
+
+    // The injection actually populated the loader's VRAM regions (Gimard is a
+    // 128-texel = 32-cell-wide page) and the CLUT row.
+    assert!(
+        vram.region_has_data(page_x as usize, page_y as usize, 32, 256),
+        "monster texture page injected at the slot's VRAM coords"
+    );
+    assert!(
+        vram.region_has_data(
+            0,
+            (monster_archive::MONSTER_CLUT_ROW_BASE + slot as u16) as usize,
+            240,
+            1
+        ),
+        "monster CLUT region injected at row 484 + slot"
+    );
+
+    // The relocated prims now resolve against populated VRAM: sample the first
+    // triangle's CBA/TSB + UVs through the same predicate the targeted VRAM
+    // builder uses to decide a prim is renderable.
+    let tri = [
+        vmesh.indices[0] as usize,
+        vmesh.indices[1] as usize,
+        vmesh.indices[2] as usize,
+    ];
+    let uvs: Vec<(u8, u8)> = tri
+        .iter()
+        .map(|&i| (vmesh.uvs[i][0], vmesh.uvs[i][1]))
+        .collect();
+    let cba = vmesh.cba_tsb[tri[0]][0];
+    let tsb = vmesh.cba_tsb[tri[0]][1];
+    assert!(
+        vram.prim_has_texture_data(cba, tsb, &uvs),
+        "a relocated prim samples populated VRAM after injection"
+    );
+}
+
+/// Disc-gated: export a real monster to binary glTF and structurally validate
+/// the container. Catches accessor/bufferView index or bounds regressions, a
+/// malformed GLB header, and animation label/channel drift.
+#[test]
+fn monster_glb_export_is_structurally_valid() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Tetsu (id 79) is the Rim Elm boss: rigged mesh, texture, many actions.
+    let glb = legaia_actor_formats::monster_gltf::export_glb(&entry, 79)
+        .expect("glb export")
+        .expect("Tetsu has an exportable mesh");
+
+    // GLB header: magic, version 2, total length self-consistent.
+    assert_eq!(&glb[0..4], b"glTF", "GLB magic");
+    assert_eq!(
+        u32::from_le_bytes(glb[4..8].try_into().unwrap()),
+        2,
+        "GLB version"
+    );
+    assert_eq!(
+        u32::from_le_bytes(glb[8..12].try_into().unwrap()) as usize,
+        glb.len(),
+        "GLB total length"
+    );
+
+    // First chunk is JSON; second is BIN.
+    let json_len = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
+    assert_eq!(&glb[16..20], b"JSON", "JSON chunk tag");
+    let json: serde_json::Value =
+        serde_json::from_slice(&glb[20..20 + json_len]).expect("glTF JSON parses");
+    let bin_off = 20 + json_len;
+    assert_eq!(&glb[bin_off + 4..bin_off + 8], b"BIN\0", "BIN chunk tag");
+    let bin_len = u32::from_le_bytes(glb[bin_off..bin_off + 4].try_into().unwrap()) as usize;
+
+    assert_eq!(json["asset"]["version"], "2.0");
+    let buffers = json["buffers"].as_array().unwrap();
+    assert_eq!(buffers.len(), 1);
+    assert_eq!(buffers[0]["byteLength"].as_u64().unwrap() as usize, bin_len);
+
+    let accessors = json["accessors"].as_array().unwrap();
+    let views = json["bufferViews"].as_array().unwrap();
+    // Every bufferView stays inside the binary buffer and is 4-byte aligned.
+    for v in views {
+        let off = v["byteOffset"].as_u64().unwrap_or(0) as usize;
+        let len = v["byteLength"].as_u64().unwrap() as usize;
+        assert!(off.is_multiple_of(4), "bufferView offset 4-aligned");
+        assert!(off + len <= bin_len, "bufferView within buffer");
+    }
+    // Every accessor references a real bufferView.
+    for a in accessors {
+        let bv = a["bufferView"].as_u64().unwrap() as usize;
+        assert!(bv < views.len(), "accessor bufferView in range");
+    }
+
+    // Animations: at least the idle + several actions, each channel targeting a
+    // real node + sampler, and every label unique (collision disambiguation).
+    let anims = json["animations"].as_array().unwrap();
+    assert!(anims.len() >= 3, "Tetsu exports multiple actions");
+    assert_eq!(anims[0]["name"], "Idle", "first animation is the idle loop");
+    let nodes = json["nodes"].as_array().unwrap().len();
+    let mut labels = std::collections::HashSet::new();
+    for an in anims {
+        let name = an["name"].as_str().unwrap().to_string();
+        assert!(
+            labels.insert(name.clone()),
+            "animation label {name} is unique"
+        );
+        let samplers = an["samplers"].as_array().unwrap().len();
+        for ch in an["channels"].as_array().unwrap() {
+            assert!((ch["sampler"].as_u64().unwrap() as usize) < samplers);
+            assert!((ch["target"]["node"].as_u64().unwrap() as usize) < nodes);
+        }
+    }
+
+    // The texture image is an embedded PNG.
+    let img_view = json["images"][0]["bufferView"]
+        .as_u64()
+        .expect("image bufferView") as usize;
+    let off = views[img_view]["byteOffset"].as_u64().unwrap_or(0) as usize;
+    assert_eq!(
+        &glb[bin_off + 8 + off..bin_off + 8 + off + 8],
+        b"\x89PNG\r\n\x1a\n",
+        "image is PNG"
+    );
+}
+
+/// Retail's shading is the prim's packet word blending the texel
+/// (`texel * colour / 128`), so the export has to carry it: without a
+/// `COLOR_0` stream the file is the raw texture page. Checked against the
+/// mesh the exporter read, on the bytes it wrote.
+#[test]
+fn monster_glb_carries_the_packet_colour_words() {
+    use legaia_actor_formats::gltf_color::glb_probe;
+
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let monster = monster_archive::mesh(&entry, 79).unwrap().unwrap();
+    let tmd = legaia_tmd::parse(monster.tmd_bytes()).expect("Tetsu TMD parses");
+    let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, monster.tmd_bytes());
+    let mut want: Vec<[u32; 3]> = mesh
+        .colors
+        .iter()
+        .map(|c| [c[0].into(), c[1].into(), c[2].into()])
+        .collect();
+    // Non-vacuity: this monster's words are not a uniform neutral run, so a
+    // white export would be a real loss.
+    let neutral = [u32::from(legaia_actor_formats::gltf_color::MODULATION_NEUTRAL); 3];
+    assert!(
+        want.iter().any(|w| *w != neutral),
+        "Tetsu's prims carry non-neutral packet words"
+    );
+
+    let glb = legaia_actor_formats::monster_gltf::export_glb(&entry, 79)
+        .expect("glb export")
+        .expect("Tetsu has an exportable mesh");
+    let (root, bin) = glb_probe::split(&glb).expect("exported bytes are a .glb");
+    assert_eq!(root["extensionsUsed"][0], "KHR_materials_unlit");
+    let mut got: Vec<[u32; 3]> = Vec::new();
+    for m in root["meshes"].as_array().unwrap() {
+        for prim in m["primitives"].as_array().unwrap() {
+            let acc = prim["attributes"]["COLOR_0"]
+                .as_u64()
+                .expect("every primitive carries COLOR_0") as usize;
+            for row in glb_probe::floats(&root, bin, acc).expect("COLOR_0 floats") {
+                let enc = legaia_actor_formats::gltf_color::linear_to_srgb_ratio;
+                got.push([
+                    (enc(row[0]) * 128.0).round() as u32,
+                    (enc(row[1]) * 128.0).round() as u32,
+                    (enc(row[2]) * 128.0).round() as u32,
+                ]);
+            }
+        }
+    }
+    want.sort_unstable();
+    got.sort_unstable();
+    assert_eq!(
+        got, want,
+        "every exported colour re-encodes to its packet word / 128"
+    );
+}
+
+/// Spell-entry effect/aux offsets resolve through the per-block effect-offset
+/// table (the `FUN_800542C8` index→table→offset indirection). Pins the decode
+/// against the real archive: the `+0x04`/`+0x08` fields are 1-based indices, not
+/// direct pointers, and the resolved offsets land on a real effect descriptor.
+#[test]
+fn spell_effect_offsets_resolve_through_the_effect_table() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Evil Fly (id 1): spell 0x10 indexes effect descriptor at block 0xEE88.
+    let evil_fly = monster_archive::record(&entry, 1).unwrap().unwrap();
+    let s10 = evil_fly
+        .spells
+        .iter()
+        .find(|s| s.id == 0x10)
+        .expect("Evil Fly spell 0x10");
+    assert_eq!(
+        s10.effect_offset,
+        Some(0xEE88),
+        "Evil Fly 0x10 effect descriptor offset"
+    );
+    // The descriptor head is a short fixed record, not a TMD (magic != 0x80000002).
+    let mesh = monster_archive::mesh(&entry, 1).unwrap().unwrap();
+    let d = &mesh.block[0xEE88..0xEE88 + 8];
+    assert_eq!(d, &[0x00, 0x24, 0x27, 0x27, 0x2c, 0x00, 0x00, 0x00]);
+
+    // Green Slime (id 7): each indexed spell resolves to a distinct in-block
+    // descriptor; spell 0x00 sits at 0x2C98.
+    let slime = monster_archive::record(&entry, 7).unwrap().unwrap();
+    let s00 = slime.spells.iter().find(|s| s.id == 0x00).unwrap();
+    assert_eq!(s00.effect_offset, Some(0x2C98));
+
+    // Corpus invariants: the index field is sparse (most entries carry none),
+    // and every resolved offset is in-bounds by construction.
+    let (mut eff, mut aux) = (0usize, 0usize);
+    for id in 1..=240u16 {
+        let Ok(Some(rec)) = monster_archive::record(&entry, id) else {
+            continue;
+        };
+        for sp in &rec.spells {
+            if sp.effect_offset.is_some() {
+                eff += 1;
+            }
+            if sp.aux_offset.is_some() {
+                aux += 1;
+            }
+        }
+    }
+    assert_eq!(
+        eff, 289,
+        "spell entries with a resolved +0x04 effect offset"
+    );
+    assert_eq!(aux, 24, "spell entries with a resolved +0x08 aux offset");
+}
+
+/// The hit-reaction tag map (`FUN_80054CB0`) over real monster archives.
+///
+/// The battle engine addresses animations by **raw entry index**, so this
+/// exercises [`monster_archive::action_tags`] (every entry, including ones with
+/// no decodable keyframe stream) rather than `animations` (which drops those and
+/// would shift every index). What this catches:
+///
+/// - the `+0x4C` entry-pointer array or its `+0x4A` count drifts, so tags stop
+///   resolving;
+/// - the tag-4 → tag-2 knockdown fallback regresses, which would leave monsters
+///   with no heavy-hit reaction to queue;
+/// - `action_tags` and `animations` silently disagree on table length.
+#[test]
+fn monster_reaction_maps_resolve_over_real_archives() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    let mut checked = 0usize;
+    let mut with_knockdown = 0usize;
+    let mut via_fallback = 0usize;
+
+    for id in 1..=120u16 {
+        let Ok(Some(tags)) = monster_archive::action_tags(&entry, id) else {
+            continue;
+        };
+        if tags.is_empty() {
+            continue;
+        }
+        checked += 1;
+
+        // Entry 0 is the idle loop for every monster in the archive.
+        assert_eq!(tags[0], 0, "monster {id}: entry 0 should be the idle tag");
+
+        let map = monster_archive::reaction_map(&tags);
+
+        // Every resolved index must be a real entry in the same table.
+        for (slot, idx) in map.iter().enumerate() {
+            if let Some(i) = idx {
+                assert!(
+                    (*i as usize) < tags.len(),
+                    "monster {id}: reaction slot {slot} -> index {i} past the {} entry table",
+                    tags.len()
+                );
+            }
+        }
+
+        // The light flinch (tag 2) is the reaction every monster needs, and it
+        // is what the knockdown slot falls back to.
+        if let Some(flinch) = map[0] {
+            assert_eq!(
+                tags[flinch as usize], 2,
+                "monster {id}: slot 0 should point at a tag-2 entry"
+            );
+            // Slot 2 is either a real tag-4 entry or the tag-2 fallback.
+            let knock = map[2].expect("knockdown resolves when a flinch exists");
+            match tags[knock as usize] {
+                4 => with_knockdown += 1,
+                2 => {
+                    via_fallback += 1;
+                    assert_eq!(Some(knock), map[0], "fallback must reuse the flinch index");
+                }
+                other => panic!("monster {id}: knockdown slot points at tag {other:#x}"),
+            }
+        }
+    }
+
+    assert!(
+        checked > 20,
+        "expected many monsters to decode, got {checked}"
+    );
+    // Non-vacuous on both arms: the archive carries monsters with a real
+    // knockdown animation and monsters that rely on the fallback.
+    assert!(
+        with_knockdown > 0,
+        "no monster resolved a real tag-4 knockdown entry"
+    );
+    // Retail data never needs the fallback: every monster that carries a
+    // light flinch also carries a real knockdown entry. The fallback is
+    // defensive code on the retail disc, and this pins that - if a future
+    // archive change starts exercising it, that is a signal worth seeing.
+    assert_eq!(
+        via_fallback, 0,
+        "retail monsters all carry a real tag-4 knockdown; {via_fallback} fell back"
+    );
+}
+
+/// Differential oracle for [`monster_archive::reaction_map`] over every real
+/// archive: rebuild the map here with an independently written transcription of
+/// `FUN_80054CB0`'s loop and require the port to agree entry-for-entry.
+///
+/// This exists because the sibling test above can only check *shape* invariants
+/// (index in range, slot 0 points at a tag-2 entry), which a first-match scan
+/// satisfies just as well as retail's last-match one. The two differ only on a
+/// duplicated reaction tag, and the census below records whether the retail
+/// archive contains that case at all - if it does not, this test says so out
+/// loud rather than leaving the reader to assume it was covered. Either way the
+/// mechanism itself is pinned CI-side by the synthetic-table unit tests in
+/// `monster_archive::animation` (`reaction_map_takes_the_last_entry_for_a_...`
+/// and `..._zero_sentinel_swallows_an_index_zero_knockdown`), which run without
+/// a disc.
+#[test]
+fn monster_reaction_maps_match_an_independent_last_wins_transcription() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Transcribed straight from the disassembly at 0x80055338..0x80055440:
+    // one forward pass, five unconditional stores, no break; then the
+    // knockdown fallback tested against a *zero* byte.
+    fn retail_map(tags: &[u8]) -> [Option<u8>; 5] {
+        const FAMILY: [u8; 5] = [2, 3, 4, 5, 0x0B];
+        let mut out = [0u8; 5];
+        for (i, &tag) in tags.iter().enumerate().take(256) {
+            for (slot, &want) in FAMILY.iter().enumerate() {
+                if tag == want {
+                    out[slot] = i as u8;
+                }
+            }
+        }
+        if out[2] == 0 {
+            out[2] = out[0];
+        }
+        // Retail's zero doubles as "unset"; the port spells that `None`.
+        let present = FAMILY.map(|t| tags.contains(&t));
+        let mut map = [None; 5];
+        for slot in 0..5 {
+            let live = present[slot] || (slot == 2 && present[0]);
+            if live && out[slot] != 0 {
+                map[slot] = Some(out[slot]);
+            } else if live && out[slot] == 0 && tags.first() == Some(&FAMILY[slot]) {
+                map[slot] = Some(0);
+            }
+        }
+        map
+    }
+
+    let mut checked = 0usize;
+    let mut dup_tag_monsters = 0usize;
+
+    for id in 1..=120u16 {
+        let Ok(Some(tags)) = monster_archive::action_tags(&entry, id) else {
+            continue;
+        };
+        if tags.is_empty() {
+            continue;
+        }
+        checked += 1;
+
+        // Census: does this monster carry the same reaction tag twice? That is
+        // the only input on which last-wins and first-wins disagree.
+        if [2u8, 3, 4, 5, 0x0B]
+            .iter()
+            .any(|t| tags.iter().filter(|&x| x == t).count() > 1)
+        {
+            dup_tag_monsters += 1;
+        }
+
+        assert_eq!(
+            monster_archive::reaction_map(&tags),
+            retail_map(&tags),
+            "monster {id}: reaction_map diverges from the transcribed loop \
+             (tags {tags:?})"
+        );
+    }
+
+    assert!(checked > 20, "expected many monsters, got {checked}");
+    eprintln!(
+        "[reaction_map] {checked} monsters checked; {dup_tag_monsters} carry a \
+         duplicated reaction tag (the last-wins-vs-first-wins discriminator). \
+         A zero here means retail data cannot distinguish the two scan orders \
+         and the CI-side synthetic tests are what pin it."
+    );
+}
+
+/// The juggle window over real monster archives: every populated monster's
+/// light-flinch entry (`+0x1EF`, tag 2) resolves through
+/// [`monster_archive::light_flinch_window`] to a gate frame the anim tick can
+/// compare (`FUN_80050E00` returns slot 0 for every reaction list on the
+/// disc), and the live-pinned monsters carry the beats the PCSX-Redux
+/// `+0x1F7` write-watch measured. What this catches:
+///
+/// - the event-frame list (`+0x10..+0x13`) or rate byte (`+0x78`) drifts;
+/// - a reaction entry grows a four-slot list, which would make retail's gate
+///   depend on the block's load address (the `gate_frame() == None` case);
+/// - the `light_flinch_window` walk stops being index-aligned with
+///   `action_tags`.
+#[test]
+fn light_flinch_juggle_windows_resolve_over_real_archives() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let records = monster_archive::records(&entry).expect("archive walk");
+    let mut checked = 0usize;
+    let mut no_window = Vec::new();
+    let mut whole_clip = Vec::new();
+    for r in &records {
+        let Ok(Some(w)) = monster_archive::light_flinch_window(&entry, r.id) else {
+            continue;
+        };
+        checked += 1;
+        assert!(
+            w.gate_frame().is_some(),
+            "monster {} ({}): reaction list {:?} fills every slot - retail's gate would \
+             be load-address dependent",
+            r.id,
+            r.name,
+            w.event_frames
+        );
+        let beat = usize::from(w.gate_frame().unwrap_or(0));
+        if beat == 0 {
+            no_window.push(format!("{} ({})", r.id, r.name));
+        }
+        // A beat at or past the clip's own frame count is authored data (a
+        // handful of entries carry one): the byte then holds for the whole
+        // flinch and drops when the clip's natural end commits idle.
+        if beat >= w.frame_count {
+            whole_clip.push(format!("{} ({})", r.id, r.name));
+        }
+        eprintln!(
+            "[juggle] {:>3} {:<16} entry {:>2} tag {} beat {:>2} rate {} frames {:>2} ticks@spd8 {:>3}",
+            r.id,
+            r.name,
+            w.entry_index,
+            w.tag,
+            beat,
+            w.rate,
+            w.frame_count,
+            w.ticks()
+        );
+    }
+    assert!(checked > 20, "expected many monsters, got {checked}");
+    eprintln!(
+        "[juggle] {checked} monsters; no juggle window at all: {no_window:?}; beat at/past \
+         the clip end (window = whole flinch): {whole_clip:?}"
+    );
+}

@@ -8,13 +8,14 @@
 //! `World::settle_muscle_contest`, plus the reward misattribution that used
 //! to sit in `World::exit_muscle_dome`.
 
-use legaia_engine_core::muscle_dome as md;
 use legaia_engine_core::world::World;
 
 /// A two-course ladder with hand-picked rows, so the arithmetic below is
 /// readable without a disc in the loop.
-fn score() -> [md::ScoreRow; md::COURSE_COUNT] {
-    let mut s = [[0i32; md::MAX_ROUNDS_PER_COURSE]; md::COURSE_COUNT];
+fn score() -> [legaia_engine_minigames::muscle_dome::ScoreRow;
+    legaia_engine_minigames::muscle_dome::COURSE_COUNT] {
+    let mut s = [[0i32; legaia_engine_minigames::muscle_dome::MAX_ROUNDS_PER_COURSE];
+        legaia_engine_minigames::muscle_dome::COURSE_COUNT];
     s[0][..3].copy_from_slice(&[10, 20, 40]);
     s
 }
@@ -22,12 +23,16 @@ fn score() -> [md::ScoreRow; md::COURSE_COUNT] {
 fn world_with_contest() -> World {
     let mut w = World::default();
     let flags = w.muscle_contest_flags();
-    w.minigames.muscle_contest = Some(md::DomeContest::enter(&flags, [3, 3, 3], score()));
+    w.minigames.muscle_contest = Some(legaia_engine_minigames::muscle_dome::DomeContest::enter(
+        &flags,
+        [3, 3, 3],
+        score(),
+    ));
     w
 }
 
-fn cleared() -> md::LegReport {
-    md::LegReport {
+fn cleared() -> legaia_engine_minigames::muscle_dome::LegReport {
+    legaia_engine_minigames::muscle_dome::LegReport {
         survived: true,
         outcome: 0,
         turns_taken: 4,
@@ -43,7 +48,8 @@ fn a_reported_leg_advances_the_ladder_and_banks_its_cell() {
     // The hub lands on the restore state, then the next leg is stageable.
     assert!(matches!(
         state,
-        md::ContestState::Restore | md::ContestState::Fight
+        legaia_engine_minigames::muscle_dome::ContestState::Restore
+            | legaia_engine_minigames::muscle_dome::ContestState::Fight
     ));
     let run = w.minigames.muscle_contest.as_ref().unwrap();
     assert_eq!(run.round(), 1, "the ladder advanced one leg");
@@ -93,8 +99,8 @@ fn a_finished_run_pays_coins_and_leaves_the_seru_log_alone() {
         "kept for the host to show"
     );
     // Continuing latches its flag.
-    assert!(w.system_flag_test(md::CONTEST_CONTINUE_FLAG));
-    assert!(!w.system_flag_test(md::CONTEST_GAVE_UP_FLAG));
+    assert!(w.system_flag_test(legaia_engine_minigames::muscle_dome::CONTEST_CONTINUE_FLAG));
+    assert!(!w.system_flag_test(legaia_engine_minigames::muscle_dome::CONTEST_GAVE_UP_FLAG));
     // And nothing captured a Seru: the victory caption names a spell, it does
     // not award one.
     assert_eq!(
@@ -107,18 +113,18 @@ fn a_finished_run_pays_coins_and_leaves_the_seru_log_alone() {
 #[test]
 fn running_from_the_first_fight_voids_the_run_and_latches_the_course_flag() {
     let mut w = world_with_contest();
-    w.report_muscle_leg(md::LegReport {
+    w.report_muscle_leg(legaia_engine_minigames::muscle_dome::LegReport {
         survived: true,
-        outcome: md::LEG_OUTCOME_RAN,
+        outcome: legaia_engine_minigames::muscle_dome::LEG_OUTCOME_RAN,
         turns_taken: 1,
     });
     let out = w.settle_muscle_contest().expect("the run ended");
     assert_eq!(out.score, 0);
     assert_eq!(w.minigames.casino_coins, 0, "a give-up pays nothing");
-    assert!(w.system_flag_test(md::CONTEST_GAVE_UP_FLAG));
+    assert!(w.system_flag_test(legaia_engine_minigames::muscle_dome::CONTEST_GAVE_UP_FLAG));
     // Round 1 = the course's first fight, so its own flag latches - the
     // Muscle Paradise trigger's course-0 third.
-    assert!(w.system_flag_test(md::COURSE_RAN_FIRST_FLAG_BASE));
+    assert!(w.system_flag_test(legaia_engine_minigames::muscle_dome::COURSE_RAN_FIRST_FLAG_BASE));
 }
 
 #[test]
@@ -139,21 +145,30 @@ fn settling_needs_a_finished_run() {
 #[test]
 fn the_master_prize_lands_in_the_bag_once() {
     let mut w = World::default();
-    let mut s = [[0i32; md::MAX_ROUNDS_PER_COURSE]; md::COURSE_COUNT];
+    let mut s = [[0i32; legaia_engine_minigames::muscle_dome::MAX_ROUNDS_PER_COURSE];
+        legaia_engine_minigames::muscle_dome::COURSE_COUNT];
     // A full-length Master course, so the run reaches the prize round.
-    for (r, cell) in s[md::MASTER_COURSE].iter_mut().enumerate().take(13) {
+    for (r, cell) in s[legaia_engine_minigames::muscle_dome::MASTER_COURSE]
+        .iter_mut()
+        .enumerate()
+        .take(13)
+    {
         *cell = r as i32 + 1;
     }
     // Unlock the Master course + open every length gate.
-    w.system_flag_set(md::COURSE_UNLOCK_FLAGS[2].0);
-    for &(_, id) in &md::MASTER_LENGTH_GATES {
+    w.system_flag_set(legaia_engine_minigames::muscle_dome::COURSE_UNLOCK_FLAGS[2].0);
+    for &(_, id) in &legaia_engine_minigames::muscle_dome::MASTER_LENGTH_GATES {
         w.system_flag_set(id);
     }
     let flags = w.muscle_contest_flags();
-    w.minigames.muscle_contest = Some(md::DomeContest::enter(&flags, [8, 8, 13], s));
+    w.minigames.muscle_contest = Some(legaia_engine_minigames::muscle_dome::DomeContest::enter(
+        &flags,
+        [8, 8, 13],
+        s,
+    ));
     assert_eq!(
         w.minigames.muscle_contest.as_ref().unwrap().course(),
-        md::MASTER_COURSE
+        legaia_engine_minigames::muscle_dome::MASTER_COURSE
     );
     for _ in 0..13 {
         w.report_muscle_leg(cleared());
@@ -161,12 +176,15 @@ fn the_master_prize_lands_in_the_bag_once() {
     let out = w.settle_muscle_contest().expect("the run finished");
     assert!(out.award_prize);
     assert_eq!(
-        w.party.inventory.get(&md::CONTEST_PRIZE_ITEM_ID).copied(),
+        w.party
+            .inventory
+            .get(&legaia_engine_minigames::muscle_dome::CONTEST_PRIZE_ITEM_ID)
+            .copied(),
         Some(1),
         "the War God Icon is in the bag"
     );
     assert!(
-        w.system_flag_test(md::CONTEST_PRIZE_FLAG),
+        w.system_flag_test(legaia_engine_minigames::muscle_dome::CONTEST_PRIZE_FLAG),
         "and the one-shot flag latched"
     );
 }
@@ -189,18 +207,20 @@ fn the_ringside_pick_reads_the_lead_record_after_the_leg() {
     stats.hp_max = 300;
     rec.set_record_stats(stats);
     w.load_party(party);
-    let card = md::MuscleCard {
+    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
         command_id: 0x0C,
         cost: 0x1E,
     };
     let fought_to = |w: &mut World, hp: i32| {
-        w.enter_muscle_dome(md::MuscleDomeSession::new(
-            [card; md::HAND_SLOTS],
-            [card; md::HAND_SLOTS],
-            [120, 120],
-            [hp, 400],
-            1,
-        ));
+        w.enter_muscle_dome(
+            legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+                [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
+                [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
+                [120, 120],
+                [hp, 400],
+                1,
+            ),
+        );
         w.exit_muscle_dome();
         (
             w.minigames.muscle_ringside_still,
@@ -209,12 +229,18 @@ fn the_ringside_pick_reads_the_lead_record_after_the_leg() {
     };
     assert_eq!(
         fought_to(&mut w, 100),
-        (Some(legaia_asset::ringside_still::PROT_INDEX_LOW_HP), 100),
+        (
+            Some(legaia_minigame_formats::ringside_still::PROT_INDEX_LOW_HP),
+            100
+        ),
         "below half: the second still, and the HP lands on the record"
     );
     assert_eq!(
         fought_to(&mut w, 200),
-        (Some(legaia_asset::ringside_still::PROT_INDEX_DEFAULT), 200)
+        (
+            Some(legaia_minigame_formats::ringside_still::PROT_INDEX_DEFAULT),
+            200
+        )
     );
 }
 
@@ -224,19 +250,21 @@ fn the_ringside_pick_reads_the_lead_record_after_the_leg() {
 /// the native `M` hotkey did alone before the escape reported the leg.
 #[test]
 fn the_shared_escape_reports_a_left_leg_and_ends_the_contest() {
-    use legaia_engine_core::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut w = world_with_contest();
-    let card = md::MuscleCard {
+    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
         command_id: 0x0C,
         cost: 0x1E,
     };
-    w.enter_muscle_dome(md::MuscleDomeSession::new(
-        [card; md::HAND_SLOTS],
-        [card; md::HAND_SLOTS],
-        [120, 120],
-        [400, 400],
-        1,
-    ));
+    w.enter_muscle_dome(
+        legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+            [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
+            [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
+            [120, 120],
+            [400, 400],
+            1,
+        ),
+    );
     assert!(w.minigames.muscle_contest.is_some());
     w.set_pad(0);
     let _ = w.tick();
@@ -247,7 +275,7 @@ fn the_shared_escape_reports_a_left_leg_and_ends_the_contest() {
         w.minigames.muscle_contest.is_none(),
         "the left leg ended the contest and it settled"
     );
-    assert!(w.system_flag_test(md::CONTEST_GAVE_UP_FLAG));
+    assert!(w.system_flag_test(legaia_engine_minigames::muscle_dome::CONTEST_GAVE_UP_FLAG));
     assert_eq!(w.minigames.casino_coins, 0, "a give-up pays nothing");
 }
 
@@ -257,19 +285,19 @@ fn the_shared_escape_reports_a_left_leg_and_ends_the_contest() {
 /// field back on its confirm, so the next round never opened.
 #[test]
 fn a_won_leg_mid_ladder_stays_in_the_arena_and_stages_the_next_fight() {
-    use legaia_engine_core::input::PadButton;
-    use legaia_engine_core::minigame_entry::MinigameSubId;
-    use legaia_engine_core::world::SceneMode;
+    use legaia_engine_mode::minigame_entry::MinigameSubId;
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_system::input::PadButton;
     let mut w = world_with_contest();
     w.mode = SceneMode::Field;
-    let card = md::MuscleCard {
+    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
         command_id: 0x0C,
         cost: 0x1E,
     };
     let won_leg = |w: &mut World| {
-        let mut s = md::MuscleDomeSession::new(
-            [card; md::HAND_SLOTS],
-            [card; md::HAND_SLOTS],
+        let mut s = legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+            [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
+            [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
             [120, 120],
             [400, 1],
             1,
@@ -277,7 +305,10 @@ fn a_won_leg_mid_ladder_stays_in_the_arena_and_stages_the_next_fight() {
         assert!(s.commit_card(0, 0));
         s.end_selection();
         s.resolve_turn(|attacker, _| if attacker == 0 { 5 } else { 0 });
-        assert_eq!(s.phase(), md::MusclePhase::Won);
+        assert_eq!(
+            s.phase(),
+            legaia_engine_menus::muscle_dome_session::MusclePhase::Won
+        );
         w.enter_muscle_dome(s);
     };
     won_leg(&mut w);
@@ -314,17 +345,17 @@ fn a_won_leg_mid_ladder_stays_in_the_arena_and_stages_the_next_fight() {
 /// next fight - once.
 #[test]
 fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
-    use legaia_engine_core::input::PadButton;
-    use legaia_engine_core::world::SceneMode;
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_system::input::PadButton;
     let mut w = world_with_contest();
     w.mode = SceneMode::Field;
-    let card = md::MuscleCard {
+    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
         command_id: 0x0C,
         cost: 0x1E,
     };
-    let mut s = md::MuscleDomeSession::new(
-        [card; md::HAND_SLOTS],
-        [card; md::HAND_SLOTS],
+    let mut s = legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+        [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
+        [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
         [120, 120],
         [400, 1],
         1,
@@ -347,7 +378,7 @@ fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
         // The shared scene host runs the hub right after the world tick.
         w.tick_muscle_hub();
         for op in w.take_sfx_ring_ops() {
-            if let legaia_engine_core::world::SfxRingOp::ArmSlot(slot, id, delay) = op {
+            if let legaia_engine_system::sound_state::SfxRingOp::ArmSlot(slot, id, delay) = op {
                 armed.push((slot, id, delay));
             }
         }
@@ -383,16 +414,16 @@ fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
 /// legs gives the contest up.
 #[test]
 fn a_course_ending_leg_and_a_between_legs_escape_hand_the_field_back() {
-    use legaia_engine_core::input::PadButton;
-    use legaia_engine_core::world::SceneMode;
-    let card = md::MuscleCard {
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_system::input::PadButton;
+    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
         command_id: 0x0C,
         cost: 0x1E,
     };
     let decide = |w: &mut World, won: bool| {
-        let mut s = md::MuscleDomeSession::new(
-            [card; md::HAND_SLOTS],
-            [card; md::HAND_SLOTS],
+        let mut s = legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+            [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
+            [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
             [120, 120],
             [400, 400],
             1,
@@ -434,5 +465,5 @@ fn a_course_ending_leg_and_a_between_legs_escape_hand_the_field_back() {
     let _ = w.tick();
     assert_eq!(w.mode, SceneMode::Field);
     assert!(w.minigames.muscle_contest.is_none());
-    assert!(w.system_flag_test(md::CONTEST_GAVE_UP_FLAG));
+    assert!(w.system_flag_test(legaia_engine_minigames::muscle_dome::CONTEST_GAVE_UP_FLAG));
 }

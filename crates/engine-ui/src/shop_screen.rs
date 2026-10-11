@@ -7,7 +7,7 @@
 //! the caller and filled by its own content renderer (or, for the two
 //! renderer-less list windows, by the SCUS kind-4 list kernel
 //! `FUN_80032A44`). Which windows are up is the widget scripts' business -
-//! a host gets the set from `engine-core::shop::shop_screen_windows`. This
+//! a host gets the set from `engine-menus::shop::shop_screen_windows`. This
 //! module turns that set plus the live content into draws, so the native
 //! `play-window` and the browser play page draw one screen rather than two.
 //!
@@ -31,7 +31,7 @@
 //! REF: FUN_80032A44 - the list kernel whose draw half this lays out.
 //! REF: FUN_801D4868 - the Buy / Sell / Quit picker (window 42).
 
-use crate::ui_menu_window_painters::{PainterPictogram, PainterSprite};
+use crate::menu::window_painters::{PainterPictogram, PainterSprite};
 use crate::{
     EquipStatBlock, PartyCompareMemberView, PartyCompareOutcome, SaveMenuAtlasRects, SpriteDraw,
     TextDraw, text_draws_for,
@@ -139,7 +139,7 @@ pub struct ShopPickerView<'a> {
 }
 
 /// One party member for window 41, as a host projects it from
-/// `engine-core::shop::party_compare_members`.
+/// `engine-core::world_views::shop::party_compare_members`.
 #[derive(Debug, Clone, Copy)]
 pub struct ShopCompareMember<'a> {
     pub name: &'a str,
@@ -155,7 +155,7 @@ pub struct ShopCompareMember<'a> {
 /// Everything one shop frame shows.
 #[derive(Debug, Clone, Copy)]
 pub struct ShopScreenView<'a> {
-    /// The window set, in draw order (`engine-core::shop::shop_screen_windows`).
+    /// The window set, in draw order (`engine-menus::shop::shop_screen_windows`).
     pub windows: &'a [usize],
     pub picker: Option<ShopPickerView<'a>>,
     pub list: Option<ShopListView<'a>>,
@@ -621,7 +621,7 @@ pub fn shop_screen_draws(ctx: &ShopScreenCtx<'_>, view: &ShopScreenView<'_>) -> 
 /// The casino prize counter's screen - the gold shop's sibling on the same
 /// window stack: the frames of windows 43 ("Exchange" plaque), 44 (the prize
 /// list), 45 (the coin counter) and, while the purchase confirm is up, 46,
-/// under the texts and sprite requests `ui_prize_exchange::prize_exchange_draws_for`
+/// under the texts and sprite requests `prize_exchange::prize_exchange_draws_for`
 /// returns. Retail (the `casino_prize_shop` library state) draws it framed on
 /// black, like the shop.
 pub fn prize_screen_draws(
@@ -631,9 +631,7 @@ pub fn prize_screen_draws(
     marks: &[PainterSprite],
     pictogram: Option<PainterPictogram>,
 ) -> ShopScreenDraws {
-    use crate::ui_prize_exchange::{
-        WIN_COIN_COUNTER, WIN_CONFIRM, WIN_EXCHANGE_TAB, WIN_PRIZE_LIST,
-    };
+    use crate::prize_exchange::{WIN_COIN_COUNTER, WIN_CONFIRM, WIN_EXCHANGE_TAB, WIN_PRIZE_LIST};
     let mut windows = vec![WIN_EXCHANGE_TAB, WIN_PRIZE_LIST, WIN_COIN_COUNTER];
     if confirming {
         windows.push(WIN_CONFIRM);

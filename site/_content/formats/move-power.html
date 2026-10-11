@@ -11,7 +11,7 @@
     <dt>Lives in</dt><dd>Battle-action overlay, PROT entry <strong>0898</strong>: table at runtime VA <code>0x801F4F5C</code> (file <code>0x26744</code>); id&rarr;index map at <code>0x801F4E63</code> (file <code>0x2664B</code>)</dd>
     <dt>Size / stride</dt><dd>44 records &times; 26 bytes; map is 128 bytes (move ids <code>0x00..=0x7F</code>)</dd>
     <dt>Indexed by</dt><dd><code>table[map[move_id]]</code> - the move id is the same id space as the <a href="spell-table.html">spell-name table</a></dd>
-    <dt>Parser</dt><dd><code>legaia_asset::move_power</code>; CLI <code>asset move-power</code>; engine <code>engine-core::move_power::MovePowerCatalog</code></dd>
+    <dt>Parser</dt><dd><code>legaia_game_tables::move_power</code>; CLI <code>asset move-power</code>; engine <code>engine-battle::move_power::MovePowerCatalog</code></dd>
     <dt>Confidence</dt><dd>Confirmed - the raw PROT bytes byte-match the in-RAM table across unrelated battle states, and every field read is pinned in the instruction stream (<a href="#how-we-know">how we know</a>)</dd>
     <dt>Used by</dt><dd><a href="../subsystems/battle-formulas.html">Battle formulas</a>, <a href="../subsystems/battle-action.html">Battle action SM</a>, <a href="../subsystems/move-vm.html">Move VM</a>, <a href="../tooling/randomizer.html">Randomizer</a> (move-power slider)</dd>
   </dl>
@@ -108,7 +108,7 @@
 
 <section class="doc-section" id="runtime-resolution">
   <h2>In the port</h2>
-  <p><code>legaia_asset::move_power</code> parses the table, the map and the side tables; <code>engine-core::move_power::MovePowerCatalog</code> resolves a move id to a full <code>MoveFx</code> descriptor (every behavioural field, the impact-config join, each list byte classified as a 3D spawn, a 2D pool effect or a flash). A cast of a non-summon move stages its spawn records through the same move VM the summon renderer uses (<code>World::spawn_move_fx</code>); the cue groups are placed by <code>engine-vm::battle_cue_group</code> from the battle-action applier. The exact per-part transform composition of a spawned scene-graph is the piece still shared-open with the summon renderer.</p>
+  <p><code>legaia_game_tables::move_power</code> parses the table, the map and the side tables; <code>engine-battle::move_power::MovePowerCatalog</code> resolves a move id to a full <code>MoveFx</code> descriptor (every behavioural field, the impact-config join, each list byte classified as a 3D spawn, a 2D pool effect or a flash). A cast of a non-summon move stages its spawn records through the same move VM the summon renderer uses (<code>World::spawn_move_fx</code>); the cue groups are placed by <code>engine-battle-vm::battle_cue_group</code> from the battle-action applier. The exact per-part transform composition of a spawned scene-graph is the piece still shared-open with the summon renderer.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
@@ -192,7 +192,7 @@
           <tr><td><code>+0x01</code></td><td>4</td><td>cue ids</td><td>Only the first <code>count</code> are read. Bit <code>0x80</code> = an <strong>actor</strong> cue (<code>FUN_801DFDF0(id &amp; 0x7F, pos, yaw)</code>, the strike pose); any other id indexes <em>both</em> effect side tables</td></tr>
         </tbody>
       </table>
-      <p>13 records fill <code>0x801F6470..0x801F64B5</code>, followed by padding and the <code>summon.DAT</code> path literal; callers never index past <code>0xC</code>. The table has exactly one consumer - a reference scan of SCUS plus every base-mapped overlay finds the address materialised once - while its two sibling tables are reached from five sites each, always in pairs. The caller is the damage-application primitive <code>FUN_800402F4</code> (eleven branches, group ids <code>5..0xC</code> literal or computed). The port carries the kernel, both tables and the per-branch dispatch (<code>legaia_engine_vm::battle_cue_group</code>).</p>
+      <p>13 records fill <code>0x801F6470..0x801F64B5</code>, followed by padding and the <code>summon.DAT</code> path literal; callers never index past <code>0xC</code>. The table has exactly one consumer - a reference scan of SCUS plus every base-mapped overlay finds the address materialised once - while its two sibling tables are reached from five sites each, always in pairs. The caller is the damage-application primitive <code>FUN_800402F4</code> (eleven branches, group ids <code>5..0xC</code> literal or computed). The port carries the kernel, both tables and the per-branch dispatch (<code>legaia_engine_battle_vm::battle_cue_group</code>).</p>
     </div>
   </details>
 

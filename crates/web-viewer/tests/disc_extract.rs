@@ -59,7 +59,7 @@ fn extract_prot_dat_from_real_disc() {
             continue;
         }
         let buf = &prot[off..end];
-        if let Some(s) = legaia_asset::scene_tmd_stream::detect(buf)
+        if let Some(s) = legaia_scene_formats::scene_tmd_stream::detect(buf)
             && let Ok(tmd) = legaia_tmd::parse(&buf[s.tmd_range()])
         {
             let mesh = legaia_tmd::mesh::tmd_to_mesh(&tmd, &buf[s.tmd_range()]);
@@ -88,7 +88,7 @@ fn extract_prot_dat_from_real_disc() {
             continue;
         }
         let buf = &prot[off..end];
-        if let Some(s) = legaia_asset::scene_tmd_stream::detect(buf)
+        if let Some(s) = legaia_scene_formats::scene_tmd_stream::detect(buf)
             && let Ok(tmd) = legaia_tmd::parse(&buf[s.tmd_range()])
         {
             let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &buf[s.tmd_range()]);

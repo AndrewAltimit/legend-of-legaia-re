@@ -1,6 +1,5 @@
 //! Per-round battle bookkeeping: the initiative-key seeder (`FUN_801DA780`)
-//! and the agility / action-gauge reset (`FUN_801D88CC`). Split out of
-//! `battle_formulas.rs`.
+//! and the agility / action-gauge reset (`FUN_801D88CC`).
 //!
 //! These are the two passes that run at a round boundary, and the order is
 //! **reset first**: the battle-flow SM calls `FUN_801D88CC` at `801d0ed0` and
@@ -691,7 +690,7 @@ pub const CAMERA_HEIGHT_MAX: i16 = 0x1400;
 /// the disassembly settles which one this is.
 ///
 /// `size_of(slot)` returns the monster record's `+0x1F` size byte
-/// ([`legaia_asset::monster_archive::MonsterRecord::size_class`]) for a monster
+/// ([`legaia_actor_formats::monster_archive::MonsterRecord::size_class`]) for a monster
 /// slot; it is never called for a party slot.
 ///
 /// `monster_slot_base` is the first slot of the monster band - the value the

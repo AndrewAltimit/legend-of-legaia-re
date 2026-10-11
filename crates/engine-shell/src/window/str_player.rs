@@ -89,7 +89,7 @@ pub(crate) fn play_str_in(
         uploaded: None,
         frame_period: timing.frame_period(),
         clock: None,
-        movie_clock: legaia_engine_core::cutscene::MovieClock::new(),
+        movie_clock: legaia_engine_system::movie::cutscene::MovieClock::new(),
         audio_out,
         pending_audio: audio,
     };
@@ -130,7 +130,7 @@ struct StrPlayerApp {
     clock: Option<std::time::Instant>,
     /// The shared pacing rule both play hosts run a movie on (audio cursor,
     /// wall clock once the cursor stalls).
-    movie_clock: legaia_engine_core::cutscene::MovieClock,
+    movie_clock: legaia_engine_system::movie::cutscene::MovieClock,
     /// Live audio output, present only when an interleaved XA track decoded
     /// and the device opened. The video clock reads its cursor for A/V sync.
     /// Owned solely by the player (single-threaded), so no `Arc` is needed.

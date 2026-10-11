@@ -13,8 +13,9 @@
 //! Skips silently when `extracted/` or `LEGAIA_DISC_BIN` is missing.
 use std::path::PathBuf;
 
-use legaia_engine_core::field_env;
-use legaia_engine_core::scene::{Scene, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::field_env;
+use legaia_engine_scene::scene::Scene;
 
 fn extracted_dir() -> Option<PathBuf> {
     for d in ["extracted", "../../extracted"] {

@@ -26,9 +26,9 @@
 //!   line after the action SM, every live battle frame (`FUN_80046A20`:
 //!   `jal 0x801E295C; jal 0x80051078`). [`World::tick_battle_separation`]
 //!   sits at the same point in `live_battle_tick`, driving the
-//!   `legaia_engine_vm::battle_separation` kernels.
+//!   `legaia_engine_battle_vm::battle_separation` kernels.
 //! - **The range law** is computed, not tabulated: `FUN_8004E2F0`
-//!   (`legaia_engine_vm::battle_action::motion::range_metric`).
+//!   (`legaia_engine_battle_vm::battle_action::motion::range_metric`).
 //!   [`World::battle_range_metric`] assembles its inputs from live engine
 //!   state; the `BattleActionHost::range_check` impl delegates here.
 //!
@@ -36,7 +36,7 @@
 //! REF: FUN_8004E2F0 (range law), FUN_80051078 / FUN_80050BB8 (separation)
 
 use super::*;
-use vm::battle_action::motion;
+use legaia_engine_battle_vm::battle_action::motion;
 
 /// Fallback root-motion pair `(entry_speed, +0x21D scale)` used when the
 /// approaching actor's committed clip carries no entry-speed halfword (no
@@ -50,7 +50,7 @@ use vm::battle_action::motion;
 const FALLBACK_APPROACH: (i16, u8) = (20, 8);
 
 /// Retail-normal `actor[+0x21D]` speed scale (see
-/// `legaia_asset::monster_archive` - the anim cursor doc pins normal `4`),
+/// `legaia_actor_formats::monster_archive` - the anim cursor doc pins normal `4`),
 /// used when the actor's own `impact_step` byte is unset.
 const DEFAULT_SPEED_SCALE: u8 = 4;
 
@@ -236,13 +236,13 @@ impl World {
             target_ref,
         };
         // Retail: a = (bearing(target_ref -> attacker_live) + 0x800) & 0xFFF.
-        let bearing = vm::battle_action::bearing_12bit_approx(
+        let bearing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
             target_ref.1,
             target_ref.0,
             attacker_pos.1,
             attacker_pos.0,
         );
-        let angle = vm::battle_approach::approach_angle(bearing) as u16;
+        let angle = legaia_engine_battle_vm::battle_approach::approach_angle(bearing) as u16;
         let (sin, cos) = motion::trig12(angle);
         motion::range_metric(&inputs, sin, cos)
     }
@@ -285,13 +285,13 @@ impl World {
                 .seat
                 .unwrap_or((tgt.move_state.world_x, tgt.move_state.world_z)),
         };
-        let bearing = vm::battle_action::bearing_12bit_approx(
+        let bearing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
             inputs.target_ref.1,
             inputs.target_ref.0,
             creature_pos.1,
             creature_pos.0,
         );
-        let angle = vm::battle_approach::approach_angle(bearing) as u16;
+        let angle = legaia_engine_battle_vm::battle_approach::approach_angle(bearing) as u16;
         let (sin, cos) = motion::trig12(angle);
         motion::range_metric(&inputs, sin, cos)
     }
@@ -386,7 +386,7 @@ impl World {
     /// (`world::battle::clip_ladder`); a living knockdown's own commit clears
     /// `+0x1DC`, so a knockdown's root speed moves the actor.
     pub(in crate::world) fn tick_battle_locomotion(&mut self) {
-        use vm::battle_action::ActionState;
+        use legaia_engine_battle_vm::battle_action::ActionState;
         self.seed_battle_seats();
         self.refresh_battle_body_pairs();
         let Some(state) = ActionState::from_byte(self.battle_ctx.action_state) else {
@@ -527,8 +527,9 @@ impl World {
         let (tx, tz) = (t.move_state.world_x, t.move_state.world_z);
         // Retail facing: bearing(target_live -> attacker_live) + half turn
         // (`0x801E32EC..0x801E3318` and the sibling state heads).
-        let facing =
-            vm::battle_action::bearing_12bit_approx(tz, tx, az, ax).wrapping_add(0x800) & 0xFFF;
+        let facing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(tz, tx, az, ax)
+            .wrapping_add(0x800)
+            & 0xFFF;
         self.actors[slot].battle.facing_angle = facing;
         // The positive-speed gate: no step once in range.
         if self.battle_range_metric(slot as u8, target) == 0 {
@@ -560,7 +561,7 @@ impl World {
     }
 
     /// PORT-adjacent driver for `FUN_80051078` / `FUN_80050BB8` (the kernels
-    /// live in `legaia_engine_vm::battle_separation`): one all-pairs
+    /// live in `legaia_engine_battle_vm::battle_separation`): one all-pairs
     /// separation pass in the retail visitation order, on the line after the
     /// action SM step - retail's exact call slot (`FUN_80046A20`).
     ///
@@ -574,7 +575,9 @@ impl World {
     ///
     /// REF: FUN_80051078, FUN_80050BB8, FUN_80046A20
     pub(in crate::world) fn tick_battle_separation(&mut self) {
-        use vm::battle_separation::{SEPARATION_SLOTS, SepActor, push_apart, separation_pass};
+        use legaia_engine_battle_vm::battle_separation::{
+            SEPARATION_SLOTS, SepActor, push_apart, separation_pass,
+        };
         let n = self.actors.len().min(SEPARATION_SLOTS);
         if n < 2 {
             return;
@@ -602,7 +605,8 @@ impl World {
             // The pair angle: `(FUN_80019B28(b.z, b.x, a.z, a.x) + 0x800)
             // & 0xFFF` over the seat pairs (`0x80050C0C..0x80050C28`).
             let (a, b) = (seps[i], seps[j]);
-            let bearing = vm::battle_action::bearing_12bit_approx(b.z, b.x, a.z, a.x);
+            let bearing =
+                legaia_engine_battle_vm::battle_action::bearing_12bit_approx(b.z, b.x, a.z, a.x);
             let angle = bearing.wrapping_add(0x800) & 0xFFF;
             let (sin, cos) = motion::trig12(angle);
             let (lo, hi) = if i < j { (i, j) } else { (j, i) };
@@ -625,7 +629,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vm::battle_action::{ActionState, StepOutcome};
+    use legaia_engine_battle_vm::battle_action::{ActionState, StepOutcome};
 
     /// A world in battle mode with 1 party member and 1 monster at the
     /// authored solo seats (0,-800) vs (0,+800).

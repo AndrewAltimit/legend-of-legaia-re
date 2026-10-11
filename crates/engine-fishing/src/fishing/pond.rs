@@ -1,5 +1,4 @@
 //! The pond session (`PondSession`): the venue-faithful fishing loop, its tables, persistence and catch HUD.
-//! Split out of `fishing.rs`.
 
 use super::*;
 
@@ -336,7 +335,7 @@ impl PondSession {
                         let region = venue
                             .region_block
                             .as_deref()
-                            .and_then(legaia_engine_vm::field_regions::RegionTable::parse);
+                            .and_then(legaia_engine_field::field_regions::RegionTable::parse);
                         lure.probe(&venue.map, region.as_ref(), self.casts, fs)
                     }
                     _ => Default::default(),
@@ -511,13 +510,13 @@ pub fn venue_for_departure_scene(scene_id: u32, current: usize) -> usize {
 /// debug launchers and the minigames page all build a session from this.
 #[derive(Debug, Clone)]
 pub struct FishingTables {
-    /// Per-species parameter records ([`legaia_asset::fishing_species::parse`]).
+    /// Per-species parameter records ([`legaia_minigame_formats::fishing_species::parse`]).
     pub species: Vec<FishingSpecies>,
     /// The two venue spawn pages, Buma then Vidna
-    /// ([`legaia_asset::fishing_species::parse_spawn_tables`]).
+    /// ([`legaia_minigame_formats::fishing_species::parse_spawn_tables`]).
     pub spawn: [Vec<[u32; 8]>; 2],
     /// Reel-cadence gesture templates
-    /// ([`legaia_asset::fishing_species::parse_cadence_templates`]).
+    /// ([`legaia_minigame_formats::fishing_species::parse_cadence_templates`]).
     pub cadence: Vec<CadenceTemplate>,
 }
 
@@ -526,7 +525,7 @@ impl FishingTables {
     /// of them fails to decode - a session without a spawn page can never
     /// hook a fish, so a partial decode is not a playable session.
     pub fn from_overlay(loaded: &[u8]) -> Option<Self> {
-        use legaia_asset::fishing_species as fs;
+        use legaia_minigame_formats::fishing_species as fs;
         Some(Self {
             species: fs::parse(loaded)?,
             spawn: fs::parse_spawn_tables(loaded)?,
@@ -609,7 +608,7 @@ impl PondSession {
     /// The landed catch's result plate this frame (`FUN_801D5298`, the
     /// result actor's tick), while [`PondPhase::Landed`] holds; `None`
     /// otherwise. One derivation for all three hosts, which pass it to
-    /// `legaia_engine_ui::ui_fishing::catch_result_draws`.
+    /// `legaia_engine_ui::fishing::hud::catch_result_draws`.
     ///
     /// The counter starts on the landing. Retail seats the result actor at
     /// the end of the landed fish's lift (`FUN_801D4948`, which raises

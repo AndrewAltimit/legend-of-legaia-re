@@ -32,7 +32,7 @@
 //! Four detours into the overlay itself, every routine hosted in 0899's own
 //! reference-free dead space (`0x801EAF10..0x801EB340`, past what `--seru-trade`
 //! uses of the same run - the blank lower band of the save-menu atlas, see
-//! [`crate::seru_overlay::RUN_C_VA`]) - so this half costs no SCUS bytes and
+//! `legaia_code_hooks::arenas::MENU_RUN_C_VA`) - so this half costs no SCUS bytes and
 //! composes with every gap-based feature:
 //!
 //! - **M1 / M1b** add the performed count (record `+0x195`, top three bits) to
@@ -68,13 +68,13 @@
 
 use anyhow::{Result, bail};
 
-use crate::mips::*;
-use crate::shiny_seru::Edit;
 use crate::super_art_list::{
     ARROW_BITS, ARROWS_COUNT_SHIFT, GLYPH_BUF_BYTES, GLYPH_HI, GLYPH_LO_BASE, MARKER_HI,
     MARKERS_SHIFT, PERFORMED_COUNT_SHIFT, PERFORMED_MASK, STYLE_ART_END, STYLE_DEFAULT,
     STYLE_SUPER_END, SUPER_ARTS_PER_CHAR, SuperArtRow,
 };
+use legaia_code_hooks::arenas::Edit;
+use legaia_code_hooks::mips::*;
 
 /// PROT entry of the menu overlay.
 pub const MENU_PROT_INDEX: usize = 899;
@@ -123,12 +123,12 @@ const CUR_PERFORMED_OFF: u16 = 0x75D;
 
 /// Code, names, pointer tables, scratch record and glyph buffer: the tail of
 /// the run `--seru-trade` shares, past its highest blob.
-pub const MENU_RUN_VA: u32 = crate::seru_overlay::RUN_C_VA + 0xAD0;
-pub const MENU_RUN_END_VA: u32 = crate::seru_overlay::TRADE_HANDLER_END;
+pub const MENU_RUN_VA: u32 = legaia_code_hooks::arenas::MENU_RUN_C_VA + 0xAD0;
+pub const MENU_RUN_END_VA: u32 = legaia_code_hooks::arenas::MENU_RUN_C_END_VA;
 /// The descriptions: the same blank atlas band, past run-C.
 pub const MENU_DESC_VA: u32 = 0x801E_B400;
 pub const MENU_DESC_END_VA: u32 = MENU_DESC_VA + 0x54F;
-const _: () = assert!(MENU_DESC_VA >= crate::seru_overlay::TRADE_HANDLER_END);
+const _: () = assert!(MENU_DESC_VA >= legaia_code_hooks::arenas::MENU_RUN_C_END_VA);
 
 /// Scratch record: `+0` character, `+2` AP, `+8` glyph pointer, `+0xC` name,
 /// `+0x10` description (retail's record stride is `0x14`).
@@ -632,9 +632,9 @@ mod tests {
         );
     }
 
-    use crate::mips_sim::Cpu;
     use crate::super_art_list::{ARROWS_STRIDE, SUP_STRIDE, arrow_code};
     use legaia_art::queue::Command;
+    use legaia_code_hooks::mips_sim::Cpu;
 
     const ROW_VA: u32 = 0x801E_8000;
     const SUP_VA: u32 = 0x8007_8A88;

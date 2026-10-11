@@ -3,10 +3,10 @@
 //!
 //! The battle-action overlay carries an 8×8 affinity matrix
 //! (`matrix[attacker_element][defender_element]`, PROT entry 898 at file offset
-//! [`legaia_asset::element_affinity::AFFINITY_MATRIX_FILE_OFFSET`]); each cell is
+//! [`legaia_game_tables::element_affinity::AFFINITY_MATRIX_FILE_OFFSET`]); each cell is
 //! a damage-scale percentage (`damage = roll * pct / 100`, so `100` = neutral,
 //! `> 100` = weak, `< 100` = resist, `0` = immune). See
-//! [`legaia_asset::element_affinity`].
+//! [`legaia_game_tables::element_affinity`].
 //!
 //! [`plan_matrix`] randomizes the 64 cells: [`StatMode::Shuffle`] permutes them
 //! (the multiset of scale percentages is preserved - the same number of
@@ -16,8 +16,8 @@
 //! untouched, so the change is purely *which element beats which*. PROT 0898 is
 //! stored raw (no LZS), so the write is strictly same-size and in place.
 
-use crate::rng::SplitMix64;
-use legaia_asset::element_affinity::ELEMENT_COUNT;
+use legaia_disc_patch::rng::SplitMix64;
+use legaia_game_tables::element_affinity::ELEMENT_COUNT;
 
 /// Re-exported [`crate::drops::DropMode`] so the affinity pass shares the CLI's
 /// `shuffle` / `random` vocabulary.

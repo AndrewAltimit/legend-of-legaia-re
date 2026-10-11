@@ -3,7 +3,7 @@
 not the field pack (PROT 0874 §0).
 
 This is the reproducible form of the empirical finding behind
-`legaia_asset::battle_char_pack`: in a real battle the party mesh pointers
+`legaia_actor_formats::battle_char_pack`: in a real battle the party mesh pointers
 `DAT_8007C018[0..=2]` reference TMDs whose (pose-independent) vertex data
 byte-matches PROT 1204 (`other5`) and NOT PROT 0874 (`befect_data`, §0). The
 field pack is field-only.

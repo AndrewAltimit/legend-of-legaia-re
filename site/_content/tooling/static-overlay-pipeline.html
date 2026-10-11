@@ -11,7 +11,7 @@
     <dt>The map</dt><dd><code>crates/asset/data/static-overlays.toml</code>: one row per overlay - entry, base, how the base was proved, sha256 of the as-loaded bytes (hashes only, no Sony bytes)</dd>
     <dt>Base recovery</dt><dd>Voted from the overlay's own <code>jal</code> call graph: every internal call target must land on a function prologue</dd>
     <dt>Slots</dt><dd>Slot A (<code>0x801CE818</code>) - the big scene overlays; slot B (<code>0x801F69D8</code>) - summon / effect blobs that timeshare one buffer</dd>
-    <dt>Implementation</dt><dd><code>legaia_asset::static_overlay</code>; CLI <code>asset overlay ...</code></dd>
+    <dt>Implementation</dt><dd><code>legaia_overlay_images::static_overlay</code>; CLI <code>asset overlay ...</code></dd>
     <dt>Limit</dt><dd>No runtime values - filled tables, <code>$gp</code>-relative globals, watchpoints stay with <a href="overlay-capture.html">dynamic capture</a> and <a href="pcsx-redux-automation.html">live probes</a></dd>
   </dl>
 </section>
@@ -137,7 +137,7 @@
     </tbody>
   </table>
   </div>
-  <p>The extracted <code>.bin</code>s are Sony overlay code (gitignored); only the map and docs are committed. Verification closes the loop: a statically-extracted overlay reproduces the same functions at the same addresses as the captured dumps - anchors asserted against the disc bytes in <code>crates/asset/tests/static_overlay_extract.rs</code> and against live RAM in the clean-copy test.</p>
+  <p>The extracted <code>.bin</code>s are Sony overlay code (gitignored); only the map and docs are committed. Verification closes the loop: a statically-extracted overlay reproduces the same functions at the same addresses as the captured dumps - anchors asserted against the disc bytes in <code>crates/overlay-images/tests/static_overlay_extract.rs</code> and against live RAM in the clean-copy test.</p>
 </section>
 
 <section class="doc-section" id="scope-limits">

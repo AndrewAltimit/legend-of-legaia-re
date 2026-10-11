@@ -26,9 +26,9 @@
 //!
 //! `ghidra/scripts/funcs/801e76d4.txt` (decompiled from `overlay_world_map.bin`).
 
+use crate::world_map_dim::{ScreenDimPass, emit_screen_dim};
+use crate::world_map_horizon::{HorizonBatch, emit_horizon};
 use crate::world_map_panel_host::packed_pad;
-use legaia_engine_vm::world_map_dim::{ScreenDimPass, emit_screen_dim};
-use legaia_engine_vm::world_map_horizon::{HorizonBatch, emit_horizon};
 
 /// Top-view camera control - live when `view_mode != 0` **and** the L1
 /// modifier is held.
@@ -36,7 +36,7 @@ use legaia_engine_vm::world_map_horizon::{HorizonBatch, emit_horizon};
 /// Every mask below is a **packed** pad bit - the layout `FUN_801E76D4`
 /// reads out of `_DAT_8007B850` (held) and `_DAT_8007B874` (newly pressed),
 /// which `FUN_8001822C` builds by swapping the raw BIOS word's byte halves.
-/// It is *not* [`crate::input::PadButton`]'s layout, and the two disagree on
+/// It is *not* [`legaia_engine_system::input::PadButton`]'s layout, and the two disagree on
 /// every bit that matters here: raw `0x1000` is Triangle, packed `0x1000` is
 /// D-pad Up. [`WorldMapController::tick`] converts on the way in
 /// ([`packed_pad`]), so the constants stay the retail literals.
@@ -230,7 +230,7 @@ pub struct WorldMapController {
     /// at `0x801E1648` (`sw v0,-0x4330(v1)`), `0x801E1688` (`-0x432c`) and
     /// `0x801E16C8` (`-0x4328`) in `overlay_world_map_801de840.txt`, each with
     /// a sibling ramp arm through the shared `0x801E205C` epilogue. `World`
-    /// implements `FieldHost::op4c_nibble4_global_write` onto this tuple, so a
+    /// implements `FieldScreenHost::write_or_ramp_global_slot` onto this tuple, so a
     /// scene script that sets the globals arms the gate exactly as retail's
     /// `FUN_801D1344` does. (An earlier note cited `0x801E1638` for the first
     /// store; that address is the arm's operand `jal`, and the store is the
@@ -280,7 +280,7 @@ impl WorldMapController {
     }
 
     /// Tick one frame. `pad_current` is the full 16-bit **raw**
-    /// ([`crate::input::PadButton`]) pad word for this frame; `pad_held` is
+    /// ([`legaia_engine_system::input::PadButton`]) pad word for this frame; `pad_held` is
     /// the bits that are newly pressed (not held from the previous frame -
     /// the retail `_DAT_8007B874` word).
     ///
@@ -441,7 +441,7 @@ impl WorldMapController {
     ///
     /// This is the retail call pair: the gate check + self-clear that opens
     /// `FUN_801D7EA0`, followed by the emitter body ported
-    /// in [`legaia_engine_vm::world_map_horizon::emit_horizon`]. Returns
+    /// in [`crate::world_map_horizon::emit_horizon`]. Returns
     /// `true` when a batch was emitted (i.e. the gate was armed).
     ///
     /// `frame_step` is the adaptive per-frame tick byte `DAT_1F800393`;
@@ -472,7 +472,7 @@ impl WorldMapController {
     /// `DAT_801F2B94` (`view_mode`) is zero, and within it the dim call is
     /// skipped unless bit 0 of `DAT_801F2B95` (`anim_flags`) is set. When
     /// both hold, retail calls `FUN_801E75DC`, whose packets are built by
-    /// [`legaia_engine_vm::world_map_dim::emit_screen_dim`].
+    /// [`crate::world_map_dim::emit_screen_dim`].
     ///
     /// Stores the result in [`Self::screen_dim`] and returns `true` when the
     /// pass fired. Non-firing frames clear the field, so a renderer reading
@@ -586,7 +586,7 @@ mod tests {
         assert!(!ctrl.is_top_view());
     }
 
-    /// The raw ([`crate::input::PadButton`]) word that arrives at the
+    /// The raw ([`legaia_engine_system::input::PadButton`]) word that arrives at the
     /// controller as `packed`. `tick` takes raw words, every retail literal
     /// is packed, and the conversion is the byte swap.
     fn raw(packed: u16) -> u16 {
@@ -628,9 +628,15 @@ mod tests {
             ..Default::default()
         };
         let (held, edge) = toggle_chord();
-        assert!(!ctrl.tick(held | crate::input::PadButton::Up.mask(), edge));
+        assert!(!ctrl.tick(
+            held | legaia_engine_system::input::PadButton::Up.mask(),
+            edge
+        ));
         assert_eq!(ctrl.view_mode, 0);
-        assert!(!ctrl.tick(held, edge | crate::input::PadButton::Circle.mask()));
+        assert!(!ctrl.tick(
+            held,
+            edge | legaia_engine_system::input::PadButton::Circle.mask()
+        ));
         assert_eq!(ctrl.view_mode, 0);
     }
 

@@ -38,7 +38,7 @@
 //!   `FUN_800542C8`; the same table the victory-spoils path reads rewards from)
 //!   by `slot - 3`, then `lbu t0,0x1d(v0)` (dump
 //!   `overlay_battle_action_801dd864.txt` `0x801dd8c4`/`0x801dd8dc`). So the
-//!   element source is the `legaia_asset::monster_archive::MonsterRecord::element`
+//!   element source is the `legaia_actor_formats::monster_archive::MonsterRecord::element`
 //!   field itself (same record whose `+0x44`/`+0x46`/`+0x48` reward fields the
 //!   spoils path reads) - there is no separate "monster→actor builder" copy to
 //!   pin. (The earlier "copied into a live `actor[+0x1d]`, not yet pinned"
@@ -48,14 +48,15 @@
 //!
 //! Static overlay data: VA `0x801F53E8` maps to **PROT 0898 file offset
 //! `0x26BD0`** under the same link base ([`OVERLAY_LINK_BASE`] `0x801CE818`) that
-//! pins the move-power table (`0x801F4F5C` → `0x26744`; see `legaia_asset::move_power`).
+//! pins the move-power table (`0x801F4F5C` → `0x26744`; see `legaia_game_tables::move_power`).
 
 /// CDNAME / PROT index of the battle-action overlay holding the tables.
-pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize = 898;
+pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
+    legaia_overlay_images::static_overlay::BATTLE_ACTION_OVERLAY_PROT as usize;
 
 /// The battle-action overlay's link/load base (`VA − file_offset`). Pinned by
 /// the move-power table (`0x801F4F5C` → file `0x26744`).
-pub const OVERLAY_LINK_BASE: u32 = 0x801C_E818;
+pub const OVERLAY_LINK_BASE: u32 = legaia_overlay_images::static_overlay::SLOT_A_BASE;
 
 /// Runtime VA of the 8×8 element-affinity matrix (`FUN_801dd864`'s base).
 pub const AFFINITY_MATRIX_VA: u32 = 0x801F_53E8;

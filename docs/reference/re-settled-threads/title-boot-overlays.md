@@ -52,29 +52,29 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | How does a slot-B module hand a spawn call its record? | resolved (three shapes beyond an adjacent pair) | `disassembly` | The pair can complete in the `jal`'s delay slot, the pointer can arrive through a saved-register copy formed up to 256 words back, and `switch` arms can each load `$a2` in the delay slot of a `j` to one shared call. The delay-slot shape accounts for 52 of the 97 spawn calls an adjacent-pair-only resolver sends out of the image into a neighbour's records ([`slot-b-module-layout.md`](../../formats/slot-b-module-layout.md#resolving-the-pointer-a-spawn-call-is-handed)). |
 | Which images take the slot-B layout walk? | resolved (the seventy at the link base, not the sixty-four in the index band) | `disassembly` | The walk's three regions are each recovered by resolving a word against `0x801F69D8`, so it belongs to every image mapped there: the 64-entry cast band plus 0900 / 0901 / 0967 / 0968 / 0969 / 0978. With the walk the six gain a head-table claim (accounted bytes 0968 `60.4% -> 99.8%`, 0969 `78.7% -> 99.4%`, 0978 `51.3% -> 91.6%`). `is_slot_b_module` answers the band question - which images the cast dispatcher reaches - and `is_slot_b_image` the layout one. |
 | What is PROT 0967's residue? | resolved (a head table, dumped code, one leaf, a consumed prompt pool and a neighbour's tail) | `disassembly` | 408 bytes of head jump table, 2,744 bytes of dumped code, one 92-byte frameless leaf `FUN_801F7628` at file `0xC50..0xCAC`, 1,757 bytes of prompt pool and 1,143 bytes inherited from PROT 0966. The pool is consumed: twenty-eight strings formed by the module's own code at forty-one sites between file `0x278` and `0xA7C`. The leaf is reached by `jal` from `0x801F7184` and `0x801F7460` inside the image, so a slot-B image can call itself. The link-base layout walk admits 0967 at 96.6%; the cast band (`0903..=0966`) is a different predicate. [`byte-accounting.md`](../../tooling/byte-accounting.md#what-the-overlay-residue-that-is-left-actually-is) |
-| What is in the PROT 0898 head block below `0xDF8`? | resolved (a string pool and **twenty-two** jump tables; two more sit above it) | `disassembly` | Each consumer is `sltiu` / `beqz` / base / `sll 2` / load / `jr`, so a table's extent is its `sltiu` bound times four: twenty-two bases tile the head, 850 arms in all, among them `0x801CF1CC` (179 arms, `jr` at `0x801EA9FC`) and `0x801CF49C` (5 arms, `ctx[+0x28A]`). Above the head sit nine arms at `0x801CF614` (`jr` at `0x801F3AC0`) and seven at `0x801CFA2C` (`jr` at `0x801F3EB4`), with the Seru side-effect banner pool between them. Counting VA-word runs instead yields nine, because abutting tables merge. `legaia_asset::battle_jump_tables`; [`byte-accounting.md`](../../tooling/byte-accounting.md#the-0898-head-is-twenty-two-jump-tables) |
+| What is in the PROT 0898 head block below `0xDF8`? | resolved (a string pool and **twenty-two** jump tables; two more sit above it) | `disassembly` | Each consumer is `sltiu` / `beqz` / base / `sll 2` / load / `jr`, so a table's extent is its `sltiu` bound times four: twenty-two bases tile the head, 850 arms in all, among them `0x801CF1CC` (179 arms, `jr` at `0x801EA9FC`) and `0x801CF49C` (5 arms, `ctx[+0x28A]`). Above the head sit nine arms at `0x801CF614` (`jr` at `0x801F3AC0`) and seven at `0x801CFA2C` (`jr` at `0x801F3EB4`), with the Seru side-effect banner pool between them. Counting VA-word runs yields nine, because abutting tables merge. `legaia_disc_audit::battle_jump_tables`; [`byte-accounting.md`](../../tooling/byte-accounting.md#the-0898-head-is-twenty-two-jump-tables) |
 | What is PROT 0970's 131,172-byte zero hole? | resolved (the overlay's own **uninitialised data region**) | `disassembly` | It decomposes exactly, in the image's own operands: the `0x50` decode context at `0x801D19A0`, two `0x7800` slice staging buffers at `0x801D19F0` and `0x801D91F0`, four globals at `0x801E09F0` and the `0x11000` STRv2 VLC table destination at `0x801E0A00`, ending flush against the unpacker. The loader transfers the whole sector extent, so an overlay's `.bss` travels with its code and reads as a hole. The table's packed source is in the same image at `0x801F1AE8`. [`byte-accounting.md`](../../tooling/byte-accounting.md#an-overlays-uninitialised-data-region-travels-with-its-code). |
-| What is PROT 0974's 10,836-byte run of readable text? | resolved (an 81-record `0x84`-stride **roster**) | `disassembly` | Not a string pool: the loop operands in `FUN_801CED68` walk a table at `0x801CEF40` on a `0x84` stride, and the text inside each record is Shift-JIS read as little-endian `u16`. The image is a USA-build dev module carrying Japanese dev text - 34 of 37 SCUS `jal` targets land on this disc's function heads, where the foreign-build control scores 0 of 42 - so "Japanese text" is not evidence of a foreign build. Parser `legaia_asset::other3_roster`. |
+| What is PROT 0974's 10,836-byte run of readable text? | resolved (an 81-record `0x84`-stride **roster**) | `disassembly` | Not a string pool: the loop operands in `FUN_801CED68` walk a table at `0x801CEF40` on a `0x84` stride, and the text inside each record is Shift-JIS read as little-endian `u16`. The image is a USA-build dev module carrying Japanese dev text - 34 of 37 SCUS `jal` targets land on this disc's function heads, where the foreign-build control scores 0 of 42 - so "Japanese text" is not evidence of a foreign build. Parser `legaia_disc_audit::other3_roster`. |
 | What is PROT 0975's undumped `0x801D4138` run? | resolved (PROT 0972's **code**, inherited at the same file offset) | `disassembly` | The 1,760 bytes from file `0x5920` are byte-identical to PROT 0972 at the same file offset - the packer's buffer is indexed by file offset and never cleared, so a short entry ends in the previous image's bytes. That is why the run has no prologue, no `jr ra` and no caller, and why it is not 0975's own jump table, data block or function interior. [`disc-coverage.md`](../../tooling/disc-coverage.md). |
 | Which of PROT 0978 / 0979 / 0980 is the dance overlay? | resolved (**only** 0980) | `disassembly` | 0978 is `field_back_read`, the staged background loader; 0979 is the battle-intro image; 0980 is the dance overlay. |
 | The front-end mode chain, re-derived independently | resolved (the six stores, the four-word edge and the INIT hand-offs all hold) | `disassembly` | A three-form opcode scan for stores to the mode word over 84 images finds **53** store sites, and every row of the boot chain, the mode-change edge's four cleared `gp` words and the per-handler INIT hand-offs match it. Mode 18's hand-off is `li v0,0x13` at `0x801CE8D4` then the store at `0x801CE8DC`, inside `0x801CE844` in PROT 0902. |
 | Which mode does the retail title screen run under? | resolved (**card** mode `0x17`, not `0x10`) | `disassembly` | The front end is a chain of six mode stores, each written by the handler that hands off, not by a table's `next` field: `0x8001D5B8` -> `0x10`, `0x801CEC94` -> `0x11`, `0x801CF4D4` -> `0x16`, `0x80025974` -> `0x17`, `0x801DFC00` -> `0x02`, `0x80025E50` -> `0x03`. Mode `0x10` is one frame of logo INIT; the alternate arm at `0x801CF4E4` is the dev CONFIG route on the entry word. `0x80025974` is `li v0,0x17` + `sh v0,-0x47c4(at)` at `0x8002596C`; `0x801CEC94` is the `sh` in a `jal` delay slot. See [`boot.md`](../../subsystems/boot.md). |
-| What reads the title entry word `_DAT_8007BB00`? | resolved (two readers, both real) | `disassembly` | `0x801CF4B0` in the boot image and `0x801DD97C` in the title overlay. The port's counterpart is `title_overlay::ENTRY_WORD_ADDR`. |
+| What reads the title entry word `_DAT_8007BB00`? | resolved (two readers, both real) | `disassembly` | `0x801CF4B0` in the boot image and `0x801DD97C` in the title overlay. The port's counterpart is `mode_entry_init::ENTRY_WORD_ADDR`. |
 | What does a mode-change edge clear? | resolved (**four** gp words, not three) | `disassembly` | The edge at `0x800161F4` clears `0x8007B938` alongside the words at `gp+0x538` and `gp+0x55C`; `gp+0x564` and `gp+0x494` are mode *copies*, not cleared state. |
 | `_DAT_8007B8C2` - how many writers? | resolved (exactly one) | `disassembly` | `main()` at `0x80015F08` (`sh v0,0x5aa(gp)`), confirmed across 70 access sites in 84 images. The build-mode selector is set once at startup and never re-written, which is what makes the dev/retail fork in `FUN_8001F87C` a load-time decision. |
 | `_DAT_8007B8C2` polarity, and its writer | resolved (`!= 0` is retail, `== 0` is dev) | `disassembly` + `capture` | [details ↓](#_dat_8007b8c2-polarity-and-its-writer) |
-| Actor-VM (`FUN_801D6628`) program source - which carrier, what selects one | resolved (menu-overlay-resident program table) | `disassembly` | The interpreted programs are data in PROT 0899's own data segment (file `0x16260..0x16740`), one per `jal FUN_801D6628` caller via `lui`+`addiu` (or a forwarded register); byte 1 of each instruction indexes the window descriptor table at `0x801E4738`, making the VM the menu's window-widget choreographer. No per-scene carrier exists - resolution is per-boot. Spec [window-script.md](../../formats/window-script.md); scanner `legaia_asset::widget_script::scan`; engine wiring `engine-core::menu_widget`. Sprite-VM readings: [re-do-not-re-walk.md](../re-do-not-re-walk.md#menus--ui). |
+| Actor-VM (`FUN_801D6628`) program source - which carrier, what selects one | resolved (menu-overlay-resident program table) | `disassembly` | The interpreted programs are data in PROT 0899's own data segment (file `0x16260..0x16740`), one per `jal FUN_801D6628` caller via `lui`+`addiu` (or a forwarded register); byte 1 of each instruction indexes the window descriptor table at `0x801E4738`, making the VM the menu's window-widget choreographer. No per-scene carrier exists - resolution is per-boot. Spec [window-script.md](../../formats/window-script.md); scanner `legaia_game_tables::widget_script::scan`; engine wiring `engine-menus::menu_widget`. Sprite-VM readings: [re-do-not-re-walk.md](../re-do-not-re-walk.md#menus--ui). |
 | `title.pak` PROT entry | resolved | `capture` | [details ↓](#titlepak-prot-entry) |
 | Does `FUN_801CE9C0` pin the per-logo quads? | resolved (no - it uploads; the quads are a descriptor table in the same image) | `disassembly` | [details ↓](#the-publisher-logo-quads) |
 | The title menu's law (`FUN_801DD35C` sub-mode `0x10`) | resolved + ported on both hosts | `disassembly` | [details ↓](#the-title-menus-law) |
 | `FUN_801D71F0` and its "shared armament placer" `0x801E5AE8` | resolved (one routine, `FUN_801E5A08`, unreferenced) | `disassembly` | [details ↓](#fun_801e5a08-the-per-slot-equip-applier) |
 | Save-screen info-panel view mode `4` ("Return") | resolved (dead - the grid has 15 cells) | `disassembly` | [details ↓](#the-dead-return-view-mode) |
 | Title screen mode-table PROT | resolved (no row is named for it - it runs under the `CARD` mode pair 22/23; `FUN_801DD35C` is PROT 0899 `+0xEB44`) | `disassembly` | [details ↓](#title-screen-mode-table-prot) |
-| Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | `capture` | Retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`; no interior fill sprite is drawn - the "marbled blue" look is the dimmed title art showing through the empty middle of the frame. Per-tile rects: [`save-screen.md`](../../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2), exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_render::save_select_chrome_draws_for` (test `save_select_chrome_emits_9slice_panel_and_pills`). |
+| Load-screen panel 9-slice geometry | resolved (engine renders byte-perfect) | `capture` | Retail composes the 81×29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`; no interior fill sprite is drawn - the "marbled blue" look is the dimmed title art showing through the empty middle of the frame. Per-tile rects: [`save-screen.md`](../../subsystems/save-screen.md#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2), exported as `legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and emitted by `legaia_engine_ui::save_select_chrome_draws_for` (test `save_select_chrome_emits_9slice_panel_and_pills`). |
 | Key-item area consumers (`0x800859E8..0x80085A40`) | resolved (narrow negative; the reader enumeration is closed) | `disassembly` | [details ↓](#key-item-area-consumers) |
 | XP-table source + reader | resolved + ported | `capture` | [details ↓](#xp-table-source--reader) |
 | New-game world-state seed store widths (`FUN_80034A6C`) | resolved (the port matches the disassembly) | `disassembly` | [details ↓](#new-game-world-state-seed-store-widths) |
-| Overlay identity from the disc (static extraction) | resolved (pipeline `legaia_asset::static_overlay`) | `capture` | [details ↓](#overlay-identity-from-the-disc-static-extraction) |
+| Overlay identity from the disc (static extraction) | resolved (pipeline `legaia_overlay_images::static_overlay`) | `capture` | [details ↓](#overlay-identity-from-the-disc-static-extraction) |
 | SCUS recomp gap - render/GTE + boot/init clusters | resolved (aliases + libgte residue + dev tooling; `main()` documented) | `disassembly` | [details ↓](#scus-recomp-gap---rendergte--bootinit-clusters) |
 | Options/menu overlay PROT entry | resolved (RAM-verified; PROT 0899 @ `0x801CE818`) | `capture` | The options/pause/inventory-equipment-status menu overlay is **PROT 0899**, not 0896: `FUN_801CF650`'s signature byte-matches PROT 0899 file `0xe38`, and the `.text`+`.rodata` prefix is byte-identical across six menu-open saves. It is the VA-alias sibling of the field overlay 0897 in slot A - the menu overlay replaces the field overlay at the base. |
 | PROT 0896 (`bat_back_dat`) identity | resolved | `capture` | The unique ~`0x9000`-byte head is the **vestigial Japanese-build field-menu / config / status overlay** - the debug-string sibling of the English retail menu overlay PROT 0899 (same `~0x801D0000` window-renderer VA family, a `"FWIN ERR %d"` printf at file `0x3D4`, `0x414`-byte char-record indexing). 0899 ships the English label set with zero `FWIN`; a signature scan finds 0896 resident in **0** of 140 states (control: English "Battle Voices" resident in 10), so the USA build never loads it. [details ↓](#prot-0896-bat_back_dat-identity) |
@@ -95,7 +95,7 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | Which title sub-mode does a cold boot show - `0x02` or `0x10`? | resolved (`0x10`, always) | `disassembly` + `capture` | [details ↓](#a-cold-boot-always-shows-title-sub-mode-0x10) |
 | How the slot-B module pager turns a request into a PROT entry | resolved (`extraction entry = a0 + 895`, with no upper bound) | `disassembly` | `FUN_8003EC70` adds a constant `895` to its argument and pages that extraction entry into slot B; nothing clamps the top of the range. Its site at `0x8005269C` passes `_DAT_8007B64A + 71`, so selector byte values `2` and `3` reach PROT `0968` and `0969` while `0` skips the load entirely. The selector's writers are in [`battle.md`](../../subsystems/battle.md#stage-overlay-dispatch-the-0x47-loader-band); the one for `2` is [below](#prot-0968---the-cort-battle-stage-overlay). |
 | Where does PROT 0896 link? | resolved (`0x801D4DF0` - and it calls no entry of this disc's executable) | `disassembly` | `recover_base` reports it on ten corroborating targets of eleven distinct internal `jal` targets; all 218 internal `j` instructions land inside the file there and none does at `0x801C5818` or `0x801C0000`; ten of the eleven `jal` targets land on an `addiu sp, sp, -X` prologue; and three runs of consecutive in-image VA words resolve every word, one of them holding the base itself. Of its 322 calls into the SCUS range, **zero** land on a `SCUS_942.54` function entry, where `0897` scores 1203 of 1307 and `0899` 793 of 884 - so no USA loader reaches it and no residency capture is owed. [details ↓](#prot-0896-bat_back_dat-identity) |
-| What is PROT 0970's run above its one-shot init flag? | resolved (two **MDEC command packets**, then the register-pointer block) | `disassembly` | `0x801D0D58` holds the quant packet header `0x40000001`, with the luma and chroma matrices at `0x801D0D5C` / `0x801D0D9C`; `0x801D0DDC` holds the IDCT packet header `0x60000000` and a static IDCT matrix. `0x801D0E60..0x801D0E9B` is fifteen hardware-register pointers (`0x1F801080..0x1F8010B8` DMA channels 0-2, `0x1F801820` / `0x1F801824` MDEC0 / MDEC1, `0x1F8010F0` DPCR). Neither uninitialised data nor code; claimed off `legaia_asset::fmv_dispatch::MDEC_*_PACKET_VA`. |
+| What is PROT 0970's run above its one-shot init flag? | resolved (two **MDEC command packets**, then the register-pointer block) | `disassembly` | `0x801D0D58` holds the quant packet header `0x40000001`, with the luma and chroma matrices at `0x801D0D5C` / `0x801D0D9C`; `0x801D0DDC` holds the IDCT packet header `0x60000000` and a static IDCT matrix. `0x801D0E60..0x801D0E9B` is fifteen hardware-register pointers (`0x1F801080..0x1F8010B8` DMA channels 0-2, `0x1F801820` / `0x1F801824` MDEC0 / MDEC1, `0x1F8010F0` DPCR). Neither uninitialised data nor code; claimed off `legaia_game_tables::fmv_dispatch::MDEC_*_PACKET_VA`. |
 | What does PROT 0970's `FUN_801CFCDC` do? | resolved (the MDEC **quant table upload** - not an output-rect stager) | `disassembly` | It copies sixteen words from `a0[0..0x40]` to `0x801D0D5C` and sixteen from `a0[0x40..0x80]` to `0x801D0D9C`, then calls `FUN_801CFFDC(pkt, 0x20)` twice - the quant packet `0x801D0D58` (`0x801CFD48`) and the static IDCT packet `0x801D0DDC` (`0x801CFD58`); only the quant packet is written. `FUN_801CFFDC` ORs `0x88` into DPCR, programs DMA0 (`MADR = pkt + 4`, `BCR = (n >> 5) << 16 \| 0x20`), writes the packet header to MDEC0 through the pointer at `0x801D0E90`, and starts DMA0 with `CHCR 0x01000201`. [`cutscene.md`](../../subsystems/cutscene.md) |
 | What is PROT 0899's 3,552-byte zero run at file `0x1EB28`? | resolved (inter-asset fill, not uninitialised data) | `disassembly` | It sits between the save-menu atlas's end and the save-slot icon sheet at `0x1F908`, and no instruction in any image forms an address inside it (`find-gp-relative-refs.py --prot`, zero hits). An overlay's `.bss` is named by its own operands; this run is named by none. |
 | What are PROT 0899's options-screen tables? | resolved (four, each bound to a consumer) | `disassembly` | The display layout `0x801E4404` (ten `[u16 row_id, u16 advance]`), the string-pointer table `0x801E442C`, the row-node list `0x801E44B8` (eight-byte nodes, zero-terminated - `lw` / `bnez` at `0x801D2A0C`) and the casino prize table `0x801E4518` (`0x60`-byte blocks of eight-byte rows). All four are formed by `lui`/`addiu` pairs in the options row renderer and the prize-exchange session. [`field-menu.md`](../../subsystems/field-menu.md#options-screen) |
@@ -225,7 +225,7 @@ palette-space collapse, not a depth cue.
 
 Port: a non-blocking crawl in the field timeline, paced off the 60 Hz sub-clock
 (`opening_chain_wall_time`: within ~4 % of retail wall time, each leg short by the unmodelled
-scene-load window, so its bands are asymmetric); `legaia_engine_vm::camera_mover` (2471 of 2480
+scene-load window, so its bands are asymmetric); `legaia_engine_battle_vm::camera_mover` (2471 of 2480
 sampled axis values against a live capture, the rest inside the probe's read skew;
 `camera_mover_recomp_oracle` under `LEGAIA_RECOMP_TRACE_DIR` replays the snap / mode-1 / mode-2 /
 mode-4 beats bit-exact); `Renderer::set_palette_grade` (`palette_law_word` /
@@ -299,13 +299,13 @@ match SM `FUN_801D0748` and all its data live in the battle-action overlay PROT 
 is a mode of the battle engine. `asset overlay find-sig` of the controller prologue
 (`lui v0,0x8008; lw v0,-0x42dc(v0)`, reading the ctx `_DAT_8007bd24`) lands on 0898 at base
 `0x801CE818`, file offset `0x1F30`, and the deck / sub-draw / victory tables resolve in-overlay
-(`legaia_asset::muscle_dome::verify_resident`); the Duckstation `overlay_muscle_dome.bin` capture
+(`legaia_minigame_formats::muscle_dome::verify_resident`); the Duckstation `overlay_muscle_dome.bin` capture
 is that overlay's slot.
 
 **Port.** `OVERLAY_PROT_BASE` carries the extraction-space `0x37F` (the host chain
 `prot_one_shot_load` → `entry_start_lba_retail` consumes extraction indices; its `toc` array starts
 at raw dword 2), with a unit test documenting the raw-vs-extraction shift.
-`engine-core::summon::summon_stager_prot_entry` maps spell id to stager entry.
+`engine-effects::summon::summon_stager_prot_entry` maps spell id to stager entry.
 
 ### Muscle Dome match shape: an ordinary battle ladder, not a card battle
 
@@ -325,7 +325,7 @@ takes, bounded by AP.
 - `0x8007BD0C` is the formation cell, not a battle-type byte: the strip's gate reads "the first
   enemy is monster `0xB6`" - Koru, the one four-turn timed boss - and no dome round fields that id.
 
-Port: `engine-core::muscle_dome` (`parse_course_ladder`, `course_score_cell`, `resolve_turn`
+Port: `engine-core::world_views::muscle_dome` (`parse_course_ladder`, `course_score_cell`, `resolve_turn`
 playing whole strings per actor, `DomeDamageModel` - the one retail damage kernel both hosts
 resolve through). Falsified readings:
 [`re-do-not-re-walk.md`](../re-do-not-re-walk.md#muscle-dome-was-never-a-card-battle).
@@ -356,7 +356,7 @@ continues, what a cleared leg is worth and what the run pays - is a second machi
 - A cleared course banks its whole score row: the Master reward is **13830** (the curated table's
   13856 is wrong).
 
-Port: `engine-core::muscle_dome::DomeContest`, driven by `World::report_muscle_leg` /
+Port: `engine-minigames::muscle_dome::DomeContest`, driven by `World::report_muscle_leg` /
 `World::settle_muscle_contest` and the browser's `muscle_contest_*` bindings. Owning page:
 [`minigame-muscle-dome.md § Two state machines`](../../subsystems/minigame-muscle-dome.md#two-state-machines-not-one).
 
@@ -380,7 +380,7 @@ Behaviour: per-press `ctx+0x6dc` debit + `actor+0x1df` append; auto-end on exhau
 (`0x50 -> 0x5a`); the `0x5a -> 0x6e` Begin|Reselect chain; Triangle inert at learned-art
 constant 0.
 
-Port: `engine-core::muscle_dome` (`selection_exhausted` / `reset_selection`),
+Port: `engine-core::world_views::muscle_dome` (`selection_exhausted` / `reset_selection`),
 `web-viewer::minigames_muscle` (`arts_input` pieces + `muscle_arts_list_json`). Owning page:
 [`minigame-muscle-dome.md § Arts command input`](../../subsystems/minigame-muscle-dome.md#arts-command-input-packet-pinned).
 
@@ -563,7 +563,7 @@ A capture-class spell record (class byte `'c'` at stats `+0`) pages its cast mod
 module is **extraction entry `935 + record[+1]`**. Enumerating the `'c'`-class records yields the
 complete map: the sub-id space covers `0935..=0966` exactly, with no orphan entry.
 
-- Parser `legaia_asset::spell_names::capture_class_records` / `capture_module_prot`; the
+- Parser `legaia_game_tables::spell_names::capture_class_records` / `capture_module_prot`; the
   disc-gated `spell_names_real` test asserts band coverage and every independently pinned leg
   (capture-pinned boss stagers 938 / 940 / 944 / 961 / 962 / 966; playtest-pinned
   Delilas / Xain modules 952 / 953 / 958 / 959 / 960).
@@ -584,7 +584,7 @@ Owning page:
 
 *Status:* resolved - the port matches the disassembly. Evidence: `disassembly`.
 
-Every `(offset, width, value)` entry in `legaia_asset::new_game::new_game_seed_words` matches the
+Every `(offset, width, value)` entry in `legaia_game_tables::new_game::new_game_seed_words` matches the
 stores `FUN_80034A6C` issues, decoded from `SCUS_942.54`. Ghidra's `DAT_` / `_DAT_` naming is a
 symbol-size heuristic and is not width evidence
 ([`ghidra.md`](../../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)).
@@ -697,7 +697,7 @@ PROT entries, both confirmed by fingerprinting a title-phase RAM snapshot (the
 `title_screen_new_game` save state) - the method that identifies `0895_bat_back_dat` as
 `init.pak`, with the same CDNAME-mislabel pattern.
 
-- **Title wordmark TIM:** PROT 0890 at file `0x14228` (parser `legaia_asset::title_pak`); the
+- **Title wordmark TIM:** PROT 0890 at file `0x14228` (parser `legaia_ui_formats::title_pak`); the
   big-logo RAM TIM at `0x80170DF8` fingerprint-matches it. Offsets quoted against 0888
   (`0x1AA28`) or 0889 (`0x19A28`) are the same absolute bytes reached through over-read entry
   sizes.
@@ -758,7 +758,7 @@ is the closed form `delta(n) = ⌊n²/4⌋ + 1`.
   sin-LUT slice. A New Game Status capture shows "Next Level 121", the real L2 threshold, not 50.
 - **Port:** `legaia_save::RETAIL_XP_CUMULATIVE` / `retail_xp_table()` ship the derived base curve
   (`121, 365, 730, ..., 9_646_483`); the boot-time disc parse
-  (`legaia_asset::level_up_tables::xp_thresholds_from_scus` → `BootSession`) cross-validates it
+  (`legaia_game_tables::level_up_tables::xp_thresholds_from_scus` → `BootSession`) cross-validates it
   byte-identically.
 - **Capture:** library-wide record sampling (`+0x0` XP / `+0x4` next threshold / `+0x130` level
   at `0x80084708 + slot×0x414`) matches through L37 including the Noa / Gala ± corrections (New
@@ -769,7 +769,7 @@ Owning page: [`level-up.md`](../../subsystems/level-up.md#xp-table).
 
 ### Overlay identity from the disc (static extraction)
 
-*Status:* resolved (pipeline `legaia_asset::static_overlay` + `asset overlay ...`). Evidence:
+*Status:* resolved (pipeline `legaia_overlay_images::static_overlay` + `asset overlay ...`). Evidence:
 `capture`.
 
 PSX overlays are clean copies of a fixed-VA-linked blob (FlushCache + jump, no per-load
@@ -1050,7 +1050,7 @@ Owning page: [`boot.md`](../../subsystems/boot.md#the-per-logo-quads).
 - **Entry:** a cold boot reaches `0x10` through `0x11`
   ([above](#a-cold-boot-always-shows-title-sub-mode-0x10)).
 
-Port: `legaia_engine_vm::title_overlay`'s executable half, driven by `engine-core::title` on both
+Port: `legaia_engine_menus::title_overlay`'s executable half, driven by `engine-menus::title` on both
 hosts.
 
 ### `FUN_801E5A08`, the per-slot equip applier
@@ -1070,7 +1070,7 @@ hosts.
 - No `jal`, data word or `addiu` materialisation of `0x801E5A08` exists in any image. The live
   equip confirm is `FUN_801D9C14`'s candidate arm.
 
-Port: `legaia_engine_vm::dev_equip_commit::commit_equip`.
+Port: `legaia_engine_field::dev_equip_commit::commit_equip`.
 
 ### The dead Return view mode
 

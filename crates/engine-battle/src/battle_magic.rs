@@ -109,7 +109,7 @@ impl BattleSpellSession {
     /// (the MP-saver accessory bits Half `0x20` / Quarter `0x10`): each row's
     /// displayed cost and affordability are computed against the **effective**
     /// cost the cast actually charges
-    /// ([`legaia_engine_vm::battle_formulas::mp_cost_after_ability_bits`]),
+    /// ([`legaia_engine_battle_vm::battle_formulas::mp_cost_after_ability_bits`]),
     /// so an MP-saver lets the caster select a spell whose raw cost exceeds
     /// their MP - matching `World::cast_spell_on_slots`. The cursor starts on
     /// the first affordable spell (or row 0 when none are affordable). Spell ids

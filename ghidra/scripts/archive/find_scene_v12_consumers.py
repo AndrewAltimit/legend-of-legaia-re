@@ -3,7 +3,7 @@
 #
 # Hunt for runtime consumers of the scene-v12 cluster (the 97 PROT
 # entries with strict header signature `[N+4, 0x12, 0, 0x14, ?, N, 0,
-# N+2]` at bytes 0..16). See crates/asset/src/scene_v12_table.rs and
+# N+2]` at bytes 0..16). See crates/scene-formats/src/scene_v12_table.rs and
 # docs/formats/scene-bundles.md for the on-disc layout.
 #
 # Approach (heuristic): a consumer reads `u16[1]` and `u16[3]` (the

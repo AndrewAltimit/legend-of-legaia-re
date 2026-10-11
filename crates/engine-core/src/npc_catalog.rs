@@ -13,11 +13,11 @@
 //! this with its render caches) and the native `legaia-engine export-glb`
 //! NPC exporter ([`crate::glb_export`]).
 
-use crate::man_field_scripts::{PlacementKind, classify_placements};
-use crate::scene::{ProtIndex, Scene};
-use crate::scene_resources::SceneResources;
 use crate::world::{FIELD_OFFMAP_HIDE_XZ, GlobalTmd};
-use legaia_asset::man_section::ActorPlacement;
+use legaia_engine_field::man_field_scripts::{PlacementKind, classify_placements};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::SceneResources;
+use legaia_scene_formats::man_section::ActorPlacement;
 use std::sync::Arc;
 
 /// One catalogued placement: the MAN record plus what its script implies.
@@ -73,7 +73,7 @@ pub struct NpcCatalog {
 /// Glyph bytes are ASCII-compatible from `0x20`, so the printable run is the
 /// text; control bytes (line breaks, the `0x1F` segment lead) end the line.
 fn dialog_label(inline: &[u8]) -> Option<String> {
-    let segs = crate::dialog::decode_inline_segments(inline);
+    let segs = legaia_engine_dialog::dialog::decode_inline_segments(inline);
     let first = segs.into_iter().next()?;
     let line: String = first
         .iter()
@@ -96,18 +96,20 @@ pub fn scene_anm_prot(scene: &Scene) -> Option<u32> {
 
 /// The scene's NPC clip bank - the bundle every host poses the scene's
 /// placements and bound props from. One resolver for every caller
-/// ([`legaia_asset::player_anm::find_scene_bundle`]): the type-`0x05`
+/// ([`legaia_actor_formats::player_anm::find_scene_bundle`]): the type-`0x05`
 /// section of a player-LZS container in one of the scene's PROT slots (the
 /// descriptor-count seed varies per scene, so the spread is tried), else the
 /// type-`0x05` chunk of a DATA_FIELD stream (`rikuroa`).
-pub fn scene_anm_bundle(scene: &Scene) -> Option<legaia_asset::player_anm::PlayerAnmBundle> {
+pub fn scene_anm_bundle(
+    scene: &Scene,
+) -> Option<legaia_actor_formats::player_anm::PlayerAnmBundle> {
     scene_anm_bundle_with_prot(scene).map(|(_, b)| b)
 }
 
 fn scene_anm_bundle_with_prot(
     scene: &Scene,
-) -> Option<(u32, legaia_asset::player_anm::PlayerAnmBundle)> {
-    legaia_asset::player_anm::find_scene_bundle(
+) -> Option<(u32, legaia_actor_formats::player_anm::PlayerAnmBundle)> {
+    legaia_actor_formats::player_anm::find_scene_bundle(
         scene.entries.iter().map(|e| (e.idx, e.bytes.as_slice())),
     )
 }
@@ -127,7 +129,8 @@ pub fn catalog_scene_npcs(
         .field_man_payload(index)
         .map_err(|e| format!("MAN: {e:#}"))?
         .ok_or_else(|| format!("{name}: scene has no MAN"))?;
-    let mf = legaia_asset::man_section::parse(&man).map_err(|e| format!("MAN parse: {e:#}"))?;
+    let mf =
+        legaia_scene_formats::man_section::parse(&man).map_err(|e| format!("MAN parse: {e:#}"))?;
 
     let anm_prot = scene_anm_prot(&scene);
     let mut entries = Vec::new();
@@ -144,12 +147,17 @@ pub fn catalog_scene_npcs(
         // See `man_field_scripts::placement_spawn_relocation`.
         if !p.special_model
             && let Some((x_enc, z_enc)) =
-                crate::man_field_scripts::placement_spawn_relocation(&mf, &man, &p, &|_| false)
+                legaia_engine_field::man_field_scripts::placement_spawn_relocation(
+                    &mf,
+                    &man,
+                    &p,
+                    &|_| false,
+                )
         {
             p.tile_x = x_enc & 0x7F;
             p.tile_z = z_enc & 0x7F;
-            p.world_x = crate::man_field_scripts::grid_byte_to_world(x_enc);
-            p.world_z = crate::man_field_scripts::grid_byte_to_world(z_enc);
+            p.world_x = legaia_engine_field::man_field_scripts::grid_byte_to_world(x_enc);
+            p.world_z = legaia_engine_field::man_field_scripts::grid_byte_to_world(z_enc);
         }
         let nobj = if p.special_model {
             // Party / savepoint heads come from the global pool, not the

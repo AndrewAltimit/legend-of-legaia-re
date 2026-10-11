@@ -5,7 +5,7 @@
 //! scene-init sweep `FUN_8003A55C` creates the *bound* placements once, on the
 //! actor list at the scene control block's `+0x0C`. The window sweep creates the
 //! rest - the placements whose footprint-anchor tile lacks
-//! [`crate::field_regions::CELL_BIND_OWNED`] - on its own list at `+0x24`
+//! [`legaia_engine_field::field_regions::CELL_BIND_OWNED`] - on its own list at `+0x24`
 //! (`0x8007C36C`), and only those inside the region box the camera re-centre
 //! latched. It runs from exactly two places, the re-centre routines
 //! `FUN_80017DD4` (the scene-entry window install in `FUN_801D6704`) and
@@ -22,7 +22,7 @@
 //! cells the terrain already holds.
 //!
 //! What a host draws from it is decided by one kernel,
-//! [`crate::field_env::placed_draw_live`]. With
+//! [`crate::scene_staging::placed_draw_live`]. With
 //! [`StaticObjectWindow::retail_windowing`] set - the play hosts' default
 //! (`OptionsState::retail_static_window`) - a window-owned placement draws only
 //! while this list holds a drawn actor for it, which is retail's sub-area
@@ -33,8 +33,9 @@
 //! emission is scope-ignored), FUN_800180EC, FUN_801D6704
 
 use super::*;
-use crate::field_env::PlacedWindowKey;
-use crate::field_regions::{self, RegionTable, WindowSpawn};
+use legaia_engine_field::field_regions::{self, RegionTable, WindowSpawn};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::field_env::PlacedWindowKey;
 use std::collections::HashSet;
 
 /// The windowed static-object list and the resident bytes it is planned from.
@@ -178,21 +179,21 @@ impl World {
     /// Per-draw Y offsets (retail frame) of a placed layer baked against
     /// `scene_lut` (the MAN-header ladder), each under the ladder its actor
     /// was spawned on ([`Self::placed_floor_lut`]) - not the live rungs.
-    /// `floors` are the draws' [`crate::field_env::FloorAnchor`]s and `keys`
-    /// their [`crate::field_env::placed_window_key`]s, parallel (a missing key
+    /// `floors` are the draws' [`legaia_engine_scene::field_env::FloorAnchor`]s and `keys`
+    /// their [`legaia_engine_scene::field_env::placed_window_key`]s, parallel (a missing key
     /// is a bound draw). The one kernel every host folds into its placed
     /// layer.
     pub fn placed_floor_offsets<'a>(
         &self,
         scene_lut: Option<[i16; 16]>,
-        floors: impl IntoIterator<Item = &'a crate::field_env::FloorAnchor>,
+        floors: impl IntoIterator<Item = &'a legaia_engine_scene::field_env::FloorAnchor>,
         keys: &[Option<PlacedWindowKey>],
     ) -> Vec<i32> {
-        let bound = crate::field_env::FloorWave::from_scene_and_world(
+        let bound = legaia_engine_scene::field_env::FloorWave::from_scene_and_world(
             scene_lut,
             &self.placed_floor_lut(None),
         );
-        let windowed = crate::field_env::FloorWave::from_scene_and_world(
+        let windowed = legaia_engine_scene::field_env::FloorWave::from_scene_and_world(
             scene_lut,
             &self
                 .terrain
@@ -217,7 +218,7 @@ impl World {
     /// spawned against - what its drawn Y follows, since nothing re-samples a
     /// placed object's height after spawn
     /// ([`crate::world::FieldTerrain::placed_spawn_lut`]). `key` is the draw's
-    /// [`crate::field_env::placed_window_key`]: `None` for a bound placement
+    /// [`legaia_engine_scene::field_env::placed_window_key`]: `None` for a bound placement
     /// (the scene-init sweep's ladder), `Some` for a window-owned one (the
     /// ladder of the window's last rebuild, falling back to the scene-init
     /// one before the first). A host folds
@@ -251,7 +252,8 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field_regions::{CELL_BIND_OWNED, MAP_OBJECT_DESCRIPTOR_STRIDE};
+    use legaia_engine_field::field_regions::{CELL_BIND_OWNED, MAP_OBJECT_DESCRIPTOR_STRIDE};
+    use legaia_engine_mode::mode::SceneMode;
 
     /// A world with one field scene's worth of resident state: descriptor 5
     /// (spawnable, drawn) on tile `(3, 4)` and descriptor 6 (spawnable, drawn)

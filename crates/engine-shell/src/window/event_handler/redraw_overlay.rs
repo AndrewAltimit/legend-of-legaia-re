@@ -1,8 +1,7 @@
 //! The redraw's 2D and effect layers: the HUD text and the sprite-overlay
 //! draw lists (boot screens, menu chrome, the field and battle HUDs, the
 //! caption), the frame's clear colour, the 3D effect meshes, and the
-//! screen-space primitive lists composited over the scene - split out of
-//! `handle_redraw`.
+//! screen-space primitive lists composited over the scene.
 
 use super::super::*;
 use super::redraw_passes::CutsceneCam;
@@ -11,17 +10,17 @@ use super::redraw_passes::CutsceneCam;
 pub(super) struct OverlayDraws {
     /// The glyph layer.
     pub hud: Vec<TextDraw>,
-    pub logo_draw_vec: Vec<legaia_engine_render::SpriteDraw>,
-    pub title_draw_vec: Vec<legaia_engine_render::SpriteDraw>,
-    pub menu_glyph_draw_vec: Vec<legaia_engine_render::SpriteDraw>,
-    pub muscle_hub_draw_vec: Vec<legaia_engine_render::SpriteDraw>,
+    pub logo_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
+    pub title_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
+    pub menu_glyph_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
+    pub muscle_hub_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
     pub muscle_hub_blend: Vec<legaia_engine_render::OverlayBlendSpan>,
     /// The system-UI atlas slot: the field party HUD, save / menu / dialog /
     /// shop / name-entry / battle chrome.
-    pub save_chrome_draw_vec: Vec<legaia_engine_render::SpriteDraw>,
+    pub save_chrome_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
     pub save_chrome_blend: Vec<legaia_engine_render::OverlayBlendSpan>,
     /// The opening caption quad.
-    pub caption_draw_vec: Vec<legaia_engine_render::SpriteDraw>,
+    pub caption_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
 }
 
 /// The frame's effect meshes (built and uploaded here, drawn in the scene
@@ -139,7 +138,7 @@ impl PlayWindowApp {
         let title_draw_vec = self.title_screen_sprite_draws(w, h);
         let menu_glyph_draw_vec = self.title_menu_glyph_sprite_draws(w, h);
         // Muscle Dome hub screens (intro card / ROUND banner / INTERVAL +
-        // score tally), placed by the shared `other_game_hud` emitters.
+        // score tally), placed by the shared `muscle_dome_hud` emitters.
         // Rides sprite slot 1: the boot-UI overlays that own it are all
         // inactive while a dome leg or its between-legs beat is up.
         let (muscle_hub_draw_vec, muscle_hub_blend) = self.muscle_hub_sprite_draws(w, h);
@@ -218,7 +217,7 @@ impl PlayWindowApp {
         // tableau): scaling by `h / 240` in window pixels drew it larger
         // than the stage and off its centre whenever the window is not a
         // stage multiple, where the page's overlay canvas is the stage.
-        let caption_draw_vec: Vec<legaia_engine_render::SpriteDraw> = {
+        let caption_draw_vec: Vec<legaia_engine_ui::SpriteDraw> = {
             let alpha = self.session.host.world.cutscene.caption_alpha;
             match self.caption_atlas.as_ref() {
                 Some((_, cw, ch)) if alpha > 0.001 => {
@@ -228,7 +227,7 @@ impl PlayWindowApp {
                     let dh = *ch * s;
                     let dx = origin.0 + (320 * s as i32 - dw as i32) / 2;
                     let dy = origin.1 + 110 * s as i32 - dh as i32 / 2;
-                    vec![legaia_engine_render::SpriteDraw {
+                    vec![legaia_engine_ui::SpriteDraw {
                         dst: (dx, dy, dw, dh),
                         src: (0, 0, *cw, *ch),
                         color: [1.0, 1.0, 1.0, alpha.clamp(0.0, 1.0)],
@@ -301,7 +300,7 @@ impl PlayWindowApp {
         // centre, the corner adds follow it, and the matrix is reset to
         // identity before the projection), so the half-extents must not go
         // through the 4x a second time. See
-        // `legaia_engine_render::effect_billboard`.
+        // `legaia_render_kernels::effect_billboard`.
         let fx_scale = if fx_in_battle && self.battle_stage_mesh.is_some() {
             BATTLE_WORLD_SCALE
         } else {
@@ -401,15 +400,15 @@ impl PlayWindowApp {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn build_screen_prims(
         &self,
-        battle_intro_prims: Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
-        field_fog_prims: Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
-        move_strip_prims: Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
-        slot_prims: Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
-        fishing_line_prims: Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
+        battle_intro_prims: Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
+        field_fog_prims: Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
+        move_strip_prims: Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
+        slot_prims: Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
+        fishing_line_prims: Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
         fx_cam: Mat4,
     ) -> (
-        Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
-        Vec<legaia_engine_render::screen_overlay::ScreenPrim>,
+        Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
+        Vec<legaia_render_kernels::screen_prim::ScreenPrim>,
     ) {
         // The intro's primitives composite *over* the scene in one frame.
         // `RenderTarget::ScreenOverlay` cannot do it: that is a whole-frame

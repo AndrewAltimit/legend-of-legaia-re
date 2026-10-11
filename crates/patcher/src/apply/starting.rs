@@ -9,7 +9,7 @@ pub fn current_starting_items(patcher: &DiscPatcher) -> Result<Vec<(u8, u8)>> {
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
         .context("read SCUS_942.54")?;
-    let inv = legaia_asset::new_game::StartingInventory::from_scus(&scus)
+    let inv = legaia_game_tables::new_game::StartingInventory::from_scus(&scus)
         .context("decode starting-inventory seed")?;
     Ok(inv.items().to_vec())
 }
@@ -20,7 +20,7 @@ pub fn current_all_warps(patcher: &DiscPatcher) -> Result<bool> {
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
         .context("read SCUS_942.54")?;
-    Ok(legaia_asset::new_game::scus_unlocks_all_warps(&scus).unwrap_or(false))
+    Ok(legaia_game_tables::new_game::scus_unlocks_all_warps(&scus).unwrap_or(false))
 }
 
 /// Outcome of randomizing the new game's starting seed.
@@ -58,7 +58,7 @@ pub fn randomize_starting_items(
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
         .context("read SCUS_942.54")?;
-    let inv_off = legaia_asset::new_game::starting_inv_seed_file_offset(&scus)
+    let inv_off = legaia_game_tables::new_game::starting_inv_seed_file_offset(&scus)
         .context("locate starting-inventory seed region in SCUS_942.54")? as u64;
     let plan = crate::starting_items::plan_seed(seed, opts);
 
@@ -74,7 +74,7 @@ pub fn randomize_starting_items(
     // neither applies it keeps its original (redundant) bytes.
     let overflow = crate::starting_items::overflow_items(&plan);
     if plan.all_warps || !overflow.is_empty() {
-        let warp_off = legaia_asset::new_game::warp_seed_file_offset(&scus)
+        let warp_off = legaia_game_tables::new_game::warp_seed_file_offset(&scus)
             .context("locate warp-preset region in SCUS_942.54")? as u64;
         let warp_patch = if plan.all_warps {
             crate::starting_items::build_warp_patch()
@@ -97,15 +97,15 @@ pub fn randomize_starting_items(
 /// character's experience cell `+0x0` to `0` (level 1, since the level is derived
 /// from cumulative experience). When the starting-level randomizer is applied, the
 /// seeded experience rides in the `addiu $t0, $zero, imm` preload at
-/// [`legaia_asset::new_game::CURRENT_XP_PRELOAD_VA`]; this reads that immediate (when
+/// [`legaia_game_tables::new_game::CURRENT_XP_PRELOAD_VA`]; this reads that immediate (when
 /// present) and derives the level from the disc XP thresholds. Purely read-only.
 pub fn current_starting_level(patcher: &DiscPatcher) -> Result<u8> {
     let scus = patcher
         .read_named_file(crate::steal::SCUS_NAME)
         .context("read SCUS_942.54")?;
-    let off = legaia_asset::new_game::scus_file_offset(
+    let off = legaia_game_tables::new_game::scus_file_offset(
         &scus,
-        legaia_asset::new_game::CURRENT_XP_PRELOAD_VA,
+        legaia_game_tables::new_game::CURRENT_XP_PRELOAD_VA,
     )
     .context("locate current-XP preload in SCUS_942.54")?;
     let word = u32::from_le_bytes(
@@ -120,14 +120,14 @@ pub fn current_starting_level(patcher: &DiscPatcher) -> Result<u8> {
         return Ok(1);
     }
     let xp = (word & 0xFFFF) as u32;
-    let thresholds = legaia_asset::level_up_tables::xp_thresholds_from_scus(&scus)
+    let thresholds = legaia_game_tables::level_up_tables::xp_thresholds_from_scus(&scus)
         .context("read XP thresholds from SCUS_942.54")?;
     // Level N when reach(N) < xp <= reach(N+1); reach(m) = thresholds[m - 2]. The
     // seeded value is the band midpoint, so it lands strictly inside level N.
     let mut level = 1u8;
     for (i, &reach) in thresholds.iter().enumerate() {
         if xp > reach {
-            level = (i as u8 + 2).min(legaia_asset::level_up_tables::MAX_LEVEL as u8);
+            level = (i as u8 + 2).min(legaia_game_tables::level_up_tables::MAX_LEVEL as u8);
         } else {
             break;
         }
@@ -181,7 +181,7 @@ pub struct StartingLevelReport {
 /// [`crate::starting_level::MIN_STARTING_LEVEL`]`..=`[`crate::starting_level::MAX_STARTING_LEVEL`];
 /// callers guard on [`crate::starting_level::is_active`]. Deterministic.
 pub fn apply_starting_level(patcher: &mut DiscPatcher, level: u8) -> Result<StartingLevelReport> {
-    use legaia_asset::new_game::{
+    use legaia_game_tables::new_game::{
         CURRENT_XP_PRELOAD_VA, CURRENT_XP_STORE_VA, GALA_XP_STORE_VA, LEVEL_SEED_VA,
         LEVEL_STORE_REDUNDANT_VA, LEVEL_STORE_VA, NOA_XP_STORE_VA, RECORD_STRIDE,
         STARTING_XP_SEED_VA, live_record_xp_offset, party_template_file_offset, scus_file_offset,
@@ -293,7 +293,7 @@ pub struct StartingBagReport {
 /// [`randomize_starting_items`] seed: the bag holds every `(id, count)` in `items`
 /// (convenience items + the full requested random fill).
 ///
-/// The opening interactive scene is `town01` ([`legaia_asset::new_game::OPENING_SCENE`]);
+/// The opening interactive scene is `town01` ([`legaia_game_tables::new_game::OPENING_SCENE`]);
 /// its MAN entry is found through `CDNAME.TXT`, the guarded block is spliced at the
 /// entry script's first opcode, the MAN is recompressed in place, and the
 /// descriptor's decompressed-size word is bumped. The guard (persistent SC story
@@ -306,7 +306,7 @@ pub fn apply_starting_bag(
     items: &[(u8, u8)],
     guard_bit: u16,
 ) -> Result<StartingBagReport> {
-    use legaia_asset::scene_asset_table::encode_size_word;
+    use legaia_scene_formats::scene_asset_table::encode_size_word;
     let mut report = StartingBagReport {
         items: items.to_vec(),
         guard_bit,
@@ -319,7 +319,7 @@ pub fn apply_starting_bag(
     let cdname = patcher
         .cdname()
         .context("read CDNAME.TXT for the starting-bag scene")?;
-    let scene = legaia_asset::new_game::OPENING_SCENE; // "town01"
+    let scene = legaia_game_tables::new_game::OPENING_SCENE; // "town01"
     let (raw_start, raw_end) = legaia_prot::cdname::block_range_for_name(&cdname, scene)
         .with_context(|| format!("CDNAME.TXT has no {scene} block"))?;
     // CDNAME #define numbers are raw-TOC indices; extraction = raw - 2.
@@ -383,7 +383,7 @@ pub struct SpecialtyReport {
 /// read-only listing. Returns `None` when the player files aren't present.
 pub fn current_specialties(patcher: &DiscPatcher) -> Result<Vec<SpecialtyAssignment>> {
     use crate::weapon_specialty::{self, Family};
-    use legaia_asset::battle_data_pack;
+    use legaia_actor_formats::battle_data_pack;
     let mut out = Vec::new();
     for player in &weapon_specialty::PLAYERS {
         let Ok(buf) = patcher.read_entry(player.entry) else {
@@ -445,7 +445,7 @@ pub fn current_specialties(patcher: &DiscPatcher) -> Result<Vec<SpecialtyAssignm
 /// report) rather than aborting the run.
 pub fn randomize_weapon_specialty(patcher: &mut DiscPatcher, seed: u64) -> Result<SpecialtyReport> {
     use crate::weapon_specialty;
-    use legaia_asset::battle_data_pack;
+    use legaia_actor_formats::battle_data_pack;
 
     let favored = weapon_specialty::plan_favored(seed);
     let mut report = SpecialtyReport::default();

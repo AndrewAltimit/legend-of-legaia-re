@@ -9,7 +9,7 @@
   <dl class="kv">
     <dt>Magic</dt><dd>none - a bare <code>u32 count</code> opens the pack; identity comes from the enclosing chunk's type byte (<code>0x01</code> TIM_LIST or <code>0x02</code> TMD)</dd>
     <dt>Where on disc</dt><dd>inside DATA_FIELD chunks in scene and effect entries of <code>PROT.DAT</code></dd>
-    <dt>Parser</dt><dd><code>legaia_asset::pack</code></dd>
+    <dt>Parser</dt><dd><code>legaia_container_formats::pack</code></dd>
     <dt>Confidence</dt><dd>Confirmed - the type-<code>0x02</code> arm of the dispatcher <code>FUN_8001F05C</code> walks it and calls <code>FUN_80026B4C</code> per member</dd>
     <dt>Used by</dt><dd><a href="../subsystems/asset-loader.html">asset loader</a>, <a href="../viewer.html">asset viewer</a></dd>
   </dl>
@@ -72,7 +72,7 @@
       <text class="dg-edge-label" x="366" y="130" text-anchor="middle">member i starts word_offset[i] x 4 bytes after the count word</text>
 
       <path class="dg-edge-dim" d="M140 160 V150 H700 V160"/>
-      <text class="dg-label" x="420" y="176">asset::pack - starts at the count word; member i at offset[i] x 4</text>
+      <text class="dg-label" x="420" y="176">container-formats::pack - starts at the count word; member i at offset[i] x 4</text>
       <path class="dg-edge-dim" d="M20 208 V198 H700 V208"/>
       <text class="dg-label" x="360" y="224">prot::timpack - starts at the chunk header; member i at offset[i] x 4 + 4</text>
     </svg>
@@ -87,7 +87,7 @@
       <tr><td>member <code>i</code></td><td><code>4 + word_offset[i] &times; 4</code></td><td><code>word_index[i] &times; 4 + 4</code> - the same byte</td></tr>
     </tbody>
   </table>
-  <p>Use <code>legaia_asset::pack</code> on a pack that starts at offset 0 (a chunk payload), and <code>prot::timpack</code> - or skip the 4-byte header first - on a whole chunk. <code>legaia_asset::field_pack::scene_pack</code> locates the chunk-headered scene pack inside a CDNAME block. The <a href="effect.html">effect bundle</a> (<code>0x02018B0C</code>) is a genuinely different layout.</p>
+  <p>Use <code>legaia_container_formats::pack</code> on a pack that starts at offset 0 (a chunk payload), and <code>prot::timpack</code> - or skip the 4-byte header first - on a whole chunk. <code>legaia_scene_formats::field_pack::scene_pack</code> locates the chunk-headered scene pack inside a CDNAME block. The <a href="effect.html">effect bundle</a> (<code>0x02018B0C</code>) is a genuinely different layout.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

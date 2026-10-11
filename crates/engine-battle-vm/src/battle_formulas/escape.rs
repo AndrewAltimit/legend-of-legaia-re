@@ -1,4 +1,4 @@
-//! Run / escape roll (`FUN_801E791C`). Split out of `battle_formulas.rs`.
+//! Run / escape roll (`FUN_801E791C`).
 
 // ---------------------------------------------------------------------------
 // Run / escape roll (FUN_801E791C)

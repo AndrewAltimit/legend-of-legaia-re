@@ -1,13 +1,13 @@
 //! Native adapter over the shared phase-scripted retail battle camera.
 //!
 //! The whole model - phases, poses, measured glides, formation law,
-//! projection - lives in [`legaia_engine_vm::battle_cam_script`], the ONE
+//! projection - lives in [`legaia_engine_battle_vm::battle_cam_script`], the ONE
 //! implementation the native play-window and the browser play page both
 //! drive (host-drift rule: same model, not parallel reimplementations).
 //! The camera's state and inputs are the engine's
 //! (`legaia_engine_core::battle_cam_inputs`, stepped from `World::tick`);
 //! this module keeps the native-only tests: the retail seat-table
-//! cross-checks (which need `legaia_engine_core::battle_seats`) and the
+//! cross-checks (which need `legaia_engine_battle::battle_seats`) and the
 //! disc-gated per-character height check (which needs `legaia_prot` +
 //! `extracted/`).
 //!
@@ -17,7 +17,7 @@
 
 #[cfg(test)]
 mod tests {
-    use legaia_engine_vm::battle_cam_script::{
+    use legaia_engine_battle_vm::battle_cam_script::{
         BattleCamActor, BattleCamPose, FormationBox, SUBMENU_HEIGHT_FALLBACK, menu_framing,
         prescale_tr_z,
     };
@@ -38,8 +38,8 @@ mod tests {
 
     /// Build the case-9 formation box from retail seat rows.
     fn seats_box(
-        party: &[legaia_engine_core::battle_seats::Seat],
-        monsters: &[legaia_engine_core::battle_seats::Seat],
+        party: &[legaia_engine_battle::battle_seats::Seat],
+        monsters: &[legaia_engine_battle::battle_seats::Seat],
     ) -> FormationBox {
         let mut b: Option<FormationBox> = None;
         for s in party.iter().chain(monsters) {
@@ -59,7 +59,7 @@ mod tests {
     /// it.
     #[test]
     fn traced_menu_depth_falls_out_of_the_retail_seat_tables() {
-        use legaia_engine_core::battle_seats::{MONSTER_SEATS, PARTY_SEATS};
+        use legaia_engine_battle::battle_seats::{MONSTER_SEATS, PARTY_SEATS};
         let solo = seats_box(&PARTY_SEATS[0][..1], &MONSTER_SEATS[0][..1]);
         assert_eq!(solo.max[1] - solo.min[1], 1600.0, "Vahn -800 vs Tetsu +800");
         let p = menu_framing(Some(solo), 0.0);
@@ -74,7 +74,7 @@ mod tests {
     /// structurally cannot observe.
     #[test]
     fn multi_member_formations_frame_wider_than_the_traced_solo_fight() {
-        use legaia_engine_core::battle_seats::{MONSTER_SEATS, PARTY_SEATS};
+        use legaia_engine_battle::battle_seats::{MONSTER_SEATS, PARTY_SEATS};
         let solo = menu_framing(
             Some(seats_box(&PARTY_SEATS[0][..1], &MONSTER_SEATS[0][..1])),
             0.0,
@@ -125,14 +125,14 @@ mod tests {
         let mut archive = legaia_prot::archive::Archive::open(&prot).expect("open PROT.DAT");
         let entry = archive
             .entries
-            .get(legaia_asset::battle_camera_table::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+            .get(legaia_game_tables::battle_camera_table::BATTLE_ACTION_OVERLAY_PROT_INDEX)
             .cloned()
             .expect("PROT 0898");
         let mut bytes = Vec::new();
         archive
             .read_entry(&entry, &mut bytes)
             .expect("read PROT 0898");
-        let table = legaia_asset::battle_camera_table::parse(&bytes).expect("height table");
+        let table = legaia_game_tables::battle_camera_table::parse(&bytes).expect("height table");
 
         // Vahn's entry is the one the solo trace pinned, so it anchors the
         // table to the measurement.

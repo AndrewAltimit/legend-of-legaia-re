@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn collect_sprite_requests_emits_one_per_active_actor_with_frame() {
@@ -81,7 +82,7 @@ fn load_field_record_without_sentinel_starts_at_zero() {
 /// `pending_minigame_warp` for `SceneHost::tick` to drain. It must **not**
 /// touch `pending_scene_transition`: routing the sub-id through the map-id
 /// resolver is what used to warp a player who used a casino cabinet to an
-/// unrelated scene. See `crate::minigame_entry`.
+/// unrelated scene. See `legaia_engine_mode::minigame_entry`.
 #[test]
 fn field_op_3e_warp_arms_the_minigame_door_not_a_scene_change() {
     let mut world = World::new();
@@ -112,8 +113,8 @@ fn field_op_3e_low_op0_installs_scripted_battle_row() {
     for op0 in [0x00u8, 0x01, 50, 0xFF] {
         let mut world = World::new();
         world.set_formation_table(
-            crate::monster_catalog::vanilla_formation_table(),
-            crate::monster_catalog::vanilla_monster_catalog(),
+            legaia_engine_battle::monster_catalog::vanilla_formation_table(),
+            legaia_engine_battle::monster_catalog::vanilla_monster_catalog(),
         );
         world.mode = SceneMode::Field;
         world.npcs.dialog.insert(1, vec![0x1F, b'h', b'i', 0x00]);
@@ -149,8 +150,8 @@ fn field_op_3e_low_op0_installs_scripted_battle_row() {
 /// world mirrors the request via these two channels.
 #[test]
 fn field_op_4c_e2_records_pending_fmv_trigger() {
-    use crate::cutscene::{STR_INIT_GAME_MODE, fmv_index_to_str_filename};
-    use crate::field_events::FieldEvent;
+    use legaia_engine_field::field_events::FieldEvent;
+    use legaia_engine_system::movie::cutscene::{STR_INIT_GAME_MODE, fmv_index_to_str_filename};
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -242,7 +243,7 @@ fn field_fmv_trigger_cut_path_is_a_noop() {
 /// early-returned and the scene's door/prop pokes had no target context.
 #[test]
 fn object_channels_seed_without_partition1_placements() {
-    use legaia_asset::man_section::{ManFile, ManHeader, SectionRef};
+    use legaia_scene_formats::man_section::{ManFile, ManHeader, SectionRef};
 
     // One partition-0 record (flat index 0), zero placements.
     let data_region_offset = 0x40usize;
@@ -291,7 +292,7 @@ fn object_channels_seed_without_partition1_placements() {
 /// the actor (`World::object_draw_turns`).
 #[test]
 fn an_object_bind_prologue_turn_reaches_the_draw() {
-    use legaia_asset::man_section::{ManFile, ManHeader, SectionRef};
+    use legaia_scene_formats::man_section::{ManFile, ManHeader, SectionRef};
 
     let data_region_offset = 0x40usize;
     let mut man = vec![0u8; data_region_offset];
@@ -330,7 +331,7 @@ fn an_object_bind_prologue_turn_reaches_the_draw() {
         0.0, 0.0, 1.0, 0.0, //
         5.0, 6.0, 7.0, 1.0,
     ];
-    let turned = crate::field_env::turn_placed_model(&model, &m);
+    let turned = legaia_engine_scene::field_env::turn_placed_model(&model, &m);
     assert_eq!(&turned[12..16], &[5.0, 6.0, 7.0, 1.0], "origin kept");
     let a = f32::from(0x600u16 - 320) * std::f32::consts::TAU / 4096.0;
     assert!((turned[0] - a.cos()).abs() < 1e-5);

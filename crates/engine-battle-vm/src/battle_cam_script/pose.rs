@@ -1,5 +1,4 @@
 //! Camera poses: dialogue, boot and menu framings, plus the actor / formation inputs they read.
-//! Split out of `battle_cam_script.rs`.
 
 /// One camera pose: 12-bit angle units (`4096` = full turn) + the eye-space
 /// translation trio, exactly the retail globals' value space.
@@ -83,7 +82,7 @@ pub const fn prescale_tr_z(raw: i32) -> f32 {
 /// `0x801F4D2C` from. Vahn's entry, the one value the solo-Vahn camera trace
 /// observes, so an unpinned character frames like the measured case instead
 /// of jumping. Real per-character heights come from
-/// `legaia_asset::battle_camera_table` via [`BattleCamActor::height`].
+/// `legaia_game_tables::battle_camera_table` via [`BattleCamActor::height`].
 pub const SUBMENU_HEIGHT_FALLBACK: f32 = 1152.0; // 0x480
 
 /// The acting battle actor the submenu framing is built around.

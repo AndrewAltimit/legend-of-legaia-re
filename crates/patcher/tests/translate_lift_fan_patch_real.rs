@@ -21,8 +21,8 @@
 //!   because the construction is the same in both languages, and blanking it
 //!   put the English line back into a translated sentence.
 
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::translation::lift;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_translate::lift;
 
 fn load(var: &str) -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os(var)?);

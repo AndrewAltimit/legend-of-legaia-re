@@ -2,7 +2,7 @@
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; field-pack format</div>
   <h1>Field-pack <span class="tag tag-done">Confirmed</span></h1>
   <p class="lede">There is no field-pack format. The entries named after the magic <code>0x01059B84</code> are ordinary
-  <a href="data-field.html">DATA_FIELD streams</a> whose single chunk is an <a href="pack.html">asset::pack</a> of PSX
+  <a href="data-field.html">DATA_FIELD streams</a> whose single chunk is an <a href="pack.html">container-formats::pack</a> of PSX
   TIMs or Legaia TMDs - a scene's texture or mesh pack. The "magic" is that chunk's <code>(type &lt;&lt; 24) | size</code>
   header, the "97-entry schema" is the pack's own <code>[count][word offsets]</code> table, and the "byte-identical
   91 KB constant block" is two Rim Elm scenes sharing their leading textures.</p>
@@ -11,11 +11,11 @@
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>What it really is</dt><dd>One <a href="data-field.html">DATA_FIELD</a> chunk wrapping one <a href="pack.html">asset::pack</a> - two formats this site already documents</dd>
+    <dt>What it really is</dt><dd>One <a href="data-field.html">DATA_FIELD</a> chunk wrapping one <a href="pack.html">container-formats::pack</a> - two formats this site already documents</dd>
     <dt>Where</dt><dd>Raw-TOC offset <code>+4</code> of a scene's <a href="cdname.html">CDNAME</a> block (extraction index <code>#define + 2</code>). 23 blocks carry one; the rest reserve the slot with a <a href="pochi.html">pochi filler</a></dd>
     <dt>The "magic"</dt><dd><code>0x01059B84</code> = <code>(TIM_LIST &lt;&lt; 24) | 0x059B84</code>. The low 24 bits are that carrier's payload length, so the word differs per file - it occurs exactly once in the whole archive</dd>
     <dt>Two forms</dt><dd>18 carriers lead with the chunk header; 5 carry the bare pack at offset 0. The bundle's <code>Flag</code> descriptor picks which</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::field_pack::scene_pack</code> (corrected reader); <code>detect</code> / <code>CANONICAL_SCHEMA</code> kept for the classifier and the <code>asset field-pack</code> CLI</dd>
+    <dt>Parser</dt><dd><code>legaia_scene_formats::field_pack::scene_pack</code> (corrected reader); <code>detect</code> / <code>CANONICAL_SCHEMA</code> kept for the classifier and the <code>asset field-pack</code> CLI</dd>
     <dt>Confidence</dt><dd>Confirmed - loader disassembly plus a whole-archive byte sweep (<a href="#how-we-know">how we know</a>)</dd>
     <dt>Used by</dt><dd><a href="scene-bundles.html">scene bundles</a>, <a href="../subsystems/asset-loader.html">asset loader</a></dd>
   </dl>
@@ -29,7 +29,7 @@
     <div class="bm-cell bm-accent" style="--w:5"><span class="bm-off">+0x08</span><span class="bm-name">word_offset[count]</span><span class="bm-size">4 &times; count</span></div>
     <div class="bm-cell" style="--w:12"><span class="bm-off">table end</span><span class="bm-name">members - TIMs or TMDs, back to back</span><span class="bm-size">to the sector-aligned end</span></div>
   </div>
-  <p>Grey = the optional <a href="data-field.html">DATA_FIELD</a> chunk header (offsets shown with it present; the five bare carriers start at <code>count</code>). Everything after it is a plain <a href="pack.html">asset::pack</a>: word offsets are <code>&times; 4</code> from the count word, and member 0 starts exactly where the table ends.</p>
+  <p>Grey = the optional <a href="data-field.html">DATA_FIELD</a> chunk header (offsets shown with it present; the five bare carriers start at <code>count</code>). Everything after it is a plain <a href="pack.html">container-formats::pack</a>: word offsets are <code>&times; 4</code> from the count word, and member 0 starts exactly where the table ends.</p>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Notes</th></tr></thead>
     <tbody>
@@ -140,7 +140,7 @@
 asset field-pack &lt;PATH&gt; --all-slots    # every member offset/size
 asset field-pack &lt;PATH&gt; --groups       # cluster members by size
 asset field-pack-scan &lt;DIR&gt;            # find the chunk-headered carriers</code></pre>
-<pre><code>use legaia_asset::field_pack;
+<pre><code>use legaia_scene_formats::field_pack;
 
 // Handles both forms: chunk_header is None for the bare carriers.
 if let Some(p) = field_pack::scene_pack(&amp;entry_bytes) {
@@ -166,7 +166,7 @@ if let Some(p) = field_pack::scene_pack(&amp;entry_bytes) {
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
-    <a href="pack.html">asset::pack</a>
+    <a href="pack.html">container-formats::pack</a>
     <a href="data-field.html">DATA_FIELD streaming</a>
     <a href="asset-type.html">Asset-type dispatch</a>
     <a href="scene-bundles.html">Scene bundles</a>

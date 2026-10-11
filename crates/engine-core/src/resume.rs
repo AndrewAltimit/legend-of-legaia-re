@@ -25,7 +25,7 @@
 //!
 //! 1. The save's own scene, when it names one and the host can enter it.
 //! 2. The scene already running, with the save loaded over it.
-//! 3. The opening town ([`legaia_asset::new_game::OPENING_SCENE`]), when
+//! 3. The opening town ([`legaia_game_tables::new_game::OPENING_SCENE`]), when
 //!    nothing is running - a cold boot's title Continue on a host that did
 //!    not pre-boot a scene.
 //!
@@ -38,7 +38,7 @@
 //! The prologue cutscene scene, then the opening town when the cutscene
 //! scene will not enter ([`NEW_GAME_SCENES`]).
 
-use legaia_asset::new_game::{OPENING_CUTSCENE_SCENE, OPENING_SCENE};
+use legaia_game_tables::new_game::{OPENING_CUTSCENE_SCENE, OPENING_SCENE};
 
 /// The scenes a New Game tries, in order: the prologue cutscene chain's
 /// first leg, then Rim Elm when that leg cannot be entered.
@@ -124,7 +124,7 @@ pub fn land_save<E: std::fmt::Display>(
 /// position the save was written at, when `scene` is the save's own scene.
 ///
 /// Retail seats a card load from the save's position snapshot (the MAN
-/// loader's `_DAT_8007B8C0` arm, [`crate::scene::SceneHost::arm_resume_seat`]).
+/// loader's `_DAT_8007B8C0` arm, [`crate::scene_host::SceneHost::arm_resume_seat`]).
 /// Every other landing - the running scene, the opening-town fallback - is
 /// not where the position was taken, so it gets no seat and enters as that
 /// scene always does. `None` too for a save that names no position.
@@ -148,7 +148,7 @@ pub trait CardLoadHost {
     fn card_load_running_scene(&self) -> Option<String>;
     /// Enter `scene` for a resume of `save` (whose own resume label is
     /// `save_scene`): the host arms the save's seat
-    /// ([`crate::scene::SceneHost::arm_resume_seat`]) and runs its scene
+    /// ([`crate::scene_host::SceneHost::arm_resume_seat`]) and runs its scene
     /// entry. The kernel hydrates the world afterwards - an implementation
     /// does not apply the save itself.
     fn card_load_enter(

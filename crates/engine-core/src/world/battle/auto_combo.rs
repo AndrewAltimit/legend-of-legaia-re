@@ -68,10 +68,10 @@ impl World {
     /// the phase before and after it.
     pub(in crate::world) fn note_auto_attack_pick(
         &mut self,
-        before: &crate::battle_input::CommandPhase,
-        after: &crate::battle_input::CommandPhase,
+        before: &legaia_engine_menus::battle_input::CommandPhase,
+        after: &legaia_engine_menus::battle_input::CommandPhase,
     ) {
-        use crate::battle_input::{BattleCommand, CommandPhase as P};
+        use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase as P};
         let attack_target = matches!(
             after,
             P::Targeting {
@@ -146,8 +146,8 @@ impl World {
     /// The pool arm and the tail for one seat: the queue bytes, direction
     /// commands with arts spliced in, unterminated.
     fn auto_attack_pool_queue(&mut self, seat: u8, target: u8) -> Vec<u8> {
-        use crate::arts_command_input::{DEFAULT_POOL, FAVORED_COST};
-        use legaia_engine_vm::battle_arts_auto_combo as combo;
+        use legaia_engine_battle::arts_command_input::{DEFAULT_POOL, FAVORED_COST};
+        use legaia_engine_battle_vm::battle_arts_auto_combo as combo;
         let roster = self.party_roster_slot(usize::from(seat));
         let inputs = self
             .battle

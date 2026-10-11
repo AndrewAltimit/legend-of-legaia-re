@@ -4,7 +4,7 @@
 //! `FUN_8001CF50` rebuilds the camera rotation for a part whose `+0x52`
 //! carries a bit of `0x780`, leaving out each flagged axis. The yaw factor
 //! (`FUN_8004629C`, `GteMat3::rot_y` under
-//! `legaia_engine_ui::gte::camera_view_rotation`) therefore runs only for a
+//! `legaia_render_kernels::gte::camera_view_rotation`) therefore runs only for a
 //! word that skips pitch or roll and keeps yaw, and one word on the disc does:
 //! `urudre1` stager record 14's `0x0080`
 //! (`engine-core/tests/move_ctrl52_census_disc.rs` pins that census).

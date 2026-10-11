@@ -1,0 +1,872 @@
+//! "Scene asset table" detector - the canonical 7-typed-asset bundle shape.
+//!
+//! ### Provenance
+//!
+//! **80 PROT entries lead with the literal 4-byte `07 00 00 00`** and decode as
+//! `parse_player_lzs(buf, 7)`-style descriptor tables - a fixed 7-asset
+//! bundle whose descriptor types form the canonical scene-asset sequence
+//! `(TimList, Tmd, Man, Mes, Move, Anm, Vdf)` = `(1, 2, 3, 4, 5, 6, 7)`.
+//!
+//! ### Layout
+//!
+//! ```text
+//! +0x00   u32  count = 7              ; literal `07 00 00 00`
+//! +0x04   u32  total_decompressed_size ; = the sum of the descriptors' sizes
+//! +0x08   7 × (u32 type_size, u32 data_offset)
+//!                                     ; each pair packs `(type<<24)|size`
+//!                                     ; first descriptor's `data_offset` = 0x40
+//! +0x40   per-descriptor LZS streams  ; one independent LZS stream per
+//!                                     ; descriptor, addressed by
+//!                                     ; `data_offset` and decompressing to
+//!                                     ; exactly `size` bytes
+//! ```
+//!
+//! ### Descriptor offsets are file-relative, and the file is one PROT entry
+//!
+//! Each descriptor `(type, size, data_offset)` is its own LZS stream where
+//! `size` is the **decompressed** byte count. `data_offset` is the
+//! file-relative byte position of that stream inside the bundle entry, read
+//! with [`legaia_prot::archive::Archive::read_entry`].
+//!
+//! **A bundle is one entry, not a span of them.** Across the retail corpus,
+//! 90 CDNAME blocks each carry exactly one MAN-bearing table, always at
+//! offset 0 of its entry, and no table's descriptor payload reaches past that
+//! entry's end - so "resolve the offsets against the entry" is the whole rule.
+//! Detection and extraction must use the same buffer: detecting against the
+//! wider `toc[p+5] - toc[p+3] + 4` window resolves a one-sector prescript
+//! entry's "table" that is really its neighbour's table at offset 0. See
+//! `legaia-engine-core::scene_bundle::extract_move_payload` for the canonical
+//! reader and [`docs/formats/prot.md`](../../../docs/formats/prot.md) for the
+//! entry-size evidence.
+//!
+//! ### Type-sequence variants (empirically observed)
+//!
+//! | Tuple                          | Count | Notes |
+//! |--------------------------------|-------|-------|
+//! | `(1, 2, 3, 4, 5, 6, 7)`        | 67    | Standard scene bundle. |
+//! | `(1, 3, 4, 5, 6, 7, 0x14)`     | 7     | Skips Tmd; trailing 0x14 is a `Flag` sentinel. |
+//! | `(2, 3, 4, 5, 6, 7, 0x14)`     | 4     | Skips TimList. |
+//! | `(10, 2, 3, 4, 5, 6, 7)`       | 1     | Leading `Flag(0xA)` sentinel. |
+//! | `(1, 2, 3, 4, 6, 7, 0x14)`     | 1     | Skips Move. |
+//!
+//! All tuples consist of legal asset-type bytes ∈ `{0x00..=0x14}` - none
+//! contain unknown types. The first descriptor's `data_offset` is **always**
+//! `0x40` (= `8 + 7*8`, the byte after the header).
+//!
+//! ### Detection strategy
+//!
+//! Strict structural check - no LZS-decode requirement, so the detector
+//! captures both the LZS-payload variants and the raw-payload variants
+//! uniformly:
+//!
+//! 1. `u32_le[0] == 7` (the literal `07 00 00 00` lead).
+//! 2. Buffer is large enough for the 64-byte header (`8 + 7 * 8`).
+//! 3. First descriptor's `data_offset == 0x40`.
+//! 4. All 7 descriptor type bytes are legal (`<= 0x14`).
+//! 5. All 7 descriptor sizes fit in 4 MB.
+//! 6. All 7 descriptor offsets fit within the buffer + a 64-byte slack
+//!    (some entries pad past the last asset for sector alignment).
+//!
+//! ### Coverage impact
+//!
+//! Promotes 80 entries to `Class::SceneAssetTable`. Of those, 26 were
+//! previously classed `lzs_container` (with `n=1` - a coincidental match
+//! because the `n=1` branch only validated the *first* descriptor), 43 were
+//! `unknown_high_entropy`, and 11 were `unknown_other`. Net named-format
+//! coverage change: **+54 entries** (the 26 lzs_container ones were already
+//! "named"; the strict 7-asset detector simply gives them a more accurate
+//! semantic class).
+//!
+//! ### Runtime walk - the slot to asset mapping
+//!
+//! The mapping is **positional + offset-based**; there is no separate
+//! slot-to-asset indirection table. The per-scene field init at
+//! `FUN_801D6704` drives a three-function chain:
+//!
+//! 1. `per_stage_init` (`FUN_8001E1B4`) allocates a single 0x62C00-byte asset
+//!    buffer once and stores its base at `_DAT_8007b85c`.
+//! 2. `field_asset_loader` (`FUN_8001F7C0`) reads the per-scene field FILE into
+//!    a 0x14000-byte scratch (`_DAT_1f8003ec`); the decoded table is relocated
+//!    so the count word lands at the asset-buffer base `_DAT_8007b85c`.
+//! 3. `descriptor_pair_walker` (`FUN_80020224`) walks the table:
+//!
+//!    ```text
+//!    base   = _DAT_8007b85c          ; table base (count word at +0)
+//!    count  = *base                  ; first u32
+//!    for slot in 0..count:
+//!        desc      = base + 8 + slot*8        ; stride 8 bytes (2 words)
+//!        type_size = desc[0]                  ; (type<<24)|size_24
+//!        data_off  = desc[1]                  ; relative to `base`
+//!        asset_type_dispatch(base + data_off, type_size, scene, 0)
+//!        status |= return
+//!    ```
+//!
+//! 4. `asset_type_dispatch` (`FUN_8001F05C`) splits `type = type_size >> 24`
+//!    and `size = type_size & 0x00FF_FFFF`, then jumps via the dispatch table
+//!    at `0x80010638 + type*4` (type bound: `< 0x15`).
+//!
+//! So **slot `i` is purely the `i`-th 8-byte descriptor**, its payload starts
+//! at `base + data_offset`, and its handler is selected by `type_size`'s high
+//! byte. [`SceneAssetTable::slots`] reproduces this walk and
+//! [`SceneAssetTable::payload_range`] resolves a slot's payload span against a
+//! caller-supplied base. The relocation into `_DAT_8007b85c` is a whole-sector
+//! block copy of the entry (next section), so the static base-relative walk
+//! [`resolve`] performs is the runtime walk.
+//!
+//! ### `+0x04` is the bundle's total decompressed size
+//!
+//! The header's second word - long carried as an unexplained `meta1` - equals
+//! `sum(descriptor[i].size)` exactly, in **every** table of this family on the
+//! disc: all 88 entries the categorizer classes `scene_asset_table` plus the
+//! 17 it classes `lzs_container` (the `count`-4/5 MAN-less v12-family form and
+//! the character/effect containers `legaia_container_formats::parse_player_lzs` reads), 105 of
+//! 105. Since `size` is the *decompressed* byte count of each descriptor's own
+//! LZS stream, the word is the bundle's total unpacked footprint - an
+//! authoring total, not a file offset and not a sector count (it exceeds the
+//! entry's byte length in all 105).
+//!
+//! **Retail never reads it.** `FUN_80020224` loads `count` from `+0x00`
+//! (`80020288`: `lw s3,0x0(s4)`) and steps descriptors from `+0x08`
+//! (`8002029c`: `lw a0,0xc(s0)` / `lw a1,0x8(s0)` with `s0 = s4`, `s0 += 8`
+//! per iteration), so the word at `+0x04` is skipped. Sweeping every dumped
+//! function for a load off `*(0x8007b85c)` finds reads at offset `0x0` only -
+//! the walker's count, `FUN_8002541C`'s pack count, and two debug prints. So
+//! the field is Confirmed as a *format* fact and is inert at runtime.
+//!
+//! ### How the table reaches `_DAT_8007b85c`
+//!
+//! `FUN_8001E1B4` allocates the buffer once - `8001e24c..8001e290`:
+//! `FUN_80017888(0, 0x62C00)` then `sw v0, -0x47a4(at)` - so `_DAT_8007b85c`
+//! is a *pointer* to a `0x62C00`-byte arena. The bundle is placed at that
+//! arena's offset 0 by a plain 32-byte-per-iteration block copy,
+//! `FUN_8003D26C(*(0x8007b85c), *(0x8007b8c4), sectors << 6)` at `801d6918`
+//! in the field init, where `sectors = *(0x8007b6fc)` (cleared right after, at
+//! `801d6c48`). `sectors << 6` iterations x 32 bytes = `sectors * 0x800`, so
+//! the copy is whole sectors of the entry, verbatim - which is why the on-disc
+//! `count` word lands exactly at the walker's `base`.
+//!
+//! See `docs/formats/scene-bundles.md` for the full byte-level spec.
+
+use serde::Serialize;
+
+use legaia_container_formats::AssetType;
+
+/// Canonical lead u32 for kingdom-bundle scenes - `07 00 00 00`.
+const HEADER_COUNT: u32 = 7;
+
+/// Maximum descriptor count the fixed-size [`SceneAssetTable::descriptors`]
+/// array can hold. Two variants exist in the retail corpus: kingdom-bundle
+/// scenes use `count = 7` (first descriptor `TimList`), and the early
+/// standalone-town scenes (e.g. `town01`, `town0c`) use `count = 6` (first
+/// descriptor `Tmd`/type-0x0A). Both are walked by `FUN_80020224`, which
+/// reads `count` from the file and loops that many descriptors.
+const MAX_DESCRIPTORS: usize = 7;
+
+/// Smallest `count` word the detector will consider. Below `HEADER_COUNT - 1`
+/// a table is admitted only when it carries a MAN (see [`detect`]); this floor
+/// keeps a one- or two-word leading run from ever reaching that test.
+const MIN_HEADER_COUNT: u32 = 4;
+
+/// Asset-type byte of the scene MAN descriptor (dispatcher case `0x03`).
+const MAN_TYPE_BYTE: u8 = 0x03;
+
+/// Header-end byte offset for a table with `count` descriptors: the 8-byte
+/// `[count][meta]` header plus `count` 8-byte descriptor records. The first
+/// descriptor's `data_offset` is always anchored here (`0x40` for count 7,
+/// `0x38` for count 6).
+fn header_end(count: u32) -> u32 {
+    8 + count * 8
+}
+
+/// Per-asset size cap. Real entries top out at ~3 MB - 4 MB leaves headroom.
+const MAX_ASSET_SIZE: u32 = 4 * 1024 * 1024;
+
+/// Cap on the magnitude of `data_offset` for descriptors past the first.
+///
+/// Offsets are file-relative against the extended bundle footprint (see
+/// the module-level "Descriptor offsets" section). Empirically they top
+/// out around 0x80000 (512 KB) across the 80 retail bundles. 16 MB is a
+/// defensive cap that rejects pointer-shaped values like `0x801C0000`
+/// while accepting all real scene asset tables - the detector runs on raw
+/// PROT bytes before the extended footprint is loaded, so it can't
+/// validate `data_offset <= file_size` directly.
+const MAX_DATA_OFFSET: u32 = 16 * 1024 * 1024;
+
+/// Detection result.
+#[derive(Debug, Clone, Serialize)]
+pub struct SceneAssetTable {
+    /// The header's second word (`+0x04`): the **sum of every descriptor's
+    /// decompressed `size`**, i.e. how many bytes this bundle unpacks to in
+    /// total. See the module-level section for the corpus identity and for
+    /// why retail never reads it.
+    pub total_decompressed_size: u32,
+    /// Number of real descriptors (`6` or `7`). Only `descriptors[..count]`
+    /// are populated; the rest are zero padding.
+    pub count: usize,
+    /// Per-descriptor `(type_byte, size, data_offset)`. Indices `>= count`
+    /// are zero padding (the table is `count`-prefixed, not fixed-7).
+    pub descriptors: [DescriptorRecord; MAX_DESCRIPTORS],
+}
+
+impl SceneAssetTable {
+    /// First descriptor whose `type_byte` is the `Move` asset type (`0x05`),
+    /// or `None` if this table doesn't carry a move-table slot.
+    ///
+    /// In every observed scene with a `scene_asset_table` shape, the Move
+    /// descriptor is at index 4. Each per-scene CDNAME block's
+    /// `slot+1` PROT entry sources that scene's per-area `move.mdt` -
+    /// this is what populates `_DAT_8007B888` (the move-table base
+    /// pointer read by `FUN_800204F8`) when the scene loads.
+    pub fn move_descriptor(&self) -> Option<&DescriptorRecord> {
+        self.used().iter().find(|d| d.type_byte == 0x05)
+    }
+
+    /// Same as [`move_descriptor`](Self::move_descriptor) but returns the
+    /// descriptor's index in the table.
+    pub fn move_descriptor_index(&self) -> Option<usize> {
+        self.used().iter().position(|d| d.type_byte == 0x05)
+    }
+
+    /// The populated descriptor slice (`descriptors[..count]`), excluding the
+    /// zero padding that follows for the `count == 6` variant.
+    pub fn used(&self) -> &[DescriptorRecord] {
+        &self.descriptors[..self.count]
+    }
+
+    /// Sum of every populated descriptor's decompressed `size` - what the
+    /// header's [`total_decompressed_size`](Self::total_decompressed_size)
+    /// word records.
+    pub fn descriptor_size_sum(&self) -> u32 {
+        self.used().iter().map(|d| d.size).sum()
+    }
+
+    /// Whether `+0x04` agrees with [`Self::descriptor_size_sum`]. True for
+    /// every table of this family on the retail disc; a false here means the
+    /// buffer is not a bundle header (or an editor rewrote sizes without
+    /// re-summing the header).
+    pub fn total_size_is_consistent(&self) -> bool {
+        self.total_decompressed_size == self.descriptor_size_sum()
+    }
+
+    /// Byte offset, within the bundle entry, of descriptor `index`'s
+    /// `(type<<24)|size` word. The descriptor table is `[8-byte header]` then
+    /// `count` 8-byte `(type_size, data_offset)` pairs, so descriptor `index`'s
+    /// type/size word sits at `8 + index*8`. Used by the variable-length MAN
+    /// editor to rewrite the *decompressed* size field after resizing an asset.
+    pub fn size_word_offset(index: usize) -> usize {
+        8 + index * 8
+    }
+
+    /// Index of the first descriptor whose `type_byte == ty`, or `None`.
+    pub fn descriptor_index(&self, ty: u8) -> Option<usize> {
+        self.used().iter().position(|d| d.type_byte == ty)
+    }
+
+    /// The positional slot-to-asset mapping exactly as the runtime walker
+    /// (`descriptor_pair_walker`, `FUN_80020224`) dispatches it: one
+    /// [`SlotMapping`] per populated descriptor, in declaration order. Slot
+    /// `i` is the `i`-th 8-byte descriptor; its handler is keyed by the
+    /// `type_byte` and its payload lives at `table_base + data_offset` (see
+    /// [`payload_range`](Self::payload_range)).
+    pub fn slots(&self) -> impl Iterator<Item = SlotMapping> + '_ {
+        self.used().iter().enumerate().map(|(slot, d)| SlotMapping {
+            slot,
+            type_byte: d.type_byte,
+            asset_type: d.asset_type(),
+            size: d.size,
+            data_offset: d.data_offset,
+        })
+    }
+
+    /// Byte span of slot `index`'s payload, relative to the table base the
+    /// runtime walks (the count word's address). This mirrors the walker's
+    /// `asset_type_dispatch(base + data_offset, size, ...)` call: the payload
+    /// starts at `table_base + data_offset` and is `size` bytes of declared
+    /// (decompressed) content.
+    ///
+    /// `size` is the *decompressed* byte count, so for an LZS-payload slot the
+    /// returned range is the logical asset size, not the compressed extent on
+    /// disc - use the range's start as the stream anchor and decode from there.
+    /// Returns `None` for an out-of-range slot.
+    pub fn payload_range(
+        &self,
+        index: usize,
+        table_base: usize,
+    ) -> Option<core::ops::Range<usize>> {
+        let d = self.used().get(index)?;
+        let start = table_base.checked_add(d.data_offset as usize)?;
+        let end = start.checked_add(d.size as usize)?;
+        Some(start..end)
+    }
+}
+
+/// One slot's positional mapping as walked by `descriptor_pair_walker`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct SlotMapping {
+    /// Positional slot index (= descriptor index).
+    pub slot: usize,
+    /// Raw type byte (high byte of the descriptor's `type_size` word).
+    pub type_byte: u8,
+    /// Decoded asset type the dispatcher selects for this slot.
+    pub asset_type: AssetType,
+    /// Declared (decompressed) payload size in bytes.
+    pub size: u32,
+    /// Payload offset relative to the table base (`base + data_offset`).
+    pub data_offset: u32,
+}
+
+/// A scene asset table plus the byte offset of its table base inside the PROT
+/// entry buffer. Produced by [`resolve`].
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedAssetTable {
+    /// Offset of the count word inside the entry buffer. `0` for a bare
+    /// [`detect`] table; the post-prescript 0x800-aligned offset for the
+    /// [`crate::scene_scripted_asset_table`] variant.
+    pub table_base: usize,
+    /// The decoded table. Its `data_offset` fields are relative to
+    /// `table_base`, matching the runtime walk.
+    pub table: SceneAssetTable,
+}
+
+/// Resolve a PROT entry to the scene asset table the runtime would walk,
+/// covering **both** the bare table (count word at offset 0) and the
+/// prescript-prefixed [`crate::scene_scripted_asset_table`] variant (count
+/// word at a 0x800-aligned offset past the event prescript).
+///
+/// This is the single entry point that answers "given this scene bundle, what
+/// is the slot-to-asset mapping?" for the ~5% of PROT entries the
+/// `SceneAssetTable` / `SceneScriptedAssetTable` classifiers fire on. The
+/// returned [`ResolvedAssetTable::table_base`] is the base the positional
+/// walk ([`SceneAssetTable::slots`] / [`SceneAssetTable::payload_range`]) is
+/// relative to.
+pub fn resolve(buf: &[u8]) -> Option<ResolvedAssetTable> {
+    // Bare table at offset 0 (the common case).
+    if let Some(table) = detect(buf) {
+        return Some(ResolvedAssetTable {
+            table_base: 0,
+            table,
+        });
+    }
+    // Prescript-prefixed variant: the table sits at a 0x800-aligned offset.
+    let scripted = crate::scene_scripted_asset_table::detect(buf)?;
+    let base = scripted.asset_table_offset;
+    let table = detect(buf.get(base..)?)?;
+    Some(ResolvedAssetTable {
+        table_base: base,
+        table,
+    })
+}
+
+/// LZS-decode the first slot whose descriptor carries `type_byte` out of a
+/// scene bundle PROT entry. `None` when the entry has no resolvable asset
+/// table or no slot of that type; `Some(Err)` when the slot exists but its
+/// payload fails to decode (truncated stream / bad declared size).
+///
+/// This is the shared "give me the bundle's ANM-walker / VDF / TIM_LIST
+/// slot" primitive: the runtime dispatcher keys each slot's handler on the
+/// descriptor's type byte, not on its position, so consumers that want one
+/// asset class should too (the count-6 early-town variants shift positions).
+pub fn decode_slot_by_type(entry: &[u8], type_byte: u8) -> Option<Result<Vec<u8>, String>> {
+    let (base, descriptors) = match resolve(entry) {
+        Some(r) => {
+            let ds: Vec<DescriptorRecord> = r.table.used().to_vec();
+            (r.table_base, ds)
+        }
+        // The strict detector anchors on the corpus counts 6/7; the
+        // MAN-less count-4 variant (`[1, 2, 6, 0x14]` - the v12-family
+        // dungeon bundles, several of which carry a walker table) walks the
+        // same way. Mirror the runtime `FUN_80020224`, which reads the
+        // count and loops with no count constraint.
+        None => (0, lenient_descriptor_walk(entry)?),
+    };
+    let d = descriptors.iter().find(|d| d.type_byte == type_byte)?;
+    let size = d.size as usize;
+    if size == 0 {
+        return Some(Err(format!("type-{type_byte:#04x} slot has size 0")));
+    }
+    let start = base + d.data_offset as usize;
+    let Some(stream) = entry.get(start..) else {
+        return Some(Err(format!(
+            "type-{type_byte:#04x} slot data_offset {start:#x} out of range"
+        )));
+    };
+    Some(legaia_lzs::decompress(stream, size).map_err(|e| format!("lzs: {e}")))
+}
+
+/// Lenient count-prefixed descriptor walk for the table variants the strict
+/// [`detect`] anchor excludes (retail: the count-4 MAN-less form and the four
+/// count-5 bundles, two of which do carry a MAN). Accepts counts `2..=7` with
+/// every type byte known, sizes plausible, and the first descriptor anchored at
+/// the header end - the same anchor law the strict detector applies to counts
+/// 6/7, and closer to the runtime walker `FUN_80020224`, which reads the count
+/// and loops with no count constraint at all.
+///
+/// The count allow-list in [`detect`] exists so an arbitrary PROT entry with a
+/// small leading word can't be *classified* as a scene bundle. A caller that
+/// confirms what it found downstream - decodes the slot, checks its magic,
+/// walks its structure - has a stronger signal than the header alone, and
+/// should use this instead of widening [`detect`] for everyone.
+pub fn lenient_descriptor_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
+    let count = legaia_bytes::u32_le(entry, 0)? as usize;
+    if !(2..=7).contains(&count) {
+        return None;
+    }
+    let header_end = 8 + count * 8;
+    let mut out = Vec::with_capacity(count);
+    for i in 0..count {
+        let p = 8 + i * 8;
+        let type_size = legaia_bytes::u32_le(entry, p)?;
+        let data_offset = legaia_bytes::u32_le(entry, p + 4)?;
+        let type_byte = ((type_size >> 24) & 0xFF) as u8;
+        let size = type_size & 0x00FF_FFFF;
+        if !is_known_type(type_byte) || size > MAX_ASSET_SIZE {
+            return None;
+        }
+        if i == 0 && data_offset as usize != header_end {
+            return None;
+        }
+        out.push(DescriptorRecord {
+            type_byte,
+            size,
+            data_offset,
+        });
+    }
+    Some(out)
+}
+
+/// The **retail** descriptor walk: `count` from `+0x00`, `count` 8-byte pairs
+/// from `+0x08`, no count bound at all.
+///
+/// [`lenient_descriptor_walk`] exists to answer "is this buffer plausibly a
+/// bundle" for a caller that will confirm downstream, and its `2..=7` count
+/// window is a detector heuristic. This function is the other thing: a
+/// transcription of what `FUN_80020224` does, for a caller that already knows
+/// the entry is a bundle and wants the same descriptors retail gets.
+///
+/// ```text
+/// 80020288  lw   s3,0x0(s4)       ; count, straight off the table base
+/// 80020290  blez s3,0x800202cc    ; a non-positive count skips the loop
+/// 80020298  move s0,s4            ; cursor starts AT the base ...
+/// 8002029c  lw   a0,0xc(s0)       ; ... so pair i is (base+8+8i, base+0xC+8i)
+/// 800202a0  lw   a1,0x8(s0)
+/// 800202a4  addiu s0,s0,0x8
+/// 800202b4  jal  0x8001f05c
+/// 800202b8  _addu a0,s4,a0        ; payload pointer = base + data_offset
+/// ```
+///
+/// The payload pointer is formed in the `jal`'s **delay slot**, which is where
+/// a backward-only scan for the addition loses it.
+///
+/// What this adds over reading the words yourself is the anchor law and the
+/// type bound the dispatcher itself imposes (`sltiu v1,v1,0x15` at
+/// `0x8001F0B4`): descriptor 0's `data_offset` must be the header end
+/// `8 + 8*count`, every type byte must be one the dispatch table has an arm
+/// for, and the offsets must ascend inside the buffer. Retail checks none of
+/// those - it is reading a file its own tool wrote - so they are this
+/// function's way of refusing a buffer that is not a bundle, not a claim about
+/// the runtime. See `ghidra/scripts/funcs/80020224.txt` and
+/// [`docs/formats/scene-bundles.md`](../../../docs/formats/scene-bundles.md).
+pub fn descriptor_bundle_walk(entry: &[u8]) -> Option<Vec<DescriptorRecord>> {
+    let count = legaia_bytes::u32_le(entry, 0)? as usize;
+    if count == 0 || count > MAX_BUNDLE_DESCRIPTORS {
+        return None;
+    }
+    let header_end = 8 + count * 8;
+    if entry.len() < header_end {
+        return None;
+    }
+    let mut out = Vec::with_capacity(count);
+    let mut prev_offset = 0u32;
+    for i in 0..count {
+        let p = 8 + i * 8;
+        let type_size = legaia_bytes::u32_le(entry, p)?;
+        let data_offset = legaia_bytes::u32_le(entry, p + 4)?;
+        let type_byte = ((type_size >> 24) & 0xFF) as u8;
+        let size = type_size & 0x00FF_FFFF;
+        if !is_known_type(type_byte) || size > MAX_ASSET_SIZE {
+            return None;
+        }
+        if data_offset as usize >= entry.len() {
+            return None;
+        }
+        if i == 0 {
+            if data_offset as usize != header_end {
+                return None;
+            }
+        } else if data_offset <= prev_offset {
+            return None;
+        }
+        prev_offset = data_offset;
+        out.push(DescriptorRecord {
+            type_byte,
+            size,
+            data_offset,
+        });
+    }
+    Some(out)
+}
+
+/// Upper bound [`descriptor_bundle_walk`] puts on the count word. Retail has
+/// none; this one only has to be above the corpus maximum (7) by enough that a
+/// buffer whose first word is a small integer cannot walk 1000 descriptors
+/// before failing.
+const MAX_BUNDLE_DESCRIPTORS: usize = 32;
+
+/// Byte span each descriptor's payload occupies **on disc**, given the entry
+/// length: descriptor `i` runs from its own `data_offset` to the next
+/// descriptor's, and the last one to the end of the entry.
+///
+/// This is layout, not a field: `size` is the *decompressed* byte count, so
+/// nothing in the header states where a compressed stream stops. Retail never
+/// needs to know - it hands the stream's start to the dispatcher and the LZS
+/// decoder stops when it has produced `size` bytes. A consumer that wants the
+/// compressed extent should decode and take the input the decoder consumed;
+/// these spans are the outer bound that walk sits inside.
+pub fn descriptor_disc_spans(
+    descriptors: &[DescriptorRecord],
+    entry_len: usize,
+) -> Vec<core::ops::Range<usize>> {
+    descriptors
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let start = d.data_offset as usize;
+            let end = descriptors
+                .get(i + 1)
+                .map(|n| n.data_offset as usize)
+                .unwrap_or(entry_len)
+                .min(entry_len)
+                .max(start);
+            start..end
+        })
+        .collect()
+}
+
+/// Encode a descriptor `(type<<24)|size` word from its parts. Companion to the
+/// decode in [`detect`]; used to rewrite a descriptor's decompressed size after
+/// a variable-length asset edit (`size` is masked to 24 bits).
+pub fn encode_size_word(type_byte: u8, size: u32) -> u32 {
+    ((type_byte as u32) << 24) | (size & 0x00FF_FFFF)
+}
+
+/// One descriptor pair from the table.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct DescriptorRecord {
+    /// Asset type byte (high byte of `type_size`).
+    pub type_byte: u8,
+    /// Asset payload size in bytes (low 24 bits of `type_size`).
+    pub size: u32,
+    /// Byte offset within the file where the payload starts.
+    pub data_offset: u32,
+}
+
+impl DescriptorRecord {
+    /// Decoded asset type the dispatcher (`FUN_8001F05C`) selects for this
+    /// descriptor's `type_byte`.
+    pub fn asset_type(&self) -> AssetType {
+        AssetType::from_byte(self.type_byte)
+    }
+}
+
+/// Try to detect a scene asset table. Returns `None` when the buffer doesn't
+/// match the strict 7-asset header.
+pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
+    let count_u32 = legaia_bytes::u32_le(buf, 0)?;
+    // Retail imposes no bound at all - `FUN_80020224` reads `count` from
+    // `+0x00` and loops that many descriptors - so the bound here is purely a
+    // detector heuristic against arbitrary small leading words, and the anchor
+    // check below is the strong signal. Kingdom bundles use `count = 7`, early
+    // standalone towns `count = 6`, and **two** scenes use `count = 5`:
+    // `bubu1` and `edbubu`, whose tuple is the canonical seven minus `Tmd` and
+    // `Vdf` (`TimList, Man, Move, Anm, Flag(0x14)`) because neither scene owns
+    // an environment mesh pack. A `{6, 7}`-only bound made both resolve no MAN
+    // and read as unloadable.
+    //
+    // The relaxation is deliberately narrow: `count < 6` is admitted only when
+    // the table carries a type-3 MAN descriptor, which is the same
+    // discriminator the v12 embedded-table probe already uses. Disc-wide that
+    // admits exactly those two entries - the other 13 sub-6 tables (the
+    // `count`-4/5 MAN-less v12-family form, `0874`'s `count`-3 party pack) all
+    // lack a MAN and keep their existing class.
+    if !(MIN_HEADER_COUNT..=HEADER_COUNT).contains(&count_u32) {
+        return None;
+    }
+    let count = count_u32 as usize;
+    let table_end = header_end(count_u32) as usize;
+    if buf.len() < table_end {
+        return None;
+    }
+    let total_decompressed_size = legaia_bytes::u32_le(buf, 4)?;
+
+    let mut descriptors = [DescriptorRecord {
+        type_byte: 0,
+        size: 0,
+        data_offset: 0,
+    }; MAX_DESCRIPTORS];
+    for (i, slot) in descriptors.iter_mut().take(count).enumerate() {
+        let p = 8 + i * 8;
+        let type_size = legaia_bytes::u32_le(buf, p)?;
+        let data_offset = legaia_bytes::u32_le(buf, p + 4)?;
+        let type_byte = ((type_size >> 24) & 0xFF) as u8;
+        let size = type_size & 0x00FF_FFFF;
+
+        if !is_known_type(type_byte) {
+            return None;
+        }
+        if size > MAX_ASSET_SIZE {
+            return None;
+        }
+        // First descriptor's offset is anchored at the byte after the
+        // `count`-prefixed descriptor table (`0x40` for count 7, `0x38` for
+        // count 6). The remaining offsets are file-relative against the
+        // EXTENDED bundle footprint (see module doc) and only get
+        // sanity-checked against MAX_DATA_OFFSET here - the detector runs on
+        // raw PROT bytes before the extended footprint is materialised.
+        if i == 0 {
+            if data_offset as usize != table_end {
+                return None;
+            }
+        } else if data_offset > MAX_DATA_OFFSET {
+            return None;
+        }
+        *slot = DescriptorRecord {
+            type_byte,
+            size,
+            data_offset,
+        };
+    }
+
+    // The sub-6 relaxation's gate (see the count bound above): a short table
+    // is a scene bundle only when it carries the MAN the scene loads.
+    if count_u32 < HEADER_COUNT - 1
+        && !descriptors
+            .iter()
+            .take(count)
+            .any(|d| d.type_byte == MAN_TYPE_BYTE)
+    {
+        return None;
+    }
+
+    Some(SceneAssetTable {
+        total_decompressed_size,
+        count,
+        descriptors,
+    })
+}
+
+/// Returns `true` when the type byte is a legal asset-type from the
+/// dispatcher table at `FUN_8001f05c` (cases 0x00..=0x14, with a few gaps).
+fn is_known_type(b: u8) -> bool {
+    !matches!(AssetType::from_byte(b), AssetType::Unknown(_))
+}
+
+/// The table the runtime walk `FUN_80020224` runs over, sliced from its base:
+/// the strict [`resolve`] (a bare count-6/7 table, or one behind a prescript),
+/// else a bare table at offset 0 that [`descriptor_bundle_walk`] accepts.
+///
+/// The second arm is the bundles the strict detector's count allow-list
+/// excludes - retail reads the count with no bound, so a count-4 `[TIM_LIST,
+/// TMD, ANM, Flag(0x14)]` table (`taiku`, `taiku2`, the v12-family dungeons)
+/// registers its mesh pack exactly like a count-6 one. Without it those
+/// scenes fell to the TMD magic sweep, which skips the pack's degenerate
+/// one-triangle placeholder members (`taiku` ships three at pack slots
+/// `0..=2`) and so moved every later mesh onto the wrong placement.
+///
+/// REF: FUN_80020224
+fn walk_table(entry_bytes: &[u8]) -> Option<&[u8]> {
+    if let Some(resolved) = resolve(entry_bytes) {
+        return entry_bytes.get(resolved.table_base..);
+    }
+    descriptor_bundle_walk(entry_bytes)?;
+    Some(entry_bytes)
+}
+
+/// One mesh a scene load registers into the runtime TMD pointer table
+/// `DAT_8007C018` (`FUN_80026B4C`, `tmd_register`).
+#[derive(Debug, Clone)]
+pub struct PoolMesh {
+    /// Descriptor slot the mesh came from (the `i` of `FUN_80020224`'s loop).
+    pub slot: usize,
+    /// Member index inside that slot's [`legaia_container_formats::pack`] - `0` for a bare
+    /// `Tmd2` (type `0x09`) slot, which registers a single mesh.
+    pub member: usize,
+    /// Byte offset of the mesh inside the slot's decompressed payload. Stable
+    /// per (entry, slot, member) and unique within an entry's pool, so it is
+    /// usable as a lookup key alongside the carrier's PROT index.
+    pub offset: usize,
+    /// The mesh bytes, from the member's offset to the next member's offset
+    /// (the last member runs to the end of the decompressed payload).
+    pub bytes: Vec<u8>,
+}
+
+/// Build the scene mesh pool from the **descriptor walk** - the way retail
+/// populates `DAT_8007C018`, rather than by scanning an entry for TMD magic.
+///
+/// `FUN_80020224` reads `count` from the table base and dispatches each
+/// descriptor through `FUN_8001F05C` (`asset_type_dispatch`) with
+/// `copy_only = 0`, so every payload is its own LZS stream decompressing to
+/// the descriptor's declared `size`. Two of the dispatcher's cases register
+/// meshes, and this function reproduces exactly those:
+///
+/// - **type `0x02` (`TMD`)** - the payload is an [`legaia_container_formats::pack`]
+///   (`u32 count`, then `count` `u32` word offsets). The handler loops
+///   `i in 0..count` calling `FUN_80026B4C(buf + offsets[i] * 4)`, so the
+///   pool gains one slot per pack member, in pack order.
+/// - **type `0x09` (`TMD2`)** - a single bare mesh handed straight to
+///   `FUN_80026B4C`.
+///
+/// Everything else (`TimList`, `Man`, `Mes`, `Move`, `Vdf`, the `Flag`
+/// sentinels) leaves the pool untouched.
+///
+/// The walk runs on **one PROT entry**: a bundle is one entry, its
+/// descriptor offsets are file-relative to the table base inside it, and no
+/// descriptor payload reaches past the entry's end
+/// ([`docs/formats/prot.md`](../../../docs/formats/prot.md)). Slots whose
+/// payload starts past the buffer, or whose LZS stream does not decode to
+/// the declared size, are skipped; an entry that carries no table at all
+/// yields an empty pool.
+///
+/// Note the pool is a count of *registrations*, not of well-formed meshes:
+/// `FUN_80026B4C` logs `Model Version Err` for a member without the
+/// `0x80000002` magic and registers it anyway. This function likewise
+/// returns every member the walk registers, so a caller that drops
+/// unparseable meshes changes the index space and should say so.
+///
+/// The walk itself is [`legaia_container_formats::walk_descriptor_pairs`] - the port of
+/// `FUN_80020224` - over the entry from the resolved table base, with the
+/// closure standing in for the two mesh-registering dispatcher cases.
+///
+/// REF: FUN_80020224, FUN_8001F05C, FUN_80026B4C
+pub fn mesh_pool(entry_bytes: &[u8]) -> Vec<PoolMesh> {
+    let Some(table) = walk_table(entry_bytes) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut slot = 0usize;
+    // The walker ORs every dispatch return into one summary word; the mesh
+    // cases' contribution is the pool itself, so the closure returns 0.
+    let _ = legaia_container_formats::walk_descriptor_pairs(table, |d| {
+        let this = slot;
+        slot += 1;
+        // Only the two mesh-registering dispatcher cases contribute.
+        if !matches!(d.type_byte, 0x02 | 0x09) {
+            return 0;
+        }
+        let Some(stream) = table
+            .get(d.data_offset as usize..)
+            .filter(|s| !s.is_empty())
+        else {
+            return 0;
+        };
+        let Ok((payload, _consumed)) = legaia_lzs::decompress_tracked(stream, d.size as usize)
+        else {
+            return 0;
+        };
+        if payload.len() != d.size as usize {
+            return 0;
+        }
+        if d.type_byte == 0x09 {
+            out.push(PoolMesh {
+                slot: this,
+                member: 0,
+                offset: 0,
+                bytes: payload,
+            });
+            return 0;
+        }
+        let Ok(members) = legaia_container_formats::pack::parse_pack(&payload) else {
+            return 0;
+        };
+        for m in members {
+            let Some(body) = payload.get(m.byte_offset..m.byte_offset + m.size) else {
+                continue;
+            };
+            out.push(PoolMesh {
+                slot: this,
+                member: m.index,
+                offset: m.byte_offset,
+                bytes: body.to_vec(),
+            });
+        }
+        0
+    });
+    out
+}
+
+/// Whether the table in `entry_bytes` carries a `Flag(0x14)` descriptor -
+/// retail's request to stream the scene's `DATA\FIELD\<scene>.pac` (the
+/// block's `+4` entry) after the walk.
+///
+/// The dispatcher's `0x14` arm returns `type << 8`, `FUN_80020224` ORs it
+/// into its status word, and the field init hands `status >> 8` to
+/// `FUN_8002541C` as the load mode (`801d6bf8`). See
+/// [`docs/formats/field-pack.md`](../../../docs/formats/field-pack.md#the-bundles-flag-descriptor-is-the-mode-argument).
+///
+/// REF: FUN_8001F05C, FUN_8002541C
+pub fn streams_scene_pac(entry_bytes: &[u8]) -> bool {
+    let Some(table) = walk_table(entry_bytes) else {
+        return false;
+    };
+    let mut hit = false;
+    let _ = legaia_container_formats::walk_descriptor_pairs(table, |d| {
+        hit |= d.type_byte == 0x14;
+        0
+    });
+    hit
+}
+
+/// The meshes a streamed `<scene>.pac` registers: `FUN_8002541C`'s mode-`0x14`
+/// arm walks the buffer as DATA_FIELD chunks - `size = *base & 0xFFFFFF`,
+/// `FUN_8001F05C(base + 4, *base, 0, 1)`, `base += (size & !3) + 4`, stop on a
+/// zero size - so a type-`0x02` chunk registers its (uncompressed)
+/// [`legaia_container_formats::pack`] members and a type-`0x09` chunk one bare mesh, appended to
+/// the pool after the table walk's own registrations.
+///
+/// A scene whose table carries no mesh slot of its own (`chitei2`) gets its
+/// whole environment pack this way. [`PoolMesh::slot`] is the chunk index.
+///
+/// REF: FUN_8002541C, FUN_8001F05C, FUN_80026B4C
+pub fn pac_mesh_pool(pac: &[u8]) -> Vec<PoolMesh> {
+    let mut out = Vec::new();
+    let mut off = 0usize;
+    let mut chunk = 0usize;
+    while let Some(header) = legaia_bytes::u32_le(pac, off) {
+        let size = (header & 0x00FF_FFFF) as usize;
+        if size == 0 {
+            break;
+        }
+        let type_byte = (header >> 24) as u8;
+        let Some(body) = pac.get(off + 4..off + 4 + size) else {
+            break;
+        };
+        match type_byte {
+            0x02 => {
+                if let Ok(members) = legaia_container_formats::pack::parse_pack(body) {
+                    for m in members {
+                        if let Some(b) = body.get(m.byte_offset..m.byte_offset + m.size) {
+                            out.push(PoolMesh {
+                                slot: chunk,
+                                member: m.index,
+                                offset: off + 4 + m.byte_offset,
+                                bytes: b.to_vec(),
+                            });
+                        }
+                    }
+                }
+            }
+            0x09 => out.push(PoolMesh {
+                slot: chunk,
+                member: 0,
+                offset: off + 4,
+                bytes: body.to_vec(),
+            }),
+            _ => {}
+        }
+        off += (size & !3) + 4;
+        chunk += 1;
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests;

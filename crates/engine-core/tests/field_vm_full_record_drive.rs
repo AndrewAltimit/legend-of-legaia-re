@@ -9,8 +9,9 @@
 //!  - The VM reaches a clean `Halt` from a long synthetic record without
 //!    drifting into `Unknown` opcodes.
 
-use legaia_engine_core::field_events::FieldEvent;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_vm::field::StepResult;
 
 /// Build a synthetic event-script record that hits every documented

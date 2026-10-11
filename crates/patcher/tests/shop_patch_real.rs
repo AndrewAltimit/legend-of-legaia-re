@@ -3,9 +3,9 @@
 //! Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. Patched images live only
 //! in memory.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 use std::collections::BTreeMap;
 
@@ -14,9 +14,9 @@ fn load_disc() -> Option<Vec<u8>> {
     p.is_file().then(|| std::fs::read(&p).ok()).flatten()
 }
 
-fn item_names(image: &[u8]) -> Option<legaia_asset::item_names::ItemNameTable> {
+fn item_names(image: &[u8]) -> Option<legaia_game_tables::item_names::ItemNameTable> {
     read_file_in_image(image, "SCUS_942.54")
-        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus))
+        .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus))
 }
 
 /// For every scene shop on `patcher`'s image, the unsellable template-id padding
@@ -31,14 +31,14 @@ fn item_names(image: &[u8]) -> Option<legaia_asset::item_names::ItemNameTable> {
 fn shop_padding_tails(patcher: &DiscPatcher) -> BTreeMap<(usize, usize), Vec<u8>> {
     let scus = read_file_in_image(patcher.image(), "SCUS_942.54").expect("SCUS present");
     let priced =
-        |id: u8| legaia_asset::item_names::price_slot(&scus, id).is_some_and(|(_, p)| p > 0);
+        |id: u8| legaia_game_tables::item_names::price_slot(&scus, id).is_some_and(|(_, p)| p > 0);
     let mut out = BTreeMap::new();
     for idx in 0..patcher.entry_count() {
         let Ok(entry) = patcher.read_entry(idx) else {
             continue;
         };
         // Structural scan (no mask) exposes the FULL declared list incl. padding.
-        let Some(loc) = legaia_asset::shop_stock::locate(&entry, None) else {
+        let Some(loc) = legaia_scene_formats::shop_stock::locate(&entry, None) else {
             continue;
         };
         for r in &loc.records {

@@ -1,6 +1,73 @@
 [workspace]
 resolver = "3"
-members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/game-tables", "crates/battle-models", "crates/overlay-images", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/disc-patch", "crates/translate", "crates/party-swap", "crates/texture-replace", "crates/code-hooks", "crates/arts-patch", "crates/delilas-party", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-battle-vm", "crates/engine-system", "crates/engine-dialog", "crates/engine-menus", "crates/engine-field", "crates/engine-core", "crates/engine-effects", "crates/engine-fishing", "crates/engine-minigames", "crates/engine-minigame-scenes", "crates/render-kernels", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-motion-vm", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
+members = [
+    "crates/iso",
+    "crates/prot",
+    "crates/lzs",
+    "crates/bytes",
+    "crates/game-tables",
+    "crates/actor-formats",
+    "crates/overlay-images",
+    "crates/container-formats",
+    "crates/scene-formats",
+    "crates/minigame-formats",
+    "crates/ui-formats",
+    "crates/disc-audit",
+    "crates/asset",
+    "crates/tmd",
+    "crates/tim",
+    "crates/xa",
+    "crates/vab",
+    "crates/mdt",
+    "crates/mes",
+    "crates/anm",
+    "crates/seq",
+    "crates/font",
+    "crates/save",
+    "crates/extract",
+    "crates/disc-patch",
+    "crates/translate",
+    "crates/party-swap",
+    "crates/texture-replace",
+    "crates/code-hooks",
+    "crates/arts-patch",
+    "crates/delilas-party",
+    "crates/delilas-challenge",
+    "crates/patcher",
+    "crates/mdec",
+    "crates/art",
+    "crates/ram-image",
+    "crates/mednafen",
+    "crates/pcsx-redux",
+    "crates/cheats",
+    "crates/gamedata",
+    "crates/engine-battle",
+    "crates/engine-battle-vm",
+    "crates/engine-system",
+    "crates/engine-dialog",
+    "crates/engine-menus",
+    "crates/engine-mode",
+    "crates/engine-field",
+    "crates/engine-scene",
+    "crates/engine-capture",
+    "crates/engine-core",
+    "crates/engine-effects",
+    "crates/engine-fishing",
+    "crates/engine-minigames",
+    "crates/engine-minigame-scenes",
+    "crates/render-kernels",
+    "crates/engine-ui",
+    "crates/engine-render",
+    "crates/engine-audio",
+    "crates/engine-motion-vm",
+    "crates/engine-vm",
+    "crates/engine-session",
+    "crates/engine-screens",
+    "crates/parity",
+    "crates/engine-shell",
+    "crates/asset-viewer",
+    "crates/web-viewer",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -46,16 +113,23 @@ legaia-bytes = { path = "crates/bytes" }
 legaia-anm = { path = "crates/anm", default-features = false }
 legaia-art = { path = "crates/art", default-features = false }
 legaia-game-tables = { path = "crates/game-tables" }
-legaia-battle-models = { path = "crates/battle-models" }
+legaia-actor-formats = { path = "crates/actor-formats" }
 legaia-overlay-images = { path = "crates/overlay-images" }
-legaia-asset = { path = "crates/asset", default-features = false }
+legaia-container-formats = { path = "crates/container-formats" }
+legaia-scene-formats = { path = "crates/scene-formats" }
+legaia-minigame-formats = { path = "crates/minigame-formats" }
+legaia-ui-formats = { path = "crates/ui-formats" }
+legaia-disc-audit = { path = "crates/disc-audit" }
 legaia-cheats = { path = "crates/cheats", default-features = false }
 legaia-engine-audio = { path = "crates/engine-audio", default-features = false }
 legaia-engine-battle = { path = "crates/engine-battle" }
 legaia-engine-battle-vm = { path = "crates/engine-battle-vm" }
+legaia-engine-capture = { path = "crates/engine-capture" }
 legaia-engine-core = { path = "crates/engine-core" }
 legaia-engine-effects = { path = "crates/engine-effects" }
 legaia-engine-field = { path = "crates/engine-field" }
+legaia-engine-mode = { path = "crates/engine-mode" }
+legaia-engine-scene = { path = "crates/engine-scene" }
 legaia-engine-dialog = { path = "crates/engine-dialog" }
 legaia-engine-menus = { path = "crates/engine-menus" }
 legaia-engine-system = { path = "crates/engine-system" }
@@ -77,6 +151,7 @@ legaia-iso = { path = "crates/iso", default-features = false }
 legaia-lzs = { path = "crates/lzs", default-features = false }
 legaia-mdec = { path = "crates/mdec", default-features = false }
 legaia-mdt = { path = "crates/mdt", default-features = false }
+legaia-ram-image = { path = "crates/ram-image" }
 legaia-mednafen = { path = "crates/mednafen", default-features = false }
 legaia-mes = { path = "crates/mes", default-features = false }
 legaia-disc-patch = { path = "crates/disc-patch" }
@@ -85,9 +160,10 @@ legaia-code-hooks = { path = "crates/code-hooks" }
 legaia-party-swap = { path = "crates/party-swap" }
 legaia-arts-patch = { path = "crates/arts-patch" }
 legaia-delilas-party = { path = "crates/delilas-party" }
+legaia-delilas-challenge = { path = "crates/delilas-challenge" }
 legaia-texture-replace = { path = "crates/texture-replace" }
 legaia-patcher = { path = "crates/patcher", default-features = false }
-legaia-pcsxr = { path = "crates/pcsxr", default-features = false }
+legaia-pcsx-redux = { path = "crates/pcsx-redux", default-features = false }
 legaia-prot = { path = "crates/prot", default-features = false }
 legaia-save = { path = "crates/save", default-features = false }
 legaia-seq = { path = "crates/seq", default-features = false }

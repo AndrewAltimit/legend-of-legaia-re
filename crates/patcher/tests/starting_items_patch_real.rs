@@ -7,7 +7,8 @@
 //! EDC/ECC-valid, and a fixed seed is byte-deterministic. Skips + passes without
 //! `LEGAIA_DISC_BIN`.
 
-use legaia_asset::new_game::{
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::new_game::{
     DOOR_OF_WIND_ITEM, STARTING_INV_SEED_LEN, StartingInventory, WARP_SEED_LEN,
     region_unlocks_all_warps, scus_unlocks_all_warps, starting_inv_seed_file_offset,
     warp_seed_file_offset,
@@ -15,7 +16,6 @@ use legaia_asset::new_game::{
 use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::starting_items::{
     GOOD_LUCK_BELL_ID, INV_REGION_SLOTS, MAX_STARTING_ITEMS, SPEED_CHAIN_ID, STARTING_ITEM_POOL,
     StartingSeedOptions, plan_seed,

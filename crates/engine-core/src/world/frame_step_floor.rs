@@ -52,9 +52,9 @@ mod tests {
         assert_eq!(w.clock.frame_step_floor, 1);
         assert_eq!(w.clock.frame_step, 1);
         // Force the commit state; the next step closes the screen.
-        use crate::name_entry::NameEntryState;
+        use legaia_engine_menus::name_entry::NameEntryState;
         w.party.name_entry.as_mut().unwrap().state = NameEntryState::Done;
-        w.step_name_entry(crate::name_entry::NameEntryInput::default());
+        w.step_name_entry(legaia_engine_menus::name_entry::NameEntryInput::default());
         assert!(!w.name_entry_active());
         assert_eq!(w.clock.frame_step_floor, 2);
         assert_eq!(w.clock.frame_step, 2);

@@ -9,14 +9,15 @@
 //! `--with-move-vm` instead loads a synthetic `WORLD_SET → WAIT_SET → HALT`
 //! program per actor so the move-VM port runs every tick.
 
-use crate::common::{WorldActorMesh, collect_scene_tim_dirs, collect_scene_tmds, mesh_aabb};
+use crate::mesh_bounds::{WorldActorMesh, mesh_aabb};
+use crate::scene_files::{collect_scene_tim_dirs, collect_scene_tmds};
 use anyhow::{Context, Result};
 use legaia_engine_render::glam::{Mat4, Vec3};
 use legaia_engine_render::{
     RenderTarget, Scene as RenderScene, SceneDraw, UploadedVram,
-    legaia_tim::Vram,
     window::{EngineWindow, orbit_camera_mvp},
 };
+use legaia_tim::Vram;
 use std::path::{Path, PathBuf};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -30,8 +31,9 @@ pub(crate) fn run_world(
     extracted_root: &Path,
     with_move_vm: bool,
 ) -> Result<()> {
-    use legaia_engine_core::scene::ProtIndex;
-    use legaia_engine_core::world::{SceneMode, World};
+    use legaia_engine_core::world::World;
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_scene::scene::ProtIndex;
 
     if max_actors == 0 {
         anyhow::bail!("max_actors must be >= 1");

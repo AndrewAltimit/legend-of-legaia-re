@@ -16,11 +16,10 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::static_overlay;
-use legaia_engine_core::dance::{
-    DANCE_HUD_ART_PROT_ENTRY, DanceGame, dance_widgets_with_abr, stage_dance_hud_vram,
-};
-use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_core::disc_readers::dance::stage_dance_hud_vram;
+use legaia_engine_minigames::dance::{DANCE_HUD_ART_PROT_ENTRY, DanceGame, dance_widgets_with_abr};
+use legaia_engine_scene::scene::ProtIndex;
+use legaia_overlay_images::static_overlay;
 
 fn prot_dat() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -40,7 +39,7 @@ fn index() -> Option<ProtIndex> {
 
 fn dance_overlay(index: &ProtIndex) -> Option<Vec<u8>> {
     let rec = static_overlay::overlay_map()
-        .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)?;
+        .by_prot_index(legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)?;
     let raw = index.entry_bytes_extended(rec.prot_index).ok()?;
     static_overlay::as_loaded(&raw, rec).ok()
 }

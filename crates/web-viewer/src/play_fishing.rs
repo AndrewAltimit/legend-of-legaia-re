@@ -14,7 +14,7 @@
 //!    lands in, and suspends the field scene underneath.
 //! 2. **A cast / reel input path.** None is added here, and that is the point:
 //!    the driver is `World::tick_fishing`, which reads the *pad*
-//!    ([`legaia_engine_core::input::PadButton`]) the page already routes through
+//!    ([`legaia_engine_system::input::PadButton`]) the page already routes through
 //!    `LegaiaRuntime::set_pad` every frame. Circle casts and locks the power
 //!    meter, Cross reels (reel A), Square reels harder (reel B). The ported
 //!    reel decoder `ReelInput::from_pad_mask` classifies the two held bits, so
@@ -45,7 +45,7 @@
 //! consumer on both.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::fishing::{PondEvent, PondPhase, PondSession, TENSION_MAX};
+use legaia_engine_fishing::fishing::{PondEvent, PondPhase, PondSession, TENSION_MAX};
 use legaia_engine_ui::{
     self as ui, BarAxis, CatchHudState, FishingCaptions, FishingHudAtlas, HudDraw, TextDraw,
 };
@@ -128,18 +128,20 @@ impl LegaiaRuntime {
 
     /// The fishing rod and line as screen primitives for this tick - the
     /// native window's `fishing_line_screen_prims` twin: the rod model
-    /// (`PondSession::rod_faces` through the shared `ui_fishing_rod` builder),
+    /// (`PondSession::rod_faces` through the shared `fishing::rod` builder),
     /// then the session's line
     /// (`legaia_engine_core::fishing_venue::fishing_line_frame`, the fish end
     /// through the follow camera the page draws the venue with) wrapped by the
-    /// shared `ui_fishing_line` builder, into the page's screen-prim pass.
-    pub(crate) fn fishing_line_prims(&mut self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+    /// shared `fishing::line` builder, into the page's screen-prim pass.
+    pub(crate) fn fishing_line_prims(
+        &mut self,
+    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         let centre = self.field_camera_centre();
         let Some((host, camera)) = self.scene_host.host_cam_mut() else {
             return Vec::new();
         };
         let world = &mut host.world;
-        if world.mode != legaia_engine_core::world::SceneMode::Fishing {
+        if world.mode != legaia_engine_mode::mode::SceneMode::Fishing {
             return Vec::new();
         }
         // The pond draws under the venue camera; the line projects through it.
@@ -157,7 +159,7 @@ impl LegaiaRuntime {
             .map(|p| p.rod_faces())
             .unwrap_or_default()
             .into_iter()
-            .map(|f| legaia_engine_ui::ui_fishing_rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
+            .map(|f| legaia_engine_ui::fishing::rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
             .collect();
         prims.extend(
             legaia_engine_core::fishing_venue::fishing_line_frame(
@@ -165,7 +167,7 @@ impl LegaiaRuntime {
                 view.as_ref(),
             )
             .and_then(|l| {
-                legaia_engine_ui::ui_fishing_line::fishing_line_prim(
+                legaia_engine_ui::fishing::line::fishing_line_prim(
                     l.fish, l.rod, l.fish_rgb, l.rod_rgb, l.ot,
                 )
             }),
@@ -176,22 +178,22 @@ impl LegaiaRuntime {
     /// The fishing HUD's sprite half as screen primitives - the native
     /// window's `fishing_hud_screen_prims` twin: every plate, digit, gauge
     /// cap and banner cut from the overlay's sprite table (`FUN_801D63B0`,
-    /// the shared `ui_fishing_sprite` builder) out of the venue's HUD page,
+    /// the shared `fishing::sprite` builder) out of the venue's HUD page,
     /// which the pond VRAM this page takes for the session already holds.
     /// Empty without a session or a decoded table.
     pub(crate) fn fishing_hud_sprite_prims(
         &self,
-    ) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
-        if host.world.mode != legaia_engine_core::world::SceneMode::Fishing {
+        if host.world.mode != legaia_engine_mode::mode::SceneMode::Fishing {
             return Vec::new();
         }
         let Some(table) = host.world.minigames.fishing_sprites.as_deref() else {
             return Vec::new();
         };
-        legaia_engine_ui::ui_fishing_sprite::fishing_hud_sprite_prims(
+        legaia_engine_ui::fishing::sprite::fishing_hud_sprite_prims(
             &self.fishing_hud_items(),
             table,
         )
@@ -244,7 +246,7 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let lines = world.fishing_hub_lines();
-        ui::ui_fishing_hub::fishing_hub_draws_for(
+        legaia_engine_ui::fishing::hub::fishing_hub_draws_for(
             font,
             lines
                 .iter()
@@ -269,7 +271,7 @@ impl LegaiaRuntime {
         // re-pointed it at an owned lure, exactly as the native window reads it.
         let lure = s.lure;
         let lures_left = *inventory
-            .get(&(legaia_engine_core::fishing::lure_item_id(lure) as u8))
+            .get(&(legaia_engine_fishing::fishing::lure_item_id(lure) as u8))
             .unwrap_or(&0) as i32;
         let mut items =
             ui::persistent_hud_draws(s.record.points, s.record.best_points, lure, lures_left);
@@ -346,7 +348,8 @@ impl LegaiaRuntime {
     /// (`World::minigames.fishing_points` and siblings), so leaving and
     /// re-entering keeps the running total and the cast counter.
     pub fn play_fishing_start(&mut self) -> bool {
-        use legaia_asset::{fishing_species, static_overlay};
+        use legaia_minigame_formats::fishing_species;
+        use legaia_overlay_images::static_overlay;
         let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
@@ -428,7 +431,7 @@ impl LegaiaRuntime {
             "live": true,
             "phase": pond_phase_name(s.phase()),
             "cast_power": s.cast_power(),
-            "cast_max": legaia_engine_core::fishing::CAST_POWER_MAX,
+            "cast_max": legaia_engine_fishing::fishing::CAST_POWER_MAX,
             "tension": s.tension(),
             "tension_max": TENSION_MAX,
             "record": s.line_record(),
@@ -502,11 +505,11 @@ impl LegaiaRuntime {
         // (`play_fishing_prizes_json`), so the screen the native window
         // draws over the pond existed on one host and a data feed on the
         // other. Both now compose it through
-        // `legaia_engine_ui::ui_fishing_exchange`.
+        // `legaia_engine_ui::fishing::exchange`.
         texts.extend(self.fishing_exchange_draws(font));
         // The venue's hub menu / help pages / tackle list, laid out by the
         // engine (`World::fishing_hub_lines`) and composed by the one
-        // `legaia_engine_ui::ui_fishing_hub` draw the native window uses.
+        // `legaia_engine_ui::fishing::hub` draw the native window uses.
         texts.extend(self.fishing_hub_draws(font));
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
         ui::scale_stage_text_draws(&mut texts, origin, scale);
@@ -582,7 +585,7 @@ impl LegaiaRuntime {
     /// (`FUN_801d03b0`), which the shared venue step
     /// ([`Self::tick_fishing_actors`]) advances on the world for both hosts.
     fn fishing_exchange_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        use legaia_engine_ui::ui_fishing_exchange as fx;
+        use legaia_engine_ui::fishing::exchange as fx;
         let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return Vec::new();
         };
@@ -627,7 +630,7 @@ impl LegaiaRuntime {
             rows: &rows,
         };
         let sway = world.minigames.fishing_venue.sway_offset;
-        let pen = legaia_engine_core::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50)
+        let pen = legaia_engine_fishing::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50)
             .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))
             .unwrap_or((8, 98));
         fx::exchange_screen_draws_for(
@@ -690,7 +693,7 @@ impl LegaiaRuntime {
     /// "help0" | "help1" | "tackle" | "exchange" }` - so the page can tell a
     /// player which keys the canvas is listening to.
     pub fn play_fishing_hub_state_json(&self) -> String {
-        use legaia_engine_core::fishing_hub::HubScreen;
+        use legaia_engine_fishing::fishing_hub::HubScreen;
         let hub = self.fishing_session().and_then(|s| s.hub());
         match hub {
             Some(h) => serde_json::json!({

@@ -13,21 +13,21 @@
 //! disc-gated sibling `hub_entry_sub_panel_disc` runs the identical assertions
 //! against the real `SCUS_942.54`.
 
-use legaia_engine_core::actor_handler::ActorHandler;
-use legaia_engine_core::equipment::{DiscEquipInfo, equip_modifier_table_from_disc};
 use legaia_engine_core::field_submode_screen::RETAIL_WEAPON_SLOTS;
 use legaia_engine_core::world::World;
-use legaia_engine_vm::baka_hub_actors::{HubDraw, slot};
-use legaia_engine_vm::world_map_overlay::{
+use legaia_engine_field::actor_handler::ActorHandler;
+use legaia_engine_field::dev_menu_leaves::{
     EQUIP_GLYPH_HIGHER, EQUIP_GLYPH_LOWER, EQUIP_INK_HIGHER, EQUIP_INK_LOWER, EQUIP_INK_NORMAL,
     EQUIP_INK_REJECT, EQUIP_MODE_BLANK, EQUIP_MODE_DIRECT, EQUIP_MODE_INVENTORY, EQUIP_REJECT_VA,
     EquipPanelDraw,
 };
+use legaia_engine_field::submode_hub_actors::{HubDraw, slot};
+use legaia_engine_menus::equipment::{DiscEquipInfo, equip_modifier_table_from_disc};
 
-/// Panel-window record the entry list paints. Taken from `baka_hub_actors`
+/// Panel-window record the entry list paints. Taken from `submode_hub_actors`
 /// rather than spelled here: the record table's base was off by four records,
 /// and a literal at every call site is what hid it.
-const ENTRY_LIST_WINDOW: usize = legaia_engine_vm::baka_hub_actors::window::ENTRY_LIST;
+const ENTRY_LIST_WINDOW: usize = legaia_engine_field::submode_hub_actors::window::ENTRY_LIST;
 
 // --- the fixture executable ------------------------------------------------
 //
@@ -59,7 +59,7 @@ const BASE_LDF: u16 = 13;
 /// Minimal synthetic PS-X EXE carrying an item property table and an equipment
 /// stat-bonus table at their retail VAs. No Sony bytes.
 fn synthetic_scus() -> Vec<u8> {
-    use legaia_asset::equip_stats::{BONUS_STRIDE, BONUS_TABLE_VA, KIND_EQUIPMENT};
+    use legaia_game_tables::equip_stats::{BONUS_STRIDE, BONUS_TABLE_VA, KIND_EQUIPMENT};
 
     const ITEM_TABLE_VA: u32 = 0x8007_4368;
     const ITEM_STRIDE: usize = 0x0C;
@@ -110,9 +110,9 @@ fn world_with_tables(restrictions: bool) -> World {
     );
 
     let scus = synthetic_scus();
-    let equip = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus)
+    let equip = legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus)
         .expect("the fixture parses as an equipment stat table");
-    let effects = legaia_asset::item_effect::ItemEffectTable::from_scus(&scus)
+    let effects = legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus)
         .expect("the fixture parses as an item-effect table");
     w.set_equipment_table(equip_modifier_table_from_disc(&equip));
     w.set_item_effects(effects);
@@ -213,7 +213,7 @@ fn value_inks(panel: &[EquipPanelDraw]) -> Vec<i32> {
 
 /// Every arrow draws under the ink the label left, not under the ink it picks.
 fn assert_arrows_keep_the_label_ink(panel: &[EquipPanelDraw]) {
-    use legaia_engine_vm::world_map_overlay::EQUIP_INK_NORMAL;
+    use legaia_engine_field::dev_menu_leaves::EQUIP_INK_NORMAL;
     for d in panel {
         if let EquipPanelDraw::Arrow { ink, .. } = d {
             assert_eq!(*ink, EQUIP_INK_NORMAL, "the arrow keeps the label's ink");

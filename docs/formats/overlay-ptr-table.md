@@ -57,7 +57,7 @@ See [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md).
 ## Reading the format
 
 ```rust
-use legaia_asset::overlay_ptr_table;
+use legaia_overlay_images::overlay_ptr_table;
 
 if let Some(t) = overlay_ptr_table::detect(buf) {
     println!("Overlay pointer table: {} entries, first=0x{:08x}, last=0x{:08x}",

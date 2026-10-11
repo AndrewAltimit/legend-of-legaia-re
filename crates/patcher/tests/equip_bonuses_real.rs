@@ -15,11 +15,11 @@
 
 use std::collections::BTreeMap;
 
-use legaia_asset::equip_stats::{EquipStatTable, bonus_table_file_offset};
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::equip_stats::{EquipStatTable, bonus_table_file_offset};
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {

@@ -14,8 +14,8 @@
 //! `FUN_8004E568` at `0x8004F34C`) - the running sum to the current level is
 //! scaled `(sum × 9_999_999) / 0x140FE` for `level < 0x11` (else `sum × 0x79`)
 //! and compared `≤ record cumulative XP` (`+0x0`). The same curve is parsed
-//! off the disc by `legaia_asset::level_up_tables::xp_thresholds_from_scus`
-//! and **installed at boot** by `legaia_engine_shell::BootSession` (which
+//! off the disc by `legaia_game_tables::level_up_tables::xp_thresholds_from_scus`
+//! and **installed at boot** by `legaia_engine_session::BootSession` (which
 //! reads the user's `SCUS_942.54`) over [`LevelUpTracker::xp_table`] - a
 //! byte-identical live cross-validation of the derived constants. Slots 1/2
 //! (Noa/Gala) shift each threshold by the ± sin-divisor correction
@@ -35,7 +35,7 @@
 //! `BootSession` calls it from the user's `SCUS_942.54`. The flat 10 HP / 5 MP
 //! [`StatGain`] default is only the disc-less fallback. Retail's per-level
 //! `rand()` jitter is modeled as an **opt-in** layer
-//! ([`LevelUpTracker::with_level_up_jitter`] + the [`BiosRand`] LCG); it is off
+//! ([`LevelUpTracker::with_level_up_jitter`] + the [`BiosRand`](legaia_engine_system::rand::BiosRand) LCG); it is off
 //! by default so it draws no `rand()` and replays stay bit-identical - see
 //! `docs/subsystems/level-up.md` § Stat gains.
 

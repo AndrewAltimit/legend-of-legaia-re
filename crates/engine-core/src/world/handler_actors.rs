@@ -16,13 +16,15 @@
 //! FUN_801D6704 (calls the transition sweep), FUN_8003AEB0 (the MAN loader)
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
-use crate::actor_handler::{ActorHandler, MAN_LOAD_RETIRED_HANDLERS};
-use crate::field_actor_kernels::{
-    ACTOR_FLAG_YIELD, ColourTween, ScreenTintPush, SweepActor, SweepDecision, sweep_actor,
-};
-use crate::field_submode::{
+use legaia_engine_field::actor_colour_tween::{ColourTween, ScreenTintPush};
+use legaia_engine_field::actor_handler::{ActorHandler, MAN_LOAD_RETIRED_HANDLERS};
+use legaia_engine_field::field_submode::{
     SCENE_ACTOR_REQUESTED_STATE, SubmodeOpen, open_submode, scene_actor_initial_state,
+};
+use legaia_engine_field::scene_transition_sweep::{
+    ACTOR_FLAG_YIELD, SweepActor, SweepDecision, sweep_actor,
 };
 
 /// What one [`World::scene_transition_actor_sweep`] pass did, for callers and
@@ -100,7 +102,7 @@ impl World {
     /// `LAB_801DA930` is the handler on spawn descriptor `0x801F27EC`, and
     /// what that tick drives is **one rung of the scene floor-height ladder**
     /// at `0x1F80035C`, not a fade - see
-    /// [`legaia_engine_vm::field_actor_timers::FloorTierBob`]. The engine keeps
+    /// [`legaia_engine_field::field_actor_timers::FloorTierBob`]. The engine keeps
     /// those records off the pool, so the callers that mean the retire
     /// (`4C 9F`, [`Self::man_load_actor_reset`]) clear
     /// [`crate::world::FieldTerrain::floor_tier_bobs`] alongside this sweep. Nothing
@@ -164,7 +166,7 @@ impl World {
     /// when no tween is installed. `town0b`'s entry script holds
     /// `(2, [0x30, 0x30, 0x00])` - its night. The enhanced-lighting mood
     /// reads it on both hosts
-    /// (`legaia_engine_ui::scene_lighting::TimeOfDay::mood_graded`).
+    /// (`legaia_render_kernels::scene_lighting::TimeOfDay::mood_graded`).
     pub fn held_scene_grade(&self) -> Option<(i16, [i16; 3])> {
         self.presentation.effect_tween_slot?;
         Some((
@@ -175,7 +177,7 @@ impl World {
 
     /// The same frame's pushes as the `(layer, blend, packed)` argument
     /// triples retail's emitter takes, ready for
-    /// `legaia_engine_ui::screen_prim::screen_effect_push_prims`.
+    /// `legaia_render_kernels::screen_prim::screen_effect_push_prims`.
     ///
     /// REF: FUN_80024EE4 - its `a0`/`a1`/`a2`, in that order.
     ///
@@ -204,7 +206,7 @@ impl World {
     /// `jalr` arm for the handler classes with a ported body that lives on the
     /// pool - the per-actor colour tween and the clip-fraction fade the field
     /// VM's actor clone spawns, per
-    /// [`crate::actor_handler::HandlerKernel::runs_in_actor_loop`].
+    /// [`legaia_engine_field::actor_handler::HandlerKernel::runs_in_actor_loop`].
     ///
     /// `frame_delta` is retail's `DAT_1F800393`, the same scalar the physics
     /// pass carries - the tween advances its clock by it, so a tween's
@@ -225,10 +227,10 @@ impl World {
             // multiply-accumulate against the cadence byte, and the retire bit
             // when the 12-bit accumulator fills. Its actors are the clones the
             // field VM's op `0x4C` sub-1 sub-op `0x14` spawns
-            // (`crate::field_actor_clone`), and the end-of-pass retire below is
+            // (`legaia_engine_field::field_actor_clone`), and the end-of-pass retire below is
             // what collects them.
             // REF: FUN_801D820C
-            if a.handler.kernel() == crate::actor_handler::HandlerKernel::ClipFade {
+            if a.handler.kernel() == legaia_engine_field::actor_handler::HandlerKernel::ClipFade {
                 vm::actor_tick::clip_fraction_step(&mut a.physics, frame_delta);
                 continue;
             }
@@ -240,7 +242,8 @@ impl World {
             // read the hosts make (`World::morph_weight_posed_tmd`) and only
             // the envelope is simulation state.
             // REF: FUN_8002174C
-            if a.handler.kernel() == crate::actor_handler::HandlerKernel::MorphWeights {
+            if a.handler.kernel() == legaia_engine_field::actor_handler::HandlerKernel::MorphWeights
+            {
                 if let Some(m) = a.morph_weights.as_mut() {
                     m.envelope.tick(frame_delta);
                 }
@@ -254,7 +257,7 @@ impl World {
             };
             let mut t = tween;
             t.flags = a.physics.status_flags;
-            let step = crate::field_actor_kernels::step_colour_tween(t, frame_delta);
+            let step = legaia_engine_field::actor_colour_tween::step_colour_tween(t, frame_delta);
             let mut next = tween;
             next.clock = step.clock;
             a.colour_tween = Some(next);
@@ -303,7 +306,7 @@ impl World {
     /// Step every live **reflection pair**.
     ///
     /// PORT driver for FUN_801E5154 (the kernel is
-    /// [`legaia_engine_vm::field_actor_reflect::tick_reflection`])
+    /// [`legaia_engine_field::field_actor_reflect::tick_reflection`])
     ///
     /// One pass per game tick, over the pool slots the `4C 86` arm seated
     /// through [`Self::spawn_reflection_controller`]. Each pair reads its
@@ -323,7 +326,7 @@ impl World {
     /// no per-seat clip cursor here, so that copy has nowhere to land and
     /// the gate's only input is the live model id.
     fn tick_reflection_controllers(&mut self) {
-        use legaia_engine_vm::field_actor_reflect::{ReflectOutcome, flags, tick_reflection};
+        use legaia_engine_field::field_actor_reflect::{ReflectOutcome, flags, tick_reflection};
 
         let live: Vec<(usize, crate::world::ReflectionLink)> = self
             .actors
@@ -360,8 +363,8 @@ impl World {
     fn reflect_seat_read(
         &self,
         seat: crate::world::EasedMoveTarget,
-    ) -> Option<legaia_engine_vm::field_actor_reflect::ReflectActor> {
-        use legaia_engine_vm::field_actor_reflect::ReflectActor;
+    ) -> Option<legaia_engine_field::field_actor_reflect::ReflectActor> {
+        use legaia_engine_field::field_actor_reflect::ReflectActor;
         match seat {
             crate::world::EasedMoveTarget::Player => {
                 let slot = self.player_actor_slot? as usize;
@@ -392,7 +395,7 @@ impl World {
     fn reflect_seat_write(
         &mut self,
         seat: crate::world::EasedMoveTarget,
-        mirrored: &legaia_engine_vm::field_actor_reflect::ReflectActor,
+        mirrored: &legaia_engine_field::field_actor_reflect::ReflectActor,
     ) {
         match seat {
             crate::world::EasedMoveTarget::Player => {
@@ -562,11 +565,11 @@ impl World {
     /// Re-spawn any scripted-scene program a scene change interrupted.
     ///
     /// PORT: FUN_8003AEB0 (`0x8003BAF0..0x8003BB3C`), driving
-    /// [`crate::field_actor_program::spawn_program`] (`FUN_801D5A24`)
+    /// [`legaia_engine_field::field_actor_program::spawn_program`] (`FUN_801D5A24`)
     ///
     /// The loader tests two bits of the shared flag bank and spawns the
     /// matching program for each. The pairs are in
-    /// [`crate::field_actor_program::MAN_LOAD_RESUME`], and what they mean is
+    /// [`legaia_engine_field::field_actor_program::MAN_LOAD_RESUME`], and what they mean is
     /// on that const: each flag is set by an *opener* program and cleared by
     /// its *closer*, so a flag still set at scene load says the opener ran and
     /// its closer did not - the loader starts the closer. Returns the programs
@@ -583,7 +586,7 @@ impl World {
         self.retire_actors_by_handler(ActorHandler::ScriptedScene);
         self.retire_yielded_actors();
         let mut spawned = Vec::new();
-        for (flag, program) in crate::field_actor_program::MAN_LOAD_RESUME {
+        for (flag, program) in legaia_engine_field::field_actor_program::MAN_LOAD_RESUME {
             if !self.system_flag_test(u16::from(flag)) {
                 continue;
             }
@@ -600,10 +603,10 @@ impl World {
     /// (`FUN_801EE094` / `FUN_801EE328` phase 0). Stepped by
     /// [`Self::tick_scene_programs`]. `None` when the pool is full.
     ///
-    /// REF: FUN_801D5A24 (ported as [`crate::field_actor_program::spawn_program`])
+    /// REF: FUN_801D5A24 (ported as [`legaia_engine_field::field_actor_program::spawn_program`])
     pub fn spawn_scene_program(&mut self, program: u16) -> Option<usize> {
         let slot = self.spawn_handler_actor(ActorHandler::ScriptedScene)?;
-        let a = crate::field_actor_program::spawn_program(program);
+        let a = legaia_engine_field::field_actor_program::spawn_program(program);
         self.actors[slot].state_50 = a.program;
         self.actors[slot].state_54 = a.state;
         self.actors[slot].scene_program = Some(a);
@@ -641,8 +644,10 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fade::FadeTemplate;
-    use crate::field_actor_kernels::{ACTOR_FLAG_TRANSITION, TWEEN_HOLD_FOREVER};
+    use legaia_engine_field::actor_colour_tween::TWEEN_HOLD_FOREVER;
+    use legaia_engine_field::scene_transition_sweep::ACTOR_FLAG_TRANSITION;
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_system::fade::FadeTemplate;
 
     fn world_with(handlers: &[ActorHandler]) -> World {
         let mut w = World::default();
@@ -740,7 +745,7 @@ mod tests {
         );
         assert_eq!(
             w.field_vm.submode_context[0],
-            crate::field_submode::SUBMODE_STATE_OPEN
+            legaia_engine_field::field_submode::SUBMODE_STATE_OPEN
         );
     }
 
@@ -796,7 +801,7 @@ mod tests {
     #[test]
     fn a_battle_draws_no_field_screen_wash() {
         let mut w = World::default();
-        let t = crate::field_actor_kernels::tween_from_fade_template(
+        let t = legaia_engine_field::actor_colour_tween::tween_from_fade_template(
             &FadeTemplate {
                 kind: 2,
                 duration: 64,
@@ -824,7 +829,7 @@ mod tests {
         // nothing. Delay 0, duration 4, hold 2: pushes while it runs, gone
         // after.
         let mut w = World::default();
-        let t = crate::field_actor_kernels::tween_from_fade_template(
+        let t = legaia_engine_field::actor_colour_tween::tween_from_fade_template(
             &FadeTemplate {
                 kind: 2,
                 duration: 4,
@@ -853,7 +858,7 @@ mod tests {
         // `hold == -1` never self-retires, so the scene-transition sweep is
         // the thing that stops a scripted fade leaking across a scene change.
         let mut w = World::default();
-        let t = crate::field_actor_kernels::tween_from_fade_template(
+        let t = legaia_engine_field::actor_colour_tween::tween_from_fade_template(
             &FadeTemplate {
                 kind: 0,
                 duration: 2,
@@ -875,7 +880,7 @@ mod tests {
 
     #[test]
     fn the_man_load_resumes_only_the_programs_whose_flag_survived() {
-        use crate::field_actor_program::{FLAG_PROGRAM_1, FLAG_SCENE_ACTIVE};
+        use legaia_engine_field::field_actor_program::{FLAG_PROGRAM_1, FLAG_SCENE_ACTIVE};
         // No flag set: no program actor at all. This is the ordinary case, so
         // if the gate were inverted every scene load would spawn two.
         let mut w = World::default();
@@ -904,7 +909,9 @@ mod tests {
         // The whole chain in one: the flag an opener left behind survives into
         // `man_load_actor_reset`, which is what `SceneHost::load_scene` calls.
         let mut w = World::default();
-        w.system_flag_set(u16::from(crate::field_actor_program::FLAG_PROGRAM_1));
+        w.system_flag_set(u16::from(
+            legaia_engine_field::field_actor_program::FLAG_PROGRAM_1,
+        ));
         w.man_load_actor_reset();
         let slot = w
             .find_actor_by_handler(ActorHandler::ScriptedScene)
@@ -923,7 +930,7 @@ mod tests {
             end_rgb: [0x44, 0x55, 0x66],
             mode: [7, 9, -1],
         };
-        let t = crate::field_actor_kernels::tween_from_fade_template(&tpl, 5);
+        let t = legaia_engine_field::actor_colour_tween::tween_from_fade_template(&tpl, 5);
         assert_eq!(t.duration, tpl.duration);
         assert_eq!(t.from, (0x11, 0x22, 0x33));
         assert_eq!(t.to, (0x44, 0x55, 0x66));

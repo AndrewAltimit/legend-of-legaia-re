@@ -19,7 +19,7 @@ camera's eye-space translation trio. Angles are 12-bit: `4096` is a full turn.
 
 | What | Retail | Port |
 |---|---|---|
-| Ground grid emitter | `func_0x801d02c0` (battle overlay), the sole draw call of the mode-`0x15` render `FUN_80026F50` | `legaia_asset::battle_backdrop`, `battle_ground_grid` |
+| Ground grid emitter | `func_0x801d02c0` (battle overlay), the sole draw call of the mode-`0x15` render `FUN_80026F50` | `legaia_scene_formats::battle_backdrop`, `battle_ground_grid` |
 | Stage colour / depth-cue pass | `FUN_80050120` (ambient `0x8007B7B0`, far colour `0x8007BB48`) | `battle_ground_grid::ambient_base_step` / `backdrop_cue_step`, `World::tick_battle_ambient` |
 | Stage stream selection | chunk walker `FUN_8001FE70` -> `_DAT_8007B864` | `ProtIndex::battle_stage_entry_for_scene` |
 | Shell registration + second copy | `FUN_800513F0`; tables `DAT_80078B50` (mirror) and `DAT_80078C1C` (outdoor) | `battle_backdrop::MirrorXTable`, `SecondCopy`, `drawn_objects_tmd` |
@@ -31,8 +31,7 @@ camera's eye-space translation trio. Angles are 12-bit: `4096` is a full turn.
 | Frame step | `FUN_80016B6C` -> `DAT_1F800393` | `BattleFrameClock` |
 | Intro transition | `FUN_801CF5BC`, PROT 0979 `field_battle_intro` | `battle_intro_transition`, `battle_intro_*`, `render-kernels::battle_intro` |
 
-The VM-side modules live in `crates/engine-battle-vm` and are re-exported by
-`legaia_engine_vm`. Camera inputs and the per-frame step are
+The VM-side modules live in `crates/engine-battle-vm`. Camera inputs and the per-frame step are
 `engine-core::battle_cam_inputs` (`World::tick_battle_camera`,
 `World::battle_cam_pose`). Both hosts - the native `play-window`
 (`crates/engine-shell/src/window/`) and the browser play page
@@ -274,7 +273,7 @@ them.
 Port: `ProtIndex::battle_stage_entry_for_scene`, consumed by each host's
 `build_battle_stage`. Tests
 `crates/engine-core/tests/battle_stage_entries_real.rs` (disc) and
-`crates/engine-shell/tests/battle_stage_live.rs` (save library).
+`crates/parity/tests/battle_stage_live.rs` (save library).
 
 <a id="backdrop-shell---two-copies-of-one-mesh"></a>
 
@@ -338,7 +337,7 @@ The port's battle resource build uploads every TIM in the bundle
 holding the address. `town01`'s semi-transparent cloud band (`(768, 0)` at `v`
 191..254, palette `1` of row 473, a greyscale + STP ramp) would then draw
 through a sibling's rainbow CLUT-cycling ramp as flat green rectangles.
-`engine-core::scene::upload_battle_stage_tims_into_vram` re-uploads the
+`engine-scene::scene::upload_battle_stage_tims_into_vram` re-uploads the
 selected entry's own TIMs last; both hosts call it from `build_battle_stage`.
 Sweeps: `rim_elms_four_stage_streams_all_claim_the_same_vram` and
 `the_selected_stage_entry_owns_its_vram_after_the_reupload`.
@@ -420,7 +419,7 @@ is symmetric about `X = 0`, so a YZ reflection reproduces it in place and only
 a half turn closes it. Of the 49 `-Z`-open shells in the corpus none is on the
 mirror list; of the 133 X-open shells, 98 are. Sweep:
 `no_z_open_shell_takes_the_mirror_transform` in
-`crates/asset/tests/battle_backdrop_real.rs`.
+`crates/disc-audit/tests/battle_backdrop_real.rs`.
 
 `0007_town01` (stage id 4) is on the list: the Tetsu arena is completed by a
 reflection. A half turn there plants a second village wall across the open sea
@@ -512,13 +511,13 @@ depth-tested mesh draws the same band once the arc stands where retail's
 does.
 
 The spin is `World::tick_battle_backdrop_spin` (once a battle frame) and
-`legaia_engine_core::scene::backdrop_slot_1_basis`; both play hosts draw
+`legaia_engine_core::scene_host::backdrop_slot_1_basis`; both play hosts draw
 slot 1 as one unbaked copy, twice a frame, under that basis
 (`SceneHost::battle_stage_layers`).
 
 #### Port
 
-`legaia_asset::battle_backdrop` is the shared kernel: `MirrorXTable::from_scus`
+`legaia_scene_formats::battle_backdrop` is the shared kernel: `MirrorXTable::from_scus`
 parses the table, `drawn_objects_tmd` applies the object-1 drop, and
 `SecondCopy::scale` / `flips_winding` give the second copy's transform (exact
 integer diagonals). `Mesh::append_scaled` / `VramMesh::append_scaled` in
@@ -1135,7 +1134,7 @@ jump-table slot `0x801CEF58`); the scene reset `FUN_8003A024` zeroes it.
 updaters (`0x801D1344` and siblings), so in retail the shake is a field effect
 and no caller is resident during a fight.
 
-The port models the opcode (`FieldHost::op4c_n8_sub4_set_b630` ->
+The port models the opcode (`FieldCameraMotionHost::set_shake_amplitude` ->
 `World::camera.shake_amplitude`) and steps the kernel from the shared battle
 camera, which owns the same translation pair. The offset is held beside the
 framing pose rather than inside it, so a live shake cannot stall a rate-clamped
@@ -1238,8 +1237,7 @@ needs ~84 frames just to finish starting.
 | Screen-strip curtain | `FUN_801D11D0` | `battle_intro_styles::tick_curtain` | `battle_intro::intro_quad_to_screen` |
 
 The simulation kernels are in `crates/engine-battle-vm`. The packet builders
-are `crates/render-kernels/src/battle_intro.rs`, re-exported as
-`engine-ui::battle_intro` and `engine-render::battle_intro`. `BattleIntro`
+are `render-kernels::battle_intro` (`crates/render-kernels/src/battle_intro.rs`). `BattleIntro`
 holds the style's working set between frames and synchronises its clock from
 the live transition entity. The one-shot field frame capture lands the drawn
 field in the texture pages each style's packets name (`Renderer::capture_rgba`
@@ -1255,7 +1253,7 @@ and the two nuances the port leaves un-carried - is on
 [`cutscene.md`](cutscene.md#per-style-emitters-render-track-gtegpu).
 `crates/engine-render/src/tests/battle_intro_emitter.rs` pins per-style packet
 counts, geometry and OT linkage, and
-`crates/engine-vm/tests/battle_intro_chain.rs` the working-set arithmetic.
+`crates/engine-battle-vm/tests/battle_intro_chain.rs` the working-set arithmetic.
 
 <a id="the-curtain-is-a-render-to-texture-and-only-its-row-pass-is-on-screen"></a>
 

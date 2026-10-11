@@ -2,7 +2,7 @@
 //! window, shared by both play hosts.
 //!
 //! The rows, the scroll word and the typing reveal live in `engine-core`
-//! (`legaia_engine_core::dialog_window`, the port of `FUN_801D84D0`'s
+//! (`legaia_engine_dialog::dialog_window`, the port of `FUN_801D84D0`'s
 //! reading-box arms); a host snapshots the panel into its `|`-joined page, the
 //! scroll in whole pixels and the window height, and this module lays the
 //! rows out.

@@ -28,7 +28,7 @@
 //! # Wiring status
 //!
 //! [`op43_sub12_calls`] is live: the field VM's sub-op `0x43`/`0x12` arm
-//! calls it and hands the resolved calls to `FieldHost::op43_vram_rect_copy`.
+//! calls it and hands the resolved calls to `FieldHost::queue_vram_rect_copies`.
 //!
 //! [`build_packet`] and [`enqueue`] are wired too: `World` implements the host
 //! trait method (`legaia_engine_core::world::vm_hosts`) by queueing the calls,
@@ -139,7 +139,7 @@ const fn pack_yx(x: i16, y: i16) -> u32 {
 ///
 /// The length byte is `5` for a real copy and `0` when **either** extent
 /// is zero (`w == 0 || h == 0`). The sibling `MoveImage` queue
-/// `FUN_80058490` in [`crate::title_prim`] kills on the *same* predicate -
+/// `FUN_80058490` in [`legaia_engine_menus::title_prim`] kills on the *same* predicate -
 /// its disassembly is the same `beq w,0` / `bne h,0` branch pair, only
 /// spelled as nested `if`s by the decompiler. What differs is the
 /// failure behaviour: this builder writes the packet body anyway and
@@ -221,7 +221,7 @@ pub enum EnqueueOutcome {
 /// PORT: FUN_800468a4
 ///
 /// Wired through `World::apply_vram_rect_copies`, the drain behind the field
-/// VM's `op43_vram_rect_copy` hook on both hosts. That hook is only one of
+/// VM's `queue_vram_rect_copies` hook on both hosts. That hook is only one of
 /// retail's two routes here; the other is the actor tick's kind-7 draw arm,
 /// which the engine still has no actor kind for.
 pub fn enqueue(call: RectCopyCall, ot_len: i32, back_buffer: bool) -> EnqueueOutcome {

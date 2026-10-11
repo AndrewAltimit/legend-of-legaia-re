@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// The inline box's page waits for confirm (a picker prompt: the press
 /// opens its menu).
@@ -12,7 +13,7 @@ fn prompt_waits(world: &World) -> bool {
 }
 
 /// Step an open menu until its slide rests and it takes input
-/// ([`crate::dialog_picker_slide`]): Up / Down and confirm do nothing before.
+/// ([`legaia_engine_dialog::dialog_picker_slide`]): Up / Down and confirm do nothing before.
 fn slide_menu_in(world: &mut World) {
     let mut guard = 0;
     while !world.dialog.inline.as_ref().unwrap().picker_takes_input() {
@@ -86,7 +87,7 @@ fn inline_dialogue_runs_branch_flag_set_through_field_vm() {
         .unwrap()
         .panel
         .as_ref()
-        .is_some_and(|p| p.state() == crate::dialog::PanelState::Typing)
+        .is_some_and(|p| p.state() == legaia_engine_dialog::dialog::PanelState::Typing)
     {
         world.step_inline_dialogue(false, false, false);
         guard += 1;
@@ -288,7 +289,7 @@ fn a_menu_reply_parks_on_its_jump_back_and_the_next_talk_reopens_the_menu() {
         .unwrap()
         .panel
         .as_ref()
-        .is_some_and(|p| p.state() == crate::dialog::PanelState::Typing)
+        .is_some_and(|p| p.state() == legaia_engine_dialog::dialog::PanelState::Typing)
     {
         world.step_inline_dialogue(false, false, false);
         guard += 1;
@@ -302,7 +303,7 @@ fn a_menu_reply_parks_on_its_jump_back_and_the_next_talk_reopens_the_menu() {
     assert_eq!(id.parked_pc, Some(back_at - 1), "parked on the 0x26");
     // The next talk resumes at the parked jump and re-opens the menu.
     let body = std::sync::Arc::clone(&id.bytecode);
-    world.dialog.inline = Some(crate::inline_dialogue::InlineDialogue::new(
+    world.dialog.inline = Some(legaia_engine_field::inline_dialogue::InlineDialogue::new(
         body,
         back_at - 1,
     ));
@@ -455,10 +456,10 @@ fn a_talk_face_at_on_another_placement_turns_it_to_its_bind() {
     // the walk kernel's FaceTarget leg on the target, not a halt on the
     // talker. The jouine geometry mirrored: the NPC lands a half-turn from
     // the player's own `0x23B` bearing toward it.
-    use crate::field_channels::FieldChannel;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
     let mut world = World {
-        mode: crate::world::SceneMode::Field,
+        mode: legaia_engine_mode::mode::SceneMode::Field,
         ..World::default()
     };
     world.spawn_actor(0);
@@ -498,7 +499,7 @@ fn a_talkers_own_face_at_turns_the_talker() {
     // `4C 85 <lo> <hi> F8` with no target byte acquires the talker itself:
     // its walk kernel turns it toward the player (`rayman` `P1[6]`, Kina).
     let mut world = World {
-        mode: crate::world::SceneMode::Field,
+        mode: legaia_engine_mode::mode::SceneMode::Field,
         ..World::default()
     };
     world.spawn_actor(0);

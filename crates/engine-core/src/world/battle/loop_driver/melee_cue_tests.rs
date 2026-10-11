@@ -22,7 +22,7 @@ fn duel() -> World {
 /// stranded and parked the band.
 #[test]
 fn a_cast_clip_total_lands_on_the_capture_band_exit() {
-    use vm::battle_action::ActionState;
+    use legaia_engine_battle_vm::battle_action::ActionState;
     let mut w = duel();
     w.battle_ctx.active_actor = 1;
     w.battle_ctx.action_state = ActionState::MagicCaptureFinalize.as_byte();
@@ -56,7 +56,7 @@ fn absorb_duel() -> World {
     let mut eq = rec.equipment();
     eq.slots[3] = 0x30;
     rec.set_equipment(eq);
-    let mut def = crate::monster_catalog::MonsterDef::new(0x40, "Seru", 1, 10);
+    let mut def = legaia_engine_battle::monster_catalog::MonsterDef::new(0x40, "Seru", 1, 10);
     def.absorb_seru = 1;
     def.absorb_chance_pct = 100;
     w.tables.monster_catalog.insert(def);
@@ -91,7 +91,7 @@ fn the_hit_that_lands_the_total_rolls_the_absorb() {
 /// entry 1, knockdown (tag 4) at entry 2, and - with `getup` - a get-up
 /// (tag 5) at entry 3.
 fn seat_reaction_clips(w: &mut World, getup: bool) {
-    use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
+    use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
     let clip = |action_id: u8| MonsterAnimation {
         action_id,
         rate: 2,
@@ -199,7 +199,7 @@ fn the_opening_hit_pays_the_approach_terms() {
 /// the seed and the first hit carries (`ctx[+0x6D2]` = 22, 212, 390).
 #[test]
 fn the_attack_angle_term_is_the_distance_from_face_on() {
-    use vm::battle_action::{ActionState, StepOutcome};
+    use legaia_engine_battle_vm::battle_action::{ActionState, StepOutcome};
     for (attacker, target, want) in [
         (0x000u16, 0x800u16, 0i16),
         (0x800, 0x000, 0),
@@ -299,7 +299,7 @@ fn a_flagged_swing_on_a_monster_enqueues_the_runtime_row() {
     // monster takes the high leg, `0x10C + 0x19C`, on the SFX ring.
     assert_eq!(
         w.take_sfx_ring_ops(),
-        vec![crate::world::SfxRingOp::Push(0x2A8)]
+        vec![legaia_engine_system::sound_state::SfxRingOp::Push(0x2A8)]
     );
     assert!(
         w.drain_battle_xa_cues().is_empty(),
@@ -344,8 +344,8 @@ fn a_flagged_sting_is_dropped_while_the_drive_is_busy() {
 /// Seat a playing clip on `slot` whose event-frame list (`+0x10..`)
 /// starts at `first_beat` - the input of the `+0x1F7` juggle window.
 fn play_clip_with_beat(w: &mut World, slot: usize, first_beat: u8) {
-    use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
-    let mut head = vec![0u8; legaia_asset::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
+    use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
+    let mut head = vec![0u8; legaia_actor_formats::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
     head[0x10] = first_beat;
     let clip = MonsterAnimation {
         action_id: 2,
@@ -359,7 +359,7 @@ fn play_clip_with_beat(w: &mut World, slot: usize, first_beat: u8) {
         frames: vec![vec![PartPose::default()]; 12],
     };
     let a = &mut w.actors[slot];
-    a.battle_animation = crate::battle_anim::MonsterAnimPlayer::new_one_shot(&clip);
+    a.battle_animation = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new_one_shot(&clip);
     a.battle_effect_script = Some(head);
     // The anim tick's `+0x1F7` write for the seated clip.
     a.battle_juggle_window = World::juggle_window_open(a);
@@ -372,7 +372,7 @@ fn play_clip_with_beat(w: &mut World, slot: usize, first_beat: u8) {
 /// `0x16` and above, resolves as before.
 #[test]
 fn a_limb_mismatched_party_hit_misses() {
-    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
     let seat = |class: u8| {
         let mut w = duel();
         let mut cat = MonsterCatalog::new();
@@ -383,18 +383,38 @@ fn a_limb_mismatched_party_hit_misses() {
         w.actors[1].battle_monster_id = Some(7);
         w
     };
-    let hit = |power_byte| vm::battle_action::HitEvent {
+    let hit = |power_byte| legaia_engine_battle_vm::battle_action::HitEvent {
         hit_index: 0,
         power_byte,
         event_frame: 4,
     };
     let frames = [4u8, 0, 0, 0];
     for (class, pb, misses) in [
-        (vm::battle_action::MISS_CLASS_LOW, 0x12u8, true),
-        (vm::battle_action::MISS_CLASS_LOW, 0x0Cu8, false),
-        (vm::battle_action::MISS_CLASS_HIGH, 0x0Cu8, true),
-        (vm::battle_action::MISS_CLASS_HIGH, 0x12u8, false),
-        (vm::battle_action::MISS_CLASS_LOW, 0x18u8, false),
+        (
+            legaia_engine_battle_vm::battle_action::MISS_CLASS_LOW,
+            0x12u8,
+            true,
+        ),
+        (
+            legaia_engine_battle_vm::battle_action::MISS_CLASS_LOW,
+            0x0Cu8,
+            false,
+        ),
+        (
+            legaia_engine_battle_vm::battle_action::MISS_CLASS_HIGH,
+            0x0Cu8,
+            true,
+        ),
+        (
+            legaia_engine_battle_vm::battle_action::MISS_CLASS_HIGH,
+            0x12u8,
+            false,
+        ),
+        (
+            legaia_engine_battle_vm::battle_action::MISS_CLASS_LOW,
+            0x18u8,
+            false,
+        ),
         (0, 0x12u8, false),
     ] {
         let mut w = seat(class);
@@ -416,7 +436,7 @@ fn a_limb_mismatched_party_hit_misses() {
         }
     }
     // A monster attacker never limb-misses, whatever the party seat reads.
-    let mut w = seat(vm::battle_action::MISS_CLASS_LOW);
+    let mut w = seat(legaia_engine_battle_vm::battle_action::MISS_CLASS_LOW);
     w.resolve_hit_event(1, hit(0x12), [0x12, 0, 0, 0], frames);
     assert_eq!(w.battle.hit_events.len(), 1);
 }

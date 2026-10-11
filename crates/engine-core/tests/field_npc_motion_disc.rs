@@ -19,7 +19,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::DefaultMapIdResolver;
 
 /// Per placement slot: its entry seat and its summed free-roam travel.
 type Excursions = BTreeMap<u8, ((i16, i16), i32)>;

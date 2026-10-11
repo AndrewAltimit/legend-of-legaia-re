@@ -15,12 +15,13 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::monster_archive::MonsterRecord;
-use legaia_engine_core::monster_catalog::{
+use legaia_actor_formats::monster_archive::MonsterRecord;
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, MonsterCatalog, MonsterDef,
     monster_def_from_record,
 };
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 
 /// The Gaza (Sim-Seru) record, id 166 - the fight whose live international
 /// retail capture pins the gate-set boost profile. Raw record stats, in record
@@ -246,7 +247,7 @@ fn real_archive_records_seed_the_boosted_profile() {
     let mut boosted_atk = 0usize;
     let mut boosted_def = 0usize;
     for id in 1..=255u16 {
-        let Ok(Some(rec)) = legaia_asset::monster_archive::record(&bytes, id) else {
+        let Ok(Some(rec)) = legaia_actor_formats::monster_archive::record(&bytes, id) else {
             continue;
         };
         let def = monster_def_from_record(&rec);

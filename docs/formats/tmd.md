@@ -128,7 +128,7 @@ the one place its row-0 arithmetic (`byte4` = 7 → byte 14) parts company with 
 data. Pinned across every field/town env pack (10229 lit quads, 107 scenes):
 offset 12 is the only candidate with zero out-of-range indices, and it leaves the
 quads planar (0.78 units mean out-of-plane, vs 65-166 for 14/16/18). Guarded by
-`crates/engine-core/tests/env_mesh_prims_disc.rs`.
+`crates/engine-scene/tests/env_mesh_prims_disc.rs`.
 
 Reading rows 0/1 quads at the `FUN_8002735c` offset makes their indices exceed
 the object's vertex count, so every mesh builder drops those prims - the visible

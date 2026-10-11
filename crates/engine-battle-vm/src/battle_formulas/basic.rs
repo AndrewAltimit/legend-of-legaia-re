@@ -1,34 +1,7 @@
 //! Core battle arithmetic: PsyQ RNG, spirit damage, MP-cost ability-bit
 //! modifiers, accuracy roll, damage caps, art-strike damage, buff ramp.
-//! Split out of `battle_formulas.rs`.
 
-/// PsyQ-shape 32-bit linear congruential RNG. Returned value is the high-15
-/// bits, in the range `0..=0x7FFF`. The seed is mutated in place.
-///
-/// Identical to PSX libc `rand()`, which is what the game uses
-/// (`FUN_80056798`, `ghidra/scripts/funcs/80056798.txt`). For deterministic
-/// replay the engine must seed this from the same boot-time source the
-/// retail game uses; the precise source is currently the SPU master clock
-/// at boot, captured in `_DAT_8007AE5C`.
-pub fn psyq_rand_step(seed: &mut u32) -> u16 {
-    *seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-    ((*seed >> 16) & 0x7FFF) as u16
-}
-
-/// The value BIOS `rand()` (`A(2Fh)`, the thunk `FUN_80056798`:
-/// `li t2,0xA0; jr t2; li t1,0x2F`) returns for an LCG state: its high
-/// half, `(state >> 16) & 0x7FFF`.
-///
-/// Every engine draw that stands in for a retail `jal 0x80056798` shapes
-/// its generator's raw state through this before a consumer sees it. Retail
-/// callers test the **low** bits of the result (`rand & 1`, `& 7`, `& 0xF`,
-/// `% n`) and divide it as a 15-bit quantity; a raw 32-bit LCG state has a
-/// low bit of period 2 and a low nibble of period 16, and a sign bit, so
-/// handing it over unshaped turns coin flips into alternations, bursts a
-/// `& 0xF` gate once every sixteen draws, and makes a signed `%` negative.
-pub fn bios_rand_shape(state: u32) -> u32 {
-    (state >> 16) & 0x7FFF
-}
+use legaia_engine_system::rand::{bios_rand_shape, psyq_rand_step};
 
 /// One raw step of the engine's **world** generator - the single stream
 /// `World::next_rng` advances and every engine stand-in for a retail

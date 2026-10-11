@@ -1,5 +1,4 @@
 //! Object render queries and the field-channel prologue runners.
-//! Split out of `narration.rs`.
 
 use super::*;
 
@@ -52,7 +51,7 @@ impl World {
     /// box (`0x23 MoveTo 0x7F,0x7F` behind a `SysFlag.Test`, e.g. town01's
     /// gate rocks `P0[18..21]` until flag `0x147` sets) or zero render scale
     /// (`0x4C 0x40 0x00`). The placed-object draw resolvers consult this via
-    /// [`crate::field_env::retain_visible_placed_draws`] - the `.MAP` table
+    /// [`legaia_engine_scene::field_env::retain_visible_placed_draws`] - the `.MAP` table
     /// alone says where a placed object *can* stand, the bind record's
     /// prologue says whether it currently *does*.
     // REF: FUN_8003A55C (bind-time prologue pre-run seats/parks the actor)
@@ -176,7 +175,7 @@ impl World {
     }
 
     /// Record the scene's object-bind rotations
-    /// ([`crate::man_field_scripts::object_script_bind_rots`]). Call before
+    /// ([`legaia_engine_field::man_field_scripts::object_script_bind_rots`]). Call before
     /// [`Self::seed_object_channels`], which seats each context's angles from
     /// them.
     pub fn set_object_bind_rots(&mut self, rots: std::collections::HashMap<usize, [u16; 3]>) {
@@ -189,7 +188,7 @@ impl World {
     // REF: FUN_8003A55C
     pub(crate) fn seat_object_channel_rots(
         &self,
-        chans: &mut [crate::field_channels::FieldChannel],
+        chans: &mut [legaia_engine_field::field_channels::FieldChannel],
     ) {
         for c in chans.iter_mut().filter(|c| c.object_bind) {
             if let Some(&[rx, ry, rz]) = self.field_vm.object_channel_rots.get(&c.placement_index) {
@@ -210,7 +209,7 @@ impl World {
     ///
     /// Hosts pair each entry with the bind-time angles
     /// ([`Self::object_bind_rot`]) through
-    /// [`crate::field_env::object_turn_matrix`]. Unturned objects are not
+    /// [`legaia_engine_scene::field_env::object_turn_matrix`]. Unturned objects are not
     /// listed.
     // REF: FUN_8001ADA4 (case 5 composes the actor's angles), FUN_8003A55C
     pub fn object_draw_turns(&self) -> std::collections::HashMap<usize, [u16; 3]> {
@@ -228,15 +227,18 @@ impl World {
     }
 
     /// [`Self::object_draw_turns`] as the rotation each turned record's draws
-    /// take about their own origin ([`crate::field_env::object_turn_matrix`]):
+    /// take about their own origin ([`legaia_engine_scene::field_env::object_turn_matrix`]):
     /// the one table both hosts fold into their placed draws
-    /// ([`crate::field_env::turn_placed_model`]).
+    /// ([`legaia_engine_scene::field_env::turn_placed_model`]).
     pub fn object_draw_turn_matrices(&self) -> std::collections::HashMap<usize, [f32; 16]> {
         self.object_draw_turns()
             .into_iter()
             .filter_map(|(record, live)| {
                 let seed = self.object_bind_rot(record)?;
-                Some((record, crate::field_env::object_turn_matrix(seed, live)))
+                Some((
+                    record,
+                    legaia_engine_scene::field_env::object_turn_matrix(seed, live),
+                ))
             })
             .collect()
     }
@@ -289,7 +291,7 @@ impl World {
     /// places does not run its talk body: `dolk2`'s Noa (`P1[2]`) and the
     /// `town01` opening's `P1[10]` / `P1[11]` stay parked after their spawn
     /// section. A touch runs the engaged context as the interaction timeline
-    /// ([`crate::cutscene_timeline::CutsceneTimeline::interaction_slot`]).
+    /// ([`legaia_engine_field::cutscene_timeline::CutsceneTimeline::interaction_slot`]).
     // PORT: FUN_8003A1E4 (spawn-prologue pre-run -> initial actor positions)
     // REF: FUN_8003AEB0, FUN_80039B7C, FUN_8003BC08
     pub fn pre_run_field_channel_prologues(&mut self) {
@@ -400,11 +402,11 @@ impl World {
                 // channel and run the op against that context.
                 let ext = vm::field::peek_extended(bc, pc);
                 let target = ext.and_then(|t| {
-                    let ci = crate::field_channels::resolve_target(&channels, t)?;
+                    let ci = legaia_engine_field::field_channels::resolve_target(&channels, t)?;
                     (ci != i).then_some(ci)
                 });
                 let self_target = ext.is_some_and(|t| {
-                    crate::field_channels::resolve_target(&channels, t) == Some(i)
+                    legaia_engine_field::field_channels::resolve_target(&channels, t) == Some(i)
                 });
                 self.field_vm.executing_object = target
                     .filter(|&ci| channels[ci].object_bind)
@@ -431,11 +433,11 @@ impl World {
                 // own halt does in retail - is unchanged.
                 // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
                 if let Some(slot) = self.field_vm.executing_channel
-                    && let Some(ramp) = crate::inline_dialogue::TalkFaceRamp::from_own_acquire(
+                    && let Some(ramp) = legaia_engine_field::inline_dialogue::TalkFaceRamp::from_own_acquire(
                         bc, pc,
                     )
                     .or_else(|| {
-                        crate::inline_dialogue::TalkFaceRamp::from_npc_acquire(bc, pc)
+                        legaia_engine_field::inline_dialogue::TalkFaceRamp::from_npc_acquire(bc, pc)
                             .filter(|_| target.is_some())
                             .map(|(_, r)| r)
                     })
@@ -572,11 +574,11 @@ impl World {
     // REF: FUN_8003A1E4 (per-record context spawn)
     pub fn seed_field_channels(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
     ) {
         self.field_vm.pending_engagements.clear();
-        self.field_vm.channels = crate::field_channels::spawn_channels(man_file, man);
+        self.field_vm.channels = legaia_engine_field::field_channels::spawn_channels(man_file, man);
         self.field_vm.channels_man = if man.is_empty() {
             None
         } else {
@@ -612,7 +614,7 @@ impl World {
     // REF: FUN_8003A55C (object bind: +0x50 flat script id + prologue pre-run)
     pub fn seed_object_channels(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         binds: &[(usize, (i16, i16))],
     ) {
@@ -625,7 +627,8 @@ impl World {
         if !same_man {
             return;
         }
-        let mut obj = crate::field_channels::spawn_object_channels(man_file, man, binds);
+        let mut obj =
+            legaia_engine_field::field_channels::spawn_object_channels(man_file, man, binds);
         self.seat_object_channel_rots(&mut obj);
         self.pre_run_object_channel_prologues(&mut obj, man);
         self.field_vm.channels.extend(obj);
@@ -637,7 +640,7 @@ impl World {
     /// the context yields/halts - the retail inline loop's exact stop set.
     pub(super) fn pre_run_object_channel_prologues(
         &mut self,
-        channels: &mut [crate::field_channels::FieldChannel],
+        channels: &mut [legaia_engine_field::field_channels::FieldChannel],
         man: &[u8],
     ) {
         for c in channels.iter_mut() {

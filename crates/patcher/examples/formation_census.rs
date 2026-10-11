@@ -3,7 +3,7 @@
 //! (PROT 867 slot prefix), and report the largest totals retail ever loads.
 //! Run: LEGAIA_DISC_BIN=... cargo run --release -p legaia-patcher --example formation_census
 
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::encounter::SceneEncounters;
 use std::collections::BTreeSet;
 

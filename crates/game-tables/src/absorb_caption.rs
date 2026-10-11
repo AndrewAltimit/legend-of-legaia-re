@@ -35,10 +35,11 @@
 //! caller's PROT 0898 image.
 
 /// CDNAME / PROT index of the battle-action overlay.
-pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize = 898;
+pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
+    legaia_overlay_images::static_overlay::BATTLE_ACTION_OVERLAY_PROT as usize;
 
 /// The battle-action overlay's link/load base (`VA - file_offset`).
-pub const OVERLAY_LINK_BASE: u32 = 0x801C_E818;
+pub const OVERLAY_LINK_BASE: u32 = legaia_overlay_images::static_overlay::SLOT_A_BASE;
 
 /// Runtime VA of the per-character prefix pointer table (`lui a1,0x801f;
 /// addiu a1,a1,0x4dfc` at `0x801D9158` / `0x801D9174`).

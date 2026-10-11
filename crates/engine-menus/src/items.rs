@@ -1,19 +1,19 @@
 //! Inventory item-effect catalog.
 //!
-//! Maps **real** retail item ids ([`legaia_asset::item_names`], the
+//! Maps **real** retail item ids ([`legaia_game_tables::item_names`], the
 //! `SCUS_942.54` item table) to typed [`ItemEffect`] descriptions the battle
 //! and field menus consume.
 //!
 //! The retail engine's per-item *effect class / targeting / usability* is the
 //! on-disc [item-effect descriptor table](../../docs/formats/item-effect-table.md)
-//! (`DAT_800752C0`, parser [`legaia_asset::item_effect`]): keyed by item id ->
+//! (`DAT_800752C0`, parser [`legaia_game_tables::item_effect`]): keyed by item id ->
 //! subtype -> `[class, tier, flags]`. [`ItemCatalog::apply_effect_flags`]
 //! installs its field/battle usability gates over the curated entries (which is
 //! how cure/revive items end up correctly battle-only). The literal restore
 //! *amount* lives in a **separate, also static** heal-amount table
 //! (`0x8007655C`) the apply handler `FUN_800402F4` reads: HP tiers
 //! `[200, 800, 9999]`, MP tiers `[50, 200, 20]` (parser
-//! [`legaia_asset::item_effect::ItemEffectTable::heal_amounts`] /
+//! [`legaia_game_tables::item_effect::ItemEffectTable::heal_amounts`] /
 //! `restore_amount`). The curated walkthrough values here are **byte-confirmed**
 //! against that table by the disc-gated `item_effect_real` test, so they stay as
 //! the engine's source (no behaviour change). (This corrects an earlier note
@@ -38,9 +38,9 @@
 //! - [`ItemEffect::Revive`]: restores HP to `(hp_max * factor) / 256`
 //!   from zero (default factor is `128` = 50%).
 //! - [`ItemEffect::StatBoost`]: permanently raises a base stat by
-//!   `delta` (capped by [`crate::battle_stats::StatRecord`] limits).
+//!   `delta` (capped by [`legaia_engine_battle::battle_stats::StatRecord`] limits).
 //! - [`ItemEffect::Spirit`]: refunds `amount` AP into the active
-//!   character's `legaia_engine_core::ap_gauge::ApGauge`.
+//!   character's `legaia_engine_battle::ap_gauge::ApGauge`.
 //! - [`ItemEffect::Capture`]: marks the target monster slot with the
 //!   capture flag - battle's monster-wipe handler reads this.
 //! - [`ItemEffect::Escape`]: forces a Run / Escape outcome.
@@ -58,7 +58,7 @@
 //! restorative item out across every living ally rather than asking for a
 //! single target.
 
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 /// The permanent stat-up consumables (class 6) by their **real** retail item
 /// ids + names (the `SCUS_942.54` item table). The *Water* line raises one
@@ -254,7 +254,7 @@ impl ItemCatalog {
     }
 
     /// Build the default catalog of consumable items keyed by their **real**
-    /// retail item ids - the `SCUS_942.54` item table ([`legaia_asset::item_names`]),
+    /// retail item ids - the `SCUS_942.54` item table ([`legaia_game_tables::item_names`]),
     /// the same id space a granted / shop / dropped item carries. (The prior
     /// catalog keyed effects by fabricated sequential ids `0x01..` that collide
     /// with the table's internal `Ra-Seru Meta $N` placeholders, so live
@@ -393,7 +393,7 @@ impl ItemCatalog {
     }
 
     /// Override each entry's field/battle usability from the real on-disc
-    /// item-effect descriptor table ([`legaia_asset::item_effect`],
+    /// item-effect descriptor table ([`legaia_game_tables::item_effect`],
     /// `DAT_800752C0`). The on-disc flags are authoritative: e.g. the cure /
     /// revive items (Antidote `0x7E`, Medicine `0x7F`, Phoenix `0x80`) carry
     /// the battle-only flag byte `0x84` - they are usable in battle but NOT
@@ -402,7 +402,7 @@ impl ItemCatalog {
     /// carry `0x02` (field only). Entries whose id doesn't resolve to a usable
     /// on-disc consumable are left untouched (the curated amount/effect kind
     /// stays - this only corrects the usability gates).
-    pub fn apply_effect_flags(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+    pub fn apply_effect_flags(&mut self, table: &legaia_game_tables::item_effect::ItemEffectTable) {
         // Collect ids first to avoid borrowing `self.by_id` while mutating
         // `self.all_party`.
         let ids: Vec<u8> = self.by_id.keys().copied().collect();
@@ -437,8 +437,8 @@ impl ItemCatalog {
     /// so a disc-free build never offers an item that would resolve to a no-op.
     /// An item is added only if the installed table actually classifies it as a
     /// permanent stat-up (defensive against an edited table).
-    pub fn apply_stat_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
-        use legaia_asset::item_effect::StatItemEffect;
+    pub fn apply_stat_items(&mut self, table: &legaia_game_tables::item_effect::ItemEffectTable) {
+        use legaia_game_tables::item_effect::StatItemEffect;
         for &(id, name) in PERMANENT_STAT_ITEMS {
             if matches!(table.stat_effect(id), Some(StatItemEffect::Permanent(_))) {
                 let field_usable = table.effect(id).map(|e| e.field_usable()).unwrap_or(true);
@@ -462,8 +462,8 @@ impl ItemCatalog {
     /// Like [`Self::apply_stat_items`], seeded **only** when the disc table is
     /// present, and only for ids the table actually classifies as a one-battle
     /// buff (defensive against an edited table).
-    pub fn apply_buff_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
-        use legaia_asset::item_effect::StatItemEffect;
+    pub fn apply_buff_items(&mut self, table: &legaia_game_tables::item_effect::ItemEffectTable) {
+        use legaia_game_tables::item_effect::StatItemEffect;
         for &(id, name) in BATTLE_BUFF_ITEMS {
             if matches!(
                 table.stat_effect(id),
@@ -488,8 +488,11 @@ impl ItemCatalog {
     ///
     /// Like the sibling seeders, installed **only** when the disc table is
     /// present and the id is actually classified as an action-gauge item.
-    pub fn apply_action_gauge_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
-        use legaia_asset::item_effect::StatItemEffect;
+    pub fn apply_action_gauge_items(
+        &mut self,
+        table: &legaia_game_tables::item_effect::ItemEffectTable,
+    ) {
+        use legaia_game_tables::item_effect::StatItemEffect;
         for &(id, name) in ACTION_GAUGE_ITEMS {
             if matches!(table.stat_effect(id), Some(StatItemEffect::ActionGauge)) {
                 let battle_usable = table.effect(id).map(|e| e.battle_usable()).unwrap_or(true);
@@ -516,7 +519,10 @@ impl ItemCatalog {
     ///
     /// Like the sibling seeders, installed **only** when the disc table is
     /// present and only for ids the table actually classifies as a book.
-    pub fn apply_arts_book_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+    pub fn apply_arts_book_items(
+        &mut self,
+        table: &legaia_game_tables::item_effect::ItemEffectTable,
+    ) {
         for &(id, name) in ARTS_BOOK_ITEMS {
             let Some(eff) = table.effect(id) else {
                 continue;
@@ -542,7 +548,10 @@ impl ItemCatalog {
     /// no data pointing at it, and only an edited effect table (a randomizer
     /// seed, a translation-adjacent patch) puts an item in front of it. An id
     /// the catalog already names keeps its name.
-    pub fn apply_point_card_items(&mut self, table: &legaia_asset::item_effect::ItemEffectTable) {
+    pub fn apply_point_card_items(
+        &mut self,
+        table: &legaia_game_tables::item_effect::ItemEffectTable,
+    ) {
         for id in 0..=u8::MAX {
             let Some(eff) = table.effect(id) else {
                 continue;

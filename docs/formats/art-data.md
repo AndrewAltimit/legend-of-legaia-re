@@ -9,7 +9,7 @@ action-constant id space that links them, and the Miracle / Super Art trigger
 tables.
 
 Implementation: [`crates/art`](../../crates/art/README.md) (tables, tokenizer,
-matchers) and `legaia_patcher::arts_power` / `super_art_power` (record editors).
+matchers) and `legaia_arts_patch::arts_power` / `super_art_power` (record editors).
 
 ## At a glance
 
@@ -147,7 +147,7 @@ Positions are documented by the schema; exact byte offsets are not pinned.
 | Hit Effect Cues (×4) | schema shape: a 32-bit word, high half = timing in frames, low half = constant (`0x1A`, `0x4C`, …). The runtime carrier is the 8-byte hit run in [Runtime cue playout](#runtime-cue-playout) |
 | Identifier | byte. Some values trigger special animations (`0x67` in Heaven's Drop = Thunderbolt) |
 | Anim Speed | byte. Lower = slower playback |
-| Effect on Enemy | status byte: `1` Toxic, `2` Numb, `3` Venom, `4` Sleep, `5` Confuse, `6` Curse, `7` Stone, `8` Faint (`legaia_engine_vm::status_effects`) |
+| Effect on Enemy | status byte: `1` Toxic, `2` Numb, `3` Venom, `4` Sleep, `5` Confuse, `6` Curse, `7` Stone, `8` Faint (`legaia_engine_battle_vm::status_effects`) |
 | Repeat Frames | 3 bytes: count, start frame, end frame. Replays a frame range; for some arts also repeats the damage of power bytes in the range (Super Tempest's 4 power bytes → 8 hits) |
 | Background | byte. `0` = regular, `2` = black (Super Arts and the Tornado Flame Hyper Art) |
 | Runtime Address | word, written by the runtime after the art is first used in battle; empty in static data |
@@ -192,7 +192,7 @@ Every art in the SCUS arts-name table resolves to one `record0` record whose
 carry 1 byte, hyper / super arts 4 ascending bytes. The two Noa Hurricane-Kick
 holes and Gala's spirit-only Miracle (which carries no `+0x24` byte) reproduce.
 There is no display copy of the power. Editor:
-`legaia_patcher::arts_power` (CLI `legaia-patcher arts`,
+`legaia_arts_patch::arts_power` (CLI `legaia-patcher arts`,
 `--arts-power COMBO=VALUE`; see [randomizer.md](../tooling/randomizer.md)).
 
 ### Art records are indexed by action constant
@@ -224,8 +224,8 @@ records ahead of row 0.
   Noa's `0x2C` / `0x2D` carry named records with power bytes but have no
   arts-name-table row and no combo.
 
-Editors: `legaia_patcher::super_art_power` (locate + edit by constant,
-name-validated) and `legaia_patcher::arts_power` (combo-keyed).
+Editors: `legaia_arts_patch::super_art_power` (locate + edit by constant,
+name-validated) and `legaia_arts_patch::arts_power` (combo-keyed).
 
 ## Runtime cue playout
 
@@ -368,7 +368,7 @@ The same low-byte-first split feeds `cr13` / `cr14` / `cr15`
 (`RBK` / `GBK` / `BBK`) at `0x80043464..0x8004346C`. Move-VM op `0x0C` builds
 the same field the same way
 (`+0x74 = (v1<<24 | 0x40000000) + v2 + (v3<<8) + (v4<<16)`, `v2` red). Mirror:
-`engine-core::battle_afterimage::GHOST_COLOR_PARTY`.
+`engine-battle::battle_afterimage::GHOST_COLOR_PARTY`.
 
 Not the same field: `FUN_8005112c`'s ribbon literals are the fourth argument of
 the 2D streak builder `FUN_80048310`, which re-packs them unchanged

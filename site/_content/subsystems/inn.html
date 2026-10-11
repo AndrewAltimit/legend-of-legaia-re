@@ -11,7 +11,7 @@
     <dt>Runs on</dt><dd>The <a href="script-vm.html">field / event script VM</a>, field overlay PROT <code>0897</code>. No inn overlay, no menu sub-screen.</dd>
     <dt>Price</dt><dd>A u16 literal in a gold-compare instruction, repeated as the magnitude of a debit a few bytes later.</dd>
     <dt>Restore</dt><dd>One heal instruction per party slot (<code>4C 82 &lt;slot&gt;</code>) - the only inn-specific opcode in the game.</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::inn_costs</code> (price scan); engine path <code>engine-core::inline_dialogue</code> over <code>engine-vm::field</code>.</dd>
+    <dt>Parser</dt><dd><code>legaia_scene_formats::inn_costs</code> (price scan); engine path <code>engine-field::inline_dialogue</code> over <code>engine-vm::field</code>.</dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly + disc sweep + disc-gated engine test (<a href="#how-we-know">how we know</a>).</dd>
   </dl>
 </section>
@@ -85,7 +85,7 @@ A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end la
 <section class="doc-section" id="cost-source">
   <h2>Where the price lives</h2>
   <p>The price is a <strong>gold-gate + debit pair</strong>: op <code>0x4E</code> sub-op 3 compares the party's gold against a u16 literal and skips when gold is short; op <code>0x3A</code> (<code>ADD_MONEY</code>) then applies the negative of that literal. A 32-bit sibling (sub-op 10) exists for prices above 65,535 and is used only by the casino's gold-to-coin counters.</p>
-  <p><code>legaia_asset::inn_costs</code> finds the pair by byte scan - a literal in a gold compare that reappears as a debit within a few instructions - which survives the picker jump tables that desync a linear walk. The engine runs that scan at scene load. Free rests (Rim Elm's bed, Biron) have no pair at all.</p>
+  <p><code>legaia_scene_formats::inn_costs</code> finds the pair by byte scan - a literal in a gold compare that reappears as a debit within a few instructions - which survives the picker jump tables that desync a linear walk. The engine runs that scan at scene load. Free rests (Rim Elm's bed, Biron) have no pair at all.</p>
   <table class="data-table">
     <thead><tr><th>Scene family</th><th>Charge</th><th>Form</th></tr></thead>
     <tbody>
@@ -114,7 +114,7 @@ A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end la
     <summary>History: the cost table that does not exist</summary>
     <div class="disclosure-body"><p>A per-scene cost table in the menu overlay's data segment was the natural first guess; the disc has none. Three port defects hid the real path at once: <code>0x2A</code> decoded as nothing, the gate read an empty purse, and the clip spin was read as the end of the conversation. See <a href="../reference/re-settled-threads.html">settled threads</a>.</p></div>
   </details>
-  <p class="hint">Full provenance: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/inn.md" target="_blank" rel="noopener"><code>docs/subsystems/inn.md</code></a>. Source: <code>crates/engine-menus/src/inn.rs</code>, <code>crates/engine-dialog/src/inline_dialogue.rs</code>.</p>
+  <p class="hint">Full provenance: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/inn.md" target="_blank" rel="noopener"><code>docs/subsystems/inn.md</code></a>. Source: <code>crates/engine-menus/src/inn.rs</code>, <code>crates/engine-field/src/inline_dialogue.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

@@ -10,7 +10,7 @@
 //!
 //! Disc-gated: skips (and passes) without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 #[test]
 fn conc_save_crystal_takes_the_savepoint_clip_from_its_prologue() {
@@ -28,7 +28,7 @@ fn conc_save_crystal_takes_the_savepoint_clip_from_its_prologue() {
         .field_man_payload(&host.index)
         .expect("man read")
         .expect("conc has a MAN");
-    let mf = legaia_asset::man_section::parse(&man).expect("MAN parses");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("MAN parses");
     let crystals: Vec<_> = mf
         .actor_placements(&man)
         .into_iter()
@@ -40,7 +40,7 @@ fn conc_save_crystal_takes_the_savepoint_clip_from_its_prologue() {
         let live = host.world.field_npc_live_anim(p.index);
         assert_eq!(
             live,
-            Some(legaia_asset::character_pack::LOCOMOTION_SAVEPOINT_RECORD as u8 + 1),
+            Some(legaia_actor_formats::character_pack::LOCOMOTION_SAVEPOINT_RECORD as u8 + 1),
             "P1[{}]: the prologue sets the savepoint clip (record 21 = id 22)",
             p.index
         );

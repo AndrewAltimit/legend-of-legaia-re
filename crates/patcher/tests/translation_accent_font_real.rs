@@ -1,4 +1,4 @@
-//! Disc-gated tests for the accent font (`translation::accents`,
+//! Disc-gated tests for the accent font (`legaia_translate::accents`,
 //! `legaia_font::accent_font`):
 //!
 //! - the retail USA font page carries ink in some high cells but gives most
@@ -14,14 +14,14 @@
 //! Only counts, widths and shape statistics are asserted - no glyph bytes.
 //! Skips + passes without `LEGAIA_DISC_BIN`.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_font::accent_font::{AccentFontState, CellDraw, FontPage};
 use legaia_font::{Font, MeasureOptions, latin};
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_iso::write::mode2_form1_sector_is_valid;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::translation::accents::{self, AccentMode, DiscFont};
-use legaia_patcher::translation::markup::{self, Target};
-use legaia_patcher::translation::{export_pack, import_pack};
+use legaia_translate::accents::{self, AccentMode, DiscFont};
+use legaia_translate::markup::{self, Target};
+use legaia_translate::{export_pack, import_pack};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -190,7 +190,7 @@ fn font_mode_pack_imports_cells_and_writes_the_font_once() {
     assert!(!font.already);
     let va = u32::from_str_radix(key.trim_start_matches("scus:str:0x"), 16).unwrap();
     let scus = p.read_named_file("SCUS_942.54").unwrap();
-    let off = legaia_asset::item_names::file_offset_for_va(&scus, va).unwrap();
+    let off = legaia_game_tables::item_names::file_offset_for_va(&scus, va).unwrap();
     assert_eq!(&scus[off..off + 5], &[0x90, b'p', 0x82, b'e', 0x00]);
 
     // Strict mode reports the same line as not encodable instead.

@@ -105,7 +105,7 @@
 //! REF: FUN_8001ADA4 (the render dispatcher arm that selects this emitter),
 //! FUN_80028158, FUN_8002A5A4 (the other two arms), FUN_801D0290 (the RNG)
 
-use legaia_engine_vm::battle_action::OverlayRng;
+use legaia_engine_battle_vm::battle_action::OverlayRng;
 
 /// PSX angle units in a full revolution - the sin / cos LUT index space.
 pub const ANGLE_MASK: i32 = 0xFFF;
@@ -742,7 +742,7 @@ pub fn ribbon_vram_mesh(ribbon: &Ribbon, core: u32, flare: u32) -> legaia_tmd::m
 /// The whole per-frame ribbon a live move-VM node draws, or `None` when the
 /// node is not on the ribbon arm - [`ribbon_call_args`] +
 /// [`RibbonParams::from_actor`] + [`build_ribbon`] (retail RNG
-/// [`legaia_engine_vm::battle_action::OverlayRng`], reseeded from `+0xB8` on
+/// [`legaia_engine_battle_vm::battle_action::OverlayRng`], reseeded from `+0xB8` on
 /// every call, and the retail LUTs) + [`ribbon_vram_mesh`].
 ///
 /// A pure function of the node's state, exactly as retail's emitter is: it
@@ -775,7 +775,7 @@ pub struct RibbonDraw {
     /// The node's `+0x52` word (move-VM op `0x15`). Its `0x780` bits select
     /// retail's camera-relative rotation `FUN_8001CF50` at the render
     /// dispatcher `FUN_8001ADA4` (`0x8001B374`); a host resolves them with
-    /// `legaia_engine_ui::gte::camera_relative_model_prefix`. `0` for draws
+    /// `legaia_render_kernels::gte::camera_relative_model_prefix`. `0` for draws
     /// that are not move-VM nodes.
     pub flags_52: u16,
 }

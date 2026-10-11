@@ -375,7 +375,7 @@ last cell the board pass moved it to.
 
 [`legaia_engine_minigames::tile_board`](../../crates/engine-minigames/src/tile_board.rs)
 holds the board, header parse, procedural fill, octant / step decode and event
-flag writes; `legaia_engine_core::tile_board` re-exports it and adds the
+flag writes; `legaia_engine_core::world_views::tile_board` holds the
 per-cell draw assembly, which reads the `World`; `World::tick_tile_board` runs the
 walk SM off op `0x49` sub-5. The play-window's `LEGAIA_TILE_BOARD_DEMO=1`
 synthesizes a retail-shaped install near the player, since no scene provides

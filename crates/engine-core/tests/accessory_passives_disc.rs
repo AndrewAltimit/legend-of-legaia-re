@@ -12,9 +12,9 @@
 //! = passive 0x06 (ATK +20%), Golden Book `0xF0` = passive 0x30 (Gold Boost,
 //! party-wide).
 
-use legaia_engine_core::Vfs;
-use legaia_engine_core::accessory_passives::AccessoryPassives;
+use legaia_engine_battle::accessory_passives::AccessoryPassives;
 use legaia_engine_core::world::World;
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
 fn passives_from_disc() -> Option<AccessoryPassives> {
@@ -22,11 +22,11 @@ fn passives_from_disc() -> Option<AccessoryPassives> {
     if !path.is_file() {
         return None;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
-    let table = legaia_asset::accessory_passive::AccessoryPassiveTable::from_scus(&scus)
+    let table = legaia_game_tables::accessory_passive::AccessoryPassiveTable::from_scus(&scus)
         .expect("parse accessory-passive table");
     Some(AccessoryPassives::from_disc(&table))
 }
@@ -39,7 +39,7 @@ fn disc_accessory_passives_drive_bits_boosts_and_party_wide_mask() {
     };
 
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -99,7 +99,7 @@ fn disc_accessory_passives_drive_bits_boosts_and_party_wide_mask() {
     // mask + helper the engine's three cast paths consume
     // (`World::cast_spell_on_slots` / `BattleSpellSession::new` / the
     // battle-action VM host all route through `MpCostModifier`).
-    use legaia_engine_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
+    use legaia_engine_battle_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
     let bits = world.party.character_ability_bits[0];
     assert_eq!(bits & 0x20, 0x20, "Spirit Talisman sets the Half-cost bit");
     let modifier = MpCostModifier::from_ability_flags(bits);

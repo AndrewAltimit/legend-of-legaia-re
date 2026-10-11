@@ -4,7 +4,7 @@
 //!
 //! PORT: FUN_8005112C (per-character signature-clip trigger)
 //! PORT: FUN_80048310 (sweep schedule + band colour ladder; the projected
-//! quad emission half is `legaia_engine_ui::battle_trail`)
+//! quad emission half is `legaia_render_kernels::battle_trail`)
 //!
 //! # The retail chain
 //!
@@ -12,7 +12,7 @@
 //! `FUN_8005112C` for a party seat whose FX colour word is armed. The
 //! trigger fires only while the **committed action record's `+0x77`
 //! identity byte** (the same byte the equipment attach scan matches - see
-//! `legaia_asset::monster_archive::MonsterAnimation::attach_key`) equals a
+//! `legaia_actor_formats::monster_archive::MonsterAnimation::attach_key`) equals a
 //! per-character constant, i.e. only during that character's hand-picked
 //! swing clips. It then calls the sweep driver `FUN_80048310` with a
 //! **base object index**, a point count of `3` and an RGB tint.

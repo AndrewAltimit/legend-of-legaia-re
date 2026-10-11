@@ -78,8 +78,8 @@ impl LegaiaViewer {
         // which already covers the tile, so only a targeting run needs this.
         if !needs.is_empty() && self.backdrop_second_copy(entry).is_some() {
             needs.push(PrimTarget {
-                clut: legaia_asset::battle_backdrop::ground_clut_rect(),
-                page: legaia_asset::battle_backdrop::ground_page_rect(),
+                clut: legaia_scene_formats::battle_backdrop::ground_clut_rect(),
+                page: legaia_scene_formats::battle_backdrop::ground_page_rect(),
             });
         }
         let mut vram = legaia_tim::Vram::new();
@@ -172,13 +172,16 @@ impl LegaiaViewer {
     pub(crate) fn backdrop_second_copy(
         &self,
         entry: &ViewerEntry,
-    ) -> Option<(legaia_asset::battle_backdrop::SecondCopy, bool)> {
+    ) -> Option<(legaia_scene_formats::battle_backdrop::SecondCopy, bool)> {
         if !matches!(entry.tmd_source, Some(TmdSource::SceneTmdStream { .. })) {
             return None;
         }
         Some(match &self.backdrop_mirror {
             Some(t) => (t.second_copy_for_prot_index(entry.meta.index), true),
-            None => (legaia_asset::battle_backdrop::SecondCopy::HalfTurn, false),
+            None => (
+                legaia_scene_formats::battle_backdrop::SecondCopy::HalfTurn,
+                false,
+            ),
         })
     }
 
@@ -189,7 +192,7 @@ impl LegaiaViewer {
     /// A `scene_tmd_stream` entry is placed the way retail places it rather
     /// than drawn raw: object 1 is dropped, and a second copy of what
     /// remains is appended under the per-stage transform that closes the
-    /// shell. See [`legaia_asset::battle_backdrop`].
+    /// shell. See [`legaia_scene_formats::battle_backdrop`].
     pub(crate) fn build_current_vram_mesh(&self) -> Option<legaia_tmd::mesh::VramMesh> {
         let (tmd, tmd_buf) = self.parse_current_tmd()?;
         let second = self
@@ -197,7 +200,7 @@ impl LegaiaViewer {
             .get(self.current)
             .and_then(|e| self.backdrop_second_copy(e));
         let tmd = match second {
-            Some(_) => legaia_asset::battle_backdrop::drawn_objects_tmd(&tmd),
+            Some(_) => legaia_scene_formats::battle_backdrop::drawn_objects_tmd(&tmd),
             None => tmd,
         };
         let vram = self.build_current_vram();
@@ -217,10 +220,10 @@ impl LegaiaViewer {
             // handed to the transform and drawn twice, once upside-down in Z.
             if vram
                 .as_ref()
-                .is_some_and(legaia_asset::battle_backdrop::ground_grid_drawable)
+                .is_some_and(legaia_scene_formats::battle_backdrop::ground_grid_drawable)
             {
                 mesh.append_scaled(
-                    &legaia_asset::battle_backdrop::build_ground_grid(),
+                    &legaia_scene_formats::battle_backdrop::build_ground_grid(),
                     [1.0, 1.0, 1.0],
                 );
             }
@@ -248,7 +251,7 @@ impl LegaiaViewer {
                 offset,
                 len,
             } => {
-                let scan = legaia_asset::tmd_scan::scan_entry(buf);
+                let scan = legaia_container_formats::tmd_scan::scan_entry(buf);
                 scan.lzs_sections
                     .get(section)?
                     .get(offset..offset + len)
@@ -278,7 +281,7 @@ impl LegaiaViewer {
                 continue;
             }
             let buf = &self.disc[off..end];
-            if let Ok(decoded) = legaia_asset::kingdom_bundle::decode_slot(buf, 4) {
+            if let Ok(decoded) = legaia_scene_formats::kingdom_bundle::decode_slot(buf, 4) {
                 return Some(decoded);
             }
         }
@@ -408,7 +411,7 @@ impl LegaiaViewer {
 
     /// Build the mesh for the currently-selected kingdom pack slot: the
     /// **hybrid** stream of the shared pack kernel
-    /// ([`legaia_engine_core::scene_assembly::build_hybrid_pack_mesh`]) - the
+    /// ([`legaia_engine_scene::scene_assembly::build_hybrid_pack_mesh`]) - the
     /// textured prims followed by the untextured `F*`/`G*` vertex-colour prims
     /// (Rim Elm's hut roofs, Karisto's colour-only landmarks) the textured
     /// builder alone drops. [`Self::build_kingdom_hybrid`] returns the same
@@ -466,7 +469,7 @@ impl LegaiaViewer {
         let end = *k.byte_ends.get(slot)?;
         let tmd_buf = k.pack.get(start..end)?;
         let tmd = legaia_tmd::parse(tmd_buf).ok()?;
-        Some(legaia_engine_core::scene_assembly::build_hybrid_pack_mesh(
+        Some(legaia_engine_scene::scene_assembly::build_hybrid_pack_mesh(
             &tmd, tmd_buf,
         ))
     }
@@ -483,7 +486,7 @@ impl LegaiaViewer {
         };
         match self.backdrop_second_copy(entry) {
             Some(_) => {
-                let drawn = legaia_asset::battle_backdrop::drawn_objects_tmd(&tmd);
+                let drawn = legaia_scene_formats::battle_backdrop::drawn_objects_tmd(&tmd);
                 let mesh = legaia_tmd::mesh::tmd_to_mesh(&drawn, &tmd_buf);
                 (mesh.triangle_count() * 2, mesh.vertex_count() * 2)
             }
@@ -514,8 +517,8 @@ impl LegaiaViewer {
         let Ok(tmd) = legaia_tmd::parse(&tmd_buf) else {
             return String::new();
         };
-        let shape = legaia_asset::scene_tmd_stream::shell_shape(&tmd);
-        let mut note = legaia_asset::battle_backdrop::describe_placement(
+        let shape = legaia_scene_formats::scene_tmd_stream::shell_shape(&tmd);
+        let mut note = legaia_scene_formats::battle_backdrop::describe_placement(
             shape.as_ref(),
             resolved.then_some(copy),
         );
@@ -527,7 +530,7 @@ impl LegaiaViewer {
         if self
             .build_current_vram()
             .as_ref()
-            .is_some_and(legaia_asset::battle_backdrop::ground_grid_drawable)
+            .is_some_and(legaia_scene_formats::battle_backdrop::ground_grid_drawable)
         {
             note.push_str(", over retail's tiled ground grid");
         } else {

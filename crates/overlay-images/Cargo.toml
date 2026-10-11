@@ -3,6 +3,8 @@ name = "legaia-overlay-images"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_overlay_images"
@@ -15,3 +17,11 @@ legaia-lzs.workspace = true
 serde.workspace = true
 sha2.workspace = true
 toml.workspace = true
+
+[dev-dependencies]
+legaia-container-formats.workspace = true
+legaia-prot.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

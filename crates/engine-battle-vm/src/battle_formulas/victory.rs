@@ -1,5 +1,5 @@
 //! Victory spoils (`FUN_8004E568` gold + EXP) and summon-magic spell XP /
-//! level-up arithmetic. Split out of `battle_formulas.rs`.
+//! level-up arithmetic.
 
 // ---------------------------------------------------------------------------
 // FUN_8004E568 - victory spoils (gold + EXP reward arithmetic)

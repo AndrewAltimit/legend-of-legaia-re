@@ -1,6 +1,6 @@
 //! Per-channel scoring of an engine observation against the retail one:
 //! party, flags, inventory, facing and camera scores, and the state report
-//! they fold into. Split out of `retail_compare.rs`; no logic change.
+//! they fold into.
 
 use super::*;
 
@@ -379,7 +379,7 @@ pub fn compare(
                 menu.subscreen,
                 menu.row,
                 match (menu.row, menu.equip_depth) {
-                    (legaia_engine_core::field_menu::FieldMenuRow::Equip, 0) => {
+                    (legaia_engine_menus::field_menu::FieldMenuRow::Equip, 0) => {
                         ", character picker"
                     }
                     (_, 1) => ", slot browse",
@@ -512,7 +512,7 @@ pub fn compare(
                     "retail parked at pc {} wait {}; engine did not reach it in {} ticks (sampled at the settle window)",
                     p.pc,
                     p.wait,
-                    crate::retail_compare_script::SCRIPT_GATE_DEADLINE
+                    legaia_engine_capture::script_gate::SCRIPT_GATE_DEADLINE
                 ),
             },
         );

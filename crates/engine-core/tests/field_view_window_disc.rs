@@ -25,11 +25,11 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::field_ground;
-use legaia_engine_core::field_regions::{self, RegionTable};
 use legaia_engine_core::field_view_window::{self, CellKey};
-use legaia_engine_core::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::field_npc_cull::FieldCullView;
+use legaia_engine_field::camera::FieldCullView;
+use legaia_engine_field::field_regions::{self, RegionTable};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_system::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
 
 fn extracted_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from)
@@ -78,7 +78,7 @@ fn crop_scene(index: &ProtIndex, name: &str) -> Option<SceneCrop> {
         .flatten()
         .unwrap_or_default()
         .into_iter()
-        .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+        .filter(|p| p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0)
         .map(|p| CellKey {
             cell: (p.col, p.row),
             cull_radius: p.cull_radius,
@@ -154,7 +154,7 @@ fn the_visible_tile_crop_over_every_field_scene() {
     let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
     let mut rows = Vec::new();
     for name in index.cdname_scene_names() {
-        if legaia_engine_core::scene::is_world_map_scene(&name) {
+        if legaia_engine_scene::scene::is_world_map_scene(&name) {
             continue;
         }
         if let Some(c) = crop_scene(&index, &name)

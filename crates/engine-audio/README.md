@@ -123,7 +123,7 @@ Two rules keep it honest:
   a wired kernel that runs and produces silence is indistinguishable from an
   unwired one at the call site, and distinguishable at the samples.
 
-The session ladder over it is `tests/w1e_audio_session_ladder.rs` (disc-gated):
+The session ladder over it is `tests/audio_session_ladder.rs` (disc-gated):
 real BGM staged and played, paused and resumed, and a real SFX cue fired
 through the frame scheduler, each asserted on the PCM that came out.
 

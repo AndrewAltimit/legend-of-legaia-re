@@ -42,10 +42,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::minigame_entry::MinigameSubId;
-use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_mode::minigame_entry::MinigameSubId;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

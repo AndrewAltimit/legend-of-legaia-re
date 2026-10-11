@@ -1,6 +1,6 @@
 //! The redraw's simulation half: the sim ticks one redraw drains and the
 //! per-tick steps (scripted input, the modal arms that own a tick, the field
-//! pad, the world tick and its frame tail), split out of `handle_redraw`.
+//! pad, the world tick and its frame tail).
 
 use super::super::*;
 use super::redraw::tick_menu_runtime_session;
@@ -22,7 +22,7 @@ impl PlayWindowApp {
         // those spawns draw the world `rand()` stream - so a wall-paced
         // capture ran a fogged scene on a stream that moved with machine
         // load, and the retail comparison's frame landed on a different
-        // fight from its headless seed (`BootSession::fog_render_tick`).
+        // fight from its headless seed (`NativeSession::fog_render_tick`).
         let ticks = if self.screenshot.is_some() { 1 } else { ticks };
         // In-flow windowed cutscene: when the field VM's FMV-trigger
         // op flips the world into SceneMode::Cutscene and the STR has
@@ -109,7 +109,7 @@ impl PlayWindowApp {
         if self.session.host.world.game_over && !self.boot_ui.is_active() {
             self.session.host.world.game_over = false;
             self.boot_ui =
-                BootUiState::GameOver(legaia_engine_core::game_over::GameOverSession::new());
+                BootUiState::GameOver(legaia_engine_menus::game_over::GameOverSession::new());
             log::info!("play-window: party wipe -> title screen");
         }
         // When the boot UI is active, route input there and skip
@@ -138,7 +138,7 @@ impl PlayWindowApp {
         // cell / glyph per press). Mirrors the opening `town01`
         // naming prompt, which suspends the field VM.
         // The routing is the engine's (`World::step_name_entry_frame`, the
-        // kernel `BootSession::tick` runs for every other driver): the
+        // kernel `NativeSession::tick` runs for every other driver): the
         // edge drives the entry SM and the frame counter advances so the
         // caret blinks. This arm adds only the window's frame-tail skip.
         if self.session.step_name_entry_frame(pressed_edge) {
@@ -218,7 +218,7 @@ impl PlayWindowApp {
         // the menu asks the same question.
         // The press itself - a script's op-`0x49` save point / ready
         // check, a Start edge, the deny buzz - is answered by the one
-        // engine rule every host asks (`BootSession::press_field_menu`),
+        // engine rule every host asks (`NativeSession::press_field_menu`),
         // which already holds the narration / title-card refusal this
         // arm used to spell out locally. A shop / prize overlay owns the
         // pad, so no press reaches the menu while one is up.
@@ -228,7 +228,7 @@ impl PlayWindowApp {
         // is not taken, or the window would route input and draws to a
         // menu that is not there while the scene tick stayed skipped.
         // The menu spawns partway through the field's wipe to black
-        // (`BootSession::pause_wipe`): until then the field keeps drawing
+        // (`NativeSession::pause_wipe`): until then the field keeps drawing
         // under the wipe and ticking (with the world in `Menu`, so the
         // player stands still), and the boot-UI arm takes the frame from
         // the tick the menu exists.
@@ -247,7 +247,7 @@ impl PlayWindowApp {
             self.session.press_field_menu(pressed_edge & 0x0008 != 0)
         };
         if let legaia_engine_session::PauseMenuPress::Opened { scripted } = press {
-            // Start: the BootSession-hosted pause menu (the retail CARD
+            // Start: the NativeSession-hosted pause menu (the retail CARD
             // pair, game_mode 0x17 - the world holds SceneMode::Menu
             // while it is open), with the window's input + draws routed
             // to it via the boot-UI arm. The open blips as a confirm, as
@@ -255,7 +255,7 @@ impl PlayWindowApp {
             // retail's cue `0x20` belongs to the pad controller, not to
             // the actor it spawns.
             if !scripted {
-                self.fire_menu_cue(crate::bgm::RETAIL_MENU_CONFIRM_CUE);
+                self.fire_menu_cue(legaia_engine_session::audio_director::RETAIL_MENU_CONFIRM_CUE);
             }
             self.tick_menu_sfx();
             // The boot-UI arm waits for the wipe to spawn the menu
@@ -368,7 +368,7 @@ impl PlayWindowApp {
             // A script-gated capture resumes the retail record when the
             // entry did not start it, and pages its dialog boxes - the
             // same drive the headless seed runs.
-            if self.tick_no == legaia_parity::retail_compare_script::SCRIPT_RESUME_TICK
+            if self.tick_no == legaia_engine_capture::script_gate::SCRIPT_RESUME_TICK
                 && let Some(sc) = self.screenshot.as_ref()
                 && !sc
                     .script_gate
@@ -427,7 +427,7 @@ impl PlayWindowApp {
             && !sc.battle_bars.is_empty()
             && !sc.battle_bars_seeded.replace(true)
         {
-            legaia_parity::retail_compare_battle::apply_bar_seeds(
+            legaia_engine_capture::bar_seeds::apply_bar_seeds(
                 &mut self.session.host.world,
                 &sc.battle_bars,
             );
@@ -440,9 +440,9 @@ impl PlayWindowApp {
                 // the headless seed does.
                 let sweeping = !matches!(
                     drive,
-                    legaia_parity::retail_compare_battle::BattleDrive::Opening { .. }
+                    legaia_engine_capture::battle_drive::BattleDrive::Opening { .. }
                 ) && world.mode == SceneMode::Battle
-                    && !legaia_parity::retail_compare_battle::entry_sweep_reached(world, 0xFF);
+                    && !legaia_engine_capture::battle_drive::entry_sweep_reached(world, 0xFF);
                 if sweeping {
                     0
                 } else {
@@ -513,7 +513,7 @@ impl PlayWindowApp {
             // new scene's geometry/VRAM replace the old one's -
             // without this the world model swaps under the OLD
             // scene's meshes.
-            Ok(legaia_engine_core::scene::SceneTickEvent::SceneEntered { name }) => {
+            Ok(legaia_engine_core::scene_host::SceneTickEvent::SceneEntered { name }) => {
                 log::info!("play-window: scene transition -> '{name}'");
                 self.rebuild_scene_render_state();
             }

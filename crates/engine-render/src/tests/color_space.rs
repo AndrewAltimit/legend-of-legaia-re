@@ -22,7 +22,7 @@
 
 use super::*;
 use crate::renderer::choose_surface_format;
-use crate::screen_overlay::{ScreenPrim, ScreenQuad};
+use legaia_render_kernels::screen_prim::{ScreenPrim, ScreenQuad};
 use wgpu::TextureFormat as Tf;
 
 /// PSX 5-bit -> 8-bit expansion: `(c5 << 3) | (c5 >> 2)`. What the console

@@ -222,7 +222,7 @@ impl MoveBuffer {
     /// `records` list is dominated by garbage slots. All-zero buffers
     /// fail because `used_slots = 0`. 75/79 retail per-scene Move buffers
     /// pass it - the canonical bar for per-scene MDT install. See
-    /// [`engine-core::scene_bundle::move_payload_looks_valid`] for the
+    /// [`engine-scene::scene_bundle::move_payload_looks_valid`] for the
     /// engine-side usage.
     pub fn looks_like_move_buffer(&self) -> bool {
         !self.records.is_empty() && self.used_slots.len() > self.bogus_offsets

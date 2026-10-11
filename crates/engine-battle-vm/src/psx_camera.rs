@@ -340,7 +340,7 @@ pub fn perspective_rh(fov_y: f32, aspect: f32, near: f32, far: f32) -> [f32; 16]
 /// globals (`DAT_801F2B94` mode, `_DAT_80089118/20` scroll, `_DAT_8007B794`
 /// azimuth, `_DAT_8007B6F4` zoom) as a survey vantage, and the port frames it
 /// as an elevated orbit around the loaded pack. The controller that owns those
-/// four values is `legaia_engine_core::world_map::WorldMapController`, live on
+/// four values is `legaia_engine_field::world_map::WorldMapController`, live on
 /// every host, so both hosts pass the same four numbers here.
 ///
 /// - `aabb_lo` / `aabb_hi` - the scene's **world-space** bounding box (the

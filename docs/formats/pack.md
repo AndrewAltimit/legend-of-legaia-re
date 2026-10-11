@@ -2,7 +2,7 @@
 
 A pack is the simplest container on the disc: a count, a table of offsets, then the members back to back. It is how several textures or several meshes travel as one unit - the data payload of a `TIM_LIST` or `TMD` chunk inside a [DATA_FIELD stream](data-field.md), or a whole PROT entry on its own. Offsets are counted in 4-byte words, and there is no per-member size: a member ends where the next one starts.
 
-Implementation: [`crates/asset/src/pack.rs`](../../crates/asset/src/pack.rs) (`parse_pack`, `extract_pack`).
+Implementation: [`crates/container-formats/src/pack.rs`](../../crates/container-formats/src/pack.rs) (`parse_pack`, `extract_pack`).
 
 ## Layout
 
@@ -48,11 +48,11 @@ The [standalone TIM-pack](tim-pack.md) reader is not a second format. Its 8-byte
 
 | Input | Reader |
 |---|---|
-| A bare pack (a chunk payload, or an entry that starts with the count) | `asset::pack` |
-| A whole chunk, header included | `prot::timpack`, or skip 4 bytes and use `asset::pack` |
+| A bare pack (a chunk payload, or an entry that starts with the count) | `container-formats::pack` |
+| A whole chunk, header included | `prot::timpack`, or skip 4 bytes and use `container-formats::pack` |
 
 ## See also
 
 - [prot::timpack](tim-pack.md) - the reader for this pack behind a `TIM_LIST` chunk header.
-- [field-pack](field-pack.md) - **not** a third pack: the `0x01059B84` word is a DATA_FIELD chunk header wrapping an `asset::pack` of scene TIMs (this page's format).
+- [field-pack](field-pack.md) - **not** a third pack: the `0x01059B84` word is a DATA_FIELD chunk header wrapping a `container-formats::pack` of scene TIMs (this page's format).
 - [DATA_FIELD streaming](data-field.md) - the streaming container these packs live inside.

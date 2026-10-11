@@ -20,14 +20,14 @@
 //!   [`SPECIAL_CAMERA_TABLE_VA`], or [`OPPONENT_SPECIAL_GLIDE`] for the
 //!   opponent. Both glides are the SCUS camera-relative glide family
 //!   (`FUN_80021248` normalizes, `FUN_8002149C` walks), run here through
-//!   [`legaia_engine_vm::camera_rel_actor`] and [`legaia_engine_vm::camera_rel_glide`].
+//!   [`legaia_engine_battle_vm::camera_rel_actor`] and [`legaia_engine_battle_vm::camera_rel_glide`].
 //!   The world is drawn through the field view build `FUN_800172C0` with the
 //!   base matrix at `0x6000` (6x, captured in the parked `minigame_baka_fighter`
 //!   state along with `H = 512`), so [`DuelCamera::view`] divides the eye trio
 //!   by [`DUEL_WORLD_SCALE`] - the rule `renderer.md` derives.
 //! * **[`FighterMotion`]** - each fighter's display clip: the action record
 //!   the actor's `+0x5C` names and the cursor `+0x68` the clip selector
-//!   `FUN_800204F8` advances. [`crate::baka_fighter::BakaFight`] owns one per
+//!   `FUN_800204F8` advances. [`legaia_engine_minigames::baka_fighter::BakaFight`] owns one per
 //!   seat and steps it every tick.
 //! * **[`BakaDuelScene`]** - the combined vertex buffers (fighters, two ghost
 //!   copies per fighter, the four arena walls, the floor grid) and the
@@ -35,7 +35,7 @@
 //!   cache that loads the assets once, rebuilds the buffers when a rung seats
 //!   a new opponent, and poses them each frame.
 //!
-//! The impact pair's effect parts ([`crate::baka_impact_fx`]) draw into
+//! The impact pair's effect parts ([`legaia_engine_minigames::baka_impact_fx`]) draw into
 //! reserved ranges of the same buffers: the flip-book flash as sprite-arm
 //! quads and the two prop flashes as copies of PROT 1203 stage TMDs `1` / `2`.
 //! Their UVs and colours change frame to frame, which
@@ -46,12 +46,12 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::baka_fighter::BakaFight;
-use legaia_asset::baka_opponents as bo;
-use legaia_engine_vm::psx_camera::{FieldCameraView, camera_rotation};
+use legaia_engine_battle_vm::psx_camera::{FieldCameraView, camera_rotation};
+use legaia_engine_minigames::baka_fighter::BakaFight;
+use legaia_minigame_formats::baka_opponents as bo;
 
 /// The duel's camera and fighter-clip kernels live in the minigame crate.
-pub use legaia_engine_minigames::baka_duel::*;
+use legaia_engine_minigames::baka_duel::*;
 
 // ---------------------------------------------------------------- assets
 
@@ -60,7 +60,7 @@ pub use legaia_engine_minigames::baka_duel::*;
 pub struct DuelFighterAsset {
     pub tmd: legaia_tmd::Tmd,
     pub raw: Vec<u8>,
-    pub bank: legaia_asset::player_anm::PlayerAnmBundle,
+    pub bank: legaia_actor_formats::player_anm::PlayerAnmBundle,
     /// Bank record of action `0` (party fighters share one bank, nine
     /// records each; a ladder fighter's own bank starts at `0`).
     pub first_record: usize,
@@ -81,19 +81,19 @@ pub struct BakaDuelAssets {
     /// Each ladder fighter's own atlas, by roster id.
     pub fighter_tims: Vec<Option<legaia_tim::Tim>>,
     /// Stage-pack TMD `3` - the round-start cameo's ring girl
-    /// ([`crate::baka_fighter_chrome::CAMEO_SCENE_MODEL`]).
+    /// ([`legaia_engine_minigames::baka_fighter_chrome::CAMEO_SCENE_MODEL`]).
     pub cameo: Option<(legaia_tmd::Tmd, Vec<u8>)>,
     /// The PROT 1203 clip bank the cameo's clips `0x1C` / `0x1D` resolve
     /// into (display id `k` = record `k - 1`).
-    pub cameo_bank: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    pub cameo_bank: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     /// The overlay's two-record blit table (`&DAT_801DBE84`), the wink.
     pub blit_rects: Vec<bo::BakaBlitRect>,
     /// The overlay's 51-record HUD widget table (`DAT_801D7160`), which the
     /// cabinet's and the round chrome's quads index
-    /// ([`crate::baka_fighter_chrome::hud_widget_quads`]).
+    /// ([`legaia_engine_minigames::baka_fighter_chrome::hud_widget_quads`]).
     pub hud_widgets: Vec<bo::BakaHudWidget>,
     /// The stage pack's TMDs `1` and `2` - the impact pair's mesh parts
-    /// ([`crate::baka_impact_fx`] template B), by `model - 1`.
+    /// ([`legaia_engine_minigames::baka_impact_fx`] template B), by `model - 1`.
     pub impact_models: [Option<(legaia_tmd::Tmd, Vec<u8>)>; 2],
 }
 
@@ -110,33 +110,34 @@ impl BakaDuelAssets {
         };
         let art_entry = read_prot(bo::BAKA_HUD_ART_PROT_INDEX);
         if let Some(e) = art_entry.as_deref() {
-            out.art = legaia_asset::minigame_art::parse_art_pack(e).unwrap_or_default();
+            out.art = legaia_minigame_formats::minigame_art::parse_art_pack(e).unwrap_or_default();
             out.wall = stage_tmd(e, 0);
             out.cameo = stage_tmd(
                 e,
-                usize::from(crate::baka_fighter_chrome::CAMEO_SCENE_MODEL),
+                usize::from(legaia_engine_minigames::baka_fighter_chrome::CAMEO_SCENE_MODEL),
             );
             out.impact_models = [stage_tmd(e, 1), stage_tmd(e, 2)];
         }
         let party_bank = art_entry.as_deref().and_then(|e| {
-            legaia_asset::player_anm::find_in_entry(e, 4)
+            legaia_actor_formats::player_anm::find_in_entry(e, 4)
                 .into_iter()
                 .next()
         });
         out.cameo_bank = party_bank.clone();
-        if let Some(rec) = legaia_asset::static_overlay::overlay_map()
+        if let Some(rec) = legaia_overlay_images::static_overlay::overlay_map()
             .by_prot_index(bo::BAKA_OVERLAY_PROT_INDEX as u32)
             && let Some(raw) = read_prot(bo::BAKA_OVERLAY_PROT_INDEX)
-            && let Ok(img) = legaia_asset::static_overlay::as_loaded(&raw, rec)
+            && let Ok(img) = legaia_overlay_images::static_overlay::as_loaded(&raw, rec)
         {
             out.blit_rects = bo::parse_blit_rects(&img).unwrap_or_default();
             out.hud_widgets = bo::parse_baka_hud(&img).unwrap_or_default();
         }
-        let party_slots = read_prot(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX as usize)
-            .and_then(|raw| legaia_asset::battle_char_pack::parse_slots(&raw).ok());
+        let party_slots =
+            read_prot(legaia_actor_formats::battle_char_pack::PROT_ENTRY_INDEX as usize)
+                .and_then(|raw| legaia_actor_formats::battle_char_pack::parse_slots(&raw).ok());
         if let Some(raw) =
-            read_prot(legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX as usize)
-            && let Ok(atlases) = legaia_asset::battle_char_pack::parse_atlases(&raw)
+            read_prot(legaia_actor_formats::battle_char_pack::ATLAS_PROT_ENTRY_INDEX as usize)
+            && let Ok(atlases) = legaia_actor_formats::battle_char_pack::parse_atlases(&raw)
         {
             out.party_atlases = atlases
                 .iter()
@@ -169,7 +170,7 @@ impl BakaDuelAssets {
                 out.fighter_tims[roster] = legaia_tim::parse(&pack.tim_bytes).ok();
                 if let (Ok(tmd), Ok(bank)) = (
                     legaia_tmd::parse(&pack.tmd_bytes),
-                    legaia_asset::player_anm::parse(&pack.anim_bytes),
+                    legaia_actor_formats::player_anm::parse(&pack.anim_bytes),
                 ) {
                     out.fighters[roster] = Some(DuelFighterAsset {
                         tmd,
@@ -198,7 +199,7 @@ impl BakaDuelAssets {
     }
 
     /// Apply the cameo's blit for table row `index`
-    /// ([`crate::baka_fighter_chrome::sprite_blit`]): a `MoveImage` of the
+    /// ([`legaia_engine_minigames::baka_fighter_chrome::sprite_blit`]): a `MoveImage` of the
     /// stored eye cell into the live one. `false` when the table did not
     /// decode or has no such row.
     pub fn apply_wink(&self, vram: &mut legaia_tim::Vram, index: usize) -> bool {
@@ -206,10 +207,12 @@ impl BakaDuelAssets {
             return false;
         };
         let raw = [
-            ((rect.src_x - crate::baka_fighter_chrome::BLIT_SRC_X_BASE as u16) << 2) as u8,
-            (rect.src_y - crate::baka_fighter_chrome::BLIT_SRC_Y_BASE as u16) as u8,
+            ((rect.src_x - legaia_engine_minigames::baka_fighter_chrome::BLIT_SRC_X_BASE as u16)
+                << 2) as u8,
+            (rect.src_y - legaia_engine_minigames::baka_fighter_chrome::BLIT_SRC_Y_BASE as u16)
+                as u8,
         ];
-        let Some(b) = crate::baka_fighter_chrome::sprite_blit(0, raw) else {
+        let Some(b) = legaia_engine_minigames::baka_fighter_chrome::sprite_blit(0, raw) else {
             return false;
         };
         vram.move_image(
@@ -226,7 +229,7 @@ impl BakaDuelAssets {
 
 /// One TMD out of the PROT 1203 stage pack (descriptor type `0x02`).
 fn stage_tmd(entry: &[u8], index: usize) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
-    use legaia_asset::{DecodeMode, decode, pack, parse_player_lzs};
+    use legaia_container_formats::{DecodeMode, decode, pack, parse_player_lzs};
     let container = parse_player_lzs(entry, 4).ok()?;
     let desc = container.descriptors.iter().find(|d| d.type_byte == 0x02)?;
     let body = decode(entry, desc, DecodeMode::Lzs).ok()?;
@@ -284,7 +287,7 @@ pub struct BakaDuelScene {
     /// Texture modulation colour (the prim's packet colour; `0x80` neutral).
     pub colors: Vec<[u8; 3]>,
     /// `[r, g, b, flag]` per vertex: flag `255` textured (modulate), `0`
-    /// untextured (fill) - `crate::packet_color::hybrid`'s layout.
+    /// untextured (fill) - `legaia_engine_field::packet_color::hybrid`'s layout.
     pub flat_rgba: Vec<u8>,
     /// Every triangle.
     pub indices: Vec<u32>,
@@ -438,9 +441,9 @@ impl BakaDuelScene {
     /// the part's colour word the way `FUN_80043390` applies it - the ABE
     /// bit forced on, the ABR mode ORed into the tpage, and the packet colour
     /// depth-cued toward the word's far colour
-    /// ([`crate::baka_impact_fx::ColourWord::cue`]).
+    /// ([`legaia_render_kernels::sprite_arm::ColourWord::cue`]).
     fn pose_impact(&mut self, fight: &BakaFight) {
-        use crate::baka_impact_fx::ImpactDraw;
+        use legaia_engine_minigames::baka_impact_fx::ImpactDraw;
         let draws = fight.impact_fx().draws();
         let mut sprite_used = 0;
         let mut mesh_used = vec![false; self.impact_meshes.len()];
@@ -536,7 +539,7 @@ impl BakaDuelScene {
     /// Append one TMD's hybrid mesh with its packet colours scaled by `keep`.
     fn push_tmd(&mut self, tmd: &legaia_tmd::Tmd, raw: &[u8], keep: f32) -> Range<usize> {
         let (mesh, oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(tmd, raw);
-        let flat = crate::packet_color::hybrid(&mesh, &shading);
+        let flat = legaia_engine_field::packet_color::hybrid(&mesh, &shading);
         let start = self.base.len();
         let scale = |c: u8| (f32::from(c) * keep).round().clamp(0.0, 255.0) as u8;
         self.base.extend_from_slice(&mesh.positions);
@@ -571,13 +574,15 @@ impl BakaDuelScene {
 
     /// The floor grid `FUN_801CEB84` emits - the battle ground grid's own
     /// routine relocated into the duel overlay, so the port is the same
-    /// builder ([`legaia_asset::battle_backdrop::build_ground_grid_sized`])
-    /// over [`crate::mode_entry_init::duel_overlay_init`]'s window tiles (the
+    /// builder ([`legaia_scene_formats::battle_backdrop::build_ground_grid_sized`])
+    /// over [`legaia_engine_system::mode_entry_init::duel_overlay_init`]'s window tiles (the
     /// `0x1F8003F8` / `0x1F8003FA` pair the emitter loops over).
     fn push_floor(&mut self) {
-        let (w, h) = crate::mode_entry_init::duel_overlay_init().window_tiles;
-        let grid =
-            legaia_asset::battle_backdrop::build_ground_grid_sized(i32::from(w), i32::from(h));
+        let (w, h) = legaia_engine_system::mode_entry_init::duel_overlay_init().window_tiles;
+        let grid = legaia_scene_formats::battle_backdrop::build_ground_grid_sized(
+            i32::from(w),
+            i32::from(h),
+        );
         let start = self.base.len() as u32;
         self.base.extend_from_slice(&grid.positions);
         self.object_ids
@@ -597,14 +602,14 @@ impl BakaDuelScene {
     /// Pose every dynamic range for this frame of `fight`.
     pub fn pose(&mut self, assets: &BakaDuelAssets, fight: &BakaFight) {
         let state = fight.cabinet().state();
-        let arena = crate::baka_cabinet::draws_arena(state);
+        let arena = legaia_engine_minigames::baka_cabinet::draws_arena(state);
         let floor = self.floor.clone();
         if arena {
             self.positions[floor.clone()].copy_from_slice(&self.base[floor]);
         } else {
             self.collapse(floor);
         }
-        if crate::baka_cabinet::front_end(state) {
+        if legaia_engine_minigames::baka_cabinet::front_end(state) {
             self.pose_front_end(assets, fight, arena);
             return;
         }
@@ -657,7 +662,9 @@ impl BakaDuelScene {
                 .record(rec)
                 .ok()
                 .map(|r| {
-                    let h = crate::baka_fighter::ClipHeader::from_record_words(r.a, r.b, r.flag);
+                    let h = legaia_engine_minigames::baka_fighter::ClipHeader::from_record_words(
+                        r.a, r.b, r.flag,
+                    );
                     let step = h.selector_step(i32::from(r.flag >> 8));
                     let span = (i32::from(r.frame_count) * 16).max(1);
                     (clock.wrapping_mul(step).rem_euclid(span) >> 4) as usize
@@ -823,7 +830,7 @@ impl BakaDuelScene {
     fn pose_range(
         &mut self,
         tmd: &legaia_tmd::Tmd,
-        bank: &legaia_asset::player_anm::PlayerAnmBundle,
+        bank: &legaia_actor_formats::player_anm::PlayerAnmBundle,
         record: usize,
         frame: usize,
         range: Range<usize>,
@@ -927,7 +934,7 @@ fn set<T: PartialEq + Copy>(dst: &mut T, v: T) -> bool {
 /// A prim's TSB word under an impact part's colour word: the ABE bit forced
 /// on when the word's bit 31 is set (`FUN_80043390` ORs it into every
 /// packet's code) and the word's ABR mode ORed into the tpage's bits 5..6.
-fn impact_tsb(tsb: u16, colour: crate::baka_impact_fx::ColourWord) -> u16 {
+fn impact_tsb(tsb: u16, colour: legaia_render_kernels::sprite_arm::ColourWord) -> u16 {
     let t = tsb | (u16::from(colour.abr) << 5);
     if colour.semi {
         legaia_tmd::mesh::pack_tsb_semi(t, true)
@@ -1015,18 +1022,21 @@ impl BakaDuelSurface {
     }
 
     /// This frame's cabinet and round-chrome widget quads for `fight`
-    /// ([`crate::baka_fighter_chrome::hud_widget_quads`]), empty while the
+    /// ([`legaia_engine_minigames::baka_fighter_chrome::hud_widget_quads`]), empty while the
     /// art is not resident ([`Self::hud_art_resident`]). Both play hosts
     /// turn them into screen primitives against the duel VRAM, which is
     /// where the PROT 1203 pages the widgets index sit.
-    pub fn hud_quads(&self, fight: &BakaFight) -> Vec<crate::baka_fighter::HudWidgetQuad> {
+    pub fn hud_quads(
+        &self,
+        fight: &BakaFight,
+    ) -> Vec<legaia_engine_minigames::baka_fighter::HudWidgetQuad> {
         if !self.hud_art_resident() {
             return Vec::new();
         }
         let Some(assets) = self.assets.as_ref() else {
             return Vec::new();
         };
-        crate::baka_fighter_chrome::hud_widget_quads(
+        legaia_engine_minigames::baka_fighter_chrome::hud_widget_quads(
             &assets.hud_widgets,
             &fight.chrome_frame().draws,
             &fight.cabinet_cells(),

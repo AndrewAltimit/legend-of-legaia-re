@@ -1,18 +1,18 @@
 use std::path::Path;
 
-use crate::common::*;
+use crate::cli_io::*;
 use anyhow::Result;
 
 /// Print the player Seru-magic summon → namesake creature map. The map is a
 /// static table recovered from the disc by mesh identity (see
-/// [`legaia_asset::summon_creatures`]); `--scus` annotates each row with the
+/// [`legaia_actor_formats::summon_creatures`]); `--scus` annotates each row with the
 /// summon's spell name.
 pub(crate) fn summon_creatures_cmd(scus: Option<&Path>, json: bool) -> Result<()> {
-    use legaia_asset::summon_creatures::SUMMON_CREATURES;
+    use legaia_actor_formats::summon_creatures::SUMMON_CREATURES;
     let names = match scus {
         Some(p) => {
-            let bytes = crate::common::read_input(p)?;
-            legaia_asset::spell_names::SpellNameTable::from_scus(&bytes)
+            let bytes = crate::cli_io::read_input(p)?;
+            legaia_game_tables::spell_names::SpellNameTable::from_scus(&bytes)
         }
         None => None,
     };
@@ -60,12 +60,12 @@ pub(crate) fn summon_creatures_cmd(scus: Option<&Path>, json: bool) -> Result<()
 
 /// Parse a per-summon stager overlay and print its move-VM part-record list.
 pub(crate) fn summon_overlay_cmd(input: &Path, base: u32, trim: Option<u32>) -> Result<()> {
-    let mut bytes = crate::common::read_input(input)?;
+    let mut bytes = crate::cli_io::read_input(input)?;
     let full_len = bytes.len();
     if let Some(t) = trim {
         bytes.truncate(t as usize);
     }
-    let ov = legaia_asset::summon_overlay::parse(&bytes, base);
+    let ov = legaia_overlay_images::summon_overlay::parse(&bytes, base);
     println!(
         "summon overlay {}: {} bytes ({} after trim), link base {:#010x}",
         input.display(),
@@ -79,7 +79,7 @@ pub(crate) fn summon_overlay_cmd(input: &Path, base: u32, trim: Option<u32>) -> 
         ov.parts.len()
     );
     for (i, p) in ov.parts.iter().enumerate() {
-        use legaia_asset::summon_overlay::SummonPartKind;
+        use legaia_overlay_images::summon_overlay::SummonPartKind;
         let kind = match p.kind() {
             SummonPartKind::TransformNode => "transform-node".to_string(),
             SummonPartKind::LibraryMesh => format!("mesh-sel {}", p.model_sel),
@@ -104,7 +104,7 @@ pub(crate) fn summon_readef_cmd(
     clut_sub: u8,
     action_id: Option<u8>,
 ) -> Result<()> {
-    use legaia_asset::summon_readef::{self, SLOT_BYTES, SlotKind, StreamFile};
+    use legaia_actor_formats::summon_readef::{self, SLOT_BYTES, SlotKind, StreamFile};
 
     if let Some(id) = action_id {
         let (file, slot) = summon_readef::stream_target(id);
@@ -119,7 +119,7 @@ pub(crate) fn summon_readef_cmd(
         return Ok(());
     }
 
-    let bytes = crate::common::read_input(input)?;
+    let bytes = crate::cli_io::read_input(input)?;
     let file = summon_readef::parse(&bytes)?;
     println!(
         "side-band file {}: {} bytes, {} slot(s) of {SLOT_BYTES:#x}",

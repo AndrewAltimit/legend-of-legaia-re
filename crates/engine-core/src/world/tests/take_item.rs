@@ -12,6 +12,7 @@
 //! implementation that unequips unconditionally still fails.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// `[4C, 52, item_id]` followed by a HALT, so the VM stops after the arm
 /// instead of running off the end of the buffer.

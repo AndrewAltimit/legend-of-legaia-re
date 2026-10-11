@@ -2,7 +2,7 @@
 //! billboard builder has to divide them by the camera's own scale.
 //!
 //! REF: FUN_800195a8 - the retail sprite-quad projector. The projector itself
-//! is ported as `legaia_engine_render::billboard::project_billboard`; this
+//! is ported as `crate::billboard::project_billboard`; this
 //! module carries only the one step a *world-space* billboard builder gets
 //! wrong, so both hosts can share it (`engine-render` links wgpu, so the
 //! browser play page cannot depend on it).
@@ -96,7 +96,7 @@ mod tests {
     /// model's flipped vertex lands on.
     #[test]
     fn a_rising_spark_projects_above_the_feet() {
-        use legaia_engine_vm::battle_cam_script::{BattleCamPose, battle_vp};
+        use legaia_engine_battle_vm::battle_cam_script::{BattleCamPose, battle_vp};
         let pose = BattleCamPose {
             pitch: 128.0,
             yaw: 2048.0,

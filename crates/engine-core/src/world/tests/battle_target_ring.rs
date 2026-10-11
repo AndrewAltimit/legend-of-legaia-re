@@ -17,9 +17,10 @@
 //! Disc-free.
 
 use super::*;
-use crate::battle_events::BattleEvent;
-use crate::input::PadButton;
-use crate::target_picker::{CursorRow, PickerState};
+use legaia_engine_battle::battle_events::BattleEvent;
+use legaia_engine_battle::target_picker::{CursorRow, PickerState};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 /// One party member facing the authored four-monster row
 /// (`battle_seats::MONSTER_SEATS[3]`, the pincer-free normal family), seated
@@ -59,7 +60,7 @@ fn open_target_cursor(w: &mut World) {
         sequence: vec![1, 2, 3],
     });
     w.battle_ctx.active_actor = 0;
-    w.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
+    w.battle.arts_menu = Some(legaia_engine_battle::battle_arts::BattleArtsSession::new(
         0,
         0,
         w.build_battle_arts_rows(0),
@@ -103,7 +104,7 @@ fn press(w: &mut World, button: PadButton) {
 /// test that asserts on the art's outcome has to let the band run, exactly
 /// as the play window does.
 fn run_armed_action(w: &mut World, cap: u32) -> Vec<BattleEvent> {
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle_vm::battle_action::ActionState;
     let mut seen = Vec::new();
     for _ in 0..cap {
         if w.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
@@ -227,7 +228,9 @@ fn stage_somersault(w: &mut World) {
 fn open_somersault_menu(w: &mut World) {
     w.battle_ctx.active_actor = 0;
     let rows = w.build_battle_arts_rows(0);
-    w.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(0, 0, rows));
+    w.battle.arts_menu = Some(legaia_engine_battle::battle_arts::BattleArtsSession::new(
+        0, 0, rows,
+    ));
 }
 
 #[test]

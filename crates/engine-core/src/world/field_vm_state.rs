@@ -1,23 +1,23 @@
 //! Field-VM execution state beyond the main context: per-record channels, helper contexts, spawn requests, the op-0x49 submode block / screen, eased moves and the entry / free-roam latches.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite [`World`].
+//! Fields keep their retail provenance notes.
 
 /// Field-VM execution state beyond the main context: per-record channels, helper contexts, spawn requests, the op-0x49 submode block / screen, eased moves and the entry / free-roam latches.
 pub struct FieldVmState {
     /// `_DAT_8007B868` - the dev/retail branch discriminator. **Retail is
     /// zero**; a non-zero value is the dev build's "not an ordinary field
     /// frame" state. Read by [`crate::world::World::man_load_actor_reset`] through
-    /// [`crate::field_submode::scene_actor_initial_state`], which forces the
+    /// [`legaia_engine_field::field_submode::scene_actor_initial_state`], which forces the
     /// spawned scene actor's state word to `1` when it is set. Mirrors of the
-    /// same word live on [`crate::cd_dma`] and [`crate::overlay_loader`]; this
+    /// same word live on [`legaia_engine_scene::cd_dma`] and [`legaia_engine_scene::overlay_loader`]; this
     /// is the field-side copy.
     pub(crate) mode_flags: u32,
     /// The op-`0x49` submode context block (`0x801F2734..`), in the order
-    /// [`crate::field_submode::SUBMODE_CONTEXT_SEEDS`] lists its ten words -
+    /// [`legaia_engine_field::field_submode::SUBMODE_CONTEXT_SEEDS`] lists its ten words -
     /// that const carries the offsets. Reseeded on every MAN load by
     /// [`crate::world::World::man_load_actor_reset`]; word `0` is the submode state
-    /// ([`crate::field_submode::SUBMODE_STATE_OPEN`] once opened).
+    /// ([`legaia_engine_field::field_submode::SUBMODE_STATE_OPEN`] once opened).
     pub(crate) submode_context: [u32; 10],
     /// `true` only while [`crate::world::World::pre_run_field_channel_prologues`] is
     /// executing the scene-entry spawn-prologue slices. The field-VM host
@@ -51,14 +51,14 @@ pub struct FieldVmState {
     /// [`crate::world::World::step_helper_contexts`], bounded by
     /// [`crate::world::SPAWNED_CONTEXT_SLOTS`] (retail's context table is a small fixed
     /// actor-slot pool). A completed context is dropped the frame it ends.
-    pub helper_contexts: Vec<crate::cutscene_timeline::CutsceneTimeline>,
+    pub helper_contexts: Vec<legaia_engine_field::cutscene_timeline::CutsceneTimeline>,
     /// Set by [`crate::world::World::seed_free_roam_story_baseline`] for scene-picker /
     /// `--scene` entries: the world was staged for a free-roam visit with no
     /// story behind it, so the BGM host arm drops entry-window pauses (their
     /// authored repair - the opening records' sub-9 restarts - never runs
     /// here). The new-game / opening chain leaves this `false`.
     pub free_roam_staging: bool,
-    /// [`crate::world::FrameClock::display_frames`] at the most recent free-roam staging / scene
+    /// [`legaia_engine_vm::frame_clock::FrameClock::display_frames`] at the most recent free-roam staging / scene
     /// entry - the base of the entry window the pause-drop measures against.
     pub(crate) free_roam_entry_frame: u64,
     /// Per-actor field-VM channels: one spawned context per MAN partition-1
@@ -70,7 +70,7 @@ pub struct FieldVmState {
     /// Their own scripts run only in the load-frame spawn pre-run
     /// ([`crate::world::World::pre_run_field_channel_prologues`]); a touch
     /// resumes one as the interaction timeline.
-    pub channels: Vec<crate::field_channels::FieldChannel>,
+    pub channels: Vec<legaia_engine_field::field_channels::FieldChannel>,
     /// A copy of [`Self::channels`] taken when a stepping pass moves the live
     /// vector out (`std::mem::take` in the channel and spawned-record
     /// steppers), so a host hook that resolves a cross-context id while a
@@ -78,7 +78,7 @@ pub struct FieldVmState {
     /// retail always sees every actor - still finds the other channels.
     /// Empty outside a stepping pass. Read it through
     /// [`crate::world::World::channel_view`], never directly.
-    pub(crate) stepping_view: Vec<crate::field_channels::FieldChannel>,
+    pub(crate) stepping_view: Vec<legaia_engine_field::field_channels::FieldChannel>,
     /// The MAN payload the channels' bytecode slices from (each channel's
     /// buffer base is its `record_offset` into this).
     pub channels_man: Option<std::sync::Arc<Vec<u8>>>,
@@ -119,7 +119,7 @@ pub struct FieldVmState {
     pub(crate) halted_elsewhere: Vec<Option<u8>>,
     /// Claim counter for the one shared script dialog box: each spawned
     /// record context that reaches a text segment stamps the next value into
-    /// its [`crate::cutscene_timeline::CutsceneTimeline::dialog_claim`], and
+    /// its [`legaia_engine_field::cutscene_timeline::CutsceneTimeline::dialog_claim`], and
     /// the lowest stamp among the helper contexts holding text owns the box
     /// (retail's runner claims it first come, first served).
     pub(crate) dialog_claims: u64,
@@ -127,10 +127,10 @@ pub struct FieldVmState {
     /// (`(flat_record_index, contact_centre)`, retail `FUN_8003A55C`),
     /// stored at scene entry so a cutscene-timeline install that has to
     /// respawn the channel set can re-append the object-bind channels
-    /// ([`crate::field_channels::spawn_object_channels`]).
+    /// ([`legaia_engine_field::field_channels::spawn_object_channels`]).
     pub(crate) object_channel_binds: Vec<(usize, (i16, i16))>,
     /// Bind-time rotation of each object-bind context, by flat record
-    /// ([`crate::man_field_scripts::object_script_bind_rots`]): the `.MAP`
+    /// ([`legaia_engine_field::man_field_scripts::object_script_bind_rots`]): the `.MAP`
     /// angles `FUN_8003A55C` seeds the actor's `+0x24 / +0x26 / +0x28` with.
     /// [`crate::world::World::object_draw_turns`] measures a script's turn
     /// against it.

@@ -11,7 +11,7 @@
     <dt>Magic / marker</dt><dd>None - static initialised data in the cutscene overlay's data section (an overlay is a chunk of code + data loaded into RAM on demand)</dd>
     <dt>Lives in</dt><dd>PROT 0970 (the STR / MDEC overlay) at link base <code>0x801CE818</code>: path strings at <code>0x801CE810</code>, return-scene labels at <code>0x801CE8AC</code>, the dispatch table at <code>0x801D0A6C</code> (23 &times; 32 B)</dd>
     <dt>Retail reader</dt><dd>Selector in the master dispatch + the play loop (<a href="#how-we-know">how we know</a>)</dd>
-    <dt>In the port</dt><dd><code>legaia_asset::fmv_dispatch</code></dd>
+    <dt>In the port</dt><dd><code>legaia_game_tables::fmv_dispatch</code></dd>
     <dt>Confidence</dt><dd>Confirmed - stride and layout pinned from the PROT 0970 disc bytes, byte-identical in the resident RAM capture; every field cross-validated against the play loop's reads; the retail <code>fmv_id 0..=8</code> range pinned by nine trigger save states.</dd>
   </dl>
 </section>
@@ -138,7 +138,7 @@
 
 <section class="doc-section" id="rust-api">
   <h2>In the port</h2>
-  <p><code>legaia_asset::fmv_dispatch::FmvTable::from_str_overlay</code> decodes the table from the PROT 0970 entry bytes; <code>entry(fmv_id)</code> gives the movie path and frame range, and <code>engine_path()</code> declines the dev slots whose files are not on the disc. The player builds its decode rects in <code>legaia_mdec::str_player</code>.</p>
+  <p><code>legaia_game_tables::fmv_dispatch::FmvTable::from_str_overlay</code> decodes the table from the PROT 0970 entry bytes; <code>entry(fmv_id)</code> gives the movie path and frame range, and <code>engine_path()</code> declines the dev slots whose files are not on the disc. The player builds its decode rects in <code>legaia_mdec::str_player</code>.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

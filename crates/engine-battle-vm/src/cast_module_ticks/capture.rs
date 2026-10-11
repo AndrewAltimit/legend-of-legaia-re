@@ -1,5 +1,4 @@
 //! The capture-class trampolines (`0x801CF56C` arm -> tick body) and six more per-module tick bodies.
-//! Split out of `cast_module_ticks.rs`.
 
 use super::*;
 

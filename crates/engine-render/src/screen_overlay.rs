@@ -8,20 +8,16 @@
 //! # Where the model lives
 //!
 //! The primitive record, the ordering-table sort and the vertex builder are
-//! **not** here: they are [`legaia_engine_ui::screen_prim`], the wgpu-free
-//! layer both hosts link. This module is the native side's re-export of that
-//! model plus the pieces that need `engine-render`'s own types - which today is
-//! the afterimage wire and the constants pin below.
-//!
-//! Everything the old inline definitions offered is still reachable at this
-//! path (`crate::screen_overlay::ScreenPrim`, `::build_geometry`, ...), so
-//! call sites and tests read unchanged; what changed is that the browser play
-//! page now reaches the same definitions instead of needing a second set.
+//! **not** here: they are [`legaia_render_kernels::screen_prim`], the wgpu-free
+//! layer both hosts link (`legaia_render_kernels::screen_prim::ScreenPrim`,
+//! `::build_geometry`, ...). This module holds the pieces that need
+//! `engine-render`'s own types - the afterimage wire and the constants pin
+//! below.
 //!
 //! # The GPU side
 //!
-//! [`build_geometry`] converts a primitive list into a flat NDC vertex/index
-//! buffer plus a list of [`DrawRun`]s (contiguous quads sharing a blend class).
+//! [`build_geometry`](legaia_render_kernels::screen_prim::build_geometry) converts a primitive list into a flat NDC vertex/index
+//! buffer plus a list of [`DrawRun`](legaia_render_kernels::screen_prim::DrawRun)s (contiguous quads sharing a blend class).
 //! [`crate::Renderer`] uploads that geometry once per frame and issues one draw
 //! per run, selecting the opaque pipeline or the matching per-ABR blend
 //! pipeline. Textured quads sample the shared PSX VRAM texture with the same
@@ -38,7 +34,7 @@
 //! into the *same* ordering table and one `DrawOTag` walks it.
 //!
 //! **The coordinate space is the PSX display, not the window.** The renderer
-//! hands [`build_geometry`] the [`crate::vram_capture::PSX_SCREEN_WIDTH`] /
+//! hands [`build_geometry`](legaia_render_kernels::screen_prim::build_geometry) the [`legaia_render_kernels::vram_capture::PSX_SCREEN_WIDTH`] /
 //! `PSX_SCREEN_HEIGHT` pair and the overlay stretches over the whole surface -
 //! matching the `orthographic_rh(0, 320, 240, 0)` the native shell's
 //! `screen_fx` meshes already use.
@@ -51,30 +47,24 @@
 //! through its own WebGL2 pass - see `docs/tooling/host-drift.md` for exactly
 //! which primitives it can and cannot put on screen.
 
-use crate::afterimage::AfterimageQuad;
+use legaia_render_kernels::afterimage::AfterimageQuad;
 
-pub use legaia_engine_ui::screen_prim::{
-    BlendClass, CornerDepth, DrawRun, FLAG_DEPTH_TESTED, FLAG_TEXTURED, FlatQuad, OverlayGeometry,
-    PSX_DISPLAY_H, PSX_DISPLAY_W, SCREEN_VERTEX_OFF_CBA_TSB, SCREEN_VERTEX_OFF_COLOR,
-    SCREEN_VERTEX_OFF_DEPTH, SCREEN_VERTEX_OFF_FLAGS, SCREEN_VERTEX_OFF_POS, SCREEN_VERTEX_OFF_UV,
-    SCREEN_VERTEX_STRIDE, ScreenPrim, ScreenQuad, ScreenVertex, build_geometry,
-    cinematic_bar_prims, display_rect_flat_quad, drop_shadow_prim, fade_prim, fog_puff_prim,
-    light_pool_prims, order_primitives, screen_effect_push_prim, screen_effect_push_prims,
-    screen_effect_push_prims_split, screen_fade_prim, sky_band_prims, world_map_marker_prim,
-};
+use legaia_render_kernels::screen_prim::{PSX_DISPLAY_H, PSX_DISPLAY_W, ScreenQuad};
 
 /// The display rect the shared model authors in is the same rect this crate
 /// captures the framebuffer into. Pinned at compile time rather than by a
 /// comment: the two constants live in different crates for a reason (the
 /// wgpu-free half cannot see `vram_capture`), and a silent divergence would
 /// show up only as a transition drawn at the wrong scale.
-const _: () = assert!(PSX_DISPLAY_W as u16 == crate::vram_capture::PSX_SCREEN_WIDTH);
-const _: () = assert!(PSX_DISPLAY_H as u16 == crate::vram_capture::PSX_SCREEN_HEIGHT);
+const _: () =
+    assert!(PSX_DISPLAY_W as u16 == legaia_render_kernels::vram_capture::PSX_SCREEN_WIDTH);
+const _: () =
+    assert!(PSX_DISPLAY_H as u16 == legaia_render_kernels::vram_capture::PSX_SCREEN_HEIGHT);
 
 /// Build a screen-space afterimage `POLY_FT4` from a projected+jittered
-/// [`AfterimageQuad`] (see [`crate::afterimage::build_afterimage_quad`]) and
+/// [`AfterimageQuad`] (see [`legaia_render_kernels::afterimage::build_afterimage_quad`]) and
 /// the OT bucket the retail caller links it at (the billboard projection's
-/// returned `depth`; see [`crate::billboard::BillboardCorners::depth`]).
+/// returned `depth`; see [`legaia_render_kernels::billboard::BillboardCorners::depth`]).
 ///
 /// This is the wire that connects the (previously unwired) afterimage +
 /// billboard ports to an actual draw path.
@@ -95,7 +85,11 @@ pub fn afterimage_screen_quad(q: &AfterimageQuad, ot_index: u32) -> ScreenQuad {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::afterimage::build_afterimage_quad;
+    use legaia_render_kernels::afterimage::build_afterimage_quad;
+    use legaia_render_kernels::screen_prim::BlendClass;
+    use legaia_render_kernels::screen_prim::FLAG_TEXTURED;
+    use legaia_render_kernels::screen_prim::ScreenPrim;
+    use legaia_render_kernels::screen_prim::build_geometry;
 
     /// A deterministic zero rng (min jitter, base band) so the afterimage
     /// corner geometry is predictable in the ordering tests.

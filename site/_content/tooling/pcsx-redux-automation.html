@@ -75,7 +75,7 @@
   <ul class="bullets">
     <li><strong>Library copies are immutable</strong> - <code>saves/library/&lt;emulator&gt;/&lt;sha256&gt;.&lt;ext&gt;</code>, gitignored; the manifest carries only the <code>backup_fingerprint</code>.</li>
     <li><strong>A mednafen-only backup cannot run here.</strong> <code>library --audit</code> says which scenarios have a PCSX-Redux state; it is the usual answer to "but it <em>is</em> backed up".</li>
-    <li><strong>Two <code>.sstate</code> shapes exist.</strong> Quicksaves are gzipped; states a probe writes are bare protobuf (~19 MB). <code>legaia_pcsxr::SaveState</code> opens both; a gzip-only reader silently drops most of the corpus.</li>
+    <li><strong>Two <code>.sstate</code> shapes exist.</strong> Quicksaves are gzipped; states a probe writes are bare protobuf (~19 MB). <code>legaia_pcsx_redux::SaveState</code> opens both; a gzip-only reader silently drops most of the corpus.</li>
     <li><strong>Check identity before blaming the probe.</strong> <code>autorun_identify_state.lua</code> reports the mode, scene and ticking overlay of any state.</li>
   </ul>
 </section>

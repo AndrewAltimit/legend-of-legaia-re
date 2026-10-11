@@ -1,5 +1,5 @@
 //! Disc-gated integration test that drives `scripts/engine/scenarios.toml`
-//! through `BootSession::open` and asserts the recorded SHA-256 of every
+//! through `NativeSession::open` and asserts the recorded SHA-256 of every
 //! scenario's `SaveFile` byte stream still matches.
 //!
 //! Skips silently when `extracted/` or `LEGAIA_DISC_BIN` is missing -

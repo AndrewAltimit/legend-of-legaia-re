@@ -1,9 +1,7 @@
 //! Live field<->battle loop, encounter/formation battle entry, battle BGM swap, field player install/seating, and step_field.
-//!
-//! Split out of `world.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     // --- live gameplay loop: Field <-> Battle round trip ------------------
@@ -17,7 +15,7 @@ impl World {
     ///
     /// 1. **Step detection.** A "step" is the player actor crossing into a
     ///    new 128-unit collision tile (`pos >> 7`), sampled once per actor
-    ///    game tick ([`crate::world::FrameClock::game_tick_fired`]). Each step drives one
+    ///    game tick ([`legaia_engine_vm::frame_clock::FrameClock::game_tick_fired`]). Each step drives one
     ///    [`Self::on_field_step`] roll - matching the retail per-step
     ///    counter rather than rolling every frame.
     /// 2. **Timers.** [`Self::tick_encounter`] advances the session's
@@ -58,7 +56,7 @@ impl World {
                         // player, a warp landing) is not a step to the
                         // region reader; a forced scripted formation still
                         // fires.
-                        let step = crate::region_encounter::is_region_step(
+                        let step = legaia_engine_battle::region_encounter::is_region_step(
                             (i32::from(prev.0), i32::from(prev.1)),
                             (i32::from(tile.0), i32::from(tile.1)),
                         );
@@ -93,7 +91,10 @@ impl World {
     /// nothing in the log to say so. `install_man_encounter` cross-checks the
     /// same pairing at scene entry; if this ever fires, that check was bypassed
     /// or the table was replaced after it ran.
-    pub(crate) fn begin_encounter_battle(&mut self, roll: crate::encounter::EncounterRoll) {
+    pub(crate) fn begin_encounter_battle(
+        &mut self,
+        roll: legaia_engine_battle::encounter::EncounterRoll,
+    ) {
         let Some(formation) = self
             .tables
             .formation_table
@@ -169,7 +170,7 @@ impl World {
     /// the default bundle (`0x370` instead of `0x36F` when `DAT_8007B64B` is
     /// set, `0x801CF6FC..0x801CF724`), which the port answers with the
     /// configured track; `N > 0` loads bundle `0x36F + N`
-    /// ([`crate::music_labels::battle_bank_bgm_id`]).
+    /// ([`legaia_engine_system::music_labels::battle_bank_bgm_id`]).
     pub(crate) fn swap_to_battle_bgm(&mut self) {
         let Some(configured) = self.audio.battle_bgm else {
             return;
@@ -184,13 +185,13 @@ impl World {
                 .region_setup
                 .and_then(|s| s.keep_backdrop_object_1)
                 .unwrap_or(false);
-            if alt && configured == crate::music_labels::BATTLE_THEME_1_BGM_ID {
-                crate::music_labels::BATTLE_THEME_2_BGM_ID
+            if alt && configured == legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID {
+                legaia_engine_system::music_labels::BATTLE_THEME_2_BGM_ID
             } else {
                 configured
             }
         } else {
-            crate::music_labels::battle_bank_bgm_id(set).unwrap_or(configured)
+            legaia_engine_system::music_labels::battle_bank_bgm_id(set).unwrap_or(configured)
         };
         if self.audio.battle_bgm_active || self.audio.current_bgm == Some(battle) {
             return;
@@ -207,7 +208,7 @@ impl World {
     /// Restore the field track stashed by [`World::swap_to_battle_bgm`] when
     /// a battle ends. No-op unless a battle swap is active. Queues a
     /// `FieldEvent::Bgm` start for the stashed track, or a stop
-    /// ([`crate::scene::BGM_SUB_OP_ENGINE_STOP`]) when no field track was
+    /// ([`crate::scene_host::BGM_SUB_OP_ENGINE_STOP`]) when no field track was
     /// playing at encounter start.
     pub(crate) fn restore_field_bgm(&mut self) {
         if !self.audio.battle_bgm_active {
@@ -226,7 +227,7 @@ impl World {
                 self.audio.current_bgm = None;
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: 0,
-                    sub_op: crate::scene::BGM_SUB_OP_ENGINE_STOP,
+                    sub_op: crate::scene_host::BGM_SUB_OP_ENGINE_STOP,
                 });
             }
         }
@@ -237,7 +238,7 @@ impl World {
     /// The three minigames whose overlay init loads a track of its own - the
     /// dance chart loops, the Baka Fighter overture, the Muscle Dome battle
     /// theme - call this from the shared door-warp entry
-    /// ([`crate::scene::SceneHost::drain_minigame_warp`]), so **both** hosts
+    /// ([`crate::scene_host::SceneHost::drain_minigame_warp`]), so **both** hosts
     /// start the same music on the same frame. The slot machine and fishing
     /// pass `None` and inherit the host scene's BGM, which is retail's own
     /// behaviour for those two.
@@ -263,7 +264,7 @@ impl World {
     /// Resume the field track a minigame's own music displaced, on the
     /// mode-24 return warp. No-op unless [`Self::swap_to_minigame_bgm`] armed
     /// the swap. A scene that had no track at entry gets a stop
-    /// ([`crate::scene::BGM_SUB_OP_ENGINE_STOP`]) rather than being left with the minigame's music running under the
+    /// ([`crate::scene_host::BGM_SUB_OP_ENGINE_STOP`]) rather than being left with the minigame's music running under the
     /// field.
     pub(crate) fn restore_minigame_bgm(&mut self) {
         if !self.audio.minigame_bgm_active {
@@ -282,7 +283,7 @@ impl World {
                 self.audio.current_bgm = None;
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: 0,
-                    sub_op: crate::scene::BGM_SUB_OP_ENGINE_STOP,
+                    sub_op: crate::scene_host::BGM_SUB_OP_ENGINE_STOP,
                 });
             }
         }
@@ -322,7 +323,7 @@ impl World {
 
     pub(crate) fn enter_battle_from_formation(
         &mut self,
-        formation: &crate::monster_catalog::FormationDef,
+        formation: &legaia_engine_battle::monster_catalog::FormationDef,
     ) {
         // **The Tetsu spar is Vahn alone** - an engine rule, not a port.
         // Retail seats whoever is in the present-party list `DAT_8007BD10`
@@ -589,11 +590,16 @@ impl World {
             .map(|s| s.monster_id as u8)
             .unwrap_or(0);
         self.battle.special_word =
-            vm::battle_formulas::battle_init_special_word(self.battle.special_word, lead_monster);
+            legaia_engine_battle_vm::battle_formulas::battle_init_special_word(
+                self.battle.special_word,
+                lead_monster,
+            );
         // The stage id as battle init leaves it: the tutorial arm
         // `enter_battle` consumed, or the `0xB5` override (`FUN_80055B6C`,
         // `0x80055D2C..0x80055D44`), which pages the arrival module in.
-        if let Some(stage) = crate::battle_stage_module::battle_init_stage_override(lead_monster) {
+        if let Some(stage) =
+            legaia_engine_battle::battle_stage_module::battle_init_stage_override(lead_monster)
+        {
             self.battle.stage_id = stage;
         }
         let stage_set = self.battle.stage_id != 0;
@@ -606,8 +612,8 @@ impl World {
         // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.
         self.battle.monster_ai_state.reset();
         // ...and the stolen band + steal latch, which retail zeroes with the
-        // same battle-load sweep (`crate::battle_steal`).
-        self.battle.steal = crate::battle_steal::StealBand::default();
+        // same battle-load sweep (`legaia_engine_battle::battle_steal`).
+        self.battle.steal = legaia_engine_battle::battle_steal::StealBand::default();
         self.battle.steal_caption = None;
         self.battle.move_label_closed = false;
         // Seed the turn-order initiative keys for this battle. When real SPD is
@@ -664,7 +670,7 @@ impl World {
     ///
     /// This is the warp-arrival placement: a door transition (field-VM op
     /// `0x3F`) carries the destination entry tile in its trailing bytes, and
-    /// [`crate::scene::SceneHost::tick`] calls this after the destination
+    /// [`crate::scene_host::SceneHost::tick`] calls this after the destination
     /// scene loads so the player stands at the door it arrived through
     /// instead of the cold-boot spawn. The floor height is sampled so the
     /// player lands on the destination's terrain tier rather than `y = 0`.
@@ -829,10 +835,11 @@ impl World {
         }
         let target = *self.field_bytecode.get(pc + 1)?;
         let bit = *self.field_bytecode.get(pc + 2)? & 0x1F;
-        if target == crate::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
+        if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
             return None;
         }
-        let ci = crate::field_channels::resolve_target(&self.field_vm.channels, target)?;
+        let ci =
+            legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, target)?;
         let ch = &mut self.field_vm.channels[ci];
         if ch.object_bind {
             return None;
@@ -896,7 +903,7 @@ impl World {
         let pc = self.field_pc;
         let op = *self.field_bytecode.get(pc)?;
         let target = *self.field_bytecode.get(pc + 1)?;
-        if target == crate::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
+        if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
             return None;
         }
         let clip_control = op == 0xAB
@@ -905,12 +912,13 @@ impl World {
         if op != 0xA3 && !clip_control {
             return None;
         }
-        let ci = crate::field_channels::resolve_target(&self.field_vm.channels, target)?;
+        let ci =
+            legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, target)?;
         let object = self.field_vm.channels[ci].object_bind;
         if clip_control && !object {
             return None;
         }
-        let width = legaia_asset::field_disasm::decode(&self.field_bytecode, pc)
+        let width = legaia_scene_formats::field_disasm::decode(&self.field_bytecode, pc)
             .ok()
             .map(|i| i.size)
             .filter(|&n| n > 0)?;
@@ -1020,7 +1028,8 @@ impl World {
         // it needs the anchor as much as a field does.
         if matches!(
             mode,
-            crate::world::SceneMode::Field | crate::world::SceneMode::WorldMap
+            legaia_engine_mode::mode::SceneMode::Field
+                | legaia_engine_mode::mode::SceneMode::WorldMap
         ) {
             self.sync_field_ctx_player_anchor();
         }
@@ -1185,8 +1194,8 @@ impl World {
 mod cross_context_cflag_tests {
     use crate::world::World;
 
-    fn channel(slot: usize, script_id: u16) -> crate::field_channels::FieldChannel {
-        crate::field_channels::FieldChannel {
+    fn channel(slot: usize, script_id: u16) -> legaia_engine_field::field_channels::FieldChannel {
+        legaia_engine_field::field_channels::FieldChannel {
             placement_index: slot,
             ctx: legaia_engine_vm::field::FieldCtx {
                 script_id,
@@ -1230,7 +1239,7 @@ mod cross_context_cflag_tests {
         let mut w = World::default();
         let mut leaf = channel(1, 1);
         leaf.object_bind = true;
-        leaf.ctx.local_flags = crate::field_env::ANIM_SPAWN_FLAGS;
+        leaf.ctx.local_flags = legaia_engine_scene::field_env::ANIM_SPAWN_FLAGS;
         leaf.ctx.field_72 = 0x1000;
         let mut block = channel(6, 6);
         block.object_bind = true;
@@ -1269,7 +1278,7 @@ mod arrival_facing_tests {
 
     fn world_with_player() -> World {
         let mut w = World {
-            mode: crate::world::SceneMode::Field,
+            mode: legaia_engine_mode::mode::SceneMode::Field,
             ..World::default()
         };
         w.spawn_actor(0);
@@ -1308,7 +1317,7 @@ mod placement_facing_op_tests {
 
     fn world_with_channel() -> World {
         let mut w = World::new();
-        w.field_vm.channels = vec![crate::field_channels::FieldChannel {
+        w.field_vm.channels = vec![legaia_engine_field::field_channels::FieldChannel {
             placement_index: 5,
             ctx: legaia_engine_vm::field::FieldCtx {
                 script_id: 0x21,

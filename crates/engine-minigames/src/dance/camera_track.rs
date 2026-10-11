@@ -1,8 +1,8 @@
 //! The dance tick's camera keyframe track (`FUN_801CF470`,
 //! `0x801CF51C..0x801CF7D8`): the pose records and key tables out of the
 //! dance overlay, the entry-built ease table, and the two counters the tick
-//! steps. `engine-core`'s `dance_venue` re-exports it and turns a pose into
-//! the venue's field camera.
+//! steps. `engine-core`'s `dance_venue` turns a pose into the venue's field
+//! camera.
 
 use super::*;
 
@@ -47,7 +47,7 @@ pub const DANCE_CAMERA_EASE_LEN: usize = 0x420;
 ///
 /// Both halvings truncate toward zero (`srl 31` / `addu` / `sra 1`).
 pub fn dance_camera_ease_table() -> Vec<i16> {
-    use legaia_engine_vm::battle_action::motion::sin12;
+    use legaia_engine_battle_vm::battle_action::motion::sin12;
     let half = |v: i32| ((v + ((v as u32 >> 31) as i32)) >> 1) as i16;
     let mut t = Vec::with_capacity(DANCE_CAMERA_EASE_LEN);
     for i in 0..0x200u16 {
@@ -90,7 +90,7 @@ impl DanceCameraTrack {
     /// form (file offset = VA - `0x801CE818`). `None` when a table or a
     /// record it names falls outside the image.
     pub fn from_overlay(overlay: &[u8]) -> Option<Self> {
-        let base = legaia_asset::dance_chart::DANCE_OVERLAY_BASE_VA;
+        let base = legaia_minigame_formats::dance_chart::DANCE_OVERLAY_BASE_VA;
         let word = |va: u32| -> Option<u32> {
             let o = va.checked_sub(base)? as usize;
             Some(u32::from_le_bytes(overlay.get(o..o + 4)?.try_into().ok()?))

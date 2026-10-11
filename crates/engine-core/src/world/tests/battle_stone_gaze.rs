@@ -2,7 +2,7 @@
 //! (`FUN_800402F4` classes 9 / 10 - the literal-class calls the streamed
 //! boss modules make) and the chain it gates: a landed Stone drives the
 //! status-CLUT recolour (`FUN_8004CE2C`'s fourth pass,
-//! `crate::battle_status_clut`) through the same `BattleHud::sync_status` +
+//! `legaia_engine_battle::battle_status_clut`) through the same `BattleHud::sync_status` +
 //! `StatusClutState::step` pair every render host ticks.
 //!
 //! Before this wire no gameplay path could land Stone on a party member at
@@ -13,7 +13,7 @@
 //! reach-triage GATED row this converts.
 
 use super::*;
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 /// A battle with a monster caster in slot 3 whose AGL dwarfs the target's, so
 /// the retail roll `target_agl < rand % (atk + tgt)` lands for almost every
@@ -31,17 +31,17 @@ fn stone_world() -> World {
     w
 }
 
-fn glare_def() -> crate::spells::SpellDef {
-    crate::spells::SpellDef {
+fn glare_def() -> legaia_engine_battle::spells::SpellDef {
+    legaia_engine_battle::spells::SpellDef {
         id: 0x3C, // Glare - the capture-pinned Stone inflictor
         name: "Glare".into(),
         mp_cost: 0,
-        target: crate::spells::SpellTarget::OneEnemy,
+        target: legaia_engine_battle::spells::SpellTarget::OneEnemy,
         // Glare's module carries no damage call; the def's effect magnitude
         // is irrelevant to the status arm under test.
-        effect: crate::spells::SpellEffect::Damage {
+        effect: legaia_engine_battle::spells::SpellEffect::Damage {
             base_power: 0,
-            element: crate::spells::SpellElement::Neutral,
+            element: legaia_engine_battle::spells::SpellElement::Neutral,
         },
         ..Default::default()
     }
@@ -68,14 +68,14 @@ fn glare_lands_stone_and_the_clut_pass_greys_the_party_row() {
     // The render chain both hosts tick: sync_status folds the Stone bit into
     // the CLUT latch (retail actor[+0x220]); step() snapshots the pristine
     // row and LoadImages the greyed copy over CLUT row 481 + slot.
-    let mut hud = crate::battle_hud::BattleHud::new();
+    let mut hud = legaia_engine_battle::battle_hud_state::BattleHud::new();
     hud.sync_status(0, &w.battle.status_effects);
     assert!(hud.status_clut.armed(), "the Stone edge arms the latch");
 
     let mut vram = legaia_tim::Vram::new();
-    let row = crate::battle_status_clut::PARTY_CLUT_ROW_BASE as usize;
+    let row = legaia_engine_battle::battle_status_clut::PARTY_CLUT_ROW_BASE as usize;
     // Seed a colourful palette in the party row (the battle loader's write).
-    let words: Vec<u16> = (0..crate::battle_status_clut::PARTY_CLUT_ENTRIES)
+    let words: Vec<u16> = (0..legaia_engine_battle::battle_status_clut::PARTY_CLUT_ENTRIES)
         .map(|i| 0x8000 | ((i % 31 + 1) as u16) | ((((i / 2) % 31 + 1) as u16) << 5))
         .collect();
     let bytes: Vec<u8> = words.iter().flat_map(|c| c.to_le_bytes()).collect();
@@ -86,7 +86,7 @@ fn glare_lands_stone_and_the_clut_pass_greys_the_party_row() {
         let grey = vram.pixel(x, row);
         assert_eq!(
             grey,
-            legaia_engine_vm::scus_battle_helpers::bgr555_to_grey(orig),
+            legaia_engine_battle_vm::bgr555_grey::bgr555_to_grey(orig),
             "entry {x} desaturated by the FUN_8004CE2C kernel"
         );
     }
@@ -135,7 +135,7 @@ fn stone_guard_blocks_the_roll_and_curse_moves_apply_curse() {
 /// untouched throughout - the arm makes no damage store.
 #[test]
 fn stone_refunds_the_reserved_item_and_cancels_the_queued_turn() {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
 
     let mut w = stone_world();
     const HEALING_LEAF: u8 = 0x01;
@@ -176,7 +176,7 @@ fn stone_refunds_the_reserved_item_and_cancels_the_queued_turn() {
 /// a spent initiative key (`+0x16C == 0`) means the turn already happened.
 #[test]
 fn stone_refund_is_gated_on_the_item_category_and_a_live_initiative_key() {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     const HEALING_LEAF: u8 = 0x01;
 
     // Category 3 (Attack): nothing to refund.
@@ -205,7 +205,7 @@ fn stone_refund_is_gated_on_the_item_category_and_a_live_initiative_key() {
 /// its reserved item.
 #[test]
 fn curse_leaves_the_queued_turn_and_the_item_alone() {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     const HEALING_LEAF: u8 = 0x01;
 
     let mut w = stone_world();

@@ -1,5 +1,4 @@
 //! The battle camera's state, glides and per-frame inputs.
-//! Split out of `battle_cam_script.rs`.
 
 use super::*;
 
@@ -278,7 +277,7 @@ pub struct BattleCamera {
 pub(super) struct AttackChannel {
     /// The parsed `0x801F4E10` table. `None` on a disc-free host, which
     /// leaves the whole channel inert (retail cannot run without it either).
-    pub(super) tracks: Option<legaia_asset::battle_attack_camera_table::AttackCameraTracks>,
+    pub(super) tracks: Option<legaia_game_tables::battle_attack_camera_table::AttackCameraTracks>,
     /// The battle context's ramp / cursor / latch quartet.
     pub(super) ctx: crate::battle_attack_camera::AttackCamCtx,
     /// The acting actor's channels this frame.
@@ -327,7 +326,7 @@ pub const BATTLE_ENTRY_YAW_SAMPLE: f32 = 3372.0;
 /// [`battle_entry_yaw`] replaces it, in 12-bit units (`192` = ~17 degrees).
 ///
 /// The bound is geometric, not fitted: the retail seats are `(0, +-800)`
-/// (`legaia_engine_core::battle_seats`), so at azimuth `t` the two rows are
+/// (`legaia_engine_battle::battle_seats`), so at azimuth `t` the two rows are
 /// separated on screen by roughly `1600 * sin(t)` battle-world units against
 /// character meshes ~400 units wide (`docs/formats/character-mesh.md`). Inside
 /// ~17 degrees the separation is under one character width and the near row
@@ -477,7 +476,7 @@ pub struct BattleCamInputs {
 /// and centres its focus immediately rather than sitting at the degenerate
 /// minimum until the first phase transition re-derives it.
 /// `tracks` is the disc-parsed per-art camera table
-/// (`legaia_asset::battle_attack_camera_table`). It is a parameter rather than
+/// (`legaia_game_tables::battle_attack_camera_table`). It is a parameter rather than
 /// a field on [`BattleCamInputs`] because the record is `Copy` and the table
 /// is not; a host that has no disc data passes `None` and the per-art channel
 /// stays inert, which is the same framing the port had before it existed.
@@ -486,7 +485,7 @@ pub fn drive(
     active: bool,
     inputs: BattleCamInputs,
     frames: u64,
-    tracks: Option<&legaia_asset::battle_attack_camera_table::AttackCameraTracks>,
+    tracks: Option<&legaia_game_tables::battle_attack_camera_table::AttackCameraTracks>,
 ) {
     let mut own = slot.as_ref().map_or(STANDALONE_RAND_SEED, |c| c.rand_state);
     drive_on_stream(slot, active, inputs, frames, tracks, &mut own);
@@ -503,7 +502,7 @@ pub fn drive_on_stream(
     active: bool,
     inputs: BattleCamInputs,
     frames: u64,
-    tracks: Option<&legaia_asset::battle_attack_camera_table::AttackCameraTracks>,
+    tracks: Option<&legaia_game_tables::battle_attack_camera_table::AttackCameraTracks>,
     rng: &mut u32,
 ) {
     if !active {

@@ -1,4 +1,4 @@
-//! Unit tests for the effect VM. Split out of `effect_vm.rs`.
+//! Unit tests for the effect VM.
 
 #![allow(clippy::field_reassign_with_default)] // tests are clearer with sequential field writes
 

@@ -33,9 +33,10 @@
 //!
 //! Skip-passes without disc data (CLAUDE.md convention).
 
-use legaia_asset::field_disasm::{FlagKind, InsnInfo, LinearWalker};
-use legaia_asset::man_section::parse as parse_man;
-use legaia_engine_core::scene::{Scene, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::Scene;
+use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker};
+use legaia_scene_formats::man_section::parse as parse_man;
 use std::path::PathBuf;
 
 /// The Conkram door-group latch.

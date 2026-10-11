@@ -6,7 +6,7 @@ Identify the shape before picking a walker. Two of the shapes (`scene_tmd_stream
 
 ## At a glance
 
-| Shape | Opens with | Retail entries | Holds | Runtime reader | Parser (`crates/asset/src/`) |
+| Shape | Opens with | Retail entries | Holds | Runtime reader | Parser (`crates/*-formats/src/`) |
 |---|---|---|---|---|---|
 | [`scene_tmd_stream`](#scene_tmd_stream---bare-tmd-prefix) | chunk header, TMD magic at `+4` | 182 | Battle-stage backdrop mesh + its TIMs | `FUN_8001FE70` | `scene_tmd_stream.rs` |
 | [`scene_vab_stream`](#scene_vab_stream---vab-prefix) | chunk header, `VABp` at `+4` | 218 | Sound bank (+ SEQ chunks) | DATA_FIELD chunks | `scene_vab_stream.rs` |
@@ -84,7 +84,7 @@ An entry holds **exactly one** `[chunk0 TMD][type-0x01 TIM chunks][terminator]` 
 
 Not a "two-list" / concatenated-sub-streams shape: the "second sub-stream at `0x14000`" of entry 0006 is PROT entry **0007** at its own offset 0 (TMD `0x2c20`, TIMs at `0x2c24` / `0xae48`), seen through the over-reading entry size. The town0b / town0c clusters are four-entry runs of the same layout (TMD bodies `0x383c` / `0x2c20` / `0x2998` / `0x3af8`, two `0x8220` TIM chunks each).
 
-[`scene_tmd_stream::sub_streams`](../../crates/asset/src/scene_tmd_stream.rs) returns one block per entry and [`battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs) reports every chunk as `WalkSource::Tail`. Both keep a post-terminator scan as a **regression detector**: a second sub-stream or a `WalkSource::Continuation` hit means the buffer spans more than one PROT entry. Disc-gated coverage: `crates/asset/tests/scene_tmd_stream_real.rs`.
+[`scene_tmd_stream::sub_streams`](../../crates/scene-formats/src/scene_tmd_stream.rs) returns one block per entry and [`battle_tim_chunks`](../../crates/scene-formats/src/scene_tmd_stream.rs) reports every chunk as `WalkSource::Tail`. Both keep a post-terminator scan as a **regression detector**: a second sub-stream or a `WalkSource::Continuation` hit means the buffer spans more than one PROT entry. Disc-gated coverage: `crates/disc-audit/tests/scene_tmd_stream_real.rs`.
 
 The engine's field-mode loader uses `battle_tim_chunks` to **skip** these battle-only TIMs. The row-479 NPC palettes are not field-resident, matching retail.
 
@@ -99,12 +99,12 @@ Measured over object 0, the shell both copies carry:
 - Trailing objects are near props and ground ribbons; several straddle the plane, which is why the classifier reads object 0 only.
 - Object **1** never draws: the backdrop actor drops it.
 
-`scene_tmd_stream::shell_shape` returns the object-0 AABB plus the open side; `ShellShape::describe` renders the viewer label; `shell_shape_all_objects` is the whole-pool form. Pinned by `every_scene_tmd_stream_backdrop_is_authored_as_a_half_shell` in `crates/asset/tests/scene_tmd_stream_real.rs`. The placement (two actors, each stage's second transform, the dropped object) is `legaia_asset::battle_backdrop`, documented in [`battle.md`](../subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh).
+`scene_tmd_stream::shell_shape` returns the object-0 AABB plus the open side; `ShellShape::describe` renders the viewer label; `shell_shape_all_objects` is the whole-pool form. Pinned by `every_scene_tmd_stream_backdrop_is_authored_as_a_half_shell` in `crates/disc-audit/tests/scene_tmd_stream_real.rs`. The placement (two actors, each stage's second transform, the dropped object) is `legaia_scene_formats::battle_backdrop`, documented in [`battle.md`](../subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh).
 
 ### Reading
 
 ```rust
-use legaia_asset::scene_tmd_stream;
+use legaia_scene_formats::scene_tmd_stream;
 if let Some(s) = scene_tmd_stream::detect(&buf) {
     let tmd = legaia_tmd::parse(&buf[s.tmd_range()])?;  // bare TMD, no wrapper
     for chunk in &s.tail_chunks {
@@ -141,7 +141,7 @@ Where the 218 sit:
 - The rest are pairs in `teien`, `monster_test` and `other1`, and one each in `battle_data`, `monster_data`, `befect_data`, `player_data` and `other7`.
 
 ```rust
-use legaia_asset::scene_vab_stream;
+use legaia_container_formats::scene_vab_stream;
 use legaia_vab::parse_header;
 
 if let Some(s) = scene_vab_stream::detect(buf) {
@@ -229,7 +229,7 @@ The `count = 6` tables are pinned by a runtime write-watchpoint on the MAN buffe
 
 ### `+0x04` is the bundle's total decompressed size
 
-The header's second word equals `sum(descriptor[i].size)` exactly. The identity holds in every table of this family on the disc: the 88 entries classed `scene_asset_table` plus the 17 classed `lzs_container` (the MAN-less `count`-4/5 form and the character / effect containers `legaia_asset::parse_player_lzs` reads), 105 of 105. It exceeds the carrying entry's byte length in all 105, which rules out "file size" and "sector count".
+The header's second word equals `sum(descriptor[i].size)` exactly. The identity holds in every table of this family on the disc: the 88 entries classed `scene_asset_table` plus the 17 classed `lzs_container` (the MAN-less `count`-4/5 form and the character / effect containers `legaia_container_formats::parse_player_lzs` reads), 105 of 105. It exceeds the carrying entry's byte length in all 105, which rules out "file size" and "sector count".
 
 Retail never reads it. `FUN_80020224` takes `count` from `+0x00` (`80020288` `lw s3,0x0(s4)`) and steps descriptors from `+0x08` (`8002029c` `lw a0,0xc(s0)` / `lw a1,0x8(s0)`, `s0 += 8` per iteration). A sweep of every dumped function for a load off `*(0x8007b85c)` finds reads at offset `0x0` only. The field is an authoring total, inert at runtime, and therefore a **consistency check** an editor must maintain: `SceneAssetTable::total_size_is_consistent`.
 
@@ -254,7 +254,7 @@ flowchart TD
 `scene_asset_table::resolve` returns the table plus the base it is relative to. `SceneAssetTable::slots` reproduces the positional walk and `payload_range(slot, base)` resolves a slot's payload span:
 
 ```rust
-use legaia_asset::scene_asset_table;
+use legaia_scene_formats::scene_asset_table;
 if let Some(r) = scene_asset_table::resolve(buf) {
     for s in r.table.slots() {
         let span = r.table.payload_range(s.slot, r.table_base).unwrap();
@@ -268,7 +268,7 @@ The disc-gated `scene_asset_table_walk_real` verifies the walk against every cla
 
 ### The mesh pool is the descriptor walk
 
-The `Tmd` descriptor (type 2) carries the scene's **environment geometry**: an [`asset::pack`](pack.md) of Legaia TMDs (terrain, buildings, props) inside that descriptor's LZS stream. `town01` has 114.
+The `Tmd` descriptor (type 2) carries the scene's **environment geometry**: an [`container-formats::pack`](pack.md) of Legaia TMDs (terrain, buildings, props) inside that descriptor's LZS stream. `town01` has 114.
 
 The runtime TMD pointer table `DAT_8007C018` is populated by exactly two dispatcher cases, and the descriptor walk is the only thing that reaches them:
 
@@ -277,18 +277,18 @@ The runtime TMD pointer table `DAT_8007C018` is populated by exactly two dispatc
 
 `FUN_80026B4C` only *checks* the `0x80000002` magic. A member without it logs `Model Version Err` and is registered anyway, so the pool size is the pack's declared `count`. Parser: `scene_asset_table::mesh_pool`.
 
-A scene's pack starts past the resident head: the five party / savepoint meshes at `DAT_8007C018[0..=4]` ([`character-mesh.md`](character-mesh.md)). The head size is the prefix `DAT_8007b6f8` that `FUN_80020f88` adds to every placement's mesh id (`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`). Rim Elm is head 5 + pack 114 = a 119-slot pool.
+A scene's pack starts past the resident head: the five party / savepoint meshes at `DAT_8007C018[0..=4]` ([`character-mesh.md`](character-mesh.md)). The head size is the prefix `DAT_8007b6f8` that `FUN_80020f88` adds to every placement's mesh id (`legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS`). Rim Elm is head 5 + pack 114 = a 119-slot pool.
 
 Rules that follow:
 
-- **A byte sweep for TMD magic is not a substitute.** A block's bytes carry meshes the walk never registers (`town01`'s `field_pack` sibling, the boot `init_data` stream), so a sweep over-collects by an amount that depends on how far each entry is read. The engine walks the descriptors (`legaia-engine-core::scene_resources`, disc-gated `scene_mesh_pool_walk_disc`) and keeps the sweep (`tmd_scan::scan_entry`, over LZS-decompressed sections) only for blocks with no walkable table.
+- **A byte sweep for TMD magic is not a substitute.** A block's bytes carry meshes the walk never registers (`town01`'s `field_pack` sibling, the boot `init_data` stream), so a sweep over-collects by an amount that depends on how far each entry is read. The engine walks the descriptors (`legaia-engine-scene::scene_resources`, disc-gated `scene_mesh_pool_walk_disc`) and keeps the sweep (`tmd_scan::scan_entry`, over LZS-decompressed sections) only for blocks with no walkable table.
 - **The walk takes any count.** The MAN-less count-4 tables (`dolk2`, `rikuroa`, `rikuroa2`, `rayman`, `station`, `balden2`, `ropeway2`, `taiku`, `doman`, `nilboa2`, `eddoman`) register their packs like a count-6 bundle, so `mesh_pool` falls back to `descriptor_bundle_walk` when `detect` declines. `taiku` shows why the sweep fails: its pack opens with three 100-byte one-triangle placeholder meshes a magic scan skips, shifting every later placement three slots.
 - **A `Flag(0x14)` table's meshes include its streamed `.pac`.** `FUN_8002541C`'s mode-`0x14` arm walks the block's `+4` entry as DATA_FIELD chunks through the same dispatcher, so a type-`0x02` chunk registers its (uncompressed) pack members behind the table's own. Ten scene tables carry no mesh slot and get their whole environment pack this way (`balden`, `ropeway`, `retockin`, `tunnelc`, `concnow`, `bubu1`, `nilboa`, `chitei2`, `edretoin`, `edbubu`); no table carries both. A magic sweep of `chitei2`'s `.pac` recovers 101 of 102 members. Parser: `scene_asset_table::streams_scene_pac` + `pac_mesh_pool`.
 - **The geometry pack is not always in the entry `find_bundle` returns.** A single-entry town keeps MAN and geometry together (`town01` = entry 4). The cutscene scene `opdeene` keeps its prescript in entry 748 and its MAN + 72-TMD vignette pack in the table at entry 749. The placement `pack_index` indexes the scene-owned entry that produced the most environment TMDs (`opdeene` 749, `town01` 4, `map01` 85), and the renderer selects the env pool by that criterion.
-- **The v12-family dungeons have no MAN-bearing bundle.** Their base+3 table is the MAN-less count-4 form, and the scene MAN is the type-3 chunk of the block's standalone `data_field_streaming` entry (`rikuroa` extraction 157, partitions `[13, 29, 64]`; `dolk2` extraction 70, `[29, 73, 17]`), resolved by the engine's `field_man_payload` streaming fallback. A v12-family dungeon's standalone LZS environment container also lives in its own entry (`rikuroa` = extraction 156, 77 TMDs). Coverage: `crates/engine-core/tests/v12_bundle_man_disc.rs`.
+- **The v12-family dungeons have no MAN-bearing bundle.** Their base+3 table is the MAN-less count-4 form, and the scene MAN is the type-3 chunk of the block's standalone `data_field_streaming` entry (`rikuroa` extraction 157, partitions `[13, 29, 64]`; `dolk2` extraction 70, `[29, 73, 17]`), resolved by the engine's `field_man_payload` streaming fallback. A v12-family dungeon's standalone LZS environment container also lives in its own entry (`rikuroa` = extraction 156, 77 TMDs). Coverage: `crates/engine-scene/tests/v12_bundle_man_disc.rs`.
 - **No dungeon embeds an asset table inside its `scene_v12_table` entry.** A "table at `0x1000`" is the entry's second successor at offset 0. The engine keeps a `BundleSource::V12Embedded` arm that never fires on retail; see [`scene-v12-table.md`](scene-v12-table.md#the-embedded-man-at-0x1000-is-an-extended-footprint-over-read).
 
-Per-mesh world placement and mesh selection come from the field map's object table (`FUN_8003a55c`; parser `legaia_asset::field_objects`, which resolves each object's `pack_index` into this pack) - see [`field-locomotion.md`](../subsystems/field-locomotion.md#object-record-format-0x0000-0x20-byte-stride). Field rendering uploads every TIM (`upload_all_tims`, matching the retail field loader).
+Per-mesh world placement and mesh selection come from the field map's object table (`FUN_8003a55c`; parser `legaia_scene_formats::field_objects`, which resolves each object's `pack_index` into this pack) - see [`field-locomotion.md`](../subsystems/field-locomotion.md#object-record-format-0x0000-0x20-byte-stride). Field rendering uploads every TIM (`upload_all_tims`, matching the retail field loader).
 
 `opdeene`'s entry 0749 holds 72 TMDs + 51 TIMs. One of the TIMs is the baked **112×32 caption strip *"It was the Seru."*** (LZS offset `0x01EC30`, two CLUT palettes for the fade), drawn between the two narration crawls: the reveal is a scene texture, not a font string ([`cutscene.md`](../subsystems/cutscene.md#narration-playback---the-crawl-roller-fun_80037174)).
 
@@ -302,7 +302,7 @@ Types `0x0A` / `0x0F` / `0x14` allocate nothing and parse nothing. The [dispatch
 | `0x0F` | `...\move.mdt` |
 | `0x14` | `DATA\FIELD\<scene>.pac` |
 
-So a `Flag` in the descriptor list is a *request to stream the scene's `+4` block entry*. Of the 100 blocks whose `+3` entry parses as a table, 28 carry `Flag(0x14)` and hold a DATA_FIELD stream at `+4`, 4 carry `Flag(0x0A)` and hold a bare [`asset::pack`](pack.md) there, and 64 carry no `Flag` and reserve `+4` with a one-sector [pochi filler](pochi.md). Details and the two exceptions: [`field-pack.md`](field-pack.md#the-bundles-flag-descriptor-is-the-mode-argument).
+So a `Flag` in the descriptor list is a *request to stream the scene's `+4` block entry*. Of the 100 blocks whose `+3` entry parses as a table, 28 carry `Flag(0x14)` and hold a DATA_FIELD stream at `+4`, 4 carry `Flag(0x0A)` and hold a bare [`container-formats::pack`](pack.md) there, and 64 carry no `Flag` and reserve `+4` with a one-sector [pochi filler](pochi.md). Details and the two exceptions: [`field-pack.md`](field-pack.md#the-bundles-flag-descriptor-is-the-mode-argument).
 
 ### The `FLAG` slot is the pochi fill file
 
@@ -317,11 +317,11 @@ A `Flag` descriptor's *payload* is never read: the dispatcher arm returns before
 | Entry | Descriptor-0 payload |
 |---|---|
 | `0022_town0c`, `0348_town0d`, `0742_town0e` | The same 1,927-byte pochi fill, same 239-byte stream. |
-| `0455_urudre1` | 343,480 bytes that decompress to a well-formed 85-member [`asset::pack`](pack.md) (first word-offset `86`), every member a PSX TIM. |
+| `0455_urudre1` | 343,480 bytes that decompress to a well-formed 85-member [`container-formats::pack`](pack.md) (first word-offset `86`), every member a PSX TIM. |
 
 `0455_urudre1`'s descriptor 0 is a **second copy of a live asset**: its decompressed bytes hash (SHA-256) identically to the first 343,480 bytes of `0456_urudre1.BIN`, where that pack ends. The scene's texture pack ships as its own PROT entry, which the asset-loader chain streams; the bundle's copy is switched off by its type byte and nothing reads it. Entry `0456` is 344,064 bytes; the 584 above the pack are high-entropy inherited slack, not zero fill.
 
-A `1927`-byte payload in a bundle is fill, and a walker that decodes it is decoding filler. `crates/asset/tests/byte_account_entries.rs` pins both halves.
+A `1927`-byte payload in a bundle is fill, and a walker that decodes it is decoding filler. `crates/disc-audit/tests/byte_account_entries.rs` pins both halves.
 
 ### The bytes after the last stream are not the bundle's
 
@@ -329,13 +329,13 @@ A bundle's content ends where its last descriptor's LZS stream stops being consu
 
 They are an earlier PROT entry's bytes at the same file offsets. The packer wrote every entry out of one buffer, in TOC order, without clearing it, so the slack at offset `k` is the byte of the nearest earlier entry whose extent reaches `k`. That prediction reproduces the slack of all 90 bundles byte for byte; the first bundle (`town01`, extraction 4) has no earlier entry that long and its slack is zero.
 
-An editor that rebuilds a bundle can write zeros there, and a parser should never read it. Measured by [`inherited_tail::buffer_run`](../../crates/asset/src/inherited_tail.rs); the disc-wide rule is in [`byte-accounting.md`](../tooling/byte-accounting.md#a-bundles-last-sector-is-the-packers-buffer).
+An editor that rebuilds a bundle can write zeros there, and a parser should never read it. Measured by [`inherited_tail::buffer_run`](../../crates/disc-audit/src/inherited_tail.rs); the disc-wide rule is in [`byte-accounting.md`](../tooling/byte-accounting.md#a-bundles-last-sector-is-the-packers-buffer).
 
 ### The world-map kingdom bundles differ in two slots
 
 In PROT 0086 / 0245 / 0392:
 
-- The type-6 slot (**slot 5**) is not a field-actor ANM pack. It is the **CLUT-walk animation table**: an LZS-compressed 516-byte table, byte-identical across the three kingdoms, of eight `16x1` `MoveImage` walker entries (ocean head + shoreline / terrain shimmer cells). `FUN_8001F05C` case 6 installs it at `DAT_8007B7C8` and the SCUS actor walker `FUN_8001ADA4` case `0xB` steps it per game tick. Parser `legaia_asset::clut_walk`; semantics in [`world-map.md`](../subsystems/world-map.md) "Ocean / water animation".
+- The type-6 slot (**slot 5**) is not a field-actor ANM pack. It is the **CLUT-walk animation table**: an LZS-compressed 516-byte table, byte-identical across the three kingdoms, of eight `16x1` `MoveImage` walker entries (ocean head + shoreline / terrain shimmer cells). `FUN_8001F05C` case 6 installs it at `DAT_8007B7C8` and the SCUS actor walker `FUN_8001ADA4` case `0xB` steps it per game tick. Parser `legaia_scene_formats::clut_walk`; semantics in [`world-map.md`](../subsystems/world-map.md) "Ocean / water animation".
 - The slot-0 TIM_LIST interleaves **non-TIM raw CLUT-block records** (`[u32, u32]` prefix + a bare TIM CLUT block, no `0x10` magic). These are the walk's parked source strips at VRAM rows 498/499/502..505, which plain TIM walkers skip (`clut_walk::park_strips` locates them).
 
 ## scene_scripted_asset_table - a shape retail does not have
@@ -385,7 +385,7 @@ Entries are 2048 / 4096 / 6144 bytes: one to three sectors.
 
 ### Record format
 
-A record is byte-identical in shape to the per-summon stagers (`legaia_asset::summon_overlay`):
+A record is byte-identical in shape to the per-summon stagers (`legaia_overlay_images::summon_overlay`):
 
 - `model_sel = -1` with a zero `reserved` halfword gives the `0xFFFF 0x0000` lead most records open with: a transform / pivot node.
 - The body is move-VM bytecode ([`move-vm.md`](../subsystems/move-vm.md)); the closing `0x0008` word is move-VM opcode `0x08` (Halt).
@@ -410,7 +410,7 @@ The bundle has **one** consumer, reached from two script homes in the scene MAN:
 - **Partition 1** carries dedicated effect-actor records (whole script = `install id N` + infinite loop) that stage ambient effects on scene entry. Most scenes install record 0 this way.
 - **Partition 2** cutscene timelines install per-shot effect ids; one timeline installs many, re-installing a multi-part effect's id per part.
 
-No field-VM code consumes prescript bytes. Census + RAM pin: `engine-core/tests/scene_prescript_consumer_census_disc.rs`; script-side scanner `legaia_engine_core::man_field_scripts::scene_stager_installs`. The scene's actual field-VM scripts live in the MAN ([`script-vm.md`](../subsystems/script-vm.md)).
+No field-VM code consumes prescript bytes. Census + RAM pin: `parity/tests/scene_prescript_consumer_census_disc.rs`; script-side scanner `legaia_engine_field::man_field_scripts::scene_stager_installs`. The scene's actual field-VM scripts live in the MAN ([`script-vm.md`](../subsystems/script-vm.md)).
 
 ### Detection
 
@@ -436,6 +436,6 @@ Pinned by the disc-gated `scene_event_records_word_aligned_real` and `prescript_
 - [Scene v12 table](scene-v12-table.md) - the `.PCH` directory and trigger records in full.
 - [Per-scene field map](field-map.md) - slot 0 of the scene block.
 - [Field-pack](field-pack.md) - what the block's `+4` entry holds and how the `Flag` mode selects it.
-- [asset::pack](pack.md) - the in-stream pack the bundles embed.
+- [container-formats::pack](pack.md) - the in-stream pack the bundles embed.
 - [Asset-type dispatcher](asset-type.md) - the per-type handlers behind `FUN_8001F05C`.
 - [`subsystems/asset-loader.md`](../subsystems/asset-loader.md) - the loader chain that resolves the bundles.

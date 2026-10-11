@@ -9,22 +9,22 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::Vfs;
-use legaia_engine_core::actor_handler::ActorHandler;
-use legaia_engine_core::equipment::{DiscEquipInfo, equip_modifier_table_from_disc};
 use legaia_engine_core::field_submode_screen::RETAIL_WEAPON_SLOTS;
 use legaia_engine_core::new_game::starting_record;
 use legaia_engine_core::world::World;
-use legaia_engine_vm::baka_hub_actors::{HubDraw, slot};
-use legaia_engine_vm::world_map_overlay::{
+use legaia_engine_field::actor_handler::ActorHandler;
+use legaia_engine_field::dev_menu_leaves::{
     EQUIP_INK_REJECT, EQUIP_MODE_DIRECT, EQUIP_REJECT_VA, EquipPanelDraw,
 };
+use legaia_engine_field::submode_hub_actors::{HubDraw, slot};
+use legaia_engine_menus::equipment::{DiscEquipInfo, equip_modifier_table_from_disc};
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
-/// Panel-window record the entry list paints. Taken from `baka_hub_actors`
+/// Panel-window record the entry list paints. Taken from `submode_hub_actors`
 /// rather than spelled here: the record table's base was off by four records,
 /// and a literal at every call site is what hid it.
-const ENTRY_LIST_WINDOW: usize = legaia_engine_vm::baka_hub_actors::window::ENTRY_LIST;
+const ENTRY_LIST_WINDOW: usize = legaia_engine_field::submode_hub_actors::window::ENTRY_LIST;
 
 /// Chaos Breaker: Vahn-only (`+6` mask `1`), weapon slot (`+7 & 0x60 = 0x40`).
 const ID_CHAOS_BREAKER: u8 = 0x27;
@@ -38,7 +38,7 @@ fn disc_scus() -> Option<Vec<u8>> {
         return None;
     }
     Some(
-        legaia_engine_core::DiscVfs::open(&path)
+        legaia_engine_scene::vfs::DiscVfs::open(&path)
             .expect("open disc")
             .read("SCUS_942.54")
             .expect("SCUS_942.54 present"),
@@ -54,15 +54,17 @@ fn disc_world(scus: &[u8]) -> World {
             .is_some()
     );
 
-    let equip = legaia_asset::equip_stats::EquipStatTable::from_scus(scus).expect("equip table");
-    let effects =
-        legaia_asset::item_effect::ItemEffectTable::from_scus(scus).expect("item-effect table");
+    let equip =
+        legaia_game_tables::equip_stats::EquipStatTable::from_scus(scus).expect("equip table");
+    let effects = legaia_game_tables::item_effect::ItemEffectTable::from_scus(scus)
+        .expect("item-effect table");
     w.set_equipment_table(equip_modifier_table_from_disc(&equip));
     w.set_item_effects(effects);
     w.install_hub_equip_restrictions(&DiscEquipInfo::from_disc(&equip));
 
     // The disc's own new-game party template, two slots of it.
-    let template = legaia_asset::new_game::StartingParty::from_scus(scus).expect("party template");
+    let template =
+        legaia_game_tables::new_game::StartingParty::from_scus(scus).expect("party template");
     let members: Vec<_> = (0..2)
         .filter_map(|i| template.member(i))
         .map(starting_record)
@@ -125,7 +127,7 @@ fn the_panel_prints_the_template_records_stats_plus_the_disc_bonus_bytes() {
 
     // The bonus bytes straight off the disc, so the expectation is not a
     // hand-copied number.
-    let table = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus).unwrap();
+    let table = legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus).unwrap();
     let weapon = table
         .bonus(ID_CHAOS_BREAKER)
         .expect("Chaos Breaker is equipment");
@@ -159,7 +161,7 @@ fn the_empty_slot_sentinel_resolves_to_a_zero_row_on_the_disc() {
     // Retail looks id `0` up like any other id: the item table's `+1` byte for
     // id 0 names a bonus row, and that row is zeroed - which is *why* an empty
     // slot adds nothing, rather than the port special-casing it.
-    let effects = legaia_asset::item_effect::ItemEffectTable::from_scus(&scus).unwrap();
+    let effects = legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus).unwrap();
     assert_eq!(effects.kind(0), 0, "id 0 is neither equipment nor a good");
     let sentinel_row = effects.subtype(0);
     assert_ne!(sentinel_row, 0, "id 0 names a row past the table's head");
@@ -184,7 +186,7 @@ fn a_real_vahn_only_candidate_is_accepted_for_vahn_and_rejected_for_noa() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let table = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus).unwrap();
+    let table = legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus).unwrap();
     let mask = table
         .bonus(ID_CHAOS_BREAKER)
         .expect("Chaos Breaker is equipment")
@@ -221,7 +223,7 @@ fn a_real_kind_two_candidate_draws_the_plain_rows_and_an_unhandled_kind_draws_no
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let effects = legaia_asset::item_effect::ItemEffectTable::from_scus(&scus).unwrap();
+    let effects = legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus).unwrap();
     let good = (1u8..=u8::MAX)
         .find(|&id| effects.kind(id) == 2)
         .expect("the disc carries kind-2 items");
@@ -264,7 +266,8 @@ fn the_pinned_weapon_slot_table_matches_the_executable() {
         return;
     };
     // `DAT_8007B42C`, a halfword per character.
-    let off = legaia_asset::new_game::scus_file_offset(&scus, 0x8007_B42C).expect("in-segment");
+    let off =
+        legaia_game_tables::new_game::scus_file_offset(&scus, 0x8007_B42C).expect("in-segment");
     let disc: Vec<i16> = (0..RETAIL_WEAPON_SLOTS.len())
         .map(|i| i16::from_le_bytes([scus[off + i * 2], scus[off + i * 2 + 1]]))
         .collect();

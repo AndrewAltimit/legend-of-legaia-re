@@ -2,7 +2,7 @@
 """display-list.py - read a frame's libgpu ordering table from either emulator.
 
 `mednafen-state display-list` does the decoding, but it can only open a mednafen
-state or a raw main-RAM dump: `legaia-pcsxr` depends on `legaia-mednafen`, so the
+state or a raw main-RAM dump: `legaia-pcsx-redux` depends on `legaia-mednafen`, so the
 mednafen crate cannot read a PCSX-Redux `.sstate` without a dependency cycle.
 This wrapper closes that gap the same way `widget-draw-sweep.py` does - dispatch
 on the file, unpack a `.sstate` through `pcsxr-state extract`, and hand the raw
@@ -51,7 +51,7 @@ def tool(name: str) -> Path:
     if not found:
         raise SystemExit(
             f"{name} not found - build it with:\n"
-            f"    cargo build --release -p legaia-mednafen -p legaia-pcsxr"
+            f"    cargo build --release -p legaia-mednafen -p legaia-pcsx-redux"
         )
     return Path(found)
 

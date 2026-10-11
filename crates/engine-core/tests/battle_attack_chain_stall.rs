@@ -18,11 +18,12 @@
 //!
 //! Disc-free; the fight below reproduces the park with plain synthetic stats.
 
-use legaia_engine_core::monster_catalog::{
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, MonsterCatalog, MonsterDef,
 };
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, ActorFlags};
+use legaia_engine_battle_vm::battle_action::{ActionState, ActorFlags};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 
 fn world_vs_caster() -> World {
     let mut w = World::new();

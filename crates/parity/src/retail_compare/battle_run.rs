@@ -1,5 +1,4 @@
-//! The battle-state run and its image comparison. Split out of
-//! `retail_compare.rs`; no logic change.
+//! The battle-state run and its image comparison.
 
 use super::*;
 
@@ -81,7 +80,7 @@ pub(super) fn run_battle(
                 && let Some(accum) = e.age_short
             {
                 let mut aged = battle.clone();
-                aged.span_gate = crate::retail_compare_battle::SpanGate::Age { accum };
+                aged.span_gate = legaia_engine_capture::battle_drive::SpanGate::Age { accum };
                 run = crate::retail_compare_battle::run_engine_battle(
                     opts.extracted,
                     retail,
@@ -96,7 +95,7 @@ pub(super) fn run_battle(
             }
             match run {
                 Ok(e)
-                    if e.mode == legaia_engine_core::world::SceneMode::Battle
+                    if e.mode == legaia_engine_mode::mode::SceneMode::Battle
                         && e.prompt_tick.is_some()
                         && (!e.surprise_opening || opening)
                         && e.driven != Some(None)
@@ -140,7 +139,7 @@ pub(super) fn run_battle(
             // than the first run did - a replay whose push depends on where
             // it starts can land further off.
             Ok(e)
-                if e.mode == legaia_engine_core::world::SceneMode::Battle
+                if e.mode == legaia_engine_mode::mode::SceneMode::Battle
                     && e.driven.is_some_and(|d| d.is_some())
                     && e.age_short.is_none()
                     && crate::retail_compare_battle::ground_residual(battle, &b, &e)
@@ -169,7 +168,7 @@ pub(super) fn run_battle(
     let battle = match engine.age_short {
         Some(accum) => {
             let mut b = battle.clone();
-            b.span_gate = crate::retail_compare_battle::SpanGate::Age { accum };
+            b.span_gate = legaia_engine_capture::battle_drive::SpanGate::Age { accum };
             aged = b;
             &aged
         }
@@ -287,7 +286,7 @@ pub(super) fn battle_image(
         // The mid-fight bars the headless seed put on its first battle tick.
         (
             "LEGAIA_BATTLE_BARS",
-            crate::retail_compare_battle::bar_seeds_to_env(&engine.hp_seed),
+            legaia_engine_capture::bar_seeds::bar_seeds_to_env(&engine.hp_seed),
         ),
     ];
     if !battle.entry_latches.is_empty() {
@@ -311,11 +310,11 @@ pub(super) fn battle_image(
     // headless channel aligns it (`BattleCamera::align_glide_origin`).
     if matches!(
         battle.battle_drive(),
-        Some(crate::retail_compare_battle::BattleDrive::Action { .. })
+        Some(legaia_engine_capture::battle_drive::BattleDrive::Action { .. })
     ) {
         env.push((
             "LEGAIA_BATTLE_CAM_ALIGN",
-            crate::retail_compare_battle::cam_align_to_env(&battle.cam_tween),
+            legaia_engine_capture::camera_align::cam_align_to_env(&battle.cam_tween),
         ));
     }
     env.push((
@@ -334,7 +333,7 @@ pub(super) fn battle_image(
     if !battle.hud_glides.is_empty() {
         env.push((
             "LEGAIA_SEAT_HUD_GLIDES",
-            crate::retail_compare_battle::HudGlideSeat::to_env(&battle.hud_glides),
+            legaia_engine_capture::hud_glide::HudGlideSeat::to_env(&battle.hud_glides),
         ));
     }
     // A capture taken mid-cast replays its cast and is captured on its phase
@@ -384,7 +383,7 @@ pub(super) fn battle_image(
             return None;
         }
         env.push(("LEGAIA_BATTLE_DRIVE", drive.to_env()));
-        tick += crate::retail_compare_battle::DRIVE_DEADLINE;
+        tick += legaia_engine_capture::battle_drive::DRIVE_DEADLINE;
     }
     match crate::retail_compare_image::engine_frame_with(
         exe,

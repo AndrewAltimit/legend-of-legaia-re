@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Dialog-advance host hook (`op 0x4C n5 sub-4`): when `current_dialog`
 /// is set, the VM halts at the poll site. A just-pressed Cross /
@@ -7,7 +8,7 @@ use super::*;
 /// HUD consumers.
 #[test]
 fn dialog_advance_halts_then_clears_on_just_pressed_cross() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -712,7 +713,7 @@ fn release_pauses(world: &mut World, ticks: usize) -> usize {
 /// the paused source and the new score never sounds.
 #[test]
 fn a_timed_release_inside_a_pending_swap_does_not_pause_the_new_track() {
-    use legaia_engine_vm::field::FieldHost;
+    use legaia_engine_vm::field::FieldAudioHost;
 
     let mut world = World::new();
     {
@@ -748,7 +749,7 @@ fn a_timed_release_inside_a_pending_swap_does_not_pause_the_new_track() {
 /// alone.
 #[test]
 fn the_script_pause_bit_follows_the_bgm_sub_ops() {
-    use legaia_engine_vm::field::FieldHost;
+    use legaia_engine_vm::field::FieldAudioHost;
 
     fn step(world: &mut World, id: u16, sub: u8) -> bool {
         let mut host = crate::world::vm_hosts::FieldHostImpl { world: &mut *world };

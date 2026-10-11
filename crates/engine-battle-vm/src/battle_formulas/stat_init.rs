@@ -1,9 +1,8 @@
 //! Battle-load stat initialisation: the party actor's `+0x14C..+0x176` block
-//! (`FUN_80053CB8`) and the equipment bonus fold it applies. Split out of
-//! `battle_formulas.rs`.
+//! (`FUN_80053CB8`) and the equipment bonus fold it applies.
 //!
 //! The monster-side sibling is `FUN_80054CB0`; its hit-reaction tag map is
-//! ported in `legaia_asset::monster_archive::reaction_map`.
+//! ported in `legaia_actor_formats::monster_archive::reaction_map`.
 
 /// The five equipment slots a party character carries (character record
 /// `+0x196..+0x19A`), in slot order.
@@ -143,7 +142,7 @@ pub struct BattleActorStats {
 /// The hit-reaction map this function also writes (`+0x1EF..+0x1F3`) is the
 /// constant `[2, 3, 4, 5, 0x0B]` - the player battle files store that family
 /// identity-ordered, so no search is needed. Monster actors take the scanning
-/// path instead; see `legaia_asset::monster_archive::reaction_map`.
+/// path instead; see `legaia_actor_formats::monster_archive::reaction_map`.
 ///
 /// Wired: the browser Muscle Dome page builds its player fighter through this
 /// kernel - `LegaiaMinigames::muscle_player_fighter` in

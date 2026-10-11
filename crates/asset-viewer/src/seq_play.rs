@@ -13,7 +13,7 @@ use std::time::Instant;
 fn music_bank_label_for_path(p: &Path) -> Option<String> {
     let stem = p.file_stem()?.to_str()?;
     let digits: String = stem.chars().take_while(|c| c.is_ascii_digit()).collect();
-    legaia_engine_core::music_labels::label_for_prot_entry(digits.parse().ok()?)
+    legaia_engine_system::music_labels::label_for_prot_entry(digits.parse().ok()?)
 }
 
 /// Headless SEQ playback. Opens AudioOut, builds a `Sequencer` over the

@@ -8,8 +8,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::chunk_install::seq_chunk_offset;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_system::chunk_install::seq_chunk_offset;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -62,7 +62,7 @@ fn every_scene_score_resolves_through_the_installer_walk() {
         let assets = host.assets().expect("loaded");
         let mut found = false;
         for (idx, class, bytes) in entries {
-            if class == legaia_asset::categorize::Class::SeqContainer {
+            if class == legaia_disc_audit::categorize::Class::SeqContainer {
                 continue;
             }
             let walked = seq_chunk_offset(&bytes);
@@ -106,7 +106,7 @@ fn every_music_bank_entry_splits_through_the_installer_walk() {
     }
     let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     let (mut paired, mut unpaired) = (0u32, Vec::new());
-    let total = legaia_engine_core::music_labels::MUSIC_TRACK_COUNT;
+    let total = legaia_engine_system::music_labels::MUSIC_TRACK_COUNT;
     for slot in 0..total {
         let bgm_id = 2000 + slot as u16;
         let entry = host
@@ -114,8 +114,8 @@ fn every_music_bank_entry_splits_through_the_installer_walk() {
             .expect("read")
             .unwrap_or_else(|| panic!("bgm {bgm_id}: no bank entry"));
         let walked =
-            legaia_engine_core::chunk_install::owned_bank_offsets(&entry).map(|s| (s.vab, s.seq));
-        if u32::from(bgm_id) == legaia_engine_core::mode_entry_init::FIELD_BGM_TWO_PART_ID {
+            legaia_engine_system::chunk_install::owned_bank_offsets(&entry).map(|s| (s.vab, s.seq));
+        if u32::from(bgm_id) == legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID {
             // The ending theme is not one bank entry: its score and bank come
             // from two entries, score first, the way retail's field init
             // stages them (`credits_two_part_bgm_disc.rs`). A magic hunt for

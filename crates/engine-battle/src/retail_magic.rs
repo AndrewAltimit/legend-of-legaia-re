@@ -20,7 +20,7 @@
 //! summon spells whose `anim` ids run sequentially (`0x25..=0x2f`). Their MP
 //! costs cross-validate exactly against the curated `data/gamedata/magic.toml`
 //! (public walkthrough data), and id `0x81` = Gimard matches the save-state
-//! pin in `legaia_engine_core::capture_observations::seru_capture`. Id `0x80` ("Flip
+//! pin in `legaia_parity::capture_observations::seru_capture`. Id `0x80` ("Flip
 //! Frog") is the boundary entry just below the block (`mp`/`anim` both 0) and
 //! is not part of the sequential player set. The lower ids `0x00..=0x24` are
 //! the elemental enemy-attack tiers (names composed via the MES substitution
@@ -41,7 +41,7 @@
 //! [`RetailSpell`] ([`RetailSpell::cast_class`] / [`RetailSpell::effect_class`])
 //! rather than asserted once for the block, because `+1` is the key
 //! `FUN_801F2160` dispatches a cast's module on
-//! ([`legaia_asset::cast_effect_pool`]). The static atk/def kernel
+//! (`legaia_overlay_images::cast_effect_pool`). The static atk/def kernel
 //! `FUN_801ec3e4` is melee/arts-only (gated on an action-queue head in
 //! `0xC..=0x1F`). See `docs/formats/spell-table.md` for the full trace. The
 //! `base_power` figures below are therefore explicit MP-scaled placeholders.
@@ -51,7 +51,7 @@
 //! 7`), scaled by element affinity + status bits + the caster's magic-power byte
 //! (`FUN_801dd864`) and finalized by `FUN_801ddb30`. The bounded, state-free
 //! pieces of that chain are ported as pure kernels in
-//! [`legaia_engine_vm::battle_formulas`] (`summon_attacker_roll` /
+//! [`legaia_engine_battle_vm::battle_formulas`] (`summon_attacker_roll` /
 //! `summon_defender_roll` / `summon_predamage` / `heal_summon_amount` and the
 //! `apply_*` scale helpers), and the live battle rolls a damaging player cast
 //! through them: `engine-core`'s `World::player_summon_predamage` feeds the
@@ -85,7 +85,7 @@ pub struct RetailSpell {
     /// **Effect class**, table `+1` - the byte `FUN_801F2160` bounds with
     /// `sltiu ..., 0x20` and jumps through `0x801CF56C` on, selecting the cast
     /// module PROT `935 + class`
-    /// ([`legaia_asset::cast_effect_pool::capture_module_prot`]). A player Seru
+    /// (`legaia_overlay_images::cast_effect_pool::capture_module_prot`). A player Seru
     /// cast does not route through that dispatcher - its module comes from the
     /// action id through `FUN_801F1ED4` - but the byte is table data and is
     /// pinned here because it is the *only* live key the capture band has.
@@ -252,8 +252,8 @@ fn spell_def_for(s: &RetailSpell) -> SpellDef {
 }
 
 /// Map the parser's decoded `+2` target shape onto the engine [`SpellTarget`].
-fn target_from_shape(shape: legaia_asset::spell_names::SpellTargetShape) -> SpellTarget {
-    use legaia_asset::spell_names::SpellTargetShape as S;
+fn target_from_shape(shape: legaia_game_tables::spell_names::SpellTargetShape) -> SpellTarget {
+    use legaia_game_tables::spell_names::SpellTargetShape as S;
     match shape {
         S::OneEnemy => SpellTarget::OneEnemy,
         S::AllEnemies => SpellTarget::AllEnemies,
@@ -276,7 +276,7 @@ pub fn retail_seru_magic_catalog() -> SpellCatalog {
 
 /// Like [`retail_seru_magic_catalog`], but the player Seru-magic block's **MP
 /// cost** (`+3`), **target shape** (`+2`, decoded via
-/// [`legaia_asset::spell_names::SpellEntry::target_shape`]) and **display name**
+/// [`legaia_game_tables::spell_names::SpellEntry::target_shape`]) and **display name**
 /// (`name_ptr`) are read from the user's `SCUS_942.54` instead of the pinned
 /// constants. On the retail disc this is byte-identical to
 /// [`retail_seru_magic_catalog`] (the pinned values were decoded from the same
@@ -285,7 +285,7 @@ pub fn retail_seru_magic_catalog() -> SpellCatalog {
 /// to the pinned record keeps a malformed table from zeroing a spell. Returns
 /// `None` only when the image isn't a parseable PSX-EXE.
 pub fn seru_magic_catalog_from_scus(scus: &[u8]) -> Option<SpellCatalog> {
-    let table = legaia_asset::spell_names::SpellNameTable::from_scus(scus)?;
+    let table = legaia_game_tables::spell_names::SpellNameTable::from_scus(scus)?;
     // Retail's live spell record is the SCUS table itself (`DAT_800754C8`,
     // read by id for every cast, monster or party - state `0x28` takes the
     // `+3` MP byte off it at `0x801E4500`), so the boot catalog is built from
@@ -327,7 +327,7 @@ pub const PLAYER_SERU_LAST_ID: u8 = 0xA0;
 /// same MP-scaled placeholder as the pinned block's.
 fn insert_player_seru_tail(
     c: &mut SpellCatalog,
-    table: &legaia_asset::spell_names::SpellNameTable,
+    table: &legaia_game_tables::spell_names::SpellNameTable,
 ) {
     let first = SERU_MAGIC.last().map_or(0x81, |s| s.id + 1);
     for id in first..=PLAYER_SERU_LAST_ID {
@@ -387,7 +387,7 @@ fn insert_player_seru_tail(
 /// every disc-booted fight - the roll picks the cast, the lookup discards it.
 fn insert_monster_specials(
     c: &mut SpellCatalog,
-    table: &legaia_asset::spell_names::SpellNameTable,
+    table: &legaia_game_tables::spell_names::SpellNameTable,
 ) {
     // Every record outside the player Seru band, named or not: retail casts
     // an unnamed record exactly as a named one (the name only feeds the
@@ -445,7 +445,7 @@ fn insert_monster_specials(
 /// every catalog consumer); `World::monster_cast_def` asks for one instead,
 /// so a cast it arms reaches the action SM's capture band `0x6E..=0x71`.
 pub fn capture_special_def(
-    table: &legaia_asset::spell_names::SpellNameTable,
+    table: &legaia_game_tables::spell_names::SpellNameTable,
     id: u8,
 ) -> Option<SpellDef> {
     let e = table.entry(id)?;
@@ -510,8 +510,8 @@ mod tests {
     /// arithmetic for them and `capture_module_prot` is not.
     #[test]
     fn pinned_effect_class_bytes_and_their_band_rows() {
-        use legaia_asset::cast_effect_pool::{capture_module_prot, seru_module_prot};
-        use legaia_asset::spell_names::CAPTURE_CLASS;
+        use legaia_game_tables::spell_names::CAPTURE_CLASS;
+        use legaia_overlay_images::cast_effect_pool::{capture_module_prot, seru_module_prot};
         let expect: &[(u8, u8, u8)] = &[
             (0x81, 0x32, 0x00),
             (0x82, 0x32, 0x00),
@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn target_from_shape_maps_all_four_shapes() {
-        use legaia_asset::spell_names::SpellTargetShape as S;
+        use legaia_game_tables::spell_names::SpellTargetShape as S;
         assert_eq!(target_from_shape(S::OneEnemy), SpellTarget::OneEnemy);
         assert_eq!(target_from_shape(S::AllEnemies), SpellTarget::AllEnemies);
         assert_eq!(target_from_shape(S::OneAlly), SpellTarget::OneAlly);
@@ -569,7 +569,7 @@ mod tests {
         // The +2 target byte each pinned Seru spell *would* carry (byte-exact
         // from SCUS), decoded via the parser, must reproduce its pinned target.
         // This locks the bit decode (0x02 ally / 0x20 all) to the catalog.
-        use legaia_asset::spell_names::{SpellEntry, SpellTargetShape as S};
+        use legaia_game_tables::spell_names::{SpellEntry, SpellTargetShape as S};
         let byte_for = |t: SpellTarget| -> u8 {
             match t {
                 SpellTarget::OneEnemy => 0x44,

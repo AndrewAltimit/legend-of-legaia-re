@@ -17,9 +17,9 @@
 //!    (`FUN_800204A4`). Without that, a tree that spawns on a loop grows a
 //!    part per iteration forever.
 
-use legaia_asset::summon_overlay::{RENDER_NODE_MODE_A, SummonPart};
 use legaia_engine_core::world::World;
 use legaia_engine_core::world::ambient::MAX_AMBIENT_PARTS;
+use legaia_overlay_images::summon_overlay::{RENDER_NODE_MODE_A, SummonPart};
 
 /// Assemble a stager bundle from `[model_sel, bytecode words]` records and
 /// install it on `world`. Each record is laid out as retail's
@@ -69,7 +69,7 @@ fn mode3_cycler(x: u16, y: u16) -> (i16, Vec<u16>) {
 #[test]
 fn runtime_op34_sub3_stages_into_the_ambient_pool_with_its_render_tail() {
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },
@@ -129,7 +129,7 @@ fn runtime_op34_sub3_stages_into_the_ambient_pool_with_its_render_tail() {
     // through the old pool produces no render-tail output at all, however long
     // it is ticked.
     let mut old = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },
@@ -168,7 +168,7 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
 
     // Child that halts on its own first run: the ordinary particle shape.
     let mut halting = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },
@@ -198,7 +198,7 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
     // the bound above comes from the free path, not from the emitter failing
     // to spawn.
     let mut parking = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },
@@ -234,7 +234,7 @@ fn halted_parts_are_freed_so_a_spawn_loop_stays_bounded() {
 #[test]
 fn a_spawned_child_inherits_the_spawners_heading() {
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },

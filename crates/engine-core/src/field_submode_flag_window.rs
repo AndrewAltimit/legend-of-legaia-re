@@ -13,8 +13,8 @@
 //! against a field state's VRAM), so each destination is a floor: the current
 //! one remembered, the pick committed as the only set flag.
 //!
-//! The picker had a port (`legaia_engine_vm::world_map_panel_actors::flag_window_tick`)
-//! hosted only by `crate::world_map_panel_host` behind a world-map pad chord,
+//! The picker had a port (`legaia_engine_field::world_map_panel_actors::flag_window_tick`)
+//! hosted only by `crate::world_views::world_map_panel_host` behind a world-map pad chord,
 //! while the field path fell into [`crate::field_submode_screen`]'s empty
 //! default arm: the dispatcher retired the actor on its first frame, the script
 //! unparked with no floor chosen (the pad's own row stays the only set
@@ -38,16 +38,16 @@
 //! `0x0E` - after sizing panel record 14 (`0x801F2B98 + 14 * 0x1C`: `+0xA` =
 //! `(8 - rows) * 16 + 0x48`, `+0xE` = `rows * 16`). Record 14's other
 //! geometry is `x = 0x18`, `w = 0x48`; its painter is `FUN_801E6984`, ported
-//! as [`crate::field_submode::submode_panel_rows`] for the row loop. The rest
+//! as [`legaia_engine_field::field_submode::submode_panel_rows`] for the row loop. The rest
 //! of the painter (`0x801E6A74..0x801E6B0C`) is the legend beside the panel:
 //! the Cross and Circle icons (`0x37` / `0x38`) at `(x + w + 0x20, y + h -
 //! 0x20)` and one row below, the two field-overlay strings `0x801CF0B8` /
 //! `0x801CF0C4` at `(x + w + 0x34, y + h - 0x1E)` / `(.., y + h - 0x0E)`, and a
 //! `0x9C x 0x20` widget frame at `(x + w + 0x10, y + h - 0x20)`.
 
-use legaia_engine_vm::baka_hub_actors::{HubAction, HubActor, HubFrame, HubGrid, slot};
-use legaia_engine_vm::world_map_panel::CursorPad;
-use legaia_engine_vm::world_map_panel_actors::{
+use legaia_engine_field::submode_hub_actors::{HubAction, HubActor, HubFrame, HubGrid, slot};
+use legaia_engine_field::world_map_panel::CursorPad;
+use legaia_engine_field::world_map_panel_actors::{
     FLAG_WINDOW_SCRIPT, FlagWindowDescriptor, FlagWindowEffect, FlagWindowInput, flag_window_tick,
 };
 
@@ -154,7 +154,7 @@ pub fn flag_window_slot(
 }
 
 /// The windows descriptor `va` installs, with the picker's own descriptor
-/// added to the ones [`legaia_engine_vm::baka_hub_actors::panel_windows`]
+/// added to the ones [`legaia_engine_field::submode_hub_actors::panel_windows`]
 /// knows.
 pub fn installed_windows(va: u32) -> Vec<usize> {
     if va == FLAG_WINDOW_SCRIPT {
@@ -162,7 +162,7 @@ pub fn installed_windows(va: u32) -> Vec<usize> {
     } else if va == crate::field_submode_code_lock::CODE_LOCK_PANEL {
         vec![crate::field_submode_code_lock::CODE_LOCK_RECORD]
     } else {
-        legaia_engine_vm::baka_hub_actors::panel_windows(va).to_vec()
+        legaia_engine_field::submode_hub_actors::panel_windows(va).to_vec()
     }
 }
 
@@ -190,18 +190,18 @@ fn plate_text(entry: u8) -> Vec<u8> {
 }
 
 /// Lay the window out: the row loop (`FUN_801E6984`'s, via
-/// [`crate::field_submode::submode_panel_rows`]) plus the legend. `legend` is
+/// [`legaia_engine_field::field_submode::submode_panel_rows`]) plus the legend. `legend` is
 /// the two field-overlay strings, read off the disc by the host.
 pub fn flag_window_lines(
     state: &FlagWindowState,
     desc: FlagWindowDescriptor,
     legend: [&[u8]; 2],
 ) -> Vec<FlagWindowLine> {
-    use crate::field_submode::{PANEL_GLYPH_DX, PANEL_GLYPH2_DX, PANEL_HIGHLIGHT_DX};
+    use legaia_engine_field::field_submode::{PANEL_GLYPH_DX, PANEL_GLYPH2_DX, PANEL_HIGHLIGHT_DX};
     let (x, y) = (FLAG_WINDOW_X, state.panel_y);
     let (w, h) = (FLAG_WINDOW_W, state.panel_h);
     let mut out = Vec::new();
-    let rows = crate::field_submode::submode_panel_rows(
+    let rows = legaia_engine_field::field_submode::submode_panel_rows(
         (x, y),
         desc.rows,
         desc.first_visible,
@@ -218,7 +218,7 @@ pub fn flag_window_lines(
                 marked: false,
             });
         }
-        let marked = r.ink == crate::field_submode::PANEL_INK_MARKED;
+        let marked = r.ink == legaia_engine_field::field_submode::PANEL_INK_MARKED;
         out.push(FlagWindowLine {
             text: plate_text(r.entry),
             x: x + PANEL_GLYPH_DX,
@@ -293,7 +293,7 @@ impl crate::world::World {
     }
 }
 
-impl crate::scene::SceneHost {
+impl crate::scene_host::SceneHost {
     /// [`crate::world::World::flag_window_lines`] with the legend read off the
     /// user's disc (the field overlay, extraction entry `0897`). The native
     /// window and the browser play page both draw this.
@@ -329,7 +329,7 @@ pub const FLAG_WINDOW_EXIT_SLOT: u16 = slot::DRAW_TICK;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_vm::world_map_panel_actors::flag_window_panel_geometry;
+    use legaia_engine_field::world_map_panel_actors::flag_window_panel_geometry;
 
     fn pad(edge: u32) -> CursorPad {
         CursorPad {
@@ -413,7 +413,7 @@ mod tests {
         assert!(!w.system_flag_test(0x139), "phase 0 clears the range");
         assert!(!w.flag_window_lines([b"", b""]).is_empty());
         // Phase 1: one step and Cross, each a fresh edge.
-        let pack = |m: u32| crate::dev_menu::retail_packed(m as u16);
+        let pack = |m: u32| legaia_engine_system::pad::retail_packed(m as u16);
         for m in [0x1000u32, 0, SUBMODE_ACCEPT, 0] {
             w.input.set_pad(pack(m));
             w.tick_submode_screen(1);

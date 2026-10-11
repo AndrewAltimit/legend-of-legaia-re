@@ -26,10 +26,11 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::man_section;
-use legaia_engine_core::encounter::EncounterPhase;
-use legaia_engine_core::region_encounter::{DEFAULT_GROUP_FLAG, EncounterRegion};
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
+use legaia_engine_battle::encounter::EncounterPhase;
+use legaia_engine_battle::region_encounter::{DEFAULT_GROUP_FLAG, EncounterRegion};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::DefaultMapIdResolver;
+use legaia_scene_formats::man_section;
 
 /// Field scenes whose live region set sits behind at least one flag-gated
 /// group, so a flat read of the region array resolves to a dead row.
@@ -90,7 +91,7 @@ fn condition_groups_tile_the_region_array_in_every_scene() {
         let Ok(bytes) = std::fs::read(path) else {
             continue;
         };
-        let Some(table) = legaia_asset::scene_asset_table::detect(&bytes) else {
+        let Some(table) = legaia_scene_formats::scene_asset_table::detect(&bytes) else {
             continue;
         };
         let Some(desc) = table.descriptors.iter().find(|d| d.type_byte == 0x03) else {

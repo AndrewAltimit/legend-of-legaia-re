@@ -12,8 +12,8 @@
 //! actor differently. `site/js/field-actors.js` is the one JS draw path both
 //! pages run over those accessors.
 
-use legaia_asset::player_anm::PlayerAnmBundle;
-use legaia_engine_core::scene::SceneHost;
+use legaia_actor_formats::player_anm::PlayerAnmBundle;
+use legaia_engine_core::scene_host::SceneHost;
 use std::collections::HashMap;
 
 use crate::play::{NpcClip, NpcRender};
@@ -23,10 +23,10 @@ use crate::play::{NpcClip, NpcRender};
 fn look_of(
     host: Option<&SceneHost>,
     slot: u8,
-) -> Option<legaia_engine_core::actor_look::ActorLook> {
+) -> Option<legaia_engine_field::actor_look::ActorLook> {
     host?
         .world
-        .actor_look(legaia_engine_core::actor_look::LookKey::Npc(slot))
+        .actor_look(legaia_engine_field::actor_look::LookKey::Npc(slot))
 }
 
 /// The pose banks an actor's clip ids index: the scene's own ANM bundle and
@@ -122,7 +122,7 @@ impl FieldActors {
                 continue;
             };
             if let Some(player) =
-                legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec)
+                legaia_engine_field::field_anim::FieldClipPlayer::from_record(b, rec)
             {
                 host.world
                     .bind_npc_clip_cursor(slot, e.placement.anim_id, &player);
@@ -358,8 +358,8 @@ impl FieldActors {
         &self,
         host: &SceneHost,
         banks: ActorBanks<'_>,
-    ) -> Vec<legaia_engine_ui::scene_lighting::PropLights> {
-        use legaia_engine_ui::scene_lighting as sl;
+    ) -> Vec<legaia_render_kernels::scene_lighting::PropLights> {
+        use legaia_render_kernels::scene_lighting as sl;
         let (Some(n), Some(res)) = (self.npcs.as_ref(), host.resources.as_ref()) else {
             return Vec::new();
         };
@@ -464,7 +464,7 @@ impl FieldActors {
         // Enhanced lighting's emissive tags - the same rule the native
         // window's actor build runs (inert unless the enhancement is on).
         if let Some(res) = host.resources.as_ref() {
-            legaia_engine_ui::scene_lighting::tag_emissive_hybrid(
+            legaia_render_kernels::scene_lighting::tag_emissive_hybrid(
                 &raw, &mut mesh, &flat, &res.vram,
             );
         }
@@ -557,7 +557,7 @@ impl FieldActors {
             let slot = e.placement.index as u8;
             match self.clips.get(&slot) {
                 Some(c) => {
-                    let look = legaia_engine_core::actor_look::ActorLook::pose_key_bits(
+                    let look = legaia_engine_field::actor_look::ActorLook::pose_key_bits(
                         look_of(host, slot).as_ref(),
                     );
                     out.push(c.player.pose_key() as i32);
@@ -588,7 +588,7 @@ impl FieldActors {
         // The script's look rotation on one object (`4C 45`), the kernel the
         // native window folds into the same pose.
         if let Some(l) = look_of(host, slot) {
-            legaia_engine_core::actor_look::apply_look(&mut pose.bone_outputs, l);
+            legaia_engine_field::actor_look::apply_look(&mut pose.bone_outputs, l);
         }
         let mut out = Vec::with_capacity(pose.bone_outputs.len() * 6);
         for (t, r) in pose.bone_outputs {

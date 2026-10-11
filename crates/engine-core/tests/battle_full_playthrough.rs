@@ -8,9 +8,11 @@
 //! settles into a `BattleComplete` outcome when the host applies damage
 //! across many ticks. Stays disc-free (no Sony bytes, no PROT lookups).
 
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
-use legaia_engine_vm::battle_formulas::{accuracy_roll, psyq_rand_step};
+use legaia_engine_battle_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
+use legaia_engine_battle_vm::battle_formulas::accuracy_roll;
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::rand::psyq_rand_step;
 
 const PARTY_HP: u16 = 200;
 const MONSTER_HP: u16 = 60;
@@ -19,7 +21,7 @@ const TARGET_DEF: i32 = 12;
 
 fn build_world() -> World {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -83,7 +85,7 @@ fn battle_runs_to_completion_with_monster_wipe() {
     let mut strikes_landed = 0u32;
     let mut transitions = 0u32;
     let mut last_battle_event_count = 0usize;
-    use legaia_engine_vm::battle_action::ActorFlags;
+    use legaia_engine_battle_vm::battle_action::ActorFlags;
 
     // Cap at 50_000 frames - way above any real battle duration.
     for _frame in 0..50_000 {

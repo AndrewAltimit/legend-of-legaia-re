@@ -24,11 +24,11 @@
 //!
 //! Skips + passes without `LEGAIA_DISC_BIN`.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::translation::export::SceneManText;
-use legaia_patcher::translation::pack::Entry;
-use legaia_patcher::translation::{ImportPhase, import_pack_phase, segments};
+use legaia_translate::export::SceneManText;
+use legaia_translate::pack::Entry;
+use legaia_translate::{ImportPhase, import_pack_phase, segments};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -78,7 +78,7 @@ fn export_never_emits_a_raw_key_in_a_non_carrier_entry() {
         return;
     };
     let patcher = DiscPatcher::open(original).expect("open disc");
-    let pack = legaia_patcher::translation::export_pack(&patcher).expect("export");
+    let pack = legaia_translate::export_pack(&patcher).expect("export");
     assert!(
         !pack.sections.inline_text.is_empty(),
         "export produced no raw carriers at all"
@@ -138,7 +138,7 @@ fn full_fill_import_only_touches_carriers_mans_and_scus() {
     }
     // The overlay UI menu-string pools (menu 0899 / battle 0898) are patched in
     // place by the `ui_menu` section, so their entry sectors are allowed too.
-    for pool in legaia_patcher::translation::ui::UI_STRING_POOLS {
+    for pool in legaia_translate::ui::UI_STRING_POOLS {
         if let Some((lba, secs)) = clamped_sectors(pool.prot_index) {
             for s in 0..secs {
                 allowed.insert(lba + s);
@@ -147,7 +147,7 @@ fn full_fill_import_only_touches_carriers_mans_and_scus() {
     }
     // The `monster_names` section rewrites names inside the monster archive's
     // records (each slot re-packed in place), so the archive is allowed too.
-    if let Some((lba, secs)) = clamped_sectors(legaia_patcher::disc::MONSTER_ARCHIVE_ENTRY) {
+    if let Some((lba, secs)) = clamped_sectors(legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY) {
         for s in 0..secs {
             allowed.insert(lba + s);
         }
@@ -173,7 +173,7 @@ fn full_fill_import_only_touches_carriers_mans_and_scus() {
     assert!(carrier_entries > 0, "no dialog carriers found");
 
     // Fill every entry the exported (already carrier-gated) pack offers.
-    let mut pack = legaia_patcher::translation::export_pack(&base).expect("export");
+    let mut pack = legaia_translate::export_pack(&base).expect("export");
     for entries in pack.sections.each_mut() {
         for e in entries.iter_mut() {
             let t = vowel_swap(&e.source);
@@ -244,7 +244,7 @@ fn import_refuses_a_poison_entry_aimed_at_a_binary_bank() {
 
     // A distributable-shape poison entry (no source; budget = on-disc framing)
     // whose "translation" is a same-length in-charset run.
-    let mut pack = legaia_patcher::translation::LanguagePack::new("xx");
+    let mut pack = legaia_translate::LanguagePack::new("xx");
     let repl: String = "z".repeat(len);
     pack.sections.inline_text.push(Entry {
         key: format!("raw:{entry_idx}:0x{off:x}"),
@@ -282,7 +282,7 @@ fn imported_scus_strings_terminate_within_their_pool() {
         return;
     };
     let base = DiscPatcher::open(original.clone()).expect("open disc");
-    let mut pack = legaia_patcher::translation::export_pack(&base).expect("export");
+    let mut pack = legaia_translate::export_pack(&base).expect("export");
     // Fill only the SCUS name sections (the spell/item/art pools whose overrun
     // would clobber a neighbour's pointer target).
     for e in pack
@@ -327,7 +327,7 @@ fn imported_scus_strings_terminate_within_their_pool() {
                 .strip_prefix("scus:str:0x")
                 .and_then(|h| u32::from_str_radix(h, 16).ok())
                 .expect("scus:str key");
-            let off = legaia_asset::item_names::file_offset_for_va(&scus, va)
+            let off = legaia_game_tables::item_names::file_offset_for_va(&scus, va)
                 .expect("VA resolves in patched SCUS");
             // NUL within a sane bound.
             let tail = &scus[off..];

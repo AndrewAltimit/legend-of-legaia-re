@@ -294,10 +294,10 @@ impl World {
         let colour = colour & 0x00FF_FFFF;
         let record = self.field_vm.executing_object;
         let key = match target {
-            Some(crate::field_env::PLAYER_ANCHOR_TARGET) => ActorTintKey::Player,
+            Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET) => ActorTintKey::Player,
             Some(t) => {
                 let view = self.channel_view();
-                let Some(ci) = crate::field_channels::resolve_target(view, t) else {
+                let Some(ci) = legaia_engine_field::field_channels::resolve_target(view, t) else {
                     // No actor answers the id: retail's resolve miss skips
                     // the arm.
                     return;
@@ -446,7 +446,7 @@ impl World {
         out
     }
 
-    /// The object-effect clip ([`crate::object_effect`]) of every field
+    /// The object-effect clip ([`legaia_engine_effects::object_effect`]) of every field
     /// context whose `+0x42` is raised (field-VM `4C C2`), keyed the way the
     /// hosts key their draws: [`ActorTintKey::Object`] for an object-bind
     /// channel (its flat record), [`ActorTintKey::Npc`] for a placement. The
@@ -456,7 +456,11 @@ impl World {
     // REF: FUN_8001C204, FUN_80027F00
     pub fn object_effect_clips(
         &self,
-    ) -> Vec<(ActorTintKey, crate::object_effect::EffectClip, f32)> {
+    ) -> Vec<(
+        ActorTintKey,
+        legaia_engine_effects::object_effect::EffectClip,
+        f32,
+    )> {
         // The player (`CC F8 C2`), at its own render scale.
         let player = self
             .object_effect
@@ -506,7 +510,7 @@ impl World {
         &self,
         key: ActorTintKey,
         model_rows: [[f32; 4]; 3],
-    ) -> Option<crate::object_effect::MeshClip> {
+    ) -> Option<legaia_engine_effects::object_effect::MeshClip> {
         self.object_effect_clips()
             .into_iter()
             .find(|(k, _, _)| *k == key)
@@ -575,8 +579,8 @@ mod tests {
         placement: usize,
         script_id: u16,
         object_bind: bool,
-    ) -> crate::field_channels::FieldChannel {
-        crate::field_channels::FieldChannel {
+    ) -> legaia_engine_field::field_channels::FieldChannel {
+        legaia_engine_field::field_channels::FieldChannel {
             placement_index: placement,
             ctx: legaia_engine_vm::field::FieldCtx {
                 script_id,

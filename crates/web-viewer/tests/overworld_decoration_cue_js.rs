@@ -1,17 +1,17 @@
-//! The play page's two JS / GLSL twins of engine kernels this lane added,
+//! The play page's two JS / GLSL twins of engine kernels,
 //! pinned against the kernels' constants:
 //!
 //! - `overworldDecorationCue` (`site/js/webgl-tmd.js`) against
-//!   `legaia_engine_core::overworld_ground_cue::decoration_draw_cue`;
+//!   `legaia_engine_field::overworld_ground_cue::decoration_draw_cue`;
 //! - `psxTextureBlend` (the screen-primitive fragment shader in
 //!   `site/js/play-app.js`) against
-//!   `legaia_engine_ui::screen_prim::psx_texture_blend`.
+//!   `legaia_render_kernels::screen_prim::psx_texture_blend`.
 //!
 //! Nothing runs the JS outside a browser; this reads the functions' text and
 //! checks the literals their arithmetic uses, so a constant edited on one
 //! side fails here.
 
-use legaia_engine_core::overworld_ground_cue::{
+use legaia_engine_field::overworld_ground_cue::{
     DECORATION_CUE_NEAR_Z, DECORATION_FAR_BYTE, DECORATION_IR0_MAX,
 };
 
@@ -84,8 +84,11 @@ fn texture_blend_twin_matches_the_kernel_shape() {
     );
     // The kernel the shader mirrors.
     assert_eq!(
-        legaia_engine_ui::screen_prim::psx_texture_blend(14, 39),
+        legaia_render_kernels::screen_prim::psx_texture_blend(14, 39),
         ((14u32 * 39) >> 7) as u8
     );
-    assert_eq!(legaia_engine_ui::screen_prim::psx_texture_blend(9, 0x80), 9);
+    assert_eq!(
+        legaia_render_kernels::screen_prim::psx_texture_blend(9, 0x80),
+        9
+    );
 }

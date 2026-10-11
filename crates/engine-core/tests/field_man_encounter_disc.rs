@@ -18,7 +18,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::DefaultMapIdResolver;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -53,9 +54,13 @@ fn field_entry_installs_man_encounter_table() {
 
         // The MAN must resolve through the bundle (count=6 or count=7).
         let resolved = host.scene.as_ref().and_then(|s| {
-            s.field_man_encounter_table(&host.index, scene)
-                .ok()
-                .flatten()
+            legaia_engine_core::disc_readers::encounter_man::field_man_encounter_table(
+                s,
+                &host.index,
+                scene,
+            )
+            .ok()
+            .flatten()
         });
 
         match resolved {

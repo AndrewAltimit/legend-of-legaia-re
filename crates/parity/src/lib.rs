@@ -18,6 +18,7 @@
 //! the wgpu renderer for frame captures.
 
 pub mod audio_trace_oracle;
+pub mod capture_observations;
 pub mod mode_trace_oracle;
 pub mod pcm_oracle;
 pub mod retail_compare;
@@ -27,11 +28,3 @@ pub mod retail_compare_image;
 pub mod retail_compare_script;
 pub mod sim_trace;
 pub mod vram_oracle;
-
-/// The session over the native cpal output, as `legaia-engine-shell` names it.
-pub(crate) mod boot {
-    pub use legaia_engine_session::boot::*;
-    pub type BootSession = legaia_engine_session::boot::BootSession<legaia_engine_audio::AudioOut>;
-}
-
-pub(crate) use boot::{BootConfig, BootSession};

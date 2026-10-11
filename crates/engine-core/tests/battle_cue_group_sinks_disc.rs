@@ -1,7 +1,7 @@
 //! Disc-gated: a committed battle item's cue group reaches the world's spawn
 //! and SFX sinks - the engine half of the `FUN_801E22C8` wiring.
 //!
-//! `crates/engine-vm/tests/battle_cue_group_real.rs` proves the selection and
+//! `crates/engine-battle-vm/tests/battle_cue_group_real.rs` proves the selection and
 //! the expansion against the real tables; this proves the other end, that
 //! each expanded [`CueSpawn`] lands somewhere a host drains. The two arms go
 //! to the two paths retail's own arms go to:
@@ -17,10 +17,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::move_power::MovePowerCatalog;
+use legaia_engine_battle::move_power::MovePowerCatalog;
+use legaia_engine_battle_vm::battle_action::{ActionCategory, ActionState};
+use legaia_engine_battle_vm::battle_cue_group::{
+    CueSpawn, CueTables, cue_group_for, expand_cue_group,
+};
 use legaia_engine_core::world::World;
-use legaia_engine_vm::battle_action::{ActionCategory, ActionState};
-use legaia_engine_vm::battle_cue_group::{CueSpawn, CueTables, cue_group_for, expand_cue_group};
 use legaia_prot::archive::Archive;
 
 fn extracted() -> Option<PathBuf> {
@@ -38,7 +40,7 @@ fn overlay_0898(dir: &std::path::Path) -> Vec<u8> {
     let mut archive = Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
     let entry = archive
         .entries
-        .get(legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .get(legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .cloned()
         .expect("PROT 0898 entry");
     let mut bytes = Vec::new();
@@ -54,8 +56,8 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     };
     let overlay = overlay_0898(&dir);
     let scus = std::fs::read(dir.join("SCUS_942.54")).expect("read SCUS");
-    let items =
-        legaia_asset::item_effect::ItemEffectTable::from_scus(&scus).expect("item-effect table");
+    let items = legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus)
+        .expect("item-effect table");
 
     let mut world = World::new();
     world.tables.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
@@ -189,12 +191,12 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     // CD-XA clip: it reaches the host-drained **XA** queue, and the SFX
     // queue stays empty.
     let char_kind = world.party_roster_slot(1) as u8 + 1;
-    let cast = legaia_engine_vm::battle_cast_cue::cast_audio_cue(
+    let cast = legaia_engine_battle_vm::battle_cast_cue::cast_audio_cue(
         1, char_kind, eff.class, item_id, eff.tier,
     );
     let mut want: Vec<u16> = Vec::new();
     let mut want_xa: Vec<(u32, u32)> = Vec::new();
-    if let legaia_engine_vm::battle_cast_cue::CastCueOutcome::Sfx(id) = cast {
+    if let legaia_engine_battle_vm::battle_cast_cue::CastCueOutcome::Sfx(id) = cast {
         if id >= 0x100 {
             let v = u32::from(id - 0x100);
             let slot = match v >> 3 {

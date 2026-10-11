@@ -98,16 +98,16 @@ pub use retail_inventory::{
 /// `level < 0x11`, else `sum × 0x79`. Validated byte-exact against the record
 /// `+0x4` next-level-threshold field across the save-state library (New Game
 /// Vahn L1 shows "Next Level 121") and identical to the boot-time disc parse
-/// (`legaia_asset::level_up_tables::xp_thresholds_from_scus`).
+/// (`legaia_game_tables::level_up_tables::xp_thresholds_from_scus`).
 ///
 /// Slots 1 (Noa) and 2 (Gala) shift each threshold by `threshold × 0x14 /
 /// divisor[level]` (Noa earlier, Gala later; sin-LUT divisor table at
 /// `0x80070A2C`, stride `0x28`) - that correction is disc data, handled by
-/// `legaia_asset::level_up_tables` + `engine_core::levelup::LevelUpTracker`.
+/// `legaia_game_tables::level_up_tables` + `legaia_engine_battle::levelup::LevelUpTracker`.
 ///
 /// Engines that don't already pull this from
-/// `legaia_engine_battle::levelup::retail_xp_table` (re-exported under
-/// `engine_core::levelup`) can use this constant directly.
+/// `legaia_engine_battle::levelup::retail_xp_table` can use this constant
+/// directly.
 // PORT: FUN_801E9504 (XP-threshold derivation, base curve)
 pub const RETAIL_XP_CUMULATIVE: [u32; 98] = build_retail_cumulative();
 

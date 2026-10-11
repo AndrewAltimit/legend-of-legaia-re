@@ -18,9 +18,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_asset::scene_asset_table;
-use legaia_engine_core::man_field_scripts::scene_destinations;
-use legaia_engine_core::scene::{ProtIndex, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_field::man_field_scripts::scene_destinations;
+use legaia_engine_scene::scene::ProtIndex;
+use legaia_scene_formats::scene_asset_table;
 
 fn extracted_prot() -> Option<PathBuf> {
     for p in [
@@ -74,7 +75,7 @@ fn map01_controller_lists_its_overworld_destinations() {
 
     let bytes = std::fs::read(prot.join("0086_map01.BIN")).expect("0086_map01.BIN");
     let man = load_man_from_scene(&bytes).expect("MAN for map01");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse map01 MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse map01 MAN");
 
     let dests = scene_destinations(&mf, &man);
     let names: std::collections::BTreeSet<&str> =
@@ -96,7 +97,7 @@ fn map01_controller_lists_its_overworld_destinations() {
     // gate should never surface a string that isn't an actual scene).
     if let Some(root) = extracted_root() {
         let index =
-            legaia_engine_core::scene::ProtIndex::open_extracted(&root).expect("prot index");
+            legaia_engine_scene::scene::ProtIndex::open_extracted(&root).expect("prot index");
         let known: std::collections::BTreeSet<String> =
             index.cdname_scene_names().into_iter().collect();
         for d in &dests {

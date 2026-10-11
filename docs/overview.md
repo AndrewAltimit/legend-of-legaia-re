@@ -29,8 +29,8 @@ flowchart TD
 
     disc -- "crates/iso" --> files
     files -- "crates/prot" --> entries
-    entries -- "crates/asset: classify + dispatch" --> contents
-    contents -- "crates/lzs, crates/asset" --> subs
+    entries -- "crates/disc-audit: classify<br/>crates/container-formats: dispatch" --> contents
+    contents -- "crates/lzs, the format-family crates" --> subs
 ```
 
 | Layer | Crate | Spec |
@@ -39,12 +39,12 @@ flowchart TD
 | PROT table of contents and entry sizes | `prot` | [`formats/prot.md`](formats/prot.md) |
 | Entry names: `#define name N` marks a block start, names inherit forward | `prot` | [`formats/cdname.md`](formats/cdname.md) |
 | LZS compression | `lzs` | [`formats/lzs.md`](formats/lzs.md) |
-| Per-entry classification and the type-byte dispatch | `asset` | [`formats/asset-type.md`](formats/asset-type.md) |
-| Streaming containers and packs | `asset`, `prot` | [`formats/data-field.md`](formats/data-field.md), [`formats/pack.md`](formats/pack.md), [`formats/tim-pack.md`](formats/tim-pack.md) |
-| Per-scene bundles: meshes, textures, sound, scripts, tables | `asset` | [`formats/scene-bundles.md`](formats/scene-bundles.md) |
-| Effect bundles (magic `0x02018B0C`) | `asset` | [`formats/effect.md`](formats/effect.md) |
+| Per-entry classification and the type-byte dispatch | `disc-audit`, `container-formats` | [`formats/asset-type.md`](formats/asset-type.md) |
+| Streaming containers and packs | `container-formats`, `prot` | [`formats/data-field.md`](formats/data-field.md), [`formats/pack.md`](formats/pack.md), [`formats/tim-pack.md`](formats/tim-pack.md) |
+| Per-scene bundles: meshes, textures, sound, scripts, tables | `scene-formats` | [`formats/scene-bundles.md`](formats/scene-bundles.md) |
+| Effect bundles (magic `0x02018B0C`) | `container-formats` | [`formats/effect.md`](formats/effect.md) |
 | Runtime code overlays | `overlay-images` | [`formats/mips-overlay.md`](formats/mips-overlay.md), [`tooling/static-overlay-pipeline.md`](tooling/static-overlay-pipeline.md) |
-| Sound-driver outputs (`.MAP` / `.PCH` / `.spk` / `.dpk`) and VAB banks | `asset`, `vab` | [`formats/sound-driver.md`](formats/sound-driver.md), [`formats/vab.md`](formats/vab.md) |
+| Sound-driver outputs (`.MAP` / `.PCH` / `.spk` / `.dpk`) and VAB banks | `container-formats`, `vab` | [`formats/sound-driver.md`](formats/sound-driver.md), [`formats/vab.md`](formats/vab.md) |
 | Sub-assets: textures, meshes, sound banks, music, dialog, animation | `tim`, `tmd`, `vab`, `seq`, `mes`, `anm`, `mdt` | The per-format pages under [`formats/`](formats/overview.md) |
 
 Movies (`MOV/*.STR`) and streamed audio (`XA/*.XA`) sit outside PROT as ordinary disc files; `mdec` and `xa` decode them ([`subsystems/cutscene.md`](subsystems/cutscene.md), [`formats/xa.md`](formats/xa.md)).
@@ -75,29 +75,32 @@ Choose by what you are trying to do:
 
 ## Workspace
 
-The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`; one library per crate, plus a command-line binary behind the crate's default-on `cli` feature where it has one. Every dependency is declared once in the root `[workspace.dependencies]`. Each crate's `README.md` documents its own scope and CLI.
+The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`; one library per crate, plus a command-line binary behind the crate's default-on `cli` feature where it has one. `asset` is the exception: it is only the `asset` binary. Every dependency is declared once in the root `[workspace.dependencies]`. Each crate's `README.md` documents its own scope and CLI.
 
 ```mermaid
 flowchart TD
     subgraph formats["Formats and extraction"]
         container["iso, prot, lzs"]
-        hub["asset<br/>+ game-tables, battle-models, overlay-images"]
+        hub["format families<br/>container-formats, scene-formats, actor-formats,<br/>minigame-formats, ui-formats, game-tables, overlay-images"]
         perfmt["tim, tmd, vab, xa, seq, mes, anm, mdt, art, font, mdec, save"]
-        extract["extract: legaia-extract"]
-        container --> hub --> extract
+        audit["disc-audit: measures the whole disc"]
+        extract["extract: legaia-extract<br/>asset: the asset CLI"]
+        container --> hub --> audit --> extract
         perfmt --> hub
     end
     subgraph port["The port"]
-        kernels["World-free kernels<br/>engine-battle, engine-field, engine-menus, engine-dialog,<br/>engine-effects, engine-system, engine-minigames, engine-fishing"]
-        vm["engine-vm<br/>over engine-battle-vm + engine-motion-vm"]
+        vm["engine-vm, engine-battle-vm, engine-motion-vm"]
+        kernels["World-free kernels<br/>engine-system, engine-mode, engine-dialog, engine-battle, engine-effects,<br/>engine-field, engine-fishing, engine-minigames, engine-menus, engine-minigame-scenes"]
+        scene["engine-scene: scene resolution + loading"]
         core["engine-core: World + scene host"]
         audio["engine-audio: SPU + sequencer"]
         session["engine-session: BootSession"]
         present["engine-screens<br/>over engine-ui + render-kernels"]
         native["engine-shell: legaia-engine<br/>engine-render (winit + wgpu)"]
         web["web-viewer: WASM site build"]
-        kernels --> core
-        vm --> core
+        vm --> kernels
+        kernels --> scene
+        scene --> core
         core --> session
         audio --> session
         core --> present
@@ -108,24 +111,28 @@ flowchart TD
     end
     subgraph mod["Disc patcher"]
         dp["disc-patch"]
-        layers["translate, code-hooks, arts-patch,<br/>texture-replace, party-swap, delilas-party"]
+        layers["translate, code-hooks, arts-patch, texture-replace,<br/>party-swap, delilas-party, delilas-challenge"]
         patcher["patcher: legaia-patcher"]
         dp --> layers --> patcher
     end
-    hub --> core
+    hub --> vm
     hub --> dp
-    hub --> web
+    patcher --> web
 ```
 
-**Formats and extraction.** `bytes` (shared checked readers) sits under the container layer `iso`, `prot`, `lzs` and the format hub `asset`, which re-exports `game-tables` (the static data tables), `battle-models` (the battle model formats) and `overlay-images` (the code-overlay image formats). The per-format parsers are `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec` and `save`; `extract` drives the whole pipeline. `mednafen` and `pcsxr` read emulator save states; `gamedata` and `cheats` are curated label sets.
+An arrow runs from a crate to the crates built on it. The exact edges, and the gate that pins the ones among the engine's kernel crates, are in [`subsystems/engine.md`](subsystems/engine.md#crate-layering).
 
-**The port.** `engine-core` holds the `World` and the scene host. Below it sit the kernels that never touch `World` - `engine-battle`, `engine-field`, `engine-menus`, `engine-dialog`, `engine-effects`, `engine-system`, `engine-minigames` (over `engine-fishing`) and `engine-minigame-scenes` - and the ported VMs in `engine-vm` (which re-exports the battle side from `engine-battle-vm`).
+**Formats and extraction.** `bytes` (shared checked readers) sits under the disc layer `iso`, `prot`, `lzs`. The per-format parsers are `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec` and `save`.
 
-On the presentation side, `engine-ui` builds renderer-agnostic draw lists over the shared `render-kernels`; `engine-screens` composes the shop-family screens once for both hosts; `engine-session` is the `BootSession` and BGM director every play host ticks. `engine-render` (winit + wgpu) and `engine-audio` (SPU + sequencer) are the native presentation leaves, `engine-shell` is the `legaia-engine` binary, and `parity` holds the retail oracles. `asset-viewer` and the `web-viewer` WASM target sit beside them.
+Over them sit the format-family crates: `container-formats` (asset dispatch, chunk stream, pack), `scene-formats` (field and world-map scenes), `actor-formats` (the character and monster model formats), `minigame-formats`, `ui-formats`, `game-tables` (the static data tables) and `overlay-images` (the code-overlay image formats). `disc-audit` measures the whole disc, `asset` is the command-line binary over it and the format families, and `extract` drives the whole pipeline. `mednafen` and `pcsx-redux` read emulator save states over the shared `ram-image`; `gamedata` and `cheats` are curated label sets.
 
-The port ships three hosts on that one engine: the native `play-window`, the browser play page, and the browser minigames page. `engine-session`, `engine-screens` and `engine-ui` carry no wgpu / winit / cpal dependency, which is what lets the same session code run natively and in `wasm32`. The gates that keep the hosts in step are in [`tooling/host-drift.md`](tooling/host-drift.md).
+**The port.** `engine-core` holds the `World` and the scene host. Directly below it, `engine-scene` is the disc-facing half: it resolves a scene to its PROT entries and loads what the scene is built from, without naming `World`. Below that sit the kernels that never touch `World` - `engine-battle`, `engine-field`, `engine-menus`, `engine-dialog`, `engine-effects`, `engine-system`, `engine-mode`, `engine-minigames` (over `engine-fishing`) and `engine-minigame-scenes` - and the ported VMs in `engine-vm`, `engine-battle-vm` (the battle side) and `engine-motion-vm`. No crate re-exports another, so a path's first segment is the crate that owns the code.
 
-**The disc patcher.** `patcher` (the `legaia-patcher` binary) sits over `disc-patch` (sector write-back, PPF output, the free-space ledger) with `translate` (language packs), `party-swap` (the battle-model swap kernels), `texture-replace` (texture, battle-art and save-icon replacement) `code-hooks` (MIPS code injection), `arts-patch` (the Tactical Arts mods) and `delilas-party` (the play-as-Delilas mod) split out of it.
+On the presentation side, `engine-ui` builds renderer-agnostic draw lists over the shared `render-kernels`; `engine-screens` composes the shop-family screens once for both hosts; `engine-session` is the `BootSession` and BGM director every play host ticks. `engine-render` (winit + wgpu) is the native renderer and `engine-audio` (SPU + sequencer; cpal natively, WebAudio in the browser) the audio stack both hosts link, `engine-shell` is the `legaia-engine` binary, and `parity` holds the retail oracles. `asset-viewer` and the `web-viewer` WASM target sit beside them.
+
+The port ships three hosts on that one engine: the native `play-window`, the browser play page, and the browser minigames page. `engine-session`, `engine-screens` and `engine-ui` carry no wgpu or winit dependency (and reach cpal only through `engine-audio` on native targets), which is what lets the same session code run natively and in `wasm32`. The gates that keep the hosts in step are in [`tooling/host-drift.md`](tooling/host-drift.md).
+
+**The disc patcher.** `patcher` (the `legaia-patcher` binary) sits over `disc-patch` (sector write-back, PPF output, the free-space ledger) with `translate` (language packs), `party-swap` (the battle-model swap kernels), `texture-replace` (texture, battle-art and save-icon replacement), `code-hooks` (MIPS code injection), `arts-patch` (the Tactical Arts mods), `delilas-party` (the play-as-Delilas mod) and `delilas-challenge` (the Delilas Challenge dome course) as separate crates under it.
 
 Build and test:
 
