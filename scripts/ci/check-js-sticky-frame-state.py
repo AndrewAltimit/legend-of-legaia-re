@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Detect sticky renderer state the play page stages on one draw branch only.
 
-The browser play page's frame loop (`site/js/play-app.js`, `_frame`) draws
+The browser play page's frame loop (`site/js/play-view-frame.js`, `_frame`) draws
 through one of three branches - an in-world minigame venue, a battle, or the
 field - over ONE `TmdRenderer` (`site/js/webgl-tmd*.js`). Several renderer
 setters store a value the renderer keeps until the next call (the NCLIP cull
@@ -21,7 +21,7 @@ The audit:
 
   1. finds every `set*` method of `TmdRenderer` whose body makes no `gl.` call
      - a pure state store, i.e. sticky;
-  2. finds every `this.renderer.<setter>(` call in `play-app.js`;
+  2. finds every `this.renderer.<setter>(` call in the `PlayView` files;
   3. requires each such call to sit inside `_stageFrameState` (the one
      per-frame staging function, called ahead of every branch), unless the
      setter is declared in BRANCH_OWNED with the reason its value cannot leak.
@@ -51,7 +51,17 @@ RENDERER_JS = (
     "site/js/webgl-tmd-frame-state.js",
     "site/js/webgl-tmd-assembled-scene.js",
 )
-PAGE_JS = "site/js/play-app.js"
+# `PlayView`'s class body, likewise declared across files. `_frame` and
+# `_stageFrameState` are in play-view-frame.js.
+PAGE_JS = (
+    "site/js/play-app.js",
+    "site/js/play-view-scene-build.js",
+    "site/js/play-view-input.js",
+    "site/js/play-view-overlay.js",
+    "site/js/play-view-field-sync.js",
+    "site/js/play-view-frame.js",
+    "site/js/play-view-battle.js",
+)
 STAGING_FN = "_stageFrameState"
 
 # Sticky setters whose value is re-decided on every branch, with the reason.
@@ -96,7 +106,8 @@ def calls_by_function(page_src: str) -> list[tuple[int, str, str]]:
     """Every `this.renderer.set*(` call as `(line, setter, enclosing method)`.
 
     The enclosing method is the nearest preceding class-method head at the
-    class body's indent (four spaces), which is how play-app.js is laid out.
+    class body's indent (four spaces), which is how the PlayView files are
+    laid out.
     """
     out = []
     current = "<top>"
@@ -109,7 +120,7 @@ def calls_by_function(page_src: str) -> list[tuple[int, str, str]]:
     return out
 
 
-def audit(renderer_src: str, page_src: str) -> list[str]:
+def audit(renderer_src: str, page_src: str, page_path: str = PAGE_JS[0]) -> list[str]:
     sticky = sticky_setters(renderer_src)
     findings = []
     for line, setter, fn in calls_by_function(page_src):
@@ -117,7 +128,7 @@ def audit(renderer_src: str, page_src: str) -> list[str]:
             continue
         if fn != STAGING_FN:
             findings.append(
-                f"{PAGE_JS}:{line}: sticky renderer setter `{setter}` called in "
+                f"{page_path}:{line}: sticky renderer setter `{setter}` called in "
                 f"`{fn}`, not in `{STAGING_FN}` - its value leaks into the other "
                 f"draw branches. Stage it in `{STAGING_FN}`, or declare it in "
                 f"BRANCH_OWNED with the reason it cannot leak."
@@ -188,17 +199,22 @@ def main() -> int:
         print("selftest: ok")
         return 0
     renderer_src = "\n".join((REPO_ROOT / p).read_text(encoding="utf-8") for p in RENDERER_JS)
-    page_src = (REPO_ROOT / PAGE_JS).read_text(encoding="utf-8")
+    page_srcs = {p: (REPO_ROOT / p).read_text(encoding="utf-8") for p in PAGE_JS}
     sticky = sticky_setters(renderer_src)
     if not sticky:
         print(f"no sticky setters found in {", ".join(RENDERER_JS)} - classifier broken?", file=sys.stderr)
         return 2
-    staged = {s for _, s, fn in calls_by_function(page_src) if fn == STAGING_FN}
-    findings = audit(renderer_src, page_src)
+    staged = {
+        s
+        for src in page_srcs.values()
+        for _, s, fn in calls_by_function(src)
+        if fn == STAGING_FN
+    }
+    findings = [f for p, src in page_srcs.items() for f in audit(renderer_src, src, p)]
     for f in findings:
         print(f)
     if not staged and not findings:
-        print(f"{PAGE_JS}: `{STAGING_FN}` stages nothing - renamed?", file=sys.stderr)
+        print(f"{', '.join(PAGE_JS)}: `{STAGING_FN}` stages nothing - renamed?", file=sys.stderr)
         return 2
     if not args.quiet or findings:
         print(

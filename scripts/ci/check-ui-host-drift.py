@@ -3009,6 +3009,29 @@ RENDER_ROOTS = [
     REPO / "site" / "js",
 ]
 
+# A class declared across several files is ONE render surface. The rules below
+# test one file's text at a time, and a rule whose two halves sit in different
+# files of the same class - the play page uploads its field ground in
+# `play-view-scene-build.js` and drives the battle frame in `play-view-battle.js` - would
+# otherwise stop matching and report zero surfaces, which reads as clean. Each
+# group is scanned as one source under its first path.
+RENDER_SURFACE_GROUPS: list[list[str]] = [
+    [
+        "site/js/play-app.js",
+        "site/js/play-view-scene-build.js",
+        "site/js/play-view-input.js",
+        "site/js/play-view-overlay.js",
+        "site/js/play-view-field-sync.js",
+        "site/js/play-view-frame.js",
+        "site/js/play-view-battle.js",
+    ],
+    [
+        "site/js/webgl-tmd.js",
+        "site/js/webgl-tmd-frame-state.js",
+        "site/js/webgl-tmd-assembled-scene.js",
+    ],
+]
+
 RENDER_KERNEL_RULES: list[dict[str, object]] = [
     {
         "kernel": "cross-draw coplanar lifts",
@@ -3188,6 +3211,11 @@ def check_render_kernels() -> tuple[list[str], list[str], list[tuple[str, int, i
     counts: list[tuple[str, int, int, int]] = []
     sources = render_sources()
     texts = {p: strip_all_comments(p.read_text(encoding="utf-8", errors="ignore")) for p in sources}
+    for group in RENDER_SURFACE_GROUPS:
+        head, *rest = [REPO / rel for rel in group]
+        if head not in texts:
+            continue
+        texts[head] = "\n".join([texts[head]] + [texts.pop(q) for q in rest if q in texts])
     for rule in RENDER_KERNEL_RULES:
         kernel = str(rule["kernel"])
         blocked: dict = rule.get("blocked_on", {})  # type: ignore[assignment]
@@ -4106,7 +4134,7 @@ def frame_path_scan(host: str) -> tuple[list[tuple[str, int]], list[dict]]:
 # every kernel in `tick_frame`, at once, from whatever answer it last held.
 # A Rust-only scan is blind to this: `tick_frame` has no such arm, which is
 # how "the browser page has no early-out" came to be written down.
-WEB_PAGE_FRAME = "site/js/play-app.js"
+WEB_PAGE_FRAME = "site/js/play-view-frame.js"
 WEB_PAGE_FRAME_FN = "_frame(skipDraw)"
 WEB_PAGE_TICK_CALL = "rt.tick_frame()"
 WEB_PAGE_DRAW_CALL = "this._drawOverlay()"
