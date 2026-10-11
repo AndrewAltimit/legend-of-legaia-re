@@ -738,6 +738,19 @@ SPLIT_MODULES = frozenset({
     "crates/engine-vm/src/baka_hub_actors",
     "crates/engine-vm/src/actor_tick",
     "crates/engine-vm/src/world_map_panel_actors",
+    "crates/engine-minigames/src/slot_machine",
+    "crates/engine-minigames/src/baka_fighter_chrome",
+    "crates/engine-minigames/src/baka_cabinet",
+    "crates/engine-fishing/src/fishing_actors",
+    "crates/engine-minigame-scenes/src/muscle_dome_scene",
+    "crates/render-kernels/src/scene_lighting",
+    "crates/render-kernels/src/battle_intro",
+    "crates/engine-ui/src/ui_overlay",
+    "crates/engine-ui/src/ui_fishing",
+    "crates/engine-ui/src/ui_menu_window_painters",
+    "crates/engine-audio/src/sequencer",
+    "crates/engine-render/src/shaders",
+    "crates/engine-render/src/renderer/render",
 })
 
 
