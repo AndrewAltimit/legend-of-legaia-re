@@ -409,7 +409,7 @@ pub enum LeaderSwapEffect {
     /// table. Runs before any gate, on every state-0 frame.
     CachePartyPoses,
     /// State `0`: spawn the fade-to-white and keep the object it returns in
-    /// `_DAT_801F3490`. The template is `crate::fade::FadeTemplate` kind `2`,
+    /// `_DAT_801F3490`. The template is `legaia_engine_system::fade::FadeTemplate` kind `2`,
     /// `0x20` frames, black to white.
     SpawnFadeOut,
     /// State `2`: write the camera object's current pose back onto the

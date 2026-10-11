@@ -207,7 +207,7 @@ impl BuyQuantitySession {
 
     /// Drive one frame from the edge-triggered pad word.
     pub fn tick(&mut self, pressed: u16) -> BuyQtyEvent {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
         match self.phase {
             BuyQtyPhase::Init => {
                 self.qty = 1;

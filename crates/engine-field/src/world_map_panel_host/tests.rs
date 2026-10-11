@@ -125,10 +125,10 @@ fn the_countdown_cap_lands_a_short_retail_value_under_a_long_idle() {
 /// document independently.
 #[test]
 fn packed_pad_swaps_the_byte_halves() {
-    assert_eq!(packed_pad(crate::input::PadButton::Cross.mask()), 0x0040);
-    assert_eq!(packed_pad(crate::input::PadButton::Circle.mask()), 0x0020);
-    assert_eq!(packed_pad(crate::input::PadButton::Up.mask()), 0x1000);
-    assert_eq!(packed_pad(crate::input::PadButton::Down.mask()), 0x4000);
+    assert_eq!(packed_pad(legaia_engine_system::input::PadButton::Cross.mask()), 0x0040);
+    assert_eq!(packed_pad(legaia_engine_system::input::PadButton::Circle.mask()), 0x0020);
+    assert_eq!(packed_pad(legaia_engine_system::input::PadButton::Up.mask()), 0x1000);
+    assert_eq!(packed_pad(legaia_engine_system::input::PadButton::Down.mask()), 0x4000);
     // And the round trip is an involution, so a host can convert back.
     assert_eq!(packed_pad(packed_pad(0x1234)), 0x1234);
 }
@@ -137,23 +137,23 @@ fn packed_pad_swaps_the_byte_halves() {
 /// feeding the raw Cross bit must NOT read as a confirm.
 #[test]
 fn the_action_masks_are_packed_not_raw() {
-    let raw_cross = u32::from(crate::input::PadButton::Cross.mask());
+    let raw_cross = u32::from(legaia_engine_system::input::PadButton::Cross.mask());
     assert_eq!(
         raw_cross & PANEL_ACTION_A,
         0,
         "raw Cross is not packed Cross"
     );
     assert_eq!(
-        u32::from(packed_pad(crate::input::PadButton::Cross.mask())) & PANEL_ACTION_A,
+        u32::from(packed_pad(legaia_engine_system::input::PadButton::Cross.mask())) & PANEL_ACTION_A,
         PANEL_ACTION_A
     );
 }
 
 fn confirm() -> u16 {
-    packed_pad(crate::input::PadButton::Cross.mask())
+    packed_pad(legaia_engine_system::input::PadButton::Cross.mask())
 }
 fn cancel() -> u16 {
-    packed_pad(crate::input::PadButton::Circle.mask())
+    packed_pad(legaia_engine_system::input::PadButton::Circle.mask())
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn the_sub_list_row_one_confirm_raises_the_hand_off() {
     h.tick(0, 0, 1, &mut f);
     // Down then confirm: cursor 1 -> phase 3 (the hand-off).
     h.tick(
-        packed_pad(crate::input::PadButton::Down.mask()),
+        packed_pad(legaia_engine_system::input::PadButton::Down.mask()),
         0,
         1,
         &mut f,
@@ -240,7 +240,7 @@ fn the_flag_window_sizes_its_panel_and_commits_a_flag() {
     // screen row 0 and only Down can leave it. Confirming on the
     // remembered row is retail's cancel, so the pick has to move first.
     h.tick(
-        packed_pad(crate::input::PadButton::Down.mask()),
+        packed_pad(legaia_engine_system::input::PadButton::Down.mask()),
         0,
         1,
         &mut f,

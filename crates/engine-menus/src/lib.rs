@@ -19,18 +19,6 @@
 
 #![forbid(unsafe_code)]
 
-// Modules these files name as `crate::...`, which engine-core re-exports at
-// its root; binding them here keeps the moved files' paths unchanged.
-use legaia_engine_battle::battle_stats;
-use legaia_engine_battle::spells;
-use legaia_engine_system::input;
-
-use legaia_engine_system::menu_input;
-
-use legaia_engine_battle::target_picker;
-
-use legaia_engine_battle::arts_command_input;
-
 // The dialog pager and the spawned-context state, in `legaia-engine-dialog`;
 // re-exported here at the paths they had as modules of this crate.
 pub use legaia_engine_dialog::{

@@ -171,7 +171,7 @@ pub struct PartyCompareMember {
 /// REF: FUN_801D4C28
 pub fn party_compare_members_of(
     members: &[legaia_save::CharacterRecord],
-    table: &crate::battle_stats::EquipmentTable,
+    table: &legaia_engine_battle::battle_stats::EquipmentTable,
     info: Option<&crate::equipment::DiscEquipInfo>,
     item_id: u8,
 ) -> Vec<PartyCompareMember> {

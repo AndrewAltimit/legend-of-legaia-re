@@ -20,16 +20,6 @@
 
 #![forbid(unsafe_code)]
 
-// Modules these files name as `crate::...`, which engine-core re-exports at
-// its root; binding them here keeps the moved files' paths unchanged.
-use legaia_engine_battle::encounter_record;
-use legaia_engine_system::fade;
-use legaia_engine_system::input;
-use legaia_engine_system::music_labels;
-use legaia_engine_system::sound_state;
-
-use legaia_engine_system::mode_entry_init;
-
 pub mod actor_handler;
 pub mod actor_look;
 pub mod camera;
@@ -66,8 +56,6 @@ pub mod float_tween;
 pub mod incense_window;
 pub mod inline_dialogue;
 pub mod man_field_scripts;
-pub mod minigame_entry;
-pub mod mode;
 pub mod morph_weight_apply;
 pub mod motion_pause;
 pub mod overworld_draw_order;

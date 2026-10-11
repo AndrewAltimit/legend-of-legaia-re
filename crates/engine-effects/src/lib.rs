@@ -12,10 +12,6 @@
 
 #![forbid(unsafe_code)]
 
-// Kernels these modules name as `crate::...`, which engine-core re-exports at
-// its root; binding them here keeps the moved files' paths unchanged.
-use legaia_engine_battle::retail_magic;
-
 pub mod action_effect_script;
 pub mod effect_default_arm;
 pub mod effect_ribbon;

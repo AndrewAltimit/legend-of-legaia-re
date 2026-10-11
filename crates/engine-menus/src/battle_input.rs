@@ -89,12 +89,12 @@
 //! `legaia_engine_core::battle_magic::BattleSpellSession` /
 //! [`crate::inventory_use::InventoryUseSession`] instead. `Spirit` and `Run`
 //! resolve immediately (no target). Target selection reuses
-//! [`crate::target_picker`].
+//! [`legaia_engine_battle::target_picker`].
 //!
 //! The session is a small state machine driven one frame at a time by
 //! [`BattleCommandSession::input`] with an edge-triggered
 //! [`BattleCommandInput`] (the host derives the edges from
-//! [`crate::input::InputState`]). When [`BattleCommandSession::resolved`]
+//! [`legaia_engine_system::input::InputState`]). When [`BattleCommandSession::resolved`]
 //! returns a value the live loop arms the action SM with the chosen target.
 //!
 //! Chip labels are the retail words. Their disc coordinates - the SCUS block at
@@ -103,7 +103,7 @@
 //! Ra-Seru name the magic arm really carries (`Meta` / `Terra` / `Ozma`) comes
 //! from.
 
-use crate::target_picker::{
+use legaia_engine_battle::target_picker::{
     CursorRow, PickerInput, PickerOutcome, SlotState, TargetKind, TargetPickerSession,
 };
 
@@ -204,7 +204,7 @@ impl BattleCommand {
 }
 
 /// Per-frame, edge-triggered pad bundle for the command session. The host
-/// fills this from [`crate::input::InputState::just_pressed`] so navigation is
+/// fills this from [`legaia_engine_system::input::InputState::just_pressed`] so navigation is
 /// one step per press (battle menus don't auto-repeat in v0.1).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BattleCommandInput {

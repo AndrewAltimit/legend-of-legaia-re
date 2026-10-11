@@ -37,7 +37,7 @@
 //! `..._0x801CFE5C.txt`, `..._0x801D0100.txt`, `..._0x801D0198.txt`,
 //! `..._0x801D0230.txt`. Ported from the disassembly.
 //!
-//! # REPLACED-BY: the `legaia_mdec` software decoder, driven by `crate::cutscene`
+//! # REPLACED-BY: the `legaia_mdec` software decoder, driven by `crate::movie::cutscene`
 //!
 //! Two independent reasons, and both land on the same class.
 //!

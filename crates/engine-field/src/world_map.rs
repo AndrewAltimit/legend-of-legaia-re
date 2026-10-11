@@ -36,7 +36,7 @@ use crate::world_map_horizon::{HorizonBatch, emit_horizon};
 /// Every mask below is a **packed** pad bit - the layout `FUN_801E76D4`
 /// reads out of `_DAT_8007B850` (held) and `_DAT_8007B874` (newly pressed),
 /// which `FUN_8001822C` builds by swapping the raw BIOS word's byte halves.
-/// It is *not* [`crate::input::PadButton`]'s layout, and the two disagree on
+/// It is *not* [`legaia_engine_system::input::PadButton`]'s layout, and the two disagree on
 /// every bit that matters here: raw `0x1000` is Triangle, packed `0x1000` is
 /// D-pad Up. [`WorldMapController::tick`] converts on the way in
 /// ([`packed_pad`]), so the constants stay the retail literals.
@@ -280,7 +280,7 @@ impl WorldMapController {
     }
 
     /// Tick one frame. `pad_current` is the full 16-bit **raw**
-    /// ([`crate::input::PadButton`]) pad word for this frame; `pad_held` is
+    /// ([`legaia_engine_system::input::PadButton`]) pad word for this frame; `pad_held` is
     /// the bits that are newly pressed (not held from the previous frame -
     /// the retail `_DAT_8007B874` word).
     ///
@@ -586,7 +586,7 @@ mod tests {
         assert!(!ctrl.is_top_view());
     }
 
-    /// The raw ([`crate::input::PadButton`]) word that arrives at the
+    /// The raw ([`legaia_engine_system::input::PadButton`]) word that arrives at the
     /// controller as `packed`. `tick` takes raw words, every retail literal
     /// is packed, and the conversion is the byte swap.
     fn raw(packed: u16) -> u16 {
@@ -628,9 +628,9 @@ mod tests {
             ..Default::default()
         };
         let (held, edge) = toggle_chord();
-        assert!(!ctrl.tick(held | crate::input::PadButton::Up.mask(), edge));
+        assert!(!ctrl.tick(held | legaia_engine_system::input::PadButton::Up.mask(), edge));
         assert_eq!(ctrl.view_mode, 0);
-        assert!(!ctrl.tick(held, edge | crate::input::PadButton::Circle.mask()));
+        assert!(!ctrl.tick(held, edge | legaia_engine_system::input::PadButton::Circle.mask()));
         assert_eq!(ctrl.view_mode, 0);
     }
 

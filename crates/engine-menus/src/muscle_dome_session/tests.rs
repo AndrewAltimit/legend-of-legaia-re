@@ -99,16 +99,16 @@ fn a_turn_opens_on_the_round_prompt_and_run_flees() {
 
 // --- The Ra-Seru command class ----------------------------------------
 
-fn seru(id: u8, mp: u8, power: u16) -> crate::spells::SpellDef {
-    crate::spells::SpellDef {
+fn seru(id: u8, mp: u8, power: u16) -> legaia_engine_battle::spells::SpellDef {
+    legaia_engine_battle::spells::SpellDef {
         id,
         name: format!("Seru{id:02x}"),
         mp_cost: mp,
-        element: crate::spells::SpellElement::Neutral,
-        target: crate::spells::SpellTarget::OneEnemy,
-        effect: crate::spells::SpellEffect::Damage {
+        element: legaia_engine_battle::spells::SpellElement::Neutral,
+        target: legaia_engine_battle::spells::SpellTarget::OneEnemy,
+        effect: legaia_engine_battle::spells::SpellEffect::Damage {
             base_power: power,
-            element: crate::spells::SpellElement::Neutral,
+            element: legaia_engine_battle::spells::SpellElement::Neutral,
         },
         anim_id: 0,
         effect_class: 0,
@@ -337,7 +337,7 @@ fn the_selection_walks_the_battle_screens_and_only_begin_fights() {
     assert!(s.selection_exhausted(0));
     assert_eq!(
         s.arts_input_view().map(|v| v.phase),
-        Some(crate::arts_command_input::ArtsInputScreen::Review)
+        Some(legaia_engine_battle::arts_command_input::ArtsInputScreen::Review)
     );
     // Any press on the review commits -> Begin | Reselect.
     assert_eq!(

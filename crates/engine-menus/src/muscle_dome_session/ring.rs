@@ -258,7 +258,7 @@ pub struct DomeMagic {
     /// kernel takes.
     pub magic_power: u16,
     /// The learned spells, in list order.
-    pub spells: Vec<crate::spells::SpellDef>,
+    pub spells: Vec<legaia_engine_battle::spells::SpellDef>,
 }
 
 /// One selectable row of the dome's Ra-Seru list.

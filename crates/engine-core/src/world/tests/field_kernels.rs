@@ -2,7 +2,7 @@
 //! table, so they stay on the engine-core side of the crate split.
 
 use crate::field_anim::{FieldClipPlayer, FieldPlayerAnim, synth_anm_bundle};
-use crate::field_submode::{CARD_REQUEST_MODE, request_card_mode};
+use legaia_engine_mode::card_request::{CARD_REQUEST_MODE, request_card_mode};
 use crate::scene_transition_actor::{HeldTransition, SceneTransitionHold};
 
 #[test]

@@ -38,7 +38,7 @@
 //! - [`ItemEffect::Revive`]: restores HP to `(hp_max * factor) / 256`
 //!   from zero (default factor is `128` = 50%).
 //! - [`ItemEffect::StatBoost`]: permanently raises a base stat by
-//!   `delta` (capped by [`crate::battle_stats::StatRecord`] limits).
+//!   `delta` (capped by [`legaia_engine_battle::battle_stats::StatRecord`] limits).
 //! - [`ItemEffect::Spirit`]: refunds `amount` AP into the active
 //!   character's `legaia_engine_core::ap_gauge::ApGauge`.
 //! - [`ItemEffect::Capture`]: marks the target monster slot with the

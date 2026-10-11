@@ -166,7 +166,7 @@ fn buy_item_count_reflects_inventory_length() {
     assert_eq!(s.buy_item_count(), 2);
 }
 
-use crate::input::PadButton;
+use legaia_engine_system::input::PadButton;
 use crate::menu_list_rows::ListSelection;
 
 #[test]
@@ -267,7 +267,7 @@ fn sell_quantity_cancel() {
     assert!(s.is_done());
 }
 
-use crate::menu_input::NavButtons;
+use legaia_engine_system::menu_input::NavButtons;
 
 fn nav(confirm: bool, cancel: bool, left: bool, right: bool) -> NavButtons {
     NavButtons {

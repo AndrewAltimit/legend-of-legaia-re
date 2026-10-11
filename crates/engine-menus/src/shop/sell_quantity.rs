@@ -143,7 +143,7 @@ impl SellQuantitySession {
     /// `frame_delta` the scratchpad frame-delta units (1 per vsync at
     /// 60 Hz) consumed by the exit delay.
     pub fn tick(&mut self, pressed: u16, frame_delta: i32) -> SellQtyEvent {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
         match self.phase {
             SellQtyPhase::Init => {
                 // Phase 0: staging + window script; interactive next

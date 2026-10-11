@@ -321,7 +321,7 @@ impl SelectInput {
     /// Unpack an edge-triggered PSX pad word, the shape every host already
     /// drives its menus with.
     pub fn from_pad_edge(pressed: u16) -> Self {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
         let is = |b: PadButton| pressed & b.mask() != 0;
         Self {
             up: is(PadButton::Up),

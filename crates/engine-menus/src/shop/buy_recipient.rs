@@ -51,7 +51,7 @@ enum BuyRecipientPhase {
 ///
 /// Navigates `party_count + 1` rows through the shared cursor
 /// primitive (`FUN_801D688C`, wrap - port
-/// [`crate::menu_input::menu_cursor_nav`]): row 0 buys one copy into
+/// [`legaia_engine_system::menu_input::menu_cursor_nav`]): row 0 buys one copy into
 /// the bag, a party row buys **and equips immediately** after an
 /// equippability check (item subtype -> equip-record `+6` mask vs the
 /// per-character mask byte `0x801E43F0[char]`; a mismatch buzzes and
@@ -92,8 +92,8 @@ impl BuyRecipientSession {
     }
 
     /// Drive one frame from the menu nav-button edges.
-    pub fn tick(&mut self, buttons: crate::menu_input::NavButtons) -> BuyRecipientEvent {
-        use crate::menu_input::CursorNav;
+    pub fn tick(&mut self, buttons: legaia_engine_system::menu_input::NavButtons) -> BuyRecipientEvent {
+        use legaia_engine_system::menu_input::CursorNav;
         match self.phase {
             BuyRecipientPhase::Init => {
                 self.cursor = 0;
@@ -102,7 +102,7 @@ impl BuyRecipientSession {
             }
             BuyRecipientPhase::Interactive => {
                 let rows = self.can_equip.len() as u32 + 1;
-                match crate::menu_input::menu_cursor_nav(&mut self.cursor, rows, true, buttons) {
+                match legaia_engine_system::menu_input::menu_cursor_nav(&mut self.cursor, rows, true, buttons) {
                     CursorNav::Confirm => {
                         let row = self.cursor & 0xFFF;
                         let point_credit = if self.point_card_held {

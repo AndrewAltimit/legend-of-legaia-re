@@ -90,7 +90,7 @@ pub struct PanelFrame {
     /// SFX ring producer calls raised this frame, in call order - the
     /// sub-list's `FUN_80035BD0(0x20)` (`0x801ED65C`) and the text box's
     /// `FUN_80035BD0(0)` + `FUN_80035B50(0x25)` (`0x801EE9AC` / `0x801EE9B4`).
-    pub sfx: Vec<crate::sound_state::SfxRingOp>,
+    pub sfx: Vec<legaia_engine_system::sound_state::SfxRingOp>,
     /// Every [`ActorExit`] a terminal arm asked for. Recorded, not dispatched -
     /// see the module docs.
     pub exits: Vec<ActorExit>,
@@ -538,7 +538,7 @@ impl PanelActorHost {
                 // the last-written ring slot rather than pushing.
                 SubListEffect::PlaySfx(s) => frame
                     .sfx
-                    .push(crate::sound_state::SfxRingOp::ReplaceLast(s as i16)),
+                    .push(legaia_engine_system::sound_state::SfxRingOp::ReplaceLast(s as i16)),
                 SubListEffect::ClearWindowDescriptor => {
                     self.flag_desc = FlagWindowDescriptor::default()
                 }
@@ -644,9 +644,9 @@ impl PanelActorHost {
                 // (`0x801EE9B4`): the move cue overwrites, the restore pushes.
                 TextBoxEffect::PlaySfx(s) => frame.sfx.push(
                     if s == crate::world_map_panel_actors::TEXT_BOX_MOVE_SFX {
-                        crate::sound_state::SfxRingOp::ReplaceLast(s as i16)
+                        legaia_engine_system::sound_state::SfxRingOp::ReplaceLast(s as i16)
                     } else {
-                        crate::sound_state::SfxRingOp::Push(s as i16)
+                        legaia_engine_system::sound_state::SfxRingOp::Push(s as i16)
                     },
                 ),
                 TextBoxEffect::RestoreParty => frame.restore_party = true,

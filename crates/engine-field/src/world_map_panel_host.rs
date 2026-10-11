@@ -63,7 +63,7 @@
 //!
 //! Every kernel in this band reads the **packed** pad words
 //! (`_DAT_8007BB84` newly-pressed, `_DAT_8007B874` held) that `FUN_8001822C`
-//! builds, not the raw BIOS layout [`crate::input::PadButton`] carries. The
+//! builds, not the raw BIOS layout [`legaia_engine_system::input::PadButton`] carries. The
 //! two hold the same 16 buttons with the byte halves swapped, so feeding a raw
 //! word straight in cross-wires the whole screen: raw Cross (`0x4000`) arrives
 //! as packed D-pad Down, and raw Up (`0x0010`) arrives as nothing at all.

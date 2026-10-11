@@ -84,7 +84,7 @@ pub const COUNTDOWN_RESET_VALUE: u32 = 0x0000_05DC;
 ///   `0x801DFC00`).
 pub const MASTER_GAME_MODE_ADDR: u32 = 0x8007_B83C;
 
-/// Master-game-mode value [`legaia_engine_system::cutscene_trigger::STR_INIT_MODE`]
+/// Master-game-mode value [`legaia_engine_system::movie::cutscene_trigger::STR_INIT_MODE`]
 /// re-exported here for use alongside [`MASTER_GAME_MODE_ADDR`] in this
 /// module.
 pub const MASTER_GAME_MODE_STR_INIT: u8 = 0x1A;

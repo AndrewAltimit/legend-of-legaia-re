@@ -262,10 +262,10 @@ pub struct FieldMenuInput {
 
 impl FieldMenuInput {
     /// Decode one frame's **raw** just-pressed pad word
-    /// ([`crate::input::PadButton`] layout) into the root picker's edges.
+    /// ([`legaia_engine_system::input::PadButton`] layout) into the root picker's edges.
     /// Every host drives the root list through this decode.
     pub fn from_pad_edge(edge: u16) -> Self {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
         let pressed = |b: PadButton| edge & b.mask() != 0;
         Self {
             up: pressed(PadButton::Up),

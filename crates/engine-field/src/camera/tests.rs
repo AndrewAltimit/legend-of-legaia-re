@@ -57,7 +57,7 @@ fn scene_entry_resets_globals_to_field_defaults() {
 fn scene_entry_restamps_the_field_draw_context_view_window() {
     let mut c = Camera::new();
     let default = {
-        let (x0, z0, x1, z1) = crate::mode_entry_init::field_draw_context().view_window;
+        let (x0, z0, x1, z1) = legaia_engine_system::mode_entry_init::field_draw_context().view_window;
         [x0, z0, x1, z1]
     };
     assert_eq!(c.zone.view_window, default, "boot seeds the field box");

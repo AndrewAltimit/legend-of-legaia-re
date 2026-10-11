@@ -33,7 +33,7 @@ The field VM (`FUN_801DE840`), actor VM, move VM, world-map controller (`FUN_801
 
 ## Entry from the field
 
-The cabinet is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 104` (`sub_id 4`), which sets game mode `0x18` and loads PROT 0976. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `legaia_engine_field::minigame_entry::MinigameSubId`.
+The cabinet is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 104` (`sub_id 4`), which sets game mode `0x18` and loads PROT 0976. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `legaia_engine_mode::minigame_entry::MinigameSubId`.
 
 A disc-wide walk of every scene MAN finds four sites: the three interchangeable cabinet placements in the Sol casino (`koin1` P1[51], P1[52], P1[53]) and one in `map03` P2[20]. The last is **dev residue** - a bare record with nothing but the warp, in a partition-2 slot no reachable script spawns. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
 

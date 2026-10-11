@@ -3571,7 +3571,7 @@ def check_owned_types(shipped: dict[str, list[tuple[str, str]]]) -> tuple[list[s
 ENUM_COVERAGE: list[dict[str, object]] = [
     {
         "enum": "SceneMode",
-        "source": "crates/engine-field/src/mode/game_mode.rs",
+        "source": "crates/engine-mode/src/mode/game_mode.rs",
         "why": "a mode both hosts can ENTER (the shared scene host drains the "
         "mode-24 door warp for either) and only one can DRAW leaves the other "
         "host's player in a frozen field with no screen - the shape four "

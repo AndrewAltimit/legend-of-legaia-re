@@ -68,7 +68,7 @@ pub const CAMERA_FORCE_EASE_FLAG: u32 = 0x0004_0000;
 /// else in this module touches the world.
 pub trait CameraWorld {
     /// The world's current scene mode.
-    fn scene_mode(&self) -> crate::mode::SceneMode;
+    fn scene_mode(&self) -> legaia_engine_mode::mode::SceneMode;
     /// The player actor's world position, `None` without a player actor.
     fn player_world_pos(&self) -> Option<(i32, i32, i32)>;
     /// Actor `slot`'s world position while it is active, else `None`.

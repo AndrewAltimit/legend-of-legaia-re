@@ -218,7 +218,7 @@ Notes on the table:
   field asset loader `FUN_8001F7C0` and the MAN decoder `FUN_8003AEB0`).
   `CONFIG` is the dev debug menu, not game config. `CARD` covers the title
   screen, the memory-card manager and the in-field pause menu. The port's
-  `GameMode` enum (`crates/engine-field/src/mode.rs`) keeps the dev names and
+  `GameMode` enum (`crates/engine-mode/src/mode.rs`) keeps the dev names and
   documents the real roles.
 
 ### Overlay loaders and index spaces
@@ -569,7 +569,7 @@ sub-mode `0x11`.
 #### The port's seat at the mode table
 
 The engine's counterpart of `_DAT_8007B83C` is `ModeSeat`
-(`crates/engine-field/src/mode.rs`, re-exported as `engine-core::mode`), owned
+(`crates/engine-mode/src/mode.rs`, re-exported as `engine-core::mode`), owned
 by `engine-session`'s `BootSession` and driven once per frame from
 `BootSession::tick`. It is a seat rather than a mirror because its **writes are
 the port's own transitions**: the session enters `MAIN INIT` where retail's

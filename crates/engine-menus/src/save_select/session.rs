@@ -518,7 +518,7 @@ impl SaveSelectSession {
 
     // REF: FUN_801d688c (the Yes/No confirm cursor - retail sub-screen 0x03
     // drives it with `FUN_801D688C(&DAT_801E46D0, 2, 1)`). A cross-reference,
-    // not a port: the routine itself is `crate::menu_input` (`//! PORT:
+    // not a port: the routine itself is `legaia_engine_system::menu_input` (`//! PORT:
     // FUN_801d688c`), whose `menu_cursor_nav` this calls. Here it advances the
     // 2-item horizontal cursor and reports confirm / cancel / move, and the
     // Yes/No branch is decided from the resulting cursor (retail return `1` =

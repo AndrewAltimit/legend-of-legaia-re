@@ -2904,7 +2904,7 @@ The library is `legaia_asset::field_disasm::{decode, LinearWalker, find_fmv_trig
 
 ## FMV-trigger sites - exhaustive backward sweep
 
-A grep across every Ghidra dump in the corpus for writes to the global game-mode word `_DAT_8007B83C = 0x1A` (the `StrInit` mode that boots the str_fmv overlay) finds only the field-VM op plus the title-attract path (pinned at two PCs in the title overlay). The sites are codified in [`legaia_engine_system::cutscene_trigger`](../../crates/engine-system/src/cutscene_trigger.rs) as `FMV_TRIGGER_SITES`:
+A grep across every Ghidra dump in the corpus for writes to the global game-mode word `_DAT_8007B83C = 0x1A` (the `StrInit` mode that boots the str_fmv overlay) finds only the field-VM op plus the title-attract path (pinned at two PCs in the title overlay). The sites are codified in [`legaia_engine_system::movie::cutscene_trigger`](../../crates/engine-system/src/movie/cutscene_trigger.rs) as `FMV_TRIGGER_SITES`:
 
 | Label | Function | Mode-write addr | FMV-id source | Trigger condition |
 |---|---|---|---|---|

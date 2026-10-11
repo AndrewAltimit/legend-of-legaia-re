@@ -20,11 +20,11 @@
 //! the handler to a [`ModeHandler`] trait, and the parameter to the
 //! [`ModeEntry::param`] flag bits. The Sony function pointers are NOT used;
 //! engine integrations supply Rust closures that drive the
-//! [`super::world::World`]. The table's name/param/next fields are
+//! [`legaia_engine_field::world::World`]. The table's name/param/next fields are
 //! reconciled against the disc-recovered map (`legaia_asset::mode_table`)
 //! by the disc-gated `mode_table_reconcile` test.
 
-use crate::input::InputState;
+use legaia_engine_system::input::InputState;
 
 mod driver;
 mod frame_stage;

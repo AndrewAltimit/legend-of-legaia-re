@@ -24,7 +24,7 @@
 //! `FUN_801DCB60`/`FUN_801D0F1C` item info, `FUN_801D2C98` caster window,
 //! `FUN_801D2E74` spell info).
 
-use crate::input::PadButton;
+use legaia_engine_system::input::PadButton;
 use crate::inventory_use::{InventoryUseInput, InventoryUseSession, InventoryUseState};
 use crate::spell_menu::{SpellMenuPhase, SpellMenuSession};
 use legaia_engine_battle_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};

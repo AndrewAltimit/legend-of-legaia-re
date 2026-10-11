@@ -245,7 +245,7 @@ pub struct ColourTweenStep {
 /// extracted `overlay_field_0897.bin` at base `0x801CE818`), clear the clock,
 /// then copy ten halfwords out of the caller's block.
 ///
-/// **The block is [`crate::fade::FadeTemplate`]**, not a private layout, and
+/// **The block is [`legaia_engine_system::fade::FadeTemplate`]**, not a private layout, and
 /// that is the useful finding: the field VM builds one block on its stack and
 /// hands it to *either* `FUN_80024E80` (the fade-actor spawn, taken when
 /// `_DAT_1F800394 & 0x800000` is set) or this function (the default arm). Both
@@ -263,7 +263,7 @@ pub struct ColourTweenStep {
 /// `FUN_801DE840` at `0x801DFD68` and `0x801DFEE8`, the
 /// `_DAT_1F800394 & 0x800000` default side of the fork - reaches
 /// `World::op34_sub0_color_intensity_setup`, which builds the two
-/// [`crate::fade::FadeTemplate`]s that arm reads off its stack and spawns
+/// [`legaia_engine_system::fade::FadeTemplate`]s that arm reads off its stack and spawns
 /// each through `World::spawn_colour_tween`. The per-frame push is then the
 /// only representation of the effect; the float ramp that used to stand
 /// beside it, with nothing reading either, is gone.
@@ -276,7 +276,7 @@ pub struct ColourTweenStep {
 ///
 /// [`ActorHandler::ColourTween`]: crate::actor_handler::ActorHandler::ColourTween
 /// [`World::screen_tint_pushes`]: legaia_engine_core::world::World::screen_tint_pushes
-pub fn tween_from_fade_template(t: &crate::fade::FadeTemplate, kind: i16) -> ColourTween {
+pub fn tween_from_fade_template(t: &legaia_engine_system::fade::FadeTemplate, kind: i16) -> ColourTween {
     let c = |v: [i16; 3]| (v[0] as u16, v[1] as u16, v[2] as u16);
     ColourTween {
         from: c(t.start_rgb),

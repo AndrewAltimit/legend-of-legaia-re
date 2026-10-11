@@ -10,7 +10,7 @@ use super::*;
 /// the decrements, checked before the SFX fires). Returns the new
 /// quantity, or `None` when nothing moved.
 pub(super) fn quantity_step(pressed: u16, qty: i32, max: i32) -> Option<i32> {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     if pressed & PadButton::Right.mask() != 0 && qty < max {
         return Some(qty + 1);
     }

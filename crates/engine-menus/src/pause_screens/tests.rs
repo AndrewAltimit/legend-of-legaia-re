@@ -2,7 +2,7 @@ use super::*;
 use crate::inventory_use::{InventoryContext, TargetRow};
 use crate::items::ItemCatalog;
 use crate::spell_menu::{CasterSlot, SpellMenuInput};
-use crate::spells::SpellCatalog;
+use legaia_engine_battle::spells::SpellCatalog;
 
 fn items_session(ids_counts: &[(u8, u8)]) -> PauseItemsSession {
     let items: Vec<u8> = ids_counts.iter().map(|(id, _)| *id).collect();
@@ -412,7 +412,7 @@ fn magic_model_desc_resolves_through_text_tables() {
 /// quarter shaved off; both set = half wins; no bits = full cost.
 fn staged_mp_cost(ability_bits: u32) -> u16 {
     let mut catalog = SpellCatalog::new();
-    catalog.insert(crate::spells::SpellDef {
+    catalog.insert(legaia_engine_battle::spells::SpellDef {
         id: 0x81,
         name: "Costly".into(),
         mp_cost: 40,
@@ -943,7 +943,7 @@ fn root_menu_cancel_asks_first_under_the_locked_context() {
 /// way a walk widened to the battle aggregator's eight would show.
 #[test]
 fn menu_stat_block_sums_five_equip_slots_not_eight() {
-    use crate::battle_stats::{EquipmentTable, ItemModifier, StatRecord};
+    use legaia_engine_battle::battle_stats::{EquipmentTable, ItemModifier, StatRecord};
     let mut table = EquipmentTable::new();
     table.set(
         0x11,
@@ -988,7 +988,7 @@ fn menu_stat_block_sums_five_equip_slots_not_eight() {
 /// the candidate step's compare is window 25, so the block is empty there.
 #[test]
 fn the_main_window_compare_block_belongs_to_the_best_equipment_row() {
-    use crate::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
+    use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
     use crate::equip_session::{EquipInput, EquipSession};
     let mut inv = crate::item_bag::ItemBag::new();
     inv.insert(1, 1);
@@ -1022,7 +1022,7 @@ fn the_main_window_compare_block_belongs_to_the_best_equipment_row() {
 
 #[test]
 fn compare_slot_row_is_the_retail_browse_row_not_the_engine_slot() {
-    use crate::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
+    use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
     use crate::equip_session::{EquipInput, EquipSession, EquipState};
 
     // Engine slot -> the row retail's browse column would be on. Rows

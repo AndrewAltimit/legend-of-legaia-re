@@ -160,7 +160,7 @@ pub const SUBMODE_DISPATCH_CLAMP_PC: u32 = 0x801D_D7F8;
 /// Address of the watchpoint-pinned countdown decrement that triggers
 /// the title attract loop (see [`cutscene_trigger::TITLE_TICK_INLINE`]).
 ///
-/// [`cutscene_trigger::TITLE_TICK_INLINE`]: legaia_engine_system::cutscene_trigger::TITLE_TICK_INLINE
+/// [`cutscene_trigger::TITLE_TICK_INLINE`]: legaia_engine_system::movie::cutscene_trigger::TITLE_TICK_INLINE
 pub const SUBMODE_COUNTDOWN_DECR_PC: u32 = 0x801D_DCCC;
 
 /// The 25-entry JT, indexed by mode byte.

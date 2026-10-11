@@ -34,13 +34,13 @@
 //!   Spirit charge to apply, so the fighter simply does not swing.
 
 use super::*;
-use crate::arts_command_input::{
+use legaia_engine_battle::arts_command_input::{
     ARTS_LIST_ROWS_PER_PAGE, ArtsCommandInputSession, ArtsCommandPad, ArtsInputResolution,
 };
 use crate::battle_input::{
     BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase, Resolution,
 };
-use crate::target_picker::SlotState;
+use legaia_engine_battle::target_picker::SlotState;
 
 /// Which selection screen owns the dome fighter's pad.
 #[derive(Debug, Clone)]
@@ -135,7 +135,7 @@ impl MuscleDomeSession {
     /// (Left, Right, Down, Up = command ids `0xC..=0xF`), off the fighter's
     /// dealt hand.
     fn entry_costs(&self) -> [u16; 4] {
-        let mut costs = [crate::arts_command_input::FAVORED_COST; 4];
+        let mut costs = [legaia_engine_battle::arts_command_input::FAVORED_COST; 4];
         for card in &self.f[0].hand {
             if let Some(cmd) = dome_command_of_action_byte(card.command_id) {
                 costs[usize::from(cmd.as_byte() - 1)] = card.cost;
@@ -340,7 +340,7 @@ impl MuscleDomeSession {
         let before = (entry.buffer.len(), entry.list_page, entry.pool);
         let reviewing = matches!(
             entry.phase,
-            crate::arts_command_input::ArtsInputPhase::Review
+            legaia_engine_battle::arts_command_input::ArtsInputPhase::Review
         );
         entry.input(
             ArtsCommandPad {
@@ -361,7 +361,7 @@ impl MuscleDomeSession {
         // cursor that opens is taken as the commit.
         let targeting = matches!(
             entry.phase,
-            crate::arts_command_input::ArtsInputPhase::Targeting { .. }
+            legaia_engine_battle::arts_command_input::ArtsInputPhase::Targeting { .. }
         );
         match entry.resolved() {
             _ if targeting => {
@@ -393,7 +393,7 @@ impl MuscleDomeSession {
                 let to_review = !reviewing
                     && matches!(
                         entry.phase,
-                        crate::arts_command_input::ArtsInputPhase::Review
+                        legaia_engine_battle::arts_command_input::ArtsInputPhase::Review
                     );
                 self.menu = DomeMenu::Input(entry);
                 self.sync_entry();
@@ -452,8 +452,8 @@ impl MuscleDomeSession {
     /// outside the selection. Harnesses (the world-tick oracles, the soak
     /// and replay drivers) share it so none of them encodes the screen order
     /// on its own.
-    pub fn scripted_press(&self) -> Option<crate::input::PadButton> {
-        use crate::input::PadButton;
+    pub fn scripted_press(&self) -> Option<legaia_engine_system::input::PadButton> {
+        use legaia_engine_system::input::PadButton;
         if self.phase != MusclePhase::Select || self.intro_up() {
             return None;
         }
@@ -483,14 +483,14 @@ impl MuscleDomeSession {
     /// the pad - the snapshot the shared arts-input chrome draws from
     /// (`legaia_engine_core::world::World::arts_input_view` hands it to the hosts during a
     /// dome leg).
-    pub fn arts_input_view(&self) -> Option<crate::arts_command_input::ArtsInputView<'_>> {
+    pub fn arts_input_view(&self) -> Option<legaia_engine_battle::arts_command_input::ArtsInputView<'_>> {
         let DomeMenu::Input(s) = &self.menu else {
             return None;
         };
         if self.phase != MusclePhase::Select {
             return None;
         }
-        Some(crate::arts_command_input::ArtsInputView {
+        Some(legaia_engine_battle::arts_command_input::ArtsInputView {
             buffer: &s.buffer,
             spent: &s.spent,
             pennants: s.bar_commands(),
@@ -499,7 +499,7 @@ impl MuscleDomeSession {
             pool_max: s.pool_max,
             costs: s.costs,
             // The dome capture's chips read the plain direction words.
-            chip_icons: crate::arts_command_input::PLAIN_CHIP_ICONS,
+            chip_icons: legaia_engine_battle::arts_command_input::PLAIN_CHIP_ICONS,
             // The right-hand plate reads the fighter's Spirit gauge, which
             // never moves during entry.
             plate_value: self.spirit(0).min(100) as u8,

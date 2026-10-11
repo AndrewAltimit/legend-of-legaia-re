@@ -5,7 +5,7 @@
 //! module enumerates them, maps each to an [`EquipSlot`] kind, and
 //! ships a vanilla catalog covering the early-game roster.
 //!
-//! Each entry produces a [`crate::battle_stats::ItemModifier`] that the
+//! Each entry produces a [`legaia_engine_battle::battle_stats::ItemModifier`] that the
 //! aggregator (`compute_battle_stats`) reads on commit. Engines build
 //! the catalog at startup and pass it into [`EquipmentSession`] /
 //! `legaia_engine_core::equip_session::EquipSession` for the player UI.
@@ -16,7 +16,7 @@
 //! Engines that care about exact retail values can override per-id via
 //! [`EquipmentCatalog::set`].
 
-use crate::battle_stats::{EquipmentTable, ItemModifier};
+use legaia_engine_battle::battle_stats::{EquipmentTable, ItemModifier};
 
 /// The 8 equipment slot kinds, in the engine's own order.
 ///
@@ -863,7 +863,7 @@ pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8
 /// arg) is dead except as the passthrough to `FUN_801DD0C0`, so it is folded
 /// into the caller's `agility_term` closure rather than taken here.
 ///
-/// REPLACED-BY: [`crate::battle_stats::compute_battle_stats`] over a
+/// REPLACED-BY: [`legaia_engine_battle::battle_stats::compute_battle_stats`] over a
 /// trial-equipped record (`legaia_engine_core::equip_session::EquipSession::preview_candidate`),
 /// which is what feeds the Equip screen's stat-compare columns on both hosts
 /// and needs no row word at all. The argument this kernel takes is a

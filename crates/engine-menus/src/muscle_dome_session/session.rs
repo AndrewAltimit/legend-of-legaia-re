@@ -594,7 +594,7 @@ impl MuscleDomeSession {
     pub fn spell_mp_cost(&self, slot: usize, spell_id: u8) -> Option<u16> {
         let m = self.magic(slot)?;
         let def = m.spells.iter().find(|s| s.id == spell_id)?;
-        Some(crate::spells::caster_mp_cost(
+        Some(legaia_engine_battle::spells::caster_mp_cost(
             def,
             u32::from(m.ability_bits),
         ))
@@ -764,14 +764,14 @@ impl MuscleDomeSession {
     }
 
     /// Resolve fighter `slot`'s committed cast against the other fighter -
-    /// the MP debit plus the shared [`crate::spells::cast_spell`] rule the
+    /// the MP debit plus the shared [`legaia_engine_battle::spells::cast_spell`] rule the
     /// regular battle's cast band folds with
     /// (`World::cast_spell_on_slots_prepaid`), so a dome cast and a battle
     /// cast of the same spell resolve through one kernel.
     ///
     /// Returns the HP delta applied to the defender (positive = damage).
     pub(super) fn resolve_cast(&mut self, slot: usize) -> i32 {
-        use crate::spells::{SpellOutcome, SpellSnapshot, cast_spell};
+        use legaia_engine_battle::spells::{SpellOutcome, SpellSnapshot, cast_spell};
         let Some(spell_id) = self.queued_cast(slot) else {
             return 0;
         };
@@ -809,7 +809,7 @@ impl MuscleDomeSession {
             target_hp_max: self.f[defender].max_hp.clamp(0, u16::MAX as i32) as u16,
             target_mp: self.mp(defender),
             target_alive: self.f[defender].hp > 0,
-            target_weakness: crate::spells::ElementMask::default(),
+            target_weakness: legaia_engine_battle::spells::ElementMask::default(),
         };
         match cast_spell(&def, target, &snap) {
             SpellOutcome::Damage { amount, .. } => i32::from(amount),

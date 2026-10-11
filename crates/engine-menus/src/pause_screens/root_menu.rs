@@ -75,7 +75,7 @@ pub enum RootMenuRoute {
 /// PORT: FUN_801d6b20 (menu-overlay sub-screen `0x01`, phase-1 confirm arm
 /// `0x801D6BCC..0x801D6CF4`)
 /// REF: FUN_801d688c (the cursor navigator this screen drives; ported as
-/// `crate::menu_input`)
+/// `legaia_engine_system::menu_input`)
 /// REF: FUN_801cfd68 (the row renderer whose grey arms read the same two
 /// globals in the same order)
 ///

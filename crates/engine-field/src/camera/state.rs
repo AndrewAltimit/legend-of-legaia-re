@@ -252,7 +252,7 @@ pub struct ZoneFollow {
     /// and overwritten by a camera-region record's mask-kind side-write -
     /// the four bytes [`crate::camera_zone::CameraZoneConfig::load_record`]
     /// returns. Seeded per scene entry from
-    /// [`crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`], replaced by a
+    /// [`legaia_engine_system::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`], replaced by a
     /// camera-region record's mask-kind side-write
     /// ([`Self::load_record`]) and by field-VM op `0x46`
     /// ([`Camera::route_camera_events`]) - retail's order is seed, then
@@ -303,7 +303,7 @@ impl Default for ZoneFollow {
             prev_scripted: false,
             pending: Vec::new(),
             view_window: {
-                let (a, b, c, d) = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
+                let (a, b, c, d) = legaia_engine_system::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
                 [a, b, c, d]
             },
             shake_offset: [0, 0],

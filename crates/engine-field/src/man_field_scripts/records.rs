@@ -31,7 +31,7 @@ impl ArmSite {
         matches!(
             self.record,
             Some(EncounterRecord { count: 1, monster_ids })
-                if monster_ids[0] == crate::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID
+                if monster_ids[0] == legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID
         )
     }
 }

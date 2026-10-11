@@ -23,7 +23,7 @@ pub const MENU_CONFIRM_CUE: u8 = 0x20;
 /// Cancel cue (`FUN_80032A44`, `li a2,0x37` at `0x80032D74`).
 pub const MENU_CANCEL_CUE: u8 = 0x37;
 
-use crate::input::PadButton;
+use legaia_engine_system::input::PadButton;
 
 // Pad bits of the host pad word both hosts hand the engine.
 const PAD_START: u16 = PadButton::Start as u16;

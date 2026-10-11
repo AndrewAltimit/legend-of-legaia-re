@@ -93,7 +93,7 @@ flowchart LR
 
 `StrInit` opens the STR stream, initialises the MDEC and starts the XA audio. `StrMode` runs the
 per-frame loop: read the next batch of sectors, decode a frame, blit it full-screen. Both map to
-`SceneMode::Cutscene` in the port (`crates/engine-field/src/mode.rs`). The mode table lists
+`SceneMode::Cutscene` in the port (`crates/engine-mode/src/mode.rs`). The mode table lists
 `ConfigInit` (index 1) as mode 27's `next`; the hand-off a movie takes is written by the master
 dispatch per `fmv_id` ([below](#master-dispatch---fun_801cea3c-overlay)).
 
@@ -165,7 +165,7 @@ table in [`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-
 inside this function, not a sibling entry point).
 
 **Port.** Both `switch`es live in `legaia_engine_core::cutscene` (defined in
-`crates/engine-system/src/cutscene.rs`): `fmv_post_play_handoff` returns the control transfer as
+`crates/engine-system/src/movie/cutscene.rs`): `fmv_post_play_handoff` returns the control transfer as
 an `FmvHandoff` (field scene + spawn word / resume-in-place / card init / mode 0), and
 `fmv_bitstream`, `fmv_is_skippable` and `fmv_clear_rects` carry the three pre-play decisions.
 
@@ -495,7 +495,7 @@ the SPU callback registration `FUN_8006A0E0`, which calls the same PsyQ entry wi
 It is byte-identical, at the same VA, in PROT 0970 and PROT 0971 (`debug_menu`; file offset
 `0x1680`, inside 0971's own `0x1800` bytes).
 
-The two sync wrappers are ported for shape in `legaia_engine_system::mdec_dma_sync`, which
+The two sync wrappers are ported for shape in `legaia_engine_system::movie::mdec_dma_sync`, which
 records them as retail-unreachable rather than as a wiring gap: no host call could make them
 correspond to something the game does. Sweep commands:
 [`find-address-word-refs.py`](../../scripts/ghidra-analysis/find-address-word-refs.py)
@@ -876,7 +876,7 @@ decode rect's VRAM origin, resolved in `legaia_mdec::str_player`.
 ### Static FMV-trigger sites - exhaustive
 
 Three sites write `_DAT_8007B83C = 0x1A` in retail, all codified in
-[`legaia_engine_system::cutscene_trigger`](../../crates/engine-system/src/cutscene_trigger.rs) as
+[`legaia_engine_system::movie::cutscene_trigger`](../../crates/engine-system/src/movie/cutscene_trigger.rs) as
 `FMV_TRIGGER_SITES`:
 
 | Site | Function | Mode-write addr | FMV-id source | Trigger condition |
@@ -2695,7 +2695,7 @@ Three details of these bodies are visible only in the disassembly; the port
 | XA sector layout + demux | `crates/xa/src/demux.rs`; [`formats/xa.md`](../formats/xa.md) |
 | Interleaved STR A/V decode + sync clock | `crates/engine-shell/src/cutscene_av.rs`; browser twin `crates/web-viewer/src/play_fmv.rs` |
 | Audio-cursor playback clock | `crates/engine-audio/src/lib.rs` (`AudioOut::xa_cursor_secs`) |
-| Game modes 26 / 27 | `crates/engine-field/src/mode.rs` |
+| Game modes 26 / 27 | `crates/engine-mode/src/mode.rs` |
 | `play-str` frame loop | `crates/engine-shell/src/window/str_player.rs` (`cmd_play_str` / `StrPlayerApp`) |
 
 ## See also

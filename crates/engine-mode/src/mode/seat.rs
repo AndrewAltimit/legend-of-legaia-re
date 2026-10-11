@@ -188,7 +188,7 @@ pub const BOOT_MODE_CHAIN: &[ModeWordStore] = &[
 ///
 /// The two pad clears are the half with observable behaviour: the button that
 /// caused a transition is not also delivered as the new mode's first input.
-/// The engine's equivalent is [`crate::input::InputState::clear_edges`], which
+/// The engine's equivalent is [`legaia_engine_system::input::InputState::clear_edges`], which
 /// drops the edges and leaves what is held alone.
 ///
 /// The `0x8007B938` clear is a fourth store the earlier three-clear reading of
@@ -279,7 +279,7 @@ pub struct ModeSeat {
     /// Mode changes taken since the seat opened.
     edges: u64,
     /// `_DAT_8007BB00` - the **front-end entry word**, the companion store of
-    /// [`crate::field_submode::request_card_mode`].
+    /// [`legaia_engine_mode::card_request::request_card_mode`].
     ///
     /// It is the flag `init.pak`'s hand-off arm reads to choose between the
     /// front end and the debug menu ([`Self::boot_handoff`]), and the flag the
@@ -366,13 +366,13 @@ impl ModeSeat {
     /// Request the front end, both stores: the mode word to `CARD INIT` and
     /// the entry word raised.
     ///
-    /// This is [`crate::field_submode::request_card_mode`]'s pair applied to
+    /// This is [`legaia_engine_mode::card_request::request_card_mode`]'s pair applied to
     /// the seat - the leaf is seven instructions and two stores, and this is
     /// where they land. Retail's field image calls it to hand the frame to
     /// the card / title screen; the port's hosts call it to open the pause
     /// menu and to re-enter the front end.
     pub fn request_card_mode(&mut self) {
-        let req = crate::field_submode::request_card_mode();
+        let req = crate::card_request::request_card_mode();
         if let Some(mode) = GameMode::from_index(req.game_mode as usize) {
             self.driver.jump_to(mode);
         }

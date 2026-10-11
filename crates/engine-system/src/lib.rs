@@ -15,16 +15,13 @@
 #![forbid(unsafe_code)]
 
 pub mod chunk_install;
-pub mod cutscene;
-pub mod cutscene_trigger;
 pub mod draw_census;
 pub mod fade;
 pub mod fade_ramp;
 pub mod input;
-pub mod mdec_dma_sync;
 pub mod menu_input;
 pub mod mode_entry_init;
-pub mod movie_audio;
+pub mod movie;
 pub mod music_labels;
 pub mod pad;
 pub mod pause_wipe;

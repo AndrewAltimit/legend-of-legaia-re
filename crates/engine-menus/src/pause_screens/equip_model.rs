@@ -146,7 +146,7 @@ pub struct EquipCompareModel {
 #[derive(Clone, Copy)]
 pub struct EquipCompareCtx<'a> {
     /// The character record behind the session. Supplies the HP / MP maxima,
-    /// which [`crate::battle_stats::StatRecord`] does not carry.
+    /// which [`legaia_engine_battle::battle_stats::StatRecord`] does not carry.
     pub record: &'a legaia_save::CharacterRecord,
     /// Disc equipment stat-bonus table view, for the class-`1` arm of the
     /// category lookup (`0x80074F68 + row*8 + 5`).
@@ -161,7 +161,7 @@ pub struct EquipCompareCtx<'a> {
 /// `FUN_801CF650`'s loop counter is bounded by `slti a2, 5` at `0x801CF744`,
 /// so the block behind windows 22 / 25 / 41 sums the first five equip bytes
 /// only - not all eight. The battle-side aggregator `FUN_80042558`, which
-/// [`crate::battle_stats::compute_battle_stats`] implements, walks the whole
+/// [`legaia_engine_battle::battle_stats::compute_battle_stats`] implements, walks the whole
 /// array; that is why [`menu_stat_block`] zeroes the tail rather than
 /// handing the shared aggregator the record as it stands.
 pub const MENU_BLOCK_EQUIP_SLOTS: usize = 5;
@@ -212,8 +212,8 @@ pub fn compare_category_for_item(id: u8, ctx: &EquipCompareCtx<'_>) -> u8 {
 /// REF: FUN_801cf5d0 - the seeder.
 /// REF: FUN_801cf650 - the equipment-bonus summer.
 pub fn menu_stat_block(
-    record: &crate::battle_stats::StatRecord,
-    table: &crate::battle_stats::EquipmentTable,
+    record: &legaia_engine_battle::battle_stats::StatRecord,
+    table: &legaia_engine_battle::battle_stats::EquipmentTable,
     hp_max: u16,
     mp_max: u16,
 ) -> [i32; 8] {
@@ -221,8 +221,8 @@ pub fn menu_stat_block(
     for slot in MENU_BLOCK_EQUIP_SLOTS..walked.equip.len() {
         walked.equip[slot] = 0;
     }
-    let neutral = crate::battle_stats::StatusModifiers::default();
-    let s = crate::battle_stats::compute_battle_stats(&walked, table, &[], &neutral);
+    let neutral = legaia_engine_battle::battle_stats::StatusModifiers::default();
+    let s = legaia_engine_battle::battle_stats::compute_battle_stats(&walked, table, &[], &neutral);
     [
         i32::from(hp_max),
         i32::from(mp_max),

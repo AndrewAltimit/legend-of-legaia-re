@@ -12,7 +12,7 @@
 //! - [`StatusPhase::Browsing`] - viewing a character's panel; L1/R1 cycle.
 //! - [`StatusPhase::Done`] - Circle/Start cancelled out, shell closes.
 
-use crate::input::PadButton;
+use legaia_engine_system::input::PadButton;
 
 /// Per-equip-slot view. Plain data so the renderer doesn't have to
 /// resolve item ids itself.

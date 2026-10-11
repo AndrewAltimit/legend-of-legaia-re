@@ -1,7 +1,7 @@
 //! Out-of-battle spell menu.
 //!
 //! Field-side spell casting flow: pick caster → pick spell → pick target
-//! → resolve via [`crate::spells::cast_spell`]. Only spells whose effect
+//! → resolve via [`legaia_engine_battle::spells::cast_spell`]. Only spells whose effect
 //! is field-meaningful (Heal / HealAll / Cure / Revive) are admissible
 //! in this context - damage / capture / escape spells filter out.
 //!
@@ -49,8 +49,8 @@
 //! REF: FUN_801d688c (cursor navigator) / FUN_8003fb10 (relevance probe)
 //! / FUN_80035394 (MP-cost kernel) / FUN_800402f4 (field applier)
 
-use crate::input::PadButton;
-use crate::spells::{SpellCatalog, SpellEffect, SpellOutcome};
+use legaia_engine_system::input::PadButton;
+use legaia_engine_battle::spells::{SpellCatalog, SpellEffect, SpellOutcome};
 
 /// Rows per page of the retail Magic-screen spell list (the capture-pinned
 /// list-page layout, shared with the Items list - see
@@ -100,10 +100,10 @@ impl CasterSlot {
     }
 
     /// MP this caster pays for `def` - the one discounted-cost kernel
-    /// ([`crate::spells::caster_mp_cost`]) the list greying, the confirm
+    /// ([`legaia_engine_battle::spells::caster_mp_cost`]) the list greying, the confirm
     /// gate, the cast resolve and the debit all read.
-    pub fn mp_cost(&self, def: &crate::spells::SpellDef) -> u16 {
-        crate::spells::caster_mp_cost(def, self.ability_bits)
+    pub fn mp_cost(&self, def: &legaia_engine_battle::spells::SpellDef) -> u16 {
+        legaia_engine_battle::spells::caster_mp_cost(def, self.ability_bits)
     }
 
     /// Learned level of the `idx`-th spell (1 when the level list is
@@ -264,7 +264,7 @@ pub enum InvalidReason {
 /// `0x801d9220..0x801d9260`: `lbu 0x2(spell_stats); andi 0x20`)
 ///
 /// WIRED: the state-2 confirm in [`SpellMenuSession::handle`] routes on it,
-/// over the flag bits [`crate::spells::SpellTarget::retail_target_flag_bits`]
+/// over the flag bits [`legaia_engine_battle::spells::SpellTarget::retail_target_flag_bits`]
 /// materialises from the catalog's decoded shape. Set opens
 /// [`SpellMenuPhase::GroupConfirm`] (retail sub-screen `0x10`, no rows);
 /// clear opens the per-member picker as before. Both hosts reach it through
@@ -272,10 +272,10 @@ pub enum InvalidReason {
 ///
 /// The prerequisite this row used to name - "a multi-target outcome **and** a
 /// matching applier" - needed no new outcome variant in the end:
-/// [`crate::spells::SpellOutcome::MultiHeal`] already carried the per-member
+/// [`legaia_engine_battle::spells::SpellOutcome::MultiHeal`] already carried the per-member
 /// grants, and `legaia_engine_core::field_menu_dispatch::apply_spell_outcome` now has an
 /// arm for it. Before that arm a party-wide heal picked one member and healed
-/// only them, because [`crate::spells::cast_spell`]'s `HealAll` arm returns
+/// only them, because [`legaia_engine_battle::spells::cast_spell`]'s `HealAll` arm returns
 /// the grant for the **one** member it was handed and asks the caller to
 /// re-run it per ally - which the group flow now does.
 pub fn spell_targets_group(stats_flag_byte: u8) -> bool {
@@ -608,7 +608,7 @@ impl SpellMenuSession {
                 // member's own deficit.
                 let mut healed: Vec<(u8, u16)> = Vec::new();
                 for row in &self.targets {
-                    let snap = crate::spells::SpellSnapshot {
+                    let snap = legaia_engine_battle::spells::SpellSnapshot {
                         caster_mp,
                         caster_ability_bits,
                         target_hp: row.hp,
@@ -617,7 +617,7 @@ impl SpellMenuSession {
                         ..Default::default()
                     };
                     if let SpellOutcome::Heal { target, amount } =
-                        crate::spells::cast_spell(def, row.slot, &snap)
+                        legaia_engine_battle::spells::cast_spell(def, row.slot, &snap)
                         && amount > 0
                     {
                         healed.push((target, amount));
@@ -695,7 +695,7 @@ impl SpellMenuSession {
                     let Some(c) = self.party.get(caster as usize) else {
                         return events;
                     };
-                    let snap = crate::spells::SpellSnapshot {
+                    let snap = legaia_engine_battle::spells::SpellSnapshot {
                         caster_mp: c.mp,
                         caster_ability_bits: c.ability_bits,
                         target_hp: target.hp,
@@ -703,7 +703,7 @@ impl SpellMenuSession {
                         target_alive: target.alive(),
                         ..Default::default()
                     };
-                    let outcome = crate::spells::cast_spell(def, target_slot, &snap);
+                    let outcome = legaia_engine_battle::spells::cast_spell(def, target_slot, &snap);
                     let resolved = SpellMenuOutcome::Cast {
                         caster_slot: c.slot,
                         spell_id,
@@ -727,8 +727,8 @@ impl SpellMenuSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spells::SpellEffect;
-    use crate::spells::SpellTarget;
+    use legaia_engine_battle::spells::SpellEffect;
+    use legaia_engine_battle::spells::SpellTarget;
 
     /// The `+2` stats bit is what picks the flow, and the two shapes the
     /// field screen can reach disagree on it.
@@ -772,7 +772,7 @@ mod tests {
                 hp_max: 100,
             },
         ];
-        let mut s = SpellMenuSession::new(party, targets, crate::spells::SpellCatalog::vanilla());
+        let mut s = SpellMenuSession::new(party, targets, legaia_engine_battle::spells::SpellCatalog::vanilla());
         let _ = s.tick(SpellMenuInput {
             cross: true,
             ..Default::default()
@@ -823,7 +823,7 @@ mod tests {
             hp: 60,
             hp_max: 100,
         }];
-        let mut s = SpellMenuSession::new(party, targets, crate::spells::SpellCatalog::vanilla());
+        let mut s = SpellMenuSession::new(party, targets, legaia_engine_battle::spells::SpellCatalog::vanilla());
         let _ = s.tick(SpellMenuInput {
             cross: true,
             ..Default::default()
@@ -1064,7 +1064,7 @@ mod tests {
     fn is_field_usable_filters_damage_and_buff() {
         assert!(!is_field_usable(&SpellEffect::Damage {
             base_power: 50,
-            element: crate::spells::SpellElement::Fire
+            element: legaia_engine_battle::spells::SpellElement::Fire
         }));
         assert!(is_field_usable(&SpellEffect::HealAll { amount: 60 }));
         assert!(is_field_usable(&SpellEffect::Heal { amount: 24 }));

@@ -37,7 +37,7 @@ pub(super) const NOA_ROSTER_SLOT: usize = 1;
 pub fn magic_loadout_of(
     member: &legaia_save::CharacterRecord,
     captured: &[u8],
-    catalog: &crate::spells::SpellCatalog,
+    catalog: &legaia_engine_battle::spells::SpellCatalog,
     ability_bits: u32,
     roster_slot: usize,
     special: u32,
@@ -50,7 +50,7 @@ pub fn magic_loadout_of(
             learned.push(sid);
         }
     }
-    let spells: Vec<crate::spells::SpellDef> = learned
+    let spells: Vec<legaia_engine_battle::spells::SpellDef> = learned
         .iter()
         .filter_map(|id| catalog.get(*id).cloned())
         .collect();

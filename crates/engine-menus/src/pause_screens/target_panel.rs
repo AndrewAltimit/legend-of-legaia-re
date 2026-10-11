@@ -86,10 +86,10 @@ pub fn staged_use_item_id(s: &PauseItemsSession) -> Option<u8> {
 /// bytes.
 pub fn stat_record_from_character(
     c: &legaia_save::CharacterRecord,
-) -> crate::battle_stats::StatRecord {
+) -> legaia_engine_battle::battle_stats::StatRecord {
     let eq_bytes = c.equipment().slots;
     let live = c.live_stats();
-    crate::battle_stats::StatRecord {
+    legaia_engine_battle::battle_stats::StatRecord {
         base_attack: live.atk,
         base_udf: live.udf,
         base_ldf: live.ldf,

@@ -116,7 +116,7 @@ pub const DOME_SEED_SALT: u32 = 0x4D55_5343;
 ///
 /// The bank map is **piecewise** - `988 + index` below sound-test 68 and
 /// `990 + index` at or above it - so an extraction entry converts to a global
-/// id through [`crate::music_labels::sound_test_index_for_prot_entry`] and not
+/// id through [`legaia_engine_system::music_labels::sound_test_index_for_prot_entry`] and not
 /// by subtracting a single base. Reading `1043` as `990 + 53` is what put
 /// `2053` here, two slots off, and the same slip cost both dance tracks below;
 /// the round-trip is pinned by this module's tests.
@@ -219,7 +219,7 @@ impl MinigameSubId {
     /// loads a Sol-disco track, the dance overlay loads one of two chart
     /// loops, and the Muscle Dome arena reuses the **battle** engine wholesale
     /// and therefore plays a battle theme
-    /// ([`crate::music_labels::BATTLE_THEME_1_BGM_ID`]). The slot machine and
+    /// ([`legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID`]). The slot machine and
     /// the fishing venue load no track at all - the casino / lake scene's own
     /// music keeps playing under them.
     ///
@@ -232,7 +232,7 @@ impl MinigameSubId {
     pub fn bgm_id(self) -> Option<u16> {
         match self {
             MinigameSubId::BakaFighter => Some(BAKA_FIGHTER_BGM_ID),
-            MinigameSubId::MuscleDome => Some(crate::music_labels::BATTLE_THEME_1_BGM_ID),
+            MinigameSubId::MuscleDome => Some(legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID),
             MinigameSubId::Dance
             | MinigameSubId::Fishing
             | MinigameSubId::SlotMachine
@@ -331,14 +331,14 @@ mod tests {
         );
         assert_eq!(
             M::MuscleDome.standalone_bgm_id(),
-            Some(crate::music_labels::BATTLE_THEME_1_BGM_ID)
+            Some(legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID)
         );
         assert_eq!(
             M::SlotMachine.standalone_bgm_id(),
             Some(SOL_CASINO_FLOOR_BGM_ID)
         );
         assert_eq!(
-            crate::music_labels::prot_entry_for_bgm_id(SOL_CASINO_FLOOR_BGM_ID),
+            legaia_engine_system::music_labels::prot_entry_for_bgm_id(SOL_CASINO_FLOOR_BGM_ID),
             Some(legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX as u32)
         );
         assert_eq!(M::Dance.standalone_bgm_id(), Some(DANCE_SHORT_SONG_BGM_ID));
@@ -347,14 +347,14 @@ mod tests {
 
     #[test]
     fn the_minigame_tracks_resolve_to_their_documented_prot_entries() {
-        use crate::music_labels::prot_entry_for_bgm_id;
+        use legaia_engine_system::music_labels::prot_entry_for_bgm_id;
         assert_eq!(prot_entry_for_bgm_id(BAKA_FIGHTER_BGM_ID), Some(1043));
         assert_eq!(prot_entry_for_bgm_id(DANCE_SHORT_SONG_BGM_ID), Some(1048));
         assert_eq!(prot_entry_for_bgm_id(DANCE_LONG_SONG_BGM_ID), Some(1054));
         // The dome reuses the battle engine, so it plays a battle theme.
         assert_eq!(
             MinigameSubId::MuscleDome.bgm_id(),
-            Some(crate::music_labels::BATTLE_THEME_1_BGM_ID)
+            Some(legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID)
         );
     }
 

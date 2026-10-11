@@ -236,7 +236,7 @@ verdicts; `engine-core` re-exports them.
 | `8003a55c` | `MapObject` | `crates/engine-field/src/field_regions.rs` | FALSE INERT |
 | `8003ebe4` / `8003ec70` | `load_overlay_a` / `load_overlay_b` + module | `crates/engine-core/src/overlay_loader.rs` | DISCLOSE |
 | `800520f0` | `battle_stage_overlay_entry` | `crates/engine-core/src/overlay_loader.rs` | DISCLOSE |
-| `801cea3c` | `fmv_post_play_handoff` | `crates/engine-system/src/cutscene.rs` | WIRE (wired) |
+| `801cea3c` | `fmv_post_play_handoff` | `crates/engine-system/src/movie/cutscene.rs` | WIRE (wired) |
 | `801cf0d8` | `build_strip` | `crates/engine-minigames/src/slot_machine.rs` | WIRE (wired) |
 | `801cf0d8` | `cash_out` | `crates/engine-minigames/src/slot_machine.rs` | FALSE INERT |
 | `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement/direction_probes.rs` | WIRE (wired) |

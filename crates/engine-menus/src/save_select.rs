@@ -61,7 +61,7 @@
 //! alone (the default) reduces the beat to the frame countdown a
 //! disk-backed host expects.
 
-use crate::menu_input::{CURSOR_INDEX_MASK, CursorNav, NavButtons, menu_cursor_nav};
+use legaia_engine_system::menu_input::{CURSOR_INDEX_MASK, CursorNav, NavButtons, menu_cursor_nav};
 
 mod card_directory;
 mod card_io;

@@ -27,7 +27,7 @@
 //!
 //! Engines forward generic [`InventoryUseInput`] events. The mapping from
 //! actual key bindings (Z = Confirm, X = Cancel, arrows for navigation)
-//! lives in `crate::input` and is engine-side.
+//! lives in `legaia_engine_system::input` and is engine-side.
 
 use crate::items::{ItemCatalog, ItemEffect, ItemEntry, ItemOutcome, TargetSnapshot, status_bit};
 use legaia_engine_battle_vm::status_effects::StatusKind;

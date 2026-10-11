@@ -158,7 +158,7 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
 /// The high block `0x99..=0xA0` carries a bespoke mesh (not an archive creature)
 /// and is intentionally unmapped - those summons return `None` here for now.
 /// The map id is validated as live in this archive; a name-based fallback covers
-/// anything [`crate::retail_magic`] names but the map does not.
+/// anything [`legaia_engine_battle::retail_magic`] names but the map does not.
 pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16> {
     // Disc-pinned map: the creature id is exact (byte-validated mesh identity),
     // so prefer it. Validate it resolves in this archive before returning.
@@ -172,7 +172,7 @@ pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16>
         return Some(c.creature_id);
     }
     // Fallback: name-based resolution for any other named summon.
-    let name = crate::retail_magic::get(spell_id)?.name;
+    let name = legaia_engine_battle::retail_magic::get(spell_id)?.name;
     let slots = legaia_asset::monster_archive::slot_count(battle_data_entry) as u16;
     (1..=slots).find(|&id| {
         legaia_asset::monster_archive::record(battle_data_entry, id)
@@ -358,6 +358,6 @@ pub fn summon_display_name(spell_id: u8) -> Option<&'static str> {
     }
     PLAYER_SUMMON_IDS
         .contains(&spell_id)
-        .then(|| crate::retail_magic::get(spell_id).map(|s| s.name))
+        .then(|| legaia_engine_battle::retail_magic::get(spell_id).map(|s| s.name))
         .flatten()
 }

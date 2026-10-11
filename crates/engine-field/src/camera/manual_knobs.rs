@@ -20,7 +20,7 @@ impl Camera {
     /// (`camera_view::resolve_field_camera`), so the d-pad remap there must
     /// not turn by it either, or "up" stops walking up-screen.
     pub fn compass_azimuth_units_for<W: CameraWorld + ?Sized>(&self, world: &W) -> u16 {
-        if world.scene_mode() == crate::mode::SceneMode::WorldMap {
+        if world.scene_mode() == legaia_engine_mode::mode::SceneMode::WorldMap {
             self.compass_azimuth_with_orbit(0.0)
         } else {
             self.compass_azimuth_units()
@@ -47,7 +47,7 @@ impl Camera {
     /// [`Self::reset_for_free_roam`] and the field locomotion step run on,
     /// so the camera is the player's exactly when the character is.
     pub fn follow_knobs_live<W: CameraWorld + ?Sized>(&self, world: &W) -> bool {
-        matches!(world.scene_mode(), crate::mode::SceneMode::Field)
+        matches!(world.scene_mode(), legaia_engine_mode::mode::SceneMode::Field)
             && !world.cutscene_timeline_active()
     }
 
@@ -73,7 +73,7 @@ impl Camera {
     /// so a drag on the world map or in battle cannot rewrite the compass the
     /// locomotion remap reads. Returns whether the gesture was taken.
     pub fn debug_orbit_by<W: CameraWorld + ?Sized>(&mut self, world: &W, radians: f32) -> bool {
-        if !matches!(world.scene_mode(), crate::mode::SceneMode::Field) {
+        if !matches!(world.scene_mode(), legaia_engine_mode::mode::SceneMode::Field) {
             return false;
         }
         self.manual_orbit = (self.manual_orbit + radians).rem_euclid(std::f32::consts::TAU);

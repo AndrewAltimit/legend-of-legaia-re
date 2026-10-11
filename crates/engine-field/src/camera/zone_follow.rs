@@ -435,7 +435,7 @@ impl Camera {
 pub fn zone_camera_scene<W: CameraWorld + ?Sized>(world: &W) -> bool {
     matches!(
         world.scene_mode(),
-        crate::mode::SceneMode::Field | crate::mode::SceneMode::WorldMap
+        legaia_engine_mode::mode::SceneMode::Field | legaia_engine_mode::mode::SceneMode::WorldMap
     ) && has_field_terrain(world)
 }
 
