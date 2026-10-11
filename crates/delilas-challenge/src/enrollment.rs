@@ -5,7 +5,7 @@
 //! the "who will be entering" picker: **Delilas Challenge**. Picking it warps
 //! into the dome arena and runs a brand-new 2-round contest course - Che & Lu
 //! together (1v2), then Gi (1v1) - installed by the companion code injection
-//! [`crate::delilas_dome`], which also pays 5000 coins for a full clear.
+//! [`crate::dome`], which also pays 5000 coins for a full clear.
 //! (The double-team fits the battle heap by streaming slim clones from
 //! unreachable archive slots - the arithmetic and the mechanism are in the
 //! `delilas_dome` module doc and `docs/subsystems/battle.md`.)
@@ -20,10 +20,10 @@
 //! disables magic. And the battle heap's distinct-monster budget (~145 KB)
 //! holds only one full Delilas block (~82 KB each) plus a normal-sized
 //! partner - the double-team round only fits because the course streams
-//! slim clones (see [`crate::delilas_dome`]). Routing the challenge through
+//! slim clones (see [`crate::dome`]). Routing the challenge through
 //! the dome's arena fixes both: the arena stages its own rounds and disables
 //! magic by design. This module is therefore only the **casino-menu half** -
-//! the menu option and the warp; the course itself is [`crate::delilas_dome`].
+//! the menu option and the warp; the course itself is [`crate::dome`].
 //!
 //! ## Mechanism - script + data, plus the companion code hook
 //!
@@ -33,8 +33,8 @@
 //! (`0x536`/`0x537`/`0x538`) while clearing the other two, then a short
 //! BGM + wait flourish and the `3E 69` arena warp. The arena init reads those
 //! flags to pick the course. The Delilas branch mirrors that arm exactly, but
-//! requests **course 3** by setting the extra flag [`crate::delilas_dome::COURSE_FLAG`]
-//! (`0x539`) that the [`crate::delilas_dome`] seed hook decodes. So:
+//! requests **course 3** by setting the extra flag [`crate::dome::COURSE_FLAG`]
+//! (`0x539`) that the [`crate::dome`] seed hook decodes. So:
 //!
 //! - **Menu.** The 3-option `0x28` "who will enter" picker grows to a 4-option
 //!   `0x29` one (the picker arity ceiling - see `crates/mes/src/picker.rs`).
@@ -110,7 +110,7 @@ use legaia_asset::man_section::{self, ManFile};
 use legaia_asset::scene_asset_table::{self, SceneAssetTable};
 use legaia_mes::{Interpreter, MesEvent, parse_picker_at};
 
-use crate::starting_bag::{sysflag_set, sysflag_test};
+use legaia_disc_patch::field_script::{sysflag_set, sysflag_test};
 
 /// SYSTEM story flag latched by the Koru death event in Nivora Ravine
 /// (`map03 P2[15]`); once set, the world-map ravine entrance resolves to
@@ -126,7 +126,7 @@ pub const DOME_ACTIVE_FLAG: u16 = 0x509;
 /// sets one (Beginner `0x536` / Expert `0x537` / Master `0x538`) and clears
 /// the other two, and the arena init reads them to pick the course. The
 /// Delilas arm clears all three and instead sets
-/// [`crate::delilas_dome::COURSE_FLAG`] so the injected seed hook selects the
+/// [`crate::dome::COURSE_FLAG`] so the injected seed hook selects the
 /// 4th course.
 pub const COURSE_UNLOCK_FLAGS: [u16; 3] = [0x536, 0x537, 0x538];
 
@@ -166,7 +166,7 @@ pub const CONTEST_WON_FLAG: u16 = 0x50A;
 const MAN_TYPE: u8 = 0x03;
 
 /// `0x60`-family SYSTEM-flag CLEAR encoder (sibling of
-/// [`crate::starting_bag::sysflag_set`]).
+/// [`legaia_disc_patch::field_script::sysflag_set`]).
 pub fn sysflag_clear(bit: u16) -> [u8; 2] {
     debug_assert!(bit <= 0x0FFF);
     [0x60 | ((bit >> 8) as u8 & 0x0F), (bit & 0xFF) as u8]
@@ -674,7 +674,7 @@ impl DelilasSites {
             return None;
         }
         let man_descriptor_off = SceneAssetTable::size_word_offset(man_desc_idx);
-        let budget = crate::man_compressed_budget(&table, man_offset, entry.len());
+        let budget = legaia_disc_patch::man_compressed_budget(&table, man_offset, entry.len());
         Self::locate_in_man(decoded, entry_idx, man_offset, man_descriptor_off, budget).ok()
     }
 
@@ -1106,7 +1106,7 @@ impl DelilasSites {
         if b[..2] != gate[..2] {
             return Err("branch does not open with the Koru gate".into());
         }
-        let course = sysflag_set(crate::delilas_dome::COURSE_FLAG);
+        let course = sysflag_set(crate::dome::COURSE_FLAG);
         if !b.windows(2).any(|w| w == course) {
             return Err("branch does not request the Delilas course".into());
         }
@@ -1301,7 +1301,7 @@ fn build_branch(base: usize, common_tail: usize, decline_tail: usize) -> Result<
     for &flag in &COURSE_UNLOCK_FLAGS {
         b.extend_from_slice(&sysflag_clear(flag));
     }
-    b.extend_from_slice(&sysflag_set(crate::delilas_dome::COURSE_FLAG));
+    b.extend_from_slice(&sysflag_set(crate::dome::COURSE_FLAG));
     b.extend_from_slice(&ARENA_ENTER_BGM);
     b.extend_from_slice(&ARENA_ENTER_WAIT_A);
     b.extend_from_slice(&ARENA_ENTER_WAIT_B);
@@ -1344,7 +1344,7 @@ mod tests {
         // The retail difficulty arms' own flag ops (dome-active + course clear).
         assert_eq!(sysflag_set(DOME_ACTIVE_FLAG), [0x55, 0x09]);
         assert_eq!(sysflag_clear(COURSE_UNLOCK_FLAGS[0]), [0x65, 0x36]);
-        assert_eq!(sysflag_set(crate::delilas_dome::COURSE_FLAG), [0x55, 0x39]);
+        assert_eq!(sysflag_set(crate::dome::COURSE_FLAG), [0x55, 0x39]);
         // The narration win test reads the settlement's contest-won flag.
         assert_eq!(sysflag_test(CONTEST_WON_FLAG, 0)[..2], [0x75, 0x0A]);
     }
@@ -1410,7 +1410,7 @@ mod tests {
                 1
             );
         }
-        let course = sysflag_set(crate::delilas_dome::COURSE_FLAG);
+        let course = sysflag_set(crate::dome::COURSE_FLAG);
         assert_eq!(b.windows(2).filter(|w| *w == course).count(), 1);
         assert_eq!(
             b.windows(DOME_WARP_OP.len())

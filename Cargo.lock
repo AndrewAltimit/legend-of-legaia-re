@@ -1336,8 +1336,18 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-asset",
+]
+
+[[package]]
+name = "legaia-delilas-challenge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-asset",
+ "legaia-code-hooks",
  "legaia-disc-patch",
  "legaia-lzs",
+ "legaia-mes",
 ]
 
 [[package]]
@@ -1956,6 +1966,7 @@ dependencies = [
  "legaia-asset",
  "legaia-bytes",
  "legaia-code-hooks",
+ "legaia-delilas-challenge",
  "legaia-delilas-party",
  "legaia-disc-patch",
  "legaia-font",

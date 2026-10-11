@@ -26,18 +26,10 @@
 //! is position-independent (its one internal jump is a relative skip), so it can be
 //! spliced at any instruction boundary.
 
+use legaia_disc_patch::field_script::{sysflag_set, sysflag_test};
+
 /// Field-VM `GIVE_ITEM` opcode (`[0x39, item_id]`, silent single-item add).
 pub const GIVE_ITEM_OP: u8 = 0x39;
-
-/// Base opcode of the persistent system-flag **SET** op (`0x5x`). The flag index
-/// is split across the opcode's low bits and the operand byte:
-/// `idx = ((op & 0x8F) << 8) | operand` (see `field_disasm` `0x50..=0x77`).
-pub const SYSFLAG_SET_BASE: u8 = 0x50;
-
-/// Base opcode of the persistent system-flag **TEST** op (`0x7x`). When the bit is
-/// set the VM jumps by the trailing `u16` delta (`[0x70, operand, dlo, dhi]`,
-/// target `= pc + 2 + delta`); when clear it falls through.
-pub const SYSFLAG_TEST_BASE: u8 = 0x70;
 
 /// Default persistent story-flag bit for the grant guard. Chosen from the high end
 /// of the saved SC bitfield (`0x80085758`): bit `0xD70` lands at SC `+0x17C6`, which
@@ -52,21 +44,6 @@ pub const DEFAULT_GUARD_BIT: u16 = 0xD70;
 /// `0x70..=0x7F`). Higher indices would need the `0x80` opcode bit; the guard stays
 /// within this range.
 pub const MAX_GUARD_BIT: u16 = 0x0FFF;
-
-/// Encode the system-flag **SET** op for `bit` (`[op, operand]`, 2 bytes).
-pub fn sysflag_set(bit: u16) -> [u8; 2] {
-    let op = SYSFLAG_SET_BASE | ((bit >> 8) as u8 & 0x0F);
-    [op, (bit & 0xFF) as u8]
-}
-
-/// Encode the system-flag **TEST**-and-skip op for `bit` (`[op, operand, dlo, dhi]`,
-/// 4 bytes). `delta` is the relative jump applied when the bit is set; the VM
-/// computes the target as `pc + 2 + delta` (`pc + header_size(1) + 1 + delta`).
-pub fn sysflag_test(bit: u16, delta: u16) -> [u8; 4] {
-    let op = SYSFLAG_TEST_BASE | ((bit >> 8) as u8 & 0x0F);
-    let d = delta.to_le_bytes();
-    [op, (bit & 0xFF) as u8, d[0], d[1]]
-}
 
 /// Total byte length of the `GIVE_ITEM` run for `items`: two bytes per granted
 /// unit (`count` × `[0x39, id]`), summing the counts. Items with `count == 0` are

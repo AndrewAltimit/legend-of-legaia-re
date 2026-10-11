@@ -14,8 +14,8 @@ use super::{
     STREAM2_HOOK_ORIG, STREAM2_HOOK_VA, STREAM2_RETURN_VA, STREAM2_ROUTINE_VA, TEMPLATE_BYTES,
     TEMPLATE_VA, WORD_OFF_FROM_S1, assemble_display_routine,
 };
-use crate::mips::*;
 use anyhow::{Result, bail};
+use legaia_code_hooks::mips::*;
 
 /// Assemble the seed routine: if [`COURSE_FLAG`] is set **and no retail
 /// difficulty arm chose a course this entry** (the retail fresh-path seed

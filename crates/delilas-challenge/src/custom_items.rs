@@ -34,7 +34,7 @@
 //! points both at the existing always-usable arm `0x80040204`.
 //!
 //! New code lives across six verified-dead SCUS regions (the same
-//! unreferenced-function cave discipline as [`crate::delilas_dome`], plus
+//! unreferenced-function cave discipline as [`crate::dome`], plus
 //! a **cold-boot** verification pass - see [`FURY_ARM_VA`] for the
 //! boot-live libapi slot that falsified the seventh):
 //!
@@ -61,8 +61,8 @@
 
 use anyhow::{Result, bail};
 
-use crate::delilas_dome::{COURSE_GLOBAL_VA, Write};
-use crate::mips::*;
+use crate::dome::{COURSE_GLOBAL_VA, Write};
+use legaia_code_hooks::mips::*;
 
 /// Nature's Elixir claims the empty-name cut-egg item slot.
 pub const ELIXIR_ITEM_ID: u8 = 0xB9;
@@ -206,7 +206,7 @@ pub const FURY_DESC: &[u8] = b"Party-wide|Fury Boost.\0";
 
 /// The full-clear rewards in announcement order - the koin1 award-ceremony
 /// narration reads these out on a Delilas win
-/// (`legaia_patcher::delilas_challenge::reward_box_lines`).
+/// ([`crate::enrollment::reward_box_lines`]).
 pub const REWARD_ANNOUNCE_NAMES: [&str; 3] = ["Ra-Seru Tear", "Nature's Elixir", "Fury Bloom"];
 /// Honey's retail display name - the announcement when the challenge ships
 /// with the Honey fallback reward instead of the custom items.
@@ -220,7 +220,7 @@ pub const SERU_SUMMON_SPELLS: [u8; 3] = [0x9E, 0x9F, 0xA0];
 // --- battle-overlay (PROT 0898) hook sites ----------------------------------
 
 /// PROT index of the battle-action overlay.
-pub use crate::delilas_dome::BATTLE_OVERLAY_PROT_INDEX;
+pub use crate::dome::BATTLE_OVERLAY_PROT_INDEX;
 const BATTLE_BASE_VA: u32 = 0x801C_E818;
 
 /// The action-seed category dispatch's `lbu v1,0x1de(s3)` (state `0xC` of
@@ -245,7 +245,7 @@ const MP_EXIT_VA: u32 = 0x801E_6814;
 
 // --- arena-overlay (PROT 0977) grant hook -----------------------------------
 
-pub use crate::delilas_dome::ARENA_OVERLAY_PROT_INDEX;
+pub use crate::dome::ARENA_OVERLAY_PROT_INDEX;
 const ARENA_BASE_VA: u32 = 0x801C_E818;
 
 /// The settle's post-payout `s0` staging at `0x801D114C` / the `jal

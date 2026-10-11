@@ -2,7 +2,7 @@
 //! constants, and the two assembled bodies.
 
 use super::{COURSE_WORD_VA, COURSE3_SEED_WORD, DISPLAY_ROUTINE_VA};
-use crate::mips::*;
+use legaia_code_hooks::mips::*;
 
 // --- AI retime (the bespoke Delilas arm, battle overlay) ---------------------
 

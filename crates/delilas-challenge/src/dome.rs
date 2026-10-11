@@ -1,6 +1,6 @@
 //! **Delilas Challenge** as a real Muscle Dome arena *course* - the code-hook
 //! half of the feature (the arena overlay PROT 0977 side + a SCUS routine
-//! cave). The casino-menu / warp half is [`crate::delilas_challenge`].
+//! cave). The casino-menu / warp half is [`crate::enrollment`].
 //!
 //! ## Why the dome arena, and why a hook
 //!
@@ -110,9 +110,9 @@
 //! same-size overwrites in the arena overlay and one same-size SCUS code
 //! hook ([`STREAM_HOOK_VA`]); an unrecognized build is refused, not
 //! corrupted. The slim-clone archive slots are written by the apply layer
-//! ([`crate::apply`]), which builds them from the user's own disc.
+//! (`legaia_patcher::apply`), which builds them from the user's own disc.
 
-use crate::mips::*;
+use legaia_code_hooks::mips::*;
 
 mod battle_ai;
 mod injection;

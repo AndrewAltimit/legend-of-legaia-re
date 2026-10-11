@@ -64,11 +64,14 @@ pub use legaia_texture_replace::battle_texture;
 pub mod casino;
 pub mod charm_fix;
 pub mod chest;
-pub mod custom_items;
+#[doc(hidden)]
+pub use legaia_delilas_challenge::custom_items;
 pub mod damage_ap;
+#[doc(hidden)]
+pub use legaia_delilas_challenge::dome as delilas_dome;
+#[doc(hidden)]
+pub use legaia_delilas_challenge::enrollment as delilas_challenge;
 pub use legaia_delilas_party::delilas_cast;
-pub mod delilas_challenge;
-pub mod delilas_dome;
 pub use legaia_delilas_party::delilas_effects;
 pub use legaia_delilas_party::delilas_party;
 pub use legaia_delilas_party::delilas_signature_attack;

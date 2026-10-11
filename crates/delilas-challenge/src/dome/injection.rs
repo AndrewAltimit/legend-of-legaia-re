@@ -21,8 +21,8 @@ use super::{
     TEMPLATE_BYTES, TEMPLATE_REF_ADDIU_ORIG, TEMPLATE_REF_LUI_ORIG, TEMPLATE_REF_LUI_VA,
     TEMPLATE_VA, assemble_display_routine,
 };
-use crate::mips::*;
 use anyhow::{Result, bail};
+use legaia_code_hooks::mips::*;
 
 /// One same-size write into a target image: `(file_offset, bytes)`.
 #[derive(Debug, Clone, PartialEq, Eq)]

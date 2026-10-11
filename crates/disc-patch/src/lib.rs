@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod disc;
+pub mod field_script;
 pub mod monster;
 pub mod ppf;
 pub mod rng;
