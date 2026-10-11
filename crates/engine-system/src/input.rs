@@ -126,7 +126,7 @@ impl InputState {
     /// query keeps working unchanged.
     ///
     /// `vsync_delta` is `DAT_1F800393` - the adaptive frame step
-    /// (`legaia_engine_core::world::FrameClock::frame_step`), not a constant `1`. That is what
+    /// (`legaia_engine_vm::frame_clock::FrameClock::frame_step`), not a constant `1`. That is what
     /// keeps the auto-repeat rate wall-clock-constant across a cadence change.
     ///
     /// REPLACED-BY: [`Self::set_pad`], which runs the same pump's packed half

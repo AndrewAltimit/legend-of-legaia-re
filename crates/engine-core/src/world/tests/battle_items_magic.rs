@@ -223,7 +223,7 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
     use legaia_engine_system::input::PadButton;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -342,7 +342,7 @@ fn battle_magic_cast_applies_mp_half_ability_bit() {
     use legaia_engine_system::input::PadButton;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -396,7 +396,7 @@ fn refresh_party_ability_bits_derives_and_propagates_party_wide() {
     use legaia_engine_battle::accessory_passives::AccessoryPassives;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 2,
             ..Default::default()
         },
@@ -442,7 +442,7 @@ fn refresh_party_ability_bits_derives_and_propagates_party_wide() {
 #[test]
 fn refresh_party_ability_bits_noops_without_a_catalog() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -461,7 +461,7 @@ fn seed_party_battle_stats_applies_accessory_stat_and_hp_boosts() {
     use legaia_engine_battle::accessory_passives::AccessoryPassives;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -620,7 +620,7 @@ fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
     use legaia_engine_battle::spells::SpellOutcome;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -650,7 +650,7 @@ fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
     // A near-full-HP monster has a tiny effective chance -> the same roll
     // misses and the monster is untouched.
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -679,7 +679,7 @@ fn battle_magic_escape_returns_to_field() {
     use legaia_engine_system::input::PadButton;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -766,7 +766,7 @@ fn a_capture_roll_never_downs_a_party_member() {
     use legaia_engine_battle::spells::SpellOutcome;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

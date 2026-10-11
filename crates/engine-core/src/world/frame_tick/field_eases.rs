@@ -43,9 +43,9 @@ impl World {
     /// driven off the player's world position.
     ///
     /// Retail runs one of these actors per spawned ramp off the effect-actor
-    /// list; the engine holds the records on [`crate::world::CameraRig::register_ramps`] and
+    /// list; the engine holds the records on [`legaia_engine_field::camera_rig::CameraRig::register_ramps`] and
     /// steps them here. What a tick writes lands in
-    /// [`crate::world::CameraRig::registers`], the four field camera-configuration
+    /// [`legaia_engine_field::camera_rig::CameraRig::registers`], the four field camera-configuration
     /// registers `0x8007B60C`/`B610`/`B614`/`B618`.
     ///
     /// Two retail gates come first, both inside
@@ -135,7 +135,7 @@ impl World {
     /// player actor. Two of them stand in for retail slots the engine does not
     /// carry: `+0x1E` / `+0x20` become the previous tick's `(world_y,
     /// world_z)`, so the settle test still answers "has the actor stopped
-    /// moving in Y and Z". The pad word is [`crate::world::StoryFlagState::story_flags`] - the same
+    /// moving in Y and Z". The pad word is [`legaia_engine_system::story_flag_state::StoryFlagState::story_flags`] - the same
     /// `_DAT_1F800394` scratchpad word retail reads the input lock and the
     /// fast-arm bit out of - and `_DAT_8007B850` is passed as `0`, which
     /// leaves the fast arm disengaged (see the comment at the call).

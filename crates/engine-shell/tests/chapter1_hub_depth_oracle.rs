@@ -51,11 +51,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
-use legaia_engine_core::world::WorldMapEntityConfig;
 use legaia_engine_field::man_field_scripts::{
     FlagBank, overworld_portal_sites, partition_record_span, partition2_record_gates,
     scene_destinations, walk_partition_gflag_sites,
 };
+use legaia_engine_field::world_map_state::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::man_field_scripts::system_flag_census;
 use legaia_engine_scene::scene::{ProtIndex, Scene};

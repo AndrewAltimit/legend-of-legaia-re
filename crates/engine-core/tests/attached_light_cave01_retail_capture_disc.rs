@@ -26,7 +26,7 @@
 //! `extracted/`, or the save library directory.
 
 use legaia_engine_core::scene_host::SceneHost;
-use legaia_engine_core::world::ScriptActorRef;
+use legaia_engine_field::field_script_actor_state::ScriptActorRef;
 use std::path::PathBuf;
 
 /// `cave01_attached_light` (retail SCUS).

@@ -9,7 +9,7 @@ impl World {
     /// and the `+7` slot byte of `DAT_80074F68`.
     ///
     /// Everything else the panel reads is already world state - the character
-    /// records ([`crate::world::PartyState::roster`]), the item property table's `+0` / `+1` bytes
+    /// records ([`legaia_engine_menus::party_state::PartyState::roster`]), the item property table's `+0` / `+1` bytes
     /// ([`crate::world::DiscTables::item_effects`]) and the five stat bonuses
     /// ([`crate::world::DiscTables::equipment_table`]). These two bytes are dropped by the
     /// modifier-only view a boot installs on the world, and survive only on the
@@ -44,11 +44,11 @@ impl World {
     ///
     /// | Retail read | World source |
     /// |---|---|
-    /// | `char[+0x75E..]`, the five equip slots | [`crate::world::PartyState::roster`] |
+    /// | `char[+0x75E..]`, the five equip slots | [`legaia_engine_menus::party_state::PartyState::roster`] |
     /// | `char[+0x6DA/+0x6DC/+0x6DE]`, ATK / UDF / LDF | the same record's `+0x112` / `+0x114` / `+0x116` |
     /// | `DAT_80074368[id*0xC + 0/+1]`, kind + stat index | [`crate::world::DiscTables::item_effects`] |
     /// | `DAT_80074F68[row][+0..+4]`, the five bonuses | [`crate::world::DiscTables::equipment_table`], re-keyed row-wise |
-    /// | `0x80084140 + 0x1818`, the bag id list | [`crate::world::PartyState::inventory`] |
+    /// | `0x80084140 + 0x1818`, the bag id list | [`legaia_engine_menus::party_state::PartyState::inventory`] |
     /// | `0x8007B42C`, the weapon-slot table | [`RETAIL_WEAPON_SLOTS`] |
     ///
     /// The bonus rows arrive **keyed by item id** (that is the shape a battle

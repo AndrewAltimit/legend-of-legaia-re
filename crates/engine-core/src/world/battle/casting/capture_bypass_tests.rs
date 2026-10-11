@@ -30,7 +30,7 @@ fn overlay_with_two_ids(power: u16) -> Vec<u8> {
 /// caster of element 0. Same seed every time.
 fn world_with_resisting_party() -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

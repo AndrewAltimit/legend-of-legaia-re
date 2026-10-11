@@ -10,7 +10,7 @@ impl<'a> FieldCameraHost for FieldHostImpl<'a> {
     // Op-0x43 sub-3..6 camera-register zone-ramp spawn (retail
     // `FUN_8003C6A4` actor on the effect list). The record's
     // parameterization is the ported kernel; the world holds the spawned
-    // records ([`crate::world::CameraRig::register_ramps`]) and ticks each one's
+    // records ([`legaia_engine_field::camera_rig::CameraRig::register_ramps`]) and ticks each one's
     // `FUN_80037018` handler per frame ([`World::tick_register_ramps`]).
     // REF: FUN_8003C6A4 (kernel PORT lives in legaia_engine_field::register_ramp)
     fn op43_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {

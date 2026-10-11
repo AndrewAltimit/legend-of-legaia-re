@@ -113,7 +113,7 @@ impl World {
     /// software VRAM - play-window's `cpu_vram_base`, a test's scratch
     /// [`legaia_tim::Vram`]). One-shots apply immediately; fades consume the
     /// retail game ticks [`World::tick`] accumulated since the last call,
-    /// each advancing the fade by [`crate::world::FrameClock::frame_step`] vsyncs (the retail
+    /// each advancing the fade by [`legaia_engine_vm::frame_clock::FrameClock::frame_step`] vsyncs (the retail
     /// `counter += DAT_1F800393` cadence) and writing the interpolated row to
     /// the destination cell. A completed fade performs the final cell-B copy
     /// / flat fill and clears the script context's halt bit, matching the

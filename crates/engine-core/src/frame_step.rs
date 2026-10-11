@@ -31,7 +31,7 @@
 //!
 //! Everything that advances in retail-frame time counts ticks, never
 //! redraws. The cutscene glide ([`CutsceneGlide`]) diffs
-//! [`crate::world::FrameClock::display_frames`], so a redraw on which no tick
+//! [`legaia_engine_vm::frame_clock::FrameClock::display_frames`], so a redraw on which no tick
 //! ran advances it by nothing.
 
 use legaia_engine_battle_vm::psx_camera::{CutsceneCameraInterp, FieldCameraView};
@@ -149,7 +149,7 @@ pub fn camera_after_world_tick(camera: &mut Camera, world: &mut World, scene_ent
 #[derive(Debug, Clone, Default)]
 pub struct CutsceneGlide {
     interp: CutsceneCameraInterp,
-    /// [`crate::world::FrameClock::display_frames`] at the previous advance.
+    /// [`legaia_engine_vm::frame_clock::FrameClock::display_frames`] at the previous advance.
     mark: u64,
     /// A capture alignment the next [`Self::advance`] lands after its step:
     /// every gliding component this many display frames short of its target

@@ -104,7 +104,7 @@ impl World {
     /// Install the per-scene region / zone tables (the `.MAP` `+0x10000`
     /// block + the MAN section-3 camera-region table) and run the initial
     /// per-tile refresh. Pass empty slices for scenes without the data -
-    /// the refresh then clears [`crate::world::StoryFlagState::extra_flags`] and resets the
+    /// the refresh then clears [`legaia_engine_system::story_flag_state::StoryFlagState::extra_flags`] and resets the
     /// attribute block to the default fill, so stale tables never leak
     /// across a transition.
     pub fn load_field_region_tables(&mut self, map_region_block: &[u8], zone_table: &[u8]) {
@@ -118,7 +118,7 @@ impl World {
     ///
     /// Quantises `tile = (world - 0x40) >> 7` (the retail locomotion-cluster
     /// convention for `FUN_801DBA20`'s arguments), rebuilds
-    /// [`crate::world::StoryFlagState::extra_flags`] (the `_DAT_8007B8F4` region-type mask the
+    /// [`legaia_engine_system::story_flag_state::StoryFlagState::extra_flags`] (the `_DAT_8007B8F4` region-type mask the
     /// field-VM op `0x42` mode 0 tests), latches the scratch attribute
     /// block, and re-selects the current camera-zone record. Called on
     /// scene entry and on every player tile crossing

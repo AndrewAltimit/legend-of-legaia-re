@@ -153,7 +153,7 @@ impl Default for FieldMenuRowMask {
 /// **Save**). The port has no globals, so a host samples both at menu-open and
 /// hands them over - see `BootSession::open_field_menu`, which reads
 /// `legaia_engine_core::world::World::menu_entry_context_kind` and
-/// `legaia_engine_core::world::PartyState::scene_save_allowed`.
+/// `crate::party_state::PartyState::scene_save_allowed`.
 ///
 /// Both the greying and the buzz come from one call to
 /// [`root_menu_confirm_route`] per row, which is what keeps them from

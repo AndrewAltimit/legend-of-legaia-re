@@ -204,7 +204,7 @@ fn battle_special_attack_requests_move_fx_spawn() {
 
     fn run(with_fx: bool) -> Option<(u8, [i16; 3])> {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },

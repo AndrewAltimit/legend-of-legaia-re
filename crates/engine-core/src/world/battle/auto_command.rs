@@ -42,7 +42,7 @@
 //! by construction. Every replay therefore goes back through
 //! `World::build_arts_action_queue`, arts and their Spirit cost included.
 //!
-//! Neither call reaches [`crate::world::PartyState::saved_chains`]. That list
+//! Neither call reaches [`legaia_engine_menus::party_state::PartyState::saved_chains`]. That list
 //! is the engine's **named** chain library (LGSF v2, edited by
 //! `tactical_arts_editor`); this is retail's unnamed last-confirmed string,
 //! and the two are different data with different lifetimes - the library

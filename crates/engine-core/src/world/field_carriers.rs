@@ -434,7 +434,7 @@ impl World {
 
     /// Open a field dialogue box from an inline interaction-script buffer (the
     /// text is the buffer itself; the retail box geometry isn't pinned, so the
-    /// box coords are zero). Sets [`crate::world::DialogState::current`] and surfaces a
+    /// box coords are zero). Sets [`legaia_engine_field::dialog_state::DialogState::current`] and surfaces a
     /// [`FieldEvent::OpenDialog`].
     fn open_field_dialog(&mut self, inline: Vec<u8>) {
         self.dialog.current = Some(DialogRequest {
@@ -525,7 +525,7 @@ impl World {
     ///   [`Self::trigger_field_interact`] and turns the player toward it
     ///   ([`Self::face_field_npc`]).
     ///
-    /// The [`crate::world::DialogState::input_consumed`] per-tick guard keeps this and the
+    /// The [`legaia_engine_field::dialog_state::DialogState::input_consumed`] per-tick guard keeps this and the
     /// field VM's `0x4C` dialog poll from both acting on the same button edge.
     /// No-op without a player actor or installed NPC positions.
     ///

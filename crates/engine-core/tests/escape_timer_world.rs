@@ -131,7 +131,7 @@ fn a_modal_dialog_freezes_the_countdown() {
     let before = world.battle.escape_timer.remaining;
     assert!(before < 600);
 
-    world.dialog.current = Some(legaia_engine_core::world::DialogRequest {
+    world.dialog.current = Some(legaia_engine_field::dialog_state::DialogRequest {
         text_id: 0,
         inline: Vec::new(),
         world_x: 0,

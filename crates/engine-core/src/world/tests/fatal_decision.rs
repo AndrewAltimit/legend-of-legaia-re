@@ -14,7 +14,7 @@ const CASTER: u8 = 1;
 /// aimed at the member).
 fn fd_world() -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

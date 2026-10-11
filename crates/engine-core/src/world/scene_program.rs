@@ -11,7 +11,7 @@
 //! | `DAT_1F800393` | the actor-tick cadence [`World::tick_handler_actors`] runs on |
 //! | `_DAT_8007BABC` / `_DAT_8007BAA0` | [`crate::world::AudioState::sound_stream`] - the side-band bank request / acknowledge pair, **not** a BGM track (see below) |
 //! | `_DAT_8007B868` | [`crate::world::AudioState::dual_mode_gate`] |
-//! | `_DAT_1F800394` | [`crate::world::StoryFlagState::story_flags`] |
+//! | `_DAT_1F800394` | [`legaia_engine_system::story_flag_state::StoryFlagState::story_flags`] |
 //! | flag `0x18` | [`World::system_flag_test`] |
 //! | player `+0x14..+0x18` / `+0x24..+0x28` / `+0x10` / `+0x72` | the player actor's move state |
 //! | player `+0x8E` | [`crate::world::FieldLocomotion::eased_mirror_y`], the halfword the height arm's mirror branch reads |

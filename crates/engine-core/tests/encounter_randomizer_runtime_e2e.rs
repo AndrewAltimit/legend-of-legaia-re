@@ -63,7 +63,7 @@ fn spawn_enemy0_for_formation(decoded_man: &[u8], formation_id: u16) -> Option<u
     let (table, defs) = scene_encounter_from_man("oracle", decoded_man)?;
 
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

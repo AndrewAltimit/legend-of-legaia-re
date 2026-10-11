@@ -73,7 +73,7 @@ fn real_effect_bundle_parses_and_battle_sm_progresses() {
     // just confirm the asset bundle's existence doesn't break the world
     // construction path engines use to wire effect-VM pools.
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },

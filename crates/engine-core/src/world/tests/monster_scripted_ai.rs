@@ -12,7 +12,7 @@ fn scripted_ai_monster_self_heals_when_wounded() {
     use legaia_engine_battle_vm::battle_action::ActionState;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -69,7 +69,7 @@ fn monster_8a_charge_gate_drives_cast_and_clamps_gauge() {
     use legaia_engine_battle::spells::SpellCatalog;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -118,7 +118,7 @@ fn monster_8a_charge_gate_drives_cast_and_clamps_gauge() {
 #[test]
 fn monster_target_resolver_expands_class_to_correct_side() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -171,7 +171,7 @@ fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
     use legaia_engine_battle::spells::SpellCatalog;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -220,7 +220,7 @@ fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
 fn monster_flee_checkpoint_rolls_once_and_arms_run_band() {
     let build = || {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },
@@ -285,7 +285,7 @@ fn monster_flee_checkpoint_rolls_once_and_arms_run_band() {
 #[test]
 fn a_lone_strong_monster_is_not_diluted_by_the_empty_pool() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -320,7 +320,7 @@ fn a_lone_strong_monster_is_not_diluted_by_the_empty_pool() {
 fn no_escape_flag_blocks_monster_flee() {
     for seed in 0..2_000u32 {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },

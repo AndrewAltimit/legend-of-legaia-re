@@ -254,7 +254,7 @@ fn bake_vdf_pulse_anim(
 
     // The same setup `SceneHost::enter_field_scene` runs before arming.
     let mut w = crate::world::World {
-        clock: crate::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },

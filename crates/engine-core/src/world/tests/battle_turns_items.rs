@@ -5,7 +5,7 @@ use legaia_engine_mode::mode::SceneMode;
 fn monsters_take_turns_and_can_wipe_the_party() {
     use legaia_engine_battle_vm::battle_action::ActionState;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -63,7 +63,7 @@ fn monsters_take_turns_and_can_wipe_the_party() {
 fn multi_monster_battle_all_monsters_act_and_party_can_win() {
     use legaia_engine_battle_vm::battle_action::ActionState;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -124,7 +124,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     use legaia_engine_system::input::PadButton;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 2,
             ..Default::default()
         },
@@ -237,7 +237,7 @@ fn battle_item_menu_cancel_reopens_command_menu() {
     use legaia_engine_system::input::PadButton;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -279,7 +279,7 @@ fn opening_the_item_window_moves_the_flow_byte_onto_it() {
     use legaia_engine_system::input::PadButton;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

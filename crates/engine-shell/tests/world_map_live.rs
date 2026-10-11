@@ -419,8 +419,8 @@ fn world_map_scene_transition_auto_enters_world_map() {
 /// to an unrelated scene instead of opening the fishing minigame.
 #[test]
 fn world_map_walking_onto_real_minigame_door_arms_the_warp() {
-    use legaia_engine_core::world::WorldMapEntityConfig;
     use legaia_engine_field::field_events::FieldEvent;
+    use legaia_engine_field::world_map_state::WorldMapEntityConfig;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
@@ -509,7 +509,7 @@ fn world_map_walking_onto_real_minigame_door_arms_the_warp() {
 /// resolves through the scene MES. Portals are walk-onto; NPCs are talk-to.
 #[test]
 fn world_map_talking_to_real_npc_renders_inline_dialogue() {
-    use legaia_engine_core::world::WorldMapEntityConfig;
+    use legaia_engine_field::world_map_state::WorldMapEntityConfig;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

@@ -162,10 +162,10 @@ impl World {
     /// at every cadence the resolver can pick.
     ///
     /// This port takes the fine-grained half of that identity - one call per
-    /// vsync with the scalar ([`crate::world::MoveVmGlobals::ramp_ratio`]) at `1` - because a
+    /// vsync with the scalar ([`legaia_engine_field::move_vm_globals::MoveVmGlobals::ramp_ratio`]) at `1` - because a
     /// sim tick is one retail display frame (see [`World::tick`]). Same wall
     /// speed, twice the intermediate poses at retail's field floor of 2.
-    /// Gating it on [`crate::world::FrameClock::display_frame_step`] would be a tautology under
+    /// Gating it on [`legaia_engine_vm::frame_clock::FrameClock::display_frame_step`] would be a tautology under
     /// that denomination and a 0.6x slowdown under any other.
     ///
     /// | base step | selector | units/vsync | units/second |

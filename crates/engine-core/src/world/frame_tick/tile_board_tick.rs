@@ -7,7 +7,7 @@ impl World {
     /// - **fade-in** (`1`): input is ignored while `+0x9C` - every tile
     ///   actor's render scale - ramps up to `0x1000`;
     /// - **walking** (`4`, and `2` while the player interpolates toward a
-    ///   committed tile, [`crate::world::TileBoardState::target`]): read one
+    ///   committed tile, [`legaia_engine_minigames::tile_board_state::TileBoardState::target`]): read one
     ///   d-pad direction, gate it against the board's cells, step. The menu
     ///   edge (Triangle, `_DAT_8007B874 & 0x10`) opens the quit prompt with
     ///   the cursor on its second row (`0x801EF824..0x801EF84C`);

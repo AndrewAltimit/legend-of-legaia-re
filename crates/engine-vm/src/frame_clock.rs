@@ -1,9 +1,7 @@
 //! Frame clock: the adaptive frame-step factor and its telemetry, the vsync accumulators, the sim-tick / display-frame counters and play time.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
+//! Split out of the composite `World` so the state one subsystem owns
 //! reads as one unit. Fields keep their retail provenance notes.
-
-use super::*;
 
 /// Frame clock: the adaptive frame-step factor and its telemetry, the vsync accumulators, the sim-tick / display-frame counters and play time.
 pub struct FrameClock {
@@ -20,15 +18,15 @@ pub struct FrameClock {
     /// `_DAT_8007B9D8`. Live poll baselines: field/town scenes run at `2`
     /// (30 fps) and the overworld kingdom scenes (`mapNN`) at `3` (20 fps) -
     /// the engine pins those per-scene values on entry
-    /// ([`crate::scene_host::SceneHost::enter_field_scene`]) rather than modelling
+    /// (`legaia_engine_core::scene_host::SceneHost::enter_field_scene`) rather than modelling
     /// the load-adaptive writer. Consumed by everything that advances
     /// per-game-tick in vsync units - the scripted CLUT fades
-    /// ([`crate::world::World::step_clut_fx`]) and the shell's CLUT-cycle cadence.
+    /// (`World::step_clut_fx`) and the shell's CLUT-cycle cadence.
     ///
     /// REF: FUN_80016B6C
     pub frame_step: u8,
     /// Retail `DAT_8007B9D8` - the per-mode **floor** under
-    /// [`crate::world::FrameClock::frame_step`], installed by the mode/scene loader and never by
+    /// [`FrameClock::frame_step`], installed by the mode/scene loader and never by
     /// the frame driver. `FUN_80016B6C` applies it as a minimum (`slt` plus a
     /// store taken only when the adaptive value is *below* it), so it raises
     /// the cadence and never caps it. Kept separate from `frame_step` because
@@ -41,10 +39,10 @@ pub struct FrameClock {
     ///
     /// Retail's frame-begin pass `FUN_8001698C` returns `1` when `gp+0x3D8`
     /// is set and neither `_DAT_8007B938` nor `gp+0x55C` carries bit `0x800`;
-    /// its caller (the per-frame mode handler, [`legaia_engine_mode::mode::per_frame_stage`])
+    /// its caller (the per-frame mode handler, `legaia_engine_mode::mode::per_frame_stage`)
     /// then abandons the frame after a pad poll and a `VSync(0)` - no
     /// mid-frame driver, no frame-end pass. Consumed (and cleared) by
-    /// [`legaia_engine_mode::mode::ModeDriver::tick`] via [`crate::world::World::take_frame_begin_skip`].
+    /// `legaia_engine_mode::mode::ModeDriver::tick` via `World::take_frame_begin_skip`.
     ///
     /// Defaults to `false`; a host that never sets it gets the pre-existing
     /// tick-every-frame behaviour - and that is also what **retail** does.
@@ -52,7 +50,7 @@ pub struct FrameClock {
     /// five-form sweep plus the `gp`-relative sweep over `SCUS_942.54` and
     /// every based overlay image finds exactly three sites touching
     /// `gp+0x3D8`, and two are clears - the mode-change edge's
-    /// (`0x800161E8`, which [`legaia_engine_mode::mode::ModeSeat`] performs) and a reset
+    /// (`0x800161E8`, which `legaia_engine_mode::mode::ModeSeat` performs) and a reset
     /// path's (`0x8001E100`). The one **setter** is
     /// `_DAT_8007B6F0 = ~_DAT_8007B6F0` at `0x80018850`, the R1+Start pause
     /// toggle in `FUN_8001822C`'s dev-hotkey tail, and that whole tail sits
@@ -65,23 +63,23 @@ pub struct FrameClock {
     pub frame_begin_skip: bool,
     /// Retail's frame-time history behind the adaptive cadence
     /// (`DAT_80084098[16]` + `0x1F800392`). Only advanced when a host calls
-    /// [`crate::world::World::resolve_frame_step`]; a host with no frame-time telemetry
+    /// `World::resolve_frame_step`; a host with no frame-time telemetry
     /// leaves it untouched and keeps the deterministic floor.
-    pub frame_step_telemetry: vm::actor_tick::FrameStepTelemetry,
+    pub frame_step_telemetry: crate::actor_tick::FrameStepTelemetry,
     /// Vsyncs accumulated toward the next **actor** game tick. Same clock as
-    /// [`crate::world::AmbientFxState::clut_vsync_accum`] and the same law - retail resolves one
+    /// `AmbientFxState::clut_vsync_accum` and the same law - retail resolves one
     /// `DAT_1F800393` per frame and runs the actor pool once per game tick,
     /// so the per-actor physics / anim / motion passes fire once every
-    /// [`crate::world::FrameClock::frame_step`] vsyncs rather than once per rendered frame. The
-    /// tick that fires carries [`crate::world::FrameClock::frame_step`] into the dispatcher's
-    /// scalars ([`legaia_engine_vm::actor_tick::TickScalars::for_cadence`]),
+    /// [`FrameClock::frame_step`] vsyncs rather than once per rendered frame. The
+    /// tick that fires carries [`FrameClock::frame_step`] into the dispatcher's
+    /// scalars ([`crate::actor_tick::TickScalars::for_cadence`]),
     /// which is what keeps wall-clock durations identical while the pose
     /// sample rate drops.
     ///
     /// REF: FUN_80016B6C (cadence resolver), FUN_801D6704 (field floor = 2)
     pub actor_vsync_accum: u8,
     /// Whether the **actor game tick** fired on the current world tick - the
-    /// one pass in every [`crate::world::FrameClock::frame_step`] vsyncs on
+    /// one pass in every [`FrameClock::frame_step`] vsyncs on
     /// which retail runs the actor pool. Consumers that retail reaches from an
     /// actor handler rather than from the vsync-rate frame pump sample on it:
     /// the region encounter reader `FUN_801D9E1C` is called from the entity
@@ -91,26 +89,26 @@ pub struct FrameClock {
     /// REF: FUN_801DA51C
     pub game_tick_fired: bool,
     /// Monotonic count of sim ticks that ran, advanced once per
-    /// [`crate::world::World::tick`]. It is the world's cheapest "a frame actually ran"
+    /// `World::tick`. It is the world's cheapest "a frame actually ran"
     /// witness - the mode driver's frame-begin-skip test probes it to tell an
     /// abandoned frame from a live one.
     ///
     /// Historically this was a fixed-point phase accumulator bridging a
     /// claimed 100 Hz sim to retail's 60 Hz display frame. No host ever ticked
     /// at 100 Hz, so the phase only ever *withheld* retail frames; with the
-    /// 1:1 denomination (see [`crate::world::World::tick`]) there is no phase left to carry.
+    /// 1:1 denomination (see `World::tick`) there is no phase left to carry.
     pub sim_ticks: u32,
     /// Monotonic count of retail display frames elapsed. Consumers that have
     /// to advance something in retail-frame time (the renderer's cutscene
     /// camera glide, whose `apply_trigger` is a duration in display frames)
     /// diff this rather than counting sim ticks.
     ///
-    /// Under the 1:1 denomination this equals [`crate::world::World::frame`]; it stays a
+    /// Under the 1:1 denomination this equals `World::frame`; it stays a
     /// separate counter because it names a *unit* (retail display frames) that
     /// the sim-tick counter does not promise.
     pub display_frames: u64,
     /// `1` on every sim tick that maps to a retail display frame - which, under
-    /// the 1:1 denomination [`crate::world::World::tick`] documents, is every sim tick.
+    /// the 1:1 denomination `World::tick` documents, is every sim tick.
     ///
     /// Consumers gate on it to say "this is retail-frame paced": the narration
     /// roller (whose scroll speed is pinned as 1 px per 6 frames at 60 Hz), the
@@ -120,21 +118,21 @@ pub struct FrameClock {
     /// make it selective again without any of those call sites changing.
     pub display_frame_step: u16,
     /// Host wall-clock reading (seconds) the play clock measures from, set by
-    /// the first [`crate::world::World::tick_play_clock`] and dropped by
-    /// [`crate::world::World::begin_new_game`]. Only ever used as a delta
+    /// the first `World::tick_play_clock` and dropped by
+    /// `World::begin_new_game`. Only ever used as a delta
     /// origin, so its epoch is the host's own.
     pub play_clock_origin: Option<f64>,
     /// Whole seconds since [`Self::play_clock_origin`] already folded into
     /// [`Self::play_time_seconds`] - the high-water mark
-    /// [`crate::world::World::tick_play_clock`] deltas against.
+    /// `World::tick_play_clock` deltas against.
     pub play_clock_high_water: u32,
-    /// The previous [`crate::world::World::tick_play_clock`] reading, which a
+    /// The previous `World::tick_play_clock` reading, which a
     /// stalled host's gap is measured against.
     pub play_clock_last: Option<f64>,
     /// A replay's retail battle frame step and the action-SM state it takes
     /// effect in (`World::seed_battle_frame_step`): `(step, state)`. Not a
     /// retail field - retail measures its step per frame
-    /// ([`crate::world::BattleFrameClock`]); the retail-compare
+    /// (`BattleFrameClock`); the retail-compare
     /// drive seeds the one a capture's frame-time ring reads.
     pub battle_frame_step_seed: Option<(u8, u8)>,
 }
@@ -147,7 +145,7 @@ impl FrameClock {
             frame_step: 2,
             frame_step_floor: 2,
             frame_begin_skip: false,
-            frame_step_telemetry: vm::actor_tick::FrameStepTelemetry::new(),
+            frame_step_telemetry: crate::actor_tick::FrameStepTelemetry::new(),
             actor_vsync_accum: 0,
             game_tick_fired: false,
             // Every sim tick is a retail display frame under the 1:1

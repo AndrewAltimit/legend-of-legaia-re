@@ -369,7 +369,7 @@ pub struct BattleState {
     /// picks **Arts** from the command menu. `Some` while the player browses
     /// saved chains / picks a target (the action SM and [`crate::world::BattleState::command`]
     /// are parked meanwhile); `None` otherwise. The World owns it because each
-    /// row's power profile is resolved from [`crate::world::PartyState::saved_chains`] +
+    /// row's power profile is resolved from [`legaia_engine_menus::party_state::PartyState::saved_chains`] +
     /// [`crate::world::DiscTables::art_records`] by `Self::build_battle_arts_rows`. Hosts read it
     /// to draw the arts overlay.
     pub arts_menu: Option<legaia_engine_battle::battle_arts::BattleArtsSession>,

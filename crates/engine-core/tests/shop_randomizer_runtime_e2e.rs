@@ -87,7 +87,7 @@ fn town_shop_buy_grants_patched_item() {
 
     // Baseline: a buy at cursor 0 of the unpatched shop grants the original id.
     let mut w0 = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             money: 1_000_000,
             ..Default::default()
         },
@@ -124,7 +124,7 @@ fn town_shop_buy_grants_patched_item() {
     assert_eq!(patched_ids[0], new_id, "patched stock holds the new id");
 
     let mut w1 = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             money: 1_000_000,
             ..Default::default()
         },
@@ -165,7 +165,7 @@ fn casino_buy_grants_patched_prize() {
 
     // Baseline: buying prize 0 of the unpatched table grants the original id.
     let mut w0 = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             money: 9_999_999,
             ..Default::default()
         },
@@ -210,7 +210,7 @@ fn casino_buy_grants_patched_prize() {
     );
 
     let mut w1 = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             money: 9_999_999,
             ..Default::default()
         },

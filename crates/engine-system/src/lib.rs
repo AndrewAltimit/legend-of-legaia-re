@@ -29,3 +29,4 @@ pub mod rand;
 pub mod retail_pad;
 pub mod scene_name_sync;
 pub mod sound_state;
+pub mod story_flag_state;

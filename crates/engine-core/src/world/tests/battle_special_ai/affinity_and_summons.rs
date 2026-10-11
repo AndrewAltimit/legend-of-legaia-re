@@ -39,7 +39,7 @@ fn element_affinity_scales_monster_special_attack_damage() {
     // monster's element row vs the party member's element column.
     fn run(affinity_pct: Option<u8>) -> u16 {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },
@@ -141,7 +141,7 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
 
     fn run(affinity_pct: Option<u8>) -> u16 {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },
@@ -231,7 +231,7 @@ fn player_summon_cast_matches_the_summon_kernel_composition() {
 
     fn build_world() -> World {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },
@@ -350,7 +350,7 @@ fn a_summon_rolls_from_its_archive_body_when_the_scene_lacks_the_creature() {
 
     fn build_world_for(archive_body: bool, spell_id: u8) -> World {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },

@@ -89,7 +89,7 @@ pub fn derive_field_carriers(man_file: &ManFile, man: &[u8]) -> Vec<DerivedField
 
 /// Per-field-carrier role. The retail engine builds one record per MAN-placed
 /// scene entity; this is the port's slice the field entity SM acts on.
-/// Paired by index with `legaia_engine_core::world::FieldCarrierState::entities`.
+/// Paired by index with `crate::field_carrier_state::FieldCarrierState::entities`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldCarrierConfig {
     /// A **scripted-encounter carrier**: engaging it (the dialogue-accept)

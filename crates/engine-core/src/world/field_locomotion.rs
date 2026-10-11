@@ -128,7 +128,7 @@ pub struct FieldLocomotion {
     /// run check entirely** - a forced walk cannot be run out of.
     ///
     /// Retail's arm reads `_DAT_8007B6A8`, which the port carries as
-    /// [`crate::world::PartyState::scene_save_allowed`] (set on the kingdom
+    /// [`legaia_engine_menus::party_state::PartyState::scene_save_allowed`] (set on the kingdom
     /// world maps) and [`crate::world::World::field_base_step`] tests
     /// directly; this flag forces the same arm on any scene, for tests and
     /// debug drivers.

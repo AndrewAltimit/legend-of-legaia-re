@@ -24,7 +24,7 @@ use legaia_engine_system::rand::psyq_rand_step;
 
 fn build_world() -> World {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },

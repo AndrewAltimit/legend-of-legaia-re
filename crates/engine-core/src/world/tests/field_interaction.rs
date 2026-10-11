@@ -1024,7 +1024,7 @@ fn three_actor_talk_lock_drop_mid_swap_waits_for_the_poll() {
 #[test]
 fn three_actor_talk_switch_suppressed_under_dialogue() {
     let mut world = talk_world_with_participants();
-    world.dialog.current = Some(crate::world::DialogRequest {
+    world.dialog.current = Some(legaia_engine_field::dialog_state::DialogRequest {
         text_id: 0,
         inline: vec![0x1F, b'x', 0x00],
         world_x: 0,
@@ -1352,7 +1352,7 @@ fn dialogue_owns_input_covers_both_channels() {
         "the inline runner alone must count - it is the ordinary NPC talk"
     );
     w.dialog.inline = None;
-    w.dialog.current = Some(crate::world::DialogRequest {
+    w.dialog.current = Some(legaia_engine_field::dialog_state::DialogRequest {
         text_id: 0,
         inline: Vec::new(),
         world_x: 0,

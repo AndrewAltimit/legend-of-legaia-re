@@ -95,12 +95,17 @@ pub mod effect_vm;
 pub mod field;
 pub mod field_actor_billboard;
 pub mod field_ledge_hop_arc;
+pub mod frame_clock;
 pub mod move_buffer;
 pub mod move_ext_strip;
 pub mod move_vm;
 pub mod move_vm_overlay_ext;
 pub mod vdf_morph;
 pub mod vram_rect_copy;
+
+/// Maximum simultaneous actors in the world. Mirrors the battle-side cap of
+/// 8 + 32 spare slots for field-side NPCs / cutscene actors.
+pub const MAX_ACTORS: usize = 64;
 
 /// Width of one bytecode instruction in bytes.
 pub const INSN_SIZE: usize = 4;

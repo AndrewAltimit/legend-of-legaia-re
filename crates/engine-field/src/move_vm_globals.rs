@@ -1,20 +1,21 @@
 //! Move-VM globals: per-actor bytecode and buffer pools, the shared predicate / counter / slot-table words, scratchpad ramp targets and the per-tick outcomes.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
+//! Split out of the composite `World` so the state one subsystem owns
 //! reads as one unit. Fields keep their retail provenance notes.
 
-use super::*;
+use legaia_engine_vm::MAX_ACTORS;
+use legaia_engine_vm::actor_tick::TickResult;
 
 /// Move-VM globals: per-actor bytecode and buffer pools, the shared predicate / counter / slot-table words, scratchpad ramp targets and the per-tick outcomes.
 pub struct MoveVmGlobals {
     /// Per-actor move-VM bytecode buffers. Indexed by actor slot. Empty
     /// vec means "no active move" - the move VM is not ticked for that
-    /// actor. Set via [`crate::world::World::set_move_bytecode`].
+    /// actor. Set via `World::set_move_bytecode`.
     pub bytecode: Vec<Vec<u16>>,
     /// MOVE buffer pool root, mirroring retail `_DAT_8007B888`. Populated
     /// per scene from the slot-1 `Asset(0x05) = Move` descriptor (the
     /// MDT-shaped offset-table blob parsed by [`legaia_mdt::MoveBuffer`]).
-    /// Consumed by the [`vm::move_buffer::MoveBufferHost`] impl in
+    /// Consumed by the [`legaia_engine_vm::move_buffer::MoveBufferHost`] impl in
     /// `move_buffer_host.rs`. Empty when no scene MOVE table is wired
     /// (the cursor's resolver returns `None` and the per-actor state
     /// stays idle, matching retail when the table pointer is null).
@@ -25,12 +26,12 @@ pub struct MoveVmGlobals {
     /// install this. See `docs/formats/mdt.md`.
     pub buffer2_root: Vec<u8>,
     /// Alternate MOVE buffer pool root, mirroring retail `_DAT_8007B75C`.
-    /// Selected by [`vm::move_buffer::STATUS_FLAG_ALT_POOL`] in the
+    /// Selected by [`legaia_engine_vm::move_buffer::STATUS_FLAG_ALT_POOL`] in the
     /// per-actor status flag word. Populated by the world-map / battle
     /// overlay paths.
     pub buffer_alt_root: Vec<u8>,
     /// Per-actor [`TickEvent`]s emitted by the last
-    /// [`crate::world::World::tick_actor_physics`] pass. Engines that want to react
+    /// `World::tick_actor_physics` pass. Engines that want to react
     /// to audio cues, render submissions, or unlink requests drain
     /// this each frame; the move-buffer cursor kick is dispatched
     /// inline so callers do not need to inspect this list to keep
@@ -49,7 +50,7 @@ pub struct MoveVmGlobals {
     /// Override for the actor free-stack top `_DAT_8007C348` that ext sub-ops
     /// 0x36 / 0x37 read (`0x8E - top` = live actors). `None` - the default -
     /// derives it from the world's live actor population
-    /// ([`crate::world::World::actor_pool_top`]); a test pins it with `Some`.
+    /// (`World::actor_pool_top`); a test pins it with `Some`.
     pub pool_top_override: Option<i16>,
     /// Move-VM scratchpad ramp ratio numerator at `_DAT_1F800393` - used by
     /// ext sub-op 0x23 (anim-bank lerp) as the numerator of a 12.0 fixed-point
@@ -67,15 +68,15 @@ pub struct MoveVmGlobals {
     /// actor's `move_state` `(world_x, world_y)` toward the target through
     /// the motion VM, one step per tick (`Self::tick_actor_motions`).
     pub actor_motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
-    /// Per-actor move-VM outcomes from the most recent [`crate::world::World::tick_move_vms`]
+    /// Per-actor move-VM outcomes from the most recent `World::tick_move_vms`
     /// call. Pairs of `(actor_slot, outcome)`. Engines drain or inspect this
     /// after `World::tick` to react to halts / pending opcodes.
-    pub outcomes: Vec<(u8, vm::move_vm::ActorTickOutcome)>,
+    pub outcomes: Vec<(u8, legaia_engine_vm::move_vm::ActorTickOutcome)>,
     /// Move-VM extension sub-op `0x2C` executions since the last draw - the
     /// scanline strip emitter `FUN_801D31B0`'s inputs, captured at the step
-    /// and drawn by [`crate::world::World::move_strip_render_step`] on the
+    /// and drawn by `World::move_strip_render_step` on the
     /// host's render pass. Capped at [`MOVE_STRIP_REQUEST_CAP`].
-    pub strip_requests: Vec<vm::move_ext_strip::StripRequest>,
+    pub strip_requests: Vec<legaia_engine_vm::move_ext_strip::StripRequest>,
 }
 
 /// Most strip requests [`MoveVmGlobals::strip_requests`] holds between two
@@ -109,14 +110,14 @@ impl MoveVmGlobals {
 impl MoveVmGlobals {
     /// Queue one sub-op `0x2C` execution for the next draw, dropping it once
     /// [`MOVE_STRIP_REQUEST_CAP`] requests are already waiting.
-    pub fn push_strip_request(&mut self, req: vm::move_ext_strip::StripRequest) {
+    pub fn push_strip_request(&mut self, req: legaia_engine_vm::move_ext_strip::StripRequest) {
         if self.strip_requests.len() < MOVE_STRIP_REQUEST_CAP {
             self.strip_requests.push(req);
         }
     }
 
     /// Drain the queued strip requests.
-    pub fn take_strip_requests(&mut self) -> Vec<vm::move_ext_strip::StripRequest> {
+    pub fn take_strip_requests(&mut self) -> Vec<legaia_engine_vm::move_ext_strip::StripRequest> {
         std::mem::take(&mut self.strip_requests)
     }
 
@@ -133,12 +134,12 @@ impl MoveVmGlobals {
     /// cached the last tick's drain (the earlier ticks of a catch-up frame
     /// were lost). Holding the latest tick's set until the next tick starts
     /// ([`Self::begin_strip_tick`]) is one frame's worth at any refresh.
-    pub fn strip_frame(&self) -> &[vm::move_ext_strip::StripRequest] {
+    pub fn strip_frame(&self) -> &[legaia_engine_vm::move_ext_strip::StripRequest] {
         &self.strip_requests
     }
 
     /// A new tick starts: drop the previous tick's strips. Called at the top
-    /// of [`crate::world::World::tick`], so the requests the tick and the
+    /// of `World::tick`, so the requests the tick and the
     /// host's post-tick effect steps push are what the next redraws show.
     pub fn begin_strip_tick(&mut self) {
         self.strip_requests.clear();
@@ -149,4 +150,18 @@ impl Default for MoveVmGlobals {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// One in-flight field-NPC walk leg, stepped through the ported motion VM
+/// ([`legaia_engine_motion_vm::motion_vm::step`], the `FUN_8003774C` port) by
+/// `World::tick_field_npc_motions`. The live position lives in
+/// `FieldNpcState::positions` (so collision / interact probes follow the
+/// walking NPC automatically); this carries the VM cursor + target.
+#[derive(Debug, Clone)]
+pub struct FieldNpcMotion {
+    /// Motion-VM state (cursor, per-frame speed, accumulated budget). The
+    /// `world_x` / `world_z` fields mirror the NPC's live position.
+    pub state: legaia_engine_motion_vm::motion_vm::MotionState,
+    /// World-space walk target of the current leg.
+    pub target: (i16, i16),
 }

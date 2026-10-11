@@ -74,7 +74,7 @@ fn seru_trade_runtime_swaps_and_reseeds() {
         .read_named_file("SCUS_942.54")
         .expect("SCUS present on disc");
     let mut w0 = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             roster: party_for(seed),
             ..Default::default()
         },
@@ -97,11 +97,11 @@ fn seru_trade_runtime_swaps_and_reseeds() {
         .expect("SCUS present after patch");
 
     let mut w = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             roster: party_for(seed),
             ..Default::default()
         },
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             play_time_seconds: 0,
             ..Default::default()
         },

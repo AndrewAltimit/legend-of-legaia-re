@@ -70,7 +70,7 @@ pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestinatio
 /// referenced partition-2 record supplies the **destination**. Both are
 /// byte-exact disc data (verified against `map01`'s trailing `0x3F` table).
 ///
-/// See `legaia_engine_core::world::WorldMapEntityConfig::OverworldPortal` (the runtime
+/// See `crate::world_map_state::WorldMapEntityConfig::OverworldPortal` (the runtime
 /// entity this seeds) and the drain in
 /// `legaia_engine_core::scene_host::SceneHost::tick`.
 #[derive(Debug, Clone, PartialEq, Eq)]

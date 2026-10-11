@@ -90,7 +90,7 @@ fn battle_bgm_swaps_on_encounter_and_restores_on_finish() {
     use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -144,7 +144,7 @@ fn playable_default_swaps_to_the_standard_battle_theme() {
     use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -177,7 +177,7 @@ fn battle_bgm_unset_leaves_music_untouched() {
     use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -206,7 +206,7 @@ fn battle_bgm_with_silent_field_stops_on_finish() {
     use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -300,7 +300,7 @@ fn arts_editor_chain_round_trips_through_save_into_the_battle_menu() {
     // A field-side session: the player opens the Tactical Arts editor and
     // composes a brand-new chain for character slot 0 (Down, Up, Up).
     let mut field = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -353,7 +353,7 @@ fn arts_editor_chain_round_trips_through_save_into_the_battle_menu() {
 
     // ...and a fresh boot that loads the save can offer it in battle.
     let mut battle = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -376,7 +376,7 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     use legaia_engine_system::input::PadButton;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -500,7 +500,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     use legaia_engine_system::input::PadButton;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -668,7 +668,7 @@ fn build_battle_arts_rows_resolves_miracle_finisher_profile() {
     // No art records staged: each of Vahn's Craze's six component arts
     // (Art22/28/23/27/20/2A) degrades to one synthetic ×12 strike.
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -760,7 +760,7 @@ fn build_battle_arts_rows_fires_super_from_recognized_art_sequence() {
     }
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -812,7 +812,7 @@ fn build_battle_arts_rows_fires_super_from_recognized_art_sequence() {
     // With no art catalog staged the recognizer can't run, so no Super is
     // detected and the chain falls back to a plain/synthetic row.
     let mut bare = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

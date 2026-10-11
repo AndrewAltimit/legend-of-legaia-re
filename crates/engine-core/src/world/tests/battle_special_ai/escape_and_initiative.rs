@@ -13,7 +13,7 @@ fn ap_boost_accessory_accelerates_spirit_gauge() {
 
     fn gauge_after_hit(ap_boost_passive: Option<u8>) -> u16 {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },
@@ -49,7 +49,7 @@ fn escape_world(party_speed: u16, enemy_speed: u16, passive: Option<u8>) -> Worl
     use legaia_engine_battle::accessory_passives::AccessoryPassives;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

@@ -409,7 +409,7 @@ fn extracted_dir() -> Option<PathBuf> {
 /// exists for unreachable while every assertion still passes.
 fn battle_world() -> World {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },

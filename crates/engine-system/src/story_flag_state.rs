@@ -1,6 +1,6 @@
 //! Story / system flag words: the retail flag arrays and the story-flag bit image the scripts test and set.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
+//! Split out of the composite `World` so the state one subsystem owns
 //! reads as one unit. Fields keep their retail provenance notes.
 
 /// Story / system flag words: the retail flag arrays and the story-flag bit image the scripts test and set.
@@ -18,7 +18,7 @@ pub struct StoryFlagState {
     /// Field-VM `extra_flags` register read by op 0x42 mode 0 - the
     /// `_DAT_8007B8F4` **region-type mask**: bit `n` set when the player's
     /// tile sits inside a type-`n` region of the scene `.MAP` region table.
-    /// Rebuilt per tile crossing by [`crate::world::World::refresh_field_regions`] (the
+    /// Rebuilt per tile crossing by `World::refresh_field_regions` (the
     /// `FUN_800180EC` / `FUN_801DBA20` ports in [`legaia_engine_field::field_regions`])
     /// when the per-scene tables are installed; otherwise host-owned
     /// scene-local state.
@@ -27,7 +27,7 @@ pub struct StoryFlagState {
     /// by op `0x2E` GFLAG_SET; cleared by op `0x2F` GFLAG_CLR; tested
     /// by op `0x30` GFLAG_TST.
     ///
-    /// Independent of [`crate::world::StoryFlagState::story_flag_bits`]: retail seeds this from
+    /// Independent of [`StoryFlagState::story_flag_bits`]: retail seeds this from
     /// the game-mode descriptor table on mode init (low 16 bits of
     /// `mode_table[mode_idx].param`) and the SC save/load bulk copy
     /// from RAM `0x80084340` never reaches scratchpad, so the bitmap
@@ -36,10 +36,10 @@ pub struct StoryFlagState {
     /// Full 512-byte story-flag bitmap mirroring retail RAM
     /// `0x80085600..0x80085800` (SC block offset `0x14C0`). This is the
     /// narrative-progress bitmap the SC block persists, separate from
-    /// the per-mode scratchpad word [`crate::world::StoryFlagState::story_flags`].
+    /// the per-mode scratchpad word [`StoryFlagState::story_flags`].
     ///
     /// Empty (`vec![]`) when the engine hasn't been booted from a retail
-    /// SC block; populated via [`crate::world::World::load_full`] when a retail-shaped
+    /// SC block; populated via `World::load_full` when a retail-shaped
     /// [`legaia_save::SaveFile`] is restored.
     pub story_flag_bits: Vec<u8>,
 }

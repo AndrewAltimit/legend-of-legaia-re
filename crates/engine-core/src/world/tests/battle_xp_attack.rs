@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn apply_battle_xp_sets_level_up_banner() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -44,7 +44,7 @@ fn apply_battle_xp_sets_level_up_banner() {
 #[test]
 fn every_member_who_levels_gets_their_own_banner_in_turn() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -97,7 +97,7 @@ fn every_member_who_levels_gets_their_own_banner_in_turn() {
 #[test]
 fn apply_battle_xp_skips_dead_members() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -122,7 +122,7 @@ fn apply_battle_xp_skips_dead_members() {
 #[test]
 fn apply_battle_xp_no_alive_returns_empty() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -148,7 +148,7 @@ fn apply_battle_loot_drops_item_when_chance_is_100() {
     cat.insert(def);
     let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -173,7 +173,7 @@ fn battle_gold_saturates_the_purse_at_99_999_999() {
     cat.insert(def);
     let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -204,7 +204,7 @@ fn a_raseru_forbidden_fight_pays_no_gold_exp_or_drop() {
     let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
     let run = |word: u32| {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },
@@ -231,7 +231,7 @@ fn a_raseru_forbidden_fight_pays_no_gold_exp_or_drop() {
 #[test]
 fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -265,7 +265,7 @@ fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
 /// `(damage, rng_advanced)`.
 fn one_basic_strike(attack: u16, defense: u16, gate: bool) -> (u16, bool) {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -340,7 +340,7 @@ fn apply_basic_attack_damage_finish_gate() {
 #[test]
 fn basic_attack_accrues_defender_spirit_gauge() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -376,7 +376,7 @@ fn basic_attack_accrues_defender_spirit_gauge() {
 #[test]
 fn spirit_gauge_clamps_at_full() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -407,7 +407,7 @@ fn spirit_gauge_clamps_at_full() {
 fn spell_damage_accrues_spirit_gauge() {
     use legaia_engine_battle::spells::{SpellElement, SpellOutcome};
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -441,7 +441,7 @@ fn spell_damage_accrues_spirit_gauge() {
 #[test]
 fn apply_basic_attack_does_not_roll_accuracy() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -470,7 +470,7 @@ fn apply_basic_attack_does_not_roll_accuracy() {
 #[test]
 fn first_living_opponent_is_chosen_by_attacker_side() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 2,
             ..Default::default()
         },
@@ -490,7 +490,7 @@ fn first_living_opponent_is_chosen_by_attacker_side() {
 #[test]
 fn next_living_combatant_round_robins_skipping_dead() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -515,7 +515,7 @@ fn next_living_combatant_round_robins_skipping_dead() {
 #[test]
 fn initiative_orders_turns_by_speed_then_reseeds() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -552,7 +552,7 @@ fn initiative_orders_turns_by_speed_then_reseeds() {
 #[test]
 fn initiative_skips_dead_high_speed_actor() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -580,7 +580,7 @@ fn initiative_skips_dead_high_speed_actor() {
 #[test]
 fn initiative_falls_back_to_round_robin_without_speed() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -611,7 +611,7 @@ fn initiative_falls_back_to_round_robin_without_speed() {
 #[test]
 fn seed_battle_initiative_arms_every_slot_and_the_fastest_opens() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -669,7 +669,7 @@ fn the_result_window_prints_the_per_member_share() {
     cat.insert(def);
     let formation = FormationDef::new(1000, vec![FormationSlot::new(4)]);
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },

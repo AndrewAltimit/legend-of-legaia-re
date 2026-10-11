@@ -158,7 +158,7 @@ impl MuscleDomeSurface {
     }
 
     /// [`Self::frame`] gated on the world's sim tick
-    /// (`legaia_engine_core::world::FrameClock::sim_ticks`): the choreography, the pose
+    /// (`legaia_engine_vm::frame_clock::FrameClock::sim_ticks`): the choreography, the pose
     /// and the battle camera script step once per tick the world ran, and a
     /// display frame that ran no tick re-draws the last pose. [`Self::frame`]
     /// steps once per *call*, so a host calling it once per display frame

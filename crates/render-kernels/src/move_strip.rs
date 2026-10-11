@@ -104,7 +104,7 @@ pub fn strip_quad_prim(q: &StripQuad, ot_index: u32) -> ScreenPrim {
 ///
 /// Both play hosts call this from their draw path with the requests of the
 /// world's most recent tick
-/// (`legaia_engine_core::world::MoveVmGlobals::strip_frame`).
+/// (`legaia_engine_field::move_vm_globals::MoveVmGlobals::strip_frame`).
 pub fn move_strip_prims(requests: &[StripRequest], view: &FieldCameraView) -> Vec<ScreenPrim> {
     let mut out = Vec::new();
     for req in requests {

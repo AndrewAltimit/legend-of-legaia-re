@@ -164,7 +164,7 @@ impl World {
     /// [`legaia_engine_fishing::fishing::PrizeExchange::buy`] against the persistent pool /
     /// purchased mask / live inventory count, then deducts
     /// [`crate::world::MinigameState::fishing_points`], latches the one-time bit, and grants the
-    /// item into [`crate::world::PartyState::inventory`]. While a fishing session is live its
+    /// item into [`legaia_engine_menus::party_state::PartyState::inventory`]. While a fishing session is live its
     /// record is synced to the reduced pool so the on-screen point total
     /// matches. `None` when no exchange is open or the buy doesn't validate.
     pub fn fishing_exchange_buy(

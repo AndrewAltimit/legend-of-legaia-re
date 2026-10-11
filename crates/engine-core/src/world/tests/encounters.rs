@@ -408,7 +408,7 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
     };
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -501,7 +501,7 @@ fn field_carrier_unengaged_never_fires() {
     use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

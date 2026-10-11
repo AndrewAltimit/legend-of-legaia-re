@@ -15,7 +15,7 @@ use legaia_save::retail_inventory::{ITEM_SLOTS_TOTAL, ItemWindow, NOT_IN_WINDOW}
 /// its first roll.
 fn steal_world(cells: &[(usize, u8, u8)], rng_seed: u32) -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -194,7 +194,7 @@ impl World {
     /// price table and the RNG matter to `roll_cast_steal` on a party seat.
     fn clone_for_price_test(&self) -> World {
         let mut w = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: self.party.party_count,
                 ..Default::default()
             },

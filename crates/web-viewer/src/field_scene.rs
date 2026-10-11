@@ -88,7 +88,7 @@ pub struct FieldScenePack {
 /// `FUN_8001ada4` case 0xB - water / waterfall shimmer, 12 carriers; see
 /// `docs/subsystems/field-ambient-fx.md`), shared by the map viewer and the
 /// play runtime. It runs on the retail game-tick clock: a game tick every
-/// [`legaia_engine_core::world::FrameClock::frame_step`] vsyncs
+/// [`legaia_engine_vm::frame_clock::FrameClock::frame_step`] vsyncs
 /// (`DAT_1F800393`; 2 in towns, 3 on the overworld).
 ///
 /// The other VRAM writers - the ambient move-VM tree and the scripted CLUT

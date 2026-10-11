@@ -49,7 +49,7 @@ impl World {
     /// Open the name-entry overlay for `slot`, seeded with the slot's current
     /// display name (e.g. the template `Vahn`). Mirrors the opening `town01`
     /// script's lead-character naming prompt. The host drives it each frame
-    /// with [`Self::step_name_entry`] and renders from [`crate::world::PartyState::name_entry`].
+    /// with [`Self::step_name_entry`] and renders from [`legaia_engine_menus::party_state::PartyState::name_entry`].
     ///
     /// The screen also holds the frame-step floor at `1` while it is open and
     /// hands the scene's floor back on close
@@ -69,7 +69,7 @@ impl World {
 
     /// Advance the active name-entry overlay by one input frame. On commit
     /// (the player confirms "Is this name okay?") the entered name is written
-    /// into [`crate::world::PartyState::party_names`] for the entry's slot, the session is closed,
+    /// into [`legaia_engine_menus::party_state::PartyState::party_names`] for the entry's slot, the session is closed,
     /// and `true` is returned so the host can resume the field script.
     /// Returns `false` while the overlay stays open (or when none is active).
     pub fn step_name_entry(
@@ -139,7 +139,7 @@ impl World {
     /// `(-600, 8, 3840)`) lands under the prompt - the shot every retail
     /// capture of the screen holds, with Vahn standing in the upper left. The
     /// engine's two glide clocks both run on
-    /// [`crate::world::FrameClock::display_frames`], so the prompt advances
+    /// [`legaia_engine_vm::frame_clock::FrameClock::display_frames`], so the prompt advances
     /// it along with the caret's [`Self::frame`]; the hosts then run their
     /// camera half as on any frame.
     // REF: FUN_801DC0BC
@@ -300,7 +300,7 @@ impl World {
     /// timeline (a field-VM record in the MAN's third record partition)
     /// that ends with `GFLAG_SET 26` - field-VM op `0x2E` with operand
     /// `0x1A`, which sets bit 26 (`0x0400_0000`) of the scratchpad flag
-    /// word `_DAT_1F800394` (the engine's [`crate::world::StoryFlagState::story_flags`]) right
+    /// word `_DAT_1F800394` (the engine's [`legaia_engine_system::story_flag_state::StoryFlagState::story_flags`]) right
     /// after staging the closing camera + actor moves. Once that bit is
     /// set, the per-frame field controller `FUN_801D1344` waits for the
     /// player's confirm press and then issues a name-based scene-change
@@ -467,11 +467,11 @@ impl World {
     /// `true` when story flag `flag` is set in the partition-2 gate bitmap
     /// (retail `DAT_80085758`). That base is the **system-flag bank** the
     /// field VM's `0x50`/`0x60`/`0x70` SET/CLEAR/TEST opcodes operate on
-    /// ([`crate::world::StoryFlagState::system_flags`], same `byte = flag >> 3`,
+    /// ([`legaia_engine_system::story_flag_state::StoryFlagState::system_flags`], same `byte = flag >> 3`,
     /// `bit = 0x80 >> (flag & 7)` addressing - `FUN_8003BDE0`'s test), so the
     /// gate check and the VM writes share one store. It also sits at offset
     /// `0x158` of the `0x80085600..0x80085800` save-bitmap window
-    /// ([`crate::world::StoryFlagState::story_flag_bits`]); the save/load paths sync that overlap so
+    /// ([`legaia_engine_system::story_flag_state::StoryFlagState::story_flag_bits`]); the save/load paths sync that overlap so
     /// gate state persists (see [`Self::save_full`] / [`Self::load_full`]).
     // REF: FUN_8003BDE0
     pub fn p2_gate_flag_set(&self, flag: u16) -> bool {
@@ -543,8 +543,8 @@ impl World {
     /// `true` while a dialogue engagement owns the pad and the player.
     ///
     /// The engine has **two** dialogue channels and either one can be live on
-    /// its own. [`crate::world::DialogState::current`] is the simplified request the probe /
-    /// world map open; [`crate::world::DialogState::inline`] is the faithful field-VM
+    /// its own. [`legaia_engine_field::dialog_state::DialogState::current`] is the simplified request the probe /
+    /// world map open; [`legaia_engine_field::dialog_state::DialogState::inline`] is the faithful field-VM
     /// runner ([`legaia_engine_field::inline_dialogue`]), which the ordinary NPC-talk path
     /// runs and which can hold a box open with no `current_dialog` at all -
     /// an interaction record whose prologue selects its segment never sets
@@ -669,7 +669,7 @@ impl World {
     /// The engine's sim clock runs at 100 Hz, so stepping the timeline once
     /// per sim tick drained every `WaitFrames` 1.67x too fast. The narration
     /// roller was already corrected onto the retail-frame sub-clock
-    /// ([`crate::world::FrameClock::display_frame_step`]); the timeline is paced off
+    /// ([`legaia_engine_vm::frame_clock::FrameClock::display_frame_step`]); the timeline is paced off
     /// the same sub-clock here so wait-dominated legs keep retail wall-time
     /// too. (Measured against a headless retail capture of the New Game
     /// opening chain: before, the roller-bound `opdeene` leg matched retail

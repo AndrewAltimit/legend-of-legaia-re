@@ -1269,8 +1269,8 @@ impl SceneHost {
     }
 
     /// Decode the active scene's gold shops from its MAN(s) and park them on
-    /// [`crate::world::ShopState::scene_shops`], priced from
-    /// [`crate::world::ShopState::item_shop_data`]. Scans every entry in the scene's
+    /// [`legaia_engine_menus::shop_state::ShopState::scene_shops`], priced from
+    /// [`legaia_engine_menus::shop_state::ShopState::item_shop_data`]. Scans every entry in the scene's
     /// CDNAME block (most carry one bundle MAN); cheap for non-bundle entries -
     /// the locator returns early without decompressing when an entry isn't a
     /// scene bundle with a MAN. No-op shop list when the disc / item data is

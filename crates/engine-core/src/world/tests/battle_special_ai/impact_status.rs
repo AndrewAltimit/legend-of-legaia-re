@@ -39,7 +39,7 @@ fn flame_caster_battle(impact: u8) -> World {
     use legaia_engine_battle::spells::SpellCatalog;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

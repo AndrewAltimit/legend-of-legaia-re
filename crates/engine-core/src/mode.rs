@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn resolve_frame_step_installs_the_floor_when_frameskip_is_off() {
         let mut w = World {
-            clock: crate::world::FrameClock {
+            clock: legaia_engine_vm::frame_clock::FrameClock {
                 frame_step_floor: 3,
                 ..Default::default()
             },

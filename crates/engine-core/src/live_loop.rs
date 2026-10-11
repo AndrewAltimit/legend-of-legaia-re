@@ -113,7 +113,7 @@ impl World {
             && matches!(self.mode, SceneMode::Field | SceneMode::WorldMap)
     }
 
-    /// Recompute the cached [`crate::world::EncounterState::scene_rollable`] answer.
+    /// Recompute the cached [`legaia_engine_battle::encounter_state::EncounterState::scene_rollable`] answer.
     ///
     /// Called whenever the encounter tables change (scene entry's region
     /// routing, and [`Self::arm_live_loop`]). The underlying scan is a pass

@@ -44,7 +44,7 @@ impl World {
     /// global frame-time `delta`, (2) run the move VM through
     /// [`vm::move_vm::actor_tick`], which gates on the resulting timer and
     /// inspects the HALT flag after the call. Outcomes are recorded in
-    /// [`crate::world::MoveVmGlobals::outcomes`] so engines that want to react to per-actor
+    /// [`legaia_engine_field::move_vm_globals::MoveVmGlobals::outcomes`] so engines that want to react to per-actor
     /// halts / waits can read them after the world ticks.
     ///
     /// `delta` mirrors the retail product `_DAT_1f800393 * _DAT_1f80037D`
@@ -108,7 +108,7 @@ impl World {
     ///
     /// The other event variants (audio cues, render submissions,
     /// unlink requests, keyframe pose writeback) are recorded in
-    /// [`crate::world::MoveVmGlobals::last_tick_events`] for engines that want to consume
+    /// [`legaia_engine_field::move_vm_globals::MoveVmGlobals::last_tick_events`] for engines that want to consume
     /// them but otherwise no-op. Wiring those is orthogonal to the
     /// move-buffer cursor.
     ///
@@ -147,7 +147,7 @@ impl World {
     ///
     /// `frame_delta` is retail's `DAT_1F800393` - the vsyncs one game tick
     /// spans - not a constant `1`. [`World::tick`] fires this once every
-    /// [`crate::world::FrameClock::frame_step`] vsyncs, so the two together conserve
+    /// [`legaia_engine_vm::frame_clock::FrameClock::frame_step`] vsyncs, so the two together conserve
     /// vsyncs-per-second: the dispatcher integrates the same total delta over
     /// the same wall-clock span, just in fewer, larger steps. That is exactly
     /// retail's own trade, and it is why duration-based parity (the camera
@@ -444,7 +444,7 @@ impl World {
     /// never taken - see its doc comment for the three gates.
     ///
     /// The forced-slow arm's byte `_DAT_8007B6A8` is the per-scene MAN flag
-    /// [`crate::world::PartyState::scene_save_allowed`] (`FUN_8003AEB0` copies
+    /// [`legaia_engine_menus::party_state::PartyState::scene_save_allowed`] (`FUN_8003AEB0` copies
     /// `MAN[1] & 1` into it), set on exactly the three kingdom world maps - so
     /// the overworld player always takes the slow step and never runs, which
     /// is what the retail overworld states measure (`10` units per `dt = 3`

@@ -18,7 +18,7 @@ impl World {
     ///
     /// 1. **Step detection.** A "step" is the player actor crossing into a
     ///    new 128-unit collision tile (`pos >> 7`), sampled once per actor
-    ///    game tick ([`crate::world::FrameClock::game_tick_fired`]). Each step drives one
+    ///    game tick ([`legaia_engine_vm::frame_clock::FrameClock::game_tick_fired`]). Each step drives one
     ///    [`Self::on_field_step`] roll - matching the retail per-step
     ///    counter rather than rolling every frame.
     /// 2. **Timers.** [`Self::tick_encounter`] advances the session's

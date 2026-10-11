@@ -354,7 +354,7 @@ impl LegaiaRuntime {
     /// Whole seconds only, and by delta rather than absolutely, so a loaded
     /// save keeps its accumulated total. The page used to substitute
     /// `world.frame / 60` at the one place the clock was *drawn*, which left
-    /// [`legaia_engine_core::world::FrameClock::play_time_seconds`] frozen at
+    /// [`legaia_engine_vm::frame_clock::FrameClock::play_time_seconds`] frozen at
     /// whatever a load put there - so the H:MM:SS box reset on every page
     /// load, ignored a loaded save's hours, and, worse, a save written from
     /// the browser recorded the *loaded* play time rather than the played one.

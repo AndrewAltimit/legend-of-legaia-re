@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn a_dead_monster_enters_the_defeat_fade() {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },
@@ -491,7 +491,7 @@ mod tests {
     #[test]
     fn a_faded_monster_is_not_restamped_neutral() {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },

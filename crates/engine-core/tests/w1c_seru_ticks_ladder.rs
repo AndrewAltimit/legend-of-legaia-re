@@ -50,7 +50,7 @@ fn extracted_dir() -> Option<PathBuf> {
 /// seated or an arm early-outs before the write the ladder is here to see.
 fn battle_world() -> World {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },

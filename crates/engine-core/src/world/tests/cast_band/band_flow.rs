@@ -164,7 +164,7 @@ fn a_monster_cast_runs_the_magic_band_and_folds_on_leaving_the_wait() {
     use legaia_engine_battle::spells::SpellCatalog;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

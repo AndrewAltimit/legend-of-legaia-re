@@ -33,7 +33,7 @@ fn extracted_dir() -> Option<PathBuf> {
 
 fn battle_world(dir: &std::path::Path) -> World {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

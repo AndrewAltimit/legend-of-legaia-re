@@ -78,7 +78,7 @@ fn town0e_morph_tree_spawns_from_a_placed_actors_prologue_or_skip() {
     );
 
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },

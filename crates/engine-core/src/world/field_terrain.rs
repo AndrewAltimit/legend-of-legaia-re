@@ -48,7 +48,7 @@ pub struct FieldTerrain {
     pub collision_grid: Vec<u8>,
     /// Per-scene `.MAP` region-table block (the file's `+0x10000..+0x12000`
     /// region - retail `*(_DAT_1F8003EC) + 0x10000`). Scanned per tile by
-    /// the [`legaia_engine_field::field_regions`] ports to rebuild [`crate::world::StoryFlagState::extra_flags`]
+    /// the [`legaia_engine_field::field_regions`] ports to rebuild [`legaia_engine_system::story_flag_state::StoryFlagState::extra_flags`]
     /// (the `_DAT_8007B8F4` mirror) and the scratch attribute box. Empty for
     /// scenes without a field map.
     pub map_region_block: Vec<u8>,
@@ -147,7 +147,7 @@ pub struct FieldTerrain {
     /// loop.
     pub(crate) last_tile: Option<(i16, i16)>,
     /// Player tile the region encounter reader last compared, sampled only
-    /// on the actor game tick ([`crate::world::FrameClock::game_tick_fired`]):
+    /// on the actor game tick ([`legaia_engine_vm::frame_clock::FrameClock::game_tick_fired`]):
     /// retail's `FUN_801D9E1C` tile cache (the entity's `+0x8E` / `+0x8F`),
     /// which its caller `FUN_801DA51C` refreshes once per game tick. Kept
     /// apart from [`crate::world::FieldTerrain::last_tile`], which the
@@ -155,7 +155,7 @@ pub struct FieldTerrain {
     pub(crate) step_tile: Option<(i16, i16)>,
     /// Region-keyed random-encounter state for the current FIELD scene (the
     /// same [`legaia_engine_battle::region_encounter`] `FUN_801D9E1C` port the overworld
-    /// uses, [`crate::world::WorldMapState::region_tracker`]). When set,
+    /// uses, [`legaia_engine_field::world_map_state::WorldMapState::region_tracker`]). When set,
     /// [`crate::world::World::on_field_step`] rolls against the player's *active region*
     /// (per-region rate increment + formation-range pick) and drives the
     /// trigger through the [`legaia_engine_battle::encounter::EncounterSession`]'s

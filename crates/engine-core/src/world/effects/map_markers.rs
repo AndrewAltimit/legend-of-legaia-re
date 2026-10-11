@@ -9,7 +9,7 @@ impl World {
     ///
     /// Returns an empty vector unless the disc-placement seeding
     /// ([`Self::install_world_map_entities_at`]) populated
-    /// [`crate::world::WorldMapState::entity_positions`] - the config-only installers
+    /// [`legaia_engine_field::world_map_state::WorldMapState::entity_positions`] - the config-only installers
     /// (which leave positions empty) produce no markers, so a camera-only or
     /// synthetic world map degrades cleanly. The marker `y` is the player
     /// actor's current plane (the placements are 2D), so markers sit on the

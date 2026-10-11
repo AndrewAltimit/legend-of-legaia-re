@@ -949,7 +949,7 @@ impl World {
 
     /// Live-loop bridge for the inline-script runner: when [`crate::world::WorldToggles::use_vm_dialogue`]
     /// is set, this starts the runner the frame a field dialogue opens (from
-    /// [`crate::world::DialogState::current`]'s inline buffer), steps it from the current pad
+    /// [`legaia_engine_field::dialog_state::DialogState::current`]'s inline buffer), steps it from the current pad
     /// edges (Cross/Circle = confirm, Up/Down = menu cursor), and tears it down
     /// (clearing `current_dialog`) when the conversation ends. No-op when the
     /// flag is off, so the default simplified path is untouched.

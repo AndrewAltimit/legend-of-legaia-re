@@ -384,7 +384,7 @@ mod capture_hold_tests {
 
     fn band_world() -> World {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 3,
                 ..Default::default()
             },

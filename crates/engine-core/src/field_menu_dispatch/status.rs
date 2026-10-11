@@ -154,7 +154,7 @@ fn default_element_views() -> Vec<ElementRankView> {
 /// name the player typed at the naming screen), never from a fixed table -
 /// so a save whose Vahn was renamed shows the new name on every menu and
 /// battle panel. The port's copy of that field is
-/// [`crate::world::PartyState::party_names`], which a card load fills from
+/// [`legaia_engine_menus::party_state::PartyState::party_names`], which a card load fills from
 /// the records and a New Game seeds with the template names; a slot it has
 /// no name for falls back to the canonical one.
 pub fn roster_names(world: &World) -> Vec<String> {

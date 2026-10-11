@@ -1,9 +1,9 @@
 //! Field camera rig: the saved camera snapshot, scene offset + ease, shake amplitude and the zone-ramp register file.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
+//! Split out of the composite `World` so the state one subsystem owns
 //! reads as one unit. Fields keep their retail provenance notes.
 
-use super::*;
+use legaia_engine_vm::field::CameraParam;
 
 /// Field camera rig: the saved camera snapshot, scene offset + ease, shake amplitude and the zone-ramp register file.
 pub struct CameraRig {
@@ -14,7 +14,7 @@ pub struct CameraRig {
     /// [`legaia_engine_vm::field::FieldCameraMotionHost::op4c_n8_sub4_set_b630`]. The
     /// scene reset `FUN_8003A024` zeroes it on every scene load
     /// (`0x8003A07C`, ported in
-    /// [`crate::world::World::reset_scene_control_block`]), so a tremor a
+    /// `World::reset_scene_control_block`), so a tremor a
     /// script leaves running ends at the door. Two
     /// routines read it: the LCG camera jitter `FUN_801D9D30` and the camera
     /// follow-ease `FUN_801DB510` (`lw a0,-0x49d0(v0)` at `0x801DB850`), whose
@@ -31,10 +31,10 @@ pub struct CameraRig {
     /// vertical offset the current scene asks for, in the player actor's
     /// `+0x16` footing units. Written by the field VM's op `0x4C`
     /// outer-nibble-4 sub-9 (all three arms) and read once a frame by
-    /// [`crate::world::World::tick_camera_offset_ease`].
+    /// `World::tick_camera_offset_ease`.
     pub scene_offset: i16,
     /// `_DAT_8007BCAC` - the smoothed camera vertical offset
-    /// [`legaia_engine_field::camera_ease::ease_camera_offset`] walks toward
+    /// [`crate::camera_ease::ease_camera_offset`] walks toward
     /// `camera_scene_offset - player_footing`. Seeded to `0x3C` by retail's
     /// per-scene initialiser `FUN_801D6704`, which is why the engine seeds it
     /// there too. The op `0x4C` n4 sub-9 **delta** arm snaps it instead of
@@ -45,29 +45,29 @@ pub struct CameraRig {
     /// against; the question the comparison asks is whether the actor has
     /// stopped moving in Y and Z, and this answers it without asserting what
     /// retail keeps in those two slots. `None` until the first tick.
-    pub(crate) ease_prev_yz: Option<(i16, i16)>,
+    pub ease_prev_yz: Option<(i16, i16)>,
     /// Last camera state snapshot - filled by `camera_save`, applied by
     /// `camera_apply` / `camera_load`. Engines that draw a camera read
     /// this between frames.
     pub state: CameraState,
     /// Live camera-register zone-ramp records spawned by the field-VM op
     /// `0x43` sub-3..6 (retail `FUN_8003C6A4` actors on the effect list).
-    /// [`crate::world::World::tick_register_ramps`] runs each one's `FUN_80037018` handler
+    /// `World::tick_register_ramps` runs each one's `FUN_80037018` handler
     /// against the player's position every field frame. See
-    /// [`legaia_engine_field::register_ramp`].
-    pub register_ramps: Vec<legaia_engine_field::register_ramp::RegisterRamp>,
+    /// [`crate::register_ramp`].
+    pub register_ramps: Vec<crate::register_ramp::RegisterRamp>,
     /// The four field camera-configuration registers
     /// (`0x8007B60C`/`B610`/`B614`/`B618`) the ramps above write. Seeded to
-    /// [`legaia_engine_field::camera::CAMERA_ZONE_DEFAULTS`] on scene entry; consumed by
-    /// [`legaia_engine_field::camera::Camera::tick`].
-    pub registers: legaia_engine_field::register_ramp::CameraRegisterFile,
+    /// [`crate::camera::CAMERA_ZONE_DEFAULTS`] on scene entry; consumed by
+    /// [`crate::camera::Camera::tick`].
+    pub registers: crate::register_ramp::CameraRegisterFile,
     /// Camera-zone arms the field VM ran this frame
-    /// ([`legaia_engine_field::camera::CameraZoneRequest`]), drained by
-    /// [`legaia_engine_field::camera::Camera::tick`]. The VM's host is `World` while the
+    /// ([`crate::camera::CameraZoneRequest`]), drained by
+    /// [`crate::camera::Camera::tick`]. The VM's host is `World` while the
     /// camera globals live on the host-owned `Camera`, so the arms queue
     /// here instead of writing the globals directly - see
-    /// [`crate::world::camera_hooks`].
-    pub(crate) zone_requests: Vec<legaia_engine_field::camera::CameraZoneRequest>,
+    /// `camera_hooks`.
+    pub zone_requests: Vec<crate::camera::CameraZoneRequest>,
 }
 
 impl CameraRig {
@@ -75,7 +75,7 @@ impl CameraRig {
         Self {
             shake_amplitude: 0,
             scene_offset: 0,
-            offset_ease: legaia_engine_field::camera_ease::CAMERA_OFFSET_EASE_SEED,
+            offset_ease: crate::camera_ease::CAMERA_OFFSET_EASE_SEED,
             ease_prev_yz: None,
             state: CameraState::default(),
             register_ramps: Vec::new(),
@@ -89,4 +89,29 @@ impl Default for CameraRig {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Camera state populated by `camera_save` / `camera_load` and read by
+/// `camera_apply`. Engines render the configured camera each frame.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CameraState {
+    /// Last `CameraConfigure` params applied (param-mask + values).
+    pub params: Vec<CameraParam>,
+    /// Last apply-trigger value.
+    pub apply_trigger: u16,
+    /// Last apply-mode nibble.
+    pub mode: u8,
+    /// Snapshot bytes from `camera_save`.
+    pub saved: Vec<u8>,
+    /// Last `camera_load` payload.
+    pub loaded_payload: Vec<u8>,
+    /// Display frames left on the cutscene camera mover's glide
+    /// (`FUN_801DC0BC`): armed by an op-`0x45` beat with a non-zero apply
+    /// trigger, zeroed by a snap, counted down once per display frame. The
+    /// script-side view of the mover, which op `4C CD` waits on - the
+    /// renderer's own glide lives on `crate::camera::Camera`, which folds
+    /// the beat only after the slice that issued it, while retail allocates
+    /// the mover inside the op and a `4C CD` later in the same slice already
+    /// sees it.
+    pub glide_frames: i32,
 }

@@ -511,7 +511,7 @@ impl crate::world::World {
     /// board into (`docs/subsystems/tile-board.md`), so clearing it is what
     /// stops a board surviving a scene change; `0x8007B630` is the camera
     /// **shake amplitude** field-VM `[4C 84 amp]` raises
-    /// ([`crate::world::CameraRig::shake_amplitude`]), so clearing it is what
+    /// ([`legaia_engine_field::camera_rig::CameraRig::shake_amplitude`]), so clearing it is what
     /// stops a tremor a script left running from following the player into
     /// the next scene. The block's own `+0x18` / `+0x1C` - the jitter pair
     /// the follow ease last added into the eye - are zeroed in the same run

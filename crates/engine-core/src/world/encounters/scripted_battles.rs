@@ -32,7 +32,7 @@ impl World {
     /// the record copy and the battle transition without any player step.
     /// The engine models that confirm-and-transition with the same immediate
     /// latch the field-carrier SM resolution uses
-    /// ([`crate::world::FieldCarrierState::pending_battle`], drained by
+    /// ([`legaia_engine_field::field_carrier_state::FieldCarrierState::pending_battle`], drained by
     /// `Self::tick_field_carriers` in the same frame): the formation must
     /// already be registered by [`Self::install_man_encounter`] (the
     /// scene-entry MAN install, which also merges the row's monster ids'
@@ -89,7 +89,7 @@ impl World {
     /// the record window overlaying the opcode to the host, which parses it as
     /// an [`legaia_engine_battle::encounter_record::EncounterRecord`] and routes it through
     /// [`Self::install_scripted_encounter`]. See
-    /// [`crate::world::EncounterState::scripted_armed`] for why this gate exists (there is no
+    /// [`legaia_engine_battle::encounter_state::EncounterState::scripted_armed`] for why this gate exists (there is no
     /// dedicated encounter opcode; the consuming entity SM is the retail
     /// discriminator).
     pub fn arm_scripted_encounter(&mut self, on: bool) {

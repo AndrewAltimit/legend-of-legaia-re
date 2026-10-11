@@ -3,10 +3,6 @@
 
 use super::*;
 
-/// Maximum simultaneous actors in the world. Mirrors the battle-side cap of
-/// 8 + 32 spare slots for field-side NPCs / cutscene actors.
-pub const MAX_ACTORS: usize = 64;
-
 /// Number of stat-bearing battle slots (party + monsters). Indexes
 /// [`crate::world::BattleState::attack`] / [`crate::world::BattleState::defense`] / [`crate::world::BattleState::speed`]
 /// and bounds the turn-order initiative scan.
@@ -113,7 +109,7 @@ pub(crate) const FIELD_BASE_STEP_DEBUG_TURBO: i32 = 0x18;
 /// The port ticks once per vsync, so the overworld walk spreads one retail
 /// frame's displacement - `((5 * 0xC00) >> 12) * 3 = 9`, rounded up to `10`
 /// by the 2-unit stepper - across three ticks
-/// ([`crate::world::WorldMapState::walk_carry`]). Ticking at `dt = 1` instead
+/// ([`legaia_engine_field::world_map_state::WorldMapState::walk_carry`]). Ticking at `dt = 1` instead
 /// rounds every tick's `3` up to `4`: `4` units a vsync against retail's
 /// `10 / 3`.
 pub(crate) const WORLD_MAP_FRAME_STEP: i32 = 3;
@@ -331,20 +327,6 @@ pub(crate) use legaia_engine_field::man_field_scripts::field_npc_walk_step_speed
 /// script.
 pub(crate) const FIELD_NPC_MOTION_PROGRAM: [u8; 1] =
     [legaia_engine_motion_vm::motion_vm::MotionOp::MoveTowardTarget as u8];
-
-/// One in-flight field-NPC walk leg, stepped through the ported motion VM
-/// ([`legaia_engine_motion_vm::motion_vm::step`], the `FUN_8003774C` port) by
-/// `World::tick_field_npc_motions`. The live position lives in
-/// [`crate::world::FieldNpcState::positions`] (so collision / interact probes follow the
-/// walking NPC automatically); this carries the VM cursor + target.
-#[derive(Debug, Clone)]
-pub struct FieldNpcMotion {
-    /// Motion-VM state (cursor, per-frame speed, accumulated budget). The
-    /// `world_x` / `world_z` fields mirror the NPC's live position.
-    pub state: legaia_engine_motion_vm::motion_vm::MotionState,
-    /// World-space walk target of the current leg.
-    pub target: (i16, i16),
-}
 
 /// One NPC's **ambient facing** channel - the idle turn-in-place behaviour of
 /// the second motion VM (`FUN_80038158` ops `0x04` / `0x0D`), driven by the

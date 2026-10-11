@@ -3,7 +3,7 @@
 //! records) and the op `0x34` sub-1 **attached light** (`FUN_801E5668`,
 //! ticked by `FUN_801E4470`).
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
+//! Split out of the composite `World` so the state one subsystem owns
 //! reads as one unit; the behaviour lives in `world/field_script_actors.rs`.
 
 use legaia_engine_vm::field_actor_billboard::AttachedSprite;
@@ -59,7 +59,7 @@ pub struct FieldScriptActorState {
     /// the NPC position map carries X / Z only. The Y stays authoritative for
     /// as long as the NPC stands on the `(x, z)` it was written at - a walk
     /// leg that moves it hands the height back to the floor sampler.
-    pub(crate) npc_heights: std::collections::BTreeMap<u8, (i16, i16, i16)>,
+    pub npc_heights: std::collections::BTreeMap<u8, (i16, i16, i16)>,
     /// Live attached lights, in spawn order.
     pub lights: Vec<FieldAttachedLight>,
 }

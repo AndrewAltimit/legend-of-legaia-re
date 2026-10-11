@@ -13,7 +13,7 @@ fn apply_battle_loot_never_drops_when_rate_zero() {
     cat.insert(def);
     let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -65,7 +65,7 @@ fn load_full_zero_level_record_clamps_to_one() {
 #[test]
 fn apply_battle_xp_scales_three_quarters_and_ceils() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },
@@ -86,7 +86,7 @@ fn apply_battle_xp_scales_three_quarters_and_ceils() {
 #[test]
 fn level_up_banner_countdown_clears() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -107,7 +107,7 @@ fn level_up_banner_countdown_clears() {
 #[test]
 fn no_level_up_banner_when_xp_insufficient() {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

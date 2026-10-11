@@ -9,7 +9,7 @@ use legaia_engine_mode::mode::SceneMode;
 impl World {
     /// Resolve a battle/party ordinal (actor slot, HUD row, VRAM texture
     /// band) to the **roster slot** of the character occupying it, per
-    /// [`crate::world::PartyState::active_party`]. Identity when no composition is installed
+    /// [`legaia_engine_menus::party_state::PartyState::active_party`]. Identity when no composition is installed
     /// or the ordinal runs past it - the historical slot-`i`-is-character-`i`
     /// behaviour every synthetic test relies on.
     pub fn party_roster_slot(&self, member: usize) -> usize {
@@ -23,12 +23,12 @@ impl World {
     /// The field party list - retail's `0x80084598` member ids for
     /// `DAT_80084594` entries - as the field VM's party ops see it.
     ///
-    /// [`crate::world::PartyState::party_actor_slots`] carries it once a
+    /// [`legaia_engine_menus::party_state::PartyState::party_actor_slots`] carries it once a
     /// save or a party op has installed it. Before that (a New Game, or a
     /// save whose composition is the roster's identity order) the list is
     /// the installed battle composition: `active_party` when set, else the
     /// identity `0..party_count`. A list the party ops emptied stays empty
-    /// ([`crate::world::PartyState::field_list_emptied`]).
+    /// ([`legaia_engine_menus::party_state::PartyState::field_list_emptied`]).
     pub fn present_party_list(&self) -> Vec<u8> {
         if self.party.party_actor_slots.is_empty() && self.party.field_list_emptied {
             return Vec::new();
@@ -64,7 +64,7 @@ impl World {
     /// battle ordinal `i` (the engine mirror of retail's present-party
     /// list at `0x8007BD10`). The list caps at the 3 on-screen party
     /// positions (the runtime texture-band count). Sets
-    /// [`crate::world::PartyState::party_count`] to the resulting length and, for each ordinal
+    /// [`legaia_engine_menus::party_state::PartyState::party_count`] to the resulting length and, for each ordinal
     /// whose mapped roster record exists, reseeds the party actor's HP /
     /// MP / liveness / SPD mirror from it - the same projection
     /// [`Self::load_party`] performs for the identity mapping. Ordinals

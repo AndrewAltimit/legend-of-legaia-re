@@ -190,7 +190,7 @@ impl World {
         self.clock.sim_ticks = self.clock.sim_ticks.wrapping_add(1);
         // Retail game-tick clock for the scripted CLUT-cell effects: one game
         // tick spans `frame_step` vsyncs (the adaptive `DAT_1F800393` factor
-        // written by `FUN_80016B6C`; see [`crate::world::FrameClock::frame_step`]). Count the sim
+        // written by `FUN_80016B6C`; see [`legaia_engine_vm::frame_clock::FrameClock::frame_step`]). Count the sim
         // ticks that map to a retail vsync and bank a game tick every
         // `frame_step` of them; [`Self::step_clut_fx`] drains the bank
         // against the host's VRAM. Only accumulates while effects are live

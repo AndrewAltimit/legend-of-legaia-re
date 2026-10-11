@@ -13,7 +13,8 @@ impl World {
     /// Default chance (percent) that a capturable enemy spawns shiny.
     /// Matches the `--shiny-seru` randomizer default and the rare-encounter
     /// feel the feature is named for.
-    pub const DEFAULT_SHINY_CHANCE_PCT: u8 = 2;
+    pub const DEFAULT_SHINY_CHANCE_PCT: u8 =
+        legaia_engine_battle::seru_state::DEFAULT_SHINY_CHANCE_PCT;
 
     /// Set the per-battle shiny-enemy chance (percent, clamped to `0..=100`).
     /// `0` disables shiny enemies.
@@ -22,10 +23,10 @@ impl World {
     }
 
     /// Roll for a shiny capturable enemy at battle entry. On a hit (chance
-    /// [`crate::world::SeruState::shiny_chance_pct`]) one capturable monster slot (a monster the
+    /// [`legaia_engine_battle::seru_state::SeruState::shiny_chance_pct`]) one capturable monster slot (a monster the
     /// catalog maps to a Seru) is chosen, its battle stats boosted by
     /// [`legaia_engine_battle::seru_learning::SHINY_DAMAGE_BONUS_PCT`]% (HP / ATK / DEF /
-    /// SPD), and its slot recorded in [`crate::world::SeruState::shiny_enemy_slots`] so a capture
+    /// SPD), and its slot recorded in [`legaia_engine_battle::seru_state::SeruState::shiny_enemy_slots`] so a capture
     /// marks the learned spell shiny. Mirrors the retail `--shiny-seru` battle
     /// hook (`FUN_800513F0` → cave routine). Idempotent per battle; the slot
     /// sets are cleared by [`Self::enter_battle_from_formation`] first.
@@ -82,7 +83,7 @@ impl World {
     /// `hit_pct` only near death, zero at full HP) - mirroring retail capture,
     /// which is reliable only on a weakened Seru. On success the monster is
     /// downed (so it counts toward the wipe) and its id is logged into
-    /// [`crate::world::SeruState::battle_captures`] for post-battle Seru learning.
+    /// [`legaia_engine_battle::seru_state::SeruState::battle_captures`] for post-battle Seru learning.
     pub(in crate::world) fn resolve_capture(&mut self, target: u8, hit_pct: u8) {
         let (hp, max, monster_id, alive) = match self.actors.get(target as usize) {
             Some(a) => (
@@ -124,7 +125,7 @@ impl World {
         }
     }
 
-    /// Drain the monster ids captured this battle (see [`crate::world::SeruState::battle_captures`]).
+    /// Drain the monster ids captured this battle (see [`legaia_engine_battle::seru_state::SeruState::battle_captures`]).
     pub fn drain_battle_captures(&mut self) -> Vec<u16> {
         std::mem::take(&mut self.seru.battle_captures)
     }
@@ -226,7 +227,7 @@ impl World {
     /// so at most one level is gained per cast - mirrored here. The leveled
     /// byte is what the next cast's magic-power stage reads
     /// ([`Self::caster_magic_power_byte`]). A level-up is recorded in
-    /// [`crate::world::SeruState::magic_level_ups`] (the banner the retail check fires as UI
+    /// [`legaia_engine_battle::seru_state::SeruState::magic_level_ups`] (the banner the retail check fires as UI
     /// element `0x65`).
     ///
     /// The special-battle word gates the accrual: the finisher's tail
@@ -286,13 +287,13 @@ impl World {
 
     /// Resolve this battle's captured monsters into Seru-learning progress.
     ///
-    /// Drains [`crate::world::SeruState::battle_captures`] (so the list is always cleared), maps
+    /// Drains [`legaia_engine_battle::seru_state::SeruState::battle_captures`] (so the list is always cleared), maps
     /// each captured monster id to its Seru id via [`crate::world::DiscTables::monster_catalog`],
-    /// and banks capture points against [`crate::world::SeruState::log`] for every active
+    /// and banks capture points against [`legaia_engine_battle::seru_state::SeruState::log`] for every active
     /// party slot through [`legaia_engine_battle::seru_learning::record_capture`]. Any Seru
     /// that crosses its learn threshold adds its spell to the character's
     /// learned list (which [`Self::build_battle_spell_session`] then offers).
-    /// Accepted outcomes are stashed in [`crate::world::SeruState::last_capture_outcomes`] for the
+    /// Accepted outcomes are stashed in [`legaia_engine_battle::seru_state::SeruState::last_capture_outcomes`] for the
     /// host to drive the capture / learned banner. Monsters with no Seru, or
     /// any capture when the registry is empty, bank nothing.
     pub(super) fn resolve_captures(&mut self) {

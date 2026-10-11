@@ -51,7 +51,7 @@ fn drops_for_monster(archive: &[u8], monster_id: u16) -> Vec<u8> {
     let catalog = catalog_from_monster_archive(archive, &[monster_id]);
     let formation = FormationDef::new(0, vec![FormationSlot::new(monster_id)]);
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

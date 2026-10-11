@@ -13,8 +13,8 @@ impl World {
     /// `+0xF4` 4×u32 field is zeroed and re-derived from the eight equipment
     /// slots ([`legaia_engine_battle::accessory_passives::AccessoryPassives::bits_for_equipment`]),
     /// then all members' words OR into the global mask (the engine's
-    /// [`crate::world::PartyState::party_ability_mask`], mirroring `DAT_80074358`). The rebuilt
-    /// word 0 also lands in [`crate::world::PartyState::character_ability_bits`] - the mask the
+    /// [`legaia_engine_menus::party_state::PartyState::party_ability_mask`], mirroring `DAT_80074358`). The rebuilt
+    /// word 0 also lands in [`legaia_engine_menus::party_state::PartyState::character_ability_bits`] - the mask the
     /// MP-cost consumers read (`Self::build_battle_spell_session` /
     /// `cast_spell_on_slots` / the battle-action VM host) - together with the
     /// party-wide-scoped bits any member contributes, so a party-wide passive
@@ -80,7 +80,7 @@ impl World {
     ///
     /// The port of retail's global-mask bit test
     /// (`DAT_80074358[index >> 5] & 1 << (index & 0x1F)`), against the
-    /// engine's [`crate::world::PartyState::party_ability_mask`]. Point-of-use consumers of the
+    /// engine's [`legaia_engine_menus::party_state::PartyState::party_ability_mask`]. Point-of-use consumers of the
     /// party-wide passives (encounter rate, escape, battle-end rewards) call
     /// this.
     pub fn party_has_ability(&self, index: u8) -> bool {

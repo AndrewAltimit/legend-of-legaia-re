@@ -126,7 +126,7 @@ pub struct AudioState {
     pub(crate) minigame_bgm_active: bool,
     /// Retail's timed sound-source auto-release (`gp+0x808`/`0x814`/`0x81C`),
     /// serviced by the frame-begin driver. Advanced by [`crate::world::World::tick`] on the
-    /// sim ticks that map to a retail vsync, by [`crate::world::FrameClock::frame_step`] - the
+    /// sim ticks that map to a retail vsync, by [`legaia_engine_vm::frame_clock::FrameClock::frame_step`] - the
     /// same cadence-invariant clock every other retail duration uses.
     ///
     /// REF: FUN_800267FC, FUN_8001698C

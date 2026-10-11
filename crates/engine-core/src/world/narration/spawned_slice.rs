@@ -1019,7 +1019,7 @@ impl World {
                             .get(pc + 2..)
                             .and_then(vm::field_ledge_hop_arc::ScriptArcRequest::decode)
                             && host.world.start_field_script_arc(
-                                crate::world::ScriptActorRef::Player,
+                                legaia_engine_field::field_script_actor_state::ScriptActorRef::Player,
                                 &req,
                                 None,
                             )

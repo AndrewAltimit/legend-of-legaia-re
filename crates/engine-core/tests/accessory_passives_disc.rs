@@ -39,7 +39,7 @@ fn disc_accessory_passives_drive_bits_boosts_and_party_wide_mask() {
     };
 
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },

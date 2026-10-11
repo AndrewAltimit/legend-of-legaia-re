@@ -10,7 +10,7 @@ use legaia_engine_system::input::PadButton;
 
 fn arts_world() -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

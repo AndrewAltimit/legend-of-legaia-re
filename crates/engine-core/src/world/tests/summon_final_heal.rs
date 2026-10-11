@@ -238,7 +238,7 @@ fn jedo_credits_per_living_monster_outside_a_scripted_fight() {
 fn final_heal_revives_and_consumes_one_lost_grail() {
     use legaia_save::Party;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -291,7 +291,7 @@ fn final_heal_revives_and_consumes_one_lost_grail() {
 fn final_heal_mid_drain_settles_on_max_hp() {
     use legaia_save::Party;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -327,7 +327,7 @@ fn final_heal_mid_drain_settles_on_max_hp() {
 fn final_heal_keeps_bit_when_second_grail_is_equipped() {
     use legaia_save::Party;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -362,7 +362,7 @@ fn final_heal_keeps_bit_when_second_grail_is_equipped() {
 fn final_heal_ignores_members_without_the_bit() {
     use legaia_save::Party;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

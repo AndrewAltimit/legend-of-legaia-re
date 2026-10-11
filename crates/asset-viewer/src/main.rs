@@ -277,7 +277,7 @@ enum Cmd {
         scene: String,
         /// Maximum actors to spawn. Capped at the number of distinct TMDs
         /// the scene's tmd_scan dir provides, then at
-        /// `engine-core::world::MAX_ACTORS` (64).
+        /// `legaia_engine_vm::MAX_ACTORS` (64).
         #[arg(long, default_value_t = 6)]
         max_actors: usize,
         /// `extracted/` root containing PROT.DAT + CDNAME.TXT + tmd_scan/
@@ -344,7 +344,7 @@ enum Cmd {
         scene: String,
         /// Number of actors to spawn. Capped at the number of distinct
         /// TMDs found in the scene's `tmd_scan/` dir, then at
-        /// `engine-core::world::MAX_ACTORS` (64).
+        /// `legaia_engine_vm::MAX_ACTORS` (64).
         #[arg(long, default_value_t = 6)]
         max_actors: usize,
         /// `extracted/` root containing PROT.DAT + CDNAME.TXT + tmd_scan/

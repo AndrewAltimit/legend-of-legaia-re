@@ -8,7 +8,7 @@
 //!
 //! Per-scene shop **stock + prices** are decoded from the disc by
 //! [`crate::shop_catalog`] (the scene MAN's op-`0x49` records + the SCUS item
-//! price table) and parked on `legaia_engine_core::world::ShopState::scene_shops`; the field-VM
+//! price table) and parked on `crate::shop_state::ShopState::scene_shops`; the field-VM
 //! op-`0x49` merchant trigger opens one (`legaia_engine_core::world::World::try_arm_field_shop`).
 //! This module owns only the buy/sell session state. (Disc-free builds leave the
 //! stock host-supplied.)

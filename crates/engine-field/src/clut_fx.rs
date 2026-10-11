@@ -23,7 +23,7 @@
 //!   per-channel deltas `(B - A) / frames` (MIPS `div` - signed, truncating
 //!   toward zero). Every tick the counter advances by the scratchpad
 //!   frame-step byte `DAT_1F800393` (`dt`, vsyncs per game tick - see
-//!   `legaia_engine_core::world::FrameClock::frame_step`); while `counter < frames` each
+//!   `legaia_engine_vm::frame_clock::FrameClock::frame_step`); while `counter < frames` each
 //!   channel accumulates `delta * dt` and the repacked row is `LoadImage`d to
 //!   the destination, so the fade completes in `frames` *vsyncs* regardless
 //!   of the frame-skip factor. On `counter >= frames`: `MoveImage` cell B to

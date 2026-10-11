@@ -95,7 +95,7 @@ impl World {
 
     /// Seed a replay's battle frame step: `step` vsyncs a frame on every tick
     /// the action SM sits in `state`, the default everywhere else
-    /// ([`crate::world::FrameClock::battle_frame_step_seed`]).
+    /// ([`legaia_engine_vm::frame_clock::FrameClock::battle_frame_step_seed`]).
     pub fn seed_battle_frame_step(&mut self, step: u8, state: u8) {
         self.clock.battle_frame_step_seed = Some((step.max(1), state));
     }

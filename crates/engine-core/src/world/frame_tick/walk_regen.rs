@@ -24,7 +24,7 @@ impl World {
     /// controller: `FUN_801D01B0`'s tail at `0x801D0910..0x801D0928` adds
     /// `DAT_1F800393` to `_DAT_801F2274` behind the step-delta-non-zero test at
     /// `0x801D08F4..0x801D090C` - one unit per vsync whose step committed.
-    /// [`Self::step_field_locomotion`] adds [`crate::world::FrameClock::display_frame_step`] once per
+    /// [`Self::step_field_locomotion`] adds [`legaia_engine_vm::frame_clock::FrameClock::display_frame_step`] once per
     /// sim tick, which is the same rate under the 1:1 denomination.
     ///
     /// The kernel's return value is the edge where the Incense window

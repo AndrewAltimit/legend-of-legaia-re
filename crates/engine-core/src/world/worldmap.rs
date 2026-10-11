@@ -180,7 +180,7 @@ impl World {
     /// the per-actor draw reads as its render scale - and `_DAT_8007B6A8`
     /// forces the slow step `5`, so a retail frame at the overworld's frame
     /// step `3` walks `10` units ([`WORLD_MAP_FRAME_STEP`], paid out over
-    /// three vsync ticks through [`crate::world::WorldMapState::walk_carry`]).
+    /// three vsync ticks through [`legaia_engine_field::world_map_state::WorldMapState::walk_carry`]).
     ///
     /// No-op without a live player actor, while a dialog owns the frame, in the
     /// top-view debug camera, or while the player's movement-disabled flag
@@ -358,7 +358,7 @@ impl World {
     /// (`world >> 7`); each step drives one
     /// [`legaia_engine_battle::region_encounter::RegionEncounterTracker::on_step`] against the
     /// player's current position. A trigger latches
-    /// [`crate::world::WorldMapState::pending_encounter`], which [`Self::tick_world_map`]
+    /// [`legaia_engine_field::world_map_state::WorldMapState::pending_encounter`], which [`Self::tick_world_map`]
     /// resolves into a battle. The RNG comes from the world's shared
     /// deterministic source, drawn only on the trigger branch, so replays stay
     /// bit-identical. No-op without a player actor or region tracker.
@@ -718,7 +718,7 @@ impl World {
     /// directly. Otherwise, a confirm press while the player stands within one
     /// tile of an [`WorldMapEntityConfig::Npc`] that carries inline dialog text
     /// (the `Dialog` op the placement walker found) opens that text against the
-    /// scene's MES container - sets [`crate::world::DialogState::current`] and emits
+    /// scene's MES container - sets [`legaia_engine_field::dialog_state::DialogState::current`] and emits
     /// [`FieldEvent::OpenDialog`], which the host renders through
     /// [`crate::scene_host::SceneHost::open_pending_dialog`], the same panel path
     /// the field VM's op `0x3F` feeds.
@@ -1161,7 +1161,7 @@ impl World {
     /// overworld-entrance engage the entity SM emitted (walk-onto its tile),
     /// leaving every other queued field event in place. `None` when no
     /// world-map transition is queued. The returned `slot` indexes
-    /// [`crate::world::WorldMapState::entity_configs`], where the
+    /// [`legaia_engine_field::world_map_state::WorldMapState::entity_configs`], where the
     /// [`WorldMapEntityConfig::OverworldPortal`] that raised it carries the
     /// real CDNAME destination - `dest_index` is only that entrance's `0x3F`
     /// index, never a door-warp map id.

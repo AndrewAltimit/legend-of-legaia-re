@@ -9,7 +9,7 @@ use legaia_engine_mode::mode::SceneMode;
 
 fn build_world(queued_action: u8) -> World {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },

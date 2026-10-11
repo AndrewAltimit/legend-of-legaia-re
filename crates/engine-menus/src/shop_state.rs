@@ -1,6 +1,6 @@
 //! Town shop + prize-exchange session state (the gold shop and the casino / fishing prize counter).
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
+//! Split out of the composite `World` so the state one subsystem owns
 //! reads as one unit. Fields keep their retail provenance notes.
 
 /// Town shop + prize-exchange session state (the gold shop and the casino / fishing prize counter).
@@ -8,47 +8,47 @@ pub struct ShopState {
     /// Item-table data the gold-shop path needs from `SCUS_942.54` (per-id buy
     /// price + a "names a real item" mask). Installed once at boot by the host
     /// (e.g. `BootSession`); `None` on disc-free builds, which leaves shop stock
-    /// host-supplied and unpriced. See [`legaia_engine_menus::shop_catalog`].
-    pub item_shop_data: Option<legaia_engine_menus::shop_catalog::ShopItemData>,
+    /// host-supplied and unpriced. See [`crate::shop_catalog`].
+    pub item_shop_data: Option<crate::shop_catalog::ShopItemData>,
     /// Gold shops located in the active scene's MAN, priced from
-    /// [`crate::world::ShopState::item_shop_data`]. Repopulated on each field-scene entry by
-    /// [`crate::scene_host::SceneHost::enter_field_scene`]; empty when the scene has
+    /// [`ShopState::item_shop_data`]. Repopulated on each field-scene entry by
+    /// `legaia_engine_core::scene_host::SceneHost::enter_field_scene`; empty when the scene has
     /// no merchant or the disc isn't available. The field-menu shop-open path
     /// picks from these instead of a hand-authored stock list.
-    pub scene_shops: Vec<legaia_engine_menus::shop_catalog::SceneShop>,
+    pub scene_shops: Vec<crate::shop_catalog::SceneShop>,
     /// A priced shop the field VM has just opened (op `0x49` sub-0 inline shop
-    /// record - see [`crate::world::World::try_arm_field_shop`]). The host drains it with
-    /// [`crate::world::World::take_pending_field_shop`] to drive the buy/sell UI, then calls
-    /// [`crate::world::World::finish_field_shop`] when the player leaves so the field VM
+    /// record - see `World::try_arm_field_shop`). The host drains it with
+    /// `World::take_pending_field_shop` to drive the buy/sell UI, then calls
+    /// `World::finish_field_shop` when the player leaves so the field VM
     /// resumes past the op. `None` between shop opens.
-    pub pending_shop: Option<legaia_engine_menus::shop::ShopSession>,
+    pub pending_shop: Option<crate::shop::ShopSession>,
     /// `true` from the frame a field-VM shop op (`0x49` sub-0) is recognised
     /// until the op's resume runs - it gates the op-0x49 tristate so the VM
     /// stays suspended while the shop is up. Distinguishes a shop arm from the
     /// name-entry arm and a plain script yield.
     pub shop_armed: bool,
     /// `true` while the opened shop UI is still up; the host clears it via
-    /// [`crate::world::World::finish_field_shop`] so the op-0x49 tristate flips Armed -> Done.
+    /// `World::finish_field_shop` so the op-0x49 tristate flips Armed -> Done.
     pub shop_open: bool,
     /// The casino prize table (menu overlay PROT 899 file `0x15D00`, four
     /// `0x60`-byte blocks), installed by
-    /// [`crate::world::World::install_menu_overlay_tables`]. Empty without disc data - the
+    /// `World::install_menu_overlay_tables`. Empty without disc data - the
     /// prize counter then refuses to open rather than selling from an
     /// invented list.
     pub prize_blocks: Vec<Vec<legaia_engine_minigames::prize_exchange::PrizeRecord>>,
     /// A prize-exchange session the field VM just opened (op `0x49` sub-op 7,
-    /// the casino prize counter - see [`crate::world::World::try_arm_prize_exchange`]). The
-    /// host drains it with [`crate::world::World::take_pending_prize_exchange`] into its
-    /// menu runtime, then calls [`crate::world::World::finish_prize_exchange`] when the
+    /// the casino prize counter - see `World::try_arm_prize_exchange`). The
+    /// host drains it with `World::take_pending_prize_exchange` into its
+    /// menu runtime, then calls `World::finish_prize_exchange` when the
     /// player leaves.
-    pub(crate) pending_prize_exchange:
+    pub pending_prize_exchange:
         Option<legaia_engine_minigames::prize_exchange::PrizeExchangeSession>,
     /// `true` from the frame an op-`0x49` sub-op-7 arm is recognised until
     /// the op's resume runs - gates the op-0x49 tristate like
-    /// [`crate::world::ShopState::shop_armed`] does for the gold shop.
+    /// [`ShopState::shop_armed`] does for the gold shop.
     pub prize_exchange_armed: bool,
     /// `true` while the opened prize-exchange UI is still up; cleared via
-    /// [`crate::world::World::finish_prize_exchange`] so the tristate flips Armed -> Done.
+    /// `World::finish_prize_exchange` so the tristate flips Armed -> Done.
     pub prize_exchange_open: bool,
 }
 

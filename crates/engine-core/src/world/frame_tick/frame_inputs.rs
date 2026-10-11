@@ -32,7 +32,7 @@ impl World {
 
     /// Consume the frame-begin skip request, returning whether this frame
     /// should be abandoned. Models `FUN_8001698C`'s non-zero return; see
-    /// [`crate::world::FrameClock::frame_begin_skip`].
+    /// [`legaia_engine_vm::frame_clock::FrameClock::frame_begin_skip`].
     ///
     /// PORT: FUN_8001698c (the frame-skip return; the ring-aging half of the
     /// same function is `legaia_engine_audio::sfx_ring::SfxCueRing::age`)
@@ -41,14 +41,14 @@ impl World {
     }
 
     /// Resolve this frame's cadence the way `FUN_80016B6C` does and install
-    /// it into [`crate::world::FrameClock::frame_step`].
+    /// it into [`legaia_engine_vm::frame_clock::FrameClock::frame_step`].
     ///
     /// PORT: FUN_80016b6c (the `0x80017044 .. 0x800171D8` cadence block; the
     /// telemetry state machine lives in
     /// [`legaia_engine_vm::actor_tick::FrameStepTelemetry`]).
     ///
     /// `elapsed_hblanks` is the frame time retail samples with `VSync(1)`
-    /// through `FUN_800173BC`. The floor is [`crate::world::FrameClock::frame_step_floor`]
+    /// through `FUN_800173BC`. The floor is [`legaia_engine_vm::frame_clock::FrameClock::frame_step_floor`]
     /// (`DAT_8007B9D8`), installed per scene, and the resolver can only raise
     /// the cadence above it - never below.
     ///
@@ -59,7 +59,7 @@ impl World {
     /// pass their measured frame time and `true`.
     ///
     /// REPLACED-BY: the fixed-rate simulation plus the scene-installed floor
-    /// [`crate::world::FrameClock::frame_step_floor`], which is what this
+    /// [`legaia_engine_vm::frame_clock::FrameClock::frame_step_floor`], which is what this
     /// resolves to on every frame that keeps up with vsync.
     ///
     /// The adaptive term is the running maximum of the last sixteen

@@ -90,7 +90,7 @@ pub enum RootMenuRoute {
 ///
 /// Both gate inputs come from the world at menu-open
 /// (`BootSession::open_field_menu`): `save_allowed` from
-/// `legaia_engine_core::world::PartyState::scene_save_allowed`, which scene load seeds from
+/// `crate::party_state::PartyState::scene_save_allowed`, which scene load seeds from
 /// [`legaia_scene_formats::man_section::ManHeader::low_flag`], and
 /// `entry_context_kind` from
 /// `legaia_engine_core::world::World::menu_entry_context_kind`. The save gate is the one

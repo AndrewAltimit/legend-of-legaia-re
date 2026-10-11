@@ -105,7 +105,7 @@ fn rim_elm_spar_menu_decodes_as_a_four_option_picker() {
 
 /// End-to-end disc proof of the disc-derived fight option: at least one town01
 /// field-NPC dialogue is a spar menu whose fight option
-/// ([`legaia_engine_core::world::spar_menu_of`]) is chosen from the
+/// ([`legaia_engine_field::field_carrier_state::spar_menu_of`]) is chosen from the
 /// scripted-battle install `3E FF 04` sitting in that option's branch - **not**
 /// from any English label. This is the translation-independent path.
 ///
@@ -143,7 +143,8 @@ fn rim_elm_spar_fight_option_is_disc_derived_from_the_battle_install() {
     // confirm its fight option's branch carries the exact Tetsu install.
     let mut proven = false;
     for (slot, bytes) in &session.host.world.npcs.dialog {
-        let Some((n, fight_option)) = legaia_engine_core::world::spar_menu_of(bytes) else {
+        let Some((n, fight_option)) = legaia_engine_field::field_carrier_state::spar_menu_of(bytes)
+        else {
             continue;
         };
         assert_eq!(n, 4, "the spar menu is a 4-option picker");

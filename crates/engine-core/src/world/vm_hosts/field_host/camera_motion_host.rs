@@ -58,7 +58,7 @@ impl<'a> FieldCameraMotionHost for FieldHostImpl<'a> {
     /// This opcode is the global's only retail writer and the global is the
     /// only input to `FUN_801D9D30`, so the field script is the sole source
     /// of a camera shake. The world holds it for the camera to read; see
-    /// [`crate::world::CameraRig::shake_amplitude`].
+    /// [`legaia_engine_field::camera_rig::CameraRig::shake_amplitude`].
     fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
         self.world.camera.shake_amplitude = value;
     }

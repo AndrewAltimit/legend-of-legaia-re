@@ -169,7 +169,7 @@ fn every_band_image_names_the_head_cue_the_doc_census_carries() {
 /// three monster seats.
 fn battle_world(dir: &std::path::Path) -> World {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },

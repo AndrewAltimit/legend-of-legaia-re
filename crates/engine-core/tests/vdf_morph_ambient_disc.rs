@@ -57,7 +57,7 @@ fn ambient_world(
     let man_file = legaia_scene_formats::man_section::parse(&man_bytes).ok()?;
 
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },

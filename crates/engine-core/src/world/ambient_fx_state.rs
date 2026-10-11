@@ -43,8 +43,8 @@ pub struct AmbientFxState {
     /// ([`crate::world::World::take_morph_dirty_slots`]).
     pub(crate) morph_dirty_slots: std::collections::BTreeSet<(usize, u32)>,
     /// Vsyncs accumulated toward the next retail *game tick* (a game tick
-    /// spans [`crate::world::FrameClock::frame_step`] vsyncs). Advanced by [`crate::world::World::tick`] on the
-    /// sim ticks that map to a retail vsync ([`crate::world::FrameClock::display_frame_step`]).
+    /// spans [`legaia_engine_vm::frame_clock::FrameClock::frame_step`] vsyncs). Advanced by [`crate::world::World::tick`] on the
+    /// sim ticks that map to a retail vsync ([`legaia_engine_vm::frame_clock::FrameClock::display_frame_step`]).
     pub(crate) clut_vsync_accum: u8,
     /// Retail game ticks elapsed since the host last drained the scripted
     /// CLUT effects ([`crate::world::World::step_clut_fx`] consumes these). Only

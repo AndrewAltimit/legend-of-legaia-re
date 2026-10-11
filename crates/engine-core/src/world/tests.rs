@@ -171,7 +171,7 @@ fn full_test_catalog() -> legaia_engine_menus::items::ItemCatalog {
 #[cfg(test)]
 fn offensive_item_world(monster_hp: u16, monster_id: u16) -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -199,7 +199,7 @@ fn capture_world(party_count: u8) -> World {
     use legaia_engine_battle::seru_learning::{SeruDef, SeruRegistry};
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count,
             ..Default::default()
         },
@@ -244,7 +244,7 @@ fn capture_world(party_count: u8) -> World {
 fn summon_xp_world(enemy_hp: u16, enemy_max_hp: u16) -> World {
     use legaia_save::Party;
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

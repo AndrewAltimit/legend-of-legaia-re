@@ -58,7 +58,7 @@ pub struct FieldVmState {
     /// authored repair - the opening records' sub-9 restarts - never runs
     /// here). The new-game / opening chain leaves this `false`.
     pub free_roam_staging: bool,
-    /// [`crate::world::FrameClock::display_frames`] at the most recent free-roam staging / scene
+    /// [`legaia_engine_vm::frame_clock::FrameClock::display_frames`] at the most recent free-roam staging / scene
     /// entry - the base of the entry window the pause-drop measures against.
     pub(crate) free_roam_entry_frame: u64,
     /// Per-actor field-VM channels: one spawned context per MAN partition-1

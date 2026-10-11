@@ -229,7 +229,7 @@ impl World {
     /// Step every NPC's ambient facing channel one **actor game tick** and
     /// mirror the result into [`crate::world::FieldNpcState::headings`].
     ///
-    /// `speed` is retail's `DAT_1F800393` ([`crate::world::FrameClock::frame_step`]). The two ops
+    /// `speed` is retail's `DAT_1F800393` ([`legaia_engine_vm::frame_clock::FrameClock::frame_step`]). The two ops
     /// respond to it differently and both readings are the retail law:
     /// `0x04`'s cursor is `addiu a0, a0, 1` - unit-per-tick, scalar-invariant,
     /// so its budget is denominated in *ticks*; `0x0D`'s wait cursor advances

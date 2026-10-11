@@ -23,7 +23,7 @@ use legaia_engine_core::world::World;
 /// emits a row for it (rows with `hp_max == 0` are filtered out).
 fn world_with_one_member() -> World {
     let mut w = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

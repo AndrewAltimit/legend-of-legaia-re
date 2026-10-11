@@ -61,7 +61,7 @@ impl World {
     ///   ([`Self::party_mirror_activates`]),
     /// - copies HP / MP from the record's [`HpMpSp`] block into the
     ///   `BattleActor` mirrors,
-    /// - stows the full record bytes via [`crate::world::PartyState::roster`] for later
+    /// - stows the full record bytes via [`legaia_engine_menus::party_state::PartyState::roster`] for later
     ///   round-trip via [`World::save_party`].
     ///
     /// The `legaia-save` crate's [`legaia_save::CharacterRecord::parse`] is
@@ -145,7 +145,7 @@ impl World {
             return self.party.roster.clone();
         }
         // Actor slot -> roster record follows the present-party composition:
-        // under an [`crate::world::PartyState::active_party`] mapping, actor ordinal `i` mirrors
+        // under an [`legaia_engine_menus::party_state::PartyState::active_party`] mapping, actor ordinal `i` mirrors
         // the character at `active_party[i]`, and characters NOT in the
         // present party keep their record values untouched. The identity
         // default resyncs every record from its same-index actor, the
@@ -174,7 +174,7 @@ impl World {
     /// The narrow sibling of [`Self::save_party`], for
     /// [`Self::finish_battle`]. Two differences, both deliberate:
     ///
-    /// - It stops at [`crate::world::PartyState::party_count`]. In battle the actor slots past
+    /// - It stops at [`legaia_engine_menus::party_state::PartyState::party_count`]. In battle the actor slots past
     ///   the party band hold *monsters*, and `save_party`'s identity default
     ///   walks the whole roster - so running it verbatim at battle end would
     ///   copy a monster's HP into the fourth character's record.
@@ -212,7 +212,7 @@ impl World {
     /// records (just written by [`Self::persist_battle_party_hp`]) hold the
     /// post-battle truth.
     ///
-    /// Bounded by [`crate::world::PartyState::party_count`]: in the restored *field* table the
+    /// Bounded by [`legaia_engine_menus::party_state::PartyState::party_count`]: in the restored *field* table the
     /// slots past the party band are NPCs, and pushing a character record's
     /// HP onto an NPC's mirrors is never right.
     pub fn resync_party_actors_from_roster(&mut self) {
@@ -537,7 +537,7 @@ impl World {
 /// gate inputs the retail root command picker reads before it lets a row
 /// through.
 impl World {
-    /// Seed [`crate::world::PartyState::scene_save_allowed`] from the scene MAN just loaded.
+    /// Seed [`legaia_engine_menus::party_state::PartyState::scene_save_allowed`] from the scene MAN just loaded.
     ///
     /// Retail's MAN loader does this inline, one instruction after it takes
     /// the header's status word: it reads byte `+1` of the resident MAN
@@ -734,7 +734,7 @@ impl World {
     ///
     /// Note this is the *open* gate only. Whether the opened menu's **Save**
     /// row then accepts is a separate, per-scene question answered by
-    /// [`crate::world::PartyState::scene_save_allowed`](crate::world::PartyState::scene_save_allowed)
+    /// [`legaia_engine_menus::party_state::PartyState::scene_save_allowed`](legaia_engine_menus::party_state::PartyState::scene_save_allowed)
     /// at the row's confirm, exactly as retail keeps `_DAT_800846D8` (which
     /// button opens the menu) and `_DAT_8007B6A8` (whether Save is legal
     /// here) as two independent globals.

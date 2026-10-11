@@ -142,7 +142,7 @@ fn start_is_inert_while_a_dialogue_owns_the_player() {
     session.host.world.dialog.inline = None;
 
     // And the simplified request channel.
-    session.host.world.dialog.current = Some(legaia_engine_core::world::DialogRequest {
+    session.host.world.dialog.current = Some(legaia_engine_field::dialog_state::DialogRequest {
         text_id: 0,
         inline: Vec::new(),
         world_x: 0,

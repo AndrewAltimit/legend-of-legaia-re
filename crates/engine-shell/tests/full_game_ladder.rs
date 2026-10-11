@@ -87,9 +87,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
 use legaia_engine_core::scene_host::{FmvHandoffOutcome, SceneTickEvent};
-use legaia_engine_core::world::{WorldMapEntityConfig, world_map_camera_relative_bits};
+use legaia_engine_core::world::world_map_camera_relative_bits;
 use legaia_engine_field::field_regions::TileTrigger;
 use legaia_engine_field::man_field_scripts::{overworld_portal_sites, scene_destinations};
+use legaia_engine_field::world_map_state::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::man_field_scripts::{scene_man_carriers, system_flag_census};
 use legaia_engine_scene::scene::{ProtIndex, Scene};

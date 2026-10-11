@@ -17,7 +17,7 @@ fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
     use legaia_engine_battle_vm::battle_action::ActionState;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -82,7 +82,7 @@ fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
 fn smarter_targeting_redirects_to_lowest_hp_without_moving_rng() {
     fn world3() -> World {
         let mut w = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 3,
                 ..Default::default()
             },
@@ -173,7 +173,7 @@ fn move_power_table_drives_monster_special_attack_damage() {
 
     fn run(install_table: bool) -> u16 {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },
@@ -260,7 +260,7 @@ fn elemental_guard_accessory_halves_matching_monster_special() {
     // passive index is `idx` equipped in the Goods slot.
     fn run(guard_passive: Option<u8>) -> u16 {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 1,
                 ..Default::default()
             },
@@ -333,7 +333,7 @@ fn spell_less_monster_always_arms_physical_strike() {
     use legaia_engine_battle_vm::battle_action::ActionState;
 
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -379,7 +379,7 @@ fn a_monster_strike_never_targets_a_fallen_party_member() {
     let mut chose_fallen_before_redirect = false;
     for seed in 0..200u32 {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 2,
                 ..Default::default()
             },
@@ -426,7 +426,7 @@ fn a_monster_cast_never_targets_a_fallen_party_member() {
     let mut chose_fallen_before_redirect = false;
     for seed in 0..400u32 {
         let mut world = World {
-            party: crate::world::PartyState {
+            party: legaia_engine_menus::party_state::PartyState {
                 party_count: 2,
                 ..Default::default()
             },

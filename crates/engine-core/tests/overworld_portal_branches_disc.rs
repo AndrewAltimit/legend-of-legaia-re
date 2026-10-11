@@ -17,10 +17,10 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use legaia_engine_core::scene_host::SceneHost;
-use legaia_engine_core::world::WorldMapEntityConfig;
 use legaia_engine_field::man_field_scripts::{
     RecordPathEnd, overworld_portal_sites, partition2_record_path_scene_change,
 };
+use legaia_engine_field::world_map_state::WorldMapEntityConfig;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn extracted_dir() -> Option<PathBuf> {

@@ -67,7 +67,7 @@ impl World {
     /// `None` when the panel is not up.
     ///
     /// Resolves drop item ids through [`crate::world::DiscTables::item_catalog`] and level-up
-    /// character slots through [`crate::world::PartyState::roster`], so a host needs no table of
+    /// character slots through [`legaia_engine_menus::party_state::PartyState::roster`], so a host needs no table of
     /// its own. Falls back to `Item <id>` / `Member <n>` when a name is
     /// unavailable (a disc-free build's synthetic catalog).
     pub fn battle_spoils_banner(&self) -> Option<BattleSpoilsBanner> {

@@ -6,7 +6,7 @@ use super::*;
 impl World {
     /// Commit a shop **buy** transaction for the session's pending item: if the
     /// player can afford it, deduct the gold and add the item(s) to
-    /// [`crate::world::PartyState::inventory`], returning `(item_id, qty, gold_delta)` (the delta is
+    /// [`legaia_engine_menus::party_state::PartyState::inventory`], returning `(item_id, qty, gold_delta)` (the delta is
     /// negative). Returns `None` when the buy isn't valid (unaffordable, sell
     /// mode, no pending item - see [`legaia_engine_menus::shop::ShopSession::try_buy`]).
     ///
@@ -36,7 +36,7 @@ impl World {
     }
 
     /// Build a [`legaia_engine_menus::shop::ShopSession`] for the `idx`-th gold shop located in
-    /// the active scene ([`crate::world::ShopState::scene_shops`], decoded from the scene MAN +
+    /// the active scene ([`legaia_engine_menus::shop_state::ShopState::scene_shops`], decoded from the scene MAN +
     /// priced from the SCUS item table at scene entry). `None` when `idx` is out
     /// of range (no merchant, or the disc / item data was absent at boot, leaving
     /// the list empty).
@@ -78,10 +78,10 @@ impl World {
     /// uses ([`legaia_scene_formats::shop_stock::parse_record`]) rejects every non-shop
     /// op-0x49 sub-0 (inn / save prompts carry MES text, not a priced item
     /// list), so this only fires on a real merchant. Gated on
-    /// [`crate::world::ShopState::item_shop_data`] being installed - without prices there's no
+    /// [`legaia_engine_menus::shop_state::ShopState::item_shop_data`] being installed - without prices there's no
     /// sellable mask (so a disc-free build can't false-positive) and no shop to
     /// price anyway. On a match it stages a priced [`legaia_engine_menus::shop::ShopSession`]
-    /// on [`crate::world::ShopState::pending_shop`] and arms the op-0x49 gate; a no-op if a
+    /// on [`legaia_engine_menus::shop_state::ShopState::pending_shop`] and arms the op-0x49 gate; a no-op if a
     /// shop is already armed (single-open) or the record doesn't validate.
     ///
     /// Returns `true` when a shop was armed.
@@ -173,7 +173,7 @@ impl World {
     /// `instr[2]` (the byte after the sub-op; retail reads it through the
     /// parked operand pointer as `_DAT_8007B450[1]` and scales by `0x60`).
     /// Builds a [`legaia_engine_minigames::prize_exchange::PrizeExchangeSession`] over the
-    /// installed [`crate::world::ShopState::prize_blocks`] table, raises the retail entry flag
+    /// installed [`legaia_engine_menus::shop_state::ShopState::prize_blocks`] table, raises the retail entry flag
     /// ([`legaia_engine_minigames::prize_exchange::PRIZE_EXCHANGE_VISITED_FLAG`]), and arms the
     /// op-`0x49` gate. No-op when the table isn't installed (disc-free), the
     /// block index is out of range, or an exchange is already armed.

@@ -100,7 +100,7 @@ fn mode4_seat_rotates_a_vram_rect_through_step_ambient_fx() {
     let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
 
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },
@@ -177,7 +177,7 @@ fn jou_record23_seats_the_scroller_and_rotates_its_rect_or_skip() {
     let scripts = scene.find_event_scripts().expect("jou event scripts");
 
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2, // town cadence
             ..Default::default()
         },
@@ -266,7 +266,7 @@ fn mode4_scene_entry_carrier_census_or_skip() {
             continue;
         }
         let mut world = World {
-            clock: legaia_engine_core::world::FrameClock {
+            clock: legaia_engine_vm::frame_clock::FrameClock {
                 frame_step: 2,
                 ..Default::default()
             },

@@ -205,7 +205,7 @@ impl World {
     /// `FUN_8004E568`): accumulate each dead enemy's gold as `gold >> 1`,
     /// finalize it through the +25% bonus + halve
     /// ([`legaia_engine_battle_vm::battle_formulas::victory_gold_finalize`]) and add it to
-    /// [`crate::world::PartyState::money`]; sum the enemy EXP and distribute it (scaled 3/4,
+    /// [`legaia_engine_menus::party_state::PartyState::money`]; sum the enemy EXP and distribute it (scaled 3/4,
     /// ceiling-split) via [`World::apply_battle_xp`]; roll the one drop
     /// retail offers ([`legaia_engine_battle_vm::battle_formulas::victory_drop_roll`], one BIOS
     /// `rand()` per enemy seat plus the 1-in-4 gate). Returns the aggregated
@@ -353,7 +353,7 @@ impl World {
     /// Resolve a **steal** attempt against `monster_id` using the per-monster
     /// steal table (the Evil God Icon mechanic). Rolls the monster's steal
     /// chance against the deterministic world RNG; on success the stolen item is
-    /// added to [`crate::world::PartyState::inventory`] and its id returned. Returns `None` when the
+    /// added to [`legaia_engine_menus::party_state::PartyState::inventory`] and its id returned. Returns `None` when the
     /// monster has no steal (item `0` / chance `0`) or the roll misses.
     ///
     /// The steal item + chance live in a static `SCUS_942.54` table

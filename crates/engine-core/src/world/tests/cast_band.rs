@@ -20,7 +20,7 @@ mod stagers_and_seats;
 /// Seru-magic catalog, the spell submenu open on the caster.
 fn seru_cast_world() -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },
@@ -81,7 +81,7 @@ fn confirm_cast(world: &mut World) {
 /// that pose `actor_table[7]` have something to write.
 fn module_code_world() -> World {
     let mut world = World {
-        party: crate::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 1,
             ..Default::default()
         },

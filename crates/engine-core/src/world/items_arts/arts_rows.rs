@@ -230,7 +230,7 @@ impl World {
     /// library; the engine writes the result back with
     /// [`Self::store_chain_library`] so the edit reaches the next battle's
     /// Arts menu (via `Self::build_battle_arts_rows`) and the next save
-    /// (via [`crate::world::PartyState::saved_chains`]).
+    /// (via [`legaia_engine_menus::party_state::PartyState::saved_chains`]).
     pub fn chain_library(&self) -> legaia_engine_battle::tactical_arts_editor::ChainLibrary {
         legaia_engine_battle::tactical_arts_editor::ChainLibrary::from_records(
             &self.party.saved_chains,
@@ -238,7 +238,7 @@ impl World {
     }
 
     /// Write an edited [`legaia_engine_battle::tactical_arts_editor::ChainLibrary`] back into
-    /// [`crate::world::PartyState::saved_chains`], replacing the whole library. This is the bridge
+    /// [`legaia_engine_menus::party_state::PartyState::saved_chains`], replacing the whole library. This is the bridge
     /// that closes the loop the field menu opens with [`Self::chain_library`]:
     /// once stored, a chain composed in the editor is selectable in battle and
     /// persists across `save_full` / `load_full`.
@@ -256,7 +256,7 @@ impl World {
     ///
     /// 1. Pushes [`BattleEvent::TacticalArtLearned`] onto
     ///    [`Self::pending_battle_events`].
-    /// 2. Sets [`crate::world::PartyState::current_art_banner`] with a 2-second display window
+    /// 2. Sets [`legaia_engine_menus::party_state::PartyState::current_art_banner`] with a 2-second display window
     ///    so the engine's HUD overlay can show "Learned Art #N!".
     ///
     /// Subsequent calls for the same `(char_id, art_id)` pair are no-ops.

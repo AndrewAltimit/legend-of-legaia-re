@@ -76,7 +76,7 @@ impl World {
     /// this frame's.
     ///
     /// The delta is one retail frame per call (the caller gates on
-    /// [`crate::world::FrameClock::display_frame_step`]); retail reads it as
+    /// [`legaia_engine_vm::frame_clock::FrameClock::display_frame_step`]); retail reads it as
     /// `_DAT_80084570 - _DAT_80073ED4`, a clock that also advances one step
     /// per display frame.
     ///

@@ -241,7 +241,7 @@ fn arm_world() -> World {
 
 fn seated_world(party_count: u8) -> World {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count,
             ..Default::default()
         },

@@ -38,7 +38,7 @@
 
 use legaia_engine_battle_vm::psx_camera::FieldCameraView;
 use legaia_engine_core::scene_host::SceneHost;
-use legaia_engine_core::world::ScriptActorRef;
+use legaia_engine_field::field_script_actor_state::ScriptActorRef;
 use std::path::PathBuf;
 
 /// `drake_castle_to_worldmap` (retail SCUS; `patch_taint_audit.py states`).

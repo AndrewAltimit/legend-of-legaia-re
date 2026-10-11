@@ -21,7 +21,7 @@ const TARGET_DEF: i32 = 12;
 
 fn build_world() -> World {
     let mut world = World {
-        party: legaia_engine_core::world::PartyState {
+        party: legaia_engine_menus::party_state::PartyState {
             party_count: 3,
             ..Default::default()
         },

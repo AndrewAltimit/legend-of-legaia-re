@@ -60,7 +60,7 @@ pub struct OwnedDialogPanel {
     /// Vsyncs per game tick (`DAT_1F800393`) the host runs the panel at. The
     /// box path runs one retail pager call every `frame_step` [`Self::tick`]s
     /// (one tick = one vsync); set it from
-    /// `legaia_engine_core::world::FrameClock::frame_step` before ticking (the World's
+    /// `legaia_engine_vm::frame_clock::FrameClock::frame_step` before ticking (the World's
     /// dialog paths do, through [`Self::tick_at`]). `0` is treated as `1`.
     pub frame_step: u8,
     /// Vsync phase within the current game tick (`0` = a pager call runs).
@@ -157,7 +157,7 @@ impl OwnedDialogPanel {
 
     /// Build a panel over the **inline** dialog bytes a placement's
     /// interaction record carries (stored on
-    /// `legaia_engine_core::world::DialogRequest::inline`).
+    /// `legaia_engine_field::dialog_state::DialogRequest::inline`).
     ///
     /// Placement-NPC and event dialogue does not live in the scene MES (its
     /// `text_id` is a box-config id, not a message index - it never resolves

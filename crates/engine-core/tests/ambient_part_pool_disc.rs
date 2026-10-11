@@ -61,7 +61,7 @@ fn run_scene(index: &ProtIndex, name: &str) -> Option<Run> {
         return None;
     }
     let mut world = World {
-        clock: legaia_engine_core::world::FrameClock {
+        clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
         },

@@ -22,3 +22,4 @@ pub mod other_game_overlay;
 pub mod prize_exchange;
 pub mod slot_machine;
 pub mod tile_board;
+pub mod tile_board_state;

@@ -241,7 +241,7 @@ pub fn encounter_banner_label(world: &crate::world::World) -> String {
 /// result screen, so a battle-mode gate would leave them wired and never
 /// drawn.
 ///
-/// The tactical-arts learn line ([`crate::world::PartyState::current_art_banner`])
+/// The tactical-arts learn line ([`legaia_engine_menus::party_state::PartyState::current_art_banner`])
 /// is **not** a source: retail announces a newly learned art with the
 /// `NEW ARTS!!` sprite banner (`World::battle_arts_banner_quads`), not with a
 /// line in this widget, and the engine's `Learned <art>!` string is its own.

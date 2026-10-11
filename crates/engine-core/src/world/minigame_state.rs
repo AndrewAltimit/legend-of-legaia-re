@@ -168,7 +168,7 @@ pub struct MinigameState {
     /// ([`crate::world::World::open_coin_counter`]) credits it as a delta instead.
     pub casino_coins: u32,
     /// The **Point Card** bank (`_DAT_800845B4`), the third purse beside
-    /// [`crate::world::PartyState::money`] and [`crate::world::MinigameState::casino_coins`]. A shop buy credits 5% of
+    /// [`legaia_engine_menus::party_state::PartyState::money`] and [`crate::world::MinigameState::casino_coins`]. A shop buy credits 5% of
     /// the gold spent while the party holds the Point Card
     /// ([`legaia_engine_menus::shop::POINT_CARD_ITEM_ID`]); the total is what the pause
     /// Items screen's "Points Left" line and the shop's window-31 toast
