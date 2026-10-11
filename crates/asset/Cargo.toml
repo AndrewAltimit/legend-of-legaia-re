@@ -29,7 +29,7 @@ png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap = { workspace = true, optional = true }
-legaia-battle-models.workspace = true
+legaia-actor-formats.workspace = true
 legaia-bytes.workspace = true
 legaia-container-formats.workspace = true
 legaia-disc-audit.workspace = true

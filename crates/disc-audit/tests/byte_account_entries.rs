@@ -736,7 +736,7 @@ fn battle_data_pack_table_to_data_slack_is_empty() {
         };
         let bytes = std::fs::read(&path).expect("read entry");
         let pack =
-            legaia_battle_models::battle_data_pack::detect(&bytes).expect("battle data pack");
+            legaia_actor_formats::battle_data_pack::detect(&bytes).expect("battle data pack");
         let table_end = pack.table_offset + (pack.records.len() + 1) * 12;
         let data_start = pack
             .records

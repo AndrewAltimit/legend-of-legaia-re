@@ -63,11 +63,11 @@ legaia_asset::system_ui_bundle	legaia_ui_formats::system_ui_bundle
 legaia_asset::tim_palette_context	legaia_ui_formats::tim_palette_context
 legaia_asset::title_pak	legaia_ui_formats::title_pak
 legaia_asset::ui_widgets	legaia_ui_formats::ui_widgets
-legaia_asset::befect_cluster	legaia_battle_models::befect_cluster
-legaia_asset::character_pack	legaia_battle_models::character_pack
-legaia_asset::field_char_textures	legaia_battle_models::field_char_textures
-legaia_asset::player_anm	legaia_battle_models::player_anm
-legaia_asset::player_file_annex	legaia_battle_models::player_file_annex
+legaia_asset::befect_cluster	legaia_actor_formats::befect_cluster
+legaia_asset::character_pack	legaia_actor_formats::character_pack
+legaia_asset::field_char_textures	legaia_actor_formats::field_char_textures
+legaia_asset::player_anm	legaia_actor_formats::player_anm
+legaia_asset::player_file_annex	legaia_actor_formats::player_file_annex
 legaia_asset::boot_overlay	legaia_overlay_images::boot_overlay
 legaia_asset::battle_jump_tables	legaia_disc_audit::battle_jump_tables
 legaia_asset::byte_account	legaia_disc_audit::byte_account

@@ -281,7 +281,7 @@ fn prim_texture_status_ok_when_clut_shares_scanline_with_a_distant_page() {
     // sits inside the texture-page y-band, with the page far to the right
     // on the *same* scanline. The depth-mismatch heuristic must not count
     // the distant page as part of the palette. (Mirrors
-    // legaia_battle_models::monster_archive::battle_render_mesh for slot 2: CLUT row
+    // legaia_actor_formats::monster_archive::battle_render_mesh for slot 2: CLUT row
     // 486, page at x=448, both on row 486.)
     let row = 486u16;
     let cba = row << 6; // palette 0 on the monster CLUT row

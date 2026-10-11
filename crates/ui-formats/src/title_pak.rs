@@ -26,7 +26,7 @@
 //! `0x24800`), so it is the source. A byte scan for the TIM's 64-byte header
 //! signature over the whole of `PROT.DAT` returns exactly **one** hit, at that
 //! offset. Same over-read family as the eight-vs-seven atlas count in
-//! [`legaia_battle_models::battle_char_pack`].
+//! [`legaia_actor_formats::battle_char_pack`].
 //!
 //! The TIM is 33312 bytes total (8-byte header + 12 + 512 CLUT block +
 //! 12 + 65536 pixel block). Pixel-block VRAM target is `fb=(512,256)`,

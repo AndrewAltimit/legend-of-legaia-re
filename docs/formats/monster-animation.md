@@ -4,7 +4,7 @@ A battle monster animates as a set of rigid body parts: one translation + rotati
 
 This is a different format from the [ANM container](anm.md) that drives field actors, and the archive is not the [player battle files](battle-data-pack.md) (extraction 863..866), although those files carry the same per-action entry family for the party.
 
-Parser: `legaia_asset::monster_archive` (`MonsterAnimation`, `PartPose`, `animations`, `animations_by_entry`, `idle_animation`), implemented in `crates/battle-models`.
+Parser: `legaia_asset::monster_archive` (`MonsterAnimation`, `PartPose`, `animations`, `animations_by_entry`, `idle_animation`), implemented in `crates/actor-formats`.
 
 ## At a glance
 

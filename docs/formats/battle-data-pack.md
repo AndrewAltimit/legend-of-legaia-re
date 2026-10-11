@@ -74,11 +74,11 @@ All offsets are file-relative.
 Details for each layer follow in file order.
 
 Implementations:
-[`battle_char_palette.rs`](../../crates/battle-models/src/battle_char_palette.rs) (the
+[`battle_char_palette.rs`](../../crates/actor-formats/src/battle_char_palette.rs) (the
 runtime-pinned `record[0]` + CLUT chain),
-[`battle_data_pack.rs`](../../crates/battle-models/src/battle_data_pack.rs) (the slot walker over
+[`battle_data_pack.rs`](../../crates/actor-formats/src/battle_data_pack.rs) (the slot walker over
 the descriptor table) and
-[`battle_char_assembly.rs`](../../crates/battle-models/src/battle_char_assembly.rs) (the
+[`battle_char_assembly.rs`](../../crates/actor-formats/src/battle_char_assembly.rs) (the
 battle-init consumer chain). See [Parser status](#parser-status).
 
 ## Contents
@@ -256,7 +256,7 @@ Two readings that look right and are not:
   primitives classified by whether their corners fall outside it. That leaves 4-31 primitives
   straddling the boundary per weapon, which really do belong to both hand and weapon.
   Presentation aid
-  [`equip_diff`](../../crates/battle-models/src/battle_char_assembly/equip_diff.rs).
+  [`equip_diff`](../../crates/actor-formats/src/battle_char_assembly/equip_diff.rs).
 - **The `200+` extras are not weapon meshes.** They are usually byte-identical **duplicates** of
   the bone object they attach to, reached only through the equipment-variant track at entry
   `+0xA4`, so drawing one alongside its host z-fights a limb. Usually, not always - see
@@ -275,7 +275,7 @@ buckets apart is the **joint**: a TMD object is authored about its own bone orig
 half always reaches the origin and the held item never does.
 
 Classes over the 81 held-item records
-([`equip_item`](../../crates/battle-models/src/battle_char_assembly/equip_item.rs)):
+([`equip_item`](../../crates/actor-formats/src/battle_char_assembly/equip_item.rs)):
 
 | Class | Records | Shape |
 |---|---:|---|
@@ -307,8 +307,8 @@ hand object, and nothing says which primitives are the axe and which are Vahn's 
 (which the palette cut, being about material, claims as item). The item-alone export is therefore
 a stated **policy** plus a committed per-record override table, and every result says whether a
 rule touched it
-([`equip_isolate`](../../crates/battle-models/src/battle_char_assembly/equip_isolate.rs), table
-`crates/battle-models/data/equip-isolation.toml`).
+([`equip_isolate`](../../crates/actor-formats/src/battle_char_assembly/equip_isolate.rs), table
+`crates/actor-formats/data/equip-isolation.toml`).
 
 The policy: **the item is everything the section spliced in that is not the character's own flesh
 or an unchanged piece of them.** "Unchanged" is read two ways, chosen per section:
@@ -342,7 +342,7 @@ reports). Each rule carries a note. The cases the table exists for:
 - Gala's two headbands are dark leather that the colour diff loses and the identity reading finds.
 
 Every rule must name a record, a column, an object and primitives that exist -
-`crates/battle-models/tests/equip_isolate_real.rs` checks that, and that every one of the 132 records
+`crates/actor-formats/tests/equip_isolate_real.rs` checks that, and that every one of the 132 records
 still keeps something and (for a held item) leaves the hand behind.
 
 The item-alone cut is **not** the disc's answer - the palette cut is, and it stays the
@@ -354,7 +354,7 @@ call goes.
 
 A welded item leaves the item-alone cut with an open grip: Vahn's Great Axe comes away as an axe
 head on a stub of shaft plus a pommel end, each terminating in an open ring of vertices.
-[`equip_repair`](../../crates/battle-models/src/battle_char_assembly/equip_repair.rs) infers the
+[`equip_repair`](../../crates/actor-formats/src/battle_char_assembly/equip_repair.rs) infers the
 missing stretch:
 
 1. Weld the item-alone mesh by `(object, position)` and walk its boundary edges into closed loops.
@@ -380,7 +380,7 @@ rule refuses three things:
   blade on the hand object and the pommel block on the forearm, both *closed* at the fist, and a
   cross-object rule joins the elbow-facing rims of two Ra-Seru arm plates through the joint.
 
-`crates/battle-models/tests/equip_repair_real.rs` sweeps the 81 records (only ever additive, every bridge
+`crates/actor-formats/tests/equip_repair_real.rs` sweeps the 81 records (only ever additive, every bridge
 inside the section's objects, the Great Axe closes). With `LEGAIA_EQUIP_SHEETS=<dir>` it writes a
 before / after contact sheet per character through the software rasteriser in
 `legaia_asset::mesh_raster`, the renderer that draws the site's per-item cards.
@@ -960,7 +960,7 @@ the `0xFE` signal) while a member still plays a dynamic-art-slot clip, and clock
 `gp+0x9EA` mirror from 0; gates 2 and 3 are not consulted by the stamp tick, so "the won battle is
 still on screen" stands in for them.
 
-Disc-gated validation: `crates/battle-models/tests/face_anim_real.rs` (table anchors; track census over
+Disc-gated validation: `crates/actor-formats/tests/face_anim_real.rs` (table anchors; track census over
 `record[0]`, swing and art-bank entries; override-table census - 40 live records, in-range
 non-neutral frames, the empty rows where retail has no flap, in-band stamps for every reachable
 counter) and `crates/engine-shell/tests/battle_face_stamp_live.rs` (live battle VRAM holds a
@@ -1194,7 +1194,7 @@ Two traps follow:
 
 ### The catalog tier
 
-[`legaia_asset::battle_texture_catalog`](../../crates/battle-models/src/battle_texture_catalog.rs)
+[`legaia_asset::battle_texture_catalog`](../../crates/actor-formats/src/battle_texture_catalog.rs)
 is the third texture tier, alongside the raw and LZS TIM catalogs. It keys each block by
 `(PROT entry, record, section, pool offset)`, where `record = -1` marks the two header `record[0]`
 blocks and `section` then carries the block ordinal.
@@ -1257,15 +1257,15 @@ Every module below is re-exported through `legaia_asset`.
 
 | Module | Role |
 |---|---|
-| [`battle_char_palette`](../../crates/battle-models/src/battle_char_palette.rs) | The runtime-pinned framing: header words, descriptor chain, `record[0]` + sub-record palette assembly. Byte-exact vs live battle VRAM. |
-| [`battle_char_assembly`](../../crates/battle-models/src/battle_char_assembly.rs) | The battle-init consumer chain: section selection (`select_sections`), mesh splice (`assemble_character`), TSB/CBA relocation (`relocate_tsb_cba`), texture-pool uploads (`character_texture_uploads` and friends). |
-| [`battle_char_assembly::equip_diff`](../../crates/battle-models/src/battle_char_assembly/equip_diff.rs) | Presentation aid: what one loadout changed against the all-defaults assembly, by the radius-envelope test. Approximate by construction, not a port - retail never compares two assemblies. |
-| [`battle_char_assembly::equip_item`](../../crates/battle-models/src/battle_char_assembly/equip_item.rs) | The exact cut: `item_partition` splits a weapon / Ra-Seru section into held item and limb by palette column, falling through to `fused`. Swept by `crates/battle-models/tests/equip_item_real.rs`. |
-| [`battle_char_assembly::equip_isolate`](../../crates/battle-models/src/battle_char_assembly/equip_isolate.rs) | The opinionated cut: `isolate_item` plus the override table. Swept by `crates/battle-models/tests/equip_isolate_real.rs`. |
-| [`battle_char_assembly::equip_repair`](../../crates/battle-models/src/battle_char_assembly/equip_repair.rs) | Grip bridging on the item-alone export. |
-| [`battle_texture_catalog`](../../crates/battle-models/src/battle_texture_catalog.rs) | The texture-pool blocks as a texture tier; `resolve_block` / `assemble_clut_row` read one back. |
-| [`battle_data_pack`](../../crates/battle-models/src/battle_data_pack.rs) | The slot walker over the `[id, offset, size]` table. |
-| [`me_archive`](../../crates/battle-models/src/me_archive.rs), [`face_anim`](../../crates/battle-models/src/face_anim.rs) | The `"ME"` archive + channel-delta codec; the facial tracks and stamp selection. |
+| [`battle_char_palette`](../../crates/actor-formats/src/battle_char_palette.rs) | The runtime-pinned framing: header words, descriptor chain, `record[0]` + sub-record palette assembly. Byte-exact vs live battle VRAM. |
+| [`battle_char_assembly`](../../crates/actor-formats/src/battle_char_assembly.rs) | The battle-init consumer chain: section selection (`select_sections`), mesh splice (`assemble_character`), TSB/CBA relocation (`relocate_tsb_cba`), texture-pool uploads (`character_texture_uploads` and friends). |
+| [`battle_char_assembly::equip_diff`](../../crates/actor-formats/src/battle_char_assembly/equip_diff.rs) | Presentation aid: what one loadout changed against the all-defaults assembly, by the radius-envelope test. Approximate by construction, not a port - retail never compares two assemblies. |
+| [`battle_char_assembly::equip_item`](../../crates/actor-formats/src/battle_char_assembly/equip_item.rs) | The exact cut: `item_partition` splits a weapon / Ra-Seru section into held item and limb by palette column, falling through to `fused`. Swept by `crates/actor-formats/tests/equip_item_real.rs`. |
+| [`battle_char_assembly::equip_isolate`](../../crates/actor-formats/src/battle_char_assembly/equip_isolate.rs) | The opinionated cut: `isolate_item` plus the override table. Swept by `crates/actor-formats/tests/equip_isolate_real.rs`. |
+| [`battle_char_assembly::equip_repair`](../../crates/actor-formats/src/battle_char_assembly/equip_repair.rs) | Grip bridging on the item-alone export. |
+| [`battle_texture_catalog`](../../crates/actor-formats/src/battle_texture_catalog.rs) | The texture-pool blocks as a texture tier; `resolve_block` / `assemble_clut_row` read one back. |
+| [`battle_data_pack`](../../crates/actor-formats/src/battle_data_pack.rs) | The slot walker over the `[id, offset, size]` table. |
+| [`me_archive`](../../crates/actor-formats/src/me_archive.rs), [`face_anim`](../../crates/actor-formats/src/face_anim.rs) | The `"ME"` archive + channel-delta codec; the facial tracks and stamp selection. |
 
 `battle_data_pack` detection validates the chain invariant (entry 0 at offset 0,
 `offset[i+1] == offset[i] + size[i]`, sector-aligned sizes, all-zero terminator) plus the

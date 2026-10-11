@@ -42,7 +42,7 @@
 //! constants below are read from the traced jumptable bodies; the per-pose
 //! source offsets are a small table in the overlay image. Dancer 0's strip is
 //! **Noa's own field atlas** (PROT 0874 §2 entry 2 at `(852, 256)` - see
-//! [`legaia_battle_models::field_char_textures`]); dancers 1..3 use the pack's strips.
+//! [`legaia_actor_formats::field_char_textures`]); dancers 1..3 use the pack's strips.
 
 use anyhow::{Context, Result, bail};
 use legaia_tim::{PixelMode, Tim, decode_rgba8};

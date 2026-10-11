@@ -6,7 +6,7 @@ use super::*;
 // --- monster archive (PROT 0867) ------------------------------------------
 
 pub(super) fn walk_monster_archive(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) {
-    use legaia_battle_models::monster_archive::SLOT_STRIDE;
+    use legaia_actor_formats::monster_archive::SLOT_STRIDE;
     let slots = buf.len() / SLOT_STRIDE;
     let mut populated = 0usize;
     let mut raw_tims = 0usize;
@@ -109,7 +109,7 @@ pub(super) fn walk_monster_block(block: &[u8], sink: &mut Sink) {
         // `MonsterMesh::texture` reads `pool = &block[pool_off..]` whole: the
         // CLUT region then a 4bpp page filling the rest of the block.
         let clut_end =
-            (pool + legaia_battle_models::monster_archive::CLUT_REGION_BYTES).min(block.len());
+            (pool + legaia_actor_formats::monster_archive::CLUT_REGION_BYTES).min(block.len());
         sink.claim(pool, clut_end, OWNER_CLUT, "15 x 16-colour palettes");
         sink.claim(clut_end, block.len(), OWNER_TEXTURE, "4bpp page, 256 rows");
     }
@@ -169,8 +169,8 @@ pub(super) fn walk_monster_block(block: &[u8], sink: &mut Sink) {
 // --- summon.dat / readef.DAT (PROT 0893 / 0894) ---------------------------
 
 pub(super) fn walk_summon_readef(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) {
-    use legaia_battle_models::summon_readef::{SLOT_BYTES, SlotKind};
-    let Ok(f) = legaia_battle_models::summon_readef::parse(buf) else {
+    use legaia_actor_formats::summon_readef::{SLOT_BYTES, SlotKind};
+    let Ok(f) = legaia_actor_formats::summon_readef::parse(buf) else {
         sink.note("summon_readef::parse failed");
         return;
     };
@@ -220,10 +220,10 @@ pub(super) fn walk_summon_readef(buf: &[u8], sink: &mut Sink, opts: &AccountOpti
                 // The link targets past the part slots (`FUN_801F19EC`'s
                 // `+0x04` / `+0x08` fixups): a big summon's entries live in
                 // the previous slot's part pool, everyone else's in-slot.
-                let big = legaia_battle_models::summon_readef::BIG_SUMMON_IDS
+                let big = legaia_actor_formats::summon_readef::BIG_SUMMON_IDS
                     .clone()
                     .any(|id| {
-                        legaia_battle_models::summon_creatures::actor_record_slot_index(id)
+                        legaia_actor_formats::summon_creatures::actor_record_slot_index(id)
                             == s.index
                     });
                 let pool = if big {
@@ -232,7 +232,7 @@ pub(super) fn walk_summon_readef(buf: &[u8], sink: &mut Sink, opts: &AccountOpti
                         .and_then(|p| buf.get(p * SLOT_BYTES..(p + 1) * SLOT_BYTES))
                         .and_then(|raw| {
                             raw.get(
-                                legaia_battle_models::summon_readef::RAW_SLOT_PART_POOL_OFFSET..,
+                                legaia_actor_formats::summon_readef::RAW_SLOT_PART_POOL_OFFSET..,
                             )
                         })
                 } else {
@@ -319,7 +319,7 @@ pub(super) fn walk_summon_readef(buf: &[u8], sink: &mut Sink, opts: &AccountOpti
                 if nonzero * 4 < SLOT_BYTES {
                     continue;
                 }
-                use legaia_battle_models::summon_readef::{
+                use legaia_actor_formats::summon_readef::{
                     RAW_SLOT_CLUT_BYTES, RAW_SLOT_PAGE_BYTES, RAW_SLOT_PART_POOL_BYTES,
                     RAW_SLOT_PART_POOL_OFFSET,
                 };
@@ -352,7 +352,7 @@ pub(super) fn walk_summon_readef(buf: &[u8], sink: &mut Sink, opts: &AccountOpti
 }
 
 pub(super) fn walk_me_archive_at(slot: &[u8], base: usize, sink: &mut Sink) {
-    let Ok(me) = legaia_battle_models::me_archive::parse(slot) else {
+    let Ok(me) = legaia_actor_formats::me_archive::parse(slot) else {
         return;
     };
     let n = me.len();
@@ -380,7 +380,7 @@ pub(super) fn walk_me_archive_at(slot: &[u8], base: usize, sink: &mut Sink) {
 // --- player battle files ---------------------------------------------------
 
 pub(super) fn walk_battle_data_pack(buf: &[u8], sink: &mut Sink, opts: &AccountOptions, depth: u8) {
-    let Some(pack) = legaia_battle_models::battle_data_pack::detect(buf) else {
+    let Some(pack) = legaia_actor_formats::battle_data_pack::detect(buf) else {
         sink.note("battle_data_pack::detect returned None");
         return;
     };

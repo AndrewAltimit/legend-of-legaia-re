@@ -2,7 +2,7 @@
 //! and of those, which also lack the tag-1 Move clip (the approach-fix
 //! guard's only unrescuable case). Usage:
 //!   cargo run -p legaia-asset --example monster_move_tags -- extracted/PROT/0867_battle_data.BIN
-use legaia_battle_models::monster_archive;
+use legaia_actor_formats::monster_archive;
 
 fn main() {
     let path = std::env::args()

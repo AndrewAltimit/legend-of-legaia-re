@@ -106,10 +106,10 @@ fn dance_art_pack_and_widget_table_decode() {
     // --- Noa's rig sources her field atlas (PROT 0874 §2 entry 2) ---
     let raw = read_entry(
         &mut arch,
-        legaia_battle_models::field_char_textures::PROT_ENTRY_INDEX,
+        legaia_actor_formats::field_char_textures::PROT_ENTRY_INDEX,
     );
     let pack =
-        legaia_battle_models::field_char_textures::parse(&raw).expect("field textures parse");
+        legaia_actor_formats::field_char_textures::parse(&raw).expect("field textures parse");
     let rig = &FACE_RIGS[0];
     let atlas = pack
         .textures

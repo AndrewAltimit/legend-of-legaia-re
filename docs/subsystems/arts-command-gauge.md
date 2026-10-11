@@ -18,7 +18,7 @@ A second, unrelated AP figure lives on this page too: the **Spirit** cost of a n
 | Disc source | weapon section `[+0x04] + 0x74` in the [player battle files](../formats/battle-data-pack.md) (extraction 863..865) |
 | Named-art Spirit cost | `FUN_801EED1C`, paid from `actor + 0x170` through the accumulator `actor + 0x224` |
 | Execution | `FUN_801EC3E4`, called from SCUS `0x800478A0` |
-| Parser | `legaia_asset::battle_char_assembly::swing_command_costs` (`crates/battle-models`) |
+| Parser | `legaia_asset::battle_char_assembly::swing_command_costs` (`crates/actor-formats`) |
 | Port | `crates/engine-battle/src/arts_command_input.rs` + `ap_gauge.rs` (re-exported by `engine-core`), drawn by `engine-ui::arts_input` on both hosts |
 | Mods | `--weapon-specialty`, the equipment editor's swing costs, `--arts-ap-grant` / `--arts-ap-cost` ([randomizer.md](../tooling/randomizer.md)) |
 
@@ -335,7 +335,7 @@ This is why the [save-record](../formats/save-record.md) labels `+0x198` weapon 
 
 An id placed at the wrong index silently falls through to the section default, and every weapon reads `0x1E`. That is the failure to expect when a cost sweep comes back constant.
 
-Every consumer reads the cost through this one function: the port's Arts input, the Muscle Dome's per-command cost, and the disc-gated pin in `crates/battle-models/tests/battle_data_pack_real.rs`.
+Every consumer reads the cost through this one function: the port's Arts input, the Muscle Dome's per-command cost, and the disc-gated pin in `crates/actor-formats/tests/battle_data_pack_real.rs`.
 
 ### Weapon classes and favored mapping
 

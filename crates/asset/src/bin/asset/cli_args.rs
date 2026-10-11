@@ -283,7 +283,7 @@ pub(super) enum Cmd {
         json: bool,
     },
     /// Print the player Seru-magic summon → namesake `battle_data` creature map
-    /// (`legaia_battle_models::summon_creatures`, recovered from the disc by mesh
+    /// (`legaia_actor_formats::summon_creatures`, recovered from the disc by mesh
     /// identity). A static table, so no disc input is required; pass `--scus` to
     /// annotate each row with the summon's spell name.
     SummonCreatures {

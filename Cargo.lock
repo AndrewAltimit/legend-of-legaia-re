@@ -1212,6 +1212,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "legaia-actor-formats"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-bytes",
+ "legaia-container-formats",
+ "legaia-game-tables",
+ "legaia-lzs",
+ "legaia-prot",
+ "legaia-tim",
+ "legaia-tmd",
+ "png",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "legaia-anm"
 version = "0.1.0"
 dependencies = [
@@ -1253,7 +1271,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "legaia-battle-models",
+ "legaia-actor-formats",
  "legaia-bytes",
  "legaia-container-formats",
  "legaia-disc-audit",
@@ -1294,24 +1312,6 @@ dependencies = [
  "libc",
  "log",
  "winit",
-]
-
-[[package]]
-name = "legaia-battle-models"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "legaia-bytes",
- "legaia-container-formats",
- "legaia-game-tables",
- "legaia-lzs",
- "legaia-prot",
- "legaia-tim",
- "legaia-tmd",
- "png",
- "serde",
- "serde_json",
- "toml",
 ]
 
 [[package]]
@@ -1388,8 +1388,8 @@ name = "legaia-disc-audit"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "legaia-actor-formats",
  "legaia-anm",
- "legaia-battle-models",
  "legaia-bytes",
  "legaia-container-formats",
  "legaia-game-tables",
@@ -1824,8 +1824,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-actor-formats",
  "legaia-art",
- "legaia-battle-models",
  "legaia-game-tables",
  "legaia-scene-formats",
  "libc",
@@ -1884,7 +1884,7 @@ dependencies = [
  "anyhow",
  "clap",
  "flate2",
- "legaia-battle-models",
+ "legaia-actor-formats",
  "legaia-cheats",
  "legaia-overlay-images",
  "legaia-prot",
@@ -1912,7 +1912,7 @@ name = "legaia-minigame-formats"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "legaia-battle-models",
+ "legaia-actor-formats",
  "legaia-container-formats",
  "legaia-game-tables",
  "legaia-lzs",

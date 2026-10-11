@@ -140,7 +140,7 @@ pub fn tmd_to_vram_mesh(tmd: &Tmd, buf: &[u8]) -> VramMesh {
 /// Same as [`tmd_to_vram_mesh`] but also returns a per-vertex **object id**
 /// (the TMD object / body-part index each emitted vertex came from), parallel
 /// to `mesh.positions`. Animated monster meshes use this to apply a per-object
-/// transform per frame (see [`legaia_battle_models::monster_archive::MonsterAnimation`]).
+/// transform per frame (see [`legaia_actor_formats::monster_archive::MonsterAnimation`]).
 /// `tmd_to_vram_mesh` is this function's mesh half, so the two never drift.
 pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u32>) {
     let (mesh, object_ids, _) = tmd_to_vram_mesh_with_prim_ids(tmd, buf);

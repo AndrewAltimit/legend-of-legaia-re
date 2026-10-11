@@ -38,7 +38,7 @@ All retail routines here are resident in `SCUS_942.54` unless marked as battle-o
 
 | Port piece | Where |
 |---|---|
-| Party assembly, monster mesh + texture relocation | `crates/battle-models` (`battle_char_assembly`, `monster_archive`), re-exported by `legaia_asset` |
+| Party assembly, monster mesh + texture relocation | `crates/actor-formats` (`battle_char_assembly`, `monster_archive`), re-exported by `legaia_asset` |
 | Per-fight form install | `engine-core::battle_party_form` |
 | Staged clip commit, ladder, rate arms | `engine-core` `world/actors/battle_anim.rs`, `world/battle/clip_ladder.rs`; `engine-battle-vm::battle_anim_rate` |
 | Tint pass, draw tick, ghost pass | `engine-battle-vm::{battle_actor_tint, battle_actor_tick, battle_action::camera_ghost}`, `engine-battle::battle_body_blend` |
@@ -187,7 +187,7 @@ The commit `FUN_8004AD80` snaps `+0x1D9 = +0x1DA` and copies `+0x1DB` unconditio
 
 **Flinch or knockdown.** Decided at `0x800420F4..0x80042124`: flinch when `actor[+0x1F2] == 0` (no get-up entry) **and** the damage is survivable, knockdown otherwise. The `+0x1EF..+0x1F3` map is filled by `FUN_80054CB0` (`0x80055360..0x800553F0`), one slot per action tag `2/3/4/5/0xB`, with the tag-4 → tag-2 fallback at `0x80055428`. Every player battle file carries a tag-5 entry, so a party member takes the knockdown arm on any hit.
 
-**Engine.** The port models the reaction with an `Actor::battle_reaction` latch (`engine-core::world`), because its per-frame `pose(Idle)` hook is an engine-local channel with no retail counterpart and would otherwise cancel a reaction the frame after it starts. The latch does not outrank the staged channel: `commit_staged_battle_anim` clears it whenever it installs a staged clip, so a struck party member still plays its approach and swings on its own turn. Regressions: `crates/engine-core/tests/battle_reaction_stage_precedence.rs`, and the GPU-free pose oracle `crates/battle-models/tests/battle_pose_orientation_real.rs` (the upright family is upright, the reaction family prone).
+**Engine.** The port models the reaction with an `Actor::battle_reaction` latch (`engine-core::world`), because its per-frame `pose(Idle)` hook is an engine-local channel with no retail counterpart and would otherwise cancel a reaction the frame after it starts. The latch does not outrank the staged channel: `commit_staged_battle_anim` clears it whenever it installs a staged clip, so a struck party member still plays its approach and swings on its own turn. Regressions: `crates/engine-core/tests/battle_reaction_stage_precedence.rs`, and the GPU-free pose oracle `crates/actor-formats/tests/battle_pose_orientation_real.rs` (the upright family is upright, the reaction family prone).
 
 ### The commit's clip-tag ladder
 
@@ -471,7 +471,7 @@ Both hosts tick the same `World` and draw from the same kernels; each owns only 
 
 ### Native renderer bridge (from-scratch engine)
 
-The engine draws the decoded monster through its standard PSX-VRAM texture path. `MonsterMesh::battle_render_mesh(slot, &mut vram)` (`crates/battle-models/src/monster_archive/mesh.rs`) reproduces the loader's per-slot relocation:
+The engine draws the decoded monster through its standard PSX-VRAM texture path. `MonsterMesh::battle_render_mesh(slot, &mut vram)` (`crates/actor-formats/src/monster_archive/mesh.rs`) reproduces the loader's per-slot relocation:
 
 - writes the CLUT region to VRAM row `484 + slot`, with the loader's STP bit on every non-zero entry (`battle_clut_region`). Without that bit the near-camera ghost and the defeat fade, both semi-transparent draws, blend nothing and draw the body solid;
 - writes the 4bpp page to `((5 + slot) * 64, 256)`;

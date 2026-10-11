@@ -417,7 +417,7 @@ CANONICAL_LADDERS = [
     ("pause_menu_compose", "legaia-engine-ui"),
     ("battle_fx_ladder", "legaia-engine-ui"),
     ("dome_ladder_and_hub_real", "legaia-web-viewer"),
-    ("character_pack_real", "legaia-battle-models"),
+    ("character_pack_real", "legaia-actor-formats"),
     ("boot_overlay_disc", "legaia-overlay-images"),
     ("cdname_retail_parse_disc", "legaia-prot"),
     ("w2c_card_inventory_ladder", "legaia-save"),

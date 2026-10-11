@@ -181,8 +181,8 @@ fn detector_modules_never_panic() {
         let _ = legaia_container_formats::tmd_size_prefix::detect(&buf);
         let _ = legaia_container_formats::scene_vab_stream::detect(&buf);
         let _ = legaia_container_formats::vab_multi_bank::detect(&buf);
-        let _ = legaia_battle_models::battle_data_pack::detect(&buf);
-        let _ = legaia_battle_models::battle_data_pack::parse(&buf);
+        let _ = legaia_actor_formats::battle_data_pack::detect(&buf);
+        let _ = legaia_actor_formats::battle_data_pack::parse(&buf);
         let _ = legaia_scene_formats::stage_geom::scan(&buf);
     }
 }
@@ -208,8 +208,8 @@ fn man_section_never_panics() {
 #[test]
 fn monster_archive_never_panics() {
     for buf in adversarial_inputs() {
-        let _ = legaia_battle_models::monster_archive::record(&buf, 1);
-        let _ = legaia_battle_models::monster_archive::record(&buf, u16::MAX);
-        let _ = legaia_battle_models::monster_archive::records(&buf);
+        let _ = legaia_actor_formats::monster_archive::record(&buf, 1);
+        let _ = legaia_actor_formats::monster_archive::record(&buf, u16::MAX);
+        let _ = legaia_actor_formats::monster_archive::records(&buf);
     }
 }

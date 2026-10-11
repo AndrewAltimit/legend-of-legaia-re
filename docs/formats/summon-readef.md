@@ -2,7 +2,7 @@
 
 `\data\battle\summon.dat` and `\data\battle\readef.DAT` are the two files the battle streams from disc *while a fight is running* (CDNAME block `bat_back_dat`). Each is a flat array of fixed `0x10800`-byte (33-sector) slots. A slot holds one of four things: a texture page with its palette rows, a summon creature's actor record, a big summon's raw palette + page + part pool, or a party member's art-animation `"ME"` archive. The action id of the cast or turn picks a group of three or four consecutive slots.
 
-Parser: `legaia_asset::summon_readef` (`crates/battle-models/src/summon_readef.rs`). Confidence: **Confirmed** (byte-verified RAM↔disc and VRAM↔disc in a mid-cast battle save state).
+Parser: `legaia_asset::summon_readef` (`crates/actor-formats/src/summon_readef.rs`). Confidence: **Confirmed** (byte-verified RAM↔disc and VRAM↔disc in a mid-cast battle save state).
 
 ## At a glance
 
@@ -544,7 +544,7 @@ unreachable through the enemy path.
 
 `readef.DAT`'s 78 slots are 26 three-slot groups, and a monster record's
 `+0x1C` is the group index (`legaia_asset::monster_archive::MonsterRecord::readef_group`;
-disc-gated census in `crates/battle-models/tests/monster_readef_group_real.rs`).
+disc-gated census in `crates/actor-formats/tests/monster_readef_group_real.rs`).
 Across the 186 populated records the byte never leaves `0..=25`, which is
 itself the check that the group reading is the right one - a base outside
 `0..=75` would seek past the end of the file.

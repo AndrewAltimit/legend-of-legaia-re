@@ -10,54 +10,54 @@
 //!   containers.
 //! - `legaia-scene-formats`, `legaia-minigame-formats`, `legaia-ui-formats` -
 //!   the formats by what they describe.
-//! - `legaia-battle-models`, `legaia-game-tables`, `legaia-overlay-images` -
+//! - `legaia-actor-formats`, `legaia-game-tables`, `legaia-overlay-images` -
 //!   models, static data tables, code-overlay images.
 //! - `legaia-disc-audit` - byte accounting, classification, catalogs.
 //!
 //! New code names the owning crate directly.
 
 #[doc(hidden)]
-pub use legaia_battle_models::battle_char_assembly;
+pub use legaia_actor_formats::battle_char_assembly;
 #[doc(hidden)]
-pub use legaia_battle_models::battle_char_pack;
+pub use legaia_actor_formats::battle_char_pack;
 #[doc(hidden)]
-pub use legaia_battle_models::battle_char_palette;
+pub use legaia_actor_formats::battle_char_palette;
 #[doc(hidden)]
-pub use legaia_battle_models::battle_data_pack;
+pub use legaia_actor_formats::battle_data_pack;
 #[doc(hidden)]
-pub use legaia_battle_models::battle_texture_catalog;
+pub use legaia_actor_formats::battle_texture_catalog;
 #[doc(hidden)]
-pub use legaia_battle_models::befect_cluster;
+pub use legaia_actor_formats::befect_cluster;
 #[doc(hidden)]
-pub use legaia_battle_models::character_gltf;
+pub use legaia_actor_formats::character_gltf;
 #[doc(hidden)]
-pub use legaia_battle_models::character_pack;
+pub use legaia_actor_formats::character_pack;
 #[doc(hidden)]
-pub use legaia_battle_models::face_anim;
+pub use legaia_actor_formats::face_anim;
 #[doc(hidden)]
-pub use legaia_battle_models::field_char_textures;
+pub use legaia_actor_formats::field_char_textures;
 #[doc(hidden)]
-pub use legaia_battle_models::gltf_color;
+pub use legaia_actor_formats::gltf_color;
 #[doc(hidden)]
-pub use legaia_battle_models::me_archive;
+pub use legaia_actor_formats::me_archive;
 #[doc(hidden)]
-pub use legaia_battle_models::mesh_raster;
+pub use legaia_actor_formats::mesh_raster;
 #[doc(hidden)]
-pub use legaia_battle_models::monster_archive;
+pub use legaia_actor_formats::monster_archive;
 #[doc(hidden)]
-pub use legaia_battle_models::monster_gltf;
+pub use legaia_actor_formats::monster_gltf;
 #[doc(hidden)]
-pub use legaia_battle_models::monster_model;
+pub use legaia_actor_formats::monster_model;
 #[doc(hidden)]
-pub use legaia_battle_models::player_anm;
+pub use legaia_actor_formats::player_anm;
 #[doc(hidden)]
-pub use legaia_battle_models::player_file_annex;
+pub use legaia_actor_formats::player_file_annex;
 #[doc(hidden)]
-pub use legaia_battle_models::scene_gltf;
+pub use legaia_actor_formats::scene_gltf;
 #[doc(hidden)]
-pub use legaia_battle_models::summon_creatures;
+pub use legaia_actor_formats::summon_creatures;
 #[doc(hidden)]
-pub use legaia_battle_models::summon_readef;
+pub use legaia_actor_formats::summon_readef;
 #[doc(hidden)]
 pub use legaia_container_formats::anm_detect;
 #[doc(hidden)]

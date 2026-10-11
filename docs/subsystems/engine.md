@@ -39,7 +39,7 @@ The workspace is two stacks that meet at the format parsers. The preservation st
 ```mermaid
 flowchart BT
     FMT["format crates<br/>iso prot lzs tim tmd vab xa seq mes anm art font save"]
-    ASSET["asset<br/>+ game-tables, battle-models, overlay-images"]
+    ASSET["asset<br/>+ game-tables, actor-formats, overlay-images"]
     EBV["engine-battle-vm"]
     EMV["engine-motion-vm"]
     EVM["engine-vm"]
@@ -120,9 +120,9 @@ Internal dependencies as declared in each crate's `Cargo.toml`.
 | `xa` | `iso` | XA-ADPCM. |
 | `vab` | `xa` | Sound banks (shares the SPU-ADPCM filter constants). |
 | `mdec` | `xa` | Movie decoder. |
-| `game-tables` | `bytes` | Static tables in `SCUS_942.54` and the overlays. |
-| `battle-models` | `game-tables`, `lzs`, `prot`, `tim`, `tmd`, `bytes` | Battle model formats + glTF export. |
-| `overlay-images` | `lzs`, `bytes` | Code-overlay images and their resident tables. |
+| `overlay-images` | `lzs`, `bytes` | Code-overlay images: detection, load bases, slot-B module layout. |
+| `game-tables` | `overlay-images`, `bytes` | Decoded data tables in `SCUS_942.54` and the overlays. |
+| `actor-formats` | `game-tables`, `lzs`, `prot`, `tim`, `tmd`, `bytes` | Character and monster model formats + glTF export. |
 | `asset` | the three above + `lzs`, `prot`, `tim`, `tmd`, `vab`, `mes`, `anm`, `mdec`, `bytes` | The format hub. |
 | `extract` | `iso`, `prot`, `lzs`, `asset`, `tim`, `tmd`, `xa`, `font` | Disc -> files pipeline. |
 | `disc-patch` | `iso`, `prot`, `lzs`, `asset`, `xa` | `DiscPatcher`, PPF, space ledger. |

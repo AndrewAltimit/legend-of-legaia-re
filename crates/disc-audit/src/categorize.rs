@@ -163,7 +163,7 @@ pub enum Class {
     /// Battle side-band streaming file (`summon.dat` / `readef.DAT`) - a flat
     /// array of `0x10800`-byte slots, each a texture slot, a summon-creature
     /// actor record, or an `"ME"` art-animation archive. See
-    /// [`legaia_battle_models::summon_readef`] and [`docs/formats/summon-readef.md`].
+    /// [`legaia_actor_formats::summon_readef`] and [`docs/formats/summon-readef.md`].
     SummonReadef,
     /// `bse.dat` - the master sound bank `FUN_8001FA88` loads once at
     /// sound-init (`[u16 tag][u16 body_offset = 4][8-byte records]`). Two
@@ -198,7 +198,7 @@ pub enum Class {
     /// Each decompressed slot holds a 32-byte header, a Legaia TMD, and a
     /// texture/CLUT pool. The retail `battle_data` CDNAME block =
     /// extraction entries 0863..0866 (the `0863/0864_edstati3` filename
-    /// labels are the +2 shift). See [`legaia_battle_models::battle_data_pack`].
+    /// labels are the +2 shift). See [`legaia_actor_formats::battle_data_pack`].
     BattleDataPack,
     /// Shape test for `[u32 format=2][u16 spu_addrs[256]][ADPCM...]` where all
     /// 256 `u16`s have bit 15 set (>= `0x8000` = active SPU slot).
@@ -631,7 +631,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
     // before weaker shape heuristics fire on them. The four player files
     // are all > 0x10000 - skip the detector for small entries to avoid
     // wasted work.
-    if buf.len() >= 0x10000 && legaia_battle_models::battle_data_pack::detect(buf).is_some() {
+    if buf.len() >= 0x10000 && legaia_actor_formats::battle_data_pack::detect(buf).is_some() {
         return mk(
             Class::BattleDataPack,
             size,
@@ -747,7 +747,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
     // `summon.dat` opens with `[u32 mode=2]` followed by a 256-entry CLUT whose
     // every colour has the STP bit set, which is byte-for-byte the shape that
     // detector reads as "256 SPU addresses, all >= 0x8000".
-    if let Some(sb) = legaia_battle_models::summon_readef::detect(buf) {
+    if let Some(sb) = legaia_actor_formats::summon_readef::detect(buf) {
         let mut report = mk(
             Class::SummonReadef,
             size,

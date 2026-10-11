@@ -197,7 +197,7 @@ impl Vram {
     ///
     /// Used by engine consumers that source CLUT halfwords from a buffer
     /// that doesn't carry the standard TIM CLUT header (e.g. the
-    /// `legaia_battle_models::battle_data_pack` post-TMD pool, where palettes
+    /// `legaia_actor_formats::battle_data_pack` post-TMD pool, where palettes
     /// live as a bare 32-byte run inside an LZS-decompressed record).
     pub fn write_clut_row(&mut self, fb_x: u16, fb_y: u16, bytes: &[u8]) {
         if bytes.is_empty() {
@@ -219,7 +219,7 @@ impl Vram {
     /// conversion. Pixels falling outside VRAM are skipped.
     ///
     /// Used by engine consumers that inject a bare (header-less) image
-    /// block - e.g. the `legaia_battle_models::monster_archive` battle texture
+    /// block - e.g. the `legaia_actor_formats::monster_archive` battle texture
     /// page, whose 4bpp pixel run lives after the CLUT region inside an
     /// LZS-decompressed archive block.
     pub fn write_block(&mut self, fb_x: u16, fb_y: u16, w_words: u16, h: u16, bytes: &[u8]) {
@@ -284,7 +284,7 @@ impl Vram {
     ///
     /// Used by the engine's battle facial animator, which re-stamps the
     /// current eye/mouth face frame from a member band's face-frame strip
-    /// onto its live face rows every frame (`legaia_battle_models::face_anim`).
+    /// onto its live face rows every frame (`legaia_actor_formats::face_anim`).
     // PORT: FUN_80058490 - the MoveImage wrapper the per-frame facial
     // animator FUN_8004C7B4 stamps through (skips rects with a zero
     // width or height).

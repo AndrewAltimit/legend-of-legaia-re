@@ -538,7 +538,7 @@ pub const CARD_FONT_PROT_INDEX: u32 = 892;
 /// code image, whose "parser" is the dump corpus).
 pub fn pick_walker(buf: &[u8], class: Class, opts: &AccountOptions) -> Walker {
     if opts.prot_index == Some(MONSTER_ARCHIVE_PROT_INDEX)
-        && buf.len() >= legaia_battle_models::monster_archive::SLOT_STRIDE
+        && buf.len() >= legaia_actor_formats::monster_archive::SLOT_STRIDE
     {
         return Walker::MonsterArchive;
     }

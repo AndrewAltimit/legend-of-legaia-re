@@ -5,10 +5,10 @@ use anyhow::Result;
 
 /// Print the player Seru-magic summon → namesake creature map. The map is a
 /// static table recovered from the disc by mesh identity (see
-/// [`legaia_battle_models::summon_creatures`]); `--scus` annotates each row with the
+/// [`legaia_actor_formats::summon_creatures`]); `--scus` annotates each row with the
 /// summon's spell name.
 pub(crate) fn summon_creatures_cmd(scus: Option<&Path>, json: bool) -> Result<()> {
-    use legaia_battle_models::summon_creatures::SUMMON_CREATURES;
+    use legaia_actor_formats::summon_creatures::SUMMON_CREATURES;
     let names = match scus {
         Some(p) => {
             let bytes = crate::cli_io::read_input(p)?;
@@ -104,7 +104,7 @@ pub(crate) fn summon_readef_cmd(
     clut_sub: u8,
     action_id: Option<u8>,
 ) -> Result<()> {
-    use legaia_battle_models::summon_readef::{self, SLOT_BYTES, SlotKind, StreamFile};
+    use legaia_actor_formats::summon_readef::{self, SLOT_BYTES, SlotKind, StreamFile};
 
     if let Some(id) = action_id {
         let (file, slot) = summon_readef::stream_target(id);

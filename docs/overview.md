@@ -81,7 +81,7 @@ The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_f
 flowchart TD
     subgraph formats["Formats and extraction"]
         container["iso, prot, lzs"]
-        hub["asset<br/>+ game-tables, battle-models, overlay-images"]
+        hub["asset<br/>+ game-tables, actor-formats, overlay-images"]
         perfmt["tim, tmd, vab, xa, seq, mes, anm, mdt, art, font, mdec, save"]
         extract["extract: legaia-extract"]
         container --> hub --> extract
@@ -117,7 +117,7 @@ flowchart TD
     hub --> web
 ```
 
-**Formats and extraction.** `bytes` (shared checked readers) sits under the container layer `iso`, `prot`, `lzs` and the format hub `asset`, which re-exports `game-tables` (the static data tables), `battle-models` (the battle model formats) and `overlay-images` (the code-overlay image formats). The per-format parsers are `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec` and `save`; `extract` drives the whole pipeline. `mednafen` and `pcsxr` read emulator save states; `gamedata` and `cheats` are curated label sets.
+**Formats and extraction.** `bytes` (shared checked readers) sits under the container layer `iso`, `prot`, `lzs` and the format hub `asset`, which re-exports `game-tables` (the static data tables), `actor-formats` (the character and monster model formats) and `overlay-images` (the code-overlay image formats). The per-format parsers are `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec` and `save`; `extract` drives the whole pipeline. `mednafen` and `pcsxr` read emulator save states; `gamedata` and `cheats` are curated label sets.
 
 **The port.** `engine-core` holds the `World` and the scene host. Below it sit the kernels that never touch `World` - `engine-battle`, `engine-field`, `engine-menus`, `engine-dialog`, `engine-effects`, `engine-system`, `engine-minigames` (over `engine-fishing`) and `engine-minigame-scenes` - and the ported VMs in `engine-vm` (which re-exports the battle side from `engine-battle-vm`).
 

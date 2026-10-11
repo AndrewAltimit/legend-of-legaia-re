@@ -377,13 +377,13 @@ pub(super) fn walk_offset_pack(
 }
 
 /// A bundle's type-`0x05` section: the ANM **clip bank**, not a Tactical-Arts
-/// move table. Each clip is an 8-byte [`legaia_battle_models::player_anm`] header followed by
+/// move table. Each clip is an 8-byte [`legaia_actor_formats::player_anm`] header followed by
 /// `bone_count * frame_count` 8-byte per-(bone, frame) transforms and an
 /// 8-byte record-boundary trailer, so a clip's claimed extent is
 /// `8 + bones*frames*8 + 8` and any shortfall against the offset table shows
 /// up as residue rather than being absorbed.
 pub(super) fn walk_clip_bank(buf: &[u8], sink: &mut Sink) {
-    let Ok(bank) = legaia_battle_models::player_anm::parse(buf) else {
+    let Ok(bank) = legaia_actor_formats::player_anm::parse(buf) else {
         // Not the `0x080C` record family - still an offset pack, and its
         // members are still real extents.
         walk_offset_pack(buf, sink, OWNER_ANM, "clip");
@@ -401,19 +401,19 @@ pub(super) fn walk_clip_bank(buf: &[u8], sink: &mut Sink) {
                 continue;
             }
         };
-        let body = legaia_battle_models::player_anm::RECORD_HEADER_SIZE
+        let body = legaia_actor_formats::player_anm::RECORD_HEADER_SIZE
             + rec.bone_count as usize
                 * rec.frame_count as usize
-                * legaia_battle_models::player_anm::BONE_FRAME_BYTES;
+                * legaia_actor_formats::player_anm::BONE_FRAME_BYTES;
         sink.claim(
             start,
-            start + legaia_battle_models::player_anm::RECORD_HEADER_SIZE,
+            start + legaia_actor_formats::player_anm::RECORD_HEADER_SIZE,
             OWNER_HEADER,
             format!("clip {i} header"),
         );
         let body_end = (start + body).min(end);
         sink.claim(
-            start + legaia_battle_models::player_anm::RECORD_HEADER_SIZE,
+            start + legaia_actor_formats::player_anm::RECORD_HEADER_SIZE,
             body_end,
             OWNER_ANM,
             format!(

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/game-tables", "crates/battle-models", "crates/overlay-images", "crates/container-formats", "crates/scene-formats", "crates/minigame-formats", "crates/ui-formats", "crates/disc-audit", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/disc-patch", "crates/translate", "crates/party-swap", "crates/texture-replace", "crates/code-hooks", "crates/arts-patch", "crates/delilas-party", "crates/delilas-challenge", "crates/patcher", "crates/mdec", "crates/art", "crates/ram-image", "crates/mednafen", "crates/pcsx-redux", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-battle-vm", "crates/engine-system", "crates/engine-dialog", "crates/engine-menus", "crates/engine-mode", "crates/engine-field", "crates/engine-core", "crates/engine-effects", "crates/engine-fishing", "crates/engine-minigames", "crates/engine-minigame-scenes", "crates/render-kernels", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-motion-vm", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
+members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/game-tables", "crates/actor-formats", "crates/overlay-images", "crates/container-formats", "crates/scene-formats", "crates/minigame-formats", "crates/ui-formats", "crates/disc-audit", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/disc-patch", "crates/translate", "crates/party-swap", "crates/texture-replace", "crates/code-hooks", "crates/arts-patch", "crates/delilas-party", "crates/delilas-challenge", "crates/patcher", "crates/mdec", "crates/art", "crates/ram-image", "crates/mednafen", "crates/pcsx-redux", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-battle-vm", "crates/engine-system", "crates/engine-dialog", "crates/engine-menus", "crates/engine-mode", "crates/engine-field", "crates/engine-core", "crates/engine-effects", "crates/engine-fishing", "crates/engine-minigames", "crates/engine-minigame-scenes", "crates/render-kernels", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-motion-vm", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
 
 [workspace.package]
 version = "0.1.0"
@@ -46,7 +46,12 @@ legaia-bytes = { path = "crates/bytes" }
 legaia-anm = { path = "crates/anm", default-features = false }
 legaia-art = { path = "crates/art", default-features = false }
 legaia-game-tables = { path = "crates/game-tables" }
-legaia-battle-models = { path = "crates/battle-models" }
+legaia-actor-formats = { path = "crates/actor-formats" }
+# Transitional key: the crate was `legaia-battle-models` before it took the
+# field-form character models. A dependent that still says
+# `legaia-battle-models.workspace = true` gets the same crate under the old
+# `legaia_battle_models` extern name. New code takes `legaia-actor-formats`.
+legaia-battle-models = { package = "legaia-actor-formats", path = "crates/actor-formats" }
 legaia-overlay-images = { path = "crates/overlay-images" }
 legaia-container-formats = { path = "crates/container-formats" }
 legaia-scene-formats = { path = "crates/scene-formats" }

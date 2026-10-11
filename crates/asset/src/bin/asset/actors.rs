@@ -10,7 +10,7 @@ pub(crate) fn character_pack_one(
     equip: Option<u8>,
     out: Option<&Path>,
 ) -> Result<()> {
-    use legaia_battle_models::character_pack;
+    use legaia_actor_formats::character_pack;
     let bytes = std::fs::read(input)
         .with_context(|| format!("read PROT 874 entry from {}", input.display()))?;
     let pack = character_pack::parse(&bytes)?;
@@ -91,7 +91,7 @@ pub(crate) fn field_char_tex_one(
     entry: Option<usize>,
     out_tim: Option<&Path>,
 ) -> Result<()> {
-    use legaia_battle_models::field_char_textures;
+    use legaia_actor_formats::field_char_textures;
     let bytes = std::fs::read(input)
         .with_context(|| format!("read PROT 874 entry from {}", input.display()))?;
     let pack = field_char_textures::parse(&bytes)?;
@@ -165,7 +165,7 @@ pub(crate) fn battle_char_pack_one(
     atlas: Option<usize>,
     out_tim: Option<&Path>,
 ) -> Result<()> {
-    use legaia_battle_models::battle_char_pack;
+    use legaia_actor_formats::battle_char_pack;
     let bytes = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
     let slots = battle_char_pack::parse_slots(&bytes)?;
     let atlases = match atlas_entry {
@@ -243,7 +243,7 @@ pub(crate) fn battle_char_pack_one(
 }
 
 pub(crate) fn player_anm_one(input: &Path, desc_count: usize, out: Option<&Path>) -> Result<()> {
-    use legaia_battle_models::player_anm;
+    use legaia_actor_formats::player_anm;
     let bytes = std::fs::read(input).with_context(|| format!("read {}", input.display()))?;
     let bundles = player_anm::find_in_entry(&bytes, desc_count);
     if bundles.is_empty() {
@@ -286,7 +286,7 @@ pub(crate) fn player_anm_scan(
     cdname_path: Option<&Path>,
     desc_count: usize,
 ) -> Result<()> {
-    use legaia_battle_models::player_anm;
+    use legaia_actor_formats::player_anm;
     let cdname = cdname_path
         .map(|p| std::fs::read_to_string(p).with_context(|| format!("read CDNAME {}", p.display())))
         .transpose()?;
@@ -350,7 +350,7 @@ pub(crate) fn monster_archive_one(
     dump_block: Option<&Path>,
     write_block: Option<&Path>,
 ) -> Result<()> {
-    use legaia_battle_models::monster_archive;
+    use legaia_actor_formats::monster_archive;
     let bytes = crate::cli_io::read_input(input)?;
     println!(
         "monster archive: {} bytes, {} slots of 0x{:X}",
@@ -502,7 +502,7 @@ pub(crate) fn monster_archive_one(
         let Some(id) = id else {
             anyhow::bail!("--glb requires --id <N>");
         };
-        match legaia_battle_models::monster_gltf::export_glb(&bytes, id)? {
+        match legaia_actor_formats::monster_gltf::export_glb(&bytes, id)? {
             Some(glb) => {
                 std::fs::write(glb_path, &glb)?;
                 println!(
@@ -559,7 +559,7 @@ pub(crate) fn monster_archive_one(
 /// The palette index (`cba & 0x3F`) of the first textured primitive in the
 /// monster's mesh, so a baked texture PNG uses the colours that prim expects.
 pub(crate) fn first_prim_palette(
-    m: &legaia_battle_models::monster_archive::MonsterMesh,
+    m: &legaia_actor_formats::monster_archive::MonsterMesh,
 ) -> Option<usize> {
     let tbuf = m.tmd_bytes();
     let tmd = legaia_tmd::parse(tbuf).ok()?;
@@ -875,7 +875,7 @@ pub(crate) fn befect_cluster_cmd(
     out: Option<&Path>,
     json: bool,
 ) -> Result<()> {
-    use legaia_battle_models::befect_cluster::{self, Component};
+    use legaia_actor_formats::befect_cluster::{self, Component};
     use legaia_prot::archive::Archive;
 
     let mut archive = Archive::open(prot)?;

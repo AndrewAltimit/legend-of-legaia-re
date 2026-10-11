@@ -17,7 +17,7 @@ binary ([`crates/asset`](../asset/README.md)) is its command-line front.
 The top of the format stack. `byte_account` and `categorize` call nearly
 every parser there is, so this crate depends on all of
 `legaia-container-formats`, `legaia-scene-formats`, `legaia-minigame-formats`,
-`legaia-ui-formats`, `legaia-battle-models`,
+`legaia-ui-formats`, `legaia-actor-formats`,
 `legaia-game-tables` and `legaia-overlay-images`. None of those may depend on
 it, and it must not depend on any engine or patcher crate. `legaia-asset`
 re-exports each module at its old path.

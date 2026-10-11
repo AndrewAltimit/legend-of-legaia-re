@@ -797,7 +797,7 @@ pub const FIGHTER_CHUNK_TIM: u8 = 0;
 pub const FIGHTER_CHUNK_TMD: u8 = 9;
 /// Chunk type byte of the fighter pack's animation bank (a canonical ANM
 /// container: `[u32 count][u32 offsets][records]`, records per
-/// `docs/formats/anm.md` - decode with `legaia_battle_models::player_anm::parse`).
+/// `docs/formats/anm.md` - decode with `legaia_actor_formats::player_anm::parse`).
 pub const FIGHTER_CHUNK_ANIM: u8 = 11;
 
 /// One ladder fighter's decoded pack (extraction PROT `1206..=1219`): a raw

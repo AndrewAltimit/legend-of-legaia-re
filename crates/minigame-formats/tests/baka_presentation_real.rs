@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use legaia_battle_models::player_anm;
+use legaia_actor_formats::player_anm;
 use legaia_container_formats::{DecodeMode, decode, pack, parse_player_lzs};
 use legaia_minigame_formats::baka_opponents::{self as baka};
 use legaia_minigame_formats::minigame_art;

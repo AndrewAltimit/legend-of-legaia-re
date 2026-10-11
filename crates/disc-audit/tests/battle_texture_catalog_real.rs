@@ -1,4 +1,4 @@
-//! Disc-gated regression for [`legaia_battle_models::battle_texture_catalog`] - the
+//! Disc-gated regression for [`legaia_actor_formats::battle_texture_catalog`] - the
 //! headerless 4bpp party-character art inside the player battle files.
 //!
 //! This family is invisible to both TIM catalogs by construction (no magic,
@@ -12,7 +12,7 @@
 
 use std::path::PathBuf;
 
-use legaia_battle_models::battle_texture_catalog::{self as catalog, BattleTextureSlot};
+use legaia_actor_formats::battle_texture_catalog::{self as catalog, BattleTextureSlot};
 
 fn extracted_prot_dir() -> Option<PathBuf> {
     [

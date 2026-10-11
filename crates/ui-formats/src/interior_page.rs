@@ -98,7 +98,7 @@ pub fn find_in_entry(bytes: &[u8]) -> Result<Tim> {
 /// Upload the page the way retail leaves it in VRAM: the image at its
 /// declared rect, and the 16×16 CLUT block as a flat 256-entry strip on
 /// row 510 starting at x = 0 (the same strip semantics as the
-/// [`legaia_battle_models::field_char_textures`] row-478 character palettes).
+/// [`legaia_actor_formats::field_char_textures`] row-478 character palettes).
 pub fn upload_to_vram(tim: &Tim, vram: &mut Vram) {
     vram.upload_tim_partial(tim, true, false);
     if let Some(clut) = tim.clut.as_ref() {

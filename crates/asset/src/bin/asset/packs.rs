@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cli_io::*;
 use anyhow::Result;
-use legaia_battle_models::battle_data_pack;
+use legaia_actor_formats::battle_data_pack;
 use legaia_container_formats::effect_bundle;
 use legaia_prot::cdname;
 use legaia_scene_formats::field_pack;
