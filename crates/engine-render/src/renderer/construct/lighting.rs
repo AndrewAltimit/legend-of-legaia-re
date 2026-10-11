@@ -258,7 +258,10 @@ pub(super) struct GlowParts {
 /// (12) + falloff uv (8) + additive colour/kind (16) = 36 bytes, one
 /// VP uniform, additive blend, depth-tested against the scene pass
 /// but never writing depth.
-pub(super) fn build_glow(device: &wgpu::Device, view_format: wgpu::TextureFormat) -> GlowParts {
+pub(super) fn build_glow_sprites(
+    device: &wgpu::Device,
+    view_format: wgpu::TextureFormat,
+) -> GlowParts {
     let glow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("legaia glow shader"),
         source: wgpu::ShaderSource::Wgsl(GLOW_SHADER_SRC.into()),

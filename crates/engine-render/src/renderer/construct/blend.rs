@@ -13,7 +13,7 @@ use super::*;
 /// no depth buffer and blended fragments must not occlude later
 /// draws); GreaterEqual (reversed-Z LessEqual) so decal prims coplanar
 /// with already-drawn geometry aren't z-rejected.
-fn pipeline(
+fn blend_pipeline(
     device: &wgpu::Device,
     view_format: wgpu::TextureFormat,
     label: &'static str,
@@ -66,7 +66,7 @@ fn pipeline(
 
 /// The four blend pipelines of one opaque pipeline, indexed by ABR mode and
 /// created in mode order.
-pub(super) fn pipelines(
+pub(super) fn blend_pipelines(
     device: &wgpu::Device,
     view_format: wgpu::TextureFormat,
     label: &'static str,
@@ -75,7 +75,7 @@ pub(super) fn pipelines(
     vertex_layout: &wgpu::VertexBufferLayout,
 ) -> [wgpu::RenderPipeline; 4] {
     std::array::from_fn(|m| {
-        pipeline(
+        blend_pipeline(
             device,
             view_format,
             label,

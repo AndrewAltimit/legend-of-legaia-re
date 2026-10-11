@@ -16,7 +16,7 @@ pub(super) struct SurfaceParts {
 
 /// Create the surface for `window`, request a device for it and configure
 /// the swapchain at `width` x `height`.
-pub(super) async fn open<W>(window: Arc<W>, width: u32, height: u32) -> Result<SurfaceParts>
+pub(super) async fn open_surface<W>(window: Arc<W>, width: u32, height: u32) -> Result<SurfaceParts>
 where
     W: wgpu::WindowHandle + 'static,
 {

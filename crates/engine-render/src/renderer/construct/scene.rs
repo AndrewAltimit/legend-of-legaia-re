@@ -19,7 +19,7 @@ pub(super) struct SceneUniformParts {
 /// holding N `MeshUniforms` slots, each `uniform_offset_alignment`
 /// bytes apart. Reused for the multi-actor VRAM-mesh and lines
 /// pipelines below.
-pub(super) fn build_uniforms(device: &wgpu::Device) -> SceneUniformParts {
+pub(super) fn build_scene_uniforms(device: &wgpu::Device) -> SceneUniformParts {
     let uniform_offset_alignment = device.limits().min_uniform_buffer_offset_alignment.max(256);
     let scene_uniforms_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scene mesh uniforms bgl"),
@@ -76,7 +76,7 @@ pub(super) struct SceneVramParts {
 /// Scene shader variants: same WGSL bodies as the single-mesh
 /// pipelines but with the REAL point-light layer (group 2 bindings)
 /// in the prelude instead of the zero stub.
-pub(super) fn build_vram(
+pub(super) fn build_scene_vram_mesh(
     device: &wgpu::Device,
     view_format: wgpu::TextureFormat,
     scene_uniforms_bgl: &wgpu::BindGroupLayout,
@@ -142,7 +142,7 @@ pub(super) fn build_vram(
 
 /// The scene wireframe pipeline: the single-mesh wireframe shader under the
 /// scene uniforms.
-pub(super) fn build_lines(
+pub(super) fn build_scene_wireframe(
     device: &wgpu::Device,
     view_format: wgpu::TextureFormat,
     scene_uniforms_bgl: &wgpu::BindGroupLayout,
@@ -219,7 +219,7 @@ pub(super) struct ColorMeshParts {
 /// the blend pass can interleave textured and untextured prims
 /// without invalidating sticky bind groups, and the scene-lit
 /// shader variant reaches the group-2 point-light layer.
-pub(super) fn build_color_mesh(
+pub(super) fn build_scene_color_mesh(
     device: &wgpu::Device,
     view_format: wgpu::TextureFormat,
     scene_uniforms_bgl: &wgpu::BindGroupLayout,
@@ -304,7 +304,7 @@ pub(super) fn build_color_mesh(
     // VRAM-mesh blend pass there is no STP discard - an untextured ABE
     // prim blends every pixel. Depth: LessEqual without writing, like
     // the textured blend pass.
-    let scene_color_mesh_blend_pipelines = blend::pipelines(
+    let scene_color_mesh_blend_pipelines = blend::blend_pipelines(
         device,
         view_format,
         "legaia scene color mesh blend pipeline",

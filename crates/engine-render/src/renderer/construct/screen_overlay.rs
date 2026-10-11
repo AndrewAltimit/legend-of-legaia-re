@@ -21,7 +21,7 @@ pub(super) struct ScreenOverlayParts {
 /// 1.0 (the reversed-Z near plane) so every overlay quad passes the
 /// test and composites on top, without occluding later draws (matches
 /// the text overlay's role).
-pub(super) fn build(
+pub(super) fn build_screen_overlay(
     device: &wgpu::Device,
     view_format: wgpu::TextureFormat,
     vram_bgl: &wgpu::BindGroupLayout,
@@ -111,7 +111,7 @@ pub(super) fn build(
         multiview: None,
         cache: None,
     });
-    let screen_overlay_blend_pipelines = blend::pipelines(
+    let screen_overlay_blend_pipelines = blend::blend_pipelines(
         device,
         view_format,
         "legaia screen overlay blend pipeline",

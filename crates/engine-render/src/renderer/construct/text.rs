@@ -18,7 +18,10 @@ pub(super) struct TextParts {
 /// Text pipeline: 2D textured quads in NDC, alpha blended, no depth.
 /// Vertex layout = 8 (pos: Float32x2) + 8 (uv: Float32x2) +
 /// 16 (color: Float32x4) = 32 bytes.
-pub(super) fn build(device: &wgpu::Device, view_format: wgpu::TextureFormat) -> TextParts {
+pub(super) fn build_text_overlay(
+    device: &wgpu::Device,
+    view_format: wgpu::TextureFormat,
+) -> TextParts {
     let text_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("legaia text shader"),
         source: wgpu::ShaderSource::Wgsl(TEXT_SHADER_SRC.into()),

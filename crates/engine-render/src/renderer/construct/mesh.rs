@@ -13,7 +13,7 @@ pub(super) struct FlatMeshParts {
 }
 
 /// Mesh pipeline: 3D triangle list, depth-tested, single directional light.
-pub(super) fn build_flat(
+pub(super) fn build_flat_mesh(
     device: &wgpu::Device,
     view_format: wgpu::TextureFormat,
     width: u32,
@@ -108,7 +108,7 @@ pub(super) fn build_flat(
 /// pipeline, but with a per-vertex UV attribute and a fragment shader
 /// that samples a bound texture. Reuses `bind_group_layout` (the
 /// texture+sampler layout from the quad pipeline) at group 1.
-pub(super) fn build_textured(
+pub(super) fn build_textured_mesh(
     device: &wgpu::Device,
     view_format: wgpu::TextureFormat,
     mesh_uniforms_bgl: &wgpu::BindGroupLayout,
@@ -262,7 +262,7 @@ pub(super) struct VramMeshParts {
 /// texture holding the whole PSX VRAM. The fragment shader does its
 /// own page+CLUT lookup so a single mesh can sample multiple texture
 /// pages and palettes correctly.
-pub(super) fn build_vram(
+pub(super) fn build_vram_mesh(
     device: &wgpu::Device,
     view_format: wgpu::TextureFormat,
     mesh_uniforms_bgl: &wgpu::BindGroupLayout,
@@ -343,7 +343,7 @@ pub(super) struct LinesParts {
 /// Wireframe lines pipeline: LineList topology, per-vertex color,
 /// depth-tested. Reuses `mesh_uniforms_bgl` for the MVP. Per-vertex
 /// layout = 12 (position) + 4 (color as Uint8x4) = 16 bytes.
-pub(super) fn build_lines(
+pub(super) fn build_wireframe(
     device: &wgpu::Device,
     view_format: wgpu::TextureFormat,
     mesh_uniforms_bgl: &wgpu::BindGroupLayout,

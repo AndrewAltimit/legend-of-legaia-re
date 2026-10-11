@@ -111,9 +111,9 @@ impl Renderer {
             queue,
             config,
             view_format,
-        } = surface::open(window, width, height).await?;
+        } = surface::open_surface(window, width, height).await?;
 
-        let quad = quad::build(&device, view_format);
+        let quad = quad::build_quad(&device, view_format);
 
         // Depth convention: **reversed-Z** across every 3D pipeline. The MVP
         // upload sites post-multiply [`reverse_z`] (clip z' = w - z), the pass
@@ -124,8 +124,8 @@ impl Renderer {
         // what lets sub-unit coplanar-separation nudges (see
         // `legaia_tmd::mesh::coplanar`) hold at every camera distance.
 
-        let flat_mesh = mesh::build_flat(&device, view_format, width, height);
-        let textured_mesh_pipeline = mesh::build_textured(
+        let flat_mesh = mesh::build_flat_mesh(&device, view_format, width, height);
+        let textured_mesh_pipeline = mesh::build_textured_mesh(
             &device,
             view_format,
             &flat_mesh.uniforms_bgl,
@@ -133,20 +133,20 @@ impl Renderer {
         );
         let vram_vertex_attributes = mesh::vram_vertex_attributes();
         let vram_vertex_layout = mesh::vram_vertex_layout(&vram_vertex_attributes);
-        let vram_mesh = mesh::build_vram(
+        let vram_mesh = mesh::build_vram_mesh(
             &device,
             view_format,
             &flat_mesh.uniforms_bgl,
             &vram_vertex_layout,
         );
-        let lines = mesh::build_lines(&device, view_format, &flat_mesh.uniforms_bgl);
+        let lines = mesh::build_wireframe(&device, view_format, &flat_mesh.uniforms_bgl);
 
-        let scene_uniforms = scene::build_uniforms(&device);
+        let scene_uniforms = scene::build_scene_uniforms(&device);
         let light_layer = lighting::build_light_layer(&device);
         let shadow_pass = lighting::build_shadow_pass(&device, scene_uniforms.offset_alignment);
-        let glow = lighting::build_glow(&device, view_format);
+        let glow = lighting::build_glow_sprites(&device, view_format);
 
-        let scene_vram = scene::build_vram(
+        let scene_vram = scene::build_scene_vram_mesh(
             &device,
             view_format,
             &scene_uniforms.bgl,
@@ -154,7 +154,7 @@ impl Renderer {
             &light_layer.bgl,
             &vram_vertex_layout,
         );
-        let vram_mesh_blend_pipelines = blend::pipelines(
+        let vram_mesh_blend_pipelines = blend::blend_pipelines(
             &device,
             view_format,
             "legaia vram mesh blend pipeline",
@@ -162,7 +162,7 @@ impl Renderer {
             &vram_mesh.shader,
             &vram_vertex_layout,
         );
-        let scene_vram_mesh_blend_pipelines = blend::pipelines(
+        let scene_vram_mesh_blend_pipelines = blend::blend_pipelines(
             &device,
             view_format,
             "legaia scene vram mesh blend pipeline",
@@ -171,8 +171,8 @@ impl Renderer {
             &vram_vertex_layout,
         );
         let scene_lines_pipeline =
-            scene::build_lines(&device, view_format, &scene_uniforms.bgl, &lines.shader);
-        let color_mesh = scene::build_color_mesh(
+            scene::build_scene_wireframe(&device, view_format, &scene_uniforms.bgl, &lines.shader);
+        let color_mesh = scene::build_scene_color_mesh(
             &device,
             view_format,
             &scene_uniforms.bgl,
@@ -180,8 +180,8 @@ impl Renderer {
             &light_layer.bgl,
         );
 
-        let text = text::build(&device, view_format);
-        let overlay = screen_overlay::build(&device, view_format, &vram_mesh.bgl);
+        let text = text::build_text_overlay(&device, view_format);
+        let overlay = screen_overlay::build_screen_overlay(&device, view_format, &vram_mesh.bgl);
         let (viewport_fill_vbuf, viewport_fill_ibuf) = screen_overlay::build_viewport_fill(&device);
 
         let depth_view = create_depth_view(&device, config.width, config.height);

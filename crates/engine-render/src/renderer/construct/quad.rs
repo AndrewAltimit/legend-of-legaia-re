@@ -15,7 +15,7 @@ pub(super) struct QuadParts {
 }
 
 /// Build the textured-quad shader, layouts, pipeline and sampler.
-pub(super) fn build(device: &wgpu::Device, view_format: wgpu::TextureFormat) -> QuadParts {
+pub(super) fn build_quad(device: &wgpu::Device, view_format: wgpu::TextureFormat) -> QuadParts {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("legaia textured quad shader"),
         source: wgpu::ShaderSource::Wgsl(SHADER_SRC.into()),
