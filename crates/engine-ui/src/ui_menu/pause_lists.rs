@@ -30,7 +30,7 @@
 //! `engine-core::pause_screens::list_kernel_navigate`. See
 //! `docs/subsystems/field-menu.md` for the traced kernel.
 
-use super::field_panels::{MENU_TEXT_GOLD, MENU_TEXT_WHITE, menu_mp_ink, num_field_draws};
+use super::{MENU_TEXT_GOLD, MENU_TEXT_WHITE, menu_mp_ink, num_field_draws};
 use crate::*;
 
 /// Retail grey text ink - CLUT staging index 0, the non-focused-list row

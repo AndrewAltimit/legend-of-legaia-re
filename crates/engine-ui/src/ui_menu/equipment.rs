@@ -11,7 +11,7 @@
 //! *content* at the byte-pinned offsets, in 320x240 stage pixels off each
 //! window's content-origin pen.
 
-use super::field_panels::num_field_draws;
+use super::num_field_draws;
 use crate::*;
 
 /// Retail row pitch inside the equip party + main windows (the `+0xe`

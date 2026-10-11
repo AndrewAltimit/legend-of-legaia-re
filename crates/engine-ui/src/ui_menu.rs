@@ -2,8 +2,20 @@
 //! panels, game-over, options + key-rebind, name entry, cutscene
 //! narration, item use, equipment, and the tactical-arts editor.
 
-mod field_panels;
-pub use field_panels::*;
+mod battle_spoils;
+pub use battle_spoils::*;
+
+mod field_menu;
+pub use field_menu::*;
+
+mod menu_ink;
+pub use menu_ink::*;
+
+mod status_screen;
+pub use status_screen::*;
+
+mod tab_banner;
+pub use tab_banner::*;
 
 mod list_order;
 pub use list_order::*;

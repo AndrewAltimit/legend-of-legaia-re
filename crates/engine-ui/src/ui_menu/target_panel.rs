@@ -35,7 +35,7 @@
 //! all-party items), otherwise the low 12 bits pick one row; bit `0x1000`
 //! switches the sprite to its static variant while a confirm is staged.
 
-use super::field_panels::{
+use super::{
     MENU_TEXT_GOLD, MENU_TEXT_TEAL, MENU_TEXT_WHITE, menu_hp_ink, menu_mp_ink, num_field_draws,
 };
 use crate::*;
