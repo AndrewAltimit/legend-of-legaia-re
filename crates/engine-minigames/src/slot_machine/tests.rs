@@ -2,7 +2,7 @@ use super::*;
 use legaia_asset::minigame_slot_scene::LANDING_LINE_BY_JITTER;
 use legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS;
 use legaia_asset::slot_payout::SlotPayoutTable;
-use legaia_engine_vm::bios_rand::BiosRand;
+use legaia_engine_system::rand::BiosRand;
 
 #[test]
 fn payline_prims_light_exactly_the_winning_line() {
@@ -1014,7 +1014,7 @@ fn an_empty_machine_raises_the_prompt_and_leaves() {
 
 #[test]
 fn packed_edges_swap_the_raw_layout() {
-    use legaia_engine_vm::pad::PadButton;
+    use legaia_engine_system::pad::PadButton;
     let raw = PadButton::Triangle.mask() | PadButton::Up.mask();
     assert_eq!(packed_edges(raw, 0), 0x1010);
     assert_eq!(packed_edges(raw, raw), 0);

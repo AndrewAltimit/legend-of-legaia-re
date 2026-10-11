@@ -1,6 +1,6 @@
 //! The free-swim wander: facing step, retarget roll, the fish camera and the wander actor.
 
-use legaia_engine_vm::pad::{PACK_LEFT, PACK_RIGHT};
+use legaia_engine_system::pad::{PACK_LEFT, PACK_RIGHT};
 
 // --- Free-swim wander (FUN_801D2278) ---------------------------------------
 

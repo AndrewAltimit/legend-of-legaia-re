@@ -138,7 +138,7 @@ impl World {
             }
             for (t, id) in r.fades {
                 let mut seat = None;
-                crate::fade::spawn_fade(&mut seat, &crate::fade::summon_template(t), *id);
+                crate::fade::spawn_fade(&mut seat, &legaia_engine_vm::battle_action::summon_fade_template(t), *id);
                 self.presentation.module_fades.extend(seat);
             }
         }

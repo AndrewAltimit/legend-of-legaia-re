@@ -14,13 +14,6 @@
 
 #![forbid(unsafe_code)]
 
-// Modules these files name as `crate::...` / `super::...`, which
-// `legaia-engine-vm` re-exports at its root; binding them here keeps the
-// moved files' paths unchanged.
-#[allow(unused_imports)] // named by rustdoc links only
-use legaia_engine_battle_vm::battle_action;
-use legaia_engine_battle_vm::battle_formulas;
-
 pub mod ambient_motion;
 pub mod ambient_motion_ops;
 pub mod motion_vm;

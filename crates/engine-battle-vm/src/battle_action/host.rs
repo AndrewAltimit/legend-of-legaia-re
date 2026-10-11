@@ -207,7 +207,7 @@ pub trait BattleActionHost {
 
     /// One BIOS `rand()` draw - `jal 0x80056798`, the `A(2Fh)` thunk - so a
     /// value in `0..=0x7FFF` (the LCG state's high half, see
-    /// [`crate::battle_formulas::bios_rand_shape`]). Every consumer in this
+    /// [`legaia_engine_system::rand::bios_rand_shape`]). Every consumer in this
     /// state machine tests its low bits or takes a `%` of it, so a host must
     /// hand over a shaped draw, never a raw generator state. Default returns
     /// 0 for deterministic tests.

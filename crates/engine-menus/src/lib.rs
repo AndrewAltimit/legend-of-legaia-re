@@ -25,7 +25,7 @@ use legaia_engine_battle::battle_stats;
 use legaia_engine_battle::spells;
 use legaia_engine_system::input;
 
-use legaia_engine_vm::menu_input;
+use legaia_engine_system::menu_input;
 
 use legaia_engine_battle::target_picker;
 

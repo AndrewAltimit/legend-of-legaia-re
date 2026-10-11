@@ -54,7 +54,7 @@ impl PondInput {
     /// word rotated into the packed retail layout (`_DAT_8007B874`): D-pad
     /// left, D-pad right and the reel pair as one mask, never the cast.
     pub fn from_engine_pad(pad: u16, pad_prev: u16) -> Self {
-        use legaia_engine_vm::pad::PadButton as B;
+        use legaia_engine_system::pad::PadButton as B;
         let mut reel_mask = 0u32;
         if pad & B::Cross.mask() != 0 {
             reel_mask |= REEL_A_PAD_BIT;

@@ -14,7 +14,7 @@
 pub trait EffectHost {
     /// Equivalent of `func_0x80056798` - one BIOS `rand()` draw, so a value
     /// in `0..=0x7FFF` (the kernel LCG's high half,
-    /// [`crate::battle_formulas::bios_rand_shape`]); retail never sees a
+    /// [`legaia_engine_system::rand::bios_rand_shape`]); retail never sees a
     /// negative draw here. Default impl returns `0` (deterministic for
     /// tests).
     fn next_random(&mut self) -> i32 {

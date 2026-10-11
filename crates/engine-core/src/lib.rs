@@ -108,7 +108,7 @@ pub use legaia_engine_menus::menu_item_category;
 pub use legaia_engine_menus::menu_list_rows;
 pub use legaia_engine_menus::menu_open_sequence;
 pub use legaia_engine_system::mdec_dma_sync;
-pub use legaia_engine_vm::menu_input;
+pub use legaia_engine_system::menu_input;
 pub mod menu_runtime;
 pub mod menu_validator;
 pub use legaia_engine_field::minigame_entry;

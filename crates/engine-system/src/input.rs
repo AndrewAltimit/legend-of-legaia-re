@@ -14,9 +14,9 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-/// The raw PSX pad-bit layout; lives in `legaia_engine_vm::pad` so the
+/// The raw PSX pad-bit layout; lives in `crate::pad` so the
 /// minigame crate shares it.
-pub use legaia_engine_vm::pad::PadButton;
+pub use crate::pad::PadButton;
 use serde::{Deserialize, Serialize};
 
 /// Host-side latch for key **taps** shorter than a display frame.

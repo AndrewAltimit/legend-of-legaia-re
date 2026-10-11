@@ -84,7 +84,7 @@ impl BakaFight {
     /// [`BakaFrameOutcome::paid`], clear it on a forfeit, and leave the
     /// cabinet on [`BakaFrameOutcome::exit`].
     pub fn frame(&mut self, edge: u16, held: u16, pot: u32) -> BakaFrameOutcome {
-        use legaia_engine_vm::pad::{PACK_CIRCLE, PACK_CROSS, PACK_SQUARE, PACK_TRIANGLE};
+        use legaia_engine_system::pad::{PACK_CIRCLE, PACK_CROSS, PACK_SQUARE, PACK_TRIANGLE};
         if self.cabinet.front_end() {
             self.set_cabinet_pad(edge);
             self.tick(1);

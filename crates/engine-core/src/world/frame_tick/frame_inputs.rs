@@ -100,7 +100,7 @@ impl World {
 
     /// One retail **`rand()`** draw: the next [`Self::next_rng`] state shaped
     /// the way BIOS `A(2Fh)` (`FUN_80056798`) shapes its own, `0..=0x7FFF`
-    /// ([`legaia_engine_vm::battle_formulas::bios_rand_shape`]).
+    /// ([`legaia_engine_system::rand::bios_rand_shape`]).
     ///
     /// A port that stands in for a `jal 0x80056798` should draw through this
     /// rather than the raw state: retail callers test the result's low bits
@@ -110,7 +110,7 @@ impl World {
     /// executable carries no `srand` thunk), which is why this is one world
     /// stream rather than a generator per subsystem.
     pub fn next_rand(&mut self) -> u32 {
-        legaia_engine_vm::battle_formulas::bios_rand_shape(self.next_rng())
+        legaia_engine_system::rand::bios_rand_shape(self.next_rng())
     }
 
     /// Replace the per-frame pad bitmask snapshot. Equivalent to

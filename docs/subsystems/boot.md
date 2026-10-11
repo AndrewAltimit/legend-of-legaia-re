@@ -1372,7 +1372,7 @@ face / shoulder byte (`pad[3]`) is bits 0..7 and the d-pad / system byte
 Masks the title tick uses: `0x44 = L1|Cross` (confirm), `0x21 = L2|Circle`
 (cancel), `0x844 = Start|L1|Cross` (press-start / confirm), `0xf5` = all face
 buttons + L1 + L2 (generic "any interaction" filter).
-The port carries both layouts in `crates/engine-vm/src/pad.rs`: `PadButton` is
+The port carries both layouts in `crates/engine-system/src/pad.rs`: `PadButton` is
 the raw PSX word (used for host keyboard / gamepad plumbing, re-exported by
 `engine-system`'s `input`), and `retail_packed` + the `PACK_*` constants are
 this packed word, which kernels ported from retail input code read.

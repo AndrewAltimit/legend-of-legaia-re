@@ -2,7 +2,7 @@
 
 use super::*;
 use legaia_asset::baka_opponents::{BakaActionSet, BakaOpponent};
-use legaia_engine_vm::bios_rand::BiosRand;
+use legaia_engine_system::rand::BiosRand;
 
 /// The base every host folds its frame count into to seed a cabinet
 /// (`BAKA_RNG_BASE ^ frame`): the play hosts with the world frame, the

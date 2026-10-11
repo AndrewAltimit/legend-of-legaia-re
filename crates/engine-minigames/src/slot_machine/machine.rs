@@ -2,7 +2,7 @@
 
 use super::*;
 use legaia_asset::slot_payout::{self, SlotPayoutTable};
-use legaia_engine_vm::bios_rand::BiosRand;
+use legaia_engine_system::rand::BiosRand;
 
 /// The outcome of one evaluated spin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

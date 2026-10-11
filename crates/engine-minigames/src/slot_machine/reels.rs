@@ -3,7 +3,7 @@
 use super::*;
 use legaia_asset::minigame_slot_scene::PAYLINE_CENTRE_ROW_BIAS;
 use legaia_asset::slot_payout::{self};
-use legaia_engine_vm::bios_rand::BiosRand;
+use legaia_engine_system::rand::BiosRand;
 
 /// The slot machine's own deterministic LCG over `DAT_801d3c80`:
 /// `x = x*5 + 1`, then the 16-bit halves are folded

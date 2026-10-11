@@ -1,6 +1,6 @@
 use super::*;
-use legaia_engine_vm::pad::PACK_LEFT;
-use legaia_engine_vm::pad::PACK_RIGHT;
+use legaia_engine_system::pad::PACK_LEFT;
+use legaia_engine_system::pad::PACK_RIGHT;
 
 #[test]
 fn a_segment_wholly_behind_the_near_bound_is_rejected() {

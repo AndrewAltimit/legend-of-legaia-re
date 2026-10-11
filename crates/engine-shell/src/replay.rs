@@ -60,7 +60,7 @@ pub struct ReplayMeta {
     pub scenario: Option<String>,
     /// Initial battle/effect-VM RNG seed. The PsyQ PRNG is `seed =
     /// seed * 1103515245 + 12345; (seed >> 16) & 0x7FFF`. See
-    /// `legaia_engine_vm::battle_formulas::psyq_rand_step`.
+    /// `legaia_engine_system::rand::psyq_rand_step`.
     pub rng_seed: u32,
     /// Total frame count to drive. The expanded pad stream has length
     /// `frames + 1` (frame 0 + the next `frames` ticks).

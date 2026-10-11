@@ -56,7 +56,7 @@
 use legaia_asset::fishing_species::FishingSpecies;
 use legaia_asset::fishing_species::{CADENCE_TOLERANCE, CadenceTemplate};
 
-use legaia_engine_vm::bios_rand::BiosRand;
+use legaia_engine_system::rand::BiosRand;
 
 mod gauges;
 mod pond;

@@ -67,8 +67,8 @@ impl WorldRng {
 
 /// The BIOS `rand()` shaping, applied to the raw [`WorldRng`] state before
 /// the element channel's consumers see a draw. One definition for the whole
-/// engine: [`legaia_engine_vm::battle_formulas::bios_rand_shape`].
-pub use legaia_engine_vm::battle_formulas::bios_rand_shape;
+/// engine: [`legaia_engine_system::rand::bios_rand_shape`].
+pub use legaia_engine_system::rand::bios_rand_shape;
 
 /// Runtime VA of the ambient emitter's spawn descriptor in the field overlay's
 /// plain-template table (see the module note).

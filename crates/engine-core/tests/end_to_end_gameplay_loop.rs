@@ -42,7 +42,8 @@ use legaia_engine_core::monster_catalog::{
 };
 use legaia_engine_core::world::{Actor, SceneMode, World};
 use legaia_engine_vm::battle_action::{ActionState, ActorFlags, StepOutcome};
-use legaia_engine_vm::battle_formulas::{accuracy_roll, psyq_rand_step};
+use legaia_engine_system::rand::psyq_rand_step;
+use legaia_engine_vm::battle_formulas::accuracy_roll;
 use legaia_save::{CharacterRecord, HpMpSp, Party, SaveExt, SaveExtV2, SaveFile};
 
 const ATTACKER_ATK: i32 = 35;

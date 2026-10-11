@@ -52,9 +52,9 @@
 //! through [`flag_list_tags`] when they open the screen
 //! (`SceneHost::dev_flag_list_tags`); a host that cannot read the entry
 //! leaves the list empty, and the raw value editor works without it.
-/// The packed pad layout and its converter live in `legaia_engine_vm::pad`
+/// The packed pad layout and its converter live in `legaia_engine_system::pad`
 /// so the minigame crate shares them.
-pub use legaia_engine_vm::pad::{
+pub use legaia_engine_system::pad::{
     PACK_CIRCLE, PACK_CROSS, PACK_DOWN, PACK_LEFT, PACK_RIGHT, PACK_SQUARE, PACK_TRIANGLE, PACK_UP,
     retail_packed,
 };

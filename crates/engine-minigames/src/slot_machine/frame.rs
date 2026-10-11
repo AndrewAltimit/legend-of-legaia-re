@@ -32,7 +32,7 @@ impl SlotMachine {
     // PORT: FUN_801cf0d8 (the per-frame state dispatch: state 1 spin, state 3
     //       stops, state 4 collect)
     pub fn frame(&mut self, packed: u32) -> SlotFrameOutcome {
-        use legaia_engine_vm::pad::{PACK_CIRCLE, PACK_CROSS, PACK_SQUARE, PACK_TRIANGLE};
+        use legaia_engine_system::pad::{PACK_CIRCLE, PACK_CROSS, PACK_SQUARE, PACK_TRIANGLE};
         let on = |m: u16| packed & u32::from(m) != 0;
         let phase = self.phase();
         self.tick();
@@ -80,7 +80,7 @@ impl SlotMachine {
 pub const SLOT_RNG_SEED: u32 = 0x6C0A_2AF0;
 
 /// The packed retail edge word for this frame off the engine's raw pad words
-/// (`InputState::pad` / `pad_prev`, [`legaia_engine_vm::pad::PadButton`] layout).
+/// (`InputState::pad` / `pad_prev`, [`legaia_engine_system::pad::PadButton`] layout).
 pub fn packed_edges(pad: u16, pad_prev: u16) -> u32 {
-    u32::from(legaia_engine_vm::pad::retail_packed(pad & !pad_prev))
+    u32::from(legaia_engine_system::pad::retail_packed(pad & !pad_prev))
 }

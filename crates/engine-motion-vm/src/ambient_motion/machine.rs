@@ -274,7 +274,7 @@ impl AmbientMotion {
 
     /// Retail `FUN_80056798` - the PsyQ 15-bit `rand()`.
     pub(crate) fn rand(&mut self) -> u32 {
-        u32::from(crate::battle_formulas::psyq_rand_step(&mut self.rng))
+        u32::from(legaia_engine_system::rand::psyq_rand_step(&mut self.rng))
     }
 
     /// The renderable heading - retail's consumers take `+0x26 & 0xFFF`.

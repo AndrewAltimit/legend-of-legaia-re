@@ -304,18 +304,6 @@ pub fn spawn_fade(seat: &mut Option<FadeState>, template: &FadeTemplate, id: i16
     *seat = Some(FadeState::load(&t));
 }
 
-/// [`FadeTemplate`] off the summon band's 13-word template layout
-/// (`DAT_801C9070`).
-pub fn summon_template(t: &legaia_engine_vm::battle_action::SummonFadeTemplate) -> FadeTemplate {
-    FadeTemplate {
-        kind: t.kind,
-        duration: t.duration,
-        start_rgb: t.start_rgb,
-        end_rgb: t.end_rgb,
-        mode: [t.delay, t.hold, 0],
-    }
-}
-
 /// A persistent full-scene colour grade - the warm gold/sepia the opening
 /// prologue cutscene (`opdeene`, "It was the Seru.") renders its whole 3D
 /// scene through, distinct from the transient [`SceneTintRamp`] fades.

@@ -17,8 +17,9 @@ use legaia_engine_core::battle_events::BattleEvent;
 use legaia_engine_core::world::{SceneMode, World};
 use legaia_engine_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
 use legaia_engine_vm::battle_formulas::{
-    MpCostModifier, accuracy_roll, mp_cost_after_ability_bits, psyq_rand_step,
+    MpCostModifier, accuracy_roll, mp_cost_after_ability_bits,
 };
+use legaia_engine_system::rand::psyq_rand_step;
 
 fn build_world() -> World {
     let mut world = World {

@@ -9,6 +9,7 @@ name = "legaia_engine_battle"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-system.workspace = true
 serde.workspace = true
 legaia-anm.workspace = true
 legaia-art.workspace = true
