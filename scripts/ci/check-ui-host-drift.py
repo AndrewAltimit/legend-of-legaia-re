@@ -528,6 +528,8 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
 # `None` means the whole file is the site, which is right when a host's
 # injection is a call made from a place the pairing should not pin.
 NATIVE_BOOT = "crates/engine-session/src/boot.rs"
+NATIVE_BOOT_FRAME_TICK = "crates/engine-session/src/boot/frame_tick.rs"
+NATIVE_BOOT_SCENE_ENTRY = "crates/engine-session/src/boot/scene_entry.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/window/save_rack_disk.rs"
 NATIVE_ASSETS = "crates/engine-shell/src/window/assets.rs"
 # The minigame session enter / exit / tick methods of the frame tick.
@@ -752,7 +754,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "page's PlayXa restated the native reader). Both stage each shout "
         "file through `xa_banks::install_shout_file`",
         "sites": {
-            "native": ("crates/engine-session/src/boot.rs", "read_arts_shout_bank"),
+            "native": ("crates/engine-session/src/boot/disc_tables.rs", "read_arts_shout_bank"),
             "web": ("crates/web-viewer/src/play_xa.rs", "play_xa_install"),
         },
         "mode": "symbols_all",
@@ -764,7 +766,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "width the retail read span divides by. Both stage each clip file "
         "through `xa_banks::install_clip_file`",
         "sites": {
-            "native": ("crates/engine-session/src/boot.rs", "read_battle_xa_clip_bank"),
+            "native": ("crates/engine-session/src/boot/disc_tables.rs", "read_battle_xa_clip_bank"),
             "web": ("crates/web-viewer/src/play_xa.rs", "play_xa_install"),
         },
         "mode": "symbols_all",
@@ -1220,7 +1222,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "its focus latch and was framed by the old scene's camera. Both "
         "direct-entry sites must run `Camera::reset_for_scene_entry`",
         "sites": {
-            "native": (NATIVE_BOOT, "enter_field_live"),
+            "native": (NATIVE_BOOT_SCENE_ENTRY, "enter_field_live"),
             "web": (WEB_RUNTIME_SCENE_SETUP, "enter_field_core"),
         },
         "mode": "symbols_all",
@@ -1238,7 +1240,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "save after it; the page used to apply the whole save at park and "
         "raised the scene's pre-bound actor slots)",
         "sites": {
-            "native": (NATIVE_BOOT, "resume_save"),
+            "native": (NATIVE_BOOT_SCENE_ENTRY, "resume_save"),
             "web": ("crates/web-viewer/src/resume.rs", "resume_parked_save"),
         },
         "mode": "symbols_all",
@@ -1251,7 +1253,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "enter from play.html callbacks, and its post-wipe title skipped "
         "the seed entirely",
         "sites": {
-            "native": (NATIVE_BOOT, "start_new_game"),
+            "native": (NATIVE_BOOT_SCENE_ENTRY, "start_new_game"),
             "web": ("crates/web-viewer/src/resume.rs", "start_new_game"),
         },
         "mode": "symbols_all",
@@ -1484,7 +1486,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "so the live-loop pairing below cannot see them; they sit in different "
         "crates' boot paths and neither is reached by the other's tests",
         "sites": {
-            "native": (NATIVE_BOOT, "enter_field_live"),
+            "native": (NATIVE_BOOT_SCENE_ENTRY, "enter_field_live"),
             "web": (WEB_RUNTIME_DISC_LOAD, "load_disc"),
         },
         "mode": "symbols_all",
@@ -1499,7 +1501,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "that each still routes through it - scanning for `set_*` in the host "
         "bodies would pass trivially once the calls moved into the kernel",
         "sites": {
-            "native": (NATIVE_BOOT, "enter_field_live"),
+            "native": (NATIVE_BOOT_SCENE_ENTRY, "enter_field_live"),
             "web": (WEB_PLAY_BATTLE, "arm_live_battles"),
         },
         "mode": "symbols_all",
@@ -1522,7 +1524,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "rather than around it",
         "sites": {
             "native_window": (NATIVE_REDRAW, "handle_redraw"),
-            "native_boot": (NATIVE_BOOT, "tick"),
+            "native_boot": (NATIVE_BOOT_FRAME_TICK, "tick"),
             "web": (WEB_PLAY_MENU_OPEN_CLOSE, "play_menu_open"),
         },
         "mode": "symbols_all",
@@ -4802,7 +4804,12 @@ def check_boot_installs() -> tuple[list[str], list[str], int]:
     """Tier 13. `(problems, waived_notes, native_installs_checked)`."""
     if not BOOT_NATIVE.is_file():
         return [f"boot installs: {BOOT_NATIVE.relative_to(REPO)} missing"], [], 0
-    native_src = BOOT_NATIVE.read_text(encoding="utf-8")
+    # The boot module is `boot.rs` plus its `boot/` children; an install in
+    # any of them is the native boot's.
+    native_src = "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in [BOOT_NATIVE, *sorted(BOOT_NATIVE.with_suffix("").glob("*.rs"))]
+    )
     native = boot_install_calls(native_src)
     web: set[str] = set()
     page_builds_session = False
