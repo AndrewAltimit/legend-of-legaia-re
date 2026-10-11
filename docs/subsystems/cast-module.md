@@ -1287,7 +1287,7 @@ head over the phase, arms that stage clips and set `+0x21D` rates and
 is therefore data. `cast_module_ticks::chain_bodies` holds one descriptor per
 body, with every arm's landing VA and every stage, rate and wrapper site;
 `run_chain_body` interprets them. The disc-gated
-`crates/engine-vm/tests/cast_chain_bodies_real.rs` re-derives each descriptor
+`crates/engine-battle-vm/tests/cast_chain_bodies_real.rs` re-derives each descriptor
 from the owning image.
 
 Four need more than a descriptor:

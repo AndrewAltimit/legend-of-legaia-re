@@ -959,7 +959,7 @@ wait must not re-stamp its stale heading over a pose another writer set (the
 interact face-the-speaker bearing being the case that regressed before).
 
 Disc oracle:
-[`crates/engine-vm/tests/ambient_motion_disc_oracle.rs`](../../crates/engine-vm/tests/ambient_motion_disc_oracle.rs)
+[`crates/engine-motion-vm/tests/ambient_motion_disc_oracle.rs`](../../crates/engine-motion-vm/tests/ambient_motion_disc_oracle.rs)
 re-derives the disc-wide census (every scene bundle's MAN → tail-section 1 →
 every record → every gated variant → every `0x04`/`0x0D` site) and replays
 each site from four start headings at three frame scalars, asserting the

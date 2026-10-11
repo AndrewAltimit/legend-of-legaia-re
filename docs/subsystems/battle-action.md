@@ -1034,7 +1034,7 @@ party) - so the group arm is the ordinary all-target cast, not an edge case.
 `BattleActionHost::actor_position` accessor (`+0x34` / `+0x38`);
 `engine-core`'s `BattleHostImpl` answers it from the seat
 `World::enter_battle` stamps out of the retail stage tables. Covered by
-`crates/engine-vm/tests/battle_cast_facing.rs` and
+`crates/engine-battle-vm/tests/battle_cast_facing.rs` and
 `crates/engine-core/tests/battle_cast_facing_chain.rs`.
 
 ## Per-actor sub-state surface

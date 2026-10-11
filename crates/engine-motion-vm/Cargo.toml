@@ -3,6 +3,8 @@ name = "legaia-engine-motion-vm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_motion_vm"
@@ -11,3 +13,13 @@ path = "src/lib.rs"
 [dependencies]
 legaia-engine-system.workspace = true
 legaia-scene-formats.workspace = true
+
+[dev-dependencies]
+legaia-container-formats.workspace = true
+# The ambient-motion disc oracle LZS-decodes each scene bundle's MAN to
+# re-derive the facing-op census (disc-gated; no bytes committed).
+legaia-lzs.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

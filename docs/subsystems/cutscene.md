@@ -1407,7 +1407,7 @@ integer law verbatim, plus `curve_unit` as the normalized `f32` shape the render
   1-6 display-frame read skew, except the two frames on which a new beat re-armed the block
   mid-read.
 - The env-gated oracle
-  [`camera_mover_recomp_oracle`](../../crates/engine-vm/tests/camera_mover_recomp_oracle.rs)
+  [`camera_mover_recomp_oracle`](../../crates/engine-battle-vm/tests/camera_mover_recomp_oracle.rs)
   (`LEGAIA_RECOMP_TRACE_DIR`; see [recomp differential](../tooling/recomp-differential.md))
   replays whole staged beats against per-display-frame captures of the opening chain and
   reproduces the snap, mode-1, mode-2 and mode-4 beats **bit-exact** per frame within the

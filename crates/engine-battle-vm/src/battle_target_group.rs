@@ -348,7 +348,7 @@ mod tests {
     /// back into a world position, takes the bearing from the actor to it,
     /// biases by a half-turn and masks to 12 bits before storing into `+0x46`.
     /// This is the unit-level statement of it; the SM-level one is
-    /// `crates/engine-vm/tests/battle_cast_facing.rs`.
+    /// `crates/engine-battle-vm/tests/battle_cast_facing.rs`.
     #[test]
     fn cast_begin_composes_the_aim_with_the_live_bearing_kernel() {
         use crate::battle_action::bearing_12bit_approx;

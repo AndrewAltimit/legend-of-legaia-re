@@ -746,7 +746,7 @@ The grid's far colour is the backdrop's staged far colour; there is no separate 
 
 Port: `legaia_engine_battle_vm::battle_ground_grid` carries the laws (`grid_ir0`, `grid_far_colour`,
 `OutdoorCueTable`, the ramp constants), with the SCUS table pinned by
-`crates/engine-vm/tests/battle_grid_cue_scus_real.rs`. `engine-render` stages a per-draw `DrawCue`
+`crates/engine-battle-vm/tests/battle_grid_cue_scus_real.rs`. `engine-render` stages a per-draw `DrawCue`
 (retail sets the DPCS inputs per drawn object) and the play-window grid draws under the `SZ >> 2` ramp
 toward the per-stage far colour. The browser play page draws the same grid from the same table:
 `play_battle_ground_cue_json` hands the page the engine-resolved far colour and the page renderer

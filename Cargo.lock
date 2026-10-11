@@ -1479,7 +1479,9 @@ dependencies = [
  "legaia-engine-system",
  "legaia-game-tables",
  "legaia-overlay-images",
+ "legaia-prot",
  "legaia-scene-formats",
+ "serde_json",
 ]
 
 [[package]]
@@ -1669,7 +1671,9 @@ dependencies = [
 name = "legaia-engine-motion-vm"
 version = "0.1.0"
 dependencies = [
+ "legaia-container-formats",
  "legaia-engine-system",
+ "legaia-lzs",
  "legaia-scene-formats",
 ]
 
@@ -1839,18 +1843,9 @@ dependencies = [
 name = "legaia-engine-vm"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "legaia-actor-formats",
  "legaia-anm",
- "legaia-container-formats",
- "legaia-engine-battle-vm",
- "legaia-engine-motion-vm",
- "legaia-game-tables",
- "legaia-lzs",
  "legaia-minigame-formats",
- "legaia-prot",
  "legaia-scene-formats",
- "serde_json",
 ]
 
 [[package]]

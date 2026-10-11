@@ -1253,7 +1253,7 @@ and the two nuances the port leaves un-carried - is on
 [`cutscene.md`](cutscene.md#per-style-emitters-render-track-gtegpu).
 `crates/engine-render/src/tests/battle_intro_emitter.rs` pins per-style packet
 counts, geometry and OT linkage, and
-`crates/engine-vm/tests/battle_intro_chain.rs` the working-set arithmetic.
+`crates/engine-battle-vm/tests/battle_intro_chain.rs` the working-set arithmetic.
 
 <a id="the-curtain-is-a-render-to-texture-and-only-its-row-pass-is-on-screen"></a>
 

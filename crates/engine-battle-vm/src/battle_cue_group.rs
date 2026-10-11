@@ -136,7 +136,7 @@ pub struct CueTables<'a> {
 /// `0x801F6470` groups) off PROT 0898 - through
 /// [`BattleActionHost::cue_tables`](crate::battle_action::BattleActionHost::cue_tables),
 /// so a host with no overlay expands nothing rather than expanding synthetic
-/// records. Composition oracle: `crates/engine-vm/tests/battle_cue_group_real.rs`.
+/// records. Composition oracle: `crates/engine-battle-vm/tests/battle_cue_group_real.rs`.
 ///
 /// Retail reaches this from `FUN_800402F4`, the item / restore applier, at
 /// eleven branches of its 132-entry class jump table (`0x80014FA0`); the port

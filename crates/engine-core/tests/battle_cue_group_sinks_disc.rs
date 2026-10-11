@@ -1,7 +1,7 @@
 //! Disc-gated: a committed battle item's cue group reaches the world's spawn
 //! and SFX sinks - the engine half of the `FUN_801E22C8` wiring.
 //!
-//! `crates/engine-vm/tests/battle_cue_group_real.rs` proves the selection and
+//! `crates/engine-battle-vm/tests/battle_cue_group_real.rs` proves the selection and
 //! the expansion against the real tables; this proves the other end, that
 //! each expanded [`CueSpawn`] lands somewhere a host drains. The two arms go
 //! to the two paths retail's own arms go to:

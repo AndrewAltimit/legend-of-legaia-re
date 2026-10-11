@@ -356,7 +356,7 @@ default; `--no-damage-finish` keeps the flat path, and the finisher supplies no
 guard halve because the Spirit stance is already the Defense triple. The
 `legaia_actor_formats::monster_archive` accessors (`attack()` / `defense_high()` /
 `defense_low()`) and `engine-core`'s `monster_def_from_record` follow the ATK /
-UDF / LDF binding. Regressions: `engine-vm/tests/battle_physical_predamage.rs`,
+UDF / LDF binding. Regressions: `engine-battle-vm/tests/battle_physical_predamage.rs`,
 `engine-core/tests/battle_physical_damage.rs`.
 
 ### The juggle window - what makes a monster "juggleable"

@@ -129,7 +129,7 @@ Retail carries **two** per-actor motion VMs and both are ported: `motion_vm`
 [`legaia-engine-motion-vm`](../engine-motion-vm/README.md)
 (`legaia_engine_motion_vm::motion_vm`, `legaia_engine_motion_vm::ambient_motion`,
 `legaia_engine_motion_vm::ambient_motion_ops`). This crate does not depend on
-it; the disc oracles in `tests/` name it as a dev-dependency.
+it, and the oracles that pin both VMs are that crate's own `tests/`.
 
 ## `actor_tick` - `FUN_80021DF4`
 
@@ -213,7 +213,7 @@ the battle camera script, `psx_camera`, the cast-module ticks and most
 battle-overlay leaves live in
 [`legaia-engine-battle-vm`](../engine-battle-vm/README.md)
 (`legaia_engine_battle_vm::battle_action`, ...). This crate does not depend
-on it outside its tests.
+on it; neither crate sits below the other.
 
 ## See also
 

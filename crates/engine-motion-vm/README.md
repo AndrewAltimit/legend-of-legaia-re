@@ -47,8 +47,8 @@ moving-class actor's requested move to its standing move, is in
 | `ambient_motion_ops` | The rest of the op bodies as further `impl AmbientMotion` blocks: story-flag writes, bit ops, teleport, model swap, scalar tweens, and the effects they report to the host. |
 
 The disc oracles that pin both VMs against every scene MAN
-(`ambient_motion_disc_oracle`, `ambient_motion_ops`) stay in
-`crates/engine-vm/tests`.
+(`ambient_motion_disc_oracle`, `ambient_motion_ops`) are this crate's
+`tests/`.
 
 ## See also
 
