@@ -1081,7 +1081,7 @@ window halfword indexes the field overlay's own 27-record descriptor table at
 resolved the way a spawn record's is, `switch` arms included, which is what
 reaches most of the pause menu's programs: their `lui`/`addiu` sits in the
 delay slot of a `j` to one shared call, outside the eight-word window
-[`widget_script::scan`](../../crates/overlay-images/src/widget_script.rs) reads. Each
+[`widget_script::scan`](../../crates/game-tables/src/widget_script.rs) reads. Each
 interpreter is image-local, so each row applies to its own entry alone - at any
 other image the same `jal` word names whatever that image holds at the VA.
 

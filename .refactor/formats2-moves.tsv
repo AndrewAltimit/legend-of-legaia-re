@@ -1,0 +1,6 @@
+legaia_overlay_images::move_power	legaia_game_tables::move_power
+legaia_overlay_images::menu_windows	legaia_game_tables::menu_windows
+legaia_overlay_images::widget_script	legaia_game_tables::widget_script
+legaia_asset::move_power	legaia_game_tables::move_power
+legaia_asset::menu_windows	legaia_game_tables::menu_windows
+legaia_asset::widget_script	legaia_game_tables::widget_script

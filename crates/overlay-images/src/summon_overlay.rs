@@ -391,7 +391,7 @@ pub fn parse(bytes: &[u8], link_base: u32) -> SummonOverlay {
 /// `jal FUN_80021B04` scan - notably the battle-action move-power effect-prototype
 /// pointer table (`0x801f6324`), whose `0x01..=0x63` entries spawn records in this
 /// exact format through the same stager (see
-/// [`crate::move_power`] / `docs/formats/move-power.md`).
+/// `legaia_game_tables::move_power` / `docs/formats/move-power.md`).
 ///
 /// `offsets` are file offsets into `bytes`; out-of-range or sub-header offsets are
 /// dropped. The returned parts are sorted by offset and deduped.

@@ -6,7 +6,7 @@
 //!
 //! - **summon branch** (`param_2 == 7`): the magnitude is derived from
 //!   caster/summon battle state, not a static table (see
-//!   [`crate::summon_overlay`] and `docs/formats/spell-table.md`).
+//!   [`legaia_overlay_images::summon_overlay`] and `docs/formats/spell-table.md`).
 //! - **non-summon branch** (`param_2 != 7`, the **arts / physical** path): the
 //!   attacker roll's modulus is read from a fixed-stride table based at
 //!   `0x801F4F5C`, indexed by the move-type byte `param_1`:
@@ -877,7 +877,7 @@ impl EffectAuxTables {
 /// Each of the table's [`EFFECT_AUX_TABLE_LEN`] entries is a pointer into this
 /// overlay's own data at a `[i16 model_sel][u16 reserved][move-VM bytecode]` record
 /// - the same scene-graph part format the summon stagers use
-///   ([`crate::summon_overlay`]). Entries can alias (several effect ids reuse one
+///   ([`legaia_overlay_images::summon_overlay`]). Entries can alias (several effect ids reuse one
 ///   record), so the returned parts are the **unique** records, sorted by offset,
 ///   each with its `bytecode` range bounded by the next record. Map a proto index
 ///   back to its record with [`EffectAuxTables::proto_record_offset`].
@@ -887,12 +887,12 @@ impl EffectAuxTables {
 /// belong to the move VM ([`crate::move_power`] feeds `legaia-engine-vm`).
 pub fn parse_effect_proto_records(
     battle_overlay_0898: &[u8],
-) -> Option<Vec<crate::summon_overlay::SummonPart>> {
+) -> Option<Vec<legaia_overlay_images::summon_overlay::SummonPart>> {
     let aux = EffectAuxTables::parse(battle_overlay_0898)?;
     let offsets: Vec<usize> = (0..EFFECT_AUX_TABLE_LEN as u8)
         .filter_map(|i| aux.proto_record_offset(i))
         .collect();
-    Some(crate::summon_overlay::parse_records_at(
+    Some(legaia_overlay_images::summon_overlay::parse_records_at(
         battle_overlay_0898,
         &offsets,
     ))

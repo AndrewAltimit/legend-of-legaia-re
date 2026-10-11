@@ -11,4 +11,5 @@ path = "src/lib.rs"
 [dependencies]
 anyhow.workspace = true
 legaia-bytes.workspace = true
+legaia-overlay-images.workspace = true
 serde.workspace = true

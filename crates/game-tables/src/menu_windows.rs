@@ -332,7 +332,7 @@ impl MenuWindowTable {
 
 fn record_is_valid(d: &MenuWindowDescriptor) -> bool {
     let renderer_ok = d.renderer_va == 0
-        || (MENU_OVERLAY_BASE_VA..crate::static_overlay::OVERLAY_WINDOW_HI)
+        || (MENU_OVERLAY_BASE_VA..legaia_overlay_images::static_overlay::OVERLAY_WINDOW_HI)
             .contains(&d.renderer_va);
     // Home rects sit on (or just off) the 320x240 display; parked/offscreen
     // homes stay within one screen of it.

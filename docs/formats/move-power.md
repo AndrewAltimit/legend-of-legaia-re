@@ -7,7 +7,7 @@ contact. A 128-byte map translates a battle move id to a record index. Party
 Tactical Arts and basic attacks do not use this table. The same data band also
 holds the effect-prototype, CLUT-source and cue-group tables the records index.
 
-Parser: `legaia_asset::move_power` (`crates/overlay-images/src/move_power.rs`).
+Parser: `legaia_asset::move_power` (`crates/game-tables/src/move_power.rs`).
 CLI: `asset move-power <raw PROT 0898 entry>` (`--effect-index` for the inverse
 map). Engine: `engine-core::move_power::MovePowerCatalog`, loaded onto
 `World::tables.move_power` from PROT 0898.

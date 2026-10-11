@@ -4,7 +4,7 @@ The code-overlay image formats, split out of `legaia-asset`: the readers
 whose input is a MIPS overlay image rather than an asset container.
 `legaia-asset` depends on this crate, never the other way round, and
 re-exports every module at its old path (`legaia_asset::static_overlay`,
-`legaia_asset::move_power`, ...), so downstream crates name the same paths
+`legaia_asset::slot_b_module`, ...), so downstream crates name the same paths
 they always did.
 
 ## What lives here
@@ -17,11 +17,17 @@ they always did.
 | `slot_b_module` | File layout of the slot-B cast / summon images: head table, code, spawn-record band, inherited tail. See [`slot-b-module-layout.md`](../../docs/formats/slot-b-module-layout.md). |
 | `summon_overlay` | The spawn-call scan and part records of a slot-B module. See [`cast-module.md`](../../docs/subsystems/cast-module.md). |
 | `cast_effect_pool` | The cast-module band indexed by PROT entry, each image resolved to its effect parts. |
-| `move_power` | The battle overlay's per-move power + behaviour table and its id map. See [`move-power.md`](../../docs/formats/move-power.md). |
-| `menu_windows` | The menu overlay's window descriptor table. See [`field-menu.md`](../../docs/subsystems/field-menu.md). |
-| `widget_script` | The window-script VM's bytecode programs in the menu overlay's data segment. See [`window-script.md`](../../docs/formats/window-script.md). |
 
 ## The split line
+
+This crate holds the image-level formats: what an overlay image is, where it
+loads, and how a slot-B module is laid out band by band (`summon_overlay` and
+`cast_effect_pool` are that layout's spawn-record and effect-part bands, and
+`slot_b_module` and `summon_overlay` call each other). A data table that
+merely happens to be resident in an overlay - move power, the window
+descriptors, the window scripts - lives in
+[`legaia-game-tables`](../game-tables/README.md), which depends on this crate
+for the overlay window bounds and the part-record reader.
 
 Each of these takes an overlay image as a byte slice and names only its
 siblings plus `legaia-bytes` and `legaia-lzs`. None reaches the asset
@@ -39,5 +45,6 @@ the docs open by name.
 ## See also
 
 - [`crates/asset`](../asset/README.md) - the format hub this was split from.
-- [`crates/game-tables`](../game-tables/README.md) - the static SCUS tables,
-  including the spell table whose id space `move_power` shares.
+- [`crates/game-tables`](../game-tables/README.md) - the static data tables,
+  the overlay-resident ones (`move_power`, `menu_windows`, `widget_script`)
+  among them.
