@@ -4,7 +4,10 @@ The engine's PSX runtime-system layer that never touches `World`: pad input
 and the retail pad pump, the streaming-chunk installer and the MDEC DMA sync,
 the RAM-cell registry, the global sound state, the fade actor, the mode-entry
 initialisers, the menu cursor primitive and the BIOS `rand` generators. It is
-the bottom of the engine stack: no other engine crate is below it. Free of wgpu, winit and
+the bottom of the engine stack: no other engine crate is below it, and the
+only workspace crates it names are the two label crates `legaia-cheats` (the
+RAM-category taxonomy `ram_map` classifies cells with) and `legaia-gamedata`
+(the music table `music_labels` joins to the disc). Free of wgpu, winit and
 cpal, so it builds for native and `wasm32` alike.
 
 `legaia-engine-core` owns the composition - `World` drives the fade, ticks the

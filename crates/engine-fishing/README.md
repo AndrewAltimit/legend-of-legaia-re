@@ -23,7 +23,7 @@ All of it is documented in
 The five modules name each other, the disc-parsed fishing tables in
 `legaia-minigame-formats`, the field-region queries in `legaia-engine-field`, pad input
 and the BIOS `rand` in `legaia-engine-system`, the GTE divide in
-`legaia-render-kernels`, the vertex-morph stager in `legaia-engine-vm` and
+`legaia-render-kernels`, the vertex-morph stager in `legaia-scene-formats` and
 the mesh walker in `legaia-tmd` - and no other minigame. That makes fishing the one
 game in the overlay band that separates as a leaf: the dance, the Baka
 Fighter duel, the slot machine and the Muscle Dome ladder share the band's

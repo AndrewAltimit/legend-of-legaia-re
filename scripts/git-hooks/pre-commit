@@ -222,6 +222,18 @@ if command -v python3 >/dev/null 2>&1 \
     fi
 fi
 
+# Crate layering. The edges among the engine's kernel crates are a committed
+# table; an edge added for one symbol looks to the compiler exactly like one a
+# crate's role calls for, so nothing else reads the difference.
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-crate-layering.py" ]]; then
+    printf '[pre-commit] crate layering\n'
+    if ! python3 scripts/ci/check-crate-layering.py; then
+        printf '[pre-commit] see scripts/ci/crate-layering.toml (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # Disc-denominated coverage ratchet. Unlike the port catalog, whose denominator
 # is the set of addresses this project cites, this measures against the game's
 # own bytes -- so it can notice a subsystem nobody has cited. It is a RATCHET:

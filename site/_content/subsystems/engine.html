@@ -152,6 +152,7 @@
     </tbody>
   </table>
   </div>
+  <p>The edges among the <code>World</code>-free kernel crates are a committed table, <code>scripts/ci/crate-layering.toml</code>, and a gate fails any <code>Cargo.toml</code> that departs from it. Each crate&rsquo;s rank is derived from its row: <code>engine-system</code>, <code>engine-dialog</code> and <code>engine-vm</code> at the bottom, then <code>engine-mode</code> and the battle and motion VMs, then <code>engine-battle</code> and <code>render-kernels</code>, then the effect, field and draw-list kernels, then fishing, the other minigames, the menus and the minigame scenes. A kernel crate never reaches <code>engine-core</code> or a host, and the edges a crate&rsquo;s role alone does not explain are listed in the table with the items that hold them.</p>
 </section>
 
 <section class="doc-section" id="runtime-architecture">

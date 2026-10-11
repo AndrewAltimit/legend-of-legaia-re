@@ -49,7 +49,7 @@ simulation crate:
   its command menu, the ring / magic gates and the loadouts built off a live
   roster stay in `engine-core::muscle_dome`; `muscle_ringside` stays too.
 - **The engine bag** - `prize_exchange::apply_redeem` is generic over
-  `RedeemBag`; `engine-core` implements it for the world's `ItemBag`.
+  `RedeemBag`; `engine-menus` implements it for the world's `ItemBag`.
   `tile_board`'s per-cell draw assembly reads the `World` and is
   `engine-core::tile_board`.
 
@@ -57,5 +57,7 @@ The pure leaves these engines share with the rest of the engine (the BIOS
 `rand()` LCG, both pad-word layouts, the `.MAP` region tables, the field clip
 step, the retail camera globals, the camera-relative glide and the menu cursor
 navigator `menu_input`) live lower: pad words, `rand` and `menu_input` in
-`legaia-engine-system`, the camera kernels in `legaia-engine-battle-vm`, and
-the region tables and clip step in `legaia-engine-field`.
+`legaia-engine-system`, the camera kernels in `legaia-engine-battle-vm` and
+the clip step in `legaia-engine-vm` (`actor_tick`). The `.MAP` region tables
+are `legaia-engine-field`'s, read by `legaia-engine-fishing`'s venue floor;
+this crate does not depend on `legaia-engine-field` or `legaia-engine-battle`.

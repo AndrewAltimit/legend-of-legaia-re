@@ -107,7 +107,7 @@ The shape to read off it:
 
 - **Every crate names the crate that owns the code it uses.** No crate re-exports another workspace crate, so the first segment of a path is where the code is.
 - **The format-family crates are the top of the preservation stack.** `container-formats`, `scene-formats`, `actor-formats`, `minigame-formats`, `ui-formats`, `game-tables` and `overlay-images` hold the Legaia-specific formats over the per-format parsers. `asset` is the `asset` command-line binary over them and `disc-audit`; it has no library.
-- **`engine-system`, `engine-dialog` and the VM crates are the bottom of the engine stack.** `engine-battle-vm`, `engine-motion-vm` and `engine-vm` hold the bytecode interpreters and state machines. They know nothing about GPU, audio or the `World`; each reaches the rest of the engine through a `Host` trait.
+- **`engine-system`, `engine-dialog` and the VM crates are the bottom of the engine stack.** `engine-battle-vm`, `engine-motion-vm` and `engine-vm` hold the bytecode interpreters and state machines. They know nothing about GPU, audio or the `World`; each reaches the rest of the engine through a `Host` trait. The three VM crates are siblings: `engine-vm` depends on no engine crate at all, the other two only on `engine-system`, and none of them names another.
 - **A ring of `World`-free kernel crates sits above them** (`engine-mode`, `engine-battle`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-minigames`, `engine-menus`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
 - **`engine-core` is where they meet.** It owns `World` and `SceneHost` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`shop`, `dance`, `tile_board`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
 - **Presentation is a separate branch.** `render-kernels` -> `engine-ui` -> `engine-render` and `engine-audio` do not depend on `engine-core`; the hosts compose them with it. `render-kernels` is also what the effect, field and minigame kernels link for GTE math.
@@ -153,9 +153,9 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-battle` | `engine-battle-vm`, `engine-system`, `actor-formats`, `game-tables`, `scene-formats`, `ui-formats`, `art`, `anm`, `save`, `tim`, `tmd`, `bytes` | `World`-free battle kernels. |
 | `render-kernels` | `engine-battle-vm`, `engine-vm`, `actor-formats`, `overlay-images`, `tim`, `tmd` | GTE math, screen prims, VRAM capture, effect emitters; no wgpu. |
 | `engine-effects` | `engine-battle`, `engine-battle-vm`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `tmd` | Effect kernels. |
-| `engine-field` | `engine-mode`, `engine-motion-vm`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `scene-formats`, `anm`, `mes`, `tmd` | Field kernels: actor programs, camera, cue routers. |
-| `engine-fishing` | `engine-field`, `engine-system`, `engine-vm`, `render-kernels`, `game-tables`, `minigame-formats`, `tmd` | Fishing rules engine. |
-| `engine-minigames` | `engine-fishing`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `save` | Minigame rules engines. |
+| `engine-field` | `engine-mode`, `engine-motion-vm`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `scene-formats`, `anm`, `mes`, `save`, `tmd` | Field kernels: actor programs, camera, cue routers. |
+| `engine-fishing` | `engine-field`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `scene-formats`, `tmd` | Fishing rules engine. |
+| `engine-minigames` | `engine-fishing`, `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `save` | Minigame rules engines. |
 | `engine-menus` | `engine-minigames`, `engine-field`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `ui-formats`, `art`, `font`, `save`, `tim` | Menu, title and memory-card front end. |
 | `engine-minigame-scenes` | `engine-menus`, `engine-minigames`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-system`, `render-kernels`, `actor-formats`, `container-formats`, `game-tables`, `minigame-formats`, `overlay-images`, `scene-formats`, `tim`, `tmd` | The minigames' 3D scene surfaces. |
 | `engine-core` | every `engine-*` kernel crate above, `render-kernels`, `disc-audit` + the format-family and parser crates | `World`, scene host and loading, battle loop, menu runtime, saves. |
@@ -169,10 +169,38 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `web-viewer` | `engine-session`, `engine-screens`, `engine-core`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
 | `asset-viewer` | `engine-core`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
 
+### The layering gate
+
+The edges among the `World`-free kernel crates are a committed table, [`scripts/ci/crate-layering.toml`](../../scripts/ci/crate-layering.toml), and [`check-crate-layering.py`](../../scripts/ci/check-crate-layering.py) fails a `Cargo.toml` that departs from it in either direction: an engine-layer dependency the crate's row does not list, or a listed one the manifest no longer declares. A crate's rank is derived from its row (one more than the highest rank it depends on), so the table has to stay acyclic; `--ranks` prints the stack:
+
+| Rank | Crates |
+|---|---|
+| 0 | `engine-system`, `engine-dialog`, `engine-vm` |
+| 1 | `engine-mode`, `engine-battle-vm`, `engine-motion-vm` |
+| 2 | `engine-battle`, `render-kernels` |
+| 3 | `engine-effects`, `engine-field`, `engine-ui` |
+| 4 | `engine-fishing` |
+| 5 | `engine-minigames` |
+| 6 | `engine-menus` |
+| 7 | `engine-minigame-scenes` |
+
+Three more rules ride on the same table. A kernel crate depends only on kernel crates, so nothing in it can reach `engine-core`, the session, the renderer or a host. A crate outside the engine layer (a format, tool or patcher crate) never depends on an engine-layer crate. And `engine-system` carries a `foreign` set: the only workspace crates it names are the two label crates `cheats` and `gamedata`.
+
+Most rows follow from the crates' roles. The ones that do not are listed in the table as `[[coupling]]` rows, each naming the items that hold the edge and why it stands. A coupling is an edge that moving a few items would not cut:
+
+- **The shared camera lives in `engine-battle-vm`.** `psx_camera`, `camera_mover`, `retail_cam`, the camera-relative kernels and the 12-bit trig are used by the field camera, the Baka Fighter duel and the draw kernels, but `psx_camera` takes its projection constants from the battle camera script and the camera-relative kernels take the battle camera's tween slots. That one family holds `engine-field -> engine-battle-vm` and half of `engine-minigames -> engine-battle-vm`, and it is why `render-kernels` sits above the battle VM.
+- **`engine-field -> engine-battle` is `encounter_record`.** The MAN field-script decoders build `EncounterRecord`, and the record expands itself into the monster catalog's formation type.
+- **`engine-effects -> engine-battle` is one lookup,** the summon catalogue resolving a spell id to its name through `retail_magic`.
+- **`engine-menus -> engine-field` is the equip commit.** The applier is a field-overlay dev-menu body (`dev_equip_commit`) that the pause menu's equip session calls too.
+- **`engine-fishing -> engine-field` is `field_regions`.** A venue floor is a field `.MAP` walk grid with tile triggers.
+- **`engine-ui -> engine-battle-vm` is the battle HUD model** (`battle_party_panel`, `battle_commit_log`): the draw-list builders project types defined beside the kernels that fill them.
+
+Adding an edge means editing the table, which is the point: the row is where the reason goes. A test that exercises another crate's code belongs in that crate's `tests/`, so a `[dev-dependencies]` edge needs its own `dev` entry.
+
 Notes on the split lines:
 
 - **Format crates stay engine-agnostic.** They produce typed in-memory data; the engine turns that into GPU resources and audio buffers.
-- **`engine-ui` is the wgpu-free leaf under `engine-render`.** It builds renderer-agnostic draw lists (`TextDraw` / `SpriteDraw`), which is what lets the browser consume them without linking wgpu.
+- **`engine-ui` is the wgpu-free draw layer under `engine-render`.** It builds renderer-agnostic draw lists (`TextDraw` / `SpriteDraw`), which is what lets the browser consume them without linking wgpu. It is not a leaf of the graph: it sits on `render-kernels` and on the battle HUD model in `engine-battle-vm`.
 - **`engine-ui` does not link `engine-core`,** so projecting engine state into its builders is a layer of its own. `engine-screens` is that layer for the shop-family screens: both play hosts call `shop_overlay_frame` and keep only input assembly, stage scale and upload.
 - **Battle splits three ways.** The action state machine and the arithmetic kernels it calls are in `engine-battle-vm` ([README](../../crates/engine-battle-vm/README.md) has the split line). The `World`-free kernels (monster AI script, catalogs, encounters, level-up, per-frame passes) are in `engine-battle`. The stateful side (round loop, command flow, cast band, monster turn picker) is in `engine-core`.
 - **Minigames split the same way.** Rules engines are in `engine-minigames` / `engine-fishing` ([README](../../crates/engine-minigames/README.md)); `World` glue and scene assembly stay in `engine-core`. The two 3D surfaces that load through a `read_prot` closure rather than a `Scene` (the Baka Fighter duel, the Muscle Dome arena) are in [`engine-minigame-scenes`](../../crates/engine-minigame-scenes/README.md).
