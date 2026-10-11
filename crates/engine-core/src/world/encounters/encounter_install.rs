@@ -250,7 +250,7 @@ impl World {
             return None;
         }
         let formation = legaia_engine_battle::encounter_formation::formation_def_from_record(
-            &record,
+            record,
             scene_label,
         );
         let formation_id = formation.formation_id;
