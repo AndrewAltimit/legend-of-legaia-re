@@ -14,7 +14,7 @@
 //! and handed to the prim dispatcher with the colour word `+0x74` and level
 //! `+0x78` - the ABE bit and ABR mode ORed into the packet, the packet
 //! colour depth-cued toward the word's far colour
-//! ([`crate::baka_impact_fx::ColourWord`]).
+//! ([`legaia_render_kernels::sprite_arm::ColourWord`]).
 //!
 //! Unlike the `0x2000` ribbon arm, whose builder is battle-overlay code, the
 //! sprite arm is SCUS-resident, so it draws in every mode.
@@ -24,7 +24,7 @@
 
 use legaia_engine_vm::move_vm::ActorState;
 
-use crate::baka_impact_fx::{ColourWord, sprite_arm_quad};
+use legaia_render_kernels::sprite_arm::{ColourWord, sprite_arm_quad};
 
 /// The draw-kind-4 render mode (`actor[+0x56]`) the dispatcher's case 4
 /// tests.

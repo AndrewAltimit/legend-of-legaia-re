@@ -11,9 +11,9 @@
 // World-free crates that own them.
 pub(crate) use legaia_engine_battle::battle_seats;
 pub(crate) use legaia_engine_field::packet_color;
-pub(crate) use legaia_engine_menus::{battle_input, muscle_dome};
+pub(crate) use legaia_engine_menus::battle_input;
 pub(crate) use legaia_engine_minigames::{
-    baka_cabinet, baka_fighter, baka_fighter_chrome, baka_impact_fx,
+    baka_cabinet, baka_fighter, baka_fighter_chrome, baka_impact_fx, muscle_dome,
 };
 pub(crate) use legaia_engine_system::mode_entry_init;
 

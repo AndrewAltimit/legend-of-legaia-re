@@ -438,7 +438,7 @@ impl BakaDuelScene {
     /// the part's colour word the way `FUN_80043390` applies it - the ABE
     /// bit forced on, the ABR mode ORed into the tpage, and the packet colour
     /// depth-cued toward the word's far colour
-    /// ([`crate::baka_impact_fx::ColourWord::cue`]).
+    /// ([`legaia_render_kernels::sprite_arm::ColourWord::cue`]).
     fn pose_impact(&mut self, fight: &BakaFight) {
         use crate::baka_impact_fx::ImpactDraw;
         let draws = fight.impact_fx().draws();
@@ -927,7 +927,7 @@ fn set<T: PartialEq + Copy>(dst: &mut T, v: T) -> bool {
 /// A prim's TSB word under an impact part's colour word: the ABE bit forced
 /// on when the word's bit 31 is set (`FUN_80043390` ORs it into every
 /// packet's code) and the word's ABR mode ORed into the tpage's bits 5..6.
-fn impact_tsb(tsb: u16, colour: crate::baka_impact_fx::ColourWord) -> u16 {
+fn impact_tsb(tsb: u16, colour: legaia_render_kernels::sprite_arm::ColourWord) -> u16 {
     let t = tsb | (u16::from(colour.abr) << 5);
     if colour.semi {
         legaia_tmd::mesh::pack_tsb_semi(t, true)

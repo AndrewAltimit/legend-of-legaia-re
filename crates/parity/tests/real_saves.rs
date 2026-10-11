@@ -206,7 +206,7 @@ fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
     // The four save slots assigned to Noa's level-up in the manifest
     // span pre / record-write / live-copy / settled frames at battle
     // scene `map01`. Asserts (a) the multi-frame write split documented
-    // in `engine_core::capture_observations::char_level_up`, and (b)
+    // in `parity::capture_observations::char_level_up`, and (b)
     // the settled byte-level deltas that
     // `engine_core::levelup::observations::noa_4_level_jump` codifies.
     //
@@ -237,7 +237,7 @@ fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
     // consistent with the level-up triplet (XP `102` u16 LE at
     // `NOA_BASE + 0x004`). All four slots are nominally `map01`,
     // but slot 4 may have been re-captured for ANM-strike work.
-    use legaia_engine_core::capture_observations::char_level_up as clu;
+    use legaia_parity::capture_observations::char_level_up as clu;
     if clu::read_xp_u16(r4, clu::NOA_BASE) != Some(102) {
         eprintln!(
             "[skip noa_level_up_triplet] mc4 doesn't carry the pre-Noa-LU \
@@ -247,7 +247,7 @@ fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
         return;
     }
 
-    use legaia_engine_core::capture_observations::char_level_up;
+    use legaia_parity::capture_observations::char_level_up;
     use legaia_engine_core::levelup::observations::noa_4_level_jump;
 
     let noa_record = (char_level_up::NOA_BASE, char_level_up::NOA_BASE + 0x414);
@@ -348,7 +348,7 @@ fn gala_level_up_triplet_pins_phase_split_and_settled_deltas() {
     let r8 = s8.main_ram().unwrap();
     let r9 = s9.main_ram().unwrap();
 
-    use legaia_engine_core::capture_observations::char_level_up;
+    use legaia_parity::capture_observations::char_level_up;
     use legaia_engine_core::levelup::observations::gala_4_level_jump;
 
     // Fingerprint check: confirm mc7 reads a Gala record value
@@ -457,7 +457,7 @@ fn encounter_trigger_diff_loads_battle_overlay() {
     // mc1 (pre-encounter, walking `map01`) → mc2 (battle just initiated,
     // same `map01` scene). Pins the encounter-trigger battle-overlay
     // residency window. The factual deltas this test asserts against
-    // are codified in `engine_core::capture_observations::encounter_trigger`;
+    // are codified in `parity::capture_observations::encounter_trigger`;
     // skips when the corpus has been re-captured for unrelated work and
     // mc1/mc2 no longer hold the expected scenes.
     if !require_slot_scenes("encounter_trigger_diff", &[(1, "map01"), (2, "map01")]) {
@@ -472,7 +472,7 @@ fn encounter_trigger_diff_loads_battle_overlay() {
     let r1 = s1.main_ram().unwrap();
     let r2 = s2.main_ram().unwrap();
 
-    use legaia_engine_core::capture_observations::encounter_trigger::*;
+    use legaia_parity::capture_observations::encounter_trigger::*;
 
     // Inside the documented overlay residency window, a single broad
     // region of changes should account for ~133 KB. The threshold
@@ -542,7 +542,7 @@ fn fire_book_use_diff_pins_vahn_record_write() {
     // just used on Vahn). Pins the per-character record write footprint.
     // Skips when mc4/mc5 have been re-captured for unrelated work; the
     // factual deltas remain codified in
-    // `engine_core::capture_observations::vahn_fire_book_use`.
+    // `parity::capture_observations::vahn_fire_book_use`.
     if !require_slot_scenes("fire_book_use_diff", &[(4, "dolk"), (5, "dolk")]) {
         return;
     }
@@ -555,7 +555,7 @@ fn fire_book_use_diff_pins_vahn_record_write() {
     let r4 = s4.main_ram().unwrap();
     let r5 = s5.main_ram().unwrap();
 
-    use legaia_engine_core::capture_observations::vahn_fire_book_use::*;
+    use legaia_parity::capture_observations::vahn_fire_book_use::*;
 
     // Window the diff to Vahn's full record; assert exactly one region
     // at the documented offset.
@@ -611,7 +611,7 @@ fn town01_field_pack_save_documents_active_scene_and_ram_base() {
     // Confirms (1) the scene-name table reads `town01` and (2) the
     // active-scene field-pack RAM base recovered from
     // `_DAT_8007B8D0 - 0x12800` matches the pinned value in
-    // `engine_core::capture_observations::field_pack_load`.
+    // `parity::capture_observations::field_pack_load`.
     let Some(p2) = save_for(2) else {
         eprintln!("{}", skip_msg(2));
         return;
@@ -631,7 +631,7 @@ fn town01_field_pack_save_documents_active_scene_and_ram_base() {
     let name = &r[off + 0x08..off + 0x10];
     assert_eq!(&name[..6], b"town01", "mc2 scene label should be town01");
 
-    use legaia_engine_core::capture_observations::field_pack_load;
+    use legaia_parity::capture_observations::field_pack_load;
     let recovered =
         field_pack_load::recover_base(r).expect("mc2 should have a non-zero load-dest pointer");
     assert_eq!(
@@ -670,7 +670,7 @@ fn town01_vs_town0c_diff_lights_up_field_pack_pool() {
     let r0 = s0.main_ram().unwrap();
     let r2 = s2.main_ram().unwrap();
 
-    use legaia_engine_core::capture_observations::field_pack_load;
+    use legaia_parity::capture_observations::field_pack_load;
 
     let base = field_pack_load::recover_base(r2).expect("mc2 base recoverable");
     let opts = DiffOptions {
@@ -727,7 +727,7 @@ fn intro_rim_elm_to_normal_rim_elm_transition_pins_loader_order_of_ops() {
     let r2 = s2.main_ram().unwrap();
     let r3 = s3.main_ram().unwrap();
 
-    use legaia_engine_core::capture_observations::{field_pack_intra_transition, field_pack_load};
+    use legaia_parity::capture_observations::{field_pack_intra_transition, field_pack_load};
 
     // mc2 settled state: pool slot 0 = town01, base = pinned town01 base.
     assert_eq!(
@@ -795,8 +795,8 @@ fn fmv_overlay_residency_in_mc1_pins_compact_table_address() {
     let s = SaveState::from_path(&p1).unwrap();
     let r = s.main_ram().unwrap();
 
-    use legaia_engine_core::capture_observations::str_fmv_overlay;
     use legaia_game_tables::str_fmv_table;
+    use legaia_parity::capture_observations::str_fmv_overlay;
 
     if !str_fmv_overlay::is_resident(r) {
         eprintln!(
@@ -892,7 +892,7 @@ fn battle_init_overlay_pair_pins_battle_bundle_window_and_actor_tick_wiring() {
     let r1 = s1.main_ram().unwrap();
     let r2 = s2.main_ram().unwrap();
 
-    use legaia_engine_core::capture_observations::battle_init_overlay as bio;
+    use legaia_parity::capture_observations::battle_init_overlay as bio;
 
     // mc2 formation cell should be populated. mc1 may already carry a
     // pre-armed formation (the user may capture "encounter armed" rather
@@ -972,7 +972,7 @@ fn battle_action_anim_pair_pins_dispatch_pointer_table_and_anim_pc_window() {
     let r3 = s3.main_ram().unwrap();
     let r4 = s4.main_ram().unwrap();
 
-    use legaia_engine_core::capture_observations::battle_action_animation as ba;
+    use legaia_parity::capture_observations::battle_action_animation as ba;
 
     // Slot-0 dispatch pointer table: 4 × u32, all the same value.
     let p3 = ba::read_dispatch_pointers(r3, ba::SLOT0_ACTOR_RECORD_BASE)
@@ -1053,7 +1053,7 @@ fn item_use_pair_pins_field_pack_base_flip_and_script_vm_ctx_shift() {
     let r2 = s2.main_ram().unwrap();
     let r3 = s3.main_ram().unwrap();
 
-    use legaia_engine_core::capture_observations::item_use_battle_event as iu;
+    use legaia_parity::capture_observations::item_use_battle_event as iu;
 
     let pre = read_u32(r2, iu::FIELD_PACK_BASE_PTR_ADDR);
     let post = read_u32(r3, iu::FIELD_PACK_BASE_PTR_ADDR);
@@ -1109,8 +1109,8 @@ fn item_use_pair_pins_field_pack_base_flip_and_script_vm_ctx_shift() {
 /// `(0x1A, expected_fmv_id)` for every save.
 #[test]
 fn cutscene_trigger_corpus_pins_fmv_id_across_nine_saves() {
-    use legaia_engine_core::capture_observations::cutscene_trigger_corpus as ctc;
-    use legaia_engine_core::capture_observations::field_pack_load;
+    use legaia_parity::capture_observations::cutscene_trigger_corpus as ctc;
+    use legaia_parity::capture_observations::field_pack_load;
 
     // Slot fingerprint: the user's per-STR captures are all on
     // `map01`. If any slot fingerprints differently, the corpus

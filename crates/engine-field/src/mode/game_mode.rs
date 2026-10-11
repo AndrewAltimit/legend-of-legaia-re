@@ -365,7 +365,7 @@ pub const WARP_SUB_ID_ADDR: u32 = 0x8007_BA34;
 /// Read the warp sub-id register out of a main-RAM image (signed 16-bit LE).
 ///
 /// The companion of
-/// `legaia_engine_core::capture_observations::cutscene_trigger_corpus::read_game_mode`:
+/// `legaia_parity::capture_observations::cutscene_trigger_corpus::read_game_mode`:
 /// a capture-side consumer needs both words to resolve a [`SceneMode`], and
 /// taking only the mode word is what makes a live minigame frame read as
 /// `Title`.

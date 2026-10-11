@@ -15,7 +15,6 @@
 // Kernels these modules name as `crate::...`, which engine-core re-exports at
 // its root; binding them here keeps the moved files' paths unchanged.
 use legaia_engine_battle::retail_magic;
-use legaia_engine_minigames::baka_impact_fx;
 
 pub mod action_effect_script;
 pub mod effect_default_arm;

@@ -12,7 +12,7 @@
 //! is not its HUD. That strip's draw sites gate on `*(u8*)0x8007BD0C ==
 //! 0xB6`, and `0x8007BD0C` is the four-slot monster-id formation cell
 //! (`legaia_engine_core::encounter_record`,
-//! `legaia_engine_core::capture_observations::battle_init_overlay::FORMATION_CELL_ADDR`),
+//! `legaia_parity::capture_observations::battle_init_overlay::FORMATION_CELL_ADDR`),
 //! so the gate reads "the first enemy is monster `0xB6`" - Koru, the game's
 //! one four-turn timed boss. The dome's own roster tops out at id `0xAA`, so
 //! no dome round can satisfy it. See
@@ -105,9 +105,9 @@ pub use session::*;
 
 // The World-free half of the dome - the course ladder and score tables, the
 // contest ladder above a leg, the hub screen's envelopes and the shared
-// constants - lives in `legaia-engine-minigames`; re-exported so every
-// `legaia_engine_core::muscle_dome::<item>` path keeps resolving.
-pub use legaia_engine_minigames::muscle_dome::*;
+// constants - lives in `legaia_engine_minigames::muscle_dome`; the session
+// files below reach it through `super::*`.
+use legaia_engine_minigames::muscle_dome::*;
 
 /// The `Turns Left / HP Left` strip is Koru's, not the dome's: its gate
 /// (`TIMED_FIGHT_MONSTER_ID`), its bound and its readout live in

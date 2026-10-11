@@ -301,7 +301,7 @@ impl SummonScene {
                     flags_52: s.field_52,
                     morph: PartMorph::of(s),
                     scale: s.field_72,
-                    colour: crate::baka_impact_fx::ColourWord::of(s),
+                    colour: legaia_render_kernels::sprite_arm::ColourWord::of(s),
                 }
             })
             .collect()

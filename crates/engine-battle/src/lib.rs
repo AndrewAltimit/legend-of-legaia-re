@@ -15,6 +15,7 @@
 //! here.
 
 pub mod accessory_passives;
+pub mod anim_cue;
 pub mod ap_gauge;
 pub mod art_strike;
 pub mod arts_command_input;
@@ -45,6 +46,7 @@ pub mod retail_magic;
 pub mod seru_learning;
 pub mod seru_stats;
 pub mod seru_trade;
+pub mod sfx_cue;
 pub mod spells;
 pub mod tactical_arts;
 pub mod tactical_arts_editor;

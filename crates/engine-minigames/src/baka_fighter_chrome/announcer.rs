@@ -11,6 +11,16 @@ pub struct XaCue {
     pub dur: u16,
 }
 
+impl From<XaCue> for legaia_engine_battle::sfx_cue::XaVoiceClip {
+    fn from(c: XaCue) -> Self {
+        Self {
+            clip: u32::from(c.clip),
+            channel: u32::from(c.chan),
+            duration_sectors: u32::from(c.dur),
+        }
+    }
+}
+
 /// The intro title card's first announcer line (`XA33` channel `0x0E`),
 /// started once as the logo fades in ([`IntroTitle::frame`]).
 pub const INTRO_LOGO_XA: XaCue = XaCue {

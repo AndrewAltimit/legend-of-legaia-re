@@ -551,7 +551,7 @@ pub mod cutscene_trigger_corpus;
 /// `legaia_engine_core::seru_learning` approximates for Genocide-Crystal captures).
 ///
 /// **Real spell ids run high.** Gimard's spell id `0x81` sits far above the
-/// port-side [`crate::spells::SpellCatalog::vanilla`] id range
+/// port-side [`legaia_engine_battle::spells::SpellCatalog::vanilla`] id range
 /// (`0x10..=0x51`). The retail spell-id space is therefore distinct from
 /// the engine's placeholder catalog - a single data point, not yet a full
 /// re-map.

@@ -581,7 +581,7 @@ The tag-`0x67` ribbon call is surfaced as `ClipImpactWrite::effect_at_target`, s
 
 ## Runtime residency windows
 
-Save-state pairs that bracket a transition, codified as constants in [`capture_observations`](../../crates/engine-system/src/capture_observations.rs) with disc-gated tests in `crates/parity/tests/real_saves.rs`.
+Save-state pairs that bracket a transition, codified as constants in [`capture_observations`](../../crates/parity/src/capture_observations.rs) with disc-gated tests in `crates/parity/tests/real_saves.rs`.
 
 <a id="battle-scene-init-residency-window"></a>
 

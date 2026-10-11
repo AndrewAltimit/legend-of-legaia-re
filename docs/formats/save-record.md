@@ -48,7 +48,7 @@ Field offsets are pinned by a fusion of three sources:
   ability-bitmap reader, `FUN_80042DBC` spell-list pop, and the
   level-up overlay applier);
 - captured save-state observations in
-  `engine_core::capture_observations::char_level_up` and the
+  `parity::capture_observations::char_level_up` and the
   `levelup::observations::{noa,gala}_4_level_jump` triplets;
 - the GameShark cheat database under [`data/cheats/`](../../data/cheats/)
   whose every effect is a labelled `(addr, value)` write.

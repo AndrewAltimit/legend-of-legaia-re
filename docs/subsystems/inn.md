@@ -132,7 +132,7 @@ own local flags.
 
 The engine path is `World::trigger_field_interact` ->
 `World::drive_inline_dialogue` -> `World::step_inline_dialogue`
-([`inline_dialogue`](../../crates/engine-dialog/src/inline_dialogue.rs)) ->
+([`inline_dialogue`](../../crates/engine-field/src/inline_dialogue.rs)) ->
 `legaia_engine_vm::field::step`.
 
 - **Cross-context clip words.** The runner binds the poked actor's `+0x62`

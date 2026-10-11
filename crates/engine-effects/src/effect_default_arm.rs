@@ -12,7 +12,7 @@
 //! sprite arm ([`crate::effect_sprite_arm`]) takes: scaled by
 //! `+0x72 / 0x1000`, turned by the rotation banks, the colour word `+0x74`
 //! and level `+0x78` ORing ABE / ABR into the packets and depth-cueing the
-//! packet colours ([`crate::baka_impact_fx::ColourWord`]). The builder is SCUS
+//! packet colours ([`legaia_render_kernels::sprite_arm::ColourWord`]). The builder is SCUS
 //! code, so it draws in every mode.
 //!
 //! The same builder has three direct callers besides the dispatcher: the
@@ -80,7 +80,7 @@
 
 use legaia_engine_vm::move_vm::ActorState;
 
-use crate::baka_impact_fx::ColourWord;
+use legaia_render_kernels::sprite_arm::ColourWord;
 use crate::effect_ribbon::TrigTable;
 
 /// Texture page word the untextured modes' packets carry (`li a3,0x1f` at

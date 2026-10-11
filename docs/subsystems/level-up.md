@@ -185,7 +185,7 @@ The level-up event splits the character record write across frames. Noa's triple
 
 Gala's runs in two phases: record write, then live copy and settle collapsed into one frame.
 
-The slot indices holding each frame live in [`scripts/scenarios.toml`](../../scripts/scenarios.toml). The phase split and the per-character record bases (Vahn `0x80084708`, Noa `0x80084B1C`, Gala `0x80084F30`, slot 3 `0x80085344`, stride `0x414`) are in [`engine_core::capture_observations::char_level_up`](../../crates/engine-system/src/capture_observations.rs) with helpers `read_record_stats` / `read_rank_counter` / `read_xp_u16`.
+The slot indices holding each frame live in [`scripts/scenarios.toml`](../../scripts/scenarios.toml). The phase split and the per-character record bases (Vahn `0x80084708`, Noa `0x80084B1C`, Gala `0x80084F30`, slot 3 `0x80085344`, stride `0x414`) are in [`parity::capture_observations::char_level_up`](../../crates/parity/src/capture_observations.rs) with helpers `read_record_stats` / `read_rank_counter` / `read_xp_u16`.
 
 ### Per-character semantic findings
 
@@ -448,7 +448,7 @@ The only reader cluster in the menu overlays (`overlay_menu_801d33d8.txt` and th
 
 The menu's spell table at `0x801E472C` is indexed by these ids (stride `0x14`; `record[+0]` = sort key, `record[+1]` = id, `record[+0xC]` = name pointer). Display is capped at 7 by `slti v0,t2,0x7` later in the loop.
 
-Engine accessor: `legaia_save::character::CharacterRecord::displayed_skills` (`DisplayedSkillList { count: u8, ids: [u8; MAX_DISPLAYED_SKILLS = 16] }`). `engine_core::capture_observations::vahn_fire_book_use` carries `MENU_READER_ADDR` (`0x801D4440`) and `MENU_OVERLAY_FN` (`0x801D33D8`).
+Engine accessor: `legaia_save::character::CharacterRecord::displayed_skills` (`DisplayedSkillList { count: u8, ids: [u8; MAX_DISPLAYED_SKILLS = 16] }`). `parity::capture_observations::vahn_fire_book_use` carries `MENU_READER_ADDR` (`0x801D4440`) and `MENU_OVERLAY_FN` (`0x801D33D8`).
 
 ### Writer
 

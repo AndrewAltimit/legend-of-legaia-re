@@ -1,6 +1,6 @@
 //! Faithful runner for an actor's inline interaction script.
 //!
-//! The simplified [`crate::dialog::OwnedDialogPanel`] types one `0x1F` text
+//! The simplified [`legaia_engine_dialog::dialog::OwnedDialogPanel`] types one `0x1F` text
 //! segment and resolves a picker locally, but it never *executes* the field-VM
 //! bytecode that surrounds the segments - the prologue's story-flag tests, the
 //! `SET`/`CLEAR` flag ops, and the scene-change a branch handler runs after a
@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use legaia_engine_vm::field::FieldCtx;
 
-use crate::dialog::OwnedDialogPanel;
+use legaia_engine_dialog::dialog::OwnedDialogPanel;
 
 /// Maximum field-VM steps to run between text boxes in one tick - bounds a
 /// pathological inline script that never reaches a text segment or end.
@@ -411,7 +411,7 @@ impl InlineDialogue {
     }
 
     /// The open menu has slid in and takes Up / Down and confirm
-    /// ([`crate::dialog::OwnedDialogPanel::picker_takes_input`]).
+    /// ([`legaia_engine_dialog::dialog::OwnedDialogPanel::picker_takes_input`]).
     pub fn picker_takes_input(&self) -> bool {
         self.panel.as_ref().is_some_and(|p| p.picker_takes_input())
     }

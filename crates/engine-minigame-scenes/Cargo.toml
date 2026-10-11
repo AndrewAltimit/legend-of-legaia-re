@@ -9,6 +9,7 @@ name = "legaia_engine_minigame_scenes"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-render-kernels.workspace = true
 legaia-asset.workspace = true
 legaia-tim.workspace = true
 legaia-tmd.workspace = true

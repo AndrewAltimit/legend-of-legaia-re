@@ -69,7 +69,7 @@ pub struct ModeTraceFrame {
     /// CDNAME label of the currently-loaded scene, e.g. `"town01"`.
     /// Engine reads from `host.scene.as_ref().map(|s| s.name)`. Retail
     /// reads from the scene-bundle pool at `0x80084540` slot 0 via
-    /// [`legaia_engine_core::capture_observations::field_pack_intra_transition::read_pool_slot_name`].
+    /// [`crate::capture_observations::field_pack_intra_transition::read_pool_slot_name`].
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub active_scene: Option<String>,
 }
@@ -309,7 +309,7 @@ fn scene_mode_name(m: legaia_engine_core::world::SceneMode) -> &'static str {
 /// pulls:
 ///
 /// - `game_mode` from `_DAT_8007B83C`
-///   ([`capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR`](legaia_engine_core::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR)).
+///   ([`capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR`](crate::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR)).
 /// - `scene_mode` derived from the **pair** `(game_mode, warp sub-id)` via
 ///   [`GameMode::scene_mode_with_warp`](legaia_engine_core::mode::GameMode::scene_mode_with_warp),
 ///   with the sub-id read from
@@ -339,8 +339,8 @@ pub fn load_runtime_mode_trace_from_save(save: &Path) -> Result<ModeTraceFrame> 
 /// the `(game_mode, warp sub-id) -> scene_mode` resolution is testable without
 /// a save state (and therefore without Sony bytes).
 pub fn mode_trace_frame_from_ram(ram: &[u8]) -> ModeTraceFrame {
-    use legaia_engine_core::capture_observations::cutscene_trigger_corpus::read_game_mode;
-    use legaia_engine_core::capture_observations::field_pack_intra_transition::read_pool_slot_name;
+    use crate::capture_observations::cutscene_trigger_corpus::read_game_mode;
+    use crate::capture_observations::field_pack_intra_transition::read_pool_slot_name;
     use legaia_engine_core::mode::{GameMode, read_warp_sub_id};
 
     let game_mode = read_game_mode(ram);
@@ -641,7 +641,7 @@ mod tests {
     /// Synthesise a main-RAM image holding a `(game_mode, warp sub-id)` pair.
     /// No Sony bytes - a zeroed buffer with two words poked in.
     fn ram_at(game_mode: u8, warp_sub_id: i16) -> Vec<u8> {
-        use legaia_engine_core::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR;
+        use crate::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR;
         use legaia_engine_core::mode::WARP_SUB_ID_ADDR;
         let mut ram = vec![0u8; 0x20_0000];
         ram[(GAME_MODE_ADDR - 0x8000_0000) as usize] = game_mode;

@@ -2068,7 +2068,7 @@ skips the opening sequence's carrier reposition.
   relative-jump table (handler `FUN_80038050`, the `FUN_80039B7C` dialog-SM family), with
   `new_pc = (open + 1 + index*2) + i16_LE(entry[index])`. There is no read-and-compare opcode, which
   is why these records desync under linear disassembly. Port `legaia_mes::Picker::jump_target` +
-  `InlineDialogueRunner::last_choice` (`crates/engine-dialog/src/inline_dialogue.rs`).
+  `InlineDialogueRunner::last_choice` (`crates/engine-field/src/inline_dialogue.rs`).
 - **Engine:**
   - Carriers derive from the scene MAN (`man_field_scripts::derive_field_carriers` +
     `World::install_field_carriers_from_man`) and tick through `tick_field_carriers`.

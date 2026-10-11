@@ -228,7 +228,7 @@ impl Default for SpellList {
 /// each record carries a name pointer at `+0xC` and a sort key at `+0x0`).
 ///
 /// The Fire Book I capture (`vahn_fire_book_use` in
-/// [`legaia_engine_core::capture_observations`]) shows this field is the
+/// [`legaia_parity::capture_observations`]) shows this field is the
 /// learn signal the runtime updates when an item teaches a Hyper Art:
 /// `count` increments by one and the new ID is inserted at position 0
 /// (head insert). The menu reader caps rendering at 7 entries, but the

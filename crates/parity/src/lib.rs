@@ -18,6 +18,7 @@
 //! the wgpu renderer for frame captures.
 
 pub mod audio_trace_oracle;
+pub mod capture_observations;
 pub mod mode_trace_oracle;
 pub mod pcm_oracle;
 pub mod retail_compare;

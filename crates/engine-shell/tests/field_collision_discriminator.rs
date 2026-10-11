@@ -172,7 +172,7 @@ fn load_wall_press(label: &str) -> Option<WallPress> {
     let ram = state.main_ram().expect("save state has main RAM");
     let scratch = state.scratch_ram().expect("save state has scratchpad RAM");
     let scene =
-        legaia_engine_core::capture_observations::field_pack_intra_transition::read_pool_slot_name(
+        legaia_parity::capture_observations::field_pack_intra_transition::read_pool_slot_name(
             ram, 0,
         )
         .expect("scene name in pool slot 0");

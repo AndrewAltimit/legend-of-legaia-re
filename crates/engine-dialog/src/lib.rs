@@ -14,10 +14,8 @@
 #![forbid(unsafe_code)]
 
 pub mod cursor_sprite;
-pub mod cutscene_timeline;
 pub mod dialog;
 pub mod dialog_pacing;
 pub mod dialog_picker_slide;
 pub mod dialog_window;
-pub mod inline_dialogue;
 pub mod text_balloon;

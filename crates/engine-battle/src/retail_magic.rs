@@ -20,7 +20,7 @@
 //! summon spells whose `anim` ids run sequentially (`0x25..=0x2f`). Their MP
 //! costs cross-validate exactly against the curated `data/gamedata/magic.toml`
 //! (public walkthrough data), and id `0x81` = Gimard matches the save-state
-//! pin in `legaia_engine_core::capture_observations::seru_capture`. Id `0x80` ("Flip
+//! pin in `legaia_parity::capture_observations::seru_capture`. Id `0x80` ("Flip
 //! Frog") is the boundary entry just below the block (`mp`/`anim` both 0) and
 //! is not part of the sequential player set. The lower ids `0x00..=0x24` are
 //! the elemental enemy-attack tiers (names composed via the MES substitution

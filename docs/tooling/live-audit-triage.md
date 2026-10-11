@@ -241,7 +241,7 @@ verdicts; `engine-core` re-exports them.
 | `801cf0d8` | `cash_out` | `crates/engine-minigames/src/slot_machine.rs` | FALSE INERT |
 | `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement/direction_probes.rs` | WIRE (wired) |
 | `801d06c8` | `buy` | `crates/engine-fishing/src/fishing/prize.rs` | FALSE INERT |
-| `801d0748` | `hp_left` / `turns_left` | `crates/engine-menus/src/muscle_dome/session.rs` | FALSE INERT |
+| `801d0748` | `hp_left` / `turns_left` | `crates/engine-menus/src/muscle_dome_session/session.rs` | FALSE INERT |
 | `801d092c` | `max_qty` | `crates/engine-fishing/src/fishing/prize.rs` | FALSE INERT |
 | `801d0b90` | `tick_walk_regen` | `crates/engine-field/src/walk_regen.rs` | WIRE (wired) |
 | `801d0c3c` | `first_visible` | `crates/engine-fishing/src/fishing/prize.rs` | FALSE INERT |

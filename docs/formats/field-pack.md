@@ -175,7 +175,7 @@ count word included.
 base**, the buffer holding `<scene>.MAP` at `+0` and `<scene>.PCH` at `+0x12000` - it is
 not a field-pack base, and nothing at `base + 0x60` is a schema slot. The constants and a
 `recover_base()` helper live in
-[`crates/engine-system/src/capture_observations.rs`](../../crates/engine-system/src/capture_observations.rs)
+[`crates/parity/src/capture_observations.rs`](../../crates/parity/src/capture_observations.rs)
 under `field_pack_load` (a historical module name).
 
 | Save | CDNAME | scene `0x80084540` | `_DAT_8007B8D0` | Field-file scratch base |
@@ -206,10 +206,10 @@ scratch region, **(3)** populate the destination region, **(4)** flip `_DAT_8007
 last. Mid-transition, a scene swap is detectable by the pool slot's CDNAME label
 disagreeing with the base implied by `_DAT_8007B8D0`.
 
-Detector + constants: `legaia_engine_core::capture_observations::field_pack_intra_transition`.
+Detector + constants: `legaia_parity::capture_observations::field_pack_intra_transition`.
 
 ```rust
-use legaia_engine_core::capture_observations::field_pack_intra_transition;
+use legaia_parity::capture_observations::field_pack_intra_transition;
 
 if let Some((label, stale_base)) =
     field_pack_intra_transition::detect_mid_transition(main_ram)

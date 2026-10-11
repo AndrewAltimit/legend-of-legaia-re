@@ -10,7 +10,6 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
-legaia-bytes.workspace = true
 legaia-cheats.workspace = true
 legaia-gamedata.workspace = true
 serde.workspace = true
@@ -18,5 +17,3 @@ toml = { workspace = true, features = ["display"] }
 
 [dev-dependencies]
 legaia-asset.workspace = true
-legaia-engine-battle.workspace = true
-legaia-save.workspace = true

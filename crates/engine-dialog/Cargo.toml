@@ -9,7 +9,5 @@ name = "legaia_engine_dialog"
 path = "src/lib.rs"
 
 [dependencies]
-legaia-asset.workspace = true
-legaia-engine-vm.workspace = true
 legaia-font.workspace = true
 legaia-mes.workspace = true

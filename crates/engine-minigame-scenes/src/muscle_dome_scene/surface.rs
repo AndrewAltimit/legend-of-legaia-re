@@ -1,7 +1,8 @@
 //! The arena surface a host draws: the camera, playback state and the per-frame pose / camera drive.
 
 use super::*;
-use crate::muscle_dome::{DomeContest, DomePlay, MuscleDomeSession, MusclePhase};
+use crate::muscle_dome::{DomeContest, DomePlay};
+use legaia_engine_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
 use legaia_engine_vm::battle_cam_script as cam;
 use std::sync::Arc;
 
@@ -431,7 +432,7 @@ impl MuscleDomeSurface {
     /// target and the formation - and store the pose on the scene.
     fn drive_camera(&mut self, session: &MuscleDomeSession, assets: &MuscleDomeAssets) {
         use crate::battle_input::CommandPhase;
-        use crate::muscle_dome::DomeMenu;
+        use legaia_engine_menus::muscle_dome_session::DomeMenu;
         let beat = self.playback.as_ref().and_then(|p| p.beat(self.tick));
         let acting = beat.map_or(0, |b| b.attacker);
         let target = acting ^ 1;

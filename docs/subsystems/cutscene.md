@@ -767,7 +767,7 @@ match PROT 0970 loaded at `0x801CE818`):
 | `0x801CE8AC` | ~50 B | variable | Post-FMV return-scene labels (CDNAME shape) |
 
 The residency check and pinned addresses are in
-`legaia_engine_core::capture_observations::str_fmv_overlay`.
+`legaia_parity::capture_observations::str_fmv_overlay`.
 
 ### Directory-record cache
 
@@ -932,7 +932,7 @@ the trigger-side state across the full retail range:
 The states were produced through the **debug menu**, not by stepping a scene's trigger op: the
 `4C E2 lo hi` byte sequence appears in no save's field-pack RAM. So the corpus pins the
 `(fmv_id, game_mode)` tuple, and the per-scene assignment comes from the disc walk above. It is
-codified at `legaia_engine_core::capture_observations::cutscene_trigger_corpus` and exercised by
+codified at `legaia_parity::capture_observations::cutscene_trigger_corpus` and exercised by
 the disc-gated test
 `crates/parity/tests/real_saves.rs::cutscene_trigger_corpus_pins_fmv_id_across_nine_saves`.
 
@@ -1533,7 +1533,7 @@ and the scene chain all happen by execution, not by a static walk of the MAN.
 
 | Record kind | Installed by | Behaviour |
 |---|---|---|
-| `opdeene` opening | [`World::load_cutscene_timeline_from_man`](../../crates/engine-core/src/world/narration.rs): finds the P2 record that issues `GFLAG_SET 26` (via `man_field_scripts::walk_partition_gflag_sites`) and resolves its named-record span | modal [`CutsceneTimeline`](../../crates/engine-dialog/src/cutscene_timeline.rs): camera seize + locomotion lock |
+| `opdeene` opening | [`World::load_cutscene_timeline_from_man`](../../crates/engine-core/src/world/narration.rs): finds the P2 record that issues `GFLAG_SET 26` (via `man_field_scripts::walk_partition_gflag_sites`) and resolves its named-record span | modal [`CutsceneTimeline`](../../crates/engine-field/src/cutscene_timeline.rs): camera seize + locomotion lock |
 | `opstati` / `opurud` | the op-`0x44` spawn, [`World::install_spawned_record`](../../crates/engine-core/src/world/narration.rs) | modal timeline |
 | `map01` / `town01`, gated walk-on beat records | the walk-on tile trigger / `install_gated_p2_record` | modal timeline |
 | an ordinary scene's mid-play op-`0x44` spawn | [`World::install_spawned_helper_record`](../../crates/engine-core/src/world/narration.rs) | **concurrent helper context** in `World::field_vm.helper_contexts` (a bounded table mirroring retail's small fixed context set), stepped by `step_helper_contexts`; no camera seize, does not read as `cutscene_timeline_active()` |
@@ -1830,7 +1830,7 @@ The engine spawns no player channel, so
 [`field_channels::resolve_target`](../../crates/engine-core/src/field_channels.rs) returns
 `None` for `0xF8` and `run_spawned_record_slice` models the two ops directly. The ExecMove emits
 the `ExecMove` field event and arms an in-flight countdown
-([`CutsceneTimeline::player_move_frames`](../../crates/engine-dialog/src/cutscene_timeline.rs),
+([`CutsceneTimeline::player_move_frames`](../../crates/engine-field/src/cutscene_timeline.rs),
 standing in for the playout, since engine player pokes complete synchronously). The halt-acquire
 **parks** at the op (`CutsceneTimeline::player_wait`) until the countdown drains, then steps
 past it by encoded width, so the record flows on to its trailing scene change. A halt-acquire

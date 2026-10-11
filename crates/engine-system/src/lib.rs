@@ -14,12 +14,6 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(test)]
-use legaia_engine_battle::retail_magic;
-#[cfg(test)]
-use legaia_engine_battle::spells;
-
-pub mod capture_observations;
 pub mod chunk_install;
 pub mod cutscene;
 pub mod draw_census;

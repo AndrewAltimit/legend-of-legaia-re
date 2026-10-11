@@ -145,7 +145,7 @@ A pre / post encounter save pair on `map01` (one frame walking, the next with ba
 
 The active scene-name table at `0x80084540` (CDNAME label + scene index) is identical across the pair: the battle is layered on the field scene rather than swapping it out. The port likewise preserves the active-scene state and resolves only the formation and battle assets.
 
-Constants: `capture_observations::encounter_trigger` ([`crates/engine-system`](../../crates/engine-system/src/capture_observations.rs)); disc-gated test `encounter_trigger_diff_loads_battle_overlay` in [`crates/parity/tests/real_saves.rs`](../../crates/parity/tests/real_saves.rs).
+Constants: `capture_observations::encounter_trigger` ([`crates/parity`](../../crates/parity/src/capture_observations.rs)); disc-gated test `encounter_trigger_diff_loads_battle_overlay` in [`crates/parity/tests/real_saves.rs`](../../crates/parity/tests/real_saves.rs).
 
 ### Scenes that cannot roll
 

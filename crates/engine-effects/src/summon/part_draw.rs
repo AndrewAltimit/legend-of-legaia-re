@@ -141,7 +141,7 @@ pub struct SummonPartDraw {
     /// level. A black far colour under an additive ABR is how a part fades:
     /// the Spirit aura's op `0x0D` ramps the level from `0x1000` (black) to
     /// `0` and back.
-    pub colour: crate::baka_impact_fx::ColourWord,
+    pub colour: legaia_render_kernels::sprite_arm::ColourWord,
 }
 
 impl SummonPartDraw {

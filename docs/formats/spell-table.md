@@ -351,7 +351,7 @@ spells.)
 MP cost + target shape are byte-exact from `SCUS_942.54`; the element column
 is the cross-reference against the curated [`gamedata`](../reference/gamedata.md)
 magic table (every MP value matches). Spell id `0x81` = Gimard also matches
-the save-state pin recorded in `legaia_engine_core::capture_observations::seru_capture`.
+the save-state pin recorded in `legaia_parity::capture_observations::seru_capture`.
 
 | Id | Name | Element | MP | Target |
 |---|---|---|---|---|

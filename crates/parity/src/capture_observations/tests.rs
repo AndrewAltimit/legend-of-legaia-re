@@ -7,9 +7,9 @@ fn gimard_id_matches_the_save_state_pin() {
     // The Gimard before/after savestate pin recorded spell id 0x81 in
     // Vahn's record; the SCUS spell table names that id "Gimard" (fire).
     assert_eq!(seru_capture::GIMARD_SPELL_ID, 0x81);
-    let gimard = crate::retail_magic::get(seru_capture::GIMARD_SPELL_ID).expect("Gimard pinned");
+    let gimard = legaia_engine_battle::retail_magic::get(seru_capture::GIMARD_SPELL_ID).expect("Gimard pinned");
     assert_eq!(gimard.name, "Gimard");
-    assert_eq!(gimard.element, crate::spells::SpellElement::Fire);
+    assert_eq!(gimard.element, legaia_engine_battle::spells::SpellElement::Fire);
 }
 
 #[test]

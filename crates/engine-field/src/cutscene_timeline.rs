@@ -208,7 +208,7 @@ pub struct CutsceneTimeline {
     /// routes pad input to the panel (confirm advances / dismisses, Up/Down
     /// move a picker cursor). On dismissal the timeline resumes at the
     /// panel's final PC (past the consumed segment).
-    pub dialog: Option<crate::dialog::OwnedDialogPanel>,
+    pub dialog: Option<legaia_engine_dialog::dialog::OwnedDialogPanel>,
     /// When [`Self::dialog`] was opened, in
     /// `legaia_engine_core::world::FieldVmState::dialog_claims` order - which of several
     /// contexts holding text got to the shared box first.
