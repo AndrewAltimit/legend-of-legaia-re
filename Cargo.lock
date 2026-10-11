@@ -1339,18 +1339,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "legaia-delilas-challenge"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "legaia-asset",
- "legaia-code-hooks",
- "legaia-disc-patch",
- "legaia-lzs",
- "legaia-mes",
-]
-
-[[package]]
 name = "legaia-container-formats"
 version = "0.1.0"
 dependencies = [
@@ -1362,6 +1350,18 @@ dependencies = [
  "legaia-tim",
  "legaia-tmd",
  "serde",
+]
+
+[[package]]
+name = "legaia-delilas-challenge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-asset",
+ "legaia-code-hooks",
+ "legaia-disc-patch",
+ "legaia-lzs",
+ "legaia-mes",
 ]
 
 [[package]]
