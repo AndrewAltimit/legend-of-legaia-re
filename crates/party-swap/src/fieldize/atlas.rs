@@ -4,7 +4,7 @@
 use super::super::*;
 use super::slot::FieldSlot;
 use super::{ATLAS_COLS_PER_CHAR, ATLAS_WINDOW_H, ATLAS_WINDOW_W, FIELD_CLUT_ROW, FIELD_TSB};
-use crate::party_swap::playerize::{merge_palettes, nearest_color};
+use crate::playerize::{merge_palettes, nearest_color};
 use legaia_tmd::descriptor::PacketShape;
 use legaia_tmd::encode::ModelPrim;
 

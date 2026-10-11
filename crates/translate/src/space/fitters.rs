@@ -7,9 +7,9 @@ use super::super::name_pool::NamePool;
 use super::super::pack::{Entry, LanguagePack};
 use super::report::{EntrySpace, NameRegion, RoomKind, SceneSpace};
 use super::{Outcomes, scene_name};
-use crate::disc::DiscPatcher;
 use anyhow::{Context, Result};
 use legaia_asset::man_edit::{self, TextSite};
+use legaia_disc_patch::disc::DiscPatcher;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 

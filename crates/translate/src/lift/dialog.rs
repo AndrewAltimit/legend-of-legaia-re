@@ -8,10 +8,10 @@ use super::super::{markup, segments};
 use super::chunk_align::framings;
 use super::source_tables::MAX_STRLEN;
 use super::{PairStats, key_entry_index};
-use crate::disc::DiscPatcher;
 use anyhow::Result;
 use legaia_asset::field_disasm;
 use legaia_asset::man_section;
+use legaia_disc_patch::disc::DiscPatcher;
 use std::collections::BTreeMap;
 
 /// Every text lead a MAN's clean script walk reaches, in walk order: the

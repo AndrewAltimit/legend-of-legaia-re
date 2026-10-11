@@ -26,7 +26,7 @@ use anyhow::Result;
 
 use legaia_asset::man_edit::{self, TextEdit};
 
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 use super::export::SceneManText;
 use super::lift;

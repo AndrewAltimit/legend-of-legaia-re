@@ -27,7 +27,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 use super::export::SceneManText;
 use super::segments;

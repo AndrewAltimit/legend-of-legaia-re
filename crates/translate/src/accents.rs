@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use super::markup::{self, Target};
 use super::pack::LanguagePack;
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// How a pack's accents reach the disc (the pack's `accents:` header).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]

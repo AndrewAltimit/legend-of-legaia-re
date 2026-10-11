@@ -36,8 +36,8 @@
 
 use anyhow::{Context, Result, bail};
 
-use crate::party_swap::PlayerRig;
-use crate::party_swap::winpose::{self, READEF_SLOT, pack_part, retarget_clip_wrist};
+use crate::PlayerRig;
+use crate::winpose::{self, READEF_SLOT, pack_part, retarget_clip_wrist};
 use legaia_asset::me_archive;
 use legaia_asset::monster_archive::{self, MonsterAnimation};
 

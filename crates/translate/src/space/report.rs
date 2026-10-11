@@ -168,7 +168,7 @@ pub struct SpaceReport {
     /// cover): how many strings can move and the room they can move into.
     #[serde(default)]
     pub code_images: Vec<CodeImageSpace>,
-    /// Every spare region of the [space ledger](crate::space_ledger), with
+    /// Every spare region of the [space ledger](legaia_disc_patch::space_ledger), with
     /// its owner and how much of it is still zero on this disc.
     #[serde(default)]
     pub spare_regions: Vec<SpareSpace>,

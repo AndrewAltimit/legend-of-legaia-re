@@ -9,8 +9,8 @@ use super::super::pack::Entry;
 use super::super::ui;
 use super::report::{ImportReport, IssueKind};
 use super::{Key, encode_source, encode_translation, fits, hint_agrees, parse_key};
-use crate::disc::DiscPatcher;
 use legaia_asset::{item_names, new_game, worldmap_menu};
+use legaia_disc_patch::disc::DiscPatcher;
 use std::collections::BTreeMap;
 
 /// Longest SCUS string the reader will follow before calling the pointer bogus.
@@ -426,7 +426,7 @@ pub(crate) fn apply_scus_work(
             .filter(|r| r.free > 0)
             .map(|r| (r.end_va - r.free as u32, r.end_va))
             .collect();
-        let extra = crate::space_ledger::zero_spans(scus, ui::SCUS_POOL_BASE_VA, &runs);
+        let extra = legaia_disc_patch::space_ledger::zero_spans(scus, ui::SCUS_POOL_BASE_VA, &runs);
         let sreloc = sys.relocate(scus, &sys_grow, &extra);
         written.extend(sreloc.written.iter().copied());
         record_code_moves(&sreloc, usize::MAX, &sys_grow, &sys_entries, report);

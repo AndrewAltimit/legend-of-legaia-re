@@ -15,10 +15,10 @@ use super::report::{
     SpaceSummary, SpareSpace,
 };
 use super::{Outcomes, all_pools, english_len, pool_index, scene_name, section_of_pool};
-use crate::disc::DiscPatcher;
-use crate::space_ledger;
 use anyhow::{Context, Result};
 use legaia_asset::man_edit::{self, TextSite};
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_disc_patch::space_ledger;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub(super) fn build_report(
@@ -125,7 +125,7 @@ pub(super) fn build_report(
 
     // --- Monsters -----------------------------------------------------------
     let mut monsters = Vec::new();
-    if let Ok(archive) = patcher.read_entry(crate::disc::MONSTER_ARCHIVE_ENTRY) {
+    if let Ok(archive) = patcher.read_entry(legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY) {
         let fields = monster_names::fields(&archive);
         for ((id, f), (_, room)) in fields.iter().zip(monster_names::budgets(&fields)) {
             let Ok(Some(block)) = legaia_asset::monster_archive::decode_block(&archive, *id) else {

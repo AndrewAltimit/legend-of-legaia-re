@@ -11,7 +11,7 @@
 //!   (the PAL builds add accented glyphs above `0x7E`), the Japanese build
 //!   uses count-led Shift-JIS lines ([`super::sjis`]).
 
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// How dialog text is framed and encoded on a build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

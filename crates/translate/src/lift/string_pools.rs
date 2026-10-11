@@ -5,8 +5,8 @@ use super::super::pack::LanguagePack;
 use super::super::{markup, monster_names, refpair, ui};
 use super::chunk_align::{nul_chunks, pair_chunk_lists, pool_text};
 use super::{LiftReport, PoolStat, key_scus_va};
-use crate::disc::DiscPatcher;
 use legaia_asset::{item_names, worldmap_menu};
+use legaia_disc_patch::disc::DiscPatcher;
 use std::collections::BTreeMap;
 
 /// Fill the `ui:` entries: each pinned overlay pool is read on both discs,
@@ -537,8 +537,8 @@ pub(super) fn lift_monster_names(
 ) {
     report.monsters_total = pack.sections.monster_names.len();
     let (Ok(_), Ok(src)) = (
-        target.read_entry(crate::disc::MONSTER_ARCHIVE_ENTRY),
-        source.read_entry(crate::disc::MONSTER_ARCHIVE_ENTRY),
+        target.read_entry(legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY),
+        source.read_entry(legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY),
     ) else {
         return;
     };

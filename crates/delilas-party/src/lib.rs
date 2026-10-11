@@ -22,9 +22,9 @@
 use legaia_arts_patch::arts;
 use legaia_code_hooks::mips;
 use legaia_disc_patch::{disc, rng};
-use legaia_party_swap::party_swap;
+use legaia_party_swap as party_swap;
 use legaia_texture_replace::save_icon;
-use legaia_translate::translation;
+use legaia_translate as translation;
 
 pub mod delilas_cast;
 pub mod delilas_effects;

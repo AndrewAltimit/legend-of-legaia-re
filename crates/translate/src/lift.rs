@@ -51,7 +51,7 @@ use anyhow::{Context, Result, bail};
 
 use legaia_asset::{item_names, new_game, spell_names};
 
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 use super::export::{SceneManText, export_pack};
 use super::pack::LanguagePack;

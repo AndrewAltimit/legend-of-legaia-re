@@ -41,7 +41,7 @@ use anyhow::{Context, Result};
 
 use legaia_asset::man_edit::{self, TextSite};
 
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 use super::markup::{self, Target};
 use super::monster_names;
@@ -613,8 +613,8 @@ pub fn import_pack_phase(
         // into the room the pools' compaction frees or the ledger's
         // translation region in this image.
         if !grow.is_empty() {
-            let extra = crate::space_ledger::translation_spans(
-                crate::space_ledger::Image::Prot(prot),
+            let extra = legaia_disc_patch::space_ledger::translation_spans(
+                legaia_disc_patch::space_ledger::Image::Prot(prot),
                 &buf,
                 base_va,
             );
@@ -649,7 +649,7 @@ fn import_monster_names(
     work: &[(u16, &Entry)],
     report: &mut ImportReport,
 ) -> Result<()> {
-    let mut archive = match patcher.read_entry(crate::disc::MONSTER_ARCHIVE_ENTRY) {
+    let mut archive = match patcher.read_entry(legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY) {
         Ok(b) => b,
         Err(e) => {
             for (_, en) in work {

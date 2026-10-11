@@ -28,7 +28,7 @@ use serde::Serialize;
 
 use legaia_asset::{field_disasm, man_edit, shop_stock};
 
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 use super::build::{self, TextCodec};
 use super::export::{self, SceneManText};

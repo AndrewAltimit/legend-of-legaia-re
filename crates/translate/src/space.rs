@@ -131,7 +131,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result};
 
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 use super::export::export_pack;
 use super::import::{ImportPhase, ImportReport, Key, WritePath, import_pack_phase, parse_key};

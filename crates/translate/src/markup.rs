@@ -515,7 +515,7 @@ mod tests {
         assert_eq!(hex, named);
         // Export writes the hex form back, whatever the pack typed.
         assert_eq!(decode(&named), "Press {ce:00}, {ce:14} and {ce:23}.");
-        for s in &crate::translation::symbols::SYMBOLS {
+        for s in &crate::symbols::SYMBOLS {
             let a = encode(&format!("{{{}}}", s.alias), Target::Segment).unwrap();
             assert_eq!(a, [0xCE, s.index]);
         }

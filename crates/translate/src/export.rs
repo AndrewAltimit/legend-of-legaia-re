@@ -22,7 +22,7 @@ use anyhow::{Context, Result};
 use legaia_asset::scene_asset_table;
 use legaia_asset::{accessory_passive, item_names, new_game, spell_names, worldmap_menu};
 
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 use super::build::TextCodec;
 use super::markup;
@@ -52,7 +52,7 @@ pub struct SceneManText {
     /// Length of the compressed stream on disc (what the repack overwrites).
     pub compressed_len: usize,
     /// Bytes the recompressed MAN must fit within (descriptor-boundary
-    /// budget - see [`crate::man_compressed_budget`]).
+    /// budget - see [`legaia_disc_patch::man_compressed_budget`]).
     pub compressed_budget: usize,
     /// Byte offset, within the PROT entry, of the MAN descriptor's
     /// `(type<<24)|size` word - rewritten when the generalized rewriter grows
@@ -81,7 +81,11 @@ impl SceneManText {
         Some(Self {
             man_offset,
             compressed_len: consumed,
-            compressed_budget: crate::man_compressed_budget(&table, man_offset, entry.len()),
+            compressed_budget: legaia_disc_patch::man_compressed_budget(
+                &table,
+                man_offset,
+                entry.len(),
+            ),
             man_descriptor_off: scene_asset_table::SceneAssetTable::size_word_offset(man_idx),
             decoded,
         })
@@ -492,7 +496,7 @@ fn collect_scus_system_sections(scus: &[u8], pack: &mut LanguagePack) {
 /// Monster names (`mon:<id>` keys): each populated record of the monster
 /// archive, budgeted by [`monster_names::budgets`].
 fn collect_monster_names(patcher: &DiscPatcher, pack: &mut LanguagePack) {
-    let Ok(entry) = patcher.read_entry(crate::disc::MONSTER_ARCHIVE_ENTRY) else {
+    let Ok(entry) = patcher.read_entry(legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY) else {
         return;
     };
     let fields = monster_names::fields(&entry);

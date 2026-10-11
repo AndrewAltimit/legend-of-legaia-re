@@ -11,7 +11,7 @@
 //!    strings re-laid end to end in order, so the bytes shorter translations
 //!    give up collect into one free run per run;
 //! 2. the longer strings are placed into those runs, or into the spare
-//!    regions the [space ledger](crate::space_ledger) reserves for
+//!    regions the [space ledger](legaia_disc_patch::space_ledger) reserves for
 //!    translation in that image (the menu overlay's slack), or - for
 //!    `SCUS_942.54` - into the free runs the name pools' own compaction left;
 //! 3. every reference to a moved string is rewritten.

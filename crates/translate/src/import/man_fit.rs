@@ -6,10 +6,10 @@ use super::super::export::SceneManText;
 use super::super::stream_man::StreamManText;
 use super::report::{ImportReport, IssueKind, SECTOR, SceneTrace, WritePath, sectors_for_overflow};
 use super::scene_plan::{PreApplied, ReadyMan, ScenePlan};
-use crate::disc::DiscPatcher;
 use anyhow::Result;
 use legaia_asset::man_edit::{self, TextEdit};
 use legaia_asset::scene_asset_table;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// Why [`relocate_and_pack`] could not produce a stream.
 pub(super) enum GrowFail {

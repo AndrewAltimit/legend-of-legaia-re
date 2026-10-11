@@ -8,7 +8,7 @@ use super::roles::{
     FIELD_CHILD, FIELD_PARENT, FIELD_ROLE_SOURCES, derive_field_roles, group_world_stats,
 };
 use super::{FIELD_BONES, FIELD_GROUPS};
-use crate::party_swap::playerize::monster_pool_texels;
+use crate::playerize::monster_pool_texels;
 use legaia_asset::character_pack;
 use legaia_tmd::descriptor::PacketShape;
 use legaia_tmd::encode::ModelPrim;

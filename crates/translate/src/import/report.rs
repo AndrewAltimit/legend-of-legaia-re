@@ -39,7 +39,7 @@ pub struct ImportReport {
     pub grown_monster_names: usize,
     /// `ui_menu` / `system_text` strings that outgrew their span and were
     /// moved - into the bytes their pools' compaction frees, a translation
-    /// region of the [space ledger](crate::space_ledger), or (in the
+    /// region of the [space ledger](legaia_disc_patch::space_ledger), or (in the
     /// executable) the name pools' free runs - with every reference
     /// rewritten (see [`super::super::code_strings`]). Counted in [`Self::applied`]
     /// too.

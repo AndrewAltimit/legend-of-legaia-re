@@ -1,18 +1,69 @@
-//! Community language packs: disc text out to an editable YAML pack and a
-//! filled pack back in as an in-place reimport (dialog, UI strings, names,
-//! textures and fonts), plus the space and budget accounting behind it and
-//! the PAL lift. See `docs/tooling/translation/`.
+//! Community language packs: the translation / language-pack pipeline behind
+//! `legaia-patcher translate`.
 //!
-//! `legaia-patcher` re-exports every module here at its old path. Doc links
-//! that pointed back up at it are plain code spans, since rustdoc cannot
-//! resolve a link into a dependent crate.
+//! Turns the disc's user-facing text into an editable YAML **language pack**
+//! and applies a filled pack back as a same-size in-place patch:
+//!
+//! ```text
+//! legaia-patcher translate export --input DISC.bin -o legaia_en.yaml
+//! legaia-patcher translate init   --lang fr --from legaia_en.yaml -o legaia_fr.yaml
+//! # ... fill the `translation:` fields ...
+//! legaia-patcher translate stats  --pack legaia_fr.yaml
+//! legaia-patcher translate import --input DISC.bin --pack legaia_fr.yaml \
+//!     --output DISC_fr.bin --patch legaia_fr.ppf
+//! ```
+//!
+//! - [`accents`] - typed accents: the pack's accent mode (strict / fold /
+//!   accent font), per-character draw notes, and the accent-font write.
+//! - [`markup`] - the reversible text <-> game-byte codec (retail glyphs are
+//!   printable ASCII; everything else is a `{xx}` / `{xx:yy}` escape).
+//! - [`segments`] - the `0x1F <text> 0x00` dialog-segment scanner shared by
+//!   export and import.
+//! - [`pack`] - the YAML schema ([`pack::LanguagePack`]) + coverage stats.
+//! - [`export`] - disc -> pack (SCUS name tables, scene-bundle MAN dialog,
+//!   raw event-script text, overlay UI menu strings).
+//! - [`ui`] - the pinned menu / battle overlay UI-string pools + their scanner.
+//! - [`import`] - pack -> patched disc via [`legaia_disc_patch::disc::DiscPatcher`],
+//!   with per-entry encodability / budget / provenance diagnostics, and a
+//!   trace of what it measured and decided ([`ImportTrace`]).
+//! - [`space`] - the space report built on that trace: every string's room,
+//!   what English uses, what a pack uses and what import does with it, plus
+//!   the per-scene / per-name fast paths a live editor calls.
+//!
+//! `legaia-patcher` re-exports this crate as `legaia_patcher::translation`. See
+//! `docs/tooling/translation/`.
+//!
+//! No Sony bytes ship with this crate: packs are generated from the user's
+//! own disc, and exported packs (which contain game text) must not be
+//! committed - see `docs/tooling/translation/index.md`.
 
 #![forbid(unsafe_code)]
 
-// Items these files name as `crate::...`, which live in a crate below this
-// one; binding them here keeps the moved files' paths unchanged.
-use legaia_disc_patch::disc;
-use legaia_disc_patch::man_compressed_budget;
-use legaia_disc_patch::space_ledger;
+pub mod accents;
+pub mod build;
+pub mod code_refs;
+pub mod code_strings;
+pub mod coverage;
+pub mod diff;
+pub mod export;
+pub mod fit;
+pub mod import;
+pub mod lift;
+pub mod markup;
+pub mod monster_names;
+pub mod name_pool;
+pub mod pack;
+pub mod refpair;
+pub mod segments;
+pub mod sjis;
+pub mod space;
+pub mod stream_man;
+pub mod symbols;
+pub mod ui;
 
-pub mod translation;
+pub use export::export_pack;
+pub use import::{
+    ImportPhase, ImportReport, ImportTrace, IssueKind, SectionCounts, WritePath, import_pack,
+    import_pack_phase, import_pack_relayout,
+};
+pub use pack::{Entry, LanguagePack, PACK_FORMAT};
