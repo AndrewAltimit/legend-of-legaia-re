@@ -5,6 +5,6 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-engine-fishing --test integration <name>::`.
 
+mod fishing_lure_point;
 mod fishing_pond_ladder;
 mod fishing_tackle_pick_ladder;
-mod fishing_lure_point;

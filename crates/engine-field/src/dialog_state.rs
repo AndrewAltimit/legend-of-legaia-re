@@ -135,7 +135,7 @@ pub struct ThreeActorTalk {
     /// [`Self::script_id`] (controller `+0x50`), the base the presence flags
     /// `flag_base + 0..=2` are tested against. Stepped by
     /// `World::tick_three_actor_talk`.
-    pub swap: crate::plain_template_actors::LeaderSwap,
+    pub swap: crate::leader_swap::LeaderSwap,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine

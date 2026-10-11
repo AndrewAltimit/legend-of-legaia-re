@@ -507,7 +507,7 @@ pub struct Actor {
     /// [`Self::handler`] is
     /// [`ActorHandler::ColourTween`](legaia_engine_field::actor_handler::ActorHandler::ColourTween).
     /// Stepped once per game tick by [`World::tick_handler_actors`].
-    pub colour_tween: Option<legaia_engine_field::field_actor_kernels::ColourTween>,
+    pub colour_tween: Option<legaia_engine_field::actor_colour_tween::ColourTween>,
 
     /// `+0x4C` / `+0x90` / `+0x3C..+0x40` / `+0x6E` - the **morph-weight**
     /// block, present only on actors whose [`Self::handler`] is
@@ -535,7 +535,7 @@ pub struct Actor {
     /// handler emitted one. Cleared at the top of every
     /// [`World::tick_handler_actors`] pass, so it is always "this frame's",
     /// never a stale one.
-    pub tint_push: Option<legaia_engine_field::field_actor_kernels::ScreenTintPush>,
+    pub tint_push: Option<legaia_engine_field::actor_colour_tween::ScreenTintPush>,
 
     /// Default-position lookup result for the actor VM. Retail reads this
     /// from a 16-byte-stride table at `0x801E4738`; engines populate per
