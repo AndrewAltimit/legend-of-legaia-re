@@ -1,0 +1,18 @@
+# Every time a ratchet baseline was let out, and why.
+#
+# `check-baseline-loosening.py` fails when a baselined value moves the wrong
+# way against the base revision unless the exact transition is recorded here.
+# Generate the entries, then write the reason:
+#
+#     scripts/ci/check-baseline-loosening.py --propose >> scripts/ci/baseline-loosenings.toml
+#
+# An entry is never removed: it only matches the one `from -> to` step it
+# names, so it cannot excuse a later fall, and the file stays the history of
+# what the ratchets gave back.
+#
+# [[loosening]]
+# file = "scripts/ci/retail-compare-baseline.json"
+# reason = "why the measurement moved, in a sentence"
+# changes = [
+#   ["states/<state>/<channel>", 0.98, 0.95],
+# ]

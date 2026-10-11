@@ -18,6 +18,8 @@
 #     on: (a) manual workflow_dispatch, or (b) a PR that has the `disc-test`
 #     label added. Set the `LEGAIA_DISC_BIN` repository variable (Settings >
 #     Variables > Actions) to the disc image path on the self-hosted runner.
+#     disc-nightly.yml runs the same suite on a schedule, so it runs whether
+#     or not anyone asks for it.
 #   - Tag pushes are NOT handled here. release.yml owns the `v*` tag event
 #     and re-runs these same fmt/clippy/test gates as its own `verify` job,
 #     so a release stays test-gated without two workflows contending for the
@@ -156,6 +158,24 @@ jobs:
       # in either direction fails.
       - name: Crate layering
         run: python3 scripts/ci/check-crate-layering.py
+
+      # A ratchet's baseline is edited in the same commit as the code that
+      # moved it, and the corpus ratchets below skip on this runner. This one
+      # needs only the baseline files: a value that moved the wrong way against
+      # the base revision fails without a scripts/ci/baseline-loosenings.toml
+      # entry. A pull request checks out its merge commit, so the PR base is
+      # the right comparison; a push compares against the commit it replaced.
+      - name: Baseline loosening
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          python3 scripts/ci/check-baseline-loosening.py --self-test
+          if [[ -n "${BASE_SHA}" && ! "${BASE_SHA}" =~ ^0+$ ]]; then
+            git fetch --quiet --depth=1 origin "${BASE_SHA}"
+            python3 scripts/ci/check-baseline-loosening.py --base "${BASE_SHA}"
+          else
+            echo "no base revision for this event; self-test only"
+          fi
 
       - name: UI host drift
         run: python3 scripts/ci/check-ui-host-drift.py
@@ -323,19 +343,6 @@ jobs:
           fetch-depth: 0
           clean: true
 
-      - name: Verify disc image exists
-        run: |
-          if [ -z "$LEGAIA_DISC_BIN" ]; then
-            echo "ERROR: LEGAIA_DISC_BIN repository variable is not set."
-            echo "Configure it under Settings > Variables > Actions on GitHub."
-            exit 1
-          fi
-          if [ ! -f "$LEGAIA_DISC_BIN" ]; then
-            echo "ERROR: disc image not found at '$LEGAIA_DISC_BIN'"
-            exit 1
-          fi
-          echo "Disc image present: $LEGAIA_DISC_BIN"
-
       # CARGO_TARGET_DIR above is the cache ROOT; this step narrows it to a
       # per-toolchain subdirectory and prunes the rest, so a rustc bump on the
       # runner cannot hand the new compiler the old one's rlibs (E0514 in the
@@ -343,8 +350,12 @@ jobs:
       - name: Select per-toolchain target dir
         run: scripts/ci/select-ci-target-dir.sh
 
+      # A gated test that finds no disc skips and passes, so a green run is
+      # not evidence the suite ran. The script checks the image is there, keeps
+      # every test's output, and fails on a test that skipped for want of the
+      # disc; skips on another input are counted into the job summary.
       - name: Run disc-gated test suite
-        run: cargo test --workspace --profile release-test
+        run: scripts/ci/run-disc-tests.sh
 
   # -- Deploy GitHub Pages ----------------------------------------------------
   deploy-pages:
