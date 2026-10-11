@@ -6,9 +6,9 @@
  * (uploadMesh / render) stays in webgl-tmd.js.
  *
  * Classic script. Requires webgl-tmd.js first (the class, buildSemiTail,
- * overworldDecorationCue, installTmdRendererMethods). */
+ * overworldDecorationCue) and site-util.js (LegaiaUtil.installMethods). */
 
-installTmdRendererMethods(class {
+window.LegaiaUtil.installMethods(TmdRenderer, class {
   /* ---------- Assembled / scene-mesh path ----------------------------- */
 
   /* Upload one TMD's geometry under a caller-supplied meshId and keep it

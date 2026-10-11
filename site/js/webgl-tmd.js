@@ -14,7 +14,7 @@
  *      the ground pass and renderAssembled
  *
  * Files 4 and 5 add methods to the class this file declares
- * (installTmdRendererMethods, at the bottom). A page that loads this file
+ * (LegaiaUtil.installMethods, site-util.js). A page that loads this file
  * loads both, directly after it.
  *
  * Public API:
@@ -788,21 +788,6 @@ class TmdRenderer {
     gl.deleteBuffer(this.oceanIdxBuf);
     gl.deleteTexture(this.oceanTex);
     gl.deleteTexture(this.oceanClutTex);
-  }
-}
-
-/* The class body continues in webgl-tmd-frame-state.js and
- * webgl-tmd-assembled-scene.js. Each hands its methods over as an anonymous
- * class, and they land on the prototype with the descriptors a class body
- * gives them (writable, configurable, non-enumerable), so a method behaves
- * the same whichever file declares it. */
-function installTmdRendererMethods(source) {
-  for (const name of Object.getOwnPropertyNames(source.prototype)) {
-    if (name === 'constructor') continue;
-    Object.defineProperty(
-      TmdRenderer.prototype, name,
-      Object.getOwnPropertyDescriptor(source.prototype, name),
-    );
   }
 }
 

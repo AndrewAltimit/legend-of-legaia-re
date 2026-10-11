@@ -124,6 +124,21 @@
     return c;
   }
 
+  /* Continue a class body in another file. `source` is a class (usually an
+   * anonymous one) whose methods, getters and setters are copied onto
+   * `target`'s prototype with the descriptors a class body gives them
+   * (writable, configurable, non-enumerable), so a method behaves the same
+   * whichever file declares it. Used where one class is too large for one
+   * file: the first file declares it, the others install onto it. */
+  function installMethods(target, source) {
+    var names = Object.getOwnPropertyNames(source.prototype);
+    for (var i = 0; i < names.length; i++) {
+      if (names[i] === 'constructor') continue;
+      Object.defineProperty(target.prototype, names[i],
+        Object.getOwnPropertyDescriptor(source.prototype, names[i]));
+    }
+  }
+
   window.escapeHtml = escapeHtml;
   window.LegaiaUtil = {
     escapeHtml: escapeHtml,
@@ -131,5 +146,6 @@
     downloadFile: downloadFile,
     poseClipInto: poseClipInto,
     modulatedSprite: modulatedSprite,
+    installMethods: installMethods,
   };
 })();

@@ -7,9 +7,9 @@
  * private pass that applies what the setters stored.
  *
  * Classic script. Requires webgl-tmd.js first (the class, the SHADOW_* and
- * MOOD_WORDS constants, installTmdRendererMethods). */
+ * MOOD_WORDS constants) and site-util.js (LegaiaUtil.installMethods). */
 
-installTmdRendererMethods(class {
+window.LegaiaUtil.installMethods(TmdRenderer, class {
   /* Upload a 512-entry fog LUT + scalar params. `lut` is a Uint16Array of
    * BGR555 entries (matches the bytes the retail Lua probe dumps to
    * fog_probe.lut.bin). `params` keys override the cached defaults; pass
