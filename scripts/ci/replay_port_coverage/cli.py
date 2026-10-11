@@ -18,6 +18,7 @@ from replay_port_coverage.coverage import (
     load_coverage,
 )
 from replay_port_coverage.inputs import discover_inputs
+from replay_port_coverage.ladder_check import check_ladders
 from replay_port_coverage.ladders import CANONICAL_LADDERS, CANONICAL_LADDER_NAMES
 from replay_port_coverage.page_audit import page_audit
 from replay_port_coverage.paths import COV_GLOB, DEFAULT_OUT, REPO
@@ -72,6 +73,21 @@ def main() -> int:
 
     if args.page_audit:
         return page_audit()
+
+    # Checked before the membership is printed or joined: the export recipe
+    # reads `--list-ladders`, so a ladder that names a test which is not on
+    # disk has to stop here rather than become a union with a silent hole.
+    stale_ladders = check_ladders()
+    if stale_ladders:
+        print(
+            f"replay-port-coverage: {len(stale_ladders)} row(s) of "
+            "CANONICAL_LADDERS (scripts/ci/replay_port_coverage/ladders.py) "
+            "name a test that is not on disk:",
+            file=sys.stderr,
+        )
+        for line in stale_ladders:
+            print(f"  - {line}", file=sys.stderr)
+        return 1
 
     if args.list_ladders:
         for name, pkg in CANONICAL_LADDERS:

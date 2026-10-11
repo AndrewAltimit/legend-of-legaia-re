@@ -1,5 +1,7 @@
 """The canonical ladders: every `(test, package)` whose coverage export the
-report unions. A renamed test or a moved test file is one edit here.
+report unions. A renamed test or a moved test file is one edit here;
+`replay_port_coverage.ladder_check` stops the run when a row names a test that
+is not on disk.
 """
 
 from __future__ import annotations

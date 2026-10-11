@@ -10,6 +10,7 @@ package beside it:
                                         is written
     replay_port_coverage/ladders.py     `CANONICAL_LADDERS`: every
                                         `(test, package)` the report unions
+    replay_port_coverage/ladder_check.py  does each ladder name a test on disk?
     replay_port_coverage/inputs.py      which exports are on disk
     replay_port_coverage/catalog.py     the port catalog as this report reads it
     replay_port_coverage/coverage.py    llvm-cov exports and the anchor join
