@@ -70,7 +70,7 @@ PROT 0972 read through 0971's extraction footprint
 
 Slot-A occupant of the mode-24 sub-id-5 door warp, true base `0x801CE818`. `other_game` is the **CDNAME block name**, not an identity: the module is the Muscle Dome **arena door/init** slot (dev module `other6`), pinned by its own monster-name roster and by the contest settlement `FUN_801D0F60`. The rows below are its HUD primitive layer. The `0x801Dxxxx`-named `overlay_0977_other_game_*` dumps are correctly based; the `0x801Cxxxx`-named ones are mis-imported at `0x801C0000` (add `0xE818` for the true VA, per the same anchor that fixes `801C2748` -> `801D0F60`).
 
-Ports: `legaia_engine_ui::other_game_hud` (the two quad emitters + the decimal readout) and `legaia_engine_core::other_game_overlay` (the step scaler + the SFX cue). See [PROT 0977 HUD primitives](#prot-0977-hud-primitives).
+Ports: `legaia_engine_ui::muscle_dome_hud` (the two quad emitters + the decimal readout) and `legaia_engine_core::other_game_overlay` (the step scaler + the SFX cue). See [PROT 0977 HUD primitives](#prot-0977-hud-primitives).
 
 | Address | Role |
 |---|---|
@@ -263,7 +263,7 @@ six rows, with rows 3 and 5 riding a lane whose own row sits elsewhere in the
 list. Every brightness is `fade * (alpha << 4) >> 7` (`sll s0, s3, 4` at
 `0x801CF298`, the `+0x7F` round before the `sra 7`), and with the fade counter
 clamped at `0x10` a full-alpha row computes `0x100`, which the emitter caps at
-`0xFF`. Port: the draw is `legaia_engine_ui::other_game_hud`
+`0xFF`. Port: the draw is `legaia_engine_ui::muscle_dome_hud`
 (`HUB_SCORE_TALLY_LABELS`, `score_tally_quads`), the count-up itself
 `legaia_engine_core::other_game_overlay::ScoreTallyRamp`.
 

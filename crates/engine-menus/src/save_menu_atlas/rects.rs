@@ -307,7 +307,7 @@ pub(super) const ELEMENT_BADGE_ROW499_TIM_OFFSET: usize = 0x100D0;
 /// the same VRAM the image blocks occupy. So the "four ids not on the
 /// system-UI sheet" are the save-slot portraits and the empty-cell frame -
 /// one asset, already baked here and already drawn by
-/// `legaia_engine_ui::ui_title_save::slot_grid`.
+/// `legaia_engine_ui::title_save::slot_grid`.
 pub const ATLAS_RECT_PORTRAIT_W: u32 = 16;
 pub const ATLAS_RECT_PORTRAIT_H: u32 = 16;
 pub const ATLAS_RECT_PORTRAIT_BASE_X: u32 = 200;

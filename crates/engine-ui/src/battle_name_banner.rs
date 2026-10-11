@@ -26,7 +26,7 @@
 //!
 //! # Wiring
 //!
-//! [`banner_x`] is live: `ui_overlay::battle_hud_draws_for` centres the
+//! [`banner_x`] is live: `battle_hud::battle_hud_draws_for` centres the
 //! move-name label with it whenever `engine-core::battle_hud::battle_move_name`
 //! names one, on the pen row the retail placement records pin. The row is
 //! not this routine's - it belongs to the two placement records the X is

@@ -19,13 +19,13 @@ use crate::*;
 pub const FISHING_HUB_MARKED_INK: [f32; 4] = [1.0, 0.85, 0.35, 1.0];
 
 /// Compose hub lines into text draws in stage space, through the shared
-/// [`crate::ui_text_lines::text_line_draws_for`].
+/// [`crate::text_lines::text_line_draws_for`].
 pub fn fishing_hub_draws_for<'a>(
     font: &legaia_font::Font,
     lines: impl IntoIterator<Item = (&'a [u8], i32, i32, bool)>,
     ink: [f32; 4],
 ) -> Vec<TextDraw> {
-    crate::ui_text_lines::text_line_draws_for(font, lines, ink, FISHING_HUB_MARKED_INK)
+    crate::text_lines::text_line_draws_for(font, lines, ink, FISHING_HUB_MARKED_INK)
 }
 
 #[cfg(test)]

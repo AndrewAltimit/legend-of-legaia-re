@@ -25,7 +25,7 @@ pub const HUD_ROUND_MAX: i32 = 9;
 /// which is what `tally` carries: `(total, gold_remaining)`.
 ///
 /// This is the *layout*. The glyph quads are
-/// `legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for`, which both
+/// `legaia_engine_ui::baka_strips::baka_digit_strip_draws_for`, which both
 /// hosts call: a shared layout under two different emitters is exactly the
 /// shape that let one host draw a summary line where the other drew the
 /// retail cells.

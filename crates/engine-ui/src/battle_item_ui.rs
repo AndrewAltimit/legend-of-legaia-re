@@ -677,7 +677,7 @@ mod tests {
     /// HUD builder's constants and this module's record cannot drift from it.
     #[test]
     fn target_strip_pins_are_the_party_bars_seats() {
-        use crate::ui_overlay::{
+        use crate::battle_hud::{
             BAR_DIGIT_Y, BAR_HP_CUR_RIGHT, BAR_HP_LABEL, BAR_INTERIOR_W, BAR_MP_CUR_RIGHT,
             BAR_MP_LABEL, BAR_NAME, BAR_X, BAR_Y, PLATE_CAP_W, PLATE_H,
         };

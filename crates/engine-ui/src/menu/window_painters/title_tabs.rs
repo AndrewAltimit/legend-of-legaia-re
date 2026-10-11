@@ -14,7 +14,7 @@ use super::*;
 /// The five pause-menu tab renderers (`FUN_801DCA0C` / `CA50` / `CA94` /
 /// `CAD8` / `CB1C`) are the same 17 instructions with a different string
 /// pointer, so this one painter serves all six windows;
-/// [`crate::ui_menu_window_dispatch`] resolves any of them to it.
+/// [`crate::menu::window_dispatch`] resolves any of them to it.
 ///
 /// PORT: FUN_801DCFE4
 /// PORT: FUN_801DCA0C, FUN_801DCA50, FUN_801DCA94, FUN_801DCAD8, FUN_801DCB1C

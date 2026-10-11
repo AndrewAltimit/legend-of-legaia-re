@@ -54,7 +54,7 @@ pub struct PaylinePrim {
 // projected endpoints, which the page strokes as a two-point line in the
 // prim's colour, half-blended when the `0x43` code carries the
 // semi-transparency bit; the native window draws the same segments as
-// one-pixel flat quads (`legaia_engine_ui::ui_slot_paylines`) off
+// one-pixel flat quads (`legaia_engine_ui::slot_paylines`) off
 // [`SlotMachine::payline_segments`]. The native window still has no model draw
 // of the cabinet mesh (PROT 1200 descriptor 1) around them - see
 // docs/subsystems/minigame-slot-machine.md, "The cabinet is a mesh".

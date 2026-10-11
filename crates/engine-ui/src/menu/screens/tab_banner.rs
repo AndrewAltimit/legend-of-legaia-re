@@ -68,18 +68,18 @@ pub fn tab_banner_draws(
 /// it from one pair of coordinates.
 ///
 /// Retained as the pen-only entry point for a caller that has no parsed
-/// descriptor to dispatch through (`crate::ui_menu_window_dispatch`); the
+/// descriptor to dispatch through (`crate::menu::window_dispatch`); the
 /// geometry itself is
-/// [`title_tab_draws_for`](crate::ui_menu_window_painters::title_tab_draws_for),
+/// [`title_tab_draws_for`](crate::menu::window_painters::title_tab_draws_for),
 /// which is the same routine window 43 names.
 ///
 /// REF: FUN_801DCA0C (Items), FUN_801DCA50 (Magic), FUN_801DCA94 (Equip),
 /// REF: FUN_801DCAD8 (Status), FUN_801DCB1C (Options) - all five are ported
 /// by `title_tab_draws_for`, which this delegates to.
 pub fn tab_label_draws(font: &legaia_font::Font, label: &str, pen: (i32, i32)) -> Vec<TextDraw> {
-    crate::ui_menu_window_painters::title_tab_draws_for(
+    crate::menu::window_painters::title_tab_draws_for(
         font,
-        crate::ui_menu_window_painters::PainterRect::new(pen.0, pen.1, 0, 0),
+        crate::menu::window_painters::PainterRect::new(pen.0, pen.1, 0, 0),
         label,
     )
 }

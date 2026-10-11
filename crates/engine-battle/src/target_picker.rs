@@ -692,7 +692,7 @@ pub fn enemy_menu_rows(
 ///
 /// Wired: its retail host, the flow-`0x0A` battle-intro enemy-name banner,
 /// is [`crate::battle_hud::battle_intro_names`], which both hosts feed to the
-/// shared battle HUD builder (`legaia_engine_ui::ui_overlay`, native
+/// shared battle HUD builder (`legaia_engine_ui::battle_hud`, native
 /// `window/hud.rs`, browser `play_battle.rs`) for the intro timer's span. The
 /// **text measurer** is the `legaia-font` layout advance (the engine's
 /// stand-in for retail's proportional `FUN_80035F04`). The X each row

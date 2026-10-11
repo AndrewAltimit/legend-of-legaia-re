@@ -562,7 +562,7 @@ The **publisher logos** run ahead of the card on this host too
 (`boot_logos_start` / `_step` / `_draws_json`): `PublisherLogosSession` walks
 retail's SCEA -> Contrail -> PROKION order off the PROT 0895 atlas, Start or
 Cross skips, and the quads come out of the shared
-`legaia_engine_ui::ui_boot_logos::publisher_logo_sprite_draws` the native
+`legaia_engine_ui::boot_logos::publisher_logo_sprite_draws` the native
 window draws through, so the 640x480 boot stage letterboxes identically on
 both. The title theme starts when the card comes up, not under the logos.
 

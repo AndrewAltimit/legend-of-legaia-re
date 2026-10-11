@@ -49,7 +49,7 @@
 //!
 //! The **presentation** half - the persistent / catch HUD layout, the gauge
 //! bars, the digit field and the banner animators - lives in
-//! `legaia_engine_ui::ui_fishing`, next to the consumer that renders it, in
+//! `legaia_engine_ui::fishing::hud`, next to the consumer that renders it, in
 //! line with the project's split between simulation (this crate) and
 //! renderer-agnostic draw-list builders (`engine-ui`).
 
@@ -91,7 +91,7 @@ pub const CAST_POWER_SEED: i32 = 0x40;
 
 /// Persistent fishing-point cap (`FUN_801d5298`: `_DAT_8008444c` clamped to
 /// `999999`). The HUD row clamps to the same literal, one copy per crate -
-/// `legaia_engine_ui::ui_fishing::HUD_POINT_CAP`.
+/// `legaia_engine_ui::fishing::hud::HUD_POINT_CAP`.
 pub const FISH_POINTS_CAP: i32 = 999_999;
 
 /// Reel-held tension divisor for the `0x40` reel button: `rod*9 + 0x23`.

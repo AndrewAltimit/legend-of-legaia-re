@@ -31,7 +31,7 @@ use legaia_engine_ui::pause_menu::{
     StatusScreenView, TopLevelView, equip_screen_compose, pause_screen_draws,
     spell_level_notice_draws, stage_transform,
 };
-use legaia_engine_ui::ui_menu_window_dispatch as dispatch;
+use legaia_engine_ui::menu::window_dispatch as dispatch;
 use legaia_engine_ui::{
     ArtsChainRow, ArtsEditorDrawArgs, ArtsEditorPhase, EquipDrawPhase, FieldMenuPartyView,
     FieldMenuRowView, InventoryItemRow, InventoryUseDrawArgs, OptionsPopupDraw, OptionsRowView,

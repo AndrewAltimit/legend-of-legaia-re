@@ -31,7 +31,7 @@
 //! REF: FUN_80032A44 - the list kernel whose draw half this lays out.
 //! REF: FUN_801D4868 - the Buy / Sell / Quit picker (window 42).
 
-use crate::ui_menu_window_painters::{PainterPictogram, PainterSprite};
+use crate::menu::window_painters::{PainterPictogram, PainterSprite};
 use crate::{
     EquipStatBlock, PartyCompareMemberView, PartyCompareOutcome, SaveMenuAtlasRects, SpriteDraw,
     TextDraw, text_draws_for,
@@ -631,7 +631,7 @@ pub fn prize_screen_draws(
     marks: &[PainterSprite],
     pictogram: Option<PainterPictogram>,
 ) -> ShopScreenDraws {
-    use crate::ui_prize_exchange::{
+    use crate::prize_exchange::{
         WIN_COIN_COUNTER, WIN_CONFIRM, WIN_EXCHANGE_TAB, WIN_PRIZE_LIST,
     };
     let mut windows = vec![WIN_EXCHANGE_TAB, WIN_PRIZE_LIST, WIN_COIN_COUNTER];

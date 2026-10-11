@@ -138,7 +138,7 @@ pub fn choice_sheet_labels(cells: &[SheetCell]) -> Vec<(i32, i32, i32, String)> 
 
 /// The pot numeral's glyph placements on the sheet: the `0x10` px coin
 /// strip (`FUN_801D6F44`) at [`CHOICE_POT_PEN`], as `(x, y, digit)` for
-/// `legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for`.
+/// `legaia_engine_ui::baka_strips::baka_digit_strip_draws_for`.
 pub fn choice_pot_placements(pot: u32) -> Vec<(i32, i32, u8)> {
     crate::baka_fighter::coin_digit_cells(pot.min(i32::MAX as u32) as i32)
         .into_iter()

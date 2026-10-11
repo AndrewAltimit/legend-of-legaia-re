@@ -69,7 +69,7 @@ pub const SPLASH_FRAMES: i32 = 0x98;
 // variant resolves into them rather than replacing them: FUN_801d1870 /
 // FUN_801d1a90 -> `bar_frame` / `power_bar_frame` (via
 // `HudDraw::resolve_bar`), and FUN_801d76e0 -> `number_digit_cells`.
-// FUN_801d63b0 itself is `crate::ui_fishing_sprite`: the variant carries
+// FUN_801d63b0 itself is `crate::fishing::sprite`: the variant carries
 // its call-site arguments and the sprite pass turns it into a quad.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HudDraw {

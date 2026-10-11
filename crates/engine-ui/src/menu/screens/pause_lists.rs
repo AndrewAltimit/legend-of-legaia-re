@@ -381,7 +381,7 @@ pub fn items_screen_draws_for(
 ///
 /// It lived inline in [`items_screen_draws_for`] while the Items screen was
 /// its only caller, which is why the equip screen had no item panel and why
-/// [`crate::ui_menu_window_painters::count_panel_draws_for`] - the *delta*
+/// [`crate::menu::window_painters::count_panel_draws_for`] - the *delta*
 /// over this panel - had nothing to be a delta over.
 ///
 /// `pen` is the window's content origin: window 17's on Items, window 24's on
@@ -413,7 +413,7 @@ pub fn item_info_panel_draws_for(
     // Both description words go through the line-breaking printer
     // (`FUN_800337B0` / `FUN_8003CD00` -> `FUN_80036888`): a break puts the
     // rest one row pitch down.
-    let broken = crate::ui_menu_window_painters::broken_text_draws_for;
+    let broken = crate::menu::window_painters::broken_text_draws_for;
     out.extend(broken(font, info.desc, (ix, iy + 0x10), MENU_TEXT_WHITE));
     if let Some((line1, line2)) = info.passive {
         str_at(&mut out, line1, ix, iy + 0x38, MENU_TEXT_GREEN);

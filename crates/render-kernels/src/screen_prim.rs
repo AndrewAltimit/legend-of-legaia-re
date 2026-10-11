@@ -999,7 +999,7 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
 ///
 /// The prim set has no two-point variant because no renderer needs one: this
 /// constructor is the line kind, and the slot machine's paylines
-/// (`legaia_engine_ui::ui_slot_paylines`) are its first consumer.
+/// (`legaia_engine_ui::slot_paylines`) are its first consumer.
 pub fn line_quad(
     a: (f32, f32),
     b: (f32, f32),

@@ -609,7 +609,7 @@ impl PondSession {
     /// The landed catch's result plate this frame (`FUN_801D5298`, the
     /// result actor's tick), while [`PondPhase::Landed`] holds; `None`
     /// otherwise. One derivation for all three hosts, which pass it to
-    /// `legaia_engine_ui::ui_fishing::catch_result_draws`.
+    /// `legaia_engine_ui::fishing::hud::catch_result_draws`.
     ///
     /// The counter starts on the landing. Retail seats the result actor at
     /// the end of the landed fish's lift (`FUN_801D4948`, which raises

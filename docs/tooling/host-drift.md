@@ -1678,7 +1678,7 @@ inside it. Tier 12 measures the inside, and the pair carries a
 
 **The fishing point exchange** is a live `Option<PrizeExchange>` on
 `World::minigames.fishing_exchange`, driven by `World::fishing_exchange_input`
-and drawn through `legaia_engine_ui::ui_fishing_exchange`. The page holds it
+and drawn through `legaia_engine_ui::fishing::exchange`. The page holds it
 open across frames (`play_fishing_exchange_state_json`;
 `play_screen_parity_disc.rs`). `PrizeExchange::is_available` folds price, the
 owned-stack cap and the one-time latch together, so the `sold` tag reads

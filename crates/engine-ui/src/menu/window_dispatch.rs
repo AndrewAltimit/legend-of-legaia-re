@@ -67,7 +67,7 @@
 
 use legaia_asset::menu_windows::{MenuWindowDescriptor, MenuWindowTable};
 
-use crate::ui_menu_window_painters::PainterRect;
+use crate::menu::window_painters::PainterRect;
 
 // --- Renderer VAs -----------------------------------------------------------
 //

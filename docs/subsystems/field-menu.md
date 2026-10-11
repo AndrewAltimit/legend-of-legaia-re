@@ -237,7 +237,7 @@ calls it indirectly (`lw v0,0x28(s4); beq v0,zero,..; jalr v0; move a0,s4` at
 `0x80031E30..0x80031E44`). A `0` is a renderer-less list window.
 
 The port mirrors that step in
-[`engine-ui::ui_menu_window_dispatch`](../../crates/engine-ui/src/ui_menu_window_dispatch.rs):
+[`engine-ui::ui_menu_window_dispatch`](../../crates/engine-ui/src/menu/window_dispatch.rs):
 `painter_for_renderer_va` maps a renderer VA to its painter, `painter_at`
 resolves one id through a parsed table and refuses a descriptor whose renderer
 is not the painter the caller expected, and `menu_window_painters` reports
@@ -339,7 +339,7 @@ save point carries no text, so its interaction record is installed by
 The table's content renderers for windows 5 (`FUN_801D61B0`), 6
 (`FUN_801D6360`), 7, 8, 24, 31, 32, 33, 34, 36, 37, 43, 45 and 46, plus the
 bottom-clipped box emit `FUN_801E4140`, are draw-list builders in
-[`engine-ui::ui_menu_window_painters`](../../crates/engine-ui/src/ui_menu_window_painters.rs)
+[`engine-ui::ui_menu_window_painters`](../../crates/engine-ui/src/menu/window_painters.rs)
 (windows 25 and 41 in `ui_equip_stat_compare`). Every window painter
 is reached by a screen on both hosts. The port keeps the pen arithmetic and the
 state-word rules and drops two globals every painter touches - the ink word

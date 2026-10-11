@@ -6,7 +6,7 @@ use super::*;
 //
 // `FUN_8003C1F8(glyph, x, y)` draws one symbol from the fixed-cell glyph
 // page. Two independent uses pin the same id space: the records screen
-// (`crate::ui_menu::records_screen`, whose fields are `:` / `/` / `.`) and
+// (`crate::menu::screens::records_screen`, whose fields are `:` / `/` / `.`) and
 // window 37, which calls it with glyph `6` between its quantity and held
 // counts (`li a0,0x6; addiu a1,s5,0x20` at `0x801D59D4`) - a `/` between
 // "how many" and "how many you have", which is what that row reads as.

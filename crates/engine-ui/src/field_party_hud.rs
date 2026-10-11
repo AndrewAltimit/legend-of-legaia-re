@@ -35,7 +35,7 @@
 //!
 //! # Why this is not the battle roster panel
 //!
-//! The battle strip ([`crate::ui_overlay::battle_hud_draws_for`]) has its own
+//! The battle strip ([`crate::battle_hud::battle_hud_draws_for`]) has its own
 //! layout, its own widths and its own plate art. The two read the same
 //! character record and take the same readout-tint law, and nothing else about
 //! them is shared - the field columns are 4 px narrower, the field separator

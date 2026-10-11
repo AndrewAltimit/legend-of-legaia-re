@@ -27,7 +27,7 @@
 //! more sheet. What makes it the still and not an arbitrary picture is that
 //! the quads name it by texture page, exactly as retail's do.
 
-use crate::other_game_hud::{HudQuad, HudSprite};
+use crate::muscle_dome_hud::{HudQuad, HudSprite};
 use legaia_asset::ringside_still as still;
 use legaia_engine_battle_vm::panel_backread_loader::{BACKREAD_RECT_X, backread_slice_rect};
 
@@ -123,14 +123,14 @@ pub const FIRST_VISIT_TILE_RECORD: i32 = 2;
 /// emitter `FUN_801D08EC`, top-left `(i << 7, j << 7)`, at scale `0x1000` and
 /// the caller's fade level, rows outermost (`0x801D0148..0x801D0194`).
 ///
-/// The draws carry no brightness: [`crate::other_game_hud::hub_screen_quads`]
+/// The draws carry no brightness: [`crate::muscle_dome_hud::hub_screen_quads`]
 /// takes the level, which is the same `*(0x801D1A7C)` the still arm reads.
 /// The arm's last packet, the full-screen shade, is [`first_visit_shade`].
 ///
 /// PORT: FUN_801d00f8 (the `_DAT_801D1AE0 == 0` arm's tile grid,
 /// `0x801D0148..0x801D0194`)
-pub fn first_visit_tile_draws() -> Vec<crate::other_game_hud::HubDraw> {
-    use crate::other_game_hud::{HubAnchor, HubDraw};
+pub fn first_visit_tile_draws() -> Vec<crate::muscle_dome_hud::HubDraw> {
+    use crate::muscle_dome_hud::{HubAnchor, HubDraw};
     let mut out = Vec::with_capacity(6);
     for j in 0..2i16 {
         for i in 0..3i16 {
@@ -249,7 +249,7 @@ pub fn first_visit_hub_draw(
     course: i32,
     round: i32,
 ) -> FirstVisitDraw {
-    use crate::other_game_hud as hud;
+    use crate::muscle_dome_hud as hud;
     let mut out = FirstVisitDraw::default();
     if levels.backdrop != 0 {
         out.tiles = hud::hub_screen_quads(table, &first_visit_tile_draws(), levels.backdrop);
@@ -521,7 +521,7 @@ mod tests {
         assert!(draws.iter().all(|d| {
             d.sel == FIRST_VISIT_TILE_RECORD
                 && d.scale == 0x1000
-                && d.anchor == crate::other_game_hud::HubAnchor::Corner
+                && d.anchor == crate::muscle_dome_hud::HubAnchor::Corner
         }));
     }
 

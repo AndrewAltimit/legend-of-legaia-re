@@ -106,7 +106,7 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 /// 0899 file `0x15D00` block table read beside `menu_windows::parse`)
 /// stages an `engine-core::prize_exchange::PrizeExchangeSession`, the menu
 /// runtime drives it, and both hosts draw it through
-/// [`crate::ui_prize_exchange::prize_exchange_draws_for`] - which calls
+/// [`crate::prize_exchange::prize_exchange_draws_for`] - which calls
 /// this painter for window 46 whenever the session's Yes/No phase is up.
 pub fn choice_panel_draws_for(
     font: &legaia_font::Font,

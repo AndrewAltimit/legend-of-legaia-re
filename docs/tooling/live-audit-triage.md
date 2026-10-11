@@ -299,7 +299,7 @@ Grouped by the defect that hid the edge. This is the regression set.
   `parse_map_objects`), `ClutCellFx` (`World::step_clut_fx` plus `read_cell`),
   `OptionsPhase` (`OptionsSession::tick`, live through the `web-viewer` roots).
 
-The fishing presentation half lives in `crates/engine-ui/src/ui_fishing.rs`
+The fishing presentation half lives in `crates/engine-ui/src/fishing/hud.rs`
 (`persistent_hud_draws`, called from `window/hud.rs`) and is live the same way.
 
 ### `WIRE` rows: the call site that should exist

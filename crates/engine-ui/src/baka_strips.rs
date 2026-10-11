@@ -96,9 +96,9 @@ pub const BAKA_HUD_OT: u32 = 3;
 ///
 /// REF: FUN_801d5ed0
 pub fn baka_hud_prims(
-    quads: &[crate::ui_dance::DanceHudQuadView],
+    quads: &[crate::dance::DanceHudQuadView],
 ) -> Vec<crate::screen_prim::ScreenPrim> {
-    crate::ui_dance::dance_hud_prims(quads, BAKA_HUD_OT)
+    crate::dance::dance_hud_prims(quads, BAKA_HUD_OT)
 }
 
 #[cfg(test)]

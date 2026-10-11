@@ -105,7 +105,7 @@ fn digit_field_fills_every_slot_at_eight_digits() {
 #[test]
 fn digit_field_slots_are_the_dome_readouts_slots() {
     for value in [0, 7, 42, 100, 999_999, 12_345_678, 99_999_999] {
-        let slots = crate::other_game_hud::decimal_slots(value);
+        let slots = crate::muscle_dome_hud::decimal_slots(value);
         let cells = number_digit_cells(0, 0, 0, value);
         let expected: Vec<(usize, i32)> = slots
             .iter()

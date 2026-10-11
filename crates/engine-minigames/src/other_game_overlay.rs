@@ -5,7 +5,7 @@
 //! The overlay's per-frame update drives a set of counters, scales each
 //! frame's step through [`step_scale`], and keys one rotating SPU voice
 //! through [`arena_voice_cue`]; the visible half is the sprite/decimal HUD in
-//! `legaia_engine_ui::other_game_hud`.
+//! `legaia_engine_ui::muscle_dome_hud`.
 //!
 //! Provenance: `ghidra/scripts/funcs/overlay_0977_other_game_801d14b0.txt`
 //! and `..._801d1288.txt`; ported from the disassembly.
@@ -327,7 +327,7 @@ impl ScoreTallyRamp {
     /// only assignment of `0` in the routine.
     ///
     /// PORT: FUN_801cf074 (`0x801CF074..0x801CF294`, the simulation half; the
-    /// two emitter loops below it are `legaia_engine_ui::other_game_hud`)
+    /// two emitter loops below it are `legaia_engine_ui::muscle_dome_hud`)
     pub fn tick(&mut self, frame_delta: u8, boost: bool, volume_word: u32) -> ScoreTallyStep {
         let dt = i32::from(frame_delta);
         let mut out = ScoreTallyStep {

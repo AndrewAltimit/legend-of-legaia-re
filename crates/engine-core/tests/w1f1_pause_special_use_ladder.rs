@@ -14,7 +14,7 @@
 //! No `debug_` helper grants `0x88` / `0x89` / `0x8A`, so the bag is seeded
 //! directly ([`world_holding`]). Lane W1-F2 needs the same world for the
 //! confirm-window *draw* side (`801d1dac` / `801d1f10` in
-//! `engine-ui/src/ui_menu/system_menus.rs`); this file is the reusable copy.
+//! `engine-ui/src/menu/screens/system_menus.rs`); this file is the reusable copy.
 //!
 //! ## Door of Wind, and what is still owed on it
 //!

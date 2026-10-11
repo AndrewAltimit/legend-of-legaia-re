@@ -283,7 +283,7 @@ pub fn two_line_panel(actor: &HubActor, env: &HubEnv) -> HubFrame {
 // operand for operand. The whole 221-instruction body is in that dump, so
 // the "unrecovered past the number draw" note no longer holds.
 /// PORT: FUN_801d0f1c
-/// REPLACED-BY: `legaia_engine_ui::ui_menu::pause_lists` - the live port of
+/// REPLACED-BY: `legaia_engine_ui::menu::screens::pause_lists` - the live port of
 /// the same routine (its info window and the id-`0xFE` Point Card arm), which
 /// both play hosts' pause screens draw. No host is owed this second copy.
 ///

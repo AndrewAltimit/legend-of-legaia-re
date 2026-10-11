@@ -24,7 +24,7 @@
 //! PORT: FUN_80034e4c - zero-padded fixed-width decimal field
 //! REF: FUN_8003c1f8 - the separator-glyph primitive this screen's `Symbol`
 //! fields draw through. Its port is
-//! `crate::ui_menu_window_painters::separator_glyph_draws`, shared with
+//! `crate::menu::window_painters::separator_glyph_draws`, shared with
 //! window 37's quantity row, which pins the same glyph id space from the
 //! other end.
 //!
@@ -83,7 +83,7 @@ pub const SAVE_BLOCK_TO_RECORD: usize = 0x5C8;
 /// the learned-Arts id list that runs from `+0x186` (the Arts-panel
 /// renderer reads the same pair), and `+0x13C` counts the learned-magic id
 /// list from `+0x13D` - the byte window 7's prompt substitutes a glyph out
-/// of (`crate::ui_menu_window_painters::char_prompt_draws_for`).
+/// of (`crate::menu::window_painters::char_prompt_draws_for`).
 pub mod record_offset {
     /// `lw` at save-block `+0x6B4` - max hits.
     pub const MAX_HITS: usize = 0xEC;
@@ -580,7 +580,7 @@ pub fn records_screen_draws_for(
                 }
             }
             RecordsField::Symbol { x, y, ch, ink } => {
-                out.extend(crate::ui_menu_window_painters::separator_glyph_char_draws(
+                out.extend(crate::menu::window_painters::separator_glyph_char_draws(
                     font,
                     ch,
                     (x, y),

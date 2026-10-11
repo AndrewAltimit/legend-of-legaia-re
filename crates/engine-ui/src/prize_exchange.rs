@@ -26,10 +26,10 @@
 //!
 //! REF: FUN_801DC1CC, FUN_801D5DE0, FUN_801DCFE4, FUN_801DD028, FUN_801D603C
 
-use crate::ui_menu_window_dispatch::{
+use crate::menu::window_dispatch::{
     COUNTER_PICTOGRAM_COINS, CounterSource, MenuWindowPainter, painter_at, painter_rect,
 };
-use crate::ui_menu_window_painters::{
+use crate::menu::window_painters::{
     ChoiceFlags, PAINTER_ROW_PITCH, PainterPictogram, PainterSprite, choice_panel_draws_for,
     counter_panel_draws_for, title_tab_draws_for,
 };
@@ -176,4 +176,4 @@ pub fn prize_exchange_draws_for(
 // not composed here: its windows are the field overlay's panel records `10`
 // and `11`, not menu-overlay descriptor windows, and the engine lays them out
 // (`legaia_engine_core::field_submode_screen::coin_counter_lines`). Both hosts
-// draw those lines through `crate::ui_text_lines::pen_line_draws_for`.
+// draw those lines through `crate::text_lines::pen_line_draws_for`.

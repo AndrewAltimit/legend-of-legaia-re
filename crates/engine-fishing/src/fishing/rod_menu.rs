@@ -6,7 +6,7 @@
 /// The line-record base offset shared by the hook check (`FUN_801d4004`:
 /// `record < gate + 300`) and the catch-HUD length readout (`FUN_801d1580`:
 /// `record - 300`, clamped at zero). The HUD-side copy of the same literal
-/// is `legaia_engine_ui::ui_fishing::RECORD_STRIKE_BASE`.
+/// is `legaia_engine_ui::fishing::hud::RECORD_STRIKE_BASE`.
 pub const RECORD_STRIKE_BASE: i32 = 300;
 
 /// The inventory item id whose count the persistent HUD shows for the

@@ -16,7 +16,7 @@
 //! | coin digits | `FUN_801d2914` | `POLY_FT4` `0x2E`, linked at OT `1` |
 //! | info panel, "COIN" label | `FUN_801d2cc0` (from `FUN_801cfff0`) | `POLY_GT4` `0x3C \| semi << 1` |
 //!
-//! The paylines are not here: they are `crate::ui_slot_paylines`, which every
+//! The paylines are not here: they are `crate::slot_paylines`, which every
 //! host already draws.
 //!
 //! Coordinates are produced on the machine's 640x240 framebuffer and halved

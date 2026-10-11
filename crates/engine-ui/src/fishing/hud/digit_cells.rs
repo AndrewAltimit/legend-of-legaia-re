@@ -22,8 +22,8 @@ pub const DIGIT_PITCH_WIDE: i32 = 0x10;
 
 /// The digit field is a fixed 8 slots wide; the value is right-aligned in it.
 /// The same eight the dome overlay's readout fills - one width, because it is
-/// one fill loop ([`crate::other_game_hud::DECIMAL_SLOTS`]).
-pub const DIGIT_FIELD_SLOTS: usize = crate::other_game_hud::DECIMAL_SLOTS;
+/// one fill loop ([`crate::muscle_dome_hud::DECIMAL_SLOTS`]).
+pub const DIGIT_FIELD_SLOTS: usize = crate::muscle_dome_hud::DECIMAL_SLOTS;
 
 /// Expand a number into its digit cells - the layout half of the digit blitter
 /// behind [`HudDraw::Number`].
@@ -39,7 +39,7 @@ pub const DIGIT_FIELD_SLOTS: usize = crate::other_game_hud::DECIMAL_SLOTS;
 /// The **slot fill is not this routine's own**. `FUN_801d76e0` and the dome
 /// overlay's `FUN_801d1308` open with the identical fill (same `-1` init, same
 /// pre-seeded units slot, same `!= 0` store gate, same eight `/10` steps), so
-/// it is taken from [`crate::other_game_hud::decimal_slots`]. What the two
+/// it is taken from [`crate::muscle_dome_hud::decimal_slots`]. What the two
 /// retail routines do *not* share is the emit half: this one selects between
 /// two emitters on `style` and advances two pens (8 px / 16 px), while the dome
 /// one has a single emitter and passes its digit by patching a widget
@@ -57,7 +57,7 @@ pub fn number_digit_cells(style: i32, x: i32, y: i32, value: i32) -> Vec<DigitCe
         DIGIT_PITCH_WIDE
     };
 
-    crate::other_game_hud::decimal_slots(value)
+    crate::muscle_dome_hud::decimal_slots(value)
         .iter()
         .enumerate()
         .filter_map(|(i, slot)| {

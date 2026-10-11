@@ -16,7 +16,7 @@
 //! Both painters live in `engine-ui` and both hosts call them, so a drift
 //! here would be a drift in one builder rather than between two copies.
 
-use legaia_engine_ui::ui_menu_window_painters::{
+use legaia_engine_ui::menu::window_painters::{
     PainterRect, buy_quantity_draws_for, sell_quantity_draws_for, sell_total_digits,
 };
 

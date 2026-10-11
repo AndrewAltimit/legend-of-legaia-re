@@ -197,7 +197,7 @@ pub fn shop_stock_row_ink(held: i16, marker: i16, gold: i32, price: i32) -> u8 {
 
 /// The two quantity windows' **content** - the pens, the digit ladder and
 /// the separator - live with the draw in
-/// `legaia_engine_ui::ui_menu_window_painters`
+/// `legaia_engine_ui::menu::window_painters`
 /// (`buy_quantity_draws_for` / `sell_quantity_draws_for`), one builder per
 /// window across both hosts. This module owns the two **sessions** that
 /// step the number those windows print and the transaction they commit.

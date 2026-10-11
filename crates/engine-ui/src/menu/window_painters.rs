@@ -5,7 +5,7 @@
 //! Each descriptor's `renderer_va` names the routine that fills that
 //! window's content rect; the 9-slice frame around it is drawn by the
 //! caller, not here (see `docs/subsystems/field-menu.md`).
-//! [`crate::ui_menu_window_dispatch`] maps a parsed descriptor to the painter
+//! [`crate::menu::window_dispatch`] maps a parsed descriptor to the painter
 //! below that draws it, the way the retail window walker maps the live
 //! window's `+0x28` to a routine. This module ports the painters for the
 //! tab / prompt / counter / shop-panel block:

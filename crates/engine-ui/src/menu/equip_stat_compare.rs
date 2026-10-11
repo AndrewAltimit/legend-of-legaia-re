@@ -66,7 +66,7 @@
 //!
 //! # Wiring
 //!
-//! `crate::ui_menu_window_dispatch` resolves both descriptors to these
+//! `crate::menu::window_dispatch` resolves both descriptors to these
 //! painters, and the screen that opens them is the shop's **equipment-buy
 //! recipient flow** (retail sub-screen `0x1C`, `FUN_801DB380`): the buy
 //! list's kind dispatch (`engine-core`'s `shop::buy_list_confirm_route`)
@@ -80,7 +80,7 @@
 //! opens these - window 25's rect `(14, 40, 144, 52)` overlaps the party
 //! window 21 it would have to replace.
 
-use crate::ui_menu_window_painters::{
+use crate::menu::window_painters::{
     ChoiceFlags, EquipTargetRow, PainterRect, PainterSprite, equip_target_list_draws_for,
 };
 use crate::{TextDraw, text_draws_for};
@@ -730,7 +730,7 @@ pub const COMPARE_LABELS_SPD: [&str; 3] = ["SPD", "INT", "AGL"];
 /// different routine is skipped rather than mis-drawn.
 ///
 /// REF: FUN_801d56fc - window 36's renderer, ported as
-/// [`crate::ui_menu_window_painters::equip_target_list_draws_for`]
+/// [`crate::menu::window_painters::equip_target_list_draws_for`]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RecipientWindowRects {
     /// Window 36 (`FUN_801D56FC`) - the recipient row list.
@@ -1259,7 +1259,7 @@ mod tests {
         assert_eq!(sprites.len(), 1);
         assert_eq!(
             sprites[0].y,
-            W36.y + 2 * crate::ui_menu_window_painters::PAINTER_ROW_PITCH
+            W36.y + 2 * crate::menu::window_painters::PAINTER_ROW_PITCH
         );
     }
 

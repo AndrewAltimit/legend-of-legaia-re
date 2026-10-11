@@ -60,7 +60,7 @@ impl FishingCaptions<'static> {
 
 /// Where the consumer samples its non-text quads from.
 ///
-/// A host that draws the sprite half itself (`crate::ui_fishing_sprite`,
+/// A host that draws the sprite half itself (`crate::fishing::sprite`,
 /// `FUN_801d63b0`'s quads over the venue's HUD page) sets
 /// [`Self::sprites_drawn`]; otherwise glyph ids resolve through `glyph_src`,
 /// and a glyph the host cannot place is dropped rather than guessed at.
@@ -75,7 +75,7 @@ pub struct FishingHudAtlas<'a> {
     pub bar_thickness: u32,
     /// The host draws the sprite half of this list itself, as screen
     /// primitives over the venue's HUD page
-    /// ([`crate::ui_fishing_sprite::fishing_hud_sprite_prims`]): numbers,
+    /// ([`crate::fishing::sprite::fishing_hud_sprite_prims`]): numbers,
     /// glyphs and bar frames are then left out here, and only the captions,
     /// counts and bar fills come back as quads.
     pub sprites_drawn: bool,
@@ -229,7 +229,7 @@ pub fn fishing_hud_draws_for(
                 // `FUN_80034B78(value, digits, x, y)`: the value right-aligned
                 // in `digits` 8-px cells, leading cells blank - a zero-padded
                 // string here ran the count into the caption before it.
-                out.extend(crate::ui_menu::num_field_draws(
+                out.extend(crate::menu::screens::num_field_draws(
                     font,
                     value.max(0) as u64,
                     origin.0 + x,

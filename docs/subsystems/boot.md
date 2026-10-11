@@ -1197,7 +1197,7 @@ Two functions carry the screen:
 (`NameEntry` + `NameEntryState` + `Control`), driven on the world by
 `World::open_name_entry` / `step_name_entry` (committing into
 `World::party.party_names`) and rendered through
-[`legaia_engine_ui::ui_menu::name_entry`](../../crates/engine-ui/src/ui_menu/name_entry.rs).
+[`legaia_engine_ui::menu::screens::name_entry`](../../crates/engine-ui/src/menu/screens/name_entry.rs).
 
 - **It is reached by executing the scene's own bytecode.** The `town01` entry
   installs P2[3] as a spawned cutscene timeline: on the natural chain arrival via
@@ -1565,7 +1565,7 @@ fade-down of the logo over the same 65 frames rather than compositing the white
 blend quad. Both hosts play the pass - the native `play-window --boot-ui` chain
 and the browser play page, which opens its logo stage ahead of the title card -
 through the shared quad builder
-`legaia_engine_ui::ui_boot_logos::publisher_logo_sprite_draws`.
+`legaia_engine_ui::boot_logos::publisher_logo_sprite_draws`.
 
 ### The code region, and where it ends
 

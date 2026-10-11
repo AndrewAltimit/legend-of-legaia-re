@@ -31,7 +31,7 @@
 //! composition below is reachable from a plain library test with no disc, no
 //! GPU and no host.
 
-use crate::ui_menu_window_painters::{
+use crate::menu::window_painters::{
     ChoiceFlags, char_prompt_draws_for, label_list_draws_for, notify_prompt_draws_for,
     title_tab_draws_for, two_line_choice_panel_draws_for,
 };
@@ -784,7 +784,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 // ...and window 24's own delta over that panel: the
                 // two-digit count in the accent pen, plus the reserved
                 // sub-rect the renderer frames either way.
-                let (count_draws, reserved) = crate::ui_menu_window_painters::count_panel_draws_for(
+                let (count_draws, reserved) = crate::menu::window_painters::count_panel_draws_for(
                     ctx.font,
                     r,
                     v.info.as_ref().map(|info| u64::from(info.count)),

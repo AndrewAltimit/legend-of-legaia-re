@@ -285,7 +285,7 @@ actor-band command loop script-vm.md documents, forming the actor band
 # writing their own reviewed rows into it - append these stanzas verbatim.
 #
 # Two rows are NOT here because they were defects and are fixed in code instead:
-# `crates/engine-ui/src/ui_equip_stat_compare.rs:801db380` and
+# `crates/engine-ui/src/menu/equip_stat_compare.rs:801db380` and
 # `crates/engine-vm/src/field.rs:801dd9d4`, both retagged `PORT:` -> `REF:`.
 #
 # Every reason below rests on a fresh read of the routine's disassembly, not on
@@ -293,7 +293,7 @@ actor-band command loop script-vm.md documents, forming the actor band
 # these VAs are aliased across overlays.
 
 # ---------------------------------------------------------------------------
-# crates/engine-ui/src/ui_menu_window_painters.rs - 14 rows, one structural cause
+# crates/engine-ui/src/menu/window_painters.rs - 14 rows, one structural cause
 # ---------------------------------------------------------------------------
 # This module ports the menu overlay's window-descriptor content painters. Every
 # one of them is a leaf whose only distinctive datum is its OWN private overlay

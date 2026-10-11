@@ -29,7 +29,7 @@ use super::*;
 /// `+0x13D` is not an arbitrary field. It is the first entry of the
 /// character's **learned-magic id list**, whose length byte sits one earlier
 /// at `+0x13C` - the same byte the records page prints under "Magic"
-/// (`crate::ui_menu::records_screen`, whose own rebase table pins the pair).
+/// (`crate::menu::screens::records_screen`, whose own rebase table pins the pair).
 /// So `DAT_8007BB78` is a list index and the substituted byte is a spell id.
 ///
 /// **Which flow opens it is pinned**, and it is narrower than "the magic
@@ -229,7 +229,7 @@ pub fn amount_prompt_draws_for(
 // then this count over it.
 /// PORT: FUN_801DCC20
 /// REF: FUN_801d0f1c - the shared item-info panel this painter is the delta
-/// over. Ported in `crate::ui_menu::pause_lists`, not here.
+/// over. Ported in `crate::menu::screens::pause_lists`, not here.
 pub fn count_panel_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
