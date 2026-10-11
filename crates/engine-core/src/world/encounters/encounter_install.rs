@@ -4,10 +4,13 @@
 use super::*;
 
 impl World {
-    /// Install an [`crate::encounter::EncounterSession`] for the current
+    /// Install an [`legaia_engine_battle::encounter::EncounterSession`] for the current
     /// scene. Engines call this on scene-enter once the per-scene encounter
     /// table is known. `None` disables encounters for the active scene.
-    pub fn set_encounter_session(&mut self, session: Option<crate::encounter::EncounterSession>) {
+    pub fn set_encounter_session(
+        &mut self,
+        session: Option<legaia_engine_battle::encounter::EncounterSession>,
+    ) {
         self.encounters.session = session;
     }
 
@@ -25,17 +28,17 @@ impl World {
     /// The on-disc resolver (reading the per-scene encounter table out of
     /// `0865_battle_data`) lands once a runtime watchpoint trace pins the
     /// table offset. Engines currently feed the registry from
-    /// [`crate::encounter_registry::vanilla_encounter_registry`] or a
+    /// [`legaia_engine_battle::encounter_registry::vanilla_encounter_registry`] or a
     /// custom composition.
     pub fn install_encounter_for_scene(
         &mut self,
-        registry: &crate::encounter_registry::EncounterRegistry,
+        registry: &legaia_engine_battle::encounter_registry::EncounterRegistry,
         scene_label: &str,
     ) -> bool {
         match registry.resolve(scene_label) {
             Some(table) => {
-                let tracker = crate::encounter::EncounterTracker::new(table.clone());
-                let session = crate::encounter::EncounterSession::new(tracker);
+                let tracker = legaia_engine_battle::encounter::EncounterTracker::new(table.clone());
+                let session = legaia_engine_battle::encounter::EncounterSession::new(tracker);
                 let nonempty = !table.is_empty();
                 self.encounters.session = Some(session);
                 nonempty
@@ -47,13 +50,13 @@ impl World {
         }
     }
 
-    /// Install a fully-built [`crate::encounter::EncounterTable`] plus its
-    /// per-row [`crate::monster_catalog::FormationDef`]s as the active
+    /// Install a fully-built [`legaia_engine_battle::encounter::EncounterTable`] plus its
+    /// per-row [`legaia_engine_battle::monster_catalog::FormationDef`]s as the active
     /// scene's encounter source.
     ///
     /// This is the disc-resident path: the field scene-entry flow resolves
     /// the table + formations straight from the scene's MAN asset (retail
-    /// `_DAT_8007B898`) via [`crate::encounter_man::scene_encounter_from_man`]
+    /// `_DAT_8007B898`) via [`legaia_engine_battle::encounter_man::scene_encounter_from_man`]
     /// and installs them here, in place of the synthetic-pattern
     /// [`Self::install_encounter_for_scene`] fallback. The formation defs are
     /// merged into `formation_table` so the table's row-index `formation_id`s
@@ -69,8 +72,8 @@ impl World {
     /// is a fight that never happens with nothing on screen to say why.
     pub fn install_man_encounter(
         &mut self,
-        table: crate::encounter::EncounterTable,
-        formations: Vec<crate::monster_catalog::FormationDef>,
+        table: legaia_engine_battle::encounter::EncounterTable,
+        formations: Vec<legaia_engine_battle::monster_catalog::FormationDef>,
     ) -> bool {
         for def in formations {
             self.tables.formation_table.insert(def);
@@ -92,27 +95,31 @@ impl World {
             }
         }
         let nonempty = !table.is_empty();
-        let tracker = crate::encounter::EncounterTracker::new(table);
-        self.encounters.session = Some(crate::encounter::EncounterSession::new(tracker));
+        let tracker = legaia_engine_battle::encounter::EncounterTracker::new(table);
+        self.encounters.session = Some(legaia_engine_battle::encounter::EncounterSession::new(
+            tracker,
+        ));
         nonempty
     }
 
-    /// Install a **bare** [`crate::encounter::EncounterSession`] for the
+    /// Install a **bare** [`legaia_engine_battle::encounter::EncounterSession`] for the
     /// active scene: an empty mean-rate table (which therefore never rolls of
     /// its own accord) wrapped in the transition / grace state machine.
     ///
     /// This is the sink a roll that came from somewhere *else* needs - the
-    /// per-region tracker ([`crate::region_encounter::RegionEncounterTracker`],
+    /// per-region tracker ([`legaia_engine_battle::region_encounter::RegionEncounterTracker`],
     /// the faithful `FUN_801D9E1C` model) and the
     /// [`Self::force_encounter`] harness both own their own pick and only want
     /// the bracketing. Installing it costs nothing and turns "the session was
     /// cleared under us" from a lost battle into a recoverable state.
     pub fn install_encounter_bracket(&mut self) {
         let label = self.active_scene_label.clone();
-        let table = crate::encounter::EncounterTable::new(label);
+        let table = legaia_engine_battle::encounter::EncounterTable::new(label);
         debug_assert!(table.is_empty(), "the bracket table must never self-roll");
-        let tracker = crate::encounter::EncounterTracker::new(table);
-        self.encounters.session = Some(crate::encounter::EncounterSession::new(tracker));
+        let tracker = legaia_engine_battle::encounter::EncounterTracker::new(table);
+        self.encounters.session = Some(legaia_engine_battle::encounter::EncounterSession::new(
+            tracker,
+        ));
         // `scene_can_roll_encounters` answers `false` while no session is
         // installed, so the cached answer (and the "no random encounters in
         // this scene" hint a host draws from it) has to be re-taken now that
@@ -171,7 +178,7 @@ impl World {
         if let Some(t) = self.terrain.region_tracker.as_mut() {
             t.clear_suppression();
         }
-        let roll = crate::encounter::EncounterRoll {
+        let roll = legaia_engine_battle::encounter::EncounterRoll {
             formation_id,
             row_index: formation_id as usize,
             roll_q8: 0,
@@ -215,20 +222,20 @@ impl World {
     /// engines read it at battle-load time.
     pub fn set_formation_table(
         &mut self,
-        table: crate::monster_catalog::FormationTable,
-        catalog: crate::monster_catalog::MonsterCatalog,
+        table: legaia_engine_battle::monster_catalog::FormationTable,
+        catalog: legaia_engine_battle::monster_catalog::MonsterCatalog,
     ) {
         self.tables.formation_table = table;
         self.tables.monster_catalog = catalog;
     }
 
-    /// Install a [`crate::encounter_record::EncounterRecord`] decoded from
+    /// Install a [`legaia_engine_battle::encounter_record::EncounterRecord`] decoded from
     /// an on-disc byte slice as the next encounter for the active scene.
     ///
     /// Mirrors the retail flow at `0x801DA620..0x801DA678`: the parsed
-    /// record's monster ids are turned into a [`crate::monster_catalog::FormationDef`]
+    /// record's monster ids are turned into a [`legaia_engine_battle::monster_catalog::FormationDef`]
     /// (registered into `formation_table`), wrapped in a single-row
-    /// [`crate::encounter::EncounterTable`] (rate `0xFF/256` so the next
+    /// [`legaia_engine_battle::encounter::EncounterTable`] (rate `0xFF/256` so the next
     /// step roll always fires), and installed as the active session.
     ///
     /// Returns the synthesized `formation_id` so engines can immediately
@@ -237,7 +244,7 @@ impl World {
     pub fn install_encounter_from_record(
         &mut self,
         scene_label: &str,
-        record: &crate::encounter_record::EncounterRecord,
+        record: &legaia_engine_battle::encounter_record::EncounterRecord,
     ) -> Option<u16> {
         if record.is_empty() {
             return None;
@@ -246,7 +253,7 @@ impl World {
         let formation_id = formation.formation_id;
         self.tables.formation_table.insert(formation);
 
-        use crate::encounter::{
+        use legaia_engine_battle::encounter::{
             EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
         };
         let mut table = EncounterTable::new(scene_label);
@@ -268,7 +275,7 @@ impl World {
     /// a formation **by index** into the per-scene formation table - the
     /// mechanism the Rim Elm Tetsu tutorial fight uses. The per-scene formations
     /// load from the MAN asset into a contiguous 8-byte-stride table
-    /// (`[3 reserved][count][<=4 ids]`, see [`crate::encounter_record`] /
+    /// (`[3 reserved][count][<=4 ids]`, see [`legaia_engine_battle::encounter_record`] /
     /// `docs/formats/encounter.md`); a carrier entity arms its encounter by
     /// pointing `actor[+0x94]` at one entry (`table_base + index*8`), and
     /// `FUN_801DA51C` copies that record into the formation cell on confirm. The
@@ -294,7 +301,7 @@ impl World {
         }
         let scene_label = self.active_scene_label.clone();
 
-        use crate::encounter::{
+        use legaia_engine_battle::encounter::{
             EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
         };
         let mut table = EncounterTable::new(&scene_label);

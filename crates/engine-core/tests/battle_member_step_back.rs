@@ -9,12 +9,13 @@
 //!
 //! Disc-free.
 
-use legaia_engine_core::battle_input::CommandPhase;
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, MonsterCatalog, MonsterDef,
 };
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_menus::battle_input::CommandPhase;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 fn world_in_battle() -> World {
     let mut w = World::new();

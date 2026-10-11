@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn enter_battle_populates_party_and_monsters() {
@@ -12,7 +13,7 @@ fn enter_battle_populates_party_and_monsters() {
     // Party slots sit at the retail 3-member seats (negative Z, facing
     // the monsters at positive Z).
     for i in 0..3 {
-        let s = crate::battle_seats::party_seat(3, i);
+        let s = legaia_engine_battle::battle_seats::party_seat(3, i);
         assert_eq!(world.actors[i].move_state.world_x, s.x);
         assert_eq!(world.actors[i].move_state.world_z, s.z);
         assert!(world.actors[i].move_state.world_z < 0);
@@ -26,7 +27,7 @@ fn enter_battle_populates_party_and_monsters() {
     // SM seeded at Begin.
     assert_eq!(
         world.battle_ctx.action_state,
-        vm::battle_action::ActionState::Begin.as_byte()
+        legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte()
     );
 }
 
@@ -249,7 +250,7 @@ fn stone_counts_as_defeated_and_is_petrified() {
 
 #[test]
 fn petrified_target_absorbs_art_strike_damage() {
-    use crate::art_strike::ArtStrikeOutcome;
+    use legaia_engine_battle::art_strike::ArtStrikeOutcome;
     use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut world = World::new();
     world.party.party_count = 4;
@@ -287,7 +288,7 @@ fn petrified_target_absorbs_art_strike_damage() {
 /// from the pre-nullify amount (matching the basic-attack / finisher order).
 #[test]
 fn stone_absorbs_a_damage_spell() {
-    use crate::spells::{SpellElement, SpellOutcome};
+    use legaia_engine_battle::spells::{SpellElement, SpellOutcome};
     use legaia_engine_battle_vm::status_effects::StatusKind;
 
     let mut world = World::new();
@@ -457,12 +458,12 @@ fn live_loop_ticks_dot_at_the_round_boundary() {
 
 #[test]
 fn all_party_item_heals_every_living_party_actor_in_battle() {
-    use crate::inventory_use::{
+    use legaia_engine_menus::inventory_use::{
         InventoryContext, InventoryUseInput, InventoryUseSession, TargetRow,
     };
 
     let mut world = World::default();
-    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    world.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
     world.enter_battle(3, 1);
     // Wound the whole party; down the third member.
     for i in 0..3 {
@@ -490,7 +491,7 @@ fn all_party_item_heals_every_living_party_actor_in_battle() {
     s.input(InventoryUseInput::Confirm);
     assert!(matches!(
         s.state,
-        crate::inventory_use::InventoryUseState::Done(_)
+        legaia_engine_menus::inventory_use::InventoryUseState::Done(_)
     ));
     assert_eq!(s.used_item, Some(0x7A));
     assert_eq!(s.used_slots, vec![0, 1], "only the two living allies");

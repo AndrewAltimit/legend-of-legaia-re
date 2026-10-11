@@ -10,7 +10,7 @@ impl<S: AudioSink> BootSession<S> {
     ///
     /// Mirrors the retail NEW GAME → field-launch chain (master mode 2 → 3,
     /// see `docs/subsystems/boot.md`). The opening scene
-    /// ([`legaia_asset::new_game::OPENING_CUTSCENE_SCENE`] = `opdeene`, the
+    /// ([`legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE`] = `opdeene`, the
     /// prologue cutscene, which hands off to `town01`) is entered through the
     /// usual [`BootSession::enter_field_live`] path; this call only resets and
     /// seeds the world state. When the SCUS template isn't available the world
@@ -84,7 +84,7 @@ impl<S: AudioSink> BootSession<S> {
         // scene entry, so the INIT column here is the plan and the body
         // below is the staging it names.
         {
-            use legaia_engine_core::mode::{GameMode, ModeInitPlan};
+            use legaia_engine_mode::mode::{GameMode, ModeInitPlan};
             let plan = self
                 .mode_seat
                 .enter(GameMode::MainInit, &mut self.host.world);
@@ -118,7 +118,7 @@ impl<S: AudioSink> BootSession<S> {
         // Each prefers the disc-accurate real-id table and falls back to the
         // fabricated-id vanilla catalog on disc-free builds.
         world.set_equipment_table(self.equip_modifier_table.clone().unwrap_or_else(|| {
-            legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
+            legaia_engine_menus::equipment::vanilla_equipment_catalog().to_modifier_table()
         }));
         if let Some(stats) = self.equip_stats.clone() {
             world.set_equip_stats(stats);
@@ -126,9 +126,9 @@ impl<S: AudioSink> BootSession<S> {
         world.set_spell_catalog(
             self.spell_catalog
                 .clone()
-                .unwrap_or_else(legaia_engine_core::retail_magic::retail_seru_magic_catalog),
+                .unwrap_or_else(legaia_engine_battle::retail_magic::retail_seru_magic_catalog),
         );
-        world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+        world.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
         if let Some(steal) = self.steal_table.clone() {
             world.set_steal_table(steal);
         }
@@ -169,7 +169,7 @@ impl<S: AudioSink> BootSession<S> {
     /// it loads the scene through [`SceneHost::enter_field_scene`] (which seeds
     /// the formation table + monster catalog from the MAN, so overworld
     /// encounters resolve to real monsters), builds the
-    /// [`RegionEncounterTable`](legaia_engine_core::region_encounter::RegionEncounterTable)
+    /// [`RegionEncounterTable`](legaia_engine_battle::region_encounter::RegionEncounterTable)
     /// from the same MAN, routes it via
     /// [`World::set_world_map_regions`], installs the field player so
     /// `tick_world_map`'s locomotion + per-tile encounter roll run, and enters
@@ -200,16 +200,16 @@ impl<S: AudioSink> BootSession<S> {
         }
 
         let equip_table = self.equip_modifier_table.clone().unwrap_or_else(|| {
-            legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
+            legaia_engine_menus::equipment::vanilla_equipment_catalog().to_modifier_table()
         });
         let world = &mut self.host.world;
         world.set_equipment_table(equip_table);
         if opts.player_battle {
-            world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+            world.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
             world.set_spell_catalog(
                 self.spell_catalog
                     .clone()
-                    .unwrap_or_else(legaia_engine_core::retail_magic::retail_seru_magic_catalog),
+                    .unwrap_or_else(legaia_engine_battle::retail_magic::retail_seru_magic_catalog),
             );
         }
         // The overworld always arms the loop (it is the encounter surface),

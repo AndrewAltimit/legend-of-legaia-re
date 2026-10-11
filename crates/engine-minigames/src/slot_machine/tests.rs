@@ -1,12 +1,12 @@
 use super::*;
-use legaia_asset::minigame_slot_scene::LANDING_LINE_BY_JITTER;
-use legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS;
-use legaia_asset::slot_payout::SlotPayoutTable;
 use legaia_engine_system::rand::BiosRand;
+use legaia_minigame_formats::minigame_slot_scene::LANDING_LINE_BY_JITTER;
+use legaia_minigame_formats::minigame_slot_scene::PAYLINE_ROW_OFFSETS;
+use legaia_minigame_formats::slot_payout::SlotPayoutTable;
 
 #[test]
 fn payline_prims_light_exactly_the_winning_line() {
-    use legaia_asset::minigame_slot_scene::{PayLine, Pos3};
+    use legaia_minigame_formats::minigame_slot_scene::{PayLine, Pos3};
     let p = |y: i16| PayLine {
         a: Pos3 {
             x: -640,
@@ -35,7 +35,7 @@ fn payline_prims_light_exactly_the_winning_line() {
 
 #[test]
 fn payline_index_zero_lights_when_the_winner_word_is_zero() {
-    use legaia_asset::minigame_slot_scene::{PayLine, Pos3};
+    use legaia_minigame_formats::minigame_slot_scene::{PayLine, Pos3};
     let z = Pos3 { x: 0, y: 0, z: 0 };
     let table = [PayLine { a: z, b: z }; 5];
     assert!(payline_prims(&table, 0)[0].lit);
@@ -367,14 +367,17 @@ fn two_landed_bonus_symbols_raise_the_anticipation_latch() {
         m.strips[0][1] = sym;
         m.strips[2][1] = sym;
     };
-    plant(&mut m, legaia_asset::slot_payout::PUNCH_SYMBOL_ID);
+    plant(
+        &mut m,
+        legaia_minigame_formats::slot_payout::PUNCH_SYMBOL_ID,
+    );
     m.stopped = [Some(0), None, None];
     m.tick();
     assert_eq!(m.anticipation(), 0, "one landed reel is not a pair");
     m.stopped = [Some(0), None, Some(0)];
     m.tick();
     assert_eq!(m.anticipation(), 1, "a punch pair");
-    plant(&mut m, legaia_asset::slot_payout::KICK_SYMBOL_ID);
+    plant(&mut m, legaia_minigame_formats::slot_payout::KICK_SYMBOL_ID);
     m.tick();
     assert_eq!(m.anticipation(), 2, "a kick pair");
     assert!(m.stop_reel(1));
@@ -689,7 +692,7 @@ fn all_five_paylines_always_play() {
     //   0 = top   (+1 +1 +1)      3 = diagonal (-1  0 +1)
     //   1 = middle ( 0  0  0)     4 = diagonal (+1  0 -1)
     //   2 = bottom (-1 -1 -1)
-    for (line, offsets) in legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS
+    for (line, offsets) in legaia_minigame_formats::minigame_slot_scene::PAYLINE_ROW_OFFSETS
         .iter()
         .enumerate()
     {
@@ -748,7 +751,7 @@ fn feature_odds_bracket_on_the_net_take() {
 /// present at their own columns.
 #[test]
 fn a_paying_spin_puts_its_own_figure_on_the_marquee() {
-    use legaia_asset::minigame_slot_scene as scene;
+    use legaia_minigame_formats::minigame_slot_scene as scene;
 
     let mut m = SlotMachine::new(payouts(), 42, 200);
     // Nothing is captioned before a spin resolves.
@@ -845,7 +848,7 @@ fn a_paying_spin_sounds_and_tallies_like_the_overlay() {
 /// this pins: every row would stay clipped above the matrix.
 #[test]
 fn the_payout_caption_slides_down_one_row_per_tick() {
-    use legaia_asset::minigame_slot_scene as scene;
+    use legaia_minigame_formats::minigame_slot_scene as scene;
 
     let mut m = SlotMachine::new(payouts(), 42, 200);
     win_on(&mut m, 6);
@@ -876,7 +879,7 @@ fn the_payout_caption_slides_down_one_row_per_tick() {
 /// payout multiplies, so the strip cannot show a different spin than it paid.
 #[test]
 fn the_bonus_tally_marquee_reads_the_claimed_reels() {
-    use legaia_asset::minigame_slot_scene as scene;
+    use legaia_minigame_formats::minigame_slot_scene as scene;
 
     let mut m = SlotMachine::new(payouts(), 0x51075, 200);
     win_on(&mut m, slot_payout::KICK_SYMBOL_ID);

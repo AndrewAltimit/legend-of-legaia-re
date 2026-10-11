@@ -21,7 +21,7 @@ pub struct CameraRig {
     /// tail (`0x801DB864..0x801DB8D4`) draws the same two masked `rand()`
     /// samples with the same centring and adds them straight onto the eye
     /// `0x800840B8` / `0x800840BC`, so one port
-    /// ([`legaia_engine_vm::battle_camera::apply_shake`]) covers both. In
+    /// ([`legaia_engine_battle_vm::battle_camera::apply_shake`]) covers both. In
     /// both, `0` is the resting state and `1..=0x15` widens the jitter
     /// window.
     ///
@@ -34,7 +34,7 @@ pub struct CameraRig {
     /// [`crate::world::World::tick_camera_offset_ease`].
     pub scene_offset: i16,
     /// `_DAT_8007BCAC` - the smoothed camera vertical offset
-    /// [`crate::camera_ease::ease_camera_offset`] walks toward
+    /// [`legaia_engine_field::camera_ease::ease_camera_offset`] walks toward
     /// `camera_scene_offset - player_footing`. Seeded to `0x3C` by retail's
     /// per-scene initialiser `FUN_801D6704`, which is why the engine seeds it
     /// there too. The op `0x4C` n4 sub-9 **delta** arm snaps it instead of
@@ -54,20 +54,20 @@ pub struct CameraRig {
     /// `0x43` sub-3..6 (retail `FUN_8003C6A4` actors on the effect list).
     /// [`crate::world::World::tick_register_ramps`] runs each one's `FUN_80037018` handler
     /// against the player's position every field frame. See
-    /// [`crate::register_ramp`].
-    pub register_ramps: Vec<crate::register_ramp::RegisterRamp>,
+    /// [`legaia_engine_field::register_ramp`].
+    pub register_ramps: Vec<legaia_engine_field::register_ramp::RegisterRamp>,
     /// The four field camera-configuration registers
     /// (`0x8007B60C`/`B610`/`B614`/`B618`) the ramps above write. Seeded to
-    /// [`crate::camera::CAMERA_ZONE_DEFAULTS`] on scene entry; consumed by
-    /// [`crate::camera::Camera::tick`].
-    pub registers: crate::register_ramp::CameraRegisterFile,
+    /// [`legaia_engine_field::camera::CAMERA_ZONE_DEFAULTS`] on scene entry; consumed by
+    /// [`legaia_engine_field::camera::Camera::tick`].
+    pub registers: legaia_engine_field::register_ramp::CameraRegisterFile,
     /// Camera-zone arms the field VM ran this frame
-    /// ([`crate::world::CameraZoneRequest`]), drained by
-    /// [`crate::camera::Camera::tick`]. The VM's host is `World` while the
+    /// ([`legaia_engine_field::camera::CameraZoneRequest`]), drained by
+    /// [`legaia_engine_field::camera::Camera::tick`]. The VM's host is `World` while the
     /// camera globals live on the host-owned `Camera`, so the arms queue
     /// here instead of writing the globals directly - see
     /// [`crate::world::camera_hooks`].
-    pub(crate) zone_requests: Vec<crate::world::CameraZoneRequest>,
+    pub(crate) zone_requests: Vec<legaia_engine_field::camera::CameraZoneRequest>,
 }
 
 impl CameraRig {
@@ -75,7 +75,7 @@ impl CameraRig {
         Self {
             shake_amplitude: 0,
             scene_offset: 0,
-            offset_ease: crate::camera_ease::CAMERA_OFFSET_EASE_SEED,
+            offset_ease: legaia_engine_field::camera_ease::CAMERA_OFFSET_EASE_SEED,
             ease_prev_yz: None,
             state: CameraState::default(),
             register_ramps: Vec::new(),

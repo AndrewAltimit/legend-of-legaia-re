@@ -8,10 +8,10 @@
 //! assert that whole path, because each link was individually correct before
 //! and the chain still did nothing.
 
-use legaia_engine_vm::battle_action::{
+use legaia_engine_battle_vm::battle_action::{
     ActionCategory, ActionState, BattleActionCtx, BattleActionHost, BattleActor, step,
 };
-use legaia_engine_vm::battle_cue_group::{CUE_GROUP_STRIDE, CueSpawn};
+use legaia_engine_battle_vm::battle_cue_group::{CUE_GROUP_STRIDE, CueSpawn};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Rec {

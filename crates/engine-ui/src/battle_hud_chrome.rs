@@ -3,7 +3,7 @@
 //! cells** (status-element and element) the HUD blits out of the atlas.
 //!
 //! Both come out of the widget-class table at `SCUS_942.54` VA
-//! `0x800732A4` (`legaia_asset::ui_widgets`,
+//! `0x800732A4` (`legaia_ui_formats::ui_widgets`,
 //! `docs/subsystems/battle.md`), so the geometry here is disc data read
 //! back rather than measurement:
 //!
@@ -418,7 +418,7 @@ pub const STATUS_BADGE_TAG_DY: i32 = 2;
 /// Atlas cells for the badges the HUD blits, `None` per cell the atlas
 /// could not bake (its palette source was outside the caller's slice).
 ///
-/// Hosts fill this from `legaia_engine_core::save_menu_atlas`'s
+/// Hosts fill this from `legaia_engine_menus::save_menu_atlas`'s
 /// `band_status_badges` / `band_element_badges`; the HUD falls back to its
 /// labelled text tag for any `None`, so a host that cannot reach the art
 /// still reads.

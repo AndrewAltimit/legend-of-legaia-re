@@ -73,7 +73,7 @@ pub(super) struct FrameCues {
     player_tint_cue: Option<legaia_engine_render::DrawCue>,
     effect_clips: Vec<(
         legaia_engine_core::world::ActorTintKey,
-        legaia_engine_core::object_effect::EffectClip,
+        legaia_engine_effects::object_effect::EffectClip,
         f32,
     )>,
 }

@@ -1,7 +1,7 @@
 //! Disc-gated: the town **ground surface** - the two layers that between them
 //! have to leave no hole in a floor the player can stand on.
 //!
-//! 1. **The ground-quad layer** ([`legaia_asset::field_objects::build_walk_heightfield`])
+//! 1. **The ground-quad layer** ([`legaia_scene_formats::field_objects::build_walk_heightfield`])
 //!    emits one quad per object-grid cell with the `0x1000` walk bit, textured
 //!    from that cell's object record (`+0x14` atlas tile / `+0x15` tpage /
 //!    `+0x16..+0x18` CLUT). That gate is retail's, measured from the live GPU
@@ -17,7 +17,7 @@
 //! 2. **The env-mesh layer** surfaces those record-less cells: retail draws the
 //!    scene's pack meshes over them (`FUN_8003A55C` placed objects + the
 //!    `+0x10`-keyed per-cell terrain meshes). The mesh id is the record's `+0x10`
-//!    for **every** object id - see [`legaia_asset::field_objects::pack_mesh_index`].
+//!    for **every** object id - see [`legaia_scene_formats::field_objects::pack_mesh_index`].
 //!
 //! The regression this guards: a positional "field-actor band" rule
 //! (`pack_index = obj_idx - 5` for ids `93..=118`) used to override `+0x10` on ten
@@ -31,13 +31,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_asset::field_objects::{
-    self, GRID_DIM, OBJECT_GRID_OFFSET, OBJECT_INDEX_MASK, ObjectRecord,
-};
 use legaia_engine_core::field_env;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
+};
+use legaia_scene_formats::field_objects::{
+    self, GRID_DIM, OBJECT_GRID_OFFSET, OBJECT_INDEX_MASK, ObjectRecord,
 };
 
 /// Rim Elm's two scene variants - the maps the retail prim-pool captures pin.

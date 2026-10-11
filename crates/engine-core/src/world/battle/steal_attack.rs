@@ -1,4 +1,4 @@
-//! The world side of a monster's death spoils ([`crate::battle_steal`]): the
+//! The world side of a monster's death spoils ([`legaia_engine_battle::battle_steal`]): the
 //! steal attack a party member's killing blow can land, the thief's loot a
 //! slain thief hands back, and the caption either raises.
 
@@ -8,7 +8,7 @@ impl World {
     /// Run monster seat `slot`'s death commit - the `FUN_8004AD80` arm at
     /// `0x8004B29C`, reached from [`Self::tick_battle_animations`] when the
     /// knockdown clip ends on a monster with no HP left. Idempotent per seat
-    /// per battle ([`crate::battle_steal::StealBand::resolved`]).
+    /// per battle ([`legaia_engine_battle::battle_steal::StealBand::resolved`]).
     ///
     /// The killer is whoever holds the action (`battle_ctx.active_actor`,
     /// retail `ctx[+0x13]`), which is the same seat that is still playing its
@@ -21,9 +21,9 @@ impl World {
     /// with `_DAT_8007BA58`, `0x8004B58C..0x8004B5B0`) is never taken.
     ///
     /// REF: FUN_8004AD80 (the arm; kernel + `// PORT:` tag in
-    /// `crate::battle_steal::resolve_death_spoils`)
+    /// `legaia_engine_battle::battle_steal::resolve_death_spoils`)
     pub(in crate::world) fn resolve_monster_death_spoils(&mut self, slot: usize) {
-        use crate::battle_steal::{self as bs, StealAttackInputs};
+        use legaia_engine_battle::battle_steal::{self as bs, StealAttackInputs};
         let party_count = usize::from(self.party.party_count);
         let Some(m) = slot.checked_sub(party_count) else {
             return;
@@ -83,8 +83,11 @@ impl World {
     /// Grant a death-spoils item and put its caption up: the bag add
     /// (`FUN_800421D4(item, 1)`), `ctx[+0x18] = 0x5B`, and the text composed
     /// from the templates on the user's executable.
-    fn raise_death_spoils(&mut self, spoils: Option<crate::battle_steal::DeathSpoils>) {
-        use crate::battle_steal as bs;
+    fn raise_death_spoils(
+        &mut self,
+        spoils: Option<legaia_engine_battle::battle_steal::DeathSpoils>,
+    ) {
+        use legaia_engine_battle::battle_steal as bs;
         let Some(spoils) = spoils else {
             return;
         };
@@ -119,14 +122,14 @@ impl World {
     pub(in crate::world) fn stash_cast_steal(
         &mut self,
         caster_slot: u8,
-        outcome: vm::cast_arm_ticks::StealOutcome,
+        outcome: legaia_engine_battle_vm::cast_arm_ticks::StealOutcome,
     ) {
-        use vm::cast_arm_ticks::StealOutcome;
+        use legaia_engine_battle_vm::cast_arm_ticks::StealOutcome;
         let Some(m) = usize::from(caster_slot).checked_sub(usize::from(self.party.party_count))
         else {
             return;
         };
-        if m >= crate::battle_steal::BAND_SEATS {
+        if m >= legaia_engine_battle::battle_steal::BAND_SEATS {
             return;
         }
         match outcome {

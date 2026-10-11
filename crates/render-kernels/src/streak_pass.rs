@@ -15,7 +15,7 @@
 //!   centre from `ctx[+0x1144]` and the half-width from `ctx[+0x6C6] - 0x200`,
 //!   both written by the action effect script's terminator
 //!   (`FUN_801DEA50`, `0x801DF290` / `0x801DF2B4`). Those writes now have a
-//!   sink: `legaia_engine_core::action_effect_script::MoveFxStreak`, installed
+//!   sink: `legaia_engine_effects::action_effect_script::MoveFxStreak`, installed
 //!   by the live battle tick and read back through `World::casting.move_fx_streak`.
 //! * **Nothing emitted a per-frame pass.** `World::casting.move_fx_trail_texpage`
 //!   was read only as a log line. [`streak_quads`] is the pass; the native

@@ -4,16 +4,17 @@
 //! formation resolve → save → reload round trip,
 //! asserting state survives across the cycle.
 
-use legaia_engine_core::encounter::{
+use legaia_engine_battle::encounter::{
     EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
 };
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::menu_runtime::MenuRuntime;
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::save_select::{
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_menus::save_select::{
     SaveSelectMode, SaveSelectSession, SelectInput, SelectOutcome, SlotContent, SlotSnapshot,
 };
-use legaia_engine_core::title::{TitleInput, TitleOutcome, TitleSession};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_menus::title::{TitleInput, TitleOutcome, TitleSession};
+use legaia_engine_mode::mode::SceneMode;
 
 fn build_world_with_party() -> World {
     let mut w = World::new();
@@ -24,7 +25,7 @@ fn build_world_with_party() -> World {
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.mp = 30;
-        w.battle.ap_gauges[i] = legaia_engine_core::ap_gauge::ApGauge::with_base(8);
+        w.battle.ap_gauges[i] = legaia_engine_battle::ap_gauge::ApGauge::with_base(8);
     }
     // Wire vanilla monster + formation tables.
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());

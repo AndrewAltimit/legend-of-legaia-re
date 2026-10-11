@@ -11,16 +11,16 @@
 //!
 //! The hybrid mesh builders here merge the two primitive families every env
 //! pack mixes - VRAM-textured prims and untextured `F*`/`G*` vertex-colour
-//! prims - into one vertex stream with the [`crate::packet_color`] side
+//! prims - into one vertex stream with the [`legaia_engine_field::packet_color`] side
 //! channel, the same convention the WebGL shader and the `.glb` baker read.
 
 use crate::coplanar_draws;
 use crate::field_env::{self, EnvDraw};
-use crate::packet_color;
 use crate::scene::{ProtIndex, Scene};
 use crate::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, ResolvedTmd, SceneLoadKind, SceneResources,
 };
+use legaia_engine_field::packet_color;
 use std::collections::HashMap;
 
 /// A fully-assembled static field scene: the engine scene resources plus the
@@ -45,7 +45,7 @@ pub struct AssembledScene {
     pub terrain: Vec<EnvDraw>,
     /// Walk-ground heightfield surface (`None` when the scene has no
     /// resolvable `.MAP` floor grid / floor LUT).
-    pub ground: Option<legaia_asset::field_objects::WalkHeightfield>,
+    pub ground: Option<legaia_scene_formats::field_objects::WalkHeightfield>,
     /// Cross-draw coplanar lifts ([`crate::coplanar_draws`]) for the combined
     /// terrain + placement lists, applied by [`Self::draw_world_position`] so
     /// overlapping same-plane tiles resolve deterministically instead of
@@ -250,7 +250,7 @@ pub fn assemble_field_scene(index: &ProtIndex, name: &str) -> Result<AssembledSc
                 .flatten()
                 .unwrap_or_default()
                 .into_iter()
-                .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+                .filter(|p| p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0)
                 .collect(),
         )
     };
@@ -328,7 +328,7 @@ pub fn build_hybrid_env_mesh(
 
 /// [`build_hybrid_env_mesh`] plus the textured half's lit-row vertices
 /// ([`legaia_tmd::mesh::LitVertex`], index-aligned with the leading vertices
-/// of the merged stream) - what [`crate::field_lit_mesh::shade_lit_rows_rgba`]
+/// of the merged stream) - what [`legaia_engine_field::field_lit_mesh::shade_lit_rows_rgba`]
 /// shades at a draw's rotation.
 pub fn build_hybrid_env_mesh_lit(
     rtmd: &ResolvedTmd,

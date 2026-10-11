@@ -8,8 +8,8 @@ use crate::world::World;
 /// timeline stays installed. The NPC starts posed at engine heading
 /// `start` (slot 5 in the render-heading map).
 fn timeline_with_npc_facing_op(op0: u8, op1: u8, start: i16) -> World {
-    use crate::cutscene_timeline::CutsceneTimeline;
     use crate::field_channels::FieldChannel;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     use legaia_engine_vm::field::FieldCtx;
 
     let mut w = World::new();
@@ -105,9 +105,9 @@ fn cutscene_timeline_npc_facing_simple_path_snaps_instantly() {
 /// `0xF8` resolving to the player object), then waits so it stays
 /// installed. The player starts at engine heading `start`.
 fn timeline_with_player_facing_op(op0: u8, op1: u8, start: i16) -> World {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     let mut w = World {
-        mode: crate::world::SceneMode::Field,
+        mode: legaia_engine_mode::mode::SceneMode::Field,
         ..World::default()
     };
     w.spawn_actor(0);
@@ -161,11 +161,11 @@ fn cutscene_timeline_player_facing_ramp_turns_the_player() {
 /// plus the half-turn, engine `0x23B` for this geometry.
 #[test]
 fn cutscene_timeline_player_halt_acquire_turns_the_player_to_its_bind() {
-    use crate::cutscene_timeline::CutsceneTimeline;
     use crate::field_channels::FieldChannel;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     use legaia_engine_vm::field::FieldCtx;
     let mut w = World {
-        mode: crate::world::SceneMode::Field,
+        mode: legaia_engine_mode::mode::SceneMode::Field,
         ..World::default()
     };
     w.spawn_actor(0);
@@ -213,11 +213,11 @@ fn cutscene_timeline_player_halt_acquire_turns_the_player_to_its_bind() {
 /// `0x23B`.
 #[test]
 fn cutscene_timeline_npc_halt_acquire_turns_the_npc_to_its_bind() {
-    use crate::cutscene_timeline::CutsceneTimeline;
     use crate::field_channels::FieldChannel;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     use legaia_engine_vm::field::FieldCtx;
     let mut w = World {
-        mode: crate::world::SceneMode::Field,
+        mode: legaia_engine_mode::mode::SceneMode::Field,
         ..World::default()
     };
     w.spawn_actor(0);
@@ -271,11 +271,11 @@ fn cutscene_timeline_npc_halt_acquire_turns_the_npc_to_its_bind() {
 /// another actor's.
 #[test]
 fn cutscene_timeline_position_copy_carries_the_heading() {
-    use crate::cutscene_timeline::CutsceneTimeline;
     use crate::field_channels::FieldChannel;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     use legaia_engine_vm::field::FieldCtx;
     let mut w = World {
-        mode: crate::world::SceneMode::Field,
+        mode: legaia_engine_mode::mode::SceneMode::Field,
         ..World::default()
     };
     w.spawn_actor(0);
@@ -330,7 +330,7 @@ fn a_spawn_prologue_own_face_at_turns_the_placement() {
     use crate::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
     let mut w = World {
-        mode: crate::world::SceneMode::Field,
+        mode: legaia_engine_mode::mode::SceneMode::Field,
         ..World::default()
     };
     // Record 0 at offset 0: `25`, `4C 85 00 00 16`, `21`; record 1 at 7.

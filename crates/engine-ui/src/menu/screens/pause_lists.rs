@@ -2,7 +2,7 @@
 //! multi-window layouts.
 //!
 //! Retail composes each screen from descriptor-table windows
-//! (`legaia_asset::menu_windows`; live sets read from the pause-menu window
+//! (`legaia_game_tables::menu_windows`; live sets read from the pause-menu window
 //! linked list of the `sol_to_karisto_worldmap` PCSX-Redux captures, driven
 //! to each screen by scripted pad walk -
 //! `scripts/pcsx-redux/autorun_menu_screen_dump.lua`):
@@ -114,7 +114,7 @@ pub const fn use_confirm_window(prompt_lines: usize) -> (usize, (i32, i32, i32, 
 
 /// Items screen window set with the pinned descriptor content rects, in
 /// retail draw order. The rects double as a disc-free fallback for hosts
-/// that frame the windows before `legaia_asset::menu_windows` is parsed.
+/// that frame the windows before `legaia_game_tables::menu_windows` is parsed.
 pub const ITEMS_SCREEN_WINDOW_RECTS: [(usize, (i32, i32, i32, i32)); 4] = [
     (pause_list_window_ids::TAB_ITEMS, (16, 12, 60, 12)),
     (pause_list_window_ids::ITEMS_COMMAND, (32, 44, 80, 38)),

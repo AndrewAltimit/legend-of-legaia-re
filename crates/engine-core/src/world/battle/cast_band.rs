@@ -60,7 +60,7 @@
 //! The per-summon effect parts are staged with it. They used to be the open
 //! half here ("the `0x180C` move-VM records are not staged"); the module's
 //! spawn records now come out of the **cast-effect pool**
-//! ([`legaia_asset::cast_effect_pool`], installed by the scene host) and stage
+//! ([`legaia_overlay_images::cast_effect_pool`], installed by the scene host) and stage
 //! through [`World::spawn_cast_module_fx`] at the same first tick, because the
 //! records are the shape the summon path already runs. What stays open is the
 //! module's *code* half - lift, camera, phase machine, damage shape - where a
@@ -129,7 +129,7 @@ pub const AOE_STAGER_WORKING_ARM: u8 = 4;
 /// Arm 26 spawns three fades at once (a white flash, a held blue grade, and
 /// the delayed white-in); the engine has one fade seat, so it carries the
 /// last, which is the one still on screen when arm 27 fades out of it.
-fn evil_seru_magic_fade(phase: u8) -> Option<crate::fade::FadeTemplate> {
+fn evil_seru_magic_fade(phase: u8) -> Option<legaia_engine_system::fade::FadeTemplate> {
     let (duration, start_rgb, end_rgb, mode) = match phase {
         2 => (0x10, [0xFF, 0x40, 0x40], [0; 3], [0, 0, 0]),
         4 => (0x40, [0; 3], [0xFF; 3], [0, -1, 0]),
@@ -137,7 +137,7 @@ fn evil_seru_magic_fade(phase: u8) -> Option<crate::fade::FadeTemplate> {
         26 => (0x40, [0; 3], [0xFF; 3], [0xC0, -1, 0]),
         _ => return None,
     };
-    Some(crate::fade::FadeTemplate {
+    Some(legaia_engine_system::fade::FadeTemplate {
         kind: 1,
         duration,
         start_rgb,
@@ -198,7 +198,7 @@ pub const CAPTURE_WALK_ENTRY: u8 = 1;
 pub const CASTER_STAGE_TICK_LIMIT: u16 = 900;
 
 /// The caster's clip stages a capture-class body owes and its port does not
-/// write ([`legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
+/// write ([`legaia_engine_battle_vm::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
 /// in flight at the head of battle phase `0x70`.
 ///
 /// Each stage is written into the caster's `+0x1DA` and the next one is
@@ -311,7 +311,7 @@ pub struct CastModuleCodeRun {
     /// `ctx+0x278` after the tick.
     pub ctx_278: u8,
     /// Seats an AoE stager swept, with the amount applied to each.
-    pub aoe_hits: Vec<vm::cast_module_ticks::AoeHit>,
+    pub aoe_hits: Vec<legaia_engine_battle_vm::cast_module_ticks::AoeHit>,
     /// `true` while the module's phase machine still reports busy.
     ///
     /// Seeded `true` for a resident module and only *lowered* by a ported
@@ -328,33 +328,37 @@ pub struct CastModuleCodeRun {
     /// action queued.
     pub item_refund: Option<u8>,
     /// What PROT 0955's Void Accessories arm decided this frame.
-    pub voided_accessory: Option<vm::cast_module_ticks::VoidAccessoriesOutcome>,
+    pub voided_accessory:
+        Option<legaia_engine_battle_vm::cast_module_ticks::VoidAccessoriesOutcome>,
     /// `(element, group)` PROT 0964's Element Change committed onto the first
     /// monster seat's record this frame (`+0x1D` / `+0x1C`).
     pub element_change: Option<(u8, u8)>,
     /// The camera shot the module armed this frame
     /// ([`vm::cast_module_camera::ModuleShot`]).
-    pub camera_shot: Option<vm::cast_module_camera::ModuleShot>,
+    pub camera_shot: Option<legaia_engine_battle_vm::cast_module_camera::ModuleShot>,
     /// The case-6 follow the module re-armed this frame
     /// ([`vm::cast_module_camera::ModuleFollow`]).
-    pub camera_follow: Option<vm::cast_module_camera::ModuleFollow>,
+    pub camera_follow: Option<legaia_engine_battle_vm::cast_module_camera::ModuleFollow>,
     /// The module framed the acting actor through case 8 this frame
     /// ([`vm::cast_module_camera::ArmDirection::end_frame`]).
     pub camera_end_frame: bool,
     /// The drift the module wrote into the camera globals this frame.
-    pub camera_nudge: Option<vm::cast_module_camera::ModuleNudge>,
+    pub camera_nudge: Option<legaia_engine_battle_vm::cast_module_camera::ModuleNudge>,
     /// A capture-class body's drift this frame
     /// ([`vm::cast_module_camera::capture_camera_director`]).
-    pub capture_drift: Option<vm::cast_module_camera::CaptureDrift>,
+    pub capture_drift: Option<legaia_engine_battle_vm::cast_module_camera::CaptureDrift>,
     /// The spawn calls the module's arm made this frame, for a director that
     /// reports them ([`vm::cast_module_camera::ModuleProfile::stages_spawns`]).
-    pub spawns: &'static [vm::cast_module_camera::ModuleSpawn],
+    pub spawns: &'static [legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
     /// The `MoveImage` the module's arm issued this frame.
-    pub vram_move: Option<vm::cast_module_camera::ModuleVramMove>,
+    pub vram_move: Option<legaia_engine_battle_vm::cast_module_camera::ModuleVramMove>,
     /// The text the module's arm put up this frame.
-    pub caption: Option<vm::cast_module_camera::ModuleCaption>,
+    pub caption: Option<legaia_engine_battle_vm::cast_module_camera::ModuleCaption>,
     /// The fades the module's arm spawned this frame, each `(template, id)`.
-    pub fades: &'static [(vm::battle_action::SummonFadeTemplate, i16)],
+    pub fades: &'static [(
+        legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
+        i16,
+    )],
     /// The arm killed the module's earlier fades first.
     pub kills_fades: bool,
 }
@@ -376,6 +380,7 @@ mod seat_map;
 #[cfg(test)]
 mod capture_hold_tests {
     use super::*;
+    use legaia_engine_mode::mode::SceneMode;
 
     fn band_world() -> World {
         let mut world = World {
@@ -403,7 +408,9 @@ mod capture_hold_tests {
     /// guarding seat, and the hit fills the defender's Spirit gauge.
     #[test]
     fn a_module_hit_is_finished_guard_halve_and_spirit() {
-        use vm::cast_module_ticks::{MYSTIC_CIRCLE_TICK, sweep_damage_shape_for};
+        use legaia_engine_battle_vm::cast_module_ticks::{
+            MYSTIC_CIRCLE_TICK, sweep_damage_shape_for,
+        };
         let shape = sweep_damage_shape_for(MYSTIC_CIRCLE_TICK).expect("Mystic Circle shape");
         let mut world = band_world();
         world.actors[0].battle.max_hp = 2000;
@@ -459,7 +466,7 @@ mod capture_hold_tests {
         // --- W1-C ---
         // PROT 0914's tick body is one of the band's unported rows. (This
         // test used to key on PROT 0909, whose tick body is now ported -
-        // `legaia_engine_vm::cast_seru_ticks_b::viguro_tick` - so keying on
+        // `legaia_engine_battle_vm::seru_magic_ticks::viguro_tick` - so keying on
         // it would have made the assertion vacuous.)
         assert_eq!(world.cast_module_for(0x8C), Some(914));
         let run = world.run_cast_module_code(0x8C, 0).unwrap();
@@ -487,8 +494,8 @@ mod capture_hold_tests {
 #[cfg(test)]
 mod sweep_code_tests {
     use super::*;
-    use crate::spells::{SpellDef, SpellTarget};
-    use vm::battle_target_group::{TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY};
+    use legaia_engine_battle::spells::{SpellDef, SpellTarget};
+    use legaia_engine_battle_vm::battle_target_group::{TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY};
 
     fn staged_target(caster: u8, target: SpellTarget, targets: Vec<u8>) -> u8 {
         let mut world = World::default();
@@ -536,10 +543,10 @@ mod sweep_code_tests {
 mod divide_split_tests {
     use super::*;
 
-    fn split() -> vm::cast_arm_ticks::GlareDivideSplit {
-        vm::cast_arm_ticks::GlareDivideSplit {
+    fn split() -> legaia_engine_battle_vm::cast_arm_ticks::GlareDivideSplit {
+        legaia_engine_battle_vm::cast_arm_ticks::GlareDivideSplit {
             // Retail pool space: the second monster of any party.
-            clone_seat: vm::cast_module_ticks::FIRST_MONSTER_SEAT + 1,
+            clone_seat: legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT + 1,
             clone_hp: 69,
             saved_caster_target: 0,
             weakened: None,

@@ -12,12 +12,12 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
 use legaia_engine_core::place_name_banner::{
     PLACE_NAME_BANNER_FLAG, man_scene_name_bytes, record_leading_flag_writes,
 };
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
 use legaia_engine_core::world::WorldMapEntityConfig;
+use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../extracted", "../../extracted"] {
@@ -75,7 +75,7 @@ fn every_named_scene_announces_itself_when_the_flag_is_armed() {
             named += 1;
         }
         if let Some(man) = man.as_deref()
-            && let Ok(mf) = legaia_asset::man_section::parse(man)
+            && let Ok(mf) = legaia_scene_formats::man_section::parse(man)
         {
             let sets = (0..3)
                 .flat_map(|p| walk_partition_gflag_sites(&mf, man, p))
@@ -123,8 +123,8 @@ fn every_named_scene_announces_itself_when_the_flag_is_armed() {
 /// MAN loader turns the flag into the banner.
 #[test]
 fn walking_into_rim_elm_from_the_overworld_raises_the_banner() {
-    use legaia_engine_core::input::PadButton;
     use legaia_engine_core::scene::SceneTickEvent;
+    use legaia_engine_system::input::PadButton;
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
@@ -149,7 +149,7 @@ fn walking_into_rim_elm_from_the_overworld_raises_the_banner() {
             .field_man_payload(&index)
             .expect("man")
             .expect("map01 has a MAN");
-        let mf = legaia_asset::man_section::parse(&man).expect("walk map01");
+        let mf = legaia_scene_formats::man_section::parse(&man).expect("walk map01");
         let (mut portals, mut announcing) = (0usize, 0usize);
         for c in &host.world.world_map.entity_configs {
             if let WorldMapEntityConfig::OverworldPortal { record, .. } = c {

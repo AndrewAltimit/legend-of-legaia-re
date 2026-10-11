@@ -40,8 +40,11 @@ const ART_RECORD_ID_BIAS: u8 = 0x1B;
 /// special word's `0x200` - are not status bits.
 ///
 /// PORT: FUN_801D0748 (the ring's status refusals, `0x801D1434..0x801D1440` / `0x801D1560..0x801D156C`)
-pub(crate) fn ring_arm_refused(status: u16, arm: crate::battle_input::BattleCommand) -> bool {
-    use crate::battle_input::BattleCommand;
+pub(crate) fn ring_arm_refused(
+    status: u16,
+    arm: legaia_engine_menus::battle_input::BattleCommand,
+) -> bool {
+    use legaia_engine_menus::battle_input::BattleCommand;
     match arm {
         BattleCommand::Attack => status & 0x38 == 0x38,
         BattleCommand::Magic => status & 0x1000 != 0,
@@ -103,16 +106,17 @@ mod ap_used_down_tests {
     #[test]
     fn the_halving_flag_reads_record_word_one() {
         let mut bits = [0u8; legaia_save::ABILITY_BITS_LEN];
-        bits[4..8].copy_from_slice(&crate::ap_gauge::AP_USED_DOWN_BIT.to_le_bytes());
+        bits[4..8].copy_from_slice(&legaia_engine_battle::ap_gauge::AP_USED_DOWN_BIT.to_le_bytes());
         let w = world_with_ability_bits(bits);
         assert_eq!(
-            w.character_ability_bits_word1(0) & crate::ap_gauge::AP_USED_DOWN_BIT,
-            crate::ap_gauge::AP_USED_DOWN_BIT
+            w.character_ability_bits_word1(0) & legaia_engine_battle::ap_gauge::AP_USED_DOWN_BIT,
+            legaia_engine_battle::ap_gauge::AP_USED_DOWN_BIT
         );
 
         // The same value in word 0 is a different passive entirely.
         let mut wrong = [0u8; legaia_save::ABILITY_BITS_LEN];
-        wrong[0..4].copy_from_slice(&crate::ap_gauge::AP_USED_DOWN_BIT.to_le_bytes());
+        wrong[0..4]
+            .copy_from_slice(&legaia_engine_battle::ap_gauge::AP_USED_DOWN_BIT.to_le_bytes());
         let w = world_with_ability_bits(wrong);
         assert_eq!(w.character_ability_bits_word1(0), 0);
     }
@@ -121,10 +125,11 @@ mod ap_used_down_tests {
     /// word `index >> 5`, bit `1 << (index & 0x1F)`.
     #[test]
     fn the_passive_index_and_the_bit_agree() {
-        let (word, mask) =
-            legaia_asset::accessory_passive::bit_location(crate::ap_gauge::AP_USED_DOWN_PASSIVE);
+        let (word, mask) = legaia_game_tables::accessory_passive::bit_location(
+            legaia_engine_battle::ap_gauge::AP_USED_DOWN_PASSIVE,
+        );
         assert_eq!(word, 1);
-        assert_eq!(mask, crate::ap_gauge::AP_USED_DOWN_BIT);
+        assert_eq!(mask, legaia_engine_battle::ap_gauge::AP_USED_DOWN_BIT);
     }
 
     /// End to end: the same committed arts turn costs half the Spirit when
@@ -134,8 +139,10 @@ mod ap_used_down_tests {
     fn the_passive_halves_a_committed_turns_spirit_charge() {
         let catalog = [(legaia_art::ActionConstant::Art1B, 3u8)];
         let performed = [legaia_art::ActionConstant::Art1B];
-        let full = crate::ap_gauge::arts_turn_spirit_cost(&catalog, &performed, false);
-        let half = crate::ap_gauge::arts_turn_spirit_cost(&catalog, &performed, true);
+        let full =
+            legaia_engine_battle::ap_gauge::arts_turn_spirit_cost(&catalog, &performed, false);
+        let half =
+            legaia_engine_battle::ap_gauge::arts_turn_spirit_cost(&catalog, &performed, true);
         assert_eq!(full, 33, "11 x 3");
         assert_eq!(half, 15, "(11 >> 1) x 3 - the shift is on the multiplier");
         assert_ne!(full, half * 2, "which is why it is not simply half");

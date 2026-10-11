@@ -13,8 +13,8 @@
 
 use super::*;
 
-use legaia_asset::monster_archive;
-use legaia_asset::scene_asset_table::encode_size_word;
+use legaia_actor_formats::monster_archive;
+use legaia_scene_formats::scene_asset_table::encode_size_word;
 
 use legaia_delilas_challenge::dome::{
     ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX, BATTLE_OVERLAY_PROT_INDEX, CLONE_IDS,
@@ -45,7 +45,7 @@ pub struct DelilasChallengeReport {
 /// except each sibling's probe-traced special-move choreography entries
 /// (`delilas_dome::slim_policy`) - encoded as slots for [`CLONE_IDS`]
 /// (190/191). The originals are read from - and never written back to -
-/// the user's own disc; see `legaia_asset::monster_archive::slim_castables`
+/// the user's own disc; see `legaia_actor_formats::monster_archive::slim_castables`
 /// for what is dropped and why the fight cannot tell.
 fn build_clone_slots(patcher: &DiscPatcher) -> Result<[(u16, Vec<u8>); 2]> {
     let mut out: Vec<(u16, Vec<u8>)> = Vec::with_capacity(2);
@@ -147,9 +147,11 @@ pub fn inject_custom_item_set(patcher: &mut DiscPatcher) -> Result<bool> {
     let scus = patcher
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for custom-items injection")?;
-    let jt_off =
-        legaia_asset::item_names::file_offset_for_va(&scus, APPLY_JT_VA + ELIXIR_CLASS as u32 * 4)
-            .context("resolve applier jump-table offset")?;
+    let jt_off = legaia_game_tables::item_names::file_offset_for_va(
+        &scus,
+        APPLY_JT_VA + ELIXIR_CLASS as u32 * 4,
+    )
+    .context("resolve applier jump-table offset")?;
     let cur = scus
         .get(jt_off..jt_off + 4)
         .map(|w| u32::from_le_bytes(w.try_into().unwrap()));

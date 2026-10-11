@@ -21,7 +21,7 @@ impl World {
     /// * the victim's immunity - retail's `ctx[+0x287] != 0 && record[+0x20]
     ///   != 0`, i.e. the scripted-fight flag AND the monster record's
     ///   double-width texture-page byte read as a "big model" proxy
-    ///   ([`crate::monster_catalog::MonsterDef::wide_texture_page`]);
+    ///   ([`legaia_engine_battle::monster_catalog::MonsterDef::wide_texture_page`]);
     /// * whether the caster is character index `3`, the only one that takes
     ///   the extra forced-resist throw. Retail reads `0x8007BD10[ctx+0x13]`,
     ///   the **1-based** present-party character id; the engine's mirror of
@@ -43,7 +43,7 @@ impl World {
     /// the element gate is the latch's own value, not a second test.
     ///
     /// The port's copy of that latch is
-    /// [`legaia_engine_vm::battle_action::BattleActionCtx::follow_up_pending`],
+    /// [`legaia_engine_battle_vm::battle_action::BattleActionCtx::follow_up_pending`],
     /// written on every player Seru cast by
     /// [`Self::stage_seru_side_effect`]. `min_level` is the module's own
     /// `sltiu v0,v0,0x3` gate, below which its ladder is skipped entirely.
@@ -79,17 +79,17 @@ impl World {
         caster_slot: u8,
         victim_slot: u8,
         spell_id: u8,
-    ) -> Option<vm::cast_seru_ticks_a::VeraRestore> {
+    ) -> Option<legaia_engine_battle_vm::seru_magic_ticks::VeraRestore> {
         let magic_level = self.caster_magic_power_byte(caster_slot, spell_id);
         let max_hp = self.actors.get(victim_slot as usize)?.battle.max_hp;
-        Some(vm::cast_seru_ticks_a::VeraRestore {
+        Some(legaia_engine_battle_vm::seru_magic_ticks::VeraRestore {
             magic_level,
             max_hp,
             cure_tier: self
                 .cure_selector(
                     caster_slot,
                     spell_id,
-                    vm::cast_seru_ticks_a::VERA_CURE_MIN_LEVEL,
+                    legaia_engine_battle_vm::seru_magic_ticks::VERA_CURE_MIN_LEVEL,
                 )
                 .unwrap_or(0),
             apply_hp: false,
@@ -102,11 +102,11 @@ impl World {
         caster_slot: u8,
         victim_slot: u8,
         spell_id: u8,
-    ) -> vm::cast_seru_ticks_a::NightoOutcome {
+    ) -> legaia_engine_battle_vm::seru_magic_ticks::NightoOutcome {
         if let Some(held) = self.casting.module_nighto_outcome {
             return held;
         }
-        use vm::cast_seru_ticks_a as ticks_a;
+        use legaia_engine_battle_vm::seru_magic_ticks as ticks_a;
         let magic_level = self.caster_magic_power_byte(caster_slot, spell_id);
         let target_immune = self.battle_ctx.scripted_fight != 0
             && self

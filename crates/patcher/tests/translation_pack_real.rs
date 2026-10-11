@@ -214,7 +214,8 @@ fn synthetic_pack_round_trips_on_disc() {
 
     // The engine-facing SCUS parsers resolve the new names too.
     let scus = legaia_iso::iso9660::read_file_in_image(&patched, "SCUS_942.54").expect("scus");
-    let items = legaia_asset::item_names::ItemNameTable::from_scus(&scus).expect("item table");
+    let items =
+        legaia_game_tables::item_names::ItemNameTable::from_scus(&scus).expect("item table");
     assert!(
         (0..=255u8).any(|id| items.name(id) == Some("Beere X")),
         "patched item name visible through ItemNameTable"
@@ -293,7 +294,7 @@ fn over_budget_and_non_latin_report_per_entry_and_touch_nothing() {
 /// bytes.
 #[test]
 fn export_keeps_every_script_walked_man_line() {
-    use legaia_asset::man_edit::{TextSite, text_site};
+    use legaia_scene_formats::man_edit::{TextSite, text_site};
     use legaia_translate::{export::SceneManText, segments};
 
     let Some(original) = load_disc() else {

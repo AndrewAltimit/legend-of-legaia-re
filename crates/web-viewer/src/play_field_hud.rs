@@ -3,7 +3,7 @@
 //!
 //! Pure wiring, like the rest of the play page's overlays: the decision is
 //! [`legaia_engine_field::world_map_panel_actors::field_hud_tick`] driven through
-//! [`legaia_engine_core::world_map_panel_host::FieldPartyHud`], the rows come
+//! [`legaia_engine_field::world_map_panel_host::FieldPartyHud`], the rows come
 //! from `field_party_hud_members`, and the geometry is
 //! [`legaia_engine_ui::field_party_hud::field_party_hud_draws_for`] - the same
 //! three pieces the native window calls, so the two hosts cannot draw
@@ -78,7 +78,7 @@ impl LegaiaRuntime {
                     // The Field HP Display option (`_DAT_800845C4`), the
                     // one engine read the native window shares.
                     legaia_engine_core::world_map_panel_host::field_hud_view_mode(w),
-                    legaia_engine_core::world_map_panel_host::packed_pad(w.input.pad()),
+                    legaia_engine_field::world_map_panel_host::packed_pad(w.input.pad()),
                     w.player_actor_slot
                         .map(usize::from)
                         .and_then(|s| w.actors.get(s))

@@ -13,7 +13,7 @@ use super::*;
 //
 //   * the attacker roll is seeded by a **static per-move power scalar** from the
 //     26-byte-stride move-power table at `0x801F4F5C` (now parsed off the disc as
-//     [`legaia_asset::move_power`], PROT 0898 file `0x26744`) - `move_type * 0x1a
+//     [`legaia_game_tables::move_power`], PROT 0898 file `0x26744`) - `move_type * 0x1a
 //     + 0x801F4F5C`, the i16 at `+0`. This is the one true per-move power scalar
 //     in the battle system; summons have no such scalar (see the summon block
 //     above + `docs/formats/move-power.md`).
@@ -69,7 +69,7 @@ pub fn arts_bonus_roll(defender_roll: u32, power: i32, attacker_agl: u16, rng: [
 #[derive(Debug, Clone, Copy)]
 pub struct ArtsPredamage {
     /// The move-power record's `+0` power scalar (sign-extended i16), from
-    /// [`legaia_asset::move_power`] indexed via the `0x801F4E63` id→index map.
+    /// [`legaia_game_tables::move_power`] indexed via the `0x801F4E63` id→index map.
     pub power: i32,
     /// Attacking actor stats (slot != 7).
     pub attacker: SummonRollActor,

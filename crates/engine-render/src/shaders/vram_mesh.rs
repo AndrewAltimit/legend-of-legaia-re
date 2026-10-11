@@ -116,7 +116,7 @@ fn psx_snap_clip(clip: vec4<f32>, vp_w: f32, vp_h: f32) -> vec4<f32> {
 }
 
 // `z = a * w + b` of `m`'s depth row over its `w` row, read the way
-// `legaia_engine_core::overworld_draw_order::depth_affine` reads it: the
+// `legaia_engine_field::overworld_draw_order::depth_affine` reads it: the
 // column with the largest `w` weight gives `a`, the translation column `b`.
 fn depth_affine(m: mat4x4<f32>) -> vec2<f32> {
     var col = m[2];
@@ -133,7 +133,7 @@ fn depth_affine(m: mat4x4<f32>) -> vec2<f32> {
 }
 
 // The overworld continent's flat bucket depth
-// (`legaia_engine_core::overworld_draw_order`): retail links each ground
+// (`legaia_engine_field::overworld_draw_order`): retail links each ground
 // cell (`FUN_801F89B8`) at `(max corner SZ >> 5) + 14` of the one ordering
 // table the fog sheets link into, so the whole cell draws at that bucket's
 // depth. `fa` / `fb` are the cell's `[x0, z0, x1, z1]` / `[y00, y10, y01,
@@ -185,7 +185,7 @@ fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, sz_scale: f32) -> vec4
 }
 
 // The overworld continent's depth cue
-// (`legaia_engine_core::overworld_ground_cue`): retail's ground emitter
+// (`legaia_engine_field::overworld_ground_cue`): retail's ground emitter
 // (`FUN_801F89B8`) runs each cell's packet colour through `DPCS` with
 // `IR0 = max(SZ1 - 0x5000, 0) >> 3`, `SZ1` the depth of the cell's corner
 // `(x1, z0)`, toward the far colour `0x1000` its caller sets with the literal

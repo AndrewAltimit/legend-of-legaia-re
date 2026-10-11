@@ -11,7 +11,7 @@
 //! It is **not** turn-limited, and the `"Turns Left: N  HP Left: P%"` strip
 //! is not its HUD. That strip's draw sites gate on `*(u8*)0x8007BD0C ==
 //! 0xB6`, and `0x8007BD0C` is the four-slot monster-id formation cell
-//! (`legaia_engine_core::encounter_record`,
+//! (`legaia_engine_battle::encounter_record`,
 //! `legaia_parity::capture_observations::battle_init_overlay::FORMATION_CELL_ADDR`),
 //! so the gate reads "the first enemy is monster `0xB6`" - Koru, the game's
 //! one four-turn timed boss. The dome's own roster tops out at id `0xAA`, so
@@ -21,7 +21,7 @@
 //! **A leg ends on a KO and on nothing else.** The arena does not run a
 //! battle loop of its own: `FUN_801D1510` stores the round's monster id into
 //! formation slot 0, clears slots 1..3, and sets the global game-mode word
-//! `_DAT_8007B83C = 0x14` (`legaia_engine_core::mode::GameMode::BattleInit`) - its only
+//! `_DAT_8007B83C = 0x14` (`legaia_engine_mode::mode::GameMode::BattleInit`) - its only
 //! game-mode write. From there the round is an ordinary battle, ended by the
 //! state-`0x5A` end-of-action gate of `FUN_801E295C` when one side has no
 //! standing combatant, and routed back to the arena (mode `0x18`) instead of
@@ -35,9 +35,9 @@
 //! This module is the *rules* layer: the four-direction deal, the
 //! budget-gated commit into the fighter's action queue, the turn counter,
 //! the HP-Left readout, and the win / lose / Seru-reward
-//! bookkeeping - driven by the parsed tables ([`legaia_asset::muscle_dome`])
+//! bookkeeping - driven by the parsed tables ([`legaia_minigame_formats::muscle_dome`])
 //! and per-command costs (the equipment sections' swing-record `+0x74`
-//! bytes, [`legaia_asset::battle_char_assembly::SwingAnimation::cost`]). The
+//! bytes, [`legaia_actor_formats::battle_char_assembly::SwingAnimation::cost`]). The
 //! sprite presentation, dome camera and the full battle-action playback are
 //! host concerns.
 //!
@@ -91,7 +91,7 @@
 // REF: FUN_80046a20 (battle-exit mode selector: mode 0x18 returns to the arena)
 
 #[cfg(test)]
-use legaia_asset::move_power;
+use legaia_game_tables::move_power;
 
 mod loadout;
 mod menu;

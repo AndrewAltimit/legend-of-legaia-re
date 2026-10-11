@@ -125,10 +125,10 @@ impl World {
         {
             let (pad, prev) = self.submode_pad_words();
             let edge = (pad & !prev) | self.field_vm.submode_screen.pad_edge_latch;
-            let toggle = (crate::dev_menu::PACK_UP
-                | crate::dev_menu::PACK_DOWN
-                | crate::dev_menu::PACK_LEFT
-                | crate::dev_menu::PACK_RIGHT) as u32;
+            let toggle = (legaia_engine_system::pad::PACK_UP
+                | legaia_engine_system::pad::PACK_DOWN
+                | legaia_engine_system::pad::PACK_LEFT
+                | legaia_engine_system::pad::PACK_RIGHT) as u32;
             if edge & toggle != 0 {
                 self.field_vm.submode_screen.counter.yes_no ^= 1;
             }
@@ -292,7 +292,7 @@ impl World {
             // way every other kill-bit actor goes.
             if let Some(idx) = self.find_actor_by_handler(ActorHandler::SubmodeDriver) {
                 self.actors[idx].physics.status_flags |=
-                    crate::field_actor_kernels::ACTOR_FLAG_YIELD;
+                    legaia_engine_field::field_actor_kernels::ACTOR_FLAG_YIELD;
             }
         }
         retired

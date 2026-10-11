@@ -36,13 +36,14 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::camera::Camera;
-use legaia_engine_core::camera_zone::{
+use legaia_engine_core::scene::SceneHost;
+use legaia_engine_field::camera::Camera;
+use legaia_engine_field::camera_zone::{
     CameraZoneConfig, ComposeInputs, atan_q11, compose, sqrt0_lut,
 };
-use legaia_engine_core::scene::SceneHost;
-use legaia_mednafen::game_anchors;
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
+use legaia_ram_image::game_anchors;
 
 const RAM_BASE: u32 = 0x8000_0000;
 /// GTE `H` (`_DAT_8007B6F4`).
@@ -394,9 +395,9 @@ fn every_walkable_state_frames_through_the_zone_camera() {
             let count = table.first().copied().unwrap_or(0) as usize;
             let mut hits = Vec::new();
             for i in 0..count {
-                let o = 1 + i * legaia_engine_core::field_regions::ZONE_RECORD_STRIDE;
+                let o = 1 + i * legaia_engine_field::field_regions::ZONE_RECORD_STRIDE;
                 let Some(r) =
-                    table.get(o..o + legaia_engine_core::field_regions::ZONE_RECORD_STRIDE)
+                    table.get(o..o + legaia_engine_field::field_regions::ZONE_RECORD_STRIDE)
                 else {
                     break;
                 };

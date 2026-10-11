@@ -16,7 +16,7 @@
 //! It lives in `engine-vm` - the leaf both the simulation and the draw layer
 //! link - so a screen point the simulation itself needs (the fishing line's
 //! rod-tip endpoint, `legaia_engine_core::fishing_actors`) and a point the
-//! renderer draws divide identically. `legaia_engine_ui::gte` re-exports
+//! renderer draws divide identically. `crate::gte` re-exports
 //! [`gte_divide`].
 
 /// Build the 257-entry UNR reciprocal seed table from the documented formula.

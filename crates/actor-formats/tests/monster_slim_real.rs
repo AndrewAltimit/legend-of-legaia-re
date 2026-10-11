@@ -35,7 +35,7 @@ fn che_and_lu_slim_blocks_keep_everything_the_fight_uses() {
 
     // (id, protected choreography indices, extra 0x23 drops, expected
     // dropped ids in entry order, minimum heap saving). This mirrors the
-    // patcher's Delilas policy (`legaia_patcher::delilas_dome::slim_policy`):
+    // patcher's Delilas policy (`legaia_delilas_challenge::dome::slim_policy`):
     // - One rollable castable survives per block (Che entry 6 `0x0F`, Lu
     //   entry 7 `0x0D`), because the AI's cast pick is
     //   `rand() % castable_count` and a zero count executes the div-guard

@@ -68,7 +68,7 @@ pub fn title_draws_for(
 
 /// Build [`SpriteDraw`]s for the title-screen main-menu rows ("NEW GAME"
 /// / "CONTINUE") sampling the dedicated menu-glyph atlas from
-/// `PROT.DAT` (see [`legaia_asset::menu_glyph_atlas`]).
+/// `PROT.DAT` (see [`legaia_ui_formats::menu_glyph_atlas`]).
 ///
 /// Retail-faithful equivalent of phase 2 in [`title_draws_for`] - same
 /// row labels and cursor / dim semantics, but each row is a horizontal
@@ -104,7 +104,7 @@ pub fn title_menu_draws_for(
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
     let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
 
-    use legaia_asset::menu_glyph_atlas as mga;
+    use legaia_ui_formats::menu_glyph_atlas as mga;
     let cell_w = mga::GLYPH_W as i32;
     let cell_h = mga::ALPHABET_GLYPH_H as i32;
     let scale = cell_scale.max(1) as i32;

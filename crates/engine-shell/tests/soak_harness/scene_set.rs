@@ -12,7 +12,7 @@ use super::*;
 /// or a scene whose field MAN resolves), unioned with the decoded `0x3F`
 /// destinations of those scenes that also resolve.
 pub(super) fn scene_set(session: &BootSession) -> Vec<String> {
-    use legaia_engine_core::man_field_scripts::scene_destinations;
+    use legaia_engine_field::man_field_scripts::scene_destinations;
     let index = &session.host.index;
     let playable = |name: &str| -> bool {
         if is_world_map_scene(name) {
@@ -37,7 +37,7 @@ pub(super) fn scene_set(session: &BootSession) -> Vec<String> {
         else {
             continue;
         };
-        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         for d in scene_destinations(&mf, &man) {
@@ -59,7 +59,7 @@ pub(super) fn default_jobs() -> usize {
 
 /// Minigame pseudo-scenes soaked alongside the scene set: each venue plus the
 /// door-warp `sub_id` it requests (fishing 0, slot 3, Baka Fighter 4, Muscle
-/// Dome 5, dance 6 - `legaia_engine_core::minigame_entry::MinigameSubId`).
+/// Dome 5, dance 6 - `legaia_engine_mode::minigame_entry::MinigameSubId`).
 pub(super) const MINIGAME_RUNS: [&str; 5] = [
     "balden+mg0",
     "koin1+mg3",

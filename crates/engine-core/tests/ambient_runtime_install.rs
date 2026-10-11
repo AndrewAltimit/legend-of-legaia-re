@@ -17,9 +17,9 @@
 //!    (`FUN_800204A4`). Without that, a tree that spawns on a loop grows a
 //!    part per iteration forever.
 
-use legaia_asset::summon_overlay::{RENDER_NODE_MODE_A, SummonPart};
 use legaia_engine_core::world::World;
 use legaia_engine_core::world::ambient::MAX_AMBIENT_PARTS;
+use legaia_overlay_images::summon_overlay::{RENDER_NODE_MODE_A, SummonPart};
 
 /// Assemble a stager bundle from `[model_sel, bytecode words]` records and
 /// install it on `world`. Each record is laid out as retail's

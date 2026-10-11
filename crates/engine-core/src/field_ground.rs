@@ -1,7 +1,7 @@
 //! The walk-ground heightfield **as a render surface** - the one kernel both
 //! hosts feed their ground draw through.
 //!
-//! [`legaia_asset::field_objects::WalkHeightfield`] is the `.MAP` floor grid
+//! [`legaia_scene_formats::field_objects::WalkHeightfield`] is the `.MAP` floor grid
 //! as data: authored heights, and triangles in whatever order its builder
 //! emits them. Two things change on the way to the screen, and both are
 //! render-site decisions rather than facts about the grid:
@@ -24,7 +24,7 @@
 //!
 //! [`GROUND_SINK`]: crate::coplanar_draws::GROUND_SINK
 
-use legaia_asset::field_objects::WalkHeightfield;
+use legaia_scene_formats::field_objects::WalkHeightfield;
 
 /// The heightfield's vertex positions as drawn: authored positions sunk by
 /// [`crate::coplanar_draws::GROUND_SINK`] (retail Y-down frame, so the sink
@@ -131,7 +131,7 @@ pub fn render_indices(hf: &WalkHeightfield) -> Vec<u32> {
 }
 
 /// The per-vertex flat-depth references both hosts upload beside the ground
-/// mesh: [`crate::overworld_draw_order::ground_flat_refs`] over the drawn
+/// mesh: [`legaia_engine_field::overworld_draw_order::ground_flat_refs`] over the drawn
 /// `positions` (same vertex order as `hf`), plus the field ground pass's
 /// **far-bucket** marker.
 ///
@@ -164,7 +164,7 @@ pub fn render_indices(hf: &WalkHeightfield) -> Vec<u32> {
 ///
 /// REF: FUN_801F6D48
 pub fn flat_refs(hf: &WalkHeightfield, positions: &[[f32; 3]]) -> Vec<[f32; 8]> {
-    let mut refs = crate::overworld_draw_order::ground_flat_refs(positions);
+    let mut refs = legaia_engine_field::overworld_draw_order::ground_flat_refs(positions);
     if hf.far_bucket.len() != positions.len() {
         return refs;
     }
@@ -262,7 +262,7 @@ mod tests {
             tile_ids: vec![0; 4],
             uvs: vec![[0, 0]; 4],
             cba_tsb: vec![[0, 0]; 4],
-            colors: vec![legaia_asset::field_objects::GROUND_PRIM_COLOR; 4],
+            colors: vec![legaia_scene_formats::field_objects::GROUND_PRIM_COLOR; 4],
             indices: vec![0, 1, 2, 1, 3, 2],
             corner_tiers: vec![0, 0, 1, 1],
             far_bucket: Vec::new(),
@@ -322,7 +322,7 @@ mod tests {
         }
         let indices = vec![0, 2, 1, 1, 2, 3, 4, 6, 5, 5, 6, 7];
         assert_eq!(crop_indices(&positions, &indices, None), indices);
-        let view = crate::world::field_npc_cull::FieldCullView {
+        let view = legaia_engine_field::camera::FieldCullView {
             // Focus tile (4, 3) with a (-2, 0, 4, 2) window: first cell
             // (2, 3), so the ground walks columns 2..=7 by rows 2..=3.
             focus_stored: [-(4 * 128), -(3 * 128)],
@@ -342,7 +342,7 @@ mod tests {
         // `grid()` is one sloped cell (two corners 32 up).
         let mut hf = grid();
         let pos = render_positions(&hf);
-        let overworld = crate::overworld_draw_order::ground_flat_refs(&pos);
+        let overworld = legaia_engine_field::overworld_draw_order::ground_flat_refs(&pos);
         // No far-bucket data (an overworld / older build): the overworld refs.
         assert_eq!(flat_refs(&hf, &pos), overworld);
         // Depth-sorted cell: unmarked.

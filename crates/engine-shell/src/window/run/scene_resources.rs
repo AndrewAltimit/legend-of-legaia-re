@@ -81,8 +81,8 @@ pub(in crate::window) fn build_window_scene_resources(
     match session
         .host
         .index
-        .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
-        .and_then(|b| legaia_asset::field_char_textures::parse(&b))
+        .entry_bytes(legaia_actor_formats::field_char_textures::PROT_ENTRY_INDEX)
+        .and_then(|b| legaia_actor_formats::field_char_textures::parse(&b))
     {
         Ok(mut pack) => {
             // Entries 1/2/3 only (the character atlas pages). The pack's

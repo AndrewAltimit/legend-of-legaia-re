@@ -33,7 +33,7 @@ pub use uploaded::*;
 /// colour, the two-vec4 flat bucket-depth reference
 /// ([`Renderer::upload_vram_mesh_with_flat_refs`]), and the primitive's
 /// corners for retail's per-primitive near reject
-/// ([`legaia_engine_ui::prim_near_reject`], [`PRIM_REF_BYTES`]).
+/// ([`legaia_render_kernels::prim_near_reject`], [`PRIM_REF_BYTES`]).
 pub(crate) const VRAM_VERTEX_STRIDE: u64 = 68 + PRIM_REF_BYTES;
 
 /// Byte stride of one glow-sprite vertex: position (3 x f32) + falloff uv

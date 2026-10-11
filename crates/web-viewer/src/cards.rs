@@ -28,7 +28,7 @@
 //!
 //! Nothing here is uploaded; the bytes live in the tab for the session.
 
-use legaia_engine_core::save_select::SlotSnapshot;
+use legaia_engine_menus::save_select::SlotSnapshot;
 use legaia_save::SaveResume;
 use legaia_save::emu;
 use wasm_bindgen::prelude::*;
@@ -65,7 +65,7 @@ pub fn formatted_memory_card() -> Vec<u8> {
 /// rather than re-detecting on every access, carries the dirty bit, and
 /// answers `save_at` / `block_is_save_start` / `dir_frame` off its own bytes.
 /// The two hosts used to carry near-identical copies that drifted.
-pub use legaia_save::emu::MountedCard;
+use legaia_save::emu::MountedCard;
 
 impl LegaiaRuntime {
     /// The card in rack slot `slot`, if one is inserted.
@@ -108,7 +108,7 @@ impl LegaiaRuntime {
     /// native window calls too.
     pub(crate) fn card_block_snapshots(&self, slot: usize) -> Vec<SlotSnapshot> {
         match self.card(slot) {
-            Some(card) => legaia_engine_core::save_select::card_block_snapshots(card),
+            Some(card) => legaia_engine_menus::save_select::card_block_snapshots(card),
             None => (0..CARD_BLOCKS).map(SlotSnapshot::empty).collect(),
         }
     }
@@ -340,7 +340,7 @@ impl LegaiaRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_core::save_select::SlotContent;
+    use legaia_engine_menus::save_select::SlotContent;
     use legaia_save::card;
 
     /// A raw 128 KiB card with every block free - the same formatted image

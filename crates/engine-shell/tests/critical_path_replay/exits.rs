@@ -145,7 +145,7 @@ pub(super) fn exit_records(host: &SceneHost) -> Vec<ExitRecord> {
     let Ok(Some(man)) = scene.field_man_payload(&host.index) else {
         return Vec::new();
     };
-    let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+    let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
         return Vec::new();
     };
     let Ok((primary, fallback)) = scene.field_tile_triggers(&host.index) else {
@@ -154,7 +154,7 @@ pub(super) fn exit_records(host: &SceneHost) -> Vec<ExitRecord> {
     let mut triggers = primary;
     triggers.extend(fallback);
     let mut by_record: HashMap<u8, ExitRecord> = HashMap::new();
-    for site in legaia_engine_core::man_field_scripts::overworld_portal_sites(&mf, &man, &triggers)
+    for site in legaia_engine_field::man_field_scripts::overworld_portal_sites(&mf, &man, &triggers)
     {
         by_record
             .entry(site.record)

@@ -11,7 +11,7 @@
 //! one spawn descriptor whose `+0x08` handler word is `0x801D0640`: the
 //! record at `0x801D4314` (file `0x5AFC`), and exactly one site materialises
 //! it - `0x801D2C24`, inside the step-marker floor pass `FUN_801D2A10`. That
-//! arm is already ported as `legaia_engine_core::minigame_floor::marker_template`:
+//! arm is already ported as `crate::minigame_floor::marker_template`:
 //! a cell whose step record resolves to clip `6..=9` takes the **marker**
 //! template and gets `clip - 6` stamped into the new actor's `+0x50`. So
 //! `+0x50` is the marker **class**, `0..=3`, and it is the row selector of
@@ -24,7 +24,7 @@
 //! _DAT_8007B6F8` to `FUN_80024E08`. `FUN_80024E08` is the **set-model**
 //! primitive - it writes `actor+0x64`, clears the clip cursor `+0x5C` and
 //! re-stages the actor through `FUN_80020F88` - and `_DAT_8007B6F8` is the
-//! field actor **pack bias** (`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`).
+//! field actor **pack bias** (`legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS`).
 //! So the halfword is a scene-pool **mesh index**, and the tick is a
 //! flipbook that swaps the marker's mesh every `duration` ticks. Reading it
 //! as a yaw / facing angle misses that the value is biased by the pack base,
@@ -129,7 +129,7 @@ pub struct MarkerActor {
 /// The timer counts **down** by the frame delta and the step fires when it
 /// goes negative, so a `duration` of `0` still holds the mesh for one frame
 /// at `frame_delta` `1`. `pack_bias` is retail's `_DAT_8007B6F8`
-/// (`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`), added to the table
+/// (`legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS`), added to the table
 /// value before it reaches the set-model primitive.
 ///
 /// `clip_cursor` is the actor's `+0x5C` and `flags` its `+0x10`: retail runs
@@ -248,7 +248,7 @@ mod tests {
         // actor pack base before it reaches the set-model primitive.
         let s = script();
         let mut a = MarkerActor::default();
-        let bias = legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
+        let bias = legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
         assert_eq!(
             step_marker(&mut a, &s, 1, bias, 0, 0).staged_mesh,
             Some(27 + bias)

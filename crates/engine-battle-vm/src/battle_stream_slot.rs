@@ -58,7 +58,7 @@ impl StreamFile {
 /// `request - 1` whole. A request of `0` is idle and has no target.
 ///
 /// PORT: FUN_801F17F8 (the request-byte decode)
-/// REPLACED-BY: `legaia_asset::summon_readef::stream_target`, which resolves
+/// REPLACED-BY: `legaia_actor_formats::summon_readef::stream_target`, which resolves
 /// the same pair (which side-band file, and which slot in it) straight from
 /// the action id, with no request byte in between. The request byte only
 /// exists because retail has to hand one `u8` across a frame boundary to a CD
@@ -141,7 +141,7 @@ impl StreamSlotSm {
     /// the two functions are exact inverses over the armable range - the
     /// round-trip is a test in this module rather than a claim here.
     ///
-    /// REPLACED-BY: `legaia_asset::summon_readef::parse`, which owns the whole
+    /// REPLACED-BY: `legaia_actor_formats::summon_readef::parse`, which owns the whole
     /// side-band file at once. Arming is a request to a transport the port
     /// does not have - the two retail callers (the side-band applier SM
     /// `FUN_801F12D0` and the battle scene loader's per-turn "ME" archive
@@ -162,7 +162,7 @@ impl StreamSlotSm {
     ///
     /// PORT: FUN_801F17F8 (the `ctx[+0x26C]` stage machine)
     /// REPLACED-BY: the synchronous disc reader behind
-    /// `legaia_asset::summon_readef::parse`. Every stage this machine walks is
+    /// `legaia_actor_formats::summon_readef::parse`. Every stage this machine walks is
     /// a libcd step - release the previous handle, seek, start the DMA, wait
     /// for it - and the port models no CD device: it slices the extracted PROT
     /// entry in place. Nothing observable comes out of the sequencer that the

@@ -7,8 +7,8 @@ use super::*;
 /// holds an arm for good.
 #[test]
 fn every_gated_chain_body_finishes() {
-    use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
-    use legaia_engine_vm::cast_module_ticks::{capture_trampoline_for, chain_bodies};
+    use legaia_engine_battle_vm::cast_module_ticks::{capture_trampoline_for, chain_bodies};
+    use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
     let mut stuck = Vec::new();
     for b in chain_bodies().iter().filter(|b| b.prot_entry >= 935) {
         let sub = (b.prot_entry - 935) as u8;
@@ -26,7 +26,7 @@ fn every_gated_chain_body_finishes() {
             let mut entries = vec![SpellEntry::default(); 0x100];
             entries[id as usize].class = CAPTURE_CLASS;
             entries[id as usize].sub_class = sub;
-            world.menu.text = Some(crate::pause_screens::MenuTextTables {
+            world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
                 spell_names: Some(SpellNameTable::from_entries(entries)),
                 ..Default::default()
             });
@@ -65,8 +65,8 @@ fn a_module_seats_its_creature_in_its_seat_arm() {
         let Some(entry) = world.cast_module_for(id) else {
             continue;
         };
-        let Some(arm) =
-            legaia_engine_vm::cast_module_camera::module_profile(entry).and_then(|p| p.seat_arm)
+        let Some(arm) = legaia_engine_battle_vm::cast_module_camera::module_profile(entry)
+            .and_then(|p| p.seat_arm)
         else {
             continue;
         };
@@ -106,8 +106,8 @@ fn a_module_seats_its_creature_in_its_seat_arm() {
 /// spun through the wrap, holding battle state `0x70` forever.
 #[test]
 fn every_capture_tick_body_finishes() {
-    use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
-    use legaia_engine_vm::cast_module_ticks::capture_trampoline_for;
+    use legaia_engine_battle_vm::cast_module_ticks::capture_trampoline_for;
+    use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
     let mut stuck = Vec::new();
     let mut checked = 0usize;
     for entry in 935u32..=966 {
@@ -129,7 +129,7 @@ fn every_capture_tick_body_finishes() {
             let mut entries = vec![SpellEntry::default(); 0x100];
             entries[id as usize].class = CAPTURE_CLASS;
             entries[id as usize].sub_class = sub;
-            world.menu.text = Some(crate::pause_screens::MenuTextTables {
+            world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
                 spell_names: Some(SpellNameTable::from_entries(entries)),
                 ..Default::default()
             });
@@ -228,9 +228,9 @@ fn vera_runs_its_fades_beside_the_band_flash() {
         world.actors[i].battle.hp = 9000;
         world.actors[i].battle.max_hp = 9000;
     }
-    world.presentation.fade = Some(crate::fade::FadeState::load(
-        &legaia_engine_vm::battle_action::summon_fade_template(
-            &legaia_engine_vm::battle_action::SUMMON_FLASH_OUT,
+    world.presentation.fade = Some(legaia_engine_system::fade::FadeState::load(
+        &legaia_engine_battle_vm::battle_action::summon_fade_template(
+            &legaia_engine_battle_vm::battle_action::SUMMON_FLASH_OUT,
         ),
     ));
     world.arm_summon_stager(0, 0x83);
@@ -281,7 +281,7 @@ fn the_swordie_wind_up_lasts_256_vsync_ticks_and_restores_the_normal_rate() {
     );
     assert_eq!(
         world.actors[7].battle.anim_rate.get(),
-        legaia_engine_vm::battle_anim_rate::RATE_NORMAL
+        legaia_engine_battle_vm::battle_anim_rate::RATE_NORMAL
     );
 }
 
@@ -290,7 +290,7 @@ fn the_swordie_wind_up_lasts_256_vsync_ticks_and_restores_the_normal_rate() {
 /// 64-tick sweep, and lets go only after the ray has turned a full circle.
 #[test]
 fn the_theeder_band_holds_through_its_ramp_and_sweep() {
-    use legaia_engine_vm::cast_seru_ticks_a::{THEEDER_RETARGET_ARM, THEEDER_SWEEP_ARM};
+    use legaia_engine_battle_vm::seru_magic_ticks::{THEEDER_RETARGET_ARM, THEEDER_SWEEP_ARM};
     let mut world = module_code_world();
     world.party.party_count = 3;
     assert_eq!(world.cast_module_for(0x82), Some(904));
@@ -316,7 +316,7 @@ fn the_theeder_band_holds_through_its_ramp_and_sweep() {
             done = true;
             break;
         }
-        use legaia_engine_vm::cast_seru_ticks_a::TheederPacket as P;
+        use legaia_engine_battle_vm::seru_magic_ticks::TheederPacket as P;
         let kind = match world.theeder_draw() {
             Some(P::Prongs { .. }) => Some("prongs"),
             Some(P::Charge { .. }) => Some("charge"),
@@ -345,7 +345,7 @@ fn the_theeder_band_holds_through_its_ramp_and_sweep() {
         }
     }
     assert!(done, "the stager let go");
-    let want = legaia_engine_vm::cast_seru_ticks_a::theeder_seat_placement(
+    let want = legaia_engine_battle_vm::seru_magic_ticks::theeder_seat_placement(
         (
             world.actors[3].move_state.world_x,
             world.actors[3].move_state.world_z,

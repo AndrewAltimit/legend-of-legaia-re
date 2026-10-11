@@ -12,7 +12,7 @@ pub struct FieldPropState {
     /// arms** of the movement probe (retail `FUN_801CFC40`). Installed at
     /// field-scene entry from
     /// [`crate::scene::Scene::field_object_placements`] (each placement's
-    /// [`collider_x`](legaia_asset::field_objects::Placement::collider_x) /
+    /// [`collider_x`](legaia_scene_formats::field_objects::Placement::collider_x) /
     /// `collider_z` = spawn position + the record's collision-footprint
     /// offset, live-verified against the spawned static actors of catalogued
     /// captures), with each bound placement's class bits decoded from its
@@ -43,7 +43,7 @@ pub struct FieldPropState {
     pub pending_touch: Option<(u8, u8)>,
     /// Per-placement walk-touch events, keyed by placement `slot`: the
     /// placements whose script fires on body contact (door warps, player
-    /// throw-back teleports - [`crate::man_field_scripts::placement_walk_touch_event`]),
+    /// throw-back teleports - [`legaia_engine_field::man_field_scripts::placement_walk_touch_event`]),
     /// with the placement's spawn position as the contact-box centre. The
     /// locomotion's per-step touch dispatch (`Self::check_field_walk_touch`)
     /// posts these without a button press - retail's `FUN_801d5b5c` auto
@@ -53,7 +53,7 @@ pub struct FieldPropState {
     /// the **flat** MAN record index the object's script is. A door record is a
     /// field-VM script whose opening `SysFlag.Test` chain selects the arm that
     /// runs, so the effect is re-resolved against the live story flags at
-    /// contact time ([`crate::man_field_scripts::resolve_walk_touch_event`])
+    /// contact time ([`legaia_engine_field::man_field_scripts::resolve_walk_touch_event`])
     /// rather than frozen at scene load; the `field_walk_touch` entry keeps the
     /// structural decode as the fallback.
     pub walk_touch_records: std::collections::BTreeMap<u8, usize>,
@@ -77,24 +77,24 @@ pub struct FieldPropState {
     /// records (`scene_event_scripts` / `scene_v12_table` offset `0x800`) parsed
     /// as summon-format move-VM stager records, the field-resident sibling of the
     /// per-summon stagers (see `docs/formats/scene-v12-table.md` +
-    /// `legaia_asset::scene_event_scripts::move_stager_records`). The field VM's
+    /// `legaia_scene_formats::scene_event_scripts::move_stager_records`). The field VM's
     /// op `0x34` sub-3 ("Play 3D animation") installs one by id through
     /// `FUN_800252EC` → the part-stager `FUN_80021B04` → the move VM; the engine
     /// mirrors that in [`crate::world::World::spawn_field_stager`]. Empty until
     /// [`crate::world::World::install_field_stagers`] runs at scene entry. Distinct from the
     /// field-VM bytecode the scene also runs (`field_bytecode`); these records are
     /// the move-VM side of the same prescript bundle.
-    pub stagers: Vec<legaia_asset::summon_overlay::SummonPart>,
+    pub stagers: Vec<legaia_overlay_images::summon_overlay::SummonPart>,
     /// The prescript bundle bytes the [`field_stagers`](crate::world::FieldPropState::stagers)
     /// records index into (needed to seed a part's move buffer when spawning).
     pub stager_bytes: Vec<u8>,
     /// Live field move-VM scene-graph effects spawned by op `0x34` sub-3, each a
-    /// one-part [`crate::summon::SummonScene`]; ticked by
+    /// one-part [`legaia_engine_effects::summon::SummonScene`]; ticked by
     /// [`crate::world::World::tick_field_fx`], drawn via [`crate::world::World::active_field_fx_part_draws`],
     /// with the non-visual nodes (the `0x4001` sound emitter) surfaced separately
     /// through [`crate::world::World::active_field_fx_render_nodes`]. A `Vec` because several
     /// can be live at once (the prescript triggers them independently).
-    pub active_fx: Vec<crate::summon::SummonScene>,
+    pub active_fx: Vec<legaia_engine_effects::summon::SummonScene>,
     /// Boss-stager bindings for the active scene, keyed by partition-1
     /// placement slot: the record an approach (walk-touch) or interact on
     /// that placed actor runs through the field VM. Derived from the scene

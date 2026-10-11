@@ -38,13 +38,13 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::actor_handler::ActorHandler;
-use legaia_engine_core::field_actor_program::{
+use legaia_engine_core::world::World;
+use legaia_engine_field::actor_handler::ActorHandler;
+use legaia_engine_field::field_actor_program::{
     FLAG_PLAYER_BUSY, FLAG_PROGRAM_1, FLAG_SCENE_ACTIVE, MAN_LOAD_RESUME, PLAYER_ENGAGED,
     PLAYER_LIFTING, PLAYER_MOTION_HELD, ProgramActor, ProgramEffect, ProgramEnv, ProgramPlayer,
     STORY_FLAG_BIT, VOICE_CHANNEL, VOICE_CLIP, VOICE_DURATION, step_scene_program,
 };
-use legaia_engine_core::world::World;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -311,7 +311,7 @@ fn program_3_needs_no_bgm_input_at_all() {
     );
     assert!(
         run.effects.contains(&ProgramEffect::Sfx(
-            legaia_engine_core::field_actor_program::SFX_BEAT
+            legaia_engine_field::field_actor_program::SFX_BEAT
         )),
         "its state-0x20 beat cue"
     );

@@ -1,9 +1,9 @@
 //! The fishing venue's actors (rod, lure, line, catch bursts) live in
-//! `legaia_engine_minigames::fishing_actors` and are re-exported here. This
+//! `legaia_engine_fishing::fishing_actors` and are re-exported here. This
 //! file keeps the one piece that reads a loaded `Scene`: gathering the rod
 //! meshes and the bend out of the venue.
 
-pub use legaia_engine_minigames::fishing_actors::*;
+use legaia_engine_fishing::fishing_actors::*;
 
 /// Lift the three rods and the bend out of a loaded venue scene: the rod
 /// models off the scene's op-`0x0E` model bank, the bend off its type-7 VDF

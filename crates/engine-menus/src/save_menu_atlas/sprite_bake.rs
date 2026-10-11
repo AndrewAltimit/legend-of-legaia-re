@@ -256,9 +256,9 @@ pub(super) fn add_battle_chrome_sprites(
 /// row 510 sub-palette 13, which is
 /// [`title_pak::MENU_GLYPH_ATLAS_TEXT_CLUT_ROW`]. The row origin
 /// (`u = digit * 8`, `v = 208`) is read out of the HUD's own `SPRT`
-/// packets; see [`legaia_asset::menu_glyph_atlas`].
+/// packets; see [`legaia_ui_formats::menu_glyph_atlas`].
 pub(super) fn add_hud_digit_strip(dst: &mut [u8], menu_glyph_tim: &[u8]) -> anyhow::Result<()> {
-    use legaia_asset::menu_glyph_atlas as mga;
+    use legaia_ui_formats::menu_glyph_atlas as mga;
 
     let tim = mga::extract_from_tim_slice(menu_glyph_tim)?;
     let parsed = legaia_tim::parse(tim.bytes)?;

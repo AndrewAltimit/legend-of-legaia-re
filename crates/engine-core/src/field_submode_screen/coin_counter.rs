@@ -3,15 +3,17 @@
 use super::*;
 
 impl World {
-    /// Run the coin counter's entry panel ([`crate::slot_machine::coin_entry_panel`])
+    /// Run the coin counter's entry panel ([`legaia_engine_minigames::slot_machine::coin_entry_panel`])
     /// when its record is installed, after the frame's commit has moved the
     /// bank and the gold - retail's window walk runs after the handler, so the
     /// painter reads the values the handler just wrote.
     pub(super) fn paint_coin_entry_panel(&mut self) {
-        use crate::slot_machine::{COIN_ENTRY_ORIGIN, COIN_ENTRY_WINDOW, CoinPanelInput};
+        use legaia_engine_minigames::slot_machine::{
+            COIN_ENTRY_ORIGIN, COIN_ENTRY_WINDOW, CoinPanelInput,
+        };
         let s = &self.field_vm.submode_screen;
         let draws = if s.open && s.installed_windows.contains(&COIN_ENTRY_WINDOW) {
-            crate::slot_machine::coin_entry_panel(&CoinPanelInput {
+            legaia_engine_minigames::slot_machine::coin_entry_panel(&CoinPanelInput {
                 origin: COIN_ENTRY_ORIGIN,
                 digits: &s.counter.digits,
                 cursor: s.counter.cursor,
@@ -77,7 +79,7 @@ pub fn coin_counter_lines(
     screen: &SubmodeScreen,
     read: impl Fn(u32) -> Vec<u8>,
 ) -> Vec<SubmodeLine> {
-    use crate::slot_machine::CoinPanelDraw;
+    use legaia_engine_minigames::slot_machine::CoinPanelDraw;
     if !screen.is_open() || screen.actor.state != slot::COIN_COUNTER {
         return Vec::new();
     }
@@ -162,7 +164,7 @@ impl crate::scene::SceneHost {
     /// [`coin_counter_lines`] with the labels read off the user's disc (the
     /// field overlay, extraction entry `0897`). The native window and the
     /// browser play page both draw this, through
-    /// `legaia_engine_ui::ui_text_lines::pen_line_draws_for`.
+    /// `legaia_engine_ui::text_lines::pen_line_draws_for`.
     pub fn coin_counter_lines(&self) -> Vec<SubmodeLine> {
         let screen = &self.world.field_vm.submode_screen;
         if !screen.is_open() || screen.actor.state != slot::COIN_COUNTER {

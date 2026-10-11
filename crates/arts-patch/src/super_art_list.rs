@@ -173,9 +173,10 @@ pub use injection::SuperArtListInjection;
 pub use rows::{SuperArtRow, arrow_code, super_art_rows};
 
 /// PROT entry of the battle-action overlay that hosts the pager and the applier.
-pub const OVERLAY_PROT_INDEX: usize = legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+pub const OVERLAY_PROT_INDEX: usize =
+    legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
 /// Load base of that overlay: a VA maps to raw-entry file offset `va - base`.
-pub const OVERLAY_BASE_VA: u32 = legaia_asset::move_power::BATTLE_OVERLAY_BASE;
+pub const OVERLAY_BASE_VA: u32 = legaia_game_tables::move_power::BATTLE_OVERLAY_BASE;
 
 /// Super Arts per character, and therefore the most rows the feature can add.
 pub const SUPER_ARTS_PER_CHAR: usize = 5;

@@ -1,6 +1,10 @@
 //! Log lines, popups, monster rows, and the level / ailment cell on a member's panel.
 
 use super::*;
+use legaia_engine_ui::HudLogView;
+use legaia_engine_ui::HudPopupView;
+use legaia_engine_ui::HudSlotView;
+use legaia_engine_ui::battle_hud_chrome;
 
 #[test]
 fn battle_hud_draws_for_includes_log_lines_below_slots() {

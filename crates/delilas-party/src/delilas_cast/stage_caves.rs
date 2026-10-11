@@ -449,7 +449,7 @@ pub fn install_stage_caves(
     let mut changed = false;
     for (va, words) in &pieces {
         let bytes = words_to_bytes(words);
-        let off = legaia_asset::item_names::file_offset_for_va(&scus, *va)
+        let off = legaia_game_tables::item_names::file_offset_for_va(&scus, *va)
             .with_context(|| format!("resolve SCUS offset of stage cave {va:#010x}"))?;
         let cur = &scus[off..off + bytes.len()];
         if cur == bytes.as_slice() {

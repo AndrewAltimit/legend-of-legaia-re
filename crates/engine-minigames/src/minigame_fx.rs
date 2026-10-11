@@ -94,11 +94,11 @@ impl MinigameFxPool {
 
     /// Spawn the three-part fishing strike splash at its fanned-out seats.
     ///
-    /// The geometry is [`crate::fishing_chrome::splash_burst`]'s
+    /// The geometry is [`legaia_engine_fishing::fishing_chrome::splash_burst`]'s
     /// (`FUN_801D7A5C`); the `>> 3` on the nudge is the host presentation glue
     /// the play window applied before this pool was shared, kept verbatim so
     /// the move changes no pixel on the host that already drew it.
-    pub fn spawn_splash(&mut self, parts: &[crate::fishing_chrome::SplashPart]) {
+    pub fn spawn_splash(&mut self, parts: &[legaia_engine_fishing::fishing_chrome::SplashPart]) {
         for p in parts {
             self.spawn(
                 (p.x as i32 + (p.nudge.0 >> 3)) as i16,
@@ -109,12 +109,16 @@ impl MinigameFxPool {
     }
 
     /// Spawn a wander-retarget ripple at the actor's world XZ pair.
-    pub fn spawn_ripple(&mut self, r: &crate::fishing_chrome::RippleSpawn) {
+    pub fn spawn_ripple(&mut self, r: &legaia_engine_fishing::fishing_chrome::RippleSpawn) {
         self.spawn(r.pos[0] >> 3, r.pos[2] >> 3, RIPPLE_SPRITE_ID);
     }
 
     /// Spawn one catch-celebration burst at its offset from the catch point.
-    pub fn spawn_burst(&mut self, b: &crate::fishing_actors::CelebrationBurst, origin: (i16, i16)) {
+    pub fn spawn_burst(
+        &mut self,
+        b: &legaia_engine_fishing::fishing_actors::CelebrationBurst,
+        origin: (i16, i16),
+    ) {
         self.spawn(
             ((origin.0 as i32 + b.offset.0 as i32) >> 3) as i16,
             ((origin.1 as i32 + b.offset.2 as i32) >> 3) as i16,
@@ -175,7 +179,7 @@ impl MinigameFxPool {
 /// spawn's `+0x50` in a register the backward scan does not reach, so the port
 /// spawns a distinct id per producer and each host's placeholder table keys on
 /// it. Stated rather than implied - the *geometry* is
-/// [`crate::fishing_chrome::ripple_spawn`]'s.
+/// [`legaia_engine_fishing::fishing_chrome::ripple_spawn`]'s.
 pub const RIPPLE_SPRITE_ID: u16 = 0x101;
 
 /// Sprite id the port spawns a catch-celebration burst with (same status as
@@ -226,9 +230,9 @@ mod tests {
     #[test]
     fn the_splash_keeps_the_play_windows_seats() {
         let mut pool = MinigameFxPool::new();
-        let parts = crate::fishing_chrome::splash_burst(
-            crate::fishing_actors::SCREEN_CENTRE.0,
-            crate::fishing_actors::SCREEN_CENTRE.1,
+        let parts = legaia_engine_fishing::fishing_chrome::splash_burst(
+            legaia_engine_fishing::fishing_actors::SCREEN_CENTRE.0,
+            legaia_engine_fishing::fishing_actors::SCREEN_CENTRE.1,
             SPLASH_SPRITE_ID,
             0x40,
         );

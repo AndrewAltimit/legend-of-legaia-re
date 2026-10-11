@@ -6,8 +6,7 @@
 //! re-exported here at their old paths. What stays is the one entry that
 //! reads the world: a fighter's magic loadout off the live roster.
 
-pub use legaia_engine_menus::muscle_dome_session::*;
-pub use legaia_engine_minigames::muscle_dome::*;
+use legaia_engine_menus::muscle_dome_session::*;
 
 use crate::world::World;
 

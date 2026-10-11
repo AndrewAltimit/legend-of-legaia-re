@@ -5,8 +5,14 @@ use super::*;
 /// expander's indexing.
 #[test]
 fn constants_agree_with_the_disc_parser() {
-    assert_eq!(CUE_GROUP_STRIDE, legaia_asset::move_power::CUE_GROUP_STRIDE);
-    assert_eq!(CUE_ACTOR_FLAG, legaia_asset::move_power::CUE_ACTOR_FLAG);
+    assert_eq!(
+        CUE_GROUP_STRIDE,
+        legaia_game_tables::move_power::CUE_GROUP_STRIDE
+    );
+    assert_eq!(
+        CUE_ACTOR_FLAG,
+        legaia_game_tables::move_power::CUE_ACTOR_FLAG
+    );
 }
 
 fn tables() -> (Vec<u8>, Vec<u8>) {

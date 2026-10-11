@@ -45,8 +45,8 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_asset::item_names::{self, ItemNameTable};
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::{self, ItemNameTable};
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_prot::cdname;
@@ -109,7 +109,7 @@ fn every_shop_stock_partitions_into_priced_then_padding() {
     let mut bad: Vec<String> = Vec::new();
     for idx in 0..patcher.entry_count() {
         let entry = patcher.read_entry(idx).expect("read PROT entry");
-        let Some(loc) = legaia_asset::shop_stock::locate(&entry, None) else {
+        let Some(loc) = legaia_scene_formats::shop_stock::locate(&entry, None) else {
             continue;
         };
         for r in &loc.records {

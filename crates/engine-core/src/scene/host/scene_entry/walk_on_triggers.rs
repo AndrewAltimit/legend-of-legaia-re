@@ -36,13 +36,13 @@ impl SceneHost {
         else {
             return;
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man_bytes) else {
             return;
         };
-        let Some(trigger) =
-            crate::field_regions::lookup_tile_trigger(&primary, &fallback, tile_x, tile_z)
-                .filter(|t| t.gate == 1)
-        else {
+        let Some(trigger) = legaia_engine_field::field_regions::lookup_tile_trigger(
+            &primary, &fallback, tile_x, tile_z,
+        )
+        .filter(|t| t.gate == 1) else {
             return;
         };
         if self
@@ -88,25 +88,25 @@ impl SceneHost {
     /// their C1 one-shot latch on the overworld instead of never firing.
     /// `true` when partition-2 record `record` carries a `0x3F` named
     /// scene-change op (a portal / door record) - the same test
-    /// [`crate::man_field_scripts::overworld_portal_sites`] uses to select
+    /// [`legaia_engine_field::man_field_scripts::overworld_portal_sites`] uses to select
     /// entrance records. Used by the overworld walk-on dispatch to leave portal
     /// records to the entity SM and spawn only beat records. A clean
     /// fall-through walk from the record's true `pc0`; `false` on a bad span.
     // REF: FUN_8003BDE0
     fn p2_record_is_portal(
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         record: usize,
     ) -> bool {
         let Some((start, pc0, len)) =
-            crate::man_field_scripts::partition_record_span(man_file, man, 2, record)
+            legaia_engine_field::man_field_scripts::partition_record_span(man_file, man, 2, record)
         else {
             return false;
         };
         let body = &man[start..start + len];
         let mut pc = pc0;
         while pc < body.len() {
-            let Ok(insn) = legaia_asset::field_disasm::decode(body, pc) else {
+            let Ok(insn) = legaia_scene_formats::field_disasm::decode(body, pc) else {
                 return false;
             };
             if insn.size == 0 {
@@ -114,7 +114,7 @@ impl SceneHost {
             }
             if matches!(
                 insn.info,
-                legaia_asset::field_disasm::InsnInfo::SceneChange { .. }
+                legaia_scene_formats::field_disasm::InsnInfo::SceneChange { .. }
             ) {
                 return true;
             }
@@ -126,8 +126,8 @@ impl SceneHost {
     // REF: FUN_801D1EC4, FUN_801D5630, FUN_8003BDE0
     pub(super) fn dispatch_walk_on_trigger(&mut self) {
         let on_world_map = match self.world.mode {
-            crate::world::SceneMode::Field => false,
-            crate::world::SceneMode::WorldMap => true,
+            legaia_engine_mode::mode::SceneMode::Field => false,
+            legaia_engine_mode::mode::SceneMode::WorldMap => true,
             _ => return,
         };
         // A kind-0 warp in flight owns the dispatcher: retail's timer half
@@ -260,10 +260,10 @@ impl SceneHost {
     /// without it.
     fn dispatch_kind1_walk_on(&mut self, tile: (u8, u8), on_world_map: bool, clip_reset: bool) {
         let (primary, fallback) = &self.field_triggers;
-        let Some(trigger) =
-            crate::field_regions::lookup_tile_trigger(primary, fallback, tile.0, tile.1)
-                .filter(|t| t.gate == 1)
-        else {
+        let Some(trigger) = legaia_engine_field::field_regions::lookup_tile_trigger(
+            primary, fallback, tile.0, tile.1,
+        )
+        .filter(|t| t.gate == 1) else {
             return;
         };
         // Under `_DAT_8007B6A8` a kind-1 hit also resets the clip base to
@@ -274,7 +274,7 @@ impl SceneHost {
         let Some(man_bytes) = self.field_man_cache.clone() else {
             return;
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man_bytes) else {
             return;
         };
         // On the overworld, a gate-1 trigger whose record is a **portal**
@@ -321,9 +321,9 @@ impl SceneHost {
     /// PORT: FUN_801D1EC4 (kind-0 arm, `0x801d21c0..0x801d2268`)
     fn dispatch_intra_scene_teleport(&mut self, tile: (u8, u8)) {
         let (primary, fallback) = &self.field_intra_teleports;
-        let Some(tp) =
-            crate::field_regions::lookup_intra_scene_teleport(primary, fallback, tile.0, tile.1)
-        else {
+        let Some(tp) = legaia_engine_field::field_regions::lookup_intra_scene_teleport(
+            primary, fallback, tile.0, tile.1,
+        ) else {
             return;
         };
         let Some(slot) = self.world.player_actor_slot else {

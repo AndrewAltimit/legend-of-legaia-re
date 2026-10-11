@@ -3,7 +3,7 @@
 //!
 //! A field/town scene's ground is a heightfield whose per-cell texture comes
 //! from the `.MAP` object record (`+0x14` atlas tile, `+0x15` tpage, `+0x16`
-//! CLUT - [`legaia_asset::field_objects::WalkHeightfield`]). The atlas pages
+//! CLUT - [`legaia_scene_formats::field_objects::WalkHeightfield`]). The atlas pages
 //! and their CLUT rows live in the scene's `scene_asset_table` entry. The
 //! observed failure this file guards is real: Jeremi's ground rendered as a
 //! "tombstone" lattice and Mt. Dhini's as a repeating vine, because a full
@@ -107,12 +107,12 @@ fn clut_origin(clut: u16) -> (usize, usize) {
 
 /// Every parseable TIM in `bytes`, raw and inside its LZS sections.
 fn tims_in(bytes: &[u8]) -> Vec<legaia_tim::Tim> {
-    let scan = legaia_asset::tim_scan::scan_entry(bytes);
+    let scan = legaia_container_formats::tim_scan::scan_entry(bytes);
     let mut out = Vec::new();
     for (source, hit) in &scan.hits {
         let src: &[u8] = match source {
-            legaia_asset::tim_scan::Source::Raw => bytes,
-            legaia_asset::tim_scan::Source::Lzs(i) => scan.lzs_sections[*i].as_slice(),
+            legaia_container_formats::tim_scan::Source::Raw => bytes,
+            legaia_container_formats::tim_scan::Source::Lzs(i) => scan.lzs_sections[*i].as_slice(),
         };
         let Some(payload) = src.get(hit.offset..hit.offset + hit.byte_len) else {
             continue;
@@ -142,7 +142,7 @@ fn pochi_leftovers_never_reach_the_ground_atlas_page() {
     let mut multi_sector = Vec::<u32>::new();
     let mut carrying_a_tim = Vec::<u32>::new();
     for idx in 0..index.entry_count() as u32 {
-        if index.class_of(idx).ok() != Some(legaia_asset::categorize::Class::PochiFiller) {
+        if index.class_of(idx).ok() != Some(legaia_disc_audit::categorize::Class::PochiFiller) {
             continue;
         }
         pochi_slots += 1;
@@ -197,7 +197,7 @@ fn pochi_leftovers_never_reach_the_ground_atlas_page() {
     let pochi_at = scene
         .entries
         .iter()
-        .position(|e| e.class == legaia_asset::categorize::Class::PochiFiller)
+        .position(|e| e.class == legaia_disc_audit::categorize::Class::PochiFiller)
         .expect("geremi's block reserves a pochi-filler slot");
     let neighbour = scene
         .entries
@@ -205,7 +205,7 @@ fn pochi_leftovers_never_reach_the_ground_atlas_page() {
         .expect("the pochi slot has a successor inside the block");
     assert_eq!(
         neighbour.class,
-        legaia_asset::categorize::Class::SceneTmdStream,
+        legaia_disc_audit::categorize::Class::SceneTmdStream,
         "the entry the old over-read reached is geremi's scene_tmd_stream sibling"
     );
     let intruder = tims_in(&neighbour.bytes)

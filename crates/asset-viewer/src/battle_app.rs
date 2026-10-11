@@ -6,16 +6,15 @@ use crate::cli::Bundle;
 use crate::mesh_bounds::{WorldActorMesh, mesh_aabb};
 use crate::pad_keymap::keymap_pad;
 use anyhow::{Context, Result};
-use legaia_engine_core::input::{InputState, PadButton};
 use legaia_engine_render::glam::{Mat4, Vec3};
 use legaia_engine_render::{
-    RenderTarget, Scene as RenderScene, SceneDraw, TextDraw, TextOverlay, UploadedFontAtlas,
-    UploadedVram,
-    legaia_tim::Vram,
-    text_draws_for,
+    RenderTarget, Scene as RenderScene, SceneDraw, TextOverlay, UploadedFontAtlas, UploadedVram,
     window::{EngineWindow, orbit_camera_mvp},
 };
+use legaia_engine_system::input::{InputState, PadButton};
+use legaia_engine_ui::{TextDraw, text_draws_for};
 use legaia_font::Font;
+use legaia_tim::Vram;
 use std::path::{Path, PathBuf};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -38,7 +37,8 @@ use winit::window::WindowId;
 ///    ctx (useful when the SM lands in a Stay-forever state).
 ///  - Esc: quit.
 pub(crate) fn run_battle_scene(extracted_root: &Path, queued_action: u8) -> Result<()> {
-    use legaia_engine_core::world::{SceneMode, World};
+    use legaia_engine_core::world::World;
+    use legaia_engine_mode::mode::SceneMode;
 
     let prot_path = extracted_root.join("PROT.DAT");
     if !prot_path.exists() {
@@ -124,7 +124,7 @@ struct BattleSmStats {
     unknown: u64,
     last_state_byte: u8,
     last_to_state_byte: u8,
-    last_complete_cause: Option<legaia_engine_vm::battle_action::BattleEndCause>,
+    last_complete_cause: Option<legaia_engine_battle_vm::battle_action::BattleEndCause>,
 }
 
 /// Battle-mode viewer state. Shape mirrors `FieldApp` minus the per-record
@@ -207,7 +207,7 @@ impl BattleSceneApp {
     }
 
     fn tick_battle_frame(&mut self) {
-        use legaia_engine_vm::battle_action::StepOutcome;
+        use legaia_engine_battle_vm::battle_action::StepOutcome;
         let outcome = self.world.tick();
         match outcome {
             Some(StepOutcome::Stay) => {
@@ -242,7 +242,7 @@ impl BattleSceneApp {
         }
         if pressed_now & PadButton::Cross.mask() != 0 {
             self.world.battle_ctx.action_state =
-                legaia_engine_vm::battle_action::ActionState::Begin.as_byte();
+                legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte();
             log::info!("re-seeding SM at ActionState::Begin");
         }
         self.prev_input_pad = pad;
@@ -273,7 +273,7 @@ impl BattleSceneApp {
         if self.font_atlas.is_none() {
             return Vec::new();
         }
-        use legaia_engine_vm::battle_action::ActionState;
+        use legaia_engine_battle_vm::battle_action::ActionState;
 
         let mut out = Vec::new();
         let white = [1.0, 1.0, 1.0, 1.0];

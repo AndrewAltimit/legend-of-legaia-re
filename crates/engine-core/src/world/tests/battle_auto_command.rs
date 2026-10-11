@@ -13,6 +13,7 @@
 //! builder tokenizes anything, so every replay goes back through the builder.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A one-member party in battle with its character record installed.
 fn auto_world() -> World {
@@ -41,7 +42,7 @@ fn queue_bytes() -> Vec<u8> {
 /// Run retail's write-back leaf over `queue` as member 0's window, with the
 /// arts category stamped - the state the input confirm leaves it in.
 fn commit_arts(w: &mut World, queue: &[u8]) {
-    w.actors[0].battle.params = [0u8; vm::battle_action::ACTION_PARAM_BYTES];
+    w.actors[0].battle.params = [0u8; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];
     w.actors[0].battle.params[..queue.len()].copy_from_slice(queue);
     w.actors[0].battle.action_category = 3;
     w.save_auto_command_string(0);
@@ -55,13 +56,18 @@ const SWINGS: [u8; 4] = [0x0F, 0x0C, 0x0D, 0x0E];
 #[test]
 fn an_arts_commit_parks_the_arrows_and_the_next_attack_replays_them() {
     let mut w = auto_world();
-    w.run_battle_art(0, &ARROWS, crate::target_picker::CursorRow::Enemy, 0);
+    w.run_battle_art(
+        0,
+        &ARROWS,
+        legaia_engine_battle::target_picker::CursorRow::Enemy,
+        0,
+    );
     let band = w.auto_command_band(0);
     let parked = w.party.roster.members[0].auto_command_string(band);
     assert_eq!(&parked[..4], &SWINGS, "the record holds the raw arrows");
     assert_eq!(parked[4], 0);
 
-    w.actors[0].battle.params = [0u8; vm::battle_action::ACTION_PARAM_BYTES];
+    w.actors[0].battle.params = [0u8; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];
     w.dispatch_pending_party_action(
         0,
         crate::battle_round::PendingPartyAction::Attack { target: 1 },
@@ -75,10 +81,15 @@ fn an_arts_commit_parks_the_arrows_and_the_next_attack_replays_them() {
 /// without charging a press.
 #[test]
 fn the_arts_entry_opens_on_the_parked_string_and_replays_it() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut w = auto_world();
-    w.run_battle_art(0, &ARROWS, crate::target_picker::CursorRow::Enemy, 0);
-    w.actors[0].battle.params = [0u8; vm::battle_action::ACTION_PARAM_BYTES];
+    w.run_battle_art(
+        0,
+        &ARROWS,
+        legaia_engine_battle::target_picker::CursorRow::Enemy,
+        0,
+    );
+    w.actors[0].battle.params = [0u8; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];
 
     w.open_arts_command_input(0);
     // The zeroed record has no AGL, so the entry seeds the default 100-AP
@@ -132,7 +143,7 @@ fn an_arts_window_parks_in_the_gauge_band_and_the_next_attack_reads_it() {
 
     // The round boundary: the actor's live stream is wiped the way a fresh
     // action arms it, so nothing but the record can carry the queue over.
-    w.actors[0].battle.params = [0u8; vm::battle_action::ACTION_PARAM_BYTES];
+    w.actors[0].battle.params = [0u8; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];
     w.actors[0].battle.strike_index = 0;
 
     // Round 2: the reader loads the window back verbatim.
@@ -155,7 +166,7 @@ fn a_member_that_never_confirmed_a_string_takes_the_swing_roll() {
     // string never contains (its bytes are art constants).
     let first = w.actors[0].battle.params[0];
     assert!(
-        vm::battle_action::is_swing_command(first),
+        legaia_engine_battle_vm::battle_action::is_swing_command(first),
         "an empty record must fall through to the swing roll, got {first:#04x}"
     );
 }
@@ -186,7 +197,7 @@ fn the_gauge_picks_the_band_and_a_topped_up_gauge_reads_its_own() {
     );
     // ...so the secondary leg zero-fills rather than borrowing the primary
     // one, which is the asymmetry the retail reader has.
-    w.actors[0].battle.params = [0xEE; vm::battle_action::ACTION_PARAM_BYTES];
+    w.actors[0].battle.params = [0xEE; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];
     assert_eq!(w.preseed_auto_command_string(0), 0);
     assert_eq!(w.actors[0].battle.params[0], 0);
 

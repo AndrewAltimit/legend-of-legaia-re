@@ -9,7 +9,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::resume::ResumeLanding;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
 
 fn extracted_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from)
@@ -95,7 +96,7 @@ fn start_new_game_seeds_and_enters_the_prologue() {
     let entered = session.start_new_game(&opts);
     assert_eq!(
         entered,
-        Some(legaia_asset::new_game::OPENING_CUTSCENE_SCENE),
+        Some(legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE),
         "a New Game enters the prologue cutscene scene"
     );
     assert_eq!(

@@ -156,12 +156,12 @@ const MIRACLE_ROW: usize = 0x0B;
 fn art_bank(
     patcher: &DiscPatcher,
     ch: Character,
-) -> Vec<legaia_asset::battle_char_assembly::ArtAnimRecord> {
+) -> Vec<legaia_actor_formats::battle_char_assembly::ArtAnimRecord> {
     let entry = patcher
         .read_entry(legaia_arts_patch::arts::player_entry_index(ch))
         .expect("player file");
-    let rec0 = legaia_asset::battle_char_assembly::decode_record0(&entry).expect("record0");
-    legaia_asset::battle_char_assembly::art_animation_bank(&rec0).expect("art bank")
+    let rec0 = legaia_actor_formats::battle_char_assembly::decode_record0(&entry).expect("record0");
+    legaia_actor_formats::battle_char_assembly::art_animation_bank(&rec0).expect("art bank")
 }
 
 fn me_slot(patcher: &DiscPatcher, slot: usize) -> Vec<u8> {
@@ -169,7 +169,7 @@ fn me_slot(patcher: &DiscPatcher, slot: usize) -> Vec<u8> {
     let readef = patcher
         .read_entry_footprint(READEF_ENTRY)
         .expect("readef.DAT");
-    let off = legaia_asset::battle_char_assembly::art_me_slot(slot, false)
+    let off = legaia_actor_formats::battle_char_assembly::art_me_slot(slot, false)
         * legaia_party_swap::winpose::READEF_SLOT;
     readef[off..off + legaia_party_swap::winpose::READEF_SLOT].to_vec()
 }
@@ -265,8 +265,8 @@ fn hybrid_leaves_the_whole_kit_where_retail_put_it() {
         // reskinned one byte-identical.
         let a = me_slot(&retail, slot);
         let b = me_slot(&hybrid, slot);
-        let ar = legaia_asset::me_archive::parse(&a).expect("retail ME");
-        let br = legaia_asset::me_archive::parse(&b).expect("hybrid ME");
+        let ar = legaia_actor_formats::me_archive::parse(&a).expect("retail ME");
+        let br = legaia_actor_formats::me_archive::parse(&b).expect("hybrid ME");
         assert_eq!(
             ar.len(),
             br.len(),
@@ -326,9 +326,9 @@ fn delilas_mode_reanimates_the_kit_and_keeps_the_supers_reachable() {
         // The archive really is the sibling's: entry count equals what
         // the record set points at, and it shrank from retail's.
         let retail_slot = me_slot(&retail, slot);
-        let a = legaia_asset::me_archive::parse(&retail_slot).expect("retail ME");
+        let a = legaia_actor_formats::me_archive::parse(&retail_slot).expect("retail ME");
         let slot_bytes = me_slot(&del, slot);
-        let b = legaia_asset::me_archive::parse(&slot_bytes).expect("delilas ME");
+        let b = legaia_actor_formats::me_archive::parse(&slot_bytes).expect("delilas ME");
         assert!(
             b.len() < a.len(),
             "{ch:?}: the rebuilt archive still carries {} entries",

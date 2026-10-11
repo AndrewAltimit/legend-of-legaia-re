@@ -5,8 +5,10 @@
 //! port: the operand decodes, the "consumes the tick" answer per arm, and
 //! the guards each arm applies before it writes anything.
 
-use legaia_engine_vm::ambient_motion::{AmbientMotion, AmbientTick, NeverBlocks, RAMP_DEST_SCALE};
-use legaia_engine_vm::ambient_motion_ops::{
+use legaia_engine_motion_vm::ambient_motion::{
+    AmbientMotion, AmbientTick, NeverBlocks, RAMP_DEST_SCALE,
+};
+use legaia_engine_motion_vm::ambient_motion_ops::{
     ACTOR_FLAG_TRANSLUCENT, ACTOR_FLAG_Y_OVERRIDE, AmbientEffect, BitTarget, ModelBank,
 };
 

@@ -10,11 +10,11 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_mednafen::ScenarioManifest;
 use legaia_parity::vram_oracle::{
     NPC_CLUT_BAND_ROWS, TEXPAGE_Y_START, VRAM_HEIGHT, VRAM_WIDTH, build_engine_vram_bytes_prepass,
     compute_static_mask, load_runtime_vram_from_save,
 };
+use legaia_ram_image::ScenarioManifest;
 
 fn word(buf: &[u8], x: usize, y: usize) -> u16 {
     let off = (y * VRAM_WIDTH + x) * 2;
@@ -164,18 +164,18 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
                 };
-                if let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(bytes, 0)
-                    && let Ok(tim_slices) = legaia_asset::pack::extract_pack(&slot0)
+                if let Ok(slot0) = legaia_scene_formats::kingdom_bundle::decode_slot(bytes, 0)
+                    && let Ok(tim_slices) = legaia_container_formats::pack::extract_pack(&slot0)
                 {
                     for (i, tslice) in tim_slices.iter().enumerate() {
                         report(&format!("kingdom-slot0[{i}]"), tslice, 0);
                     }
                 }
-                let scan = legaia_asset::tim_scan::scan_entry(bytes);
+                let scan = legaia_container_formats::tim_scan::scan_entry(bytes);
                 for (source, hit) in &scan.hits {
                     let src: &[u8] = match source {
-                        legaia_asset::tim_scan::Source::Raw => bytes,
-                        legaia_asset::tim_scan::Source::Lzs(idx) => {
+                        legaia_container_formats::tim_scan::Source::Raw => bytes,
+                        legaia_container_formats::tim_scan::Source::Lzs(idx) => {
                             scan.lzs_sections[*idx].as_slice()
                         }
                     };
@@ -245,10 +245,14 @@ fn main() -> anyhow::Result<()> {
         // Enumerate the befect cluster's TIM rects; flag every TIM whose image
         // rect covers the divergence cell.
         let raw = index.entry_bytes(874)?;
-        let container = legaia_asset::parse_player_lzs(&raw, 3)?;
+        let container = legaia_container_formats::parse_player_lzs(&raw, 3)?;
         let section = &container.descriptors[2];
-        let decoded = legaia_asset::decode(&raw, section, legaia_asset::DecodeMode::Lzs)?;
-        for target in legaia_asset::befect_cluster::scan_tims(&decoded) {
+        let decoded = legaia_container_formats::decode(
+            &raw,
+            section,
+            legaia_container_formats::DecodeMode::Lzs,
+        )?;
+        for target in legaia_actor_formats::befect_cluster::scan_tims(&decoded) {
             if let Ok(tim) = legaia_tim::parse(&decoded[target.offset..]) {
                 let img = &tim.image;
                 let covers = (img.fb_x as usize..img.fb_x as usize + img.fb_w as usize)

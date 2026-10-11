@@ -23,9 +23,10 @@
 use std::hash::Hasher;
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::input::PadButton;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -76,7 +77,7 @@ fn inputs() -> Option<Inputs> {
     let path = library
         .join("pcsx-redux")
         .join(format!("{ANCHOR_FP}.sstate"));
-    let Ok(state) = legaia_pcsxr::SaveState::from_path(&path) else {
+    let Ok(state) = legaia_pcsx_redux::SaveState::from_path(&path) else {
         eprintln!("[skip] anchor state {ANCHOR_FP} not in the library");
         return None;
     };
@@ -244,7 +245,7 @@ const DIRS: [PadButton; 4] = [
 /// A human's battle hand: Begin or Run on the round prompt, any ring arm,
 /// Auto or Command, arts strings, cancel now and then.
 fn human_pad(session: &BootSession, rng: &mut Rng) -> u16 {
-    use legaia_engine_core::battle_input::CommandPhase;
+    use legaia_engine_menus::battle_input::CommandPhase;
     let w = &session.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
         return PadButton::Cross.mask();

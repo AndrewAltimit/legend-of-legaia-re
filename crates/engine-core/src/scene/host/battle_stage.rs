@@ -6,11 +6,11 @@
 //! 0x1F` for the region the player stands in - every step, and again on the
 //! op-`0x3E` scripted-battle install - and battle init `FUN_800513F0` loads
 //! entry `scene_index + variant` through `FUN_8001FA88`
-//! ([`crate::region_encounter::battle_stage_entry_for_variant`]). So a scene
+//! ([`legaia_engine_battle::region_encounter::battle_stage_entry_for_variant`]). So a scene
 //! with several sub-area backdrops fights in whichever one the region names.
 
 use super::SceneHost;
-use legaia_asset::battle_backdrop::SecondCopy;
+use legaia_scene_formats::battle_backdrop::SecondCopy;
 
 /// A backdrop's drawn objects split by whether the backdrop draw spins them.
 ///
@@ -126,7 +126,7 @@ impl SceneHost {
     ///
     /// REF: FUN_800513F0, FUN_801F69F4
     pub fn battle_stage_object_indices(&self, object_count: usize) -> Vec<usize> {
-        legaia_asset::battle_backdrop::drawn_object_indices_rebound(
+        legaia_scene_formats::battle_backdrop::drawn_object_indices_rebound(
             object_count,
             self.battle_stage_keeps_object_1(),
             self.world.battle.backdrop_rebound,

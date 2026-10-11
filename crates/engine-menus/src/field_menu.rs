@@ -25,7 +25,7 @@
 //! so a row cannot draw white and then buzz.
 //!
 //! The engine's Tactical Arts chain editor
-//! (`legaia_engine_core::tactical_arts_editor::ChainEditor`) is an engine extension
+//! (`legaia_engine_battle::tactical_arts_editor::ChainEditor`) is an engine extension
 //! with no retail pause-menu row; it stays reachable through the
 //! dedicated arts session commands.
 //!

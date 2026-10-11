@@ -8,7 +8,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_asset::battle_char_assembly::equip_diff;
+use legaia_actor_formats::battle_char_assembly::equip_diff;
 use legaia_web_viewer::LegaiaViewer;
 
 /// The live full-party save's Vahn loadout (char record `+0x196..+0x19A`):
@@ -672,12 +672,12 @@ fn item_cards_carry_metadata_a_thumbnail_and_downloads() {
                 continue;
             }
             let px = v.equipment_item_card_pixels(size as u32);
-            let panel = legaia_asset::mesh_raster::Rgba {
+            let panel = legaia_actor_formats::mesh_raster::Rgba {
                 pixels: &px,
                 width: size,
                 height: size,
             };
-            legaia_asset::mesh_raster::blit(
+            legaia_actor_formats::mesh_raster::blit(
                 &mut img,
                 w,
                 h,

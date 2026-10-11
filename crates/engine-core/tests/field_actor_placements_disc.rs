@@ -95,8 +95,8 @@ fn man_actor_placements_decode_for_real_scenes() {
 
 #[test]
 fn placement_scripts_classify_into_kinds() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::man_field_scripts::{PlacementKind, classify_placements};
+    use legaia_engine_field::man_field_scripts::{PlacementKind, classify_placements};
+    use legaia_scene_formats::man_section::parse as parse_man;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
@@ -170,9 +170,9 @@ fn placement_scripts_classify_into_kinds() {
 /// rather than stopping at the first `0x00` the way the panel typewriter does.
 #[test]
 fn inline_dialogue_decodes_into_full_segment_pool() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::dialog::decode_inline_segments;
-    use legaia_engine_core::man_field_scripts::{PlacementKind, classify_placements};
+    use legaia_engine_dialog::dialog::decode_inline_segments;
+    use legaia_engine_field::man_field_scripts::{PlacementKind, classify_placements};
+    use legaia_scene_formats::man_section::parse as parse_man;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
@@ -257,7 +257,7 @@ fn inline_dialogue_decodes_into_full_segment_pool() {
 /// previously identified.
 ///
 /// The test asserts the prefix decodes cleanly under
-/// [`legaia_engine_vm::field_disasm::LinearWalker`] for every classified
+/// [`legaia_scene_formats::field_disasm::LinearWalker`] for every classified
 /// town01 NPC: no `UnknownSubOp` / `UnknownOpcode` errors on the prefix span
 /// (the walker is allowed to err inside the post-`0x1F` MES glyph text it
 /// was never asked to parse). This both proves the framing and pins the
@@ -265,9 +265,9 @@ fn inline_dialogue_decodes_into_full_segment_pool() {
 /// desynced on every dialog record.
 #[test]
 fn dialog_prefix_decodes_as_field_vm_bytecode() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::man_field_scripts::{PlacementKind, classify_placements};
-    use legaia_engine_vm::field_disasm::{DisasmError, LinearWalker};
+    use legaia_engine_field::man_field_scripts::{PlacementKind, classify_placements};
+    use legaia_scene_formats::field_disasm::{DisasmError, LinearWalker};
+    use legaia_scene_formats::man_section::parse as parse_man;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

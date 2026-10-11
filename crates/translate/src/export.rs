@@ -3,10 +3,10 @@
 //! Coverage (see `docs/tooling/translation/index.md` for the map):
 //!
 //! - `SCUS_942.54` name pools: item names + shared item-type strings
-//!   (`legaia_asset::item_names`), spell names (`legaia_asset::spell_names`),
+//!   (`legaia_game_tables::item_names`), spell names (`legaia_game_tables::spell_names`),
 //!   Tactical Arts names (`legaia_art::arts_table`), accessory passive
-//!   names + descriptions (`legaia_asset::accessory_passive`), and the
-//!   new-game party name fields (`legaia_asset::new_game`). Strings are
+//!   names + descriptions (`legaia_game_tables::accessory_passive`), and the
+//!   new-game party name fields (`legaia_game_tables::new_game`). Strings are
 //!   pointer-addressed and deduplicated by target VA; interior pointers
 //!   (another table slot pointing into a string's span) clamp the budget.
 //! - Scene dialog: `0x1F`-lead segments in every scene-bundle MAN
@@ -19,8 +19,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
 
-use legaia_asset::scene_asset_table;
-use legaia_asset::{accessory_passive, item_names, new_game, spell_names, worldmap_menu};
+use legaia_game_tables::{accessory_passive, item_names, new_game, spell_names, worldmap_menu};
+use legaia_scene_formats::scene_asset_table;
 
 use legaia_disc_patch::disc::DiscPatcher;
 
@@ -56,7 +56,7 @@ pub struct SceneManText {
     pub compressed_budget: usize,
     /// Byte offset, within the PROT entry, of the MAN descriptor's
     /// `(type<<24)|size` word - rewritten when the generalized rewriter grows
-    /// the decompressed MAN (see `legaia_asset::scene_asset_table`).
+    /// the decompressed MAN (see `legaia_scene_formats::scene_asset_table`).
     pub man_descriptor_off: usize,
     /// Decompressed MAN (dialog edits mutate this in place, same-size).
     pub decoded: Vec<u8>,
@@ -458,7 +458,7 @@ fn collect_ui_sections(patcher: &DiscPatcher, pack: &mut LanguagePack) {
 /// `SCUS_942.54` system strings outside the name tables (`scus:str:` keys in
 /// the `system_text` section) and the world-map quick-travel place-name cells
 /// (`scus:cell:` keys, fixed `0x20`-byte fields). See [`ui::SCUS_STRING_POOLS`]
-/// and `legaia_asset::worldmap_menu`.
+/// and `legaia_game_tables::worldmap_menu`.
 fn collect_scus_system_sections(scus: &[u8], pack: &mut LanguagePack) {
     for pool in ui::SCUS_STRING_POOLS {
         for s in ui::scan_pool(scus, pool) {

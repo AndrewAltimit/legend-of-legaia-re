@@ -1,7 +1,7 @@
 //! The turn timeline: the beats one resolved turn plays back and their tick budget.
 
 use super::*;
-use crate::muscle_dome::DomePlay;
+use legaia_engine_minigames::muscle_dome::DomePlay;
 
 /// What one stretch of a turn's playback is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

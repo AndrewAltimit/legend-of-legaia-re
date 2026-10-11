@@ -24,11 +24,11 @@ impl PlayWindowApp {
         let Some(scene) = self.session.host.scene.as_ref() else {
             return Default::default();
         };
-        let tiles: Vec<legaia_asset::field_objects::Placement> =
+        let tiles: Vec<legaia_scene_formats::field_objects::Placement> =
             match scene.field_terrain_tiles(&self.session.host.index) {
                 Ok(Some(t)) => t
                     .into_iter()
-                    .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+                    .filter(|p| p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0)
                     .collect(),
                 _ => return Default::default(),
             };
@@ -75,7 +75,7 @@ impl PlayWindowApp {
         // The two layers resolve separately so the caller knows where the
         // decorations start: retail's decoration sweep (`FUN_801F69D8`)
         // depth-cues each decoration by its origin's depth
-        // (`legaia_engine_core::overworld_ground_cue::decoration_draw_cue`),
+        // (`legaia_engine_field::overworld_ground_cue::decoration_draw_cue`),
         // the landmarks it skips take no cue from it.
         let mut landmarks = match scene.walk_object_placements(&self.session.host.index) {
             Ok(Some(t)) => t,
@@ -135,14 +135,14 @@ impl PlayWindowApp {
     /// Retail path: the kingdom bundle's slot 5 (the type-byte `0x06` slot of
     /// PROT 0085 / 0244 / 0391) is the CLUT-walk animation table - eight
     /// independent 16x1 `MoveImage` walkers (ocean head + shoreline/terrain
-    /// shimmer cells), parsed by [`legaia_asset::clut_walk`]. Parsing it also
+    /// shimmer cells), parsed by [`legaia_scene_formats::clut_walk`]. Parsing it also
     /// parks the walkers' VRAM source strips into the CPU VRAM (see
     /// [`Self::park_clut_walk_strips`]): the strips ship in the bundle's
     /// slot-0 TIM_LIST as raw CLUT-block records without the TIM magic, so
     /// the scene TIM pre-pass skips them.
     ///
     /// Fallback: the legacy single-cell 13-frame ocean-head cycle
-    /// ([`legaia_asset::ocean::find_ocean_assets`]), used ONLY when no scene
+    /// ([`legaia_scene_formats::ocean::find_ocean_assets`]), used ONLY when no scene
     /// entry yields a parseable slot-5 table. The fallback exists for
     /// modified / damaged bundles (every retail kingdom ships slot 5): it
     /// keeps the most visible water shimmer alive rather than freezing the

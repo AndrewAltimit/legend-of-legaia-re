@@ -66,7 +66,7 @@ impl<S: AudioSink> BootSession<S> {
         self.mode_seat.request_card_mode();
         let plan = self
             .mode_seat
-            .enter(legaia_engine_core::mode::GameMode::CardInit, world);
+            .enter(legaia_engine_mode::mode::GameMode::CardInit, world);
         debug_assert!(
             plan.is_none(),
             "CARD INIT stages no overlay-A request in the port's model"
@@ -144,7 +144,7 @@ impl<S: AudioSink> BootSession<S> {
 
     /// The pause menu's field wipe: whether the menu has spawned yet and the
     /// fade quad to draw over the field while it ramps.
-    pub fn pause_wipe(&self) -> &legaia_engine_core::pause_wipe::PauseWipe {
+    pub fn pause_wipe(&self) -> &legaia_engine_system::pause_wipe::PauseWipe {
         &self.pause_wipe
     }
 

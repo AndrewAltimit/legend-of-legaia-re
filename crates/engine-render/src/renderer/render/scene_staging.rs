@@ -24,7 +24,11 @@ impl Renderer {
         let o = at(0.0, 0.0);
         let right = (at(0.1, 0.0) - o).normalize_or_zero();
         let up = (at(0.0, 0.1) - o).normalize_or_zero();
-        let verts = crate::scene_lighting::glow_vertices(&sprites, right.to_array(), up.to_array());
+        let verts = legaia_render_kernels::scene_lighting::glow_vertices(
+            &sprites,
+            right.to_array(),
+            up.to_array(),
+        );
         if verts.is_empty() {
             return None;
         }
@@ -66,7 +70,8 @@ impl Renderer {
     /// encoder). With the layer inert this writes a zero light count and
     /// encodes nothing - the faithful path's whole cost.
     pub(super) fn stage_scene_lights_and_shadows(&self, scene: &Scene<'_>) {
-        use crate::scene_lights::{MAX_SCENE_LIGHTS, light_view_proj};
+        use crate::scene_lights::light_view_proj;
+        use legaia_render_kernels::scene_lighting::MAX_SCENE_LIGHTS;
         let active = self.scene_lights_active();
         let lights = self.scene_lights.borrow();
         let n = if active {

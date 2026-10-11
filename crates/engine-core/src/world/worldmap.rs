@@ -4,15 +4,16 @@
 //! change from the original inline definitions.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
-/// [`crate::world_map_panel_host::PanelFlagStore`] over the world's shared
+/// [`legaia_engine_field::world_map_panel_host::PanelFlagStore`] over the world's shared
 /// system flag bank - the engine's `FUN_8003CE64` / `FUN_8003CE08` /
 /// `FUN_8003CE34` triple.
 struct WorldPanelFlags<'a> {
     world: &'a mut World,
 }
 
-impl crate::world_map_panel_host::PanelFlagStore for WorldPanelFlags<'_> {
+impl legaia_engine_field::world_map_panel_host::PanelFlagStore for WorldPanelFlags<'_> {
     fn flag_test(&self, id: i32) -> bool {
         u16::try_from(id).is_ok_and(|i| self.world.system_flag_test(i))
     }
@@ -355,7 +356,7 @@ impl World {
     ///
     /// A "step" is the player actor crossing into a new 128-unit tile
     /// (`world >> 7`); each step drives one
-    /// [`crate::region_encounter::RegionEncounterTracker::on_step`] against the
+    /// [`legaia_engine_battle::region_encounter::RegionEncounterTracker::on_step`] against the
     /// player's current position. A trigger latches
     /// [`crate::world::WorldMapState::pending_encounter`], which [`Self::tick_world_map`]
     /// resolves into a battle. The RNG comes from the world's shared
@@ -381,7 +382,7 @@ impl World {
                 self.world_map.last_tile = Some(tile);
                 // A seat or warp landing two or more tiles away is not a
                 // step to the region reader.
-                crate::region_encounter::is_region_step(prev, tile)
+                legaia_engine_battle::region_encounter::is_region_step(prev, tile)
             }
             None => {
                 self.world_map.last_tile = Some(tile);
@@ -474,8 +475,12 @@ impl World {
     /// Route the scene's region-keyed encounter table onto the overworld so
     /// `Self::tick_world_map` rolls random encounters per region. Resets the
     /// step-tile latch. Pair with [`Self::enter_world_map`] (or call after it).
-    pub fn set_world_map_regions(&mut self, table: crate::region_encounter::RegionEncounterTable) {
-        let mut tracker = crate::region_encounter::RegionEncounterTracker::new(table);
+    pub fn set_world_map_regions(
+        &mut self,
+        table: legaia_engine_battle::region_encounter::RegionEncounterTable,
+    ) {
+        let mut tracker =
+            legaia_engine_battle::region_encounter::RegionEncounterTracker::new(table);
         tracker.set_counter(self.encounters.step_counter);
         self.world_map.region_tracker = Some(tracker);
         self.world_map.last_tile = None;
@@ -486,26 +491,27 @@ impl World {
     /// Route the current FIELD scene's region-keyed encounter table so
     /// [`Self::on_field_step`] rolls per *active region* (the retail
     /// `FUN_801D9E1C` rate counter + formation-range pick) instead of the
-    /// aggregated mean-rate [`crate::encounter::EncounterSession`]. The
+    /// aggregated mean-rate [`legaia_engine_battle::encounter::EncounterSession`]. The
     /// session stays installed and supplies the transition / grace
-    /// bracketing (via [`crate::encounter::EncounterSession::trigger_with`]);
+    /// bracketing (via [`legaia_engine_battle::encounter::EncounterSession::trigger_with`]);
     /// the region tracker just replaces *which* rate and formation a step
     /// rolls. `None` clears the field tracker (back to the mean path).
     ///
     /// The scene-entry path calls this from the same MAN the mean table is
-    /// built from ([`crate::region_encounter::region_encounter_table_from_man`]),
+    /// built from ([`legaia_engine_battle::region_encounter::region_encounter_table_from_man`]),
     /// so a scene whose MAN has no encounter-region section keeps the mean
     /// path untouched.
     pub fn set_field_regions(
         &mut self,
-        table: Option<crate::region_encounter::RegionEncounterTable>,
+        table: Option<legaia_engine_battle::region_encounter::RegionEncounterTable>,
     ) {
         // Every field scene entry (the world map enters through the same
         // path) runs retail's scene-entry top-up of the shared step counter
         // before any tracker is seeded from it.
         self.top_up_encounter_step_counter();
         self.terrain.region_tracker = table.map(|t| {
-            let mut tracker = crate::region_encounter::RegionEncounterTracker::new(t);
+            let mut tracker =
+                legaia_engine_battle::region_encounter::RegionEncounterTracker::new(t);
             tracker.set_counter(self.encounters.step_counter);
             tracker
         });
@@ -535,9 +541,10 @@ impl World {
     /// `0x801E077C`).
     ///
     /// REF: FUN_801DDF48 (ported as
-    /// [`crate::region_encounter::encounter_counter_reroll`])
+    /// [`legaia_engine_battle::region_encounter::encounter_counter_reroll`])
     pub fn reroll_encounter_step_counter(&mut self) {
-        let v = crate::region_encounter::encounter_counter_reroll(|| self.next_rand());
+        let v =
+            legaia_engine_battle::region_encounter::encounter_counter_reroll(|| self.next_rand());
         self.set_encounter_step_counter(v);
     }
 
@@ -545,11 +552,13 @@ impl World {
     /// otherwise it carries across the door untouched.
     ///
     /// REF: FUN_8003AB2C (ported as
-    /// [`crate::region_encounter::encounter_counter_scene_entry_top_up`])
+    /// [`legaia_engine_battle::region_encounter::encounter_counter_scene_entry_top_up`])
     pub fn top_up_encounter_step_counter(&mut self) {
         let c = self.encounters.step_counter;
         let v =
-            crate::region_encounter::encounter_counter_scene_entry_top_up(c, || self.next_rand());
+            legaia_engine_battle::region_encounter::encounter_counter_scene_entry_top_up(c, || {
+                self.next_rand()
+            });
         self.set_encounter_step_counter(v);
     }
 
@@ -768,8 +777,8 @@ impl World {
     /// ([`legaia_engine_field::travel_art_actor`]) - the art then warps the party
     /// back to the tile recorded before the screen opened.
     fn tick_world_map_panels(&mut self) {
-        use crate::world_map_panel_host::{PanelActorKind, packed_pad};
         use legaia_engine_field::travel_art_actor::TravelArt;
+        use legaia_engine_field::world_map_panel_host::{PanelActorKind, packed_pad};
 
         if self.world_map.ctrl.is_none() {
             return;
@@ -795,13 +804,14 @@ impl World {
         // What a travel art reads off the world: the player's live Y (Rula's
         // lift re-reads `+0x16` every frame) and flag `0x0B`, which its
         // opener program holds until its state 4.
-        let travel_env = crate::world_map_panel_host::TravelEnv {
+        let travel_env = legaia_engine_field::world_map_panel_host::TravelEnv {
             player_y: self
                 .player_actor_slot
                 .and_then(|slot| self.actors.get(slot as usize))
                 .map(|a| a.move_state.world_y),
-            effect_busy: self
-                .system_flag_test(u16::from(crate::field_actor_program::FLAG_PLAYER_BUSY)),
+            effect_busy: self.system_flag_test(u16::from(
+                legaia_engine_field::field_actor_program::FLAG_PLAYER_BUSY,
+            )),
         };
 
         // Take the controller out so the flag-bank adapter can borrow the
@@ -825,7 +835,7 @@ impl World {
         if !ctrl.panels.is_active()
             && let Some((tx, tz)) = player_tile
         {
-            let map = crate::world_map::kingdom_index_for_scene_base(ctrl.scene_base)
+            let map = legaia_engine_field::world_map::kingdom_index_for_scene_base(ctrl.scene_base)
                 .or(ctrl.entry_fade.kingdom_index)
                 .or_else(|| kingdom_index_for_scene_label(&self.active_scene_label))
                 .map(u32::from)
@@ -966,7 +976,10 @@ impl World {
     ///
     /// REF: FUN_801EE328, FUN_801EE094 (the kernel is
     /// `legaia_engine_field::travel_art_actor::TravelArtActor::tick`)
-    fn apply_travel_art_frame(&mut self, frame: &crate::world_map_panel_host::PanelFrame) {
+    fn apply_travel_art_frame(
+        &mut self,
+        frame: &legaia_engine_field::world_map_panel_host::PanelFrame,
+    ) {
         self.apply_travel_art_outputs(
             frame.travel_queue_program,
             frame.clear_warp_hold,
@@ -987,7 +1000,9 @@ impl World {
     ) {
         use legaia_engine_field::travel_art_actor as ta;
         if let Some(program) = queue_program {
-            self.system_flag_set(u16::from(crate::field_actor_program::FLAG_PLAYER_BUSY));
+            self.system_flag_set(u16::from(
+                legaia_engine_field::field_actor_program::FLAG_PLAYER_BUSY,
+            ));
             if self.spawn_scene_program(program).is_some() {
                 log::info!("travel art queued opener program {program}");
             }
@@ -1120,7 +1135,7 @@ impl World {
     ///
     /// The arm forks on the config row: an
     /// [`WorldMapEntityConfig::OverworldPortal`] surfaces a
-    /// [`crate::field_events::FieldEvent::WorldMapTransition`], while a
+    /// [`legaia_engine_field::field_events::FieldEvent::WorldMapTransition`], while a
     /// [`WorldMapEntityConfig::MinigameDoor`] arms
     /// [`crate::world::MinigameState::pending_warp`] instead - its payload is a mode-24
     /// sub-id, not a map id.
@@ -1139,7 +1154,7 @@ impl World {
     }
 
     /// Remove and return the first pending
-    /// [`crate::field_events::FieldEvent::WorldMapTransition`] as
+    /// [`legaia_engine_field::field_events::FieldEvent::WorldMapTransition`] as
     /// `(dest_index, slot)`.
     ///
     /// The host's scene-transition drain calls this each tick to consume the

@@ -24,8 +24,8 @@
 //! in the crate's own disc-gated unit tests, which run the patched retail
 //! applier over the block in the in-crate interpreter.
 
-use legaia_asset::item_names::file_offset_for_va;
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::super_arts_pack::{

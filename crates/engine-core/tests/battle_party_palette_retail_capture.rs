@@ -18,7 +18,7 @@
 //! `extracted/`) and the mednafen save library (`LEGAIA_SAVES_LIBRARY`, else
 //! `saves/library`); skips and passes without either.
 
-use legaia_asset::battle_char_assembly as bca;
+use legaia_actor_formats::battle_char_assembly as bca;
 use legaia_engine_core::battle_party_form::{
     PartyFormSources, VramWriteLog, build_party_battle_form,
 };
@@ -116,7 +116,8 @@ fn party_clut_rows_are_the_equipped_sections_palettes() {
             let entry = archive.entries[863 + member].clone();
             let mut raw = Vec::new();
             archive.read_entry(&entry, &mut raw).expect("player file");
-            let pack = legaia_asset::battle_data_pack::parse(&raw).expect("player-file pack");
+            let pack =
+                legaia_actor_formats::battle_data_pack::parse(&raw).expect("player-file pack");
             let uploads = bca::character_texture_uploads(&raw, &pack, &equipped, member as u8)
                 .expect("texture uploads");
             let row = 481 + member;

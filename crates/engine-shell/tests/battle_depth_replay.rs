@@ -31,7 +31,7 @@
 //! ## The command model is three phases, not one menu
 //!
 //! Retail's `FUN_801D0748` walks `ctx[+0x06]` through three selection
-//! surfaces ([`legaia_engine_core::battle_input`]), and a driver that assumes
+//! surfaces ([`legaia_engine_menus::battle_input`]), and a driver that assumes
 //! a single flat menu never reaches half the ladder:
 //!
 //! | `ctx[+0x06]` | phase | chips |
@@ -117,11 +117,12 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::arts_command_input::ArtsInputScreen;
-use legaia_engine_core::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_battle::arts_command_input::ArtsInputScreen;
+use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// The opening town, and the only scene carrying the sparring formation the
 /// ladder fights.
@@ -428,8 +429,8 @@ fn stock_player(session: &mut BootSession) {
     for member in w.party.roster.members.iter_mut() {
         // Prepend order fixes the menu rows: the last one prepended sits at
         // row 0, so the summon is row 0 and the MP-rung spell is row 1.
-        legaia_engine_core::magic_xp::learn_spell_prepend(member, SPELL_FOR_MP_RUNG);
-        legaia_engine_core::magic_xp::learn_spell_prepend(member, SPELL_SUMMON);
+        legaia_engine_battle::magic_xp::learn_spell_prepend(member, SPELL_FOR_MP_RUNG);
+        legaia_engine_battle::magic_xp::learn_spell_prepend(member, SPELL_SUMMON);
     }
     // MP the casts are charged against, and a party that survives 999 HP of
     // sparring partner long enough to finish the ladder. (`BattleActor` has

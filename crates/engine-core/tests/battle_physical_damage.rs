@@ -16,11 +16,12 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::monster_catalog::{
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, MonsterCatalog, MonsterDef,
     catalog_from_monster_archive, monster_def_from_record,
 };
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 
 /// A three-member party at fresh-game-shaped stats, seated in a battle
 /// against `formation` and auto-resolving (no command menu).
@@ -196,7 +197,7 @@ fn a_starting_party_can_fell_a_real_early_enemy() {
     // The lowest-HP real records - the ones the opening areas field.
     let ids: Vec<u16> = (1..=40u16)
         .filter(|&id| {
-            legaia_asset::monster_archive::record(&bytes, id)
+            legaia_actor_formats::monster_archive::record(&bytes, id)
                 .ok()
                 .flatten()
                 .map(|r| monster_def_from_record(&r))

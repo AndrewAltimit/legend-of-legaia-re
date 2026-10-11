@@ -15,8 +15,8 @@ impl PlayWindowApp {
         let mut lit_sources = std::collections::HashMap::new();
         #[allow(clippy::type_complexity)]
         let mut diag_census_out: (
-            Vec<Option<legaia_engine_core::draw_census::MeshCensus>>,
-            Option<legaia_engine_core::draw_census::MeshCensus>,
+            Vec<Option<legaia_engine_system::draw_census::MeshCensus>>,
+            Option<legaia_engine_system::draw_census::MeshCensus>,
         );
         let (
             vram_opt,
@@ -47,11 +47,11 @@ impl PlayWindowApp {
                 .ok();
             let mut meshes = Vec::new();
             // `LEGAIA_DIAG_DRAWS`: the census beside each pushed mesh.
-            let mut census: Vec<Option<legaia_engine_core::draw_census::MeshCensus>> = Vec::new();
+            let mut census: Vec<Option<legaia_engine_system::draw_census::MeshCensus>> = Vec::new();
             let census_on = self.draw_census.is_some();
             let mesh_census = |v: &legaia_tmd::mesh::VramMesh| {
                 census_on.then(|| {
-                    legaia_engine_core::draw_census::MeshCensus::from_mesh(
+                    legaia_engine_system::draw_census::MeshCensus::from_mesh(
                         &v.positions,
                         &v.cba_tsb,
                         &v.colors,
@@ -73,10 +73,11 @@ impl PlayWindowApp {
             // Consumed after the placement lists resolve, where every
             // *instance* of an emitting mesh contributes its own world-space
             // samples (see `legaia_engine_render::scene_lights`).
-            let mut tmd_vram_emitters: Vec<Vec<legaia_engine_render::scene_lights::EmitterSample>> =
-                vec![Vec::new(); res.tmds.len()];
+            let mut tmd_vram_emitters: Vec<
+                Vec<legaia_render_kernels::scene_lighting::EmitterSample>,
+            > = vec![Vec::new(); res.tmds.len()];
             let mut tmd_color_emitters: Vec<
-                Vec<legaia_engine_render::scene_lights::EmitterSample>,
+                Vec<legaia_render_kernels::scene_lighting::EmitterSample>,
             > = vec![Vec::new(); res.tmds.len()];
             for (src_i, rtmd) in res.tmds.iter().enumerate() {
                 // Build this mesh's untextured (F*/G*) vertex-colour primitives
@@ -113,7 +114,7 @@ impl PlayWindowApp {
                 // jungle's one-quad bush / branch billboards) black. Scoped to
                 // the prologue legs by the same gate as the sepia grade.
                 if prologue_graded {
-                    legaia_engine_core::fade::apply_prologue_lit_ambient(
+                    legaia_engine_system::fade::apply_prologue_lit_ambient(
                         &mut vmesh.colors,
                         &lit_rows,
                     );
@@ -141,12 +142,12 @@ impl PlayWindowApp {
                 // Enhanced lighting: tag the emissive prims (TSB / blend bit
                 // 13) - the shared `scene_lighting` rule the browser page's
                 // mesh build runs too. Inert unless the enhancement is on.
-                let curated = legaia_engine_render::scene_lighting::tag_emissive_meshes(
+                let curated = legaia_render_kernels::scene_lighting::tag_emissive_meshes(
                     &rtmd.raw, &mut vmesh, &mut cmesh, &res.vram,
                 );
                 if !cmesh.is_empty() {
                     tmd_color_emitters[src_i] =
-                        legaia_engine_render::scene_lights::color_mesh_emitters(
+                        legaia_render_kernels::scene_lighting::color_mesh_emitters(
                             &cmesh.positions,
                             &cmesh.colors,
                             &cmesh.blend,
@@ -248,18 +249,19 @@ impl PlayWindowApp {
                         color_hist
                     );
                 }
-                tmd_vram_emitters[src_i] = legaia_engine_render::scene_lights::vram_mesh_emitters(
-                    &vmesh.positions,
-                    &vmesh.cba_tsb,
-                    &vmesh.colors,
-                    &vmesh.indices,
-                    Some((&res.vram, &vmesh.uvs)),
-                );
+                tmd_vram_emitters[src_i] =
+                    legaia_render_kernels::scene_lighting::vram_mesh_emitters(
+                        &vmesh.positions,
+                        &vmesh.cba_tsb,
+                        &vmesh.colors,
+                        &vmesh.indices,
+                        Some((&res.vram, &vmesh.uvs)),
+                    );
                 // A curated emissive mesh (the Genesis Tree) casts one strong
                 // light from its centre.
                 if let Some(hit) = curated {
                     tmd_vram_emitters[src_i].push(
-                        legaia_engine_render::scene_lighting::curated_mesh_sample(&hit),
+                        legaia_render_kernels::scene_lighting::curated_mesh_sample(&hit),
                     );
                 }
                 match r.upload_vram_mesh(
@@ -277,7 +279,7 @@ impl PlayWindowApp {
                         // legs keep their ambient restage above.
                         if !prologue_graded
                             && lit_vertices.len() == vmesh.colors.len()
-                            && legaia_engine_core::field_lit_mesh::has_lit_rows(&lit_vertices)
+                            && legaia_engine_field::field_lit_mesh::has_lit_rows(&lit_vertices)
                         {
                             lit_sources.insert(meshes.len(), (vmesh.clone(), lit_vertices));
                         }
@@ -348,7 +350,7 @@ impl PlayWindowApp {
                     // Same hybrid coplanar resolution as the static env
                     // meshes above (and the web `build_hybrid_env_mesh_posed`).
                     legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
-                    legaia_engine_render::scene_lighting::tag_emissive_meshes(
+                    legaia_render_kernels::scene_lighting::tag_emissive_meshes(
                         &rtmd.raw, &mut vmesh, &mut cmesh, &res.vram,
                     );
                     // Retain the raw TMD so the draw pass can re-pose this prop
@@ -373,7 +375,7 @@ impl PlayWindowApp {
                                 // (`rebuild_field_lit_meshes`).
                                 if self.session.host.world.scene_color_grade().is_none()
                                     && posed_lit.len() == vmesh.colors.len()
-                                    && legaia_engine_core::field_lit_mesh::has_lit_rows(&posed_lit)
+                                    && legaia_engine_field::field_lit_mesh::has_lit_rows(&posed_lit)
                                 {
                                     lit_sources.insert(meshes.len(), (vmesh.clone(), posed_lit));
                                 }
@@ -429,7 +431,7 @@ impl PlayWindowApp {
             // The CPU copy the visible-tile crop re-uploads a cropped index
             // list from (`ground_crop` in `handle_redraw`).
             let mut ground_src: Option<GroundSource> = None;
-            let mut ground_census: Option<legaia_engine_core::draw_census::MeshCensus> = None;
+            let mut ground_census: Option<legaia_engine_system::draw_census::MeshCensus> = None;
             if let Some(scene) = self.session.host.scene.as_ref()
                 && let Ok(Some(hf)) = scene.walk_heightfield(&self.session.host.index)
                 && !hf.indices.is_empty()
@@ -579,16 +581,19 @@ impl PlayWindowApp {
         // NPC/prop layer (where most interior candle sconces actually live)
         // adds its own below, and the combined set clusters into at most
         // `MAX_SCENE_LIGHTS` lights at the end of this function.
-        let mut light_samples: Vec<legaia_engine_render::scene_lights::EmitterSample> = Vec::new();
-        let mut prop_light_sets: Vec<legaia_engine_render::scene_lighting::PropLights> = Vec::new();
+        let mut light_samples: Vec<legaia_render_kernels::scene_lighting::EmitterSample> =
+            Vec::new();
+        let mut prop_light_sets: Vec<legaia_render_kernels::scene_lighting::PropLights> =
+            Vec::new();
         {
-            use legaia_engine_render::scene_lights as sl;
             for (mesh_idx, model) in field_placement_draws.iter().chain(&field_terrain_draws) {
                 if let Some(&src) = tmd_src_index.get(*mesh_idx)
                     && let Some(em) = tmd_vram_emitters.get(src)
                     && !em.is_empty()
                 {
-                    light_samples.extend(sl::transform_samples(em, model));
+                    light_samples.extend(legaia_render_kernels::scene_lighting::transform_samples(
+                        em, model,
+                    ));
                 }
             }
             for (mesh_idx, model) in field_placement_color_draws
@@ -599,7 +604,9 @@ impl PlayWindowApp {
                     && let Some(em) = tmd_color_emitters.get(src)
                     && !em.is_empty()
                 {
-                    light_samples.extend(sl::transform_samples(em, model));
+                    light_samples.extend(legaia_render_kernels::scene_lighting::transform_samples(
+                        em, model,
+                    ));
                 }
             }
         }
@@ -726,7 +733,7 @@ impl PlayWindowApp {
                         atlas_data.width,
                         atlas_data.height
                     );
-                    let rects = legaia_engine_render::SaveMenuAtlasRects {
+                    let rects = legaia_engine_ui::SaveMenuAtlasRects {
                         panel_tl: atlas_data.band_panel_tl(),
                         panel_tr: atlas_data.band_panel_tr(),
                         panel_bl: atlas_data.band_panel_bl(),
@@ -771,7 +778,7 @@ impl PlayWindowApp {
                             atlas_data.band_load_portrait(1),
                             atlas_data.band_load_portrait(2),
                         ],
-                        battle: Some(legaia_engine_render::BattleChromeRects {
+                        battle: Some(legaia_engine_ui::BattleChromeRects {
                             panel_bg: atlas_data.band_battle_panel_bg(),
                             plate_cap_l: atlas_data.band_battle_plate_cap_l(),
                             plate_body: atlas_data.band_battle_plate_body(),
@@ -788,7 +795,7 @@ impl PlayWindowApp {
                     // status badges need the row-511 extension palettes),
                     // so it travels with the atlas rather than being
                     // re-derived from the layout.
-                    let badges = legaia_engine_render::battle_hud_chrome::BattleBadgeRects {
+                    let badges = legaia_engine_ui::battle_hud_chrome::BattleBadgeRects {
                         status: atlas_data.band_status_badges(),
                         element: atlas_data.band_element_badges(),
                     };
@@ -797,7 +804,7 @@ impl PlayWindowApp {
                     // sprite half - under the labels and numerals that
                     // sample the same atlas, which the text half could not
                     // do (it always composites on top).
-                    let solid = legaia_engine_render::atlas_opaque_texel(
+                    let solid = legaia_engine_ui::atlas_opaque_texel(
                         &atlas_data.rgba,
                         atlas_data.width,
                         atlas_data.height,
@@ -959,9 +966,11 @@ impl PlayWindowApp {
                     .session
                     .host
                     .index
-                    .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+                    .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
                     .ok()
-                    .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+                    .and_then(|b| {
+                        legaia_actor_formats::character_pack::field_locomotion_anm(&b).ok()
+                    });
                 // The rest pose and the bone cap come from the MESH's slot: a
                 // party-slot mesh (the lead's form, or a `CC F8 50` operand
                 // `>= 0xF0`) poses from its own bank, a scene-bank model has
@@ -979,9 +988,9 @@ impl PlayWindowApp {
                 // (bone_count, per-bone (translation, rotation) pairs)
                 type IdlePose = (usize, Vec<([i16; 3], [i16; 3])>);
                 let idle_pose: Option<IdlePose> = locomotion.as_ref().and_then(|bundle| {
-                    let rec_idx = legaia_asset::character_pack::locomotion_record_index(
+                    let rec_idx = legaia_actor_formats::character_pack::locomotion_record_index(
                         lead,
-                        legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT,
+                        legaia_actor_formats::character_pack::LOCOMOTION_IDLE_SLOT,
                     );
                     let rec = bundle.record(rec_idx).ok()?;
                     let bones = rec.bone_count as usize;
@@ -1068,7 +1077,7 @@ impl PlayWindowApp {
                                 .as_ref()
                                 .filter(|_| roster_lead <= 2)
                                 .and_then(|bundle| {
-                                    legaia_engine_core::field_anim::FieldPlayerAnim::from_locomotion_bank(
+                                    legaia_engine_field::field_anim::FieldPlayerAnim::from_locomotion_bank(
                                         bundle, roster_lead,
                                     )
                                 });
@@ -1142,9 +1151,9 @@ impl PlayWindowApp {
                 .session
                 .host
                 .index
-                .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+                .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
                 .ok()
-                .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+                .and_then(|b| legaia_actor_formats::character_pack::field_locomotion_anm(&b).ok());
             let placements = self
                 .session
                 .host
@@ -1152,9 +1161,11 @@ impl PlayWindowApp {
                 .as_ref()
                 .and_then(|s| s.field_man_payload(&self.session.host.index).ok().flatten())
                 .and_then(|man| {
-                    legaia_asset::man_section::parse(&man).ok().map(|mf| {
-                        legaia_engine_core::man_field_scripts::classify_placements(&mf, &man)
-                    })
+                    legaia_scene_formats::man_section::parse(&man)
+                        .ok()
+                        .map(|mf| {
+                            legaia_engine_field::man_field_scripts::classify_placements(&mf, &man)
+                        })
                 })
                 .unwrap_or_default();
             for (p, _kind) in &placements {
@@ -1235,7 +1246,9 @@ impl PlayWindowApp {
                         // record poses this NPC per frame (the rest pose
                         // below stays the frame-0 fallback / first frame).
                         if let Some(player) =
-                            legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec_idx)
+                            legaia_engine_field::field_anim::FieldClipPlayer::from_record(
+                                b, rec_idx,
+                            )
                         {
                             // The playhead is the world's: the actor's
                             // `+0x62` word may hold or one-shot the clip.
@@ -1269,7 +1282,7 @@ impl PlayWindowApp {
                     }
                     None => legaia_tmd::mesh::tmd_to_color_mesh(&tmd, &raw),
                 };
-                let prop_curated = legaia_engine_render::scene_lighting::tag_emissive_meshes(
+                let prop_curated = legaia_render_kernels::scene_lighting::tag_emissive_meshes(
                     &raw, &mut vmesh, &mut cmesh, &res.vram,
                 );
                 let mesh_idx = if vmesh.indices.is_empty() {
@@ -1347,7 +1360,6 @@ impl PlayWindowApp {
                 // NOT read here: on a character they are skin and hair.
                 // A set whose actor is parked in the hide box doesn't emit.
                 {
-                    use legaia_engine_render::scene_lights as sl;
                     // A prop spawned in the hide box (the Genesis Tree, moved
                     // into the plaza by its spawn script) still derives its
                     // set; `place_prop_lights` drops it while it is hidden.
@@ -1355,14 +1367,14 @@ impl PlayWindowApp {
                         let y = world.sample_field_floor_height(p.world_x as i32, p.world_z as i32);
                         let spawn = [p.world_x as f32, y as f32, p.world_z as f32];
                         let model = Mat4::from_translation(Vec3::from(spawn));
-                        let mut samples = sl::vram_mesh_emitters(
+                        let mut samples = legaia_render_kernels::scene_lighting::vram_mesh_emitters(
                             &vmesh.positions,
                             &vmesh.cba_tsb,
                             &vmesh.colors,
                             &vmesh.indices,
                             Some((&res.vram, &vmesh.uvs)),
                         );
-                        samples.extend(sl::color_mesh_emitters(
+                        samples.extend(legaia_render_kernels::scene_lighting::color_mesh_emitters(
                             &cmesh.positions,
                             &cmesh.colors,
                             &cmesh.blend,
@@ -1370,14 +1382,18 @@ impl PlayWindowApp {
                         ));
                         if let Some(hit) = prop_curated {
                             samples.push(
-                                legaia_engine_render::scene_lighting::curated_mesh_sample(&hit),
+                                legaia_render_kernels::scene_lighting::curated_mesh_sample(&hit),
                             );
                         }
                         let lights =
-                            sl::cluster_all_scene_lights(&sl::transform_samples(&samples, &model));
+                            legaia_render_kernels::scene_lighting::cluster_all_scene_lights(
+                                &legaia_render_kernels::scene_lighting::transform_samples(
+                                    &samples, &model,
+                                ),
+                            );
                         if !lights.is_empty() {
                             prop_light_sets.push(
-                                legaia_engine_render::scene_lighting::PropLights {
+                                legaia_render_kernels::scene_lighting::PropLights {
                                     slot: p.index as u8,
                                     spawn,
                                     lights,
@@ -1409,8 +1425,8 @@ impl PlayWindowApp {
         // props) into the scene's point lights. Consumed per frame by the
         // redraw staging; inert unless dynamic lighting + shadows are on.
         {
-            use legaia_engine_render::scene_lights as sl;
-            self.scene_point_lights = sl::cluster_all_scene_lights(&light_samples);
+            self.scene_point_lights =
+                legaia_render_kernels::scene_lighting::cluster_all_scene_lights(&light_samples);
             self.scene_prop_lights = std::mem::take(&mut prop_light_sets);
             if !self.scene_point_lights.is_empty() {
                 let w = &*world;

@@ -49,9 +49,9 @@ use std::sync::Arc;
 use legaia_engine_core::field_env::{
     self, ANIM_CLAMP, ANIM_HOLD, ANIM_REVERSE, AnimCmd, PropAnimBank,
 };
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::{FieldPropCollider, World};
+use legaia_engine_system::input::PadButton;
 
 /// Rim Elm's two scene variants (they share one `.MAP`).
 const TOWN_SCENES: &[&str] = &["town01", "town0c"];
@@ -113,14 +113,14 @@ fn scene_props(index: &Arc<ProtIndex>, name: &str) -> SceneProps {
         .field_man_payload(index)
         .expect("man")
         .expect("field man");
-    let man_file = legaia_asset::man_section::parse(&man).expect("parse man");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("parse man");
     let bundle = scene
         .entries
         .iter()
         .find_map(|e| {
             [3usize, 5, 6, 7]
                 .into_iter()
-                .find_map(|d| legaia_asset::player_anm::find_in_entry(&e.bytes, d).pop())
+                .find_map(|d| legaia_actor_formats::player_anm::find_in_entry(&e.bytes, d).pop())
         })
         .expect("scene ANM bundle");
 

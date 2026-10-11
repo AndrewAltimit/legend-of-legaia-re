@@ -6,7 +6,7 @@ use super::*;
 #[wasm_bindgen]
 impl LegaiaRuntime {
     /// Route this frame's pad word into the engine. Bit layout is the PSX digital
-    /// pad ([`legaia_engine_core::input::PadButton`]): `0x0008` Start, `0x0010`
+    /// pad ([`legaia_engine_system::input::PadButton`]): `0x0008` Start, `0x0010`
     /// Up, `0x0020` Right, `0x0040` Down, `0x0080` Left, `0x1000` Triangle,
     /// `0x2000` Circle, `0x4000` Cross, `0x8000` Square. Edge detection is the
     /// engine's - just hand it the held set each frame.
@@ -105,7 +105,7 @@ impl LegaiaRuntime {
     ///
     /// An **override**, not the normal path: the engine camera publishes its
     /// own compass azimuth every tick
-    /// ([`legaia_engine_core::camera::Camera::compass_azimuth_units`], which
+    /// ([`legaia_engine_field::camera::Camera::compass_azimuth_units`], which
     /// sums the scripted yaw, the drag-orbit and the host framing bias), and
     /// the native window has nothing that needs to speak over it. The page's
     /// VR first-person mode does: there the headset gaze *is* the heading, so

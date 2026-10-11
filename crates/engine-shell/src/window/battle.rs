@@ -1,8 +1,8 @@
 //! Extracted from `window.rs` (mechanical split; behavior-preserving).
 
 use super::*;
-use legaia_engine_render::battle_intro::BattleIntro;
-use legaia_engine_render::screen_overlay::ScreenPrim;
+use legaia_render_kernels::battle_intro::BattleIntro;
+use legaia_render_kernels::screen_prim::ScreenPrim;
 
 // The battle-HUD row fold and the encounter-banner label are shared with the
 // browser play page: both live in `legaia_engine_core::battle_hud` and each
@@ -37,7 +37,7 @@ impl PlayWindowApp {
             // The audio duck: the summon / capture arms lower the BGM to 75%
             // of its reference, the Done band's `0x51` arm raises it back.
             // The director ramps one retail unit per frame (`tick_duck`).
-            if let legaia_engine_core::battle_events::BattleEvent::DuckAudioLevel { target_pct } =
+            if let legaia_engine_battle::battle_events::BattleEvent::DuckAudioLevel { target_pct } =
                 &ev
                 && let Some(bgm) = self.session.bgm.as_mut()
             {

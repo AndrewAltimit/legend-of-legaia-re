@@ -2,6 +2,7 @@
 //! tutorial step and exit.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Enter the Noa dance (rhythm) minigame on `game`, suspending the current
@@ -10,10 +11,10 @@ impl World {
     /// contract: the interrupted field/battle state stays intact underneath.
     ///
     /// Applies the dance stager's pad-latch clear
-    /// ([`crate::dance::dance_scene_stage`]): retail zeroes `_DAT_8007B880` on
+    /// ([`legaia_engine_minigames::dance::dance_scene_stage`]): retail zeroes `_DAT_8007B880` on
     /// the frame the hall is staged, so the confirm press that starts the
     /// minigame is not also read as its first judged note.
-    pub fn enter_dance(&mut self, game: crate::dance::DanceGame) {
+    pub fn enter_dance(&mut self, game: legaia_engine_minigames::dance::DanceGame) {
         // Don't stack a suspend: if the dance is already running, just swap the
         // game so a re-entry keeps the true return mode.
         if self.mode != SceneMode::Dance {
@@ -25,24 +26,24 @@ impl World {
         // world is what gives the **door-warp** entry a count-in on both
         // hosts. Previously only the native debug launcher ran one, from a
         // driver of its own.
-        let long_song = game.song_len() == crate::dance::SONG_LEN_LONG;
-        let how_to = game.mode() == crate::dance::DanceMode::HowTo;
+        let long_song = game.song_len() == legaia_engine_minigames::dance::SONG_LEN_LONG;
+        let how_to = game.mode() == legaia_engine_minigames::dance::DanceMode::HowTo;
         // State 1's flag writes, after it has read the mode off them: the
         // three one-shot mode requests are cleared (`0x801CF950..0x801CF964`;
         // the free-play flag stays) and the pass flag is raised for the
         // results state to clear on a loss (`0x801CF968`).
         // PORT: FUN_801cf470 (state 1's flag writes)
         for flag in [
-            crate::dance::MODE_FLAG_FINALS,
-            crate::dance::MODE_FLAG_QUALIFIER,
-            crate::dance::MODE_FLAG_HOW_TO,
+            legaia_engine_minigames::dance::MODE_FLAG_FINALS,
+            legaia_engine_minigames::dance::MODE_FLAG_QUALIFIER,
+            legaia_engine_minigames::dance::MODE_FLAG_HOW_TO,
         ] {
             self.system_flag_clear(flag);
         }
-        self.system_flag_set(crate::dance::WIN_FLAG);
+        self.system_flag_set(legaia_engine_minigames::dance::WIN_FLAG);
         self.minigames.dance = Some(game);
         self.minigames.dance_last_judge = None;
-        self.minigames.dance_countin = Some(crate::dance::CountIn::new());
+        self.minigames.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
         self.minigames.dance_countin_banner = None;
         self.minigames.dance_countin_go = None;
         // The dance overlay loads one of two mode-selected chart loops; the
@@ -50,14 +51,15 @@ impl World {
         // length. Held until the count-in clears, which is when retail's
         // beat clock starts.
         self.minigames.dance_pending_bgm = Some(if long_song {
-            crate::minigame_entry::DANCE_LONG_SONG_BGM_ID
+            legaia_engine_mode::minigame_entry::DANCE_LONG_SONG_BGM_ID
         } else {
-            crate::minigame_entry::DANCE_SHORT_SONG_BGM_ID
+            legaia_engine_mode::minigame_entry::DANCE_SHORT_SONG_BGM_ID
         });
-        self.minigames.dance_tutorial = how_to.then(crate::dance_tutorial::DanceTutorial::new);
+        self.minigames.dance_tutorial =
+            how_to.then(legaia_engine_minigames::dance_tutorial::DanceTutorial::new);
         self.minigames.dance_tutorial_frame = None;
         self.mode = SceneMode::Dance;
-        if crate::dance::dance_scene_stage().clear_pad_latch {
+        if legaia_engine_minigames::dance::dance_scene_stage().clear_pad_latch {
             self.input.clear_edges();
         }
     }
@@ -68,7 +70,7 @@ impl World {
     /// host to log. `None` while the hall still owns the frame, or with no run.
     /// The per-frame poll both play hosts make; each used to spell the
     /// `mode != Dance` test beside its own `exit_dance` call.
-    pub fn finish_dance_if_over(&mut self) -> Option<crate::dance::DanceGame> {
+    pub fn finish_dance_if_over(&mut self) -> Option<legaia_engine_minigames::dance::DanceGame> {
         if self.mode == SceneMode::Dance {
             return None;
         }
@@ -93,7 +95,7 @@ impl World {
     /// `enter_dance` is the only writer of `minigames.dance`, so "a run is
     /// installed, or the mode is still the hall" is exactly the set of frames
     /// with something to tear down.
-    pub fn exit_dance(&mut self) -> Option<crate::dance::DanceGame> {
+    pub fn exit_dance(&mut self) -> Option<legaia_engine_minigames::dance::DanceGame> {
         if self.mode != SceneMode::Dance && self.minigames.dance.is_none() {
             return None;
         }
@@ -111,7 +113,7 @@ impl World {
         self.restore_minigame_bgm();
         // The stager runs on teardown as well as on entry, so the press that
         // leaves the hall does not carry into the restored field mode.
-        if crate::dance::dance_scene_stage().clear_pad_latch {
+        if legaia_engine_minigames::dance::dance_scene_stage().clear_pad_latch {
             self.input.clear_edges();
         }
         self.minigames.dance.take()
@@ -123,7 +125,7 @@ impl World {
     /// The judged buttons are the retail ones: `FUN_801d1af4` reads the
     /// newly-pressed word `_DAT_8007B874` and tests the three face bits
     /// `0x80` / `0x20` / `0x10` = Square / Circle / Triangle, which is exactly
-    /// [`crate::dance::DanceDir::pad_bit`]. This frame's pad edges are packed
+    /// [`legaia_engine_minigames::dance::DanceDir::pad_bit`]. This frame's pad edges are packed
     /// into that layout and the direction is picked by matching `pad_bit`, so
     /// the bit-to-direction binding lives in the ported kernel. Edge-triggered
     /// (`just_pressed`) so a held button scores at most one note per press.
@@ -149,7 +151,7 @@ impl World {
             self.minigames.dance_countin_banner = step.banner;
             self.minigames.dance_countin_go = step.go;
             if let Some(cue) = step.cue {
-                self.write_dance_ring_cue(crate::dance::STAGE_CUE_RING_SLOT, cue);
+                self.write_dance_ring_cue(legaia_engine_minigames::dance::STAGE_CUE_RING_SLOT, cue);
             }
             if step.done {
                 self.minigames.dance_countin_banner = None;
@@ -173,10 +175,10 @@ impl World {
         //
         // The engine's `PadButton` word and the packed word `FUN_8001822C`
         // builds hold the same 16 buttons with the two bytes swapped (see
-        // `crate::retail_pad`: face/shoulder cluster low, dpad/system high),
+        // `legaia_engine_system::retail_pad`: face/shoulder cluster low, dpad/system high),
         // so one rotate turns this frame's edges into the mask the retail
         // judge reads.
-        use crate::dance::DanceDir;
+        use legaia_engine_minigames::dance::DanceDir;
         let pressed = (self.input.pad() & !self.input.pad_prev()).rotate_right(8);
         let dir = [DanceDir::C, DanceDir::A, DanceDir::B]
             .into_iter()
@@ -191,7 +193,7 @@ impl World {
         // The countdown parts' move-VM op `0x1D` stores straight into ring
         // slot 3 (`DAT_8007B6DE`), as the award does.
         for cue in finish_cues {
-            self.write_dance_ring_cue(crate::dance::AWARD_CUE_RING_SLOT, cue);
+            self.write_dance_ring_cue(legaia_engine_minigames::dance::AWARD_CUE_RING_SLOT, cue);
         }
         self.route_dance_award_sounds(&award_sounds);
         if finished {
@@ -200,7 +202,7 @@ impl World {
             // place so the host can read the final score before clearing.
             self.mode = self.minigames.dance_return_mode;
             if clear_win {
-                self.system_flag_clear(crate::dance::WIN_FLAG);
+                self.system_flag_clear(legaia_engine_minigames::dance::WIN_FLAG);
             }
         }
         self.step_dance_tutorial();
@@ -214,7 +216,9 @@ impl World {
     pub(in crate::world::frame_tick) fn write_dance_ring_cue(&mut self, slot: u8, cue: u16) {
         self.audio
             .sfx_ring_ops
-            .push(crate::world::SfxRingOp::WriteSlot(slot, cue as i16));
+            .push(legaia_engine_system::sound_state::SfxRingOp::WriteSlot(
+                slot, cue as i16,
+            ));
     }
 
     /// Hand the human's award sounds to the audio side: cues into ring slot
@@ -222,26 +226,29 @@ impl World {
     /// `FUN_80065034`) on the queue both hosts drain. The tier-2 sting's
     /// variant is `rand() % 3` off the one world stream, as retail's
     /// `jal 0x80056798` at `0x801D2138`.
-    pub(crate) fn route_dance_award_sounds(&mut self, sounds: &[crate::dance::DanceAwardSound]) {
-        use crate::dance::DanceAwardSound;
+    pub(crate) fn route_dance_award_sounds(
+        &mut self,
+        sounds: &[legaia_engine_minigames::dance::DanceAwardSound],
+    ) {
+        use legaia_engine_minigames::dance::DanceAwardSound;
         for &s in sounds {
             match s {
-                DanceAwardSound::Cue(cue) => {
-                    self.write_dance_ring_cue(crate::dance::AWARD_CUE_RING_SLOT, cue)
-                }
+                DanceAwardSound::Cue(cue) => self
+                    .write_dance_ring_cue(legaia_engine_minigames::dance::AWARD_CUE_RING_SLOT, cue),
                 DanceAwardSound::Sting { r, random } => {
                     let r = if random {
-                        (self.next_rand() % u32::from(crate::dance::STING_RANDOM_VARIANTS)) as u16
+                        (self.next_rand()
+                            % u32::from(legaia_engine_minigames::dance::STING_RANDOM_VARIANTS))
+                            as u16
                     } else {
                         r
                     };
-                    let vol = crate::other_game_overlay::cue_volume(
+                    let vol = legaia_engine_minigames::other_game_overlay::cue_volume(
                         self.audio.levels.voice_volume as u32,
                     );
-                    for v in crate::dance::dance_hit_sting_voices(r) {
-                        self.audio
-                            .sfx_voice_keys
-                            .push(crate::other_game_overlay::VoiceAttrCue {
+                    for v in legaia_engine_minigames::dance::dance_hit_sting_voices(r) {
+                        self.audio.sfx_voice_keys.push(
+                            legaia_engine_minigames::other_game_overlay::VoiceAttrCue {
                                 voice: u32::from(v.voice),
                                 vab_program_tone: (
                                     i32::from(v.level),
@@ -250,7 +257,8 @@ impl World {
                                 ),
                                 note_and_fine: (i32::from(v.note), 0x40),
                                 volume: (vol, vol),
-                            });
+                            },
+                        );
                     }
                 }
             }
@@ -260,13 +268,13 @@ impl World {
     /// Run the Disco King how-to tutorial actor for one frame beside the live
     /// session, on the retail pad-word layout (the same rotate the judge
     /// applies). No-op unless the installed run is a
-    /// [`crate::dance::DanceMode::HowTo`] one.
+    /// [`legaia_engine_minigames::dance::DanceMode::HowTo`] one.
     ///
     /// The handler runs during the count-in too - retail's actor ticks
     /// independently of the dance states, and its opening prompt is what the
     /// player answers before the song.
     // REF: FUN_801D0750 (the actor handler; the per-state kernels are
-    //      `crate::dance_tutorial`)
+    //      `legaia_engine_minigames::dance_tutorial`)
     pub(in crate::world::frame_tick) fn step_dance_tutorial(&mut self) {
         if self.minigames.dance_tutorial.is_none() {
             self.minigames.dance_tutorial_frame = None;
@@ -292,7 +300,7 @@ impl World {
         if let Some(cue) = frame.cue {
             // `FUN_801d0750` stores its cursor / confirm blips straight into
             // ring slot 0 (`sh id, 0x8007B6D8`).
-            self.write_dance_ring_cue(crate::dance::STAGE_CUE_RING_SLOT, cue);
+            self.write_dance_ring_cue(legaia_engine_minigames::dance::STAGE_CUE_RING_SLOT, cue);
         }
         if frame.done {
             self.minigames.dance_tutorial = None;

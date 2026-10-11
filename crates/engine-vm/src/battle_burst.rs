@@ -501,7 +501,7 @@ pub fn arm_invariants_hold() -> bool {
 /// Layout is the shared move-buffer record format - `[i16 model_sel][u16 reserved]
 /// [move-VM bytecode]`, terminated by op `0x08` HALT - documented under
 /// [`docs/subsystems/move-vm.md`](../../../docs/subsystems/move-vm.md), the same
-/// shape `legaia_asset::summon_overlay` and `legaia_asset::scene_event_scripts`
+/// shape `legaia_overlay_images::summon_overlay` and `legaia_scene_formats::scene_event_scripts`
 /// parse for the summon and per-scene stager tables.
 ///
 /// The bytes come from a supplied `0898` image and are never committed: this

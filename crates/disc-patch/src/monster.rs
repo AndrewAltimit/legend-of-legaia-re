@@ -2,7 +2,7 @@
 //!
 //! Each monster occupies a fixed `0x14000`-byte slot at `(id-1) * 0x14000`,
 //! laid out as `[u32 decompressed_size][Legaia LZS stream]` (see
-//! [`legaia_asset::monster_archive`]). To change a value in the decoded record
+//! [`legaia_actor_formats::monster_archive`]). To change a value in the decoded record
 //! - e.g. the item drop the randomizer shuffles - we decompress the slot, edit
 //!   the decoded block in place, recompress with [`legaia_lzs::compress`], and
 //!   rebuild `[u32 size][stream]` zero-padded back to the original slot size.
@@ -15,7 +15,7 @@
 //! guard rejects the rare case where it would not).
 
 use anyhow::{Result, bail};
-use legaia_asset::monster_archive::SLOT_STRIDE;
+use legaia_actor_formats::monster_archive::SLOT_STRIDE;
 
 /// Decoded-record byte offset of the drop item id (`0` = no drop).
 pub const DROP_ITEM_OFFSET: usize = 0x48;

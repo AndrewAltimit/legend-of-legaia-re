@@ -9,8 +9,8 @@ use crate::world::World;
 /// the flag-test. A single spawned channel (script id 5) provides the
 /// cross-context target whose flag the timeline waits on.
 fn timeline_with_channel_wait(channel_flag_bit3: bool) -> World {
-    use crate::cutscene_timeline::CutsceneTimeline;
     use crate::field_channels::FieldChannel;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     use legaia_engine_vm::field::FieldCtx;
 
     let mut w = World::new();
@@ -128,10 +128,10 @@ fn cutscene_timeline_channel_wait_times_out_to_step_past() {
 /// clip, and drawing it over the hero tore the body apart.
 #[test]
 fn a_player_exec_move_queues_a_scene_clip_only_off_the_party_bank() {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     for (bit_op, queued) in [(0xB1u8, Vec::<u8>::new()), (0xB2, vec![5])] {
         let mut w = World {
-            mode: crate::world::SceneMode::Field,
+            mode: legaia_engine_mode::mode::SceneMode::Field,
             ..World::default()
         };
         w.spawn_actor(0);
@@ -149,7 +149,7 @@ fn a_player_exec_move_queues_a_scene_clip_only_off_the_party_bank() {
 /// dispatcher's arguments, not a resume PC), then the trailing `0x3F`
 /// scene change to `jouina` and the record's terminal backward-jump park.
 fn timeline_with_player_channel_door() -> World {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     let mut w = World::new();
     let mut bc = vec![
         0xA2, 0xF8, 0x06, // ExecMove move_id=6 against the player anchor
@@ -193,9 +193,10 @@ fn cutscene_timeline_player_channel_door_reaches_scene_change() {
         );
     }
     assert!(
-        w.pending_field_events
-            .iter()
-            .any(|e| matches!(e, crate::field_events::FieldEvent::ExecMove { move_id: 6 })),
+        w.pending_field_events.iter().any(|e| matches!(
+            e,
+            legaia_engine_field::field_events::FieldEvent::ExecMove { move_id: 6 }
+        )),
         "the player-channel ExecMove emits the move event"
     );
     // The park drains over the countdown, then the trailing `0x3F` fires
@@ -229,7 +230,7 @@ fn cutscene_timeline_player_halt_acquire_without_move_steps_past() {
     // A player-channel halt-acquire with NO move in flight completes
     // immediately: no park, PC steps past by the encoded width onto the
     // next op.
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     let mut w = World::new();
     // Nine bytes: extended header (2) + sub + tile x + tile z + two `s16`
     // walk-dispatcher arguments - retail `overlay_0897` `0x801DF5B8`
@@ -258,9 +259,9 @@ fn cutscene_timeline_player_halt_acquire_without_move_steps_past() {
 /// party-bank bit down (`B2 F8 18`, `A2 F8 03`), its end-latch spin
 /// (`AC F8 08`, `AD F8 08`), and a `WaitFrames` so the timeline stays up.
 fn timeline_with_player_walk_and_clip_wait(clip_ticks: u32) -> World {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     let mut w = World {
-        mode: crate::world::SceneMode::Field,
+        mode: legaia_engine_mode::mode::SceneMode::Field,
         ..World::default()
     };
     w.spawn_actor(0);
@@ -316,8 +317,8 @@ fn cutscene_timeline_player_compass_walk_runs_its_budget_while_the_record_waits(
 /// after the leg lands, exactly as the player arm does.
 #[test]
 fn cutscene_timeline_npc_compass_walk_moves_the_placement_while_the_record_waits() {
-    use crate::cutscene_timeline::CutsceneTimeline;
     use crate::field_channels::FieldChannel;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     use legaia_engine_vm::field::FieldCtx;
     let bc = vec![
         0xB7, 0x40, 0x00, 0x84, // compass walk: dir 0 (-Z), 4 x div 16
@@ -363,7 +364,7 @@ fn cutscene_timeline_npc_compass_walk_moves_the_placement_while_the_record_waits
 /// ungated record, four for a gated divisor-4 one, then steps past.
 #[test]
 fn cutscene_timeline_player_clip_latch_spin_holds_for_the_clip() {
-    use crate::field_anim::{CLIP_RATE, clip_end_ticks, clip_step};
+    use legaia_engine_field::field_anim::{CLIP_RATE, clip_end_ticks, clip_step};
     let frames = 10u16;
     for (gated, div, per_frame) in [(false, 0u8, 2usize), (true, 4, 4)] {
         let ticks = clip_end_ticks(frames, clip_step(CLIP_RATE, gated, div));
@@ -395,9 +396,9 @@ fn cutscene_timeline_player_clip_latch_spin_holds_for_the_clip() {
 /// press.
 #[test]
 fn a_pad_poll_loop_waits_for_the_press() {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     let mut w = World {
-        mode: crate::world::SceneMode::Field,
+        mode: legaia_engine_mode::mode::SceneMode::Field,
         ..World::default()
     };
     let bc = vec![
@@ -417,7 +418,7 @@ fn a_pad_poll_loop_waits_for_the_press() {
         .as_ref()
         .expect("still waiting on the pad");
     assert!(tl.pc < 11, "never passed the poll, pc={:#x}", tl.pc);
-    w.set_pad(crate::input::PadButton::Cross.mask());
+    w.set_pad(legaia_engine_system::input::PadButton::Cross.mask());
     for _ in 0..4 {
         w.step_cutscene_timeline();
     }
@@ -429,7 +430,7 @@ fn a_pad_poll_loop_waits_for_the_press() {
 /// the port: the spin steps past as before rather than parking forever.
 #[test]
 fn cutscene_timeline_party_bank_clip_does_not_park_the_latch_spin() {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     let mut w = World::default();
     let bc = vec![0xA2, 0xF8, 0x01, 0xAD, 0xF8, 0x08, 0x4A, 0xFF, 0x7F];
     w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));

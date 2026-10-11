@@ -39,7 +39,7 @@ pub struct DomePlay {
 ///
 /// A queued direction resolves exactly as retail plays a battle action - the
 /// move-power record via the `0x801F4E63` id → index map
-/// ([`legaia_asset::move_power`]), the arts/physical predamage roll
+/// ([`legaia_game_tables::move_power`]), the arts/physical predamage roll
 /// (`FUN_801dd0ac`), the element-affinity scale (`FUN_801dd864`) and the
 /// damage finisher (`FUN_801ddb30`), drawing from the `rand()` stream in
 /// retail call order (3 draws, +2 when the bonus arm fires, +1 when
@@ -104,7 +104,7 @@ impl DomeDamageModel {
     ) -> Option<Self> {
         let table = move_power::parse(raw)?;
         let map = move_power::parse_id_index_map(raw)?;
-        let affinity = legaia_asset::element_affinity::parse(raw);
+        let affinity = legaia_game_tables::element_affinity::parse(raw);
         Some(Self::new(table, map, affinity, combatants, hp, rng_seed))
     }
 

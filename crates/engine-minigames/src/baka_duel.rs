@@ -32,11 +32,11 @@
 //!   seat and steps it every tick.
 
 use crate::baka_fighter::ClipHeader;
-use legaia_asset::baka_opponents as bo;
 use legaia_engine_battle_vm::camera_rel_actor::normalize_camera_relative_params;
 use legaia_engine_battle_vm::camera_rel_glide::CameraRelGlide;
 use legaia_engine_battle_vm::psx_camera::FieldCameraView;
 use legaia_engine_battle_vm::retail_cam::RetailCamGlobals;
+use legaia_minigame_formats::baka_opponents as bo;
 
 // ---------------------------------------------------------------- camera
 

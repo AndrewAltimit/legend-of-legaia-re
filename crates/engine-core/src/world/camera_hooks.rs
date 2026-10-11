@@ -7,12 +7,12 @@
 //!
 //! The retail arms call straight into the field overlay's camera routines,
 //! which write the camera globals. In the port those globals live on
-//! [`crate::camera::Camera`], which each host owns (the native window's
+//! [`legaia_engine_field::camera::Camera`], which each host owns (the native window's
 //! `BootSession`, the browser play page's `PlayCamera`), while the field
 //! VM's [`legaia_engine_vm::field::FieldHost`] is implemented on [`World`].
 //! So an arm cannot reach the camera directly: it records a
 //! [`CameraZoneRequest`] on the world, and
-//! [`crate::camera::Camera::tick`] drains the queue on the next frame -
+//! [`legaia_engine_field::camera::Camera::tick`] drains the queue on the next frame -
 //! which is one shared drain point for both hosts rather than a hook each
 //! of them would have to remember to call.
 //!
@@ -40,7 +40,7 @@
 
 use super::World;
 
-pub use crate::camera::CameraZoneRequest;
+use legaia_engine_field::camera::CameraZoneRequest;
 
 impl World {
     /// Queue one camera-zone arm. The queue is bounded: a script that

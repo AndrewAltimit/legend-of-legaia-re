@@ -70,7 +70,7 @@ use crate::battle_char_assembly::{
     TextureRect, TextureUpload, UPLOAD_BPP, parse_upload_block,
 };
 use crate::battle_data_pack::{self, BattleDataPack};
-use crate::item_names::ItemNameTable;
+use legaia_game_tables::item_names::ItemNameTable;
 
 /// The four PROT entries that carry a player battle file
 /// (`PLAYER1..4` = Vahn / Noa / Gala / the all-default fourth file).

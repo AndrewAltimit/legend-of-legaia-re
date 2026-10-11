@@ -4,13 +4,13 @@
 //! `legaia_asset`:
 //!
 //! - **raw** - a TIM stored uncompressed (the flat-scan
-//!   `legaia_asset::tim_catalog` population: standalone entries, `timpack`
+//!   `legaia_disc_audit::tim_catalog` population: standalone entries, `timpack`
 //!   members, and the unindexed system-UI gap before entry 0). Addressed as
 //!   `(entry, byte offset within the entry)`, or a flat `PROT.DAT` offset
 //!   for gap TIMs. Always replaceable: the encoder preserves dimensions /
 //!   bpp / CLUT layout, so the write is same-size in place.
 //! - **lzs** - a TIM inside an LZS-compressed section
-//!   (`legaia_asset::tim_deep_catalog`). Addressed as `(entry, section,
+//!   (`legaia_disc_audit::tim_deep_catalog`). Addressed as `(entry, section,
 //!   offset within the decoded section)`. Replaceable only when the edited
 //!   section **recompresses into the retail stream's byte footprint**
 //!   ([`legaia_lzs::compress_optimal`]); otherwise the replacement fails
@@ -499,15 +499,15 @@ pub fn export_texture_png(
 pub fn texture_catalogs(
     patcher: &DiscPatcher,
 ) -> Result<(
-    Vec<legaia_asset::tim_catalog::CatalogTim>,
-    Vec<legaia_asset::tim_deep_catalog::DeepCatalogTim>,
+    Vec<legaia_disc_audit::tim_catalog::CatalogTim>,
+    Vec<legaia_disc_audit::tim_deep_catalog::DeepCatalogTim>,
 )> {
     let prot = patcher
         .read_named_file("PROT.DAT")
         .context("PROT.DAT not found in disc image")?;
     let spans = patcher.entry_spans();
-    let raw = legaia_asset::tim_catalog::build_from_spans(&prot, &spans);
-    let deep = legaia_asset::tim_deep_catalog::build_from_spans(&prot, &spans);
+    let raw = legaia_disc_audit::tim_catalog::build_from_spans(&prot, &spans);
+    let deep = legaia_disc_audit::tim_deep_catalog::build_from_spans(&prot, &spans);
     Ok((raw, deep))
 }
 

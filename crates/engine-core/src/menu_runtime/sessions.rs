@@ -84,7 +84,7 @@ impl MenuRuntime {
     }
 
     /// Install the disc-pinned equip restrictions the retail buy dispatch
-    /// reads ([`crate::equipment::DiscEquipInfo`], built from the static
+    /// reads ([`legaia_engine_menus::equipment::DiscEquipInfo`], built from the static
     /// `SCUS_942.54` equipment stat-bonus table).
     pub fn install_equip_info(&mut self, info: DiscEquipInfo) {
         self.equip_info = Some(info);
@@ -103,7 +103,7 @@ impl MenuRuntime {
     /// Open a shop into its **top-level Buy / Sell / Trade picker**
     /// ([`MenuState::ShopMenu`]) - the field-VM op-`0x49` merchant trigger path.
     /// The Trade row appears only when the disc enabled seru trading; selecting
-    /// it opens this vendor's [`crate::seru_trade::SeruTradeSession`].
+    /// it opens this vendor's [`legaia_engine_battle::seru_trade::SeruTradeSession`].
     pub fn open_shop_menu(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
         self.shop_slides.reset();
@@ -178,7 +178,7 @@ impl MenuRuntime {
     /// overlay swapped out (`scripts/scenarios.toml` `casino_prize_shop`), so
     /// no field code - locomotion, NPC motion, the field VM - can run under
     /// the screen. The inn is not one of these: retail's inn is an ordinary
-    /// field-VM dialogue ([`crate::inn`]), so the field keeps its tick under
+    /// field-VM dialogue ([`legaia_engine_menus::inn`]), so the field keeps its tick under
     /// the prompt.
     ///
     /// Hosts skip the world tick while this holds. The browser page always
@@ -221,7 +221,10 @@ impl MenuRuntime {
     /// Open the casino prize-exchange screen (field-VM op-`0x49` sub-op 7) -
     /// the counterpart of [`Self::open_shop_menu`] for the session drained
     /// from `World::take_pending_prize_exchange`.
-    pub fn open_prize_exchange(&mut self, session: crate::prize_exchange::PrizeExchangeSession) {
+    pub fn open_prize_exchange(
+        &mut self,
+        session: legaia_engine_minigames::prize_exchange::PrizeExchangeSession,
+    ) {
         self.prize_session = Some(session);
         self.shop_age = 0;
     }
@@ -238,7 +241,7 @@ impl MenuRuntime {
 
     /// The seru-trade offer currently being confirmed at `ShopTradeConfirm`
     /// (the one picked in `ShopTrade`), for the host to label the prompt.
-    pub fn pending_trade_offer(&self) -> Option<legaia_asset::seru_trade::OwnerTrade> {
+    pub fn pending_trade_offer(&self) -> Option<legaia_game_tables::seru_trade::OwnerTrade> {
         self.trade_session
             .as_ref()
             .and_then(|t| t.offers.get(self.trade_pending_offer).copied())

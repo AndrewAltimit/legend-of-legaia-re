@@ -8,6 +8,7 @@
 
 use super::*;
 use crate::fog_volume::{FogMover, FogSpace, FogVolumeFrame, scene_style};
+use legaia_engine_mode::mode::SceneMode;
 
 /// Mover keys: the player, field channels by placement slot, battle bodies
 /// by actor index - disjoint ranges so a mode switch never pairs one with

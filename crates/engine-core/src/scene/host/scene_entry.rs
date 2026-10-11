@@ -7,7 +7,7 @@
 
 use super::*;
 
-use crate::cutscene::FmvHandoff;
+use legaia_engine_system::movie::cutscene::FmvHandoff;
 
 mod battle_inputs;
 mod entry_seat;

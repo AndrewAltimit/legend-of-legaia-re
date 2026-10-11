@@ -38,15 +38,15 @@ fn authored_swap_targets(index: &ProtIndex, scene: &Scene) -> BTreeSet<i16> {
     let mut out = BTreeSet::new();
     for carrier in scene_man_carriers(index, scene) {
         let man = &carrier.payload;
-        let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
             continue;
         };
-        for rec in legaia_asset::man_motion::motion_records(man, &man_file) {
-            for var in legaia_asset::man_motion::stream_variants(man, &rec) {
+        for rec in legaia_scene_formats::man_motion::motion_records(man, &man_file) {
+            for var in legaia_scene_formats::man_motion::stream_variants(man, &rec) {
                 let mut pc = var.code_offset;
                 while pc < var.code_end && pc < man.len() {
                     let op = man[pc];
-                    let Some(w) = legaia_asset::man_motion::op_width(op) else {
+                    let Some(w) = legaia_scene_formats::man_motion::op_width(op) else {
                         break;
                     };
                     if op == 0x0E && pc + 2 < man.len() {

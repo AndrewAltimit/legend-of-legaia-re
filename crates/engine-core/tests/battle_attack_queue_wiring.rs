@@ -15,7 +15,7 @@
 //!
 //!  1. confirming Attack writes a non-empty swing stream - here, through
 //!     the `Auto` chip, the round-start pool arm of `FUN_801F0450`
-//!     (`legaia_engine_vm::battle_arts_auto_combo`), which spends the action
+//!     (`legaia_engine_battle_vm::battle_arts_auto_combo`), which spends the action
 //!     gauge on direction commands;
 //!  2. the chain walks it - every queued byte is staged as the next anim and
 //!     the strike cursor advances, instead of exiting on byte 0;
@@ -27,11 +27,14 @@
 //! `battle_attack_queue_move_power_disc.rs` pins the move-power half against
 //! the real table.
 
-use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, SWING_LEFT, SWING_RIGHT, is_swing_command};
+use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_battle_vm::battle_action::{
+    ActionState, SWING_LEFT, SWING_RIGHT, is_swing_command,
+};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// A player-driven battle parked on its opening command menu, with the
 /// monster band buffed so it survives the measurement window.
@@ -63,7 +66,7 @@ fn battle_awaiting_command() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("attack_queue_wiring_test");
@@ -117,7 +120,7 @@ fn acting_slot(w: &World) -> usize {
 /// non-Cross input it ever needs is the Left that seats the ring cursor on
 /// the `Attack` arm (spatial seating - Left is the diamond's left arm).
 fn confirm_attack(w: &mut World) {
-    use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+    use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase};
     let cross = InputState::mask_of([PadButton::Cross]);
     let left = InputState::mask_of([PadButton::Left]);
     let mut release = false;

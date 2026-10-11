@@ -142,10 +142,10 @@ impl LegaiaRuntime {
         };
         // First few genuinely priced ids - enough rows to prove the panel
         // renders stock rather than an empty frame.
-        let items: Vec<legaia_engine_core::shop::ShopItem> = (1u8..=255)
+        let items: Vec<legaia_engine_menus::shop::ShopItem> = (1u8..=255)
             .filter(|&id| data.price(id) > 0)
             .take(4)
-            .map(|id| legaia_engine_core::shop::ShopItem {
+            .map(|id| legaia_engine_menus::shop::ShopItem {
                 item_id: id,
                 price: data.price(id) as u32,
             })
@@ -153,13 +153,13 @@ impl LegaiaRuntime {
         if items.is_empty() {
             return false;
         }
-        let inv = legaia_engine_core::shop::ShopInventory::new(0, items);
+        let inv = legaia_engine_menus::shop::ShopInventory::new(0, items);
         // Mirror the arm the field VM performs, so closing the shop has a
         // gate to release.
         host.world.shops.shop_armed = true;
         host.world.shops.shop_open = true;
         self.menu
-            .open_shop_menu(legaia_engine_core::shop::ShopSession::new(inv));
+            .open_shop_menu(legaia_engine_menus::shop::ShopSession::new(inv));
         true
     }
 
@@ -191,10 +191,10 @@ impl LegaiaRuntime {
         let Some(data) = host.world.shops.item_shop_data.as_ref() else {
             return false;
         };
-        let items: Vec<legaia_engine_core::shop::ShopItem> = (1u8..=255)
+        let items: Vec<legaia_engine_menus::shop::ShopItem> = (1u8..=255)
             .filter(|&id| table.is_equipment(id) && data.price(id) > 0)
             .take(4)
-            .map(|id| legaia_engine_core::shop::ShopItem {
+            .map(|id| legaia_engine_menus::shop::ShopItem {
                 item_id: id,
                 price: data.price(id) as u32,
             })
@@ -202,12 +202,12 @@ impl LegaiaRuntime {
         if items.is_empty() {
             return false;
         }
-        host.world.party.money = legaia_engine_core::shop::GOLD_CAP;
-        let inv = legaia_engine_core::shop::ShopInventory::new(0, items);
+        host.world.party.money = legaia_engine_menus::shop::GOLD_CAP;
+        let inv = legaia_engine_menus::shop::ShopInventory::new(0, items);
         host.world.shops.shop_armed = true;
         host.world.shops.shop_open = true;
         self.menu
-            .open_shop_menu(legaia_engine_core::shop::ShopSession::new(inv));
+            .open_shop_menu(legaia_engine_menus::shop::ShopSession::new(inv));
         true
     }
 
@@ -230,11 +230,12 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
-        host.world.tables.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
-            enabled: true,
-            seed,
-            ..Default::default()
-        });
+        host.world.tables.seru_trade_config =
+            Some(legaia_game_tables::seru_trade::SeruTradeConfig {
+                enabled: true,
+                seed,
+                ..Default::default()
+            });
         true
     }
 }
@@ -356,13 +357,13 @@ impl LegaiaRuntime {
             // The code lock (op-0x49 sub-op 2, slot 0x21), same line
             // composition as the native window (`SceneHost::code_lock_lines`).
             floor.extend(host.code_lock_lines());
-            windows.extend(legaia_engine_ui::ui_text_lines::text_line_draws_for(
+            windows.extend(legaia_engine_ui::text_lines::text_line_draws_for(
                 font,
                 floor
                     .iter()
                     .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
                 [1.0, 1.0, 1.0, 1.0],
-                legaia_engine_ui::ui_text_lines::FLOOR_WINDOW_MARKED_INK,
+                legaia_engine_ui::text_lines::FLOOR_WINDOW_MARKED_INK,
             ));
         }
         let banners = screens.banner_texts;

@@ -11,7 +11,7 @@ impl LegaiaRuntime {
     /// translation trio (TR.z already through the `(z << 8) / 0xA0`
     /// projection prescale), `focus` the world point the camera orbits in
     /// RAW battle units. The live pose of the SAME phase-scripted camera
-    /// the native window runs ([`legaia_engine_vm::battle_cam_script`]:
+    /// the native window runs ([`legaia_engine_battle_vm::battle_cam_script`]:
     /// dialogue close-up / far menu framing with the idle orbit /
     /// per-character submenu close-up, with the measured glides between).
     /// Kept as a diagnostic/value-space export; the page's projection
@@ -32,13 +32,13 @@ impl LegaiaRuntime {
             pose.focus[0],
             pose.focus[1],
             pose.focus[2],
-            legaia_engine_vm::battle_cam_script::GTE_H,
+            legaia_engine_battle_vm::battle_cam_script::GTE_H,
         )
     }
 
     /// The battle view-projection matrix for this frame: 16 column-major
     /// floats (WebGL `mat4` layout), or empty outside battle. The shared
-    /// [`legaia_engine_vm::battle_cam_script::battle_vp`] - the native
+    /// [`legaia_engine_battle_vm::battle_cam_script::battle_vp`] - the native
     /// window's `psx_camera_mvp` composition - over the live phase-scripted
     /// pose, with the retail 4x battle world scale folded into the focus
     /// exactly like the native `battle_dome_camera_mvp`. The page hands
@@ -49,7 +49,8 @@ impl LegaiaRuntime {
             return Vec::new();
         }
         let pose = self.battle_cam_pose();
-        legaia_engine_vm::battle_cam_script::battle_vp(&pose, BATTLE_WORLD_SCALE, aspect).to_vec()
+        legaia_engine_battle_vm::battle_cam_script::battle_vp(&pose, BATTLE_WORLD_SCALE, aspect)
+            .to_vec()
     }
 }
 
@@ -60,7 +61,7 @@ impl LegaiaRuntime {
     /// Which framing the shared phase script has the camera in, as the JSON
     /// export's `phase` string.
     fn battle_cam_phase_label(&self) -> &'static str {
-        use legaia_engine_vm::battle_cam_script::BattleCamPhase as P;
+        use legaia_engine_battle_vm::battle_cam_script::BattleCamPhase as P;
         match self
             .scene_host
             .host()
@@ -96,10 +97,12 @@ impl LegaiaRuntime {
     /// The engine's battle-camera pose (`World::battle_cam_pose` - the state
     /// `World::tick` steps for every host), or the shared boot pose off a
     /// scene host.
-    pub(crate) fn battle_cam_pose(&self) -> legaia_engine_vm::battle_cam_script::BattleCamPose {
+    pub(crate) fn battle_cam_pose(
+        &self,
+    ) -> legaia_engine_battle_vm::battle_cam_script::BattleCamPose {
         self.scene_host
             .host()
             .map(|h| h.world.battle_cam_pose())
-            .unwrap_or(legaia_engine_vm::battle_cam_script::BOOT_POSE)
+            .unwrap_or(legaia_engine_battle_vm::battle_cam_script::BOOT_POSE)
     }
 }

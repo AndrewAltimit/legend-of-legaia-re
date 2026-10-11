@@ -17,7 +17,7 @@ impl PlayWindowApp {
     pub(super) fn render_scene_frame(
         &mut self,
         prep: FramePrep,
-        battle_intro: &mut Option<legaia_engine_render::battle_intro::BattleIntro>,
+        battle_intro: &mut Option<legaia_render_kernels::battle_intro::BattleIntro>,
         field_tail_ticks: u32,
         view_cells: Option<legaia_engine_core::field_view_window::ViewCells>,
         cutscene_cam: Option<super::redraw_passes::CutsceneCam>,
@@ -209,7 +209,7 @@ impl PlayWindowApp {
         fx.push_draws(&mut draws);
         // The floating value readout is a screen-space primitive run, not
         // a scene mesh: see `screen_prims` below, where both hosts build
-        // it from `legaia_engine_ui::battle_numerals`.
+        // it from `legaia_render_kernels::battle_numerals`.
         // The scripted screen fade (op 0x4C 0x12) is NOT drawn as a wash
         // mesh here: it is a multiply tint staged into the colour grade +
         // depth-cue far colour (see the grade staging above), matching
@@ -275,7 +275,7 @@ impl PlayWindowApp {
         {
             match r.capture_scene_rgba(legaia_engine_render::RenderTarget::Scene(&scene)) {
                 Ok(img) => {
-                    legaia_engine_render::vram_capture::land_display_frame(
+                    legaia_render_kernels::vram_capture::land_display_frame(
                         &img.rgba, img.width, img.height, base,
                     );
                     self.session.host.world.land_framebuffer();

@@ -13,7 +13,7 @@
 //! - **Scripted facing ramps are linear at per-op rates** (`arc / budget`)
 //!   with an exact terminal snap onto an eight-point compass value: every
 //!   ramp in the beat is reproduced tick-for-tick by the ported motion-VM
-//!   `0x38` RotateToAngle law (`legaia_engine_vm::motion_vm::step`) at the
+//!   `0x38` RotateToAngle law (`legaia_engine_motion_vm::motion_vm::step`) at the
 //!   retail speed scalar, for some 7-bit frame budget - including the
 //!   floor-divide increment pattern.
 //! - **Mid-ramp headings hold raw values outside `0..0xFFF`** - the trace's
@@ -31,8 +31,11 @@
 //! constant wrapping offset, and terminal snaps through the masked
 //! conversion - both asserted exactly, wraparound-aware.
 
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::motion_vm::{MotionState, MotionTarget, StepResult, step, walk_facing_index};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_motion_vm::motion_vm::{
+    MotionState, MotionTarget, StepResult, step, walk_facing_index,
+};
 use std::path::PathBuf;
 
 /// Retail speed scalar during the traced beat (`_DAT_1F800393`): the actor

@@ -4,7 +4,8 @@
 //! produce; plus the kind-0 warp's text-balloon tear-down.
 
 use super::*;
-use crate::field_anim::{FieldClipPlayer, FieldPlayerAnim, synth_anm_bundle};
+use legaia_engine_field::field_anim::{FieldClipPlayer, FieldPlayerAnim, synth_anm_bundle};
+use legaia_engine_mode::mode::SceneMode;
 
 /// A field world with a player and a two-bone clip pair installed.
 fn world_with_anim() -> World {
@@ -92,7 +93,7 @@ fn a_script_clip_aimed_at_the_player_writes_the_base_and_binds() {
 #[test]
 fn a_running_warp_tears_down_the_text_balloon() {
     let mut w = world_with_anim();
-    w.cutscene.text_balloon = Some(crate::text_balloon::TextBalloon::spawn(b"x"));
+    w.cutscene.text_balloon = Some(legaia_engine_dialog::text_balloon::TextBalloon::spawn(b"x"));
     w.tick_field_warp();
     assert!(
         w.cutscene.text_balloon.is_some(),

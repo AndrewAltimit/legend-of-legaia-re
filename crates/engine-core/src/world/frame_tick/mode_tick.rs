@@ -1,6 +1,7 @@
 //! `World::tick` and the per-mode dispatch it runs.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Per-frame world tick. Drives whichever scene-mode VMs are live.
@@ -79,7 +80,7 @@ impl World {
         //
         // Resolved through the ported mode table rather than spelled out as a
         // `SceneMode::Menu` literal here, so the rule and its provenance cannot
-        // drift apart: [`crate::mode::runs_master_frame_driver`] reads it off
+        // drift apart: [`legaia_engine_mode::mode::runs_master_frame_driver`] reads it off
         // the same `per_frame_stage` rows the mode-table oracles use.
         //
         // What still runs under the menu is retail's too, and is *outside* the
@@ -102,8 +103,8 @@ impl World {
         // headless `World::tick` consumers (the replay / determinism / mode
         // trace drivers, and any future owner of `ModeDriver`).
         // REF: FUN_80025f74, FUN_80017978, FUN_80016444
-        let runs_master_driver = crate::mode::GameMode::for_scene_mode(self.mode)
-            .map(crate::mode::runs_master_frame_driver)
+        let runs_master_driver = legaia_engine_mode::mode::GameMode::for_scene_mode(self.mode)
+            .map(legaia_engine_mode::mode::runs_master_frame_driver)
             .unwrap_or(true);
         // Bridge the vsync-rate pad to the game-tick-rate actor pool for the
         // op-0x49 submode screens: the hosts publish a pad word every tick and
@@ -226,7 +227,7 @@ impl World {
             // The teardown gates (`record[+8]` active, `_DAT_8007B868`) live
             // in the libsnd voice binding the engine replaces, so the engine
             // arm is "release when it fires" unconditionally.
-            if let crate::sound_state::SoundReleaseTick::Fired { .. } =
+            if let legaia_engine_system::sound_state::SoundReleaseTick::Fired { .. } =
                 self.audio.sound_release.tick(step, true, false)
             {
                 self.audio.pending_sound_release = true;
@@ -247,11 +248,12 @@ impl World {
                 // the new score for good (the commit then releases the paused
                 // source).
                 if !self.audio.start_pending_commit {
-                    self.pending_field_events
-                        .push(crate::field_events::FieldEvent::Bgm {
+                    self.pending_field_events.push(
+                        legaia_engine_field::field_events::FieldEvent::Bgm {
                             text_id: 0,
                             sub_op: 2,
-                        });
+                        },
+                    );
                 }
             }
         }
@@ -427,7 +429,7 @@ impl World {
             }
         }
         // Tick the live `4C E1` text balloon (FUN_801DA7F0 handler; see
-        // `crate::text_balloon`). The player-engaged flag (`_DAT_8007C364
+        // `legaia_engine_dialog::text_balloon`). The player-engaged flag (`_DAT_8007C364
         // +0x10 & 0x80000`) is host-substituted by "a dialog engagement is
         // live"; the cadence is the 60 fps sub-clock step, matching the
         // narration roller above.
@@ -435,7 +437,9 @@ impl World {
         if runs_master_driver && let Some(balloon) = self.cutscene.text_balloon.as_mut() {
             let engaged = balloon_engaged;
             let cadence = self.clock.display_frame_step as i16;
-            if balloon.tick(engaged, cadence) == crate::text_balloon::BalloonTick::Killed {
+            if balloon.tick(engaged, cadence)
+                == legaia_engine_dialog::text_balloon::BalloonTick::Killed
+            {
                 self.cutscene.text_balloon = None;
             }
         }
@@ -496,7 +500,7 @@ impl World {
         // Age the minigame effect-part pool. Here rather than in a host's own
         // frame step: a pool a host owns ages only on that host, and the
         // fishing splash spent its whole life native-only for exactly that
-        // reason (see [`crate::minigame_fx`]). Unconditional, like the ramps
+        // reason (see [`legaia_engine_minigames::minigame_fx`]). Unconditional, like the ramps
         // above - a pool with no live part costs a length test.
         self.minigames.fx.tick(1);
         match self.mode {
@@ -551,7 +555,7 @@ impl World {
                     {
                         self.dialog.current = None;
                         self.pending_field_events
-                            .push(crate::field_events::FieldEvent::DialogDismissed);
+                            .push(legaia_engine_field::field_events::FieldEvent::DialogDismissed);
                     }
                     None
                 } else {

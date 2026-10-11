@@ -12,8 +12,8 @@ use super::super::*;
 /// `Scene` there drops every transition style from the PNGs.
 pub(super) fn present_target<'a>(
     scene: &'a RenderScene<'a>,
-    prims: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
-    under_overlay: &'a [legaia_engine_render::screen_overlay::ScreenPrim],
+    prims: &'a [legaia_render_kernels::screen_prim::ScreenPrim],
+    under_overlay: &'a [legaia_render_kernels::screen_prim::ScreenPrim],
 ) -> RenderTarget<'a> {
     if prims.is_empty() && under_overlay.is_empty() {
         RenderTarget::Scene(scene)
@@ -114,7 +114,7 @@ impl PlayWindowApp {
         if let Some(d) = self.draw_census.as_ref()
             && let Some(path) = std::env::var_os("LEGAIA_DIAG_DRAWS")
         {
-            type Census = legaia_engine_core::draw_census::MeshCensus;
+            type Census = legaia_engine_system::draw_census::MeshCensus;
             let mut by_ptr: std::collections::HashMap<
                 *const legaia_engine_render::UploadedVramMesh,
                 &Census,
@@ -145,7 +145,7 @@ impl PlayWindowApp {
                         .map(|c| (*c, dr.mvp.to_cols_array()))
                 })
             };
-            let rows = legaia_engine_core::draw_census::family_rows(census_draws(), 320.0, 240.0);
+            let rows = legaia_engine_system::draw_census::family_rows(census_draws(), 320.0, 240.0);
             // `LEGAIA_DIAG_DRAW_TRIS=<clut hex>`: that family's triangles,
             // one per line, at `<path>.tris`.
             if let Some(cba) = std::env::var("LEGAIA_DIAG_DRAW_TRIS")
@@ -156,7 +156,7 @@ impl PlayWindowApp {
                 tp.push(".tris");
                 let _ = std::fs::write(
                     tp,
-                    legaia_engine_core::draw_census::family_tris_jsonl(
+                    legaia_engine_system::draw_census::family_tris_jsonl(
                         census_draws(),
                         320.0,
                         240.0,
@@ -175,7 +175,7 @@ impl PlayWindowApp {
             }
             let _ = std::fs::write(
                 path,
-                legaia_engine_core::draw_census::family_rows_jsonl(&rows),
+                legaia_engine_system::draw_census::family_rows_jsonl(&rows),
             );
         }
     }
@@ -186,8 +186,8 @@ impl PlayWindowApp {
         &self,
         r: &legaia_engine_render::Renderer,
         scene: &RenderScene<'_>,
-        screen_prims: &[legaia_engine_render::screen_overlay::ScreenPrim],
-        light_prims: &[legaia_engine_render::screen_overlay::ScreenPrim],
+        screen_prims: &[legaia_render_kernels::screen_prim::ScreenPrim],
+        light_prims: &[legaia_render_kernels::screen_prim::ScreenPrim],
     ) {
         let target = |scene| present_target(scene, screen_prims, light_prims);
         // Screenshot harness: at the target tick, read the frame back

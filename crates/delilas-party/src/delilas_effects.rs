@@ -98,7 +98,7 @@ use legaia_disc_patch::disc::DiscPatcher;
 pub const BATTLE_OVERLAY_ENTRY: usize = 898;
 
 /// Load base of [`BATTLE_OVERLAY_ENTRY`] - the same constant
-/// `legaia_asset::move_power::BATTLE_OVERLAY_BASE` derives from the move-power
+/// `legaia_game_tables::move_power::BATTLE_OVERLAY_BASE` derives from the move-power
 /// table's pinned file offset.
 pub const BATTLE_OVERLAY_BASE: u32 = 0x801C_E818;
 
@@ -548,15 +548,15 @@ mod tests {
         );
         assert_eq!(
             BATTLE_OVERLAY_BASE,
-            legaia_asset::move_power::BATTLE_OVERLAY_BASE
+            legaia_game_tables::move_power::BATTLE_OVERLAY_BASE
         );
         assert_eq!(
             PROTO_TABLE_FILE_OFFSET,
-            legaia_asset::move_power::EFFECT_PROTO_TABLE_FILE_OFFSET
+            legaia_game_tables::move_power::EFFECT_PROTO_TABLE_FILE_OFFSET
         );
         assert_eq!(
             PROTO_TABLE_LEN,
-            legaia_asset::move_power::EFFECT_AUX_TABLE_LEN
+            legaia_game_tables::move_power::EFFECT_AUX_TABLE_LEN
         );
     }
 

@@ -25,8 +25,8 @@
 //! Disc-gated: skip-passes when `LEGAIA_DISC_BIN` is unset or `extracted/` is
 //! absent, per the repo convention.
 
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::{SceneHost, is_world_map_scene};
+use legaia_engine_system::input::PadButton;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -63,7 +63,7 @@ fn gate() -> Option<PathBuf> {
 fn the_opening_prologue_roller_crawls_under_a_pad_driven_tick() {
     let Some(extracted) = gate() else { return };
 
-    let scene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    let scene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.enter_field_scene(scene, 0)
         .expect("enter the prologue");
@@ -143,7 +143,7 @@ fn the_opening_prologue_roller_crawls_under_a_pad_driven_tick() {
     let target = host.world.take_prologue_handoff(true);
     assert_eq!(
         target,
-        Some(legaia_asset::new_game::OPENING_SCENE),
+        Some(legaia_game_tables::new_game::OPENING_SCENE),
         "a confirm mid-narration hands off to Rim Elm"
     );
     assert!(

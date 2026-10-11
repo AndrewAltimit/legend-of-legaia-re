@@ -46,11 +46,10 @@
 //! REF: FUN_8001E890
 
 use anyhow::Result;
-use legaia_asset::categorize::Class;
-use legaia_asset::{
-    anm_detect, battle_data_pack, kingdom_bundle, pack, scene_tmd_stream, tim_scan, tmd_scan,
-    world_map_overlay,
-};
+use legaia_actor_formats::battle_data_pack;
+use legaia_container_formats::{anm_detect, pack, tim_scan, tmd_scan};
+use legaia_disc_audit::categorize::Class;
+use legaia_scene_formats::{kingdom_bundle, scene_tmd_stream, world_map_overlay};
 use legaia_tim::Vram;
 
 use crate::scene::{Scene, SceneEntry};
@@ -154,7 +153,7 @@ pub struct SceneResources {
     /// cluster-A command stream, so a consumer can render them as an
     /// inspection wireframe (see `world_map_overlay::wireframe_segments_3d`)
     /// but not yet as placed solid meshes.
-    pub world_map_slot4: Option<legaia_asset::world_map_overlay::KingdomSlot4>,
+    pub world_map_slot4: Option<legaia_scene_formats::world_map_overlay::KingdomSlot4>,
 }
 
 impl SceneResources {

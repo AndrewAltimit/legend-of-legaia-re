@@ -35,7 +35,7 @@
 //!
 //! So the four cells tile one `16 x 16` blob at `(0xE0, 0)` of the
 //! menu-glyph atlas page, each quad sampling one `8 x 8` quarter
-//! (`legaia_asset::menu_glyph_atlas` - the boot system-UI bundle keeps it
+//! (`legaia_ui_formats::menu_glyph_atlas` - the boot system-UI bundle keeps it
 //! resident, [`crate::scene_resources`]). The blob's fill is palette index
 //! `5`, a dark grey with the STP bit set; its surround is index `0`, which
 //! the GPU treats as transparent.
@@ -120,7 +120,7 @@ pub struct DropShadowQuad {
     /// The retail OT slot (larger = farther).
     pub ot_index: u32,
     /// Per-corner scene depth in the frame matrix's normalised depth
-    /// (`legaia_engine_ui::screen_prim::CornerDepth`'s convention), when the
+    /// (`legaia_render_kernels::screen_prim::CornerDepth`'s convention), when the
     /// host draws the blob depth-tested against its 3D scene. Retail has no
     /// depth buffer: its ground sorts into the far bucket and the actor in
     /// front of the blob's `+0xA0` bias, which a host with a depth buffer

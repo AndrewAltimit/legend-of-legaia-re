@@ -8,8 +8,8 @@
 //! asserting the posed mesh actually moves frame-to-frame and stays bounded.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (disc-gated convention).
-use legaia_engine_core::battle_anim::MonsterAnimPlayer;
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_engine_battle::battle_anim::MonsterAnimPlayer;
 
 fn load_disc() -> Option<Vec<u8>> {
     let path = std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -27,25 +27,26 @@ fn real_monster_idle_animation_drives_a_moving_posed_mesh() {
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .expect("read monster archive");
 
-    let records = legaia_asset::monster_archive::records(&archive).expect("decode archive");
+    let records = legaia_actor_formats::monster_archive::records(&archive).expect("decode archive");
 
     // Find the first monster that (a) decodes a multi-frame, multi-part idle
     // clip, and (b) whose embedded TMD parses with one object per animated part
     // (the pose addresses every object). Not every slot animates, so scan.
     let mut chosen: Option<(
         u16,
-        legaia_asset::monster_archive::MonsterAnimation,
+        legaia_actor_formats::monster_archive::MonsterAnimation,
         legaia_tmd::Tmd,
         Vec<u8>,
     )> = None;
     for r in &records {
-        let Ok(Some(idle)) = legaia_asset::monster_archive::idle_animation(&archive, r.id) else {
+        let Ok(Some(idle)) = legaia_actor_formats::monster_archive::idle_animation(&archive, r.id)
+        else {
             continue;
         };
         if idle.frame_count < 2 || idle.part_count < 2 {
             continue;
         }
-        let Ok(Some(mesh)) = legaia_asset::monster_archive::mesh(&archive, r.id) else {
+        let Ok(Some(mesh)) = legaia_actor_formats::monster_archive::mesh(&archive, r.id) else {
             continue;
         };
         let raw = mesh.tmd_bytes().to_vec();
@@ -143,7 +144,7 @@ fn real_monster_idle_animation_drives_a_moving_posed_mesh() {
 /// kernel and through [`MonsterAnimPlayer`] ticking a whole keyframe at a time.
 #[test]
 fn monster_archive_pose_blend_retry_census() {
-    use legaia_engine_vm::battle_pose_blend::{EULER_FLIP_THRESHOLD, blend_part_pose};
+    use legaia_engine_battle_vm::battle_pose_blend::{EULER_FLIP_THRESHOLD, blend_part_pose};
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
@@ -152,12 +153,13 @@ fn monster_archive_pose_blend_retry_census() {
     let archive = patcher
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .expect("read monster archive");
-    let records = legaia_asset::monster_archive::records(&archive).expect("decode archive");
+    let records = legaia_actor_formats::monster_archive::records(&archive).expect("decode archive");
 
     let (mut clips, mut blended, mut retried, mut changed) = (0u64, 0u64, 0u64, 0u64);
     let (mut whole, mut clips_with_retry) = (0u64, 0u64);
     for r in &records {
-        let Ok(Some(anims)) = legaia_asset::monster_archive::animations(&archive, r.id) else {
+        let Ok(Some(anims)) = legaia_actor_formats::monster_archive::animations(&archive, r.id)
+        else {
             continue;
         };
         for anim in &anims {
@@ -183,7 +185,7 @@ fn monster_archive_pose_blend_retry_census() {
                             any = true;
                             // The no-retry angles, for the "changed" count.
                             let plain = |n: u16, c: u16| {
-                                legaia_engine_vm::battle_pose_blend::lerp_battle_angle(
+                                legaia_engine_battle_vm::battle_pose_blend::lerp_battle_angle(
                                     i32::from(n),
                                     i32::from(c),
                                     i32::from(frac),
@@ -245,10 +247,11 @@ fn monster_archive_end_step_census() {
     let archive = patcher
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .expect("read monster archive");
-    let records = legaia_asset::monster_archive::records(&archive).expect("decode archive");
+    let records = legaia_actor_formats::monster_archive::records(&archive).expect("decode archive");
     let (mut idle, mut actions, mut stepping) = (0u32, 0u32, 0u32);
     for r in &records {
-        let Ok(Some(anims)) = legaia_asset::monster_archive::animations_by_entry(&archive, r.id)
+        let Ok(Some(anims)) =
+            legaia_actor_formats::monster_archive::animations_by_entry(&archive, r.id)
         else {
             continue;
         };

@@ -1,7 +1,7 @@
 use super::pose_codec::{encode_channel_delta, pack_part};
 use super::victory_loop::{LoopWindow, compose_base_stream};
 use super::*;
-use legaia_asset::me_archive;
+use legaia_actor_formats::me_archive;
 
 #[test]
 fn channel_delta_roundtrips() {

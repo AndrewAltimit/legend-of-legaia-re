@@ -90,7 +90,7 @@ impl DanceCameraTrack {
     /// form (file offset = VA - `0x801CE818`). `None` when a table or a
     /// record it names falls outside the image.
     pub fn from_overlay(overlay: &[u8]) -> Option<Self> {
-        let base = legaia_asset::dance_chart::DANCE_OVERLAY_BASE_VA;
+        let base = legaia_minigame_formats::dance_chart::DANCE_OVERLAY_BASE_VA;
         let word = |va: u32| -> Option<u32> {
             let o = va.checked_sub(base)? as usize;
             Some(u32::from_le_bytes(overlay.get(o..o + 4)?.try_into().ok()?))

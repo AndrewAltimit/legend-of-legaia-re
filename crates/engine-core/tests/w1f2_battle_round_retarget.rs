@@ -45,7 +45,8 @@
 //! the party still has to land the hit that kills it - nothing here zeroes a
 //! monster.
 
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 
 const PARTY: u8 = 3;
 const MONSTERS: u8 = 3;

@@ -28,12 +28,14 @@
 //! landed award is credited to the capped persistent total with the best-catch
 //! pair updated only on an improvement.
 
-use legaia_asset::fishing_species::{CadenceStep, CadenceTemplate, FishingSpecies, SPAWN_BANDS};
-use legaia_engine_core::fishing::{
+use legaia_engine_fishing::fishing::{
     BandCheck, CAST_POWER_MAX, FISH_POINTS_CAP, FishingRecord, LAND_RECORD, PondEvent, PondInput,
     PondPhase, PondSession, RECORD_STRIKE_BASE, ReelCadence, band_roll, band4_gate, spawn_species,
 };
-use legaia_engine_core::levelup::BiosRand;
+use legaia_engine_system::rand::BiosRand;
+use legaia_minigame_formats::fishing_species::{
+    CadenceStep, CadenceTemplate, FishingSpecies, SPAWN_BANDS,
+};
 
 /// Reel-A (Cross) held bit of the retail `_DAT_8007b850` word.
 const REEL_A: u32 = 0x40;

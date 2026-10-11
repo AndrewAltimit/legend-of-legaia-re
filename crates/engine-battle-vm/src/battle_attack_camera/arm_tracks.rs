@@ -156,7 +156,7 @@ pub enum PoseSlot {
 /// One arm's use of one track-table row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArmTrack {
-    /// Row index into [`legaia_asset::battle_attack_camera_table`] (retail's
+    /// Row index into [`legaia_game_tables::battle_attack_camera_table`] (retail's
     /// `lhu` displacement divided by four).
     pub row: usize,
     /// The pose component the row is folded into.

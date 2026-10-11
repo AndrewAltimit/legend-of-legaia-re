@@ -1,48 +1,50 @@
 //! Field-menu sub-session dispatcher.
 //!
-//! Hooks the seven [`crate::field_menu::FieldMenuRow`] selections to their
+//! Hooks the seven [`legaia_engine_menus::field_menu::FieldMenuRow`] selections to their
 //! respective renderer-agnostic sub-sessions:
 //!
 //! | Row     | Sub-session                                           |
 //! |---------|-------------------------------------------------------|
-//! | Items   | [`crate::inventory_use::InventoryUseSession`]         |
-//! | Equip   | [`crate::equip_session::EquipSession`]                |
-//! | Spells  | [`crate::spell_menu::SpellMenuSession`]               |
-//! | Arts    | [`crate::tactical_arts_editor::ChainEditor`]          |
-//! | Status  | [`crate::status_screen::StatusScreenSession`]         |
-//! | Save    | [`crate::save_select::SaveSelectSession`] (Save mode) |
+//! | Items   | [`legaia_engine_menus::inventory_use::InventoryUseSession`]         |
+//! | Equip   | [`legaia_engine_menus::equip_session::EquipSession`]                |
+//! | Spells  | [`legaia_engine_menus::spell_menu::SpellMenuSession`]               |
+//! | Arts    | [`legaia_engine_battle::tactical_arts_editor::ChainEditor`]          |
+//! | Status  | [`legaia_engine_menus::status_screen::StatusScreenSession`]         |
+//! | Save    | [`legaia_engine_menus::save_select::SaveSelectSession`] (Save mode) |
 //! | Config  | [`crate::options::OptionsSession`]                    |
 //!
 //! Pure plumbing - the dispatcher builds the right sub-session from
 //! [`World`] state, routes per-frame pad input into it, and exposes
-//! `is_done` for the engine to call [`crate::field_menu::FieldMenuSession::resume`].
+//! `is_done` for the engine to call [`legaia_engine_menus::field_menu::FieldMenuSession::resume`].
 //! Side-effects (writing equipment back to a record, casting a spell on
 //! the active party, persisting a save) are intentionally left to the
 //! engine - see [`apply_equip_outcome`] / [`apply_inventory_outcome`] /
 //! [`apply_spell_outcome`] / [`apply_arts_outcome`] for the typed helpers.
 
-use crate::battle_stats::{EquipmentTable, StatusModifiers};
-use crate::equip_session::{EquipInput, EquipOutcome, EquipSession};
-use crate::field_menu::FieldMenuRow;
-use crate::input::{Mapping, PadButton};
-use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow as InvTargetRow};
-use crate::list_order::{LIST_ORDER_STEP_MAGIC, ListOrderRow, ListOrderSession};
-use crate::magic_xp::SpellLevelNotice;
 use crate::options::{OptionsInput, OptionsSession, OptionsState};
-pub use crate::pause_screens::ItemDisplayText;
-use crate::pause_screens::stat_record_from_character;
-use crate::pause_screens::{PauseItemRow, PauseItemsSession};
-use crate::save_select::{SaveRack, SaveSelectMode, SaveSelectSession, SelectInput};
-use crate::spell_menu::{
+use crate::world::World;
+use legaia_engine_battle::battle_stats::{EquipmentTable, StatusModifiers};
+use legaia_engine_battle::magic_xp::SpellLevelNotice;
+use legaia_engine_battle::spells::SpellCatalog;
+use legaia_engine_battle::tactical_arts_editor::{ChainEditor, ChainLibrary, EditInput};
+use legaia_engine_menus::equip_session::{EquipInput, EquipOutcome, EquipSession};
+use legaia_engine_menus::field_menu::FieldMenuRow;
+use legaia_engine_menus::inventory_use::{
+    InventoryContext, InventoryUseSession, TargetRow as InvTargetRow,
+};
+use legaia_engine_menus::list_order::{LIST_ORDER_STEP_MAGIC, ListOrderRow, ListOrderSession};
+use legaia_engine_menus::pause_screens::ItemDisplayText;
+use legaia_engine_menus::pause_screens::stat_record_from_character;
+use legaia_engine_menus::pause_screens::{PauseItemRow, PauseItemsSession};
+use legaia_engine_menus::save_select::{SaveRack, SaveSelectMode, SaveSelectSession, SelectInput};
+use legaia_engine_menus::spell_menu::{
     CasterSlot as SpellCasterSlot, SpellMenuInput, SpellMenuOutcome, SpellMenuSession,
     TargetRow as SpellTargetRow,
 };
-use crate::spells::SpellCatalog;
-use crate::status_screen::{
+use legaia_engine_menus::status_screen::{
     ElementRankView, EquipSlotView, StatusInput, StatusScreenSession, StatusSnapshot,
 };
-use crate::tactical_arts_editor::{ChainEditor, ChainLibrary, EditInput};
-use crate::world::World;
+use legaia_engine_system::input::{Mapping, PadButton};
 
 mod arts_editor;
 mod outcomes;
@@ -59,7 +61,7 @@ pub use status::*;
 pub use tick::*;
 
 /// One of the seven sub-sessions that can be active beneath a suspended
-/// [`crate::field_menu::FieldMenuSession`].
+/// [`legaia_engine_menus::field_menu::FieldMenuSession`].
 pub enum FieldMenuSubsession {
     /// The retail Items screen (command window + 12-row list pages +
     /// info window) layered over the item-use flow. The inner
@@ -210,7 +212,7 @@ impl FieldMenuSubsession {
 
     /// [`Self::tick_pad_edge`] carrying the host's most-recent keyboard key
     /// name, in the engine's own key vocabulary
-    /// ([`crate::input::KEY_NAME_DOM_CODES`]). Consumed only by the Options
+    /// ([`legaia_engine_system::input::KEY_NAME_DOM_CODES`]). Consumed only by the Options
     /// sub-session's key-rebind screen while it awaits a key; every other
     /// variant ignores it.
     pub fn tick_pad_edge_with_key(&mut self, pressed: u16, key_pressed: Option<&str>) {
@@ -308,7 +310,7 @@ impl FieldMenuSubsession {
 
     /// `true` once the inner sub-session has reached its terminal state.
     /// The shell should then call
-    /// [`crate::field_menu::FieldMenuSession::resume`] to drop control
+    /// [`legaia_engine_menus::field_menu::FieldMenuSession::resume`] to drop control
     /// back into the field menu.
     pub fn is_done(&self) -> bool {
         match self {

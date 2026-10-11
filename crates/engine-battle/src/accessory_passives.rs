@@ -6,7 +6,7 @@
 //! The retail per-frame stat aggregator (`FUN_80042558`,
 //! `ghidra/scripts/funcs/80042558.txt`) walks each active party member's
 //! eight equipment-slot bytes, resolves every equipped item to a 64-slot
-//! passive-effect index (`legaia_asset::accessory_passive`: descriptor `+3`
+//! passive-effect index (`legaia_game_tables::accessory_passive`: descriptor `+3`
 //! byte for accessories, equip-record `+5` byte for equipment - both
 //! sentinel-gated at `< 0x40`), and sets bit `index` in the character's
 //! 4×`u32` ability bitfield at record `+0xF4`. The four words are then OR'd
@@ -17,7 +17,7 @@
 //! This type is the engine's table side of that mechanism: it owns the
 //! item-id → passive-index map plus the per-index party-wide scope flags,
 //! both decoded from the user's `SCUS_942.54`
-//! ([`legaia_asset::accessory_passive::AccessoryPassiveTable`]). The bit
+//! ([`legaia_game_tables::accessory_passive::AccessoryPassiveTable`]). The bit
 //! *derivation* ([`AccessoryPassives::bits_for_equipment`]) mirrors the
 //! retail loop exactly; the stat-percent rebuild lives in
 //! [`crate::battle_stats::compute_battle_stats_with_passives`] and the
@@ -50,7 +50,7 @@ impl AccessoryPassives {
     /// Build from the parsed static tables. Indexes every item id that
     /// resolves to a live passive (`passive_index` is already `< 0x40`) and
     /// flags the party-wide-scoped indices from the record scope words.
-    pub fn from_disc(table: &legaia_asset::accessory_passive::AccessoryPassiveTable) -> Self {
+    pub fn from_disc(table: &legaia_game_tables::accessory_passive::AccessoryPassiveTable) -> Self {
         let mut passive_by_item = HashMap::new();
         for id in 0u8..=u8::MAX {
             if let Some(idx) = table.passive_index(id) {
@@ -58,9 +58,9 @@ impl AccessoryPassives {
             }
         }
         let mut party_wide = [0u32; ABILITY_WORDS];
-        for idx in 0..legaia_asset::accessory_passive::PASSIVE_COUNT as u8 {
+        for idx in 0..legaia_game_tables::accessory_passive::PASSIVE_COUNT as u8 {
             if table.record(idx).is_some_and(|r| r.party_wide()) {
-                let (w, mask) = legaia_asset::accessory_passive::bit_location(idx);
+                let (w, mask) = legaia_game_tables::accessory_passive::bit_location(idx);
                 party_wide[w] |= mask;
             }
         }
@@ -79,12 +79,12 @@ impl AccessoryPassives {
     ) -> Self {
         let passive_by_item = items
             .into_iter()
-            .filter(|&(_, idx)| idx < legaia_asset::accessory_passive::NO_PASSIVE)
+            .filter(|&(_, idx)| idx < legaia_game_tables::accessory_passive::NO_PASSIVE)
             .collect();
         let mut party_wide = [0u32; ABILITY_WORDS];
         for idx in party_wide_indices {
-            if idx < legaia_asset::accessory_passive::NO_PASSIVE {
-                let (w, mask) = legaia_asset::accessory_passive::bit_location(idx);
+            if idx < legaia_game_tables::accessory_passive::NO_PASSIVE {
+                let (w, mask) = legaia_game_tables::accessory_passive::bit_location(idx);
                 party_wide[w] |= mask;
             }
         }
@@ -110,7 +110,7 @@ impl AccessoryPassives {
                 continue;
             }
             if let Some(idx) = self.passive_index(id) {
-                let (w, mask) = legaia_asset::accessory_passive::bit_location(idx);
+                let (w, mask) = legaia_game_tables::accessory_passive::bit_location(idx);
                 words[w] |= mask;
             }
         }

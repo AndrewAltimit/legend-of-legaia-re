@@ -1,7 +1,7 @@
 //! Party <-> Delilas battle-model swap kernels: pure transforms over decoded
 //! disc assets. Nothing here opens a disc; the disc writes are
 //! `legaia-delilas-party`'s. `legaia-patcher` re-exports this crate as
-//! `legaia_patcher::party_swap`.
+//! `crate`.
 //!
 //! The crate root holds the shared rig math (anatomy permutation, bone
 //! frames, the pivot-anchored bake, texture re-layout) and the
@@ -56,12 +56,14 @@
 use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
 
-use legaia_asset::battle_char_assembly::{
+use legaia_actor_formats::battle_char_assembly::{
     self, AUTHORING_FIRST_TEXPAGE, SECTION_COUNT, TextureUpload,
 };
-use legaia_asset::battle_data_pack;
-use legaia_asset::monster_archive::{self, PartPose};
-use legaia_asset::monster_model::{CBA_BASE, CLUT_COUNT, CLUT_REGION_BYTES, PAGE_HEIGHT, UV_SPACE};
+use legaia_actor_formats::battle_data_pack;
+use legaia_actor_formats::monster_archive::{self, PartPose};
+use legaia_actor_formats::monster_model::{
+    CBA_BASE, CLUT_COUNT, CLUT_REGION_BYTES, PAGE_HEIGHT, UV_SPACE,
+};
 use legaia_tmd::encode::{ModelGroup, ModelObject, decode_model, encode};
 
 pub mod cast_stage;

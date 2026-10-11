@@ -112,11 +112,6 @@ legaia-anm = { path = "crates/anm", default-features = false }
 legaia-art = { path = "crates/art", default-features = false }
 legaia-game-tables = { path = "crates/game-tables" }
 legaia-actor-formats = { path = "crates/actor-formats" }
-# Transitional key: the crate was `legaia-battle-models` before it took the
-# field-form character models. A dependent that still says
-# `legaia-battle-models.workspace = true` gets the same crate under the old
-# `legaia_battle_models` extern name. New code takes `legaia-actor-formats`.
-legaia-battle-models = { package = "legaia-actor-formats", path = "crates/actor-formats" }
 legaia-overlay-images = { path = "crates/overlay-images" }
 legaia-container-formats = { path = "crates/container-formats" }
 legaia-scene-formats = { path = "crates/scene-formats" }
@@ -166,11 +161,6 @@ legaia-delilas-challenge = { path = "crates/delilas-challenge" }
 legaia-texture-replace = { path = "crates/texture-replace" }
 legaia-patcher = { path = "crates/patcher", default-features = false }
 legaia-pcsx-redux = { path = "crates/pcsx-redux", default-features = false }
-# Transitional key: the crate was `legaia-pcsxr` (PCSXR is a different
-# emulator). A dependent that still says `legaia-pcsxr.workspace = true` gets
-# the same crate under the old `legaia_pcsxr` extern name. New code takes
-# `legaia-pcsx-redux`.
-legaia-pcsxr = { package = "legaia-pcsx-redux", path = "crates/pcsx-redux", default-features = false }
 legaia-prot = { path = "crates/prot", default-features = false }
 legaia-save = { path = "crates/save", default-features = false }
 legaia-seq = { path = "crates/seq", default-features = false }

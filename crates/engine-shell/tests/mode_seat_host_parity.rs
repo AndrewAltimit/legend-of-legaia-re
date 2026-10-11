@@ -3,7 +3,7 @@
 //!
 //! The open thread this answers is "the browser play page holds no mode
 //! seat". It does now (`legaia_web_viewer::runtime::LegaiaRuntime` owns a
-//! [`ModeSeat`](legaia_engine_core::mode::ModeSeat) and reconciles it once
+//! [`ModeSeat`](legaia_engine_mode::mode::ModeSeat) and reconciles it once
 //! per frame), but holding a seat is not the same as driving it: the native
 //! session also **enters** two INIT modes by hand - `MAIN INIT` at field
 //! entry and `CARD INIT` on the pause-menu open - and a host that only lets
@@ -33,7 +33,8 @@
 
 #![allow(clippy::expect_fun_call)]
 
-use legaia_engine_shell::{BootConfig, BootSession};
+use legaia_engine_session::boot::BootConfig;
+use legaia_engine_shell::BootSession;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 const SCENE: &str = "town01";
@@ -66,7 +67,7 @@ fn native_chain(disc: &str) -> (Vec<(u8, String)>, u64) {
     sample(&s, &mut words);
     s.enter_field_live(
         SCENE,
-        &legaia_engine_shell::boot::FieldLiveOpts {
+        &legaia_engine_session::boot::FieldLiveOpts {
             live_loop: false,
             player_battle: false,
             ..Default::default()

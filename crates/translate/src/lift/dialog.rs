@@ -9,9 +9,9 @@ use super::chunk_align::framings;
 use super::source_tables::MAX_STRLEN;
 use super::{PairStats, key_entry_index};
 use anyhow::Result;
-use legaia_asset::field_disasm;
-use legaia_asset::man_section;
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_scene_formats::field_disasm;
+use legaia_scene_formats::man_section;
 use std::collections::BTreeMap;
 
 /// Every text lead a MAN's clean script walk reaches, in walk order: the

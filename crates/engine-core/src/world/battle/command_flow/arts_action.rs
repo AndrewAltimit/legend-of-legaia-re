@@ -17,7 +17,7 @@ impl World {
         &mut self,
         roster: u8,
         art_byte: u8,
-    ) -> Option<vm::battle_action::ArtUseCheck> {
+    ) -> Option<legaia_engine_battle_vm::battle_action::ArtUseCheck> {
         let cap = self
             .party
             .tactical_arts
@@ -25,14 +25,14 @@ impl World {
             .saturating_sub(ART_RECORD_ID_BIAS);
         let rec = self.party.roster.members.get_mut(usize::from(roster))?;
         let mut list = rec.displayed_skills();
-        let verdict = vm::battle_action::check_and_learn_art(
+        let verdict = legaia_engine_battle_vm::battle_action::check_and_learn_art(
             &mut list.count,
             &mut list.ids,
             art_byte.wrapping_sub(ART_RECORD_ID_BIAS),
             true,
             cap,
         );
-        if verdict == vm::battle_action::ArtUseCheck::Learned {
+        if verdict == legaia_engine_battle_vm::battle_action::ArtUseCheck::Learned {
             rec.set_displayed_skills(list);
         }
         Some(verdict)
@@ -62,18 +62,18 @@ impl World {
     ///
     /// PORT: FUN_801EED1C (the player path: normalise + learn + finish;
     /// the tokenizer body is `legaia_art::tokenize`, the finish passes
-    /// `legaia_engine_vm::battle_action::queue_applier`)
+    /// `legaia_engine_battle_vm::battle_action::queue_applier`)
     pub(in crate::world) fn build_arts_action_queue(
         &mut self,
         caster: u8,
         commands: &[legaia_art::Command],
     ) -> (
-        [u8; vm::battle_action::ACTION_QUEUE_CAP],
+        [u8; legaia_engine_battle_vm::battle_action::ACTION_QUEUE_CAP],
         Vec<legaia_art::ActionConstant>,
-        [u32; vm::battle_action::ACTION_QUEUE_CAP],
+        [u32; legaia_engine_battle_vm::battle_action::ACTION_QUEUE_CAP],
     ) {
         use legaia_art::ActionConstant;
-        use vm::battle_action::ACTION_QUEUE_CAP;
+        use legaia_engine_battle_vm::battle_action::ACTION_QUEUE_CAP;
         let roster = self.party_roster_slot(caster as usize) as u8;
         let character = self.caster_character(roster);
         // The character's art catalog in grid order (ascending constant),
@@ -143,7 +143,7 @@ impl World {
             let id = art.as_byte();
             let verdict = self.learn_art_on_record(roster, id);
             match verdict {
-                Some(vm::battle_action::ArtUseCheck::Learned) => {
+                Some(legaia_engine_battle_vm::battle_action::ArtUseCheck::Learned) => {
                     bytes[i] = ActionConstant::SpecialStarter.as_byte();
                     self.notify_art_used(roster, id);
                 }
@@ -163,12 +163,13 @@ impl World {
         // The builder's special-trigger flag `0x801F696C` (cleared at its
         // head, set by the Miracle and Super arms) rides out on the context
         // for the strike loop's drift gate.
-        let (marks, trigger) = vm::battle_action::finish_action_queue_with_trigger(
-            character,
-            commands,
-            miracle_armed,
-            &mut bytes,
-        );
+        let (marks, trigger) =
+            legaia_engine_battle_vm::battle_action::finish_action_queue_with_trigger(
+                character,
+                commands,
+                miracle_armed,
+                &mut bytes,
+            );
         self.battle_ctx.super_trigger = trigger;
         let actions: Vec<ActionConstant> = bytes
             .iter()
@@ -189,7 +190,7 @@ impl World {
         &mut self,
         caster: u8,
         sequence: &[u8],
-        target_row: crate::target_picker::CursorRow,
+        target_row: legaia_engine_battle::target_picker::CursorRow,
         target_slot: u8,
     ) {
         if let Some(a) = self.actors.get_mut(caster as usize) {
@@ -201,7 +202,7 @@ impl World {
             // from `0x801D22BC` in the target confirm, **before** the queue
             // builder tokenizes anything at the dispatch - so the record holds
             // raw arrows, and every replay goes back through the builder.
-            a.battle.params = [0; vm::battle_action::ACTION_PARAM_BYTES];
+            a.battle.params = [0; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];
             let arrows = sequence
                 .iter()
                 .filter_map(|&b| legaia_art::Command::from_byte(b))
@@ -239,7 +240,7 @@ impl World {
         &mut self,
         caster: u8,
         sequence: &[u8],
-        target_row: crate::target_picker::CursorRow,
+        target_row: legaia_engine_battle::target_picker::CursorRow,
         target_slot: u8,
     ) {
         let commands: Vec<legaia_art::Command> = sequence
@@ -276,8 +277,8 @@ impl World {
     /// directions matched, and until it was wired a turn's whole cost was its
     /// swings and an art body was free.
     ///
-    /// The amount is [`crate::ap_gauge::arts_turn_spirit_cost`] over the
-    /// caster's builder-order catalog ([`crate::battle_arts::spirit_catalog`])
+    /// The amount is [`legaia_engine_battle::ap_gauge::arts_turn_spirit_cost`] over the
+    /// caster's builder-order catalog ([`legaia_engine_battle::battle_arts::spirit_catalog`])
     /// and the arts the queue actually performs. Retail accrues it into
     /// `actor[+0x224]` inside the builder and spends it once in the
     /// battle-action cleanup arm (`0x801E5D74`); the port charges it here, at
@@ -293,16 +294,18 @@ impl World {
         }
         let roster = self.party_roster_slot(caster as usize) as u8;
         let character = self.caster_character(roster);
-        let catalog = crate::battle_arts::spirit_catalog(&self.tables.art_records, character);
+        let catalog =
+            legaia_engine_battle::battle_arts::spirit_catalog(&self.tables.art_records, character);
         // Retail's halving gate (`srl t4,t4,0x1` at `0x801EF378`) reads the
         // **character record's** `+0xF8` - word 1 of the accessory-passive
         // ability bitfield - and tests bit `0x800`, i.e. passive `0x2B`
         // "AP Used Down" (the Mettle Gem). See `ap_gauge::AP_USED_DOWN_BIT`
         // for the address arithmetic; it is not an actor flag and not a
         // per-turn condition, so it reads live off the equipped accessory.
-        let halved =
-            self.character_ability_bits_word1(roster) & crate::ap_gauge::AP_USED_DOWN_BIT != 0;
-        let cost = crate::ap_gauge::arts_turn_spirit_cost(&catalog, actions, halved);
+        let halved = self.character_ability_bits_word1(roster)
+            & legaia_engine_battle::ap_gauge::AP_USED_DOWN_BIT
+            != 0;
+        let cost = legaia_engine_battle::ap_gauge::arts_turn_spirit_cost(&catalog, actions, halved);
         if let Some(a) = self.actors.get_mut(caster as usize) {
             a.battle.spirit_gauge = a.battle.spirit_gauge.saturating_sub(cost);
         }
@@ -323,11 +326,11 @@ impl World {
         caster: u8,
         queue: &[u8],
         actions: &[legaia_art::ActionConstant],
-        starter_marks: [u32; vm::battle_action::ACTION_QUEUE_CAP],
-        target_row: crate::target_picker::CursorRow,
+        starter_marks: [u32; legaia_engine_battle_vm::battle_action::ACTION_QUEUE_CAP],
+        target_row: legaia_engine_battle::target_picker::CursorRow,
         target_slot: u8,
     ) {
-        use crate::target_picker::CursorRow;
+        use legaia_engine_battle::target_picker::CursorRow;
         let party_count = self.party.party_count.clamp(1, 3);
         let target = match target_row {
             CursorRow::Enemy => party_count + target_slot,
@@ -368,6 +371,7 @@ impl World {
         a.battle.chosen_art = None;
         self.battle_ctx.active_actor = caster;
         self.battle_ctx.queued_action = 3;
-        self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+        self.battle_ctx.action_state =
+            legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte();
     }
 }

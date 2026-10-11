@@ -207,7 +207,7 @@ fn binds_carry_the_anim_id_and_only_bind_owned_cells_drop() {
     let mut bound = placement(Some(1), None, 0);
     bound.anchor_col = 7;
     bound.anchor_row = 9;
-    bound.anchor_cell = legaia_asset::field_objects::CELL_BIND_OWNED;
+    bound.anchor_cell = legaia_scene_formats::field_objects::CELL_BIND_OWNED;
     let unbound = placement(Some(2), None, 0); // anchor (2, 3): no bind, no 0x400
     let mut binds = HashMap::new();
     binds.insert(
@@ -234,7 +234,7 @@ fn binds_carry_the_anim_id_and_only_bind_owned_cells_drop() {
 
     // Unbound *and* bind-owned: neither retail sweep takes it.
     let mut orphan = placement(Some(2), None, 0);
-    orphan.anchor_cell = legaia_asset::field_objects::CELL_BIND_OWNED;
+    orphan.anchor_cell = legaia_scene_formats::field_objects::CELL_BIND_OWNED;
     let (draws, drops) = resolve_placed_env_draws(&env_tmds, &[orphan], None, Some(&binds));
     assert!(draws.is_empty());
     assert!(matches!(
@@ -266,7 +266,7 @@ fn partition0_header_yields_the_anim_id() {
         man.extend_from_slice(&[0x21, 0x00]); // a token script body
     }
     let mf = ManFile {
-        header: legaia_asset::man_section::ManHeader {
+        header: legaia_scene_formats::man_section::ManHeader {
             status_flags: 0,
             low_flag: false,
             depth_lut: [0; 16],
@@ -275,7 +275,7 @@ fn partition0_header_yields_the_anim_id() {
         },
         partitions: [offsets, Vec::new(), Vec::new()],
         data_region_offset: dro,
-        sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+        sections: std::array::from_fn(|_| legaia_scene_formats::man_section::SectionRef {
             offset: man.len(),
             length: 0,
         }),

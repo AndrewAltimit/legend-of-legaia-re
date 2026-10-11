@@ -545,12 +545,12 @@ pub struct FieldDrawContext {
 /// PORT: FUN_801DE37C (`0x801de37c..0x801de3dc`)
 ///
 /// WIRED: through the camera's scene-entry reset
-/// (`legaia_engine_core::camera::Camera::reset_globals_for_scene_entry`), which both
+/// (`legaia_engine_field::camera::Camera::reset_globals_for_scene_entry`), which both
 /// hosts run on every field entry - the native window on the `SceneEntered`
 /// tick, the browser play page from `reset_for_scene_entry` after
 /// `enter_field_scene`. The consumer is [`Self::view_window`]: it seeds the
 /// camera's visible-tile window, which the focus edge clamp
-/// (`legaia_engine_core::camera_zone::clamp_focus`) widens the latched walk region by, and
+/// (`legaia_engine_field::camera_zone::clamp_focus`) widens the latched walk region by, and
 /// which field-VM op `0x46` and a camera-region record's mask-kind side-write
 /// then replace. Re-stamping it per entry is what stops one scene's scripted
 /// window leaking into the next.
@@ -625,7 +625,7 @@ pub struct DuelOverlayInit {
 ///
 /// PORT: FUN_801CF00C (`0x801cf00c..0x801cf384`).
 ///
-/// Read by the duel's 3D surface: `legaia_engine_core::baka_duel_scene::BakaDuelScene`
+/// Read by the duel's 3D surface: `legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelScene`
 /// sizes the arena floor from `window_tiles` - the `0x1F8003F8` /
 /// `0x1F8003FA` pair the floor emitter `FUN_801CEB84` loops over - so the
 /// seed is live on both play hosts through `BakaDuelSurface::frame`. The

@@ -2,6 +2,7 @@
 //! change.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A monster's cast clip is the tag-`0x23` entry its magic **slot** walks to
 /// (`FUN_801E9FD4`, `0x801EA4A4..0x801EA548`), reversed against the slot
@@ -10,7 +11,7 @@ use super::*;
 /// `battle_gimard_tail_fire_a` capture reads (`+0x1E0 = 8`).
 #[test]
 fn a_monster_cast_plays_the_tag_0x23_entry_its_magic_slot_walks_to() {
-    use legaia_asset::monster_archive::MonsterAnimation;
+    use legaia_actor_formats::monster_archive::MonsterAnimation;
     use std::sync::Arc;
     let clip = |tag: u8| {
         Some(MonsterAnimation {
@@ -29,10 +30,10 @@ fn a_monster_cast_plays_the_tag_0x23_entry_its_magic_slot_walks_to() {
     world.party.party_count = 1;
     world.actors.push(Actor::default());
     world.actors.push(Actor::default());
-    world
-        .tables
-        .monster_catalog
-        .insert(crate::monster_catalog::MonsterDef::new(10, "Gimard", 99, 60).with_magic([0x27]));
+    world.tables.monster_catalog.insert(
+        legaia_engine_battle::monster_catalog::MonsterDef::new(10, "Gimard", 99, 60)
+            .with_magic([0x27]),
+    );
     world.actors[1].battle_monster_id = Some(10);
     let tags = [0x00, 0x01, 0x02, 0x04, 0x05, 0x0B, 0x0D, 0x0F, 0x23];
     world.actors[1].battle_action_clips = Some(Arc::new(tags.iter().map(|&t| clip(t)).collect()));
@@ -40,7 +41,8 @@ fn a_monster_cast_plays_the_tag_0x23_entry_its_magic_slot_walks_to() {
 
     // Two slots: the first tag-0x23 entry belongs to the LAST slot.
     world.tables.monster_catalog.insert(
-        crate::monster_catalog::MonsterDef::new(10, "Gimard", 99, 60).with_magic([0x27, 0x28]),
+        legaia_engine_battle::monster_catalog::MonsterDef::new(10, "Gimard", 99, 60)
+            .with_magic([0x27, 0x28]),
     );
     let tags = [0x00, 0x01, 0x23, 0x04, 0x23];
     world.actors[1].battle_action_clips = Some(Arc::new(tags.iter().map(|&t| clip(t)).collect()));
@@ -74,13 +76,13 @@ fn a_capture_charge_branch_folds_nothing() {
 /// cast that left the counter alone kept Rogue on `0xB0` for the whole fight.
 #[test]
 fn element_change_writes_the_ai_counter_it_rerolls_against() {
-    use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
     let mut world = module_code_world();
     let mut entries = vec![SpellEntry::default(); 0x100];
     entries[0xAF].class = CAPTURE_CLASS;
     // Sub-id 29 pages PROT 0964 (`935 + 29`).
     entries[0xAF].sub_class = 29;
-    world.menu.text = Some(crate::pause_screens::MenuTextTables {
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
         spell_names: Some(SpellNameTable::from_entries(entries)),
         ..Default::default()
     });
@@ -115,7 +117,7 @@ fn element_change_writes_the_ai_counter_it_rerolls_against() {
 /// monster starts on its disc element.
 #[test]
 fn element_change_stays_on_the_seat_and_ends_with_the_battle() {
-    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot, MonsterDef};
     let mut party = legaia_save::Party::zeroed(3);
     for member in &mut party.members {
         let mut hms = member.hp_mp_sp();

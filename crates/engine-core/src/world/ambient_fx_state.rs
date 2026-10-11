@@ -37,7 +37,7 @@ pub struct AmbientFxState {
     /// [`crate::world::World::install_entry_vdf_pulse`], ticked with the ambient bank,
     /// surfaced through [`crate::world::World::current_morph_deltas`]. `None` = retail
     /// behaviour (see `docs/subsystems/field-ambient-fx.md`).
-    pub entry_vdf_pulse: Option<crate::vdf_pulse::EntryVdfPulse>,
+    pub entry_vdf_pulse: Option<legaia_engine_field::vdf_pulse::EntryVdfPulse>,
     /// `(pack_slot, group)` pairs whose morph deltas changed during the last
     /// ambient drain - the renderer-facing dirty set
     /// ([`crate::world::World::take_morph_dirty_slots`]).
@@ -96,7 +96,7 @@ pub struct AmbientFxState {
     /// cannot reproduce; `jouine`'s flesh walls hue-cycle through green, so
     /// the same frame scored by luck of the phase. Empty everywhere but the
     /// comparison's `play-window` child (`LEGAIA_SEAT_CLUT_FX`).
-    pub cell_fx_seed: Vec<crate::clut_cell_fx::ClutCellFx>,
+    pub cell_fx_seed: Vec<legaia_engine_field::clut_cell_fx::ClutCellFx>,
     /// Capture alignment, the scroller sibling of [`Self::cell_fx_seed`]: a
     /// retail state's mode-4 scroller rects `(x, y, w, h)` with the texels
     /// its VRAM held there, written over the engine's after every field

@@ -8,10 +8,11 @@
 //!
 //! Disc-free: every fixture is synthetic engine state.
 
-use legaia_engine_core::walk_regen::{
+use legaia_engine_core::world::World;
+use legaia_engine_field::walk_regen::{
     AP_WALK_MASK, HP_WALK_MASK, MP_WALK_MASK, WALK_REGEN_STEP_COST,
 };
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_mode::mode::SceneMode;
 
 /// Give roster slot 0 a record with the three walk passives set and every
 /// pool one bump short of full, and make it the whole present party.
@@ -110,7 +111,7 @@ fn committed_locomotion_steps_feed_the_walk_regen_accumulator() {
     party_with_walk_passives(&mut world, HP_WALK_MASK);
     // Hold X+ (pad bit 0x2000 is the decoded direction; drive the pad the way
     // a host does).
-    world.set_pad(legaia_engine_core::input::PadButton::Right.mask());
+    world.set_pad(legaia_engine_system::input::PadButton::Right.mask());
 
     let start_x = world.actors[0].move_state.world_x;
     for _ in 0..200 {

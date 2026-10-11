@@ -21,7 +21,7 @@ impl PlayWindowApp {
     /// the GPU.
     ///
     /// The seat, the choreography, the camera and the buffers are the
-    /// engine's (`legaia_engine_core::muscle_dome_scene::MuscleDomeSurface::
+    /// engine's (`legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface::
     /// frame`, the call the browser play page makes too); this host uploads
     /// the dome VRAM on a generation change and the posed mesh every frame,
     /// and the redraw draws them under `DomeCamera::vp_raw` (the battle
@@ -129,7 +129,7 @@ impl PlayWindowApp {
     /// * a leg opening mid-ladder arms the ROUND banner alone;
     /// * a leg **closing** arms the between-legs INTERVAL + score-tally
     ///   screen, but only when the shared cadence rule
-    ///   ([`legaia_engine_core::muscle_dome::leg_boundary_raises_interval`])
+    ///   ([`legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval`])
     ///   says retail's hub reaches state `0x0A` - a survived leg with the
     ///   course not yet exhausted. A lost, run-from or final leg settles
     ///   instead and raises nothing.
@@ -140,12 +140,12 @@ impl PlayWindowApp {
     /// running ([`MusclePhase::ends_turn`]).
     ///
     /// Each screen runs retail's own fade / hold envelope
-    /// ([`legaia_engine_core::muscle_dome::HubScreen`]) rather than a frame
+    /// ([`legaia_engine_minigames::muscle_dome::HubScreen`]) rather than a frame
     /// count this host picked: fade in at the arm's rate, hold at the
     /// measured literal, fade out - and the two card holds end early on a
     /// pad press, the way `FUN_801CF870`'s `& 0xF4` test lets them.
     ///
-    /// [`MusclePhase::ends_turn`]: legaia_engine_core::muscle_dome::MusclePhase::ends_turn
+    /// [`MusclePhase::ends_turn`]: legaia_engine_menus::muscle_dome_session::MusclePhase::ends_turn
     pub(in crate::window) fn tick_muscle_hub(&mut self) {
         // A dome leg the player WALKED into (the mode-24 door warp, drained
         // by the shared scene host) already carries its contest: the warp
@@ -216,24 +216,22 @@ impl PlayWindowApp {
         if self.session.host.world.minigames.muscle_contest.is_some() {
             return;
         }
-        let Ok(raw) =
-            self.session.host.index.entry_bytes_extended(
-                legaia_engine_core::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32,
-            )
-        else {
+        let Ok(raw) = self.session.host.index.entry_bytes_extended(
+            legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32,
+        ) else {
             return;
         };
         let flags = self.session.host.world.muscle_contest_flags();
         self.session.host.world.minigames.muscle_contest =
-            legaia_engine_core::muscle_dome::DomeContest::from_overlay(&raw, &flags);
+            legaia_engine_minigames::muscle_dome::DomeContest::from_overlay(&raw, &flags);
     }
 
     pub(in crate::window) fn load_muscle_hub_assets(&mut self) {
-        use legaia_engine_render::other_game_hud as hud;
+        use legaia_engine_ui::muscle_dome_hud as hud;
         if self.muscle_hub.is_some() {
             return;
         }
-        use legaia_asset::muscle_dome::HUB_CONTAINER_PROT_INDEX;
+        use legaia_minigame_formats::muscle_dome::HUB_CONTAINER_PROT_INDEX;
         let Some(renderer) = self.win.renderer.as_ref() else {
             return;
         };
@@ -251,20 +249,20 @@ impl PlayWindowApp {
         };
         // Section 0 = `[12-byte header][TIM][TIM]`, decoded with the arena's
         // upload STP applied (the VRAM CLUT words the blend classes key on).
-        let Some((tim0, tim1)) = legaia_asset::muscle_dome::hub_page_tims(&container) else {
+        let Some((tim0, tim1)) = legaia_minigame_formats::muscle_dome::hub_page_tims(&container)
+        else {
             log::warn!("muscle hub: page TIMs did not decode from the dome container");
             return;
         };
-        let arena_raw =
-            match self.session.host.index.entry_bytes_extended(
-                legaia_engine_core::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32,
-            ) {
-                Ok(b) => b,
-                Err(e) => {
-                    log::warn!("muscle hub: PROT 0977 read failed: {e:#}");
-                    return;
-                }
-            };
+        let arena_raw = match self.session.host.index.entry_bytes_extended(
+            legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32,
+        ) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("muscle hub: PROT 0977 read failed: {e:#}");
+                return;
+            }
+        };
         let table = hud::parse_sprite_table(&arena_raw);
         if table.is_empty() {
             log::warn!("muscle hub: PROT 0977 sprite table did not parse");
@@ -292,7 +290,7 @@ impl PlayWindowApp {
         }
         // The two ringside stills share the atlas: each is a 320-wide sheet
         // (the VRAM region `(384, 0)` the battle end's loader fills).
-        let atlas_w = atlas_w.max(legaia_asset::ringside_still::WIDTH as u32);
+        let atlas_w = atlas_w.max(legaia_minigame_formats::ringside_still::WIDTH as u32);
         let mut blocks: Vec<(u8, u8, u32)> = Vec::new();
         let mut rgba: Vec<u8> = Vec::new();
         let mut atlas_h = 0u32;
@@ -326,25 +324,25 @@ impl PlayWindowApp {
         atlas_h += 4;
         let mut stills: Vec<(u32, u32)> = Vec::new();
         for variant in 0..2u32 {
-            let index = legaia_asset::ringside_still::PROT_INDEX_DEFAULT + variant;
+            let index = legaia_minigame_formats::ringside_still::PROT_INDEX_DEFAULT + variant;
             let Some(sheet) = self
                 .session
                 .host
                 .index
                 .entry_bytes_extended(index)
                 .ok()
-                .and_then(|b| legaia_engine_render::ringside_backdrop::still_sheet_rgba(&b))
+                .and_then(|b| legaia_engine_ui::ringside_backdrop::still_sheet_rgba(&b))
             else {
                 log::warn!("muscle hub: ringside still {index} did not decode");
                 continue;
             };
-            let sw = legaia_asset::ringside_still::WIDTH as u32;
+            let sw = legaia_minigame_formats::ringside_still::WIDTH as u32;
             for row in sheet.chunks_exact(sw as usize * 4) {
                 rgba.extend_from_slice(row);
                 rgba.resize(rgba.len() + ((atlas_w - sw) * 4) as usize, 0);
             }
             stills.push((variant, atlas_h));
-            atlas_h += legaia_asset::ringside_still::HEIGHT as u32;
+            atlas_h += legaia_minigame_formats::ringside_still::HEIGHT as u32;
         }
         match renderer.upload_sprite_atlas(&rgba, atlas_w, atlas_h) {
             Ok(atlas) => {
@@ -354,7 +352,7 @@ impl PlayWindowApp {
                 );
                 self.muscle_hub = Some(MuscleHubAssets {
                     blocks,
-                    palette_stp: legaia_engine_render::ringside_backdrop::HubPaletteStp::from_tims(
+                    palette_stp: legaia_engine_ui::ringside_backdrop::HubPaletteStp::from_tims(
                         &tim0, &tim1,
                     ),
                     table,
@@ -369,8 +367,8 @@ impl PlayWindowApp {
 
     /// The Muscle Dome hub screens as retail-placed sprite draws, through the
     /// shared `engine-ui` emitters both hosts draw with
-    /// ([`legaia_engine_render::other_game_hud::hub_screen_quads`] /
-    /// [`legaia_engine_render::other_game_hud::score_tally_quads`] - the browser
+    /// ([`legaia_engine_ui::muscle_dome_hud::hub_screen_quads`] /
+    /// [`legaia_engine_ui::muscle_dome_hud::score_tally_quads`] - the browser
     /// dome page reaches the same functions via
     /// `minigames_muscle::muscle_hub_quads_json`): the hub's first visit
     /// (`ringside_backdrop::first_visit_hub_draw` - wall, shade, intro strip,
@@ -401,10 +399,10 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> (
-        Vec<legaia_engine_render::SpriteDraw>,
+        Vec<legaia_engine_ui::SpriteDraw>,
         Vec<legaia_engine_render::OverlayBlendSpan>,
     ) {
-        use legaia_engine_render::other_game_hud as hud;
+        use legaia_engine_ui::muscle_dome_hud as hud;
         let Some(assets) = self.muscle_hub.as_ref() else {
             return (Vec::new(), Vec::new());
         };
@@ -425,7 +423,7 @@ impl PlayWindowApp {
         let mut quads: Vec<hud::HudQuad> = Vec::new();
         // The first visit's shade and the screens drawn over it: the shade
         // sits between the wall tiles (`quads`) and these.
-        let mut shade: Option<legaia_engine_render::ringside_backdrop::BackdropShade> = None;
+        let mut shade: Option<legaia_engine_ui::ringside_backdrop::BackdropShade> = None;
         let mut front: Vec<hud::HudQuad> = Vec::new();
         if in_dome {
             // A first visit's frame: the brick wall + shade (the backdrop
@@ -433,7 +431,7 @@ impl PlayWindowApp {
             // by the shared kernel the play page draws with.
             if let Some(hub) = self.session.host.world.minigames.muscle_hub.first_visit {
                 let f = hub.frame();
-                let levels = legaia_engine_render::ringside_backdrop::FirstVisitLevels {
+                let levels = legaia_engine_ui::ringside_backdrop::FirstVisitLevels {
                     backdrop: f.backdrop,
                     intro: f.intro,
                     title_scale: f.title_scale,
@@ -445,7 +443,7 @@ impl PlayWindowApp {
                     .muscle_contest
                     .as_ref()
                     .map_or((0, 1), |c| (c.course() as i32, c.round() as i32 + 1));
-                let d = legaia_engine_render::ringside_backdrop::first_visit_hub_draw(
+                let d = legaia_engine_ui::ringside_backdrop::first_visit_hub_draw(
                     &mut table, &levels, course, round,
                 );
                 quads.extend(d.tiles);
@@ -516,7 +514,7 @@ impl PlayWindowApp {
                 card,
             ));
         }
-        let mut out: Vec<legaia_engine_render::SpriteDraw> = Vec::new();
+        let mut out: Vec<legaia_engine_ui::SpriteDraw> = Vec::new();
         // The backdrop goes first: retail links the still's two packets at
         // the ordering table's far end (`OT + 0xFA0`), behind every sprite.
         if !in_dome
@@ -530,14 +528,14 @@ impl PlayWindowApp {
                 .filter(|b| b.visible())
             && let Some(&(_, still_y)) = assets.stills.iter().find(|(v, _)| *v == b.variant())
         {
-            use legaia_engine_render::ringside_backdrop as rb;
+            use legaia_engine_ui::ringside_backdrop as rb;
             for q in rb::ringside_still_quads(b.level()) {
                 let Some(d) = rb::StillDraw::from_quad(&q) else {
                     continue;
                 };
                 // A flat packet colour: texture modulation `texel * c / 128`.
                 let c = f32::from(d.level) / 128.0;
-                out.push(legaia_engine_render::SpriteDraw {
+                out.push(legaia_engine_ui::SpriteDraw {
                     dst: d.dst,
                     src: (d.src.0, still_y + d.src.1, d.src.2, d.src.3),
                     color: [c, c, c, 1.0],
@@ -551,9 +549,9 @@ impl PlayWindowApp {
         quads.extend(front);
         let mut blend = Vec::new();
         let push_shade =
-            |out: &mut Vec<legaia_engine_render::SpriteDraw>,
+            |out: &mut Vec<legaia_engine_ui::SpriteDraw>,
              blend: &mut Vec<legaia_engine_render::OverlayBlendSpan>,
-             sh: &legaia_engine_render::ringside_backdrop::BackdropShade| {
+             sh: &legaia_engine_ui::ringside_backdrop::BackdropShade| {
                 let rows = shade_row_draws(sh, assets.white_y);
                 blend.push(legaia_engine_render::OverlayBlendSpan {
                     start: out.len() as u32,
@@ -615,7 +613,7 @@ impl PlayWindowApp {
                     abr,
                 });
             }
-            out.push(legaia_engine_render::SpriteDraw {
+            out.push(legaia_engine_ui::SpriteDraw {
                 dst: (x0 as i32, y0 as i32, (x1 - x0) as u32, (y1 - y0) as u32),
                 src: (sx as u32, block_y + sy as u32, csw, csh),
                 color: [tint(0), tint(1), tint(2), 1.0],
@@ -629,7 +627,7 @@ impl PlayWindowApp {
         // The quads sit in the retail 320x240 frame; map them through the
         // same stage transform every minigame chrome layer uses.
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-        legaia_engine_render::scale_stage_text_draws(&mut out, stage_origin, stage_scale);
+        legaia_engine_ui::scale_stage_text_draws(&mut out, stage_origin, stage_scale);
         (out, blend)
     }
 }
@@ -644,9 +642,9 @@ impl PlayWindowApp {
 /// row `y` subtracts `top + (bottom - top) * y / h`, the Gouraud value at
 /// that row. A row that subtracts nothing is skipped.
 fn shade_row_draws(
-    sh: &legaia_engine_render::ringside_backdrop::BackdropShade,
+    sh: &legaia_engine_ui::ringside_backdrop::BackdropShade,
     white_y: u32,
-) -> Vec<legaia_engine_render::SpriteDraw> {
+) -> Vec<legaia_engine_ui::SpriteDraw> {
     let (x0, y0) = (i32::from(sh.xy[0].0), i32::from(sh.xy[0].1));
     let w = (i32::from(sh.xy[1].0) - x0).max(0) as u32;
     let h = (i32::from(sh.xy[2].1) - y0).max(0);
@@ -659,7 +657,7 @@ fn shade_row_draws(
             continue;
         }
         let f = f as f32 / 255.0;
-        out.push(legaia_engine_render::SpriteDraw {
+        out.push(legaia_engine_ui::SpriteDraw {
             dst: (x0, y0 + row, w, 1),
             src: (0, white_y, 1, 1),
             color: [f, f, f, 1.0],

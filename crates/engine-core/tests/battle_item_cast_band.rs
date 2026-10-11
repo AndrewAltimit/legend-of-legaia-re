@@ -21,10 +21,11 @@
 //! Disc-free: synthetic party + the vanilla monster/formation tables. Runs in
 //! CI unconditionally.
 
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionCategory, ActionState};
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_battle_vm::battle_action::{ActionCategory, ActionState};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// Build a field-ready world with the player-driven battle flag set - the
 /// same shape as `battle_player_driven.rs`.
@@ -52,7 +53,7 @@ fn build_world() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("item_cast_band_test");
@@ -108,7 +109,7 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     // Two copies so the "one copy consumed" assertion is non-vacuous. The
     // catalog defaults empty (disc-installed at boot); the port's vanilla
     // catalog carries the Healing Leaf entry the menu filter needs.
-    w.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+    w.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
     w.party.inventory.insert(0x77, 2);
 
     enter_battle(&mut w);
@@ -211,7 +212,7 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     let saw_cast_label = w.pending_battle_events.iter().any(|e| {
         matches!(
             e,
-            legaia_engine_core::battle_events::BattleEvent::UiElement {
+            legaia_engine_battle::battle_events::BattleEvent::UiElement {
                 effect_id: 0x4C,
                 ..
             }

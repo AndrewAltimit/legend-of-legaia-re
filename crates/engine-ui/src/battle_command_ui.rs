@@ -64,7 +64,7 @@
 //! thing that keeps the copy honest until the literals read the kernel.
 
 use crate::{SpriteDraw, TextDraw};
-use legaia_asset::title_pak;
+use legaia_ui_formats::title_pak;
 
 // --------------------------------------------------------------- geometry
 
@@ -114,7 +114,7 @@ pub const CLUSTER_COMMAND: ChipCluster = ChipCluster {
 ///
 /// Retail's own labels for the pair are static `SCUS_942.54` rodata the
 /// placement records point at before the battle overlay is even loaded
-/// (`legaia_asset::battle_ui_strings::{SCUS_BEGIN, SCUS_RUN}`), which is
+/// (`legaia_ui_formats::battle_ui_strings::{SCUS_BEGIN, SCUS_RUN}`), which is
 /// the disc-side proof that this cluster is the round prompt and not a
 /// second command row.
 pub const CLUSTER_TOP_LEVEL: ChipCluster = ChipCluster {
@@ -491,7 +491,7 @@ pub const ITEM_MARK_ANCHOR: (i16, i16) = (0xCC, 0x22);
 /// Which marks the command ring wears this frame - one type from
 /// `engine-vm`, so `engine-core`'s `battle_hud::battle_ring_marks` hands it to
 /// this builder with no per-host copy.
-pub use legaia_engine_battle_vm::battle_party_panel::RingMarks;
+use legaia_engine_battle_vm::battle_party_panel::RingMarks;
 
 /// One ring mark from a [`legaia_engine_battle_vm::battle_party_panel::StripQuad`]:
 /// the quad's screen span (inclusive corners, so `x1 - x0 + 1` wide), drawn

@@ -82,9 +82,9 @@ impl LegaiaRuntime {
             // the native window folds into the same rig.
             if let Some(l) = h
                 .world
-                .actor_look(legaia_engine_core::actor_look::LookKey::Player)
+                .actor_look(legaia_engine_field::actor_look::LookKey::Player)
             {
-                legaia_engine_core::actor_look::apply_look(&mut bones, l);
+                legaia_engine_field::actor_look::apply_look(&mut bones, l);
             }
             Some(bones)
         });

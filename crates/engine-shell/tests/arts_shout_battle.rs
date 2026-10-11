@@ -23,14 +23,15 @@
 //!
 //! Skips (passing) when `LEGAIA_DISC_BIN` is unset, like every disc test.
 //!
-//! [`BattleShoutCue`]: legaia_engine_core::battle_events::BattleShoutCue
+//! [`BattleShoutCue`]: legaia_engine_battle::battle_events::BattleShoutCue
 
 use std::path::PathBuf;
 
-use legaia_engine_core::arts_command_input::ArtsInputScreen;
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::arts_command_input::ArtsInputScreen;
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 fn disc_path() -> Option<PathBuf> {
     let p = std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -97,7 +98,7 @@ fn build_world(with_record: bool) -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("arts_shout_test");
@@ -125,8 +126,8 @@ fn build_world(with_record: bool) -> World {
 /// presses Cross never reaches an executed art.
 fn drive_art_and_collect_shouts(
     w: &mut World,
-) -> Vec<legaia_engine_core::battle_events::BattleShoutCue> {
-    use legaia_engine_core::battle_input::BattleCommand;
+) -> Vec<legaia_engine_battle::battle_events::BattleShoutCue> {
+    use legaia_engine_menus::battle_input::BattleCommand;
 
     let up = InputState::mask_of([PadButton::Up]);
     let mut entered = false;
@@ -169,7 +170,7 @@ fn drive_art_and_collect_shouts(
             // Retail's open flow: `Begin` on the round prompt, the ring's
             // `Attack` arm, then the `Auto | Command` prompt - `Command` is
             // the directional arts entry, `Auto` the plain swing.
-            use legaia_engine_core::battle_input::{AttackMode, CommandPhase};
+            use legaia_engine_menus::battle_input::{AttackMode, CommandPhase};
             match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
                     // Spatial seating: Left is the `Attack` arm's own side.
@@ -229,7 +230,7 @@ fn art_shout_pcm_lands_in_the_mix_after_the_cd_delay() {
     };
 
     // --- The bank the boot path stages, from the real disc. ---
-    let mut bank = legaia_engine_shell::boot::read_arts_shout_bank(&disc)
+    let mut bank = legaia_engine_session::boot::read_arts_shout_bank(&disc)
         .expect("arts-voice shout bank stages from the disc");
     let pool: Vec<u8> = bank
         .pool(0, 0x27)

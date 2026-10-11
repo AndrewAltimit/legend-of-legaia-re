@@ -39,10 +39,10 @@ pub(super) fn fk_inset_hand(
     dst_hand: &ModelObject,
     ch_f: usize,
     ch_h: usize,
-    anims: &[legaia_asset::monster_archive::MonsterAnimation],
+    anims: &[legaia_actor_formats::monster_archive::MonsterAnimation],
     law_budget: f32,
 ) -> Result<Option<[f32; 3]>> {
-    use legaia_asset::monster_archive::PartPose;
+    use legaia_actor_formats::monster_archive::PartPose;
     if hand.vertices.is_empty() || forearm.vertices.is_empty() {
         return Ok(None);
     }

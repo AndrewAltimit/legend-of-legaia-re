@@ -1,6 +1,8 @@
 //! Gauge and readout inks, alpha, and the font's solid texel.
 
 use super::*;
+use legaia_engine_ui::font_solid_src;
+use legaia_engine_ui::gauge_fill_color;
 
 #[test]
 fn hp_bar_color_index_tiers_match_retail() {

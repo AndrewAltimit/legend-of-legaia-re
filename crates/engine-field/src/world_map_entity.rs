@@ -3,7 +3,7 @@
 //!
 //! PORT: FUN_801DA51C
 //! REF: FUN_801D9E1C (the region encounter roll this SM reaches through
-//!      [`WorldMapHost::on_encounter`]; ported in `legaia_engine_core::region_encounter`)
+//!      [`WorldMapHost::on_encounter`]; ported in `legaia_engine_battle::region_encounter`)
 //!
 //! One instance of [`WorldMapEntityCtx`] exists per on-map entity (NPCs,
 //! town-portal tiles, monster spawn zones). The retail engine stores the

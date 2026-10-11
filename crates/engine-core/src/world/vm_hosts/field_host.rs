@@ -73,8 +73,8 @@ impl FieldHostImpl<'_> {
     /// stand-in context, `CC F8 45 ..`), the placement channel stepping, or
     /// nobody - a placed object's context draws through the static bracket,
     /// which never reads the look.
-    fn look_key(&self, ctx: &FieldCtx) -> Option<crate::actor_look::LookKey> {
-        use crate::actor_look::LookKey;
+    fn look_key(&self, ctx: &FieldCtx) -> Option<legaia_engine_field::actor_look::LookKey> {
+        use legaia_engine_field::actor_look::LookKey;
         if ctx.script_id == u16::from(crate::field_env::PLAYER_ANCHOR_TARGET)
             || self.ctx_is_player(ctx)
         {
@@ -128,7 +128,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // prompt pending falls back to the default Idle.
     // REF: FUN_801F03F0 (name-entry overlay) / op49_invoke_setup func_0x80020de0
     // Op `0x4C` outer-nibble-4 sub-9 - the writer of the two globals
-    // `crate::camera_ease` eases between, read off the three arms at
+    // `legaia_engine_field::camera_ease` eases between, read off the three arms at
     // `0x801E1480..0x801E162C` in `overlay_world_map_801de840.txt`:
     //
     // | `_DAT_1F800394` | scene ctrl `+0x4A`     | `_DAT_8007BCAC`      |
@@ -183,7 +183,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
 
     /// Op `4C 45` with `ticks == 0`: the side buffer's look object and
     /// angles, written at once (`0x801E12BC..0x801E12F4`). See
-    /// [`crate::actor_look`].
+    /// [`legaia_engine_field::actor_look`].
     ///
     /// PORT: FUN_801DE840 (the nibble-4 sub-5 immediate arm)
     fn op4c_n4_sub5_write_immediate(
@@ -301,7 +301,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// so every mode-1 test missed; Rim Elm's "stand here and press Down"
     /// polls (`42 01 00 ..`, `town01` P2[12..14]) never saw the press.
     fn screen_mode(&self) -> u32 {
-        u32::from(crate::world_map_panel_host::packed_pad(
+        u32::from(legaia_engine_field::world_map_panel_host::packed_pad(
             self.world.input.pad(),
         ))
     }
@@ -344,9 +344,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // parameterization is the ported kernel; the world holds the spawned
     // records ([`crate::world::CameraRig::register_ramps`]) and ticks each one's
     // `FUN_80037018` handler per frame ([`World::tick_register_ramps`]).
-    // REF: FUN_8003C6A4 (kernel PORT lives in crate::register_ramp)
+    // REF: FUN_8003C6A4 (kernel PORT lives in legaia_engine_field::register_ramp)
     fn op43_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
-        if let Some(ramp) = crate::register_ramp::spawn_register_ramp(sub_op, zone, start, end) {
+        if let Some(ramp) =
+            legaia_engine_field::register_ramp::spawn_register_ramp(sub_op, zone, start, end)
+        {
             self.world.camera.register_ramps.push(ramp);
         }
     }
@@ -476,9 +478,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // predecessor-kill (the handler's first lines kill any live
         // sibling balloon). The X centering waits for a host-side font
         // measurement; the tick lives in `World::tick`
-        // (`crate::text_balloon::TextBalloon::tick`).
+        // (`legaia_engine_dialog::text_balloon::TextBalloon::tick`).
         let _ = script_id;
-        self.world.cutscene.text_balloon = Some(crate::text_balloon::TextBalloon::spawn(text_buf));
+        self.world.cutscene.text_balloon = Some(
+            legaia_engine_dialog::text_balloon::TextBalloon::spawn(text_buf),
+        );
     }
 
     fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
@@ -555,7 +559,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// Without it every scripted gold gate reads an empty purse, so each of
     /// them takes its can't-afford branch: an inn stay, a paid tour, a train
     /// ticket and a casino coin purchase are all one `0x4E` sub-3 compare
-    /// against a script literal (`legaia_asset::inn_costs`). That is the
+    /// against a script literal (`legaia_scene_formats::inn_costs`). That is the
     /// whole affordability check - retail has no inn routine and no cost
     /// table, so this read is what makes the charge reachable at all.
     fn party_bank_value(&self, sub_op: u8) -> i32 {
@@ -1157,7 +1161,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
 
     /// `[4C, 0x89, lo, hi]` - the pager's automatic-press countdown
     /// `_DAT_80073F00`, which a waiting box page counts down and then
-    /// presses through ([`crate::dialog::OwnedDialogPanel::tick_at_auto`]).
+    /// presses through ([`legaia_engine_dialog::dialog::OwnedDialogPanel::tick_at_auto`]).
     fn op4c_n8_sub9_set_73f00(&mut self, value: i16) {
         self.world.dialog.auto_press = value;
     }

@@ -257,7 +257,7 @@ const CAPTURE_TABLE: u32 = 0x801C_F56C;
 
 /// `(owning PROT entry, the VA PROT 0898's capture arm calls, the arms the
 /// port carries)` - the six trampolines
-/// `legaia_engine_vm::cast_module_ticks::CAPTURE_TRAMPOLINES` names.
+/// `legaia_engine_battle_vm::cast_module_ticks::CAPTURE_TRAMPOLINES` names.
 type TrampolineRow = (u32, u32, &'static [(u8, u32)]);
 const TRAMPOLINES: [TrampolineRow; 6] = [
     (

@@ -2,6 +2,7 @@
 //! boss stagers read from the MAN, and placement engagements.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A boss-stager binding installed for the active scene: the partition-1
 /// record an approach/interact on the placement slot runs, plus its park
@@ -86,7 +87,7 @@ impl World {
     ///
     /// While armed, the field VM's bare arm-encounter op (`0x37`/`0x41`) hands
     /// the record window overlaying the opcode to the host, which parses it as
-    /// an [`crate::encounter_record::EncounterRecord`] and routes it through
+    /// an [`legaia_engine_battle::encounter_record::EncounterRecord`] and routes it through
     /// [`Self::install_scripted_encounter`]. See
     /// [`crate::world::EncounterState::scripted_armed`] for why this gate exists (there is no
     /// dedicated encounter opcode; the consuming entity SM is the retail
@@ -99,7 +100,7 @@ impl World {
     /// VM forwarded at the bare arm-encounter op (`0x37`/`0x41`); the record
     /// overlays the opcode (`[opcode][op1][op2][count][ids..]`).
     ///
-    /// The window is parsed as an [`crate::encounter_record::EncounterRecord`]
+    /// The window is parsed as an [`legaia_engine_battle::encounter_record::EncounterRecord`]
     /// (`[flag][_][_][count][ids..]`) and, when it carries at least one
     /// monster, installed against the active scene via
     /// [`Self::install_encounter_from_record`] - so the next
@@ -116,7 +117,7 @@ impl World {
             .push(FieldEvent::ScriptedEncounter {
                 record: record_bytes.to_vec(),
             });
-        let record = crate::encounter_record::EncounterRecord::parse(record_bytes)?;
+        let record = legaia_engine_battle::encounter_record::EncounterRecord::parse(record_bytes)?;
         if record.is_empty() {
             return None;
         }
@@ -140,7 +141,7 @@ impl World {
 
     /// Install the active scene's **boss-stager placements** as approach /
     /// interact dispatch bindings, derived entirely from the MAN's own bytes
-    /// ([`crate::man_field_scripts::boss_stager_placements`]).
+    /// ([`legaia_engine_field::man_field_scripts::boss_stager_placements`]).
     ///
     /// For each partition-1 placement whose record carries the scripted-battle
     /// op `3E FF <row>` (rikuroa's Caruban stager `P1[3]`: `52 89` marker SET
@@ -160,7 +161,7 @@ impl World {
     /// the record has no station leg - as an interact-probe position
     /// ([`crate::world::FieldNpcState::positions`]) plus a walk-touch contact
     /// ([`crate::world::FieldPropState::walk_touch`],
-    /// [`crate::man_field_scripts::WalkTouchEvent::StagerBeat`]). Walking
+    /// [`legaia_engine_field::man_field_scripts::WalkTouchEvent::StagerBeat`]). Walking
     /// into / interacting with the placed actor then runs the record itself
     /// ([`Self::run_boss_stager_record`]) - the engine mirror of retail's
     /// touch dispatch resuming the parked stager script.
@@ -171,11 +172,11 @@ impl World {
     // REF: FUN_801d5b5c (touch dispatch), FUN_801cf9f4 (interaction probe)
     pub fn install_boss_stagers_from_man(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
     ) {
         self.props.boss_stagers.clear();
-        for site in crate::man_field_scripts::boss_stager_placements(man_file, man) {
+        for site in legaia_engine_field::man_field_scripts::boss_stager_placements(man_file, man) {
             // The row must be a registered scene formation (scene entry merged
             // the MAN rows + their archive stats) - a desync phantom is not.
             let row_ok = self
@@ -199,7 +200,7 @@ impl World {
             };
             // **One placement, one dispatch owner.** A placement the carrier
             // install already claimed as a
-            // [`crate::world::FieldCarrierConfig::ScriptedEncounter`] is a
+            // [`legaia_engine_field::man_field_scripts::FieldCarrierConfig::ScriptedEncounter`] is a
             // talk-first NPC whose `3E FF <row>` sits *behind* its dialogue
             // and its inline picker - retail's Rim Elm sparring partner
             // (`town01` P1[10], MAN formation row 4). Its interaction must
@@ -244,7 +245,7 @@ impl World {
                 slot,
                 (
                     station,
-                    crate::man_field_scripts::WalkTouchEvent::StagerBeat,
+                    legaia_engine_field::man_field_scripts::WalkTouchEvent::StagerBeat,
                 ),
             );
             log::info!(
@@ -290,7 +291,7 @@ impl World {
         let Some(man) = self.field_vm.channels_man.clone() else {
             return false;
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
             return false;
         };
         let installed = self.install_interaction_timeline(&man_file, &man, record);
@@ -311,15 +312,19 @@ impl World {
     // REF: FUN_80039B7C
     fn install_interaction_timeline(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         record: u8,
     ) -> bool {
         if !self.install_cutscene_timeline_record(man_file, man, 1, record as usize, false) {
             return false;
         }
-        let span =
-            crate::man_field_scripts::partition_record_span(man_file, man, 1, record as usize);
+        let span = legaia_engine_field::man_field_scripts::partition_record_span(
+            man_file,
+            man,
+            1,
+            record as usize,
+        );
         let channel_pc = self
             .field_vm
             .channels
@@ -358,7 +363,7 @@ impl World {
             self.field_vm.pending_engagements.clear();
             return;
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
             self.field_vm.pending_engagements.clear();
             return;
         };

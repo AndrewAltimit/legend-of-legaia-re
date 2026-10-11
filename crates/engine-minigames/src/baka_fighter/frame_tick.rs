@@ -42,7 +42,7 @@ impl BakaFight {
     /// Step every live afterimage one frame (retail's actor pool runs the
     /// `0x801D7684` callback once per frame per actor).
     fn tick_afterimages(&mut self, frame_step: i32) {
-        use legaia_asset::baka_opponents::ACTION_SPECIAL;
+        use legaia_minigame_formats::baka_opponents::ACTION_SPECIAL;
         self.afterimage_frames.clear();
         let strike = self.strike.as_ref();
         let chosen = [self.f[0].chosen, self.f[1].chosen];
@@ -188,7 +188,7 @@ impl BakaFight {
             for (m, t) in self.motion.iter_mut().zip(st.iter()) {
                 let r = m
                     .record
-                    .min(legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER - 1);
+                    .min(legaia_minigame_formats::baka_opponents::ACTIONS_PER_FIGHTER - 1);
                 m.step(t.speed[r], self.rate_divisor, t.clips[r], frame_step);
             }
         }
@@ -436,7 +436,8 @@ impl BakaFight {
                     self.f[w].chosen == Some(BakaAttack::Special)
                         && !special_round_win
                         && self.f[w].clock.landed.map_or(0, |i| i + 1)
-                            < st[w].frames[legaia_asset::baka_opponents::ACTION_SPECIAL].len()
+                            < st[w].frames[legaia_minigame_formats::baka_opponents::ACTION_SPECIAL]
+                                .len()
                 });
                 if special_continues {
                     self.f[l].chosen = None;

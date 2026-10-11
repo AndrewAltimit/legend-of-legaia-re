@@ -110,7 +110,7 @@ impl FieldHostImpl<'_> {
         // 4. Otherwise spawn the walk-in tween, black -> target, hold `-1`.
         //
         // REF: FUN_801DE2B0 (the spawner, ported at
-        // `crate::field_actor_kernels::tween_from_fade_template`)
+        // `legaia_engine_field::field_actor_kernels::tween_from_fade_template`)
         //
         // Both spawns fork on scratchpad global `_DAT_1F800394` bit 23
         // (`lui v1,0x80; and` at `0x801DFD1C` / `0x801DFEB0`): set, retail
@@ -120,8 +120,10 @@ impl FieldHostImpl<'_> {
         // field-op-census --only 2E`) nor a motion-VM `0x10`/`0x11` (none is
         // authored in any bank), pinned by
         // `crates/asset/tests/scratch_global_bit_writers_real.rs`.
-        use crate::fade::FadeTemplate;
-        use crate::field_actor_kernels::{ACTOR_FLAG_YIELD, tween_from_fade_template};
+        use legaia_engine_field::field_actor_kernels::{
+            ACTOR_FLAG_YIELD, tween_from_fade_template,
+        };
+        use legaia_engine_system::fade::FadeTemplate;
 
         if let Some(slot) = self.world.presentation.effect_tween_slot.take() {
             if let Some(a) = self.world.actors.get_mut(slot) {
@@ -174,7 +176,11 @@ impl FieldHostImpl<'_> {
             duration,
             start_rgb: [0; 3],
             end_rgb: target,
-            mode: [0, crate::field_actor_kernels::TWEEN_HOLD_FOREVER, 0],
+            mode: [
+                0,
+                legaia_engine_field::field_actor_kernels::TWEEN_HOLD_FOREVER,
+                0,
+            ],
         };
         self.world.presentation.effect_tween_slot = self
             .world
@@ -232,9 +238,9 @@ impl FieldHostImpl<'_> {
             ];
             let frames = u16::from_le_bytes([payload[3], payload[4]]);
             let current = self.world.presentation.tint.as_ref().map(|t| t.factor());
-            self.world.presentation.tint = Some(crate::fade::SceneTintRamp::to_target(
-                current, target, frames,
-            ));
+            self.world.presentation.tint = Some(
+                legaia_engine_system::fade::SceneTintRamp::to_target(current, target, frames),
+            );
         }
         // Sub-op 0x13: the field clear colour (both draw environments'
         // `r0 / g0 / b0`), instant or ramped by `FUN_8003C5F0` over

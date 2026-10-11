@@ -271,14 +271,14 @@ fn exchange() -> PrizeExchange {
     let rows: Vec<_> = rows
         .iter()
         .enumerate()
-        .map(
-            |(row, &(limit, price, item_id))| legaia_asset::fishing_exchange::ExchangeRow {
+        .map(|(row, &(limit, price, item_id))| {
+            legaia_minigame_formats::fishing_exchange::ExchangeRow {
                 row,
                 limit,
                 price,
                 item_id,
-            },
-        )
+            }
+        })
         .collect();
     PrizeExchange::from_asset(1, &rows, None)
 }
@@ -468,7 +468,7 @@ fn rod_lure_select_cancel_and_non_interactive() {
 
 // --- retail species selection ------------------------------------------
 
-use legaia_asset::fishing_species::{CadenceStep, CadenceTemplate};
+use legaia_minigame_formats::fishing_species::{CadenceStep, CadenceTemplate};
 
 #[test]
 fn band_roll_matches_the_cutoff_table() {

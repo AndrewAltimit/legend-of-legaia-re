@@ -104,7 +104,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
     fn stage_owned_vab(&mut self, entry_bytes: &[u8]) -> Option<Vec<u8>> {
         // The installer walk's split (type-0 bank, type-2 score), not a
         // magic hunt - see `chunk_install::owned_bank_offsets`.
-        let split = legaia_engine_core::chunk_install::owned_bank_offsets(entry_bytes)?;
+        let split = legaia_engine_system::chunk_install::owned_bank_offsets(entry_bytes)?;
         let vab_off = split.vab;
         let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
         // Both halves are validated before the SPU is touched - the page's
@@ -202,7 +202,7 @@ impl<S: AudioSink> BgmDirector for AudioBgmDirector<S> {
 
     /// The pause state is the output's sequencer gate and nothing else - the
     /// browser twin reads the same bit - so a writer that bypasses the
-    /// director (a movie ducking the score, `legaia_engine_core::movie_audio`)
+    /// director (a movie ducking the score, `legaia_engine_system::movie::movie_audio`)
     /// cannot leave a second latch disagreeing with it.
     fn pause(&mut self) {
         self.audio.set_sequencer_paused(true);

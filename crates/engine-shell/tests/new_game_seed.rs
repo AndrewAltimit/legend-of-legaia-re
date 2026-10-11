@@ -10,7 +10,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_shell::boot::{BootConfig, BootSession};
+use legaia_engine_session::boot::BootConfig;
+use legaia_engine_shell::boot::BootSession;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -110,7 +111,7 @@ fn boot_installs_the_real_per_character_growth_curves_from_disc() {
     };
     let session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
 
-    use legaia_engine_core::levelup::StatGrowthCurve;
+    use legaia_engine_battle::levelup::StatGrowthCurve;
     let curves = &session.host.world.party.level_up_tracker.stat_curves;
 
     // Vahn/Noa/Gala get real per-level curves; the placeholder flat rate is gone.
@@ -178,7 +179,7 @@ fn enter_field_live_installs_disc_catalogs_without_battle_flags() {
     let mut session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
 
     // Default opts: no live loop, no player-driven battle.
-    let opts = legaia_engine_shell::boot::FieldLiveOpts::default();
+    let opts = legaia_engine_session::boot::FieldLiveOpts::default();
     assert!(
         !opts.live_loop && !opts.player_battle,
         "default opts carry no battle flags"

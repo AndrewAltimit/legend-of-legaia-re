@@ -50,10 +50,10 @@ pub fn pack_record_offset(pack: &[u8], index: i16) -> Option<usize> {
 ///
 /// PORT: FUN_80024CFC
 ///
-/// REPLACED-BY: `legaia_asset::clut_walk::parse` (the same
+/// REPLACED-BY: `legaia_scene_formats::clut_walk::parse` (the same
 /// `base + word[index + 1]` record resolve, over the same table) plus the
 /// hosts' per-entry walker state seeded with
-/// `legaia_asset::clut_walk::ACCUMULATOR_SEED` (this spawn's `+0x68 = 100`).
+/// `legaia_scene_formats::clut_walk::ACCUMULATOR_SEED` (this spawn's `+0x68 = 100`).
 ///
 /// Its one retail caller is the field overlay's `MAIN_INIT` loop at
 /// `0x801D6CA4..0x801D6CD4`: for `i in 0..*table` it calls this with the

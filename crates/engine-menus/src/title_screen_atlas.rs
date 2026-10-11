@@ -3,7 +3,7 @@
 //! Companion to [`crate::title`] (state machine) and
 //! [`crate::publisher_logos`] (boot-phase logo atlas). Decodes the
 //! 256×256 8bpp title TIM from PROT 0890 (the multi-bank sound-data
-//! cluster's trailing pool - see [`legaia_asset::title_pak`] for the
+//! cluster's trailing pool - see [`legaia_ui_formats::title_pak`] for the
 //! disc-source pin, and for why 0888 / 0889 used to look like
 //! duplicate sources) into RGBA8 pixels the engine layer uploads as a
 //! sprite atlas.
@@ -14,7 +14,7 @@
 //! quad behind the cursor / blink overlay drawn by the existing
 //! [`crate::title::TitleSession`].
 
-use legaia_asset::title_pak;
+use legaia_ui_formats::title_pak;
 
 /// Width of the title atlas in pixels (matches the source 256×256 TIM).
 pub const ATLAS_WIDTH: u32 = 256;

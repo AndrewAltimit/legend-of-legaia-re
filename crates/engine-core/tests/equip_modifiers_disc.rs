@@ -4,7 +4,7 @@
 //! catalog. Skips without `LEGAIA_DISC_BIN`.
 
 use legaia_engine_core::Vfs;
-use legaia_engine_core::equipment::equip_modifier_table_from_disc;
+use legaia_engine_menus::equipment::equip_modifier_table_from_disc;
 use std::path::PathBuf;
 
 #[test]
@@ -21,7 +21,8 @@ fn disc_modifier_table_uses_real_ids_and_stats() {
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
-    let stats = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus).expect("equip table");
+    let stats =
+        legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus).expect("equip table");
     let table = equip_modifier_table_from_disc(&stats);
 
     // Chaos Breaker (id 0x27) is a weapon: attack 72, no defense / SPD / INT.
@@ -64,10 +65,10 @@ fn disc_modifier_table_uses_real_ids_and_stats() {
 /// must appear for every party member.
 #[test]
 fn disc_equip_restrictions_gate_equip_session_item_list() {
-    use legaia_asset::equip_stats::EquipSlot as DiscSlot;
-    use legaia_engine_core::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
-    use legaia_engine_core::equip_session::EquipSession;
-    use legaia_engine_core::equipment::DiscEquipInfo;
+    use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
+    use legaia_engine_menus::equip_session::EquipSession;
+    use legaia_engine_menus::equipment::DiscEquipInfo;
+    use legaia_game_tables::equip_stats::EquipSlot as DiscSlot;
 
     let Some(path) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -81,7 +82,8 @@ fn disc_equip_restrictions_gate_equip_session_item_list() {
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
-    let stats = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus).expect("equip table");
+    let stats =
+        legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus).expect("equip table");
     let info = DiscEquipInfo::from_disc(&stats);
 
     // Ground truth (cross-checked in crates/asset/tests/equip_stats_real.rs):
@@ -104,7 +106,7 @@ fn disc_equip_restrictions_gate_equip_session_item_list() {
 
     // End-to-end through the equip session item filter. A weapon-slot picker
     // (UI slot 0) shows only weapons the active character may equip.
-    let mut inv = legaia_engine_core::world::ItemBag::new();
+    let mut inv = legaia_engine_menus::item_bag::ItemBag::new();
     inv.insert(0x25, 1); // Force Blade (Vahn only)
     inv.insert(0x22, 1); // Survival Knife (anyone)
 

@@ -37,7 +37,7 @@ pub fn fighter_pack_entry(roster: usize) -> (usize, u32) {
     (folded, FIGHTER_PACK_TOC_BASE + folded as u32)
 }
 
-// REPLACED-BY: `legaia_asset::baka_opponents::parse_fighter_pack`. The port
+// REPLACED-BY: `legaia_minigame_formats::baka_opponents::parse_fighter_pack`. The port
 // resolves the fighter's PROT entry on demand and walks the same
 // `[u32 (type<<24)|size][payload]` chunk chain into typed sub-asset bytes
 // (TIM / TMD / ANM), which the browser duel host consumes directly; retail's

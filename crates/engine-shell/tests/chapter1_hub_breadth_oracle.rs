@@ -73,14 +73,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{
-    FlagBank, overworld_portal_sites, partition_record_span, partition2_record_gates,
-    scene_destinations, system_flag_census, walk_partition_gflag_sites,
-};
+use legaia_engine_core::man_field_scripts::system_flag_census;
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost, SceneTickEvent};
 use legaia_engine_core::scene_bundle::{extract_man_payload, find_bundle};
-use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig};
-use legaia_engine_vm::field_disasm::{FlagKind, InsnInfo, LinearWalker, scene_change_name};
+use legaia_engine_core::world::WorldMapEntityConfig;
+use legaia_engine_field::man_field_scripts::{
+    FlagBank, overworld_portal_sites, partition_record_span, partition2_record_gates,
+    scene_destinations, walk_partition_gflag_sites,
+};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, scene_change_name};
 
 // ---------------------------------------------------------------------
 // Discovery + shared drive helpers (patterned on the hub sweep + depth
@@ -175,7 +177,7 @@ fn drive_to_leg(dest: &str) -> Option<SceneHost> {
     host.world.set_pad(0);
     let mut entered = None;
     // + the scene-change hold (`FUN_80021934`'s countdown).
-    for _ in 0..12 + legaia_engine_core::scene_transition_actor::HOLD_TICKS {
+    for _ in 0..12 + legaia_engine_field::scene_transition_actor::HOLD_TICKS {
         if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
             entered = Some(name);
             break;
@@ -225,7 +227,7 @@ fn load_man(index: &ProtIndex, name: &str) -> Vec<u8> {
 /// The `0x3F` destination-name set from the partition-1 destination-table scan.
 fn scene_dest_names(index: &ProtIndex, name: &str) -> BTreeSet<String> {
     let man = load_man(index, name);
-    let mf = legaia_asset::man_section::parse(&man).expect("parse MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
     scene_destinations(&mf, &man)
         .into_iter()
         .map(|d| d.scene_name)
@@ -235,7 +237,7 @@ fn scene_dest_names(index: &ProtIndex, name: &str) -> BTreeSet<String> {
 /// Clean-name `0x3F` scene-change sites in one partition-2 record via the
 /// resync-capable [`LinearWalker`] (copied from the depth oracle).
 fn p2_scene_changes(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     record: usize,
 ) -> Vec<(usize, String, i16)> {
@@ -256,7 +258,7 @@ fn p2_scene_changes(
 
 /// Non-empty C1/C2 gate lists across all `n` partition-2 records.
 fn p2_gate_census(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     n: usize,
     scene: &str,
@@ -289,7 +291,7 @@ fn gate1_tiles_of(index: &ProtIndex, name: &str, rec: u8) -> BTreeSet<(u8, u8)> 
 
 /// Assert one partition-2 record SETs `flag` at `abs_pc` (the latch closer).
 fn assert_p2_set_site(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     scene: &str,
     rec: usize,
@@ -318,7 +320,7 @@ fn part_a_cave01_depth_decode() {
     };
     let index = host.index.clone();
     let man = load_man(&index, "cave01");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse cave01 MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse cave01 MAN");
     assert_eq!(mf.header.partition_counts, [1, 13, 18], "cave01 MAN shape");
 
     // (1) One named 0x3F destination (map01) carried by TWO exit records -
@@ -466,7 +468,7 @@ fn part_b_vell_depth_decode() {
     };
     let index = host.index.clone();
     let man = load_man(&index, "vell");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse vell MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse vell MAN");
     assert_eq!(mf.header.partition_counts, [8, 17, 13], "vell MAN shape");
 
     // (1) Single 0x3F destination: the overworld exit P2[10].
@@ -501,7 +503,7 @@ fn part_b_vell_depth_decode() {
     // is always satisfied on a fresh save; 0x7 is the shared busy/system
     // slot also gating most vozz records).
     let vozz_man = load_man(&index, "vozz");
-    let vozz_mf = legaia_asset::man_section::parse(&vozz_man).expect("parse vozz MAN");
+    let vozz_mf = legaia_scene_formats::man_section::parse(&vozz_man).expect("parse vozz MAN");
     let (vc1, vc2) = partition2_record_gates(&vozz_mf, &vozz_man, 7).expect("vozz P2[7] gates");
     assert_eq!(
         (vc1, vc2),
@@ -534,7 +536,7 @@ fn part_c_suimon_depth_decode() {
     };
     let index = host.index.clone();
     let man = load_man(&index, "suimon");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse suimon MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse suimon MAN");
     assert_eq!(mf.header.partition_counts, [10, 7, 3], "suimon MAN shape");
 
     // (1) All three partition-2 records are 0x3F exits to map01 (+0x1C each)
@@ -611,7 +613,7 @@ fn part_d_jouinb_direct_load_and_decode() {
 
     let index = host.index.clone();
     let man = load_man(&index, "jouinb");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse jouinb MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse jouinb MAN");
     assert_eq!(mf.header.partition_counts, [19, 7, 13], "jouinb MAN shape");
 
     // (2) The chain: P2[10] chains DEEPER to jouinc; P2[9] returns to jouina.
@@ -674,7 +676,8 @@ fn part_d_jouinb_direct_load_and_decode() {
     // castle is a four-deep interior chain jou -> jouina -> jouinb -> jouinc
     // -> jouind.
     let jouinc_man = load_man(&index, "jouinc");
-    let jouinc_mf = legaia_asset::man_section::parse(&jouinc_man).expect("parse jouinc MAN");
+    let jouinc_mf =
+        legaia_scene_formats::man_section::parse(&jouinc_man).expect("parse jouinc MAN");
     assert_eq!(
         jouinc_mf.header.partition_counts,
         [43, 18, 60],

@@ -17,7 +17,7 @@
 //! screen to its rect over a fixed span and only the active state takes input
 //! (`docs/formats/mes.md`, "The picker slide"). [`picker_box_rect`] and
 //! [`picker_slide_start`] give the two literal geometries the entry arms
-//! write; the slide itself is `legaia_engine_core::dialog_picker_slide`.
+//! write; the slide itself is `legaia_engine_dialog::dialog_picker_slide`.
 //!
 //! `0x2A`'s arity is not in the post-page dispatch chain (which only names the
 //! entry state) but in the shared cursor handler at `0x801D941C`, whose option

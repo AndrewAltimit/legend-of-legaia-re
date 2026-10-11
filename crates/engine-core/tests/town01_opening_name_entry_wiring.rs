@@ -14,9 +14,9 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::name_entry::{NameEntryInput, NameEntryState};
 use legaia_engine_core::scene::SceneHost;
 use legaia_engine_core::world::World;
+use legaia_engine_menus::name_entry::{NameEntryInput, NameEntryState};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -48,7 +48,7 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
     // Simulate the opdeene→town01 prologue hand-off: the flag `take_prologue_handoff`
     // would set, telling the town01 entry to install the opening timeline.
     host.world.cutscene.entering_town01_opening = true;
-    host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
 
     // 1. The opening timeline installed and is armed to open name entry; the
@@ -125,7 +125,7 @@ fn town01_opening_timeline_opens_name_entry_at_op49() {
         confirm: true,
         ..Default::default()
     });
-    let end = legaia_engine_core::name_entry::CONTROL_ANCHORS[2];
+    let end = legaia_engine_menus::name_entry::CONTROL_ANCHORS[2];
     host.world.party.name_entry.as_mut().unwrap().cursor = end;
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
@@ -200,7 +200,7 @@ fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, t
         .as_ref()
         .is_some_and(|t| t.dialog.is_some());
     if parked && tick.is_multiple_of(2) {
-        world.set_pad(legaia_engine_core::input::PadButton::Cross.mask());
+        world.set_pad(legaia_engine_system::input::PadButton::Cross.mask());
     } else {
         world.set_pad(0);
     }

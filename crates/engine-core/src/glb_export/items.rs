@@ -79,7 +79,7 @@ fn item_file_stem(character: &str, section: usize, id: u32, name: Option<&str>) 
 
 /// Assemble each character wearing exactly one item per equippable record
 /// and bake both per-item `.glb` flavours through the shared loadout kernel
-/// (`legaia_asset::battle_char_assembly::loadout` - the same code the
+/// (`legaia_actor_formats::battle_char_assembly::loadout` - the same code the
 /// browser characters page runs). `scus` (the `SCUS_942.54` bytes) supplies
 /// item display names and section labels; without it both fall back to ids.
 ///
@@ -89,11 +89,11 @@ pub fn export_equipment_item_glbs(
     index: &ProtIndex,
     scus: Option<&[u8]>,
 ) -> Result<ItemsExport, String> {
-    use legaia_asset::battle_char_assembly as bca;
-    use legaia_asset::battle_char_assembly::loadout;
+    use legaia_actor_formats::battle_char_assembly as bca;
+    use legaia_actor_formats::battle_char_assembly::loadout;
 
-    let names = scus.and_then(legaia_asset::item_names::ItemNameTable::from_scus);
-    let stats = scus.and_then(legaia_asset::equip_stats::EquipStatTable::from_scus);
+    let names = scus.and_then(legaia_game_tables::item_names::ItemNameTable::from_scus);
+    let stats = scus.and_then(legaia_game_tables::equip_stats::EquipStatTable::from_scus);
     let mut items = Vec::new();
     let mut notes = Vec::new();
     for (cslot, character) in loadout::CHARACTER_LABELS.iter().enumerate() {
@@ -101,7 +101,7 @@ pub fn export_equipment_item_glbs(
         let raw = index
             .entry_bytes(prot_index)
             .map_err(|e| format!("player file (PROT {prot_index}): {e}"))?;
-        let pack = legaia_asset::battle_data_pack::parse(&raw)
+        let pack = legaia_actor_formats::battle_data_pack::parse(&raw)
             .map_err(|e| format!("player file {prot_index}: {e}"))?;
         let cats = loadout::section_catalog(&pack);
         let labels = loadout::section_labels(&cats, stats.as_ref(), cslot);

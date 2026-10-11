@@ -57,7 +57,7 @@ pub(super) fn source() -> Option<Source> {
 
 pub(super) fn open_session(src: &Source) -> BootSession {
     let cfg = BootConfig {
-        scene: legaia_engine_shell::boot::DEFAULT_BOOT_SCENE.to_string(),
+        scene: legaia_engine_session::boot::DEFAULT_BOOT_SCENE.to_string(),
         enable_audio: false,
     };
     match src {

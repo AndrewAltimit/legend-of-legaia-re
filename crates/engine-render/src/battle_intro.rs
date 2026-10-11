@@ -2,7 +2,7 @@
 //!
 //! The emitter itself - working sets, projection, packet builders, the
 //! curtain's CPU two-pass composition - is wgpu-free and lives in
-//! [`legaia_engine_ui::battle_intro`], where the browser play page can link
+//! [`legaia_render_kernels::battle_intro`], where the browser play page can link
 //! it. Everything is re-exported here at the historical path so native call
 //! sites and tests read unchanged.
 //!
@@ -14,7 +14,7 @@
 //! is a `gl.readPixels` of its own drawn frame - each host owns its readback,
 //! neither owns the emitter.)
 
-pub use legaia_engine_ui::battle_intro::*;
+use legaia_render_kernels::battle_intro::*;
 
 /// Bring the transition's private VRAM page up to date for this frame, and
 /// say whether the host has to re-upload it.

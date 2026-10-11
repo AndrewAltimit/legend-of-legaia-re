@@ -13,11 +13,12 @@
 //! *does* move on the held frame, so a hold that silently stopped working
 //! fails here rather than passing by looking the same.
 
-use legaia_engine_core::encounter::{
+use legaia_engine_battle::encounter::{
     EncounterEntry, EncounterRoll, EncounterSession, EncounterTable, EncounterTracker,
 };
-use legaia_engine_core::mode::{GameMode, ModeSeat};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_mode::mode::{GameMode, ModeSeat};
 
 fn transitioning_world() -> World {
     let mut world = World::new();

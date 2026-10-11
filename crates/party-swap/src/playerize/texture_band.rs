@@ -4,7 +4,7 @@
 
 use super::super::*;
 use super::CLUT_BYTES;
-use legaia_asset::battle_char_assembly::SECTION_TEXTURE_RECTS;
+use legaia_actor_formats::battle_char_assembly::SECTION_TEXTURE_RECTS;
 
 /// One free texture region of the party band, in authoring-page space.
 struct BandRegion {
@@ -22,7 +22,7 @@ struct BandRegion {
 /// texel coordinates `(x0, y0, x1, y1)` (x1/y1 exclusive): the union of
 /// the eye + mouth stamp destination rects from the static
 /// `SCUS_942.54` face-frame tables (`DAT_800768CC` / `DAT_800768E4`,
-/// halfword coords x4 - mirror `legaia_asset::face_anim`, values
+/// halfword coords x4 - mirror `legaia_actor_formats::face_anim`, values
 /// asserted against the disc by `face_stamp_windows_match_the_scus_tables`).
 ///
 /// The per-frame facial animator (`FUN_8004C7B4`) MoveImages the

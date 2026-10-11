@@ -30,10 +30,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_asset::man_motion;
-use legaia_asset::man_section::parse as parse_man;
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_scene_formats::man_motion;
+use legaia_scene_formats::man_section::parse as parse_man;
 
 /// Prefer an already-extracted tree; fall back to the disc `.bin`.
 fn open_host() -> Option<SceneHost> {
@@ -60,7 +61,7 @@ fn extracted_dir() -> Option<PathBuf> {
 /// `(min_x, min_z, max_x, max_z)` world bounds.
 fn wander_boxes(
     man: &[u8],
-    man_file: &legaia_asset::man_section::ManFile,
+    man_file: &legaia_scene_formats::man_section::ManFile,
 ) -> Vec<(i32, i32, i32, i32)> {
     let mut out = Vec::new();
     for rec in man_motion::motion_records(man, man_file) {
@@ -316,7 +317,7 @@ fn town01_villagers_wander_through_the_real_scene_entry() {
         eprintln!("[skip] no extracted/ tree and disc open failed");
         return;
     };
-    host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
 
     let anchors = host.world.npcs.positions.clone();
@@ -391,7 +392,7 @@ fn liveliness_off_publishes_neither_position_nor_walk_facing() {
         eprintln!("[skip] no extracted/ tree and disc open failed");
         return;
     };
-    host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
     assert!(!host.world.npcs.animate, "liveliness is off by default");
 

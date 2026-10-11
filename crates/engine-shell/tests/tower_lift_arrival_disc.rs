@@ -20,8 +20,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::SceneHost;
+use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

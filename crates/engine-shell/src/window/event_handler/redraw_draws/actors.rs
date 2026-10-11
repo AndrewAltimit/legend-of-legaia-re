@@ -82,7 +82,7 @@ impl<'m> DrawCtx<'_, 'm> {
             // placed-object pass uses (`placement_rotation`); an untilted
             // one keeps the yaw-only matrix.
             let rot = if pose.tilted() {
-                legaia_engine_render::battle_intro::placement_rotation(
+                legaia_render_kernels::battle_intro::placement_rotation(
                     pose.pitch, pose.yaw, pose.roll,
                 )
             } else {
@@ -161,7 +161,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // would render an unrelated scene mesh, and unresolved
         // templates (no `tmd_ref`) never upload - both degrade
         // to "no draw".
-        for d in crate::tile_board_draws::tile_board_actor_draws(w) {
+        for d in legaia_engine_core::tile_board::tile_board_actor_draws(w) {
             if !app.drained_spawn_slots.contains(&d.slot) {
                 continue;
             }
@@ -233,7 +233,7 @@ impl<'m> DrawCtx<'_, 'm> {
             && let Some(gi) = app.battle_ground_mesh
             && let Some(gmesh) = store.meshes.get(gi)
         {
-            use legaia_engine_vm::battle_ground_grid as grid;
+            use legaia_engine_battle_vm::battle_ground_grid as grid;
             let flip = PlayWindowApp::battle_stage_model();
             draws.push(SceneDraw {
                 mesh: gmesh,
@@ -312,7 +312,7 @@ impl<'m> DrawCtx<'_, 'm> {
             // creature performs, restored at `0x36`.
             if in_battle
                 && actor.battle.render_flag
-                    == legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN
+                    == legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN
             {
                 continue;
             }
@@ -339,7 +339,7 @@ impl<'m> DrawCtx<'_, 'm> {
             // only holds the LAST repositioned cell (and a slot the
             // drain hasn't uploaded still wears the naive pre-bind).
             // The player (tile table slot 0) stays on this path.
-            if crate::tile_board_draws::is_tile_actor_slot(&app.session.host.world, i) {
+            if legaia_engine_core::tile_board::is_tile_actor_slot(&app.session.host.world, i) {
                 continue;
             }
             // The `opdeene` prologue cutscene is an abstract vignette

@@ -5,7 +5,7 @@ use super::super::*;
 use super::READEF_SLOT;
 use super::pose_codec::{encode_channel_delta, pack_part};
 use super::retarget::retarget_clip_wrist;
-use legaia_asset::me_archive;
+use legaia_actor_formats::me_archive;
 
 /// Rebuild ONE entry of a (main art) "ME" archive slot: entry
 /// `entry_index` becomes the retargeted sibling `clip` at the entry's
@@ -86,7 +86,7 @@ pub struct RebuiltArtSlot {
 pub fn rebuild_art_slot_entry(
     slot: &[u8],
     entry_index: usize,
-    chain: &[&legaia_asset::monster_archive::MonsterAnimation],
+    chain: &[&legaia_actor_formats::monster_archive::MonsterAnimation],
     rig: &PlayerRig,
     player_file: &[u8],
     archive_entry: &[u8],
@@ -188,11 +188,11 @@ pub fn rebuild_art_slot_entry(
 /// The playback rate a concatenated chain runs at: the fastest stage's,
 /// so every slower stage can be stretched up to it rather than any stage
 /// being decimated down.
-fn chain_rate(stages: &[&legaia_asset::monster_archive::MonsterAnimation]) -> u8 {
+fn chain_rate(stages: &[&legaia_actor_formats::monster_archive::MonsterAnimation]) -> u8 {
     stages.iter().map(|c| winpose_rate(c)).max().unwrap_or(1)
 }
 
-fn winpose_rate(clip: &legaia_asset::monster_archive::MonsterAnimation) -> u8 {
+fn winpose_rate(clip: &legaia_actor_formats::monster_archive::MonsterAnimation) -> u8 {
     clip.rate.max(1)
 }
 
@@ -204,7 +204,7 @@ fn winpose_rate(clip: &legaia_asset::monster_archive::MonsterAnimation) -> u8 {
 /// common rate `R`. `None` when the total will not fit the stream head's
 /// `u8` frame count.
 fn chain_frames(
-    stages: &[&legaia_asset::monster_archive::MonsterAnimation],
+    stages: &[&legaia_actor_formats::monster_archive::MonsterAnimation],
     target_rate: u8,
 ) -> Option<(usize, Vec<usize>)> {
     let r = target_rate.max(1) as usize;
@@ -224,7 +224,7 @@ fn chain_frames(
 /// into one stream.
 #[allow(clippy::too_many_arguments)]
 fn build_chain(
-    stages: &[&legaia_asset::monster_archive::MonsterAnimation],
+    stages: &[&legaia_actor_formats::monster_archive::MonsterAnimation],
     per_stage: &[usize],
     rig: &PlayerRig,
     player_file: &[u8],

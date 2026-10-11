@@ -25,7 +25,7 @@
 //! ## What is committed here and what is not
 //!
 //! The two pre-emptive lines are retail sentences; their disc coordinates are
-//! pinned in [`legaia_asset::battle_ui_strings`] and the text is read off the
+//! pinned in [`legaia_ui_formats::battle_ui_strings`] and the text is read off the
 //! user's own image, never stored. [`FormationBanner::line`] therefore takes an
 //! optional resolved template and falls back to the port's own wording, which
 //! is what a host without a disc-read string table shows.
@@ -77,8 +77,8 @@ impl FormationBanner {
     }
 
     /// Which pinned disc string carries this banner's retail wording.
-    pub fn disc_label(self) -> legaia_asset::battle_ui_strings::BattleUiLabel {
-        use legaia_asset::battle_ui_strings::BattleUiLabel as L;
+    pub fn disc_label(self) -> legaia_ui_formats::battle_ui_strings::BattleUiLabel {
+        use legaia_ui_formats::battle_ui_strings::BattleUiLabel as L;
         match self {
             Self::Ambushed => L::Ambushed,
             Self::TeamSurprisedEnemy => L::TeamSurprised,
@@ -96,7 +96,7 @@ impl FormationBanner {
     /// The rendered line.
     ///
     /// `template` is the retail string when the caller has one (read from the
-    /// user's image through [`legaia_asset::battle_ui_strings`]): the `0xC1`
+    /// user's image through [`legaia_ui_formats::battle_ui_strings`]): the `0xC1`
     /// token and the character index byte that follows it are replaced with
     /// `leader`. With no template the port's own wording is used, so a host
     /// that never loaded the overlay still says which way the ambush went.
@@ -149,7 +149,7 @@ mod tests {
     /// label: the SCUS and overlay halves key disjoint label sets.
     #[test]
     fn the_two_label_halves_share_no_key() {
-        use legaia_asset::battle_ui_strings::{OVERLAY_LABELS, SCUS_LABELS};
+        use legaia_ui_formats::battle_ui_strings::{OVERLAY_LABELS, SCUS_LABELS};
         for (_, scus) in SCUS_LABELS {
             assert!(
                 !OVERLAY_LABELS.iter().any(|(_, ovl)| *ovl == scus),

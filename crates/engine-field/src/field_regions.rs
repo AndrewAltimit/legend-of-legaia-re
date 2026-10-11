@@ -453,7 +453,7 @@ pub fn refresh_object_grid_marks(map: &mut [u8]) {
 }
 
 /// Object-cell bit that marks a tile as **owned by the scene-init bind sweep**
-/// (`legaia_asset::field_objects::CELL_BIND_OWNED`, stamped by `FUN_8003AEB0`
+/// (`legaia_scene_formats::field_objects::CELL_BIND_OWNED`, stamped by `FUN_8003AEB0`
 /// from the gate-0 bind triggers). The window sweep skips any placement whose
 /// footprint-anchor tile carries it, which is what keeps the two sweeps
 /// disjoint.

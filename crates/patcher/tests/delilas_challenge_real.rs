@@ -84,7 +84,7 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     let scus = reopen
         .read_named_file("SCUS_942.54")
         .expect("read SCUS from patched image");
-    let routine_off = legaia_asset::item_names::file_offset_for_va(&scus, ROUTINE_VA)
+    let routine_off = legaia_game_tables::item_names::file_offset_for_va(&scus, ROUTINE_VA)
         .expect("resolve routine VA");
     let routine_bytes: Vec<u8> = legaia_delilas_challenge::dome::assemble_routine()
         .iter()
@@ -95,8 +95,8 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
         &routine_bytes[..],
         "seed routine in the cave must match the current (guarded) shape"
     );
-    let roster_off =
-        legaia_asset::item_names::file_offset_for_va(&scus, ROSTER_VA).expect("resolve roster VA");
+    let roster_off = legaia_game_tables::item_names::file_offset_for_va(&scus, ROSTER_VA)
+        .expect("resolve roster VA");
     assert!(
         scus[roster_off..roster_off + 16].iter().any(|&b| b != 0),
         "Delilas roster must be present in the cave"
@@ -141,7 +141,7 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
     {
         let mut downgraded = DiscPatcher::open(patched.clone()).expect("open patched");
         let scus = downgraded.read_named_file("SCUS_942.54").expect("scus");
-        let routine_off = legaia_asset::item_names::file_offset_for_va(&scus, ROUTINE_VA)
+        let routine_off = legaia_game_tables::item_names::file_offset_for_va(&scus, ROUTINE_VA)
             .expect("resolve routine VA");
         // Any non-current word will do; 0 is what no shipped routine carries
         // at its first slot (`addiu a0,zero,0x539`).
@@ -187,7 +187,7 @@ fn delilas_challenge_round_trips_on_the_real_disc() {
 
     // --- Decode-level assertions on the patched koin1 MAN. ---
     let man = &after.decoded;
-    let mf = legaia_asset::man_section::parse(man).expect("patched MAN parses");
+    let mf = legaia_scene_formats::man_section::parse(man).expect("patched MAN parses");
     let dro = mf.data_region_offset;
     let mut found_picker = false;
     for &off in &mf.partitions[1] {
@@ -395,8 +395,8 @@ fn delilas_challenge_honey_fallback_skips_the_custom_items() {
 
     // The grant cave carries exactly the Honey-only routine.
     let scus = reopen.read_named_file("SCUS_942.54").expect("read SCUS");
-    let grant_off =
-        legaia_asset::item_names::file_offset_for_va(&scus, GRANT_VA).expect("resolve grant VA");
+    let grant_off = legaia_game_tables::item_names::file_offset_for_va(&scus, GRANT_VA)
+        .expect("resolve grant VA");
     let want: Vec<u8> = assemble_grant_routine_for(&[HONEY_ITEM_ID])
         .iter()
         .flat_map(|w| w.to_le_bytes())
@@ -421,9 +421,11 @@ fn delilas_challenge_honey_fallback_skips_the_custom_items() {
 
     // Custom-items sites stay retail: the applier jump-table words and the
     // battle-overlay seed-dispatch hook.
-    let jt_off =
-        legaia_asset::item_names::file_offset_for_va(&scus, APPLY_JT_VA + ELIXIR_CLASS as u32 * 4)
-            .expect("resolve applier JT");
+    let jt_off = legaia_game_tables::item_names::file_offset_for_va(
+        &scus,
+        APPLY_JT_VA + ELIXIR_CLASS as u32 * 4,
+    )
+    .expect("resolve applier JT");
     for k in 0..2 {
         let got = u32::from_le_bytes(scus[jt_off + k * 4..jt_off + k * 4 + 4].try_into().unwrap());
         assert_eq!(got, APPLY_DEFAULT_ARM, "applier JT must stay retail");

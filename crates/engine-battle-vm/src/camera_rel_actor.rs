@@ -54,10 +54,10 @@
 //! ## Where it runs
 //!
 //! The Baka Fighter duel hosts the family: its arena camera
-//! (`legaia_engine_core::baka_duel_scene::DuelCamera`) holds the one glide a
+//! (`legaia_engine_minigames::baka_duel::DuelCamera`) holds the one glide a
 //! duel can have live - the round-start spin's settle and a special commit's
 //! swing, both records PROT 0976 builds at `0x80070764` - normalizes it here
-//! and walks it with `legaia_engine_core::camera_rel_glide`, every tick of
+//! and walks it with `crate::camera_rel_glide`, every tick of
 //! `BakaFight`. The battle's own producer does not reach it: the
 //! camera-anchored actor seat (spawn descriptor `DAT_8007071C`, actor list
 //! `_DAT_8007C34C`) has no engine counterpart in a battle, and
@@ -135,7 +135,7 @@ pub struct NormalizedParams {
 ///
 /// PORT: FUN_80021248
 ///
-/// Called by `legaia_engine_core::baka_duel_scene::DuelCamera::arm_glide`,
+/// Called by `legaia_engine_minigames::baka_duel::DuelCamera::arm_glide`,
 /// which `BakaFight` reaches on a special commit and at the end of the
 /// round-start spin - live on both play hosts through `World::tick`. The
 /// battle's producer (`FUN_801D829C`) stays off it; see the module docs.

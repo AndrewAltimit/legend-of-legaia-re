@@ -14,7 +14,7 @@ impl SceneHost {
     pub(super) fn install_battle_sfx_bank(&mut self) {
         if self.bse_bank_cache.is_none() {
             let bytes = match self.index.entry_bytes(BSE_BANK_PROT_ENTRY) {
-                Ok(b) if legaia_asset::bse_bank::detect(&b).is_some() => b.to_vec(),
+                Ok(b) if legaia_container_formats::bse_bank::detect(&b).is_some() => b.to_vec(),
                 Ok(_) => {
                     eprintln!("[scene] PROT {BSE_BANK_PROT_ENTRY} is not a bse bank");
                     Vec::new()
@@ -89,10 +89,12 @@ impl SceneHost {
             return;
         }
         self.move_power_loaded = true;
-        let entry = crate::move_power::BATTLE_ACTION_OVERLAY_PROT_ENTRY;
+        let entry = legaia_engine_battle::move_power::BATTLE_ACTION_OVERLAY_PROT_ENTRY;
         match self.index.entry_bytes(entry) {
             Ok(bytes) => {
-                if let Some(cat) = crate::move_power::MovePowerCatalog::from_overlay_0898(&bytes) {
+                if let Some(cat) =
+                    legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(&bytes)
+                {
                     self.world.tables.move_power = Some(cat);
                     // Retain the overlay so the move-FX render path can read the
                     // 0x801f6324 prototype records' move-VM bytecode.
@@ -106,7 +108,7 @@ impl SceneHost {
                 // The element-affinity matrix + per-character element table are
                 // sibling static data in the same overlay, so parse them from the
                 // same bytes. A failure leaves the neutral 100% multiplier active.
-                if let Some(aff) = legaia_asset::element_affinity::parse(&bytes) {
+                if let Some(aff) = legaia_game_tables::element_affinity::parse(&bytes) {
                     self.world.tables.element_affinity = Some(aff);
                 } else {
                     eprintln!(
@@ -116,7 +118,7 @@ impl SceneHost {
                 // The battle camera's per-character height table (0x801F4D2C)
                 // is sibling static data in the same overlay. A failure leaves
                 // the camera on its single traced fallback height.
-                if let Some(heights) = legaia_asset::battle_camera_table::parse(&bytes) {
+                if let Some(heights) = legaia_game_tables::battle_camera_table::parse(&bytes) {
                     self.world.tables.battle_camera_heights = Some(heights);
                 } else {
                     eprintln!(
@@ -125,7 +127,8 @@ impl SceneHost {
                 }
                 // The Seru-absorb banner's caption pieces (0x801F4DFC /
                 // 0x801F4C28) are sibling rodata in the same overlay.
-                self.world.tables.absorb_caption = legaia_asset::absorb_caption::parse(&bytes);
+                self.world.tables.absorb_caption =
+                    legaia_game_tables::absorb_caption::parse(&bytes);
                 // The loss window's text (0x801F4C78 / 0x801F4C94) is sibling
                 // rodata in the same overlay.
                 self.world.tables.defeat_text =
@@ -134,7 +137,7 @@ impl SceneHost {
                 // data in the same overlay. A failure leaves the stager off,
                 // so levelled Seru casts carry no secondary debuff.
                 if let Some(side) =
-                    legaia_asset::seru_side_effect::SeruSideEffectTable::parse(&bytes)
+                    legaia_game_tables::seru_side_effect::SeruSideEffectTable::parse(&bytes)
                 {
                     self.world.tables.seru_side_effects = Some(side);
                 } else {
@@ -156,14 +159,14 @@ impl SceneHost {
     /// reads all 64 once instead, because the band is small static data and the
     /// alternative is a disc read inside a battle frame. A cast then resolves
     /// its module through PROT 0898's own dispatch arithmetic
-    /// (`legaia_engine_vm::battle_cast_dispatch`) and stages that module's
+    /// (`legaia_engine_battle_vm::battle_cast_dispatch`) and stages that module's
     /// spawn records ([`crate::world::World::spawn_cast_module_fx`]).
     ///
     /// Entries that fail to read are skipped rather than aborting the install -
     /// a cast whose module is missing simply stages no records, which is the
     /// disc-free behaviour. `see docs/subsystems/cast-module.md`.
     pub(super) fn ensure_cast_effect_pool(&mut self) {
-        use legaia_asset::cast_effect_pool::{
+        use legaia_overlay_images::cast_effect_pool::{
             CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST, CastEffectPool,
         };
         if self.cast_effect_pool_loaded {
@@ -187,14 +190,14 @@ impl SceneHost {
             .install_cast_effect_pool(std::sync::Arc::new(pool));
         // The attack names the summon modules' caption arms print: each
         // player cast's `summon.dat` actor record `rec[0]` string.
-        if let Ok(summon_dat) = self
-            .index
-            .entry_bytes(u32::from(legaia_asset::summon_readef::SUMMON_PROT_INDEX))
-        {
+        if let Ok(summon_dat) = self.index.entry_bytes(u32::from(
+            legaia_actor_formats::summon_readef::SUMMON_PROT_INDEX,
+        )) {
             let names: std::collections::BTreeMap<u8, String> =
-                legaia_asset::summon_readef::PLAYER_CAST_IDS
+                legaia_actor_formats::summon_readef::PLAYER_CAST_IDS
                     .filter_map(|id| {
-                        let cast = legaia_asset::summon_readef::parse_cast(&summon_dat, id).ok()?;
+                        let cast = legaia_actor_formats::summon_readef::parse_cast(&summon_dat, id)
+                            .ok()?;
                         Some((id, cast.attack_name?))
                     })
                     .collect();
@@ -221,7 +224,7 @@ impl SceneHost {
     /// battle files: for each roster character (Vahn / Noa / Gala = PROT
     /// 863 / 864 / 865), splice that character's *equipped* sections and
     /// read each swing record's `+0x74` AP cost
-    /// (`legaia_asset::battle_char_assembly::swing_command_costs`, slots
+    /// (`legaia_actor_formats::battle_char_assembly::swing_command_costs`, slots
     /// `0xC..=0xF` = Left / Right / Down / Up). A slot whose section can't
     /// be resolved keeps the favored base `0x1E` - the disc-free
     /// behaviour.
@@ -252,12 +255,12 @@ impl SceneHost {
             let Ok(bytes) = self.index.entry_bytes(prot) else {
                 continue;
             };
-            let Some(pack) = legaia_asset::battle_data_pack::detect(&bytes) else {
+            let Some(pack) = legaia_actor_formats::battle_data_pack::detect(&bytes) else {
                 continue;
             };
-            let Ok(costs) =
-                legaia_asset::battle_char_assembly::swing_command_costs(&bytes, &pack, &equipped)
-            else {
+            let Ok(costs) = legaia_actor_formats::battle_char_assembly::swing_command_costs(
+                &bytes, &pack, &equipped,
+            ) else {
                 continue;
             };
             for (i, c) in costs.iter().enumerate() {
@@ -298,7 +301,7 @@ impl SceneHost {
         };
         for (slot, id) in pending {
             if let Ok(Some(clips)) =
-                legaia_asset::monster_archive::animations_by_entry(&archive, id)
+                legaia_actor_formats::monster_archive::animations_by_entry(&archive, id)
                 && clips.iter().any(Option::is_some)
             {
                 self.world
@@ -318,8 +321,10 @@ impl SceneHost {
                 .get(slot)
                 .is_some_and(|a| a.battle_animation.is_none());
             if unposed
-                && let Ok(Some(idle)) = legaia_asset::monster_archive::idle_animation(&archive, id)
-                && let Some(player) = crate::battle_anim::MonsterAnimPlayer::new(&idle)
+                && let Ok(Some(idle)) =
+                    legaia_actor_formats::monster_archive::idle_animation(&archive, id)
+                && let Some(player) =
+                    legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&idle)
             {
                 self.world.set_actor_battle_animation(slot, player);
             }
@@ -341,7 +346,7 @@ impl SceneHost {
     ///
     /// REF: FUN_800513F0
     pub fn ensure_battle_party_forms(&mut self) {
-        if !matches!(self.world.mode, crate::world::SceneMode::Battle) {
+        if !matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Battle) {
             return;
         }
         let serial = self.world.battle.entry_serial;
@@ -379,7 +384,7 @@ impl SceneHost {
     ///
     /// REF: FUN_801F0450
     pub(super) fn refresh_battle_auto_combo_inputs(&mut self) {
-        use legaia_asset::battle_char_assembly as bca;
+        use legaia_actor_formats::battle_char_assembly as bca;
         const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
         const GUARD_TABLE_VA: u32 = 0x801F_672C;
         for (slot, &prot) in PLAYER_FILE_PROT.iter().enumerate() {
@@ -392,7 +397,7 @@ impl SceneHost {
                 continue;
             };
             let inputs = &mut self.world.battle.auto_combo.inputs[slot];
-            if let Some(pack) = legaia_asset::battle_data_pack::detect(&bytes)
+            if let Some(pack) = legaia_actor_formats::battle_data_pack::detect(&bytes)
                 && let Ok(swings) = bca::swing_battle_animations(&bytes, &pack, &equipped)
             {
                 let mut heads = [[0u8; 4]; 4];
@@ -425,9 +430,10 @@ impl SceneHost {
                 inputs.art_count = count;
             }
         }
-        if let Some(rec) = legaia_asset::static_overlay::overlay_map().by_label("battle_action")
+        if let Some(rec) =
+            legaia_overlay_images::static_overlay::overlay_map().by_label("battle_action")
             && let Ok(bytes) = self.index.entry_bytes(rec.prot_index)
-            && let Ok(image) = legaia_asset::static_overlay::as_loaded(&bytes, rec)
+            && let Ok(image) = legaia_overlay_images::static_overlay::as_loaded(&bytes, rec)
             && let Some(off) = GUARD_TABLE_VA.checked_sub(rec.base_va)
             && let Some(raw) = image.get(off as usize..off as usize + 8)
         {

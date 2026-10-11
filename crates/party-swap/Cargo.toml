@@ -15,3 +15,5 @@ legaia-bytes.workspace = true
 legaia-lzs.workspace = true
 legaia-tim.workspace = true
 legaia-tmd.workspace = true
+legaia-actor-formats.workspace = true
+legaia-container-formats.workspace = true

@@ -95,7 +95,7 @@ impl Frame {
     /// fixed 3x would compare the bars and a misscaled picture.
     pub fn from_engine_capture(rgba: &[u8], width: usize, height: usize) -> Result<Self> {
         let ((x0, y0), s) =
-            legaia_engine_render::pause_menu::stage_transform(width as u32, height as u32);
+            legaia_engine_ui::pause_menu::stage_transform(width as u32, height as u32);
         let (x0, y0, s) = (x0.max(0) as usize, y0.max(0) as usize, s as usize);
         if x0 + FRAME_W * s > width || y0 + FRAME_H * s > height || rgba.len() < width * height * 4
         {
@@ -264,7 +264,7 @@ pub fn engine_frame(
     label: &str,
     save: &legaia_save::SaveFile,
     hud_countdown: Option<i16>,
-    camera_block: Option<&legaia_engine_core::camera_zone::CameraZoneConfig>,
+    camera_block: Option<&legaia_engine_field::camera_zone::CameraZoneConfig>,
     seat_focus: Option<[i32; 2]>,
     extra_env: &[(&str, String)],
 ) -> Result<Frame> {

@@ -11,7 +11,7 @@
 //!   into the SFX ring (`FUN_801D3B18`), category `2`.
 //!
 //! All three are decoded from the disc's static SFX descriptor table
-//! (`legaia_asset::sfx_table`) and fired against the bank their own **category**
+//! (`legaia_game_tables::sfx_table`) and fired against the bank their own **category**
 //! names: a category selects a mixer record whose `+8` is a VAB slot id, slot 0
 //! is the system bank (extraction PROT 0868) and slot 2 the class-2 bank
 //! (PROT 0869) the retail battle scene loader / Baka init load. The cue names
@@ -28,10 +28,12 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::sfx_table::{PINNED_SLOT_BANKS, SLOT2_CLASS2_BANK_ALT_PROT_INDEX, SfxTable};
 use legaia_engine_audio::{Spu, VabBank, spu::ram::SPU_RAM_BYTES, spu::ram::SpuAllocator};
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_shell::boot::SFX_BANK_SPU_BYTES;
+use legaia_engine_session::boot::SFX_BANK_SPU_BYTES;
+use legaia_game_tables::sfx_table::{
+    PINNED_SLOT_BANKS, SLOT2_CLASS2_BANK_ALT_PROT_INDEX, SfxTable,
+};
 
 /// Cue ids (descriptor indices) under test.
 const CUE_ART_STRIKE: u8 = 0x1A;

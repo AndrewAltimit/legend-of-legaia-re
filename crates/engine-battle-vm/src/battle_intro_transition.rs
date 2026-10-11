@@ -609,7 +609,7 @@ pub struct IntroQuadRequest {
 /// PORT: FUN_801CF1B0
 ///
 /// WIRED. Its one caller [`crate::battle_intro_styles::tick_curtain`] draws
-/// end to end: `legaia_engine_render::battle_intro::BattleIntro` owns the
+/// end to end: `legaia_render_kernels::battle_intro::BattleIntro` owns the
 /// `0x14`-stride descriptor table - parsed off PROT 0979 by
 /// `IntroQuadTable::parse_overlay`, so the overlay the older note called
 /// unloaded is read - ticks it from the live transition clock, and converts

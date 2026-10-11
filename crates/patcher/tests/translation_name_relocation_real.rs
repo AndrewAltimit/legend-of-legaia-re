@@ -14,8 +14,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use legaia_asset::item_names;
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_translate::export::name_table_refs;
 use legaia_translate::markup::{self, Target};

@@ -41,7 +41,8 @@
 //! REF: FUN_801D6704, FUN_8001DCF8, FUN_800520F0, FUN_80025980, FUN_8001FF58,
 //! FUN_800243F0, FUN_80016B6C, FUN_801D8450
 
-use legaia_asset::sfx_table::{SLOT2_CLASS2_BANK_PROT_INDEX, SLOT6_FIELD_BANK_PROT_INDEX};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_game_tables::sfx_table::{SLOT2_CLASS2_BANK_PROT_INDEX, SLOT6_FIELD_BANK_PROT_INDEX};
 
 use super::*;
 
@@ -274,14 +275,14 @@ impl World {
     }
 
     /// Run field-VM op `0x36` sub `3` - `FUN_801D8450` - against the engine:
-    /// replay [`crate::field_audio_release::field_audio_release_steps`] in
+    /// replay [`legaia_engine_field::field_audio_release::field_audio_release_steps`] in
     /// retail's order. The two voice stops cross to the host
     /// ([`Self::take_sfx_voice_stops`]); the slot-6 close and the latch clear
     /// land on [`SfxBankResidency::side_band_teardown`]; `_DAT_8007BA88` has
     /// no engine cell (nothing in the engine raises the forced-channel latch).
     pub fn release_field_audio(&mut self) {
-        use crate::field_audio_release::{FIELD_CUE_GLOBAL_B, ReleaseStep};
-        for step in crate::field_audio_release::field_audio_release_steps() {
+        use legaia_engine_field::field_audio_release::{FIELD_CUE_GLOBAL_B, ReleaseStep};
+        for step in legaia_engine_field::field_audio_release::field_audio_release_steps() {
             match step {
                 ReleaseStep::StopVoice(v) => self.audio.sfx_voice_stops.push(v as u8),
                 ReleaseStep::ReleaseVabSlot(_) => self.audio.residency.side_band_teardown(),
@@ -301,7 +302,9 @@ impl World {
     /// Drain the voices a minigame keyed directly this tick
     /// ([`crate::world::AudioState::sfx_voice_keys`]). Each host keys them
     /// through its explicit voice-attr door (`key_on_voice_attr`).
-    pub fn take_sfx_voice_keys(&mut self) -> Vec<crate::other_game_overlay::VoiceAttrCue> {
+    pub fn take_sfx_voice_keys(
+        &mut self,
+    ) -> Vec<legaia_engine_minigames::other_game_overlay::VoiceAttrCue> {
         std::mem::take(&mut self.audio.sfx_voice_keys)
     }
 }
@@ -309,6 +312,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_engine_mode::mode::SceneMode;
 
     fn world_in(mode: SceneMode, scene: &str) -> World {
         let mut w = World::new();

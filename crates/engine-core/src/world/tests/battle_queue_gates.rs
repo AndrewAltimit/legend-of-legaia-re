@@ -13,6 +13,7 @@
 //!    is the damage kernel's apply-mode look-ahead input.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A one-party-member battle world with `member`'s record installed, ready
 /// for an arts commit.
@@ -102,22 +103,22 @@ fn roster_id_two_reads_the_other_slot_of_the_pair() {
     let mut only_three = [0u8; 8];
     only_three[3] = 0x40;
     assert!(
-        vm::battle_action::miracle_marker_armed(2, &only_two),
+        legaia_engine_battle_vm::battle_action::miracle_marker_armed(2, &only_two),
         "id 2 reads equipment slot 2"
     );
-    assert!(!vm::battle_action::miracle_marker_armed(2, &only_three));
-    assert!(vm::battle_action::miracle_marker_armed(1, &only_three));
-    assert!(!vm::battle_action::miracle_marker_armed(1, &only_two));
-    assert!(vm::battle_action::miracle_marker_armed(3, &only_three));
+    assert!(!legaia_engine_battle_vm::battle_action::miracle_marker_armed(2, &only_three));
+    assert!(legaia_engine_battle_vm::battle_action::miracle_marker_armed(1, &only_three));
+    assert!(!legaia_engine_battle_vm::battle_action::miracle_marker_armed(1, &only_two));
+    assert!(legaia_engine_battle_vm::battle_action::miracle_marker_armed(3, &only_three));
 }
 
 #[test]
 fn the_swing_class_reaches_the_no_input_attack_queue() {
-    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
     let mut w = arts_world([0u8; 8]);
     let mut cat = MonsterCatalog::new();
     let mut low = MonsterDef::new(7, "Low", 100, 10);
-    low.swing_class = vm::battle_action::LOW_SWING_TARGET_CLASS;
+    low.swing_class = legaia_engine_battle_vm::battle_action::LOW_SWING_TARGET_CLASS;
     cat.insert(low);
     let mut tall = MonsterDef::new(8, "Tall", 100, 10);
     tall.swing_class = 0;
@@ -128,7 +129,7 @@ fn the_swing_class_reaches_the_no_input_attack_queue() {
     w.actors[2].battle_monster_id = Some(8);
     assert_eq!(
         w.attack_swing_class_of(1),
-        vm::battle_action::LOW_SWING_TARGET_CLASS
+        legaia_engine_battle_vm::battle_action::LOW_SWING_TARGET_CLASS
     );
     assert_eq!(w.attack_swing_class_of(2), 0);
     // A party slot has no record-pointer-table row in retail; the port
@@ -139,12 +140,19 @@ fn the_swing_class_reaches_the_no_input_attack_queue() {
     // class-2 target, two rolled arm swings for the other.
     let n = w.seed_basic_attack_queue(0, 1);
     assert_eq!(n, 1);
-    assert_eq!(w.actors[0].battle.params[0], vm::battle_action::SWING_LOW);
+    assert_eq!(
+        w.actors[0].battle.params[0],
+        legaia_engine_battle_vm::battle_action::SWING_LOW
+    );
     let n = w.seed_basic_attack_queue(0, 2);
-    assert_eq!(n, vm::battle_action::BASIC_ATTACK_SWINGS);
+    assert_eq!(
+        n,
+        legaia_engine_battle_vm::battle_action::BASIC_ATTACK_SWINGS
+    );
     for b in &w.actors[0].battle.params[..2] {
         assert!(
-            vm::battle_action::is_swing_command(*b) && *b != vm::battle_action::SWING_LOW,
+            legaia_engine_battle_vm::battle_action::is_swing_command(*b)
+                && *b != legaia_engine_battle_vm::battle_action::SWING_LOW,
             "arm swing expected, got {b:#04x}"
         );
     }
@@ -152,13 +160,13 @@ fn the_swing_class_reaches_the_no_input_attack_queue() {
 
 #[test]
 fn the_apply_mode_early_arm_fires_at_the_hit_ticker_seat() {
-    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
     let mut w = arts_world([0u8; 8]);
     // Party width 1, so slots 1..3 are monster seats.
     let mut cat = MonsterCatalog::new();
     let mut tall = MonsterDef::new(9, "Tall", 100, 10);
     // Class 3: only power bytes 0x11..=0x15 can connect with it.
-    tall.swing_class = vm::battle_action::MISS_CLASS_HIGH;
+    tall.swing_class = legaia_engine_battle_vm::battle_action::MISS_CLASS_HIGH;
     cat.insert(tall);
     let mut ordinary = MonsterDef::new(10, "Ordinary", 100, 10);
     ordinary.swing_class = 0;
@@ -168,59 +176,60 @@ fn the_apply_mode_early_arm_fires_at_the_hit_ticker_seat() {
     w.actors[2].battle_monster_id = Some(10);
     // Attacker: party slot 0, cursor parked (so the look-ahead's stream walk
     // is skipped, exactly as retail's `0xFF - 1` bound does).
-    w.actors[0].battle.strike_index = vm::battle_action::STRIKE_CURSOR_PARKED;
+    w.actors[0].battle.strike_index = legaia_engine_battle_vm::battle_action::STRIKE_CURSOR_PARKED;
 
     // Every remaining power byte is class LOW - nothing left can connect with
     // a class-3 target, so the total lands on this hit.
     let low_run = [0x05u8, 0x05, 0, 0];
     assert_eq!(
         w.hit_apply_mode(0, 1, &low_run, 0),
-        vm::battle_action::APPLY_MODE_EARLY
+        legaia_engine_battle_vm::battle_action::APPLY_MODE_EARLY
     );
     // A class-HIGH byte still ahead keeps it on the ordinary arm...
     let mixed = [0x05u8, 0x12, 0, 0];
     assert_eq!(
         w.hit_apply_mode(0, 1, &mixed, 0),
-        vm::battle_action::APPLY_MODE_NORMAL
+        legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL
     );
     // ...and an ordinary-class target is never on the early arm.
     assert_eq!(
         w.hit_apply_mode(0, 2, &low_run, 0),
-        vm::battle_action::APPLY_MODE_NORMAL
+        legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL
     );
 }
 
 #[test]
 fn the_war_god_carry_arm_fires_from_the_attackers_own_ability_word() {
-    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
     let mut w = arts_world([0u8; 8]);
     let mut cat = MonsterCatalog::new();
     cat.insert(MonsterDef::new(11, "Ordinary", 100, 10));
     w.set_monster_catalog(cat);
     w.actors[1].battle_monster_id = Some(11);
-    w.actors[0].battle.strike_index = vm::battle_action::STRIKE_CURSOR_PARKED;
+    w.actors[0].battle.strike_index = legaia_engine_battle_vm::battle_action::STRIKE_CURSOR_PARKED;
     let run = [0x05u8, 0, 0, 0];
 
     assert_eq!(
         w.hit_apply_mode(0, 1, &run, 0),
-        vm::battle_action::APPLY_MODE_NORMAL
+        legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL
     );
-    w.party.character_ability_bits[0] = vm::battle_action::WAR_GOD_ATTACK_X2_BIT;
+    w.party.character_ability_bits[0] =
+        legaia_engine_battle_vm::battle_action::WAR_GOD_ATTACK_X2_BIT;
     assert_eq!(
         w.hit_apply_mode(0, 1, &run, 0),
-        vm::battle_action::APPLY_MODE_CARRY,
+        legaia_engine_battle_vm::battle_action::APPLY_MODE_CARRY,
         "first pass of the Attack x2 pair applies nothing"
     );
     w.battle_ctx.attack_x2_pass = 1;
     assert_eq!(
         w.hit_apply_mode(0, 1, &run, 0),
-        vm::battle_action::APPLY_MODE_CARRY,
+        legaia_engine_battle_vm::battle_action::APPLY_MODE_CARRY,
         "the second pass is still under the bound"
     );
-    w.battle_ctx.attack_x2_pass = vm::battle_action::ATTACK_X2_PASS_BOUND;
+    w.battle_ctx.attack_x2_pass = legaia_engine_battle_vm::battle_action::ATTACK_X2_PASS_BOUND;
     assert_eq!(
         w.hit_apply_mode(0, 1, &run, 0),
-        vm::battle_action::APPLY_MODE_NORMAL
+        legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL
     );
 }
 
@@ -332,10 +341,11 @@ fn a_party_target_never_leaves_the_ordinary_apply_arm() {
     // an ally is always the ordinary arm.
     let mut w = arts_world([0u8; 8]);
     w.party.party_count = 3;
-    w.party.character_ability_bits[0] = vm::battle_action::WAR_GOD_ATTACK_X2_BIT;
-    w.actors[0].battle.strike_index = vm::battle_action::STRIKE_CURSOR_PARKED;
+    w.party.character_ability_bits[0] =
+        legaia_engine_battle_vm::battle_action::WAR_GOD_ATTACK_X2_BIT;
+    w.actors[0].battle.strike_index = legaia_engine_battle_vm::battle_action::STRIKE_CURSOR_PARKED;
     assert_eq!(
         w.hit_apply_mode(0, 1, &[0x05, 0, 0, 0], 0),
-        vm::battle_action::APPLY_MODE_NORMAL
+        legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL
     );
 }

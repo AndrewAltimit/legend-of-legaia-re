@@ -2,7 +2,7 @@
 //! the real overlay bytes.
 //!
 //! Validates, on the user's disc extraction, the structural constants the
-//! [`legaia_engine_core::screen_fx`] port is built on:
+//! [`legaia_engine_effects::screen_fx`] port is built on:
 //!
 //! * the 5-entry sprite-script sub-op dispatch table at the overlay head
 //!   (`jr *(0x801F69D8 + sub*4)`);
@@ -19,7 +19,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::screen_fx::{
+use legaia_engine_effects::screen_fx::{
     SCREEN_FX_DESCRIPTOR_VAS, SCREEN_FX_HANDLER_VAS, SCREEN_FX_LINK_BASE, SCREEN_FX_OVERLAY_PROT,
     SPRITE_SUBOP_ENTRY_VAS,
 };

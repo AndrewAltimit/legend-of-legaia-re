@@ -1,6 +1,6 @@
 //! The battle **stage-id** byte `_DAT_8007B64A`: which stage overlay slot the
 //! current fight reads, and so which arm the side-band tick
-//! ([`crate::battle_sideband`]) takes.
+//! ([`legaia_engine_battle::battle_sideband`]) takes.
 //!
 //! Retail treats the byte as last-writer-wins across five writers, each
 //! ported at its own seat and writing [`crate::world::BattleState::stage_id`]:

@@ -5,8 +5,8 @@
 //! seru at a fixed level - and the preference reseeds every bucket.
 //!
 //! The offer isn't stored - it's recomputed on demand from the shared kernel
-//! [`legaia_asset::seru_trade`] using `(master seed, play-time bucket)`, the
-//! same [`legaia_asset::seru_trade::bucket_offer`] stream the randomizer bakes
+//! [`legaia_game_tables::seru_trade`] using `(master seed, play-time bucket)`, the
+//! same [`legaia_game_tables::seru_trade::bucket_offer`] stream the randomizer bakes
 //! into the on-disc schedule the retail handler reads, so the engine and a
 //! patched disc always show the same trade for the same seed + bucket. The
 //! randomizer embeds only the master seed (+ enabled flag) in the disc;
@@ -16,12 +16,12 @@
 //!
 //! "Owning" a seru here means the spell id sits in a character record's spell
 //! list (`+0x13D`, [`legaia_save::SpellList`]); the tradeable id space is the
-//! player Seru-magic block ([`legaia_asset::seru_trade::SERU_POOL_START`]
-//! `..=`[`legaia_asset::seru_trade::SERU_POOL_END`]), the same ids
-//! [`legaia_asset::spell_names`] names. A trade rewrites the owner's spell list
+//! player Seru-magic block ([`legaia_game_tables::seru_trade::SERU_POOL_START`]
+//! `..=`[`legaia_game_tables::seru_trade::SERU_POOL_END`]), the same ids
+//! [`legaia_game_tables::spell_names`] names. A trade rewrites the owner's spell list
 //! in place, so the new seru is castable the next time a battle loads the party.
 
-use legaia_asset::seru_trade::{self, BucketOffer, OwnedSeru, OwnerTrade, SeruTradeConfig};
+use legaia_game_tables::seru_trade::{self, BucketOffer, OwnedSeru, OwnerTrade, SeruTradeConfig};
 use legaia_save::CharacterRecord;
 
 /// Whether `id` is a tradeable player seru (the Seru-magic block).
@@ -74,7 +74,7 @@ pub enum TradeResult {
 /// UI before confirming, and the byte the retail handler writes into the level
 /// array (`+0x161`).
 ///
-/// [`legaia_asset::seru_trade::expand_offers`] already filters out owners who
+/// [`legaia_game_tables::seru_trade::expand_offers`] already filters out owners who
 /// hold the received seru, so the normal path is the in-place replace; if a
 /// stale trade slips through with the received seru already owned, the given
 /// slot is compact-removed instead (no duplicate is created). Returns what
@@ -134,7 +134,7 @@ pub struct SeruTradeSession {
     /// The disc-embedded config (master seed + offer cap).
     pub config: SeruTradeConfig,
     /// This vendor's phase offset into the bucket schedule
-    /// ([`legaia_asset::seru_trade::vendor_bucket_offset`], summed from the
+    /// ([`legaia_game_tables::seru_trade::vendor_bucket_offset`], summed from the
     /// shop's stock + name exactly as the retail handler sums the armed
     /// op-`0x49` record) - so each trader shows its own offer at any given
     /// play time while the disc stores one schedule.
@@ -299,7 +299,7 @@ pub fn trade_screen_text(
     pending: Option<&OwnerTrade>,
     confirming: bool,
     party: &[CharacterRecord],
-    names: Option<&legaia_asset::spell_names::SpellNameTable>,
+    names: Option<&legaia_game_tables::spell_names::SpellNameTable>,
 ) -> TradeScreenText {
     let name_of = |id: u8| -> String {
         names

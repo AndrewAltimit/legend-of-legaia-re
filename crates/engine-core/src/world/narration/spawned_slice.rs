@@ -7,7 +7,7 @@ use super::*;
 impl World {
     pub(super) fn run_spawned_record_slice(
         &mut self,
-        tl: &mut crate::cutscene_timeline::CutsceneTimeline,
+        tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
         modal: bool,
     ) -> bool {
         tl.frames = tl.frames.saturating_add(1);
@@ -191,15 +191,17 @@ impl World {
                 npc_glide_hold.push(slot);
             }
             fw.frames += 1;
-            let r = vm::motion_vm::step(
+            let r = legaia_engine_motion_vm::motion_vm::step(
                 &mut fw.state,
-                vm::motion_vm::MotionTarget::default(),
+                legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
                 &fw.program,
             );
             if fw.state.yaw_written {
                 self.set_timeline_facing(fw.slot, fw.state.yaw as i16);
             }
-            if r != vm::motion_vm::StepResult::Done && fw.frames < WALK_PARK_TIMEOUT {
+            if r != legaia_engine_motion_vm::motion_vm::StepResult::Done
+                && fw.frames < WALK_PARK_TIMEOUT
+            {
                 tl.npc_facings.push(fw);
             }
         }
@@ -243,9 +245,9 @@ impl World {
         // REF: FUN_8003774C (case 0x38 interpreted in place)
         if let Some(mut fw) = tl.facing_wait.take() {
             fw.frames += 1;
-            let r = vm::motion_vm::step(
+            let r = legaia_engine_motion_vm::motion_vm::step(
                 &mut fw.state,
-                vm::motion_vm::MotionTarget::default(),
+                legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
                 &fw.program,
             );
             if fw.state.yaw_written {
@@ -253,7 +255,9 @@ impl World {
                 // exactly as retail's `+0x26` does); render consumers mask.
                 self.set_timeline_facing(fw.slot, fw.state.yaw as i16);
             }
-            if r != vm::motion_vm::StepResult::Done && fw.frames < WALK_PARK_TIMEOUT {
+            if r != legaia_engine_motion_vm::motion_vm::StepResult::Done
+                && fw.frames < WALK_PARK_TIMEOUT
+            {
                 tl.facing_wait = Some(fw);
                 self.field_vm.channels = channels;
                 self.field_vm.stepping_view.clear();
@@ -310,7 +314,7 @@ impl World {
                 // clears the overlay. Skip past the block either way.
                 if let Some(site) = tl.narration_blocks.iter().find(|b| b.op_offset == pc) {
                     match site.kind {
-                        legaia_asset::cutscene_text::NarrationKind::Crawl => {
+                        legaia_scene_formats::cutscene_text::NarrationKind::Crawl => {
                             if host.world.cutscene_narration_active() {
                                 tl.narration_pc = Some(pc);
                                 tl.narration_pending_open = true;
@@ -336,7 +340,7 @@ impl World {
                             tl.pc = site_end;
                             continue;
                         }
-                        legaia_asset::cutscene_text::NarrationKind::Card => {
+                        legaia_scene_formats::cutscene_text::NarrationKind::Card => {
                             let blank = site.pages.iter().all(|p| p.trim().is_empty());
                             host.world.cutscene.card = if blank {
                                 None
@@ -376,7 +380,7 @@ impl World {
                         // escapes, exactly as the prop-interaction panel
                         // does, or a name renders as an empty string.
                         let _ = modal;
-                        let mut panel = crate::dialog::OwnedDialogPanel::at_segment(
+                        let mut panel = legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(
                             std::sync::Arc::clone(&tl.bytecode),
                             pc,
                         );
@@ -510,7 +514,7 @@ impl World {
                     && let Some(t) = vm::field::peek_extended(&tl.bytecode, pc)
                     && t != 0xF8
                     && t != 0xFB
-                    && let Ok(insn) = legaia_asset::field_disasm::decode(&tl.bytecode, pc)
+                    && let Ok(insn) = legaia_scene_formats::field_disasm::decode(&tl.bytecode, pc)
                 {
                     if pc < tl.visited.len() {
                         tl.visited[pc] = true;
@@ -568,8 +572,8 @@ impl World {
                     };
                     let (tx, tz) = (decode(b0), decode(b1));
                     let speed = crate::world::field_npc_walk_step_speed(0x80, b2 & 7);
-                    let parked_sentinel =
-                        (b0 & 0x7F, b1 & 0x7F) == crate::man_field_scripts::PARKED_SENTINEL_TILE;
+                    let parked_sentinel = (b0 & 0x7F, b1 & 0x7F)
+                        == legaia_engine_field::man_field_scripts::PARKED_SENTINEL_TILE;
                     let walk_slot: Option<Option<u8>> = if ext == Some(0xF8) {
                         Some(None) // player anchor
                     } else if let Some((_, ci)) = target {
@@ -625,7 +629,7 @@ impl World {
                             tl.pc = pc + 5;
                             continue;
                         }
-                        tl.walk_wait = Some(crate::cutscene_timeline::TimelineWalk {
+                        tl.walk_wait = Some(legaia_engine_field::cutscene_timeline::TimelineWalk {
                             slot,
                             target: (tx, tz),
                             resume_pc: pc + 5,
@@ -690,9 +694,9 @@ impl World {
                         channels[ci].ctx.world_x as i16,
                         channels[ci].ctx.world_z as i16,
                     ));
-                    let mut glide = crate::cutscene_timeline::TimelineNpcGlide {
+                    let mut glide = legaia_engine_field::cutscene_timeline::TimelineNpcGlide {
                         slot,
-                        state: vm::motion_vm::MotionState {
+                        state: legaia_engine_motion_vm::motion_vm::MotionState {
                             speed: 1,
                             ..Default::default()
                         },
@@ -752,7 +756,9 @@ impl World {
                     }
                     if op1 & 0x7F == 0 {
                         if let Some(h) =
-                            crate::man_field_scripts::facing_index_to_engine_heading(op0 & 0xF)
+                            legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(
+                                op0 & 0xF,
+                            )
                         {
                             host.world.set_timeline_facing(slot, h);
                         }
@@ -763,9 +769,9 @@ impl World {
                     // live `+0x26`); a never-posed NPC stands at the retail
                     // spawn default 0 = engine 0x800.
                     let cur = host.world.timeline_facing(slot).unwrap_or(0x800);
-                    let leg = crate::cutscene_timeline::TimelineFacing {
+                    let leg = legaia_engine_field::cutscene_timeline::TimelineFacing {
                         slot,
-                        state: vm::motion_vm::MotionState {
+                        state: legaia_engine_motion_vm::motion_vm::MotionState {
                             yaw: (cur as u16) & 0x0FFF,
                             // The timeline ticks once per retail display
                             // frame, so speed 1 maps the operand budget 1:1
@@ -801,7 +807,10 @@ impl World {
                 if let Some((_, ci)) = target
                     && !channels[ci].object_bind
                     && let Some((_, ramp)) =
-                        crate::inline_dialogue::TalkFaceRamp::from_npc_acquire(&tl.bytecode, pc)
+                        legaia_engine_field::inline_dialogue::TalkFaceRamp::from_npc_acquire(
+                            &tl.bytecode,
+                            pc,
+                        )
                 {
                     if pc < tl.visited.len() {
                         tl.visited[pc] = true;
@@ -813,7 +822,7 @@ impl World {
                     ));
                     // The kernel runs in the same actor tick that armed it, so
                     // the leg takes its first frame now.
-                    let mut face = crate::cutscene_timeline::TimelineNpcFace {
+                    let mut face = legaia_engine_field::cutscene_timeline::TimelineNpcFace {
                         slot,
                         ramp,
                         frames: 1,
@@ -838,7 +847,10 @@ impl World {
                     // context, the player kept facing the camera.
                     // REF: FUN_801DE840 (0x801E2148..0x801E21DC)
                     if let Some(mut ramp) =
-                        crate::inline_dialogue::TalkFaceRamp::from_acquire(&tl.bytecode, pc)
+                        legaia_engine_field::inline_dialogue::TalkFaceRamp::from_acquire(
+                            &tl.bytecode,
+                            pc,
+                        )
                     {
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
@@ -952,17 +964,18 @@ impl World {
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
                         }
-                        let mut glide = crate::cutscene_timeline::TimelinePlayerGlide {
-                            state: vm::motion_vm::MotionState {
-                                speed: 1,
-                                ..Default::default()
-                            },
-                            body0,
-                            body1,
-                            rate: if op == 0x37 { 0x80 } else { 0x40 },
-                            resume_pc: pc + 4,
-                            frames: 0,
-                        };
+                        let mut glide =
+                            legaia_engine_field::cutscene_timeline::TimelinePlayerGlide {
+                                state: legaia_engine_motion_vm::motion_vm::MotionState {
+                                    speed: 1,
+                                    ..Default::default()
+                                },
+                                body0,
+                                body1,
+                                rate: if op == 0x37 { 0x80 } else { 0x40 },
+                                resume_pc: pc + 4,
+                                frames: 0,
+                            };
                         if host.world.step_player_glide(&mut glide) {
                             tl.player_glide = Some(glide);
                         }
@@ -1086,27 +1099,33 @@ impl World {
                 let (mut next_pc, kind, mut stop) = match result {
                     FieldStepResult::Advance { next_pc } => (
                         next_pc,
-                        crate::cutscene_timeline::TraceResult::Advance,
+                        legaia_engine_field::cutscene_timeline::TraceResult::Advance,
                         false,
                     ),
                     FieldStepResult::Yield { resume_pc } => (
                         resume_pc,
-                        crate::cutscene_timeline::TraceResult::Yield,
+                        legaia_engine_field::cutscene_timeline::TraceResult::Yield,
                         true,
                     ),
                     // WAIT_FRAMES and conditional holds return `Halt` at the
                     // same PC: end the frame and resume there next tick.
-                    FieldStepResult::Halt { final_pc } => {
-                        (final_pc, crate::cutscene_timeline::TraceResult::Halt, true)
-                    }
+                    FieldStepResult::Halt { final_pc } => (
+                        final_pc,
+                        legaia_engine_field::cutscene_timeline::TraceResult::Halt,
+                        true,
+                    ),
                     // An op this port can't advance past: stop and let the
                     // safety net below arm the hand-off.
-                    FieldStepResult::Pending { pc, .. } => {
-                        (pc, crate::cutscene_timeline::TraceResult::Pending, true)
-                    }
-                    FieldStepResult::Unknown { pc, .. } => {
-                        (pc, crate::cutscene_timeline::TraceResult::Unknown, true)
-                    }
+                    FieldStepResult::Pending { pc, .. } => (
+                        pc,
+                        legaia_engine_field::cutscene_timeline::TraceResult::Pending,
+                        true,
+                    ),
+                    FieldStepResult::Unknown { pc, .. } => (
+                        pc,
+                        legaia_engine_field::cutscene_timeline::TraceResult::Unknown,
+                        true,
+                    ),
                 };
                 // Step past the timeline's conditional-wait parks that are NOT
                 // the modelled channel handshake. Retail Halts at PC on these -
@@ -1154,17 +1173,21 @@ impl World {
                 // *verify*, not a completion wait, so it falls through to the
                 // width step-past below.
                 if op == 0x33
-                    && matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
+                    && matches!(
+                        kind,
+                        legaia_engine_field::cutscene_timeline::TraceResult::Halt
+                    )
                     && next_pc == pc
                     && let Some((tid, _)) = target
                 {
                     let bit = tl.bytecode.get(pc + 2).copied().unwrap_or(0) & 0x1F;
                     if bit != 10 {
-                        tl.channel_wait = Some(crate::cutscene_timeline::ChannelWait {
-                            target_id: tid,
-                            bit,
-                            frames: 0,
-                        });
+                        tl.channel_wait =
+                            Some(legaia_engine_field::cutscene_timeline::ChannelWait {
+                                target_id: tid,
+                                bit,
+                                frames: 0,
+                            });
                         // Leave PC on the op; the pre-step gate resolves the park.
                         break;
                     }
@@ -1185,7 +1208,10 @@ impl World {
                 let npc_clip_spin = op == 0x2D
                     && opcode_byte & 0x80 != 0
                     && tl.bytecode.get(pc + 2) == Some(&8)
-                    && matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
+                    && matches!(
+                        kind,
+                        legaia_engine_field::cutscene_timeline::TraceResult::Halt
+                    )
                     && next_pc == pc
                     && target.is_some_and(|(_, ci)| {
                         !channels[ci].object_bind
@@ -1201,8 +1227,10 @@ impl World {
                 tl.npc_clip_spin_frames = 0;
                 let is_flag_test_handshake = matches!(op, 0x2D | 0x30 | 0x33)
                     || (op == 0x4C && target.is_none() && !glide_wait);
-                if matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
-                    && next_pc == pc
+                if matches!(
+                    kind,
+                    legaia_engine_field::cutscene_timeline::TraceResult::Halt
+                ) && next_pc == pc
                     && op != 0x4A
                     && op != 0x49
                     && !glide_wait
@@ -1215,7 +1243,7 @@ impl World {
                     // `4C D2 53 .. 4C D2 59` run then lost the `44 7A` that
                     // re-seats the village after the quake).
                     let header_size = if opcode_byte & 0x80 != 0 { 2 } else { 1 };
-                    next_pc = legaia_asset::field_disasm::decode(&tl.bytecode, pc)
+                    next_pc = legaia_scene_formats::field_disasm::decode(&tl.bytecode, pc)
                         .map_or(pc + header_size + 1, |insn| pc + insn.size);
                     stop = false;
                 }
@@ -1239,8 +1267,10 @@ impl World {
                 // back to the wait - and retail sits in it until the press;
                 // reading it as a wrap dropped the record and handed the
                 // player the pad in the ending's last scene.
-                if matches!(kind, crate::cutscene_timeline::TraceResult::Advance)
-                    && next_pc <= pc
+                if matches!(
+                    kind,
+                    legaia_engine_field::cutscene_timeline::TraceResult::Advance
+                ) && next_pc <= pc
                     && tl.visited.get(next_pc).copied().unwrap_or(false)
                     && !loop_polls_held_pad(&tl.bytecode, next_pc, pc)
                 {
@@ -1265,15 +1295,20 @@ impl World {
                 // `21` is what stops the fight re-firing until the next touch.
                 if tl.interaction_slot.is_some()
                     && opcode_byte == 0x21
-                    && matches!(kind, crate::cutscene_timeline::TraceResult::Advance)
+                    && matches!(
+                        kind,
+                        legaia_engine_field::cutscene_timeline::TraceResult::Advance
+                    )
                 {
                     tl.done = true;
                     stop = true;
                 }
                 if tl.trace_enabled {
                     if std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some()
-                        && !(matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
-                            && next_pc == pc)
+                        && !(matches!(
+                            kind,
+                            legaia_engine_field::cutscene_timeline::TraceResult::Halt
+                        ) && next_pc == pc)
                     {
                         eprintln!(
                             "DIAG timeline: frame {} pc {pc:#06x} op {opcode_byte:#04x} \
@@ -1283,19 +1318,20 @@ impl World {
                             &tl.bytecode[pc..(pc + 12).min(tl.bytecode.len())]
                         );
                     }
-                    tl.trace.push(crate::cutscene_timeline::TraceEntry {
-                        pc,
-                        opcode_byte,
-                        opcode: opcode_byte & 0x7F,
-                        next_pc,
-                        result: kind,
-                    });
+                    tl.trace
+                        .push(legaia_engine_field::cutscene_timeline::TraceEntry {
+                            pc,
+                            opcode_byte,
+                            opcode: opcode_byte & 0x7F,
+                            next_pc,
+                            result: kind,
+                        });
                 }
                 tl.pc = next_pc;
                 if matches!(
                     kind,
-                    crate::cutscene_timeline::TraceResult::Pending
-                        | crate::cutscene_timeline::TraceResult::Unknown
+                    legaia_engine_field::cutscene_timeline::TraceResult::Pending
+                        | legaia_engine_field::cutscene_timeline::TraceResult::Unknown
                 ) {
                     tl.done = true;
                 }
@@ -1316,7 +1352,10 @@ impl World {
                     // bounded by the glide's own frame count, which the
                     // mover spends one display frame at a time.
                     if ((opcode_byte & 0x7F) == 0x4A || glide_wait)
-                        && matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
+                        && matches!(
+                            kind,
+                            legaia_engine_field::cutscene_timeline::TraceResult::Halt
+                        )
                         && next_pc == pc
                     {
                         tl.frames = tl.frames.saturating_sub(1);
@@ -1333,7 +1372,10 @@ impl World {
                     // record the cap's own note names: `jouine` `P2[16]`
                     // stopped three bytes short of its `4C E2 08` FMV tail.
                     if (opcode_byte & 0x7F) == 0x43
-                        && matches!(kind, crate::cutscene_timeline::TraceResult::Yield)
+                        && matches!(
+                            kind,
+                            legaia_engine_field::cutscene_timeline::TraceResult::Yield
+                        )
                         && tl
                             .bytecode
                             .get(pc + if opcode_byte & 0x80 != 0 { 2 } else { 1 })

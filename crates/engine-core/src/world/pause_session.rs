@@ -102,8 +102,8 @@ pub struct PauseSession {
 
 /// The fade the art's phase exit spawns (`FUN_80024E80` on the stack template
 /// at `0x801EE160..0x801EE1A0` / `0x801EE470..0x801EE4B0`).
-fn travel_fade_template() -> crate::fade::FadeTemplate {
-    crate::fade::FadeTemplate {
+fn travel_fade_template() -> legaia_engine_system::fade::FadeTemplate {
+    legaia_engine_system::fade::FadeTemplate {
         kind: ta::FLASH_FADE_KIND,
         duration: ta::FLASH_FADE_FRAMES,
         start_rgb: [0; 3],
@@ -112,7 +112,7 @@ fn travel_fade_template() -> crate::fade::FadeTemplate {
     }
 }
 
-fn is_travel_fade(f: &crate::fade::FadeState) -> bool {
+fn is_travel_fade(f: &legaia_engine_system::fade::FadeState) -> bool {
     f.kind == i32::from(ta::FLASH_FADE_KIND)
         && f.mode[1] == ta::FLASH_FADE_HOLD
         && f.mode[2] == ta::FLASH_FADE_ID
@@ -222,8 +222,9 @@ impl World {
                 if let Some(y) = self.player_world_y() {
                     actor.player_y = y;
                 }
-                let effect_busy =
-                    self.system_flag_test(u16::from(crate::field_actor_program::FLAG_PLAYER_BUSY));
+                let effect_busy = self.system_flag_test(u16::from(
+                    legaia_engine_field::field_actor_program::FLAG_PLAYER_BUSY,
+                ));
                 let target = session.target.clone();
                 let out = actor.tick(effect_busy, i16::from(frame_delta), || {
                     Some(ta::destination_for(
@@ -239,7 +240,7 @@ impl World {
                     out.restore_player,
                 );
                 if out.spawn_flash {
-                    crate::fade::spawn_fade(
+                    legaia_engine_system::fade::spawn_fade(
                         &mut self.presentation.fade,
                         &travel_fade_template(),
                         ta::FLASH_FADE_ID,

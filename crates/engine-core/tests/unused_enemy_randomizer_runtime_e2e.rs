@@ -25,9 +25,10 @@
 //! that row's original (vanilla, non-unused) monster, so the patched assertion
 //! can't pass vacuously. Skips without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::encounter_man::scene_encounter_from_man;
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_engine_battle::encounter_man::scene_encounter_from_man;
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_patcher::encounter::SceneEncounters;
 use legaia_patcher::unused::UNUSED_ENEMY_IDS;
 

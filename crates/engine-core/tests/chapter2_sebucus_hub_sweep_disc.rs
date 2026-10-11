@@ -22,10 +22,10 @@
 //!
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md convention).
 
-use legaia_asset::man_section::{ManFile, parse as parse_man};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::man_field_scripts::{partition2_record_gates, scene_destinations};
 use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
+use legaia_engine_field::man_field_scripts::{partition2_record_gates, scene_destinations};
+use legaia_engine_system::input::PadButton;
+use legaia_scene_formats::man_section::{ManFile, parse as parse_man};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 

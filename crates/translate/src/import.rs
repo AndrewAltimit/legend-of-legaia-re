@@ -39,7 +39,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
 
-use legaia_asset::man_edit::{self, TextSite};
+use legaia_scene_formats::man_edit::{self, TextSite};
 
 use legaia_disc_patch::disc::DiscPatcher;
 

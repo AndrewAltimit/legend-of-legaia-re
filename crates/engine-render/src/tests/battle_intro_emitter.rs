@@ -21,17 +21,16 @@
 //! companion that parses the real table lives in
 //! `crates/engine-render/tests/battle_intro_table_real.rs`.
 
-use super::*;
-use crate::battle_intro::{BattleIntro, IntroQuadTable};
-use crate::screen_overlay::ScreenPrim;
 use crate::tests::screen_overlay_gpu::{build_harness_vram, headless_device, render_frame_rgba};
-use crate::vram_capture::{
-    CaptureOpts, FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH,
-    blit_rgba_into_vram,
-};
 use legaia_engine_battle_vm::battle_intro_particles::ParticleEnv;
 use legaia_engine_battle_vm::battle_intro_styles::{CURTAIN_COLS, CURTAIN_ROWS, IntroStyle};
 use legaia_engine_battle_vm::battle_intro_swirl::SwirlTrig;
+use legaia_render_kernels::battle_intro::{BattleIntro, IntroQuadTable};
+use legaia_render_kernels::screen_prim::ScreenPrim;
+use legaia_render_kernels::vram_capture::{
+    CaptureOpts, FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH,
+    blit_rgba_into_vram,
+};
 use legaia_tim::Vram;
 
 /// Deterministic stand-in for the disc's trig tables, sqrt and PRNG - the same
@@ -96,9 +95,9 @@ fn intro(style: IntroStyle, total: i32) -> BattleIntro {
 }
 
 /// A frame's primitives with the unconditional backdrop (`prims[0]`, see
-/// [`crate::battle_intro::backdrop_prim`]) dropped, so the positional
+/// [`legaia_render_kernels::battle_intro::backdrop_prim`]) dropped, so the positional
 /// assertions below index the style's own emission.
-fn style_prims(f: &crate::battle_intro::IntroFrame) -> &[ScreenPrim] {
+fn style_prims(f: &legaia_render_kernels::battle_intro::IntroFrame) -> &[ScreenPrim] {
     assert!(
         matches!(f.prims[0], ScreenPrim::Flat(q) if q.ot_index == u32::MAX
             && !q.semi_transparent),
@@ -144,7 +143,7 @@ fn field_frame() -> Vec<u8> {
 ///   disc's descriptor records carry `0xFF` on both edges, so
 ///   `build_intro_quad`'s `c * intensity / 256` shades white to `0x7F` - and
 ///   PSX texture modulation is `(texel * colour) >> 7` at the framebuffer's
-///   5-bit depth ([`legaia_engine_ui::screen_prim::psx_texture_blend`]). A
+///   5-bit depth ([`legaia_render_kernels::screen_prim::psx_texture_blend`]). A
 ///   curtain strip therefore lands one 5-bit level below the frame it was
 ///   cut from (level 0 stays 0), on hardware as here.
 /// * **The 5-bit expansion.** The shader widens the blended level as
@@ -157,7 +156,7 @@ fn field_frame() -> Vec<u8> {
 /// one 5-bit level per pixel, so a strip drawn one row or one column off its
 /// source is wrong by about **eight** 8-bit steps - far outside the bound.
 fn drawn_channel(c5: u8) -> u8 {
-    let q = legaia_engine_ui::screen_prim::psx_texture_blend(c5, 0x7F);
+    let q = legaia_render_kernels::screen_prim::psx_texture_blend(c5, 0x7F);
     ((q as f32 / 31.0) * 255.0).round() as u8
 }
 
@@ -251,7 +250,9 @@ fn the_rows_pull_apart_from_the_screen_centre_as_the_clock_runs() {
     let mut it = intro(IntroStyle::Curtain, 400);
     let first = it.tick(0, 1);
     let later = it.tick(28, 1);
-    let y = |f: &crate::battle_intro::IntroFrame, row: usize| match style_prims(f)[row * 2] {
+    let y = |f: &legaia_render_kernels::battle_intro::IntroFrame, row: usize| match style_prims(f)
+        [row * 2]
+    {
         ScreenPrim::Textured(q) => q.xy[0].1,
         _ => panic!(),
     };
@@ -377,7 +378,7 @@ fn the_additive_styles_white_out_and_the_rest_fade_to_black() {
 /// runs again for the rest of the window. [`backdrop_prim`] is the port's
 /// stand-in for that, which is why it is unconditional.
 ///
-/// [`backdrop_prim`]: crate::battle_intro::backdrop_prim
+/// [`backdrop_prim`]: legaia_render_kernels::battle_intro::backdrop_prim
 #[test]
 fn every_transition_frame_covers_the_screen() {
     for style in [
@@ -480,8 +481,12 @@ fn every_style_skips_its_first_frame_and_keeps_its_fade_schedule() {
 /// apart by blend: the backdrop is opaque, the wash is the subtractive quad
 /// `FUN_80046978` hands to `FUN_80024EE4` with ABR `2`.
 fn split_particle_frame(
-    f: &crate::battle_intro::IntroFrame,
-) -> (usize, Vec<crate::screen_overlay::ScreenQuad>, usize) {
+    f: &legaia_render_kernels::battle_intro::IntroFrame,
+) -> (
+    usize,
+    Vec<legaia_render_kernels::screen_prim::ScreenQuad>,
+    usize,
+) {
     let mut washes = 0;
     let mut quads = Vec::new();
     let mut flats = 0;
@@ -527,7 +532,7 @@ fn the_scatter_field_reconstructs_the_screen_as_8px_patches_at_rest() {
     assert!(
         quads
             .iter()
-            .all(|q| q.ot_index == crate::battle_intro::PARTICLE_OT)
+            .all(|q| q.ot_index == legaia_render_kernels::battle_intro::PARTICLE_OT)
     );
     // At clock 1 the diagonal delay ramp (`(col + row) * 0x40`) has released
     // the cells within `1 * 0x6E`: (0,0) at delay 0 and (0,1)/(1,0) at 0x40.
@@ -549,7 +554,10 @@ fn the_spinup_field_draws_confetti_and_the_expanding_ring() {
     assert_eq!(washes, 0, "FUN_801D0370 never washes");
     assert_eq!(quads.len(), PARTICLE_TICK_COUNT);
     // The FUN_801D1CFC tail: a 96-segment ring, phase 0xA0 at clock 1.
-    assert_eq!(ring, crate::battle_intro::SPINUP_RING_SEGMENTS);
+    assert_eq!(
+        ring,
+        legaia_render_kernels::battle_intro::SPINUP_RING_SEGMENTS
+    );
     // Style B's rest pose also reconstructs the frame: the `>> 3` position
     // pre-divide against the doubled seed constants lands the same 8-px
     // cells (x = -0x500 + col * 0x40 at view z 0x400 is a 1/8 scale).
@@ -560,7 +568,7 @@ fn the_spinup_field_draws_confetti_and_the_expanding_ring() {
 
 #[test]
 fn a_moved_spinup_particle_links_one_ot_word_nearer() {
-    use crate::battle_intro::{PARTICLE_OT, PARTICLE_OT_MOVED};
+    use legaia_render_kernels::battle_intro::{PARTICLE_OT, PARTICLE_OT_MOVED};
     let mut it = intro(IntroStyle::SpinUpParticles, 400);
     it.tick(0, 1);
     // Run the clock far enough that the radial delays start expiring but not
@@ -578,7 +586,7 @@ fn a_moved_spinup_particle_links_one_ot_word_nearer() {
 
 #[test]
 fn the_spinup_ring_expands_fades_and_expires() {
-    use crate::battle_intro::emit_spinup_ring;
+    use legaia_render_kernels::battle_intro::emit_spinup_ring;
     // Phase 0: not started. Phase past 0x1000: expired (clock 26 on).
     let mut none = Vec::new();
     assert!(!emit_spinup_ring(0, &mut none));
@@ -649,8 +657,8 @@ fn the_swirl_draws_both_halves_of_every_drawing_band() {
     for q in &quads {
         assert!(!q.semi_transparent);
         assert!(
-            q.color == crate::battle_intro::SWIRL_RING_RGB
-                || q.color == crate::battle_intro::SWIRL_WALL_RGB
+            q.color == legaia_render_kernels::battle_intro::SWIRL_RING_RGB
+                || q.color == legaia_render_kernels::battle_intro::SWIRL_WALL_RGB
         );
     }
 }
@@ -671,7 +679,7 @@ fn swirl_bands_fly_along_z_and_wind_down_bands_stop_drawing() {
         clock += 1;
         later = it.tick(clock, 1);
     }
-    let count = |f: &crate::battle_intro::IntroFrame| {
+    let count = |f: &legaia_render_kernels::battle_intro::IntroFrame| {
         f.prims
             .iter()
             .filter(|p| matches!(p, ScreenPrim::Textured(_)))
@@ -692,7 +700,7 @@ fn the_swirl_washes_once_the_late_phase_arrives() {
     it.tick(0, 1);
     // The wash reads the previous frame's clock, so it lags the crossing.
     let at = it.tick(LATE_PHASE_FRAME as i16, 1);
-    let washes = |f: &crate::battle_intro::IntroFrame| {
+    let washes = |f: &legaia_render_kernels::battle_intro::IntroFrame| {
         f.prims
             .iter()
             // The backdrop shares the bucket; the wash is the blended one.
@@ -770,7 +778,7 @@ fn the_seeded_sheet_projects_to_the_retail_screen_rect() {
 
 /// Screen bounding box of a frame's primitives - the measurement that told a
 /// moving transition from a still one.
-fn prim_bbox(f: &crate::battle_intro::IntroFrame) -> (i16, i16, i16, i16) {
+fn prim_bbox(f: &legaia_render_kernels::battle_intro::IntroFrame) -> (i16, i16, i16, i16) {
     let (mut lo_x, mut lo_y, mut hi_x, mut hi_y) = (i16::MAX, i16::MAX, i16::MIN, i16::MIN);
     for p in &f.prims {
         let ScreenPrim::Textured(q) = p else { continue };
@@ -890,8 +898,8 @@ fn the_shade_faces_carry_the_three_literals_and_blend_additively() {
 
 #[test]
 fn a_shade_face_draws_on_top_of_its_opaque_sibling() {
-    use crate::screen_overlay::order_primitives;
     use legaia_engine_battle_vm::battle_intro_tiles::SHADE_TPAGE;
+    use legaia_render_kernels::screen_prim::order_primitives;
     let mut it = intro(IntroStyle::TileShatter, 200);
     it.tick(0, 1);
     let f = it.tick(1, 1);
@@ -928,7 +936,7 @@ fn a_shade_face_draws_on_top_of_its_opaque_sibling() {
 
 #[test]
 fn the_euler_kernel_matches_the_cardinal_rotations() {
-    use crate::battle_intro::euler_rot_psx;
+    use legaia_render_kernels::battle_intro::euler_rot_psx;
     // FUN_80026988 composes Rx * Ry * Rz. At the cardinals the q12
     // truncation is exact, so the axis matrices come out clean.
     let id = euler_rot_psx((0, 0, 0));
@@ -947,7 +955,7 @@ fn the_euler_kernel_matches_the_cardinal_rotations() {
     // A mixed rotation agrees with the generic q12 product to within the
     // kernel's own per-term truncation (each element one step at most).
     let m = euler_rot_psx((0x100, 0x200, 0x300));
-    let composed = crate::billboard::rot_z_psx(0); // identity in q12
+    let composed = legaia_render_kernels::billboard::rot_z_psx(0); // identity in q12
     let _ = composed;
     let rx = euler_rot_psx((0x100, 0, 0));
     let ry = euler_rot_psx((0, 0x200, 0));
@@ -984,7 +992,7 @@ fn boxy_tile(pos_z: i16) -> legaia_engine_battle_vm::battle_intro_tiles::TileRec
 
 #[test]
 fn the_backface_cull_is_single_sided() {
-    use crate::battle_intro::emit_tile;
+    use legaia_render_kernels::battle_intro::emit_tile;
     // At the resting pose the front face passes NCLIP and the back face -
     // whose packet row reverses the corner order - rejects. Front is the one
     // 0x80-grey opaque quad; back would be the 0x20-grey one.
@@ -1003,7 +1011,7 @@ fn the_backface_cull_is_single_sided() {
 
 #[test]
 fn the_near_cutoff_drops_a_face_hugging_the_camera() {
-    use crate::battle_intro::emit_tile;
+    use legaia_render_kernels::battle_intro::emit_tile;
     // Control: at the seeded depth the front face (OTZ 0x800) draws.
     let mut far = Vec::new();
     emit_tile(&boxy_tile(0x880), &mut far);
@@ -1205,9 +1213,9 @@ fn the_curtain_redraws_the_captured_field_frame_and_then_opens_it() {
 /// its own pages (`0x135` / `0x137`) are both inside the columns rect. The
 /// curtain does sample the rows rect, so it must keep both.
 mod capture_rects {
-    use crate::battle_intro::{TILE_SHADE_PAGE, capture_rects_for};
-    use crate::vram_capture::{FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, VramRect};
     use legaia_engine_battle_vm::battle_intro_styles::IntroStyle;
+    use legaia_render_kernels::battle_intro::{TILE_SHADE_PAGE, capture_rects_for};
+    use legaia_render_kernels::vram_capture::{FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, VramRect};
 
     /// Halfword-rect overlap, the relation that makes the clobber a clobber.
     fn overlaps(a: VramRect, b: VramRect) -> bool {
@@ -1277,12 +1285,12 @@ mod capture_rects {
 /// wash arm at `0x801D1228..0x801D1230` of `..._801d11d0.txt`).
 mod curtain_accumulation {
     use super::*;
-    use crate::battle_intro::{
-        CURTAIN_DISPLAY_DECAY_5, CURTAIN_MIDPASS_ABR, CURTAIN_MIDPASS_DECAY_5, CURTAIN_MIDPASS_OT,
-        CURTAIN_MIDPASS_RGB, CURTAIN_TRAIL_OT, CURTAIN_TRAIL_RECT,
-    };
     use legaia_engine_battle_vm::battle_intro_styles::{
         CURTAIN_COL_OT_DEPTH, CURTAIN_ROW_OT_DEPTH, CURTAIN_WASH_RGB,
+    };
+    use legaia_render_kernels::battle_intro::{
+        CURTAIN_DISPLAY_DECAY_5, CURTAIN_MIDPASS_ABR, CURTAIN_MIDPASS_DECAY_5, CURTAIN_MIDPASS_OT,
+        CURTAIN_MIDPASS_RGB, CURTAIN_TRAIL_OT, CURTAIN_TRAIL_RECT,
     };
 
     #[test]

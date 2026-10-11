@@ -4,16 +4,16 @@
 //! (`FUN_801D26CC`): one `LINE_G2` packet (GP0 `0x50`, a Gouraud two-point
 //! line, opaque) from the fish's projected point to the rod tip, clipped by
 //! `FUN_801D56E4` and linked at the rod tip's depth bucket. The engine builds
-//! that packet (`legaia_engine_core::fishing::PondSession::line_frame`, clip
+//! that packet (`legaia_engine_fishing::fishing::PondSession::line_frame`, clip
 //! and colours included); this module turns it into the prim set's line kind,
-//! [`crate::screen_prim::line_quad`], with the two end colours carried as
+//! [`legaia_render_kernels::screen_prim::line_quad`], with the two end colours carried as
 //! per-corner Gouraud colours.
 //!
 //! The native window and the browser play page both draw the line through
 //! [`fishing_line_prim`]; the minigames page strokes the same clipped
 //! endpoints and colours on its canvas.
 
-use crate::screen_prim::{ScreenPrim, line_quad};
+use legaia_render_kernels::screen_prim::{ScreenPrim, line_quad};
 
 /// The line's quad in display space: `fish` / `rod` are the clipped
 /// endpoints in retail 320x240 screen space, each end carrying its packet

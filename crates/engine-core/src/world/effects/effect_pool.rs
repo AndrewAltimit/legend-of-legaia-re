@@ -163,7 +163,7 @@ impl World {
 
     /// This frame's effect ribbons - every draw-kind-4 ribbon node (move-VM op
     /// `0x42`) in the live summon, move-FX and effect-script scenes, rebuilt
-    /// from its state ([`crate::summon::SummonScene::ribbon_draws`]). Both
+    /// from its state ([`legaia_engine_effects::summon::SummonScene::ribbon_draws`]). Both
     /// battle hosts draw these in their FX pass, composed like a mesh part.
     ///
     /// Battle only: the emitter `FUN_801CFA48` is battle-overlay code reached
@@ -172,8 +172,8 @@ impl World {
     ///
     /// PORT: FUN_8001ADA4 (case 4's `0x2000` arm, `0x8001B060..0x8001B124`:
     /// the emitter call and the model-list repoint)
-    pub fn active_effect_ribbons(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
-        if self.mode != crate::world::SceneMode::Battle {
+    pub fn active_effect_ribbons(&self) -> Vec<legaia_engine_effects::effect_ribbon::RibbonDraw> {
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle {
             return Vec::new();
         }
         let mut out = Vec::new();
@@ -192,11 +192,13 @@ impl World {
     /// This frame's draw-kind-4 geometry - every live node whose model is
     /// its emitter's per-frame output, each composed like a mesh part: the
     /// ribbons ([`Self::active_effect_ribbons`], battle only), the `0x4000`
-    /// sprite-arm quads ([`crate::effect_sprite_arm`]) and the default arm's
-    /// procedural rings / discs / crowns ([`crate::effect_default_arm`]) of
+    /// sprite-arm quads ([`legaia_engine_effects::effect_sprite_arm`]) and the default arm's
+    /// procedural rings / discs / crowns ([`legaia_engine_effects::effect_default_arm`]) of
     /// the summon, move-FX, effect-script and field ambient parts. This is
     /// the list both hosts' FX passes draw.
-    pub fn active_effect_kind4_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
+    pub fn active_effect_kind4_draws(
+        &self,
+    ) -> Vec<legaia_engine_effects::effect_ribbon::RibbonDraw> {
         let mut out = self.active_effect_ribbons();
         let scenes = self
             .casting

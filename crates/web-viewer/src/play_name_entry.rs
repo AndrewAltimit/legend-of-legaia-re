@@ -2,7 +2,7 @@
 //! prompt, the last screen of the New Game flow before free-roam play.
 //!
 //! Nothing here re-implements the screen. The state machine is
-//! [`legaia_engine_core::name_entry`] (opened by the field VM's pinned
+//! [`legaia_engine_menus::name_entry`] (opened by the field VM's pinned
 //! op-`0x49` while the establishing-sweep timeline runs, stepped through
 //! [`World::step_name_entry`](legaia_engine_core::world::World::step_name_entry))
 //! and the geometry is the shared `legaia-engine-ui` pair
@@ -23,7 +23,7 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::name_entry::{Control, GRID, NameEntry, NameEntryInput, NameEntryState};
+use legaia_engine_menus::name_entry::{Control, GRID, NameEntry, NameEntryInput, NameEntryState};
 use legaia_engine_ui::{self as ui, NameEntryView};
 
 /// Project the engine's [`NameEntry`] onto the renderer-agnostic view the
@@ -41,7 +41,7 @@ fn name_entry_view<'a>(entry: &'a NameEntry, frame: u64) -> NameEntryView<'a> {
         control_cursor,
         confirming: entry.state == NameEntryState::Confirm,
         confirm_yes: entry.confirm_yes,
-        caret_on: legaia_engine_core::name_entry::caret_on(frame),
+        caret_on: legaia_engine_menus::name_entry::caret_on(frame),
     }
 }
 
@@ -57,7 +57,7 @@ impl LegaiaRuntime {
     pub fn debug_enter_town01_opening(&mut self) -> Result<(), String> {
         let host = self.scene_host.host_mut().ok_or("no disc loaded")?;
         host.world.cutscene.entering_town01_opening = true;
-        self.enter_field(legaia_asset::new_game::OPENING_SCENE)
+        self.enter_field(legaia_game_tables::new_game::OPENING_SCENE)
             .map(|_| ())
             .map_err(|e| format!("{e:?}"))
     }

@@ -24,10 +24,10 @@ pub(super) type TutorialStageBox<'a> = (
 /// `legaia-engine-ui` is a leaf that does not link `engine-core` - so
 /// every host that draws the input screen carries this three-line map.
 fn arts_input_screen(
-    p: legaia_engine_core::arts_command_input::ArtsInputScreen,
-) -> legaia_engine_render::arts_input::ArtsInputScreen {
-    use legaia_engine_core::arts_command_input::ArtsInputScreen as Sim;
-    use legaia_engine_render::arts_input::ArtsInputScreen as Ui;
+    p: legaia_engine_battle::arts_command_input::ArtsInputScreen,
+) -> legaia_engine_ui::arts_input::ArtsInputScreen {
+    use legaia_engine_battle::arts_command_input::ArtsInputScreen as Sim;
+    use legaia_engine_ui::arts_input::ArtsInputScreen as Ui;
     match p {
         Sim::Entering => Ui::Entering,
         Sim::Review => Ui::Review,
@@ -42,7 +42,7 @@ fn arts_input_screen(
 pub(super) type CommandChips = (
     Vec<(String, bool)>,
     usize,
-    legaia_engine_render::battle_command_ui::ChipPhase,
+    legaia_engine_ui::battle_command_ui::ChipPhase,
 );
 
 impl PlayWindowApp {
@@ -66,13 +66,13 @@ impl PlayWindowApp {
         // password door): header off the field overlay, one letter per
         // entered symbol, through the same line composition.
         floor.extend(self.session.host.code_lock_lines());
-        stage.extend(legaia_engine_render::ui_text_lines::text_line_draws_for(
+        stage.extend(legaia_engine_ui::text_lines::text_line_draws_for(
             &self.font,
             floor
                 .iter()
                 .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
             [1.0, 1.0, 1.0, 1.0],
-            legaia_engine_render::ui_text_lines::FLOOR_WINDOW_MARKED_INK,
+            legaia_engine_ui::text_lines::FLOOR_WINDOW_MARKED_INK,
         ));
         stage
     }
@@ -83,10 +83,10 @@ impl PlayWindowApp {
     /// open this frame.
     /// The tile board's quit-prompt geometry while its walk SM sits in the
     /// prompt state, `None` otherwise.
-    fn tile_board_prompt_layout(&self) -> Option<legaia_engine_render::TileBoardPromptLayout> {
+    fn tile_board_prompt_layout(&self) -> Option<legaia_engine_ui::TileBoardPromptLayout> {
         self.session.host.world.tile_board_prompt_cursor()?;
-        let (frame, rows, cursor_x) = legaia_engine_core::tile_board::prompt_layout();
-        Some(legaia_engine_render::TileBoardPromptLayout {
+        let (frame, rows, cursor_x) = legaia_engine_minigames::tile_board::prompt_layout();
+        Some(legaia_engine_ui::TileBoardPromptLayout {
             frame,
             rows,
             cursor_x,
@@ -100,19 +100,19 @@ impl PlayWindowApp {
     /// session's own control mapping).
     pub(super) fn name_entry_view<'a>(
         &self,
-        entry: &'a legaia_engine_core::name_entry::NameEntry,
-    ) -> legaia_engine_render::NameEntryView<'a> {
-        use legaia_engine_core::name_entry::GRID;
+        entry: &'a legaia_engine_menus::name_entry::NameEntry,
+    ) -> legaia_engine_ui::NameEntryView<'a> {
+        use legaia_engine_menus::name_entry::GRID;
         let (grid_cursor, control_cursor) = entry.cursor_cells();
-        legaia_engine_render::NameEntryView {
+        legaia_engine_ui::NameEntryView {
             grid_rows: &GRID,
             name: &entry.name,
             default_name: &entry.default_name,
             grid_cursor,
             control_cursor,
-            confirming: entry.state == legaia_engine_core::name_entry::NameEntryState::Confirm,
+            confirming: entry.state == legaia_engine_menus::name_entry::NameEntryState::Confirm,
             confirm_yes: entry.confirm_yes,
-            caret_on: legaia_engine_core::name_entry::caret_on(self.session.host.world.frame),
+            caret_on: legaia_engine_menus::name_entry::caret_on(self.session.host.world.frame),
         }
     }
 
@@ -124,7 +124,7 @@ impl PlayWindowApp {
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
+    ) -> Vec<legaia_engine_ui::SpriteDraw> {
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
@@ -133,7 +133,7 @@ impl PlayWindowApp {
         };
         let view = self.name_entry_view(entry);
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-        legaia_engine_render::name_entry_chrome_sprite_draws_for(
+        legaia_engine_ui::name_entry_chrome_sprite_draws_for(
             &assets.rects,
             &view,
             stage_origin,
@@ -153,10 +153,10 @@ pub(super) const BATTLE_HUD_PEN: (i32, i32) = (8, 60);
 /// frame, handing it to `f` (the frame borrows row views built here, so
 /// this is CPS-shaped).
 pub(super) fn with_battle_item_frame<R>(
-    model: &legaia_engine_core::inventory_use::BattleItemMenuModel,
-    f: impl FnOnce(&legaia_engine_render::battle_item_ui::BattleItemMenuFrame<'_>) -> R,
+    model: &legaia_engine_menus::inventory_use::BattleItemMenuModel,
+    f: impl FnOnce(&legaia_engine_ui::battle_item_ui::BattleItemMenuFrame<'_>) -> R,
 ) -> R {
-    use legaia_engine_render::battle_item_ui as bii;
+    use legaia_engine_ui::battle_item_ui as bii;
     let rows: Vec<bii::BattleItemRowView<'_>> = model
         .view
         .rows

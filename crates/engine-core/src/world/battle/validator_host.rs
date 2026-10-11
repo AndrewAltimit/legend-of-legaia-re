@@ -16,8 +16,9 @@
 //! REF: FUN_8003FB10, FUN_80046898
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
-use legaia_engine_vm::battle_action::{ActionValidatorHost, SlotResources, validate_action};
+use legaia_engine_battle_vm::battle_action::{ActionValidatorHost, SlotResources, validate_action};
 
 /// Validator arm `0x05` - "the slot is alive". The arm the battle target rows
 /// use: clear the slot's bit, re-set it when the actor's `+0x14C` is non-zero.
@@ -112,10 +113,10 @@ impl World {
     pub(in crate::world) fn battle_target_rows(
         &self,
     ) -> (
-        [crate::target_picker::SlotState; 3],
-        [crate::target_picker::SlotState; 5],
+        [legaia_engine_battle::target_picker::SlotState; 3],
+        [legaia_engine_battle::target_picker::SlotState; 5],
     ) {
-        use crate::target_picker::SlotState;
+        use legaia_engine_battle::target_picker::SlotState;
         let party_count = self.party.party_count.clamp(1, 3);
         let slots: Vec<u8> = (0..(party_count as usize + 5).min(8) as u8).collect();
         let mask = self.action_validity_mask(ARM_ALIVE, 0, &slots);

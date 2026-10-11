@@ -112,7 +112,7 @@ fn play_render_state_matches_native_field_pipeline() {
             .flatten()
             .unwrap_or_default()
             .into_iter()
-            .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+            .filter(|p| p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0)
             .collect();
         let (native_terrain_draws, _) =
             legaia_engine_core::field_env::resolve_env_draws(&env_tmds, &native_terrain, floor_lut);
@@ -133,9 +133,9 @@ fn play_render_state_matches_native_field_pipeline() {
             .ok()
             .flatten()
             .expect("scene has a MAN");
-        let mf = legaia_asset::man_section::parse(&man).expect("MAN parses");
+        let mf = legaia_scene_formats::man_section::parse(&man).expect("MAN parses");
         let mut native_slots: Vec<usize> = Vec::new();
-        for (p, _) in legaia_engine_core::man_field_scripts::classify_placements(&mf, &man) {
+        for (p, _) in legaia_engine_field::man_field_scripts::classify_placements(&mf, &man) {
             let resolvable = if p.special_model {
                 host.world
                     .global_tmd_pool

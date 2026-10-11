@@ -371,13 +371,13 @@ enum Cmd {
 fn load_backdrop_mirror_table(
     explicit: Option<&std::path::Path>,
     prot_dat: &std::path::Path,
-) -> Option<legaia_asset::battle_backdrop::MirrorXTable> {
+) -> Option<legaia_scene_formats::battle_backdrop::MirrorXTable> {
     let path = match explicit {
         Some(p) => p.to_path_buf(),
         None => prot_dat.parent()?.join("SCUS_942.54"),
     };
     let bytes = std::fs::read(&path).ok()?;
-    let table = legaia_asset::battle_backdrop::MirrorXTable::from_scus(&bytes);
+    let table = legaia_scene_formats::battle_backdrop::MirrorXTable::from_scus(&bytes);
     match &table {
         Some(t) => log::info!(
             "battle-backdrop mirror table: {} stage(s) from {}",

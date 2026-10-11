@@ -1,8 +1,8 @@
 //! The [`BakaFight`] session state, its builders and read accessors.
 
 use super::*;
-use legaia_asset::baka_opponents::{BakaActionSet, BakaOpponent};
 use legaia_engine_system::rand::BiosRand;
+use legaia_minigame_formats::baka_opponents::{BakaActionSet, BakaOpponent};
 
 /// The base every host folds its frame count into to seed a cabinet
 /// (`BAKA_RNG_BASE ^ frame`): the play hosts with the world frame, the
@@ -434,7 +434,7 @@ impl BakaFight {
     /// editor state has something to dump (`FUN_801D553C`).
     pub fn with_action_tables(
         mut self,
-        tables: Vec<legaia_asset::baka_opponents::BakaActionSet>,
+        tables: Vec<legaia_minigame_formats::baka_opponents::BakaActionSet>,
     ) -> Self {
         self.cabinet = std::mem::take(&mut self.cabinet).with_action_tables(tables);
         self.cabinet.enter_duel();

@@ -18,7 +18,7 @@
 //! the player are not candidates: the first runs every frame whatever the
 //! capture shows, the second is driven by the pad.
 
-use legaia_mednafen::game_anchors;
+use legaia_ram_image::game_anchors;
 
 /// The actor-list heads `FUN_8002519C` walks (`_DAT_8007C34C` onward).
 const ACTOR_LIST_HEADS: u32 = 0x8007_C34C;
@@ -415,7 +415,7 @@ impl ScriptGate {
     /// waiting for the press that turns it, or the last page waiting for the
     /// press that closes it (`is_done` - the box stays up until that press,
     /// the same pair the window's prompt glyph keys on).
-    fn page_up(d: &legaia_engine_core::dialog::OwnedDialogPanel) -> bool {
+    fn page_up(d: &legaia_engine_dialog::dialog::OwnedDialogPanel) -> bool {
         d.is_waiting_for_input() || d.is_done()
     }
 
@@ -461,7 +461,7 @@ impl ScriptGate {
             Some(g) => world.camera.state.glide_frames <= g,
             None => world.camera.state.glide_frames <= 0,
         };
-        let passed = |tl: &legaia_engine_core::cutscene_timeline::CutsceneTimeline| {
+        let passed = |tl: &legaia_engine_field::cutscene_timeline::CutsceneTimeline| {
             head_of(&tl.bytecode) == self.head
                 && ((tl.pc == self.pc
                     && tl.ctx.wait_accum >= self.wait
@@ -513,7 +513,7 @@ impl ScriptGate {
     /// instruction from it decodes, none is a jump or a text segment, and
     /// one ends exactly on the gate PC.
     fn straight_to_gate(&self, world: &legaia_engine_core::world::World) -> bool {
-        use legaia_asset::field_disasm::{InsnInfo, decode};
+        use legaia_scene_formats::field_disasm::{InsnInfo, decode};
         let reaches = |bc: &[u8], mut pc: usize| {
             if head_of(bc) != self.head {
                 return false;
@@ -598,15 +598,15 @@ impl ScriptGate {
         {
             let cur = id.picker_cursor();
             let b = match cur.cmp(&want) {
-                std::cmp::Ordering::Less => legaia_engine_core::input::PadButton::Down,
-                std::cmp::Ordering::Greater => legaia_engine_core::input::PadButton::Up,
-                std::cmp::Ordering::Equal => legaia_engine_core::input::PadButton::Cross,
+                std::cmp::Ordering::Less => legaia_engine_system::input::PadButton::Down,
+                std::cmp::Ordering::Greater => legaia_engine_system::input::PadButton::Up,
+                std::cmp::Ordering::Equal => legaia_engine_system::input::PadButton::Cross,
             };
             return b.mask();
         }
         match self.context(world) {
             Some(c) if c.dialog_open && c.pc != self.pc => {
-                legaia_engine_core::input::PadButton::Cross.mask()
+                legaia_engine_system::input::PadButton::Cross.mask()
             }
             _ => 0,
         }
@@ -671,7 +671,7 @@ impl ScriptGate {
 /// back to the `0x21` at `+0x142`), while the park after its install pass
 /// (`+0x13F`) has only forward jumps ahead of it.
 pub fn loops_back_to(bytecode: &[u8], pc: usize) -> bool {
-    use legaia_asset::field_disasm::{InsnInfo, decode};
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode};
     let mut at = pc;
     while let Ok(i) = decode(bytecode, at) {
         if i.size == 0 {
@@ -702,7 +702,7 @@ pub const SCRIPT_RESUME_TICK: u64 = crate::retail_compare::SETTLE_TICKS;
 /// are the ones it has already latched) as the modal cutscene timeline, or
 /// as a concurrent context when another timeline holds that slot. The
 /// op-`0x35` words of the arm that spawns the record, when that arm scored it
-/// ([`legaia_engine_core::man_field_scripts::walk_spawn_scores`]), are
+/// ([`legaia_engine_field::man_field_scripts::walk_spawn_scores`]), are
 /// replayed first. Returns `true` when a context was installed.
 pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &ScriptGate) -> bool {
     if let Some(c) = gate.context(&host.world) {
@@ -718,7 +718,7 @@ pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &Scr
     else {
         return false;
     };
-    let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+    let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
         return false;
     };
     let n0 = mf.header.partition_counts[0].max(0) as usize;
@@ -727,7 +727,7 @@ pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &Scr
         return false;
     };
     let Some((start, pc0, len)) =
-        legaia_engine_core::man_field_scripts::partition_record_span(&mf, &man, 2, idx)
+        legaia_engine_field::man_field_scripts::partition_record_span(&mf, &man, 2, idx)
     else {
         return false;
     };
@@ -740,7 +740,7 @@ pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &Scr
     // The arm that spawns the record may have scored it: replay that arm's
     // track words first, since the resume starts the record without it.
     roll_back_run_latches(&mut host.world, &man[start..start + len], gate.pc);
-    if let Some(score) = legaia_engine_core::man_field_scripts::walk_spawn_scores(&mf, &man)
+    if let Some(score) = legaia_engine_field::man_field_scripts::walk_spawn_scores(&mf, &man)
         .into_iter()
         .find(|s| u16::from(s.global_index) == gate.flat_index)
     {
@@ -749,7 +749,7 @@ pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &Scr
     let world = &mut host.world;
     if world.cutscene_timeline_active() {
         world.field_vm.helper_contexts.push(
-            legaia_engine_core::cutscene_timeline::CutsceneTimeline::new(
+            legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(
                 man[start..start + len].to_vec(),
                 pc0,
             ),
@@ -814,7 +814,7 @@ fn engage_placement(world: &mut legaia_engine_core::world::World, gate: &ScriptG
 /// well." at `+0x804`, which a talk opened from the entry only reaches
 /// through the fight. `None` for every other gate.
 pub fn post_battle_resume(body: &[u8], gate_pc: usize) -> Option<usize> {
-    use legaia_asset::field_disasm::decode;
+    use legaia_scene_formats::field_disasm::decode;
     for start in 0..gate_pc.min(64) {
         let mut pc = start;
         let mut prev_op = None;
@@ -849,7 +849,7 @@ pub fn post_battle_resume(body: &[u8], gate_pc: usize) -> Option<usize> {
 /// is captured on. `body` is in the gate's frame (the record's script
 /// start at offset 0).
 pub fn run_latches(body: &[u8], gate_pc: usize) -> Vec<u16> {
-    use legaia_asset::field_disasm::{FlagKind, InsnInfo, decode};
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, decode};
     for start in 0..gate_pc.min(64) {
         let mut pc = start;
         let mut run: Vec<u16> = Vec::new();
@@ -891,7 +891,7 @@ pub fn run_latches(body: &[u8], gate_pc: usize) -> Vec<u16> {
 /// `119` at `+0x7A6`, ahead of the line `v0_1_tetsu_dialogue_accept` is
 /// captured on.
 pub fn run_grants(body: &[u8], gate_pc: usize) -> Vec<u8> {
-    use legaia_asset::field_disasm::{FlagKind, InsnInfo, decode};
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, decode};
     for start in 0..gate_pc.min(64) {
         let mut pc = start;
         let mut run: Vec<u8> = Vec::new();

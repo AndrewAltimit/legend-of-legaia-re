@@ -69,7 +69,8 @@ pub(super) fn doors_to(
         .field_man_payload(index)
         .map_err(|e| format!("MAN: {e:#}"))?
         .ok_or("no MAN")?;
-    let mf = legaia_asset::man_section::parse(&man).map_err(|e| format!("parse MAN: {e:#}"))?;
+    let mf =
+        legaia_scene_formats::man_section::parse(&man).map_err(|e| format!("parse MAN: {e:#}"))?;
     let (primary, fallback) = scene
         .field_tile_triggers(index)
         .map_err(|e| format!(".MAP triggers: {e:#}"))?;
@@ -235,8 +236,8 @@ pub(super) fn talk_hop(
     graph: &DiscGraph,
     dest: &str,
 ) -> Option<Result<String, String>> {
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
-    use legaia_engine_core::man_field_scripts::partition_record_span;
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
     let (mf, man, _) = scene_man_and_triggers(session)?;
     let n0 = mf.partitions.first().map_or(0, Vec::len);
     let n1 = mf.partitions.get(1).map_or(0, Vec::len);
@@ -247,7 +248,7 @@ pub(super) fn talk_hop(
         .unwrap_or_default();
     // Does the record (partition, index) reach `dest` within `depth` spawns?
     fn reaches(
-        mf: &legaia_asset::man_section::ManFile,
+        mf: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         part: usize,
         rec: usize,
@@ -313,7 +314,7 @@ pub(super) fn talk_hop(
 pub(super) fn scene_man_and_triggers(
     session: &BootSession,
 ) -> Option<(
-    legaia_asset::man_section::ManFile,
+    legaia_scene_formats::man_section::ManFile,
     Vec<u8>,
     Vec<TileTrigger>,
 )> {
@@ -321,7 +322,7 @@ pub(super) fn scene_man_and_triggers(
     let index = &session.host.index;
     let scene = Scene::load(index, &name).ok()?;
     let man = scene.field_man_payload(index).ok()??;
-    let mf = legaia_asset::man_section::parse(&man).ok()?;
+    let mf = legaia_scene_formats::man_section::parse(&man).ok()?;
     let (p, f) = scene.field_tile_triggers(index).ok()?;
     Some((mf, man, p.into_iter().chain(f).collect()))
 }
@@ -330,7 +331,7 @@ pub(super) fn scene_man_and_triggers(
 /// partition-2 C1 / C2 story gates (retail `FUN_8003BDE0`) and which of them
 /// the live flag bank fails - the one-level-down reason a door stays shut.
 pub(super) fn site_gate_report(session: &BootSession, dest: &str) -> String {
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
         return "scene MAN / triggers unavailable".into();
     };

@@ -1,35 +1,34 @@
 //! The fishing **venue actors**' per-frame step, shared by every host that
 //! runs the fishing minigame over a world.
 //!
-//! The session ([`crate::fishing::PondSession`]) is the minigame's rules: the
+//! The session ([`legaia_engine_fishing::fishing::PondSession`]) is the minigame's rules: the
 //! cast, the band check, the fight, the lure's own walk-grid drift. Around it
 //! the overlay runs a handful of venue actors that are presentation rather
 //! than rules, and this module is their frame:
 //!
 //! - the free-swimming fish wander (`FUN_801D2278`,
-//!   [`crate::fishing_actors::FishWander`]) at the shore while the cast is
+//!   [`legaia_engine_fishing::fishing_actors::FishWander`]) at the shore while the cast is
 //!   idle, steered by the held D-pad, with its **retarget ripple**
-//!   ([`crate::fishing_chrome::ripple_spawn`]) on every new wander target;
+//!   ([`legaia_engine_fishing::fishing_chrome::ripple_spawn`]) on every new wander target;
 //! - the wander actor settled onto the venue floor through the shared ground
-//!   solver ([`crate::fishing_chrome::float_actor_tick`]) and its retail
+//!   solver ([`legaia_engine_fishing::fishing_chrome::float_actor_tick`]) and its retail
 //!   camera publish;
 //! - the reeling-line actor (`FUN_801D4948`,
-//!   [`crate::fishing_actors::LineActorSim`]) across hook, fight and the
+//!   [`legaia_engine_fishing::fishing_actors::LineActorSim`]) across hook, fight and the
 //!   catch celebration, whose **bursts** ride the session's lure;
 //! - the point-exchange sub-screen's idle sway
-//!   ([`crate::fishing_chrome::sway_vector`]).
+//!   ([`legaia_engine_fishing::fishing_chrome::sway_vector`]).
 //!
 //! It used to live inside the native window's `tick_fishing_actors`, which
 //! made the ripples, the bursts, the venue camera and the swaying prize panel
 //! native-only. The step is host-agnostic - every input is world state, the
 //! held pad or the scene's `.MAP` bytes - so it lives here and each host calls
 //! [`tick_fishing_venue`] from its own minigame frame, then applies the
-//! returned camera writes to its own [`crate::camera::Camera`].
+//! returned camera writes to its own [`legaia_engine_field::camera::Camera`].
 
-use crate::fishing::{PondEvent, PondPhase};
-use crate::fishing_actors as fa;
-use crate::fishing_chrome as fc;
 use crate::world::MinigameState;
+use legaia_engine_fishing::fishing::{PondEvent, PondPhase};
+use legaia_engine_fishing::fishing_chrome as fc;
 
 /// Seed of the venue's small `rand()` stand-in (an xorshift the port uses for
 /// the wander's retarget rolls). The native window seeded its host-side copy
@@ -119,7 +118,7 @@ pub fn party_placements(venue: usize) -> [FishingPartyMember; 3] {
 
 /// The fishing venue's camera for the lead at `(x, y, z)` facing `facing`:
 /// the setup's reset (angles `0`, `TR.x = 0`, `TR.z = 0x974`), the lead
-/// tick's publish ([`fa::fish_camera`]: yaw off the facing, `TR.y = 0x400 -
+/// tick's publish ([`legaia_engine_fishing::fishing_actors::fish_camera`]: yaw off the facing, `TR.y = 0x400 -
 /// 6 y`, focus on the lead with a zero `Y`) and the setup's `H`
 /// ([`VENUE_GTE_H`]). The eye trio reduces by the 6x world scale retail folds
 /// into its rotation, as the field follow camera's does.
@@ -132,12 +131,12 @@ pub fn venue_camera_view(
     y: i16,
     z: i16,
     facing: i16,
-) -> legaia_engine_vm::psx_camera::FieldCameraView {
+) -> legaia_engine_battle_vm::psx_camera::FieldCameraView {
     let reset = fc::venue_camera_reset();
-    let publish = fa::fish_camera(x, y, z, facing);
+    let publish = legaia_engine_fishing::fishing_actors::fish_camera(x, y, z, facing);
     let s = crate::camera_view::CUTSCENE_WORLD_SCALE;
     let to_rad = |u: i32| u as f32 * (std::f32::consts::TAU / 4096.0);
-    legaia_engine_vm::psx_camera::FieldCameraView {
+    legaia_engine_battle_vm::psx_camera::FieldCameraView {
         focus: [
             -publish.translation.0 as f32,
             publish.translation.1 as f32,
@@ -159,14 +158,16 @@ pub fn venue_camera_view(
 /// aim), while a fishing session is up: the view both play hosts draw the
 /// pond with and project the fishing line through. `None` before the venue
 /// has armed.
-pub fn venue_view(mg: &MinigameState) -> Option<legaia_engine_vm::psx_camera::FieldCameraView> {
+pub fn venue_view(
+    mg: &MinigameState,
+) -> Option<legaia_engine_battle_vm::psx_camera::FieldCameraView> {
     mg.fishing.as_ref()?;
     let w = mg.fishing_venue.wander.as_ref()?;
     Some(venue_camera_view(w.x, w.y, w.z, w.facing))
 }
 
 /// Where the lead's actor spawns for `venue`, `(x, y, z)` world units - the
-/// actor [`fa::FishWander`] models (the lead's tick `FUN_801D2050` /
+/// actor [`legaia_engine_fishing::fishing_actors::FishWander`] models (the lead's tick `FUN_801D2050` /
 /// `FUN_801D2278`, whose actor pointer `DAT_801D928C` is the lead's).
 pub fn lead_spawn(venue: usize) -> (i16, i16, i16) {
     let lead = party_placements(venue)[0];
@@ -178,9 +179,9 @@ pub fn lead_spawn(venue: usize) -> (i16, i16, i16) {
 #[derive(Debug, Clone)]
 pub struct FishingVenue {
     /// The free-swimming fish, armed on the first fishing frame.
-    pub wander: Option<fa::FishWander>,
+    pub wander: Option<legaia_engine_fishing::fishing_actors::FishWander>,
     /// The reeling-line actor, armed on the hook event.
-    pub line: Option<fa::LineActorSim>,
+    pub line: Option<legaia_engine_fishing::fishing_actors::LineActorSim>,
     /// The venue scene's `.MAP` extended footprint (the engine's
     /// `_DAT_1F8003EC` floor buffer), loaded once at arm.
     floor: Option<Vec<u8>>,
@@ -220,12 +221,12 @@ pub struct VenueCameraWrites {
     /// `_DAT_800840BC` alone.
     pub reset: Option<fc::VenueCameraReset>,
     /// The wander actor's camera publish, every frame it exists.
-    pub publish: Option<fa::FishCamera>,
+    pub publish: Option<legaia_engine_fishing::fishing_actors::FishCamera>,
 }
 
 impl VenueCameraWrites {
     /// Write these into the engine camera's retail globals.
-    pub fn apply(&self, camera: &mut crate::camera::Camera) {
+    pub fn apply(&self, camera: &mut legaia_engine_field::camera::Camera) {
         let g = &mut camera.globals.0;
         if let Some(reset) = self.reset {
             g[0] = reset.rot[0] as i32;
@@ -262,7 +263,7 @@ pub fn sway_sine_table() -> &'static [i16] {
 
 /// Run one venue frame.
 ///
-/// `in_fishing` is whether the world is in [`crate::world::SceneMode::Fishing`];
+/// `in_fishing` is whether the world is in [`legaia_engine_mode::mode::SceneMode::Fishing`];
 /// leaving the mode drops every actor. `held_packed` is the held pad in the
 /// packed retail layout (`_DAT_8007B850`; the engine's PSX-layout mask
 /// rotated right by eight). `floor` is asked for the venue's `.MAP` bytes
@@ -292,7 +293,9 @@ pub fn tick_fishing_venue(
     // camera reset.
     if v.wander.is_none() {
         let (x, y, z) = lead_spawn(session.venue);
-        v.wander = Some(fa::FishWander::new(x, y, z));
+        v.wander = Some(legaia_engine_fishing::fishing_actors::FishWander::new(
+            x, y, z,
+        ));
         v.floor = floor();
         out.reset = Some(fc::venue_camera_reset());
     }
@@ -326,8 +329,8 @@ pub fn tick_fishing_venue(
     // Settle the actor onto the venue floor (the `.MAP` height grid through
     // the shared ground solver) and publish its camera.
     if let (Some(w), Some(buf)) = (v.wander.as_mut(), v.floor.as_ref()) {
-        let ramp = crate::minigame_floor::height_ramp();
-        let grid = crate::minigame_floor::FloorGrid::new(buf);
+        let ramp = legaia_engine_fishing::minigame_floor::height_ramp();
+        let grid = legaia_engine_fishing::minigame_floor::FloorGrid::new(buf);
         let t = fc::float_actor_tick(grid, w.x, w.z, 0, &ramp);
         w.y = t.y;
     }
@@ -338,7 +341,9 @@ pub fn tick_fishing_venue(
     // dropped on a snap.
     for e in &mg.fishing_events {
         match *e {
-            PondEvent::Hooked(_) => v.line = Some(fa::LineActorSim::hooked()),
+            PondEvent::Hooked(_) => {
+                v.line = Some(legaia_engine_fishing::fishing_actors::LineActorSim::hooked())
+            }
             PondEvent::Landed(points) => match v.line.as_mut() {
                 Some(line) => line.land(points),
                 None => v.line = None,
@@ -378,19 +383,19 @@ pub fn tick_fishing_venue(
     out
 }
 
-/// This frame's fishing line on a world host: [`crate::fishing::PondSession::line_frame`]
+/// This frame's fishing line on a world host: [`legaia_engine_fishing::fishing::PondSession::line_frame`]
 /// with the fish end projected through `view`, the scene camera the host
 /// resolved for the frame it draws (`camera_view::resolve_field_camera(..)
 /// .field_view()`), as retail's lure tick projects it through the scene
 /// view the field matrix build leaves in the GTE.
 ///
 /// The native window and the browser play page both call this and wrap the
-/// result with the one builder `legaia_engine_ui::ui_fishing_line`. `None`
+/// result with the one builder `legaia_engine_ui::fishing::line`. `None`
 /// with no session, no camera or no line out.
 pub fn fishing_line_frame(
     mg: &mut MinigameState,
-    view: Option<&legaia_engine_vm::psx_camera::FieldCameraView>,
-) -> Option<fa::FishingLine> {
+    view: Option<&legaia_engine_battle_vm::psx_camera::FieldCameraView>,
+) -> Option<legaia_engine_fishing::fishing_actors::FishingLine> {
     let view = view?;
     mg.fishing
         .as_mut()?
@@ -401,7 +406,7 @@ pub fn fishing_line_frame(
 /// 320x240 screen space - `RTPS`'s `OFX/OFY + H * xy / z`, saturated to the
 /// `SXY` range, floored as the GTE's `>> 16` floors. `None` behind the eye.
 pub fn project_to_retail_screen(
-    view: &legaia_engine_vm::psx_camera::FieldCameraView,
+    view: &legaia_engine_battle_vm::psx_camera::FieldCameraView,
     p: [i32; 3],
 ) -> Option<(i16, i16)> {
     let e = view.eye_space([p[0] as f32, p[1] as f32, p[2] as f32]);
@@ -414,8 +419,14 @@ pub fn project_to_retail_screen(
             .clamp(-1024.0, 1023.0) as i16
     };
     Some((
-        axis(e[0], fa::GTE_SCREEN_CENTRE.0),
-        axis(e[1], fa::GTE_SCREEN_CENTRE.1),
+        axis(
+            e[0],
+            legaia_engine_fishing::fishing_actors::GTE_SCREEN_CENTRE.0,
+        ),
+        axis(
+            e[1],
+            legaia_engine_fishing::fishing_actors::GTE_SCREEN_CENTRE.1,
+        ),
     ))
 }
 
@@ -445,9 +456,9 @@ pub fn venue_floor_bytes(host: &crate::scene::SceneHost) -> Option<Vec<u8>> {
 /// (the world's engine mask rotated into the packed retail layout) and the
 /// venue floor all come off the host, so the native window and the browser
 /// play page run the identical frame and differ only in which
-/// [`crate::camera::Camera`] they apply the returned writes to.
+/// [`legaia_engine_field::camera::Camera`] they apply the returned writes to.
 pub fn tick_fishing_venue_on_host(host: &mut crate::scene::SceneHost) -> VenueCameraWrites {
-    let in_fishing = host.world.mode == crate::world::SceneMode::Fishing;
+    let in_fishing = host.world.mode == legaia_engine_mode::mode::SceneMode::Fishing;
     let held_packed = host.world.input.pad().rotate_right(8);
     let floor = if in_fishing && !host.world.minigames.fishing_venue.armed() {
         venue_floor_bytes(host)
@@ -460,7 +471,7 @@ pub fn tick_fishing_venue_on_host(host: &mut crate::scene::SceneHost) -> VenueCa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fishing::PondSession;
+    use legaia_engine_fishing::fishing::PondSession;
 
     fn session() -> PondSession {
         PondSession::new(
@@ -471,7 +482,7 @@ mod tests {
             1,
             2,
             60,
-            crate::fishing::FishingRecord::default(),
+            legaia_engine_fishing::fishing::FishingRecord::default(),
             0,
             0x0BAD_F00D,
         )
@@ -498,7 +509,7 @@ mod tests {
         // ripples into the pool every host draws, not into a host's own.
         let mut mg = MinigameState::new();
         mg.fishing = Some(session());
-        let held = crate::dev_menu::PACK_RIGHT;
+        let held = legaia_engine_system::pad::PACK_RIGHT;
         let mut spawned = false;
         for _ in 0..2000 {
             tick_fishing_venue(&mut mg, true, held, || None);
@@ -598,7 +609,7 @@ mod tests {
 
     #[test]
     fn camera_writes_land_in_the_retail_globals() {
-        let mut cam = crate::camera::Camera::default();
+        let mut cam = legaia_engine_field::camera::Camera::default();
         let reset = fc::venue_camera_reset();
         let w = VenueCameraWrites {
             reset: Some(reset),

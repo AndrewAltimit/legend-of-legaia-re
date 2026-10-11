@@ -145,6 +145,3 @@ impl From<StatGain> for StatGrowthCurve {
         StatGrowthCurve::Flat(g)
     }
 }
-/// The PSX BIOS `rand()` LCG; lives in `legaia_engine_system::rand` so the
-/// minigame crate shares it.
-pub use legaia_engine_system::rand::BiosRand;

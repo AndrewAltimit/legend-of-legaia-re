@@ -20,7 +20,7 @@ fn the_viguro_stager_runs_from_the_cast_band_seam() {
     assert_eq!(run.prot_entry, 909);
     assert_eq!(
         world.actors[7].battle.active_target,
-        legaia_engine_vm::cast_module_ticks::TARGET_CODE_ENEMY_ROW,
+        legaia_engine_battle_vm::cast_module_ticks::TARGET_CODE_ENEMY_ROW,
         "arm 0 retargets the summon seat to the enemy row"
     );
     assert_eq!(

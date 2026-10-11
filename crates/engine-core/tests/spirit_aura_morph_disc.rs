@@ -11,8 +11,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::move_power::MovePowerCatalog;
-use legaia_engine_core::world::{GlobalTmd, SceneMode, World};
+use legaia_engine_battle::move_power::MovePowerCatalog;
+use legaia_engine_core::world::{GlobalTmd, World};
+use legaia_engine_mode::mode::SceneMode;
 use legaia_prot::archive::Archive;
 
 fn extracted() -> Option<PathBuf> {
@@ -49,7 +50,7 @@ fn the_spirit_aura_prototypes_hold_and_draw_their_morphed_cone() {
     let mut archive = Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
     let overlay = entry(
         &mut archive,
-        legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX,
+        legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX,
     );
     let mut world = World::new();
     world.mode = SceneMode::Battle;
@@ -61,7 +62,7 @@ fn the_spirit_aura_prototypes_hold_and_draw_their_morphed_cone() {
     // next entry's bytes on too.
     let mut etmd = entry(&mut archive, 871);
     etmd.extend(entry(&mut archive, 872));
-    for (i, body) in legaia_asset::pack::extract_pack(&etmd)
+    for (i, body) in legaia_container_formats::pack::extract_pack(&etmd)
         .expect("etmd pack")
         .iter()
         .enumerate()
@@ -117,7 +118,7 @@ fn the_spirit_aura_grows_and_fades_at_the_captured_rates() {
     let mut archive = Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
     let overlay = entry(
         &mut archive,
-        legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX,
+        legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX,
     );
     let mut world = World::new();
     world.mode = SceneMode::Battle;

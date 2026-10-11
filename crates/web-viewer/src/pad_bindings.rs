@@ -4,7 +4,7 @@
 //! Every browser page that takes input needs a `KeyboardEvent.code -> PSX pad
 //! bit` table. There used to be two of them, hand-written in JS, and neither
 //! agreed with the engine's own default layout
-//! (`legaia_engine_core::input::Mapping::default`) or with each other:
+//! (`legaia_engine_system::input::Mapping::default`) or with each other:
 //!
 //! | key | native window | play page | boot / title |
 //! |---|---|---|---|
@@ -30,7 +30,7 @@
 //! single-source-of-truth property that made the tables above deletable.
 //!
 //! "Starts at", because the table is now **editable**: the options screen's
-//! Key Config screen ([`legaia_engine_core::key_rebind::KeyRebindSession`],
+//! Key Config screen ([`legaia_engine_menus::key_rebind::KeyRebindSession`],
 //! reached through [`legaia_engine_core::options::OptionsSession`]) commits
 //! binds into it, and [`store_mapping`] round-trips the result through
 //! `localStorage` under [`BINDINGS_STORAGE_KEY`] - the browser twin of the
@@ -43,7 +43,7 @@
 //! needs the same table.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::input::Mapping;
+use legaia_engine_system::input::Mapping;
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 
@@ -144,7 +144,7 @@ pub fn pad_bindings_reset() {
 /// The engine's default keyboard layout as `{ "<KeyboardEvent.code>": <bit> }`.
 ///
 /// Bits are the PSX digital-pad masks
-/// (`legaia_engine_core::input::PadButton`) the runtime's `set_pad` /
+/// (`legaia_engine_system::input::PadButton`) the runtime's `set_pad` /
 /// `*_input` entry points already take, so a page folds held or pressed codes
 /// straight into a pad word with no second table.
 ///
@@ -173,7 +173,7 @@ pub fn pad_bindings_json() -> String {
 /// through a rebind.
 #[wasm_bindgen]
 pub fn pad_buttons_json() -> String {
-    use legaia_engine_core::input::PadButton::*;
+    use legaia_engine_system::input::PadButton::*;
     let all = [
         Select, L3, R3, Start, Up, Right, Down, Left, L2, R2, L1, R1, Triangle, Circle, Cross,
         Square,
@@ -235,7 +235,7 @@ mod tests {
         let json = pad_bindings_json();
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON object");
         let obj = v.as_object().expect("object");
-        let want = legaia_engine_core::input::Mapping::web_default().dom_code_bindings();
+        let want = legaia_engine_system::input::Mapping::web_default().dom_code_bindings();
         assert_eq!(obj.len(), want.len());
         for (code, bit) in want {
             assert_eq!(obj.get(code).and_then(|b| b.as_u64()), Some(u64::from(bit)));

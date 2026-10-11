@@ -168,7 +168,7 @@ impl LegaiaMinigames {
 
     /// The five payline **line prims** for one frame, built by the ported
     /// payline pass (`FUN_801d3380`,
-    /// [`legaia_engine_core::slot_machine::payline_prims`]) over this disc's
+    /// [`legaia_engine_minigames::slot_machine::payline_prims`]) over this disc's
     /// geometry table:
     ///
     /// ```json
@@ -179,7 +179,7 @@ impl LegaiaMinigames {
     ///
     /// `sa` / `sb` are the endpoints already projected onto the 640x240 slot
     /// framebuffer by the engine's one projection pass
-    /// ([`legaia_engine_core::slot_machine::projected_paylines`]) - the same
+    /// ([`legaia_engine_minigames::slot_machine::projected_paylines`]) - the same
     /// segments the native window draws.
     ///
     /// `winning_line` is retail's `DAT_801d3c8c`, compared for equality, so
@@ -195,7 +195,7 @@ impl LegaiaMinigames {
             return "[]".to_string();
         };
         let pos = |p: &slot_scene::Pos3| format!("[{},{},{}]", p.x, p.y, p.z);
-        let rows = legaia_engine_core::slot_machine::projected_paylines(&sc.paylines, winning_line)
+        let rows = legaia_engine_minigames::slot_machine::projected_paylines(&sc.paylines, winning_line)
             .iter()
             .map(|p| {
                 let l = &p.prim;
@@ -225,7 +225,7 @@ impl LegaiaMinigames {
     ///
     /// The retail machine is not a sprite collage: every element is a quad in a
     /// 3D scene projected through the GTE (see
-    /// [`legaia_asset::minigame_slot_scene`]). This hands the page the same
+    /// [`legaia_minigame_formats::minigame_slot_scene`]). This hands the page the same
     /// scene graph, in model space, so it can project it itself:
     ///
     /// ```json

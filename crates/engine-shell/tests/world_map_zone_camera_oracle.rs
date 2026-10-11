@@ -23,11 +23,12 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::camera::Camera;
 use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
 use legaia_engine_core::scene::SceneHost;
-use legaia_mednafen::game_anchors;
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_engine_field::camera::Camera;
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
+use legaia_ram_image::game_anchors;
 
 const RAM_BASE: u32 = 0x8000_0000;
 const GTE_H: u32 = 0x8007_B6F4;

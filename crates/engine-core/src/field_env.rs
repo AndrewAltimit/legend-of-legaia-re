@@ -7,7 +7,7 @@
 //!   sections carry the scene's object-local Legaia TMDs (buildings, props,
 //!   terrain-decor tiles) - the `scene_asset_table` type-2 `Tmd` descriptor;
 //! - the **placements**: the field `.MAP` object grid
-//!   ([`legaia_asset::field_objects`], retail `FUN_8003A55C`), whose records
+//!   ([`legaia_scene_formats::field_objects`], retail `FUN_8003A55C`), whose records
 //!   select a pack mesh (`+0x10`) and give it a world transform, with world Y
 //!   resolved through the MAN header's 16-entry floor-height LUT.
 //!
@@ -27,11 +27,11 @@
 //! REF: FUN_8003AEB0 (floor-LUT install)
 //! REF: FUN_801F69D8, FUN_801F7088 (per-cell terrain emitters: corner-average Y)
 
-use crate::field_regions::{self, TileTrigger};
 use crate::scene::Scene;
 use crate::scene_resources::SceneResources;
-use legaia_asset::field_objects::Placement;
-use legaia_asset::man_section::ManFile;
+use legaia_engine_field::field_regions::{self, TileTrigger};
+use legaia_scene_formats::field_objects::Placement;
+use legaia_scene_formats::man_section::ManFile;
 use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]

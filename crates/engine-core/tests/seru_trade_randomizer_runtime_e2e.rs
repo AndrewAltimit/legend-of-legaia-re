@@ -16,11 +16,11 @@
 //!
 //! Skips without `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
-use legaia_asset::seru_trade::{self, DEFAULT_MAX_OFFERS, SECONDS_PER_RESEED};
-use legaia_engine_core::seru_trade::TradeResult;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_engine_battle::seru_trade::TradeResult;
 use legaia_engine_core::world::World;
+use legaia_game_tables::seru_trade::{self, DEFAULT_MAX_OFFERS, SECONDS_PER_RESEED};
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_save::{CharacterRecord, Party, SpellList};
 
 fn load_disc() -> Option<Vec<u8>> {

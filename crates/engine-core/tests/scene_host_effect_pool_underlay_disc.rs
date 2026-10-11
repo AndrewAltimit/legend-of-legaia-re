@@ -109,11 +109,13 @@ fn a_caption_tims_transparent_words_stay_transparent_over_the_pool() {
     let mut caption = None;
     for entry in &scene.entries {
         let bytes: &[u8] = &entry.bytes;
-        let scan = legaia_asset::tim_scan::scan_entry(bytes);
+        let scan = legaia_container_formats::tim_scan::scan_entry(bytes);
         for (source, hit) in &scan.hits {
             let src: &[u8] = match source {
-                legaia_asset::tim_scan::Source::Raw => bytes,
-                legaia_asset::tim_scan::Source::Lzs(i) => scan.lzs_sections[*i].as_slice(),
+                legaia_container_formats::tim_scan::Source::Raw => bytes,
+                legaia_container_formats::tim_scan::Source::Lzs(i) => {
+                    scan.lzs_sections[*i].as_slice()
+                }
             };
             let end = (hit.offset + hit.byte_len).min(src.len());
             if let Ok(t) = legaia_tim::parse(&src[hit.offset..end])

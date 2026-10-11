@@ -97,18 +97,18 @@
 
 use anyhow::{Result, bail};
 
-use legaia_asset::item_names;
+use legaia_game_tables::item_names;
 
 use legaia_code_hooks::mips::*;
 
 /// PROT entry index of the battle-action overlay that hosts the victory check.
 /// (Same overlay the flee-EXP / move-power / element-affinity randomizers edit.)
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
-    legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+    legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
 
 /// Load base VA of the battle-action overlay. A VA inside it maps to PROT-entry
 /// file offset `va - OVERLAY_BASE_VA` (the overlay is stored raw).
-pub const OVERLAY_BASE_VA: u32 = legaia_asset::move_power::BATTLE_OVERLAY_BASE;
+pub const OVERLAY_BASE_VA: u32 = legaia_game_tables::move_power::BATTLE_OVERLAY_BASE;
 
 /// Detour site (SCUS): the first of the two instructions we replace with
 /// `j routine` + `nop`, right after the battle-setup monster loop in

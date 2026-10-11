@@ -65,7 +65,7 @@ impl LegaiaRuntime {
         if let Some(audio) = self.audio_out.as_ref() {
             audio.set_mono(matches!(
                 self.options_state.audio,
-                legaia_engine_core::options::AudioMode::Mono
+                legaia_engine_menus::option_values::AudioMode::Mono
             ));
             audio.set_muted(self.options_state.muted);
             audio.set_bus_volumes(self.options_state.bgm_volume, self.options_state.sfx_volume);

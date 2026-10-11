@@ -12,7 +12,7 @@ impl World {
     ///
     /// - [`WalkTouchEvent::Warp`] → arm the **mode-24 minigame door-warp**
     ///   (the effect of the record's `0x3E` op, staged exactly as the
-    ///   field-VM arm stages it - see [`crate::minigame_entry`]);
+    ///   field-VM arm stages it - see [`legaia_engine_mode::minigame_entry`]);
     /// - [`WalkTouchEvent::PlayerMoveTo`] → snap the player to the decoded
     ///   world coords (the record's cross-context `0x23` into the player
     ///   channel) and surface a [`FieldEvent::MoveTo`].
@@ -112,13 +112,15 @@ impl World {
             .copied()
             .and_then(|record| {
                 let man = self.field_vm.channels_man.clone()?;
-                let man_file = legaia_asset::man_section::parse(&man).ok()?;
+                let man_file = legaia_scene_formats::man_section::parse(&man).ok()?;
                 let flags = self.flags.system_flags.clone();
                 let test = |idx: u16| -> bool {
                     let byte = usize::from(idx >> 3);
                     byte < flags.len() && flags[byte] & (0x80u8 >> (idx & 7)) != 0
                 };
-                crate::man_field_scripts::resolve_walk_touch_arm(&man_file, &man, record, &test)
+                legaia_engine_field::man_field_scripts::resolve_walk_touch_arm(
+                    &man_file, &man, record, &test,
+                )
             })
             .unwrap_or(Some(event));
         // Post through the same dispatch path the button-gated interact uses.
@@ -130,7 +132,7 @@ impl World {
             // A `Warp` event is, by construction, **only** ever a mode-24
             // minigame sub-id: `is_genuine_warp` gates the decoded `0x3E`'s
             // `op0` to `100..=106`, and every carrier of that id space is a
-            // venue cabinet (see [`crate::minigame_entry`]).
+            // venue cabinet (see [`legaia_engine_mode::minigame_entry`]).
             //
             // Body contact must NOT execute it. Retail's contact kernel
             // `FUN_801d5b5c` **resumes the placement's script**; it does not
@@ -205,7 +207,7 @@ impl World {
     /// Arm the arrival bracket for a teleport the walk-touch bind `slot`'s
     /// record just made: every bind whose record the teleporting record
     /// names in a cross-context `B1 <obj> 00`
-    /// ([`crate::man_field_scripts::record_exempted_objects`]) is skipped by
+    /// ([`legaia_engine_field::man_field_scripts::record_exempted_objects`]) is skipped by
     /// the touch dispatch and the collision probe until the player is off
     /// its contact box. The engine moves the player by the record's
     /// `MoveTo` alone (the ride's `A2 F8` walk-off clip is not run), so the
@@ -221,10 +223,12 @@ impl World {
         let Some(man) = self.field_vm.channels_man.clone() else {
             return;
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
             return;
         };
-        let targets = crate::man_field_scripts::record_exempted_objects(&man_file, &man, record);
+        let targets = legaia_engine_field::man_field_scripts::record_exempted_objects(
+            &man_file, &man, record,
+        );
         // A ride that sets the player down inside another door's contact
         // box walks the player out of it before letting go (`balden`'s
         // elevator cars, P0[7] / P0[14]: `CC F8 51` runs the player to the
@@ -361,7 +365,7 @@ impl World {
     /// channels' op-`0x17` records rather than from
     /// [`crate::world::FieldNpcState::default_moves`] (the static harvest): retail reads
     /// the arena, and a stream that has not run its `0x17` yet still holds
-    /// the [`DEFAULT_MOVE_UNSET`](legaia_engine_vm::ambient_motion::DEFAULT_MOVE_UNSET)
+    /// the [`DEFAULT_MOVE_UNSET`](legaia_engine_motion_vm::ambient_motion::DEFAULT_MOVE_UNSET)
     /// sentinel there, which suppresses the post.
     ///
     /// REF: FUN_801cfc40, FUN_8003d038, FUN_80038158
@@ -390,13 +394,16 @@ impl World {
             })
         });
         let Some(slot) = hit else { return };
-        let stride = vm::motion_vm::BIND_RECORD_STRIDE;
+        let stride = legaia_engine_motion_vm::motion_vm::BIND_RECORD_STRIDE;
         let slots = usize::from(*self.npcs.ambient.keys().next_back().unwrap_or(&0)) + 1;
-        let mut arena = vec![vm::ambient_motion::DEFAULT_MOVE_UNSET; slots * stride];
+        let mut arena =
+            vec![legaia_engine_motion_vm::ambient_motion::DEFAULT_MOVE_UNSET; slots * stride];
         for (&s, chan) in &self.npcs.ambient {
             arena[usize::from(s) * stride] = chan.vm.default_move[0];
         }
-        let Some(posted) = vm::motion_vm::post_touch(&arena, usize::from(slot)) else {
+        let Some(posted) =
+            legaia_engine_motion_vm::motion_vm::post_touch(&arena, usize::from(slot))
+        else {
             return; // suppressed by the record's class byte
         };
         if let Some(chan) = self.npcs.ambient.get_mut(&slot) {

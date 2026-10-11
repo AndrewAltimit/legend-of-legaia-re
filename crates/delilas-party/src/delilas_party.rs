@@ -18,8 +18,8 @@
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::monster_archive;
-use legaia_asset::new_game;
+use legaia_actor_formats::monster_archive;
+use legaia_game_tables::new_game;
 use legaia_party_swap::{PlayerRig, fieldize, playerize, winpose};
 
 /// PROT entry of `readef.DAT` (the battle side-band streaming slots).

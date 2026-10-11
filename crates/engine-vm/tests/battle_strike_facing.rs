@@ -9,7 +9,7 @@
 //!
 //! REF: FUN_801E295C (`0x801E36F0..0x801E371C`, `0x801E3AD0..0x801E3AFC`)
 
-use legaia_engine_vm::battle_action::{
+use legaia_engine_battle_vm::battle_action::{
     ActionState, ActorFlags, BattleActionCtx, BattleActionHost, BattleActor, step,
 };
 

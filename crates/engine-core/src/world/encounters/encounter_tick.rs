@@ -2,6 +2,7 @@
 //! places on the field, and the hand-off into and out of battle.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Field-step trigger. Engines call this once per "the player walked
@@ -9,7 +10,7 @@ impl World {
     /// to advance the encounter tracker. Returns `true` if a battle
     /// transition was triggered this step.
     ///
-    /// The method is a no-op when no [`crate::encounter::EncounterSession`]
+    /// The method is a no-op when no [`legaia_engine_battle::encounter::EncounterSession`]
     /// is installed, when the session is not in `Idle`, or when the world
     /// is not in [`SceneMode::Field`].
     pub fn on_field_step(&mut self) -> bool {
@@ -49,9 +50,9 @@ impl World {
         // drives the roll (`FUN_801D9E1C`) instead of the session's
         // aggregated mean rate. The session still owns the transition /
         // grace SM, so only roll while it is `Idle` (mirroring
-        // [`crate::encounter::EncounterSession::on_step`]'s own gate) and feed
-        // a trigger through [`crate::encounter::EncounterSession::trigger_with`].
-        // REF: FUN_801D9E1C (ported in crate::region_encounter)
+        // [`legaia_engine_battle::encounter::EncounterSession::on_step`]'s own gate) and feed
+        // a trigger through [`legaia_engine_battle::encounter::EncounterSession::trigger_with`].
+        // REF: FUN_801D9E1C (ported in legaia_engine_battle::region_encounter)
         if self.terrain.region_tracker.is_some() {
             // The region roll owns the rate AND the formation pick; the
             // session owns nothing but the frames between trigger and battle.
@@ -64,11 +65,12 @@ impl World {
             if self.encounters.session.is_none() {
                 self.install_encounter_bracket();
             }
-            let idle = self
-                .encounters
-                .session
-                .as_ref()
-                .is_none_or(|s| matches!(s.phase(), crate::encounter::EncounterPhase::Idle));
+            let idle = self.encounters.session.as_ref().is_none_or(|s| {
+                matches!(
+                    s.phase(),
+                    legaia_engine_battle::encounter::EncounterPhase::Idle
+                )
+            });
             if !idle {
                 return false;
             }
@@ -92,7 +94,8 @@ impl World {
             // The reader's battle-setup half runs on every step that lands in
             // a region, before - and regardless of - the roll.
             if let Some(region) = tracker.table().region_at_world(wx, wz) {
-                let setup = crate::region_encounter::region_battle_setup(&region.setup);
+                let setup =
+                    legaia_engine_battle::region_encounter::region_battle_setup(&region.setup);
                 self.store_region_battle_setup(setup);
             }
             // The Incense window (`_DAT_8007B600`) skips the roll outright
@@ -116,7 +119,7 @@ impl World {
             self.terrain.region_tracker = Some(tracker);
             return match roll {
                 Some(r) => {
-                    let er = crate::encounter::EncounterRoll {
+                    let er = legaia_engine_battle::encounter::EncounterRoll {
                         formation_id: r.formation_id as u16,
                         row_index: r.formation_id as usize,
                         roll_q8: 0,
@@ -196,10 +199,10 @@ impl World {
     /// `Transition`, so nothing is in flight to hold a phase.
     ///
     /// PORT: FUN_801CF5BC (live wiring; the kernel is
-    /// `legaia_engine_vm::battle_intro_transition::tick_transition`)
+    /// `legaia_engine_battle_vm::battle_intro_transition::tick_transition`)
     fn tick_battle_intro(&mut self) {
-        use crate::encounter::EncounterPhase;
-        use vm::battle_intro_transition::{
+        use legaia_engine_battle::encounter::EncounterPhase;
+        use legaia_engine_battle_vm::battle_intro_transition::{
             TransitionEffect, TransitionGlobals, TransitionResponses, tick_transition,
         };
 
@@ -309,7 +312,7 @@ impl World {
             // attacking during the spin.
             self.audio
                 .battle_sfx_cues
-                .push(crate::battle_events::BattleSfxCue {
+                .push(legaia_engine_battle::battle_events::BattleSfxCue {
                     kind: cue,
                     timing_frames: 0,
                     actor_slot: 0,
@@ -339,15 +342,15 @@ impl World {
     /// transition. The mode *word* must not follow it that early:
     /// `FUN_801CF5BC` writes `_DAT_8007B83C = 0x14` only once the intro clock
     /// has passed its full duration **and** `TransitionEntity::ready == 3`
-    /// (`legaia_engine_vm::battle_intro_transition::TransitionTick::entered_battle_mode`).
-    /// [`crate::mode::ModeSeat::adopt_world_mode`] consults this, so both
+    /// (`legaia_engine_battle_vm::battle_intro_transition::TransitionTick::entered_battle_mode`).
+    /// [`legaia_engine_mode::mode::ModeSeat::adopt_world_mode`] consults this, so both
     /// hosts take the retail edge rather than the trigger frame.
     ///
     /// False outside a transition, so nothing else is gated by it.
     pub fn battle_mode_word_held(&self) -> bool {
         matches!(
             self.encounters.session.as_ref().map(|s| s.phase()),
-            Some(crate::encounter::EncounterPhase::Transition { .. })
+            Some(legaia_engine_battle::encounter::EncounterPhase::Transition { .. })
         ) && !self.battle.intro_mode_handoff
     }
 
@@ -370,7 +373,7 @@ impl World {
         self.carriers.pending_battle.is_some()
             || matches!(
                 self.encounters.session.as_ref().map(|s| s.phase()),
-                Some(crate::encounter::EncounterPhase::Transition { .. })
+                Some(legaia_engine_battle::encounter::EncounterPhase::Transition { .. })
             )
     }
 
@@ -414,18 +417,20 @@ impl World {
             || matches!(
                 self.encounters.session.as_ref().map(|s| s.phase()),
                 Some(
-                    crate::encounter::EncounterPhase::Transition { .. }
-                        | crate::encounter::EncounterPhase::Triggered(_)
+                    legaia_engine_battle::encounter::EncounterPhase::Transition { .. }
+                        | legaia_engine_battle::encounter::EncounterPhase::Triggered(_)
                 )
             )
     }
 
-    /// Return the resolved [`crate::monster_catalog::FormationDef`] for the
+    /// Return the resolved [`legaia_engine_battle::monster_catalog::FormationDef`] for the
     /// currently-triggered encounter, if any. Engines call this after the
     /// session reports `Triggered` to drain the roll and resolve into a
     /// concrete monster set; the session advances to `Battling` as a
     /// side-effect.
-    pub fn drain_encounter_formation(&mut self) -> Option<crate::encounter::EncounterRoll> {
+    pub fn drain_encounter_formation(
+        &mut self,
+    ) -> Option<legaia_engine_battle::encounter::EncounterRoll> {
         self.encounters
             .session
             .as_mut()

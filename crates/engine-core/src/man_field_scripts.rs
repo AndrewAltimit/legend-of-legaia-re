@@ -9,7 +9,7 @@
 //! censuses' scene-name entry points, which load each scene and hand its
 //! carriers to the carrier-level census.
 
-pub use legaia_engine_field::man_field_scripts::*;
+use legaia_engine_field::man_field_scripts::*;
 
 use crate::scene::{ProtIndex, Scene};
 use std::collections::BTreeMap;
@@ -100,7 +100,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::man_section::{ManFile, ManHeader};
+
+    use legaia_scene_formats::man_section::{ManFile, ManHeader};
 
     /// Build a MAN with two partition-1 records: record 0 (the scene
     /// controller, skipped by `actor_placements`) and record 1 (a placed actor
@@ -130,7 +131,7 @@ mod tests {
             header,
             partitions: [vec![], vec![off0, off1], vec![]],
             data_region_offset,
-            sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+            sections: std::array::from_fn(|_| legaia_scene_formats::man_section::SectionRef {
                 offset: man.len(),
                 length: 0,
             }),
@@ -156,7 +157,8 @@ mod tests {
             PlacementKind::Npc { dialog_inline, .. } => {
                 let inline = dialog_inline.expect("inline text captured");
                 // Renders the segment text (after the 0x1F lead).
-                let panel = crate::dialog::OwnedDialogPanel::from_inline_dialog(&inline);
+                let panel =
+                    legaia_engine_dialog::dialog::OwnedDialogPanel::from_inline_dialog(&inline);
                 assert!(panel.is_some(), "inline buffer is renderable");
             }
             other => panic!("expected Npc, got {other:?}"),

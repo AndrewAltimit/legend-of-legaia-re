@@ -35,8 +35,8 @@ pub(super) type ForkedHop = ((i32, i32), Vec<u8>, usize, Vec<u16>, Vec<u16>);
 /// more than once, or tests where the player stands first, is left out: its
 /// landing is not one place.
 pub(super) fn ledge_hops(session: &BootSession) -> WarpMap {
-    use legaia_asset::field_disasm::{ActorCtrlKind, InsnInfo, LinearWalker, MenuCtrlKind};
-    use legaia_engine_core::man_field_scripts::{partition_record_span, partition2_record_gates};
+    use legaia_engine_field::man_field_scripts::{partition_record_span, partition2_record_gates};
+    use legaia_scene_formats::field_disasm::{ActorCtrlKind, InsnInfo, LinearWalker, MenuCtrlKind};
     if session.host.world.mode != SceneMode::Field {
         return HashMap::new();
     }
@@ -82,11 +82,11 @@ pub(super) fn ledge_hops(session: &BootSession) -> WarpMap {
                             InsnInfo::CondJmp { .. }
                             | InsnInfo::Picker { .. }
                             | InsnInfo::SystemFlag {
-                                kind: legaia_asset::field_disasm::FlagKind::Test,
+                                kind: legaia_scene_formats::field_disasm::FlagKind::Test,
                                 ..
                             }
                             | InsnInfo::GFlag {
-                                kind: legaia_asset::field_disasm::FlagKind::Test,
+                                kind: legaia_scene_formats::field_disasm::FlagKind::Test,
                                 ..
                             } => forks = true,
                             InsnInfo::SceneChange { .. }
@@ -105,7 +105,7 @@ pub(super) fn ledge_hops(session: &BootSession) -> WarpMap {
                     // story-flag branch) lands on one tile. Rogue Tower's
                     // floors join only through these (`rugi` P2[0..37]).
                     let mut snaps: Vec<(i16, i16)> =
-                        legaia_engine_core::man_field_scripts::player_moves_in_region(body, pc0)
+                        legaia_engine_field::man_field_scripts::player_moves_in_region(body, pc0)
                             .into_iter()
                             .filter(|m| m.is_teleport())
                             .map(|m| (m.world_x, m.world_z))
@@ -187,7 +187,7 @@ pub(super) fn open_landing(w: &legaia_engine_core::world::World, land: Cell) -> 
 /// Where a walk-on record whose only forks are story-flag tests walks the
 /// player under the live flags: the run is followed from its first opcode
 /// (a `SysFlag.Test` jumps when its flag is set - the same reading
-/// [`legaia_engine_core::man_field_scripts::placement_spawn_relocation`]
+/// [`legaia_engine_field::man_field_scripts::placement_spawn_relocation`]
 /// makes), and the last player walk leg (`C7 F8 x z`) or arc on it is the
 /// landing. `deroa`'s transporter hub P2[11] sends its platform to one of
 /// three shaft rooms by the switch flags `0x4EF` / `0x4F0`.
@@ -196,7 +196,7 @@ pub(super) fn flag_path_landing(
     body: &[u8],
     pc0: usize,
 ) -> Option<Cell> {
-    use legaia_asset::field_disasm::{ActorCtrlKind, FlagKind, InsnInfo, decode};
+    use legaia_scene_formats::field_disasm::{ActorCtrlKind, FlagKind, InsnInfo, decode};
     let at = |b: u8| i16::from(b & 0x7F) * 128 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 };
     let mut pc = pc0;
     let mut seen = HashSet::new();
@@ -246,7 +246,7 @@ pub(super) fn flag_path_landing(
 }
 
 /// The loaded field scene's kind-0 intra-scene teleports (`.MAP` trigger
-/// block, [`legaia_engine_core::field_regions::IntraSceneTeleport`]): the
+/// block, [`legaia_engine_field::field_regions::IntraSceneTeleport`]): the
 /// tile that repositions the player outright, and the cell it lands in.
 /// House interiors and dungeon rooms are laid out in the same field map as
 /// the street outside, joined only by these, so a planner that does not
@@ -303,16 +303,17 @@ pub(super) const ACTOR_PROBES: [[(i16, i16); 3]; 4] = [
 /// (`WalkTouchEvent::PlayerMoveTo`) - contact centre and landing cell.
 /// Vahn's front door and every house door of a town are this class.
 pub(super) fn object_doors(session: &BootSession) -> Vec<((i16, i16), Cell)> {
-    use legaia_engine_core::man_field_scripts::{WalkTouchEvent, resolve_walk_touch_arm};
+    use legaia_engine_field::man_field_scripts::{WalkTouchEvent, resolve_walk_touch_arm};
     let w = &session.host.world;
     if w.mode != SceneMode::Field {
         return Vec::new();
     }
-    let parsed = w
-        .field_vm
-        .channels_man
-        .as_ref()
-        .and_then(|man| Some((legaia_asset::man_section::parse(man).ok()?, man.clone())));
+    let parsed = w.field_vm.channels_man.as_ref().and_then(|man| {
+        Some((
+            legaia_scene_formats::man_section::parse(man).ok()?,
+            man.clone(),
+        ))
+    });
     let mut out = Vec::new();
     for (&slot, &(contact, event)) in &w.props.walk_touch {
         let live = w
@@ -343,7 +344,7 @@ pub(super) fn object_doors(session: &BootSession) -> Vec<((i16, i16), Cell)> {
 /// (109, 78), walks the player aboard, rides and walks them off the far
 /// side, each touch the other way (`0x38B`).
 pub(super) fn prop_rides(session: &BootSession) -> Vec<((i16, i16), Cell)> {
-    use legaia_asset::field_disasm::{InsnInfo, decode};
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode};
     let w = &session.host.world;
     if w.mode != SceneMode::Field {
         return Vec::new();
@@ -435,12 +436,12 @@ pub(super) fn prop_rides(session: &BootSession) -> Vec<((i16, i16), Cell)> {
 /// collision probe until the player is out of its reach, so the landing is
 /// a pocket the player walks off, not a cell pinned against the platform.
 pub(super) fn door_partners(session: &BootSession) -> HashMap<(i16, i16), Vec<(i16, i16)>> {
-    use legaia_engine_core::man_field_scripts::record_exempted_objects;
+    use legaia_engine_field::man_field_scripts::record_exempted_objects;
     let w = &session.host.world;
     let Some(man) = w.field_vm.channels_man.as_ref() else {
         return HashMap::new();
     };
-    let Ok(mf) = legaia_asset::man_section::parse(man) else {
+    let Ok(mf) = legaia_scene_formats::man_section::parse(man) else {
         return HashMap::new();
     };
     let mut out: HashMap<(i16, i16), Vec<(i16, i16)>> = HashMap::new();
@@ -523,8 +524,8 @@ pub(super) fn boxed_doors(session: &BootSession) -> Vec<BoxedDoor> {
 /// `Some(box)` when only a player-channel box test (tiles `x_min, z_min,
 /// x_max, z_max`) stands before it.
 pub(super) fn door_openings(session: &BootSession) -> HashMap<(u8, u8), Option<TileBox>> {
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
-    use legaia_engine_core::man_field_scripts::partition_record_span;
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let w = &session.host.world;
     if w.mode != SceneMode::Field || w.props.bank.props.is_empty() {
         return HashMap::new();
@@ -532,7 +533,7 @@ pub(super) fn door_openings(session: &BootSession) -> HashMap<(u8, u8), Option<T
     let Some(man) = w.field_vm.channels_man.as_ref() else {
         return HashMap::new();
     };
-    let Ok(mf) = legaia_asset::man_section::parse(man) else {
+    let Ok(mf) = legaia_scene_formats::man_section::parse(man) else {
         return HashMap::new();
     };
     // The touch resumes the record past its spawn prologue (the first `21`),
@@ -556,7 +557,7 @@ pub(super) fn door_openings(session: &BootSession) -> HashMap<(u8, u8), Option<T
         let mut boxed = None;
         let mut seen = HashSet::new();
         while seen.insert(pc) {
-            let insn = legaia_asset::field_disasm::decode(body, pc).ok()?;
+            let insn = legaia_scene_formats::field_disasm::decode(body, pc).ok()?;
             if insn.size == 0 {
                 return None;
             }

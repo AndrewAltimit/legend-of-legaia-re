@@ -36,7 +36,7 @@ const PROT_EFECT_DAT_ENTRY: u32 = 873;
 /// PROT entry holding the global monster stat archive (one `0x14000`-byte
 /// LZS slot per monster id; the CDNAME label `battle_data` is shared across
 /// 0865-0868). The misleading `monster_data` label (PROT 869) is a stub.
-/// See [`legaia_asset::monster_archive`] + `docs/subsystems/battle.md`.
+/// See [`legaia_actor_formats::monster_archive`] + `docs/subsystems/battle.md`.
 pub(crate) const MONSTER_ARCHIVE_PROT_ENTRY: u32 = 867;
 
 /// Number of slots PROT 0874 section 0 contributes to the head of the
@@ -136,15 +136,16 @@ pub(crate) fn seed_global_tmd_pool_from_befect_data(
     let raw = index
         .entry_bytes(PROT_BEFECT_DATA_ENTRY)
         .with_context(|| format!("read PROT entry {} (befect_data)", PROT_BEFECT_DATA_ENTRY))?;
-    let container = legaia_asset::parse_player_lzs(&raw, 3)
+    let container = legaia_container_formats::parse_player_lzs(&raw, 3)
         .context("parse befect_data as a 3-descriptor player.lzs-shaped container")?;
     let section0 = container
         .descriptors
         .first()
         .ok_or_else(|| anyhow::anyhow!("befect_data has no section 0"))?;
-    let decoded = legaia_asset::decode(&raw, section0, legaia_asset::DecodeMode::Lzs)
-        .context("LZS-decode befect_data section 0")?;
-    let pack_entries = legaia_asset::pack::extract_pack(&decoded)
+    let decoded =
+        legaia_container_formats::decode(&raw, section0, legaia_container_formats::DecodeMode::Lzs)
+            .context("LZS-decode befect_data section 0")?;
+    let pack_entries = legaia_container_formats::pack::extract_pack(&decoded)
         .context("walk befect_data section 0 as a TMD-pack")?;
     let head = pack_entries
         .into_iter()
@@ -178,7 +179,7 @@ pub(crate) fn seed_global_tmd_pool_from_befect_data(
 /// Seed the battle effect-model library from PROT 0871 (`etmd.dat`) into
 /// `World::global_tmd_pool[3..=32]` (retail `DAT_8007C018[3..=32]`).
 ///
-/// PROT 0871 is an uncompressed 30-entry [`legaia_asset::pack`] of Legaia
+/// PROT 0871 is an uncompressed 30-entry [`legaia_container_formats::pack`] of Legaia
 /// TMDs; the engine walks it directly (no LZS) and parses each entry, mapping
 /// pack entry `i` -> pool index [`EFFECT_MODEL_LIBRARY_BASE`]` + i`. This is
 /// the library retail loads at battle init (`FUN_800520F0`); the live
@@ -206,7 +207,7 @@ pub(crate) fn seed_effect_model_library_from_etmd(
                 PROT_EFFECT_MODEL_LIBRARY_ENTRY
             )
         })?;
-    let pack_entries = legaia_asset::pack::extract_pack(&raw)
+    let pack_entries = legaia_container_formats::pack::extract_pack(&raw)
         .context("walk PROT 0871 (etmd.dat) as a TMD pack")?;
     let mut loaded = 0usize;
     for (i, body) in pack_entries
@@ -289,7 +290,7 @@ const BEFECT_ETIM_SECTION: usize = 2;
 ///
 /// CLUT blocks are uploaded as **flat horizontal strips** (`FUN_800198e0`:
 /// `LoadImage(rect = { x, y, w*h, 1 })`), not as the declared `w x h`
-/// rectangle - see the inline note. (`legaia_asset::field_char_textures` is the
+/// rectangle - see the inline note. (`legaia_actor_formats::field_char_textures` is the
 /// standalone parser + verifier for the same section, byte-exact against a live
 /// field VRAM dump.)
 ///
@@ -319,7 +320,7 @@ pub fn upload_effect_textures_into_vram(
 ) -> Result<usize> {
     let decoded = befect_etim_section_bytes(index)?;
     let mut uploaded = 0;
-    for target in legaia_asset::befect_cluster::scan_tims(&decoded) {
+    for target in legaia_actor_formats::befect_cluster::scan_tims(&decoded) {
         match legaia_tim::parse(&decoded[target.offset..]) {
             Ok(tim) => {
                 // Image page: declared rect, verbatim.
@@ -360,7 +361,7 @@ fn befect_etim_section_bytes(index: &ProtIndex) -> Result<Vec<u8>> {
     let raw = index
         .entry_bytes(PROT_BEFECT_DATA_ENTRY)
         .with_context(|| format!("read PROT entry {} (befect_data)", PROT_BEFECT_DATA_ENTRY))?;
-    let container = legaia_asset::parse_player_lzs(&raw, 3)
+    let container = legaia_container_formats::parse_player_lzs(&raw, 3)
         .context("parse befect_data as a 3-descriptor player.lzs-shaped container")?;
     let section = container
         .descriptors
@@ -368,7 +369,7 @@ fn befect_etim_section_bytes(index: &ProtIndex) -> Result<Vec<u8>> {
         .ok_or_else(|| {
             anyhow::anyhow!("befect_data has no section {BEFECT_ETIM_SECTION} (etim)")
         })?;
-    legaia_asset::decode(&raw, section, legaia_asset::DecodeMode::Lzs)
+    legaia_container_formats::decode(&raw, section, legaia_container_formats::DecodeMode::Lzs)
         .with_context(|| format!("LZS-decode befect_data section {BEFECT_ETIM_SECTION} (etim)"))
 }
 
@@ -389,7 +390,7 @@ fn befect_etim_section_bytes(index: &ProtIndex) -> Result<Vec<u8>> {
 pub fn effect_texture_image_rects(index: &ProtIndex) -> Result<Vec<(u16, u16, u16, u16)>> {
     let decoded = befect_etim_section_bytes(index)?;
     let mut rects = Vec::new();
-    for target in legaia_asset::befect_cluster::scan_tims(&decoded) {
+    for target in legaia_actor_formats::befect_cluster::scan_tims(&decoded) {
         if let Ok(tim) = legaia_tim::parse(&decoded[target.offset..]) {
             let img = &tim.image;
             rects.push((img.fb_x, img.fb_y, img.fb_w, img.h));
@@ -414,11 +415,13 @@ pub fn block_image_rects(index: &ProtIndex, block: &str) -> Result<Vec<(u16, u16
     let scene = Scene::load(index, block)?;
     let mut rects = Vec::new();
     for entry in &scene.entries {
-        let scan = legaia_asset::tim_scan::scan_entry(&entry.bytes);
+        let scan = legaia_container_formats::tim_scan::scan_entry(&entry.bytes);
         for (source, hit) in &scan.hits {
             let payload: &[u8] = match source {
-                legaia_asset::tim_scan::Source::Raw => &entry.bytes,
-                legaia_asset::tim_scan::Source::Lzs(idx) => scan.lzs_sections[*idx].as_slice(),
+                legaia_container_formats::tim_scan::Source::Raw => &entry.bytes,
+                legaia_container_formats::tim_scan::Source::Lzs(idx) => {
+                    scan.lzs_sections[*idx].as_slice()
+                }
             };
             if let Some(slice) = payload.get(hit.offset..)
                 && let Ok(tim) = legaia_tim::parse(slice)
@@ -458,7 +461,7 @@ pub fn upload_flame_atlas_into_vram(
         .entry_bytes_extended(PROT_FLAME_ATLAS_ENTRY)
         .with_context(|| format!("read PROT entry {PROT_FLAME_ATLAS_ENTRY} (flame atlas)"))?;
     let mut uploaded = 0;
-    for target in legaia_asset::befect_cluster::scan_tims(&raw) {
+    for target in legaia_actor_formats::befect_cluster::scan_tims(&raw) {
         match legaia_tim::parse(&raw[target.offset..]) {
             Ok(tim) => {
                 vram.upload_tim_partial(&tim, true, upload_clut);
@@ -515,7 +518,7 @@ pub fn upload_battle_stage_tims_into_vram(
     };
     let bytes: &[u8] = &entry.bytes;
     let mut uploaded = 0;
-    for hit in legaia_asset::tim_scan::scan_buffer(bytes) {
+    for hit in legaia_container_formats::tim_scan::scan_buffer(bytes) {
         let end = hit.offset + hit.byte_len;
         if end > bytes.len() {
             continue;

@@ -265,14 +265,14 @@ fn stone_0x32a_and_0x590_are_real_local_progress_gates() {
 /// the disc.
 #[test]
 fn keikoku_inner_doorway_record_has_no_variant_and_no_foreign_writer() {
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some(index) = open_index() else { return };
     let scene = Scene::load(&index, "keikoku").expect("load keikoku");
     let carriers = scene_man_carriers(&index, &scene);
     assert_eq!(carriers.len(), 1, "keikoku ships exactly one MAN carrier");
     assert!(!carriers[0].is_variant(), "and it is the bundle MAN");
     let man = &carriers[0].payload;
-    let mf = legaia_asset::man_section::parse(man).expect("parse keikoku MAN");
+    let mf = legaia_scene_formats::man_section::parse(man).expect("parse keikoku MAN");
     let (c1, c2) = partition2_record_gates(&mf, man, 7).expect("P2[7] gates");
     assert!(
         c1.is_empty() && c2.is_empty(),

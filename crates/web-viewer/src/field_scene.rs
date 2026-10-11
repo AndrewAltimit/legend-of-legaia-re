@@ -40,7 +40,7 @@ pub struct FieldScenePack {
     pub terrain: Vec<EnvDraw>,
     /// Walk-ground heightfield surface (`None` when the scene has no
     /// resolvable `.MAP` floor grid / floor LUT).
-    pub ground: Option<legaia_asset::field_objects::WalkHeightfield>,
+    pub ground: Option<legaia_scene_formats::field_objects::WalkHeightfield>,
     /// Cross-draw coplanar lifts (`legaia_engine_core::coplanar_draws`) for
     /// the combined terrain + placement lists, applied by the position
     /// exporters so overlapping same-plane tiles resolve deterministically
@@ -63,7 +63,7 @@ pub struct FieldScenePack {
     /// the host refuses the scene.
     pub live: Option<Box<legaia_engine_core::scene_live::LiveScene>>,
     /// The scene's ANM bundle - the clips placed props pose from.
-    pub scene_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    pub scene_anm: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     /// The live ladders (the live room's, then every other room's) the
     /// ground's drawn positions were last re-resolved against
     /// ([`LegaiaViewer::field_scene_ground_live_positions`]).
@@ -77,14 +77,14 @@ pub struct FieldScenePack {
     pub window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
     /// The PROT 0874 locomotion bundle - the clips the party / global-pool
     /// actors pose from.
-    pub locomotion_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    pub locomotion_anm: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     /// The scene's MAN-placed actors over the live world
     /// ([`crate::field_actors::FieldActors`], the play page's own actor
     /// layer), exported as `field_scene_npc_*`.
     pub(crate) actors: crate::field_actors::FieldActors,
 }
 
-/// The bundle type-6 **CLUT-walk table** runner (`legaia_asset::clut_walk`,
+/// The bundle type-6 **CLUT-walk table** runner (`legaia_scene_formats::clut_walk`,
 /// `FUN_8001ada4` case 0xB - water / waterfall shimmer, 12 carriers; see
 /// `docs/subsystems/field-ambient-fx.md`), shared by the map viewer and the
 /// play runtime. It runs on the retail game-tick clock: a game tick every
@@ -111,7 +111,7 @@ pub struct FieldSceneAnim {
 /// (`engine-core::scene_assembly`) so the browser pages and the native
 /// `export-glb` path bake identical meshes; re-exported under the old path
 /// for the crate's other pages.
-pub use legaia_engine_core::scene_assembly::{build_hybrid_env_mesh, build_hybrid_env_mesh_posed};
+use legaia_engine_core::scene_assembly::{build_hybrid_env_mesh, build_hybrid_env_mesh_posed};
 
 /// Assemble a CDNAME scene's full static map: field-mode
 /// [`SceneResources`] (VRAM + env TMD pack) + the `.MAP` placement /
@@ -198,9 +198,9 @@ pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) 
         .map(legaia_engine_core::field_ground::vertex_cells)
         .unwrap_or_default();
     pack.locomotion_anm = index
-        .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+        .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
         .ok()
-        .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+        .and_then(|b| legaia_actor_formats::character_pack::field_locomotion_anm(&b).ok());
     pack.live = legaia_engine_core::scene_live::LiveScene::enter(index.clone(), &pack.name)
         .map_err(|e| console_log(&format!("field scene {}: not live: {e}", pack.name)))
         .ok()
@@ -802,7 +802,7 @@ impl LegaiaViewer {
     /// record `anim_id - 1` when `anim_id` is non-zero, as
     /// [`Self::field_scene_mesh_posed`] - with its **light-source rows**
     /// shaded for a draw at the record angles `(rot_x, rot_y, rot_z)`: the
-    /// `legaia_engine_core::field_lit_mesh` kernel both play hosts run, under
+    /// `legaia_engine_field::field_lit_mesh` kernel both play hosts run, under
     /// the live scene's field light (the scene-load light before the scene
     /// runs live). Returns whether the mesh has lit rows; the page keeps one
     /// shared upload for a slot without any.
@@ -847,14 +847,14 @@ impl LegaiaViewer {
                 legaia_engine_core::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &f.res.vram)
             }
         };
-        let has_lit = legaia_engine_core::field_lit_mesh::has_lit_rows(&lit);
+        let has_lit = legaia_engine_field::field_lit_mesh::has_lit_rows(&lit);
         if has_lit {
-            let rot = legaia_engine_core::field_lit_mesh::draw_rotation(
+            let rot = legaia_engine_field::field_lit_mesh::draw_rotation(
                 rot_x as u16,
                 rot_y as u16,
                 rot_z as u16,
             );
-            legaia_engine_core::field_lit_mesh::shade_lit_rows_rgba(
+            legaia_engine_field::field_lit_mesh::shade_lit_rows_rgba(
                 &mut mesh.colors,
                 &mut flat,
                 &lit,
@@ -873,7 +873,7 @@ impl LegaiaViewer {
         };
         f.env_tmds.get(slot as usize).is_some_and(|&res_idx| {
             let (_, lit) = f.res.tmds[res_idx].build_filtered_vram_mesh_lit_vertices(&f.res.vram);
-            legaia_engine_core::field_lit_mesh::has_lit_rows(&lit)
+            legaia_engine_field::field_lit_mesh::has_lit_rows(&lit)
         })
     }
 
@@ -954,7 +954,7 @@ impl LegaiaViewer {
     /// yaw-only `placementModelScaled*` path: that builder's negated-yaw
     /// convention is a cancellation specific to `Ry`. The page composes
     /// retail's `Rx * Ry * Rz` instead (`placementModelEuler`), which is what
-    /// `legaia_engine_render::battle_intro::placement_rotation` applies on the
+    /// `legaia_render_kernels::battle_intro::placement_rotation` applies on the
     /// native host. Not a rarity to skip: across the field corpus ~6% of
     /// placements tilt, and some scenes tilt every one of theirs.
     pub fn field_scene_placement_rot_x(&self) -> Vec<u16> {

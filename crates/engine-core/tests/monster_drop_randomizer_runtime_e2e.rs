@@ -17,7 +17,7 @@
 //! monster record off the (patched) disc.
 //!
 //! The engine sidesteps that cache entirely: it decodes the monster
-//! record straight from disc bytes (`legaia_asset::monster_archive`) and runs
+//! record straight from disc bytes (`legaia_actor_formats::monster_archive`) and runs
 //! the very victory-spoils path the randomizer's edit feeds - the drop roll in
 //! [`World::apply_battle_loot`] (ported from the reward resolver `FUN_8004E568`
 //! → `FUN_80054CB0` record→actor copy). So this test:
@@ -37,11 +37,11 @@
 //! the roll lands for any non-zero rate (roll `0`, gate open), keeping both
 //! passes comparable. Skips without `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
-use legaia_engine_core::monster_catalog::{
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, catalog_from_monster_archive,
 };
 use legaia_engine_core::world::World;
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 /// World RNG seed on which the victory drop roll lands for any positive
 /// chance. The one-monster roll draws twice: `rand() % 100 < chance`, then -
@@ -93,7 +93,7 @@ fn patched_monster_drop_grants_new_item_at_runtime() {
 
     // Item names purely for legible output (no Sony bytes are asserted).
     let names = legaia_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54")
-        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let name_of = |id: u8| {
         names
             .as_ref()
@@ -108,7 +108,7 @@ fn patched_monster_drop_grants_new_item_at_runtime() {
     let archive = patcher
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .expect("read archive");
-    let records = legaia_asset::monster_archive::records(&archive).expect("decode archive");
+    let records = legaia_actor_formats::monster_archive::records(&archive).expect("decode archive");
 
     let (monster_id, original_item, original_chance) = records
         .iter()
@@ -120,7 +120,7 @@ fn patched_monster_drop_grants_new_item_at_runtime() {
             }
             let replacement = pick_replacement(r.drop_item);
             let slot = patcher.monster_slot(r.id).ok()?;
-            legaia_patcher::monster::set_drop(&slot, replacement, r.drop_chance_pct).ok()?;
+            legaia_disc_patch::monster::set_drop(&slot, replacement, r.drop_chance_pct).ok()?;
             Some((r.id, r.drop_item, r.drop_chance_pct))
         })
         .expect("archive must hold at least one droppable, re-packable monster");
@@ -143,11 +143,11 @@ fn patched_monster_drop_grants_new_item_at_runtime() {
     let mut patcher = DiscPatcher::open(disc).expect("reopen disc");
     let slot = patcher.monster_slot(monster_id).unwrap();
     let repacked =
-        legaia_patcher::monster::set_drop(&slot, replacement_item, original_chance).unwrap();
+        legaia_disc_patch::monster::set_drop(&slot, replacement_item, original_chance).unwrap();
     patcher.patch_monster_slot(monster_id, &repacked).unwrap();
 
     let patched_archive = patcher.read_entry(MONSTER_ARCHIVE_ENTRY).unwrap();
-    let patched_rec = legaia_asset::monster_archive::record(&patched_archive, monster_id)
+    let patched_rec = legaia_actor_formats::monster_archive::record(&patched_archive, monster_id)
         .unwrap()
         .unwrap();
     assert_eq!(

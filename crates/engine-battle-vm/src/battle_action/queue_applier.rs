@@ -312,7 +312,7 @@ pub const SWING_HIGH: u8 = 0x0F;
 /// against `2` at `0x801EEFD0`.
 ///
 /// `+0x1E` sits between the record's element byte `+0x1D` and its size class
-/// `+0x1F`, and `legaia_asset::monster_archive` does not parse it. What the
+/// `+0x1F`, and `legaia_actor_formats::monster_archive` does not parse it. What the
 /// disassembly establishes is only its *effect*: a class-`2` target is struck
 /// with one `SWING_LOW` instead of two arm swings, which reads as the height /
 /// posture class behind retail's limb-vs-height "Miss".

@@ -11,9 +11,9 @@
 //!     cargo run --release -p legaia-asset --example hand_frame_fit
 #![allow(clippy::needless_range_loop)]
 
-use legaia_asset::battle_data_pack;
+use legaia_actor_formats::battle_data_pack;
+use legaia_party_swap::weapon_fuse::{BareFrame, weapon_fusion_record};
 use legaia_patcher::equip_transplant::{section_clut_cols, weapon_section};
-use legaia_patcher::party_swap::weapon_fuse::{BareFrame, weapon_fusion_record};
 use std::collections::BTreeMap;
 
 type V = [f64; 3];

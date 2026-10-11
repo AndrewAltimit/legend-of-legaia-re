@@ -41,10 +41,10 @@ pub(super) fn retail_cam_tween(
     ram: &[u8],
     ctx: u32,
 ) -> (
-    legaia_engine_vm::battle_cam_script::BattleCamPose,
-    legaia_engine_vm::battle_cam_script::BattleCamPose,
+    legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
+    legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
 ) {
-    use legaia_engine_vm::battle_cam_script::BattleCamPose;
+    use legaia_engine_battle_vm::battle_cam_script::BattleCamPose;
     let word = |va: u32| game_anchors::u32_at(ram, va) as i32 as f32;
     let live = BattleCamPose {
         pitch: f32::from(game_anchors::u16_at(ram, 0x8007_B790) & 0xFFF),
@@ -67,8 +67,8 @@ pub(super) fn retail_cam_tween(
 /// `pitch, yaw, tr.x, tr.y, tr.z, focus.x, focus.y, focus.z`.
 pub fn cam_align_to_env(
     tween: &(
-        legaia_engine_vm::battle_cam_script::BattleCamPose,
-        legaia_engine_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
     ),
 ) -> String {
     [tween.0, tween.1]
@@ -89,10 +89,10 @@ pub fn cam_align_to_env(
 pub fn cam_align_from_env(
     v: &str,
 ) -> Option<(
-    legaia_engine_vm::battle_cam_script::BattleCamPose,
-    legaia_engine_vm::battle_cam_script::BattleCamPose,
+    legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
+    legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
 )> {
-    use legaia_engine_vm::battle_cam_script::BattleCamPose;
+    use legaia_engine_battle_vm::battle_cam_script::BattleCamPose;
     let n: Vec<f32> = v
         .split(',')
         .map(|f| f.trim().parse().ok())

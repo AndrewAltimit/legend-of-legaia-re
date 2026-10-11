@@ -33,15 +33,15 @@
 use legaia_engine_core::field_menu_dispatch::{
     apply_pause_items_outcome, build_pause_items_session,
 };
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::items::ItemCatalog;
-use legaia_engine_core::pause_screens::{
+use legaia_engine_core::world::World;
+use legaia_engine_menus::items::ItemCatalog;
+use legaia_engine_menus::pause_screens::{
     DOOR_OF_LIGHT_ITEM_ID, DOOR_OF_WIND_ITEM_ID, INCENSE_ITEM_ID, MENU_EXIT_CODE_FIELD_ESCAPE,
     MENU_EXIT_CODE_WORLD_MAP_WARP, PauseItemsFocus, PauseItemsSession, SpecialUseOutcome,
     SpecialUsePhase, UseRoute, items_screen_model, special_use_route_for_item,
     use_route_for_effect,
 };
-use legaia_engine_core::world::World;
+use legaia_engine_system::input::PadButton;
 
 /// A field world whose bag holds `ids` (one each) plus a plain Healing Leaf,
 /// with a three-member roster the item-use flow can target.
@@ -247,7 +247,7 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
     let mut world = world_holding(&[DOOR_OF_WIND_ITEM_ID]);
     // Two landmarks the walk will accept, one it will not: the placement
     // table is disc data, so the flags are what the ladder controls.
-    world.menu.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
+    world.menu.worldmap_menu = Some(legaia_game_tables::worldmap_menu::WorldmapMenu {
         names: vec!["Rim Elm".into(), "Drake Castle".into(), "Sol".into()],
         placements: vec![
             placement(0, 0, 0x10, 0x0055),
@@ -307,7 +307,7 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
     assert_eq!(world.party.inventory.get(&DOOR_OF_WIND_ITEM_ID), None);
     assert_eq!(
         world.menu.pending_warp,
-        Some(legaia_engine_core::pause_screens::StagedWarp {
+        Some(legaia_engine_menus::pause_screens::StagedWarp {
             scene_id: 0x0201,
             menu_x: 0x40,
             menu_y: 0x50,
@@ -321,7 +321,7 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
 #[test]
 fn the_staged_warp_has_no_drain_yet() {
     let mut world = world_holding(&[]);
-    world.menu.pending_warp = Some(legaia_engine_core::pause_screens::StagedWarp {
+    world.menu.pending_warp = Some(legaia_engine_menus::pause_screens::StagedWarp {
         scene_id: 0x0055,
         menu_x: 1,
         menu_y: 2,
@@ -337,8 +337,8 @@ fn placement(
     name_idx: u8,
     discovery_flag: u8,
     scene_id: u16,
-) -> legaia_asset::worldmap_menu::PlacementRecord {
-    legaia_asset::worldmap_menu::PlacementRecord {
+) -> legaia_game_tables::worldmap_menu::PlacementRecord {
+    legaia_game_tables::worldmap_menu::PlacementRecord {
         index,
         name_idx,
         discovery_flag,

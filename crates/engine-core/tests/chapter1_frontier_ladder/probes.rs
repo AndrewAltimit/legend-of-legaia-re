@@ -131,7 +131,7 @@ pub(super) fn settle(host: &mut SceneHost) -> Settle {
             && host.world.field_vm.helper_contexts.is_empty()
             && host.world.field_vm.pending_record_spawns.is_empty()
             && !host.world.field_scripts_held_for_battle()
-            && host.world.mode != legaia_engine_core::world::SceneMode::Battle
+            && host.world.mode != legaia_engine_mode::mode::SceneMode::Battle
         {
             return Settle::Released;
         }
@@ -154,7 +154,7 @@ pub(super) fn settle(host: &mut SceneHost) -> Settle {
     let held_by = if host.world.cutscene_timeline_active() {
         "cutscene timeline"
     } else if host.world.field_scripts_held_for_battle()
-        || host.world.mode == legaia_engine_core::world::SceneMode::Battle
+        || host.world.mode == legaia_engine_mode::mode::SceneMode::Battle
     {
         "a committed battle"
     } else if host.world.dialogue_owns_input() {

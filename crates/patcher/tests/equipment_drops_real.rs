@@ -19,12 +19,12 @@
 //! runtime oracle - verification is the byte/disassembly checks here plus an
 //! emulator playtest.
 
-use legaia_asset::item_names::file_offset_for_va;
 use legaia_code_hooks::bonus_drop::{
     self, BonusDropInjection, DISPLACED, HOOK_VA, RETURN_VA, ROUTINE_VA, assemble_routine,
     detour_words,
 };
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::equipment::{equipment_ids, equipment_pool};

@@ -8,16 +8,19 @@ impl World {
     /// apply. Party slots 0/1/2 are Vahn/Noa/Gala; out-of-range slots (story
     /// guests, monsters) fall back to Vahn so the lookup never panics.
     pub(crate) fn caster_character(&self, slot: u8) -> legaia_art::Character {
-        crate::battle_arts::character_for_slot(slot)
+        legaia_engine_battle::battle_arts::character_for_slot(slot)
     }
 
     /// Build the Arts submenu rows for `caster` from their saved chains. For
     /// each chain, the longest staged art record whose command string the
-    /// chain ends with ([`crate::battle_arts::chain_matches_record`]) supplies
+    /// chain ends with ([`legaia_engine_battle::battle_arts::chain_matches_record`]) supplies
     /// the real power profile; chains with no matching record fall back to a
     /// synthetic profile derived from the directional commands.
-    pub(crate) fn build_battle_arts_rows(&self, caster: u8) -> Vec<crate::battle_arts::ArtRow> {
-        use crate::battle_arts::{
+    pub(crate) fn build_battle_arts_rows(
+        &self,
+        caster: u8,
+    ) -> Vec<legaia_engine_battle::battle_arts::ArtRow> {
+        use legaia_engine_battle::battle_arts::{
             ArtRow, chain_matches_record, miracle_for_chain, power_from_record, super_for_chain,
             synthetic_power,
         };
@@ -38,7 +41,7 @@ impl World {
                     let (power, enemy_effect) = self.miracle_strike_profile(character, miracle);
                     // Shout key: the finisher constant of the resolved
                     // Miracle queue (the last art the materialiser runs).
-                    let action = legaia_engine_vm::battle_action::resolve_action_queue(
+                    let action = legaia_engine_battle_vm::battle_action::resolve_action_queue(
                         character,
                         miracle.commands,
                         &[],
@@ -127,26 +130,29 @@ impl World {
 
     /// Resolve a Miracle Art's per-strike power profile from its
     /// finisher-replacement queue. Runs the canonical command resolution
-    /// ([`legaia_engine_vm::battle_action::resolve_action_queue`]), which
+    /// ([`legaia_engine_battle_vm::battle_action::resolve_action_queue`]), which
     /// replaces the directional input with the Miracle's component-art queue,
     /// then turns each art constant in that queue into strikes:
     ///
     /// - if the `(character, art)` record is staged ([`Self::set_art_record`]),
     ///   the art contributes its real damage power bytes + status effect;
     /// - otherwise it contributes one tier-0 (`x12`) synthetic strike, the same
-    ///   graceful-degradation profile [`crate::battle_arts::synthetic_power`]
+    ///   graceful-degradation profile [`legaia_engine_battle::battle_arts::synthetic_power`]
     ///   uses when no disc art data is loaded.
     ///
     /// The first staged component art's status effect is adopted for the whole
-    /// finisher. Result is clamped to [`crate::battle_arts::MAX_ART_HITS`] and
+    /// finisher. Result is clamped to [`legaia_engine_battle::battle_arts::MAX_ART_HITS`] and
     /// floored at one strike.
     pub(in crate::world) fn miracle_strike_profile(
         &self,
         character: legaia_art::Character,
         miracle: &legaia_art::MiracleArt,
     ) -> (Vec<legaia_art::power::PowerByte>, legaia_art::EnemyEffect) {
-        let queue =
-            legaia_engine_vm::battle_action::resolve_action_queue(character, miracle.commands, &[]);
+        let queue = legaia_engine_battle_vm::battle_action::resolve_action_queue(
+            character,
+            miracle.commands,
+            &[],
+        );
         self.art_actions_strike_profile(character, queue.actions().iter().copied())
     }
 
@@ -177,15 +183,15 @@ impl World {
     /// tier-0 (`x12`) synthetic strike when that art's record isn't loaded (the
     /// graceful-degradation fallback the no-disc-data path uses). The first
     /// staged status effect is adopted for the whole finisher; the result is
-    /// clamped to [`crate::battle_arts::MAX_ART_HITS`] and floored at one strike.
+    /// clamped to [`legaia_engine_battle::battle_arts::MAX_ART_HITS`] and floored at one strike.
     /// Shared by the Miracle and Super finisher resolvers.
     fn art_actions_strike_profile(
         &self,
         character: legaia_art::Character,
         actions: impl Iterator<Item = legaia_art::ActionConstant>,
     ) -> (Vec<legaia_art::power::PowerByte>, legaia_art::EnemyEffect) {
-        use crate::battle_arts::MAX_ART_HITS;
         use legaia_art::power::PowerByte;
+        use legaia_engine_battle::battle_arts::MAX_ART_HITS;
         // Synthetic UDF x12 - the tier-0 high strike a component art with no
         // staged record degrades to.
         const SYNTH_UDF_X12: u8 = 0x16;
@@ -198,7 +204,8 @@ impl World {
             }
             match self.tables.art_records.get(&(character, action)) {
                 Some(rec) => {
-                    let (mut bytes, effect) = crate::battle_arts::power_from_record(rec);
+                    let (mut bytes, effect) =
+                        legaia_engine_battle::battle_arts::power_from_record(rec);
                     if enemy_effect == legaia_art::EnemyEffect::None {
                         enemy_effect = effect;
                     }
@@ -218,22 +225,27 @@ impl World {
     }
 
     /// Pull the cross-character saved-chain library out as a
-    /// [`crate::tactical_arts_editor::ChainLibrary`] - what the field menu's
+    /// [`legaia_engine_battle::tactical_arts_editor::ChainLibrary`] - what the field menu's
     /// Tactical Arts editor browses + edits. The editor mutates the returned
     /// library; the engine writes the result back with
     /// [`Self::store_chain_library`] so the edit reaches the next battle's
     /// Arts menu (via `Self::build_battle_arts_rows`) and the next save
     /// (via [`crate::world::PartyState::saved_chains`]).
-    pub fn chain_library(&self) -> crate::tactical_arts_editor::ChainLibrary {
-        crate::tactical_arts_editor::ChainLibrary::from_records(&self.party.saved_chains)
+    pub fn chain_library(&self) -> legaia_engine_battle::tactical_arts_editor::ChainLibrary {
+        legaia_engine_battle::tactical_arts_editor::ChainLibrary::from_records(
+            &self.party.saved_chains,
+        )
     }
 
-    /// Write an edited [`crate::tactical_arts_editor::ChainLibrary`] back into
+    /// Write an edited [`legaia_engine_battle::tactical_arts_editor::ChainLibrary`] back into
     /// [`crate::world::PartyState::saved_chains`], replacing the whole library. This is the bridge
     /// that closes the loop the field menu opens with [`Self::chain_library`]:
     /// once stored, a chain composed in the editor is selectable in battle and
     /// persists across `save_full` / `load_full`.
-    pub fn store_chain_library(&mut self, lib: &crate::tactical_arts_editor::ChainLibrary) {
+    pub fn store_chain_library(
+        &mut self,
+        lib: &legaia_engine_battle::tactical_arts_editor::ChainLibrary,
+    ) {
         self.party.saved_chains = lib.to_records();
     }
 

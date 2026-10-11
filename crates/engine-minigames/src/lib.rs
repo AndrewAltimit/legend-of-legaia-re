@@ -3,7 +3,7 @@
 //! renderer.
 //!
 //! `legaia-engine-core` depends on this crate and re-exports every module at
-//! its old path (`legaia_engine_core::slot_machine`, ...), so hosts keep
+//! its old path (`crate::slot_machine`, ...), so hosts keep
 //! naming the paths they always did. What stays in `engine-core`, and why,
 //! is in this crate's `README.md`.
 
@@ -16,12 +16,7 @@ pub mod baka_fighter_chrome;
 pub mod baka_impact_fx;
 pub mod dance;
 pub mod dance_tutorial;
-pub use legaia_engine_fishing::fishing;
-pub use legaia_engine_fishing::fishing_actors;
-pub use legaia_engine_fishing::fishing_chrome;
-pub use legaia_engine_fishing::fishing_hub;
 pub mod minigame_actor;
-pub use legaia_engine_fishing::minigame_floor;
 pub mod minigame_fx;
 pub mod muscle_dome;
 pub mod other_game_overlay;

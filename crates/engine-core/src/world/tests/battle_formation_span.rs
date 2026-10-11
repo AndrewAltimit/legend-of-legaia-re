@@ -5,7 +5,7 @@
 use super::*;
 
 fn seat_monsters(world: &mut World, party: u8, ids: &[u16]) {
-    use crate::monster_catalog::MonsterDef;
+    use legaia_engine_battle::monster_catalog::MonsterDef;
     world.enter_battle(party, ids.len() as u8);
     for (k, &id) in ids.iter().enumerate() {
         if world.tables.monster_catalog.get(id).is_none() {
@@ -107,7 +107,7 @@ fn intro_labels_sit_over_their_monsters() {
     // The three normal-family seats: -600, 0, 600.
     assert_eq!(xs, vec![-600, 0, 600]);
     let mut rows = rows;
-    crate::target_picker::layout_enemy_menu_rows(&mut rows, |_| 0);
+    legaia_engine_battle::target_picker::layout_enemy_menu_rows(&mut rows, |_| 0);
     let placed: Vec<i16> = rows.iter().map(|r| r.x).collect();
     assert_eq!(placed, vec![0xA0 - 75, 0xA0, 0xA0 + 75]);
 }

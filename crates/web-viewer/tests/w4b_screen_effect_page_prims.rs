@@ -35,7 +35,7 @@ use legaia_web_viewer::runtime::LegaiaRuntime;
 const SCENE: &str = "town0e";
 
 /// Byte offsets into the shared `ScreenVertex` layout - re-stated from
-/// `legaia_engine_ui::screen_prim` so a silent stride change fails here
+/// `legaia_render_kernels::screen_prim` so a silent stride change fails here
 /// rather than reading a neighbouring field as a colour.
 const STRIDE: usize = 48;
 const OFF_COLOR: usize = 24;
@@ -56,12 +56,12 @@ fn play_page_draws_the_field_screen_effect_wash() {
     };
     assert_eq!(
         STRIDE as u64,
-        legaia_engine_ui::screen_prim::SCREEN_VERTEX_STRIDE,
+        legaia_render_kernels::screen_prim::SCREEN_VERTEX_STRIDE,
         "the shared vertex stride moved"
     );
     assert_eq!(
         OFF_COLOR as u64,
-        legaia_engine_ui::screen_prim::SCREEN_VERTEX_OFF_COLOR,
+        legaia_render_kernels::screen_prim::SCREEN_VERTEX_OFF_COLOR,
         "the shared colour offset moved"
     );
     rt.enter_field(SCENE).expect("enter the scene");

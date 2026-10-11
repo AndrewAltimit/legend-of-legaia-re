@@ -16,11 +16,11 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{
-    RecordPathEnd, overworld_portal_sites, partition2_record_path_scene_change,
-};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
 use legaia_engine_core::world::WorldMapEntityConfig;
+use legaia_engine_field::man_field_scripts::{
+    RecordPathEnd, overworld_portal_sites, partition2_record_path_scene_change,
+};
 
 fn extracted_dir() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -58,7 +58,7 @@ fn map03_entrances_follow_their_flag_branches() {
         .field_man_payload(&index)
         .expect("MAN")
         .expect("map03 has a MAN");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
     let under = |rec: usize, flags: &[u16]| {
         let set: BTreeSet<u16> = flags.iter().copied().collect();
         dest(partition2_record_path_scene_change(&mf, &man, rec, &|f| {

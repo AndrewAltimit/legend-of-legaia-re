@@ -34,11 +34,12 @@
 //! A baseline pass over the *unpatched* exit first confirms it warps to `map01`,
 //! so the patched assertion can't pass vacuously. Skips without `LEGAIA_DISC_BIN`.
 
-use legaia_asset::man_edit::DestEdit;
-use legaia_asset::scene_asset_table::encode_size_word;
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_patcher::door::SceneDoors;
+use legaia_scene_formats::man_edit::DestEdit;
+use legaia_scene_formats::scene_asset_table::encode_size_word;
 
 /// Rim Elm scene bundle PROT entry.
 const TOWN01_ENTRY: usize = 4;

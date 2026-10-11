@@ -17,7 +17,7 @@
 //! far corner at `x0 + w - 1` / `y0 + h - 1`, exactly like its texel rect. The
 //! `HIT` / `TOTAL` / `DAMAGE` label blits make that unambiguous: they are
 //! drawn 1:1, and their screen delta equals their texel delta to the pixel.
-//! The port's [`legaia_engine_ui::battle_numerals::readout_quad`] instead
+//! The port's [`legaia_render_kernels::battle_numerals::readout_quad`] instead
 //! emits `x0 + w` (see its `x1` / `y1`), so each engine readout quad spans one
 //! more column and row than retail's; the test prints that delta per label
 //! rather than asserting it, because fixing it is a host-side change.
@@ -42,8 +42,9 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_vm::battle_value_readout as vr;
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_engine_battle_vm::battle_value_readout as vr;
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
 
 const RAM_BASE: u32 = 0x8000_0000;
 /// GTE `H` (`_DAT_8007B6F4`).
@@ -368,8 +369,8 @@ fn walkable_camera_rows(
             continue;
         };
         let Ok(ram) = st.main_ram() else { continue };
-        let scene = legaia_mednafen::game_anchors::scene_name(ram);
-        let mode = legaia_mednafen::game_anchors::game_mode(ram);
+        let scene = legaia_ram_image::game_anchors::scene_name(ram);
+        let mode = legaia_ram_image::game_anchors::game_mode(ram);
         // Field / walkable modes only - a battle writes its own camera.
         if mode != 0x03 {
             continue;

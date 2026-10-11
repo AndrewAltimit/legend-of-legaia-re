@@ -244,7 +244,7 @@ impl FadeState {
     /// `0x80024FB0`). Kind `1` is `B + F` (a ramp to white brightens to a
     /// white-out), kind `2` is `B - F` (the same ramp darkens to black).
     /// Hosts draw the quad through
-    /// `legaia_engine_ui::screen_prim::screen_fade_prim`.
+    /// `legaia_render_kernels::screen_prim::screen_fade_prim`.
     // REF: FUN_80024EE4, FUN_80025000
     pub fn abr(&self) -> u8 {
         (self.kind & 3) as u8

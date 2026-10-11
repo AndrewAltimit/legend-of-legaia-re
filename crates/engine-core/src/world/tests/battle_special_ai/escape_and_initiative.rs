@@ -2,13 +2,14 @@
 //! initiative keys and the AP-boost gauge.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// The two "spirit gain up" finisher bits are the AP Boost accessory passives
 /// (`0x28`/`0x29`): a wearer's spirit-art gauge charges faster from the same
 /// hit, read off the rebuilt ability bitfield via `World::defender_resist`.
 #[test]
 fn ap_boost_accessory_accelerates_spirit_gauge() {
-    use crate::accessory_passives::AccessoryPassives;
+    use legaia_engine_battle::accessory_passives::AccessoryPassives;
 
     fn gauge_after_hit(ap_boost_passive: Option<u8>) -> u16 {
         let mut world = World {
@@ -45,7 +46,7 @@ fn ap_boost_accessory_accelerates_spirit_gauge() {
 /// party SPD vs enemy SPD, both sides at full HP, optional accessory passive
 /// on the member's slot-7 equip.
 fn escape_world(party_speed: u16, enemy_speed: u16, passive: Option<u8>) -> World {
-    use crate::accessory_passives::AccessoryPassives;
+    use legaia_engine_battle::accessory_passives::AccessoryPassives;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -148,7 +149,7 @@ fn escape_accessories_fold_from_the_ability_bitfield() {
 /// is indistinguishable from not latching at all.
 #[test]
 fn latched_preemptive_strike_makes_the_escape_compare_unfailable() {
-    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+    use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
 
     let mut caught_without = 0;
     let mut escaped_with = 0;
@@ -178,7 +179,7 @@ fn latched_preemptive_strike_makes_the_escape_compare_unfailable() {
 /// the initiative lockout.
 #[test]
 fn latched_back_attack_does_not_touch_the_escape_roll() {
-    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+    use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
 
     for seed in 0..50u32 {
         let mut plain = escape_world(30, 45, None);
@@ -200,7 +201,7 @@ fn latched_back_attack_does_not_touch_the_escape_roll() {
 /// strike. Only the forced-flee arm bypasses `+0x287`.
 #[test]
 fn latched_preemptive_strike_still_loses_to_the_no_escape_flag() {
-    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+    use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
 
     for seed in 0..25u32 {
         let mut w = escape_world(1000, 1, None);
@@ -222,7 +223,7 @@ fn latched_preemptive_strike_still_loses_to_the_no_escape_flag() {
 /// **and** the advantage survives into `+0x291` (the latch ran after it).
 #[test]
 fn seed_then_latch_feeds_both_formation_consumers() {
-    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+    use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
 
     let mut w = escape_world(40, 40, None);
     w.party.party_count = 3;
@@ -271,7 +272,7 @@ fn seed_then_latch_feeds_both_formation_consumers() {
 /// that was supposed to lose it.
 #[test]
 fn side_lockout_follows_party_count_not_the_fixed_retail_boundary() {
-    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+    use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
 
     for (advantage, party_locked) in [
         (FormationAdvantage::BackAttack, true),
@@ -327,7 +328,7 @@ fn initiative_keys_carry_the_wounded_bonus_from_the_kernel() {
         }
         w.actors[0].battle.hp = 1; // near death
         w.actors[1].battle.hp = 1000; // untouched
-        w.set_battle_formation(legaia_engine_vm::battle_formulas::FormationAdvantage::None);
+        w.set_battle_formation(legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None);
 
         w.reseed_initiative();
 
@@ -371,7 +372,7 @@ fn downed_wearer_does_not_fold_escape_accessories() {
 /// pass once per battle and kept the latch for the whole fight.
 #[test]
 fn the_pre_emptive_escape_latch_lasts_one_round() {
-    use legaia_engine_vm::battle_formulas::FormationAdvantage;
+    use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
 
     let mut w = escape_world(40, 40, None);
     w.set_battle_formation(FormationAdvantage::Preemptive);

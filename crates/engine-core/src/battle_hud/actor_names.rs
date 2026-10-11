@@ -6,7 +6,7 @@ use super::*;
 pub(super) fn party_count(world: &crate::world::World) -> usize {
     // A dome leg seats the lead fighter alone, and no battle actor table
     // backs it.
-    if world.mode == crate::world::SceneMode::MuscleDome {
+    if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         return 1;
     }
     (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len())
@@ -40,7 +40,7 @@ pub(super) fn monster_name(world: &crate::world::World, slot: u8) -> String {
     // the formation seats the same monster more than once (`Skeleton A`,
     // `Gilium Lv3 A`), lettered over the seated slots so a twin dying does
     // not re-letter the survivor - the same rule the target rows use.
-    let twins: Vec<usize> = (pc..pc + crate::target_picker::FORMATION_SLOTS)
+    let twins: Vec<usize> = (pc..pc + legaia_engine_battle::target_picker::FORMATION_SLOTS)
         .filter(|&s| {
             world.actors.get(s).is_some_and(|a| a.battle.max_hp != 0)
                 && catalog(s).as_deref() == Some(name.as_str())
@@ -85,7 +85,7 @@ pub fn battle_active_actor(world: &crate::world::World) -> Option<(u8, String)> 
             let slot = command_entry_actor(world)?;
             Some((slot, actor_name(world, slot)))
         }
-        BattleHudPhase::Action if world.mode == crate::world::SceneMode::MuscleDome => {
+        BattleHudPhase::Action if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome => {
             // A dome play-out: the plaque names the side whose play is
             // acting out (the capture-pinned rule: the acting fighter's
             // plate holds the top-left seat once actions play).
@@ -106,7 +106,7 @@ pub fn battle_active_actor(world: &crate::world::World) -> Option<(u8, String)> 
             let slot = world.battle_ctx.active_actor;
             let actor = world.actors.get(slot as usize)?;
             if actor.battle.action_category
-                == legaia_engine_vm::battle_action::ActionCategory::Run.as_byte()
+                == legaia_engine_battle_vm::battle_action::ActionCategory::Run.as_byte()
             {
                 return None;
             }

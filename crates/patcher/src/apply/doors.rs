@@ -337,8 +337,8 @@ pub fn randomize_doors(
     mode: DropMode,
     coupling: DoorCoupling,
 ) -> Result<DoorApplyReport> {
-    use legaia_asset::man_edit::DestEdit;
-    use legaia_asset::scene_asset_table::encode_size_word;
+    use legaia_scene_formats::man_edit::DestEdit;
+    use legaia_scene_formats::scene_asset_table::encode_size_word;
 
     let cd = cdname_map(patcher);
 

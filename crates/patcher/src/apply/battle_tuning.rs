@@ -7,9 +7,9 @@ use super::*;
 /// Returns `None` if the battle-action overlay entry can't be parsed.
 pub fn current_move_powers(patcher: &DiscPatcher) -> Result<Option<Vec<i16>>> {
     let entry = patcher
-        .read_entry(legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .read_entry(legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .context("read battle-action overlay entry 0898")?;
-    Ok(legaia_asset::move_power::parse(&entry)
+    Ok(legaia_game_tables::move_power::parse(&entry)
         .map(|recs| recs.iter().map(|r| r.power_raw).collect()))
 }
 
@@ -21,13 +21,13 @@ pub fn randomize_move_powers(
     seed: u64,
     mode: DropMode,
 ) -> Result<usize> {
-    use legaia_asset::move_power::{
+    use legaia_game_tables::move_power::{
         BATTLE_ACTION_OVERLAY_PROT_INDEX, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
     };
     let mut entry = patcher
         .read_entry(BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .context("read battle-action overlay entry 0898")?;
-    let Some(records) = legaia_asset::move_power::parse(&entry) else {
+    let Some(records) = legaia_game_tables::move_power::parse(&entry) else {
         return Ok(0);
     };
     // Redistribute powers only among populated records. Empty (all-zero) records
@@ -70,12 +70,12 @@ pub fn current_affinity_matrix(
     patcher: &DiscPatcher,
 ) -> Result<Option<[u8; crate::element_affinity::MATRIX_CELLS]>> {
     let entry = patcher
-        .read_entry(legaia_asset::element_affinity::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .read_entry(legaia_game_tables::element_affinity::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .context("read battle-action overlay entry 0898")?;
-    let Some(aff) = legaia_asset::element_affinity::ElementAffinity::parse(&entry) else {
+    let Some(aff) = legaia_game_tables::element_affinity::ElementAffinity::parse(&entry) else {
         return Ok(None);
     };
-    let ec = legaia_asset::element_affinity::ELEMENT_COUNT;
+    let ec = legaia_game_tables::element_affinity::ELEMENT_COUNT;
     let mut flat = [0u8; crate::element_affinity::MATRIX_CELLS];
     for (atk, row) in aff.matrix.iter().enumerate() {
         flat[atk * ec..atk * ec + row.len()].copy_from_slice(row);
@@ -91,7 +91,7 @@ pub fn randomize_element_affinity(
     seed: u64,
     mode: DropMode,
 ) -> Result<usize> {
-    use legaia_asset::element_affinity::{
+    use legaia_game_tables::element_affinity::{
         AFFINITY_MATRIX_FILE_OFFSET, BATTLE_ACTION_OVERLAY_PROT_INDEX,
     };
     let Some(current) = current_affinity_matrix(patcher)? else {
@@ -130,7 +130,7 @@ pub fn current_spell_costs(patcher: &DiscPatcher) -> Result<Option<Vec<SpellCost
     let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
         return Ok(None);
     };
-    let Some(table) = legaia_asset::spell_names::SpellNameTable::from_scus(&scus) else {
+    let Some(table) = legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus) else {
         return Ok(None);
     };
     let mut out = Vec::new();
@@ -155,11 +155,11 @@ pub fn randomize_spell_costs(
     seed: u64,
     mode: DropMode,
 ) -> Result<usize> {
-    use legaia_asset::spell_names::{RECORD_STRIDE, SPELL_COUNT};
+    use legaia_game_tables::spell_names::{RECORD_STRIDE, SPELL_COUNT};
     let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
         return Ok(0);
     };
-    let Some(table_off) = legaia_asset::spell_names::stats_file_offset(&scus) else {
+    let Some(table_off) = legaia_game_tables::spell_names::stats_file_offset(&scus) else {
         return Ok(0);
     };
     let span = SPELL_COUNT * RECORD_STRIDE;
@@ -168,7 +168,7 @@ pub fn randomize_spell_costs(
     };
 
     // Randomizable population: named spells with a non-zero MP cost.
-    let names = legaia_asset::spell_names::SpellNameTable::from_scus(&scus);
+    let names = legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus);
     let ids: Vec<usize> = (0..SPELL_COUNT)
         .filter(|&id| {
             let cost = table[id * RECORD_STRIDE + 3];
@@ -216,9 +216,9 @@ pub struct EquipBonusRow {
     pub items: Vec<u8>,
 }
 
-/// Map an [`legaia_asset::equip_stats::EquipSlot`] to its CLI label.
-fn equip_slot_name(slot: legaia_asset::equip_stats::EquipSlot) -> &'static str {
-    use legaia_asset::equip_stats::EquipSlot;
+/// Map an [`legaia_game_tables::equip_stats::EquipSlot`] to its CLI label.
+fn equip_slot_name(slot: legaia_game_tables::equip_stats::EquipSlot) -> &'static str {
+    use legaia_game_tables::equip_stats::EquipSlot;
     match slot {
         EquipSlot::Body => "body",
         EquipSlot::Head => "head",
@@ -235,7 +235,7 @@ pub fn current_equip_bonuses(patcher: &DiscPatcher) -> Result<Option<Vec<EquipBo
     let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
         return Ok(None);
     };
-    let Some(table) = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus) else {
+    let Some(table) = legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus) else {
         return Ok(None);
     };
     let items = table.items_for_rows();
@@ -269,7 +269,7 @@ pub fn randomize_equip_bonuses(
     seed: u64,
     mode: DropMode,
 ) -> Result<usize> {
-    use legaia_asset::equip_stats::{BONUS_STRIDE, EquipStatTable, bonus_table_file_offset};
+    use legaia_game_tables::equip_stats::{BONUS_STRIDE, EquipStatTable, bonus_table_file_offset};
     let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
         return Ok(0);
     };
@@ -330,7 +330,7 @@ pub fn randomize_equip_masks(
     seed: u64,
     mode: DropMode,
 ) -> Result<usize> {
-    use legaia_asset::equip_stats::{BONUS_STRIDE, EquipStatTable, bonus_table_file_offset};
+    use legaia_game_tables::equip_stats::{BONUS_STRIDE, EquipStatTable, bonus_table_file_offset};
     let Some(scus) = patcher.read_named_file(SCUS_NAME) else {
         return Ok(0);
     };

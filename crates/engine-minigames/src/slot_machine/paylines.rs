@@ -21,8 +21,8 @@ pub struct PaylinePrim {
     /// Payline index `0..5`. Doubles as the medallion / lamp index.
     pub index: usize,
     /// The segment's two endpoints, straight out of the geometry table.
-    pub a: legaia_asset::minigame_slot_scene::Pos3,
-    pub b: legaia_asset::minigame_slot_scene::Pos3,
+    pub a: legaia_minigame_formats::minigame_slot_scene::Pos3,
+    pub b: legaia_minigame_formats::minigame_slot_scene::Pos3,
     /// 24-bit modulation colour.
     pub color: (u8, u8, u8),
     /// Always [`PAYLINE_GP0_CODE`].
@@ -37,7 +37,7 @@ pub struct PaylinePrim {
 /// against each line index - so a frame where that word still holds `0`
 /// lights line 0, and only a value outside `0..5` leaves every line unlit.
 /// The caller supplies the geometry table
-/// ([`legaia_asset::minigame_slot_scene::SlotScene::paylines`], disc data
+/// ([`legaia_minigame_formats::minigame_slot_scene::SlotScene::paylines`], disc data
 /// at `DAT_801d3680`); nothing here is hard-coded geometry.
 ///
 /// Projection and ordering-table linkage stay caller-side, as they do for
@@ -59,7 +59,7 @@ pub struct PaylinePrim {
 // of the cabinet mesh (PROT 1200 descriptor 1) around them - see
 // docs/subsystems/minigame-slot-machine.md, "The cabinet is a mesh".
 pub fn payline_prims(
-    paylines: &[legaia_asset::minigame_slot_scene::PayLine],
+    paylines: &[legaia_minigame_formats::minigame_slot_scene::PayLine],
     winning_line: i32,
 ) -> Vec<PaylinePrim> {
     paylines
@@ -95,16 +95,16 @@ pub struct ProjectedPayline {
 
 /// The projection pass [`payline_prims`] leaves caller-side, run once for
 /// every host: each endpoint goes through
-/// [`legaia_asset::minigame_slot_scene::project`] - the machine's captured
+/// [`legaia_minigame_formats::minigame_slot_scene::project`] - the machine's captured
 /// projection (the stand-in for `FUN_8003D368`'s `RTPS` under the camera the
 /// overlay installs) that the rest of the cabinet is drawn with.
 ///
 /// REF: FUN_801d3380 (the two `FUN_8003D368` calls per segment)
 pub fn projected_paylines(
-    paylines: &[legaia_asset::minigame_slot_scene::PayLine],
+    paylines: &[legaia_minigame_formats::minigame_slot_scene::PayLine],
     winning_line: i32,
 ) -> Vec<ProjectedPayline> {
-    use legaia_asset::minigame_slot_scene::project;
+    use legaia_minigame_formats::minigame_slot_scene::project;
     payline_prims(paylines, winning_line)
         .into_iter()
         .map(|prim| ProjectedPayline {

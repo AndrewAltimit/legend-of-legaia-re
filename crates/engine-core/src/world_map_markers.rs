@@ -33,7 +33,7 @@
 //! quad has no such order, so under the walk camera each quad carries its
 //! corners' **scene depth** through the same matrix
 //! ([`MarkerQuad::depth`]), and both hosts depth-test it against the terrain
-//! they already drew (`legaia_engine_ui::screen_prim::FLAG_DEPTH_TESTED`).
+//! they already drew (`legaia_render_kernels::screen_prim::FLAG_DEPTH_TESTED`).
 //! The depth is taken [`DEPTH_PULL`] units nearer the eye than the segment
 //! itself, so a base cross lying on the ground does not z-fight the ground it
 //! lies on. The top-view debug camera has no retail eye and keeps drawing
@@ -297,7 +297,9 @@ pub fn marker_quads(
     aabb: ([f32; 3], [f32; 3]),
     draw_player: bool,
 ) -> Vec<MarkerQuad> {
-    if world.mode != crate::world::SceneMode::WorldMap || world.cutscene_timeline_active() {
+    if world.mode != legaia_engine_mode::mode::SceneMode::WorldMap
+        || world.cutscene_timeline_active()
+    {
         return Vec::new();
     }
     if matches!(frame, FieldCameraFrame::Cutscene(_)) {
@@ -317,7 +319,7 @@ pub fn marker_quads(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::SceneMode;
+    use legaia_engine_mode::mode::SceneMode;
 
     fn world_map_world() -> World {
         let mut w = World {
@@ -339,7 +341,7 @@ mod tests {
         let w = world_map_world();
         let frame = camera_view::resolve_field_camera(
             &w,
-            &crate::camera::Camera::default(),
+            &legaia_engine_field::camera::Camera::default(),
             None,
             [0.0, 0.0],
         );
@@ -362,7 +364,7 @@ mod tests {
         let w = world_map_world();
         let frame = camera_view::resolve_field_camera(
             &w,
-            &crate::camera::Camera::default(),
+            &legaia_engine_field::camera::Camera::default(),
             None,
             [0.0, 0.0],
         );
@@ -420,7 +422,7 @@ mod tests {
         let w = world_map_world();
         let frame = camera_view::resolve_field_camera(
             &w,
-            &crate::camera::Camera::default(),
+            &legaia_engine_field::camera::Camera::default(),
             None,
             [0.0, 0.0],
         );

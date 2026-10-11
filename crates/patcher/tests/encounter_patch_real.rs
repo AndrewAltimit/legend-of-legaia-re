@@ -23,14 +23,14 @@ fn snapshot(patcher: &DiscPatcher, idx: usize) -> Option<(Vec<u8>, Vec<u8>, Vec<
     // Presence guard (a scene with no decodable encounter section is skipped).
     SceneEncounters::locate(&entry, idx)?;
     // Re-derive counts + ids without exposing internals: parse again here.
-    let table = legaia_asset::scene_asset_table::detect(&entry)?;
+    let table = legaia_scene_formats::scene_asset_table::detect(&entry)?;
     let man = table.used().iter().find(|d| d.type_byte == 0x03).copied()?;
     let (decoded, _) =
         legaia_lzs::decompress_tracked(&entry[man.data_offset as usize..], man.size as usize)
             .ok()?;
-    let mf = legaia_asset::man_section::parse(&decoded).ok()?;
+    let mf = legaia_scene_formats::man_section::parse(&decoded).ok()?;
     let body = mf.encounter_section_body(&decoded)?;
-    let sec = legaia_asset::man_section::parse_encounter_section(body).ok()?;
+    let sec = legaia_scene_formats::man_section::parse_encounter_section(body).ok()?;
     let base = mf.encounter_section().body_offset() + sec.formation_range.0;
     let mut ids = Vec::new();
     let mut counts = Vec::new();

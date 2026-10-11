@@ -41,7 +41,7 @@
 //! REF: FUN_801F2160
 //! REF: FUN_8004AD80
 
-use legaia_engine_vm::cast_arm_ticks as arms;
+use legaia_engine_battle_vm::cast_arm_ticks as arms;
 
 /// One measured cast: action id, owning PROT entry, the body VA retail
 /// entered, the phase bytes its arms walked in order, the dwell in module
@@ -334,7 +334,7 @@ fn no_monster_record_names_either_curse_id() {
         eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
         return;
     };
-    let recs = legaia_asset::monster_archive::records(&entry).expect("archive walk");
+    let recs = legaia_actor_formats::monster_archive::records(&entry).expect("archive walk");
     assert!(
         recs.len() > 150,
         "expected the full roster, got {}",

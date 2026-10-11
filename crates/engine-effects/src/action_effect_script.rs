@@ -56,7 +56,7 @@
 //!    per-action entry the anim commit `FUN_8004AD80` selects. On disc that
 //!    entry is a monster-archive action entry / a player record[0] action
 //!    entry, and its `+0x14..+0x53` region is exactly this record stream -
-//!    carried by `legaia_asset::monster_archive::MonsterAnimation::effect_script`.
+//!    carried by `legaia_actor_formats::monster_archive::MonsterAnimation::effect_script`.
 //! 2. **The cursor is per-actor state** (`+0x1F5`), zeroed when a new anim
 //!    record commits (`FUN_8004AD80`, `0x8004B060`) - the engine mirror is
 //!    `world::Actor::battle_effect_cursor`, reset by the anim commit.
@@ -79,7 +79,7 @@
 //! the `ctx[+0x1014]` / `+0x6C6` / `+0x24E` / `+0x1144` block, the live tick
 //! installs it (`World::step_actor_effect_script` →
 //! `World::casting.move_fx_streak`), and the render layer projects the streak
-//! billboard from it (`legaia_engine_render::afterimage`, drawn by the native
+//! billboard from it (`legaia_render_kernels::afterimage`, drawn by the native
 //! window's screen-FX pass). What is still **not** modelled is the stepper's
 //! function-head sibling, retail's `0x801DEA50..0x801DEBEC` prologue - whose
 //! semantics are now pinned from the disassembly even though the port carries
@@ -263,7 +263,7 @@ pub struct EffectRecord {
 impl EffectRecord {
     /// Decode the record at `cursor` from a script block. The block is the
     /// action's anim-record head
-    /// (`legaia_asset::monster_archive::MonsterAnimation::effect_script`),
+    /// (`legaia_actor_formats::monster_archive::MonsterAnimation::effect_script`),
     /// whose records sit at [`RECORD_BASE`]` + cursor * `[`RECORD_STRIDE`].
     ///
     /// PORT: FUN_801DEA50 (`0x801dec84..0x801ded48`).
@@ -474,7 +474,7 @@ pub fn scale_offset(off: i16, scale: u16) -> i32 {
 /// Returns `None` for action `0` (no queued action - the read would run off the
 /// front of the map).
 ///
-/// The map is `legaia_asset::move_power::parse_id_index_map`'s table (runtime
+/// The map is `legaia_game_tables::move_power::parse_id_index_map`'s table (runtime
 /// VA `0x801F4E64`), which the live tick passes when a
 /// `crate::move_power::MovePowerCatalog` is installed. Note the off-by-one:
 /// `map[action - 1]`, not `map[action]` (`0x801df25c`). The resulting record
@@ -525,7 +525,7 @@ pub struct EffectScriptStep {
     /// terminator test, so the quad the seed loop copies out at `0x801DF2B4`
     /// carries the terminator record's placement. That point is what the
     /// afterimage streak later projects
-    /// ([`legaia_engine_render::afterimage`]).
+    /// ([`legaia_render_kernels::afterimage`]).
     pub launch: Option<(i32, i32, i32)>,
 }
 
@@ -572,7 +572,7 @@ impl MoveFxStreak {
     /// terminate, so a host can call it unconditionally per frame.
     ///
     /// `counter_word` is the staged move-power record's `+0x04`
-    /// ([`legaia_asset::move_power::MoveRecord::counter_init`]); pass `None`
+    /// ([`legaia_game_tables::move_power::MoveRecord::counter_init`]); pass `None`
     /// when no catalog is installed and the block keeps its previous word,
     /// exactly as retail's `sh` would be skipped.
     pub fn install(&mut self, step: &EffectScriptStep, counter_word: Option<u16>) -> bool {
@@ -593,7 +593,7 @@ impl MoveFxStreak {
 
     /// The streak billboard's half-width: `ctx[+0x6C6] - 0x200`, the value
     /// `FUN_801E1AB0` hands the GTE projector at `0x801E1B44`. Mirrors
-    /// `legaia_engine_render::afterimage::streak_half_width`, which is the
+    /// `legaia_render_kernels::afterimage::streak_half_width`, which is the
     /// canonical port - repeated here so `engine-core` (which cannot depend
     /// on the wgpu-linked render crate) can answer the same question.
     pub fn half_width(&self) -> i16 {

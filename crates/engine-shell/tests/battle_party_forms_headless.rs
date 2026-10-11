@@ -12,9 +12,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
 
 const SCENE: &str = "town01";
 
@@ -107,7 +108,7 @@ fn assert_vahn_form_installed(session: &BootSession) {
 /// every battle entry, and atlas 7's rect is `(448, 256)` - slot 2's page -
 /// so the third enemy of any three-monster formation drew Baka Fighter art.
 fn assert_monster_slots_untouched(session: &BootSession) {
-    use legaia_asset::monster_archive::{MONSTER_CLUT_ROW_BASE, monster_page_origin};
+    use legaia_actor_formats::monster_archive::{MONSTER_CLUT_ROW_BASE, monster_page_origin};
     let forms = session.host.battle_party_forms().expect("party forms");
     let mut vram = legaia_tim::Vram::new();
     let sentinel = 0x5A5Au16;

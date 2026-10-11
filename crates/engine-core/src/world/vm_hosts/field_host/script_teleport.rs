@@ -12,7 +12,7 @@ use super::*;
 /// **flattened** `[P0..P1..P2]` record table directly. Since the placement
 /// spawner writes `+0x50 = N0 + placement_index`, the record it lands on is
 /// the context's own partition-1 placement record - NOT partition-0 record
-/// `script_id`. [`crate::man_field_scripts::flat_record_span`] models that
+/// `script_id`. [`legaia_engine_field::man_field_scripts::flat_record_span`] models that
 /// index space; the partition-1 header shape then applies, which is what
 /// `FUN_8003D0BC` (skip the `[u8 N][N*2]` name/locals field) plus the 4-byte
 /// placement header `[model, anim, bx, bz]` expects.
@@ -38,12 +38,16 @@ use super::*;
 ///
 /// Returns `false` (ctx untouched) when the record cannot be resolved.
 pub(in crate::world) fn apply_script_table_teleport(
-    man_file: &legaia_asset::man_section::ManFile,
+    man_file: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     ctx: &mut FieldCtx,
 ) -> bool {
     let Some((script_start, pc0, _body_len)) =
-        crate::man_field_scripts::flat_record_span(man_file, man, ctx.script_id as usize)
+        legaia_engine_field::man_field_scripts::flat_record_span(
+            man_file,
+            man,
+            ctx.script_id as usize,
+        )
     else {
         return false;
     };
@@ -107,16 +111,18 @@ impl FieldHostImpl<'_> {
     /// REF: FUN_8003CF7C, FUN_801DE840 (`0x801E2798..0x801E282C`)
     fn rerun_spawn_section(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         ctx: &mut FieldCtx,
     ) {
         if self.world.field_vm.respawn_rerun {
             return;
         }
-        let Some((start, pc0, _len)) =
-            crate::man_field_scripts::flat_record_span(man_file, man, ctx.script_id as usize)
-        else {
+        let Some((start, pc0, _len)) = legaia_engine_field::man_field_scripts::flat_record_span(
+            man_file,
+            man,
+            ctx.script_id as usize,
+        ) else {
             return;
         };
         let Some(bc) = man.get(start..) else {
@@ -139,7 +145,7 @@ impl FieldHostImpl<'_> {
             }
             let foreign = vm::field::peek_extended(bc, pc).is_some_and(|t| u16::from(t) != own);
             let next = if foreign {
-                match legaia_asset::field_disasm::decode(bc, pc) {
+                match legaia_scene_formats::field_disasm::decode(bc, pc) {
                     Ok(insn) => pc + insn.size,
                     Err(_) => break,
                 }
@@ -167,7 +173,7 @@ impl FieldHostImpl<'_> {
     // resolver (prefix-summed s16 counts at `+0x22` + flattened u24
     // record-offset walk) feeding the op-`0x4C 0xC3` script-table teleport;
     // the record walk is shared with
-    // [`crate::man_field_scripts::partition_record_offset`], the descriptor
+    // [`legaia_engine_field::man_field_scripts::partition_record_offset`], the descriptor
     // decode + ctx write-set live in [`apply_script_table_teleport`].
     pub(super) fn op4c_n_c_sub_3_script_teleport(&mut self, ctx: &mut FieldCtx) {
         // Resolve against the scene's resident MAN (kept on the world while
@@ -176,7 +182,7 @@ impl FieldHostImpl<'_> {
         let Some(man) = self.world.field_vm.channels_man.clone() else {
             return;
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
             return;
         };
         if !apply_script_table_teleport(&man_file, &man, ctx) {

@@ -2,19 +2,19 @@
 //!
 //! Retail draws each of the five paylines as one GP0 `0x43` packet - a flat,
 //! semi-transparent two-point line - after `RTPS`-projecting both endpoints
-//! (`FUN_801D3380`, ported as `legaia_engine_core::slot_machine::payline_prims`
+//! (`FUN_801D3380`, ported as `legaia_engine_minigames::slot_machine::payline_prims`
 //! with the projection in `slot_machine::projected_paylines`). The overlay
 //! framebuffer this module feeds carries quads, not lines, so each segment
-//! becomes the prim set's line kind, [`crate::screen_prim::line_quad`]: a
+//! becomes the prim set's line kind, [`legaia_render_kernels::screen_prim::line_quad`]: a
 //! one-pixel-thick flat quad along the line.
 //!
 //! Input coordinates are on the machine's own **640x240** framebuffer (the
 //! slot overlay sets video mode `0x280`, see
-//! `legaia_asset::minigame_slot_scene::SCREEN_W`); the output is in the
+//! `legaia_minigame_formats::minigame_slot_scene::SCREEN_W`); the output is in the
 //! `PSX_DISPLAY_W` x `PSX_DISPLAY_H` space every screen primitive is authored
 //! in, so x is halved on the way through.
 
-use crate::screen_prim::{PSX_DISPLAY_W, ScreenPrim, line_quad};
+use legaia_render_kernels::screen_prim::{PSX_DISPLAY_W, ScreenPrim, line_quad};
 
 /// Ordering-table bucket the payline quads link at: over the reels, under
 /// every UI overlay the host composites later.

@@ -21,9 +21,9 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::field_env;
-use legaia_engine_core::man_field_scripts::ambient_effect_installs;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::ambient_effect_installs;
 
 fn extracted_root() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -54,7 +54,7 @@ fn ambient_world(
     let scripts = scene.find_event_scripts()?;
     let stager_bytes = scripts.bytes.to_vec();
     let man_bytes = scene.field_man_payload(&index).ok()??;
-    let man_file = legaia_asset::man_section::parse(&man_bytes).ok()?;
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).ok()?;
 
     let mut world = World {
         clock: legaia_engine_core::world::FrameClock {

@@ -19,7 +19,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_shell::boot::{BootConfig, BootSession};
+use legaia_engine_session::boot::BootConfig;
+use legaia_engine_shell::boot::BootSession;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -43,20 +44,20 @@ fn free_roam_field_clears_leaked_cinematic_camera_yaw() {
         enable_audio: false,
     };
     let mut session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
-    let opts = legaia_engine_shell::boot::FieldLiveOpts::default();
+    let opts = legaia_engine_session::boot::FieldLiveOpts::default();
     session
         .enter_field_live("town01", &opts)
         .expect("enter town01 live");
 
     // Free-roam field: plain Field mode, no opening cutscene timeline (entered
     // directly, not via the prologue hand-off).
-    use legaia_engine_core::world::SceneMode;
+    use legaia_engine_mode::mode::SceneMode;
     assert!(matches!(session.host.world.mode, SceneMode::Field));
     assert!(!session.host.world.cutscene_timeline_active());
 
     // Simulate the state a cutscene leaves behind: the controller parked in
     // Cinematic mode at a ~180deg yaw (the value that inverts the d-pad remap).
-    session.camera.mode = legaia_engine_core::camera::CameraMode::Cinematic;
+    session.camera.mode = legaia_engine_field::camera::CameraMode::Cinematic;
     session.camera.yaw = std::f32::consts::PI;
     session.camera.pitch = 0.5;
 

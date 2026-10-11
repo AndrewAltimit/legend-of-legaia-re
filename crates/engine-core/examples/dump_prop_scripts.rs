@@ -6,9 +6,9 @@
 //! Usage: `cargo run -p legaia-engine-core --example dump_prop_scripts -- town01`
 use std::path::PathBuf;
 
-use legaia_asset::field_disasm;
-use legaia_asset::man_section::ManFile;
 use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_scene_formats::field_disasm;
+use legaia_scene_formats::man_section::ManFile;
 
 /// A partition-0 record's byte span in the MAN (start..next record start).
 fn p0_record(man_file: &ManFile, man: &[u8], index: usize) -> Option<(usize, usize)> {
@@ -32,7 +32,7 @@ fn main() -> anyhow::Result<()> {
         let scene = Scene::load(&p, &name)?;
         let binds = scene.field_object_binds(&p)?.expect("field map + man");
         let man = scene.field_man_payload(&p)?.expect("field man");
-        let man_file = legaia_asset::man_section::parse(&man)?;
+        let man_file = legaia_scene_formats::man_section::parse(&man)?;
         let placements = scene.field_object_placements(&p)?.expect("field map");
         println!("=== {name}: {} binds", binds.len());
         let mut seen = std::collections::BTreeSet::new();

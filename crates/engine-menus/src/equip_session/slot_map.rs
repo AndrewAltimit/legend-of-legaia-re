@@ -130,9 +130,9 @@ pub fn retail_slot_row_for_engine_slot(engine_slot: u8) -> Option<i32> {
 }
 
 /// The equipment-record `+7` slot bits for a disc equip category, i.e. the
-/// inverse of `legaia_asset::equip_stats::EquipBonus::slot`.
-pub(super) fn slot_bits_of_category(cat: legaia_asset::equip_stats::EquipSlot) -> u8 {
-    use legaia_asset::equip_stats::EquipSlot as Disc;
+/// inverse of `legaia_game_tables::equip_stats::EquipBonus::slot`.
+pub(super) fn slot_bits_of_category(cat: legaia_game_tables::equip_stats::EquipSlot) -> u8 {
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
     match cat {
         Disc::Body => 0x00,
         Disc::Head => 0x20,

@@ -35,7 +35,7 @@
 //!
 //! Disc-free: the machine is a pure state machine over its own input struct.
 
-use legaia_engine_core::save_subscreen::{
+use legaia_engine_menus::save_subscreen::{
     EXIT_CODE_NORMAL, SaveEntryContext, SavePhase, SaveScreenMachine, SaveSubScreen,
     SubScreenEffect, SubScreenInput,
 };

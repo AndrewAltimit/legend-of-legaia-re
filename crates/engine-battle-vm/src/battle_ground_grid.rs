@@ -76,7 +76,7 @@
 //!
 //! # Wiring
 //!
-//! The drawn mesh is the shared builder `legaia_asset::battle_backdrop::
+//! The drawn mesh is the shared builder `legaia_scene_formats::battle_backdrop::
 //! build_ground_grid_rgbc` (re-exported by `engine-shell`'s `play-window` as
 //! `build_battle_ground_grid` and drawn under the battle camera), coloured
 //! with [`battle_ambient_colour`] of the live base
@@ -487,7 +487,7 @@ pub const OUTDOOR_CUE_TABLE_VA: u32 = 0x8007_8C1C;
 
 /// Byte offset of [`OUTDOOR_CUE_TABLE_VA`] inside the `SCUS_942.54` file
 /// image (same `va - 0x8000F800` mapping as
-/// `legaia_asset::battle_backdrop::MIRROR_X_TABLE_SCUS_OFFSET`).
+/// `legaia_scene_formats::battle_backdrop::MIRROR_X_TABLE_SCUS_OFFSET`).
 pub const OUTDOOR_CUE_TABLE_SCUS_OFFSET: usize = 0x6_941C;
 
 /// Upper bound on the zero-terminated table walk, so a mis-aimed offset
@@ -537,7 +537,7 @@ impl OutdoorCueTable {
     /// [`Self::contains_runtime_id`] keyed by PROT extraction index
     /// (`runtime id + 3`, the `battle_backdrop` mapping).
     pub fn contains_prot_index(&self, prot_index: u32) -> bool {
-        legaia_asset::battle_backdrop::runtime_stage_id(prot_index)
+        legaia_scene_formats::battle_backdrop::runtime_stage_id(prot_index)
             .is_some_and(|id| self.contains_runtime_id(id))
     }
 

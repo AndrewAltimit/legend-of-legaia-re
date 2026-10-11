@@ -25,8 +25,9 @@
 //!
 //! Skips (and passes) when `LEGAIA_DISC_BIN` / `extracted/` are missing.
 
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {

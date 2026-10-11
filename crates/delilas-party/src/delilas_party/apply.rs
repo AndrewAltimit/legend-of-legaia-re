@@ -734,7 +734,7 @@ pub fn apply_delilas_party_with(
 ///
 /// The battle overlay's per-character element table
 /// (`0x801F5480`, one byte per 1-based character id;
-/// `legaia_asset::element_affinity::CHARACTER_ELEMENTS_FILE_OFFSET`) is the
+/// `legaia_game_tables::element_affinity::CHARACTER_ELEMENTS_FILE_OFFSET`) is the
 /// only per-character element on the disc, and retail seeds it Vahn = fire,
 /// Noa = wind, Gala = thunder. Two routines index it, both with
 /// `DAT_8007BD10[actor] - 1` (the slot's active member id), and both use the
@@ -760,7 +760,7 @@ pub(super) fn retarget_character_elements(
     mapping: &PartyMapping,
     archive: &[u8],
 ) -> Result<Vec<String>> {
-    use legaia_asset::element_affinity as ea;
+    use legaia_game_tables::element_affinity as ea;
     let mut notes = Vec::new();
     for (_, _, slot, who, sibling) in mapping.pairs() {
         let id = sibling.monster_id();

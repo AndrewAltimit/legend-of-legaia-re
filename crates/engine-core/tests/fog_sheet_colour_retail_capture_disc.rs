@@ -23,8 +23,9 @@
 //! missing.
 
 use legaia_engine_core::fog_particles::{FOG_CLUT, FOG_POOL_SLOTS, FOG_TPAGE, FogParticle};
-use legaia_mednafen::prim_pool::{self, Prim};
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
+use legaia_ram_image::prim_pool::{self, Prim};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -198,8 +199,8 @@ fn fog_sheet_colours_match_the_retail_frame_record_for_record() {
 /// capture's `*_DAT_8007BB04`.
 #[test]
 fn fog_sheet_geometry_matches_the_retail_frame() {
+    use legaia_engine_battle_vm::psx_camera::FieldCameraView;
     use legaia_engine_core::fog_particles::{FogFrameEnv, FogPool, FogView};
-    use legaia_engine_vm::psx_camera::FieldCameraView;
     let (Some(manifest_path), Some(library)) =
         (find("scripts/scenarios.toml"), find("saves/library"))
     else {

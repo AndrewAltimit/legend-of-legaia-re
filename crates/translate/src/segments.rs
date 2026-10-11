@@ -4,7 +4,7 @@
 //! pool of `0x1F <token stream> 0x00` segments inline in its scene's
 //! interaction scripts (see `docs/formats/mes.md` § multi-segment box
 //! packing, `docs/formats/dialog-font.md`, and
-//! `legaia_asset::cutscene_text` for the narration flavour). The same framing
+//! `legaia_scene_formats::cutscene_text` for the narration flavour). The same framing
 //! carries picker labels, chest flavor text and cutscene narration, in two
 //! byte domains:
 //!
@@ -22,7 +22,7 @@
 //! chaperoned by `0xFF` control bytes every <= 8 bytes, and any segment
 //! containing `0xFF` is rejected.
 
-use legaia_asset::man_edit::{self, TextSite};
+use legaia_scene_formats::man_edit::{self, TextSite};
 
 use super::export::SceneManText;
 use super::markup;

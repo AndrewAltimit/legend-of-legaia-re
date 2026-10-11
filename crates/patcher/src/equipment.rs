@@ -10,7 +10,7 @@
 //! ## Classification (no committed Sony bytes)
 //!
 //! The retail item id space is one flat 256-entry table shared by consumables,
-//! key items, and equipment (see [`legaia_asset::item_names`]). Nothing on the
+//! key items, and equipment (see [`legaia_game_tables::item_names`]). Nothing on the
 //! disc cleanly flags "this id is a weapon" in a single byte, so we classify by
 //! **name**: every weapon / armor / accessory in the curated, public
 //! [`legaia_gamedata`] tables is matched (case-insensitively) against the
@@ -22,7 +22,7 @@
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 
-use legaia_asset::item_names::ItemNameTable;
+use legaia_game_tables::item_names::ItemNameTable;
 use legaia_gamedata::Database;
 
 /// One equippable item eligible to be granted as the bonus equipment drop.

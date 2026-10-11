@@ -21,7 +21,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::region_encounter::region_encounter_table_from_man;
+use legaia_engine_battle::region_encounter::region_encounter_table_from_man;
 use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost, is_world_map_scene};
 
 fn extracted_dir() -> Option<PathBuf> {

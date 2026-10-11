@@ -37,7 +37,7 @@ use legaia_engine_battle_vm::battle_value_readout as vr;
 
 use crate::screen_prim::{ScreenPrim, ScreenQuad};
 
-pub use vr::{GLYPH_CLUT, GLYPH_TPAGE};
+use vr::{GLYPH_CLUT, GLYPH_TPAGE};
 
 /// Ordering-table bucket the readout links at - **retail's own**, not a
 /// chosen one.

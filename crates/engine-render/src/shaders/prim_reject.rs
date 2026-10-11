@@ -1,7 +1,7 @@
 //! The effect clip and per-primitive near-reject WGSL chunks.
 
 /// Retail's per-primitive near reject, evaluated in the vertex stage (see
-/// `legaia_engine_ui::prim_near_reject`). Every vertex carries its
+/// `legaia_render_kernels::prim_near_reject`). Every vertex carries its
 /// primitive's corners (`c0.w` = corner count, `0` = no single owner), so
 /// each corner reaches the same verdict and the whole primitive drops
 /// together. `m` is the draw's matrix: its `w` row is the eye depth. The

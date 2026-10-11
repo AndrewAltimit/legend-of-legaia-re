@@ -9,7 +9,7 @@
 //!
 //! Skips + passes without `LEGAIA_DISC_BIN`.
 
-use legaia_asset::monster_archive::{self, SLOT_STRIDE};
+use legaia_actor_formats::monster_archive::{self, SLOT_STRIDE};
 use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_translate::{export_pack, import_pack, monster_names};

@@ -16,7 +16,7 @@ pub(super) fn item_restore(
     slot: usize,
     hp: u32,
 ) -> Option<u32> {
-    use legaia_engine_core::items::ItemEffect;
+    use legaia_engine_menus::items::ItemEffect;
     let max = u32::from(w.actors[slot].battle.max_hp);
     let e = w.tables.item_catalog.get(id)?;
     Some(match e.effect {
@@ -234,7 +234,7 @@ pub(super) fn wanted_item(
 
 /// The MP the member's strongest damaging spell costs, if it knows one.
 pub(super) fn best_spell_cost(w: &legaia_engine_core::world::World, actor: u8) -> Option<u32> {
-    use legaia_engine_core::spells::SpellEffect;
+    use legaia_engine_battle::spells::SpellEffect;
     let m = w
         .party
         .roster
@@ -264,7 +264,7 @@ pub(super) fn wanted_mp_item(
     ids: impl Iterator<Item = u8>,
     actor: u8,
 ) -> Option<(u8, u8)> {
-    use legaia_engine_core::items::ItemEffect;
+    use legaia_engine_menus::items::ItemEffect;
     if !w.battle.no_escape || solo_duel(w) {
         return None;
     }
@@ -316,7 +316,7 @@ pub(super) fn wanted_fury_item(
     ids: impl Iterator<Item = u8>,
     actor: u8,
 ) -> Option<(u8, u8)> {
-    use legaia_engine_core::items::ItemEffect;
+    use legaia_engine_menus::items::ItemEffect;
     if !w.battle.no_escape || solo_duel(w) {
         return None;
     }
@@ -340,7 +340,7 @@ pub(super) fn wanted_fury_item(
         return None;
     }
     let roster = w.party_roster_slot(i);
-    let character = legaia_engine_core::battle_arts::character_for_slot(roster as u8);
+    let character = legaia_engine_battle::battle_arts::character_for_slot(roster as u8);
     let miracle = legaia_art::MIRACLE_ARTS
         .iter()
         .find(|m| m.character == character)?;
@@ -352,7 +352,7 @@ pub(super) fn wanted_fury_item(
         .swing_costs
         .get(roster)
         .copied()
-        .unwrap_or([legaia_engine_core::arts_command_input::FAVORED_COST; 4])
+        .unwrap_or([legaia_engine_battle::arts_command_input::FAVORED_COST; 4])
         .into_iter()
         .max()
         .unwrap_or(u16::MAX);
@@ -384,8 +384,8 @@ pub(super) fn wanted_power_item(
     ids: impl Iterator<Item = u8>,
     actor: u8,
 ) -> Option<(u8, u8)> {
-    use legaia_asset::item_effect::{StatItemEffect, StatTarget};
-    use legaia_engine_core::spells::BuffStat;
+    use legaia_engine_battle::spells::BuffStat;
+    use legaia_game_tables::item_effect::{StatItemEffect, StatTarget};
     if !w.battle.no_escape || solo_duel(w) {
         return None;
     }
@@ -469,7 +469,7 @@ pub(super) fn miracle_ready(w: &legaia_engine_core::world::World, actor: u8) -> 
         return false;
     }
     let roster = w.party_roster_slot(i);
-    let character = legaia_engine_core::battle_arts::character_for_slot(roster as u8);
+    let character = legaia_engine_battle::battle_arts::character_for_slot(roster as u8);
     let Some(miracle) = legaia_art::MIRACLE_ARTS
         .iter()
         .find(|m| m.character == character)
@@ -481,7 +481,7 @@ pub(super) fn miracle_ready(w: &legaia_engine_core::world::World, actor: u8) -> 
         .swing_costs
         .get(roster)
         .copied()
-        .unwrap_or([legaia_engine_core::arts_command_input::FAVORED_COST; 4])
+        .unwrap_or([legaia_engine_battle::arts_command_input::FAVORED_COST; 4])
         .into_iter()
         .max()
         .unwrap_or(u16::MAX);
@@ -493,7 +493,7 @@ pub(super) fn miracle_ready(w: &legaia_engine_core::world::World, actor: u8) -> 
 pub(super) fn miracle_armed(w: &legaia_engine_core::world::World, actor: u8) -> bool {
     let roster = w.party_roster_slot(usize::from(actor));
     w.party.roster.members.get(roster).is_some_and(|m| {
-        legaia_engine_vm::battle_action::miracle_marker_armed(
+        legaia_engine_battle_vm::battle_action::miracle_marker_armed(
             (roster as u8).wrapping_add(1),
             &m.equipment().slots,
         )
@@ -503,9 +503,9 @@ pub(super) fn miracle_armed(w: &legaia_engine_core::world::World, actor: u8) -> 
 /// The Magic row worth casting: the strongest affordable damage spell.
 pub(super) fn wanted_spell(
     w: &legaia_engine_core::world::World,
-    m: &legaia_engine_core::battle_magic::BattleSpellSession,
+    m: &legaia_engine_battle::battle_magic::BattleSpellSession,
 ) -> Option<usize> {
-    use legaia_engine_core::spells::SpellEffect;
+    use legaia_engine_battle::spells::SpellEffect;
     m.spells
         .iter()
         .enumerate()
@@ -579,7 +579,7 @@ thread_local! {
 /// spent the gauge.
 pub(super) fn arts_plan(
     w: &legaia_engine_core::world::World,
-    s: &legaia_engine_core::arts_command_input::ArtsCommandInputSession,
+    s: &legaia_engine_battle::arts_command_input::ArtsCommandInputSession,
 ) -> Vec<u8> {
     use legaia_art::Command;
     // Nine: each character's Miracle Art is a nine-command string
@@ -591,7 +591,7 @@ pub(super) fn arts_plan(
     // written by the first arts commit, so before it every member reads
     // Vahn's.
     let roster = w.party_roster_slot(usize::from(s.actor));
-    let character = legaia_engine_core::battle_arts::character_for_slot(roster as u8);
+    let character = legaia_engine_battle::battle_arts::character_for_slot(roster as u8);
     let cost = |cmds: &[Command]| -> u16 { cmds.iter().map(|&c| s.cost_of(c)).sum() };
     let mut normal: Vec<(legaia_art::ActionConstant, &[Command])> = w
         .tables

@@ -116,7 +116,7 @@ fn slot_machine_art_decodes_off_the_disc() {
     assert!(mg.slot_art_ready());
 
     // Every reel symbol decodes at its retail cell (`FUN_801d0fa8`): 64x64 RGBA.
-    for sym in 0..legaia_asset::minigame_art::SLOT_SYMBOL_COUNT {
+    for sym in 0..legaia_minigame_formats::minigame_art::SLOT_SYMBOL_COUNT {
         let px = mg.slot_symbol_rgba(sym);
         assert_eq!(px.len(), 64 * 64 * 4, "symbol {sym} is a 64x64 sprite");
         assert!(
@@ -512,7 +512,7 @@ fn a_press_on_an_empty_machine_is_broke_not_a_free_spin() {
 /// would fail if the geometry were being measured off the art instead of read.
 #[test]
 fn the_slot_machines_3d_scene_decodes_and_projects_onto_the_retail_frame() {
-    use legaia_asset::minigame_slot_scene as sc;
+    use legaia_minigame_formats::minigame_slot_scene as sc;
 
     let Some((mg, _)) = loaded() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
@@ -692,7 +692,7 @@ fn slot_and_baka_bgm_and_the_spin_motor_decode_off_the_disc() {
 /// used to draw the raw table in colours of its own.
 #[test]
 fn the_payline_prims_come_from_the_ported_pass() {
-    use legaia_engine_core::slot_machine as sm;
+    use legaia_engine_minigames::slot_machine as sm;
     let Some((mg, _)) = loaded() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
@@ -722,7 +722,7 @@ fn the_payline_prims_come_from_the_ported_pass() {
             // Screen endpoints from the engine's one projection - the ones
             // the native window draws too.
             let a = &scene["paylines"][i]["a"];
-            let (sx, sy) = legaia_asset::minigame_slot_scene::project(
+            let (sx, sy) = legaia_minigame_formats::minigame_slot_scene::project(
                 a[0].as_i64().unwrap() as i32,
                 a[1].as_i64().unwrap() as i32,
                 a[2].as_i64().unwrap() as i32,
@@ -739,7 +739,7 @@ fn the_payline_prims_come_from_the_ported_pass() {
 /// there instead of computing a column of its own.
 #[test]
 fn the_baka_chrome_glyph_draws_carry_the_engine_stamp() {
-    use legaia_engine_core::baka_fighter_chrome as bc;
+    use legaia_engine_minigames::baka_fighter_chrome as bc;
     let Some((mut mg, _)) = loaded() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;

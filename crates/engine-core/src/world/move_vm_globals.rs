@@ -122,7 +122,7 @@ impl MoveVmGlobals {
 
     /// The strip requests of the most recent tick - what a host's draw path
     /// hands the shared render step
-    /// (`legaia_engine_ui::move_strip::move_strip_prims`). Not drained: a
+    /// (`legaia_render_kernels::move_strip::move_strip_prims`). Not drained: a
     /// redraw on which no tick ran draws the same set again.
     ///
     /// Retail emits each `0x2C` execution into the primitive buffer of the

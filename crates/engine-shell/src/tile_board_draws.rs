@@ -26,7 +26,3 @@
 //! REF: overlay_0897_801e0f3c (per-cell tile-actor draw pass - see the
 //! provenance caveat on the `engine-core` function: the renderer is the walk
 //! SM's tail block at `0x801EFEA0`, not an entry at this address)
-
-pub use legaia_engine_core::tile_board::{
-    TileActorDraw, is_tile_actor_slot, tile_actor_slots_needing_mesh, tile_board_actor_draws,
-};

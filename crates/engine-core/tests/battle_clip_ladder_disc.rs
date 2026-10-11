@@ -14,7 +14,7 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (disc-gated convention).
 
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 fn archive() -> Option<Vec<u8>> {
     let path = std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -31,11 +31,12 @@ fn only_monster_0xb3_lacks_a_knockdown_entry() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let n = legaia_asset::monster_archive::slot_count(&archive) as u16;
+    let n = legaia_actor_formats::monster_archive::slot_count(&archive) as u16;
     let mut decoded = 0;
     let mut without = Vec::new();
     for id in 1..=n {
-        let Ok(Some(clips)) = legaia_asset::monster_archive::animations_by_entry(&archive, id)
+        let Ok(Some(clips)) =
+            legaia_actor_formats::monster_archive::animations_by_entry(&archive, id)
         else {
             continue;
         };
@@ -71,9 +72,10 @@ fn party_entries_seven_and_eight_continue_the_knockdown() {
         "0866_battle_data.BIN",
     ] {
         let raw = std::fs::read(dir.join(file)).expect("read");
-        let clips = legaia_asset::battle_char_assembly::battle_animations(&raw).expect("clips");
+        let clips =
+            legaia_actor_formats::battle_char_assembly::battle_animations(&raw).expect("clips");
         let by = |slot: u8| clips.iter().find(|c| c.action_id == slot);
-        let root_y = |c: &legaia_asset::monster_archive::MonsterAnimation, last: bool| {
+        let root_y = |c: &legaia_actor_formats::monster_archive::MonsterAnimation, last: bool| {
             let f = if last {
                 c.frames.last()
             } else {

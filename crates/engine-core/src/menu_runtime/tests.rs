@@ -3,7 +3,7 @@ use legaia_save::{CharacterRecord, EquipmentSlots, SpellList};
 
 #[test]
 fn an_empty_bag_greys_every_shop_root_row_below_buy() {
-    use crate::shop::{SHOP_INK_GREY, SHOP_INK_NORMAL};
+    use legaia_engine_menus::shop::{SHOP_INK_GREY, SHOP_INK_NORMAL};
     let full = shop_root_labels(false, true);
     assert_eq!(
         full,
@@ -34,8 +34,8 @@ fn a_shop_suspends_the_field_and_an_inn_does_not() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let mut rt = MenuRuntime::new(tmp.path().to_path_buf());
     assert!(!rt.suspends_field(), "nothing open");
-    rt.open_shop_menu(crate::shop::ShopSession::new(
-        crate::shop::ShopInventory::new(0, Vec::new()),
+    rt.open_shop_menu(legaia_engine_menus::shop::ShopSession::new(
+        legaia_engine_menus::shop::ShopInventory::new(0, Vec::new()),
     ));
     assert!(rt.is_open());
     assert!(rt.suspends_field(), "a shop freezes the field");
@@ -319,16 +319,19 @@ fn down() -> MenuInput {
 
 #[test]
 fn shop_menu_trade_row_drives_a_seru_swap() {
-    use crate::shop::{ShopInventory, ShopSession};
+    use legaia_engine_menus::shop::{ShopInventory, ShopSession};
 
     // A shop on a disc with seru trading enabled; the lead owns the seru
     // the seed's bucket-0 offer wants (the bucket model trades a type the
     // party holds) plus an unrelated one.
     let seed = 0xABCDu64;
-    let bucket0 =
-        legaia_asset::seru_trade::bucket_offer(seed, 0, &legaia_asset::seru_trade::default_pool());
+    let bucket0 = legaia_game_tables::seru_trade::bucket_offer(
+        seed,
+        0,
+        &legaia_game_tables::seru_trade::default_pool(),
+    );
     let mut world = World::new();
-    world.tables.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
+    world.tables.seru_trade_config = Some(legaia_game_tables::seru_trade::SeruTradeConfig {
         enabled: true,
         seed,
         max_offers: 4,
@@ -387,7 +390,7 @@ fn shop_menu_trade_row_drives_a_seru_swap() {
 
 #[test]
 fn shop_menu_hides_trade_row_when_trading_disabled() {
-    use crate::shop::{ShopInventory, ShopSession};
+    use legaia_engine_menus::shop::{ShopInventory, ShopSession};
 
     let mut world = World::default(); // no seru_trade_config -> disabled
     world.load_party(Party {
@@ -406,7 +409,7 @@ fn shop_menu_hides_trade_row_when_trading_disabled() {
 
 #[test]
 fn shop_buy_flow_drives_through_tick_and_grants_item() {
-    use crate::shop::{ShopInventory, ShopItem, ShopSession};
+    use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
 
     let mut world = world_with_party(1);
     world.party.money = 500;
@@ -451,7 +454,7 @@ fn shop_buy_flow_drives_through_tick_and_grants_item() {
 /// until a press, which the menu VM never sees.
 #[test]
 fn shop_buy_credits_the_point_card_and_holds_the_window_31_toast() {
-    use crate::shop::{POINT_CARD_ITEM_ID, ShopInventory, ShopItem, ShopSession};
+    use legaia_engine_menus::shop::{POINT_CARD_ITEM_ID, ShopInventory, ShopItem, ShopSession};
 
     let mut world = world_with_party(1);
     world.party.money = 500;
@@ -509,7 +512,7 @@ fn spell_level_notice_holds_until_a_press() {
     let mut world = world_with_party(1);
     let mut runtime = MenuRuntime::new("/tmp/legaia-test");
     runtime.open();
-    runtime.arm_spell_level_notice(crate::magic_xp::SpellLevelNotice {
+    runtime.arm_spell_level_notice(legaia_engine_battle::magic_xp::SpellLevelNotice {
         caster_slot: 0,
         spell_index: 0,
         spell_id: 0x83,
@@ -535,7 +538,7 @@ fn spell_level_notice_holds_until_a_press() {
 /// the beat - retail's case 3 returns straight to sub-screen `0x1B`.
 #[test]
 fn shop_buy_without_the_point_card_neither_credits_nor_toasts() {
-    use crate::shop::{ShopInventory, ShopItem, ShopSession};
+    use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
 
     let mut world = world_with_party(1);
     world.party.money = 500;
@@ -576,7 +579,7 @@ fn shop_buy_without_the_point_card_neither_credits_nor_toasts() {
 /// is only reached from the quantity screen a affordable row opened.
 #[test]
 fn a_refused_buy_banks_no_points() {
-    use crate::shop::{POINT_CARD_ITEM_ID, ShopInventory, ShopItem, ShopSession};
+    use legaia_engine_menus::shop::{POINT_CARD_ITEM_ID, ShopInventory, ShopItem, ShopSession};
 
     let mut world = world_with_party(1);
     world.party.money = 50;
@@ -598,7 +601,7 @@ fn a_refused_buy_banks_no_points() {
 
 #[test]
 fn shop_buy_refusal_beat_stays_on_the_list_row() {
-    use crate::shop::{ShopInventory, ShopItem, ShopSession};
+    use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
 
     // 50 gold against a 100-gold row: the retail state-2 dispatch
     // refuses at the list (`slt gold, price` + buzz) - no pending
@@ -644,7 +647,7 @@ fn shop_buy_refusal_beat_stays_on_the_list_row() {
 
 #[test]
 fn shop_buy_list_pages_seven_rows_like_the_kernel() {
-    use crate::shop::{ShopInventory, ShopItem, ShopSession};
+    use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
 
     let mut world = world_with_party(1);
     world.party.money = 100_000;
@@ -678,7 +681,7 @@ fn shop_buy_list_pages_seven_rows_like_the_kernel() {
 
 #[test]
 fn shop_buy_full_stack_row_is_refused_at_the_list() {
-    use crate::shop::{ShopInventory, ShopItem, ShopSession};
+    use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
 
     // A stack already at 99 is a disabled row (`0x800`): the list
     // kernel buzzes it before the state-2 dispatch - a purse that can
@@ -706,7 +709,7 @@ fn shop_buy_full_stack_row_is_refused_at_the_list() {
 /// one, then the quantity stepper's own step / cancel.
 #[test]
 fn shop_ticks_raise_the_list_kernel_cues() {
-    use crate::shop::{ShopInventory, ShopItem, ShopSession};
+    use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
 
     let mut world = world_with_party(1);
     world.party.money = 50;
@@ -759,15 +762,15 @@ fn shop_ticks_raise_the_list_kernel_cues() {
 
 #[test]
 fn equipment_buy_opens_recipient_picker_and_equips_now() {
-    use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
-    use crate::shop::{ShopInventory, ShopItem, ShopSession};
-    use legaia_asset::equip_stats::EquipSlot as Disc;
+    use legaia_engine_menus::equipment::{DiscEquipEntry, DiscEquipInfo};
+    use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
 
     let mut world = world_with_party(2);
     world.party.money = 300;
     // Party member 1 already wears item 7 in the weapon slot.
     let mut eq = world.party.roster.members[1].equipment();
-    eq.slots[crate::equipment::EquipSlot::Weapon.as_index() as usize] = 7;
+    eq.slots[legaia_engine_menus::equipment::EquipSlot::Weapon.as_index() as usize] = 7;
     world.party.roster.members[1].set_equipment(eq);
 
     let mut runtime = MenuRuntime::new("/tmp/legaia-test");
@@ -811,7 +814,7 @@ fn equipment_buy_opens_recipient_picker_and_equips_now() {
     assert_eq!(world.party.money, 180, "120 gold debited");
     assert_eq!(
         world.party.roster.members[1].equipment().slots
-            [crate::equipment::EquipSlot::Weapon.as_index() as usize],
+            [legaia_engine_menus::equipment::EquipSlot::Weapon.as_index() as usize],
         0x30,
         "bought piece equipped directly"
     );
@@ -829,9 +832,9 @@ fn equipment_buy_opens_recipient_picker_and_equips_now() {
 
 #[test]
 fn recipient_row_zero_buys_one_copy_into_the_bag() {
-    use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
-    use crate::shop::{ShopInventory, ShopItem, ShopSession};
-    use legaia_asset::equip_stats::EquipSlot as Disc;
+    use legaia_engine_menus::equipment::{DiscEquipEntry, DiscEquipInfo};
+    use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
 
     let mut world = world_with_party(1);
     world.party.money = 200;
@@ -867,9 +870,9 @@ fn recipient_row_zero_buys_one_copy_into_the_bag() {
 
 #[test]
 fn equipment_buy_keeps_quantity_flow_while_retail_flow_is_off() {
-    use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
-    use crate::shop::{ShopInventory, ShopItem, ShopSession};
-    use legaia_asset::equip_stats::EquipSlot as Disc;
+    use legaia_engine_menus::equipment::{DiscEquipEntry, DiscEquipInfo};
+    use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
 
     let mut world = world_with_party(1);
     world.party.money = 500;
@@ -901,7 +904,7 @@ fn equipment_buy_keeps_quantity_flow_while_retail_flow_is_off() {
 
 #[test]
 fn shop_triangle_from_list_tears_down_session_and_closes() {
-    use crate::shop::{ShopInventory, ShopSession};
+    use legaia_engine_menus::shop::{ShopInventory, ShopSession};
 
     let mut world = world_with_party(1);
     let mut runtime = MenuRuntime::new("/tmp/legaia-test");

@@ -84,7 +84,7 @@ pub fn build_engine_audio_trace(
             .take_sfx_ring_ops()
             .into_iter()
             .filter_map(|op| {
-                use legaia_engine_core::world::SfxRingOp;
+                use legaia_engine_system::sound_state::SfxRingOp;
                 match op {
                     SfxRingOp::Push(id) | SfxRingOp::ReplaceLast(id) => Some(id),
                     SfxRingOp::WriteSlot(_, id) | SfxRingOp::ArmSlot(_, id, _) => Some(id),
@@ -101,7 +101,7 @@ pub fn build_engine_audio_trace(
 /// audio / PCM trace samples it.
 ///
 /// [`BootSession::open`] only calls `load_scene`: the world stays in
-/// [`SceneMode::Title`](legaia_engine_core::world::SceneMode) with **no field
+/// [`SceneMode::Title`](legaia_engine_mode::mode::SceneMode) with **no field
 /// record installed**, so the field VM steps nothing and op `0x35` never
 /// executes. Every other engine-side oracle already goes through
 /// [`BootSession::enter_field_live`] (the mode-trace builders, `sim-trace`);
@@ -109,7 +109,7 @@ pub fn build_engine_audio_trace(
 /// reason their engine traces reported an empty voice mask on every frame
 /// while retail keyed voices.
 ///
-/// [`crate::boot::FieldLiveOpts::default`] rather than the window's playable
+/// [`legaia_engine_session::boot::FieldLiveOpts::default`] rather than the window's playable
 /// preset: a no-input trace window wants the field VM running and nothing
 /// else, so the step-driven encounter roll and player-driven battles stay
 /// off and the sampled audio is the scene's own entry music.
@@ -130,7 +130,10 @@ pub fn build_engine_audio_trace(
 /// any BGM".
 pub(crate) fn enter_scene_for_trace(session: &mut BootSession, scene: &str) -> Result<()> {
     session.host.world.seed_free_roam_story_baseline(scene);
-    session.enter_field_live(scene, &crate::boot::FieldLiveOpts::default())?;
+    session.enter_field_live(
+        scene,
+        &legaia_engine_session::boot::FieldLiveOpts::default(),
+    )?;
     Ok(())
 }
 

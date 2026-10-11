@@ -5,7 +5,7 @@ use super::*;
 
 impl World {
     /// Roll a monster special-attack's damage through the faithful
-    /// arts/physical kernel ([`legaia_engine_vm::battle_formulas::arts_physical_predamage`],
+    /// arts/physical kernel ([`legaia_engine_battle_vm::battle_formulas::arts_physical_predamage`],
     /// the non-summon branch of `FUN_801dd0ac`) seeded with the move's real
     /// per-move power (the move-power table's `+0`, `>> 2`). Returns the
     /// pre-finisher damage clamped to `1..=9999`, or `None` when the table
@@ -58,14 +58,14 @@ impl World {
         power: i32,
         move_id: u8,
     ) -> Option<u16> {
-        use vm::battle_formulas::{
+        use legaia_engine_battle_vm::battle_formulas::{
             DamageFinish, SummonRollActor, arts_physical_predamage_lazy, damage_finish_lazy,
         };
 
         // PROT 0961's party sweep rolls its wrapper only in the evolved-Cort
         // fight; anywhere else it is a scripted wipe with no roll at all.
         if self.dead_end_crisis_wipes(move_id) {
-            return Some(vm::cast_module_ticks::DEAD_END_CRISIS_WIPE_DAMAGE);
+            return Some(legaia_engine_battle_vm::cast_module_ticks::DEAD_END_CRISIS_WIPE_DAMAGE);
         }
         if CAPTURE_BYPASS_MOVE_IDS.contains(&move_id) {
             let power = self.baked_module_power(move_id).unwrap_or(power);
@@ -142,7 +142,7 @@ impl World {
     ///
     /// The wrapper is not the shared kernel with a flag flipped - it is its
     /// own roll, and the two differ in three places the port keeps apart
-    /// ([`legaia_engine_vm::battle_damage_wrappers`]):
+    /// ([`legaia_engine_battle_vm::battle_damage_wrappers`]):
     ///
     /// * the attacker roll mixes the flat ATK-working stat (`+0x158`) in place
     ///   of the shared kernel's doubled `+0x168` term, and draws **one**
@@ -172,11 +172,11 @@ impl World {
     /// PORT: FUN_801DD6B4 (live wiring; pure kernel in
     /// `battle_damage_wrappers::atk_wrapper_predamage`)
     fn capture_bypass_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
-        use legaia_engine_vm::battle_damage_wrappers::{
+        use legaia_engine_battle_vm::battle_damage_wrappers::{
             ATK_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
             atk_wrapper_predamage,
         };
-        use vm::battle_formulas::{DamageFinish, damage_finish_lazy};
+        use legaia_engine_battle_vm::battle_formulas::{DamageFinish, damage_finish_lazy};
 
         let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
         let attacker_hp = self.actors.get(attacker as usize)?.battle.hp;
@@ -242,15 +242,15 @@ impl World {
     /// Without a disc image the answer is `false`, which keeps disc-free
     /// battles on the shared kernel exactly as before.
     pub(super) fn is_capture_class_move(&self, move_id: u8) -> bool {
-        self.spell_table_class(move_id) == Some(legaia_asset::spell_names::CAPTURE_CLASS)
+        self.spell_table_class(move_id) == Some(legaia_game_tables::spell_names::CAPTURE_CLASS)
     }
 
     fn capture_respect_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
-        use legaia_engine_vm::battle_damage_wrappers::{
+        use legaia_engine_battle_vm::battle_damage_wrappers::{
             INT_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
             int_wrapper_predamage,
         };
-        use vm::battle_formulas::{DamageFinish, damage_finish_lazy};
+        use legaia_engine_battle_vm::battle_formulas::{DamageFinish, damage_finish_lazy};
 
         let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
         let attacker_hp = self.actors.get(attacker as usize)?.battle.hp;
@@ -329,7 +329,7 @@ impl World {
     /// - **Finisher** (`FUN_801ddb30`): no-damage floor (`rand()%9 + 8`,
     ///   drawn lazily), the per-caster summon power-percent
     ///   (`0x801F5468[(char_id-1)*8 + summon_element]`,
-    ///   [`legaia_asset::element_affinity::ElementAffinity::summon_power_pct`]),
+    ///   [`legaia_game_tables::element_affinity::ElementAffinity::summon_power_pct`]),
     ///   and the 9999 cap. The party-resist / guard stages don't apply to an
     ///   enemy defender; the state-mutating tail (popup accumulator, MP
     ///   drain, stat debuffs) stays in the live fold.
@@ -346,7 +346,7 @@ impl World {
         target: u8,
         spell_id: u8,
     ) -> Option<u16> {
-        use vm::battle_formulas::{
+        use legaia_engine_battle_vm::battle_formulas::{
             DamageFinish, DefenderResist, SummonRollActor, damage_finish_lazy,
             summon_predamage_lazy,
         };

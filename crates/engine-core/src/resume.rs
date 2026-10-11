@@ -25,7 +25,7 @@
 //!
 //! 1. The save's own scene, when it names one and the host can enter it.
 //! 2. The scene already running, with the save loaded over it.
-//! 3. The opening town ([`legaia_asset::new_game::OPENING_SCENE`]), when
+//! 3. The opening town ([`legaia_game_tables::new_game::OPENING_SCENE`]), when
 //!    nothing is running - a cold boot's title Continue on a host that did
 //!    not pre-boot a scene.
 //!
@@ -38,7 +38,7 @@
 //! The prologue cutscene scene, then the opening town when the cutscene
 //! scene will not enter ([`NEW_GAME_SCENES`]).
 
-use legaia_asset::new_game::{OPENING_CUTSCENE_SCENE, OPENING_SCENE};
+use legaia_game_tables::new_game::{OPENING_CUTSCENE_SCENE, OPENING_SCENE};
 
 /// The scenes a New Game tries, in order: the prologue cutscene chain's
 /// first leg, then Rim Elm when that leg cannot be entered.

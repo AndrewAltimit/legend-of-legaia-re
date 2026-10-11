@@ -6,7 +6,7 @@ use super::*;
 
 impl PlayWindowApp {
     /// Lazily read the static face-frame tables out of the boot source's
-    /// `SCUS_942.54` (`legaia_asset::face_anim::FaceFrameTables`). A failed
+    /// `SCUS_942.54` (`legaia_actor_formats::face_anim::FaceFrameTables`). A failed
     /// attempt (disc-free run / unparsable executable) is remembered so the
     /// probe only runs once; facial animation is simply skipped then.
     pub(in crate::window) fn load_face_tables(&mut self) {
@@ -28,10 +28,10 @@ impl PlayWindowApp {
         };
         self.face_tables = scus
             .as_deref()
-            .and_then(legaia_asset::face_anim::FaceFrameTables::from_scus);
+            .and_then(legaia_actor_formats::face_anim::FaceFrameTables::from_scus);
         self.art_mouth_tables = scus
             .as_deref()
-            .and_then(legaia_asset::face_anim::ArtMouthTables::from_scus);
+            .and_then(legaia_actor_formats::face_anim::ArtMouthTables::from_scus);
         if self.face_tables.is_none() {
             log::info!(
                 "play-window: SCUS face-frame tables unavailable - battle faces stay neutral"
@@ -60,7 +60,7 @@ impl PlayWindowApp {
         };
         self.seru_names = scus
             .as_deref()
-            .and_then(legaia_asset::spell_names::SpellNameTable::from_scus);
+            .and_then(legaia_game_tables::spell_names::SpellNameTable::from_scus);
     }
 
     /// Per-tick battle facial animation: re-stamp each registered party
@@ -81,10 +81,10 @@ impl PlayWindowApp {
     // node, call the stamp pass with (band slot, char index, cursor
     // keyframes, playing action entry), skipping char 3 (Terra) and bands
     // >= 3. The stamp-selection half is `FaceFrameTables::stamps_with_art_window`
-    // (PORT: FUN_8004C7B4 in legaia_asset::face_anim).
+    // (PORT: FUN_8004C7B4 in legaia_actor_formats::face_anim).
     pub(in crate::window) fn tick_battle_face_stamps(&mut self) {
-        use legaia_asset::face_anim::{ART_BAND_FIRST, ART_BAND_LAST, ArtMouthOverride};
-        use legaia_engine_vm::battle_action::BattleEndCause;
+        use legaia_actor_formats::face_anim::{ART_BAND_FIRST, ART_BAND_LAST, ArtMouthOverride};
+        use legaia_engine_battle_vm::battle_action::BattleEndCause;
         if self.session.host.world.mode != SceneMode::Battle || self.battle_faces.is_empty() {
             return;
         }
@@ -125,10 +125,13 @@ impl PlayWindowApp {
             // (FUN_8004AD80), so the animator reads THAT entry's tracks
             // (record +0xB0 eyes / +0xBC mouth). Below the art base, the
             // playing clip's action slot picks the record[0] / swing entry.
-            let tracks = if action_id >= legaia_asset::battle_char_assembly::ART_ANIM_ID_BASE {
+            let tracks = if action_id
+                >= legaia_actor_formats::battle_char_assembly::ART_ANIM_ID_BASE
+            {
                 mf.art_tracks
                     .get(
-                        (action_id - legaia_asset::battle_char_assembly::ART_ANIM_ID_BASE) as usize,
+                        (action_id - legaia_actor_formats::battle_char_assembly::ART_ANIM_ID_BASE)
+                            as usize,
                     )
                     .and_then(|t| t.as_ref())
             } else {
@@ -198,7 +201,7 @@ impl PlayWindowApp {
     /// Status CLUT recolour - the fourth pass of `FUN_8004CE2C`. An actor
     /// whose Stone latch fired this frame has its party CLUT row
     /// (`481 + slot`) restaged grey from the pristine palette copy
-    /// ([`legaia_engine_core::battle_status_clut`]); the latch itself is
+    /// ([`legaia_engine_battle::battle_status_clut`]); the latch itself is
     /// armed inside `BattleHud::sync_status`, which
     /// [`Self::drain_and_log_battle_events`] already runs once per slot per
     /// frame.
@@ -233,7 +236,7 @@ impl PlayWindowApp {
     /// table form (`FUN_801DEA50`, `0x801df0dc..0x801df134`). Each queued
     /// `0x801F6418` byte is a VRAM source x whose sixteen entries move onto
     /// `(224, 476)`, recolouring whatever the spawned move-FX prototype draws
-    /// ([`legaia_engine_core::battle_effect_clut`]).
+    /// ([`legaia_engine_battle::battle_effect_clut`]).
     ///
     /// Shares the mid-battle re-upload protocol with
     /// [`Self::tick_battle_status_clut`]: mutate the stashed battle VRAM,
@@ -251,7 +254,7 @@ impl PlayWindowApp {
         };
         let mut dirty = false;
         for x in stages {
-            dirty |= legaia_engine_core::battle_effect_clut::stage_effect_clut(vram, x);
+            dirty |= legaia_engine_battle::battle_effect_clut::stage_effect_clut(vram, x);
         }
         if !dirty {
             return;
@@ -365,7 +368,7 @@ impl PlayWindowApp {
     /// the grid mesh bakes the near colour into its vertices, so it is rebuilt
     /// only on the frames the ambient moves.
     pub(in crate::window) fn sync_battle_ground_ambient(&mut self) {
-        use legaia_engine_vm::battle_ground_grid as grid;
+        use legaia_engine_battle_vm::battle_ground_grid as grid;
         let Some(gi) = self.battle_ground_mesh else {
             return;
         };

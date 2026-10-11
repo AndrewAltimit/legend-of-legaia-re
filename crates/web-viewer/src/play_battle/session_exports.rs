@@ -114,7 +114,7 @@ impl LegaiaRuntime {
         else {
             return false;
         };
-        legaia_engine_core::magic_xp::learn_spell_prepend(record, spell_id);
+        legaia_engine_battle::magic_xp::learn_spell_prepend(record, spell_id);
         true
     }
 
@@ -265,7 +265,7 @@ impl LegaiaRuntime {
     /// Continue / Retry / Quit panel growing back. Routing matches the native
     /// window's `BootUiState::GameOver` arm exactly - one destination.
     pub fn game_over_input(&mut self, _edge: u16) -> String {
-        use legaia_engine_core::game_over::GameOverOutcome;
+        use legaia_engine_menus::game_over::GameOverOutcome;
         let Some(session) = self.game_over.as_mut() else {
             return String::new();
         };

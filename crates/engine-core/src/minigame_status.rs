@@ -15,14 +15,15 @@
 //! one draw kernel in `engine-ui` (`ui_text_lines::status_row_draws_for`), and
 //! each host applies its one stage transform.
 
-use crate::baka_fighter::{BakaFight, MatchPhase};
-use crate::dance::{
+use crate::world::World;
+use legaia_engine_menus::muscle_dome_session::MusclePhase;
+use legaia_engine_minigames::baka_fighter::{BakaFight, MatchPhase};
+use legaia_engine_minigames::dance::{
     DanceGame, GAUGE_STEP, Judge, dance_beat_track_note_x, dance_combo_window_bright,
     dance_number_digits,
 };
-use crate::muscle_dome::{MusclePhase, TIME_METER_MAX};
-use crate::slot_machine::{SlotMachine, SlotPhase};
-use crate::world::World;
+use legaia_engine_minigames::muscle_dome::TIME_METER_MAX;
+use legaia_engine_minigames::slot_machine::{SlotMachine, SlotPhase};
 
 /// The contest line's pen (Muscle Dome ladder position).
 pub const PEN_CONTEST: (i32, i32) = (8, 44);
@@ -102,7 +103,7 @@ pub fn baka_status_rows(f: &BakaFight) -> Vec<StatusRow> {
                 "PLAYER SELECT  {}   Left/Right pick, Cross confirms",
                 ["Vahn", "Noa", "Gala"].get(cursor).copied().unwrap_or("?")
             ),
-            None if f.cabinet().state() == crate::baka_cabinet::ST_ATTRACT => {
+            None if f.cabinet().state() == legaia_engine_minigames::baka_cabinet::ST_ATTRACT => {
                 "BAKA FIGHTER   Start or Cross to begin".to_string()
             }
             None => "BAKA FIGHTER".to_string(),
@@ -350,8 +351,8 @@ mod tests {
     #[test]
     fn every_row_sits_on_the_stage_pens() {
         let pens = [PEN_CONTEST, PEN_STATUS, PEN_PROMPT, PEN_EXTRA];
-        use crate::slot_machine::SYMBOL_COUNT;
-        use legaia_asset::slot_payout::SlotPayoutTable;
+        use legaia_engine_minigames::slot_machine::SYMBOL_COUNT;
+        use legaia_minigame_formats::slot_payout::SlotPayoutTable;
         let payouts = SlotPayoutTable {
             payouts: [2u8; SYMBOL_COUNT],
         };

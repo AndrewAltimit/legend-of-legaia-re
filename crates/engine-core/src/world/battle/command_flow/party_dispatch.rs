@@ -19,7 +19,7 @@ impl World {
         action: crate::battle_round::PendingPartyAction,
     ) {
         use crate::battle_round::PendingPartyAction as Pending;
-        use vm::battle_action::ActionState;
+        use legaia_engine_battle_vm::battle_action::ActionState;
         self.battle_ctx.active_actor = actor;
         match action {
             Pending::Attack { target } => {
@@ -49,7 +49,8 @@ impl World {
                 // that is what the round plays.
                 if let Some(queue) = self.take_auto_attack_queue(actor) {
                     if let Some(a) = self.actors.get_mut(actor as usize) {
-                        a.battle.params = [0; vm::battle_action::ACTION_PARAM_BYTES];
+                        a.battle.params =
+                            [0; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];
                         for (dst, src) in a.battle.params.iter_mut().zip(queue.iter()) {
                             *dst = *src;
                         }
@@ -73,9 +74,12 @@ impl World {
                         self.charge_art_spirit(actor, &actions);
                         let party_count = self.party.party_count.clamp(1, 3);
                         let (row, slot) = if target >= party_count {
-                            (crate::target_picker::CursorRow::Enemy, target - party_count)
+                            (
+                                legaia_engine_battle::target_picker::CursorRow::Enemy,
+                                target - party_count,
+                            )
                         } else {
-                            (crate::target_picker::CursorRow::Ally, target)
+                            (legaia_engine_battle::target_picker::CursorRow::Ally, target)
                         };
                         self.arm_battle_art_action(actor, &queue, &actions, marks, row, slot);
                     }
@@ -144,17 +148,19 @@ impl World {
                 // live loop's settle glue (`live_battle_tick`) walks to
                 // completion.
                 let target = if used_slots.len() > 1 {
-                    vm::battle_cue_group::TARGET_PARTY_WIDE
+                    legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE
                 } else {
                     used_slots.first().copied().unwrap_or(actor)
                 };
                 self.clear_action_stream(actor);
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.active_target = target;
-                    a.battle.action_category = vm::battle_action::ActionCategory::Item.as_byte();
+                    a.battle.action_category =
+                        legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte();
                     a.battle.params[0] = item_id;
                 }
-                self.battle_ctx.queued_action = vm::battle_action::ActionCategory::Item.as_byte();
+                self.battle_ctx.queued_action =
+                    legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte();
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();
             }
             Pending::Spirit => {
@@ -239,12 +245,12 @@ impl World {
             return;
         }
         for action in actions {
-            self.audio
-                .battle_shout_cues
-                .push(crate::battle_events::BattleShoutCue {
+            self.audio.battle_shout_cues.push(
+                legaia_engine_battle::battle_events::BattleShoutCue {
                     cslot: cslot as u8,
                     action: action.as_byte(),
-                });
+                },
+            );
         }
     }
 }

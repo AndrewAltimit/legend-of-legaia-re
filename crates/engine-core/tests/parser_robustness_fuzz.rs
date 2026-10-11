@@ -147,18 +147,18 @@ fn parsers_never_panic_on_malformed_input() {
     // decompressed disc containers, so a truncated / hostile container must
     // not slice-panic before the offset is used.
     total += run("effect_bundle::detect", &[], |b| {
-        let _ = legaia_asset::effect_bundle::detect(b);
+        let _ = legaia_container_formats::effect_bundle::detect(b);
     });
     total += run("kingdom_bundle::parse", &[], |b| {
-        let _ = legaia_asset::kingdom_bundle::parse(b);
+        let _ = legaia_scene_formats::kingdom_bundle::parse(b);
     });
     total += run("kingdom_bundle::decode_slot", &[], |b| {
         for slot in 0u8..6 {
-            let _ = legaia_asset::kingdom_bundle::decode_slot(b, slot);
+            let _ = legaia_scene_formats::kingdom_bundle::decode_slot(b, slot);
         }
     });
     total += run("world_map_overlay::parse", &[], |b| {
-        let _ = legaia_asset::world_map_overlay::parse(b);
+        let _ = legaia_scene_formats::world_map_overlay::parse(b);
     });
     total += run("battle_char_palette::parse_record", &[], |b| {
         // rec0 is a caller-supplied cursor into the file; sweep several,
@@ -171,14 +171,14 @@ fn parsers_never_panic_on_malformed_input() {
             b.len(),
             b.len() + 64,
         ] {
-            let _ = legaia_asset::battle_char_palette::parse_record(b, rec0);
+            let _ = legaia_actor_formats::battle_char_palette::parse_record(b, rec0);
         }
     });
     total += run("character_pack::parse", &[], |b| {
-        let _ = legaia_asset::character_pack::parse(b);
+        let _ = legaia_actor_formats::character_pack::parse(b);
     });
     total += run("scene_v12_table::detect", &[], |b| {
-        if let Some(t) = legaia_asset::scene_v12_table::detect(b) {
+        if let Some(t) = legaia_scene_formats::scene_v12_table::detect(b) {
             // Also exercise the offset-driven payload slicer.
             for i in 0..64 {
                 let _ = t.script_payload(b, i);
@@ -186,14 +186,14 @@ fn parsers_never_panic_on_malformed_input() {
         }
     });
     total += run("field_pack::detect", &[], |b| {
-        if let Some(fp) = legaia_asset::field_pack::detect(b) {
+        if let Some(fp) = legaia_scene_formats::field_pack::detect(b) {
             for i in 0..64 {
                 let _ = fp.slot_bytes_in_assets(b, i);
             }
         }
     });
     total += run("player_anm::parse", &[], |b| {
-        let _ = legaia_asset::player_anm::parse(b);
+        let _ = legaia_actor_formats::player_anm::parse(b);
     });
 
     assert_eq!(total, 0, "{total} parser inputs panicked (see stderr)");

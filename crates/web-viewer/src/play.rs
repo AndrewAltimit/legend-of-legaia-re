@@ -70,7 +70,7 @@ pub struct FieldRender {
     /// (the native window's `resolve_field_terrain_draws` rule).
     pub terrain: Vec<EnvDraw>,
     /// Walk-ground heightfield surface, when the scene has a resolvable floor.
-    pub ground: Option<legaia_asset::field_objects::WalkHeightfield>,
+    pub ground: Option<legaia_scene_formats::field_objects::WalkHeightfield>,
     /// The scene's MAN-frame floor-height ladder, i.e. the one the two draw
     /// lists' `world_y` were baked against. Kept so the live ladder - which
     /// the field VM animates per frame (op `0x4C` nibble-9) - can be folded
@@ -109,7 +109,7 @@ pub struct FieldRender {
     /// [`Self::placements`] (the landmarks come first); `placements.len()`
     /// on every other scene. The draws from here on carry retail's
     /// per-object decoration depth cue
-    /// ([`legaia_engine_core::overworld_ground_cue::decoration_draw_cue`]),
+    /// ([`legaia_engine_field::overworld_ground_cue::decoration_draw_cue`]),
     /// the native window's `world_map_deco_start` twin.
     pub decoration_start: usize,
 }
@@ -141,9 +141,9 @@ pub(crate) struct NpcRender {
 /// (drained from `World::npcs.anim_cues`) so scripted actors perform
 /// their beats instead of looping the placement clip.
 ///
-/// [`FieldClipPlayer`]: legaia_engine_core::field_anim::FieldClipPlayer
+/// [`FieldClipPlayer`]: legaia_engine_field::field_anim::FieldClipPlayer
 pub(crate) struct NpcClip {
-    pub player: legaia_engine_core::field_anim::FieldClipPlayer,
+    pub player: legaia_engine_field::field_anim::FieldClipPlayer,
     /// Bumped on every ANIMATE-cue re-target, so the page knows the pose
     /// stream behind the frame index changed and must be re-read.
     pub generation: u32,
@@ -207,7 +207,7 @@ fn world_map_landmarks(
     index: &ProtIndex,
     scene: &Scene,
     hidden_records: &std::collections::HashSet<usize>,
-) -> Vec<legaia_asset::field_objects::Placement> {
+) -> Vec<legaia_scene_formats::field_objects::Placement> {
     let mut landmarks = scene
         .walk_object_placements(index)
         .ok()
@@ -264,7 +264,7 @@ pub fn build_field_render(
                 .flatten()
                 .unwrap_or_default()
                 .into_iter()
-                .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+                .filter(|p| p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0)
                 .collect(),
             scene.field_object_binds(index).ok().flatten(),
         )

@@ -32,13 +32,13 @@
 //!
 //! Skip-passes without disc data (CLAUDE.md convention).
 
-use legaia_asset::field_disasm::LinearWalker;
-use legaia_asset::man_section::parse as parse_man;
-use legaia_engine_core::actor_handler::ActorHandler;
 use legaia_engine_core::scene::{Scene, SceneHost};
+use legaia_engine_field::actor_handler::ActorHandler;
 use legaia_engine_field::field_actor_reflect::{
     ReflectActor, ReflectOutcome, spawn_controller, tick_reflection,
 };
+use legaia_scene_formats::field_disasm::LinearWalker;
+use legaia_scene_formats::man_section::parse as parse_man;
 use std::path::PathBuf;
 
 /// The spawn words every one of the three captured spawner calls carried.
@@ -151,7 +151,7 @@ fn conc2_mirrors_are_seated_by_their_prologues_and_match_the_capture() {
     };
     host.load_scene("conc2").expect("load conc2 into the host");
     host.enter_field_scene("conc2", 0).expect("enter conc2");
-    host.world.mode = legaia_engine_core::world::SceneMode::Field;
+    host.world.mode = legaia_engine_mode::mode::SceneMode::Field;
     let mut seated = 0usize;
     for _ in 0..120 {
         let _ = host.world.tick();

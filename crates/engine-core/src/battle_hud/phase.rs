@@ -60,8 +60,8 @@ pub fn battle_action_in_flight(state: u8) -> bool {
 /// own phase (retail's windows are states below the ring), and the command
 /// session wins over the action SM (it opens between actions).
 pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
-    use crate::battle_input::CommandPhase;
-    if world.mode == crate::world::SceneMode::MuscleDome {
+    use legaia_engine_menus::battle_input::CommandPhase;
+    if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         // A dome leg is a battle whose only command surfaces are the
         // fighter's selection screens (`muscle_dome::DomeMenu`); the play-out
         // has no battle-action band behind it.
@@ -73,10 +73,10 @@ pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
             return BattleHudPhase::Idle;
         }
         if s.is_some_and(|s| {
-            s.phase() == crate::muscle_dome::MusclePhase::Select
+            s.phase() == legaia_engine_menus::muscle_dome_session::MusclePhase::Select
                 && matches!(
                     s.menu(),
-                    crate::muscle_dome::DomeMenu::Command(c)
+                    legaia_engine_menus::muscle_dome_session::DomeMenu::Command(c)
                         if matches!(c.phase, CommandPhase::RoundPrompt { .. })
                 )
         }) {
@@ -84,8 +84,10 @@ pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
             return BattleHudPhase::RoundPrompt;
         }
         return match s.map(|s| s.phase()) {
-            Some(crate::muscle_dome::MusclePhase::Select) => BattleHudPhase::CommandEntry,
-            Some(crate::muscle_dome::MusclePhase::TurnOver)
+            Some(legaia_engine_menus::muscle_dome_session::MusclePhase::Select) => {
+                BattleHudPhase::CommandEntry
+            }
+            Some(legaia_engine_menus::muscle_dome_session::MusclePhase::TurnOver)
                 if world.muscle_playback_tally().is_some() =>
             {
                 BattleHudPhase::Action
@@ -93,7 +95,7 @@ pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
             _ => BattleHudPhase::Idle,
         };
     }
-    if world.mode != crate::world::SceneMode::Battle {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
         return BattleHudPhase::Idle;
     }
     if world.arts_input_active()
@@ -166,13 +168,13 @@ pub enum CommandSurface {
 /// The surface owning this frame, or `None` outside
 /// [`BattleHudPhase::CommandEntry`].
 pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurface> {
-    use crate::battle_input::CommandPhase;
-    use crate::target_picker::{CursorRow, PickerState};
+    use legaia_engine_battle::target_picker::{CursorRow, PickerState};
+    use legaia_engine_menus::battle_input::CommandPhase;
     if battle_hud_phase(world) != BattleHudPhase::CommandEntry {
         return None;
     }
-    if world.mode == crate::world::SceneMode::MuscleDome {
-        use crate::muscle_dome::DomeMenu;
+    if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
+        use legaia_engine_menus::muscle_dome_session::DomeMenu;
         return Some(match world.minigames.muscle_dome.as_ref()?.menu() {
             DomeMenu::Command(c) => match c.phase {
                 CommandPhase::Menu { .. } => CommandSurface::Ring,
@@ -191,7 +193,7 @@ pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurf
     }
     if let Some(m) = world.battle.spell_menu.as_ref() {
         return Some(match &m.phase {
-            crate::battle_magic::SpellPhase::Targeting { picker, .. } => {
+            legaia_engine_battle::battle_magic::SpellPhase::Targeting { picker, .. } => {
                 CommandSurface::SpellTarget(match picker.state() {
                     PickerState::Cursor {
                         row: CursorRow::Ally,
@@ -228,7 +230,7 @@ pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurf
 /// The party member entering a command while a command surface is up.
 pub(super) fn command_entry_actor(world: &crate::world::World) -> Option<u8> {
     // The dome fields one fighter, seated at ordinal 0.
-    if world.mode == crate::world::SceneMode::MuscleDome {
+    if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         return world.minigames.muscle_dome.as_ref().map(|_| 0);
     }
     if let Some(slot) = world.arts_input_actor() {

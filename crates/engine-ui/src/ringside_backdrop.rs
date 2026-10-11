@@ -28,8 +28,8 @@
 //! the quads name it by texture page, exactly as retail's do.
 
 use crate::muscle_dome_hud::{HudQuad, HudSprite};
-use legaia_asset::ringside_still as still;
 use legaia_engine_battle_vm::panel_backread_loader::{BACKREAD_RECT_X, backread_slice_rect};
+use legaia_minigame_formats::ringside_still as still;
 
 /// GP0 command byte of the two packets: `0x2C`, a flat-shaded, textured,
 /// opaque, modulated four-point polygon (`POLY_FT4`).
@@ -301,7 +301,7 @@ pub fn first_visit_hub_draw(
 /// is called with, so a variant-1 packet carries ABR 1 (`B + F`) and a
 /// variant-2 packet ABR 2 (`B - F`) through `clut + 1`. The GPU applies
 /// that equation only to texels whose CLUT colour has STP set. Classify the
-/// CLUTs **as uploaded** (`legaia_asset::muscle_dome::hub_page_tims`): the
+/// CLUTs **as uploaded** (`legaia_minigame_formats::muscle_dome::hub_page_tims`): the
 /// arena raises the upload STP flag before loading the pages, so every
 /// non-empty palette on both rows is all-STP in VRAM even though the file
 /// carries it on four. The variant-2 pass therefore subtracts its white
@@ -309,39 +309,40 @@ pub fn first_visit_hub_draw(
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HubPaletteStp {
     /// `[sheet][sub-palette]`, sheet `0` = tpage bit 4 clear.
-    pages: [Vec<crate::screen_prim::PaletteStp>; 2],
+    pages: [Vec<legaia_render_kernels::screen_prim::PaletteStp>; 2],
 }
 
 impl HubPaletteStp {
     /// Classify both pages' sub-palettes.
     pub fn from_tims(page0: &legaia_tim::Tim, page1: &legaia_tim::Tim) -> Self {
-        let classify = |t: &legaia_tim::Tim| -> Vec<crate::screen_prim::PaletteStp> {
-            (0..t.palette_count())
-                .map(|i| {
-                    t.clut
-                        .as_ref()
-                        .and_then(|c| c.palette(t.mode, i))
-                        .map_or(crate::screen_prim::PaletteStp::None, |p| {
-                            crate::screen_prim::palette_stp(p)
-                        })
-                })
-                .collect()
-        };
+        let classify =
+            |t: &legaia_tim::Tim| -> Vec<legaia_render_kernels::screen_prim::PaletteStp> {
+                (0..t.palette_count())
+                    .map(|i| {
+                        t.clut
+                            .as_ref()
+                            .and_then(|c| c.palette(t.mode, i))
+                            .map_or(legaia_render_kernels::screen_prim::PaletteStp::None, |p| {
+                                legaia_render_kernels::screen_prim::palette_stp(p)
+                            })
+                    })
+                    .collect()
+            };
         HubPaletteStp {
             pages: [classify(page0), classify(page1)],
         }
     }
 
     /// The ABR equation a hub quad's texels go through, or `None` when it
-    /// draws opaque ([`crate::screen_prim::textured_semi_abr`]). A palette
+    /// draws opaque ([`legaia_render_kernels::screen_prim::textured_semi_abr`]). A palette
     /// the pages do not hold classifies as STP-free.
     pub fn quad_abr(&self, q: &HudQuad) -> Option<u8> {
         let sheet = usize::from(q.tpage & 0x10 != 0);
         let stp = self.pages[sheet]
             .get(usize::from(q.clut & 0x3F))
             .copied()
-            .unwrap_or(crate::screen_prim::PaletteStp::None);
-        crate::screen_prim::textured_semi_abr(q.semi_transparent, q.tpage, stp)
+            .unwrap_or(legaia_render_kernels::screen_prim::PaletteStp::None);
+        legaia_render_kernels::screen_prim::textured_semi_abr(q.semi_transparent, q.tpage, stp)
     }
 }
 

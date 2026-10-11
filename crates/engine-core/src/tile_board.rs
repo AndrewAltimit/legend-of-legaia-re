@@ -3,7 +3,7 @@
 //! `legaia_engine_minigames::tile_board` and are re-exported here; this file
 //! keeps the per-frame draw assembly, which reads the `World`.
 
-pub use legaia_engine_minigames::tile_board::*;
+use legaia_engine_minigames::tile_board::*;
 
 // ---------------------------------------------------------------------
 // Per-frame draw assembly

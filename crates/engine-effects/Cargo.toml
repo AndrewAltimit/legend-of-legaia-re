@@ -15,3 +15,5 @@ legaia-asset.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-vm.workspace = true
 legaia-tmd.workspace = true
+legaia-actor-formats.workspace = true
+legaia-overlay-images.workspace = true

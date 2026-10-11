@@ -31,8 +31,8 @@ pub mod vram_oracle;
 
 /// The session over the native cpal output, as `legaia-engine-shell` names it.
 pub(crate) mod boot {
-    pub use legaia_engine_session::boot::*;
+
     pub type BootSession = legaia_engine_session::boot::BootSession<legaia_engine_audio::AudioOut>;
 }
 
-pub(crate) use boot::{BootConfig, BootSession};
+pub(crate) use boot::BootSession;

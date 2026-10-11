@@ -46,7 +46,7 @@ fn words_to_bytes(w: &[u32]) -> Vec<u8> {
 
 /// Resolve a SCUS VA to a file offset in the image.
 fn scus_off(scus: &[u8], va: u32) -> Result<usize> {
-    legaia_asset::item_names::file_offset_for_va(scus, va)
+    legaia_game_tables::item_names::file_offset_for_va(scus, va)
         .ok_or_else(|| anyhow::anyhow!("show-super-arts: can't resolve SCUS VA {va:#x}"))
 }
 

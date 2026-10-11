@@ -71,7 +71,7 @@ pub struct BattleIntro {
     /// meshes sample), so the capture re-lands it in the **cloned** page the
     /// transition draws against. `None` = no disc access; the shade faces
     /// then sample whatever the base page holds.
-    shade_pack: Option<legaia_asset::field_char_textures::FieldCharTextures>,
+    shade_pack: Option<legaia_actor_formats::field_char_textures::FieldCharTextures>,
     /// The captured frame lifted out of [`FIELD_CAPTURE_COLS`] as a plain
     /// `320 x 240` halfword image, so the curtain's column pass can sample it
     /// while the same page is being written. Empty for every other style.
@@ -197,7 +197,7 @@ impl BattleIntro {
     /// page (see the `shade_pack` field). Only the tile shatter consults it.
     pub fn with_shade_pack(
         mut self,
-        pack: Option<legaia_asset::field_char_textures::FieldCharTextures>,
+        pack: Option<legaia_actor_formats::field_char_textures::FieldCharTextures>,
     ) -> Self {
         self.shade_pack = pack;
         self
@@ -234,8 +234,8 @@ impl BattleIntro {
             .as_ref()
             .and_then(|(img, base)| parse_tile_corner_table(img, *base))
             .unwrap_or(DEFAULT_TILE_CORNERS);
-        let shade =
-            field_char_textures.and_then(|b| legaia_asset::field_char_textures::parse(b).ok());
+        let shade = field_char_textures
+            .and_then(|b| legaia_actor_formats::field_char_textures::parse(b).ok());
         let mut env = IntroEnv::new(rng_seed);
         let mut trig = IntroEnv::new(rng_seed);
         Self::new(

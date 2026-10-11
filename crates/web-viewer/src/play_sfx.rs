@@ -52,7 +52,7 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_audio::{AudioSink, SfxBank};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::audio_director::SfxFrameReport;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -90,18 +90,18 @@ const DUCK_LEVEL_REF: u8 = legaia_engine_session::audio_director::DUCK_LEVEL_REF
 /// pages reach the same id through different code, and retracing one page's
 /// cues must not silently move the other's. Same set in
 /// `docs/subsystems/field-menu.md`. The value is the engine's one table
-/// ([`legaia_engine_core::menu_cues`]), which the native window fires from
+/// ([`legaia_engine_menus::menu_cues`]), which the native window fires from
 /// too.
-pub(crate) const RETAIL_MENU_CURSOR_CUE: u8 = legaia_engine_core::menu_cues::MENU_CURSOR_CUE;
+pub(crate) const RETAIL_MENU_CURSOR_CUE: u8 = legaia_engine_menus::menu_cues::MENU_CURSOR_CUE;
 /// Cue id retail's pause menu fires confirming an **enabled** row: `li a1,0x20`
 /// at `0x80032d24` in `FUN_80032A44`, stored through the shared
 /// `sh a1,0x0(v0)` at `0x80032d40` alongside the `mode = 2` write. A
 /// *disabled* row takes the sibling branch and buzzes `0x23` instead
 /// (`li a1,0x23` at `0x80032d0c`) - a distinction this host has no path for.
-pub(crate) const RETAIL_MENU_CONFIRM_CUE: u8 = legaia_engine_core::menu_cues::MENU_CONFIRM_CUE;
+pub(crate) const RETAIL_MENU_CONFIRM_CUE: u8 = legaia_engine_menus::menu_cues::MENU_CONFIRM_CUE;
 /// Cue id retail's pause menu fires on cancel: `li a2,0x37` at `0x80032d74` in
 /// `FUN_80032A44`, stored at `0x80032d94`, with `mode = 3`.
-pub(crate) const RETAIL_MENU_CANCEL_CUE: u8 = legaia_engine_core::menu_cues::MENU_CANCEL_CUE;
+pub(crate) const RETAIL_MENU_CANCEL_CUE: u8 = legaia_engine_menus::menu_cues::MENU_CANCEL_CUE;
 
 /// What this host enqueues for a cursor move: [`RETAIL_MENU_CURSOR_CUE`], the
 /// same id retail writes into the ring.
@@ -269,7 +269,7 @@ pub struct PlaySfx {
     /// director when it is built. Empty until `load_disc`.
     pub bank: SfxBank,
     /// Cue id -> VAB slot, the routing half of the same descriptor table
-    /// ([`legaia_asset::sfx_table::SfxTable::cue_slots`]), installed beside
+    /// ([`legaia_game_tables::sfx_table::SfxTable::cue_slots`]), installed beside
     /// [`Self::bank`]. Empty until `load_disc`.
     pub cue_slots: BTreeMap<u8, u8>,
     /// Whether the director's resident banks were staged against the loaded
@@ -376,7 +376,7 @@ impl LegaiaRuntime {
             self.sfx.resident_staged = true;
             let staged = host
                 .index
-                .entry_bytes_extended(legaia_asset::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX)
+                .entry_bytes_extended(legaia_game_tables::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX)
                 .is_ok_and(|bytes| d.stage_resident_slot0(bytes));
             if !staged {
                 crate::console_log("play SFX: slot-0 system bank (PROT 0868) did not stage");
@@ -394,7 +394,7 @@ impl LegaiaRuntime {
     /// `load_disc`; a `PROT.DAT`-only load has no executable and leaves both
     /// empty, which makes every cue a silent no-op rather than an error.
     pub(crate) fn install_sfx_descriptors(&mut self, scus: &[u8]) {
-        if let Some(table) = legaia_asset::sfx_table::SfxTable::from_scus(scus) {
+        if let Some(table) = legaia_game_tables::sfx_table::SfxTable::from_scus(scus) {
             self.sfx.bank = SfxBank::from_descriptors(
                 table
                     .active()
@@ -810,21 +810,21 @@ impl LegaiaRuntime {
 
     /// Fire the pause menu's blip for this frame's just-pressed `edge` (the
     /// PSX pad word the page feeds `set_pad`). Which blip, if any, is the
-    /// engine's one rule ([`legaia_engine_core::menu_cues::menu_edge_blip`]),
+    /// engine's one rule ([`legaia_engine_menus::menu_cues::menu_edge_blip`]),
     /// the same call the native window makes: `start_closes_menu` is whether
     /// this frame's Start closes the whole menu (the root row list) rather
     /// than reaching a sub-screen. Returns whether a cue sounded; a request
     /// is counted in `menu_cue_requests` either way, as
     /// [`Self::play_sfx_event`] counts it.
     pub fn play_menu_edge_blip(&mut self, edge: u16, start_closes_menu: bool) -> bool {
-        let Some(blip) = legaia_engine_core::menu_cues::menu_edge_blip(edge, start_closes_menu)
+        let Some(blip) = legaia_engine_menus::menu_cues::menu_edge_blip(edge, start_closes_menu)
         else {
             return false;
         };
         let event = match blip {
-            legaia_engine_core::menu_cues::MenuBlip::Cursor => "menu_cursor",
-            legaia_engine_core::menu_cues::MenuBlip::Confirm => "menu_confirm",
-            legaia_engine_core::menu_cues::MenuBlip::Cancel => "menu_cancel",
+            legaia_engine_menus::menu_cues::MenuBlip::Cursor => "menu_cursor",
+            legaia_engine_menus::menu_cues::MenuBlip::Confirm => "menu_confirm",
+            legaia_engine_menus::menu_cues::MenuBlip::Cancel => "menu_cancel",
         };
         self.play_sfx_event(event)
     }
@@ -905,8 +905,8 @@ mod tests {
     fn the_menu_edge_export_follows_the_engine_rule() {
         let mut rt = LegaiaRuntime::new();
         let requests = |rt: &LegaiaRuntime| rt.sfx.menu_cue_requests;
-        let start = legaia_engine_core::input::PadButton::Start as u16;
-        let cross = legaia_engine_core::input::PadButton::Cross as u16;
+        let start = legaia_engine_system::input::PadButton::Start as u16;
+        let cross = legaia_engine_system::input::PadButton::Cross as u16;
         let _ = rt.play_menu_edge_blip(start, true);
         assert_eq!(requests(&rt), 1, "a closing Start blips");
         let _ = rt.play_menu_edge_blip(start, false);

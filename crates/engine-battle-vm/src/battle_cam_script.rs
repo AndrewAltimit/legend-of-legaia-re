@@ -73,7 +73,7 @@
 //! `TR.y` is the only genuine table: `0x801F4D2C + (char_id - 1) * 2`, keyed
 //! on **character identity** (`DAT_8007BD10[slot]`, the 1-based party-record
 //! selector), not on seat - a per-model height offset. It is disc data, read
-//! off the battle-action overlay by `legaia_asset::battle_camera_table` and
+//! off the battle-action overlay by `legaia_game_tables::battle_camera_table` and
 //! handed to [`BattleCamActor::height`] by the host rather than transcribed
 //! here; [`SUBMENU_HEIGHT_FALLBACK`] covers a disc-free host.
 //!

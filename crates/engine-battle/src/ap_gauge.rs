@@ -25,7 +25,7 @@
 //!
 //! The full comparison, the disassembly that pins the pool source, and
 //! what a faithful port needs (a reader for the `+0x74` byte in the
-//! player battle files, which `legaia_asset::battle_data_pack`
+//! player battle files, which `legaia_actor_formats::battle_data_pack`
 //! documents but does not parse) are in
 //! `docs/subsystems/arts-command-gauge.md`.
 //!

@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::music_labels as ml;
+use legaia_engine_system::music_labels as ml;
 
 fn extracted_prot() -> Option<PathBuf> {
     for p in [

@@ -188,13 +188,14 @@ fn block_badge_into(
 ) {
     let neutral = (0x80, 0x80, 0x80);
     out.push(save_ui_record_quad(
-        legaia_asset::title_pak::SAVE_MENU_ATLAS_NO_LABEL,
+        legaia_ui_formats::title_pak::SAVE_MENU_ATLAS_NO_LABEL,
         neutral,
         pen,
         stage_origin,
         stage_scale,
     ));
-    if let Some(cell) = legaia_asset::title_pak::save_menu_atlas_block_digit(u32::from(block)) {
+    if let Some(cell) = legaia_ui_formats::title_pak::save_menu_atlas_block_digit(u32::from(block))
+    {
         out.push(save_ui_record_quad(
             cell,
             neutral,
@@ -243,7 +244,9 @@ fn card_work_progress_into(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) {
-    use legaia_asset::title_pak::{SAVE_MENU_ATLAS_PROGRESS_TEXEL, SAVE_MENU_ATLAS_PROGRESS_TUBE};
+    use legaia_ui_formats::title_pak::{
+        SAVE_MENU_ATLAS_PROGRESS_TEXEL, SAVE_MENU_ATLAS_PROGRESS_TUBE,
+    };
     let t = i32::from(progress_t.min(0x1000));
     let (fx, fy, fw, fh) = CARD_WORK_FILL;
     let w = (t * fw) >> 12;
@@ -828,7 +831,7 @@ mod messagebox_geometry_tests {
 #[cfg(test)]
 mod card_work_sprite_tests {
     use super::*;
-    use legaia_asset::title_pak::{
+    use legaia_ui_formats::title_pak::{
         SAVE_MENU_ATLAS_NO_LABEL, SAVE_MENU_ATLAS_PROGRESS_TUBE, save_menu_atlas_block_digit,
     };
 

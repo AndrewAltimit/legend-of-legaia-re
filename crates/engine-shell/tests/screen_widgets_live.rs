@@ -23,7 +23,8 @@
 
 use std::path::PathBuf;
 
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
 
 const SPRITE: u32 = 0x801F_7A9C;
 const MASK: u32 = 0x801F_811C;

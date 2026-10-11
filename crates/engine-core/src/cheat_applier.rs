@@ -1,5 +1,5 @@
 //! Per-frame applier that resolves parsed [`legaia_cheats::CheatEntry`]
-//! values into engine cells via the [`crate::ram_map`] registry.
+//! values into engine cells via the [`legaia_engine_system::ram_map`] registry.
 //!
 //! Used by `legaia-engine play-window --cheat-file <PATH>` to validate
 //! that our memory map matches retail behaviour: every cheat write
@@ -13,9 +13,9 @@
 //! to apply codes that follow a conditional gate unconditionally
 //! (useful for "Save Anywhere", "Status Modifier Menu", etc.).
 
-use crate::ram_map::{CellTarget, RamCell, WorldField, build_registry};
 use crate::world::World;
 use legaia_cheats::{CheatCode, Database};
+use legaia_engine_system::ram_map::{CellTarget, RamCell, WorldField, build_registry};
 use std::collections::HashMap;
 
 /// Applier configuration.
@@ -389,7 +389,7 @@ mod tests {
         let mut world = empty_world();
         world.minigames.fishing_points = 0;
         world.enter_fishing_session(
-            &crate::fishing::FishingTables {
+            &legaia_engine_fishing::fishing::FishingTables {
                 species: Vec::new(),
                 spawn: [Vec::new(), Vec::new()],
                 cadence: Vec::new(),

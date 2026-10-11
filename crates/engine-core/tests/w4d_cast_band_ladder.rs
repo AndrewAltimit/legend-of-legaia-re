@@ -22,8 +22,9 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_asset::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_overlay_images::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
 use std::path::PathBuf;
 
 /// Arms stepped per seated id. Retail's trampolines switch on the caster's
@@ -85,7 +86,7 @@ fn every_reachable_cast_band_id_steps_its_module_code() {
     // run returns `None` and the ladder would seat nothing.
     let mut archive =
         legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
-    let mut pool = legaia_asset::cast_effect_pool::CastEffectPool::new();
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
     for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
         let Some(entry) = archive.entries.get(idx as usize).cloned() else {
             continue;

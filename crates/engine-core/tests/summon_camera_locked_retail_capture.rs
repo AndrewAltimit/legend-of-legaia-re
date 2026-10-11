@@ -31,10 +31,10 @@
 //! `extracted/`) and the mednafen save library (`LEGAIA_SAVES_LIBRARY`, else
 //! `saves/library`); skips and passes without either.
 
-use legaia_asset::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
-use legaia_engine_core::summon::{SummonScene, is_camera_locked};
+use legaia_engine_effects::summon::{SummonScene, is_camera_locked};
 use legaia_engine_vm::move_vm::MoveHost;
 use legaia_mednafen::SaveState;
+use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
 use legaia_prot::archive::Archive;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

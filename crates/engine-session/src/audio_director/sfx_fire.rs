@@ -312,7 +312,8 @@ impl<S: AudioSink> AudioBgmDirector<S> {
             return;
         };
         for &(slot, bank) in want {
-            let Some(bytes) = legaia_asset::vab_multi_bank::bank_bytes(&archive, usize::from(bank))
+            let Some(bytes) =
+                legaia_container_formats::vab_multi_bank::bank_bytes(&archive, usize::from(bank))
             else {
                 log::debug!("monster.snd bank {bank} absent");
                 continue;
@@ -354,8 +355,8 @@ impl<S: AudioSink> AudioBgmDirector<S> {
         self.apply_sfx_ring_ops(&ops, world.clock.display_frame_step.clamp(1, 255) as u8);
         let field_family = matches!(
             world.mode,
-            legaia_engine_core::world::SceneMode::Field
-                | legaia_engine_core::world::SceneMode::WorldMap
+            legaia_engine_mode::mode::SceneMode::Field
+                | legaia_engine_mode::mode::SceneMode::WorldMap
         );
         // A slot-6 side-band bank is not a tail borrower: retail streams it
         // over the field bank in the shared region, and the residency below
@@ -372,7 +373,9 @@ impl<S: AudioSink> AudioBgmDirector<S> {
         let monster_banks = world.battle_monster_sound_banks();
         self.sync_battle_monster_banks(&monster_banks, || {
             index
-                .entry_bytes_extended(legaia_asset::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32)
+                .entry_bytes_extended(
+                    legaia_container_formats::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32,
+                )
                 .ok()
         });
         self.stop_sfx_voices(&world.take_sfx_voice_stops());
@@ -400,7 +403,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
     // REF: FUN_8004E568
     pub fn enqueue_battle_cues(
         &mut self,
-        cues: &[legaia_engine_core::battle_events::BattleSfxCue],
+        cues: &[legaia_engine_battle::battle_events::BattleSfxCue],
         index: &legaia_engine_core::scene::ProtIndex,
     ) {
         if cues

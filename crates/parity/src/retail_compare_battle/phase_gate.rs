@@ -46,7 +46,7 @@ pub struct PhaseGate {
     pub done_hold: Option<i16>,
     /// For a capture inside one of PROT 0903's countdown-paced arms
     /// (`1..=10`): retail's module countdown
-    /// ([`legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA`]). The
+    /// ([`legaia_engine_battle_vm::cast_module_camera::GIMARD_COUNTDOWN_VA`]). The
     /// arm alone places the frame at the arm's first pass - the
     /// `shiny_refactor_gimard_plus35` frame was taken at arm 9's entry, 16
     /// vsyncs before retail's (countdown `928` against the arm's opening
@@ -58,7 +58,7 @@ pub struct PhaseGate {
 /// How far a walk-arm yaw base has swung from its seat (`0x200`), in
 /// 12-bit units.
 pub(super) fn walk_swing(yaw: i32) -> i32 {
-    (yaw - legaia_engine_vm::cast_module_camera::GIMARD_WALK_YAW_BASE) & 0xFFF
+    (yaw - legaia_engine_battle_vm::cast_module_camera::GIMARD_WALK_YAW_BASE) & 0xFFF
 }
 
 impl PhaseGate {

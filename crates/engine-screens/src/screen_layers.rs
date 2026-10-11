@@ -27,7 +27,7 @@
 
 use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::world::World;
-use legaia_engine_ui::screen_prim::{self, FlatQuad, ScreenPrim, ScreenQuad};
+use legaia_render_kernels::screen_prim::{self, FlatQuad, ScreenPrim, ScreenQuad};
 
 /// The primitives a host projects itself (its camera, its VRAM residency),
 /// one field per layer. A layer a host does not draw stays empty.
@@ -74,7 +74,7 @@ pub struct HostScreenPrims {
 /// `ScreenFxFrame::draw_quads`, which decides the culling, UVs, colours and
 /// the retail ordering-table slot. Both hosts used to carry a copy.
 pub fn screen_fx_prims(world: &World) -> Vec<ScreenPrim> {
-    use legaia_engine_core::screen_fx::ScreenFxQuad;
+    use legaia_engine_effects::screen_fx::ScreenFxQuad;
     world
         .presentation
         .fx_frame
@@ -127,7 +127,7 @@ fn slot_rules_page(world: &World) -> bool {
     world.minigames.slot_machine.as_ref().is_some_and(|m| {
         matches!(
             m.screen(),
-            legaia_engine_core::slot_machine::SlotScreen::Instructions { .. }
+            legaia_minigame_formats::minigame_slot_scene::SlotScreen::Instructions { .. }
         )
     })
 }
@@ -194,7 +194,7 @@ pub fn compose_screen_prims(
     // PROT 0948's Cross Beam (OT `2` / `0x400`, both behind the text) and
     // PROT 0904's beam.
     if let Some(c) = world.cross_beam_draw() {
-        under.extend(legaia_engine_ui::cast_beam::cross_beam_prims(c));
+        under.extend(legaia_render_kernels::cast_beam::cross_beam_prims(c));
     }
     under.extend(theeder);
     // The world's one live full-screen fade, split at the text layer by its
@@ -228,9 +228,9 @@ pub fn compose_screen_prims(
         screen_prim::PSX_DISPLAY_H,
     ));
     over.extend(value_readout);
-    over.extend(legaia_engine_ui::battle_numerals::arts_banner_prims(
+    over.extend(legaia_render_kernels::battle_numerals::arts_banner_prims(
         &world.battle_arts_banner_quads(),
-        legaia_engine_ui::battle_numerals::VALUE_READOUT_OT,
+        legaia_render_kernels::battle_numerals::VALUE_READOUT_OT,
     ));
     over.extend(dance_countin);
     over.extend(dance_hud);

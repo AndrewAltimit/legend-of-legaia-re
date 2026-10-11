@@ -42,7 +42,10 @@ pub fn export_npc_glbs(
         let nobj = rtmd.tmd.objects.len();
         // Spawn clip first (frame 0 = the rest pose a non-autoplaying viewer
         // shows), then the rest of the bundle's matching clips as variety.
-        let mut anims: Vec<(String, legaia_asset::monster_archive::MonsterAnimation)> = Vec::new();
+        let mut anims: Vec<(
+            String,
+            legaia_actor_formats::monster_archive::MonsterAnimation,
+        )> = Vec::new();
         if let Some(b) = bundle.as_ref() {
             let primary = (e.placement.anim_id as usize).checked_sub(1);
             let mut order: Vec<usize> = Vec::new();

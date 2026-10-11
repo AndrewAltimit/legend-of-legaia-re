@@ -3,7 +3,7 @@
 //!
 //! Both are content renderers named by the menu-overlay window-descriptor
 //! table (52 records at VA `0x801E4738` / PROT 0899 file `0x15F20`, parser
-//! `legaia_asset::menu_windows`), so the geometry below hangs off the
+//! `legaia_game_tables::menu_windows`), so the geometry below hangs off the
 //! window's live content origin and nothing else:
 //!
 //! | Window | Rect | Renderer |
@@ -75,7 +75,7 @@
 //! recipient list. That composition is what both hosts call, through the one
 //! shared projection `legaia_engine_screens::recipient_window_draws` - so
 //! neither can grow a row order, a cursor row or a note string the other
-//! lacks. The pause equip flow (`legaia_engine_core::equip_session`) still
+//! lacks. The pause equip flow (`legaia_engine_menus::equip_session`) still
 //! draws its capture-pinned window set (ids 2 / 21 / 22 / 23) and never
 //! opens these - window 25's rect `(14, 40, 144, 52)` overlaps the party
 //! window 21 it would have to replace.
@@ -812,7 +812,7 @@ pub struct RecipientPickerView<'a> {
 /// `FUN_801D6628`, navigates `party_count + 1` rows with `FUN_801D688C`, and
 /// commits a buy / equip. The window painters this function composes are
 /// separately tagged, and the state machine's own port is
-/// `legaia_engine_core::shop::BuyRecipientSession`
+/// `legaia_engine_menus::shop::BuyRecipientSession`
 /// (`PORT: FUN_801DB380` there). An earlier `PORT:` tag here claimed "the
 /// sub-screen's draw half", a half the 285-instruction body does not have.
 ///

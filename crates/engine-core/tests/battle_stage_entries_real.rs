@@ -29,7 +29,8 @@ fn extracted_dir() -> Option<PathBuf> {
 /// Objects + total vertices of a stage entry's leading dome TMD.
 fn dome_shape(host: &SceneHost, idx: u32) -> (usize, usize) {
     let bytes = host.index.entry_bytes(idx).expect("read stage entry");
-    let s = legaia_asset::scene_tmd_stream::detect(&bytes).expect("stage is a scene_tmd_stream");
+    let s = legaia_scene_formats::scene_tmd_stream::detect(&bytes)
+        .expect("stage is a scene_tmd_stream");
     let tmd = legaia_tmd::parse(&bytes[s.tmd_range()]).expect("parse dome TMD");
     let verts = tmd.objects.iter().map(|o| o.vertices.len()).sum();
     (tmd.objects.len(), verts)
@@ -38,7 +39,8 @@ fn dome_shape(host: &SceneHost, idx: u32) -> (usize, usize) {
 /// Object 0's vertex pool - the byte run a resident dome is identified by.
 fn dome_vertex_pool(host: &SceneHost, idx: u32) -> Vec<u8> {
     let bytes = host.index.entry_bytes(idx).expect("read stage entry");
-    let s = legaia_asset::scene_tmd_stream::detect(&bytes).expect("stage is a scene_tmd_stream");
+    let s = legaia_scene_formats::scene_tmd_stream::detect(&bytes)
+        .expect("stage is a scene_tmd_stream");
     let tmd = legaia_tmd::parse(&bytes[s.tmd_range()]).expect("parse dome TMD");
     tmd.objects[0]
         .vertices
@@ -181,7 +183,7 @@ type FbRect = (u16, u16, u16, u16);
 /// Every parseable TIM in a buffer, as `(image page, clut block)` addresses.
 fn tim_addresses(bytes: &[u8]) -> Vec<(FbRect, FbRect)> {
     let mut out = Vec::new();
-    for hit in legaia_asset::tim_scan::scan_buffer(bytes) {
+    for hit in legaia_container_formats::tim_scan::scan_buffer(bytes) {
         let end = hit.offset + hit.byte_len;
         let Some(slice) = bytes.get(hit.offset..end) else {
             continue;
@@ -288,7 +290,7 @@ fn the_selected_stage_entry_owns_its_vram_after_the_reupload() {
 
     // The stage entry's own CLUT rows, straight off the disc.
     let raw = host.index.entry_bytes(stage_entry).expect("stage bytes");
-    let want: Vec<(u16, u16, Vec<u16>)> = legaia_asset::tim_scan::scan_buffer(&raw)
+    let want: Vec<(u16, u16, Vec<u16>)> = legaia_container_formats::tim_scan::scan_buffer(&raw)
         .into_iter()
         .filter_map(|hit| {
             let end = hit.offset + hit.byte_len;
@@ -352,10 +354,10 @@ fn the_backdrop_shells_untextured_half_is_a_double_digit_share() {
     // town01's Tetsu arena and map01's overworld dome - the two stage shapes.
     for (idx, min_share) in [(7u32, 0.10f32), (88, 0.02)] {
         let bytes = host.index.entry_bytes(idx).expect("read stage entry");
-        let s = legaia_asset::scene_tmd_stream::detect(&bytes).expect("scene_tmd_stream");
+        let s = legaia_scene_formats::scene_tmd_stream::detect(&bytes).expect("scene_tmd_stream");
         let raw = &bytes[s.tmd_range()];
         let tmd = legaia_tmd::parse(raw).expect("parse dome TMD");
-        let drawn = legaia_asset::battle_backdrop::drawn_objects_tmd(&tmd);
+        let drawn = legaia_scene_formats::battle_backdrop::drawn_objects_tmd(&tmd);
         let textured = legaia_tmd::mesh::tmd_to_vram_mesh(&drawn, raw);
         let mut colour = legaia_tmd::mesh::tmd_to_color_mesh(&drawn, raw);
         let (t_tris, c_tris) = (textured.indices.len() / 3, colour.indices.len() / 3);
@@ -416,14 +418,14 @@ fn the_backdrop_shells_untextured_half_is_a_double_digit_share() {
 /// Which objects of a stage TMD the backdrop actually draws.
 ///
 /// Retail's registration drops object index 1 and keeps the rest
-/// (`FUN_800513f0`, ported as `legaia_asset::battle_backdrop::drawn_object_indices`), so
+/// (`FUN_800513f0`, ported as `legaia_scene_formats::battle_backdrop::drawn_object_indices`), so
 /// the two stage shapes on the disc resolve differently: the two-object shells
 /// keep object 0 alone, and the four-object overworld domes keep 0, 2 and 3.
 /// Drawing object 0 alone - the port's old behaviour - is right for the shells
 /// and loses the mountains and the ground ring on the domes.
 #[test]
 fn backdrop_object_selection_matches_the_two_stage_shapes() {
-    use legaia_asset::battle_backdrop::drawn_object_indices;
+    use legaia_scene_formats::battle_backdrop::drawn_object_indices;
 
     let Some(extracted) = extracted_dir() else {
         eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
@@ -446,7 +448,7 @@ fn backdrop_object_selection_matches_the_two_stage_shapes() {
     // piece the truncation was dropping, and the reason an overworld battle
     // had sky but no floor behind the procedural grid.
     let bytes = host.index.entry_bytes(88).expect("read stage entry");
-    let s = legaia_asset::scene_tmd_stream::detect(&bytes).expect("scene_tmd_stream");
+    let s = legaia_scene_formats::scene_tmd_stream::detect(&bytes).expect("scene_tmd_stream");
     let tmd = legaia_tmd::parse(&bytes[s.tmd_range()]).expect("parse dome TMD");
     let ys: Vec<i16> = tmd.objects[3].vertices.iter().map(|v| v.y).collect();
     assert!(
@@ -479,7 +481,7 @@ fn four_object_stages_are_only_the_overworld_domes() {
         let Ok(bytes) = host.index.entry_bytes(idx) else {
             continue;
         };
-        let Some(s) = legaia_asset::scene_tmd_stream::detect(&bytes) else {
+        let Some(s) = legaia_scene_formats::scene_tmd_stream::detect(&bytes) else {
             continue;
         };
         let Ok(tmd) = legaia_tmd::parse(&bytes[s.tmd_range()]) else {

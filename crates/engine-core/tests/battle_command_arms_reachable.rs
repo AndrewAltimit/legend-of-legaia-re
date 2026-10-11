@@ -21,9 +21,10 @@
 //! A wave that re-points an arm again fails here first, with the arm named,
 //! rather than as a shout count of zero three test files away.
 
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 fn build_world() -> World {
     let mut w = World::new();
@@ -49,7 +50,7 @@ fn build_world() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("command_arm_test");
@@ -103,8 +104,8 @@ fn enter_battle(w: &mut World) {
 /// `Attack` arm - so `Arts` is reached *through* `Attack`, which is where
 /// retail puts the directional command entry. Panics if the walk never gets
 /// there: a miss means the arm was removed, not that the driver was unlucky.
-fn pick_command(w: &mut World, want: legaia_engine_core::battle_input::BattleCommand) {
-    use legaia_engine_core::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
+fn pick_command(w: &mut World, want: legaia_engine_menus::battle_input::BattleCommand) {
+    use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
     let ring_arm = match want {
         BattleCommand::Arts => BattleCommand::Attack,
         other => other,
@@ -179,7 +180,7 @@ fn open_surfaces(w: &World) -> Vec<&'static str> {
 
 #[test]
 fn arts_command_opens_an_input_session_that_reads_directions() {
-    use legaia_engine_core::battle_input::BattleCommand;
+    use legaia_engine_menus::battle_input::BattleCommand;
 
     let mut w = build_world();
     enter_battle(&mut w);
@@ -227,7 +228,7 @@ fn arts_command_opens_an_input_session_that_reads_directions() {
 
 #[test]
 fn magic_and_item_arms_each_open_their_own_surface() {
-    use legaia_engine_core::battle_input::BattleCommand;
+    use legaia_engine_menus::battle_input::BattleCommand;
 
     for (command, expected) in [
         (BattleCommand::Magic, "spell_menu"),

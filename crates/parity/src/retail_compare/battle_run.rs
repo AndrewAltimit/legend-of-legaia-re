@@ -96,7 +96,7 @@ pub(super) fn run_battle(
             }
             match run {
                 Ok(e)
-                    if e.mode == legaia_engine_core::world::SceneMode::Battle
+                    if e.mode == legaia_engine_mode::mode::SceneMode::Battle
                         && e.prompt_tick.is_some()
                         && (!e.surprise_opening || opening)
                         && e.driven != Some(None)
@@ -140,7 +140,7 @@ pub(super) fn run_battle(
             // than the first run did - a replay whose push depends on where
             // it starts can land further off.
             Ok(e)
-                if e.mode == legaia_engine_core::world::SceneMode::Battle
+                if e.mode == legaia_engine_mode::mode::SceneMode::Battle
                     && e.driven.is_some_and(|d| d.is_some())
                     && e.age_short.is_none()
                     && crate::retail_compare_battle::ground_residual(battle, &b, &e)

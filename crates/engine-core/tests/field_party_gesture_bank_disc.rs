@@ -15,9 +15,9 @@
 //! member's bit, ticks the scene host through it, and checks each party
 //! re-target. Skip-passes without `LEGAIA_DISC_BIN`.
 
-use legaia_asset::field_disasm::{FlagKind, InsnInfo, LinearWalker, man_script_spans};
-use legaia_engine_core::field_anim::FieldClipPlayer;
 use legaia_engine_core::scene::SceneHost;
+use legaia_engine_field::field_anim::FieldClipPlayer;
+use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, man_script_spans};
 
 /// Bones of every party-member field clip (the hero meshes carry 12 objects,
 /// the last two equipment templates no clip poses).
@@ -33,10 +33,10 @@ fn party_gestures_bind_from_the_live_party_bank() {
         return;
     };
     let mut host = SceneHost::open_disc(&disc).expect("open disc");
-    let loco = legaia_asset::character_pack::field_locomotion_anm(
+    let loco = legaia_actor_formats::character_pack::field_locomotion_anm(
         &host
             .index
-            .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+            .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
             .expect("PROT 0874"),
     )
     .expect("party locomotion bundle");
@@ -55,7 +55,7 @@ fn party_gestures_bind_from_the_live_party_bank() {
         let Ok(Some(man)) = scene.field_man_payload(&host.index) else {
             continue;
         };
-        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         let p0 = mf.header.partition_counts[0].max(0) as usize;

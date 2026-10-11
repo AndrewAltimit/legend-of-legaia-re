@@ -24,7 +24,7 @@ impl World {
     ///
     /// PORT: FUN_801D27E0
     ///
-    /// The SM kernel is [`crate::cutscene_script_elements::LeaderSwap`]
+    /// The SM kernel is [`legaia_engine_field::plain_template_actors::LeaderSwap`]
     /// (the byte-level port of the dispatcher, gate, and search); this tick
     /// is its host. Per state:
     ///
@@ -75,7 +75,7 @@ impl World {
     /// follows the player actor), and the `FUN_8003BDE0` spawn-condition
     /// re-check at the new tile.
     pub(crate) fn tick_three_actor_talk(&mut self) {
-        use crate::cutscene_script_elements::{
+        use legaia_engine_field::plain_template_actors::{
             LEADER_ACTOR_POSE_SENTINEL, LEADER_SWAP_REQUEST_BIT, LeaderSwapEffect, LeaderSwapWorld,
         };
         let Some(mut talk) = self.dialog.three_actor_talk else {
@@ -147,15 +147,17 @@ impl World {
                     // `801d29c8..801d2a00`: kind 2, 0x20 frames, black ->
                     // white, no start delay, a `-1` hold - the landed white
                     // persists until the state-2 fade-in replaces it.
-                    self.presentation.fade =
-                        Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
+                    self.presentation.fade = Some(legaia_engine_system::fade::FadeState::load(
+                        &legaia_engine_system::fade::FadeTemplate {
                             kind: 2,
-                            duration: crate::cutscene_script_elements::LEADER_SWAP_FADE_FRAMES
-                                as i16,
+                            duration:
+                                legaia_engine_field::plain_template_actors::LEADER_SWAP_FADE_FRAMES
+                                    as i16,
                             start_rgb: [0, 0, 0],
                             end_rgb: [0xFF, 0xFF, 0xFF],
                             mode: [0, -1, 0],
-                        }));
+                        },
+                    ));
                 }
                 LeaderSwapEffect::StoreOutgoingPose { slot } => {
                     // The outgoing leader's participant actor takes the
@@ -225,15 +227,17 @@ impl World {
                 LeaderSwapEffect::SpawnFadeIn => {
                     // `801d2c24..801d2c54`: kind 2, 0x20 frames, white ->
                     // black.
-                    self.presentation.fade =
-                        Some(crate::fade::FadeState::load(&crate::fade::FadeTemplate {
+                    self.presentation.fade = Some(legaia_engine_system::fade::FadeState::load(
+                        &legaia_engine_system::fade::FadeTemplate {
                             kind: 2,
-                            duration: crate::cutscene_script_elements::LEADER_SWAP_FADE_FRAMES
-                                as i16,
+                            duration:
+                                legaia_engine_field::plain_template_actors::LEADER_SWAP_FADE_FRAMES
+                                    as i16,
                             start_rgb: [0xFF, 0xFF, 0xFF],
                             end_rgb: [0, 0, 0],
                             mode: [0, 0, 0],
-                        }));
+                        },
+                    ));
                 }
                 LeaderSwapEffect::ReleaseFadeObject | LeaderSwapEffect::ClearCameraBusy => {
                     // The engine fade steps + drops itself

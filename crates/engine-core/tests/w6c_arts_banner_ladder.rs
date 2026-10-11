@@ -14,10 +14,11 @@
 //!
 //! Disc-free; runs in CI.
 
-use legaia_engine_core::arts_command_input::ArtsInputScreen;
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::arts_command_input::ArtsInputScreen;
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 fn stage_vahn_art(w: &mut World, byte: u8, cmds: &[legaia_art::Command], strikes: usize) {
     let action = legaia_art::ActionConstant::from_byte(byte).unwrap();
@@ -96,7 +97,7 @@ fn build_world() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("super_art_live_test");
@@ -121,7 +122,7 @@ fn monster_hp_total(w: &World) -> u32 {
 
 #[test]
 fn a_typed_super_raises_the_banner_and_the_host_read_draws_it() {
-    use legaia_engine_core::battle_input::BattleCommand;
+    use legaia_engine_menus::battle_input::BattleCommand;
 
     let mut w = build_world();
     let up = InputState::mask_of([PadButton::Up]);
@@ -196,7 +197,7 @@ fn a_typed_super_raises_the_banner_and_the_host_read_draws_it() {
             // whatever the cursor sits on; the other presses are the spatial
             // seatings - Left onto the `Attack` arm, Left/Right onto the
             // `Auto`/`Command` chip.
-            use legaia_engine_core::battle_input::{AttackMode, CommandPhase};
+            use legaia_engine_menus::battle_input::{AttackMode, CommandPhase};
             match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
                     InputState::mask_of([PadButton::Left])

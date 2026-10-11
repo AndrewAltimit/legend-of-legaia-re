@@ -1,5 +1,5 @@
 //! Disc-gated: the Baka Fighter duel's 3D surface
-//! ([`legaia_engine_core::baka_duel_scene`]) over the real disc.
+//! ([`legaia_engine_minigame_scenes::baka_duel_scene`]) over the real disc.
 //!
 //! Builds the duel through the door-warp tables (PROT 0976), stages the
 //! clip headers and the special-commit cameras, loads the surface through
@@ -11,13 +11,14 @@
 //! round-start spin. No Sony bytes are asserted. Skips + passes when
 //! `LEGAIA_DISC_BIN` is absent.
 
-use legaia_asset::baka_opponents;
-use legaia_asset::static_overlay;
-use legaia_engine_core::baka_duel_scene::{self as ds, BakaDuelSurface};
-use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, roster_clip_headers};
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_minigame_scenes::baka_duel_scene::{self as ds, BakaDuelSurface};
+use legaia_engine_minigames::baka_fighter::{BakaAttack, BakaFight, roster_clip_headers};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
+use legaia_minigame_formats::baka_opponents;
+use legaia_overlay_images::static_overlay;
 
 fn project(vp: &[f32; 16], p: [f32; 3]) -> Option<[f32; 2]> {
     let c = |r: usize| vp[r] * p[0] + vp[4 + r] * p[1] + vp[8 + r] * p[2] + vp[12 + r];
@@ -59,15 +60,18 @@ fn the_duel_surface_poses_the_real_fighters_under_the_arena_camera() {
     let loaded = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
     let opponents = baka_opponents::parse(&loaded).expect("roster parses");
     let actions = baka_opponents::parse_actions(&loaded).expect("actions parse");
-    let cameras = ds::parse_special_cameras(&loaded);
-    assert_eq!(cameras.len(), ds::SPECIAL_CAMERA_ROWS);
+    let cameras = legaia_engine_minigames::baka_duel::parse_special_cameras(&loaded);
+    assert_eq!(
+        cameras.len(),
+        legaia_engine_minigames::baka_duel::SPECIAL_CAMERA_ROWS
+    );
     // Every populated row moves the eye (a zero row would be no glide).
     for r in &cameras {
         assert!(r[6..12].iter().any(|&v| v != 0), "row carries eye targets");
     }
 
     let read = |i: usize| host.index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
-    let opponent = legaia_engine_core::baka_fighter::first_rung_roster();
+    let opponent = legaia_engine_minigames::baka_fighter::first_rung_roster();
     let fight = BakaFight::from_tables(&opponents, &actions, 0, opponent, 0x5EED)
         .expect("fight builds")
         .with_roster_clip_headers(roster_clip_headers(read))

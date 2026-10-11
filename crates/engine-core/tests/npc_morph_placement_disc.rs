@@ -49,8 +49,8 @@ fn rim_elm_withered_genesis_tree_stages_its_morph_onto_the_placement_mesh() {
         .as_ref()
         .and_then(|s| s.field_man_payload(&host.index).ok().flatten())
         .expect("town01 MAN");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse MAN");
-    let placement = legaia_engine_core::man_field_scripts::classify_placements(&mf, &man)
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
+    let placement = legaia_engine_field::man_field_scripts::classify_placements(&mf, &man)
         .into_iter()
         .map(|(p, _)| p)
         .find(|p| p.index == usize::from(TREE_SLOT))

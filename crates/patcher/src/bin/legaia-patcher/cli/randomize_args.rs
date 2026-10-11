@@ -338,7 +338,7 @@ pub(crate) struct RandomizeArgs {
     #[arg(long, default_value_t = false)]
     pub(crate) seru_trade: bool,
     /// Maximum trades a single vendor offers at once (only with `--seru-trade`).
-    #[arg(long, default_value_t = legaia_asset::seru_trade::DEFAULT_MAX_OFFERS)]
+    #[arg(long, default_value_t = legaia_game_tables::seru_trade::DEFAULT_MAX_OFFERS)]
     pub(crate) seru_trade_offers: u8,
     /// How random-encounter formations are reassigned. The pool each scene draws
     /// from is set by `--encounter-scope`.

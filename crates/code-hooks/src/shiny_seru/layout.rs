@@ -7,7 +7,7 @@ use crate::arenas::{ARENA2_VA, SCUS_GAP_VA, SLOT6_VA};
 /// Default per-battle probability (percent) of a shiny capturable enemy.
 pub const DEFAULT_PCT: u8 = 2;
 /// Damage / stat bonus a shiny Seru grants (percent). Mirrors
-/// `legaia_engine_core::seru_learning::SHINY_DAMAGE_BONUS_PCT`.
+/// `legaia_engine_battle::seru_learning::SHINY_DAMAGE_BONUS_PCT`.
 pub const SHINY_BONUS_PCT: u32 = 35;
 
 // --- Hook sites (VA, expected first word). Each is detoured with [j, nop]; the

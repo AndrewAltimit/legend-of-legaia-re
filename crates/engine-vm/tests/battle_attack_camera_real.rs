@@ -17,14 +17,14 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::battle_attack_camera_table::AttackCameraTracks;
-use legaia_engine_vm::battle_attack_camera::{
+use legaia_engine_battle_vm::battle_attack_camera::{
     AttackCamActor, AttackCamCtx, CharacterArm, FIRST_ART, art_arm, attack_camera_framing,
 };
-use legaia_engine_vm::battle_cam_script::{
+use legaia_engine_battle_vm::battle_cam_script::{
     ActionFraming, AttackCamChannels, BattleCamActor, BattleCamInputs, BattleCamPhase,
     BattleCamera, action_framing, drive, phase_for,
 };
+use legaia_game_tables::battle_attack_camera_table::AttackCameraTracks;
 
 fn extracted_dir() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -46,14 +46,14 @@ fn real_tracks() -> Option<AttackCameraTracks> {
     let mut archive = legaia_prot::archive::Archive::open(&prot).expect("open PROT.DAT");
     let entry = archive
         .entries
-        .get(legaia_asset::battle_camera_table::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .get(legaia_game_tables::battle_camera_table::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .cloned()
         .expect("PROT 0898 entry exists");
     let mut bytes = Vec::new();
     archive
         .read_entry(&entry, &mut bytes)
         .expect("read PROT 0898");
-    legaia_asset::battle_attack_camera_table::parse(&bytes)
+    legaia_game_tables::battle_attack_camera_table::parse(&bytes)
 }
 
 const CHARACTERS: [CharacterArm; 3] = [CharacterArm::One, CharacterArm::Two, CharacterArm::Three];

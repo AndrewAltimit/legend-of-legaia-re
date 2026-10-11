@@ -10,9 +10,10 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::effect_bundle;
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, StepOutcome};
+use legaia_container_formats::effect_bundle;
+use legaia_engine_battle_vm::battle_action::{ActionState, StepOutcome};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_prot::archive::Archive;
 use legaia_prot::cdname;
 

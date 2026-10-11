@@ -1,5 +1,5 @@
 use super::*;
-use legaia_asset::baka_opponents::BakaActionSet;
+use legaia_minigame_formats::baka_opponents::BakaActionSet;
 
 #[test]
 fn every_dispatcher_case_is_a_distinct_ascending_state() {
@@ -165,7 +165,7 @@ fn vital_bar_is_one_pixel_per_32_hp() {
 
 #[test]
 fn vital_frames_tile_from_each_side_anchor() {
-    use legaia_asset::baka_opponents::BakaBarFrameCell;
+    use legaia_minigame_formats::baka_opponents::BakaBarFrameCell;
     let cell = |width, u: u8| BakaBarFrameCell {
         width,
         uv: [(u, 0), (u + 7, 0), (u, 15), (u + 7, 15)],

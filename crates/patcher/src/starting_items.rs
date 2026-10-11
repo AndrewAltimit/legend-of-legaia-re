@@ -3,10 +3,10 @@
 //!
 //! A vanilla New Game seeds exactly one inventory slot - Healing Leaf (item id
 //! `0x77`) ×5 - written in code by `FUN_80034A6C`
-//! (see [`legaia_asset::new_game::StartingInventory`] and
+//! (see [`legaia_game_tables::new_game::StartingInventory`] and
 //! `docs/formats/new-game-table.md`). There is no static starting-inventory
 //! table to edit, so this randomizer rewrites the **seed code** itself: the
-//! 40-byte reclaimable region at [`legaia_asset::new_game::STARTING_INV_SEED_VA`]
+//! 40-byte reclaimable region at [`legaia_game_tables::new_game::STARTING_INV_SEED_VA`]
 //! (the original `li`/`sb` seed plus the redundant inline zero-loop the callers
 //! already cover with their `SC`-block `memset`).
 //!
@@ -34,7 +34,7 @@
 //! ([`STARTING_ITEM_POOL`], Healing Leaf .. Wonder Elixir) so a *random* start
 //! stays sensible rather than handing out arbitrary equipment.
 
-use legaia_asset::new_game::{
+use legaia_game_tables::new_game::{
     DOOR_OF_WIND_ITEM, INCENSE_ITEM, INVENTORY_SC_OFFSET, STARTING_INV_SEED_LEN, WARP_ALL_FLAGS_HI,
     WARP_ALL_FLAGS_LO, WARP_FLAGS_SC_OFFSET, WARP_SEED_LEN,
 };
@@ -53,7 +53,7 @@ const INSTRS_PER_ITEM: usize = 2;
 /// two per item (`addiu` + `sh`).
 pub const INV_REGION_SLOTS: usize = SEED_INSTRS / INSTRS_PER_ITEM;
 
-/// Extra item slots the warp-preset region ([`legaia_asset::new_game::WARP_SEED_VA`])
+/// Extra item slots the warp-preset region ([`legaia_game_tables::new_game::WARP_SEED_VA`])
 /// can hold **when the all-warps preset is not requested**. Its four
 /// instructions otherwise carry the visited-towns bitmask; when that preset is
 /// off they are free, so the seed borrows them for two more `(id, count)` slots
@@ -224,7 +224,7 @@ fn sh_v0_s0(off: u16) -> u32 {
 }
 /// `addiu $v1, $zero, imm16` - the warp preset uses `$v1` so it never clobbers
 /// `$v0`, which carries a live constant through its region (see
-/// [`legaia_asset::new_game::WARP_SEED_VA`]).
+/// [`legaia_game_tables::new_game::WARP_SEED_VA`]).
 fn addiu_v1(imm: u16) -> u32 {
     0x2403_0000 | imm as u32
 }
@@ -413,7 +413,7 @@ pub fn build_seed_patch(items: &[(u8, u8)]) -> [u8; STARTING_INV_SEED_LEN] {
 
 /// Encode a [`SeedPlan`]'s **inventory-region** slots into the 40-byte
 /// inventory-seed patch (the region at
-/// [`legaia_asset::new_game::STARTING_INV_SEED_VA`]).
+/// [`legaia_game_tables::new_game::STARTING_INV_SEED_VA`]).
 ///
 /// Only the first [`INV_REGION_SLOTS`] slots land here; any overflow is encoded
 /// into the warp-preset region by [`build_warp_items_patch`] (see
@@ -500,7 +500,7 @@ pub fn build_warp_items_patch(items: &[(u8, u8)]) -> [u8; WARP_SEED_LEN] {
 }
 
 /// Encode the all-warps preset into the 16-byte warp-seed patch (the separate
-/// region at [`legaia_asset::new_game::WARP_SEED_VA`]).
+/// region at [`legaia_game_tables::new_game::WARP_SEED_VA`]).
 ///
 /// Two `addiu $v1, $zero, imm` + `sh $v1, off($s0)` pairs that write the
 /// visited-towns bitmask ([`WARP_FLAGS_SC_OFFSET`]). It uses `$v1` (not `$v0`)
@@ -527,7 +527,7 @@ pub fn build_warp_patch() -> [u8; WARP_SEED_LEN] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::new_game::StartingInventory;
+    use legaia_game_tables::new_game::StartingInventory;
 
     #[test]
     fn pool_is_the_consumable_block() {
@@ -738,14 +738,18 @@ mod tests {
         // The warp preset is a SEPARATE region; the inventory patch carries no
         // warp stores.
         let inv = build_seed_patch_for(&plan);
-        assert!(!legaia_asset::new_game::region_unlocks_all_warps(&inv));
+        assert!(!legaia_game_tables::new_game::region_unlocks_all_warps(
+            &inv
+        ));
         assert_eq!(
             StartingInventory::decode_region(&inv).items(),
             &[VANILLA_STARTING_ITEM]
         );
         // The dedicated warp patch sets the bitmask.
         let warp = build_warp_patch();
-        assert!(legaia_asset::new_game::region_unlocks_all_warps(&warp));
+        assert!(legaia_game_tables::new_game::region_unlocks_all_warps(
+            &warp
+        ));
     }
 
     #[test]

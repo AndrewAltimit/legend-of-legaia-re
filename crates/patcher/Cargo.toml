@@ -47,6 +47,12 @@ legaia-prot.workspace = true
 legaia-iso.workspace = true
 legaia-gamedata.workspace = true
 legaia-font.workspace = true
+legaia-actor-formats.workspace = true
+legaia-container-formats.workspace = true
+legaia-game-tables.workspace = true
+legaia-minigame-formats.workspace = true
+legaia-scene-formats.workspace = true
+legaia-ui-formats.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 serde_json.workspace = true
@@ -56,6 +62,7 @@ encoding_rs.workspace = true
 libc = { workspace = true, optional = true }
 
 [dev-dependencies]
+legaia-disc-audit.workspace = true
 # equip_transplant_real writes PNG renders of the transplanted meshes.
 png.workspace = true
 

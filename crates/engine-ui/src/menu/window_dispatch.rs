@@ -1,5 +1,5 @@
 //! `renderer_va` -> content-painter dispatch over the menu-overlay
-//! **window-descriptor table** (`legaia_asset::menu_windows`).
+//! **window-descriptor table** (`legaia_game_tables::menu_windows`).
 //!
 //! Retail never hard-codes "this screen draws that content". A window is
 //! spawned from its descriptor, the descriptor's `+0xC` renderer VA is copied
@@ -65,7 +65,7 @@
 //! lists, so this crate has no painter to name for them and listing them
 //! would make [`menu_window_painters`] claim windows it cannot paint.
 
-use legaia_asset::menu_windows::{MenuWindowDescriptor, MenuWindowTable};
+use legaia_game_tables::menu_windows::{MenuWindowDescriptor, MenuWindowTable};
 
 use crate::menu::window_painters::PainterRect;
 
@@ -274,7 +274,7 @@ pub fn painter_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::menu_windows::MENU_WINDOW_COUNT;
+    use legaia_game_tables::menu_windows::MENU_WINDOW_COUNT;
 
     /// A table carrying the retail renderer VAs at the retail ids, built
     /// without a disc: only the fields the dispatch reads are set.

@@ -26,7 +26,7 @@
 //! battle init through game mode `0x14`, and the round driver
 //! `FUN_801D0748` is the battle overlay's), so the two bodies stand on the
 //! battle formation seats - the lone party seat `(0, -800)` and the lone
-//! monster seat `(0, 800)` (`crate::battle_seats`) - at the battle world
+//! monster seat `(0, 800)` (`legaia_engine_battle::battle_seats`) - at the battle world
 //! scale, and the frame is filmed by the **battle camera script**
 //! (`legaia_engine_battle_vm::battle_cam_script`, `FUN_801D5854`), the same one an
 //! ordinary fight runs: the far framing with its idle orbit on the prompts,
@@ -57,7 +57,8 @@ pub use timeline::*;
 /// The monster archive (PROT 867).
 pub const MONSTER_ARCHIVE_PROT_INDEX: usize = 867;
 /// The dome arena overlay (PROT 0977) - the course ladder's carrier.
-pub const ARENA_OVERLAY_PROT_INDEX: usize = crate::muscle_dome::ARENA_OVERLAY_PROT_INDEX;
+pub const ARENA_OVERLAY_PROT_INDEX: usize =
+    legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_PROT_INDEX;
 /// The arena backdrop stream (PROT 1225).
 pub const ARENA_BACKDROP_PROT_INDEX: usize = 1225;
 /// The battle-action overlay (PROT 0898): the per-character camera height
@@ -85,9 +86,9 @@ pub const BATTLE_WORLD_SCALE: f32 = 4.0;
 /// and the lone monster seat (`0x800775C8` / `0x80077608` row 0).
 pub fn seat_xz(i: usize) -> [f32; 2] {
     let s = if i == 0 {
-        crate::battle_seats::party_seat(1, 0)
+        legaia_engine_battle::battle_seats::party_seat(1, 0)
     } else {
-        crate::battle_seats::monster_seat(1, 0, false)
+        legaia_engine_battle::battle_seats::monster_seat(1, 0, false)
     };
     [f32::from(s.x), f32::from(s.z)]
 }
@@ -97,9 +98,9 @@ pub const FACINGS: [i32; 2] = [0, 0x800];
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::muscle_dome::DomePlay;
-    use legaia_asset::monster_archive::MonsterAnimation;
+    use legaia_actor_formats::monster_archive::MonsterAnimation;
     use legaia_engine_battle_vm::battle_cam_script as cam;
+    use legaia_engine_minigames::muscle_dome::DomePlay;
 
     fn clip(frames: usize, rate: u32) -> DomeClip {
         DomeClip {

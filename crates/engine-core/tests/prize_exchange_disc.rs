@@ -153,7 +153,7 @@ fn the_exchange_windows_rects_are_on_stage() {
     let Some(overlay) = menu_overlay() else {
         return;
     };
-    let table = legaia_asset::menu_windows::parse(&overlay).expect("window table parses");
+    let table = legaia_game_tables::menu_windows::parse(&overlay).expect("window table parses");
     for id in [43usize, 44, 45, 46] {
         let d = table.window(id).unwrap_or_else(|| panic!("window {id}"));
         let (x, y, w, h) = d.rect();
@@ -177,7 +177,7 @@ fn the_retail_prize_table_arms_both_counters() {
     w.install_menu_overlay_tables(&overlay);
     assert_eq!(
         w.shops.prize_blocks.len(),
-        legaia_engine_core::prize_exchange::PRIZE_BLOCK_COUNT,
+        legaia_engine_minigames::prize_exchange::PRIZE_BLOCK_COUNT,
         "the extended PROT 899 read reaches the table at 0x15D00"
     );
 

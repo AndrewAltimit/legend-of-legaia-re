@@ -7,7 +7,7 @@
 //! through the same kernel
 //! ([`legaia_engine_core::dance::stage_dance_hud_vram`]) and emit the same
 //! quads through the same builder
-//! ([`legaia_engine_ui::ui_dance::dance_countin_prims`]); what differs is only
+//! ([`legaia_engine_ui::dance::dance_countin_prims`]); what differs is only
 //! *where the VRAM lives*, and that is a genuine per-host fact.
 //!
 //! While a dance runs the native window draws the venue itself
@@ -34,7 +34,7 @@
 //! spellings of "did the upload work".
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
 
 impl LegaiaRuntime {
     /// Publish this frame's dance residency claim into the world, so the
@@ -62,8 +62,8 @@ impl LegaiaRuntime {
     /// world's one predicate (`MinigameState::dance_hud_quads`: HUD up and
     /// page resident), through the shared `ui_dance::dance_hud_prims` the
     /// native window emits with. Empty otherwise, when the text rows draw.
-    pub(crate) fn dance_hud_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
-        use legaia_engine_ui::ui_dance as ud;
+    pub(crate) fn dance_hud_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_engine_ui::dance as ud;
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
@@ -91,8 +91,10 @@ impl LegaiaRuntime {
     /// Empty outside the count-in and empty without the page, which is when
     /// `play_minigames`'s text builder draws the placeholder instead - the
     /// same either/or the native window applies, off the same world flag.
-    pub(crate) fn dance_countin_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
-        use legaia_engine_ui::ui_dance as ud;
+    pub(crate) fn dance_countin_prims(
+        &self,
+    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_engine_ui::dance as ud;
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };

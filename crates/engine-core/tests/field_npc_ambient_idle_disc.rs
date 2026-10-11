@@ -2,7 +2,7 @@
 //! standing town NPC idly turns in place instead of holding one heading.
 //!
 //! The channel is the second motion VM's facing half (`FUN_80038158` ops
-//! `0x04` / `0x0D`, ported at `legaia_engine_vm::ambient_motion`). Its
+//! `0x04` / `0x0D`, ported at `legaia_engine_motion_vm::ambient_motion`). Its
 //! bytecode arrives as MAN tail-section 1, one record per bound actor, bound
 //! by `actor_id = N0 + placement_index` (`FUN_8003A9D4` / `FUN_8003A1E4`).
 //! `World::seed_field_npc_ambient` installs one channel per placement and
@@ -21,9 +21,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_asset::man_section::parse as parse_man;
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_scene_formats::man_section::parse as parse_man;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -107,8 +108,8 @@ fn town01_authors_its_facing_ramps_in_flag_gated_variants() {
         eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
-    use legaia_asset::man_motion::SELECTOR_DEFAULT;
-    use legaia_engine_vm::ambient_motion::facing_sites;
+    use legaia_engine_motion_vm::ambient_motion::facing_sites;
+    use legaia_scene_formats::man_motion::SELECTOR_DEFAULT;
 
     let mut gated_sites = 0usize;
     let mut default_sites = 0usize;
@@ -150,8 +151,8 @@ fn a_flag_gated_facing_stream_turns_its_npc() {
         eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
-    use legaia_asset::man_motion::SELECTOR_DEFAULT;
-    use legaia_engine_vm::ambient_motion::facing_sites;
+    use legaia_engine_motion_vm::ambient_motion::facing_sites;
+    use legaia_scene_formats::man_motion::SELECTOR_DEFAULT;
 
     // Find a placement whose gated variant carries facing ops, and the flag
     // that selects it.

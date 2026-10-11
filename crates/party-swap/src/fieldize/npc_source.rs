@@ -6,7 +6,7 @@ use super::FIELD_BONES;
 use super::atlas::paint_vram;
 use super::roles::derive_field_roles;
 use super::slot::SlotSource;
-use legaia_asset::parse_player_lzs;
+use legaia_container_formats::parse_player_lzs;
 
 /// PROT entry of the nilboa (Nivora Ravine duel scene) TMD pack that
 /// carries the Delilas siblings' own field NPC meshes.
@@ -127,7 +127,7 @@ pub(super) fn npc_slot_source(
         bail!("NPC pack entry head {head:#x} is not a type-2 TMD stream");
     }
     let pack = &npc_pack[4..];
-    let entries = legaia_asset::pack::parse_pack(pack)?;
+    let entries = legaia_container_formats::pack::parse_pack(pack)?;
     let e = entries
         .get(member)
         .ok_or_else(|| anyhow::anyhow!("NPC pack member {member} missing"))?;
@@ -141,7 +141,7 @@ pub(super) fn npc_slot_source(
     }
 
     // Rest pose from the scene ANM bundle's idle record.
-    let bundle = legaia_asset::player_anm::find_in_entry(npc_bundle, 5)
+    let bundle = legaia_actor_formats::player_anm::find_in_entry(npc_bundle, 5)
         .into_iter()
         .next()
         .ok_or_else(|| anyhow::anyhow!("NPC bundle entry carries no ANM bundle"))?;
@@ -166,10 +166,10 @@ pub(super) fn npc_slot_source(
     // local palette ids (cba & 0x3F indexes `cluts`, the pipeline's
     // convention).
     let container = parse_player_lzs(npc_bundle, 3).context("NPC bundle container")?;
-    let tims_payload = legaia_asset::decode(
+    let tims_payload = legaia_container_formats::decode(
         npc_bundle,
         &container.descriptors[0],
-        legaia_asset::DecodeMode::Lzs,
+        legaia_container_formats::DecodeMode::Lzs,
     )
     .context("NPC bundle TIM list")?;
     let mut vram = vec![0u16; 1024 * 512];

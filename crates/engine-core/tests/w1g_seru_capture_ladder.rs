@@ -32,11 +32,12 @@
 //! Seru registry and spell catalog (spell `0x40` "Reseal" is the
 //! `SpellEffect::Capture` row). Runs in CI unconditionally.
 
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::seru_learning::SeruRegistry;
-use legaia_engine_core::spells::SpellCatalog;
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_battle::seru_learning::SeruRegistry;
+use legaia_engine_battle::spells::SpellCatalog;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// Formation 11 of the vanilla table: two Killer Bees (monster id 7).
 const FORMATION_KILLER_BEE_PAIR: u16 = 11;
@@ -93,7 +94,7 @@ fn build_world() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("w1g_seru_capture_ladder");
@@ -198,7 +199,7 @@ fn a_captured_seru_banks_at_teardown_and_commits_the_learn_to_the_record() {
         }
         if matches!(
             w.battle.command.as_ref().map(|s| &s.phase),
-            Some(legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. })
+            Some(legaia_engine_menus::battle_input::CommandPhase::RoundPrompt { .. })
         ) {
             press(&mut w, PadButton::Cross); // Begin -> the command ring
         }
@@ -221,7 +222,7 @@ fn a_captured_seru_banks_at_teardown_and_commits_the_learn_to_the_record() {
         for _ in 0..4 {
             match w.battle.command.as_ref().map(|c| &c.phase) {
                 None => break,
-                Some(legaia_engine_core::battle_input::CommandPhase::CommitConfirm { .. }) => {
+                Some(legaia_engine_menus::battle_input::CommandPhase::CommitConfirm { .. }) => {
                     press(&mut w, PadButton::Cross)
                 }
                 Some(_) => press(&mut w, PadButton::Down),
@@ -283,7 +284,7 @@ fn a_captured_seru_banks_at_teardown_and_commits_the_learn_to_the_record() {
         "the spell the caster already knew is pushed down one slot"
     );
     assert_eq!(
-        legaia_engine_core::magic_xp::spell_xp(rec, 0usize),
+        legaia_engine_battle::magic_xp::spell_xp(rec, 0usize),
         0,
         "the new entry's XP word starts at zero"
     );

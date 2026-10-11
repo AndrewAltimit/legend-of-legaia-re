@@ -24,7 +24,7 @@ use legaia_save::card::{self, RetailBlockIcon};
 use legaia_save::emu::MountedCard;
 use legaia_save::{SaveFile, SaveResume};
 
-use crate::save_select::{
+use legaia_engine_menus::save_select::{
     CARD_SLOT_CLASSES, SlotContent, card_dir_entries, card_dir_slot_of, card_directory_scan,
     card_free_blocks, classify_card_directory,
 };
@@ -87,21 +87,21 @@ pub fn card_save_index(card: &MountedCard, block: u8) -> u32 {
 }
 
 /// The memory-card portrait for save number `slot`, read off the disc's
-/// portrait sheet (`legaia_asset::save_icon`, PROT 899).
+/// portrait sheet (`legaia_ui_formats::save_icon`, PROT 899).
 ///
 /// `None` when the sheet cannot be read or the slot is one the sheet does not
 /// cover - the block-identity write then leaves the icon region as found
 /// rather than stamping a wrong one.
 pub fn retail_block_icon(index: &crate::scene::ProtIndex, slot: u32) -> Option<RetailBlockIcon> {
     let entry = index
-        .entry_bytes(legaia_asset::save_icon::PROT_ENTRY as u32)
+        .entry_bytes(legaia_ui_formats::save_icon::PROT_ENTRY as u32)
         .ok()?;
-    let sheet = legaia_asset::save_icon::parse_entry(&entry).ok()?;
+    let sheet = legaia_ui_formats::save_icon::parse_entry(&entry).ok()?;
     // The slot -> tile mapping is retail's own (`0x3C0 + slot * 4`
     // halfwords), so it goes through the port rather than being open-coded
     // even though the map is the identity.
-    let tile = legaia_asset::save_icon::tile_for_slot(slot as usize);
-    if tile >= legaia_asset::save_icon::USABLE_TILE_COUNT {
+    let tile = legaia_ui_formats::save_icon::tile_for_slot(slot as usize);
+    if tile >= legaia_ui_formats::save_icon::USABLE_TILE_COUNT {
         return None;
     }
     Some(RetailBlockIcon {

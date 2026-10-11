@@ -24,7 +24,7 @@
 use std::path::{Path, PathBuf};
 
 use legaia_art::SUPER_ARTS;
-use legaia_pcsxr::SaveState;
+use legaia_pcsx_redux::SaveState;
 
 /// Battle-actor pointer table (8 x u32; slots 0..2 = party).
 const ACTOR_TABLE_VA: u32 = 0x801C_9370;

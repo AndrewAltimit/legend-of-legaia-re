@@ -13,7 +13,7 @@ use super::*;
 // `_DAT_8007B81C` (sine) / `_DAT_8007B7F8` (cosine) are the same SCUS tables
 // the slot-machine reel renderer reads; reuse the reproduced lookups.
 // REF: FUN_801d0fa8 (independent consumer that pinned the two tables)
-use legaia_asset::minigame_slot_scene::{cos_4096, sin_4096};
+use legaia_minigame_formats::minigame_slot_scene::{cos_4096, sin_4096};
 
 /// Maximum simultaneous effects (master slots).
 pub const MAX_MASTER_SLOTS: usize = 32;

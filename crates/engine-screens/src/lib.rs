@@ -17,11 +17,11 @@
 //! sprite is in surface pixels for the `surface_w x surface_h` the caller
 //! passed.
 
-use legaia_asset::menu_windows::MenuWindowTable;
 use legaia_engine_core::field_submode_screen::SubmodeLine;
 use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::world::World;
 use legaia_engine_ui::{SaveMenuAtlasRects, SpriteDraw, TextDraw};
+use legaia_game_tables::menu_windows::MenuWindowTable;
 
 mod banners;
 pub mod field_frame;
@@ -99,7 +99,7 @@ pub struct ScreenInputs<'a> {
     /// cursors / pictograms fall back to ASCII glyphs.
     pub chrome: Option<&'a SaveMenuAtlasRects>,
     /// The boot executable's spell / Seru name table (the seru-trade rows).
-    pub seru_names: Option<&'a legaia_asset::spell_names::SpellNameTable>,
+    pub seru_names: Option<&'a legaia_game_tables::spell_names::SpellNameTable>,
     /// The casino coin counter's laid-out lines
     /// (`SceneHost::coin_counter_lines`, which needs the scene's PROT index).
     pub coin_counter: &'a [SubmodeLine],
@@ -180,7 +180,7 @@ pub fn shop_item_label(world: &World, id: u8) -> String {
 /// the passive table instead of the item's own description word, and draws
 /// nothing at all when that passive index is the `>= 0x40` sentinel.
 /// `MenuTextTables::item_passive_text` resolves the same chain
-/// (`legaia_asset::accessory_passive`, which applies the sentinel bound), so a
+/// (`legaia_game_tables::accessory_passive`, which applies the sentinel bound), so a
 /// `Some` there is the accessory arm and a `None` is the item arm.
 pub fn shop_item_description(world: &World, id: u8) -> String {
     let Some(text) = world.menu.text.as_ref() else {

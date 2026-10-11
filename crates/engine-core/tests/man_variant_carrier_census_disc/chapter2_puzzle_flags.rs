@@ -57,11 +57,11 @@ fn chapter2_tunnela_treasure_chest_flags() {
 
     // Structural: tunnela's partition-2 records carry NO header gates (this is
     // inline chest state, not a spine gate family).
-    let mf = legaia_asset::man_section::parse(&tunnela).expect("parse");
+    let mf = legaia_scene_formats::man_section::parse(&tunnela).expect("parse");
     let n_p2 = *mf.header.partition_counts.get(2).unwrap_or(&0) as usize;
     for r in 0..n_p2 {
         let (c1, c2) =
-            legaia_engine_core::man_field_scripts::partition2_record_gates(&mf, &tunnela, r)
+            legaia_engine_field::man_field_scripts::partition2_record_gates(&mf, &tunnela, r)
                 .unwrap_or_default();
         assert!(
             c1.is_empty() && c2.is_empty(),

@@ -90,7 +90,7 @@ pub fn stage_luminance(
     raw: &[u8],
     objects: &[usize],
 ) -> Option<f32> {
-    let shell = legaia_asset::battle_backdrop::objects_tmd(tmd, objects);
+    let shell = legaia_scene_formats::battle_backdrop::objects_tmd(tmd, objects);
     let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&shell, raw);
     scene_luminance(vram, [&mesh])
 }

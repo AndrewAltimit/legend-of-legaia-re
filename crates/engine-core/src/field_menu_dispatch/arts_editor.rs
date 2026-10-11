@@ -13,7 +13,7 @@ use super::*;
 pub const ARTS_EDITOR_OPEN_BUTTON: PadButton = PadButton::Triangle;
 
 /// Phase tag of an [`ArtsEditorView`], mirroring
-/// [`crate::tactical_arts_editor::EditorPhase`] without the payloads so
+/// [`legaia_engine_battle::tactical_arts_editor::EditorPhase`] without the payloads so
 /// renderer crates can match on it without depending on `engine-core`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArtsEditorPhaseTag {
@@ -58,7 +58,7 @@ pub struct ArtsEditorView {
 /// took at construction, so the screen stays consistent with the edits in
 /// flight rather than with the world's not-yet-updated records.
 pub fn arts_editor_view(editor: &ChainEditor, world: &World) -> ArtsEditorView {
-    use crate::tactical_arts_editor::EditorPhase;
+    use legaia_engine_battle::tactical_arts_editor::EditorPhase;
 
     let char_slot = editor.char_slot();
     let character_name = roster_names(world)

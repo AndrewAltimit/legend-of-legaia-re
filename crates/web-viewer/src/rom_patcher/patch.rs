@@ -275,8 +275,8 @@ pub async fn patch_rom(
     let casino_mode = parse_mode(casino);
     let steal_mode = parse_mode(steals);
     let arts_mode = parse_mode(arts).map(|m| match m {
-        DropMode::Shuffle => legaia_patcher::arts::ArtsMode::Shuffle,
-        DropMode::Random => legaia_patcher::arts::ArtsMode::Random,
+        DropMode::Shuffle => legaia_arts_patch::arts::ArtsMode::Shuffle,
+        DropMode::Random => legaia_arts_patch::arts::ArtsMode::Random,
     });
     let door_mode = parse_mode(doors);
     let house_door_mode = parse_mode(house_doors);
@@ -404,7 +404,7 @@ pub async fn patch_rom(
         if needs_pool {
             legaia_patcher::unused::extend_pool(
                 &mut pool,
-                legaia_patcher::custom_items::CUSTOM_ITEM_IDS,
+                legaia_delilas_challenge::custom_items::CUSTOM_ITEM_IDS,
             );
         } else if !delilas_challenge {
             summary.push_str(
@@ -465,7 +465,7 @@ pub async fn patch_rom(
     if equipment_drops {
         let rep = apply::inject_equipment_bonus_drop(
             &mut patcher,
-            legaia_patcher::bonus_drop::DEFAULT_CHANCE_PCT,
+            legaia_code_hooks::bonus_drop::DEFAULT_CHANCE_PCT,
         )
         .map_err(|e| err(format!("equipment drops: {e}")))?;
         summary.push_str(&format!(
@@ -518,7 +518,7 @@ pub async fn patch_rom(
     // fight's experience into the party (vanilla gives nothing for fleeing).
     prog.stage("run-away EXP hook").await;
     if flee_exp {
-        let rep = apply::inject_flee_exp(&mut patcher, legaia_patcher::flee_exp::DEFAULT_PCT)
+        let rep = apply::inject_flee_exp(&mut patcher, legaia_code_hooks::flee_exp::DEFAULT_PCT)
             .map_err(|e| err(format!("flee-exp: {e}")))?;
         summary.push_str(&format!(
             "flee-exp: {}% of a fled fight's experience banked into the party\n",
@@ -568,8 +568,9 @@ pub async fn patch_rom(
             "shiny-seru: skipped (shares SCUS arena bytes with the Delilas Challenge, which wins)\n",
         );
     } else if shiny_seru {
-        let rep = apply::inject_shiny_seru(&mut patcher, legaia_patcher::shiny_seru::DEFAULT_PCT)
-            .map_err(|e| err(format!("shiny-seru: {e}")))?;
+        let rep =
+            apply::inject_shiny_seru(&mut patcher, legaia_code_hooks::shiny_seru::DEFAULT_PCT)
+                .map_err(|e| err(format!("shiny-seru: {e}")))?;
         summary.push_str(&format!(
             "shiny-seru: {}% chance per battle a capturable enemy is shiny (+35% stats / damage)\n",
             rep.pct
@@ -632,7 +633,7 @@ pub async fn patch_rom(
         apply::enable_seru_trades(
             &mut patcher,
             seed_n,
-            legaia_asset::seru_trade::DEFAULT_MAX_OFFERS,
+            legaia_game_tables::seru_trade::DEFAULT_MAX_OFFERS,
         )
         .map_err(|e| err(format!("seru-trade config: {e}")))?;
         summary.push_str("seru-trade: in-shop Seru trading vendor enabled\n");
@@ -826,7 +827,7 @@ pub async fn patch_rom(
         summary.push_str("oscillating-ap: off\n");
     } else {
         match oscillating_ap.parse::<u8>() {
-            Ok(pct) if pct <= legaia_patcher::oscillating_ap::MAX_DAMAGE_PCT => {
+            Ok(pct) if pct <= legaia_arts_patch::oscillating_ap::MAX_DAMAGE_PCT => {
                 match apply::inject_oscillating_ap(&mut patcher, pct) {
                     Ok(rep) => summary.push_str(&format!(
                         "oscillating-ap: every battle re-deals each art onto the cost side \
@@ -905,7 +906,7 @@ pub async fn patch_rom(
             .filter(|t| !t.trim().is_empty())
         {
             let parsed = tok.split_once('=').and_then(|(c, v)| {
-                let combo = legaia_patcher::arts_power::parse_combo(c.trim())?;
+                let combo = legaia_arts_patch::arts_power::parse_combo(c.trim())?;
                 let vs = v.trim();
                 let value = vs
                     .strip_prefix("0x")
@@ -913,7 +914,7 @@ pub async fn patch_rom(
                     .map(|h| u8::from_str_radix(h, 16))
                     .unwrap_or_else(|| vs.parse::<u8>())
                     .ok()?;
-                (value == 0 || legaia_patcher::arts_power::is_power_byte(value))
+                (value == 0 || legaia_arts_patch::arts_power::is_power_byte(value))
                     .then_some((combo, value))
             });
             match parsed {
@@ -927,7 +928,7 @@ pub async fn patch_rom(
                                 let combo: String = e
                                     .combo
                                     .iter()
-                                    .map(legaia_patcher::arts_power::command_glyph)
+                                    .map(legaia_arts_patch::arts_power::command_glyph)
                                     .collect();
                                 summary.push_str(&format!(
                                     "arts-power: {combo} ({:?}) -> {value:#04X}\n",
@@ -959,7 +960,7 @@ pub async fn patch_rom(
             .filter(|t| !t.is_empty())
         {
             let parsed = tok.split_once('=').and_then(|(n, v)| {
-                let hits = legaia_patcher::super_art_power::find_super_art(n.trim(), None);
+                let hits = legaia_arts_patch::super_art_power::find_super_art(n.trim(), None);
                 let art = (hits.len() == 1).then_some(hits[0])?;
                 let vs = v.trim();
                 let value = vs
@@ -968,7 +969,7 @@ pub async fn patch_rom(
                     .map(|h| u8::from_str_radix(h, 16))
                     .unwrap_or_else(|| vs.parse::<u8>())
                     .ok()?;
-                legaia_patcher::super_art_power::is_accepted_power(value).then_some((art, value))
+                legaia_arts_patch::super_art_power::is_accepted_power(value).then_some((art, value))
             });
             match parsed {
                 Some((art, value)) => {
@@ -1006,7 +1007,7 @@ pub async fn patch_rom(
     if arts_ap_grants.is_empty() && arts_ap_costs.is_empty() {
         summary.push_str("arts-ap: untouched\n");
     } else {
-        let mut specs: Vec<legaia_patcher::arts_ap_grant::ArtApSpec> = Vec::new();
+        let mut specs: Vec<legaia_arts_patch::arts_ap_grant::ArtApSpec> = Vec::new();
         for (src, grant) in [(arts_ap_grants, true), (arts_ap_costs, false)] {
             for tok in src
                 .split([',', ';', '\n', ' '])
@@ -1026,7 +1027,7 @@ pub async fn patch_rom(
             match apply::inject_arts_ap_grant(&mut patcher, &specs) {
                 Ok(rep) => {
                     for g in &rep.resolved {
-                        let combo = legaia_patcher::arts_ap_grant::combo_str(&g.combo);
+                        let combo = legaia_arts_patch::arts_ap_grant::combo_str(&g.combo);
                         let what = if g.mode.is_grant() {
                             format!("grants {} AP", g.mode.amount())
                         } else {
@@ -1192,15 +1193,15 @@ pub async fn patch_rom(
         // unknown value falls back to the default (original).
         let arts_voice = delilas_arts_voice
             .trim()
-            .parse::<legaia_patcher::delilas_voice_fx::ArtsVoiceMode>()
+            .parse::<legaia_delilas_party::delilas_voice_fx::ArtsVoiceMode>()
             .unwrap_or_default();
         // Move mode for the swapped kit; an empty or unknown value falls
         // back to the retail-preserving default (hybrid).
         let move_mode = delilas_moves
             .trim()
-            .parse::<legaia_patcher::delilas_party::DelilasMoveMode>()
+            .parse::<legaia_delilas_party::delilas_party::DelilasMoveMode>()
             .unwrap_or_default();
-        match legaia_patcher::delilas_party::PartyMapping::parse(delilas_party) {
+        match legaia_delilas_party::delilas_party::PartyMapping::parse(delilas_party) {
             Ok(mapping) => {
                 let cast_route = if shiny_seru
                     || show_super_arts
@@ -1209,11 +1210,11 @@ pub async fn patch_rom(
                     || !arts_ap_costs.trim().is_empty()
                     || oscillating
                 {
-                    legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
+                    legaia_delilas_party::delilas_party::CastRoutePolicy::ArenaTaken
                 } else {
-                    legaia_patcher::delilas_party::CastRoutePolicy::Install
+                    legaia_delilas_party::delilas_party::CastRoutePolicy::Install
                 };
-                match legaia_patcher::delilas_party::apply_delilas_party(
+                match legaia_delilas_party::delilas_party::apply_delilas_party(
                     &mut patcher,
                     &mapping,
                     arts_voice,
@@ -1475,7 +1476,7 @@ pub async fn patch_rom(
             ));
         } else {
             let names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-                .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+                .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
             let list: Vec<String> = rep
                 .items
                 .iter()

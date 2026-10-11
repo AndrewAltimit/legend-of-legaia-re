@@ -21,7 +21,7 @@
 //! `SZ1` is the first vertex of the column step's second `RTPT`
 //! (`0x801F8BA8`), whose `V0` is the floor tile one column on at the cell's
 //! own row: the cell corner `(x1, z0)` - vertex 1 of the cell in the
-//! [`legaia_asset::field_objects::WalkHeightfield`] order. `IR0` is not
+//! [`legaia_scene_formats::field_objects::WalkHeightfield`] order. `IR0` is not
 //! clamped; `DPCS` saturates the colour instead.
 //!
 //! **Far colour.** The emitter's caller `FUN_801F69D8` calls `SetFarColor`
@@ -40,7 +40,7 @@
 //! overworld state holds `0x808080` there, and no scene MAN carries the
 //! field-VM write to it (`4C 10`, zero sites disc-wide), so on the overworld
 //! the base is the neutral `0x80` the port's ground cells already bake
-//! ([`legaia_asset::field_objects::GROUND_PRIM_COLOR`]).
+//! ([`legaia_scene_formats::field_objects::GROUND_PRIM_COLOR`]).
 //!
 //! Captured on `karisto_sol_pre_encounter` (PCSX-Redux, exec breakpoints at
 //! the emitter's entry, the instruction after the `DPCS`, and the

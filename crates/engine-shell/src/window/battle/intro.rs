@@ -25,7 +25,7 @@ impl PlayWindowApp {
     pub(in crate::window) fn take_battle_intro_frame(
         &mut self,
     ) -> (Option<BattleIntro>, Vec<ScreenPrim>) {
-        use legaia_engine_core::encounter::EncounterPhase;
+        use legaia_engine_battle::encounter::EncounterPhase;
 
         let phase = self
             .session
@@ -110,11 +110,11 @@ impl PlayWindowApp {
         let inputs = host.battle_intro_style_inputs(formation_id);
         let overlay = host
             .index
-            .entry_bytes_extended(legaia_engine_render::battle_intro::INTRO_OVERLAY_PROT)
+            .entry_bytes_extended(legaia_render_kernels::battle_intro::INTRO_OVERLAY_PROT)
             .ok();
         let shade = host
             .index
-            .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
+            .entry_bytes(legaia_actor_formats::field_char_textures::PROT_ENTRY_INDEX)
             .ok();
         let intro = BattleIntro::arm_for_battle(
             &inputs,

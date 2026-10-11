@@ -22,6 +22,14 @@ legaia-save.workspace = true
 legaia-seq.workspace = true
 legaia-vab.workspace = true
 legaia-xa.workspace = true
+legaia-container-formats.workspace = true
+legaia-engine-battle.workspace = true
+legaia-engine-field.workspace = true
+legaia-engine-mode.workspace = true
+legaia-engine-system.workspace = true
+legaia-game-tables.workspace = true
 
 [dev-dependencies]
 legaia-engine-audio.workspace = true
+legaia-engine-minigames.workspace = true
+legaia-minigame-formats.workspace = true

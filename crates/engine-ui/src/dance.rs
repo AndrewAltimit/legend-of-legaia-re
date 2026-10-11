@@ -163,7 +163,7 @@ pub fn dance_countin_draws_for(
 /// The banner record's texture page (`+0x04` = `0x0008`, the 4bpp page at
 /// halfword `(512, 0)`) - every HUD row of the table carries it, and PROT
 /// 1230's own TIM set is where the page's texels come from
-/// (`legaia_engine_core::dance::DANCE_HUD_ART_PROT_ENTRY`).
+/// (`legaia_engine_minigames::dance::DANCE_HUD_ART_PROT_ENTRY`).
 pub const COUNTIN_SPRITE_TPAGE: u16 = 0x0008;
 
 /// The record's `+0x13` semi-transparency **rate**, which the emitter folds
@@ -183,7 +183,7 @@ pub const COUNTIN_OT: u32 = 3;
 
 /// The count-in banner's art, as the run's own widget table carries it.
 ///
-/// Mirrors `legaia_asset::dance_art::DanceWidget` record `0` plus its `+0x13`
+/// Mirrors `legaia_minigame_formats::dance_art::DanceWidget` record `0` plus its `+0x13`
 /// ABR byte, in the same "views are mirrors rather than imports" seam the
 /// [`DanceCountInView`] above uses. [`Default`] is the published record - the
 /// immediates this module documents - so a host with no parsed table still
@@ -219,7 +219,7 @@ impl Default for DanceCountInArt {
 impl DanceCountInArt {
     /// Lift the art out of a parsed widget record and its ABR byte - what a
     /// host holding a real overlay image passes instead of [`Default`].
-    pub fn from_widget(w: &legaia_asset::dance_art::DanceWidget, abr: u8) -> Self {
+    pub fn from_widget(w: &legaia_minigame_formats::dance_art::DanceWidget, abr: u8) -> Self {
         Self {
             uv: (w.u, w.v),
             cell: (w.w, w.h),
@@ -235,7 +235,7 @@ impl DanceCountInArt {
 ///
 /// PORT: FUN_801d2d98 (`0x801D2EAC`..`0x801D2F18`) - the animator's **emit**
 /// half. The envelope half is
-/// `legaia_engine_core::dance::dance_countin_banner_envelope`; this is the
+/// `legaia_engine_minigames::dance::dance_countin_banner_envelope`; this is the
 /// three `FUN_801D2F38` calls it feeds, which the disassembly pins exactly:
 ///
 /// - the sliding arm (`a0 == 0`) emits **two whole copies** of the cell, at
@@ -263,7 +263,7 @@ pub fn dance_countin_prims(
     view: DanceCountInView,
     art: DanceCountInArt,
     ot_index: u32,
-) -> Vec<crate::screen_prim::ScreenPrim> {
+) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
     let level = |c: u8| (u32::from(c) * view.brightness.clamp(0, 0xFF) as u32) >> 8;
     let colour = (level(0xFF) << 16) | (level(0xFF) << 8) | level(0xFF);
     let (u0, v0) = art.uv;
@@ -275,17 +275,19 @@ pub fn dance_countin_prims(
     let quad = |cx: i32, cy: i32, semi: bool| {
         let (x0, x1) = ((cx as i16) - hw, (cx as i16) + hw);
         let (y0, y1) = ((cy as i16) - hh, (cy as i16) + hh);
-        crate::screen_prim::ScreenPrim::Textured(crate::screen_prim::ScreenQuad {
-            xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
-            uv: [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
-            clut: art.clut,
-            tpage: art.tpage + u16::from(art.abr) * 0x20,
-            color: colour,
-            gouraud: None,
-            semi_transparent: semi,
-            ot_index,
-            depth: None,
-        })
+        legaia_render_kernels::screen_prim::ScreenPrim::Textured(
+            legaia_render_kernels::screen_prim::ScreenQuad {
+                xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+                uv: [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
+                clut: art.clut,
+                tpage: art.tpage + u16::from(art.abr) * 0x20,
+                color: colour,
+                gouraud: None,
+                semi_transparent: semi,
+                ot_index,
+                depth: None,
+            },
+        )
     };
     let y = countin_centre_y(view.hold);
     if view.hold {
@@ -308,22 +310,22 @@ pub const COUNTIN_GO_CENTRE: (i32, i32) = (0xA0, 0x78);
 /// `GO!` between the READY banner and the song, as screen-space PSX
 /// primitives: `FUN_801cf470` states 4 / 5 emit widget `0x0C` through
 /// `FUN_801D2F38` at [`COUNTIN_GO_CENTRE`] with brightness `acc * 2`
-/// (`legaia_engine_core::dance::CountInStep::go`). The record's `+0x0F`
+/// (`legaia_engine_minigames::dance::CountInStep::go`). The record's `+0x0F`
 /// byte is `1`, so the cell blends - the same flag the READY slide arm
 /// pokes to `1` and its hold arm clears. `art` is record `0x0C`'s.
 pub fn dance_go_prims(
     brightness: i32,
     art: DanceCountInArt,
     ot_index: u32,
-) -> Vec<crate::screen_prim::ScreenPrim> {
+) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
     let level = (0xFF_u32 * brightness.clamp(0, 0xFF) as u32) >> 8;
     let colour = (level << 16) | (level << 8) | level;
     let (u0, v0) = art.uv;
     let (u1, v1) = (u0.wrapping_add(art.cell.0), v0.wrapping_add(art.cell.1));
     let (hw, hh) = ((art.cell.0 / 2) as i16, (art.cell.1 / 2) as i16);
     let (cx, cy) = (COUNTIN_GO_CENTRE.0 as i16, COUNTIN_GO_CENTRE.1 as i16);
-    vec![crate::screen_prim::ScreenPrim::Textured(
-        crate::screen_prim::ScreenQuad {
+    vec![legaia_render_kernels::screen_prim::ScreenPrim::Textured(
+        legaia_render_kernels::screen_prim::ScreenQuad {
             xy: [
                 (cx - hw, cy - hh),
                 (cx + hw, cy - hh),
@@ -369,7 +371,7 @@ pub const TUTORIAL_FEEDBACK_Y: i32 = 0x68;
 pub const TUTORIAL_FEEDBACK_X: i32 = 8;
 
 /// One frame of the Disco King tutorial, as
-/// `legaia_engine_core::dance_tutorial::TutorialFrame` carries it.
+/// `legaia_engine_minigames::dance_tutorial::TutorialFrame` carries it.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DanceTutorialView<'a> {
     /// Caption line seats this step draws at.
@@ -438,7 +440,7 @@ pub fn dance_tutorial_draws_for(
 }
 
 /// One dance HUD quad as `FUN_801d2f38` builds it - the fields of
-/// `legaia_engine_core::dance::DanceHudQuad`, which this crate cannot name.
+/// `legaia_engine_minigames::dance::DanceHudQuad`, which this crate cannot name.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DanceHudQuadView {
     /// GP0 polygon code (`(semi << 1) | 0x3C`).
@@ -467,24 +469,26 @@ pub struct DanceHudQuadView {
 pub fn dance_hud_prims(
     quads: &[DanceHudQuadView],
     ot_index: u32,
-) -> Vec<crate::screen_prim::ScreenPrim> {
+) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
     let rgb = |c: [u8; 3]| (u32::from(c[0]) << 16) | (u32::from(c[1]) << 8) | u32::from(c[2]);
     quads
         .iter()
         .map(|q| {
             let (x0, y0, x1, y1) = q.rect;
             let (top, bottom) = (rgb(q.rgb_top), rgb(q.rgb_bottom));
-            crate::screen_prim::ScreenPrim::Textured(crate::screen_prim::ScreenQuad {
-                xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
-                uv: q.uv,
-                clut: q.clut,
-                tpage: q.tpage,
-                color: top,
-                gouraud: Some([top, top, bottom, bottom]),
-                semi_transparent: q.poly_code & 0x02 != 0,
-                ot_index,
-                depth: None,
-            })
+            legaia_render_kernels::screen_prim::ScreenPrim::Textured(
+                legaia_render_kernels::screen_prim::ScreenQuad {
+                    xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+                    uv: q.uv,
+                    clut: q.clut,
+                    tpage: q.tpage,
+                    color: top,
+                    gouraud: Some([top, top, bottom, bottom]),
+                    semi_transparent: q.poly_code & 0x02 != 0,
+                    ot_index,
+                    depth: None,
+                },
+            )
         })
         .collect()
 }
@@ -630,10 +634,12 @@ mod tests {
         assert_eq!(three[0].dst.2, one[0].dst.2 * 3);
     }
 
-    fn quad(p: &crate::screen_prim::ScreenPrim) -> crate::screen_prim::ScreenQuad {
+    fn quad(
+        p: &legaia_render_kernels::screen_prim::ScreenPrim,
+    ) -> legaia_render_kernels::screen_prim::ScreenQuad {
         match p {
-            crate::screen_prim::ScreenPrim::Textured(q) => *q,
-            crate::screen_prim::ScreenPrim::Flat(_) => {
+            legaia_render_kernels::screen_prim::ScreenPrim::Textured(q) => *q,
+            legaia_render_kernels::screen_prim::ScreenPrim::Flat(_) => {
                 panic!("the banner emits textured quads only")
             }
         }
@@ -728,7 +734,7 @@ mod tests {
     /// data, and a host that holds the table must be able to pass it.
     #[test]
     fn a_parsed_record_overrides_the_defaults() {
-        let w = legaia_asset::dance_art::DanceWidget {
+        let w = legaia_minigame_formats::dance_art::DanceWidget {
             scale: 0x1000,
             tpage: 0x0009,
             clut: 0x7D01,
@@ -770,7 +776,7 @@ mod tests {
             tpage: 0x2F,
         };
         let prims = dance_hud_prims(&[q], COUNTIN_OT);
-        let crate::screen_prim::ScreenPrim::Textured(p) = &prims[0] else {
+        let legaia_render_kernels::screen_prim::ScreenPrim::Textured(p) = &prims[0] else {
             panic!("textured quad");
         };
         assert_eq!(p.xy, [(10, 20), (42, 20), (10, 36), (42, 36)]);

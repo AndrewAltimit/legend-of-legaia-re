@@ -17,7 +17,7 @@ impl World {
     pub(in crate::world) fn defender_resist(
         &self,
         slot: u8,
-    ) -> vm::battle_formulas::DefenderResist {
+    ) -> legaia_engine_battle_vm::battle_formulas::DefenderResist {
         if slot >= self.party.party_count {
             return Default::default();
         }
@@ -30,7 +30,7 @@ impl World {
             return Default::default();
         };
         let bits = member.ability_bits();
-        vm::battle_formulas::DefenderResist::from_ability_words(
+        legaia_engine_battle_vm::battle_formulas::DefenderResist::from_ability_words(
             u32::from_le_bytes([bits[0], bits[1], bits[2], bits[3]]),
             u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]),
         )
@@ -49,7 +49,7 @@ impl World {
     pub fn physical_defense_of(&self, slot: u8, command: u8) -> u16 {
         let idx = slot as usize;
         if let Some(Some((udf, ldf))) = self.battle.defense_split.get(idx) {
-            return if vm::battle_formulas::physical_defense_is_udf(command) {
+            return if legaia_engine_battle_vm::battle_formulas::physical_defense_is_udf(command) {
                 *udf
             } else {
                 *ldf
@@ -88,7 +88,7 @@ impl World {
     /// `battle_formulas::escape_roll`; the success-side flee staging stays
     /// with the run band in `battle_action`)
     pub(in crate::world) fn roll_battle_escape(&mut self) -> bool {
-        use vm::battle_formulas::{
+        use legaia_engine_battle_vm::battle_formulas::{
             EscapeActor, EscapeFlags, escape_enemy_score, escape_party_score, escape_roll,
         };
         let party_n = (self.party.party_count as usize).min(self.actors.len());
@@ -146,7 +146,7 @@ impl World {
     ///   shortfall each, in table order.
     ///
     /// Then the camera cuts to the reverse angle
-    /// ([`legaia_engine_vm::battle_cam_script::BattleCamera::arm_escape_shot`]).
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::arm_escape_shot`]).
     ///
     /// Retail stages every party slot; the port stages the members still
     /// standing and leaves a downed one where it fell (the run band floors
@@ -163,7 +163,7 @@ impl World {
             for &i in &runners {
                 let a = &mut self.actors[i];
                 a.battle.queued_anim = 1;
-                a.battle.flag_bits = vm::battle_action::ActorFlags(1);
+                a.battle.flag_bits = legaia_engine_battle_vm::battle_action::ActorFlags(1);
                 a.battle.facing_angle = 0x800;
                 a.battle.active_target = 9;
                 let ms = &mut a.move_state;
@@ -235,7 +235,7 @@ impl World {
     ///
     /// REF: FUN_801EC0DC
     pub(in crate::world) fn monster_flee_roll(&mut self, slot: u8) -> bool {
-        use vm::battle_formulas::FleeActor;
+        use legaia_engine_battle_vm::battle_formulas::FleeActor;
         let pc = (self.party.party_count as usize).min(self.actors.len());
         let fold = |world: &Self, i: usize| FleeActor {
             hp: world.actors[i].battle.hp,
@@ -271,7 +271,7 @@ impl World {
             .map(|d| d.intel)
             .unwrap_or(0);
         let no_escape = u8::from(self.battle.no_escape);
-        vm::battle_formulas::monster_escape_roll(
+        legaia_engine_battle_vm::battle_formulas::monster_escape_roll(
             no_escape,
             &party,
             &monsters,
@@ -300,7 +300,7 @@ impl World {
         let Some(a) = self.actors.get_mut(defender_slot as usize) else {
             return;
         };
-        a.battle.spirit_gauge = vm::battle_formulas::spirit_gauge_fill(
+        a.battle.spirit_gauge = legaia_engine_battle_vm::battle_formulas::spirit_gauge_fill(
             over as u32,
             a.battle.max_hp,
             a.battle.spirit_gauge,
@@ -351,7 +351,7 @@ impl World {
     pub(in crate::world) fn apply_battle_buff(
         &mut self,
         slot: u8,
-        stat: crate::spells::BuffStat,
+        stat: legaia_engine_battle::spells::BuffStat,
         magnitude: i16,
         turns: u8,
     ) {
@@ -390,12 +390,13 @@ impl World {
     /// A Defense ramp is taken from the slot's **UDF half** when it carries a
     /// [`crate::world::BattleState::defense_split`] - see [`Self::move_defense_split`] for why
     /// the scalar alone is the wrong basis.
-    fn ramp_buff_scalar(&mut self, slot: u8, stat: crate::spells::BuffStat) -> i16 {
-        use crate::spells::BuffStat;
+    fn ramp_buff_scalar(&mut self, slot: u8, stat: legaia_engine_battle::spells::BuffStat) -> i16 {
+        use legaia_engine_battle::spells::BuffStat;
         if matches!(stat, BuffStat::Defense | BuffStat::MagicDefense)
             && let Some(Some((udf, _))) = self.battle.defense_split.get(slot as usize).copied()
         {
-            let delta = (i32::from(vm::battle_formulas::buff_ramp(udf)) - i32::from(udf)) as i16;
+            let delta = (i32::from(legaia_engine_battle_vm::battle_formulas::buff_ramp(udf))
+                - i32::from(udf)) as i16;
             return self.add_to_buff_scalar(slot, stat, delta);
         }
         let scalar = match stat {
@@ -408,7 +409,7 @@ impl World {
         };
         let Some(scalar) = scalar else { return 0 };
         let before = *scalar;
-        let after = vm::battle_formulas::buff_ramp(before);
+        let after = legaia_engine_battle_vm::battle_formulas::buff_ramp(before);
         *scalar = after;
         (after as i32 - before as i32) as i16
     }
@@ -420,10 +421,10 @@ impl World {
     pub(super) fn add_to_buff_scalar(
         &mut self,
         slot: u8,
-        stat: crate::spells::BuffStat,
+        stat: legaia_engine_battle::spells::BuffStat,
         delta: i16,
     ) -> i16 {
-        use crate::spells::BuffStat;
+        use legaia_engine_battle::spells::BuffStat;
         if matches!(stat, BuffStat::Defense | BuffStat::MagicDefense) {
             self.move_defense_split(slot, delta);
         }
@@ -503,8 +504,8 @@ impl World {
     ///
     /// REF: FUN_80054CB0 (the `sh` pairs at `0x80055160..0x8005530C`; the
     /// routine is ported at
-    /// [`crate::monster_catalog::monster_def_from_record`] and its arithmetic
-    /// at [`crate::monster_catalog::MonsterDef::installed_stats`])
+    /// [`legaia_engine_battle::monster_catalog::monster_def_from_record`] and its arithmetic
+    /// at [`legaia_engine_battle::monster_catalog::MonsterDef::installed_stats`])
     pub(in crate::world) fn sync_battle_stat_bases(&mut self) {
         for slot in 0..self.battle.attack.len() {
             self.battle.attack_base[slot] = self.battle.attack[slot];
@@ -610,7 +611,7 @@ impl World {
         caster: u8,
         spell_id: u8,
         targets: &[u8],
-    ) -> Option<(legaia_asset::seru_side_effect::SideEffectKind, u8)> {
+    ) -> Option<(legaia_game_tables::seru_side_effect::SideEffectKind, u8)> {
         use legaia_engine_battle_vm::seru_side_effect::{
             StagerInputs, StagerOutcome, StagerTarget, stage_side_effect,
         };
@@ -666,7 +667,7 @@ impl World {
         // `0x801F6960` (`0x801F4444..`), which is the latch the summon's
         // return-from-fade pass reads to decide whether to print
         // "No effect." (`FUN_801F3C34`, ported at
-        // `legaia_engine_vm::move_no_effect_guard::queued_magic_message` and
+        // `legaia_engine_battle_vm::move_no_effect_guard::queued_magic_message` and
         // live from action state `0x36`). Nothing wrote the port's copy, so
         // every levelled cast announced itself as a miss even when its effect
         // had landed. Written on every player Seru cast - the percent when
@@ -700,7 +701,7 @@ impl World {
     pub(in crate::world) fn apply_seru_side_effect(
         &mut self,
         slot: u8,
-        kind: legaia_asset::seru_side_effect::SideEffectKind,
+        kind: legaia_game_tables::seru_side_effect::SideEffectKind,
         pct: u8,
     ) {
         use legaia_engine_battle_vm::seru_side_effect::{TargetStats, apply_hit};

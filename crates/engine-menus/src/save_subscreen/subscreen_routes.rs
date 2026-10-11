@@ -39,7 +39,7 @@ pub enum SaveSubScreen {
     /// The pair's direction is fixed by the root picker's row labels: row
     /// `5` is `@Load` and routes here, row `6` is `@Save` and routes to
     /// [`Self::CardSave`] - see
-    /// `legaia_engine_core::pause_screens::ROOT_MENU_ROUTES`. Retail's own op selector
+    /// `crate::pause_screens::ROOT_MENU_ROUTES`. Retail's own op selector
     /// agrees: this driver calls `FUN_801DD35C(1, 2)`, the arm that skips
     /// the card-file erase.
     CardLoad,

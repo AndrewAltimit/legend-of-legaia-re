@@ -14,11 +14,12 @@
 //!
 //! Disc-free: synthetic party + monsters. Runs in CI unconditionally.
 
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_action::{
+use legaia_engine_battle_vm::battle_action::{
     ActionState, CURSOR_COLOR_BRIGHT, CURSOR_COLOR_DIM, CURSOR_FLAG_DIMMED, CURSOR_FLAG_SELECTED,
 };
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// 3 party + `monsters` monster slots, all live, player-driven battle mode.
 fn battle_world(monsters: usize) -> World {
@@ -68,7 +69,7 @@ fn open_command_menu(w: &mut World) -> usize {
 /// bare Cross no longer lands on a target. Every press here is one edge, and
 /// the only non-Cross press is the ring walk off its opening `Item` arm.
 fn open_target_cursor(w: &mut World) {
-    use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+    use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase};
     for _ in 0..64 {
         let Some(session) = w.battle.command.as_ref() else {
             panic!("the command session closed before a target cursor opened");

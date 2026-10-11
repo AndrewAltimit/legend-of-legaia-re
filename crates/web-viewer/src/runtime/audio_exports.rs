@@ -64,7 +64,7 @@ impl LegaiaRuntime {
 
     /// Swap the score to the title theme - the browser twin of the native
     /// post-wipe `BootUiState::Title` hand-off: stop the running track,
-    /// then start [`legaia_engine_core::music_labels::TITLE_THEME_BGM_ID`]
+    /// then start [`legaia_engine_system::music_labels::TITLE_THEME_BGM_ID`]
     /// as an owned-VAB global track. The page calls this when the
     /// party-wipe hold resolves to the title card, so the battle BGM never
     /// outlives the battle. `false` when audio is down or the disc entry
@@ -72,7 +72,7 @@ impl LegaiaRuntime {
     /// the stale track.
     pub fn play_title_bgm(&mut self) -> bool {
         use legaia_engine_core::scene::BgmDirector;
-        let id = legaia_engine_core::music_labels::TITLE_THEME_BGM_ID;
+        let id = legaia_engine_system::music_labels::TITLE_THEME_BGM_ID;
         let Some(d) = self.audio_director() else {
             return false;
         };

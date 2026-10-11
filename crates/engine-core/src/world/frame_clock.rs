@@ -41,10 +41,10 @@ pub struct FrameClock {
     ///
     /// Retail's frame-begin pass `FUN_8001698C` returns `1` when `gp+0x3D8`
     /// is set and neither `_DAT_8007B938` nor `gp+0x55C` carries bit `0x800`;
-    /// its caller (the per-frame mode handler, [`crate::mode::per_frame_stage`])
+    /// its caller (the per-frame mode handler, [`legaia_engine_mode::mode::per_frame_stage`])
     /// then abandons the frame after a pad poll and a `VSync(0)` - no
     /// mid-frame driver, no frame-end pass. Consumed (and cleared) by
-    /// [`crate::mode::ModeDriver::tick`] via [`crate::world::World::take_frame_begin_skip`].
+    /// [`legaia_engine_mode::mode::ModeDriver::tick`] via [`crate::world::World::take_frame_begin_skip`].
     ///
     /// Defaults to `false`; a host that never sets it gets the pre-existing
     /// tick-every-frame behaviour - and that is also what **retail** does.
@@ -52,7 +52,7 @@ pub struct FrameClock {
     /// five-form sweep plus the `gp`-relative sweep over `SCUS_942.54` and
     /// every based overlay image finds exactly three sites touching
     /// `gp+0x3D8`, and two are clears - the mode-change edge's
-    /// (`0x800161E8`, which [`crate::mode::ModeSeat`] performs) and a reset
+    /// (`0x800161E8`, which [`legaia_engine_mode::mode::ModeSeat`] performs) and a reset
     /// path's (`0x8001E100`). The one **setter** is
     /// `_DAT_8007B6F0 = ~_DAT_8007B6F0` at `0x80018850`, the R1+Start pause
     /// toggle in `FUN_8001822C`'s dev-hotkey tail, and that whole tail sits

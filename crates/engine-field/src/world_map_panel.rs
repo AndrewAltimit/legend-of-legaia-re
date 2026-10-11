@@ -259,7 +259,7 @@ pub fn decode_panel_command(
 ///
 /// PORT: FUN_801e9b3c (the `do { } while (*param_1 != 0)` record loop)
 ///
-/// Wired: `legaia_engine_core::world_map_panel_host::PanelWindowHost::run_script`
+/// Wired: `crate::world_map_panel_host::PanelWindowHost::run_script`
 /// decodes here and applies each effect to its window objects, reached from
 /// `World::tick_world_map`.
 pub fn run_panel_script(

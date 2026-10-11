@@ -88,10 +88,10 @@ pub(super) fn save_diff(
 pub(super) fn apply_save_commit(
     session: &mut BootSession,
     card: &mut SoakCard,
-    commit: legaia_engine_core::save_screen::SaveCommit,
+    commit: legaia_engine_menus::save_screen::SaveCommit,
     opts: &FieldLiveOpts,
 ) {
-    use legaia_engine_core::save_screen::SaveCommitKind;
+    use legaia_engine_menus::save_screen::SaveCommitKind;
     let key = (commit.port, commit.cell);
     match commit.kind {
         SaveCommitKind::Save => {
@@ -117,7 +117,7 @@ pub(super) fn refresh_rack(session: &mut BootSession, card: &SoakCard) {
             .get_mut(port as usize)
             .and_then(|p| p.get_mut(cell as usize))
         {
-            *slot = legaia_engine_core::save_select::snapshot_for_save(cell, sf, resume);
+            *slot = legaia_engine_menus::save_select::snapshot_for_save(cell, sf, resume);
         }
     }
     let rack = session.save_rack().clone();

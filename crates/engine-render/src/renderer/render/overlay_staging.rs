@@ -122,7 +122,7 @@ impl Renderer {
     }
 
     /// Build one frame's screen-overlay geometry from `prims` (see
-    /// [`crate::screen_overlay::build_geometry`]), grow the dynamic
+    /// [`legaia_render_kernels::screen_prim::build_geometry`]), grow the dynamic
     /// vertex/index buffers if needed, upload the geometry, and cache the
     /// per-run draw list for [`Self::draw_screen_overlay`]. The staging pass
     /// of [`RenderTarget::ScreenOverlay`].
@@ -130,8 +130,11 @@ impl Renderer {
     /// every retail screen-space emitter authors there and clamps against it,
     /// so handing `build_geometry` the surface size would pin the overlay into
     /// the top-left corner of a larger frame. See
-    /// [`crate::screen_overlay::build_geometry`].
-    pub(super) fn stage_screen_overlay(&self, prims: &[crate::screen_overlay::ScreenPrim]) {
+    /// [`legaia_render_kernels::screen_prim::build_geometry`].
+    pub(super) fn stage_screen_overlay(
+        &self,
+        prims: &[legaia_render_kernels::screen_prim::ScreenPrim],
+    ) {
         self.stage_screen_overlay_split(&[], prims);
     }
 
@@ -141,17 +144,17 @@ impl Renderer {
     /// the number of runs `under` produced.
     pub(super) fn stage_screen_overlay_split(
         &self,
-        under: &[crate::screen_overlay::ScreenPrim],
-        over: &[crate::screen_overlay::ScreenPrim],
+        under: &[legaia_render_kernels::screen_prim::ScreenPrim],
+        over: &[legaia_render_kernels::screen_prim::ScreenPrim],
     ) {
         let (w, h) = (
-            crate::vram_capture::PSX_SCREEN_WIDTH as u32,
-            crate::vram_capture::PSX_SCREEN_HEIGHT as u32,
+            legaia_render_kernels::vram_capture::PSX_SCREEN_WIDTH as u32,
+            legaia_render_kernels::vram_capture::PSX_SCREEN_HEIGHT as u32,
         );
-        let mut geo = crate::screen_overlay::build_geometry(under, w, h);
+        let mut geo = legaia_render_kernels::screen_prim::build_geometry(under, w, h);
         self.screen_overlay_under_runs.set(geo.runs.len());
         if !over.is_empty() {
-            let tail = crate::screen_overlay::build_geometry(over, w, h);
+            let tail = legaia_render_kernels::screen_prim::build_geometry(over, w, h);
             let (vbase, ibase) = (geo.vertices.len() as u32, geo.indices.len() as u32);
             geo.vertices.extend(tail.vertices);
             geo.indices.extend(tail.indices.iter().map(|i| i + vbase));
@@ -171,7 +174,7 @@ impl Renderer {
             *self.screen_overlay_vbuf.borrow_mut() =
                 self.device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("screen overlay vertex buffer (resized)"),
-                    size: (cap as u64) * crate::screen_overlay::SCREEN_VERTEX_STRIDE,
+                    size: (cap as u64) * legaia_render_kernels::screen_prim::SCREEN_VERTEX_STRIDE,
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
@@ -197,7 +200,7 @@ impl Renderer {
     }
 
     /// Draw the runs staged by [`Self::stage_screen_overlay`]: one indexed
-    /// draw per [`crate::screen_overlay::DrawRun`], binding the opaque
+    /// draw per [`legaia_render_kernels::screen_prim::DrawRun`], binding the opaque
     /// pipeline or the matching per-ABR blend pipeline. Groups 0 = the shared
     /// PSX VRAM texture.
     /// Stage the scene-viewport fill for this frame: when the target is a
@@ -222,19 +225,21 @@ impl Renderer {
         }
         let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
         let (sw, sh) = (
-            crate::vram_capture::PSX_SCREEN_WIDTH as i16,
-            crate::vram_capture::PSX_SCREEN_HEIGHT as i16,
+            legaia_render_kernels::vram_capture::PSX_SCREEN_WIDTH as i16,
+            legaia_render_kernels::vram_capture::PSX_SCREEN_HEIGHT as i16,
         );
-        let quad = crate::screen_overlay::ScreenPrim::Flat(crate::screen_overlay::FlatQuad {
-            xy: [(0, 0), (sw, 0), (0, sh), (sw, sh)],
-            color: [byte(c[0]), byte(c[1]), byte(c[2]), 255],
-            gouraud: None,
-            semi_transparent: false,
-            abr_mode: 0,
-            ot_index: 0,
-            depth: None,
-        });
-        let geo = crate::screen_overlay::build_geometry(&[quad], sw as u32, sh as u32);
+        let quad = legaia_render_kernels::screen_prim::ScreenPrim::Flat(
+            legaia_render_kernels::screen_prim::FlatQuad {
+                xy: [(0, 0), (sw, 0), (0, sh), (sw, sh)],
+                color: [byte(c[0]), byte(c[1]), byte(c[2]), 255],
+                gouraud: None,
+                semi_transparent: false,
+                abr_mode: 0,
+                ot_index: 0,
+                depth: None,
+            },
+        );
+        let geo = legaia_render_kernels::screen_prim::build_geometry(&[quad], sw as u32, sh as u32);
         self.queue.write_buffer(
             &self.viewport_fill_vbuf,
             0,
@@ -295,7 +300,7 @@ impl Renderer {
         vram: &UploadedVram,
         under: bool,
     ) {
-        use crate::screen_overlay::BlendClass;
+        use legaia_render_kernels::screen_prim::BlendClass;
         let all = self.screen_overlay_runs.borrow();
         let split = self.screen_overlay_under_runs.get().min(all.len());
         let runs = if under { &all[..split] } else { &all[split..] };

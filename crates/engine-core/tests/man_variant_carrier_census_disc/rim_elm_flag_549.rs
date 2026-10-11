@@ -42,7 +42,7 @@ use super::*;
 /// also `no_two_man_carriers_share_bytes_disc_wide`, the general form.
 #[test]
 fn flag_549_reader_is_the_rim_elm_p2_gate() {
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some(index) = open_index() else { return };
     // Canonical case pinned exactly; the other variants share the shape.
     let scene = Scene::load(&index, "town01").expect("load town01");
@@ -50,7 +50,7 @@ fn flag_549_reader_is_the_rim_elm_p2_gate() {
         .field_man_payload(&index)
         .expect("payload")
         .expect("town01 MAN resolves");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
     let (c1_3, _) = partition2_record_gates(&mf, &man, 3).expect("P2[3] gates");
     assert_eq!(c1_3, vec![0x225], "town01 P2[3] C1 = the opening one-shot");
     let (c1_4, c2_4) = partition2_record_gates(&mf, &man, 4).expect("P2[4] gates");
@@ -71,7 +71,7 @@ fn flag_549_reader_is_the_rim_elm_p2_gate() {
             continue;
         };
         for carrier in scene_man_carriers(&index, &scene) {
-            let Ok(mf) = legaia_asset::man_section::parse(&carrier.payload) else {
+            let Ok(mf) = legaia_scene_formats::man_section::parse(&carrier.payload) else {
                 continue;
             };
             let n_p2 = (*mf.header.partition_counts.get(2).unwrap_or(&0)).max(0) as usize;
@@ -216,8 +216,8 @@ fn flag_549_writer_is_the_rim_elm_p2_3_self_latch() {
 /// also seen on rayman2/retockin/dohaty). This corrects the "ch2 spoke" reading.
 #[test]
 fn town0c_is_a_rim_elm_state_variant_not_a_ch2_spoke() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
+    use legaia_scene_formats::man_section::parse as parse_man;
     let Some(index) = open_index() else { return };
     let gates = |scene_name: &str, rec: usize| -> (Vec<u16>, Vec<u16>) {
         let scene = Scene::load(&index, scene_name).expect("load");

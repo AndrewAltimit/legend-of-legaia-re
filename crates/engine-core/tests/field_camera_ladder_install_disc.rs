@@ -17,10 +17,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::camera::Camera;
 use legaia_engine_core::frame_step::{camera_after_world_tick, camera_before_world_tick};
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
+use legaia_engine_field::camera::Camera;
+use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {

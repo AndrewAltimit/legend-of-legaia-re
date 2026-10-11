@@ -110,7 +110,7 @@ pub struct SweepDecision {
 /// Retail runs this over a whole actor list, and the field initialiser calls it
 /// **once per list** - seven times - on a warp entry (`_DAT_8007B8B8 == 2`),
 /// which is what makes a warp structurally different from a cold entry (see
-/// `legaia_engine_core::mode_entry_init::FieldEntryMode`).
+/// `legaia_engine_system::mode_entry_init::FieldEntryMode`).
 ///
 /// The order the flags land in matters: the three handler tests OR
 /// [`ACTOR_FLAG_YIELD`] in, then [`ACTOR_FLAG_TRANSITION`] is stamped
@@ -200,7 +200,7 @@ pub struct ColourTween {
 ///
 /// Hosts draw the frame's pushes through
 /// `legaia_engine_core::world::World::screen_tint_push_args` and the shared emitter
-/// `legaia_engine_ui::screen_prim::screen_effect_push_prims`, which is where
+/// `legaia_render_kernels::screen_prim::screen_effect_push_prims`, which is where
 /// the clamp, the mask and the channel swap live.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScreenTintPush {

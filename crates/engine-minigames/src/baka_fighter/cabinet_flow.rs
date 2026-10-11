@@ -1,7 +1,7 @@
 //! The cabinet side of a fight: rung and player installs, the cabinet tick and the select-screen lineup.
 
 use super::*;
-use legaia_asset::baka_opponents::ROUND_WIN_TARGET;
+use legaia_minigame_formats::baka_opponents::ROUND_WIN_TARGET;
 
 impl BakaFight {
     /// Seat the next rung's opponent, the port side of the cabinet's

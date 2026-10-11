@@ -39,12 +39,12 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{
-    CLEAN_RESYNC_INSNS, partition_record_span, scene_man_carriers,
-};
+use legaia_engine_core::man_field_scripts::scene_man_carriers;
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::field_disasm::{ActorCtrlKind, Insn, InsnInfo, LinearWalker};
+use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_scene_formats::field_disasm::{ActorCtrlKind, Insn, InsnInfo, LinearWalker};
 
 /// One decoded site: the record body that carries it plus the offset of the
 /// instruction inside that body.
@@ -91,7 +91,7 @@ fn collect_sites(
         };
         for carrier in scene_man_carriers(index, &scene) {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             for partition in 0..3 {
@@ -211,7 +211,7 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
         // and the balloon eventually kills itself. Driving it through the
         // world's own frame tick is what runs `FUN_801DA7F0`.
         let mut drew = false;
-        for _ in 0..(legaia_engine_core::text_balloon::BALLOON_TOTAL as u32 + 8) {
+        for _ in 0..(legaia_engine_dialog::text_balloon::BALLOON_TOTAL as u32 + 8) {
             world.tick();
             if world
                 .cutscene
@@ -259,7 +259,7 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
         assert!(
             events.iter().any(|e| matches!(
                 e,
-                legaia_engine_core::field_events::FieldEvent::Bgm { sub_op: 2, .. }
+                legaia_engine_field::field_events::FieldEvent::Bgm { sub_op: 2, .. }
             )),
             "{}: game over queued no BGM pause",
             site.scene
@@ -390,13 +390,13 @@ fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
         // when the endpoints happen to match.
         assert_eq!(
             [ramp.x_lo, ramp.z_lo, ramp.x_hi, ramp.z_hi],
-            zone.map(legaia_engine_core::register_ramp::tile_to_world),
+            zone.map(legaia_engine_field::register_ramp::tile_to_world),
             "{}: ramp zone corners are not this instruction's operand bytes",
             site.scene
         );
         assert_eq!(
             ramp.slot,
-            legaia_engine_core::register_ramp::RampSlot::from_sub_op(sub_op)
+            legaia_engine_field::register_ramp::RampSlot::from_sub_op(sub_op)
                 .expect("sub-op in the ramp family"),
             "{}: ramp landed in the wrong destination block",
             site.scene

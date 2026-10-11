@@ -58,7 +58,7 @@ fn interaction_timeline_holds_the_talk_pose_until_it_ends() {
     w.npcs.positions.insert(3, (0, 0));
     w.npcs.headings.insert(3, 0x800);
     w.face_field_npc_at_player(3);
-    let mut tl = crate::cutscene_timeline::CutsceneTimeline::new(vec![0x21], 0);
+    let mut tl = legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(vec![0x21], 0);
     tl.interaction_slot = Some(3);
     w.cutscene.timeline = Some(tl);
     assert!(w.interaction_timeline_holds_talk_facing());

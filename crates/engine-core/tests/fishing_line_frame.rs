@@ -8,13 +8,16 @@
 //! vertex 37 is the on-axis tip, one bend record on it). The last test lifts
 //! the real rods and bend out of the `other1` bank and is disc-gated.
 
-use legaia_asset::fishing_species::{CadenceStep, CadenceTemplate, FishingSpecies, SPAWN_BANDS};
-use legaia_engine_core::fishing::{
+use legaia_engine_core::fishing_actors::rod_mesh_from_scene;
+use legaia_engine_fishing::fishing::{
     CAST_POWER_MAX, FishingRecord, PondInput, PondPhase, PondSession, PondVenue, ROD_PAD_RIGHT,
 };
-use legaia_engine_core::fishing_actors::{
+use legaia_engine_fishing::fishing_actors::{
     LINE_CLIP_RECT, LINE_FISH_RGB, LINE_ROD_RGB, ROD_BEND_VDF_ENTRY, ROD_MODEL_BASE,
-    ROD_TIP_VERTEX, RodMesh, RodSwing, VENUE_ANCHOR, clip_segment_2d, rod_mesh_from_scene,
+    ROD_TIP_VERTEX, RodMesh, RodSwing, VENUE_ANCHOR, clip_segment_2d,
+};
+use legaia_minigame_formats::fishing_species::{
+    CadenceStep, CadenceTemplate, FishingSpecies, SPAWN_BANDS,
 };
 
 const REEL_A: u32 = 0x40;
@@ -230,7 +233,7 @@ fn the_line_goes_and_the_rod_recovers_once_the_fight_resolves() {
 fn a_held_dpad_side_rolls_the_rod() {
     let mut p = pond();
     cast(&mut p);
-    let right = PondInput::from_engine_pad(legaia_engine_core::input::PadButton::Right.mask(), 0);
+    let right = PondInput::from_engine_pad(legaia_engine_system::input::PadButton::Right.mask(), 0);
     assert_ne!(right.reel_mask & ROD_PAD_RIGHT, 0);
     for _ in 0..32 {
         tick(&mut p, right);
@@ -295,7 +298,7 @@ fn the_session_draws_no_rod_before_the_cast_and_asks_for_one_after_it() {
 /// and the cast pose puts the rod on screen with the line's rod end on it.
 #[test]
 fn the_venue_rods_draw_in_the_cast_pose_around_the_line_tip() {
-    use legaia_engine_core::fishing_actors::{RodActor, rod_faces, rod_tip_screen};
+    use legaia_engine_fishing::fishing_actors::{RodActor, rod_faces, rod_tip_screen};
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;

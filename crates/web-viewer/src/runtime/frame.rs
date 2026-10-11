@@ -260,7 +260,7 @@ impl LegaiaRuntime {
     /// mesh upload; everything else is presentation this host reads off the
     /// world's own state instead (the cutscene camera params, the dialog box).
     pub(crate) fn drain_and_route_field_events_web(&mut self) {
-        use legaia_engine_core::field_events::FieldEvent;
+        use legaia_engine_field::field_events::FieldEvent;
         // Route any BGM event the frame's own steps raised since the routing
         // pass after the scene tick (a battle-presentation or minigame swap,
         // a dance song ending) before the drain below drops whatever is left.

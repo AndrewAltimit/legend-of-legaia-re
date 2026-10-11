@@ -554,9 +554,9 @@ fn rung3_items_use_opens_the_target_panel_over_a_hurt_party() {
     // (`effect_gated_by_target_state` is false for a stat-up) - the *only*
     // thing that can make their panels differ is the preview word.
     let scus = legaia_web_viewer::disc::extract_scus(&bytes).expect("SCUS on the disc");
-    let effects =
-        legaia_asset::item_effect::ItemEffectTable::from_scus(&scus).expect("item-effect table");
-    use legaia_engine_core::pause_screens::target_panel_mode;
+    let effects = legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus)
+        .expect("item-effect table");
+    use legaia_engine_menus::pause_screens::target_panel_mode;
     let previewing: Vec<(u8, u32)> = (0u8..=255)
         .filter_map(|id| {
             let e = effects.effect(id)?;
@@ -694,10 +694,10 @@ fn rung3b_the_target_panel_preview_word_matches_the_discs_item_tables() {
     let disc = std::env::var("LEGAIA_DISC_BIN").expect("gated above");
     let bytes = std::fs::read(&disc).expect("disc readable");
     let scus = legaia_web_viewer::disc::extract_scus(&bytes).expect("SCUS on the disc");
-    let effects =
-        legaia_asset::item_effect::ItemEffectTable::from_scus(&scus).expect("item-effect table");
+    let effects = legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus)
+        .expect("item-effect table");
 
-    use legaia_engine_core::pause_screens::target_panel_mode;
+    use legaia_engine_menus::pause_screens::target_panel_mode;
     let mut previews = 0usize;
     let mut seen_modes = std::collections::BTreeSet::new();
     for id in 0u8..=255 {
@@ -804,7 +804,7 @@ fn rung4_the_dance_page_gates_its_clip_driver_and_keys_its_sting() {
     // moves key is a different sting from the tier-2 random pick, and anything
     // enumerating only `0..3` misses it.
     let mut keyed = Vec::new();
-    for r in 0..=legaia_engine_core::dance::STING_TIER_VARIANT as u8 {
+    for r in 0..=legaia_engine_minigames::dance::STING_TIER_VARIANT as u8 {
         let a = mg.dance_sting_pcm(r, 0);
         let b = mg.dance_sting_pcm(r, 1);
         if a.is_empty() && b.is_empty() {
@@ -822,10 +822,10 @@ fn rung4_the_dance_page_gates_its_clip_driver_and_keys_its_sting() {
     assert!(
         keyed
             .iter()
-            .any(|&(r, _, _)| r == legaia_engine_core::dance::STING_TIER_VARIANT as u8),
+            .any(|&(r, _, _)| r == legaia_engine_minigames::dance::STING_TIER_VARIANT as u8),
         "the groovy-move tier variant r={} did not resolve - the bank was \
          enumerated over the random space only",
-        legaia_engine_core::dance::STING_TIER_VARIANT
+        legaia_engine_minigames::dance::STING_TIER_VARIANT
     );
     let distinct: std::collections::BTreeSet<_> = keyed
         .iter()

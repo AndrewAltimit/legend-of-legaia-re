@@ -1,5 +1,7 @@
 use super::*;
+use legaia_engine_battle_vm::battle_gauge_rearm::POPUP_RING_SLOTS;
 use legaia_engine_battle_vm::status_effects::StatusEffectTracker;
+use legaia_engine_menus::battle_input::CommandChipPhase;
 
 #[test]
 fn slot_hud_default_has_no_active_state() {
@@ -232,7 +234,7 @@ fn hud_sync_status_pulls_from_tracker() {
 /// the kernel is intact but nothing ever asks it to run.
 #[test]
 fn stone_reaches_the_party_clut_row_through_sync_status() {
-    use crate::battle_status_clut::{PARTY_CLUT_ENTRIES, PARTY_CLUT_ROW_BASE};
+    use legaia_engine_battle::battle_status_clut::{PARTY_CLUT_ENTRIES, PARTY_CLUT_ROW_BASE};
 
     let mut vram = legaia_tim::Vram::new();
     let row = PARTY_CLUT_ROW_BASE + 1;
@@ -519,8 +521,8 @@ fn gauge_fill_indices_follow_the_retail_precedence() {
 /// dead slot must contribute nothing (retail's zero id).
 #[test]
 fn enemy_target_rows_collapse_runs_and_skip_dead_slots() {
-    use crate::monster_catalog::MonsterDef;
     use crate::world::{Actor, World};
+    use legaia_engine_battle::monster_catalog::MonsterDef;
     let mut w = World::new();
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
@@ -607,8 +609,9 @@ fn log_views_resolves_color_from_accent() {
 // ------------------------------------------------------------------
 
 fn battle_world(party: u8) -> crate::world::World {
-    use crate::monster_catalog::MonsterDef;
-    use crate::world::{Actor, SceneMode, World};
+    use crate::world::{Actor, World};
+    use legaia_engine_battle::monster_catalog::MonsterDef;
+    use legaia_engine_mode::mode::SceneMode;
     let mut w = World::new();
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
@@ -636,7 +639,7 @@ fn battle_world(party: u8) -> crate::world::World {
 
 #[test]
 fn round_prompt_is_panels_only() {
-    use crate::battle_input::BattleCommandSession;
+    use legaia_engine_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
     assert_eq!(battle_hud_phase(&w), BattleHudPhase::RoundPrompt);
@@ -654,7 +657,7 @@ fn round_prompt_is_panels_only() {
 /// flow SM draws the static SCUS word and never reads `ctx[+0x287]`.
 #[test]
 fn a_no_escape_round_prompt_still_reads_run() {
-    use crate::battle_input::BattleCommandSession;
+    use legaia_engine_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.no_escape = true;
     w.battle.command = Some(BattleCommandSession::new_round_open(0, 0, true));
@@ -667,7 +670,7 @@ fn a_no_escape_round_prompt_still_reads_run() {
 
 #[test]
 fn the_ring_is_bar_tab_plaque_and_ap_plate() {
-    use crate::battle_input::BattleCommandSession;
+    use legaia_engine_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.actors[0].battle.spirit_gauge = 37;
     w.battle.command = Some(BattleCommandSession::new(0, 0));
@@ -686,7 +689,7 @@ fn the_ring_is_bar_tab_plaque_and_ap_plate() {
 /// direction word.
 #[test]
 fn the_arts_entry_keeps_the_attack_trail_and_names_its_arm_chips() {
-    use crate::arts_command_input::{ArtsCommandInputSession, chip_icon};
+    use legaia_engine_battle::arts_command_input::{ArtsCommandInputSession, chip_icon};
     let mut w = battle_world(1);
     w.battle.arts_input = Some(ArtsCommandInputSession::new(0, 0, 100, [30; 4], 0));
     assert_eq!(battle_command_surface(&w), Some(CommandSurface::ArtsInput));
@@ -719,7 +722,7 @@ fn the_arts_entry_keeps_the_attack_trail_and_names_its_arm_chips() {
 
 #[test]
 fn the_magic_chip_reads_dash_without_a_raseru_and_the_disc_name_with_one() {
-    use crate::battle_input::BattleCommandSession;
+    use legaia_engine_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.command = Some(BattleCommandSession::new(0, 0));
     let chips = battle_command_chips(&w).expect("ring chips");
@@ -744,7 +747,7 @@ fn the_magic_chip_reads_dash_without_a_raseru_and_the_disc_name_with_one() {
 
 #[test]
 fn the_raseru_forbidden_bit_greys_the_chip_and_marks_it() {
-    use crate::battle_input::BattleCommandSession;
+    use legaia_engine_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.command = Some(BattleCommandSession::new(0, 0));
     let mut eq = w.party.roster.members[0].equipment();
@@ -754,13 +757,13 @@ fn the_raseru_forbidden_bit_greys_the_chip_and_marks_it() {
     assert_eq!(battle_magic_chip_mark(&w), None);
     // The Rim Elm ambush / monster 0xAF: the name stays, the chip greys
     // and wears the red cross-out.
-    w.battle.special_word = legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN;
+    w.battle.special_word = legaia_engine_battle_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN;
     let (label, enabled) = battle_command_chips(&w).expect("ring chips").chips[2].clone();
     assert_ne!(label, "-");
     assert!(!enabled);
     assert_eq!(
         battle_magic_chip_mark(&w),
-        Some(crate::muscle_dome::ChipMark::Forbidden)
+        Some(legaia_engine_menus::muscle_dome_session::ChipMark::Forbidden)
     );
     assert!(battle_raseru_cross_out(&w), "the ring is up: the X draws");
     // Off the ring (no command session) the arm does not run.
@@ -773,7 +776,7 @@ fn the_raseru_forbidden_bit_greys_the_chip_and_marks_it() {
 /// Curse - and nothing at all off the ring.
 #[test]
 fn the_ring_marks_follow_the_word_and_the_members_status() {
-    use crate::battle_input::BattleCommandSession;
+    use legaia_engine_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.command = Some(BattleCommandSession::new(0, 0));
     assert_eq!(
@@ -830,7 +833,7 @@ fn noa_gate_reads_the_byte_before_everyone_elses() {
 
 #[test]
 fn attack_mode_and_targeting_park_the_bar_but_keep_tab_and_plaque() {
-    use crate::battle_input::{BattleCommandSession, CommandPhase};
+    use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
     let mut w = battle_world(1);
     let mut cmd = BattleCommandSession::new(0, 0);
     cmd.phase = CommandPhase::AttackMode { cursor: 0 };
@@ -850,13 +853,13 @@ fn attack_mode_and_targeting_park_the_bar_but_keep_tab_and_plaque() {
 
 #[test]
 fn item_window_shows_panels_and_its_target_step_shows_the_pointed_bar() {
-    use crate::inventory_use::{
+    use legaia_engine_menus::inventory_use::{
         InventoryContext, InventoryUseSession, InventoryUseState, TargetRow,
     };
     let mut w = battle_world(2);
     w.battle_ctx.active_actor = 1;
     let mut menu = InventoryUseSession::new(
-        crate::items::ItemCatalog::default(),
+        legaia_engine_menus::items::ItemCatalog::default(),
         Vec::new(),
         vec![TargetRow::new(0, "Vahn"), TargetRow::new(1, "Noa")],
         InventoryContext::Battle,
@@ -906,14 +909,14 @@ fn arm_action(w: &mut crate::world::World, actor: u8, category: u8, target: u8) 
     // The action's record-7 openers, as the seed and the Item pre-arm run
     // them: the seed for an Attack / Magic on a party seat, `0x3C` for a
     // party member's item.
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     let pc = w.party.party_count;
     let opened = ((category == ActionCategory::Attack.as_byte()
         || category == ActionCategory::Magic.as_byte())
         && target < pc)
         || (category == ActionCategory::Item.as_byte() && actor < pc);
     w.battle.readout_bar_glide =
-        opened.then(|| legaia_engine_vm::battle_commit_log::LogLaunch::new(false));
+        opened.then(|| legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false));
 }
 
 #[test]
@@ -921,8 +924,8 @@ fn a_group_cast_rewritten_to_a_slot_raises_no_bar() {
     // Holy Eyes from a lone Vahn: the seed reads the party code `8` and opens
     // nothing; the band then rewrites the byte to slot `0`
     // (`evolved_0x91_midcast`), which must not raise the bar mid-cast.
-    use legaia_engine_vm::battle_action::ActionCategory;
-    use legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
     let mut w = battle_world(1);
     arm_action(
         &mut w,
@@ -937,7 +940,7 @@ fn a_group_cast_rewritten_to_a_slot_raises_no_bar() {
 
 #[test]
 fn a_party_attack_on_a_monster_shows_plaque_target_plaque_and_no_readout() {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     let mut w = battle_world(1);
     arm_action(&mut w, 0, ActionCategory::Attack.as_byte(), 3);
     assert_eq!(battle_hud_phase(&w), BattleHudPhase::Action);
@@ -969,7 +972,7 @@ fn a_party_attack_on_a_monster_shows_plaque_target_plaque_and_no_readout() {
 
 #[test]
 fn an_art_names_itself_once_the_strike_cursor_passes_its_constant() {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     let mut w = battle_world(1);
     arm_action(&mut w, 0, ActionCategory::Attack.as_byte(), 3);
     // Any Vahn art constant the curated table names.
@@ -993,7 +996,7 @@ fn an_art_names_itself_once_the_strike_cursor_passes_its_constant() {
 
 #[test]
 fn a_monster_cast_on_a_member_shows_that_member_bar_and_damage_style() {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     let mut w = battle_world(1);
     arm_action(&mut w, 3, ActionCategory::Magic.as_byte(), 0);
     assert_eq!(battle_active_actor(&w), Some((3, "Gimard".into())));
@@ -1013,8 +1016,8 @@ fn a_monster_cast_on_a_member_shows_that_member_bar_and_damage_style() {
 
 #[test]
 fn a_party_item_shows_the_actor_bar_and_a_party_wide_item_shows_the_panels() {
-    use legaia_engine_vm::battle_action::ActionCategory;
-    use legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
     let mut w = battle_world(2);
     arm_action(&mut w, 1, ActionCategory::Item.as_byte(), 0);
     assert_eq!(
@@ -1056,8 +1059,8 @@ fn a_party_item_shows_the_actor_bar_and_a_party_wide_item_shows_the_panels() {
 /// seed; the three row-arm Seru ids raise no target plaque.
 #[test]
 fn the_seed_plates_follow_fun_801e6d84() {
-    use legaia_engine_vm::battle_action::ActionCategory;
-    use legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
     let mut w = battle_world(1);
     arm_action(
         &mut w,
@@ -1084,7 +1087,7 @@ fn the_seed_plates_follow_fun_801e6d84() {
 
 #[test]
 fn run_shows_no_plaque_and_idle_shows_nothing() {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     let mut w = battle_world(1);
     arm_action(&mut w, 0, ActionCategory::Run.as_byte(), 3);
     assert_eq!(battle_active_actor(&w), None);

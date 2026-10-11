@@ -20,7 +20,7 @@
 //! behind its clip: case `7` for an id below `0x25`, otherwise the byte at
 //! `0x801F66D8 + id - 0x25` (`0x801EA548..0x801EA574`). The byte is a case of
 //! the cast-effect driver `FUN_801DC0A0`
-//! (`legaia_engine_vm::battle_cam_script::spell_cam_case`).
+//! (`legaia_engine_battle_vm::battle_cam_script::spell_cam_case`).
 //!
 //! The tables are disc data read off the user's own image; nothing here
 //! carries their bytes. Consumers: `legaia_engine_core`'s

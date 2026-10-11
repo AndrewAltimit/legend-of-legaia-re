@@ -78,7 +78,9 @@ impl FieldHostImpl<'_> {
     // `38 83 00` in their bind prologue.
     // REF: FUN_801DE840 (case 0x38), FUN_8003C83C
     pub(super) fn face_compass(&mut self, ctx: &mut FieldCtx, index: u8, player: bool) {
-        let Some(heading) = crate::man_field_scripts::facing_index_to_engine_heading(index) else {
+        let Some(heading) =
+            legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(index)
+        else {
             return;
         };
         if !player {
@@ -113,7 +115,7 @@ impl FieldHostImpl<'_> {
         // (retail space) - the `FUN_8003C5F0` ramp the scheduler lerps.
         if sub == 8 {
             if let Some(HeadingOwner::Placement(slot)) = self.world.heading_owner(ctx) {
-                use vm::ambient_motion::{RAMP_DEST_HEADING, Ramp, RampKind};
+                use legaia_engine_motion_vm::ambient_motion::{RAMP_DEST_HEADING, Ramp, RampKind};
                 let start = i32::from(self.world.npcs.heading(slot).wrapping_sub(0x800));
                 let total = i32::from(ticks);
                 self.world.npcs.heading_ramps.free_owner(u32::from(slot));
@@ -142,7 +144,7 @@ impl FieldHostImpl<'_> {
         if sub != 0 || ctx.script_id != u16::from(crate::field_env::PLAYER_ANCHOR_TARGET) {
             return;
         }
-        use vm::ambient_motion::{RAMP_DEST_SCALE, Ramp, RampKind};
+        use legaia_engine_motion_vm::ambient_motion::{RAMP_DEST_SCALE, Ramp, RampKind};
         let total = i32::from(ticks);
         self.world.locomotion.player_scale_ramps.install(Ramp {
             dest: RAMP_DEST_SCALE,
@@ -378,7 +380,9 @@ impl FieldHostImpl<'_> {
             // turned it to the `(96, 58)` arm's index 7.
             if let Some(slot) = self.world.field_vm.executing_channel
                 && let Some(heading) =
-                    crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
+                    legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(
+                        depth_byte & 0xF,
+                    )
             {
                 self.world.npcs.headings.insert(slot, heading);
             }
@@ -415,7 +419,9 @@ impl FieldHostImpl<'_> {
                 .insert(slot, (world_x as i16, world_z as i16));
             self.world.npcs.motions.remove(&slot);
             if let Some(heading) =
-                crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
+                legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(
+                    depth_byte & 0xF,
+                )
             {
                 self.world.npcs.headings.insert(slot, heading);
             }
@@ -441,7 +447,9 @@ impl FieldHostImpl<'_> {
                 actor.move_state.world_z = world_z as i16;
                 actor.move_state.world_y = y;
                 if let Some(heading) =
-                    crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
+                    legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(
+                        depth_byte & 0xF,
+                    )
                 {
                     actor.move_state.render_26 = heading;
                 }
@@ -480,7 +488,9 @@ impl FieldHostImpl<'_> {
                 *pos = (world_x as i16, world_z as i16);
                 self.world.npcs.motions.remove(&slot);
                 if let Some(heading) =
-                    crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
+                    legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(
+                        depth_byte & 0xF,
+                    )
                 {
                     self.world.npcs.headings.insert(slot, heading);
                 }

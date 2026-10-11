@@ -114,8 +114,8 @@ impl EquipSession {
 }
 
 /// The `+7 & 0x60` slot bits a parsed disc equip category carries.
-fn disc_category_slot_bits(cat: legaia_asset::equip_stats::EquipSlot) -> u8 {
-    use legaia_asset::equip_stats::EquipSlot as Disc;
+fn disc_category_slot_bits(cat: legaia_game_tables::equip_stats::EquipSlot) -> u8 {
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
     match cat {
         Disc::Body => 0x00,
         Disc::Head => 0x20,

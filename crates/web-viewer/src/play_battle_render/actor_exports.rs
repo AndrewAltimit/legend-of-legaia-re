@@ -92,7 +92,7 @@ impl LegaiaRuntime {
     /// plus the dispatcher's near-plane reject) - the browser twin of the
     /// native draw loop's skips.
     pub fn play_battle_actor_transforms(&self) -> Vec<f32> {
-        use legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+        use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
@@ -159,7 +159,7 @@ impl LegaiaRuntime {
 
     /// Battle actor `i`'s **arts after-image ghosts** this frame - the
     /// browser seat of the retail walk `FUN_80049348`
-    /// (`legaia_engine_core::battle_afterimage`; the plan comes from the
+    /// (`legaia_engine_battle::battle_afterimage`; the plan comes from the
     /// shared `World::battle_ghost_draws`). Seven `f32` per ghost:
     /// `[world_x, world_y, world_z, r, g, b, k]` with RGB normalized `0..1`
     /// (the page draws each ghost flat-coloured additive via its cue
@@ -167,13 +167,13 @@ impl LegaiaRuntime {
     /// pushed to `eye + k * (pos - eye)` and the page multiplies its draw
     /// scale by `k`, which together is retail's deeper-OT-bucket ordering
     /// under a depth buffer (see
-    /// `legaia_engine_core::battle_afterimage::ghost_eye_push_scale` - the
+    /// `legaia_engine_battle::battle_afterimage::ghost_eye_push_scale` - the
     /// screen silhouette is unchanged, the body's opaque depth wins where
     /// they overlap). The matching pose is
     /// [`Self::play_battle_actor_ghost_pose`]. Empty outside a
     /// SpecialStarter dash / non-idle monster clip.
     pub fn play_battle_actor_ghosts(&self, i: u32) -> Vec<f32> {
-        use legaia_engine_core::battle_afterimage as ai;
+        use legaia_engine_battle::battle_afterimage as ai;
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
@@ -185,8 +185,11 @@ impl LegaiaRuntime {
         // page's scaled placement space, so the eye comes back scaled - the
         // ghost push runs in raw actor units.
         let pose = self.battle_cam_pose();
-        let vp =
-            legaia_engine_vm::battle_cam_script::battle_vp(&pose, BATTLE_WORLD_SCALE, 4.0 / 3.0);
+        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(
+            &pose,
+            BATTLE_WORLD_SCALE,
+            4.0 / 3.0,
+        );
         let eye_raw = ai::camera_eye_from_vp(&vp).map(|e| e.map(|c| c / BATTLE_WORLD_SCALE));
         let body = host.world.actors.get(a.actor_idx).map(|w| {
             [

@@ -15,9 +15,9 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_asset::save_icon::{TILE_COUNT, TILE_SIZE};
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_texture_replace::save_icon::{self, SLOT_COUNT};
+use legaia_ui_formats::save_icon::{TILE_COUNT, TILE_SIZE};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

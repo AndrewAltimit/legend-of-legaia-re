@@ -28,8 +28,8 @@
 //! texel indices remapped during the island copy).
 
 use super::*;
-use legaia_asset::battle_char_assembly::record0_texture_uploads;
-use legaia_asset::battle_data_pack::decode_record;
+use legaia_actor_formats::battle_char_assembly::record0_texture_uploads;
+use legaia_actor_formats::battle_data_pack::decode_record;
 
 mod frame_bake;
 mod hands;
@@ -136,18 +136,19 @@ pub fn playerize_player_file_with(
     // the Super flourishes, every art). The FK hand inset optimizes the
     // wrist seam across ALL of them; a record0-only objective left one
     // art clip's seam a hair past the audit band.
-    let mut host_anims =
-        legaia_asset::battle_char_assembly::battle_animations(player_file).unwrap_or_default();
+    let mut host_anims = legaia_actor_formats::battle_char_assembly::battle_animations(player_file)
+        .unwrap_or_default();
     if let Some(readef) = readef
-        && let Ok(rec0) = legaia_asset::battle_char_assembly::decode_record0(player_file)
-        && let Ok(bank) = legaia_asset::battle_char_assembly::art_animation_bank(&rec0)
+        && let Ok(rec0) = legaia_actor_formats::battle_char_assembly::decode_record0(player_file)
+        && let Ok(bank) = legaia_actor_formats::battle_char_assembly::art_animation_bank(&rec0)
     {
         for rec in &bank {
-            if let Ok(archive) = legaia_asset::battle_char_assembly::art_me_archive(
+            if let Ok(archive) = legaia_actor_formats::battle_char_assembly::art_me_archive(
                 readef,
                 char_slot,
                 rec.uses_base_archive(),
-            ) && let Ok(clip) = legaia_asset::battle_char_assembly::art_animation(rec, &archive)
+            ) && let Ok(clip) =
+                legaia_actor_formats::battle_char_assembly::art_animation(rec, &archive)
             {
                 host_anims.push(clip);
             }
@@ -243,7 +244,7 @@ fn playerize_scaled(
     hand_twins: HandTwins,
     fusions: &super::weapon_fuse::WeaponFusion,
     weapon_cols: &[u16],
-    host_anims: &[legaia_asset::monster_archive::MonsterAnimation],
+    host_anims: &[legaia_actor_formats::monster_archive::MonsterAnimation],
     char_slot: usize,
     keep_welded_fist: bool,
 ) -> Result<PlayerizedFile> {
@@ -741,7 +742,7 @@ fn playerize_scaled(
         // (empty) sibling block.
         let weapon_block;
         let pool_block: &[u8] = if Some(section) == fusions.weapon_section
-            && let Some(up) = legaia_asset::battle_char_assembly::section_texture_upload(
+            && let Some(up) = legaia_actor_formats::battle_char_assembly::section_texture_upload(
                 &decoded.bytes,
                 section,
                 0,

@@ -298,8 +298,8 @@ fn shipped_packs_apply_to_a_real_disc() {
         // name on the patched disc must equal a `scus:str` translation, and none
         // may be empty (an over-long write would have eaten a neighbour).
         let scus = legaia_iso::iso9660::read_file_in_image(&patched, "SCUS_942.54").expect("scus");
-        let items =
-            legaia_asset::item_names::ItemNameTable::from_scus(&scus).expect("item name table");
+        let items = legaia_game_tables::item_names::ItemNameTable::from_scus(&scus)
+            .expect("item name table");
         let translated: std::collections::BTreeSet<&str> = pack
             .sections
             .items
@@ -378,7 +378,8 @@ fn translated_then_randomized_composes_and_stays_valid() {
     let check = DiscPatcher::open(both.clone()).expect("re-parse composed image");
     let _ = legaia_patcher::apply::current_drops(&check).expect("drops still readable");
     let scus2 = legaia_iso::iso9660::read_file_in_image(&both, "SCUS_942.54").expect("scus");
-    let items = legaia_asset::item_names::ItemNameTable::from_scus(&scus2).expect("item table");
+    let items =
+        legaia_game_tables::item_names::ItemNameTable::from_scus(&scus2).expect("item table");
     let translated: std::collections::BTreeSet<&str> = pack
         .sections
         .items

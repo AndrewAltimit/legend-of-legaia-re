@@ -8,7 +8,7 @@ use super::pose_codec::{mmul, to_euler, transpose};
 /// (nearest frame) to `frame_count` frames of `part_count` player
 /// channels. Noa's extra hair channel rides the head's pose.
 pub fn retarget_clip(
-    clip: &legaia_asset::monster_archive::MonsterAnimation,
+    clip: &legaia_actor_formats::monster_archive::MonsterAnimation,
     rig: &PlayerRig,
     player_file: &[u8],
     archive_entry: &[u8],
@@ -45,7 +45,7 @@ pub fn retarget_clip(
 /// long-axis error under the slaved wrist, ~0 by construction here.
 #[allow(clippy::too_many_arguments)]
 pub fn retarget_clip_wrist(
-    clip: &legaia_asset::monster_archive::MonsterAnimation,
+    clip: &legaia_actor_formats::monster_archive::MonsterAnimation,
     rig: &PlayerRig,
     player_file: &[u8],
     archive_entry: &[u8],

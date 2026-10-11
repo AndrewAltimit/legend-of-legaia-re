@@ -53,7 +53,7 @@ pub(super) enum Run {
 /// naming prompt's Yes/No confirm, which opens on No - there the hand moves
 /// Up to Yes first, or the prompt drops back to editing forever.
 pub(super) fn script_pad(session: &BootSession, f: usize) -> u16 {
-    use legaia_engine_core::name_entry::NameEntryState;
+    use legaia_engine_menus::name_entry::NameEntryState;
     if let Some(pad) = held_pad_poll(session) {
         return pad;
     }
@@ -163,7 +163,7 @@ thread_local! {
 pub(super) fn picker_pad(session: &BootSession) -> Option<u16> {
     let w = &session.host.world;
     let menu = |bytecode: &std::sync::Arc<Vec<u8>>,
-                panel: &legaia_engine_core::dialog::OwnedDialogPanel| {
+                panel: &legaia_engine_dialog::dialog::OwnedDialogPanel| {
         let pk = panel.picker()?;
         // Keyed on the record's bytes, not its allocation: each talk
         // re-installs the record in a fresh buffer, so a pointer key made
@@ -261,7 +261,7 @@ pub(super) fn beat_progress_option(session: &BootSession) -> Option<usize> {
     // instructions of the jump down before its `44 63`.
     let spawns = |mut at: usize| {
         for _ in 0..512 {
-            let Ok(i) = legaia_asset::field_disasm::decode(&bc, at) else {
+            let Ok(i) = legaia_scene_formats::field_disasm::decode(&bc, at) else {
                 return false;
             };
             match bc[at] & 0x7F {
@@ -270,7 +270,7 @@ pub(super) fn beat_progress_option(session: &BootSession) -> Option<usize> {
                 _ => {}
             }
             at = match i.info {
-                legaia_asset::field_disasm::InsnInfo::JmpRel { target, .. } => target,
+                legaia_scene_formats::field_disasm::InsnInfo::JmpRel { target, .. } => target,
                 _ => at + i.size.max(1),
             };
         }
@@ -282,7 +282,7 @@ pub(super) fn beat_progress_option(session: &BootSession) -> Option<usize> {
 /// The picker the modal timeline (or the first spawned record with a box)
 /// has open: option count, branch targets and the record's bytes.
 pub(super) fn open_picker(session: &BootSession) -> Option<(usize, [usize; 4], Vec<u8>)> {
-    use legaia_asset::field_disasm::{InsnInfo, decode};
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode};
     let w = &session.host.world;
     let tl = w
         .cutscene
@@ -316,7 +316,7 @@ pub(super) fn open_picker(session: &BootSession) -> Option<(usize, [usize; 4], V
 /// regroups the party and clears the members' progress flags; their No
 /// steps the walker back. `None` outside a split, or when no option stays.
 pub(super) fn split_stay_option(session: &BootSession) -> Option<usize> {
-    use legaia_asset::field_disasm::{InsnInfo, decode};
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode};
     let w = &session.host.world;
     w.dialog.three_actor_talk.as_ref()?;
     let tl = w
@@ -377,10 +377,10 @@ thread_local! {
 /// names the hop's destination, moves the highlight there and confirms.
 /// `None` when no flag window is up (or no row leads to the destination).
 pub(super) fn flag_window_pad(session: &BootSession) -> Option<u16> {
-    use legaia_asset::field_disasm::{InsnInfo, decode, scene_change_name};
     use legaia_engine_core::field_submode_flag_window::{
         FLAG_WINDOW_SLOT, descriptor_from_operand,
     };
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode, scene_change_name};
     let w = &session.host.world;
     let screen = &w.field_vm.submode_screen;
     if !screen.open || screen.actor.state != FLAG_WINDOW_SLOT {
@@ -451,13 +451,13 @@ pub(super) fn flag_window_pad(session: &BootSession) -> Option<u16> {
 /// inside that list's visible band. Each row's scene is the first named
 /// scene change behind the record's test of `base + row`.
 pub(super) fn flag_window_destinations(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     record: usize,
 ) -> BTreeSet<String> {
-    use legaia_asset::field_disasm::{FlagKind, InsnInfo, decode, scene_change_name};
     use legaia_engine_core::field_submode_flag_window::descriptor_from_operand;
-    use legaia_engine_core::man_field_scripts::partition_record_span;
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, decode, scene_change_name};
     let mut out = BTreeSet::new();
     let Some((start, pc0, len)) = partition_record_span(mf, man, 2, record) else {
         return out;
@@ -637,7 +637,7 @@ thread_local! {
 /// step counter (`World::encounters.step_counter`, written only by the
 /// region arm of `World::on_field_step`).
 pub(super) fn encounter_roll_state(session: &BootSession) -> (bool, bool, i32) {
-    use legaia_engine_core::encounter::EncounterPhase;
+    use legaia_engine_battle::encounter::EncounterPhase;
     let e = &session.host.world.encounters;
     (
         e.session
@@ -664,7 +664,7 @@ pub(super) fn note_random_roll(session: &BootSession, (idle, pending, counter): 
 /// on alternate frames, because the menu reads edges. `None` while no menu is
 /// up.
 pub(super) fn scripted_menu_pad(session: &BootSession, f: usize) -> Option<u16> {
-    use legaia_engine_core::field_menu::FieldMenuPhase;
+    use legaia_engine_menus::field_menu::FieldMenuPhase;
     let menu = session.field_menu.as_ref()?;
     let button = if session.field_menu_sub.is_some() {
         PadButton::Circle

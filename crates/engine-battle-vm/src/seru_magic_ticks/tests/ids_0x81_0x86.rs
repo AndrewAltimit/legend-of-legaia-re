@@ -450,7 +450,7 @@ fn vera_writes_a_negative_hp_bar_delta_rather_than_accumulating() {
 /// level, and a damaging row's percent selects nothing.
 #[test]
 fn the_cure_tiers_are_the_light_rows_level_bands() {
-    use legaia_asset::seru_side_effect::{
+    use legaia_game_tables::seru_side_effect::{
         RETAIL_CURE_CLASS_BY_BAND, RETAIL_PERCENT_BY_BAND, SideEffectKind, level_band,
     };
     assert_eq!(

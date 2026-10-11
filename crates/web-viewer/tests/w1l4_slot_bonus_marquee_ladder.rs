@@ -44,10 +44,10 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_asset::minigame_art;
-use legaia_asset::minigame_slot_scene as slot;
-use legaia_asset::slot_payout;
-use legaia_engine_core::slot_machine::{REEL_COUNT, SlotMachine, SlotPhase};
+use legaia_engine_minigames::slot_machine::{REEL_COUNT, SlotMachine, SlotPhase};
+use legaia_minigame_formats::minigame_art;
+use legaia_minigame_formats::minigame_slot_scene as slot;
+use legaia_minigame_formats::slot_payout;
 use legaia_web_viewer::minigames::LegaiaMinigames;
 
 const OVERLAY_FILE: &str = "0975_other_game.BIN";
@@ -310,14 +310,15 @@ fn a_played_bonus_round_pays_the_product_its_marquee_tallies() {
     );
     assert_eq!(
         m.net_take(),
-        net_take_before + legaia_engine_core::slot_machine::NET_TAKE_FEATURE_SPIN - result.payout,
+        net_take_before + legaia_engine_minigames::slot_machine::NET_TAKE_FEATURE_SPIN
+            - result.payout,
         "a bonus payout is subtracted from the net-take counter"
     );
     let credited = m.collect();
     assert_eq!(credited as u32, product);
     assert_eq!(
         m.balance(),
-        balance_before - legaia_engine_core::slot_machine::SPIN_COST_FEATURE + credited,
+        balance_before - legaia_engine_minigames::slot_machine::SPIN_COST_FEATURE + credited,
         "1 coin charged, the product credited"
     );
     eprintln!(

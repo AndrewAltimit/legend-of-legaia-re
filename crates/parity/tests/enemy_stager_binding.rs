@@ -38,8 +38,9 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::scene::ProtIndex;
-use legaia_mednafen::{SaveState, ScenarioManifest, extract::ram_slice};
+use legaia_mednafen::SaveState;
 use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
+use legaia_ram_image::{ScenarioManifest, extract::ram_slice};
 
 /// `(scenario label, loader-B id, extraction entry)` for the catalogued
 /// non-final-boss enemy special-attack mid-casts.

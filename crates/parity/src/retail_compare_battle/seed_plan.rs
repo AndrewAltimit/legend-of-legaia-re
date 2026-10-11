@@ -39,7 +39,7 @@ pub(super) const ENTRY_SWEEP_TICKS: u32 = 120;
 pub(super) const SPARRING_OPEN_TICKS: u32 = 160;
 
 /// Whether the engine's battle-entry sweep
-/// ([`legaia_engine_vm::battle_cam_script::BattleCamera::start_entry_sweep`])
+/// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::start_entry_sweep`])
 /// has run as far as retail's frame-driver counter `entry` reads: a counter
 /// inside the sweep (`0x80..=0xC0`) is met once the engine's has reached it,
 /// one past it (`0xFF`) once the engine's sweep is over, and one below it
@@ -80,14 +80,15 @@ impl RetailBattle {
     ///   (`battle_vahn_tri_somersault_super` reached its round 380 ticks
     ///   later, camera `.864` to `.663`);
     /// * the summon close-up `0x33` / `0x34`
-    ///   ([`legaia_engine_vm::battle_cam_script::SUMMON_CAST_STATES`]) re-arms
+    ///   ([`legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES`]) re-arms
     ///   `FUN_801DC0A0` case `0x12`'s three-frame tween every pass, which the
     ///   walker lands in one step at step `3` and trails at `2`. The module
     ///   states `0x35` / `0x36` measured mixed (`gimard_burning_attack`
     ///   `image` `+.022`, `camera` `-.026`).
     pub fn frame_step_seed(&self) -> Option<(u8, u8)> {
         (matches!(self.seed_plan(), SeedPlan::Cast)
-            && legaia_engine_vm::battle_cam_script::SUMMON_CAST_STATES.contains(&self.action_state)
+            && legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
+                .contains(&self.action_state)
             && self.frame_step != legaia_engine_core::world::DEFAULT_BATTLE_FRAME_STEP)
             .then_some((self.frame_step, self.action_state))
     }
@@ -164,12 +165,14 @@ pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                     } else {
                         0
                     };
-                    legaia_engine_vm::cast_module_camera::capture_countdown_va(action).map(|va| {
-                        (
-                            game_anchors::u8_at(ram, ctx + 0x279),
-                            game_anchors::u32_at(ram, va) as i32,
-                        )
-                    })
+                    legaia_engine_battle_vm::cast_module_camera::capture_countdown_va(action).map(
+                        |va| {
+                            (
+                                game_anchors::u8_at(ram, ctx + 0x279),
+                                game_anchors::u32_at(ram, va) as i32,
+                            )
+                        },
+                    )
                 })
                 .flatten();
             // The yaw counter is a clock only while the action SM drifts it

@@ -20,11 +20,11 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
-use legaia_engine_core::man_field_scripts::partition_record_span;
-use legaia_engine_core::tile_board::{self, TileBoardHeader};
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
-use legaia_engine_shell::tile_board_draws;
+use legaia_engine_field::man_field_scripts::partition_record_span;
+use legaia_engine_minigames::tile_board::{self, TileBoardHeader};
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -41,21 +41,22 @@ fn extracted_dir() -> Option<PathBuf> {
 /// (the same resolution order as `legaia_engine_core::scene_bundle`).
 fn load_man_from_scene(bytes: &[u8]) -> Option<Vec<u8>> {
     let mut candidates: Vec<usize> = Vec::new();
-    if legaia_asset::scene_asset_table::detect(bytes).is_some() {
+    if legaia_scene_formats::scene_asset_table::detect(bytes).is_some() {
         candidates.push(0);
     }
-    if let Some(info) = legaia_asset::scene_scripted_asset_table::detect(bytes) {
+    if let Some(info) = legaia_scene_formats::scene_scripted_asset_table::detect(bytes) {
         candidates.push(info.asset_table_offset);
     }
     let mut off = 0x800;
     while off + 0x40 <= bytes.len() {
-        if legaia_asset::scene_asset_table::detect(&bytes[off..]).is_some() {
+        if legaia_scene_formats::scene_asset_table::detect(&bytes[off..]).is_some() {
             candidates.push(off);
         }
         off += 0x800;
     }
     for table_offset in candidates {
-        let Some(table) = legaia_asset::scene_asset_table::detect(&bytes[table_offset..]) else {
+        let Some(table) = legaia_scene_formats::scene_asset_table::detect(&bytes[table_offset..])
+        else {
             continue;
         };
         let Some(man) = table
@@ -87,7 +88,7 @@ fn load_man_from_scene(bytes: &[u8]) -> Option<Vec<u8>> {
 /// [`TileBoardHeader`]. Returns `(partition, record, header)` per hit, plus
 /// a count of sub-5 sites whose header failed the parse gate.
 fn board_headers_in_man(man: &[u8]) -> (Vec<(usize, usize, TileBoardHeader)>, usize) {
-    let Ok(mf) = legaia_asset::man_section::parse(man) else {
+    let Ok(mf) = legaia_scene_formats::man_section::parse(man) else {
         return (Vec::new(), 0);
     };
     let mut out = Vec::new();
@@ -233,7 +234,7 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
         "procedural fill produced no drawable cells"
     );
     assert_eq!(world.board.draw_list.len(), drawable_cells);
-    let draws = tile_board_draws::tile_board_actor_draws(world);
+    let draws = legaia_engine_core::tile_board::tile_board_actor_draws(world);
     assert_eq!(
         draws.len(),
         drawable_cells,
@@ -253,7 +254,7 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
     // template mesh (`tmd_ref`) from the global pool - the exact set the
     // play-window redraw queues for GPU upload. The upload queue lists each
     // slot exactly once.
-    let need = tile_board_draws::tile_actor_slots_needing_mesh(world);
+    let need = legaia_engine_core::tile_board::tile_actor_slots_needing_mesh(world);
     let distinct_slots: std::collections::BTreeSet<u8> =
         world.board.draw_list.iter().map(|d| d.slot).collect();
     assert_eq!(
@@ -265,7 +266,7 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
         let a = &world.actors[*slot as usize];
         assert!(a.active && a.tmd_ref.is_some());
         assert!(
-            tile_board_draws::is_tile_actor_slot(world, *slot as usize),
+            legaia_engine_core::tile_board::is_tile_actor_slot(world, *slot as usize),
             "tile slot {slot} not board-owned"
         );
     }
@@ -273,7 +274,9 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
     // The player actor (tile table slot 0) is NOT board-owned - the normal
     // field path keeps drawing it.
     let pslot = world.player_actor_slot.expect("player seated") as usize;
-    assert!(!tile_board_draws::is_tile_actor_slot(world, pslot));
+    assert!(!legaia_engine_core::tile_board::is_tile_actor_slot(
+        world, pslot
+    ));
 }
 
 #[test]
@@ -306,13 +309,13 @@ fn tile_board_unresolved_templates_degrade_gracefully() {
     let world = &session.host.world;
     assert!(!world.board.draw_list.is_empty());
     assert!(
-        tile_board_draws::tile_actor_slots_needing_mesh(world).is_empty(),
+        legaia_engine_core::tile_board::tile_actor_slots_needing_mesh(world).is_empty(),
         "unresolved templates must not enter the upload queue"
     );
     // The per-cell assembly still enumerates the cells (the actors are
     // live); the bin-side drained-slot gate is what keeps them off-screen.
     assert_eq!(
-        tile_board_draws::tile_board_actor_draws(world).len(),
+        legaia_engine_core::tile_board::tile_board_actor_draws(world).len(),
         world.board.draw_list.len()
     );
 }

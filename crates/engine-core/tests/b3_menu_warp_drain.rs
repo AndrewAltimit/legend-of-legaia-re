@@ -22,8 +22,9 @@
 //! the map `SceneHost` installs at construction. Skips + passes without
 //! `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::pause_screens::StagedWarp;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_menus::pause_screens::StagedWarp;
+use legaia_engine_mode::mode::SceneMode;
 use std::path::PathBuf;
 
 fn toc_map() -> legaia_prot::cdname::IndexMap {
@@ -257,7 +258,8 @@ fn every_disc_placement_scene_id_resolves_through_the_installed_toc_map() {
         .expect("open disc vfs")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
-    let menu = legaia_asset::worldmap_menu::parse_scus(&scus).expect("placement table parses");
+    let menu =
+        legaia_game_tables::worldmap_menu::parse_scus(&scus).expect("placement table parses");
     assert!(!menu.placements.is_empty());
     for p in &menu.placements {
         let name = host

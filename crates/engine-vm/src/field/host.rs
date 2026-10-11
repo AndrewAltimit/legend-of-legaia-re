@@ -160,7 +160,7 @@ pub trait FieldHost {
     /// `_DAT_8007B8F4` is the per-tile **region-type mask**: bit `n` set
     /// when the player tile sits inside a type-`n` region of the scene
     /// `.MAP` region table. Rebuilt by `FUN_800180EC` / `FUN_801DBA20`
-    /// (ports: `legaia_engine_core::field_regions`).
+    /// (ports: `legaia_engine_field::field_regions`).
     fn extra_flags(&self) -> u32 {
         0
     }
@@ -241,7 +241,7 @@ pub trait FieldHost {
     /// destination entry-tile bytes the op also carries (`& 0x7F` tile,
     /// `& 0x80` half-tile). Default is a no-op so a bare host still advances past
     /// the op. The VM only passes a name that cleared the clean-CDNAME-label gate
-    /// ([`crate::field_disasm::clean_scene_name`]); a desync-phantom `0x3F` inside
+    /// ([`legaia_scene_formats::field_disasm::clean_scene_name`]); a desync-phantom `0x3F` inside
     /// message text is skipped (no transition) but still advances the PC.
     /// `dir & 7` is the arrival-facing selector: retail resolves it through
     /// the 8-entry compass table at SCUS `0x80073F04` (`facing = (dir & 7) *
@@ -1508,7 +1508,7 @@ pub trait FieldHost {
     /// value space is `0..=0xFF` and only the operand byte can set it.
     ///
     /// `_DAT_8007B630` is the amplitude `FUN_801D9D30`
-    /// ([`crate::battle_camera::apply_shake`]) turns into an LCG jitter on
+    /// ([`legaia_engine_battle_vm::battle_camera::apply_shake`]) turns into an LCG jitter on
     /// the camera translation pair `0x800840B8/BC`: `0` is "no shake" and
     /// `1..=0x15` widens the sample window. This opcode is that global's
     /// only writer, which is what makes the field script the sole source of
@@ -1906,7 +1906,7 @@ pub trait FieldHost {
     /// FMV index selects a 32-byte entry from the static dispatch
     /// table at `0x801D0A6C` in the str_fmv overlay (master dispatch
     /// `FUN_801CEA3C`, selector `sll v0,v0,0x5`; decoder
-    /// `legaia_asset::fmv_dispatch`). Retail ids are `0..=8` -
+    /// `legaia_game_tables::fmv_dispatch`). Retail ids are `0..=8` -
     /// `MV1`/`MV2`/four `MV3` frame-range segments/`MV4`/`MV5`/`MV6`,
     /// every movie on the disc. The trailing 3 bytes are reserved by
     /// the dispatcher's PC math but unused.
@@ -1929,7 +1929,7 @@ pub trait FieldHost {
     /// 2-byte instruction `[4C, 0xEC]`. Writes `_DAT_8007B5FC = FUN_801DDF48()`:
     /// the encounter step-counter reroll `r1 % 487 - r2 % 487 + 0x3CE`
     /// (triangular over `488..=1460`), ported as
-    /// `legaia_engine_core::region_encounter::encounter_counter_reroll` and
+    /// `legaia_engine_battle::region_encounter::encounter_counter_reroll` and
     /// seated by the engine host into the shared counter. No shipped script
     /// issues a clean `4C EC`. PC += 2.
     // REF: FUN_801DDF48
@@ -2005,7 +2005,7 @@ pub trait FieldHost {
     /// including the terminator). `script_id` is the active script's ID,
     /// passed in lieu of the original `param_3` ctx pointer.
     ///
-    /// [`field_helpers::packet_length`]: crate::field::dispatch_leaves::packet_length
+    /// [`field_helpers::packet_length`]: legaia_scene_formats::field_disasm::packet_length
     fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
         let _ = (text_buf, script_id);
     }
@@ -2706,7 +2706,7 @@ pub trait FieldHost {
     ///   sell-quantity confirm and the Door-of-Light use run); `0x100` is what
     ///   it returns when no slot holds the id. So the `== 0x100` branch is the
     ///   fallback, and `FUN_800430AC` -
-    ///   `legaia_engine_core::equipment::party_unequip_accessory_by_id` - takes
+    ///   `legaia_engine_menus::equipment::party_unequip_accessory_by_id` - takes
     ///   the item off whoever is *wearing* it.
     /// * **There is no poll and no halt.** The PC delta sits in the branch
     ///   delay slot, so it retires on both paths; the `bne` target

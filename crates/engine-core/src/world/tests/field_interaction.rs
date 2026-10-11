@@ -1,4 +1,6 @@
 use super::*;
+use legaia_engine_field::man_field_scripts::FieldCarrierConfig;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Field dialogue opens from the **interaction path**
 /// ([`World::trigger_field_interact`], what the talk probe calls) reading the
@@ -62,12 +64,12 @@ fn field_interact_without_inline_text_opens_no_dialogue() {
 /// counterpart to the carrier-engage API.
 #[test]
 fn field_dialogue_accept_auto_arms_scripted_carrier() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World::new();
     world.set_formation_table(
-        crate::monster_catalog::vanilla_formation_table(),
-        crate::monster_catalog::vanilla_monster_catalog(),
+        legaia_engine_battle::monster_catalog::vanilla_formation_table(),
+        legaia_engine_battle::monster_catalog::vanilla_monster_catalog(),
     );
     world.set_active_scene_label("town01");
     world.mode = SceneMode::Field;
@@ -133,7 +135,7 @@ fn field_dialogue_accept_auto_arms_scripted_carrier() {
 /// turned toward the matched NPC (the face-the-NPC step).
 #[test]
 fn interaction_probe_talks_to_adjacent_npc_only() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -175,8 +177,8 @@ fn interaction_probe_talks_to_adjacent_npc_only() {
 /// under that beat (`station`'s ticket seller over its P2[19] departure).
 #[test]
 fn interaction_probe_is_refused_while_a_script_context_engages_the_player() {
-    use crate::cutscene_timeline::CutsceneTimeline;
-    use crate::input::PadButton;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -219,7 +221,7 @@ fn interaction_probe_is_refused_while_a_script_context_engages_the_player() {
 /// units ahead of the facing, not a radius around the player).
 #[test]
 fn interaction_probe_requires_facing_the_npc() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -244,7 +246,7 @@ fn interaction_probe_requires_facing_the_npc() {
 /// open field opens nothing.
 #[test]
 fn interaction_probe_no_npc_in_range_opens_nothing() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -270,7 +272,7 @@ fn interaction_probe_no_npc_in_range_opens_nothing() {
 /// box - so the action button talks to him from the captured rest position.
 #[test]
 fn interaction_probe_matches_tetsu_capture_geometry() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -295,12 +297,12 @@ fn interaction_probe_matches_tetsu_capture_geometry() {
 /// input-driven counterpart to the field-VM dialogue-accept.
 #[test]
 fn interaction_probe_walk_up_to_scripted_carrier_starts_fight() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World::new();
     world.set_formation_table(
-        crate::monster_catalog::vanilla_formation_table(),
-        crate::monster_catalog::vanilla_monster_catalog(),
+        legaia_engine_battle::monster_catalog::vanilla_formation_table(),
+        legaia_engine_battle::monster_catalog::vanilla_monster_catalog(),
     );
     world.set_active_scene_label("town01");
     world.mode = SceneMode::Field;
@@ -470,7 +472,7 @@ fn inline_runner_resumes_across_wait_frames_to_run_the_post_wait_effect() {
         .unwrap()
         .panel
         .as_ref()
-        .is_some_and(|p| p.state() == crate::dialog::PanelState::Typing)
+        .is_some_and(|p| p.state() == legaia_engine_dialog::dialog::PanelState::Typing)
     {
         world.step_inline_dialogue(false, false, false);
         guard += 1;
@@ -515,8 +517,8 @@ fn inline_runner_resumes_across_wait_frames_to_run_the_post_wait_effect() {
 fn world_with_spar_carrier() -> World {
     let mut world = World::new();
     world.set_formation_table(
-        crate::monster_catalog::vanilla_formation_table(),
-        crate::monster_catalog::vanilla_monster_catalog(),
+        legaia_engine_battle::monster_catalog::vanilla_formation_table(),
+        legaia_engine_battle::monster_catalog::vanilla_monster_catalog(),
     );
     world.set_active_scene_label("town01");
     world.mode = SceneMode::Field;
@@ -539,7 +541,7 @@ fn world_with_spar_carrier() -> World {
 /// the box just closes. The fight is gated on the index-2 ("practice") option.
 #[test]
 fn carrier_spar_menu_gates_engage_on_the_fight_option() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = world_with_spar_carrier();
 
@@ -578,7 +580,7 @@ fn carrier_spar_menu_gates_engage_on_the_fight_option() {
 /// flips Field -> Battle (the faithful 4-option path).
 #[test]
 fn carrier_spar_menu_fight_option_starts_battle() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = world_with_spar_carrier();
     world.input.set_pad(PadButton::Cross.mask());
@@ -649,12 +651,12 @@ fn nav_step_toward_walks_player_to_target() {
 /// dismissing it returns to free roam (no carrier-slot entry -> nothing armed).
 #[test]
 fn field_dialogue_accept_on_plain_npc_does_not_arm_battle() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World::new();
     world.set_formation_table(
-        crate::monster_catalog::vanilla_formation_table(),
-        crate::monster_catalog::vanilla_monster_catalog(),
+        legaia_engine_battle::monster_catalog::vanilla_formation_table(),
+        legaia_engine_battle::monster_catalog::vanilla_monster_catalog(),
     );
     world.mode = SceneMode::Field;
     world.install_field_carriers(vec![FieldCarrierConfig::Npc { interact_id: 7 }]);
@@ -1052,7 +1054,7 @@ fn three_actor_talk_switch_arms_from_a_square_pad_edge() {
     let mut world = talk_world_with_participants();
 
     // A frame with Square down, no latch touched.
-    world.set_pad(crate::input::PadButton::Square.mask());
+    world.set_pad(legaia_engine_system::input::PadButton::Square.mask());
     world.tick_three_actor_talk();
     assert_eq!(
         world.dialog.three_actor_talk.unwrap().swap.phase,
@@ -1062,7 +1064,7 @@ fn three_actor_talk_switch_arms_from_a_square_pad_edge() {
 
     // Run back to the poll with Square still HELD: the level must not re-arm.
     for _ in 0..100 {
-        world.set_pad(crate::input::PadButton::Square.mask());
+        world.set_pad(legaia_engine_system::input::PadButton::Square.mask());
         world.tick_three_actor_talk();
         if world
             .dialog
@@ -1073,7 +1075,7 @@ fn three_actor_talk_switch_arms_from_a_square_pad_edge() {
         }
     }
     assert_eq!(world.party.party_leader_slot, Some(1), "one swap happened");
-    world.set_pad(crate::input::PadButton::Square.mask());
+    world.set_pad(legaia_engine_system::input::PadButton::Square.mask());
     world.tick_three_actor_talk();
     assert_eq!(
         world.dialog.three_actor_talk.unwrap().swap.phase,
@@ -1084,7 +1086,7 @@ fn three_actor_talk_switch_arms_from_a_square_pad_edge() {
     // Releasing and pressing again is a new edge, and swaps again.
     world.set_pad(0);
     world.tick_three_actor_talk();
-    world.set_pad(crate::input::PadButton::Square.mask());
+    world.set_pad(legaia_engine_system::input::PadButton::Square.mask());
     world.tick_three_actor_talk();
     assert_eq!(
         world.dialog.three_actor_talk.unwrap().swap.phase,
@@ -1101,7 +1103,7 @@ fn a_square_press_outside_a_talk_does_nothing() {
     world.mode = SceneMode::Field;
     world.party.party_actor_slots = vec![Some(0), Some(1), Some(2)];
     world.party.party_leader_slot = Some(0);
-    world.set_pad(crate::input::PadButton::Square.mask());
+    world.set_pad(legaia_engine_system::input::PadButton::Square.mask());
     world.tick_three_actor_talk();
     assert!(world.dialog.three_actor_talk.is_none());
     assert_eq!(world.party.party_leader_slot, Some(0));
@@ -1140,7 +1142,7 @@ fn seat_prologue_npc(w: &mut World, slot: u8) {
     w.npcs.headings.insert(slot, 0x400);
     w.npcs.dialog_prologue.insert(
         slot,
-        crate::man_field_scripts::InlineDialogPrologue {
+        legaia_engine_field::man_field_scripts::InlineDialogPrologue {
             body: vec![0x1F, b'h', b'i', 0x00, 0x21],
             entry_pc: 0,
             first_segment: 0,
@@ -1164,7 +1166,7 @@ fn hold(w: &mut World, mask: u16, n: usize) {
 /// Play one conversation the way a player does - press, release, press - and
 /// return once no dialogue channel owns the frame.
 fn play_out_conversation(w: &mut World) {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     for _ in 0..40 {
         if !w.dialogue_owns_input() {
             return;
@@ -1194,7 +1196,7 @@ fn play_out_conversation(w: &mut World) {
 /// out of" looks like from the pad.
 #[test]
 fn probe_talk_ends_and_does_not_reopen_under_a_held_confirm() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut world = walkable_talk_scene();
     seat_prologue_npc(&mut world, 3);
 
@@ -1260,7 +1262,7 @@ fn probe_talk_ends_and_does_not_reopen_under_a_held_confirm() {
 /// player around underneath the box, including while navigating options.
 #[test]
 fn player_cannot_walk_while_the_inline_runner_owns_the_frame() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     // Control: with no dialogue up, a held direction does move the player.
     let mut free = walkable_talk_scene();
@@ -1307,7 +1309,7 @@ fn player_cannot_walk_while_the_inline_runner_owns_the_frame() {
 /// and the teardown writes the save back.
 #[test]
 fn talking_turns_the_npc_to_the_player_and_restores_its_facing() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut world = walkable_talk_scene();
     seat_prologue_npc(&mut world, 3);
     assert_eq!(

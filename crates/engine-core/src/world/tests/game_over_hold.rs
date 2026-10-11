@@ -9,9 +9,10 @@
 //! the latch.
 
 use super::*;
-use crate::field_events::FieldEvent;
-use crate::monster_catalog::{FormationDef, FormationSlot};
-use vm::battle_action::BattleEndCause;
+use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+use legaia_engine_battle_vm::battle_action::BattleEndCause;
+use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A world one party member deep, mid-battle with the BGM swap active and
 /// a field snapshot captured, ready for `finish_battle`.

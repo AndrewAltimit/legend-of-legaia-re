@@ -279,7 +279,7 @@ impl World {
     /// Requires the collision grid ([`Self::load_field_collision_grid`]) and the
     /// object-grid cells ([`Self::load_field_object_cells`]) to be loaded first.
     /// `teleport_tiles` / `anchors` are the scene's `.MAP` kind-0 trigger tiles
-    /// and landing positions ([`crate::field_regions::IntraSceneTeleport`]).
+    /// and landing positions ([`legaia_engine_field::field_regions::IntraSceneTeleport`]).
     pub fn resolve_cold_field_spawn(
         &self,
         teleport_tiles: &[(u8, u8)],

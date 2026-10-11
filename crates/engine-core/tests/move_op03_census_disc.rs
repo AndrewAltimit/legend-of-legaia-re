@@ -17,11 +17,11 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use legaia_asset::scene_event_scripts::move_stager_records;
-use legaia_asset::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::summon::summon_stager_prot_entry;
+use legaia_engine_effects::summon::summon_stager_prot_entry;
 use legaia_engine_vm::move_vm::{ActorState, MoveHost, StepResult, step};
+use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
+use legaia_scene_formats::scene_event_scripts::move_stager_records;
 
 const BUDGET: usize = 20_000;
 

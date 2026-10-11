@@ -10,7 +10,7 @@ pub const ROOT_MENU_CONTEXT_LOCKED: u8 = 0x0D;
 /// The per-scene save-allow flag `_DAT_8007B6A8` gating the **Save** row.
 ///
 /// Scene load seeds it from the MAN header's `[0x01] & 1`
-/// ([`legaia_asset::man_section::ManHeader::low_flag`]); a cleared flag is
+/// ([`legaia_scene_formats::man_section::ManHeader::low_flag`]); a cleared flag is
 /// what makes a scene a no-save scene. It is the same byte the
 /// "Save Anywhere" cheat forces - see
 /// [`docs/reference/memory-map.md`](../../../docs/reference/memory-map.md).
@@ -91,7 +91,7 @@ pub enum RootMenuRoute {
 /// Both gate inputs come from the world at menu-open
 /// (`BootSession::open_field_menu`): `save_allowed` from
 /// `legaia_engine_core::world::PartyState::scene_save_allowed`, which scene load seeds from
-/// [`legaia_asset::man_section::ManHeader::low_flag`], and
+/// [`legaia_scene_formats::man_section::ManHeader::low_flag`], and
 /// `entry_context_kind` from
 /// `legaia_engine_core::world::World::menu_entry_context_kind`. The save gate is the one
 /// that bites on real data - the MAN bit is set on the three kingdom world
@@ -227,14 +227,14 @@ pub const CONTEXT_LOCKED_CANCEL_SUBSCREEN: u8 = 3;
 
 /// Load base of the menu overlay's string pool - the image
 /// [`menu_overlay_string`] slices.
-pub const MENU_OVERLAY_BASE_VA: u32 = legaia_asset::menu_windows::MENU_OVERLAY_BASE_VA;
+pub const MENU_OVERLAY_BASE_VA: u32 = legaia_game_tables::menu_windows::MENU_OVERLAY_BASE_VA;
 
 /// The six label VAs `FUN_801D6360` loads into the string primitive, in
 /// draw order (`lui a0,0x801d` + `addiu a0,a0,-0x1358` and its five
 /// siblings at `0x801d636c..0x801d6448`).
 ///
 /// Coordinates only - the text is read from the caller's own image, the
-/// same rule `legaia_asset::battle_ui_strings` follows. The sixth entry is
+/// same rule `legaia_ui_formats::battle_ui_strings` follows. The sixth entry is
 /// a one-byte control string rather than a line, which is why the panel
 /// reads as five lines plus the advance hand.
 pub const NOTICE_PANEL_LABEL_VAS: [u32; 6] = [

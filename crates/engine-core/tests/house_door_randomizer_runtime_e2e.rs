@@ -37,10 +37,11 @@
 //! guard guarantees the Mei's-house entry changes under any seed (non-vacuous).
 //! Skips without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::field_events::FieldEvent;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_engine_core::world::World;
+use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 use legaia_patcher::house_door::{DoorSide, SceneHouseDoors};
 

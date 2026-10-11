@@ -32,8 +32,8 @@
 use std::path::{Path, PathBuf};
 
 use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost, is_world_map_scene};
-use legaia_mednafen::ScenarioManifest;
-use legaia_mednafen::scenarios::library_backup_for;
+use legaia_ram_image::ScenarioManifest;
+use legaia_ram_image::scenarios::library_backup_for;
 
 const RAM_MASK: u32 = 0x001F_FFFF;
 /// Field-actor list sentinel head (the `FUN_8003BC08` tick class).
@@ -446,7 +446,7 @@ fn capture_from_ram(label: &str, ram: &[u8]) -> RetailCapture {
 fn load_backup_ram(path: &Path) -> Option<Vec<u8>> {
     match path.extension().and_then(|e| e.to_str()) {
         Some("sstate") => {
-            let st = legaia_pcsxr::SaveState::from_path(path).ok()?;
+            let st = legaia_pcsx_redux::SaveState::from_path(path).ok()?;
             Some(st.main_ram().to_vec())
         }
         _ => {
@@ -558,7 +558,7 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
         return;
     }
 
-    let locality = legaia_engine_core::man_field_scripts::NPC_ROUTE_LOCALITY;
+    let locality = legaia_engine_field::man_field_scripts::NPC_ROUTE_LOCALITY;
     let mut divergences: Vec<Divergence> = Vec::new();
     let mut tolerated = 0usize;
     let mut states_compared = 0usize;
@@ -598,7 +598,7 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
             .ok()
             .flatten()
             .and_then(|man| {
-                legaia_asset::man_section::parse(&man)
+                legaia_scene_formats::man_section::parse(&man)
                     .ok()
                     .map(|mf| mf.header.partition_counts[0].max(0) as u8)
             })

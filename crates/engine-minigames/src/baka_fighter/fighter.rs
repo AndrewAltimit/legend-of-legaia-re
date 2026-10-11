@@ -1,7 +1,7 @@
 //! Attacks, exchange reports, fighter configuration and the live per-fighter state.
 
 use super::*;
-use legaia_asset::baka_opponents::{BakaActionSet, BakaOpponent};
+use legaia_minigame_formats::baka_opponents::{BakaActionSet, BakaOpponent};
 
 /// One of the duel's attack commitments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

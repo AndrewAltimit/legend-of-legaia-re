@@ -3,8 +3,8 @@
 //! The fishing prize counters (Buma / Vidna ponds) sell accessories and
 //! consumables for **fishing points** rather than gold. Each prize is a 12-byte
 //! row `[u32 limit][u32 price][u32 item_id]` in the raw fishing overlay
-//! ([`legaia_asset::fishing_exchange`], PROT entry
-//! [`legaia_asset::fishing_species::FISHING_OVERLAY_PROT_INDEX`] = 972). The
+//! ([`legaia_minigame_formats::fishing_exchange`], PROT entry
+//! [`legaia_minigame_formats::fishing_species::FISHING_OVERLAY_PROT_INDEX`] = 972). The
 //! `price` field is both the point cost *and* the "only appears once you can
 //! afford it" gate (row 0 is hidden until `price < points`), so lowering a
 //! prize's price both cheapens it and makes it show up sooner.
@@ -19,8 +19,10 @@
 
 use anyhow::{Result, bail};
 
-use legaia_asset::fishing_exchange::{self, EXCHANGE_ROW_STRIDE};
-use legaia_asset::fishing_species::{FISHING_OVERLAY_BASE_VA, FISHING_OVERLAY_PROT_INDEX};
+use legaia_minigame_formats::fishing_exchange::{self, EXCHANGE_ROW_STRIDE};
+use legaia_minigame_formats::fishing_species::{
+    FISHING_OVERLAY_BASE_VA, FISHING_OVERLAY_PROT_INDEX,
+};
 
 /// The fishing overlay's PROT entry (re-exported for callers/tests).
 pub const OVERLAY_PROT_INDEX: usize = FISHING_OVERLAY_PROT_INDEX;
@@ -131,7 +133,7 @@ pub fn list_prizes(overlay: &[u8]) -> Result<Vec<PrizeInfo>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::fishing_exchange::EXCHANGE_ROWS;
+    use legaia_minigame_formats::fishing_exchange::EXCHANGE_ROWS;
 
     /// Build a synthetic raw overlay with a known two-page exchange table.
     fn synthetic() -> Vec<u8> {

@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 
-use legaia_asset::man_edit::{self, TextEdit};
+use legaia_scene_formats::man_edit::{self, TextEdit};
 
 use legaia_disc_patch::disc::DiscPatcher;
 

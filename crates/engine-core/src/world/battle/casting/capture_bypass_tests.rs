@@ -1,7 +1,8 @@
 use super::*;
-use crate::monster_catalog::{MonsterCatalog, MonsterDef};
-use crate::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
-use legaia_asset::move_power::{
+use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
+use legaia_engine_battle::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_game_tables::move_power::{
     MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
     MOVE_POWER_TABLE_LEN,
 };
@@ -68,8 +69,10 @@ fn world_with_resisting_party() -> World {
     world.battle.accuracy[1] = 200;
 
     world.tables.move_power = Some(
-        crate::move_power::MovePowerCatalog::from_overlay_0898(&overlay_with_two_ids(2000))
-            .expect("synthetic catalog parses"),
+        legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(
+            &overlay_with_two_ids(2000),
+        )
+        .expect("synthetic catalog parses"),
     );
     world.rng_state = 0xC0FF_EE01;
     world
@@ -158,14 +161,14 @@ fn the_bypass_wrapper_rolls_a_different_kernel_not_just_a_different_flag() {
 /// the world's disc-derived menu text - the same table
 /// `World::install_menu_text` fills from `SCUS_942.54`.
 fn with_capture_class(world: &mut World, id: u8) {
-    use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
     let mut entries = vec![SpellEntry::default(); 0x100];
     entries[id as usize].class = CAPTURE_CLASS;
     // Sub-id 19 pages PROT 0954 (Fatal Decision), a body with no damage
     // site, so no baked power stands in for the table's: these fixtures
     // isolate the wrapper choice, not the power seed.
     entries[id as usize].sub_class = 19;
-    world.menu.text = Some(crate::pause_screens::MenuTextTables {
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
         spell_names: Some(SpellNameTable::from_entries(entries)),
         ..Default::default()
     });
@@ -189,8 +192,10 @@ fn world_on_the_bonus_floor() -> World {
     world.battle.accuracy[1] = 20; // attacker `+0x168`
     world.battle.defense[0] = 4000; // defender `+0x15C`
     world.tables.move_power = Some(
-        crate::move_power::MovePowerCatalog::from_overlay_0898(&overlay_with_two_ids(40))
-            .expect("synthetic catalog parses"),
+        legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(
+            &overlay_with_two_ids(40),
+        )
+        .expect("synthetic catalog parses"),
     );
     world
 }
@@ -280,7 +285,7 @@ fn the_bypass_census_wins_over_the_class_byte() {
 /// the end-to-end signal does not exist.
 #[test]
 fn the_bypass_wrapper_weights_the_defence_terms_more_heavily() {
-    use legaia_engine_vm::battle_damage_wrappers::{
+    use legaia_engine_battle_vm::battle_damage_wrappers::{
         WrapperDefender, atk_defender_roll, int_defender_roll,
     };
     let d = |stat: u16| WrapperDefender {

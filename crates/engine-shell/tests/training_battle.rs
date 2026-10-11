@@ -16,12 +16,14 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::encounter_record::{
+use legaia_engine_battle::encounter_record::{
     RIM_ELM_TRAINING_FORMATION_ID, RIM_ELM_TRAINING_OPPONENT_ID,
 };
-use legaia_engine_core::monster_catalog::catalog_from_monster_archive;
-use legaia_engine_core::world::{FieldCarrierConfig, SceneMode};
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_battle::monster_catalog::catalog_from_monster_archive;
+use legaia_engine_field::man_field_scripts::FieldCarrierConfig;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
 
 const SCENE: &str = "town01";
 
@@ -352,7 +354,7 @@ fn training_reaches_battle_via_field_carrier_sm() {
 /// drives the engage the manual API stood in for.
 #[test]
 fn training_reaches_battle_via_field_vm_dialogue_accept() {
-    use legaia_engine_core::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
@@ -485,7 +487,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
 /// there (the cold spawn is tile 20; the carrier is across the map).
 #[test]
 fn training_reaches_battle_via_interaction_probe() {
-    use legaia_engine_core::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

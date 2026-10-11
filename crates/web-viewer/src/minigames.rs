@@ -7,9 +7,9 @@
 //!
 //! | Game | Overlay | Table |
 //! |---|---|---|
-//! | Noa's dance | PROT 0980 | step chart (`legaia_asset::dance_chart`) |
-//! | Baka Fighter | PROT 0976 | roster + action tables (`legaia_asset::baka_opponents`) |
-//! | Casino slots | PROT 0975 | per-symbol payout table (`legaia_asset::slot_payout`) |
+//! | Noa's dance | PROT 0980 | step chart (`legaia_minigame_formats::dance_chart`) |
+//! | Baka Fighter | PROT 0976 | roster + action tables (`legaia_minigame_formats::baka_opponents`) |
+//! | Casino slots | PROT 0975 | per-symbol payout table (`legaia_minigame_formats::slot_payout`) |
 //!
 //! This module is the thin JSON shell over those engines. The load path is
 //! identical to the play-window's and to the disc-gated `*_minigame_real`
@@ -38,7 +38,7 @@ pub(crate) use baka_presentation::{baka_state_json_for, duel_surface};
 mod dance_presentation;
 
 // Fishing + Muscle Dome are the other two ported rules engines
-// (`legaia_engine_core::fishing` / `muscle_dome`). Each gets a thin JSON shell
+// (`legaia_engine_fishing::fishing` / `muscle_dome`). Each gets a thin JSON shell
 // in its own child module, mirroring the dance/baka split above; the session
 // state lives on `LegaiaMinigames` and the wasm-bindgen methods that drive it
 // are in these files.
@@ -62,14 +62,14 @@ mod slot_sound;
 pub use bgm::Music01Render;
 pub(crate) use bgm::{music01_pair_ok, render_music01_bgm};
 
-use legaia_asset::fishing_species::FishingSpecies;
-use legaia_asset::minigame_art::{self, SlotHudWidget};
-use legaia_asset::minigame_sfx::{self, SfxCueBank};
-use legaia_asset::minigame_slot_scene::{self as slot_scene, SlotScene};
-use legaia_asset::static_overlay;
-use legaia_engine_core::baka_fighter::{BakaAttack, BakaFight, MatchPhase};
-use legaia_engine_core::dance::{DanceDir, DanceEvent, DanceGame};
-use legaia_engine_core::slot_machine::{SlotMachine, SlotPhase};
+use legaia_engine_minigames::baka_fighter::{BakaAttack, BakaFight, MatchPhase};
+use legaia_engine_minigames::dance::{DanceDir, DanceEvent, DanceGame};
+use legaia_engine_minigames::slot_machine::{SlotMachine, SlotPhase};
+use legaia_minigame_formats::fishing_species::FishingSpecies;
+use legaia_minigame_formats::minigame_art::{self, SlotHudWidget};
+use legaia_minigame_formats::minigame_sfx::{self, SfxCueBank};
+use legaia_minigame_formats::minigame_slot_scene::{self as slot_scene, SlotScene};
+use legaia_overlay_images::static_overlay;
 use legaia_tim::Tim;
 
 /// The three side-games playable in the browser, plus the disc they read.
@@ -85,11 +85,11 @@ pub struct LegaiaMinigames {
     /// The pre-song count-in (READY, then `GO!`), the engine's
     /// `dance::CountIn` both play hosts run - armed by [`Self::dance_start`],
     /// stepped by [`Self::dance_countin_step`].
-    dance_countin: Option<legaia_engine_core::dance::CountIn>,
+    dance_countin: Option<legaia_engine_minigames::dance::CountIn>,
     /// A how-to run's Disco King tutorial actor ([`Self::dance_start_mode`]).
-    dance_tutorial: Option<legaia_engine_core::dance_tutorial::DanceTutorial>,
+    dance_tutorial: Option<legaia_engine_minigames::dance_tutorial::DanceTutorial>,
     /// The tutorial's last frame, for [`Self::dance_tutorial_rgba`].
-    dance_tutorial_frame: Option<legaia_engine_core::dance_tutorial::TutorialFrame>,
+    dance_tutorial_frame: Option<legaia_engine_minigames::dance_tutorial::TutorialFrame>,
     /// Live Baka Fighter duel.
     baka: Option<BakaFight>,
     /// The page's winnings accumulator for a cabinet run - retail's mode-24
@@ -105,7 +105,7 @@ pub struct LegaiaMinigames {
     /// The duel's 3D surface (`engine-core::baka_duel_scene`) - the same
     /// per-host cache the native window and the play page pose the duel
     /// through, here over this page's own fight.
-    baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
+    baka_surface: legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface,
     /// The dance floor's cast surface (`engine-core::dance_cast_scene`) over
     /// this page's run - the per-host cache the native window and the play
     /// page pose the bodies through, off the run's own clip driver.
@@ -123,14 +123,14 @@ pub struct LegaiaMinigames {
     /// Parsed Baka roster + action tables (cached; the roster picker reads them
     /// before a fight starts).
     baka_tables: Option<(
-        Vec<legaia_asset::baka_opponents::BakaOpponent>,
-        Vec<legaia_asset::baka_opponents::BakaActionSet>,
+        Vec<legaia_minigame_formats::baka_opponents::BakaOpponent>,
+        Vec<legaia_minigame_formats::baka_opponents::BakaActionSet>,
     )>,
     /// Live slot-machine session.
     slot: Option<SlotMachine>,
     /// Parsed slot payout table (cached; the paytable panel reads it before a
     /// session starts).
-    slot_payouts: Option<legaia_asset::slot_payout::SlotPayoutTable>,
+    slot_payouts: Option<legaia_minigame_formats::slot_payout::SlotPayoutTable>,
     /// The slot machine's five-TIM art pack (PROT 1200) - the reel symbols,
     /// cabinet, digit font and banners the retail machine draws with.
     slot_art: Option<Vec<Tim>>,
@@ -140,12 +140,12 @@ pub struct LegaiaMinigames {
     /// billboards and the dot-matrix message bank (PROT 0975 + art page 3).
     slot_scene: Option<SlotScene>,
     /// The machine's whole resident set for the shared screen-prim builder
-    /// (`legaia_engine_ui::ui_slot_cabinet`): art-pack VRAM, scene graph,
+    /// (`legaia_engine_ui::slot_cabinet`): art-pack VRAM, scene graph,
     /// HUD records and the cabinet mesh - what the native window draws from.
-    pub(crate) slot_cabinet: Option<legaia_engine_ui::ui_slot_cabinet::SlotCabinetAssets>,
+    pub(crate) slot_cabinet: Option<legaia_engine_ui::slot_cabinet::SlotCabinetAssets>,
     /// The marquee's counters for this page's own machine (the play hosts'
     /// `SlotMarqueeClock` twin) and the dot buffer they composed this frame.
-    slot_clock: legaia_engine_ui::ui_slot_cabinet::SlotMarqueeClock,
+    slot_clock: legaia_engine_ui::slot_cabinet::SlotMarqueeClock,
     slot_dots: Vec<u8>,
     /// The retail dialog font (PROT.DAT font TIM + the SCUS width table), for
     /// the slot machine's rules pages - the play hosts draw the same text
@@ -172,18 +172,18 @@ pub struct LegaiaMinigames {
     fishing_overlay: Option<Vec<u8>>,
     /// Live venue-faithful pond session (the retail cast/band/strike/fight
     /// loop; see `minigames_fishing.rs`).
-    fishing_pond: Option<legaia_engine_core::fishing::PondSession>,
+    fishing_pond: Option<legaia_engine_fishing::fishing::PondSession>,
     /// Parsed per-venue species-spawn tables (PROT 0972 rodata pages).
     fishing_spawn: Option<[Vec<[u32; 8]>; 2]>,
     /// Parsed reel-cadence gesture templates (PROT 0972 rodata).
-    fishing_cadence: Option<Vec<legaia_asset::fishing_species::CadenceTemplate>>,
+    fishing_cadence: Option<Vec<legaia_minigame_formats::fishing_species::CadenceTemplate>>,
     /// Parsed point-exchange prize pages (PROT 0972 rodata).
-    fishing_exchange: Option<legaia_asset::fishing_exchange::FishingExchange>,
+    fishing_exchange: Option<legaia_minigame_formats::fishing_exchange::FishingExchange>,
     /// The pond session's HUD banner timers (engine-ui's retail animators).
     fishing_banners: legaia_engine_ui::FishingBanners,
     /// The fishing HUD's sprite table off PROT 0972
-    /// ([`legaia_asset::fishing_sprites`]).
-    fishing_sprites: Option<Vec<legaia_asset::fishing_sprites::FishingSprite>>,
+    /// ([`legaia_minigame_formats::fishing_sprites`]).
+    fishing_sprites: Option<Vec<legaia_minigame_formats::fishing_sprites::FishingSprite>>,
     /// The last frame's fishing HUD draw list, as `fishing_pond_hud_json`
     /// built it - what `fishing_hud_rgba` rasterises.
     fishing_hud_last: Vec<legaia_engine_ui::HudDraw>,
@@ -193,9 +193,9 @@ pub struct LegaiaMinigames {
     /// This page's **effect-part pool** - the standalone twin of
     /// `World::minigames.fx`, which this page cannot use because it drives
     /// the session types directly and holds no `World`. Same model
-    /// ([`legaia_engine_core::minigame_fx`]), same draw builder, ticked from
+    /// ([`legaia_engine_minigames::minigame_fx`]), same draw builder, ticked from
     /// whichever per-minigame tick is running.
-    fx: legaia_engine_core::minigame_fx::MinigameFxPool,
+    fx: legaia_engine_minigames::minigame_fx::MinigameFxPool,
     /// Prizes collected through the point exchange this session
     /// (`item_id -> qty`; the browser has no live inventory to grant into).
     fishing_prizes: std::collections::HashMap<u32, u32>,
@@ -207,7 +207,7 @@ pub struct LegaiaMinigames {
     fishing_angler_facing: i16,
     /// SCUS item-name table (present on full-disc loads only), naming the
     /// point-exchange prize rows.
-    item_names: Option<legaia_asset::item_names::ItemNameTable>,
+    item_names: Option<legaia_game_tables::item_names::ItemNameTable>,
 
     /// Live Muscle Dome **leg** (see `minigames_muscle.rs`): the rules session
     /// plus the disc-derived fighter stats, RNG cursor and round play log.
@@ -215,29 +215,29 @@ pub struct LegaiaMinigames {
     /// The Muscle Dome **contest** the legs belong to - the ladder run that
     /// decides which `(course, round)` is staged, banks the coin tally and
     /// settles the payout. Shared kernel
-    /// ([`legaia_engine_core::muscle_dome::DomeContest`]), so the browser and
+    /// ([`legaia_engine_minigames::muscle_dome::DomeContest`]), so the browser and
     /// the native window run one model rather than two.
-    muscle_run: Option<legaia_engine_core::muscle_dome::DomeContest>,
+    muscle_run: Option<legaia_engine_minigames::muscle_dome::DomeContest>,
     /// The player's casino coin bank, so a settled contest has somewhere to
     /// pay into (the native host banks into `World::minigames.casino_coins`).
     muscle_coins: u32,
     /// The **special-battle word** `0x8007BAC0` the next leg opens on - the
     /// value retail's arena entry seeds from the three course-unlock story
-    /// flags (`legaia_engine_core::muscle_dome::contest_entry_word`). The
+    /// flags (`legaia_engine_minigames::muscle_dome::contest_entry_word`). The
     /// native host reads the flags out of `World`; this page has no save, so
     /// the word is latched from the `unlock` mask the page hands
     /// `muscle_contest_start`. `0` until a contest is opened, which forbids
     /// nothing.
     muscle_special: u32,
     /// The last settled contest, kept so the page can show the payout.
-    muscle_settlement: Option<legaia_engine_core::muscle_dome::ContestSettlement>,
+    muscle_settlement: Option<legaia_engine_minigames::muscle_dome::ContestSettlement>,
     /// The Muscle Dome's cached battle tables (deck hand ids, move-power table
     /// + id map, element-affinity matrix - all PROT 0898 rodata), decoded once
     /// per disc so each fresh contest rebuilds without re-decoding.
     muscle_tables: Option<muscle_web::MuscleTables>,
     /// The dome leg's 3D surface - the engine kernel the play hosts draw a
     /// leg with (`minigames_muscle/surface.rs`).
-    muscle_surface: legaia_engine_core::muscle_dome_scene::MuscleDomeSurface,
+    muscle_surface: legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface,
 
     /// `SCUS_942.54` bytes, kept when the input was a full disc image (absent
     /// for a raw `PROT.DAT` load). The Muscle Dome reads the new-game
@@ -350,13 +350,13 @@ impl LegaiaMinigames {
 
     /// The RNG seed a session of `game` (`"fishing"`, `"muscle"`) starts on:
     /// the salt the play hosts fold the world frame into
-    /// ([`legaia_engine_core::minigame_entry::FISHING_SEED_SALT`] /
-    /// [`legaia_engine_core::minigame_entry::DOME_SEED_SALT`]), folded with
+    /// ([`legaia_engine_mode::minigame_entry::FISHING_SEED_SALT`] /
+    /// [`legaia_engine_mode::minigame_entry::DOME_SEED_SALT`]), folded with
     /// this page's stepped-frame count. The page used to seed off
     /// `Date.now()` / `Math.random()`, a rule of its own. `0` for an unknown
     /// game.
     pub fn minigame_seed(&self, game: &str) -> u32 {
-        use legaia_engine_core::minigame_entry::{DOME_SEED_SALT, FISHING_SEED_SALT};
+        use legaia_engine_mode::minigame_entry::{DOME_SEED_SALT, FISHING_SEED_SALT};
         match game {
             "fishing" => FISHING_SEED_SALT ^ self.sim_frames,
             "muscle" => DOME_SEED_SALT ^ self.sim_frames,
@@ -451,7 +451,7 @@ impl LegaiaMinigames {
     ///
     /// `x` / `y` are stage pixels in the retail 320x240 frame and `fade` is
     /// `0..=255`. The pool, its bound and its ramp are
-    /// [`legaia_engine_core::minigame_fx`], the same model the play page and
+    /// [`legaia_engine_minigames::minigame_fx`], the same model the play page and
     /// the native window drain - so a part spawned by a ported kernel ages
     /// identically on all three surfaces.
     pub fn minigame_fx_json(&self) -> String {
@@ -480,14 +480,14 @@ impl LegaiaMinigames {
     ///
     /// These are the load-screen slot-grid portraits, pinned in the unindexed
     /// pre-`init_data` gap of `PROT.DAT` (offset `0x1AC90`, 192-byte stride;
-    /// `legaia_asset::title_pak::extract_overlay_load_portrait_tim`). Retail
+    /// `legaia_ui_formats::title_pak::extract_overlay_load_portrait_tim`). Retail
     /// bakes the lead's copy into every SC save block as the memory-card icon,
     /// so these are exactly the faces a retail save carries. The site's save
     /// bar decodes them once from the visitor's own disc and caches the pixels
     /// locally - no art ships with the page. Empty when no disc is loaded or
     /// the TIM doesn't parse.
     pub fn save_portrait_rgba(&self, char_id: usize) -> Vec<u8> {
-        use legaia_asset::title_pak::{
+        use legaia_ui_formats::title_pak::{
             OVERLAY_LOAD_PORTRAIT_COUNT, OVERLAY_LOAD_PORTRAIT_STRIDE,
             OVERLAY_LOAD_PORTRAIT_TIM_OFFSET,
         };
@@ -558,7 +558,7 @@ mod countin_tests {
     fn the_page_count_in_is_the_engine_count_in() {
         let mut mg = LegaiaMinigames::new();
         assert_eq!(mg.dance_countin_step(), vec![0; 8], "no run, no count-in");
-        mg.dance_countin = Some(legaia_engine_core::dance::CountIn::new());
+        mg.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
         let (mut cues, mut saw_ready, mut saw_go, mut vsyncs) = (Vec::new(), false, false, 0);
         loop {
             let s = mg.dance_countin_step();
@@ -574,7 +574,7 @@ mod countin_tests {
         }
         assert!(saw_ready && saw_go);
         assert_eq!(cues, vec![0x200, 0x201]);
-        assert_eq!(vsyncs, legaia_engine_core::dance::COUNTIN_TOTAL_VSYNCS);
+        assert_eq!(vsyncs, legaia_engine_minigames::dance::COUNTIN_TOTAL_VSYNCS);
         assert_eq!(mg.dance_countin_step()[0], 0, "the song runs after done");
     }
 

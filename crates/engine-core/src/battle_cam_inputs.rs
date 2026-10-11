@@ -1,7 +1,7 @@
 //! The battle camera's **inputs** and its per-battle state, derived from the
 //! world once for every host.
 //!
-//! The phase-scripted camera itself is `legaia_engine_vm::battle_cam_script`
+//! The phase-scripted camera itself is `legaia_engine_battle_vm::battle_cam_script`
 //! (`drive` + `BattleCamera`). What it is fed - the retail phase, the acting
 //! actor, the post-strike target, the formation box, the case-6 framing
 //! context, the per-art attack channels - is a pure read of [`World`], and it
@@ -16,8 +16,8 @@
 //! REF: FUN_801D5854 (the framing cases the script ports), FUN_801E295C
 
 use crate::world::World;
-use legaia_engine_vm::battle_cam_script as script;
-use legaia_engine_vm::battle_formulas as vm_formulas;
+use legaia_engine_battle_vm::battle_cam_script as script;
+use legaia_engine_battle_vm::battle_formulas as vm_formulas;
 
 /// Derive the shared battle-camera drive inputs from the live world state -
 /// phase, acting actor, formation box.
@@ -44,7 +44,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
     // stage-1 arm aims the camera at the first monster seat through
     // `FUN_801D829C` with `TR (0, 0x500, 0x400)` (`0x80056324..0x80056364`) -
     // the Dialogue framing - for exactly the span its hold `ctx[+0x6B0]` is up.
-    let caption_up = world.battle.stage_id == crate::battle_sideband::STAGE_SPARRING
+    let caption_up = world.battle.stage_id == legaia_engine_battle::battle_sideband::STAGE_SPARRING
         && world.battle.sideband.hold != 0;
     let phase = script::phase_for_state(
         world.dialog.current.is_some() || world.dialog.inline.is_some() || caption_up,
@@ -133,7 +133,8 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // (`v0_1_battle_start_tetsu`: yaw `0`, `TR (0, 0x500, 0x666)`) - and
         // the lesson prompt then orbits out of it, as every retail fight
         // does.
-        entry_yaw: if world.battle.stage_id == crate::battle_sideband::STAGE_SPARRING {
+        entry_yaw: if world.battle.stage_id == legaia_engine_battle::battle_sideband::STAGE_SPARRING
+        {
             0.0
         } else {
             script::battle_entry_yaw(world.locomotion.camera_azimuth)
@@ -179,8 +180,8 @@ fn battle_cursor_framing(
     world: &World,
     actor_at: &dyn Fn(u8, Option<u8>) -> Option<script::BattleCamActor>,
 ) -> Option<script::CursorFraming> {
-    use crate::battle_input::CommandPhase;
-    use crate::target_picker::{CursorRow, PickerState};
+    use legaia_engine_battle::target_picker::{CursorRow, PickerState};
+    use legaia_engine_menus::battle_input::CommandPhase;
     let party_count = world.party.party_count.clamp(1, 3);
     let enemy_at = |slot: u8| -> Option<script::CursorFraming> {
         let a = world.actors.get(usize::from(slot))?;
@@ -235,7 +236,7 @@ fn battle_cursor_framing(
 /// windows (`0x3C` / `0x46`) are pickers of the same member and keep its
 /// close-up.
 fn member_surface_open(world: &World) -> bool {
-    use crate::battle_input::CommandPhase;
+    use legaia_engine_menus::battle_input::CommandPhase;
     let b = &world.battle;
     b.arts_menu.is_some()
         || b.arts_input.is_some()
@@ -305,7 +306,7 @@ fn battle_end_cam_inputs(
     actor_at: impl Fn(u8, Option<u8>) -> Option<script::BattleCamActor>,
 ) -> script::BattleCamInputs {
     use crate::world::VictoryPhase;
-    use legaia_engine_vm::battle_action::BattleEndCause;
+    use legaia_engine_battle_vm::battle_action::BattleEndCause;
     let Some(seq) = world.battle.victory else {
         return inputs;
     };
@@ -493,9 +494,9 @@ fn battle_target_slot(world: &World, acting_slot: u8) -> Option<usize> {
 /// (`World::tables.move_power_overlay`). `None` on a host that never loaded it.
 pub fn battle_attack_tracks(
     world: &World,
-) -> Option<legaia_asset::battle_attack_camera_table::AttackCameraTracks> {
+) -> Option<legaia_game_tables::battle_attack_camera_table::AttackCameraTracks> {
     let overlay = world.tables.move_power_overlay.as_ref()?;
-    legaia_asset::battle_attack_camera_table::parse(overlay)
+    legaia_game_tables::battle_attack_camera_table::parse(overlay)
 }
 
 /// The per-art attack camera's per-actor channels for the acting slot, or
@@ -508,7 +509,7 @@ pub fn battle_attack_tracks(
 /// cursor; the engine's animation player exposes whole keyframes, so the
 /// conversion is a `<< 4`.
 pub fn battle_attack_channels(world: &World, acting_slot: u8) -> Option<script::AttackCamChannels> {
-    use legaia_engine_vm::battle_attack_camera as cam;
+    use legaia_engine_battle_vm::battle_attack_camera as cam;
     if usize::from(acting_slot) >= world.party.party_count as usize {
         return None;
     }
@@ -555,7 +556,9 @@ pub fn battle_attack_channels(world: &World, acting_slot: u8) -> Option<script::
 ///
 /// REF: FUN_801DC0A0, FUN_801DCEAC, FUN_801F0348
 pub fn spell_cam_inputs(world: &World, slot: u8, case: u8) -> script::SpellCamInputs {
-    use legaia_engine_vm::battle_target_group::{GroupSlot, RENDER_FLAG_HIDDEN, target_group_aim};
+    use legaia_engine_battle_vm::battle_target_group::{
+        GroupSlot, RENDER_FLAG_HIDDEN, target_group_aim,
+    };
     let pc = world.party.party_count;
     let Some(a) = world.actors.get(usize::from(slot)) else {
         return script::SpellCamInputs {
@@ -708,7 +711,7 @@ impl World {
     /// [`World::tick`], so the gate is the world's mode and nothing a host
     /// renders.
     pub fn tick_battle_camera(&mut self) {
-        let active = self.mode == crate::world::SceneMode::Battle;
+        let active = self.mode == legaia_engine_mode::mode::SceneMode::Battle;
         let inputs = battle_cam_inputs(self);
         let tracks = battle_attack_tracks(self);
         let frames = self.clock.display_frames;
@@ -751,8 +754,8 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::battle_input::BattleCommandSession;
-    use crate::world::SceneMode;
+    use legaia_engine_menus::battle_input::BattleCommandSession;
+    use legaia_engine_mode::mode::SceneMode;
     use script::BattleCamPhase;
 
     /// Run a fresh fight's battle-entry sweep out and let the far framing
@@ -797,9 +800,11 @@ mod tests {
         assert_eq!(battle_cam_inputs(&world).phase, BattleCamPhase::Submenu);
 
         world.battle.command = None;
-        world.battle.arts_input = Some(crate::arts_command_input::ArtsCommandInputSession::new(
-            1, 1, 100, [0; 4], 1,
-        ));
+        world.battle.arts_input = Some(
+            legaia_engine_battle::arts_command_input::ArtsCommandInputSession::new(
+                1, 1, 100, [0; 4], 1,
+            ),
+        );
         assert_eq!(battle_cam_inputs(&world).phase, BattleCamPhase::Submenu);
         assert_eq!(submenu_member(&world), Some(1), "framed on the member");
     }
@@ -847,8 +852,8 @@ mod tests {
     /// as the far Begin / Run framing.
     #[test]
     fn the_attack_cursor_frames_the_member_toward_its_target() {
-        use crate::battle_input::{BattleCommand, CommandPhase};
-        use crate::target_picker::{SlotState, TargetKind, TargetPickerSession};
+        use legaia_engine_battle::target_picker::{SlotState, TargetKind, TargetPickerSession};
+        use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase};
         let mut world = World {
             mode: SceneMode::Battle,
             ..World::default()

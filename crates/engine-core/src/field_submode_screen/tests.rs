@@ -32,7 +32,7 @@ fn a_screen_only_ticks_while_the_driver_actor_is_alive() {
 /// its cursor, all while the entry panel stays up underneath.
 #[test]
 fn the_coin_counter_resolves_to_positioned_lines() {
-    use crate::slot_machine::{COIN_ENTRY_LABEL_VAS, COIN_ENTRY_ORIGIN};
+    use legaia_engine_minigames::slot_machine::{COIN_ENTRY_LABEL_VAS, COIN_ENTRY_ORIGIN};
     let mut w = world_with_driver();
     w.party.money = 5_000;
     w.minigames.casino_coins = 7;
@@ -55,8 +55,9 @@ fn the_coin_counter_resolves_to_positioned_lines() {
     );
 
     w.field_vm.submode_screen.counter.set_entered(3);
-    w.input
-        .set_pad(crate::dev_menu::retail_packed(SUBMODE_ACCEPT_MASK as u16));
+    w.input.set_pad(legaia_engine_system::pad::retail_packed(
+        SUBMODE_ACCEPT_MASK as u16,
+    ));
     w.tick_submode_screen(1);
     assert_eq!(w.field_vm.submode_screen.actor.sub, 2);
     let lines = coin_counter_lines(&w.field_vm.submode_screen, read);
@@ -88,8 +89,9 @@ fn the_coin_counter_moves_coins_and_gold_through_a_world_tick() {
     // Type 12 coins.
     w.field_vm.submode_screen.counter.set_entered(12);
     // Frame 2: accept.
-    w.input
-        .set_pad(crate::dev_menu::retail_packed(SUBMODE_ACCEPT_MASK as u16));
+    w.input.set_pad(legaia_engine_system::pad::retail_packed(
+        SUBMODE_ACCEPT_MASK as u16,
+    ));
     w.tick_submode_screen(1);
     assert_eq!(
         w.field_vm.submode_screen.actor.sub, 2,
@@ -135,10 +137,10 @@ fn the_close_tick_default_unparks_instead_of_hanging() {
 /// screen never hands the frame back, so the op stays parked.
 #[test]
 fn the_soft_reset_slides_records_in_then_hands_off_to_the_title() {
-    use crate::input::PadButton;
     use legaia_engine_field::world_map_panel_actors::{
         SOFT_RESET_SLIDE_REST, SOFT_RESET_SLIDE_START,
     };
+    use legaia_engine_system::input::PadButton;
     assert_eq!(slot_for_op49_sub_op(0x0C), Some(SOFT_RESET_SLOT));
     let mut w = world_with_driver();
     w.open_field_submode_screen(SOFT_RESET_SLOT, None);
@@ -187,8 +189,9 @@ fn a_painted_screen_emits_draws() {
     w.tick_submode_screen(1);
     assert_eq!(w.field_vm.submode_screen.installed_windows, vec![0, 10, 10]);
     w.field_vm.submode_screen.counter.set_entered(2);
-    w.input
-        .set_pad(crate::dev_menu::retail_packed(SUBMODE_ACCEPT_MASK as u16));
+    w.input.set_pad(legaia_engine_system::pad::retail_packed(
+        SUBMODE_ACCEPT_MASK as u16,
+    ));
     w.tick_submode_screen(1);
     assert_eq!(
         w.field_vm.submode_screen.installed_windows,

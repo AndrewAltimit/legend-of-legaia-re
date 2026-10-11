@@ -41,7 +41,7 @@
 //! See [`victory_cycle`] and [`compose_base_stream`].
 
 use super::*;
-use legaia_asset::me_archive;
+use legaia_actor_formats::me_archive;
 
 mod art_slot;
 mod idle;
@@ -74,7 +74,7 @@ pub fn base_slot_index(char_index: usize) -> usize {
 /// (zero-padded past the archive).
 pub fn rebuild_base_slot(
     slot: &[u8],
-    clip: &legaia_asset::monster_archive::MonsterAnimation,
+    clip: &legaia_actor_formats::monster_archive::MonsterAnimation,
     rig: &PlayerRig,
     player_file: &[u8],
     archive_entry: &[u8],
@@ -141,7 +141,7 @@ pub fn rebuild_base_slot(
                     (_, Some(r)) => clip.frames[r.clone()].to_vec(),
                     _ => vec![clip.frames[clip.frames.len() - 1].clone()],
                 };
-                let cyc_anim = legaia_asset::monster_archive::MonsterAnimation {
+                let cyc_anim = legaia_actor_formats::monster_archive::MonsterAnimation {
                     frame_count: cycle_frames.len(),
                     frames: cycle_frames,
                     ..clip.clone()

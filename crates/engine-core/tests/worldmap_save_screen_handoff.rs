@@ -27,13 +27,14 @@
 //!
 //! Synthetic world, no disc gate, no Sony bytes.
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_core::world_map::WorldMapController;
-use legaia_engine_core::world_map_panel_host::{
+use legaia_engine_core::world::World;
+use legaia_engine_field::world_map::WorldMapController;
+use legaia_engine_field::world_map_panel_actors::{BRIGHTNESS_MAX, FADE_FLASH_HOLD_PHASE};
+use legaia_engine_field::world_map_panel_host::{
     FLASH_RELEASE_COUNTER, FLASH_RELEASE_COUNTER_ALT, PanelActorKind, SaveScreenOutcome,
 };
-use legaia_engine_field::world_map_panel_actors::{BRIGHTNESS_MAX, FADE_FLASH_HOLD_PHASE};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 /// Descriptor `FUN_801D841C` passes to `FUN_80020DE0`.
 const SAVE_SCREEN_DESCRIPTOR: u32 = 0x8007_06BC;
@@ -59,11 +60,11 @@ fn tap(world: &mut World, button: PadButton) {
     world.input.set_pad(0);
 }
 
-fn panels(world: &World) -> &legaia_engine_core::world_map_panel_host::PanelActorHost {
+fn panels(world: &World) -> &legaia_engine_field::world_map_panel_host::PanelActorHost {
     &world.world_map.ctrl.as_ref().expect("controller").panels
 }
 
-fn panels_mut(world: &mut World) -> &mut legaia_engine_core::world_map_panel_host::PanelActorHost {
+fn panels_mut(world: &mut World) -> &mut legaia_engine_field::world_map_panel_host::PanelActorHost {
     &mut world.world_map.ctrl.as_mut().expect("controller").panels
 }
 

@@ -4,7 +4,7 @@
 //! PROT 867 bytes. The Gimard mapping (`0x81` → id 10) is the one byte-verified
 //! against the fingerprinted `gimard_summon_visible` save; the whole base +
 //! evolved block `0x81..=0x95` is disc-pinned by mesh identity (see
-//! `legaia_asset::summon_creatures` + the asset-side `summon_creature_tmd_map_real`).
+//! `legaia_actor_formats::summon_creatures` + the asset-side `summon_creature_tmd_map_real`).
 use std::path::PathBuf;
 
 fn battle_data() -> Option<Vec<u8>> {
@@ -24,7 +24,7 @@ fn player_summons_map_to_their_namesake_battle_data_creatures() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT/0867 missing");
         return;
     };
-    use legaia_engine_core::summon::summon_creature_id;
+    use legaia_engine_effects::summon::summon_creature_id;
 
     // spell id -> (name, expected battle_data creature id).
     let expect: &[(u8, &str, u16)] = &[
@@ -57,11 +57,11 @@ fn player_summons_map_to_their_namesake_battle_data_creatures() {
             .unwrap_or_else(|| panic!("no creature for summon {name} ({spell:#04x})"));
         assert_eq!(got, id, "summon {name} ({spell:#04x}) -> creature id");
         // The resolved creature really carries that name + a decodable idle.
-        let rec = legaia_asset::monster_archive::record(&entry, got)
+        let rec = legaia_actor_formats::monster_archive::record(&entry, got)
             .expect("decode")
             .expect("populated");
         assert_eq!(rec.name, name);
-        let idle = legaia_asset::monster_archive::idle_animation(&entry, got)
+        let idle = legaia_actor_formats::monster_archive::idle_animation(&entry, got)
             .expect("decode idle")
             .expect("summon creature has an idle clip");
         assert!(
@@ -100,7 +100,7 @@ fn every_player_summon_resolves_a_drawable_spawn_body() {
         .iter()
         .find_map(|d| std::fs::read(PathBuf::from(d).join("0893_monster_se.BIN")).ok())
         .expect("summon.dat (PROT 893) beside 867");
-    use legaia_engine_core::summon::{HIGH_SUMMON_IDS, summon_spawn_asset};
+    use legaia_engine_effects::summon::{HIGH_SUMMON_IDS, summon_spawn_asset};
     for spell in (0x81u8..=0x95).chain(HIGH_SUMMON_IDS) {
         let a = summon_spawn_asset(spell, &entry, Some(&summon_dat))
             .unwrap_or_else(|| panic!("{spell:#04x}: no spawn body"));

@@ -169,7 +169,7 @@ pub(super) fn clamp_charge_loop_windows(
     slot: usize,
     who: &str,
 ) -> Result<Vec<String>> {
-    use legaia_asset::battle_char_assembly;
+    use legaia_actor_formats::battle_char_assembly;
     use legaia_party_swap::moveset;
 
     let character = slot_character(slot);
@@ -260,7 +260,7 @@ pub(super) fn apply_delilas_moveset(
     patcher: &mut DiscPatcher,
     ctx: &SignatureCtx<'_>,
 ) -> Result<Vec<String>> {
-    use legaia_asset::battle_char_assembly;
+    use legaia_actor_formats::battle_char_assembly;
     use legaia_party_swap::moveset;
 
     let &SignatureCtx {

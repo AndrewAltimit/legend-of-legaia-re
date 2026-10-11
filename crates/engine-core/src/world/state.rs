@@ -2,6 +2,7 @@
 //! (`Default` + constructor/dispatch) extracted verbatim from `world.rs`.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Singleton world / scene held by an engine integration.
 ///
@@ -79,7 +80,7 @@ pub struct World {
     /// `FUN_80026BE0`): `0x1000` entries of `trunc(sin(i * 2pi / 4096) *
     /// 4096)`. Read by move-VM op `0x03` (the X term) and the world-map
     /// horizon emitter `FUN_801D7EA0`. Filled by [`World::new`] from
-    /// [`crate::action_effect_script::retail_rotation_lut`], byte-exact
+    /// [`legaia_engine_effects::action_effect_script::retail_rotation_lut`], byte-exact
     /// with the disc table.
     pub sin_lut: Vec<i16>,
     /// The cosine view, `_DAT_8007B7F8` = the same table `+0x400` entries
@@ -88,8 +89,8 @@ pub struct World {
 
     /// The object-effect parameter table at `0x80083FF8` (boot-seeded;
     /// move-VM ext `0x17..0x1A` write it): what a raised `actor[+0x42]`
-    /// draws under ([`crate::object_effect`]).
-    pub object_effect: crate::object_effect::ObjectEffectTable,
+    /// draws under ([`legaia_engine_effects::object_effect`]).
+    pub object_effect: legaia_engine_effects::object_effect::ObjectEffectTable,
 
     /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
     pub battle: BattleState,
@@ -124,7 +125,8 @@ pub struct World {
     /// countdown (`FUN_80021934`); the departing scene keeps ticking until
     /// [`crate::scene::SceneHost::tick`] commits it. `None` between
     /// transitions.
-    pub scene_transition_hold: Option<crate::scene_transition_actor::SceneTransitionHold>,
+    pub scene_transition_hold:
+        Option<legaia_engine_field::scene_transition_actor::SceneTransitionHold>,
 
     /// Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.
     pub cutscene: CutsceneState,
@@ -137,7 +139,7 @@ pub struct World {
     /// Mirror of the `FieldHost` callbacks - see [`FieldEvent`] for the
     /// per-variant citation.
     ///
-    /// [`FieldEvent`]: crate::field_events::FieldEvent
+    /// [`FieldEvent`]: legaia_engine_field::field_events::FieldEvent
     pub pending_field_events: Vec<FieldEvent>,
 
     /// Pending actor-spawn requests emitted by field-VM op `0x4C 0x80`
@@ -156,7 +158,7 @@ pub struct World {
     /// damage, screen-shake, etc. See [`BattleEvent`] for the per-variant
     /// citation.
     ///
-    /// [`BattleEvent`]: crate::battle_events::BattleEvent
+    /// [`BattleEvent`]: legaia_engine_battle::battle_events::BattleEvent
     pub pending_battle_events: Vec<BattleEvent>,
 
     /// Field dialogue state: the simplified dialog panel, the inline field-VM dialogue runner and the interact / talk latches.
@@ -279,19 +281,19 @@ pub struct World {
 
     /// The system flags the active scene's own field-VM records SET on
     /// their way into a `3E FF <row>` scripted battle entry, each paired
-    /// with that row ([`crate::man_field_scripts::BattleEntryArm`]), read
+    /// with that row ([`legaia_engine_field::man_field_scripts::BattleEntryArm`]), read
     /// off the MAN when the scene's carriers are installed. The disc-side
     /// evidence a direct `--battle <row>` entry consults to replay the arm
     /// the row's own record raises ([`World::replay_scripted_battle_arm`]).
-    pub scene_battle_entry_arms: Vec<crate::man_field_scripts::BattleEntryArm>,
+    pub scene_battle_entry_arms: Vec<legaia_engine_field::man_field_scripts::BattleEntryArm>,
 
     /// The op-`0x35` BGM words the active scene's records run on their way
     /// into a `3E FF <row>` scripted battle entry
-    /// ([`crate::man_field_scripts::BattleEntryScore`]), read off the MAN
+    /// ([`legaia_engine_field::man_field_scripts::BattleEntryScore`]), read off the MAN
     /// beside [`Self::scene_battle_entry_arms`]. A direct `--battle <row>`
     /// entry replays them ([`World::replay_scripted_battle_score`]), so the
     /// fight plays the theme its event started.
-    pub scene_battle_entry_scores: Vec<crate::man_field_scripts::BattleEntryScore>,
+    pub scene_battle_entry_scores: Vec<legaia_engine_field::man_field_scripts::BattleEntryScore>,
 
     /// Set when a battle resolves to [`BattleEndCause::PartyWipe`]. Hosts
     /// read it to raise their defeat state (native
@@ -388,13 +390,13 @@ impl World {
             script_actors: FieldScriptActorState::default(),
             rng_state: 0x1234_5678,
             casting: CastFxState::new(),
-            sin_lut: crate::action_effect_script::retail_rotation_lut()
+            sin_lut: legaia_engine_effects::action_effect_script::retail_rotation_lut()
                 .sin_table()
                 .to_vec(),
-            cos_lut: crate::action_effect_script::retail_rotation_lut()
+            cos_lut: legaia_engine_effects::action_effect_script::retail_rotation_lut()
                 .cos_table()
                 .to_vec(),
-            object_effect: crate::object_effect::ObjectEffectTable::boot(),
+            object_effect: legaia_engine_effects::object_effect::ObjectEffectTable::boot(),
             battle: BattleState::new(),
             camera: CameraRig::new(),
             audio: AudioState::new(),
@@ -650,7 +652,7 @@ impl World {
         // The seed's entry operand (`0x80073EF4` / `0x80073EF8`): the prologue
         // scene's entry seats the player here, and its region selector reads
         // the seat before the opening record moves him.
-        self.cutscene.new_game_entry_seat = Some(legaia_asset::new_game::NEW_GAME_ENTRY_SEAT);
+        self.cutscene.new_game_entry_seat = Some(legaia_game_tables::new_game::NEW_GAME_ENTRY_SEAT);
         // Arm the arrival side of the scene-transition fade handshake
         // (`0x52F`/`0x530`/`0x531`, the shared `P1[0]` idiom): with `0x52F`
         // set, the destination entry script's arrival arm fires `4C 12 00 00
@@ -664,7 +666,7 @@ impl World {
     }
 
     /// Does the party hold the **Point Card** (item
-    /// [`crate::shop::POINT_CARD_ITEM_ID`])?
+    /// [`legaia_engine_menus::shop::POINT_CARD_ITEM_ID`])?
     ///
     /// Retail asks the bag-slot scan `FUN_80042F4C(0xFE)` and tests the
     /// returned count's low halfword (`sll 16` / `beq`), so a slot present
@@ -677,14 +679,14 @@ impl World {
     pub fn point_card_held(&self) -> bool {
         self.party
             .inventory
-            .get(&crate::shop::POINT_CARD_ITEM_ID)
+            .get(&legaia_engine_menus::shop::POINT_CARD_ITEM_ID)
             .is_some_and(|c| *c > 0)
     }
 
     /// Credit one buy commit's Point Card accrual and return what was
     /// added, or `None` when the party does not hold the card.
     ///
-    /// `(price / 20) * qty`, clamped into [`crate::shop::POINT_CARD_CAP`] -
+    /// `(price / 20) * qty`, clamped into [`legaia_engine_menus::shop::POINT_CARD_CAP`] -
     /// the arithmetic the Point Card's own on-disc description states as
     /// "5% of the price". Retail runs this **before** the gold debit; the
     /// engine's caller does the same.
@@ -700,9 +702,9 @@ impl World {
         if !self.point_card_held() {
             return None;
         }
-        let credit = crate::shop::point_card_credit(price, qty);
+        let credit = legaia_engine_menus::shop::point_card_credit(price, qty);
         self.minigames.point_card =
-            crate::shop::apply_point_card(self.minigames.point_card, credit);
+            legaia_engine_menus::shop::apply_point_card(self.minigames.point_card, credit);
         Some(credit)
     }
 }

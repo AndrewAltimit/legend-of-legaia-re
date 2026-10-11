@@ -89,10 +89,10 @@ impl TraceBgmDirector {
         let report =
             legaia_vab::parse(bytes, vab_off).context("parse scene VAB header for audio trace")?;
         let mut alloc = SpuAllocator::new(
-            crate::boot::SPU_RESERVED_BYTES,
-            crate::boot::SPU_RAM_BYTES
-                - crate::boot::SPU_RESERVED_BYTES
-                - crate::boot::SFX_BANK_SPU_BYTES,
+            legaia_engine_session::boot::SPU_RESERVED_BYTES,
+            legaia_engine_session::boot::SPU_RAM_BYTES
+                - legaia_engine_session::boot::SPU_RESERVED_BYTES
+                - legaia_engine_session::boot::SFX_BANK_SPU_BYTES,
         );
         let bank = VabBank::upload(&mut self.spu, &mut alloc, &report, bytes);
         self.bank = Some(bank);
@@ -144,7 +144,7 @@ impl TraceBgmDirector {
     pub(super) fn stage_owned_vab(&mut self, entry_bytes: &[u8]) -> Option<Vec<u8>> {
         // The installer walk's split (type-0 bank, type-2 score), not a
         // magic hunt - see `chunk_install::owned_bank_offsets`.
-        let split = legaia_engine_core::chunk_install::owned_bank_offsets(entry_bytes)?;
+        let split = legaia_engine_system::chunk_install::owned_bank_offsets(entry_bytes)?;
         let vab_off = split.vab;
         let report = legaia_vab::parse(entry_bytes, vab_off).ok()?;
         let body = &entry_bytes[vab_off..];

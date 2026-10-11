@@ -7,20 +7,20 @@ impl World {
     /// The cast record a monster's turn arms for `spell_id`: the catalog's,
     /// or - for a capture-class special, which the catalog does not carry -
     /// one built off the disc spell table
-    /// ([`crate::retail_magic::capture_special_def`]). The action SM routes
+    /// ([`legaia_engine_battle::retail_magic::capture_special_def`]). The action SM routes
     /// the latter to its capture band on the table's class byte, as retail's
     /// does; without it the pick degraded to a strike.
     pub(in crate::world) fn monster_cast_def(
         &self,
         spell_id: u8,
-    ) -> Option<crate::spells::SpellDef> {
+    ) -> Option<legaia_engine_battle::spells::SpellDef> {
         self.tables
             .spell_catalog
             .get(spell_id)
             .cloned()
             .or_else(|| {
                 let table = self.menu.text.as_ref()?.spell_names.as_ref()?;
-                crate::retail_magic::capture_special_def(table, spell_id)
+                legaia_engine_battle::retail_magic::capture_special_def(table, spell_id)
             })
     }
 
@@ -31,11 +31,11 @@ impl World {
     ///
     /// Faithful to the core: it rolls `rand % (1 + live_magic_count)` over the
     /// monster's own global magic-attack ids (record `+0x21..=+0x23`, carried on
-    /// [`crate::monster_catalog::MonsterDef::magic_attacks`]); a roll of `0`
+    /// [`legaia_engine_battle::monster_catalog::MonsterDef::magic_attacks`]); a roll of `0`
     /// picks a **physical** strike (target `rand % party_count`), otherwise it
     /// picks magic id `magic[roll-1]` and resolves the target by the spell's
     /// shape byte (`spell_table[id*0xC + 2] & 0x60`), modelled here through the
-    /// catalog's [`crate::spells::SpellTarget`]: `OneEnemy` → a random living
+    /// catalog's [`legaia_engine_battle::spells::SpellTarget`]: `OneEnemy` → a random living
     /// party member, `AllEnemies` → the whole living party, `AllAllies` → the
     /// whole living monster band, `OneAlly` → the most-weakened living ally (or
     /// self), `SelfOnly` → self. A cast the monster can't afford from its live
@@ -47,9 +47,9 @@ impl World {
     /// encounter record's `[+4 + slot]` monster ids - i.e. the **monster id**,
     /// not an abstract AI-type, so each case is bespoke AI for a specific
     /// monster the engine already identifies via `battle_monster_id`. That
-    /// switch is ported in [`crate::monster_ai`] ([`crate::monster_ai::decide`])
+    /// switch is ported in [`legaia_engine_battle::monster_ai`] ([`legaia_engine_battle::monster_ai::decide`])
     /// and consulted here as an override, followed by the post-switch
-    /// recent-target ring ([`crate::monster_ai::apply_recent_target_ring`]). The
+    /// recent-target ring ([`legaia_engine_battle::monster_ai::apply_recent_target_ring`]). The
     /// companion target resolver `FUN_801E7320` is ported as
     /// [`Self::resolve_monster_target`] (the `monster_setup` hook).
     ///
@@ -145,7 +145,7 @@ impl World {
             // length, which would read every `monster_count != 4` / `!= 3`
             // scripted-cast gate as open.
             let seated = self.seated_monster_slots().count() as u8;
-            let ctx = crate::monster_ai::MonsterAiCtx {
+            let ctx = legaia_engine_battle::monster_ai::MonsterAiCtx {
                 monster_id: (monster_id & 0xFF) as u8,
                 monster_index: slot.saturating_sub(pc),
                 caster_slot: slot,
@@ -169,7 +169,9 @@ impl World {
             };
             let mut ai = std::mem::take(&mut self.battle.monster_ai_state);
             let mut spirit_writeback = None;
-            if let Some(cast) = crate::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rand()) {
+            if let Some(cast) =
+                legaia_engine_battle::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rand())
+            {
                 category = cast.category;
                 spell_id = cast.spell_id;
                 if !cast.keep_target {
@@ -186,7 +188,7 @@ impl World {
                 a.battle.spirit_gauge = g;
             }
             // Anti-repeat ring (applies to whichever single party target stands).
-            target_class = crate::monster_ai::apply_recent_target_ring(
+            target_class = legaia_engine_battle::monster_ai::apply_recent_target_ring(
                 target_class,
                 spell_id,
                 pc,
@@ -269,7 +271,7 @@ impl World {
     /// boss-phase-transition pseudo-action. A boss script issues action `0xFF`
     /// when the fight crosses a scripted phase boundary; the next monster turn's
     /// `Self::pick_monster_action` then reads the bumped mode through
-    /// [`crate::monster_ai::decide`], activating that phase's scripted casts.
+    /// [`legaia_engine_battle::monster_ai::decide`], activating that phase's scripted casts.
     /// The retail counter is a byte, so it wraps at `0xFF`.
     ///
     /// PORT: FUN_801E295C

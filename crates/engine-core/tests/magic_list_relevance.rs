@@ -7,20 +7,20 @@
 //! confirm. The spell table here is synthetic (the record geometry, no disc
 //! text); each assertion has a contrast a gate-less screen fails.
 
-use legaia_asset::spell_names::{SpellEntry, SpellNameTable};
-use legaia_engine_core::battle_stats::EquipmentTable;
-use legaia_engine_core::field_menu::FieldMenuRow;
+use legaia_engine_battle::battle_stats::EquipmentTable;
+use legaia_engine_battle::spells::SpellCatalog;
+use legaia_engine_battle::tactical_arts_editor::ChainLibrary;
 use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::items::ItemCatalog;
 use legaia_engine_core::menu_validator::spell_affects_anyone;
 use legaia_engine_core::options::OptionsState;
-use legaia_engine_core::pause_screens::MenuTextTables;
-use legaia_engine_core::save_select::{SaveRack, SlotSnapshot};
-use legaia_engine_core::spell_menu::{InvalidReason, SpellMenuEvent, SpellMenuPhase};
-use legaia_engine_core::spells::SpellCatalog;
-use legaia_engine_core::tactical_arts_editor::ChainLibrary;
 use legaia_engine_core::world::World;
+use legaia_engine_menus::field_menu::FieldMenuRow;
+use legaia_engine_menus::items::ItemCatalog;
+use legaia_engine_menus::pause_screens::MenuTextTables;
+use legaia_engine_menus::save_select::{SaveRack, SlotSnapshot};
+use legaia_engine_menus::spell_menu::{InvalidReason, SpellMenuEvent, SpellMenuPhase};
+use legaia_engine_system::input::PadButton;
+use legaia_game_tables::spell_names::{SpellEntry, SpellNameTable};
 
 /// The vanilla catalog's Heal - a field-usable single-ally heal.
 const HEAL: u8 = 0x10;
@@ -96,7 +96,7 @@ fn heal_row(world: &World) -> (bool, bool) {
         panic!("Magic builds the spell session");
     };
     let admissible = s.current_spell_rows()[0].admissible;
-    let events = s.tick(legaia_engine_core::spell_menu::SpellMenuInput {
+    let events = s.tick(legaia_engine_menus::spell_menu::SpellMenuInput {
         cross: true,
         ..Default::default()
     });

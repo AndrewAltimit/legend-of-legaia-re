@@ -135,10 +135,9 @@ impl FieldHostImpl<'_> {
                     // `jal 0x80035B50` with `a0 = (s16)op1_word`
                     // (`0x801E0344..0x801E034C`): the cue id goes to the
                     // host ring.
-                    self.world
-                        .audio
-                        .sfx_ring_ops
-                        .push(crate::world::SfxRingOp::Push(op1_word as i16));
+                    self.world.audio.sfx_ring_ops.push(
+                        legaia_engine_system::sound_state::SfxRingOp::Push(op1_word as i16),
+                    );
                 }
                 1 => {
                     if !self
@@ -165,10 +164,9 @@ impl FieldHostImpl<'_> {
                         .audio
                         .sfx_cue_delays
                         .set_delay(parked, op1_word as i16);
-                    self.world
-                        .audio
-                        .sfx_ring_ops
-                        .push(crate::world::SfxRingOp::SetLastDelay(op1_word as i16));
+                    self.world.audio.sfx_ring_ops.push(
+                        legaia_engine_system::sound_state::SfxRingOp::SetLastDelay(op1_word as i16),
+                    );
                 }
                 // Sub `3` (`FUN_801D8450`) is ungated: it stops the top two
                 // voices, closes VAB slot 6 and clears the field-bank latch,

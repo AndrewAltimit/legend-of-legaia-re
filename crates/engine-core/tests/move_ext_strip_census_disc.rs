@@ -21,9 +21,9 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use legaia_asset::scene_event_scripts::move_stager_records;
 use legaia_engine_core::scene::SceneHost;
 use legaia_engine_vm::move_vm::{ActorState, MoveHost, StepResult, step};
+use legaia_scene_formats::scene_event_scripts::move_stager_records;
 
 const BUDGET: usize = 20_000;
 
@@ -161,7 +161,7 @@ fn census_move_ext_sub_op_2c_carriers() {
             continue;
         };
         if let Some(Ok(payload)) =
-            legaia_asset::scene_asset_table::decode_slot_by_type(&bytes, 0x05)
+            legaia_scene_formats::scene_asset_table::decode_slot_by_type(&bytes, 0x05)
         {
             move_slots += 1;
             for w in words_of(&payload).windows(2) {

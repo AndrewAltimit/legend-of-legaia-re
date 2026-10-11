@@ -26,8 +26,9 @@ use legaia_engine_audio::AudioSink;
 use legaia_engine_audio::WebAudioOut;
 use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
 use legaia_engine_menus::menu::{MenuInput, open as menu_open};
+use legaia_engine_mode::mode::SceneMode;
 use wasm_bindgen::prelude::*;
 
 use crate::play::{FieldRender, PlayerRig};
@@ -77,10 +78,10 @@ pub struct LegaiaRuntime {
     /// props), resolved once per scene the way the native window's
     /// `find_scene_anm_bundle` does: entry-major, descriptor-count seed
     /// `[3, 5, 6, 7]` minor.
-    pub(crate) scene_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    pub(crate) scene_anm: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     /// The PROT 0874 §1 party locomotion bundle - the pose source for the
     /// global-pool specials (save point / party heads).
-    pub(crate) locomotion_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    pub(crate) locomotion_anm: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     /// The scene's CLUT-walk (water / waterfall shimmer) animation state,
     /// rebuilt at every scene entry with its source strips parked into the
     /// host's VRAM. Only the walker half lives here - the ambient move-VM
@@ -96,10 +97,10 @@ pub struct LegaiaRuntime {
     /// scene entry.
     pub(crate) scene_lights: Option<crate::play_lighting::SceneLightCache>,
     /// The field-to-battle transition's per-frame emitter - the same
-    /// `legaia_engine_ui::battle_intro::BattleIntro` the native window arms.
+    /// `legaia_render_kernels::battle_intro::BattleIntro` the native window arms.
     /// `Some` only while the encounter session sits in its `Transition`
     /// phase; owns the captured-field VRAM clone the style bodies sample.
-    pub(crate) battle_intro: Option<legaia_engine_ui::battle_intro::BattleIntro>,
+    pub(crate) battle_intro: Option<legaia_render_kernels::battle_intro::BattleIntro>,
     /// The between-beat cutscene glide and its display-frame clock - the
     /// shared kernel (`frame_step::CutsceneGlide`) the native window owns
     /// one of too. Without it every `apply > 0` Camera Configure beat snapped
@@ -148,7 +149,7 @@ pub struct LegaiaRuntime {
     /// the cached player position its decision kernel reads. The same state
     /// the native window holds - retail keeps it in overlay globals, so every
     /// host that draws a screen owns a copy.
-    pub(crate) field_party_hud: legaia_engine_core::world_map_panel_host::FieldPartyHud,
+    pub(crate) field_party_hud: legaia_engine_field::world_map_panel_host::FieldPartyHud,
     /// Scene the HUD driver was last armed for, so a scene change takes
     /// retail's rearm arm rather than comparing the new scene's player
     /// position against the old one's.
@@ -179,7 +180,8 @@ pub struct LegaiaRuntime {
     /// [`crate::play_battle`] intro tick (the emitter mutates working sets,
     /// so the per-frame accessors must not re-tick) with the primitive count
     /// alongside for the page's early-out.
-    pub(crate) battle_intro_geom: Option<(u32, legaia_engine_ui::screen_prim::OverlayGeometry)>,
+    pub(crate) battle_intro_geom:
+        Option<(u32, legaia_render_kernels::screen_prim::OverlayGeometry)>,
     /// The last tick's host-projected screen layers, recomposed with the
     /// world's live layers and the shop / pause fades by
     /// [`crate::play_battle`]'s `rebuild_screen_geom`.
@@ -191,7 +193,7 @@ pub struct LegaiaRuntime {
     pub(crate) occl_fade: legaia_engine_core::field_occlusion::FadeRamp,
     /// SCUS item-name table, parsed once at `load_disc` - the labels the field
     /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
-    pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
+    pub(crate) item_names: Option<legaia_game_tables::item_names::ItemNameTable>,
     /// The real proportional retail dialog font, decoded straight from the disc
     /// (`PROT.DAT` font TIM + the SCUS width table) at `load_disc` - the same
     /// glyphs + advances the native pause menu draws. `None` (built-in
@@ -205,37 +207,37 @@ pub struct LegaiaRuntime {
     pub(crate) play_menu: Option<crate::play_menu::PlayMenu>,
     /// Boot-chain title-screen session; `Some` while the title runs before a
     /// scene is entered ([`crate::boot_title`]).
-    pub(crate) boot_title: Option<legaia_engine_core::title::TitleSession>,
+    pub(crate) boot_title: Option<legaia_engine_menus::title::TitleSession>,
     /// The title session **parked as a backdrop** while the boot Continue
     /// hand-off's save-select owns the screen. Retail keeps the title art up
     /// behind the Load panel at a dim; this page used to release the session
     /// at the hand-off and compose the panel over black
     /// ([`crate::boot_title::LegaiaRuntime::boot_title_backdrop_draws_json`]).
-    pub(crate) boot_title_backdrop: Option<legaia_engine_core::title::TitleSession>,
+    pub(crate) boot_title_backdrop: Option<legaia_engine_menus::title::TitleSession>,
     /// How many attract hand-offs the title has skipped this session. The
     /// countdown fires the same way it does natively, but this page has no
     /// STR/MDEC playback on the play path, so the movie is skipped and the
     /// count is what the page discloses instead of showing it.
     pub(crate) boot_title_attract_skips: u32,
     /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
-    pub(crate) title_atlas: Option<legaia_engine_core::title_screen_atlas::TitleScreenAtlas>,
+    pub(crate) title_atlas: Option<legaia_engine_menus::title_screen_atlas::TitleScreenAtlas>,
     /// Publisher-logo boot phase, the stage **ahead** of the title card
     /// ([`crate::boot_title`]). `Some` while the logos play.
-    pub(crate) boot_logos: Option<legaia_engine_core::publisher_logos::PublisherLogosSession>,
+    pub(crate) boot_logos: Option<legaia_engine_menus::publisher_logos::PublisherLogosSession>,
     /// Disc-sourced publisher-logo atlas (PROT 0895 `init.pak`), built on the
     /// first logo run and kept for the page load.
-    pub(crate) boot_logos_atlas: Option<legaia_engine_core::publisher_logos::LogosAtlas>,
+    pub(crate) boot_logos_atlas: Option<legaia_engine_menus::publisher_logos::LogosAtlas>,
     /// The atlas build was attempted and failed (no disc, or `init.pak` did
     /// not parse), so it is not retried every frame.
     pub(crate) boot_logos_failed: bool,
-    /// Disc-sourced **menu-glyph** atlas (`legaia_asset::menu_glyph_atlas`) -
+    /// Disc-sourced **menu-glyph** atlas (`legaia_ui_formats::menu_glyph_atlas`) -
     /// the small-caps sheet the title menu's NEW GAME / CONTINUE rows sample
     /// when the title art is absent, exactly as the native window does.
-    pub(crate) menu_glyph_atlas: Option<legaia_engine_core::menu_glyph_atlas::MenuGlyphAtlas>,
+    pub(crate) menu_glyph_atlas: Option<legaia_engine_menus::menu_glyph_atlas::MenuGlyphAtlas>,
     /// The **memory-card rack**: the player's own card images occupying the
     /// console's two ports ([`crate::cards`]). The in-canvas Load / Save
     /// screens read and write these, and the page exports them back out.
-    pub(crate) cards: [Option<crate::cards::MountedCard>; crate::cards::CARD_SLOTS],
+    pub(crate) cards: [Option<legaia_save::emu::MountedCard>; crate::cards::CARD_SLOTS],
     /// Per rack slot: an in-game Save wrote the card and the page has not
     /// yet stored it back into browser storage
     /// ([`Self::card_take_written`]). Distinct from the card's own `dirty`
@@ -310,11 +312,11 @@ pub struct LegaiaRuntime {
     /// footstep cadence ([`crate::play_sfx`]).
     pub(crate) sfx: crate::play_sfx::PlaySfx,
     /// The live party-wipe hand-off, when a wipe raised one: the same
-    /// [`legaia_engine_core::game_over::GameOverSession`] the native window
+    /// [`legaia_engine_menus::game_over::GameOverSession`] the native window
     /// builds, holding for the same number of frames and resolving to the
     /// same single destination (the title screen). Not a panel - retail draws
     /// nothing here and offers no choice.
-    pub(crate) game_over: Option<legaia_engine_core::game_over::GameOverSession>,
+    pub(crate) game_over: Option<legaia_engine_menus::game_over::GameOverSession>,
     /// Live WebAudio output + its from-scratch SPU. Crate-visible so the SFX
     /// channel ([`crate::play_sfx`]) can key one-shot cues into the same SPU the
     /// BGM sequencer feeds - one mixer, as on hardware.
@@ -325,12 +327,12 @@ pub struct LegaiaRuntime {
     /// the sell-detail panel's passive chain reads the equip record's `+5`
     /// byte and the stat-compare windows read the bonus columns. `None` on
     /// a PROT.DAT-only load.
-    pub(crate) equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
+    pub(crate) equip_stats: Option<legaia_game_tables::equip_stats::EquipStatTable>,
     /// Spell / seru display names from the same executable, used to label the
     /// shop's seru-trade offers ("give (owner) -> receive"). `None` on a
     /// PROT.DAT-only load, where offers fall back to `Seru NN` exactly as the
     /// native window's do.
-    pub(crate) seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
+    pub(crate) seru_names: Option<legaia_game_tables::spell_names::SpellNameTable>,
     /// The live developer-menu screen, when the visitor's explicit opt-in
     /// has raised one ([`crate::play_dev_menu`]) - the browser twin of the
     /// native window's `LEGAIA_DEV_MENU` session. `None` while the opt-in is
@@ -383,7 +385,7 @@ impl LegaiaRuntime {
             world,
             menu,
             scene_host: crate::host_slot::HostSlot::new({
-                let mut c = legaia_engine_core::camera::Camera::new();
+                let mut c = legaia_engine_field::camera::Camera::new();
                 c.render_yaw_bias = legaia_engine_core::camera_view::retail_field_render_yaw_bias();
                 // The follow distance is an OPTION, and the window applies it
                 // at startup (`window/run.rs`). `Camera::new()`'s own default
@@ -539,7 +541,7 @@ impl LegaiaRuntime {
     }
 
     /// Enter an INIT mode **now**, against the active world - the browser's
-    /// call of [`legaia_engine_core::mode::ModeSeat::enter`], the entry point
+    /// call of [`legaia_engine_mode::mode::ModeSeat::enter`], the entry point
     /// `BootSession` calls at the same two junctures (field entry through
     /// `MAIN INIT`, the pause menu through `CARD INIT`).
     ///
@@ -552,8 +554,8 @@ impl LegaiaRuntime {
     ///
     pub(crate) fn seat_enter(
         &mut self,
-        mode: legaia_engine_core::mode::GameMode,
-    ) -> Option<legaia_engine_core::mode::ModeInitPlan> {
+        mode: legaia_engine_mode::mode::GameMode,
+    ) -> Option<legaia_engine_mode::mode::ModeInitPlan> {
         let (world, seat) = self.scene_host.world_seat_mut(&mut self.world);
         seat.enter(mode, world)
     }

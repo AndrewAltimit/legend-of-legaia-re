@@ -7,10 +7,10 @@ use super::*;
 /// PROT entry of the Muscle Dome arena's door / init overlay.
 pub(super) const ARENA_PROT_INDEX: u32 = 977;
 /// The arena's course descriptor table: three `{ i32 round_count; u32
-/// first_round }` records (`legaia_engine_core::muscle_dome::COURSE_TABLE_VA`).
+/// first_round }` records (`legaia_engine_minigames::muscle_dome::COURSE_TABLE_VA`).
 const ARENA_COURSE_TABLE_VA: u32 = 0x801D_1A08;
 /// The per-`(course, round)` score table, sixteen `i32` cells per course
-/// (`legaia_engine_core::muscle_dome::SCORE_TABLE_VA`).
+/// (`legaia_engine_minigames::muscle_dome::SCORE_TABLE_VA`).
 const ARENA_SCORE_TABLE_VA: u32 = 0x801D_1860;
 /// The two `lui` sites that form [`ARENA_SCORE_TABLE_VA`]: the settlement's
 /// `DAT_801D1860 + course * 0x40 + (round - 1) * 4` read (`0x801D10E8`,
@@ -26,7 +26,7 @@ const ARENA_MAX_ROUNDS: usize = 16;
 /// `first_round` pointers, and the label each round names - the opponent-name
 /// pool at the head of the image, which is reached only through those
 /// records. The parser of record is
-/// `legaia_engine_core::muscle_dome::parse_course_ladder`; this mirrors its
+/// `legaia_engine_minigames::muscle_dome::parse_course_ladder`; this mirrors its
 /// validation (three courses of `1..=16` rounds, non-zero byte monster ids)
 /// and claims nothing when any of it fails.
 pub(in crate::byte_account) fn claim_arena_course_ladder(buf: &[u8], sink: &mut Sink) {

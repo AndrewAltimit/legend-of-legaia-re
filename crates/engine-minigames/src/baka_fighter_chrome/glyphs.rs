@@ -27,7 +27,7 @@ pub const BANNER_CLUT_FLASH: u16 = 0x7742;
 /// this and the page samples widget 5's strip at the stamped column - the one
 /// host that draws the chrome from the duel's own art. The play window
 /// performs the same stamp against the overlay's parsed widget table
-/// (`legaia_asset::baka_opponents::parse_baka_hud`, `window/minigames.rs`) and
+/// (`legaia_minigame_formats::baka_opponents::parse_baka_hud`, `window/minigames.rs`) and
 /// carries the resolved rect beside each draw, but prints the chrome as
 /// labels: its duel HUD has no textured-quad surface, so the rect is not yet
 /// sampled there. The browser play page prints the same labels.

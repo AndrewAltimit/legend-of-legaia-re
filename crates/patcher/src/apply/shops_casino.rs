@@ -7,13 +7,13 @@ use super::*;
 /// record `count` over-counts the purchasable stock by a trailing run of
 /// unsellable (price-`0`) template ids, so the sellable mask both rejects stray
 /// `0x49` payloads and trims the padding out of the stock (see
-/// [`legaia_asset::shop_stock`]). `None` if SCUS / its item table is absent (the
+/// [`legaia_scene_formats::shop_stock`]). `None` if SCUS / its item table is absent (the
 /// shop locator then falls back to structural-only validation).
 fn sellable_item_mask(patcher: &DiscPatcher) -> Option<[bool; 256]> {
     let scus = patcher.read_named_file("SCUS_942.54")?;
     let mut mask = [false; 256];
     for (id, slot) in mask.iter_mut().enumerate() {
-        *slot = legaia_asset::item_names::price_slot(&scus, id as u8)
+        *slot = legaia_game_tables::item_names::price_slot(&scus, id as u8)
             .is_some_and(|(_, price)| price > 0);
     }
     Some(mask)

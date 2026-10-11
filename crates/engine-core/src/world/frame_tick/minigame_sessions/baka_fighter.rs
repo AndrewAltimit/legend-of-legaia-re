@@ -1,13 +1,14 @@
 //! The Baka Fighter session: enter, exit, tick and the XA prestage.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Enter the Baka Fighter duel on `fight`, suspending the current scene
     /// mode (restored by [`World::exit_baka_fighter`]). Like the dance /
     /// fishing / slot / pause-menu suspend contract, the interrupted field
     /// state stays intact underneath.
-    pub fn enter_baka_fighter(&mut self, fight: crate::baka_fighter::BakaFight) {
+    pub fn enter_baka_fighter(&mut self, fight: legaia_engine_minigames::baka_fighter::BakaFight) {
         if self.mode != SceneMode::BakaFighter {
             self.minigames.baka_return_mode = self.mode;
         }
@@ -38,7 +39,9 @@ impl World {
     ///
     /// Returns the fight so the host can read the final state. No-op when no
     /// duel is active.
-    pub fn exit_baka_fighter(&mut self) -> Option<crate::baka_fighter::BakaFight> {
+    pub fn exit_baka_fighter(
+        &mut self,
+    ) -> Option<legaia_engine_minigames::baka_fighter::BakaFight> {
         let fight = self.minigames.baka_fighter.take();
         if let Some(f) = fight.as_ref()
             && f.winner() == Some(0)
@@ -73,9 +76,9 @@ impl World {
     ///   special (type 4) - a port enhancement: retail has no button for
     ///   type 4, which is its auto-finisher (`0x801D4550`).
     /// - The CPU slot picks through the ported `FUN_801d487c` roll inside
-    ///   [`crate::baka_fighter::BakaFight::tick`].
+    ///   [`legaia_engine_minigames::baka_fighter::BakaFight::tick`].
     /// - When the match is decided, the frame's packed pad edge goes to the
-    ///   cabinet (`FUN_801CF388`, [`crate::baka_cabinet::BakaCabinet`]),
+    ///   cabinet (`FUN_801CF388`, [`legaia_engine_minigames::baka_cabinet::BakaCabinet`]),
     ///   which runs the rest of the **ladder** inside this one mode-24 visit,
     ///   as retail does: a win reaches the tally and then the "NEXT GAME /
     ///   PAY OUT" choice (Left / Right, confirm Cross); NEXT GAME seats the
@@ -107,8 +110,9 @@ impl World {
         // prize, not party gold (`0x8008459C`); the exit warp
         // ([`Self::minigame_return_warp`]) then pays the accumulator into the
         // casino coin bank.
-        let edge = crate::dev_menu::retail_packed(self.input.pad() & !self.input.pad_prev());
-        let held = crate::dev_menu::retail_packed(self.input.pad());
+        let edge =
+            legaia_engine_system::pad::retail_packed(self.input.pad() & !self.input.pad_prev());
+        let held = legaia_engine_system::pad::retail_packed(self.input.pad());
         let pot = self.minigames.winnings;
         let out = match self.minigames.baka_fighter.as_mut() {
             Some(f) => f.frame(edge, held, pot),

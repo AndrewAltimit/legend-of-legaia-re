@@ -17,7 +17,7 @@
 //!   to the CD-XA lane ([`crate::play_xa`]).
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::battle_events::BattleEvent;
+use legaia_engine_battle::battle_events::BattleEvent;
 
 impl LegaiaRuntime {
     /// Drain this tick's battle audio queues.

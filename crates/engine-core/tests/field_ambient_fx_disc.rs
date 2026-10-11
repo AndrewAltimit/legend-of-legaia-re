@@ -18,9 +18,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::ambient_effect_installs;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::ambient_effect_installs;
 
 fn extracted_root() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -50,7 +50,7 @@ fn jou_ambient_tree_spawns_and_cycles_clut_cells_or_skip() {
         .field_man_payload(&index)
         .expect("man payload")
         .expect("jou has a MAN");
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("parse MAN");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("parse MAN");
 
     // One ambient install: the P1 effect script's `34 30 00`.
     let installs = ambient_effect_installs(&man_file, &man_bytes);

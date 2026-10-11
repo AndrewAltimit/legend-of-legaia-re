@@ -747,7 +747,7 @@ pub(super) fn hazards(session: &BootSession, dest: &str) -> HashSet<(i32, i32)> 
     let index = &session.host.index;
     if let Ok(scene) = Scene::load(index, &name)
         && let Ok(Some(man)) = scene.field_man_payload(index)
-        && let Ok(mf) = legaia_asset::man_section::parse(&man)
+        && let Ok(mf) = legaia_scene_formats::man_section::parse(&man)
         && let Ok((p, f)) = scene.field_tile_triggers(index)
     {
         let triggers: Vec<TileTrigger> = p.into_iter().chain(f).collect();
@@ -756,7 +756,7 @@ pub(super) fn hazards(session: &BootSession, dest: &str) -> HashSet<(i32, i32)> 
         // into `koin1b`, spawns only while `0x426` is clear, and once it is
         // set the corridor to the door to `kor` runs over that band.
         let live = |rec: u8| {
-            legaia_engine_core::man_field_scripts::partition2_record_gates(
+            legaia_engine_field::man_field_scripts::partition2_record_gates(
                 &mf,
                 &man,
                 usize::from(rec),

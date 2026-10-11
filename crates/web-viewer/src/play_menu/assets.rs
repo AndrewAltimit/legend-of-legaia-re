@@ -52,7 +52,9 @@ impl PlayMenuAssets {
     /// ([`crate::play_shop`]) dispatches on each descriptor's `renderer_va`,
     /// which no fallback can invent - those windows draw only when the real
     /// table is present, exactly as they do in the native window.
-    pub(crate) fn window_table(&self) -> Option<&legaia_asset::menu_windows::MenuWindowTable> {
+    pub(crate) fn window_table(
+        &self,
+    ) -> Option<&legaia_game_tables::menu_windows::MenuWindowTable> {
         self.windows.as_ref()
     }
 
@@ -117,21 +119,21 @@ impl LegaiaRuntime {
                     // where `build_atlas` cannot reach it, and those three
                     // cells silently bake blank.
                     let base =
-                        legaia_engine_core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64;
-                    let end = (legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
-                        + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE)
+                        legaia_engine_menus::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64;
+                    let end = (legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+                        + legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE)
                         as u64;
                     idx.prot_dat_raw_bytes(base, (end - base) as usize)
                 };
-                let pill =
-                    idx.entry_bytes_extended(legaia_asset::title_pak::PROT_INDEX_OVERLAY as u32);
+                let pill = idx
+                    .entry_bytes_extended(legaia_ui_formats::title_pak::PROT_INDEX_OVERLAY as u32);
                 // The battle HUD's 8x12 numeral cells, off the menu-glyph
                 // TIM's sub-palette 13. Baked into the same atlas so the
                 // HUD's sprite list stays one texture on this host too.
                 let glyph_tim = idx
                     .prot_dat_raw_bytes(
-                        legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
-                        legaia_asset::menu_glyph_atlas::TIM_SIZE,
+                        legaia_ui_formats::menu_glyph_atlas::PROT_DAT_OFFSET,
+                        legaia_ui_formats::menu_glyph_atlas::TIM_SIZE,
                     )
                     .ok();
                 // The menus' bold fixed-width numerals and the list pager
@@ -140,7 +142,7 @@ impl LegaiaRuntime {
                 // (`save_menu_atlas::menu_font_cells`).
                 if let Ok(system_ui) = panel.as_ref() {
                     font = font.with_sprite_cells(
-                        &legaia_engine_core::save_menu_atlas::menu_font_cells(
+                        &legaia_engine_menus::save_menu_atlas::menu_font_cells(
                             system_ui,
                             glyph_tim.as_deref(),
                         ),
@@ -154,9 +156,9 @@ impl LegaiaRuntime {
                                 // page, baked into the same atlas the chips
                                 // draw from (the native window bakes it too).
                                 if let Ok(flame) = idx.entry_bytes_extended(
-                                    legaia_engine_core::save_menu_atlas::FLAME_ATLAS_PROT_ENTRY,
+                                    legaia_engine_menus::save_menu_atlas::FLAME_ATLAS_PROT_ENTRY,
                                 ) {
-                                    legaia_engine_core::save_menu_atlas::add_cross_out_mark(
+                                    legaia_engine_menus::save_menu_atlas::add_cross_out_mark(
                                         &mut a, &flame,
                                     );
                                 }
@@ -173,10 +175,10 @@ impl LegaiaRuntime {
                 };
                 let windows = idx
                     .entry_bytes_extended(
-                        legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32,
+                        legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32,
                     )
                     .ok()
-                    .and_then(|b| legaia_asset::menu_windows::parse(&b).ok());
+                    .and_then(|b| legaia_game_tables::menu_windows::parse(&b).ok());
                 (chrome, windows)
             }
             None => (None, None),

@@ -5,7 +5,7 @@ use super::*;
 
 /// The summon band's live full-screen flash in a capture: which of the two
 /// templates it is and how many vsyncs it has run. Read off the SCUS fade
-/// actor's `+0x7C` block ([`legaia_engine_core::fade_ramp`]), whose
+/// actor's `+0x7C` block ([`legaia_engine_system::fade_ramp`]), whose
 /// countdowns give the age back exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetailFade {
@@ -24,7 +24,9 @@ pub(super) const ACTOR_DONE: u32 = 0x8;
 pub(super) const ACTOR_POOL: std::ops::Range<u32> = 0x8007_0000..0x800A_0000;
 
 /// The block's per-frame red delta for a template (`FUN_80020B00`).
-pub(super) fn template_delta(t: &legaia_engine_vm::battle_action::SummonFadeTemplate) -> i16 {
+pub(super) fn template_delta(
+    t: &legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
+) -> i16 {
     (((i32::from(t.end_rgb[0]) - i32::from(t.start_rgb[0])) * 0x40) / i32::from(t.duration)) as i16
 }
 
@@ -33,7 +35,9 @@ pub(super) fn template_delta(t: &legaia_engine_vm::battle_action::SummonFadeTemp
 /// two summon templates (the creature's own fades share the actor and the
 /// kind, never the delta and duration pair).
 pub fn summon_fade(ram: &[u8]) -> Option<RetailFade> {
-    use legaia_engine_vm::battle_action::{SUMMON_FADE_ID, SUMMON_FLASH_IN, SUMMON_FLASH_OUT};
+    use legaia_engine_battle_vm::battle_action::{
+        SUMMON_FADE_ID, SUMMON_FLASH_IN, SUMMON_FLASH_OUT,
+    };
     let s16 = |va: u32| game_anchors::u16_at(ram, va) as i16;
     let mut a = ACTOR_POOL.start;
     while a + 0xA0 < ACTOR_POOL.end {

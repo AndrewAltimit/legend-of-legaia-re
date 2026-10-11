@@ -70,9 +70,3 @@ pub mod retail_cam;
 pub mod seru_magic_ticks;
 pub mod seru_side_effect;
 pub mod status_effects;
-
-// Old paths of `seru_magic_ticks`, kept until consumers are rewritten.
-#[doc(hidden)]
-pub use seru_magic_ticks as cast_seru_ticks_a;
-#[doc(hidden)]
-pub use seru_magic_ticks as cast_seru_ticks_b;

@@ -15,9 +15,11 @@
 use std::path::PathBuf;
 
 use legaia_engine_audio::{SfxBank, Spu};
-use legaia_engine_core::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
-use legaia_engine_core::world::{SceneMode, SfxRingOp};
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::sound_state::SfxRingOp;
 
 /// `(VAB slot, monster.snd bank)` pairs.
 type MonsterBanks = Vec<(u8, u16)>;
@@ -96,9 +98,11 @@ fn a_monster_cue_keys_a_sample_from_its_monster_snd_bank() {
     let archive = session
         .host
         .index
-        .entry_bytes_extended(legaia_asset::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32)
+        .entry_bytes_extended(
+            legaia_container_formats::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32,
+        )
         .expect("monster.snd");
-    let bytes = legaia_asset::vab_multi_bank::bank_bytes(&archive, usize::from(bank))
+    let bytes = legaia_container_formats::vab_multi_bank::bank_bytes(&archive, usize::from(bank))
         .expect("bank in the archive");
     let report = legaia_vab::parse(bytes, 4).expect("the bank's VAB header at +4");
     let mut spu = Spu::new();

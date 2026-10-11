@@ -6,10 +6,10 @@
 //! is where `World` implements it, plus the field-entry demo handler, which
 //! drives the actor VM and so needs the whole world.
 
-pub use legaia_engine_mode::mode::*;
+use legaia_engine_mode::mode::*;
 
-use crate::input::InputState;
 use crate::world::World;
+use legaia_engine_system::input::InputState;
 use legaia_engine_vm::Position as ActorVmPosition;
 
 impl ModeWorld for World {
@@ -82,7 +82,7 @@ impl FieldDemoHandler {
 
 impl ModeHandler<World> for FieldDemoHandler {
     fn run(&mut self, mode: GameMode, world: &mut World, input: &InputState) -> HandlerResult {
-        use crate::input::PadButton;
+        use legaia_engine_system::input::PadButton;
         match mode {
             GameMode::MainInit => {
                 if !self.initialised {
@@ -148,14 +148,26 @@ mod tests {
         let mut seat = ModeSeat::new(GameMode::MainMode);
         // A frame with Start newly pressed - the edge that opens the menu.
         world.set_pad(0);
-        world.set_pad(crate::input::PadButton::Start.mask());
-        assert!(world.input.just_pressed(crate::input::PadButton::Start));
+        world.set_pad(legaia_engine_system::input::PadButton::Start.mask());
+        assert!(
+            world
+                .input
+                .just_pressed(legaia_engine_system::input::PadButton::Start)
+        );
 
         seat.enter(GameMode::CardInit, &mut world);
         assert_eq!(seat.game_mode(), GameMode::CardMode);
         // Held is untouched; only the edge is gone.
-        assert!(!world.input.just_pressed(crate::input::PadButton::Start));
-        assert!(world.input.pressed(crate::input::PadButton::Start));
+        assert!(
+            !world
+                .input
+                .just_pressed(legaia_engine_system::input::PadButton::Start)
+        );
+        assert!(
+            world
+                .input
+                .pressed(legaia_engine_system::input::PadButton::Start)
+        );
         assert_eq!(seat.edges(), 1);
     }
 
@@ -168,14 +180,16 @@ mod tests {
         let mut seat = ModeSeat::new(GameMode::MainMode);
         seat.adopt_scene_mode(SceneMode::Battle);
         world.set_pad(0);
-        world.set_pad(crate::input::PadButton::Circle.mask());
+        world.set_pad(legaia_engine_system::input::PadButton::Circle.mask());
 
         let f = seat.frame(&mut world);
         let edge = f.edge.expect("the word moved, so the edge is taken");
         assert_eq!(edge.to, GameMode::BattleMode);
         assert!(!edge.swallowed_pad_edges);
         assert!(
-            world.input.just_pressed(crate::input::PadButton::Circle),
+            world
+                .input
+                .just_pressed(legaia_engine_system::input::PadButton::Circle),
             "the frame's own input survives an adopted transition"
         );
     }
@@ -311,7 +325,7 @@ mod tests {
         // a session installed - a minigame mode with no session self-heals
         // back to its return mode inside the world tick, which would mask the
         // install this test is about.
-        w.enter_fishing(crate::fishing::PondSession::new(
+        w.enter_fishing(legaia_engine_fishing::fishing::PondSession::new(
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -319,7 +333,7 @@ mod tests {
             0,
             0,
             0,
-            crate::fishing::FishingRecord::default(),
+            legaia_engine_fishing::fishing::FishingRecord::default(),
             0,
             0,
         ));
@@ -439,7 +453,7 @@ mod tests {
         assert_eq!(r, HandlerResult::Continue);
         assert_eq!(d.current(), GameMode::MainMode);
         // Cross press: transitions to MapdispInit.
-        input.set_pad(crate::input::PadButton::Cross.mask());
+        input.set_pad(legaia_engine_system::input::PadButton::Cross.mask());
         let r = d.tick(&mut h, &mut w, &input);
         assert_eq!(r, HandlerResult::GoTo(GameMode::MapdispInit));
         assert_eq!(d.current(), GameMode::MapdispInit);

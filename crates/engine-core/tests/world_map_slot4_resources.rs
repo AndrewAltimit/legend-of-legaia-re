@@ -88,7 +88,7 @@ fn world_map_scene_surfaces_slot4_pool() {
 
         // The decoded bank must yield a non-empty translation-path plot with
         // motion on more than one axis - the live overlay's geometry source.
-        let segs = legaia_asset::world_map_overlay::translation_path_segments(slot4);
+        let segs = legaia_scene_formats::world_map_overlay::translation_path_segments(slot4);
         assert!(
             !segs.is_empty(),
             "{map}: no slot-4 translation-path segments"

@@ -47,10 +47,10 @@ fn scene_color_grade_only_on_the_prologue_cutscene() {
         "the Rim Elm hand-off renders in full colour"
     );
     // The opdeene prologue cutscene renders through the warm sepia grade.
-    w.set_active_scene_label(legaia_asset::new_game::OPENING_CUTSCENE_SCENE);
+    w.set_active_scene_label(legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE);
     assert_eq!(
         w.scene_color_grade(),
-        Some(crate::fade::ColorGrade::PROLOGUE_SEPIA)
+        Some(legaia_engine_system::fade::ColorGrade::PROLOGUE_SEPIA)
     );
 }
 
@@ -70,7 +70,7 @@ fn scene_depth_cue_tracks_the_prologue_grade_gate() {
         w.set_active_scene_label(scene);
         assert_eq!(
             w.scene_depth_cue(),
-            Some(crate::fade::DepthCueRamp::PROLOGUE_GOLD),
+            Some(legaia_engine_system::fade::DepthCueRamp::PROLOGUE_GOLD),
             "{scene} stages the prologue depth-cue ramp"
         );
     }

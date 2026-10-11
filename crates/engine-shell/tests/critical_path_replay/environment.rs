@@ -40,8 +40,8 @@ pub(super) fn open_host() -> Option<SceneHost> {
     // survived" unmeasurable (and, before the wipe hold existed, silently
     // scored a total party kill as `Fight::Survived`).
     let scus = std::fs::read(extracted.join("SCUS_942.54")).expect("read SCUS_942.54");
-    let party =
-        legaia_asset::new_game::StartingParty::from_scus(&scus).expect("SCUS new-game template");
+    let party = legaia_game_tables::new_game::StartingParty::from_scus(&scus)
+        .expect("SCUS new-game template");
     host.world.seed_starting_party(&party);
     Some(host)
 }

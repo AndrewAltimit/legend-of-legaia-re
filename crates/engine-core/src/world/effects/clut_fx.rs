@@ -2,7 +2,9 @@
 //! written through to the software VRAM.
 
 use super::*;
-use crate::clut_fx::{CLUT_CELL_ENTRIES, ClutCellFxOp, ClutFade, ClutFadeStep, flat_b_row};
+use legaia_engine_field::clut_fx::{
+    CLUT_CELL_ENTRIES, ClutCellFxOp, ClutFade, ClutFadeStep, flat_b_row,
+};
 
 // --- scripted CLUT-cell effects (field-VM 0x4C n6 sub-0x61) ----------------
 

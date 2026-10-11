@@ -16,12 +16,12 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_disc_patch::rng::seed_from_str;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 use legaia_patcher::items::valid_item_pool;
-use legaia_patcher::rng::seed_from_str;
-use legaia_patcher::translation::{
+use legaia_translate::{
     ImportPhase, ImportReport, LanguagePack, export_pack, import_pack, import_pack_phase,
     import_pack_relayout, lift,
 };
@@ -115,9 +115,12 @@ impl Progress {
 /// Parse one arts-AP token: `[CHARACTER:]COMBO=AMOUNT` (`Vahn:RDLDL=10`,
 /// `RDLDL=10`). `grant` picks the mode. Returns `None` on any malformed token
 /// (the caller reports it in the summary and carries on).
-fn parse_art_ap_token(tok: &str, grant: bool) -> Option<legaia_patcher::arts_ap_grant::ArtApSpec> {
+fn parse_art_ap_token(
+    tok: &str,
+    grant: bool,
+) -> Option<legaia_arts_patch::arts_ap_grant::ArtApSpec> {
     use legaia_art::queue::Character;
-    use legaia_patcher::arts_ap_grant::{AP_CAP, ApMode, ArtApSpec};
+    use legaia_arts_patch::arts_ap_grant::{AP_CAP, ApMode, ArtApSpec};
     let (lhs, val_str) = tok.trim().split_once('=')?;
     let (character, combo_str) = match lhs.split_once(':') {
         Some((c, rest)) => {
@@ -131,7 +134,7 @@ fn parse_art_ap_token(tok: &str, grant: bool) -> Option<legaia_patcher::arts_ap_
         }
         None => (None, lhs),
     };
-    let combo = legaia_patcher::arts_power::parse_combo(combo_str.trim())?;
+    let combo = legaia_arts_patch::arts_power::parse_combo(combo_str.trim())?;
     let vs = val_str.trim();
     let amount = vs
         .strip_prefix("0x")

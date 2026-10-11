@@ -22,7 +22,7 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_asset::monster_archive::{self, SLOT_STRIDE};
+use legaia_actor_formats::monster_archive::{self, SLOT_STRIDE};
 use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::apply;
 use legaia_patcher::attack_count::{self, ACTION_BAND, COST_UNAVAILABLE};

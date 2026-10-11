@@ -37,7 +37,8 @@ use legaia_engine_core::scene::BgmDirector;
 use legaia_seq::Seq;
 use serde::{Deserialize, Serialize};
 
-use crate::{BootConfig, BootSession};
+use crate::BootSession;
+use legaia_engine_session::boot::BootConfig;
 
 mod divergence;
 mod engine_trace;
@@ -237,7 +238,7 @@ pub struct AudioTraceBuildOptions {
 impl Default for AudioTraceBuildOptions {
     fn default() -> Self {
         Self {
-            scene: crate::boot::DEFAULT_BOOT_SCENE.to_string(),
+            scene: legaia_engine_session::boot::DEFAULT_BOOT_SCENE.to_string(),
             bgm_id: None,
             us_per_frame: 1_000_000.0 / 60.0,
             frames: 60,

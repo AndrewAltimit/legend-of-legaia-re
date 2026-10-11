@@ -41,7 +41,7 @@ pub(super) fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
         // own.
         host.world.toggles.live_gameplay_loop = true;
         host.world
-            .set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+            .set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
         // Leave Rim Elm with the purse spent on healing. See [`BAG_HEAL_COUNT`]
         // for why five, and why this is the model's one non-pad input.
         if fight.bag {

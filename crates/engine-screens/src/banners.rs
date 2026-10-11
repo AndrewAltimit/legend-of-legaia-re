@@ -2,7 +2,7 @@
 //! line, both ticked down by `World::tick`.
 
 use crate::{CAPTURE_PEN, LEVEL_UP_PEN, ScreenInputs};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_ui::{self as ui, TextDraw};
 
 /// The banner rows for one frame, in **stage** pixels.

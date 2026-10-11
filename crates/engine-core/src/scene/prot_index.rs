@@ -50,7 +50,7 @@ pub struct ProtIndex {
     class_cache: Mutex<HashMap<u32, Class>>,
     /// Lazy parse of the boot-resident system-UI TIM bundle (raw TOC
     /// entries 0/1). Populated on first `system_ui_bundle` call.
-    system_ui_cache: Mutex<Option<Arc<legaia_asset::system_ui_bundle::SystemUiBundle>>>,
+    system_ui_cache: Mutex<Option<Arc<legaia_ui_formats::system_ui_bundle::SystemUiBundle>>>,
     /// Retail region this index was opened against. Metadata only - the TOC
     /// formula and CDNAME layout are identical across regions.
     pub region: Region,
@@ -202,7 +202,7 @@ impl ProtIndex {
     /// not see a neighbour's bytes - the per-summon move-VM stagers (PROT
     /// 0903.., the high-summon block, the enemy-boss block), whose spawn-site
     /// record pointers are only valid for their own load at the shared link
-    /// base. Matches `legaia_asset::summon_overlay::unique_content_len`.
+    /// base. Matches `legaia_overlay_images::summon_overlay::unique_content_len`.
     pub fn entry_bytes_lba_footprint(&self, idx: u32) -> Result<Vec<u8>> {
         let mut bytes = self.entry_bytes_extended(idx)?;
         if let Some(count) = self.entry_lba_count_retail(idx as u16) {
@@ -235,24 +235,26 @@ impl ProtIndex {
     /// (image at declared rect, CLUT as a flattened `w*h x 1` strip) and
     /// never evicts it, so the engine's per-scene VRAM pre-pass layers it
     /// under every scene build. Lazy + cached; see
-    /// [`legaia_asset::system_ui_bundle`] and
+    /// [`legaia_ui_formats::system_ui_bundle`] and
     /// [`docs/formats/tim-pack.md`].
     ///
     /// Raw TOC entry `n` spans sectors `toc[n] .. toc[n+1]` in this
     /// index's TOC frame (extraction entry `p` = raw entry `p + 2`).
-    pub fn system_ui_bundle(&self) -> Result<Arc<legaia_asset::system_ui_bundle::SystemUiBundle>> {
+    pub fn system_ui_bundle(
+        &self,
+    ) -> Result<Arc<legaia_ui_formats::system_ui_bundle::SystemUiBundle>> {
         if let Some(b) = crate::lock_poison_tolerant(&self.system_ui_cache).clone() {
             return Ok(b);
         }
-        let mut ranges = Vec::with_capacity(legaia_asset::system_ui_bundle::RAW_ENTRY_COUNT);
-        for n in 0..legaia_asset::system_ui_bundle::RAW_ENTRY_COUNT {
+        let mut ranges = Vec::with_capacity(legaia_ui_formats::system_ui_bundle::RAW_ENTRY_COUNT);
+        for n in 0..legaia_ui_formats::system_ui_bundle::RAW_ENTRY_COUNT {
             let (start, end) = match (self.toc.get(n), self.toc.get(n + 1)) {
                 (Some(&s), Some(&e)) if s > 0 && e > s => (s as u64 * 0x800, e as u64 * 0x800),
                 _ => anyhow::bail!("PROT TOC head words missing for raw entry {n}"),
             };
             ranges.push(self.prot_dat_raw_bytes(start, (end - start) as usize)?);
         }
-        let bundle = legaia_asset::system_ui_bundle::parse_entries(&ranges[0], &ranges[1])
+        let bundle = legaia_ui_formats::system_ui_bundle::parse_entries(&ranges[0], &ranges[1])
             .context("parse the system-UI bundle (raw TOC entries 0/1)")?;
         let arc = Arc::new(bundle);
         *crate::lock_poison_tolerant(&self.system_ui_cache) = Some(arc.clone());
@@ -321,7 +323,7 @@ impl ProtIndex {
         (start..end)
             .filter(|&idx| {
                 self.entry_bytes(idx)
-                    .map(|b| legaia_asset::scene_tmd_stream::is_scene_tmd_stream(&b))
+                    .map(|b| legaia_scene_formats::scene_tmd_stream::is_scene_tmd_stream(&b))
                     .unwrap_or(false)
             })
             .collect()
@@ -362,7 +364,7 @@ impl ProtIndex {
     /// The PROT entry the battle backdrop comes from when the fight starts in
     /// a region whose stage variant is `variant` (`region[+8] & 0x1F`, retail
     /// `_DAT_8007BD60`): scene `scene_name`'s CDNAME index plus the variant
-    /// plus three ([`crate::region_encounter::battle_stage_entry_for_variant`]:
+    /// plus three ([`legaia_engine_battle::region_encounter::battle_stage_entry_for_variant`]:
     /// battle init `FUN_800513F0` hands `scene_index + variant` to the
     /// loader `FUN_8001FA88`). `None` when the scene has no CDNAME block or the
     /// named entry is not a `scene_tmd_stream`, so a caller can fall back to
@@ -370,10 +372,12 @@ impl ProtIndex {
     pub fn battle_stage_entry_for_region(&self, scene_name: &str, variant: u8) -> Option<u32> {
         let map = self.cdname.as_ref()?;
         let (raw_start, _) = cdname::block_range_for_name(map, scene_name)?;
-        let idx = crate::region_encounter::battle_stage_entry_for_variant(raw_start, variant);
+        let idx = legaia_engine_battle::region_encounter::battle_stage_entry_for_variant(
+            raw_start, variant,
+        );
         self.entry_bytes(idx)
             .ok()
-            .filter(|b| legaia_asset::scene_tmd_stream::is_scene_tmd_stream(b))
+            .filter(|b| legaia_scene_formats::scene_tmd_stream::is_scene_tmd_stream(b))
             .map(|_| idx)
     }
 
@@ -389,7 +393,7 @@ impl ProtIndex {
     /// host clones this into [`crate::world::DiscTables::scene_toc_names`] so the
     /// world-side menu-warp drain can resolve a quick-travel placement's
     /// `scene_id` (that field is a raw TOC index - see
-    /// `legaia_asset::worldmap_menu`).
+    /// `legaia_game_tables::worldmap_menu`).
     pub fn cdname_map(&self) -> Option<&cdname::IndexMap> {
         self.cdname.as_ref()
     }

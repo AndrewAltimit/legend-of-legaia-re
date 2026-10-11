@@ -35,7 +35,7 @@
 
 /// Object-grid (`.MAP` `+0x8000`) cell bit marking a tile whose floor height
 /// comes from the elevation-override model instead of the corner-nibble
-/// bilinear surface. Sibling of `legaia_asset::field_objects`'s
+/// bilinear surface. Sibling of `legaia_scene_formats::field_objects`'s
 /// `CELL_VISIBLE` (`0x2000`) / `CELL_WALK_VISIBLE` (`0x1000`).
 pub const CELL_ELEVATION_OVERRIDE: u16 = 0x0800;
 

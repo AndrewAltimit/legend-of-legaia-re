@@ -26,7 +26,7 @@ use super::*;
 ///   against `0x46D` is where the player walks, not a script fact.
 #[test]
 fn region_gate_in_bracket_write_order() {
-    use legaia_engine_core::man_field_scripts::{
+    use legaia_engine_field::man_field_scripts::{
         partition2_record_gates, walk_partition_gflag_sites,
     };
     let Some(index) = open_index() else { return };
@@ -53,7 +53,7 @@ fn region_gate_in_bracket_write_order() {
             .field_man_payload(&index)
             .expect("payload")
             .expect("MAN");
-        let mf = legaia_asset::man_section::parse(&man).expect("parse");
+        let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
         (mf, man)
     };
     let gates = |scene_name: &str, rec: usize| {
@@ -139,7 +139,7 @@ fn region_gate_in_bracket_write_order() {
 /// changes nothing a script, a record gate or an engine path can observe.
 #[test]
 fn region_gate_unordered_flags_have_no_joint_reader() {
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some(index) = open_index() else { return };
     let scenes = index.cdname_scene_names();
     let census = system_flag_census(&index, &scenes);
@@ -165,13 +165,13 @@ fn region_gate_unordered_flags_have_no_joint_reader() {
     }
     // Each reader's whole flag traffic is the one test of its own flag.
     {
-        use legaia_engine_core::man_field_scripts::walk_partition_gflag_sites;
+        use legaia_engine_field::man_field_scripts::walk_partition_gflag_sites;
         let scene = Scene::load(&index, "deroa").expect("load deroa");
         let man = scene
             .field_man_payload(&index)
             .expect("payload")
             .expect("MAN");
-        let mf = legaia_asset::man_section::parse(&man).expect("parse");
+        let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
         for (p, rec, flag) in [(2usize, 8usize, 0x46Eu16), (0, 0, 0x46F), (0, 5, 0x46F)] {
             let sites: Vec<_> = walk_partition_gflag_sites(&mf, &man, p)
                 .into_iter()
@@ -187,7 +187,7 @@ fn region_gate_unordered_flags_have_no_joint_reader() {
             continue;
         };
         for carrier in scene_man_carriers(&index, &scene) {
-            let Ok(mf) = legaia_asset::man_section::parse(&carrier.payload) else {
+            let Ok(mf) = legaia_scene_formats::man_section::parse(&carrier.payload) else {
                 continue;
             };
             let n2 = mf.header.partition_counts[2] as usize;

@@ -20,13 +20,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
-use legaia_asset::man_section::parse as parse_man;
-use legaia_engine_core::man_field_scripts::{
+use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_field::man_field_scripts::{
     classify_placements, partition_record_span, placement_inline_prologue,
     placement_scripted_menu_record,
 };
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+use legaia_scene_formats::man_section::parse as parse_man;
 
 fn extracted_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from)

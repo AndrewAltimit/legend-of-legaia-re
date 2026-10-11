@@ -49,13 +49,13 @@ fn koin3_entry_script_passes_its_actor_guards_to_the_dance_hall_track() {
         eprintln!("[skip] extracted disc not found (set LEGAIA_EXTRACTED_DIR)");
         return;
     };
-    let cfg = legaia_engine_shell::boot::BootConfig {
+    let cfg = legaia_engine_session::boot::BootConfig {
         scene: "koin3".into(),
         enable_audio: false,
     };
     let mut session =
         legaia_engine_shell::boot::BootSession::open(&extracted, &cfg).expect("open koin3");
-    let opts = legaia_engine_shell::boot::FieldLiveOpts::default();
+    let opts = legaia_engine_session::boot::FieldLiveOpts::default();
     session
         .enter_field_live("koin3", &opts)
         .expect("enter koin3");

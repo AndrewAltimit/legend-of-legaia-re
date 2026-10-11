@@ -1,4 +1,39 @@
 use super::*;
+use legaia_engine_ui::BattleChromeRects;
+use legaia_engine_ui::NOW_CHECKING_PANEL_POS;
+use legaia_engine_ui::NOW_CHECKING_PANEL_SIZE;
+use legaia_engine_ui::SAVE_SELECT_CURSOR_POS;
+use legaia_engine_ui::SAVE_SELECT_SLOT_PITCH_Y;
+use legaia_engine_ui::SAVE_SELECT_SLOT1_POS;
+use legaia_engine_ui::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE;
+use legaia_engine_ui::SAVE_SELECT_TITLE_COLOR;
+use legaia_engine_ui::SAVE_SELECT_TITLE_POS;
+use legaia_engine_ui::SLOT_GRID_ORIGIN;
+use legaia_engine_ui::SLOT_GRID_PITCH_X;
+use legaia_engine_ui::SLOT_GRID_PITCH_Y;
+use legaia_engine_ui::SLOT_GRID_ROW_STAGGER_X;
+use legaia_engine_ui::SLOT_INFO_CAPTION_CENTER_X;
+use legaia_engine_ui::SLOT_INFO_PANEL_PARKED_Y;
+use legaia_engine_ui::SLOT_INFO_PANEL_SIZE;
+use legaia_engine_ui::SaveMenuAtlasRects;
+use legaia_engine_ui::SaveSelectRow;
+use legaia_engine_ui::SlotGridCell;
+use legaia_engine_ui::SlotInfoView;
+use legaia_engine_ui::dialog_advance_hand_sprite;
+use legaia_engine_ui::dialog_option_hand_sprite;
+use legaia_engine_ui::dialog_window_chrome_draws_for;
+use legaia_engine_ui::menu_window_chrome_draws_for;
+use legaia_engine_ui::now_checking_panel_draws_for;
+use legaia_engine_ui::now_checking_text_draws_for;
+use legaia_engine_ui::save_select_chrome_draws_for;
+use legaia_engine_ui::save_select_cursor_draw_for;
+use legaia_engine_ui::save_select_draws_for;
+use legaia_engine_ui::scale_stage_text_draws;
+use legaia_engine_ui::slot_info_caption_draws_for;
+use legaia_engine_ui::slot_info_panel_draws_for;
+use legaia_engine_ui::slot_info_panel_text_draws_for;
+use legaia_engine_ui::slot_preview_grid_draws_for;
+use legaia_engine_ui::title_draws_for;
 
 #[test]
 fn title_phase_2_renders_three_rows() {

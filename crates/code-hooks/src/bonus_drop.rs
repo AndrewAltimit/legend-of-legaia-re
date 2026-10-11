@@ -63,7 +63,7 @@
 
 use anyhow::{Result, bail};
 
-use legaia_asset::item_names;
+use legaia_game_tables::item_names;
 
 use crate::mips::*;
 

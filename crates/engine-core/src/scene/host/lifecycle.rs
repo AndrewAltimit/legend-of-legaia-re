@@ -23,7 +23,7 @@ impl SceneHost {
             .field_man_payload(&self.index)
             .ok()
             .flatten()
-            .and_then(|man| legaia_asset::place_names::scene_name(&man))
+            .and_then(|man| legaia_scene_formats::place_names::scene_name(&man))
             .map(|n| n.name)
             .unwrap_or_default();
         legaia_save::SaveResume {
@@ -190,8 +190,12 @@ impl SceneHost {
             .scene_clip_meta
             .iter()
             .map(|&(frames, gated, div)| {
-                let step = crate::field_anim::clip_step(crate::field_anim::CLIP_RATE, gated, div);
-                crate::field_anim::clip_end_ticks(frames, step)
+                let step = legaia_engine_field::field_anim::clip_step(
+                    legaia_engine_field::field_anim::CLIP_RATE,
+                    gated,
+                    div,
+                );
+                legaia_engine_field::field_anim::clip_end_ticks(frames, step)
             })
             .collect();
         self.scene = Some(scene);
@@ -225,7 +229,7 @@ impl SceneHost {
         let man_header = self
             .field_man_cache
             .as_ref()
-            .and_then(|man| legaia_asset::man_section::parse(man).ok());
+            .and_then(|man| legaia_scene_formats::man_section::parse(man).ok());
         self.world
             .install_scene_save_permission(man_header.as_ref());
         // The actor-list work retail's MAN loader `FUN_8003AEB0` does around
@@ -253,7 +257,7 @@ impl SceneHost {
         self.scene_gold_charges = self
             .field_man_cache
             .as_ref()
-            .map(|man| legaia_asset::inn_costs::scan(man))
+            .map(|man| legaia_scene_formats::inn_costs::scan(man))
             .unwrap_or_default();
         // The scene's CD-XA one-shots, for a host that stages clips
         // asynchronously to have them resident before the op fires - plus the
@@ -271,7 +275,7 @@ impl SceneHost {
 
     /// Decode + cache the just-loaded scene's named scene-change destinations
     /// (`0x3F` ops) from its MAN, via
-    /// [`crate::man_field_scripts::scene_destinations`]. Clears to empty when
+    /// [`legaia_engine_field::man_field_scripts::scene_destinations`]. Clears to empty when
     /// the scene carries no MAN or it doesn't parse. Called by [`Self::load_scene`]
     /// so every scene-entry path keeps the table current.
     fn refresh_scene_destinations(&mut self) {
@@ -280,8 +284,10 @@ impl SceneHost {
             .as_ref()
             .and_then(|s| s.field_man_payload(&self.index).ok().flatten())
             .and_then(|man| {
-                let mf = legaia_asset::man_section::parse(&man).ok()?;
-                Some(crate::man_field_scripts::scene_destinations(&mf, &man))
+                let mf = legaia_scene_formats::man_section::parse(&man).ok()?;
+                Some(legaia_engine_field::man_field_scripts::scene_destinations(
+                    &mf, &man,
+                ))
             })
             .unwrap_or_default();
     }
@@ -290,8 +296,10 @@ impl SceneHost {
     /// (`0x3F` ops): every town / dungeon its controller script can warp to,
     /// each with its `i16` index + entry tile. Empty when no scene is loaded or
     /// the scene has no destination table. See
-    /// [`crate::man_field_scripts::scene_destinations`].
-    pub fn scene_destinations(&self) -> &[crate::man_field_scripts::SceneDestination] {
+    /// [`legaia_engine_field::man_field_scripts::scene_destinations`].
+    pub fn scene_destinations(
+        &self,
+    ) -> &[legaia_engine_field::man_field_scripts::SceneDestination] {
         &self.scene_destinations
     }
 
@@ -299,9 +307,9 @@ impl SceneHost {
     /// op-`0x4E` gold-gate + negative `0x3A` debit pair in its field-VM
     /// script (inn stays, paid tours, casino gold-to-coin counters), in
     /// script order. Scanned from the MAN at [`Self::load_scene`] via
-    /// [`legaia_asset::inn_costs::scan`]. Empty when no scene is loaded or
+    /// [`legaia_scene_formats::inn_costs::scan`]. Empty when no scene is loaded or
     /// the scene charges nothing.
-    pub fn scene_gold_charges(&self) -> &[legaia_asset::inn_costs::GoldCharge] {
+    pub fn scene_gold_charges(&self) -> &[legaia_scene_formats::inn_costs::GoldCharge] {
         &self.scene_gold_charges
     }
 
@@ -346,7 +354,7 @@ impl SceneHost {
         // records, so the stamp above does not reach them: hold the seat tile
         // for them the same way (a walked crossing caught between its portal
         // firing and the next scene loading stands on that portal).
-        if self.world.mode == crate::world::SceneMode::WorldMap {
+        if self.world.mode == legaia_engine_mode::mode::SceneMode::WorldMap {
             self.world.world_map.seat_hold_tile = Some((tx, tz));
         }
         true
@@ -369,8 +377,10 @@ impl SceneHost {
             return false;
         }
         let (primary, fallback) = &self.field_triggers;
-        crate::field_regions::lookup_tile_trigger(primary, fallback, tx as u8, tz as u8)
-            .is_some_and(|t| t.gate == 1)
+        legaia_engine_field::field_regions::lookup_tile_trigger(
+            primary, fallback, tx as u8, tz as u8,
+        )
+        .is_some_and(|t| t.gate == 1)
     }
 
     /// A [`SceneDestinationResolver`] over the current scene's destinations -

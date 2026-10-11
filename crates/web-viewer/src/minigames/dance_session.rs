@@ -23,7 +23,7 @@ impl LegaiaMinigames {
             game.attach_clip_bank(b.clip_bank());
         }
         self.dance = Some(game);
-        self.dance_countin = Some(legaia_engine_core::dance::CountIn::new());
+        self.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
         self.dance_tutorial = None;
         self.dance_tutorial_frame = None;
         true
@@ -36,7 +36,7 @@ impl LegaiaMinigames {
     /// play page's door-warp entry run. Returns `false` when the overlay
     /// didn't decode.
     pub fn dance_start_mode(&mut self, mode: u8, long_song: bool) -> bool {
-        use legaia_engine_core::dance::DanceMode as M;
+        use legaia_engine_minigames::dance::DanceMode as M;
         let mode = match mode {
             1 => M::Finals,
             2 => M::HowTo,
@@ -53,9 +53,9 @@ impl LegaiaMinigames {
             game.attach_clip_bank(b.clip_bank());
         }
         self.dance = Some(game);
-        self.dance_countin = Some(legaia_engine_core::dance::CountIn::new());
+        self.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
         self.dance_tutorial =
-            (mode == M::HowTo).then(legaia_engine_core::dance_tutorial::DanceTutorial::new);
+            (mode == M::HowTo).then(legaia_engine_minigames::dance_tutorial::DanceTutorial::new);
         self.dance_tutorial_frame = None;
         true
     }
@@ -71,7 +71,7 @@ impl LegaiaMinigames {
     /// face button (advance / confirm), `2` cursor back, `4` cursor on.
     /// Returns the cue id the frame fires (`0` for none).
     pub fn dance_tutorial_step(&mut self, buttons: u8) -> u32 {
-        use legaia_engine_core::dance_tutorial as dt;
+        use legaia_engine_minigames::dance_tutorial as dt;
         let mut pad = 0u16;
         if buttons & 1 != 0 {
             pad |= dt::PAD_ADVANCE;
@@ -112,7 +112,7 @@ impl LegaiaMinigames {
     /// `ui_dance::dance_tutorial_draws_for` both play hosts draw. Empty with
     /// no live tutorial or no dialog font.
     pub fn dance_tutorial_rgba(&self, w: u32, h: u32) -> Vec<u8> {
-        use legaia_engine_ui::ui_dance;
+        use legaia_engine_ui::dance as ui_dance;
         let (Some(tf), Some(font)) = (self.dance_tutorial_frame.as_ref(), self.slot_font.as_ref())
         else {
             return Vec::new();
@@ -271,8 +271,8 @@ impl LegaiaMinigames {
             g.lane(),
             g.beat_index(),
             g.intra_beat_phase(),
-            legaia_engine_core::dance::BEAT_PERIOD,
-            legaia_engine_core::dance::BEAT_WINDOW,
+            legaia_engine_minigames::dance::BEAT_PERIOD,
+            legaia_engine_minigames::dance::BEAT_WINDOW,
             g.accuracy_weight(),
             g.in_dead_zone(),
             g.on_combo_slot(),
@@ -324,19 +324,19 @@ impl LegaiaMinigames {
     ///   "parts":   [ {"sprite":11,"x":160,"y":144,"fade":32,"shadow":true} ] }
     /// ```
     ///
-    /// `dancers` is [`legaia_engine_core::dance::dance_clip_driver_gate`]
+    /// `dancers` is [`legaia_engine_minigames::dance::dance_clip_driver_gate`]
     /// (`FUN_801d4098`) over the pool `FUN_801d0190`'s spawn stores seed:
     /// `clip` is the actor's `+0x5C` bound anim id and `clip_driver` whether
     /// the shared clip driver runs for it this frame.
     ///
-    /// `parts` is [`legaia_engine_core::dance::sprite_part_emit`]
+    /// `parts` is [`legaia_engine_minigames::dance::sprite_part_emit`]
     /// (`FUN_801d387c`) plus its fade prologue over the sprite parts the run
     /// spawns on a scoring judge - `x`/`y` are already through the emit's
     /// `>> 3`, so they are page pixels in the retail 320x240 stage, and
     /// `shadow` marks the two-emit arm (draw the cell twice, the second copy
     /// dimmer).
     pub fn dance_actors_json(&self) -> String {
-        use legaia_engine_core::dance::SpritePartEmit;
+        use legaia_engine_minigames::dance::SpritePartEmit;
         let Some(g) = self.dance.as_ref() else {
             return r#"{"dancers":[],"parts":[]}"#.to_string();
         };
@@ -390,12 +390,12 @@ impl LegaiaMinigames {
         overlay_image(
             &self.prot,
             &self.entries,
-            legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32,
+            legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32,
         )
     }
 
     /// Decode the dance step chart out of the dance overlay (PROT 0980).
-    pub(super) fn dance_chart(&self) -> Option<legaia_asset::dance_chart::DanceChart> {
-        legaia_asset::dance_chart::parse(&self.dance_overlay()?)
+    pub(super) fn dance_chart(&self) -> Option<legaia_minigame_formats::dance_chart::DanceChart> {
+        legaia_minigame_formats::dance_chart::parse(&self.dance_overlay()?)
     }
 }

@@ -24,7 +24,7 @@ const TRIGGER_FALLBACK_OFFSET: usize = 0x12000;
 /// Static topology, per-frame positions, and no allocation in the frame path.
 #[derive(Default)]
 pub(crate) struct DanceMarkers {
-    floor: legaia_engine_core::minigame_floor::MarkerFloor,
+    floor: legaia_engine_fishing::minigame_floor::MarkerFloor,
     /// Base positions - every span at its real world position.
     positions: Vec<f32>,
     uvs: Vec<i32>,
@@ -89,7 +89,7 @@ pub(super) fn bake_dance_markers(
     overlay: &[u8],
     origin: (f32, f32, f32),
 ) -> DanceMarkers {
-    use legaia_engine_core::minigame_floor as mf;
+    use legaia_engine_fishing::minigame_floor as mf;
 
     let Some(script) = legaia_engine_fishing::dance_marker::MarkerScript::from_overlay(
         overlay,
@@ -104,10 +104,10 @@ pub(super) fn bake_dance_markers(
         return DanceMarkers::default();
     };
     let primary =
-        legaia_engine_core::field_regions::parse_tile_triggers(&map[TRIGGER_BLOCK_OFFSET..]);
+        legaia_engine_field::field_regions::parse_tile_triggers(&map[TRIGGER_BLOCK_OFFSET..]);
     let fallback = map
         .get(TRIGGER_FALLBACK_OFFSET..)
-        .map(legaia_engine_core::field_regions::parse_tile_triggers)
+        .map(legaia_engine_field::field_regions::parse_tile_triggers)
         .unwrap_or_default();
     let ramp = mf::height_ramp();
     let floor = mf::MarkerFloor::build(
@@ -153,9 +153,9 @@ pub(super) fn bake_dance_markers(
             let Some(rtmd) = res.tmds.get(res_tmd) else {
                 continue;
             };
-            let entry = built
-                .entry(res_tmd)
-                .or_insert_with(|| crate::field_scene::build_hybrid_env_mesh(rtmd, &res.vram));
+            let entry = built.entry(res_tmd).or_insert_with(|| {
+                legaia_engine_core::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram)
+            });
             let (vm, flat) = (&entry.0, &entry.1);
             if vm.positions.is_empty() {
                 continue;
@@ -181,9 +181,9 @@ pub(super) fn bake_dance_markers(
             }
             if flat.is_empty() {
                 let neutral = [
-                    legaia_engine_core::packet_color::NEUTRAL,
-                    legaia_engine_core::packet_color::NEUTRAL,
-                    legaia_engine_core::packet_color::NEUTRAL,
+                    legaia_engine_field::packet_color::NEUTRAL,
+                    legaia_engine_field::packet_color::NEUTRAL,
+                    legaia_engine_field::packet_color::NEUTRAL,
                     255,
                 ];
                 out.flat

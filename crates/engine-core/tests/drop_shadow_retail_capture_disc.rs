@@ -30,8 +30,9 @@
 use legaia_engine_core::drop_shadow::{
     SHADOW_CLUT, SHADOW_TPAGE, ShadowVertex, casts_shadow, shadow_grid, shadow_quads,
 };
-use legaia_mednafen::prim_pool::{self, Prim};
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
+use legaia_ram_image::prim_pool::{self, Prim};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 

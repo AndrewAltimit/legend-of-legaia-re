@@ -46,7 +46,7 @@
 //! All five retail call sites (`0x801CFCE4` / `0x801CFDE8` / `0x801CFED4` /
 //! `0x801CFF1C` / `0x801CFF5C`, none in SCUS) sit inside **`FUN_801CFA48`**,
 //! the effect-ribbon geometry emitter ported as
-//! `legaia_engine_core::effect_ribbon`. `0x801CFB94`, which an earlier note
+//! `legaia_engine_effects::effect_ribbon`. `0x801CFB94`, which an earlier note
 //! here named as the caller, is not a function at all - it is a branch target
 //! inside that routine's plane-select switch, and the enclosing prologue is
 //! `addiu sp, sp, -0x70` at `0x801CFA48`.
@@ -62,7 +62,7 @@
 //!
 //! # Consumer
 //!
-//! `legaia_engine_core::effect_ribbon::ribbon_mesh_for_actor` seeds one
+//! `legaia_engine_effects::effect_ribbon::ribbon_mesh_for_actor` seeds one
 //! generator per ribbon from the node's `+0xB8` halfword and hands its draws to
 //! the emitter; both battle hosts reach it through
 //! `World::active_effect_ribbons`.

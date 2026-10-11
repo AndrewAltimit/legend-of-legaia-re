@@ -22,8 +22,8 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::monster_archive::PartPose;
-use legaia_asset::{battle_char_assembly, monster_archive};
+use legaia_actor_formats::monster_archive::PartPose;
+use legaia_actor_formats::{battle_char_assembly, monster_archive};
 use legaia_party_swap::{PlayerRig, winpose};
 
 fn prot_dir() -> Option<PathBuf> {

@@ -4,9 +4,9 @@
 
 use super::*;
 
-use crate::battle_events::{BattleEvent, BattleHitFx};
+use legaia_engine_battle::battle_events::{BattleEvent, BattleHitFx};
+use legaia_engine_battle_vm::battle_action::{BattleEndCause, StepOutcome};
 use legaia_engine_vm as vm;
-use vm::battle_action::{BattleEndCause, StepOutcome};
 
 mod actor_draw;
 mod auto_combo;

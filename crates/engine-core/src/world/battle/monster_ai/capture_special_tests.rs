@@ -1,5 +1,5 @@
 use crate::world::World;
-use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
 
 const GUILTY_CROSS: u8 = 0x37;
 
@@ -13,7 +13,7 @@ fn world_with_capture_special() -> World {
         ..SpellEntry::default()
     };
     let mut world = World::default();
-    world.menu.text = Some(crate::pause_screens::MenuTextTables {
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
         spell_names: Some(SpellNameTable::from_entries(entries)),
         ..Default::default()
     });

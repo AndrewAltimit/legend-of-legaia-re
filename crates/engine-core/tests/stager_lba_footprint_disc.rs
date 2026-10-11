@@ -11,8 +11,8 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
 use legaia_engine_core::scene::ProtIndex;
+use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
 
 fn extracted_root() -> Option<PathBuf> {
     for p in ["extracted", "../extracted", "../../extracted"] {

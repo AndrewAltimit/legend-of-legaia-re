@@ -15,9 +15,13 @@ use super::*;
 /// laid across every pass off Mt. Letona's summit). Crossing one moves
 /// nobody, writes no story flag and changes no scene, so the walk need not
 /// step around it; avoiding it sealed the summit off from its way down.
-pub(super) fn inert_band(mf: &legaia_asset::man_section::ManFile, man: &[u8], rec: usize) -> bool {
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
-    use legaia_engine_core::man_field_scripts::partition_record_span;
+pub(super) fn inert_band(
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    rec: usize,
+) -> bool {
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let Some((start, pc0, len)) = partition_record_span(mf, man, 2, rec) else {
         return false;
     };
@@ -39,7 +43,7 @@ pub(super) fn inert_band(mf: &legaia_asset::man_section::ManFile, man: &[u8], re
 }
 
 pub(super) fn pad_avoid(session: &BootSession, keep: Option<(i16, i16)>) -> HashSet<(i32, i32)> {
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let mut out = hazards(session, "");
     if session.host.world.mode == SceneMode::Field
         && let Some((mf, man, triggers)) = scene_man_and_triggers(session)
@@ -73,7 +77,7 @@ pub(super) fn pad_avoid(session: &BootSession, keep: Option<(i16, i16)>) -> Hash
 /// record cleanly clears a C1 latch of the walk-on record on `door` - the
 /// bands that open the way to it.
 pub(super) fn unlatching_bands(session: &BootSession, door: (i16, i16)) -> Vec<(i32, i32)> {
-    use legaia_engine_core::man_field_scripts::{
+    use legaia_engine_field::man_field_scripts::{
         FlagBank, partition2_record_gates, walk_partition_gflag_sites,
     };
     if session.host.world.mode != SceneMode::Field {

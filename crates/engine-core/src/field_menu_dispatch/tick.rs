@@ -12,12 +12,12 @@ use super::*;
 /// row's sub-session ([`FieldMenuSubsession::build`]) with its own rack and
 /// key table.
 pub fn tick_root_list(
-    menu: &mut crate::field_menu::FieldMenuSession,
+    menu: &mut legaia_engine_menus::field_menu::FieldMenuSession,
     edge: u16,
 ) -> Option<FieldMenuRow> {
-    let _ = menu.tick(crate::field_menu::FieldMenuInput::from_pad_edge(edge));
+    let _ = menu.tick(legaia_engine_menus::field_menu::FieldMenuInput::from_pad_edge(edge));
     match menu.phase() {
-        crate::field_menu::FieldMenuPhase::Suspended { row } => Some(row),
+        legaia_engine_menus::field_menu::FieldMenuPhase::Suspended { row } => Some(row),
         _ => None,
     }
 }
@@ -124,7 +124,7 @@ pub struct FinishedSubsession {
     pub spell_level_notice: Option<SpellLevelNotice>,
     /// Window 8: a Hyper-Art book taught an art, for
     /// [`crate::menu_runtime::MenuRuntime::arm_art_learned_notice`].
-    pub art_learned_notice: Option<crate::pause_screens::ArtLearnedNotice>,
+    pub art_learned_notice: Option<legaia_engine_menus::pause_screens::ArtLearnedNotice>,
 }
 
 /// Fold a finished pause-menu sub-session into the world - the one outcome

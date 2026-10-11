@@ -30,8 +30,8 @@ fn walked_leads(man: &[u8]) -> usize {
         .filter(|&off| {
             man[off - 1] == 0x1F
                 && matches!(
-                    legaia_asset::man_edit::text_site(man, off),
-                    legaia_asset::man_edit::TextSite::Segment
+                    legaia_scene_formats::man_edit::text_site(man, off),
+                    legaia_scene_formats::man_edit::TextSite::Segment
                 )
         })
         .count()
@@ -101,7 +101,7 @@ fn lift_then_import_stays_valid_and_grows_a_man() {
             // coincidental `0x1F` runs inside operands, whose resync shifts
             // with the text around them - both measure bytes, not structure.
             assert!(
-                legaia_asset::man_edit::text_edits_preserve_scripts(
+                legaia_scene_formats::man_edit::text_edits_preserve_scripts(
                     &orig_man.decoded,
                     &new_man.decoded
                 ),

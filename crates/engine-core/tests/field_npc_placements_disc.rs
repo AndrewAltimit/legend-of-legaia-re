@@ -78,7 +78,7 @@ fn town01_npc_placements_resolve_models_and_anim_records() {
         .entries
         .iter()
         .find_map(|e| {
-            legaia_asset::player_anm::find_in_entry(&e.bytes, 3)
+            legaia_actor_formats::player_anm::find_in_entry(&e.bytes, 3)
                 .into_iter()
                 .next()
         })
@@ -89,8 +89,8 @@ fn town01_npc_placements_resolve_models_and_anim_records() {
         .field_man_payload(&index)
         .expect("read MAN")
         .expect("town01 has a MAN");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse MAN");
-    let placements = legaia_engine_core::man_field_scripts::classify_placements(&mf, &man);
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
+    let placements = legaia_engine_field::man_field_scripts::classify_placements(&mf, &man);
     assert_eq!(placements.len(), 52, "town01 partition-1 placement count");
 
     let mut animated = 0usize;
@@ -151,9 +151,9 @@ fn town01_npc_placements_resolve_models_and_anim_records() {
         .find(|(p, _)| p.special_model && p.model_index == 0xF2)
         .map(|(p, _)| p.anim_id);
     let idle = |slot: usize| {
-        (legaia_asset::character_pack::locomotion_record_index(
+        (legaia_actor_formats::character_pack::locomotion_record_index(
             slot,
-            legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT,
+            legaia_actor_formats::character_pack::LOCOMOTION_IDLE_SLOT,
         ) + 1) as u8
     };
     assert_eq!(noa, Some(idle(1)), "Noa placement anim = locomotion idle");

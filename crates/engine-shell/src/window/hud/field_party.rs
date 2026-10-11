@@ -102,7 +102,7 @@ impl PlayWindowApp {
                 &self.session.host.world,
             );
             let idle = legaia_engine_field::world_map_panel_actors::hud_idle_frames(mode, false);
-            if legaia_engine_core::world_map_panel_host::hud_phase_hold(
+            if legaia_engine_field::world_map_panel_host::hud_phase_hold(
                 self.tick_no,
                 sc.capture_tick,
                 n,
@@ -133,7 +133,7 @@ impl PlayWindowApp {
         // page - not the window's held keys, which keep the HUD hidden while
         // the world itself was fed a neutral pad (a shop, the narration
         // crawl, a locked cutscene).
-        let pad = legaia_engine_core::world_map_panel_host::packed_pad(world.input.pad());
+        let pad = legaia_engine_field::world_map_panel_host::packed_pad(world.input.pad());
         self.field_party_hud
             .tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
         // The overworld's idle (`0xA0`) outlasts the run before the capture
@@ -141,7 +141,7 @@ impl PlayWindowApp {
         // countdown on its own: clamp the running countdown as well.
         if let Some(sc) = self.screenshot.as_ref()
             && let Some(n) = sc.hud_countdown
-            && let Some(cap) = legaia_engine_core::world_map_panel_host::hud_countdown_cap(
+            && let Some(cap) = legaia_engine_field::world_map_panel_host::hud_countdown_cap(
                 self.tick_no,
                 sc.capture_tick,
                 n,
@@ -160,8 +160,8 @@ impl PlayWindowApp {
         &self,
         w: u32,
         h: u32,
-    ) -> legaia_engine_render::BattleHudDraws {
-        use legaia_engine_render::field_party_hud as fp;
+    ) -> legaia_engine_ui::BattleHudDraws {
+        use legaia_engine_ui::field_party_hud as fp;
         // Ask the suppress gate on the DRAW path too, not only on the tick.
         // Retail evaluates it once because `FUN_801D0D38` is both halves in
         // one function; the port splits them, and a split decision is only

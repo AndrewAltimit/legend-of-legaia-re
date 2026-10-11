@@ -209,7 +209,7 @@ pub struct SceneHost {
     /// Lazily-loaded monster stat archive (PROT entry 867, extended
     /// footprint). Cached because it's 15.9 MB and the same global table
     /// serves every scene. Populated on the first field entry that needs
-    /// real monster stats. See [`legaia_asset::monster_archive`].
+    /// real monster stats. See [`legaia_actor_formats::monster_archive`].
     monster_archive_cache: Option<Arc<Vec<u8>>>,
     /// The battle runtime SFX bank `bse.dat` (PROT 888), read once per host
     /// (`Some(empty)` records a failed read so it is not retried) and copied
@@ -235,7 +235,7 @@ pub struct SceneHost {
     /// warp is not a scene transition, and every existing consumer of that enum
     /// matches it exhaustively. A host that cares reads this after
     /// [`SceneHost::tick`]; one that does not is unaffected. See
-    /// [`crate::minigame_entry`].
+    /// [`legaia_engine_mode::minigame_entry`].
     pub last_minigame_warp: Option<MinigameWarpOutcome>,
     /// The **destination-entry operand** the next field entry seats the player
     /// from, in world coordinates - the engine's mirror of retail's
@@ -244,7 +244,7 @@ pub struct SceneHost {
     /// Retail's field initialiser `FUN_801D6704` seats the player from that
     /// pair on **both** its arms (`0x801D6F64` / `0x801D6F7C`, the anchor
     /// `FUN_8003AEB0` filled); the cold arm's other write, the one at
-    /// [`crate::mode_entry_init::FIELD_COLD_SPAWN`], is the **ambient
+    /// [`legaia_engine_system::mode_entry_init::FIELD_COLD_SPAWN`], is the **ambient
     /// emitter's** spawn, not the player's. A retail scene change always has
     /// an operand, because the door / warp / new-game path that requested it
     /// wrote the pair first.
@@ -259,27 +259,27 @@ pub struct SceneHost {
     pub(crate) pending_entry_seat: Option<(i16, i16)>,
     /// The current scene's disc-sourced **named scene-change destinations**
     /// (`0x3F` ops), decoded from its MAN on entry via
-    /// [`crate::man_field_scripts::scene_destinations`]. Empty for scenes with
+    /// [`legaia_engine_field::man_field_scripts::scene_destinations`]. Empty for scenes with
     /// no MAN / no destination table. Drives [`Self::destination_resolver`].
-    scene_destinations: Vec<crate::man_field_scripts::SceneDestination>,
+    scene_destinations: Vec<legaia_engine_field::man_field_scripts::SceneDestination>,
     /// The current scene's `.MAP` kind-1 tile-trigger tables
     /// (`(primary, fallback)` - see
-    /// [`crate::field_regions::parse_tile_triggers`]), cached at scene load
+    /// [`legaia_engine_field::field_regions::parse_tile_triggers`]), cached at scene load
     /// for the per-frame walk-on dispatch. Empty for scenes without a field
     /// map.
     field_triggers: (
-        Vec<crate::field_regions::TileTrigger>,
-        Vec<crate::field_regions::TileTrigger>,
+        Vec<legaia_engine_field::field_regions::TileTrigger>,
+        Vec<legaia_engine_field::field_regions::TileTrigger>,
     ),
     /// The current scene's `.MAP` **kind-0** intra-scene-teleport tables
     /// (`(primary, fallback)` - see
-    /// [`crate::field_regions::parse_intra_scene_teleports`]), cached at scene
+    /// [`legaia_engine_field::field_regions::parse_intra_scene_teleports`]), cached at scene
     /// load for the per-frame tile-crossing dispatch. This is the second door
     /// class: a house exit whose destination lives in the `.MAP`, with no MAN
     /// script and no object of its own.
     field_intra_teleports: (
-        Vec<crate::field_regions::IntraSceneTeleport>,
-        Vec<crate::field_regions::IntraSceneTeleport>,
+        Vec<legaia_engine_field::field_regions::IntraSceneTeleport>,
+        Vec<legaia_engine_field::field_regions::IntraSceneTeleport>,
     ),
     /// The current scene's MAN payload, cached at scene load so a walk-on
     /// trigger hit can resolve its partition-2 record without a disc re-read.
@@ -287,9 +287,9 @@ pub struct SceneHost {
     /// The current scene's paired **scripted gold charges** (op-`0x4E`
     /// gold-gate + negative `0x3A` debit pairs - inn stays, tours, casino
     /// counters), scanned from the cached MAN at scene load via
-    /// [`legaia_asset::inn_costs::scan`]. Empty for scenes with no MAN or no
+    /// [`legaia_scene_formats::inn_costs::scan`]. Empty for scenes with no MAN or no
     /// charge site. Drives [`Self::scene_inn_cost`].
-    scene_gold_charges: Vec<legaia_asset::inn_costs::GoldCharge>,
+    scene_gold_charges: Vec<legaia_scene_formats::inn_costs::GoldCharge>,
     /// Player collision tile at the previous tick - the engine mirror of the
     /// retail last-tile globals `FUN_801D1EC4` compares to fire the walk-on
     /// tile trigger only on a tile **crossing**. `None` = stale (scene entry

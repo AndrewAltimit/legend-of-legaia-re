@@ -33,7 +33,7 @@
 //! * [`ui_title_save`] - title menu, 9-slice window chrome, save-select,
 //!   save-slot grid + info panel, "Now checking" dialog.
 //! * [`minigame_fx`] - the minigame effect-part pool's draw builder (the
-//!   pool itself is `legaia_engine_core::minigame_fx`) plus the dance run's
+//!   pool itself is `legaia_engine_minigames::minigame_fx`) plus the dance run's
 //!   own sprite-part emit, both shared by every host.
 //! * [`screen_prim`] - screen-space PSX primitives (`POLY_FT4`/`POLY_GT4`
 //!   corners, CLUT/texpage, ABR mode, ordering-table bucket) plus the shared
@@ -52,55 +52,37 @@
 //!
 //! [`TextOverlay`]: https://docs.rs/legaia-engine-render
 
-pub use legaia_font;
-pub use legaia_tim;
 
-pub use legaia_render_kernels::afterimage;
 pub mod arts_input;
 pub mod baka_strips;
 pub mod battle_chrome;
 pub mod battle_command_ui;
 mod battle_hud;
 pub mod battle_hud_chrome;
-pub use legaia_render_kernels::battle_intro;
 pub mod battle_item_ui;
 pub mod battle_name_banner;
-pub use legaia_render_kernels::battle_numerals;
 pub mod battle_stage_clear;
 mod battle_timed_fight_strip;
-pub use legaia_render_kernels::battle_trail;
 mod battle_tutorial_box;
-pub use legaia_render_kernels::billboard;
 pub mod boot_logos;
-pub use legaia_render_kernels::cast_beam;
-pub use legaia_render_kernels::cast_theeder;
 pub mod dance;
 mod dialog_reading_box;
-pub use legaia_render_kernels::effect_billboard;
 pub mod field_party_hud;
 pub mod fishing;
-pub use legaia_render_kernels::gte;
 mod incense_notice_box;
 pub mod menu;
 pub mod minigame_fx;
-pub use legaia_render_kernels::move_strip;
 pub mod muscle_dome_hud;
 pub mod pause_menu;
-pub use legaia_render_kernels::prim_near_reject;
 pub mod prize_exchange;
 pub mod ringside_backdrop;
-pub use legaia_render_kernels::scene_lighting;
-pub use legaia_render_kernels::screen_prim;
-pub use legaia_render_kernels::screen_prim_raster;
 pub mod shop_screen;
 pub mod slot_cabinet;
 pub mod slot_paylines;
-pub use legaia_render_kernels::streak_pass;
 mod text_balloon_box;
 pub mod text_lines;
 mod tile_board_prompt;
 mod title_save;
-pub use legaia_render_kernels::vram_capture;
 
 pub use battle_hud::*;
 pub use battle_timed_fight_strip::*;
@@ -114,39 +96,6 @@ pub use menu::window_dispatch::*;
 pub use text_balloon_box::*;
 pub use tile_board_prompt::*;
 pub use title_save::*;
-
-// Former `ui_`-prefixed and disc-path module names, kept until the
-// workspace's consumers name the new paths (`.refactor/midlayer-moves.tsv`).
-#[doc(hidden)]
-pub use baka_strips as ui_baka_strips;
-#[doc(hidden)]
-pub use boot_logos as ui_boot_logos;
-#[doc(hidden)]
-pub use dance as ui_dance;
-#[doc(hidden)]
-pub use fishing::exchange as ui_fishing_exchange;
-#[doc(hidden)]
-pub use fishing::hub as ui_fishing_hub;
-#[doc(hidden)]
-pub use fishing::line as ui_fishing_line;
-#[doc(hidden)]
-pub use fishing::rod as ui_fishing_rod;
-#[doc(hidden)]
-pub use fishing::sprite as ui_fishing_sprite;
-#[doc(hidden)]
-pub use menu::window_dispatch as ui_menu_window_dispatch;
-#[doc(hidden)]
-pub use menu::window_painters as ui_menu_window_painters;
-#[doc(hidden)]
-pub use muscle_dome_hud as other_game_hud;
-#[doc(hidden)]
-pub use prize_exchange as ui_prize_exchange;
-#[doc(hidden)]
-pub use slot_cabinet as ui_slot_cabinet;
-#[doc(hidden)]
-pub use slot_paylines as ui_slot_paylines;
-#[doc(hidden)]
-pub use text_lines as ui_text_lines;
 
 /// One textured quad in screen space. Coordinates are pixel-space relative
 /// to the top-left of the surface; the renderer converts to NDC at draw

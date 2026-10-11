@@ -26,10 +26,10 @@ use super::*;
 pub(super) fn stage_shell_meshes(
     tmd: &legaia_tmd::Tmd,
     raw: &[u8],
-    second: legaia_asset::battle_backdrop::SecondCopy,
+    second: legaia_scene_formats::battle_backdrop::SecondCopy,
     objects: &[usize],
 ) -> (legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh) {
-    let tmd0 = legaia_asset::battle_backdrop::objects_tmd(tmd, objects);
+    let tmd0 = legaia_scene_formats::battle_backdrop::objects_tmd(tmd, objects);
     let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw);
     let first = vmesh.clone();
     vmesh.append_scaled(&first, second.scale());
@@ -47,7 +47,7 @@ pub(super) fn stage_slot_meshes(
     raw: &[u8],
     objects: &[usize],
 ) -> (legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh) {
-    let tmd0 = legaia_asset::battle_backdrop::objects_tmd(tmd, objects);
+    let tmd0 = legaia_scene_formats::battle_backdrop::objects_tmd(tmd, objects);
     (
         legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw),
         legaia_tmd::mesh::tmd_to_color_mesh(&tmd0, raw),
@@ -61,7 +61,7 @@ pub(in crate::window) struct BattleStage {
     /// The backdrop shell TMD plus the raw bytes it was parsed from.
     pub(in crate::window) dome: (legaia_tmd::Tmd, Vec<u8>),
     /// The second backdrop copy's per-stage transform (`DAT_80078B50`).
-    pub(in crate::window) second: legaia_asset::battle_backdrop::SecondCopy,
+    pub(in crate::window) second: legaia_scene_formats::battle_backdrop::SecondCopy,
     /// Ground-grid depth-cue far colour, display `0..1` - the backdrop far
     /// colour per stage class (`DAT_80078C1C` outdoor table).
     pub(in crate::window) grid_far: [f32; 3],
@@ -123,9 +123,9 @@ impl PlayWindowApp {
         let scus = self.scus_bytes();
         let second = scus
             .as_deref()
-            .and_then(legaia_asset::battle_backdrop::MirrorXTable::from_scus)
+            .and_then(legaia_scene_formats::battle_backdrop::MirrorXTable::from_scus)
             .map(|t| t.second_copy_for_prot_index(stage_entry))
-            .unwrap_or(legaia_asset::battle_backdrop::SecondCopy::HalfTurn);
+            .unwrap_or(legaia_scene_formats::battle_backdrop::SecondCopy::HalfTurn);
         // The ground grid's depth-cue far colour: the backdrop far colour
         // retail derives per stage class (`FUN_80050120`) - the sibling
         // SCUS table at `DAT_80078C1C` picks the brightened outdoor arm on
@@ -135,13 +135,13 @@ impl PlayWindowApp {
         // `scripts/pcsx-redux/autorun_grid_far_colour.lua`.
         let grid_far_bytes = scus
             .as_deref()
-            .and_then(legaia_engine_vm::battle_ground_grid::OutdoorCueTable::from_scus)
+            .and_then(legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable::from_scus)
             .map(|t| t.far_colour_for_prot_index(stage_entry))
-            .unwrap_or(legaia_engine_vm::battle_ground_grid::GRID_FAR_INDOOR);
+            .unwrap_or(legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_INDOOR);
         let grid_far = grid_far_bytes.map(|c| f32::from(c) / 255.0);
         let outdoor = scus
             .as_deref()
-            .and_then(legaia_engine_vm::battle_ground_grid::OutdoorCueTable::from_scus)
+            .and_then(legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable::from_scus)
             .is_some_and(|t| t.contains_prot_index(stage_entry));
         log::info!(
             "play-window: battle stage = scene '{scene_name}' PROT {stage_entry} \
@@ -224,7 +224,7 @@ impl PlayWindowApp {
         self.session.host.world.fog_volume.battle_luma = None;
         // REF: FUN_800513f0 - the backdrop registration whose object-list edit
         // and second-copy transform this host consumes through
-        // `legaia_asset::battle_backdrop`.
+        // `legaia_scene_formats::battle_backdrop`.
         if let Some(BattleStage {
             dome: (tmd, raw),
             second,
@@ -235,7 +235,7 @@ impl PlayWindowApp {
         {
             // Retail's backdrop registration edits the object list rather
             // than truncating it: it drops index 1 and keeps the rest
-            // (`legaia_asset::battle_backdrop`, ported from `FUN_800513f0`).
+            // (`legaia_scene_formats::battle_backdrop`, ported from `FUN_800513f0`).
             // On the two-object stage shells that is object 0 alone - object 1
             // is the ground-level ribbon of near props no retail capture shows,
             // and drawing it painted an engine-only white streak across the
@@ -325,7 +325,7 @@ impl PlayWindowApp {
                 // Pre-cue colour = the settled battle ambient
                 // (`0x8007B7B0` -> `RGBC`), see `build_ground_grid_rgbc`.
                 let grid = build_battle_ground_grid(
-                    legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED,
+                    legaia_engine_battle_vm::battle_ground_grid::GRID_RGBC_SETTLED,
                 );
                 match r.upload_vram_mesh(
                     &grid.positions,
@@ -338,7 +338,7 @@ impl PlayWindowApp {
                     Ok(gm) => {
                         self.battle_ground_mesh = Some(self.meshes.len());
                         self.battle_ground_rgbc =
-                            legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED;
+                            legaia_engine_battle_vm::battle_ground_grid::GRID_RGBC_SETTLED;
                         // The grid's GTE depth cue: far colour per stage
                         // class (resolved in `build_battle_stage`), ramped
                         // by the emitter's per-vertex `SZ >> 2` law at draw
@@ -358,7 +358,7 @@ impl PlayWindowApp {
         // party loop for why the complement matters.
         let mut registered: Vec<usize> = Vec::new();
         for (actor_idx, monster_id, slot) in monsters {
-            let mesh = match legaia_asset::monster_archive::mesh(&archive, monster_id) {
+            let mesh = match legaia_actor_formats::monster_archive::mesh(&archive, monster_id) {
                 Ok(Some(m)) => m,
                 Ok(None) => continue,
                 Err(e) => {
@@ -398,16 +398,15 @@ impl PlayWindowApp {
                     // CBA/TSB relocation, or the animated monster samples
                     // the wrong page and renders white) and the idle clip,
                     // through the install the browser page runs too.
-                    let idle =
-                        match legaia_asset::monster_archive::idle_animation(&archive, monster_id) {
-                            Ok(idle) => idle,
-                            Err(e) => {
-                                log::warn!(
-                                    "play-window: monster {monster_id} idle anim decode: {e:#}"
-                                );
-                                None
-                            }
-                        };
+                    let idle = match legaia_actor_formats::monster_archive::idle_animation(
+                        &archive, monster_id,
+                    ) {
+                        Ok(idle) => idle,
+                        Err(e) => {
+                            log::warn!("play-window: monster {monster_id} idle anim decode: {e:#}");
+                            None
+                        }
+                    };
                     self.session.host.world.install_monster_battle_form(
                         actor_idx,
                         slot,
@@ -428,7 +427,7 @@ impl PlayWindowApp {
         // Load the REAL battle party meshes and bind them to the party actor
         // slots. The faithful source is the retail battle loader's per-character
         // ASSEMBLY: each member's mesh is spliced from their player battle file's
-        // equipment-id sections (`legaia_asset::battle_char_assembly`, extraction
+        // equipment-id sections (`legaia_actor_formats::battle_char_assembly`, extraction
         // PROT 863..865) and relocated into the slot's runtime VRAM band
         // (`relocate_tsb_cba`, the registration-time TSB/CBA pass of
         // FUN_800513F0). The band's PIXELS come from the same player file: the

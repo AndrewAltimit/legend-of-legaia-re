@@ -4,6 +4,7 @@
 //! change from the original inline definitions.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 mod battle_anim;
 mod battle_fx;
 mod mode_entry;
@@ -234,7 +235,7 @@ impl World {
     /// timeline walks the lead out of his house, keeps him. Both play hosts
     /// ask this before drawing the lead; the page used to draw him.
     pub fn actor_hidden_by_scene(&self, slot: usize) -> bool {
-        slot == 0 && self.active_scene_label == legaia_asset::new_game::OPENING_CUTSCENE_SCENE
+        slot == 0 && self.active_scene_label == legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE
     }
 
     /// Bind actor `slot` to TMD index `tmd_idx` in `SceneResources::tmds`.
@@ -248,10 +249,13 @@ impl World {
 
     /// Install the field player's idle/walk clip pair (built by the host from
     /// the PROT 0874 §1 locomotion bundle -
-    /// [`crate::field_anim::FieldPlayerAnim`]). The field tick advances it
+    /// [`legaia_engine_field::field_anim::FieldPlayerAnim`]). The field tick advances it
     /// after the locomotion step; `None` (the default) leaves the player on
     /// the static rest pose.
-    pub fn set_field_player_anim(&mut self, anim: Option<crate::field_anim::FieldPlayerAnim>) {
+    pub fn set_field_player_anim(
+        &mut self,
+        anim: Option<legaia_engine_field::field_anim::FieldPlayerAnim>,
+    ) {
         self.locomotion.player_anim = anim;
     }
 
@@ -464,7 +468,7 @@ impl World {
     ///
     /// This is the source-agnostic half of the locomotion animation. The pad
     /// and nav-walk paths raise
-    /// [`crate::field_anim::FieldPlayerAnim::moved_this_frame`] directly
+    /// [`legaia_engine_field::field_anim::FieldPlayerAnim::moved_this_frame`] directly
     /// (they know they moved before they commit, and a *wall-blocked* pad
     /// step still walks in place the way retail does, which a position diff
     /// cannot see). Everything else that moves an actor - a motion-VM patrol
@@ -626,7 +630,7 @@ impl World {
     /// whose handler is the clip-fraction fade.
     ///
     /// PORT: FUN_801D835C (the helper; the plan kernel is
-    /// [`crate::field_actor_clone::clone_plan`])
+    /// [`legaia_engine_field::field_actor_clone::clone_plan`])
     /// REF: FUN_8003C83C (the id resolve), FUN_80020DE0 (the allocation),
     /// REF: FUN_801D820C (the tick [`Self::tick_handler_actors`] then runs)
     ///
@@ -640,7 +644,7 @@ impl World {
     /// Returns the seated slot.
     pub fn spawn_actor_clone(&mut self, src_id: u8, modulation: u32, rate: i16) -> Option<usize> {
         let src = self.clone_source(src_id)?;
-        let plan = crate::field_actor_clone::clone_plan(src, modulation, rate);
+        let plan = legaia_engine_field::field_actor_clone::clone_plan(src, modulation, rate);
         let start = FIELD_SPAWN_START_SLOT as usize;
         let slot_idx = self
             .actors
@@ -654,8 +658,8 @@ impl World {
         // from whatever the slot last held.
         let mut actor = Actor {
             active: true,
-            handler: crate::actor_handler::ActorHandler::ClipFade,
-            state_54: crate::field_actor_clone::CLONE_DESCRIPTOR_INITIAL_STATE,
+            handler: legaia_engine_field::actor_handler::ActorHandler::ClipFade,
+            state_54: legaia_engine_field::field_actor_clone::CLONE_DESCRIPTOR_INITIAL_STATE,
             ..Actor::default()
         };
         actor.physics.world_x = plan.pos.0;
@@ -672,7 +676,9 @@ impl World {
         actor.move_state.render_24 = plan.rot.0;
         actor.move_state.render_26 = plan.rot.1;
         actor.move_state.render_28 = plan.rot.2;
-        actor.modulation_rgb = Some(crate::field_actor_clone::modulation_rgb(plan.modulation));
+        actor.modulation_rgb = Some(legaia_engine_field::field_actor_clone::modulation_rgb(
+            plan.modulation,
+        ));
         self.actors[slot_idx] = actor;
         Some(slot_idx)
     }
@@ -730,7 +736,8 @@ impl World {
             // forms one, and seating it can only strand the player.
             return None;
         }
-        let slot = self.spawn_handler_actor(crate::actor_handler::ActorHandler::Reflection)?;
+        let slot =
+            self.spawn_handler_actor(legaia_engine_field::actor_handler::ActorHandler::Reflection)?;
         let controller = legaia_engine_field::field_actor_reflect::spawn_controller(words);
         let a = &mut self.actors[slot];
         a.state_54 = legaia_engine_field::field_actor_reflect::REFLECT_INITIAL_STATE;
@@ -766,8 +773,11 @@ impl World {
     /// The source-actor fields the clone helper reads, resolved from a
     /// cross-context target byte.
     // REF: FUN_8003C83C
-    fn clone_source(&self, src_id: u8) -> Option<crate::field_actor_clone::CloneSource> {
-        use crate::field_actor_clone::CloneSource;
+    fn clone_source(
+        &self,
+        src_id: u8,
+    ) -> Option<legaia_engine_field::field_actor_clone::CloneSource> {
+        use legaia_engine_field::field_actor_clone::CloneSource;
         if src_id == 0xF8 {
             let slot = self.player_actor_slot? as usize;
             let a = self.actors.get(slot)?;
@@ -854,7 +864,7 @@ impl World {
     /// Step the **Arts announcement banner** one battle frame.
     ///
     /// PORT: FUN_801E2524 (driver; the kernel is
-    /// [`legaia_engine_vm::battle_action::step_flash_ramp`])
+    /// [`legaia_engine_battle_vm::battle_action::step_flash_ramp`])
     ///
     /// Retail calls the ramp unconditionally from the battle draw tick
     /// (`FUN_800480D8`, `jal 0x801E2524` at `0x80048140`) and lets the stage
@@ -864,7 +874,7 @@ impl World {
     /// ([`Self::battle_arts_banner_quads`]). Returns `true` when the frame
     /// drew something, which is what a test can assert without a renderer.
     pub fn tick_arts_banner(&mut self, frame_delta: u8) -> bool {
-        use legaia_engine_vm::battle_action as fr;
+        use legaia_engine_battle_vm::battle_action as fr;
         let frame = fr::step_flash_ramp(
             self.battle_ctx.arts_banner_stage,
             self.battle_ctx.arts_banner_level,
@@ -881,15 +891,17 @@ impl World {
 
     /// This frame's banner quads, in retail emit order - the shared read both
     /// hosts build their screen primitives from
-    /// (`legaia_engine_ui::battle_numerals::arts_banner_prims`).
+    /// (`legaia_render_kernels::battle_numerals::arts_banner_prims`).
     ///
     /// Retail re-reads `ctx[+0x28C]` per layer *inside* the emitter, so a
     /// layer emitted later in the frame still sees the pre-walk value; the
     /// step above writes the walked value back, so this read has to recompute
     /// the layer set from the pre-walk clock rather than reuse the stepped
     /// one. Empty outside battle and on an idle banner.
-    pub fn battle_arts_banner_quads(&self) -> Vec<legaia_engine_vm::battle_action::FlashQuad> {
-        use legaia_engine_vm::battle_action as fr;
+    pub fn battle_arts_banner_quads(
+        &self,
+    ) -> Vec<legaia_engine_battle_vm::battle_action::FlashQuad> {
+        use legaia_engine_battle_vm::battle_action as fr;
         if self.mode != SceneMode::Battle {
             return Vec::new();
         }
@@ -946,13 +958,13 @@ impl World {
         };
         let groups = Self::tmd_group_vertex_bytes(&gtmd.tmd);
         let refs: Vec<&[u8]> = groups.iter().map(Vec::as_slice).collect();
-        let rest_pose = crate::morph_weight_apply::rest_pose_snapshot(&block, &refs);
+        let rest_pose = legaia_engine_field::morph_weight_apply::rest_pose_snapshot(&block, &refs);
         let actor = &mut self.actors[slot_idx];
-        actor.handler = crate::actor_handler::ActorHandler::MorphWeights;
-        actor.morph_weights = Some(crate::morph_weight_apply::MorphWeightActor {
+        actor.handler = legaia_engine_field::actor_handler::ActorHandler::MorphWeights;
+        actor.morph_weights = Some(legaia_engine_field::morph_weight_apply::MorphWeightActor {
             block,
             rest_pose,
-            envelope: crate::morph_weight_apply::MorphWeightEnvelope {
+            envelope: legaia_engine_field::morph_weight_apply::MorphWeightEnvelope {
                 weight: 0,
                 up_rate: up_rate as i16,
                 down_rate: down_rate as i16,
@@ -1001,7 +1013,7 @@ impl World {
     /// alongside the raw bytes a VRAM-mesh build needs and the weight it was
     /// posed at.
     ///
-    /// This is [`crate::morph_weight_apply::apply_morph_weights`] run over
+    /// This is [`legaia_engine_field::morph_weight_apply::apply_morph_weights`] run over
     /// the engine's own vertex representation, so neither host owns any part
     /// of the blend. `None` when the slot carries no morph state, no mesh,
     /// or a block that names nothing the mesh has.
@@ -1017,7 +1029,7 @@ impl World {
         let gtmd = actor.tmd_ref.as_ref()?;
         let mut groups = Self::tmd_group_vertex_bytes(&gtmd.tmd);
         let weight = m.envelope.weight;
-        if crate::morph_weight_apply::apply_morph_weights(
+        if legaia_engine_field::morph_weight_apply::apply_morph_weights(
             &m.block,
             &mut groups,
             &m.rest_pose,

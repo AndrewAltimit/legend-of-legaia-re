@@ -69,7 +69,7 @@
 
 use crate::monster_stats::ScalePermille;
 use anyhow::Result;
-use legaia_asset::monster_archive::MonsterRecord;
+use legaia_actor_formats::monster_archive::MonsterRecord;
 use legaia_disc_patch::monster::repack_slot;
 
 /// Byte offset of the AGL-cost byte inside a `+0x4C` action entry.
@@ -153,7 +153,7 @@ pub fn set_costs(slot_bytes: &[u8], edits: &[CostEdit]) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::monster_archive::SLOT_STRIDE;
+    use legaia_actor_formats::monster_archive::SLOT_STRIDE;
 
     fn scale(text: &str) -> ScalePermille {
         ScalePermille::parse(text).unwrap()
@@ -242,7 +242,7 @@ mod tests {
 
     fn record_of(block: &[u8]) -> MonsterRecord {
         let slot = fake_slot(block);
-        legaia_asset::monster_archive::record(&slot, 1)
+        legaia_actor_formats::monster_archive::record(&slot, 1)
             .unwrap()
             .expect("populated record")
     }

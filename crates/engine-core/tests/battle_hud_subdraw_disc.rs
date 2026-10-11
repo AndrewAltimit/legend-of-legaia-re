@@ -40,13 +40,14 @@ fn extracted_root() -> Option<PathBuf> {
 fn battle_overlay() -> Option<(Vec<u8>, u32)> {
     let root = extracted_root()?;
     let index = ProtIndex::open_extracted(&root).expect("open PROT index");
-    let record = legaia_asset::static_overlay::overlay_map()
+    let record = legaia_overlay_images::static_overlay::overlay_map()
         .by_label("battle_action")
         .expect("battle_action overlay record");
     let bytes = index
         .entry_bytes(record.prot_index)
         .expect("battle overlay entry bytes");
-    let loaded = legaia_asset::static_overlay::as_loaded(&bytes, record).expect("load overlay");
+    let loaded =
+        legaia_overlay_images::static_overlay::as_loaded(&bytes, record).expect("load overlay");
     Some((loaded, record.base_va))
 }
 

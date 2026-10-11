@@ -61,13 +61,13 @@ fn every_posed_prop_keeps_its_keyframes_through_the_blender() {
         ) else {
             continue;
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         let Some(bundle) = scene.entries.iter().find_map(|e| {
             [3usize, 5, 6, 7]
                 .into_iter()
-                .find_map(|d| legaia_asset::player_anm::find_in_entry(&e.bytes, d).pop())
+                .find_map(|d| legaia_actor_formats::player_anm::find_in_entry(&e.bytes, d).pop())
         }) else {
             continue;
         };

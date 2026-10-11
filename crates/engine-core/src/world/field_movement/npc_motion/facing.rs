@@ -197,10 +197,10 @@ impl World {
     /// through the field VM, and the prologue's `0x4C 0x51` / `0x38`
     /// (simple-path) ops write the actor's `+0x26` heading from the
     /// 8-direction LUT at SCUS `0x80073F04`
-    /// ([`crate::man_field_scripts::placement_initial_facing`]). The engine
+    /// ([`legaia_engine_field::man_field_scripts::placement_initial_facing`]). The engine
     /// derives the same LUT index statically per placement and stores the
     /// converted 12-bit engine heading (`0` = Z+;
-    /// [`crate::man_field_scripts::facing_index_to_engine_heading`]) in
+    /// [`legaia_engine_field::man_field_scripts::facing_index_to_engine_heading`]) in
     /// [`crate::world::FieldNpcState::headings`] - the map every NPC draw reads. A later
     /// walk overwrites the slot exactly as retail's per-step facing writes
     /// overwrite `+0x26`, and an already-present heading (a scripted channel
@@ -212,18 +212,20 @@ impl World {
     // REF: FUN_801DE840, FUN_801d01b0 (heading-space convention)
     pub fn seed_field_npc_facings(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
     ) {
         for p in man_file.actor_placements(man) {
             let Ok(slot) = u8::try_from(p.index) else {
                 continue;
             };
-            let Some(idx) = crate::man_field_scripts::placement_initial_facing(man_file, man, &p)
+            let Some(idx) =
+                legaia_engine_field::man_field_scripts::placement_initial_facing(man_file, man, &p)
             else {
                 continue;
             };
-            let Some(heading) = crate::man_field_scripts::facing_index_to_engine_heading(idx)
+            let Some(heading) =
+                legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(idx)
             else {
                 continue;
             };
@@ -241,7 +243,7 @@ impl World {
     /// Turn a stationary field NPC to face world `(tx, tz)` - the retail
     /// "face the speaker" cinematic pose. This runs one shot of the ported
     /// motion VM's `0x4C` `FaceTarget` op (the yaw-rotate leg of
-    /// `FUN_8003774C`, [`legaia_engine_vm::motion_vm`]) seeded from the NPC's
+    /// `FUN_8003774C`, [`legaia_engine_motion_vm::motion_vm`]) seeded from the NPC's
     /// current heading and settles the resulting 12-bit yaw straight into
     /// [`crate::world::FieldNpcState::headings`] - the map every NPC draw reads. It is the
     /// runtime driver the retail dialog engine invokes when the player talks
@@ -258,7 +260,7 @@ impl World {
         // rotates *from* where it stands (a full match for retail's actor
         // `+0x26` seed) and mask into the 12-bit yaw space the op expects.
         let cur_yaw = (self.npcs.heading(slot) & 0x0FFF) as u16;
-        let mut state = vm::motion_vm::MotionState {
+        let mut state = legaia_engine_motion_vm::motion_vm::MotionState {
             world_x: cx,
             world_z: cz,
             // Budget of 1 (below) against this speed makes the FaceTarget leg
@@ -268,7 +270,7 @@ impl World {
             yaw: cur_yaw,
             ..Default::default()
         };
-        let target = vm::motion_vm::MotionTarget {
+        let target = legaia_engine_motion_vm::motion_vm::MotionTarget {
             x: tx,
             y: 0,
             z: tz,
@@ -277,7 +279,7 @@ impl World {
         // `0x4C` FaceTarget, sub-mode `0x85` (rotate yaw), budget `0x0001`,
         // target byte `0xF8` (self); no high bit -> the body starts at +1.
         const FACE_TARGET_PROGRAM: [u8; 5] = [0x4C, 0x85, 0x01, 0x00, 0xF8];
-        let _ = vm::motion_vm::step(&mut state, target, &FACE_TARGET_PROGRAM);
+        let _ = legaia_engine_motion_vm::motion_vm::step(&mut state, target, &FACE_TARGET_PROGRAM);
         self.npcs.headings.insert(slot, (state.yaw & 0x0FFF) as i16);
     }
 }

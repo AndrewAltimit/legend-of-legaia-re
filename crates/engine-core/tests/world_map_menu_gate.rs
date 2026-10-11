@@ -31,9 +31,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuRow, FieldMenuSession};
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_menus::field_menu::{FieldMenuGate, FieldMenuRow, FieldMenuSession};
+use legaia_engine_mode::mode::SceneMode;
 
 /// The three kingdom overworlds - the only scenes whose MAN permits saving.
 const KINGDOM_MAPS: [&str; 3] = ["map01", "map02", "map03"];

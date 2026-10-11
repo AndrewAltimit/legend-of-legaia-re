@@ -1,6 +1,6 @@
 //! The developer action-table dump.
 
-use legaia_asset::baka_opponents::BakaActionSet;
+use legaia_minigame_formats::baka_opponents::BakaActionSet;
 
 // ------------------------------------------------- developer action dump
 
@@ -21,7 +21,7 @@ pub const DUMP_FIGHTERS: usize = 0x11;
 /// The port builds the same text and hands it back instead of touching a
 /// filesystem. Two columns are narrower than retail's: retail prints all eight
 /// leading words of the action record and the four halfwords of every
-/// sub-keyframe, while `legaia_asset::baka_opponents::parse_actions` decodes
+/// sub-keyframe, while `legaia_minigame_formats::baka_opponents::parse_actions` decodes
 /// only the record's power (`+0x18`) and sub-keyframe count (`+0x1C`) - so the
 /// per-keyframe TRS rows are absent until that parser widens. Retail's own
 /// format strings are overlay rodata and are not reproduced; the labels here

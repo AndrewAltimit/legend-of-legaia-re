@@ -38,8 +38,8 @@ fn kingdom_atlas_cluts_overwrite_the_boot_rows() {
             .entries
             .iter()
             .find_map(|e| {
-                let slot0 = legaia_asset::kingdom_bundle::decode_slot(&e.bytes, 0).ok()?;
-                let members = legaia_asset::pack::extract_pack(&slot0).ok()?;
+                let slot0 = legaia_scene_formats::kingdom_bundle::decode_slot(&e.bytes, 0).ok()?;
+                let members = legaia_container_formats::pack::extract_pack(&slot0).ok()?;
                 Some(members.iter().map(|m| m.to_vec()).collect::<Vec<_>>())
             })
             .expect("a kingdom bundle with a slot-0 atlas");

@@ -75,7 +75,7 @@ pub(super) fn engine_bearing(dx: f32, dz: f32) -> i16 {
 pub(super) fn stream_has_walk_op(code: &[u8]) -> bool {
     let mut pc = 0usize;
     while pc < code.len() {
-        let Some(w) = legaia_asset::man_motion::op_width(code[pc]) else {
+        let Some(w) = legaia_scene_formats::man_motion::op_width(code[pc]) else {
             return false;
         };
         if matches!(code[pc], 0x03 | 0x19 | 0x20 | 0x18) {
@@ -100,7 +100,7 @@ impl AmbientPlayerProbe {
     }
 }
 
-impl vm::ambient_motion::AmbientBlocking for AmbientPlayerProbe {
+impl legaia_engine_motion_vm::ambient_motion::AmbientBlocking for AmbientPlayerProbe {
     fn step_blocked(&self, x: i16, z: i16, lut_index: u8) -> bool {
         let (dx, dz) = FIELD_FACING_PROBES[usize::from(lut_index & 7)];
         self.hit(x, z, dx, dz)

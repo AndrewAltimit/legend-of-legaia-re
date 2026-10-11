@@ -99,7 +99,7 @@ pub fn parse_catch_rate(text: &str) -> Result<u8, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::monster_archive::SLOT_STRIDE;
+    use legaia_actor_formats::monster_archive::SLOT_STRIDE;
 
     fn fake_slot(block: &[u8]) -> Vec<u8> {
         let stream = legaia_lzs::compress(block);

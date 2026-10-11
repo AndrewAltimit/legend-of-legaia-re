@@ -61,7 +61,7 @@ pub struct StatRecord {
 ///
 /// The retail equipment stat-bonus table (`DAT_80074F68`) modifies exactly
 /// these five stats - `ATK` / `UDF` / `LDF` / `SPD` / `INT` (see
-/// `legaia_asset::equip_stats`; the `+0` byte is the INT bonus, `+4` the SPD
+/// `legaia_game_tables::equip_stats`; the `+0` byte is the INT bonus, `+4` the SPD
 /// bonus). Equipment never touches the derived accuracy / evasion lines, so
 /// those are not represented here.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -270,7 +270,7 @@ pub fn compute_battle_stats(
 ///    OR'd into [`BattleStats::abilities`] bytes `0..16` (the engine mirror of
 ///    the record `+0xF4` 4×u32 bitfield).
 /// 2. **Percent stat rebuild** - for each set boost index the matching stat
-///    line gains `base / divisor` (`legaia_asset::accessory_passive::stat_boosts`:
+///    line gains `base / divisor` (`legaia_game_tables::accessory_passive::stat_boosts`:
 ///    divisor `10` = +10%, `4` = +25%, `5` = +20%), where `base` is the
 ///    **base** stat (`StatRecord::base_*` - retail reads the `+0x11C..` base
 ///    window, *not* the post-equipment value, so the percent magnitude is
@@ -349,9 +349,9 @@ fn compute_battle_stats_inner(
     // division), exactly as `FUN_80042558` - see
     // [`compute_battle_stats_with_passives`].
     if let Some(words) = &passive_words {
-        use legaia_asset::accessory_passive::{BoostedStat, stat_boosts};
-        for idx in 0u8..legaia_asset::accessory_passive::NO_PASSIVE {
-            let (w, mask) = legaia_asset::accessory_passive::bit_location(idx);
+        use legaia_game_tables::accessory_passive::{BoostedStat, stat_boosts};
+        for idx in 0u8..legaia_game_tables::accessory_passive::NO_PASSIVE {
+            let (w, mask) = legaia_game_tables::accessory_passive::bit_location(idx);
             if words[w] & mask == 0 {
                 continue;
             }

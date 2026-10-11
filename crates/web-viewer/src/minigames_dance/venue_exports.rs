@@ -16,7 +16,7 @@ impl LegaiaMinigames {
     /// height. Empty when the cast did not decode.
     pub fn dance_venue_vp(&self, aspect: f32) -> Vec<f32> {
         let tracked = self.dance.as_ref().and_then(|g| g.camera_pose()).map(|p| {
-            dance_venue::venue_camera_at(&legaia_engine_core::dance::dance_scene_entry(), p)
+            dance_venue::venue_camera_at(&legaia_engine_minigames::dance::dance_scene_entry(), p)
         });
         match tracked {
             Some(camera) => self.dance_venue_vp_with(&camera, aspect),
@@ -80,7 +80,7 @@ impl LegaiaMinigames {
     /// would not refuse for their screen span.
     pub fn dance_env_visible_indices(&self) -> Vec<u32> {
         let tracked = self.dance.as_ref().and_then(|g| g.camera_pose()).map(|p| {
-            dance_venue::venue_camera_at(&legaia_engine_core::dance::dance_scene_entry(), p)
+            dance_venue::venue_camera_at(&legaia_engine_minigames::dance::dance_scene_entry(), p)
         });
         let camera = tracked.or_else(|| self.dance_bodies.as_ref().map(|b| b.camera));
         camera

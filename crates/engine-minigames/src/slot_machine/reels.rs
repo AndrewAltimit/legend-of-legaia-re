@@ -1,9 +1,9 @@
 //! The slot LCG, the reel-strip builder, the per-spin feature roll and the stop / landing plan.
 
 use super::*;
-use legaia_asset::minigame_slot_scene::PAYLINE_CENTRE_ROW_BIAS;
-use legaia_asset::slot_payout::{self};
 use legaia_engine_system::rand::BiosRand;
+use legaia_minigame_formats::minigame_slot_scene::PAYLINE_CENTRE_ROW_BIAS;
+use legaia_minigame_formats::slot_payout;
 
 /// The slot machine's own deterministic LCG over `DAT_801d3c80`:
 /// `x = x*5 + 1`, then the 16-bit halves are folded
@@ -190,7 +190,7 @@ pub fn stop_plan(
 /// `target`. On a hit at row `R` it stops the reel at raw `R + 3 + word`, where
 /// `word` is this spin's landing-line table entry for the reel, which puts the
 /// target on the payline `line_offset` names rather than always on the middle
-/// row ([`legaia_asset::minigame_slot_scene::LANDING_LINE_BY_JITTER`]). With no
+/// row ([`legaia_minigame_formats::minigame_slot_scene::LANDING_LINE_BY_JITTER`]). With no
 /// hit it takes the next row. A `None` target (or a `depth` of 0, its retail
 /// companion: the `blez` at `0x801D2468`) searches nothing - the bonus round's
 /// free stop.

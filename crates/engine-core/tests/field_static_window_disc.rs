@@ -22,8 +22,8 @@
 use std::collections::HashSet;
 
 use legaia_engine_core::field_env::{self, PlacedWindowKey};
-use legaia_engine_core::field_regions::{self, CELL_BIND_OWNED, RegionTable};
 use legaia_engine_core::scene::SceneHost;
+use legaia_engine_field::field_regions::{self, CELL_BIND_OWNED, RegionTable};
 
 /// Rim Elm (both variants), a casino town, and three scenes whose region boxes
 /// leave some window-sweep placements outside every sub-area box.

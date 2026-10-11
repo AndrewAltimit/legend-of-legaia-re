@@ -79,7 +79,7 @@ impl LegaiaMinigames {
     /// and stand-off are the picked fighter's. Returns `false` when the tables
     /// didn't decode or a roster id is out of range.
     pub fn baka_start_as(&mut self, player: usize, opponent: usize, seed: u32) -> bool {
-        if player >= legaia_engine_core::baka_cabinet::SELECT_OPTIONS as usize {
+        if player >= legaia_engine_minigames::baka_cabinet::SELECT_OPTIONS as usize {
             return false;
         }
         match self.baka_fight_for(player, opponent, seed) {
@@ -99,12 +99,12 @@ impl LegaiaMinigames {
     /// it is and what it draws.
     ///
     /// Seeded the way the play hosts seed a cabinet
-    /// ([`legaia_engine_core::baka_fighter::BAKA_RNG_BASE`] folded with the
+    /// ([`legaia_engine_minigames::baka_fighter::BAKA_RNG_BASE`] folded with the
     /// frame count), not with a page random.
     pub fn baka_start_cabinet(&mut self) -> bool {
-        let seed = legaia_engine_core::baka_fighter::BAKA_RNG_BASE ^ self.sim_frames;
+        let seed = legaia_engine_minigames::baka_fighter::BAKA_RNG_BASE ^ self.sim_frames;
         self.baka_winnings = 0;
-        let first = legaia_engine_core::baka_fighter::first_rung_roster();
+        let first = legaia_engine_minigames::baka_fighter::first_rung_roster();
         match self.baka_fight_for(0, first, seed) {
             Some(f) => {
                 self.baka = Some(f.with_attract());
@@ -127,17 +127,17 @@ impl LegaiaMinigames {
                 // loader (the play hosts stage the same) - so the strike clock
                 // and the special's afterimage step and expire on the real
                 // clips.
-                let headers = legaia_engine_core::baka_fighter::roster_clip_headers(|i| {
+                let headers = legaia_engine_minigames::baka_fighter::roster_clip_headers(|i| {
                     self.baka_entry(i).map(<[u8]>::to_vec)
                 });
                 let img = overlay_image(
                     &self.prot,
                     &self.entries,
-                    legaia_asset::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32,
+                    legaia_minigame_formats::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32,
                 );
                 let cameras = img
                     .as_deref()
-                    .map(legaia_engine_core::baka_duel_scene::parse_special_cameras)
+                    .map(legaia_engine_minigames::baka_duel::parse_special_cameras)
                     .unwrap_or_default();
                 // The impact pair's four effect templates, so this page's
                 // duel spawns and steps the same parts the play hosts draw.
@@ -195,7 +195,7 @@ impl LegaiaMinigames {
     /// (`0x80` = the descriptor's own RGB), `s` the 20.12 size scale, `g`
     /// the glyph-strip cell a digit draw pages widget 5 to (`null` for a
     /// plain widget) and `u` the texel column that paging stamps into widget
-    /// 5's record - [`legaia_engine_core::baka_fighter_chrome::glyph_u`], the
+    /// 5's record - [`legaia_engine_minigames::baka_fighter_chrome::glyph_u`], the
     /// byte store retail's glyph wrapper performs (so it wraps at 256), and
     /// the same stamp the native window resolves its chrome draws with.
     /// `[]` outside a duel.
@@ -211,7 +211,7 @@ impl LegaiaMinigames {
                 serde_json::json!({
                     "w": d.widget, "x": d.x, "y": d.y,
                     "b": d.brightness, "s": d.size, "g": d.glyph,
-                    "u": d.glyph.map(legaia_engine_core::baka_fighter_chrome::glyph_u),
+                    "u": d.glyph.map(legaia_engine_minigames::baka_fighter_chrome::glyph_u),
                 })
             })
             .collect();

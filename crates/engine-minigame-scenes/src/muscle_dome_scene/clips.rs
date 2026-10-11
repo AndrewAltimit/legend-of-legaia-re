@@ -1,7 +1,7 @@
 //! Body clips: the pose tags, per-body clip sets, the playing act and the clip pickers.
 
-use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::monster_archive::MonsterAnimation;
+use legaia_actor_formats::battle_char_assembly as bca;
+use legaia_actor_formats::monster_archive::MonsterAnimation;
 use legaia_tmd::mesh::VramMesh;
 
 /// Player battle-form clip slots the dome plays.
@@ -127,7 +127,7 @@ pub fn fighter_clip(
     slot: u32,
 ) -> Option<MonsterAnimation> {
     let anim = if (0xC..=0xF).contains(&slot) {
-        let pack = legaia_asset::battle_data_pack::parse(raw).ok()?;
+        let pack = legaia_actor_formats::battle_data_pack::parse(raw).ok()?;
         bca::swing_battle_animations(raw, &pack, &[0u8; 5])
             .ok()?
             .into_iter()

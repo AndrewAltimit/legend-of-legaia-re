@@ -39,7 +39,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{BootConfig, BootSession};
+use crate::BootSession;
+use legaia_engine_session::boot::BootConfig;
 
 /// Top-level manifest. Maps to a `scripts/engine/scenarios.toml` file.
 #[derive(Debug, Clone, Serialize, Deserialize)]

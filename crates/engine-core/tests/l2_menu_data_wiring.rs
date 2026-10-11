@@ -17,24 +17,24 @@
 //! Disc-free: every table these drive is either synthesised at the byte
 //! level (the menu-overlay category table) or built as typed records.
 
-use legaia_engine_core::battle_stats::{EquipmentTable, ItemModifier};
-use legaia_engine_core::field_menu::FieldMenuRow;
+use legaia_engine_battle::battle_stats::{EquipmentTable, ItemModifier};
+use legaia_engine_battle::spells::SpellCatalog;
+use legaia_engine_battle::tactical_arts_editor::ChainLibrary;
 use legaia_engine_core::field_menu_dispatch::{
     FieldMenuSubsession, apply_inventory_outcome, apply_pause_items_outcome,
     build_pause_items_session, warp_destinations,
 };
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::items::ItemCatalog;
-use legaia_engine_core::menu_item_category::{CATEGORY_TABLE_OFFSET, CategoryEntry};
 use legaia_engine_core::options::OptionsState;
-use legaia_engine_core::pause_screens::{
+use legaia_engine_core::world::World;
+use legaia_engine_menus::field_menu::FieldMenuRow;
+use legaia_engine_menus::items::ItemCatalog;
+use legaia_engine_menus::menu_item_category::{CATEGORY_TABLE_OFFSET, CategoryEntry};
+use legaia_engine_menus::pause_screens::{
     DOOR_OF_LIGHT_ITEM_ID, DOOR_OF_WIND_ITEM_ID, INCENSE_ITEM_ID, MENU_EXIT_CODE_FIELD_ESCAPE,
     MENU_EXIT_CODE_WORLD_MAP_WARP, PauseItemsSession, StagedWarp,
 };
-use legaia_engine_core::save_select::SaveRack;
-use legaia_engine_core::spells::SpellCatalog;
-use legaia_engine_core::tactical_arts_editor::ChainLibrary;
-use legaia_engine_core::world::World;
+use legaia_engine_menus::save_select::SaveRack;
+use legaia_engine_system::input::PadButton;
 
 /// Healing Leaf - a plain single-target item the ordinary use flow accepts.
 const HEALING_LEAF: u8 = 0x77;
@@ -195,8 +195,8 @@ fn placement(
     name_idx: u8,
     discovery_flag: u8,
     scene_id: u16,
-) -> legaia_asset::worldmap_menu::PlacementRecord {
-    legaia_asset::worldmap_menu::PlacementRecord {
+) -> legaia_game_tables::worldmap_menu::PlacementRecord {
+    legaia_game_tables::worldmap_menu::PlacementRecord {
         index,
         name_idx,
         discovery_flag,
@@ -217,7 +217,7 @@ fn placement(
 #[test]
 fn the_landmark_walk_gates_on_the_flag_and_dedupes_on_the_last_accepted_name() {
     let mut world = field_world();
-    world.menu.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
+    world.menu.worldmap_menu = Some(legaia_game_tables::worldmap_menu::WorldmapMenu {
         names: vec!["Rim Elm".into(), "Drake Castle".into(), "Sol".into()],
         placements: vec![
             placement(0, 0, 0x10, 0x0055), // Rim Elm, locked below
@@ -266,7 +266,7 @@ fn the_landmark_walk_gates_on_the_flag_and_dedupes_on_the_last_accepted_name() {
 fn a_door_of_wind_pick_consumes_the_item_and_stages_the_destination() {
     let mut world = field_world();
     world.party.inventory.insert(DOOR_OF_WIND_ITEM_ID, 2);
-    world.menu.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
+    world.menu.worldmap_menu = Some(legaia_game_tables::worldmap_menu::WorldmapMenu {
         names: vec!["Rim Elm".into(), "Drake Castle".into()],
         placements: vec![placement(0, 0, 0x10, 0x0055), placement(1, 1, 0x11, 0x0162)],
     });
@@ -299,7 +299,7 @@ fn a_door_of_wind_pick_consumes_the_item_and_stages_the_destination() {
 fn backing_out_of_the_destination_list_consumes_nothing() {
     let mut world = field_world();
     world.party.inventory.insert(DOOR_OF_WIND_ITEM_ID, 1);
-    world.menu.worldmap_menu = Some(legaia_asset::worldmap_menu::WorldmapMenu {
+    world.menu.worldmap_menu = Some(legaia_game_tables::worldmap_menu::WorldmapMenu {
         names: vec!["Rim Elm".into()],
         placements: vec![placement(0, 0, 0x10, 0x0055)],
     });

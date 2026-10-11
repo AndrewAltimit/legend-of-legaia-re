@@ -3,9 +3,10 @@
 //! Skipped when `LEGAIA_MEDNAFEN_DIR` is unset - keeps CI green for
 //! contributors without a disc + saves on hand.
 
-use legaia_mednafen::diff::{DiffOptions, diff_ram, sort_by_size};
-use legaia_mednafen::extract::PSX_RAM_SIZE;
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
+use legaia_ram_image::diff::{DiffOptions, diff_ram, sort_by_size};
+use legaia_ram_image::extract::PSX_RAM_SIZE;
 
 fn mcs_dir() -> Option<std::path::PathBuf> {
     std::env::var("LEGAIA_MEDNAFEN_DIR")
@@ -247,7 +248,7 @@ fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
         return;
     }
 
-    use legaia_engine_core::levelup::observations::noa_4_level_jump;
+    use legaia_engine_battle::levelup::observations::noa_4_level_jump;
     use legaia_parity::capture_observations::char_level_up;
 
     let noa_record = (char_level_up::NOA_BASE, char_level_up::NOA_BASE + 0x414);
@@ -348,7 +349,7 @@ fn gala_level_up_triplet_pins_phase_split_and_settled_deltas() {
     let r8 = s8.main_ram().unwrap();
     let r9 = s9.main_ram().unwrap();
 
-    use legaia_engine_core::levelup::observations::gala_4_level_jump;
+    use legaia_engine_battle::levelup::observations::gala_4_level_jump;
     use legaia_parity::capture_observations::char_level_up;
 
     // Fingerprint check: confirm mc7 reads a Gala record value

@@ -83,7 +83,7 @@ pub(crate) fn assemble_setup(pct: u8, bitmap_va: u32, disp: [u32; 2], ret: u32) 
 /// whose name matches a player Seru-magic name in [`SERU_NAMES`] (including
 /// `"<name> $N"` variants). Drives the shiny allowlist bitmap.
 pub fn capturable_monster_ids(archive: &[u8]) -> Result<Vec<u16>> {
-    let recs = legaia_asset::monster_archive::records(archive)
+    let recs = legaia_actor_formats::monster_archive::records(archive)
         .map_err(|e| anyhow::anyhow!("decode monster archive: {e}"))?;
     let mut ids = Vec::new();
     for (i, r) in recs.iter().enumerate() {

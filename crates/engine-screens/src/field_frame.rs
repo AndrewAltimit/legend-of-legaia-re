@@ -3,8 +3,8 @@
 //! which is why they live here rather than in `engine-core` or `engine-ui`.
 
 use legaia_engine_core::scene::{SceneHost, is_world_map_scene};
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_ui::scene_lighting::{
+use legaia_engine_mode::mode::SceneMode;
+use legaia_render_kernels::scene_lighting::{
     PropLights, ScenePointLight, nearest_lights, place_prop_lights,
 };
 

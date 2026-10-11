@@ -9,11 +9,11 @@ impl LegaiaMinigames {
 
     /// Start a slot session on the disc's payout table with `balance` coins in
     /// the machine, on the overlay's own literal seed
-    /// ([`legaia_engine_core::slot_machine::SLOT_RNG_SEED`]) - the one the play
+    /// ([`legaia_engine_minigames::slot_machine::SLOT_RNG_SEED`]) - the one the play
     /// hosts rack every cabinet with. Returns `false` when the payout table
     /// didn't decode.
     pub fn slot_start(&mut self, balance: i32) -> bool {
-        let seed = legaia_engine_core::slot_machine::SLOT_RNG_SEED;
+        let seed = legaia_engine_minigames::slot_machine::SLOT_RNG_SEED;
         let Some(payouts) = self.slot_payouts.clone() else {
             return false;
         };
@@ -91,7 +91,7 @@ impl LegaiaMinigames {
     /// native window and the play page draw on their GPUs. Empty without a
     /// session or the resident set.
     pub fn slot_frame_rgba(&self, w: u32, h: u32) -> Vec<u8> {
-        use legaia_engine_ui::{ui_slot_cabinet as usc, ui_slot_paylines as usp};
+        use legaia_engine_ui::{slot_cabinet as usc, slot_paylines as usp};
         let (Some(m), Some(c)) = (self.slot.as_ref(), self.slot_cabinet.as_ref()) else {
             return Vec::new();
         };
@@ -103,8 +103,12 @@ impl LegaiaMinigames {
             _ => Vec::new(),
         };
         if matches!(m.screen(), slot_scene::SlotScreen::Instructions { .. }) {
-            let mut px =
-                legaia_engine_ui::screen_prim_raster::rasterize_rgba(&menu, c.vram.as_u16(), w, h);
+            let mut px = legaia_render_kernels::screen_prim_raster::rasterize_rgba(
+                &menu,
+                c.vram.as_u16(),
+                w,
+                h,
+            );
             if let Some(f) = self.slot_font.as_ref() {
                 blit_text(&mut px, w, h, f, &text);
             }
@@ -142,7 +146,7 @@ impl LegaiaMinigames {
             .collect();
         prims.extend(usp::payline_screen_prims(&segments));
         prims.extend(menu);
-        legaia_engine_ui::screen_prim_raster::rasterize_rgba(&prims, c.vram.as_u16(), w, h)
+        legaia_render_kernels::screen_prim_raster::rasterize_rgba(&prims, c.vram.as_u16(), w, h)
     }
 
     /// Live machine state. `window` is the 3x3 grid of symbol ids actually on
@@ -175,8 +179,8 @@ impl LegaiaMinigames {
         // The visible 3x3: each reel's payline row plus the row above / below,
         // which are exactly the rows the win eval reads for the three paylines.
         let strips = m.strips();
-        let len = legaia_engine_core::slot_machine::STRIP_LEN as isize;
-        let window = (0..legaia_engine_core::slot_machine::REEL_COUNT)
+        let len = legaia_engine_minigames::slot_machine::STRIP_LEN as isize;
+        let window = (0..legaia_engine_minigames::slot_machine::REEL_COUNT)
             .map(|r| {
                 let row = m.payline_row(r) as isize;
                 let cell = |off: isize| strips[r][(row + off).rem_euclid(len) as usize].to_string();
@@ -260,8 +264,8 @@ impl LegaiaMinigames {
     /// evaluator multiplies the very rows the tally latched. A page that renders
     /// `tally` cannot show a line that disagrees with what the spin paid.
     pub fn slot_bonus_json(&self) -> String {
-        use legaia_asset::slot_payout as sp;
-        use legaia_engine_core::slot_machine::REEL_COUNT;
+        use legaia_engine_minigames::slot_machine::REEL_COUNT;
+        use legaia_minigame_formats::slot_payout as sp;
         let head = format!(
             r#""kick_symbol":{},"kick_rounds":{},"punch_symbol":{},"punch_rounds":{},"min":{},"max":{}"#,
             sp::KICK_SYMBOL_ID,

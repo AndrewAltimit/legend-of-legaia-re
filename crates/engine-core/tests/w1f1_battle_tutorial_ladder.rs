@@ -28,13 +28,14 @@
 //! * a box on screen parks the battle loop (`ctx[+0x6B2]`), so no pad-driven
 //!   frame can advance the action SM past it.
 
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::battle_flow::BattleFlowState;
 use legaia_engine_core::battle_tutorial::{
     BattleTutorial, BattleTutorialScript, BoxStyle, OVERLAY_967_BASE_VA, TutorialLesson, msg,
 };
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// A stand-in overlay blob: one ASCII marker per emittable message VA, so a
 /// queued box is traceable back to the hook that produced it without shipping
@@ -89,7 +90,7 @@ fn primed_world() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("w1f1_tutorial_ladder");

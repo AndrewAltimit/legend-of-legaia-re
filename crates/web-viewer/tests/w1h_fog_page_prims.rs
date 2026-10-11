@@ -18,9 +18,10 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::man_field_scripts::{partition_record_span, scene_man_carriers};
+use legaia_engine_core::man_field_scripts::scene_man_carriers;
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker};
+use legaia_engine_field::man_field_scripts::partition_record_span;
+use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 use legaia_web_viewer::runtime::LegaiaRuntime;
 use std::path::PathBuf;
 
@@ -54,7 +55,7 @@ fn entry_raising_scene(index: &ProtIndex) -> Option<String> {
         };
         for carrier in scene_man_carriers(index, &scene) {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             let partitions = man_file.header.partition_counts.len();
@@ -71,7 +72,7 @@ fn entry_raising_scene(index: &ProtIndex) -> Option<String> {
                     for insn in LinearWalker::new(body, pc0).flatten() {
                         match &insn.info {
                             InsnInfo::SystemFlag {
-                                kind: legaia_engine_vm::field_disasm::FlagKind::Test,
+                                kind: legaia_scene_formats::field_disasm::FlagKind::Test,
                                 ..
                             }
                             | InsnInfo::BBoxTest { .. }

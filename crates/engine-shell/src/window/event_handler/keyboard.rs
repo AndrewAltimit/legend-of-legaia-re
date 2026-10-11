@@ -89,7 +89,7 @@ impl PlayWindowApp {
         // effect-id -> etmd-model selection is decoded (move-power
         // record `+0x12`/`+0x16` effect-id lists -> the `0x801F6324`
         // prototype table -> record `model_sel` -> `global_tmd_pool
-        // [model_sel + 3]`; `legaia_asset::move_power::EffectListEntry`
+        // [model_sel + 3]`; `legaia_game_tables::move_power::EffectListEntry`
         // + `World::spawn_move_fx`, exercised by the `H` key); `F` is
         // just the simpler fixed-model dev hand-spawn.
         if matches!(code, KeyCode::KeyF)
@@ -176,9 +176,9 @@ impl PlayWindowApp {
                 .entry_bytes_lba_footprint(PROT_GIMARD_SUMMON_STAGER)
             {
                 Ok(bytes) => {
-                    let overlay = legaia_asset::summon_overlay::parse(
+                    let overlay = legaia_overlay_images::summon_overlay::parse(
                         &bytes,
-                        legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE,
+                        legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE,
                     );
                     self.session.host.world.spawn_summon(
                         &overlay,
@@ -390,7 +390,9 @@ impl PlayWindowApp {
             // The tutorial actor is installed by `World::enter_dance` when the
             // parsed run is a how-to one, so it reaches the browser play page
             // from the same call.
-            if self.start_dance_minigame_mode(legaia_engine_core::dance::DanceMode::HowTo, false) {
+            if self
+                .start_dance_minigame_mode(legaia_engine_minigames::dance::DanceMode::HowTo, false)
+            {
                 log::info!("dance: how-to started - face buttons advance the tutorial");
             }
             return;
@@ -492,7 +494,7 @@ impl PlayWindowApp {
                 self.session.host.world.close_minigame_round_trip();
             } else {
                 self.session.host.world.request_minigame_warp(
-                    legaia_engine_core::minigame_entry::MinigameSubId::SlotMachine.sub_id(),
+                    legaia_engine_mode::minigame_entry::MinigameSubId::SlotMachine.sub_id(),
                 );
                 log::info!(
                     "slots: door warp armed (bank {} coins) - Cross spins/collects, Square/Cross/Circle stop reels 0/1/2, O to cash out",
@@ -525,7 +527,7 @@ impl PlayWindowApp {
                 // run / give-up path, retail's `_DAT_80084448 = 4` arm) and
                 // settles a contest that has run out.
                 if let Some(s) = self.session.host.world.leave_muscle_dome() {
-                    use legaia_engine_core::muscle_dome::MusclePhase;
+                    use legaia_engine_menus::muscle_dome_session::MusclePhase;
                     let phase = s.phase();
                     match phase {
                         MusclePhase::Won => log::info!("muscle: leg won"),
@@ -541,7 +543,7 @@ impl PlayWindowApp {
                 self.session.host.world.close_minigame_round_trip();
             } else {
                 self.session.host.world.request_minigame_warp(
-                    legaia_engine_core::minigame_entry::MinigameSubId::MuscleDome.sub_id(),
+                    legaia_engine_mode::minigame_entry::MinigameSubId::MuscleDome.sub_id(),
                 );
                 log::info!(
                     "muscle: door warp armed - fight to a KO, arrows enter directions, Cross confirms, M to leave"
@@ -576,7 +578,7 @@ impl PlayWindowApp {
                 }
             } else {
                 self.session.host.world.request_minigame_warp(
-                    legaia_engine_core::minigame_entry::MinigameSubId::BakaFighter.sub_id(),
+                    legaia_engine_mode::minigame_entry::MinigameSubId::BakaFighter.sub_id(),
                 );
                 log::info!("baka: door warp armed - Square/Circle/Cross attack, B to leave");
             }
@@ -633,7 +635,7 @@ impl PlayWindowApp {
         // (auto -> day -> dusk -> night). Persisted; inert while the
         // enhancement is off.
         if matches!(code, KeyCode::F8) && state == ElementState::Pressed {
-            use legaia_engine_render::scene_lighting::TimeOfDay;
+            use legaia_render_kernels::scene_lighting::TimeOfDay;
             let next = TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
                 .unwrap_or_default()
                 .next();
@@ -847,8 +849,8 @@ impl PlayWindowApp {
             let is_confirm = matches!(
                 self.mapping.pad_button_for_key(keycode_to_name(code)),
                 Some(
-                    legaia_engine_core::input::PadButton::Cross
-                        | legaia_engine_core::input::PadButton::Circle
+                    legaia_engine_system::input::PadButton::Cross
+                        | legaia_engine_system::input::PadButton::Circle
                 )
             );
             if let Some(panel) = self.active_dialog.as_mut()

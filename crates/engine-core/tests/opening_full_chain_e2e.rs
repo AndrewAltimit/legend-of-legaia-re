@@ -16,8 +16,8 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::name_entry::{NameEntryInput, NameEntryState};
 use legaia_engine_core::scene::SceneHost;
+use legaia_engine_menus::name_entry::{NameEntryInput, NameEntryState};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -47,7 +47,7 @@ fn new_game_opening_chains_naturally_with_zero_input() {
     let Some(mut host) = skip_or_host() else {
         return;
     };
-    let opdeene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    let opdeene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
 
     // --- NEW GAME: seed and enter the prologue cutscene ---
     host.world.begin_new_game();
@@ -160,7 +160,7 @@ fn new_game_opening_chains_naturally_with_zero_input() {
     }
     assert_eq!(
         host.world.active_scene_label,
-        legaia_asset::new_game::OPENING_SCENE,
+        legaia_game_tables::new_game::OPENING_SCENE,
         "the fly-in chains into Rim Elm (ticked {ticks})"
     );
     assert!(
@@ -195,8 +195,8 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
     let Some(mut host) = skip_or_host() else {
         return;
     };
-    let opdeene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
-    let town01 = legaia_asset::new_game::OPENING_SCENE;
+    let opdeene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
+    let town01 = legaia_game_tables::new_game::OPENING_SCENE;
 
     host.world.begin_new_game();
     host.enter_field_scene(opdeene, 0).expect("enter opdeene");
@@ -244,7 +244,7 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
         confirm: true,
         ..Default::default()
     });
-    let end = legaia_engine_core::name_entry::CHAR_CELLS + 16;
+    let end = legaia_engine_menus::name_entry::CHAR_CELLS + 16;
     host.world.party.name_entry.as_mut().unwrap().cursor = end;
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
@@ -321,7 +321,7 @@ fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, t
         .as_ref()
         .is_some_and(|t| t.dialog.is_some());
     if parked && tick.is_multiple_of(2) {
-        world.set_pad(legaia_engine_core::input::PadButton::Cross.mask());
+        world.set_pad(legaia_engine_system::input::PadButton::Cross.mask());
     } else {
         world.set_pad(0);
     }

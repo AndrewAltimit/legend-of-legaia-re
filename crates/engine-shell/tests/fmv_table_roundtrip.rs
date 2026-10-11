@@ -180,9 +180,10 @@ fn fmv_table_lbas_match_iso_walk_when_overlay_resident() {
     let s = SaveState::from_path(&save_path).expect("parse save state");
     let r = s.main_ram().expect("main ram slice");
     let off = (str_fmv_overlay::COMPACT_TABLE_ADDR - 0x80000000) as usize;
-    let entries = legaia_asset::str_fmv_table::parse_entries(
+    let entries = legaia_game_tables::str_fmv_table::parse_entries(
         &r[off..off
-            + str_fmv_overlay::MV_BASENAMES.len() * legaia_asset::str_fmv_table::ENTRY_STRIDE],
+            + str_fmv_overlay::MV_BASENAMES.len()
+                * legaia_game_tables::str_fmv_table::ENTRY_STRIDE],
         str_fmv_overlay::MV_BASENAMES.len(),
     )
     .expect("compact table parses");

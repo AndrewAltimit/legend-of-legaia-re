@@ -22,7 +22,7 @@ fn disc_magic_xp_thresholds_decode_and_install() {
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
 
-    let table = legaia_engine_core::magic_xp::thresholds_from_scus(&scus)
+    let table = legaia_engine_battle::magic_xp::thresholds_from_scus(&scus)
         .expect("threshold table decodes from the retail SCUS");
 
     // Shape invariants of the retail curve (the loader enforces ascending +

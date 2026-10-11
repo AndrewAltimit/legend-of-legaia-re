@@ -22,7 +22,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
     /// reward bank, a side-band bank, or `monster.snd` for the battle's
     /// slots `7` / `8`. `None` for an empty slot.
     pub fn prot_for_slot(&self, slot: u8) -> Option<u32> {
-        use legaia_asset::sfx_table::{
+        use legaia_game_tables::sfx_table::{
             SLOT0_SYSTEM_BANK_PROT_INDEX, SLOT11_REWARD_BANK_PROT_INDEX,
         };
         if !self.sfx_vabs.contains_key(&slot) {
@@ -43,7 +43,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
         self.tail
             .monsters()
             .is_some_and(|(_, borrows)| borrows.iter().any(|t| t.slot == slot))
-            .then_some(legaia_asset::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32)
+            .then_some(legaia_container_formats::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32)
     }
 
     /// Whether the battle-end reward bank is parked in its slot.
@@ -60,7 +60,8 @@ impl<S: AudioSink> AudioBgmDirector<S> {
         if self.has_reward_bank() {
             return true;
         }
-        let Some(bytes) = read_entry(legaia_asset::sfx_table::SLOT11_REWARD_BANK_PROT_INDEX) else {
+        let Some(bytes) = read_entry(legaia_game_tables::sfx_table::SLOT11_REWARD_BANK_PROT_INDEX)
+        else {
             return false;
         };
         self.stage_transient_sfx_vab(TRANSIENT_REWARD_SLOT, &bytes)
@@ -119,7 +120,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
 
     /// Install the cue id -> VAB slot routing decoded from the same
     /// descriptor table as [`Self::set_sfx_bank`]
-    /// (`legaia_asset::sfx_table::SfxTable::cue_slots`). Without it every cue
+    /// (`legaia_game_tables::sfx_table::SfxTable::cue_slots`). Without it every cue
     /// falls back to the class-2 bank, which is what a single-bank host did.
     pub fn set_sfx_cue_slots<I: IntoIterator<Item = (u8, u8)>>(&mut self, slots: I) {
         self.sfx_cue_slots = slots.into_iter().collect();

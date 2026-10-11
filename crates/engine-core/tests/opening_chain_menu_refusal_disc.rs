@@ -50,7 +50,7 @@ fn the_opening_chain_never_admits_the_pause_menu() {
     };
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.world.begin_new_game();
-    host.enter_field_scene(legaia_asset::new_game::OPENING_CUTSCENE_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE, 0)
         .expect("enter opdeene");
     assert!(
         host.world.cutscene.opening_chain_active,

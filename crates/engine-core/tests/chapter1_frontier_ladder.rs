@@ -40,7 +40,7 @@
 //! path `DATA\FIELD\<name>.MAP`, and ISO 9660 identifiers are upper case), so
 //! roughly half the disc's destinations are written `MAP03` / `KOR3` /
 //! `RETOCKIN` rather than lower case. Admitting them - see
-//! [`legaia_asset::field_disasm::clean_scene_name`] - roughly doubles the
+//! [`legaia_scene_formats::field_disasm::clean_scene_name`] - roughly doubles the
 //! closure and pulls in most of the `dream` hub's fan-out. Members are what
 //! the graph reaches, not what chapter a player is in;
 //! `scripts/scenarios.toml` labels some of them (`garmel`) chapter 2.
@@ -125,13 +125,13 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::PathBuf;
 
-use legaia_asset::man_section::{ManFile, parse as parse_man};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::man_field_scripts::{overworld_portal_sites, scene_destinations};
 use legaia_engine_core::scene::{
     DefaultMapIdResolver, ProtIndex, Scene, SceneHost, SceneTickEvent, is_world_map_scene,
 };
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_field::man_field_scripts::{overworld_portal_sites, scene_destinations};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
+use legaia_scene_formats::man_section::{ManFile, parse as parse_man};
 
 mod captured_scenes;
 mod exits;
@@ -207,7 +207,7 @@ fn open_host() -> Option<SceneHost> {
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
     if let Ok(scus) = std::fs::read(extracted.join("SCUS_942.54"))
-        && let Some(party) = legaia_asset::new_game::StartingParty::from_scus(&scus)
+        && let Some(party) = legaia_game_tables::new_game::StartingParty::from_scus(&scus)
     {
         host.world.seed_starting_party(&party);
     }

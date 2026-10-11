@@ -7,7 +7,7 @@ use super::*;
 /// environment draws, applying what the object bind decides.
 ///
 /// Retail creates these actors from two sweeps, and every placed record belongs
-/// to exactly one of them (see [`legaia_asset::field_objects`]):
+/// to exactly one of them (see [`legaia_scene_formats::field_objects`]):
 ///
 /// - **bound** (a kind-1 trigger sits on the footprint-anchor tile): the scene-init
 ///   sweep `FUN_8003A55C` creates it, and the bind's `anim_id` lands on
@@ -31,7 +31,7 @@ use super::*;
 /// `anim_id` `0`, nothing is dropped), which is what the bind-less terrain-cell
 /// sweeps want.
 ///
-/// [`CELL_BIND_OWNED`]: legaia_asset::field_objects::CELL_BIND_OWNED
+/// [`CELL_BIND_OWNED`]: legaia_scene_formats::field_objects::CELL_BIND_OWNED
 pub fn resolve_placed_env_draws(
     env_tmds: &[usize],
     placements: &[Placement],
@@ -66,7 +66,7 @@ pub fn resolve_placed_env_draws(
                 // still draws; only a record the *window* sweep also skips
                 // (anchor tile marked `CELL_BIND_OWNED`) has no actor at all.
                 None => {
-                    if p.anchor_cell & legaia_asset::field_objects::CELL_BIND_OWNED != 0 {
+                    if p.anchor_cell & legaia_scene_formats::field_objects::CELL_BIND_OWNED != 0 {
                         drops.push(EnvDrawDrop::Unbound {
                             anchor,
                             world_x: p.world_x,
@@ -172,7 +172,7 @@ pub fn retain_visible_landmark_placements(
         return;
     }
     placements.retain(|p| {
-        p.flags & legaia_asset::field_objects::FLAG_PLACED == 0
+        p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0
             || binds
                 .get(&(p.anchor_col, p.anchor_row))
                 .is_none_or(|b| !hidden_records.contains(&(b.record as usize)))
@@ -421,7 +421,7 @@ impl PlacedWindowKey {
     }
 
     /// The key of a window-sweep actor.
-    pub fn of_spawn(s: &crate::field_regions::WindowSpawn) -> Self {
+    pub fn of_spawn(s: &legaia_engine_field::field_regions::WindowSpawn) -> Self {
         Self {
             anchor: s.anchor,
             world_x: s.world.0,
@@ -485,7 +485,7 @@ pub fn placed_window_key(
 /// [`crate::world::StaticObjectWindow::retail_windowing`] clear), and under
 /// retail windowing only while the list holds a **drawn** actor for it: inside
 /// the box the last camera re-centre latched, and with a non-zero draw kind
-/// ([`crate::field_regions::WindowSpawn::drawn`]).
+/// ([`legaia_engine_field::field_regions::WindowSpawn::drawn`]).
 // REF: FUN_801D7B50 (the list), FUN_8001ADA4 (the draw-kind range check)
 pub fn placed_draw_live(
     key: Option<&PlacedWindowKey>,
@@ -516,7 +516,7 @@ pub fn story_hidden_records_for_scene(
     let Ok(Some(man_bytes)) = scene.field_man_payload(index) else {
         return Default::default();
     };
-    let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes) else {
+    let Ok(man_file) = legaia_scene_formats::man_section::parse(&man_bytes) else {
         return Default::default();
     };
     let (primary, fallback) = scene
@@ -527,7 +527,9 @@ pub fn story_hidden_records_for_scene(
         .field_map_index(index)
         .and_then(|idx| index.entry_bytes_extended(idx).ok());
     let object_binds: Vec<(usize, (i16, i16))> = match map_bytes.as_deref() {
-        Some(map) => crate::man_field_scripts::object_script_bind_seats(map, &triggers),
+        Some(map) => {
+            legaia_engine_field::man_field_scripts::object_script_bind_seats(map, &triggers)
+        }
         None => triggers
             .iter()
             .filter(|t| t.gate == 0)
@@ -548,7 +550,9 @@ pub fn story_hidden_records_for_scene(
     w.set_object_bind_rots(
         map_bytes
             .as_deref()
-            .map(|map| crate::man_field_scripts::object_script_bind_rots(map, &triggers))
+            .map(|map| {
+                legaia_engine_field::man_field_scripts::object_script_bind_rots(map, &triggers)
+            })
             .unwrap_or_default(),
     );
     w.seed_object_channels(&man_file, &man_bytes, &object_binds);

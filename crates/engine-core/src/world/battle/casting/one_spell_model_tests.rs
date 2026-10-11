@@ -1,8 +1,8 @@
 use super::*;
-use crate::spells::SpellCatalog;
 use crate::world::vm_hosts::BattleHostImpl;
-use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
-use legaia_engine_vm::battle_action::BattleActionHost;
+use legaia_engine_battle::spells::SpellCatalog;
+use legaia_engine_battle_vm::battle_action::BattleActionHost;
+use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
 
 /// **The canary.** For every spell the catalog prices, the host the engine
 /// actually installs must quote that exact price - so a spell the player
@@ -50,9 +50,9 @@ fn the_battle_host_prices_every_catalog_spell_exactly_as_the_catalog_does() {
 #[test]
 fn the_battle_host_prices_the_retail_seru_block() {
     let mut world = World::new();
-    world.set_spell_catalog(crate::retail_magic::retail_seru_magic_catalog());
+    world.set_spell_catalog(legaia_engine_battle::retail_magic::retail_seru_magic_catalog());
     let host = BattleHostImpl { world: &mut world };
-    for s in crate::retail_magic::SERU_MAGIC {
+    for s in legaia_engine_battle::retail_magic::SERU_MAGIC {
         assert_eq!(
             host.spell_mp_cost(s.id),
             s.mp,
@@ -87,7 +87,7 @@ fn the_capture_route_and_the_kernel_pick_share_one_class_byte() {
     let mut world = World::new();
     let mut entries = vec![SpellEntry::default(); 0x100];
     entries[ID as usize].class = CAPTURE_CLASS;
-    world.menu.text = Some(crate::pause_screens::MenuTextTables {
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
         spell_names: Some(SpellNameTable::from_entries(entries)),
         ..Default::default()
     });
@@ -112,7 +112,7 @@ fn the_seed_discriminator_reads_the_same_class_byte() {
     let mut entries = vec![SpellEntry::default(); 0x100];
     entries[0x10].class = 0x02; // < 0x14, id < 0x65 -> Spirit band
     entries[0x11].class = 0x32; // >= 0x14          -> magic band
-    world.menu.text = Some(crate::pause_screens::MenuTextTables {
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
         spell_names: Some(SpellNameTable::from_entries(entries)),
         ..Default::default()
     });
@@ -138,7 +138,7 @@ fn the_seed_discriminator_reads_the_same_class_byte() {
 fn both_cast_paths_quote_the_same_price_so_a_double_charge_would_be_visible() {
     let mut world = World::new();
     world.party.party_count = 1;
-    world.set_spell_catalog(crate::retail_magic::retail_seru_magic_catalog());
+    world.set_spell_catalog(legaia_engine_battle::retail_magic::retail_seru_magic_catalog());
     for i in 0..2usize {
         let a = world.spawn_actor(i);
         a.battle.liveness = 1;
@@ -177,7 +177,7 @@ fn a_prepaid_mp_saver_cast_resolves_at_exactly_the_discounted_price() {
     let mut world = World::new();
     world.party.party_count = 1;
     world.party.character_ability_bits[0] = 0x20;
-    world.set_spell_catalog(crate::retail_magic::retail_seru_magic_catalog());
+    world.set_spell_catalog(legaia_engine_battle::retail_magic::retail_seru_magic_catalog());
     for i in 0..2usize {
         let a = world.spawn_actor(i);
         a.battle.liveness = 1;
@@ -192,7 +192,7 @@ fn a_prepaid_mp_saver_cast_resolves_at_exactly_the_discounted_price() {
         .get(0x82)
         .cloned()
         .expect("Theeder is in the retail block");
-    assert_eq!(crate::spells::caster_mp_cost(&def, 0x20), 12);
+    assert_eq!(legaia_engine_battle::spells::caster_mp_cost(&def, 0x20), 12);
     // The band already charged 12 of the caster's 12: 0 left.
     world.cast_spell_on_slots_prepaid(0, &def, &[1]);
     assert!(

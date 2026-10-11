@@ -15,7 +15,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::battle_texture_catalog::BattleTextureSlot;
+use legaia_actor_formats::battle_texture_catalog::BattleTextureSlot;
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_disc_patch::ppf;
 use legaia_texture_replace::battle_texture::{self, BattleTextureTarget};
@@ -335,7 +335,7 @@ pub(crate) fn cmd_tim_palette_map(
          sprites win over plates, plates over bars, bars over windows, then the smaller rect; \
          {} pixel(s) are drawn through more than one palette.",
         rows.len(),
-        legaia_asset::ui_widgets::SUBPALETTE_EXT_TIM_PROT_OFFSET,
+        legaia_ui_formats::ui_widgets::SUBPALETTE_EXT_TIM_PROT_OFFSET,
         pals.unclaimed_pixels,
         pals.contested_pixels
     );

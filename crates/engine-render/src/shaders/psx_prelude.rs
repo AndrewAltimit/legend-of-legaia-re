@@ -203,7 +203,7 @@ fn cue_ramp_ir0(cue_a: f32, ramp: vec4<f32>, frag_w: f32) -> f32 {
 // `light_dir.w`: when it is zero (the default) the input colour is returned
 // bit-unchanged, keeping the faithful path pixel-identical.
 //
-// Model (the enhanced-lighting mood, `legaia_engine_ui::scene_lighting`):
+// Model (the enhanced-lighting mood, `legaia_render_kernels::scene_lighting`):
 //   out = baked * min(min(ambient + (diffuse*|N.L| + pool_w*pool) * key, MAX)
 //                     + point_gain, TOTAL_MAX)
 //   emissive prims: out = baked * emissive_gain

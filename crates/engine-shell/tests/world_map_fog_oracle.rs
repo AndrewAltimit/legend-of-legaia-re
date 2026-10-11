@@ -21,8 +21,9 @@
 
 use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
 use legaia_engine_core::fog_particles::{FOG_CAP_RAISED, FOG_CLUT, FOG_OVERWORLD_LIFT, FOG_TPAGE};
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {

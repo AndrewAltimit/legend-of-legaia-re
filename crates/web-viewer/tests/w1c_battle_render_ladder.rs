@@ -52,17 +52,17 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset. CI runs without disc data.
 //!
-//! [`IntroStyle::TileShatter`]: legaia_engine_vm::battle_intro_styles::IntroStyle::TileShatter
+//! [`IntroStyle::TileShatter`]: legaia_engine_battle_vm::battle_intro_styles::IntroStyle::TileShatter
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::scene::ProtIndex;
-use legaia_engine_ui::battle_intro::{BattleIntro, IntroQuadTable, parse_tile_corner_table};
-use legaia_engine_vm::battle_intro_particles::IntroEnv;
-use legaia_engine_vm::battle_intro_styles::{
+use legaia_engine_battle_vm::battle_intro_particles::IntroEnv;
+use legaia_engine_battle_vm::battle_intro_styles::{
     INTRO_FADE_RAMPS, IntroStyle, IntroStyleInputs, intro_duration_frames, select_intro_style,
 };
+use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_system::input::PadButton;
+use legaia_render_kernels::battle_intro::{BattleIntro, IntroQuadTable, parse_tile_corner_table};
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 const W: u32 = 960;
@@ -171,10 +171,10 @@ fn intro_tables(index: &ProtIndex) -> (IntroQuadTable, [i32; 4]) {
         .entry_bytes_extended(INTRO_OVERLAY_PROT)
         .ok()
         .and_then(|raw| {
-            let rec = legaia_asset::static_overlay::overlay_map()
+            let rec = legaia_overlay_images::static_overlay::overlay_map()
                 .by_prot_index(INTRO_OVERLAY_PROT)?
                 .clone();
-            let img = legaia_asset::static_overlay::as_loaded(&raw, &rec).ok()?;
+            let img = legaia_overlay_images::static_overlay::as_loaded(&raw, &rec).ok()?;
             Some((img, rec.base_va))
         });
     let table = loaded
@@ -712,11 +712,11 @@ fn rung6_weapon_trail_seated(rt: &mut LegaiaRuntime) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 fn rung5_target_kernels() -> Result<(), String> {
-    use legaia_engine_vm::battle_action::{
+    use legaia_engine_battle_vm::battle_action::{
         PoolActor, RedirectQuery, TargetCycle, bearing_12bit_approx, build_attack_target_queue,
         cycle_attack_target, redirect_dead_target,
     };
-    use legaia_engine_vm::battle_target_group::{
+    use legaia_engine_battle_vm::battle_target_group::{
         GroupSlot, MIN_GROUP_EXTENT, TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY, target_group_aim,
         target_group_range,
     };

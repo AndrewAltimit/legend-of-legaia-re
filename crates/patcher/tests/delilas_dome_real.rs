@@ -6,7 +6,6 @@
 //! slim-clone archive slots building from the real Che/Lu blocks. Requires
 //! `LEGAIA_DISC_BIN`; skips (and passes) without it.
 
-use legaia_asset::item_names::file_offset_for_va;
 use legaia_delilas_challenge::dome::{
     AI_BLOCK_CAPACITY, AI_BLOCK_VA, ARENA_BASE_VA, ARENA_OVERLAY_PROT_INDEX,
     BATTLE_OVERLAY_PROT_INDEX, CLONE_IDS, DELILAS_PAIR_IDS, DISPLAY_ROUTINE_CAPACITY,
@@ -19,6 +18,7 @@ use legaia_delilas_challenge::dome::{
     TEMPLATE_REF_LUI_VA, TEMPLATE_VA,
 };
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
 use legaia_iso::iso9660::read_file_in_image;
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -257,9 +257,11 @@ fn clone_slots_are_battle_unreachable_and_slims_build() {
         let size = u32::from_le_bytes(slot[..4].try_into().unwrap()) as usize;
         let block = legaia_lzs::decompress(&slot[4..], size).expect("decode block");
         let (protected, extra_drop) = legaia_delilas_challenge::dome::slim_policy(src);
-        let slim = legaia_asset::monster_archive::slim_castables(&block, protected, extra_drop)
-            .expect("slim");
-        let encoded = legaia_asset::monster_archive::encode_slot(&slim.bytes).expect("encode");
+        let slim =
+            legaia_actor_formats::monster_archive::slim_castables(&block, protected, extra_drop)
+                .expect("slim");
+        let encoded =
+            legaia_actor_formats::monster_archive::encode_slot(&slim.bytes).expect("encode");
         assert_eq!(encoded.len(), 0x14000, "clone slot {dst} is slot-sized");
         // The slim heap footprint must be under the original's.
         let orig_heap = u32::from_le_bytes(block[8..12].try_into().unwrap());

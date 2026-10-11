@@ -34,8 +34,8 @@ pub(super) const SCRIPTED_EDGE_COST: usize = 6;
 
 impl DiscGraph {
     pub(super) fn build(index: &ProtIndex) -> Self {
-        use legaia_asset::field_disasm::{find_fmv_triggers, partition_record_span};
-        use legaia_engine_core::cutscene::{FmvHandoff, fmv_post_play_handoff};
+        use legaia_engine_system::movie::cutscene::{FmvHandoff, fmv_post_play_handoff};
+        use legaia_scene_formats::field_disasm::{find_fmv_triggers, partition_record_span};
         let mut edges: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         let mut doors = BTreeSet::new();
         let mut fmv: BTreeMap<(String, String), BTreeSet<(usize, usize)>> = BTreeMap::new();
@@ -48,7 +48,7 @@ impl DiscGraph {
             let set = edges.entry(name.clone()).or_default();
             for c in scene_man_carriers(index, &scene) {
                 let man = &c.payload;
-                let Ok(mf) = legaia_asset::man_section::parse(man) else {
+                let Ok(mf) = legaia_scene_formats::man_section::parse(man) else {
                     continue;
                 };
                 for d in scene_destinations(&mf, man) {
@@ -69,7 +69,7 @@ impl DiscGraph {
                 // card save from `PRO-01` on). `scene_destinations` keeps one
                 // entry per destination; a scene with two exits to one map
                 // (a town's two gates) has two landings.
-                for s in legaia_asset::man_edit::scene_change_sites(man) {
+                for s in legaia_scene_formats::man_edit::scene_change_sites(man) {
                     if s.partition == 2 && s.name != name && set.contains(&s.name) {
                         landings
                             .entry((name.clone(), s.name.clone()))
@@ -100,7 +100,7 @@ impl DiscGraph {
             }
             // Walk-on reachability, in the MAN the live host loads.
             if let Ok(Some(man)) = scene.field_man_payload(index)
-                && let Ok(mf) = legaia_asset::man_section::parse(&man)
+                && let Ok(mf) = legaia_scene_formats::man_section::parse(&man)
                 && let Ok((p, f)) = scene.field_tile_triggers(index)
             {
                 let triggers: Vec<TileTrigger> = p.into_iter().chain(f).collect();

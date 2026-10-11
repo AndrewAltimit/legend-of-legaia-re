@@ -10,7 +10,7 @@
 //! [`super::motion_vm`] ports the *other* motion VM (`FUN_8003774C`, the
 //! pursue / patrol / face-target one). This module is the ambient sibling:
 //! the VM whose bytecode arrives as MAN tail-section 1
-//! (`legaia_asset::man_motion`) and which gives a standing town NPC its idle
+//! (`legaia_scene_formats::man_motion`) and which gives a standing town NPC its idle
 //! turn-in-place behaviour. Without it engine NPCs hold one heading forever
 //! where retail NPCs slowly look around.
 //!
@@ -130,7 +130,7 @@
 //!   **Not executed here**: the stepped-over set, by op number, is `0x02`,
 //!   `0x06`, `0x07`, `0x08`, `0x09`, `0x0A`, `0x0B`, `0x0C`, `0x0E`, `0x0F`,
 //!   `0x10`, `0x11`, `0x12`, `0x13`, `0x14`, `0x15` and `0x16` - every
-//!   remaining entry in [`legaia_asset::man_motion::op_width`]'s space. Their
+//!   remaining entry in [`legaia_scene_formats::man_motion::op_width`]'s space. Their
 //!   widths are known (that is what lets the walk stay in sync) and `0x07` /
 //!   `0x08` are separately decoded as the story-flag writers by the static
 //!   census `legaia-engine man-scripts --motion-flag-census`, but no body here
@@ -159,7 +159,7 @@
 //! parked for the rest of the authored countdown; see
 //! [`AmbientMotion::pending_touch`].
 
-use legaia_asset::man_motion::op_width;
+use legaia_scene_formats::man_motion::op_width;
 
 mod blocking;
 pub use blocking::*;

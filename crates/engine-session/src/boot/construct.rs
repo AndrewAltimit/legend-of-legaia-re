@@ -72,7 +72,7 @@ impl<S: AudioSink> BootSession<S> {
                 None => (None, None, None),
             };
         let spell_catalog = scus.and_then(read_retail_spell_catalog);
-        let steal_table = scus.and_then(legaia_asset::steal_table::StealTable::from_scus);
+        let steal_table = scus.and_then(legaia_game_tables::steal_table::StealTable::from_scus);
         // Wire the CDNAME-derived map-id resolver so field-VM scene
         // transitions resolve to the right CDNAME label.
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
@@ -241,7 +241,7 @@ impl<S: AudioSink> BootSession<S> {
             spell_level_notice: None,
             art_learned_notice: None,
             field_menu_resume: SceneMode::Field,
-            mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
+            mode_seat: legaia_engine_mode::mode::ModeSeat::new_at_boot(),
             host_drains_queues: false,
             queue_marks: HostQueueMarks::default(),
             camera_azimuth_override: None,
@@ -289,8 +289,8 @@ impl<S: AudioSink> BootSession<S> {
 /// Each entry is a scene-VAB-style stream (`[u32 chunk header][VAB]...`), so
 /// the VAB starts at `+4` (with a `+0` fallback for a bare bank).
 fn stage_sfx_vab<S: AudioSink>(director: &mut AudioBgmDirector<S>, host: &SceneHost) -> Result<()> {
-    use legaia_asset::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX;
     use legaia_engine_core::world::SharedRegionBank;
+    use legaia_game_tables::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX;
 
     let bytes = host
         .index

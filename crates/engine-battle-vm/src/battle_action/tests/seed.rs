@@ -404,7 +404,7 @@ fn the_default_capture_predicate_derives_from_the_class_byte() {
         }
     }
     let mut classes = std::collections::HashMap::new();
-    classes.insert(0x37u8, legaia_asset::spell_names::CAPTURE_CLASS);
+    classes.insert(0x37u8, legaia_game_tables::spell_names::CAPTURE_CLASS);
     classes.insert(0x38u8, 0x32u8);
     let host = ClassOnly(classes);
     assert!(host.is_capture_spell(0x37));

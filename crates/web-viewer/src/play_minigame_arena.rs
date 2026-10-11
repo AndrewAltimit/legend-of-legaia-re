@@ -17,7 +17,7 @@
 //!   native launcher runs - which is what makes a leg pay, and what names the
 //!   monster the page draws. The hub screens (intro card, ROUND banner,
 //!   between-legs INTERVAL + score tally) run retail's own fade / hold
-//!   envelopes ([`legaia_engine_core::muscle_dome::HubScreen`]) off the
+//!   envelopes ([`legaia_engine_minigames::muscle_dome::HubScreen`]) off the
 //!   world's leg / contest edges, ported from the native window's
 //!   `tick_muscle_hub`; the quads come out of the PROT 0977 sprite table
 //!   through the shared `other_game_hud` emitters.
@@ -33,10 +33,11 @@
 //!
 //! Start leaves any of the three (`World::poll_minigame_escape`).
 
-use legaia_engine_core::dance::DanceGame;
-use legaia_engine_core::muscle_dome::{self as md, DomeContest, MuscleDomeSession, MusclePhase};
+use legaia_engine_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
+use legaia_engine_minigames::dance::DanceGame;
+use legaia_engine_minigames::muscle_dome::DomeContest;
 use legaia_engine_ui::TextDraw;
-use legaia_engine_ui::other_game_hud::{self as hud, HudQuad, HudSprite};
+use legaia_engine_ui::muscle_dome_hud::{self as hud, HudQuad, HudSprite};
 use wasm_bindgen::prelude::*;
 
 use crate::minigames::duel_surface;
@@ -45,10 +46,12 @@ use crate::runtime::LegaiaRuntime;
 
 /// PROT entry of the arena roster / init overlay (course ladder, score
 /// table, hub sprite table).
-const ARENA_OVERLAY_PROT_INDEX: u32 = md::ARENA_OVERLAY_PROT_INDEX as u32;
+const ARENA_OVERLAY_PROT_INDEX: u32 =
+    legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32;
 /// PROT entry of the dome data container whose LZS section 0 carries the
 /// two hub-page TIMs (`other6.lzs` slot 0).
-const HUB_CONTAINER_PROT_INDEX: u32 = legaia_asset::muscle_dome::HUB_CONTAINER_PROT_INDEX;
+const HUB_CONTAINER_PROT_INDEX: u32 =
+    legaia_minigame_formats::muscle_dome::HUB_CONTAINER_PROT_INDEX;
 /// The page's sheet id for the ringside still (the hub pages are `4` / `5`);
 /// its `pal` is the still variant, `0` = extraction 1221, `1` = 1222.
 const STILL_SHEET: u32 = 8;
@@ -106,7 +109,7 @@ impl LegaiaRuntime {
         let ui = &mut self.minigame_ui.muscle;
         ui.monster_id = raw
             .as_deref()
-            .and_then(md::parse_course_ladder)
+            .and_then(legaia_engine_minigames::muscle_dome::parse_course_ladder)
             .and_then(|ladder| {
                 let rounds = &ladder.get(course)?.rounds;
                 let n = (round as usize).min(rounds.len().checked_sub(1)?);
@@ -190,7 +193,7 @@ impl LegaiaRuntime {
         // A leg is open; otherwise the arena hub is between legs (or the
         // contest has handed the field back) and the INTERVAL + still screens
         // are the hub's own - the native window's same test.
-        let in_dome = world.mode == legaia_engine_core::world::SceneMode::MuscleDome
+        let in_dome = world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
             && world.minigames.muscle_dome.is_some();
         let mut table = table.clone();
         let mut quads = Vec::new();
@@ -330,7 +333,7 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let rows = legaia_engine_core::minigame_status::muscle_status_rows(&host.world);
-        legaia_engine_ui::ui_text_lines::status_row_draws_for(
+        legaia_engine_ui::text_lines::status_row_draws_for(
             font,
             rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
         )
@@ -346,7 +349,7 @@ impl LegaiaRuntime {
             .ok()?;
         // The shared decoder applies the arena's upload STP (the VRAM CLUT
         // words), the same call the native window and the dome page make.
-        legaia_asset::muscle_dome::hub_page_tims(&entry)
+        legaia_minigame_formats::muscle_dome::hub_page_tims(&entry)
     }
 }
 
@@ -363,7 +366,7 @@ pub(crate) struct BakaUi {
 }
 
 impl LegaiaRuntime {
-    fn baka_session(&self) -> Option<&legaia_engine_core::baka_fighter::BakaFight> {
+    fn baka_session(&self) -> Option<&legaia_engine_minigames::baka_fighter::BakaFight> {
         self.scene_host
             .host()?
             .world
@@ -419,19 +422,19 @@ impl LegaiaRuntime {
     /// (`BakaDuelSurface::hud_quads`, retail `FUN_801d5ed0`) through the
     /// shared builder (`ui_baka_strips::baka_hud_prims`), the same two calls
     /// the native window makes. Empty unless [`Self::baka_hud_art_drawn`].
-    pub(crate) fn baka_hud_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+    pub(crate) fn baka_hud_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         if !self.baka_hud_art_drawn() {
             return Vec::new();
         }
         let Some(f) = self.baka_session() else {
             return Vec::new();
         };
-        let views: Vec<legaia_engine_ui::ui_dance::DanceHudQuadView> = self
+        let views: Vec<legaia_engine_ui::dance::DanceHudQuadView> = self
             .minigame_ui
             .baka_surface
             .hud_quads(f)
             .iter()
-            .map(|q| legaia_engine_ui::ui_dance::DanceHudQuadView {
+            .map(|q| legaia_engine_ui::dance::DanceHudQuadView {
                 poly_code: q.poly_code,
                 rect: (q.x0, q.y0, q.x1, q.y1),
                 uv: q.uv,
@@ -441,7 +444,7 @@ impl LegaiaRuntime {
                 tpage: q.tpage_attr,
             })
             .collect();
-        legaia_engine_ui::ui_baka_strips::baka_hud_prims(&views)
+        legaia_engine_ui::baka_strips::baka_hud_prims(&views)
     }
 
     /// The native window's Baka Fighter HUD lines.
@@ -450,7 +453,7 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let rows = legaia_engine_core::minigame_status::baka_status_rows(f);
-        let mut out = legaia_engine_ui::ui_text_lines::status_row_draws_for(
+        let mut out = legaia_engine_ui::text_lines::status_row_draws_for(
             font,
             rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
         );
@@ -466,41 +469,35 @@ impl LegaiaRuntime {
         let placed = if f.cabinet().front_end() {
             Vec::new()
         } else {
-            legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
+            legaia_engine_minigames::baka_fighter_chrome::hud_digit_placements(
                 f.round() as i32,
                 f.tally().map(|t| (t.total(), t.gold_remaining())),
             )
         };
-        out.extend(
-            legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for(
-                font,
-                &placed,
-                legaia_engine_ui::ui_text_lines::STATUS_ROW_DIM_INK,
-            ),
-        );
+        out.extend(legaia_engine_ui::baka_strips::baka_digit_strip_draws_for(
+            font,
+            &placed,
+            legaia_engine_ui::text_lines::STATUS_ROW_DIM_INK,
+        ));
         // The round chrome (`BakaChrome`: intro card, ROUND banner,
         // countdown) and the "NEXT GAME / PAY OUT" sheet, through the label
         // kernels the native window draws with.
         // With the duel VRAM's HUD pages resident both draw as retail quads
         // in the prim pass (`baka_hud_prims`); the labels are the fallback.
-        use legaia_engine_core::{baka_cabinet as bcab, baka_fighter_chrome as bc};
+        use legaia_engine_minigames::{baka_cabinet as bcab, baka_fighter_chrome as bc};
         if !self.baka_hud_art_drawn() {
-            out.extend(
-                legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
-                    font,
-                    &bc::chrome_labels(&f.chrome_frame().draws),
-                    WHITE,
-                ),
-            );
+            out.extend(legaia_engine_ui::baka_strips::baka_widget_label_draws_for(
+                font,
+                &bc::chrome_labels(&f.chrome_frame().draws),
+                WHITE,
+            ));
             // The cabinet's own widgets: the attract prompt, the "PLAYER
             // SELECT" banner and the "NEXT GAME / PAY OUT" sheet.
-            out.extend(
-                legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
-                    font,
-                    &bcab::choice_sheet_labels(&f.cabinet_cells()),
-                    WHITE,
-                ),
-            );
+            out.extend(legaia_engine_ui::baka_strips::baka_widget_label_draws_for(
+                font,
+                &bcab::choice_sheet_labels(&f.cabinet_cells()),
+                WHITE,
+            ));
         }
         if f.cabinet().choice_sheet().is_some() {
             let pot = self
@@ -508,13 +505,11 @@ impl LegaiaRuntime {
                 .host()
                 .map(|h| h.world.minigames.winnings)
                 .unwrap_or(0);
-            out.extend(
-                legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for(
-                    font,
-                    &bcab::choice_pot_placements(pot),
-                    WHITE,
-                ),
-            );
+            out.extend(legaia_engine_ui::baka_strips::baka_digit_strip_draws_for(
+                font,
+                &bcab::choice_pot_placements(pot),
+                WHITE,
+            ));
         }
         out
     }
@@ -545,7 +540,7 @@ impl LegaiaRuntime {
             g,
             host.world.minigames.dance_last_judge.as_ref(),
         );
-        let mut out = legaia_engine_ui::ui_text_lines::status_row_draws_for(
+        let mut out = legaia_engine_ui::text_lines::status_row_draws_for(
             font,
             rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
         );
@@ -714,7 +709,8 @@ impl LegaiaRuntime {
                 .and_then(|h| {
                     h.index
                         .entry_bytes_extended(
-                            legaia_asset::ringside_still::PROT_INDEX_DEFAULT + palette.min(1),
+                            legaia_minigame_formats::ringside_still::PROT_INDEX_DEFAULT
+                                + palette.min(1),
                         )
                         .ok()
                 })
@@ -730,8 +726,8 @@ impl LegaiaRuntime {
     pub fn play_mg_muscle_hub_sheet_dims(&self, sheet: u32) -> Vec<u32> {
         if sheet == STILL_SHEET {
             return vec![
-                legaia_asset::ringside_still::WIDTH as u32,
-                legaia_asset::ringside_still::HEIGHT as u32,
+                legaia_minigame_formats::ringside_still::WIDTH as u32,
+                legaia_minigame_formats::ringside_still::HEIGHT as u32,
             ];
         }
         let Some((t0, t1)) = self.muscle_hub_tims() else {
@@ -742,7 +738,7 @@ impl LegaiaRuntime {
     }
 
     /// Pose the dome's 3D arena surface for this frame
-    /// (`legaia_engine_core::muscle_dome_scene::MuscleDomeSurface::frame`,
+    /// (`legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface::frame`,
     /// the call the native window makes too) and return its generation - or
     /// `-1` when no dome session is live or its scene does not decode. A
     /// generation the page has not seen means the static buffers and the
@@ -751,8 +747,7 @@ impl LegaiaRuntime {
     pub fn play_mg_muscle_scene_frame(&mut self) -> i32 {
         let host = self.scene_host.host();
         let world = host.map(|h| &h.world);
-        let live =
-            world.is_some_and(|w| w.mode == legaia_engine_core::world::SceneMode::MuscleDome);
+        let live = world.is_some_and(|w| w.mode == legaia_engine_mode::mode::SceneMode::MuscleDome);
         let session = world
             .filter(|_| live)
             .and_then(|w| w.minigames.muscle_dome.as_ref());
@@ -849,7 +844,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host() else {
             return -1;
         };
-        let live = host.world.mode == legaia_engine_core::world::SceneMode::Fishing;
+        let live = host.world.mode == legaia_engine_mode::mode::SceneMode::Fishing;
         let surface = &mut self.minigame_ui.fishing_surface;
         match surface.frame(&host.index, &host.world.minigames, live) {
             Some(_) => surface.generation() as i32,
@@ -938,7 +933,7 @@ impl LegaiaRuntime {
     }
 
     /// Pose the duel's 3D surface for this frame
-    /// (`legaia_engine_core::baka_duel_scene::BakaDuelSurface::frame`, the
+    /// (`legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface::frame`, the
     /// call the native window makes too) and return its generation - or `-1`
     /// when no duel is live. A generation the page has not seen means the
     /// static buffers and the VRAM changed (a rung seated a new opponent):

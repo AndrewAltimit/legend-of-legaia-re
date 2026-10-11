@@ -13,17 +13,17 @@
 //! `FUN_801D6B20`'s row-3 arm, is the only site in PROT 0899 that writes
 //! `0x15` into the submenu word `DAT_801E46A4`.
 
-use legaia_engine_core::battle_stats::EquipmentTable;
-use legaia_engine_core::field_menu::FieldMenuRow;
+use legaia_engine_battle::battle_stats::EquipmentTable;
+use legaia_engine_battle::spells::SpellCatalog;
+use legaia_engine_battle::tactical_arts_editor::ChainLibrary;
 use legaia_engine_core::field_menu_dispatch::{FieldMenuSubsession, apply_list_order_outcome};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::items::ItemCatalog;
-use legaia_engine_core::list_order::LIST_ORDER_PAGE_ROWS;
 use legaia_engine_core::options::OptionsState;
-use legaia_engine_core::save_select::{SaveRack, SlotSnapshot};
-use legaia_engine_core::spells::SpellCatalog;
-use legaia_engine_core::tactical_arts_editor::ChainLibrary;
 use legaia_engine_core::world::World;
+use legaia_engine_menus::field_menu::FieldMenuRow;
+use legaia_engine_menus::items::ItemCatalog;
+use legaia_engine_menus::list_order::LIST_ORDER_PAGE_ROWS;
+use legaia_engine_menus::save_select::{SaveRack, SlotSnapshot};
+use legaia_engine_system::input::PadButton;
 
 /// The learned-spell ids the lead caster starts with.
 const SPELLS: [u8; 4] = [0x81, 0x82, 0x83, 0x84];

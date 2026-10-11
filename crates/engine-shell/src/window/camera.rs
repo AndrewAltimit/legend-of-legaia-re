@@ -235,7 +235,7 @@ impl PlayWindowApp {
                     ch.art_id,
                     ch.arm_select,
                     ch.anim_frame,
-                    legaia_engine_vm::battle_attack_camera::art_arm(ch.character, ch.art_id)
+                    legaia_engine_battle_vm::battle_attack_camera::art_arm(ch.character, ch.art_id)
                         .map(|v| format!("{v:#010x}")),
                 ),
                 None => eprintln!("  attackcam not armed"),
@@ -352,7 +352,7 @@ impl PlayWindowApp {
         // over the angle globals; `FUN_8001CF50` is the per-node
         // camera-relative variant, not this). `glam`'s `from_rotation_*` build the
         // same right-handed factors as the crate's own q3.12 rendition
-        // `legaia_engine_render::gte::math::camera_view_rotation`, so this is
+        // `legaia_render_kernels::gte::math::camera_view_rotation`, so this is
         // that product in float. Roll (op-`0x45` slot 2, `_DAT_8007B794`) is
         // authored by retail - eight scenes stage a non-zero one; see
         // `crates/engine-core/tests/thread_camera_roll_execution.rs`.
@@ -377,7 +377,7 @@ impl PlayWindowApp {
         let b = -near * far / (far - near);
         let aspect_fix = (4.0 / 3.0) / aspect.max(0.01);
         // The `y`-from-`w` term is retail's screen centre
-        // `legaia_engine_vm::battle_cam_script::GTE_OFY` = 114, not the naive
+        // `legaia_engine_battle_vm::battle_cam_script::GTE_OFY` = 114, not the naive
         // `240 / 2`: the GTE control file carries `OFX = 160` / `OFY = 114`
         // unchanged through field, battle, battle load and minigame, so every
         // projected point sits six rows above the geometric centre of the
@@ -388,7 +388,7 @@ impl PlayWindowApp {
             Vec4::new(0.0, -h / 120.0, 0.0, 0.0),
             Vec4::new(
                 0.0,
-                legaia_engine_vm::battle_cam_script::GTE_OFY_NDC_BIAS,
+                legaia_engine_battle_vm::battle_cam_script::GTE_OFY_NDC_BIAS,
                 a,
                 1.0,
             ),
@@ -617,8 +617,8 @@ mod debug_orbit_tests {
 
 #[cfg(test)]
 mod battle_entry_yaw_tests {
+    use legaia_engine_battle_vm::battle_cam_script::BATTLE_ENTRY_YAW_SAMPLE;
     use legaia_engine_core::battle_cam_inputs::battle_cam_inputs;
-    use legaia_engine_vm::battle_cam_script::BATTLE_ENTRY_YAW_SAMPLE;
 
     fn world_at(azimuth: u16) -> legaia_engine_core::world::World {
         let mut w = legaia_engine_core::world::World::new();
@@ -627,7 +627,7 @@ mod battle_entry_yaw_tests {
     }
 
     /// **The host applies the shared guard**, not just "the guard is right":
-    /// the kernel's own cases live in `legaia_engine_vm::battle_cam_script`,
+    /// the kernel's own cases live in `legaia_engine_battle_vm::battle_cam_script`,
     /// and what this pins is that the window's `BattleCamInputs` carries its
     /// result rather than the raw compass word. The browser play page's twin
     /// of this test is in `crates/web-viewer/src/play_battle_render.rs`.
@@ -731,9 +731,10 @@ mod follow_compass_tests {
 #[cfg(test)]
 mod battle_cam_shared_tests {
     use super::*;
+    use legaia_engine_battle_vm::battle_cam_script as script;
     use legaia_engine_core::battle_cam_inputs::battle_cam_inputs;
-    use legaia_engine_core::world::{SceneMode, World};
-    use legaia_engine_vm::battle_cam_script as script;
+    use legaia_engine_core::world::World;
+    use legaia_engine_mode::mode::SceneMode;
 
     /// The shared projection's far plane must stay paired with the native
     /// renderer's `SCENE_FAR` (the script crate cannot take the wgpu link,
@@ -821,13 +822,12 @@ mod battle_cam_shared_tests {
         tetsu.battle_monster_id = Some(1);
         tetsu.tmd_binding = Some(0);
         world.actors = vec![vahn, tetsu];
-        world.battle.command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
-            0, 0,
-        ));
+        world.battle.command =
+            Some(legaia_engine_menus::battle_input::BattleCommandSession::new(0, 0));
         // The **arts input** picker is what arms retail's case-0 close-up;
         // the command chooser alone keeps the far framing (see
         // `script::phase_for_state`).
-        world.battle.arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
+        world.battle.arts_menu = Some(legaia_engine_battle::battle_arts::BattleArtsSession::new(
             0,
             0,
             Vec::new(),
@@ -899,13 +899,12 @@ mod battle_cam_shared_tests {
         tetsu.battle_monster_id = Some(1);
         tetsu.tmd_binding = Some(0);
         world.actors = vec![vahn, tetsu];
-        world.battle.command = Some(legaia_engine_core::battle_input::BattleCommandSession::new(
-            0, 0,
-        ));
+        world.battle.command =
+            Some(legaia_engine_menus::battle_input::BattleCommandSession::new(0, 0));
         // The **arts input** picker is what arms retail's case-0 close-up;
         // the command chooser alone keeps the far framing (see
         // `script::phase_for_state`).
-        world.battle.arts_menu = Some(legaia_engine_core::battle_arts::BattleArtsSession::new(
+        world.battle.arts_menu = Some(legaia_engine_battle::battle_arts::BattleArtsSession::new(
             0,
             0,
             Vec::new(),
@@ -1021,7 +1020,7 @@ mod battle_cam_shared_tests {
 
         // Idle between actions: the far framing, not the action framing.
         world.battle_ctx.action_state =
-            legaia_engine_vm::battle_action::ActionState::Begin.as_byte();
+            legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte();
         assert_eq!(
             battle_cam_inputs(&world).phase,
             script::BattleCamPhase::Menu
@@ -1029,7 +1028,7 @@ mod battle_cam_shared_tests {
 
         // The strike is executing on party slot 0.
         world.battle_ctx.action_state =
-            legaia_engine_vm::battle_action::ActionState::AttackStrike.as_byte();
+            legaia_engine_battle_vm::battle_action::ActionState::AttackStrike.as_byte();
         world.battle_ctx.active_actor = 0;
         let inputs = battle_cam_inputs(&world);
         assert_eq!(inputs.phase, script::BattleCamPhase::Action);
@@ -1052,12 +1051,13 @@ mod battle_cam_shared_tests {
 
         // A monster's turn frames on the computed size-class depth instead.
         world.battle_ctx.active_actor = 1;
-        world.battle.camera_frame_height = legaia_engine_vm::battle_formulas::CAMERA_HEIGHT_MAX;
+        world.battle.camera_frame_height =
+            legaia_engine_battle_vm::battle_formulas::CAMERA_HEIGHT_MAX;
         let mob = battle_cam_inputs(&world);
         assert!(!mob.action.party_slot);
         assert_eq!(
             mob.action.depth_raw,
-            legaia_engine_vm::battle_formulas::CAMERA_HEIGHT_MAX as i32,
+            legaia_engine_battle_vm::battle_formulas::CAMERA_HEIGHT_MAX as i32,
             "the fallback arm reads ctx[+0x6D0]"
         );
         assert_eq!(mob.action.raw_z(), mob.action.depth_raw);
@@ -1204,12 +1204,12 @@ mod cutscene_framing_tests {
     /// through the GTE. This pins the two to the same product, roll included,
     /// so a sign or ordering slip in the third factor cannot pass unnoticed:
     /// `psx_camera_mvp`'s `R` must equal
-    /// [`legaia_engine_render::gte::camera_view_rotation`] with no skip bit,
+    /// [`legaia_render_kernels::gte::camera_view_rotation`] with no skip bit,
     /// which is the full `Rx * Ry * Rz` product (pitch outermost) retail's
     /// camera matrix also is.
     #[test]
     fn the_shell_rotation_matches_the_ported_gte_composition_including_roll() {
-        use legaia_engine_render::gte::camera_view_rotation;
+        use legaia_render_kernels::gte::camera_view_rotation;
         // `juui2`'s beat: pitch -643, yaw -1480, roll -660 (12-bit units).
         let to_rad = |u: f32| u / 4096.0 * TAU;
         let (pitch, yaw, roll) = (to_rad(-643.0), to_rad(-1480.0), to_rad(-660.0));
@@ -1246,7 +1246,7 @@ mod cutscene_framing_tests {
     /// is exact: `OFX + h * tr.x / tr.z` = `172.0` on the nose, so a wrong
     /// eye-back depth moves it immediately. `Y` is `OFY + h * tr.y / tr.z`
     /// with the retail screen centre `OFY = 114` (see
-    /// `legaia_engine_vm::battle_cam_script::GTE_OFY`), giving `173.7`. The
+    /// `legaia_engine_battle_vm::battle_cam_script::GTE_OFY`), giving `173.7`. The
     /// framebuffer read this expectation was first taken from said "~180",
     /// which is what a soft eyeball of a *cluster* of small actors gives
     /// against a projection of the single ground anchor they stand around -
@@ -1265,7 +1265,8 @@ mod cutscene_framing_tests {
             (px - 172.0).abs() < 3.0,
             "focus X projects to retail ~172, got {px}"
         );
-        let want_y = legaia_engine_vm::battle_cam_script::GTE_OFY + 792.0 * (1293.0 / 17145.0);
+        let want_y =
+            legaia_engine_battle_vm::battle_cam_script::GTE_OFY + 792.0 * (1293.0 / 17145.0);
         assert!(
             (py - want_y).abs() < 3.0,
             "focus Y projects to OFY + h*tr.y/tr.z = {want_y} (lower-centre), got {py}"

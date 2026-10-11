@@ -1,6 +1,6 @@
 //! Keyboard to PSX pad mapping and the pad buttons' display labels.
 
-use legaia_engine_core::input::PadButton;
+use legaia_engine_system::input::PadButton;
 use winit::keyboard::KeyCode;
 
 /// Map winit physical keys to PSX pad button bits. Keyboard mapping mirrors

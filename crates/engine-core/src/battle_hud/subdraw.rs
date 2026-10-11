@@ -112,7 +112,7 @@ impl SubdrawStep {
 }
 
 /// Decode step `step` of the sub-draw table out of a **loaded** battle
-/// overlay image (`legaia_asset::static_overlay::as_loaded`, so `image[0]`
+/// overlay image (`legaia_overlay_images::static_overlay::as_loaded`, so `image[0]`
 /// is `base_va`). `None` when the table or the record falls outside the
 /// image.
 pub fn subdraw_step(image: &[u8], base_va: u32, step: usize) -> Option<SubdrawStep> {

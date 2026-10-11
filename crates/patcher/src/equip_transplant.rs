@@ -44,8 +44,8 @@
 use anyhow::{Context, Result, bail};
 use legaia_tmd::encode::{ModelObject, decode_model, encode};
 
-use legaia_asset::battle_char_assembly::{SECTION_COUNT, SECTION_TEXTURE_RECTS};
-use legaia_asset::battle_data_pack::{self, BattleDataPack};
+use legaia_actor_formats::battle_char_assembly::{SECTION_COUNT, SECTION_TEXTURE_RECTS};
+use legaia_actor_formats::battle_data_pack::{self, BattleDataPack};
 use legaia_party_swap::playerize::{
     alias_variant_onto_bone, rebuild_player_file, splice_record_tmd, variant_object,
 };

@@ -144,13 +144,13 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
 /// found. **The player summon spawns the namesake creature** (the Gimard spell
 /// summons the Gimard creature, Theeder→Theeder, …), so the faithful render is
 /// the ordinary battle TRS-keyframe path applied to that creature's
-/// monster-archive block (mesh via [`legaia_asset::monster_archive::battle_render_mesh`],
-/// animation via [`legaia_asset::monster_archive::idle_animation`] →
+/// monster-archive block (mesh via [`legaia_actor_formats::monster_archive::battle_render_mesh`],
+/// animation via [`legaia_actor_formats::monster_archive::idle_animation`] →
 /// [`crate::battle_anim::MonsterAnimPlayer`] → `tmd_to_vram_mesh_posed_rot`) -
 /// **not** the move-VM scene-graph the [`SummonScene`] stand-in drives.
 ///
 /// Resolved from the disc-pinned base + evolved map
-/// ([`legaia_asset::summon_creatures`]): every summon group's `summon.dat`
+/// ([`legaia_actor_formats::summon_creatures`]): every summon group's `summon.dat`
 /// actor-record TMD is byte-identical to its mapped `battle_data` creature mesh,
 /// covering `0x81..=0x95` (the base block plus the evolved-Seru block, including
 /// the two evolved legs Kemaro `0x90` / Spoon `0x91`, which were disc-pinned by
@@ -162,8 +162,8 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
 pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16> {
     // Disc-pinned map: the creature id is exact (byte-validated mesh identity),
     // so prefer it. Validate it resolves in this archive before returning.
-    let mapped = legaia_asset::summon_creatures::creature_for_spell(spell_id).filter(|c| {
-        legaia_asset::monster_archive::record(battle_data_entry, c.creature_id)
+    let mapped = legaia_actor_formats::summon_creatures::creature_for_spell(spell_id).filter(|c| {
+        legaia_actor_formats::monster_archive::record(battle_data_entry, c.creature_id)
             .ok()
             .flatten()
             .is_some()
@@ -173,9 +173,9 @@ pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16>
     }
     // Fallback: name-based resolution for any other named summon.
     let name = legaia_engine_battle::retail_magic::get(spell_id)?.name;
-    let slots = legaia_asset::monster_archive::slot_count(battle_data_entry) as u16;
+    let slots = legaia_actor_formats::monster_archive::slot_count(battle_data_entry) as u16;
     (1..=slots).find(|&id| {
-        legaia_asset::monster_archive::record(battle_data_entry, id)
+        legaia_actor_formats::monster_archive::record(battle_data_entry, id)
             .ok()
             .flatten()
             .is_some_and(|r| r.name == name)
@@ -191,9 +191,9 @@ pub struct SummonSpawnAsset {
     /// The archive creature id for a reused enemy body, `None` for a body
     /// that comes out of the cast's own `summon.dat` group.
     pub creature_id: Option<u16>,
-    pub mesh: legaia_asset::monster_archive::MonsterMesh,
-    pub idle: Option<legaia_asset::monster_archive::MonsterAnimation>,
-    pub clips: Vec<legaia_asset::monster_archive::MonsterAnimation>,
+    pub mesh: legaia_actor_formats::monster_archive::MonsterMesh,
+    pub idle: Option<legaia_actor_formats::monster_archive::MonsterAnimation>,
+    pub clips: Vec<legaia_actor_formats::monster_archive::MonsterAnimation>,
 }
 
 /// Resolve the body a player summon `spell_id` seats as slot 7.
@@ -207,7 +207,7 @@ pub struct SummonSpawnAsset {
 /// with its archive-order clips - is the same body. Every other cast id
 /// (the high block `0x99..=0xA0` and the flutes) has no archive twin and
 /// resolves from `summon_dat` (extraction PROT 893) through
-/// [`legaia_asset::summon_readef::parse_cast`], idling on the record's clip 0.
+/// [`legaia_actor_formats::summon_readef::parse_cast`], idling on the record's clip 0.
 /// `None` when neither source resolves.
 ///
 /// REF: FUN_801F19EC, FUN_80055468
@@ -216,7 +216,7 @@ pub fn summon_spawn_asset(
     battle_data_entry: &[u8],
     summon_dat: Option<&[u8]>,
 ) -> Option<SummonSpawnAsset> {
-    use legaia_asset::monster_archive as ma;
+    use legaia_actor_formats::monster_archive as ma;
     if let Some(creature) = summon_creature_id(spell_id, battle_data_entry)
         && let Ok(Some(mesh)) = ma::mesh(battle_data_entry, creature)
     {
@@ -232,7 +232,7 @@ pub fn summon_spawn_asset(
                 .unwrap_or_default(),
         });
     }
-    let cast = legaia_asset::summon_readef::parse_cast(summon_dat?, spell_id).ok()?;
+    let cast = legaia_actor_formats::summon_readef::parse_cast(summon_dat?, spell_id).ok()?;
     Some(SummonSpawnAsset {
         creature_id: None,
         idle: cast.clips.first().cloned(),
@@ -247,7 +247,7 @@ pub fn summon_spawn_asset(
 /// **bespoke**: unlike `0x81..=0x95`, their mesh byte-matches no `battle_data`
 /// archive record, so [`summon_creature_id`] returns `None` for them and the
 /// mesh has to come out of the cast's own `summon.dat` group
-/// ([`legaia_asset::summon_readef::parse_cast`]).
+/// ([`legaia_actor_formats::summon_readef::parse_cast`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BigSummon {
     /// Spell / action id (`actor[+0x1DF]`).
@@ -336,18 +336,18 @@ pub fn big_summon_by_name(name: &str) -> Option<&'static BigSummon> {
 
 /// The two live **rare-Seru flute** summons, whose ids sit between the evolved
 /// block and the high block and so are covered by neither
-/// [`legaia_asset::summon_creatures`] nor [`BIG_SUMMONS`]. Both are
+/// [`legaia_actor_formats::summon_creatures`] nor [`BIG_SUMMONS`]. Both are
 /// capture-pinned mid-cast on the player path (see [`FLUTE_SUMMON_IDS`]);
 /// `0x98` is retail's unused third slot and stays unnamed.
 const FLUTE_SUMMON_NAMES: &[(u8, &str)] = &[(0x96, "Lippian"), (0x97, "Spikefish")];
 
 /// Display name of the creature a player summon spell brings out, across the
 /// whole `0x81..=0xA0` span: the namesake `battle_data` creature for the base
-/// and evolved blocks ([`legaia_asset::summon_creatures`]), the summon's own
+/// and evolved blocks ([`legaia_actor_formats::summon_creatures`]), the summon's own
 /// name for the big-summon band ([`BIG_SUMMONS`]), and the spell-table name
 /// otherwise. `None` for an id that is not a player summon.
 pub fn summon_display_name(spell_id: u8) -> Option<&'static str> {
-    if let Some(c) = legaia_asset::summon_creatures::creature_for_spell(spell_id) {
+    if let Some(c) = legaia_actor_formats::summon_creatures::creature_for_spell(spell_id) {
         return Some(c.name);
     }
     if let Some(b) = big_summon(spell_id) {

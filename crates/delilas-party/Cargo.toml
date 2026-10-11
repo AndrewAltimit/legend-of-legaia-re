@@ -21,3 +21,5 @@ legaia-texture-replace.workspace = true
 legaia-translate.workspace = true
 legaia-vab.workspace = true
 legaia-xa.workspace = true
+legaia-actor-formats.workspace = true
+legaia-game-tables.workspace = true

@@ -25,12 +25,12 @@ pub struct Edit {
 
 /// PROT entry index of the battle-action overlay (0898).
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
-    legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+    legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
 /// PROT entry index of the menu overlay (0899) hosting the spell-list renderer.
 pub const MENU_OVERLAY_PROT_INDEX: usize = 899;
 /// Load base VA shared by the slot-A overlays (0897 / 0898 / 0899). A VA inside
 /// one maps to PROT-entry file offset `va - OVERLAY_BASE_VA`.
-pub const OVERLAY_BASE_VA: u32 = legaia_asset::move_power::BATTLE_OVERLAY_BASE;
+pub const OVERLAY_BASE_VA: u32 = legaia_game_tables::move_power::BATTLE_OVERLAY_BASE;
 
 // --- Shared retail sites ----------------------------------------------------
 
@@ -59,7 +59,7 @@ pub const RAND_FUNC_VA: u32 = 0x8005_6798;
 /// Known live data tables in `SCUS_942.54` (VA start, end-exclusive). A routine
 /// or data region must not overlap any of these even if the overlapped bytes are
 /// zero - they are indexed at runtime. Pinned from `docs/reference/memory-map.md`,
-/// the `legaia_asset::face_anim` / `item_names` table addresses, and the SsAPI
+/// the `legaia_actor_formats::face_anim` / `item_names` table addresses, and the SsAPI
 /// sound/effect tables found by read-watching a live battle (their zero padding
 /// is what the old arena3/4/5 wrongly squatted in - the Healing-Leaf freeze).
 pub const SCUS_TABLE_RANGES: &[(u32, u32)] = &[

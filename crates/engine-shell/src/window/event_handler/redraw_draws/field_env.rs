@@ -94,7 +94,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     return *model;
                 };
                 let Some(k) =
-                    legaia_engine_render::gte::decoration_cell_basis(*skip, facing_cam.as_ref())
+                    legaia_render_kernels::gte::decoration_cell_basis(*skip, facing_cam.as_ref())
                 else {
                     return *model;
                 };

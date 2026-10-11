@@ -44,8 +44,8 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::title::{TitleInput, TitlePhase, TitleSession};
-use legaia_engine_core::title_screen_atlas::build_atlas_from_prot_888;
+use legaia_engine_menus::title::{TitleInput, TitlePhase, TitleSession};
+use legaia_engine_menus::title_screen_atlas::build_atlas_from_prot_888;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 
 /// `(edge & mask)` test on a PSX-encoded pad-edge word.
@@ -84,9 +84,9 @@ impl LegaiaRuntime {
         };
         let bytes = host
             .index
-            .entry_bytes(legaia_asset::title_pak::PROT_INDEX_PRIMARY as u32);
+            .entry_bytes(legaia_ui_formats::title_pak::PROT_INDEX_PRIMARY as u32);
         let atlas = bytes.ok().and_then(|b| {
-            build_atlas_from_prot_888(&b, legaia_asset::title_pak::TITLE_TIM_OFFSET).ok()
+            build_atlas_from_prot_888(&b, legaia_ui_formats::title_pak::TITLE_TIM_OFFSET).ok()
         });
         if atlas.is_none() {
             crate::console_log("boot title: PROT 0888 title art unavailable");
@@ -108,12 +108,12 @@ impl LegaiaRuntime {
         };
         let Ok(bytes) = host
             .index
-            .entry_bytes(legaia_asset::init_pak::PROT_INDEX as u32)
+            .entry_bytes(legaia_ui_formats::init_pak::PROT_INDEX as u32)
         else {
             crate::console_log("boot logos: PROT 0895 (init.pak) unavailable");
             return;
         };
-        match legaia_engine_core::publisher_logos::build_atlas_from_init_pak(&bytes) {
+        match legaia_engine_menus::publisher_logos::build_atlas_from_init_pak(&bytes) {
             Ok(a) => {
                 self.boot_logos_failed = false;
                 self.boot_logos_atlas = Some(a);
@@ -123,7 +123,7 @@ impl LegaiaRuntime {
     }
 
     /// Build the menu-glyph atlas (the small-caps sheet at
-    /// [`legaia_asset::menu_glyph_atlas`]) off the loaded PROT, best-effort.
+    /// [`legaia_ui_formats::menu_glyph_atlas`]) off the loaded PROT, best-effort.
     /// Only the no-title-art path needs it, but it is cheap and stable, so it
     /// is built alongside the title art.
     fn ensure_menu_glyph_atlas(&mut self) {
@@ -136,12 +136,12 @@ impl LegaiaRuntime {
         self.menu_glyph_atlas = host
             .index
             .prot_dat_raw_bytes(
-                legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
-                legaia_asset::menu_glyph_atlas::TIM_SIZE,
+                legaia_ui_formats::menu_glyph_atlas::PROT_DAT_OFFSET,
+                legaia_ui_formats::menu_glyph_atlas::TIM_SIZE,
             )
             .ok()
             .and_then(|b| {
-                legaia_engine_core::menu_glyph_atlas::build_atlas_from_prot_dat_slice(&b).ok()
+                legaia_engine_menus::menu_glyph_atlas::build_atlas_from_prot_dat_slice(&b).ok()
             });
     }
 
@@ -281,7 +281,7 @@ impl LegaiaRuntime {
             );
             // Retail's abort: `fmv_id 0` on a face button / Select
             // (`FUN_801CF098`'s `_DAT_8007B850 & 0x1F0` test).
-            if crate::play_fmv::skip_edge_hit(fmv_id, edge) {
+            if legaia_engine_system::movie::cutscene::fmv_skip_edge_hit(fmv_id, edge) {
                 self.fmv.request_finish();
             }
             match self.fmv.poll() {
@@ -308,7 +308,7 @@ impl LegaiaRuntime {
         let Some(session) = self.boot_title.as_mut() else {
             return String::new();
         };
-        use legaia_engine_core::title::TitleOutcome;
+        use legaia_engine_menus::title::TitleOutcome;
         match session.outcome() {
             Some(o) => {
                 // The session is not simply dropped at the hand-off: retail
@@ -377,7 +377,7 @@ impl LegaiaRuntime {
         if self.boot_logos_atlas.is_none() {
             return false;
         }
-        self.boot_logos = Some(legaia_engine_core::publisher_logos::PublisherLogosSession::new());
+        self.boot_logos = Some(legaia_engine_menus::publisher_logos::PublisherLogosSession::new());
         true
     }
 
@@ -427,13 +427,13 @@ impl LegaiaRuntime {
     /// black by the page.
     ///
     /// The quads come out of the shared
-    /// `legaia_engine_ui::ui_boot_logos::publisher_logo_sprite_draws` the
+    /// `legaia_engine_ui::boot_logos::publisher_logo_sprite_draws` the
     /// native window draws through, against retail's own 640x480 boot stage -
     /// so the two hosts letterbox the logos identically and a fade level is
     /// the same alpha in both.
     pub fn boot_logos_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
-        use legaia_engine_core::publisher_logos::{LOGO_COUNT, STAGE};
-        use legaia_engine_ui::ui_boot_logos::{LogoQuadView, publisher_logo_sprite_draws};
+        use legaia_engine_menus::publisher_logos::{LOGO_COUNT, STAGE};
+        use legaia_engine_ui::boot_logos::{LogoQuadView, publisher_logo_sprite_draws};
         let (Some(session), Some(atlas)) =
             (self.boot_logos.as_ref(), self.boot_logos_atlas.as_ref())
         else {

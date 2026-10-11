@@ -60,7 +60,7 @@ fn opdeene_resident_colour_words_lie_on_the_sepia_curve() {
         eprintln!("[skip] {} not in the library", path.display());
         return;
     }
-    let st = legaia_pcsxr::SaveState::from_path(&path).expect("load the S1 state");
+    let st = legaia_pcsx_redux::SaveState::from_path(&path).expect("load the S1 state");
     assert_eq!(st.scene_name(), "opdeene");
     let in_ram = |a: u32| (0x8000_0000..0x8020_0000).contains(&a);
     let last = st.u32_at(RESIDENT_LAST);

@@ -228,10 +228,10 @@ pub fn section_catalog(pack: &BattleDataPack) -> [SectionCatalog; bca::SECTION_C
 /// armour, seal and boots too.
 pub fn section_labels(
     cats: &[SectionCatalog; bca::SECTION_COUNT],
-    stats: Option<&crate::equip_stats::EquipStatTable>,
+    stats: Option<&legaia_game_tables::equip_stats::EquipStatTable>,
     cslot: usize,
 ) -> [String; bca::SECTION_COUNT] {
-    use crate::equip_stats::EquipSlot;
+    use legaia_game_tables::equip_stats::EquipSlot;
     let mut slot_of: [Option<EquipSlot>; bca::SECTION_COUNT] = [None; bca::SECTION_COUNT];
     let mut exclusive = [false; bca::SECTION_COUNT];
     if let Some(stats) = stats {
@@ -660,7 +660,7 @@ fn clip_bank<'a>(c: &'a EquippedCharacter) -> Vec<crate::character_gltf::Charact
 pub fn item_glb(
     c: &EquippedCharacter,
     section: usize,
-    names: Option<&crate::item_names::ItemNameTable>,
+    names: Option<&legaia_game_tables::item_names::ItemNameTable>,
 ) -> Vec<u8> {
     let Some(it) = c.items.iter().find(|i| i.section == section) else {
         return Vec::new();
@@ -794,7 +794,7 @@ pub fn item_glb(
 pub fn item_only_glb(
     c: &EquippedCharacter,
     section: usize,
-    names: Option<&crate::item_names::ItemNameTable>,
+    names: Option<&legaia_game_tables::item_names::ItemNameTable>,
 ) -> Vec<u8> {
     let Some(it) = c.items.iter().find(|i| i.section == section) else {
         return Vec::new();
@@ -851,7 +851,10 @@ pub fn item_only_glb(
 }
 
 /// The item's display name out of the SCUS table, or `id N` without one.
-pub fn item_display_name(id: u32, names: Option<&crate::item_names::ItemNameTable>) -> String {
+pub fn item_display_name(
+    id: u32,
+    names: Option<&legaia_game_tables::item_names::ItemNameTable>,
+) -> String {
     u8::try_from(id)
         .ok()
         .and_then(|i| names?.name(i))

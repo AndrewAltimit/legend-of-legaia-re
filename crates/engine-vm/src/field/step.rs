@@ -771,7 +771,7 @@ pub fn step<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             }
             let raw = &bytecode[name_start..name_start + name_len];
-            if let Some(name) = crate::field_disasm::clean_scene_name(raw) {
+            if let Some(name) = legaia_scene_formats::field_disasm::clean_scene_name(raw) {
                 let entry_x = bytecode[name_start + name_len];
                 let entry_z = bytecode[name_start + name_len + 1];
                 let dir = bytecode[name_start + name_len + 2];

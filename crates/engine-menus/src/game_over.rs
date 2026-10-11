@@ -35,7 +35,7 @@
 //! There is therefore no Continue / Retry / Quit vocabulary anywhere on
 //! this path, and no artwork: the only `GAME OVER` string on the disc is
 //! in PROT 0902, the mode-18/19 overlay, which no retail path reaches
-//! (see `legaia_engine_core::mode::GameMode::GameOverInit` and
+//! (see `legaia_engine_mode::mode::GameMode::GameOverInit` and
 //! `docs/subsystems/battle.md` § party wipe + the game-over overlay).
 //! The port's former three-row chooser was an engine invention standing in
 //! for a destination that was, at the time it was written, unpinned. It is

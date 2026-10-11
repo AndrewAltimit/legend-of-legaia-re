@@ -17,7 +17,7 @@ impl PlayWindowApp {
     /// The frame step is the engine's fixed one tick per frame (retail reads
     /// `DAT_1f800393`, its frame-rate compensation word).
     pub(in crate::window) fn tick_fishing_banners(&mut self) {
-        use legaia_engine_core::fishing::PondEvent;
+        use legaia_engine_fishing::fishing::PondEvent;
         let world = &self.session.host.world;
         if world.minigames.fishing.is_none() {
             // Left the minigame: drop any half-run banner with the session.
@@ -62,7 +62,7 @@ impl PlayWindowApp {
     /// traced stage-pixel pens, the catch HUD while a cast is out, and the
     /// live one-shot banners. The text consumer and the sprite pass read the
     /// same list. Empty outside a fishing session.
-    pub(in crate::window) fn fishing_hud_items(&self) -> Vec<legaia_engine_render::HudDraw> {
+    pub(in crate::window) fn fishing_hud_items(&self) -> Vec<legaia_engine_ui::HudDraw> {
         let world = &self.session.host.world;
         if world.mode != SceneMode::Fishing {
             return Vec::new();
@@ -76,9 +76,9 @@ impl PlayWindowApp {
         let lures_left = *world
             .party
             .inventory
-            .get(&(legaia_engine_core::fishing::lure_item_id(lure) as u8))
+            .get(&(legaia_engine_fishing::fishing::lure_item_id(lure) as u8))
             .unwrap_or(&0) as i32;
-        let mut items = legaia_engine_render::persistent_hud_draws(
+        let mut items = legaia_engine_ui::persistent_hud_draws(
             s.record.points,
             s.record.best_points,
             lure,
@@ -89,8 +89,8 @@ impl PlayWindowApp {
         // `DAT_801d9178` has no engine analogue and stays zero.
         let c = s.catch_hud();
         if c.visible {
-            items.extend(legaia_engine_render::catch_hud_draws(
-                &legaia_engine_render::CatchHudState {
+            items.extend(legaia_engine_ui::catch_hud_draws(
+                &legaia_engine_ui::CatchHudState {
                     record: c.record,
                     line_extent: 0,
                     cast_power: c.cast_power,
@@ -108,7 +108,7 @@ impl PlayWindowApp {
                 .fishing_captions
                 .as_ref()
                 .map_or(0, |t| t.species_name(r.species).len());
-            items.extend(legaia_engine_render::catch_result_draws(
+            items.extend(legaia_engine_ui::catch_result_draws(
                 r.ramp,
                 r.strength,
                 r.points,
@@ -129,11 +129,11 @@ impl PlayWindowApp {
     /// Empty without a session or a decoded table.
     pub(in crate::window) fn fishing_hud_screen_prims(
         &self,
-    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         let Some(table) = self.session.host.world.minigames.fishing_sprites.as_deref() else {
             return Vec::new();
         };
-        legaia_engine_render::ui_fishing_sprite::fishing_hud_sprite_prims(
+        legaia_engine_ui::fishing::sprite::fishing_hud_sprite_prims(
             &self.fishing_hud_items(),
             table,
         )
@@ -148,7 +148,7 @@ impl PlayWindowApp {
     /// same calls. Empty with no rod and no line out.
     pub(in crate::window) fn fishing_line_screen_prims(
         &mut self,
-    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         use legaia_engine_core::camera_view::resolve_field_camera;
         if self.session.host.world.mode != SceneMode::Fishing {
             return Vec::new();
@@ -171,7 +171,7 @@ impl PlayWindowApp {
             .map(|p| p.rod_faces())
             .unwrap_or_default()
             .into_iter()
-            .map(|f| legaia_engine_render::ui_fishing_rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
+            .map(|f| legaia_engine_ui::fishing::rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
             .collect();
         prims.extend(
             legaia_engine_core::fishing_venue::fishing_line_frame(
@@ -179,7 +179,7 @@ impl PlayWindowApp {
                 view.as_ref(),
             )
             .and_then(|l| {
-                legaia_engine_render::ui_fishing_line::fishing_line_prim(
+                legaia_engine_ui::fishing::line::fishing_line_prim(
                     l.fish, l.rod, l.fish_rgb, l.rod_rgb, l.ot,
                 )
             }),
@@ -280,10 +280,10 @@ impl PlayWindowApp {
     /// tables can't decode. Mirrors [`Self::start_dance_minigame`]'s overlay
     /// path.
     pub(in crate::window) fn start_fishing_minigame(&mut self) -> bool {
-        use legaia_asset::static_overlay;
-        let Some(rec) = static_overlay::overlay_map()
-            .by_prot_index(legaia_asset::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
-        else {
+        use legaia_overlay_images::static_overlay;
+        let Some(rec) = static_overlay::overlay_map().by_prot_index(
+            legaia_minigame_formats::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32,
+        ) else {
             log::warn!("fishing: overlay 0972 absent from the static-overlay map");
             return false;
         };

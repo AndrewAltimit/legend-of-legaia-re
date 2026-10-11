@@ -257,7 +257,7 @@ pub enum SpanGate {
     ///
     /// `arm` is `(ctx[+0x279], countdown)` for a `0x70` capture of a module
     /// whose countdown the engine directs
-    /// ([`legaia_engine_vm::cast_module_camera::capture_countdown_va`]): the
+    /// ([`legaia_engine_battle_vm::cast_module_camera::capture_countdown_va`]): the
     /// phase is held until the engine's module sits in that arm with its
     /// countdown run down at least as far - the module's own clock, which
     /// places a camera shot or drift in flight.
@@ -316,7 +316,7 @@ pub(super) fn capture_ramp_left(world: &legaia_engine_core::world::World, height
 }
 
 /// How old the active actor's clip is, in the close-up accumulator's units
-/// ([`BattleCamera::clip_age`](legaia_engine_vm::battle_cam_script::BattleCamera::clip_age)):
+/// ([`BattleCamera::clip_age`](legaia_engine_battle_vm::battle_cam_script::BattleCamera::clip_age)):
 /// the engine's `ctx[+0x87C]` with the natural-end re-commits of a looping
 /// clip left out. Retail's
 /// accumulator restarts on those (`player_steal_skeleton_banner` reads `176`
@@ -867,32 +867,29 @@ impl BattleDrive {
                         SpanGate::Landed => {
                             !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
                         }
-                        SpanGate::Age { accum } => {
-                            active_clip_age(world) >= u32::from(accum)
-                                && steer.clip.is_none_or(|k| {
-                                    world.battle_current_anim(usize::from(engine_seat(seat, pc)))
-                                        == k
-                                })
-                                && steer.cursor.is_none_or(|u| {
-                                    world
-                                        .actors
-                                        .get(usize::from(engine_seat(seat, pc)))
-                                        .is_some_and(|a| a.battle.strike_index == u)
-                                })
-                                && (!steer.spoils
-                                    || world.battle_ctx.message_id
-                                        == legaia_engine_core::battle_steal::STEAL_CAPTION_ELEMENT)
-                                && steer.fading.is_none_or(|(v, lane)| {
-                                    world
-                                        .actors
-                                        .get(usize::from(engine_seat(v, pc)))
-                                        .is_some_and(|a| {
-                                            a.battle.render_flag
-                                            == legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE
-                                            && (a.battle.render_color & 0x3FF) as u16 <= lane
-                                        })
-                                })
-                        }
+                        SpanGate::Age { accum } => active_clip_age(world) >= u32::from(accum)
+                            && steer.clip.is_none_or(|k| {
+                                world.battle_current_anim(usize::from(engine_seat(seat, pc))) == k
+                            })
+                            && steer.cursor.is_none_or(|u| {
+                                world
+                                    .actors
+                                    .get(usize::from(engine_seat(seat, pc)))
+                                    .is_some_and(|a| a.battle.strike_index == u)
+                            })
+                            && (!steer.spoils
+                                || world.battle_ctx.message_id
+                                    == legaia_engine_battle::battle_steal::STEAL_CAPTION_ELEMENT)
+                            && steer.fading.is_none_or(|(v, lane)| {
+                                world
+                                    .actors
+                                    .get(usize::from(engine_seat(v, pc)))
+                                    .is_some_and(|a| {
+                                        a.battle.render_flag
+                                    == legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
+                                    && (a.battle.render_color & 0x3FF) as u16 <= lane
+                                    })
+                            }),
                         _ => true,
                     }
             }
@@ -1020,9 +1017,9 @@ impl BattleDrive {
     pub fn press(
         &self,
         world: &legaia_engine_core::world::World,
-    ) -> Option<legaia_engine_core::input::PadButton> {
-        use legaia_engine_core::battle_input::CommandPhase;
-        use legaia_engine_core::input::PadButton;
+    ) -> Option<legaia_engine_system::input::PadButton> {
+        use legaia_engine_menus::battle_input::CommandPhase;
+        use legaia_engine_system::input::PadButton;
         if world.mode != SceneMode::Battle || matches!(self, Self::Opening { .. }) {
             return None;
         }
@@ -1051,8 +1048,8 @@ impl BattleDrive {
                         .and_then(|c| c.picker())
                 });
             if let Some(picker) = picker
-                && let legaia_engine_core::target_picker::PickerState::Cursor {
-                    row: legaia_engine_core::target_picker::CursorRow::Enemy,
+                && let legaia_engine_battle::target_picker::PickerState::Cursor {
+                    row: legaia_engine_battle::target_picker::CursorRow::Enemy,
                     slot,
                 } = picker.state()
                 && slot != want
@@ -1195,7 +1192,7 @@ pub(super) fn seed_entered_arrows(
 ) {
     use legaia_save::character::AutoCommandBand;
     let roster = world.party_roster_slot(usize::from(seat));
-    let character = legaia_engine_core::battle_arts::character_for_slot(roster as u8);
+    let character = legaia_engine_battle::battle_arts::character_for_slot(roster as u8);
     let Some(arrows) = entered_arrows(queue, |art| {
         let action = legaia_art::ActionConstant::from_byte(art)?;
         world

@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::battle_seats::{MONSTER_SEATS, MONSTER_SEATS_ALT, PARTY_SEATS, Seat};
+use legaia_engine_battle::battle_seats::{MONSTER_SEATS, MONSTER_SEATS_ALT, PARTY_SEATS, Seat};
 
 const SCUS_LOAD_VA: u32 = 0x8001_0000;
 const SCUS_FILE_HEADER: u32 = 0x800;

@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Dialog-advance host hook (`op 0x4C n5 sub-4`): when `current_dialog`
 /// is set, the VM halts at the poll site. A just-pressed Cross /
@@ -7,7 +8,7 @@ use super::*;
 /// HUD consumers.
 #[test]
 fn dialog_advance_halts_then_clears_on_just_pressed_cross() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World::new();
     world.mode = SceneMode::Field;

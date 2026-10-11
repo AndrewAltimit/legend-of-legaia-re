@@ -34,13 +34,13 @@
 //!
 //! Disc-free.
 
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::world::World;
-use legaia_engine_core::world_map_panel_host::{
-    PanelActorHost, PanelActorKind, PanelFlagStore, VisitedMap, packed_pad,
-};
 use legaia_engine_field::travel_art_actor::TravelArt;
 use legaia_engine_field::world_map_panel_actors::BRIGHTNESS_MAX;
+use legaia_engine_field::world_map_panel_host::{
+    PanelActorHost, PanelActorKind, PanelFlagStore, VisitedMap, packed_pad,
+};
+use legaia_engine_system::input::PadButton;
 
 /// The three retail overworld scene bases, whose kingdom indices are `0/1/2`
 /// (`world_map::kingdom_index_for_scene_base`).
@@ -124,7 +124,7 @@ fn the_recorder_tracks_the_tile_the_party_is_standing_on() {
     assert_eq!(
         KINGDOM_BASES
             .iter()
-            .map(|b| legaia_engine_core::world_map::kingdom_index_for_scene_base(*b))
+            .map(|b| legaia_engine_field::world_map::kingdom_index_for_scene_base(*b))
             .collect::<Vec<_>>(),
         vec![Some(0), Some(1), Some(2)]
     );

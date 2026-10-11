@@ -6,7 +6,7 @@
 //! carries a bit of `0x780`, leaving out each flagged axis (`0x80` pitch,
 //! `0x100` yaw, `0x200` roll); `0x400` takes the saved-matrix arm first. So
 //! the yaw factor `FUN_8004629C` (`GteMat3::rot_y` under
-//! `legaia_engine_ui::gte::camera_view_rotation`) runs only for a word that
+//! `legaia_render_kernels::gte::camera_view_rotation`) runs only for a word that
 //! sets `0x80` or `0x200` and clears both `0x100` and `0x400`. The retail
 //! captures (`docs/subsystems/renderer.md`) show `0x380`, `0x100` / `0x180`
 //! and `0x400` only; this asks the disc the same question.
@@ -34,9 +34,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_asset::scene_event_scripts::move_stager_records;
-use legaia_asset::slot_b_module;
 use legaia_engine_core::scene::SceneHost;
+use legaia_overlay_images::slot_b_module;
+use legaia_scene_formats::scene_event_scripts::move_stager_records;
 
 /// Move-VM opcode `0x15` - `+0x52 = operand`.
 const OP_CTRL52: u16 = 0x15;

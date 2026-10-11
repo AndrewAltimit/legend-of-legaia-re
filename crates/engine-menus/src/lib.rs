@@ -21,9 +21,6 @@
 
 // The dialog pager and the spawned-context state, in `legaia-engine-dialog`;
 // re-exported here at the paths they had as modules of this crate.
-pub use legaia_engine_dialog::{
-    cursor_sprite, dialog, dialog_pacing, dialog_picker_slide, dialog_window, text_balloon,
-};
 
 pub mod battle_input;
 pub mod battle_open;

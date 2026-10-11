@@ -323,7 +323,7 @@ impl World {
     ///
     /// PORT: FUN_800402F4 (`0x80041CFC..0x80041D4C`)
     pub(in crate::world) fn stone_cancels_queued_action(&mut self, target: u8) {
-        use vm::battle_action::ActionCategory;
+        use legaia_engine_battle_vm::battle_action::ActionCategory;
         let Some(actor) = self.actors.get_mut(target as usize) else {
             return;
         };

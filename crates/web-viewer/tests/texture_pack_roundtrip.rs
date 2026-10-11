@@ -16,8 +16,8 @@
 use std::env;
 use std::fs;
 
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::texture::TextureTarget;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_texture_replace::texture::TextureTarget;
 use legaia_tim::encode::EncodeOptions;
 use legaia_web_viewer::texture_pack::{
     EntryStatus, PackEntry, PackMeta, from_json, to_json, verify,
@@ -218,7 +218,7 @@ fn re_importing_onto_an_already_patched_texture_is_caught() {
         offset: row.coord.offset,
     };
     let (w, h, rgba) = legaia_tim::encode::decode_png_rgba(&png).expect("our own png");
-    legaia_patcher::texture::replace_texture(
+    legaia_texture_replace::texture::replace_texture(
         &mut patcher,
         &target,
         &rgba,

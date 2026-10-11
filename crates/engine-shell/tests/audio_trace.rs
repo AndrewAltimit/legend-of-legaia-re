@@ -59,11 +59,11 @@
 
 use std::path::PathBuf;
 
-use legaia_mednafen::ScenarioManifest;
 use legaia_parity::audio_trace_oracle::{
     AudioDivergenceKind, engine_trace_from_paths, first_audio_trace_divergence,
     load_runtime_audio_trace_from_save,
 };
+use legaia_ram_image::ScenarioManifest;
 
 /// How many engine frames to tick before sampling. One retail second at
 /// 60 Hz, matching the mode-trace oracle's window.

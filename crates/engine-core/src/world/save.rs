@@ -2,6 +2,7 @@
 //! `world.rs` as an additional `impl World` block.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Byte offset of the system-flag bank (`0x80085758`) inside the saved
 /// story-flag window (`0x80085600`).
@@ -474,7 +475,8 @@ impl World {
             }
         } else {
             let window = self.party.inventory.window();
-            self.party.inventory = crate::world::ItemBag::from_slots(&sf.ext.item_slots);
+            self.party.inventory =
+                legaia_engine_menus::item_bag::ItemBag::from_slots(&sf.ext.item_slots);
             self.party.inventory.set_window(window);
         }
         // (The level-up tracker's per-slot XP + level are hydrated from the
@@ -485,7 +487,7 @@ impl World {
         self.party.per_char_ext = sf.ext_v2.per_char.clone();
         // Reset trackers so reloads don't accumulate stale state.
         self.party.tactical_arts = TacticalArtsTracker::new();
-        self.seru.log = crate::seru_learning::SeruCaptureLog::new();
+        self.seru.log = legaia_engine_battle::seru_learning::SeruCaptureLog::new();
         for (slot, ce) in &sf.ext_v2.per_char {
             // Re-mark learned arts so the tracker doesn't re-fire the
             // "first time learned" event for arts the save already has.
@@ -560,7 +562,7 @@ impl World {
     /// PORT: FUN_8003aeb0 (`0x8003AF48..0x8003AF54`)
     pub fn install_scene_save_permission(
         &mut self,
-        man: Option<&legaia_asset::man_section::ManFile>,
+        man: Option<&legaia_scene_formats::man_section::ManFile>,
     ) {
         self.party.scene_save_allowed = man.is_some_and(|m| m.header.low_flag);
     }
@@ -593,7 +595,7 @@ impl World {
         let Some(kind) = self.field_vm.submode_screen.park_sub_op else {
             return false;
         };
-        if crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS.contains(&kind) {
+        if legaia_engine_field::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS.contains(&kind) {
             self.field_vm.submode_screen.done = true;
         }
         self.clear_op49_park();
@@ -683,11 +685,11 @@ impl World {
     /// arm - it is the top-view debug renderer, and it branches straight to
     /// its epilogue (`0x801E9B14`) whenever `DAT_801F2B94 == 0`. Entering
     /// top view at all needs the debug flag `_DAT_8007B98C`, which retail
-    /// leaves clear. See [`crate::world_map::WorldMapController`].
+    /// leaves clear. See [`legaia_engine_field::world_map::WorldMapController`].
     ///
     /// The port splits the one retail mode in two -
-    /// [`SceneMode::Field`](crate::world::SceneMode::Field) for towns and
-    /// fields, [`SceneMode::WorldMap`](crate::world::SceneMode::WorldMap)
+    /// [`SceneMode::Field`](legaia_engine_mode::mode::SceneMode::Field) for towns and
+    /// fields, [`SceneMode::WorldMap`](legaia_engine_mode::mode::SceneMode::WorldMap)
     /// for the kingdom overworlds - so the predicate has to name both. Every
     /// other mode (battle, cutscene, the minigames, an already-open menu)
     /// suspends field dispatch and never reaches the accept.
@@ -698,7 +700,8 @@ impl World {
     pub fn scene_mode_takes_menu_open(&self) -> bool {
         matches!(
             self.mode,
-            crate::world::SceneMode::Field | crate::world::SceneMode::WorldMap
+            legaia_engine_mode::mode::SceneMode::Field
+                | legaia_engine_mode::mode::SceneMode::WorldMap
         )
     }
 
@@ -829,7 +832,7 @@ impl World {
     /// debug word `_DAT_8007B98C` is set and the packed pad holds `0x100` -
     /// then `0x13`, a debug screen the engine does not have. The engine's
     /// debug word is the overworld controller's
-    /// [`crate::world_map::WorldMapController::debug_enabled`] (the same
+    /// [`legaia_engine_field::world_map::WorldMapController::debug_enabled`] (the same
     /// `_DAT_8007B98C` gate the top-view toggle reads); in a field scene it is
     /// retail's zero.
     ///
@@ -845,7 +848,9 @@ impl World {
         let inputs = StatePickInputs {
             script_resume_slot: u32::from(self.field_vm.submode_screen.park_sub_op.is_some()),
             debug_mode: u32::from(debug),
-            pad_mask: u32::from(crate::world_map_panel_host::packed_pad(self.input.pad())),
+            pad_mask: u32::from(legaia_engine_field::world_map_panel_host::packed_pad(
+                self.input.pad(),
+            )),
         };
         state_pick(
             inputs,

@@ -34,10 +34,10 @@
 
 use legaia_art::queue::{ActionConstant, Command};
 use legaia_art::record::{ArtRecord, EnemyEffect};
-use legaia_engine_core::battle_arts::chain_matches_record;
+use legaia_arts_patch::arts::ArtsMode;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_engine_battle::battle_arts::chain_matches_record;
 use legaia_patcher::apply::{self, ArtSite};
-use legaia_patcher::arts::ArtsMode;
-use legaia_patcher::disc::DiscPatcher;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

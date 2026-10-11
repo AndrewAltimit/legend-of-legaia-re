@@ -18,9 +18,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::field_regions::parse_tile_triggers;
-use legaia_engine_core::minigame_floor::{FloorGrid, MarkerFloor, height_ramp};
 use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_field::field_regions::parse_tile_triggers;
+use legaia_engine_fishing::minigame_floor::{FloorGrid, MarkerFloor, height_ramp};
 
 /// `.MAP` primary trigger block, and the `+0x12000` fallback.
 const TRIGGER_BLOCK_OFFSET: usize = 0x10000;
@@ -51,10 +51,10 @@ fn gate() -> Option<Arc<ProtIndex>> {
 }
 
 fn dance_overlay(index: &ProtIndex) -> Option<Vec<u8>> {
-    let rec = legaia_asset::static_overlay::overlay_map()
-        .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)?;
+    let rec = legaia_overlay_images::static_overlay::overlay_map()
+        .by_prot_index(legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)?;
     let bytes = index.entry_bytes_extended(rec.prot_index).ok()?;
-    legaia_asset::static_overlay::as_loaded(&bytes, rec).ok()
+    legaia_overlay_images::static_overlay::as_loaded(&bytes, rec).ok()
 }
 
 /// Build the venue's marker pool from the disc and report what it found.
@@ -71,8 +71,11 @@ fn the_dance_venue_has_marker_cells_and_they_flip() {
         eprintln!("[ok] marker class {class}: {} steps", script.steps(class));
     }
 
-    let scene =
-        Scene::load(&index, legaia_asset::dance_cast::DANCE_SCENE_NAME).expect("load other7");
+    let scene = Scene::load(
+        &index,
+        legaia_minigame_formats::dance_cast::DANCE_SCENE_NAME,
+    )
+    .expect("load other7");
     let map_idx = scene.field_map_index(&index).expect("venue .MAP entry");
     let map = index.entry_bytes_extended(map_idx).expect("map bytes");
     let primary = parse_tile_triggers(&map[TRIGGER_BLOCK_OFFSET..]);
@@ -92,8 +95,8 @@ fn the_dance_venue_has_marker_cells_and_they_flip() {
         &ramp,
         0,
         0,
-        legaia_engine_core::minigame_floor::GRID_EXTENT,
-        legaia_engine_core::minigame_floor::GRID_EXTENT,
+        legaia_engine_fishing::minigame_floor::GRID_EXTENT,
+        legaia_engine_fishing::minigame_floor::GRID_EXTENT,
         false,
         &primary,
         &fallback,

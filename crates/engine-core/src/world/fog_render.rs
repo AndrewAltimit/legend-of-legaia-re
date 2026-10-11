@@ -14,7 +14,8 @@
 
 use super::*;
 use crate::fog_particles::{FOG_CAP_DEFAULT, FOG_DPAD_MASK, FogFrameEnv, FogQuad, FogView};
-use legaia_engine_vm::psx_camera::FieldCameraView;
+use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_mode::mode::SceneMode;
 
 /// MAN sibling-section index (`sibling_sections()[3]`) that installs into
 /// `DAT_80073ED8` - section 4 of the six.
@@ -64,7 +65,7 @@ impl World {
     /// REF: FUN_8003AEB0
     pub fn install_fog_regions(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
     ) {
         self.fog.regions = man_file

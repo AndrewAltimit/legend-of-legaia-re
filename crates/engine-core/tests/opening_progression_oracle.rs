@@ -28,7 +28,7 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -138,7 +138,7 @@ fn opening_anchors_codify_retail_progression() {
             eprintln!("[skip] {}: no library save", s.label);
             continue;
         };
-        let st = legaia_pcsxr::SaveState::from_path(&path).expect("load .sstate");
+        let st = legaia_pcsx_redux::SaveState::from_path(&path).expect("load .sstate");
         eprintln!(
             "[{}] scene={:?} mode=0x{:02X} pos={:?}",
             s.label,
@@ -176,7 +176,7 @@ fn engine_reproduces_the_town01_name_entry_beat() {
     // (post-name-entry free-roam).
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.world.cutscene.entering_town01_opening = true;
-    host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_SCENE, 0)
         .expect("enter town01 opening");
     assert_eq!(
         host.world.mode,

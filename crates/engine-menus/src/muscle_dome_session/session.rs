@@ -295,7 +295,7 @@ impl MuscleDomeSession {
     /// `char_id` is the winning fighter's 1-based character id (retail's
     /// `DAT_8007BD10[ctx+0x13]`); the lead-in line is entry `char_id - 1` of
     /// the victory-message pointer table
-    /// ([`legaia_asset::muscle_dome::VICTORY_MSG_TABLE_VA`], which holds
+    /// ([`legaia_minigame_formats::muscle_dome::VICTORY_MSG_TABLE_VA`], which holds
     /// exactly the three party fighters' lines), then the reward spell's
     /// name, then a fixed suffix.
     ///

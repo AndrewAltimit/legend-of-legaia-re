@@ -5,7 +5,7 @@ use super::*;
 impl World {
     /// Whether Cort's **Mystic Shield** is up - retail's `_DAT_8007BD84`,
     /// the effect handle PROT 0940's `0xAC` arm 4 stores (`0x801F7678`) and
-    /// the engine mirrors as [`crate::monster_ai::MonsterAiState::flag_bd84`].
+    /// the engine mirrors as [`legaia_engine_battle::monster_ai::MonsterAiState::flag_bd84`].
     /// While it is non-null the damage finisher halves every hit on an enemy
     /// defender (`FUN_801DDB30`, `0x801DDB98..0x801DDBC8`).
     pub(in crate::world) fn mystic_shield_up(&self) -> bool {

@@ -117,7 +117,7 @@ impl FieldHostImpl<'_> {
             // Every (re)arm spawns a fresh controller in retail, so the SM
             // starts at state 0; its presence-flag base is the instruction's
             // u16 (controller `+0x50`).
-            swap: crate::cutscene_script_elements::LeaderSwap {
+            swap: legaia_engine_field::plain_template_actors::LeaderSwap {
                 phase: 0,
                 counter: 0,
                 flag_base: arg_word,

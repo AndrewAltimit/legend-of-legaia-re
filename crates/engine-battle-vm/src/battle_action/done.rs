@@ -520,7 +520,7 @@ fn done_band_ui_teardown<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut B
 /// routes on, and this is its *other* reader: it is passed to
 /// `FUN_801E92DC`, which walks `0x80084140 + char*0x414 + 0x704` for the
 /// acting character and prepends spell `byte + 0x80` there
-/// (`legaia_engine_core::magic_xp::learn_spell_prepend`). The byte is the Seru
+/// (`legaia_engine_battle::magic_xp::learn_spell_prepend`). The byte is the Seru
 /// the arts resolver's killing-blow absorb staged (`FUN_801EC3E4`
 /// `0x801EE2E8`), so this is where an absorbed Seru is learned - in the
 /// action's own Done band, not after the battle. Element `0x59` raised in the

@@ -80,7 +80,7 @@ fn scene_prescripts_select_global_pool_tracks() {
     let mut total_field_events = 0usize;
 
     for scene_name in &scene_names {
-        let cfg = legaia_engine_shell::boot::BootConfig {
+        let cfg = legaia_engine_session::boot::BootConfig {
             scene: scene_name.clone(),
             enable_audio: false,
         };
@@ -89,7 +89,7 @@ fn scene_prescripts_select_global_pool_tracks() {
         };
         // Cold-boot the scene into live field dispatch. Plain `tick` alone
         // never installs a field record, so the VM would step nothing.
-        let opts = legaia_engine_shell::boot::FieldLiveOpts {
+        let opts = legaia_engine_session::boot::FieldLiveOpts {
             live_loop: true,
             ..Default::default()
         };
@@ -118,7 +118,7 @@ fn scene_prescripts_select_global_pool_tracks() {
             .iter()
             .map(|&(id, owned)| {
                 let entry = if owned {
-                    legaia_engine_core::music_labels::prot_entry_for_bgm_id(id).unwrap_or(0)
+                    legaia_engine_system::music_labels::prot_entry_for_bgm_id(id).unwrap_or(0)
                 } else {
                     block_start + 8 + id as u32
                 };
@@ -144,7 +144,7 @@ fn scene_prescripts_select_global_pool_tracks() {
         let rendered: Vec<String> = ids
             .iter()
             .map(|(id, owned, entry)| {
-                let label = legaia_engine_core::music_labels::label_for_bgm_id(*id)
+                let label = legaia_engine_system::music_labels::label_for_bgm_id(*id)
                     .unwrap_or_else(|| "-".to_string());
                 let pool = if *owned { "global" } else { "scene-local" };
                 format!("{id} ({pool}, prot {entry}) {label}")

@@ -50,7 +50,7 @@
 //! `battle_gimard_tail_fire` save reads it straight out of a running part
 //! actor's `+0x0C` (`crates/mednafen/tests/firetail_movefx_liveness.rs`) - and
 //! the four `0x801F****` widget handlers are the PROT 0900 descriptor words at
-//! `0x801F8FE4/8FFC/9014/902C` (`legaia_engine_core::screen_fx`).
+//! `0x801F8FE4/8FFC/9014/902C` (`legaia_engine_effects::screen_fx`).
 //!
 //! REF: FUN_80020DE0 (installs the handler), FUN_8002519C (dispatches it)
 
@@ -212,13 +212,13 @@ pub enum HandlerKernel {
     /// engine spawns the roller as host state (`World::cutscene.narration`)
     /// and not as a pool node.
     NarrationRoller,
-    /// `legaia_engine_core::text_balloon::TextBalloon` - same shape as
+    /// `legaia_engine_dialog::text_balloon::TextBalloon` - same shape as
     /// [`Self::NarrationRoller`]: ported, but hosted off the actor pool.
     TextBalloon,
     /// `engine-vm::camera_mover::CameraMover`, driven by
     /// `legaia_engine_core::camera`.
     CameraMover,
-    /// One of the four `legaia_engine_core::screen_fx` widget handlers.
+    /// One of the four `legaia_engine_effects::screen_fx` widget handlers.
     ScreenWidget,
     /// [`crate::field_actor_program::step_scene_program`], run by
     /// `legaia_engine_core::world::World::tick_handler_actors` over the programs the MAN

@@ -21,9 +21,9 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::man_field_scripts::{placement_inline_prologue, scene_destinations};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost, is_world_map_scene};
 use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::{placement_inline_prologue, scene_destinations};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
@@ -127,7 +127,7 @@ fn inline_dialogue_runner_never_panics_across_field_scenes() {
             Ok(Some(b)) => b,
             _ => continue,
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man_bytes) else {
             continue;
         };
         scenes_scanned += 1;
@@ -215,10 +215,10 @@ fn faithful_dialogue_tick_never_errors() {
             for i in 0..300u32 {
                 let mut mask = 0u16;
                 if i % 4 == 0 {
-                    mask |= legaia_engine_core::input::PadButton::Cross.mask();
+                    mask |= legaia_engine_system::input::PadButton::Cross.mask();
                 }
                 if i % 11 == 5 {
-                    mask |= legaia_engine_core::input::PadButton::Down.mask();
+                    mask |= legaia_engine_system::input::PadButton::Down.mask();
                 }
                 host.world.set_pad(mask);
                 host.tick().unwrap_or_else(|e| {
@@ -284,7 +284,7 @@ fn scene_change_destinations_all_enter_without_error() {
             Ok(Some(b)) => b,
             _ => continue,
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man_bytes) else {
             continue;
         };
         for d in scene_destinations(&man_file, &man_bytes) {

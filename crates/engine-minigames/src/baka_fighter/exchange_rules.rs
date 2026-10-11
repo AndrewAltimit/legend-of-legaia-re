@@ -1,7 +1,7 @@
 //! The exchange rules on [`BakaFight`]: move commit, AI pick, the resolver, damage and round bookkeeping.
 
 use super::*;
-use legaia_asset::baka_opponents::ROUND_WIN_TARGET;
+use legaia_minigame_formats::baka_opponents::ROUND_WIN_TARGET;
 
 impl BakaFight {
     /// The combat tick's commit, for either side: the clock restarts, and a
@@ -36,7 +36,7 @@ impl BakaFight {
             && let Some(st) = self.strike.as_ref()
         {
             self.rate_divisor = crate::baka_fighter_chrome::SPECIAL_RATE_DIVISOR;
-            let speed = st[slot].speed[legaia_asset::baka_opponents::ACTION_SPECIAL];
+            let speed = st[slot].speed[legaia_minigame_formats::baka_opponents::ACTION_SPECIAL];
             self.afterimages
                 .push(crate::baka_fighter_chrome::AfterimageActor::spawn(
                     slot, speed,
@@ -153,7 +153,8 @@ impl BakaFight {
         // also hands the winner's strike back to the lookup (`+0x0C = 2`,
         // `0x801D3EB0`), which is what lets the special's next strike land.
         let full_hit = self.strike.as_ref().is_some_and(|st| {
-            let n = st[winner].frames[legaia_asset::baka_opponents::ACTION_SPECIAL].len();
+            let n =
+                st[winner].frames[legaia_minigame_formats::baka_opponents::ACTION_SPECIAL].len();
             n > 0 && self.f[winner].clock.landed == Some(n - 1)
         });
         if self.f[winner].clock.state == StrikeState::Landed {
@@ -243,7 +244,8 @@ impl BakaFight {
     pub(super) fn finish_or_end_round(&mut self, winner: usize) {
         let has_finisher = self.f[winner].hp > 0
             && self.strike.as_ref().is_some_and(|st| {
-                !st[winner].frames[legaia_asset::baka_opponents::ACTION_SPECIAL].is_empty()
+                !st[winner].frames[legaia_minigame_formats::baka_opponents::ACTION_SPECIAL]
+                    .is_empty()
             });
         if !has_finisher {
             self.end_round(winner, false);

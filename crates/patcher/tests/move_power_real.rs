@@ -10,10 +10,10 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_asset::move_power::{
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::move_power::{
     self, BATTLE_ACTION_OVERLAY_PROT_INDEX, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
 };
-use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;
 

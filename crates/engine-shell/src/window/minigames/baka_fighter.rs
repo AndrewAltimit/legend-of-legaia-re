@@ -66,11 +66,11 @@ impl PlayWindowApp {
     /// tick (`BakaFight` owns the [`BakaChrome`] runner and steps it inside
     /// `tick_with_input`; the round banners start at its own round ends) and
     /// resolve each glyph draw's `u` stamp against the overlay's parsed
-    /// widget table ([`legaia_engine_core::baka_fighter_chrome::glyph_u`]).
+    /// widget table ([`legaia_engine_minigames::baka_fighter_chrome::glyph_u`]).
     ///
-    /// [`BakaChrome`]: legaia_engine_core::baka_fighter_chrome::BakaChrome
+    /// [`BakaChrome`]: legaia_engine_minigames::baka_fighter_chrome::BakaChrome
     pub(in crate::window) fn tick_baka_chrome(&mut self) {
-        use legaia_engine_core::baka_fighter_chrome as bc;
+        use legaia_engine_minigames::baka_fighter_chrome as bc;
         if self.session.host.world.mode != SceneMode::BakaFighter {
             self.baka_chrome_frame.clear();
             return;
@@ -144,18 +144,18 @@ impl PlayWindowApp {
     /// [`Self::baka_hud_art_drawn`].
     pub(in crate::window) fn baka_hud_prims(
         &self,
-    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         if !self.baka_hud_art_drawn() {
             return Vec::new();
         }
         let Some(f) = self.session.host.world.minigames.baka_fighter.as_ref() else {
             return Vec::new();
         };
-        let views: Vec<legaia_engine_render::ui_dance::DanceHudQuadView> = self
+        let views: Vec<legaia_engine_ui::dance::DanceHudQuadView> = self
             .baka_surface
             .hud_quads(f)
             .iter()
-            .map(|q| legaia_engine_render::ui_dance::DanceHudQuadView {
+            .map(|q| legaia_engine_ui::dance::DanceHudQuadView {
                 poly_code: q.poly_code,
                 rect: (q.x0, q.y0, q.x1, q.y1),
                 uv: q.uv,
@@ -165,17 +165,18 @@ impl PlayWindowApp {
                 tpage: q.tpage_attr,
             })
             .collect();
-        legaia_engine_render::ui_baka_strips::baka_hud_prims(&views)
+        legaia_engine_ui::baka_strips::baka_hud_prims(&views)
     }
 
     /// PROT 0976's HUD widget table in its loaded form, or `None` when the
     /// overlay does not resolve.
     pub(super) fn baka_overlay_hud_widgets(
         &self,
-    ) -> Option<Vec<legaia_asset::baka_opponents::BakaHudWidget>> {
-        use legaia_asset::static_overlay;
-        let rec = static_overlay::overlay_map()
-            .by_prot_index(legaia_asset::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32)?;
+    ) -> Option<Vec<legaia_minigame_formats::baka_opponents::BakaHudWidget>> {
+        use legaia_overlay_images::static_overlay;
+        let rec = static_overlay::overlay_map().by_prot_index(
+            legaia_minigame_formats::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32,
+        )?;
         let raw = self
             .session
             .host
@@ -183,7 +184,7 @@ impl PlayWindowApp {
             .entry_bytes_extended(rec.prot_index)
             .ok()?;
         let loaded = static_overlay::as_loaded(&raw, rec).ok()?;
-        legaia_asset::baka_opponents::parse_baka_hud(&loaded)
+        legaia_minigame_formats::baka_opponents::parse_baka_hud(&loaded)
     }
 }
 
@@ -191,7 +192,7 @@ impl PlayWindowApp {
     /// Pose the Baka duel's 3D surface for this frame and put it on the GPU.
     ///
     /// The pose, the arena camera and the buffers are the engine's
-    /// (`legaia_engine_core::baka_duel_scene::BakaDuelSurface::frame`, the
+    /// (`legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface::frame`, the
     /// call the browser play page makes too); this host uploads the duel
     /// VRAM on a generation change and the posed meshes every frame, and
     /// the redraw's duel branch draws them under `DuelCamera::vp_raw`.

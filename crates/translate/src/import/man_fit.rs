@@ -7,9 +7,9 @@ use super::super::stream_man::StreamManText;
 use super::report::{ImportReport, IssueKind, SECTOR, SceneTrace, WritePath, sectors_for_overflow};
 use super::scene_plan::{PreApplied, ReadyMan, ScenePlan};
 use anyhow::Result;
-use legaia_asset::man_edit::{self, TextEdit};
-use legaia_asset::scene_asset_table;
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_scene_formats::man_edit::{self, TextEdit};
+use legaia_scene_formats::scene_asset_table;
 
 /// Why [`relocate_and_pack`] could not produce a stream.
 pub(super) enum GrowFail {

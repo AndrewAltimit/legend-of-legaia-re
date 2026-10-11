@@ -21,20 +21,23 @@
 //! ```
 //!
 //! `ambient`, `key`, `pool_w` and `emissive_gain` are the staged
-//! [`crate::scene_lighting::LightingMood`]; `point_gain` is the per-scene
+//! [`legaia_render_kernels::scene_lighting::LightingMood`]; `point_gain` is the per-scene
 //! point-light layer ([`crate::scene_lights`]). The CPU mirror is
-//! [`crate::scene_lighting::shade`] - shared with the browser play page's
+//! [`legaia_render_kernels::scene_lighting::shade`] - shared with the browser play page's
 //! GLSL twin, whose constants `check-ui-host-drift.py` pairs with these.
-
-pub use crate::scene_lighting::{
-    DIFFUSE, LAMBERT_FALLBACK, MAX_GAIN, POOL_CENTER, POOL_INNER, POOL_OUTER, TOTAL_MAX_GAIN,
-    pool_factor, shade,
-};
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::scene_lighting::LightingMood;
+
+    use legaia_render_kernels::scene_lighting::DIFFUSE;
+    use legaia_render_kernels::scene_lighting::LAMBERT_FALLBACK;
+    use legaia_render_kernels::scene_lighting::LightingMood;
+    use legaia_render_kernels::scene_lighting::MAX_GAIN;
+    use legaia_render_kernels::scene_lighting::POOL_CENTER;
+    use legaia_render_kernels::scene_lighting::POOL_INNER;
+    use legaia_render_kernels::scene_lighting::POOL_OUTER;
+    use legaia_render_kernels::scene_lighting::TOTAL_MAX_GAIN;
+    use legaia_render_kernels::scene_lighting::shade;
 
     /// The WGSL twin must carry the same tunables as the shared CPU mirror
     /// - the shader is the production path.
@@ -58,7 +61,7 @@ mod tests {
                 "WGSL drifted from the mirror: {needle}"
             );
         }
-        use crate::scene_lighting::{
+        use legaia_render_kernels::scene_lighting::{
             WINDOW_FLOOR, WINDOW_GLASS_BLACK_MAX, WINDOW_GLASS_MIN_BLUE, WINDOW_RGB,
         };
         for needle in [

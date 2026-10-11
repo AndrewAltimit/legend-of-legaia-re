@@ -4,7 +4,7 @@
 //! actors animate from an ANM record (8-byte per-bone keyframes, decoded by
 //! `FUN_8001BE80`), a battle monster (and the player summon, which retail poses
 //! exactly like an enemy body) animates from the per-object rigid-transform
-//! keyframe stream in its archive record (`legaia_asset::monster_archive`
+//! keyframe stream in its archive record (`legaia_actor_formats::monster_archive`
 //! [`MonsterAnimation`], the `+0x8c` `[u8 parts][u8 frames][9-byte TRS]` stream
 //! decoded by `FUN_8004998C`). Action 0 is the idle loop.
 //!
@@ -30,8 +30,8 @@
 //! rate and the branch split. A zero clip rate (clip built
 //! without entry context) keeps the historical display default.
 
+use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
 use legaia_anm::PoseFrame;
-use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
 use legaia_engine_battle_vm::battle_pose_blend::blend_part_pose;
 
 /// Fixed-point fractional bits for the frame cursor (8.8): `1 << 8` phase units
@@ -60,7 +60,7 @@ pub struct MonsterAnimPlayer {
     /// The clip's solo / freeze byte (entry `+0x87`,
     /// [`MonsterAnimation::solo_flag`]) - the second input of the retail
     /// history-ring id a monster seat stamps each frame
-    /// (`legaia_engine_core::battle_afterimage::monster_ring_id`).
+    /// (`crate::battle_afterimage::monster_ring_id`).
     solo_flag: u8,
     /// The clip's impact-effect class (entry `+0x7A`,
     /// [`MonsterAnimation::impact_class`]) - the selector the hit routine
@@ -667,7 +667,7 @@ mod tests {
 #[cfg(test)]
 mod one_shot_tests {
     use super::*;
-    use legaia_asset::monster_archive::PartPose;
+    use legaia_actor_formats::monster_archive::PartPose;
 
     fn clip(frames: usize) -> MonsterAnimation {
         MonsterAnimation {
@@ -807,7 +807,7 @@ mod one_shot_tests {
     /// `count` cycles (`+0x84..+0x87`), a root speed and a hit-event pair.
     fn windowed_clip(frames: usize, count: u8, start: u8, end: u8) -> MonsterAnimation {
         let mut c = clip(frames);
-        let mut head = vec![0u8; legaia_asset::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
+        let mut head = vec![0u8; legaia_actor_formats::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
         head[0] = 0x0C; // power byte 0 (in band)
         head[0x0C..0x0E].copy_from_slice(&(-20i16).to_le_bytes());
         head[0x10] = 3; // hit frame

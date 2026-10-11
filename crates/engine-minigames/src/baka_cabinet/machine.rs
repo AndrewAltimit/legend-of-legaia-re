@@ -1,7 +1,7 @@
 //! The [`BakaCabinet`] state, its frame and input records, construction and accessors.
 
 use super::*;
-use legaia_asset::baka_opponents::BakaActionSet;
+use legaia_minigame_formats::baka_opponents::BakaActionSet;
 
 /// PORT: FUN_801cf388 (`0x801D1FE8`..`0x801D2070`) - the epilogue's screen
 /// shake decay.

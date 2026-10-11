@@ -5,7 +5,7 @@
 //! cutscene-timeline field-VM script - the same partition-2 record that
 //! raises the `town01` hand-off `GFLAG_SET 26`. Each page is framed
 //! `0x1F <ascii> 0x00` and introduced by a `0x4C` narration op whose operand
-//! declares the page count (see `legaia_asset::cutscene_text`).
+//! declares the page count (see `legaia_scene_formats::cutscene_text`).
 //!
 //! This asserts the parse's *structural* invariants - two blocks of 14 and 8
 //! pages, every page non-empty 7-bit ASCII, page counts matching the op - so
@@ -13,9 +13,9 @@
 //! (Sony-owned) narration text into the source. Skip-passes without disc
 //! data / extracted assets (CLAUDE.md convention).
 
-use legaia_asset::cutscene_text::parse_narration;
-use legaia_engine_core::man_field_scripts::partition_record_span;
 use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_field::man_field_scripts::partition_record_span;
+use legaia_scene_formats::cutscene_text::parse_narration;
 use std::path::PathBuf;
 
 /// Partition / record where the `opdeene` cutscene timeline lives.
@@ -43,14 +43,14 @@ fn opdeene_timeline_carries_two_inline_narration_blocks() {
         return;
     };
 
-    let cutscene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    let cutscene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
     let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
     let scene = Scene::load(&index, cutscene).expect("load opdeene");
     let man = scene
         .field_man_payload(&index)
         .expect("man payload fetch")
         .expect("opdeene has a MAN payload");
-    let man_file = legaia_asset::man_section::parse(&man).expect("man parse");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("man parse");
 
     let (script_start, pc0, body_len) =
         partition_record_span(&man_file, &man, TIMELINE_PARTITION, TIMELINE_RECORD)

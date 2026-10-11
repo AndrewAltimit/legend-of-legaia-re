@@ -53,7 +53,7 @@ impl LegaiaRuntime {
         // native window's `stage_fog_volume` rule).
         if self.options_state.enhanced_lighting && !h.is_empty() {
             use legaia_engine_core::fog_volume::header as hd;
-            let c = legaia_engine_ui::scene_lighting::fog_tint(
+            let c = legaia_render_kernels::scene_lighting::fog_tint(
                 [h[hd::COLOR_R], h[hd::COLOR_G], h[hd::COLOR_B]],
                 &self.lighting_mood(),
             );

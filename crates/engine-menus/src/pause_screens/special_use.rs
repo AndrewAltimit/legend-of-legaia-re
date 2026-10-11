@@ -17,7 +17,7 @@ use super::*;
 /// Driven from [`target_panel_view_model_of`], the host entry point for the
 /// window-14 panel: the staged bag id resolves the item record's kind
 /// byte and effect descriptor through the world's disc-parsed
-/// [`legaia_asset::item_effect::ItemEffectTable`].
+/// [`legaia_game_tables::item_effect::ItemEffectTable`].
 pub fn target_panel_mode(item_kind: u8, effect_class: u8, effect_arg: u8) -> u32 {
     if item_kind != 2 || effect_class != 6 {
         return 0;
@@ -85,7 +85,7 @@ pub fn special_use_route_for_item(item_id: u8) -> Option<UseRoute> {
 
 /// One row of the Door of Wind destination list - a **visible** placement
 /// record from the quick-travel table (`DAT_80073A98`, 6-byte stride;
-/// parser [`legaia_asset::worldmap_menu`]).
+/// parser [`legaia_game_tables::worldmap_menu`]).
 ///
 /// The visible set is built by the same walk the world-map landmark menu
 /// runs (`FUN_80030628` case `0x19`, `0x80031870..0x800318dc`): each record
@@ -180,7 +180,7 @@ pub enum SpecialUseOutcome {
     /// Door of Wind destination picked: one `0x89` consumed; the menu
     /// closes with exit code [`MENU_EXIT_CODE_WORLD_MAP_WARP`].
     /// `landmark` indexes the quick-travel placement table (retail
-    /// `0x80073A98`, 6-byte records - `legaia_asset::worldmap_menu`);
+    /// `0x80073A98`, 6-byte records - `legaia_game_tables::worldmap_menu`);
     /// retail stages record `+2`/`+4`/`+5` into the world-state words
     /// `0x80084628`/`0x80084624`/`0x8008462C` before the handoff.
     Warp { landmark: usize },

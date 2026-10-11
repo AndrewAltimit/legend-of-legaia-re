@@ -227,7 +227,7 @@ mod tests {
     }
 
     fn enter(w: &mut World, code: &[u8]) {
-        let pack = |m: u32| crate::dev_menu::retail_packed(m as u16);
+        let pack = |m: u32| legaia_engine_system::pad::retail_packed(m as u16);
         for &sym in code {
             w.input.set_pad(pack(bit_for(sym)));
             w.tick_submode_screen(1);

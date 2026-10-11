@@ -19,11 +19,11 @@ pub(super) fn next_anchor_has(flag: u16) -> bool {
 /// anchor never shows.
 pub(super) fn overreaching_records(
     session: &BootSession,
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     partition: usize,
 ) -> BTreeSet<usize> {
-    use legaia_engine_core::man_field_scripts::{
+    use legaia_engine_field::man_field_scripts::{
         FlagBank, partition2_record_gates, walk_partition_gflag_sites,
     };
     let n2 = mf.partitions.get(2).map_or(0, Vec::len);
@@ -47,8 +47,8 @@ pub(super) fn overreaching_records(
         let base =
             mf.partitions.first().map_or(0, Vec::len) + mf.partitions.get(1).map_or(0, Vec::len);
         let carries = |rec: usize| {
-            use legaia_asset::field_disasm::{ActorCtrlKind, InsnInfo, LinearWalker};
-            use legaia_engine_core::man_field_scripts::partition_record_span;
+            use legaia_engine_field::man_field_scripts::partition_record_span;
+            use legaia_scene_formats::field_disasm::{ActorCtrlKind, InsnInfo, LinearWalker};
             partition_record_span(mf, man, part, rec).is_some_and(|(start, pc0, len)| {
                 LinearWalker::new(&man[start..start + len], pc0)
                     .flatten()
@@ -195,15 +195,15 @@ thread_local! {
 /// clear.
 pub(super) fn handoff_cleared(
     session: &BootSession,
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     part: usize,
     rec: usize,
 ) -> BTreeSet<u16> {
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
-    use legaia_engine_core::man_field_scripts::{
+    use legaia_engine_field::man_field_scripts::{
         FlagBank, partition_record_span, walk_partition_gflag_sites,
     };
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
     let Some((start, pc0, len)) = partition_record_span(mf, man, part, rec) else {
         return BTreeSet::new();
     };
@@ -230,7 +230,7 @@ pub(super) fn handoff_cleared(
                         else {
                             return BTreeSet::new();
                         };
-                        let Ok(dmf) = legaia_asset::man_section::parse(&dman) else {
+                        let Ok(dmf) = legaia_scene_formats::man_section::parse(&dman) else {
                             return BTreeSet::new();
                         };
                         walk_partition_gflag_sites(&dmf, &dman, 1)
@@ -257,7 +257,7 @@ pub(super) fn handoff_cleared(
 /// fight and the Hunter's Spring anchor has both clear; `town01` P1[10],
 /// Tetsu's spar, is played for the `0x22E` its record also raises.
 pub(super) fn stager_overreaches(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     p1_record: usize,
 ) -> bool {
@@ -272,13 +272,13 @@ pub(super) fn stager_overreaches(
 /// carries `0x6B5` (cleared again by the entry script) or the `0x6B6` of
 /// P2[19], the sequel the entry script spawns on it after the fight.
 pub(super) fn record_overreaches(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     partition: usize,
     record: usize,
     follow_fight: bool,
 ) -> bool {
-    use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
     let sites: Vec<_> = (0..3)
         .flat_map(|p| walk_partition_gflag_sites(mf, man, p))
         .filter(|s| s.bank == FlagBank::System && s.clean && !s.text_alias && !s.debug_menu)
@@ -321,12 +321,12 @@ pub(super) fn record_overreaches(
 /// pending flag set before `3E FF` arms (`deene` P1[0]: `76 B5`, `66 B5`,
 /// `44 27`).
 pub(super) fn entry_spawns_on(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     flags: &BTreeSet<u16>,
 ) -> BTreeSet<usize> {
-    use legaia_asset::field_disasm::{FlagKind as Kind, InsnInfo, LinearWalker};
-    use legaia_engine_core::man_field_scripts::partition_record_span;
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{FlagKind as Kind, InsnInfo, LinearWalker};
     let mut out = BTreeSet::new();
     let Some((start, pc0, len)) = partition_record_span(mf, man, 1, 0) else {
         return out;
@@ -358,7 +358,7 @@ pub(super) fn entry_spawns_on(
 /// The live walk-on tiles of the loaded field scene whose record stages a
 /// fight ([`record_stages_fight`]).
 pub(super) fn fight_band_tiles(session: &BootSession) -> HashSet<(i32, i32)> {
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
         return HashSet::new();
     };
@@ -381,13 +381,13 @@ pub(super) fn fight_band_tiles(session: &BootSession) -> HashSet<(i32, i32)> {
 /// Whether record `(part, rec)`, or a partition-2 record it spawns, installs
 /// a scripted battle (op `0x3E` with `op0 == 0xFF` or `< 100`).
 pub(super) fn record_stages_fight(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     part: usize,
     rec: usize,
 ) -> bool {
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
-    use legaia_engine_core::man_field_scripts::partition_record_span;
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let fights = |part: usize, rec: usize| {
         partition_record_span(mf, man, part, rec).is_some_and(|(start, pc0, len)| {
             LinearWalker::new(&man[start..start + len], pc0)
@@ -407,13 +407,13 @@ pub(super) fn record_stages_fight(
 /// `op0 == 0xFF` or `< 100`), its own and those of the partition-2 records
 /// it spawns (three levels).
 pub(super) fn staged_formation_rows(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     part: usize,
     rec: usize,
 ) -> BTreeSet<u16> {
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
-    use legaia_engine_core::man_field_scripts::partition_record_span;
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let rows = |part: usize, rec: usize| -> Vec<u16> {
         partition_record_span(mf, man, part, rec).map_or_else(Vec::new, |(start, pc0, len)| {
             LinearWalker::new(&man[start..start + len], pc0)
@@ -441,13 +441,13 @@ pub(super) fn staged_formation_rows(
 /// Whether record `(part, rec)` runs the mode-24 minigame door-warp
 /// (op `0x3E` with `op0 >= 100`, a venue cabinet's entry).
 pub(super) fn record_enters_minigame(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     part: usize,
     rec: usize,
 ) -> bool {
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
-    use legaia_engine_core::man_field_scripts::partition_record_span;
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let Some((start, pc0, len)) = partition_record_span(mf, man, part, rec) else {
         return false;
     };
@@ -467,14 +467,14 @@ pub(super) fn record_enters_minigame(
 /// `P1[0]` trades that for `0x27B` - the flag that joins the two chambers.
 pub(super) fn hands_off_to_entry_script(
     session: &BootSession,
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     rec: usize,
 ) -> bool {
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
-    use legaia_engine_core::man_field_scripts::{
+    use legaia_engine_field::man_field_scripts::{
         FlagBank, partition_record_span, walk_partition_gflag_sites,
     };
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
     let w = &session.host.world;
     let sets: BTreeSet<u16> = walk_partition_gflag_sites(mf, man, 1)
         .iter()
@@ -511,7 +511,7 @@ pub(super) fn hands_off_to_entry_script(
         else {
             return false;
         };
-        let Ok(dmf) = legaia_asset::man_section::parse(&dman) else {
+        let Ok(dmf) = legaia_scene_formats::man_section::parse(&dman) else {
             return false;
         };
         walk_partition_gflag_sites(&dmf, &dman, 1).iter().any(|s| {
@@ -526,15 +526,15 @@ pub(super) fn hands_off_to_entry_script(
 /// The partition-2 records `(part, rec)` spawns through op `0x44`
 /// (`SPAWN_RECORD`, global index `base + r`), followed `depth` levels.
 pub(super) fn spawned_p2(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     part: usize,
     rec: usize,
     base: usize,
     depth: usize,
 ) -> BTreeSet<usize> {
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
-    use legaia_engine_core::man_field_scripts::partition_record_span;
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let mut out = BTreeSet::new();
     let Some((start, pc0, len)) = partition_record_span(mf, man, part, rec) else {
         return out;

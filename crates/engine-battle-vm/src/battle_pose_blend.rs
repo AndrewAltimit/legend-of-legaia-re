@@ -31,12 +31,12 @@
 //!   never written. The retry has no second gate.
 //!
 //! The field blender `FUN_8001BE80` carries the same retry
-//! (`legaia_asset::player_anm::blend_bone_transform`), but the two unwraps
+//! (`legaia_actor_formats::player_anm::blend_bone_transform`), but the two unwraps
 //! differ at exactly half a turn: the field helper `FUN_8001D088` bumps on
 //! `>= 0x800`, this decoder on `> 0x800` (`slti v0,v0,0x801`). A step of
 //! exactly `-0x800` therefore runs backward here and forward in the field.
 
-use legaia_asset::monster_archive::PartPose;
+use legaia_actor_formats::monster_archive::PartPose;
 
 /// A full turn in 12-bit angle units.
 const TURN: i32 = 0x1000;

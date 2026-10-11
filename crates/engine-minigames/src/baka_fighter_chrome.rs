@@ -4,7 +4,7 @@
 //! All three are frame-counter timelines over the same primitive: the HUD
 //! textured-quad emitter `FUN_801D5ED0`, ported as
 //! [`crate::baka_fighter::hud_widget_quad`] against the 51-record widget
-//! descriptor table (`legaia_asset::baka_opponents::parse_baka_hud`). This
+//! descriptor table (`legaia_minigame_formats::baka_opponents::parse_baka_hud`). This
 //! module keeps the *timelines* - which widget is drawn where, how bright and
 //! how big on frame `t`, plus the CD-XA announcer lines and the screen fades
 //! they fire - separate from the quad geometry, so a host can run them with no

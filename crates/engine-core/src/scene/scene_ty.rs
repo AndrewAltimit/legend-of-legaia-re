@@ -163,7 +163,7 @@ impl Scene {
     /// `SceneScriptedAssetTable` entry.
     ///
     /// **The records have one consumer**: the move-VM stager installer.
-    /// [`legaia_asset::scene_event_scripts::move_stager_records`] parses the
+    /// [`legaia_scene_formats::scene_event_scripts::move_stager_records`] parses the
     /// `[count][offsets]`-indexed records as summon-format **move-VM stager**
     /// records (100% valid stager leads across the corpus - the field-resident
     /// sibling of the per-summon stagers, installed by field-VM op `0x34`
@@ -185,10 +185,10 @@ impl Scene {
         for entry in &self.entries {
             let ranges = match entry.class {
                 Class::SceneEventScripts => {
-                    legaia_asset::scene_event_scripts::record_ranges(&entry.bytes)
+                    legaia_scene_formats::scene_event_scripts::record_ranges(&entry.bytes)
                 }
                 Class::SceneScriptedAssetTable => {
-                    legaia_asset::scene_scripted_asset_table::record_ranges(&entry.bytes)
+                    legaia_scene_formats::scene_scripted_asset_table::record_ranges(&entry.bytes)
                 }
                 _ => None,
             };
@@ -223,7 +223,7 @@ impl Scene {
     /// makes the standalone read zero-false-positive, and `edteien`'s
     /// prescript is **two** records. Here there *is* context, which is what
     /// lets this take the positional prescript read instead
-    /// ([`legaia_asset::scene_event_scripts::record_ranges_positional`]). It
+    /// ([`legaia_scene_formats::scene_event_scripts::record_ranges_positional`]). It
     /// is also what the phantom
     /// `SceneScriptedAssetTable` class used to supply: it claimed these same
     /// entries because a table appeared to follow at `+0x800`, which was the
@@ -240,7 +240,7 @@ impl Scene {
                 continue;
             }
             if let Some(ranges) =
-                legaia_asset::scene_event_scripts::record_ranges_positional(&entry.bytes)
+                legaia_scene_formats::scene_event_scripts::record_ranges_positional(&entry.bytes)
                 && !ranges.is_empty()
             {
                 return Some(EventScripts {
@@ -334,17 +334,17 @@ impl Scene {
     /// holding the region-record table the shared point-in-AABB scan
     /// (`FUN_80017FBC`) walks - body offset `s16` at block `+0xE`, count
     /// `s16` at `+0x10`, 8-byte records `[x0, z0, x1, z1, type, 0, 0, 0]`.
-    /// Consumed by [`crate::field_regions::RegionTable`]. Returns
+    /// Consumed by [`legaia_engine_field::field_regions::RegionTable`]. Returns
     /// `Ok(None)` when the scene has no field map.
     ///
-    /// REF: FUN_80017FBC, FUN_800180EC (ports in [`crate::field_regions`])
+    /// REF: FUN_80017FBC, FUN_800180EC (ports in [`legaia_engine_field::field_regions`])
     pub fn field_map_region_block(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
         let Some(idx) = self.field_map_index(index) else {
             return Ok(None);
         };
         let bytes = index.entry_bytes_extended(idx)?;
         Ok(bytes
-            .get(crate::field_regions::MAP_REGION_BLOCK_OFFSET..FIELD_MAP_LEN)
+            .get(legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET..FIELD_MAP_LEN)
             .map(<[u8]>::to_vec))
     }
 
@@ -362,28 +362,28 @@ impl Scene {
         &self,
         index: &ProtIndex,
     ) -> Result<(
-        Vec<crate::field_regions::TileTrigger>,
-        Vec<crate::field_regions::TileTrigger>,
+        Vec<legaia_engine_field::field_regions::TileTrigger>,
+        Vec<legaia_engine_field::field_regions::TileTrigger>,
     )> {
         let Some(idx) = self.field_map_index(index) else {
             return Ok((Vec::new(), Vec::new()));
         };
         let bytes = index.entry_bytes_extended(idx)?;
         let primary = bytes
-            .get(crate::field_regions::MAP_REGION_BLOCK_OFFSET..)
-            .map(crate::field_regions::parse_tile_triggers)
+            .get(legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET..)
+            .map(legaia_engine_field::field_regions::parse_tile_triggers)
             .unwrap_or_default();
         // The fallback table = the first sectors past the `.MAP`'s 0x12000
         // footprint (the next PROT entry on disc). Some maps' extended reads
         // include that window; otherwise read the sibling entry directly.
         let mut fallback = bytes
-            .get(crate::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
-            .map(crate::field_regions::parse_tile_triggers)
+            .get(legaia_engine_field::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
+            .map(legaia_engine_field::field_regions::parse_tile_triggers)
             .unwrap_or_default();
         if fallback.is_empty()
             && let Ok(sibling) = index.entry_bytes_extended(idx + 1)
         {
-            fallback = crate::field_regions::parse_tile_triggers(&sibling);
+            fallback = legaia_engine_field::field_regions::parse_tile_triggers(&sibling);
         }
         Ok((primary, fallback))
     }
@@ -393,31 +393,31 @@ impl Scene {
     /// the `.MAP` rather than in a MAN script. Same block + fallback
     /// resolution as [`Self::field_tile_triggers`].
     ///
-    /// See [`crate::field_regions::IntraSceneTeleport`].
+    /// See [`legaia_engine_field::field_regions::IntraSceneTeleport`].
     // REF: FUN_801D1EC4, FUN_801D5630
     pub fn field_intra_scene_teleports(
         &self,
         index: &ProtIndex,
     ) -> Result<(
-        Vec<crate::field_regions::IntraSceneTeleport>,
-        Vec<crate::field_regions::IntraSceneTeleport>,
+        Vec<legaia_engine_field::field_regions::IntraSceneTeleport>,
+        Vec<legaia_engine_field::field_regions::IntraSceneTeleport>,
     )> {
         let Some(idx) = self.field_map_index(index) else {
             return Ok((Vec::new(), Vec::new()));
         };
         let bytes = index.entry_bytes_extended(idx)?;
         let primary = bytes
-            .get(crate::field_regions::MAP_REGION_BLOCK_OFFSET..)
-            .map(crate::field_regions::parse_intra_scene_teleports)
+            .get(legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET..)
+            .map(legaia_engine_field::field_regions::parse_intra_scene_teleports)
             .unwrap_or_default();
         let mut fallback = bytes
-            .get(crate::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
-            .map(crate::field_regions::parse_intra_scene_teleports)
+            .get(legaia_engine_field::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
+            .map(legaia_engine_field::field_regions::parse_intra_scene_teleports)
             .unwrap_or_default();
         if fallback.is_empty()
             && let Ok(sibling) = index.entry_bytes_extended(idx + 1)
         {
-            fallback = crate::field_regions::parse_intra_scene_teleports(&sibling);
+            fallback = legaia_engine_field::field_regions::parse_intra_scene_teleports(&sibling);
         }
         Ok((primary, fallback))
     }
@@ -429,18 +429,20 @@ impl Scene {
     /// is object-local; each placement gives a mesh its world transform).
     ///
     /// Mirrors retail `FUN_8003A55C`; see
-    /// [`legaia_asset::field_objects`] for the format + provenance. Reads the
+    /// [`legaia_scene_formats::field_objects`] for the format + provenance. Reads the
     /// field map entry's **extended** footprint (the object grid is past the
     /// TOC-indexed payload). Returns `Ok(None)` if the scene has no field map.
     pub fn field_object_placements(
         &self,
         index: &ProtIndex,
-    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+    ) -> Result<Option<Vec<legaia_scene_formats::field_objects::Placement>>> {
         let Some(idx) = self.field_map_index(index) else {
             return Ok(None);
         };
         let bytes = index.entry_bytes_extended(idx)?;
-        Ok(Some(legaia_asset::field_objects::parse_placements(&bytes)))
+        Ok(Some(legaia_scene_formats::field_objects::parse_placements(
+            &bytes,
+        )))
     }
 
     /// The scene's **object binds**: for every `.MAP` tile carrying a kind-1
@@ -463,7 +465,7 @@ impl Scene {
         let Some(man) = self.field_man_payload(index)? else {
             return Ok(None);
         };
-        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
             return Ok(None);
         };
         let map = index.entry_bytes_extended(idx)?;
@@ -472,7 +474,7 @@ impl Scene {
 
     /// The scene's **bulk terrain** tiles: one entry per visible cell of the
     /// field map's object-index grid (`+0x8000`, cell bit
-    /// [`legaia_asset::field_objects::CELL_VISIBLE`]), positioned the same way
+    /// [`legaia_scene_formats::field_objects::CELL_VISIBLE`]), positioned the same way
     /// as [`Self::field_object_placements`]. This is the dense continent layer
     /// (ground / trees / mountains) the overhead sweep `FUN_801F69D8` draws -
     /// far more tiles than the placed-flag interactive objects. Returns
@@ -480,14 +482,14 @@ impl Scene {
     pub fn field_terrain_tiles(
         &self,
         index: &ProtIndex,
-    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+    ) -> Result<Option<Vec<legaia_scene_formats::field_objects::Placement>>> {
         let Some(idx) = self.field_map_index(index) else {
             return Ok(None);
         };
         let bytes = index.entry_bytes_extended(idx)?;
-        Ok(Some(legaia_asset::field_objects::parse_terrain_tiles(
-            &bytes,
-        )))
+        Ok(Some(
+            legaia_scene_formats::field_objects::parse_terrain_tiles(&bytes),
+        ))
     }
 
     /// Resolve the **free-roam walk** view's field `.MAP` entry.
@@ -512,7 +514,7 @@ impl Scene {
     pub fn walk_heightfield(
         &self,
         index: &ProtIndex,
-    ) -> Result<Option<legaia_asset::field_objects::WalkHeightfield>> {
+    ) -> Result<Option<legaia_scene_formats::field_objects::WalkHeightfield>> {
         let Some(idx) = self.walk_field_map_index(index) else {
             return Ok(None);
         };
@@ -523,13 +525,13 @@ impl Scene {
         // A kingdom overworld's ground is `FUN_801F89B8`'s, which tests no
         // `0x1000` cell bit (`GroundCellGate::TerrainRecord`).
         let gate = if crate::scene::is_world_map_scene(&self.name) {
-            legaia_asset::field_objects::GroundCellGate::TerrainRecord
+            legaia_scene_formats::field_objects::GroundCellGate::TerrainRecord
         } else {
-            legaia_asset::field_objects::GroundCellGate::WalkVisible
+            legaia_scene_formats::field_objects::GroundCellGate::WalkVisible
         };
-        Ok(Some(legaia_asset::field_objects::build_ground_heightfield(
-            &bytes, &lut, gate,
-        )))
+        Ok(Some(
+            legaia_scene_formats::field_objects::build_ground_heightfield(&bytes, &lut, gate),
+        ))
     }
 
     /// The walk view's placed-flag interactive objects, read from
@@ -538,30 +540,32 @@ impl Scene {
     pub fn walk_object_placements(
         &self,
         index: &ProtIndex,
-    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+    ) -> Result<Option<Vec<legaia_scene_formats::field_objects::Placement>>> {
         let Some(idx) = self.walk_field_map_index(index) else {
             return Ok(None);
         };
         let bytes = index.entry_bytes_extended(idx)?;
-        Ok(Some(legaia_asset::field_objects::parse_placements(&bytes)))
+        Ok(Some(legaia_scene_formats::field_objects::parse_placements(
+            &bytes,
+        )))
     }
 
     /// The walk view's **decoration layer** - trees, mountain groups, and
     /// props: walk-visible cells whose record stamps a nonzero `+0x10` pack
     /// mesh without the placed flag (disjoint from
     /// [`Self::walk_object_placements`]). See
-    /// [`legaia_asset::field_objects::parse_walk_decorations`].
+    /// [`legaia_scene_formats::field_objects::parse_walk_decorations`].
     pub fn walk_decoration_placements(
         &self,
         index: &ProtIndex,
-    ) -> Result<Option<Vec<legaia_asset::field_objects::Placement>>> {
+    ) -> Result<Option<Vec<legaia_scene_formats::field_objects::Placement>>> {
         let Some(idx) = self.walk_field_map_index(index) else {
             return Ok(None);
         };
         let bytes = index.entry_bytes_extended(idx)?;
-        Ok(Some(legaia_asset::field_objects::parse_walk_decorations(
-            &bytes,
-        )))
+        Ok(Some(
+            legaia_scene_formats::field_objects::parse_walk_decorations(&bytes),
+        ))
     }
 
     /// The scene's 16-entry floor-height LUT, read from the MAN header
@@ -627,12 +631,12 @@ impl Scene {
     /// (`rikuroa` P1[0] tests the `0x289` battle-staged marker and issues the
     /// op-`0x44` spawn of the post-victory record `P2[50]`).
     ///
-    /// REF: FUN_8003ab2c (the port lives in `legaia_asset::man_section`).
+    /// REF: FUN_8003ab2c (the port lives in `legaia_scene_formats::man_section`).
     pub fn field_man_entry_script(&self, index: &ProtIndex) -> Result<Option<(Vec<u8>, usize)>> {
         let Some(man_bytes) = self.field_man_payload(index)? else {
             return Ok(None);
         };
-        let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
+        let Ok(man) = legaia_scene_formats::man_section::parse(&man_bytes) else {
             return Ok(None);
         };
         let Some((start, pc0)) = man.scene_entry_script(&man_bytes) else {
@@ -652,23 +656,23 @@ impl Scene {
     /// detector gap [`Self::field_man_entry_script`] documents) or when the
     /// MAN's encounter section declares no rollable formations (towns with
     /// no encounters). Resolves now for the `count=6`
-    /// [`legaia_asset::scene_asset_table`] field scenes (town01 etc.) thanks
+    /// [`legaia_scene_formats::scene_asset_table`] field scenes (town01 etc.) thanks
     /// to the relaxed detector.
     ///
     /// Wire the pair via [`crate::world::World::install_man_encounter`].
     ///
     /// REF: FUN_8003AEB0 (installs the encounter section into the runtime
     /// control block); the byte-level walk lives in
-    /// `legaia_asset::man_section` and the runtime bridge in
-    /// [`crate::encounter_man`].
+    /// `legaia_scene_formats::man_section` and the runtime bridge in
+    /// [`legaia_engine_battle::encounter_man`].
     pub fn field_man_encounter_table(
         &self,
         index: &ProtIndex,
         scene_label: &str,
     ) -> Result<
         Option<(
-            crate::encounter::EncounterTable,
-            Vec<crate::monster_catalog::FormationDef>,
+            legaia_engine_battle::encounter::EncounterTable,
+            Vec<legaia_engine_battle::monster_catalog::FormationDef>,
         )>,
     > {
         // Same resolution order as [`Self::field_man_payload`] (bundle MAN
@@ -680,16 +684,13 @@ impl Scene {
         let Some(man_bytes) = self.field_man_payload(index)? else {
             return Ok(None);
         };
-        Ok(crate::encounter_man::scene_encounter_from_man(
-            scene_label,
-            &man_bytes,
-        ))
+        Ok(legaia_engine_battle::encounter_man::scene_encounter_from_man(scene_label, &man_bytes))
     }
 
     /// The scene's NPC / actor placement list, decoded from the MAN
     /// partition-1 records (retail `FUN_8003A1E4` per-record actor spawn).
     ///
-    /// Each [`ActorPlacement`](legaia_asset::man_section::ActorPlacement) is one
+    /// Each [`ActorPlacement`](legaia_scene_formats::man_section::ActorPlacement) is one
     /// placed entity: its spawn tile/world position, model index, action count,
     /// and the byte offset of its field-VM script (the script that later
     /// installs the entity's encounter record or portal behaviour). This is the
@@ -704,11 +705,11 @@ impl Scene {
     pub fn field_actor_placements(
         &self,
         index: &ProtIndex,
-    ) -> Result<Option<Vec<legaia_asset::man_section::ActorPlacement>>> {
+    ) -> Result<Option<Vec<legaia_scene_formats::man_section::ActorPlacement>>> {
         let Some(man_bytes) = self.field_man_payload(index)? else {
             return Ok(None);
         };
-        let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
+        let Ok(man) = legaia_scene_formats::man_section::parse(&man_bytes) else {
             return Ok(None);
         };
         Ok(Some(man.actor_placements(&man_bytes)))
@@ -720,7 +721,7 @@ impl Scene {
     /// [`Self::field_man_entry_script`] documents.
     ///
     /// Callers that want the parsed structure pass the bytes to
-    /// [`legaia_asset::man_section::parse`]; this is the shared raw-bytes
+    /// [`legaia_scene_formats::man_section::parse`]; this is the shared raw-bytes
     /// fetch behind the entry-script / encounter-table accessors, exposed so
     /// the field host can also walk the cutscene-timeline partition (e.g. the
     /// opening prologue's `GFLAG_SET 26` hand-off arm).
@@ -748,13 +749,13 @@ impl Scene {
     /// 18-byte camera-region records the boot walk (`FUN_8003AEB0`)
     /// installs at the control block `_DAT_801C6EA4 + 0x4` and the
     /// per-tile zone query (`FUN_801DBA20`, ported as
-    /// [`crate::field_regions::zone_query`]) walks. Returns `Ok(None)` when
+    /// [`legaia_engine_field::field_regions::zone_query`]) walks. Returns `Ok(None)` when
     /// the scene has no MAN or the MAN's section 3 is the chain terminator.
     pub fn field_zone_table(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
         let Some(man_bytes) = self.field_man_payload(index)? else {
             return Ok(None);
         };
-        let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
+        let Ok(man) = legaia_scene_formats::man_section::parse(&man_bytes) else {
             return Ok(None);
         };
         let sec = &man.sections[3];

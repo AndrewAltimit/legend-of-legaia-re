@@ -44,9 +44,9 @@
 //! `..._801d0370.txt` and `..._801d11d0.txt` - disassembly, not the C.
 //!
 //! REF: FUN_800195A8 - the sprite projector, ported as
-//! `legaia_engine_render::billboard::project_billboard`.
+//! `legaia_render_kernels::billboard::project_billboard`.
 //! REF: FUN_8003D2C4 - retail `AddPrim`, whose ordering is
-//! `legaia_engine_render::screen_overlay::order_primitives`.
+//! `legaia_render_kernels::screen_prim::order_primitives`.
 //! Both are named in the wiring notes below.
 //!
 //! REF: FUN_801D0D24 - the tile-shatter tick, ported in
@@ -652,7 +652,7 @@ pub fn particle_quad_accepted(style: &ParticleTickStyle, depth: i32, corner0: (i
 /// PORT: FUN_801CFDA0
 /// PORT: FUN_801D0370
 ///
-/// REPLACED-BY: `legaia_engine_render::battle_intro::emit_particle_field`,
+/// REPLACED-BY: `legaia_render_kernels::battle_intro::emit_particle_field`,
 /// which carries the same two PORT tags and is the live path. It does what
 /// this loop does *and* assembles the per-particle `POLY_FT4` packet in the
 /// same pass, stepping each particle through [`step_particle`] rather than
@@ -809,7 +809,7 @@ fn warp(offset: i32, elapsed: i32) -> i32 {
 /// PORT: FUN_801D11D0
 /// REF: FUN_801CF1B0 (the quad builder), FUN_801D1D9C (the mid-pass emitter)
 ///
-/// WIRED. `legaia_engine_render::battle_intro::BattleIntro` owns the
+/// WIRED. `legaia_render_kernels::battle_intro::BattleIntro` owns the
 /// descriptor table (the `0x14`-stride table parses out of PROT 0979 via
 /// `IntroQuadTable::parse_overlay`), ticks it from the live transition clock,
 /// splits this function's output by pass, emits the row quads as screen
@@ -818,7 +818,7 @@ fn warp(offset: i32, elapsed: i32) -> i32 {
 /// The style is reached only when [`select_intro_style`] picks it, which is
 /// three formations on the disc; the ordinary encounter takes
 /// [`IntroStyle::TileShatter`], which is drawn by
-/// `legaia_engine_render::battle_intro::emit_tile`.
+/// `legaia_render_kernels::battle_intro::emit_tile`.
 pub fn tick_curtain(table: &mut [IntroQuadDesc], elapsed: &mut i16, frame_step: u8) -> CurtainTick {
     let mut out = CurtainTick::default();
     let clock = i32::from(*elapsed);

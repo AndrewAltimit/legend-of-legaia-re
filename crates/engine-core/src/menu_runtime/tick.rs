@@ -103,7 +103,7 @@ impl MenuRuntime {
                 _ => Self::sell_list_rows(world).len(),
             };
             let pressed = menu_input_pad_word(input);
-            let c = crate::pause_screens::list_kernel_navigate_rows(
+            let c = legaia_engine_menus::pause_screens::list_kernel_navigate_rows(
                 self.ctx.cursor as usize,
                 n,
                 pressed,

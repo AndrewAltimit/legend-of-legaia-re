@@ -17,7 +17,6 @@
 //! injected MIPS (the engine can't run it) - the engine path is
 //! covered by `legaia-engine-core`'s `shiny_*` unit tests instead.
 
-use legaia_asset::item_names::file_offset_for_va;
 use legaia_code_hooks::arenas::{
     self, BATTLE_ACTION_OVERLAY_PROT_INDEX, HOOK_SETUP_VA, MENU_OVERLAY_PROT_INDEX,
     OVERLAY_BASE_VA, SCUS_GAP_END_VA, SCUS_GAP_VA,
@@ -27,6 +26,7 @@ use legaia_code_hooks::shiny_seru::{
     HOOK_GRANT_SHIFT_VA, HOOK_GRANT_VA, HOOK_MENU_VA, ShinySeruInjection,
 };
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 

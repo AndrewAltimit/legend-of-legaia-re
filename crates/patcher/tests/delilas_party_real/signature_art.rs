@@ -25,7 +25,7 @@ fn every_slot_gets_its_siblings_signature_art() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    use legaia_asset::battle_char_assembly as bca;
+    use legaia_actor_formats::battle_char_assembly as bca;
     use legaia_delilas_party::delilas_party::READEF_ENTRY;
     use legaia_party_swap::winpose;
 
@@ -213,10 +213,10 @@ fn every_slot_gets_its_siblings_signature_art() {
             }
         }
 
-        let anims = legaia_asset::monster_archive::animations(&archive, monster_id)
+        let anims = legaia_actor_formats::monster_archive::animations(&archive, monster_id)
             .expect("animations")
             .expect("archive slot");
-        let stages: Vec<&legaia_asset::monster_archive::MonsterAnimation> = chain
+        let stages: Vec<&legaia_actor_formats::monster_archive::MonsterAnimation> = chain
             .iter()
             .map(|&i| anims.get(i).expect("chain stage"))
             .collect();
@@ -420,7 +420,7 @@ fn every_slot_gets_its_siblings_signature_art() {
         // exactly this row when the converted signature fires, so it
         // must announce the special itself, not the host art.
         {
-            let table = legaia_asset::spell_names::SpellNameTable::from_scus(&scus)
+            let table = legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus)
                 .expect("patched spell table");
             let id = (monster_id - 0x29) as u8;
             assert_eq!(
@@ -480,7 +480,7 @@ fn every_slot_gets_its_siblings_signature_art() {
                 rig.channel_for_canonical[14] as usize,
             ];
             // GTE space is y-down, so the deepest contact is the LARGEST y.
-            let floor = |a: &legaia_asset::monster_archive::MonsterAnimation| {
+            let floor = |a: &legaia_actor_formats::monster_archive::MonsterAnimation| {
                 a.frames
                     .iter()
                     .map(|f| feet.iter().map(|&c| f[c].ty).max().unwrap())
@@ -584,7 +584,7 @@ fn every_slot_gets_its_siblings_signature_art() {
 /// default if the default happened to be the identity permutation.
 #[test]
 fn every_slot_fights_in_its_siblings_element() {
-    use legaia_asset::element_affinity as ea;
+    use legaia_game_tables::element_affinity as ea;
     let Some(original) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -595,7 +595,7 @@ fn every_slot_fights_in_its_siblings_element() {
         .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
         .expect("archive");
     let sibling_element = |s: Sibling| -> u8 {
-        legaia_asset::monster_archive::record(&archive, s.monster_id())
+        legaia_actor_formats::monster_archive::record(&archive, s.monster_id())
             .expect("record")
             .expect("populated")
             .element
@@ -677,7 +677,7 @@ fn every_slot_fights_in_its_siblings_element() {
 /// matches this decode byte for byte, effect scripts included.
 #[test]
 fn the_signature_effect_script_lives_in_the_bank_the_runtime_walks() {
-    use legaia_asset::battle_char_assembly as bca;
+    use legaia_actor_formats::battle_char_assembly as bca;
     let Some(original) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;

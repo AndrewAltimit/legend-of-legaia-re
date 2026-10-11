@@ -1,9 +1,9 @@
 //! The loaded arena assets: fighters, monsters, arena mesh and VRAM, and the pose kernel.
 
 use super::*;
-use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::monster_archive;
-use legaia_asset::scene_tmd_stream;
+use legaia_actor_formats::battle_char_assembly as bca;
+use legaia_actor_formats::monster_archive;
+use legaia_scene_formats::scene_tmd_stream;
 use legaia_tmd::mesh::VramMesh;
 use std::sync::Arc;
 
@@ -22,7 +22,7 @@ pub struct MuscleDomeAssets {
     /// framing's depth (`FUN_801F0348`).
     pub(super) size_class: u8,
     /// The per-character close-up heights (`0x801F4D2C`).
-    pub(super) heights: Option<legaia_asset::battle_camera_table::BattleCameraHeights>,
+    pub(super) heights: Option<legaia_game_tables::battle_camera_table::BattleCameraHeights>,
 }
 
 impl std::fmt::Debug for MuscleDomeAssets {
@@ -35,7 +35,7 @@ impl std::fmt::Debug for MuscleDomeAssets {
 }
 
 fn fighter_build(raw: &[u8]) -> Option<(bca::AssembledCharacter, VramMesh, Vec<u32>)> {
-    let pack = legaia_asset::battle_data_pack::parse(raw).ok()?;
+    let pack = legaia_actor_formats::battle_data_pack::parse(raw).ok()?;
     let mut asm = bca::assemble_character(raw, &pack, &[0u8; 5]).ok()?;
     bca::relocate_tsb_cba(&mut asm.tmd, 0).ok()?;
     let tmd = legaia_tmd::parse(&asm.tmd).ok()?;
@@ -53,7 +53,7 @@ impl MuscleDomeAssets {
         char_slot: u32,
     ) -> Option<Self> {
         let player_file = read_prot(
-            legaia_asset::battle_texture_catalog::PLAYER_FILE_ENTRIES[0] as usize
+            legaia_actor_formats::battle_texture_catalog::PLAYER_FILE_ENTRIES[0] as usize
                 + char_slot.min(2) as usize,
         )?;
         let raw = player_file.as_slice();
@@ -78,7 +78,7 @@ impl MuscleDomeAssets {
         let archive = read_prot(MONSTER_ARCHIVE_PROT_INDEX)?;
         let mut vram = legaia_tim::Vram::new();
         // The character's band-0 texture pool + battle palette.
-        if let Ok(pack) = legaia_asset::battle_data_pack::parse(raw) {
+        if let Ok(pack) = legaia_actor_formats::battle_data_pack::parse(raw) {
             if let Ok(uploads) = bca::character_texture_uploads(raw, &pack, &[0u8; 5], 0) {
                 for u in &uploads {
                     vram.write_block(u.fb_x(), u.fb_y(), u.rect.w, u.rect.h, &u.pixels);
@@ -106,11 +106,11 @@ impl MuscleDomeAssets {
             // Vahn = the byte-exact fixed-stride record parse; the others =
             // the equipment-robust collector.
             let pal = if char_slot == 0 {
-                legaia_asset::battle_char_palette::find_record0(raw).and_then(|rec0| {
-                    legaia_asset::battle_char_palette::parse_record(raw, rec0).ok()
+                legaia_actor_formats::battle_char_palette::find_record0(raw).and_then(|rec0| {
+                    legaia_actor_formats::battle_char_palette::parse_record(raw, rec0).ok()
                 })
             } else {
-                legaia_asset::battle_char_palette::collect_palette(raw, 0, &cols).ok()
+                legaia_actor_formats::battle_char_palette::collect_palette(raw, 0, &cols).ok()
             };
             if let Some(pal) = pal {
                 for &row in &rows {
@@ -177,7 +177,7 @@ impl MuscleDomeAssets {
             ground_grid(&mut statics, &mut statics_flat);
         }
         let heights = read_prot(BATTLE_ACTION_PROT_INDEX)
-            .and_then(|raw| legaia_asset::battle_camera_table::parse(&raw));
+            .and_then(|raw| legaia_game_tables::battle_camera_table::parse(&raw));
         let mut assets = Self {
             key: (monster_id, char_slot),
             bodies: [fighter, monster],

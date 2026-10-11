@@ -18,8 +18,8 @@
 //! does not model what they mean, only that they are forwarded verbatim.
 //!
 //! Ported from the disassembly in `ghidra/scripts/funcs/8003053c.txt`; the
-//! record geometry is the same one `legaia_engine_core::retail_magic` and
-//! `legaia_asset::spell_names` read.
+//! record geometry is the same one `legaia_engine_battle::retail_magic` and
+//! `legaia_game_tables::spell_names` read.
 
 /// Stride of one record in the static spell-stats table `DAT_800754C8`.
 pub const SPELL_RECORD_STRIDE: usize = 12;

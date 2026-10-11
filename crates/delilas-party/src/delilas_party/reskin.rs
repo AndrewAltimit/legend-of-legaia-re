@@ -129,7 +129,7 @@ pub(super) fn reskin_signature_art(
     // byte (entry +0x78) is re-timed in the SAME record0 rewrite so the
     // host's shorter stream, now carrying the sibling's longer clip,
     // still runs for the clip's authored duration.
-    use legaia_asset::battle_char_assembly;
+    use legaia_actor_formats::battle_char_assembly;
     let char_edits = edits.player_edits(&plan, character);
     let index = legaia_arts_patch::arts::player_entry_index(character);
     let entry = patcher

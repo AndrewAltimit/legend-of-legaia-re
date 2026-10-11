@@ -597,4 +597,4 @@ impl MuscleDomeSession {
 
 /// The action-byte base of the four direction commands: entry byte `n`
 /// (`Command::as_byte`, Left = 1) is command id `0xB + n`.
-const HAND_COMMAND_BASE: u8 = legaia_asset::muscle_dome::HAND_COMMAND_MIN - 1;
+const HAND_COMMAND_BASE: u8 = legaia_minigame_formats::muscle_dome::HAND_COMMAND_MIN - 1;

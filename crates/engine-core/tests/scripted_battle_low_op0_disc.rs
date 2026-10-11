@@ -21,7 +21,7 @@
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -65,8 +65,8 @@ fn low_op0_sites_install_their_formation_row_and_enter_battle() {
             .field_man_payload(&host.index)
             .expect("MAN payload read")
             .unwrap_or_else(|| panic!("{scene} resolves its bundle MAN"));
-        let man_file = legaia_asset::man_section::parse(&man).expect("MAN parses");
-        let (start, _pc0, len) = legaia_engine_core::man_field_scripts::partition_record_span(
+        let man_file = legaia_scene_formats::man_section::parse(&man).expect("MAN parses");
+        let (start, _pc0, len) = legaia_engine_field::man_field_scripts::partition_record_span(
             &man_file, &man, partition, index,
         )
         .unwrap_or_else(|| panic!("{scene} P{partition}[{index}] span resolves"));
@@ -80,7 +80,7 @@ fn low_op0_sites_install_their_formation_row_and_enter_battle() {
 
         // The row is a real MAN formation with monsters, registered at entry.
         let record =
-            legaia_engine_core::encounter_man::formation_record_for_row(&man, usize::from(row))
+            legaia_engine_battle::encounter_man::formation_record_for_row(&man, usize::from(row))
                 .unwrap_or_else(|| panic!("{scene} formation row {row} decodes"));
         assert!(record.count > 0, "{scene} row {row} carries monsters");
         let first_monster = u16::from(record.monster_ids[0]);

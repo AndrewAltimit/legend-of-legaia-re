@@ -332,7 +332,7 @@ fn a_delayed_sfx_cue_reaches_the_output_on_its_own_frame() {
             return;
         }
     };
-    let Some(table) = legaia_asset::sfx_table::SfxTable::from_scus(&scus) else {
+    let Some(table) = legaia_game_tables::sfx_table::SfxTable::from_scus(&scus) else {
         eprintln!("[skip] SFX descriptor table did not decode from SCUS");
         return;
     };
@@ -349,10 +349,10 @@ fn a_delayed_sfx_cue_reaches_the_output_on_its_own_frame() {
     let mut archive = Archive::open(&extracted.join("PROT.DAT")).expect("open PROT");
     // The class-2 sound bank - the slot the battle / duel cues key and the
     // fallback every unrouted cue resolves to.
-    let (_slot, prot) = legaia_asset::sfx_table::PINNED_SLOT_BANKS
+    let (_slot, prot) = legaia_game_tables::sfx_table::PINNED_SLOT_BANKS
         .iter()
         .copied()
-        .find(|(s, _)| *s == legaia_asset::sfx_table::FALLBACK_VAB_SLOT)
+        .find(|(s, _)| *s == legaia_game_tables::sfx_table::FALLBACK_VAB_SLOT)
         .expect("the fallback slot is pinned");
     let Some(entry) = archive.entries.get(prot as usize).cloned() else {
         eprintln!("[skip] PROT {prot} absent from this archive");

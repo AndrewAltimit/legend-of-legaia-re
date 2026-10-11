@@ -8,7 +8,7 @@
 //! REF: FUN_8004FE5C, FUN_80016444, FUN_80025EEC
 //! The enqueue pair `FUN_80035B50` / `FUN_80035BD0` is [`SfxCueRing::push_cue`] /
 //! [`SfxCueRing::replace_last`], which carry their own tags. The field-side
-//! producers reach them from the engine as `legaia_engine_core::world::SfxRingOp`
+//! producers reach them from the engine as `legaia_engine_system::sound_state::SfxRingOp`
 //! values, since this ring lives with the SPU on the host side of the crate
 //! boundary.
 //! The libsnd calls a drained cue makes, factored out of [`CueVoicePlan`].
@@ -71,7 +71,7 @@
 //! function-boundary difference only.
 //!
 //! The descriptor lookup and the SPU programming that follow a drain hit are
-//! [`CueVoicePlan`] below - the data side is `legaia_asset::sfx_table`, and
+//! [`CueVoicePlan`] below - the data side is `legaia_game_tables::sfx_table`, and
 //! `FUN_80065034` itself is libsnd, out of the port's scope.
 
 /// Slots in the retail ring (`slti v0,a2,0x4`).
@@ -367,7 +367,7 @@ impl CueDrainState {
 
 /// Build the voice plan for one drained cue.
 ///
-/// `descriptor` is the 8-byte `legaia_asset::sfx_table` record already
+/// `descriptor` is the 8-byte `legaia_game_tables::sfx_table` record already
 /// resolved for the cue id (static table or runtime bank - the *selection* is
 /// `RUNTIME_BANK_ID_BASE`, but both paths land on the same 8-byte shape).
 /// `channel_level` / `channel_enabled` come from the mixer record at

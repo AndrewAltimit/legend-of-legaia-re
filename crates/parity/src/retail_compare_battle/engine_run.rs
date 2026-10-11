@@ -242,7 +242,7 @@ pub fn run_engine_battle(
             // fight installed from another table, or a scene whose rows the
             // engine does not register. Register the cell as its own
             // formation, with the archive's stats for its ids.
-            let rec = legaia_engine_core::encounter_record::EncounterRecord::new(
+            let rec = legaia_engine_battle::encounter_record::EncounterRecord::new(
                 battle.monster_ids.len() as u8,
                 &battle.monster_ids,
             )
@@ -265,7 +265,8 @@ pub fn run_engine_battle(
         .any(|id| session.host.world.tables.monster_catalog.get(*id).is_none())
     {
         let archive = session.host.index.entry_bytes_extended(867)?;
-        let cat = legaia_engine_core::monster_catalog::catalog_from_monster_archive(&archive, &ids);
+        let cat =
+            legaia_engine_battle::monster_catalog::catalog_from_monster_archive(&archive, &ids);
         for def in cat.by_id.into_values() {
             session.host.world.tables.monster_catalog.insert(def);
         }
@@ -288,7 +289,7 @@ pub fn run_engine_battle(
         .world
         .seed_battle_backdrop_keep_object_1(battle.keep_backdrop_object_1);
     session.host.world.toggles.battle_camera =
-        legaia_engine_core::options::BattleCameraOpt::from_word(battle.camera_option);
+        legaia_engine_menus::option_values::BattleCameraOpt::from_word(battle.camera_option);
     // Hand any replayed BGM words to the director before reading the word.
     session.host.route_bgm_events(&mut director)?;
     let seats = retail_roster_slots(battle);
@@ -329,7 +330,7 @@ pub fn run_engine_battle(
     // run already and moved `+0x290` into `+0x291`.
     let surprise_opening = {
         let w = &session.host.world;
-        let none = legaia_engine_vm::battle_formulas::FormationAdvantage::None;
+        let none = legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None;
         w.battle_formation() != none || w.battle_formation_latched() != none
     };
     // Reconstruct the mid-fight HP / MP (the engine seeds full bars).
@@ -556,7 +557,7 @@ pub fn run_engine_battle(
     if std::env::var_os("LEGAIA_RC_CAM_TRACE").is_some()
         && let Some(cam) = session.host.world.battle.camera.as_ref()
     {
-        let p = |p: legaia_engine_vm::battle_cam_script::BattleCamPose| {
+        let p = |p: legaia_engine_battle_vm::battle_cam_script::BattleCamPose| {
             format!(
                 "{}/{} tr={:?} focus={:?}",
                 p.pitch,

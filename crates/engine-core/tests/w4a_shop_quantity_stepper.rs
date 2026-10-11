@@ -8,9 +8,10 @@
 //! confirm lands the purchase or sale with no Yes/No screen in between, and
 //! that a cancel hands the pad back to the list it came from.
 
-use legaia_engine_core::menu_runtime::{MenuInput, MenuRuntime, MenuState};
-use legaia_engine_core::shop::{POINT_CARD_ITEM_ID, ShopInventory, ShopItem, ShopSession};
+use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::world::World;
+use legaia_engine_menus::menu::{MenuInput, MenuState};
+use legaia_engine_menus::shop::{POINT_CARD_ITEM_ID, ShopInventory, ShopItem, ShopSession};
 use legaia_save::{CharacterRecord, Party};
 
 const POTION: u8 = 0x77;

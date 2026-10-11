@@ -49,7 +49,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::{item_names, new_game, spell_names};
+use legaia_game_tables::{item_names, new_game, spell_names};
 
 use legaia_disc_patch::disc::DiscPatcher;
 

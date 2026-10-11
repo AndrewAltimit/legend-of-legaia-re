@@ -23,7 +23,7 @@
 //!   CLUT-7 white.
 //!
 //! The format string itself is space-padded where the numbers go; it is read
-//! off the user's own PROT 0898 (`legaia_asset::battle_ui_strings`), never
+//! off the user's own PROT 0898 (`legaia_ui_formats::battle_ui_strings`), never
 //! carried here.
 //!
 //! **Not pinned, and chosen here:** how the record renderer pads a number

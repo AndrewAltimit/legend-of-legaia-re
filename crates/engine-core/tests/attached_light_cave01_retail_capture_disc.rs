@@ -64,7 +64,7 @@ struct RetailLight {
     parent: u32,
 }
 
-fn retail_lights(st: &legaia_pcsxr::SaveState) -> Vec<RetailLight> {
+fn retail_lights(st: &legaia_pcsx_redux::SaveState) -> Vec<RetailLight> {
     let in_ram = |a: u32| (0x8000_0000..0x8020_0000).contains(&a);
     let mut out = Vec::new();
     for head in LIST_HEADS {
@@ -100,7 +100,7 @@ fn retail_lights(st: &legaia_pcsxr::SaveState) -> Vec<RetailLight> {
 /// `5` in the tag's top byte and a RAM link (or the `0xFFFFFF` terminator) -
 /// so colour bytes that happen to occur elsewhere in RAM are not read as rim
 /// vertices. Returns `(centre_x, centre_y, half_w, half_h)`.
-fn packet_rim(st: &legaia_pcsxr::SaveState, rgb: [u8; 3]) -> Option<(i32, i32, i32, i32)> {
+fn packet_rim(st: &legaia_pcsx_redux::SaveState, rgb: [u8; 3]) -> Option<(i32, i32, i32, i32)> {
     let ram = st.main_ram();
     let (mut x0, mut x1, mut y0, mut y1) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
     let tag_ok = |i: usize| {
@@ -145,7 +145,7 @@ fn cave01_darkness_mask_matches_the_retail_capture() {
         // SAFETY: single-threaded test setup before any save load.
         unsafe { std::env::set_var("LEGAIA_SCUS", extracted.join("SCUS_942.54")) };
     }
-    let st = legaia_pcsxr::SaveState::from_path(&path).expect("load the cave01 state");
+    let st = legaia_pcsx_redux::SaveState::from_path(&path).expect("load the cave01 state");
     assert_eq!(st.scene_name(), "cave01", "the capture is the cave01 field");
 
     // 1. The record, retail vs engine.

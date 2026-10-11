@@ -208,7 +208,7 @@ pub const BOOT_UI_STAGE_W: u32 = 320;
 pub const BOOT_UI_STAGE_H: u32 = 240;
 
 /// Retail PSX framebuffer position of the load-screen panel top-left.
-/// Mirror of [`legaia_asset::title_pak::OVERLAY_SAVE_PANEL_RETAIL_DST`].
+/// Mirror of [`legaia_ui_formats::title_pak::OVERLAY_SAVE_PANEL_RETAIL_DST`].
 pub const SAVE_SELECT_PANEL_POS: (i32, i32) = (6, 4);
 /// Total size of the load-screen panel in source pixels.
 pub const SAVE_SELECT_PANEL_SIZE: (i32, i32) = (81, 29);
@@ -245,7 +245,7 @@ pub const SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE: (i32, i32) = (25, 41);
 pub const SAVE_SELECT_SLOT_PITCH_Y: i32 = 16;
 /// Retail PSX framebuffer position of the pointing-finger cursor when
 /// pointing at SLOT 1. Mirror of
-/// [`legaia_asset::title_pak::OVERLAY_SAVE_CURSOR_RETAIL_DST`]. SLOT 2
+/// [`legaia_ui_formats::title_pak::OVERLAY_SAVE_CURSOR_RETAIL_DST`]. SLOT 2
 /// shifts the cursor down by [`SAVE_SELECT_SLOT_PITCH_Y`].
 pub const SAVE_SELECT_CURSOR_POS: (i32, i32) = (114, 100);
 /// Pin of the pointing-finger cursor sprite top-left during the
@@ -294,7 +294,7 @@ pub const TITLE_ART_POS: (i32, i32) = (33, 6);
 pub const TITLE_ART_SIZE: (i32, i32) = (254, 148);
 
 /// Source rects for the save-menu atlas, mirrored from
-/// [`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*`] (9-slice
+/// [`legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_PANEL_*`] (9-slice
 /// panel chrome) + `OVERLAY_SAVE_MENU_BAND_SLOT[12]` (pills). Passed
 /// into [`save_select_chrome_draws_for`] so it can build SpriteDraws
 /// without depending on the engine-core build of the atlas.
@@ -428,7 +428,7 @@ pub struct SaveMenuAtlasRects {
 ///
 /// Every one is packet-pinned in `crate::battle_chrome` and
 /// copied out of the resident system-UI sheet by
-/// `legaia_engine_core::save_menu_atlas`, except [`Self::digits`], which
+/// `legaia_engine_menus::save_menu_atlas`, except [`Self::digits`], which
 /// comes off the neighbouring menu-glyph atlas and is therefore the one
 /// piece a caller can be missing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -477,7 +477,7 @@ pub const HUD_DIGIT_W: i32 = 8;
 pub const HUD_DIGIT_H: i32 = 12;
 
 /// Sub-rect of digit `d` (`0..=9`) inside a HUD numeral `strip`.
-/// Mirrors `legaia_engine_core::save_menu_atlas::hud_digit_cell`;
+/// Mirrors `legaia_engine_menus::save_menu_atlas::hud_digit_cell`;
 /// `engine-ui` sits below `engine-core` in the crate graph.
 pub fn hud_digit_rect(strip: (u32, u32, u32, u32), d: u32) -> Option<(u32, u32, u32, u32)> {
     (d <= 9).then(|| {
@@ -498,7 +498,7 @@ pub fn hud_digit_rect(strip: (u32, u32, u32, u32), d: u32) -> Option<(u32, u32, 
 ///   a 1×4 remainder), and left + right edges (4×21). This function
 ///   reproduces that composition exactly, pulling tiles from the
 ///   system-UI sprite sheet at the byte-pinned source rects in
-///   `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*`.
+///   `legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_PANEL_*`.
 ///
 /// No interior fill is drawn - retail leaves the middle of the
 /// 9-slice frame empty so the dimmed title art behind shows through.

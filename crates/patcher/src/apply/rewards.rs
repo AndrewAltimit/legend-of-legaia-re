@@ -30,8 +30,8 @@ pub fn scale_monster_exp(patcher: &mut DiscPatcher, scale: ScalePermille) -> Res
     let entry = patcher
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .context("read monster battle_data archive")?;
-    let records =
-        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
+    let records = legaia_actor_formats::monster_archive::records(&entry)
+        .context("decode monster archive records")?;
     for rec in &records {
         let new_exp = rewards::scale_exp_value(rec.exp, scale);
         if new_exp == rec.exp {
@@ -69,8 +69,8 @@ pub fn set_seru_catch_rate(patcher: &mut DiscPatcher, pct: u8) -> Result<RewardR
     let entry = patcher
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .context("read monster battle_data archive")?;
-    let records =
-        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
+    let records = legaia_actor_formats::monster_archive::records(&entry)
+        .context("decode monster archive records")?;
     for rec in &records {
         if rec.seru_id == 0 || rec.catch_rate_pct == pct {
             continue;

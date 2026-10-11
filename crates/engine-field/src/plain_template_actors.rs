@@ -111,7 +111,7 @@ pub struct SaveScreenSpawn {
 /// function is ported and live as
 /// `crate::world_map_panel_actors::fade_flash_tick`, its phase-1
 /// arm emits `FadeFlashEffect::SpawnSaveScreen` where the `jal` sits, and
-/// `legaia_engine_core::world_map_panel_host::PanelActorHost` calls this from
+/// `crate::world_map_panel_host::PanelActorHost` calls this from
 /// that arm's handler. The call path is `World::tick` ->
 /// `World::tick_world_map` -> `World::tick_world_map_panels` ->
 /// `PanelActorHost::tick`.

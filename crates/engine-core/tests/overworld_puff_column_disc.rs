@@ -13,16 +13,16 @@
 //! right, but a probe that never drove the ambient tick saw only the first
 //! run's two nodes; and once ticked, the travelling puffs still stood still,
 //! because the ambient tick ran the move VM without the part tick's motion
-//! block (`legaia_engine_core::part_motion`), which is what integrates a
+//! block (`legaia_engine_effects::part_motion`), which is what integrates a
 //! velocity the VM only sets.
 //!
 //! Skip-pass when `LEGAIA_DISC_BIN` / `extracted/` are missing.
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::scene_entry_ambient_installs;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::{FrameClock, World};
+use legaia_engine_field::man_field_scripts::scene_entry_ambient_installs;
 
 const COLUMN_X: i16 = 9152;
 const SPAWN_Z: i16 = 10432;
@@ -57,7 +57,7 @@ fn map01_puff_column_matches_the_retail_population_and_drift() {
         .ok()
         .flatten()
         .expect("map01 MAN");
-    let man_file = legaia_asset::man_section::parse(&man).expect("parse MAN");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
     let mut world = World {
         clock: FrameClock {
             frame_step: 2,
@@ -107,7 +107,7 @@ fn map01_puff_column_matches_the_retail_population_and_drift() {
         // At retail's size: the record's `1024 x 256` sheet (`+0xB4 / +0xB6`)
         // at the seater's render scale `+0x72 = 0x1000`. A part seated with a
         // zero scale collapses every corner onto the node and draws nothing.
-        let span = |d: &legaia_engine_core::effect_ribbon::RibbonDraw, axis: usize| {
+        let span = |d: &legaia_engine_effects::effect_ribbon::RibbonDraw, axis: usize| {
             let (lo, hi) = d
                 .mesh
                 .positions

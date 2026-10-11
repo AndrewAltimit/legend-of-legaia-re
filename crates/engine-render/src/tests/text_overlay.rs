@@ -1,4 +1,7 @@
 use super::*;
+use legaia_engine_ui::SpriteRequest;
+use legaia_engine_ui::sprite_draws_for;
+use legaia_engine_ui::text_draws_for;
 
 #[test]
 fn letterbox_scale_pillarbox() {

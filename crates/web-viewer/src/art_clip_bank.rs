@@ -29,8 +29,8 @@
 //! character wears (only the four weapon swings are equipment-spliced), so
 //! the caller caches the result and re-expands it per assembled object.
 
-use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::monster_archive::MonsterAnimation;
+use legaia_actor_formats::battle_char_assembly as bca;
+use legaia_actor_formats::monster_archive::MonsterAnimation;
 use legaia_gamedata::{ArtKind, Character};
 
 use crate::disc;
@@ -41,10 +41,10 @@ const READEF_PROT_INDEX: u32 = 894;
 
 /// The loadout kernel's [`ArtClip`] - the data shape this module fills.
 /// The struct lives with the shared kernel
-/// (`legaia_asset::battle_char_assembly::loadout`) so a native consumer can
+/// (`legaia_actor_formats::battle_char_assembly::loadout`) so a native consumer can
 /// take the same clips; the curated-name resolution ladder below stays
 /// host-side because it needs `legaia_gamedata` and the disc TOC.
-pub(crate) use legaia_asset::battle_char_assembly::loadout::ArtClip;
+pub(crate) use legaia_actor_formats::battle_char_assembly::loadout::ArtClip;
 
 /// The `kind` tag the summary JSON carries per art clip.
 pub(crate) fn kind_tag(kind: ArtKind) -> &'static str {

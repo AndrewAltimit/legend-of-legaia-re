@@ -1,7 +1,7 @@
 //! The dance floor's **bodies as a 3D surface**: every actor the spawner puts
-//! on the floor ([`crate::dance::DanceGame::body_frames`]) as one combined,
+//! on the floor ([`legaia_engine_minigames::dance::DanceGame::body_frames`]) as one combined,
 //! posed vertex buffer in raw retail world coordinates - one kernel every
-//! host draws, the dance twin of [`crate::baka_duel_scene`].
+//! host draws, the dance twin of [`legaia_engine_minigame_scenes::baka_duel_scene`].
 //!
 //! * **Who stands where** is the rules engine's: the mode's spawn table, the
 //!   how-to mode's Disco King, each body's display clip track. A host never
@@ -12,11 +12,11 @@
 //!   the ten live groups `FUN_8001E890` draws), every other one the
 //!   dance-hall scene's TMD pool ([`crate::dance_venue::DanceVenue`]).
 //! * **The pose** is the clip driver's: the track's ticks turned into the
-//!   1/16-frame cursor by [`crate::field_anim::clip_step`] on the record's
+//!   1/16-frame cursor by [`legaia_engine_field::field_anim::clip_step`] on the record's
 //!   own gate + divisor, the loop wrapping at the end tick
-//!   ([`crate::field_anim::clip_end_ticks`]), a move held on its last frame
+//!   ([`legaia_engine_field::field_anim::clip_end_ticks`]), a move held on its last frame
 //!   until it has run its length, and the record's sub-frame blend
-//!   ([`legaia_asset::player_anm::blend_bone_transform`]). Each object is
+//!   ([`legaia_actor_formats::player_anm::blend_bone_transform`]). Each object is
 //!   `Rz.Ry.Rx . v + T`, then the actor's render scale (`+0x72`), its yaw
 //!   about Y and its position.
 //!
@@ -26,16 +26,16 @@
 //!
 //! Every clip resolves against the hall's bank. A descriptor anim word's bit
 //! `0x200` would route its clip to the resident party bank instead
-//! ([`legaia_asset::dance_cast::DanceClip::party_bank`]); no clip on the disc
+//! ([`legaia_minigame_formats::dance_cast::DanceClip::party_bank`]); no clip on the disc
 //! carries it, so the surface has no second bank to hold.
 
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::dance::{DanceBodyClip, DanceBodyFrame, DanceBodyModel, DanceGame};
 use crate::dance_venue::DanceVenue;
-use crate::field_anim::{clip_end_ticks, clip_step};
-use legaia_asset::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transform};
+use legaia_actor_formats::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transform};
+use legaia_engine_field::field_anim::{clip_end_ticks, clip_step};
+use legaia_engine_minigames::dance::{DanceBodyClip, DanceBodyFrame, DanceBodyModel, DanceGame};
 
 /// Live TMD groups of an active-party field mesh: groups 10 / 11 are the
 /// equipment templates, never drawn (`FUN_8001E890`).
@@ -45,7 +45,7 @@ pub const ACTIVE_PARTY_LIVE_GROUPS: u32 = 10;
 /// pool slot 1, the model kind 0's descriptor names - with an active-party
 /// mesh's object count capped to [`ACTIVE_PARTY_LIVE_GROUPS`].
 pub fn resident_body_tmd(character_pack: &[u8], slot: usize) -> Option<Vec<u8>> {
-    let pack = legaia_asset::character_pack::parse(character_pack).ok()?;
+    let pack = legaia_actor_formats::character_pack::parse(character_pack).ok()?;
     let cslot = pack.slot(slot)?;
     let mut tmd_bytes = cslot.tmd_bytes.clone();
     if cslot.is_active_party() && tmd_bytes.len() >= 0x0C {
@@ -84,7 +84,7 @@ impl DanceCastAssets {
     /// `None` without the venue's ANM bundle - no clip could pose.
     pub fn from_venue(
         venue: &DanceVenue,
-        cast: &legaia_asset::dance_cast::DanceCast,
+        cast: &legaia_minigame_formats::dance_cast::DanceCast,
         character_pack: Option<&[u8]>,
     ) -> Option<Self> {
         let anm = venue.anm.clone()?;
@@ -102,7 +102,11 @@ impl DanceCastAssets {
             }
             Self::push_scene(&mut scene, venue, k.model);
         }
-        Self::push_scene(&mut scene, venue, crate::dance::DEMO_MODEL);
+        Self::push_scene(
+            &mut scene,
+            venue,
+            legaia_engine_minigames::dance::DEMO_MODEL,
+        );
         Some(Self {
             resident,
             scene,
@@ -234,7 +238,7 @@ pub struct DanceCastScene {
     /// Texture modulation colour (the prim's packet colour; `0x80` neutral).
     pub colors: Vec<[u8; 3]>,
     /// `[r, g, b, flag]` per vertex: flag `255` textured, `0` untextured
-    /// (`crate::packet_color::hybrid`'s layout).
+    /// (`legaia_engine_field::packet_color::hybrid`'s layout).
     pub flat_rgba: Vec<u8>,
     /// Every triangle.
     pub indices: Vec<u32>,
@@ -286,7 +290,7 @@ impl DanceCastScene {
 
     fn push_tmd(&mut self, tmd: &legaia_tmd::Tmd, raw: &[u8]) -> Range<usize> {
         let (mesh, oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(tmd, raw);
-        let flat = crate::packet_color::hybrid(&mesh, &shading);
+        let flat = legaia_engine_field::packet_color::hybrid(&mesh, &shading);
         let start = self.base.len();
         self.base.extend_from_slice(&mesh.positions);
         self.object_ids.extend_from_slice(&oids);
@@ -435,7 +439,7 @@ impl DanceCastSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::dance_cast::DanceClip;
+    use legaia_minigame_formats::dance_cast::DanceClip;
 
     #[test]
     fn body_clip_record_is_the_placement_id_minus_one() {

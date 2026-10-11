@@ -25,15 +25,18 @@
 //!
 //! See `docs/subsystems/minigame-dance.md` § Entering and leaving the hall.
 
-use crate::camera::Camera;
-use crate::dance::{DanceMode, DanceSceneEntry, dance_face_rig, dance_scene_entry};
 use crate::field_env::{self, EnvDraw};
 use crate::scene::{ProtIndex, Scene};
 use crate::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
-use crate::world::{SceneMode, World};
-use legaia_asset::dance_art::{self, FaceRig};
-use legaia_asset::player_anm::PlayerAnmBundle;
-use legaia_engine_vm::psx_camera::FieldCameraView;
+use crate::world::World;
+use legaia_actor_formats::player_anm::PlayerAnmBundle;
+use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_field::camera::Camera;
+use legaia_engine_minigames::dance::{
+    DanceMode, DanceSceneEntry, dance_face_rig, dance_scene_entry,
+};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_minigame_formats::dance_art::{self, FaceRig};
 use legaia_tim::Vram;
 
 /// The world scale retail folds into the camera rotation under game mode 24:
@@ -73,11 +76,7 @@ pub fn venue_camera(e: &DanceSceneEntry) -> FieldCameraView {
 
 // --- the camera keyframe track (FUN_801CF470, 0x801CF51C..0x801CF7D8) ----
 // Lives in the minigame crate (`dance::camera_track`); re-exported here.
-pub use crate::dance::{
-    DANCE_CAMERA_EASE_LEN, DANCE_CAMERA_KEY_WRAP, DANCE_CAMERA_KEYS_QUALIFIER_VA,
-    DANCE_CAMERA_KEYS_VA, DANCE_CAMERA_POSES_VA, DANCE_CAMERA_SEGMENT, DanceCameraPose,
-    DanceCameraTrack, dance_camera_ease_table,
-};
+use legaia_engine_minigames::dance::DanceCameraPose;
 
 /// A track pose as the port's field-frame camera: the entry's `H` and the
 /// beat-clock actor's focus ([`venue_camera`]), with this pose's angles and
@@ -153,7 +152,7 @@ pub fn psx_gpu_visible_indices(
     origin: [f32; 3],
     indices: &[u32],
 ) -> Vec<u32> {
-    let r = legaia_engine_vm::psx_camera::camera_rotation(view.pitch, view.yaw, view.roll);
+    let r = legaia_engine_battle_vm::psx_camera::camera_rotation(view.pitch, view.yaw, view.roll);
     let sxy: Vec<[i64; 2]> = positions
         .iter()
         .map(|p| {
@@ -271,7 +270,7 @@ pub fn venue_sfx_vab_index(e: &DanceSceneEntry) -> u32 {
 /// the venue's scene data. Bounding the block there also keeps it off the
 /// TOC's zeroed tail.
 pub fn venue_cdname_stub(e: &DanceSceneEntry) -> String {
-    let name = legaia_asset::dance_cast::DANCE_SCENE_NAME;
+    let name = legaia_minigame_formats::dance_cast::DANCE_SCENE_NAME;
     format!(
         "#define {name} {} \n#define {name}_end {} \n",
         e.scene_block_base, e.stream_ids.1
@@ -286,7 +285,7 @@ pub fn venue_scene_name(index: &ProtIndex, e: &DanceSceneEntry) -> Option<String
 
 /// The dance hall's choreography bank - the venue scene's MOVE ANM bundle
 /// (PROT 1229), which every descriptor clip indexes - for
-/// [`crate::dance::DanceGame::attach_clip_bank`]. `None` when the venue block
+/// [`legaia_engine_minigames::dance::DanceGame::attach_clip_bank`]. `None` when the venue block
 /// or its bundle does not resolve.
 pub fn dance_clip_bank(index: &ProtIndex) -> Option<PlayerAnmBundle> {
     let name = venue_scene_name(index, &dance_scene_entry())?;
@@ -352,8 +351,9 @@ impl DanceVenue {
         .ok()?;
         // The human dancer's field atlas (PROT 0874 §2) - resident from the
         // field in retail, and the strip rig 0 stamps into.
-        if let Ok(raw) = index.entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
-            && let Ok(pack) = legaia_asset::field_char_textures::parse(&raw)
+        if let Ok(raw) =
+            index.entry_bytes(legaia_actor_formats::field_char_textures::PROT_ENTRY_INDEX)
+            && let Ok(pack) = legaia_actor_formats::field_char_textures::parse(&raw)
         {
             pack.upload_to_vram(&mut resources.vram, false);
         }
@@ -361,8 +361,8 @@ impl DanceVenue {
         let mut faces_stamped = 0;
         let face_stamps = entry_face_stamps(&e);
         if let Some(overlay) = overlay {
-            let mut rects: Vec<crate::dance::DanceHudRect> = Vec::new();
-            for (w, _) in crate::dance::dance_widgets_with_abr(overlay) {
+            let mut rects: Vec<legaia_engine_minigames::dance::DanceHudRect> = Vec::new();
+            for (w, _) in legaia_engine_minigames::dance::dance_widgets_with_abr(overlay) {
                 let r = (
                     w.tpage_xy(),
                     (((w.clut & 0x3F) * 16), (w.clut >> 6) & 0x1FF),
@@ -430,7 +430,7 @@ impl DanceVenue {
 /// [`field_env`] calls the field scene uses, each with the cross-draw
 /// coplanar lift - ranked terrain first, as every host ranks them.
 fn venue_draws(index: &ProtIndex, scene: &Scene, res: &SceneResources) -> Vec<VenueDraw> {
-    use legaia_asset::field_objects::FLAG_PLACED;
+    use legaia_scene_formats::field_objects::FLAG_PLACED;
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
     let binds = scene.field_object_binds(index).ok().flatten();
@@ -510,13 +510,13 @@ pub enum DanceVenueEdge {
 /// walked-in scene is never unloaded.
 ///
 /// Every staged frame then advances the run's camera keyframe track
-/// ([`DanceCameraTrack::tick`], via [`crate::dance::DanceGame::advance_camera`])
+/// ([`DanceCameraTrack::tick`], via [`legaia_engine_minigames::dance::DanceGame::advance_camera`])
 /// and re-frames the staged camera on the pose it wrote
 /// ([`venue_camera_at`]). A run with no track, or the how-to demo, keeps the
 /// entry's pose.
 ///
 // REF: FUN_801CEF54, FUN_801D414C (the record is
-// `crate::dance::dance_scene_entry`, whose `PORT:` tag this call makes live)
+// `legaia_engine_minigames::dance::dance_scene_entry`, whose `PORT:` tag this call makes live)
 pub fn sync_dance_venue(world: &mut World, camera: &mut Camera) -> Option<DanceVenueEdge> {
     let edge = stage_or_restore(world, camera);
     // The dance tick's camera keyframe track runs every staged frame - the
@@ -554,7 +554,7 @@ fn stage_or_restore(world: &mut World, camera: &mut Camera) -> Option<DanceVenue
         }
         (false, true) => {
             let stage = world.minigames.dance_venue.take()?;
-            let teardown = crate::dance::dance_scene_stage();
+            let teardown = legaia_engine_minigames::dance::dance_scene_stage();
             if teardown.restores_scene_block_base {
                 world.battle.map_id = stage.saved_block_base;
             }
@@ -568,6 +568,13 @@ fn stage_or_restore(world: &mut World, camera: &mut Camera) -> Option<DanceVenue
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_engine_minigames::dance::DANCE_CAMERA_EASE_LEN;
+    use legaia_engine_minigames::dance::DANCE_CAMERA_KEYS_QUALIFIER_VA;
+    use legaia_engine_minigames::dance::DANCE_CAMERA_KEYS_VA;
+    use legaia_engine_minigames::dance::DANCE_CAMERA_POSES_VA;
+    use legaia_engine_minigames::dance::DANCE_CAMERA_SEGMENT;
+    use legaia_engine_minigames::dance::DanceCameraTrack;
+    use legaia_engine_minigames::dance::dance_camera_ease_table;
 
     #[test]
     fn the_ease_table_is_a_half_cosine_rise_then_a_hold() {
@@ -600,7 +607,7 @@ mod tests {
     /// `k % 3`, every key of the other table pose `2`; pose `k` has angles
     /// `(100k, -100k, 0)` and eye `(0, 1000k, -1000k)`.
     fn synthetic_overlay() -> Vec<u8> {
-        let base = legaia_asset::dance_chart::DANCE_OVERLAY_BASE_VA;
+        let base = legaia_minigame_formats::dance_chart::DANCE_OVERLAY_BASE_VA;
         let mut o = vec![0u8; (DANCE_CAMERA_KEYS_VA - base) as usize + 0x48];
         for k in 0..13u32 {
             let q = (DANCE_CAMERA_KEYS_QUALIFIER_VA - base + 4 * k) as usize;
@@ -869,7 +876,7 @@ mod tests {
         let map = legaia_prot::cdname::parse_str(&venue_cdname_stub(&e)).unwrap();
         assert_eq!(
             map.get(&e.stream_ids.0).map(String::as_str),
-            Some(legaia_asset::dance_cast::DANCE_SCENE_NAME)
+            Some(legaia_minigame_formats::dance_cast::DANCE_SCENE_NAME)
         );
     }
 }

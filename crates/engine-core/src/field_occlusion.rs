@@ -55,7 +55,7 @@ pub const HALF_CHAR_HEIGHT: f32 = 65.0;
 /// the page excluded only battle and the minigames, so a pause menu or a
 /// scripted shot kept dissolving the walls behind them.
 pub fn fade_armed(world: &World, cutscene_camera_owns_frame: bool) -> bool {
-    world.mode == crate::world::SceneMode::Field && !cutscene_camera_owns_frame
+    world.mode == legaia_engine_mode::mode::SceneMode::Field && !cutscene_camera_owns_frame
 }
 
 /// The host's own arming terms of the fade, beside [`fade_armed`]'s world

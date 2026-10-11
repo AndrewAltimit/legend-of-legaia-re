@@ -13,7 +13,7 @@
 //! counts and equality against what was read back. Skips + passes without
 //! `LEGAIA_DISC_BIN`.
 
-use legaia_asset::battle_texture_catalog::BattleTextureSlot;
+use legaia_actor_formats::battle_texture_catalog::BattleTextureSlot;
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_texture_replace::battle_texture::{self, BattleTextureTarget, PaletteSource};

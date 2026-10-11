@@ -22,7 +22,8 @@
 //! Skip-pass (CLAUDE.md disc-gated convention) when `LEGAIA_DISC_BIN` is
 //! unset.
 
-use legaia_engine_shell::boot::{BootConfig, BootSession};
+use legaia_engine_session::boot::BootConfig;
+use legaia_engine_shell::boot::BootSession;
 use legaia_font::Font;
 use std::path::PathBuf;
 

@@ -8,7 +8,7 @@
 //!
 //! * **The ground shadow** (`0x62400`): the object's two colour words and its
 //!   radius are read back off the buffer, the builder
-//!   ([`legaia_engine_core::effect_default_arm::build`], mode `1`, 24
+//!   ([`legaia_engine_effects::effect_default_arm::build`], mode `1`, 24
 //!   columns) is run on them, and every byte the port writes must equal
 //!   retail's.
 //! * **The dispatcher's buffer** (`0x5DC00`): the builder is run on every
@@ -23,10 +23,10 @@
 //!
 //! Skips (and passes) when the save library is missing.
 
-use legaia_engine_core::effect_default_arm::{
+use legaia_engine_effects::effect_default_arm::{
     SCRATCH_OFFSET, SHADOW_SCRATCH_OFFSET, SHADOW_SEGMENTS, build, ground_shadow_src,
 };
-use legaia_engine_core::effect_ribbon::RetailTrig;
+use legaia_engine_effects::effect_ribbon::RetailTrig;
 use legaia_mednafen::SaveState;
 use std::path::PathBuf;
 

@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 // ---------------------------------------------------------------------------
 // Present-party composition (`World::party.active_party`)
@@ -59,7 +60,7 @@ fn battle_spell_session_reads_composed_character() {
     list.ids[0] = 0x20;
     party.members[3].set_spell_list(list);
     world.load_party(party);
-    world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
+    world.set_spell_catalog(legaia_engine_battle::spells::SpellCatalog::vanilla());
     world.set_active_party(vec![3, 0]);
     world.mode = SceneMode::Battle;
     // Ordinal 0 (Terra) offers her spell; ordinal 1 (Vahn) has none.

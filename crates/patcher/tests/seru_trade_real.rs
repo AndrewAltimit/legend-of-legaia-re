@@ -5,10 +5,10 @@
 //! written, the write is same-size + sector-valid, a fixed seed is
 //! byte-deterministic, and the rest of the disc is untouched.
 
-use legaia_asset::seru_trade;
-use legaia_asset::seru_trade::{DEFAULT_MAX_OFFERS, SeruTradeConfig};
 use legaia_code_hooks::seru_overlay;
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::seru_trade;
+use legaia_game_tables::seru_trade::{DEFAULT_MAX_OFFERS, SeruTradeConfig};
 use legaia_patcher::apply;
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -136,7 +136,7 @@ fn overlay_slice_patches_pochi_slot_stub_and_detour() {
         .read_named_file("SCUS_942.54")
         .expect("SCUS present");
     let stub_off =
-        legaia_asset::item_names::file_offset_for_va(&scus, seru_overlay::STUB_VA).unwrap();
+        legaia_game_tables::item_names::file_offset_for_va(&scus, seru_overlay::STUB_VA).unwrap();
     let stub0 = u32::from_le_bytes(scus[stub_off..stub_off + 4].try_into().unwrap());
     assert_eq!(
         stub0,
@@ -190,7 +190,7 @@ fn dead_mode_slice_patches_gap_routines_detour_and_mode_table() {
         .read_named_file("SCUS_942.54")
         .expect("SCUS present");
     let word_at = |va: u32| -> u32 {
-        let off = legaia_asset::item_names::file_offset_for_va(&scus, va).unwrap();
+        let off = legaia_game_tables::item_names::file_offset_for_va(&scus, va).unwrap();
         u32::from_le_bytes(scus[off..off + 4].try_into().unwrap())
     };
 
@@ -261,7 +261,7 @@ fn warp_slice_patches_gap_detour_and_fun80025980() {
         .read_named_file("SCUS_942.54")
         .expect("SCUS present");
     let word_at = |va: u32| -> u32 {
-        let off = legaia_asset::item_names::file_offset_for_va(&scus, va).unwrap();
+        let off = legaia_game_tables::item_names::file_offset_for_va(&scus, va).unwrap();
         u32::from_le_bytes(scus[off..off + 4].try_into().unwrap())
     };
 
@@ -344,7 +344,7 @@ fn picker_slice_patches_menu_overlay_gap_and_fun80025980() {
         .read_named_file("SCUS_942.54")
         .expect("SCUS present");
     let word_at = |va: u32| -> u32 {
-        let off = legaia_asset::item_names::file_offset_for_va(&scus, va).unwrap();
+        let off = legaia_game_tables::item_names::file_offset_for_va(&scus, va).unwrap();
         u32::from_le_bytes(scus[off..off + 4].try_into().unwrap())
     };
 
@@ -618,7 +618,7 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
     );
     // The SCUS rodata gap is UNTOUCHED by seru trading (compatible with gap features).
     let scus = patcher.read_named_file("SCUS_942.54").expect("SCUS");
-    let gap_off = legaia_asset::item_names::file_offset_for_va(&scus, 0x8007_AB80).unwrap();
+    let gap_off = legaia_game_tables::item_names::file_offset_for_va(&scus, 0x8007_AB80).unwrap();
     assert_eq!(
         &scus[gap_off..gap_off + 4],
         &[0u8; 4],

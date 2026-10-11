@@ -341,7 +341,7 @@ pub fn dialog_option_hand_sprite(
 /// the lower-right rim of the standard 244-wide box - while a page waits for
 /// confirm (state `0x19`) and no automatic press is counting down. `icon` is
 /// the atlas cell of the frame to draw
-/// (`legaia_engine_core::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON[frame]`,
+/// (`legaia_engine_menus::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON[frame]`,
 /// the frame from `OwnedDialogPanel::advance_icon`); the strip flips every
 /// sixteen vsyncs. Drawn untinted: the primitive's colour word is the
 /// neutral `0x808080` and the record's CLUT is row 7, the hand's.

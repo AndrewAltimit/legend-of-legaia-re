@@ -42,13 +42,13 @@
 //! (`FUN_8003CA78`), the `{0xC2, item}` item-name token appended by
 //! `FUN_8003CB54` ([`legaia_engine_battle_vm::mes_escape_append::mes_append_escape`]),
 //! the two-byte tail appended by `FUN_8003CAC4` - from the templates pinned in
-//! [`legaia_asset::battle_ui_strings`] and read off the user's own
+//! [`legaia_ui_formats::battle_ui_strings`] and read off the user's own
 //! executable, and shown in HUD element `0x5B`: placement record 91
 //! (`0x80077498`, payload pointer `+0x14` = `0x800774AC`), the full-width
 //! bar that slides from `(16, 236)` up to the active-actor bar's seat
 //! `(16, 194)`.
 
-use legaia_asset::battle_ui_strings::{BattleUiLabel, BattleUiStrings};
+use legaia_ui_formats::battle_ui_strings::{BattleUiLabel, BattleUiStrings};
 
 /// HUD element id the caption is raised on (`li a0,0x5b` before the
 /// `jal 0x801D8DE8` at `0x8004B37C` / `0x8004B628`), and the message id the
@@ -118,7 +118,7 @@ pub struct StealAttackInputs {
     /// Any living member's `+0xF8 & 0x20000`.
     pub items_up: bool,
     /// The slain monster's steal-table row, `None` with no table installed.
-    pub entry: Option<legaia_asset::steal_table::StealEntry>,
+    pub entry: Option<legaia_game_tables::steal_table::StealEntry>,
     /// `ctx[+0x18] == 0x5B` - the last message raised is this caption.
     pub caption_up: bool,
 }
@@ -269,7 +269,7 @@ pub struct StealCaption {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::steal_table::StealEntry;
+    use legaia_game_tables::steal_table::StealEntry;
 
     fn inputs(chance: u8, item: u8) -> StealAttackInputs {
         StealAttackInputs {
@@ -378,12 +378,12 @@ mod tests {
         };
         put(
             &mut scus,
-            legaia_asset::battle_ui_strings::SCUS_STEAL_STOLE,
+            legaia_ui_formats::battle_ui_strings::SCUS_STEAL_STOLE,
             b"HEAD <",
         );
         put(
             &mut scus,
-            legaia_asset::battle_ui_strings::SCUS_STEAL_STOLE_TAIL,
+            legaia_ui_formats::battle_ui_strings::SCUS_STEAL_STOLE_TAIL,
             b">.",
         );
         let strings = BattleUiStrings::from_scus(&scus);

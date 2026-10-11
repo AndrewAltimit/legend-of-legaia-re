@@ -71,7 +71,7 @@ impl World {
     /// `buffer_base = script_start` convention. See
     /// [`crate::scene::Scene::field_man_entry_script`].
     ///
-    /// REF: FUN_8003ab2c (the port lives in `legaia_asset::man_section`).
+    /// REF: FUN_8003ab2c (the port lives in `legaia_scene_formats::man_section`).
     pub fn load_field_script_at(&mut self, bytecode: Vec<u8>, pc: usize) {
         self.field_bytecode = bytecode;
         self.field_pc = pc;
@@ -175,7 +175,7 @@ impl World {
     }
 
     /// Run a window-widget program against the menu window list
-    /// ([`crate::menu_widget::MenuWidgetState`]) - the production route
+    /// ([`legaia_engine_menus::menu_widget::MenuWidgetState`]) - the production route
     /// into the window-script VM (`legaia_engine_vm::run`, retail
     /// `FUN_801D6628`). `bytecode` is disc bytes resolved by
     /// [`World::install_menu_overlay_tables`].
@@ -261,7 +261,9 @@ impl World {
         self.commit_staged_battle_anims();
         // A new action opens: the previous action's cast-module scene does not
         // carry into it ([`Self::retire_cast_scene_at_action_begin`]).
-        if self.battle_ctx.action_state == vm::battle_action::ActionState::Begin.as_byte() {
+        if self.battle_ctx.action_state
+            == legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte()
+        {
             self.retire_cast_scene_at_action_begin();
         }
         // Step against a clone of the context, then write it back. The
@@ -276,7 +278,7 @@ impl World {
         let pre_banner = ctx.levelup_banner_element;
         let pre_cursor = ctx.turn_cursor;
         let mut host = BattleHostImpl { world: self };
-        let out = vm::battle_action::step(&mut host, &mut ctx);
+        let out = legaia_engine_battle_vm::battle_action::step(&mut host, &mut ctx);
         // One host path does write the context: the summon stager's strike
         // folds the cast inside the step, and the fold's level check stamps
         // the banner element `ctx[+0x26]` (`sb v0,0x26(v1)` at `0x801E723C`,
@@ -303,7 +305,8 @@ impl World {
         // the module, and the SM carries the escape outcome on
         // `absorbed_seru` (`run::run_wait`).
         if std::mem::take(&mut self.casting.module_flee) {
-            self.battle_ctx.action_state = vm::battle_action::ActionState::RunWait.as_byte();
+            self.battle_ctx.action_state =
+                legaia_engine_battle_vm::battle_action::ActionState::RunWait.as_byte();
             self.battle_ctx.frame_timer = FLUTE_FLEE_WAIT_FRAMES;
             self.battle_ctx.absorbed_seru = 1;
         }
@@ -322,7 +325,7 @@ impl World {
             self.battle.steal.on_action_transition(from, to);
             // A new action's seed ends whatever flight held the last one's
             // effect lists.
-            if to == vm::battle_action::ActionState::ActionSeed.as_byte() {
+            if to == legaia_engine_battle_vm::battle_action::ActionState::ActionSeed.as_byte() {
                 self.casting.homing_holds_lists = None;
             }
         }

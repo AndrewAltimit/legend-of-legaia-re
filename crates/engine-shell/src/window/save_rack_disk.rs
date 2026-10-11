@@ -31,33 +31,33 @@ pub(crate) use legaia_save::emu::MountedCard;
 /// 5x3 block grid of `slot_00 … slot_14`. Modelling the directory as the
 /// mounted card is what lets that screen be the same screen the browser
 /// draws - one [`SaveRack`] kind, one
-/// [`legaia_engine_core::save_screen::SaveScreenFlow`], no per-host flag.
+/// [`legaia_engine_menus::save_screen::SaveScreenFlow`], no per-host flag.
 /// Port 2 is empty here; [`disk_save_rack_with_card`] is the same rack with a
 /// real card image in it.
 /// The windowed host mounts a card in port 2 whenever `--card` names one, so
 /// this unmounted form is what the unit tests below stand on.
 #[cfg(test)]
-pub(crate) fn disk_save_rack(save_dir: &Path) -> legaia_engine_core::save_select::SaveRack {
+pub(crate) fn disk_save_rack(save_dir: &Path) -> legaia_engine_menus::save_select::SaveRack {
     disk_save_rack_with_card(save_dir, None)
 }
 
 /// [`disk_save_rack`] with a [`MountedCard`] in **port 2**.
 ///
 /// Both pills are built through
-/// [`legaia_engine_core::save_screen::card_port_snapshot`], the one place a
+/// [`legaia_engine_menus::save_screen::card_port_snapshot`], the one place a
 /// port's pill fields are decided, so a mounted card carries its own name
 /// into the row exactly as the browser's imported `.mcr` does.
 pub(crate) fn disk_save_rack_with_card(
     save_dir: &Path,
     card: Option<&MountedCard>,
-) -> legaia_engine_core::save_select::SaveRack {
-    use legaia_engine_core::save_screen::card_port_snapshot;
+) -> legaia_engine_menus::save_select::SaveRack {
+    use legaia_engine_menus::save_screen::card_port_snapshot;
     let dir_label = save_dir
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("SAVE DATA");
     let mounted = [Some(dir_label), card.map(|c| c.label.as_str())];
-    legaia_engine_core::save_select::SaveRack::CardPorts(
+    legaia_engine_menus::save_select::SaveRack::CardPorts(
         (0..CARD_PORTS)
             .map(|port| card_port_snapshot(port, mounted.get(port as usize).copied().flatten()))
             .collect(),
@@ -65,13 +65,13 @@ pub(crate) fn disk_save_rack_with_card(
 }
 
 /// The fifteen blocks behind a port of [`disk_save_rack`] - the answer to
-/// [`legaia_engine_core::save_screen::SaveScreenFlow::pending_read`]. Port 1
+/// [`legaia_engine_menus::save_screen::SaveScreenFlow::pending_read`]. Port 1
 /// is the save directory; every other port is unmounted and reads empty.
 #[cfg(test)]
 pub(crate) fn disk_port_blocks(
     save_dir: &Path,
     port: u8,
-) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
+) -> Vec<legaia_engine_menus::save_select::SlotSnapshot> {
     disk_port_blocks_with_card(save_dir, None, port)
 }
 
@@ -83,12 +83,12 @@ pub(crate) fn disk_port_blocks_with_card(
     save_dir: &Path,
     card: Option<&MountedCard>,
     port: u8,
-) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
-    use legaia_engine_core::save_screen::SLOT_GRID_CELLS;
-    use legaia_engine_core::save_select::SlotSnapshot;
+) -> Vec<legaia_engine_menus::save_select::SlotSnapshot> {
+    use legaia_engine_menus::save_screen::SLOT_GRID_CELLS;
+    use legaia_engine_menus::save_select::SlotSnapshot;
     match (port, card) {
         (0, _) => scan_save_dir(save_dir),
-        (1, Some(card)) => legaia_engine_core::save_select::card_block_snapshots(card),
+        (1, Some(card)) => legaia_engine_menus::save_select::card_block_snapshots(card),
         _ => (0..SLOT_GRID_CELLS).map(SlotSnapshot::empty).collect(),
     }
 }
@@ -133,7 +133,7 @@ pub(crate) fn write_slot_save(
     Ok(path)
 }
 
-/// The [`SlotSnapshot`](legaia_engine_core::save_select::SlotSnapshot) a
+/// The [`SlotSnapshot`](legaia_engine_menus::save_select::SlotSnapshot) a
 /// parsed save presents on the load screen: the lead record's own name /
 /// level / HP / MP through [`legaia_save::SaveFile::leader_summary`] - the
 /// one derivation the browser's card rack uses too - and the resume point's
@@ -143,8 +143,8 @@ pub(crate) fn snapshot_for_save(
     slot: u8,
     sf: &legaia_save::SaveFile,
     resume: &legaia_save::SaveResume,
-) -> legaia_engine_core::save_select::SlotSnapshot {
-    use legaia_engine_core::save_select::{SlotContent, SlotSnapshot};
+) -> legaia_engine_menus::save_select::SlotSnapshot {
+    use legaia_engine_menus::save_select::{SlotContent, SlotSnapshot};
     let Some(leader) = sf.leader_summary() else {
         return SlotSnapshot::foreign(slot);
     };
@@ -178,8 +178,10 @@ pub(crate) fn snapshot_for_save(
     }
 }
 
-pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
-    use legaia_engine_core::save_select::SlotSnapshot;
+pub(crate) fn scan_save_dir(
+    save_dir: &Path,
+) -> Vec<legaia_engine_menus::save_select::SlotSnapshot> {
+    use legaia_engine_menus::save_select::SlotSnapshot;
     // Scan up to 15 slots (one per retail PSX memory-card block) so
     // the load-screen 5×3 grid can render every potential slot.
     const MAX_SLOTS: u8 = 15;
@@ -223,7 +225,7 @@ pub(crate) fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_sel
 mod save_scan_tests {
     use super::scan_save_dir;
     use legaia_engine_core::menu_runtime::SAVE_EXT;
-    use legaia_engine_core::save_select::{SaveSelectMode, SlotContent, SlotInfoMode};
+    use legaia_engine_menus::save_select::{SaveSelectMode, SlotContent, SlotInfoMode};
     use legaia_save::{CharacterRecord, Party, SaveExt, SaveFile};
 
     fn slot_path(dir: &std::path::Path, slot: u8) -> std::path::PathBuf {
@@ -316,10 +318,10 @@ mod save_scan_tests {
 mod save_rack_tests {
     use super::{CARD_PORTS, disk_port_blocks, disk_save_rack, scan_save_dir};
     use legaia_engine_core::menu_runtime::SAVE_EXT;
-    use legaia_engine_core::save_screen::{
+    use legaia_engine_menus::save_screen::{
         SLOT_GRID_CELLS, SaveCommit, SaveCommitKind, SaveScreenFlow,
     };
-    use legaia_engine_core::save_select::{
+    use legaia_engine_menus::save_select::{
         SaveRack, SaveSelectMode, SaveSelectSession, SelectInput, SelectPhase,
     };
     use legaia_save::{CharacterRecord, Party, SaveFile};
@@ -395,7 +397,7 @@ mod save_rack_tests {
         step(
             &mut session,
             &mut flow,
-            legaia_engine_core::input::PadButton::Cross.mask(),
+            legaia_engine_system::input::PadButton::Cross.mask(),
         );
         for _ in 0..session.now_checking_frames() + 1 {
             step(&mut session, &mut flow, 0);
@@ -406,8 +408,8 @@ mod save_rack_tests {
         step(
             &mut session,
             &mut flow,
-            legaia_engine_core::input::PadButton::Right.mask()
-                | legaia_engine_core::input::PadButton::Cross.mask(),
+            legaia_engine_system::input::PadButton::Right.mask()
+                | legaia_engine_system::input::PadButton::Cross.mask(),
         );
         assert!(
             matches!(session.phase(), SelectPhase::SlotPreview { .. }),
@@ -417,7 +419,7 @@ mod save_rack_tests {
             step(
                 &mut session,
                 &mut flow,
-                legaia_engine_core::input::PadButton::Right.mask(),
+                legaia_engine_system::input::PadButton::Right.mask(),
             );
         }
         // Cross raises "Do you wish to load?" (defaulting to No); Yes runs
@@ -425,18 +427,18 @@ mod save_rack_tests {
         step(
             &mut session,
             &mut flow,
-            legaia_engine_core::input::PadButton::Cross.mask(),
+            legaia_engine_system::input::PadButton::Cross.mask(),
         );
         assert_eq!(flow.commit(&session), None, "the load asks first");
         step(
             &mut session,
             &mut flow,
-            legaia_engine_core::input::PadButton::Left.mask(),
+            legaia_engine_system::input::PadButton::Left.mask(),
         );
         step(
             &mut session,
             &mut flow,
-            legaia_engine_core::input::PadButton::Cross.mask(),
+            legaia_engine_system::input::PadButton::Cross.mask(),
         );
         while !session.is_done() {
             step(&mut session, &mut flow, 0);
@@ -467,7 +469,7 @@ mod save_rack_tests {
 #[cfg(test)]
 mod slot_model_tests {
     use super::{read_slot_save, scan_save_dir, write_slot_save};
-    use legaia_engine_core::save_select::SlotContent;
+    use legaia_engine_menus::save_select::SlotContent;
     use legaia_save::{CharacterRecord, HpMpSp, Party, SaveFile, SaveResume};
 
     fn a_save() -> SaveFile {
@@ -550,8 +552,8 @@ mod slot_model_tests {
 #[cfg(test)]
 mod mounted_card_tests {
     use super::{CARD_PORTS, MountedCard, disk_port_blocks_with_card, disk_save_rack_with_card};
-    use legaia_engine_core::save_screen::SLOT_GRID_CELLS;
-    use legaia_engine_core::save_select::SlotContent;
+    use legaia_engine_menus::save_screen::SLOT_GRID_CELLS;
+    use legaia_engine_menus::save_select::SlotContent;
     use legaia_save::{CharacterRecord, HpMpSp, Party, SaveFile, SaveResume};
 
     /// A card image built in memory: the `MC` header, one block claimed for a
@@ -632,8 +634,8 @@ mod mounted_card_tests {
     /// together, the way the window ticks them.
     #[test]
     fn down_on_the_pill_row_picks_the_mounted_card() {
-        use legaia_engine_core::save_screen::SaveScreenFlow;
-        use legaia_engine_core::save_select::{SaveSelectMode, SaveSelectSession, SelectInput};
+        use legaia_engine_menus::save_screen::SaveScreenFlow;
+        use legaia_engine_menus::save_select::{SaveSelectMode, SaveSelectSession, SelectInput};
         let (dir, card) = mount("player.mcr", 3);
         let rack = disk_save_rack_with_card(dir.path(), Some(&card));
         let mut session = SaveSelectSession::for_rack(SaveSelectMode::Load, &rack);
@@ -720,10 +722,10 @@ mod mounted_card_tests {
         std::fs::write(&raw_path, &raw).unwrap();
         std::fs::write(&gme_path, &gme).unwrap();
 
-        let from_raw = legaia_engine_core::save_select::card_block_snapshots(
+        let from_raw = legaia_engine_menus::save_select::card_block_snapshots(
             &MountedCard::open(&raw_path).unwrap(),
         );
-        let from_gme = legaia_engine_core::save_select::card_block_snapshots(
+        let from_gme = legaia_engine_menus::save_select::card_block_snapshots(
             &MountedCard::open(&gme_path).unwrap(),
         );
         assert_eq!(from_raw, from_gme);

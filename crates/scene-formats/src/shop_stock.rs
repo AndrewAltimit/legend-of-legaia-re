@@ -51,7 +51,7 @@
 //! This is the shared *read* side: the randomizer
 //! ([`legaia_patcher::shop`](https://docs.rs)) wraps [`locate`] with its
 //! recompress/write-back machinery, and the engine builds its shop UI stock from
-//! the same records (`legaia_engine_core::shop_catalog`).
+//! the same records (`legaia_engine_menus::shop_catalog`).
 
 use crate::scene_asset_table;
 

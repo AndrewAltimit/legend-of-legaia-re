@@ -48,12 +48,12 @@ use legaia_arts_patch::super_art_menu::{
     HOOK_BOUND_VA, HOOK_CURSOR_VA, HOOK_MARK_VA, HOOK_ROW_VA, MENU_BASE_VA, MENU_DESC_END_VA,
     MENU_DESC_VA, MENU_PROT_INDEX, MENU_RUN_END_VA, MENU_RUN_VA, SuperArtMenuInjection,
 };
-use legaia_asset::item_names::file_offset_for_va;
 use legaia_code_hooks::arenas::{
     ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SLOT6_END_VA,
     SLOT6_VA,
 };
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
 use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;

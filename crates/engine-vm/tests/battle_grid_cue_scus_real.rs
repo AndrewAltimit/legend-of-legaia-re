@@ -13,7 +13,7 @@
 //! `SCUS_942.54` isn't on disk (`extracted/`, `../../extracted/`, or
 //! `LEGAIA_EXTRACTED_DIR`).
 
-use legaia_engine_vm::battle_ground_grid::{
+use legaia_engine_battle_vm::battle_ground_grid::{
     GRID_FAR_INDOOR, GRID_FAR_OUTDOOR, OutdoorCueTable, grid_far_colour,
 };
 use std::path::PathBuf;

@@ -39,12 +39,13 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use legaia_engine_core::battle_flow::BattleFlowState;
-use legaia_engine_core::world::SceneMode;
-use legaia_mednafen::game_anchors;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_ram_image::game_anchors;
 use serde::{Deserialize, Serialize};
 
-use crate::boot::{BootConfig, BootSession, FieldLiveOpts};
+use crate::boot::BootSession;
 use crate::retail_compare::{CameraObs, RetailObs};
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
 
 mod bar_seeds;
 mod camera_align;
@@ -96,7 +97,7 @@ const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
 /// The tint-state byte `actor[+0x21C]`'s defeat-fade value.
-const DEFEAT_FADE_STATE: u8 = legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE;
+const DEFEAT_FADE_STATE: u8 = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
 /// The SCUS frame driver's battle-entry counter `gp+0x330`: below `0x80`
 /// the fight loads, `0x80..=0xC0` the entry sweep owns the camera, `0xFF`
 /// the battle tick runs (`FUN_80046A20`, `0x80046EEC..0x8004700C`).
@@ -283,7 +284,7 @@ pub struct RetailBattle {
     /// clip commit (`rand() % 2`).
     pub track_coin: u8,
     /// PROT 0903's countdown word
-    /// ([`legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA`]) - only
+    /// ([`legaia_engine_battle_vm::cast_module_camera::GIMARD_COUNTDOWN_VA`]) - only
     /// meaningful while that module is resident.
     pub gimard_countdown: i32,
     /// `ctx[+0xD]` - the acting action's framing style.
@@ -292,8 +293,8 @@ pub struct RetailBattle {
     /// (`ctx[+0x118C]`) steps toward, in the engine's pose space
     /// ([`retail_cam_tween`]): `(live, end)`.
     pub cam_tween: (
-        legaia_engine_vm::battle_cam_script::BattleCamPose,
-        legaia_engine_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
     ),
     /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
     pub entry_counter: u8,
@@ -338,7 +339,7 @@ pub struct RetailBattle {
     pub span_gate: SpanGate,
     /// The win pose the battle-end sequence latched on its pose actor
     /// (`ctx[+0x13]`'s `+0x1DB`), for a capture past the end signal. The
-    /// results framing is that pose's script ([`legaia_engine_vm::battle_cam_script`]'s
+    /// results framing is that pose's script ([`legaia_engine_battle_vm::battle_cam_script`]'s
     /// `battle_over_script`), and the sequencer draws the pose from the
     /// stream, so a seed that reaches the phase on another pose frames
     /// another shot.

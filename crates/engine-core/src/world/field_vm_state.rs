@@ -8,16 +8,16 @@ pub struct FieldVmState {
     /// `_DAT_8007B868` - the dev/retail branch discriminator. **Retail is
     /// zero**; a non-zero value is the dev build's "not an ordinary field
     /// frame" state. Read by [`crate::world::World::man_load_actor_reset`] through
-    /// [`crate::field_submode::scene_actor_initial_state`], which forces the
+    /// [`legaia_engine_field::field_submode::scene_actor_initial_state`], which forces the
     /// spawned scene actor's state word to `1` when it is set. Mirrors of the
     /// same word live on [`crate::cd_dma`] and [`crate::overlay_loader`]; this
     /// is the field-side copy.
     pub(crate) mode_flags: u32,
     /// The op-`0x49` submode context block (`0x801F2734..`), in the order
-    /// [`crate::field_submode::SUBMODE_CONTEXT_SEEDS`] lists its ten words -
+    /// [`legaia_engine_field::field_submode::SUBMODE_CONTEXT_SEEDS`] lists its ten words -
     /// that const carries the offsets. Reseeded on every MAN load by
     /// [`crate::world::World::man_load_actor_reset`]; word `0` is the submode state
-    /// ([`crate::field_submode::SUBMODE_STATE_OPEN`] once opened).
+    /// ([`legaia_engine_field::field_submode::SUBMODE_STATE_OPEN`] once opened).
     pub(crate) submode_context: [u32; 10],
     /// `true` only while [`crate::world::World::pre_run_field_channel_prologues`] is
     /// executing the scene-entry spawn-prologue slices. The field-VM host
@@ -51,7 +51,7 @@ pub struct FieldVmState {
     /// [`crate::world::World::step_helper_contexts`], bounded by
     /// [`crate::world::SPAWNED_CONTEXT_SLOTS`] (retail's context table is a small fixed
     /// actor-slot pool). A completed context is dropped the frame it ends.
-    pub helper_contexts: Vec<crate::cutscene_timeline::CutsceneTimeline>,
+    pub helper_contexts: Vec<legaia_engine_field::cutscene_timeline::CutsceneTimeline>,
     /// Set by [`crate::world::World::seed_free_roam_story_baseline`] for scene-picker /
     /// `--scene` entries: the world was staged for a free-roam visit with no
     /// story behind it, so the BGM host arm drops entry-window pauses (their
@@ -119,7 +119,7 @@ pub struct FieldVmState {
     pub(crate) halted_elsewhere: Vec<Option<u8>>,
     /// Claim counter for the one shared script dialog box: each spawned
     /// record context that reaches a text segment stamps the next value into
-    /// its [`crate::cutscene_timeline::CutsceneTimeline::dialog_claim`], and
+    /// its [`legaia_engine_field::cutscene_timeline::CutsceneTimeline::dialog_claim`], and
     /// the lowest stamp among the helper contexts holding text owns the box
     /// (retail's runner claims it first come, first served).
     pub(crate) dialog_claims: u64,
@@ -130,7 +130,7 @@ pub struct FieldVmState {
     /// ([`crate::field_channels::spawn_object_channels`]).
     pub(crate) object_channel_binds: Vec<(usize, (i16, i16))>,
     /// Bind-time rotation of each object-bind context, by flat record
-    /// ([`crate::man_field_scripts::object_script_bind_rots`]): the `.MAP`
+    /// ([`legaia_engine_field::man_field_scripts::object_script_bind_rots`]): the `.MAP`
     /// angles `FUN_8003A55C` seeds the actor's `+0x24 / +0x26 / +0x28` with.
     /// [`crate::world::World::object_draw_turns`] measures a script's turn
     /// against it.

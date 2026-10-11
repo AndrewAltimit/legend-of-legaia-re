@@ -4,7 +4,7 @@
 //! The formations live in the per-scene MAN asset (type `0x03`, descriptor
 //! index 2 of a scene bundle), inside an LZS stream. Each formation record is
 //! `[3 reserved][u8 count 0..4][u8 ids...]` (see
-//! [`legaia_asset::man_section`] and `docs/formats/encounter.md`). An edit is
+//! [`legaia_scene_formats::man_section`] and `docs/formats/encounter.md`). An edit is
 //! therefore: locate the MAN inside the scene's PROT entry, decompress, rewrite
 //! the id bytes (same length - count is preserved), recompress, and write the
 //! stream back over the original (the LZS decoder stops at the descriptor's
@@ -35,8 +35,8 @@
 //! donor pool, so the fight ships exactly as authored regardless of the region
 //! layout.
 
-use legaia_asset::man_section::{self, EncounterSection};
-use legaia_asset::scene_asset_table;
+use legaia_scene_formats::man_section::{self, EncounterSection};
+use legaia_scene_formats::scene_asset_table;
 
 use crate::drops::DropMode;
 use legaia_disc_patch::rng::SplitMix64;
@@ -332,7 +332,7 @@ impl SceneEncounters {
     /// continuation - is skipped rather than clamped: a partial MAN would
     /// re-pack over bytes that are not ours.
     pub fn locate_streaming_mans(entry: &[u8], entry_idx: usize) -> Vec<Self> {
-        let Ok(report) = legaia_asset::parse_streaming(entry, 4096) else {
+        let Ok(report) = legaia_container_formats::parse_streaming(entry, 4096) else {
             return Vec::new();
         };
         let mut out = Vec::new();

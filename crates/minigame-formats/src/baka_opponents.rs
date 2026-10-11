@@ -30,7 +30,7 @@
 //! loop plays back-to-front to exhaustion, then the picker is free again.
 //! [`BakaOpponent::attack_at`] is the forward-indexed convenience view; the
 //! faithful backward walk lives in the engine port
-//! (`legaia_engine_core::baka_fighter`).
+//! (`legaia_engine_minigames::baka_fighter`).
 //!
 //! ## Action tables (power + keyframes)
 //!

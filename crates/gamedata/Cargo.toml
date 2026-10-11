@@ -33,7 +33,7 @@ toml.workspace = true
 
 [dev-dependencies]
 legaia-art.workspace = true
-legaia-battle-models.workspace = true
+legaia-actor-formats.workspace = true
 legaia-game-tables.workspace = true
 legaia-scene-formats.workspace = true
 

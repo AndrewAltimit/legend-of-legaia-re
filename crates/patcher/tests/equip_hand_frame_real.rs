@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::battle_data_pack;
+use legaia_actor_formats::battle_data_pack;
 use legaia_party_swap::weapon_fuse::{BareFrame, weapon_fusion_record};
 use legaia_patcher::equip_hand_frame::{
     self, V3, WeaponClass, fit_class_excluding, nearest_rms, shaft_axis,

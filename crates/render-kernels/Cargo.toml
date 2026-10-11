@@ -16,6 +16,8 @@ legaia-asset.workspace = true
 legaia-engine-vm.workspace = true
 legaia-tim.workspace = true
 legaia-tmd.workspace = true
+legaia-actor-formats.workspace = true
+legaia-overlay-images.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

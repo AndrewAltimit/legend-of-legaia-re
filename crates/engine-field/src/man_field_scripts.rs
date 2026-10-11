@@ -22,10 +22,10 @@
 //!
 //! Each record opens with the same `[u8 N][N*2 locals][4-byte header]`
 //! prefix as the entry script, so the first opcode sits `1 + N*2 + 4`
-//! bytes in (see [`legaia_asset::man_section::ManFile::scene_entry_script`]).
+//! bytes in (see [`legaia_scene_formats::man_section::ManFile::scene_entry_script`]).
 //!
 //! This module pairs the MAN partition walk with the field-VM disassembler
-//! ([`legaia_asset::field_disasm`]) so callers get a faithful,
+//! ([`legaia_scene_formats::field_disasm`]) so callers get a faithful,
 //! opcode-aware instruction stream per record instead of a byte scan. The
 //! distinction matters for the scripted-encounter hunt: a naive search for
 //! a "yield" byte (`0x37` / `0x41`) hits every yield opcode **and** every
@@ -48,10 +48,10 @@
 //! hypothesis against the indexed-formation-table hypothesis
 //! (see [`legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
 
-use legaia_asset::field_disasm::{
+use legaia_scene_formats::field_disasm::{
     EffectKind, FlagKind, InsnInfo, LinearWalker, MenuCtrlKind, YieldKind, scene_change_name,
 };
-use legaia_asset::man_section::{ActorPlacement, ManFile};
+use legaia_scene_formats::man_section::{ActorPlacement, ManFile};
 
 use legaia_engine_battle::encounter_record::EncounterRecord;
 

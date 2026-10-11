@@ -137,7 +137,7 @@ pub enum EasedMoveTarget {
 
 /// One live **reflection pair** - the engine's form of the controller actor
 /// `FUN_801E573C` seats, hung off the pool slot that carries
-/// [`ActorHandler::Reflection`](crate::actor_handler::ActorHandler::Reflection).
+/// [`ActorHandler::Reflection`](legaia_engine_field::actor_handler::ActorHandler::Reflection).
 ///
 /// The two ends are not interchangeable. Retail's tick reads `+0x94` (and
 /// gates the whole frame on *its* tile position) and writes `+0x90`; the
@@ -198,7 +198,7 @@ pub struct EffectSprite {
     /// `atlas w/h * sprite_scale >> 8` (x10 the texel size at the retail
     /// `0xA00` scale), which the projector adds either side of the centre.
     /// Hosts size the quad through
-    /// `legaia_engine_ui::effect_billboard::world_half_extents`.
+    /// `legaia_render_kernels::effect_billboard::world_half_extents`.
     pub size: [f32; 2],
     /// Top-left source texel within the texture page (atlas `u`, `v`).
     pub uv: [u16; 2],
@@ -344,11 +344,8 @@ pub struct WorldMapPlayerMarker {
     pub facing: i16,
 }
 
-/// The scene mode the mode word resolves to, defined beside the mode seat.
-pub use crate::mode::SceneMode;
-
 /// One sprite frame on a sprite sheet. Equivalent in shape to
-/// `legaia_engine_render::SpriteRequest` but lives in engine-core (which
+/// `legaia_engine_ui::SpriteRequest` but lives in engine-core (which
 /// can't depend on the wgpu-bound render crate). Engine binaries
 /// translate one-to-one when handing the per-frame sprite list to the
 /// renderer.
@@ -375,7 +372,7 @@ impl Default for SpriteFrame {
 }
 
 /// Per-actor sprite request emitted by [`World::collect_sprite_requests`].
-/// Engine binaries map this 1:1 to `legaia_engine_render::SpriteRequest`
+/// Engine binaries map this 1:1 to `legaia_engine_ui::SpriteRequest`
 /// for the wgpu sprite-batch upload.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ActorSpriteRequest {
@@ -411,7 +408,7 @@ pub struct GlobalTmd {
 /// [`Actor::battle_pose_history`]): the posed frame + world position the
 /// actor rendered with on that frame, and whether the frame is
 /// ghost-eligible under the retail ring-id gate
-/// ([`crate::battle_afterimage::GHOST_RING_ID_MIN`] - party: the committed
+/// ([`legaia_engine_battle::battle_afterimage::GHOST_RING_ID_MIN`] - party: the committed
 /// clip slot is `0x11`, the Super / Miracle SpecialStarter dash; monster:
 /// any non-idle clip tag).
 #[derive(Debug, Clone)]
@@ -435,17 +432,17 @@ pub struct BattleGhostFrame {
 /// `World::battle_weapon_trail_draws`: the ring-sampled sweep of an
 /// actor's three trail control points (the weapon bone chain
 /// `base_part..base_part+3` of its trigger row -
-/// `legaia_engine_vm::battle_trail`), in actor-local space, newest step
+/// `legaia_engine_battle_vm::battle_trail`), in actor-local space, newest step
 /// first, consecutive steps two frames apart. Hosts transform the points
 /// with the same model matrix the live body draws with, project them into
 /// the 320x240 stage, and hand the projected sweep to
-/// `legaia_engine_ui::battle_trail::weapon_trail_prims`.
+/// `legaia_render_kernels::battle_trail::weapon_trail_prims`.
 #[derive(Debug, Clone)]
 pub struct BattleWeaponTrailDraw {
     pub actor_slot: u8,
     /// `steps[k][i]` = local-space position of control point `i` at sweep
     /// step `k`.
-    pub steps: Vec<[[i16; 3]; legaia_engine_vm::battle_trail::TRAIL_POINTS]>,
+    pub steps: Vec<[[i16; 3]; legaia_engine_battle_vm::battle_trail::TRAIL_POINTS]>,
     /// Trail tint (the trigger row's RGB).
     pub rgb: [u8; 3],
 }
@@ -478,7 +475,7 @@ pub struct Actor {
     /// frame dispatcher `FUN_8002519C` calls it, and the find / retire
     /// leaves (`FUN_8003CF04` / `FUN_8003CF40`) plus the scene-transition
     /// sweep `FUN_801D7518` all key on it. See
-    /// [`crate::actor_handler::ActorHandler`] for how a VA and a ported Rust
+    /// [`legaia_engine_field::actor_handler::ActorHandler`] for how a VA and a ported Rust
     /// kernel travel together in one value.
     ///
     /// [`ActorHandler::None`] for slots seated by paths that predate handler
@@ -486,12 +483,12 @@ pub struct Actor {
     /// those are invisible to every identity test, which is the same thing
     /// retail's null `+0x0C` does.
     ///
-    /// [`ActorHandler::None`]: crate::actor_handler::ActorHandler::None
-    pub handler: crate::actor_handler::ActorHandler,
+    /// [`ActorHandler::None`]: legaia_engine_field::actor_handler::ActorHandler::None
+    pub handler: legaia_engine_field::actor_handler::ActorHandler,
 
     /// `+0x50` - the per-handler **parameter word**. What it selects is the
     /// handler's business: the scripted-scene actor reads it as a program id
-    /// ([`crate::field_actor_program`]), the submode driver has it cleared at
+    /// ([`legaia_engine_field::field_actor_program`]), the submode driver has it cleared at
     /// spawn. Zero for handlers that never look at it.
     pub state_50: u16,
 
@@ -509,37 +506,37 @@ pub struct Actor {
 
     /// `+0xB8..+0xD6` - the colour-tween block, present only on actors whose
     /// [`Self::handler`] is
-    /// [`ActorHandler::ColourTween`](crate::actor_handler::ActorHandler::ColourTween).
+    /// [`ActorHandler::ColourTween`](legaia_engine_field::actor_handler::ActorHandler::ColourTween).
     /// Stepped once per game tick by [`World::tick_handler_actors`].
-    pub colour_tween: Option<crate::field_actor_kernels::ColourTween>,
+    pub colour_tween: Option<legaia_engine_field::field_actor_kernels::ColourTween>,
 
     /// `+0x4C` / `+0x90` / `+0x3C..+0x40` / `+0x6E` - the **morph-weight**
     /// block, present only on actors whose [`Self::handler`] is
-    /// [`ActorHandler::MorphWeights`](crate::actor_handler::ActorHandler::MorphWeights),
+    /// [`ActorHandler::MorphWeights`](legaia_engine_field::actor_handler::ActorHandler::MorphWeights),
     /// i.e. the ones the field VM's `4C D8` allocator seated
     /// ([`World::spawn_morph_weight_actor`]). Its envelope is stepped once
     /// per game tick by [`World::tick_handler_actors`]; hosts read the
     /// blended mesh back through [`World::morph_weight_posed_tmd`].
-    pub morph_weights: Option<crate::morph_weight_apply::MorphWeightActor>,
+    pub morph_weights: Option<legaia_engine_field::morph_weight_apply::MorphWeightActor>,
 
     /// `+0x80 .. +0x94` - the reflection pair, present only on actors whose
     /// [`Self::handler`] is
-    /// [`ActorHandler::Reflection`](crate::actor_handler::ActorHandler::Reflection).
+    /// [`ActorHandler::Reflection`](legaia_engine_field::actor_handler::ActorHandler::Reflection).
     /// Stepped once per game tick by [`World::tick_handler_actors`].
     pub reflection: Option<ReflectionLink>,
 
     /// `+0x50` / `+0x54` / `+0x9E` / `+0x10` / `+0x16` - the scripted-scene
     /// program block, present only on actors whose [`Self::handler`] is
-    /// [`ActorHandler::ScriptedScene`](crate::actor_handler::ActorHandler::ScriptedScene)
+    /// [`ActorHandler::ScriptedScene`](legaia_engine_field::actor_handler::ActorHandler::ScriptedScene)
     /// (seated by [`World::man_load_resume_programs`]). Stepped once per game
     /// tick by [`World::tick_handler_actors`].
-    pub scene_program: Option<crate::field_actor_program::ProgramActor>,
+    pub scene_program: Option<legaia_engine_field::field_actor_program::ProgramActor>,
 
     /// This frame's `FUN_80024EE4` full-screen colour push, if the actor's
     /// handler emitted one. Cleared at the top of every
     /// [`World::tick_handler_actors`] pass, so it is always "this frame's",
     /// never a stale one.
-    pub tint_push: Option<crate::field_actor_kernels::ScreenTintPush>,
+    pub tint_push: Option<legaia_engine_field::field_actor_kernels::ScreenTintPush>,
 
     /// Default-position lookup result for the actor VM. Retail reads this
     /// from a 16-byte-stride table at `0x801E4738`; engines populate per
@@ -612,7 +609,7 @@ pub struct Actor {
     /// for monster (and player-summon) actors from their archive idle clip; the
     /// battle tick advances it into `pose_frame`. Mutually exclusive with
     /// `active_animation` (field ANM) on a given actor.
-    pub battle_animation: Option<crate::battle_anim::MonsterAnimPlayer>,
+    pub battle_animation: Option<legaia_engine_battle::battle_anim::MonsterAnimPlayer>,
 
     /// Per-slot battle action clips for this actor (the player files'
     /// `record[0]` action streams, expanded so channel `i` drives TMD object
@@ -686,9 +683,9 @@ pub struct Actor {
 
     /// The committed battle clip's **effect-script block** - the disc action
     /// entry's head bytes
-    /// ([`legaia_asset::monster_archive::MonsterAnimation::effect_script`])
+    /// ([`legaia_actor_formats::monster_archive::MonsterAnimation::effect_script`])
     /// whose `+0x14..+0x53` region the per-frame effect-script walk reads
-    /// ([`crate::action_effect_script::step_effect_script`]). Installed by
+    /// ([`legaia_engine_effects::action_effect_script::step_effect_script`]). Installed by
     /// the anim commit alongside the player (retail: `node[+0x4C]` =
     /// `actor[+0x234+i*4]`, `FUN_80049348`); `None` when the clip carries no
     /// script or no clip is committed.
@@ -704,7 +701,7 @@ pub struct Actor {
 
     /// Animation cue-track cursor - the engine mirror of actor `+0x1F6`, the
     /// resume point of the per-frame `FUN_800508DC` walk over the committed
-    /// entry's `+0x54` `(frame, cue)` track ([`crate::anim_cue`]). Zeroed by
+    /// entry's `+0x54` `(frame, cue)` track ([`legaia_engine_battle::anim_cue`]). Zeroed by
     /// the anim commit (`FUN_8004AD80`, `0x8004AFD0`); unlike the effect
     /// cursor it does **not** rewind when a looping clip wraps - retail never
     /// rewinds it there.
@@ -714,14 +711,14 @@ pub struct Actor {
     /// retail rings `FUN_80047430` shifts every frame (position `+0x4C`,
     /// anim cursor `+0x17A`, clip `+0x234`, committed anim id `+0x1FB`;
     /// 32 slots). Front = last frame. Feeds the arts after-image ghost walk
-    /// ([`crate::battle_afterimage`], `World::battle_ghost_draws`).
+    /// ([`legaia_engine_battle::battle_afterimage`], `World::battle_ghost_draws`).
     /// Maintained only while a battle animation plays; cleared on battle
     /// exit with the rest of the battle anim state.
     pub battle_pose_history: std::collections::VecDeque<BattleGhostFrame>,
 
     /// Battle monster texture slot (`0..=4`). The monster TMD's on-disc CBA/TSB
     /// are nominal defaults the battle loader relocates per slot
-    /// (`FUN_80055468` → `legaia_asset::monster_archive::relocate_cba/relocate_tsb`).
+    /// (`FUN_80055468` → `legaia_actor_formats::monster_archive::relocate_cba/relocate_tsb`).
     /// Renderers that rebuild this actor's mesh from the raw TMD each frame (the
     /// posed-animation path) must re-apply that relocation, since a fresh build
     /// carries the nominal addresses again. `None` for non-monster actors.
@@ -778,7 +775,7 @@ pub struct Actor {
     /// `World::enter_battle_from_formation`; lets a renderer fetch the
     /// monster's battle mesh + texture pool (the on-disc CBA/TSB are
     /// relocated per battle slot - see
-    /// `legaia_asset::monster_archive::MonsterMesh::battle_render_mesh`).
+    /// `legaia_actor_formats::monster_archive::MonsterMesh::battle_render_mesh`).
     pub battle_monster_id: Option<u16>,
 
     /// This fight's element override for a monster seat: the per-seat copy
@@ -849,7 +846,7 @@ pub struct BattleBuff {
     /// Actor-table slot the buff applies to.
     pub slot: u8,
     /// Buffed stat.
-    pub stat: crate::spells::BuffStat,
+    pub stat: legaia_engine_battle::spells::BuffStat,
     /// Signed delta actually written into the per-slot scalar (`0` for stats
     /// that have no live-loop scalar).
     pub applied_delta: i16,
@@ -962,8 +959,6 @@ pub fn spar_menu_of(dialogue: &[u8]) -> Option<(usize, usize)> {
     None
 }
 
-pub use crate::man_field_scripts::FieldCarrierConfig;
-
 /// Per-overworld-entity role. The retail engine builds one record per on-map
 /// entity from the scene's entity table; this is the port's slice the
 /// gameplay SM acts on - an encounter zone spawns its own formation, a portal
@@ -977,7 +972,7 @@ pub enum WorldMapEntityConfig {
     EncounterZone { formation_id: u16 },
     /// A **mode-24 minigame door** placed on the overworld: engaging it (via
     /// [`World::engage_world_map_entity`]) arms the same door warp the field
-    /// VM's op-`0x3E` arm does ([`crate::minigame_entry::MinigameSubId`]).
+    /// VM's op-`0x3E` arm does ([`legaia_engine_mode::minigame_entry::MinigameSubId`]).
     ///
     /// `sub_id` is the op's `op0 - 100`, which selects a *code overlay*, not a
     /// scene - so this variant never reaches a
@@ -989,7 +984,7 @@ pub enum WorldMapEntityConfig {
     /// The overworld's town / dungeon entrances are **not** this - they are
     /// [`Self::OverworldPortal`], sourced from the `0x3F` named-scene-change
     /// bridge below, and they are the only producer of
-    /// [`crate::field_events::FieldEvent::WorldMapTransition`].
+    /// [`legaia_engine_field::field_events::FieldEvent::WorldMapTransition`].
     MinigameDoor { sub_id: u8 },
     /// An overworld town / dungeon entrance sourced from the disc's `.MAP`
     /// walk-on tile-trigger → MAN partition-2 record → `0x3F`
@@ -1001,7 +996,7 @@ pub enum WorldMapEntityConfig {
     /// whose name resolution lives in an uncaptured overlay), this carries
     /// the **exact CDNAME destination** + arrival tile straight from the
     /// controller's bytecode, so engaging it warps to a real scene. Engaging
-    /// it surfaces a [`crate::field_events::FieldEvent::WorldMapTransition`]
+    /// it surfaces a [`legaia_engine_field::field_events::FieldEvent::WorldMapTransition`]
     /// (whose `slot` points back at this config); the host's transition drain
     /// reads the destination from here.
     OverworldPortal {
@@ -1029,11 +1024,11 @@ pub enum WorldMapEntityConfig {
         /// runs on contact - `map01` P0[6], the Garmel mouth), not a gate-1
         /// walk-on trigger. `record` is then a flat record index, and the
         /// crossing replays the flag writes along the record's path to its
-        /// `0x3F` ([`crate::man_field_scripts::flat_record_path_walk`]).
+        /// `0x3F` ([`legaia_engine_field::man_field_scripts::flat_record_path_walk`]).
         object: bool,
     },
     /// A plain interactable (NPC / signpost). Surfaces a
-    /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.
+    /// [`legaia_engine_field::field_events::FieldEvent::FieldInteract`] with `interact_id`.
     ///
     /// `inline` is the entity's own placement-script dialog text (the `0x3F`
     /// op's inline buffer the placement walker captured); `World::tick_world_map`
@@ -1132,7 +1127,7 @@ pub struct ThreeActorTalk {
     /// [`Self::script_id`] (controller `+0x50`), the base the presence flags
     /// `flag_base + 0..=2` are tested against. Stepped by
     /// [`World::tick_three_actor_talk`].
-    pub swap: crate::cutscene_script_elements::LeaderSwap,
+    pub swap: legaia_engine_field::plain_template_actors::LeaderSwap,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -1160,7 +1155,7 @@ pub struct BattleRewards {
     pub xp: u32,
     /// The EXP each living member is credited - the summed EXP scaled by 3/4
     /// and ceiling-divided among the living members
-    /// ([`legaia_engine_vm::battle_formulas::victory_exp_per_member`]), `0`
+    /// ([`legaia_engine_battle_vm::battle_formulas::victory_exp_per_member`]), `0`
     /// in a no-reward fight. This is the figure the result window prints:
     /// `FUN_8004E568` stores the share `s6` into `gp+0xA04` (`0x8004F684`)
     /// and hands that word to the number draw `FUN_8003563C`, so a party of
@@ -1170,7 +1165,7 @@ pub struct BattleRewards {
     pub level_ups: Vec<LevelUpResult>,
     /// Item drops the post-battle loot roll surfaced: at most one entry, the
     /// item retail's victory drop roll offers
-    /// ([`legaia_engine_vm::battle_formulas::victory_drop_roll`]), and none
+    /// ([`legaia_engine_battle_vm::battle_formulas::victory_drop_roll`]), and none
     /// when the bag already holds 99 of it.
     pub drops: Vec<u8>,
 }
@@ -1193,7 +1188,7 @@ pub struct CameraState {
     /// (`FUN_801DC0BC`): armed by an op-`0x45` beat with a non-zero apply
     /// trigger, zeroed by a snap, counted down once per display frame. The
     /// script-side view of the mover, which op `4C CD` waits on - the
-    /// renderer's own glide lives on `crate::camera::Camera`, which folds
+    /// renderer's own glide lives on `legaia_engine_field::camera::Camera`, which folds
     /// the beat only after the slice that issued it, while retail allocates
     /// the mover inside the op and a `4C CD` later in the same slice already
     /// sees it.

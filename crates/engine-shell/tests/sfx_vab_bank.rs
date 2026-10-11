@@ -1,7 +1,7 @@
 //! The SFX cues' **program bank** is the active scene's music VAB.
 //!
 //! `DAT_8006F198` keys each sound effect to `[program, tone, ...]` (see
-//! `legaia_asset::sfx_table`). Those program ids index a VAB - and that VAB is
+//! `legaia_game_tables::sfx_table`). Those program ids index a VAB - and that VAB is
 //! not a dedicated SFX master: it is the per-scene `scene_vab_stream` bank that
 //! the BGM sequencer has open. The retail SFX voice setup `FUN_80065034` reads
 //! the libsnd "current bank" globals (`_DAT_801ce33c` header base,
@@ -23,8 +23,9 @@
 //! program/tone resolves only in scenes whose bank is big enough - SFX
 //! availability is scene-dependent, not a guaranteed reservation.
 
-use legaia_asset::sfx_table::SfxTable;
-use legaia_mednafen::{SaveState, ScenarioManifest, extract, ram_slice};
+use legaia_game_tables::sfx_table::SfxTable;
+use legaia_mednafen::SaveState;
+use legaia_ram_image::{ScenarioManifest, extract, ram_slice};
 use std::path::{Path, PathBuf};
 
 /// libsnd "current sound bank" VAB-header base pointer.

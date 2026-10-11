@@ -5,7 +5,7 @@
 //! scene-init sweep `FUN_8003A55C` creates the *bound* placements once, on the
 //! actor list at the scene control block's `+0x0C`. The window sweep creates the
 //! rest - the placements whose footprint-anchor tile lacks
-//! [`crate::field_regions::CELL_BIND_OWNED`] - on its own list at `+0x24`
+//! [`legaia_engine_field::field_regions::CELL_BIND_OWNED`] - on its own list at `+0x24`
 //! (`0x8007C36C`), and only those inside the region box the camera re-centre
 //! latched. It runs from exactly two places, the re-centre routines
 //! `FUN_80017DD4` (the scene-entry window install in `FUN_801D6704`) and
@@ -34,7 +34,8 @@
 
 use super::*;
 use crate::field_env::PlacedWindowKey;
-use crate::field_regions::{self, RegionTable, WindowSpawn};
+use legaia_engine_field::field_regions::{self, RegionTable, WindowSpawn};
+use legaia_engine_mode::mode::SceneMode;
 use std::collections::HashSet;
 
 /// The windowed static-object list and the resident bytes it is planned from.
@@ -251,7 +252,8 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field_regions::{CELL_BIND_OWNED, MAP_OBJECT_DESCRIPTOR_STRIDE};
+    use legaia_engine_field::field_regions::{CELL_BIND_OWNED, MAP_OBJECT_DESCRIPTOR_STRIDE};
+    use legaia_engine_mode::mode::SceneMode;
 
     /// A world with one field scene's worth of resident state: descriptor 5
     /// (spawnable, drawn) on tile `(3, 4)` and descriptor 6 (spawnable, drawn)

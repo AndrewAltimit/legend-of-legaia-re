@@ -118,7 +118,7 @@ pub fn install_cast_hook(p: &mut DiscPatcher, routes: &[CastRoute]) -> Result<bo
         );
     }
     let scus = p.read_named_file(SCUS_NAME).context("read SCUS_942.54")?;
-    let off = legaia_asset::item_names::file_offset_for_va(&scus, stub_va)
+    let off = legaia_game_tables::item_names::file_offset_for_va(&scus, stub_va)
         .context("resolve SCUS gap file offset")?;
     let cur = &scus[off..off + bytes.len()];
     if cur == bytes.as_slice() {
@@ -182,7 +182,7 @@ const BLOCK_REACTION_PATCHED: u32 = 0x2402_0006; // li v0, 0x06
 pub fn relocate_block_reaction(p: &mut DiscPatcher) -> Result<bool> {
     const SCUS_NAME: &str = "SCUS_942.54";
     let scus = p.read_named_file(SCUS_NAME).context("read SCUS_942.54")?;
-    let off = legaia_asset::item_names::file_offset_for_va(&scus, BLOCK_REACTION_LI_VA)
+    let off = legaia_game_tables::item_names::file_offset_for_va(&scus, BLOCK_REACTION_LI_VA)
         .context("resolve the Block-reaction literal's file offset")?;
     let cur = u32::from_le_bytes(scus[off..off + 4].try_into()?);
     if cur == BLOCK_REACTION_PATCHED {

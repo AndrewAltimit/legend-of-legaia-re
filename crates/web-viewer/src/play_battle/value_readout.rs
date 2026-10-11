@@ -18,7 +18,7 @@ impl LegaiaRuntime {
     ///
     /// Shared by the retail-art path (`battle_value_readout_prims`) and the
     /// font fallback below so the two cannot seat the same number
-    /// differently. Layout is `legaia_engine_vm::battle_value_readout`, the
+    /// differently. Layout is `legaia_engine_battle_vm::battle_value_readout`, the
     /// same kernel the native window runs.
     ///
     /// Only the newest popup per actor contributes: retail's readout is a
@@ -32,10 +32,10 @@ impl LegaiaRuntime {
     fn battle_value_readout_layout(
         &self,
     ) -> Option<(
-        Option<legaia_engine_vm::battle_value_readout::ComboCluster>,
-        Vec<legaia_engine_vm::battle_value_readout::ValueCell>,
+        Option<legaia_engine_battle_vm::battle_value_readout::ComboCluster>,
+        Vec<legaia_engine_battle_vm::battle_value_readout::ValueCell>,
     )> {
-        use legaia_engine_vm::battle_value_readout as vr;
+        use legaia_engine_battle_vm::battle_value_readout as vr;
         if self.battle_hud.popups.is_empty() && self.battle_hud.combo.is_none() {
             return None;
         }
@@ -45,10 +45,10 @@ impl LegaiaRuntime {
         // read `play_battle_camera_vp`, which answers empty without a battle
         // render - the very frames the font fallback exists for - so a fight
         // whose render did not build drew no numbers at all.
-        if world.mode != legaia_engine_core::world::SceneMode::Battle {
+        if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
             return None;
         }
-        let vp = legaia_engine_vm::battle_cam_script::battle_vp(
+        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(
             &self.battle_cam_pose(),
             BATTLE_WORLD_SCALE_LOCAL,
             4.0 / 3.0,
@@ -79,7 +79,7 @@ impl LegaiaRuntime {
                 continue;
             };
             let age = p.frames_total.saturating_sub(p.frames_remaining);
-            cells.extend(legaia_engine_ui::battle_numerals::popup_value_cells(
+            cells.extend(legaia_render_kernels::battle_numerals::popup_value_cells(
                 &vp,
                 BATTLE_WORLD_SCALE_LOCAL,
                 trio,
@@ -100,21 +100,21 @@ impl LegaiaRuntime {
             && self
                 .scene_host
                 .host()
-                .is_some_and(|h| h.world.mode == legaia_engine_core::world::SceneMode::Battle)
+                .is_some_and(|h| h.world.mode == legaia_engine_mode::mode::SceneMode::Battle)
     }
 
     /// The frame's value readout as screen-space PSX primitives - retail's
     /// own 24x24 numeral cells off the resident battle effect atlas.
     ///
-    /// The quads come out of `legaia_engine_ui::battle_numerals`, the same
+    /// The quads come out of `legaia_render_kernels::battle_numerals`, the same
     /// builder the native window emits through, so both hosts sample the same
     /// texels off the same page through the same ordering-table pass. Empty
     /// outside battle and before the battle VRAM exists, which is what leaves
     /// the font fallback in charge for those frames.
     pub(crate) fn battle_value_readout_prims(
         &self,
-    ) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
-        use legaia_engine_ui::battle_numerals as bn;
+    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_render_kernels::battle_numerals as bn;
         if !self.battle_value_readout_has_atlas() {
             return Vec::new();
         }
@@ -150,13 +150,14 @@ impl LegaiaRuntime {
         };
         // The stage transform the rest of the battle chrome uses.
         let (origin, scale) = crate::play_menu::stage_transform(surface_w, surface_h);
-        let view = |k: &legaia_engine_vm::battle_value_readout::ValueCell| ui::ValueCellView {
-            digit: k.digit,
-            x: k.x,
-            y: k.y,
-            w: k.w,
-            h: k.h,
-        };
+        let view =
+            |k: &legaia_engine_battle_vm::battle_value_readout::ValueCell| ui::ValueCellView {
+                digit: k.digit,
+                x: k.x,
+                y: k.y,
+                w: k.w,
+                h: k.h,
+            };
         let mut out = Vec::new();
         if let Some(c) = cluster.as_ref() {
             let labels: Vec<ui::ComboLabelView<'_>> = c

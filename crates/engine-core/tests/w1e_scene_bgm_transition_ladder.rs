@@ -21,8 +21,8 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::field_events::FieldEvent;
 use legaia_engine_core::scene::{BgmDirector, DefaultMapIdResolver, SceneHost};
+use legaia_engine_field::field_events::FieldEvent;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -113,8 +113,9 @@ impl BgmDirector for LatchDirector {
 /// Every `Bgm { text_id, sub_op }` the scene's MAN carries, decoded with the
 /// opcode-aware walker across all three record partitions.
 fn scene_bgm_ops(host: &SceneHost) -> Vec<(u16, u8)> {
-    use legaia_engine_core::man_field_scripts::{partition_record_span, scene_man_carriers};
-    use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::scene_man_carriers;
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
     let Some(scene) = host.scene.as_ref() else {
         return Vec::new();
@@ -124,7 +125,7 @@ fn scene_bgm_ops(host: &SceneHost) -> Vec<(u16, u8)> {
         return Vec::new();
     };
     let man = carrier.payload.clone();
-    let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+    let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -409,8 +410,8 @@ fn a_scene_fade_arm_runs_against_the_scenes_own_vram() {
         .field_man_payload(&host.index)
         .expect("man payload")
         .expect("map01 has a field MAN");
-    let man_file = legaia_asset::man_section::parse(&man).expect("parse MAN");
-    let sites = legaia_engine_core::man_field_scripts::scene_clut_cell_fx(&man_file, &man);
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
+    let sites = legaia_engine_field::man_field_scripts::scene_clut_cell_fx(&man_file, &man);
     let fade = sites
         .iter()
         .find(|s| s.op.frames != 0)

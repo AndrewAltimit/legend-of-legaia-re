@@ -44,9 +44,19 @@ legaia-save.workspace = true
 legaia-cheats.workspace = true
 legaia-gamedata.workspace = true
 legaia-bytes.workspace = true
+legaia-actor-formats.workspace = true
+legaia-container-formats.workspace = true
+legaia-disc-audit.workspace = true
+legaia-engine-dialog.workspace = true
+legaia-engine-motion-vm.workspace = true
+legaia-game-tables.workspace = true
+legaia-minigame-formats.workspace = true
+legaia-overlay-images.workspace = true
+legaia-scene-formats.workspace = true
+legaia-ui-formats.workspace = true
+legaia-engine-fishing.workspace = true
 
 [dev-dependencies]
-legaia-engine-fishing.workspace = true
 tempfile.workspace = true
 # Disc-gated runtime oracle for the chest randomizer: patch a real disc's MAN in
 # memory, then drive the patched bytes through the field VM. legaia-patcher depends only
@@ -55,7 +65,7 @@ legaia-patcher.workspace = true
 # Disc-gated field-state oracles: load a cataloged PCSX-Redux playthrough anchor's
 # main RAM and assert the engine reproduces the captured retail facts. pcsxr
 # depends only on mednafen (never engine-core), so this dev-only edge is acyclic.
-legaia-pcsxr.workspace = true
+legaia-pcsx-redux.workspace = true
 # Disc-gated dance-minigame oracle: re-extract the dance overlay (PROT 0980) and
 # drive the real parsed step chart through the dance rules engine. prot depends
 # only on iso/lzs (never engine-core), so this dev-only edge is acyclic.
@@ -64,6 +74,9 @@ legaia-prot.workspace = true
 # (u16-offset RAM form at _DAT_8007B8D0). mednafen depends on no engine
 # crate, so this dev-only edge is acyclic.
 legaia-mednafen.workspace = true
+legaia-arts-patch.workspace = true
+legaia-disc-patch.workspace = true
+legaia-ram-image.workspace = true
 
 [[test]]
 name = "integration"

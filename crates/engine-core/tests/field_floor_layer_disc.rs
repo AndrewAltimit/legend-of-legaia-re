@@ -4,7 +4,7 @@
 //! `.MAP` floor grid at `+0x4000` lifted by the scene's 16-entry
 //! **floor-height LUT**, which retail's MAN loader `FUN_8003AEB0` installs
 //! from the scene MAN's header
-//! ([`legaia_asset::field_objects::build_walk_heightfield`],
+//! ([`legaia_scene_formats::field_objects::build_walk_heightfield`],
 //! `Scene::field_floor_height_lut`). So the floor depends on a chain of three
 //! resolutions, and the last two are silent when they fail:
 //!
@@ -109,7 +109,7 @@ fn sweep(index: &ProtIndex) -> Vec<Floor> {
             .flatten()
             .unwrap_or_default()
             .iter()
-            .filter(|t| t.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+            .filter(|t| t.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0)
             .count();
         // A block with neither is an asset block that merely shares a
         // neighbour's `.MAP` index; it has no field map of its own.

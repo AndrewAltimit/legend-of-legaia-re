@@ -410,7 +410,7 @@ fn default_map_id_resolver_empty_returns_none() {
 
 #[test]
 fn scene_destination_resolver_resolves_by_index() {
-    use crate::man_field_scripts::SceneDestination;
+    use legaia_engine_field::man_field_scripts::SceneDestination;
     let r = SceneDestinationResolver::new(vec![
         SceneDestination {
             scene_name: "town0c".into(),
@@ -539,19 +539,19 @@ fn route_bgm_handles_control_subops_without_scene() {
     // file, so this test exercises route_bgm_events indirectly via
     // a unit-sized stand-in: only the control sub-ops 2/3/4.
     let mut d = RecordingBgm::default();
-    let ev2 = crate::field_events::FieldEvent::Bgm {
+    let ev2 = legaia_engine_field::field_events::FieldEvent::Bgm {
         text_id: 0,
         sub_op: 2,
     };
-    let ev3 = crate::field_events::FieldEvent::Bgm {
+    let ev3 = legaia_engine_field::field_events::FieldEvent::Bgm {
         text_id: 0,
         sub_op: 3,
     };
-    let ev4 = crate::field_events::FieldEvent::Bgm {
+    let ev4 = legaia_engine_field::field_events::FieldEvent::Bgm {
         text_id: 0,
         sub_op: 4,
     };
-    let ev_stop = crate::field_events::FieldEvent::Bgm {
+    let ev_stop = legaia_engine_field::field_events::FieldEvent::Bgm {
         text_id: 0,
         sub_op: BGM_SUB_OP_ENGINE_STOP,
     };
@@ -559,7 +559,7 @@ fn route_bgm_handles_control_subops_without_scene() {
     // table (`0x801CEE00`, indexed `sub - 1`) sets pause bit 1 for 2 and 3
     // and clears it with a re-attach for 4; only the engine's own word stops.
     for ev in [ev2, ev3, ev4, ev_stop] {
-        if let crate::field_events::FieldEvent::Bgm { sub_op, .. } = ev {
+        if let legaia_engine_field::field_events::FieldEvent::Bgm { sub_op, .. } = ev {
             match sub_op {
                 2 | 3 => d.pause(),
                 4 => d.resume(),

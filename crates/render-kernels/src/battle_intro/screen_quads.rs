@@ -48,7 +48,7 @@ pub fn intro_quad_to_screen(q: &IntroQuad) -> ScreenQuad {
 /// white-out, and the subtractive ones never reached black. The OT layer is
 /// `a0` - [`legaia_engine_battle_vm::battle_intro_styles::INTRO_FADE_LAYER`], the
 /// same `2` for all five styles - so that is what the bucket carries.
-/// The quad itself is [`legaia_engine_ui::screen_prim::fade_prim`], which is
+/// The quad itself is [`crate::screen_prim::fade_prim`], which is
 /// also what the browser play page emits: the fade is the one part of this
 /// transition both hosts draw, so the two must not each build the packet.
 pub fn fade_quad(f: &IntroFade) -> ScreenPrim {

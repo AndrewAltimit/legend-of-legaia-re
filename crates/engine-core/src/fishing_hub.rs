@@ -1,10 +1,10 @@
 //! The fishing venue's hub screen: the rules half (`FishingHub`, its text
 //! tables and the `PondSession` hub tick) lives in
-//! `legaia_engine_minigames::fishing_hub` and is re-exported here; this file
+//! `legaia_engine_fishing::fishing_hub` and is re-exported here; this file
 //! keeps the `World` methods that route the hub's exits into the world's
 //! exchange sub-screen and wallet.
 
-pub use legaia_engine_minigames::fishing_hub::*;
+use legaia_engine_fishing::fishing_hub::*;
 
 impl crate::world::World {
     /// The fishing hub's frame on the world: the step every world host (the
@@ -117,10 +117,9 @@ impl crate::world::World {
                 // stores runtime cue `0x206` straight into ring slot 0 on its
                 // Yes arm (`0x801D089C`), after the list's and the quantity
                 // screen's `0x20` selects this one press stands in for.
-                ExchangeOutcome::Bought(_) => self
-                    .audio
-                    .sfx_ring_ops
-                    .push(crate::world::SfxRingOp::WriteSlot(0, 0x206)),
+                ExchangeOutcome::Bought(_) => self.audio.sfx_ring_ops.push(
+                    legaia_engine_system::sound_state::SfxRingOp::WriteSlot(0, 0x206),
+                ),
                 _ => sfx.push(0x22),
             }
         }
@@ -134,7 +133,7 @@ impl crate::world::World {
     /// The hub's draw lines on the world: the session's layout with the
     /// tackle rows named off the SCUS item table and counted off the bag.
     /// Empty while no hub is up (or no hub text decoded). The one layout
-    /// both world hosts hand to `legaia_engine_ui::ui_fishing_hub`.
+    /// both world hosts hand to `legaia_engine_ui::fishing::hub`.
     pub fn fishing_hub_lines(&self) -> Vec<HubLine> {
         let (Some(s), Some(text)) = (
             self.minigames.fishing.as_ref(),

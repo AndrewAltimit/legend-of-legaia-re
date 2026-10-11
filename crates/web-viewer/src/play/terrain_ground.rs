@@ -48,17 +48,19 @@ impl LegaiaRuntime {
             .engine_camera
             .filter(|(m, _)| m.as_slice() == vp)
             .and_then(|(_, frame)| frame.field_view())
-            .map(|v| legaia_engine_ui::gte::PartCameraPose::from_field_view(&v))
+            .map(|v| legaia_render_kernels::gte::PartCameraPose::from_field_view(&v))
         else {
             return Vec::new();
         };
         let mut out = Vec::new();
         for (i, d) in f.terrain.iter().enumerate() {
-            let Some(k) = legaia_engine_ui::gte::decoration_cell_basis(d.view_skip, Some(&cam))
+            let Some(k) =
+                legaia_render_kernels::gte::decoration_cell_basis(d.view_skip, Some(&cam))
             else {
                 continue;
             };
-            let r = legaia_engine_ui::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z);
+            let r =
+                legaia_render_kernels::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z);
             let kr = glam::Mat3::from_cols_array_2d(&k).transpose() * glam::Mat3::from_mat4(r);
             let page = glam::Mat3::from_diagonal(glam::Vec3::new(1.0, -1.0, 1.0)) * kr;
             out.push(i as f32);

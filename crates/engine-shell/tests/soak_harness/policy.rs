@@ -306,8 +306,8 @@ impl Policy {
 /// `FightPolicy`): Begin, Attack, Auto, confirm the target, Cross any message
 /// box. `0` when nothing obvious is wanted.
 pub(super) fn fight_pad(s: &BootSession) -> u16 {
-    use legaia_engine_core::battle_input::CommandPhase;
-    use legaia_engine_core::inventory_use::InventoryUseState;
+    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_menus::inventory_use::InventoryUseState;
     let w = &s.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
         return b(PadButton::Cross);

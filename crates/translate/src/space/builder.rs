@@ -16,9 +16,9 @@ use super::report::{
 };
 use super::{Outcomes, all_pools, english_len, pool_index, scene_name, section_of_pool};
 use anyhow::{Context, Result};
-use legaia_asset::man_edit::{self, TextSite};
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_disc_patch::space_ledger;
+use legaia_scene_formats::man_edit::{self, TextSite};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub(super) fn build_report(
@@ -128,7 +128,9 @@ pub(super) fn build_report(
     if let Ok(archive) = patcher.read_entry(legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY) {
         let fields = monster_names::fields(&archive);
         for ((id, f), (_, room)) in fields.iter().zip(monster_names::budgets(&fields)) {
-            let Ok(Some(block)) = legaia_asset::monster_archive::decode_block(&archive, *id) else {
+            let Ok(Some(block)) =
+                legaia_actor_formats::monster_archive::decode_block(&archive, *id)
+            else {
                 continue;
             };
             let kept = block

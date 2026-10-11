@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 // --- field collision grid + free-movement locomotion ---------------
 

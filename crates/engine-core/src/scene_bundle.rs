@@ -23,10 +23,10 @@
 //! REF: FUN_800204F8
 
 use anyhow::Result;
-use legaia_asset::categorize::Class;
-use legaia_asset::{
-    AssetType, Descriptor, scene_asset_table::SceneAssetTable,
-    scene_scripted_asset_table::SceneScriptedAssetTable,
+use legaia_container_formats::{AssetType, Descriptor};
+use legaia_disc_audit::categorize::Class;
+use legaia_scene_formats::{
+    scene_asset_table::SceneAssetTable, scene_scripted_asset_table::SceneScriptedAssetTable,
 };
 
 use crate::scene::{Scene, SceneEntry};
@@ -143,13 +143,14 @@ pub fn find_bundle<'a>(scene: &'a Scene) -> Option<BundleSource<'a>> {
     for entry in &scene.entries {
         match entry.class {
             Class::SceneAssetTable => {
-                if let Some(t) = legaia_asset::scene_asset_table::detect(&entry.bytes) {
+                if let Some(t) = legaia_scene_formats::scene_asset_table::detect(&entry.bytes) {
                     return Some(BundleSource::Plain { entry, table: t });
                 }
             }
             Class::SceneScriptedAssetTable => {
-                if let Some(info) = legaia_asset::scene_scripted_asset_table::detect(&entry.bytes)
-                    && let Some(table) = legaia_asset::scene_asset_table::detect(
+                if let Some(info) =
+                    legaia_scene_formats::scene_scripted_asset_table::detect(&entry.bytes)
+                    && let Some(table) = legaia_scene_formats::scene_asset_table::detect(
                         &entry.bytes[info.asset_table_offset..],
                     )
                 {
@@ -191,7 +192,7 @@ fn find_embedded_asset_table(bytes: &[u8]) -> Option<(SceneAssetTable, usize)> {
     const ALIGN: usize = 0x800;
     let mut off = ALIGN;
     while off + 0x40 <= bytes.len() {
-        if let Some(table) = legaia_asset::scene_asset_table::detect(&bytes[off..])
+        if let Some(table) = legaia_scene_formats::scene_asset_table::detect(&bytes[off..])
             && table
                 .descriptors
                 .iter()
@@ -403,8 +404,8 @@ fn move_payload_looks_valid(buf: &[u8]) -> bool {
 /// MAN descriptor is independently LZS-compressed; this is
 /// `LZS.decode(entry_bytes[desc[2].data_offset..], desc[2].size)`.
 ///
-/// Suitable for feeding directly to [`legaia_asset::man_section::parse`]
-/// or [`crate::encounter_man::encounter_table_from_man`].
+/// Suitable for feeding directly to [`legaia_scene_formats::man_section::parse`]
+/// or [`legaia_engine_battle::encounter_man::encounter_table_from_man`].
 ///
 /// Returns `Ok(None)` for bundles whose descriptor table doesn't carry a
 /// MAN slot (rare - the canonical scene tuple includes it at index 2)
@@ -454,7 +455,7 @@ pub fn extract_man_payload(bundle: &BundleSource, entry_bytes: &[u8]) -> Result<
 /// and the retail script heap at the Mt. Rikuroa Caruban beat byte-matches
 /// the streaming chunk of PROT `0157` - the streaming carrier IS the
 /// resident MAN. Thirteen retail blocks carry such a MAN (see
-/// [`crate::man_field_scripts::ManCarrier`]).
+/// [`legaia_engine_field::man_field_scripts::ManCarrier`]).
 pub fn streaming_man_payloads(scene: &Scene) -> Vec<(u32, usize, Vec<u8>)> {
     let mut out = Vec::new();
     for entry in &scene.entries {
@@ -464,7 +465,7 @@ pub fn streaming_man_payloads(scene: &Scene) -> Vec<(u32, usize, Vec<u8>)> {
         ) {
             continue;
         }
-        let Ok(report) = legaia_asset::parse_streaming(&entry.bytes, 4096) else {
+        let Ok(report) = legaia_container_formats::parse_streaming(&entry.bytes, 4096) else {
             continue;
         };
         for chunk in &report.chunks {
@@ -478,7 +479,7 @@ pub fn streaming_man_payloads(scene: &Scene) -> Vec<(u32, usize, Vec<u8>)> {
             else {
                 continue;
             };
-            if legaia_asset::man_section::parse(payload).is_err() {
+            if legaia_scene_formats::man_section::parse(payload).is_err() {
                 continue;
             }
             out.push((entry.idx, chunk.header_offset, payload.to_vec()));
@@ -506,7 +507,7 @@ pub fn streaming_man_payloads(scene: &Scene) -> Vec<(u32, usize, Vec<u8>)> {
 pub fn scene_tim_layout(scene: &Scene) -> Result<Vec<TimLocation>> {
     let mut out = Vec::new();
     for entry in &scene.entries {
-        for hit in legaia_asset::tim_scan::scan_buffer(&entry.bytes) {
+        for hit in legaia_container_formats::tim_scan::scan_buffer(&entry.bytes) {
             out.push(TimLocation {
                 entry_idx: entry.idx,
                 offset: hit.offset,
@@ -587,7 +588,7 @@ impl ScriptedEventRecords {
 /// Returns `None` if the bundle isn't a scripted table or has no records.
 pub fn scripted_event_record_ranges(bundle: &BundleSource) -> Option<ScriptedEventRecords> {
     if let BundleSource::Scripted { entry, .. } = bundle {
-        let ranges = legaia_asset::scene_scripted_asset_table::record_ranges(&entry.bytes)?;
+        let ranges = legaia_scene_formats::scene_scripted_asset_table::record_ranges(&entry.bytes)?;
         if !ranges.is_empty() {
             return Some(ScriptedEventRecords {
                 entry_idx: entry.idx,
@@ -629,7 +630,7 @@ pub fn scripted_event_record_ranges(bundle: &BundleSource) -> Option<ScriptedEve
 /// per scene, this needs to be revisited.
 pub fn find_vdf_buffer(scene: &Scene) -> Option<Vec<u8>> {
     for entry in &scene.entries {
-        let Ok(report) = legaia_asset::parse_streaming(&entry.bytes, 4096) else {
+        let Ok(report) = legaia_container_formats::parse_streaming(&entry.bytes, 4096) else {
             continue;
         };
         for c in &report.chunks {
@@ -648,7 +649,7 @@ pub fn find_vdf_buffer(scene: &Scene) -> Option<Vec<u8>> {
     // corpus - jou's 17 flesh-ground sub-entries among them). Same decoded
     // layout, so `World::vdf_record_bytes` indexes it unchanged.
     for entry in &scene.entries {
-        if let Some(Ok(vdf)) = legaia_asset::scene_vdf::from_scene_bundle(&entry.bytes) {
+        if let Some(Ok(vdf)) = legaia_scene_formats::scene_vdf::from_scene_bundle(&entry.bytes) {
             return Some(vdf.bytes);
         }
     }
@@ -674,14 +675,14 @@ pub fn find_vdf_buffer(scene: &Scene) -> Option<Vec<u8>> {
 /// 3. loads the shared player pack (`FUN_8001E890` - `data\field\player.lzs`,
 ///    the 5-TMD character mesh pack into `DAT_8007C018[0..4]`),
 /// 4. **only when no DATA_FIELD bundle is staged** (`DAT_8007B768 < 0`,
-///    the `0xFFFF` sentinel [`crate::mode::CORE_STATE_RESET`] seeds)
+///    the `0xFFFF` sentinel [`legaia_engine_mode::mode::CORE_STATE_RESET`] seeds)
 ///    requests the scene's streaming bundle - PROT chunk index
 ///    `field_record + 3` - into the `_DAT_8007B85C` asset buffer
 ///    (`FUN_8001EEF0`; the retail branch additionally blocks on
 ///    `FUN_8003DE7C(0)` when the request was issued),
 /// 5. clears the `u16` at scene-buffer `+0x12` - object descriptor 0's
 ///    flags word, so the grid-mark refresh
-///    ([`crate::field_regions::refresh_object_grid_marks`]) sees slot 0
+///    ([`legaia_engine_field::field_regions::refresh_object_grid_marks`]) sees slot 0
 ///    inactive.
 ///
 /// The engine loads scenes through [`crate::scene::Scene`] resources
@@ -711,7 +712,7 @@ pub struct FieldLoadEntryPlan {
 /// PROT entries on demand and owns their bytes per scene. The step's other
 /// writes are unobservable in the port: the kingdom-TMD prefix reset only
 /// re-bases a global mesh pool the port does not keep (it indexes each
-/// scene's own pack, `legaia_asset::field_objects::pack_mesh_index`), the
+/// scene's own pack, `legaia_scene_formats::field_objects::pack_mesh_index`), the
 /// player pack is loaded by the scene resources, and the clear of descriptor
 /// 0's flags word only drops that descriptor's bit `0x10` (every retail
 /// `.MAP` that sets any of its flags sets exactly `0x10`) - neither of the
@@ -729,7 +730,7 @@ mod tests {
     use std::sync::Arc;
 
     fn synth_scene_asset_table_bytes(types: [u8; 7], total_size: usize) -> Vec<u8> {
-        // Mirror the helper inside legaia_asset::scene_asset_table tests but
+        // Mirror the helper inside legaia_scene_formats::scene_asset_table tests but
         // produce real packed payloads after the descriptor block so our
         // sequential walker has bytes to read.
         let header_end = 0x40u32;
@@ -775,7 +776,10 @@ mod tests {
         assert_eq!(p.data_field_chunk, 0x13);
         assert!(p.stage_needed);
         // CORE_STATE_RESET's 0xFFFF sentinel reads as -1 through the lh.
-        let p = field_load_entry_plan(0x10, crate::mode::CORE_STATE_RESET.data_field_index as i16);
+        let p = field_load_entry_plan(
+            0x10,
+            legaia_engine_mode::mode::CORE_STATE_RESET.data_field_index as i16,
+        );
         assert!(p.stage_needed);
         // An already-staged (non-negative) index skips the request.
         assert!(!field_load_entry_plan(5, 0).stage_needed);

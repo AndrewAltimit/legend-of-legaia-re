@@ -23,9 +23,11 @@ impl PlayWindowApp {
             .session
             .host
             .index
-            .entry_bytes(u32::from(legaia_asset::summon_readef::SUMMON_PROT_INDEX))
+            .entry_bytes(u32::from(
+                legaia_actor_formats::summon_readef::SUMMON_PROT_INDEX,
+            ))
             .ok();
-        let Some(asset) = legaia_engine_core::summon::summon_spawn_asset(
+        let Some(asset) = legaia_engine_effects::summon::summon_spawn_asset(
             spell_id,
             &archive,
             summon_dat.as_ref().map(|b| b.as_slice()),
@@ -100,7 +102,7 @@ impl PlayWindowApp {
             a.move_state.world_z = -350;
         }
         if let Some(idle) = asset.idle.as_ref()
-            && let Some(player) = legaia_engine_core::battle_anim::MonsterAnimPlayer::new(idle)
+            && let Some(player) = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(idle)
         {
             self.session
                 .host

@@ -241,7 +241,7 @@ fn map01_runs_live() {
     assert!(live.is_world_map());
     assert_eq!(
         live.host.world.mode,
-        legaia_engine_core::world::SceneMode::WorldMap
+        legaia_engine_mode::mode::SceneMode::WorldMap
     );
     assert!(live.rooms().is_empty(), "the overworld has no ladder rooms");
     for _ in 0..240 {

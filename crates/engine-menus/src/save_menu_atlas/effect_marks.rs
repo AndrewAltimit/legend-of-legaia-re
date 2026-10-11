@@ -21,7 +21,7 @@ use super::*;
 /// whether the X baked; a source without that TIM leaves the atlas
 /// untouched.
 pub fn add_cross_out_mark(atlas: &mut SaveMenuAtlas, flame_atlas_entry: &[u8]) -> bool {
-    for target in legaia_asset::befect_cluster::scan_tims(flame_atlas_entry) {
+    for target in legaia_actor_formats::befect_cluster::scan_tims(flame_atlas_entry) {
         let Ok(tim) = legaia_tim::parse(&flame_atlas_entry[target.offset..]) else {
             continue;
         };

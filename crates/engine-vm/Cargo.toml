@@ -15,6 +15,8 @@ legaia-anm.workspace = true
 legaia-asset.workspace = true
 legaia-engine-battle-vm.workspace = true
 legaia-engine-motion-vm.workspace = true
+legaia-minigame-formats.workspace = true
+legaia-scene-formats.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
@@ -25,6 +27,9 @@ serde_json.workspace = true
 # The ambient-motion disc oracle LZS-decodes each scene bundle's MAN to
 # re-derive the facing-op census (disc-gated; no bytes committed).
 legaia-lzs.workspace = true
+legaia-actor-formats.workspace = true
+legaia-container-formats.workspace = true
+legaia-game-tables.workspace = true
 
 [[test]]
 name = "integration"

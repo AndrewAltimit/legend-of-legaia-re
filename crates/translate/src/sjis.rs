@@ -17,7 +17,7 @@
 //!
 //! This is why a Latin exporter finds nothing on the Japanese disc: there is
 //! no `0x1F` lead, and the count byte reads as a terminator. The script walk
-//! here ([`man_lines`]) is the Latin walk (`legaia_asset::field_disasm`) with
+//! here ([`man_lines`]) is the Latin walk (`legaia_scene_formats::field_disasm`) with
 //! those four instruction shapes sized the Japanese way, run over the same
 //! per-record windows (`man_edit::record_script_windows`).
 //!
@@ -26,7 +26,7 @@
 //! with every byte pair that does not round-trip through Shift-JIS written as
 //! a `{xx:yy}` escape, so [`encode`]`(`[`decode`]`(b)) == b` for every line.
 
-use legaia_asset::{field_disasm, man_edit};
+use legaia_scene_formats::{field_disasm, man_edit};
 
 use super::segments::Segment;
 

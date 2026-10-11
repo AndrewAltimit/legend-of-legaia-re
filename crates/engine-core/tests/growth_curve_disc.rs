@@ -11,12 +11,12 @@
 //! level-1 `start`) and against the byte-pinned Noa L2->L3 capture. Skips without
 //! `LEGAIA_DISC_BIN`.
 
-use legaia_asset::level_up_tables::{
+use legaia_engine_battle::levelup::{LevelUpTracker, StatGrowthCurve};
+use legaia_engine_core::Vfs;
+use legaia_game_tables::level_up_tables::{
     GROWTH_CHAR_COUNT, GROWTH_STAT_COUNT, growth_tables_from_scus,
 };
-use legaia_asset::new_game::StartingParty;
-use legaia_engine_core::Vfs;
-use legaia_engine_core::levelup::{LevelUpTracker, StatGrowthCurve};
+use legaia_game_tables::new_game::StartingParty;
 use std::path::PathBuf;
 
 fn read_scus() -> Option<Vec<u8>> {

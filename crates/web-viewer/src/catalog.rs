@@ -224,13 +224,13 @@ impl LegaiaViewer {
 //
 // A TIM's own CLUT rows are the right palettes only when the game samples the
 // texture through the cell the file uploads to and nothing overwrote it. See
-// `legaia_asset::tim_palette_context` for the three shapes that break it. The
+// `legaia_ui_formats::tim_palette_context` for the three shapes that break it. The
 // accessors below let the catalog detail panel (a) say which shape applies,
 // (b) offer the palettes VRAM really holds on the TIM's CLUT row after the
 // boot upload, and (c) decode the system-UI page "as the game draws it" -
 // every widget sprite through its own palette.
 
-use legaia_asset::tim_palette_context::{self as palctx, ClutFate};
+use legaia_ui_formats::tim_palette_context::{self as palctx, ClutFate};
 
 /// How a catalog detail render picks its palette. Parsed from the page's
 /// `<select>` value: `own:N`, `vram:X:Y` or `composite`.
@@ -315,7 +315,7 @@ impl LegaiaViewer {
     /// Composite decode of a sheet-page TIM, if the palette map applies and
     /// covers any of it. Returns `(rgba, covered, contested)`. Reads the
     /// same kernel as the ROM patcher's region map
-    /// (`legaia_asset::tim_palette_context::texel_palettes`).
+    /// (`legaia_ui_formats::tim_palette_context::texel_palettes`).
     fn catalog_composite(&self, tim: &legaia_tim::Tim) -> Option<(Vec<u8>, usize, usize)> {
         let regions = self.sheet_regions.as_ref()?;
         let boot = self.boot_cluts.as_ref()?;
@@ -324,7 +324,7 @@ impl LegaiaViewer {
         }
         let cover = self
             .disc
-            .get(legaia_asset::ui_widgets::BUTTON_GLYPH_TIM_PROT_OFFSET..)
+            .get(legaia_ui_formats::ui_widgets::BUTTON_GLYPH_TIM_PROT_OFFSET..)
             .and_then(palctx::parse_button_glyph_tim);
         let texels = palctx::texel_palettes(tim, regions, cover.as_ref())?;
         let covered = texels.claimed();

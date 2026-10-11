@@ -176,10 +176,12 @@ impl LegaiaMinigames {
                     // The rotating counter belongs to the host, as retail's
                     // free-running `DAT_801D1AE4` does.
                     for _ in &step.cues {
-                        attrs.push(legaia_engine_core::other_game_overlay::arena_voice_cue(
-                            &mut self.muscle_tally_cue_counter,
-                            volume_word,
-                        ));
+                        attrs.push(
+                            legaia_engine_minigames::other_game_overlay::arena_voice_cue(
+                                &mut self.muscle_tally_cue_counter,
+                                volume_word,
+                            ),
+                        );
                     }
                 }
                 if !step.rolling {
@@ -234,7 +236,7 @@ impl LegaiaMinigames {
     /// bank on the way past, once.
     #[cfg(target_arch = "wasm32")]
     fn sfx_slot_for_cue(&mut self, id: u8) -> Option<u8> {
-        let table = legaia_asset::sfx_table::SfxTable::from_scus(self.scus.as_ref()?)?;
+        let table = legaia_game_tables::sfx_table::SfxTable::from_scus(self.scus.as_ref()?)?;
         if self.sfx_bank.is_none() {
             self.sfx_bank = Some(legaia_engine_audio::SfxBank::from_descriptors(
                 table
@@ -253,7 +255,7 @@ impl LegaiaMinigames {
         if self.sfx_vabs.contains_key(&slot) {
             return true;
         }
-        let Some(prot_index) = legaia_asset::sfx_table::prot_index_for_slot(slot) else {
+        let Some(prot_index) = legaia_game_tables::sfx_table::prot_index_for_slot(slot) else {
             return false;
         };
         let Some(entry) = entry_bytes(&self.prot, &self.entries, prot_index) else {

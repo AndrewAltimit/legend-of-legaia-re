@@ -32,12 +32,11 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use legaia_asset::categorize::Class;
-use legaia_engine_core::man_field_scripts::{
-    flag_test_bytescan, scene_man_carriers, system_flag_census,
-};
+use legaia_disc_audit::categorize::Class;
+use legaia_engine_core::man_field_scripts::{scene_man_carriers, system_flag_census};
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_vm::field_disasm::FlagKind;
+use legaia_engine_field::man_field_scripts::flag_test_bytescan;
+use legaia_scene_formats::field_disasm::FlagKind;
 
 mod carrier_census;
 mod chapter2_gates;

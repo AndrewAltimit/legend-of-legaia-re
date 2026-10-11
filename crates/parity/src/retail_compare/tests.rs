@@ -1,8 +1,8 @@
 //! Unit tests for the retail comparison corpus.
 
 use super::*;
-use legaia_engine_core::field_menu::FieldMenuRow;
-use legaia_engine_core::input::PadButton;
+use legaia_engine_menus::field_menu::FieldMenuRow;
+use legaia_engine_system::input::PadButton;
 
 fn ram_with_subscreen(sub: u8) -> Vec<u8> {
     let mut ram = vec![0u8; 0x20_0000];
@@ -97,7 +97,7 @@ fn sprite_arm_seeds_round_trip_through_their_env_form() {
 
 #[test]
 fn cell_fx_and_fog_seeds_round_trip_through_their_env_forms() {
-    let fx = vec![legaia_engine_core::clut_cell_fx::ClutCellFx {
+    let fx = vec![legaia_engine_field::clut_cell_fx::ClutCellFx {
         rect: (0, 502, 16, 1),
         h_add: 2880,
         s_add: 0,

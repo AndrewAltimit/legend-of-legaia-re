@@ -16,7 +16,7 @@ impl SceneHost {
     /// REF: FUN_8003A55C, FUN_801CF754, FUN_801CFC40
     fn install_field_props(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man_bytes: &[u8],
     ) {
         let Some(scene) = self.scene.as_ref() else {
@@ -74,7 +74,8 @@ impl SceneHost {
                 // footprint (`A3 F8 24 1F`), and a solid box there boxed the
                 // player in on all four probes once the cutscene ended.
                 // REF: FUN_801CF754, FUN_801D7B50, FUN_801D01B0
-                let init_owned = p.anchor_cell & crate::field_regions::CELL_BIND_OWNED != 0;
+                let init_owned =
+                    p.anchor_cell & legaia_engine_field::field_regions::CELL_BIND_OWNED != 0;
                 crate::world::FieldPropCollider {
                     anchor: bind.map(|_| anchor),
                     center: (p.collider_x, p.collider_z),
@@ -165,8 +166,9 @@ impl SceneHost {
         // fade-to-black carries into the next scene, whose `P1[0]` arrival
         // arm fades back in.
         self.world.presentation.effect_tween_slot = None;
-        self.world
-            .retire_actors_by_handler(crate::actor_handler::ActorHandler::ColourTween);
+        self.world.retire_actors_by_handler(
+            legaia_engine_field::actor_handler::ActorHandler::ColourTween,
+        );
         // The MAN loader zeroes the clear colour on every scene load
         // (`FUN_8003AEB0`, `0x8003B470..0x8003B48C`); the scene's own
         // `4C 13` sets it again.
@@ -223,7 +225,7 @@ impl SceneHost {
             })?;
             (record.to_vec(), scripts.bytes.to_vec())
         };
-        self.world.mode = crate::world::SceneMode::Field;
+        self.world.mode = legaia_engine_mode::mode::SceneMode::Field;
         // Cold-boot default init: entering a scene with no party / save ever
         // loaded seeds the retail new-game defaults (template party, starting
         // bag, starting gold) when the host carries them, so the pause menu
@@ -248,7 +250,7 @@ impl SceneHost {
         // Mirrors the retail scene-entry player setup in `FUN_8003aeb0`.
         self.world.install_field_player(0);
         // Field entry seat, through the field initialiser's own placement
-        // kernel (`crate::mode_entry_init::field_spawn`, PORT: FUN_801D6704).
+        // kernel (`legaia_engine_system::mode_entry_init::field_spawn`, PORT: FUN_801D6704).
         //
         // Retail's seat is the **destination-entry operand** `_DAT_80073EF4` /
         // `_DAT_80073EF8`, written by whatever requested the scene change (a
@@ -271,10 +273,10 @@ impl SceneHost {
         // wins), and is spent by whichever entry comes first.
         let new_game_seat = self.world.cutscene.new_game_entry_seat.take();
         let operand = self.pending_entry_seat.take().or_else(|| {
-            new_game_seat.filter(|_| name == legaia_asset::new_game::OPENING_CUTSCENE_SCENE)
+            new_game_seat.filter(|_| name == legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE)
         });
-        let cold = crate::mode_entry_init::field_spawn(
-            crate::mode_entry_init::FieldEntryMode::Cold,
+        let cold = legaia_engine_system::mode_entry_init::field_spawn(
+            legaia_engine_system::mode_entry_init::FieldEntryMode::Cold,
             operand.unwrap_or((0, 0)),
             (0, 0),
             false,
@@ -282,7 +284,7 @@ impl SceneHost {
         );
         let (seat_x, seat_y, seat_z) = match operand {
             Some(_) => (cold.player.0, 0, cold.player.1),
-            None => crate::mode_entry_init::FIELD_COLD_SPAWN,
+            None => legaia_engine_system::mode_entry_init::FIELD_COLD_SPAWN,
         };
         if let Some(player) = self.world.actors.get_mut(0) {
             player.move_state.world_x = seat_x;
@@ -297,10 +299,10 @@ impl SceneHost {
         // emits nothing until a script raises the gate through op `0x4C`
         // nibble 3 sub-0. The span is the field draw context's own window; op
         // `0x46` retunes it per scene.
-        let (wx0, wz0, wx1, wz1) = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
+        let (wx0, wz0, wx1, wz1) = legaia_engine_system::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
         self.world.install_field_scene_elements(
-            crate::mode_entry_init::FieldEntryMode::Cold,
-            crate::cutscene_script_elements::SceneSpan {
+            legaia_engine_system::mode_entry_init::FieldEntryMode::Cold,
+            legaia_engine_field::plain_template_actors::SceneSpan {
                 x_min: wx0,
                 y_min: wz0,
                 x_max: wx1,
@@ -354,26 +356,26 @@ impl SceneHost {
                 // everywhere: `retona`'s tile `(0x1D, 0x18)` carries
                 // `0x3000` in a live capture and not on the disc.
                 // PORT: FUN_80017BEC (scene-load call site)
-                crate::field_regions::refresh_object_grid_marks(&mut bytes);
+                legaia_engine_field::field_regions::refresh_object_grid_marks(&mut bytes);
                 // The object-descriptor region (`+0x0000..0x4000`) stays
                 // resident: the sub-area window sweep indexes it on every
                 // camera re-centre, not just at load.
                 self.world.load_field_object_descriptors(
                     bytes
-                        .get(..crate::field_regions::MAP_WALK_GRID_OFFSET)
+                        .get(..legaia_engine_field::field_regions::MAP_WALK_GRID_OFFSET)
                         .unwrap_or_default(),
                 );
                 self.world.load_field_object_cells(
                     bytes
-                        .get(legaia_asset::field_objects::OBJECT_GRID_OFFSET..)
+                        .get(legaia_scene_formats::field_objects::OBJECT_GRID_OFFSET..)
                         .unwrap_or_default(),
                 );
                 self.world.load_field_elevation_overrides(
                     bytes
-                        .get(crate::field_regions::MAP_REGION_BLOCK_OFFSET..)
+                        .get(legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET..)
                         .unwrap_or_default(),
                     bytes
-                        .get(crate::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
+                        .get(legaia_engine_field::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
                         .unwrap_or_default(),
                 );
             }
@@ -604,7 +606,9 @@ impl SceneHost {
             if !ids.is_empty()
                 && let Some(archive) = self.monster_archive_bytes()
             {
-                let cat = crate::monster_catalog::catalog_from_monster_archive(&archive, &ids);
+                let cat = legaia_engine_battle::monster_catalog::catalog_from_monster_archive(
+                    &archive, &ids,
+                );
                 for def in cat.by_id.into_values() {
                     self.world.tables.monster_catalog.insert(def);
                 }
@@ -613,27 +617,37 @@ impl SceneHost {
                 // monsters, so a summon creature is not in it; the summon
                 // roll reads its HP / INT / element off this record.
                 if self.world.tables.summon_creatures.is_empty() {
-                    for spell_id in (0..=u8::MAX).filter(|&id| crate::summon::has_summon_body(id)) {
-                        let Some(cid) = crate::summon::summon_creature_id(spell_id, &archive)
+                    for spell_id in (0..=u8::MAX)
+                        .filter(|&id| legaia_engine_effects::summon::has_summon_body(id))
+                    {
+                        let Some(cid) =
+                            legaia_engine_effects::summon::summon_creature_id(spell_id, &archive)
                         else {
                             continue;
                         };
-                        if let Ok(Some(rec)) = legaia_asset::monster_archive::record(&archive, cid)
+                        if let Ok(Some(rec)) =
+                            legaia_actor_formats::monster_archive::record(&archive, cid)
                         {
                             self.world.tables.summon_creatures.insert(
                                 spell_id,
-                                crate::monster_catalog::monster_def_from_record(&rec),
+                                legaia_engine_battle::monster_catalog::monster_def_from_record(
+                                    &rec,
+                                ),
                             );
                         }
                     }
                 }
                 if self.world.tables.summon_elements.is_empty() {
-                    for spell_id in (0..=u8::MAX).filter(|&id| crate::summon::has_summon_body(id)) {
-                        let Some(cid) = crate::summon::summon_creature_id(spell_id, &archive)
+                    for spell_id in (0..=u8::MAX)
+                        .filter(|&id| legaia_engine_effects::summon::has_summon_body(id))
+                    {
+                        let Some(cid) =
+                            legaia_engine_effects::summon::summon_creature_id(spell_id, &archive)
                         else {
                             continue;
                         };
-                        if let Ok(Some(rec)) = legaia_asset::monster_archive::record(&archive, cid)
+                        if let Ok(Some(rec)) =
+                            legaia_actor_formats::monster_archive::record(&archive, cid)
                         {
                             self.world
                                 .tables
@@ -670,7 +684,9 @@ impl SceneHost {
             .as_ref()
             .and_then(|s| s.field_man_payload(&self.index).ok().flatten())
             .as_ref()
-            .and_then(|man| crate::region_encounter::region_encounter_table_from_man(name, man));
+            .and_then(|man| {
+                legaia_engine_battle::region_encounter::region_encounter_table_from_man(name, man)
+            });
         self.world.set_field_regions(field_region_table);
         // Install the scene's field entity-SM carriers derived from the same
         // MAN actor-placement partition (retail builds one record per
@@ -692,7 +708,8 @@ impl SceneHost {
             .as_ref()
             .map(|s| s.field_man_payload(&self.index))
         {
-            Some(Ok(Some(man_bytes))) => match legaia_asset::man_section::parse(&man_bytes) {
+            Some(Ok(Some(man_bytes))) => match legaia_scene_formats::man_section::parse(&man_bytes)
+            {
                 Ok(man_file) => {
                     self.world
                         .install_field_carriers_from_man(&man_file, &man_bytes);
@@ -764,7 +781,7 @@ impl SceneHost {
                         .as_ref()
                         .and_then(|s| s.field_map_index(&self.index))
                         .and_then(|idx| self.index.entry_bytes_extended(idx).ok());
-                    let triggers: Vec<crate::field_regions::TileTrigger> = self
+                    let triggers: Vec<legaia_engine_field::field_regions::TileTrigger> = self
                         .field_triggers
                         .0
                         .iter()
@@ -773,11 +790,11 @@ impl SceneHost {
                         .collect();
                     type Bind = (
                         (i16, i16),
-                        crate::man_field_scripts::WalkTouchEvent,
+                        legaia_engine_field::man_field_scripts::WalkTouchEvent,
                         Option<usize>,
                     );
                     let binds: Vec<Bind> = match map_bytes.as_deref() {
-                        Some(map) => crate::man_field_scripts::object_walk_touch_binds(
+                        Some(map) => legaia_engine_field::man_field_scripts::object_walk_touch_binds(
                             map, &triggers, &man_file, &man_bytes,
                         )
                         .into_iter()
@@ -788,7 +805,7 @@ impl SceneHost {
                             .filter(|t| t.gate == 0)
                             .filter_map(|t| {
                                 let record = t.record as usize;
-                                let event = crate::man_field_scripts::flat_record_walk_touch_event(
+                                let event = legaia_engine_field::man_field_scripts::flat_record_walk_touch_event(
                                     &man_file, &man_bytes, record,
                                 )?;
                                 let pos = (
@@ -819,7 +836,9 @@ impl SceneHost {
                     // REF: FUN_8003A55C, FUN_8003C83C
                     let object_binds: Vec<(usize, (i16, i16))> = match map_bytes.as_deref() {
                         Some(map) => {
-                            crate::man_field_scripts::object_script_bind_seats(map, &triggers)
+                            legaia_engine_field::man_field_scripts::object_script_bind_seats(
+                                map, &triggers,
+                            )
                         }
                         None => triggers
                             .iter()
@@ -852,7 +871,9 @@ impl SceneHost {
                         map_bytes
                             .as_deref()
                             .map(|map| {
-                                crate::man_field_scripts::object_script_bind_rots(map, &triggers)
+                                legaia_engine_field::man_field_scripts::object_script_bind_rots(
+                                    map, &triggers,
+                                )
                             })
                             .unwrap_or_default(),
                     );
@@ -1041,7 +1062,7 @@ impl SceneHost {
                 // cutscene-armed), install the rolling pulse so the morphs
                 // move at plain entry. `install_entry_vdf_pulse` self-guards
                 // on retail-armed parts (town0e / rikuroa keep the faithful
-                // envelope). See `crate::vdf_pulse`.
+                // envelope). See `legaia_engine_field::vdf_pulse`.
                 if let Some(scene) = self.scene.as_ref() {
                     let env = crate::field_env::env_pack_tmd_indices(scene, &res);
                     let pack_objects: Vec<Vec<usize>> = env
@@ -1095,7 +1116,7 @@ impl SceneHost {
         // arm only when it is present. A cutscene scene that never issues that
         // write never produces a false hand-off. See
         // [`crate::world::World::arm_prologue_handoff_from_man`].
-        if name == legaia_asset::new_game::OPENING_CUTSCENE_SCENE {
+        if name == legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE {
             // The New-Game opening chain starts here: while it plays (through
             // the `opstati` / `opurud` legs the timelines chain into), a
             // confirm press with the hand-off bit armed skips the whole
@@ -1117,50 +1138,52 @@ impl SceneHost {
                 .as_ref()
                 .map(|s| s.field_man_payload(&self.index))
             {
-                Some(Ok(Some(man_bytes))) => match legaia_asset::man_section::parse(&man_bytes) {
-                    Ok(man_file) => {
-                        // Execute the cutscene timeline as a spawned field-VM
-                        // context: its camera path + actor moves play and the
-                        // closing `GFLAG_SET 26` fires by execution. Fall back
-                        // to the static MAN-walk arm only when the timeline
-                        // record can't be resolved, so the prologue still hands
-                        // off either way.
-                        if self
-                            .world
-                            .load_cutscene_timeline_from_man(&man_file, &man_bytes)
-                        {
-                            log::info!(
-                                "prologue: executing '{}' cutscene timeline -> '{}' hand-off by GFLAG_SET {}",
-                                legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
-                                legaia_asset::new_game::OPENING_SCENE,
-                                crate::world::PROLOGUE_HANDOFF_BIT,
-                            );
-                        } else if self
-                            .world
-                            .arm_prologue_handoff_from_man(&man_file, &man_bytes)
-                        {
-                            log::info!(
-                                "prologue: armed '{}' -> '{}' hand-off from MAN GFLAG_SET {} (static fallback)",
-                                legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
-                                legaia_asset::new_game::OPENING_SCENE,
-                                crate::world::PROLOGUE_HANDOFF_BIT,
-                            );
+                Some(Ok(Some(man_bytes))) => {
+                    match legaia_scene_formats::man_section::parse(&man_bytes) {
+                        Ok(man_file) => {
+                            // Execute the cutscene timeline as a spawned field-VM
+                            // context: its camera path + actor moves play and the
+                            // closing `GFLAG_SET 26` fires by execution. Fall back
+                            // to the static MAN-walk arm only when the timeline
+                            // record can't be resolved, so the prologue still hands
+                            // off either way.
+                            if self
+                                .world
+                                .load_cutscene_timeline_from_man(&man_file, &man_bytes)
+                            {
+                                log::info!(
+                                    "prologue: executing '{}' cutscene timeline -> '{}' hand-off by GFLAG_SET {}",
+                                    legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE,
+                                    legaia_game_tables::new_game::OPENING_SCENE,
+                                    crate::world::PROLOGUE_HANDOFF_BIT,
+                                );
+                            } else if self
+                                .world
+                                .arm_prologue_handoff_from_man(&man_file, &man_bytes)
+                            {
+                                log::info!(
+                                    "prologue: armed '{}' -> '{}' hand-off from MAN GFLAG_SET {} (static fallback)",
+                                    legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE,
+                                    legaia_game_tables::new_game::OPENING_SCENE,
+                                    crate::world::PROLOGUE_HANDOFF_BIT,
+                                );
+                            }
+                            // The inline narration is script-driven: the timeline
+                            // stepper installs each block's pages on the roller
+                            // presenter when its PC reaches the block's op and
+                            // suspends the timeline until the crawl completes
+                            // (retail `FUN_80037174`). Nothing to install here.
+                            if let Some(tl) = self.world.cutscene.timeline.as_ref() {
+                                log::info!(
+                                    "prologue: '{}' timeline carries {} narration block(s)",
+                                    legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE,
+                                    tl.narration_blocks.len(),
+                                );
+                            }
                         }
-                        // The inline narration is script-driven: the timeline
-                        // stepper installs each block's pages on the roller
-                        // presenter when its PC reaches the block's op and
-                        // suspends the timeline until the crawl completes
-                        // (retail `FUN_80037174`). Nothing to install here.
-                        if let Some(tl) = self.world.cutscene.timeline.as_ref() {
-                            log::info!(
-                                "prologue: '{}' timeline carries {} narration block(s)",
-                                legaia_asset::new_game::OPENING_CUTSCENE_SCENE,
-                                tl.narration_blocks.len(),
-                            );
-                        }
+                        Err(err) => eprintln!("[scene] prologue MAN parse skipped: {err:#}"),
                     }
-                    Err(err) => eprintln!("[scene] prologue MAN parse skipped: {err:#}"),
-                },
+                }
                 Some(Err(err)) => eprintln!("[scene] prologue MAN payload skipped: {err:#}"),
                 _ => {}
             }
@@ -1171,7 +1194,7 @@ impl SceneHost {
         // op-`0x49` STATE_RESUME opens the name-entry overlay at the right beat
         // (rather than the host opening it blindly at the hand-off). One-shot:
         // consume the flag so re-entering `town01` later never re-runs it.
-        if name == legaia_asset::new_game::OPENING_SCENE
+        if name == legaia_game_tables::new_game::OPENING_SCENE
             && (self.world.cutscene.entering_town01_opening
                 || self.world.cutscene.opening_chain_active)
         {
@@ -1186,21 +1209,23 @@ impl SceneHost {
                 .as_ref()
                 .map(|s| s.field_man_payload(&self.index))
             {
-                Some(Ok(Some(man_bytes))) => match legaia_asset::man_section::parse(&man_bytes) {
-                    Ok(man_file) => {
-                        if self
-                            .world
-                            .install_town01_opening_timeline(&man_file, &man_bytes)
-                        {
-                            log::info!(
-                                "opening: executing '{}' opening timeline (P2[{}]); name entry opens at its op-0x49 STATE_RESUME",
-                                legaia_asset::new_game::OPENING_SCENE,
-                                crate::world::World::TOWN01_OPENING_TIMELINE_RECORD,
-                            );
+                Some(Ok(Some(man_bytes))) => {
+                    match legaia_scene_formats::man_section::parse(&man_bytes) {
+                        Ok(man_file) => {
+                            if self
+                                .world
+                                .install_town01_opening_timeline(&man_file, &man_bytes)
+                            {
+                                log::info!(
+                                    "opening: executing '{}' opening timeline (P2[{}]); name entry opens at its op-0x49 STATE_RESUME",
+                                    legaia_game_tables::new_game::OPENING_SCENE,
+                                    crate::world::World::TOWN01_OPENING_TIMELINE_RECORD,
+                                );
+                            }
                         }
+                        Err(err) => eprintln!("[scene] town01 opening MAN parse skipped: {err:#}"),
                     }
-                    Err(err) => eprintln!("[scene] town01 opening MAN parse skipped: {err:#}"),
-                },
+                }
                 Some(Err(err)) => eprintln!("[scene] town01 opening MAN payload skipped: {err:#}"),
                 _ => {}
             }
@@ -1256,7 +1281,7 @@ impl SceneHost {
                 Ok(b) => b,
                 Err(_) => continue,
             };
-            shops.extend(crate::shop_catalog::scene_shops(
+            shops.extend(legaia_engine_menus::shop_catalog::scene_shops(
                 &bytes,
                 idx as usize,
                 item_data.as_ref(),

@@ -50,8 +50,9 @@ pub const DEFAULT_TILE_CORNERS: [i32; 4] = [0, 1, 0x11, 0x12];
 /// form the two in-overlay table readers take. `None` when the static
 /// overlay map has no base for the entry or the image does not relocate.
 pub fn intro_overlay_as_loaded(raw: &[u8]) -> Option<(Vec<u8>, u32)> {
-    let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
-    let as_loaded = legaia_asset::static_overlay::as_loaded(raw, rec).ok()?;
+    let rec =
+        legaia_overlay_images::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
+    let as_loaded = legaia_overlay_images::static_overlay::as_loaded(raw, rec).ok()?;
     Some((as_loaded, rec.base_va))
 }
 

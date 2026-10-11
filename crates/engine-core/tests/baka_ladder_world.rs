@@ -14,10 +14,11 @@
 //! re-seats the same opponent); the disc-gated leg reads PROT 0976's roster
 //! and checks the install climbs the rung fold (`roster = stage + 3`).
 
-use legaia_engine_core::baka_cabinet::{ST_CHOICE, ST_GAME_OVER};
-use legaia_engine_core::baka_fighter::{BakaFight, FighterConfig, first_rung_roster};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_minigames::baka_cabinet::{ST_CHOICE, ST_GAME_OVER};
+use legaia_engine_minigames::baka_fighter::{BakaFight, FighterConfig, first_rung_roster};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 const PRIZE: u32 = 100;
 
@@ -190,8 +191,9 @@ fn next_game_climbs_the_disc_roster() {
         eprintln!("[skip] PROT 0976 unreadable");
         return;
     };
-    let opponents = legaia_asset::baka_opponents::parse(&overlay).expect("roster");
-    let actions = legaia_asset::baka_opponents::parse_actions(&overlay).expect("actions");
+    let opponents = legaia_minigame_formats::baka_opponents::parse(&overlay).expect("roster");
+    let actions =
+        legaia_minigame_formats::baka_opponents::parse_actions(&overlay).expect("actions");
     let first = first_rung_roster();
     assert_eq!(first, 5, "stage seeded 2 folds to roster 5");
     let f = BakaFight::from_tables(&opponents, &actions, 0, first, 7).expect("fight");

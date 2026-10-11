@@ -76,18 +76,17 @@ impl World {
 mod tests {
     use super::*;
     use crate::world::FieldNpcAmbient;
-    use legaia_engine_vm as vm;
 
     /// A channel seeded the way `seed_field_npc_ambient` seeds one, running
     /// `code` with op `0x17`'s record already installed.
     fn channel(slot: u8, default_move: [u8; 2], code: Vec<u8>) -> FieldNpcAmbient {
-        let mut m = vm::ambient_motion::AmbientMotion::new(u32::from(slot), 0);
+        let mut m = legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(u32::from(slot), 0);
         m.actor_flags |= legaia_engine_field::motion_pause::MOVING_CLASS;
         m.default_move = default_move;
         FieldNpcAmbient {
             defers: false,
             walks: true,
-            variants: vec![(legaia_asset::man_motion::SELECTOR_DEFAULT, code)],
+            variants: vec![(legaia_scene_formats::man_motion::SELECTOR_DEFAULT, code)],
             live: None,
             vm: m,
         }
@@ -118,7 +117,7 @@ mod tests {
     #[test]
     fn an_unset_record_and_a_classless_actor_are_left_alone() {
         let mut w = World::new();
-        let unset = vm::ambient_motion::DEFAULT_MOVE_UNSET;
+        let unset = legaia_engine_motion_vm::ambient_motion::DEFAULT_MOVE_UNSET;
         w.npcs
             .ambient
             .insert(2, channel(2, [unset, unset], WAIT.to_vec()));

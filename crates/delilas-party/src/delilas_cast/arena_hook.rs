@@ -294,7 +294,7 @@ pub fn install_delilas_arena(p: &mut DiscPatcher) -> Result<bool> {
         bail!("delilas arena does not fit ARENA1 ({} bytes)", bytes.len());
     }
     let scus = p.read_named_file(SCUS_NAME).context("read SCUS_942.54")?;
-    let off = legaia_asset::item_names::file_offset_for_va(&scus, ARENA1_VA)
+    let off = legaia_game_tables::item_names::file_offset_for_va(&scus, ARENA1_VA)
         .context("resolve ARENA1 file offset")?;
     let cur = &scus[off..off + bytes.len()];
     if cur == bytes.as_slice() {

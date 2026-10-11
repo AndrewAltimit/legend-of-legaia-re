@@ -14,7 +14,7 @@
 //! Skips (and passes) without `LEGAIA_DISC_BIN`.
 
 use legaia_engine_audio::xa_clip_bank::read_span_sectors;
-use legaia_engine_shell::bgm::read_xa_channel_span;
+use legaia_engine_session::audio_director::read_xa_channel_span;
 use std::path::PathBuf;
 
 fn disc() -> Option<PathBuf> {

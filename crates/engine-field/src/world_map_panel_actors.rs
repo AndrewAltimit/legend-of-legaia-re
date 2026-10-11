@@ -87,7 +87,7 @@ pub use field_hud::*;
 /// PORT: FUN_801ed308 (cases 6/7), FUN_801ed590 (state 2), FUN_801ee5d4
 /// (case 4), FUN_801ee90c (the `0x801EEA50` block), FUN_801ef014 (state 3)
 ///
-/// Wired: `legaia_engine_core::world_map_panel_host::PanelActorHost::retire`
+/// Wired: `crate::world_map_panel_host::PanelActorHost::retire`
 /// applies all four stores through [`ActorExit::apply`] and records the pair
 /// in `PanelFrame::exits` - see the module wiring status for why the new
 /// handler id is recorded and not dispatched, except id `0` (the close tick
@@ -114,7 +114,7 @@ impl ActorExit {
     /// next-handler immediate. Note `scene[+0x3E]` is **not** among them - the
     /// separate `case 5` arm is the only thing that clears it.
     ///
-    /// Wired: `legaia_engine_core::world_map_panel_host::PanelActorHost::retire`
+    /// Wired: `crate::world_map_panel_host::PanelActorHost::retire`
     /// applies every terminal arm's exit through here, reached from
     /// `PanelActorHost::tick` -> `World::tick_world_map_panels` ->
     /// `World::tick_world_map` -> `World::tick`.

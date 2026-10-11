@@ -1,5 +1,5 @@
 //! Move-FX streak **schedule ladder**: drive the production dispatcher
-//! [`legaia_engine_ui::streak_pass::streak_quads_scheduled`] through the
+//! [`legaia_render_kernels::streak_pass::streak_quads_scheduled`] through the
 //! retail counter walk and assert each regime at the emitted packets.
 //!
 //! The dispatcher is the routine both hosts call once per battle frame (the
@@ -25,8 +25,8 @@
 //! numbers, and the projection is the engine camera. Runs everywhere.
 
 use glam::{Mat4, Vec3};
-use legaia_engine_ui::afterimage::{CLUT_BASE, MODULATION_COLOR, TEXPAGE};
-use legaia_engine_ui::streak_pass::{
+use legaia_render_kernels::afterimage::{CLUT_BASE, MODULATION_COLOR, TEXPAGE};
+use legaia_render_kernels::streak_pass::{
     AFTERIMAGE_COUNTER_MIN, RIBBON_COUNTER_MAX, StreakSource, streak_quads_scheduled,
 };
 

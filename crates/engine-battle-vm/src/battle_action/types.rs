@@ -622,10 +622,10 @@ pub struct BattleActor {
     /// * category `1` (Item): the item's property record `+1`
     ///   (`0x80074368 + id*0xC`) indexes the **item-effect descriptor table**
     ///   `0x800752C0` (4-byte stride) and this takes the record's `+0` byte -
-    ///   `legaia_asset::item_effect::ItemEffect::class`.
+    ///   `legaia_game_tables::item_effect::ItemEffect::class`.
     /// * any other category (Magic / Spirit): the **spell table** record
     ///   `0x800754C8 + id*0xC`, byte `+0` -
-    ///   `legaia_asset::spell_names::SpellEntry::class`.
+    ///   `legaia_game_tables::spell_names::SpellEntry::class`.
     ///
     /// Both legs land in one class space: `0..=8` are the applier's effect
     /// classes (heal / cure / revive / shield / buff), and the larger values
@@ -639,7 +639,7 @@ pub struct BattleActor {
     /// `+0x1E9` - the class's **tier / sub-index**, seeded beside
     /// [`Self::cast_class`] from byte `+1` of the same record.
     ///
-    /// For an item this is `legaia_asset::item_effect::ItemEffect::tier` (the
+    /// For an item this is `legaia_game_tables::item_effect::ItemEffect::tier` (the
     /// heal-amount row, the buff stat, ...); for a spell it is the record's
     /// `+1` sub-index (`docs/formats/spell-table.md`). It is the `param_2`
     /// the applier's cue-group sites turn into a group id for classes `0`,

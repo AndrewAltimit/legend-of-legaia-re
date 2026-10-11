@@ -327,7 +327,7 @@ fn imported_scus_strings_terminate_within_their_pool() {
                 .strip_prefix("scus:str:0x")
                 .and_then(|h| u32::from_str_radix(h, 16).ok())
                 .expect("scus:str key");
-            let off = legaia_asset::item_names::file_offset_for_va(&scus, va)
+            let off = legaia_game_tables::item_names::file_offset_for_va(&scus, va)
                 .expect("VA resolves in patched SCUS");
             // NUL within a sane bound.
             let tail = &scus[off..];

@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+use legaia_engine_mode::mode::SceneMode;
 
 fn field_world() -> World {
     let mut w = World::new();

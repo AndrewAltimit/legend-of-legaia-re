@@ -45,9 +45,9 @@
 //! disc-gated mirror test re-asserts it).
 
 use super::*;
-use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::battle_char_assembly::swing_battle_animations;
-use legaia_asset::monster_archive::MonsterAnimation;
+use legaia_actor_formats::battle_char_assembly as bca;
+use legaia_actor_formats::battle_char_assembly::swing_battle_animations;
+use legaia_actor_formats::monster_archive::MonsterAnimation;
 
 mod bake_ctx;
 mod block_entries;
@@ -191,8 +191,15 @@ fn hero_victory_clip(
         .unwrap_or(1);
     let archive = bca::art_me_archive(readef, char_index, true).context("base ME archive")?;
     let stream = archive.entry(0).context("base entry 0")?;
-    legaia_asset::monster_archive::parse_animation_stream(&stream, 0x22, rate, 0, 0, Vec::new())
-        .ok_or_else(|| anyhow::anyhow!("base ME entry 0 is not a keyframe stream"))
+    legaia_actor_formats::monster_archive::parse_animation_stream(
+        &stream,
+        0x22,
+        rate,
+        0,
+        0,
+        Vec::new(),
+    )
+    .ok_or_else(|| anyhow::anyhow!("base ME entry 0 is not a keyframe stream"))
 }
 
 /// The close clip under `compact_close`: the hero's record0 "Recover"

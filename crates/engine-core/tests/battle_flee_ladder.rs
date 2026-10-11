@@ -20,11 +20,12 @@
 //! Disc-free: synthetic party + the vanilla monster/formation tables. Runs in
 //! CI unconditionally.
 
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_battle_vm::battle_action::ActionState;
 use legaia_engine_battle_vm::status_effects::StatusKind;
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_action::ActionState;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 fn build_world() -> World {
     let mut w = World::new();
@@ -50,7 +51,7 @@ fn build_world() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("flee_ladder_test");
@@ -120,7 +121,7 @@ fn assured_escape_runs_the_run_band_and_leaves_the_battle() {
     // the live `+0x290` byte already; this writes the latched copy the roll
     // reads.)
     w.set_battle_formation_latched(
-        legaia_engine_vm::battle_formulas::FormationAdvantage::Preemptive,
+        legaia_engine_battle_vm::battle_formulas::FormationAdvantage::Preemptive,
     );
 
     // A downed member and a petrified member: the `0x64` success arm floors

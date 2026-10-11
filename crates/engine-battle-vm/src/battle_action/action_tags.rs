@@ -1,6 +1,6 @@
 //! Monster **action-tag** lookups - the battle action SM's calls into the
 //! first-byte tag search `FUN_80050E2C`
-//! ([`legaia_asset::monster_archive::find_action_by_tag`]).
+//! ([`legaia_actor_formats::monster_archive::find_action_by_tag`]).
 //!
 //! A monster's staged anim id is an index into its archive record's
 //! `+0x4C` action-record array, and the byte at `record[0]` of each entry is a
@@ -29,7 +29,7 @@
 //! indices well past `1` (monster 73's pre-approach is entry `10`).
 
 use super::BattleActionHost;
-use legaia_asset::monster_archive::{NO_ACTION_ENTRY, find_action_by_tag};
+use legaia_actor_formats::monster_archive::{NO_ACTION_ENTRY, find_action_by_tag};
 
 /// The pre-approach transition clip (`li a1,0x20` at `0x801E3260`).
 pub const APPROACH_TRANSITION_TAG: u8 = 0x20;

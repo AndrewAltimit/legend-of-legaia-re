@@ -90,11 +90,11 @@ use crate::mips::{A0, S3, V0, V1, ZERO, bne, jal, lbu, lui, lw, nop, ori, sb};
 
 /// PROT entry index of the battle-action overlay hosting `FUN_801E295C`.
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
-    legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+    legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
 
 /// Load base VA of the battle-action overlay. A VA inside it maps to
 /// PROT-entry file offset `va - OVERLAY_BASE_VA` (the overlay is stored raw).
-pub const OVERLAY_BASE_VA: u32 = legaia_asset::move_power::BATTLE_OVERLAY_BASE;
+pub const OVERLAY_BASE_VA: u32 = legaia_game_tables::move_power::BATTLE_OVERLAY_BASE;
 
 /// First word of the replaced window: the state-`0x19` arm's facing
 /// recompute (`lh a0,0x38(s8)`).

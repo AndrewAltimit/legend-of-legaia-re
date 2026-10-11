@@ -17,15 +17,16 @@
 //!
 //! Every assertion is paired with a contrast a do-nothing port fails.
 
+use legaia_engine_battle::region_encounter::{EncounterRegion, RegionEncounterTable};
 use legaia_engine_core::field_menu_dispatch::{
     apply_pause_items_outcome, build_pause_items_session,
 };
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::items::ItemCatalog;
-use legaia_engine_core::pause_screens::{INCENSE_ITEM_ID, PauseItemsFocus, PauseItemsSession};
-use legaia_engine_core::region_encounter::{EncounterRegion, RegionEncounterTable};
-use legaia_engine_core::walk_regen::{WALK_REGEN_STEP_COST, tick_walk_regen};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_field::walk_regen::{WALK_REGEN_STEP_COST, tick_walk_regen};
+use legaia_engine_menus::items::ItemCatalog;
+use legaia_engine_menus::pause_screens::{INCENSE_ITEM_ID, PauseItemsFocus, PauseItemsSession};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 /// A field world with a seated player standing in one whole-map region whose
 /// rate drains any step counter in one step, holding a Healing Leaf and two

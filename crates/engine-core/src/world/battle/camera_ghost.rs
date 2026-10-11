@@ -37,8 +37,9 @@
 //! runs every battle frame.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
-use crate::action_effect_script::RotationLut;
+use legaia_engine_effects::action_effect_script::RotationLut;
 
 impl World {
     /// The retail pool slot of engine actor `e`. Scope codes `8` / `9` pass
@@ -54,7 +55,7 @@ impl World {
 
     /// One frame of the ghost pass. No-op outside battle.
     pub(in crate::world) fn tick_battle_camera_ghost(&mut self) {
-        use vm::battle_action::{GhostInputs, GhostSlot, camera_ghost_pass};
+        use legaia_engine_battle_vm::battle_action::{GhostInputs, GhostSlot, camera_ghost_pass};
         if self.mode != SceneMode::Battle {
             return;
         }
@@ -119,7 +120,7 @@ impl World {
                     .is_some_and(|v| v.side_band_request_up()),
             ),
         };
-        let lut = crate::action_effect_script::retail_rotation_lut();
+        let lut = legaia_engine_effects::action_effect_script::retail_rotation_lut();
         camera_ghost_pass(
             &inputs,
             &mut slots,
@@ -127,7 +128,12 @@ impl World {
             |a| lut.a(a),
             |p1z, p1x, p2z, p2x| {
                 let c = |v: i32| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
-                vm::battle_action::bearing_12bit_approx(c(p1z), c(p1x), c(p2z), c(p2x))
+                legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                    c(p1z),
+                    c(p1x),
+                    c(p2z),
+                    c(p2x),
+                )
             },
         );
         for (r, s) in slots.iter().enumerate() {

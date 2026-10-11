@@ -16,10 +16,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::dance::{DEMO_POS, DanceBodyModel, DanceGame, DanceMode};
 use legaia_engine_core::dance_cast_scene::{DanceCastAssets, DanceCastSurface, resolve_clip};
 use legaia_engine_core::dance_venue::DanceVenue;
 use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_minigames::dance::{DEMO_POS, DanceBodyModel, DanceGame, DanceMode};
 
 fn extracted_dir() -> Option<PathBuf> {
     let over = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from);
@@ -48,15 +48,15 @@ fn every_mode_draws_its_own_floor() {
     let Some(dir) = gate() else { return };
     eprintln!("[ran] dance cast surface");
     let index = ProtIndex::open_extracted(&dir).expect("prot index");
-    let rec = legaia_asset::static_overlay::overlay_map()
-        .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+    let rec = legaia_overlay_images::static_overlay::overlay_map()
+        .by_prot_index(legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
         .expect("0980 mapped");
     let raw = index.entry_bytes_extended(rec.prot_index).expect("0980");
-    let overlay = legaia_asset::static_overlay::as_loaded(&raw, rec).expect("loaded form");
-    let cast = legaia_asset::dance_cast::parse(&overlay).expect("cast");
+    let overlay = legaia_overlay_images::static_overlay::as_loaded(&raw, rec).expect("loaded form");
+    let cast = legaia_minigame_formats::dance_cast::parse(&overlay).expect("cast");
     let venue = DanceVenue::build(&index, Some(&overlay)).expect("venue");
     let pack = index
-        .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+        .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
         .expect("0874");
     let assets = DanceCastAssets::from_venue(&venue, &cast, Some(pack.as_slice())).expect("assets");
 

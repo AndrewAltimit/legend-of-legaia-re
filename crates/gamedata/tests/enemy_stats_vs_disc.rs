@@ -1,11 +1,11 @@
 //! Disc-gated cross-validation of curated enemy stats against the static
-//! monster-stat archive (`PROT 0867`, parsed by `legaia_battle_models::monster_archive`).
+//! monster-stat archive (`PROT 0867`, parsed by `legaia_actor_formats::monster_archive`).
 //!
 //! Joining the curated `enemies.toml` to the disc records **by monster name**
 //! reveals that the curated bestiary stats are not raw copies of the disc
 //! record - they are the **in-battle stats**, i.e. the raw record run through
 //! the battle loader's stat boost (`FUN_80054cb0`; see
-//! `legaia_battle_models::monster_archive` "Battle-load stat boost"). The combat-stat
+//! `legaia_actor_formats::monster_archive` "Battle-load stat boost"). The combat-stat
 //! factors below are exactly that boost (gate-set profile B), which is why the
 //! curated numbers - mined from walkthroughs that recorded what the player
 //! *fights* - are higher than the disc bytes:
@@ -42,7 +42,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use legaia_battle_models::monster_archive::{self, MonsterRecord};
+use legaia_actor_formats::monster_archive::{self, MonsterRecord};
 use legaia_gamedata::{Database, Enemy};
 
 fn entry_867() -> Option<Vec<u8>> {

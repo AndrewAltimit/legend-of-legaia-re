@@ -114,7 +114,7 @@ pub(super) struct DecodedRow {
 
 impl OwnedDialogPanel {
     /// Build a panel over `bytes` starting at `pc` (the offset returned by
-    /// `legaia_engine_core::scene_assets::SceneMes::message_offset`).
+    /// `crate::dialog::SceneMes::message_offset`).
     pub fn new(bytes: Arc<Vec<u8>>, pc: usize) -> Self {
         Self {
             bytes,
@@ -206,7 +206,7 @@ impl OwnedDialogPanel {
     /// Build a panel that types the `0x1F` text segment whose **lead byte** is
     /// at `seg_lead` (i.e. `bytes[seg_lead] == 0x1F`), attaching any picker that
     /// immediately follows it. Used by the inline-script field-VM runner
-    /// (`legaia_engine_core::inline_dialogue`), which lands the VM on each text segment and
+    /// (`legaia_engine_field::inline_dialogue`), which lands the VM on each text segment and
     /// opens a box there. Unlike [`Self::from_inline_dialog`] it does not search
     /// for the first segment - the caller already knows the exact lead.
     pub fn at_segment(bytes: Arc<Vec<u8>>, seg_lead: usize) -> Self {

@@ -3,6 +3,7 @@
 //! fallen-target exclusion.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Monster-AI cast path: a monster whose record carries a castable spell
 /// it can afford folds a real spell onto the party (HP drops, MP spent, a
@@ -11,9 +12,9 @@ use super::*;
 /// cast-vs-strike roll lands on "cast".
 #[test]
 fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
-    use crate::monster_catalog::vanilla_monster_catalog;
-    use crate::spells::SpellCatalog;
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle::monster_catalog::vanilla_monster_catalog;
+    use legaia_engine_battle::spells::SpellCatalog;
+    use legaia_engine_battle_vm::battle_action::ActionState;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -145,10 +146,10 @@ fn smarter_targeting_redirects_to_lowest_hp_without_moving_rng() {
 /// damage (the path engaged) and (b) the table path is deterministic.
 #[test]
 fn move_power_table_drives_monster_special_attack_damage() {
-    use crate::monster_catalog::vanilla_monster_catalog;
-    use crate::move_power::MovePowerCatalog;
-    use crate::spells::SpellCatalog;
-    use legaia_asset::move_power::{
+    use legaia_engine_battle::monster_catalog::vanilla_monster_catalog;
+    use legaia_engine_battle::move_power::MovePowerCatalog;
+    use legaia_engine_battle::spells::SpellCatalog;
+    use legaia_game_tables::move_power::{
         MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
         MOVE_POWER_TABLE_LEN,
     };
@@ -233,11 +234,11 @@ fn move_power_table_drives_monster_special_attack_damage() {
 /// accessory) passes through at full magnitude.
 #[test]
 fn elemental_guard_accessory_halves_matching_monster_special() {
-    use crate::accessory_passives::AccessoryPassives;
-    use crate::monster_catalog::vanilla_monster_catalog;
-    use crate::move_power::MovePowerCatalog;
-    use crate::spells::SpellCatalog;
-    use legaia_asset::move_power::{
+    use legaia_engine_battle::accessory_passives::AccessoryPassives;
+    use legaia_engine_battle::monster_catalog::vanilla_monster_catalog;
+    use legaia_engine_battle::move_power::MovePowerCatalog;
+    use legaia_engine_battle::spells::SpellCatalog;
+    use legaia_game_tables::move_power::{
         MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
         MOVE_POWER_TABLE_LEN,
     };
@@ -329,7 +330,7 @@ fn elemental_guard_accessory_halves_matching_monster_special() {
 /// member and arms the SM at `Begin`.
 #[test]
 fn spell_less_monster_always_arms_physical_strike() {
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle_vm::battle_action::ActionState;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -419,8 +420,8 @@ fn a_monster_strike_never_targets_a_fallen_party_member() {
 /// the picker itself can still name it.
 #[test]
 fn a_monster_cast_never_targets_a_fallen_party_member() {
-    use crate::monster_catalog::vanilla_monster_catalog;
-    use crate::spells::SpellCatalog;
+    use legaia_engine_battle::monster_catalog::vanilla_monster_catalog;
+    use legaia_engine_battle::spells::SpellCatalog;
     let mut casts = 0;
     let mut chose_fallen_before_redirect = false;
     for seed in 0..400u32 {

@@ -15,8 +15,8 @@ pub(super) fn exit_diagnosis(host: &SceneHost, name: &str, mf: &ManFile, man: &[
     let p2_count = mf.header.partition_counts[2].max(0) as usize;
     // Which partition-2 records carry a `0x3F` at all? Probe each with a
     // synthetic gate-1 trigger on its own tile, reusing the real decoder.
-    let synthetic: Vec<legaia_engine_core::field_regions::TileTrigger> = (0..p2_count.min(256))
-        .map(|r| legaia_engine_core::field_regions::TileTrigger {
+    let synthetic: Vec<legaia_engine_field::field_regions::TileTrigger> = (0..p2_count.min(256))
+        .map(|r| legaia_engine_field::field_regions::TileTrigger {
             tile_x: (r % 128) as u8,
             tile_z: (r / 128) as u8,
             record: r as u8,

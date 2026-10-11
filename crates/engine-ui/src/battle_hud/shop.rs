@@ -14,7 +14,7 @@ pub struct ShopRow<'a> {
     /// greyed/unavailable pen and `6` the accent pen a stock row takes from
     /// its record's "already owned / restricted" marker; `5` the buy list's
     /// hoisted band. Callers derive it with
-    /// `legaia_engine_core::shop::shop_buy_row_ink` (buy list) or
+    /// `legaia_engine_menus::shop::shop_buy_row_ink` (buy list) or
     /// `shop_stock_row_ink`; rows with no retail ink of their own pass
     /// [`SHOP_INK_NORMAL`].
     pub ink: u8,

@@ -22,7 +22,9 @@
 //! [`docs/subsystems/battle-action.md`](../../../../../docs/subsystems/battle-action.md).
 
 use super::*;
-use vm::battle_action::{PoolActor, first_selectable_target, next_selectable_actor};
+use legaia_engine_battle_vm::battle_action::{
+    PoolActor, first_selectable_target, next_selectable_actor,
+};
 
 impl World {
     /// Actor `slot`'s retail `+0x16E` status word.

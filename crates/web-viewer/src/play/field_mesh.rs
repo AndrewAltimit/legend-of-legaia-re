@@ -91,13 +91,13 @@ impl LegaiaRuntime {
                 .get(res_idx)
                 .ok_or_else(|| JsValue::from_str("field_mesh: tmd missing"))?;
             let (mut mesh, flat) = match &offsets {
-                Some(o) => crate::field_scene::build_hybrid_env_mesh_posed(rtmd, o),
-                None => crate::field_scene::build_hybrid_env_mesh(rtmd, &res.vram),
+                Some(o) => legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o),
+                None => legaia_engine_core::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram),
             };
             // Enhanced lighting's emissive tags (TSB bit 13) - the native
             // window's env-mesh rule; the shaders read them only while the
             // enhancement is on.
-            legaia_engine_ui::scene_lighting::tag_emissive_hybrid(
+            legaia_render_kernels::scene_lighting::tag_emissive_hybrid(
                 &rtmd.raw, &mut mesh, &flat, &res.vram,
             );
             (mesh, flat)
@@ -111,7 +111,7 @@ impl LegaiaRuntime {
     /// Select + build environment-pack slot `slot` (unposed) with its
     /// **light-source rows** shaded for a draw at the record angles
     /// `(rot_x, rot_y, rot_z)` under the world's live field light - the
-    /// `legaia_engine_core::field_lit_mesh` kernel the native window shades
+    /// `legaia_engine_field::field_lit_mesh` kernel the native window shades
     /// its env draws with. Returns whether the mesh has lit rows at all; for a
     /// mesh without any, the build is the plain [`Self::field_mesh`] one and
     /// the page keeps sharing that upload across draws.
@@ -172,13 +172,13 @@ impl LegaiaRuntime {
                     legaia_engine_core::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &res.vram)
                 }
             };
-            if legaia_engine_core::field_lit_mesh::has_lit_rows(&lit) {
-                let rot = legaia_engine_core::field_lit_mesh::draw_rotation(
+            if legaia_engine_field::field_lit_mesh::has_lit_rows(&lit) {
+                let rot = legaia_engine_field::field_lit_mesh::draw_rotation(
                     rot_x as u16,
                     rot_y as u16,
                     rot_z as u16,
                 );
-                legaia_engine_core::field_lit_mesh::shade_lit_rows_rgba(
+                legaia_engine_field::field_lit_mesh::shade_lit_rows_rgba(
                     &mut mesh.colors,
                     &mut flat,
                     &lit,
@@ -186,12 +186,12 @@ impl LegaiaRuntime {
                     &rot,
                 );
             }
-            legaia_engine_ui::scene_lighting::tag_emissive_hybrid(
+            legaia_render_kernels::scene_lighting::tag_emissive_hybrid(
                 &rtmd.raw, &mut mesh, &flat, &res.vram,
             );
             (mesh, flat, lit)
         };
-        let has_lit = legaia_engine_core::field_lit_mesh::has_lit_rows(&lit);
+        let has_lit = legaia_engine_field::field_lit_mesh::has_lit_rows(&lit);
         if let Some(f) = self.field.as_mut() {
             // Not the plain build's cache key: a later `field_mesh(slot)`
             // must rebuild the unshaded stream.
@@ -215,7 +215,7 @@ impl LegaiaRuntime {
         };
         res.tmds.get(res_idx).is_some_and(|rtmd| {
             let (_, lit) = rtmd.build_filtered_vram_mesh_lit_vertices(&res.vram);
-            legaia_engine_core::field_lit_mesh::has_lit_rows(&lit)
+            legaia_engine_field::field_lit_mesh::has_lit_rows(&lit)
         })
     }
 
@@ -283,7 +283,7 @@ impl LegaiaRuntime {
         let Some(m) = host.world.morphed_env_tmd(s, rtmd) else {
             return Vec::new();
         };
-        let (mesh, _) = crate::field_scene::build_hybrid_env_mesh(&m, &res.vram);
+        let (mesh, _) = legaia_engine_core::scene_assembly::build_hybrid_env_mesh(&m, &res.vram);
         mesh.positions.iter().flatten().copied().collect()
     }
 
@@ -346,7 +346,8 @@ impl LegaiaRuntime {
         let Some(rtmd) = res.tmds.get(res_idx) else {
             return Vec::new();
         };
-        let (mesh, _flat) = crate::field_scene::build_hybrid_env_mesh_posed(rtmd, &offsets);
+        let (mesh, _flat) =
+            legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed(rtmd, &offsets);
         mesh.positions.iter().flatten().copied().collect()
     }
 }

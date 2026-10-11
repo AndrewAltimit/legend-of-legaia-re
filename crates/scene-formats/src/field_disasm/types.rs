@@ -298,7 +298,7 @@ pub enum ActorCtrlKind {
     /// rectangle `[x_lo, z_lo, x_hi, z_hi]`; `start` / `end` are the register
     /// values at the low / high Z edge of it, both sign-extended halfwords
     /// (`FUN_8003CE9C`). The old "four target values over `ticks` with a
-    /// `curve`" reading is falsified - see `legaia_engine_core::register_ramp`.
+    /// `curve`" reading is falsified - see `legaia_engine_field::register_ramp`.
     CameraRegisterRamp {
         sub_op: u8,
         zone: [u8; 4],

@@ -88,7 +88,7 @@ fn landmark_packs_keep_their_untextured_prims() {
             continue;
         };
         let bundle = std::fs::read(&path).expect("read kingdom bundle");
-        let pack = legaia_asset::kingdom_bundle::decode_slot(&bundle, 1)
+        let pack = legaia_scene_formats::kingdom_bundle::decode_slot(&bundle, 1)
             .unwrap_or_else(|e| panic!("{label}: slot 1 decode: {e}"));
         let bodies = pack_bodies(&pack);
 

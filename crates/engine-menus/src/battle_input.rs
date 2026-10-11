@@ -85,8 +85,8 @@
 //! [`Resolution::OpenSpellMenu`] / [`Resolution::OpenArtsMenu`] hand-offs: the
 //! command session can't run those pickers itself (they need the caster's saved
 //! chains / learned spells / live MP / inventory + party stats), so the live
-//! loop opens a host-owned `legaia_engine_core::battle_arts::BattleArtsSession` /
-//! `legaia_engine_core::battle_magic::BattleSpellSession` /
+//! loop opens a host-owned `legaia_engine_battle::battle_arts::BattleArtsSession` /
+//! `legaia_engine_battle::battle_magic::BattleSpellSession` /
 //! [`crate::inventory_use::InventoryUseSession`] instead. `Spirit` and `Run`
 //! resolve immediately (no target). Target selection reuses
 //! [`legaia_engine_battle::target_picker`].
@@ -99,7 +99,7 @@
 //!
 //! Chip labels are the retail words. Their disc coordinates - the SCUS block at
 //! `0x8007B658..0x8007B68D` and the battle overlay's own pool - are pinned in
-//! [`legaia_asset::battle_ui_strings`], which is also where the per-character
+//! [`legaia_ui_formats::battle_ui_strings`], which is also where the per-character
 //! Ra-Seru name the magic arm really carries (`Meta` / `Terra` / `Ozma`) comes
 //! from.
 
@@ -113,16 +113,16 @@ pub enum BattleCommand {
     /// Physical attack - opens a target cursor and commits a strike.
     Attack,
     /// Tactical Arts - hands off to the host saved-chain submenu (see
-    /// `legaia_engine_core::battle_arts`).
+    /// `legaia_engine_battle::battle_arts`).
     Arts,
     /// Magic spell - hands off to the host battle spell submenu (see
-    /// `legaia_engine_core::battle_magic`).
+    /// `legaia_engine_battle::battle_magic`).
     Magic,
     /// Use an item - hands off to the host inventory submenu (see
     /// [`crate::inventory_use`]).
     Item,
     /// Spirit: guard for the turn (+5 AP via
-    /// `legaia_engine_core::ap_gauge::ApGauge::charge_spirit`, guard-halved damage until
+    /// `legaia_engine_battle::ap_gauge::ApGauge::charge_spirit`, guard-halved damage until
     /// the next turn). Resolves immediately - no target.
     Spirit,
     /// Run: attempt to flee through the action SM's run band
@@ -292,7 +292,7 @@ impl CommitChoice {
     pub const PROMPT: [CommitChoice; 2] = [CommitChoice::Begin, CommitChoice::Reselect];
 
     /// Chip label - the port's word, used only when the disc strings were not
-    /// read (`legaia_asset::battle_ui_strings::{OVL_BEGIN, SCUS_RESELECT}`).
+    /// read (`legaia_ui_formats::battle_ui_strings::{OVL_BEGIN, SCUS_RESELECT}`).
     pub fn label(self) -> &'static str {
         match self {
             CommitChoice::Begin => "Begin",
@@ -326,13 +326,13 @@ pub enum CommandPhase {
         target_slot: u8,
     },
     /// The player picked Arts. Hands off (like Magic / Item): the live loop
-    /// opens a `legaia_engine_core::battle_arts::BattleArtsSession` over the caster's saved
+    /// opens a `legaia_engine_battle::battle_arts::BattleArtsSession` over the caster's saved
     /// chains, executes the chosen art, then cycles the turn.
     OpenArtsMenu,
     /// The player picked Magic. Like Item, the command session can't run the
     /// spell picker itself (it needs the caster's learned spells + live MP), so
     /// it hands off: the live loop opens a
-    /// `legaia_engine_core::battle_magic::BattleSpellSession`, casts the chosen spell, then
+    /// `legaia_engine_battle::battle_magic::BattleSpellSession`, casts the chosen spell, then
     /// cycles the turn.
     OpenSpellMenu,
     /// The player picked Item. The command session can't run the inventory

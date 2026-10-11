@@ -12,7 +12,7 @@ use super::*;
 ///   byte-equal as well.
 ///
 /// `menu_glyph_tim` is the optional third source: the
-/// [`legaia_asset::menu_glyph_atlas`] TIM slice (`PROT.DAT[0x11218]`),
+/// [`legaia_ui_formats::menu_glyph_atlas`] TIM slice (`PROT.DAT[0x11218]`),
 /// which carries the battle HUD's 8x12 numeral cells. Pass `None` and
 /// [`ATLAS_RECT_HUD_DIGITS`] stays transparent - every consumer treats a
 /// blank strip as "no digit art" and falls back to font glyphs, so a
@@ -134,7 +134,8 @@ pub fn build_atlas(
 
     // The dialogue page mark's two frames - the cursor primitive's record 1,
     // same CLUT row 7 plane.
-    for (uv, dst) in crate::cursor_sprite::CURSOR_RECORDS[crate::cursor_sprite::KIND_PAGE_MARK]
+    for (uv, dst) in legaia_engine_dialog::cursor_sprite::CURSOR_RECORDS
+        [legaia_engine_dialog::cursor_sprite::KIND_PAGE_MARK]
         .uv
         .iter()
         .zip(ATLAS_RECT_ADVANCE_ICON)
@@ -389,7 +390,7 @@ pub fn menu_font_cells(
     }
     let mut cells = Vec::new();
     if let Some(tim) = menu_glyph_tim
-        .and_then(|t| legaia_asset::menu_glyph_atlas::extract_from_tim_slice(t).ok())
+        .and_then(|t| legaia_ui_formats::menu_glyph_atlas::extract_from_tim_slice(t).ok())
         .and_then(|t| legaia_tim::parse(t.bytes).ok())
     {
         let w = tim.pixel_width() as u32;

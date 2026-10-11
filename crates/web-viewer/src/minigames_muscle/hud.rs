@@ -18,7 +18,7 @@ use super::*;
 // ROUND headings, hub digit strip) is the two-TIM LZS payload of the dome's
 // own data file (extraction 1220, `other6.lzs` slot 0), whose on-screen
 // geometry is the PROT 0977 overlay's sprite descriptor table
-// (`legaia_engine_ui::other_game_hud::parse_sprite_table`).
+// (`legaia_engine_ui::muscle_dome_hud::parse_sprite_table`).
 //
 // Every piece rect below is capture-pinned: a live PCSX-Redux Muscle Dome
 // battle (the `minigame_muscle_dome_pcsx` scenario driven into the match)
@@ -53,7 +53,7 @@ pub(super) const HUD_BANNER_TIM_OFFSET: usize = 0x10450;
 /// PROT entry (extraction space) of the dome data container
 /// (`other6.lzs` slot 0): LZS section 0 carries the two hub-page TIMs.
 pub(super) const HUD_HUB_CONTAINER_PROT_INDEX: u32 =
-    legaia_asset::muscle_dome::HUB_CONTAINER_PROT_INDEX;
+    legaia_minigame_formats::muscle_dome::HUB_CONTAINER_PROT_INDEX;
 
 /// HUD sheet id of the ringside still (`int.tim` / `int2.tim`, extraction
 /// 1221 / 1222, 320x256 BGR555); its `palette` is the still variant.
@@ -82,8 +82,8 @@ pub(super) const HUD_BUTTON_TIM_OFFSET: usize = 0x7B00;
 /// space, hence [`ArtsInputAtlasRects::SHEET`] rather than the hosts'
 /// baked-atlas variant.
 pub(super) fn arts_input_pieces() -> serde_json::Value {
-    use legaia_asset::title_pak as tp;
     use legaia_engine_ui::arts_input::{ArtsInputAtlasRects, ChipDirection};
+    use legaia_ui_formats::title_pak as tp;
     let r = ArtsInputAtlasRects::SHEET;
     let rect = |t: (u32, u32, u32, u32)| serde_json::json!([t.0, t.1, t.2, t.3]);
     serde_json::json!({
@@ -178,7 +178,7 @@ impl LegaiaMinigames {
         // The shared decoder applies the arena's upload STP, so the CLUT
         // words here are the VRAM ones the variant passes blend against.
         let entry = entry_bytes(&self.prot, &self.entries, HUD_HUB_CONTAINER_PROT_INDEX)?;
-        legaia_asset::muscle_dome::hub_page_tims(entry)
+        legaia_minigame_formats::muscle_dome::hub_page_tims(entry)
     }
 
     /// Decode a 4bpp TIM through 16-colour palette `pal` to RGBA8
@@ -291,7 +291,7 @@ impl LegaiaMinigames {
     /// victory-message pointer table at `0x801F4DFC` indexed `char_id - 1`,
     /// the reward spell's name from the shared spell-name table, and a fixed
     /// suffix at `0x801F4C28`. The index half is
-    /// [`MuscleDomeSession::reward_banner`](legaia_engine_core::muscle_dome::MuscleDomeSession::reward_banner);
+    /// [`MuscleDomeSession::reward_banner`](legaia_engine_menus::muscle_dome_session::MuscleDomeSession::reward_banner);
     /// this resolves the two overlay strings off the as-loaded PROT 0898
     /// image and the spell name off `SCUS_942.54`.
     ///
@@ -327,7 +327,7 @@ impl LegaiaMinigames {
             .and_then(|img| {
                 overlay_string(
                     img,
-                    legaia_engine_vm::battle_cast_dispatch::BANNER_SUFFIX_VA,
+                    legaia_engine_battle_vm::battle_cast_dispatch::BANNER_SUFFIX_VA,
                 )
             })
             .unwrap_or_default();
@@ -358,11 +358,10 @@ impl LegaiaMinigames {
     /// clearing it adds }] }`. `name`/`hp` are null when the archive slot
     /// does not decode.
     pub fn muscle_course_ladder_json(&self) -> String {
-        use legaia_engine_core::muscle_dome as md;
         let Some(raw) = entry_bytes(&self.prot, &self.entries, 977) else {
             return "[]".to_string();
         };
-        let Some(ladder) = md::parse_course_ladder(raw) else {
+        let Some(ladder) = legaia_engine_minigames::muscle_dome::parse_course_ladder(raw) else {
             return "[]".to_string();
         };
         let archive = self.monster_archive_entry();
@@ -385,7 +384,7 @@ impl LegaiaMinigames {
                             "id": round.monster_id,
                             "name": rec.as_ref().map(|m| m.name.clone()),
                             "hp": rec.as_ref().map(|m| m.hp),
-                            "score": md::course_score_cell(raw, c, r as u32 + 1),
+                            "score": legaia_engine_minigames::muscle_dome::course_score_cell(raw, c, r as u32 + 1),
                         })
                     })
                     .collect();
@@ -436,7 +435,7 @@ impl LegaiaMinigames {
     /// started, through the announcer lane. Returns the frame as
     /// [`Self::muscle_first_visit_json`] does; `{"ok":false}` with no live hub.
     pub fn muscle_first_visit_step(&mut self, pressed: bool, course: i32, round: i32) -> String {
-        use legaia_engine_core::muscle_dome::HUB_SKIP_PAD_MASK;
+        use legaia_engine_minigames::muscle_dome::HUB_SKIP_PAD_MASK;
         let Some(mut hub) = self.muscle_hub.take() else {
             return r#"{"ok":false}"#.to_string();
         };
@@ -445,7 +444,7 @@ impl LegaiaMinigames {
         }
         if let Some(cue) = hub.take_xa() {
             self.muscle_hub_xa_fired = self.muscle_hub_xa_fired.wrapping_add(1);
-            self.play_baka_xa(legaia_engine_core::baka_fighter_chrome::XaCue {
+            self.play_baka_xa(legaia_engine_minigames::baka_fighter_chrome::XaCue {
                 clip: cue.clip,
                 chan: cue.channel,
                 dur: cue.duration_sectors,
@@ -472,7 +471,7 @@ impl LegaiaMinigames {
         round: i32,
     ) -> String {
         use legaia_engine_core::muscle_ringside::FirstVisitArm as A;
-        use legaia_engine_ui::other_game_hud as hud;
+        use legaia_engine_ui::muscle_dome_hud as hud;
         use legaia_engine_ui::ringside_backdrop as rb;
         let Some(raw) = entry_bytes(&self.prot, &self.entries, 977) else {
             return r#"{"ok":false}"#.to_string();
@@ -553,7 +552,6 @@ impl LegaiaMinigames {
     /// resolved onto the sheet through their texture pages
     /// (`StillDraw::from_quad`).
     pub fn muscle_interval_still_json(&self, tick: i32, hp_cur: u32, hp_max: u32) -> String {
-        use legaia_engine_core::muscle_dome as md;
         use legaia_engine_core::muscle_ringside::{BackdropStage, HubBackdrop};
         use legaia_engine_ui::ringside_backdrop as rb;
         let Some(run) = self.muscle_run.as_ref() else {
@@ -563,10 +561,15 @@ impl LegaiaMinigames {
             hp_cur.min(0xFFFF) as u16,
             hp_max.min(0xFFFF) as u16,
         );
-        let variant = still.saturating_sub(legaia_asset::ringside_still::PROT_INDEX_DEFAULT);
-        let roll =
-            md::HUB_TALLY_ROLL_LEAD_TICKS + *md::HUB_TALLY_CUE_STAGGER.last().unwrap_or(&0) as i32;
-        let mut interval = Some(md::HubScreen::interval(roll));
+        let variant =
+            still.saturating_sub(legaia_minigame_formats::ringside_still::PROT_INDEX_DEFAULT);
+        let roll = legaia_engine_minigames::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS
+            + *legaia_engine_minigames::muscle_dome::HUB_TALLY_CUE_STAGGER
+                .last()
+                .unwrap_or(&0) as i32;
+        let mut interval = Some(legaia_engine_minigames::muscle_dome::HubScreen::interval(
+            roll,
+        ));
         let (mut ramp, _) = run.tally_roll();
         let mut backdrop = HubBackdrop::reentry(still);
         let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
@@ -574,7 +577,8 @@ impl LegaiaMinigames {
             if backdrop.stage() == BackdropStage::Card {
                 break;
             }
-            let lane0_full = ramp.fade[0] >= legaia_engine_core::other_game_overlay::LANE_FADE_FULL;
+            let lane0_full =
+                ramp.fade[0] >= legaia_engine_minigames::other_game_overlay::LANE_FADE_FULL;
             backdrop.tick(1, 0, interval.map(|i| i.stage()), lane0_full);
             if let Some(i) = interval.as_mut() {
                 i.tick(1, 0);
@@ -614,12 +618,12 @@ impl LegaiaMinigames {
     /// scale (`0x100` = the record's own colour).
     ///
     /// Every row's screen rect comes out of the retail emitters
-    /// ([`legaia_engine_ui::other_game_hud::hub_screen_quads`]) fed the draw
+    /// ([`legaia_engine_ui::muscle_dome_hud::hub_screen_quads`]) fed the draw
     /// list recovered from that entry's own call sites, so the page places
     /// nothing itself: `x`/`y`/`dw`/`dh` are the quad's, `u`/`v`/`w`/`h`
     /// its texels, `sheet` 4/5 the hub page and `pal` the row sub-palette.
     pub fn muscle_hub_quads_json(&self, screen: u32, round: i32, brightness: i32) -> String {
-        use legaia_engine_ui::other_game_hud as hud;
+        use legaia_engine_ui::muscle_dome_hud as hud;
         let Some(raw) = entry_bytes(&self.prot, &self.entries, 977) else {
             return r#"{"ok":false}"#.to_string();
         };
@@ -703,7 +707,7 @@ impl LegaiaMinigames {
             return entry_bytes(
                 &self.prot,
                 &self.entries,
-                legaia_asset::ringside_still::PROT_INDEX_DEFAULT + palette.min(1),
+                legaia_minigame_formats::ringside_still::PROT_INDEX_DEFAULT + palette.min(1),
             )
             .and_then(legaia_engine_ui::ringside_backdrop::still_sheet_rgba)
             .unwrap_or_default();
@@ -775,7 +779,7 @@ impl LegaiaMinigames {
         };
         let hub = self.hud_hub_tims();
         let hub_sprites: Vec<serde_json::Value> = entry_bytes(&self.prot, &self.entries, 977)
-            .map(legaia_engine_ui::other_game_hud::parse_sprite_table)
+            .map(legaia_engine_ui::muscle_dome_hud::parse_sprite_table)
             .unwrap_or_default()
             .iter()
             .enumerate()
@@ -801,8 +805,8 @@ impl LegaiaMinigames {
                 "hub1": dims(&hub.as_ref().map(|(_, b)| b.clone())),
                 "button": dims(&button),
                 "still": [
-                    legaia_asset::ringside_still::WIDTH,
-                    legaia_asset::ringside_still::HEIGHT,
+                    legaia_minigame_formats::ringside_still::WIDTH,
+                    legaia_minigame_formats::ringside_still::HEIGHT,
                 ],
             },
             // Capture-pinned piece rects: [u, v, w, h] on the named sheet,

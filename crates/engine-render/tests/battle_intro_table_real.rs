@@ -4,7 +4,7 @@
 //! to end, and its only disc input is the `0x14`-stride record table at overlay
 //! VA `0x801D1EC4` inside PROT 0979 `field_battle_intro`. The unit tests drive
 //! that style through a synthetic stand-in
-//! (`legaia_engine_render::battle_intro::IntroQuadTable::neutral`), which
+//! (`legaia_render_kernels::battle_intro::IntroQuadTable::neutral`), which
 //! proves the arithmetic and proves nothing about the disc.
 //!
 //! This closes that gap: it reads the real entry, relocates it to the base
@@ -22,10 +22,10 @@ use legaia_engine_battle_vm::battle_intro_styles::{
     CURTAIN_COL_DESC, CURTAIN_COL_TPAGE_LEFT, CURTAIN_COL_TPAGE_RIGHT, CURTAIN_LEFT_W,
     CURTAIN_RIGHT_W, CURTAIN_ROW_DESC, CURTAIN_ROW_TPAGE_LEFT, CURTAIN_ROW_TPAGE_RIGHT,
 };
-use legaia_engine_render::battle_intro::{
+use legaia_render_kernels::battle_intro::{
     INTRO_QUAD_TABLE_LEN, INTRO_QUAD_TABLE_VA, IntroQuadTable,
 };
-use legaia_engine_render::vram_capture::{FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS};
+use legaia_render_kernels::vram_capture::{FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS};
 
 /// PROT index of the field-to-battle transition overlay.
 const INTRO_OVERLAY_PROT: u32 = 979;
@@ -57,8 +57,9 @@ fn overlay_image() -> Option<(Vec<u8>, u32)> {
     let entry = archive.entries.get(INTRO_OVERLAY_PROT as usize)?.clone();
     let mut raw = Vec::new();
     archive.read_entry(&entry, &mut raw).ok()?;
-    let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
-    let as_loaded = legaia_asset::static_overlay::as_loaded(&raw, rec).ok()?;
+    let rec =
+        legaia_overlay_images::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
+    let as_loaded = legaia_overlay_images::static_overlay::as_loaded(&raw, rec).ok()?;
     Some((as_loaded, rec.base_va))
 }
 

@@ -4,17 +4,17 @@
 //! every key is an equippable **weapon** id, favor nibbles stay within
 //! the three character bits, and every character has favored weapons in
 //! both favor groups. Non-weapon equipment never resolves an entry, so
-//! the ported check ([`legaia_engine_core::menu_item_category`],
+//! the ported check ([`legaia_engine_menus::menu_item_category`],
 //! `FUN_801DD0C0` - see the `// PORT:` tag in the module) scores it 0.
 //! No Sony bytes are asserted, only structural facts. Skips + passes
 //! when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_asset::equip_stats::{EquipSlot, EquipStatTable};
 use legaia_engine_core::Vfs;
-use legaia_engine_core::menu_item_category::{
+use legaia_engine_core::scene::SceneHost;
+use legaia_engine_menus::menu_item_category::{
     CATEGORY_MATCH_SCORE, CategoryEntry, category_check, parse_category_table,
 };
-use legaia_engine_core::scene::SceneHost;
+use legaia_game_tables::equip_stats::{EquipSlot, EquipStatTable};
 use std::path::PathBuf;
 
 fn from_disc() -> Option<(Vec<CategoryEntry>, EquipStatTable)> {
@@ -27,7 +27,7 @@ fn from_disc() -> Option<(Vec<CategoryEntry>, EquipStatTable)> {
     // read the extended footprint.
     let overlay = host
         .index
-        .entry_bytes_extended(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
         .expect("read PROT 0899 (extended)");
     let table = parse_category_table(&overlay).expect("category table parses");
 

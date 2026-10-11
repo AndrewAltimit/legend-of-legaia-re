@@ -1,5 +1,5 @@
 use super::*;
-use legaia_engine_core::muscle_dome::{self as md, MuscleCard};
+use legaia_engine_menus::muscle_dome_session::MuscleCard;
 
 fn session(special: u32) -> MuscleDomeSession {
     let card = MuscleCard {
@@ -16,7 +16,9 @@ fn session(special: u32) -> MuscleDomeSession {
 /// red X, CLUT `0x7704` = sub-palette 4.
 #[test]
 fn a_forbidden_chip_carries_the_cross_out_quad() {
-    let rows = LegaiaMinigames::muscle_chip_json(&session(md::SPECIAL_ITEM_FORBIDDEN));
+    let rows = LegaiaMinigames::muscle_chip_json(&session(
+        legaia_engine_menus::muscle_dome_session::SPECIAL_ITEM_FORBIDDEN,
+    ));
     let item = rows.iter().find(|r| r["chip"] == "item").unwrap();
     assert_eq!(item["mark"], "forbidden");
     let q = &item["mark_quad"];

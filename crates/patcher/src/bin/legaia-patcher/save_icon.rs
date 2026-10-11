@@ -44,7 +44,7 @@ pub(crate) fn cmd_save_icon_list(input: &Path) -> Result<()> {
             distinct.len(),
         );
     }
-    let blank = legaia_asset::save_icon::TILE_COUNT - 1;
+    let blank = legaia_ui_formats::save_icon::TILE_COUNT - 1;
     println!(
         "\nTile {blank} exists in the strip but is blank width padding - nothing selects it, \
          so it is not offered as a slot."
@@ -58,7 +58,7 @@ pub(crate) fn cmd_save_icon_export(input: &Path, slot: usize, output: &Path) -> 
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let sheet = save_icon::read_sheet(&patcher)?;
     let rgba = save_icon::export_slot(&sheet, slot)?;
-    let size = legaia_asset::save_icon::TILE_SIZE;
+    let size = legaia_ui_formats::save_icon::TILE_SIZE;
     legaia_tim::write_png(output, size, size, &rgba)?;
     println!(
         "wrote {} - save-icon slot {slot} (save number {}), {size}x{size}, 16-colour palette",
@@ -90,7 +90,7 @@ pub(crate) fn cmd_save_icon_replace(
 
     let png_bytes = std::fs::read(png).with_context(|| format!("read {}", png.display()))?;
     let (w, h, rgba) = decode_png_rgba(&png_bytes)?;
-    let size = legaia_asset::save_icon::TILE_SIZE;
+    let size = legaia_ui_formats::save_icon::TILE_SIZE;
     if (w, h) != (size, size) {
         bail!(
             "a save-icon portrait must be exactly {size}x{size}; {} is {w}x{h}",
@@ -146,7 +146,7 @@ pub(crate) fn cmd_save_icon_replace(
         }
         println!("verified: slot {slot} decodes pixel-exactly to the input image");
     }
-    for other in 0..legaia_asset::save_icon::TILE_COUNT {
+    for other in 0..legaia_ui_formats::save_icon::TILE_COUNT {
         if other == slot {
             continue;
         }

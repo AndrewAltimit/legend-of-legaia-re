@@ -9,8 +9,8 @@ pub fn current_drops(patcher: &DiscPatcher) -> Result<Vec<CurrentDrop>> {
     let entry = patcher
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .context("read monster battle_data archive")?;
-    let records =
-        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
+    let records = legaia_actor_formats::monster_archive::records(&entry)
+        .context("decode monster archive records")?;
     Ok(records
         .iter()
         .map(|r| CurrentDrop {

@@ -10,8 +10,9 @@
 //! Run: `cargo run -p legaia-engine-shell --release --example field_grid_census`
 //! Requires `extracted/PROT.DAT`, `scripts/scenarios.toml`, `saves/library`.
 
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_mednafen::SaveState;
 use legaia_parity::capture_observations::field_pack_intra_transition::read_pool_slot_name;
+use legaia_ram_image::ScenarioManifest;
 use std::path::PathBuf;
 
 fn main() {

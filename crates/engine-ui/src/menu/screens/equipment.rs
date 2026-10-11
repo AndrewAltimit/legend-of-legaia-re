@@ -1,7 +1,7 @@
 //! Equip-screen draw builders - the retail multi-window layout.
 //!
 //! Retail composes the pause menu's Equip screen from four descriptor-table
-//! windows (`legaia_asset::menu_windows`, draw order): the "Equip" title tab
+//! windows (`legaia_game_tables::menu_windows`, draw order): the "Equip" title tab
 //! (id 2, `FUN_801DCA94`), the party window (id 21, `FUN_801D2094`), the
 //! renderer-less item-list container (id 23; its lower span is occluded by
 //! the main window drawn after it) and the main window (id 22,
@@ -103,7 +103,7 @@ pub struct EquipScreenView<'a> {
 /// Build [`TextDraw`]s for the retail equip screen's window contents.
 ///
 /// `party_pen` / `list_pen` / `main_pen` are the content origins of the
-/// id-21 / id-23 / id-22 descriptor windows (`legaia_asset::menu_windows`).
+/// id-21 / id-23 / id-22 descriptor windows (`legaia_game_tables::menu_windows`).
 /// Offsets inside each window are the traced retail placements
 /// (docs/subsystems/field-menu.md "Equip screen"):
 ///

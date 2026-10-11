@@ -18,8 +18,9 @@
 //!
 //! Disc-free: every world here is synthetic.
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 /// `World::terrain.collision_grid` is a `0x80 x 0x80` byte grid; the crate
 /// constants are mirrored here because this is an integration test.

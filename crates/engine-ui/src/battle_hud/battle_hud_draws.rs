@@ -164,7 +164,7 @@ pub fn battle_hud_draws_for(
         });
     };
     // LV / HP / MP label: the resident system-UI atlas sprites
-    // (`OVERLAY_SYSTEM_UI_LABEL_LV` / `_HP` / `_MP`, `legaia_asset::title_pak`).
+    // (`OVERLAY_SYSTEM_UI_LABEL_LV` / `_HP` / `_MP`, `legaia_ui_formats::title_pak`).
     // Retail packs all three into **one** sub-palette - the gold-vs-green
     // difference is baked into the texels, not a per-label CLUT - so they
     // draw untinted. Without an atlas they degrade to tinted text at the same

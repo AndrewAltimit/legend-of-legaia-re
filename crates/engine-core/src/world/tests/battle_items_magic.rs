@@ -1,9 +1,10 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
-    use crate::input::PadButton;
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle_vm::battle_action::ActionState;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = offensive_item_world(500, 7);
     // Bomb (0x13) deals 200 HP to an enemy.
@@ -25,7 +26,9 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
     {
         let m = world.battle.item_menu.as_ref().unwrap();
         match m.state {
-            crate::inventory_use::InventoryUseState::TargetSelect { cursor, .. } => {
+            legaia_engine_menus::inventory_use::InventoryUseState::TargetSelect {
+                cursor, ..
+            } => {
                 assert_eq!(cursor, 1, "cursor positioned on the enemy row");
             }
             other => panic!("expected TargetSelect, got {other:?}"),
@@ -57,7 +60,7 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
     let active = world.battle_ctx.active_actor as usize;
     assert_eq!(
         world.actors[active].battle.action_category,
-        legaia_engine_vm::battle_action::ActionCategory::Item.as_byte()
+        legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte()
     );
     assert_eq!(world.actors[active].battle.params[0], 0x13);
     let fx = world.drain_battle_hit_fx();
@@ -75,7 +78,7 @@ fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
 /// offensive items take the monster-ring side (`0x5B`).
 #[test]
 fn heal_item_target_panel_lists_party_rows_only() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = offensive_item_world(500, 7);
     world.actors[0].battle.hp = 120; // hurt, so the heal is admissible
@@ -108,7 +111,7 @@ fn heal_item_target_panel_lists_party_rows_only() {
 
 #[test]
 fn battle_item_bomb_downs_a_low_hp_enemy() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = offensive_item_world(120, 7);
     world.party.inventory.insert(0x13, 1); // Bomb, 200 dmg vs 120 HP.
@@ -129,7 +132,7 @@ fn battle_item_bomb_downs_a_low_hp_enemy() {
 
 #[test]
 fn battle_item_capture_downs_a_weakened_enemy_and_logs_the_id() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     // Weakened monster (10/500 HP) so the missing-HP capture roll is
     // near-certain; pin the RNG so the roll (23) lands.
@@ -161,7 +164,7 @@ fn battle_item_capture_downs_a_weakened_enemy_and_logs_the_id() {
 
 #[test]
 fn battle_item_escape_returns_to_field() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = offensive_item_world(500, 7);
     world.party.inventory.insert(0x12, 1); // Goblin Foot (escape).
@@ -215,9 +218,9 @@ fn battle_item_escape_returns_to_field() {
 
 #[test]
 fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
-    use crate::input::PadButton;
-    use crate::spells::SpellCatalog;
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle::spells::SpellCatalog;
+    use legaia_engine_battle_vm::battle_action::ActionState;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -298,7 +301,7 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
 
 #[test]
 fn silenced_caster_cannot_open_the_magic_submenu() {
-    use crate::spells::SpellCatalog;
+    use legaia_engine_battle::spells::SpellCatalog;
     use legaia_engine_battle_vm::status_effects::StatusKind;
 
     let mut world = World::new();
@@ -335,8 +338,8 @@ fn silenced_caster_cannot_open_the_magic_submenu() {
 
 #[test]
 fn battle_magic_cast_applies_mp_half_ability_bit() {
-    use crate::input::PadButton;
-    use crate::spells::SpellCatalog;
+    use legaia_engine_battle::spells::SpellCatalog;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -390,7 +393,7 @@ fn battle_magic_cast_applies_mp_half_ability_bit() {
 
 #[test]
 fn refresh_party_ability_bits_derives_and_propagates_party_wide() {
-    use crate::accessory_passives::AccessoryPassives;
+    use legaia_engine_battle::accessory_passives::AccessoryPassives;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -455,7 +458,7 @@ fn refresh_party_ability_bits_noops_without_a_catalog() {
 
 #[test]
 fn seed_party_battle_stats_applies_accessory_stat_and_hp_boosts() {
-    use crate::accessory_passives::AccessoryPassives;
+    use legaia_engine_battle::accessory_passives::AccessoryPassives;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -513,7 +516,7 @@ fn seed_party_battle_stats_applies_accessory_stat_and_hp_boosts() {
 
 #[test]
 fn battle_magic_buff_raises_scalar_refreshes_and_expires() {
-    use crate::spells::{BuffStat, SpellOutcome};
+    use legaia_engine_battle::spells::{BuffStat, SpellOutcome};
 
     let mut world = World::default();
     world.set_battle_attack(0, 50);
@@ -558,7 +561,7 @@ fn battle_magic_buff_raises_scalar_refreshes_and_expires() {
 
 #[test]
 fn battle_magic_buff_ramp_is_multiplicative_not_additive() {
-    use crate::spells::{BuffStat, SpellOutcome};
+    use legaia_engine_battle::spells::{BuffStat, SpellOutcome};
 
     let mut world = World::default();
     // At a 200 scalar the retail x6/5 ramp (->240) diverges from a flat +20
@@ -592,7 +595,7 @@ fn battle_magic_buff_ramp_is_multiplicative_not_additive() {
 
 #[test]
 fn battle_magic_debuff_saturates_at_zero_and_reverts_exactly() {
-    use crate::spells::{BuffStat, SpellOutcome};
+    use legaia_engine_battle::spells::{BuffStat, SpellOutcome};
 
     let mut world = World::default();
     // Power Down on an enemy with a small attack: -25 saturates the u16
@@ -614,7 +617,7 @@ fn battle_magic_debuff_saturates_at_zero_and_reverts_exactly() {
 
 #[test]
 fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
-    use crate::spells::SpellOutcome;
+    use legaia_engine_battle::spells::SpellOutcome;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -672,8 +675,8 @@ fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
 
 #[test]
 fn battle_magic_escape_returns_to_field() {
-    use crate::input::PadButton;
-    use crate::spells::SpellCatalog;
+    use legaia_engine_battle::spells::SpellCatalog;
+    use legaia_engine_system::input::PadButton;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -695,7 +698,7 @@ fn battle_magic_escape_returns_to_field() {
 
     // Open the spell submenu with Warp (0x41, SelfOnly escape) learned.
     world.battle_ctx.active_actor = 0;
-    world.battle.spell_menu = Some(crate::battle_magic::BattleSpellSession::new(
+    world.battle.spell_menu = Some(legaia_engine_battle::battle_magic::BattleSpellSession::new(
         0,
         0,
         &[0x41],
@@ -760,7 +763,7 @@ fn battle_magic_escape_returns_to_field() {
 /// The roll is still drawn, so the rand stream matches the monster case.
 #[test]
 fn a_capture_roll_never_downs_a_party_member() {
-    use crate::spells::SpellOutcome;
+    use legaia_engine_battle::spells::SpellOutcome;
 
     let mut world = World {
         party: crate::world::PartyState {

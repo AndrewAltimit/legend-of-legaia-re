@@ -3,7 +3,7 @@
 
 use super::*;
 
-pub use crate::battle_input::{BattleCommandChips, CommandChipPhase};
+use legaia_engine_menus::battle_input::{BattleCommandChips, CommandChipPhase};
 
 /// The chip cluster this frame draws, or `None` when no command prompt
 /// owns the frame (a submenu, an arts session or a dialogue box wins).
@@ -13,12 +13,14 @@ pub use crate::battle_input::{BattleCommandChips, CommandChipPhase};
 /// [`battle_magic_chip`] - the member's Ra-Seru name or `-` - not a fixed
 /// word.
 pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommandChips> {
-    use crate::battle_input::{AttackMode, BattleCommand, CommandPhase, CommitChoice, RoundChoice};
-    use legaia_asset::battle_ui_strings::BattleUiLabel;
-    if world.mode == crate::world::SceneMode::MuscleDome {
+    use legaia_engine_menus::battle_input::{
+        AttackMode, BattleCommand, CommandPhase, CommitChoice, RoundChoice,
+    };
+    use legaia_ui_formats::battle_ui_strings::BattleUiLabel;
+    if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         return dome_command_chips(world);
     }
-    if world.mode != crate::world::SceneMode::Battle {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
         return None;
     }
     if world.dialog.current.is_some() || world.dialog.inline.is_some() {
@@ -103,8 +105,8 @@ pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommand
 /// fighter carrying none, `FUN_801D8DE8` record `0xA`), and the confirm pair
 /// is the disc's `Begin` / `Reselect`.
 pub(super) fn dome_command_chips(world: &crate::world::World) -> Option<BattleCommandChips> {
-    use crate::battle_input::{BattleCommand, CommitChoice};
-    use legaia_asset::battle_ui_strings::BattleUiLabel;
+    use legaia_engine_menus::battle_input::{BattleCommand, CommitChoice};
+    use legaia_ui_formats::battle_ui_strings::BattleUiLabel;
     let s = world.minigames.muscle_dome.as_ref()?;
     if world.dialog.current.is_some() || world.dialog.inline.is_some() {
         return None;
@@ -142,14 +144,14 @@ pub(super) fn dome_command_chips(world: &crate::world::World) -> Option<BattleCo
     s.command_chips(&raseru, [&begin, &reselect])
 }
 
-pub use legaia_engine_vm::battle_commit_log::{CommitLogRow, CommitLogTarget};
+use legaia_engine_battle_vm::battle_commit_log::{CommitLogRow, CommitLogTarget};
 
 /// The commit-log rows retail shows this frame, row 0 first.
 ///
 /// Retail keeps the log up on the ring through the whole command phase and
 /// **launches** it - slides it one display width off the left edge - when the
 /// member leaves the ring for a sub-screen, sliding it back when they return
-/// (`legaia_engine_vm::battle_commit_log::LogLaunch`, carried per row as
+/// (`legaia_engine_battle_vm::battle_commit_log::LogLaunch`, carried per row as
 /// `slide_x`). The round's Begin is not a launch: the log leaves with the
 /// command phase. A row belongs to each member the command
 /// cursor has already walked past: every member ahead of the one entering a
@@ -164,12 +166,12 @@ pub use legaia_engine_vm::battle_commit_log::{CommitLogRow, CommitLogTarget};
 /// and whether an Item row carries a target, is inferred from the ring's
 /// arm order (records `0x0C` / `0x0E`), not read off a commit arm.
 pub fn battle_commit_log(world: &crate::world::World) -> Vec<CommitLogRow> {
-    use crate::battle_input::CommandPhase;
     use crate::battle_round::{PendingPartyAction, RoundPhase};
-    use crate::target_picker::CursorRow;
-    use legaia_asset::battle_ui_strings::BattleUiLabel;
-    use legaia_engine_vm::battle_commit_log as log;
-    if world.mode != crate::world::SceneMode::Battle
+    use legaia_engine_battle::target_picker::CursorRow;
+    use legaia_engine_battle_vm::battle_commit_log as log;
+    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_ui_formats::battle_ui_strings::BattleUiLabel;
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle
         || world.battle.round_flow.phase != RoundPhase::Command
     {
         return Vec::new();
@@ -231,7 +233,7 @@ pub fn battle_commit_log(world: &crate::world::World) -> Vec<CommitLogRow> {
                 target_row,
                 target_slot,
             } => {
-                use crate::spells::SpellTarget;
+                use legaia_engine_battle::spells::SpellTarget;
                 let target = match world.tables.spell_catalog.get(*spell_id).map(|d| d.target) {
                     Some(SpellTarget::AllEnemies) => CommitLogTarget::AllEnemies,
                     Some(SpellTarget::AllAllies) => CommitLogTarget::AllAllies,
@@ -274,11 +276,11 @@ pub fn battle_commit_log(world: &crate::world::World) -> Vec<CommitLogRow> {
 /// shows `DAMAGE` (`battle_gimard_tail_fire_a`). Capture-graded: the two
 /// styles are read off those frames' display lists, not off a dispatch.
 pub fn battle_combo_style(world: &crate::world::World) -> Option<ComboStyle> {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     // The dome's play-out tally rides the status rows, not the battle
     // popup stream this cluster counts.
     if battle_hud_phase(world) != BattleHudPhase::Action
-        || world.mode == crate::world::SceneMode::MuscleDome
+        || world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
         // A counterattack's strikes run under the monster's seeded HUD,
         // which opened no cluster ([`crate::world::BattleState::counter_hud`]).
         || world.battle.counter_hud.is_some()

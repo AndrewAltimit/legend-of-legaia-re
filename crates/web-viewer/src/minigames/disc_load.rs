@@ -42,7 +42,7 @@ impl LegaiaMinigames {
         };
         self.item_names = scus
             .as_ref()
-            .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(scus));
+            .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(scus));
         self.scus = scus;
         let entries = disc::parse_prot_toc(&prot)
             .ok_or_else(|| JsValue::from_str("minigames: PROT.DAT TOC parse failed"))?;
@@ -85,7 +85,7 @@ impl LegaiaMinigames {
             Some(c) => format!(
                 r#"{{"ok":true,"rows":{},"beats":{},"art":{},"body":{},"sfx":{}}}"#,
                 c.rows.len(),
-                legaia_asset::dance_chart::BEATS_PER_ROW,
+                legaia_minigame_formats::dance_chart::BEATS_PER_ROW,
                 self.dance_pres.is_some(),
                 self.dance_bodies.is_some(),
                 self.dance_pres
@@ -104,11 +104,11 @@ impl LegaiaMinigames {
         self.baka_tables = overlay_image(
             &self.prot,
             &self.entries,
-            legaia_asset::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32,
+            legaia_minigame_formats::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32,
         )
         .and_then(|img| {
-            let opponents = legaia_asset::baka_opponents::parse(&img)?;
-            let actions = legaia_asset::baka_opponents::parse_actions(&img)?;
+            let opponents = legaia_minigame_formats::baka_opponents::parse(&img)?;
+            let actions = legaia_minigame_formats::baka_opponents::parse_actions(&img)?;
             Some((opponents, actions))
         });
         // The roster carries each fighter's name in the 32 bytes ahead of the
@@ -116,7 +116,7 @@ impl LegaiaMinigames {
         self.baka_names = overlay_image(
             &self.prot,
             &self.entries,
-            legaia_asset::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32,
+            legaia_minigame_formats::baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32,
         )
         .and_then(|img| minigame_art::baka_roster_names(&img).ok());
         let baka_json = match &self.baka_tables {
@@ -135,9 +135,9 @@ impl LegaiaMinigames {
         self.slot_payouts = overlay_image(
             &self.prot,
             &self.entries,
-            legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32,
+            legaia_minigame_formats::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32,
         )
-        .and_then(|img| legaia_asset::slot_payout::parse(&img));
+        .and_then(|img| legaia_minigame_formats::slot_payout::parse(&img));
 
         // --- slot art pack (PROT 1200) + HUD descriptors (raw PROT 0975) ---
         // The overlay init `FUN_801CEC94` loads the art from raw TOC 0x4B2; the
@@ -151,7 +151,7 @@ impl LegaiaMinigames {
         self.slot_hud = entry_bytes(
             &self.prot,
             &self.entries,
-            legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32,
+            legaia_minigame_formats::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32,
         )
         .and_then(|raw| minigame_art::parse_slot_hud(raw).ok());
 
@@ -164,7 +164,7 @@ impl LegaiaMinigames {
             let overlay = entry_bytes(
                 &self.prot,
                 &self.entries,
-                legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32,
+                legaia_minigame_formats::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32,
             )?;
             let art = self.slot_art.as_ref()?;
             let (idx, w, _h) = minigame_art::slot_page_indices(art, slot_scene::DOT_PAGE).ok()?;
@@ -172,7 +172,7 @@ impl LegaiaMinigames {
         })();
 
         // --- the machine's resident set for the shared screen-prim builder ---
-        self.slot_cabinet = legaia_engine_ui::ui_slot_cabinet::SlotCabinetAssets::load(|i| {
+        self.slot_cabinet = legaia_engine_ui::slot_cabinet::SlotCabinetAssets::load(|i| {
             entry_bytes(&self.prot, &self.entries, i as u32).map(<[u8]>::to_vec)
         })
         .ok()
@@ -180,7 +180,7 @@ impl LegaiaMinigames {
             // The resident system-UI sheet the submenu box's border samples.
             match self
                 .prot
-                .get(legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET..)
+                .get(legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET..)
             {
                 Some(head) => a.with_system_ui(head),
                 None => a,

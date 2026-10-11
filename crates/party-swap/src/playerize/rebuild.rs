@@ -29,7 +29,7 @@ pub fn rebuild_player_file(
 
 /// [`rebuild_player_file`] with no entry budget: greedy LZS throughout,
 /// the file ends at the last record's sector boundary. The shape a
-/// caller parks outside the PROT entry (`legaia_asset::player_file_annex`)
+/// caller parks outside the PROT entry (`legaia_actor_formats::player_file_annex`)
 /// wants - room is not the constraint there.
 pub fn rebuild_player_file_unbounded(
     player_file: &[u8],

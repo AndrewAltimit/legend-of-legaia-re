@@ -38,7 +38,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::input::PadButton;
+use legaia_engine_system::input::PadButton;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 const W: u32 = 960;

@@ -46,7 +46,7 @@ fn opdeene_record_reaches_its_scene_change_at_retail_pace() {
     };
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.world.begin_new_game();
-    host.enter_field_scene(legaia_asset::new_game::OPENING_CUTSCENE_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE, 0)
         .expect("enter opdeene");
 
     let (mut at_wait, mut at_dolly, mut at_change) = (None, None, None);

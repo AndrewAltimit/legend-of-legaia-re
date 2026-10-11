@@ -6,7 +6,7 @@
 //! Items screen's window-14 target panel, which takes the disc item-effect
 //! table and the roster off a [`World`].
 
-pub use legaia_engine_menus::pause_screens::*;
+use legaia_engine_menus::pause_screens::*;
 
 use crate::world::World;
 

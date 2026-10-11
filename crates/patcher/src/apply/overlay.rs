@@ -79,7 +79,7 @@ pub fn inject_overlay_slice_opts(
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for overlay-slice stub")?;
     let stub = ov::words_to_bytes(&ov::assemble_shop_loader_stub_gated(lba, sectors, gated));
-    let stub_off = legaia_asset::item_names::file_offset_for_va(&scus, ov::STUB_VA)
+    let stub_off = legaia_game_tables::item_names::file_offset_for_va(&scus, ov::STUB_VA)
         .ok_or_else(|| anyhow::anyhow!("can't resolve stub VA {:#x} in SCUS", ov::STUB_VA))?;
     if scus
         .get(stub_off..stub_off + stub.len())
@@ -156,7 +156,7 @@ pub fn inject_overlay_slice_dead_mode(patcher: &mut DiscPatcher) -> Result<Overl
     let trigger = ov::words_to_bytes(&ov::assemble_mode_request_trigger());
     let loader = ov::words_to_bytes(&ov::assemble_mode_init_loader_stub(lba, sectors));
     let resolve_gap = |va: u32, len: usize| -> Result<usize> {
-        let off = legaia_asset::item_names::file_offset_for_va(&scus, va)
+        let off = legaia_game_tables::item_names::file_offset_for_va(&scus, va)
             .ok_or_else(|| anyhow::anyhow!("can't resolve gap VA {va:#x} in SCUS"))?;
         if scus
             .get(off..off + len)
@@ -203,7 +203,7 @@ pub fn inject_overlay_slice_dead_mode(patcher: &mut DiscPatcher) -> Result<Overl
 
     // 4. Repurpose the dead mode's mode-table handler -> our loader (guarded).
     let handler_va = ov::dead_mode_handler_va();
-    let handler_off = legaia_asset::item_names::file_offset_for_va(&scus, handler_va)
+    let handler_off = legaia_game_tables::item_names::file_offset_for_va(&scus, handler_va)
         .ok_or_else(|| anyhow::anyhow!("can't resolve mode-table handler VA {handler_va:#x}"))?;
     let cur = scus
         .get(handler_off..handler_off + 4)
@@ -293,7 +293,7 @@ pub fn inject_overlay_slice_warp_opts(
     // must NOT call the return-warp (which would reload the field immediately).
     let redirect = ov::words_to_bytes(&ov::assemble_warp_init_redirect_opts(lba, sectors, !draw));
     let resolve_gap = |va: u32, len: usize| -> Result<usize> {
-        let off = legaia_asset::item_names::file_offset_for_va(&scus, va)
+        let off = legaia_game_tables::item_names::file_offset_for_va(&scus, va)
             .ok_or_else(|| anyhow::anyhow!("can't resolve gap VA {va:#x} in SCUS"))?;
         if scus
             .get(off..off + len)
@@ -339,8 +339,9 @@ pub fn inject_overlay_slice_warp_opts(
         .context("write op-0x49 warp detour into the field overlay")?;
 
     // 4. FUN_80025980 overlay-load site -> redirect (guarded).
-    let init_off = legaia_asset::item_names::file_offset_for_va(&scus, ov::WARP_INIT_DETOUR_VA)
-        .ok_or_else(|| anyhow::anyhow!("can't resolve FUN_80025980 detour VA"))?;
+    let init_off =
+        legaia_game_tables::item_names::file_offset_for_va(&scus, ov::WARP_INIT_DETOUR_VA)
+            .ok_or_else(|| anyhow::anyhow!("can't resolve FUN_80025980 detour VA"))?;
     let at_init: Vec<u32> = scus
         .get(init_off..init_off + 8)
         .ok_or_else(|| anyhow::anyhow!("FUN_80025980 detour offset out of range"))?
@@ -405,7 +406,7 @@ pub fn inject_overlay_slice_picker(patcher: &mut DiscPatcher) -> Result<OverlayS
     let trigger = ov::words_to_bytes(&ov::assemble_picker_trade_detour_stub(ov::WARP_SUBID));
     let redirect = ov::words_to_bytes(&ov::assemble_warp_init_redirect_opts(lba, sectors, false));
     let resolve_gap = |va: u32, len: usize| -> Result<usize> {
-        let off = legaia_asset::item_names::file_offset_for_va(&scus, va)
+        let off = legaia_game_tables::item_names::file_offset_for_va(&scus, va)
             .ok_or_else(|| anyhow::anyhow!("can't resolve gap VA {va:#x} in SCUS"))?;
         if scus
             .get(off..off + len)
@@ -450,8 +451,9 @@ pub fn inject_overlay_slice_picker(patcher: &mut DiscPatcher) -> Result<OverlayS
         .context("write picker trade detour into the menu overlay")?;
 
     // 4. FUN_80025980 overlay-load site -> redirect (guarded). SCUS-resident.
-    let init_off = legaia_asset::item_names::file_offset_for_va(&scus, ov::WARP_INIT_DETOUR_VA)
-        .ok_or_else(|| anyhow::anyhow!("can't resolve FUN_80025980 detour VA"))?;
+    let init_off =
+        legaia_game_tables::item_names::file_offset_for_va(&scus, ov::WARP_INIT_DETOUR_VA)
+            .ok_or_else(|| anyhow::anyhow!("can't resolve FUN_80025980 detour VA"))?;
     let at_init: Vec<u32> = scus
         .get(init_off..init_off + 8)
         .ok_or_else(|| anyhow::anyhow!("FUN_80025980 detour offset out of range"))?
@@ -586,8 +588,8 @@ pub fn inject_native_trade_row(patcher: &mut DiscPatcher) -> Result<()> {
 /// returns to the picker on exit. Pure overlay-0899 + SCUS-gap edits; the shop is
 /// never torn down. All PROT-0899 sites are guarded against the recognized US build.
 pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
-    use legaia_asset::seru_trade as st;
     use legaia_code_hooks::seru_overlay as ov;
+    use legaia_game_tables::seru_trade as st;
 
     let base = ov::SLOT_A_BASE;
     let menu = patcher

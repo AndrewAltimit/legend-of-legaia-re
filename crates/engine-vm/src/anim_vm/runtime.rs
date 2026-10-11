@@ -206,7 +206,7 @@ pub trait Host {
     /// draws each as a tinted copy of the actor - it loads the history
     /// frame `+0x17A[i]` into `+0x68` and record `+0x234[i]` into `+0x4C`,
     /// then calls `FUN_80048A08` (`0x8004950C`). It is not a child-actor chain walk.
-    /// Ported for the engine as `legaia_engine_core::battle_afterimage`.
+    /// Ported for the engine as `legaia_engine_battle::battle_afterimage`.
     fn on_child_step_iter(&mut self, actor: u8, lod_step: u8) {
         let _ = (actor, lod_step);
     }

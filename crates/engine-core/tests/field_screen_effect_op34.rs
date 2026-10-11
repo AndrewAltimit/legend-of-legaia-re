@@ -15,8 +15,8 @@
 //! REF: FUN_801DE2B0 (the spawner), FUN_801DDC20 (the tick),
 //! REF: FUN_80024EE4 (the push)
 
-use legaia_engine_core::actor_handler::ActorHandler;
 use legaia_engine_core::world::World;
+use legaia_engine_field::actor_handler::ActorHandler;
 
 /// `34 05 FF FF FF 41 00` - the instruction whose template the capture read.
 /// `op0 = 5` selects blend 2 (bit 0) and push kind 0 (bit 2); the operand

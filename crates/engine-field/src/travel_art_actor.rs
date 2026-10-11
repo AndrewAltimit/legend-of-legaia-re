@@ -222,7 +222,7 @@ pub struct TravelDestination {
 /// PORT: FUN_801ee094 (`0x801EE1F0..0x801EE264` scan)
 /// REF: FUN_801ee328 (the byte-identical scan in the Rula handler)
 ///
-/// Wired: `legaia_engine_core::world_map_panel_host::PanelActorHost` passes
+/// Wired: `crate::world_map_panel_host::PanelActorHost` passes
 /// this as the `resolve` closure's scan half, over the visited-map table it
 /// records from the overworld tick.
 pub fn find_visited_map(
@@ -238,7 +238,7 @@ pub fn find_visited_map(
 /// PORT: FUN_801ee094 (`0x801EE268..0x801EE2E4`)
 ///
 /// Wired: the other half of the `resolve` closure
-/// `legaia_engine_core::world_map_panel_host::PanelActorHost` supplies.
+/// `crate::world_map_panel_host::PanelActorHost` supplies.
 pub fn destination_for(record_index: usize, tile_x: i32, tile_z: i32) -> TravelDestination {
     TravelDestination {
         record_index,

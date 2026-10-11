@@ -16,9 +16,10 @@
 //! Disc-free: synthetic party + the vanilla monster/formation tables. Runs in
 //! CI unconditionally.
 
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// Build a field-ready world identical to the auto-resolve live-loop test
 /// but with the player-driven battle flag set.
@@ -46,7 +47,7 @@ fn build_player_driven_world() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("player_driven_test");
@@ -123,7 +124,7 @@ fn battle_waits_for_player_command_then_resolves() {
     // arm it opens on), `Auto` on the attack-mode prompt, then the target
     // cursor's confirm; the strike commits and the single-monster formation
     // wipes. ---
-    use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+    use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase};
     let left = InputState::mask_of([PadButton::Left]);
     let mut returned = false;
     let mut release = false;

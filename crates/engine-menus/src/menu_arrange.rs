@@ -2,7 +2,7 @@
 //! Items screen's "Arrange" command.
 //!
 //! The menu overlay (PROT 0899, base `0x801CE818` -
-//! `legaia_asset::menu_windows::MENU_OVERLAY_BASE_VA`) carries a 256-byte
+//! `legaia_game_tables::menu_windows::MENU_OVERLAY_BASE_VA`) carries a 256-byte
 //! display-order table at VA `0x801E4A88` (file offset `0x16270`):
 //! `table[rank] = item_id` - the canonical bag ordering, one byte per
 //! rank slot over the full 8-bit item-id space.
@@ -32,7 +32,7 @@ pub const ARRANGE_TABLE_VA: u32 = 0x801E_4A88;
 /// File offset of the table inside the as-loaded menu-overlay image
 /// (PROT 0899), via the same base the window-descriptor table uses.
 pub const ARRANGE_TABLE_OFFSET: usize =
-    (ARRANGE_TABLE_VA - legaia_asset::menu_windows::MENU_OVERLAY_BASE_VA) as usize;
+    (ARRANGE_TABLE_VA - legaia_game_tables::menu_windows::MENU_OVERLAY_BASE_VA) as usize;
 
 /// Number of rank slots (the full 8-bit item-id space).
 pub const ARRANGE_TABLE_LEN: usize = 0x100;

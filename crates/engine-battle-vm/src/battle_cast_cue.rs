@@ -240,7 +240,7 @@ fn rand_span_before(words: &[u32], site: usize) -> u8 {
 /// PROT 0903 `(6, 4, 686)` - the rows this scan reproduces).
 ///
 /// `image` is one PROT entry of `0903..=0966` as extracted. The content
-/// bound is `legaia_asset::slot_b_module::content_end` at the band's link
+/// bound is `legaia_overlay_images::slot_b_module::content_end` at the band's link
 /// base; a funnel site whose category is not a literal below `3` is not a
 /// voice and is skipped. `None` when no site inside the content values its
 /// argument - the image has no head cue this scan can name.
@@ -250,9 +250,9 @@ pub fn module_head_cue(image: &[u8]) -> Option<ModuleHeadCue> {
     // A zero bound is "no layout recognised" (a fixture too small to carry a
     // head table), not "no content": scan the whole image then. Every real
     // band image has a non-zero code end.
-    let end = match legaia_asset::slot_b_module::content_end(
+    let end = match legaia_overlay_images::slot_b_module::content_end(
         image,
-        legaia_asset::slot_b_module::SLOT_B_LINK_BASE,
+        legaia_overlay_images::slot_b_module::SLOT_B_LINK_BASE,
     ) {
         0 => image.len(),
         n => n.min(image.len()),
@@ -354,7 +354,7 @@ pub enum VoiceCueVerdict {
 /// `(id - 0x100) >> 3` with the `1 -> 0x1A`, `3 -> 0x1B`, `5 -> 0x1C`
 /// remaps applied in sequence off that one value, channel `(id - 0x100) & 7`,
 /// span `(raw * 60 + 99) / 100` where `raw` is the caller's read of
-/// `DAT_800788B8[id - 0x100]` (`legaia_asset::xa_cue_table`).
+/// `DAT_800788B8[id - 0x100]` (`legaia_game_tables::xa_cue_table`).
 ///
 /// PORT: FUN_8004FCC8
 pub fn admit_voice_cue(id: u16, gates: VoiceCueGates, raw_span: Option<u16>) -> VoiceCueVerdict {

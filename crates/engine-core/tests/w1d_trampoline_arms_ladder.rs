@@ -1,5 +1,5 @@
 //! Disc-gated **trampoline-arm ladder**: seat every `(PROT entry, action id)`
-//! pair the seven modules `legaia_engine_vm::cast_arm_ticks` carries, walk its
+//! pair the seven modules `legaia_engine_battle_vm::cast_arm_ticks` carries, walk its
 //! module phase to the end, and assert the body actually entered.
 //!
 //! Why it exists. The fourteen bodies are reached only through their module's
@@ -14,9 +14,10 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_asset::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::cast_arm_ticks as arms;
+use legaia_engine_battle_vm::cast_arm_ticks as arms;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_overlay_images::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
 use std::path::PathBuf;
 
 /// `(PROT entry, action id, body VA)` - the fourteen bodies, fifteen arms
@@ -84,7 +85,8 @@ fn battle_world() -> World {
         world.actors[slot].battle.hp = 4000;
         world.actors[slot].battle.mp = 77;
         world.actors[slot].battle.liveness = 1;
-        world.actors[slot].battle.anim_rate = legaia_engine_vm::battle_anim_rate::AnimRate(8);
+        world.actors[slot].battle.anim_rate =
+            legaia_engine_battle_vm::battle_anim_rate::AnimRate(8);
     }
     // The caster is a monster seat aiming at the party row, which is what a
     // capture-class cast is in retail.
@@ -141,7 +143,7 @@ fn every_trampoline_arm_enters_its_body_and_reaches_a_terminal_step() {
     base.install_menu_text(&scus);
     let mut archive =
         legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
-    let mut pool = legaia_asset::cast_effect_pool::CastEffectPool::new();
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
     for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
         let Some(entry) = archive.entries.get(idx as usize).cloned() else {
             continue;
@@ -171,7 +173,7 @@ fn every_trampoline_arm_enters_its_body_and_reaches_a_terminal_step() {
             }
         }
         assert_eq!(
-            legaia_engine_vm::cast_module_ticks::capture_tick_body(entry, id),
+            legaia_engine_battle_vm::cast_module_ticks::capture_tick_body(entry, id),
             Some(body),
             "PROT {entry} id {id:#04X}: the trampoline map names a different body"
         );
@@ -209,7 +211,7 @@ fn every_trampoline_arm_enters_its_body_and_reaches_a_terminal_step() {
         // gated arms' seeds over their drains (`capture_countdown`): the
         // gate is live on the band, not just in the table.
         if let Some(table) =
-            legaia_engine_vm::cast_module_camera::capture_arm_countdowns(entry, body)
+            legaia_engine_battle_vm::cast_module_camera::capture_arm_countdowns(entry, body)
         {
             let mut floor = 0i32;
             let mut cd = 0i32;
@@ -220,8 +222,12 @@ fn every_trampoline_arm_enters_its_body_and_reaches_a_terminal_step() {
                     cd -= held * d;
                 }
                 match a.write {
-                    Some(legaia_engine_vm::cast_module_camera::CountdownWrite::Set(v)) => cd = v,
-                    Some(legaia_engine_vm::cast_module_camera::CountdownWrite::Add(v)) => cd += v,
+                    Some(legaia_engine_battle_vm::cast_module_camera::CountdownWrite::Set(v)) => {
+                        cd = v
+                    }
+                    Some(legaia_engine_battle_vm::cast_module_camera::CountdownWrite::Add(v)) => {
+                        cd += v
+                    }
                     None => {}
                 }
             }
@@ -278,7 +284,7 @@ fn the_new_arms_do_not_hold_the_band_forever() {
     base.install_menu_text(&scus);
     let mut archive =
         legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
-    let mut pool = legaia_asset::cast_effect_pool::CastEffectPool::new();
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
     for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
         let Some(entry) = archive.entries.get(idx as usize).cloned() else {
             continue;

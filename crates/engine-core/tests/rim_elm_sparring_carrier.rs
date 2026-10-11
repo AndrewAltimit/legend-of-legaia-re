@@ -20,12 +20,12 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::dialog::OwnedDialogPanel;
-use legaia_engine_core::encounter_record::{
+use legaia_engine_battle::encounter_record::{
     RIM_ELM_SPARRING_CARRIER_MODEL, RIM_ELM_SPARRING_CARRIER_TILE,
 };
-use legaia_engine_core::man_field_scripts::{PlacementKind, classify_placement};
 use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_dialog::dialog::OwnedDialogPanel;
+use legaia_engine_field::man_field_scripts::{PlacementKind, classify_placement};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -77,7 +77,7 @@ fn town01_sparring_carrier_is_pinned_and_renders_dialogue() {
     let man = legaia_engine_core::scene_bundle::extract_man_payload(&bundle, &entry_bytes)
         .expect("man extract")
         .expect("town01 MAN payload");
-    let man_file = legaia_asset::man_section::parse(&man).expect("man parse");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("man parse");
     let placements = man_file.actor_placements(&man);
 
     // The sparring partner: a single placement at the pinned tile + model.
@@ -179,21 +179,21 @@ fn town01_p1_10_carries_the_tetsu_3e_ff_04_install() {
         .field_man_payload(&index)
         .expect("MAN payload read")
         .expect("town01 resolves its bundle MAN");
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("MAN parses");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("MAN parses");
 
     // Formation row 4 = lone Tetsu (0x4F).
-    let record = legaia_engine_core::encounter_man::formation_record_for_row(&man_bytes, 4)
+    let record = legaia_engine_battle::encounter_man::formation_record_for_row(&man_bytes, 4)
         .expect("town01 formation row 4 decodes");
     assert_eq!(record.count, 1, "row 4 is a lone-monster formation");
     assert_eq!(
         record.monster_ids[0],
-        legaia_engine_core::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID,
+        legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID,
         "row 4's lone slot is Tetsu"
     );
 
     // P1[10] carries `3E FF 04` exactly once.
     let (start, _pc0, len) =
-        legaia_engine_core::man_field_scripts::partition_record_span(&man_file, &man_bytes, 1, 10)
+        legaia_engine_field::man_field_scripts::partition_record_span(&man_file, &man_bytes, 1, 10)
             .expect("P1[10] span resolves");
     let body = &man_bytes[start..start + len];
     let hits = body.windows(3).filter(|w| *w == [0x3E, 0xFF, 0x04]).count();

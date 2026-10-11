@@ -92,8 +92,8 @@ impl FightPolicy {
     /// The pad mask for this frame. `0` means "press nothing", which is what
     /// the neutral model does for the whole battle.
     pub(super) fn pad_for(&self, host: &SceneHost) -> u16 {
-        use legaia_engine_core::battle_input::CommandPhase;
-        use legaia_engine_core::inventory_use::InventoryUseState;
+        use legaia_engine_menus::battle_input::CommandPhase;
+        use legaia_engine_menus::inventory_use::InventoryUseState;
 
         if !self.driven {
             return 0;

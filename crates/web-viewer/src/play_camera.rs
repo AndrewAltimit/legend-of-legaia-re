@@ -1,6 +1,6 @@
 //! The play page's camera: the engine's, not the page's.
 //!
-//! This host used to carry no [`legaia_engine_core::camera::Camera`] at all.
+//! This host used to carry no [`legaia_engine_field::camera::Camera`] at all.
 //! The page ran a spherical orbit projection (`buildWorldOrbitVp` - yaw,
 //! pitch, a half-window) that *approximated* the retail GTE camera, fed the
 //! engine an azimuth derived from its own yaw, and re-mapped the op-`0x45`
@@ -20,7 +20,7 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::camera_view::{self, FieldCameraFrame};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
 use wasm_bindgen::prelude::*;
 
 impl LegaiaRuntime {
@@ -213,7 +213,7 @@ impl LegaiaRuntime {
             .scene_host
             .host()
             .map_or(SceneMode::Title, |h| h.world.mode);
-        legaia_engine_ui::prim_near_reject::shader_params(
+        legaia_render_kernels::prim_near_reject::shader_params(
             camera_view::prim_near_cut(mode, retail_camera),
             camera_view::prim_gpu_span_h(
                 mode,
@@ -226,7 +226,7 @@ impl LegaiaRuntime {
 
     /// Per-vertex primitive-corner records for a triangle mesh - the stream
     /// the page binds as `a_prim_c0..a_prim_c3`, from the same
-    /// [`legaia_engine_ui::prim_near_reject::prim_corner_refs`] the native
+    /// [`legaia_render_kernels::prim_near_reject::prim_corner_refs`] the native
     /// renderer's mesh upload packs. `positions` is `x, y, z` per vertex;
     /// the result is 13 floats per vertex.
     pub fn prim_corner_refs(&self, positions: &[f32], indices: &[u32]) -> Vec<f32> {
@@ -235,7 +235,7 @@ impl LegaiaRuntime {
         if indices.iter().any(|&i| i >= n) {
             return Vec::new();
         }
-        legaia_engine_ui::prim_near_reject::prim_corner_refs(&pos, indices)
+        legaia_render_kernels::prim_near_reject::prim_corner_refs(&pos, indices)
             .into_iter()
             .flatten()
             .collect()
@@ -438,7 +438,7 @@ impl LegaiaRuntime {
     }
 
     /// The user's drag-orbit around the follow target, radians, compass sense
-    /// - [`legaia_engine_core::camera::Camera::manual_orbit`], the same field
+    /// - [`legaia_engine_field::camera::Camera::manual_orbit`], the same field
     /// the native window's left-mouse drag writes. Feeding it here rather
     /// than keeping a page-local yaw is what keeps the movement compass
     /// (`compass_azimuth_units`) tracking the view on both hosts.
@@ -453,7 +453,7 @@ impl LegaiaRuntime {
 
     /// Swing the orbit by `radians` from the page's **debug orbit** vantage
     /// (`F3`), through the shared
-    /// [`legaia_engine_core::camera::Camera::debug_orbit_by`] the native
+    /// [`legaia_engine_field::camera::Camera::debug_orbit_by`] the native
     /// window's own `F3` drag calls. Un-gated by the cutscene (the debug
     /// vantage is a dev viewpoint) but field-only.
     ///
@@ -471,7 +471,7 @@ impl LegaiaRuntime {
     }
 
     /// Whether the user's follow-camera knobs steer this frame
-    /// ([`legaia_engine_core::camera::Camera::follow_knobs_live`]): free-roam
+    /// ([`legaia_engine_field::camera::Camera::follow_knobs_live`]): free-roam
     /// field with no cutscene timeline owning the camera. `false` while a
     /// scripted shot runs - the camera is locked where the script put it -
     /// and off the field.
@@ -483,7 +483,7 @@ impl LegaiaRuntime {
 
     /// Swing the follow camera's orbit by `radians` (compass sense) through
     /// the cutscene-gated engine setter
-    /// ([`legaia_engine_core::camera::Camera::orbit_by`]). Returns whether
+    /// ([`legaia_engine_field::camera::Camera::orbit_by`]). Returns whether
     /// the gesture was taken; a drag during a cutscene is dropped rather
     /// than banked, so the view never snaps when control returns.
     pub fn play_camera_orbit_by(&mut self, radians: f32) -> bool {
@@ -495,7 +495,7 @@ impl LegaiaRuntime {
 
     /// Tip the follow camera's tilt by `radians` (positive = further down),
     /// gated like [`Self::play_camera_orbit_by`]
-    /// ([`legaia_engine_core::camera::Camera::tilt_by`]).
+    /// ([`legaia_engine_field::camera::Camera::tilt_by`]).
     pub fn play_camera_tilt_by(&mut self, radians: f32) -> bool {
         match self.scene_host.host_cam_mut() {
             Some((h, camera)) => camera.tilt_by(&h.world, radians),
@@ -505,7 +505,7 @@ impl LegaiaRuntime {
 
     /// Scale the follow camera's continuous zoom by `factor` (`> 1` pulls
     /// the eye back), gated like [`Self::play_camera_orbit_by`]
-    /// ([`legaia_engine_core::camera::Camera::zoom_by`]).
+    /// ([`legaia_engine_field::camera::Camera::zoom_by`]).
     pub fn play_camera_zoom_by(&mut self, factor: f32) -> bool {
         match self.scene_host.host_cam_mut() {
             Some((h, camera)) => camera.zoom_by(&h.world, factor),
@@ -524,7 +524,7 @@ impl LegaiaRuntime {
     }
 
     /// Put orbit, tilt and zoom back at their retail-identical defaults
-    /// ([`legaia_engine_core::camera::Camera::reset_follow_knobs`]).
+    /// ([`legaia_engine_field::camera::Camera::reset_follow_knobs`]).
     pub fn play_camera_reset_framing(&mut self) {
         self.scene_host.camera_mut().reset_follow_knobs();
     }
@@ -551,7 +551,7 @@ impl LegaiaRuntime {
 
     /// `true` while the world map's **top-view debug camera** is live - the
     /// vantage retail's R1+R2+Cross chord toggles
-    /// (`legaia_engine_core::world_map::WorldMapController`). The toggle
+    /// (`legaia_engine_field::world_map::WorldMapController`). The toggle
     /// itself is engine-side and identical on both hosts; this is only the
     /// readout a page needs to label its HUD.
     pub fn play_camera_is_top_view(&self) -> bool {

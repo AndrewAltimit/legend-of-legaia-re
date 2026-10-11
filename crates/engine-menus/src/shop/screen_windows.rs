@@ -176,7 +176,7 @@ pub fn party_compare_members_of(
     item_id: u8,
 ) -> Vec<PartyCompareMember> {
     use crate::equipment::EquipSlot;
-    use legaia_asset::equip_stats::EquipSlot as Disc;
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
     let entry = info.and_then(|i| i.entry(item_id));
     let slot_idx = entry.map(|e| {
         match e.category {

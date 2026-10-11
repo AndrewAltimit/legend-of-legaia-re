@@ -70,7 +70,7 @@
 //! Neither can run in the port because neither runs in retail. The spawn's
 //! write set is held on the side `SubmodeScreen` struct; the clip pick's live
 //! twin is `FUN_801D1BA0`'s tail, whose job the engine's field clip player
-//! does (`legaia_engine_core::field_anim`).
+//! does (`crate::field_anim`).
 
 /// The `base == 99` special case in the clip pick.
 pub const BASE_SENTINEL: u16 = 99;
@@ -155,7 +155,7 @@ pub struct ActorClipPick {
 ///
 /// PORT: FUN_801e58a8
 ///
-/// REPLACED-BY: the engine field clip player (`legaia_engine_core::field_anim`,
+/// REPLACED-BY: the engine field clip player (`crate::field_anim`,
 /// the idle / walk slot of the party locomotion bank), which picks the
 /// player's clip where `FUN_801D1BA0`'s inline twin of this arithmetic does.
 ///

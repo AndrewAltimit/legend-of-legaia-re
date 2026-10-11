@@ -16,7 +16,7 @@ fn main() -> anyhow::Result<()> {
 
     let scene = Scene::load(&p, &name)?;
     let man = scene.field_man_payload(&p)?.expect("no MAN");
-    let mf = legaia_asset::man_section::parse(&man)?;
+    let mf = legaia_scene_formats::man_section::parse(&man)?;
 
     let n2 = mf.header.partition_counts[2].max(0) as usize;
     for rec in 0..n2 {
@@ -24,19 +24,19 @@ fn main() -> anyhow::Result<()> {
             continue;
         }
         let Some((start, pc0, len)) =
-            legaia_engine_core::man_field_scripts::partition_record_span(&mf, &man, 2, rec)
+            legaia_engine_field::man_field_scripts::partition_record_span(&mf, &man, 2, rec)
         else {
             println!("P2[{rec}]: (bad span)");
             continue;
         };
         println!("\n=== P2[{rec}] start={start:#x} pc0={pc0} len={len} ===");
         let body = &man[start..start + len];
-        for insn in legaia_asset::field_disasm::LinearWalker::new(body, pc0) {
+        for insn in legaia_scene_formats::field_disasm::LinearWalker::new(body, pc0) {
             match insn {
                 Ok(i) => {
                     println!(
                         "{}",
-                        legaia_asset::field_disasm::format_instruction(&i, body)
+                        legaia_scene_formats::field_disasm::format_instruction(&i, body)
                     );
                 }
                 Err((pc, e)) => {

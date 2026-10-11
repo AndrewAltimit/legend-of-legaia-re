@@ -1,10 +1,11 @@
 //! Cast-band screen draws: the cross beam and the screen-fade quads.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// PROT 0948's beam counter while its builder ran on this module tick -
-    /// the one input `legaia_engine_ui::cast_beam::cross_beam_prims` builds
+    /// the one input `legaia_render_kernels::cast_beam::cross_beam_prims` builds
     /// the frame's beam packets from, on both hosts. `None` outside arm 3.
     pub fn cross_beam_draw(&self) -> Option<i32> {
         (self.mode == SceneMode::Battle && self.casting.module_beam_live)
@@ -13,7 +14,7 @@ impl World {
 
     /// The full-screen fade quad to composite this frame, as
     /// `(rgb 0xRRGGBB, abr_mode, ot_index)` for
-    /// `legaia_engine_ui::screen_prim::fade_prim` - `None` while no fade is
+    /// `legaia_render_kernels::screen_prim::fade_prim` - `None` while no fade is
     /// live or its start delay is still running (retail's tick returns `-1`
     /// and draws nothing). The ABR mode is the template's kind word and the
     /// OT index the id `FUN_80024E80` stamped (`AddPrim(ot + id*4, ..)` in
@@ -37,7 +38,7 @@ impl World {
 }
 
 /// One fade's quad, `None` while its start delay runs.
-fn fade_draw(f: &crate::fade::FadeState) -> Option<(u32, u8, u32)> {
+fn fade_draw(f: &legaia_engine_system::fade::FadeState) -> Option<(u32, u8, u32)> {
     if !f.visible() {
         return None;
     }

@@ -42,7 +42,7 @@ pub const ANIM_SPAWN_RATE: i16 = 8;
 pub const PLAYER_ANCHOR_TARGET: u8 = 0xF8;
 
 /// Frame count the player's clip cursor falls back to when neither the scene
-/// ANM bundle nor an installed [`crate::field_anim::FieldPlayerAnim`] can
+/// ANM bundle nor an installed [`legaia_engine_field::field_anim::FieldPlayerAnim`] can
 /// measure the real clip - the player-side twin of the prop bank's 1-frame
 /// stand-in. It only has to be finite: what it bounds is how long a script's
 /// end-latch spin waits, and a headless world has no clip to watch anyway.
@@ -146,7 +146,7 @@ impl PropAnim {
     ///
     /// `scaled_step` is the record's blend gate as well as its step selector
     /// (both read clip byte `+1` bit 0; see
-    /// [`legaia_asset::player_anm::PlayerAnmRecord::blends`]), so a clip that
+    /// [`legaia_actor_formats::player_anm::PlayerAnmRecord::blends`]), so a clip that
     /// does not blend drops the sub-frame fraction here, and the clamp bit is
     /// kept only where it can matter - a fraction on the last frame.
     pub fn pose_key(&self) -> PropPoseKey {
@@ -184,8 +184,11 @@ impl PropAnim {
         // prop on this arm is also posed between keyframes. A minority of the
         // disc's posed props take it (`tests/field_prop_pose_sampler_disc.rs`
         // counts them).
-        let step =
-            crate::field_anim::clip_step(self.rate as u16, self.scaled_step, self.step_div) as i16;
+        let step = legaia_engine_field::field_anim::clip_step(
+            self.rate as u16,
+            self.scaled_step,
+            self.step_div,
+        ) as i16;
         if self.flags & ANIM_RESTART != 0 {
             self.flags &= !ANIM_RESTART;
             self.cursor = if self.flags & ANIM_REVERSE == 0 {
@@ -277,7 +280,7 @@ impl PropPoseKey {
 /// REF: FUN_8001BE80 (the two-frame sampler, ported at
 /// `PlayerAnmBundle::sample_bone`)
 pub fn prop_bone_offsets(
-    bundle: &legaia_asset::player_anm::PlayerAnmBundle,
+    bundle: &legaia_actor_formats::player_anm::PlayerAnmBundle,
     anim_id: u8,
     key: PropPoseKey,
     bones: usize,
@@ -306,7 +309,7 @@ pub fn prop_bone_offsets(
 ///
 /// REF: FUN_8001B964
 pub fn posed_prop_offsets(
-    bundle: &legaia_asset::player_anm::PlayerAnmBundle,
+    bundle: &legaia_actor_formats::player_anm::PlayerAnmBundle,
     anim_id: u8,
     key: PropPoseKey,
     object_count: usize,

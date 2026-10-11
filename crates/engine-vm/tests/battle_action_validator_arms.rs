@@ -5,7 +5,7 @@
 //!
 //! REF: FUN_8003FB10
 
-use legaia_engine_vm::battle_action::{
+use legaia_engine_battle_vm::battle_action::{
     ActionValidatorHost, RecordStat, SlotResources, item_count_gate, validate_action,
 };
 use std::collections::HashMap;

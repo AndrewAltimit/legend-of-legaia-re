@@ -116,13 +116,13 @@ pub fn entry_rod_index(saved: u32, mut count_of: impl FnMut(u32) -> i32) -> u32 
 /// Retail stores `-0x20 * n` descending from `0x1F80037A`, so tier `n` sits
 /// `0x20` world units below tier `n - 1`. It is the same LUT the per-cell
 /// terrain emitters index by a map cell's low nibble, in the sign convention
-/// [`legaia_asset::field_objects::Placement::world_y`] uses (`world_y =
+/// [`legaia_scene_formats::field_objects::Placement::world_y`] uses (`world_y =
 /// -lut[nibble]`), which is why the entries here are positive.
 ///
 /// PORT: FUN_801CF070 (`0x801cf24c..0x801cf268`)
 ///
-/// REPLACED-BY: `legaia_asset::field_objects::Placement::world_y` and
-/// `legaia_asset::field_objects::build_walk_heightfield`, which take a
+/// REPLACED-BY: `legaia_scene_formats::field_objects::Placement::world_y` and
+/// `legaia_scene_formats::field_objects::build_walk_heightfield`, which take a
 /// scene's floor LUT as a parameter and read it out of the scene's own MAN
 /// (`Scene::field_floor_height_lut`). The port has no scratchpad for a scene
 /// to publish a LUT into, so the constant is the retail value for the fishing

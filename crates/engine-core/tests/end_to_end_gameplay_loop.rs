@@ -13,7 +13,7 @@
 //!    formation table at full trigger rate, and steps until the session
 //!    drops into [`crate::encounter::EncounterPhase::Triggered`].
 //! 3. **Trigger an encounter.** Drains the formation roll, populates
-//!    monster slots 3..N from [`legaia_engine_core::monster_catalog::MonsterCatalog`],
+//!    monster slots 3..N from [`legaia_engine_battle::monster_catalog::MonsterCatalog`],
 //!    flips the world into [`SceneMode::Battle`].
 //! 4. **Drive the battle SM through to victory.** Loops [`World::tick`]
 //!    while applying port-side formula damage (the same pattern as
@@ -32,18 +32,19 @@
 //! The synthetic version runs in CI. The disc-gated variant unlocks when
 //! a Legaia memory card is present at the mednafen default path.
 
-use legaia_engine_core::encounter::{
+use legaia_engine_battle::encounter::{
     EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
 };
-use legaia_engine_core::encounter_record::{EncounterRecord, FORMATION_SLOTS};
-use legaia_engine_core::levelup::{StatGain, StatGrowthCurve};
-use legaia_engine_core::monster_catalog::{
+use legaia_engine_battle::encounter_record::{EncounterRecord, FORMATION_SLOTS};
+use legaia_engine_battle::levelup::{StatGain, StatGrowthCurve};
+use legaia_engine_battle::monster_catalog::{
     FormationDef, MonsterCatalog, vanilla_formation_table, vanilla_monster_catalog,
 };
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle_vm::battle_action::{ActionState, ActorFlags, StepOutcome};
+use legaia_engine_battle_vm::battle_formulas::accuracy_roll;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::rand::psyq_rand_step;
-use legaia_engine_vm::battle_action::{ActionState, ActorFlags, StepOutcome};
-use legaia_engine_vm::battle_formulas::accuracy_roll;
 use legaia_save::{CharacterRecord, HpMpSp, Party, SaveExt, SaveExtV2, SaveFile};
 
 const ATTACKER_ATK: i32 = 35;
@@ -129,8 +130,8 @@ fn synthetic_save_file() -> SaveFile {
 /// e2e test can assert the post-battle stat bump regardless of which
 /// formation rolled. Per-slot gains are deliberately distinct so the
 /// round-trip check observes character-keyed differences.
-fn deterministic_level_up_tracker() -> legaia_engine_core::levelup::LevelUpTracker {
-    use legaia_engine_core::levelup::LevelUpTracker;
+fn deterministic_level_up_tracker() -> legaia_engine_battle::levelup::LevelUpTracker {
+    use legaia_engine_battle::levelup::LevelUpTracker;
     LevelUpTracker::new()
         // Tiny XP table: every level needs `level * 10` cumulative XP, so
         // a single 50-XP reward will always cross at least one threshold.

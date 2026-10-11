@@ -2,6 +2,7 @@
 //! over-time roll and the toxic tick.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 // ---------------------------------------------------------------------------
 // Enemy special-attack impact status proc (monster -> party).
@@ -15,7 +16,7 @@ use super::*;
 /// Build a synthetic PROT-0898-shaped overlay whose Flame (`0x20`) move-power
 /// record carries `impact` in its `+0x0A` impact-effect selector.
 fn overlay_flame_with_impact(impact: u8) -> Vec<u8> {
-    use legaia_asset::move_power::{
+    use legaia_game_tables::move_power::{
         MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
         MOVE_POWER_TABLE_LEN,
     };
@@ -33,9 +34,9 @@ fn overlay_flame_with_impact(impact: u8) -> Vec<u8> {
 /// A 1-vs-1 battle where Bandit Boss (monster id 5) at slot 1 casts its
 /// `magic_attacks[0]` = Flame (`0x20`) at the lone party member on `BANDIT_BOSS_FLAME_SEED`.
 fn flame_caster_battle(impact: u8) -> World {
-    use crate::monster_catalog::vanilla_monster_catalog;
-    use crate::move_power::MovePowerCatalog;
-    use crate::spells::SpellCatalog;
+    use legaia_engine_battle::monster_catalog::vanilla_monster_catalog;
+    use legaia_engine_battle::move_power::MovePowerCatalog;
+    use legaia_engine_battle::spells::SpellCatalog;
 
     let mut world = World {
         party: crate::world::PartyState {

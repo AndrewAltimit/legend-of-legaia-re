@@ -1,5 +1,5 @@
 //! Disc-gated end-to-end: pull a real per-scene MAN out of the PROT.DAT
-//! corpus, decode it via [`legaia_engine_core::encounter_man::encounter_table_from_man`],
+//! corpus, decode it via [`legaia_engine_battle::encounter_man::encounter_table_from_man`],
 //! and assert the result matches the byte-exact retail layout (formation
 //! count, formation row 3 = `[count=2, ids=4,4]` for `map01`).
 //!
@@ -9,13 +9,14 @@
 //! - The MAN → EncounterTable wiring regresses (table comes back empty
 //!   when it shouldn't, or rates clamp wrong).
 //! - The `formation_record_for_row` helper drifts from
-//!   `legaia_asset::man_section`'s record layout.
+//!   `legaia_scene_formats::man_section`'s record layout.
 //! - The scene-bundle MAN extractor (`extract_man_payload`) drops bytes.
 
-use legaia_asset::{monster_archive, scene_asset_table};
-use legaia_engine_core::encounter_man::{
+use legaia_actor_formats::monster_archive;
+use legaia_engine_battle::encounter_man::{
     encounter_table_from_man, formation_defs_from_man, formation_record_for_row,
 };
+use legaia_scene_formats::scene_asset_table;
 use std::collections::HashSet;
 use std::path::PathBuf;
 

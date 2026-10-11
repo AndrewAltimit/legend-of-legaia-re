@@ -14,7 +14,7 @@
 //! For each catalogued mid-battle capture, the party ids (`DAT_8007BD10`)
 //! and equipped item ids (char record `+0x196`) are read from the live RAM,
 //! the same uploads are decoded from the disc player files
-//! (`legaia_asset::battle_char_assembly::character_texture_uploads`), and
+//! (`legaia_actor_formats::battle_char_assembly::character_texture_uploads`), and
 //! every block's pixel + CLUT bytes are compared against the capture's GPU
 //! VRAM at the computed coordinates.
 //!
@@ -23,9 +23,10 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::battle_char_assembly::character_texture_uploads;
+use legaia_actor_formats::battle_char_assembly::character_texture_uploads;
 use legaia_engine_core::scene::ProtIndex;
-use legaia_mednafen::{PsxGpu, SaveState, ScenarioManifest, VRAM_WIDTH};
+use legaia_mednafen::{PsxGpu, SaveState, VRAM_WIDTH};
+use legaia_ram_image::ScenarioManifest;
 
 /// Catalogued mid-battle captures with the party texture bands resident.
 /// (A first-battle-frame capture is deliberately excluded: before the
@@ -154,7 +155,8 @@ fn battle_char_texture_placement_matches_live_vram() {
             let file = index
                 .entry_bytes_extended(862 + cid as u32)
                 .expect("read player battle file");
-            let pack = legaia_asset::battle_data_pack::parse(&file).expect("parse player file");
+            let pack =
+                legaia_actor_formats::battle_data_pack::parse(&file).expect("parse player file");
             let rec = CHAR_RECORDS + (cid as usize - 1) * CHAR_STRIDE;
             let equipped: [u8; 5] = ram[rec + EQUIP_OFF..rec + EQUIP_OFF + 5]
                 .try_into()

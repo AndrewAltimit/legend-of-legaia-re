@@ -25,12 +25,12 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
     // system-UI TIM header. Mirror the disc-mode caller's window,
     // which extends through the extension-strip TIMs (ATR icons) and
     // the load-screen portrait / empty-frame TIMs.
-    let tim_off = legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET;
-    let end = legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
-        + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
+    let tim_off = legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET;
+    let end = legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+        + legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
     let system_ui_slice = &prot_dat[tim_off..end];
-    let glyph_off = legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET as usize;
-    let glyph_tim = &prot_dat[glyph_off..glyph_off + legaia_asset::menu_glyph_atlas::TIM_SIZE];
+    let glyph_off = legaia_ui_formats::menu_glyph_atlas::PROT_DAT_OFFSET as usize;
+    let glyph_tim = &prot_dat[glyph_off..glyph_off + legaia_ui_formats::menu_glyph_atlas::TIM_SIZE];
     // The battle HUD's own window starts one TIM earlier, at the row-511
     // CLUT extension, so the three status badges on sub-palettes 16..18
     // come along; `build_atlas` splits that leading TIM back off.

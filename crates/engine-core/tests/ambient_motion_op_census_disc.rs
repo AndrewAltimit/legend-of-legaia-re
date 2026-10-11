@@ -2,7 +2,7 @@
 //! authors, per scene MAN.
 //!
 //! The port of `FUN_80038158` runs the whole 32-slot op table
-//! (`legaia_engine_vm::ambient_motion_ops`), but four of its arms reach no
+//! (`legaia_engine_motion_vm::ambient_motion_ops`), but four of its arms reach no
 //! consumer on either host - `0x0E` (model re-bind), `0x13` (`MoveImage`),
 //! `0x15` / `0x16` (the pitch / roll tweens). Wiring a consumer for an arm no
 //! authored stream ever executes is speculation dressed as parity, so this
@@ -10,7 +10,7 @@
 //! op at all, and in which scenes?
 //!
 //! It walks every CDNAME scene's MAN tail-**section 1** streams (the carrier
-//! `legaia_asset::man_motion` decodes, every variant of every record) and
+//! `legaia_scene_formats::man_motion` decodes, every variant of every record) and
 //! counts each opcode by the section's own width table. Printed as a table
 //! with `--nocapture`; the assertions pin the arms whose absence or presence
 //! a wiring decision rests on.
@@ -64,17 +64,17 @@ fn census() -> Option<(Census, WalkStats)> {
         };
         for carrier in scene_man_carriers(&index, &scene) {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
-            for rec in legaia_asset::man_motion::motion_records(man, &man_file) {
-                for var in legaia_asset::man_motion::stream_variants(man, &rec) {
+            for rec in legaia_scene_formats::man_motion::motion_records(man, &man_file) {
+                for var in legaia_scene_formats::man_motion::stream_variants(man, &rec) {
                     stats.variants += 1;
                     let mut pc = var.code_offset;
                     let mut clean = true;
                     while pc < var.code_end && pc < man.len() {
                         let op = man[pc];
-                        let Some(w) = legaia_asset::man_motion::op_width(op) else {
+                        let Some(w) = legaia_scene_formats::man_motion::op_width(op) else {
                             clean = false;
                             break;
                         };
@@ -144,20 +144,20 @@ fn model_swap_operands_against_the_placement_model_set_or_skip() {
         let mut carriers: BTreeSet<(u32, Option<usize>)> = BTreeSet::new();
         for carrier in scene_man_carriers(&index, &scene) {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             for (p, _kind) in
-                legaia_engine_core::man_field_scripts::classify_placements(&man_file, man)
+                legaia_engine_field::man_field_scripts::classify_placements(&man_file, man)
             {
                 spawn_models.insert(i16::from(p.model_index));
             }
-            for rec in legaia_asset::man_motion::motion_records(man, &man_file) {
-                for var in legaia_asset::man_motion::stream_variants(man, &rec) {
+            for rec in legaia_scene_formats::man_motion::motion_records(man, &man_file) {
+                for var in legaia_scene_formats::man_motion::stream_variants(man, &rec) {
                     let mut pc = var.code_offset;
                     while pc < var.code_end && pc < man.len() {
                         let op = man[pc];
-                        let Some(w) = legaia_asset::man_motion::op_width(op) else {
+                        let Some(w) = legaia_scene_formats::man_motion::op_width(op) else {
                             break;
                         };
                         if op == 0x0E {

@@ -9,21 +9,21 @@
 //! answers the second, over the roster records the pause menu edits.
 //!
 //! Its consumer is the spell-record broadcast `FUN_8003053C`
-//! ([`crate::spell_party_broadcast::broadcast`]), whose three `jal` sites on
+//! ([`legaia_engine_menus::spell_party_broadcast::broadcast`]), whose three `jal` sites on
 //! the disc are all menu code: the Magic list builder (`FUN_80030628`,
 //! `0x80031210`) and the two cast confirms `FUN_801D9280` / `FUN_801D9594`
 //! (`0x801D954C` / `0x801D98B4`, PROT 0899). [`spell_affects_anyone`] is
 //! that question for one spell id.
 //!
 //! REF: FUN_8003FB10 (the validator, ported as
-//! `legaia_engine_vm::battle_action::validate_action`)
+//! `legaia_engine_battle_vm::battle_action::validate_action`)
 
-use legaia_engine_vm::battle_action::{
+use legaia_engine_battle_vm::battle_action::{
     ActionValidatorHost, RecordStat, SlotResources, validate_action,
 };
 
-use crate::spell_party_broadcast::{BroadcastRoster, SpellDispatchRecord, broadcast};
 use crate::world::World;
+use legaia_engine_menus::spell_party_broadcast::{BroadcastRoster, SpellDispatchRecord, broadcast};
 
 /// [`ActionValidatorHost`] over the roster records - the validator's
 /// out-of-battle resource source.

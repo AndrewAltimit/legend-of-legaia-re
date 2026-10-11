@@ -26,7 +26,7 @@ pub struct IntroQuadTable(pub Vec<IntroQuadDesc>);
 
 impl IntroQuadTable {
     /// Parse the table out of a PROT 0979 image already relocated to its load
-    /// base (`legaia_asset::static_overlay::as_loaded`).
+    /// base (`legaia_overlay_images::static_overlay::as_loaded`).
     ///
     /// Returns `None` when the image is too short to hold the table, which is
     /// the only failure that can be detected structurally - the records carry

@@ -17,14 +17,14 @@
 //!
 //! Every carrier is walked (bundle + streaming variant MANs), every record of
 //! every partition from its own first-opcode offset; only clean decodes count
-//! (`legaia_asset::field_disasm::clean_hit_offsets`).
+//! (`legaia_scene_formats::field_disasm::clean_hit_offsets`).
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_asset::field_disasm::{OpKey, clean_hit_offsets, man_script_spans};
 use legaia_engine_core::man_field_scripts::scene_man_carriers;
 use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_scene_formats::field_disasm::{OpKey, clean_hit_offsets, man_script_spans};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -55,7 +55,7 @@ fn face_at_binds_are_not_always_the_records_own_actor() {
             continue;
         };
         for c in scene_man_carriers(&index, &scene) {
-            let Ok(mf) = legaia_asset::man_section::parse(&c.payload) else {
+            let Ok(mf) = legaia_scene_formats::man_section::parse(&c.payload) else {
                 continue;
             };
             let n0 = mf.header.partition_counts[0].max(0) as usize;

@@ -13,12 +13,13 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (disc-gated convention).
 
-use legaia_engine_core::monster_catalog::{
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, catalog_from_monster_archive,
 };
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_action::ActionState;
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_engine_battle_vm::battle_action::ActionState;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 
 fn archive() -> Option<Vec<u8>> {
     let path = std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -35,7 +36,10 @@ fn world_vs(
     archive: &[u8],
     id: u16,
     party_hp: u16,
-    prep: impl FnOnce(&mut legaia_save::Party, &mut legaia_engine_core::monster_catalog::MonsterCatalog),
+    prep: impl FnOnce(
+        &mut legaia_save::Party,
+        &mut legaia_engine_battle::monster_catalog::MonsterCatalog,
+    ),
 ) -> World {
     let mut w = World::new();
     while w.actors.len() < 8 {
@@ -74,7 +78,7 @@ fn world_vs(
         w.tick();
     }
     assert_eq!(w.mode, SceneMode::Battle);
-    let clips = legaia_asset::monster_archive::animations_by_entry(archive, id)
+    let clips = legaia_actor_formats::monster_archive::animations_by_entry(archive, id)
         .expect("clips decode")
         .expect("clips present");
     w.set_actor_battle_action_clips(3, std::sync::Arc::new(clips));
@@ -82,7 +86,7 @@ fn world_vs(
 }
 
 fn tags(archive: &[u8], id: u16) -> Vec<u8> {
-    legaia_asset::monster_archive::action_tags(archive, id)
+    legaia_actor_formats::monster_archive::action_tags(archive, id)
         .expect("tags decode")
         .expect("tags present")
 }
@@ -166,7 +170,7 @@ fn a_killing_blow_absorbs_the_monsters_seru() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
     };
-    let records = legaia_asset::monster_archive::records(&archive).expect("archive");
+    let records = legaia_actor_formats::monster_archive::records(&archive).expect("archive");
     let rec = records
         .iter()
         .find(|r| r.seru_id != 0 && r.hp > 0)

@@ -521,7 +521,7 @@ fn lo_of(va: u32) -> u16 {
 }
 
 fn scus_off(scus: &[u8], va: u32) -> Result<usize> {
-    legaia_asset::item_names::file_offset_for_va(scus, va)
+    legaia_game_tables::item_names::file_offset_for_va(scus, va)
         .ok_or_else(|| anyhow::anyhow!("super-arts-pack: can't resolve SCUS VA {va:#x}"))
 }
 

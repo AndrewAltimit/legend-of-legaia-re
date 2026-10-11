@@ -1,7 +1,7 @@
 //! Disc + save-library gated: the battle **facial-animator stamp** is
 //! byte-visible in live battle VRAM.
 //!
-//! The mechanism under test (`FUN_8004C7B4`, `legaia_asset::face_anim`):
+//! The mechanism under test (`FUN_8004C7B4`, `legaia_actor_formats::face_anim`):
 //! every frame, the current eye and mouth face frames are `MoveImage`-copied
 //! from the member band's face-frame strip onto the band's live face rows.
 //! Invariant: in any mid-battle capture, each animated member's live face
@@ -17,8 +17,11 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::face_anim::{EYE_FRAME_COUNT, FaceFrameTables, FaceStamp, MOUTH_FRAME_COUNT};
-use legaia_mednafen::{PsxGpu, SaveState, ScenarioManifest, VRAM_WIDTH};
+use legaia_actor_formats::face_anim::{
+    EYE_FRAME_COUNT, FaceFrameTables, FaceStamp, MOUTH_FRAME_COUNT,
+};
+use legaia_mednafen::{PsxGpu, SaveState, VRAM_WIDTH};
+use legaia_ram_image::ScenarioManifest;
 
 /// Catalogued mid-battle captures with the party texture bands resident
 /// (the same set the texture-placement oracle uses).

@@ -14,7 +14,7 @@ impl World {
     pub(in crate::world) fn build_battle_spell_session(
         &self,
         caster: u8,
-    ) -> Option<crate::battle_magic::BattleSpellSession> {
+    ) -> Option<legaia_engine_battle::battle_magic::BattleSpellSession> {
         if self.actor_blocked_from_magic(caster) {
             return None;
         }
@@ -47,7 +47,7 @@ impl World {
             .get(caster as usize)
             .copied()
             .unwrap_or(0);
-        Some(crate::battle_magic::BattleSpellSession::new(
+        Some(legaia_engine_battle::battle_magic::BattleSpellSession::new(
             caster,
             caster,
             &learned,
@@ -59,15 +59,15 @@ impl World {
 
     /// Drive the open battle Magic submenu one frame from [`World::input`].
     ///
-    /// Edge-triggered pad → one [`crate::battle_magic::BattleSpellInput`] per
+    /// Edge-triggered pad → one [`legaia_engine_battle::battle_magic::BattleSpellInput`] per
     /// frame. On a confirmed cast the action SM's Magic band is armed with the
     /// committed spell and its resolved targets ([`Self::arm_player_cast`]);
     /// the band charges the MP, plays the cast, and the outcome folds at
     /// retail's seam - a cast is the caster's whole turn, no strike fires.
     /// Backing out reopens the command menu for the same actor.
     pub(in crate::world) fn tick_battle_spell_menu(&mut self) {
-        use crate::battle_magic::{BattleSpellInput, SpellResolution};
-        use crate::input::PadButton;
+        use legaia_engine_battle::battle_magic::{BattleSpellInput, SpellResolution};
+        use legaia_engine_system::input::PadButton;
 
         let Some(mut menu) = self.battle.spell_menu.take() else {
             return;
@@ -125,8 +125,10 @@ impl World {
     /// the enemy rows - the session routes the cursor to the correct side.
     pub(in crate::world) fn build_battle_item_session(
         &self,
-    ) -> crate::inventory_use::InventoryUseSession {
-        use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow};
+    ) -> legaia_engine_menus::inventory_use::InventoryUseSession {
+        use legaia_engine_menus::inventory_use::{
+            InventoryContext, InventoryUseSession, TargetRow,
+        };
         let names = crate::field_menu_dispatch::roster_names(self);
         let items: Vec<u8> = self
             .party
@@ -202,8 +204,10 @@ impl World {
     /// frame - the same suppression the command chips follow. Living here
     /// rather than in each host keeps the two hosts on one projection
     /// (host-drift tier: paired simulation injection sites).
-    pub fn battle_item_menu_model(&self) -> Option<crate::inventory_use::BattleItemMenuModel> {
-        if self.mode != crate::world::SceneMode::Battle {
+    pub fn battle_item_menu_model(
+        &self,
+    ) -> Option<legaia_engine_menus::inventory_use::BattleItemMenuModel> {
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle {
             return None;
         }
         if self.dialog.current.is_some() || self.dialog.inline.is_some() {
@@ -228,12 +232,14 @@ impl World {
             // walk wraps inside the party band `[0, ctx[+0x00])`; the
             // enemy-side item states ring the monster seats instead
             // (`FUN_801D0748`; rule pinned at
-            // `crate::inventory_use::target_on_effect_side`). The session
+            // `legaia_engine_menus::inventory_use::target_on_effect_side`). The session
             // cursor indexes the full roster, so it is remapped onto the
             // filtered list.
-            let side_ok = |t: &crate::inventory_use::TargetRow| {
+            let side_ok = |t: &legaia_engine_menus::inventory_use::TargetRow| {
                 menu.current_item()
-                    .map(|e| crate::inventory_use::target_on_effect_side(&e.effect, t))
+                    .map(|e| {
+                        legaia_engine_menus::inventory_use::target_on_effect_side(&e.effect, t)
+                    })
                     .unwrap_or(!t.is_enemy)
             };
             let cursor = menu
@@ -246,19 +252,21 @@ impl World {
                 menu.targets
                     .iter()
                     .filter(|t| side_ok(t))
-                    .map(|t| crate::inventory_use::BattleItemTargetRow {
-                        name: t.name.clone(),
-                        hp: t.hp,
-                        hp_max: t.hp_max,
-                        mp: t.mp,
-                        mp_max: t.mp_max,
-                        alive: t.alive,
-                    })
+                    .map(
+                        |t| legaia_engine_menus::inventory_use::BattleItemTargetRow {
+                            name: t.name.clone(),
+                            hp: t.hp,
+                            hp_max: t.hp_max,
+                            mp: t.mp,
+                            mp_max: t.mp_max,
+                            alive: t.alive,
+                        },
+                    )
                     .collect(),
                 cursor,
             )
         });
-        Some(crate::inventory_use::BattleItemMenuModel {
+        Some(legaia_engine_menus::inventory_use::BattleItemMenuModel {
             view,
             description,
             actor_name,
@@ -268,7 +276,7 @@ impl World {
 
     /// Drive the open battle inventory submenu one frame from [`World::input`].
     ///
-    /// Edge-triggered pad → one [`crate::inventory_use::InventoryUseInput`] per
+    /// Edge-triggered pad → one [`legaia_engine_menus::inventory_use::InventoryUseInput`] per
     /// frame. On a completed use the chosen item is applied authoritatively via
     /// [`Self::use_item`], one copy is consumed from the inventory, a heal /
     /// cure popup is surfaced for the HUD, and the action SM is parked at
@@ -276,8 +284,8 @@ impl World {
     /// fires - using an item is the actor's whole turn). Backing out reopens
     /// the command menu for the same actor.
     pub(in crate::world) fn tick_battle_item_menu(&mut self) {
-        use crate::input::PadButton;
-        use crate::inventory_use::{InventoryUseInput, InventoryUseState};
+        use legaia_engine_menus::inventory_use::{InventoryUseInput, InventoryUseState};
+        use legaia_engine_system::input::PadButton;
 
         let Some(mut menu) = self.battle.item_menu.take() else {
             return;
@@ -337,7 +345,9 @@ impl World {
             // REF: FUN_801F6B70 (state 110, `0x801F7088..0x801F7190`)
             if item_before.is_some()
                 && self.battle.tutorial.is_some()
-                && self.battle_tutorial_commit(vm::battle_action::ActionCategory::Item.as_byte())
+                && self.battle_tutorial_commit(
+                    legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte(),
+                )
             {
                 self.open_battle_command(actor);
                 return;
@@ -347,7 +357,7 @@ impl World {
                     self.consume_item(item_id);
                     if let Some(a) = self.actors.get_mut(actor as usize) {
                         a.battle.action_category =
-                            vm::battle_action::ActionCategory::Item.as_byte();
+                            legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte();
                     }
                     // The ring's Item arm wrote this already; restating it at
                     // the window's commit keeps an item window reached by any
@@ -405,12 +415,12 @@ impl World {
     /// approximation of it.
     ///
     /// REF: FUN_800402F4 (the assigning seed; kernel in
-    /// `legaia_engine_vm::battle_hp_bar::assign_pending`)
+    /// `legaia_engine_battle_vm::battle_hp_bar::assign_pending`)
     pub(in crate::world) fn apply_battle_item(
         &mut self,
         item_id: u8,
         target_slot: u8,
-    ) -> crate::items::ItemOutcome {
+    ) -> legaia_engine_menus::items::ItemOutcome {
         let before = self
             .actors
             .get(target_slot as usize)
@@ -443,8 +453,12 @@ impl World {
     /// damage-coloured number; cures push the status letter. The HP / status
     /// side is already applied by [`Self::use_item`]; this is presentation-only
     /// (drained via [`Self::drain_battle_hit_fx`]).
-    pub(super) fn push_item_use_fx(&mut self, target_slot: u8, outcome: crate::items::ItemOutcome) {
-        use crate::items::ItemOutcome;
+    pub(super) fn push_item_use_fx(
+        &mut self,
+        target_slot: u8,
+        outcome: legaia_engine_menus::items::ItemOutcome,
+    ) {
+        use legaia_engine_menus::items::ItemOutcome;
         let (amount, is_heal) = match outcome {
             ItemOutcome::HealedHp { amount } | ItemOutcome::HealedMp { amount } => (amount, true),
             ItemOutcome::Revived { hp_after } => (hp_after, true),

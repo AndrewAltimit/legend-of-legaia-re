@@ -1,5 +1,5 @@
 //! The **element channel**: the pool of spawned field-overlay plain-template
-//! actors whose handlers live in [`crate::cutscene_script_elements`]. Its one
+//! actors whose handlers live in [`legaia_engine_field::plain_template_actors`]. Its one
 //! occupant is the ambient particle emitter (`FUN_801D6058`).
 //!
 //! It follows the shape `World` already uses for the field overlay's other
@@ -11,12 +11,12 @@
 //! (`FUN_801D5C08`) and a "teardown" (`FUN_801D5D60`) - that no producer ever
 //! spawned. Those two handlers are the ledge-hop / op-`0x43` arc pair, ported
 //! and seated in `legaia_engine_vm::field_ledge_hop_arc` and
-//! `World::script_actors`; see [`crate::cutscene_script_elements`] for the
+//! `World::script_actors`; see [`legaia_engine_field::plain_template_actors`] for the
 //! template evidence.
 //!
 //! # Where the ambient emitter actually comes from
 //!
-//! `crate::cutscene_script_elements`'s module note said there was "no
+//! `legaia_engine_field::plain_template_actors`'s module note said there was "no
 //! element-actor dispatch to hang these off". For the **ambient emitter** that
 //! is falsified by the bytes: `0x801D6058` is the `+0x08` handler word of a
 //! `0x18`-byte spawn descriptor at `0x801F271C` in the field overlay's own
@@ -34,8 +34,9 @@
 //!
 //! REF: FUN_80024C88 (the positioned spawn), FUN_801D6058 (the handler)
 
-use crate::cutscene_script_elements::{AmbientEmitter, AmbientParticle, AmbientScene};
-use crate::world::{SceneMode, World};
+use crate::world::World;
+use legaia_engine_field::plain_template_actors::{AmbientEmitter, AmbientParticle, AmbientScene};
+use legaia_engine_mode::mode::SceneMode;
 
 /// A borrow-free view of [`World::rng_state`], so the channel can feed the
 /// ambient emitter the world's own deterministic LCG while the tick holds
@@ -55,7 +56,7 @@ impl WorldRng {
     /// The same LCG step [`World::next_rng`] runs. Named `step` rather than
     /// `next` so it cannot be mistaken for an iterator.
     pub fn step(&mut self) -> u32 {
-        self.0 = legaia_engine_vm::battle_formulas::world_lcg_step(self.0);
+        self.0 = legaia_engine_battle_vm::battle_formulas::world_lcg_step(self.0);
         self.0
     }
 
@@ -68,7 +69,7 @@ impl WorldRng {
 /// The BIOS `rand()` shaping, applied to the raw [`WorldRng`] state before
 /// the element channel's consumers see a draw. One definition for the whole
 /// engine: [`legaia_engine_system::rand::bios_rand_shape`].
-pub use legaia_engine_system::rand::bios_rand_shape;
+use legaia_engine_system::rand::bios_rand_shape;
 
 /// Runtime VA of the ambient emitter's spawn descriptor in the field overlay's
 /// plain-template table (see the module note).
@@ -155,7 +156,7 @@ impl World {
     ///
     /// `FUN_801D6704` (field MAIN INIT) reaches `0x801D6FB8..0x801D6FE0` only
     /// when the field-entry mode word `_DAT_8007B8B8` is zero
-    /// ([`crate::mode_entry_init::FieldEntryMode::Cold`], which is every
+    /// ([`legaia_engine_system::mode_entry_init::FieldEntryMode::Cold`], which is every
     /// ordinary scene change), and there it runs
     /// `FUN_80024C88(&pos, 0x801F271C, pool)` and stores `1` into the returned
     /// actor's `+0x1A` - the emitter's **scene** arm. `pos` is
@@ -180,7 +181,7 @@ impl World {
     ///
     /// WIRED: the field arm of `Scene::enter_field_scene`
     /// (`scene/host/scene_entry.rs`) calls this beside the
-    /// `crate::mode_entry_init::field_spawn` that seats the player, so every
+    /// `legaia_engine_system::mode_entry_init::field_spawn` that seats the player, so every
     /// cold field entry on both hosts installs exactly one emitter. What no
     /// host yet DRAWS is the particles themselves: the channel fills
     /// `ElementFrame::particles` every frame and no renderer consumes them,
@@ -190,10 +191,10 @@ impl World {
     /// REF: FUN_80024C88 (the positioned spawn), FUN_801D6058 (the handler)
     pub fn install_field_scene_elements(
         &mut self,
-        entry_mode: crate::mode_entry_init::FieldEntryMode,
-        span: crate::cutscene_script_elements::SceneSpan,
+        entry_mode: legaia_engine_system::mode_entry_init::FieldEntryMode,
+        span: legaia_engine_field::plain_template_actors::SceneSpan,
     ) {
-        if entry_mode != crate::mode_entry_init::FieldEntryMode::Cold {
+        if entry_mode != legaia_engine_system::mode_entry_init::FieldEntryMode::Cold {
             return;
         }
         self.cutscene
@@ -278,7 +279,7 @@ impl World {
         fog.overworld = overworld;
         let window = self.terrain.region_attributes.box_bytes;
         let [player_x, _, player_z] = self.fog_player_world_pos();
-        let trig = crate::action_effect_script::retail_rotation_lut();
+        let trig = legaia_engine_effects::action_effect_script::retail_rotation_lut();
         for el in live.iter_mut() {
             match &mut el.kind {
                 // The emitter's handler (`FUN_801D6058`) is field-overlay code
@@ -297,7 +298,7 @@ impl World {
                     // overworld a region record widens it to reach well
                     // ahead of the player, which is where retail's fog sits.
                     if let Some([x_min, y_min, x_max, y_max]) = fog.view_window {
-                        scene.span = crate::cutscene_script_elements::SceneSpan {
+                        scene.span = legaia_engine_field::plain_template_actors::SceneSpan {
                             x_min,
                             y_min,
                             x_max,
@@ -326,7 +327,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::SceneMode;
+    use legaia_engine_mode::mode::SceneMode;
 
     fn world() -> World {
         let mut w = World::new();
@@ -337,8 +338,8 @@ mod tests {
 
     #[test]
     fn a_cold_field_entry_installs_exactly_one_emitter_with_the_gate_clear() {
-        use crate::cutscene_script_elements::SceneSpan;
-        use crate::mode_entry_init::{FIELD_DEFAULT_VIEW_WINDOW, FieldEntryMode};
+        use legaia_engine_field::plain_template_actors::SceneSpan;
+        use legaia_engine_system::mode_entry_init::{FIELD_DEFAULT_VIEW_WINDOW, FieldEntryMode};
         let (x_min, y_min, x_max, y_max) = FIELD_DEFAULT_VIEW_WINDOW;
         let span = SceneSpan {
             x_min,
@@ -385,7 +386,7 @@ mod tests {
         w.spawn_ambient_emitter(AmbientScene {
             enabled: true,
             dense: false,
-            span: crate::cutscene_script_elements::SceneSpan {
+            span: legaia_engine_field::plain_template_actors::SceneSpan {
                 x_min: -100,
                 x_max: 100,
                 y_min: -60,
@@ -418,7 +419,7 @@ mod tests {
         let scene = AmbientScene {
             enabled: true,
             dense: false,
-            span: crate::cutscene_script_elements::SceneSpan {
+            span: legaia_engine_field::plain_template_actors::SceneSpan {
                 x_min: -100,
                 x_max: 100,
                 y_min: -60,

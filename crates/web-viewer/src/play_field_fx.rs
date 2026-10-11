@@ -8,7 +8,7 @@
 //! `legaia_engine_core::fog_particles` and its `World::fog_render_step`
 //! seam; this file is the page's draw-path call into it, the twin of the
 //! native window's `take_field_fog_prims`. Both wrap the quads through
-//! `legaia_engine_ui::screen_prim::fog_puff_prim`, and both resolve the
+//! `legaia_render_kernels::screen_prim::fog_puff_prim`, and both resolve the
 //! camera with `resolve_field_camera(.., None, centre)` - the follow pose, with
 //! the scene-AABB centre as the fallback focus on both hosts - so a
 //! scripted camera beat projects the fog the same way on either host.
@@ -19,8 +19,8 @@
 //! field entry (`upload_effect_textures_into_vram`).
 
 use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_ui::screen_prim::{ScreenPrim, fog_puff_prim};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_render_kernels::screen_prim::{ScreenPrim, fog_puff_prim};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::runtime::LegaiaRuntime;
@@ -125,7 +125,7 @@ impl LegaiaRuntime {
             .field_drop_shadows(&view)
             .iter()
             .map(|q| {
-                legaia_engine_ui::screen_prim::drop_shadow_prim(
+                legaia_render_kernels::screen_prim::drop_shadow_prim(
                     q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth,
                 )
             })
@@ -155,13 +155,13 @@ impl LegaiaRuntime {
         let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
             return Vec::new();
         };
-        legaia_engine_ui::move_strip::move_strip_prims(requests, &view)
+        legaia_render_kernels::move_strip::move_strip_prims(requests, &view)
     }
 
     /// This frame's attached lights (the field VM's op `0x34` sub-1 light
     /// pools, `World::field_light_draws`) as screen primitives, through the
     /// same follow camera as the fog and the shared
-    /// `legaia_engine_ui::screen_prim::light_pool_prims` wrapper - the native
+    /// `legaia_render_kernels::screen_prim::light_pool_prims` wrapper - the native
     /// window's `field_light_screen_prims` twin. Empty outside a field scene.
     pub(crate) fn field_light_prims(&self) -> Vec<ScreenPrim> {
         let centre = self.field_camera_centre();
@@ -179,7 +179,7 @@ impl LegaiaRuntime {
         world
             .field_light_draws(&view)
             .iter()
-            .flat_map(|d| legaia_engine_ui::screen_prim::light_pool_prims(d.abr, &d.polys))
+            .flat_map(|d| legaia_render_kernels::screen_prim::light_pool_prims(d.abr, &d.polys))
             .collect()
     }
 }

@@ -66,7 +66,7 @@ impl<'m> DrawCtx<'_, 'm> {
             app.overworld_curve_scale(cutscene_cam)
         };
         let deco_cue = |mvp: Mat4| {
-            legaia_engine_core::overworld_ground_cue::decoration_draw_cue(mvp.w_axis.w, deco_curve)
+            legaia_engine_field::overworld_ground_cue::decoration_draw_cue(mvp.w_axis.w, deco_curve)
                 .map(|c| legaia_engine_render::DrawCue {
                     far: c.far,
                     near_z: -1.0,

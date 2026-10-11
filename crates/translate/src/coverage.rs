@@ -26,7 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::Result;
 use serde::Serialize;
 
-use legaia_asset::{field_disasm, man_edit, shop_stock};
+use legaia_scene_formats::{field_disasm, man_edit, shop_stock};
 
 use legaia_disc_patch::disc::DiscPatcher;
 

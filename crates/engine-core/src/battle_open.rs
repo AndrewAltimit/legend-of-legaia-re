@@ -6,9 +6,7 @@
 //! [`crate::scene::ProtIndex`]: the battle overlay's labels and the cast
 //! trigger's anim-pair lists.
 
-pub use legaia_engine_menus::battle_open::*;
-
-use legaia_asset::battle_ui_strings::{BattleUiStrings, OVERLAY_BASE_VA};
+use legaia_ui_formats::battle_ui_strings::{BattleUiStrings, OVERLAY_BASE_VA};
 
 /// Read the battle screen's overlay-resident labels - the banner sentences,
 /// `Spirit`, `Escape` and the per-character Ra-Seru magic-command names - off
@@ -18,19 +16,20 @@ use legaia_asset::battle_ui_strings::{BattleUiStrings, OVERLAY_BASE_VA};
 /// `Command`) is not read here: those words are already the port's own chip
 /// labels, so the only thing a disc read would add is a second copy. Hosts
 /// that want them can call
-/// [`legaia_asset::battle_ui_strings::BattleUiStrings::merge_scus`] on top.
+/// [`legaia_ui_formats::battle_ui_strings::BattleUiStrings::merge_scus`] on top.
 ///
 /// An entry that will not resolve yields an empty table rather than an error,
 /// so a host with a partial extraction falls back to the port's wording.
 pub fn battle_ui_strings_from_prot(index: &crate::scene::ProtIndex) -> BattleUiStrings {
     let mut out = BattleUiStrings::default();
-    let Some(rec) = legaia_asset::static_overlay::overlay_map().by_label("battle_action") else {
+    let Some(rec) = legaia_overlay_images::static_overlay::overlay_map().by_label("battle_action")
+    else {
         return out;
     };
     let Ok(bytes) = index.entry_bytes(rec.prot_index) else {
         return out;
     };
-    match legaia_asset::static_overlay::as_loaded(&bytes, rec) {
+    match legaia_overlay_images::static_overlay::as_loaded(&bytes, rec) {
         Ok(loaded) => out.merge_overlay(&loaded, rec.base_va),
         Err(_) => out.merge_overlay(&bytes, OVERLAY_BASE_VA),
     }
@@ -40,7 +39,7 @@ pub fn battle_ui_strings_from_prot(index: &crate::scene::ProtIndex) -> BattleUiS
 /// Both halves of the battle labels, built the one way every host installs
 /// them: the overlay half off PROT 0898 ([`battle_ui_strings_from_prot`]),
 /// then the SCUS half on top
-/// ([`legaia_asset::battle_ui_strings::BattleUiStrings::merge_scus`]).
+/// ([`legaia_ui_formats::battle_ui_strings::BattleUiStrings::merge_scus`]).
 ///
 /// Retail has no merge: each label is a string the drawing routine addresses
 /// in its own image, so the only order that could matter is which half wins a
@@ -68,15 +67,16 @@ pub fn battle_ui_strings_for_disc(
 /// entry will not resolve.
 pub fn spell_anim_pairs_from_prot(
     index: &crate::scene::ProtIndex,
-) -> legaia_asset::spell_anim_pairs::SpellAnimPairs {
-    use legaia_asset::spell_anim_pairs::SpellAnimPairs;
-    let Some(rec) = legaia_asset::static_overlay::overlay_map().by_label("battle_action") else {
+) -> legaia_game_tables::spell_anim_pairs::SpellAnimPairs {
+    use legaia_game_tables::spell_anim_pairs::SpellAnimPairs;
+    let Some(rec) = legaia_overlay_images::static_overlay::overlay_map().by_label("battle_action")
+    else {
         return SpellAnimPairs::default();
     };
     let Ok(bytes) = index.entry_bytes(rec.prot_index) else {
         return SpellAnimPairs::default();
     };
-    match legaia_asset::static_overlay::as_loaded(&bytes, rec) {
+    match legaia_overlay_images::static_overlay::as_loaded(&bytes, rec) {
         Ok(loaded) => SpellAnimPairs::parse(&loaded, rec.base_va),
         Err(_) => SpellAnimPairs::parse(&bytes, OVERLAY_BASE_VA),
     }

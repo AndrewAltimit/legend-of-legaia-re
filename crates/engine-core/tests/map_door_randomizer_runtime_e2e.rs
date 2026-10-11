@@ -11,9 +11,9 @@
 //! The engine's kind-0 dispatch (`SceneHost::dispatch_intra_scene_teleport`,
 //! the port of `FUN_801D1EC4`'s kind-0 arm at `0x801d21c0`) is exactly:
 //! parse the `.MAP` `+0x10000` trigger block's kind-0 sub-table
-//! ([`legaia_engine_core::field_regions::parse_intra_scene_teleports`]), look
+//! ([`legaia_engine_field::field_regions::parse_intra_scene_teleports`]), look
 //! the crossed tile up
-//! ([`legaia_engine_core::field_regions::lookup_intra_scene_teleport`]), and
+//! ([`legaia_engine_field::field_regions::lookup_intra_scene_teleport`]), and
 //! seat the player at [`IntraSceneTeleport::dest_world`]. This test drives
 //! those same kernels over the raw entry bytes:
 //!
@@ -30,13 +30,15 @@
 //!
 //! Skips + passes without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::field_regions::{lookup_intra_scene_teleport, parse_intra_scene_teleports};
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_engine_field::field_regions::{
+    lookup_intra_scene_teleport, parse_intra_scene_teleports,
+};
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 
-/// `.MAP` trigger-block offset (`legaia_engine_core::field_regions::MAP_REGION_BLOCK_OFFSET`).
-const TRIGGER_BLOCK: usize = legaia_engine_core::field_regions::MAP_REGION_BLOCK_OFFSET;
+/// `.MAP` trigger-block offset (`legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET`).
+const TRIGGER_BLOCK: usize = legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

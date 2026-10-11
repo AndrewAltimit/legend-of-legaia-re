@@ -22,7 +22,7 @@
 //!
 //! Known pinned programs (byte-verified against the disc image; the shop pair
 //! is additionally pinned by the randomizer's seru-trading vendor, which
-//! reuses exactly these scripts - `legaia_patcher::seru_overlay::consts`):
+//! reuses exactly these scripts - `legaia_code_hooks::seru_overlay::consts`):
 //!
 //! | VA | contents | caller |
 //! |---|---|---|

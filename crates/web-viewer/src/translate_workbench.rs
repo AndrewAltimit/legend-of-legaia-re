@@ -7,7 +7,7 @@
 //! pack the page edits, the importer's SCUS name planner
 //! ([`NameFitter`]) and the retail dialog font decoded off the disc. Every
 //! number it returns is the importer's: rooms and growth paths come from the
-//! space report kernel (`legaia_patcher::translation::space`), widths from
+//! space report kernel (`legaia_translate::space`), widths from
 //! [`legaia_font::Font::measure`] against [`legaia_font::TEXT_LIMITS`]. No
 //! budget rule is re-derived here.
 //!
@@ -29,17 +29,17 @@ use std::collections::HashMap;
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_font::accent_font::{AccentFontState, CellDraw};
 use legaia_font::escape_icons::{EscapeIcons, ICON_PROT_DAT_LEN, ICON_PROT_DAT_OFFSET};
 use legaia_font::latin;
 use legaia_font::{Font, MeasureOptions, PenItem, TextLimit, limit_for};
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::translation::accents::{self, AccentMode, DiscFont};
-use legaia_patcher::translation::markup::{self, Target};
-use legaia_patcher::translation::space::{
+use legaia_translate::accents::{self, AccentMode, DiscFont};
+use legaia_translate::markup::{self, Target};
+use legaia_translate::space::{
     NameFitter, SpaceOptions, SpaceReport, space_report_with_export, target_for_key,
 };
-use legaia_patcher::translation::{LanguagePack, export_pack, symbols};
+use legaia_translate::{LanguagePack, export_pack, symbols};
 
 fn err(msg: impl AsRef<str>) -> JsValue {
     JsValue::from_str(msg.as_ref())
@@ -332,7 +332,7 @@ impl Core {
         self.meta = meta;
     }
 
-    fn entry(&self, key: &str) -> Option<&legaia_patcher::translation::Entry> {
+    fn entry(&self, key: &str) -> Option<&legaia_translate::Entry> {
         let &(si, ei) = self.index.get(key)?;
         self.pack
             .sections
@@ -341,7 +341,7 @@ impl Core {
             .and_then(|(_, es)| es.get(ei))
     }
 
-    fn english_entry(&self, key: &str) -> Option<&legaia_patcher::translation::Entry> {
+    fn english_entry(&self, key: &str) -> Option<&legaia_translate::Entry> {
         let &(si, ei) = self.index.get(key)?;
         self.english
             .sections
@@ -361,14 +361,14 @@ impl Core {
     }
 
     fn scus_u32(&self, va: u32) -> Option<u32> {
-        let off = legaia_asset::item_names::file_offset_for_va(&self.scus, va)?;
+        let off = legaia_game_tables::item_names::file_offset_for_va(&self.scus, va)?;
         Some(u32::from_le_bytes(
             self.scus.get(off..off + 4)?.try_into().ok()?,
         ))
     }
 
     fn scus_cstr(&self, va: u32, max: usize) -> Option<Vec<u8>> {
-        let off = legaia_asset::item_names::file_offset_for_va(&self.scus, va)?;
+        let off = legaia_game_tables::item_names::file_offset_for_va(&self.scus, va)?;
         let s = self.scus.get(off..(off + max).min(self.scus.len()))?;
         Some(s.iter().copied().take_while(|&b| b != 0).collect())
     }
@@ -396,15 +396,15 @@ impl Core {
             }
             0xC2 | 0xC4 => {
                 let va = self.scus_u32(
-                    legaia_asset::item_names::TABLE_VA
-                        + u32::from(arg) * legaia_asset::item_names::RECORD_STRIDE as u32,
+                    legaia_game_tables::item_names::TABLE_VA
+                        + u32::from(arg) * legaia_game_tables::item_names::RECORD_STRIDE as u32,
                 )?;
                 self.name_at(va)
             }
             0xC3 => {
                 let va = self.scus_u32(
-                    legaia_asset::spell_names::STATS_VA
-                        + u32::from(arg) * legaia_asset::spell_names::RECORD_STRIDE as u32
+                    legaia_game_tables::spell_names::STATS_VA
+                        + u32::from(arg) * legaia_game_tables::spell_names::RECORD_STRIDE as u32
                         + 8,
                 )?;
                 self.name_at(va)
@@ -690,7 +690,7 @@ impl Core {
         )?;
         r.entries.retain(|e| {
             e.outcome
-                .is_some_and(|o| o != legaia_patcher::translation::space::Outcome::Untranslated)
+                .is_some_and(|o| o != legaia_translate::space::Outcome::Untranslated)
         });
         r.names.clear();
         let mut reasons: std::collections::BTreeMap<&'static str, usize> = Default::default();
@@ -717,12 +717,7 @@ impl Core {
 
     /// One scene MAN re-planned with the working pack's lines for it.
     pub fn scene_fit(&self, prot: usize, relayout: bool) -> String {
-        let fit = legaia_patcher::translation::space::scene_fit(
-            &self.patcher,
-            &self.pack,
-            prot,
-            relayout,
-        );
+        let fit = legaia_translate::space::scene_fit(&self.patcher, &self.pack, prot, relayout);
         serde_json::to_string(&fit).unwrap_or_else(|_| "null".into())
     }
 
@@ -733,15 +728,12 @@ impl Core {
 
     /// The working pack imported onto a scratch copy of the disc, as the
     /// ROM patcher's check does.
-    pub fn validate(
-        &self,
-        relayout: bool,
-    ) -> anyhow::Result<legaia_patcher::translation::ImportReport> {
+    pub fn validate(&self, relayout: bool) -> anyhow::Result<legaia_translate::ImportReport> {
         let mut scratch = DiscPatcher::open(self.patcher.image().to_vec())?;
         if relayout {
-            legaia_patcher::translation::import_pack_relayout(&mut scratch, &self.pack)
+            legaia_translate::import_pack_relayout(&mut scratch, &self.pack)
         } else {
-            legaia_patcher::translation::import_pack(&mut scratch, &self.pack)
+            legaia_translate::import_pack(&mut scratch, &self.pack)
         }
     }
 
@@ -1167,7 +1159,7 @@ impl Workbench {
     /// `{index, token, alias, name, kind, w, h, rgba}` (`rgba` a
     /// `Uint8Array`, or `null` for a number escape or when the sprites did
     /// not decode). Names come from
-    /// [`legaia_patcher::translation::symbols::SYMBOLS`].
+    /// [`legaia_translate::symbols::SYMBOLS`].
     pub fn symbols(&self) -> Result<JsValue, JsValue> {
         let out = js_sys::Array::new();
         for s in &symbols::SYMBOLS {

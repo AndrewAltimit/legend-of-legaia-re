@@ -11,3 +11,4 @@ path = "src/lib.rs"
 [dependencies]
 legaia-asset.workspace = true
 legaia-engine-system.workspace = true
+legaia-scene-formats.workspace = true

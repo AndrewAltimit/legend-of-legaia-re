@@ -80,12 +80,14 @@ impl World {
             .summon_actor_slot
             .filter(|&s| self.actors.get(s as usize).is_some_and(|a| a.active))
             .and_then(|s| self.actors.get(s as usize))
-            .map(|a| vm::cast_module_camera::ModuleSeat {
-                x: a.move_state.world_x,
-                y: a.move_state.world_y,
-                z: a.move_state.world_z,
-                facing: a.battle.facing_angle & 0xFFF,
-            });
+            .map(
+                |a| legaia_engine_battle_vm::cast_module_camera::ModuleSeat {
+                    x: a.move_state.world_x,
+                    y: a.move_state.world_y,
+                    z: a.move_state.world_z,
+                    facing: a.battle.facing_angle & 0xFFF,
+                },
+            );
         self.casting.module_cam.creature_live = seat_live;
         self.casting.module_cam.creature_arrived = st.walked;
         let placed_before = self.casting.module_cam.creature.is_some();
@@ -107,14 +109,14 @@ impl World {
         // the module's hit arm rather than on the engine's walk-in.
         let profile = run
             .as_ref()
-            .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry))
+            .and_then(|r| legaia_engine_battle_vm::cast_module_camera::module_profile(r.prot_entry))
             .filter(|p| p.paces_band());
         // A module whose director reports its spawn calls seats each record
         // on the pass its arm makes the call, after the arm's own creature
         // placement above (Gimard's arm 3 spawns on the seat it just set).
         let stages_spawns = run
             .as_ref()
-            .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry))
+            .and_then(|r| legaia_engine_battle_vm::cast_module_camera::module_profile(r.prot_entry))
             .is_some_and(|p| p.stages_spawns);
         if let Some(r) = run.as_ref().filter(|_| stages_spawns) {
             if let Some(m) = r.vram_move {
@@ -138,9 +140,9 @@ impl World {
             }
             for (t, id) in r.fades {
                 let mut seat = None;
-                crate::fade::spawn_fade(
+                legaia_engine_system::fade::spawn_fade(
                     &mut seat,
-                    &legaia_engine_vm::battle_action::summon_fade_template(t),
+                    &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
                     *id,
                 );
                 self.presentation.module_fades.extend(seat);
@@ -164,7 +166,7 @@ impl World {
         if let Some(f) = run.as_ref().and_then(|r| r.camera_follow)
             && let Some(cam) = self.battle.camera.as_mut()
         {
-            let actor = legaia_engine_vm::battle_cam_script::BattleCamActor {
+            let actor = legaia_engine_battle_vm::battle_cam_script::BattleCamActor {
                 facing: i32::from(f.seat.facing),
                 world: [
                     f32::from(f.seat.x),
@@ -184,7 +186,7 @@ impl World {
         // stager armed is requested as the module reaches it.
         let seat_arm = run
             .as_ref()
-            .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry))
+            .and_then(|r| legaia_engine_battle_vm::cast_module_camera::module_profile(r.prot_entry))
             .and_then(|p| p.seat_arm);
         if let Some((arm, spell, at)) = self.casting.summon_seat_owed
             && (module_phase >= arm || run.is_none())
@@ -321,7 +323,8 @@ impl World {
         }
         let (vx, vz) = self.battle_seat_of(usize::from(victim));
         // `FUN_80019B28(victim, creature) + 0x800` (`0x801F73A4..0x801F73C4`).
-        let bearing = vm::battle_action::bearing_12bit_approx(vz, vx, pos.1, pos.0);
+        let bearing =
+            legaia_engine_battle_vm::battle_action::bearing_12bit_approx(vz, vx, pos.1, pos.0);
         let facing = bearing.wrapping_add(0x800) & 0xFFF;
         // The walk is the creature clip's own root motion: the anim tick's
         // positive-speed term steps it along this facing while the range
@@ -353,7 +356,7 @@ impl World {
                 ms.world_x = vx;
                 ms.world_z = vz;
             } else {
-                let (sin, cos) = vm::battle_action::motion::trig12(facing);
+                let (sin, cos) = legaia_engine_battle_vm::battle_action::motion::trig12(facing);
                 ms.world_x = (i32::from(ms.world_x)
                     + ((i32::from(sin) * SUMMON_DIRECTED_WALK_STEP) >> 12))
                     as i16;

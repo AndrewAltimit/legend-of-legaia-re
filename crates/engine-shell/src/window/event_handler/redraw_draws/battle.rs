@@ -30,7 +30,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // it renders it **twice**: a second copy under either a
         // per-stage `Ry(180)` half-turn or a mirror-X selected by
         // the SCUS table `DAT_80078B50`
-        // (`legaia_asset::battle_backdrop::SecondCopy`). The
+        // (`legaia_scene_formats::battle_backdrop::SecondCopy`). The
         // stage TMD is a HALF arena, not a full surround
         // (map01's dome is a front half, verts `Z in [-1260,
         // +12155]`; town01's arena is authored entirely at
@@ -114,7 +114,7 @@ impl<'m> DrawCtx<'_, 'm> {
         let store = &self.store;
         let battle_ghost_uploads = &store.posed.battle_ghost_uploads;
         let DrawLists { color_draws, .. } = out;
-        use legaia_engine_core::battle_afterimage as ai;
+        use legaia_engine_battle::battle_afterimage as ai;
         let eye = ai::camera_eye_from_vp(&actor_cam.to_cols_array());
         for (mesh, model, gpos, bpos) in battle_ghost_uploads {
             let push = match eye {

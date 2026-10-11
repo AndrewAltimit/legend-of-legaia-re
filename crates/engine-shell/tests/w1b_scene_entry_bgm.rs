@@ -148,7 +148,7 @@ fn town01_cold_entry_selects_the_retail_track() {
         }
     }
 
-    let cfg = legaia_engine_shell::boot::BootConfig {
+    let cfg = legaia_engine_session::boot::BootConfig {
         scene: "town01".to_string(),
         enable_audio: false,
     };
@@ -158,7 +158,7 @@ fn town01_cold_entry_selects_the_retail_track() {
     session
         .enter_field_live(
             "town01",
-            &legaia_engine_shell::boot::FieldLiveOpts::default(),
+            &legaia_engine_session::boot::FieldLiveOpts::default(),
         )
         .expect("enter town01 live");
 

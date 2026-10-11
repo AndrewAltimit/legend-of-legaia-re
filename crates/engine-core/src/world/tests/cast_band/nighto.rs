@@ -39,11 +39,11 @@ fn the_nighto_verdict_is_drawn_once_and_held_for_the_whole_cast() {
 /// monster in a random encounter is not immune at all.
 #[test]
 fn a_wide_texture_page_monster_resists_nighto_only_in_a_scripted_fight() {
-    use legaia_engine_vm::cast_seru_ticks_a::NightoOutcome;
+    use legaia_engine_battle_vm::seru_magic_ticks::NightoOutcome;
     let verdict = |wide: u8, scripted: u8, seed: u32| -> NightoOutcome {
         let mut world = module_code_world();
         world.rng_state = seed;
-        let mut def = crate::monster_catalog::MonsterDef::new(77, "Big", 300, 20);
+        let mut def = legaia_engine_battle::monster_catalog::MonsterDef::new(77, "Big", 300, 20);
         def.wide_texture_page = wide;
         world.tables.monster_catalog.insert(def);
         world.actors[3].battle_monster_id = Some(77);
@@ -86,7 +86,7 @@ fn a_wide_texture_page_monster_resists_nighto_only_in_a_scripted_fight() {
 /// tick always took the resisted branch and wrote neither.
 #[test]
 fn the_nighto_fork_writes_the_victim_on_both_of_its_branches() {
-    use legaia_engine_vm::cast_seru_ticks_a::{NIGHTO_CONFUSE_BITS, NightoOutcome};
+    use legaia_engine_battle_vm::seru_magic_ticks::{NIGHTO_CONFUSE_BITS, NightoOutcome};
     let mut kills = 0usize;
     let mut confuses = 0usize;
     for seed in 0..512u32 {

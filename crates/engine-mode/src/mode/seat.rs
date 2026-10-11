@@ -357,8 +357,8 @@ impl ModeSeat {
     }
 
     /// Record the row the running title holds
-    /// (`legaia_engine_core::title::TitleSession::row_counter`); the next title opens
-    /// there (`legaia_engine_core::title::TitleSession::for_front_end_at`).
+    /// (`legaia_engine_menus::title::TitleSession::row_counter`); the next title opens
+    /// there (`legaia_engine_menus::title::TitleSession::for_front_end_at`).
     pub fn set_title_row(&mut self, row: u8) {
         self.title_row = row;
     }

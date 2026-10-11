@@ -128,7 +128,7 @@ impl LegaiaMinigames {
         if let Some(catalog) = self
             .scus
             .as_ref()
-            .and_then(|s| legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(s))
+            .and_then(|s| legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(s))
         {
             // The catalog carries the monster specials and the placeholder
             // block as well; the ring offers the **player Seru** ids only.
@@ -140,8 +140,8 @@ impl LegaiaMinigames {
             spells.sort_by_key(|s| s.id);
             session.install_magic(
                 0,
-                legaia_engine_core::muscle_dome::DomeMagic {
-                    ring: legaia_engine_core::muscle_dome::DomeRing {
+                legaia_engine_menus::muscle_dome_session::DomeMagic {
+                    ring: legaia_engine_menus::muscle_dome_session::DomeRing {
                         special,
                         status: 0,
                         has_raseru: true,
@@ -194,7 +194,7 @@ impl LegaiaMinigames {
         let Some(c) = self.muscle.as_mut() else {
             return "idle".to_string();
         };
-        let pad = legaia_engine_core::muscle_dome::DomeSelectPad {
+        let pad = legaia_engine_menus::muscle_dome_session::DomeSelectPad {
             left: bits & 1 != 0,
             right: bits & 2 != 0,
             up: bits & 4 != 0,
@@ -205,7 +205,7 @@ impl LegaiaMinigames {
             select_attack: legaia_engine_core::options::OptionsState::default()
                 .battle_select_attack,
         };
-        use legaia_engine_core::muscle_dome::DomeMenuEvent as E;
+        use legaia_engine_menus::muscle_dome_session::DomeMenuEvent as E;
         match c.session.select_input(pad) {
             E::Idle => "idle",
             E::Cursor => "cursor",
@@ -228,9 +228,9 @@ impl LegaiaMinigames {
     /// the ring seat, Auto / Command, Begin / Reselect); `list_page` the
     /// entry screen's open Triangle arts-list page (`-1` closed).
     pub fn muscle_menu_json(&self) -> String {
-        use legaia_engine_core::arts_command_input::ArtsInputPhase;
-        use legaia_engine_core::battle_input::CommandPhase;
-        use legaia_engine_core::muscle_dome::DomeMenu;
+        use legaia_engine_battle::arts_command_input::ArtsInputPhase;
+        use legaia_engine_menus::battle_input::CommandPhase;
+        use legaia_engine_menus::muscle_dome_session::DomeMenu;
         let Some(c) = self.muscle.as_ref() else {
             return r#"{"screen":null}"#.to_string();
         };
@@ -279,7 +279,7 @@ impl LegaiaMinigames {
     }
 
     /// Play the turn out through the shared retail damage kernel
-    /// ([`legaia_engine_core::muscle_dome::DomeDamageModel`], installed at
+    /// ([`legaia_engine_minigames::muscle_dome::DomeDamageModel`], installed at
     /// [`Self::muscle_start_vs`]) - the player's whole queued command string,
     /// then the opponent's, not interleaved. The native play-window host
     /// resolves through the same kernel; this method holds no damage rule of
@@ -325,8 +325,8 @@ impl LegaiaMinigames {
         // leg the contest stages gates its ring chips the way the arena's own
         // entry would (`FUN_801CEA6C`). The native host reads the same three
         // flags out of `World` instead.
-        self.muscle_special = legaia_engine_core::muscle_dome::contest_entry_word(&flags);
-        match legaia_engine_core::muscle_dome::DomeContest::from_overlay(raw, &flags) {
+        self.muscle_special = legaia_engine_minigames::muscle_dome::contest_entry_word(&flags);
+        match legaia_engine_minigames::muscle_dome::DomeContest::from_overlay(raw, &flags) {
             Some(c) => {
                 self.muscle_run = Some(c);
                 self.muscle_settlement = None;
@@ -357,7 +357,7 @@ impl LegaiaMinigames {
     /// recovery is returned.
     ///
     /// `outcome` is the battle's own outcome code -
-    /// [`legaia_engine_core::muscle_dome::LEG_OUTCOME_RAN`] gives the contest
+    /// [`legaia_engine_minigames::muscle_dome::LEG_OUTCOME_RAN`] gives the contest
     /// up. `hp_max` scales every recovery lane. Returns the HP the fighter
     /// gets back (capped at `hp_max`), or `-1` when no contest is open.
     ///
@@ -376,7 +376,7 @@ impl LegaiaMinigames {
         unlock: u32,
         gates: u32,
     ) -> i32 {
-        use legaia_engine_core::muscle_dome::{ContestState, LegReport};
+        use legaia_engine_minigames::muscle_dome::{ContestState, LegReport};
         let flags = web_contest_flags(unlock, gates, false);
         let Some(run) = self.muscle_run.as_mut() else {
             return -1;
@@ -403,7 +403,7 @@ impl LegaiaMinigames {
     /// raises the arena's between-legs INTERVAL + score-tally screen.
     ///
     /// The answer is the shared rule's
-    /// ([`legaia_engine_core::muscle_dome::leg_boundary_raises_interval`]) -
+    /// ([`legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval`]) -
     /// the same call the native window's `tick_muscle_hub` makes - so the page
     /// cannot grow a cadence of its own. It says `true` only for a survived leg
     /// with the course not yet exhausted; a lost, run-from or final leg settles
@@ -411,9 +411,9 @@ impl LegaiaMinigames {
     ///
     /// It is not a *turn* question. A turn boundary keeps the leg open and the
     /// arena hub unreached, so the page must go straight back to the command
-    /// cluster there ([`legaia_engine_core::muscle_dome::MusclePhase::ends_turn`]).
+    /// cluster there ([`legaia_engine_menus::muscle_dome_session::MusclePhase::ends_turn`]).
     pub fn muscle_leg_shows_interval(&self) -> bool {
-        legaia_engine_core::muscle_dome::leg_boundary_raises_interval(
+        legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(
             self.muscle_run.as_ref().map(|r| r.state()),
         )
     }
@@ -421,7 +421,7 @@ impl LegaiaMinigames {
     /// One hub screen's retail fade / hold envelope, sampled at `tick`
     /// ticks in with `pad` as the arm's edge word - the browser twin of the
     /// native window's `tick_muscle_hub`, over the same
-    /// [`legaia_engine_core::muscle_dome::HubScreen`] kernel, so neither host
+    /// [`legaia_engine_minigames::muscle_dome::HubScreen`] kernel, so neither host
     /// can pick a frame count of its own.
     ///
     /// `screen`: 0 = intro card, 1 = ROUND banner, 2 = opponent / ROUND-n
@@ -432,14 +432,15 @@ impl LegaiaMinigames {
     /// `0` fade-in / `1` hold / `2` fade-out / `3` done, and `total` is the
     /// screen's unskipped length in ticks.
     pub fn muscle_hub_screen_json(&self, screen: u32, tick: i32, pad: u32) -> String {
-        use legaia_engine_core::muscle_dome as md;
         let mut env = match screen {
-            0 => md::HubScreen::intro_card(),
-            1 => md::HubScreen::round_banner(),
-            2 => md::HubScreen::opponent_card(),
-            _ => md::HubScreen::interval(
-                md::HUB_TALLY_ROLL_LEAD_TICKS
-                    + *md::HUB_TALLY_CUE_STAGGER.last().unwrap_or(&0) as i32,
+            0 => legaia_engine_minigames::muscle_dome::HubScreen::intro_card(),
+            1 => legaia_engine_minigames::muscle_dome::HubScreen::round_banner(),
+            2 => legaia_engine_minigames::muscle_dome::HubScreen::opponent_card(),
+            _ => legaia_engine_minigames::muscle_dome::HubScreen::interval(
+                legaia_engine_minigames::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS
+                    + *legaia_engine_minigames::muscle_dome::HUB_TALLY_CUE_STAGGER
+                        .last()
+                        .unwrap_or(&0) as i32,
             ),
         };
         let total = env.total_ticks();
@@ -450,10 +451,10 @@ impl LegaiaMinigames {
             env.tick(1, pad as u16);
         }
         let stage = match env.stage() {
-            md::HubScreenStage::FadeIn => 0,
-            md::HubScreenStage::Hold => 1,
-            md::HubScreenStage::FadeOut => 2,
-            md::HubScreenStage::Done => 3,
+            legaia_engine_minigames::muscle_dome::HubScreenStage::FadeIn => 0,
+            legaia_engine_minigames::muscle_dome::HubScreenStage::Hold => 1,
+            legaia_engine_minigames::muscle_dome::HubScreenStage::FadeOut => 2,
+            legaia_engine_minigames::muscle_dome::HubScreenStage::Done => 3,
         };
         serde_json::json!({
             "brightness": env.brightness(),
@@ -470,7 +471,6 @@ impl LegaiaMinigames {
     /// Returns `true` when a settlement happened. `prize_awarded` is the
     /// `0x6CB` one-shot flag as the page knows it.
     pub fn muscle_contest_settle(&mut self, unlock: u32, gates: u32, prize_awarded: bool) -> bool {
-        use legaia_engine_core::muscle_dome as md;
         let flags = web_contest_flags(unlock, gates, prize_awarded);
         let Some(run) = self.muscle_run.as_mut() else {
             return false;
@@ -481,7 +481,8 @@ impl LegaiaMinigames {
         let out = run.settle(&flags);
         self.muscle_run = None;
         self.muscle_settlement = Some(out);
-        self.muscle_coins = md::credit_casino_coins(self.muscle_coins, out.score);
+        self.muscle_coins =
+            legaia_engine_minigames::muscle_dome::credit_casino_coins(self.muscle_coins, out.score);
         true
     }
 
@@ -610,7 +611,7 @@ impl LegaiaMinigames {
             "hp_left": s.hp_left(),
             "hp_left_pct": [s.hp_left_percent(0), s.hp_left_percent(1)],
             "time_meter": s.time_meter(),
-            "time_meter_max": legaia_engine_core::muscle_dome::TIME_METER_MAX,
+            "time_meter_max": legaia_engine_minigames::muscle_dome::TIME_METER_MAX,
             "queue": [s.queue(0), s.queue(1)],
             "last_damage": s.last_turn_damage(),
             "hand": hand,
@@ -651,7 +652,7 @@ impl LegaiaMinigames {
     /// screen rect, `u`/`v`/`w`/`h` the texels on the `etim` page, `pal` the
     /// sub-palette its CLUT word names.
     pub(super) fn muscle_chip_json(s: &MuscleDomeSession) -> Vec<serde_json::Value> {
-        use legaia_engine_core::muscle_dome::{ChipMark, DomeRingChip};
+        use legaia_engine_menus::muscle_dome_session::{ChipMark, DomeRingChip};
         DomeRingChip::RING
             .iter()
             .map(|chip| {
@@ -761,7 +762,7 @@ impl LegaiaMinigames {
     pub fn muscle_spell_name(&self, id: u8) -> String {
         self.scus
             .as_ref()
-            .and_then(|s| legaia_asset::spell_names::SpellNameTable::from_scus(s))
+            .and_then(|s| legaia_game_tables::spell_names::SpellNameTable::from_scus(s))
             .and_then(|t| t.name(id).map(str::to_owned))
             .unwrap_or_default()
     }

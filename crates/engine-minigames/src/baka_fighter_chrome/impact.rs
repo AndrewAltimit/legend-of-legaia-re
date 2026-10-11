@@ -29,7 +29,7 @@ pub const IMPACT_Z_LIFT: i16 = 0x32;
 // `spawn_impact`, run by `tick_with_input` - the one duel tick the native
 // window, the browser play page and the minigames page all drive). The
 // spawns seat `crate::baka_impact_fx` parts, which the duel surface
-// (`legaia_engine_core::baka_duel_scene`) draws.
+// (`legaia_engine_minigame_scenes::baka_duel_scene`) draws.
 /// PORT: FUN_801d4df8 - the per-slot **impact effect pair**.
 ///
 /// Retail calls it on a decided exchange. It first zeroes the fighter's
@@ -116,7 +116,7 @@ pub const BLIT_SRC_Y_BASE: i16 = 0x80;
 pub const BLIT_DST_Y: i32 = 0x86;
 
 // Called from the duel surface's VRAM build
-// (`legaia_engine_core::baka_duel_scene::BakaDuelAssets::apply_wink`), for the row the
+// (`legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelAssets::apply_wink`), for the row the
 // cameo's frame leaves showing ([`CameoPose::blit_index`]); the surface bumps
 // its generation when the row changes so each host re-uploads the edited
 // VRAM.

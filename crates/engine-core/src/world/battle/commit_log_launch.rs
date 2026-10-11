@@ -1,6 +1,6 @@
 //! The commit log's **launch** - the log sliding off the left edge when the
 //! member entering a command leaves the ring for a sub-screen, and back when
-//! they return. The kernel is `legaia_engine_vm::battle_commit_log::LogLaunch`
+//! they return. The kernel is `legaia_engine_battle_vm::battle_commit_log::LogLaunch`
 //! (the step table, the mode per step and the glide it runs); this module is
 //! where the engine's command flow raises it.
 //!
@@ -47,8 +47,9 @@ const READOUT_BAR_ELEMENT: u8 = 7;
 impl World {
     /// Raise a launch in `inbound`'s direction.
     pub(in crate::world) fn launch_commit_log(&mut self, inbound: bool) {
-        self.battle.commit_log_launch =
-            Some(legaia_engine_vm::battle_commit_log::LogLaunch::new(inbound));
+        self.battle.commit_log_launch = Some(
+            legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(inbound),
+        );
     }
 
     /// One tick of the launch glide ([`BATTLE_PASS_STEP_PER_TICK`]). A
@@ -69,8 +70,8 @@ impl World {
     /// `FUN_801D8DE8(0x44 | 0x51, 0)` from the action seed's banner plan
     /// starts that plate's glide from seat A.
     pub(in crate::world) fn note_action_plate_raise(&mut self, element: u8, mode: u8) {
-        use legaia_engine_vm::battle_commit_log::LogLaunch;
-        use legaia_engine_vm::battle_cue_group::{HUD_CASTER_BANNER, HUD_TARGET_BANNER};
+        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+        use legaia_engine_battle_vm::battle_cue_group::{HUD_CASTER_BANNER, HUD_TARGET_BANNER};
         if mode & 1 != 0 {
             return;
         }
@@ -104,7 +105,7 @@ impl World {
     /// test does not tell the branch apart, so such a cast starts the glide
     /// at the seed and again at `0x3C`.
     fn seed_raises_readout_bar(&self) -> bool {
-        use legaia_engine_vm::battle_action::ActionCategory;
+        use legaia_engine_battle_vm::battle_action::ActionCategory;
         let a = self.battle_ctx.active_actor;
         let Some(actor) = self.actors.get(usize::from(a)) else {
             return false;
@@ -176,10 +177,10 @@ impl World {
     /// was on before the frame and the one it is on after.
     pub(in crate::world) fn launch_commit_log_for(
         &mut self,
-        before: &crate::battle_input::CommandPhase,
-        after: &crate::battle_input::CommandPhase,
+        before: &legaia_engine_menus::battle_input::CommandPhase,
+        after: &legaia_engine_menus::battle_input::CommandPhase,
     ) {
-        use crate::battle_input::{BattleCommand, CommandPhase as P};
+        use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase as P};
         let leaves_ring = matches!(before, P::Menu { .. })
             && matches!(
                 after,

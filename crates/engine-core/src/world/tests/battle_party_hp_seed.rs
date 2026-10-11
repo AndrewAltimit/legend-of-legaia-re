@@ -6,7 +6,8 @@
 //! entered there seated Noa and Gala at 0 HP.
 
 use super::*;
-use crate::monster_catalog::{FormationDef, FormationSlot};
+use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+use legaia_engine_mode::mode::SceneMode;
 
 fn party_world() -> World {
     let mut party = legaia_save::Party::zeroed(3);

@@ -53,8 +53,8 @@
 //! walk skips inline-dialogue `0x1F` segments exactly like [`crate::chest`]'s
 //! ground-truthed give-item walk.
 
-use legaia_asset::field_disasm::{self, InsnInfo};
-use legaia_asset::{man_section, scene_asset_table};
+use legaia_scene_formats::field_disasm::{self, InsnInfo};
+use legaia_scene_formats::{man_section, scene_asset_table};
 
 use crate::drops::DropMode;
 use legaia_disc_patch::rng::SplitMix64;

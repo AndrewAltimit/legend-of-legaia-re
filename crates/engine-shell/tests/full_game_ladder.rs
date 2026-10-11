@@ -86,15 +86,16 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::field_regions::TileTrigger;
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::man_field_scripts::{
-    overworld_portal_sites, scene_destinations, scene_man_carriers, system_flag_census,
-};
+use legaia_engine_core::man_field_scripts::{scene_man_carriers, system_flag_census};
 use legaia_engine_core::scene::{FmvHandoffOutcome, ProtIndex, Scene, SceneTickEvent};
-use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig, world_map_camera_relative_bits};
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
-use legaia_engine_vm::field_disasm::FlagKind;
+use legaia_engine_core::world::{WorldMapEntityConfig, world_map_camera_relative_bits};
+use legaia_engine_field::field_regions::TileTrigger;
+use legaia_engine_field::man_field_scripts::{overworld_portal_sites, scene_destinations};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::input::PadButton;
+use legaia_scene_formats::field_disasm::FlagKind;
 use serde::Deserialize;
 
 mod beat_records;

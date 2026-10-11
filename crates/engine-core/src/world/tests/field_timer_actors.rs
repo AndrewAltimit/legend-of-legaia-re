@@ -7,6 +7,7 @@
 //! the operand triples are quoted from the on-disc sites named in each test.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Give the world the frame cadence the field tick reads (`DAT_1F800393`).
 fn field_world() -> World {

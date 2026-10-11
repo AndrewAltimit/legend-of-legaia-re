@@ -23,7 +23,7 @@
 //!    OETF, equals its mesh packet word divided by 128, vertex for vertex,
 //!    against the same stream the canvas uploads (the file stores the
 //!    linearized ratio so a linear-space glTF viewer lands on the canvas
-//!    product - see `legaia_asset::gltf_color`).
+//!    product - see `legaia_actor_formats::gltf_color`).
 //! 3. **Non-vacuity** - the cast under test really does carry strongly
 //!    non-neutral words, so the value check has something to catch.
 //!
@@ -32,7 +32,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_asset::gltf_color::glb_probe;
+use legaia_actor_formats::gltf_color::glb_probe;
 use legaia_web_viewer::summon_view::LegaiaSummons;
 
 /// Meta, the armoured summon whose swords carry the flame gradient.
@@ -68,7 +68,7 @@ fn exported_color0(glb: &[u8]) -> Vec<[f32; 4]> {
 /// Round the way a `f32` from the file compares against `word / 128`: the
 /// file carries the sRGB-linearized ratio, so re-encode it first.
 fn to_word(v: f32) -> u32 {
-    (legaia_asset::gltf_color::linear_to_srgb_ratio(v) * 128.0).round() as u32
+    (legaia_actor_formats::gltf_color::linear_to_srgb_ratio(v) * 128.0).round() as u32
 }
 
 #[test]

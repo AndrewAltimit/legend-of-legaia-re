@@ -8,7 +8,10 @@ impl PlayWindowApp {
     /// arm a dance run on the qualifier floor. Returns `false` (and logs) when
     /// no disc is attached or the chart can't decode.
     pub(in crate::window) fn start_dance_minigame(&mut self, long_song: bool) -> bool {
-        self.start_dance_minigame_mode(legaia_engine_core::dance::DanceMode::Qualifier, long_song)
+        self.start_dance_minigame_mode(
+            legaia_engine_minigames::dance::DanceMode::Qualifier,
+            long_song,
+        )
     }
 
     /// Load the dance overlay and arm a run on `mode`'s floor. The world
@@ -22,12 +25,12 @@ impl PlayWindowApp {
     /// [`DanceGame::from_overlay_for_mode`].
     pub(in crate::window) fn start_dance_minigame_mode(
         &mut self,
-        mode: legaia_engine_core::dance::DanceMode,
+        mode: legaia_engine_minigames::dance::DanceMode,
         long_song: bool,
     ) -> bool {
-        use legaia_asset::static_overlay;
+        use legaia_overlay_images::static_overlay;
         let Some(rec) = static_overlay::overlay_map()
-            .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+            .by_prot_index(legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
         else {
             log::warn!("dance: overlay 0980 absent from the static-overlay map");
             return false;
@@ -46,8 +49,9 @@ impl PlayWindowApp {
                 return false;
             }
         };
-        match legaia_engine_core::dance::DanceGame::from_overlay_for_mode(&loaded, mode, long_song)
-        {
+        match legaia_engine_minigames::dance::DanceGame::from_overlay_for_mode(
+            &loaded, mode, long_song,
+        ) {
             Some(mut game) => {
                 // The hall's choreography bank times each judge move.
                 if let Some(bank) =
@@ -87,7 +91,7 @@ impl PlayWindowApp {
     /// fully pinned.
     ///
     /// Only the rects the run's own widget table names are staged
-    /// ([`DanceGame::hud_vram_rects`](legaia_engine_core::dance::DanceGame::hud_vram_rects)),
+    /// ([`DanceGame::hud_vram_rects`](legaia_engine_minigames::dance::DanceGame::hud_vram_rects)),
     /// because the suspended scene keeps rendering behind the HUD and the rest
     /// of that pack targets the columns a field texture pack occupies. The
     /// pristine copy is kept so the field VRAM is exact on exit rather than
@@ -208,12 +212,12 @@ impl PlayWindowApp {
     }
 
     pub(super) fn build_dance_venue_gpu(&self, generation: u32) -> Option<DanceVenueGpu> {
-        use legaia_asset::static_overlay;
         use legaia_engine_core::dance_venue::DanceVenue;
+        use legaia_overlay_images::static_overlay;
         let r = self.win.renderer.as_ref()?;
         let index = &self.session.host.index;
         let overlay = static_overlay::overlay_map()
-            .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+            .by_prot_index(legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
             .and_then(|rec| {
                 let raw = index.entry_bytes_extended(rec.prot_index).ok()?;
                 static_overlay::as_loaded(&raw, rec).ok()
@@ -223,10 +227,10 @@ impl PlayWindowApp {
         // choreography bank) plus kind 0's resident mesh (PROT 0874).
         let cast_assets = overlay
             .as_deref()
-            .and_then(legaia_asset::dance_cast::parse)
+            .and_then(legaia_minigame_formats::dance_cast::parse)
             .and_then(|cast| {
                 let pack = index
-                    .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+                    .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
                     .ok();
                 legaia_engine_core::dance_cast_scene::DanceCastAssets::from_venue(
                     &venue,

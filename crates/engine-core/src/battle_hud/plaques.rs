@@ -4,6 +4,7 @@
 //! marks. Split out of `battle_hud.rs`; no logic change.
 
 use super::*;
+use legaia_engine_menus::battle_input::CommandChipPhase;
 
 /// The party member whose full-width readout bar (placement record 7) is
 /// up this frame, or `None`.
@@ -25,7 +26,7 @@ use super::*;
 ///   reaches `0x3C` - its seed arm goes straight to `0x46` - and raises the
 ///   AP bar + plate pair instead, so it has no readout bar.
 pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     let pc = party_count(world) as u8;
     match battle_hud_phase(world) {
         BattleHudPhase::CommandEntry => match battle_command_surface(world)? {
@@ -38,9 +39,11 @@ pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
         // A dome play-out raises the fighter's bar while the opponent's
         // play lands on it - the seed `0x0C` opens record 7 for a party
         // target - and parks it while the fighter is the one acting.
-        BattleHudPhase::Action if world.mode == crate::world::SceneMode::MuscleDome => world
-            .muscle_playback_tally()
-            .and_then(|(attacker, _)| (attacker == 1).then_some(0)),
+        BattleHudPhase::Action if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome => {
+            world
+                .muscle_playback_tally()
+                .and_then(|(attacker, _)| (attacker == 1).then_some(0))
+        }
         // The counterattack swap keeps the bar the monster's seed raised for
         // its target - the counterer ([`crate::world::BattleState::counter_hud`]).
         BattleHudPhase::Action if world.battle.counter_hud.is_some() => {
@@ -91,7 +94,7 @@ pub fn battle_ring_ap_plate_value(world: &crate::world::World) -> Option<u8> {
     if battle_command_surface(world) != Some(CommandSurface::Ring) {
         return None;
     }
-    if world.mode == crate::world::SceneMode::MuscleDome {
+    if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         return Some(world.minigames.muscle_dome.as_ref()?.spirit(0).min(100) as u8);
     }
     let actor = world.battle.command.as_ref()?.actor;
@@ -117,10 +120,10 @@ pub fn battle_ring_ap_plate_value(world: &crate::world::World) -> Option<u8> {
 ///   that skips the block for a party caster;
 /// * an item names the item (the `0x3C` arm's `(0x4C, 0)` at `0x801E3DC8`).
 pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     // A dome play-out has no battle-action record behind it to name.
     if battle_hud_phase(world) != BattleHudPhase::Action
-        || world.mode == crate::world::SceneMode::MuscleDome
+        || world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
     {
         return None;
     }
@@ -133,7 +136,7 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
             return None;
         }
         let staged = usize::from(actor.battle.strike_index).min(actor.battle.params.len());
-        let character = crate::battle_arts::character_for_slot(a);
+        let character = legaia_engine_battle::battle_arts::character_for_slot(a);
         actor.battle.params[..staged]
             .iter()
             .rev()
@@ -156,7 +159,7 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
             // A summon module prints its own line at the label's place
             // (`FUN_8003541C(.., 0x96, ..)`): the spell name, then the
             // attack name, until the band's exit.
-            use legaia_engine_vm::cast_module_camera::ModuleCaption;
+            use legaia_engine_battle_vm::cast_module_camera::ModuleCaption;
             let id = actor.battle.params[0];
             return match world.casting.module_caption? {
                 ModuleCaption::SpellName => world
@@ -191,11 +194,11 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
 /// The full-width message bar's line (HUD element `0x5B`, placement record
 /// 91), or `None`: the death-spoils caption a slain monster raised - the
 /// Evil God Icon's steal, or a thief's loot handed back
-/// ([`crate::battle_steal`]). Composed at the death commit from the
+/// ([`legaia_engine_battle::battle_steal`]). Composed at the death commit from the
 /// templates on the user's executable, and held for the rest of the action
 /// that raised it.
 pub fn battle_message_bar(world: &crate::world::World) -> Option<String> {
-    if world.mode != crate::world::SceneMode::Battle {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
         return None;
     }
     world.battle.steal_caption.as_ref().map(|c| c.text.clone())
@@ -205,7 +208,7 @@ pub fn battle_message_bar(world: &crate::world::World) -> Option<String> {
 /// linear step from `seat_a` to `seat_b` (`a + (b - a) * elapsed / total`,
 /// snapped once settled), less `seat_b`. `0` with no glide recorded.
 pub(super) fn plate_glide_dy(
-    glide: Option<&legaia_engine_vm::battle_commit_log::LogLaunch>,
+    glide: Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     seat_a: i32,
     seat_b: i32,
 ) -> i32 {
@@ -253,7 +256,7 @@ pub(super) const TARGET_PLAQUE_SEATS_Y: (i32, i32) = (236, 194);
 /// plaque is a different record and this is `0`.
 pub fn battle_action_plaque_dy(world: &crate::world::World) -> i32 {
     if battle_hud_phase(world) != BattleHudPhase::Action
-        || world.mode != crate::world::SceneMode::Battle
+        || world.mode != legaia_engine_mode::mode::SceneMode::Battle
     {
         return 0;
     }
@@ -265,7 +268,7 @@ pub fn battle_action_plaque_dy(world: &crate::world::World) -> i32 {
 /// same raise glide as [`battle_action_plaque_dy`], on record `0x51`, from
 /// below the bottom edge.
 pub fn battle_target_plaque_dy(world: &crate::world::World) -> i32 {
-    if world.mode != crate::world::SceneMode::Battle {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
         return 0;
     }
     let (a, b) = TARGET_PLAQUE_SEATS_Y;
@@ -282,7 +285,7 @@ pub(super) const READOUT_BAR_SEATS_Y: (i32, i32) = (234, 192);
 /// the action phase, where the bar is the command ring's or a target step's.
 pub fn battle_readout_bar_dy(world: &crate::world::World) -> i32 {
     if battle_hud_phase(world) != BattleHudPhase::Action
-        || world.mode != crate::world::SceneMode::Battle
+        || world.mode != legaia_engine_mode::mode::SceneMode::Battle
     {
         return 0;
     }
@@ -322,14 +325,14 @@ pub const ROW_PLATE_SPELL_IDS: [u8; 3] = [0x8D, 0x86, 0x82];
 /// closed in `0x51` only for a monster target under categories `1..=3`
 /// (`0x801E6314..0x801E6348`).
 pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Option<u8>)> {
-    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
     if battle_hud_phase(world) != BattleHudPhase::Action || world.battle.target_plate_cleared {
         return None;
     }
     // A dome play-out: the fighter's plays name the opponent here, the
     // opponent's plays raise the fighter's bar instead
     // ([`battle_readout_bar_slot`]) - the party-attack-only rule above.
-    if world.mode == crate::world::SceneMode::MuscleDome {
+    if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         let (attacker, _) = world.muscle_playback_tally()?;
         let name = world.minigames.muscle_dome.as_ref()?.opponent_name()?;
         return (attacker == 0).then(|| (name.to_string(), None));
@@ -382,7 +385,7 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
 ///
 /// REF: FUN_801D5854 (`0x801D5B28..0x801D5BAC`)
 pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(String, Option<u8>)> {
-    use crate::target_picker::{CursorRow, PickerState, TargetPickerSession};
+    use legaia_engine_battle::target_picker::{CursorRow, PickerState, TargetPickerSession};
     let b = &world.battle;
     let picker: Option<&TargetPickerSession> = b
         .command
@@ -391,13 +394,17 @@ pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(Strin
         .or_else(|| b.arts_input.as_ref().and_then(|a| a.picker()))
         .or_else(|| {
             b.arts_menu.as_ref().and_then(|a| match &a.phase {
-                crate::battle_arts::ArtsPhase::Targeting { picker, .. } => Some(picker),
+                legaia_engine_battle::battle_arts::ArtsPhase::Targeting { picker, .. } => {
+                    Some(picker)
+                }
                 _ => None,
             })
         })
         .or_else(|| {
             b.spell_menu.as_ref().and_then(|s| match &s.phase {
-                crate::battle_magic::SpellPhase::Targeting { picker, .. } => Some(picker),
+                legaia_engine_battle::battle_magic::SpellPhase::Targeting { picker, .. } => {
+                    Some(picker)
+                }
                 _ => None,
             })
         });
@@ -426,7 +433,7 @@ pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(Strin
 /// battle load copies verbatim from the record's name (`FUN_80054CB0`,
 /// `0x80054D0C..0x80054D34`), so the badge is the name's own `0xCE` escape
 /// (`battle_melee_hit_spark`: `CE 14 " Gimard"`, escape `0x14` = the fire
-/// plate) - [`crate::monster_catalog::MonsterDef::plaque_badge`], the same
+/// plate) - [`legaia_engine_battle::monster_catalog::MonsterDef::plaque_badge`], the same
 /// selector [`battle_plaque_element_badge`] reads. Indexing the strip with
 /// the record's `+0x1D` element byte drew Gimard (element `2`) under the
 /// wind plate, and badged monsters whose names carry no escape.
@@ -491,7 +498,7 @@ pub fn battle_member_has_raseru(world: &crate::world::World, ordinal: u8) -> boo
 /// word only when the overlay strings were not read. `enabled` is the
 /// same gate: retail draws the `-` chip and refuses the arm. It is also
 /// cleared while the battle's special word carries
-/// [`legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN`] - retail
+/// [`legaia_engine_battle_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN`] - retail
 /// keeps the name, crosses the chip out (`FUN_801DBC30(0xF8, 0x42)` at
 /// `0x801D12F0`, [`battle_magic_chip_mark`]) and refuses the arm
 /// (`0x801D1448..0x801D1454`).
@@ -515,7 +522,7 @@ pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, b
             if idx == 4 {
                 "-".to_string()
             } else {
-                crate::battle_input::BattleCommand::Magic
+                legaia_engine_menus::battle_input::BattleCommand::Magic
                     .label()
                     .to_string()
             }
@@ -526,18 +533,22 @@ pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, b
 /// The special-battle word's Ra-Seru bit is up for this battle (the Rim Elm
 /// ambush, monster `0xAF`; see [`crate::world::BattleState::special_word`]).
 pub fn battle_raseru_forbidden(world: &crate::world::World) -> bool {
-    world.battle.special_word & legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN != 0
+    world.battle.special_word & legaia_engine_battle_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN
+        != 0
 }
 
 /// The mark the Ra-Seru chip wears in a regular battle: the red cross-out
-/// ([`crate::muscle_dome::ChipMark::Forbidden`], `FUN_801DBC30`) while the
+/// ([`legaia_engine_menus::muscle_dome_session::ChipMark::Forbidden`], `FUN_801DBC30`) while the
 /// special word forbids it, else none. The phase-`0x28` arm draws the mark
 /// before it tests the pad (`0x801D12DC..0x801D12F4`).
 ///
 /// REF: FUN_801D0748 (the mark test; the draw-side port is
 /// [`battle_raseru_cross_out`])
-pub fn battle_magic_chip_mark(world: &crate::world::World) -> Option<crate::muscle_dome::ChipMark> {
-    battle_raseru_forbidden(world).then_some(crate::muscle_dome::ChipMark::Forbidden)
+pub fn battle_magic_chip_mark(
+    world: &crate::world::World,
+) -> Option<legaia_engine_menus::muscle_dome_session::ChipMark> {
+    battle_raseru_forbidden(world)
+        .then_some(legaia_engine_menus::muscle_dome_session::ChipMark::Forbidden)
 }
 
 /// Whether this frame draws the red cross-out X over the command ring's
@@ -585,7 +596,7 @@ pub fn battle_ring_marks(
     if !battle_command_chips(world).is_some_and(|c| c.phase == CommandChipPhase::CommandRing) {
         return legaia_engine_battle_vm::battle_party_panel::RingMarks::default();
     }
-    if world.mode == crate::world::SceneMode::MuscleDome {
+    if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         return world
             .minigames
             .muscle_dome
@@ -596,10 +607,10 @@ pub fn battle_ring_marks(
     let word = world.battle.special_word;
     let status = world.battle_command_status_word().unwrap_or(0);
     legaia_engine_battle_vm::battle_party_panel::RingMarks {
-        item_forbidden: word & legaia_engine_vm::battle_formulas::SPECIAL_ARENA != 0,
+        item_forbidden: word & legaia_engine_battle_vm::battle_formulas::SPECIAL_ARENA != 0,
         raseru_forbidden: battle_raseru_cross_out(world),
-        attack_rotted: status & legaia_engine_vm::battle_formulas::ROT_ALL_LIMBS
-            == legaia_engine_vm::battle_formulas::ROT_ALL_LIMBS,
+        attack_rotted: status & legaia_engine_battle_vm::battle_formulas::ROT_ALL_LIMBS
+            == legaia_engine_battle_vm::battle_formulas::ROT_ALL_LIMBS,
         magic_cursed: status & 0x1000 != 0,
     }
 }

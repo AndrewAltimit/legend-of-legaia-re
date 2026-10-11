@@ -1,9 +1,9 @@
 //! The arena surface a host draws: the camera, playback state and the per-frame pose / camera drive.
 
 use super::*;
-use crate::muscle_dome::{DomeContest, DomePlay};
 use legaia_engine_battle_vm::battle_cam_script as cam;
 use legaia_engine_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
+use legaia_engine_minigames::muscle_dome::{DomeContest, DomePlay};
 use std::sync::Arc;
 
 /// The dome's camera: one pose of the battle camera script, projected the
@@ -62,7 +62,7 @@ pub struct MuscleDomeSurface {
     /// A `(monster, character)` pair that failed to decode, so a missing
     /// asset is not re-decoded every frame.
     failed: Option<(u16, u32)>,
-    ladder: Option<Option<Vec<crate::muscle_dome::DomeCourse>>>,
+    ladder: Option<Option<Vec<legaia_engine_minigames::muscle_dome::DomeCourse>>>,
     scene: Option<MuscleDomeScene>,
     generation: u32,
     tick: u32,
@@ -129,7 +129,7 @@ impl MuscleDomeSurface {
     ) -> Option<u16> {
         let ladder = self.ladder.get_or_insert_with(|| {
             read_prot(ARENA_OVERLAY_PROT_INDEX)
-                .and_then(|raw| crate::muscle_dome::parse_course_ladder(&raw))
+                .and_then(|raw| legaia_engine_minigames::muscle_dome::parse_course_ladder(&raw))
         });
         let (course, round) = contest.map_or((0, 0), |c| (c.course(), c.round()));
         let rounds = &ladder.as_ref()?.get(course)?.rounds;
@@ -229,7 +229,7 @@ impl MuscleDomeSurface {
 
     /// The framing a host that drives its own selection flow asks for (the
     /// minigames page, which commits through the session's card calls rather
-    /// than through its [`crate::muscle_dome::DomeMenu`]). `None` - every
+    /// than through its [`legaia_engine_minigames::muscle_dome::DomeMenu`]). `None` - every
     /// world host - derives it from the session's own menu.
     pub fn set_select_framing(&mut self, framing: Option<SelectFraming>) {
         self.select_framing = framing;
@@ -353,7 +353,7 @@ impl MuscleDomeSurface {
                     &mut m,
                     &mut flat,
                     &b.mesh,
-                    &crate::packet_color::textured(&b.mesh),
+                    &legaia_engine_field::packet_color::textured(&b.mesh),
                 );
             }
             let bases = [0, assets.bodies[0].mesh.positions.len(), m.positions.len()];
@@ -431,7 +431,7 @@ impl MuscleDomeSurface {
     /// phase each moment of a leg is in a battle, the acting body, its
     /// target and the formation - and store the pose on the scene.
     fn drive_camera(&mut self, session: &MuscleDomeSession, assets: &MuscleDomeAssets) {
-        use crate::battle_input::CommandPhase;
+        use legaia_engine_menus::battle_input::CommandPhase;
         use legaia_engine_menus::muscle_dome_session::DomeMenu;
         let beat = self.playback.as_ref().and_then(|p| p.beat(self.tick));
         let acting = beat.map_or(0, |b| b.attacker);

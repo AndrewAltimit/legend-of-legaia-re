@@ -12,12 +12,13 @@ impl World {
     /// alongside the field-VM `load_field_script` path.
     ///
     /// REF: the prescript bundle the retail `FUN_800252EC` indexes
-    /// (`legaia_asset::scene_event_scripts::move_stager_records`).
+    /// (`legaia_scene_formats::scene_event_scripts::move_stager_records`).
     pub fn install_field_stagers(&mut self, entry_bytes: &[u8]) {
         self.props.active_fx.clear();
         self.props.stager_bytes = entry_bytes.to_vec();
         self.props.stagers =
-            legaia_asset::scene_event_scripts::move_stager_records(entry_bytes).unwrap_or_default();
+            legaia_scene_formats::scene_event_scripts::move_stager_records(entry_bytes)
+                .unwrap_or_default();
     }
 
     /// Spawn one field move-VM stager record by id at `origin` (world units),
@@ -43,15 +44,19 @@ impl World {
         // `global_tmd_pool`; the `+5` prefix is implicit in indexing the
         // scene-pack list directly. Most field stager records are transform /
         // render-mode (particle / sound) nodes that bind no mesh.
-        let scene =
-            crate::summon::SummonScene::spawn_parts(&[part], &self.props.stager_bytes, 0, origin);
+        let scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
+            &[part],
+            &self.props.stager_bytes,
+            0,
+            origin,
+        );
         self.props.active_fx.push(scene);
         true
     }
 
     /// Advance every live field move-VM scene-graph effect one frame. Finished
     /// scenes are **kept** (not drained): a finished part stops ticking
-    /// ([`crate::summon::SummonScene::tick`] skips finished parts) but holds its
+    /// ([`legaia_engine_effects::summon::SummonScene::tick`] skips finished parts) but holds its
     /// final transform, so a quick-halting mesh effect stays visible at its last
     /// pose rather than vanishing the same frame it halts (which would race the
     /// render). Effects are cleared on scene entry ([`Self::install_field_stagers`])
@@ -81,7 +86,7 @@ impl World {
     /// Per-part mesh draws across all live field move-VM effects (the visual
     /// parts). The non-visual nodes (`0x4001` sound emitter) never appear here -
     /// see [`Self::active_field_fx_render_nodes`].
-    pub fn active_field_fx_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
+    pub fn active_field_fx_part_draws(&self) -> Vec<legaia_engine_effects::summon::SummonPartDraw> {
         self.props
             .active_fx
             .iter()
@@ -93,7 +98,9 @@ impl World {
     /// the `0x4000` particle and `0x4001` **sound-emitter** sentinels, classified
     /// for the renderer / audio host (the sound emitter is *not* a draw). Mirrors
     /// `FUN_80021DF4`'s `+0x5A` split of these nodes off the mesh draw path.
-    pub fn active_field_fx_render_nodes(&self) -> Vec<crate::summon::SpecialRenderNode> {
+    pub fn active_field_fx_render_nodes(
+        &self,
+    ) -> Vec<legaia_engine_effects::summon::SpecialRenderNode> {
         self.props
             .active_fx
             .iter()

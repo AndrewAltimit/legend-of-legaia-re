@@ -221,7 +221,7 @@ impl EntryVdfPulse {
 /// op stream is linear and `0x0A` sits in straight-line record bodies in
 /// the corpus).
 pub fn stager_records_arm_morphs(
-    records: &[legaia_asset::summon_overlay::SummonPart],
+    records: &[legaia_overlay_images::summon_overlay::SummonPart],
     bytes: &[u8],
 ) -> bool {
     for rec in records {

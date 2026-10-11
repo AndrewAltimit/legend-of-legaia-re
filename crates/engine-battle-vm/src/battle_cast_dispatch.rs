@@ -26,7 +26,7 @@
 //! both: the retail emitter VA (what the `jr` table's arm jumps to, the fact
 //! the dump pins) and the **band entry** that VA lives in
 //! ([`CastDispatch::module`]) - which is a pool handle, because
-//! `legaia_asset::cast_effect_pool` indexes the band's spawn records by PROT
+//! `legaia_overlay_images::cast_effect_pool` indexes the band's spawn records by PROT
 //! entry. `legaia_engine_core::world::World::spawn_cast_module_fx` stages the
 //! resolved module's records through the same move-VM effect stand-in the
 //! summon path uses, at the paging seam and at the stager's first tick.
@@ -39,11 +39,11 @@
 //!
 //! Two claims an earlier revision of this note made are **wrong** and are
 //! corrected here. It said the `+0x01` effect-class byte "nothing decodes":
-//! `legaia_asset::spell_names::SpellEntry` has read it as `sub_class` for as
+//! `legaia_game_tables::spell_names::SpellEntry` has read it as `sub_class` for as
 //! long as it has read `+0`, and `World::spell_table_sub_class` already serves
 //! it to the battle host. And it said `retail_magic` "carries name / MP /
 //! target only": it now carries the byte as
-//! `legaia_engine_core::retail_magic::RetailSpell::effect_class`. What was
+//! `legaia_engine_battle::retail_magic::RetailSpell::effect_class`. What was
 //! true, and what the pool fixes, is that no consumer turned the byte into a
 //! module. Beware also that `+0` is called "the cast class" in the parser
 //! while `+1` is "the effect class" here; two different bytes, one word.
@@ -241,7 +241,7 @@ pub struct CastDispatch {
     /// it. The engine-runnable half is [`Self::module`].
     pub emitter: Option<u32>,
     /// The band entry the emitter lives in - the **pool handle**
-    /// [`legaia_asset::cast_effect_pool`] keys the module's spawn records by.
+    /// [`legaia_overlay_images::cast_effect_pool`] keys the module's spawn records by.
     /// `None` when the key fell outside the dispatcher's `sltiu ..., 0x20`
     /// bound.
     ///
@@ -273,7 +273,7 @@ pub fn seru_spell_emitter(action_id: u8, ctx_27a: u8) -> CastDispatch {
     let index = action_id.wrapping_sub(SERU_SPELL_ID_MIN) as usize;
     CastDispatch {
         emitter: SERU_SPELL_EMITTERS.get(index).copied().flatten(),
-        module: legaia_asset::cast_effect_pool::seru_module_prot(action_id),
+        module: legaia_overlay_images::cast_effect_pool::seru_module_prot(action_id),
         run_tail: ctx_27a != 0,
     }
 }
@@ -295,7 +295,7 @@ pub fn seru_spell_emitter(action_id: u8, ctx_27a: u8) -> CastDispatch {
 pub fn spell_class_emitter(effect_class: u8, ctx_27a: u8) -> CastDispatch {
     CastDispatch {
         emitter: SPELL_CLASS_EMITTERS.get(effect_class as usize).copied(),
-        module: legaia_asset::cast_effect_pool::capture_module_prot(effect_class),
+        module: legaia_overlay_images::cast_effect_pool::capture_module_prot(effect_class),
         run_tail: ctx_27a != 0,
     }
 }
@@ -331,7 +331,7 @@ pub const REWARD_SPELL_ID_BASE: u16 = 0x80;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RewardBanner {
     /// Index into the per-character lead-in message table at `0x801F4DFC`
-    /// (`legaia_asset::muscle_dome::VICTORY_MSG_TABLE_VA`). Retail forms it as
+    /// (`legaia_minigame_formats::muscle_dome::VICTORY_MSG_TABLE_VA`). Retail forms it as
     /// `DAT_8007BD10[ctx[+0x13]] - 1`, i.e. the **1-based** character id of
     /// the actor in the active slot, minus one.
     pub lead_in_index: u8,

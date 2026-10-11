@@ -20,7 +20,7 @@ impl PlayWindowApp {
     ) -> Vec<TextDraw> {
         let mut d = text_draws_for(&self.font.layout_ascii(text), pen, color);
         let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-        legaia_engine_render::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
+        legaia_engine_ui::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
         d
     }
 
@@ -33,12 +33,12 @@ impl PlayWindowApp {
         w: u32,
         h: u32,
     ) -> Vec<TextDraw> {
-        let mut d = legaia_engine_render::ui_text_lines::status_row_draws_for(
+        let mut d = legaia_engine_ui::text_lines::status_row_draws_for(
             &self.font,
             rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
         );
         let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-        legaia_engine_render::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
+        legaia_engine_ui::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
         d
     }
 
@@ -100,7 +100,7 @@ impl PlayWindowApp {
                 .as_ref()
                 .and_then(|b| b.last_started)
                 .map(
-                    |id| match legaia_engine_core::music_labels::label_for_bgm_id(id) {
+                    |id| match legaia_engine_system::music_labels::label_for_bgm_id(id) {
                         Some(label) => format!("  bgm {id}: {label}"),
                         None => format!("  bgm {id}"),
                     },
@@ -224,7 +224,7 @@ impl PlayWindowApp {
                         if r.dim { dim } else { white },
                     ));
                 }
-                legaia_engine_render::scale_stage_text_draws(
+                legaia_engine_ui::scale_stage_text_draws(
                     &mut stage_draws,
                     stage_origin,
                     stage_scale,
@@ -233,7 +233,7 @@ impl PlayWindowApp {
                 // The sprite-part layer: `FUN_801d387c`'s emit dispatch over
                 // the run's own part pool (the sequence-clear banner + stars
                 // the rules engine spawns), faded by its `+0x78` prologue.
-                out.extend(legaia_engine_render::minigame_fx::dance_sprite_part_draws(
+                out.extend(legaia_engine_ui::minigame_fx::dance_sprite_part_draws(
                     &self.font,
                     &minigame_fx::dance_sprite_part_views(&g.sprite_part_emits()),
                     stage_origin,
@@ -243,7 +243,7 @@ impl PlayWindowApp {
 
             // Disco King tutorial captions (the how-to run) and the
             // pre-song count-in banner, both through the shared
-            // `legaia_engine_ui::ui_dance` builders the browser play page
+            // `legaia_engine_ui::dance` builders the browser play page
             // draws them with - the caption strings are overlay rodata the
             // port does not read, so the seats are retail's and the
             // letterforms are placeholders.
@@ -256,9 +256,9 @@ impl PlayWindowApp {
                 .as_ref()
             {
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-                out.extend(legaia_engine_render::ui_dance::dance_tutorial_draws_for(
+                out.extend(legaia_engine_ui::dance::dance_tutorial_draws_for(
                     &self.font,
-                    legaia_engine_render::ui_dance::DanceTutorialView {
+                    legaia_engine_ui::dance::DanceTutorialView {
                         captions: &tf.captions,
                         options: tf.options,
                         cursor_pos: tf.cursor_pos,
@@ -290,9 +290,9 @@ impl PlayWindowApp {
                 .as_ref()
         {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            out.extend(legaia_engine_render::ui_dance::dance_countin_draws_for(
+            out.extend(legaia_engine_ui::dance::dance_countin_draws_for(
                 &self.font,
-                legaia_engine_render::ui_dance::DanceCountInView {
+                legaia_engine_ui::dance::DanceCountInView {
                     x_offset: env.x_offset,
                     brightness: env.brightness,
                     hold: env.hold,
@@ -306,7 +306,7 @@ impl PlayWindowApp {
             && let Some(go) = self.session.host.world.minigames.dance_countin_go
         {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            out.extend(legaia_engine_render::ui_dance::dance_go_draws_for(
+            out.extend(legaia_engine_ui::dance::dance_go_draws_for(
                 &self.font,
                 go,
                 stage_origin,
@@ -320,7 +320,7 @@ impl PlayWindowApp {
         // the run spawns it into its own pool above.
         {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            out.extend(legaia_engine_render::minigame_fx::fx_part_draws(
+            out.extend(legaia_engine_ui::minigame_fx::fx_part_draws(
                 &self.font,
                 &minigame_fx::fx_part_views(&self.session.host.world.minigames.fx),
                 stage_origin,
@@ -355,7 +355,7 @@ impl PlayWindowApp {
             // stand-in) is up AND the held pad carries the modifier bit -
             // the same two-sided gate retail applies.
             if let Some(wd) = &self.session.host.world.minigames.fishing_venue.wander {
-                use legaia_engine_core::fishing_actors::{
+                use legaia_engine_fishing::fishing_actors::{
                     debug_readout_visible, debug_tile, tracked_point_separation,
                 };
                 let held = self.pad.rotate_right(8);
@@ -384,7 +384,7 @@ impl PlayWindowApp {
             // table decoded (`fishing_hud_screen_prims`); this consumer then
             // keeps only the captions, the lure count and the gauge fills.
             let sprites_drawn = self.session.host.world.minigames.fishing_sprites.is_some();
-            let hud_atlas = legaia_engine_render::FishingHudAtlas {
+            let hud_atlas = legaia_engine_ui::FishingHudAtlas {
                 solid_src: self.battle_hud_solid_src(),
                 glyph_src: &|_| None,
                 bar_thickness: 8,
@@ -393,15 +393,15 @@ impl PlayWindowApp {
             // The lure row's captions off the disc when the overlay's text
             // resolved, the engine placeholders otherwise.
             let captions = match self.session.host.world.minigames.fishing_captions.as_ref() {
-                Some(t) => legaia_engine_render::FishingCaptions::from_disc(
+                Some(t) => legaia_engine_ui::FishingCaptions::from_disc(
                     &t.lure_names,
                     &t.lures_left,
                     &t.suffix,
                 )
                 .with_fish_names(&t.species_names),
-                None => legaia_engine_render::FishingCaptions::placeholder(),
+                None => legaia_engine_ui::FishingCaptions::placeholder(),
             };
-            let mut draws = legaia_engine_render::fishing_hud_draws_for(
+            let mut draws = legaia_engine_ui::fishing_hud_draws_for(
                 &self.font,
                 &items,
                 &captions,
@@ -409,7 +409,7 @@ impl PlayWindowApp {
                 (0, 0),
             );
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
             // The venue's hub menu / help pages / tackle list (Triangle or
             // Select on the idle shore), laid out by the engine
@@ -417,17 +417,13 @@ impl PlayWindowApp {
             // composition the browser play page uses.
             let hub = self.session.host.world.fishing_hub_lines();
             if !hub.is_empty() {
-                let mut hub_draws = legaia_engine_render::ui_fishing_hub::fishing_hub_draws_for(
+                let mut hub_draws = legaia_engine_ui::fishing::hub::fishing_hub_draws_for(
                     &self.font,
                     hub.iter()
                         .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
                     white,
                 );
-                legaia_engine_render::scale_stage_text_draws(
-                    &mut hub_draws,
-                    stage_origin,
-                    stage_scale,
-                );
+                legaia_engine_ui::scale_stage_text_draws(&mut hub_draws, stage_origin, stage_scale);
                 out.extend(hub_draws);
             }
         }
@@ -443,7 +439,8 @@ impl PlayWindowApp {
             // two-left / six-down skin bias, swaying on the overlay's idle
             // sway triple (FUN_801d03b0). The list is anchored inside it.
             let sway = world.minigames.fishing_venue.sway_offset;
-            let panel = legaia_engine_core::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50);
+            let panel =
+                legaia_engine_fishing::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50);
             let (px, py) = panel
                 .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))
                 .unwrap_or((8, 98));
@@ -456,12 +453,12 @@ impl PlayWindowApp {
                         .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
                 })
                 .collect();
-            // The screen itself is `legaia_engine_ui::ui_fishing_exchange`,
+            // The screen itself is `legaia_engine_ui::fishing::exchange`,
             // shared with the browser play page: the row layout, the ink
             // rule and the one-time tag are decided once. This host supplies
             // the pen (the swaying panel above), its own key legend, and the
             // live bag reads the view needs.
-            use legaia_engine_render::ui_fishing_exchange as fx;
+            use legaia_engine_ui::fishing::exchange as fx;
             let rows: Vec<fx::ExchangeRowView<'_>> = ex
                 .rows
                 .iter()
@@ -504,7 +501,7 @@ impl PlayWindowApp {
                 dim,
             );
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            legaia_engine_render::scale_stage_text_draws(&mut ex_draws, stage_origin, stage_scale);
+            legaia_engine_ui::scale_stage_text_draws(&mut ex_draws, stage_origin, stage_scale);
             out.extend(ex_draws);
         }
         // Slot-machine minigame HUD: the three payline symbols, the balance /
@@ -552,20 +549,20 @@ impl PlayWindowApp {
             let placed = if f.cabinet().front_end() {
                 Vec::new()
             } else {
-                legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
+                legaia_engine_minigames::baka_fighter_chrome::hud_digit_placements(
                     f.round() as i32,
                     f.tally().map(|t| (t.total(), t.gold_remaining())),
                 )
             };
             // The placements are 320x240 stage cells, like the rows above:
             // drawn raw they sat top-left at a fraction of the page's size.
-            let mut cells = legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
+            let mut cells = legaia_engine_ui::baka_strips::baka_digit_strip_draws_for(
                 &self.font,
                 &placed,
-                legaia_engine_render::ui_text_lines::STATUS_ROW_DIM_INK,
+                legaia_engine_ui::text_lines::STATUS_ROW_DIM_INK,
             );
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            legaia_engine_render::scale_stage_text_draws(&mut cells, stage_origin, stage_scale);
+            legaia_engine_ui::scale_stage_text_draws(&mut cells, stage_origin, stage_scale);
             out.extend(cells);
 
             // The round chrome's resolved draws (`BakaChrome` - the intro
@@ -589,9 +586,9 @@ impl PlayWindowApp {
                 let mut cd = if quads {
                     Vec::new()
                 } else {
-                    legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
+                    legaia_engine_ui::baka_strips::baka_widget_label_draws_for(
                         &self.font,
-                        &legaia_engine_core::baka_fighter_chrome::chrome_labels(&draws),
+                        &legaia_engine_minigames::baka_fighter_chrome::chrome_labels(&draws),
                         [1.0; 4],
                     )
                 };
@@ -599,28 +596,22 @@ impl PlayWindowApp {
                 // prompt, the "PLAYER SELECT" banner and the "NEXT GAME /
                 // PAY OUT" sheet, plus the sheet's pot numeral off the live
                 // accumulator.
-                use legaia_engine_core::baka_cabinet as bcab;
+                use legaia_engine_minigames::baka_cabinet as bcab;
                 if !quads {
-                    cd.extend(
-                        legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
-                            &self.font,
-                            &bcab::choice_sheet_labels(&cabinet_cells),
-                            [1.0; 4],
-                        ),
-                    );
+                    cd.extend(legaia_engine_ui::baka_strips::baka_widget_label_draws_for(
+                        &self.font,
+                        &bcab::choice_sheet_labels(&cabinet_cells),
+                        [1.0; 4],
+                    ));
                 }
                 if sheet.is_some() {
-                    cd.extend(
-                        legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
-                            &self.font,
-                            &bcab::choice_pot_placements(
-                                self.session.host.world.minigames.winnings,
-                            ),
-                            [1.0; 4],
-                        ),
-                    );
+                    cd.extend(legaia_engine_ui::baka_strips::baka_digit_strip_draws_for(
+                        &self.font,
+                        &bcab::choice_pot_placements(self.session.host.world.minigames.winnings),
+                        [1.0; 4],
+                    ));
                 }
-                legaia_engine_render::scale_stage_text_draws(&mut cd, stage_origin, stage_scale);
+                legaia_engine_ui::scale_stage_text_draws(&mut cd, stage_origin, stage_scale);
                 out.extend(cd);
             }
         }
@@ -632,7 +623,7 @@ impl PlayWindowApp {
         if self.session.host.world.mode == SceneMode::MuscleDome && self.dome_battle_chrome_up() {
             out.extend(self.battle_hud_frame_draws(w, h).text);
             if let Some((chips, cursor, phase)) = self.battle_command_menu_chips() {
-                use legaia_engine_render::battle_command_ui as bcu;
+                use legaia_engine_ui::battle_command_ui as bcu;
                 let (origin, scale) = self.save_select_stage(w, h);
                 let views = bcu::command_chip_views(&chips);
                 out.extend(bcu::battle_command_chip_text(
@@ -667,9 +658,8 @@ impl PlayWindowApp {
             // `save_select_stage` wrapper, so `check-ui-host-drift.py` can
             // pin this composition against the browser page's: this is the
             // only such call in `build_hud`, and losing it fails the gate.
-            let (stage_origin, stage_scale) =
-                legaia_engine_render::pause_menu::stage_transform(w, h);
-            legaia_engine_render::scale_stage_text_draws(&mut stage, stage_origin, stage_scale);
+            let (stage_origin, stage_scale) = legaia_engine_ui::pause_menu::stage_transform(w, h);
+            legaia_engine_ui::scale_stage_text_draws(&mut stage, stage_origin, stage_scale);
             out.extend(stage);
         }
         // Battle-event log: the engine's own typed battle stream
@@ -680,7 +670,7 @@ impl PlayWindowApp {
         // it rides the shared `LEGAIA_DIAG_HUD` toggle with the rest of the
         // debug readout and is off by default. The ring itself keeps
         // filling either way, so a probe can turn it on mid-session.
-        if !self.battle_event_log.is_empty() && legaia_engine_render::diag_hud_enabled() {
+        if !self.battle_event_log.is_empty() && legaia_engine_ui::diag_hud_enabled() {
             let log_color = [1.0f32, 0.95, 0.7, 1.0];
             let line_height = 14;
             let bottom_y = 280;
@@ -696,8 +686,8 @@ impl PlayWindowApp {
         // SceneMode::Battle; harmless when the live loop is off (it just never
         // enters battle).
         if self.session.host.world.mode == SceneMode::Battle {
-            use legaia_engine_core::battle_input::CommandPhase;
-            use legaia_engine_core::target_picker::{CursorRow, PickerState};
+            use legaia_engine_battle::target_picker::{CursorRow, PickerState};
+            use legaia_engine_menus::battle_input::CommandPhase;
             let bw = &self.session.host.world;
             // Greyed-out row tint, used by the target lists in the Arts /
             // Magic / Item submenus below for a K.O.'d target.
@@ -748,7 +738,7 @@ impl PlayWindowApp {
                 // The Begin | Reselect pick is the party's commit confirm
                 // (the command-chip cluster), not a line of this screen.
             } else if let Some(arts) = &bw.battle.arts_menu {
-                use legaia_engine_core::battle_arts::ArtsPhase;
+                use legaia_engine_battle::battle_arts::ArtsPhase;
                 let menu_x = 8i32;
                 let mut my = 210i32;
                 match &arts.phase {
@@ -820,7 +810,7 @@ impl PlayWindowApp {
                     _ => {}
                 }
             } else if let Some(spell) = &bw.battle.spell_menu {
-                use legaia_engine_core::battle_magic::SpellPhase;
+                use legaia_engine_battle::battle_magic::SpellPhase;
                 let menu_x = 8i32;
                 let mut my = 210i32;
                 match &spell.phase {
@@ -894,7 +884,7 @@ impl PlayWindowApp {
                 if let Some(model) = self.battle_item_menu_model() {
                     let (origin, scale) = self.save_select_stage(w, h);
                     out.extend(with_battle_item_frame(&model, |frame| {
-                        legaia_engine_render::battle_item_ui::battle_item_window_text(
+                        legaia_engine_ui::battle_item_ui::battle_item_window_text(
                             &self.font, frame, origin, scale,
                         )
                     }));
@@ -919,7 +909,7 @@ impl PlayWindowApp {
                         // in the sprite layer
                         // (`battle_chrome_sprite_draws`).
                         if let Some((chips, cursor, phase)) = self.battle_command_menu_chips() {
-                            use legaia_engine_render::battle_command_ui as bcu;
+                            use legaia_engine_ui::battle_command_ui as bcu;
                             let (origin, scale) = self.save_select_stage(w, h);
                             let views = bcu::command_chip_views(&chips);
                             out.extend(bcu::battle_command_chip_text(
@@ -981,9 +971,8 @@ impl PlayWindowApp {
             // explainer share the frame at `Begin | Run`).
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             for (rect, tbox) in self.battle_tutorial_stage_boxes() {
-                let mut draws = legaia_engine_render::battle_tutorial_text_draws_for(
-                    &self.font, &tbox.text, rect,
-                );
+                let mut draws =
+                    legaia_engine_ui::battle_tutorial_text_draws_for(&self.font, &tbox.text, rect);
                 // Without the system-UI atlas there is no frame and no advance
                 // hand, so keep a plain confirm hint as the only affordance a
                 // waiting box would otherwise have.
@@ -995,7 +984,7 @@ impl PlayWindowApp {
                         dim,
                     ));
                 }
-                legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
                 out.extend(draws);
             }
             // Koru's timed-fight strip (`Turns Left / HP Left`): a stage-space
@@ -1004,15 +993,15 @@ impl PlayWindowApp {
             if let Some(strip) =
                 legaia_engine_core::timed_fight::timed_fight_strip(&self.session.host.world)
             {
-                let mut draws = legaia_engine_render::timed_fight_strip_text_draws(
+                let mut draws = legaia_engine_ui::timed_fight_strip_text_draws(
                     &self.font,
-                    &legaia_engine_render::TimedFightStripView {
+                    &legaia_engine_ui::TimedFightStripView {
                         label: &strip.label,
                         turns_left: strip.turns_left,
                         hp_left: strip.hp_left,
                     },
                 );
-                legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
                 out.extend(draws);
             }
         }
@@ -1023,7 +1012,7 @@ impl PlayWindowApp {
         if !screens.banner_texts.is_empty() {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             let mut rows = screens.banner_texts.clone();
-            legaia_engine_render::scale_stage_text_draws(&mut rows, stage_origin, stage_scale);
+            legaia_engine_ui::scale_stage_text_draws(&mut rows, stage_origin, stage_scale);
             out.extend(rows);
         }
         // Opening-cutscene narration: the retail bottom-up subtitle CRAWL
@@ -1052,14 +1041,14 @@ impl PlayWindowApp {
                 .map(String::as_str)
                 .collect();
             if !crawl.is_empty() || !card.is_empty() {
-                let mut draws = legaia_engine_render::cutscene_text_stage_draws(
+                let mut draws = legaia_engine_ui::cutscene_text_stage_draws(
                     &self.font,
                     &crawl,
                     &card,
                     [1.0, 1.0, 1.0, 1.0],
                 );
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-                legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
                 out.extend(draws);
             }
         }
@@ -1070,9 +1059,9 @@ impl PlayWindowApp {
         // locked together.
         if let Some(entry) = &self.session.host.world.party.name_entry {
             let view = self.name_entry_view(entry);
-            let mut draws = legaia_engine_render::name_entry_draws_for(&self.font, &view);
+            let mut draws = legaia_engine_ui::name_entry_draws_for(&self.font, &view);
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
         // Dialog box text: the active NPC / event message (simplified
@@ -1094,7 +1083,7 @@ impl PlayWindowApp {
             // band (`FUN_801D84D0` draws `FUN_80036888(row, 0, 0, ctx+0x12,
             // ctx+0x14 + (scroll >> 4) + i*0xF)` in the staged CLUT-7 menu
             // white). The shared builder is the browser page's too.
-            let mut draws: Vec<TextDraw> = legaia_engine_render::dialog_reading_box_text_draws_for(
+            let mut draws: Vec<TextDraw> = legaia_engine_ui::dialog_reading_box_text_draws_for(
                 &self.font,
                 &snap.page,
                 (bx, by),
@@ -1103,7 +1092,7 @@ impl PlayWindowApp {
             );
             // Option-picker labels, through the builder the page shares.
             if let Some((px, py, _, _)) = lay.picker {
-                draws.extend(legaia_engine_render::dialog_picker_label_draws_for(
+                draws.extend(legaia_engine_ui::dialog_picker_label_draws_for(
                     &self.font,
                     &snap.options,
                     snap.cursor,
@@ -1111,7 +1100,7 @@ impl PlayWindowApp {
                     has_chrome,
                 ));
             }
-            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
         // The `4C E1` text balloon: the single line at the retail pen -
@@ -1133,9 +1122,8 @@ impl PlayWindowApp {
                 .and_then(|b| b.pen())
         {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            let mut draws =
-                legaia_engine_render::text_balloon_text_draws_for(&self.font, text, pen);
-            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            let mut draws = legaia_engine_ui::text_balloon_text_draws_for(&self.font, text, pen);
+            legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
         // The tile board's quit prompt (walk-SM state 5): the title and the
@@ -1145,20 +1133,20 @@ impl PlayWindowApp {
         {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             let mut draws =
-                legaia_engine_render::tile_board_prompt_text_draws_for(&self.font, &lay, &lines);
-            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                legaia_engine_ui::tile_board_prompt_text_draws_for(&self.font, &lay, &lines);
+            legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
         // The Incense wear-off notice (`FUN_801F1E48`): one line of the field
         // overlay's own text.
         if let Some(line) = self.session.host.incense_notice_line() {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            let mut draws = legaia_engine_render::incense_notice_text_draws_for(
+            let mut draws = legaia_engine_ui::incense_notice_text_draws_for(
                 &self.font,
                 legaia_engine_core::incense_notice::notice_text_pen(),
                 &line,
             );
-            legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
         // Opt-in developer menu: its row list draws over everything else.
@@ -1171,7 +1159,7 @@ impl PlayWindowApp {
         if !self.dev_menu_draws.is_empty() {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             let mut dev = self.dev_menu_draws.clone();
-            legaia_engine_render::scale_stage_text_draws(&mut dev, stage_origin, stage_scale);
+            legaia_engine_ui::scale_stage_text_draws(&mut dev, stage_origin, stage_scale);
             out.extend(dev);
         }
         out

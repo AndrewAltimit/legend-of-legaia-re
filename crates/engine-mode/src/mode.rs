@@ -21,7 +21,7 @@
 //! [`ModeEntry::param`] flag bits. The Sony function pointers are NOT used;
 //! engine integrations supply Rust closures that drive the
 //! [`legaia_engine_field::world::World`]. The table's name/param/next fields are
-//! reconciled against the disc-recovered map (`legaia_asset::mode_table`)
+//! reconciled against the disc-recovered map (`legaia_game_tables::mode_table`)
 //! by the disc-gated `mode_table_reconcile` test.
 
 use legaia_engine_system::input::InputState;

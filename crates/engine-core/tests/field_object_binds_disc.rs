@@ -42,12 +42,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_asset::field_objects::{CELL_BIND_OWNED, FLAG_PLACED};
 use legaia_engine_core::field_env;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
+use legaia_scene_formats::field_objects::{CELL_BIND_OWNED, FLAG_PLACED};
 
 /// Rim Elm's two scene variants (they share one `.MAP`).
 const TOWN_SCENES: &[&str] = &["town01", "town0c"];
@@ -297,9 +297,9 @@ fn bound_multi_object_props_resolve_a_matching_pose_clip() {
             .entries
             .iter()
             .find_map(|e| {
-                [3usize, 5, 6, 7]
-                    .into_iter()
-                    .find_map(|d| legaia_asset::player_anm::find_in_entry(&e.bytes, d).pop())
+                [3usize, 5, 6, 7].into_iter().find_map(|d| {
+                    legaia_actor_formats::player_anm::find_in_entry(&e.bytes, d).pop()
+                })
             })
             .expect("scene ANM bundle");
 
@@ -357,7 +357,7 @@ fn cupboard_frame_zero_is_the_closed_door() {
         .find_map(|e| {
             [3usize, 5, 6, 7]
                 .into_iter()
-                .find_map(|d| legaia_asset::player_anm::find_in_entry(&e.bytes, d).pop())
+                .find_map(|d| legaia_actor_formats::player_anm::find_in_entry(&e.bytes, d).pop())
         })
         .expect("scene ANM bundle");
 

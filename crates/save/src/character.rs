@@ -132,7 +132,7 @@ pub struct HpMpSp {
 /// and the equip screen's row map `DAT_801E43E8` reads `00 01 00 04 05 06 07`,
 /// which together put armour at 0, head at 1 and footwear at 4. The weapon
 /// sits at byte 2 or 3 per `_DAT_8007B42C` (`2, 3, 2` for Vahn / Noa / Gala).
-/// It is *not* weapon-first - `legaia_engine_core::equipment::EquipSlot` uses
+/// It is *not* weapon-first - `legaia_engine_menus::equipment::EquipSlot` uses
 /// a different, engine-defined order and re-maps before walking a record.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EquipmentSlots {
@@ -728,7 +728,7 @@ impl CharacterRecord {
 
     /// Game-time field accessor lives outside this record (game time
     /// is a party-wide global at `0x80084570`); see
-    /// [`legaia_engine_core::ram_map`] for the engine-side cell.
+    /// [`legaia_engine_system::ram_map`] for the engine-side cell.
     /// Provided here as a doc anchor for cross-reference.
     pub const GAME_TIME_GLOBAL_ADDR: u32 = 0x80084570;
 

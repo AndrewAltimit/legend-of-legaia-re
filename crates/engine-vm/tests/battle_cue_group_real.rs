@@ -2,9 +2,9 @@
 //! two the expander indexes and the one that selects which group an action
 //! reaches.
 //!
-//! `legaia_asset::move_power::EffectAuxTables` carries the SFX map at
+//! `legaia_game_tables::move_power::EffectAuxTables` carries the SFX map at
 //! `0x801F6418` and the `[count][id; 4]` group records at `0x801F6470`;
-//! `legaia_asset::item_effect::ItemEffectTable` carries the `(class, tier)`
+//! `legaia_game_tables::item_effect::ItemEffectTable` carries the `(class, tier)`
 //! descriptors at `0x800752C0` that `cue_group_for` turns into a group id.
 //! The first test is the composition oracle for the expander pair; the second
 //! walks every real battle-usable item through the selection and asserts the
@@ -15,13 +15,13 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::move_power::{CUE_ACTOR_FLAG, EffectAuxTables};
-use legaia_engine_vm::battle_action::{
+use legaia_engine_battle_vm::battle_action::{
     ActionCategory, ActionState, BattleActionCtx, BattleActionHost, BattleActor, step,
 };
-use legaia_engine_vm::battle_cue_group::{
+use legaia_engine_battle_vm::battle_cue_group::{
     CUE_TINT_NEUTRAL, CueSpawn, CueTables, cue_group_for, expand_cue_group,
 };
+use legaia_game_tables::move_power::{CUE_ACTOR_FLAG, EffectAuxTables};
 
 fn extracted_dir() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -38,14 +38,14 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
-fn item_effects() -> Option<legaia_asset::item_effect::ItemEffectTable> {
+fn item_effects() -> Option<legaia_game_tables::item_effect::ItemEffectTable> {
     let scus = extracted_dir()?.join("SCUS_942.54");
     if !scus.is_file() {
         eprintln!("[skip] extracted/SCUS_942.54 missing");
         return None;
     }
     let bytes = std::fs::read(&scus).expect("read SCUS_942.54");
-    legaia_asset::item_effect::ItemEffectTable::from_scus(&bytes)
+    legaia_game_tables::item_effect::ItemEffectTable::from_scus(&bytes)
 }
 
 fn aux_tables() -> Option<EffectAuxTables> {
@@ -53,7 +53,7 @@ fn aux_tables() -> Option<EffectAuxTables> {
     let mut archive = legaia_prot::archive::Archive::open(&prot).expect("open PROT.DAT");
     let entry = archive
         .entries
-        .get(legaia_asset::battle_camera_table::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .get(legaia_game_tables::battle_camera_table::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .cloned()
         .expect("PROT 0898 entry exists");
     let mut bytes = Vec::new();
@@ -218,7 +218,7 @@ fn the_state_machine_places_a_real_items_cue_group() {
 
     struct Host {
         actors: Vec<BattleActor>,
-        items: legaia_asset::item_effect::ItemEffectTable,
+        items: legaia_game_tables::item_effect::ItemEffectTable,
         groups: Vec<u8>,
         sfx: Vec<u8>,
         cues: Vec<CueSpawn>,

@@ -4,6 +4,7 @@
 //! change from the original inline definitions.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 mod dialogue_drive;
 
@@ -19,7 +20,7 @@ pub struct FrameGrade {
     /// is always the identity).
     pub palette_collapse: bool,
     /// The view-depth DPCS ramp, `None` to clear it.
-    pub depth_cue: Option<crate::fade::DepthCueRamp>,
+    pub depth_cue: Option<legaia_engine_system::fade::DepthCueRamp>,
 }
 mod field_channels;
 mod record_install;
@@ -52,10 +53,10 @@ impl World {
     ///
     /// The screen also holds the frame-step floor at `1` while it is open and
     /// hands the scene's floor back on close
-    /// ([`crate::name_entry::NameEntry::saved_frame_step_floor`]).
+    /// ([`legaia_engine_menus::name_entry::NameEntry::saved_frame_step_floor`]).
     pub fn open_name_entry(&mut self, slot: usize) {
         let initial = self.party_name(slot).to_string();
-        let mut entry = crate::name_entry::NameEntry::new(slot, &initial);
+        let mut entry = legaia_engine_menus::name_entry::NameEntry::new(slot, &initial);
         entry.saved_frame_step_floor = Some(self.clock.frame_step_floor);
         self.set_frame_step_floor(1);
         self.party.name_entry = Some(entry);
@@ -71,12 +72,15 @@ impl World {
     /// into [`crate::world::PartyState::party_names`] for the entry's slot, the session is closed,
     /// and `true` is returned so the host can resume the field script.
     /// Returns `false` while the overlay stays open (or when none is active).
-    pub fn step_name_entry(&mut self, input: crate::name_entry::NameEntryInput) -> bool {
+    pub fn step_name_entry(
+        &mut self,
+        input: legaia_engine_menus::name_entry::NameEntryInput,
+    ) -> bool {
         let Some(entry) = self.party.name_entry.as_mut() else {
             return false;
         };
         entry.step(input);
-        if entry.state == crate::name_entry::NameEntryState::Done {
+        if entry.state == legaia_engine_menus::name_entry::NameEntryState::Done {
             let slot = entry.char_index;
             let name = entry.committed_name();
             if self.party.party_names.len() <= slot {
@@ -119,7 +123,7 @@ impl World {
         if !self.name_entry_active() {
             return false;
         }
-        self.step_name_entry(crate::name_entry::NameEntryInput::from_pad_edge(edge));
+        self.step_name_entry(legaia_engine_menus::name_entry::NameEntryInput::from_pad_edge(edge));
         self.name_entry_display_frames(1);
         true
     }
@@ -148,7 +152,7 @@ impl World {
 
     /// Install the opening-cutscene narration presenter with `pages` (the
     /// inline subtitle pages decoded from the scene MAN's cutscene-timeline
-    /// script; see [`crate::man_field_scripts::collect_partition_narration`]).
+    /// script; see [`legaia_engine_field::man_field_scripts::collect_partition_narration`]).
     /// A presenter with no pages installs nothing - a scene that carries no
     /// inline narration simply never shows one. The host renders the active
     /// page from [`crate::world::CutsceneState::narration`]; [`Self::tick`] advances its
@@ -163,11 +167,13 @@ impl World {
         // `DAT_8007B9D8` to 3 through move-VM ext sub-op `0x2F` (opdeene's
         // record 16), which is what the capture reads - so no per-roller
         // override is needed.
-        self.cutscene.narration = Some(crate::cutscene_narration::CutsceneNarration::with_seed(
-            pages,
-            self.cutscene.narration_seed,
-            u16::from(self.clock.frame_step),
-        ));
+        self.cutscene.narration = Some(
+            legaia_engine_field::cutscene_narration::CutsceneNarration::with_seed(
+                pages,
+                self.cutscene.narration_seed,
+                u16::from(self.clock.frame_step),
+            ),
+        );
         // Monotonic "which crawl block is showing" counter. Because a
         // non-blocking crawl lets the next block open the very tick the prior
         // one scrolls out (continuous crawl, no blank frame), a rising-edge
@@ -189,7 +195,7 @@ impl World {
     /// The full-scene colour grade the current scene renders through, or
     /// `None` for the natural-colour default. The opening prologue cutscene
     /// scenes (`opdeene` / `opstati` / `opurud`) return
-    /// [`crate::fade::ColorGrade::PROLOGUE_SEPIA`] so the whole 3D scene draws
+    /// [`legaia_engine_system::fade::ColorGrade::PROLOGUE_SEPIA`] so the whole 3D scene draws
     /// through the warm gold multiply tint while the narration text stays
     /// white - the
     /// retail cold-boot capture shows the grade persisting across all three
@@ -198,13 +204,13 @@ impl World {
     ///
     /// This mirrors retail keying the dim-ambient + gold far-colour grade on
     /// the cutscene scenes and clearing it for the interactive field - see
-    /// [`crate::fade::ColorGrade`] for the traced GTE mechanism.
-    pub fn scene_color_grade(&self) -> Option<crate::fade::ColorGrade> {
+    /// [`legaia_engine_system::fade::ColorGrade`] for the traced GTE mechanism.
+    pub fn scene_color_grade(&self) -> Option<legaia_engine_system::fade::ColorGrade> {
         if matches!(
             self.active_scene_label.as_str(),
             "opdeene" | "opstati" | "opurud"
         ) {
-            Some(crate::fade::ColorGrade::PROLOGUE_SEPIA)
+            Some(legaia_engine_system::fade::ColorGrade::PROLOGUE_SEPIA)
         } else {
             None
         }
@@ -217,10 +223,10 @@ impl World {
     /// narration beats (crushing far scenery toward gold) and neutral values
     /// on the interactive field, where the cue is the identity. Hosts stage
     /// this each frame (`set_depth_cue_ramp` / `clear_depth_cue_ramp`) - see
-    /// [`crate::fade::DepthCueRamp`] for the traced mechanism.
-    pub fn scene_depth_cue(&self) -> Option<crate::fade::DepthCueRamp> {
+    /// [`legaia_engine_system::fade::DepthCueRamp`] for the traced mechanism.
+    pub fn scene_depth_cue(&self) -> Option<legaia_engine_system::fade::DepthCueRamp> {
         self.scene_color_grade()
-            .map(|_| crate::fade::DepthCueRamp::PROLOGUE_GOLD)
+            .map(|_| legaia_engine_system::fade::DepthCueRamp::PROLOGUE_GOLD)
     }
 
     /// This frame's whole grade staging, the three renderer arms both play
@@ -317,7 +323,7 @@ impl World {
     /// instead of blindly raising the bit on scene entry, the engine walks
     /// the scene MAN's partition-2 records (the cutscene timelines) for a
     /// `GFLAG_SET` of [`PROLOGUE_HANDOFF_BIT`] via
-    /// [`crate::man_field_scripts::walk_partition_gflag_sites`] and arms only
+    /// [`legaia_engine_field::man_field_scripts::walk_partition_gflag_sites`] and arms only
     /// when it is present - so a cutscene scene that never issues that write
     /// can never produce a false hand-off. Returns `true` when it armed.
     ///
@@ -329,12 +335,13 @@ impl World {
     // REF: FUN_801D1344
     pub fn arm_prologue_handoff_from_man(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
     ) -> bool {
-        let armed = crate::man_field_scripts::walk_partition_gflag_sites(man_file, man, 2)
-            .iter()
-            .any(|s| s.set && s.bit as u32 == PROLOGUE_HANDOFF_BIT);
+        let armed =
+            legaia_engine_field::man_field_scripts::walk_partition_gflag_sites(man_file, man, 2)
+                .iter()
+                .any(|s| s.set && s.bit as u32 == PROLOGUE_HANDOFF_BIT);
         if armed {
             self.arm_prologue_handoff();
         }
@@ -353,7 +360,7 @@ impl World {
     /// }
     /// ```
     ///
-    /// Returns the skip target scene ([`legaia_asset::new_game::OPENING_SCENE`]
+    /// Returns the skip target scene ([`legaia_game_tables::new_game::OPENING_SCENE`]
     /// = `town01`) once - when the opening cutscene chain is playing
     /// ([`crate::world::CutsceneState::opening_chain_active`], set at the `opdeene` entry and carried
     /// through its `opstati` / `opurud` legs), the trigger bit is set
@@ -408,7 +415,7 @@ impl World {
             // installs the opening cutscene timeline (which opens name entry at
             // its pinned op-`0x49`); a normal `town01` visit never sets this.
             self.cutscene.entering_town01_opening = true;
-            Some(legaia_asset::new_game::OPENING_SCENE)
+            Some(legaia_game_tables::new_game::OPENING_SCENE)
         } else {
             None
         }
@@ -420,9 +427,9 @@ impl World {
     ///
     /// Finds the partition-2 (cutscene-timeline) record that issues the
     /// [`PROLOGUE_HANDOFF_BIT`] `GFLAG_SET` via
-    /// [`crate::man_field_scripts::walk_partition_gflag_sites`], resolves its
+    /// [`legaia_engine_field::man_field_scripts::walk_partition_gflag_sites`], resolves its
     /// named-record span with
-    /// [`crate::man_field_scripts::partition_record_span`] (the partition-2
+    /// [`legaia_engine_field::man_field_scripts::partition_record_span`] (the partition-2
     /// header decode), and slices the record body from its `script_start` so
     /// relative jumps wrap against the record base (retail
     /// `buffer_base = script_start`). The spawned context begins at the
@@ -435,11 +442,11 @@ impl World {
     // REF: FUN_801D1344
     pub fn load_cutscene_timeline_from_man(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
     ) -> bool {
         let Some(record_idx) =
-            crate::man_field_scripts::walk_partition_gflag_sites(man_file, man, 2)
+            legaia_engine_field::man_field_scripts::walk_partition_gflag_sites(man_file, man, 2)
                 .into_iter()
                 .find(|s| s.set && s.bit as u32 == PROLOGUE_HANDOFF_BIT)
                 .map(|s| s.record)
@@ -538,7 +545,7 @@ impl World {
     /// The engine has **two** dialogue channels and either one can be live on
     /// its own. [`crate::world::DialogState::current`] is the simplified request the probe /
     /// world map open; [`crate::world::DialogState::inline`] is the faithful field-VM
-    /// runner ([`crate::inline_dialogue`]), which the ordinary NPC-talk path
+    /// runner ([`legaia_engine_field::inline_dialogue`]), which the ordinary NPC-talk path
     /// runs and which can hold a box open with no `current_dialog` at all -
     /// an interaction record whose prologue selects its segment never sets
     /// one. Testing only the first therefore leaves the pad live under the
@@ -570,10 +577,13 @@ impl World {
     }
 
     /// The page mark `panel` draws this frame: its strip frame, or `None`
-    /// when the pager draws none ([`crate::dialog::OwnedDialogPanel::advance_icon`]).
+    /// when the pager draws none ([`legaia_engine_dialog::dialog::OwnedDialogPanel::advance_icon`]).
     /// A seated frame ([`Self::seat_page_mark_frame`]) replaces the panel's
     /// own while the mark is up.
-    pub fn page_mark_frame(&self, panel: &crate::dialog::OwnedDialogPanel) -> Option<u8> {
+    pub fn page_mark_frame(
+        &self,
+        panel: &legaia_engine_dialog::dialog::OwnedDialogPanel,
+    ) -> Option<u8> {
         panel
             .advance_icon()
             .map(|f| self.dialog.page_mark_seat.unwrap_or(f))
@@ -598,7 +608,7 @@ impl World {
     /// field contexts are frozen, not torn down - but nothing draws its box
     /// on the battle frame.
     // REF: FUN_801D84D0
-    pub fn script_dialog_panel(&self) -> Option<&crate::dialog::OwnedDialogPanel> {
+    pub fn script_dialog_panel(&self) -> Option<&legaia_engine_dialog::dialog::OwnedDialogPanel> {
         if self.mode == SceneMode::Battle {
             return None;
         }
@@ -620,10 +630,10 @@ impl World {
 
     /// Step the opening-cutscene timeline one frame.
     ///
-    /// Runs the spawned cutscene context ([`crate::cutscene_timeline`]) through
+    /// Runs the spawned cutscene context ([`legaia_engine_field::cutscene_timeline`]) through
     /// the field VM until it yields, waits, or completes - mirroring retail's
     /// run-until-`YIELD`-per-frame dispatch. Camera Configure (`0x45`) and
-    /// actor MoveTo (`0x23`) ops emit the same [`crate::field_events::FieldEvent`]s
+    /// actor MoveTo (`0x23`) ops emit the same [`legaia_engine_field::field_events::FieldEvent`]s
     /// the runtime camera folds in; the closing `GFLAG_SET 26` writes the
     /// hand-off bit through the same host path the main field VM uses, so the
     /// `town01` hand-off arms by execution.
@@ -633,7 +643,7 @@ impl World {
     /// - a per-frame step budget caps a non-yielding loop;
     /// - a frame cap forces completion if the timeline never reaches its
     ///   closing op (e.g. it hits an op this port cannot advance past); for the
-    ///   `opdeene` prologue ([`crate::cutscene_timeline::CutsceneTimeline::arms_prologue_handoff`])
+    ///   `opdeene` prologue ([`legaia_engine_field::cutscene_timeline::CutsceneTimeline::arms_prologue_handoff`])
     ///   the hand-off is then armed statically as a safety net.
     ///
     /// The `town01` opening timeline parks on op-`0x49` STATE_RESUME to open the
@@ -758,20 +768,21 @@ impl World {
     // REF: FUN_80039B7C
     fn drive_script_dialog(
         &mut self,
-        tl: &mut crate::cutscene_timeline::CutsceneTimeline,
+        tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
         routed: bool,
     ) {
         let Some(panel) = tl.dialog.as_mut() else {
             return;
         };
-        let pressed = |w: &Self, b: crate::input::PadButton| routed && w.input.just_pressed(b);
-        let confirm = pressed(self, crate::input::PadButton::Cross)
-            || pressed(self, crate::input::PadButton::Circle);
+        let pressed =
+            |w: &Self, b: legaia_engine_system::input::PadButton| routed && w.input.just_pressed(b);
+        let confirm = pressed(self, legaia_engine_system::input::PadButton::Cross)
+            || pressed(self, legaia_engine_system::input::PadButton::Circle);
         if panel.menu_active() {
-            if pressed(self, crate::input::PadButton::Up) {
+            if pressed(self, legaia_engine_system::input::PadButton::Up) {
                 panel.move_picker_cursor(-1);
             }
-            if pressed(self, crate::input::PadButton::Down) {
+            if pressed(self, legaia_engine_system::input::PadButton::Down) {
                 panel.move_picker_cursor(1);
             }
         }
@@ -819,7 +830,7 @@ impl World {
                 }
             } else {
                 // Still typing or scrolling: the pager's skip latch
-                // completes the page (`crate::dialog_window`).
+                // completes the page (`legaia_engine_dialog::dialog_window`).
                 panel.confirm_while_typing();
             }
         }
@@ -855,7 +866,7 @@ impl World {
     // REF: FUN_8003774C (the 0x37 / 0x41 arm)
     pub(super) fn step_player_glide(
         &mut self,
-        glide: &mut crate::cutscene_timeline::TimelinePlayerGlide,
+        glide: &mut legaia_engine_field::cutscene_timeline::TimelinePlayerGlide,
     ) -> bool {
         glide.frames += 1;
         let done = match self.player_actor_slot {
@@ -863,7 +874,7 @@ impl World {
                 let ms = &self.actors[p as usize].move_state;
                 glide.state.world_x = ms.world_x;
                 glide.state.world_z = ms.world_z;
-                let done = vm::motion_vm::compass_walk(
+                let done = legaia_engine_motion_vm::motion_vm::compass_walk(
                     &mut glide.state,
                     glide.body0,
                     glide.body1,
@@ -888,15 +899,22 @@ impl World {
     /// while the leg still has units left (and the park timeout has not run
     /// out).
     // REF: FUN_8003774C (the 0x37 / 0x41 arm)
-    fn step_npc_glide(&mut self, glide: &mut crate::cutscene_timeline::TimelineNpcGlide) -> bool {
+    fn step_npc_glide(
+        &mut self,
+        glide: &mut legaia_engine_field::cutscene_timeline::TimelineNpcGlide,
+    ) -> bool {
         glide.frames += 1;
         let Some(&(x, z)) = self.npcs.positions.get(&glide.slot) else {
             return false;
         };
         glide.state.world_x = x;
         glide.state.world_z = z;
-        let done =
-            vm::motion_vm::compass_walk(&mut glide.state, glide.body0, glide.body1, glide.rate);
+        let done = legaia_engine_motion_vm::motion_vm::compass_walk(
+            &mut glide.state,
+            glide.body0,
+            glide.body1,
+            glide.rate,
+        );
         self.npcs
             .positions
             .insert(glide.slot, (glide.state.world_x, glide.state.world_z));
@@ -941,7 +959,7 @@ impl World {
     /// (plain) cap in [`Self::step_helper_contexts`] instead.
     fn finish_cutscene_timeline_frame(
         &mut self,
-        mut tl: crate::cutscene_timeline::CutsceneTimeline,
+        mut tl: legaia_engine_field::cutscene_timeline::CutsceneTimeline,
     ) {
         // Frame cap: real disc bytecode must never hang the tick. The opdeene
         // prologue gets the generous cap - its record arms the hand-off bit
@@ -977,7 +995,9 @@ impl World {
             }
             for fw in std::mem::take(&mut tl.npc_facings) {
                 if let Some(h) =
-                    crate::man_field_scripts::facing_index_to_engine_heading(fw.program[1] & 0xF)
+                    legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(
+                        fw.program[1] & 0xF,
+                    )
                 {
                     self.set_timeline_facing(fw.slot, h);
                 }
@@ -1016,11 +1036,14 @@ impl World {
     }
 
     /// Hand a finished touch-resumed timeline's PC back to its placement
-    /// channel ([`crate::cutscene_timeline::CutsceneTimeline::interaction_slot`]):
+    /// channel ([`legaia_engine_field::cutscene_timeline::CutsceneTimeline::interaction_slot`]):
     /// the two are one retail context, so the next touch resumes where this
     /// interaction's `0x21` left it. No-op for a spawned-record timeline.
     // REF: FUN_80039B7C
-    fn release_interaction_context(&mut self, tl: &crate::cutscene_timeline::CutsceneTimeline) {
+    fn release_interaction_context(
+        &mut self,
+        tl: &legaia_engine_field::cutscene_timeline::CutsceneTimeline,
+    ) {
         let Some(slot) = tl.interaction_slot else {
             return;
         };
@@ -1134,7 +1157,7 @@ impl World {
         // direction unblocks.
         if dropped
             && self.field_vm.helper_contexts.is_empty()
-            && matches!(self.mode, crate::world::SceneMode::Field)
+            && matches!(self.mode, legaia_engine_mode::mode::SceneMode::Field)
             // A record that ended by leaving the scene (`chitei2`'s rescue
             // beat jumps the party into the drain pipe, then `0x3F`) parks
             // the hand-off behind the streaming actor; the departing scene's
@@ -1222,19 +1245,19 @@ impl World {
 
 /// Apply `FUN_80038050`'s verdict on the byte after a dismissed box to the
 /// runner: a parking byte ends the talk with the cursor left on it (recorded
-/// in [`crate::inline_dialogue::InlineDialogue::parked_pc`]); `0x21` and the
+/// in [`legaia_engine_field::inline_dialogue::InlineDialogue::parked_pc`]); `0x21` and the
 /// continuing bytes are left to the VM loop, which already ends on a raw
 /// `0x21` and runs the rest. A prop-bound run (door / cupboard record) keeps
 /// running through its tail: the parking rule is pinned on NPC talks only.
 ///
 /// REF: FUN_80039B7C (`0x80039C84..0x80039D60`, the talk end after a box),
 /// FUN_80038050
-fn end_talk_at_post_box_byte(id: &mut crate::inline_dialogue::InlineDialogue) {
+fn end_talk_at_post_box_byte(id: &mut legaia_engine_field::inline_dialogue::InlineDialogue) {
     if id.prop_anchor.is_some() {
         return;
     }
-    if let crate::inline_dialogue::TalkDispatch::EndParked(pc) =
-        crate::inline_dialogue::talk_dispatch(&id.bytecode, id.pc)
+    if let legaia_engine_field::inline_dialogue::TalkDispatch::EndParked(pc) =
+        legaia_engine_field::inline_dialogue::talk_dispatch(&id.bytecode, id.pc)
     {
         id.parked_pc = Some(pc);
         id.done = true;
@@ -1253,7 +1276,7 @@ fn end_talk_at_post_box_byte(id: &mut crate::inline_dialogue::InlineDialogue) {
 fn loop_polls_held_pad(bytecode: &[u8], from: usize, to: usize) -> bool {
     let mut pc = from;
     while pc <= to {
-        let Ok(insn) = legaia_asset::field_disasm::decode(bytecode, pc) else {
+        let Ok(insn) = legaia_scene_formats::field_disasm::decode(bytecode, pc) else {
             return false;
         };
         if insn.size == 0 {
@@ -1261,7 +1284,7 @@ fn loop_polls_held_pad(bytecode: &[u8], from: usize, to: usize) -> bool {
         }
         if matches!(
             insn.info,
-            legaia_asset::field_disasm::InsnInfo::CondJmp { mode: 1, .. }
+            legaia_scene_formats::field_disasm::InsnInfo::CondJmp { mode: 1, .. }
         ) {
             return true;
         }

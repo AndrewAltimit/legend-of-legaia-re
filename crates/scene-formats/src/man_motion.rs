@@ -50,7 +50,7 @@
 //!
 //! Full semantics per op, and which ones end the frame, are in
 //! [`docs/subsystems/motion-vm.md`](../../../docs/subsystems/motion-vm.md);
-//! the interpreter is `legaia_engine_vm::ambient_motion`.
+//! the interpreter is `legaia_engine_motion_vm::ambient_motion`.
 //!
 //! | op | width | effect |
 //! |----|-------|--------|

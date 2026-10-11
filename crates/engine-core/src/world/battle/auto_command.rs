@@ -23,7 +23,7 @@
 //! The arts-entry read is at the **open**, as retail's is
 //! (`World::open_arts_command_input`): the entry session keeps the string so a
 //! bare confirm replays it without charging a press, and the first press
-//! wipes it (`crate::arts_command_input::ArtsCommandInputSession::preseed`).
+//! wipes it (`legaia_engine_battle::arts_command_input::ArtsCommandInputSession::preseed`).
 //!
 //! The Attack read is at **dispatch**, not at the confirm press, for the same reason
 //! [`crate::world::World::seed_basic_attack_queue`] is: the port arms a party
@@ -89,8 +89,8 @@ impl World {
                 [0u8; AUTO_COMMAND_STRING_LEN],
             ),
         };
-        let mut queue = [0u8; vm::battle_action::ACTION_QUEUE_CAP];
-        vm::battle_action::preseed_action_queue(
+        let mut queue = [0u8; legaia_engine_battle_vm::battle_action::ACTION_QUEUE_CAP];
+        legaia_engine_battle_vm::battle_action::preseed_action_queue(
             &mut queue,
             // Retail's staging gate `DAT_8007BD04`: the port has no separate
             // "a command string is staged" latch, and the condition it stands
@@ -134,7 +134,7 @@ impl World {
         };
         let mut first = rec.auto_command_string(AutoCommandBand::Primary);
         let mut second = rec.auto_command_string(AutoCommandBand::Secondary);
-        let wrote = vm::battle_action::save_action_queue(
+        let wrote = legaia_engine_battle_vm::battle_action::save_action_queue(
             &queue,
             alive,
             category_is_arts,

@@ -22,7 +22,7 @@ impl World {
     /// the two.
     ///
     /// PORT: FUN_801F2160 (the dispatch seam; the per-module tick bodies are
-    /// [`legaia_engine_vm::cast_module_ticks`])
+    /// [`legaia_engine_battle_vm::cast_module_ticks`])
     pub fn capture_stager_tick(&mut self) -> bool {
         let Some(spell_id) = self.casting.capture_spell else {
             return false;
@@ -109,10 +109,11 @@ impl World {
         let actor = self.actors.get(usize::from(slot))?;
         let seat_monster = (actor.battle_monster_id? & 0xFF) as u8;
         let installed = actor.battle_action_clips.as_ref()?;
-        let approach = vm::cast_module_ticks::capture_body_approaches(entry, spell_id)
-            .then_some(actor.battle.active_target)
-            .filter(|&t| t < 8 && usize::from(t) < self.actors.len() && t != slot);
-        let clips: Vec<u8> = vm::cast_module_ticks::capture_caster_stages(
+        let approach =
+            legaia_engine_battle_vm::cast_module_ticks::capture_body_approaches(entry, spell_id)
+                .then_some(actor.battle.active_target)
+                .filter(|&t| t < 8 && usize::from(t) < self.actors.len() && t != slot);
+        let clips: Vec<u8> = legaia_engine_battle_vm::cast_module_ticks::capture_caster_stages(
             entry,
             spell_id,
             seat_monster,
@@ -189,7 +190,7 @@ impl World {
                 // sb v1,0x1da(<caster>)`, e.g. `0x801F72C8` in PROT 0952).
                 let (vx, vz) = self.battle_seat_of(usize::from(victim));
                 let a = &mut self.actors[usize::from(run.slot)];
-                let bearing = vm::battle_action::bearing_12bit_approx(
+                let bearing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
                     vz,
                     vx,
                     a.move_state.world_z,

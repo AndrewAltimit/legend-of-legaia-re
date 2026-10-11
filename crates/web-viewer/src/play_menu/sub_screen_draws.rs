@@ -7,7 +7,7 @@ use super::*;
 /// Map the engine-core window-14 target-panel model onto the engine-ui view
 /// rows. Mirrors the native shell's `target_panel_members`.
 fn target_panel_members(
-    model: &legaia_engine_core::pause_screens::TargetPanelModel,
+    model: &legaia_engine_menus::pause_screens::TargetPanelModel,
 ) -> Vec<ui::TargetPanelMember<'_>> {
     model
         .members
@@ -30,7 +30,7 @@ fn target_panel_members(
 /// Hand-cursor decode of the target panel: all-party picks put the hand on
 /// every row (retail cursor bit `0x2000`), otherwise it sits on one row.
 fn target_panel_cursor(
-    model: &legaia_engine_core::pause_screens::TargetPanelModel,
+    model: &legaia_engine_menus::pause_screens::TargetPanelModel,
 ) -> ui::TargetPanelCursor {
     if model.all_targets {
         ui::TargetPanelCursor::All { pressed: false }
@@ -51,10 +51,10 @@ fn target_panel_cursor(
 /// projection and the composition - is shared. The native window's twin is
 /// `window/menu_draws.rs::equip_compose_input`.
 fn equip_compose_input(
-    m: &legaia_engine_core::pause_screens::EquipScreenModel,
+    m: &legaia_engine_menus::pause_screens::EquipScreenModel,
     text_cursor: bool,
 ) -> ui::pause_menu::EquipComposeInput<'_> {
-    use legaia_engine_core::pause_screens::EquipScreenPhase as Tag;
+    use legaia_engine_menus::pause_screens::EquipScreenPhase as Tag;
     ui::pause_menu::EquipComposeInput {
         party_names: &m.party_names,
         slot_labels: &m.slot_labels,
@@ -91,7 +91,7 @@ fn equip_compose_input(
 /// Borrow the shared Equip **compare** model into `engine-ui`'s input. The
 /// native window's twin is `window/menu_draws.rs::equip_compare_input`.
 fn equip_compare_input(
-    c: &legaia_engine_core::pause_screens::EquipCompareModel,
+    c: &legaia_engine_menus::pause_screens::EquipCompareModel,
 ) -> ui::pause_menu::EquipCompareInput<'_> {
     ui::pause_menu::EquipCompareInput {
         name: c.name.as_str(),
@@ -209,14 +209,14 @@ impl LegaiaRuntime {
     pub(super) fn build_items(
         &self,
         assets: &PlayMenuAssets,
-        s: &legaia_engine_core::pause_screens::PauseItemsSession,
+        s: &legaia_engine_menus::pause_screens::PauseItemsSession,
         sprites: &mut Vec<SpriteDraw>,
         texts: &mut Vec<TextDraw>,
         origin: (i32, i32),
         scale: u32,
     ) {
         let ctx = assets.menu_ctx(origin, scale);
-        let model = legaia_engine_core::pause_screens::items_screen_model(s);
+        let model = legaia_engine_menus::pause_screens::items_screen_model(s);
         if model.target_select {
             if let Some(panel) = self
                 .menu_world()
@@ -296,7 +296,7 @@ impl LegaiaRuntime {
             (Some(sc), Some(one)) => {
                 if matches!(
                     sc.route,
-                    legaia_engine_core::pause_screens::UseRoute::Incense
+                    legaia_engine_menus::pause_screens::UseRoute::Incense
                 ) {
                     vec![sc.item_name.as_str(), "Use it?"]
                 } else {
@@ -340,7 +340,7 @@ impl LegaiaRuntime {
         scale: u32,
     ) {
         let ctx = assets.menu_ctx(origin, scale);
-        let model = legaia_engine_core::pause_screens::magic_screen_model(
+        let model = legaia_engine_menus::pause_screens::magic_screen_model(
             s,
             self.menu_world().and_then(|w| w.menu.text.as_ref()),
         );
@@ -485,12 +485,12 @@ impl LegaiaRuntime {
         // disc tables the compare category is looked up in - the same
         // sources the native window passes.
         let record = world.and_then(|w| w.party.roster.members.get(char_slot as usize));
-        let compare = record.map(|r| legaia_engine_core::pause_screens::EquipCompareCtx {
+        let compare = record.map(|r| legaia_engine_menus::pause_screens::EquipCompareCtx {
             record: r,
             equip_info: self.menu.equip_info.as_ref(),
             item_effects: world.and_then(|w| w.tables.item_effects.as_ref()),
         });
-        let m = legaia_engine_core::pause_screens::equip_screen_model(
+        let m = legaia_engine_menus::pause_screens::equip_screen_model(
             session,
             char_slot,
             &names,
@@ -562,7 +562,7 @@ impl LegaiaRuntime {
         let selected_item_name = s.current_item().map(|e| e.name);
         let in_battle = matches!(
             s.context,
-            legaia_engine_core::inventory_use::InventoryContext::Battle
+            legaia_engine_menus::inventory_use::InventoryContext::Battle
         );
         let args = ui::InventoryUseDrawArgs {
             items: &item_rows,
@@ -582,7 +582,7 @@ impl LegaiaRuntime {
         assets: &PlayMenuAssets,
         popup: &legaia_engine_core::options::OptionsPopup,
     ) -> (i32, i32, i32, i32) {
-        use legaia_asset::menu_windows::window_ids;
+        use legaia_game_tables::menu_windows::window_ids;
         let (px, _, pw, _) = assets.window_rect(window_ids::OPTIONS_POPUP);
         let (_, sy, _, _) = assets.window_rect(window_ids::OPTIONS_MAIN);
         legaia_engine_core::options::options_popup_content_rect(

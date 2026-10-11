@@ -19,8 +19,9 @@
 //!
 //! Disc-free: synthetic party + the vanilla monster/formation tables.
 
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 
 /// A world seated for a battle against the vanilla Goblin formation (id 1),
 /// with the live loop **off** - the default a bare `World::new()` boots with.
@@ -339,14 +340,14 @@ fn a_victory_arms_the_spoils_panel() {
 /// - see the sibling below.
 #[test]
 fn a_monster_cast_does_not_park_the_action_sm() {
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle_vm::battle_action::ActionState;
 
     let mut w = World::new();
     w.mode = SceneMode::Battle;
     w.party.party_count = 3;
     // A **priced** catalog, so the band's MP debit is a real subtraction and
     // not the zero an unwired `spell_mp_cost` used to hand it. Flame is 5 MP.
-    w.set_spell_catalog(legaia_engine_core::spells::SpellCatalog::vanilla());
+    w.set_spell_catalog(legaia_engine_battle::spells::SpellCatalog::vanilla());
     let flame_cost = u16::from(w.tables.spell_catalog.mp_cost(0x20));
     assert!(flame_cost > 0, "the catalog prices Flame");
     for i in 0..8 {
@@ -407,13 +408,13 @@ fn a_monster_cast_does_not_park_the_action_sm() {
 /// must end, with the cast paid for once at `0x28`.
 #[test]
 fn a_party_seru_cast_runs_the_summon_band_out_and_pays_once() {
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle_vm::battle_action::ActionState;
 
     let mut w = World::new();
     w.mode = SceneMode::Battle;
     w.party.party_count = 3;
     // Gimard is 10 MP byte-exact from SCUS.
-    w.set_spell_catalog(legaia_engine_core::retail_magic::retail_seru_magic_catalog());
+    w.set_spell_catalog(legaia_engine_battle::retail_magic::retail_seru_magic_catalog());
     for i in 0..8 {
         let a = w.spawn_actor(i);
         a.battle.liveness = 1;

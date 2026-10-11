@@ -19,8 +19,8 @@ pub const MENU_OPEN_WIPE_TICKS: u64 = MENU_PRESS_GAP;
 /// on its character picker (`0x12`); the slot browse (`0x13`) is one more
 /// `Cross`, and the candidate list (`0x14`) a `Down` past Best Equipment and
 /// a `Cross` after that.
-pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_core::input::PadButton)> {
-    use legaia_engine_core::input::PadButton;
+pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_system::input::PadButton)> {
+    use legaia_engine_system::input::PadButton;
     let mut out = vec![(0, PadButton::Start)];
     let mut t = MENU_OPEN_WIPE_TICKS;
     let mut press = |b: PadButton| {
@@ -50,8 +50,8 @@ pub fn pause_menu_drive_ticks(menu: &RetailMenu) -> u64 {
 /// ([`pause_menu_presses`], each a one-tick edge), settle, and read back the
 /// sub-screen it holds.
 pub(super) fn drive_pause_menu(session: &mut BootSession, menu: &RetailMenu) -> Result<Option<u8>> {
-    use legaia_engine_core::equip_session::EquipState;
     use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menus::equip_session::EquipState;
     let presses = pause_menu_presses(menu);
     for t in 0..=pause_menu_drive_ticks(menu) {
         let mask = presses

@@ -11,7 +11,7 @@
 //! cyclers tiling the flesh palette row, the flag-gated lightning palette,
 //! and the ambient SFX loop. See `docs/subsystems/field-ambient-fx.md`.
 //!
-//! Two properties force this path off the [`crate::summon::SummonScene`]
+//! Two properties force this path off the [`legaia_engine_effects::summon::SummonScene`]
 //! stand-in and onto the shared bundle:
 //!
 //! 1. **In-place self-modification.** The spawn fan-out relies on ext op
@@ -24,7 +24,7 @@
 //!    writes, so a later op of the same run reads the patched operand.
 //! 2. **The mode-3 render tail.** `0x4000` render-mode parts run the
 //!    per-frame CLUT-cell integrator (`FUN_80021DF4` mode-3 arm) and emit
-//!    HSV palette rewrites ([`crate::clut_cell_fx`]), which need a VRAM
+//!    HSV palette rewrites ([`legaia_engine_field::clut_cell_fx`]), which need a VRAM
 //!    surface - the renderer drives [`World::step_ambient_fx`] with its
 //!    software VRAM exactly like the scripted-CLUT sibling
 //!    [`World::step_clut_fx`].
@@ -48,13 +48,13 @@
 //!
 //! PORT: FUN_80021B04 (spawn-time first run + per-tick move-VM drive for
 //! the prescript-record parts; the per-tick half runs the part tick's
-//! channel and motion blocks around the VM - [`crate::part_motion`])
+//! channel and motion blocks around the VM - [`legaia_engine_effects::part_motion`])
 //! REF: FUN_800252EC, FUN_80021DF4, FUN_80019D50, FUN_801DE840
 
 pub mod vram_scroll;
 
 use super::*;
-use crate::clut_cell_fx::{self, ClutCellFx};
+use legaia_engine_field::clut_cell_fx::{self, ClutCellFx};
 use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome};
 use vram_scroll::VramScrollFx;
 
@@ -452,7 +452,7 @@ impl World {
 
         // Mode-3 render tail: the `0x4000` render-mode node's CLUT-cell
         // integrator runs every game tick regardless of the wait timer.
-        let cell_fx = if model_sel == legaia_asset::summon_overlay::RENDER_NODE_MODE_A {
+        let cell_fx = if model_sel == legaia_overlay_images::summon_overlay::RENDER_NODE_MODE_A {
             clut_cell_fx::mode3_integrate(&mut state, self.clock.frame_step.max(1))
         } else {
             None
@@ -640,16 +640,16 @@ impl World {
                 // puff sheets apart over a puff's life.
                 move_vm::advance_keyframe_cursor(st, self.clock.frame_step.max(1));
                 move_vm::integrate_draw_channels(st, drain);
-                if crate::part_motion::runs_motion_block(st) {
-                    crate::part_motion::motion_block(st, drain);
+                if legaia_engine_effects::part_motion::runs_motion_block(st) {
+                    legaia_engine_effects::part_motion::motion_block(st, drain);
                 }
             }
             self.tick_ambient_part(idx, 0);
             if let Some(part) = self.ambient.fx.get_mut(idx) {
-                crate::part_motion::clamp_levels(&mut part.state);
+                legaia_engine_effects::part_motion::clamp_levels(&mut part.state);
             }
         }
-        // The scene-entry VDF pulse (enhancement - `crate::vdf_pulse`) rides
+        // The scene-entry VDF pulse (enhancement - `legaia_engine_field::vdf_pulse`) rides
         // the same ambient game tick.
         let step = self.clock.frame_step.max(1);
         if let Some(pulse) = self.ambient.entry_vdf_pulse.as_mut() {
@@ -660,27 +660,31 @@ impl World {
 
     /// The live ambient parts that are `0x4000` sprite-arm nodes (move-VM
     /// op `0x23`), each as its quad - one per posed part on a keyframe-pose
-    /// node ([`crate::effect_sprite_arm::sprite_arm_draws`]). Part of
+    /// node ([`legaia_engine_effects::effect_sprite_arm::sprite_arm_draws`]). Part of
     /// [`World::active_effect_kind4_draws`].
-    pub fn ambient_sprite_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
+    pub fn ambient_sprite_arm_draws(
+        &self,
+    ) -> Vec<legaia_engine_effects::effect_ribbon::RibbonDraw> {
         self.ambient
             .fx
             .iter()
             .filter(|p| !p.finished)
-            .flat_map(|p| crate::effect_sprite_arm::sprite_arm_draws(&p.state))
+            .flat_map(|p| legaia_engine_effects::effect_sprite_arm::sprite_arm_draws(&p.state))
             .collect()
     }
 
     /// The live ambient parts that are default-arm draw-kind-4 nodes
     /// (move-VM op `0x13`), each as its procedural mesh
-    /// ([`crate::effect_default_arm::default_arm_draw`]). Part of
+    /// ([`legaia_engine_effects::effect_default_arm::default_arm_draw`]). Part of
     /// [`World::active_effect_kind4_draws`].
-    pub fn ambient_default_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
+    pub fn ambient_default_arm_draws(
+        &self,
+    ) -> Vec<legaia_engine_effects::effect_ribbon::RibbonDraw> {
         self.ambient
             .fx
             .iter()
             .filter(|p| !p.finished)
-            .filter_map(|p| crate::effect_default_arm::default_arm_draw(&p.state))
+            .filter_map(|p| legaia_engine_effects::effect_default_arm::default_arm_draw(&p.state))
             .collect()
     }
 
@@ -795,7 +799,7 @@ impl World {
     /// where retail's own entry ambience has no morph carrier (jou).
     ///
     /// Opt-in per scene: `scene` must be one the pulse is authored for
-    /// ([`crate::vdf_pulse::entry_pulse_slots`]), and only that scene's
+    /// ([`legaia_engine_field::vdf_pulse::entry_pulse_slots`]), and only that scene's
     /// listed env slots are targeted. Every other populated pack keeps
     /// retail's still geometry at entry.
     pub fn install_entry_vdf_pulse(&mut self, scene: &str, pack_objects: &[Vec<usize>]) -> bool {
@@ -803,7 +807,7 @@ impl World {
         if !self.toggles.entry_pulse_enabled {
             return false;
         }
-        let Some(allowed) = crate::vdf_pulse::entry_pulse_slots(scene) else {
+        let Some(allowed) = legaia_engine_field::vdf_pulse::entry_pulse_slots(scene) else {
             return false;
         };
         let pack_objects: Vec<Vec<usize>> = pack_objects
@@ -822,7 +826,7 @@ impl World {
         // morph arming in ANY story state (rikuroa's flag-gated records) -
         // retail owns those morphs; the pulse is only for packs retail
         // never arms from the ambient tree (jou).
-        if crate::vdf_pulse::stager_records_arm_morphs(
+        if legaia_engine_field::vdf_pulse::stager_records_arm_morphs(
             &self.props.stagers,
             &self.props.stager_bytes,
         ) {
@@ -840,7 +844,7 @@ impl World {
             .filter_map(|i| self.vdf_record_bytes(i as u8))
             .collect();
         self.ambient.entry_vdf_pulse =
-            crate::vdf_pulse::EntryVdfPulse::build(&entries, pack_objects);
+            legaia_engine_field::vdf_pulse::EntryVdfPulse::build(&entries, pack_objects);
         self.ambient.entry_vdf_pulse.is_some()
     }
 

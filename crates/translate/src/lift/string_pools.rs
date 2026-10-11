@@ -5,8 +5,8 @@ use super::super::pack::LanguagePack;
 use super::super::{markup, monster_names, refpair, ui};
 use super::chunk_align::{nul_chunks, pair_chunk_lists, pool_text};
 use super::{LiftReport, PoolStat, key_scus_va};
-use legaia_asset::{item_names, worldmap_menu};
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::{item_names, worldmap_menu};
 use std::collections::BTreeMap;
 
 /// Fill the `ui:` entries: each pinned overlay pool is read on both discs,

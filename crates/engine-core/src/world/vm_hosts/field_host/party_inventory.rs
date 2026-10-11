@@ -47,7 +47,7 @@ impl FieldHostImpl<'_> {
                 }
             }
             _ => {
-                crate::equipment::party_unequip_accessory_by_id(
+                legaia_engine_menus::equipment::party_unequip_accessory_by_id(
                     &mut self.world.party.roster,
                     item_id,
                 );
@@ -100,7 +100,7 @@ impl FieldHostImpl<'_> {
     /// the negative charge and the fades, then emits one of these per
     /// party slot. The charge and the restore are decoupled, which is why
     /// a free rest (a bed, an infirmary) is the same tail with the gate
-    /// and debit dropped - and why `legaia_asset::inn_costs` finds the
+    /// and debit dropped - and why `legaia_scene_formats::inn_costs` finds the
     /// prices scripted per scene rather than in a table.
     ///
     /// Retail addresses the slot by *literal operand*, so a script that

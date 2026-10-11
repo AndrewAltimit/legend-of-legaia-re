@@ -39,7 +39,7 @@ pub(super) type PlacedDrawList = (
 /// ([`legaia_engine_core::field_env::EnvDraw::view_skip`]): the record's
 /// `0x380` bits and the cell's own rotation-and-scale, kept so the frame can
 /// rebuild the cell's model as `T(pos) * K * rot` against this frame's camera
-/// (`legaia_engine_render::gte::decoration_cell_basis`).
+/// (`legaia_render_kernels::gte::decoration_cell_basis`).
 pub(super) type CameraFacing = (u16, Mat4);
 
 /// [`PlayWindowApp::resolve_field_terrain_draws`]'s lists: the draws, the
@@ -55,7 +55,7 @@ pub(super) type TerrainDrawList = (
 impl PlayWindowApp {
     /// Shade the env draws' light-source rows under the world's live field
     /// light: one shaded copy of each lit mesh per draw rotation, retail's
-    /// `L * Rot` fold (`legaia_engine_core::field_lit_mesh`). Runs after an
+    /// `L * Rot` fold (`legaia_engine_field::field_lit_mesh`). Runs after an
     /// asset upload and again whenever the live light changes (op `4C 8A`).
     pub(super) fn rebuild_field_lit_meshes(&mut self) {
         let light = self.session.host.world.presentation.field_light;
@@ -66,7 +66,7 @@ impl PlayWindowApp {
         lit.placement.clear();
         lit.posed.clear();
         let census_on = self.draw_census.is_some();
-        let mut lit_census: Vec<legaia_engine_core::draw_census::MeshCensus> = Vec::new();
+        let mut lit_census: Vec<legaia_engine_system::draw_census::MeshCensus> = Vec::new();
         // `LEGAIA_DIAG_NO_LIT_ROWS` leaves the lit rows at their neutral
         // texel, for before/after frames.
         if lit.sources.is_empty() || std::env::var_os("LEGAIA_DIAG_NO_LIT_ROWS").is_some() {
@@ -83,12 +83,12 @@ impl PlayWindowApp {
             let (mesh, lit_vertices) = sources.get(&mesh_idx)?;
             let m3: [[f32; 3]; 3] =
                 std::array::from_fn(|row| std::array::from_fn(|col| model.col(col)[row]));
-            let rot = legaia_engine_core::field_lit_mesh::rotation_from_matrix(m3);
+            let rot = legaia_engine_field::field_lit_mesh::rotation_from_matrix(m3);
             if let Some(&v) = keys.get(&(mesh_idx, rot)) {
                 return Some(v);
             }
             let mut colors = mesh.colors.clone();
-            legaia_engine_core::field_lit_mesh::shade_lit_rows(
+            legaia_engine_field::field_lit_mesh::shade_lit_rows(
                 &mut colors,
                 lit_vertices,
                 &light,
@@ -107,7 +107,7 @@ impl PlayWindowApp {
                 .ok()?;
             shaded.push(up);
             if census_on {
-                lit_census.push(legaia_engine_core::draw_census::MeshCensus::from_mesh(
+                lit_census.push(legaia_engine_system::draw_census::MeshCensus::from_mesh(
                     &mesh.positions,
                     &mesh.cba_tsb,
                     &colors,

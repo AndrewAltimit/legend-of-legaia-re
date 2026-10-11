@@ -108,7 +108,7 @@ fn bgm_injection_offset(decoded: &[u8], pc0: usize) -> Option<usize> {
     let mut pc = pc0;
     // Bound the scan so a runaway never walks the whole MAN.
     for _ in 0..64 {
-        let insn = legaia_asset::field_disasm::decode(decoded, pc).ok()?;
+        let insn = legaia_scene_formats::field_disasm::decode(decoded, pc).ok()?;
         if insn.size == 0 {
             return None;
         }
@@ -147,7 +147,7 @@ impl SceneBagInject {
     /// not a scene bundle, has no MAN, the MAN doesn't decompress to its declared
     /// size / parse, or has no partition-1 record 0 (the entry script).
     pub fn locate(entry: &[u8], entry_idx: usize) -> Option<Self> {
-        use legaia_asset::{man_section, scene_asset_table};
+        use legaia_scene_formats::{man_section, scene_asset_table};
         let table = scene_asset_table::detect(entry)?;
         let man_idx = table.descriptor_index(MAN_TYPE)?;
         let man = table.used()[man_idx];
@@ -217,14 +217,14 @@ impl SceneBagInject {
     /// Splice the guarded grant block at the entry-script start, recompress, and
     /// return `(recompressed_stream, new_decompressed_size)`. `None` when the entry
     /// record carries an absolute reference (unsafe to shift - see
-    /// [`legaia_asset::man_edit::apply_insertions`]), the rebuilt block fails to
+    /// [`legaia_scene_formats::man_edit::apply_insertions`]), the rebuilt block fails to
     /// decode back, or the recompressed MAN overflows the original footprint (caller
     /// then leaves the scene unchanged). The caller writes the size word with
     /// `scene_asset_table::encode_size_word(0x03, new_size)` at
     /// [`man_descriptor_off`](Self::man_descriptor_off).
     pub fn rebuild(&self, items: &[(u8, u8)], guard_bit: u16) -> Option<(Vec<u8>, u32)> {
-        use legaia_asset::field_disasm::{self, FlagKind, InsnInfo};
-        use legaia_asset::man_edit::{self, Insertion};
+        use legaia_scene_formats::field_disasm::{self, FlagKind, InsnInfo};
+        use legaia_scene_formats::man_edit::{self, Insertion};
 
         let block = guarded_grant_block(items, guard_bit);
         let new_man = man_edit::apply_insertions(
@@ -259,7 +259,7 @@ impl SceneBagInject {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::field_disasm::{self, FlagKind, InsnInfo};
+    use legaia_scene_formats::field_disasm::{self, FlagKind, InsnInfo};
 
     #[test]
     fn flag_ops_encode_the_index_split() {

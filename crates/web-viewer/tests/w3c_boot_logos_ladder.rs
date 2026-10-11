@@ -43,10 +43,10 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::publisher_logos::{
+use legaia_engine_menus::publisher_logos::{
     LOGO_CONTRAIL, LOGO_COUNT, LOGO_PROKION, LOGO_QUADS, LOGO_SCEA, RETAIL_SEQUENCE, STAGE,
 };
+use legaia_engine_system::input::PadButton;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 /// The page's surface. At 960x720 the 640x480 boot stage fits at integer

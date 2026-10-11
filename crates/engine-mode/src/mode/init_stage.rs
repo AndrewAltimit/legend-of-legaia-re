@@ -136,7 +136,7 @@ pub struct ModeInitStage {
 // has **no `jal` anywhere on the disc**. Its one reference of any form is the
 // word at `0x800709DC`, which is `mode_table[24] + 0x10` in the 28 x 24-byte
 // table at `0x8007078C` - so retail reaches it only by indexing that table,
-// and `legaia_asset::mode_table` already recovers the table from the disc.
+// and `legaia_game_tables::mode_table` already recovers the table from the disc.
 // The gap is a dispatcher that calls the slot, not a table to call it from.
 pub fn other_warp_init_stage(sub_id: i16) -> Option<ModeInitStage> {
     /// Per-sub-id overlay init entries (jump table at `0x80010AE4`).
@@ -245,7 +245,7 @@ pub enum ModeInitBare {
 /// whatever image is resident in overlay slot A. That does **not** make it a
 /// dead jump: in PROT 0895 (`init.pak`) the VA is a real entry with a clean
 /// `addiu sp,sp,-0x230` prologue, and it is the publisher-logo boot pass -
-/// see [`READ_INIT_TARGET`] and `legaia_engine_core::publisher_logos`.
+/// see [`READ_INIT_TARGET`] and `legaia_engine_menus::publisher_logos`.
 ///
 /// **Mode 20 is the one live row.** `FUN_80055B6C` is the battle-scene setup
 /// entry, resident in `SCUS_942.54`, so BATTLE INIT is a real call and not a

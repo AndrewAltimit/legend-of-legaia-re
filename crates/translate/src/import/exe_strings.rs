@@ -9,8 +9,8 @@ use super::super::pack::Entry;
 use super::super::ui;
 use super::report::{ImportReport, IssueKind};
 use super::{Key, encode_source, encode_translation, fits, hint_agrees, parse_key};
-use legaia_asset::{item_names, new_game, worldmap_menu};
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::{item_names, new_game, worldmap_menu};
 use std::collections::BTreeMap;
 
 /// Longest SCUS string the reader will follow before calling the pointer bogus.
@@ -173,7 +173,7 @@ fn plan_scus_party(
 }
 
 /// Plan one fixed-cell write: a `0x20`-byte NUL-padded `SCUS_942.54` field
-/// (the world-map quick-travel place names, `legaia_asset::worldmap_menu`).
+/// (the world-map quick-travel place names, `legaia_game_tables::worldmap_menu`).
 /// The write is bounded by the cell itself, like a party-name field.
 fn plan_scus_cell(
     scus: &[u8],

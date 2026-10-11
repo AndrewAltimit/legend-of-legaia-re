@@ -45,12 +45,12 @@
 //! emitter tiles a brick wall under the intro, title and course cards;
 //! [`FirstVisitHub`] runs that visit's arms, the wall's level among them.
 
-use crate::muscle_dome::{
+use legaia_engine_battle_vm::panel_backread_loader::backread_texture_variant;
+use legaia_engine_minigames::muscle_dome::{
     HUB_BACKDROP_HALF, HUB_FADE_FULL, HUB_FADE_STEP_FAST, HUB_FADE_STEP_SLOW, HUB_INTRO_HOLD_TICKS,
     HUB_OPPONENT_CARD_HOLD_TICKS, HUB_ROUND_BANNER_HOLD_TICKS, HUB_SKIP_PAD_MASK, HubScreen,
     HubScreenStage,
 };
-use legaia_engine_battle_vm::panel_backread_loader::backread_texture_variant;
 
 /// Which still a battle end leaves resident, as an extraction PROT index:
 /// `1221` (`int.tim`) at or above half HP, `1222` (`int2.tim`) below.
@@ -63,7 +63,7 @@ use legaia_engine_battle_vm::panel_backread_loader::backread_texture_variant;
 /// a0,s0,0x4c7` at `0x801F6C3C`; the compare is ported at
 /// `backread_texture_variant`)
 pub fn still_prot_index(hp_cur_live: u16, hp_max_record: u16) -> u32 {
-    legaia_asset::ringside_still::PROT_INDEX_DEFAULT
+    legaia_minigame_formats::ringside_still::PROT_INDEX_DEFAULT
         + backread_texture_variant(hp_cur_live, hp_max_record)
 }
 
@@ -165,7 +165,7 @@ impl HubBackdrop {
     /// `0` (`int.tim`) or `1` (`int2.tim`) - the loader's `s0`.
     pub fn variant(&self) -> u32 {
         self.still
-            .saturating_sub(legaia_asset::ringside_still::PROT_INDEX_DEFAULT)
+            .saturating_sub(legaia_minigame_formats::ringside_still::PROT_INDEX_DEFAULT)
     }
 
     /// The backdrop level `*(0x801D1A7C)`, the emitter's fade argument.
@@ -557,14 +557,17 @@ pub struct HubTimers {
     pub first_visit: Option<FirstVisitHub>,
     /// A leg-open ROUND card `(displayed round, envelope)` no hub screen has
     /// introduced - retail arms `0x15` / `0x16`.
-    pub round_banner: Option<(i32, crate::muscle_dome::HubScreen)>,
+    pub round_banner: Option<(i32, legaia_engine_minigames::muscle_dome::HubScreen)>,
     /// The round a re-entered hub's backdrop last drew its ROUND card for
     /// ([`leg_open_raises_round_card`]).
     pub card_round: Option<i32>,
     /// The INTERVAL + score-tally screen's envelope.
-    pub interval: Option<crate::muscle_dome::HubScreen>,
+    pub interval: Option<legaia_engine_minigames::muscle_dome::HubScreen>,
     /// The score tally's roll-up and the coin tally it counts from.
-    pub tally: Option<(crate::other_game_overlay::ScoreTallyRamp, i32)>,
+    pub tally: Option<(
+        legaia_engine_minigames::other_game_overlay::ScoreTallyRamp,
+        i32,
+    )>,
     /// The re-entered hub's backdrop.
     pub backdrop: Option<HubBackdrop>,
     /// Last frame's "a leg is open".
@@ -579,10 +582,10 @@ pub struct HubTimersFrame {
     /// The first visit's announcer line, through the host's CD-XA path.
     pub xa: Option<HubXaCue>,
     /// The tally lanes' voice keys (`FUN_801D1288` builds each attr set).
-    pub voice_cues: Vec<crate::other_game_overlay::VoiceAttrCue>,
+    pub voice_cues: Vec<legaia_engine_minigames::other_game_overlay::VoiceAttrCue>,
     /// Cue-ring slot writes `(slot, id, countdown)` - the INTERVAL arm's
     /// staggered "ka-ching" cues, written into all four ring slots on the
-    /// arm's first frame ([`crate::muscle_dome::HUB_TALLY_CUES`]).
+    /// arm's first frame ([`legaia_engine_minigames::muscle_dome::HUB_TALLY_CUES`]).
     pub ring_cues: Vec<(u8, i16, i16)>,
     /// The between-legs hub has played out (INTERVAL drained, ROUND card
     /// gone): [`crate::world::World::tick_muscle_hub`] hands the next fight
@@ -611,7 +614,6 @@ impl HubTimers {
         pad: u16,
         volume_word: u32,
     ) -> HubTimersFrame {
-        use crate::muscle_dome as md;
         let mg = &world.minigames;
         let leg_open = mg.muscle_dome.is_some();
         let contest_open = mg.muscle_contest.is_some();
@@ -628,7 +630,10 @@ impl HubTimers {
                 // arms end in the ROUND card.
                 self.first_visit = Some(FirstVisitHub::new());
             } else if raise {
-                self.round_banner = Some((round, md::HubScreen::opponent_card()));
+                self.round_banner = Some((
+                    round,
+                    legaia_engine_minigames::muscle_dome::HubScreen::opponent_card(),
+                ));
             }
             self.interval = None;
             self.backdrop = None;
@@ -636,20 +641,24 @@ impl HubTimers {
         if !leg_open && self.prev_leg_open && self.prev_contest_open {
             // The leg boundary the arena hub sees; whether it shows the tally
             // screen is the shared rule's call.
-            let raises =
-                md::leg_boundary_raises_interval(mg.muscle_contest.as_ref().map(|c| c.state()));
+            let raises = legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(
+                mg.muscle_contest.as_ref().map(|c| c.state()),
+            );
             // The tally's four lanes step one row per tick after the shared
             // lead-in, and the last cue lands on the staggered countdown, so
             // the roll cannot be shorter than that stagger.
-            let roll = md::HUB_TALLY_ROLL_LEAD_TICKS
-                + *md::HUB_TALLY_CUE_STAGGER.last().unwrap_or(&0) as i32;
-            self.interval = raises.then(|| md::HubScreen::interval(roll));
+            let roll = legaia_engine_minigames::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS
+                + *legaia_engine_minigames::muscle_dome::HUB_TALLY_CUE_STAGGER
+                    .last()
+                    .unwrap_or(&0) as i32;
+            self.interval =
+                raises.then(|| legaia_engine_minigames::muscle_dome::HubScreen::interval(roll));
             if raises {
                 // Arm `0x0A`'s first frame (`DAT_801D1A7C == 0`) fills the
                 // whole ring: ids and countdowns, slot by slot.
                 out.ring_cues = (0u8..)
-                    .zip(md::HUB_TALLY_CUES)
-                    .zip(md::HUB_TALLY_CUE_STAGGER)
+                    .zip(legaia_engine_minigames::muscle_dome::HUB_TALLY_CUES)
+                    .zip(legaia_engine_minigames::muscle_dome::HUB_TALLY_CUE_STAGGER)
                     .map(|((slot, id), delay)| (slot, id, i16::from(delay)))
                     .collect();
             }
@@ -683,10 +692,9 @@ impl HubTimers {
         // The backdrop rides the INTERVAL screen's arms, then runs its own
         // return + ROUND-card arms once the screen has gone.
         if let Some(backdrop) = self.backdrop.as_mut() {
-            let lane0_full = self
-                .tally
-                .as_ref()
-                .is_some_and(|(ramp, _)| ramp.fade[0] >= crate::other_game_overlay::LANE_FADE_FULL);
+            let lane0_full = self.tally.as_ref().is_some_and(|(ramp, _)| {
+                ramp.fade[0] >= legaia_engine_minigames::other_game_overlay::LANE_FADE_FULL
+            });
             backdrop.tick(1, pad, self.interval.map(|i| i.stage()), lane0_full);
             if backdrop.card_brightness().is_some() {
                 self.card_round = Some(round);
@@ -895,7 +903,7 @@ mod tests {
         );
         assert!(leg_open_raises_round_card(Some(2), 3));
     }
-    use legaia_asset::ringside_still::{PROT_INDEX_DEFAULT, PROT_INDEX_LOW_HP};
+    use legaia_minigame_formats::ringside_still::{PROT_INDEX_DEFAULT, PROT_INDEX_LOW_HP};
 
     #[test]
     fn below_half_hp_picks_the_second_still() {

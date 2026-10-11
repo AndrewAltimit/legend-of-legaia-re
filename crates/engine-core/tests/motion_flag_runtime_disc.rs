@@ -17,11 +17,13 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` / extracted assets are missing
 //! (CLAUDE.md disc-gated convention).
 
-use legaia_asset::man_motion::{self, MotionFlagKind};
-use legaia_engine_core::man_field_scripts::{MotionCensusSite, motion_flag_census};
+use legaia_engine_core::man_field_scripts::motion_flag_census;
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{FieldNpcAmbient, SceneMode, World};
-use legaia_engine_vm::ambient_motion::AmbientMotion;
+use legaia_engine_core::world::{FieldNpcAmbient, World};
+use legaia_engine_field::man_field_scripts::MotionCensusSite;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_motion_vm::ambient_motion::AmbientMotion;
+use legaia_scene_formats::man_motion::{self, MotionFlagKind};
 use std::path::PathBuf;
 
 /// `World::terrain.collision_grid` is a `0x80 x 0x80` byte grid; the
@@ -58,7 +60,7 @@ fn code_at_site(index: &ProtIndex, s: &MotionCensusSite) -> Option<Vec<u8>> {
     let carriers = legaia_engine_core::man_field_scripts::scene_man_carriers(index, &scene);
     let carrier = carriers.iter().find(|c| c.entry_idx == s.entry_idx)?;
     let man = &carrier.payload;
-    let man_file = legaia_asset::man_section::parse(man).ok()?;
+    let man_file = legaia_scene_formats::man_section::parse(man).ok()?;
     let records = man_motion::motion_records(man, &man_file);
     let rec = records.get(s.site.record)?;
     let variant = man_motion::stream_variants(man, rec)

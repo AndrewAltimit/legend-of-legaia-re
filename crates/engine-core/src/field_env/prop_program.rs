@@ -163,9 +163,9 @@ const ANIM_BITS: &[u8] = &[1, 3, 7, 8, 9];
 /// (`0x2B` / `0x2C` / `0x2D` on `actor+0x62`, `0x4C` nibble-3 sub-5/6, `0x4C`
 /// nibble-4 sub-1)
 pub fn decode_prop_program(record: &[u8], pc0: usize) -> PropProgram {
-    use legaia_asset::field_disasm::{FlagKind, InsnInfo, LinearWalker, MenuCtrlKind};
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, MenuCtrlKind};
 
-    let anim_cmd = |insn: &legaia_asset::field_disasm::Insn| -> Option<AnimCmd> {
+    let anim_cmd = |insn: &legaia_scene_formats::field_disasm::Insn| -> Option<AnimCmd> {
         // Cross-context writes target a different actor's record, not this
         // prop's - retail's `0x2B`/`0x2C` write `iVar18 + 0x62`, the executing
         // context's own actor.
@@ -297,7 +297,7 @@ pub fn prop_spawn_free_runs(man_file: &ManFile, man: &[u8], record: usize) -> bo
 /// itself when the record carries no `0x24`/`0x25` prologue marker (retail
 /// skips the prologue run entirely then).
 pub(super) fn parked_pc_after_prologue(record: &[u8], pc0: usize) -> usize {
-    use legaia_asset::field_disasm::LinearWalker;
+    use legaia_scene_formats::field_disasm::LinearWalker;
     if !matches!(record.get(pc0), Some(0x24) | Some(0x25)) {
         return pc0;
     }

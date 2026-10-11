@@ -1,6 +1,6 @@
 //! Savestate cross-check for the static SFX descriptor table (`DAT_8006F198`).
 //!
-//! `legaia_asset::sfx_table` parses the 100-entry table out of `SCUS_942.54`.
+//! `legaia_game_tables::sfx_table` parses the 100-entry table out of `SCUS_942.54`.
 //! This test proves the parse against **ground-truth live RAM**: it reads the
 //! same VA window out of a catalogued mednafen save state's main RAM and parses
 //! it with the identical decoder, then drives the disc-decoded descriptors into
@@ -12,9 +12,10 @@
 //! passes when neither `scripts/scenarios.toml` + a library backup is present
 //! (CI has no Sony bytes).
 
-use legaia_asset::sfx_table::{SFX_TABLE_ENTRIES, SFX_TABLE_VA, SfxTable};
 use legaia_engine_audio::SfxBank;
-use legaia_mednafen::{SaveState, ScenarioManifest, ram_slice};
+use legaia_game_tables::sfx_table::{SFX_TABLE_ENTRIES, SFX_TABLE_VA, SfxTable};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::{ScenarioManifest, ram_slice};
 use std::path::PathBuf;
 
 fn first_existing<const N: usize>(cands: [&str; N]) -> Option<PathBuf> {

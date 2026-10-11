@@ -32,8 +32,8 @@
 //! host can drift on the packed-pad conversion, the equip commit or the
 //! record-counter reads without the gate failing.
 
-use legaia_engine_core::dev_menu::retail_packed;
 use legaia_engine_core::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage};
+use legaia_engine_system::pad::retail_packed;
 use legaia_engine_ui::{self as ui, RecordsLabels, TextDraw};
 use wasm_bindgen::prelude::*;
 
@@ -50,7 +50,7 @@ const DEV_RECORDS_PEN: (i32, i32) = (24, 40);
 
 /// Pad bit that swaps the row list for the Records page (unused by every
 /// [`DevMenuSession`] row, so it steals nothing).
-const RECORDS_TOGGLE: u16 = legaia_engine_core::dev_menu::PACK_SQUARE;
+const RECORDS_TOGGLE: u16 = legaia_engine_system::pad::PACK_SQUARE;
 
 /// The records page's heading strings. Retail keeps them in the world-map
 /// overlay's data segment; the builder takes them from the caller so no game

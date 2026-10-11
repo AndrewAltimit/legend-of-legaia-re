@@ -2,7 +2,7 @@
 //! spawns with +35% stats, and whose captured Seru deals +35% damage forever.
 //!
 //! Mirrors the engine implementation in
-//! `legaia_engine_core::seru_learning` (the `shiny` set + `SHINY_DAMAGE_BONUS_PCT`)
+//! `legaia_engine_battle::seru_learning` (the `shiny` set + `SHINY_DAMAGE_BONUS_PCT`)
 //! as a retail disc patch, built from the same `enemy_ally`-style code injection.
 //!
 //! ## What "shiny" means on retail

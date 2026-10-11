@@ -12,7 +12,8 @@
 //! disc-derived on native and fetched differently in the browser, so each
 //! host installs its own before calling in.
 
-use crate::world::{SceneMode, World};
+use crate::world::World;
+use legaia_engine_mode::mode::SceneMode;
 
 /// How much of the live gameplay loop to arm.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -43,14 +44,14 @@ pub struct LiveLoopOpts {
 impl LiveLoopOpts {
     /// The shipped default: the full loop, player-driven, and the
     /// Battle↔Field BGM swap on retail's standard random-encounter theme
-    /// ([`crate::music_labels::BATTLE_THEME_1_BGM_ID`] - the `battle_id == 0`
+    /// ([`legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID`] - the `battle_id == 0`
     /// track the intro's bundle load selects). A host that knows a
     /// scene-specific battle track overrides it; `None` disables the swap.
     pub fn playable() -> Self {
         Self {
             live_loop: true,
             player_battle: true,
-            battle_bgm: Some(crate::music_labels::BATTLE_THEME_1_BGM_ID),
+            battle_bgm: Some(legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID),
         }
     }
 }
@@ -70,10 +71,10 @@ impl World {
 
         if self.encounters.session.is_none() && matches!(self.mode, SceneMode::Field) {
             self.set_formation_table(
-                crate::monster_catalog::vanilla_formation_table(),
-                crate::monster_catalog::vanilla_monster_catalog(),
+                legaia_engine_battle::monster_catalog::vanilla_formation_table(),
+                legaia_engine_battle::monster_catalog::vanilla_monster_catalog(),
             );
-            let registry = crate::encounter_registry::vanilla_encounter_registry();
+            let registry = legaia_engine_battle::encounter_registry::vanilla_encounter_registry();
             self.install_encounter_for_scene(&registry, scene);
         }
 
@@ -83,7 +84,7 @@ impl World {
         self.set_battle_bgm(opts.battle_bgm);
         if opts.player_battle {
             self.battle.player_driven = true;
-            self.set_seru_registry(crate::seru_learning::SeruRegistry::retail());
+            self.set_seru_registry(legaia_engine_battle::seru_learning::SeruRegistry::retail());
         }
         self.refresh_encounter_rollable();
         if self.toggles.live_gameplay_loop && !self.encounters.scene_rollable {
@@ -160,7 +161,7 @@ impl World {
     /// tables: the overworld asks its region tracker, a field scene asks its
     /// per-region tracker when one is routed (only the story-flag group the
     /// condition walk selected counts, and regions shadow in group order -
-    /// see [`crate::region_encounter::RegionEncounterTable::any_rollable`])
+    /// see [`legaia_engine_battle::region_encounter::RegionEncounterTable::any_rollable`])
     /// and otherwise falls back to the aggregated mean-rate session. Either
     /// field path additionally needs the session installed, because the
     /// session owns the transition / grace bracketing a trigger goes through.

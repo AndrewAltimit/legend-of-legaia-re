@@ -15,14 +15,14 @@ pub struct ScreenFxState {
     /// (retail state `0x66` spawns the `DAT_801C9070` black→white ramp via
     /// the fade-primitive spawner `FUN_80024E80`). Stepped once per
     /// [`crate::world::World::tick`]; dropped when the ramp completes. Hosts draw an
-    /// overlay from [`crate::fade::FadeState::rgb`] while this is `Some`.
-    pub fade: Option<crate::fade::FadeState>,
+    /// overlay from [`legaia_engine_system::fade::FadeState::rgb`] while this is `Some`.
+    pub fade: Option<legaia_engine_system::fade::FadeState>,
     /// Further full-screen fades running beside [`Self::fade`]: retail's
     /// fade spawner allocates a pool actor per call, so a module can run its
     /// own ramps while the summon band's flash is still up (PROT 0905's
     /// white rise over the band's flash-out). Stepped and drawn like
     /// [`Self::fade`], dropped as each lands; cleared with the battle.
-    pub(crate) module_fades: Vec<crate::fade::FadeState>,
+    pub(crate) module_fades: Vec<legaia_engine_system::fade::FadeState>,
     /// The live **screen-effect colour tween** the field VM's op `0x34`
     /// sub-0 arm installs - the pool slot retail keeps in `_DAT_8007B62C`.
     ///
@@ -51,16 +51,16 @@ pub struct ScreenFxState {
     /// `FUN_8003F3FC`: it fades the fog sheets, not the frame. Persists
     /// across scene changes (the departure arm's ramp to `0` carries in).
     /// Stepped once per [`crate::world::World::tick`]; dropped once neutral.
-    pub tint: Option<crate::fade::SceneTintRamp>,
+    pub tint: Option<legaia_engine_system::fade::SceneTintRamp>,
     /// Screen-effect widget host (the PROT-0900 mask / sprite / panel /
     /// letterbox family), driven by the field-VM op `0x43` sub-ops
     /// `0x10`/`0x11`/`0x13`/`0x14`/`0x15` - the ending-scene widget
-    /// path. See [`crate::screen_fx`].
-    pub fx: crate::screen_fx::ScreenFxHost,
+    /// path. See [`legaia_engine_effects::screen_fx`].
+    pub fx: legaia_engine_effects::screen_fx::ScreenFxHost,
     /// The current frame's widget draw list, refreshed by the Field /
     /// Cutscene tick while any widget is live ([`crate::world::World::tick_screen_fx`]).
     /// Renderers composite these 2D overlays above the scene.
-    pub fx_frame: crate::screen_fx::ScreenFxFrame,
+    pub fx_frame: legaia_engine_effects::screen_fx::ScreenFxFrame,
     /// The live cinematic bar emitter (field-VM op `0x43` sub-`0xC`, retail
     /// template `0x801F2858` / tick `FUN_801DD784`). One at a time, because
     /// its spawner is the one op that allocates it and its envelope retires

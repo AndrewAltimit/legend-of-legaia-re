@@ -16,7 +16,7 @@
 //! tabulates them. Its one dumped caller, the battle anim commit
 //! `FUN_8004AD80`, appends `{0xC2, id}` - the item-name token - to the
 //! death-spoils captions (steal attack / thief's loot, HUD element `0x5B`),
-//! and `legaia_engine_core::battle_steal::compose_caption` makes the same
+//! and `legaia_engine_battle::battle_steal::compose_caption` makes the same
 //! call when a slain monster's knockdown ends.
 
 /// Byte offset of a MES-markup string's terminator - the write cursor
@@ -24,7 +24,7 @@
 ///
 // PORT: FUN_8003cb54
 ///
-/// WIRED: `legaia_engine_core::battle_steal::compose_caption`, from the
+/// WIRED: `legaia_engine_battle::battle_steal::compose_caption`, from the
 /// death-spoils arm `World::resolve_monster_death_spoils` both hosts run.
 ///
 /// The buffer is dialog bytecode, so the walk is the standard glyph-stride
@@ -63,7 +63,7 @@ pub fn mes_string_end_offset(s: &[u8]) -> usize {
 ///
 // PORT: FUN_8003cb54
 ///
-/// WIRED: `legaia_engine_core::battle_steal::compose_caption`, from the
+/// WIRED: `legaia_engine_battle::battle_steal::compose_caption`, from the
 /// death-spoils arm `World::resolve_monster_death_spoils` both hosts run.
 ///
 /// `tag` is a `0xC0..=0xCF` escape opcode and `arg` its argument - retail's one

@@ -82,13 +82,13 @@ pub struct VitalFrameCell {
 
 /// PORT: FUN_801d2afc (`0x801D2C9C`..`0x801D2DAC`) - the VITAL bar frames.
 ///
-/// Each side lays the [`legaia_asset::baka_opponents::HUD_BAR_FRAME_CELLS`]
+/// Each side lays the [`legaia_minigame_formats::baka_opponents::HUD_BAR_FRAME_CELLS`]
 /// table cells left to right from [`VITAL_FRAME_X`], each `width` wide - the
 /// cap, the stretched body, the cap. There is no "VITAL" label in the duel
 /// HUD: widget `0x18` is only drawn by the select screen (`0x801D2450`).
 pub fn vital_frame_cells(
     side: usize,
-    cells: &[legaia_asset::baka_opponents::BakaBarFrameCell],
+    cells: &[legaia_minigame_formats::baka_opponents::BakaBarFrameCell],
 ) -> Vec<VitalFrameCell> {
     let mut x = VITAL_FRAME_X[side.min(1)];
     cells

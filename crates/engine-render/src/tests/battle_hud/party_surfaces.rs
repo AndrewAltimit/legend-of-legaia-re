@@ -1,6 +1,9 @@
 //! The party surface: resting roster panels, the active-actor bar, the message bar, plates and host-box parking.
 
 use super::*;
+use legaia_engine_ui::BattleHudFrame;
+use legaia_engine_ui::battle_hud_draws_for;
+use legaia_engine_ui::gauge_fill_color;
 
 /// At rest the party draws as **roster panels**, not a bar: one 102x48 panel
 /// per live member at the packet-pinned seat, name pen `+5` inside it.

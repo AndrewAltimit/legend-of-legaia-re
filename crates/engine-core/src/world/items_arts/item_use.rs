@@ -2,50 +2,55 @@
 //! (status clear, fury boost, arts book, point card, buffs and stat raises).
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Use an item from the catalog against a target slot. Wraps the
     /// `items::apply_effect` resolution and folds the outcome back into
     /// world state (HP/MP deltas, status cure, revive HP). Returns the
-    /// resolved [`crate::items::ItemOutcome`] so the engine can drive
+    /// resolved [`legaia_engine_menus::items::ItemOutcome`] so the engine can drive
     /// dialog / SFX / visual cues.
     ///
-    /// Returns [`crate::items::ItemOutcome::NoEffect`] when:
+    /// Returns [`legaia_engine_menus::items::ItemOutcome::NoEffect`] when:
     ///   - the item id is not in the catalog,
     ///   - or the target slot is out of range.
     ///
     /// HP / MP changes are clamped to the actor's max values. Cure /
     /// CureAll outcomes also clear the corresponding entries from the
     /// `StatusEffectTracker`.
-    pub fn use_item(&mut self, item_id: u8, target_slot: u8) -> crate::items::ItemOutcome {
+    pub fn use_item(
+        &mut self,
+        item_id: u8,
+        target_slot: u8,
+    ) -> legaia_engine_menus::items::ItemOutcome {
         let entry = match self.tables.item_catalog.get(item_id) {
             Some(e) => *e,
-            None => return crate::items::ItemOutcome::NoEffect,
+            None => return legaia_engine_menus::items::ItemOutcome::NoEffect,
         };
         // Permanent multi-stat boost (class-6 Water line): resolved from the
         // on-disc effect table (which this path needs anyway), not the pure
         // table-less `apply_effect`.
-        if let crate::items::ItemEffect::StatUp = entry.effect {
+        if let legaia_engine_menus::items::ItemEffect::StatUp = entry.effect {
             return self.apply_stat_up_item(item_id, target_slot);
         }
         // One-battle stat buff (class-7 Elixir): ramps the target's battle-actor
         // stat scalars by ×6/5, resolved from the on-disc table.
-        if let crate::items::ItemEffect::BattleBuff = entry.effect {
+        if let legaia_engine_menus::items::ItemEffect::BattleBuff = entry.effect {
             return self.apply_buff_item(item_id, target_slot);
         }
         // One-battle action-gauge extension (class-5 Fury Boost): extends the
         // target's AP gauge for the rest of the battle.
-        if let crate::items::ItemEffect::ActionGauge = entry.effect {
+        if let legaia_engine_menus::items::ItemEffect::ActionGauge = entry.effect {
             return self.apply_fury_boost_item(target_slot);
         }
         // Hyper-Art book (class 11/12/13): the applier's ordered insert into a
         // fixed character's displayed-skill list. The target the player picked
         // is not read at all - the class picks the record.
-        if let crate::items::ItemEffect::ArtsBook = entry.effect {
+        if let legaia_engine_menus::items::ItemEffect::ArtsBook = entry.effect {
             return self.apply_arts_book_item(item_id);
         }
         // Point Card strike (class 14): discharge the bank onto the target.
-        if let crate::items::ItemEffect::PointCardStrike = entry.effect {
+        if let legaia_engine_menus::items::ItemEffect::PointCardStrike = entry.effect {
             return self.apply_point_card_strike(target_slot);
         }
         let idx = target_slot as usize;
@@ -76,10 +81,12 @@ impl World {
             .status_effects
             .statuses(target_slot)
             .iter()
-            .fold(0u8, |m, s| m | crate::items::status_bit(s.kind));
+            .fold(0u8, |m, s| {
+                m | legaia_engine_menus::items::status_bit(s.kind)
+            });
         let snapshot = if field_roster {
             let hms = self.party.roster.members[idx].hp_mp_sp();
-            crate::items::TargetSnapshot {
+            legaia_engine_menus::items::TargetSnapshot {
                 hp: hms.hp_cur,
                 hp_max: hms.hp_max,
                 mp: hms.mp_cur,
@@ -89,7 +96,7 @@ impl World {
             }
         } else {
             match self.actors.get(idx) {
-                Some(a) => crate::items::TargetSnapshot {
+                Some(a) => legaia_engine_menus::items::TargetSnapshot {
                     hp: a.battle.hp,
                     hp_max: a.battle.max_hp,
                     mp: a.battle.mp,
@@ -102,15 +109,15 @@ impl World {
                     is_dead: a.battle.hp == 0 && a.battle.max_hp > 0,
                     status_mask,
                 },
-                None => return crate::items::ItemOutcome::NoEffect,
+                None => return legaia_engine_menus::items::ItemOutcome::NoEffect,
             }
         };
         if let Some(outcome) = self.apply_status_clear_item(item_id, target_slot, snapshot.hp) {
             return outcome;
         }
-        let outcome = crate::items::apply_effect(entry.effect, &snapshot);
+        let outcome = legaia_engine_menus::items::apply_effect(entry.effect, &snapshot);
         match outcome {
-            crate::items::ItemOutcome::HealedHp { amount } => {
+            legaia_engine_menus::items::ItemOutcome::HealedHp { amount } => {
                 if field_roster {
                     let rec = &mut self.party.roster.members[idx];
                     let mut hms = rec.hp_mp_sp();
@@ -121,7 +128,7 @@ impl World {
                     a.battle.hp = a.battle.hp.saturating_add(amount).min(a.battle.max_hp);
                 }
             }
-            crate::items::ItemOutcome::HealedMp { amount } => {
+            legaia_engine_menus::items::ItemOutcome::HealedMp { amount } => {
                 if field_roster {
                     let rec = &mut self.party.roster.members[idx];
                     let mut hms = rec.hp_mp_sp();
@@ -138,13 +145,13 @@ impl World {
                     a.battle.mp = a.battle.mp.saturating_add(amount).min(cap);
                 }
             }
-            crate::items::ItemOutcome::Cured { kind } => {
+            legaia_engine_menus::items::ItemOutcome::Cured { kind } => {
                 self.battle.status_effects.cure(target_slot, kind);
             }
-            crate::items::ItemOutcome::CuredAll => {
+            legaia_engine_menus::items::ItemOutcome::CuredAll => {
                 self.battle.status_effects.cure_all(target_slot);
             }
-            crate::items::ItemOutcome::Revived { hp_after } => {
+            legaia_engine_menus::items::ItemOutcome::Revived { hp_after } => {
                 if field_roster {
                     let rec = &mut self.party.roster.members[idx];
                     let mut hms = rec.hp_mp_sp();
@@ -169,13 +176,13 @@ impl World {
                     }
                 }
             }
-            crate::items::ItemOutcome::SpiritGained { amount }
+            legaia_engine_menus::items::ItemOutcome::SpiritGained { amount }
                 if idx < self.battle.ap_gauges.len() =>
             {
                 // Refund AP into the active actor's gauge if it's a party slot.
                 self.battle.ap_gauges[idx].refund(amount);
             }
-            crate::items::ItemOutcome::DamageDealt { amount } => {
+            legaia_engine_menus::items::ItemOutcome::DamageDealt { amount } => {
                 // Offensive item (e.g. Bomb): subtract HP from the enemy slot
                 // and down it if it reaches zero.
                 if let Some(a) = self.actors.get_mut(idx) {
@@ -185,18 +192,18 @@ impl World {
                     }
                 }
             }
-            crate::items::ItemOutcome::CaptureRolled { strength } => {
+            legaia_engine_menus::items::ItemOutcome::CaptureRolled { strength } => {
                 // Capture item: roll against the enemy's missing-HP fraction
                 // (shared with the Magic capture path); a success downs the
                 // monster and logs its id into `battle_captures`.
                 self.resolve_capture(target_slot, strength.min(u8::MAX as u16) as u8);
             }
-            crate::items::ItemOutcome::EscapeRequested => {
+            legaia_engine_menus::items::ItemOutcome::EscapeRequested => {
                 // Escape item (e.g. Goblin Foot): flag the encounter to end;
                 // the battle item-menu tick returns to the field.
                 self.battle.escaped = true;
             }
-            crate::items::ItemOutcome::StatRaised { target, delta } => {
+            legaia_engine_menus::items::ItemOutcome::StatRaised { target, delta } => {
                 // Permanent stat-up consumable (Power Tonic, Vital Tonic, ...):
                 // raise the persistent roster record and refresh the live
                 // derived values so the gain shows immediately and survives a
@@ -236,15 +243,16 @@ impl World {
         item_id: u8,
         target_slot: u8,
         hp: u16,
-    ) -> Option<crate::items::ItemOutcome> {
+    ) -> Option<legaia_engine_menus::items::ItemOutcome> {
         use legaia_engine_battle_vm::status_effects::StatusKind;
         let class = self.tables.item_effects.as_ref()?.effect(item_id)?.class;
-        if class != vm::battle_action::EFFECT_SELECTOR_STATUS_CLEAR {
+        if class != legaia_engine_battle_vm::battle_action::EFFECT_SELECTOR_STATUS_CLEAR {
             return None;
         }
         let word = self.battle.status_effects.display_flags(target_slot);
-        let Some(after) = vm::battle_action::selector_status_clear(hp, word) else {
-            return Some(crate::items::ItemOutcome::NoEffect);
+        let Some(after) = legaia_engine_battle_vm::battle_action::selector_status_clear(hp, word)
+        else {
+            return Some(legaia_engine_menus::items::ItemOutcome::NoEffect);
         };
         let cleared = word & !after;
         let mut first = None;
@@ -256,8 +264,8 @@ impl World {
             }
         }
         Some(match first {
-            Some(kind) => crate::items::ItemOutcome::Cured { kind },
-            None => crate::items::ItemOutcome::NoEffect,
+            Some(kind) => legaia_engine_menus::items::ItemOutcome::Cured { kind },
+            None => legaia_engine_menus::items::ItemOutcome::NoEffect,
         })
     }
 
@@ -283,7 +291,7 @@ impl World {
     }
 
     /// Apply a one-battle action-gauge extension
-    /// ([`crate::items::ItemEffect::ActionGauge`], Fury Boost) to party
+    /// ([`legaia_engine_menus::items::ItemEffect::ActionGauge`], Fury Boost) to party
     /// `target_slot`. Retail sets the actor `+0x1F9` flag, and the action-SM
     /// gauge-build phase then sizes the gauge as `gauge_stat * 7 / 5 + 8`
     /// (clamped) instead of the base length. The engine models the AP gauge as a
@@ -294,20 +302,23 @@ impl World {
     /// survives [`ApGauge::reset_for_turn`]) and the live gauge gains the delta
     /// immediately; it is reverted at battle end ([`Self::finish_battle`]).
     /// Idempotent within a battle (a second Fury Boost re-sets the already-set
-    /// flag, no extra gauge). Returns [`crate::items::ItemOutcome::NoEffect`] for
+    /// flag, no extra gauge). Returns [`legaia_engine_menus::items::ItemOutcome::NoEffect`] for
     /// a non-party slot.
     ///
     /// The flag itself is the battle actor's `+0x1F9` byte
-    /// ([`legaia_engine_vm::battle_action::BattleActor::spirit_shield`]), and
+    /// ([`legaia_engine_battle_vm::battle_action::BattleActor::spirit_shield`]), and
     /// that is what the live gauge reads: the round boundary
     /// ([`crate::battle_round::BattleRound::boundary`], `FUN_801D88CC` loop A)
     /// restores `+0x154` - the arts entry's command pool - to
     /// `base * 7 / 5 + 8` (cap `0x120`) while it is up. The `ApGauge` budget
     /// alone reached neither, so a Fury Boost bought a player nothing.
-    fn apply_fury_boost_item(&mut self, target_slot: u8) -> crate::items::ItemOutcome {
+    fn apply_fury_boost_item(
+        &mut self,
+        target_slot: u8,
+    ) -> legaia_engine_menus::items::ItemOutcome {
         let idx = target_slot as usize;
         if idx >= self.battle.ap_gauges.len() {
-            return crate::items::ItemOutcome::NoEffect;
+            return legaia_engine_menus::items::ItemOutcome::NoEffect;
         }
         if let Some(a) = self.actors.get_mut(idx) {
             a.battle.spirit_shield = 1;
@@ -323,10 +334,10 @@ impl World {
             gauge.current_ap = gauge.current_ap.saturating_add(delta);
             self.battle.fury_boost[idx] = Some(delta);
         }
-        crate::items::ItemOutcome::ActionGaugeExtended
+        legaia_engine_menus::items::ItemOutcome::ActionGaugeExtended
     }
 
-    /// Apply a Hyper-Art **book** ([`crate::items::ItemEffect::ArtsBook`], the
+    /// Apply a Hyper-Art **book** ([`legaia_engine_menus::items::ItemEffect::ArtsBook`], the
     /// class-`11`/`12`/`13` consumables Fire / Wind / Thunder Book I..III).
     ///
     /// The engine's stand-in for applier selectors `0x0B`..`0x0D`
@@ -341,7 +352,7 @@ impl World {
     ///   book lines do not share a tier space.
     ///
     /// The insert itself is
-    /// [`legaia_engine_vm::battle_action::selector_insert_displayed_skill`] -
+    /// [`legaia_engine_battle_vm::battle_action::selector_insert_displayed_skill`] -
     /// the ordered (ascending-by-id) insert into the record's `+0x185` count /
     /// `+0x186` id list, which `WorldFieldHost::learned_arts` already reads
     /// back for the battle AI's auto-fill queue.
@@ -349,40 +360,42 @@ impl World {
     /// Retail's out-of-battle leg also raises the "learned" notification
     /// (`jal 0x80035C00` at `0x8004208C`, skipped when the mode word
     /// `0x8007B83C` is `0x15`); the engine surfaces that as the returned
-    /// [`crate::items::ItemOutcome::ArtLearned`] instead of a side channel, so
+    /// [`legaia_engine_menus::items::ItemOutcome::ArtLearned`] instead of a side channel, so
     /// a host can bannerise it on the field and stay quiet in battle.
     ///
-    /// Returns [`crate::items::ItemOutcome::NoEffect`] when no effect table is
+    /// Returns [`legaia_engine_menus::items::ItemOutcome::NoEffect`] when no effect table is
     /// installed, when the id is not a book, when the class names a roster slot
     /// the party does not have, or when the list is already full.
-    fn apply_arts_book_item(&mut self, item_id: u8) -> crate::items::ItemOutcome {
+    fn apply_arts_book_item(&mut self, item_id: u8) -> legaia_engine_menus::items::ItemOutcome {
         let Some(eff) = self
             .tables
             .item_effects
             .as_ref()
             .and_then(|t| t.effect(item_id))
         else {
-            return crate::items::ItemOutcome::NoEffect;
+            return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
-        if !crate::items::ARTS_BOOK_CLASSES.contains(&eff.class) {
-            return crate::items::ItemOutcome::NoEffect;
+        if !legaia_engine_menus::items::ARTS_BOOK_CLASSES.contains(&eff.class) {
+            return legaia_engine_menus::items::ItemOutcome::NoEffect;
         }
-        let rslot = usize::from(eff.class - crate::items::ARTS_BOOK_CLASS_BASE);
+        let rslot = usize::from(eff.class - legaia_engine_menus::items::ARTS_BOOK_CLASS_BASE);
         let Some(rec) = self.party.roster.members.get_mut(rslot) else {
-            return crate::items::ItemOutcome::NoEffect;
+            return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
         let mut list = rec.displayed_skills();
         let mut count = list.count;
-        let Some(position) = legaia_engine_vm::battle_action::selector_insert_displayed_skill(
-            &mut list.ids,
-            &mut count,
-            eff.tier,
-        ) else {
-            return crate::items::ItemOutcome::NoEffect;
+        let Some(position) =
+            legaia_engine_battle_vm::battle_action::selector_insert_displayed_skill(
+                &mut list.ids,
+                &mut count,
+                eff.tier,
+            )
+        else {
+            return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
         list.count = count;
         rec.set_displayed_skills(list);
-        crate::items::ItemOutcome::ArtLearned {
+        legaia_engine_menus::items::ItemOutcome::ArtLearned {
             character: rslot as u8,
             art_id: eff.tier,
             position: position as u8,
@@ -398,21 +411,24 @@ impl World {
     /// the amount as HP damage with the band's kill-capable clamp, and stages
     /// the victim's reaction clip through the cast band's three-leg pick. The
     /// arithmetic is
-    /// [`legaia_engine_vm::battle_action::selector_point_card`]; this is the
+    /// [`legaia_engine_battle_vm::battle_action::selector_point_card`]; this is the
     /// seat that gives it a bank and a victim.
     ///
     /// **No shipped item reaches it.** Decoding all 256 static item rows
     /// through the effect descriptors finds no class-`14` row, so on the retail
     /// disc this is reachable code over unreachable data; an edited effect
     /// table opens it. The catalog seeder
-    /// ([`crate::items::ItemCatalog::apply_point_card_items`]) therefore sweeps
+    /// ([`legaia_engine_menus::items::ItemCatalog::apply_point_card_items`]) therefore sweeps
     /// the id space rather than naming ids.
-    fn apply_point_card_strike(&mut self, target_slot: u8) -> crate::items::ItemOutcome {
-        use legaia_engine_vm::battle_action::{PointCardVictim, selector_point_card};
+    fn apply_point_card_strike(
+        &mut self,
+        target_slot: u8,
+    ) -> legaia_engine_menus::items::ItemOutcome {
+        use legaia_engine_battle_vm::battle_action::{PointCardVictim, selector_point_card};
         let counter = self.minigames.point_card.max(0) as u32;
         let idx = target_slot as usize;
         let Some(a) = self.actors.get_mut(idx) else {
-            return crate::items::ItemOutcome::NoEffect;
+            return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
         let p = |i: usize| a.battle.params.get(i - 0x1DF).copied().unwrap_or(0);
         let victim = PointCardVictim {
@@ -423,7 +439,7 @@ impl World {
             restage: 0,
         };
         let Some(d) = selector_point_card(counter, victim) else {
-            return crate::items::ItemOutcome::NoEffect;
+            return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
         a.battle.hp = d.hp;
         a.battle.queued_anim = d.staged_anim;
@@ -431,13 +447,13 @@ impl World {
             a.battle.liveness = 0;
         }
         self.minigames.point_card = d.remaining as i32;
-        crate::items::ItemOutcome::PointCardSpent {
+        legaia_engine_menus::items::ItemOutcome::PointCardSpent {
             spent: d.spent,
             remaining: d.remaining,
         }
     }
 
-    /// Apply a one-battle stat buff ([`crate::items::ItemEffect::BattleBuff`],
+    /// Apply a one-battle stat buff ([`legaia_engine_menus::items::ItemEffect::BattleBuff`],
     /// the class-7 Elixirs) to `target_slot`. The buffed stats are resolved from
     /// the installed on-disc item-effect table; each is ramped ×6/5 for the rest
     /// of the battle through the shared buff path ([`Self::apply_battle_buff`],
@@ -445,11 +461,15 @@ impl World {
     /// revert-on-expiry / revert-at-battle-end bookkeeping. `Defense` ramps the
     /// single defence scalar; `Agility` maps to the accuracy/evasion proxy (no
     /// live scalar yet, so it only runs the turn timer, like a buff spell on
-    /// Speed). Returns [`crate::items::ItemOutcome::NoEffect`] when no table is
+    /// Speed). Returns [`legaia_engine_menus::items::ItemOutcome::NoEffect`] when no table is
     /// installed or the id isn't a one-battle buff.
-    fn apply_buff_item(&mut self, item_id: u8, target_slot: u8) -> crate::items::ItemOutcome {
-        use crate::spells::BuffStat;
-        use legaia_asset::item_effect::{StatItemEffect, StatTarget};
+    fn apply_buff_item(
+        &mut self,
+        item_id: u8,
+        target_slot: u8,
+    ) -> legaia_engine_menus::items::ItemOutcome {
+        use legaia_engine_battle::spells::BuffStat;
+        use legaia_game_tables::item_effect::{StatItemEffect, StatTarget};
         // "One battle": a turn count large enough to outlast the encounter; the
         // buff is reverted wholesale at battle end (`finish_battle`).
         const ONE_BATTLE: u8 = u8::MAX;
@@ -463,7 +483,7 @@ impl World {
             .as_ref()
             .and_then(|t| t.stat_effect(item_id));
         let Some(StatItemEffect::BuffOneBattle(stats)) = resolved else {
-            return crate::items::ItemOutcome::NoEffect;
+            return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
         let mut count = 0u8;
         for stat in stats {
@@ -482,23 +502,27 @@ impl World {
             count = count.saturating_add(1);
         }
         if count == 0 {
-            crate::items::ItemOutcome::NoEffect
+            legaia_engine_menus::items::ItemOutcome::NoEffect
         } else {
-            crate::items::ItemOutcome::Buffed { count }
+            legaia_engine_menus::items::ItemOutcome::Buffed { count }
         }
     }
 
-    /// Apply a permanent multi-stat boost ([`crate::items::ItemEffect::StatUp`],
+    /// Apply a permanent multi-stat boost ([`legaia_engine_menus::items::ItemEffect::StatUp`],
     /// the class-6 *Water* line) to party slot `target_slot`. The per-stat
     /// changes are resolved from the installed on-disc item-effect table via the
-    /// item's `(class, tier)` descriptor (`legaia_asset::item_effect`), then each
+    /// item's `(class, tier)` descriptor (`legaia_game_tables::item_effect`), then each
     /// is applied through the shared [`Self::apply_stat_raise`] persistent path.
     /// `Defense` raises both defence facets (DEF-up + DEF-down), matching the
-    /// retail apply handler. Returns [`crate::items::ItemOutcome::NoEffect`] when
+    /// retail apply handler. Returns [`legaia_engine_menus::items::ItemOutcome::NoEffect`] when
     /// no table is installed or the id isn't a permanent stat-up.
-    fn apply_stat_up_item(&mut self, item_id: u8, target_slot: u8) -> crate::items::ItemOutcome {
-        use crate::items::StatBoostTarget as T;
-        use legaia_asset::item_effect::{StatItemEffect, StatTarget};
+    fn apply_stat_up_item(
+        &mut self,
+        item_id: u8,
+        target_slot: u8,
+    ) -> legaia_engine_menus::items::ItemOutcome {
+        use legaia_engine_menus::items::StatBoostTarget as T;
+        use legaia_game_tables::item_effect::{StatItemEffect, StatTarget};
         let idx = target_slot as usize;
         // Resolve to an owned value so the immutable table borrow is dropped
         // before the mutable `apply_stat_raise` calls.
@@ -508,7 +532,7 @@ impl World {
             .as_ref()
             .and_then(|t| t.stat_effect(item_id));
         let Some(StatItemEffect::Permanent(changes)) = resolved else {
-            return crate::items::ItemOutcome::NoEffect;
+            return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
         let mut raises: Vec<(T, u16)> = Vec::with_capacity(changes.len() + 1);
         for ch in &changes {
@@ -531,13 +555,13 @@ impl World {
             self.apply_stat_raise(idx, target, delta);
         }
         if count == 0 {
-            crate::items::ItemOutcome::NoEffect
+            legaia_engine_menus::items::ItemOutcome::NoEffect
         } else {
-            crate::items::ItemOutcome::StatsRaised { count }
+            legaia_engine_menus::items::ItemOutcome::StatsRaised { count }
         }
     }
 
-    /// Apply a permanent [`crate::items::ItemOutcome::StatRaised`] to party
+    /// Apply a permanent [`legaia_engine_menus::items::ItemOutcome::StatRaised`] to party
     /// slot `idx`: mutate the persistent character record and re-derive the
     /// live battle stats. HP/MP-max raises bump the live actor's caps (and
     /// current values) too; combat-stat raises land in the `+0x110` live-stat
@@ -548,8 +572,13 @@ impl World {
     /// battle traces), so the engine uses self-consistent rules: combat stats
     /// cap at the record's per-stat cap constant (fallback `999`), HP/MP max
     /// cap at `9999`, and a max raise refills the gained amount.
-    fn apply_stat_raise(&mut self, idx: usize, target: crate::items::StatBoostTarget, delta: u16) {
-        use crate::items::StatBoostTarget as T;
+    fn apply_stat_raise(
+        &mut self,
+        idx: usize,
+        target: legaia_engine_menus::items::StatBoostTarget,
+        delta: u16,
+    ) {
+        use legaia_engine_menus::items::StatBoostTarget as T;
         const STAT_CAP_FALLBACK: u16 = 999;
         const HPMP_CAP: u16 = 9999;
         if self.party.roster.members.get(idx).is_none() {

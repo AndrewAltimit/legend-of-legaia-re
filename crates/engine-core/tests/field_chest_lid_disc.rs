@@ -20,8 +20,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::SceneHost;
+use legaia_engine_system::input::PadButton;
 
 /// West Voz Forest - nine chests in one scene.
 const SCENE: &str = "vell";
@@ -52,16 +52,16 @@ fn enter(host: &mut SceneHost) {
     let scene = host.scene.as_ref().expect("scene");
     let scene_anm = scene.entries.iter().find_map(|e| {
         [3usize, 5, 6, 7].into_iter().find_map(|d| {
-            legaia_asset::player_anm::find_in_entry(&e.bytes, d)
+            legaia_actor_formats::player_anm::find_in_entry(&e.bytes, d)
                 .into_iter()
                 .next()
         })
     });
     let loco = host
         .index
-        .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+        .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
         .ok()
-        .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+        .and_then(|b| legaia_actor_formats::character_pack::field_locomotion_anm(&b).ok());
     host.world
         .drain_field_anim_cues(scene_anm.as_ref(), loco.as_ref(), |_| Some(true));
     assert!(

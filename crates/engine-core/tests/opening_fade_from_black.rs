@@ -34,7 +34,7 @@ fn new_game_opdeene_entry_fades_in_from_black() {
     let Some(mut host) = skip_or_host() else {
         return;
     };
-    let opdeene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    let opdeene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
     host.world.begin_new_game();
     assert!(
         host.world.system_flag_test(0x52F),
@@ -104,7 +104,7 @@ fn opdeene_timeline_fires_between_beat_black_fades() {
     let Some(mut host) = skip_or_host() else {
         return;
     };
-    let opdeene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    let opdeene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
     host.world.begin_new_game();
     host.enter_field_scene(opdeene, 0).expect("enter opdeene");
     assert!(host.world.cutscene_timeline_active());
@@ -175,7 +175,7 @@ fn new_game_opdeene_entry_run_stops_where_retail_parks() {
     let Some(mut host) = skip_or_host() else {
         return;
     };
-    let opdeene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    let opdeene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
     host.world.begin_new_game();
     host.enter_field_scene(opdeene, 0).expect("enter opdeene");
     assert_eq!(host.world.field_pc, 0x99, "system PC after the load frame");
@@ -191,7 +191,7 @@ fn new_game_opdeene_entry_run_stops_where_retail_parks() {
     let seat = &host.world.actors[0].move_state;
     assert_eq!(
         (seat.world_x, seat.world_z),
-        legaia_asset::new_game::NEW_GAME_ENTRY_SEAT,
+        legaia_game_tables::new_game::NEW_GAME_ENTRY_SEAT,
         "the New Game's entry operand seats the player"
     );
     // The opening holds the player from here: the system loop sits out and

@@ -12,15 +12,13 @@
 //! settlement `0x32`.
 //!
 //! This locks the rule both hosts read
-//! (`md::leg_boundary_raises_interval`), because a host that re-derives it can
+//! (`legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval`), because a host that re-derives it can
 //! get it wrong the way the browser dome page did - raising the screen on every
 //! `MusclePhase::TurnOver`, i.e. one intermission per turn instead of per
 //! fight.
 
-use legaia_engine_core::muscle_dome as md;
-use legaia_engine_core::muscle_dome::{
-    ContestState, HAND_SLOTS, MuscleCard, MuscleDomeSession, MusclePhase,
-};
+use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
+use legaia_engine_minigames::muscle_dome::{ContestState, HAND_SLOTS};
 
 /// Four identical direction slots at 30 AP each - the retail deal shape.
 fn hand() -> [MuscleCard; HAND_SLOTS] {
@@ -40,18 +38,27 @@ fn long_leg() -> MuscleDomeSession {
 }
 
 /// A three-round ladder with readable cells.
-fn contest() -> md::DomeContest {
-    let mut score = [[0i32; md::MAX_ROUNDS_PER_COURSE]; md::COURSE_COUNT];
+fn contest() -> legaia_engine_minigames::muscle_dome::DomeContest {
+    let mut score = [[0i32; legaia_engine_minigames::muscle_dome::MAX_ROUNDS_PER_COURSE];
+        legaia_engine_minigames::muscle_dome::COURSE_COUNT];
     score[0][..3].copy_from_slice(&[10, 20, 40]);
-    md::DomeContest::enter(&md::ContestFlags::default(), [3, 3, 3], score)
+    legaia_engine_minigames::muscle_dome::DomeContest::enter(
+        &legaia_engine_minigames::muscle_dome::ContestFlags::default(),
+        [3, 3, 3],
+        score,
+    )
 }
 
 /// Drain the hub's `0x0A`..`0x0C` sequence the way both hosts do inside their
 /// leg report, and hand back the state the host can still observe.
-fn report(run: &mut md::DomeContest, survived: bool, turns: u32) -> Option<ContestState> {
-    let flags = md::ContestFlags::default();
+fn report(
+    run: &mut legaia_engine_minigames::muscle_dome::DomeContest,
+    survived: bool,
+    turns: u32,
+) -> Option<ContestState> {
+    let flags = legaia_engine_minigames::muscle_dome::ContestFlags::default();
     run.finish_leg(
-        md::LegReport {
+        legaia_engine_minigames::muscle_dome::LegReport {
             survived,
             outcome: 0,
             turns_taken: turns,
@@ -129,7 +136,7 @@ fn a_cleared_fight_raises_exactly_one_intermission() {
     // Leg 1 cleared, course not exhausted -> hub state 0x0A ran.
     let after = report(&mut run, true, 4);
     assert!(
-        md::leg_boundary_raises_interval(after),
+        legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(after),
         "a survived leg with the course unexhausted shows the tally screen"
     );
     assert_eq!(run.round(), 1, "the ladder advanced exactly one leg");
@@ -137,7 +144,7 @@ fn a_cleared_fight_raises_exactly_one_intermission() {
 
     // Leg 2 cleared: one more, and only one more.
     let after = report(&mut run, true, 2);
-    assert!(md::leg_boundary_raises_interval(after));
+    assert!(legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(after));
     assert_eq!(run.round(), 2);
 }
 
@@ -147,7 +154,7 @@ fn a_lost_or_final_fight_settles_instead_of_showing_the_screen() {
     let mut run = contest();
     let after = report(&mut run, false, 3);
     assert!(
-        !md::leg_boundary_raises_interval(after),
+        !legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(after),
         "a lost leg settles; it does not show the tally screen"
     );
     assert!(run.over());
@@ -155,40 +162,48 @@ fn a_lost_or_final_fight_settles_instead_of_showing_the_screen() {
     // Final leg of the course: also settlement, not the tally screen.
     let mut run = contest();
     for _ in 0..2 {
-        assert!(md::leg_boundary_raises_interval(report(&mut run, true, 1)));
+        assert!(
+            legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(report(
+                &mut run, true, 1
+            ))
+        );
     }
     let after = report(&mut run, true, 1);
     assert!(
-        !md::leg_boundary_raises_interval(after),
+        !legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(after),
         "the course-exhausting leg settles"
     );
     assert!(run.over());
 
     // And a run-from leg, the third settlement path.
     let mut run = contest();
-    let flags = md::ContestFlags::default();
+    let flags = legaia_engine_minigames::muscle_dome::ContestFlags::default();
     run.finish_leg(
-        md::LegReport {
+        legaia_engine_minigames::muscle_dome::LegReport {
             survived: true,
-            outcome: md::LEG_OUTCOME_RAN,
+            outcome: legaia_engine_minigames::muscle_dome::LEG_OUTCOME_RAN,
             turns_taken: 1,
         },
         500,
         &flags,
     );
-    assert!(!md::leg_boundary_raises_interval(Some(run.state())));
+    assert!(!legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(Some(run.state())));
     assert!(run.gave_up());
 }
 
 #[test]
 fn no_contest_and_a_settled_contest_show_nothing() {
-    assert!(!md::leg_boundary_raises_interval(None));
-    assert!(!md::leg_boundary_raises_interval(Some(
-        ContestState::Settle
-    )));
-    assert!(!md::leg_boundary_raises_interval(Some(
-        ContestState::Settled
-    )));
+    assert!(!legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(None));
+    assert!(
+        !legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(Some(
+            ContestState::Settle
+        ))
+    );
+    assert!(
+        !legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(Some(
+            ContestState::Settled
+        ))
+    );
 }
 
 #[test]

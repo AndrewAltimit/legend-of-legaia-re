@@ -15,13 +15,13 @@ impl World {
 
     /// The look rotation (field-VM `4C 45`) an animated actor draws with
     /// this frame, or `None` while it turns nothing. Both play hosts fold it
-    /// into the actor's pose with [`crate::actor_look::apply_look`] before
+    /// into the actor's pose with [`legaia_engine_field::actor_look::apply_look`] before
     /// they skin the mesh - the player's rig and every posed NPC.
     // REF: FUN_8001B964 (0x8001BB40..0x8001BB88)
     pub fn actor_look(
         &self,
-        key: crate::actor_look::LookKey,
-    ) -> Option<crate::actor_look::ActorLook> {
+        key: legaia_engine_field::actor_look::LookKey,
+    ) -> Option<legaia_engine_field::actor_look::ActorLook> {
         self.npcs.looks.turning(key)
     }
 

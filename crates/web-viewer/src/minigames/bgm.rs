@@ -11,7 +11,7 @@ use super::*;
 /// stops at the first `pQES` byte run after the bank, which inside a VAG body
 /// is sample data.
 pub(crate) fn music01_pair_ok(buf: &[u8]) -> bool {
-    legaia_engine_core::chunk_install::owned_bank_offsets(buf).is_some()
+    legaia_engine_system::chunk_install::owned_bank_offsets(buf).is_some()
 }
 
 /// Stage one `music_01` entry's `[VAB][SEQ]` pair through the from-scratch SPU:
@@ -28,7 +28,7 @@ fn stage_music01_seq(
     legaia_engine_audio::Spu,
     legaia_engine_audio::sequencer::Sequencer,
 )> {
-    let split = legaia_engine_core::chunk_install::owned_bank_offsets(buf)?;
+    let split = legaia_engine_system::chunk_install::owned_bank_offsets(buf)?;
     let vab_off = split.vab;
     let vab_report = legaia_vab::parse(buf, vab_off).ok()?;
     let seq = legaia_seq::Seq::parse(buf.get(split.seq..)?).ok()?;
@@ -155,11 +155,11 @@ const DANCE_JUKEBOX: &[(u16, &str)] = &[
 fn minigame_bgm_source(game: &str) -> Option<(u32, &'static str)> {
     match game {
         "baka" => Some((
-            legaia_asset::baka_opponents::BAKA_BGM_PROT_INDEX as u32,
+            legaia_minigame_formats::baka_opponents::BAKA_BGM_PROT_INDEX as u32,
             "overlay init FUN_801CF00C loads music_01 slot 55 (Sol disco fever)",
         )),
         "slot" => Some((
-            legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX as u32,
+            legaia_minigame_formats::slot_payout::SLOT_HOST_BGM_PROT_INDEX as u32,
             "host scene 0543_koin1 op-0x35 BGM 2018 = music_01 slot 18 (Sol casino)",
         )),
         _ => None,
@@ -201,7 +201,7 @@ impl LegaiaMinigames {
     /// Resolve a global-pool BGM id (`>= 2000`) to its `music_01` entry bytes,
     /// through the piecewise bank map (the bank is not a single linear run).
     fn music01_entry_for_bgm(&self, bgm_id: u16) -> Option<&[u8]> {
-        let entry = legaia_engine_core::music_labels::prot_entry_for_bgm_id(bgm_id)?;
+        let entry = legaia_engine_system::music_labels::prot_entry_for_bgm_id(bgm_id)?;
         entry_bytes(&self.prot, &self.entries, entry)
     }
 
@@ -248,7 +248,7 @@ impl LegaiaMinigames {
             if !music01_pair_ok(buf) {
                 continue;
             }
-            let label = legaia_engine_core::music_labels::label_for_bgm_id(bgm)
+            let label = legaia_engine_system::music_labels::label_for_bgm_id(bgm)
                 .unwrap_or_else(|| format!("BGM {bgm}"));
             rows.push(format!(
                 r#"{{"bgm":{bgm},"label":{},"role":{}}}"#,
@@ -267,7 +267,7 @@ impl LegaiaMinigames {
     /// `MinigameSubId::standalone_bgm_id`, so the page carries no track
     /// literal of its own.
     pub fn minigame_bgm_id(&self, game: &str) -> i32 {
-        use legaia_engine_core::minigame_entry::MinigameSubId as M;
+        use legaia_engine_mode::minigame_entry::MinigameSubId as M;
         let sub = match game {
             "baka" => M::BakaFighter,
             "slot" => M::SlotMachine,

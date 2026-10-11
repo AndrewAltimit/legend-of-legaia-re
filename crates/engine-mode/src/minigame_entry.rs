@@ -322,7 +322,7 @@ mod tests {
     /// entry, which pointed every one of them two slots low.
     /// A standalone host's track per game: the overlay's own where it has
     /// one, the Sol casino floor's for the slot machine (extraction `1006`,
-    /// `legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX`), the dance's
+    /// `legaia_minigame_formats::slot_payout::SLOT_HOST_BGM_PROT_INDEX`), the dance's
     /// short song, and nothing for fishing.
     #[test]
     fn standalone_tracks_cover_the_inheriting_slots() {
@@ -341,7 +341,7 @@ mod tests {
         );
         assert_eq!(
             legaia_engine_system::music_labels::prot_entry_for_bgm_id(SOL_CASINO_FLOOR_BGM_ID),
-            Some(legaia_asset::slot_payout::SLOT_HOST_BGM_PROT_INDEX as u32)
+            Some(legaia_minigame_formats::slot_payout::SLOT_HOST_BGM_PROT_INDEX as u32)
         );
         assert_eq!(M::Dance.standalone_bgm_id(), Some(DANCE_SHORT_SONG_BGM_ID));
         assert_eq!(M::Fishing.standalone_bgm_id(), None);

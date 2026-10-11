@@ -18,10 +18,12 @@ use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
 use legaia_engine_core::fog_particles::{
     FOG_CAP_DEFAULT, FOG_CLUT, FOG_LEFT_UV_ROW, FOG_RIGHT_UV_ROW, FOG_TPAGE, FOG_UV_ROWS,
 };
-use legaia_engine_core::man_field_scripts::{partition_record_span, scene_man_carriers};
+use legaia_engine_core::man_field_scripts::scene_man_carriers;
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
-use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker};
+use legaia_engine_field::man_field_scripts::partition_record_span;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -68,7 +70,7 @@ fn census(index: &ProtIndex) -> Vec<GateSite> {
         };
         for carrier in scene_man_carriers(index, &scene) {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             let partitions = man_file.header.partition_counts.len();
@@ -85,7 +87,7 @@ fn census(index: &ProtIndex) -> Vec<GateSite> {
                     for insn in LinearWalker::new(body, pc0).flatten() {
                         match &insn.info {
                             InsnInfo::SystemFlag {
-                                kind: legaia_engine_vm::field_disasm::FlagKind::Test,
+                                kind: legaia_scene_formats::field_disasm::FlagKind::Test,
                                 ..
                             }
                             | InsnInfo::BBoxTest { .. }

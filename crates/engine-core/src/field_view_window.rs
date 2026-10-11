@@ -41,9 +41,10 @@
 //! Hosts reach this through [`field_view_cells`], which adds the port's policy:
 //! the crop only holds at retail's own framing (see its docs).
 
-use crate::camera::{Camera, CameraDistance};
-use crate::world::field_npc_cull::FieldCullView;
-use crate::world::{SceneMode, World};
+use crate::world::World;
+use legaia_engine_field::camera::FieldCullView;
+use legaia_engine_field::camera::{Camera, CameraDistance};
+use legaia_engine_mode::mode::SceneMode;
 
 /// The cell rectangle one frame of `FUN_801F7088` walks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -575,7 +576,7 @@ mod tests {
             ..town01()
         };
         cam.reset_globals_for_scene_entry();
-        let (x0, z0, x1, z1) = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
+        let (x0, z0, x1, z1) = legaia_engine_system::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
         assert_eq!(cam.zone.view_window, [x0, z0, x1, z1]);
         let entry = FieldCullView {
             window: cam.zone.view_window,

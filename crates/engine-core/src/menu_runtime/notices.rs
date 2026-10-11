@@ -16,19 +16,24 @@ impl MenuRuntime {
     /// menu cast leveled a spell. A host paints the window while this is
     /// `Some` and routes the pad through
     /// [`Self::dismiss_spell_level_notice`] instead of the screen below.
-    pub fn spell_level_notice(&self) -> Option<&crate::magic_xp::SpellLevelNotice> {
+    pub fn spell_level_notice(&self) -> Option<&legaia_engine_battle::magic_xp::SpellLevelNotice> {
         self.spell_level_notice.as_ref()
     }
 
     /// The live art-learned notice (retail window 8), or `None`.
-    pub fn art_learned_notice(&self) -> Option<&crate::pause_screens::ArtLearnedNotice> {
+    pub fn art_learned_notice(
+        &self,
+    ) -> Option<&legaia_engine_menus::pause_screens::ArtLearnedNotice> {
         self.art_learned_notice.as_ref()
     }
 
     /// Park a pause-menu art-learned notice on the window-8 beat - hosts
     /// take it off [`crate::world::MenuState::pending_art_notice`] after
     /// applying a finished Items screen.
-    pub fn arm_art_learned_notice(&mut self, notice: crate::pause_screens::ArtLearnedNotice) {
+    pub fn arm_art_learned_notice(
+        &mut self,
+        notice: legaia_engine_menus::pause_screens::ArtLearnedNotice,
+    ) {
         self.art_learned_notice = Some(notice);
     }
 
@@ -67,7 +72,10 @@ impl MenuRuntime {
     /// Park a menu-cast level-up on the window-7 beat - the engine's
     /// `FUN_80035C00` (hosts arm it with
     /// [`crate::field_menu_dispatch::apply_spell_outcome`]'s return).
-    pub fn arm_spell_level_notice(&mut self, notice: crate::magic_xp::SpellLevelNotice) {
+    pub fn arm_spell_level_notice(
+        &mut self,
+        notice: legaia_engine_battle::magic_xp::SpellLevelNotice,
+    ) {
         self.spell_level_notice = Some(notice);
     }
 
@@ -103,7 +111,7 @@ impl MenuRuntime {
             return;
         }
         world.minigames.point_card =
-            crate::shop::apply_point_card(world.minigames.point_card, credit);
+            legaia_engine_menus::shop::apply_point_card(world.minigames.point_card, credit);
         self.point_card_toast = Some(credit);
     }
 }

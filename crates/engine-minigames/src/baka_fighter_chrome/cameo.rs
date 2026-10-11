@@ -52,7 +52,7 @@ pub struct CameoPose {
 // Spawned by `BakaFight` at a round setup under a held Triangle (the host
 // hands the duel its packed held word through `BakaFight::set_held_pad`),
 // stepped per frame as `crate::baka_fighter::CameoActor`, and drawn by the
-// duel's 3D surface (`legaia_engine_core::baka_duel_scene`): stage model
+// duel's 3D surface (`legaia_engine_minigame_scenes::baka_duel_scene`): stage model
 // [`CAMEO_SCENE_MODEL`] posed by records `0x1B` / `0x1C` of the PROT 1203
 // clip bank in the camera-relative frame, with [`sprite_blit`]'s wink
 // applied to the surface's VRAM.

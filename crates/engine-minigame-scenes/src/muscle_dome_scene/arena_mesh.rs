@@ -1,6 +1,6 @@
 //! The arena geometry: backdrop hybrid and ring filters, the second copy, ground grid and checker floor.
 
-use legaia_asset::scene_tmd_stream;
+use legaia_scene_formats::scene_tmd_stream;
 use legaia_tmd::mesh::VramMesh;
 
 /// The arena shell as a hybrid VRAM mesh plus its packet-colour stream,
@@ -12,7 +12,7 @@ pub fn arena_hybrid(buf: &[u8]) -> Option<(VramMesh, Vec<u8>)> {
     let tmd_bytes = buf.get(stream.tmd_range())?;
     let tmd = legaia_tmd::parse(tmd_bytes).ok()?;
     let (mesh, oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, tmd_bytes);
-    let flat = crate::packet_color::hybrid(&mesh, &shading);
+    let flat = legaia_engine_field::packet_color::hybrid(&mesh, &shading);
     if !oids.iter().any(|&o| o != 0) {
         return Some((mesh, flat));
     }
@@ -72,12 +72,15 @@ fn filter_mesh(mesh: &VramMesh, flat: &[u8], keep: &[bool]) -> (VramMesh, Vec<u8
 /// is not on the list, so the copy takes the default half turn. The shell
 /// is open toward `-X` and only about a third of it is symmetric in `z`, so
 /// the two transforms put the furniture in visibly different places.
-pub const ARENA_SECOND_COPY: legaia_asset::battle_backdrop::SecondCopy =
-    legaia_asset::battle_backdrop::SecondCopy::HalfTurn;
+pub const ARENA_SECOND_COPY: legaia_scene_formats::battle_backdrop::SecondCopy =
+    legaia_scene_formats::battle_backdrop::SecondCopy::HalfTurn;
 
 /// `mesh` under a backdrop second-copy transform, its winding restored when
 /// the transform reflects.
-fn second_copy(mesh: &VramMesh, copy: legaia_asset::battle_backdrop::SecondCopy) -> VramMesh {
+fn second_copy(
+    mesh: &VramMesh,
+    copy: legaia_scene_formats::battle_backdrop::SecondCopy,
+) -> VramMesh {
     let k = copy.scale();
     let mut out = mesh.clone();
     for p in &mut out.positions {

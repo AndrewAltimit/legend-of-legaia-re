@@ -199,7 +199,7 @@ pub fn export_world_glb(
     ];
 
     // --- Ambient VDF morph bake (Rim Elm's shoreline going in and out). ---
-    // Recreate the engine's scene-entry pulse (`crate::vdf_pulse` - the same
+    // Recreate the engine's scene-entry pulse (`legaia_engine_field::vdf_pulse` - the same
     // arming the play hosts run, with its self-guard for retail-armed
     // scenes), turn each lane's full-weight deltas into a glTF morph target
     // on the affected world meshes, and sample the envelope for exactly one
@@ -214,7 +214,7 @@ pub fn export_world_glb(
         .and_then(|w| w.times.last().copied())
         .unwrap_or(0.0);
 
-    let glb = legaia_asset::scene_gltf::build_scene_glb_animated(
+    let glb = legaia_actor_formats::scene_gltf::build_scene_glb_animated(
         &a.name,
         &meshes,
         &instances,
@@ -249,8 +249,8 @@ fn bake_vdf_pulse_anim(
     a: &AssembledScene,
     handles: &HashMap<(usize, u8), Option<usize>>,
     meshes: &mut [SceneMesh],
-) -> Option<legaia_asset::scene_gltf::SceneWeightsAnim> {
-    use legaia_asset::scene_gltf::{SceneMorphTarget, SceneWeightsAnim};
+) -> Option<legaia_actor_formats::scene_gltf::SceneWeightsAnim> {
+    use legaia_actor_formats::scene_gltf::{SceneMorphTarget, SceneWeightsAnim};
 
     // The same setup `SceneHost::enter_field_scene` runs before arming.
     let mut w = crate::world::World {
@@ -265,9 +265,9 @@ fn bake_vdf_pulse_anim(
     }
     w.set_vdf_buffer(crate::scene_bundle::find_vdf_buffer(scene));
     if let Ok(Some(man)) = scene.field_man_payload(index)
-        && let Ok(mf) = legaia_asset::man_section::parse(&man)
+        && let Ok(mf) = legaia_scene_formats::man_section::parse(&man)
     {
-        for arg in crate::man_field_scripts::scene_entry_ambient_installs(&mf, &man) {
+        for arg in legaia_engine_field::man_field_scripts::scene_entry_ambient_installs(&mf, &man) {
             w.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
         }
     }

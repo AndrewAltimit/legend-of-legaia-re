@@ -48,9 +48,9 @@
 //! CI without `LEGAIA_DISC_BIN` - the world-map render pass and its panel
 //! screen are disc-free kernels over controller state.
 
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::world::World;
-use legaia_engine_core::world_map_panel_host::PanelActorKind;
+use legaia_engine_field::world_map_panel_host::PanelActorKind;
+use legaia_engine_system::input::PadButton;
 
 // ---------------------------------------------------------------------------
 // Pad
@@ -127,11 +127,11 @@ fn overworld() -> World {
     w
 }
 
-fn ctrl(w: &World) -> &legaia_engine_core::world_map::WorldMapController {
+fn ctrl(w: &World) -> &legaia_engine_field::world_map::WorldMapController {
     w.world_map.ctrl.as_ref().expect("world-map controller")
 }
 
-fn ctrl_mut(w: &mut World) -> &mut legaia_engine_core::world_map::WorldMapController {
+fn ctrl_mut(w: &mut World) -> &mut legaia_engine_field::world_map::WorldMapController {
     w.world_map.ctrl.as_mut().expect("world-map controller")
 }
 
@@ -183,8 +183,8 @@ fn rung2_map_display_fade(w: &mut World) -> Result<(), String> {
     // The cue reaches the SFX ring both hosts replay, not a controller-local
     // queue: `World::tick_world_map` drains the controller every frame.
     let sfx = w.take_sfx_ring_ops();
-    let want = legaia_engine_core::world::SfxRingOp::Push(i16::from(
-        legaia_engine_core::world_map::MAP_DISPLAY_SFX,
+    let want = legaia_engine_system::sound_state::SfxRingOp::Push(i16::from(
+        legaia_engine_field::world_map::MAP_DISPLAY_SFX,
     ));
     if !sfx.contains(&want) {
         return Err(format!("the arm raised no SFX ring cue: {sfx:?}"));
@@ -389,7 +389,7 @@ fn rung7_sub_list_handoff(w: &mut World) -> Result<(), String> {
         if !c
             .panels
             .windows
-            .is_open(legaia_engine_core::world_map_panel_host::SUBLIST_PANEL_INDEX)
+            .is_open(legaia_engine_field::world_map_panel_host::SUBLIST_PANEL_INDEX)
         {
             return Err("the sub-list open script spawned no window".into());
         }
@@ -731,9 +731,9 @@ fn w1d_world_map_render_ladder() {
 /// picker phase nor the draw gate the dispatcher's return feeds.
 #[test]
 fn w1d_dev_menu_cancel_runs_the_row_action_dispatcher() {
-    use legaia_engine_core::dev_menu::{PACK_CIRCLE, PACK_DOWN};
     use legaia_engine_core::dev_menu_host::{DevMenuSession, DevPage};
     use legaia_engine_field::dev_menu_leaves::ListPickerPhase;
+    use legaia_engine_system::pad::{PACK_CIRCLE, PACK_DOWN};
 
     let mut s = DevMenuSession::new();
     let mut none: [&mut [u8]; 0] = [];
@@ -795,7 +795,7 @@ fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
         // Seat a different item in the destination slot so the give-back is
         // observable rather than a no-op zero.
         let mut probe = record.clone();
-        let mut bag = legaia_engine_core::world::ItemBag::new();
+        let mut bag = legaia_engine_menus::item_bag::ItemBag::new();
         bag.insert(0x20, 1);
         let mut host = WorldEquipHost {
             inventory: &mut bag,
@@ -815,7 +815,7 @@ fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
         at
     };
 
-    let mut bag = legaia_engine_core::world::ItemBag::new();
+    let mut bag = legaia_engine_menus::item_bag::ItemBag::new();
     bag.insert(0x20, 1);
     record[equip_base] = 0x11; // the outgoing item
     let mut host = WorldEquipHost {
@@ -835,7 +835,7 @@ fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
     );
 
     // A bag miss must change nothing at all.
-    let mut empty = legaia_engine_core::world::ItemBag::new();
+    let mut empty = legaia_engine_menus::item_bag::ItemBag::new();
     let before = record.clone();
     let mut host = WorldEquipHost {
         inventory: &mut empty,
@@ -854,7 +854,7 @@ fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
 /// kernel computes, not that a session asks it to.
 #[test]
 fn w1d_submode_frame_loop_reaches_the_equipment_sub_panel() {
-    use legaia_engine_core::actor_handler::ActorHandler;
+    use legaia_engine_field::actor_handler::ActorHandler;
     use legaia_engine_field::submode_hub_actors::{HubDraw, HubPainter, slot, window};
 
     let mut w = World::new();

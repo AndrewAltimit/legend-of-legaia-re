@@ -14,7 +14,7 @@
 //! 1. **Want.** The runtime resolves the movie's raw-sector window - the
 //!    `MV*.STR` file's extent off the disc walk, narrowed to the `fmv_id`'s
 //!    frame range through the same
-//!    [`legaia_asset::fmv_dispatch::fmv_segment_window`] the native window
+//!    [`legaia_game_tables::fmv_dispatch::fmv_segment_window`] the native window
 //!    seeks with - and publishes it as [`LegaiaRuntime::play_fmv_wanted_json`].
 //! 2. **Install.** The page slices those sectors out of its disc bytes and
 //!    hands them to [`LegaiaRuntime::play_fmv_install`], which demuxes the
@@ -62,21 +62,21 @@
 //! ## The score
 //!
 //! What a movie does to the BGM is the engine's
-//! [`legaia_engine_core::movie_audio::MovieScore`], the policy the native
+//! [`legaia_engine_system::movie::movie_audio::MovieScore`], the policy the native
 //! window consults too: arming the title attract releases the score, an
 //! installed movie that carries an XA track ducks it only while it is
 //! sounding, and the end - however the beat ends - gives back exactly what
 //! was taken and brings the title theme back after the attract.
 
-use legaia_asset::fmv_dispatch::{FmvTable, STR_OVERLAY_PROT_INDEX, fmv_segment_window};
 #[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::AudioSink;
-use legaia_engine_core::cutscene::fmv_is_skippable;
-use legaia_engine_core::input::InputState;
-#[cfg(test)]
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::InputState;
+#[cfg(test)]
+use legaia_engine_system::input::PadButton;
+use legaia_engine_system::movie::cutscene::fmv_is_skippable;
+use legaia_game_tables::fmv_dispatch::{FmvTable, STR_OVERLAY_PROT_INDEX, fmv_segment_window};
 use wasm_bindgen::prelude::*;
 
 use crate::disc::FileEntry;
@@ -94,12 +94,7 @@ pub const INSTALL_TIMEOUT_FRAMES: u32 = 600;
 
 /// The buttons retail's `0x1F0` packed-mask test covers - re-exported from
 /// the shared kernel so this host's tests keep their name.
-pub use legaia_engine_core::cutscene::FMV_SKIP_BUTTONS as SKIP_BUTTONS;
-/// Retail's abort test: a skippable `fmv_id`, on any of [`SKIP_BUTTONS`].
-/// `edge` is a just-pressed PSX pad word. Lives in
-/// [`legaia_engine_core::cutscene`] so the native window can make the same
-/// decision.
-pub use legaia_engine_core::cutscene::fmv_skip_edge_hit as skip_edge_hit;
+use legaia_engine_system::movie::cutscene::FMV_SKIP_BUTTONS as SKIP_BUTTONS;
 
 /// The same test over the world's own pad edge (the page feeds `set_pad`
 /// every tick, so `just_pressed` is the retail newly-pressed word).
@@ -108,9 +103,9 @@ fn skip_edge_from_input(fmv_id: i16, input: &InputState) -> bool {
 }
 
 /// Who armed the movie: the field VM's cutscene mode or the title attract -
-/// the engine's own [`legaia_engine_core::movie_audio::MovieOrigin`], so the
+/// the engine's own [`legaia_engine_system::movie::movie_audio::MovieOrigin`], so the
 /// movie-audio policy reads the same value this lane arms with.
-pub(crate) use legaia_engine_core::movie_audio::MovieOrigin as FmvOrigin;
+pub(crate) use legaia_engine_system::movie::movie_audio::MovieOrigin as FmvOrigin;
 
 /// A movie the runtime wants the page to install: the raw-sector window of
 /// the `fmv_id`'s segment on the disc image.
@@ -136,8 +131,8 @@ pub(crate) struct OpenFmv {
     /// the descriptor (rate / channels) stays readable.
     audio_handed: bool,
     /// The pacing rule the native window's movie runs on
-    /// ([`legaia_engine_core::cutscene::MovieClock`]), fresh per install.
-    clock: legaia_engine_core::cutscene::MovieClock,
+    /// ([`legaia_engine_system::movie::cutscene::MovieClock`]), fresh per install.
+    clock: legaia_engine_system::movie::cutscene::MovieClock,
 }
 
 /// Unity XA gain (Q1.14), what the native movie players pass.
@@ -176,7 +171,7 @@ pub(crate) struct FmvState {
     /// finish (or skip) has to take it off again.
     mixer_audio: bool,
     /// What the movie in flight did to the score (module docs, "The score").
-    score: legaia_engine_core::movie_audio::MovieScore,
+    score: legaia_engine_system::movie::movie_audio::MovieScore,
 }
 
 impl FmvState {
@@ -334,7 +329,7 @@ fn resolve_wanted(
     files: &[FileEntry],
     fmv_id: i16,
 ) -> Option<WantedFmv> {
-    let rel = legaia_engine_core::cutscene::fmv_index_to_str_filename(fmv_id)?;
+    let rel = legaia_engine_system::movie::cutscene::fmv_index_to_str_filename(fmv_id)?;
     let want = rel.to_ascii_uppercase();
     let file = files
         .iter()
@@ -679,7 +674,7 @@ impl LegaiaRuntime {
     }
 
     /// The video frame due now, through the shared pacing rule
-    /// ([`legaia_engine_core::cutscene::MovieClock`]) the native window's
+    /// ([`legaia_engine_system::movie::cutscene::MovieClock`]) the native window's
     /// movie runs on: the engine mixer's XA cursor while the track is there,
     /// else `page_audio_secs` (the page's own fallback output; negative for
     /// none), else `wall_secs` - with the cursor-stall latch. Not clamped to
@@ -780,6 +775,7 @@ impl LegaiaRuntime {
 pub(crate) mod tests {
     use super::*;
     use legaia_engine_core::scene::SceneHost;
+    use legaia_engine_system::movie::cutscene::fmv_skip_edge_hit as skip_edge_hit;
 
     /// A one-frame 320x224 movie at 15 fps standing in for an installed one.
     fn test_av(audio: Option<legaia_mdec::str_av::StrAudio>) -> StrAv {

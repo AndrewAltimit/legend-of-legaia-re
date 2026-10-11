@@ -4,7 +4,7 @@
 //! The opening Rim Elm sequence runs from a `town01` partition-2
 //! (cutscene-timeline) record: establishing camera, Vahn's scripted walk-out,
 //! then the "Select your name." prompt. This installs that record as a spawned
-//! [`legaia_engine_core::cutscene_timeline::CutsceneTimeline`] and decodes it
+//! [`legaia_engine_field::cutscene_timeline::CutsceneTimeline`] and decodes it
 //! through the authoritative field VM ([`legaia_engine_vm::field::step`]). The
 //! VM is the only complete decoder: the `field_disasm` linear decoder bails on
 //! unported `0x4C` sub-ops, and a naive linear disassembler mis-strides the
@@ -136,7 +136,7 @@ fn town01_opening_name_entry_trigger_is_op49_at_0x02c6() {
     };
 
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
-    host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
 
     let man_bytes = host
@@ -146,7 +146,7 @@ fn town01_opening_name_entry_trigger_is_op49_at_0x02c6() {
         .field_man_payload(&host.index)
         .expect("man payload result")
         .expect("town01 has a field MAN");
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("parse town01 MAN");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("parse town01 MAN");
 
     // Install the opening record (partition-2 record 3) and grab its body.
     assert!(
@@ -161,7 +161,7 @@ fn town01_opening_name_entry_trigger_is_op49_at_0x02c6() {
         .take()
         .expect("timeline present");
     let pc0 =
-        legaia_engine_core::man_field_scripts::partition_record_span(&man_file, &man_bytes, 2, 3)
+        legaia_engine_field::man_field_scripts::partition_record_span(&man_file, &man_bytes, 2, 3)
             .expect("P2[3] span")
             .1;
 

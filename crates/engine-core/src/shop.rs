@@ -7,7 +7,7 @@
 //! table off a [`World`], and the page-length helper keyed on the menu
 //! runtime's state.
 
-pub use legaia_engine_menus::shop::*;
+use legaia_engine_menus::shop::*;
 
 pub use crate::menu_runtime::shop_list_page_rows;
 
@@ -20,7 +20,7 @@ use crate::world::World;
 /// REF: FUN_801D4C28
 pub fn party_compare_members(
     world: &World,
-    info: Option<&crate::equipment::DiscEquipInfo>,
+    info: Option<&legaia_engine_menus::equipment::DiscEquipInfo>,
     item_id: u8,
 ) -> Vec<PartyCompareMember> {
     party_compare_members_of(

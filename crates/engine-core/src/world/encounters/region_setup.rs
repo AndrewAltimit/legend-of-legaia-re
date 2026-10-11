@@ -10,7 +10,7 @@ impl World {
     /// as retail's globals would be.
     ///
     /// REF: FUN_801D9E1C (ported as
-    /// [`crate::region_encounter::region_battle_setup`])
+    /// [`legaia_engine_battle::region_encounter::region_battle_setup`])
     pub fn apply_region_battle_setup_at_player(&mut self) {
         let Some((wx, wz)) = self
             .player_actor_slot
@@ -24,7 +24,7 @@ impl World {
         };
         tracker.select_group(|flag| self.system_flag_test(flag));
         if let Some(region) = tracker.table().region_at_world(wx, wz) {
-            let setup = crate::region_encounter::region_battle_setup(&region.setup);
+            let setup = legaia_engine_battle::region_encounter::region_battle_setup(&region.setup);
             self.store_region_battle_setup(setup);
         }
         self.terrain.region_tracker = Some(tracker);
@@ -35,7 +35,7 @@ impl World {
     /// were, so those two carry over from the previous setup.
     pub(super) fn store_region_battle_setup(
         &mut self,
-        mut setup: crate::region_encounter::RegionBattleSetup,
+        mut setup: legaia_engine_battle::region_encounter::RegionBattleSetup,
     ) {
         if let Some(prev) = self.encounters.region_setup {
             setup.keep_backdrop_object_1 =
@@ -52,16 +52,15 @@ impl World {
     /// actor is no longer the field walker. The rest of the last setup is
     /// kept, as a short-layout region record would keep it.
     pub fn seed_battle_stage_variant(&mut self, variant: u8) {
-        let mut setup =
-            self.encounters
-                .region_setup
-                .unwrap_or(crate::region_encounter::RegionBattleSetup {
-                    stage_variant: 0,
-                    keep_backdrop_object_1: None,
-                    door_of_light_blocked: true,
-                    door_of_wind_blocked: true,
-                    world_map_return: None,
-                });
+        let mut setup = self.encounters.region_setup.unwrap_or(
+            legaia_engine_battle::region_encounter::RegionBattleSetup {
+                stage_variant: 0,
+                keep_backdrop_object_1: None,
+                door_of_light_blocked: true,
+                door_of_wind_blocked: true,
+                world_map_return: None,
+            },
+        );
         setup.stage_variant = variant & 0x1F;
         self.encounters.region_setup = Some(setup);
     }

@@ -36,7 +36,7 @@ impl World {
     /// code `4` (`FUN_801D8A58`), so the session hands on to Riremito
     /// (`FUN_801EE094`). The three words then hold what the last long-layout
     /// region record the player stood in stored (`region[+9..+0xB]`,
-    /// [`crate::region_encounter::WorldMapReturn`]): a retail capture of a
+    /// [`legaia_engine_battle::region_encounter::WorldMapReturn`]): a retail capture of a
     /// Door of Light in cave01 reads `0x55 @ (37, 109)` there and seats the
     /// party at `(37 << 7) + 0x40, (109 << 7) + 0x40` on map01. Only when no
     /// region has stored a triple yet (an engine-only state: a scene with no
@@ -50,8 +50,10 @@ impl World {
     /// REF: FUN_801D8B90 (stage), FUN_801D8A58 (escape exit code),
     /// FUN_801ED308 (the session), FUN_801EE094 / FUN_801EE328 (the arts)
     pub fn drain_staged_menu_warp(&mut self) {
-        use crate::pause_screens::{MENU_EXIT_CODE_FIELD_ESCAPE, MENU_EXIT_CODE_WORLD_MAP_WARP};
         use crate::world::pause_session::PauseTravelTarget;
+        use legaia_engine_menus::pause_screens::{
+            MENU_EXIT_CODE_FIELD_ESCAPE, MENU_EXIT_CODE_WORLD_MAP_WARP,
+        };
         if let Some(warp) = self.menu.pending_warp.take() {
             match travel_scene(&self.tables.scene_toc_names, u32::from(warp.scene_id)) {
                 Some(name) => {

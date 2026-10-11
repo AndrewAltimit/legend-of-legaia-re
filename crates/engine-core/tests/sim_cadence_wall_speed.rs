@@ -54,8 +54,9 @@
 //!
 //! Disc-free: a synthetic `World` with an open collision grid. No gating.
 
-use legaia_engine_core::input;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input;
 
 /// Retail display frames per second - the unit `World::tick` is denominated in.
 const RETAIL_FPS: u32 = 60;

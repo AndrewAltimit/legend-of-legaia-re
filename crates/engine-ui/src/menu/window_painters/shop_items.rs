@@ -166,7 +166,7 @@ pub fn equip_class_mask(member_class: u8) -> u8 {
 }
 
 /// Whether the equipment whose character mask is `equip_mask`
-/// (`legaia_asset::equip_stats::EquipBonus::equip_mask`) can be worn by a
+/// (`legaia_game_tables::equip_stats::EquipBonus::equip_mask`) can be worn by a
 /// member of `member_class`.
 ///
 /// REF: FUN_801D56FC (`and v0,s6,v0; bne v0,zero` - a zero result drops

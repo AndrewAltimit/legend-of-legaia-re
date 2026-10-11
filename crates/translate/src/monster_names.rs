@@ -2,7 +2,7 @@
 //!
 //! A monster's display name lives in its own record, not in the executable:
 //! each id's slot of the monster archive (PROT entry 867,
-//! `legaia_asset::monster_archive`) is an LZS stream whose decoded block opens
+//! `legaia_actor_formats::monster_archive`) is an LZS stream whose decoded block opens
 //! with a block-relative `name_offset` word. The battle loader fixes that word
 //! to a pointer and copies the string into the actor's display-name buffer
 //! (`FUN_80054CB0`: `strlen + 1` bytes into `actor + 0x1BC`), and the name
@@ -37,7 +37,7 @@
 //! no PROT offset moves.
 
 use anyhow::Result;
-use legaia_asset::monster_archive::{self, SLOT_STRIDE};
+use legaia_actor_formats::monster_archive::{self, SLOT_STRIDE};
 
 use super::markup;
 

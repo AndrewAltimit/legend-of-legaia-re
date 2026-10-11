@@ -38,7 +38,7 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_HUD_COUNTDOWN=<n>`: the field party HUD's idle countdown
     /// (retail's `_DAT_801F348C`) the capture must land on, so a stationary
     /// seat shows the readout exactly when the retail frame does
-    /// ([`legaia_engine_core::world_map_panel_host::hud_phase_hold`]). Set by
+    /// ([`legaia_engine_field::world_map_panel_host::hud_phase_hold`]). Set by
     /// the retail-compare image channel from the state's own RAM.
     pub hud_countdown: Option<i16>,
     /// `LEGAIA_CAPTURE_TALK=<slot>@<tick>`: at that world tick, talk to the
@@ -59,7 +59,7 @@ pub struct ScreenshotConfig {
     pub phase_gate: Option<legaia_parity::retail_compare_battle::PhaseGate>,
     /// `LEGAIA_BATTLE_ORBIT_YAW=<yaw>`: the battle idle orbit's azimuth the
     /// capture must show, held while the orbit owns yaw
-    /// ([`legaia_engine_vm::battle_cam_script::BattleCamera::align_orbit_yaw`]).
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_orbit_yaw`]).
     /// The orbit is a clock, so this is its phase alignment - the camera twin
     /// of [`Self::hud_countdown`]. Set by the retail-compare image channel
     /// from the battle state's own rotation global.
@@ -74,11 +74,11 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_BATTLE_CAM_ALIGN=<16 numbers>`: retail's live battle camera
     /// and its tween endpoints (pitch, yaw, eye trio, focus trio each), for
     /// starting the captured phase's glide where retail's stood
-    /// ([`legaia_engine_vm::battle_cam_script::BattleCamera::align_glide_origin`]).
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_glide_origin`]).
     /// Set by the retail-compare image channel.
     pub battle_cam_align: Option<(
-        legaia_engine_vm::battle_cam_script::BattleCamPose,
-        legaia_engine_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
     )>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too
@@ -126,7 +126,7 @@ pub struct ScreenshotConfig {
     /// widget (`legaia_parity::retail_compare::retail_panel`), installed on
     /// the capture frame - the vignette record that spawned it ran before
     /// the record the seed resumes.
-    pub seat_panel: Option<legaia_engine_core::screen_fx::PanelWidget>,
+    pub seat_panel: Option<legaia_engine_effects::screen_fx::PanelWidget>,
     /// `LEGAIA_SEAT_CLEAR=r,g,b`: a retail state's frame clear colour (the
     /// draw environment's `r0 / g0 / b0`), written over the engine's on the
     /// capture frame - the system script's op-`4C 13` history.
@@ -178,7 +178,7 @@ pub struct ScreenshotConfig {
 /// reach. A cast needs the caster to have *learned* the spell (the Magic arm
 /// parks on an unlearned action id), and the dome's magic ban is seeded at
 /// arena entry from story flags `0x536` / `0x537` / `0x538`
-/// (`legaia_engine_core::muscle_dome::COURSE_UNLOCK_FLAGS`), the last one set
+/// (`legaia_engine_minigames::muscle_dome::COURSE_UNLOCK_FLAGS`), the last one set
 /// winning with `0x321` - course 2 plus
 /// `SPECIAL_MAGIC_FORBIDDEN`.
 #[derive(Debug, Default, Clone)]
@@ -253,7 +253,7 @@ impl PlayCheats {
     pub(crate) fn apply(
         &self,
         world: &mut legaia_engine_core::world::World,
-        templates: Option<&legaia_asset::new_game::StartingParty>,
+        templates: Option<&legaia_game_tables::new_game::StartingParty>,
     ) {
         for cheat in self.list() {
             let line = world.apply_cheat(&cheat, templates);
@@ -352,7 +352,7 @@ impl ScreenshotConfig {
                 let (tick, btn) = entry
                     .split_once(':')
                     .with_context(|| format!("pad-script entry '{entry}' is not TICK:BUTTON"))?;
-                let button = legaia_engine_core::input::PadButton::from_name(btn.trim())
+                let button = legaia_engine_system::input::PadButton::from_name(btn.trim())
                     .with_context(|| format!("pad-script button '{btn}' is not a pad button"))?;
                 // `TICK` (one-tick edge) or `FIRST-LAST` (held across the
                 // inclusive range - walking somewhere needs a held direction).
@@ -585,10 +585,10 @@ pub fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
 }
 
 /// Map a winit `KeyCode` to the user-friendly key name used in
-/// [`legaia_engine_core::input::Mapping`]. Returns `""` for keys outside
+/// [`legaia_engine_system::input::Mapping`]. Returns `""` for keys outside
 /// the default set.
 /// Physical key -> the key **name** the engine's binding table is keyed by
-/// ([`legaia_engine_core::input::Mapping`]).
+/// ([`legaia_engine_system::input::Mapping`]).
 ///
 /// This function is a filter, and it was silently narrower than the table it
 /// feeds: `C`, `V`, `D` and `E` are bound (Triangle, Square, Right, R1) and
@@ -749,7 +749,7 @@ mod key_script_tests {
     /// binding without a name fails here rather than in a player's hands.
     #[test]
     fn every_bound_key_survives_the_window_name_filter() {
-        use legaia_engine_core::input::Mapping;
+        use legaia_engine_system::input::Mapping;
         let mapping = Mapping::web_default();
         let mut checked = 0;
         let mut names: Vec<&String> = mapping.bindings.keys().collect();
@@ -805,7 +805,7 @@ mod key_script_tests {
 #[cfg(test)]
 mod key_binding_tests {
     use super::keycode_to_name;
-    use legaia_engine_core::input::{Mapping, PadButton};
+    use legaia_engine_system::input::{Mapping, PadButton};
     use winit::keyboard::KeyCode;
 
     /// Start answers to Enter and Space on the desktop build too.

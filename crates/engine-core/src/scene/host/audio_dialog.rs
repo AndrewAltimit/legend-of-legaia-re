@@ -41,19 +41,19 @@ impl SceneHost {
     /// (`>= 2000`): the whole `[VAB][SEQ]` pair the director uploads + plays
     /// itself (via [`BgmDirector::start_owned_vab`]). Global ids are
     /// `2000 + sound-test slot`, resolved to an extraction PROT entry through
-    /// the piecewise bank map ([`crate::music_labels::prot_entry_for_bgm_id`] -
+    /// the piecewise bank map ([`legaia_engine_system::music_labels::prot_entry_for_bgm_id`] -
     /// the bank is not a single linear run). Returns `None` for scene-local ids, ids past
     /// the bank, or when the entry can't be read. This is the global half of
     /// the retail `FUN_800243F0` resolver that [`Self::bgm_seq_bytes`] left
     /// unmodeled - every real music cue (field, battle, minigame) is a global
     /// track, so this is the path most BGM actually takes.
     ///
-    /// The ending theme [`crate::mode_entry_init::FIELD_BGM_TWO_PART_ID`] is
+    /// The ending theme [`legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID`] is
     /// the one id retail does not play from its bank slot: the field
     /// initialiser stages its score and instruments from two other entries on
-    /// sound slot 10 ([`crate::mode_entry_init::field_bgm_plan`]). Its bytes
+    /// sound slot 10 ([`legaia_engine_system::mode_entry_init::field_bgm_plan`]). Its bytes
     /// here are that pair composed into one stream
-    /// ([`crate::mode_entry_init::two_part_bgm_stream`]), so both play hosts
+    /// ([`legaia_engine_system::mode_entry_init::two_part_bgm_stream`]), so both play hosts
     /// stage it through the same owned-VAB path as every other track.
     ///
     /// This is the half of `FUN_800243F0` that runs in play: the op-`0x35`
@@ -66,14 +66,14 @@ impl SceneHost {
     /// double-buffered async load poller around it is host-replaced by the
     /// engine-audio Sequencer + this synchronous byte access)
     pub fn music_bank_entry_bytes(&self, bgm_id: u16) -> Result<Option<Arc<Vec<u8>>>> {
-        use crate::mode_entry_init::{field_bgm_plan, two_part_bgm_stream};
+        use legaia_engine_system::mode_entry_init::{field_bgm_plan, two_part_bgm_stream};
         // No latch and no playing slot: re-starts are the director's to
         // suppress, as for every other track.
         if let Some([seq_raw, vab_raw]) =
             field_bgm_plan(u32::from(bgm_id), 0, u32::MAX, false).two_part_streams
         {
             let read = |raw: u32| {
-                legaia_asset::boot_overlay::raw_to_extraction(raw)
+                legaia_overlay_images::boot_overlay::raw_to_extraction(raw)
                     .and_then(|e| self.index.entry_bytes(e).ok())
             };
             let (Some(seq), Some(vab)) = (read(seq_raw), read(vab_raw)) else {
@@ -81,7 +81,7 @@ impl SceneHost {
             };
             return Ok(two_part_bgm_stream(&seq, &vab).map(Arc::new));
         }
-        let Some(entry) = crate::music_labels::prot_entry_for_bgm_id(bgm_id) else {
+        let Some(entry) = legaia_engine_system::music_labels::prot_entry_for_bgm_id(bgm_id) else {
             return Ok(None);
         };
         Ok(self.index.entry_bytes(entry).ok())
@@ -90,10 +90,10 @@ impl SceneHost {
     /// The tile board's quit-prompt lines (title, then the two rows), read
     /// off the field overlay's image (extraction entry `0897`) the way the
     /// render tail reads them out of its own data segment. `None` when the
-    /// entry cannot be read. See [`crate::tile_board::prompt_strings`].
+    /// entry cannot be read. See [`legaia_engine_minigames::tile_board::prompt_strings`].
     pub fn tile_board_prompt_lines(&self) -> Option<[Vec<u8>; 3]> {
         let bytes = self.index.entry_bytes(897).ok()?;
-        crate::tile_board::prompt_strings(&bytes)
+        legaia_engine_minigames::tile_board::prompt_strings(&bytes)
     }
 
     /// The developer EVENT FLAG page's list projection, read off the field
@@ -131,7 +131,7 @@ impl SceneHost {
     /// VAB-tagged entry is in the scene.
     ///
     /// **The offset is not optional.** A `vab_entries` member is a
-    /// [`SceneVabStream`](legaia_asset::scene_vab_stream) - a DATA_FIELD
+    /// [`SceneVabStream`](legaia_container_formats::scene_vab_stream) - a DATA_FIELD
     /// chunk stream whose chunk 0 carries the VAB's header part - so the
     /// entry begins with a 4-byte chunk header and the bank begins at `+4`
     /// (`docs/formats/vab.md`). No retail PROT entry begins with the magic
@@ -148,7 +148,7 @@ impl SceneHost {
             return Ok(None);
         };
         let bytes = self.index.entry_bytes(entry_idx)?;
-        let vab_off = legaia_asset::scene_vab_stream::detect(&bytes)
+        let vab_off = legaia_container_formats::scene_vab_stream::detect(&bytes)
             .map(|s| s.vab_range().start)
             .with_context(|| {
                 format!("PROT entry {entry_idx} is classed VAB-bearing but is not a VAB stream")
@@ -157,9 +157,9 @@ impl SceneHost {
     }
 
     /// If the world has a pending dialog request and no panel is currently
-    /// running, build an [`crate::dialog::OwnedDialogPanel`] resolved through
+    /// running, build an [`legaia_engine_dialog::dialog::OwnedDialogPanel`] resolved through
     /// the scene's MES container and return it. The caller drives the
-    /// panel per-frame; when [`crate::dialog::OwnedDialogPanel::is_done`]
+    /// panel per-frame; when [`legaia_engine_dialog::dialog::OwnedDialogPanel::is_done`]
     /// reports true, the caller calls [`SceneHost::clear_dialog`] to
     /// release the field-VM script.
     ///
@@ -167,7 +167,9 @@ impl SceneHost {
     /// container. The resolved request is left on the world; calling
     /// [`SceneHost::clear_dialog`] cleans it up when the user dismisses
     /// the box.
-    pub fn open_pending_dialog(&mut self) -> Option<crate::dialog::OwnedDialogPanel> {
+    pub fn open_pending_dialog(
+        &mut self,
+    ) -> Option<legaia_engine_dialog::dialog::OwnedDialogPanel> {
         let req = self.world.dialog.current.as_ref()?;
         // Placement-NPC / event dialogue carries its text inline (the field-VM
         // `0x3F` op's buffer); its `text_id` is a box-config id, not an MES
@@ -176,7 +178,7 @@ impl SceneHost {
         // the message-table dialogue paths).
         if !req.inline.is_empty()
             && let Some(mut panel) =
-                crate::dialog::OwnedDialogPanel::from_inline_dialog(&req.inline)
+                legaia_engine_dialog::dialog::OwnedDialogPanel::from_inline_dialog(&req.inline)
         {
             // The same name / number escape resolution the VM-dialogue
             // panels take (`World::dialog_substitutions`).
@@ -184,7 +186,7 @@ impl SceneHost {
             return Some(panel.opening_menu_at_wait());
         }
         let mes = self.assets.as_ref()?.mes.as_ref()?;
-        crate::dialog::OwnedDialogPanel::from_scene_mes(mes, req.text_id)
+        legaia_engine_dialog::dialog::OwnedDialogPanel::from_scene_mes(mes, req.text_id)
     }
 
     /// Clear the world's pending dialog request. Call after the user
@@ -254,67 +256,73 @@ impl SceneHost {
         let mut leftover = Vec::new();
         for ev in self.world.drain_field_events() {
             match ev {
-                crate::field_events::FieldEvent::Bgm { text_id, sub_op } => match sub_op {
-                    // 1 = start; 9 = start behind a load barrier this host
-                    // never has to wait on (see the doc comment above).
-                    1 | 9 => {
-                        // Both arms store the id into `_DAT_8007BAC8` before
-                        // anything resolves it, the park sentinel included.
-                        self.bgm_track_word = Some(text_id);
-                        // Every track brings its own VAB. A scene-local id
-                        // loads retail's fallback track, not a scene bank
-                        // (`SCENE_LOCAL_BGM_FALLBACK_ID`); the id itself is
-                        // kept so the director's same-track suppression
-                        // compares what retail's `_DAT_8007BAB8` does.
-                        if let Some(entry) =
-                            self.music_bank_entry_bytes(super::bgm_bank_id(text_id))?
-                        {
-                            director.start_owned_vab(text_id, &entry);
+                legaia_engine_field::field_events::FieldEvent::Bgm { text_id, sub_op } => {
+                    match sub_op {
+                        // 1 = start; 9 = start behind a load barrier this host
+                        // never has to wait on (see the doc comment above).
+                        1 | 9 => {
+                            // Both arms store the id into `_DAT_8007BAC8` before
+                            // anything resolves it, the park sentinel included.
+                            self.bgm_track_word = Some(text_id);
+                            // Every track brings its own VAB. A scene-local id
+                            // loads retail's fallback track, not a scene bank
+                            // (`SCENE_LOCAL_BGM_FALLBACK_ID`); the id itself is
+                            // kept so the director's same-track suppression
+                            // compares what retail's `_DAT_8007BAB8` does.
+                            if let Some(entry) =
+                                self.music_bank_entry_bytes(super::bgm_bank_id(text_id))?
+                            {
+                                director.start_owned_vab(text_id, &entry);
+                                acted += 1;
+                            }
+                        }
+                        // 2 / 3 both set pause bit 1 (`0x801E0138`,
+                        // `0x801E015C`); 4 clears it and re-attaches the slot
+                        // (`0x801E0180`).
+                        2 | 3 => {
+                            director.pause();
                             acted += 1;
                         }
+                        4 => {
+                            director.resume();
+                            acted += 1;
+                        }
+                        super::BGM_SUB_OP_ENGINE_STOP => {
+                            director.stop();
+                            acted += 1;
+                        }
+                        8 => {
+                            // FUN_80019898: re-attach the BGM sound source and
+                            // re-apply the field volume global (DAT_8007B6EC).
+                            director
+                                .reattach_volume(super::bgm_reattach_volume(self.bgm_volume_raw));
+                            acted += 1;
+                        }
+                        // Sub-op 0xA - the unhalt-pause swap-commit (retail arm
+                        // 0x801E0264: wait on _DAT_8007B750 bit 3, release the
+                        // paused slot via FUN_800266E0 + FUN_80026520, set the
+                        // release-ack bit 4, clear the pause bit 1). The wait is
+                        // on the resolver's load-settle bit, which this
+                        // synchronous host satisfies on arrival - same reasoning
+                        // as sub-op 9's barrier above - so the commit routes
+                        // immediately.
+                        // PORT: FUN_800266E0 (the detach half of the commit)
+                        // PORT: FUN_80026520 (the close half; both are subsumed by
+                        // the director's release of its paused source)
+                        10 => {
+                            director.unhalt_pause();
+                            acted += 1;
+                        }
+                        _ => {
+                            // Other sub-ops (5/6/7/11) are control words -
+                            // surface them back on the queue for richer engines.
+                            leftover.push(legaia_engine_field::field_events::FieldEvent::Bgm {
+                                text_id,
+                                sub_op,
+                            });
+                        }
                     }
-                    // 2 / 3 both set pause bit 1 (`0x801E0138`,
-                    // `0x801E015C`); 4 clears it and re-attaches the slot
-                    // (`0x801E0180`).
-                    2 | 3 => {
-                        director.pause();
-                        acted += 1;
-                    }
-                    4 => {
-                        director.resume();
-                        acted += 1;
-                    }
-                    super::BGM_SUB_OP_ENGINE_STOP => {
-                        director.stop();
-                        acted += 1;
-                    }
-                    8 => {
-                        // FUN_80019898: re-attach the BGM sound source and
-                        // re-apply the field volume global (DAT_8007B6EC).
-                        director.reattach_volume(super::bgm_reattach_volume(self.bgm_volume_raw));
-                        acted += 1;
-                    }
-                    // Sub-op 0xA - the unhalt-pause swap-commit (retail arm
-                    // 0x801E0264: wait on _DAT_8007B750 bit 3, release the
-                    // paused slot via FUN_800266E0 + FUN_80026520, set the
-                    // release-ack bit 4, clear the pause bit 1). The wait is
-                    // on the resolver's load-settle bit, which this
-                    // synchronous host satisfies on arrival - same reasoning
-                    // as sub-op 9's barrier above - so the commit routes
-                    // immediately.
-                    // PORT: FUN_800266E0 (the detach half of the commit)
-                    // PORT: FUN_80026520 (the close half; both are subsumed by
-                    // the director's release of its paused source)
-                    10 => {
-                        director.unhalt_pause();
-                        acted += 1;
-                    }
-                    _ => {
-                        // Other sub-ops (5/6/7/11) are control words -
-                        // surface them back on the queue for richer engines.
-                        leftover.push(crate::field_events::FieldEvent::Bgm { text_id, sub_op });
-                    }
-                },
+                }
                 other => leftover.push(other),
             }
         }

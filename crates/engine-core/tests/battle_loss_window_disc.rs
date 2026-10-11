@@ -3,10 +3,10 @@
 //! results frame opens are the same framed window.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (disc-gated convention).
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_engine_battle_vm::battle_party_panel::{
     DEFEAT_WINDOW_ELEMENT, DefeatText, RESULT_WINDOW_ELEMENT, ResultSubject,
 };
-use legaia_patcher::disc::DiscPatcher;
 
 #[test]
 fn the_loss_window_text_and_seat_come_off_the_disc() {
@@ -24,7 +24,7 @@ fn the_loss_window_text_and_seat_come_off_the_disc() {
     assert_ne!(solo, team, "the two build arms word the loss differently");
 
     let scus = patcher.read_named_file("SCUS_942.54").expect("read SCUS");
-    let table = legaia_asset::screen_elements::ScreenElementTable::from_scus(&scus)
+    let table = legaia_ui_formats::screen_elements::ScreenElementTable::from_scus(&scus)
         .expect("placement table");
     let win = table.get(RESULT_WINDOW_ELEMENT).expect("record 0x41");
     let loss = table.get(DEFEAT_WINDOW_ELEMENT).expect("record 0x42");

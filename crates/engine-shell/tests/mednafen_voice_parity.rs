@@ -23,10 +23,11 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_mednafen::SaveState;
 use legaia_parity::audio_trace_oracle::{
     AudioTraceBuildOptions, build_engine_audio_trace, load_runtime_audio_trace_from_save,
 };
+use legaia_ram_image::ScenarioManifest;
 
 fn first_dir(cands: &[&str], probe: &str) -> Option<PathBuf> {
     cands

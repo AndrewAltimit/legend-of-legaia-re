@@ -2,7 +2,7 @@
 //! continent cell carrying its four corners draws at its ordering-table
 //! bucket's depth, one value across the whole cell - retail's
 //! `(max corner SZ >> 5) + 14` (`FUN_801F89B8`), mapped back through the
-//! draw's own matrix (`legaia_engine_core::overworld_draw_order`, which
+//! draw's own matrix (`legaia_engine_field::overworld_draw_order`, which
 //! computes the same number on the CPU for the fog sheets). Skips (passes
 //! vacuously) with no GPU adapter.
 
@@ -421,7 +421,7 @@ fn a_continent_cell_draws_flat_at_its_bucket_depth() {
     }
 }
 
-/// The overworld ground's depth cue (`legaia_engine_core::overworld_ground_cue`,
+/// The overworld ground's depth cue (`legaia_engine_field::overworld_ground_cue`,
 /// retail `FUN_801F89B8`'s `DPCS`): with the corners carried on an overworld
 /// frame the cell's packet colour is pushed toward the far colour `0x1000` by
 /// `IR0 = max(SZ1 - 0x5000, 0) >> 3`, `SZ1` the depth of corner `(x1, z0)`;

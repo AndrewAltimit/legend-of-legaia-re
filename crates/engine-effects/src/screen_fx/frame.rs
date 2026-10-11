@@ -54,7 +54,7 @@ pub const OT_MASK: u32 = 0x1C;
 /// every host draws, in the retail GP0 vertex order
 /// `(left,top) (right,top) (left,bottom) (right,bottom)`.
 ///
-/// This is deliberately a 1:1 mirror of `legaia_engine_ui::screen_prim`'s two
+/// This is deliberately a 1:1 mirror of `legaia_render_kernels::screen_prim`'s two
 /// variants without depending on that crate (`engine-core` is below it): each
 /// host re-wraps these mechanically, so the geometry, the culling, the UVs and
 /// the ordering are decided **once**, here.

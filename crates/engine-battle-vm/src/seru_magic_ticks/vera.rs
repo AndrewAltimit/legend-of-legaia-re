@@ -47,7 +47,7 @@ pub const VERA_CURE_MIN_LEVEL: u8 = 3;
 /// `0x801F4420..0x801F4440`) and stores its first byte there
 /// (`sw v1,0x6960(v0)` at `0x801F4480`). On the light row - element `5`, the
 /// row a cure-class summon selects - that byte is
-/// [`legaia_asset::seru_side_effect::RETAIL_CURE_CLASS_BY_BAND`], i.e. `1..=4`
+/// [`legaia_game_tables::seru_side_effect::RETAIL_CURE_CLASS_BY_BAND`], i.e. `1..=4`
 /// by magic-level band. On the six damaging rows it is a percent
 /// (`5 / 10 / 15 / 20`), which matches none of the four arms, so a non-light
 /// summon's cast cures nothing without needing a second element test.

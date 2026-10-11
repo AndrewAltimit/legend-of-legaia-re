@@ -17,3 +17,4 @@ toml = { workspace = true, features = ["display"] }
 
 [dev-dependencies]
 legaia-asset.workspace = true
+legaia-game-tables.workspace = true

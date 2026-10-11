@@ -1,10 +1,10 @@
 //! The CLUT-walk shimmer's **stepper**: the water / waterfall / ocean palette
 //! animation every host runs over its scene VRAM.
 //!
-//! [`legaia_asset::clut_walk`] parses the walker table and the source strips;
+//! [`legaia_scene_formats::clut_walk`] parses the walker table and the source strips;
 //! this is what installs them and steps them. Each table entry is one retail
 //! walker actor (`FUN_80024cfc` spawns it, accumulator seeded to
-//! [`legaia_asset::clut_walk::ACCUMULATOR_SEED`] so every entry's first copy
+//! [`legaia_scene_formats::clut_walk::ACCUMULATOR_SEED`] so every entry's first copy
 //! fires at scene entry). Per retail game tick every accumulator banks `dt`
 //! vsyncs (`DAT_1F800393`); when one crosses its frame's hold it emits a 16x1
 //! VRAM-to-VRAM `MoveImage` from the parked source strip onto its destination
@@ -22,7 +22,7 @@
 //! stepper (acc += DAT_1F800393; on acc >= hold: MoveImage 16x1, acc = 0,
 //! frame++ wrapping).
 
-use legaia_asset::clut_walk::{self, ClutWalkTable, ParkStrip};
+use legaia_scene_formats::clut_walk::{self, ClutWalkTable, ParkStrip};
 use legaia_tim::Vram;
 
 use crate::scene::{ProtIndex, Scene, is_world_map_scene};
@@ -109,7 +109,7 @@ impl ClutWalkAnim {
             let Ok(table) = clut_walk::from_kingdom_entry(&entry.bytes) else {
                 continue;
             };
-            if let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&entry.bytes, 0) {
+            if let Ok(slot0) = legaia_scene_formats::kingdom_bundle::decode_slot(&entry.bytes, 0) {
                 park(vram, &clut_walk::park_strips(&slot0));
             }
             let missing_cells = park_drake_complement(&table, index, vram);
@@ -121,10 +121,11 @@ impl ClutWalkAnim {
         }
         // Slot 5 absent / unparseable: the legacy ocean-head fallback.
         for entry in &scene.entries {
-            let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&entry.bytes, 0) else {
+            let Ok(slot0) = legaia_scene_formats::kingdom_bundle::decode_slot(&entry.bytes, 0)
+            else {
                 continue;
             };
-            if let Some(ocean) = legaia_asset::ocean::find_ocean_assets(&slot0)
+            if let Some(ocean) = legaia_scene_formats::ocean::find_ocean_assets(&slot0)
                 && ocean.animation_frames.len() >= 32
             {
                 return Some(ClutWalkInstall {
@@ -227,10 +228,10 @@ fn park_drake_complement(
     if missing.is_empty() {
         return missing;
     }
-    // PROT 0086, not 0085 - see `legaia_asset::kingdom_bundle::BUNDLE_ENTRIES`.
-    let drake = legaia_asset::kingdom_bundle::BUNDLE_ENTRIES[0];
+    // PROT 0086, not 0085 - see `legaia_scene_formats::kingdom_bundle::BUNDLE_ENTRIES`.
+    let drake = legaia_scene_formats::kingdom_bundle::BUNDLE_ENTRIES[0];
     if let Ok(bytes) = index.entry_bytes(drake)
-        && let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&bytes, 0)
+        && let Ok(slot0) = legaia_scene_formats::kingdom_bundle::decode_slot(&bytes, 0)
     {
         let rows: Vec<u16> = missing.iter().map(|&(_, y)| y).collect();
         let strips: Vec<ParkStrip> = clut_walk::park_strips(&slot0)
@@ -245,7 +246,7 @@ fn park_drake_complement(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::clut_walk::{ClutWalkEntry, ClutWalkFrame};
+    use legaia_scene_formats::clut_walk::{ClutWalkEntry, ClutWalkFrame};
 
     fn one_entry(hold: u8) -> ClutWalkAnim {
         ClutWalkAnim::walk(ClutWalkTable {

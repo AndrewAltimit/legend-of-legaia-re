@@ -17,15 +17,15 @@
 //! without a GPU on either side.
 
 use legaia_engine_battle_vm::battle_value_readout as vr;
-use legaia_engine_ui::battle_numerals as bn;
-use legaia_engine_ui::screen_prim::{
+use legaia_render_kernels::battle_numerals as bn;
+use legaia_render_kernels::screen_prim::{
     BlendClass, FLAG_TEXTURED, PSX_DISPLAY_H, PSX_DISPLAY_W, SCREEN_VERTEX_OFF_CBA_TSB,
     SCREEN_VERTEX_OFF_FLAGS, SCREEN_VERTEX_STRIDE, build_geometry,
 };
 
 /// One frame's worth of readout: a three-hit combo cluster plus a floating
 /// numeral over an actor that projected to `(160, 120)`.
-fn frame_prims() -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+fn frame_prims() -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
     let cluster = vr::combo_cluster(vr::ComboStyle::HitTotal, 3, 481, 0);
     let mut prims = bn::combo_cluster_prims(&cluster, bn::VALUE_READOUT_OT);
     let cells = vr::value_cells(184, 160, 120, vr::POP_FRAMES);
@@ -63,8 +63,16 @@ fn every_readout_vertex_names_the_glyph_page() {
         let clut = le_u32(&bytes, base + SCREEN_VERTEX_OFF_CBA_TSB as usize);
         let tpage = le_u32(&bytes, base + SCREEN_VERTEX_OFF_CBA_TSB as usize + 4);
         let flags = le_u32(&bytes, base + SCREEN_VERTEX_OFF_FLAGS as usize);
-        assert_eq!(clut, u32::from(bn::GLYPH_CLUT), "vertex {v} CLUT");
-        assert_eq!(tpage, u32::from(bn::GLYPH_TPAGE), "vertex {v} texpage");
+        assert_eq!(
+            clut,
+            u32::from(legaia_engine_battle_vm::battle_value_readout::GLYPH_CLUT),
+            "vertex {v} CLUT"
+        );
+        assert_eq!(
+            tpage,
+            u32::from(legaia_engine_battle_vm::battle_value_readout::GLYPH_TPAGE),
+            "vertex {v} texpage"
+        );
         assert_eq!(flags & FLAG_TEXTURED, FLAG_TEXTURED, "vertex {v} flags");
     }
 }

@@ -10,16 +10,16 @@
 //! so the wiring is exercised where the hosts reach it rather than only at the
 //! leaf.
 
-use legaia_asset::fishing_species::FishingSpecies;
-use legaia_engine_core::field_regions::RegionTable;
-use legaia_engine_core::fishing::{
+use legaia_engine_field::field_regions::RegionTable;
+use legaia_engine_fishing::fishing::{
     CAST_POWER_MAX, FishingRecord, PondInput, PondPhase, PondSession, PondVenue,
 };
-use legaia_engine_core::fishing_actors::{
+use legaia_engine_fishing::fishing_actors::{
     CELL_WATER_BIT, LURE_CAST_RADIUS, LureActor, VENUE_ANCHOR, WATER_TILE_CLASSES,
     WATER_TILE_DEFAULT, walk_grid_overhead,
 };
-use legaia_engine_core::minigame_floor::{CELL_GRID_OFF, CELL_GRID_PITCH, GRID_EXTENT};
+use legaia_engine_fishing::minigame_floor::{CELL_GRID_OFF, CELL_GRID_PITCH, GRID_EXTENT};
+use legaia_minigame_formats::fishing_species::FishingSpecies;
 
 /// A `.MAP` buffer long enough for the object-descriptor band, the `+0x4000`
 /// walk grid, the `+0x8000` cell grid and the `+0x10000` region block.

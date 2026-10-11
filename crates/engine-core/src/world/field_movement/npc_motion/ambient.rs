@@ -86,7 +86,7 @@ impl World {
     /// Seed the per-NPC **ambient facing** channels from the scene MAN's
     /// tail-section-1 motion streams - the idle turn-in-place behaviour of the
     /// second motion VM (`FUN_80038158` ops `0x04` / `0x0D`, ported at
-    /// [`legaia_engine_vm::ambient_motion`]). Without this a standing town NPC
+    /// [`legaia_engine_motion_vm::ambient_motion`]). Without this a standing town NPC
     /// holds one heading forever where retail NPCs slowly look around.
     ///
     /// Binding resolution is the installer's: `FUN_8003A9D4` matches each
@@ -108,10 +108,10 @@ impl World {
     // REF: FUN_8003A9D4 (binding installer), FUN_8003A1E4 (+0x50 = N0 + index)
     pub fn seed_field_npc_ambient(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
     ) {
-        use legaia_asset::man_motion;
+        use legaia_scene_formats::man_motion;
         self.npcs.ambient.clear();
         let Some(n0) = man_file.partitions.first().map(|p| p.len()) else {
             return;
@@ -139,7 +139,10 @@ impl World {
                 if variants.is_empty() {
                     continue;
                 }
-                let vm = vm::ambient_motion::AmbientMotion::new(u32::from(b.actor_id), 0);
+                let vm = legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(
+                    u32::from(b.actor_id),
+                    0,
+                );
                 self.npcs.object_ambient.insert(
                     record,
                     FieldNpcAmbient {
@@ -187,8 +190,11 @@ impl World {
             // wander op's AABB guard is absolute, so a channel started at
             // the origin would retire its wander on the first tick.
             let (px, pz) = self.npcs.positions.get(&slot).copied().unwrap_or((0, 0));
-            let mut vm = vm::ambient_motion::AmbientMotion::new(u32::from(slot), retail_heading)
-                .with_position(px, pz);
+            let mut vm = legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(
+                u32::from(slot),
+                retail_heading,
+            )
+            .with_position(px, pz);
             // The seater's class bit: `FUN_8003A1E4` ORs `0x20000` into every
             // partition-1 placement it seats (`0x8003A3A4..0x8003A3B4`), so
             // the channel's `+0x10` word starts with it - the gate the
@@ -232,7 +238,7 @@ impl World {
     /// scalar, so op and ramp retire together).
     ///
     /// **The mirror is gated on the VM having actually moved the heading**,
-    /// the same contract [`legaia_engine_vm::motion_vm::MotionState`]'s
+    /// the same contract [`legaia_engine_motion_vm::motion_vm::MotionState`]'s
     /// `yaw_written` buys for the walk channel: an NPC parked in a `0x05`
     /// wait op must not re-stamp its stale ambient heading over a pose some
     /// other writer set - the interact "face the speaker" bearing, a scripted
@@ -243,7 +249,7 @@ impl World {
     /// port resets the VM's PC / cursor on a change rather than resuming the
     /// old variant's offset into new bytecode.
     // This is the host driver, not the port: both routines are ported in
-    // `legaia_engine_vm::ambient_motion`, whose module-level `PORT:` line
+    // `legaia_engine_motion_vm::ambient_motion`, whose module-level `PORT:` line
     // claims them, and this method only steps that VM and publishes the
     // result. So the tags here are cross-references - the same form
     // `world/frame_tick.rs`'s call site already uses for the pair.
@@ -292,7 +298,8 @@ impl World {
                 .player_actor_slot
                 .and_then(|s| self.actors.get(usize::from(s)))
                 .is_some_and(|a| {
-                    a.move_state.flags & crate::field_actor_program::PLAYER_ENGAGED != 0
+                    a.move_state.flags & legaia_engine_field::field_actor_program::PLAYER_ENGAGED
+                        != 0
                 });
         let talker = self.dialog.inline.as_ref().and_then(|id| id.npc_slot);
         for slot in slots {
@@ -372,18 +379,20 @@ impl World {
             // ambient channel has a stream bound, so those two inputs are
             // constant here. The ramp pool is its own actor and keeps
             // running either way.
-            let suppressed = globals_in & crate::world::CAMERA_HOLD_FLAG != 0;
-            let plan = vm::motion_vm::field_actor_plan(vm::motion_vm::FieldActorInputs {
-                lifetime: vm.move_pair.unwrap_or(0),
-                flags: vm.actor_flags,
-                field_8e: 0,
-                path_target_present: false,
-                scripted_present: true,
-                ambient_gate: false,
-                frame_step: speed,
-                scene_guard_clear: true,
-                global_suppress: suppressed,
-            });
+            let suppressed = globals_in & legaia_engine_field::camera::CAMERA_HOLD_FLAG != 0;
+            let plan = legaia_engine_motion_vm::motion_vm::field_actor_plan(
+                legaia_engine_motion_vm::motion_vm::FieldActorInputs {
+                    lifetime: vm.move_pair.unwrap_or(0),
+                    flags: vm.actor_flags,
+                    field_8e: 0,
+                    path_target_present: false,
+                    scripted_present: true,
+                    ambient_gate: false,
+                    frame_step: speed,
+                    scene_guard_clear: true,
+                    global_suppress: suppressed,
+                },
+            );
             if plan.dispatch.run_scripted && !defer {
                 vm.tick_with(code, speed, &blocking);
             } else {
@@ -525,19 +534,19 @@ impl World {
     /// the same cursor / parked-slot / delay-table update the field VM's op
     /// `0x36` sub-`0` runs - so a scripted beat's cue parks the slot a
     /// following op-`0x36` sub-`4` delay write then targets - and queues the
-    /// cue **id** as a [`crate::world::SfxRingOp::Push`] for the host's audio
+    /// cue **id** as a [`legaia_engine_system::sound_state::SfxRingOp::Push`] for the host's audio
     /// ring, which both hosts drain and play.
     ///
-    /// [`AmbientEffect::ModelSwap`]: legaia_engine_vm::ambient_motion_ops::AmbientEffect::ModelSwap
-    /// [`AmbientEffect::MoveImage`]: legaia_engine_vm::ambient_motion_ops::AmbientEffect::MoveImage
-    /// [`AmbientEffect::SfxCue`]: legaia_engine_vm::ambient_motion_ops::AmbientEffect::SfxCue
+    /// [`AmbientEffect::ModelSwap`]: legaia_engine_motion_vm::ambient_motion_ops::AmbientEffect::ModelSwap
+    /// [`AmbientEffect::MoveImage`]: legaia_engine_motion_vm::ambient_motion_ops::AmbientEffect::MoveImage
+    /// [`AmbientEffect::SfxCue`]: legaia_engine_motion_vm::ambient_motion_ops::AmbientEffect::SfxCue
     // REF: FUN_80035B50 (the enqueue the `SfxCue` arm reproduces)
     pub(in crate::world::field_movement) fn apply_ambient_motion_effects(
         &mut self,
         slot: u8,
-        effects: &[legaia_engine_vm::ambient_motion_ops::AmbientEffect],
+        effects: &[legaia_engine_motion_vm::ambient_motion_ops::AmbientEffect],
     ) {
-        use legaia_engine_vm::ambient_motion_ops::AmbientEffect as Fx;
+        use legaia_engine_motion_vm::ambient_motion_ops::AmbientEffect as Fx;
         for fx in effects {
             match *fx {
                 Fx::SystemFlagSet(idx) => self.system_flag_set(idx),
@@ -556,7 +565,7 @@ impl World {
                     // host ring, which plays it.
                     self.audio
                         .sfx_ring_ops
-                        .push(crate::world::SfxRingOp::Push(id));
+                        .push(legaia_engine_system::sound_state::SfxRingOp::Push(id));
                 }
                 Fx::MoveImage { rect, dx, dy } => {
                     // The same libgpu blit the field VM's `4C 60` emitter
@@ -581,7 +590,7 @@ impl World {
                     // `model_bank::resolve_model_id`. The VM already applied
                     // the `0xF0` split; re-adding the threshold on the
                     // special arm is its inverse, not a second decode.
-                    use legaia_engine_vm::ambient_motion_ops::ModelBank as VmBank;
+                    use legaia_engine_motion_vm::ambient_motion_ops::ModelBank as VmBank;
                     let id = match bank {
                         VmBank::Scene => offset,
                         VmBank::Special => {
@@ -611,7 +620,8 @@ impl World {
             player: None,
             exempt: true,
         };
-        let suppressed = self.flags.story_flags & crate::world::CAMERA_HOLD_FLAG != 0;
+        let suppressed =
+            self.flags.story_flags & legaia_engine_field::camera::CAMERA_HOLD_FLAG != 0;
         let records: Vec<usize> = self.npcs.object_ambient.keys().copied().collect();
         for record in records {
             let pick = self
@@ -639,8 +649,12 @@ impl World {
             }
             vm.tick_with(code, speed, &probe);
             for fx in std::mem::take(&mut vm.effects) {
-                if let vm::ambient_motion_ops::AmbientEffect::ModelSwap { bank, offset } = fx {
-                    use legaia_engine_vm::ambient_motion_ops::ModelBank as VmBank;
+                if let legaia_engine_motion_vm::ambient_motion_ops::AmbientEffect::ModelSwap {
+                    bank,
+                    offset,
+                } = fx
+                {
+                    use legaia_engine_motion_vm::ambient_motion_ops::ModelBank as VmBank;
                     let id = match bank {
                         VmBank::Scene => offset,
                         VmBank::Special => {

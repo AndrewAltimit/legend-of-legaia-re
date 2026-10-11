@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 // ---------------------------------------------------------------------------
 // Field-NPC motion (motion-VM wiring) + prop walk-touch dispatch
@@ -167,7 +168,7 @@ fn start_field_npc_motion_requires_installed_slot() {
 /// `field_op_3e_warp_arms_the_minigame_door_not_a_scene_change`.
 #[test]
 fn walk_touch_warp_posts_the_interact_but_does_not_enter_the_minigame() {
-    use crate::man_field_scripts::WalkTouchEvent;
+    use legaia_engine_field::man_field_scripts::WalkTouchEvent;
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -230,7 +231,7 @@ fn walk_touch_warp_posts_the_interact_but_does_not_enter_the_minigame() {
 
 #[test]
 fn walk_touch_player_moveto_teleports_player() {
-    use crate::man_field_scripts::WalkTouchEvent;
+    use legaia_engine_field::man_field_scripts::WalkTouchEvent;
 
     let mut world = World::new();
     world.mode = SceneMode::Field;
@@ -306,7 +307,7 @@ fn interaction_prologue_npc_run_seats_the_interacted_npc() {
     world.npcs.dialog.insert(3, body[first_segment..].to_vec());
     world.npcs.dialog_prologue.insert(
         3,
-        crate::man_field_scripts::InlineDialogPrologue {
+        legaia_engine_field::man_field_scripts::InlineDialogPrologue {
             body,
             entry_pc: 0,
             first_segment,
@@ -331,7 +332,7 @@ fn interaction_prologue_npc_run_seats_the_interacted_npc() {
     assert!(world.npcs.motions.is_empty(), "no walk leg is armed");
     assert_eq!(
         world.npcs.headings.get(&3).copied(),
-        crate::man_field_scripts::facing_index_to_engine_heading(2),
+        legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(2),
         "operand byte +3's low nibble is the LUT facing"
     );
 }

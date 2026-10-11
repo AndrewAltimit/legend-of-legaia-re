@@ -413,7 +413,7 @@ pub(super) fn run_one(
                 tick_menu_session(&mut menu_rt, &mut session.host.world, edge);
                 Ok(SceneTickEvent::Stepped)
             } else if session.host.world.name_entry_active() {
-                let input = legaia_engine_core::name_entry::NameEntryInput::from_pad_edge(edge);
+                let input = legaia_engine_menus::name_entry::NameEntryInput::from_pad_edge(edge);
                 session.host.world.step_name_entry(input);
                 session.host.world.frame = session.host.world.frame.wrapping_add(1);
                 Ok(SceneTickEvent::Stepped)

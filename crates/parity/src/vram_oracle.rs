@@ -27,7 +27,8 @@ use legaia_engine_core::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 
-use crate::{BootConfig, BootSession};
+use crate::BootSession;
+use legaia_engine_session::boot::BootConfig;
 
 /// PSX VRAM dimensions in BGR555 cells.
 pub const VRAM_WIDTH: usize = 1024;
@@ -225,7 +226,7 @@ pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 /// CLUT cells the **world-map walk-view runtime rewrites** (water / shoreline
 /// palette cycling). Disc-derived: the exclusion set is the eight 16x1
 /// `MoveImage` **destination cells of the kingdom-bundle slot-5 CLUT-walk
-/// table** (`legaia_asset::clut_walk`, byte-identical across PROT 0085 /
+/// table** (`legaia_scene_formats::clut_walk`, byte-identical across PROT 0085 /
 /// 0244 / 0391) - `(0/16/32, 506)`, `(0/16/32, 508)`, `(32, 509)`,
 /// `(48, 500)` - folded per row. The walker (`FUN_8001ada4` case 0xB, one
 /// actor per entry) rewrites each whole 16-entry cell every few game ticks,

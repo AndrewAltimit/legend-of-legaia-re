@@ -29,7 +29,7 @@ use legaia_web_viewer::runtime::LegaiaRuntime;
 const START: u16 = 0x0008;
 const CROSS: u16 = 0x4000;
 
-/// Mode-24 sub-ids (`legaia_engine_core::minigame_entry::MinigameSubId`).
+/// Mode-24 sub-ids (`legaia_engine_mode::minigame_entry::MinigameSubId`).
 const SUB_SLOT: u8 = 3;
 const SUB_BAKA: u8 = 4;
 const SUB_MUSCLE: u8 = 5;

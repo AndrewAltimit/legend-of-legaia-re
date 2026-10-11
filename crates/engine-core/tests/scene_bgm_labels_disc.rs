@@ -13,8 +13,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::scene_bgm_starts;
-use legaia_engine_core::music_labels;
+use legaia_engine_field::man_field_scripts::scene_bgm_starts;
+use legaia_engine_system::music_labels;
 
 fn extracted_prot() -> Option<PathBuf> {
     for p in [
@@ -31,7 +31,7 @@ fn extracted_prot() -> Option<PathBuf> {
 }
 
 fn load_man_from_scene(bytes: &[u8]) -> Option<Vec<u8>> {
-    let table = legaia_asset::scene_asset_table::detect(bytes)?;
+    let table = legaia_scene_formats::scene_asset_table::detect(bytes)?;
     let man = table
         .descriptors
         .iter()
@@ -74,7 +74,7 @@ fn scene_bgm_ids_resolve_to_music_labels() {
         let Some(man) = load_man_from_scene(&bytes) else {
             continue;
         };
-        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         scenes_with_man += 1;

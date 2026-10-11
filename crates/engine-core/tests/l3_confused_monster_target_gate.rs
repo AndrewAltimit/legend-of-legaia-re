@@ -38,9 +38,10 @@
 //!
 //! Disc-free: synthetic party + the vanilla monster / formation tables.
 
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_battle_vm::status_effects::StatusKind;
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 
 const PARTY: u8 = 3;
 const MONSTERS: u8 = 3;
@@ -78,7 +79,7 @@ fn battle_world(seed: u32) -> World {
 /// target = self). Filtering on `category == 3` therefore drops exactly the
 /// outcome that proves the arm ran, and reads as "the monster never acted".
 fn armed_actions(w: &mut World, slot: u8, frames: usize) -> Vec<(u8, u8)> {
-    use legaia_engine_core::battle_input::CommandPhase;
+    use legaia_engine_menus::battle_input::CommandPhase;
     let mut seen: Vec<(u8, u8)> = Vec::new();
     for frame in 0..frames {
         // A party nobody can command still raises the party-wide screens
@@ -90,7 +91,7 @@ fn armed_actions(w: &mut World, slot: u8, frames: usize) -> Vec<(u8, u8)> {
                 CommandPhase::RoundPrompt { .. } | CommandPhase::CommitConfirm { .. }
             )
         });
-        let cross = legaia_engine_core::input::PadButton::Cross.mask();
+        let cross = legaia_engine_system::input::PadButton::Cross.mask();
         w.set_pad(if party_screen && frame % 2 == 0 {
             cross
         } else {
@@ -107,7 +108,7 @@ fn armed_actions(w: &mut World, slot: u8, frames: usize) -> Vec<(u8, u8)> {
         // arm this measures.
         if w.battle_ctx.active_actor != slot
             || w.battle_ctx.action_state
-                == legaia_engine_vm::battle_action::ActionState::EndOfAction.as_byte()
+                == legaia_engine_battle_vm::battle_action::ActionState::EndOfAction.as_byte()
         {
             continue;
         }
@@ -388,8 +389,8 @@ fn a_confused_party_member_is_flipped_the_other_way() {
         if let Some(session) = w.battle.command.as_ref().filter(|s| {
             !matches!(
                 s.phase,
-                legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. }
-                    | legaia_engine_core::battle_input::CommandPhase::CommitConfirm { .. }
+                legaia_engine_menus::battle_input::CommandPhase::RoundPrompt { .. }
+                    | legaia_engine_menus::battle_input::CommandPhase::CommitConfirm { .. }
             )
         }) {
             let still_confused = w

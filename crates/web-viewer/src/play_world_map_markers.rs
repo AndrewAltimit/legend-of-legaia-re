@@ -8,7 +8,7 @@
 //! facing-ticked post for the player when the leader's mesh is missing.
 //! The geometry, colours, sizing and projection all come out of
 //! `legaia_engine_core::world_map_markers`; this file only wraps its quads
-//! through `legaia_engine_ui::screen_prim::world_map_marker_prim` onto the
+//! through `legaia_render_kernels::screen_prim::world_map_marker_prim` onto the
 //! page's existing screen-prim pass - the page has no line primitive, which
 //! is why the kernel emits one-pixel quads rather than lines. The native
 //! window's twin is `world_map_marker_prims`.
@@ -18,10 +18,10 @@
 //! draw step never advances the cutscene glide.
 
 use legaia_engine_core::camera_view::resolve_field_camera;
-use legaia_engine_core::world::SceneMode;
 use legaia_engine_core::world_map_markers::marker_quads;
 use legaia_engine_core::world_map_sky::sky_band;
-use legaia_engine_ui::screen_prim::{ScreenPrim, sky_band_prims, world_map_marker_prim};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_render_kernels::screen_prim::{ScreenPrim, sky_band_prims, world_map_marker_prim};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::runtime::LegaiaRuntime;

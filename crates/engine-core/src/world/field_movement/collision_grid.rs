@@ -3,6 +3,7 @@
 //! queries.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     // --- field collision grid + free-movement locomotion ----------------
@@ -75,11 +76,11 @@ impl World {
             .terrain
             .object_cells
             .iter()
-            .any(|c| c & legaia_asset::field_objects::CELL_WALK_VISIBLE != 0)
+            .any(|c| c & legaia_scene_formats::field_objects::CELL_WALK_VISIBLE != 0)
         {
-            legaia_asset::field_objects::CELL_WALK_VISIBLE
+            legaia_scene_formats::field_objects::CELL_WALK_VISIBLE
         } else {
-            legaia_asset::field_objects::CELL_VISIBLE
+            legaia_scene_formats::field_objects::CELL_VISIBLE
         };
     }
 
@@ -112,7 +113,7 @@ impl World {
         self.refresh_field_regions();
     }
 
-    /// Per-tile region refresh - drives the [`crate::field_regions`] ports
+    /// Per-tile region refresh - drives the [`legaia_engine_field::field_regions`] ports
     /// (`FUN_800180EC` + `FUN_801DBA20`) against the player's current tile.
     ///
     /// Quantises `tile = (world - 0x40) >> 7` (the retail locomotion-cluster
@@ -123,7 +124,7 @@ impl World {
     /// scene entry and on every player tile crossing
     /// (`Self::live_field_tick`).
     ///
-    /// REF: FUN_800180EC, FUN_801DBA20 (ports in [`crate::field_regions`])
+    /// REF: FUN_800180EC, FUN_801DBA20 (ports in [`legaia_engine_field::field_regions`])
     pub fn refresh_field_regions(&mut self) {
         if self.terrain.map_region_block.is_empty() && self.terrain.zone_table.is_empty() {
             // No per-scene tables installed - leave `extra_flags` to the
@@ -139,13 +140,18 @@ impl World {
         };
         let tx = (wx as i32 - 0x40) >> 7;
         let tz = (wz as i32 - 0x40) >> 7;
-        let table = crate::field_regions::RegionTable::parse(&self.terrain.map_region_block);
+        let table =
+            legaia_engine_field::field_regions::RegionTable::parse(&self.terrain.map_region_block);
         let world_map_mode = self.mode == SceneMode::WorldMap;
-        let (mask, attrs) =
-            crate::field_regions::refresh_region_attributes(table.as_ref(), tx, tz, world_map_mode);
+        let (mask, attrs) = legaia_engine_field::field_regions::refresh_region_attributes(
+            table.as_ref(),
+            tx,
+            tz,
+            world_map_mode,
+        );
         self.flags.extra_flags = mask;
         self.terrain.region_attributes = attrs;
-        if let Some(result) = crate::field_regions::zone_query(
+        if let Some(result) = legaia_engine_field::field_regions::zone_query(
             &self.terrain.zone_table,
             table.as_ref(),
             &attrs,
@@ -156,7 +162,7 @@ impl World {
             // rebuild too (identical recomputation).
             self.flags.extra_flags = result.region_mask;
             self.terrain.zone_record = result.record.map(|r| {
-                let mut rec = [0u8; crate::field_regions::ZONE_RECORD_STRIDE];
+                let mut rec = [0u8; legaia_engine_field::field_regions::ZONE_RECORD_STRIDE];
                 rec.copy_from_slice(r);
                 rec
             });

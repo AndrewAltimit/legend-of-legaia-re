@@ -4,7 +4,7 @@
 //! The assembled battle mesh (one TMD spliced per character from their
 //! player battle file's equipment sections, objects sorted by bone tag) is
 //! posed by the character's **own idle keyframe stream** from record[0] of
-//! the same player file (`legaia_asset::battle_char_assembly::
+//! the same player file (`legaia_actor_formats::battle_char_assembly::
 //! idle_battle_animation` - monster-format `[parts][frames][9-byte TRS]`,
 //! `parts` = skeleton bones, channel `i` driving object `i`; equipment
 //! extras ride their attach bone via `anm_bones`). PROT 1203 is NOT that
@@ -35,9 +35,10 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-use legaia_asset::battle_char_assembly;
-use legaia_asset::monster_archive::MonsterAnimation;
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_actor_formats::battle_char_assembly;
+use legaia_actor_formats::monster_archive::MonsterAnimation;
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
 
 const PLAYER_FILES: [&str; 3] = [
     "0863_edstati3.BIN",
@@ -115,12 +116,12 @@ fn assembled_party_pose_matches_baka_reference() {
     // ANM bundle (per-character banks; the first record of each bank is the
     // idle whose frame 0 the reference poses with, bone i -> 1204 object i).
     let pack1204 = std::fs::read(dir.join("1204_other5.BIN")).expect("read 1204");
-    let bcp = legaia_asset::battle_char_pack::parse_slots(&pack1204).expect("parse 1204");
+    let bcp = legaia_actor_formats::battle_char_pack::parse_slots(&pack1204).expect("parse 1204");
     let raw1203 = std::fs::read(dir.join("1203_other5.BIN")).expect("read 1203");
     let anm1203 = [6usize, 3, 5, 7]
         .iter()
         .find_map(|&dc| {
-            legaia_asset::player_anm::find_in_entry(&raw1203, dc)
+            legaia_actor_formats::player_anm::find_in_entry(&raw1203, dc)
                 .into_iter()
                 .next()
         })
@@ -136,7 +137,7 @@ fn assembled_party_pose_matches_baka_reference() {
 
     for (cslot, file) in PLAYER_FILES.iter().enumerate() {
         let raw = std::fs::read(dir.join(file)).expect("read player file");
-        let pack = legaia_asset::battle_data_pack::parse(&raw).expect("parse pack");
+        let pack = legaia_actor_formats::battle_data_pack::parse(&raw).expect("parse pack");
         let asm = battle_char_assembly::assemble_character(&raw, &pack, &[0; 5])
             .expect("assemble defaults");
         let tmd = legaia_tmd::parse(&asm.tmd).expect("parse assembled TMD");
@@ -314,7 +315,7 @@ fn assembled_party_matches_live_battle() {
 
         // Assemble from the disc with the capture's own equipped ids.
         let raw = std::fs::read(dir.join(file)).expect("read player file");
-        let pack = legaia_asset::battle_data_pack::parse(&raw).expect("parse pack");
+        let pack = legaia_actor_formats::battle_data_pack::parse(&raw).expect("parse pack");
         let pid = rbytes(ram, PARTY_IDS, 3)[slot];
         assert!(pid > 0, "{file}: party slot {slot} empty in capture");
         let rec = CHAR_RECORDS + (pid as u32 - 1) * CHAR_STRIDE;

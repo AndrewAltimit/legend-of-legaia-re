@@ -13,10 +13,10 @@
 //!
 //! Disc-free by construction - these are kernels over plain structs.
 
-use legaia_engine_vm::battle_cast_census::{
+use legaia_engine_battle_vm::battle_cast_census::{
     EFFECT_CHILD_STONE, EffectChildVictim, RESTAGE_BIT_FACE, RESTAGE_BIT_REACTION, effect_child_hit,
 };
-use legaia_engine_vm::cast_module_ticks::*;
+use legaia_engine_battle_vm::cast_module_ticks::*;
 
 fn ctx(phase: u8, actors: u8) -> CastModuleCtx {
     CastModuleCtx {

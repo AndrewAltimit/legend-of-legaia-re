@@ -269,7 +269,7 @@ pub(super) fn layout_head_window(
 /// Repaint each character's atlas TIM (entries 1..=3 of §2) with the new
 /// head window + palettes, in place inside the decoded §2 pack bytes.
 pub(super) fn patch_atlas(sec2: &mut [u8], slots: &[FieldSlot]) -> Result<()> {
-    let entries = legaia_asset::pack::parse_pack(sec2)?;
+    let entries = legaia_container_formats::pack::parse_pack(sec2)?;
     for (slot, fs) in slots.iter().enumerate() {
         let e = entries
             .get(slot + 1)

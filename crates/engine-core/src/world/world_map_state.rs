@@ -15,7 +15,7 @@ pub struct WorldMapState {
     /// installed overworld entity (encounter zones / town portals / NPCs).
     /// Empty unless [`crate::world::World::install_world_map_entities`] seeded them, so
     /// world-map mode without gameplay (camera-only) keeps ticking untouched.
-    /// Driven each [`crate::world::SceneMode::WorldMap`] tick by `Self::tick_world_map`.
+    /// Driven each [`legaia_engine_mode::mode::SceneMode::WorldMap`] tick by `Self::tick_world_map`.
     pub(crate) entities: Vec<legaia_engine_field::world_map_entity::WorldMapEntityCtx>,
     /// Per-entity role config, paired by index with [`crate::world::WorldMapState::entities`].
     /// Empty (or shorter than the entity list) means an entity has no specific
@@ -43,17 +43,17 @@ pub struct WorldMapState {
     pub(crate) player_walking: bool,
     /// Overworld encounter pending resolution into a battle: the formation id
     /// an entity SM's encounter handler latched this frame. Drained at the end
-    /// of `Self::tick_world_map` to flip into [`crate::world::SceneMode::Battle`]. `None`
+    /// of `Self::tick_world_map` to flip into [`legaia_engine_mode::mode::SceneMode::Battle`]. `None`
     /// between encounters.
     pub(crate) pending_encounter: Option<u16>,
     /// Region-keyed random-encounter state for the overworld (the
-    /// `FUN_801D9E1C` port, [`crate::region_encounter`]). When set,
+    /// `FUN_801D9E1C` port, [`legaia_engine_battle::region_encounter`]). When set,
     /// `Self::tick_world_map` rolls it once per 128-unit tile the player
     /// crosses, latching [`crate::world::WorldMapState::pending_encounter`] on a trigger.
     /// `None` on a camera-only world map (no region data routed).
     ///
     /// REF: FUN_801D9E1C
-    pub region_tracker: Option<crate::region_encounter::RegionEncounterTracker>,
+    pub region_tracker: Option<legaia_engine_battle::region_encounter::RegionEncounterTracker>,
     /// Player tile (`world >> 7`) at the previous overworld step check, for
     /// per-tile step detection. `None` until the first world-map tick seeds it.
     pub last_tile: Option<(i32, i32)>,

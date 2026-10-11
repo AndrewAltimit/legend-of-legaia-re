@@ -22,7 +22,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::summon as summon_core;
+use legaia_engine_effects::summon as summon_core;
 use legaia_web_viewer::summon_view::LegaiaSummons;
 
 /// The seven summons the page must name and draw.

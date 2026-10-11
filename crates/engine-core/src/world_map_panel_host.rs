@@ -7,7 +7,7 @@
 //! rearm term and the present-party projection - which both hosts ask once
 //! per frame.
 
-pub use legaia_engine_field::world_map_panel_host::*;
+use legaia_engine_field::world_map_panel_host::*;
 
 /// Retail's `_DAT_8007B868` field-HUD suppress global, as the port can see
 /// it - the one answer both hosts ask for, rather than one enumeration each.
@@ -42,15 +42,15 @@ pub use legaia_engine_field::world_map_panel_host::*;
 /// PORT: FUN_801d0d38 (`lw a2,0x45c4(v0)` at `0x801D0D74`)
 pub fn field_hud_view_mode(world: &crate::world::World) -> i32 {
     match world.toggles.field_hp_display {
-        crate::options::HpDisplayOpt::Immediate => 0,
-        crate::options::HpDisplayOpt::Gradual => 1,
-        crate::options::HpDisplayOpt::DisplayOff => 2,
+        legaia_engine_menus::option_values::HpDisplayOpt::Immediate => 0,
+        legaia_engine_menus::option_values::HpDisplayOpt::Gradual => 1,
+        legaia_engine_menus::option_values::HpDisplayOpt::DisplayOff => 2,
     }
 }
 
 /// PORT: FUN_801d0d38 (`0x801D0D38..0x801D0DBC` suppress gate)
 pub fn field_hud_suppressed(world: &crate::world::World, host_panel_owns_frame: bool) -> bool {
-    use crate::world::SceneMode;
+    use legaia_engine_mode::mode::SceneMode;
     !matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
         || host_panel_owns_frame
         // A conversation or a running interaction record is not a term
@@ -85,7 +85,7 @@ pub fn field_hud_suppressed(world: &crate::world::World, host_panel_owns_frame: 
 pub fn field_battle_transition_active(world: &crate::world::World) -> bool {
     matches!(
         world.encounters.session.as_ref().map(|s| s.phase()),
-        Some(crate::encounter::EncounterPhase::Transition { .. })
+        Some(legaia_engine_battle::encounter::EncounterPhase::Transition { .. })
     )
 }
 
@@ -170,8 +170,10 @@ mod tests {
     /// Off never draws - and the scene kind changes none of it.
     #[test]
     fn the_hp_display_option_drives_the_hud_idle_on_every_scene_kind() {
-        use crate::options::{HpDisplayOpt, OptionsState};
-        use crate::world::{SceneMode, World};
+        use crate::options::OptionsState;
+        use crate::world::World;
+        use legaia_engine_menus::option_values::HpDisplayOpt;
+        use legaia_engine_mode::mode::SceneMode;
         for (opt, mode, first_draw) in [
             (HpDisplayOpt::Immediate, 0, Some(0x28u32)),
             (HpDisplayOpt::Gradual, 1, Some(0xA0)),
@@ -261,7 +263,7 @@ mod tests {
         w.set_pad(0);
         let _ = w.tick();
         assert!(!w.world_map.ctrl.as_ref().unwrap().panels.is_active());
-        w.set_pad(crate::input::PadButton::Square.mask());
+        w.set_pad(legaia_engine_system::input::PadButton::Square.mask());
         let _ = w.tick();
         let panels = &w.world_map.ctrl.as_ref().unwrap().panels;
         assert!(panels.is_active(), "Square installs the sub-list");
@@ -277,7 +279,7 @@ mod tests {
     fn the_screen_stays_shut_without_the_debug_gate() {
         let mut w = crate::world::World::default();
         w.enter_world_map();
-        w.set_pad(crate::input::PadButton::Square.mask());
+        w.set_pad(legaia_engine_system::input::PadButton::Square.mask());
         let _ = w.tick();
         assert!(!w.world_map.ctrl.as_ref().unwrap().panels.is_active());
     }
@@ -296,14 +298,14 @@ mod tests {
         }
         // R2 installs the text box; phase 0 hands to the fade block, so seat
         // the prompt phase directly and confirm.
-        w.set_pad(crate::input::PadButton::R2.mask());
+        w.set_pad(legaia_engine_system::input::PadButton::R2.mask());
         let _ = w.tick();
         {
             let p = &mut w.world_map.ctrl.as_mut().unwrap().panels;
             assert_eq!(p.kind, Some(PanelActorKind::TextBox));
             assert_eq!(p.phase, 1, "installed straight at the prompt");
         }
-        w.set_pad(crate::input::PadButton::Cross.mask());
+        w.set_pad(legaia_engine_system::input::PadButton::Cross.mask());
         let _ = w.tick();
         for m in w.party.roster.members.iter() {
             assert_eq!(u16::from_le_bytes([m.raw[0x106], m.raw[0x107]]), 300);
@@ -358,15 +360,15 @@ mod tests {
                 base_flag: 0,
             };
         }
-        w.set_pad(crate::input::PadButton::R1.mask());
+        w.set_pad(legaia_engine_system::input::PadButton::R1.mask());
         let _ = w.tick();
         assert!(
             !w.system_flag_test(0x0003),
             "phase 0's range clear reached the world bank"
         );
-        w.set_pad(crate::input::PadButton::Down.mask());
+        w.set_pad(legaia_engine_system::input::PadButton::Down.mask());
         let _ = w.tick();
-        w.set_pad(crate::input::PadButton::Cross.mask());
+        w.set_pad(legaia_engine_system::input::PadButton::Cross.mask());
         let _ = w.tick();
         let picked = w.world_map.ctrl.as_ref().unwrap().panels.cursor;
         assert!(
@@ -380,7 +382,8 @@ mod tests {
     /// is not resident while the intro plays.
     #[test]
     fn the_battle_transition_suppresses_the_field_hud() {
-        use crate::world::{SceneMode, World};
+        use crate::world::World;
+        use legaia_engine_mode::mode::SceneMode;
         let mut world = World::new();
         world.mode = SceneMode::Field;
         world.install_encounter_bracket();
@@ -390,11 +393,13 @@ mod tests {
             .session
             .as_mut()
             .expect("bracket installed");
-        assert!(session.trigger_with(crate::encounter::EncounterRoll {
-            formation_id: 1,
-            row_index: 0,
-            roll_q8: 0,
-        }));
+        assert!(
+            session.trigger_with(legaia_engine_battle::encounter::EncounterRoll {
+                formation_id: 1,
+                row_index: 0,
+                roll_q8: 0,
+            })
+        );
         assert!(field_battle_transition_active(&world));
         assert!(field_hud_suppressed(&world, false), "the intro owns slot A");
     }

@@ -23,12 +23,12 @@ fn disc_spell_catalog_matches_pinned_mp_and_target() {
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
 
-    let disc = legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+    let disc = legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(&scus)
         .expect("spell table parses");
 
     // Every pinned Seru spell's MP + target + name read back identically from
     // the retail disc (the pinned constants were decoded from this same table).
-    for s in legaia_engine_core::retail_magic::SERU_MAGIC {
+    for s in legaia_engine_battle::retail_magic::SERU_MAGIC {
         let def = disc
             .get(s.id)
             .unwrap_or_else(|| panic!("disc catalog missing {:#04x}", s.id));
@@ -40,7 +40,7 @@ fn disc_spell_catalog_matches_pinned_mp_and_target() {
     // Spot-check the four decoded shapes are actually present in the block
     // (so the test is non-vacuous about the target decode).
     let target_of = |id: u8| disc.get(id).map(|d| d.target);
-    use legaia_engine_core::spells::SpellTarget;
+    use legaia_engine_battle::spells::SpellTarget;
     assert_eq!(
         target_of(0x81),
         Some(SpellTarget::OneEnemy),
@@ -77,11 +77,11 @@ fn disc_spell_catalog_covers_the_whole_player_seru_block() {
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
-    let table = legaia_asset::spell_names::SpellNameTable::from_scus(&scus).expect("table");
-    let disc = legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+    let table = legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus).expect("table");
+    let disc = legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(&scus)
         .expect("spell table parses");
     let mut named = 0;
-    for id in 0x81..=legaia_engine_core::retail_magic::PLAYER_SERU_LAST_ID {
+    for id in 0x81..=legaia_engine_battle::retail_magic::PLAYER_SERU_LAST_ID {
         let Some(e) = table.entry(id) else { continue };
         let Some(name) = e.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) else {
             continue;

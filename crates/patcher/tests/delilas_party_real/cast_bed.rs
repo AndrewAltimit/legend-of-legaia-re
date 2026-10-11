@@ -15,8 +15,9 @@ use legaia_disc_patch::disc::DiscPatcher;
 /// the assertion does not measure the patcher with the patcher's tools.
 pub(super) fn stream_speed(readef: &[u8], slot: usize, entry_index: usize) -> Vec<f64> {
     use legaia_party_swap::winpose::READEF_SLOT;
-    let off = legaia_asset::battle_char_assembly::art_me_slot(slot, false) * READEF_SLOT;
-    let ar = legaia_asset::me_archive::parse(&readef[off..off + READEF_SLOT]).expect("ME archive");
+    let off = legaia_actor_formats::battle_char_assembly::art_me_slot(slot, false) * READEF_SLOT;
+    let ar = legaia_actor_formats::me_archive::parse(&readef[off..off + READEF_SLOT])
+        .expect("ME archive");
     let body = ar.entry(entry_index).expect("art entry");
     let (parts, frames) = (body[0] as usize, body[1] as usize);
     let sx12 = |v: u16| -> i32 {

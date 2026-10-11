@@ -193,7 +193,7 @@ fn items_for_slot_filters_by_implied_slot() {
 #[test]
 fn restrictions_gate_item_list_by_character_mask() {
     use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
-    use legaia_asset::equip_stats::EquipSlot as Disc;
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
 
     // Two weapons: one Vahn-only (mask 1), one anyone (mask 7).
     let mut inv = crate::item_bag::ItemBag::new();
@@ -255,7 +255,7 @@ fn restrictions_gate_item_list_by_character_mask() {
 #[test]
 fn restrictions_gate_unambiguous_slot_by_disc_category() {
     use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
-    use legaia_asset::equip_stats::EquipSlot as Disc;
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
 
     let mut inv = crate::item_bag::ItemBag::new();
     inv.insert(0x20, 1); // weapon

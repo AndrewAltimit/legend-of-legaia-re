@@ -6,7 +6,7 @@ use super::*;
 /// A world with Koru-style casting set up for PROT 0961: party of three at
 /// seats `0..3`, the caster at seat 3 (formation slot 0) carrying `lead`.
 fn dead_end_crisis_world(lead: u16) -> World {
-    use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
     let mut world = module_code_world();
     world.party.party_count = 3;
     world.battle_ctx.active_actor = 3;
@@ -20,7 +20,7 @@ fn dead_end_crisis_world(lead: u16) -> World {
     entries[0xA1].class = CAPTURE_CLASS;
     entries[0xA1].sub_class = 0x1A;
     entries[0xA1].mp = 0;
-    world.menu.text = Some(crate::pause_screens::MenuTextTables {
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
         spell_names: Some(SpellNameTable::from_entries(entries)),
         ..Default::default()
     });

@@ -11,9 +11,9 @@
 //! Disc-gated: the door warp loads the arena and battle overlays. Skips and
 //! passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_engine_core::minigame_entry::MinigameSubId;
 use legaia_engine_core::scene::{MinigameWarpOutcome, SceneHost};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::minigame_entry::MinigameSubId;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn a_hurt_lead_enters_the_next_leg_with_its_record_maximum() {
@@ -69,8 +69,8 @@ fn a_hurt_lead_enters_the_next_leg_with_its_record_maximum() {
 /// walked back in with.
 #[test]
 fn the_second_leg_plate_keeps_the_record_maximum_through_the_hub() {
-    use legaia_engine_core::input::PadButton;
-    use legaia_engine_core::muscle_dome::MusclePhase;
+    use legaia_engine_menus::muscle_dome_session::MusclePhase;
+    use legaia_engine_system::input::PadButton;
 
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

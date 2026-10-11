@@ -23,10 +23,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
-use legaia_engine_vm::battle_action::ActionState;
+use legaia_engine_battle_vm::battle_action::ActionState;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::input::PadButton;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -43,7 +44,7 @@ fn open_session() -> Option<BootSession> {
         return None;
     };
     let cfg = BootConfig {
-        scene: legaia_engine_shell::boot::DEFAULT_BOOT_SCENE.to_string(),
+        scene: legaia_engine_session::boot::DEFAULT_BOOT_SCENE.to_string(),
         enable_audio: false,
     };
     let mut candidates = Vec::new();
@@ -78,7 +79,7 @@ fn host_drains(session: &mut BootSession) {
 /// The route ladder's fighter: Begin, Attack, Auto, confirm the target,
 /// confirm a message box, back out of a bag - every one a pad press.
 fn fight_pad(session: &BootSession) -> u16 {
-    use legaia_engine_core::battle_input::CommandPhase;
+    use legaia_engine_menus::battle_input::CommandPhase;
     let w = &session.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
         return PadButton::Cross.mask();

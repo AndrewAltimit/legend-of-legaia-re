@@ -34,7 +34,7 @@ pub mod space_ledger;
 /// budget. The descriptors' `data_offset`s never move (all edits are same-size
 /// in place), so the boundary is constant across passes.
 pub fn man_compressed_budget(
-    table: &legaia_asset::scene_asset_table::SceneAssetTable,
+    table: &legaia_scene_formats::scene_asset_table::SceneAssetTable,
     man_data_offset: usize,
     entry_len: usize,
 ) -> usize {

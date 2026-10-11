@@ -1,7 +1,7 @@
 //! Top-level engine boot session.
 //!
 //! Composes the per-crate primitives ([`legaia_engine_core::scene::SceneHost`],
-//! [`legaia_engine_core::camera::Camera`], the BGM director from
+//! [`legaia_engine_field::camera::Camera`], the BGM director from
 //! [`crate::audio_director::AudioBgmDirector`]) into one struct the binary drives per
 //! frame. Mirrors the retail boot flow:
 //!
@@ -23,18 +23,18 @@ use anyhow::{Context, Result};
 #[cfg(not(target_arch = "wasm32"))]
 use legaia_engine_audio::AudioOut;
 use legaia_engine_audio::AudioSink;
-use legaia_engine_core::camera::Camera;
-use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuSession};
+use legaia_engine_battle::magic_xp::SpellLevelNotice;
 use legaia_engine_core::field_menu_dispatch::{
     FieldMenuSubsession, SubsessionHandoff, finish_subsession, tick_open_subsession, tick_root_list,
 };
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::magic_xp::SpellLevelNotice;
 use legaia_engine_core::options::OptionsState;
-use legaia_engine_core::save_screen::{SaveCommit, SaveScreenFlow};
-use legaia_engine_core::save_select::{SaveRack, SlotSnapshot};
 use legaia_engine_core::scene::{BgmDirector, DefaultMapIdResolver, SceneHost, SceneTickEvent};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_field::camera::Camera;
+use legaia_engine_menus::field_menu::{FieldMenuGate, FieldMenuSession};
+use legaia_engine_menus::save_screen::{SaveCommit, SaveScreenFlow};
+use legaia_engine_menus::save_select::{SaveRack, SlotSnapshot};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 use crate::audio_director::AudioBgmDirector;
 
@@ -169,42 +169,42 @@ pub struct BootSession<S: AudioSink> {
     /// seed a faithful starting roster; `None` when the executable couldn't be
     /// read (e.g. a raw PROT.DAT-only source), in which case New Game keeps the
     /// world's default scaffold party.
-    pub starting_party: Option<legaia_asset::new_game::StartingParty>,
+    pub starting_party: Option<legaia_game_tables::new_game::StartingParty>,
     /// New-game starting inventory decoded from the boot source's `SCUS_942.54`
     /// seed code (`FUN_80034A6C`), if present. Vanilla retail is Healing Leaf
     /// ×5; the starting-item randomizer rewrites it. Used by
     /// [`BootSession::begin_new_game`] to seed the opening bag faithfully.
-    pub starting_inventory: Option<legaia_asset::new_game::StartingInventory>,
+    pub starting_inventory: Option<legaia_game_tables::new_game::StartingInventory>,
     /// Disc-accurate equipment modifier table keyed by real item ids, parsed
-    /// from the boot source's `SCUS_942.54` ([`legaia_asset::equip_stats`]).
+    /// from the boot source's `SCUS_942.54` ([`legaia_game_tables::equip_stats`]).
     /// Preferred over the fabricated-id vanilla catalog when installing the
     /// battle-stat equipment table; `None` on disc-free builds.
-    pub equip_modifier_table: Option<legaia_engine_core::battle_stats::EquipmentTable>,
+    pub equip_modifier_table: Option<legaia_engine_battle::battle_stats::EquipmentTable>,
     /// Disc-pinned equip restrictions (character mask `+6` + slot category
     /// `+7`) keyed by real item ids, parsed from the same equipment stat-bonus
-    /// table ([`legaia_asset::equip_stats`]). Drives the equip screen's
+    /// table ([`legaia_game_tables::equip_stats`]). Drives the equip screen's
     /// per-character item gate
-    /// ([`legaia_engine_core::equip_session::EquipSession::new_with_restrictions`]);
+    /// ([`legaia_engine_menus::equip_session::EquipSession::new_with_restrictions`]);
     /// `None` on disc-free builds.
-    pub equip_restrictions: Option<legaia_engine_core::equipment::DiscEquipInfo>,
+    pub equip_restrictions: Option<legaia_engine_menus::equipment::DiscEquipInfo>,
     /// The **raw** equipment stat-bonus records (`DAT_80074F68`) behind the two
     /// derived tables above. The Items screen's Throw Out list reads each
     /// record's `+7` flags byte, which neither derived form keeps; `None` on
     /// disc-free builds, where no row reports the no-discard bit.
-    pub equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
+    pub equip_stats: Option<legaia_game_tables::equip_stats::EquipStatTable>,
     /// Player Seru-magic catalog with MP cost + target shape read from the
-    /// boot source's `SCUS_942.54` spell table ([`legaia_asset::spell_names`]).
+    /// boot source's `SCUS_942.54` spell table ([`legaia_game_tables::spell_names`]).
     /// Preferred over the pinned `retail_seru_magic_catalog` when installing the
     /// battle spell catalog, so a randomized / translated disc is honoured;
     /// `None` on disc-free builds.
-    pub spell_catalog: Option<legaia_engine_core::spells::SpellCatalog>,
+    pub spell_catalog: Option<legaia_engine_battle::spells::SpellCatalog>,
     /// Static per-monster **steal** table (`DAT_80077828`, fields
     /// `[chance, item]`), parsed from the same `SCUS_942.54`
-    /// ([`legaia_asset::steal_table`]). Installed on the world beside the
+    /// ([`legaia_game_tables::steal_table`]). Installed on the world beside the
     /// equipment / spell / item catalogs so PROT 0941's Steal can resolve a
     /// monster-seat victim; `None` on disc-free builds, which leaves that leg
     /// drawing no roll at all.
-    pub steal_table: Option<legaia_asset::steal_table::StealTable>,
+    pub steal_table: Option<legaia_game_tables::steal_table::StealTable>,
     /// The real retail proportional dialog font, decoded straight from the
     /// boot source (`PROT.DAT`'s 4bpp font TIM + the `SCUS_942.54` advance
     /// table at `0x80073F1C`) - **no mednafen save state required**.
@@ -225,7 +225,7 @@ pub struct BootSession<S: AudioSink> {
     /// ([`legaia_font::Font::with_escape_icons`]). `None` when unreachable.
     pub escape_icons: Option<legaia_font::escape_icons::EscapeIcons>,
     /// The session's **seat at the retail mode table**: the port's copy of
-    /// `_DAT_8007B83C` ([`legaia_engine_core::mode::ModeSeat`]).
+    /// `_DAT_8007B83C` ([`legaia_engine_mode::mode::ModeSeat`]).
     ///
     /// [`Self::tick`] drives it once per frame, and the session's own
     /// transitions write it where retail's code stores the word - field entry
@@ -234,7 +234,7 @@ pub struct BootSession<S: AudioSink> {
     /// edge (which swallows the pad edge that caused the transition, the way
     /// `0x800161EC` / `0x800161F8` do) and a real `game_mode` for every frame
     /// the mode-trace oracle samples.
-    pub mode_seat: legaia_engine_core::mode::ModeSeat,
+    pub mode_seat: legaia_engine_mode::mode::ModeSeat,
     /// In-field pause-menu session, when open. Retail runs the pause menu
     /// under the CARD mode pair (`_DAT_8007B83C = 0x17`, `CARD MODE`, in
     /// every menu-open capture); the session-hosted equivalent holds
@@ -274,8 +274,8 @@ pub struct BootSession<S: AudioSink> {
     /// with the windowed host so the second stage is one implementation.
     save_flow: SaveScreenFlow,
     /// The field's fade to black around the pause menu (`FUN_801ED308`'s
-    /// `_DAT_8007B440`) - see [`legaia_engine_core::pause_wipe`].
-    pause_wipe: legaia_engine_core::pause_wipe::PauseWipe,
+    /// `_DAT_8007B440`) - see [`legaia_engine_system::pause_wipe`].
+    pause_wipe: legaia_engine_system::pause_wipe::PauseWipe,
     /// The save / load pick the last finished Save sub-session produced, if
     /// any. **Not** acted on here: the persistence backend is host-owned (a
     /// save directory, a card image), so `BootSession` runs the *flow* and
@@ -287,7 +287,7 @@ pub struct BootSession<S: AudioSink> {
     pub spell_level_notice: Option<SpellLevelNotice>,
     /// Art-learned notice a Hyper-Art book produced from the Items screen
     /// (retail's window 8); latched the same way.
-    pub art_learned_notice: Option<legaia_engine_core::pause_screens::ArtLearnedNotice>,
+    pub art_learned_notice: Option<legaia_engine_menus::pause_screens::ArtLearnedNotice>,
     /// Scene mode the world ran before the pause menu opened, restored by
     /// [`BootSession::close_field_menu`].
     field_menu_resume: SceneMode,

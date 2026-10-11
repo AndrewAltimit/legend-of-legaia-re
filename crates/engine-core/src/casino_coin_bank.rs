@@ -115,7 +115,7 @@ mod tests {
             (vec![0x4C, 0xE5, 0x0A, 0x00, 0x00], 0, 10),
         ] {
             let mut w = World::new();
-            w.mode = crate::world::SceneMode::Field;
+            w.mode = legaia_engine_mode::mode::SceneMode::Field;
             w.clock.display_frame_step = 1;
             w.minigames.casino_coins = start;
             w.load_field_script(script);

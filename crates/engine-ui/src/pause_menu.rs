@@ -42,7 +42,7 @@ use crate::{
     StatusSatelliteView, TargetPanelView, TextDraw,
 };
 use crate::{MenuWindowPainter, painter_at, painter_rect};
-use legaia_asset::menu_windows::{MenuWindowTable, window_ids};
+use legaia_game_tables::menu_windows::{MenuWindowTable, window_ids};
 
 /// Menu-overlay descriptor id of the **spell level-up notice** window
 /// (renderer `FUN_801DCCB4`, the [`MenuWindowPainter::CharPrompt`] painter).
@@ -415,7 +415,7 @@ pub struct OptionsScreenView<'a> {
 
 /// The key-rebind sub-screen's model: one `(button label, bound key)` pair
 /// per row, plus which row the cursor is on and whether it is waiting for a
-/// keypress ([`legaia_engine_core::key_rebind::KeyRebindSession`]).
+/// keypress ([`legaia_engine_menus::key_rebind::KeyRebindSession`]).
 pub struct KeyRebindView<'a> {
     pub rows: &'a [(&'a str, &'a str)],
     pub cursor: u8,
@@ -513,7 +513,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 v.party,
                 ctx.rects.pen(window_ids::TOP_INFO_PANEL),
             ));
-            sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::TOP_LEVEL_WINDOWS));
+            sprites.extend(ctx.window_chrome(&legaia_game_tables::menu_windows::TOP_LEVEL_WINDOWS));
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::field_menu_icon_sprites_for(
                     rects,
@@ -544,7 +544,9 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 ctx.chrome_present(),
             ));
             texts.extend(ctx.tab_title(window_ids::TAB_STATUS, "Status"));
-            sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::STATUS_SCREEN_WINDOWS));
+            sprites.extend(
+                ctx.window_chrome(&legaia_game_tables::menu_windows::STATUS_SCREEN_WINDOWS),
+            );
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::status_icon_sprites_for(
                     rects,
@@ -663,7 +665,8 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             // the two hosts disagreed about (the browser emitted the Use
             // confirm's frame *before* the window set, so the item list's
             // frame painted over it).
-            sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::ITEMS_SCREEN_WINDOWS));
+            sprites
+                .extend(ctx.window_chrome(&legaia_game_tables::menu_windows::ITEMS_SCREEN_WINDOWS));
             sprites.extend(ctx.frame_around(crate::ITEMS_INFO_EXTRA_BOX_RECT));
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::items_screen_sprites_for(
@@ -722,7 +725,8 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 ctx.rects.pen(window_ids::MAGIC_INFO),
             ));
             texts.extend(ctx.tab_title(window_ids::TAB_MAGIC, "Magic"));
-            sprites.extend(ctx.window_chrome(&legaia_asset::menu_windows::MAGIC_SCREEN_WINDOWS));
+            sprites
+                .extend(ctx.window_chrome(&legaia_game_tables::menu_windows::MAGIC_SCREEN_WINDOWS));
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::magic_screen_sprites_for(
                     rects,
@@ -754,8 +758,9 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             // `equip_screen_draws_for`).
             let browse = v.view.phase == crate::EquipDrawPhase::SlotPicker;
             if browse {
-                sprites
-                    .extend(ctx.window_chrome(&legaia_asset::menu_windows::EQUIP_SCREEN_WINDOWS));
+                sprites.extend(
+                    ctx.window_chrome(&legaia_game_tables::menu_windows::EQUIP_SCREEN_WINDOWS),
+                );
             } else {
                 sprites.extend(ctx.window_chrome(&[window_ids::TAB_EQUIP, window_ids::EQUIP_LIST]));
             }

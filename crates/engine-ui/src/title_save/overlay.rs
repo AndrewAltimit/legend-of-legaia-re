@@ -13,7 +13,7 @@
 //! when `rects` is present, with the atlas-only label sprites switching the
 //! text half's ASCII stand-ins off.
 //!
-//! The model comes from `legaia_engine_core::save_select::overlay_model`,
+//! The model comes from `legaia_engine_menus::save_select::overlay_model`,
 //! which a host borrows into [`SaveSelectOverlayView`]; the slide positions
 //! are resolved here from the session's two 12-bit timers because the
 //! endpoints are this crate's constants.
@@ -130,7 +130,7 @@ fn darken_under(
         return;
     }
     let scale = stage_scale.max(1);
-    let (tx, ty, _, _) = legaia_asset::title_pak::SAVE_MENU_ATLAS_WHITE_TEXEL;
+    let (tx, ty, _, _) = legaia_ui_formats::title_pak::SAVE_MENU_ATLAS_WHITE_TEXEL;
     out.darken = Some(SaveScreenDarken {
         sprite: out.sprites.len(),
         level,

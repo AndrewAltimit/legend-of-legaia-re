@@ -38,7 +38,7 @@ fn a_raising_beat_writes_row_zero_and_clips_its_actors() {
             .as_ref()
             .and_then(|s| s.field_man_payload(&host.index).ok().flatten())
             .expect("MAN");
-        let mf = legaia_asset::man_section::parse(&man).expect("parse MAN");
+        let mf = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
         let flat = mf.header.partition_counts[0].max(0) as usize
             + mf.header.partition_counts[1].max(0) as usize
             + record;

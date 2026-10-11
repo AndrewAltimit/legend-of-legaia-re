@@ -70,11 +70,11 @@ pub fn hud_digit_placements(round: i32, tally: Option<(i32, i32)>) -> Vec<(i32, 
 /// The quads sample the PROT 1203 art pages through the widget's own
 /// texpage / CLUT words, so a host draws them only while those pages are
 /// resident - which the duel VRAM makes them
-/// (`legaia_engine_core::baka_duel_scene::BakaDuelSurface::hud_quads`).
+/// (`legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface::hud_quads`).
 ///
 /// REF: FUN_801d5ed0, FUN_801cf388, FUN_801d59d4
 pub fn hud_widget_quads(
-    widgets: &[legaia_asset::baka_opponents::BakaHudWidget],
+    widgets: &[legaia_minigame_formats::baka_opponents::BakaHudWidget],
     draws: &[ChromeDraw],
     cells: &[crate::baka_cabinet::SheetCell],
 ) -> Vec<crate::baka_fighter::HudWidgetQuad> {
@@ -135,8 +135,8 @@ pub fn chrome_labels(draws: &[ChromeDraw]) -> Vec<(i32, i32, i32, String)> {
 mod hud_strip_tests {
     use super::*;
 
-    fn widget(u: u8) -> legaia_asset::baka_opponents::BakaHudWidget {
-        legaia_asset::baka_opponents::BakaHudWidget {
+    fn widget(u: u8) -> legaia_minigame_formats::baka_opponents::BakaHudWidget {
+        legaia_minigame_formats::baka_opponents::BakaHudWidget {
             scale: 0x1000,
             texpage: 5,
             clut: 0x7780,

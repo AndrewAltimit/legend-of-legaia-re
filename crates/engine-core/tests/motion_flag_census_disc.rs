@@ -5,7 +5,7 @@
 //! writes the `DAT_80085758` system story-flag bank: its op `0x07` SETs and
 //! op `0x08` CLEARs the flag in its u16 operand. Its scripts are
 //! disc-resident - MAN tail-**section 1**, installed on actors at scene
-//! entry by `FUN_8003A9D4` (see `legaia_asset::man_motion`) - so
+//! entry by `FUN_8003A9D4` (see `legaia_scene_formats::man_motion`) - so
 //! [`motion_flag_census`] can sweep them without a runtime capture, exactly
 //! like the field-VM `system_flag_census` sibling.
 //!
@@ -25,8 +25,9 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` / extracted assets are missing
 //! (CLAUDE.md disc-gated convention).
 
-use legaia_engine_core::man_field_scripts::{MotionCensusSite, motion_flag_census};
+use legaia_engine_core::man_field_scripts::motion_flag_census;
 use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_field::man_field_scripts::MotionCensusSite;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -57,7 +58,7 @@ fn run_census() -> Option<BTreeMap<u16, Vec<MotionCensusSite>>> {
 
 #[test]
 fn motion_flag_census_finds_the_known_anchor_sites() {
-    use legaia_asset::man_motion::MotionFlagKind;
+    use legaia_scene_formats::man_motion::MotionFlagKind;
     let Some(census) = run_census() else { return };
 
     let total: usize = census.values().map(Vec::len).sum();

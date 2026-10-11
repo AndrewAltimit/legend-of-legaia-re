@@ -40,12 +40,3 @@ pub use spu::{NUM_VOICES as SPU_NUM_VOICES, PsxSpu, SPU_RAM_BYTES, SpuVoiceState
 
 // Transitional aliases: the emulator-neutral RAM-image analysis lives in
 // `legaia-ram-image`. New code names that crate.
-#[doc(hidden)]
-pub use legaia_ram_image::{
-    PSX_RAM_KSEG0, PSX_RAM_SIZE, RamDiff, RegionDiff, Scenario, ScenarioManifest, StateIdentity,
-    WatchpointSpec, game_mode_label, identify, ram_slice,
-};
-#[doc(hidden)]
-pub use legaia_ram_image::{
-    bisect, diff, extract, game_anchors, prim_dispatch, prim_pool, scenarios, source_hunt,
-};

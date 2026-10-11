@@ -5,14 +5,14 @@
 //! (`+0x74`, tag `0x0C..=0x1F`) into `action_costs`. This test decodes the real
 //! monster archive (PROT 867) and asserts that (a) at least one real monster
 //! carries an AGL gauge and a costed swing set, and (b) the enemy budget port
-//! ([`legaia_engine_vm::battle_action::enemy_action_budget`]) turns that data
+//! ([`legaia_engine_battle_vm::battle_action::enemy_action_budget`]) turns that data
 //! into a swing count of at least 1 for such a monster - i.e. the B8 plumbing +
 //! B-enemy-AI consumer resolve off real disc bytes, not just the synthetic
 //! catalog.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (disc-gated convention).
-use legaia_engine_core::monster_catalog::monster_def_from_record;
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_engine_battle::monster_catalog::monster_def_from_record;
 
 fn load_disc() -> Option<Vec<u8>> {
     let path = std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -29,7 +29,7 @@ fn real_monster_records_populate_agl_budget() {
     let archive = patcher
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .expect("read monster archive");
-    let records = legaia_asset::monster_archive::records(&archive).expect("decode archive");
+    let records = legaia_actor_formats::monster_archive::records(&archive).expect("decode archive");
     assert!(!records.is_empty(), "archive decodes at least one monster");
 
     let mut with_agl = 0usize;
@@ -53,7 +53,7 @@ fn real_monster_records_populate_agl_budget() {
         // count is deterministic; the cheapest swing bounds the minimum.
         if def.agl > 0 {
             let mut rng = || 0u32;
-            let n = legaia_engine_vm::battle_action::enemy_action_count(
+            let n = legaia_engine_battle_vm::battle_action::enemy_action_count(
                 def.agl,
                 &def.action_costs,
                 &mut rng,

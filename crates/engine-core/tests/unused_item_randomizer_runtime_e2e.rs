@@ -28,11 +28,11 @@
 //! monster's original drop, so the patched assertion can't pass vacuously. The
 //! drop roll is seeded to land. Skips without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::monster_catalog::{
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, catalog_from_monster_archive,
 };
 use legaia_engine_core::world::World;
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::item_name::{SERU_BELL_ID, SERU_BELL_NAME};
 
 /// World RNG seed on which the victory drop roll lands for any positive
@@ -85,7 +85,8 @@ fn enabling_unused_items_grants_and_names_the_accessory_at_runtime() {
     let scus = patcher
         .read_named_file("SCUS_942.54")
         .expect("read patched SCUS");
-    let table = legaia_asset::item_names::ItemNameTable::from_scus(&scus).expect("parse table");
+    let table =
+        legaia_game_tables::item_names::ItemNameTable::from_scus(&scus).expect("parse table");
     assert_eq!(
         table.name(SERU_BELL_ID),
         Some(SERU_BELL_NAME),
@@ -107,7 +108,7 @@ fn enabling_unused_items_grants_and_names_the_accessory_at_runtime() {
     let archive = base
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .expect("read archive");
-    let records = legaia_asset::monster_archive::records(&archive).expect("decode archive");
+    let records = legaia_actor_formats::monster_archive::records(&archive).expect("decode archive");
     let (monster_id, original_item, chance) = records
         .iter()
         .find_map(|r| {
@@ -115,7 +116,7 @@ fn enabling_unused_items_grants_and_names_the_accessory_at_runtime() {
                 return None;
             }
             let slot = base.monster_slot(r.id).ok()?;
-            legaia_patcher::monster::set_drop(&slot, SERU_BELL_ID, r.drop_chance_pct).ok()?;
+            legaia_disc_patch::monster::set_drop(&slot, SERU_BELL_ID, r.drop_chance_pct).ok()?;
             Some((r.id, r.drop_item, r.drop_chance_pct))
         })
         .expect("archive must hold a droppable, re-packable monster");
@@ -130,10 +131,10 @@ fn enabling_unused_items_grants_and_names_the_accessory_at_runtime() {
     // Patch the drop to the unused accessory, re-decode off the patched image.
     let mut patcher = DiscPatcher::open(disc).expect("reopen disc");
     let slot = patcher.monster_slot(monster_id).unwrap();
-    let repacked = legaia_patcher::monster::set_drop(&slot, SERU_BELL_ID, chance).unwrap();
+    let repacked = legaia_disc_patch::monster::set_drop(&slot, SERU_BELL_ID, chance).unwrap();
     patcher.patch_monster_slot(monster_id, &repacked).unwrap();
     let patched_archive = patcher.read_entry(MONSTER_ARCHIVE_ENTRY).unwrap();
-    let patched_rec = legaia_asset::monster_archive::record(&patched_archive, monster_id)
+    let patched_rec = legaia_actor_formats::monster_archive::record(&patched_archive, monster_id)
         .unwrap()
         .unwrap();
     assert_eq!(

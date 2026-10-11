@@ -1,13 +1,16 @@
 //! The top-left seat: banner, plaque, and the badges that ride them.
 
 use super::*;
+use legaia_engine_ui::BattleHudDraws;
+use legaia_engine_ui::BattleHudFrame;
+use legaia_engine_ui::battle_hud_draws_for;
 
 // ---------------------------------------------------------------------------
 // The top-left seat: banner, plaque, and the badges that ride them
 // ---------------------------------------------------------------------------
 
 /// Atlas cell of status badge `i`, mirroring
-/// `legaia_engine_core::save_menu_atlas::status_badge_atlas_rect` - this
+/// `legaia_engine_menus::save_menu_atlas::status_badge_atlas_rect` - this
 /// crate sits below `engine-core`, so the layout is repeated here and
 /// `engine-shell`'s `badge_atlas_seats_match_the_bake` pins the two equal.
 const fn status_badge_cell(i: usize) -> (u32, u32, u32, u32) {

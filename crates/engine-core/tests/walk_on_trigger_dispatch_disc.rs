@@ -19,9 +19,9 @@
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md
 //! convention).
 
-use legaia_engine_core::name_entry::NameEntryInput;
 use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
 use legaia_engine_core::world::World;
+use legaia_engine_menus::name_entry::NameEntryInput;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -58,7 +58,7 @@ fn seat_at_tile(world: &mut World, tile_x: i16, tile_z: i16) {
 /// the name-entry park, commit a name, tick the timeline to completion.
 fn run_opening_to_freeroam(host: &mut SceneHost) {
     host.world.cutscene.entering_town01_opening = true;
-    host.enter_field_scene(legaia_asset::new_game::OPENING_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
     let mut ticks = 0u32;
     while !host.world.name_entry_active() && ticks < 4000 {
@@ -74,7 +74,7 @@ fn run_opening_to_freeroam(host: &mut SceneHost) {
         ..Default::default()
     });
     host.world.party.name_entry.as_mut().unwrap().cursor =
-        legaia_engine_core::name_entry::CONTROL_ANCHORS[2];
+        legaia_engine_menus::name_entry::CONTROL_ANCHORS[2];
     host.world.step_name_entry(NameEntryInput {
         confirm: true,
         ..Default::default()
@@ -155,7 +155,7 @@ fn post_naming_story_beat_spawns_on_walk_on() {
     let mut mei_positions: Vec<(i16, i16)> = Vec::new();
     while host.world.cutscene_timeline_active() && n < 20000 {
         let pad = if n.is_multiple_of(2) {
-            legaia_engine_core::input::PadButton::Cross.mask()
+            legaia_engine_system::input::PadButton::Cross.mask()
         } else {
             0
         };
@@ -262,7 +262,7 @@ fn town01_exit_tiles_leave_for_the_overworld() {
     );
     assert_eq!(
         host.world.mode,
-        legaia_engine_core::world::SceneMode::WorldMap,
+        legaia_engine_mode::mode::SceneMode::WorldMap,
         "map01 routes through the world-map entry"
     );
 }
@@ -302,7 +302,7 @@ fn house_door_binds_teleport_on_contact() {
                 return None;
             }
             match event {
-                legaia_engine_core::man_field_scripts::WalkTouchEvent::PlayerMoveTo {
+                legaia_engine_field::man_field_scripts::WalkTouchEvent::PlayerMoveTo {
                     world_x,
                     world_z,
                     ..
@@ -323,7 +323,7 @@ fn house_door_binds_teleport_on_contact() {
     host.world.actors[slot].move_state.world_x = doorway.0;
     host.world.actors[slot].move_state.world_z = doorway.1 - 200;
     host.world
-        .set_pad(legaia_engine_core::input::PadButton::Up.mask());
+        .set_pad(legaia_engine_system::input::PadButton::Up.mask());
     let mut landed = false;
     for _ in 0..60 {
         host.tick().expect("tick");
@@ -411,7 +411,7 @@ fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, t
         .as_ref()
         .is_some_and(|t| t.dialog.is_some());
     if parked && tick.is_multiple_of(2) {
-        world.set_pad(legaia_engine_core::input::PadButton::Cross.mask());
+        world.set_pad(legaia_engine_system::input::PadButton::Cross.mask());
     } else {
         world.set_pad(0);
     }
@@ -468,7 +468,7 @@ fn a_repoll_record_reruns_until_the_press() {
     let mut cleared = false;
     for _ in 0..10 {
         host.world
-            .set_pad(legaia_engine_core::input::PadButton::Down.mask());
+            .set_pad(legaia_engine_system::input::PadButton::Down.mask());
         host.tick().expect("tick");
         host.world.actors[slot].move_state.world_x = seat.0;
         host.world.actors[slot].move_state.world_z = seat.1;

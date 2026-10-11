@@ -128,7 +128,7 @@ pub fn sprite_arm_draws(s: &ActorState) -> Vec<crate::effect_ribbon::RibbonDraw>
     legaia_engine_vm::move_vm::keyframe_pose_entries(s)
         .iter()
         .map(|entry| {
-            let t = legaia_asset::player_anm::BoneTransform::decode(entry);
+            let t = legaia_actor_formats::player_anm::BoneTransform::decode(entry);
             let (sx, cx) = ((t.r_x as f32) * A).sin_cos();
             let (sy, cy) = ((t.r_y as f32) * A).sin_cos();
             let (sz, cz) = ((t.r_z as f32) * A).sin_cos();

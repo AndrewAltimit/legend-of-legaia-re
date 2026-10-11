@@ -3,7 +3,7 @@
 use super::*;
 
 impl SceneHost {
-    /// Load `name`, switch the world to [`crate::world::SceneMode::Field`],
+    /// Load `name`, switch the world to [`legaia_engine_mode::mode::SceneMode::Field`],
     /// and load the requested event-script record (default 0) into the
     /// field-VM bytecode buffer. Returns `Err` if the scene has no event
     /// scripts or the record index is out of range.

@@ -153,7 +153,7 @@ pub struct EquipCompareCtx<'a> {
     pub equip_info: Option<&'a crate::equipment::DiscEquipInfo>,
     /// Disc item-effect table, for the item record's class byte and the
     /// non-equipment arm of the category lookup (`0x800752C0 + row*4 + 3`).
-    pub item_effects: Option<&'a legaia_asset::item_effect::ItemEffectTable>,
+    pub item_effects: Option<&'a legaia_game_tables::item_effect::ItemEffectTable>,
 }
 
 /// Equip bytes the **menu** stat aggregator walks.
@@ -178,7 +178,7 @@ pub const COMPARE_CATEGORY_DEFAULT: u8 = 0x40;
 /// the table: class `1` reads the equipment bonus row's `+5`, anything else
 /// reads the item-effect descriptor's `+3`. Both arms index by the **same**
 /// `+1` byte of the item record, which is what
-/// [`legaia_asset::item_effect::ItemEffectTable::subtype`] returns.
+/// [`legaia_game_tables::item_effect::ItemEffectTable::subtype`] returns.
 ///
 /// REF: FUN_801d1290 - the renderer this lookup belongs to; the guards that
 /// decide *whether* it is consulted are `engine-ui`'s

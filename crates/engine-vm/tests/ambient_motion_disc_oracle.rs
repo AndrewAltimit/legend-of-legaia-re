@@ -3,10 +3,10 @@
 //! authored sites rather than hand-written fixtures.
 //!
 //! Corpus: every retail `scene_asset_table` bundle's MAN, tail-section 1
-//! (`legaia_asset::man_motion`), every motion record, every flag-gated
+//! (`legaia_scene_formats::man_motion`), every motion record, every flag-gated
 //! variant of every record's stream. Each variant's bytecode is walked by
 //! op width and every `0x04` / `0x0D` site collected, then replayed through
-//! [`legaia_engine_vm::ambient_motion`] until it retires.
+//! [`legaia_engine_motion_vm::ambient_motion`] until it retires.
 //!
 //! What this pins - the properties that separate a correct port from a
 //! plausible one:
@@ -37,12 +37,12 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` or `extracted/PROT/` is missing
 //! (CLAUDE.md disc-gated convention).
 
-use legaia_asset::man_motion;
-use legaia_asset::man_section;
-use legaia_asset::scene_asset_table;
-use legaia_engine_vm::ambient_motion::{
+use legaia_engine_motion_vm::ambient_motion::{
     AmbientFacingSite, AmbientMotion, AmbientTick, facing_sites,
 };
+use legaia_scene_formats::man_motion;
+use legaia_scene_formats::man_section;
+use legaia_scene_formats::scene_asset_table;
 use std::path::PathBuf;
 
 /// One census row: a facing site plus where on the disc it came from.
@@ -120,7 +120,7 @@ fn census() -> Option<Vec<Site>> {
         let Ok(bytes) = std::fs::read(path) else {
             continue;
         };
-        let Ok(report) = legaia_asset::parse_streaming(&bytes, 4096) else {
+        let Ok(report) = legaia_container_formats::parse_streaming(&bytes, 4096) else {
             continue;
         };
         let name = path

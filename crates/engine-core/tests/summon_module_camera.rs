@@ -4,7 +4,7 @@
 //! Drives PROT 0903 (Gimard, spell `0x81`) through the stager seam the action
 //! SM calls in `0x35` / `0x36` (`World::summon_stager_tick`) with the shared
 //! battle camera stepping beside it, and checks the three things the module
-//! director (`legaia_engine_vm::cast_module_camera`) is for:
+//! director (`legaia_engine_battle_vm::cast_module_camera`) is for:
 //!
 //! - the band holds for as long as the module's countdown-paced arms do -
 //!   hundreds of frames, not the engine stager's own walk-in;
@@ -14,9 +14,10 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_asset::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::cast_module_ticks::SUMMON_SEAT;
+use legaia_engine_battle_vm::cast_module_ticks::SUMMON_SEAT;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_overlay_images::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -56,7 +57,7 @@ fn battle_world(dir: &std::path::Path) -> World {
 
     let mut archive =
         legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
-    let mut pool = legaia_asset::cast_effect_pool::CastEffectPool::new();
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
     for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
         let Some(entry) = archive.entries.get(idx as usize).cloned() else {
             continue;

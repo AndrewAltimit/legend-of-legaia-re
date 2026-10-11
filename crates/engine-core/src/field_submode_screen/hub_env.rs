@@ -108,7 +108,7 @@ impl World {
             })
             .collect();
         for id in 0..=u8::MAX {
-            if items.kind(id) != legaia_asset::equip_stats::KIND_EQUIPMENT {
+            if items.kind(id) != legaia_game_tables::equip_stats::KIND_EQUIPMENT {
                 continue;
             }
             let Some(m) = self.tables.equipment_table.get(id) else {
@@ -172,12 +172,14 @@ impl World {
     /// raw word against the packed masks cross-wired every submode screen:
     /// Cross did nothing, Down accepted, Right backed out and the face
     /// buttons stepped the cursor. The conversion is
-    /// [`crate::dev_menu::retail_packed`], the same one the Incense notice
+    /// [`legaia_engine_system::pad::retail_packed`], the same one the Incense notice
     /// and both hosts' dev menus use.
     pub(super) fn submode_pad_words(&self) -> (u32, u32) {
         (
-            u32::from(crate::dev_menu::retail_packed(self.input.pad())),
-            u32::from(crate::dev_menu::retail_packed(self.input.pad_prev())),
+            u32::from(legaia_engine_system::pad::retail_packed(self.input.pad())),
+            u32::from(legaia_engine_system::pad::retail_packed(
+                self.input.pad_prev(),
+            )),
         )
     }
 
@@ -242,14 +244,18 @@ impl World {
                     self.field_vm.submode_screen.soft_reset.records_y = Some(y)
                 }
                 Fx::WhiteFade { frames } => {
-                    let template = crate::fade::FadeTemplate {
+                    let template = legaia_engine_system::fade::FadeTemplate {
                         kind: 2,
                         duration: frames as i16,
                         start_rgb: [0, 0, 0],
                         end_rgb: [0xFF, 0xFF, 0xFF],
                         mode: [0, -1, 0],
                     };
-                    crate::fade::spawn_fade(&mut self.presentation.fade, &template, 0);
+                    legaia_engine_system::fade::spawn_fade(
+                        &mut self.presentation.fade,
+                        &template,
+                        0,
+                    );
                 }
                 Fx::ReloadExecutable => {
                     if !self.field_vm.submode_screen.soft_reset.reloaded {

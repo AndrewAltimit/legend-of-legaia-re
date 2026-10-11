@@ -17,7 +17,7 @@ pub struct PropAnimState {
     pub world: (i32, i32),
     /// Static-arm contact-box centre: the placement's world position plus the
     /// record's collision-footprint offset (`FUN_801CFC40`'s tile-record
-    /// derivation; [`legaia_asset::field_objects::Placement::collider_x`]).
+    /// derivation; [`legaia_scene_formats::field_objects::Placement::collider_x`]).
     pub collider: (i32, i32),
     /// Flat MAN partition-0 record index of the bind (the prop's script).
     pub record: usize,
@@ -153,7 +153,7 @@ impl PropAnimBank {
             // platform's way west to the deroa door stayed shut.
             if bind.anim_id == 0
                 && program.spawn_cflags & 0x4002_0000 == 0
-                && crate::man_field_scripts::p0_record_walk_touch_event(
+                && legaia_engine_field::man_field_scripts::p0_record_walk_touch_event(
                     man_file,
                     man,
                     bind.record as usize,

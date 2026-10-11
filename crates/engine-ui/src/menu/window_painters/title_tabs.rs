@@ -42,7 +42,7 @@ pub fn title_tab_draws_for(
 /// The retail record is the armed op-`0x49` payload: `_DAT_8007B450` points
 /// at the opcode's sub-op byte, so for a shop record (`[count][ids][name]`)
 /// `record[2]` is `count` and the string starts one past the last id - the
-/// vendor name `legaia_asset::shop_stock` decodes.
+/// vendor name `legaia_scene_formats::shop_stock` decodes.
 ///
 /// PORT: FUN_801DCF14
 pub fn record_title_tab_draws_for(

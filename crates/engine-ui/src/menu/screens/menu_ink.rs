@@ -66,7 +66,7 @@ pub fn menu_hp_ink(hp: u16, hp_max: u16) -> [f32; 4] {
 ///
 /// The ailment arm has a live input on both hosts: [`FieldMenuPartyView`]
 /// and [`StatusPanelView`] each carry the `+0x12E` word, filled from
-/// `legaia_engine_core::status_screen::StatusSnapshot::status_flags` -
+/// `legaia_engine_menus::status_screen::StatusSnapshot::status_flags` -
 /// which `field_menu_dispatch::status_snapshots` reads off the live
 /// `World::battle.status_effects` tracker (`display_flags`, the `+0x16E` mirror
 /// retail's `FUN_80047430` copies into the record). The pause-menu party

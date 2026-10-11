@@ -190,7 +190,7 @@ fn font_mode_pack_imports_cells_and_writes_the_font_once() {
     assert!(!font.already);
     let va = u32::from_str_radix(key.trim_start_matches("scus:str:0x"), 16).unwrap();
     let scus = p.read_named_file("SCUS_942.54").unwrap();
-    let off = legaia_asset::item_names::file_offset_for_va(&scus, va).unwrap();
+    let off = legaia_game_tables::item_names::file_offset_for_va(&scus, va).unwrap();
     assert_eq!(&scus[off..off + 5], &[0x90, b'p', 0x82, b'e', 0x00]);
 
     // Strict mode reports the same line as not encodable instead.

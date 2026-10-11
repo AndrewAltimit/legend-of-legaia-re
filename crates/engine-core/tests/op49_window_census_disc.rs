@@ -8,7 +8,7 @@
 //! `+3` rows, `+4..5` u16 base flag. Its writes land on system flags
 //! `base + offset`, so a window site can set a flag with **no literal
 //! operand** anywhere in the corpus. This census decodes every op-`0x49`
-//! site with the real field-VM disassembler ([`legaia_asset::field_disasm`]
+//! site with the real field-VM disassembler ([`legaia_scene_formats::field_disasm`]
 //! `LinearWalker` - framed instruction boundaries, not raw byte pairs) and
 //! interprets every site's operand window under that descriptor layout, the
 //! conservative superset (which sub-op arms handler `0x23` is runtime state).
@@ -34,8 +34,9 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` / extracted assets are missing
 //! (CLAUDE.md disc-gated convention).
 
-use legaia_engine_core::man_field_scripts::{Op49WindowSite, op49_window_census};
+use legaia_engine_core::man_field_scripts::op49_window_census;
 use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_field::man_field_scripts::Op49WindowSite;
 use std::path::PathBuf;
 
 /// The still-orphaned spine / gate flags: dolk-clear, Drake mist walls, and

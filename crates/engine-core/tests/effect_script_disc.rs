@@ -1,6 +1,6 @@
 //! Disc-gated oracle for the battle **effect-script** chain: the entry
 //! `+0x14..+0x53` region every decoded action animation carries
-//! (`legaia_asset::monster_archive::MonsterAnimation::effect_script`) must
+//! (`legaia_actor_formats::monster_archive::MonsterAnimation::effect_script`) must
 //! read as the record stream `FUN_801DEA50` walks - `[frame_gate, effect,
 //! i16 x, y, z]` at 8-byte stride from `+0x14`, ended by a zero frame gate -
 //! and driving the engine stepper over a real player walk clip must produce
@@ -16,10 +16,10 @@
 //!   (monster archive / player record[0]);
 //! - the stepper regressing against real record data.
 
-use legaia_engine_core::action_effect_script::{
+use legaia_engine_effects::action_effect_script::{
     EffectRecord, MAX_CURSOR, retail_rotation_lut, step_effect_script,
 };
-use legaia_engine_core::action_effect_script::{EffectScriptActor, FacingBias, rotate_offset};
+use legaia_engine_effects::action_effect_script::{EffectScriptActor, FacingBias, rotate_offset};
 use std::path::PathBuf;
 
 fn prot_file(name: &str) -> Option<Vec<u8>> {
@@ -62,7 +62,7 @@ fn walk_head(head: &[u8], what: &str) -> (bool, usize, usize) {
 
 #[test]
 fn monster_archive_effect_scripts_read_as_record_streams() {
-    use legaia_asset::monster_archive;
+    use legaia_actor_formats::monster_archive;
     let Some(entry) = prot_file("0867_battle_data.BIN") else {
         eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
         return;
@@ -110,7 +110,7 @@ fn monster_archive_effect_scripts_read_as_record_streams() {
 
 #[test]
 fn player_walk_clip_effect_script_steps_to_positioned_spawns() {
-    use legaia_asset::battle_char_assembly;
+    use legaia_actor_formats::battle_char_assembly;
     // Every player file's walk entry (slot 1) carries footstep effect
     // records: step the real stream through the engine stepper with the
     // retail rotation LUT and assert positioned spawns come out.
@@ -177,7 +177,7 @@ fn player_walk_clip_effect_script_steps_to_positioned_spawns() {
 
 #[test]
 fn world_tick_emits_spawns_from_a_real_committed_walk_clip() {
-    use legaia_asset::battle_char_assembly;
+    use legaia_actor_formats::battle_char_assembly;
     use legaia_engine_core::world::World;
     // End-to-end producer chain on real data: install Vahn's disc action
     // clips on a battle actor, stage the walk (anim id 1), and drive the

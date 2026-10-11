@@ -3,8 +3,9 @@
 //! `UnknownState`. No disc data needed - this exercises the engine
 //! integration layer end-to-end.
 
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
+use legaia_engine_battle_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 
 fn build_world(queued_action: u8) -> World {
     let mut world = World {
@@ -123,7 +124,7 @@ fn battle_world_handles_every_queued_action_id() {
 /// event gets pushed onto pending_battle_events during a normal turn.
 #[test]
 fn battle_turn_emits_events_into_pending_queue() {
-    use legaia_engine_core::battle_events::BattleEvent;
+    use legaia_engine_battle::battle_events::BattleEvent;
 
     let mut world = build_world(3);
     let mut event_count = 0usize;
@@ -167,7 +168,7 @@ fn battle_turn_emits_events_into_pending_queue() {
 /// Damage formula primitive sanity-check via the world-side helper.
 #[test]
 fn basic_damage_is_a_function_of_atk_minus_def() {
-    use legaia_engine_core::battle_events::basic_damage;
+    use legaia_engine_battle::battle_events::basic_damage;
     let weak = basic_damage(20, 50, 0);
     let strong = basic_damage(200, 50, 0);
     assert!(strong > weak);

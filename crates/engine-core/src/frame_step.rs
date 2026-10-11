@@ -34,10 +34,10 @@
 //! [`crate::world::FrameClock::display_frames`], so a redraw on which no tick
 //! ran advances it by nothing.
 
-use legaia_engine_vm::psx_camera::{CutsceneCameraInterp, FieldCameraView};
+use legaia_engine_battle_vm::psx_camera::{CutsceneCameraInterp, FieldCameraView};
 
-use crate::camera::Camera;
 use crate::world::World;
+use legaia_engine_field::camera::Camera;
 
 /// One sim tick, in seconds: the retail NTSC vsync period the engine's tick
 /// is denominated in (`SIM_HZ == RETAIL_FPS`).

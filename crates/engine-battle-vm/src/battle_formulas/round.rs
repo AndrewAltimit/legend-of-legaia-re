@@ -691,7 +691,7 @@ pub const CAMERA_HEIGHT_MAX: i16 = 0x1400;
 /// the disassembly settles which one this is.
 ///
 /// `size_of(slot)` returns the monster record's `+0x1F` size byte
-/// ([`legaia_asset::monster_archive::MonsterRecord::size_class`]) for a monster
+/// ([`legaia_actor_formats::monster_archive::MonsterRecord::size_class`]) for a monster
 /// slot; it is never called for a party slot.
 ///
 /// `monster_slot_base` is the first slot of the monster band - the value the

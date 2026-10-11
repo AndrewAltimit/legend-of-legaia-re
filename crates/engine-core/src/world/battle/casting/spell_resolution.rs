@@ -19,7 +19,7 @@ impl World {
     pub(in crate::world) fn cast_spell_on_slots(
         &mut self,
         caster: u8,
-        def: &crate::spells::SpellDef,
+        def: &legaia_engine_battle::spells::SpellDef,
         targets: &[u8],
     ) -> bool {
         self.cast_spell_on_slots_impl(caster, def, targets, true)
@@ -33,7 +33,7 @@ impl World {
     pub(in crate::world) fn cast_spell_on_slots_prepaid(
         &mut self,
         caster: u8,
-        def: &crate::spells::SpellDef,
+        def: &legaia_engine_battle::spells::SpellDef,
         targets: &[u8],
     ) -> bool {
         self.cast_spell_on_slots_impl(caster, def, targets, false)
@@ -42,11 +42,11 @@ impl World {
     fn cast_spell_on_slots_impl(
         &mut self,
         caster: u8,
-        def: &crate::spells::SpellDef,
+        def: &legaia_engine_battle::spells::SpellDef,
         targets: &[u8],
         charge_mp: bool,
     ) -> bool {
-        use crate::spells::{SpellSnapshot, cast_spell};
+        use legaia_engine_battle::spells::{SpellSnapshot, cast_spell};
 
         // Apply the caster's MP-cost ability-bit modifier (Half 0x20 /
         // Quarter 0x10) so an MP-saver accessory reduces the live cast cost,
@@ -65,7 +65,7 @@ impl World {
         } else {
             0
         };
-        let cost = crate::spells::caster_mp_cost(def, ability_bits);
+        let cost = legaia_engine_battle::spells::caster_mp_cost(def, ability_bits);
         let (caster_hp, caster_max_hp, caster_mp_now) = match self.actors.get(caster as usize) {
             Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
             None => return false,
@@ -102,18 +102,18 @@ impl World {
         // [`Self::accrue_summon_spell_xp`]). Retail keys on "attacker slot 7"
         // (the summon body, `0x801DE440`) with no spell-id test, and both the
         // base and the evolved Seru blocks cast through that body
-        // ([`crate::summon::has_summon_body`]); `FUN_801E70BC`'s own
+        // ([`legaia_engine_effects::summon::has_summon_body`]); `FUN_801E70BC`'s own
         // threshold multiplier set names evolved ids (`0x8D`). So both blocks
         // accrue. `group_target` mirrors the summon's target byte (`+0x1DD`
         // = 8/9 for a group cast): the per-hit unit drops from 12 to 4.
         let is_party_summon_cast = (caster as usize) < self.party.party_count as usize
-            && crate::summon::has_summon_body(def.id);
+            && legaia_engine_effects::summon::has_summon_body(def.id);
         // The high block (`0x99..=0xA0`) trains the spell too: its modules
         // strike through the same slot-7 body, and the two that strike
         // nothing (Horn, Jedo outside a scripted fight) credit inline
-        // ([`crate::summon::module_trains_spell_xp`]).
+        // ([`legaia_engine_effects::summon::module_trains_spell_xp`]).
         let trains_spell_xp = (caster as usize) < self.party.party_count as usize
-            && crate::summon::module_trains_spell_xp(def.id);
+            && legaia_engine_effects::summon::module_trains_spell_xp(def.id);
         // Jedo's non-scripted arm strikes nothing, so no finisher tail runs
         // for it; it credits a flat grant per living monster seat instead.
         let jedo_banish = def.id == JEDO_SPELL_ID && !self.battle.scripted_fight;
@@ -126,7 +126,10 @@ impl World {
                 .seru
                 .log
                 .is_shiny(self.party_roster_slot(caster as usize) as u8, def.id);
-        let group_target = matches!(def.target, crate::spells::SpellTarget::AllEnemies);
+        let group_target = matches!(
+            def.target,
+            legaia_engine_battle::spells::SpellTarget::AllEnemies
+        );
         let mut summon_xp_gain: u32 = 0;
         if trains_spell_xp {
             summon_xp_gain = self.inline_module_spell_xp(def.id, jedo_banish);
@@ -140,12 +143,13 @@ impl World {
         // which is what `is_party_summon_cast` already identifies. `None` -
         // and no `rand()` draw - for every other cast, for a caster below
         // magic level 3, and on a host with no side-effect table installed.
-        let side_effect =
-            if is_party_summon_cast && crate::summon::module_stages_side_effect(def.id) {
-                self.stage_seru_side_effect(caster, def.id, targets)
-            } else {
-                None
-            };
+        let side_effect = if is_party_summon_cast
+            && legaia_engine_effects::summon::module_stages_side_effect(def.id)
+        {
+            self.stage_seru_side_effect(caster, def.id, targets)
+        } else {
+            None
+        };
 
         for &t in targets {
             let Some(actor) = self.actors.get(t as usize) else {
@@ -166,18 +170,21 @@ impl World {
                 target_hp_max: actor.battle.max_hp,
                 target_mp: actor.battle.mp,
                 target_alive: actor.battle.liveness != 0,
-                target_weakness: crate::spells::ElementMask::default(),
+                target_weakness: legaia_engine_battle::spells::ElementMask::default(),
             };
             let mut outcome = cast_spell(def, t, &snap);
             // Override only the magnitude of a damaging monster special-attack;
             // heals / buffs / non-table moves fall through unchanged. The
             // arts/physical kernel already folds the enemy→party affinity in.
             if let Some(power) = move_power
-                && let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome
+                && let legaia_engine_battle::spells::SpellOutcome::Damage { amount, .. } =
+                    &mut outcome
                 && let Some(faithful) = self.enemy_move_predamage(caster, t, power, def.id)
             {
                 *amount = faithful;
-            } else if let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome {
+            } else if let legaia_engine_battle::spells::SpellOutcome::Damage { amount, .. } =
+                &mut outcome
+            {
                 // Player Seru-magic path. When the monster catalog resolves
                 // the summon creature (disc-real battles), the magnitude
                 // rolls through the faithful summon branch of FUN_801dd0ac -
@@ -208,7 +215,8 @@ impl World {
             // arm credits the spell's XP per healed seat, which banks with the
             // damage path's below.
             if is_party_summon_cast
-                && let crate::spells::SpellOutcome::Heal { amount, .. } = &mut outcome
+                && let legaia_engine_battle::spells::SpellOutcome::Heal { amount, .. } =
+                    &mut outcome
                 && let Some(a) =
                     self.seru_tick_heal_amount(caster, def.id, snap.target_hp, snap.target_hp_max)
             {
@@ -222,9 +230,13 @@ impl World {
             }
             // Shiny Seru: +35% on the final magnitude (9999-capped), after the
             // affinity / summon roll so it stacks on the spell's normal output.
-            if shiny_cast && let crate::spells::SpellOutcome::Damage { amount, .. } = &mut outcome {
-                let boosted =
-                    (*amount as u32 * (100 + crate::seru_learning::SHINY_DAMAGE_BONUS_PCT)) / 100;
+            if shiny_cast
+                && let legaia_engine_battle::spells::SpellOutcome::Damage { amount, .. } =
+                    &mut outcome
+            {
+                let boosted = (*amount as u32
+                    * (100 + legaia_engine_battle::seru_learning::SHINY_DAMAGE_BONUS_PCT))
+                    / 100;
                 *amount = boosted.min(9999) as u16;
             }
             // Per-hit spell-XP gain (FUN_801ddb30 tail): the final damage
@@ -232,17 +244,21 @@ impl World {
             // (the snapshot taken above, before the fold applies the damage).
             if trains_spell_xp
                 && !jedo_banish
-                && let crate::spells::SpellOutcome::Damage { amount, .. } = &outcome
+                && let legaia_engine_battle::spells::SpellOutcome::Damage { amount, .. } = &outcome
             {
-                summon_xp_gain =
-                    summon_xp_gain.saturating_add(vm::battle_formulas::summon_spell_xp_gain(
+                summon_xp_gain = summon_xp_gain.saturating_add(
+                    legaia_engine_battle_vm::battle_formulas::summon_spell_xp_gain(
                         *amount as u32,
                         snap.target_hp,
                         snap.target_hp_max,
                         group_target,
-                    ));
+                    ),
+                );
             }
-            let damaged = matches!(outcome, crate::spells::SpellOutcome::Damage { .. });
+            let damaged = matches!(
+                outcome,
+                legaia_engine_battle::spells::SpellOutcome::Damage { .. }
+            );
             self.fold_spell_outcome(outcome);
             // The finisher's per-element stat switch runs once per hit, on the
             // hit's own target - a cure class (light) and a party target write
@@ -269,10 +285,10 @@ impl World {
                 ]
             })
             .unwrap_or([0, -300, -645]);
-        if crate::summon::PLAYER_SUMMON_IDS.contains(&def.id) {
+        if legaia_engine_effects::summon::PLAYER_SUMMON_IDS.contains(&def.id) {
             // A player summon id resolves to a per-summon overlay: request
             // the summon-creature spawn (the retail cast band's `FUN_8003EC70`
-            // overlay load - see `crate::summon`). A band-owned cast's spawn
+            // overlay load - see `legaia_engine_effects::summon`). A band-owned cast's spawn
             // is the stager's (already out and walking by the strike).
             if charge_mp {
                 self.request_summon_spawn(def.id, fx_origin);

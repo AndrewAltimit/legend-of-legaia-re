@@ -18,8 +18,8 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use legaia_asset::move_power::{self, BATTLE_ACTION_OVERLAY_PROT_INDEX};
 use legaia_engine_vm::move_vm::{self, ActorState, MoveHost, StepResult};
+use legaia_game_tables::move_power::{self, BATTLE_ACTION_OVERLAY_PROT_INDEX};
 use legaia_prot::archive::Archive;
 
 /// The move VM's per-frame opcode cap (mirrors `engine_core::summon`).

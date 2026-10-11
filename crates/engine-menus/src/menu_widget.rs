@@ -5,7 +5,7 @@
 //!
 //! Retail's menu overlay (PROT 0899) choreographs its UI windows with small
 //! bytecode programs resident in the overlay's own data segment
-//! ([`legaia_asset::widget_script`]): the shop picker dispatcher
+//! ([`legaia_game_tables::widget_script`]): the shop picker dispatcher
 //! `FUN_801DAFD4` runs the open script `DAT_801E4E38` when the Buy/Sell
 //! picker comes up and the slide-away script `DAT_801E4E54` on the Sell
 //! transition (docs/subsystems/shop.md). This module is the receiving side:
@@ -27,8 +27,8 @@
 //!
 //! [`World::install_menu_overlay_tables`]: legaia_engine_core::world::World::install_menu_overlay_tables
 
-use legaia_asset::widget_script;
 use legaia_engine_vm as vm;
+use legaia_game_tables::widget_script;
 use std::collections::BTreeMap;
 
 /// Resolved window-widget programs - raw disc bytes (terminator included),
@@ -125,7 +125,7 @@ impl WidgetWindow {
 
 /// The window list the widget scripts drive. Implements
 /// [`vm::Host`]; window ids index the menu window descriptor table
-/// ([`legaia_asset::menu_windows`]), whose `x`/`y` seed
+/// ([`legaia_game_tables::menu_windows`]), whose `x`/`y` seed
 /// [`vm::Host::default_position`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MenuWidgetState {
@@ -143,7 +143,10 @@ pub struct MenuWidgetState {
 
 impl MenuWidgetState {
     /// Install home positions from the disc-parsed window descriptor table.
-    pub fn set_defaults_from_table(&mut self, table: &legaia_asset::menu_windows::MenuWindowTable) {
+    pub fn set_defaults_from_table(
+        &mut self,
+        table: &legaia_game_tables::menu_windows::MenuWindowTable,
+    ) {
         self.defaults = table
             .windows
             .iter()

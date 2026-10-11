@@ -12,11 +12,12 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::monster_archive::{self, MonsterAnimation};
-use legaia_engine_core::monster_catalog::{
+use legaia_actor_formats::monster_archive::{self, MonsterAnimation};
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, catalog_from_monster_archive,
 };
-use legaia_engine_core::world::{Actor, CASTER_STAGE_TICK_LIMIT, SceneMode, World};
+use legaia_engine_core::world::{Actor, CASTER_STAGE_TICK_LIMIT, World};
+use legaia_engine_mode::mode::SceneMode;
 
 fn archive() -> Option<Vec<u8>> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -132,7 +133,7 @@ struct CastTrace {
 }
 
 /// Every `(monster id, spell id)` the scripted per-monster AI switch can
-/// queue (`legaia_engine_core::monster_ai::decide`, the port of
+/// queue (`legaia_engine_battle::monster_ai::decide`, the port of
 /// `FUN_801E9FD4`'s switch): the boss phases and the scripted casts that do
 /// not come out of a record's magic slots. Transcribed from the switch's
 /// `cast_*` literals; the generic slot casts are the archive's own.
@@ -230,14 +231,14 @@ fn setup(
         return None;
     }
     let mut w = World::new();
-    w.set_spell_catalog(legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(scus)?);
+    w.set_spell_catalog(legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(scus)?);
     w.install_menu_text(scus);
     // With the move-power table in, a cast whose clip seeds a homing flight
     // lands its hit from that flight and the recovery state waits on the
     // flight's children - the path a booted fight takes.
     if let Some(overlay) = overlay_0898() {
         w.tables.move_power =
-            legaia_engine_core::move_power::MovePowerCatalog::from_overlay_0898(&overlay);
+            legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(&overlay);
     }
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
@@ -303,7 +304,7 @@ fn cast(
     w.battle.forced_monster_cast = Some((seat as u8, spell));
     let mut t = CastTrace {
         idles_in_retail: w.cast_module_for(spell).is_some_and(|entry| {
-            legaia_engine_vm::cast_module_ticks::capture_body_idles_caster(entry, spell)
+            legaia_engine_battle_vm::cast_module_ticks::capture_body_idles_caster(entry, spell)
         }),
         ..CastTrace::default()
     };
@@ -313,11 +314,12 @@ fn cast(
     // over; that action is not the seeded one. Only an action that *starts*
     // under observation counts.
     t.approaches = w.cast_module_for(spell).is_some_and(|entry| {
-        legaia_engine_vm::cast_module_ticks::capture_body_approaches(entry, spell)
+        legaia_engine_battle_vm::cast_module_ticks::capture_body_approaches(entry, spell)
     });
     t.walk_only = t.approaches
         && w.cast_module_for(spell).is_some_and(|entry| {
-            legaia_engine_vm::cast_module_ticks::capture_caster_stages(entry, spell, 0, 0).is_none()
+            legaia_engine_battle_vm::cast_module_ticks::capture_caster_stages(entry, spell, 0, 0)
+                .is_none()
         });
     t.evil_seru_magic = w.cast_module_for(spell) == Some(EVIL_SERU_MAGIC_ENTRY);
     // PROT 0954's roulette, and every body whose arms the band paces on
@@ -325,15 +327,15 @@ fn cast(
     // band is the choreography's retail length, which runs past the guard
     // (Genocidal Cannon ~1750 ticks, Dead End Crisis ~1540).
     t.owns_band = w.cast_module_for(spell).is_some_and(|entry| {
-        use legaia_engine_vm::cast_module_camera as cam;
-        let body = legaia_engine_vm::cast_module_ticks::capture_tick_body(entry, spell)
+        use legaia_engine_battle_vm::cast_module_camera as cam;
+        let body = legaia_engine_battle_vm::cast_module_ticks::capture_tick_body(entry, spell)
             .unwrap_or(cam::SINGLE_BODY);
-        entry == legaia_engine_vm::cast_fatal_decision::FATAL_DECISION_ENTRY
+        entry == legaia_engine_battle_vm::cast_fatal_decision::FATAL_DECISION_ENTRY
             || cam::capture_arm_countdowns(entry, body).is_some()
     });
     let mut start = (0i32, 0i32);
     t.deals_damage = w.cast_module_for(spell).is_some_and(|entry| {
-        legaia_engine_vm::cast_module_ticks::capture_site_power(entry, spell).is_some()
+        legaia_engine_battle_vm::cast_module_ticks::capture_site_power(entry, spell).is_some()
     });
     let party_hp = |w: &World| -> u32 { (0..3).map(|i| u32::from(w.actors[i].battle.hp)).sum() };
     let mut hp_at_start = party_hp(&w);
@@ -344,7 +346,7 @@ fn cast(
         // other module reads the pad there).
         let tap = w.battle_ctx.action_state == 0x70 && t.ticks.is_multiple_of(2);
         w.set_pad(if tap {
-            legaia_engine_core::input::PadButton::Cross.mask()
+            legaia_engine_system::input::PadButton::Cross.mask()
         } else {
             0
         });

@@ -5,7 +5,7 @@ use super::*;
 impl World {
     // --- W1-C: player Seru 0909..0913 ---
     /// Dispatch one of the five player-Seru tick bodies for this frame
-    /// ([`legaia_engine_vm::cast_seru_ticks_b`], PROT 0909..0913, action ids
+    /// ([`legaia_engine_battle_vm::seru_magic_ticks`], PROT 0909..0913, action ids
     /// `0x87..=0x8B`).
     ///
     /// The damage and heal inputs are deliberately neutral. The engine folds
@@ -28,17 +28,17 @@ impl World {
     pub(in crate::world::battle::cast_band) fn run_seru_b_tick(
         &mut self,
         entry: u32,
-        ctx: &mut vm::cast_module_ticks::CastModuleCtx,
-        seats: &mut [vm::cast_module_ticks::CastActorState],
+        ctx: &mut legaia_engine_battle_vm::cast_module_ticks::CastModuleCtx,
+        seats: &mut [legaia_engine_battle_vm::cast_module_ticks::CastActorState],
         caster_slot: u8,
         summon_slot: u8,
         victim_slot: u8,
     ) -> (
-        vm::cast_module_ticks::CastTickStep,
-        Vec<vm::cast_module_ticks::AoeHit>,
+        legaia_engine_battle_vm::cast_module_ticks::CastTickStep,
+        Vec<legaia_engine_battle_vm::cast_module_ticks::AoeHit>,
     ) {
-        use legaia_engine_vm::cast_seru_ticks_b as seru;
-        use vm::cast_module_ticks::{AoeHit, SweepHit};
+        use legaia_engine_battle_vm::cast_module_ticks::{AoeHit, SweepHit};
+        use legaia_engine_battle_vm::seru_magic_ticks as seru;
 
         // `seats` is the retail-shaped row (`seat_map`); the kernels take
         // their seats in it, the engine's own reads stay engine-indexed.
@@ -83,7 +83,7 @@ impl World {
             910 => {
                 let clock = seru::SwordieClock {
                     rate: 1,
-                    speed: vm::battle_anim_rate::RATE_NORMAL,
+                    speed: legaia_engine_battle_vm::battle_anim_rate::RATE_NORMAL,
                 };
                 let mut slashes = self.casting.module_swordie;
                 let (step, hits) =

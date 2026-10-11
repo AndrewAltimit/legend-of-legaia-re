@@ -11,7 +11,7 @@ impl World {
     /// `FUN_800358c0` writes the target into the actor `+0xA`/`+0xC` + subobj
     /// mirrors and clears the `+0x20` glide cursor; the per-frame consumer is
     /// the motion VM `FUN_8003774C`, ported in
-    /// [`legaia_engine_vm::motion_vm`]). Returns `false` (and does nothing)
+    /// [`legaia_engine_motion_vm::motion_vm`]). Returns `false` (and does nothing)
     /// when `slot` is not an installed field NPC - the retail actor-list
     /// search miss, which returns 0.
     ///
@@ -38,7 +38,7 @@ impl World {
         self.npcs.motions.insert(
             slot,
             FieldNpcMotion {
-                state: vm::motion_vm::MotionState {
+                state: legaia_engine_motion_vm::motion_vm::MotionState {
                     world_x: cx,
                     world_y: 0,
                     world_z: cz,
@@ -104,13 +104,17 @@ impl World {
             let Some(motion) = self.npcs.motions.get_mut(&slot) else {
                 continue;
             };
-            let target = vm::motion_vm::MotionTarget {
+            let target = legaia_engine_motion_vm::motion_vm::MotionTarget {
                 x: motion.target.0,
                 y: 0,
                 z: motion.target.1,
                 id: 0,
             };
-            let result = vm::motion_vm::step(&mut motion.state, target, &FIELD_NPC_MOTION_PROGRAM);
+            let result = legaia_engine_motion_vm::motion_vm::step(
+                &mut motion.state,
+                target,
+                &FIELD_NPC_MOTION_PROGRAM,
+            );
             let pos = (motion.state.world_x, motion.state.world_z);
             // The walker's heading is the one the `0x47` step itself snapped
             // onto the eight-point compass - written **once per leg** at the
@@ -123,7 +127,7 @@ impl World {
                 self.npcs.headings.insert(slot, motion.state.yaw as i16);
             }
             self.npcs.positions.insert(slot, pos);
-            if result == vm::motion_vm::StepResult::Done {
+            if result == legaia_engine_motion_vm::motion_vm::StepResult::Done {
                 self.npcs.motions.remove(&slot);
             }
         }
@@ -150,7 +154,7 @@ impl World {
         self.move_vm.actor_motions.insert(
             actor_id,
             FieldNpcMotion {
-                state: vm::motion_vm::MotionState {
+                state: legaia_engine_motion_vm::motion_vm::MotionState {
                     world_x: cx,
                     // The sprite-actor glide runs in the actor VM's packed
                     // (x, y) plane; the motion VM's XZ pursue step maps
@@ -186,18 +190,22 @@ impl World {
             let Some(motion) = self.move_vm.actor_motions.get_mut(&slot) else {
                 continue;
             };
-            let target = vm::motion_vm::MotionTarget {
+            let target = legaia_engine_motion_vm::motion_vm::MotionTarget {
                 x: motion.target.0,
                 y: 0,
                 z: motion.target.1,
                 id: 0,
             };
-            let result = vm::motion_vm::step(&mut motion.state, target, &FIELD_NPC_MOTION_PROGRAM);
+            let result = legaia_engine_motion_vm::motion_vm::step(
+                &mut motion.state,
+                target,
+                &FIELD_NPC_MOTION_PROGRAM,
+            );
             let (nx, ny) = (motion.state.world_x, motion.state.world_z);
             let actor = &mut self.actors[slot as usize];
             actor.move_state.world_x = nx;
             actor.move_state.world_y = ny;
-            if result == vm::motion_vm::StepResult::Done {
+            if result == legaia_engine_motion_vm::motion_vm::StepResult::Done {
                 self.move_vm.actor_motions.remove(&slot);
             }
         }

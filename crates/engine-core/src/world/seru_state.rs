@@ -10,13 +10,13 @@ pub struct SeruState {
     /// Per-character Seru capture log - drives the post-battle "spell
     /// learned!" banner and the in-menu spell list. Pure data; saved
     /// through [`legaia_save::SaveExtV2::per_char`].
-    pub log: crate::seru_learning::SeruCaptureLog,
+    pub log: legaia_engine_battle::seru_learning::SeruCaptureLog,
     /// Master Seru registry (Seru id -> spell taught + capture points).
     /// Engines install via [`crate::world::World::set_seru_registry`]; `World::finish_battle`
     /// resolves [`crate::world::SeruState::battle_captures`] against it into [`crate::world::SeruState::log`].
     /// Empty by default - captures then bank no points (the monster is still
     /// downed + logged, but nothing is learned).
-    pub(crate) registry: crate::seru_learning::SeruRegistry,
+    pub(crate) registry: legaia_engine_battle::seru_learning::SeruRegistry,
     /// Capture outcomes produced by the most recently finished battle, one per
     /// captured Seru that the registry accepted. Replaced (not appended) by
     /// every `resolve_captures`, so it holds one battle's outcomes at most.
@@ -24,7 +24,7 @@ pub struct SeruState {
     /// [`crate::world::PartyState::current_capture_banner`], built from the
     /// same resolve; this list is the record behind it, read by
     /// [`crate::world::World::drain_last_capture_outcomes`].
-    pub(crate) last_capture_outcomes: Vec<crate::seru_learning::CaptureOutcome>,
+    pub(crate) last_capture_outcomes: Vec<legaia_engine_battle::seru_learning::CaptureOutcome>,
     /// Monster ids captured this battle by a capture spell (`SpellEffect::Capture`).
     /// The captured monster is downed immediately; the host drains this for
     /// post-battle Seru-learning resolution (the live loop carries no Seru
@@ -63,8 +63,8 @@ impl SeruState {
             shiny_enemy_slots: std::collections::HashSet::new(),
             shiny_captures: Vec::new(),
             magic_level_ups: Vec::new(),
-            log: crate::seru_learning::SeruCaptureLog::new(),
-            registry: crate::seru_learning::SeruRegistry::new(),
+            log: legaia_engine_battle::seru_learning::SeruCaptureLog::new(),
+            registry: legaia_engine_battle::seru_learning::SeruRegistry::new(),
             last_capture_outcomes: Vec::new(),
         }
     }

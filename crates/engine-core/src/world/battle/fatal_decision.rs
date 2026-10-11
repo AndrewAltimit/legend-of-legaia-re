@@ -1,5 +1,5 @@
 //! PROT 0954 (Fatal Decision) on the world: the battle side of
-//! [`legaia_engine_vm::cast_fatal_decision`] - the seats it reads, the
+//! [`legaia_engine_battle_vm::cast_fatal_decision`] - the seats it reads, the
 //! records it seats and moves, the stop prompt and the outcome banner, and
 //! the sixteen outcomes on the victim.
 //!
@@ -11,7 +11,7 @@
 
 use super::cast_band::{BATTLE_TABLE_SLOTS, CastModuleCodeRun};
 use super::*;
-use vm::cast_fatal_decision as fd;
+use legaia_engine_battle_vm::cast_fatal_decision as fd;
 
 /// The label of the backdrop part.
 const TAG_BACKDROP: u32 = 0x0954_0000;
@@ -26,8 +26,8 @@ const MESSAGE_BAR_ELEMENT: u8 = 0x5B;
 
 /// Arm 7's flash (`FUN_80024E80(0x801D9070, 1)`): kind `1`, a `0x20`-frame
 /// ramp from white to black, no hold.
-fn landing_flash() -> crate::fade::FadeTemplate {
-    crate::fade::FadeTemplate {
+fn landing_flash() -> legaia_engine_system::fade::FadeTemplate {
+    legaia_engine_system::fade::FadeTemplate {
         kind: 1,
         duration: 0x20,
         start_rgb: [0xFF; 3],
@@ -104,7 +104,9 @@ impl World {
             depth: seats.depth_raw as i16,
             caster_monster: seats.caster_monster,
             victim_is_party: victim < self.party.party_count,
-            confirm: self.input.just_pressed(crate::input::PadButton::Cross),
+            confirm: self
+                .input
+                .just_pressed(legaia_engine_system::input::PadButton::Cross),
             victim_status: self.raw_status_word(victim),
             victim_hp: v.map_or(0, |a| a.battle.hp),
             victim_playing: v.map_or(0, |a| a.battle.current_anim),
@@ -162,7 +164,7 @@ impl World {
     /// Put `text` in the message bar under the acting seat.
     fn raise_fatal_message(&mut self, text: Option<String>) {
         if let Some(text) = text {
-            self.battle.steal_caption = Some(crate::battle_steal::StealCaption {
+            self.battle.steal_caption = Some(legaia_engine_battle::battle_steal::StealCaption {
                 text,
                 owner: self.battle_ctx.active_actor,
             });
@@ -194,7 +196,11 @@ impl World {
                 if let Some(a) = self.actors.get_mut(usize::from(slot)) {
                     let r = a.battle.anim_rate.get();
                     a.battle.anim_rate =
-                        vm::battle_anim_rate::AnimRate(if p.halve_rates { r >> 1 } else { r << 1 });
+                        legaia_engine_battle_vm::battle_anim_rate::AnimRate(if p.halve_rates {
+                            r >> 1
+                        } else {
+                            r << 1
+                        });
                 }
             }
         }
@@ -214,7 +220,11 @@ impl World {
         }
         self.drive_fatal_parts(p);
         if p.flash {
-            crate::fade::spawn_fade(&mut self.presentation.fade, &landing_flash(), 1);
+            legaia_engine_system::fade::spawn_fade(
+                &mut self.presentation.fade,
+                &landing_flash(),
+                1,
+            );
         }
         if let Some(id) = p.cue {
             // The open cue is the module's head cue, which the arming seam
@@ -243,7 +253,7 @@ impl World {
     /// rotation (every one is camera-relative), labelled for the arms that
     /// write into it later.
     fn seat_fatal_records(&mut self, spawns: &[fd::FatalSpawn]) {
-        const LINK_BASE: u32 = legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
+        const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
         let Some(module) = self
             .casting
             .effect_pool
@@ -261,7 +271,7 @@ impl World {
             let mut offs: Vec<usize> = module.parts.iter().map(|p| p.record_off).collect();
             offs.push(off);
             let picked: Vec<_> =
-                legaia_asset::summon_overlay::parse_records_at(&module.bytes, &offs)
+                legaia_overlay_images::summon_overlay::parse_records_at(&module.bytes, &offs)
                     .into_iter()
                     .filter(|p| p.record_off == off)
                     .collect();
@@ -277,7 +287,7 @@ impl World {
                 }
             };
             let scene = self.casting.active_summon.get_or_insert_with(|| {
-                crate::summon::SummonScene::spawn_parts(
+                legaia_engine_effects::summon::SummonScene::spawn_parts(
                     &[],
                     &module.bytes,
                     crate::scene::EFFECT_MODEL_LIBRARY_BASE,
@@ -439,12 +449,14 @@ impl World {
             self.stone_cancels_queued_action(victim);
         }
         if let Some((amount, restores)) = step.popup {
-            self.battle.hit_fx.push(crate::battle_events::BattleHitFx {
-                target_slot: victim,
-                amount,
-                is_heal: restores,
-                is_crit: false,
-            });
+            self.battle
+                .hit_fx
+                .push(legaia_engine_battle::battle_events::BattleHitFx {
+                    target_slot: victim,
+                    amount,
+                    is_heal: restores,
+                    is_crit: false,
+                });
         }
         step.reaction
     }
@@ -494,7 +506,7 @@ impl World {
                     *cell = data.price(id as u8) != 0;
                 }
             }
-            vm::cast_arm_ticks::steal_pick_bag_slot(
+            legaia_engine_battle_vm::cast_arm_ticks::steal_pick_bag_slot(
                 &bag,
                 None,
                 || self.next_rand(),

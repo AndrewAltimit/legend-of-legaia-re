@@ -23,9 +23,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::world::{
-    AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, SceneMode, World,
-};
+use legaia_engine_core::world::{AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, World};
+use legaia_engine_mode::mode::SceneMode;
 
 /// Load base of the field overlay (`crates/asset/data/static-overlays.toml`).
 const FIELD_BASE: u32 = 0x801C_E818;
@@ -134,8 +133,8 @@ fn the_emitter_spawn_site_selects_the_scene_arm() {
 fn the_channel_advances_from_the_worlds_own_frame_tick() {
     // Disc-free on purpose - this asserts the wiring, not the data - but it
     // lives here because it is the other half of the claim above.
-    use legaia_engine_core::cutscene_script_elements::SceneSpan;
-    use legaia_engine_core::mode_entry_init::FieldEntryMode;
+    use legaia_engine_field::plain_template_actors::SceneSpan;
+    use legaia_engine_system::mode_entry_init::FieldEntryMode;
     let mut w = World::new();
     w.mode = SceneMode::Field;
     w.clock.display_frame_step = 1;

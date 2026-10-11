@@ -1,7 +1,7 @@
 //! Event queue emitted by the battle action state machine through the
 //! world's `BattleActionHost` implementation.
 //!
-//! Mirrors `legaia_engine_core::field_events` but for battle. Visual side-effects
+//! Mirrors `legaia_engine_field::field_events` but for battle. Visual side-effects
 //! (pose changes, UI element spawns, spell animations, screen shake,
 //! brightness ramps) and gameplay primitives (damage application,
 //! capture-archive load, party / monster setup) are pushed onto a
@@ -150,7 +150,7 @@ pub struct BattleShoutCue {
 
 /// One battle **effect-script spawn request** - a record the per-actor
 /// effect-script walk consumed this frame
-/// (`legaia_engine_core::action_effect_script::step_effect_script`, the `FUN_801DEA50`
+/// (`legaia_engine_effects::action_effect_script::step_effect_script`, the `FUN_801DEA50`
 /// port driven from the battle animation tick). Cosmetic, in the
 /// [`BattleHitFx`] "drain and present" pattern: `at` is already the
 /// world-space position (the record's local offset scaled and rotated by the

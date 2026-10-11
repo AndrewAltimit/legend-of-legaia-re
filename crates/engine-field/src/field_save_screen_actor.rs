@@ -17,7 +17,7 @@
 //! State 0 does two things that together form the call chain: it writes its
 //! own actor pointer to `_DAT_8007B8E0` and sets the game mode to `0x16`
 //! (mode 22, CARD INIT). Mode 23's frame body `FUN_80017978` is
-//! `(*_DAT_8007B8E0)[+0x0C]()` - see `legaia_engine_core::mode::CARD_FRAME_BODY` - so
+//! `(*_DAT_8007B8E0)[+0x0C]()` - see `legaia_engine_mode::mode::CARD_FRAME_BODY` - so
 //! from the next frame the CARD mode pair ticks *this* actor and nothing
 //! else. That is why mode 23 runs no actor passes and no display flip: this
 //! handler is the entire frame.
@@ -76,8 +76,8 @@
 //! `SceneMode::Menu` and enters `GameMode::CardInit` through the mode seat -
 //! which stages no overlay request in the port's model - then
 //! `legaia_engine_core::field_menu_dispatch::FieldMenuSubsession::build` opens the Save /
-//! Load row as a `legaia_engine_core::save_select::SaveSelectSession` on the same running
-//! field session, and `legaia_engine_core::save_screen::SaveScreenFlow` runs the card
+//! Load row as a `legaia_engine_menus::save_select::SaveSelectSession` on the same running
+//! field session, and `legaia_engine_menus::save_screen::SaveScreenFlow` runs the card
 //! half around it. Both shipped hosts own that flow, and `field_menu_resume`
 //! hands the mode back when the session ends.
 //!
@@ -216,7 +216,7 @@ impl FieldSaveScreenActor {
     /// which stages no overlay request),
     /// `legaia_engine_core::field_menu_dispatch::FieldMenuSubsession::build` opens the
     /// Save / Load row onto the running field session, and
-    /// `legaia_engine_core::save_screen::SaveScreenFlow` runs the card half. No code
+    /// `legaia_engine_menus::save_screen::SaveScreenFlow` runs the card half. No code
     /// overlay is paged, so there is nothing for the eleven states to
     /// sequence. See the module docs.
     pub fn tick(&mut self, input: SaveScreenInput) -> Vec<SaveScreenEffect> {

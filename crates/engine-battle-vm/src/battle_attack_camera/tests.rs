@@ -90,7 +90,7 @@ fn every_dispatched_arm_has_a_track_map() {
 /// least one arm. That density is what pins the parser's extent.
 #[test]
 fn the_track_map_uses_every_row_of_the_table() {
-    use legaia_asset::battle_attack_camera_table::ATTACK_CAMERA_ROWS;
+    use legaia_game_tables::battle_attack_camera_table::ATTACK_CAMERA_ROWS;
     let mut used = std::collections::BTreeSet::new();
     for arm in ARM_TRACKS {
         for t in arm.tracks {
@@ -166,7 +166,7 @@ fn track_folds_hit_the_named_component() {
 /// pull different offsets out of one row.
 #[test]
 fn arm_phase_reads_the_cursor_column() {
-    use legaia_asset::battle_attack_camera_table::{
+    use legaia_game_tables::battle_attack_camera_table::{
         self as tbl, ATTACK_CAMERA_FILE_OFFSET, ATTACK_CAMERA_LEN,
     };
     let mut buf = vec![0u8; ATTACK_CAMERA_FILE_OFFSET + ATTACK_CAMERA_LEN];
@@ -263,8 +263,8 @@ fn thresholds_are_ordered() {
 /// A table whose row `r` reads `(r * 16, r * 16 + 1)` - distinguishable
 /// per row AND per cursor, so a test can tell which row an arm folded and
 /// which column it took.
-fn probe_table() -> legaia_asset::battle_attack_camera_table::AttackCameraTracks {
-    use legaia_asset::battle_attack_camera_table as tbl;
+fn probe_table() -> legaia_game_tables::battle_attack_camera_table::AttackCameraTracks {
+    use legaia_game_tables::battle_attack_camera_table as tbl;
     let mut buf = vec![0u8; tbl::ATTACK_CAMERA_FILE_OFFSET + tbl::ATTACK_CAMERA_LEN];
     for r in 0..tbl::ATTACK_CAMERA_ROWS {
         for c in 0..tbl::ATTACK_CAMERA_PHASES {

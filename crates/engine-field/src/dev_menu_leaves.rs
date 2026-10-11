@@ -295,7 +295,7 @@ pub const SFX_CANCEL: u32 = 0x36;
 /// Named `dev_menu_cursor_step` rather than `cursor_step` on purpose: a free
 /// function's name is the whole of its identity to the reachability pass
 /// (`docs/tooling/stale-not-wired-triage.md`), and
-/// `legaia_engine_core::baka_cabinet::cursor_step` is a live free function of
+/// `legaia_engine_minigames::baka_cabinet::cursor_step` is a live free function of
 /// that name, so every call to *that* one used to read as a call to this one.
 /// Keep the names distinct.
 ///
@@ -551,7 +551,7 @@ pub enum StatDelta {
 /// stacked per-entry label list, which draws a label and then calls this as the
 /// entry's **sub-draw**. The pause-menu preview is a separate flow that
 /// trial-equips into its own 8-slot array and re-runs
-/// `legaia_engine_core::battle_stats`'s aggregator, so it never reaches here.
+/// `legaia_engine_battle::battle_stats`'s aggregator, so it never reaches here.
 ///
 /// Wired: [`equip_stat_panel`] is the whole sub-draw and runs this twice - once
 /// over the live loadout, once over the trial one - and
@@ -584,7 +584,7 @@ pub fn aggregate_slot_stats(
 /// Wired: the candidate arm of [`equip_stat_panel`], which draws the reject
 /// line instead of the comparison columns when this returns `false`. The
 /// engine's own equip screen is a different screen and gates with
-/// `legaia_engine_core::equipment`'s mask check, not with this.
+/// `legaia_engine_menus::equipment`'s mask check, not with this.
 /// PORT: FUN_801E5B4C (equippability guard)
 pub fn can_equip(mask: u8, char_idx: u32) -> bool {
     if char_idx < 3 {

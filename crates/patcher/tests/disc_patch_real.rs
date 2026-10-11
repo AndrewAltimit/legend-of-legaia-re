@@ -6,7 +6,7 @@
 //! `LEGAIA_DISC_BIN` and skips+passes when unset. It never writes the patched
 //! image anywhere - the edit lives only in memory.
 
-use legaia_asset::monster_archive::{self, SLOT_STRIDE};
+use legaia_actor_formats::monster_archive::{self, SLOT_STRIDE};
 use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};

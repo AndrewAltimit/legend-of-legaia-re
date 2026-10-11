@@ -21,9 +21,9 @@
 //! assert the **state machine** acted on it, so re-splitting the storage fails
 //! them.
 
+use legaia_engine_battle_vm::battle_action::ActionState;
+use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
 use legaia_engine_core::world::World;
-use legaia_engine_vm::battle_action::ActionState;
-use legaia_engine_vm::battle_formulas::FormationAdvantage;
 
 /// Stage a 3-party / 2-monster battle parked at the SM's `Begin` state.
 fn battle_at_begin() -> World {

@@ -34,9 +34,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::dialog::{OwnedDialogPanel, PanelState};
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_dialog::dialog::{OwnedDialogPanel, PanelState};
+use legaia_engine_mode::mode::SceneMode;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {

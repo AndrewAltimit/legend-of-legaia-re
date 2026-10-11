@@ -18,12 +18,12 @@
 // REF: FUN_8003ce64 (read a system flag - the course, length and prize gates)
 // REF: FUN_800421d4 (give item - the one-shot War God Icon award)
 
-use legaia_asset::element_affinity::ElementAffinity;
-use legaia_asset::move_power::{self, MoveRecord};
 use legaia_engine_battle_vm::battle_formulas::{
     DamageFinish, DefenderResist, SummonRollActor, arts_physical_predamage_lazy,
     damage_finish_lazy, spirit_gauge_fill, world_rand,
 };
+use legaia_game_tables::element_affinity::ElementAffinity;
+use legaia_game_tables::move_power::{self, MoveRecord};
 
 mod contest;
 mod course;
@@ -37,7 +37,7 @@ pub use hub::*;
 
 /// Deal size (the retail deal loop builds exactly four slots, one per
 /// direction).
-pub const HAND_SLOTS: usize = legaia_asset::muscle_dome::HAND_SLOTS;
+pub const HAND_SLOTS: usize = legaia_minigame_formats::muscle_dome::HAND_SLOTS;
 
 /// Queue capacity: the turn's first commit zeroes `actor+0x1df..+0x1ee`
 /// (16 bytes), bounding the per-turn queue.

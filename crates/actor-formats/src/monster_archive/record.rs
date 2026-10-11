@@ -292,7 +292,7 @@ impl MonsterRecord {
 ///
 /// REF: FUN_80054CB0 (`0x80055244..0x8005530C`, both boost profiles; the
 /// record -> actor copy this is the arithmetic of is ported at
-/// `legaia_engine_core::monster_catalog::monster_def_from_record`)
+/// `legaia_engine_battle::monster_catalog::monster_def_from_record`)
 pub fn boost_profile(stats: [u16; 6], scripted: bool) -> [u16; 6] {
     let s = stats;
     if scripted {

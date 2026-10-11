@@ -24,7 +24,7 @@ fn block_name(patcher: &DiscPatcher, id: u16) -> String {
     let archive = patcher
         .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
         .expect("archive");
-    legaia_asset::monster_archive::record(&archive, id)
+    legaia_actor_formats::monster_archive::record(&archive, id)
         .expect("record")
         .expect("populated")
         .name
@@ -117,11 +117,14 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
                 sheet_r.tile_clut_bytes(src).unwrap(),
                 "portrait tile {hero_tile} palette != retail tile {src}"
             );
-            let base = (legaia_asset::title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET
-                + hero_tile * legaia_asset::title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE)
+            let base = (legaia_ui_formats::title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET
+                + hero_tile * legaia_ui_formats::title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE)
                 as u64;
             let tim = reopened
-                .read_prot_bytes(base, legaia_asset::title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE)
+                .read_prot_bytes(
+                    base,
+                    legaia_ui_formats::title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE,
+                )
                 .expect("standalone portrait TIM");
             assert_eq!(
                 tim[20..52],
@@ -149,12 +152,12 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         .read_entry_footprint(MONSTER_ARCHIVE_ENTRY)
         .expect("archive");
     for id in [162u16, 163, 164] {
-        let mesh = legaia_asset::monster_archive::mesh(&archive, id)
+        let mesh = legaia_actor_formats::monster_archive::mesh(&archive, id)
             .expect("mesh")
             .expect("populated");
         let tmd = legaia_tmd::parse(mesh.tmd_bytes()).expect("swapped TMD");
         assert_eq!(tmd.objects.len(), 15, "monster {id} part count");
-        let anims = legaia_asset::monster_archive::animations(&archive, id)
+        let anims = legaia_actor_formats::monster_archive::animations(&archive, id)
             .expect("anims")
             .expect("populated");
         assert!(anims.iter().all(|a| a.part_count == 15));
@@ -163,20 +166,20 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     // The rebuilt player files re-assemble through the retail chain.
     for entry in [863usize, 864, 865] {
         let file = reopened.read_entry_footprint(entry).expect("player file");
-        let pack = legaia_asset::battle_data_pack::parse(&file).expect("pack reparse");
-        legaia_asset::battle_char_assembly::assemble_character(&file, &pack, &[0; 5])
+        let pack = legaia_actor_formats::battle_data_pack::parse(&file).expect("pack reparse");
+        legaia_actor_formats::battle_char_assembly::assemble_character(&file, &pack, &[0; 5])
             .expect("assemble");
-        legaia_asset::battle_char_assembly::battle_animations(&file).expect("anims");
+        legaia_actor_formats::battle_char_assembly::battle_animations(&file).expect("anims");
     }
 
     // New-game template names follow the mapping.
     let scus = reopened
         .read_named_file("SCUS_942.54")
         .expect("SCUS present");
-    let tmpl = legaia_asset::new_game::party_template_file_offset(&scus).expect("template");
+    let tmpl = legaia_game_tables::new_game::party_template_file_offset(&scus).expect("template");
     let name_at = |slot: usize| -> String {
-        let off = tmpl + slot * legaia_asset::new_game::RECORD_STRIDE + 16;
-        let field = &scus[off..off + legaia_asset::new_game::NAME_LEN];
+        let off = tmpl + slot * legaia_game_tables::new_game::RECORD_STRIDE + 16;
+        let field = &scus[off..off + legaia_game_tables::new_game::NAME_LEN];
         let len = field.iter().position(|&b| b == 0).unwrap_or(field.len());
         String::from_utf8_lossy(&field[..len]).into_owned()
     };
@@ -454,8 +457,9 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
         let p_readef = reopened.read_entry_footprint(READEF_ENTRY).expect("readef");
         for slot in [2usize, 5, 8] {
             let span = slot * 0x10800..(slot + 1) * 0x10800;
-            let ra = legaia_asset::me_archive::parse(&r_readef[span.clone()]).expect("retail ME");
-            let pa = legaia_asset::me_archive::parse(&p_readef[span]).expect("patched ME");
+            let ra = legaia_actor_formats::me_archive::parse(&r_readef[span.clone()])
+                .expect("retail ME");
+            let pa = legaia_actor_formats::me_archive::parse(&p_readef[span]).expect("patched ME");
             assert_eq!(ra.len(), pa.len(), "slot {slot} entry count");
             for i in 0..ra.len() {
                 let r = ra.entry(i).expect("retail entry");

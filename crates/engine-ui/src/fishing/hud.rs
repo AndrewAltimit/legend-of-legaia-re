@@ -19,7 +19,7 @@
 //!
 //! The rules half of the minigame - the cast oscillator, the tension
 //! tug-of-war, catch scoring, the prize exchange - lives in
-//! `legaia_engine_core::fishing`, which owns the numeric kernels this module
+//! `legaia_engine_fishing::fishing`, which owns the numeric kernels this module
 //! only displays.
 
 mod banners;
@@ -37,13 +37,13 @@ pub use hud_draws::*;
 /// The line-record base offset the catch-HUD length readout subtracts
 /// (`FUN_801d1580`: `record - 300`, clamped at zero). Same retail literal as
 /// the hook check's `record < gate + 300`, whose copy lives with the rules
-/// kernels (`legaia_engine_core::fishing::RECORD_STRIKE_BASE`).
+/// kernels (`legaia_engine_fishing::fishing::RECORD_STRIKE_BASE`).
 pub const RECORD_STRIKE_BASE: i32 = 300;
 
 /// The point total the persistent HUD clamps its row to (`FUN_801d13f0`).
 /// Same retail literal as the persistent counter's own clamp in
 /// `FUN_801d5298`, whose copy lives with the rules kernels
-/// (`legaia_engine_core::fishing::FISH_POINTS_CAP`).
+/// (`legaia_engine_fishing::fishing::FISH_POINTS_CAP`).
 pub const HUD_POINT_CAP: i32 = 999_999;
 
 /// Glyph / digit brightness of the persistent + catch HUD rows

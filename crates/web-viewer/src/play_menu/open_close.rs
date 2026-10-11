@@ -11,8 +11,8 @@ impl LegaiaRuntime {
     /// The session's own open (`BootSession::open_field_menu`, reached
     /// through `BootSession::press_field_menu`): a [`FieldMenuSession`]
     /// seeded with the world's money + play time, the two row gates sampled
-    /// into a [`FieldMenuGate`](legaia_engine_core::field_menu::FieldMenuGate), and the world switched into
-    /// [`SceneMode::Menu`](legaia_engine_core::world::SceneMode::Menu) so field dispatch suspends while the menu owns the
+    /// into a [`FieldMenuGate`](legaia_engine_menus::field_menu::FieldMenuGate), and the world switched into
+    /// [`SceneMode::Menu`](legaia_engine_mode::mode::SceneMode::Menu) so field dispatch suspends while the menu owns the
     /// frame.
     pub fn play_menu_open(&mut self) {
         // A menu-button press, answered by the engine's one rule
@@ -224,7 +224,7 @@ impl LegaiaRuntime {
     /// seeded at scene load from the MAN header bit retail copies into
     /// `_DAT_8007B6A8`). The page shows the Save-here hint from this, and the
     /// menu's own Save row inks and buzzes from the same value through
-    /// [`FieldMenuGate`](legaia_engine_core::field_menu::FieldMenuGate).
+    /// [`FieldMenuGate`](legaia_engine_menus::field_menu::FieldMenuGate).
     pub fn play_scene_save_allowed(&self) -> bool {
         self.scene_host
             .host()
@@ -242,7 +242,7 @@ impl LegaiaRuntime {
     ///
     /// Returns `true` when the key was latched - i.e. the code is one the
     /// engine's shared vocabulary has a name for
-    /// ([`legaia_engine_core::input::key_name_for_dom_code`]) and a menu is
+    /// ([`legaia_engine_system::input::key_name_for_dom_code`]) and a menu is
     /// open. A page uses that to decide whether to swallow the event. Codes
     /// outside the vocabulary answer `false` rather than being stored under a
     /// guessed name, which is the same bound the native window's
@@ -252,7 +252,7 @@ impl LegaiaRuntime {
     /// The page must skip auto-repeat (`KeyboardEvent.repeat`); the native
     /// window collapses its own repeat stream in `handle_key`.
     pub fn play_menu_key(&mut self, code: &str) -> bool {
-        let Some(name) = legaia_engine_core::input::key_name_for_dom_code(code) else {
+        let Some(name) = legaia_engine_system::input::key_name_for_dom_code(code) else {
             return false;
         };
         match self.play_menu.as_mut() {

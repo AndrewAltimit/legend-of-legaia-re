@@ -85,8 +85,8 @@ fn synthetic_replay_sample(world: &legaia_engine_core::world::World) -> ModeTrac
     }
 }
 
-fn synthetic_replay_scene_mode_name(m: legaia_engine_core::world::SceneMode) -> &'static str {
-    use legaia_engine_core::world::SceneMode;
+fn synthetic_replay_scene_mode_name(m: legaia_engine_mode::mode::SceneMode) -> &'static str {
+    use legaia_engine_mode::mode::SceneMode;
     match m {
         SceneMode::Title => "Title",
         SceneMode::Field => "Field",

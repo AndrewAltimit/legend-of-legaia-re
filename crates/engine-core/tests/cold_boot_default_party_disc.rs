@@ -1,6 +1,6 @@
 //! Disc-gated: a **cold scene boot** (entering a scene directly with no New
 //! Game confirm and no save loaded) seeds the retail new-game defaults - the
-//! `SCUS_942.54` starting-party template ([`legaia_asset::new_game`]) and the
+//! `SCUS_942.54` starting-party template ([`legaia_game_tables::new_game`]) and the
 //! starting bag - so the pause menu always reads valid party data, and a
 //! subsequent `save_full` / `load_full` round-trips that seeded state.
 //!
@@ -31,13 +31,13 @@ fn defaults_from_disc(disc: &std::path::Path) -> Option<NewGameDefaults> {
         .ok()?
         .read("SCUS_942.54")
         .ok()?;
-    let party = legaia_asset::new_game::StartingParty::from_scus(&scus)?;
-    let inventory = legaia_asset::new_game::StartingInventory::from_scus(&scus);
+    let party = legaia_game_tables::new_game::StartingParty::from_scus(&scus)?;
+    let inventory = legaia_game_tables::new_game::StartingInventory::from_scus(&scus);
     Some(NewGameDefaults {
         party,
         inventory,
         picker_party: false,
-        equip_stats: legaia_asset::equip_stats::EquipStatTable::from_scus(&scus),
+        equip_stats: legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus),
     })
 }
 

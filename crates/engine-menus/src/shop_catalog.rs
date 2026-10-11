@@ -3,13 +3,13 @@
 //! A town merchant's stock list is not an overlay data table - it lives **inline
 //! in the scene's field-VM script** (the MAN), as field-VM op `0x49` (`STATE_RESUME`)
 //! sub-op `0` carrying `[count][item_ids][ASCII name]`. The shared scanner
-//! [`legaia_asset::shop_stock`] locates these records robustly (a byte-scan that
+//! [`legaia_scene_formats::shop_stock`] locates these records robustly (a byte-scan that
 //! survives the dialogue-picker jump tables a linear walk desyncs on); this
 //! module pairs it with item prices to populate the engine's
 //! [`crate::shop::ShopInventory`] with real per-scene stock.
 //!
 //! Buy **prices** come from the static `SCUS_942.54` item table (the `u16` at
-//! record `+2`, [`legaia_asset::item_names::item_price`]) - the same field the
+//! record `+2`, [`legaia_game_tables::item_names::item_price`]) - the same field the
 //! gold-debiting buy handler reads. A price of `0` marks a quest / key /
 //! found-only / internal item the game never sells, so the price table doubles
 //! as a **sellable mask** (price `> 0`). The mask does double duty in the scan:
@@ -44,10 +44,11 @@ impl ShopItemData {
     pub fn from_scus(scus: &[u8]) -> Option<Self> {
         // Require a parseable item table (id 1's price slot resolves), matching
         // the randomizer's `sellable_pool` precondition.
-        legaia_asset::item_names::price_slot(scus, 1)?;
+        legaia_game_tables::item_names::price_slot(scus, 1)?;
         let mut prices = [0u16; 256];
         for id in 0u16..=255 {
-            prices[id as usize] = legaia_asset::item_names::item_price(scus, id as u8).unwrap_or(0);
+            prices[id as usize] =
+                legaia_game_tables::item_names::item_price(scus, id as u8).unwrap_or(0);
         }
         Some(Self { prices })
     }
@@ -85,13 +86,13 @@ pub struct SceneShop {
 /// Decode every gold shop in one scene-bundle PROT entry.
 ///
 /// `entry_bytes` is the raw PROT entry (the same footprint
-/// [`legaia_asset::scene_asset_table`] expects); `entry_idx` is its PROT index,
+/// [`legaia_scene_formats::scene_asset_table`] expects); `entry_idx` is its PROT index,
 /// used only as the [`ShopInventory::shop_id`] tag. When `item_data` is supplied
 /// the scan uses the **sellable** (priced `> 0`) mask: a record must lead with a
 /// sellable item, and the trailing run of unsellable template-id padding the
 /// record `count` over-counts (the `Ra-Seru Meta $N` placeholders) is trimmed out
 /// of the stock - so the priced stock the player sees is exactly the leading
-/// sellable run (see [`legaia_asset::shop_stock`]). Without it the scan is
+/// sellable run (see [`legaia_scene_formats::shop_stock`]). Without it the scan is
 /// structural-only and every price is `0`.
 ///
 /// Returns an empty vec when the entry isn't a scene bundle, has no MAN, or has
@@ -102,7 +103,7 @@ pub fn scene_shops(
     item_data: Option<&ShopItemData>,
 ) -> Vec<SceneShop> {
     let mask = item_data.map(|d| d.sellable_mask());
-    let Some(sc) = legaia_asset::shop_stock::locate(entry_bytes, mask.as_ref()) else {
+    let Some(sc) = legaia_scene_formats::shop_stock::locate(entry_bytes, mask.as_ref()) else {
         return Vec::new();
     };
     sc.records
@@ -169,7 +170,7 @@ mod tests {
         let mut man = Vec::new();
         man.extend_from_slice(&[0x49, 0x00, 0x00, 0x02, 0x22, 0x34]);
         man.extend_from_slice(b"Variety Store\0");
-        let records = legaia_asset::shop_stock::scan(&man, Some(&mask));
+        let records = legaia_scene_formats::shop_stock::scan(&man, Some(&mask));
         assert_eq!(records.len(), 1, "all-priced record is kept");
         assert_eq!(data.price(0x22), 50);
         assert_eq!(data.price(0x34), 120);
@@ -190,7 +191,7 @@ mod tests {
         let mut man = Vec::new();
         man.extend_from_slice(&[0x49, 0x00, 0x00, 0x03, 0x22, 0x34, 0x03]);
         man.extend_from_slice(b"Variety Store\0");
-        let records = legaia_asset::shop_stock::scan(&man, Some(&data.sellable_mask()));
+        let records = legaia_scene_formats::shop_stock::scan(&man, Some(&data.sellable_mask()));
         assert_eq!(records.len(), 1, "the real shop is kept");
         let stock: Vec<u8> = records[0].id_offsets.iter().map(|&o| man[o]).collect();
         assert_eq!(stock, vec![0x22, 0x34], "the 0x03 padding is trimmed");
@@ -199,14 +200,16 @@ mod tests {
         let mut man = Vec::new();
         man.extend_from_slice(&[0x49, 0x00, 0x00, 0x02, 0x03, 0x03]);
         man.extend_from_slice(b"Variety Store\0");
-        assert!(legaia_asset::shop_stock::scan(&man, Some(&data.sellable_mask())).is_empty());
+        assert!(
+            legaia_scene_formats::shop_stock::scan(&man, Some(&data.sellable_mask())).is_empty()
+        );
 
         // Structural-only (no mask) keeps the full declared list including padding.
         let mut man = Vec::new();
         man.extend_from_slice(&[0x49, 0x00, 0x00, 0x03, 0x22, 0x34, 0x03]);
         man.extend_from_slice(b"Variety Store\0");
         assert_eq!(
-            legaia_asset::shop_stock::scan(&man, None)[0]
+            legaia_scene_formats::shop_stock::scan(&man, None)[0]
                 .id_offsets
                 .len(),
             3

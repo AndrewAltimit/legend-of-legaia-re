@@ -1,5 +1,5 @@
 use super::*;
-use legaia_asset::summon_overlay::{
+use legaia_overlay_images::summon_overlay::{
     RENDER_NODE_MODE_A, RENDER_NODE_MODE_B, SummonOverlay, SummonPart,
 };
 

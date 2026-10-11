@@ -1,7 +1,7 @@
 //! The publisher-logo boot pass's **draw** half: retail's per-logo quads
 //! letterboxed onto a surface.
 //!
-//! The layout itself is not computed here - `legaia_engine_core::publisher_logos`
+//! The layout itself is not computed here - `legaia_engine_menus::publisher_logos`
 //! carries `LOGO_QUADS`, retail's own source rects and destinations in the
 //! 640x480 stage the boot pass runs in (`FUN_801CE9C0` selects it with
 //! `FUN_8001DAF8(0x400)`). This is only the projection of that stage onto a
@@ -21,7 +21,7 @@ use crate::SpriteDraw;
 
 /// One logo quad: a rect in the logo's own decoded-TIM pixel space and its
 /// destination in the boot stage. The mirror of
-/// `legaia_engine_core::publisher_logos::LogoQuad`.
+/// `legaia_engine_menus::publisher_logos::LogoQuad`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LogoQuadView {
     /// `(x, y, w, h)` in the decoded TIM.

@@ -10,10 +10,10 @@
 //!
 //! REF: FUN_801E295C (`0x801E4334..0x801E43A4`), FUN_801DCEAC
 
-use legaia_engine_vm::battle_action::{
+use legaia_engine_battle_vm::battle_action::{
     ACTOR_SLOTS, ActionState, BattleActionCtx, BattleActionHost, BattleActor, step,
 };
-use legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
 
 /// Minimal host with seats: the only thing beyond the default trait bodies is
 /// the actor table and [`BattleActionHost::actor_position`].

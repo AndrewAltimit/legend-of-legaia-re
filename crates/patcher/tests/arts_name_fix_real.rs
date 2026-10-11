@@ -6,9 +6,9 @@
 //!
 //! Gates on `LEGAIA_DISC_BIN`; skips and passes when unset.
 
-use legaia_asset::item_names::file_offset_for_va;
 use legaia_code_hooks::arenas::ARENA1_VA;
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
 use legaia_patcher::apply;
 use legaia_patcher::arts_name_fix::{
     ArtsNameFixInjection, HOOK_DISPLACED, HOOK_VA, ROUTINE_BYTES, ROUTINE_WORDS, assemble_hook,

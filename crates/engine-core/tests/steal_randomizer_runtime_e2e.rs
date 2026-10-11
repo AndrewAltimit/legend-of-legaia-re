@@ -38,9 +38,9 @@
 //! (`next_rand() % 100 == 0`), keeping both passes comparable. Skips without
 //! `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
-use legaia_asset::steal_table::{self, StealTable};
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_engine_core::world::World;
-use legaia_patcher::disc::DiscPatcher;
+use legaia_game_tables::steal_table::{self, StealTable};
 
 /// World RNG seed for which the first `apply_steal` roll is `0`
 /// (`next_rand() % 100 == 0`), so the steal lands for any positive chance. On
@@ -86,7 +86,7 @@ fn patched_steal_grants_new_item_at_runtime() {
 
     // Item names purely for legible output (no Sony bytes are asserted).
     let scus = legaia_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54").expect("SCUS");
-    let names = legaia_asset::item_names::ItemNameTable::from_scus(&scus);
+    let names = legaia_game_tables::item_names::ItemNameTable::from_scus(&scus);
     let name_of = |id: u8| {
         names
             .as_ref()

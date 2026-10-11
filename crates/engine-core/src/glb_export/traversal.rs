@@ -23,15 +23,15 @@ impl FloorSampler {
         {
             world.load_field_object_cells(
                 bytes
-                    .get(legaia_asset::field_objects::OBJECT_GRID_OFFSET..)
+                    .get(legaia_scene_formats::field_objects::OBJECT_GRID_OFFSET..)
                     .unwrap_or_default(),
             );
             world.load_field_elevation_overrides(
                 bytes
-                    .get(crate::field_regions::MAP_REGION_BLOCK_OFFSET..)
+                    .get(legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET..)
                     .unwrap_or_default(),
                 bytes
-                    .get(crate::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
+                    .get(legaia_engine_field::field_regions::MAP_TRIGGER_FALLBACK_OFFSET..)
                     .unwrap_or_default(),
             );
         }
@@ -210,14 +210,18 @@ pub fn export_scene_traversal(
     });
     let man = scene.field_man_payload(index).ok().flatten();
     if let (Some(map), Some(triggers), Some(man)) = (map_bytes, triggers, man.as_ref())
-        && let Ok(mf) = legaia_asset::man_section::parse(man)
+        && let Ok(mf) = legaia_scene_formats::man_section::parse(man)
     {
-        for bind in crate::man_field_scripts::object_walk_touch_binds(&map, &triggers, &mf, man) {
-            let cold =
-                crate::man_field_scripts::resolve_walk_touch_event(&mf, man, bind.record, &|_| {
-                    false
-                });
-            let Some(crate::man_field_scripts::WalkTouchEvent::PlayerMoveTo {
+        for bind in legaia_engine_field::man_field_scripts::object_walk_touch_binds(
+            &map, &triggers, &mf, man,
+        ) {
+            let cold = legaia_engine_field::man_field_scripts::resolve_walk_touch_event(
+                &mf,
+                man,
+                bind.record,
+                &|_| false,
+            );
+            let Some(legaia_engine_field::man_field_scripts::WalkTouchEvent::PlayerMoveTo {
                 world_x,
                 world_z,
                 facing,
@@ -227,7 +231,8 @@ pub fn export_scene_traversal(
             };
             script_doors.push((bind.contact, (world_x, world_z), facing, bind.record));
         }
-        portal_sites = crate::man_field_scripts::overworld_portal_sites(&mf, man, &triggers);
+        portal_sites =
+            legaia_engine_field::man_field_scripts::overworld_portal_sites(&mf, man, &triggers);
     }
 
     // Every landing point, indexed teleport-order (map doors then script
@@ -274,7 +279,7 @@ pub fn export_scene_traversal(
         }));
     }
     for (i, &((cx, cz), (dx, dz), facing, record)) in script_doors.iter().enumerate() {
-        let base = (crate::field_regions::MAP_OBJECT_CONTACT_HALF + 48) as f32;
+        let base = (legaia_engine_field::field_regions::MAP_OBJECT_CONTACT_HALF + 48) as f32;
         let (tpos, thalf) = sized_box(cx, cz, base, map_doors.len() + i);
         out.teleports.push(json!({
             "kind": "script",

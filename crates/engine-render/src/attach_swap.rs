@@ -8,7 +8,7 @@
 //! into the render node's per-channel model table (`*(node + 0x44) + 4 +
 //! channel*4`) - the array the battle draw pass hands to the TMD renderer once
 //! per animation channel. The engine's battle render path draws an assembled
-//! whole-character mesh (`legaia_asset::battle_char_assembly`) and has no
+//! whole-character mesh (`legaia_actor_formats::battle_char_assembly`) and has no
 //! per-channel model table to write into, so there is no slice to pass. What
 //! closes the gap is the battle draw path keeping the assembled pieces as
 //! **channels** rather than one merged mesh; then [`resolve_attach_swap`] fills

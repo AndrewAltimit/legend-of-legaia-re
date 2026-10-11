@@ -1,11 +1,11 @@
 //! The spin cycle on [`SlotMachine`]: charge and spin-up, the per-frame reel tick, reel stops, win evaluation, payout tally and marquee.
 
 use super::*;
-use legaia_asset::minigame_slot_scene::{
+use legaia_minigame_formats::minigame_slot_scene::{
     LANDING_LINE_BY_JITTER, MarqueeFrame, MarqueePlacement, PAYLINE_ROW_OFFSETS,
     compose_marquee_frame,
 };
-use legaia_asset::slot_payout::{self};
+use legaia_minigame_formats::slot_payout;
 
 impl SlotMachine {
     /// Charge the bet and start a spin (state `1` → `2`): subtract the flat
@@ -320,11 +320,11 @@ impl SlotMachine {
             };
         }
         // Five paylines - three horizontal and two diagonal. The per-reel row
-        // offsets are `legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS`,
+        // offsets are `legaia_minigame_formats::minigame_slot_scene::PAYLINE_ROW_OFFSETS`,
         // read off the retail evaluator's absolute row reads. All five always
         // play; the winning line index is also the medallion the machine lights.
         let mut best: Option<(usize, u8, i32)> = None;
-        for (line, offs) in legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS
+        for (line, offs) in legaia_minigame_formats::minigame_slot_scene::PAYLINE_ROW_OFFSETS
             .iter()
             .enumerate()
         {
@@ -409,7 +409,7 @@ impl SlotMachine {
     }
 
     /// What the dot matrix shows this frame, as blit placements. Pair with
-    /// [`legaia_asset::minigame_slot_scene::render_marquee`] and a parsed message
+    /// [`legaia_minigame_formats::minigame_slot_scene::render_marquee`] and a parsed message
     /// bank to rasterise it.
     pub fn marquee_placements(&self) -> Vec<MarqueePlacement> {
         compose_marquee_frame(&self.marquee())

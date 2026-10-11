@@ -9,7 +9,7 @@
 //! ingredient and did not use it - [`World::man_load_actor_reset`] spawns an
 //! [`ActorHandler::SubmodeDriver`] actor on every MAN load (retail's
 //! `FUN_801D9C3C` at `0x8003B444`) and
-//! [`crate::actor_handler::HandlerKernel`] classed it `Unported`, so the actor
+//! [`legaia_engine_field::actor_handler::HandlerKernel`] classed it `Unported`, so the actor
 //! sat in the pool doing nothing.
 //!
 //! ## Why this is load-bearing rather than decoration
@@ -49,9 +49,9 @@ use legaia_engine_field::submode_hub_actors::{
     HubEquipRecord, HubFrame, HubGrid, HubPainter, slot,
 };
 
-use crate::actor_handler::ActorHandler;
-use crate::equipment::{DiscEquipEntry, DiscEquipInfo, EquipSlot};
 use crate::world::World;
+use legaia_engine_field::actor_handler::ActorHandler;
+use legaia_engine_menus::equipment::{DiscEquipEntry, DiscEquipInfo, EquipSlot};
 
 mod coin_counter;
 mod hub_env;
@@ -189,7 +189,7 @@ pub struct SubmodeScreen {
     ///
     /// Retail's own value is a menu-list global, not hub state: the list
     /// machinery publishes the highlighted row's class there
-    /// ([`crate::menu_list_rows`]) and the sub-panel reads it. `0` is the
+    /// ([`legaia_engine_menus::menu_list_rows`]) and the sub-panel reads it. `0` is the
     /// no-candidate arm, which is what a hub screen opened without a list up
     /// sees.
     pub equip_mode: u32,
@@ -208,10 +208,10 @@ pub struct SubmodeScreen {
     /// Slot `0x21`'s lock state ([`crate::field_submode_code_lock`]).
     pub code_lock: legaia_engine_field::code_lock_actor::CodeLockActor,
     /// The coin counter's entry panel this frame - the painter of record
-    /// [`crate::slot_machine::COIN_ENTRY_WINDOW`], which lives in
+    /// [`legaia_engine_minigames::slot_machine::COIN_ENTRY_WINDOW`], which lives in
     /// `slot_machine` rather than beside the other painters because it reads
     /// the counter's cells. Empty while that record is not installed.
-    pub coin_panel: Vec<crate::slot_machine::CoinPanelDraw>,
+    pub coin_panel: Vec<legaia_engine_minigames::slot_machine::CoinPanelDraw>,
     /// A host has opened the pause menu for the current scripted
     /// menu-button press ([`OP49_PARK_PRESERVING_SUB_OPS`]), so the request
     /// is spent until the park is re-armed. See

@@ -207,7 +207,7 @@ pub(super) fn cmd_play_window_with_record(
         std::env::var_os("LEGAIA_SMART_MONSTERS").is_some();
     // Field-live arming, built once and reused: at startup for the direct path
     // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
-    let field_live_opts = crate::boot::FieldLiveOpts {
+    let field_live_opts = legaia_engine_session::boot::FieldLiveOpts {
         live_loop,
         player_battle,
         battle_bgm,
@@ -265,7 +265,7 @@ pub(super) fn cmd_play_window_with_record(
     session.host.world.toggles.overworld_marker_overlay =
         std::env::var_os("LEGAIA_WORLD_MAP_MARKERS").is_some();
     let world_map = match resumed {
-        Some(mode) => mode == legaia_engine_core::world::SceneMode::WorldMap,
+        Some(mode) => mode == legaia_engine_mode::mode::SceneMode::WorldMap,
         None => world_map,
     };
     // A resumed overworld leaves the developer band off: a Load is not a
@@ -320,7 +320,7 @@ pub(super) fn cmd_play_window_with_record(
     if seed_party {
         let entered = session.host.world.mode;
         session.begin_new_game();
-        if entered == legaia_engine_core::world::SceneMode::WorldMap {
+        if entered == legaia_engine_mode::mode::SceneMode::WorldMap {
             session.host.world.mode = entered;
         }
         let seeded = session.host.world.party.roster.members.len();
@@ -425,7 +425,7 @@ pub(super) fn cmd_play_window_with_record(
         let mut learned = 0usize;
         for id in debug_seeds.learn_spells.iter().copied().chain(from_env) {
             if let Some(lead) = session.host.world.party.roster.members.first_mut() {
-                legaia_engine_core::magic_xp::learn_spell_prepend(lead, id);
+                legaia_engine_battle::magic_xp::learn_spell_prepend(lead, id);
                 learned += 1;
             }
         }
@@ -727,7 +727,7 @@ pub(super) fn cmd_play_window_with_record(
             // The title / save-select flow enters its own scene afterwards and
             // would reset the session under the armed fight.
             log::warn!("play-window: --battle ignored under --boot-ui (the boot flow re-enters)");
-        } else if session.host.world.mode == legaia_engine_core::world::SceneMode::Battle {
+        } else if session.host.world.mode == legaia_engine_mode::mode::SceneMode::Battle {
             log::warn!("play-window: --battle skipped - a battle is already open");
         } else {
             // `LEGAIA_BATTLE_SETTLE=N`: tick the landed field N frames with
@@ -809,7 +809,7 @@ pub(super) fn cmd_play_window_with_record(
             Font::placeholder()
         });
 
-    let mapping = legaia_engine_core::input::Mapping::load_or_default(&std::path::PathBuf::from(
+    let mapping = legaia_engine_system::input::Mapping::load_or_default(&std::path::PathBuf::from(
         "legaia-input.toml",
     ));
     // Try to decode the publisher logos from PROT 0895 (init.pak) up
@@ -818,9 +818,9 @@ pub(super) fn cmd_play_window_with_record(
     let publisher_logos_atlas_data = match session
         .host
         .index
-        .entry_bytes(legaia_asset::init_pak::PROT_INDEX as u32)
+        .entry_bytes(legaia_ui_formats::init_pak::PROT_INDEX as u32)
     {
-        Ok(b) => match legaia_engine_core::publisher_logos::build_atlas_from_init_pak(&b) {
+        Ok(b) => match legaia_engine_menus::publisher_logos::build_atlas_from_init_pak(&b) {
             Ok(a) => {
                 log::info!(
                     "play-window: publisher-logos atlas built ({}x{}, {} logos)",
@@ -848,11 +848,11 @@ pub(super) fn cmd_play_window_with_record(
     let title_screen_atlas_data = match session
         .host
         .index
-        .entry_bytes(legaia_asset::title_pak::PROT_INDEX_PRIMARY as u32)
+        .entry_bytes(legaia_ui_formats::title_pak::PROT_INDEX_PRIMARY as u32)
     {
-        Ok(b) => match legaia_engine_core::title_screen_atlas::build_atlas_from_prot_888(
+        Ok(b) => match legaia_engine_menus::title_screen_atlas::build_atlas_from_prot_888(
             &b,
-            legaia_asset::title_pak::TITLE_TIM_OFFSET,
+            legaia_ui_formats::title_pak::TITLE_TIM_OFFSET,
         ) {
             Ok(a) => {
                 log::info!(
@@ -877,12 +877,12 @@ pub(super) fn cmd_play_window_with_record(
     // gap in `PROT.DAT` (offset `0x11218`). Carries the small-caps font
     // retail samples for "NEW GAME" / "CONTINUE" menu rows. The
     // per-entry extractor never visits this gap, so we read PROT.DAT
-    // raw bytes - see `legaia_asset::menu_glyph_atlas`.
+    // raw bytes - see `legaia_ui_formats::menu_glyph_atlas`.
     let menu_glyph_atlas_data = match session.host.index.prot_dat_raw_bytes(
-        legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
-        legaia_asset::menu_glyph_atlas::TIM_SIZE,
+        legaia_ui_formats::menu_glyph_atlas::PROT_DAT_OFFSET,
+        legaia_ui_formats::menu_glyph_atlas::TIM_SIZE,
     ) {
-        Ok(b) => match legaia_engine_core::menu_glyph_atlas::build_atlas_from_prot_dat_slice(&b) {
+        Ok(b) => match legaia_engine_menus::menu_glyph_atlas::build_atlas_from_prot_dat_slice(&b) {
             Ok(a) => {
                 log::info!(
                     "play-window: menu-glyph atlas built ({}x{})",
@@ -910,8 +910,8 @@ pub(super) fn cmd_play_window_with_record(
         .host
         .index
         .prot_dat_raw_bytes(
-            legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
-            legaia_asset::menu_glyph_atlas::TIM_SIZE,
+            legaia_ui_formats::menu_glyph_atlas::PROT_DAT_OFFSET,
+            legaia_ui_formats::menu_glyph_atlas::TIM_SIZE,
         )
         .ok();
 
@@ -920,13 +920,13 @@ pub(super) fn cmd_play_window_with_record(
     // same texture as its labels (`save_menu_atlas::menu_font_cells`; the
     // browser page attaches the same cells).
     let font = match session.host.index.prot_dat_raw_bytes(
-        legaia_engine_core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64,
-        legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
-            + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE
-            - legaia_engine_core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET,
+        legaia_engine_menus::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64,
+        legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+            + legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE
+            - legaia_engine_menus::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET,
     ) {
         Ok(system_ui) => {
-            font.with_sprite_cells(&legaia_engine_core::save_menu_atlas::menu_font_cells(
+            font.with_sprite_cells(&legaia_engine_menus::save_menu_atlas::menu_font_cells(
                 &system_ui,
                 menu_glyph_tim_bytes.as_deref(),
             ))
@@ -949,7 +949,7 @@ pub(super) fn cmd_play_window_with_record(
         session
             .host
             .index
-            .entry_bytes_extended(legaia_asset::title_pak::PROT_INDEX_OVERLAY as u32),
+            .entry_bytes_extended(legaia_ui_formats::title_pak::PROT_INDEX_OVERLAY as u32),
         // Pull a slice that covers BOTH the system-UI sheet (panel
         // chrome, cursor) AND the load-screen portrait + frame TIMs
         // (`OVERLAY_LOAD_PORTRAIT_TIM_OFFSET`..end of
@@ -962,9 +962,9 @@ pub(super) fn cmd_play_window_with_record(
             // nine status-element badges decode with. `build_atlas` splits
             // that leading TIM off and treats the remainder exactly as a
             // sheet-rooted slice.
-            let base = legaia_engine_core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET;
-            let end = legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
-                + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
+            let base = legaia_engine_menus::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET;
+            let end = legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+                + legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
             session
                 .host
                 .index
@@ -972,7 +972,7 @@ pub(super) fn cmd_play_window_with_record(
         },
     ) {
         (Ok(pill_bytes), Ok(panel_bytes)) => {
-            match legaia_engine_core::save_menu_atlas::build_atlas(
+            match legaia_engine_menus::save_menu_atlas::build_atlas(
                 &panel_bytes,
                 &pill_bytes,
                 menu_glyph_tim_bytes.as_deref(),
@@ -982,9 +982,9 @@ pub(super) fn cmd_play_window_with_record(
                     // the system-UI sheet; bake it into the same atlas so it
                     // draws in the chip list (the browser page bakes it too).
                     if let Ok(flame) = session.host.index.entry_bytes_extended(
-                        legaia_engine_core::save_menu_atlas::FLAME_ATLAS_PROT_ENTRY,
+                        legaia_engine_menus::save_menu_atlas::FLAME_ATLAS_PROT_ENTRY,
                     ) {
-                        legaia_engine_core::save_menu_atlas::add_cross_out_mark(&mut a, &flame);
+                        legaia_engine_menus::save_menu_atlas::add_cross_out_mark(&mut a, &flame);
                     }
                     log::info!(
                         "play-window: save-menu atlas built ({}x{}) - 9-slice from PROT.DAT[0x018E0] + pills from PROT 0899",
@@ -1017,14 +1017,14 @@ pub(super) fn cmd_play_window_with_record(
         .index
         // The table sits at file 0x15F20, past the entry's TOC size - read
         // the extended footprint (the same read the save-menu pill TIM uses).
-        .entry_bytes_extended(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
         .ok()
         .and_then(|b| {
             // The same overlay carries the Arrange display-order table
             // (FUN_801D64A8): install it so the Items screen's Arrange
             // command sorts by the retail rank rather than id order.
             session.host.world.install_menu_overlay_tables(&b);
-            match legaia_asset::menu_windows::parse(&b) {
+            match legaia_game_tables::menu_windows::parse(&b) {
                 Ok(t) => Some(t),
                 Err(e) => {
                     log::warn!("play-window: menu window table parse failed: {e:#}");
@@ -1052,7 +1052,7 @@ pub(super) fn cmd_play_window_with_record(
     let initial_boot_ui = if boot_ui {
         if publisher_logos_atlas_data.is_some() {
             BootUiState::PublisherLogos(
-                legaia_engine_core::publisher_logos::PublisherLogosSession::new(),
+                legaia_engine_menus::publisher_logos::PublisherLogosSession::new(),
             )
         } else {
             BootUiState::Title(super::boot_cutscene::title_session(
@@ -1163,7 +1163,7 @@ pub(super) fn cmd_play_window_with_record(
         battle_stage_shell: None,
         battle_ground_mesh: None,
         battle_ground_cue_far: None,
-        battle_ground_rgbc: legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED,
+        battle_ground_rgbc: legaia_engine_battle_vm::battle_ground_grid::GRID_RGBC_SETTLED,
         battle_stage_outdoor: false,
         prev_scene_mode: None,
         monster_archive: None,
@@ -1200,7 +1200,7 @@ pub(super) fn cmd_play_window_with_record(
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
         card: mounted_card,
-        save_flow: legaia_engine_core::save_screen::SaveScreenFlow::new(),
+        save_flow: legaia_engine_menus::save_screen::SaveScreenFlow::new(),
         options_state: {
             let mut o = legaia_engine_core::options::OptionsState::load_or_default(
                 &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
@@ -1211,7 +1211,7 @@ pub(super) fn cmd_play_window_with_record(
                 .ok()
                 .and_then(|v| v.trim().parse::<u8>().ok())
             {
-                o.battle_camera = legaia_engine_core::options::BattleCameraOpt::from_word(v);
+                o.battle_camera = legaia_engine_menus::option_values::BattleCameraOpt::from_word(v);
             }
             o
         },
@@ -1223,7 +1223,7 @@ pub(super) fn cmd_play_window_with_record(
         extracted_root: disc.map_or_else(|| Some(extracted_root.to_path_buf()), |_| None),
         disc_path: disc.map(|d| d.to_path_buf()),
         cutscene: None,
-        movie_score: legaia_engine_core::movie_audio::MovieScore::new(),
+        movie_score: legaia_engine_system::movie::movie_audio::MovieScore::new(),
         cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide::new(),
         sim_stepper: legaia_engine_core::frame_step::SimStepper::new(),
         active_dialog: None,
@@ -1248,7 +1248,7 @@ pub(super) fn cmd_play_window_with_record(
         cursor_y: 0.0,
         field_party_hud: Default::default(),
         field_party_hud_scene: None,
-        diag_rows: legaia_engine_render::diag_hud_enabled(),
+        diag_rows: legaia_engine_ui::diag_hud_enabled(),
     };
 
     // Retail-shaped equipment buy: this window draws the recipient picker
@@ -1292,7 +1292,7 @@ pub(super) fn cmd_play_window_with_record(
     // run BUTTON inverts this per frame - see `World::field_run_active` - and
     // is fed from the pad each tick in the event handler.
     app.session.host.world.locomotion.run_default =
-        app.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
+        app.options_state.field_move == legaia_engine_menus::option_values::FieldMoveOpt::Run;
     log::info!(
         "camera: distance = {} (T cycles); precise movement {} (R toggles); drag to orbit",
         app.options_state.camera_distance.label(),

@@ -16,8 +16,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::cutscene::{FmvHandoff, fmv_post_play_handoff};
-use legaia_engine_shell::boot::{BootConfig, BootSession};
+use legaia_engine_session::boot::BootConfig;
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::movie::cutscene::{FmvHandoff, fmv_post_play_handoff};
 
 /// The nine `fmv_id`s that address a movie on the retail disc.
 const RETAIL_FMV_IDS: std::ops::RangeInclusive<i16> = 0..=8;
@@ -108,7 +109,7 @@ fn every_field_handoff_scene_enters() {
             .unwrap_or_else(|e| panic!("fmv {id}: hand-off scene '{scene}' did not enter: {e:#}"));
         assert_eq!(
             session.host.world.mode,
-            legaia_engine_core::world::SceneMode::Field,
+            legaia_engine_mode::mode::SceneMode::Field,
             "fmv {id}: hand-off left the world off the field"
         );
         checked += 1;
@@ -128,7 +129,7 @@ fn every_field_handoff_scene_enters() {
 #[test]
 fn the_handoff_transfers_once_however_many_hosts_poll() {
     use legaia_engine_core::scene::FmvHandoffOutcome;
-    use legaia_engine_core::world::SceneMode;
+    use legaia_engine_mode::mode::SceneMode;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

@@ -5,7 +5,7 @@ use crate::*;
 /// Build [`TextDraw`]s for the encounter transition banner.
 ///
 /// Drawn during [`crate::EncounterPhase::Transition`] (where the engine
-/// type is `legaia_engine_core::encounter::EncounterPhase`). Renders a
+/// type is `legaia_engine_battle::encounter::EncounterPhase`). Renders a
 /// large centered "ENCOUNTER!" line plus the formation label below.
 /// Engines fade the surface independently - this just produces the
 /// glyph draws.

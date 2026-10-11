@@ -15,7 +15,7 @@ impl World {
     // REF: FUN_8003BDE0
     pub fn install_spawned_record(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         global_index: u8,
     ) -> bool {
@@ -41,11 +41,13 @@ impl World {
     // timeline instead of a context field.
     pub fn install_gated_p2_record(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         record_idx: usize,
     ) -> bool {
-        match crate::man_field_scripts::partition2_record_gates(man_file, man, record_idx) {
+        match legaia_engine_field::man_field_scripts::partition2_record_gates(
+            man_file, man, record_idx,
+        ) {
             Some((c1, c2)) => {
                 if !self.p2_record_gates_pass(&c1, &c2) {
                     return false;
@@ -78,7 +80,7 @@ impl World {
     // REF: FUN_8003BDE0
     pub fn install_spawned_helper_record(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         global_index: u8,
     ) -> bool {
@@ -105,14 +107,16 @@ impl World {
     // REF: FUN_8003BDE0
     pub fn install_helper_record(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         record_idx: usize,
     ) -> bool {
         if self.field_vm.helper_contexts.len() >= crate::world::SPAWNED_CONTEXT_SLOTS {
             return false;
         }
-        match crate::man_field_scripts::partition2_record_gates(man_file, man, record_idx) {
+        match legaia_engine_field::man_field_scripts::partition2_record_gates(
+            man_file, man, record_idx,
+        ) {
             Some((c1, c2)) => {
                 if !self.p2_record_gates_pass(&c1, &c2) {
                     return false;
@@ -121,19 +125,18 @@ impl World {
             None => return false,
         }
         let Some((script_start, pc0, body_len)) =
-            crate::man_field_scripts::partition_record_span(man_file, man, 2, record_idx)
+            legaia_engine_field::man_field_scripts::partition_record_span(
+                man_file, man, 2, record_idx,
+            )
         else {
             return false;
         };
         let Some(body) = man.get(script_start..script_start + body_len) else {
             return false;
         };
-        self.field_vm
-            .helper_contexts
-            .push(crate::cutscene_timeline::CutsceneTimeline::new(
-                body.to_vec(),
-                pc0,
-            ));
+        self.field_vm.helper_contexts.push(
+            legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(body.to_vec(), pc0),
+        );
         // The same spawn tail as `Self::install_gated_p2_record`: the kick at
         // `0x8003C0D4`.
         self.kick_field_npc_motion_pause();
@@ -166,10 +169,10 @@ impl World {
     // REF: FUN_8003BDE0
     pub fn install_town01_opening_timeline(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
     ) -> bool {
-        match crate::man_field_scripts::partition2_record_gates(
+        match legaia_engine_field::man_field_scripts::partition2_record_gates(
             man_file,
             man,
             Self::TOWN01_OPENING_TIMELINE_RECORD,
@@ -213,9 +216,9 @@ impl World {
     /// Resolves the record's `(script_start, pc0, body_len)` span, slices the
     /// body from `script_start` (so relative jumps wrap against the record
     /// base), parses the inline narration blocks into
-    /// [`crate::cutscene_timeline::NarrationSite`]s (the stepper suspends the
+    /// [`legaia_engine_field::cutscene_timeline::NarrationSite`]s (the stepper suspends the
     /// timeline at each block while the
-    /// [`crate::cutscene_narration::CutsceneNarration`] presenter plays its
+    /// [`legaia_engine_field::cutscene_narration::CutsceneNarration`] presenter plays its
     /// pages - the retail caption-child suspend), and installs the timeline
     /// with `trace` controlling op-stream recording.
     ///
@@ -225,14 +228,16 @@ impl World {
     // REF: FUN_8003C764
     pub fn install_cutscene_timeline_record(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         partition: usize,
         record_idx: usize,
         trace: bool,
     ) -> bool {
         let Some((script_start, pc0, body_len)) =
-            crate::man_field_scripts::partition_record_span(man_file, man, partition, record_idx)
+            legaia_engine_field::man_field_scripts::partition_record_span(
+                man_file, man, partition, record_idx,
+            )
         else {
             return false;
         };
@@ -240,14 +245,14 @@ impl World {
             return false;
         };
         let body = body.to_vec();
-        let narration_blocks: Vec<crate::cutscene_timeline::NarrationSite> =
-            legaia_asset::cutscene_text::parse_narration(&body)
+        let narration_blocks: Vec<legaia_engine_field::cutscene_timeline::NarrationSite> =
+            legaia_scene_formats::cutscene_text::parse_narration(&body)
                 .into_iter()
                 .filter(|b| b.count_matches() && !b.pages.is_empty())
                 .map(|b| {
                     let (start, end) = b.byte_span();
                     debug_assert_eq!(start, b.op_offset);
-                    crate::cutscene_timeline::NarrationSite {
+                    legaia_engine_field::cutscene_timeline::NarrationSite {
                         op_offset: b.op_offset,
                         end: end.min(body.len()),
                         pages: b.pages.into_iter().map(|p| p.text).collect(),
@@ -255,7 +260,7 @@ impl World {
                     }
                 })
                 .collect();
-        let mut tl = crate::cutscene_timeline::CutsceneTimeline::new(body, pc0);
+        let mut tl = legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(body, pc0);
         tl.narration_blocks = narration_blocks;
         if trace || std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some() {
             tl = tl.with_trace();

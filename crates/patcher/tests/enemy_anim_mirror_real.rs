@@ -12,7 +12,7 @@
 //!
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_asset::monster_archive as ma;
+use legaia_actor_formats::monster_archive as ma;
 use legaia_delilas_party::delilas_party::{CastRoutePolicy, PartyMapping, apply_delilas_party};
 use legaia_delilas_party::enemy_anim_mirror::{
     RetailSources, apply_enemy_anim_mirror, staged_entries, staged_plan,

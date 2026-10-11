@@ -36,7 +36,7 @@ pub(super) fn v12_sidecar_skip(entry: &SceneEntry, host_idx: Option<u32>) -> boo
 
 /// `true` when `entry` is a **pochi-filler** slot: a reserved-but-unused PROT
 /// entry whose payload is the `pochipochipochi...` + `0x1A` dev fill
-/// ([`legaia_asset::categorize`], `docs/formats/pochi.md`). A scene reserves N
+/// ([`legaia_disc_audit::categorize`], `docs/formats/pochi.md`). A scene reserves N
 /// asset slots and fills only some; retail never dispatches one, so neither
 /// does the build.
 ///
@@ -61,18 +61,18 @@ pub(super) fn pochi_filler_skip(entry: &SceneEntry) -> bool {
 /// descriptor walk, not a byte scan for TMD magic.
 ///
 /// `FUN_80020224` walks the bundle's `count` descriptors and hands each to
-/// `FUN_8001F05C`; case `0x02` LZS-decodes an [`legaia_asset::pack`] of
+/// `FUN_8001F05C`; case `0x02` LZS-decodes an [`legaia_container_formats::pack`] of
 /// meshes and calls `FUN_80026B4C` (`tmd_register`) once per member, case
 /// `0x09` registers a single bare mesh. Those registrations *are* the pool -
 /// slot `k` of `DAT_8007C018` past the resident head. See
-/// [`legaia_asset::scene_asset_table::mesh_pool`].
+/// [`legaia_scene_formats::scene_asset_table::mesh_pool`].
 ///
 /// Why this is not a byte scan: an entry's bytes carry meshes the walk never
 /// registers, and a scan therefore over-collects. `town01`'s block is the
 /// case that shows it - the block's `field_pack` sibling and the boot
 /// `init_data` stream both hold TMDs a magic sweep finds, while the walk
 /// registers only the bundle's own 114-member pack. With the resident 5-mesh
-/// head (`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`, the runtime
+/// head (`legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS`, the runtime
 /// prefix `DAT_8007b6f8` that `FUN_80020f88` adds to every placement's mesh
 /// id) that is a 119-slot pool, which is what the live table holds.
 ///
@@ -95,10 +95,12 @@ pub(super) fn descriptor_walk_pool(scene: &Scene) -> Vec<ResolvedTmd> {
         if pochi_filler_skip(entry) {
             continue;
         }
-        if pac_entry.is_none() && legaia_asset::scene_asset_table::streams_scene_pac(&entry.bytes) {
+        if pac_entry.is_none()
+            && legaia_scene_formats::scene_asset_table::streams_scene_pac(&entry.bytes)
+        {
             pac_entry = Some(entry.idx + 1);
         }
-        for mesh in legaia_asset::scene_asset_table::mesh_pool(&entry.bytes) {
+        for mesh in legaia_scene_formats::scene_asset_table::mesh_pool(&entry.bytes) {
             let Ok(tmd) = legaia_tmd::parse(&mesh.bytes) else {
                 continue;
             };
@@ -112,7 +114,7 @@ pub(super) fn descriptor_walk_pool(scene: &Scene) -> Vec<ResolvedTmd> {
         }
     }
     if let Some(pac) = pac_entry.and_then(|i| scene.entries.iter().find(|e| e.idx == i)) {
-        for mesh in legaia_asset::scene_asset_table::pac_mesh_pool(&pac.bytes) {
+        for mesh in legaia_scene_formats::scene_asset_table::pac_mesh_pool(&pac.bytes) {
             let Ok(tmd) = legaia_tmd::parse(&mesh.bytes) else {
                 continue;
             };
@@ -133,23 +135,23 @@ pub(super) fn descriptor_walk_pool(scene: &Scene) -> Vec<ResolvedTmd> {
 ///
 /// The head is the five party / savepoint meshes at `DAT_8007C018[0..=4]` -
 /// section 0 of the `player_data` character pack
-/// ([`legaia_asset::character_pack`]). Its size is pinned independently of
+/// ([`legaia_actor_formats::character_pack`]). Its size is pinned independently of
 /// this code: `FUN_80020f88` computes a placement's pool index as
 /// `record[+0x10] + DAT_8007b6f8` with the prefix `= 5`
-/// ([`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`], pinned 14/14
+/// ([`legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS`], pinned 14/14
 /// against a live walk capture), so the field pool head is exactly those five
 /// slots.
 ///
 /// Every other shared block therefore contributes no meshes. `init_data`
 /// (PROT 0) is the case that matters: it is the boot system-UI bundle, a
 /// DATA_FIELD stream whose `TIM_LIST` chunk is the UI/sprite atlas
-/// [`legaia_asset::system_ui_bundle`] uploads. Its sibling TMD chunk is
+/// [`legaia_ui_formats::system_ui_bundle`] uploads. Its sibling TMD chunk is
 /// registered at boot, before the per-scene pool is rebuilt - a magic sweep
 /// of the block pulls those meshes into the field pool where the pinned
 /// 5-slot prefix says they are not.
 pub(super) fn shared_head_pool(scene: &Scene) -> Vec<ResolvedTmd> {
     for entry in &scene.entries {
-        let Ok(pack) = legaia_asset::character_pack::parse(&entry.bytes) else {
+        let Ok(pack) = legaia_actor_formats::character_pack::parse(&entry.bytes) else {
             continue;
         };
         let mut out = Vec::new();

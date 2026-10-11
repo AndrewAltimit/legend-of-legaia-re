@@ -50,17 +50,17 @@
 
 use super::*;
 
-use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::battle_char_assembly::equip_diff;
-use legaia_asset::battle_char_assembly::loadout;
-use legaia_asset::mesh_raster;
-use legaia_asset::monster_archive::MonsterAnimation;
+use legaia_actor_formats::battle_char_assembly as bca;
+use legaia_actor_formats::battle_char_assembly::equip_diff;
+use legaia_actor_formats::battle_char_assembly::loadout;
+use legaia_actor_formats::mesh_raster;
+use legaia_actor_formats::monster_archive::MonsterAnimation;
 
 /// The shared loadout kernel (assembly, item cuts, per-item glb bakers) -
-/// hoisted to `legaia_asset::battle_char_assembly::loadout` so the native
+/// hoisted to `legaia_actor_formats::battle_char_assembly::loadout` so the native
 /// `export-glb --items` and this page run one implementation. What stays
 /// here is presentation: diff tints, JSON summaries, canvas accessors.
-pub(crate) use legaia_asset::battle_char_assembly::loadout::{
+pub(crate) use legaia_actor_formats::battle_char_assembly::loadout::{
     CHARACTER_LABELS, EquippedCharacter, ItemAloneMesh, PLAYER_FILE_BASE, item_glb, item_only_glb,
     rest_poses, section_catalog, section_labels,
 };
@@ -165,7 +165,7 @@ impl LegaiaViewer {
             let Some(raw) = entry_bytes(&self.disc, &entries, prot_index) else {
                 continue;
             };
-            let Ok(pack) = legaia_asset::battle_data_pack::parse(raw) else {
+            let Ok(pack) = legaia_actor_formats::battle_data_pack::parse(raw) else {
                 continue;
             };
             let cat = section_catalog(&pack);
@@ -211,7 +211,7 @@ impl LegaiaViewer {
     /// `diff` turns on the **diff highlight**: an approximate envelope test
     /// that tints what the loadout adds beyond the unequipped part, and draws
     /// the bare geometry it replaced alongside. See
-    /// [`legaia_asset::battle_char_assembly::equip_diff`] for what that
+    /// [`legaia_actor_formats::battle_char_assembly::equip_diff`] for what that
     /// boundary is and is not.
     ///
     /// Returns a JSON summary; `{"ok":false,"why":...}` when the character
@@ -517,16 +517,16 @@ impl LegaiaViewer {
                 15.0
             }
         };
-        let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = c
+        let clips: Vec<legaia_actor_formats::character_gltf::CharacterClip<'_>> = c
             .clips
             .iter()
-            .map(|clip| legaia_asset::character_gltf::CharacterClip {
+            .map(|clip| legaia_actor_formats::character_gltf::CharacterClip {
                 name: clip.label.clone(),
                 fps: fps_for_rate(clip.anim.rate),
                 anim: &clip.anim,
             })
             .collect();
-        legaia_asset::character_gltf::build_character_glb(
+        legaia_actor_formats::character_gltf::build_character_glb(
             &self.equipped_glb_name(),
             &c.mesh,
             &c.object_ids,

@@ -212,7 +212,7 @@ pub fn interp_clip_vertex(out: &mut [u8], verts: &[u8], cur_off: usize, flags: u
 ///
 /// PORT: FUN_80036c4c
 ///
-/// REPLACED-BY: `legaia_engine_ui::screen_prim::ScreenPrim::gouraud` -
+/// REPLACED-BY: `crate::screen_prim::ScreenPrim::gouraud` -
 /// per-corner modulation carried as an `Option<[u32; 4]>` on the typed prim
 /// and folded into vertex colours by `build_geometry`, live on both hosts
 /// (`engine-shell` `window/event_handler/redraw_passes.rs`, `web-viewer`

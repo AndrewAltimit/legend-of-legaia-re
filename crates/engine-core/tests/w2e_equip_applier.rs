@@ -10,19 +10,21 @@
 //! 3. The write lands in the retail record's `+0x196` window, which is what
 //!    `legaia_save`'s own accessors read back.
 
-use legaia_engine_core::battle_stats::{EquipmentTable, ItemModifier, StatRecord, StatusModifiers};
-use legaia_engine_core::equip_session::{
-    EQUIP_SLOTS, EquipEvent, EquipInput, EquipSession, RETAIL_EQUIP_BYTE_TO_ENGINE_SLOT,
-    RETAIL_WEAPON_EQUIP_BYTE, retail_slot_row_for_engine_slot,
+use legaia_engine_battle::battle_stats::{
+    EquipmentTable, ItemModifier, StatRecord, StatusModifiers,
 };
-use legaia_engine_core::equipment::{DiscEquipEntry, DiscEquipInfo};
 use legaia_engine_field::dev_equip_commit::{
     BAG_MISS, EQUIP_SFX_CUE, EquipCommitHost, commit_equip,
 };
 use legaia_engine_field::dev_menu_leaves::resolve_equip_slot;
+use legaia_engine_menus::equip_session::{
+    EQUIP_SLOTS, EquipEvent, EquipInput, EquipSession, RETAIL_EQUIP_BYTE_TO_ENGINE_SLOT,
+    RETAIL_WEAPON_EQUIP_BYTE, retail_slot_row_for_engine_slot,
+};
+use legaia_engine_menus::equipment::{DiscEquipEntry, DiscEquipInfo};
 use std::collections::HashMap;
 
-use legaia_asset::equip_stats::EquipSlot as DiscSlot;
+use legaia_game_tables::equip_stats::EquipSlot as DiscSlot;
 
 const HEAD_ITEM: u8 = 0x30;
 const BODY_ITEM: u8 = 0x31;
@@ -58,7 +60,7 @@ fn record() -> StatRecord {
 }
 
 fn session(party_slot: u8) -> EquipSession {
-    let mut inv = legaia_engine_core::world::ItemBag::new();
+    let mut inv = legaia_engine_menus::item_bag::ItemBag::new();
     for id in [HEAD_ITEM, BODY_ITEM, WEAPON_ITEM, FOOT_ITEM] {
         inv.insert(id, 1);
     }

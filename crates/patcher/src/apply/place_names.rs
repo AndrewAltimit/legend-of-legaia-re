@@ -8,7 +8,7 @@ use super::*;
 
 use std::collections::BTreeMap;
 
-use legaia_asset::worldmap_menu::NAME_COUNT;
+use legaia_game_tables::worldmap_menu::NAME_COUNT;
 
 use crate::location_name::{self, ManPlaceNames};
 
@@ -208,7 +208,8 @@ pub fn rename_locations_by_target(
             .patch_prot_entry(
                 carrier.entry_idx,
                 carrier.man_descriptor_off as u64,
-                &legaia_asset::scene_asset_table::encode_size_word(0x03, *size).to_le_bytes(),
+                &legaia_scene_formats::scene_asset_table::encode_size_word(0x03, *size)
+                    .to_le_bytes(),
             )
             .with_context(|| format!("write MAN size word (PROT entry {})", carrier.entry_idx))?;
         patcher

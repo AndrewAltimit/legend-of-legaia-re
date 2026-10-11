@@ -25,25 +25,25 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::save_menu_atlas::{
+use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_menus::save_menu_atlas::{
     SYSTEM_UI_CLUT_EXT_TIM_OFFSET, SaveMenuAtlas, build_atlas,
 };
-use legaia_engine_core::scene::ProtIndex;
 use legaia_web_viewer::disc::{extract_cdname_txt, extract_prot_dat};
 
 /// Build the atlas exactly as a host does, from a panel slice rooted at
 /// `base`. `None` when the slice or the bake fails.
 fn atlas_rooted_at(index: &ProtIndex, base: usize) -> Option<SaveMenuAtlas> {
-    let end = legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
-        + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
+    let end = legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+        + legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
     let panel = index.prot_dat_raw_bytes(base as u64, end - base).ok()?;
     let pill = index
-        .entry_bytes_extended(legaia_asset::title_pak::PROT_INDEX_OVERLAY as u32)
+        .entry_bytes_extended(legaia_ui_formats::title_pak::PROT_INDEX_OVERLAY as u32)
         .ok()?;
     let glyph = index
         .prot_dat_raw_bytes(
-            legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
-            legaia_asset::menu_glyph_atlas::TIM_SIZE,
+            legaia_ui_formats::menu_glyph_atlas::PROT_DAT_OFFSET,
+            legaia_ui_formats::menu_glyph_atlas::TIM_SIZE,
         )
         .ok();
     build_atlas(&panel, &pill, glyph.as_deref()).ok()
@@ -64,7 +64,7 @@ fn the_pages_atlas_base_is_the_one_that_decodes_every_status_badge() {
         .expect("atlas from the CLUT-extension-rooted slice");
     let sheet_rooted = atlas_rooted_at(
         &index,
-        legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET,
+        legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET,
     )
     .expect("atlas from the sheet-rooted slice");
 

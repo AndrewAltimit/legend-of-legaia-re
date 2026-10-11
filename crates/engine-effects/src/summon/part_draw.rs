@@ -22,7 +22,7 @@ pub(super) fn is_mesh_sel(model_sel: i16) -> bool {
 /// "Part render-tail" for the full table.
 ///
 /// Only the two values the spawner `FUN_80021B04` seeds from a record's
-/// `model_sel` sentinel ([`legaia_asset::summon_overlay::RENDER_NODE_MODE_A`] `0x4000`, [`legaia_asset::summon_overlay::RENDER_NODE_MODE_B`]
+/// `model_sel` sentinel ([`legaia_overlay_images::summon_overlay::RENDER_NODE_MODE_A`] `0x4000`, [`legaia_overlay_images::summon_overlay::RENDER_NODE_MODE_B`]
 /// `0x4001`) are classified statically here - the rest of the `+0x5A` space is
 /// rebound at runtime by move-VM anim ops, which the engine abstracts
 /// away (it carries no `+0x5A` cell), so this is the faithful static surface.
@@ -123,7 +123,7 @@ pub struct SummonPartDraw {
     /// The part's `+0x52` word (move-VM op `0x15`,
     /// `move_vm::ActorState::field_52`). Its `0x780` bits send the draw
     /// through retail's camera-relative rotation `FUN_8001CF50`; a host
-    /// resolves them with `legaia_engine_ui::gte::camera_relative_model_prefix`.
+    /// resolves them with `legaia_render_kernels::gte::camera_relative_model_prefix`.
     pub flags_52: u16,
     /// The part's armed VDF morph lanes - `(sub_entry_index, weight)` per
     /// lane op `0x0A` set up, while the envelope bit `0x1000` is raised.

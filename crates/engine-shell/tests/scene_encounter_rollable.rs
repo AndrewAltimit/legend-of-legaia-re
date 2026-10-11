@@ -20,7 +20,8 @@
 use std::path::{Path, PathBuf};
 
 use legaia_engine_core::live_loop::LiveLoopOpts;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -256,7 +257,7 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
     let mut entered = false;
     let mut resolved = false;
     for _ in 0..100_000 {
-        if world.mode == legaia_engine_core::world::SceneMode::Battle {
+        if world.mode == legaia_engine_mode::mode::SceneMode::Battle {
             entered = true;
             // Force the victory outcome (see the comment above): boosted
             // attack so the monsters fall in bounded time, and the party
@@ -276,7 +277,7 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
             }
         }
         world.tick();
-        if world.mode == legaia_engine_core::world::SceneMode::Battle {
+        if world.mode == legaia_engine_mode::mode::SceneMode::Battle {
             entered = true;
         } else if entered {
             resolved = true;

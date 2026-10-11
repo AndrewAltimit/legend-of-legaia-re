@@ -15,7 +15,7 @@
 //! `legaia_engine_core::world::World::step_cutscene_timeline`, which runs one frame slice
 //! through the shared field VM ([`legaia_engine_vm::field::step`]): camera ops
 //! (`0x45`) and `MoveTo`s (`0x23`) fire by execution and emit the
-//! `legaia_engine_core::field_events::FieldEvent`s the runtime camera folds in, and flag
+//! `crate::field_events::FieldEvent`s the runtime camera folds in, and flag
 //! writes such as `GFLAG_SET 26` land by execution rather than by a static MAN
 //! walk. Installation is
 //! `legaia_engine_core::world::World::install_cutscene_timeline_record`.
@@ -33,7 +33,7 @@
 //! handshake parks the timeline until the channel answers. The inline
 //! narration op (`0xCC 0xF8 0x80 N`, which retail routes to the `FUN_8003C764`
 //! text-balloon path) is presented by
-//! `legaia_engine_core::cutscene_narration::CutsceneNarration`; the timeline suspends at
+//! `crate::cutscene_narration::CutsceneNarration`; the timeline suspends at
 //! each block while its pages play, and the actor-allocator host hook is
 //! scoped off while a modal timeline steps.
 
@@ -87,7 +87,7 @@ pub enum TraceResult {
 /// them - so the choreography around a block runs between blocks, never under
 /// them. `legaia_engine_core::world::World::step_cutscene_timeline` mirrors that: when the
 /// timeline PC reaches `op_offset` it installs the pages on the
-/// `legaia_engine_core::cutscene_narration::CutsceneNarration` presenter and parks until
+/// `crate::cutscene_narration::CutsceneNarration` presenter and parks until
 /// the presenter completes, then resumes at `end`.
 // REF: FUN_8003C764
 #[derive(Debug, Clone)]
@@ -101,7 +101,7 @@ pub struct NarrationSite {
     /// Presentation form: a crawl suspends the timeline while the roller
     /// plays; a static title card installs (or, when its pages are blank,
     /// clears) the card overlay and the timeline continues.
-    pub kind: legaia_asset::cutscene_text::NarrationKind,
+    pub kind: legaia_scene_formats::cutscene_text::NarrationKind,
 }
 
 /// A cross-context channel wait the timeline is PARKED on.
@@ -363,7 +363,7 @@ pub struct CutsceneTimeline {
     pub npc_faces: Vec<TimelineNpcFace>,
     /// Ticks left on the **scene-bank** clip the timeline last poked onto the
     /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
-    /// end-latch length at its own step (`legaia_engine_core::field_anim::clip_end_ticks`).
+    /// end-latch length at its own step (`crate::field_anim::clip_end_ticks`).
     /// Retail's clip tick `FUN_800204F8` latches the end flag `0x100` into
     /// the player's `+0x62` when the cursor reaches the last frame
     /// (`0x800206E4..0x8002072C`), and a record waits for it with

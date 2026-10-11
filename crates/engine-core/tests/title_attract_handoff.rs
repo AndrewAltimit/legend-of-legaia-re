@@ -14,7 +14,7 @@
 //! may leave the session parked in `Attract`, which is the failure this file
 //! exists to catch.
 
-use legaia_engine_core::title::{TitleEvent, TitleInput, TitlePhase, TitleSession};
+use legaia_engine_menus::title::{TitleEvent, TitleInput, TitlePhase, TitleSession};
 use legaia_engine_menus::title_overlay::{ATTRACT_FMV_ID, COUNTDOWN_RESET_VALUE};
 
 /// A session sitting on the live menu with the attract armed.
@@ -164,7 +164,7 @@ fn each_confirmed_row_moves_the_retail_sub_mode_where_retail_moves_it() {
     });
     assert_eq!(
         s.outcome(),
-        Some(legaia_engine_core::title::TitleOutcome::NewGame)
+        Some(legaia_engine_menus::title::TitleOutcome::NewGame)
     );
     assert_eq!(s.retail_submode(), TitleOverlaySubMode::LaunchFade as u8);
 
@@ -180,7 +180,7 @@ fn each_confirmed_row_moves_the_retail_sub_mode_where_retail_moves_it() {
     });
     assert_eq!(
         s.outcome(),
-        Some(legaia_engine_core::title::TitleOutcome::Continue)
+        Some(legaia_engine_menus::title::TitleOutcome::Continue)
     );
     assert_eq!(
         s.retail_submode(),

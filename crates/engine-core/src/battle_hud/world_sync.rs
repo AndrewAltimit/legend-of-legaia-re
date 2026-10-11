@@ -32,7 +32,7 @@ struct SlotRow {
 /// anchoring off the same index space, so compacting here would mis-anchor
 /// every damage number.
 pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
-    if world.mode == crate::world::SceneMode::MuscleDome {
+    if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         sync_dome_hud_rows(hud, world);
         return;
     }
@@ -190,7 +190,7 @@ fn sync_dome_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
 
 /// Build the deduplicated enemy target-menu rows straight off the live
 /// world's monster slots - the host-facing entry to
-/// [`crate::target_picker::enemy_menu_rows`] (retail `FUN_801D9D3C`, the
+/// [`legaia_engine_battle::target_picker::enemy_menu_rows`] (retail `FUN_801D9D3C`, the
 /// intro-banner composer's dedup pass reused for the picker).
 ///
 /// The engine seats a formation's monsters directly after the party
@@ -211,12 +211,12 @@ fn sync_dome_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
 /// recentres - not a GTE projection. The layout maps it to the screen as
 /// `(avg >> 3) - width / 2 + 0xA0`, so a label sits over its group's seat.
 /// It is read here off the live position; callers run
-/// [`crate::target_picker::layout_enemy_menu_rows`] with their own text
+/// [`legaia_engine_battle::target_picker::layout_enemy_menu_rows`] with their own text
 /// measurer before drawing.
 pub fn battle_enemy_target_rows(
     world: &crate::world::World,
-) -> Vec<crate::target_picker::EnemyMenuRow> {
-    use crate::target_picker::{DEDUP_SUFFIX, FORMATION_SLOTS, enemy_menu_rows};
+) -> Vec<legaia_engine_battle::target_picker::EnemyMenuRow> {
+    use legaia_engine_battle::target_picker::{DEDUP_SUFFIX, FORMATION_SLOTS, enemy_menu_rows};
     let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     let mut ids = [0u8; FORMATION_SLOTS];
     let mut names: Vec<String> = vec![String::new(); FORMATION_SLOTS];
@@ -276,13 +276,13 @@ pub fn battle_enemy_target_rows(
 /// group, laid out by retail's composer and pen-seated at `(x, 48)`.
 ///
 /// Retail's flow state `0x0A` calls `FUN_801D9D3C`, which groups the
-/// formation ([`crate::target_picker::enemy_menu_rows`]), lays the labels out
-/// ([`crate::target_picker::layout_enemy_menu_rows`]) and spawns each as a
+/// formation ([`legaia_engine_battle::target_picker::enemy_menu_rows`]), lays the labels out
+/// ([`legaia_engine_battle::target_picker::layout_enemy_menu_rows`]) and spawns each as a
 /// text actor with the message banner's class-0 frame; the labels live until
 /// the `0x0B` expiry sweeps every text actor, which is the
 /// [`crate::world::BattleState::intro_names_frames`] timer. The pair returned
 /// is `(label, pen x)`; the drawer takes the pen y from
-/// [`crate::target_picker::MENU_ROW_Y`]'s value, `48`.
+/// [`legaia_engine_battle::target_picker::MENU_ROW_Y`]'s value, `48`.
 ///
 /// `font` is the width measure retail's `FUN_80035F04` is (the `legaia-font`
 /// layout advance). The X each group averages is its monsters' battle world
@@ -291,10 +291,10 @@ pub fn battle_intro_names(
     world: &crate::world::World,
     font: &legaia_font::Font,
 ) -> Vec<(String, i32)> {
-    if world.mode == crate::world::SceneMode::MuscleDome {
+    if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         return dome_intro_names(world, font);
     }
-    if world.mode != crate::world::SceneMode::Battle
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle
         || world.battle.intro_names_frames == 0
         || world.battle_entry_sweeping()
     {
@@ -316,7 +316,7 @@ pub fn battle_intro_names(
         return Vec::new();
     }
     let mut rows = battle_enemy_target_rows(world);
-    crate::target_picker::layout_enemy_menu_rows(&mut rows, |s| {
+    legaia_engine_battle::target_picker::layout_enemy_menu_rows(&mut rows, |s| {
         font.layout_ascii(s).advance_x as i16
     });
     rows.into_iter()
@@ -328,8 +328,8 @@ pub fn battle_intro_names(
 /// one-monster formation is one label, the opponent's display name, laid out
 /// the way every group label is - `0xA0 + avg(+0x34) / 8 - width / 2` over
 /// the monster's battle X, which the lone monster seat puts at `0`
-/// (`crate::battle_seats`) - and clamped into `6 ..= 0x13A - width`. Up for
-/// the leg's battle-open hold ([`crate::muscle_dome::MuscleDomeSession::intro_up`])
+/// (`legaia_engine_battle::battle_seats`) - and clamped into `6 ..= 0x13A - width`. Up for
+/// the leg's battle-open hold ([`legaia_engine_menus::muscle_dome_session::MuscleDomeSession::intro_up`])
 /// once no hub screen covers the leg.
 fn dome_intro_names(world: &crate::world::World, font: &legaia_font::Font) -> Vec<(String, i32)> {
     let Some(s) = world.minigames.muscle_dome.as_ref() else {
@@ -342,7 +342,7 @@ fn dome_intro_names(world: &crate::world::World, font: &legaia_font::Font) -> Ve
         return Vec::new();
     };
     let width = i32::from(font.layout_ascii(name).advance_x as i16);
-    let seat_x = i32::from(crate::battle_seats::monster_seat(1, 0, false).x);
+    let seat_x = i32::from(legaia_engine_battle::battle_seats::monster_seat(1, 0, false).x);
     let x = (0xA0 + (seat_x >> 3) - width / 2).clamp(6, (0x13A - width).max(6));
     vec![(name.to_string(), x)]
 }
@@ -358,7 +358,7 @@ pub fn battle_stage_banner(
     font: &legaia_font::Font,
 ) -> Option<(String, i32, i32)> {
     use crate::battle_stage_module::{ARRIVAL_BANNER_CENTRE_X, ARRIVAL_BANNER_Y};
-    if world.mode != crate::world::SceneMode::Battle {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
         return None;
     }
     let label = world.battle.stage_banner.as_ref()?;

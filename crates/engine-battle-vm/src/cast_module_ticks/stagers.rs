@@ -94,7 +94,7 @@ pub fn puera_stager(ctx: &mut CastModuleCtx, arm: u8) {
 /// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F8B90 (state half; the three spawn sites are
-/// `legaia_asset::cast_effect_pool`'s records)
+/// `legaia_overlay_images::cast_effect_pool`'s records)
 pub fn gilium_stager(ctx: &mut CastModuleCtx, arm: u8) {
     if arm == 0 {
         ctx.ctx_278 = 3;

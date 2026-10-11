@@ -181,7 +181,7 @@ pub mod vahn_fire_book_use;
 ///
 /// **Runtime layout != on-disc schema (confirmed by capture):**
 ///
-/// The on-disc field-pack format (see [`legaia_asset::field_pack`])
+/// The on-disc field-pack format (see [`legaia_scene_formats::field_pack`])
 /// declares a 91 KB schema covering offsets `0x60..0x16651` with 97
 /// strict slots. In RAM at `base + 0x60` (where on-disc slot 0 sits) the
 /// captured bytes are post-processed GP0 GPU primitive packets, **not**
@@ -256,7 +256,7 @@ pub mod field_pack_intra_transition;
 ///   the `CdSearchFile` per-directory cache of PsyQ `CdlFILE` records
 ///   (records start at `0x801CAE08`; the historical name-first 24-byte
 ///   parse at `0x801CAE40` was phase-shifted 8 bytes - see
-///   `docs/formats/str-fmv-table.md`). [`legaia_asset::str_fmv_table`]
+///   `docs/formats/str-fmv-table.md`). [`legaia_game_tables::str_fmv_table`]
 ///   still reads the historical window as a capture-forensics helper.
 /// - **ISO9660-shape directory copies** at [`ISO_DIRECTORY_TABLE_ADDR`]:
 ///   the same six files re-encoded as full ISO9660 directory records
@@ -317,9 +317,9 @@ pub mod str_fmv_overlay;
 /// so the pool currents land in the live-copy step alongside the maxima
 /// and live stats.
 ///
-/// The pinned byte deltas live in `legaia_engine_core::levelup::observations`:
-/// - `legaia_engine_core::levelup::observations::noa_4_level_jump`
-/// - `legaia_engine_core::levelup::observations::gala_4_level_jump`
+/// The pinned byte deltas live in `legaia_engine_battle::levelup::observations`:
+/// - `legaia_engine_battle::levelup::observations::noa_4_level_jump`
+/// - `legaia_engine_battle::levelup::observations::gala_4_level_jump`
 ///
 /// **Per-character record bases** (verified across the captured corpus,
 /// stride `0x414`):
@@ -497,7 +497,7 @@ pub mod item_use_battle_event;
 ///
 /// 1. **`fmv_id` range extends to `0..=8`** - exactly the nine
 ///    retail slots of the disc-decoded FMV dispatch table at
-///    `0x801D0A6C` (23 slots of 32 bytes, `legaia_asset::fmv_dispatch`;
+///    `0x801D0A6C` (23 slots of 32 bytes, `legaia_game_tables::fmv_dispatch`;
 ///    slots `9..=22` are dev files absent from the retail disc). The
 ///    debug menu reaches all nine retail slots.
 /// 2. **Game mode is `0x1A` (StrInit) for every save** - the trigger
@@ -548,7 +548,7 @@ pub mod cutscene_trigger_corpus;
 /// Seru (Gimard) is an **immediate** grant - the spell appears at level 1
 /// in one step, with **no** capture-points accumulation visible in the
 /// record (contrast the optional points-threshold model the engine's
-/// `legaia_engine_core::seru_learning` approximates for Genocide-Crystal captures).
+/// `legaia_engine_battle::seru_learning` approximates for Genocide-Crystal captures).
 ///
 /// **Real spell ids run high.** Gimard's spell id `0x81` sits far above the
 /// port-side [`legaia_engine_battle::spells::SpellCatalog::vanilla`] id range

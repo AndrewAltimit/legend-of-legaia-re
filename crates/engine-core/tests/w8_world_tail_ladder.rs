@@ -21,19 +21,21 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use legaia_asset::fishing_species::{CadenceStep, CadenceTemplate, FishingSpecies, SPAWN_BANDS};
-use legaia_asset::scene_event_scripts::move_stager_records;
-use legaia_engine_core::fishing::{
+use legaia_engine_core::man_field_scripts::scene_man_carriers;
+use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
+use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
+use legaia_engine_fishing::fishing::{
     FLIGHT_FRAMES, FishingRecord, PondPhase, PondSession, WINDUP_FRAMES,
 };
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::man_field_scripts::{
-    CLEAN_RESYNC_INSNS, partition_record_span, scene_man_carriers,
-};
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 use legaia_engine_vm::move_vm::{ActorState, MoveHost, StepResult, step};
+use legaia_minigame_formats::fishing_species::{
+    CadenceStep, CadenceTemplate, FishingSpecies, SPAWN_BANDS,
+};
+use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+use legaia_scene_formats::scene_event_scripts::move_stager_records;
 
 fn extracted_dir() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -168,7 +170,7 @@ fn a_shipped_vram_rect_copy_runs_through_the_frame_tail() {
         };
         for carrier in scene_man_carriers(&index, &scene) {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             for partition in 0..3 {
@@ -235,7 +237,7 @@ fn shipped_menu_ctrl(index: &ProtIndex, op0: u8) -> Option<(String, Vec<u8>, usi
         };
         for carrier in scene_man_carriers(index, &scene) {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             for partition in 0..3 {

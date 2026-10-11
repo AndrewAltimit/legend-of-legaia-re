@@ -1,7 +1,7 @@
 //! The title card's **band composition** - one builder, both hosts.
 //!
 //! The retail title screen is sub-rects of the PROT 0888 title TIM
-//! ([`legaia_asset::title_pak`]'s `TITLE_BAND_*`) placed at
+//! ([`legaia_ui_formats::title_pak`]'s `TITLE_BAND_*`) placed at
 //! [`TITLE_ART_POS`]. Both hosts used to carry their own copy of that
 //! composition, which is how the save-screen backdrop came to exist on one
 //! host only: the browser play page dropped its title session the moment the
@@ -91,7 +91,7 @@ pub fn title_band_sprites(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    use legaia_asset::title_pak;
+    use legaia_ui_formats::title_pak;
     let scale = stage_scale.max(1);
     let si = scale as i32;
     let alpha = state.alpha.clamp(0.0, 1.0);
@@ -181,7 +181,7 @@ pub fn title_band_sprites(
 ///
 /// Every one reads tpage `0x0098` and CLUT `0x7AC0`: the 8bpp page at VRAM
 /// `(512, 256)` with its palette at `(0, 491)`, which is exactly where the
-/// title TIM (PROT 0890 at `0x14228`, [`legaia_asset::title_pak`]) uploads its
+/// title TIM (PROT 0890 at `0x14228`, [`legaia_ui_formats::title_pak`]) uploads its
 /// pixel and CLUT blocks. A `save_select_idle` VRAM capture holds that TIM
 /// there byte for byte, so the atlas both hosts already build from PROT 0890
 /// is the page these rects address.

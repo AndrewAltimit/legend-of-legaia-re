@@ -2,6 +2,7 @@
 //! effect pool, module lookup, and the module FX and arm spawns.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// A host seated the summon creature at actor `slot`: adopt the seat,
@@ -74,7 +75,7 @@ impl World {
     /// no module records, which is the disc-free behaviour.
     pub fn install_cast_effect_pool(
         &mut self,
-        pool: std::sync::Arc<legaia_asset::cast_effect_pool::CastEffectPool>,
+        pool: std::sync::Arc<legaia_overlay_images::cast_effect_pool::CastEffectPool>,
     ) {
         self.casting.effect_pool = Some(pool);
     }
@@ -99,8 +100,11 @@ impl World {
     ///
     /// REF: FUN_801F1ED4, FUN_801F2160
     pub fn cast_module_for(&self, spell_id: u8) -> Option<u32> {
-        use vm::battle_cast_dispatch::{seru_spell_emitter, spell_class_emitter};
-        if self.spell_table_class(spell_id) == Some(legaia_asset::spell_names::CAPTURE_CLASS) {
+        use legaia_engine_battle_vm::battle_cast_dispatch::{
+            seru_spell_emitter, spell_class_emitter,
+        };
+        if self.spell_table_class(spell_id) == Some(legaia_game_tables::spell_names::CAPTURE_CLASS)
+        {
             let sub = self.spell_effect_class(spell_id)?;
             return spell_class_emitter(sub, 0).module;
         }
@@ -109,8 +113,8 @@ impl World {
 
     /// The record's `+0x01` **effect class**: the disc table's byte when one is
     /// installed, else the catalog record's
-    /// ([`crate::spells::SpellDef::effect_class`], which
-    /// [`crate::retail_magic`] fills from `SCUS_942.54`).
+    /// ([`legaia_engine_battle::spells::SpellDef::effect_class`], which
+    /// [`legaia_engine_battle::retail_magic`] fills from `SCUS_942.54`).
     pub fn spell_effect_class(&self, spell_id: u8) -> Option<u8> {
         self.spell_table_sub_class(spell_id).or_else(|| {
             self.tables
@@ -125,7 +129,7 @@ impl World {
     ///
     /// Each record is `[i16 model_sel][u16 reserved][move-VM bytecode]`, the shape
     /// the whole spawn stack shares, so the records run through the same
-    /// [`crate::summon::SummonScene`] the summon and move-FX paths already use
+    /// [`legaia_engine_effects::summon::SummonScene`] the summon and move-FX paths already use
     /// and both hosts draw and tick them with no host change
     /// (`active_summon_part_draws` / `tick_summon`).
     ///
@@ -136,7 +140,7 @@ impl World {
     ///
     /// This is the **DATA** half of the band's worklist. The **PORT** half -
     /// the six tick bodies and the seven state-touching stagers - is
-    /// [`legaia_engine_vm::cast_module_ticks`], driven from
+    /// [`legaia_engine_battle_vm::cast_module_ticks`], driven from
     /// [`Self::run_cast_module_code`] at this same seam. The **SCOPE-IGNORE**
     /// rows are the six null stagers and the one unreferenced routine; there
     /// is nothing to stage for them either.
@@ -160,10 +164,10 @@ impl World {
         }
         // A module whose body is ported whole seats its own records, each on
         // the pass its arm spawns it.
-        if entry == vm::cast_fatal_decision::FATAL_DECISION_ENTRY {
+        if entry == legaia_engine_battle_vm::cast_fatal_decision::FATAL_DECISION_ENTRY {
             return false;
         }
-        self.casting.active_summon = Some(crate::summon::SummonScene::spawn_parts(
+        self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
             &module.parts,
             &module.bytes,
             crate::scene::EFFECT_MODEL_LIBRARY_BASE,
@@ -189,12 +193,12 @@ impl World {
     pub(super) fn stage_module_arm_spawns(
         &mut self,
         prot_entry: u32,
-        spawns: &[vm::cast_module_camera::ModuleSpawn],
-        shot: Option<vm::cast_module_camera::ModuleShot>,
+        spawns: &[legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
+        shot: Option<legaia_engine_battle_vm::cast_module_camera::ModuleShot>,
     ) {
-        use legaia_asset::move_power::{self, BATTLE_OVERLAY_BASE};
-        use vm::cast_module_camera::SpawnRecord;
-        const LINK_BASE: u32 = legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
+        use legaia_engine_battle_vm::cast_module_camera::SpawnRecord;
+        use legaia_game_tables::move_power::{self, BATTLE_OVERLAY_BASE};
+        const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
         let creature = self
             .casting
             .module_cam
@@ -205,16 +209,21 @@ impl World {
             .module_cam
             .victim_slot
             .and_then(|s| self.actors.get(usize::from(s)))
-            .map(|a| vm::cast_module_camera::ModuleSeat {
-                x: a.move_state.world_x,
-                y: a.move_state.world_y,
-                z: a.move_state.world_z,
-                facing: a.battle.facing_angle & 0xFFF,
-            });
+            .map(
+                |a| legaia_engine_battle_vm::cast_module_camera::ModuleSeat {
+                    x: a.move_state.world_x,
+                    y: a.move_state.world_y,
+                    z: a.move_state.world_z,
+                    facing: a.battle.facing_angle & 0xFFF,
+                },
+            );
         for spawn in spawns {
-            let Some((pos, rot)) =
-                vm::cast_module_camera::spawn_anchor_point(spawn.anchor, creature, victim, shot)
-            else {
+            let Some((pos, rot)) = legaia_engine_battle_vm::cast_module_camera::spawn_anchor_point(
+                spawn.anchor,
+                creature,
+                victim,
+                shot,
+            ) else {
                 continue;
             };
             let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
@@ -232,8 +241,10 @@ impl World {
                     };
                     let mut offs: Vec<usize> = module.parts.iter().map(|p| p.record_off).collect();
                     offs.push(off);
-                    let parts =
-                        legaia_asset::summon_overlay::parse_records_at(&module.bytes, &offs);
+                    let parts = legaia_overlay_images::summon_overlay::parse_records_at(
+                        &module.bytes,
+                        &offs,
+                    );
                     (module.bytes.clone(), parts, off)
                 }
                 SpawnRecord::BattleProto(word_va) => {
@@ -256,7 +267,8 @@ impl World {
                         .map(|p| p.record_off)
                         .collect();
                     offs.push(off);
-                    let parts = legaia_asset::summon_overlay::parse_records_at(&overlay, &offs);
+                    let parts =
+                        legaia_overlay_images::summon_overlay::parse_records_at(&overlay, &offs);
                     (overlay, parts, off)
                 }
             };
@@ -267,7 +279,7 @@ impl World {
             match self.casting.active_summon.as_mut() {
                 Some(scene) => scene.push_parts(&picked, &bytes, pos, rot),
                 None => {
-                    let mut scene = crate::summon::SummonScene::spawn_parts(
+                    let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
                         &[],
                         &bytes,
                         crate::scene::EFFECT_MODEL_LIBRARY_BASE,

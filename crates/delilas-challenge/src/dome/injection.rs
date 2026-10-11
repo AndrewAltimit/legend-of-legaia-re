@@ -324,7 +324,7 @@ impl DomeInjection {
 
 /// Resolve a SCUS VA to its file offset within the `SCUS_942.54` image.
 pub(super) fn scus_off(scus: &[u8], va: u32) -> Result<usize> {
-    legaia_asset::item_names::file_offset_for_va(scus, va)
+    legaia_game_tables::item_names::file_offset_for_va(scus, va)
         .ok_or_else(|| anyhow::anyhow!("cannot resolve SCUS VA {va:#x}"))
 }
 

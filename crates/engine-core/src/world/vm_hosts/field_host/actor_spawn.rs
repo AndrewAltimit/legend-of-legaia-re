@@ -64,7 +64,7 @@ impl FieldHostImpl<'_> {
         }
         // Walk `count` variable-length records out of `tail` using the
         // retail packet-length rule (FUN_8003CA38, mirrored in
-        // `legaia_engine_vm::field::dispatch_leaves::packet_length`): bytes <= 0x1E
+        // `legaia_scene_formats::field_disasm::packet_length`): bytes <= 0x1E
         // terminate a record; bytes whose top nibble is 0xC consume one
         // extra byte. The walker stops when the tail is exhausted - the
         // retail original would over-read into adjacent memory, which the
@@ -75,7 +75,7 @@ impl FieldHostImpl<'_> {
             if cursor >= tail.len() {
                 break;
             }
-            let len = legaia_engine_vm::field::dispatch_leaves::packet_length(&tail[cursor..]);
+            let len = legaia_scene_formats::field_disasm::packet_length(&tail[cursor..]);
             records.push(tail[cursor..cursor + len].to_vec());
             // Skip the terminator byte itself (the byte <= 0x1E that
             // closed the record); if the walker ran off the end without

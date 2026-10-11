@@ -1,7 +1,7 @@
 //! The **place-name banner**: the scene's display name shown once on entry.
 //!
 //! What draws it is not a panel script and not a dedicated state machine. It
-//! is the ordinary `4C E1` text balloon ([`crate::text_balloon`], handler
+//! is the ordinary `4C E1` text balloon ([`legaia_engine_dialog::text_balloon`], handler
 //! `FUN_801DA7F0`), spawned by the tail of the MAN loader `FUN_8003AEB0` with
 //! the scene MAN's section-2 name as its line
 //! ([`docs/formats/place-names.md`](../../../docs/formats/place-names.md)).
@@ -54,7 +54,7 @@
 //! operations that open the record ([`record_leading_flag_writes`]) before it
 //! loads the destination.
 
-use crate::text_balloon::TextBalloon;
+use legaia_engine_dialog::text_balloon::TextBalloon;
 
 /// System-flag index that arms the banner (`0x80085758` bit `0x20`,
 /// `andi v0,v0,0x20` at `0x8003BB64` under the `0x80 >> (idx & 7)` bank law).
@@ -83,16 +83,16 @@ pub fn man_load_banner(name: &[u8], armed: bool) -> Option<TextBalloon> {
 /// retail's `_DAT_801C6EA0` pointer as the draw leaf sees it. Empty when the
 /// MAN does not walk or carries no name.
 ///
-/// Raw bytes, not [`legaia_asset::place_names::scene_name`]'s ASCII view:
+/// Raw bytes, not [`legaia_scene_formats::place_names::scene_name`]'s ASCII view:
 /// retail tests only the first byte, so a Shift-JIS name is not "no name" to
 /// the loader.
 pub fn man_scene_name_bytes(man: &[u8]) -> Vec<u8> {
-    let Ok(parsed) = legaia_asset::man_section::parse(man) else {
+    let Ok(parsed) = legaia_scene_formats::man_section::parse(man) else {
         return Vec::new();
     };
     let Some(section) = parsed
         .sections
-        .get(legaia_asset::place_names::SCENE_NAME_SECTION)
+        .get(legaia_scene_formats::place_names::SCENE_NAME_SECTION)
     else {
         return Vec::new();
     };
@@ -124,14 +124,14 @@ pub fn man_scene_name_bytes(man: &[u8]) -> Vec<u8> {
 /// REF: FUN_801DE840 (the field VM's `0x50` / `0x60` / `0x70` arms,
 /// `FUN_8003CE08` / `FUN_8003CE34` / `FUN_8003CE64`)
 pub fn record_leading_flag_writes(
-    man_file: &legaia_asset::man_section::ManFile,
+    man_file: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     record: usize,
     flag_set: impl Fn(u16) -> bool,
 ) -> Vec<(bool, u16)> {
-    use legaia_asset::field_disasm::{FlagKind, InsnInfo, decode};
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, decode};
     let Some((start, pc0, len)) =
-        crate::man_field_scripts::partition_record_span(man_file, man, 2, record)
+        legaia_engine_field::man_field_scripts::partition_record_span(man_file, man, 2, record)
     else {
         return Vec::new();
     };
@@ -217,8 +217,8 @@ impl crate::world::World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::text_balloon::{BALLOON_TOTAL, BALLOON_Y, BalloonTick};
     use crate::world::World;
+    use legaia_engine_dialog::text_balloon::{BALLOON_TOTAL, BALLOON_Y, BalloonTick};
 
     #[test]
     fn an_armed_flag_and_a_name_seat_an_unlinked_balloon() {

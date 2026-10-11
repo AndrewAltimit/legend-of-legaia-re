@@ -27,11 +27,6 @@
 //! their decompilation.
 //! REF: FUN_801DE840
 
-/// The variable-length text/data packet-width helper (`FUN_8003CA38`) now lives
-/// in the Track-1 `asset` crate next to the field-VM disassembler that also uses
-/// it; re-exported so `crate::field::dispatch_leaves::packet_length` keeps resolving.
-pub use legaia_asset::field_disasm::packet_length;
-
 /// Test whether the `idx`-th bit of a packed bit array is set.
 ///
 /// Ported from `FUN_8003CE64` (see `ghidra/scripts/funcs/8003ce64.txt`). The
@@ -197,7 +192,7 @@ pub fn tile_center(b: u8) -> i16 {
 mod tests {
     use super::*;
 
-    // `packet_length` moved to `legaia_asset::field_disasm`; its tests live
+    // `packet_length` moved to `legaia_scene_formats::field_disasm`; its tests live
     // there now. It is re-exported above so the rest of the engine VM can call
     // `field_helpers::packet_length` unchanged.
 

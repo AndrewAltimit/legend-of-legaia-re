@@ -20,8 +20,8 @@
 
 use std::path::{Path, PathBuf};
 
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
 use legaia_engine_shell::BootSession;
-use legaia_engine_shell::boot::{BootConfig, FieldLiveOpts};
 use legaia_parity::retail_compare::{enumerate_corpus, read_retail, resolve_dirs};
 
 fn repo() -> PathBuf {
@@ -47,7 +47,7 @@ fn an_idle_resume_with_live_npcs_does_not_move_the_player() {
         return;
     };
     let manifest =
-        legaia_mednafen::ScenarioManifest::from_path(repo().join("scripts/scenarios.toml"))
+        legaia_ram_image::ScenarioManifest::from_path(repo().join("scripts/scenarios.toml"))
             .expect("scenario manifest");
     let scus = std::fs::read(extracted.join("SCUS_942.54")).expect("SCUS");
     let entries = enumerate_corpus(&manifest, &library);

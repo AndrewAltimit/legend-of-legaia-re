@@ -1,6 +1,6 @@
 //! Build [`EncounterTable`]s straight from a scene's on-disc MAN bytes.
 //!
-//! Bridges [`legaia_asset::man_section`] (the multi-section MAN walker that
+//! Bridges [`legaia_scene_formats::man_section`] (the multi-section MAN walker that
 //! mirrors `FUN_8003AEB0` / `FUN_8003A110`) into the runtime encounter
 //! types. The retail engine doesn't synthesize encounter rates the way the
 //! pattern-fallback [`EncounterRegistry`](crate::encounter_registry) does;
@@ -39,7 +39,7 @@
 
 use crate::encounter::{EncounterEntry, EncounterTable};
 use crate::monster_catalog::{FormationDef, FormationSlot};
-use legaia_asset::man_section;
+use legaia_scene_formats::man_section;
 
 /// Decode a MAN buffer and synthesize an [`EncounterTable`] for the scene.
 ///

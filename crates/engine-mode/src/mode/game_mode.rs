@@ -32,31 +32,31 @@ pub enum SceneMode {
     /// World-map mode - `WorldMapController` drives camera and entity ticks.
     WorldMap,
     /// Noa dance (rhythm) minigame - the beat clock + hit judge own the frame
-    /// (`legaia_engine_core::dance::DanceGame`); field / battle dispatch is suspended. The
+    /// (`legaia_engine_minigames::dance::DanceGame`); field / battle dispatch is suspended. The
     /// hosting session preserves the suspended scene state and restores its
     /// mode on exit, like the pause menu. Retail runs it under `game_mode 0x19`
     /// (`OTHER MODE`) with warp sub-id `6` (the dance overlay, PROT 0980).
     Dance,
     /// Fishing minigame - the cast / fight / score loop owns the frame
-    /// (`legaia_engine_core::fishing::PondSession`); field / battle dispatch is
+    /// (`legaia_engine_fishing::fishing::PondSession`); field / battle dispatch is
     /// suspended and the interrupted mode restored on exit. Retail runs it
     /// under `game_mode 0x19` (`OTHER MODE`) with warp sub-id `0` (the fishing
     /// overlay, PROT 0972).
     Fishing,
     /// Casino slot-machine minigame - the reel state machine owns the frame
-    /// (`legaia_engine_core::slot_machine::SlotMachine`); field / battle dispatch is
+    /// (`legaia_engine_minigames::slot_machine::SlotMachine`); field / battle dispatch is
     /// suspended and the interrupted mode restored on exit. Retail runs it
     /// under `game_mode 0x19` (`OTHER MODE`) with warp sub-id `3` (the slot
     /// overlay, PROT 0975).
     SlotMachine,
     /// Baka Fighter duel minigame - the exchange / round / match state
-    /// machine owns the frame (`legaia_engine_core::baka_fighter::BakaFight`); field /
+    /// machine owns the frame (`legaia_engine_minigames::baka_fighter::BakaFight`); field /
     /// battle dispatch is suspended and the interrupted mode restored on
     /// exit. Retail runs it under `game_mode 0x19` (`OTHER MODE`) with warp
     /// sub-id `4` (the Baka Fighter overlay, PROT 0976).
     BakaFighter,
     /// Muscle Dome contest, an ordinary battle fought to a KO - the direction-entry /
-    /// commit / resolve loop owns the frame (`legaia_engine_core::muscle_dome::MuscleDomeSession`); field
+    /// commit / resolve loop owns the frame (`legaia_engine_menus::muscle_dome_session::MuscleDomeSession`); field
     /// / battle dispatch is suspended and the interrupted mode restored on
     /// exit. Retail: the arena runs *inside* the battle overlay (PROT 0898)
     /// on the `_DAT_8007bd24` context, entered through the `game_mode 0x18`
@@ -282,14 +282,14 @@ impl GameMode {
             // `v0_1_pre_battle_tetsu` save (Vahn walking in Rim Elm / town01)
             // and the runtime-pinned free-movement controller on `map03`,
             // both at game_mode 0x03 (see docs/subsystems/field-locomotion.md).
-            // The disc-recovered handler map (legaia_asset::mode_table)
+            // The disc-recovered handler map (legaia_game_tables::mode_table)
             // confirms it structurally: mode 2's init handler FUN_80025B64
             // loads the field overlay + per-scene initializer and hands off
             // to mode 3. MainInit holds Field like the other init modes
             // below hold their successors'.
             GameMode::MainInit | GameMode::MainMode => SceneMode::Field,
             // MAPDISP (12/13) is the world-map DISPLAY mode, not the field -
-            // pinned by the disc mode table (legaia_asset::mode_table): its
+            // pinned by the disc mode table (legaia_game_tables::mode_table): its
             // per-frame handler 0x80025F2C routes the world-map render tick
             // (docs/subsystems/world-map.md). Field/town is MainMode above.
             GameMode::MapdispInit | GameMode::MapdispMode => SceneMode::WorldMap,

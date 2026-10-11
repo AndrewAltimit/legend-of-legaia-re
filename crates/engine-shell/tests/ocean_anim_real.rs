@@ -47,8 +47,8 @@ fn world_map_ocean_clut_is_referenced_by_terrain_or_skip() {
         .entries
         .iter()
         .find_map(|e| {
-            let slot0 = legaia_asset::kingdom_bundle::decode_slot(&e.bytes, 0).ok()?;
-            legaia_asset::ocean::find_ocean_assets(&slot0).map(|o| o.animation_frames)
+            let slot0 = legaia_scene_formats::kingdom_bundle::decode_slot(&e.bytes, 0).ok()?;
+            legaia_scene_formats::ocean::find_ocean_assets(&slot0).map(|o| o.animation_frames)
         })
         .expect("ocean animation table present in the map01 kingdom bundle");
     assert_eq!(frames.len(), 13 * 32, "13 frames x 32 bytes");

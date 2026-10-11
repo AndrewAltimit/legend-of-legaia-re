@@ -27,8 +27,8 @@
 //! Structural assertions only (tiles, coords) - no Sony bytes. Skip-passes
 //! without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md convention).
 
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::SceneHost;
+use legaia_engine_system::input::PadButton;
 use std::path::PathBuf;
 
 /// Vahn's-house door object's contact-box centre (outdoors, on the doorstep).
@@ -146,7 +146,7 @@ fn vahn_house_exit_is_a_kind0_map_record() {
         .field_intra_scene_teleports(&host.index)
         .expect("kind-0 table");
     let tp =
-        legaia_engine_core::field_regions::lookup_intra_scene_teleport(&primary, &fallback, 97, 9)
+        legaia_engine_field::field_regions::lookup_intra_scene_teleport(&primary, &fallback, 97, 9)
             .expect("town01 carries a kind-0 teleport at interior tile (97,9)");
     assert_eq!(
         tp.dest_world(),

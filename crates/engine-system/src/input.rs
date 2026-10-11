@@ -209,7 +209,7 @@ impl InputState {
     /// query reads false until the next [`Self::set_pad`]. This is the retail
     /// pad-latch clear (`_DAT_8007B880 = 0`) that mode transitions perform so
     /// the button that opened a mode is not also consumed as that mode's first
-    /// input - see `legaia_engine_core::dance::dance_scene_stage`.
+    /// input - see `legaia_engine_minigames::dance::dance_scene_stage`.
     ///
     /// It deliberately leaves the retail pump and the held-duration timestamps
     /// alone: a held button stays held, it just stops looking newly pressed.

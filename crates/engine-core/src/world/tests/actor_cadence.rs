@@ -20,6 +20,7 @@
 //! opportunity.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Sim ticks to run. One sim tick is one retail display frame (the 1:1
 /// denomination `World::tick` documents), so this is also the vsync count.
@@ -159,9 +160,12 @@ fn with_ambient(w: &mut World, slot: u8, code: Vec<u8>, retail_heading: u16) {
         FieldNpcAmbient {
             defers: false,
             walks: false,
-            variants: vec![(legaia_asset::man_motion::SELECTOR_DEFAULT, code)],
+            variants: vec![(legaia_scene_formats::man_motion::SELECTOR_DEFAULT, code)],
             live: None,
-            vm: vm::ambient_motion::AmbientMotion::new(u32::from(slot), retail_heading),
+            vm: legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(
+                u32::from(slot),
+                retail_heading,
+            ),
         },
     );
 }
@@ -273,10 +277,13 @@ fn variant_selection_follows_the_live_system_flag_bank() {
                 // Flag-gated variant (system flag 0x10) turns to lut 4.
                 (0x0010, vec![0x04, 0x04, 0x08]),
                 // Default variant just waits.
-                (legaia_asset::man_motion::SELECTOR_DEFAULT, vec![0x05, 0x7F]),
+                (
+                    legaia_scene_formats::man_motion::SELECTOR_DEFAULT,
+                    vec![0x05, 0x7F],
+                ),
             ],
             live: None,
-            vm: vm::ambient_motion::AmbientMotion::new(3, 0x000),
+            vm: legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(3, 0x000),
         },
     );
     // Flag clear: the default variant runs, so nothing turns.

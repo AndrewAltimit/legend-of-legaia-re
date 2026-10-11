@@ -93,7 +93,7 @@ impl BattleCamera {
     pub fn set_attack_channels(
         &mut self,
         channels: Option<AttackCamChannels>,
-        tracks: Option<&legaia_asset::battle_attack_camera_table::AttackCameraTracks>,
+        tracks: Option<&legaia_game_tables::battle_attack_camera_table::AttackCameraTracks>,
     ) {
         self.attack.actor = channels;
         if self.attack.tracks.is_none()

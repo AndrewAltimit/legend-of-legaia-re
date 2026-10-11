@@ -95,7 +95,7 @@ pub struct MonsterAnimation {
     /// `[frame_gate, effect_id, i16 x, i16 y, i16 z]` records the battle
     /// anim-node tick walks each frame to place the action's visual effects
     /// (`FUN_801DEA50`, reached from `FUN_80047430`; engine stepper
-    /// `legaia_engine_core::action_effect_script::step_effect_script`, which
+    /// `legaia_engine_effects::action_effect_script::step_effect_script`, which
     /// reads records at `RECORD_BASE = 0x14` of exactly this slice) - and
     /// the rest of the head is what the other per-frame consumers of the
     /// committed entry read: the power run (`+0x00..+0x04`) and hit-event
@@ -669,7 +669,7 @@ pub fn light_flinch_window(entry: &[u8], id: u16) -> Result<Option<JuggleWindow>
 /// ```
 ///
 /// Called by the battle action SM's monster-animation lookups
-/// (`legaia_engine_vm::battle_action::monster_action_by_tag`): the approach
+/// (`legaia_engine_battle_vm::battle_action::monster_action_by_tag`): the approach
 /// chain's `0x20` / `1` / `0x21` stages, the knockout taunt's `0x22` and the
 /// capture takedown's walk, over the tag list of the monster's installed
 /// action clips.

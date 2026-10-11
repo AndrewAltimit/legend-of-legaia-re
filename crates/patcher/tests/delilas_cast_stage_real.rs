@@ -6,7 +6,7 @@
 //! Block-reaction literal follows it, and the PROT 959 stage step stays
 //! retail (no pin). Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_asset::battle_char_assembly as bca;
+use legaia_actor_formats::battle_char_assembly as bca;
 use legaia_delilas_party::delilas_party::{
     CastRoutePolicy, DelilasMoveMode, PartyMapping, Sibling, apply_delilas_party,
 };
@@ -108,8 +108,9 @@ fn staged_cast_rows_carry_ches_clips_and_block_survives() {
         .find(|(e, _)| *e == che_entry)
         .unwrap()
         .1;
-    let pack = legaia_asset::battle_data_pack::parse(&live).expect("patched pack parses");
-    let retail_pack = legaia_asset::battle_data_pack::parse(retail_che).expect("retail pack");
+    let pack = legaia_actor_formats::battle_data_pack::parse(&live).expect("patched pack parses");
+    let retail_pack =
+        legaia_actor_formats::battle_data_pack::parse(retail_che).expect("retail pack");
     assert_eq!(
         pack.records.len(),
         retail_pack.records.len(),
@@ -334,7 +335,8 @@ fn staged_cast_rows_carry_ches_clips_and_block_survives() {
 
     // The party-init Block-reaction literal now stages row 0x06.
     let scus = reopened.read_named_file("SCUS_942.54").expect("SCUS");
-    let off = legaia_asset::item_names::file_offset_for_va(&scus, 0x8005_4008).expect("VA map");
+    let off =
+        legaia_game_tables::item_names::file_offset_for_va(&scus, 0x8005_4008).expect("VA map");
     assert_eq!(
         u32::from_le_bytes(scus[off..off + 4].try_into().unwrap()),
         0x2402_0006,

@@ -1,4 +1,46 @@
 use super::*;
+use legaia_engine_ui::ArtsChainRow;
+use legaia_engine_ui::ArtsEditorDrawArgs;
+use legaia_engine_ui::ArtsEditorPhase;
+use legaia_engine_ui::EquipCandidateRow;
+use legaia_engine_ui::EquipDrawPhase;
+use legaia_engine_ui::EquipScreenView;
+use legaia_engine_ui::EquipSlotRow;
+use legaia_engine_ui::EquipStatRow;
+use legaia_engine_ui::FieldMenuRowView;
+use legaia_engine_ui::InventoryItemRow;
+use legaia_engine_ui::InventoryTargetRow;
+use legaia_engine_ui::InventoryUseDrawArgs;
+use legaia_engine_ui::MENU_TEXT_TEAL;
+use legaia_engine_ui::MENU_TEXT_WHITE;
+use legaia_engine_ui::OPTIONS_INK_GOLD;
+use legaia_engine_ui::OPTIONS_INK_TEAL;
+use legaia_engine_ui::OptionsPopupDraw;
+use legaia_engine_ui::OptionsRowView;
+use legaia_engine_ui::ShopRow;
+use legaia_engine_ui::SpellMenuDrawArgs;
+use legaia_engine_ui::SpellRowView;
+use legaia_engine_ui::SpellTargetView;
+use legaia_engine_ui::StatusPanelView;
+use legaia_engine_ui::StatusSatelliteView;
+use legaia_engine_ui::StatusStatRow;
+use legaia_engine_ui::capture_banner_draws_for;
+use legaia_engine_ui::encounter_banner_draws_for;
+use legaia_engine_ui::equip_screen_draws_for;
+use legaia_engine_ui::equip_screen_sprites_for;
+use legaia_engine_ui::field_menu_draws_for;
+use legaia_engine_ui::inventory_use_draws_for;
+use legaia_engine_ui::key_rebind_draws_for;
+use legaia_engine_ui::level_up_draws_for;
+use legaia_engine_ui::options_draws_for;
+use legaia_engine_ui::shop_draws_for;
+use legaia_engine_ui::spell_menu_draws_for;
+use legaia_engine_ui::status_icon_sprites_for;
+use legaia_engine_ui::status_satellite_draws_for;
+use legaia_engine_ui::status_satellite_icon_sprites_for;
+use legaia_engine_ui::status_screen_draws_for;
+use legaia_engine_ui::tab_banner_draws;
+use legaia_engine_ui::tactical_arts_editor_draws_for;
 
 #[test]
 fn shop_draws_for_buy_mode_produces_draws() {
@@ -301,7 +343,7 @@ fn status_screen_label_icons_suppresses_ap_text_and_empty_equips() {
 // There is no game-over panel test here any more, because there is no
 // game-over panel. The one that stood here asserted a dimmed Continue row on
 // a three-row chooser retail never had - a test asserting the defect. The
-// wipe hand-off's own assertions live in `legaia_engine_core::game_over`.
+// wipe hand-off's own assertions live in `legaia_engine_menus::game_over`.
 
 #[test]
 fn options_draws_render_rows() {

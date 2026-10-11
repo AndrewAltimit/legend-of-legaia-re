@@ -2,7 +2,7 @@ use super::*;
 
 impl World {
     /// One frame of the tile board's walk state machine (`FUN_801EF2B0`,
-    /// states in [`crate::tile_board::sm`]):
+    /// states in [`legaia_engine_minigames::tile_board::sm`]):
     ///
     /// - **fade-in** (`1`): input is ignored while `+0x9C` - every tile
     ///   actor's render scale - ramps up to `0x1000`;
@@ -33,7 +33,7 @@ impl World {
     /// PORT: FUN_801EF2B0 (states 1, 2, 4, 5, 6, 7, 9..0xE; the arrival
     /// state 3 and event state 8 are [`Self::tile_board_arrival`])
     pub(super) fn tick_tile_board(&mut self) {
-        use crate::tile_board::sm;
+        use legaia_engine_minigames::tile_board::sm;
         const D: u8 = 1;
         if self.dialogue_owns_input() {
             return;
@@ -47,7 +47,8 @@ impl World {
         }
         match self.board.sm {
             sm::FADE_IN => {
-                let (fade, done) = crate::tile_board::fade_in_step(self.board.fade, D);
+                let (fade, done) =
+                    legaia_engine_minigames::tile_board::fade_in_step(self.board.fade, D);
                 self.board.fade = fade;
                 if done {
                     self.board.sm = sm::WALK;
@@ -55,13 +56,13 @@ impl World {
                 return;
             }
             sm::PROMPT => {
-                let nav_in = crate::menu_input::NavButtons::new(
+                let nav_in = legaia_engine_system::menu_input::NavButtons::new(
                     self.input.just_pressed(input::PadButton::Cross),
                     self.input.just_pressed(input::PadButton::Circle),
                     self.input.just_pressed(input::PadButton::Up),
                     self.input.just_pressed(input::PadButton::Down),
                 );
-                let nav = crate::menu_input::menu_cursor_nav(
+                let nav = legaia_engine_system::menu_input::menu_cursor_nav(
                     &mut self.board.prompt_cursor,
                     2,
                     true,
@@ -70,7 +71,8 @@ impl World {
                 if let Some(cue) = nav.sfx_cue() {
                     self.push_sfx_cue(i16::from(cue));
                 }
-                self.board.sm = crate::tile_board::prompt_next(nav, self.board.prompt_cursor);
+                self.board.sm =
+                    legaia_engine_minigames::tile_board::prompt_next(nav, self.board.prompt_cursor);
                 return;
             }
             sm::QUIT | sm::TRIGGER_EXIT => {
@@ -82,7 +84,8 @@ impl World {
                 return;
             }
             sm::FADE_OUT | sm::EVENT_FADE_OUT => {
-                let (fade, done) = crate::tile_board::fade_out_step(self.board.fade, D);
+                let (fade, done) =
+                    legaia_engine_minigames::tile_board::fade_out_step(self.board.fade, D);
                 self.board.fade = fade;
                 if done {
                     self.board.sm = sm::PARK;
@@ -108,7 +111,7 @@ impl World {
 
         // Idle (state 4): the menu edge first, then one direction.
         if self.input.just_pressed(input::PadButton::Triangle) {
-            self.board.fade = crate::tile_board::FADE_FULL;
+            self.board.fade = legaia_engine_minigames::tile_board::FADE_FULL;
             self.board.prompt_cursor = 1;
             self.board.sm = sm::PROMPT;
             return;
@@ -120,11 +123,11 @@ impl World {
             let under = board
                 .cell(board.player_col as i32, board.player_row as i32)
                 .unwrap_or(0);
-            self.locomotion.pad_octant = crate::tile_board::walker_octant(under);
+            self.locomotion.pad_octant = legaia_engine_minigames::tile_board::walker_octant(under);
         }
         let held = tile_board_held_mask(&self.input);
         let remapped = Self::remap_pad_direction(held, self.locomotion.pad_octant);
-        let Some(dir) = crate::tile_board::step_for_mask(remapped) else {
+        let Some(dir) = legaia_engine_minigames::tile_board::step_for_mask(remapped) else {
             return;
         };
         match self.board.grid.as_mut().and_then(|b| b.try_step(dir)) {
@@ -133,7 +136,7 @@ impl World {
                 // producer (`jal 0x80035B50` with `0x21`, `0x801EF990`), then
                 // the run clip - `_DAT_8007BDD8 = 3`, `+0x5C = leader * 7 +
                 // 3`, bind (`0x801EF998..0x801EF9D0`).
-                self.push_sfx_cue(crate::tile_board::STEP_SFX);
+                self.push_sfx_cue(legaia_engine_minigames::tile_board::STEP_SFX);
                 self.field_player_strided_clip(legaia_engine_field::field_player_clip::BASE_RUN);
                 self.board.target = Some((tx, tz));
                 // State 4 stores state 2 and falls straight into it
@@ -149,7 +152,7 @@ impl World {
                 // port's state 4 runs every vsync and fires it on the vsyncs
                 // the actor game tick fired.
                 if self.clock.actor_vsync_accum == 0 {
-                    self.replace_last_sfx_cue(crate::tile_board::BONK_SFX);
+                    self.replace_last_sfx_cue(legaia_engine_minigames::tile_board::BONK_SFX);
                 }
             }
         }
@@ -165,8 +168,10 @@ impl World {
     pub(super) fn tile_board_walk_step(&mut self, slot: usize, tx: i32, tz: i32) {
         let ms = &mut self.actors[slot].move_state;
         let (x, z) = (ms.world_x as i32, ms.world_z as i32);
-        if let Some(octant) = crate::tile_board::walker_facing_octant(tx - x, tz - z) {
-            ms.render_26 = crate::tile_board::engine_heading_for_octant(octant);
+        if let Some(octant) =
+            legaia_engine_minigames::tile_board::walker_facing_octant(tx - x, tz - z)
+        {
+            ms.render_26 = legaia_engine_minigames::tile_board::engine_heading_for_octant(octant);
         }
         let nx = step_toward(x, tx, TILE_BOARD_SPEED);
         let nz = step_toward(z, tz, TILE_BOARD_SPEED);
@@ -187,8 +192,12 @@ impl World {
     /// The quit prompt's cursor row while the tile board's walk SM sits in
     /// state `5`, for the hosts' panel draw; `None` otherwise.
     pub fn tile_board_prompt_cursor(&self) -> Option<usize> {
-        (self.board.grid.is_some() && self.board.sm == crate::tile_board::sm::PROMPT)
-            .then_some((self.board.prompt_cursor & crate::menu_input::CURSOR_INDEX_MASK) as usize)
+        (self.board.grid.is_some()
+            && self.board.sm == legaia_engine_minigames::tile_board::sm::PROMPT)
+            .then_some(
+                (self.board.prompt_cursor & legaia_engine_system::menu_input::CURSOR_INDEX_MASK)
+                    as usize,
+            )
     }
 
     /// The render scale a board tile of `value` draws at this frame: the
@@ -196,17 +205,17 @@ impl World {
     /// except the event tile the player stands on during the exit fade,
     /// which keeps its full size. `1.0` with no board up.
     pub fn tile_board_cell_scale(&self, value: u8) -> f32 {
-        use crate::tile_board::sm;
+        use legaia_engine_minigames::tile_board::sm;
         let Some(board) = self.board.grid.as_ref() else {
             return 1.0;
         };
         if matches!(self.board.sm, sm::FADE_OUT | sm::EVENT_FADE_OUT | sm::PARK) {
             let under = board.cell(board.player_col as i32, board.player_row as i32);
-            if crate::tile_board::fade_exempt_value(under) == Some(value) {
+            if legaia_engine_minigames::tile_board::fade_exempt_value(under) == Some(value) {
                 return 1.0;
             }
         }
-        f32::from(self.board.fade) / f32::from(crate::tile_board::FADE_FULL)
+        f32::from(self.board.fade) / f32::from(legaia_engine_minigames::tile_board::FADE_FULL)
     }
 
     /// Advance the screen-effect widgets one frame and refresh
@@ -230,12 +239,12 @@ impl World {
 
     /// Walk-SM arrival pass (state 3 of `FUN_801EF2B0`, `0x801EF6FC`), run
     /// when the player's interpolation reaches the committed tile centre. The
-    /// arrived cell picks one of three arms ([`crate::tile_board::arrival_action`]):
+    /// arrived cell picks one of three arms ([`legaia_engine_minigames::tile_board::arrival_action`]):
     ///
     /// - a **trigger cell** (`7`) starts the exit with no flag write
     ///   (state `7`);
     /// - an **event cell** (`8..=0xA`) first writes the state-8 system flags
-    ///   ([`crate::tile_board::event_cell_flag_writes`]: SET `A + v + 1`, and
+    ///   ([`legaia_engine_minigames::tile_board::event_cell_flag_writes`]: SET `A + v + 1`, and
     ///   SET `A` when TEST `B + v` is clear, `v = cell - 8`, `A`/`B` the header
     ///   `+7`/`+9` bases), then starts the event exit (state `0xB`);
     /// - any other cell advances **every** animated cell on the board one step
@@ -246,7 +255,7 @@ impl World {
     ///
     /// PORT: FUN_801EF2B0 (states 3 and 8)
     pub(super) fn tile_board_arrival(&mut self) {
-        use crate::tile_board::ArrivalAction;
+        use legaia_engine_minigames::tile_board::ArrivalAction;
         let Some(board) = self.board.grid.as_mut() else {
             return;
         };
@@ -254,21 +263,25 @@ impl World {
         let Some(cell) = board.cell(col, row) else {
             return;
         };
-        match crate::tile_board::arrival_action(cell) {
+        match legaia_engine_minigames::tile_board::arrival_action(cell) {
             ArrivalAction::Continue => {
-                crate::tile_board::advance_animated_cells(&mut board.cells);
+                legaia_engine_minigames::tile_board::advance_animated_cells(&mut board.cells);
             }
-            ArrivalAction::ExitTrigger => self.board.sm = crate::tile_board::sm::TRIGGER_EXIT,
+            ArrivalAction::ExitTrigger => {
+                self.board.sm = legaia_engine_minigames::tile_board::sm::TRIGGER_EXIT
+            }
             ArrivalAction::ExitEvent => {
                 if let Some(header) = self.board.header {
-                    let writes = crate::tile_board::event_cell_flag_writes(&header, cell, |i| {
-                        self.system_flag_test(i)
-                    });
+                    let writes = legaia_engine_minigames::tile_board::event_cell_flag_writes(
+                        &header,
+                        cell,
+                        |i| self.system_flag_test(i),
+                    );
                     for idx in writes {
                         self.system_flag_set(idx);
                     }
                 }
-                self.board.sm = crate::tile_board::sm::EVENT_STEP;
+                self.board.sm = legaia_engine_minigames::tile_board::sm::EVENT_STEP;
             }
         }
     }
@@ -284,8 +297,8 @@ impl World {
         self.board.grid = None;
         self.board.header = None;
         self.board.target = None;
-        self.board.sm = crate::tile_board::sm::WALK;
-        self.board.fade = crate::tile_board::FADE_FULL;
+        self.board.sm = legaia_engine_minigames::tile_board::sm::WALK;
+        self.board.fade = legaia_engine_minigames::tile_board::FADE_FULL;
         self.despawn_tile_actors();
     }
 
@@ -299,7 +312,7 @@ impl World {
     /// Returns `false` off the field, with a board already up or armed, with
     /// no player actor, or when the install is refused.
     pub fn install_demo_tile_board(&mut self) -> bool {
-        if self.mode != crate::world::SceneMode::Field
+        if self.mode != legaia_engine_mode::mode::SceneMode::Field
             || self.board.grid.is_some()
             || self.board.armed
         {
@@ -356,16 +369,20 @@ impl World {
         let Some(window) = instr.get(1..) else {
             return false;
         };
-        let Some(header) = crate::tile_board::TileBoardHeader::parse(window) else {
+        let Some(header) = legaia_engine_minigames::tile_board::TileBoardHeader::parse(window)
+        else {
             return false;
         };
-        let cells =
-            crate::tile_board::procedural_fill(header.width, header.height, || self.next_rand());
-        let mut board = crate::tile_board::TileBoard::from_header(&header, cells);
+        let cells = legaia_engine_minigames::tile_board::procedural_fill(
+            header.width,
+            header.height,
+            || self.next_rand(),
+        );
+        let mut board = legaia_engine_minigames::tile_board::TileBoard::from_header(&header, cells);
         // State 0 seats the player's cell at column 4, row 0; the actor
         // walks there after the fade-in (below).
-        board.player_col = crate::tile_board::START_COL;
-        board.player_row = crate::tile_board::START_ROW;
+        board.player_col = legaia_engine_minigames::tile_board::START_COL;
+        board.player_row = legaia_engine_minigames::tile_board::START_ROW;
 
         // Spawn one tile actor per distinct drawn cell value present on the
         // board (retail `DAT_801f35bc[value]`, slots `2..=14`): resolve the
@@ -373,18 +390,23 @@ impl World {
         // global-TMD + VDF-buffer path the `0x4C 0xD8` field allocator uses
         // (`spawn_field_actor`). The renderer repositions + draws these each
         // frame; unresolved templates still allocate a slot (empty mesh).
-        let mut present = [false; crate::tile_board::TILE_ACTOR_TABLE_LEN];
+        let mut present = [false; legaia_engine_minigames::tile_board::TILE_ACTOR_TABLE_LEN];
         for &c in &board.cells {
-            if crate::tile_board::is_drawable_cell(c) {
+            if legaia_engine_minigames::tile_board::is_drawable_cell(c) {
                 present[c as usize] = true;
             }
         }
-        let mut tile_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
-        for value in crate::tile_board::CELL_DRAW_FIRST..=crate::tile_board::CELL_DRAW_LAST {
+        let mut tile_slots = [None; legaia_engine_minigames::tile_board::TILE_ACTOR_TABLE_LEN];
+        for value in legaia_engine_minigames::tile_board::CELL_DRAW_FIRST
+            ..=legaia_engine_minigames::tile_board::CELL_DRAW_LAST
+        {
             if !present[value as usize] {
                 continue;
             }
-            let tpl = crate::tile_board::tile_template_for(header.tile_template_base, value);
+            let tpl = legaia_engine_minigames::tile_board::tile_template_for(
+                header.tile_template_base,
+                value,
+            );
             if let Some(slot) = self.spawn_field_actor(tpl as i16, tpl, value as u16, 0) {
                 tile_slots[value as usize] = Some(slot as u8);
             }
@@ -418,7 +440,7 @@ impl World {
         self.board.grid = Some(board);
         self.board.header = Some(header);
         self.board.armed = true;
-        self.board.sm = crate::tile_board::sm::FADE_IN;
+        self.board.sm = legaia_engine_minigames::tile_board::sm::FADE_IN;
         self.board.fade = 0;
         true
     }
@@ -431,14 +453,16 @@ impl World {
     /// PORT: the walk-SM board-exit teardown (`overlay_0897_801ef2b0`
     /// case 8 -> board free).
     pub(super) fn despawn_tile_actors(&mut self) {
-        for value in crate::tile_board::CELL_DRAW_FIRST..=crate::tile_board::CELL_DRAW_LAST {
+        for value in legaia_engine_minigames::tile_board::CELL_DRAW_FIRST
+            ..=legaia_engine_minigames::tile_board::CELL_DRAW_LAST
+        {
             if let Some(slot) = self.board.actor_slots[value as usize]
                 && let Some(a) = self.actors.get_mut(slot as usize)
             {
                 *a = Actor::new();
             }
         }
-        self.board.actor_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
+        self.board.actor_slots = [None; legaia_engine_minigames::tile_board::TILE_ACTOR_TABLE_LEN];
         self.board.draw_list.clear();
     }
 
@@ -467,17 +491,19 @@ impl World {
         // player stands on, and 0xE draws nothing (`0x801EFDA8`, the render
         // tail's state gate).
         let parked = match self.board.sm {
-            crate::tile_board::sm::PARK => Some(crate::tile_board::fade_exempt_value(
-                board.cell(board.player_col as i32, board.player_row as i32),
-            )),
-            crate::tile_board::sm::TEARDOWN => Some(None),
+            legaia_engine_minigames::tile_board::sm::PARK => {
+                Some(legaia_engine_minigames::tile_board::fade_exempt_value(
+                    board.cell(board.player_col as i32, board.player_row as i32),
+                ))
+            }
+            legaia_engine_minigames::tile_board::sm::TEARDOWN => Some(None),
             _ => None,
         };
         for (col, row) in board.draw_cells(header.mode_flag, header.radius) {
             let Some(cell) = board.cell(col, row) else {
                 continue;
             };
-            if !crate::tile_board::is_drawable_cell(cell) {
+            if !legaia_engine_minigames::tile_board::is_drawable_cell(cell) {
                 continue;
             }
             if let Some(keep) = parked
@@ -489,7 +515,7 @@ impl World {
                 continue;
             };
             let (world_x, world_z) = board.tile_world(col, row);
-            list.push(crate::tile_board::TileDraw {
+            list.push(legaia_engine_minigames::tile_board::TileDraw {
                 col: col as u8,
                 row: row as u8,
                 cell_value: cell,

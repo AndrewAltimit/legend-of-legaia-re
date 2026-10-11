@@ -46,12 +46,12 @@ impl LegaiaViewer {
         let ram = save
             .main_ram()
             .map_err(|e| JsValue::from_str(&format!("read main RAM: {e}")))?;
-        let pool_start_kuseg = legaia_mednafen::prim_pool::POOL_BASE_DEFAULT;
+        let pool_start_kuseg = legaia_ram_image::prim_pool::POOL_BASE_DEFAULT;
         let pool_end_kuseg = 0x80102000u32;
         let pool_lo = (pool_start_kuseg - 0x8000_0000) as usize;
         let pool_hi = (pool_end_kuseg - 0x8000_0000) as usize;
         let pool = &ram[pool_lo..pool_hi.min(ram.len())];
-        let prims = legaia_mednafen::prim_pool::decode(pool, pool_start_kuseg);
+        let prims = legaia_ram_image::prim_pool::decode(pool, pool_start_kuseg);
 
         // Build vertex array. Two triangles per quad prim. Three vertices
         // for tri prims (zero-area duplicate to keep stride uniform).
@@ -87,7 +87,7 @@ impl LegaiaViewer {
         };
         for p in &prims {
             match *p {
-                legaia_mednafen::prim_pool::Prim::PolyFt4 {
+                legaia_ram_image::prim_pool::Prim::PolyFt4 {
                     cmd,
                     color,
                     verts: v,
@@ -103,7 +103,7 @@ impl LegaiaViewer {
                         );
                     }
                 }
-                legaia_mednafen::prim_pool::Prim::PolyGt4 {
+                legaia_ram_image::prim_pool::Prim::PolyGt4 {
                     cmd,
                     colors,
                     verts: v,
@@ -119,7 +119,7 @@ impl LegaiaViewer {
                         );
                     }
                 }
-                legaia_mednafen::prim_pool::Prim::PolyFt3 {
+                legaia_ram_image::prim_pool::Prim::PolyFt3 {
                     cmd,
                     color,
                     verts: v,
@@ -140,7 +140,7 @@ impl LegaiaViewer {
                         );
                     }
                 }
-                legaia_mednafen::prim_pool::Prim::PolyGt3 {
+                legaia_ram_image::prim_pool::Prim::PolyGt3 {
                     cmd,
                     colors,
                     verts: v,
@@ -162,7 +162,7 @@ impl LegaiaViewer {
                         );
                     }
                 }
-                legaia_mednafen::prim_pool::Prim::Sprt16 {
+                legaia_ram_image::prim_pool::Prim::Sprt16 {
                     cmd,
                     color,
                     pos,
@@ -171,7 +171,7 @@ impl LegaiaViewer {
                 } => {
                     sprite_to_quad(&mut verts, cmd, color, pos, uv, clut, (16, 16));
                 }
-                legaia_mednafen::prim_pool::Prim::Sprt8 {
+                legaia_ram_image::prim_pool::Prim::Sprt8 {
                     cmd,
                     color,
                     pos,
@@ -183,7 +183,7 @@ impl LegaiaViewer {
                 // Free-size sprite (GP0 0x64): the window-chrome opcode. Its
                 // extent is a packet field rather than the opcode's, so it is
                 // the one sprite kind that needs the size passed through.
-                legaia_mednafen::prim_pool::Prim::Sprt {
+                legaia_ram_image::prim_pool::Prim::Sprt {
                     cmd,
                     color,
                     pos,
@@ -209,10 +209,10 @@ impl LegaiaViewer {
                 // them keeps this viewer's output exactly what it was when the
                 // decoder produced textured primitives only; rendering them
                 // needs an untextured path on both sides of the buffer.
-                legaia_mednafen::prim_pool::Prim::PolyF3 { .. }
-                | legaia_mednafen::prim_pool::Prim::PolyF4 { .. }
-                | legaia_mednafen::prim_pool::Prim::PolyG3 { .. }
-                | legaia_mednafen::prim_pool::Prim::PolyG4 { .. } => {}
+                legaia_ram_image::prim_pool::Prim::PolyF3 { .. }
+                | legaia_ram_image::prim_pool::Prim::PolyF4 { .. }
+                | legaia_ram_image::prim_pool::Prim::PolyG3 { .. }
+                | legaia_ram_image::prim_pool::Prim::PolyG4 { .. } => {}
             }
         }
         let vertex_count = (verts.len() / 14) as u32;
@@ -392,7 +392,7 @@ impl LegaiaViewer {
             Some(b) => b,
             None => return "[]".into(),
         };
-        let pak = match legaia_asset::init_pak::parse(bytes) {
+        let pak = match legaia_ui_formats::init_pak::parse(bytes) {
             Ok(p) => p,
             Err(_) => return "[]".into(),
         };
@@ -423,7 +423,7 @@ impl LegaiaViewer {
         let Some(bytes) = self.prot_0895_bytes() else {
             return Vec::new();
         };
-        let Ok(pak) = legaia_asset::init_pak::parse(bytes) else {
+        let Ok(pak) = legaia_ui_formats::init_pak::parse(bytes) else {
             return Vec::new();
         };
         let Some(logo) = pak.logos.get(idx as usize) else {

@@ -1,13 +1,17 @@
 //! The slot-machine session: enter, exit, tick and its sound routing.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Enter the casino slot-machine minigame on `machine`, suspending the
     /// current scene mode (restored by [`World::exit_slot_machine`]). Like
     /// the dance / fishing / pause-menu suspend contract, the interrupted
     /// field state stays intact underneath.
-    pub fn enter_slot_machine(&mut self, machine: crate::slot_machine::SlotMachine) {
+    pub fn enter_slot_machine(
+        &mut self,
+        machine: legaia_engine_minigames::slot_machine::SlotMachine,
+    ) {
         if self.mode != SceneMode::SlotMachine {
             self.minigames.slot_return_mode = self.mode;
         }
@@ -20,7 +24,9 @@ impl World {
     /// ([`crate::world::MinigameState::casino_coins`] - the retail state-100 assignment
     /// `_DAT_800845A4 = DAT_801d4114`). Returns the session so the host can
     /// read the final state. No-op when the machine isn't active.
-    pub fn exit_slot_machine(&mut self) -> Option<crate::slot_machine::SlotMachine> {
+    pub fn exit_slot_machine(
+        &mut self,
+    ) -> Option<legaia_engine_minigames::slot_machine::SlotMachine> {
         if self.mode == SceneMode::SlotMachine {
             self.mode = self.minigames.slot_return_mode;
         }
@@ -30,7 +36,7 @@ impl World {
             // Leaving mid-spin must not strand the reel motor.
             self.audio
                 .sfx_voice_stops
-                .push(crate::slot_machine::SPIN_VOICE);
+                .push(legaia_engine_minigames::slot_machine::SPIN_VOICE);
         }
         machine
     }
@@ -52,10 +58,13 @@ impl World {
     /// [`Cross`]: input::PadButton::Cross
     ///
     /// PORT: the slot overlay's per-frame driver (`FUN_801cf0d8` reel SM;
-    /// the confirmed kernels live in [`crate::slot_machine`]).
+    /// the confirmed kernels live in [`legaia_engine_minigames::slot_machine`]).
     pub(in crate::world::frame_tick) fn tick_slot_machine(&mut self) {
-        use crate::slot_machine::SlotFrameOutcome;
-        let packed = crate::slot_machine::packed_edges(self.input.pad(), self.input.pad_prev());
+        use legaia_engine_minigames::slot_machine::SlotFrameOutcome;
+        let packed = legaia_engine_minigames::slot_machine::packed_edges(
+            self.input.pad(),
+            self.input.pad_prev(),
+        );
         let Some(m) = self.minigames.slot_machine.as_mut() else {
             // Mode is SlotMachine but no session installed - drop back.
             self.mode = self.minigames.slot_return_mode;
@@ -85,7 +94,7 @@ impl World {
     /// [`World::runtime_sfx_bundle`]), its motor voice through the direct
     /// key / release queues both hosts drain.
     ///
-    /// [`SfxRingOp::WriteSlot`]: crate::world::SfxRingOp::WriteSlot
+    /// [`SfxRingOp::WriteSlot`]: legaia_engine_system::sound_state::SfxRingOp::WriteSlot
     pub(in crate::world::frame_tick) fn route_slot_sounds(&mut self) {
         let Some(m) = self.minigames.slot_machine.as_mut() else {
             return;
@@ -94,7 +103,9 @@ impl World {
         for (slot, id) in sounds.ring {
             self.audio
                 .sfx_ring_ops
-                .push(crate::world::SfxRingOp::WriteSlot(slot, id));
+                .push(legaia_engine_system::sound_state::SfxRingOp::WriteSlot(
+                    slot, id,
+                ));
         }
         self.audio.sfx_voice_keys.extend(sounds.voice_on);
         self.audio.sfx_voice_stops.extend(sounds.voice_off);

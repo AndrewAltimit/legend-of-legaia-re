@@ -33,8 +33,9 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use legaia_engine_core::scene::ProtIndex;
-use legaia_mednafen::{SaveState, ScenarioManifest, extract::ram_slice};
+use legaia_mednafen::SaveState;
 use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
+use legaia_ram_image::{ScenarioManifest, extract::ram_slice};
 
 /// `(scenario label, stager extraction PROT entry)` for the three Sim-Seru
 /// player casts whose stagers carry `0x4000` render-mode records.

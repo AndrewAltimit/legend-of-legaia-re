@@ -89,11 +89,11 @@ pub(super) fn party_hp_permille(session: &BootSession) -> u32 {
 /// then Circle back out to the field. Every step is a pad edge through the
 /// same menu sessions both play hosts drive. Returns how many items it used.
 pub(super) fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
-    use legaia_engine_core::field_menu::FieldMenuRow;
     use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
-    use legaia_engine_core::inventory_use::InventoryUseState;
-    use legaia_engine_core::items::ItemEffect;
-    use legaia_engine_core::pause_screens::PauseItemsFocus;
+    use legaia_engine_menus::field_menu::FieldMenuRow;
+    use legaia_engine_menus::inventory_use::InventoryUseState;
+    use legaia_engine_menus::items::ItemEffect;
+    use legaia_engine_menus::pause_screens::PauseItemsFocus;
     if !walking(session) || !released(session) || party_hp_permille(session) >= threshold {
         return 0;
     }
@@ -113,7 +113,7 @@ pub(super) fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize
         };
         let pad = match session.field_menu_sub.as_ref() {
             None => match menu.phase() {
-                legaia_engine_core::field_menu::FieldMenuPhase::Browsing { cursor } => {
+                legaia_engine_menus::field_menu::FieldMenuPhase::Browsing { cursor } => {
                     if party_hp_permille(session) >= threshold
                         || used >= 4
                         || used_at_entry.is_some_and(|u| u == used)
@@ -272,9 +272,9 @@ pub(super) fn unguarded_members(w: &legaia_engine_core::world::World, element: u
 /// (`FUN_801E5A08`'s port), so the bag gives up the item and takes back the
 /// one it replaced. Returns how many members it equipped.
 pub(super) fn pad_equip_guard(session: &mut BootSession, element: u8) -> usize {
-    use legaia_engine_core::equip_session::{EquipState, browse_row_for_slot};
-    use legaia_engine_core::field_menu::{FieldMenuPhase, FieldMenuRow};
     use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
+    use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
     let Some(item) = guard_item_for(&session.host.world, element) else {
         return 0;
     };
@@ -401,10 +401,10 @@ pub(super) fn pad_equip_guard(session: &mut BootSession, element: u8) -> usize {
 /// all, whatever the rand stream deals (see `field-menu.md`, the Incense
 /// route `FUN_801D8D94`). Returns whether one was used.
 pub(super) fn pad_field_repel(session: &mut BootSession, threshold: u32) -> bool {
-    use legaia_engine_core::field_menu::FieldMenuRow;
     use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
-    use legaia_engine_core::inventory_use::InventoryUseState;
-    use legaia_engine_core::pause_screens::{INCENSE_ITEM_ID, PauseItemsFocus};
+    use legaia_engine_menus::field_menu::FieldMenuRow;
+    use legaia_engine_menus::inventory_use::InventoryUseState;
+    use legaia_engine_menus::pause_screens::{INCENSE_ITEM_ID, PauseItemsFocus};
     let w = &session.host.world;
     if !walking(session)
         || !released(session)
@@ -431,7 +431,7 @@ pub(super) fn pad_field_repel(session: &mut BootSession, threshold: u32) -> bool
         };
         let pad = match session.field_menu_sub.as_ref() {
             None => match menu.phase() {
-                legaia_engine_core::field_menu::FieldMenuPhase::Browsing { cursor } => {
+                legaia_engine_menus::field_menu::FieldMenuPhase::Browsing { cursor } => {
                     if used {
                         PadButton::Circle.mask()
                     } else if cursor != items_row {
@@ -533,13 +533,13 @@ thread_local! {
 /// per-party-slot HP/MP refill (`FieldHost::op4c_n8_sub2_restore_party_slot`)
 /// every bed and inn stay ends in - at a clean decode boundary?
 pub(super) fn record_restores(
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     part: usize,
     rec: usize,
 ) -> bool {
-    use legaia_asset::field_disasm::{OpKey, clean_hit_offsets};
-    use legaia_engine_core::man_field_scripts::partition_record_span;
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{OpKey, clean_hit_offsets};
     let Some((start, pc0, len)) = partition_record_span(mf, man, part, rec) else {
         return false;
     };
@@ -564,7 +564,7 @@ pub(super) fn record_restores(
 /// dealt streams (`LEGAIA_FGL_RNG_SEED`), against 3 of 21 walking straight
 /// out to `map01`.
 pub(super) fn pad_rest(session: &mut BootSession) -> Result<Option<String>, String> {
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
     if session.host.world.mode != SceneMode::Field
         || session.host.world.scene_can_roll_encounters()
         || !walking(session)

@@ -257,7 +257,8 @@ impl Renderer {
                 flags: [0.0; 4],
                 // Dynamic lighting off (w = 0) = the retail-identical path.
                 light_dir: [0.0; 4],
-                light_color: crate::scene_lighting::LightingMood::DAY.uniforms(false)[1],
+                light_color: legaia_render_kernels::scene_lighting::LightingMood::DAY
+                    .uniforms(false)[1],
                 cue_ramp: [0.0; 4],
                 palette: [0.0; 4],
                 model_rows: MODEL_ROWS_IDENTITY,
@@ -422,7 +423,7 @@ impl Renderer {
         // The flat reference is zero on every mesh but the continent ground,
         // whose vertices carry their cell's four corners so the overworld
         // draws each cell at its ordering-table bucket's depth
-        // (`legaia_engine_core::overworld_draw_order`).
+        // (`legaia_engine_field::overworld_draw_order`).
         let vram_vertex_layout = wgpu::VertexBufferLayout {
             array_stride: crate::renderer::VRAM_VERTEX_STRIDE,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -623,7 +624,8 @@ impl Renderer {
             size: wgpu::Extent3d {
                 width: SHADOW_MAP_DIM,
                 height: SHADOW_MAP_DIM,
-                depth_or_array_layers: crate::scene_lights::MAX_SCENE_LIGHTS as u32,
+                depth_or_array_layers: legaia_render_kernels::scene_lighting::MAX_SCENE_LIGHTS
+                    as u32,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -637,7 +639,8 @@ impl Renderer {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
-        let shadow_layer_views: Vec<wgpu::TextureView> = (0..crate::scene_lights::MAX_SCENE_LIGHTS)
+        let shadow_layer_views: Vec<wgpu::TextureView> = (0
+            ..legaia_render_kernels::scene_lighting::MAX_SCENE_LIGHTS)
             .map(|i| {
                 shadow_tex.create_view(&wgpu::TextureViewDescriptor {
                     label: Some("scene light shadow layer view"),
@@ -1388,13 +1391,13 @@ impl Renderer {
                 format: wgpu::VertexFormat::Uint32,
             },
             wgpu::VertexAttribute {
-                offset: crate::screen_overlay::SCREEN_VERTEX_OFF_DEPTH,
+                offset: legaia_render_kernels::screen_prim::SCREEN_VERTEX_OFF_DEPTH,
                 shader_location: 5,
                 format: wgpu::VertexFormat::Float32,
             },
         ];
         let screen_overlay_vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: crate::screen_overlay::SCREEN_VERTEX_STRIDE,
+            array_stride: legaia_render_kernels::screen_prim::SCREEN_VERTEX_STRIDE,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &screen_overlay_attributes,
         };
@@ -1446,7 +1449,9 @@ impl Renderer {
         let initial_overlay_quads: u32 = 32;
         let screen_overlay_vbuf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("screen overlay vertex buffer"),
-            size: (initial_overlay_quads as u64) * 4 * crate::screen_overlay::SCREEN_VERTEX_STRIDE,
+            size: (initial_overlay_quads as u64)
+                * 4
+                * legaia_render_kernels::screen_prim::SCREEN_VERTEX_STRIDE,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1459,7 +1464,7 @@ impl Renderer {
 
         let viewport_fill_vbuf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scene viewport fill vertex buffer"),
-            size: 4 * crate::screen_overlay::SCREEN_VERTEX_STRIDE,
+            size: 4 * legaia_render_kernels::screen_prim::SCREEN_VERTEX_STRIDE,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1535,7 +1540,9 @@ impl Renderer {
             // Shadow sub-toggle defaults ON - it only bites while dynamic
             // lighting is enabled and lights are staged.
             dyn_shadows: std::cell::Cell::new(true),
-            lighting_mood: std::cell::Cell::new(crate::scene_lighting::LightingMood::DAY),
+            lighting_mood: std::cell::Cell::new(
+                legaia_render_kernels::scene_lighting::LightingMood::DAY,
+            ),
             glow_sprites: std::cell::RefCell::new(Vec::new()),
             // Camera-occlusion fade off by default: parity oracles and every
             // non-play-window consumer stay on the faithful render; the play

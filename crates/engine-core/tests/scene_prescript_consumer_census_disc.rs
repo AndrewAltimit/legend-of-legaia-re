@@ -25,7 +25,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::scene_stager_installs;
+use legaia_engine_field::man_field_scripts::scene_stager_installs;
 
 fn extracted_prot() -> Option<PathBuf> {
     for p in [
@@ -42,7 +42,7 @@ fn extracted_prot() -> Option<PathBuf> {
 }
 
 fn load_man_from_scene(bytes: &[u8]) -> Option<Vec<u8>> {
-    let table = legaia_asset::scene_asset_table::detect(bytes)?;
+    let table = legaia_scene_formats::scene_asset_table::detect(bytes)?;
     let man = table
         .descriptors
         .iter()
@@ -59,8 +59,8 @@ fn load_man_from_scene(bytes: &[u8]) -> Option<Vec<u8>> {
 /// The prescript record ranges for a scene entry file, when it carries one
 /// of the two container shapes.
 fn prescript_records(bytes: &[u8]) -> Option<Vec<(usize, usize)>> {
-    legaia_asset::scene_event_scripts::record_ranges(bytes)
-        .or_else(|| legaia_asset::scene_scripted_asset_table::record_ranges(bytes))
+    legaia_scene_formats::scene_event_scripts::record_ranges(bytes)
+        .or_else(|| legaia_scene_formats::scene_scripted_asset_table::record_ranges(bytes))
         .filter(|r| !r.is_empty())
 }
 
@@ -143,7 +143,7 @@ fn prescript_stager_ids_census() {
     let mut record0_scenes = 0usize;
 
     for (label, records, man) in &collect_scenes(&prot) {
-        let Ok(mf) = legaia_asset::man_section::parse(man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(man) else {
             continue;
         };
         scenes += 1;
@@ -215,7 +215,8 @@ fn prescript_stager_ids_census() {
 /// bytes - installer id `k` = prescript record `k`.
 #[test]
 fn stager_table_ram_relocation_matches_the_file_bundle() {
-    use legaia_mednafen::{SaveState, ScenarioManifest};
+    use legaia_mednafen::SaveState;
+    use legaia_ram_image::ScenarioManifest;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

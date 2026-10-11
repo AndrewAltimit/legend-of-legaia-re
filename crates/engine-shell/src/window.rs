@@ -6,19 +6,22 @@ use crate::BootSession;
 use crate::replay::{PadEvent, ReplayFile, ReplayMeta};
 use anyhow::{Context, Result};
 use glam::{Mat4, Vec3, Vec4};
+use legaia_anm::AnimPlayer;
 use legaia_engine_audio::AudioSink;
 use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::scene::Scene;
 use legaia_engine_core::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
-use legaia_engine_core::world::{AnimPlayer, SceneMode};
+use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_render::{
-    CaptureImage, ColorSceneDraw, HudPopupView, HudSlotMeta, HudSlotView, RenderTarget,
-    Scene as RenderScene, SceneDraw, TextDraw, TextOverlay, UploadedColorMesh, UploadedFontAtlas,
-    UploadedVram, UploadedVramMesh, battle_hud_draws_for, encounter_banner_draws_for,
-    text_draws_for,
+    CaptureImage, ColorSceneDraw, RenderTarget, Scene as RenderScene, SceneDraw, TextOverlay,
+    UploadedColorMesh, UploadedFontAtlas, UploadedVram, UploadedVramMesh,
     window::{EngineWindow, orbit_camera_mvp},
+};
+use legaia_engine_ui::{
+    HudPopupView, HudSlotMeta, HudSlotView, TextDraw, battle_hud_draws_for,
+    encounter_banner_draws_for, text_draws_for,
 };
 use legaia_font::Font;
 use std::path::Path;
@@ -85,7 +88,7 @@ pub(crate) use geometry::{
 // The procedural battle ground grid lives in `legaia-asset` so all three
 // hosts share one implementation (the native window, the asset-viewer and
 // the browser play page) rather than forking the kernel per host.
-pub(crate) use legaia_asset::battle_backdrop::build_ground_grid_rgbc as build_battle_ground_grid;
+pub(crate) use legaia_scene_formats::battle_backdrop::build_ground_grid_rgbc as build_battle_ground_grid;
 pub use run::cmd_play_window;
 // These two stay window-tree-private (their signatures reference the
 // `pub(super)` record types); re-exported only so the sibling submodules
@@ -115,7 +118,7 @@ impl PlayWindowApp {
 //
 // The field-menu text builders lay glyphs out in stage pixels; the window
 // rects come from the menu overlay's **window-descriptor table** (PROT
-// 0899 @0x15F20, VA 0x801E4738 - `legaia_asset::menu_windows`), parsed
+// 0899 @0x15F20, VA 0x801E4738 - `legaia_game_tables::menu_windows`), parsed
 // from the user's disc at boot into `PlayWindowApp::menu_window_table`.
 // Both the resolver and its pinned fallback live in
 // `legaia_engine_ui::pause_menu` (`MenuRects` / `MENU_WINDOW_FALLBACK`),
@@ -139,7 +142,7 @@ impl PlayWindowApp {
     /// Content rect for a menu window id: the disc-parsed descriptor when
     /// available, else the shared pinned mirror.
     fn menu_window_rect(&self, id: usize) -> (i32, i32, i32, i32) {
-        legaia_engine_render::pause_menu::MenuRects::new(self.menu_window_table.as_ref()).rect(id)
+        legaia_engine_ui::pause_menu::MenuRects::new(self.menu_window_table.as_ref()).rect(id)
     }
 
     /// Advance `World::clock.play_time_seconds` off the window's wall clock,
@@ -182,7 +185,7 @@ impl PlayWindowApp {
         if let Some(audio) = self.session.audio.as_ref() {
             audio.set_mono(matches!(
                 self.options_state.audio,
-                legaia_engine_core::options::AudioMode::Mono
+                legaia_engine_menus::option_values::AudioMode::Mono
             ));
             // Master mute (engine-only knob; `F2` toggles it live). The
             // mixer gate zeroes the output while the sequencer / SPU keep
@@ -202,7 +205,7 @@ impl PlayWindowApp {
         &self,
         popup: &legaia_engine_core::options::OptionsPopup,
     ) -> (i32, i32, i32, i32) {
-        use legaia_asset::menu_windows::window_ids;
+        use legaia_game_tables::menu_windows::window_ids;
         let (px, _, pw, _) = self.menu_window_rect(window_ids::OPTIONS_POPUP);
         let (_, sy, _, _) = self.menu_window_rect(window_ids::OPTIONS_MAIN);
         legaia_engine_core::options::options_popup_content_rect(
@@ -246,8 +249,8 @@ mod battle_camera_tests {
                 return None;
             }
             Some((
-                256.0 * e[0] / ez + legaia_engine_vm::battle_cam_script::GTE_OFX,
-                256.0 * (e[1] + 1280.0) / ez + legaia_engine_vm::battle_cam_script::GTE_OFY,
+                256.0 * e[0] / ez + legaia_engine_battle_vm::battle_cam_script::GTE_OFX,
+                256.0 * (e[1] + 1280.0) / ez + legaia_engine_battle_vm::battle_cam_script::GTE_OFY,
             ))
         }
         // Sample several world points and orbit angles (4:3 so aspect_fix == 1).

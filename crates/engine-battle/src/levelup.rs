@@ -14,7 +14,7 @@
 //! `FUN_8004E568` at `0x8004F34C`) - the running sum to the current level is
 //! scaled `(sum × 9_999_999) / 0x140FE` for `level < 0x11` (else `sum × 0x79`)
 //! and compared `≤ record cumulative XP` (`+0x0`). The same curve is parsed
-//! off the disc by `legaia_asset::level_up_tables::xp_thresholds_from_scus`
+//! off the disc by `legaia_game_tables::level_up_tables::xp_thresholds_from_scus`
 //! and **installed at boot** by `legaia_engine_shell::BootSession` (which
 //! reads the user's `SCUS_942.54`) over [`LevelUpTracker::xp_table`] - a
 //! byte-identical live cross-validation of the derived constants. Slots 1/2

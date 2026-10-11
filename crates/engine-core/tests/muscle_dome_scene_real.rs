@@ -1,5 +1,5 @@
 //! Disc-gated: the Muscle Dome's 3D arena surface
-//! ([`legaia_engine_core::muscle_dome_scene`]) over the real disc.
+//! ([`legaia_engine_minigame_scenes::muscle_dome_scene`]) over the real disc.
 //!
 //! Seats the first rung of the course ladder through the same `read_prot`
 //! closure the hosts pass, and asserts structure only: the fighter, the
@@ -9,9 +9,9 @@
 //! still while the seated pair does. No Sony bytes are asserted. Skips +
 //! passes when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_engine_core::muscle_dome::{MuscleCard, MuscleDomeSession};
-use legaia_engine_core::muscle_dome_scene::MuscleDomeSurface;
 use legaia_engine_core::scene::SceneHost;
+use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession};
+use legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface;
 
 fn project(vp: &[f32; 16], p: [f32; 3]) -> Option<[f32; 2]> {
     let c = |r: usize| vp[r] * p[0] + vp[4 + r] * p[1] + vp[8 + r] * p[2] + vp[12 + r];

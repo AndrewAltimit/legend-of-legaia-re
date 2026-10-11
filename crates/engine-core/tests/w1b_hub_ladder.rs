@@ -42,15 +42,16 @@
 //! Disc-free: every table this needs is committed as a constant, and
 //! `w1b_hub_tables_disc.rs` is what pins those constants to the disc.
 
-use legaia_engine_core::actor_handler::ActorHandler;
 use legaia_engine_core::field_submode_screen::{
     SUBMODE_ACCEPT_MASK, SUBMODE_BACK_MASK, slot_for_op49_sub_op,
 };
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_field::actor_handler::ActorHandler;
 use legaia_engine_field::submode_hub_actors::{
     self as hub, GOLD_PER_COIN, HubAction, HubDraw, HubPainter, PAD_CURSOR_UP, PICK_ACCEPT, slot,
     window,
 };
+use legaia_engine_mode::mode::SceneMode;
 
 /// A field world with the submode driver the MAN loader spawns, in the mode
 /// whose arm steps the field VM.
@@ -79,7 +80,7 @@ fn op49_script(sub_op: u8, entries: [u8; 3]) -> Vec<u8> {
 /// PSX word, so it is converted back to what a host would send.
 fn step(w: &mut World, mask: u16) {
     w.input
-        .set_pad(legaia_engine_core::dev_menu::retail_packed(mask));
+        .set_pad(legaia_engine_system::pad::retail_packed(mask));
     let _ = w.tick();
 }
 

@@ -4,6 +4,7 @@
 //! with the fold on the `0x29` exit.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 mod band_flow;
 mod fight_kind_gates;
@@ -31,7 +32,7 @@ fn seru_cast_world() -> World {
     }
     world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
-    world.tables.spell_catalog = crate::retail_magic::retail_seru_magic_catalog();
+    world.tables.spell_catalog = legaia_engine_battle::retail_magic::retail_seru_magic_catalog();
     world.actors[0].active = true;
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
@@ -58,7 +59,7 @@ fn seru_cast_world() -> World {
 }
 
 fn confirm_cast(world: &mut World) {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     // Cross on the spell row opens the target cursor; Cross again confirms.
     world.set_pad(0);
     world.set_pad(PadButton::Cross.mask());
@@ -95,7 +96,7 @@ fn module_code_world() -> World {
         world.actors[i].battle.hp = 100;
         world.actors[i].battle.max_hp = 100;
         world.actors[i].battle.liveness = 1;
-        world.actors[i].battle.anim_rate = legaia_engine_vm::battle_anim_rate::AnimRate(8);
+        world.actors[i].battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(8);
     }
     world.battle_ctx.active_actor = 0;
     world
@@ -138,7 +139,7 @@ fn drive_module_through(world: &mut World, spell_id: u8, last: u8) {
 
 /// Run PROT 0907's phase chain far enough that the fork arm has executed.
 fn run_nighto_to_the_fork(world: &mut World) {
-    use legaia_engine_vm::cast_seru_ticks_a::NIGHTO_CONFUSE_ARM;
+    use legaia_engine_battle_vm::seru_magic_ticks::NIGHTO_CONFUSE_ARM;
     for _ in 0..=usize::from(NIGHTO_CONFUSE_ARM) + 2 {
         if world.run_cast_module_code(0x85, 0).is_none() {
             break;

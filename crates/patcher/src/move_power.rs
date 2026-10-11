@@ -2,7 +2,7 @@
 //! the battle-action overlay's move-power table.
 //!
 //! The table (`0x801F4F5C`, PROT entry 898 at file offset
-//! [`legaia_asset::move_power::MOVE_POWER_TABLE_FILE_OFFSET`]) holds 44
+//! [`legaia_game_tables::move_power::MOVE_POWER_TABLE_FILE_OFFSET`]) holds 44
 //! 26-byte records; the damage kernel reads each record's `+0x00` halfword as
 //! the move's **power** (the `rand % ((power >> shift) + 1)` roll modulus). This
 //! is the *special-attack* power space - enemy specials and Seru-magic, NOT

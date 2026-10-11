@@ -17,7 +17,7 @@ impl PlayWindowApp {
     /// bundle any entry yields.
     pub(in crate::window) fn find_scene_anm_bundle(
         &self,
-    ) -> Option<legaia_asset::player_anm::PlayerAnmBundle> {
+    ) -> Option<legaia_actor_formats::player_anm::PlayerAnmBundle> {
         self.session
             .host
             .scene

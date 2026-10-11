@@ -16,9 +16,10 @@
 //! threshold table in the retail shape, and the vanilla monster tables. Runs
 //! in CI unconditionally.
 
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 fn build_world() -> World {
     let mut w = World::new();
@@ -44,7 +45,7 @@ fn build_world() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("magic_xp_ladder_test");
@@ -101,7 +102,7 @@ fn press(w: &mut World, b: PadButton) {
 fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     let mut w = build_world();
     // The port's Seru-magic catalog: id 0x81 = Gimard, a damage spell.
-    w.tables.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
+    w.tables.spell_catalog = legaia_engine_battle::retail_magic::retail_seru_magic_catalog();
     // The retail-shaped threshold curve (strictly ascending, level 1 needs
     // the total to EXCEED entry [0]).
     w.tables.magic_xp_thresholds = Some([17, 50, 92, 144, 208, 288, 392, 536]);
@@ -139,7 +140,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     w.battle.no_escape = true;
 
     let rec_xp =
-        |w: &World| legaia_engine_core::magic_xp::spell_xp(&w.party.roster.members[0], 0usize);
+        |w: &World| legaia_engine_battle::magic_xp::spell_xp(&w.party.roster.members[0], 0usize);
     assert_eq!(rec_xp(&w), 0);
 
     let mut leveled: Vec<(u8, u8, u8)> = Vec::new();
@@ -163,7 +164,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         // one opens straight on the ring - dismiss the prompt when it is up.
         if matches!(
             w.battle.command.as_ref().map(|s| &s.phase),
-            Some(legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. })
+            Some(legaia_engine_menus::battle_input::CommandPhase::RoundPrompt { .. })
         ) {
             press(&mut w, PadButton::Cross); // Begin -> the command ring
         }
@@ -189,7 +190,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         for _ in 0..4 {
             match w.battle.command.as_ref().map(|c| &c.phase) {
                 None => break,
-                Some(legaia_engine_core::battle_input::CommandPhase::CommitConfirm { .. }) => {
+                Some(legaia_engine_menus::battle_input::CommandPhase::CommitConfirm { .. }) => {
                     press(&mut w, PadButton::Cross) // Begin
                 }
                 Some(_) => press(&mut w, PadButton::Down), // ring: Spirit arm
@@ -271,7 +272,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     assert!(
         banner
             .text
-            .ends_with(&legaia_engine_core::magic_xp::magic_level_increased_message(&name)),
+            .ends_with(&legaia_engine_battle::magic_xp::magic_level_increased_message(&name)),
         "{:?}",
         banner.text
     );

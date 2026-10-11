@@ -42,13 +42,15 @@
 //!
 //! Skips and passes without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_asset::man_section;
-use legaia_engine_core::man_field_scripts::{partition_record_span, scene_man_carriers};
+use legaia_engine_core::man_field_scripts::scene_man_carriers;
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::partition_record_span;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_vm::field::{
     ActorSearchResult, CameraParam, FieldCtx, FieldHost, StepResult, step,
 };
+use legaia_scene_formats::man_section;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -403,7 +405,7 @@ fn exec_census(corpus: &[Record], flags_set: bool) -> Census {
             let pc = world.field_pc;
             let Some(res) = world.step_field() else { break };
             for ev in world.drain_field_events() {
-                let legaia_engine_core::field_events::FieldEvent::CameraConfigure {
+                let legaia_engine_field::field_events::FieldEvent::CameraConfigure {
                     params, ..
                 } = ev
                 else {

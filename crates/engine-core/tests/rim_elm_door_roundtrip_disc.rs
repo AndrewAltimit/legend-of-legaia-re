@@ -33,10 +33,10 @@
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md
 //! convention).
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::man_field_scripts::WalkTouchEvent;
 use legaia_engine_core::scene::SceneHost;
 use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::WalkTouchEvent;
+use legaia_engine_system::input::PadButton;
 use std::path::PathBuf;
 
 /// The three Rim Elm story-state scenes (CDNAME blocks at PROT 3 / 12 / 21).

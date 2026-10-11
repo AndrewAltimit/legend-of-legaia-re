@@ -39,11 +39,11 @@ const CROSS: u16 = 0x4000;
 /// with no window up (retail's per-vsync capture; the overlay carries
 /// nothing but the fade prim meanwhile), then the screen's windows slide in
 /// from their park edges over
-/// [`SHOP_SLIDE_FRAMES`](legaia_engine_core::shop::SHOP_SLIDE_FRAMES). The
+/// [`SHOP_SLIDE_FRAMES`](legaia_engine_menus::shop::SHOP_SLIDE_FRAMES). The
 /// same settle lets a screen change's incoming windows land.
 fn settle(rt: &mut LegaiaRuntime) {
     let frames = legaia_engine_core::menu_runtime::SHOP_FADE_FRAMES as usize
-        + usize::from(legaia_engine_core::shop::SHOP_SLIDE_FRAMES)
+        + usize::from(legaia_engine_menus::shop::SHOP_SLIDE_FRAMES)
         + 2;
     for _ in 0..frames {
         rt.play_shop_input(0);
@@ -140,16 +140,16 @@ fn shop_opens_renders_and_releases_the_field_vm() {
 
 /// Re-parse the menu-overlay window-descriptor table straight off the disc, so
 /// the rect assertions below have a source independent of the runtime.
-fn disc_window_table() -> Option<legaia_asset::menu_windows::MenuWindowTable> {
+fn disc_window_table() -> Option<legaia_game_tables::menu_windows::MenuWindowTable> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;
     let bytes = std::fs::read(&disc).ok()?;
     let prot = legaia_web_viewer::disc::extract_prot_dat(&bytes)?;
     let entries = legaia_web_viewer::disc::parse_prot_toc(&prot)?;
-    let idx = legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32;
+    let idx = legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32;
     let e = entries.iter().find(|x| x.index == idx)?;
     let off = e.byte_offset as usize;
     let end = (e.byte_offset + e.size_bytes) as usize;
-    legaia_asset::menu_windows::parse(prot.get(off..end)?).ok()
+    legaia_game_tables::menu_windows::parse(prot.get(off..end)?).ok()
 }
 
 /// The shop's retail descriptor windows must carry content **inside their own
@@ -327,7 +327,7 @@ fn the_seru_trade_screens_draw_on_the_browser_host() {
     rt.play_shop_input(CROSS);
     rt.play_shop_input(0);
 
-    let trade = legaia_engine_core::menu_runtime::MenuState::ShopTrade.as_byte();
+    let trade = legaia_engine_menus::menu::MenuState::ShopTrade.as_byte();
     assert_eq!(
         rt.debug_menu_state_byte(),
         trade,

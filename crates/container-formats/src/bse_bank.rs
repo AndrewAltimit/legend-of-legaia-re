@@ -111,7 +111,7 @@
 //! `0xDC(gp[0x678])` - byte `+4` of row 27 - and enqueues cue `0x21B`
 //! (`0x200 + 27`). So the authored category is a **default** and a live cue's
 //! VAB slot is chosen by the actor that fired it. Port of the router:
-//! `legaia_engine_core::sfx_cue`.
+//! `legaia_engine_battle::sfx_cue`.
 //!
 //! ### The two carriers
 //!

@@ -14,7 +14,7 @@
 mod sub15_record {
     /// `0x6BC` printed - the 64-slot accessory-passive ("Goods") ability
     /// bitfield, the same field
-    /// `legaia_engine_core::accessory_passives` indexes.
+    /// `legaia_engine_battle::accessory_passives` indexes.
     pub const ABILITY_BITS: usize = 0x0F4;
     /// `0x5D0` printed - a word array the row swap exchanges, 4-byte stride.
     pub const ROW_WORDS: usize = 0x008;

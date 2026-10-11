@@ -11,9 +11,10 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` / extracted assets are missing
 //! (CLAUDE.md disc-gated convention).
 
-use legaia_engine_core::man_field_scripts::{FlagCensusSite, system_flag_census};
+use legaia_engine_core::man_field_scripts::system_flag_census;
 use legaia_engine_core::scene::ProtIndex;
-use legaia_engine_vm::field_disasm::FlagKind;
+use legaia_engine_field::man_field_scripts::FlagCensusSite;
+use legaia_scene_formats::field_disasm::FlagKind;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 

@@ -62,7 +62,7 @@ impl PlayWindowApp {
             return;
         }
         let width = match world.cutscene.text_balloon.as_ref() {
-            Some(b) => legaia_engine_render::text_balloon_text_width(&self.font, &b.text),
+            Some(b) => legaia_engine_ui::text_balloon_text_width(&self.font, &b.text),
             None => return,
         };
         world.commit_text_balloon_width(width);
@@ -83,10 +83,10 @@ impl PlayWindowApp {
                 })
                 .collect()
         };
-        let from_panel = |panel: &legaia_engine_core::dialog::OwnedDialogPanel,
+        let from_panel = |panel: &legaia_engine_dialog::dialog::OwnedDialogPanel,
                           require_text: bool|
          -> Option<DialogSnapshot> {
-            let page = legaia_engine_render::dialog_page_string(&panel.page_bytes());
+            let page = legaia_engine_ui::dialog_page_string(&panel.page_bytes());
             if require_text && page.is_empty() {
                 return None;
             }
@@ -141,7 +141,7 @@ impl PlayWindowApp {
     ///   Retail anchors the reading box at the TOP of the stage - with
     ///   or without an option picker.
     /// - Picker box: the engine's slide rect
-    ///   ([`legaia_engine_core::dialog::OwnedDialogPanel::picker_rect`]) -
+    ///   ([`legaia_engine_dialog::dialog::OwnedDialogPanel::picker_rect`]) -
     ///   the box on its way in from off screen, then at rest: `0x2A` at the
     ///   top right `(0xD8, 0x4A, 0x58, 0x1A)`, the N-option lists at
     ///   `(0x26, 0x94 + ((4-n)*0xF)/2, 0xF4, 0x38 - (4-n)*0xF)`. `None`
@@ -155,7 +155,7 @@ impl PlayWindowApp {
         // (`_DAT_801F2740 = 3` in both box-init arms) regardless of how
         // much text has typed in; only over-long simplified pages grow
         // it to a 4th row.
-        let lines = legaia_engine_render::dialog_reading_box_lines(&snap.page, snap.box_rows);
+        let lines = legaia_engine_ui::dialog_reading_box_lines(&snap.page, snap.box_rows);
         let main_w = 0xF4;
         let main_h = lines * 0xF - 3;
         let picker = if snap.options.is_empty() {
@@ -179,7 +179,7 @@ impl PlayWindowApp {
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
+    ) -> Vec<legaia_engine_ui::SpriteDraw> {
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
@@ -192,7 +192,7 @@ impl PlayWindowApp {
         // the reading box. Drawn whether or not a reading box is also up -
         // retail's balloon is its own actor and outlives any dialog
         // engagement that spawned it.
-        let mut out: Vec<legaia_engine_render::SpriteDraw> = Vec::new();
+        let mut out: Vec<legaia_engine_ui::SpriteDraw> = Vec::new();
         if self.session.host.world.text_balloon_drawing().is_some()
             && let Some(rect) = self
                 .session
@@ -203,7 +203,7 @@ impl PlayWindowApp {
                 .as_ref()
                 .map(|b| b.frame_rect())
         {
-            out.extend(legaia_engine_render::text_balloon_chrome_draws_for(
+            out.extend(legaia_engine_ui::text_balloon_chrome_draws_for(
                 &assets.rects,
                 rect,
                 stage_origin,
@@ -213,7 +213,7 @@ impl PlayWindowApp {
         if let Some(lay) = self.tile_board_prompt_layout()
             && let Some(cursor) = self.session.host.world.tile_board_prompt_cursor()
         {
-            out.extend(legaia_engine_render::tile_board_prompt_sprites_for(
+            out.extend(legaia_engine_ui::tile_board_prompt_sprites_for(
                 &assets.rects,
                 &lay,
                 cursor,
@@ -222,7 +222,7 @@ impl PlayWindowApp {
             ));
         }
         if self.session.host.world.incense_notice_shown() {
-            out.extend(legaia_engine_render::incense_notice_sprites_for(
+            out.extend(legaia_engine_ui::incense_notice_sprites_for(
                 &assets.rects,
                 legaia_engine_core::incense_notice::notice_frame_rect(),
                 stage_origin,
@@ -233,14 +233,14 @@ impl PlayWindowApp {
             return out;
         };
         let lay = Self::dialog_stage_layout(&snap);
-        out.extend(legaia_engine_render::dialog_window_chrome_draws_for(
+        out.extend(legaia_engine_ui::dialog_window_chrome_draws_for(
             &assets.rects,
             lay.main,
             stage_origin,
             stage_scale,
         ));
         if let Some(prect) = lay.picker {
-            out.extend(legaia_engine_render::dialog_window_chrome_draws_for(
+            out.extend(legaia_engine_ui::dialog_window_chrome_draws_for(
                 &assets.rects,
                 prect,
                 stage_origin,
@@ -250,7 +250,7 @@ impl PlayWindowApp {
             // (FUN_8002B994 kind 0 at box_x-6, box_y + cursor*0xF), drawn
             // only once the slide rests (count 0).
             if snap.picker_hand {
-                out.push(legaia_engine_render::dialog_option_hand_sprite(
+                out.push(legaia_engine_ui::dialog_option_hand_sprite(
                     &assets.rects,
                     (prect.0 + snap.hand_bob, prect.1),
                     snap.cursor,
@@ -261,8 +261,8 @@ impl PlayWindowApp {
         } else if let Some(frame) = snap.advance_icon {
             // The two-frame page mark at the lower-right rim while the
             // pager waits for confirm (FUN_8002B994 kind 1).
-            out.push(legaia_engine_render::dialog_page_mark_sprite(
-                legaia_engine_core::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON
+            out.push(legaia_engine_ui::dialog_page_mark_sprite(
+                legaia_engine_menus::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON
                     [usize::from(frame) & 1],
                 lay.main,
                 stage_origin,

@@ -4,7 +4,7 @@
 //! A vanilla New Game seeds the party at level 1. The seed routine `FUN_800560B4`
 //! initialises these progression fields per roster record (offsets relative to the
 //! `0x414`-byte record at `0x80084708 + n*0x414`, pinned from live captures + the
-//! cheat database - see [`legaia_asset::new_game`]):
+//! cheat database - see [`legaia_game_tables::new_game`]):
 //!
 //! - **`+0x130`** - the **displayed combat level**, read directly (it is *not*
 //!   re-derived from cumulative experience at a New Game - confirmed live: a record
@@ -12,12 +12,12 @@
 //!   high byte `+0x131` is the magic-rank counter. `FUN_800560B4`'s **record-init
 //!   loop** stamps `+0x130 = 1` / `+0x131 = 1` for *every* party record.
 //! - **stats** - eight `u16`s copied from the per-record starting-party template
-//!   ([`legaia_asset::new_game::PARTY_TEMPLATE_VA`], level-1 values) into each live
+//!   ([`legaia_game_tables::new_game::PARTY_TEMPLATE_VA`], level-1 values) into each live
 //!   record by that same loop.
 //! - **`+0x0`** - current cumulative experience (the "Max Exp" cheat target), left
 //!   `0` at a New Game; **`+0x4`** - the *next-level* XP threshold, seeded per
 //!   character to its level-1→2 value (the literal at
-//!   [`legaia_asset::new_game::STARTING_XP_SEED_VA`]).
+//!   [`legaia_game_tables::new_game::STARTING_XP_SEED_VA`]).
 //!
 //! Because the loop stamps `+0x130` for all four roster slots, the randomizer makes
 //! the whole *starting roster* coherent at level `N` with same-size in-place
@@ -32,7 +32,7 @@
 //! 2. **Stats** - overwrite each growth-capable slot's eight `u16` template stats
 //!    with that character's level-`N` values, accumulating the deterministic
 //!    (jitter-free) per-level growth gains from `FUN_801E9504`'s curves
-//!    ([`legaia_asset::level_up_tables`]) on top of the level-1 template. The growth
+//!    ([`legaia_game_tables::level_up_tables`]) on top of the level-1 template. The growth
 //!    table covers [`GROWTH_CHAR_COUNT`] characters (Vahn / Noa / Gala); the 4th
 //!    template slot (Terra) has no growth curve, so it keeps its base template stats
 //!    (Terra is a scripted guest who re-scales on her late join, so this is moot).
@@ -40,11 +40,11 @@
 //!    an in-band level-`N` value (the midpoint of `reach(N)..reach(N+1)`) and its
 //!    `+0x4` to `reach(N+1)`, so every character's "exp / next" status readout and
 //!    level-up progression are coherent - not just the lead's. The threshold rides in
-//!    a single `$v0` (the [`legaia_asset::new_game::STARTING_XP_SEED_VA`] literal) that
+//!    a single `$v0` (the [`legaia_game_tables::new_game::STARTING_XP_SEED_VA`] literal) that
 //!    the seed routine stores to all three `+0x4` cells; the randomizer drops the two
-//!    intervening per-character reloads ([`legaia_asset::new_game::CURRENT_XP_STORE_VA`]
-//!    / [`legaia_asset::new_game::NOA_XP_STORE_VA`]) and the redundant `lui` at
-//!    [`legaia_asset::new_game::GALA_XP_STORE_VA`], repurposing those three slots as
+//!    intervening per-character reloads ([`legaia_game_tables::new_game::CURRENT_XP_STORE_VA`]
+//!    / [`legaia_game_tables::new_game::NOA_XP_STORE_VA`]) and the redundant `lui` at
+//!    [`legaia_game_tables::new_game::GALA_XP_STORE_VA`], repurposing those three slots as
 //!    `sw $t0, <+0x0>($s0)` experience stores (one per growth slot). Dropping the
 //!    reloads means all three `+0x4` cells take the same `reach(N+1)`; the per-slot
 //!    `FUN_801E9504` correction (Noa −, Gala +, ≤2 % near these levels) is re-applied
@@ -56,10 +56,10 @@
 //! [`MAX_STARTING_LEVEL`] (where `reach(N+1)` still fits a positive `imm16`).
 
 use anyhow::{Context, Result, bail};
-use legaia_asset::level_up_tables::{
+use legaia_game_tables::level_up_tables::{
     GROWTH_CHAR_COUNT, growth_tables_from_scus, xp_thresholds_from_scus,
 };
-use legaia_asset::new_game::{PARTY_RECORDS, STAT_COUNT, StartingParty};
+use legaia_game_tables::new_game::{PARTY_RECORDS, STAT_COUNT, StartingParty};
 
 /// Default starting level the toggle seeds when enabled without an explicit
 /// value. A modest head start that skips the earliest grind without
@@ -216,7 +216,7 @@ pub fn plan(scus: &[u8], level: u8) -> Result<StartingLevelPlan> {
 }
 
 /// Encode the next-level threshold into the 4 bytes of the `addiu $v0, $zero, imm`
-/// literal at [`legaia_asset::new_game::STARTING_XP_SEED_VA`] (the `+0x4` seed). The
+/// literal at [`legaia_game_tables::new_game::STARTING_XP_SEED_VA`] (the `+0x4` seed). The
 /// instruction is `0x2402_0000 | imm16`; the whole word is returned so the patcher
 /// writes a complete instruction.
 pub fn next_threshold_instruction(next_threshold: u16) -> [u8; 4] {
@@ -224,7 +224,7 @@ pub fn next_threshold_instruction(next_threshold: u16) -> [u8; 4] {
 }
 
 /// Encode the current-experience preload `addiu $t0, $zero, imm` written at
-/// [`legaia_asset::new_game::CURRENT_XP_PRELOAD_VA`] (repurposing the slot-3 / Terra
+/// [`legaia_game_tables::new_game::CURRENT_XP_PRELOAD_VA`] (repurposing the slot-3 / Terra
 /// `+0x4` store). `$t0` then holds the value the [`current_xp_store_instruction`]
 /// writes to slot 0's `+0x0` cumulative-experience cell. `$t0` = register 8, so the
 /// opcode/rt nibble is `0x2408`.
@@ -235,7 +235,7 @@ pub fn current_xp_preload_instruction(current_xp: u16) -> [u8; 4] {
 /// Encode `sw $t0, record_offset($s0)` - store the preloaded current-experience value
 /// (`$t0`) into a live record's `+0x0` cumulative-experience cell. `record_offset` is
 /// the SC-relative byte offset of that record's `+0x0`
-/// ([`legaia_asset::new_game::live_record_xp_offset`]: Vahn `0x5c8`, Noa `0x9dc`, Gala
+/// ([`legaia_game_tables::new_game::live_record_xp_offset`]: Vahn `0x5c8`, Noa `0x9dc`, Gala
 /// `0xdf0`). `$s0` is the SC base. Opcode `sw` = `0x2b`, base `$s0` = reg 16, rt `$t0`
 /// = reg 8, giving the word `0xAE08_0000 | record_offset`.
 pub fn cumulative_xp_store_instruction(record_offset: u16) -> [u8; 4] {
@@ -243,17 +243,17 @@ pub fn cumulative_xp_store_instruction(record_offset: u16) -> [u8; 4] {
 }
 
 /// The fixed `sw $t0, 0x5c8($s0)` instruction written at
-/// [`legaia_asset::new_game::CURRENT_XP_STORE_VA`] - stores the preloaded experience
+/// [`legaia_game_tables::new_game::CURRENT_XP_STORE_VA`] - stores the preloaded experience
 /// value (`$t0`) to party slot 0's `+0x0` cumulative-experience cell (replacing the
 /// vanilla slot-1 / Noa `addiu $v0, $zero, 0x66` threshold literal). `$s0` is the SC
 /// base, so slot-0 record `+0x0` is at `$s0 + 0x5c8`. Thin wrapper over
 /// [`cumulative_xp_store_instruction`] for slot 0.
 pub fn current_xp_store_instruction() -> [u8; 4] {
-    cumulative_xp_store_instruction(legaia_asset::new_game::live_record_xp_offset(0))
+    cumulative_xp_store_instruction(legaia_game_tables::new_game::live_record_xp_offset(0))
 }
 
 /// Encode the loop's level literal `addiu $v0, $zero, (1 << 8) | level` written at
-/// [`legaia_asset::new_game::LEVEL_SEED_VA`]. Packed so the [`level_store_instruction`]
+/// [`legaia_game_tables::new_game::LEVEL_SEED_VA`]. Packed so the [`level_store_instruction`]
 /// `sh` sets the record's displayed-level cell `+0x130 = level` (low byte) and the
 /// magic-rank cell `+0x131 = 1` (high byte) in one halfword store.
 pub fn level_literal_instruction(level: u8) -> [u8; 4] {
@@ -261,14 +261,14 @@ pub fn level_literal_instruction(level: u8) -> [u8; 4] {
 }
 
 /// The fixed `sh $v0, 0x6f8($s0)` instruction written at
-/// [`legaia_asset::new_game::LEVEL_STORE_VA`] - stores the packed `[level, 1]`
+/// [`legaia_game_tables::new_game::LEVEL_STORE_VA`] - stores the packed `[level, 1]`
 /// halfword to the record's `+0x130`/`+0x131` cells (replacing the vanilla
 /// `sb $v0, 0x6f9($s0)`).
 pub fn level_store_instruction() -> [u8; 4] {
     0xA602_06F8u32.to_le_bytes()
 }
 
-/// A `nop`, written at [`legaia_asset::new_game::LEVEL_STORE_REDUNDANT_VA`] - the
+/// A `nop`, written at [`legaia_game_tables::new_game::LEVEL_STORE_REDUNDANT_VA`] - the
 /// vanilla second level store, made redundant by the `sh` above.
 pub fn nop_instruction() -> [u8; 4] {
     [0; 4]
@@ -338,7 +338,7 @@ mod tests {
         // Each growth-capable slot's `+0x0` store is `sw $t0, off($s0)` - only the
         // SC-relative offset varies (Vahn 0x5c8, Noa 0x9dc, Gala 0xdf0).
         for slot in 0..3 {
-            let off = legaia_asset::new_game::live_record_xp_offset(slot);
+            let off = legaia_game_tables::new_game::live_record_xp_offset(slot);
             let sw = u32::from_le_bytes(cumulative_xp_store_instruction(off));
             assert_eq!(sw >> 26, 0x2b, "sw opcode");
             assert_eq!((sw >> 21) & 0x1f, 16, "base = $s0");

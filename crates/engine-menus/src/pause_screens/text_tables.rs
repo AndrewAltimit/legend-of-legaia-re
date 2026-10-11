@@ -6,21 +6,21 @@
 #[derive(Debug, Clone, Default)]
 pub struct MenuTextTables {
     /// Item names + info-window descriptions.
-    pub item_names: Option<legaia_asset::item_names::ItemNameTable>,
+    pub item_names: Option<legaia_game_tables::item_names::ItemNameTable>,
     /// Spell names / MP / info-window descriptions.
-    pub spell_names: Option<legaia_asset::spell_names::SpellNameTable>,
+    pub spell_names: Option<legaia_game_tables::spell_names::SpellNameTable>,
     /// Accessory ("Goods") passive name/description records - the green +
     /// white lines of the item info window's extra widget box.
-    pub passives: Option<legaia_asset::accessory_passive::AccessoryPassiveTable>,
+    pub passives: Option<legaia_game_tables::accessory_passive::AccessoryPassiveTable>,
     /// The arts-name table (`DAT_80075EC4`, [`legaia_art::arts_table`]) - what
     /// the `0xC5` markup token resolves against, keyed on `[character, art]`.
     pub arts: Option<Vec<legaia_art::arts_table::ArtTableEntry>>,
     /// The post-battle level-up window's seven lines, raw MES bytes, index
     /// `mask - 1` (screen elements `0x45..=0x4B`,
-    /// [`legaia_asset::screen_elements::RECORD_LEVEL_UP_BASE`]).
+    /// [`legaia_ui_formats::screen_elements::RECORD_LEVEL_UP_BASE`]).
     pub level_up_lines: Option<Vec<Vec<u8>>>,
     /// The report window's drop line template, raw MES bytes
-    /// ([`legaia_asset::screen_elements::drop_line_template`]).
+    /// ([`legaia_ui_formats::screen_elements::drop_line_template`]).
     pub drop_line: Option<Vec<u8>>,
 }
 
@@ -29,19 +29,19 @@ impl MenuTextTables {
     /// best-effort).
     pub fn from_scus(scus: &[u8]) -> Self {
         Self {
-            item_names: legaia_asset::item_names::ItemNameTable::from_scus(scus),
-            spell_names: legaia_asset::spell_names::SpellNameTable::from_scus(scus),
-            passives: legaia_asset::accessory_passive::AccessoryPassiveTable::from_scus(scus),
+            item_names: legaia_game_tables::item_names::ItemNameTable::from_scus(scus),
+            spell_names: legaia_game_tables::spell_names::SpellNameTable::from_scus(scus),
+            passives: legaia_game_tables::accessory_passive::AccessoryPassiveTable::from_scus(scus),
             arts: legaia_art::arts_table::parse_from_scus(scus),
             level_up_lines: (1..=7)
                 .map(|mask| {
-                    legaia_asset::screen_elements::payload_string(
+                    legaia_ui_formats::screen_elements::payload_string(
                         scus,
-                        legaia_asset::screen_elements::RECORD_LEVEL_UP_BASE + mask,
+                        legaia_ui_formats::screen_elements::RECORD_LEVEL_UP_BASE + mask,
                     )
                 })
                 .collect(),
-            drop_line: legaia_asset::screen_elements::drop_line_template(scus),
+            drop_line: legaia_ui_formats::screen_elements::drop_line_template(scus),
         }
     }
 

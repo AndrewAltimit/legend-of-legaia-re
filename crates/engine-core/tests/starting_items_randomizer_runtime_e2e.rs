@@ -30,10 +30,10 @@
 //!
 //! Skips without `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
-use legaia_asset::new_game::StartingInventory;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_engine_core::world::World;
+use legaia_game_tables::new_game::StartingInventory;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -42,7 +42,7 @@ fn load_disc() -> Option<Vec<u8>> {
 
 /// Seed a fresh New Game world's bag from a starting-inventory seed and return
 /// the resulting `id -> count` map (the engine path `begin_new_game` drives).
-fn seed_bag(inv: &StartingInventory) -> legaia_engine_core::world::ItemBag {
+fn seed_bag(inv: &StartingInventory) -> legaia_engine_menus::item_bag::ItemBag {
     let mut world = World::default();
     world.begin_new_game(); // clears the bag, like the retail SC memset
     world.seed_starting_inventory(inv);
@@ -103,7 +103,8 @@ fn patched_starting_items_seed_the_bag_at_runtime() {
 
     // The runtime bag holds EXACTLY the patched items (id -> count), not the
     // vanilla Healing Leaf x5.
-    let expected: legaia_engine_core::world::ItemBag = patched.items().iter().copied().collect();
+    let expected: legaia_engine_menus::item_bag::ItemBag =
+        patched.items().iter().copied().collect();
     assert_eq!(
         bag, expected,
         "the New Game bag is exactly the patched seed"
@@ -137,7 +138,7 @@ fn forced_door_of_wind_seeds_the_bag_at_runtime() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
     };
-    use legaia_asset::new_game::DOOR_OF_WIND_ITEM;
+    use legaia_game_tables::new_game::DOOR_OF_WIND_ITEM;
     use legaia_patcher::starting_items::{DOOR_OF_WIND_COUNT, StartingSeedOptions};
 
     // Baseline: a vanilla New Game has no Door of Wind in the bag.

@@ -1,7 +1,7 @@
 //! The strike clock: clip headers, per-fighter strike tables and the action-table keyframe lookup.
 
 use super::*;
-use legaia_asset::baka_opponents::BakaActionSet;
+use legaia_minigame_formats::baka_opponents::BakaActionSet;
 
 /// Where a fighter's strike clock stands: the per-fighter word at block
 /// `+0x0C` (`&DAT_801dbfc8[slot * 0x2a]`) the combat tick and the damage
@@ -75,7 +75,7 @@ pub struct ClipHeader {
 }
 
 impl ClipHeader {
-    /// From a parsed record's header words (`legaia_asset::player_anm`
+    /// From a parsed record's header words (`legaia_actor_formats::player_anm`
     /// `PlayerAnmRecord { a, b, flag, .. }`: `a` = bytes `+0/+1`, `b` =
     /// `+2/+3`, `flag` = `+6/+7`).
     pub fn from_record_words(a: u16, b: u16, flag: u16) -> Self {
@@ -98,11 +98,12 @@ impl ClipHeader {
 }
 
 /// One fighter's nine clip headers, by action.
-pub type ClipHeaders = [Option<ClipHeader>; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER];
+pub type ClipHeaders =
+    [Option<ClipHeader>; legaia_minigame_formats::baka_opponents::ACTIONS_PER_FIGHTER];
 
 /// A clip bank's headers for the nine actions starting at `first_record`.
 pub fn clip_headers_from_bundle(
-    bundle: &legaia_asset::player_anm::PlayerAnmBundle,
+    bundle: &legaia_actor_formats::player_anm::PlayerAnmBundle,
     first_record: usize,
 ) -> ClipHeaders {
     std::array::from_fn(|action| {
@@ -118,12 +119,12 @@ pub fn clip_headers_from_bundle(
 /// nine records each (`id * 9 + action`); the ladder fighters (`3..`) off
 /// their own pack's bank (PROT `1206 + id - 3`, record = action) - the same
 /// two banks the duel's clip ids resolve into (see
-/// `legaia_asset::baka_opponents::action_slot_label`). A fighter whose bank
+/// `legaia_minigame_formats::baka_opponents::action_slot_label`). A fighter whose bank
 /// does not decode gets all-`None` headers.
 pub fn roster_clip_headers(read_prot: impl Fn(usize) -> Option<Vec<u8>>) -> Vec<ClipHeaders> {
-    use legaia_asset::baka_opponents as bo;
+    use legaia_minigame_formats::baka_opponents as bo;
     let party = read_prot(bo::BAKA_HUD_ART_PROT_INDEX).and_then(|e| {
-        legaia_asset::player_anm::find_in_entry(&e, 4)
+        legaia_actor_formats::player_anm::find_in_entry(&e, 4)
             .into_iter()
             .next()
     });
@@ -138,7 +139,7 @@ pub fn roster_clip_headers(read_prot: impl Fn(usize) -> Option<Vec<u8>>) -> Vec<
                 bo::fighter_pack_prot_index(roster)
                     .and_then(&read_prot)
                     .and_then(|e| bo::parse_fighter_pack(&e))
-                    .and_then(|p| legaia_asset::player_anm::parse(&p.anim_bytes).ok())
+                    .and_then(|p| legaia_actor_formats::player_anm::parse(&p.anim_bytes).ok())
                     .map(|b| clip_headers_from_bundle(&b, 0))
                     .unwrap_or([None; bo::ACTIONS_PER_FIGHTER])
             }
@@ -151,22 +152,22 @@ pub fn roster_clip_headers(read_prot: impl Fn(usize) -> Option<Vec<u8>>) -> Vec<
 /// `1..=4`), plus the clip headers when a host staged the fighter's clip bank.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StrikeTable {
-    pub speed: [i32; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
-    pub frames: [Vec<i16>; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+    pub speed: [i32; legaia_minigame_formats::baka_opponents::ACTIONS_PER_FIGHTER],
+    pub frames: [Vec<i16>; legaia_minigame_formats::baka_opponents::ACTIONS_PER_FIGHTER],
     /// Per-action clip header; `None` until a host supplies the fighter's
     /// clip bank ([`BakaFight::set_clip_headers`]). Without it the strike
     /// clock steps by the record speed alone, which is exact for every clip
     /// whose record leaves the double-step bit clear.
-    pub clips: [Option<ClipHeader>; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+    pub clips: [Option<ClipHeader>; legaia_minigame_formats::baka_opponents::ACTIONS_PER_FIGHTER],
     /// Per-action strike offsets - each live sub-keyframe's `+0x20 / +0x22 /
     /// +0x24` TRS, in slot order (the column the impact pair reads).
-    pub offsets: [Vec<[i16; 3]>; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+    pub offsets: [Vec<[i16; 3]>; legaia_minigame_formats::baka_opponents::ACTIONS_PER_FIGHTER],
 }
 
 impl StrikeTable {
     /// Lift a fighter's parsed action set.
     pub fn from_actions(actions: &BakaActionSet) -> Self {
-        let mut frames: [Vec<i16>; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER] =
+        let mut frames: [Vec<i16>; legaia_minigame_formats::baka_opponents::ACTIONS_PER_FIGHTER] =
             Default::default();
         for (a, f) in frames.iter_mut().enumerate() {
             *f = actions.strike_frames(a);
@@ -181,7 +182,7 @@ impl StrikeTable {
         StrikeTable {
             speed: actions.speed,
             frames,
-            clips: [None; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+            clips: [None; legaia_minigame_formats::baka_opponents::ACTIONS_PER_FIGHTER],
             offsets,
         }
     }

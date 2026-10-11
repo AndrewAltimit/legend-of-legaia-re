@@ -27,15 +27,16 @@
 //! Disc-gated: the course ladder and the damage model both come off the
 //! disc. Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_asset::muscle_dome as asset_md;
-use legaia_asset::static_overlay;
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::muscle_dome::{
-    self as md, ContestState, DomeCombatant, DomeDamageModel, GlideStep, MuscleCard,
-    MuscleDomeSession, MusclePhase, SpriteGlide,
-};
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
+use legaia_engine_minigames::muscle_dome::{
+    ContestState, DomeCombatant, DomeDamageModel, GlideStep, SpriteGlide,
+};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
+use legaia_minigame_formats::muscle_dome as asset_md;
+use legaia_overlay_images::static_overlay;
 
 /// The arena overlay - the entry that carries the course descriptor table and
 /// the score rows.
@@ -81,7 +82,8 @@ fn session_from(t: &DiscTables) -> MuscleDomeSession {
         command_id: cmd,
         cost: 0x1E,
     };
-    let hand: [MuscleCard; md::HAND_SLOTS] = std::array::from_fn(|i| card(t.commands[i]));
+    let hand: [MuscleCard; legaia_engine_minigames::muscle_dome::HAND_SLOTS] =
+        std::array::from_fn(|i| card(t.commands[i]));
     let mut session = MuscleDomeSession::new(hand, hand, [120, 120], [PLAYER_HP, OPPONENT_HP], 1);
     let profile = |hp: i32| DomeCombatant {
         hp_max: hp as u16,
@@ -102,7 +104,7 @@ fn session_from(t: &DiscTables) -> MuscleDomeSession {
 }
 
 /// Play the entered leg by pad until the session decides it.
-fn play_leg(world: &mut World) -> md::LegReport {
+fn play_leg(world: &mut World) -> legaia_engine_minigames::muscle_dome::LegReport {
     let mut frames = 0u32;
     loop {
         frames += 1;
@@ -134,7 +136,7 @@ fn play_leg(world: &mut World) -> md::LegReport {
         .muscle_dome
         .as_ref()
         .expect("session installed");
-    md::LegReport {
+    legaia_engine_minigames::muscle_dome::LegReport {
         survived: matches!(s.phase(), MusclePhase::Won),
         outcome: 0,
         turns_taken: s.turn(),
@@ -148,12 +150,17 @@ fn play_leg(world: &mut World) -> md::LegReport {
 #[test]
 fn rung1_the_disc_course_ladder_opens_a_contest() {
     let Some(t) = disc_tables() else { return };
-    let ladder = md::parse_course_ladder(&t.arena).expect("PROT 0977 course descriptor decodes");
-    assert_eq!(ladder.len(), md::COURSE_COUNT, "three courses");
+    let ladder = legaia_engine_minigames::muscle_dome::parse_course_ladder(&t.arena)
+        .expect("PROT 0977 course descriptor decodes");
+    assert_eq!(
+        ladder.len(),
+        legaia_engine_minigames::muscle_dome::COURSE_COUNT,
+        "three courses"
+    );
     for (i, course) in ladder.iter().enumerate() {
         assert!(!course.rounds.is_empty(), "course {i} has rounds");
         assert!(
-            course.rounds.len() <= md::MAX_ROUNDS_PER_COURSE,
+            course.rounds.len() <= legaia_engine_minigames::muscle_dome::MAX_ROUNDS_PER_COURSE,
             "course {i} fits the score table"
         );
         for (r, round) in course.rounds.iter().enumerate() {
@@ -163,8 +170,10 @@ fn rung1_the_disc_course_ladder_opens_a_contest() {
 
     let mut w = World::new();
     let flags = w.muscle_contest_flags();
-    w.minigames.muscle_contest =
-        Some(md::DomeContest::from_overlay(&t.arena, &flags).expect("the contest opens"));
+    w.minigames.muscle_contest = Some(
+        legaia_engine_minigames::muscle_dome::DomeContest::from_overlay(&t.arena, &flags)
+            .expect("the contest opens"),
+    );
     let run = w.minigames.muscle_contest.as_ref().unwrap();
     assert_eq!(run.round(), 0, "a fresh contest starts before leg one");
     assert_eq!(
@@ -173,7 +182,7 @@ fn rung1_the_disc_course_ladder_opens_a_contest() {
         "the first leg is stageable"
     );
     assert!(
-        run.course() < md::COURSE_COUNT,
+        run.course() < legaia_engine_minigames::muscle_dome::COURSE_COUNT,
         "the unlock flags pick a real course"
     );
 }
@@ -192,8 +201,10 @@ fn rungs2to4_a_played_leg_reports_into_the_ladder_and_pays_its_rows() {
     let mut w = World::new();
     w.mode = SceneMode::Field;
     let flags = w.muscle_contest_flags();
-    w.minigames.muscle_contest =
-        Some(md::DomeContest::from_overlay(&t.arena, &flags).expect("the contest opens"));
+    w.minigames.muscle_contest = Some(
+        legaia_engine_minigames::muscle_dome::DomeContest::from_overlay(&t.arena, &flags)
+            .expect("the contest opens"),
+    );
     let course = w.minigames.muscle_contest.as_ref().unwrap().course();
     w.enter_muscle_dome(session_from(&t));
     assert_eq!(w.mode, SceneMode::MuscleDome);
@@ -223,7 +234,7 @@ fn rungs2to4_a_played_leg_reports_into_the_ladder_and_pays_its_rows() {
     let rows = run.rows();
     assert_eq!(
         rows.score_cell,
-        md::course_score_cell(&t.arena, course, 1).unwrap_or(0),
+        legaia_engine_minigames::muscle_dome::course_score_cell(&t.arena, course, 1).unwrap_or(0),
         "the score row is the disc's own `(course, round)` cell"
     );
     // The three recovery lanes are HP, not money - the property the port had
@@ -342,7 +353,7 @@ fn a_resolved_turn_holds_for_its_playback_and_tallies_it() {
         assert!(s.last_turn_closes_in(), "the leg's first plays walk in");
         (
             plays.len(),
-            legaia_engine_core::muscle_dome_scene::turn_playback_ticks(
+            legaia_engine_minigame_scenes::muscle_dome_scene::turn_playback_ticks(
                 plays,
                 s.last_turn_closes_in(),
             ),

@@ -13,10 +13,10 @@ use super::*;
 ///
 /// Three decoders read the same MAN and they disagree:
 ///
-/// - [`legaia_asset::man_edit::scene_change_sites`] - a **clean** per-partition
+/// - [`legaia_scene_formats::man_edit::scene_change_sites`] - a **clean** per-partition
 ///   fall-through walk from each record's true `pc0`, stopping at the first
 ///   desync. This is what a door *op* looks like.
-/// - [`legaia_asset::man_edit::partition1_destinations`] - the **recovering**
+/// - [`legaia_scene_formats::man_edit::partition1_destinations`] - the **recovering**
 ///   walk that also reaches the destination-*table* blob some controllers
 ///   append past their last partition-1 record. This is what a door *entry*
 ///   looks like.
@@ -43,7 +43,7 @@ use super::*;
 /// `jouine` is a fourth shape: no decoder finds a named scene change, because
 /// there is none. Its exit is the FMV hand-off op `4C E2 08` at MAN `0x03E90`,
 /// and control returns through
-/// [`legaia_engine_core::cutscene::fmv_post_play_handoff`], not through the
+/// [`legaia_engine_system::movie::cutscene::fmv_post_play_handoff`], not through the
 /// field VM's `0x3F` arm.
 #[test]
 fn part_d_which_decoder_sees_each_of_the_five_doors() {
@@ -53,11 +53,11 @@ fn part_d_which_decoder_sees_each_of_the_five_doors() {
     /// `(clean-walk sites as (partition, name), destination-table names)`.
     fn decoders(host: &SceneHost, name: &str) -> (Vec<(usize, String)>, Vec<String>) {
         let (mf, man) = scene_man(&host.index, name).unwrap_or_else(|| panic!("{name}: no MAN"));
-        let clean = legaia_asset::man_edit::scene_change_sites(&man)
+        let clean = legaia_scene_formats::man_edit::scene_change_sites(&man)
             .into_iter()
             .map(|s| (s.partition, s.name))
             .collect();
-        let table = legaia_asset::man_edit::partition1_destinations(&mf, &man)
+        let table = legaia_scene_formats::man_edit::partition1_destinations(&mf, &man)
             .into_iter()
             .map(|d| d.scene_name)
             .collect();
@@ -113,7 +113,7 @@ fn part_d_which_decoder_sees_each_of_the_five_doors() {
         "jouine carries no named-scene-change at all; got {clean:?} / {table:?}"
     );
     let (mf, man) = scene_man(&host.index, "jouine").expect("jouine MAN");
-    let fmvs = legaia_engine_core::man_field_scripts::scene_fmv_triggers(&mf, &man);
+    let fmvs = legaia_engine_field::man_field_scripts::scene_fmv_triggers(&mf, &man);
     assert!(
         fmvs.iter().any(|t| t.fmv_id == 8),
         "jouine's exit is the `4C E2 08` FMV trigger; decoded triggers {fmvs:?}"
@@ -351,7 +351,7 @@ fn part_e2_do_those_scenes_carry_a_record_that_exits_at_all() {
         for partition in [2usize, 1] {
             let count = mf.header.partition_counts[partition].max(0) as usize;
             for record in 0..count.min(MAX_RECORDS_RUN) {
-                if legaia_engine_core::man_field_scripts::partition_record_span(
+                if legaia_engine_field::man_field_scripts::partition_record_span(
                     &mf, &man, partition, record,
                 )
                 .is_none()

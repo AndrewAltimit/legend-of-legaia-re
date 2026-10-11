@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::AssetType;
+use legaia_container_formats::AssetType;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 
 fn main() -> anyhow::Result<()> {
@@ -24,7 +24,7 @@ fn main() -> anyhow::Result<()> {
         };
         let mut scene_hit = false;
         for entry in &scene.entries {
-            let Ok(report) = legaia_asset::parse_streaming(&entry.bytes, 4096) else {
+            let Ok(report) = legaia_container_formats::parse_streaming(&entry.bytes, 4096) else {
                 continue;
             };
             for c in &report.chunks {

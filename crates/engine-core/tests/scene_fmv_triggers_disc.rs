@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::scene_fmv_triggers;
+use legaia_engine_field::man_field_scripts::scene_fmv_triggers;
 
 fn extracted_prot() -> Option<PathBuf> {
     for p in [
@@ -28,7 +28,7 @@ fn extracted_prot() -> Option<PathBuf> {
 }
 
 fn load_man_from_scene(bytes: &[u8]) -> Option<Vec<u8>> {
-    let table = legaia_asset::scene_asset_table::detect(bytes)?;
+    let table = legaia_scene_formats::scene_asset_table::detect(bytes)?;
     let man = table
         .descriptors
         .iter()
@@ -71,7 +71,7 @@ fn every_scene_fmv_trigger_decodes_from_disc() {
         let Some(man) = load_man_from_scene(&bytes) else {
             continue;
         };
-        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         scenes_with_man += 1;
@@ -99,7 +99,7 @@ fn every_scene_fmv_trigger_decodes_from_disc() {
 
     // The pinned per-scene movie assignment (one trigger op per scene, ids
     // literal in the bytecode). Under the corrected 32-byte-stride dispatch
-    // table (`legaia_asset::fmv_dispatch`) every id below is a retail
+    // table (`legaia_game_tables::fmv_dispatch`) every id below is a retail
     // movie: 1 = MV2, 2..=4 = MV3 segments 1..3, 6 = MV4, 7 = MV5,
     // 8 = MV6. fmv_id 0 (the MV1 intro) fires from the title/new-game
     // path, not a scene MAN; fmv_id 5 (MV3 segment 4, the one slot whose

@@ -86,7 +86,7 @@ pub(crate) struct Browser {
     /// Per-stage battle-backdrop mirror table from `SCUS_942.54`, when the
     /// executable was found. `None` falls the preview back to the default
     /// half-turn second copy.
-    pub(crate) backdrop_mirror: Option<legaia_asset::battle_backdrop::MirrorXTable>,
+    pub(crate) backdrop_mirror: Option<legaia_scene_formats::battle_backdrop::MirrorXTable>,
     pub(crate) current: u32,
     pub(crate) last_count: u32,
 }

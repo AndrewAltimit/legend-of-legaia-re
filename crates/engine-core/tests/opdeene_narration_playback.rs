@@ -49,7 +49,7 @@ fn opdeene_narration_is_script_driven_and_skippable() {
         return;
     };
 
-    let cutscene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    let cutscene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.enter_field_scene(cutscene, 0).expect("enter opdeene");
 
@@ -169,7 +169,7 @@ fn opdeene_narration_is_script_driven_and_skippable() {
     let target = host.world.take_prologue_handoff(true);
     assert_eq!(
         target,
-        Some(legaia_asset::new_game::OPENING_SCENE),
+        Some(legaia_game_tables::new_game::OPENING_SCENE),
         "a confirm mid-narration skips the opening to Rim Elm"
     );
     assert!(

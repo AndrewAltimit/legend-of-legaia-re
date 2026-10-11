@@ -158,14 +158,14 @@ fn spine_flag_writers_surface_in_the_carrier_census() {
 /// self-latching one-shot shape.
 #[test]
 fn rikuroa_carrier_p2_50_is_the_0x142_self_latch() {
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some(index) = open_index() else { return };
     let scene = Scene::load(&index, "rikuroa").expect("load rikuroa");
     let man = scene
         .field_man_payload(&index)
         .expect("payload")
         .expect("rikuroa MAN resolves");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
     assert_eq!(mf.header.partition_counts, [13, 29, 64]);
     let (c1, c2) = partition2_record_gates(&mf, &man, 50).expect("P2[50] gates");
     assert_eq!(
@@ -181,14 +181,14 @@ fn rikuroa_carrier_p2_50_is_the_0x142_self_latch() {
 /// one it plays over. The spawn-score walk finds that arm's start.
 #[test]
 fn rikuroa_p2_50_is_scored_by_its_spawning_arm() {
-    use legaia_engine_core::man_field_scripts::walk_spawn_scores;
+    use legaia_engine_field::man_field_scripts::walk_spawn_scores;
     let Some(index) = open_index() else { return };
     let scene = Scene::load(&index, "rikuroa").expect("load rikuroa");
     let man = scene
         .field_man_payload(&index)
         .expect("payload")
         .expect("rikuroa MAN resolves");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
     let scores = walk_spawn_scores(&mf, &man);
     let s = scores
         .iter()
@@ -216,14 +216,14 @@ fn rikuroa_p2_50_is_scored_by_its_spawning_arm() {
 /// HEADER gate list, not an inline `0x70` TEST.
 #[test]
 fn geremi_p2_0_is_the_0x1be_self_latch() {
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some(index) = open_index() else { return };
     let scene = Scene::load(&index, "geremi").expect("load geremi");
     let man = scene
         .field_man_payload(&index)
         .expect("payload")
         .expect("geremi MAN resolves");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
     assert_eq!(mf.header.partition_counts, [18, 70, 20]);
     let (c1, c2) = partition2_record_gates(&mf, &man, 0).expect("P2[0] gates");
     assert_eq!(

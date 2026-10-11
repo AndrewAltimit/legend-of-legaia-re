@@ -28,7 +28,7 @@ pub fn shop_menu_rows(trading: bool) -> &'static [MenuState] {
 /// every row below it takes the grey. The engine-only Trade row sits
 /// between Sell and Quit and takes the same rule.
 pub fn shop_root_labels(trading: bool, bag_has_sellable: bool) -> Vec<(&'static str, u8)> {
-    let ink = crate::shop::shop_root_command_rows((0, 0), 0x4000, bag_has_sellable);
+    let ink = legaia_engine_menus::shop::shop_root_command_rows((0, 0), 0x4000, bag_has_sellable);
     shop_menu_rows(trading)
         .iter()
         .map(|s| match s {
@@ -53,7 +53,7 @@ pub fn shop_root_labels(trading: bool, bag_has_sellable: bool) -> Vec<(&'static 
 /// (the inn prompt and the pause-menu screens key their own).
 // REF: FUN_80032A44
 pub fn shop_ui_cue(state: MenuState, input: MenuInput, moved: bool, refused: bool) -> Option<u8> {
-    use crate::menu_cues::{MENU_CANCEL_CUE, MENU_CONFIRM_CUE, MENU_CURSOR_CUE};
+    use legaia_engine_menus::menu_cues::{MENU_CANCEL_CUE, MENU_CONFIRM_CUE, MENU_CURSOR_CUE};
     if !matches!(
         state,
         MenuState::ShopMenu
@@ -89,13 +89,15 @@ pub const SHOP_REFUSAL_CUE: u8 = 0x23;
 /// and cancel (`0x801DC064..`, `0x801DC020`) and the sale `0x36`
 /// (`0x801DBE78`).
 // REF: FUN_801DB7F4, FUN_801DBD94
-pub(super) fn quantity_ui_cue(event: &crate::shop::QuantityPickerEvent) -> Option<u8> {
-    use crate::shop::QuantityPickerEvent as E;
+pub(super) fn quantity_ui_cue(
+    event: &legaia_engine_menus::shop::QuantityPickerEvent,
+) -> Option<u8> {
+    use legaia_engine_menus::shop::QuantityPickerEvent as E;
     match event {
-        E::Moved => Some(crate::menu_cues::MENU_CURSOR_CUE),
+        E::Moved => Some(legaia_engine_menus::menu_cues::MENU_CURSOR_CUE),
         E::Bought { .. } => Some(0x2C),
         E::Sold { .. } => Some(0x36),
-        E::Cancelled => Some(crate::menu_cues::MENU_CANCEL_CUE),
+        E::Cancelled => Some(legaia_engine_menus::menu_cues::MENU_CANCEL_CUE),
         E::None | E::Finished => None,
     }
 }
@@ -106,14 +108,14 @@ pub(super) fn quantity_ui_cue(event: &crate::shop::QuantityPickerEvent) -> Optio
 /// `0x24` buy-and-equip (`0x801DB5C8`), `0x23` a member who cannot equip it
 /// (`0x801DB5AC`).
 // REF: FUN_801DB380
-pub(super) fn recipient_ui_cue(event: &crate::shop::BuyRecipientEvent) -> Option<u8> {
-    use crate::shop::BuyRecipientEvent as E;
+pub(super) fn recipient_ui_cue(event: &legaia_engine_menus::shop::BuyRecipientEvent) -> Option<u8> {
+    use legaia_engine_menus::shop::BuyRecipientEvent as E;
     match event {
-        E::Moved => Some(crate::menu_cues::MENU_CURSOR_CUE),
+        E::Moved => Some(legaia_engine_menus::menu_cues::MENU_CURSOR_CUE),
         E::BoughtToBag { .. } => Some(0x2C),
         E::BoughtAndEquipped { .. } => Some(0x24),
         E::Buzz => Some(SHOP_REFUSAL_CUE),
-        E::Cancelled => Some(crate::menu_cues::MENU_CANCEL_CUE),
+        E::Cancelled => Some(legaia_engine_menus::menu_cues::MENU_CANCEL_CUE),
         E::None | E::ExitToBuyList => None,
     }
 }

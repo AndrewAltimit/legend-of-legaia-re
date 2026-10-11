@@ -225,7 +225,7 @@ pub const PASSIVE_NONE: u8 = 0x40;
 /// item-effect descriptors + `DiscEquipInfo::row_passive_index`). NB this chain differs
 /// from the Items screen's
 /// ([`crate::pause_screens::MenuTextTables::item_passive_text`], which
-/// reads `legaia_asset::accessory_passive::AccessoryPassiveTable::passive_index`)
+/// reads `legaia_game_tables::accessory_passive::AccessoryPassiveTable::passive_index`)
 /// on the non-equipment arm: this port follows `FUN_801d5ae8` in sending
 /// **any** non-`1` kind to the item-effect table, while the asset-crate
 /// resolver (derived from `FUN_80042558`) accepts kind `2` only.

@@ -25,7 +25,7 @@ pub fn retail_ambient_heading(ram: &[u8], n: u32) -> bool {
 /// (`+0x10 & 0x80`, a heading op in the variant its PC sits in), whatever
 /// holds it now: an engaged wanderer stopped where its walks left it.
 pub fn retail_stream_turns(ram: &[u8], n: u32) -> bool {
-    use legaia_asset::man_motion::op_width;
+    use legaia_scene_formats::man_motion::op_width;
     let flags = game_anchors::u32_at(ram, n + 0x10);
     if flags & 0x80 == 0 {
         return false;
@@ -128,7 +128,7 @@ const PAGE_MARK_TIMER: u32 = 0x801C_6014;
 /// `0x801D9804..0x801D9828`).
 ///
 /// The strip flips every sixteen vsyncs of the kind's timer
-/// (`legaia_engine_core::cursor_sprite`), which counts from the first call
+/// (`legaia_engine_dialog::cursor_sprite`), which counts from the first call
 /// at the box's height - time the seed does not replay. The frame on screen
 /// is two game frames older than the RAM, so the timer is taken back by the
 /// lag and the frame with it when that crosses a flip.
@@ -256,7 +256,7 @@ pub(super) fn unrotate_rect(texels: &[u16], w: usize, h: usize, dx: usize, dy: u
 pub(super) const PANEL_TICK: u32 = 0x801F_849C;
 
 /// The first live image-panel widget on a retail state's actor lists
-/// ([`legaia_engine_core::screen_fx::PanelWidget`]'s field map: current
+/// ([`legaia_engine_effects::screen_fx::PanelWidget`]'s field map: current
 /// `+0x14..+0x1A` / `+0x24`, targets `+0x3C..+0x42` / `+0x26`, base sizes
 /// `+0xB8..+0xBC`, tween `+0x9C` / `+0x9E`, spawn size `+0xAA` / `+0xAC`,
 /// texel origin `+0xA4` / `+0xA8`, pages `+0xA0` / `+0xA2`).
@@ -266,12 +266,12 @@ pub(super) const PANEL_TICK: u32 = 0x801F_849C;
 /// capture is usually parked in the credits record that runs after it -
 /// `ending_panel_corner` holds record 13, the panel already shrunk to the
 /// corner - so a seed that resumes the running record never spawns it.
-pub fn retail_panel(ram: &[u8]) -> Option<legaia_engine_core::screen_fx::PanelWidget> {
+pub fn retail_panel(ram: &[u8]) -> Option<legaia_engine_effects::screen_fx::PanelWidget> {
     let n = crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
         .find(|&n| game_anchors::u32_at(ram, n + 0x0C) == PANEL_TICK)?;
     let h = |o: u32| game_anchors::i16_at(ram, n + o);
-    Some(legaia_engine_core::screen_fx::PanelWidget {
+    Some(legaia_engine_effects::screen_fx::PanelWidget {
         cur: [h(0x14), h(0x16), h(0x18), h(0x1A), h(0x24)],
         target: [h(0x3C), h(0x3E), h(0x40), h(0x42), h(0x26)],
         base: [h(0xB8), h(0xBA), h(0xBC)],
@@ -296,7 +296,7 @@ pub fn retail_panel(ram: &[u8]) -> Option<legaia_engine_core::screen_fx::PanelWi
 /// (`legaia_engine_vm::vram_rect_copy::op43_sub12_calls`) - so a seed cut at
 /// the image's own width left the strip's last texels unseeded.
 pub(super) fn panel_source_rects(
-    p: &legaia_engine_core::screen_fx::PanelWidget,
+    p: &legaia_engine_effects::screen_fx::PanelWidget,
     vram: &[u8],
 ) -> Vec<SeededVramRect> {
     let (w0, h) = (p.w0.clamp(0, 1024) as u16, p.h0.clamp(0, 512) as u16);
@@ -327,7 +327,7 @@ pub(super) fn panel_source_rects(
 
 /// [`retail_panel`] as `LEGAIA_SEAT_PANEL`: the widget's fields as
 /// comma-separated integers in [`panel_from_env`]'s order.
-pub fn panel_env(p: &legaia_engine_core::screen_fx::PanelWidget) -> String {
+pub fn panel_env(p: &legaia_engine_effects::screen_fx::PanelWidget) -> String {
     let mut v: Vec<i32> = Vec::new();
     v.extend(p.cur.iter().map(|&x| i32::from(x)));
     v.extend(p.target.iter().map(|&x| i32::from(x)));
@@ -349,7 +349,7 @@ pub fn panel_env(p: &legaia_engine_core::screen_fx::PanelWidget) -> String {
 }
 
 /// Inverse of [`panel_env`].
-pub fn panel_from_env(s: &str) -> Option<legaia_engine_core::screen_fx::PanelWidget> {
+pub fn panel_from_env(s: &str) -> Option<legaia_engine_effects::screen_fx::PanelWidget> {
     let v: Vec<i32> = s
         .split(',')
         .map(|t| t.trim().parse().ok())
@@ -358,7 +358,7 @@ pub fn panel_from_env(s: &str) -> Option<legaia_engine_core::screen_fx::PanelWid
         return None;
     }
     let h = |i: usize| v[i] as i16;
-    Some(legaia_engine_core::screen_fx::PanelWidget {
+    Some(legaia_engine_effects::screen_fx::PanelWidget {
         cur: [h(0), h(1), h(2), h(3), h(4)],
         target: [h(5), h(6), h(7), h(8), h(9)],
         base: [h(10), h(11), h(12)],
@@ -890,8 +890,8 @@ pub fn sprite_arms_from_env(s: &str) -> Vec<legaia_engine_core::world::ambient::
 /// list order: a part ticked by `FUN_80021DF4` with render mode `+0x5A = 3`
 /// past its first armed frame (`+0x9C > 1`), as the snapshot its next
 /// `FUN_80019D50` write uses - rect `+0xA0..+0xA6`, adds `+0x90/92/94`, mode
-/// `+0x9E`, white amount `+0x68` ([`legaia_engine_core::clut_cell_fx`]).
-pub fn retail_cell_fx(ram: &[u8]) -> Vec<legaia_engine_core::clut_cell_fx::ClutCellFx> {
+/// `+0x9E`, white amount `+0x68` ([`legaia_engine_field::clut_cell_fx`]).
+pub fn retail_cell_fx(ram: &[u8]) -> Vec<legaia_engine_field::clut_cell_fx::ClutCellFx> {
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
         .filter(|&n| {
@@ -899,7 +899,7 @@ pub fn retail_cell_fx(ram: &[u8]) -> Vec<legaia_engine_core::clut_cell_fx::ClutC
                 && game_anchors::i16_at(ram, n + 0x5A) == 3
                 && game_anchors::i16_at(ram, n + 0x9C) > 1
         })
-        .map(|n| legaia_engine_core::clut_cell_fx::ClutCellFx {
+        .map(|n| legaia_engine_field::clut_cell_fx::ClutCellFx {
             rect: (
                 game_anchors::u16_at(ram, n + 0xA0),
                 game_anchors::u16_at(ram, n + 0xA2),
@@ -917,7 +917,7 @@ pub fn retail_cell_fx(ram: &[u8]) -> Vec<legaia_engine_core::clut_cell_fx::ClutC
 
 /// [`retail_cell_fx`] as `LEGAIA_SEAT_CLUT_FX`: `x,y,w,h,h,s,v,mode,white`
 /// per part, `;`-separated.
-pub fn cell_fx_env(fx: &[legaia_engine_core::clut_cell_fx::ClutCellFx]) -> String {
+pub fn cell_fx_env(fx: &[legaia_engine_field::clut_cell_fx::ClutCellFx]) -> String {
     fx.iter()
         .map(|f| {
             format!(
@@ -930,12 +930,12 @@ pub fn cell_fx_env(fx: &[legaia_engine_core::clut_cell_fx::ClutCellFx]) -> Strin
 }
 
 /// Inverse of [`cell_fx_env`]; malformed entries are dropped.
-pub fn cell_fx_from_env(s: &str) -> Vec<legaia_engine_core::clut_cell_fx::ClutCellFx> {
+pub fn cell_fx_from_env(s: &str) -> Vec<legaia_engine_field::clut_cell_fx::ClutCellFx> {
     s.split(';')
         .filter_map(|e| {
             let v: Vec<i32> = e.split(',').filter_map(|x| x.trim().parse().ok()).collect();
             let [x, y, w, h, hh, ss, vv, mode, white] = <[i32; 9]>::try_from(v).ok()?;
-            Some(legaia_engine_core::clut_cell_fx::ClutCellFx {
+            Some(legaia_engine_field::clut_cell_fx::ClutCellFx {
                 rect: (x as u16, y as u16, w as u16, h as u16),
                 h_add: hh as i16,
                 s_add: ss as i16,
@@ -954,7 +954,7 @@ pub struct RetailMenu {
     /// `DAT_801E46A4`.
     pub subscreen: u8,
     /// The root row whose confirm reaches it.
-    pub row: legaia_engine_core::field_menu::FieldMenuRow,
+    pub row: legaia_engine_menus::field_menu::FieldMenuRow,
     /// For an Equip-row screen, how many confirms past the root row it sits
     /// (`0` character picker, `1` slot browse, `2` candidate list).
     pub equip_depth: u8,
@@ -967,7 +967,7 @@ impl RetailMenu {
     /// clear, and a script-entered screen (the casino prize exchange,
     /// `0x20`) is no root row's.
     pub(super) fn from_ram(ram: &[u8], scene: &str) -> std::result::Result<Self, String> {
-        use legaia_engine_core::field_menu::FieldMenuRow;
+        use legaia_engine_menus::field_menu::FieldMenuRow;
         let subscreen = game_anchors::u8_at(ram, MENU_SUBSCREEN);
         if subscreen == 0 {
             return Err(format!(
@@ -1009,7 +1009,7 @@ pub(super) const CAMERA_STAGINGS: [u32; 2] = [0x801F_3580, 0x801C_6EA8];
 /// block, which the seat's tile re-query reproduces.
 pub(super) fn camera_block_composed(
     ram: &[u8],
-    block: &legaia_engine_core::camera_zone::CameraZoneConfig,
+    block: &legaia_engine_field::camera_zone::CameraZoneConfig,
 ) -> bool {
     CAMERA_STAGINGS
         .iter()
@@ -1024,7 +1024,7 @@ pub(super) fn camera_block_bytes(ram: &[u8]) -> Option<Vec<u8>> {
 
 /// `LEGAIA_SEAT_CAMERA_BLOCK` for `play-window`: the block's 40 bytes from
 /// [`CAMERA_BLOCK`], hex.
-pub fn camera_block_env(block: &legaia_engine_core::camera_zone::CameraZoneConfig) -> String {
+pub fn camera_block_env(block: &legaia_engine_field::camera_zone::CameraZoneConfig) -> String {
     block
         .to_retail_block()
         .iter()
@@ -1033,7 +1033,9 @@ pub fn camera_block_env(block: &legaia_engine_core::camera_zone::CameraZoneConfi
 }
 
 /// Inverse of [`camera_block_env`].
-pub fn camera_block_from_env(s: &str) -> Option<legaia_engine_core::camera_zone::CameraZoneConfig> {
+pub fn camera_block_from_env(
+    s: &str,
+) -> Option<legaia_engine_field::camera_zone::CameraZoneConfig> {
     let s = s.trim();
     if s.len() != 0x50 {
         return None;
@@ -1042,7 +1044,7 @@ pub fn camera_block_from_env(s: &str) -> Option<legaia_engine_core::camera_zone:
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
         .collect::<Option<Vec<u8>>>()?;
-    legaia_engine_core::camera_zone::CameraZoneConfig::from_retail_block(&bytes)
+    legaia_engine_field::camera_zone::CameraZoneConfig::from_retail_block(&bytes)
 }
 
 pub(super) fn rd16(ram: &[u8], va: u32) -> i16 {

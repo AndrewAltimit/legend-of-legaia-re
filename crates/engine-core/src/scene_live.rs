@@ -45,7 +45,7 @@
 //!
 //! So the preview keeps one ladder per room ([`RoomLadder`]), keyed by the
 //! region-type mask a tile carries (the `.MAP` region table,
-//! [`crate::field_regions::refresh_region_attributes`] - the same mask the
+//! [`legaia_engine_field::field_regions::refresh_region_attributes`] - the same mask the
 //! script tests). At entry a throwaway probe host seats a standing player in
 //! each room in turn ([`SceneHost::debug_seat_standing`]) and lets the
 //! scene's own script react; whatever it installs is that room's ladder,
@@ -72,7 +72,7 @@ use legaia_engine_field::field_actor_timers::FloorTierBob;
 
 use crate::field_env::{EnvDraw, FloorWave, PlacedWindowKey, PropPoseKey};
 use crate::scene::{ProtIndex, SceneHost, SceneTickEvent};
-use crate::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Re-entries of the viewed scene a preview performs before it stops
 /// ticking (see the module docs).
@@ -357,7 +357,7 @@ impl LiveScene {
     /// `cells` is [`crate::field_ground::vertex_cells`] of `hf`.
     pub fn ground_positions(
         &self,
-        hf: &legaia_asset::field_objects::WalkHeightfield,
+        hf: &legaia_scene_formats::field_objects::WalkHeightfield,
         cells: &[Option<(i32, i32)>],
     ) -> Vec<[f32; 3]> {
         crate::field_ground::live_render_positions_by_cell(hf, cells, |c| self.floor_lut_at(c))
@@ -396,9 +396,9 @@ fn man_moves_ladder(man: &[u8]) -> bool {
 /// but the live player's, capturing what the scene's script installed.
 fn probe_rooms(index: Arc<ProtIndex>, name: &str, live: &SceneHost) -> (Vec<u32>, Vec<RoomLadder>) {
     let none = || (Vec::new(), Vec::new());
-    let Some(table) =
-        crate::field_regions::RegionTable::parse(&live.world.terrain.map_region_block)
-    else {
+    let Some(table) = legaia_engine_field::field_regions::RegionTable::parse(
+        &live.world.terrain.map_region_block,
+    ) else {
         return none();
     };
     let moves = live
@@ -412,8 +412,15 @@ fn probe_rooms(index: Arc<ProtIndex>, name: &str, live: &SceneHost) -> (Vec<u32>
     let mut masks = Vec::with_capacity((GRID * GRID) as usize);
     for r in 0..GRID {
         for c in 0..GRID {
-            masks
-                .push(crate::field_regions::refresh_region_attributes(Some(&table), c, r, false).0);
+            masks.push(
+                legaia_engine_field::field_regions::refresh_region_attributes(
+                    Some(&table),
+                    c,
+                    r,
+                    false,
+                )
+                .0,
+            );
         }
     }
     let entry_mask = live.world.flags.extra_flags;

@@ -53,7 +53,7 @@ pub(super) fn op_4c<H: FieldHost>(
             // arm (`0x801E0E80`) reads a sixth payload byte and exits through
             // `j 0x801E3624` with `addiu s8,s8,1` in the delay slot, on top of
             // the `addiu s8,s8,7` the nibble entry already did. Every other
-            // sub-op advances seven. `legaia_asset::field_disasm` has always
+            // sub-op advances seven. `legaia_scene_formats::field_disasm` has always
             // decoded the extra byte; the executing VM did not, which slid the
             // PC one byte on every `4C 14` the disc issues.
             // REF: FUN_801D835C

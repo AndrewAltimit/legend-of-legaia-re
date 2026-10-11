@@ -31,11 +31,11 @@
 //! chest), so the patched assertion can't pass vacuously. Skips without
 //! `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
-use legaia_asset::man_section::parse as parse_man;
-use legaia_engine_core::field_events::FieldEvent;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_engine_core::world::World;
+use legaia_engine_field::field_events::FieldEvent;
 use legaia_patcher::chest::SceneChests;
-use legaia_patcher::disc::DiscPatcher;
+use legaia_scene_formats::man_section::parse as parse_man;
 
 /// keikoku (Ravine) scene bundle PROT entry - the chest-randomizer ground-truth
 /// scene (see `crates/patcher/tests/chest_patch_real.rs`).
@@ -113,7 +113,7 @@ fn patched_chest_grants_new_item_at_runtime() {
     // (no Sony bytes are asserted) - so the run reads "Phoenix -> Ra-Seru Helmet"
     // rather than raw ids.
     let names = legaia_iso::iso9660::read_file_in_image(&disc, "SCUS_942.54")
-        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let name_of = |id: u8| {
         names
             .as_ref()

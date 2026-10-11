@@ -23,8 +23,9 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_shell::{BootConfig, BootSession};
+use legaia_engine_session::boot::BootConfig;
+use legaia_engine_shell::BootSession;
+use legaia_engine_system::input::PadButton;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 const SCENE: &str = "town01";
@@ -58,7 +59,7 @@ fn native_path(disc: &str) -> Vec<(i32, i32)> {
     s.host.world.seed_free_roam_story_baseline(SCENE);
     s.enter_field_live(
         SCENE,
-        &legaia_engine_shell::boot::FieldLiveOpts {
+        &legaia_engine_session::boot::FieldLiveOpts {
             live_loop: false,
             player_battle: false,
             ..Default::default()

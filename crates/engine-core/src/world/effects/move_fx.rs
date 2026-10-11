@@ -11,7 +11,7 @@ impl World {
     /// entry resolves to a summon-format move-VM record (`+0x00 model_sel`,
     /// `+0x02 flags`, `+0x04` bytecode) staged by the shared `FUN_80021B04`
     /// machinery. This parses those records out of the retained battle-action
-    /// overlay (PROT 0898) and spawns them as a [`crate::summon::SummonScene`]
+    /// overlay (PROT 0898) and spawns them as a [`legaia_engine_effects::summon::SummonScene`]
     /// with model base `crate::scene::EFFECT_MODEL_LIBRARY_BASE` (the engine's
     /// fixed-library analogue of the retail `gp[0x754] = party_count + 2`; see
     /// that constant's docs), so each mesh part resolves to
@@ -29,7 +29,7 @@ impl World {
         let Some(fx) = cat.fx_for_move_id(move_id) else {
             return false;
         };
-        use legaia_asset::move_power::{self, BATTLE_OVERLAY_BASE, EffectListEntry};
+        use legaia_game_tables::move_power::{self, BATTLE_OVERLAY_BASE, EffectListEntry};
 
         // The high-bit (`0x80`) effect-list entries route to the 2D efect.dat
         // pool (`FUN_801dfdf0`), not the 0x801f6324 scene-graph. They spawn
@@ -84,17 +84,18 @@ impl World {
             if let Some(overlay) = self.tables.move_power_overlay.clone()
                 && let Some(all_parts) = move_power::parse_effect_proto_records(&overlay)
             {
-                let parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
+                let parts: Vec<legaia_overlay_images::summon_overlay::SummonPart> = all_parts
                     .into_iter()
                     .filter(|p| wanted.contains(&p.record_off))
                     .collect();
                 if !parts.is_empty() {
-                    self.casting.active_move_fx = Some(crate::summon::SummonScene::spawn_parts(
-                        &parts,
-                        &overlay,
-                        crate::scene::EFFECT_MODEL_LIBRARY_BASE,
-                        origin,
-                    ));
+                    self.casting.active_move_fx =
+                        Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
+                            &parts,
+                            &overlay,
+                            crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                            origin,
+                        ));
                     // Surface the move's presentation fields for the
                     // render / audio layers: the trail/afterimage texpage
                     // (`+0x0b`) and the sound cue (`+0x0d`). The texpage is
@@ -134,7 +135,7 @@ impl World {
     /// `0x32`, non-zero map byte), so callers routing an effect-script spawn
     /// through this get the palette swap without a second copy. It is a 16x1
     /// `MoveImage` onto `(224, 476)`, not a sound cue - see
-    /// [`crate::battle_effect_clut`].
+    /// [`legaia_engine_battle::battle_effect_clut`].
     ///
     /// This form seats its parts at unit scale with zeroed angles - the
     /// cue-group arm's spawn. The effect-script walk's own spawn passes the
@@ -151,7 +152,7 @@ impl World {
             effect_id,
             origin,
             [0; 3],
-            crate::summon::SPAWN_RENDER_SCALE,
+            legaia_engine_effects::summon::SPAWN_RENDER_SCALE,
         )
     }
 
@@ -199,12 +200,12 @@ impl World {
         let Some(overlay) = self.tables.move_power_overlay.clone() else {
             return false;
         };
-        use legaia_asset::move_power;
+        use legaia_game_tables::move_power;
         let Some(all_parts) = move_power::parse_effect_proto_records(&overlay) else {
             return false;
         };
         let mut offs: Vec<usize> = all_parts.iter().map(|p| p.record_off).collect();
-        let mut parts: Vec<legaia_asset::summon_overlay::SummonPart> = all_parts
+        let mut parts: Vec<legaia_overlay_images::summon_overlay::SummonPart> = all_parts
             .into_iter()
             .filter(|p| p.record_off == off)
             .collect();
@@ -219,12 +220,12 @@ impl World {
                 .collect();
             offs.extend(&twins);
             parts.extend(
-                legaia_asset::summon_overlay::parse_records_at(&overlay, &offs)
+                legaia_overlay_images::summon_overlay::parse_records_at(&overlay, &offs)
                     .into_iter()
                     .filter(|p| twins.contains(&p.record_off)),
             );
         }
-        let mut scene = crate::summon::SummonScene::spawn_parts(
+        let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
             &parts,
             &overlay,
             crate::scene::EFFECT_MODEL_LIBRARY_BASE,
@@ -259,7 +260,7 @@ impl World {
         let Some(overlay) = self.tables.move_power_overlay.clone() else {
             return;
         };
-        use legaia_asset::move_power::{self, BATTLE_OVERLAY_BASE};
+        use legaia_game_tables::move_power::{self, BATTLE_OVERLAY_BASE};
         let mut offs: Vec<usize> = move_power::parse_effect_proto_records(&overlay)
             .unwrap_or_default()
             .iter()
@@ -268,7 +269,7 @@ impl World {
         let record_at = |offs: &mut Vec<usize>, va: u32| {
             let off = va.checked_sub(BATTLE_OVERLAY_BASE)? as usize;
             offs.push(off);
-            legaia_asset::summon_overlay::parse_records_at(&overlay, offs)
+            legaia_overlay_images::summon_overlay::parse_records_at(&overlay, offs)
                 .into_iter()
                 .find(|p| p.record_off == off)
         };
@@ -279,7 +280,7 @@ impl World {
             if self.casting.active_action_fx.len() >= Self::ACTION_FX_CAP {
                 continue;
             }
-            let mut scene = crate::summon::SummonScene::spawn_parts(
+            let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
                 &[],
                 &overlay,
                 crate::scene::EFFECT_MODEL_LIBRARY_BASE,
@@ -304,10 +305,10 @@ impl World {
                 self.world.next_rand() as i32
             }
             fn sin(&self, index: u32) -> i16 {
-                vm::battle_action::motion::trig12(index as u16).0
+                legaia_engine_battle_vm::battle_action::motion::trig12(index as u16).0
             }
             fn cos(&self, index: u32) -> i16 {
-                vm::battle_action::motion::trig12(index as u16).1
+                legaia_engine_battle_vm::battle_action::motion::trig12(index as u16).1
             }
             fn parent_yaw(&self) -> i16 {
                 self.yaw
@@ -339,7 +340,7 @@ impl World {
             };
             vm::battle_burst::run_burst(&mut host, b.mode);
             let requests = host.out;
-            let mut scene = crate::summon::SummonScene::spawn_parts(
+            let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
                 &[],
                 &overlay,
                 crate::scene::EFFECT_MODEL_LIBRARY_BASE,
@@ -365,11 +366,11 @@ impl World {
     }
 
     /// The seater's own VM run for every battle FX part seated since the
-    /// last tick ([`crate::summon::SummonScene::seat_run`]), over the
+    /// last tick ([`legaia_engine_effects::summon::SummonScene::seat_run`]), over the
     /// summon, move-FX and effect-script scenes. Run after each batch of
     /// seats so no part reaches a draw before its program has.
     pub fn seat_run_battle_fx(&mut self) {
-        let mut scenes: Vec<crate::summon::SummonScene> = Vec::new();
+        let mut scenes: Vec<legaia_engine_effects::summon::SummonScene> = Vec::new();
         scenes.extend(self.casting.active_summon.take());
         let summon_n = scenes.len();
         scenes.extend(self.casting.active_move_fx.take());
@@ -516,7 +517,7 @@ impl World {
     /// draw move FX draw the effect-script spawns too. Empty when nothing is
     /// playing. Each draw's `model_index` indexes [`Self::global_tmd_pool`]
     /// (the PROT 0871 effect-model library).
-    pub fn active_move_fx_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
+    pub fn active_move_fx_part_draws(&self) -> Vec<legaia_engine_effects::summon::SummonPartDraw> {
         let mut out = self
             .casting
             .active_move_fx
@@ -543,7 +544,7 @@ impl World {
     /// Both hosts resolve every move-FX part draw through it.
     pub fn morphed_part_tmd(
         &self,
-        draw: &crate::summon::SummonPartDraw,
+        draw: &legaia_engine_effects::summon::SummonPartDraw,
     ) -> Option<crate::world::GlobalTmd> {
         let lanes = draw.morph.lanes();
         if lanes.is_empty() {
@@ -551,7 +552,7 @@ impl World {
         }
         let rest = self.global_tmd(draw.model_index as i16)?;
         let resolve = |idx: u8| -> Option<&[u8]> {
-            if self.mode == crate::world::SceneMode::Battle {
+            if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
                 crate::world::vdf_entry(self.tables.battle_vdf.as_deref()?, idx)
             } else {
                 self.vdf_record_bytes(idx)
@@ -582,14 +583,14 @@ impl World {
     /// The local-space mesh a summon / move-FX part draw renders: its
     /// morphed or rest mesh ([`Self::morphed_part_tmd`], else the pool
     /// TMD) with the part's render scale and colour word applied
-    /// ([`crate::summon::SummonPartDraw::apply_render_state`]) - the model
+    /// ([`legaia_engine_effects::summon::SummonPartDraw::apply_render_state`]) - the model
     /// draw `0x8001B160` hands every part through. `None` when the part's
     /// mesh is not in the pool. Both hosts draw every part whose
-    /// [`crate::summon::SummonPartDraw::draws_rest_mesh`] is false through
+    /// [`legaia_engine_effects::summon::SummonPartDraw::draws_rest_mesh`] is false through
     /// this kernel: it is what fades the Spirit aura in and out.
     pub fn part_draw_vram_mesh(
         &self,
-        draw: &crate::summon::SummonPartDraw,
+        draw: &legaia_engine_effects::summon::SummonPartDraw,
     ) -> Option<legaia_tmd::mesh::VramMesh> {
         let morphed = self.morphed_part_tmd(draw);
         let g = match morphed.as_ref() {
@@ -609,7 +610,7 @@ impl World {
 
     /// Request a move-FX spawn for the non-summon move `move_id` at `origin`,
     /// but only when the move-power table is installed and the move's record
-    /// carries a spawnable effect entry ([`crate::move_power::MovePowerCatalog::move_has_spawn_fx`]).
+    /// carries a spawnable effect entry ([`legaia_engine_battle::move_power::MovePowerCatalog::move_has_spawn_fx`]).
     /// No-op otherwise (plain physical hits, disc-free battles with no table).
     /// Idempotent within a step (last cast wins). The move-FX sibling of
     /// [`Self::request_summon_spawn`]; Seru-summon ids go through that instead.

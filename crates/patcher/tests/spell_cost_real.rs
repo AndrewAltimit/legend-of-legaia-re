@@ -71,7 +71,8 @@ fn shuffle_spell_costs_round_trips_on_disc() {
     let (scus_lba, _) = find_file_in_image(img, "SCUS_942.54").unwrap();
     let scus =
         legaia_iso::iso9660::read_file_in_image(&original, "SCUS_942.54").expect("read SCUS");
-    let table_off = legaia_asset::spell_names::stats_file_offset(&scus).expect("stats offset");
+    let table_off =
+        legaia_game_tables::spell_names::stats_file_offset(&scus).expect("stats offset");
     let table_sector = scus_lba as usize + table_off / USER_DATA_SIZE;
     let sb = table_sector * SECTOR_SIZE;
     assert!(

@@ -6,13 +6,13 @@ use super::*;
 impl World {
     /// Drive the open battle Arts submenu one frame from [`World::input`].
     ///
-    /// Edge-triggered pad → one [`crate::battle_arts::BattleArtsInput`] per
+    /// Edge-triggered pad → one [`legaia_engine_battle::battle_arts::BattleArtsInput`] per
     /// frame. A confirmed row commits its direction string
     /// ([`Self::run_battle_art`]); the queue is built and the attack band
     /// armed at the caster's dispatch. Backing out reopens the command menu.
     pub(in crate::world) fn tick_battle_arts_menu(&mut self) {
-        use crate::battle_arts::{ArtsResolution, BattleArtsInput};
-        use crate::input::PadButton;
+        use legaia_engine_battle::battle_arts::{ArtsResolution, BattleArtsInput};
+        use legaia_engine_system::input::PadButton;
 
         let Some(mut menu) = self.battle.arts_menu.take() else {
             return;
@@ -60,7 +60,7 @@ impl World {
 
     /// Open the retail-model **Arts command input** for `actor`: seed the
     /// AP pool from the acting character's AGL (retail `ctx+0x6DC` <-
-    /// actor `+0x154`; [`crate::arts_command_input::DEFAULT_POOL`] without
+    /// actor `+0x154`; [`legaia_engine_battle::arts_command_input::DEFAULT_POOL`] without
     /// stats), the four per-direction press costs (Left = the arm command
     /// `0x0C`, carrying the per-(character, weapon) `+0x74` byte from
     /// [`Self::battle_arm_costs`]; the others at the favored base), and the
@@ -95,12 +95,14 @@ impl World {
     /// the battle's entry session, `muscle_dome::DomeMenu`), so during one
     /// this is the dome fighter's entry - one view, one chrome, both kinds of
     /// fight.
-    pub fn arts_input_view(&self) -> Option<crate::arts_command_input::ArtsInputView<'_>> {
-        if self.mode == crate::world::SceneMode::MuscleDome {
+    pub fn arts_input_view(
+        &self,
+    ) -> Option<legaia_engine_battle::arts_command_input::ArtsInputView<'_>> {
+        if self.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
             return self.minigames.muscle_dome.as_ref()?.arts_input_view();
         }
         let s = self.battle.arts_input.as_ref()?;
-        Some(crate::arts_command_input::ArtsInputView {
+        Some(legaia_engine_battle::arts_command_input::ArtsInputView {
             buffer: &s.buffer,
             spent: &s.spent,
             pennants: s.bar_commands(),
@@ -117,7 +119,10 @@ impl World {
                     .get(roster)
                     .map(|r| r.equipment().slots)
                     .unwrap_or_default();
-                crate::arts_command_input::retail_chip_icons(roster as u8 + 1, &equip)
+                legaia_engine_battle::arts_command_input::retail_chip_icons(
+                    roster as u8 + 1,
+                    &equip,
+                )
             },
             // The right-hand plate reads the caster's **Spirit** gauge and
             // never moves during entry - the entry budget's visible form is
@@ -138,7 +143,7 @@ impl World {
     /// elements - placement records `0x0F` (the AP bar) and `0x52` (the AP
     /// plate) - and the spirit band then grows the bar to the extended gauge
     /// the next turn's entry pool will have, and climbs the plate by the
-    /// Spirit the turn earns (`legaia_engine_vm::battle_action`'s spirit
+    /// Spirit the turn earns (`legaia_engine_battle_vm::battle_action`'s spirit
     /// band, [`vm::battle_action::BattleActionCtx::spirit_bar_width`] /
     /// `spirit_plate_value`). The Done band's tail unloads both. So the view
     /// is up from the band's entry (`0x46`) until the `0x51` fade-down's
@@ -149,12 +154,16 @@ impl World {
     ///
     /// Both hosts draw it through the arts-entry chrome builders when no
     /// entry session is open ([`Self::arts_input_view`] takes precedence).
-    pub fn spirit_gauge_view(&self) -> Option<crate::arts_command_input::ArtsInputView<'static>> {
-        use crate::arts_command_input::{ArtsInputScreen, ArtsInputView};
-        if self.mode != crate::world::SceneMode::Battle || self.battle.arts_input.is_some() {
+    pub fn spirit_gauge_view(
+        &self,
+    ) -> Option<legaia_engine_battle::arts_command_input::ArtsInputView<'static>> {
+        use legaia_engine_battle::arts_command_input::{ArtsInputScreen, ArtsInputView};
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle
+            || self.battle.arts_input.is_some()
+        {
             return None;
         }
-        use vm::battle_action::ActionState as S;
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
         let state = self.battle_ctx.action_state;
         let up = (S::SpiritArtsEntry.as_byte()..=S::DoneCleanup.as_byte()).contains(&state)
             || (state == S::DoneFadeDown.as_byte() && self.battle_ctx.done_ui_torn_down == 0);
@@ -166,7 +175,9 @@ impl World {
             return None;
         }
         let actor = self.actors.get(usize::from(slot))?;
-        if actor.battle.action_category != vm::battle_action::ActionCategory::Spirit.as_byte() {
+        if actor.battle.action_category
+            != legaia_engine_battle_vm::battle_action::ActionCategory::Spirit.as_byte()
+        {
             return None;
         }
         let width = self.battle_ctx.spirit_bar_width;
@@ -177,9 +188,9 @@ impl World {
             pennant_spent: &[],
             pool: 0,
             pool_max: width
-                .saturating_add(vm::battle_action::SPIRIT_BAR_WIDTH_BIAS)
+                .saturating_add(legaia_engine_battle_vm::battle_action::SPIRIT_BAR_WIDTH_BIAS)
                 .max(0) as u16,
-            costs: [crate::arts_command_input::FAVORED_COST; 4],
+            costs: [legaia_engine_battle::arts_command_input::FAVORED_COST; 4],
             chip_icons: [0x0F, 0x0E, 0x11, 0x10],
             plate_value: self.battle_ctx.spirit_plate_value.clamp(0, 100) as u8,
             list_page: None,
@@ -199,7 +210,7 @@ impl World {
     }
 
     pub(in crate::world) fn open_arts_command_input(&mut self, actor: u8) {
-        use crate::arts_command_input::{
+        use legaia_engine_battle::arts_command_input::{
             ARTS_LIST_ROWS_PER_PAGE, ArtsCommandInputSession, DEFAULT_POOL, FAVORED_COST,
         };
         let char_slot = self.party_roster_slot(actor as usize) as u8;
@@ -297,8 +308,8 @@ impl World {
     /// out (empty buffer + Circle, or no valid target) reopens the command
     /// menu.
     pub(in crate::world) fn tick_battle_arts_input(&mut self) {
-        use crate::arts_command_input::{ArtsCommandPad, ArtsInputResolution};
-        use crate::input::PadButton;
+        use legaia_engine_battle::arts_command_input::{ArtsCommandPad, ArtsInputResolution};
+        use legaia_engine_system::input::PadButton;
 
         let Some(mut session) = self.battle.arts_input.take() else {
             return;
@@ -314,10 +325,10 @@ impl World {
             triangle: self.input.just_pressed(PadButton::Triangle),
         };
         // A rotted limb's direction is refused during entry, with the buzz
-        // cue (`crate::arts_command_input::rot_blocks`).
+        // cue (`legaia_engine_battle::arts_command_input::rot_blocks`).
         if matches!(
             session.phase,
-            crate::arts_command_input::ArtsInputPhase::Entering
+            legaia_engine_battle::arts_command_input::ArtsInputPhase::Entering
         ) {
             let status = self.raw_status_word(session.actor);
             let mut refused = false;
@@ -327,25 +338,25 @@ impl World {
                 (&mut ev.down, legaia_art::Command::Down),
                 (&mut ev.right, legaia_art::Command::Right),
             ] {
-                if *pressed && crate::arts_command_input::rot_blocks(status, cmd) {
+                if *pressed && legaia_engine_battle::arts_command_input::rot_blocks(status, cmd) {
                     *pressed = false;
                     refused = true;
                 }
             }
             if refused {
-                self.audio
-                    .battle_sfx_cues
-                    .push(crate::battle_events::BattleSfxCue {
-                        kind: crate::arts_command_input::ROT_REFUSED_CUE,
+                self.audio.battle_sfx_cues.push(
+                    legaia_engine_battle::battle_events::BattleSfxCue {
+                        kind: legaia_engine_battle::arts_command_input::ROT_REFUSED_CUE,
                         timing_frames: 0,
                         actor_slot: session.actor,
                         target_slot: session.actor,
-                    });
+                    },
+                );
             }
         }
         let was_entering = matches!(
             session.phase,
-            crate::arts_command_input::ArtsInputPhase::Entering
+            legaia_engine_battle::arts_command_input::ArtsInputPhase::Entering
         );
         session.input(ev, party, monsters);
 
@@ -357,8 +368,8 @@ impl World {
         // `110` validator with category `3` (an art is an Attack). Either
         // hook's rewind discards the entry and reopens the command menu.
         if self.battle.tutorial.is_some() {
-            use crate::arts_command_input::ArtsInputPhase as P;
             use crate::battle_flow::BattleFlowState as Flow;
+            use legaia_engine_battle::arts_command_input::ArtsInputPhase as P;
             let rejected = match &session.phase {
                 P::Entering if !was_entering => self.set_battle_flow(Flow::ArtsCommandEntry),
                 P::Review | P::Targeting { .. } | P::Confirmed { .. } if was_entering => {

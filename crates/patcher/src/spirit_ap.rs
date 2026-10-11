@@ -83,11 +83,11 @@ use anyhow::{Result, bail};
 
 /// PROT entry index of the battle-action overlay hosting `FUN_801E295C`.
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
-    legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+    legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX;
 
 /// Load base VA of the battle-action overlay (raw entry: file offset =
 /// `va - OVERLAY_BASE_VA`).
-pub const OVERLAY_BASE_VA: u32 = legaia_asset::move_power::BATTLE_OVERLAY_BASE;
+pub const OVERLAY_BASE_VA: u32 = legaia_game_tables::move_power::BATTLE_OVERLAY_BASE;
 
 /// The retail Spirit accrual: 32 AP per Spirit action.
 pub const RETAIL_SPIRIT_AP: i16 = 0x20;

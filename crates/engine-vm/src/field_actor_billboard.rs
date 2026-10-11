@@ -174,7 +174,7 @@ pub fn sprite_rect(quad: &ProjectedQuad) -> SpriteRect {
 /// Live on both play hosts: `World::field_light_draws` runs it per attached
 /// light with a projector over the field camera, and the native window's
 /// `field_light_screen_prims` and the browser play page's `field_light_prims`
-/// draw the result through `legaia_engine_ui::screen_prim::light_pool_prims`.
+/// draw the result through `legaia_render_kernels::screen_prim::light_pool_prims`.
 /// The per-tick hook `FUN_801E3E00` ([`attached_sprite_script_tick`]) runs in
 /// the world's simulation tick rather than inside the draw, which is the same
 /// order - retail calls it before projecting.
@@ -528,7 +528,7 @@ fn quarter_mix(a: u32, b: u32) -> u32 {
 /// Returned in **link order** - the order retail's `AddPrim`
 /// (`FUN_8003D2C4`) calls run, all into one ordering-table slot
 /// (`*0x1F8003F4 + 8`). That slot is LIFO, so the drawn order is the reverse;
-/// `legaia_engine_ui::screen_prim`'s sort reproduces exactly that for prims
+/// `legaia_render_kernels::screen_prim`'s sort reproduces exactly that for prims
 /// submitted in link order at one `ot_index`.
 ///
 /// PORT: FUN_801e3984

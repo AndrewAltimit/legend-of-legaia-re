@@ -10,7 +10,7 @@ impl World {
     /// When a real on-disc item-effect table has been installed via
     /// [`Self::set_item_effects`], its field/battle usability flags are applied
     /// onto the new catalog so the item-menu gating matches retail.
-    pub fn set_item_catalog(&mut self, catalog: crate::items::ItemCatalog) {
+    pub fn set_item_catalog(&mut self, catalog: legaia_engine_menus::items::ItemCatalog) {
         let mut catalog = catalog;
         if let Some(table) = &self.tables.item_effects {
             catalog.apply_effect_flags(table);
@@ -26,7 +26,7 @@ impl World {
     /// Install the real on-disc item-effect descriptor table. Subsequent
     /// [`Self::set_item_catalog`] calls apply its usability flags; this also
     /// re-applies them to the catalog already installed.
-    pub fn set_item_effects(&mut self, table: legaia_asset::item_effect::ItemEffectTable) {
+    pub fn set_item_effects(&mut self, table: legaia_game_tables::item_effect::ItemEffectTable) {
         self.tables.item_catalog.apply_effect_flags(&table);
         self.tables.item_catalog.apply_stat_items(&table);
         self.tables.item_catalog.apply_buff_items(&table);
@@ -38,8 +38,8 @@ impl World {
 
     /// Install the spell catalog used by the player-driven battle Magic
     /// submenu. Engines call this at battle init (commonly
-    /// [`crate::spells::SpellCatalog::vanilla`]).
-    pub fn set_spell_catalog(&mut self, catalog: crate::spells::SpellCatalog) {
+    /// [`legaia_engine_battle::spells::SpellCatalog::vanilla`]).
+    pub fn set_spell_catalog(&mut self, catalog: legaia_engine_battle::spells::SpellCatalog) {
         self.tables.spell_catalog = catalog;
     }
 
@@ -58,7 +58,7 @@ impl World {
 
     /// Install a character's art records **from its art-animation bank** -
     /// the per-character player file's `record[0] +0x58` records
-    /// ([`legaia_asset::battle_char_assembly::art_animation_bank`]), which
+    /// ([`legaia_actor_formats::battle_char_assembly::art_animation_bank`]), which
     /// are the records the retail queue-builder walks: record `k` is action
     /// constant `0x10 + k`, its `+0x00` combo is the arrow string the
     /// tokenizer matches (`FUN_801EED1C` `0x801EF3BC..0x801EF3EC`) and its
@@ -73,7 +73,7 @@ impl World {
     pub fn install_art_bank_records(
         &mut self,
         character: legaia_art::Character,
-        records: &[legaia_asset::battle_char_assembly::ArtAnimRecord],
+        records: &[legaia_actor_formats::battle_char_assembly::ArtAnimRecord],
     ) {
         use legaia_art::{ActionConstant, Command};
         for rec in records {

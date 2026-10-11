@@ -89,7 +89,7 @@ impl MapIdResolver for DefaultMapIdResolver {
 }
 
 /// A resolver backed by a scene's **disc-sourced** scene-destination table
-/// ([`crate::man_field_scripts::scene_destinations`]).
+/// ([`legaia_engine_field::man_field_scripts::scene_destinations`]).
 ///
 /// This resolves the **named scene-change** (`0x3F`) id space: each `0x3F` op
 /// carries an `i16` index alongside the inline destination name, and a scene's
@@ -105,14 +105,17 @@ impl MapIdResolver for DefaultMapIdResolver {
 /// dedicated [`Self::resolve`]/[`Self::destination`] by `i16`.
 #[derive(Debug, Clone, Default)]
 pub struct SceneDestinationResolver {
-    by_index: std::collections::HashMap<i16, crate::man_field_scripts::SceneDestination>,
+    by_index:
+        std::collections::HashMap<i16, legaia_engine_field::man_field_scripts::SceneDestination>,
 }
 
 impl SceneDestinationResolver {
     /// Build from a decoded destination list (first entry per index wins, which
-    /// matches [`scene_destinations`](crate::man_field_scripts::scene_destinations)'s
+    /// matches [`scene_destinations`](legaia_engine_field::man_field_scripts::scene_destinations)'s
     /// first-seen dedup).
-    pub fn new(destinations: Vec<crate::man_field_scripts::SceneDestination>) -> Self {
+    pub fn new(
+        destinations: Vec<legaia_engine_field::man_field_scripts::SceneDestination>,
+    ) -> Self {
         let mut by_index = std::collections::HashMap::new();
         for d in destinations {
             by_index.entry(d.index).or_insert(d);
@@ -127,7 +130,10 @@ impl SceneDestinationResolver {
 
     /// The full destination record for an `i16` scene-change index (name +
     /// entry tile).
-    pub fn destination(&self, index: i16) -> Option<&crate::man_field_scripts::SceneDestination> {
+    pub fn destination(
+        &self,
+        index: i16,
+    ) -> Option<&legaia_engine_field::man_field_scripts::SceneDestination> {
         self.by_index.get(&index)
     }
 

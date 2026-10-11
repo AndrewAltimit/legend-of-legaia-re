@@ -15,9 +15,9 @@ use anyhow::{Context, Result};
 use legaia_engine_render::glam::{Mat4, Vec3};
 use legaia_engine_render::{
     RenderTarget, Scene as RenderScene, SceneDraw, UploadedVram,
-    legaia_tim::Vram,
     window::{EngineWindow, orbit_camera_mvp},
 };
+use legaia_tim::Vram;
 use std::path::{Path, PathBuf};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -32,7 +32,8 @@ pub(crate) fn run_world(
     with_move_vm: bool,
 ) -> Result<()> {
     use legaia_engine_core::scene::ProtIndex;
-    use legaia_engine_core::world::{SceneMode, World};
+    use legaia_engine_core::world::World;
+    use legaia_engine_mode::mode::SceneMode;
 
     if max_actors == 0 {
         anyhow::bail!("max_actors must be >= 1");

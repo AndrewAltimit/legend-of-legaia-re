@@ -1,5 +1,5 @@
 //! Retail capture of the battle tint pass `FUN_8004A908`
-//! (`legaia_engine_vm::battle_actor_tint`), the colour word and blend weight
+//! (`legaia_engine_battle_vm::battle_actor_tint`), the colour word and blend weight
 //! both play hosts now stage for every battle body through
 //! `World::battle_actor_draw_plan`.
 //!
@@ -19,7 +19,7 @@
 //! Capture-gated: skip-passes without `scripts/scenarios.toml` or
 //! `saves/library`.
 
-use legaia_engine_vm::battle_actor_tint::{BattleTintInputs, TintArm, battle_actor_tint};
+use legaia_engine_battle_vm::battle_actor_tint::{BattleTintInputs, TintArm, battle_actor_tint};
 use std::path::PathBuf;
 
 const SEAT_TABLE: u32 = 0x801C_9370;
@@ -98,7 +98,7 @@ fn the_tint_pass_reproduces_the_captured_render_words() {
         eprintln!("[skip] scripts/scenarios.toml or saves/library missing (capture-gated)");
         return;
     };
-    let manifest = legaia_mednafen::ScenarioManifest::from_path(&manifest).expect("manifest");
+    let manifest = legaia_ram_image::ScenarioManifest::from_path(&manifest).expect("manifest");
     let (mut states, mut bodies, mut exact, mut depth_arm) = (0, 0, 0, 0);
     for scn in &manifest.scenarios {
         if scn.phase.as_deref() != Some("battle") {
@@ -108,7 +108,7 @@ fn the_tint_pass_reproduces_the_captured_render_words() {
             continue;
         };
         let ram = match path.extension().and_then(|e| e.to_str()) {
-            Some("sstate") => legaia_pcsxr::SaveState::from_path(&path)
+            Some("sstate") => legaia_pcsx_redux::SaveState::from_path(&path)
                 .ok()
                 .map(|s| s.main_ram().to_vec()),
             _ => legaia_mednafen::SaveState::from_path(&path)

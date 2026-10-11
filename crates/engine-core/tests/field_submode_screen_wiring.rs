@@ -9,17 +9,17 @@
 //! computes - the gap this suite exists to close is whether the frame loop
 //! reaches it at all.
 
-use legaia_engine_core::actor_handler::ActorHandler;
 use legaia_engine_core::field_submode_screen::{
     Op49ParkOwner, SUBMODE_ACCEPT_MASK, slot_for_op49_sub_op,
 };
 use legaia_engine_core::world::World;
+use legaia_engine_field::actor_handler::ActorHandler;
 use legaia_engine_field::submode_hub_actors::{GOLD_PER_COIN, PICK_ACCEPT, slot};
 
 /// The raw PSX pad word a host sends for a **packed** Legaia mask - the
 /// submode masks are packed, `World::input` holds the raw word.
 fn raw(packed: u16) -> u16 {
-    legaia_engine_core::dev_menu::retail_packed(packed)
+    legaia_engine_system::pad::retail_packed(packed)
 }
 
 /// A world with the submode driver actor the MAN loader spawns.
@@ -388,7 +388,7 @@ fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
     // press is a fresh edge.
     w.input.set_pad(0);
     w.tick();
-    w.input.set_pad(raw(legaia_engine_core::dev_menu::PACK_UP));
+    w.input.set_pad(raw(legaia_engine_system::pad::PACK_UP));
     assert!(tick_until(&mut w, 16, |w| w
         .field_vm
         .submode_screen
@@ -420,7 +420,7 @@ fn the_coin_confirm_is_pad_driven_without_a_picker_feed() {
 /// host word, the two were exactly swapped.
 #[test]
 fn a_host_cross_press_accepts_and_a_host_down_press_does_not() {
-    use legaia_engine_core::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let open = || {
         let mut w = field_world();
         w.party.money = 5_000;

@@ -17,7 +17,7 @@
 
 use std::collections::BTreeSet;
 
-use legaia_asset::battle_data_pack;
+use legaia_actor_formats::battle_data_pack;
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_patcher::apply;

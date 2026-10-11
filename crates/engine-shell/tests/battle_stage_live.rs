@@ -23,7 +23,8 @@ use std::path::{Path, PathBuf};
 
 use legaia_engine_core::overlay_loader::battle_stage_overlay_entry;
 use legaia_engine_core::scene::{ProtIndex, SceneHost};
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
 
 const RAM_BASE: u32 = 0x8000_0000;
 /// Stage-bundle base the type-`0x01` chunk walker records.

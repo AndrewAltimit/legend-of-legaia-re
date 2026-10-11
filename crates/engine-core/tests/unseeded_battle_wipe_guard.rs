@@ -16,8 +16,9 @@
 //! - an unseeded battle is NOT reported as a party wipe, and
 //! - it still terminates: a monster wipe resolves and tears down.
 
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
+use legaia_engine_battle_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A battle world with NO roster: the party slots are stamped by
 /// `enter_battle` but nothing projects records onto them - the unseeded

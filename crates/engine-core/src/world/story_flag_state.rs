@@ -19,7 +19,7 @@ pub struct StoryFlagState {
     /// `_DAT_8007B8F4` **region-type mask**: bit `n` set when the player's
     /// tile sits inside a type-`n` region of the scene `.MAP` region table.
     /// Rebuilt per tile crossing by [`crate::world::World::refresh_field_regions`] (the
-    /// `FUN_800180EC` / `FUN_801DBA20` ports in [`crate::field_regions`])
+    /// `FUN_800180EC` / `FUN_801DBA20` ports in [`legaia_engine_field::field_regions`])
     /// when the per-scene tables are installed; otherwise host-owned
     /// scene-local state.
     pub extra_flags: u32,

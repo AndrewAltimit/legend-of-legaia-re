@@ -127,7 +127,7 @@ pub struct FadeFlashInput {
 /// Wired: `PanelActorKind::FadeFlash` in
 /// `legaia_engine_core::world_map_panel_host`. The host owns the brightness
 /// accumulator and the flash counter, performs the spawn through
-/// `legaia_engine_core::cutscene_script_elements::save_screen_spawn`, and
+/// `crate::plain_template_actors::save_screen_spawn`, and
 /// releases the park through `PanelActorHost::release_flash`, which writes the
 /// counter the way the menu side does.
 pub fn fade_flash_tick(phase: i16, input: FadeFlashInput) -> (i16, i32, i32, Vec<FadeFlashEffect>) {

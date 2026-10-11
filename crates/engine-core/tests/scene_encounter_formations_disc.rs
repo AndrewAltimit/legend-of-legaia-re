@@ -29,7 +29,7 @@ use std::path::PathBuf;
 
 use legaia_engine_core::live_loop::LiveLoopOpts;
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -44,9 +44,10 @@ fn extracted_dir() -> Option<PathBuf> {
 /// Every formation row a rate-bearing region of `man` can pick.
 fn region_rollable_rows(man: &[u8]) -> BTreeSet<u16> {
     let mut ids = BTreeSet::new();
-    let Some(table) =
-        legaia_engine_core::region_encounter::region_encounter_table_from_man("corpus-probe", man)
-    else {
+    let Some(table) = legaia_engine_battle::region_encounter::region_encounter_table_from_man(
+        "corpus-probe",
+        man,
+    ) else {
         return ids;
     };
     for r in &table.regions {
@@ -90,7 +91,7 @@ fn every_rollable_formation_resolves_across_the_scene_corpus() {
             continue;
         };
         let Some((table, defs)) =
-            legaia_engine_core::encounter_man::scene_encounter_from_man(scene, &man)
+            legaia_engine_battle::encounter_man::scene_encounter_from_man(scene, &man)
         else {
             continue;
         };
@@ -100,7 +101,7 @@ fn every_rollable_formation_resolves_across_the_scene_corpus() {
         host.world.set_active_scene_label(scene);
         host.world.install_man_encounter(table, defs);
         host.world.set_field_regions(
-            legaia_engine_core::region_encounter::region_encounter_table_from_man(scene, &man),
+            legaia_engine_battle::region_encounter::region_encounter_table_from_man(scene, &man),
         );
 
         let registered: BTreeSet<u16> = host.world.registered_formation_ids().into_iter().collect();
@@ -288,8 +289,8 @@ fn force_encounter_drives_a_named_row_through_the_normal_transition() {
             .session
             .as_ref()
             .map(|s| s.phase())
-            .unwrap_or(legaia_engine_core::encounter::EncounterPhase::Idle),
-        legaia_engine_core::encounter::EncounterPhase::Idle
+            .unwrap_or(legaia_engine_battle::encounter::EncounterPhase::Idle),
+        legaia_engine_battle::encounter::EncounterPhase::Idle
     ));
 
     // rikuroa row 17 is the scripted lone-Caruban boss row (its formation

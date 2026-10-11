@@ -87,7 +87,7 @@ pub fn apply_anim_push(pose: &mut CameraPose, phase_cursor: u8, push: i32) {
 /// fixed byte offsets off it. The offsets the arms use are `0x00, 0x04, …,
 /// 0x4C` - dense over twenty rows - so the table is twenty parallel halfword
 /// tracks four bytes apart, each holding one value per phase.
-/// [`legaia_asset::battle_attack_camera_table`] parses it.
+/// [`legaia_game_tables::battle_attack_camera_table`] parses it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArmPhase {
     /// `ctx[+0x26D]` - the phase cursor.
@@ -108,7 +108,7 @@ impl ArmPhase {
     /// reports this whole module as live.
     pub fn track_value(
         self,
-        table: &legaia_asset::battle_attack_camera_table::AttackCameraTracks,
+        table: &legaia_game_tables::battle_attack_camera_table::AttackCameraTracks,
         track: usize,
     ) -> Option<i16> {
         table.track(track, self.cursor as usize)

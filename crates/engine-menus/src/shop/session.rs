@@ -131,11 +131,11 @@ pub struct ShopSession {
     pub pending_bag_slot: Option<u8>,
     /// Stable identity of the vendor running this shop. Derived from
     /// the shop record at field-shop arm time via
-    /// [`legaia_asset::seru_trade::vendor_id_from_shop`]; `0` for sessions built
+    /// [`legaia_game_tables::seru_trade::vendor_id_from_shop`]; `0` for sessions built
     /// directly (tests / host-supplied stock).
     pub vendor_id: u16,
     /// The vendor's phase offset into the seru-trade bucket schedule
-    /// ([`legaia_asset::seru_trade::vendor_bucket_offset`], the same
+    /// ([`legaia_game_tables::seru_trade::vendor_bucket_offset`], the same
     /// count+ids+name sum the retail handler takes from the armed op-`0x49`
     /// record) - each trader shows its own offer. `0` for sessions built
     /// directly (tests / host-supplied stock).

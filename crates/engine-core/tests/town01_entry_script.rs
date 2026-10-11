@@ -44,7 +44,7 @@ fn town01_man_entry_script_resolves_and_arm_lives_in_partition_one() {
     assert_eq!(bundle.entry_idx(), 4, "town01 bundle entry");
     assert_eq!(
         index.class_of(bundle.entry_idx()).expect("class"),
-        legaia_asset::categorize::Class::SceneAssetTable,
+        legaia_disc_audit::categorize::Class::SceneAssetTable,
         "town01 bundle class"
     );
 
@@ -81,7 +81,7 @@ fn town01_man_entry_script_resolves_and_arm_lives_in_partition_one() {
     let man = legaia_engine_core::scene_bundle::extract_man_payload(&bundle, &entry_bytes)
         .expect("man extract")
         .expect("town01 MAN payload");
-    let parsed = legaia_asset::man_section::parse(&man).expect("man parse");
+    let parsed = legaia_scene_formats::man_section::parse(&man).expect("man parse");
     assert_eq!(
         parsed.header.partition_counts,
         [36, 53, 39],

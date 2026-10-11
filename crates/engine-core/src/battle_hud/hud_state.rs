@@ -60,8 +60,8 @@ pub struct BattleHud {
     /// `FUN_8004CE2C`. Armed by [`Self::sync_status`] (which every host
     /// already calls once per slot per frame) and
     /// drained by the host's mid-battle VRAM pass through
-    /// [`crate::battle_status_clut::StatusClutState::step`].
-    pub status_clut: crate::battle_status_clut::StatusClutState,
+    /// [`legaia_engine_battle::battle_status_clut::StatusClutState::step`].
+    pub status_clut: legaia_engine_battle::battle_status_clut::StatusClutState,
     /// The right-hand combo counter the current action has put up - `N HIT`
     /// / `TOTAL x` for a physical chain, `DAMAGE x` for a cast - or `None`
     /// while nothing has landed. Accumulated by [`Self::push_popup`] from
@@ -310,7 +310,7 @@ impl BattleHud {
     /// lies past it, so the cluster is closed there whatever the latch reads.
     /// `rim_elm_gimard_seru_capture_after` (`0x52`) shows no cluster.
     pub fn close_combo_on_fade_down(&mut self, action_state: u8, torn_down: bool) {
-        use legaia_engine_vm::battle_action::ActionState as S;
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
         let closed = (action_state == S::DoneFadeDown.as_byte() && torn_down)
             || action_state == S::DoneSeruAbsorb.as_byte();
         if closed && let Some(c) = self.combo.as_mut().filter(|c| !c.closing) {
@@ -457,7 +457,7 @@ impl BattleHud {
 }
 
 /// Plain HUD slot view - owned strings + bytes, no renderer types.
-/// Engines convert into `legaia_engine_render::HudSlotView` trivially:
+/// Engines convert into `legaia_engine_ui::HudSlotView` trivially:
 /// the field shapes match by name.
 #[derive(Debug, Clone)]
 pub struct SlotView {

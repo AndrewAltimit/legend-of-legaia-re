@@ -10,6 +10,7 @@
 
 use super::*;
 use crate::scus_leaf_kernels::SoundStreamRequest;
+use legaia_engine_mode::mode::SceneMode;
 
 /// One `36` instruction followed by a `00` HALT, run once from a fresh
 /// world seeded with `pair` / `dual_mode`. Returns the PC afterwards; `0`
@@ -103,7 +104,9 @@ fn subs_3_and_4_are_ungated() {
     assert_eq!(world.audio.sfx_cue_delays.delay(0), Some(0x30));
     assert_eq!(
         world.take_sfx_ring_ops(),
-        vec![crate::world::SfxRingOp::SetLastDelay(0x30)]
+        vec![legaia_engine_system::sound_state::SfxRingOp::SetLastDelay(
+            0x30
+        )]
     );
 }
 
@@ -126,7 +129,7 @@ fn sub0_enqueue_waits_for_the_pair() {
     // `a0 = (s16)word1` into `FUN_80035B50`: the id crosses to the host ring.
     assert_eq!(
         world.take_sfx_ring_ops(),
-        vec![crate::world::SfxRingOp::Push(0x11)]
+        vec![legaia_engine_system::sound_state::SfxRingOp::Push(0x11)]
     );
 }
 
@@ -155,7 +158,7 @@ fn the_xa_arm_queues_the_clip_it_starts() {
     assert_eq!(pc, 5);
     assert_eq!(
         w.drain_field_xa_cues(),
-        vec![crate::sfx_cue::XaVoiceClip {
+        vec![legaia_engine_battle::sfx_cue::XaVoiceClip {
             clip: 0x10,
             channel: 7,
             duration_sectors: 0x135,
@@ -241,7 +244,12 @@ fn the_timed_release_expiry_reaches_the_hosts_as_a_bgm_pause() {
         pauses += w
             .drain_field_events()
             .iter()
-            .filter(|e| matches!(e, crate::field_events::FieldEvent::Bgm { sub_op: 2, .. }))
+            .filter(|e| {
+                matches!(
+                    e,
+                    legaia_engine_field::field_events::FieldEvent::Bgm { sub_op: 2, .. }
+                )
+            })
             .count();
     }
     assert_eq!(pauses, 1, "one pause, on the expiry frame");

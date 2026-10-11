@@ -322,7 +322,7 @@ impl PrizeExchangeSession {
 /// The two bag operations the state-3 commit needs: the held count the
 /// `< 0x63` gate reads (`FUN_80042F4C(id)`) and the one-copy grant
 /// (`FUN_800421D4(id, 1)`). The engine's party bag
-/// (`legaia_engine_core::world::ItemBag`) implements it; this crate keeps
+/// (`legaia_engine_menus::item_bag::ItemBag`) implements it; this crate keeps
 /// the rules free of the bag type.
 pub trait RedeemBag {
     /// Copies of `item_id` currently held (0 when absent).

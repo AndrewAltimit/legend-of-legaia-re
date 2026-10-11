@@ -5,13 +5,13 @@
 //! paths. What stays is the two queries that read a live battle off the
 //! world: whether the strip is up, and the strip itself.
 
-pub use legaia_engine_menus::timed_fight::*;
+use legaia_engine_menus::timed_fight::*;
 
 /// `true` while the battle's command phase is up - from the round start to
 /// the `Begin` that plays the round out - which is the strip's lifetime (see
 /// the module docs).
 pub fn strip_visible(world: &crate::world::World) -> bool {
-    world.mode == crate::world::SceneMode::Battle
+    world.mode == legaia_engine_mode::mode::SceneMode::Battle
         && world.battle.flow != crate::battle_flow::BattleFlowState::Idle
 }
 
@@ -38,7 +38,7 @@ pub fn timed_fight_strip(world: &crate::world::World) -> Option<TimedFightStrip>
     let label = world
         .battle
         .ui_strings
-        .get(legaia_asset::battle_ui_strings::BattleUiLabel::TimedFightStrip)?
+        .get(legaia_ui_formats::battle_ui_strings::BattleUiLabel::TimedFightStrip)?
         .to_string();
     Some(TimedFightStrip {
         label,

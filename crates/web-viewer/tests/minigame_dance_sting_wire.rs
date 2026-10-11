@@ -1,6 +1,6 @@
 //! Disc-gated: the browser dance page's good-step **hit sting** resolves the
 //! `(program, tone, note)` triple through the ported `FUN_801d3d78` kernel
-//! (`legaia_engine_core::dance::dance_hit_sting_voices`) rather than
+//! (`legaia_engine_minigames::dance::dance_hit_sting_voices`) rather than
 //! recomputing it.
 //!
 //! Two things the wire buys, both checked here against the visitor's own disc:
@@ -17,7 +17,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::dance::{
+use legaia_engine_minigames::dance::{
     STING_PROGRAM, STING_RANDOM_VARIANTS, STING_TIER_VARIANT, dance_hit_sting_voices,
 };
 use legaia_web_viewer::minigames::LegaiaMinigames;

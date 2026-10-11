@@ -10,7 +10,7 @@ use crate::*;
 // reaches. The panel that used to live here - a red `GAME OVER` heading
 // over Continue / Retry / Quit rows - was an engine invention from the
 // period when the destination was unpinned; see
-// `legaia_engine_core::game_over` for the four sites that pin it. If a
+// `legaia_engine_menus::game_over` for the four sites that pin it. If a
 // wipe presentation is ever wanted again it belongs behind an
 // enhancement toggle, not on the default path.
 

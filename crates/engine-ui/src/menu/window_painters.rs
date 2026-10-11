@@ -1,5 +1,5 @@
 //! Content painters for a block of the menu overlay's **window-descriptor
-//! table** (`legaia_asset::menu_windows`, 52 records at overlay VA
+//! table** (`legaia_game_tables::menu_windows`, 52 records at overlay VA
 //! `0x801E4738`).
 //!
 //! Each descriptor's `renderer_va` names the routine that fills that
@@ -76,7 +76,7 @@ pub use title_tabs::*;
 ///
 /// The painters read `+0xA`/`+0xC` as the content origin and `+0xE`/`+0x10`
 /// as the content extent; those are exactly
-/// `legaia_asset::menu_windows::MenuWindowDescriptor::rect`.
+/// `legaia_game_tables::menu_windows::MenuWindowDescriptor::rect`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PainterRect {
     pub x: i32,

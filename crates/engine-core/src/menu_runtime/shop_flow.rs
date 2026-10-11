@@ -19,7 +19,7 @@ impl MenuRuntime {
         let Some(session) = self.recipient_session.as_mut() else {
             return;
         };
-        let buttons = crate::menu_input::NavButtons::new(
+        let buttons = legaia_engine_system::menu_input::NavButtons::new(
             input.cross,
             input.circle || input.triangle,
             input.up,
@@ -62,7 +62,7 @@ impl MenuRuntime {
     /// (`FUN_801DB7F4` phase 0 buying, `FUN_801DBD94` phase 0 selling).
     ///
     /// The bound is the same kernel the row list used to draw
-    /// ([`crate::shop::buy_qty_max`] / the staged stack's count), so the
+    /// ([`legaia_engine_menus::shop::buy_qty_max`] / the staged stack's count), so the
     /// screen changed interaction without changing what it allows. A staged
     /// item the bag cannot supply (a sell row with a zero count) opens no
     /// picker at all, which leaves the VM on the screen it routed to.
@@ -80,12 +80,12 @@ impl MenuRuntime {
                 .find(item_id)
                 .map(|i| u16::try_from(i.price).unwrap_or(u16::MAX))
                 .unwrap_or(0);
-            let max = crate::shop::buy_qty_max(world.party.money, price, held);
+            let max = legaia_engine_menus::shop::buy_qty_max(world.party.money, price, held);
             if max < 1 {
                 return;
             }
-            self.quantity_session = Some(crate::shop::QuantityPicker::Buy(
-                crate::shop::BuyQuantitySession::new(
+            self.quantity_session = Some(legaia_engine_menus::shop::QuantityPicker::Buy(
+                legaia_engine_menus::shop::BuyQuantitySession::new(
                     item_id,
                     price,
                     world.party.money,
@@ -116,8 +116,8 @@ impl MenuRuntime {
             if staged == 0 {
                 return;
             }
-            self.quantity_session = Some(crate::shop::QuantityPicker::Sell(
-                crate::shop::SellQuantitySession::new(item_id, price, staged),
+            self.quantity_session = Some(legaia_engine_menus::shop::QuantityPicker::Sell(
+                legaia_engine_menus::shop::SellQuantitySession::new(item_id, price, staged),
             ));
         }
     }
@@ -128,9 +128,9 @@ impl MenuRuntime {
     /// The sub-sessions decide it before the state byte does: a quantity
     /// stepper or the recipient picker owns the screen while the list state
     /// it was opened from stays parked underneath. A host feeds the result
-    /// to [`crate::shop::shop_screen_windows`] for the window set.
-    pub fn shop_screen_phase(&self) -> Option<crate::shop::ShopScreenPhase> {
-        use crate::shop::ShopScreenPhase as P;
+    /// to [`legaia_engine_menus::shop::shop_screen_windows`] for the window set.
+    pub fn shop_screen_phase(&self) -> Option<legaia_engine_menus::shop::ShopScreenPhase> {
+        use legaia_engine_menus::shop::ShopScreenPhase as P;
         self.shop_session.as_ref()?;
         if let Some(view) = self.quantity_view() {
             return Some(if view.buying {
@@ -159,7 +159,7 @@ impl MenuRuntime {
     }
 
     /// The shop windows on screen this frame with their slide progress,
-    /// `(window id, progress)` in draw order - see [`crate::shop::ShopSlides`].
+    /// `(window id, progress)` in draw order - see [`legaia_engine_menus::shop::ShopSlides`].
     pub fn shop_slides(&self) -> Vec<(usize, u8)> {
         if self.shop_session.is_none() {
             return Vec::new();
@@ -179,7 +179,9 @@ impl MenuRuntime {
         match self.shop_screen_phase() {
             Some(phase) => self
                 .shop_slides
-                .tick(&crate::shop::shop_screen_windows(phase, false)),
+                .tick(&legaia_engine_menus::shop::shop_screen_windows(
+                    phase, false,
+                )),
             None if self.shop_session.is_some() => self.shop_slides.tick(&[]),
             None => self.shop_slides.reset(),
         }
@@ -214,7 +216,7 @@ impl MenuRuntime {
         let event = picker.tick(pressed, 1);
         self.ui_cue = quantity_ui_cue(&event);
         match event {
-            crate::shop::QuantityPickerEvent::Bought {
+            legaia_engine_menus::shop::QuantityPickerEvent::Bought {
                 item_id,
                 qty,
                 cost,
@@ -225,7 +227,7 @@ impl MenuRuntime {
                     self.arm_point_card_toast(world, point_credit);
                 }
             }
-            crate::shop::QuantityPickerEvent::Sold {
+            legaia_engine_menus::shop::QuantityPickerEvent::Sold {
                 item_id,
                 qty,
                 credit,
@@ -238,7 +240,10 @@ impl MenuRuntime {
             }
             _ => {}
         }
-        let cancelled = matches!(event, crate::shop::QuantityPickerEvent::Cancelled);
+        let cancelled = matches!(
+            event,
+            legaia_engine_menus::shop::QuantityPickerEvent::Cancelled
+        );
         let done = cancelled || self.quantity_session.as_ref().is_some_and(|p| p.is_done());
         if !done {
             return;
@@ -290,11 +295,13 @@ impl MenuRuntime {
     fn apply_quantity_buy(world: &mut World, item_id: u8, qty: u8, cost: i32) -> bool {
         let owned = *world.party.inventory.get(&item_id).unwrap_or(&0);
         if world.party.money < cost
-            || u32::from(owned) + u32::from(qty) > u32::from(crate::shop::SHOP_HELD_CAP)
+            || u32::from(owned) + u32::from(qty)
+                > u32::from(legaia_engine_menus::shop::SHOP_HELD_CAP)
         {
             return false;
         }
-        world.party.money = (world.party.money - cost).clamp(0, crate::shop::GOLD_CAP);
+        world.party.money =
+            (world.party.money - cost).clamp(0, legaia_engine_menus::shop::GOLD_CAP);
         world.party.inventory.add(item_id, qty);
         true
     }
@@ -302,9 +309,9 @@ impl MenuRuntime {
     /// The quantity screen's **sell** commit: take the units off the staged
     /// bag slot (the id path is the fallback for a row list built without
     /// slots) and credit the purse, clamped by
-    /// [`crate::shop::apply_sale_gold`].
+    /// [`legaia_engine_menus::shop::apply_sale_gold`].
     fn apply_quantity_sell(&mut self, world: &mut World, item_id: u8, qty: u8, credit: i32) {
-        world.party.money = crate::shop::apply_sale_gold(world.party.money, credit);
+        world.party.money = legaia_engine_menus::shop::apply_sale_gold(world.party.money, credit);
         let staged_slot = self.shop_session.as_ref().and_then(|s| s.pending_bag_slot);
         match staged_slot {
             Some(slot) => {
@@ -322,7 +329,7 @@ impl MenuRuntime {
 
     /// One frame of the casino prize exchange: drive the session's browse /
     /// Yes-No SM, apply a Yes commit against the live coin bank / inventory /
-    /// system flags ([`crate::prize_exchange::apply_redeem`] - the retail
+    /// system flags ([`legaia_engine_minigames::prize_exchange::apply_redeem`] - the retail
     /// state-3 deltas), and on the browse cancel drop the session + flip the
     /// suspended op-`0x49` Armed -> Done so the counter script resumes.
     pub(super) fn tick_prize(&mut self, world: &mut World, input: MenuInput) {
@@ -331,7 +338,7 @@ impl MenuRuntime {
         };
         // The list is vertical (Up/Down) but the shared navigator's axis is
         // decrement/increment; accept both axes, like the recipient picker.
-        let buttons = crate::menu_input::NavButtons::new(
+        let buttons = legaia_engine_system::menu_input::NavButtons::new(
             input.cross,
             input.circle || input.triangle,
             input.up || input.left,
@@ -343,13 +350,13 @@ impl MenuRuntime {
             inventory.get(&id).copied().unwrap_or(0)
         });
         match event {
-            crate::prize_exchange::PrizeEvent::Redeemed {
+            legaia_engine_minigames::prize_exchange::PrizeEvent::Redeemed {
                 item_id,
                 price,
                 gate,
             } => {
                 let flags = &mut world.flags.system_flags;
-                let applied = crate::prize_exchange::apply_redeem(
+                let applied = legaia_engine_minigames::prize_exchange::apply_redeem(
                     &mut world.minigames.casino_coins,
                     &mut world.party.inventory,
                     &mut |g| {
@@ -375,7 +382,7 @@ impl MenuRuntime {
                     });
                 }
             }
-            crate::prize_exchange::PrizeEvent::Exit => {
+            legaia_engine_minigames::prize_exchange::PrizeEvent::Exit => {
                 self.prize_session = None;
                 world.finish_prize_exchange();
             }
@@ -389,10 +396,11 @@ impl MenuRuntime {
     /// refusal fired and nothing changed.
     fn apply_recipient_bag_buy(world: &mut World, item_id: u8, cost: i32) -> bool {
         let owned = *world.party.inventory.get(&item_id).unwrap_or(&0);
-        if owned >= crate::shop::SHOP_HELD_CAP || world.party.money < cost {
+        if owned >= legaia_engine_menus::shop::SHOP_HELD_CAP || world.party.money < cost {
             return false;
         }
-        world.party.money = (world.party.money - cost).clamp(0, crate::shop::GOLD_CAP);
+        world.party.money =
+            (world.party.money - cost).clamp(0, legaia_engine_menus::shop::GOLD_CAP);
         let _ = world.party.inventory.add(item_id, 1);
         true
     }
@@ -411,8 +419,8 @@ impl MenuRuntime {
         item_id: u8,
         cost: i32,
     ) -> bool {
-        use crate::equipment::EquipSlot;
-        use legaia_asset::equip_stats::EquipSlot as Disc;
+        use legaia_engine_menus::equipment::EquipSlot;
+        use legaia_game_tables::equip_stats::EquipSlot as Disc;
         let Some(entry) = self.equip_info.as_ref().and_then(|i| i.entry(item_id)) else {
             return false;
         };
@@ -436,7 +444,8 @@ impl MenuRuntime {
         if displaced != 0 {
             let _ = world.party.inventory.add(displaced, 1);
         }
-        world.party.money = (world.party.money - cost).clamp(0, crate::shop::GOLD_CAP);
+        world.party.money =
+            (world.party.money - cost).clamp(0, legaia_engine_menus::shop::GOLD_CAP);
         world.refresh_party_ability_bits();
         true
     }

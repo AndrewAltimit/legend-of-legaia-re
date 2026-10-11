@@ -6,7 +6,7 @@
 //! `addiu s0,s2,0x3` at `0x8005185C`); a party of one or two leaves the
 //! unused party slots as zeroed actor structs (`+0x14C` HP `0`, `+0x16E`
 //! flags `0`, prim word `+0x04` `0` in the Tetsu tutorial's solo capture).
-//! Every kernel in `legaia_engine_vm::cast_module_ticks` / `cast_arm_ticks` /
+//! Every kernel in `legaia_engine_battle_vm::cast_module_ticks` / `cast_arm_ticks` /
 //! `cast_seru_ticks_*` is ported against that pool: its row sweeps run over
 //! seats `3..7`, its "`+0x1DD < 3` is the party" tests and its `3 + ctx[+1]`
 //! arithmetic all assume the fixed base.
@@ -34,7 +34,7 @@ pub(in crate::world) struct CastSeatMap {
 }
 
 /// Retail's first monster seat, the fixed base the kernels assume.
-const FIRST_MONSTER: u8 = vm::cast_module_ticks::FIRST_MONSTER_SEAT;
+const FIRST_MONSTER: u8 = legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT;
 
 /// Retail's seats `3..8` are the five monster seats.
 const MONSTER_SEATS: u8 = 5;
@@ -110,7 +110,10 @@ impl World {
 
     /// [`World::cast_actor_state`] with its `+0x1DD` target code in retail's
     /// seat space - the view a kernel reads.
-    pub(in crate::world) fn cast_view(&self, slot: u8) -> vm::cast_module_ticks::CastActorState {
+    pub(in crate::world) fn cast_view(
+        &self,
+        slot: u8,
+    ) -> legaia_engine_battle_vm::cast_module_ticks::CastActorState {
         let map = self.cast_seat_map();
         let mut st = self.cast_actor_state(slot);
         st.target_code = map.target_to_retail(st.target_code);
@@ -123,7 +126,7 @@ impl World {
     pub(in crate::world) fn write_cast_view(
         &mut self,
         slot: u8,
-        st: &vm::cast_module_ticks::CastActorState,
+        st: &legaia_engine_battle_vm::cast_module_ticks::CastActorState,
     ) {
         let map = self.cast_seat_map();
         let live = self
@@ -141,7 +144,9 @@ impl World {
 
     /// The whole actor table as a retail-shaped seat row: an empty party seat
     /// is the zeroed struct retail leaves there.
-    pub(in crate::world) fn cast_seat_row(&self) -> Vec<vm::cast_module_ticks::CastActorState> {
+    pub(in crate::world) fn cast_seat_row(
+        &self,
+    ) -> Vec<legaia_engine_battle_vm::cast_module_ticks::CastActorState> {
         let map = self.cast_seat_map();
         (0..map.retail_len())
             .map(|r| {
@@ -155,7 +160,7 @@ impl World {
     /// dropped (retail's land in a struct nothing reads).
     pub(in crate::world) fn write_cast_seat_row(
         &mut self,
-        seats: &[vm::cast_module_ticks::CastActorState],
+        seats: &[legaia_engine_battle_vm::cast_module_ticks::CastActorState],
     ) {
         let map = self.cast_seat_map();
         for (r, st) in seats.iter().enumerate() {
@@ -167,7 +172,9 @@ impl World {
 
     /// [`Self::cast_seat_row`] for the extra record fields
     /// ([`World::cast_arm_ext_state`]).
-    pub(in crate::world) fn cast_arm_ext_row(&self) -> Vec<vm::cast_arm_ticks::CastArmExtState> {
+    pub(in crate::world) fn cast_arm_ext_row(
+        &self,
+    ) -> Vec<legaia_engine_battle_vm::cast_arm_ticks::CastArmExtState> {
         let map = self.cast_seat_map();
         (0..map.retail_len())
             .map(|r| {
@@ -180,7 +187,7 @@ impl World {
     /// [`Self::write_cast_seat_row`] for the extra record fields.
     pub(in crate::world) fn write_cast_arm_ext_row(
         &mut self,
-        exts: &[vm::cast_arm_ticks::CastArmExtState],
+        exts: &[legaia_engine_battle_vm::cast_arm_ticks::CastArmExtState],
     ) {
         let map = self.cast_seat_map();
         for (r, st) in exts.iter().enumerate() {
@@ -194,13 +201,13 @@ impl World {
     /// an empty party seat is dropped).
     pub(in crate::world) fn cast_hits_to_engine(
         &self,
-        hits: impl IntoIterator<Item = vm::cast_module_ticks::AoeHit>,
-    ) -> Vec<vm::cast_module_ticks::AoeHit> {
+        hits: impl IntoIterator<Item = legaia_engine_battle_vm::cast_module_ticks::AoeHit>,
+    ) -> Vec<legaia_engine_battle_vm::cast_module_ticks::AoeHit> {
         let map = self.cast_seat_map();
         hits.into_iter()
             .filter_map(|h| {
                 map.engine(h.seat)
-                    .map(|seat| vm::cast_module_ticks::AoeHit { seat, ..h })
+                    .map(|seat| legaia_engine_battle_vm::cast_module_ticks::AoeHit { seat, ..h })
             })
             .collect()
     }

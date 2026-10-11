@@ -42,7 +42,7 @@ impl RetailBattle {
     pub fn action_victims(&self) -> Vec<usize> {
         let past_cast = self.seed_plan() == SeedPlan::Cast
             && self.action_state
-                >= legaia_engine_vm::battle_action::ActionState::DoneCleanup.as_byte();
+                >= legaia_engine_battle_vm::battle_action::ActionState::DoneCleanup.as_byte();
         if !matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat < 3) && !past_cast {
             return Vec::new();
         }

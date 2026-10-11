@@ -4,8 +4,10 @@
 //! ported kernel behind it actually ran, so the port stays on a live path
 //! rather than being exercised only by its own unit tests.
 
-use legaia_engine_core::battle_stats::{EquipmentTable, ItemModifier, StatRecord, StatusModifiers};
-use legaia_engine_core::equip_session::{EquipInput, EquipSession};
+use legaia_engine_battle::battle_stats::{
+    EquipmentTable, ItemModifier, StatRecord, StatusModifiers,
+};
+use legaia_engine_menus::equip_session::{EquipInput, EquipSession};
 
 fn press(cross: bool, down: bool) -> EquipInput {
     EquipInput {
@@ -28,7 +30,7 @@ fn session() -> EquipSession {
         base_int: 10,
         equip: [0; 8],
     };
-    let mut inv = legaia_engine_core::world::ItemBag::new();
+    let mut inv = legaia_engine_menus::item_bag::ItemBag::new();
     // The legacy placeholder slot rule is `id >> 5`, so 0x20 / 0x21 are
     // both slot-1 candidates.
     inv.insert(0x20u8, 1u8);
@@ -105,7 +107,7 @@ fn equip_confirm_preview_matches_the_picked_row() {
 /// flow.
 #[test]
 fn use_list_confirm_routes_through_the_effect_class_dispatch() {
-    use legaia_engine_core::pause_screens::{
+    use legaia_engine_menus::pause_screens::{
         DOOR_OF_LIGHT_ITEM_ID, DOOR_OF_WIND_ITEM_ID, INCENSE_ITEM_ID, UseRoute,
         special_use_route_for_item, use_route_for_effect,
     };
@@ -135,7 +137,7 @@ fn use_list_confirm_routes_through_the_effect_class_dispatch() {
 /// re-fires on every later frame of every later beat.
 #[test]
 fn now_checking_beat_drains_the_latched_card_events() {
-    use legaia_engine_core::save_select::{
+    use legaia_engine_menus::save_select::{
         SaveSelectMode, SaveSelectSession, SelectInput, SelectPhase, SlotContent, SlotSnapshot,
     };
 

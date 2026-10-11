@@ -20,7 +20,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::scene::{FIELD_MAP_LEN, ProtIndex, Scene};
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
 
 const OBJECT_GRID: std::ops::Range<usize> = 0x8000..0x10000;
 

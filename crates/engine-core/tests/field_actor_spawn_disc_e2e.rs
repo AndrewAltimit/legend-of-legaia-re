@@ -40,13 +40,13 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::field_events::FieldEvent;
-use legaia_engine_core::man_field_scripts::{
-    CLEAN_RESYNC_INSNS, partition_record_span, scene_man_carriers,
-};
+use legaia_engine_core::man_field_scripts::scene_man_carriers;
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{FIELD_SPAWN_START_SLOT, SceneMode, World};
-use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker};
+use legaia_engine_core::world::{FIELD_SPAWN_START_SLOT, World};
+use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
 fn extracted_dir() -> Option<PathBuf> {
     let d = PathBuf::from("extracted");
@@ -106,7 +106,7 @@ fn collect_0x4c_d8_sites(extracted: &std::path::Path) -> Vec<SpawnOpSite> {
         };
         for carrier in scene_man_carriers(&index, &scene) {
             let man = &carrier.payload;
-            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
                 continue;
             };
             for partition in 0..3 {
@@ -786,7 +786,7 @@ fn morph_weight_actor_seats_and_blends_on_a_shipped_carrier() {
         );
         assert_eq!(
             actor.handler,
-            legaia_engine_core::actor_handler::ActorHandler::MorphWeights,
+            legaia_engine_field::actor_handler::ActorHandler::MorphWeights,
             "{scene}: the 4C D8 allocator stamps the morph handler"
         );
         let morph = actor

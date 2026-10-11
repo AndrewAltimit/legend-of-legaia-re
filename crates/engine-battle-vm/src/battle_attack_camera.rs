@@ -48,7 +48,7 @@
 //! Each arm reads one or more halfwords out of the disc table at
 //! `0x801F4E10` - twenty rows of two, addressed `base + row*4 + cursor*2`
 //! with `cursor = ctx[+0x26D]` - and adds them into the pose. Parser:
-//! [`legaia_asset::battle_attack_camera_table`]. Every row is used and every
+//! [`legaia_game_tables::battle_attack_camera_table`]. Every row is used and every
 //! use is a fold into one pose component; [`ARM_TRACKS`] is the whole map,
 //! taken site by site from the dump.
 //!

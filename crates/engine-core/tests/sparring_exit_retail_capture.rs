@@ -28,10 +28,11 @@
 //! The library is found through `LEGAIA_SAVES_LIBRARY` (the
 //! `saves/library` directory) before the repo-relative fallback.
 
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::battle_tutorial::{BattleTutorialScript, OVERLAY_967_BASE_VA, msg};
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 use legaia_mednafen::SaveState;
 use std::path::PathBuf;
 
@@ -80,7 +81,7 @@ fn primed_world(flag_bytes: Option<[u8; 4]>) -> World {
     w.actors[0].move_state.world_z = 300;
     w.actors[0].move_state.field_72 = 4096;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("sparring_exit");
@@ -252,9 +253,9 @@ fn the_sparring_exit_leaves_the_flag_bank_as_retail_does() {
 /// flow-state `90` hook rewinds an `Auto` attack in that lesson, and checks
 /// the entered arrows otherwise.
 fn lesson_pad(w: &World) -> u16 {
-    use legaia_engine_core::arts_command_input::ArtsInputPhase;
-    use legaia_engine_core::battle_input::CommandPhase;
+    use legaia_engine_battle::arts_command_input::ArtsInputPhase;
     use legaia_engine_core::battle_tutorial::TutorialLesson;
+    use legaia_engine_menus::battle_input::CommandPhase;
     let cross = InputState::mask_of([PadButton::Cross]);
     if !w.battle.tutorial_boxes.is_empty() || w.battle.item_menu.is_some() {
         return cross;
@@ -355,7 +356,7 @@ fn play_every_lesson(w: &mut World) -> Vec<u8> {
 /// item, wounded party or not; [`play_every_lesson`] still wounds the lead
 /// once the fight has seated its stats, so the heal lands on something.
 fn stock_the_items_lesson(w: &mut World) {
-    w.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+    w.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
     w.party.inventory.add(0x77, 3); // Healing Leaf
 }
 

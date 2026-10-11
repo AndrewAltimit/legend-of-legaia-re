@@ -12,8 +12,8 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::save_menu_atlas as sma;
 use legaia_engine_core::scene::SceneHost;
+use legaia_engine_menus::save_menu_atlas as sma;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -75,18 +75,18 @@ fn the_ring_marks_bake_into_free_atlas_cells() {
     let idx = &host.index;
     // The window both hosts build the atlas from.
     let base = sma::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64;
-    let end = (legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
-        + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE) as u64;
+    let end = (legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+        + legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE) as u64;
     let panel = idx
         .prot_dat_raw_bytes(base, (end - base) as usize)
         .expect("system-UI slice");
     let pill = idx
-        .entry_bytes_extended(legaia_asset::title_pak::PROT_INDEX_OVERLAY as u32)
+        .entry_bytes_extended(legaia_ui_formats::title_pak::PROT_INDEX_OVERLAY as u32)
         .expect("PROT 0899");
     let glyph = idx
         .prot_dat_raw_bytes(
-            legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
-            legaia_asset::menu_glyph_atlas::TIM_SIZE,
+            legaia_ui_formats::menu_glyph_atlas::PROT_DAT_OFFSET,
+            legaia_ui_formats::menu_glyph_atlas::TIM_SIZE,
         )
         .ok();
     let mut atlas = sma::build_atlas(&panel, &pill, glyph.as_deref()).expect("atlas");
@@ -141,13 +141,13 @@ fn the_page_mark_frames_bake_beside_the_hand() {
     let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     let idx = &host.index;
     let base = sma::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64;
-    let end = (legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
-        + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE) as u64;
+    let end = (legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+        + legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE) as u64;
     let panel = idx
         .prot_dat_raw_bytes(base, (end - base) as usize)
         .expect("system-UI slice");
     let pill = idx
-        .entry_bytes_extended(legaia_asset::title_pak::PROT_INDEX_OVERLAY as u32)
+        .entry_bytes_extended(legaia_ui_formats::title_pak::PROT_INDEX_OVERLAY as u32)
         .expect("PROT 0899");
     let atlas = sma::build_atlas(&panel, &pill, None).expect("atlas");
     let cell = |c: (u32, u32, u32, u32)| -> Vec<u8> {

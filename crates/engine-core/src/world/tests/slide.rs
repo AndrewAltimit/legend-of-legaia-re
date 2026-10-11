@@ -3,6 +3,7 @@
 //! retail table values decoded from `SCUS_942.54`.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// A field world with an all-open collision grid.
 fn open_field() -> World {

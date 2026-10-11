@@ -2,6 +2,7 @@
 //! and the board entries the parked instruction carries.
 
 use super::*;
+use legaia_engine_field::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS;
 
 impl World {
     /// Which field-VM context is stepping right now - the owner an op-`0x49`
@@ -58,7 +59,7 @@ impl World {
     /// `FUN_801ED308`. So a `-1` row the port does not route elsewhere -
     /// sub-op `1`, a save point, and sub-op `0x0D` - opens the menu by
     /// itself, and the entry decode then picks its first screen off the kind
-    /// byte ([`crate::pause_screens::menu_entry_subscreen`]).
+    /// byte ([`legaia_engine_menus::pause_screens::menu_entry_subscreen`]).
     ///
     /// Not under the opening narration crawl or a title card: the timeline
     /// owns the scene there and the press waits for it to end. Both halves

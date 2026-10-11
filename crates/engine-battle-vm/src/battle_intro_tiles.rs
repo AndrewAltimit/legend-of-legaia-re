@@ -285,7 +285,7 @@ pub use crate::battle_intro_particles::ParticleEnv;
 /// PORT: FUN_801D081C
 /// REF: FUN_80019B28 (heading), FUN_8005AF0C (sqrt), FUN_80056798 (rand)
 ///
-/// WIRED. `legaia_engine_render::battle_intro::BattleIntro` owns the
+/// WIRED. `legaia_render_kernels::battle_intro::BattleIntro` owns the
 /// [`TileGrid`] between frames, ticks it from the live transition clock, and
 /// **draws it**: [`tile_face_quads`] resolves each record's ten-primitive
 /// packet and the render side projects it through the ported FT4-handler
@@ -422,7 +422,7 @@ fn shr4_toward_zero(v: i32) -> i32 {
 /// `+0x08` word): 4bpp page at VRAM `(448, 0)`, ABR bits `01` = additive.
 ///
 /// The page is the top-left 64x64 texel corner of the **field-character
-/// texture pack's entry 0** (`legaia_asset::field_char_textures`, PROT 0874
+/// texture pack's entry 0** (`legaia_actor_formats::field_char_textures`, PROT 0874
 /// section 2) - a 256x256 4bpp TIM whose declared destination is `(448, 0)`,
 /// resident for the whole field session. Pinned by mid-transition capture:
 /// the VRAM rect is byte-identical to that TIM before the encounter, on the

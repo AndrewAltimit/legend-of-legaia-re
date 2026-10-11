@@ -14,4 +14,6 @@ legaia-asset.workspace = true
 legaia-iso.workspace = true
 legaia-lzs.workspace = true
 legaia-prot.workspace = true
+legaia-actor-formats.workspace = true
+legaia-scene-formats.workspace = true
 serde.workspace = true

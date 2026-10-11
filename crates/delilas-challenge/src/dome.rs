@@ -29,7 +29,7 @@
 //! unchecked). Neither VRAM nor the AI is involved, so the fix is to shrink
 //! what the loader *streams*, without touching what the game *is*:
 //!
-//! - **Slim clones.** `legaia_asset::monster_archive::slim_castables`
+//! - **Slim clones.** `legaia_actor_formats::monster_archive::slim_castables`
 //!   rebuilds Che's and Lu's blocks minus their generic-AI castable spell
 //!   entries (the ~5-6 KB packed keyframe streams the AI picker can roll;
 //!   mesh, stats, name, reactions, approach/special entries, and the two

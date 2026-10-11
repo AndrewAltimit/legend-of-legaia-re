@@ -31,7 +31,7 @@ impl MenuRuntime {
     /// The shop **sell** list's rows, in retail's order: the bag's active
     /// window walked by slot, sellable rows in place, unsellable (price `0`)
     /// rows dimmed and sorted last (`FUN_80030628` content id 2, ported as
-    /// [`crate::menu_list_rows::build_price_gated_rows`]).
+    /// [`legaia_engine_menus::menu_list_rows::build_price_gated_rows`]).
     ///
     /// Both the list draw and the sell commit go through here, which is the
     /// point: the two used to build the rows separately - the draw

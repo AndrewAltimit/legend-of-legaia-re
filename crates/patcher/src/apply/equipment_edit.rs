@@ -41,8 +41,10 @@ use crate::equip_transplant::{
     self, Transplant, packed_len, records_with_transplants, transplant_weapon,
 };
 use anyhow::{Context, Result, bail};
-use legaia_asset::battle_data_pack;
-use legaia_asset::equip_stats::{BONUS_STRIDE, EquipSlot, EquipStatTable, bonus_table_file_offset};
+use legaia_actor_formats::battle_data_pack;
+use legaia_game_tables::equip_stats::{
+    BONUS_STRIDE, EquipSlot, EquipStatTable, bonus_table_file_offset,
+};
 use legaia_party_swap::playerize::{rebuild_player_file, rebuild_player_file_unbounded};
 
 use crate::weapon_specialty::{self, PLAYERS, arm_cost_offset, up_cost_offset};
@@ -507,7 +509,7 @@ pub fn read_equipment_table(patcher: &DiscPatcher) -> Result<Option<EquipmentTab
     let Some(table) = EquipStatTable::from_scus(&scus) else {
         return Ok(None);
     };
-    let names = legaia_asset::item_names::ItemNameTable::from_scus(&scus);
+    let names = legaia_game_tables::item_names::ItemNameTable::from_scus(&scus);
     let items_for_rows = table.items_for_rows();
     let mut row_of = std::collections::BTreeMap::new();
     for (row, items) in items_for_rows.iter().enumerate() {

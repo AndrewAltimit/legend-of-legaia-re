@@ -147,7 +147,7 @@ pub(super) fn timeline_p2_record(session: &BootSession) -> Option<u8> {
     let n2 = mf.partitions.get(2)?.len();
     (0..n2).find_map(|i| {
         let (start, _, len) =
-            legaia_engine_core::man_field_scripts::partition_record_span(&mf, &man, 2, i)?;
+            legaia_engine_field::man_field_scripts::partition_record_span(&mf, &man, 2, i)?;
         (len == tl.bytecode.len() && man.get(start..start + len)? == tl.bytecode.as_slice())
             .then_some(i as u8)
     })

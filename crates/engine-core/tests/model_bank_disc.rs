@@ -136,7 +136,7 @@ fn the_player_arm_is_not_a_scene_source_or_skip() {
     // And the PROT 0874 pack really is five members, which is what makes
     // `SCENE_BANK_BASE` five.
     let bytes = index.entry_bytes(874).expect("PROT 0874");
-    let pack = legaia_asset::character_pack::parse(&bytes).expect("parse 0874");
+    let pack = legaia_actor_formats::character_pack::parse(&bytes).expect("parse 0874");
     assert_eq!(pack.slots().len(), 5);
     eprintln!("[ok] player bank = 5 PROT 0874 members, disjoint from the scene bank");
 }

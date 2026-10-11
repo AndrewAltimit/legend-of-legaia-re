@@ -2,7 +2,7 @@
 //! on the static `SCUS_942.54` equipment bonus table (`DAT_80074F68`).
 //!
 //! Every equippable item resolves through the shared item table to an 8-byte
-//! bonus record (see [`legaia_asset::equip_stats`]). Byte `+6` is the
+//! bonus record (see [`legaia_game_tables::equip_stats`]). Byte `+6` is the
 //! **equip-character mask** - bit `1` Vahn/Meta, `2` Noa/Terra, `4` Gala/Ozma
 //! (`7` = anyone) - and it is the field the [`crate::equip_bonus`] stat pass
 //! deliberately leaves welded to its row. This pass moves **only** that byte, so
@@ -10,7 +10,7 @@
 //! slot, and slot type stays put. The two passes touch disjoint bytes, so they
 //! compose: run both and a shuffled-stat sword also lands on a shuffled owner.
 //!
-//! The engine consumes the same `+6` byte (`legaia_engine_core::equipment::
+//! The engine consumes the same `+6` byte (`legaia_engine_menus::equipment::
 //! DiscEquipInfo::can_equip`), so a patched disc genuinely re-gates each
 //! character's equip picker.
 //!

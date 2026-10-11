@@ -3,8 +3,8 @@
 //! price 0 (and out of the sellable pool), and a shop `Random` pass only ever
 //! stocks priced (non-quest) items. Gates on `LEGAIA_DISC_BIN`.
 
-use legaia_asset::item_names;
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::drops::DropMode;

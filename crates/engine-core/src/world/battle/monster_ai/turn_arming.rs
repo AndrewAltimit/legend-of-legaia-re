@@ -5,7 +5,7 @@ use super::*;
 
 impl World {
     pub(in crate::world) fn take_monster_turn(&mut self, slot: u8) {
-        use vm::battle_action::ActionState;
+        use legaia_engine_battle_vm::battle_action::ActionState;
 
         self.battle_ctx.active_actor = slot;
         match self.pick_monster_action(slot) {
@@ -136,8 +136,8 @@ impl World {
     /// The watched seat is retail's own: battle seat `0`, the party leader,
     /// **not** the companion itself.
     fn arm_ai_companion(&mut self, slot: u8) -> bool {
-        use vm::battle_action::ActionState;
-        use vm::battle_action::{
+        use legaia_engine_battle_vm::battle_action::ActionState;
+        use legaia_engine_battle_vm::battle_action::{
             AI_COMPANION_CHAR_ID, AI_COMPANION_MAGIC_SUB_ROUTE, AI_COMPANION_WATCHED_SEAT,
             AiCompanionPick, AiCompanionWatch, ai_companion_pick,
         };
@@ -171,7 +171,8 @@ impl World {
             })
             .collect();
         let mut rolls: Vec<u32> = Vec::new();
-        for _ in 0..(2 + vm::battle_action::AI_COMPANION_MAX_TARGET_DRAWS + 2) {
+        for _ in 0..(2 + legaia_engine_battle_vm::battle_action::AI_COMPANION_MAX_TARGET_DRAWS + 2)
+        {
             rolls.push(self.next_rand());
         }
         let mut cursor = rolls.into_iter();
@@ -222,7 +223,7 @@ impl World {
     }
 
     pub(in crate::world) fn arm_party_physical(&mut self, slot: u8) {
-        use vm::battle_action::ActionState;
+        use legaia_engine_battle_vm::battle_action::ActionState;
         if self.arm_ai_companion(slot) {
             return;
         }
@@ -267,7 +268,7 @@ impl World {
     /// REF: FUN_801EED1C (the party-side per-action seeder whose absence is
     /// what leaves a stale stream behind)
     pub(in crate::world) fn clear_action_stream(&mut self, slot: u8) {
-        let len = vm::battle_formulas::ACTION_STREAM_RANGE.len();
+        let len = legaia_engine_battle_vm::battle_formulas::ACTION_STREAM_RANGE.len();
         if let Some(a) = self.actors.get_mut(slot as usize) {
             for b in a.battle.params.iter_mut().take(len) {
                 *b = 0;
@@ -289,7 +290,7 @@ impl World {
     /// Arm a generic physical strike for monster `slot` against the first
     /// living party member (fallback when a picked cast can't fold).
     fn arm_monster_physical(&mut self, slot: u8) {
-        use vm::battle_action::ActionState;
+        use legaia_engine_battle_vm::battle_action::ActionState;
         self.arm_monster_strike_budget(slot);
         self.clear_action_stream(slot);
         let target = self.first_living_opponent_of(slot).unwrap_or(slot);
@@ -313,7 +314,7 @@ impl World {
     /// monster `slot` is about to make - the enemy analogue of the party Arts AP
     /// gauge. Port of the AGL-gauge spending loop in the picker
     /// `FUN_801E9FD4`: the monster gets one swing per action its per-round AGL
-    /// gauge ([`crate::monster_catalog::MonsterDef::agl`]) can afford from its
+    /// gauge ([`legaia_engine_battle::monster_catalog::MonsterDef::agl`]) can afford from its
     /// physical swing costs (`action_costs`), capped at 15, via
     /// [`vm::battle_action::enemy_action_budget`]. Draws battle RNG (one roll per
     /// candidate pick) exactly as retail's picker does.
@@ -351,8 +352,11 @@ impl World {
             catalog_agl
         };
         self.battle.monster_strike_budget = if agl > 0 && !costs.is_empty() {
-            let stream =
-                vm::battle_action::enemy_action_budget(agl, &costs, &mut || self.next_rand());
+            let stream = legaia_engine_battle_vm::battle_action::enemy_action_budget(
+                agl,
+                &costs,
+                &mut || self.next_rand(),
+            );
             // Retail's budget loop spends the gauge it walked. Only do so on
             // the SPD-seeded path: the round-robin fallback has no round
             // boundary to restore it, so an unrestorable gauge would drain to

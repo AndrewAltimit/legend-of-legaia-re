@@ -7,8 +7,8 @@
 
 use super::*;
 use crate::world::vm_hosts::BattleHostImpl;
-use legaia_engine_vm::battle_action::BattleActionHost;
-use legaia_engine_vm::battle_cast_cue::{CastCueOutcome, cast_audio_cue};
+use legaia_engine_battle_vm::battle_action::BattleActionHost;
+use legaia_engine_battle_vm::battle_cast_cue::{CastCueOutcome, cast_audio_cue};
 
 /// The party leg of the cast-cue band is `roster_id * 0x10 + 0xF8..0xFC`
 /// with a 1-based roster id, so every party cue is `>= 0x108` - a CD-XA clip.

@@ -15,8 +15,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::world::SfxRingOp;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::sound_state::SfxRingOp;
 
 fn extracted_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from)

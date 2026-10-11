@@ -5,10 +5,10 @@
 //! module replaces it with the byte-pinned retail chrome: the gold 9-slice
 //! window frames + navy filigree come from the disc's menu-UI atlas (PROT 0899
 //! plus the PROT.DAT system-UI sheet, assembled by
-//! [`legaia_engine_core::save_menu_atlas::build_atlas`]), the glyphs from the
+//! [`legaia_engine_menus::save_menu_atlas::build_atlas`]), the glyphs from the
 //! proportional dialog font, and every rectangle from the shipped
 //! `*_draws_for` functions in `legaia-engine-ui`. The window geometry is the
-//! disc-parsed descriptor table ([`legaia_asset::menu_windows`]), with the
+//! disc-parsed descriptor table ([`legaia_game_tables::menu_windows`]), with the
 //! same pinned fallback the native window keeps.
 //!
 //! The **root command list is the shared retail picker**
@@ -17,9 +17,9 @@
 //! [`LegaiaRuntime::play_menu_open`] hands the press to
 //! `BootSession::press_field_menu`, the call the native window makes, which
 //! seeds the picker with the world's money + play time, samples the two row
-//! gates retail reads at every draw into a [`FieldMenuGate`](legaia_engine_core::field_menu::FieldMenuGate) (the op-`0x49`
+//! gates retail reads at every draw into a [`FieldMenuGate`](legaia_engine_menus::field_menu::FieldMenuGate) (the op-`0x49`
 //! entry context and the scene MAN's save-allow bit) and switches the world
-//! into [`SceneMode::Menu`](legaia_engine_core::world::SceneMode::Menu). So the open rule, the row ink and the confirm
+//! into [`SceneMode::Menu`](legaia_engine_mode::mode::SceneMode::Menu). So the open rule, the row ink and the confirm
 //! routing are one engine answer on both hosts, and a row cannot draw white
 //! here and buzz there - which it did, letting a player Save in a scene whose
 //! own data forbids it.
@@ -65,7 +65,7 @@
 //! None of that flow lives here. The grid cursor, the once-per-port card
 //! read, the rule that a Load may not confirm an empty block and the mapping
 //! from a finished session back to `(port, cell)` are
-//! [`legaia_engine_core::save_screen::SaveScreenFlow`] - one kernel both this
+//! [`legaia_engine_menus::save_screen::SaveScreenFlow`] - one kernel both this
 //! page and the native `play-window` drive, so the two cannot disagree about
 //! what the screen addresses. This host supplies only the **bytes**: the
 //! fifteen block snapshots behind a port, and the load / write against the
@@ -73,19 +73,19 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::equip_session::EquipSession;
-use legaia_engine_core::field_menu::{FieldMenuOutcome, FieldMenuRow, FieldMenuSession};
 use legaia_engine_core::field_menu_dispatch::{
     self, ArtsEditorPhaseTag, FieldMenuSubsession, status_snapshots,
 };
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
 use legaia_engine_core::options::OptionsSession;
-use legaia_engine_core::save_menu_atlas::{SaveMenuAtlas, build_atlas};
-use legaia_engine_core::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};
-use legaia_engine_core::save_select::{SaveRack, SaveSelectSession};
-use legaia_engine_core::spell_menu::{SpellMenuPhase, SpellMenuSession};
-use legaia_engine_core::status_screen::StatusScreenSession;
+use legaia_engine_menus::equip_session::EquipSession;
+use legaia_engine_menus::field_menu::{FieldMenuOutcome, FieldMenuRow, FieldMenuSession};
+use legaia_engine_menus::inventory_use::{InventoryUseSession, InventoryUseState};
+use legaia_engine_menus::save_menu_atlas::{SaveMenuAtlas, build_atlas};
+use legaia_engine_menus::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};
+use legaia_engine_menus::save_select::{SaveRack, SaveSelectSession};
+use legaia_engine_menus::spell_menu::{SpellMenuPhase, SpellMenuSession};
+use legaia_engine_menus::status_screen::StatusScreenSession;
+use legaia_engine_system::input::PadButton;
 use legaia_engine_ui::{
     self as ui, FieldMenuPartyView, FieldMenuRowView, SaveMenuAtlasRects, SlotGridCell,
     SlotInfoView, SpriteDraw, StatusPanelView, StatusSatelliteView, StatusStatRow, TextDraw,
@@ -114,7 +114,7 @@ mod sub_screen_draws;
 pub struct PlayMenuAssets {
     font: legaia_font::Font,
     chrome: Option<(SaveMenuAtlas, SaveMenuAtlasRects)>,
-    windows: Option<legaia_asset::menu_windows::MenuWindowTable>,
+    windows: Option<legaia_game_tables::menu_windows::MenuWindowTable>,
 }
 /// Active pause-menu state: the shared root-list state machine plus the open
 /// sub-screen, if any.

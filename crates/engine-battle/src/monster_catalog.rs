@@ -75,7 +75,7 @@ pub struct MonsterDef {
     /// **entry index** of each candidate swing action - the raw anim id the
     /// picker queues into the monster's action stream (`actor[+0x1DF..]`)
     /// and the attack band stages into `+0x1DA`
-    /// ([`legaia_asset::monster_archive::MonsterSpell::entry_index`]).
+    /// ([`legaia_actor_formats::monster_archive::MonsterSpell::entry_index`]).
     /// Empty on the synthetic catalog, which then keeps the budget-only
     /// immediate swings.
     pub action_entries: Vec<u8>,
@@ -104,7 +104,7 @@ pub struct MonsterDef {
     pub seru_id: Option<u16>,
     /// Global spell ids this monster can cast in battle (from the monster
     /// record's 3-slot magic-attack array at `+0x21..=+0x23`; see
-    /// [`legaia_asset::monster_archive::MonsterRecord::magic_attacks`]). The
+    /// [`legaia_actor_formats::monster_archive::MonsterRecord::magic_attacks`]). The
     /// battle monster-AI chooses among the entries it can afford to fold a
     /// real spell cast onto the party. Empty = physical attacker only.
     pub magic_attacks: Vec<u8>,
@@ -114,7 +114,7 @@ pub struct MonsterDef {
     /// monsters; [`monster_def_from_record`] sets it from the record.
     pub element: u8,
     /// Limb-vs-height **swing class** (monster record `+0x1E`; see
-    /// [`legaia_asset::monster_archive::MonsterRecord::swing_class`]). Two
+    /// [`legaia_actor_formats::monster_archive::MonsterRecord::swing_class`]). Two
     /// consumers, both in `crates/engine-vm`'s battle-action layer: the
     /// no-input attack queue (`basic_attack_queue` - a class-`2` target takes
     /// one low swing) and the damage kernel's apply-mode look-ahead
@@ -128,7 +128,7 @@ pub struct MonsterDef {
     /// REF: FUN_801EED1C, FUN_801EC3E4
     pub swing_class: u8,
     /// Body-size / bulk class (monster record `+0x1F`; see
-    /// [`legaia_asset::monster_archive::MonsterRecord::size_class`]). The
+    /// [`legaia_actor_formats::monster_archive::MonsterRecord::size_class`]). The
     /// battle camera frames on it - `FUN_801F0348` writes
     /// `ctx+0x6D0 = clamp(size << 7, 0x0C00, 0x1400)` every time an actor is
     /// seeded, so a bulkier enemy pulls the camera back.
@@ -140,13 +140,13 @@ pub struct MonsterDef {
     /// REF: FUN_801F0348
     pub size_class: u8,
     /// Double-width **texture-page** flag (monster record `+0x20`; see
-    /// [`legaia_asset::monster_archive::MonsterRecord::wide_texture_page`]).
+    /// [`legaia_actor_formats::monster_archive::MonsterRecord::wide_texture_page`]).
     ///
     /// Carried here for its **second** reader, not its first: three summon
     /// ticks (PROT 0907 Nighto, 0908, 0916) read the byte record-direct
     /// through `0x801C9348[seat - 3]` as a "big model" resist proxy, and
     /// Nighto's kill / confuse roll
-    /// ([`legaia_engine_battle_vm::cast_seru_ticks_a::NightoRoll::target_immune`])
+    /// ([`legaia_engine_battle_vm::seru_magic_ticks::NightoRoll::target_immune`])
     /// forces the resist when it is non-zero **and** the fight is a scripted
     /// one (`ctx[+0x287]`). Its first reader is the model upload's VRAM rect
     /// widen, which the port's texture path does not consult.
@@ -157,7 +157,7 @@ pub struct MonsterDef {
     /// for a monster that wears no badge.
     ///
     /// Carried verbatim from
-    /// [`legaia_asset::monster_archive::MonsterRecord::plaque_badge`]: the
+    /// [`legaia_actor_formats::monster_archive::MonsterRecord::plaque_badge`]: the
     /// badge is the caret escape the archive name itself begins with, not a
     /// function of [`Self::element`]. Most populated records carry no
     /// escape, and the letter order is a different permutation from the
@@ -228,7 +228,7 @@ impl MonsterDef {
     }
 
     /// The six stats the battle loader installs for a fight of this class:
-    /// [`legaia_asset::monster_archive::boost_profile`] of
+    /// [`legaia_actor_formats::monster_archive::boost_profile`] of
     /// [`Self::raw_stats`], in `[AGL, ATK, UDF, LDF, INT, SPD]` order.
     ///
     /// `scripted` is the fight's `ctx[+0x287]`: set for a boss / story
@@ -250,7 +250,7 @@ impl MonsterDef {
                 self.speed,
             ];
         }
-        legaia_asset::monster_archive::boost_profile(self.raw_stats, scripted)
+        legaia_actor_formats::monster_archive::boost_profile(self.raw_stats, scripted)
     }
 
     /// Builder: attach a Seru id so a successful capture feeds the
@@ -296,7 +296,7 @@ impl MonsterCatalog {
 }
 
 /// Build a [`MonsterDef`] from a disc-resident monster stat record (PROT
-/// entry 867; see [`legaia_asset::monster_archive`]).
+/// entry 867; see [`legaia_actor_formats::monster_archive`]).
 ///
 /// # The stats are the **battle-load boosted** ones, not the raw record
 ///
@@ -343,7 +343,7 @@ impl MonsterCatalog {
 /// the arithmetic itself is `MonsterRecord::battle_stats`)
 /// - `action_costs` <- the `+0x74` AGL cost of each of the monster's candidate
 ///   physical swing actions. The archive parses **every** action record into
-///   [`legaia_asset::monster_archive::MonsterRecord::spells`]
+///   [`legaia_actor_formats::monster_archive::MonsterRecord::spells`]
 ///   (`MonsterSpell { id = tag `+0x0`, agl_cost = `+0x74`, .. }`); the retail
 ///   picker's physical branch selects records whose tag is in `0x0C..=0x1F`
 ///   (the swing / short-approach family) with a non-`0xFF` cost, which is what
@@ -356,7 +356,9 @@ impl MonsterCatalog {
 /// the retail victory-spoils formula scales them (EXP `* 3/4` then split among
 /// the party; gold `(Σ base>>1) * 0.5`). The drop chance stays the record's
 /// `u8` percent, which is what the retail roll compares against.
-pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecord) -> MonsterDef {
+pub fn monster_def_from_record(
+    rec: &legaia_actor_formats::monster_archive::MonsterRecord,
+) -> MonsterDef {
     // The battle-load boosted profile (`FUN_80054CB0`), in record-stat order:
     // `[AGL, ATK, UDF, LDF, INT, SPD]`. Every stat below that the live actor
     // carries is taken from here, never from the raw record accessors.
@@ -414,7 +416,7 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
 pub fn catalog_from_monster_archive(entry867: &[u8], ids: &[u16]) -> MonsterCatalog {
     let mut cat = MonsterCatalog::new();
     for &id in ids {
-        if let Ok(Some(rec)) = legaia_asset::monster_archive::record(entry867, id) {
+        if let Ok(Some(rec)) = legaia_actor_formats::monster_archive::record(entry867, id) {
             cat.insert(monster_def_from_record(&rec));
         }
     }

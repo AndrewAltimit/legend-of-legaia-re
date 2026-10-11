@@ -14,7 +14,7 @@
 //! reaches it through field-VM `4C DB`: that arm calls `FUN_801E57F0`, which
 //! spawns descriptor `0x801F2930` (handler word `0x801E4D8C`) with the
 //! operand pointer at `+0x90` - jouine's MAN issues it four times. The
-//! already-ported `FUN_801E4794` family ([`legaia_engine_core::clut_fx`])
+//! already-ported `FUN_801E4794` family ([`crate::clut_fx`])
 //! fades one VRAM cell **A -> B** into a destination. `FUN_801E4D8C` instead
 //! reads a **single** source CLUT out of VRAM and fades it toward a **flat
 //! target colour** carried in its data record, by a fixed *endpoint fraction*,

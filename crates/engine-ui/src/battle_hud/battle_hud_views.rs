@@ -336,7 +336,7 @@ pub struct BattleHudFrame<'a> {
     pub surface: (u32, u32),
     /// System-UI atlas rects for the strip chrome (gradient fill + gold
     /// 9-slice frame) and the gold/green HP / MP label sprites
-    /// (`OVERLAY_SYSTEM_UI_LABEL_HP` / `_MP`, `legaia_asset::title_pak`).
+    /// (`OVERLAY_SYSTEM_UI_LABEL_HP` / `_MP`, `legaia_ui_formats::title_pak`).
     /// `None` degrades the chrome to solid-texel rects and the labels to
     /// tinted "HP" / "MP" text.
     pub chrome: Option<&'a SaveMenuAtlasRects>,

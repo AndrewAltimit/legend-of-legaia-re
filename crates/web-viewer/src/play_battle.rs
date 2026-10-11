@@ -41,9 +41,9 @@ use legaia_engine_core::battle_hud::{
     BattleHud, DamagePopup, battle_active_actor, battle_plaque_element_badge,
     encounter_banner_enabled, encounter_banner_label, sync_battle_hud_rows,
 };
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_ui::battle_intro::BattleIntro;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_ui::{self as ui, HudPopupView, HudSlotMeta, HudSlotView, SpriteDraw, TextDraw};
+use legaia_render_kernels::battle_intro::BattleIntro;
 use wasm_bindgen::prelude::*;
 
 mod overlay_draws;
@@ -118,7 +118,7 @@ fn battle_hud_slot_views(hud: &BattleHud) -> Vec<HudSlotView<'_>> {
 /// carries (`window/hud.rs`); the projection itself is
 /// `World::battle_item_menu_model`, shared by both hosts.
 fn with_battle_item_frame<R>(
-    model: &legaia_engine_core::inventory_use::BattleItemMenuModel,
+    model: &legaia_engine_menus::inventory_use::BattleItemMenuModel,
     f: impl FnOnce(&legaia_engine_ui::battle_item_ui::BattleItemMenuFrame<'_>) -> R,
 ) -> R {
     use legaia_engine_ui::battle_item_ui as bii;
@@ -200,11 +200,11 @@ impl LegaiaRuntime {
     fn enemy_target_strip_draws(
         &self,
         _font: &legaia_font::Font,
-        picker: &legaia_engine_core::target_picker::TargetPickerSession,
+        picker: &legaia_engine_battle::target_picker::TargetPickerSession,
         _surface_w: u32,
         _surface_h: u32,
     ) -> Option<Vec<TextDraw>> {
-        use legaia_engine_core::target_picker::{CursorRow, PickerState};
+        use legaia_engine_battle::target_picker::{CursorRow, PickerState};
         matches!(
             picker.state(),
             PickerState::Cursor {
@@ -349,7 +349,7 @@ impl LegaiaRuntime {
         if !wiped || self.game_over.is_some() {
             return;
         }
-        self.game_over = Some(legaia_engine_core::game_over::GameOverSession::new());
+        self.game_over = Some(legaia_engine_menus::game_over::GameOverSession::new());
     }
 }
 

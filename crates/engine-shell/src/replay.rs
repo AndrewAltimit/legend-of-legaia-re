@@ -70,7 +70,7 @@ pub struct ReplayMeta {
 /// One pad-mask transition.
 ///
 /// `pad` is the PSX pad bitmask. Layout matches
-/// [`legaia_engine_core::input::PadButton::mask`]: Cross = `0x4000`,
+/// [`legaia_engine_system::input::PadButton::mask`]: Cross = `0x4000`,
 /// Circle = `0x2000`, Up = `0x0010`, Down = `0x0040`, Left = `0x0080`,
 /// Right = `0x0020`, etc. Stored as a plain `u16` so the wire form is
 /// `pad = 0x4000` rather than `pad = ["Cross"]`. Future writers can

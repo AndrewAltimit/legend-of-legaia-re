@@ -7,8 +7,8 @@ use crate::world::World;
 /// (`interaction_slot`) over `bc`, with that placement's channel sharing
 /// the bytes at PC 0.
 fn interaction_timeline(bc: Vec<u8>, slot: u8) -> World {
-    use crate::cutscene_timeline::CutsceneTimeline;
     use crate::field_channels::FieldChannel;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     use legaia_engine_vm::field::FieldCtx;
 
     let mut w = World::new();
@@ -49,7 +49,7 @@ fn a_touch_resumed_context_ends_at_its_nop_and_hands_the_pc_back() {
 
 #[test]
 fn the_system_script_starts_no_pass_while_another_context_holds_the_player() {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     // Two passes: `SET 7`, `21`, then `SET 8`, `21`.
     let mut w = World::new();
     w.load_field_script(vec![0x50, 0x07, 0x21, 0x50, 0x08, 0x21]);
@@ -71,7 +71,7 @@ fn the_system_script_starts_no_pass_while_another_context_holds_the_player() {
 
 #[test]
 fn an_open_system_pass_continues_under_a_held_player() {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     // `WaitFrames 2` inside the pass, then `SET 9`, `21`: a pass already
     // open when the player gets held runs on (`0x801DA78C`).
     let mut w = World::new();
@@ -102,8 +102,8 @@ fn a_committed_battle_holds_the_system_script() {
 
 #[test]
 fn a_seat_then_walk_in_one_slice_walks_from_the_seat() {
-    use crate::cutscene_timeline::CutsceneTimeline;
     use crate::field_channels::FieldChannel;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     use legaia_engine_vm::field::FieldCtx;
     // `CC 40 51 10 10 00 00` seats channel 0x40 at tile (16,16), then
     // `C7 40 12 10 33` walks it to (18,16) - the shape of every cutscene
@@ -141,9 +141,9 @@ fn a_seat_then_walk_in_one_slice_walks_from_the_seat() {
 
 #[test]
 fn a_poked_placement_does_not_run_its_talk_body() {
-    use crate::cutscene_timeline::CutsceneTimeline;
     use crate::field_channels::FieldChannel;
-    use crate::world::SceneMode;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_mode::mode::SceneMode;
     use legaia_engine_vm::field::FieldCtx;
     // A placement whose talk body is `SET 0x20`. The timeline pokes it
     // (`B1 40 01`, a cross-context CFLAG_SET), then waits. Retail runs a
@@ -181,7 +181,7 @@ fn a_poked_placement_does_not_run_its_talk_body() {
 
 #[test]
 fn a_player_targeted_move_to_in_a_timeline_seats_the_player() {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     // `A3 F8 60 0D` (MOVE_TO against the player anchor), then a wait.
     let mut w = World::new();
     w.install_field_player(0);
@@ -202,8 +202,8 @@ fn a_player_targeted_move_to_in_a_timeline_seats_the_player() {
 
 #[test]
 fn a_copy_from_player_then_walk_starts_at_the_player() {
-    use crate::cutscene_timeline::CutsceneTimeline;
     use crate::field_channels::FieldChannel;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     use legaia_engine_vm::field::FieldCtx;
     // `CC 40 37` (4C nibble-3 sub-7: copy the player's position onto
     // channel 0x40), then `C7 40 12 10 33` walks it off. The channel
@@ -244,7 +244,7 @@ fn a_copy_from_player_then_walk_starts_at_the_player() {
 
 #[test]
 fn a_helper_context_parks_on_its_text_and_runs_on_after_the_box() {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     // `1F 'H' 'i' 00` (one text segment), `SET 0x0C`, then a long wait.
     // Retail's runner parks any engaged context on its text segment and
     // hands it to the shared box; a helper used to complete there and
@@ -263,7 +263,7 @@ fn a_helper_context_parks_on_its_text_and_runs_on_after_the_box() {
     assert!(!w.system_flag_test(0x0C));
     for i in 0..200 {
         w.set_pad(if i % 2 == 0 {
-            crate::input::PadButton::Cross.mask()
+            legaia_engine_system::input::PadButton::Cross.mask()
         } else {
             0
         });
@@ -281,7 +281,7 @@ fn a_helper_context_parks_on_its_text_and_runs_on_after_the_box() {
 
 #[test]
 fn a_parked_box_is_not_drawn_over_a_battle() {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     // The field pager lives in the field overlay, which the battle
     // overlay replaces: a context parked on its text across a forced
     // fight keeps its park, but no box is drawn until the field returns.
@@ -292,9 +292,9 @@ fn a_parked_box_is_not_drawn_over_a_battle() {
         .push(CutsceneTimeline::new(bc, 0));
     w.step_helper_contexts();
     assert!(w.script_dialog_panel().is_some());
-    w.mode = crate::world::SceneMode::Battle;
+    w.mode = legaia_engine_mode::mode::SceneMode::Battle;
     assert!(w.script_dialog_panel().is_none(), "no box over the fight");
-    w.mode = crate::world::SceneMode::Field;
+    w.mode = legaia_engine_mode::mode::SceneMode::Field;
     assert!(
         w.script_dialog_panel().is_some(),
         "the park survives the fight"
@@ -303,7 +303,7 @@ fn a_parked_box_is_not_drawn_over_a_battle() {
 
 #[test]
 fn a_helper_off_text_keeps_its_slice_while_the_box_is_taken() {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     // Retail's runner `FUN_80039B7C` gates a context on its own `+0x9C`,
     // never on the box: while one context's text is up, a context that is
     // not on text runs every frame, and a second context that reaches
@@ -361,7 +361,7 @@ fn a_helper_off_text_keeps_its_slice_while_the_box_is_taken() {
     // context gets the box.
     for i in 0..200 {
         w.set_pad(if i % 2 == 0 {
-            crate::input::PadButton::Cross.mask()
+            legaia_engine_system::input::PadButton::Cross.mask()
         } else {
             0
         });
@@ -377,7 +377,7 @@ fn a_helper_off_text_keeps_its_slice_while_the_box_is_taken() {
     );
     for i in 0..400 {
         w.set_pad(if i % 2 == 0 {
-            crate::input::PadButton::Cross.mask()
+            legaia_engine_system::input::PadButton::Cross.mask()
         } else {
             0
         });
@@ -394,7 +394,7 @@ fn a_helper_off_text_keeps_its_slice_while_the_box_is_taken() {
 
 #[test]
 fn a_second_player_walk_waits_for_the_first_to_land() {
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     // Two contexts each walk the player (`C7 F8 tx tz mode`) then SET a
     // flag. Retail's walk park leaves the player's halt bit `0x400` set
     // until the kernel lands it, and the dispatcher refuses the second

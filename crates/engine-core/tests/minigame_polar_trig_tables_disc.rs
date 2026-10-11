@@ -1,5 +1,5 @@
 //! Disc-gated: the two quadrature tables
-//! [`legaia_engine_core::minigame_floor::polar_offset`] indexes are **static
+//! [`legaia_engine_fishing::minigame_floor::polar_offset`] indexes are **static
 //! `SCUS_942.54` rodata**, not overlay-installed runtime data.
 //!
 //! This is the oracle behind that port's corrected `NOT WIRED:` reason. The
@@ -18,18 +18,18 @@
 //! 2. The two are `0x800` bytes apart - one quarter turn - so they overlap:
 //!    the pair is *one* table read at two phases.
 //! 3. Entries are `trunc(0x1000 * sin)`, truncating toward zero - and the
-//!    analytic reproduction in `legaia_asset::minigame_slot_scene` reproduces
+//!    analytic reproduction in `legaia_minigame_formats::minigame_slot_scene` reproduces
 //!    them entry for entry. Rounding instead differs on about half the table by
 //!    one LSB, and the reel renderer multiplies that error by a radius, so the
 //!    reproduction is checked against the disc rather than assumed.
 //!
 //! Skips and passes without `LEGAIA_DISC_BIN`.
 
-use legaia_asset::minigame_slot_scene::{
+use legaia_engine_core::Vfs;
+use legaia_engine_fishing::minigame_floor::{POLAR_SHIFT, POLAR_TABLE_LEN, polar_offset};
+use legaia_minigame_formats::minigame_slot_scene::{
     ANGLE_FULL, COS_TABLE_VA, SIN_TABLE_VA, cos_4096, sin_4096,
 };
-use legaia_engine_core::Vfs;
-use legaia_engine_core::minigame_floor::{POLAR_SHIFT, POLAR_TABLE_LEN, polar_offset};
 use std::path::PathBuf;
 
 /// `SCUS_942.54` text-segment load address; the PS-EXE header is `0x800`
@@ -119,7 +119,7 @@ fn the_ported_trig_reproduces_the_disc_tables_entry_for_entry() {
     let sin = read_table(&scus, SIN_TABLE_VA);
     let cos = read_table(&scus, COS_TABLE_VA);
 
-    // `legaia_asset::minigame_slot_scene`'s analytic stand-in is what the reel
+    // `legaia_minigame_formats::minigame_slot_scene`'s analytic stand-in is what the reel
     // renderer's `reel_y` / `reel_z` and the effect VM's planar leg rotation
     // read instead of the table, so it has to *be* the table, not approximate
     // it. Every entry, both phases.

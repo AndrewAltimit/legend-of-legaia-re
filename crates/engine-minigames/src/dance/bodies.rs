@@ -50,7 +50,7 @@ pub struct DanceBodyClip {
 
 impl DanceBodyClip {
     /// The track entry for a kind-descriptor clip.
-    pub fn of(clip: &legaia_asset::dance_cast::DanceClip) -> Self {
+    pub fn of(clip: &legaia_minigame_formats::dance_cast::DanceClip) -> Self {
         Self {
             id: clip.anim_id & 0x1FF,
             rate: clip.rate,

@@ -78,7 +78,7 @@ impl World {
     /// Differences from [`Self::decode_field_direction`] (the retail path):
     /// the camera azimuth rotates the screen vector at full angular
     /// resolution instead of snapping to the nearest 90°, and a deflected
-    /// analog stick ([`crate::input::InputState::lstick`], PSX `[-127, 127]`
+    /// analog stick ([`legaia_engine_system::input::InputState::lstick`], PSX `[-127, 127]`
     /// axes, +Y down) supplies an arbitrary screen angle - digital keys are
     /// the 8-way fallback when the stick rests inside the deadzone.
     pub(super) fn decode_field_direction_precise(&self) -> Option<((f32, f32), u16, i16)> {

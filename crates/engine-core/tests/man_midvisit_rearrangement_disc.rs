@@ -23,10 +23,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{
-    partition_record_span, partition2_record_gates, scene_man_carriers,
-};
+use legaia_engine_core::man_field_scripts::scene_man_carriers;
 use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_field::man_field_scripts::{partition_record_span, partition2_record_gates};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -65,7 +64,7 @@ fn midvisit_rearrangement_records_pinned() {
     );
     assert_eq!(carrier.entry_idx, 70, "dolk2 variant MAN lives in PROT[70]");
     let man = &carrier.payload;
-    let man_file = legaia_asset::man_section::parse(man).expect("parse dolk2 MAN");
+    let man_file = legaia_scene_formats::man_section::parse(man).expect("parse dolk2 MAN");
 
     let (c1, c2) = partition2_record_gates(&man_file, man, 11).expect("P2[11] gates");
     assert_eq!(c1, vec![0x27C], "P2[11] one-shot latch");
@@ -120,7 +119,7 @@ fn midvisit_rearrangement_records_pinned() {
     let carrier = carriers.first().expect("garmel MAN carrier");
     assert!(!carrier.is_variant(), "garmel uses its bundle MAN");
     let man = &carrier.payload;
-    let man_file = legaia_asset::man_section::parse(man).expect("parse garmel MAN");
+    let man_file = legaia_scene_formats::man_section::parse(man).expect("parse garmel MAN");
 
     // P1[0]'s three flag-consume arms spawn the re-arrangement beats
     // P2[13..15] (partition-2 base = N0 + N1 = 24 + 27 = 0x33).

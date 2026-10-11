@@ -22,11 +22,11 @@ use super::*;
 /// `Command` with the Somersault for the hyper-arts drill (an Auto attack is
 /// that lesson's wrong-lesson rewind).
 pub(super) fn fight_pad(session: &BootSession) -> u16 {
-    use legaia_engine_core::arts_command_input::ArtsInputPhase;
-    use legaia_engine_core::battle_input::CommandPhase;
-    use legaia_engine_core::battle_magic::SpellPhase;
+    use legaia_engine_battle::arts_command_input::ArtsInputPhase;
+    use legaia_engine_battle::battle_magic::SpellPhase;
     use legaia_engine_core::battle_tutorial::TutorialLesson;
-    use legaia_engine_core::inventory_use::InventoryUseState;
+    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_menus::inventory_use::InventoryUseState;
     let w = &session.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
         return PadButton::Cross.mask();
@@ -295,7 +295,7 @@ pub(super) fn battle_snapshot(session: &BootSession) -> String {
     let phase: String = phase.chars().take(60).collect();
     let clip = |s: String| s.chars().take(90).collect::<String>();
     let sm = w.battle_ctx.action_state;
-    let sm_name = legaia_engine_vm::battle_action::ActionState::from_byte(sm)
+    let sm_name = legaia_engine_battle_vm::battle_action::ActionState::from_byte(sm)
         .map_or_else(|| "?".to_string(), |s| format!("{s:?}"));
     format!(
         "{formation} party[{}] mobs[{}] action SM ctx[7]=0x{sm:02X} {sm_name} actor {} boxes {} phase {phase}; driven {} end {:?} victory {} flow {} round {}",
@@ -342,7 +342,8 @@ pub(super) fn party_dump(session: &BootSession) {
         );
     }
     for i in 0..n {
-        let ch = legaia_engine_core::battle_arts::character_for_slot(w.party_roster_slot(i) as u8);
+        let ch =
+            legaia_engine_battle::battle_arts::character_for_slot(w.party_roster_slot(i) as u8);
         let mut arts: Vec<String> = w
             .tables
             .art_records
@@ -483,7 +484,7 @@ pub(super) fn fight_battle(session: &mut BootSession) -> Option<Run> {
         let window = session.host.world.battle.command.as_ref().is_some_and(|c| {
             matches!(
                 c.phase,
-                legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. }
+                legaia_engine_menus::battle_input::CommandPhase::RoundPrompt { .. }
             )
         });
         let mut run = ROUND_LOSS.with(std::cell::Cell::get);

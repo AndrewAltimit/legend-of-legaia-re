@@ -22,7 +22,7 @@
 //! [`seed_boot_offset_table`] and [`text_line_count`].
 //!
 //! REF: FUN_800267FC - the tick half of the timed sound-source pair, ported
-//! in [`crate::sound_state`].
+//! in [`legaia_engine_system::sound_state`].
 //! REF: FUN_80035B50 - the SFX enqueue that parks the slot the delay set
 //! writes through.
 //! REF: FUN_80062004 - the libsnd `SsSeqSetVol` shim the arm tail-calls.
@@ -50,7 +50,7 @@
 /// at `_DAT_8007B7E0`, and calls this with `(pool, pool + 4, 0x50)` at
 /// `0x801D7384`, so the eighty slot indices are seeded `0..79` with the top
 /// index `79` stored at the pool's `+0`. The pop and push are
-/// `crate::cutscene::sprite_stack_pop` / `sprite_stack_push`
+/// `legaia_engine_system::movie::cutscene::sprite_stack_pop` / `sprite_stack_push`
 /// (`FUN_8001FA34` / `FUN_8001FA68`), whose one consumer is that pool.
 ///
 /// WIRED: [`crate::fog_particles::FogPool::reset`] seeds its free stack
@@ -296,7 +296,7 @@ impl StagedCharacterSelector {
 /// instructions) writes when it arms the timed sound-source release.
 ///
 /// This is the **arm** half of the pair whose tick half
-/// ([`crate::sound_state::SoundReleaseTimer`]) is already ported. The tick
+/// ([`legaia_engine_system::sound_state::SoundReleaseTimer`]) is already ported. The tick
 /// consumes three of these cells; the arm writes two more:
 ///
 /// | Cell | Written |
@@ -366,7 +366,7 @@ impl TimedSoundArm {
 /// not because the encoding requires it (`0x6C810` does not).
 ///
 /// The eight distinct slots and the four aliased pairs are the same ones
-/// [`legaia_asset::sfx_table::spu_base_for_slot`] returns; word `+0x24`
+/// [`legaia_game_tables::sfx_table::spu_base_for_slot`] returns; word `+0x24`
 /// (slot 9) being unwritten is that helper's `None`.
 pub const BOOT_OFFSET_TABLE: [u32; 12] = [
     0x0000_1010, // +0x00
@@ -411,7 +411,7 @@ pub const BOOT_ENABLE_FLAG_ADDRS: [u32; 3] = [0x8007_0520, 0x8007_0580, 0x8007_0
 /// VAB slot (`sll v0,slot,2; addu v0,v0,base; lw a2,0x0(v0)`) to get the SPU
 /// address it hands `SsVabOpenHead`. These twelve words are therefore the
 /// per-slot **SPU RAM bases**, which is also why they match
-/// [`legaia_asset::sfx_table::spu_base_for_slot`] word for word (see
+/// [`legaia_game_tables::sfx_table::spu_base_for_slot`] word for word (see
 /// [`docs/formats/sfx-table.md`](../../../docs/formats/sfx-table.md)).
 ///
 /// What is missing is the boot path, not the reader - but the reason recorded
@@ -527,7 +527,7 @@ impl crate::world::World {
         self.board.header = None;
         self.board.target = None;
         self.board.armed = false;
-        self.board.actor_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
+        self.board.actor_slots = [None; legaia_engine_minigames::tile_board::TILE_ACTOR_TABLE_LEN];
         self.board.draw_list.clear();
         // `sw zero, -0x49d0(v0)` at `0x8003A07C`: `_DAT_8007B630 = 0`.
         self.camera.shake_amplitude = 0;

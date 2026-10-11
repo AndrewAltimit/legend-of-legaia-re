@@ -55,7 +55,7 @@
 //! retail countdown/reload and returns the tick's strip widths;
 //! [`rotate_rect`] is the pure texel kernel. `World::step_ambient_fx` owns
 //! VRAM and applies the two together, the same contract the mode-3 sibling
-//! ([`crate::clut_cell_fx`]) uses - except that this one is **destructive**:
+//! ([`legaia_engine_field::clut_cell_fx`]) uses - except that this one is **destructive**:
 //! the rect is rotated in place, so it is applied once per game tick rather
 //! than recomputed per frame from a cached capture.
 

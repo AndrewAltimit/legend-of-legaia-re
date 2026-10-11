@@ -99,7 +99,7 @@ pub const SCAN_LIMIT: usize = 0x20;
 
 /// Minimum spell level that lets the message fire - the same gate the stager
 /// applies before staging anything.
-pub const MIN_LEVEL: u8 = legaia_asset::seru_side_effect::MIN_LEVEL;
+pub const MIN_LEVEL: u8 = legaia_game_tables::seru_side_effect::MIN_LEVEL;
 
 /// The banner id the pass prints and mirrors into `ctx[+0x18]`.
 pub const MESSAGE_ID: u8 = 0x66;

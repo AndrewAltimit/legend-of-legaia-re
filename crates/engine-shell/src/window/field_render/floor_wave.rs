@@ -201,7 +201,7 @@ impl PlayWindowApp {
         let indices =
             legaia_engine_core::field_ground::crop_indices(&v.positions, &v.indices, Some(cells));
         if let Some(d) = self.draw_census.as_mut() {
-            d.ground_crop = Some(legaia_engine_core::draw_census::MeshCensus::from_mesh(
+            d.ground_crop = Some(legaia_engine_system::draw_census::MeshCensus::from_mesh(
                 &v.positions,
                 &v.cba_tsb,
                 &v.colors,

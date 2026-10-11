@@ -8,9 +8,9 @@
 //! samples each frame.
 //!
 //! **Both sides emit the mode word.** [`BootSession`] holds a
-//! [`ModeSeat`](legaia_engine_core::mode::ModeSeat) - the port's copy of
+//! [`ModeSeat`](legaia_engine_mode::mode::ModeSeat) - the port's copy of
 //! `_DAT_8007B83C` - written where retail's code stores that word and
-//! reconciled with [`world.mode`](legaia_engine_core::world::SceneMode) once
+//! reconciled with [`world.mode`](legaia_engine_mode::mode::SceneMode) once
 //! per tick, so every engine-sampled frame carries a `game_mode` and
 //! [`first_mode_trace_divergence`]'s `game_mode` compare is live rather than
 //! skipped. It used to be `None` for every frame except an open pause menu,
@@ -38,7 +38,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::{BootConfig, BootSession};
+use crate::BootSession;
+use legaia_engine_session::boot::BootConfig;
 
 /// One sample of the engine's (or retail's) high-level dispatch state.
 /// A field the sampler cannot fill is left as `None` rather than zeroed, so a
@@ -51,18 +52,18 @@ pub struct ModeTraceFrame {
     pub frame: u64,
     /// `_DAT_8007B83C` byte (an index into the 28-mode table). Retail:
     /// read directly. Engine: the session's
-    /// [`ModeSeat`](legaia_engine_core::mode::ModeSeat) word, on every frame.
+    /// [`ModeSeat`](legaia_engine_mode::mode::ModeSeat) word, on every frame.
     /// `None` only for a sampler that holds no seat.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub game_mode: Option<u8>,
     /// Debug name from `mode::TABLE` (e.g. `"MAPDISP MODE"`).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub game_mode_name: Option<String>,
-    /// [`SceneMode`](legaia_engine_core::world::SceneMode) variant name:
+    /// [`SceneMode`](legaia_engine_mode::mode::SceneMode) variant name:
     /// `"Title"` / `"Field"` / `"Battle"` / `"Cutscene"` / `"WorldMap"` /
     /// `"Menu"` / the five minigames. Both emitters fill this. Retail derives
     /// it from the `(game_mode, warp sub-id)` pair via
-    /// [`GameMode::scene_mode_with_warp`](legaia_engine_core::mode::GameMode::scene_mode_with_warp),
+    /// [`GameMode::scene_mode_with_warp`](legaia_engine_mode::mode::GameMode::scene_mode_with_warp),
     /// because the mode word alone cannot separate the five minigames: they all
     /// run under `0x19`.
     pub scene_mode: String,
@@ -162,7 +163,7 @@ pub fn build_engine_mode_trace_field_live(
     };
     session.enter_field_live(
         scene_name,
-        &crate::boot::FieldLiveOpts {
+        &legaia_engine_session::boot::FieldLiveOpts {
             live_loop: true,
             ..Default::default()
         },
@@ -209,7 +210,7 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
     disc: Option<&Path>,
     frames: u64,
 ) -> Result<Vec<ModeTraceFrame>> {
-    use legaia_engine_core::input::PadButton;
+    use legaia_engine_system::input::PadButton;
 
     let cfg = BootConfig {
         scene: scene_name.to_string(),
@@ -222,7 +223,7 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
     session.begin_new_game();
     session.enter_field_live(
         scene_name,
-        &crate::boot::FieldLiveOpts {
+        &legaia_engine_session::boot::FieldLiveOpts {
             live_loop: true,
             ..Default::default()
         },
@@ -287,8 +288,8 @@ fn sample_engine_frame(session: &BootSession) -> ModeTraceFrame {
     }
 }
 
-fn scene_mode_name(m: legaia_engine_core::world::SceneMode) -> &'static str {
-    use legaia_engine_core::world::SceneMode;
+fn scene_mode_name(m: legaia_engine_mode::mode::SceneMode) -> &'static str {
+    use legaia_engine_mode::mode::SceneMode;
     match m {
         SceneMode::Title => "Title",
         SceneMode::Field => "Field",
@@ -311,9 +312,9 @@ fn scene_mode_name(m: legaia_engine_core::world::SceneMode) -> &'static str {
 /// - `game_mode` from `_DAT_8007B83C`
 ///   ([`capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR`](crate::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR)).
 /// - `scene_mode` derived from the **pair** `(game_mode, warp sub-id)` via
-///   [`GameMode::scene_mode_with_warp`](legaia_engine_core::mode::GameMode::scene_mode_with_warp),
+///   [`GameMode::scene_mode_with_warp`](legaia_engine_mode::mode::GameMode::scene_mode_with_warp),
 ///   with the sub-id read from
-///   [`WARP_SUB_ID_ADDR`](legaia_engine_core::mode::WARP_SUB_ID_ADDR).
+///   [`WARP_SUB_ID_ADDR`](legaia_engine_mode::mode::WARP_SUB_ID_ADDR).
 /// - `active_scene` from the scene-bundle pool slot 0 at `0x80084540`.
 ///
 /// **The sub-id is not optional here.** The retail mode word alone cannot tell
@@ -341,7 +342,7 @@ pub fn load_runtime_mode_trace_from_save(save: &Path) -> Result<ModeTraceFrame> 
 pub fn mode_trace_frame_from_ram(ram: &[u8]) -> ModeTraceFrame {
     use crate::capture_observations::cutscene_trigger_corpus::read_game_mode;
     use crate::capture_observations::field_pack_intra_transition::read_pool_slot_name;
-    use legaia_engine_core::mode::{GameMode, read_warp_sub_id};
+    use legaia_engine_mode::mode::{GameMode, read_warp_sub_id};
 
     let game_mode = read_game_mode(ram);
     let warp_sub_id = read_warp_sub_id(ram);
@@ -360,8 +361,8 @@ pub fn mode_trace_frame_from_ram(ram: &[u8]) -> ModeTraceFrame {
     }
 }
 
-fn game_mode_label(gm: legaia_engine_core::mode::GameMode) -> &'static str {
-    legaia_engine_core::mode::TABLE[gm.as_index()].name
+fn game_mode_label(gm: legaia_engine_mode::mode::GameMode) -> &'static str {
+    legaia_engine_mode::mode::TABLE[gm.as_index()].name
 }
 
 /// Number of leading main-RAM bytes the manifest's `ram_fingerprint_sha256`
@@ -642,7 +643,7 @@ mod tests {
     /// No Sony bytes - a zeroed buffer with two words poked in.
     fn ram_at(game_mode: u8, warp_sub_id: i16) -> Vec<u8> {
         use crate::capture_observations::cutscene_trigger_corpus::GAME_MODE_ADDR;
-        use legaia_engine_core::mode::WARP_SUB_ID_ADDR;
+        use legaia_engine_mode::mode::WARP_SUB_ID_ADDR;
         let mut ram = vec![0u8; 0x20_0000];
         ram[(GAME_MODE_ADDR - 0x8000_0000) as usize] = game_mode;
         let off = (WARP_SUB_ID_ADDR - 0x8000_0000) as usize;

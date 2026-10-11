@@ -78,7 +78,7 @@
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::item_names;
+use legaia_game_tables::item_names;
 
 use crate::arenas::{Edit, OVERLAY_BASE_VA, OVERLAY_TABLE_RANGES, SCUS_TABLE_RANGES};
 use crate::mips::*;

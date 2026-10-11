@@ -2,6 +2,7 @@
 //! kernel composition.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// With both the move-power table AND the element-affinity tables installed, a
 /// monster special attack scales by `matrix[enemy_element][party_member_element]`
@@ -11,11 +12,11 @@ use super::*;
 /// exactly - so the affinity is gated and never perturbs the RNG stream.
 #[test]
 fn element_affinity_scales_monster_special_attack_damage() {
-    use crate::monster_catalog::vanilla_monster_catalog;
-    use crate::move_power::MovePowerCatalog;
-    use crate::spells::SpellCatalog;
-    use legaia_asset::element_affinity::ElementAffinity;
-    use legaia_asset::move_power::{
+    use legaia_engine_battle::monster_catalog::vanilla_monster_catalog;
+    use legaia_engine_battle::move_power::MovePowerCatalog;
+    use legaia_engine_battle::spells::SpellCatalog;
+    use legaia_game_tables::element_affinity::ElementAffinity;
+    use legaia_game_tables::move_power::{
         MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
         MOVE_POWER_TABLE_LEN,
     };
@@ -112,9 +113,9 @@ fn element_affinity_scales_monster_special_attack_damage() {
 /// exactly (the summon power-percent stage defaults to 100).
 #[test]
 fn element_affinity_scales_player_summon_cast_by_creature_element() {
-    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
-    use crate::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
-    use legaia_asset::element_affinity::ElementAffinity;
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
+    use legaia_game_tables::element_affinity::ElementAffinity;
 
     const SUMMON_ELEM: usize = 2; // the "Gimard" creature's element
     const ENEMY_ELEM: usize = 5; // the target enemy's element
@@ -220,9 +221,9 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
 /// caster AGL doubled, and the shared LCG drawn in retail call order.
 #[test]
 fn player_summon_cast_matches_the_summon_kernel_composition() {
-    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
-    use crate::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
-    use legaia_engine_vm::battle_formulas::{
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::spells::{SpellDef, SpellEffect, SpellElement, SpellTarget};
+    use legaia_engine_battle_vm::battle_formulas::{
         DamageFinish, DefenderResist, SummonRollActor, damage_finish_lazy, summon_predamage_lazy,
     };
 
@@ -341,7 +342,7 @@ fn player_summon_cast_matches_the_summon_kernel_composition() {
 /// which a boss's defence floors at 1 (the Dohati fight's Viguro casts).
 #[test]
 fn a_summon_rolls_from_its_archive_body_when_the_scene_lacks_the_creature() {
-    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
 
     fn build_world(archive_body: bool) -> World {
         build_world_for(archive_body, 0x81)

@@ -29,7 +29,7 @@ use legaia_engine_core::scene::ProtIndex;
 /// One catalogued placement - the shared kernel's record
 /// ([`legaia_engine_core::npc_catalog::NpcEntry`]), re-exported so the
 /// viewer's accessors keep their old path.
-pub use legaia_engine_core::npc_catalog::NpcEntry;
+use legaia_engine_core::npc_catalog::NpcEntry;
 
 /// The NPC catalog for one loaded field scene. Built by
 /// [`LegaiaViewer::set_scene_npcs`]; the meshes resolve against the

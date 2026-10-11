@@ -33,9 +33,9 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use legaia_asset::battle_char_assembly as bca;
-use legaia_asset::monster_archive::PartPose;
-use legaia_asset::{battle_data_pack, me_archive};
+use legaia_actor_formats::battle_char_assembly as bca;
+use legaia_actor_formats::monster_archive::PartPose;
+use legaia_actor_formats::{battle_data_pack, me_archive};
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_tmd::encode::{ModelObject, decode_model};
 

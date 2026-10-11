@@ -70,7 +70,7 @@ pub const TIME_METER_MAX: u8 = 0xC;
 /// `0x2AAAAAAB` reciprocal-multiply divide) - `-0x92` empty, `+0xE` full.
 /// Returns `(new_counter, bar_y)`.
 ///
-/// Wired: `legaia_engine_core::muscle_dome::MuscleDomeSession::tick_time_meter`, which the host calls once a
+/// Wired: `legaia_engine_menus::muscle_dome_session::MuscleDomeSession::tick_time_meter`, which the host calls once a
 /// frame while a contest is up.
 pub fn time_meter_step(counter: u8, dt: u8, in_select_phase: bool, ramp_up: bool) -> (u8, i16) {
     let new = if ramp_up && in_select_phase {
@@ -144,7 +144,7 @@ pub const HUB_TALLY_CUE_STAGGER: [u8; 4] = [0, 0x1E, 0x3C, 0x5A];
 /// The four ring ids the INTERVAL arm writes beside [`HUB_TALLY_CUE_STAGGER`]
 /// (`0x801CFCAC..0x801CFCC8`), one per ring slot. Both are runtime-bank ids:
 /// they resolve against the arena's own descriptor bundle
-/// (`legaia_asset::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`), whose rows
+/// (`legaia_minigame_formats::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`), whose rows
 /// `0x202` / `0x203` key tones 3 and 4..5 of the arena's slot-3 side bank.
 pub const HUB_TALLY_CUES: [i16; 4] = [0x202, 0x202, 0x202, 0x203];
 

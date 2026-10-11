@@ -4,6 +4,7 @@
 //! change from the original inline definitions.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     // --- live gameplay loop: Field <-> Battle round trip ------------------
@@ -58,7 +59,7 @@ impl World {
                         // player, a warp landing) is not a step to the
                         // region reader; a forced scripted formation still
                         // fires.
-                        let step = crate::region_encounter::is_region_step(
+                        let step = legaia_engine_battle::region_encounter::is_region_step(
                             (i32::from(prev.0), i32::from(prev.1)),
                             (i32::from(tile.0), i32::from(tile.1)),
                         );
@@ -93,7 +94,10 @@ impl World {
     /// nothing in the log to say so. `install_man_encounter` cross-checks the
     /// same pairing at scene entry; if this ever fires, that check was bypassed
     /// or the table was replaced after it ran.
-    pub(crate) fn begin_encounter_battle(&mut self, roll: crate::encounter::EncounterRoll) {
+    pub(crate) fn begin_encounter_battle(
+        &mut self,
+        roll: legaia_engine_battle::encounter::EncounterRoll,
+    ) {
         let Some(formation) = self
             .tables
             .formation_table
@@ -169,7 +173,7 @@ impl World {
     /// the default bundle (`0x370` instead of `0x36F` when `DAT_8007B64B` is
     /// set, `0x801CF6FC..0x801CF724`), which the port answers with the
     /// configured track; `N > 0` loads bundle `0x36F + N`
-    /// ([`crate::music_labels::battle_bank_bgm_id`]).
+    /// ([`legaia_engine_system::music_labels::battle_bank_bgm_id`]).
     pub(crate) fn swap_to_battle_bgm(&mut self) {
         let Some(configured) = self.audio.battle_bgm else {
             return;
@@ -184,13 +188,13 @@ impl World {
                 .region_setup
                 .and_then(|s| s.keep_backdrop_object_1)
                 .unwrap_or(false);
-            if alt && configured == crate::music_labels::BATTLE_THEME_1_BGM_ID {
-                crate::music_labels::BATTLE_THEME_2_BGM_ID
+            if alt && configured == legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID {
+                legaia_engine_system::music_labels::BATTLE_THEME_2_BGM_ID
             } else {
                 configured
             }
         } else {
-            crate::music_labels::battle_bank_bgm_id(set).unwrap_or(configured)
+            legaia_engine_system::music_labels::battle_bank_bgm_id(set).unwrap_or(configured)
         };
         if self.audio.battle_bgm_active || self.audio.current_bgm == Some(battle) {
             return;
@@ -322,7 +326,7 @@ impl World {
 
     pub(crate) fn enter_battle_from_formation(
         &mut self,
-        formation: &crate::monster_catalog::FormationDef,
+        formation: &legaia_engine_battle::monster_catalog::FormationDef,
     ) {
         // **The Tetsu spar is Vahn alone** - an engine rule, not a port.
         // Retail seats whoever is in the present-party list `DAT_8007BD10`
@@ -589,7 +593,10 @@ impl World {
             .map(|s| s.monster_id as u8)
             .unwrap_or(0);
         self.battle.special_word =
-            vm::battle_formulas::battle_init_special_word(self.battle.special_word, lead_monster);
+            legaia_engine_battle_vm::battle_formulas::battle_init_special_word(
+                self.battle.special_word,
+                lead_monster,
+            );
         // The stage id as battle init leaves it: the tutorial arm
         // `enter_battle` consumed, or the `0xB5` override (`FUN_80055B6C`,
         // `0x80055D2C..0x80055D44`), which pages the arrival module in.
@@ -606,8 +613,8 @@ impl World {
         // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.
         self.battle.monster_ai_state.reset();
         // ...and the stolen band + steal latch, which retail zeroes with the
-        // same battle-load sweep (`crate::battle_steal`).
-        self.battle.steal = crate::battle_steal::StealBand::default();
+        // same battle-load sweep (`legaia_engine_battle::battle_steal`).
+        self.battle.steal = legaia_engine_battle::battle_steal::StealBand::default();
         self.battle.steal_caption = None;
         self.battle.move_label_closed = false;
         // Seed the turn-order initiative keys for this battle. When real SPD is
@@ -910,7 +917,7 @@ impl World {
         if clip_control && !object {
             return None;
         }
-        let width = legaia_asset::field_disasm::decode(&self.field_bytecode, pc)
+        let width = legaia_scene_formats::field_disasm::decode(&self.field_bytecode, pc)
             .ok()
             .map(|i| i.size)
             .filter(|&n| n > 0)?;
@@ -1020,7 +1027,8 @@ impl World {
         // it needs the anchor as much as a field does.
         if matches!(
             mode,
-            crate::world::SceneMode::Field | crate::world::SceneMode::WorldMap
+            legaia_engine_mode::mode::SceneMode::Field
+                | legaia_engine_mode::mode::SceneMode::WorldMap
         ) {
             self.sync_field_ctx_player_anchor();
         }
@@ -1269,7 +1277,7 @@ mod arrival_facing_tests {
 
     fn world_with_player() -> World {
         let mut w = World {
-            mode: crate::world::SceneMode::Field,
+            mode: legaia_engine_mode::mode::SceneMode::Field,
             ..World::default()
         };
         w.spawn_actor(0);

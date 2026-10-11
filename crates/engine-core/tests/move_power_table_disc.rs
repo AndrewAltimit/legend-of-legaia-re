@@ -3,7 +3,7 @@
 //! per-move power scalar through the `0x801F4E63` id → index map.
 //!
 //! The asset crate has its own byte-level tests for the parser; this one pins
-//! the *engine wrapper* ([`legaia_engine_core::move_power::MovePowerCatalog`])
+//! the *engine wrapper* ([`legaia_engine_battle::move_power::MovePowerCatalog`])
 //! end to end against the entry bytes a real boot streams, and joins the
 //! move-id space to a known named monster special-attack (Tail Fire, move id
 //! `0x27`, the enemy-Gimard move - power record index `0x12`). Skips without
@@ -27,7 +27,7 @@ fn move_power_catalog_resolves_named_monster_attacks() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT/0898 missing");
         return;
     };
-    use legaia_engine_core::move_power::MovePowerCatalog;
+    use legaia_engine_battle::move_power::MovePowerCatalog;
 
     let cat = MovePowerCatalog::from_overlay_0898(&entry)
         .expect("move-power table parses from the real PROT 0898 overlay");
@@ -69,7 +69,7 @@ fn move_fx_descriptor_decodes_from_the_real_overlay() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT/0898 missing");
         return;
     };
-    use legaia_engine_core::move_power::MovePowerCatalog;
+    use legaia_engine_battle::move_power::MovePowerCatalog;
 
     let cat = MovePowerCatalog::from_overlay_0898(&entry).expect("move-power table parses");
 
@@ -101,7 +101,7 @@ fn move_fx_descriptor_decodes_from_the_real_overlay() {
     // Across the whole named-attack band, every Spawn entry the lists carry
     // resolves through the aux tables (no out-of-table index escapes), and at
     // least one move actually carries an effect list (the band isn't inert).
-    use legaia_asset::move_power::{EffectListEntry, IMPACT_EFFECT_TABLE_LEN};
+    use legaia_game_tables::move_power::{EffectListEntry, IMPACT_EFFECT_TABLE_LEN};
     let mut moves_with_effects = 0usize;
     for move_id in 0x25u8..=0x74 {
         let Some(fx) = cat.fx_for_move_id(move_id) else {

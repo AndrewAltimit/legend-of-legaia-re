@@ -7,10 +7,11 @@
 //! that checks the real text resolves.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 use crate::battle_flow::BattleFlowState;
-use crate::battle_input::{BattleCommandSession, CommandPhase};
 use crate::battle_tutorial::{BattleTutorialScript, TutorialLesson, msg};
+use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
 
 /// A stand-in overlay blob: every message VA the machine can emit gets a short
 /// ASCII marker naming its own address, so a queued box is traceable back to the
@@ -179,7 +180,7 @@ fn opening_a_turn_raises_the_turn_prompt_and_queues_the_lesson_intro() {
 /// hooks are one press away rather than one tick away.
 fn take_begin(world: &mut World) {
     world.set_pad(0);
-    world.set_pad(crate::input::PadButton::Cross.mask());
+    world.set_pad(legaia_engine_system::input::PadButton::Cross.mask());
     world.tick_battle_command();
     world.set_pad(0);
 }
@@ -290,8 +291,8 @@ fn committing_the_taught_category_is_accepted_and_advances_the_lesson() {
         party_slot: 0,
         no_escape: false,
         phase: CommandPhase::Confirmed {
-            command: crate::battle_input::BattleCommand::Attack,
-            target_row: crate::target_picker::CursorRow::Enemy,
+            command: legaia_engine_menus::battle_input::BattleCommand::Attack,
+            target_row: legaia_engine_battle::target_picker::CursorRow::Enemy,
             target_slot: 0,
         },
     });
@@ -315,7 +316,7 @@ fn committing_the_taught_category_is_accepted_and_advances_the_lesson() {
 }
 
 /// Press `button` for one arts-entry frame, then release.
-fn arts_press(world: &mut World, button: crate::input::PadButton) {
+fn arts_press(world: &mut World, button: legaia_engine_system::input::PadButton) {
     world.set_pad(0);
     world.set_pad(button.mask());
     world.tick_battle_arts_input();
@@ -347,7 +348,7 @@ fn drill_world() -> World {
 /// accepted and the fight ran on.
 #[test]
 fn the_somersault_entry_passes_the_drill_and_commits_the_last_lesson() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut world = drill_world();
     for b in [PadButton::Up, PadButton::Down, PadButton::Up] {
         arts_press(&mut world, b);
@@ -381,7 +382,7 @@ fn the_somersault_entry_passes_the_drill_and_commits_the_last_lesson() {
 
 #[test]
 fn a_wrong_drill_string_is_refused_back_to_the_command_menu() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut world = drill_world();
     for b in [PadButton::Down, PadButton::Down, PadButton::Down] {
         arts_press(&mut world, b);
@@ -395,7 +396,7 @@ fn a_wrong_drill_string_is_refused_back_to_the_command_menu() {
 
 #[test]
 fn the_drill_matches_one_leading_arrow() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut world = drill_world();
     // Four arrows at the favoured cost need more than the default pool.
     let entry = world.battle.arts_input.as_mut().unwrap();
@@ -420,7 +421,7 @@ fn the_drill_matches_one_leading_arrow() {
 /// is the wrong-lesson rewind at the target cursor (`0x801F6F98`).
 #[test]
 fn an_auto_attack_in_the_drill_lesson_rewinds() {
-    use crate::battle_input::BattleCommand;
+    use legaia_engine_menus::battle_input::BattleCommand;
     let mut world = tutorial_battle_world();
     world.battle.tutorial.as_mut().unwrap().lesson = TutorialLesson::HyperArts.raw();
     world.open_battle_command(0);
@@ -432,7 +433,7 @@ fn an_auto_attack_in_the_drill_lesson_rewinds() {
         phase: CommandPhase::AttackMode { cursor: 0 },
     });
     world.set_pad(0);
-    world.set_pad(crate::input::PadButton::Left.mask());
+    world.set_pad(legaia_engine_system::input::PadButton::Left.mask());
     world.tick_battle_command();
     world.set_pad(0);
     assert_eq!(queued(&world), vec![marker(msg::WRONG_HYPER_ARTS)]);
@@ -462,7 +463,7 @@ fn a_box_on_screen_parks_the_battle_loop() {
 
 #[test]
 fn a_waiting_box_dismisses_on_cross_and_a_plain_one_times_out() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
     // Box 0 is style 0 (no wait); box 1 is style 3 (waits).
@@ -589,7 +590,7 @@ fn a_press_skips_the_completion_countdown_once_the_sign_off_box_is_gone() {
     // (`ctx[+0x6B2] != 0` guards the zeroing at `0x801F7224`) ...
     world.set_pad(0);
     let _ = world.tick();
-    world.set_pad(crate::input::PadButton::Cross.mask());
+    world.set_pad(legaia_engine_system::input::PadButton::Cross.mask());
     let _ = world.tick();
     world.set_pad(0);
     let _ = world.tick();
@@ -602,7 +603,7 @@ fn a_press_skips_the_completion_countdown_once_the_sign_off_box_is_gone() {
         "... and leaves the countdown running"
     );
     // ... and the next press ends the wait.
-    world.set_pad(crate::input::PadButton::Circle.mask());
+    world.set_pad(legaia_engine_system::input::PadButton::Circle.mask());
     let _ = world.tick();
     world.set_pad(0);
     assert_eq!(
@@ -643,7 +644,7 @@ fn a_closed_sparring_fight_runs_no_more_battle() {
 #[test]
 fn replay_scripted_battle_arm_keys_on_the_records_entry_row() {
     use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
-    use legaia_asset::man_section::{ManFile, ManHeader};
+    use legaia_scene_formats::man_section::{ManFile, ManHeader};
 
     // One controller record + one placement whose script is the retail
     // sparring shape: dialogue, wait, `50 19 · 50 00 · 52 3C · 3E FF 04`.
@@ -668,7 +669,7 @@ fn replay_scripted_battle_arm_keys_on_the_records_entry_row() {
         },
         partitions: [vec![], vec![0, off1], vec![]],
         data_region_offset,
-        sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+        sections: std::array::from_fn(|_| legaia_scene_formats::man_section::SectionRef {
             offset: man.len(),
             length: 0,
         }),
@@ -703,7 +704,7 @@ fn replay_scripted_battle_arm_keys_on_the_records_entry_row() {
 #[test]
 fn the_sparring_caption_waits_for_the_enemy_names_to_go() {
     let mut world = tutorial_battle_world();
-    world.battle.intro_names_frames = crate::battle_open::PLAIN_OPEN_FRAMES;
+    world.battle.intro_names_frames = legaia_engine_menus::battle_open::PLAIN_OPEN_FRAMES;
     assert!(world.sparring_open_held());
     world.begin_battle_round();
     assert!(world.battle.sparring_round_pending, "round start held");
@@ -711,7 +712,7 @@ fn the_sparring_caption_waits_for_the_enemy_names_to_go() {
     assert!(!world.battle_tutorial_box_up());
     let state = world.battle_ctx.action_state;
     // The names drain one a tick; nothing else moves under them.
-    for _ in 0..crate::battle_open::PLAIN_OPEN_FRAMES {
+    for _ in 0..legaia_engine_menus::battle_open::PLAIN_OPEN_FRAMES {
         assert!(world.battle.sparring_round_pending);
         world.live_battle_tick();
         assert_eq!(world.battle_ctx.action_state, state);
@@ -734,7 +735,7 @@ fn an_ordinary_fight_is_not_held_by_its_enemy_names() {
     world.toggles.live_gameplay_loop = true;
     world.battle.player_driven = true;
     world.enter_battle(3, 2);
-    world.battle.intro_names_frames = crate::battle_open::PLAIN_OPEN_FRAMES;
+    world.battle.intro_names_frames = legaia_engine_menus::battle_open::PLAIN_OPEN_FRAMES;
     assert!(!world.sparring_open_held());
     world.begin_battle_round();
     assert!(!world.battle.sparring_round_pending);
@@ -746,7 +747,7 @@ fn an_ordinary_fight_is_not_held_by_its_enemy_names() {
 /// loop - but stays on screen until the next one replaces it.
 #[test]
 fn a_self_dismissing_prompt_stands_until_the_next_one_replaces_it() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
     let intro = world.battle.tutorial_boxes[0].text.clone();

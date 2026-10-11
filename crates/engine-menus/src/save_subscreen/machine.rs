@@ -27,7 +27,7 @@ pub enum SaveEntryContext {
     CasinoPrizeCounter,
     /// Context byte `0x0D` - returning after a save completed. The same
     /// kind byte hides the root picker's Load row and arms its
-    /// leave-confirm (`legaia_engine_core::pause_screens::ROOT_MENU_CONTEXT_LOCKED`).
+    /// leave-confirm (`crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED`).
     PostSave,
     /// Context byte `0x00` - a **town shop**. The byte is the op-`0x49`
     /// record's own kind, and it opens the shop's mode select
@@ -313,7 +313,7 @@ impl SaveScreenMachine {
             // per-frame body belongs to another module - the slot grid and
             // the info panel to `crate::save_select`, the character-parameter
             // editor and the generic picker to no host at all, the casino
-            // confirm to `legaia_engine_core::prize_exchange`. A host drives them through
+            // confirm to `legaia_engine_minigames::prize_exchange`. A host drives them through
             // `goto`, as it always has.
             SaveSubScreen::SlotSelect
             | SaveSubScreen::CharParamEditor

@@ -9,8 +9,8 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::man_field_scripts::walk_partition1_scripts;
 use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_field::man_field_scripts::walk_partition1_scripts;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -44,7 +44,7 @@ fn town01_partition1_scripts_walk_and_report_arm_sites() {
     let man = legaia_engine_core::scene_bundle::extract_man_payload(&bundle, &entry_bytes)
         .expect("man extract")
         .expect("town01 MAN payload");
-    let man_file = legaia_asset::man_section::parse(&man).expect("man parse");
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("man parse");
 
     let records = walk_partition1_scripts(&man_file, &man);
     eprintln!(
@@ -117,7 +117,7 @@ fn town01_partition1_scripts_walk_and_report_arm_sites() {
         eprintln!(
             "[tetsu] no inline [count=1][id=0x4F] literal at any P1 yield site \
              - supports the indexed-formation-table install path (formation index {})",
-            legaia_engine_core::encounter_record::RIM_ELM_TRAINING_FORMATION_ID
+            legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID
         );
     }
 

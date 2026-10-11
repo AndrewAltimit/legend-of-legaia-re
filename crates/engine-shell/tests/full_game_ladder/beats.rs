@@ -17,7 +17,7 @@ pub(super) fn play_beats(
     session: &mut BootSession,
     log: &mut Vec<String>,
 ) -> Result<Option<String>, String> {
-    use legaia_engine_core::man_field_scripts::{boss_stager_placements, partition2_record_gates};
+    use legaia_engine_field::man_field_scripts::{boss_stager_placements, partition2_record_gates};
     if session.host.world.mode != SceneMode::Field {
         return Ok(None);
     }
@@ -73,7 +73,7 @@ pub(super) fn play_beats(
     // same run, and replaying a seat-and-release beat walks the player off
     // the route another beat set up.
     let tested: BTreeMap<usize, BTreeSet<u16>> = {
-        use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+        use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
         let mut m: BTreeMap<usize, BTreeSet<u16>> = BTreeMap::new();
         for site in walk_partition_gflag_sites(&mf, &man, 2) {
             if site.clean && site.bank == FlagBank::System && site.kind == FlagKind::Test {
@@ -541,10 +541,10 @@ pub(super) fn play_beats(
 /// SETs a still-clear flag the next anchor carries.
 pub(super) fn object_door_beats(
     session: &BootSession,
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
 ) -> Vec<(u8, (i16, i16))> {
-    use legaia_engine_core::man_field_scripts::{
+    use legaia_engine_field::man_field_scripts::{
         FlagBank, WalkTouchEvent, resolve_walk_touch_event, walk_partition_gflag_sites,
     };
     let w = &session.host.world;
@@ -607,10 +607,10 @@ pub(super) type PropBeat = ((u8, u8), (i32, i32), bool);
 /// record overreaches (sets a latch the next anchor lacks) is left alone.
 pub(super) fn prop_beats(
     session: &BootSession,
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
 ) -> Vec<PropBeat> {
-    use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
     let w = &session.host.world;
     let wanted = |part: usize| -> BTreeSet<usize> {
         walk_partition_gflag_sites(mf, man, part)
@@ -748,12 +748,12 @@ pub(super) const BEAT_ROUNDS: usize = 3;
 /// is not played.
 pub(super) fn talk_beats(
     session: &BootSession,
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
 ) -> Vec<u8> {
-    use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
     let w = &session.host.world;
-    let wanted = |s: &legaia_engine_core::man_field_scripts::GFlagSite| {
+    let wanted = |s: &legaia_engine_field::man_field_scripts::GFlagSite| {
         s.bank == FlagBank::System
             && s.kind == FlagKind::Set
             && s.clean

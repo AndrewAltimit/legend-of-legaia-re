@@ -2,7 +2,7 @@
 //! replace it with a custom one.
 //!
 //! Export writes `<stem>.obj` / `<stem>.mtl` / `<stem>.png` via
-//! [`legaia_asset::monster_model::export_obj`]. Replace runs the reverse
+//! [`legaia_actor_formats::monster_model::export_obj`]. Replace runs the reverse
 //! codec, splices the new mesh + texture pool into the monster's decoded
 //! block ([`monster_archive::replace_mesh_and_pool`] - every offset the size
 //! change moves is fixed up), re-packs the LZS slot, and patches it in place
@@ -22,7 +22,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::{monster_archive, monster_model};
+use legaia_actor_formats::{monster_archive, monster_model};
 use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_disc_patch::ppf;
 

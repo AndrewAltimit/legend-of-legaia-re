@@ -95,7 +95,7 @@
 //! straddling jumps, and the MES picker jump entries are data no opcode walk
 //! ever visits. This module therefore walks the record **MES-aware** (text
 //! segments skipped via the `legaia-mes` interpreter, pickers decoded via
-//! `legaia_mes::picker`, opcodes via `legaia_asset::field_disasm`), collects
+//! `legaia_mes::picker`, opcodes via `legaia_scene_formats::field_disasm`), collects
 //! every relative-jump field - opcode deltas *and* picker entries, which share
 //! the same "delta is relative to its own field" encoding - and rewrites each
 //! one the insertions move. The rebuilt record is re-walked and required to
@@ -105,10 +105,10 @@
 //! The apply's stored PC here is `0`, which sits before the splice point and
 //! therefore never moves.)
 
-use legaia_asset::field_disasm::{self, InsnInfo, InventoryCmpKind};
-use legaia_asset::man_section::{self, ManFile};
-use legaia_asset::scene_asset_table::{self, SceneAssetTable};
 use legaia_mes::{Interpreter, MesEvent, parse_picker_at};
+use legaia_scene_formats::field_disasm::{self, InsnInfo, InventoryCmpKind};
+use legaia_scene_formats::man_section::{self, ManFile};
+use legaia_scene_formats::scene_asset_table::{self, SceneAssetTable};
 
 use legaia_disc_patch::field_script::{sysflag_set, sysflag_test};
 

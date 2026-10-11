@@ -18,7 +18,7 @@
 //! `switch` inside the (overlay-resident, undumped) item-use *apply* handler.
 //! So the numeric heal/restore amounts are **not** recoverable from this table
 //! alone - the engine keeps curated walkthrough amounts for those (see
-//! `legaia_engine_core::items`). What this table *does* give faithfully is the
+//! `legaia_engine_menus::items`). What this table *does* give faithfully is the
 //! effect class, the per-class tier selector, the all-party flag, and the
 //! field-vs-battle usability flags.
 //!

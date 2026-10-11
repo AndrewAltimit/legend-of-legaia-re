@@ -123,7 +123,7 @@ impl LegaiaRuntime {
     /// entry context's kind byte is `0x0D`. Browser twin of the native
     /// window's `context_locked_screen_draws`, off the same session phases,
     /// the same disc-parsed rects and the same
-    /// [`legaia_engine_core::pause_screens::ContextLockedLabels`] - so
+    /// [`legaia_engine_menus::pause_screens::ContextLockedLabels`] - so
     /// neither host can invent a label the other does not have.
     ///
     /// Returns `true` when one of the two drew, which is what suppresses
@@ -375,7 +375,7 @@ impl LegaiaRuntime {
     fn build_arts_editor(
         &self,
         assets: &PlayMenuAssets,
-        editor: &legaia_engine_core::tactical_arts_editor::ChainEditor,
+        editor: &legaia_engine_battle::tactical_arts_editor::ChainEditor,
         sprites: &mut Vec<SpriteDraw>,
         texts: &mut Vec<TextDraw>,
         origin: (i32, i32),
@@ -423,7 +423,7 @@ impl LegaiaRuntime {
     fn build_list_order(
         &self,
         assets: &PlayMenuAssets,
-        session: &legaia_engine_core::list_order::ListOrderSession,
+        session: &legaia_engine_menus::list_order::ListOrderSession,
         sprites: &mut Vec<SpriteDraw>,
         texts: &mut Vec<TextDraw>,
         origin: (i32, i32),
@@ -445,7 +445,7 @@ impl LegaiaRuntime {
                 rows: &rows,
                 cursor: session.cursor(),
                 scroll_top: session.scroll_top(),
-                page_rows: legaia_engine_core::list_order::LIST_ORDER_PAGE_ROWS,
+                page_rows: legaia_engine_menus::list_order::LIST_ORDER_PAGE_ROWS,
                 reorderable: session.reorderable(),
             })),
         );

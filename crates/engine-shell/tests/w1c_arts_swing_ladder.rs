@@ -8,7 +8,7 @@
 //! | layer | routine | how it is reached |
 //! |---|---|---|
 //! | arts-voice shout | `FUN_8004C140` (`legaia_engine_audio::shout`) | the executed art's `BattleShoutCue` resolved against the disc-built bank |
-//! | face stamps | `FUN_8004C7B4` (`legaia_asset::face_anim`) | the swung clip's frame counter, with and without the victory-window mouth override |
+//! | face stamps | `FUN_8004C7B4` (`legaia_actor_formats::face_anim`) | the swung clip's frame counter, with and without the victory-window mouth override |
 //! | XA clip start | `FUN_8003D53C` (`legaia_engine_shell::xa_clip`) | the voice-cue census the `xa-cue` CLI runs |
 //!
 //! The third is **not** on the shout's path and this ladder does not pretend
@@ -38,10 +38,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::arts_command_input::ArtsInputScreen;
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::arts_command_input::ArtsInputScreen;
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// Vahn's Somersault. The pool anchor a live retail trace pinned.
 const SOMERSAULT: u8 = 0x27;
@@ -119,7 +120,7 @@ fn world_with_somersault() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("w1c_arts_swing");
@@ -138,7 +139,7 @@ fn world_with_somersault() -> World {
 
 /// What the driven swing observed, per frame it was live.
 struct Swing {
-    shouts: Vec<legaia_engine_core::battle_events::BattleShoutCue>,
+    shouts: Vec<legaia_engine_battle::battle_events::BattleShoutCue>,
     /// Every `(staged action id, clip frame)` the swinging member's battle
     /// animation passed through - the exact pair the retail facial animator
     /// is handed each frame (`FUN_80047430` -> `FUN_8004C7B4`).
@@ -151,7 +152,7 @@ struct Swing {
 /// `Command` chip (the directional entry) -> `Up` -> Cross, then the target.
 /// Later party turns fall back to `Auto` so exactly one arts entry is driven.
 fn drive_the_swing(w: &mut World) -> Swing {
-    use legaia_engine_core::battle_input::{AttackMode, BattleCommand, CommandPhase};
+    use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase};
 
     let up = InputState::mask_of([PadButton::Up]);
     let mut entered = false;
@@ -292,7 +293,7 @@ fn w1c_arts_swing_ladder() {
     );
 
     // --- rung 2: the shout bank's channel pick (FUN_8004C140). -------------
-    let mut bank = legaia_engine_shell::boot::read_arts_shout_bank(&disc)
+    let mut bank = legaia_engine_session::boot::read_arts_shout_bank(&disc)
         .expect("arts-voice shout bank stages from the disc");
     let pool: Vec<u8> = bank
         .pool(swing.shouts[0].cslot, swing.shouts[0].action)
@@ -336,7 +337,7 @@ fn w1c_arts_swing_ladder() {
     eprintln!("[rung 2] shout: pool {pool:?}, picks {picks:?}");
 
     // --- rung 3: the facial animator (FUN_8004C7B4). -----------------------
-    use legaia_asset::face_anim::{
+    use legaia_actor_formats::face_anim::{
         ART_BAND_FIRST, ART_BAND_LAST, ArtMouthOverride, ArtMouthTables, FaceFrameTables,
         battle_face_tracks,
     };
@@ -441,7 +442,7 @@ fn w1c_arts_swing_ladder() {
                 false,
             );
             let plain = frames.stamps_with_art_window(0, 0, Some(&voiced.1), n, None, false);
-            let eyes = |v: &[legaia_asset::face_anim::FaceStamp]| v.last().copied();
+            let eyes = |v: &[legaia_actor_formats::face_anim::FaceStamp]| v.last().copied();
             assert_eq!(
                 eyes(&over),
                 eyes(&plain),

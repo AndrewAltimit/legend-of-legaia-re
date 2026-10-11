@@ -393,12 +393,10 @@ fn magic_model_desc_resolves_through_text_tables() {
         cross: true,
         ..Default::default()
     });
-    let mut entries = vec![legaia_asset::spell_names::SpellEntry::default(); 0x82];
+    let mut entries = vec![legaia_game_tables::spell_names::SpellEntry::default(); 0x82];
     entries[0x81].desc = Some("Crazy Driver\nAttack enemies.".to_string());
     let text = MenuTextTables {
-        spell_names: Some(legaia_asset::spell_names::SpellNameTable::from_entries(
-            entries,
-        )),
+        spell_names: Some(legaia_game_tables::spell_names::SpellNameTable::from_entries(entries)),
         ..Default::default()
     };
     let m = magic_screen_model(&s, Some(&text));

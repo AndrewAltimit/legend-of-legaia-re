@@ -36,7 +36,7 @@ impl Renderer {
     /// This is what makes a drawn frame addressable as a texture. Retail's
     /// field-to-battle curtain slices a captured field frame into row and
     /// column strips and stretches them apart; its strips' texture pages
-    /// decode to [`crate::vram_capture::FIELD_CAPTURE_ROWS`] /
+    /// decode to [`legaia_render_kernels::vram_capture::FIELD_CAPTURE_ROWS`] /
     /// `FIELD_CAPTURE_COLS`, so a caller reproducing that style captures into
     /// those rects and then draws the strips through
     /// [`RenderTarget::SceneWithScreenPrims`] (or `ScreenOverlay`) against the
@@ -53,11 +53,11 @@ impl Renderer {
         &self,
         target: RenderTarget<'_>,
         vram: &mut Vram,
-        dst: crate::vram_capture::VramRect,
-        opts: crate::vram_capture::CaptureOpts,
+        dst: legaia_render_kernels::vram_capture::VramRect,
+        opts: legaia_render_kernels::vram_capture::CaptureOpts,
     ) -> Result<usize> {
         let img = self.capture_scene_rgba(target)?;
-        Ok(crate::vram_capture::blit_rgba_into_vram(
+        Ok(legaia_render_kernels::vram_capture::blit_rgba_into_vram(
             &img.rgba, img.width, img.height, vram, dst, opts,
         ))
     }

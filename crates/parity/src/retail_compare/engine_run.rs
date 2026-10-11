@@ -324,7 +324,7 @@ pub(super) fn sample_engine(
         .scene
         .as_ref()
         .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
-        .and_then(|man| legaia_asset::man_section::parse(&man).ok())
+        .and_then(|man| legaia_scene_formats::man_section::parse(&man).ok())
         .map(|mf| mf.header.partition_counts[0].max(0) as u16);
     let world = &session.host.world;
     let npc_facings = n0

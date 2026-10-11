@@ -33,11 +33,11 @@
 
 use std::path::PathBuf;
 
-use legaia_mednafen::ScenarioManifest;
 use legaia_parity::mode_trace_oracle::{
     build_engine_mode_trace_field_live, first_mode_trace_divergence,
     load_runtime_mode_trace_from_save, save_ram_fingerprint,
 };
+use legaia_ram_image::ScenarioManifest;
 
 /// How many engine frames to tick before the comparison. 60 = one
 /// retail second; enough for boot-time scene transitions (field-VM
@@ -47,7 +47,7 @@ const FRAMES: u64 = 60;
 
 /// PSX pad Start bit (`PadButton::Start`), threaded into the pad stream of
 /// `phase = "menu"` scenarios so the session opens the pause menu.
-const START_MASK: u16 = legaia_engine_core::input::PadButton::Start as u16;
+const START_MASK: u16 = legaia_engine_system::input::PadButton::Start as u16;
 
 fn manifest_path() -> Option<PathBuf> {
     for candidate in [

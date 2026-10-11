@@ -5,16 +5,16 @@
 //! the per-primitive dispatcher `FUN_80043390`, whose bank-0 handlers emit
 //! untextured `POLY_F3` / `POLY_F4` / `POLY_G3` / `POLY_G4` packets into the
 //! ordering table. The engine does the projection, the cull and the bucket
-//! (`legaia_engine_core::fishing_actors::rod_faces`, reached through
+//! (`legaia_engine_fishing::fishing_actors::rod_faces`, reached through
 //! `PondSession::rod_faces`); this module turns each face into the prim set's
 //! flat kind with per-corner Gouraud colours.
 //!
 //! The native window and the browser play page both draw the rod through
 //! [`fishing_rod_prim`], ahead of the line in the same pass; the minigames
 //! page fills the same faces on its canvas, in the order
-//! [`crate::screen_prim::order_primitives`] gives these prims.
+//! [`legaia_render_kernels::screen_prim::order_primitives`] gives these prims.
 
-use crate::screen_prim::{FlatQuad, ScreenPrim};
+use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim};
 
 /// One rod face as an opaque Gouraud quad. `xy` / `rgb` are the four
 /// corners in `v0..v3` order (a triangle repeats its third corner, which

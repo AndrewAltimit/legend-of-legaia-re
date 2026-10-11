@@ -5,7 +5,7 @@
 //! The dance overlay (PROT 0980) draws its whole HUD through one emitter
 //! (`FUN_801d2f38`) over a 34-record widget table in its own rodata; the art
 //! those widgets sample is the PROT 1230 TIM pack the mode-24 entry path
-//! stages at VRAM `(512, 0)` (see [`legaia_asset::dance_art`] and
+//! stages at VRAM `(512, 0)` (see [`legaia_minigame_formats::dance_art`] and
 //! `docs/subsystems/minigame-dance.md`). This module hands the page the same
 //! table, the same page, and the traced emitter geometry, so the JS side
 //! never invents a rect.
@@ -14,15 +14,15 @@ use super::*;
 
 use std::collections::HashMap;
 
-use legaia_asset::dance_art::{self, DanceWidget};
-use legaia_asset::dance_cast::{self, DanceCast, DanceClip};
-use legaia_asset::player_anm::PlayerAnmBundle;
-use legaia_asset::{character_pack, field_char_textures};
-use legaia_engine_core::dance::dance_hit_sting_voices;
+use legaia_actor_formats::player_anm::PlayerAnmBundle;
+use legaia_actor_formats::{character_pack, field_char_textures};
 use legaia_engine_core::dance_venue::{self, DanceVenue};
 use legaia_engine_core::field_env;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::scene_resources::SceneResources;
+use legaia_engine_minigames::dance::dance_hit_sting_voices;
+use legaia_minigame_formats::dance_art::{self, DanceWidget};
+use legaia_minigame_formats::dance_cast::{self, DanceCast, DanceClip};
 use legaia_tmd::mesh::{VramMesh, tmd_to_vram_mesh_field_hybrid};
 
 #[path = "minigames_dance/body_exports.rs"]
@@ -67,7 +67,7 @@ pub(crate) struct DanceBodyMesh {
     flat: Vec<u8>,
     /// TMD object count = the pose rig width.
     part_count: usize,
-    /// Dancer-kind descriptor index (`legaia_asset::dance_cast`; kind = the
+    /// Dancer-kind descriptor index (`legaia_minigame_formats::dance_cast`; kind = the
     /// face-stamp rig id for kinds 0..=3).
     kind: usize,
     /// Qualifier-mode floor spawn `(x, z)` (the overlay's spawn table).
@@ -96,7 +96,7 @@ pub(crate) struct DanceEnv {
 
 impl DanceBodies {
     /// The dance hall's choreography bank, for
-    /// [`DanceGame::attach_clip_bank`](legaia_engine_core::dance::DanceGame::attach_clip_bank).
+    /// [`DanceGame::attach_clip_bank`](legaia_engine_minigames::dance::DanceGame::attach_clip_bank).
     pub(crate) fn clip_bank(&self) -> &PlayerAnmBundle {
         &self.anm
     }
@@ -145,9 +145,9 @@ impl DanceEnv {
             // `packet_color::textured` walks `mesh.colors`, which is parallel
             // to `mesh.positions`, so an empty `flat` means an empty mesh.)
             let neutral = [
-                legaia_engine_core::packet_color::NEUTRAL,
-                legaia_engine_core::packet_color::NEUTRAL,
-                legaia_engine_core::packet_color::NEUTRAL,
+                legaia_engine_field::packet_color::NEUTRAL,
+                legaia_engine_field::packet_color::NEUTRAL,
+                legaia_engine_field::packet_color::NEUTRAL,
                 255,
             ];
             self.flat
@@ -168,11 +168,11 @@ impl DanceEnv {
 /// the Y column negates, which is the single flip the page's own orbit
 /// framing applies.
 pub(crate) fn dance_venue_vp_in_frame(
-    camera: &legaia_engine_vm::psx_camera::FieldCameraView,
+    camera: &legaia_engine_battle_vm::psx_camera::FieldCameraView,
     origin: (f32, f32, f32),
     aspect: f32,
 ) -> [f32; 16] {
-    let v = legaia_engine_vm::psx_camera::FieldCameraView {
+    let v = legaia_engine_battle_vm::psx_camera::FieldCameraView {
         focus: [
             camera.focus[0] - origin.0,
             camera.focus[1] - origin.1,
@@ -210,8 +210,8 @@ fn bake_dance_env(index: &ProtIndex, venue: &DanceVenue, origin: (f32, f32, f32)
                 .then(|| venue.frame0_bone_offsets(draw.anim_id, rtmd.tmd.objects.len()))
                 .flatten();
             match &offsets {
-                Some(o) => crate::field_scene::build_hybrid_env_mesh_posed(rtmd, o),
-                None => crate::field_scene::build_hybrid_env_mesh(rtmd, &res.vram),
+                Some(o) => legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o),
+                None => legaia_engine_core::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram),
             }
         });
         let (mesh, flat) = (&entry.0, &entry.1);
@@ -266,7 +266,7 @@ fn bake_dance_env(index: &ProtIndex, venue: &DanceVenue, origin: (f32, f32, f32)
 /// dance-groove loop, and the 11 judge-triggered moves) is a record of that
 /// scene's 60-record MOVE ANM bundle (PROT 1229). See
 /// `docs/subsystems/minigame-dance.md` § Dancer bodies and
-/// [`legaia_asset::dance_cast`].
+/// [`legaia_minigame_formats::dance_cast`].
 pub(crate) struct DanceBodies {
     /// The qualifier-mode floor cast, left..right by spawn x =
     /// `[kind 2, Noa (human), kind 3]`.
@@ -297,7 +297,7 @@ pub(crate) struct DanceBodies {
     origin: (f32, f32, f32),
     /// The dance entry's camera ([`dance_venue::venue_camera`]), in world
     /// coordinates.
-    camera: legaia_engine_vm::psx_camera::FieldCameraView,
+    camera: legaia_engine_battle_vm::psx_camera::FieldCameraView,
     /// The floor's body meshes + choreography bank for the engine's cast
     /// surface ([`legaia_engine_core::dance_cast_scene`]), which the play page
     /// poses the run's own cast through - whatever mode it is.
@@ -316,7 +316,7 @@ impl LegaiaMinigames {
         let overlay = overlay_image(
             &self.prot,
             &self.entries,
-            legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32,
+            legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32,
         )?;
         let art = entry_bytes(
             &self.prot,
@@ -347,7 +347,7 @@ impl LegaiaMinigames {
         let vab_entry = entry_bytes(
             &self.prot,
             &self.entries,
-            dance_venue::venue_sfx_vab_index(&legaia_engine_core::dance::dance_scene_entry()),
+            dance_venue::venue_sfx_vab_index(&legaia_engine_minigames::dance::dance_scene_entry()),
         );
         let sfx = match (
             entry_bytes(
@@ -401,7 +401,7 @@ impl LegaiaMinigames {
     /// track ([`Self::dance_venue_vp`]). Empty when the cast did not decode.
     pub(crate) fn dance_venue_vp_with(
         &self,
-        camera: &legaia_engine_vm::psx_camera::FieldCameraView,
+        camera: &legaia_engine_battle_vm::psx_camera::FieldCameraView,
         aspect: f32,
     ) -> Vec<f32> {
         let Some(b) = self.dance_bodies.as_ref() else {
@@ -416,7 +416,7 @@ impl LegaiaMinigames {
     /// triangle whose screen span the GPU refuses. Empty with no hall.
     pub(crate) fn dance_env_visible_indices_with(
         &self,
-        camera: &legaia_engine_vm::psx_camera::FieldCameraView,
+        camera: &legaia_engine_battle_vm::psx_camera::FieldCameraView,
     ) -> Vec<u32> {
         let Some(b) = self.dance_bodies.as_ref().filter(|b| !b.env.is_empty()) else {
             return Vec::new();
@@ -446,7 +446,7 @@ impl LegaiaMinigames {
         let overlay = overlay_image(
             &self.prot,
             &self.entries,
-            legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32,
+            legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32,
         )?;
         let cast = dance_cast::parse(&overlay)?;
 
@@ -460,7 +460,7 @@ impl LegaiaMinigames {
         // wasm32. The venue build also puts Noa's field atlas, the HUD page
         // and the entry's five face stamps into its VRAM. The ProtIndex clone
         // is dropped again before this function returns.
-        let entry = legaia_engine_core::dance::dance_scene_entry();
+        let entry = legaia_engine_minigames::dance::dance_scene_entry();
         let index = ProtIndex::from_bytes(
             self.prot.clone(),
             Some(&dance_venue::venue_cdname_stub(&entry)),

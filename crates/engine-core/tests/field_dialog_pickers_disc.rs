@@ -14,8 +14,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::man_field_scripts::{PlacementKind, classify_placements};
 use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_field::man_field_scripts::{PlacementKind, classify_placements};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -68,7 +68,7 @@ fn field_inline_pickers_decode_and_jump_in_bounds() {
         let Some(man) = scene.field_man_payload(&index).ok().flatten() else {
             continue;
         };
-        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         for (p, kind) in classify_placements(&mf, &man) {

@@ -10,9 +10,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_anim::FieldPlayerAnim;
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::SceneHost;
+use legaia_engine_field::field_anim::FieldPlayerAnim;
+use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -40,9 +40,10 @@ fn open_town01() -> Option<SceneHost> {
     }
     let bytes = host
         .index
-        .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+        .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
         .expect("PROT 0874");
-    let bundle = legaia_asset::character_pack::field_locomotion_anm(&bytes).expect("section 1");
+    let bundle =
+        legaia_actor_formats::character_pack::field_locomotion_anm(&bytes).expect("section 1");
     let anim = FieldPlayerAnim::from_locomotion_bank(&bundle, 0).expect("Vahn's bank");
     for slot in 0..7 {
         assert!(anim.has_bank_slot(slot), "bank slot {slot} decodes");

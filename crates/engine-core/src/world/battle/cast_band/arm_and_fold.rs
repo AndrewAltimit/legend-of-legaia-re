@@ -2,7 +2,7 @@
 //! monster arms, the pending-cast fold and the cast-band settle.
 
 use super::*;
-use vm::battle_action::{ActionCategory, ActionState, StepOutcome};
+use legaia_engine_battle_vm::battle_action::{ActionCategory, ActionState, StepOutcome};
 
 impl World {
     /// Absolute actor slots a player cast lands on, from the submenu's
@@ -10,12 +10,12 @@ impl World {
     /// sit behind the party), a group shape takes the whole band.
     pub(in crate::world) fn spell_targets_for(
         &self,
-        def: &crate::spells::SpellDef,
-        target_row: crate::target_picker::CursorRow,
+        def: &legaia_engine_battle::spells::SpellDef,
+        target_row: legaia_engine_battle::target_picker::CursorRow,
         target_slot: u8,
     ) -> Vec<u8> {
-        use crate::spells::SpellTarget;
-        use crate::target_picker::CursorRow;
+        use legaia_engine_battle::spells::SpellTarget;
+        use legaia_engine_battle::target_picker::CursorRow;
         let party_count = self.party.party_count.clamp(1, 3);
         match def.target {
             SpellTarget::OneEnemy | SpellTarget::OneAlly | SpellTarget::SelfOnly => {
@@ -34,9 +34,16 @@ impl World {
     /// group shape is the group code the cast-begin facing store and the
     /// cue expander decode (`8` = the party, `9` = the enemy row), a single
     /// shape is the slot itself.
-    fn cast_target_code(&self, def: &crate::spells::SpellDef, targets: &[u8], caster: u8) -> u8 {
-        use crate::spells::SpellTarget;
-        use vm::battle_target_group::{TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY};
+    fn cast_target_code(
+        &self,
+        def: &legaia_engine_battle::spells::SpellDef,
+        targets: &[u8],
+        caster: u8,
+    ) -> u8 {
+        use legaia_engine_battle::spells::SpellTarget;
+        use legaia_engine_battle_vm::battle_target_group::{
+            TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY,
+        };
         let caster_is_party = caster < self.party.party_count;
         match def.target {
             // Codes are in retail's absolute numbering: 8 = party, 9 = the
@@ -72,7 +79,7 @@ impl World {
     pub(in crate::world) fn arm_player_cast(
         &mut self,
         caster: u8,
-        def: &crate::spells::SpellDef,
+        def: &legaia_engine_battle::spells::SpellDef,
         targets: Vec<u8>,
     ) {
         let code = self.cast_target_code(def, &targets, caster);
@@ -106,7 +113,7 @@ impl World {
     pub(in crate::world) fn arm_monster_cast(
         &mut self,
         slot: u8,
-        def: &crate::spells::SpellDef,
+        def: &legaia_engine_battle::spells::SpellDef,
         targets: Vec<u8>,
     ) {
         let code = self.cast_target_code(def, &targets, slot);
@@ -208,7 +215,7 @@ impl World {
 
     /// Fold the owed cast onto `target` alone and keep the rest owed - the
     /// hit one homing effect child lands
-    /// ([`crate::action_effect_script::HomingSlots::hits`]). A target the
+    /// ([`legaia_engine_effects::action_effect_script::HomingSlots::hits`]). A target the
     /// cast does not owe is left alone.
     ///
     /// REF: FUN_801E09F8 (the effect-child hit arm `0x801E1844..0x801E1A68`,
@@ -244,9 +251,9 @@ impl World {
     /// slots - on a move the move-power table resolves, so the flight has a
     /// record to fly on.
     fn cast_fold_rides_the_flight(&self, pc: &PendingCast) -> bool {
-        use crate::action_effect_script as fx;
+        use legaia_engine_effects::action_effect_script as fx;
         if pc.caster < self.party.party_count
-            || crate::summon::PLAYER_SUMMON_IDS.contains(&pc.spell_id)
+            || legaia_engine_effects::summon::PLAYER_SUMMON_IDS.contains(&pc.spell_id)
         {
             return false;
         }
@@ -303,9 +310,11 @@ impl World {
         // had no module damage applied, and skipping the generic fold there
         // would leave the cast owed forever instead of double-applied.
         if let Some(entry) = self.cast_module_for(pc.spell_id)
-            && let Some(body) = vm::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
-            && vm::cast_module_ticks::tick_body_owns_the_fold(entry, body)
-            && let Some(arm) = vm::cast_module_ticks::sweep_arm_for(entry, body)
+            && let Some(body) =
+                legaia_engine_battle_vm::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
+            && legaia_engine_battle_vm::cast_module_ticks::tick_body_owns_the_fold(entry, body)
+            && let Some(arm) =
+                legaia_engine_battle_vm::cast_module_ticks::sweep_arm_for(entry, body)
             && self.casting.module_phase > arm
         {
             return;
@@ -318,8 +327,9 @@ impl World {
         // The `phase > arm` test is the same guard - a host that never drove
         // the band past the sweep arm is still owed the generic fold.
         if let Some(entry) = self.cast_module_for(pc.spell_id)
-            && let Some(body) = vm::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
-            && let Some(arm) = vm::cast_arm_ticks::arm_sweep_arm(entry, body)
+            && let Some(body) =
+                legaia_engine_battle_vm::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
+            && let Some(arm) = legaia_engine_battle_vm::cast_arm_ticks::arm_sweep_arm(entry, body)
             && self.casting.module_phase > arm
         {
             return;

@@ -284,7 +284,7 @@ pub const SCUS_POOL_BASE_VA: u32 = 0x8000_F800;
 ///   `|You now have the {c2:01}.`;
 /// - the battle **command chips** in the small-data pool (`Auto`, `Command`,
 ///   `  All`, `MP`, `Attack`, `Item`, `Run`, `Begin`), each the payload of a
-///   screen-element placement record (`legaia_asset::screen_elements`).
+///   screen-element placement record (`legaia_ui_formats::screen_elements`).
 pub const SCUS_STRING_POOLS: &[UiStringPool] = &[
     UiStringPool {
         prot_index: usize::MAX,

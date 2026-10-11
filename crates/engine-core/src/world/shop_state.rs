@@ -8,20 +8,20 @@ pub struct ShopState {
     /// Item-table data the gold-shop path needs from `SCUS_942.54` (per-id buy
     /// price + a "names a real item" mask). Installed once at boot by the host
     /// (e.g. `BootSession`); `None` on disc-free builds, which leaves shop stock
-    /// host-supplied and unpriced. See [`crate::shop_catalog`].
-    pub item_shop_data: Option<crate::shop_catalog::ShopItemData>,
+    /// host-supplied and unpriced. See [`legaia_engine_menus::shop_catalog`].
+    pub item_shop_data: Option<legaia_engine_menus::shop_catalog::ShopItemData>,
     /// Gold shops located in the active scene's MAN, priced from
     /// [`crate::world::ShopState::item_shop_data`]. Repopulated on each field-scene entry by
     /// [`crate::scene::SceneHost::enter_field_scene`]; empty when the scene has
     /// no merchant or the disc isn't available. The field-menu shop-open path
     /// picks from these instead of a hand-authored stock list.
-    pub scene_shops: Vec<crate::shop_catalog::SceneShop>,
+    pub scene_shops: Vec<legaia_engine_menus::shop_catalog::SceneShop>,
     /// A priced shop the field VM has just opened (op `0x49` sub-0 inline shop
     /// record - see [`crate::world::World::try_arm_field_shop`]). The host drains it with
     /// [`crate::world::World::take_pending_field_shop`] to drive the buy/sell UI, then calls
     /// [`crate::world::World::finish_field_shop`] when the player leaves so the field VM
     /// resumes past the op. `None` between shop opens.
-    pub pending_shop: Option<crate::shop::ShopSession>,
+    pub pending_shop: Option<legaia_engine_menus::shop::ShopSession>,
     /// `true` from the frame a field-VM shop op (`0x49` sub-0) is recognised
     /// until the op's resume runs - it gates the op-0x49 tristate so the VM
     /// stays suspended while the shop is up. Distinguishes a shop arm from the
@@ -35,13 +35,14 @@ pub struct ShopState {
     /// [`crate::world::World::install_menu_overlay_tables`]. Empty without disc data - the
     /// prize counter then refuses to open rather than selling from an
     /// invented list.
-    pub prize_blocks: Vec<Vec<crate::prize_exchange::PrizeRecord>>,
+    pub prize_blocks: Vec<Vec<legaia_engine_minigames::prize_exchange::PrizeRecord>>,
     /// A prize-exchange session the field VM just opened (op `0x49` sub-op 7,
     /// the casino prize counter - see [`crate::world::World::try_arm_prize_exchange`]). The
     /// host drains it with [`crate::world::World::take_pending_prize_exchange`] into its
     /// menu runtime, then calls [`crate::world::World::finish_prize_exchange`] when the
     /// player leaves.
-    pub(crate) pending_prize_exchange: Option<crate::prize_exchange::PrizeExchangeSession>,
+    pub(crate) pending_prize_exchange:
+        Option<legaia_engine_minigames::prize_exchange::PrizeExchangeSession>,
     /// `true` from the frame an op-`0x49` sub-op-7 arm is recognised until
     /// the op's resume runs - gates the op-0x49 tristate like
     /// [`crate::world::ShopState::shop_armed`] does for the gold shop.

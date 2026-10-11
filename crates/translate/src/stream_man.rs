@@ -12,7 +12,7 @@
 //!
 //! 1. the MAN is chunk 0 (type `0x03`) at entry offset 4, so a `raw:` key's
 //!    entry offset minus 4 is a decompressed-MAN offset and
-//!    [`legaia_asset::man_edit::apply_text_edits`] relocates every crossing
+//!    [`legaia_scene_formats::man_edit::apply_text_edits`] relocates every crossing
 //!    reference exactly as for a decoded LZS MAN;
 //! 2. the chunk's `(type << 24) | size` header is rewritten with the grown
 //!    size, and every later chunk (plus the stream terminator and whatever
@@ -37,7 +37,7 @@
 
 use std::ops::Range;
 
-use legaia_asset::man_section;
+use legaia_scene_formats::man_section;
 
 use super::segments;
 
@@ -83,7 +83,7 @@ impl StreamManText {
     /// prose test, so its export locates the chunk this way and lets the
     /// script walk ([`super::sjis::man_lines`]) decide what is text.
     pub fn locate_structural(entry: &[u8]) -> Option<Self> {
-        let report = legaia_asset::parse_streaming(entry, 64).ok()?;
+        let report = legaia_container_formats::parse_streaming(entry, 64).ok()?;
         if !report.terminated || report.chunks.is_empty() {
             return None;
         }
@@ -219,7 +219,7 @@ mod tests {
         assert_eq!((hdr & 0xFF_FFFF) as usize, 2112);
         assert_eq!(&out[4..4 + grown.len()], grown.as_slice());
         assert_eq!(&out[4 + grown.len()..4 + 2112], &[0, 0]);
-        let re = legaia_asset::parse_streaming(&out, 64).expect("re-parse");
+        let re = legaia_container_formats::parse_streaming(&out, 64).expect("re-parse");
         assert!(re.terminated);
         assert_eq!(re.chunks.len(), 3);
         let mes_off = re.chunks[1].header_offset + 4;

@@ -35,10 +35,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::cutscene::{FmvHandoff, fmv_post_play_handoff};
-use legaia_engine_core::man_field_scripts::scene_fmv_triggers;
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_field::man_field_scripts::scene_fmv_triggers;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::movie::cutscene::{FmvHandoff, fmv_post_play_handoff};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -80,7 +80,7 @@ const TRIGGER_SCENES: &[(&str, i16)] = &[
 fn trigger_op_bytes(index: &Arc<ProtIndex>, scene_name: &str) -> Option<(Vec<u8>, i16)> {
     let scene = Scene::load(index, scene_name).ok()?;
     let man = scene.field_man_payload(index).ok().flatten()?;
-    let mf = legaia_asset::man_section::parse(&man).ok()?;
+    let mf = legaia_scene_formats::man_section::parse(&man).ok()?;
     let t = *scene_fmv_triggers(&mf, &man).first()?;
     let n1 = mf.header.partition_counts[1].max(0) as usize;
     let mut starts: Vec<usize> = (0..n1)

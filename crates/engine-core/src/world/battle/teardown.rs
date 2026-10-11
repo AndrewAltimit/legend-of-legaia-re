@@ -3,6 +3,7 @@
 //! change from the original inline definitions.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// One line of the post-battle spoils panel's variable block, already
 /// resolved against the world's item catalog / roster.
@@ -139,7 +140,7 @@ impl World {
     }
 
     /// The report window's drop line for an item named `item`: the
-    /// executable's template (`legaia_asset::screen_elements::DROP_LINE_PTR_VA`)
+    /// executable's template (`legaia_ui_formats::screen_elements::DROP_LINE_PTR_VA`)
     /// with its `0xC2` item escape spliced, less the leading `0x7C` break
     /// that puts it on the window's third row (the port keeps rows as
     /// lines). `None` without the template.
@@ -230,7 +231,8 @@ impl World {
             // The tracker holds the word; any non-zero stand-in asks the
             // kernel whether it survives.
             let hp0 = self.actors[member].battle.hp;
-            let (status, hp) = vm::battle_formulas::battle_exit_party_reset(word, 1, hp0);
+            let (status, hp) =
+                legaia_engine_battle_vm::battle_formulas::battle_exit_party_reset(word, 1, hp0);
             if status == 0 {
                 self.battle.status_effects.drop_slot(member as u8);
             }
@@ -317,7 +319,7 @@ impl World {
     /// Both wipe arms clear story-flag index 1 (`andi 0xbf` at
     /// `0x8003B5A0`); every other ending **sets** it (`ori 0x40` at
     /// `0x8003B58C`) - the script-readable battle outcome
-    /// ([`crate::battle_return_flags`]). Non-wipe endings restore the field
+    /// ([`legaia_engine_battle::battle_return_flags`]). Non-wipe endings restore the field
     /// actor snapshot, drop the encounter session into its grace window, and
     /// flip the scene mode back to [`SceneMode::Field`].
     // REF: FUN_8003AEB0 (the back-from-battle game-over gate this folds)
@@ -367,7 +369,7 @@ impl World {
         // is the game over. `wipe_to_title` is `true` only on that arm; a
         // wipe under the latch takes the ordinary field return below.
         let survived = self.battle.end != Some(BattleEndCause::PartyWipe);
-        let ret = crate::battle_return_flags::apply_battle_return_flags(
+        let ret = legaia_engine_battle::battle_return_flags::apply_battle_return_flags(
             &mut WorldFlagBank(self),
             survived,
         );
@@ -387,7 +389,9 @@ impl World {
         // each battle's monster actors afresh, and the tracker is indexed by
         // slot, so a status left here would land on the next battle's monster
         // in the same slot.
-        for slot in self.party.party_count..vm::battle_action::ACTOR_SLOTS as u8 {
+        for slot in
+            self.party.party_count..legaia_engine_battle_vm::battle_action::ACTOR_SLOTS as u8
+        {
             self.battle.status_effects.drop_slot(slot);
         }
         self.battle_exit_party_reset();
@@ -405,7 +409,7 @@ impl World {
             self.audio.battle_bgm_active = false;
             self.audio.field_bgm_resume = None;
             self.pending_field_events
-                .push(crate::field_events::FieldEvent::Bgm {
+                .push(legaia_engine_field::field_events::FieldEvent::Bgm {
                     text_id: 0,
                     sub_op: 2,
                 });
@@ -536,7 +540,7 @@ impl World {
     /// Active enemy actors in the current battle as `(actor_index,
     /// monster_id, battle_slot)`, where `battle_slot` is the 0-based monster
     /// index the battle texture loader keys VRAM placement on (feed it to
-    /// `legaia_asset::monster_archive::MonsterMesh::battle_render_mesh`).
+    /// `legaia_actor_formats::monster_archive::MonsterMesh::battle_render_mesh`).
     /// Empty unless the world is in [`SceneMode::Battle`].
     ///
     /// A renderer uses this to bridge each decoded monster mesh into its draw
@@ -563,7 +567,7 @@ impl World {
 /// (`DAT_80085758`, MSB-first).
 struct WorldFlagBank<'a>(&'a mut World);
 
-impl crate::battle_return_flags::FlagBank for WorldFlagBank<'_> {
+impl legaia_engine_battle::battle_return_flags::FlagBank for WorldFlagBank<'_> {
     fn test(&self, idx: u16) -> bool {
         self.0.system_flag_test(idx)
     }
@@ -593,7 +597,7 @@ mod level_up_line_tests {
         lines[0] = [&[0xC1, 0x00][..], b" up"].concat();
         lines[2] = [&[0xC1, 0x00][..], b" & ", &[0xC1, 0x01], b" up"].concat();
         lines[6] = b"all up".to_vec();
-        w.menu.text = Some(crate::pause_screens::MenuTextTables {
+        w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
             level_up_lines: Some(lines),
             ..Default::default()
         });
@@ -615,7 +619,7 @@ mod level_up_line_tests {
     fn the_drop_line_splices_the_item() {
         let mut w = World::default();
         assert_eq!(w.drop_line("Leaf"), None);
-        w.menu.text = Some(crate::pause_screens::MenuTextTables {
+        w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
             drop_line: Some([&b"|Got the "[..], &[0xC2, 0x01], b"."].concat()),
             ..Default::default()
         });

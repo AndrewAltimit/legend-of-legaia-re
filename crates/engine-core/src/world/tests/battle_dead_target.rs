@@ -7,7 +7,8 @@
 
 use super::*;
 use crate::battle_round::{PendingPartyAction, RoundPhase};
-use vm::battle_action::ActionState;
+use legaia_engine_battle_vm::battle_action::ActionState;
+use legaia_engine_mode::mode::SceneMode;
 
 /// One party member (slot 0) against three monsters (engine slots 1..=3).
 fn world_one_vs_three() -> World {
@@ -131,15 +132,19 @@ fn a_monster_side_wiped_mid_round_ends_in_victory() {
 fn a_revive_item_stands_the_downed_member_back_up() {
     // The tag-8 kneel's entry and the root latch its commit raises.
     const PARTY_DOWNED_LOOP_ENTRY: u8 = 8;
-    const ANIM_FLAG_ROOT_LATCH: u8 = vm::battle_action::ActorFlags::FX_SUPPRESSED;
+    const ANIM_FLAG_ROOT_LATCH: u8 =
+        legaia_engine_battle_vm::battle_action::ActorFlags::FX_SUPPRESSED;
     let mut world = world_one_vs_three();
-    world.tables.item_catalog = crate::items::ItemCatalog::vanilla();
+    world.tables.item_catalog = legaia_engine_menus::items::ItemCatalog::vanilla();
     kill(&mut world, 0);
     world.actors[0].battle_reaction = Some(PARTY_DOWNED_LOOP_ENTRY);
     world.actors[0].battle.flag_bits.set(ANIM_FLAG_ROOT_LATCH);
     let outcome = world.apply_battle_item(0x80, 0);
     assert!(
-        matches!(outcome, crate::items::ItemOutcome::Revived { .. }),
+        matches!(
+            outcome,
+            legaia_engine_menus::items::ItemOutcome::Revived { .. }
+        ),
         "{outcome:?}"
     );
     let a = &world.actors[0];

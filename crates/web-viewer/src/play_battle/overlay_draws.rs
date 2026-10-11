@@ -135,7 +135,7 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) -> (Vec<ui::SpriteDraw>, Vec<TextDraw>) {
-        use legaia_engine_core::arts_command_input::ArtsInputScreen as Sim;
+        use legaia_engine_battle::arts_command_input::ArtsInputScreen as Sim;
         use legaia_engine_ui::arts_input as ai;
         let empty = (Vec::new(), Vec::new());
         let Some(bw) = self.scene_host.host().map(|h| &h.world) else {
@@ -351,7 +351,8 @@ impl LegaiaRuntime {
     /// so the page's two draw arrays cannot disagree about whether the menu
     /// is up.
     pub(crate) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
-        use legaia_engine_core::battle_hud::{CommandChipPhase, battle_command_chips};
+        use legaia_engine_core::battle_hud::battle_command_chips;
+        use legaia_engine_menus::battle_input::CommandChipPhase;
         use legaia_engine_ui::battle_command_ui::ChipPhase;
         let world = self.scene_host.host().map(|h| &h.world)?;
         let chips = battle_command_chips(world)?;
@@ -476,8 +477,8 @@ impl LegaiaRuntime {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<TextDraw> {
-        use legaia_engine_core::battle_input::CommandPhase;
-        use legaia_engine_core::target_picker::{CursorRow, PickerState};
+        use legaia_engine_battle::target_picker::{CursorRow, PickerState};
+        use legaia_engine_menus::battle_input::CommandPhase;
 
         let Some(bw) = self.scene_host.host().map(|h| &h.world) else {
             return Vec::new();
@@ -565,7 +566,7 @@ impl LegaiaRuntime {
         if dialogue_up {
             // Dialogue box up: no menu chrome.
         } else if let Some(arts) = &bw.battle.arts_menu {
-            use legaia_engine_core::battle_arts::ArtsPhase;
+            use legaia_engine_battle::battle_arts::ArtsPhase;
             let mut my = MENU_Y;
             match &arts.phase {
                 ArtsPhase::Select { cursor } => {
@@ -636,7 +637,7 @@ impl LegaiaRuntime {
                 _ => {}
             }
         } else if let Some(spell) = &bw.battle.spell_menu {
-            use legaia_engine_core::battle_magic::SpellPhase;
+            use legaia_engine_battle::battle_magic::SpellPhase;
             let mut my = MENU_Y;
             match &spell.phase {
                 SpellPhase::Select { cursor } => {

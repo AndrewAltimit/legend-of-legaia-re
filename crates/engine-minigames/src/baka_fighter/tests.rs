@@ -1,5 +1,5 @@
 use super::*;
-use legaia_asset::baka_opponents::ROUND_WIN_TARGET;
+use legaia_minigame_formats::baka_opponents::ROUND_WIN_TARGET;
 
 #[test]
 fn tally_stalls_each_row_until_it_has_faded_in() {
@@ -714,7 +714,7 @@ fn ai_pattern_plays_backward_after_seeding() {
 
 #[test]
 fn hud_widget_quad_scales_centres_and_mirrors() {
-    let w = legaia_asset::baka_opponents::BakaHudWidget {
+    let w = legaia_minigame_formats::baka_opponents::BakaHudWidget {
         scale: 0x2000, // 2.0 in 20.12: half-extent = cell (w*0x2000>>13 = w)
         texpage: 0x19,
         clut: 0x7AB0,
@@ -755,7 +755,7 @@ fn hud_widget_quad_scales_centres_and_mirrors() {
 /// re-rolls the arithmetic fails here rather than drifting a pixel.
 #[test]
 fn the_widget_extent_is_integer_and_size_scaled() {
-    let w = legaia_asset::baka_opponents::BakaHudWidget {
+    let w = legaia_minigame_formats::baka_opponents::BakaHudWidget {
         // An odd product: `w * scale >> 13` truncates where a float
         // division would not.
         scale: 0x1800,
@@ -937,7 +937,7 @@ fn round_score_out_of_range_index_is_inert() {
 /// per tick and strikes on `frames`; the special strikes on `special`.
 fn strike_table(speed: i32, frames: &[i16], special: &[i16]) -> StrikeTable {
     let mut t = StrikeTable {
-        speed: [speed; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER],
+        speed: [speed; legaia_minigame_formats::baka_opponents::ACTIONS_PER_FIGHTER],
         ..StrikeTable::default()
     };
     for a in 1..=3 {
@@ -1027,8 +1027,8 @@ fn a_special_commit_slows_the_round_and_spawns_its_afterimage() {
     assert_eq!(ghosts[0].1.passes.len(), 2);
     // With a staged clip header the ghosts expire on the special clip's
     // end rather than with the exchange.
-    let mut hdr = [None; legaia_asset::baka_opponents::ACTIONS_PER_FIGHTER];
-    hdr[legaia_asset::baka_opponents::ACTION_SPECIAL] = Some(ClipHeader {
+    let mut hdr = [None; legaia_minigame_formats::baka_opponents::ACTIONS_PER_FIGHTER];
+    hdr[legaia_minigame_formats::baka_opponents::ACTION_SPECIAL] = Some(ClipHeader {
         frames: 2,
         double_step: false,
         n: 1,
@@ -1109,7 +1109,7 @@ fn the_special_wins_the_round_only_on_its_last_strike() {
 
 #[test]
 fn from_tables_runs_the_strike_clock() {
-    use legaia_asset::baka_opponents::{BakaActionSet, BakaOpponent, BakaSubKeyframe};
+    use legaia_minigame_formats::baka_opponents::{BakaActionSet, BakaOpponent, BakaSubKeyframe};
     let opp = |i| BakaOpponent {
         index: i,
         gold_reward: 10,

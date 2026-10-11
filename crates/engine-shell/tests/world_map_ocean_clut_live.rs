@@ -7,7 +7,7 @@
 //! Sebucus / Karisto captures extend the verification: in each kingdom's
 //! live VRAM the ocean-head CLUT row (`(0, 506)`, 16 entries) must hold
 //! **one of the 13 animation frames** decoded from that kingdom's own
-//! bundle (slot-0 TIM list, `legaia_asset::ocean::find_ocean_assets`) -
+//! bundle (slot-0 TIM list, `legaia_scene_formats::ocean::find_ocean_assets`) -
 //! i.e. the same animator runs against per-kingdom strips, not just on
 //! Drake.
 //!
@@ -17,11 +17,12 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::scene::ProtIndex;
-use legaia_mednafen::{PsxGpu, SaveState, ScenarioManifest, VRAM_WIDTH};
+use legaia_mednafen::{PsxGpu, SaveState, VRAM_WIDTH};
+use legaia_ram_image::ScenarioManifest;
 
 /// (scenario label, kingdom bundle PROT entry, scene label) per kingdom.
 ///
-/// The entries come from [`legaia_asset::kingdom_bundle::BUNDLE_ENTRIES`]
+/// The entries come from [`legaia_scene_formats::kingdom_bundle::BUNDLE_ENTRIES`]
 /// rather than literals on purpose: this test used to name `0244` / `0391`,
 /// which are the **prescript** entries the superseded over-reading entry size
 /// happened to start in. The bundles are `0245` / `0392`, and reading the
@@ -30,12 +31,12 @@ use legaia_mednafen::{PsxGpu, SaveState, ScenarioManifest, VRAM_WIDTH};
 const CAPTURES: &[(&str, u32, &str)] = &[
     (
         "sebucus_overworld_resident",
-        legaia_asset::kingdom_bundle::BUNDLE_ENTRIES[1],
+        legaia_scene_formats::kingdom_bundle::BUNDLE_ENTRIES[1],
         "map02",
     ),
     (
         "karisto_overworld_resident",
-        legaia_asset::kingdom_bundle::BUNDLE_ENTRIES[2],
+        legaia_scene_formats::kingdom_bundle::BUNDLE_ENTRIES[2],
         "map03",
     ),
 ];
@@ -110,9 +111,9 @@ fn ocean_clut_cycle_live_on_all_kingdoms() {
         let bundle = index
             .entry_bytes_extended(bundle_entry)
             .expect("read kingdom bundle");
-        let slot0 =
-            legaia_asset::kingdom_bundle::decode_slot(&bundle, 0).expect("decode bundle slot 0");
-        let ocean = legaia_asset::ocean::find_ocean_assets(&slot0)
+        let slot0 = legaia_scene_formats::kingdom_bundle::decode_slot(&bundle, 0)
+            .expect("decode bundle slot 0");
+        let ocean = legaia_scene_formats::ocean::find_ocean_assets(&slot0)
             .unwrap_or_else(|| panic!("{label}: bundle {bundle_entry} has no ocean assets"));
         let frames = &ocean.animation_frames;
         assert!(

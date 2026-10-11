@@ -10,7 +10,7 @@
 //! | 2 | the labels drawn over the world map at each place's map position | the **world-map location table** trailing every kingdom MAN (`map01` / `map02` / `map03`) |
 //! | 3 | the banner on entering the scene (and the save-screen location row) | each scene MAN's **section 2** display name |
 //!
-//! Sites 2 and 3 are parsed by [`legaia_asset::place_names`], which carries
+//! Sites 2 and 3 are parsed by [`legaia_scene_formats::place_names`], which carries
 //! the byte layout and the provenance for both.
 //!
 //! ## What an edit costs
@@ -37,12 +37,12 @@
 
 use anyhow::{Result, bail};
 
-use legaia_asset::item_names::file_offset_for_va;
-use legaia_asset::place_names::{
+use legaia_game_tables::item_names::file_offset_for_va;
+use legaia_game_tables::worldmap_menu::{NAME_COUNT, NAME_STRIDE, NAME_TABLE_ADDR};
+use legaia_scene_formats::place_names::{
     self, PlaceNameError, SceneName, WORLD_MAP_NAME_CAPACITY, WorldMapTable,
 };
-use legaia_asset::scene_asset_table;
-use legaia_asset::worldmap_menu::{NAME_COUNT, NAME_STRIDE, NAME_TABLE_ADDR};
+use legaia_scene_formats::scene_asset_table;
 
 /// Max bytes a renamed name can use across **all three** carriers: the
 /// world-map record's 24-byte name field is the tightest of them, so 23
@@ -213,7 +213,7 @@ impl ManPlaceNames {
         if decoded.len() != man.size as usize {
             return None;
         }
-        let parsed = legaia_asset::man_section::parse(&decoded).ok()?;
+        let parsed = legaia_scene_formats::man_section::parse(&decoded).ok()?;
         let scene_name = place_names::scene_name_of(&parsed, &decoded);
         let world_map = place_names::world_map_table_of(&parsed, &decoded);
         if scene_name.is_none() && world_map.is_none() {
@@ -287,7 +287,7 @@ impl ManPlaceNames {
     /// Re-walk the (possibly resized) buffer so the cached carrier offsets stay
     /// truthful after an edit.
     fn rescan(&mut self) {
-        if let Ok(parsed) = legaia_asset::man_section::parse(&self.decoded) {
+        if let Ok(parsed) = legaia_scene_formats::man_section::parse(&self.decoded) {
             self.scene_name = place_names::scene_name_of(&parsed, &self.decoded);
             self.world_map = place_names::world_map_table_of(&parsed, &self.decoded);
         }
@@ -305,7 +305,7 @@ impl ManPlaceNames {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::worldmap_menu::SCUS_LOAD_ADDR;
+    use legaia_game_tables::worldmap_menu::SCUS_LOAD_ADDR;
 
     /// Build a synthetic SCUS-EXE-shaped buffer with the name table populated.
     fn synthetic(names: &[&str]) -> Vec<u8> {

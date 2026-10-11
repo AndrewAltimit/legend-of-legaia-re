@@ -31,7 +31,7 @@ pub struct EncounterState {
     pub(crate) pending_scripted: Option<Vec<u8>>,
     /// When `true`, the field VM's bare arm-encounter op (`0x37`/`0x41`) is
     /// treated as a scripted-encounter install: the record window overlaying
-    /// the opcode is parsed as an [`crate::encounter_record::EncounterRecord`]
+    /// the opcode is parsed as an [`legaia_engine_battle::encounter_record::EncounterRecord`]
     /// and installed via [`crate::world::World::install_scripted_encounter`], which then
     /// disarms (fire-once). Default `false` so generic script yields are never
     /// mistaken for encounter arms. See [`crate::world::World::arm_scripted_encounter`].
@@ -49,9 +49,9 @@ pub struct EncounterState {
     /// installed; `None` in scenes where encounters are disabled
     /// (towns / cutscenes / world-map). Engines call
     /// [`crate::world::World::on_field_step`] from the field-step path (player walks one
-    /// tile) to advance the tracker; the resulting [`crate::encounter::EncounterPhase`]
+    /// tile) to advance the tracker; the resulting [`legaia_engine_battle::encounter::EncounterPhase`]
     /// drives the camera-shake / fade / battle-load chain.
-    pub session: Option<crate::encounter::EncounterSession>,
+    pub session: Option<legaia_engine_battle::encounter::EncounterSession>,
     /// Cached answer to [`crate::world::World::scene_can_roll_encounters`] for the scene
     /// currently installed, refreshed by
     /// [`crate::world::World::refresh_encounter_rollable`] whenever the encounter tables
@@ -78,7 +78,7 @@ pub struct EncounterState {
     /// variant `_DAT_8007BD60`, the backdrop keep bit `_DAT_8007B64B`, and
     /// the two Door gates of scratchpad `0x1F800394`. `None` until a region
     /// has been stood in; retail's globals are sticky, and so is this.
-    pub region_setup: Option<crate::region_encounter::RegionBattleSetup>,
+    pub region_setup: Option<legaia_engine_battle::region_encounter::RegionBattleSetup>,
 }
 
 impl EncounterState {
@@ -91,7 +91,7 @@ impl EncounterState {
             session: None,
             scene_rollable: false,
             scene_hint_frames: 0,
-            step_counter: crate::region_encounter::ENCOUNTER_COUNTER_BASE,
+            step_counter: legaia_engine_battle::region_encounter::ENCOUNTER_COUNTER_BASE,
             region_setup: None,
         }
     }

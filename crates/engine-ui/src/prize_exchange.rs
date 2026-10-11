@@ -12,7 +12,7 @@
 //! | 46 (`0x2E`) | `FUN_801D603C` | the Yes/No confirm ([`choice_panel_draws_for`]) |
 //!
 //! Window 44's ink rule is retail's list rule, resolved by the host through
-//! `legaia_engine_core::shop::shop_stock_row_ink` (the port of
+//! `legaia_engine_menus::shop::shop_stock_row_ink` (the port of
 //! `FUN_801D5DE0`'s ink arm) and carried on [`PrizeRow::ink`]: a stack at the
 //! 99 cap greys, a non-zero record marker re-inks to the accent pen, and a
 //! coin bank short of the price greys again - last rule wins. The confirm panel (46) draws
@@ -20,7 +20,7 @@
 //! retail's `DAT_801E46D0 = 1` convention.
 //!
 //! The composition takes the disc window table so every rect comes off the
-//! descriptor records (`legaia_asset::menu_windows`), same as the shop
+//! descriptor records (`legaia_game_tables::menu_windows`), same as the shop
 //! windows - with painter-authority dispatch: an id whose renderer moved
 //! draws nothing rather than mis-drawing.
 //!
@@ -34,7 +34,7 @@ use crate::menu::window_painters::{
     counter_panel_draws_for, title_tab_draws_for,
 };
 use crate::{MENU_TEXT_WHITE, TextDraw, text_draws_for};
-use legaia_asset::menu_windows::MenuWindowTable;
+use legaia_game_tables::menu_windows::MenuWindowTable;
 
 /// Window ids of the exchange screen's four descriptor records.
 pub const WIN_EXCHANGE_TAB: usize = 43;
@@ -63,7 +63,7 @@ pub struct PrizeRow {
     /// Party's held count of the item (the 99-cap ink input).
     pub held: u8,
     /// Retail row ink: `FUN_801D5DE0`'s last-rule-wins selection, which the
-    /// host resolves with `legaia_engine_core::shop::shop_stock_row_ink`
+    /// host resolves with `legaia_engine_menus::shop::shop_stock_row_ink`
     /// (held cap, the record's `+2` marker, the coin bank against the price).
     /// `0` greys the row, `6` is the marker's accent pen, anything else the
     /// normal pen.

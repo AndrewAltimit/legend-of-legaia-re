@@ -24,11 +24,13 @@
 //! species, spawn page and gesture templates are synthetic in the same shape
 //! the disc carries.
 
-use legaia_asset::fishing_species::{CadenceStep, CadenceTemplate, FishingSpecies, SPAWN_BANDS};
-use legaia_engine_core::fishing::{
+use legaia_engine_fishing::fishing::{
     CAST_POWER_MAX, FISHING_MENU_ROW_STATES, FISHING_MENU_ROW_X, FISHING_MENU_ROW_Y0, FishingMenu,
     FishingRecord, PondEvent, PondInput, PondPhase, PondSession, RodLureSelect, lure_item_id,
     rod_item_id, spawn_species,
+};
+use legaia_minigame_formats::fishing_species::{
+    CadenceStep, CadenceTemplate, FishingSpecies, SPAWN_BANDS,
 };
 
 /// Pad bits the two screens read, as retail masks them.

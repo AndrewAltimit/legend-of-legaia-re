@@ -39,7 +39,7 @@ pub(super) struct Contact {
 /// `None` when the clip is too short to have a speed profile or never
 /// decelerates at all (a pure approach).
 pub(super) fn principal_impact(
-    clip: &legaia_asset::monster_archive::MonsterAnimation,
+    clip: &legaia_actor_formats::monster_archive::MonsterAnimation,
 ) -> Option<Contact> {
     if clip.part_count == 0 || clip.frame_count < 4 {
         return None;
@@ -97,7 +97,7 @@ pub(super) fn principal_impact(
 /// [`RebuiltArtSlot::stages`](legaia_party_swap::winpose::RebuiltArtSlot)
 /// of the chain are walked.
 pub(super) fn chain_contacts(
-    chain: &[&legaia_asset::monster_archive::MonsterAnimation],
+    chain: &[&legaia_actor_formats::monster_archive::MonsterAnimation],
     rebuilt: &legaia_party_swap::winpose::RebuiltArtSlot,
 ) -> Vec<Contact> {
     let kept = chain.len().saturating_sub(rebuilt.stages);
@@ -109,7 +109,7 @@ pub(super) fn chain_contacts(
     // for a stage whose beats are authored, because it is the yardstick the
     // wind-up filter below is measured against.
     struct Stage<'a> {
-        clip: &'a legaia_asset::monster_archive::MonsterAnimation,
+        clip: &'a legaia_actor_formats::monster_archive::MonsterAnimation,
         start: usize,
         len: usize,
         authored: Vec<u8>,
@@ -220,7 +220,7 @@ pub(super) fn ascending_within(frames: &[usize], last: usize) -> Vec<u8> {
 /// the extras ride the same impact on consecutive frames - retail's own
 /// multi-hit idiom (Burning Flare is `11 12 13 14` on one swing).
 pub(super) fn retimed_hit_frames(
-    host: &legaia_asset::battle_char_assembly::ArtAnimRecord,
+    host: &legaia_actor_formats::battle_char_assembly::ArtAnimRecord,
     rebuilt: &legaia_party_swap::winpose::RebuiltArtSlot,
     contacts: &[Contact],
 ) -> (Vec<(usize, u8)>, String) {
@@ -345,9 +345,9 @@ pub(super) fn fx_live_count(script: &[u8]) -> usize {
 /// contact. The walker's gate rule is the hit rule (`frame + 1 >= gate`,
 /// `0x801decb4`), so a gate equal to a hit value fires on the same frame.
 pub(super) fn effect_script_edits(
-    host: &legaia_asset::battle_char_assembly::ArtAnimRecord,
-    clip: &legaia_asset::monster_archive::MonsterAnimation,
-    siblings_clips: &[legaia_asset::monster_archive::MonsterAnimation],
+    host: &legaia_actor_formats::battle_char_assembly::ArtAnimRecord,
+    clip: &legaia_actor_formats::monster_archive::MonsterAnimation,
+    siblings_clips: &[legaia_actor_formats::monster_archive::MonsterAnimation],
     rebuilt: &legaia_party_swap::winpose::RebuiltArtSlot,
     burst: Option<u8>,
     contacts: &[Contact],

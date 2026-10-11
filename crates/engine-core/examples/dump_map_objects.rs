@@ -9,8 +9,8 @@
 //!   0x10000..       region + kind-1 tile-trigger tables
 use std::path::PathBuf;
 
-use legaia_engine_core::field_regions::lookup_tile_trigger;
 use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_field::field_regions::lookup_tile_trigger;
 
 fn main() -> anyhow::Result<()> {
     let extracted = PathBuf::from("extracted");

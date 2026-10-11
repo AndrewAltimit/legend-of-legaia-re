@@ -2,6 +2,7 @@
 //! seat query.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// PROT 0904's beam root and arm-12 ray tip for sweep word `ctx_6d8`
@@ -15,7 +16,7 @@ impl World {
         summon_slot: u8,
         ctx_6d8: u16,
     ) -> ([i16; 3], [i16; 3]) {
-        use vm::cast_seru_ticks_a as ta;
+        use legaia_engine_battle_vm::seru_magic_ticks as ta;
         let g = self.theeder_geom(summon_slot);
         let mouth = ta::theeder_mouth(g.x, g.z, g.facing);
         let tip = ta::theeder_ray_tip(mouth, g.facing, ta::theeder_sweep_phase(ctx_6d8));
@@ -37,10 +38,12 @@ impl World {
                 .get(s as usize)
                 .map(|a| (a.move_state.world_x, a.move_state.world_z))
         };
-        Some(vm::cast_seru_ticks_a::theeder_seat_placement(
-            pos(victim_slot)?,
-            pos(caster_slot)?,
-        ))
+        Some(
+            legaia_engine_battle_vm::seru_magic_ticks::theeder_seat_placement(
+                pos(victim_slot)?,
+                pos(caster_slot)?,
+            ),
+        )
     }
 
     pub(in crate::world::battle::cast_band) fn pin_theeder_seat(
@@ -59,10 +62,10 @@ impl World {
     pub(in crate::world::battle::cast_band) fn theeder_geom(
         &self,
         summon_slot: u8,
-    ) -> vm::cast_seru_ticks_a::TheederGeom {
+    ) -> legaia_engine_battle_vm::seru_magic_ticks::TheederGeom {
         self.actors
             .get(summon_slot as usize)
-            .map(|a| vm::cast_seru_ticks_a::TheederGeom {
+            .map(|a| legaia_engine_battle_vm::seru_magic_ticks::TheederGeom {
                 x: a.move_state.world_x,
                 z: a.move_state.world_z,
                 facing: a.battle.facing_angle & 0x0FFF,
@@ -74,10 +77,10 @@ impl World {
     /// tick drew (the arm-9 prongs, the arm-11 charge beam, the arm-11/12
     /// sweeping beam and its trail, the arm-13 retract) - while its cast is
     /// in the band. Both hosts project the points with their battle camera
-    /// and build the primitives with `legaia_engine_ui::cast_theeder`.
+    /// and build the primitives with `legaia_render_kernels::cast_theeder`.
     ///
     /// REF: FUN_801F815C, FUN_801F83A4, FUN_801F8634, FUN_801F8B84
-    pub fn theeder_draw(&self) -> Option<vm::cast_seru_ticks_a::TheederPacket> {
+    pub fn theeder_draw(&self) -> Option<legaia_engine_battle_vm::seru_magic_ticks::TheederPacket> {
         if self.mode != SceneMode::Battle || self.casting.summon_stager.is_none() {
             return None;
         }
@@ -119,7 +122,7 @@ impl World {
         half_width: u16,
         seats: std::ops::Range<u8>,
     ) -> Vec<u8> {
-        use vm::battle_action::bearing_12bit_approx;
+        use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
         const FULL_TURN: u16 = 0x1000;
         seats
             .filter(|&seat| {

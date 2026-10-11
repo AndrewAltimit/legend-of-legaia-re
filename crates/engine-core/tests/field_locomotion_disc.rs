@@ -19,9 +19,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
-use legaia_engine_core::world::{FIELD_COLD_SPAWN_XZ, SceneMode};
+use legaia_engine_core::world::FIELD_COLD_SPAWN_XZ;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {

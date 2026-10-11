@@ -1,5 +1,5 @@
 //! Disc-gated oracle for the arts after-image **ring-id gate** on monster
-//! seats (`legaia_engine_core::battle_afterimage::monster_ring_id`).
+//! seats (`legaia_engine_battle::battle_afterimage::monster_ring_id`).
 //!
 //! Retail's anim tick (`FUN_80047430`, `0x80048044..0x80048060`) stamps a
 //! monster's history-ring id from the committed record: `record[+0x77] +
@@ -12,8 +12,8 @@
 //! Skips silently when `extracted/PROT/` or `LEGAIA_DISC_BIN` is missing
 //! (CI without disc data).
 
-use legaia_asset::monster_archive;
-use legaia_engine_core::battle_afterimage as ai;
+use legaia_actor_formats::monster_archive;
+use legaia_engine_battle::battle_afterimage as ai;
 use std::path::PathBuf;
 
 fn prot_file(name: &str) -> Option<Vec<u8>> {
@@ -120,7 +120,7 @@ fn monster_ring_id_gate_matches_the_disc_records() {
     // exceed the last routed value.
     const LAST_ROUTED_CLASS: u8 = 6;
     assert_eq!(
-        legaia_engine_core::move_power::IMPACT_CLASS_LIMIT,
+        legaia_engine_battle::move_power::IMPACT_CLASS_LIMIT,
         LAST_ROUTED_CLASS,
         "the tint gate is `< 6`: class 6 is the status-only arm"
     );
@@ -198,15 +198,15 @@ fn player_file_records_carry_only_routed_selectors() {
     let mut seen = std::collections::BTreeMap::<u8, usize>::new();
     for (name, path) in &files {
         let bytes = std::fs::read(path).expect("player file reads");
-        let anims = legaia_asset::battle_char_assembly::battle_animations(&bytes)
+        let anims = legaia_actor_formats::battle_char_assembly::battle_animations(&bytes)
             .unwrap_or_else(|e| panic!("{name}: basic animations: {e}"));
         let basic: Vec<(u8, u8, u8, u8)> = anims
             .iter()
             .map(|a| (a.action_id, a.attach_key, a.solo_flag, a.impact_class))
             .collect();
-        let record0 = legaia_asset::battle_char_assembly::decode_record0(&bytes)
+        let record0 = legaia_actor_formats::battle_char_assembly::decode_record0(&bytes)
             .unwrap_or_else(|e| panic!("{name}: record0: {e}"));
-        let arts = legaia_asset::battle_char_assembly::art_animation_bank(&record0)
+        let arts = legaia_actor_formats::battle_char_assembly::art_animation_bank(&record0)
             .unwrap_or_else(|e| panic!("{name}: art bank: {e}"));
         let art_rows: Vec<(usize, u8, u8)> = arts
             .iter()

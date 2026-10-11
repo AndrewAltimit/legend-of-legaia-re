@@ -236,7 +236,8 @@ pub(super) fn load_anchor(lib: &Path, a: &AnchorRef) -> Result<Anchor, String> {
                     legaia_mednafen::SaveState::from_path(&med).map_err(|e| format!("{e:#}"))?;
                 st.main_ram().map_err(|e| format!("{e:#}"))?.to_vec()
             } else if pcsx.exists() {
-                let st = legaia_pcsxr::SaveState::from_path(&pcsx).map_err(|e| format!("{e:#}"))?;
+                let st =
+                    legaia_pcsx_redux::SaveState::from_path(&pcsx).map_err(|e| format!("{e:#}"))?;
                 st.main_ram().to_vec()
             } else {
                 return Err(format!(
@@ -245,10 +246,10 @@ pub(super) fn load_anchor(lib: &Path, a: &AnchorRef) -> Result<Anchor, String> {
             };
             let base = (SC_RAM_BASE & 0x1F_FFFF) as usize;
             let sc = ram[base..base + SC_LEN].to_vec();
-            let scene = legaia_mednafen::game_anchors::scene_name(&ram);
-            let mode = legaia_mednafen::game_anchors::game_mode(&ram);
+            let scene = legaia_ram_image::game_anchors::scene_name(&ram);
+            let mode = legaia_ram_image::game_anchors::game_mode(&ram);
             let seat = if mode == 0x03 {
-                legaia_mednafen::game_anchors::player_pos(&ram)
+                legaia_ram_image::game_anchors::player_pos(&ram)
             } else {
                 None
             };

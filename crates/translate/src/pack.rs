@@ -124,7 +124,7 @@ pub struct Sections {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub system_text: Vec<Entry>,
     /// World-map quick-travel place-name cells: fixed `0x20`-byte NUL-padded
-    /// fields in `SCUS_942.54` (`legaia_asset::worldmap_menu`).
+    /// fields in `SCUS_942.54` (`legaia_game_tables::worldmap_menu`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub place_names: Vec<Entry>,
     /// Monster names (battle name plaque + every battle line naming the

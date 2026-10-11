@@ -118,7 +118,7 @@ pub fn stat_record_from_character(
 /// `pause_screens::target_panel_view_model` passes them off a `World`.
 pub fn target_panel_view_model_of(
     s: &PauseItemsSession,
-    item_effects: Option<&legaia_asset::item_effect::ItemEffectTable>,
+    item_effects: Option<&legaia_game_tables::item_effect::ItemEffectTable>,
     members: &[legaia_save::CharacterRecord],
 ) -> Option<TargetPanelModel> {
     let mode = staged_use_item_id(s)

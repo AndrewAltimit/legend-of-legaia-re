@@ -7,8 +7,8 @@
 //! the painter directly would prove the kernel computes, not that a running
 //! session ever asks it to.
 
-use legaia_engine_core::actor_handler::ActorHandler;
 use legaia_engine_core::world::World;
+use legaia_engine_field::actor_handler::ActorHandler;
 use legaia_engine_field::dev_menu_leaves::EquipPanelDraw;
 use legaia_engine_field::submode_hub_actors::{HubDraw, HubPainter, slot};
 

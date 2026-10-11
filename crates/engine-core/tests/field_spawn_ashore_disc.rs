@@ -22,9 +22,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
 use legaia_engine_core::world::FIELD_COLD_SPAWN_XZ;
+use legaia_engine_system::input::PadButton;
 
 /// The three kingdom overworld scenes.
 const OVERWORLDS: [&str; 3] = ["map01", "map02", "map03"];

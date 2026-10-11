@@ -1,12 +1,12 @@
 //! Hand-checked cases for the melee pre-damage kernel
-//! ([`legaia_engine_vm::battle_formulas::physical_predamage`], the port of
+//! ([`legaia_engine_battle_vm::battle_formulas::physical_predamage`], the port of
 //! `FUN_801EC3E4`'s roll pair).
 //!
 //! Every expected value below is computed by hand from the disassembly's
 //! stages with a fixed `rand()` so the arithmetic - not just the shape - is
 //! pinned. Disc-free.
 
-use legaia_engine_vm::battle_formulas::{
+use legaia_engine_battle_vm::battle_formulas::{
     COMMAND_POWER_SCALARS, PhysicalHit, command_power_scalar, physical_defense_is_udf,
     physical_predamage,
 };

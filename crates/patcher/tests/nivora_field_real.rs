@@ -20,7 +20,7 @@
 //!
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_asset::monster_archive::PartPose;
+use legaia_actor_formats::monster_archive::PartPose;
 use legaia_delilas_party::delilas_party::PartyMapping;
 use legaia_delilas_party::nivora_field::apply_nivora_field;
 use legaia_disc_patch::disc::DiscPatcher;
@@ -59,12 +59,12 @@ fn posed_stats(
     record: usize,
 ) -> (Vec<[f32; 3]>, f32) {
     let pack = &pack_entry[4..];
-    let entries = legaia_asset::pack::parse_pack(pack).expect("pack parses");
+    let entries = legaia_container_formats::pack::parse_pack(pack).expect("pack parses");
     let e = &entries[member];
     let bytes = &pack[e.byte_offset..e.byte_offset + e.size];
     let tmd = legaia_tmd::parse(bytes).expect("member TMD parses");
     let model = legaia_tmd::encode::decode_model(&tmd, bytes).expect("member decodes");
-    let anm = legaia_asset::player_anm::find_in_entry(bundle_entry, 5)
+    let anm = legaia_actor_formats::player_anm::find_in_entry(bundle_entry, 5)
         .into_iter()
         .next()
         .expect("scene ANM bundle");
@@ -121,11 +121,12 @@ fn head_tim_ranges(sec0: &[u8]) -> Vec<(usize, usize)> {
 }
 
 fn decoded_sec0(bundle_entry: &[u8]) -> Vec<u8> {
-    let container = legaia_asset::parse_player_lzs(bundle_entry, 3).expect("0638 container");
-    legaia_asset::decode(
+    let container =
+        legaia_container_formats::parse_player_lzs(bundle_entry, 3).expect("0638 container");
+    legaia_container_formats::decode(
         bundle_entry,
         &container.descriptors[0],
-        legaia_asset::DecodeMode::Lzs,
+        legaia_container_formats::DecodeMode::Lzs,
     )
     .expect("0638 TIM list decodes")
 }
@@ -139,7 +140,8 @@ fn default_mapping_heroizes_nilboa_and_survives_reparse() {
     let patcher = DiscPatcher::open(original.clone()).expect("open disc");
     let base_pack = patcher.read_entry_footprint(PACK_ENTRY).expect("0639");
     let base_bundle = patcher.read_entry_footprint(BUNDLE_ENTRY).expect("0638");
-    let base_entries = legaia_asset::pack::parse_pack(&base_pack[4..]).expect("baseline pack");
+    let base_entries =
+        legaia_container_formats::pack::parse_pack(&base_pack[4..]).expect("baseline pack");
     let member_count = base_entries.len();
     let base_span: usize = SIBLINGS.iter().map(|&(_, m, _)| base_entries[m].size).sum();
     let mut base_stats = Vec::new();
@@ -180,7 +182,8 @@ fn default_mapping_heroizes_nilboa_and_survives_reparse() {
     );
 
     // Pack re-parses with the same shape; untouched members identical.
-    let new_entries = legaia_asset::pack::parse_pack(&new_pack[4..]).expect("patched pack");
+    let new_entries =
+        legaia_container_formats::pack::parse_pack(&new_pack[4..]).expect("patched pack");
     assert_eq!(new_entries.len(), member_count, "member count");
     let swapped: Vec<usize> = SIBLINGS.iter().map(|&(_, m, _)| m).collect();
     for m in 0..member_count {
@@ -299,8 +302,10 @@ fn default_mapping_heroizes_nilboa_and_survives_reparse() {
         changed_inside > 0,
         "head TIMs unchanged - repaint did nothing"
     );
-    let base_container = legaia_asset::parse_player_lzs(&base_bundle, 3).expect("base container");
-    let new_container = legaia_asset::parse_player_lzs(&new_bundle, 3).expect("new container");
+    let base_container =
+        legaia_container_formats::parse_player_lzs(&base_bundle, 3).expect("base container");
+    let new_container =
+        legaia_container_formats::parse_player_lzs(&new_bundle, 3).expect("new container");
     let (b1, b2) = (
         base_container.descriptors[1].data_offset as usize,
         base_container.descriptors[2].data_offset as usize,
@@ -325,7 +330,7 @@ fn mapping_permutation_is_honored_and_deterministic() {
     let member_bytes = |image: &[u8], member: usize| -> Vec<u8> {
         let p = DiscPatcher::open(image.to_vec()).expect("open");
         let pack = p.read_entry_footprint(PACK_ENTRY).expect("0639");
-        let entries = legaia_asset::pack::parse_pack(&pack[4..]).expect("pack");
+        let entries = legaia_container_formats::pack::parse_pack(&pack[4..]).expect("pack");
         let e = &entries[member];
         pack[4 + e.byte_offset..4 + e.byte_offset + e.size].to_vec()
     };

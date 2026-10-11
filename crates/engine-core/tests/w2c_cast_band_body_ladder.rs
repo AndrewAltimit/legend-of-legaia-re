@@ -20,8 +20,9 @@
 //! observable state change. Skips (and passes) without `LEGAIA_DISC_BIN` /
 //! `extracted/`.
 
-use legaia_asset::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_overlay_images::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
 use std::path::PathBuf;
 
 /// The three module sources, by the name the row table uses.
@@ -222,7 +223,7 @@ fn seru_world() -> World {
     let mut world = seated_world(3);
     world.actors[0].battle.active_target = 3;
     world.battle_ctx.active_actor = 0;
-    world.casting.summon_actor_slot = Some(legaia_engine_vm::cast_module_ticks::SUMMON_SEAT);
+    world.casting.summon_actor_slot = Some(legaia_engine_battle_vm::cast_module_ticks::SUMMON_SEAT);
     world
 }
 
@@ -256,7 +257,8 @@ fn seated_world(party_count: u8) -> World {
         world.actors[slot].battle.hp = 4000;
         world.actors[slot].battle.mp = 99;
         world.actors[slot].battle.liveness = 1;
-        world.actors[slot].battle.anim_rate = legaia_engine_vm::battle_anim_rate::AnimRate(8);
+        world.actors[slot].battle.anim_rate =
+            legaia_engine_battle_vm::battle_anim_rate::AnimRate(8);
     }
     world
 }
@@ -292,7 +294,7 @@ fn every_ported_cast_band_body_is_entered_once() {
     let scus = std::fs::read(dir.join("SCUS_942.54")).expect("read SCUS_942.54");
     let mut archive =
         legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
-    let mut pool = legaia_asset::cast_effect_pool::CastEffectPool::new();
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
     for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
         let Some(entry) = archive.entries.get(idx as usize).cloned() else {
             continue;
@@ -350,7 +352,7 @@ fn every_ported_cast_band_body_is_entered_once() {
             // phases until its move-VM stager bumps them, and every other arm
             // of that band's stagers only hands spawn records to the pool.
             // The first band and the capture-class arms take `0` throughout.
-            let rendezvous = legaia_engine_vm::cast_seru_ticks_b::VIGURO_RENDEZVOUS_PHASES
+            let rendezvous = legaia_engine_battle_vm::seru_magic_ticks::VIGURO_RENDEZVOUS_PHASES
                 .contains(&w.casting.module_phase);
             let arm = u8::from(module == "cast_seru_ticks_b" && !rendezvous) * 2;
             let Some(run) = w.run_cast_module_code(id, arm) else {

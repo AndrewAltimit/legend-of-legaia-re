@@ -55,7 +55,7 @@ impl SummonScene {
     /// Spawn from an explicit set of [`SummonPart`] records (rather than a whole
     /// [`SummonOverlay`]). Used by the battle move-power effect-FX path, whose
     /// records come from the `0x801f6324` prototype-pointer table
-    /// ([`legaia_asset::summon_overlay::parse_records_at`]) rather than the
+    /// ([`legaia_overlay_images::summon_overlay::parse_records_at`]) rather than the
     /// stager's `jal`-site scan, but stage through the identical
     /// `FUN_80021B04` → move-VM machinery. `record_bytes` is the buffer the parts
     /// were parsed from (the move-FX records live in the battle-action overlay,

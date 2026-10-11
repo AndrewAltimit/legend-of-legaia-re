@@ -9,7 +9,7 @@ impl PlayWindowApp {
     /// scene: each placed environment object's scene-pack mesh paired with a
     /// world model matrix. Built from the field map's object table
     /// (`Scene::field_object_placements`) and the scene_asset_table TMD pack;
-    /// the per-object pack index resolves via `legaia_asset::field_objects`.
+    /// the per-object pack index resolves via `legaia_scene_formats::field_objects`.
     ///
     /// `tmd_src_index[j]` is the `res.tmds` index of uploaded mesh `j` (meshes
     /// skip empty-prim TMDs, so this bridges back). Returns empty for scenes
@@ -68,7 +68,7 @@ impl PlayWindowApp {
         &self,
         res: &SceneResources,
         posed: &PosedPlacementMeshes,
-        bundle: Option<&legaia_asset::player_anm::PlayerAnmBundle>,
+        bundle: Option<&legaia_actor_formats::player_anm::PlayerAnmBundle>,
     ) -> Vec<PosedPropDraw> {
         use legaia_engine_core::field_env;
         let Some(scene) = self.session.host.scene.as_ref() else {
@@ -127,7 +127,7 @@ impl PlayWindowApp {
                 d.world_z as f32 + off[2],
             ));
             let rot =
-                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z)
+                legaia_render_kernels::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z)
                     * Mat4::from_scale(Vec3::splat(scale));
             props.push(PosedPropDraw {
                 anchor: d.anchor,
@@ -207,7 +207,7 @@ impl PlayWindowApp {
             if let Ok(Some(tiles)) = scene.field_terrain_tiles(index) {
                 let tiles: Vec<_> = tiles
                     .into_iter()
-                    .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
+                    .filter(|p| p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0)
                     .collect();
                 let (d, _) = field_env::resolve_env_draws(&env_tmds, &tiles, floor_lut);
                 draws.extend(d);
@@ -319,7 +319,7 @@ impl PlayWindowApp {
         &self,
         res: &SceneResources,
         tmd_src_index: &[usize],
-        placements: &[legaia_asset::field_objects::Placement],
+        placements: &[legaia_scene_formats::field_objects::Placement],
         flip_y: bool,
         binds: Option<
             &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
@@ -507,7 +507,7 @@ impl PlayWindowApp {
             // world-map pairing applies the per-model flip on the left of
             // `rot`. So the same matrix is correct for both.
             let rot =
-                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z)
+                legaia_render_kernels::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z)
                     * Mat4::from_scale(Vec3::splat(scale));
             let model = if flip_y {
                 t * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0)) * rot

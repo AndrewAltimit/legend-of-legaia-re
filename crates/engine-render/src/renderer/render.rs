@@ -49,7 +49,7 @@ impl Renderer {
         // `SceneWithScreenPrims` is a `Scene` plus a composited ordering-table
         // pass; unwrap it here so the scene arms below stay single-purpose and
         // the overlay is drawn as a tail on top of whatever the scene emitted.
-        let empty: &[crate::screen_overlay::ScreenPrim] = &[];
+        let empty: &[legaia_render_kernels::screen_prim::ScreenPrim] = &[];
         let (target, composited_prims, under_prims) = match target {
             RenderTarget::SceneWithScreenPrims {
                 scene,

@@ -29,13 +29,15 @@
 //! [`IntroEnv`]), and the curtain's descriptor table is a synthetic four-record
 //! stand-in for the one that lives in PROT 0979. No Sony bytes.
 
-use legaia_engine_vm::battle_intro_particles::{self as particles, ParticleEnv, SeedOutcome};
-use legaia_engine_vm::battle_intro_styles::{
+use legaia_engine_battle_vm::battle_intro_particles::{
+    self as particles, ParticleEnv, SeedOutcome,
+};
+use legaia_engine_battle_vm::battle_intro_styles::{
     self as styles, PARTICLE_TICK_A, PARTICLE_TICK_B, PARTICLE_TICK_COUNT,
 };
-use legaia_engine_vm::battle_intro_swirl::{self as swirl, SwirlBuildOutcome, SwirlTrig};
-use legaia_engine_vm::battle_intro_tiles::{self as tiles, TileSeedOutcome, TileSubStyle};
-use legaia_engine_vm::battle_intro_transition::{
+use legaia_engine_battle_vm::battle_intro_swirl::{self as swirl, SwirlBuildOutcome, SwirlTrig};
+use legaia_engine_battle_vm::battle_intro_tiles::{self as tiles, TileSeedOutcome, TileSubStyle};
+use legaia_engine_battle_vm::battle_intro_transition::{
     IntroQuadDesc, TransitionEntity, TransitionGlobals, TransitionResponses, tick_transition,
 };
 
@@ -55,13 +57,13 @@ const FRAMES: i32 = 0x78;
 /// seeded particle gets, which is fine - this test asserts the kernels compose
 /// and stay live, not that they reproduce a captured frame.
 struct IntroEnv {
-    rng: legaia_engine_vm::battle_intro_particles::IntroRng,
+    rng: legaia_engine_battle_vm::battle_intro_particles::IntroRng,
 }
 
 impl IntroEnv {
     fn new() -> Self {
         Self {
-            rng: legaia_engine_vm::battle_intro_particles::IntroRng::new(0x1234_5678),
+            rng: legaia_engine_battle_vm::battle_intro_particles::IntroRng::new(0x1234_5678),
         }
     }
 

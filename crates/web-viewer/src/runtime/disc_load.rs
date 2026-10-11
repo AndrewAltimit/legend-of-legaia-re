@@ -38,12 +38,12 @@ impl LegaiaRuntime {
         // a PROT.DAT load has no SCUS and the menu shows raw ids instead).
         self.item_names = scus
             .as_ref()
-            .and_then(|s| legaia_asset::item_names::ItemNameTable::from_scus(s));
+            .and_then(|s| legaia_game_tables::item_names::ItemNameTable::from_scus(s));
         // The seru-trade offers' display names. The trade config itself, the
         // menu text and the static progression tables are the session's
         // installs (`BootSession::from_host`, below), as on the native boot.
         if let Some(s) = scus.as_ref() {
-            self.seru_names = legaia_asset::spell_names::SpellNameTable::from_scus(s);
+            self.seru_names = legaia_game_tables::spell_names::SpellNameTable::from_scus(s);
         }
         // Sound-effect descriptors from the same executable (`DAT_8006F198`,
         // see docs/formats/sfx-table.md). Data only - the program bank uploads
@@ -56,7 +56,7 @@ impl LegaiaRuntime {
         // command sorts by the retail rank rather than id order.
         if let Ok(overlay) = host
             .index
-            .entry_bytes_extended(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+            .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
         {
             host.world.install_menu_overlay_tables(&overlay);
         }
@@ -100,13 +100,13 @@ impl LegaiaRuntime {
         // menu falls back to a generic frame.
         self.equip_stats = scus
             .as_ref()
-            .and_then(|s| legaia_asset::equip_stats::EquipStatTable::from_scus(s));
+            .and_then(|s| legaia_game_tables::equip_stats::EquipStatTable::from_scus(s));
         host.world.set_equipment_table(
             self.equip_stats
                 .as_ref()
-                .map(legaia_engine_core::equipment::equip_modifier_table_from_disc)
+                .map(legaia_engine_menus::equipment::equip_modifier_table_from_disc)
                 .unwrap_or_else(|| {
-                    legaia_engine_core::equipment::vanilla_equipment_catalog().to_modifier_table()
+                    legaia_engine_menus::equipment::vanilla_equipment_catalog().to_modifier_table()
                 }),
         );
         // The raw stat-bonus records as well: the Items screen's Throw Out
@@ -121,14 +121,14 @@ impl LegaiaRuntime {
         // buy list ([`crate::play_shop`]), so opt into the flow and install
         // the disc restrictions the buy-list kind dispatch reads.
         if let Some(table) = self.equip_stats.as_ref() {
-            let mut info = legaia_engine_core::equipment::DiscEquipInfo::from_disc(table);
+            let mut info = legaia_engine_menus::equipment::DiscEquipInfo::from_disc(table);
             // The three Goods rows browse a class-2 id space the equipment
             // stat table does not hold; without this index they offer no
             // candidates at all. Twin of the native boot's install in
             // `legaia_engine_shell::boot`.
             if let Some(effects) = scus
                 .as_ref()
-                .and_then(|s| legaia_asset::item_effect::ItemEffectTable::from_scus(s))
+                .and_then(|s| legaia_game_tables::item_effect::ItemEffectTable::from_scus(s))
             {
                 info.install_goods(&effects);
             }
@@ -140,23 +140,23 @@ impl LegaiaRuntime {
         // on this host too rather than drawing nothing.
         if let Some(steal) = scus
             .as_ref()
-            .and_then(|s| legaia_asset::steal_table::StealTable::from_scus(s))
+            .and_then(|s| legaia_game_tables::steal_table::StealTable::from_scus(s))
         {
             host.world.set_steal_table(steal);
         }
         host.world.set_spell_catalog(
             scus.as_ref()
-                .and_then(|s| legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(s))
-                .unwrap_or_else(legaia_engine_core::retail_magic::retail_seru_magic_catalog),
+                .and_then(|s| legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(s))
+                .unwrap_or_else(legaia_engine_battle::retail_magic::retail_seru_magic_catalog),
         );
         host.world
-            .set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+            .set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
         // Real item-effect usability flags (cure/revive = battle-only, etc.);
         // applied after `set_item_catalog` since it rewrites the catalog. Absent
         // on a PROT.DAT-only load (catalog keeps its curated flags).
         if let Some(effects) = scus
             .as_ref()
-            .and_then(|s| legaia_asset::item_effect::ItemEffectTable::from_scus(s))
+            .and_then(|s| legaia_game_tables::item_effect::ItemEffectTable::from_scus(s))
         {
             host.world.set_item_effects(effects);
         }

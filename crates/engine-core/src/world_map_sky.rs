@@ -2,7 +2,7 @@
 //!
 //! The band itself - its projection, scroll, clipping and colour - is the
 //! `FUN_801F73E4` port [`legaia_render_kernels::world_map_sky`]; the primitive
-//! both hosts link is `legaia_engine_ui::screen_prim::sky_band_prims`. This
+//! both hosts link is `legaia_render_kernels::screen_prim::sky_band_prims`. This
 //! module is the one gate both hosts call between them, so neither decides
 //! on its own which frames carry a sky.
 //!
@@ -15,9 +15,10 @@
 
 use legaia_render_kernels::world_map_sky::{SKY_DIM_FLAG, SkySprite, sky_band_sprites};
 
-use crate::camera::Camera;
 use crate::camera_view::FieldCameraFrame;
-use crate::world::{SceneMode, World};
+use crate::world::World;
+use legaia_engine_field::camera::Camera;
+use legaia_engine_mode::mode::SceneMode;
 
 /// This frame's sky sprites, or none outside the overworld walk / timeline
 /// views.

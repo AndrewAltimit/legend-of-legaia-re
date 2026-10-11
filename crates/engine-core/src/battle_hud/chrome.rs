@@ -43,7 +43,7 @@ pub fn battle_begin_tab_visible(world: &crate::world::World) -> bool {
 /// `0x801D3968..0x801D3974` for `0x0E`), i.e. abutting the plaque. The item
 /// window draws its own trail (record `0x0C`), so it is not named here.
 pub fn battle_breadcrumb_third_tab(world: &crate::world::World) -> Option<String> {
-    use crate::battle_input::BattleCommand;
+    use legaia_engine_menus::battle_input::BattleCommand;
     match battle_command_surface(world)? {
         CommandSurface::AttackMode
         | CommandSurface::Targeting
@@ -52,7 +52,7 @@ pub fn battle_breadcrumb_third_tab(world: &crate::world::World) -> Option<String
         // The dome's Ra-Seru list is its own projection (`dome_command_chips`
         // carries its arm word); the battle's resolver is not its source.
         CommandSurface::SpellBrowse | CommandSurface::SpellTarget(_)
-            if world.mode != crate::world::SceneMode::MuscleDome =>
+            if world.mode != legaia_engine_mode::mode::SceneMode::MuscleDome =>
         {
             let slot = command_entry_actor(world)?;
             Some(battle_magic_chip(world, slot).0)
@@ -95,15 +95,17 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
         ),
         // The two `t2 == 8` openers (see above); either keeps the panels up
         // until the Done band's `0x51` hold ends.
-        BattleHudPhase::Action if world.mode == crate::world::SceneMode::MuscleDome => false,
+        BattleHudPhase::Action if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome => {
+            false
+        }
         BattleHudPhase::Action => {
             let a = world.battle_ctx.active_actor;
             world.actors.get(a as usize).is_some_and(|actor| {
-                use legaia_engine_vm::battle_action::{ActionCategory, ActionState};
+                use legaia_engine_battle_vm::battle_action::{ActionCategory, ActionState};
                 let s = world.battle_ctx.action_state;
                 let cat = actor.battle.action_category;
                 let party_wide = actor.battle.active_target
-                    == legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
+                    == legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
                 let open = s < ITEM_PANELS_CLOSE_STATE;
                 let monster_seed =
                     a >= party_count(world) as u8 && seed_plates_reach_the_target_arm(cat);
@@ -128,8 +130,8 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
 /// archive name begins with a caret plus a letter and the plaque draws badge
 /// `letter - 'A'`, drawing nothing at all when the name carries no escape
 /// (`docs/subsystems/battle.md`, the element-badge section). So this reads
-/// [`crate::monster_catalog::MonsterDef::plaque_badge`], which
-/// `legaia_asset::monster_archive` carries straight off the name bytes.
+/// [`legaia_engine_battle::monster_catalog::MonsterDef::plaque_badge`], which
+/// `legaia_actor_formats::monster_archive` carries straight off the name bytes.
 ///
 /// Two things this deliberately does **not** do, both of which the earlier
 /// element-byte selector got wrong: it does not badge every monster (only a
@@ -141,7 +143,7 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
 /// monster frames (`Gimard`), and the party ones (`Vahn`, `Noa`) do not.
 pub fn battle_plaque_element_badge(world: &crate::world::World) -> Option<u8> {
     // A dome plaque's slot is a fighter seat, not a battle actor.
-    if world.mode == crate::world::SceneMode::MuscleDome {
+    if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         return None;
     }
     let (slot, _) = battle_active_actor(world)?;
@@ -248,7 +250,7 @@ pub fn encounter_banner_label(world: &crate::world::World) -> String {
 /// neither drew source 1, so no host ever showed the absorb or magic-level
 /// line.
 pub fn battle_banner_message(world: &crate::world::World) -> Option<String> {
-    if world.mode == crate::world::SceneMode::Battle
+    if world.mode == legaia_engine_mode::mode::SceneMode::Battle
         && let Some(b) = &world.battle.message_banner
     {
         return Some(b.text.clone());

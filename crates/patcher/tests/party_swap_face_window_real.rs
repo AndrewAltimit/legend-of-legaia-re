@@ -1,7 +1,7 @@
 //! Disc-gated oracle for `playerize::FACE_STAMP_WINDOWS`: the mirrored
 //! per-character live-face reservation must equal the union of the eye +
 //! mouth stamp destination rects in the disc's own `SCUS_942.54`
-//! face-frame tables (`legaia_asset::face_anim`), and sit inside
+//! face-frame tables (`legaia_actor_formats::face_anim`), and sit inside
 //! section 1's texture rect (the tile the per-frame facial animator
 //! stamps into).
 //!
@@ -10,8 +10,8 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::battle_char_assembly::SECTION_TEXTURE_RECTS;
-use legaia_asset::face_anim;
+use legaia_actor_formats::battle_char_assembly::SECTION_TEXTURE_RECTS;
+use legaia_actor_formats::face_anim;
 use legaia_party_swap::playerize::FACE_STAMP_WINDOWS;
 
 fn scus() -> Option<Vec<u8>> {

@@ -14,8 +14,6 @@
 
 // Items these files name as `crate::...`, which live in a crate below this
 // one; binding them here keeps the moved files' paths unchanged.
-use legaia_game_tables::equip_stats;
-use legaia_game_tables::item_names;
 
 pub mod battle_char_assembly;
 pub mod battle_char_pack;

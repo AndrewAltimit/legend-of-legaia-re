@@ -1,16 +1,16 @@
 //! Disc-gated: the default consumable [`ItemCatalog`] is keyed by **real**
 //! retail item ids - every entry's id resolves to its entry name in the
-//! `SCUS_942.54` item table ([`legaia_asset::item_names`]).
+//! `SCUS_942.54` item table ([`legaia_game_tables::item_names`]).
 //!
 //! This is the guard against the prior bug where the catalog used fabricated
 //! sequential ids (`0x01..`) that collide with the table's internal
 //! `Ra-Seru Meta $N` placeholders, so a live granted id (e.g. Healing Leaf
 //! `0x77`) never matched a catalog effect. Skips without `LEGAIA_DISC_BIN`.
 
-use legaia_asset::item_effect::{ItemEffectTable, RestoreAmount};
 use legaia_engine_core::Vfs;
-use legaia_engine_core::items::{ItemCatalog, ItemEffect, ItemOutcome};
 use legaia_engine_core::world::World;
+use legaia_engine_menus::items::{ItemCatalog, ItemEffect, ItemOutcome};
+use legaia_game_tables::item_effect::{ItemEffectTable, RestoreAmount};
 use std::path::PathBuf;
 
 #[test]
@@ -28,7 +28,7 @@ fn vanilla_catalog_ids_match_the_real_item_table() {
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
     let names =
-        legaia_asset::item_names::ItemNameTable::from_scus(&scus).expect("item table parses");
+        legaia_game_tables::item_names::ItemNameTable::from_scus(&scus).expect("item table parses");
 
     let catalog = ItemCatalog::vanilla();
     assert!(catalog.len() >= 10, "catalog is populated");
@@ -283,7 +283,7 @@ fn fury_boost_seeds_and_extends_the_ap_gauge_from_disc() {
 
     let mut world = World::new();
     world.set_item_effects(table); // seeds Fury Boost onto the catalog
-    world.battle.ap_gauges[0] = legaia_engine_core::ap_gauge::ApGauge::with_base(10);
+    world.battle.ap_gauges[0] = legaia_engine_battle::ap_gauge::ApGauge::with_base(10);
 
     // Fury Boost is battle-only and extends the gauge: base 10 -> 14 (×7/5).
     let fb = world

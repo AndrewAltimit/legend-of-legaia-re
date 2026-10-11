@@ -145,7 +145,7 @@ pub fn due_video_frame(
     wall_elapsed_secs: f64,
     frame_period_secs: f64,
 ) -> usize {
-    legaia_engine_core::cutscene::movie_frame_at(
+    legaia_engine_system::movie::cutscene::movie_frame_at(
         audio_secs.unwrap_or(wall_elapsed_secs),
         frame_period_secs,
     )
@@ -153,15 +153,15 @@ pub fn due_video_frame(
 
 /// Narrow a whole-`MVn.STR`-file sector span to the segment one `fmv_id`
 /// plays. The seek itself lives with the dispatch table it reads -
-/// [`legaia_asset::fmv_dispatch::fmv_segment_window`] - so the native window
+/// [`legaia_game_tables::fmv_dispatch::fmv_segment_window`] - so the native window
 /// and the browser play page open a movie off the same arithmetic; this is
 /// the same call under the name the window's boot chain already uses.
 pub fn fmv_segment_window(
-    entry: Option<&legaia_asset::fmv_dispatch::FmvEntry>,
+    entry: Option<&legaia_game_tables::fmv_dispatch::FmvEntry>,
     file_lba: u32,
     file_sectors: u32,
 ) -> (u32, u32) {
-    legaia_asset::fmv_dispatch::fmv_segment_window(entry, file_lba, file_sectors)
+    legaia_game_tables::fmv_dispatch::fmv_segment_window(entry, file_lba, file_sectors)
 }
 
 #[cfg(test)]
@@ -171,9 +171,9 @@ mod tests {
     #[test]
     fn segment_window_delegates_to_the_shared_seek() {
         // MV3.STR fmv_id 4: frames 0x1a5..0x27b -> skip 420 frames, play 215.
-        // The arithmetic is pinned in `legaia_asset::fmv_dispatch`; this only
+        // The arithmetic is pinned in `legaia_game_tables::fmv_dispatch`; this only
         // proves the native name still reaches it.
-        let e = legaia_asset::fmv_dispatch::FmvEntry {
+        let e = legaia_game_tables::fmv_dispatch::FmvEntry {
             fmv_id: 4,
             path: "\\MOV\\MV3.STR;1".to_string(),
             scale_flag: 0,
@@ -184,7 +184,7 @@ mod tests {
         };
         assert_eq!(
             fmv_segment_window(Some(&e), 1000, 6800),
-            legaia_asset::fmv_dispatch::fmv_segment_window(Some(&e), 1000, 6800)
+            legaia_game_tables::fmv_dispatch::fmv_segment_window(Some(&e), 1000, 6800)
         );
         assert_eq!(fmv_segment_window(None, 1000, 6800), (1000, 6800));
     }

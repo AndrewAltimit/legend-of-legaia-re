@@ -4,7 +4,7 @@
 //! the one step that reads the disc through a [`crate::scene::ProtIndex`]:
 //! staging the HUD art into a scene's VRAM.
 
-pub use legaia_engine_minigames::dance::*;
+use legaia_engine_minigames::dance::*;
 
 /// Upload the dance HUD's own texture page and CLUT row into `vram`, leaving
 /// every other rect of the resident scene alone. Returns how many TIMs were
@@ -65,7 +65,7 @@ mod tests {
         // The field's default is offset instead - further ahead than behind
         // and further left than right - so the two are not the same box even
         // though both are deeper than wide.
-        let f = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
+        let f = legaia_engine_system::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
         assert_ne!(f.2, -f.0);
         assert_ne!(f.3, -f.1);
         assert_ne!(e.view_window, f);

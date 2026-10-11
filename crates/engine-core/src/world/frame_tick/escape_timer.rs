@@ -1,6 +1,7 @@
 //! The scripted countdown timer: scheduling its flags and the per-frame drain.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Arm the scripted countdown the field VM installs with `0x4C 0xD3`

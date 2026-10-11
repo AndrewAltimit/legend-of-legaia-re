@@ -433,7 +433,7 @@ pub fn detect(bytes: &[u8]) -> Option<SidebandFile> {
 /// The whole player-summon action-id span carried by `summon.dat`: the base +
 /// evolved + flute + Evil-Seru groups (`0x81..=0x99`, three slots each) and the
 /// seven big-summon groups (`0x9A..=0xA0`, four slots each). Mirrors
-/// `legaia_engine_core::summon::PLAYER_SUMMON_IDS`.
+/// `legaia_engine_effects::summon::PLAYER_SUMMON_IDS`.
 pub const PLAYER_CAST_IDS: std::ops::RangeInclusive<u8> = 0x81..=0xA0;
 
 /// The four-slot **big-summon** band - the Sim-Seru (Palma / Mule / Horn /

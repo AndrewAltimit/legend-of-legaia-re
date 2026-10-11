@@ -8,7 +8,7 @@
 //! Each entry produces a [`legaia_engine_battle::battle_stats::ItemModifier`] that the
 //! aggregator (`compute_battle_stats`) reads on commit. Engines build
 //! the catalog at startup and pass it into [`EquipmentSession`] /
-//! `legaia_engine_core::equip_session::EquipSession` for the player UI.
+//! `crate::equip_session::EquipSession` for the player UI.
 //!
 //! The vanilla catalog is a from-scratch reconstruction approximating the
 //! retail values; the actual numeric stats live in the equipment table
@@ -160,7 +160,7 @@ impl EquipmentCatalog {
 
 /// Build a disc-accurate equipment modifier table keyed by **real** retail item
 /// ids from the static equipment stat-bonus table
-/// ([`legaia_asset::equip_stats`], `DAT_80074F68`). Each equippable id's
+/// ([`legaia_game_tables::equip_stats`], `DAT_80074F68`). Each equippable id's
 /// attack / def-up / def-down bytes (byte-exact vs the curated gamedata) map
 /// onto an [`ItemModifier`].
 ///
@@ -175,10 +175,10 @@ impl EquipmentCatalog {
 /// All five equipment-fed stats are mapped: attack (`+1`), def-up (`+2`),
 /// def-down (`+3`), plus the head-gear `+0` byte (INT) and footwear `+4` byte
 /// (SPD), pinned via the equip-screen aggregator's record-offset preload
-/// (`FUN_801CF5D0`; see `legaia_asset::equip_stats`). Accuracy / evasion are
+/// (`FUN_801CF5D0`; see `legaia_game_tables::equip_stats`). Accuracy / evasion are
 /// derived from AGL and are not equipment-fed, so they are absent here.
 pub fn equip_modifier_table_from_disc(
-    table: &legaia_asset::equip_stats::EquipStatTable,
+    table: &legaia_game_tables::equip_stats::EquipStatTable,
 ) -> EquipmentTable {
     let mut out = EquipmentTable::new();
     for id in 0u8..=u8::MAX {
@@ -200,7 +200,7 @@ pub fn equip_modifier_table_from_disc(
 }
 
 /// Disc-pinned per-item equip restrictions, built from the static equipment
-/// stat-bonus table (`DAT_80074F68`, [`legaia_asset::equip_stats`]).
+/// stat-bonus table (`DAT_80074F68`, [`legaia_game_tables::equip_stats`]).
 ///
 /// Two facts the equip UI needs that the modifier-only [`EquipmentTable`] view
 /// drops: **which characters** may equip an item (the `+6` character mask) and
@@ -234,7 +234,7 @@ pub struct DiscEquipEntry {
     /// `+6` character mask (`1` Vahn/Meta, `2` Noa/Terra, `4` Gala/Ozma; `7` any).
     pub mask: u8,
     /// `+7 & 0x60` disc slot category.
-    pub category: legaia_asset::equip_stats::EquipSlot,
+    pub category: legaia_game_tables::equip_stats::EquipSlot,
     /// `+7 & 0x01` Ra-Seru (story upgrade) flag.
     pub is_ra_seru: bool,
     /// `+5` accessory-passive index, or `None` when the record carries the
@@ -249,7 +249,7 @@ impl DiscEquipInfo {
     /// Build from the parsed equipment stat-bonus table. Indexes every
     /// equippable item id (`kind == 1`) that resolves to a bonus record, and
     /// keeps the `+5` column of every parsed row for [`Self::row_passive_index`].
-    pub fn from_disc(table: &legaia_asset::equip_stats::EquipStatTable) -> Self {
+    pub fn from_disc(table: &legaia_game_tables::equip_stats::EquipStatTable) -> Self {
         let mut entries = std::collections::HashMap::new();
         for id in 0u8..=u8::MAX {
             if let Some(b) = table.bonus(id) {
@@ -283,7 +283,7 @@ impl DiscEquipInfo {
     /// no category, no character mask. A `DiscEquipInfo` built from the
     /// equipment stat table alone therefore knows nothing about them, which
     /// is why a Goods row offered no candidates at all until this ran.
-    pub fn install_goods(&mut self, effects: &legaia_asset::item_effect::ItemEffectTable) {
+    pub fn install_goods(&mut self, effects: &legaia_game_tables::item_effect::ItemEffectTable) {
         self.goods = (0u8..=u8::MAX)
             .filter(|&id| {
                 let marker = effects
@@ -327,7 +327,7 @@ impl DiscEquipInfo {
     /// The `+5` passive index of bonus **row** `bonus_index`, or the
     /// no-passive sentinel `0x40` when the row was not parsed.
     ///
-    /// This is the shape `legaia_engine_core::shop::item_passive_index`'s equipment arm
+    /// This is the shape `crate::shop::item_passive_index`'s equipment arm
     /// wants, and the reason it is row-keyed rather than id-keyed is that the
     /// retail renderer is: `FUN_801D5AE8` loads the item property record's
     /// `+1` byte and indexes `0x80074F68 + that * 8` directly
@@ -337,7 +337,7 @@ impl DiscEquipInfo {
         self.row_passives
             .get(bonus_index as usize)
             .copied()
-            .unwrap_or(legaia_asset::equip_stats::PASSIVE_NONE)
+            .unwrap_or(legaia_game_tables::equip_stats::PASSIVE_NONE)
     }
 
     /// The `+5` passive index for an equippable **item id**, or `None` when it
@@ -357,7 +357,7 @@ impl DiscEquipInfo {
     }
 
     /// The disc slot category for `id`, if it is equipment.
-    pub fn category(&self, id: u8) -> Option<legaia_asset::equip_stats::EquipSlot> {
+    pub fn category(&self, id: u8) -> Option<legaia_game_tables::equip_stats::EquipSlot> {
         self.entries.get(&id).map(|e| e.category)
     }
 
@@ -387,8 +387,10 @@ impl DiscEquipInfo {
 /// "head" category, and helmet shares it). The four mapped slots get
 /// disc-category filtering in the equip session; the rest fall back to a
 /// mask-only gate. See [`DiscEquipInfo`] for the disambiguation limitation.
-pub fn engine_slot_disc_category(slot: EquipSlot) -> Option<legaia_asset::equip_stats::EquipSlot> {
-    use legaia_asset::equip_stats::EquipSlot as Disc;
+pub fn engine_slot_disc_category(
+    slot: EquipSlot,
+) -> Option<legaia_game_tables::equip_stats::EquipSlot> {
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
     match slot {
         EquipSlot::Weapon => Some(Disc::Weapon),
         EquipSlot::BodyArmor => Some(Disc::Body),
@@ -443,7 +445,7 @@ fn mk_modifier_with_ability(
 /// **fabricated ids** (e.g. `0x20` "Bronze Sword") and "feels right" stat
 /// tiers - kept as a disc-free fallback / UI scaffold. The real per-equip
 /// attack / def values are the static `SCUS_942.54` table (`DAT_80074F68`,
-/// [`legaia_asset::equip_stats`]); [`equip_modifier_table_from_disc`] builds a
+/// [`legaia_game_tables::equip_stats`]); [`equip_modifier_table_from_disc`] builds a
 /// disc-accurate modifier table keyed by the real item ids, which the boot path
 /// prefers when the executable is readable.
 pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
@@ -836,7 +838,7 @@ pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8
 /// Equipment **stat-field accessor**. Given an item `id` (whose high nibble
 /// `id & 0xF000` tags its id space) and a `field` selector, resolves the id
 /// to an 8-byte equip stat-bonus record (`DAT_80074F68`,
-/// [`legaia_asset::equip_stats`]) and returns the requested stat combination.
+/// [`legaia_game_tables::equip_stats`]) and returns the requested stat combination.
 ///
 /// Id-space tags (`id & 0xF000`):
 /// - `0x1000` / `0x6000` / `0x9000`: `id & 0x3FF` is an **inventory-slot
@@ -864,7 +866,7 @@ pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8
 /// into the caller's `agility_term` closure rather than taken here.
 ///
 /// REPLACED-BY: [`legaia_engine_battle::battle_stats::compute_battle_stats`] over a
-/// trial-equipped record (`legaia_engine_core::equip_session::EquipSession::preview_candidate`),
+/// trial-equipped record (`crate::equip_session::EquipSession::preview_candidate`),
 /// which is what feeds the Equip screen's stat-compare columns on both hosts
 /// and needs no row word at all. The argument this kernel takes is a
 /// **class-tagged row-entry word** (`0x1000` / `0x6000` / `0x7000` /
@@ -877,7 +879,7 @@ pub fn equip_stat_field(
     id: u16,
     field: u8,
     inventory_slot: impl Fn(u16) -> u8,
-    equip_bonus: impl Fn(u16) -> Option<legaia_asset::equip_stats::EquipBonus>,
+    equip_bonus: impl Fn(u16) -> Option<legaia_game_tables::equip_stats::EquipBonus>,
     agility_term: impl Fn(u16) -> u32,
 ) -> u32 {
     let resolved = match id & 0xf000 {
@@ -1059,7 +1061,7 @@ mod tests {
 
     #[test]
     fn disc_equip_info_gates_by_mask_and_category() {
-        use legaia_asset::equip_stats::EquipSlot as Disc;
+        use legaia_game_tables::equip_stats::EquipSlot as Disc;
         let info = DiscEquipInfo::from_entries([
             (
                 0x20,
@@ -1102,7 +1104,7 @@ mod tests {
     /// item record's `+1` byte and several item ids share a row.
     #[test]
     fn the_passive_column_is_row_keyed_and_defaults_to_the_sentinel() {
-        use legaia_asset::equip_stats::{EquipStatTable, PASSIVE_NONE};
+        use legaia_game_tables::equip_stats::{EquipStatTable, PASSIVE_NONE};
         // A synthetic SCUS: PS-X EXE header, then an item property table and a
         // bonus table at their retail VAs. No Sony bytes.
         let t_addr = 0x8007_0000u32;
@@ -1148,7 +1150,7 @@ mod tests {
 
     #[test]
     fn engine_slot_disc_category_maps_only_unambiguous_slots() {
-        use legaia_asset::equip_stats::EquipSlot as Disc;
+        use legaia_game_tables::equip_stats::EquipSlot as Disc;
         assert_eq!(
             engine_slot_disc_category(EquipSlot::Weapon),
             Some(Disc::Weapon)
@@ -1205,7 +1207,7 @@ mod tests {
 
     // -- equip_stat_field (FUN_800302E4) -------------------------------
 
-    use legaia_asset::equip_stats::EquipBonus;
+    use legaia_game_tables::equip_stats::EquipBonus;
 
     // raw = [INT, ATK, UDF, LDF, SPD, passive, mask, slot]
     const REC_10: EquipBonus = EquipBonus {

@@ -264,7 +264,7 @@ pub fn name_entry_chrome_sprite_draws_for(
 /// Build [`TextDraw`]s for one opening-cutscene narration page (a single
 /// subtitle line), horizontally centered at `center_x` with its baseline at
 /// `top_y`, both in surface pixels. The host calls this with the active
-/// page text from [`legaia_engine_core::cutscene_narration::CutsceneNarration`]
+/// page text from [`legaia_engine_field::cutscene_narration::CutsceneNarration`]
 /// each frame; an empty / completed narration draws nothing.
 ///
 /// Centering is computed from the font metrics (`center_x - width / 2`), the

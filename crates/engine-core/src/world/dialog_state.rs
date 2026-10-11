@@ -31,7 +31,8 @@ pub struct DialogState {
     /// The interaction-prologue record for the dialogue [`crate::world::World::trigger_field_interact`]
     /// most recently opened (taken by [`crate::world::World::drive_inline_dialogue`] when it
     /// starts the runner). `None` when the opened NPC has no prologue record.
-    pub active_inline_prologue: Option<crate::man_field_scripts::InlineDialogPrologue>,
+    pub active_inline_prologue:
+        Option<legaia_engine_field::man_field_scripts::InlineDialogPrologue>,
     /// While [`crate::world::World::step_inline_dialogue`] is stepping the field VM over an
     /// NPC's interaction record, this carries that NPC's placement slot so the
     /// `0x4C 0x51` NPC-run host hook can route the walk to the right actor
@@ -44,24 +45,24 @@ pub struct DialogState {
     /// Per-tick guard: set when a Cross/Circle press is consumed by a field
     /// dialogue open or dismiss this tick, so the script's `0x4C` dialog poll
     /// and the interaction probe can't both act on the same edge (double
-    /// open/dismiss). Reset at the top of each [`crate::world::SceneMode::Field`] tick.
+    /// open/dismiss). Reset at the top of each [`legaia_engine_mode::mode::SceneMode::Field`] tick.
     pub input_consumed: bool,
     /// A running inline interaction script driven through the field VM (the
     /// faithful dialogue path). Opt-in alternative to the simplified
     /// [`crate::world::DialogState::current`] / `OwnedDialogPanel` path: it *executes* the
     /// prologue flag tests, branch flag-sets, and scene changes between text
-    /// boxes. See [`crate::inline_dialogue`] and [`crate::world::World::step_inline_dialogue`].
-    pub inline: Option<crate::inline_dialogue::InlineDialogue>,
+    /// boxes. See [`legaia_engine_field::inline_dialogue`] and [`crate::world::World::step_inline_dialogue`].
+    pub inline: Option<legaia_engine_field::inline_dialogue::InlineDialogue>,
     /// The pager's automatic-press countdown `_DAT_80073F00`: field-VM op
     /// `4C 89` writes it, and a box page waiting for confirm counts it down
     /// by the frame step and presses for the player when it runs out
-    /// ([`crate::dialog::OwnedDialogPanel::tick_at_auto`]). `<= 0` is idle.
+    /// ([`legaia_engine_dialog::dialog::OwnedDialogPanel::tick_at_auto`]). `<= 0` is idle.
     pub(crate) auto_press: i16,
     /// The cursor sprite primitive's per-kind frame / timer state
-    /// (`0x801C6000..0x801C6020`, [`crate::cursor_sprite`]) the pager's page
+    /// (`0x801C6000..0x801C6020`, [`legaia_engine_dialog::cursor_sprite`]) the pager's page
     /// mark and option hand animate on. Global in retail, so it outlives a
     /// box: the next page at the same height carries the mark's phase on.
-    pub(crate) cursor_sprites: crate::cursor_sprite::CursorSprites,
+    pub(crate) cursor_sprites: legaia_engine_dialog::cursor_sprite::CursorSprites,
     /// A page-mark frame seated over the engine's own
     /// ([`crate::world::World::seat_page_mark_frame`]); `None` outside the
     /// retail comparison's capture frame.

@@ -3,7 +3,7 @@
 //!
 //! The chain a transition needs is: draw -> read back -> quantise into
 //! [`legaia_tim::Vram`] -> re-upload -> sample. `Renderer::capture_into_vram`
-//! is `capture_rgba` plus [`crate::vram_capture::blit_rgba_into_vram`], and
+//! is `capture_rgba` plus [`legaia_render_kernels::vram_capture::blit_rgba_into_vram`], and
 //! `Renderer` cannot be built without a window - so this drives the same two
 //! halves through the headless harness instead: the real
 //! `SCREEN_OVERLAY_SHADER_SRC` pipeline draws the frame, the readback goes
@@ -12,9 +12,11 @@
 //! Skips (passes vacuously) with no GPU adapter, like its sibling.
 
 use super::*;
-use crate::screen_overlay::{FlatQuad, ScreenPrim, ScreenQuad};
 use crate::tests::screen_overlay_gpu::{TARGET, build_harness, headless_device, render_frame_rgba};
-use crate::vram_capture::{CaptureOpts, VramRect, blit_rgba_into_vram, rgb8_to_bgr555};
+use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, ScreenQuad};
+use legaia_render_kernels::vram_capture::{
+    CaptureOpts, VramRect, blit_rgba_into_vram, rgb8_to_bgr555,
+};
 use legaia_tim::Vram;
 
 fn full_quad() -> [(i16, i16); 4] {

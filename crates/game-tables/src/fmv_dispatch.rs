@@ -112,7 +112,7 @@ impl FmvEntry {
     }
 
     /// Engine-shape path: forward slashes, no version, no leading slash - e.g.
-    /// `MOV/MV1.STR`. Matches `legaia_engine_core::cutscene::fmv_index_to_str_filename`.
+    /// `MOV/MV1.STR`. Matches `legaia_engine_system::movie::cutscene::fmv_index_to_str_filename`.
     pub fn engine_path(&self) -> String {
         let no_ver = self.path.split(';').next().unwrap_or(&self.path);
         no_ver.trim_start_matches(['\\', '/']).replace('\\', "/")
@@ -198,7 +198,7 @@ impl FmvTable {
 
     /// Engine-shape movie path for `fmv_id`, restricted to retail-disc movies
     /// (`None` for the dev-only `MOV*.STR` slots). Mirrors
-    /// `legaia_engine_core::cutscene::fmv_index_to_str_filename`.
+    /// `legaia_engine_system::movie::cutscene::fmv_index_to_str_filename`.
     pub fn engine_path(&self, fmv_id: i16) -> Option<String> {
         let e = self.entry(fmv_id)?;
         e.on_retail_disc().then(|| e.engine_path())

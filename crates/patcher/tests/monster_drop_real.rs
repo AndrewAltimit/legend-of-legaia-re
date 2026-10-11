@@ -9,7 +9,7 @@
 //! Reads the per-entry file the extractor writes under `extracted/PROT/`; skips
 //! and passes when it is absent.
 
-use legaia_asset::monster_archive::{self, SLOT_STRIDE};
+use legaia_actor_formats::monster_archive::{self, SLOT_STRIDE};
 
 fn entry_867() -> Option<Vec<u8>> {
     for p in ["extracted/PROT", "../../extracted/PROT"] {

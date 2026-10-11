@@ -2,6 +2,7 @@
 //! escape poll, the entry and return warps and the SFX cue drain.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Drain the minigame SFX cue ids queued this frame (the fishing hub's
@@ -62,11 +63,9 @@ impl World {
             // Start, Cross or L1), so there Start begins rather than quits;
             // from the player select on it quits as everywhere else.
             SceneMode::BakaFighter
-                if self
-                    .minigames
-                    .baka_fighter
-                    .as_ref()
-                    .is_some_and(|f| f.cabinet().state() == crate::baka_cabinet::ST_ATTRACT) =>
+                if self.minigames.baka_fighter.as_ref().is_some_and(|f| {
+                    f.cabinet().state() == legaia_engine_minigames::baka_cabinet::ST_ATTRACT
+                }) =>
             {
                 return;
             }
@@ -134,8 +133,8 @@ impl World {
     pub fn request_minigame_warp(&mut self, sub_id: u8) {
         self.arm_minigame_warp();
         self.minigames.pending_warp = Some(sub_id);
-        if crate::minigame_entry::MinigameSubId::from_sub_id(sub_id)
-            == Some(crate::minigame_entry::MinigameSubId::MuscleDome)
+        if legaia_engine_mode::minigame_entry::MinigameSubId::from_sub_id(sub_id)
+            == Some(legaia_engine_mode::minigame_entry::MinigameSubId::MuscleDome)
         {
             self.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
         }

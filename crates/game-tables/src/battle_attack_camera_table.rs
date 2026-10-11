@@ -48,7 +48,7 @@
 //! `2` to the yaw and row `3` to the eye-space Z (`0x801D7470`/`0x801D748C`).
 //! The rows are per-arm constants, not a column-typed record, so this parser
 //! exposes them as numbered tracks and leaves the meaning to the arm that
-//! reads them ([`legaia_engine_vm::battle_attack_camera`] on the engine side).
+//! reads them ([`legaia_engine_battle_vm::battle_attack_camera`] on the engine side).
 //!
 //! ## Provenance
 //!

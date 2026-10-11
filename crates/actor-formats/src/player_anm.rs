@@ -537,7 +537,7 @@ pub const ANGLE_TURN: i32 = 0x1000;
 /// PORT: FUN_8001D088 - reached through the two-frame sampler
 /// [`PlayerAnmBundle::sample_pose`] / [`blend_bone_transform`], which both
 /// hosts' field prop pose paths and the NPC / player clip player
-/// (`legaia_engine_core::field_anim::FieldClipPlayer`) call.
+/// (`legaia_engine_field::field_anim::FieldClipPlayer`) call.
 ///
 /// `frac` is the 4-bit sub-frame fraction the frame blender carries at
 /// `actor+0x68` (`0..=15`); the result is

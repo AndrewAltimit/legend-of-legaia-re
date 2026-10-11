@@ -10,7 +10,7 @@
 //!    `(SZ - 0x10) >> 5` and every continent cell the port's heightfield
 //!    reproduces at `(max corner SZ >> 5) + 14`, both relative to the one base
 //!    pointer `*0x1F8003F4` - so the two are on one scale
-//!    (`legaia_engine_core::overworld_draw_order`).
+//!    (`legaia_engine_field::overworld_draw_order`).
 //! 2. **Ties.** Where a bucket holds both, the sheet comes first in the chain,
 //!    so the cell covers it.
 //! 3. **Coverage.** Rasterising the walked table in chain order gives the
@@ -21,14 +21,17 @@
 //! Skips (and passes) when the scenario manifest or the save library is
 //! missing.
 
+use legaia_engine_battle_vm::psx_camera::{
+    FieldCameraView, mat4_mul, mat4_scale, mat4_translation,
+};
 use legaia_engine_core::fog_particles::{
     FOG_CLUT, FOG_POOL_SLOTS, FOG_TPAGE, FogFrameEnv, FogPool, FogQuad, FogView,
 };
 use legaia_engine_core::overworld_curvature::curvature_at;
-use legaia_engine_core::overworld_draw_order as order;
-use legaia_engine_vm::psx_camera::{FieldCameraView, mat4_mul, mat4_scale, mat4_translation};
-use legaia_mednafen::prim_pool::{self, Prim};
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_engine_field::overworld_draw_order as order;
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
+use legaia_ram_image::prim_pool::{self, Prim};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
@@ -274,7 +277,7 @@ fn overworld_fog_and_continent_draw_in_retail_bucket_order() {
         let o = FLOOR_LADDER_SCRATCH + 2 * i;
         i16::from_le_bytes([scratch[o], scratch[o + 1]])
     });
-    let hf = legaia_asset::field_objects::build_walk_heightfield(map, &lut);
+    let hf = legaia_scene_formats::field_objects::build_walk_heightfield(map, &lut);
     assert!(hf.quad_count() > 1000, "map01's continent resolves");
     let mesh_clip = |p: [f32; 3]| -> [f32; 4] {
         // Y-up render frame: raw retail points flip Y.
@@ -321,8 +324,8 @@ fn overworld_fog_and_continent_draw_in_retail_bucket_order() {
                 xy_f,
                 ndc,
                 key: order::ground_ot_index(sz),
-                cue: legaia_engine_core::overworld_ground_cue::ground_cue_color(
-                    legaia_asset::field_objects::GROUND_PRIM_COLOR,
+                cue: legaia_engine_field::overworld_ground_cue::ground_cue_color(
+                    legaia_scene_formats::field_objects::GROUND_PRIM_COLOR,
                     sz[1],
                 )[0],
             });

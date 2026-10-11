@@ -28,13 +28,13 @@ impl LegaiaViewer {
         let Some(slice) = self.character_pack_slice() else {
             return r#"{"slots":[]}"#.to_string();
         };
-        let pack = match legaia_asset::character_pack::parse(slice) {
+        let pack = match legaia_actor_formats::character_pack::parse(slice) {
             Ok(p) => p,
             Err(e) => {
                 return format!(r#"{{"slots":[],"error":"character pack: {e}"}}"#);
             }
         };
-        let active = legaia_asset::character_pack::equipment_swap::ACTIVE_PARTY_SLOTS;
+        let active = legaia_actor_formats::character_pack::equipment_swap::ACTIVE_PARTY_SLOTS;
         let slots: Vec<serde_json::Value> = pack
             .slots()
             .iter()
@@ -50,7 +50,7 @@ impl LegaiaViewer {
                     });
                 serde_json::json!({
                     "slot": s.slot,
-                    "label": legaia_asset::character_pack::slot_label(s.slot),
+                    "label": legaia_actor_formats::character_pack::slot_label(s.slot),
                     "disc_nobj": s.disc_nobj,
                     "tmd_bytes": s.tmd_bytes.len(),
                     "patch": patch,
@@ -60,13 +60,13 @@ impl LegaiaViewer {
         serde_json::json!({
             "slots": slots,
             "first_group_descriptor_offset":
-                legaia_asset::character_pack::FIRST_GROUP_DESCRIPTOR_OFFSET,
+                legaia_actor_formats::character_pack::FIRST_GROUP_DESCRIPTOR_OFFSET,
             "group_descriptor_bytes":
-                legaia_asset::character_pack::GROUP_DESCRIPTOR_BYTES,
+                legaia_actor_formats::character_pack::GROUP_DESCRIPTOR_BYTES,
             "equip_group_zero_offset":
-                legaia_asset::character_pack::EQUIP_GROUP_ZERO_OFFSET,
+                legaia_actor_formats::character_pack::EQUIP_GROUP_ZERO_OFFSET,
             "equip_group_nonzero_offset":
-                legaia_asset::character_pack::EQUIP_GROUP_NONZERO_OFFSET,
+                legaia_actor_formats::character_pack::EQUIP_GROUP_NONZERO_OFFSET,
         })
         .to_string()
     }
@@ -76,7 +76,7 @@ impl LegaiaViewer {
     fn character_pack_slice(&self) -> Option<&[u8]> {
         let meta = parse_prot_toc(&self.disc)?
             .into_iter()
-            .find(|e| e.index == legaia_asset::character_pack::PROT_ENTRY_INDEX)?;
+            .find(|e| e.index == legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)?;
         let off = meta.byte_offset as usize;
         let end = off.saturating_add(meta.size_bytes as usize);
         self.disc.get(off..end)
@@ -93,16 +93,16 @@ impl LegaiaViewer {
         equip: Option<u8>,
     ) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
         let raw = self.character_pack_slice()?;
-        let pack = legaia_asset::character_pack::parse(raw).ok()?;
+        let pack = legaia_actor_formats::character_pack::parse(raw).ok()?;
         let cslot = pack.slot(slot)?;
         // Retail caps the active-party slots at 10 live groups (FUN_8001E890);
         // mirror that so groups 10/11 (the equip templates) aren't drawn as
         // visible geometry. The patched copy still contains the templates at
         // their disc offsets but `parse` walks only the first `nobj`.
         let mut tmd_bytes = if let Some(equip_byte) = equip {
-            let active = legaia_asset::character_pack::equipment_swap::ACTIVE_PARTY_SLOTS;
+            let active = legaia_actor_formats::character_pack::equipment_swap::ACTIVE_PARTY_SLOTS;
             if let Some(patch) = active.iter().find(|p| (p.slot as usize) == slot) {
-                legaia_asset::character_pack::equipment_swap::apply(
+                legaia_actor_formats::character_pack::equipment_swap::apply(
                     &cslot.tmd_bytes,
                     *patch,
                     equip_byte,
@@ -262,13 +262,13 @@ impl LegaiaViewer {
     /// as a **flat horizontal strip** (`w*h` colours at one row), STP off - so
     /// the meshes' per-primitive CBA columns sample the right palettes. Byte-
     /// exact against a live field VRAM dump (see
-    /// [`legaia_asset::field_char_textures`]). The Field form renders against
+    /// [`legaia_actor_formats::field_char_textures`]). The Field form renders against
     /// this VRAM through the same paletted pipeline the Battle form uses.
     pub fn field_char_vram_bytes(&self) -> Vec<u8> {
         let Some(raw) = self.character_pack_slice() else {
             return Vec::new();
         };
-        let Ok(pack) = legaia_asset::field_char_textures::parse(raw) else {
+        let Ok(pack) = legaia_actor_formats::field_char_textures::parse(raw) else {
             return Vec::new();
         };
         let mut vram = legaia_tim::Vram::new();
@@ -283,7 +283,7 @@ impl LegaiaViewer {
         let Some(raw) = self.character_pack_slice() else {
             return Vec::new();
         };
-        let Ok(pack) = legaia_asset::character_pack::parse(raw) else {
+        let Ok(pack) = legaia_actor_formats::character_pack::parse(raw) else {
             return Vec::new();
         };
         pack.slot(slot as usize)
@@ -316,7 +316,7 @@ impl LegaiaViewer {
         ) else {
             return r#"{"slots":[],"atlases":[]}"#.to_string();
         };
-        let pack = match legaia_asset::battle_char_pack::parse(slice, atlas_slice) {
+        let pack = match legaia_actor_formats::battle_char_pack::parse(slice, atlas_slice) {
             Ok(p) => p,
             Err(e) => {
                 return format!(r#"{{"slots":[],"atlases":[],"error":"battle char pack: {e}"}}"#);
@@ -328,7 +328,7 @@ impl LegaiaViewer {
             .map(|s| {
                 serde_json::json!({
                     "slot": s.slot,
-                    "label": legaia_asset::battle_char_pack::slot_label(s.slot),
+                    "label": legaia_actor_formats::battle_char_pack::slot_label(s.slot),
                     "disc_nobj": s.disc_nobj,
                     "tmd_bytes": s.tmd_bytes.len(),
                     "file_offset": s.file_offset,
@@ -350,27 +350,27 @@ impl LegaiaViewer {
         serde_json::json!({
             "slots": slots,
             "atlases": atlases,
-            "atlas_stride_bytes": legaia_asset::battle_char_pack::ATLAS_STRIDE_BYTES,
-            "first_atlas_offset": legaia_asset::battle_char_pack::FIRST_ATLAS_OFFSET,
+            "atlas_stride_bytes": legaia_actor_formats::battle_char_pack::ATLAS_STRIDE_BYTES,
+            "first_atlas_offset": legaia_actor_formats::battle_char_pack::FIRST_ATLAS_OFFSET,
         })
         .to_string()
     }
 
     fn battle_char_pack_slice(&self) -> Option<&[u8]> {
-        self.prot_entry(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
+        self.prot_entry(legaia_actor_formats::battle_char_pack::PROT_ENTRY_INDEX)
     }
 
     /// The sibling entry holding the eight character atlases (PROT 1205). The
     /// atlases are **not** in [`Self::battle_char_pack_slice`]'s entry; see
-    /// [`legaia_asset::battle_char_pack`] for why they used to look like they
+    /// [`legaia_actor_formats::battle_char_pack`] for why they used to look like they
     /// were.
     fn battle_char_atlas_slice(&self) -> Option<&[u8]> {
-        self.prot_entry(legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX)
+        self.prot_entry(legaia_actor_formats::battle_char_pack::ATLAS_PROT_ENTRY_INDEX)
     }
 
     fn build_battle_char_mesh(&self, slot: usize) -> Option<(legaia_tmd::Tmd, Vec<u8>)> {
         let raw = self.battle_char_pack_slice()?;
-        let slots = legaia_asset::battle_char_pack::parse_slots(raw).ok()?;
+        let slots = legaia_actor_formats::battle_char_pack::parse_slots(raw).ok()?;
         let cslot = slots.get(slot)?;
         let tmd_bytes = cslot.tmd_bytes.clone();
         let tmd = legaia_tmd::parse(&tmd_bytes).ok()?;
@@ -476,7 +476,7 @@ impl LegaiaViewer {
         let Some(raw) = self.battle_char_pack_slice() else {
             return Vec::new();
         };
-        let Ok(slots) = legaia_asset::battle_char_pack::parse_slots(raw) else {
+        let Ok(slots) = legaia_actor_formats::battle_char_pack::parse_slots(raw) else {
             return Vec::new();
         };
         slots
@@ -491,7 +491,7 @@ impl LegaiaViewer {
         let Some(raw) = self.battle_char_atlas_slice() else {
             return Vec::new();
         };
-        let Ok(atlases) = legaia_asset::battle_char_pack::parse_atlases(raw) else {
+        let Ok(atlases) = legaia_actor_formats::battle_char_pack::parse_atlases(raw) else {
             return Vec::new();
         };
         atlases
@@ -519,7 +519,7 @@ impl LegaiaViewer {
         let Some(raw) = self.battle_char_atlas_slice() else {
             return Vec::new();
         };
-        let Ok(atlases) = legaia_asset::battle_char_pack::parse_atlases(raw) else {
+        let Ok(atlases) = legaia_actor_formats::battle_char_pack::parse_atlases(raw) else {
             return Vec::new();
         };
         let mut vram = legaia_tim::Vram::new();
@@ -535,15 +535,15 @@ impl LegaiaViewer {
     /// whose disc palette source is known. This is the colour-correct render a
     /// real turn-based battle produces - the party CLUTs decoded from the
     /// character's `edstati3` record (`FUN_80052FA0`, see
-    /// [`legaia_asset::battle_char_palette`]) and STP-set onto the VRAM rows the
+    /// [`legaia_actor_formats::battle_char_palette`]) and STP-set onto the VRAM rows the
     /// mesh's nominal CBA samples.
     ///
     /// Vahn (slot 0, extraction PROT `0863` - the `PLAYER1` file, raw TOC
     /// `0x361`; see `docs/formats/cdname.md` § numbering space) is validated
     /// byte-exact against a live battle VRAM capture (his tutorial-equipped
-    /// state via [`legaia_asset::battle_char_palette::parse_record`]). Noa
+    /// state via [`legaia_actor_formats::battle_char_palette::parse_record`]). Noa
     /// (slot 1, extraction `0864`) and Gala (slot 2, extraction `0865`) use the
-    /// equipment-robust [`legaia_asset::battle_char_palette::collect_palette`]
+    /// equipment-robust [`legaia_actor_formats::battle_char_palette::collect_palette`]
     /// - record0 + the section separators' unequipped-default CLUTs, filtered
     /// to the columns each mesh samples (validated against a full-party
     /// capture: Noa ~98%, Gala 100%). All three player files load by
@@ -574,15 +574,15 @@ impl LegaiaViewer {
     }
 
     /// Parse the battle CLUT bands out of a character's `edstati3` PROT entry
-    /// (the fixed-stride [`parse_record`](legaia_asset::battle_char_palette::parse_record)
+    /// (the fixed-stride [`parse_record`](legaia_actor_formats::battle_char_palette::parse_record)
     /// assembly - exact for Vahn).
     fn edstati3_palette(
         &self,
         prot_index: u32,
-    ) -> Option<legaia_asset::battle_char_palette::BattleCharPalette> {
+    ) -> Option<legaia_actor_formats::battle_char_palette::BattleCharPalette> {
         let slice = self.prot_entry(prot_index)?;
-        let rec0 = legaia_asset::battle_char_palette::find_record0(slice)?;
-        legaia_asset::battle_char_palette::parse_record(slice, rec0).ok()
+        let rec0 = legaia_actor_formats::battle_char_palette::find_record0(slice)?;
+        legaia_actor_formats::battle_char_palette::parse_record(slice, rec0).ok()
     }
 
     /// Equipment-robust palette for `mesh_slot`'s character from PROT `prot_index`
@@ -591,13 +591,13 @@ impl LegaiaViewer {
         &self,
         prot_index: u32,
         mesh_slot: usize,
-    ) -> Option<legaia_asset::battle_char_palette::BattleCharPalette> {
+    ) -> Option<legaia_actor_formats::battle_char_palette::BattleCharPalette> {
         let cols = self.battle_char_clut_cols(mesh_slot);
         if cols.is_empty() {
             return None;
         }
         let slice = self.prot_entry(prot_index)?;
-        legaia_asset::battle_char_palette::collect_palette(slice, 0, &cols).ok()
+        legaia_actor_formats::battle_char_palette::collect_palette(slice, 0, &cols).ok()
     }
 
     fn prot_entry(&self, prot_index: u32) -> Option<&[u8]> {
@@ -671,7 +671,7 @@ impl LegaiaViewer {
                 return Vec::new();
             };
             let mut vram = legaia_tim::Vram::new();
-            if let Ok(texpack) = legaia_asset::field_char_textures::parse(raw) {
+            if let Ok(texpack) = legaia_actor_formats::field_char_textures::parse(raw) {
                 texpack.upload_to_vram(&mut vram, false);
             }
             let nobj = tmd.objects.len();
@@ -679,7 +679,7 @@ impl LegaiaViewer {
             // a non-autoplaying viewer shows), then Walk, then the
             // neutral-labeled rest of the bank.
             let mut picks: Vec<usize> = Vec::new();
-            use legaia_asset::character_pack as cp;
+            use legaia_actor_formats::character_pack as cp;
             if slot < 3 {
                 picks.push(cp::locomotion_record_index(slot, cp::LOCOMOTION_IDLE_SLOT));
                 picks.push(cp::locomotion_record_index(slot, cp::LOCOMOTION_WALK_SLOT));
@@ -693,8 +693,10 @@ impl LegaiaViewer {
             } else if slot == 4 {
                 picks.push(cp::LOCOMOTION_AUX_RECORD);
             }
-            let mut anims: Vec<(String, legaia_asset::monster_archive::MonsterAnimation)> =
-                Vec::new();
+            let mut anims: Vec<(
+                String,
+                legaia_actor_formats::monster_archive::MonsterAnimation,
+            )> = Vec::new();
             if let Ok(bundle) = cp::field_locomotion_anm(raw) {
                 for rec in picks {
                     if let Some(anim) = bundle.record_to_monster_animation(rec)
@@ -711,16 +713,18 @@ impl LegaiaViewer {
                     }
                 }
             }
-            let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = anims
+            let clips: Vec<legaia_actor_formats::character_gltf::CharacterClip<'_>> = anims
                 .iter()
-                .map(|(name, anim)| legaia_asset::character_gltf::CharacterClip {
-                    name: name.clone(),
-                    fps: clip_fps,
-                    anim,
-                })
+                .map(
+                    |(name, anim)| legaia_actor_formats::character_gltf::CharacterClip {
+                        name: name.clone(),
+                        fps: clip_fps,
+                        anim,
+                    },
+                )
                 .collect();
             let name = format!("{}_field", cp::slot_label(slot).replace(' ', "_"));
-            return legaia_asset::character_gltf::build_character_glb_hybrid(
+            return legaia_actor_formats::character_gltf::build_character_glb_hybrid(
                 &name,
                 &mesh,
                 &object_ids,
@@ -748,10 +752,13 @@ impl LegaiaViewer {
         // Rebuild the Vram from the flat byte image (row-major u16 halfwords).
         vram.write_block(0, 0, 1024, 512, &vram_bytes);
         let nobj = tmd.objects.len();
-        use legaia_asset::baka_opponents as bo;
+        use legaia_minigame_formats::baka_opponents as bo;
         let decoded = self.player_anm_decoded(1203);
-        let mut anims: Vec<(String, legaia_asset::monster_archive::MonsterAnimation)> = Vec::new();
-        if let Ok(bundle) = legaia_asset::player_anm::parse(&decoded) {
+        let mut anims: Vec<(
+            String,
+            legaia_actor_formats::monster_archive::MonsterAnimation,
+        )> = Vec::new();
+        if let Ok(bundle) = legaia_actor_formats::player_anm::parse(&decoded) {
             let picks: Vec<usize> = if slot < 3 {
                 (0..bo::ACTIONS_PER_FIGHTER)
                     .map(|k| slot * bo::ACTIONS_PER_FIGHTER + k)
@@ -778,27 +785,35 @@ impl LegaiaViewer {
                 }
             }
         }
-        let clips: Vec<legaia_asset::character_gltf::CharacterClip<'_>> = anims
+        let clips: Vec<legaia_actor_formats::character_gltf::CharacterClip<'_>> = anims
             .iter()
-            .map(|(name, anim)| legaia_asset::character_gltf::CharacterClip {
-                name: name.clone(),
-                fps: clip_fps,
-                anim,
-            })
+            .map(
+                |(name, anim)| legaia_actor_formats::character_gltf::CharacterClip {
+                    name: name.clone(),
+                    fps: clip_fps,
+                    anim,
+                },
+            )
             .collect();
         let form_tag = if form == 1 { "battle" } else { "baka" };
         let name = format!(
             "{}_{form_tag}",
-            legaia_asset::battle_char_pack::slot_label(slot).replace(' ', "_")
+            legaia_actor_formats::battle_char_pack::slot_label(slot).replace(' ', "_")
         );
-        legaia_asset::character_gltf::build_character_glb(&name, &mesh, &object_ids, &vram, &clips)
-            .unwrap_or_default()
+        legaia_actor_formats::character_gltf::build_character_glb(
+            &name,
+            &mesh,
+            &object_ids,
+            &vram,
+            &clips,
+        )
+        .unwrap_or_default()
     }
 
     // ------------------------------------------------------------------
     // Player ANM bundles - per-scene asset bundle, section 2, type 0x05
     // ("MOVE" label but canonical ANM content with marker_1 = 0x080C).
-    // See `legaia_asset::player_anm` + docs/formats/anm.md.
+    // See `legaia_actor_formats::player_anm` + docs/formats/anm.md.
 }
 
 /// Write a character's true battle palette into the 1 MB PSX VRAM byte buffer.
@@ -808,7 +823,7 @@ impl LegaiaViewer {
 fn overlay_palette_rows(
     vram: &mut [u8],
     rows: &[u16],
-    pal: &legaia_asset::battle_char_palette::BattleCharPalette,
+    pal: &legaia_actor_formats::battle_char_palette::BattleCharPalette,
 ) {
     const VRAM_W: usize = 1024;
     for &row in rows {

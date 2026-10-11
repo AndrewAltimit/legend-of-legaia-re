@@ -22,14 +22,15 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use legaia_asset::sfx_table::FALLBACK_VAB_SLOT;
 use legaia_engine_audio::bgm_tail::{BgmTail, TailBorrow};
 use legaia_engine_audio::{
     ArtsShoutBank, AudioSink, PendingCue, SHOUT_CD_RESPONSE_DELAY, Sequencer, SfxBank,
     SfxFireBatch, SfxScheduler, VabBank, XaClipBank,
 };
 use legaia_engine_core::scene::BgmDirector;
-use legaia_engine_core::world::{SfxRingOp, SharedRegionBank, SideBandBank};
+use legaia_engine_core::world::{SharedRegionBank, SideBandBank};
+use legaia_engine_system::sound_state::SfxRingOp;
+use legaia_game_tables::sfx_table::FALLBACK_VAB_SLOT;
 use legaia_seq::Seq;
 
 mod bgm_playback;
@@ -43,14 +44,14 @@ use xa_clips::XaLazySource;
 pub use xa_clips::read_xa_channel_span;
 
 /// The pause menu's cursor-step cue, re-exported from the one engine-side
-/// table both hosts fire from ([`legaia_engine_core::menu_cues`], provenance
+/// table both hosts fire from ([`legaia_engine_menus::menu_cues`], provenance
 /// there: `FUN_80032A44`'s ring writes). Category `0`, so the director sounds
 /// it out of the slot-0 system bank (PROT 0868).
-pub const RETAIL_MENU_CURSOR_CUE: u16 = legaia_engine_core::menu_cues::MENU_CURSOR_CUE as u16;
-/// The enabled-row confirm cue ([`legaia_engine_core::menu_cues::MENU_CONFIRM_CUE`]).
-pub const RETAIL_MENU_CONFIRM_CUE: u16 = legaia_engine_core::menu_cues::MENU_CONFIRM_CUE as u16;
-/// The cancel cue ([`legaia_engine_core::menu_cues::MENU_CANCEL_CUE`]).
-pub const RETAIL_MENU_CANCEL_CUE: u16 = legaia_engine_core::menu_cues::MENU_CANCEL_CUE as u16;
+pub const RETAIL_MENU_CURSOR_CUE: u16 = legaia_engine_menus::menu_cues::MENU_CURSOR_CUE as u16;
+/// The enabled-row confirm cue ([`legaia_engine_menus::menu_cues::MENU_CONFIRM_CUE`]).
+pub const RETAIL_MENU_CONFIRM_CUE: u16 = legaia_engine_menus::menu_cues::MENU_CONFIRM_CUE as u16;
+/// The cancel cue ([`legaia_engine_menus::menu_cues::MENU_CANCEL_CUE`]).
+pub const RETAIL_MENU_CANCEL_CUE: u16 = legaia_engine_menus::menu_cues::MENU_CANCEL_CUE as u16;
 
 /// BGM director that routes [`BgmDirector`] events into a live
 /// audio output ([`AudioSink`]). The director holds a clone of the audio handle (cpal stream
@@ -77,7 +78,7 @@ pub struct AudioBgmDirector<S: AudioSink> {
     /// [`Self::bank`] the BGM sequencer uses.
     sfx_bank: SfxBank,
     /// Cue id -> **VAB slot**, the routing half of the same descriptor table
-    /// ([`legaia_asset::sfx_table::SfxTable::cue_slots`]): a cue's `+4`
+    /// ([`legaia_game_tables::sfx_table::SfxTable::cue_slots`]): a cue's `+4`
     /// category selects the mixer record whose `+8` is the slot its voices key.
     /// Empty until [`Self::set_sfx_cue_slots`]; an absent id routes to
     /// [`FALLBACK_VAB_SLOT`], while a routed id whose slot is closed is silent.

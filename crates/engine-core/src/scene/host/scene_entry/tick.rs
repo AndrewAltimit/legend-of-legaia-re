@@ -16,7 +16,7 @@ impl SceneHost {
     ///
     /// REF: FUN_8001FD44 (the packet that spawns the actor), FUN_80021934
     fn advance_scene_transition_hold(&mut self) -> bool {
-        use crate::scene_transition_actor::{HeldTransition, SceneTransitionHold};
+        use legaia_engine_field::scene_transition_actor::{HeldTransition, SceneTransitionHold};
         if self.world.scene_transition_hold.is_none() {
             let request =
                 if let Some((n, x, z, d)) = self.world.pending_named_scene_transition.take() {
@@ -57,9 +57,12 @@ impl SceneHost {
                 self.world.pending_named_scene_transition = Some((n, x, z, d));
             }
             HeldTransition::Portal(dest_index, slot) => {
-                self.world
-                    .pending_field_events
-                    .push(crate::field_events::FieldEvent::WorldMapTransition { dest_index, slot });
+                self.world.pending_field_events.push(
+                    legaia_engine_field::field_events::FieldEvent::WorldMapTransition {
+                        dest_index,
+                        slot,
+                    },
+                );
             }
         }
         false
@@ -76,13 +79,13 @@ impl SceneHost {
     /// boot/transition path seeds the overworld the same way the explicit
     /// `--world-map` entry does.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
-        let was_battle = matches!(self.world.mode, crate::world::SceneMode::Battle);
+        let was_battle = matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Battle);
         let _ = self.world.tick();
         self.measure_fog_volume_light();
         // The arena hub's screens run every tick, including the ones after a
         // leg has closed; its hand-off arms the next leg's drain below.
         self.world.tick_muscle_hub();
-        if matches!(self.world.mode, crate::world::SceneMode::Battle) {
+        if matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Battle) {
             if !was_battle || self.world.audio.battle_sfx_bank.is_none() {
                 self.install_battle_sfx_bank();
             }
@@ -102,7 +105,7 @@ impl SceneHost {
         // battle, so the re-entry's script side is reproduced by reloading the
         // entry script here.
         // REF: FUN_8003ab2c (system-script rebuild on field entry)
-        if was_battle && matches!(self.world.mode, crate::world::SceneMode::Field) {
+        if was_battle && matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Field) {
             let entry_script = self
                 .scene
                 .as_ref()
@@ -130,7 +133,7 @@ impl SceneHost {
                 .scene
                 .as_ref()
                 .map(|s| s.field_man_payload(&self.index))
-            && let Ok(man_file) = legaia_asset::man_section::parse(&man_bytes)
+            && let Ok(man_file) = legaia_scene_formats::man_section::parse(&man_bytes)
         {
             for global_index in pending_spawns {
                 if self.world.cutscene.opening_chain_active {
@@ -175,7 +178,7 @@ impl SceneHost {
         // map-id door-warp: its destination name is carried inline by the op,
         // so it loads directly without the map-id resolver. This is the live
         // consumer of the disc-sourced scene-destination data - the same names
-        // [`crate::man_field_scripts::scene_destinations`] catalogs.
+        // [`legaia_engine_field::man_field_scripts::scene_destinations`] catalogs.
         if let Some((name, entry_x, entry_z, dir)) =
             self.world.pending_named_scene_transition.take()
         {
@@ -213,7 +216,7 @@ impl SceneHost {
             return Ok(SceneTickEvent::SceneEntered { name });
         }
         // GAP-1: overworld-portal scene transition. The world-map entity SM
-        // emits [`crate::field_events::FieldEvent::WorldMapTransition`] when the
+        // emits [`legaia_engine_field::field_events::FieldEvent::WorldMapTransition`] when the
         // player walks onto a portal tile
         // ([`crate::world::World::auto_engage_world_map_portals`] ->
         // `on_scene_transition`); without a consumer it was dropped to the
@@ -252,10 +255,10 @@ impl SceneHost {
                 // flag 2, which the destination's MAN loader turns into the
                 // place-name banner.
                 if let Some(man) = self.field_man_cache.clone()
-                    && let Ok(mf) = legaia_asset::man_section::parse(&man)
+                    && let Ok(mf) = legaia_scene_formats::man_section::parse(&man)
                 {
                     let writes = if object {
-                        crate::man_field_scripts::flat_record_path_walk(
+                        legaia_engine_field::man_field_scripts::flat_record_path_walk(
                             &mf,
                             &man,
                             usize::from(record),
@@ -299,7 +302,7 @@ impl SceneHost {
         }
         // The mode-24 minigame door-warp drains ahead of the map-id
         // transition: it is the op-`0x3E` `op0 >= 100` arm, and its id is a
-        // minigame sub-id, not a map id (see `crate::minigame_entry`).
+        // minigame sub-id, not a map id (see `legaia_engine_mode::minigame_entry`).
         if let Some(outcome) = self.drain_minigame_warp() {
             self.last_minigame_warp = Some(outcome);
             return Ok(SceneTickEvent::Stepped);
@@ -329,7 +332,7 @@ impl SceneHost {
     /// the bank at the same brightness.
     fn measure_fog_volume_light(&mut self) {
         if !self.world.toggles.volumetric_fog
-            || self.world.mode != crate::world::SceneMode::Field
+            || self.world.mode != legaia_engine_mode::mode::SceneMode::Field
             || self
                 .world
                 .fog_volume

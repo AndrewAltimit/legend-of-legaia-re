@@ -15,9 +15,5 @@ pub mod battle_fx;
 pub mod boot;
 pub mod xa_banks;
 
-/// The old name of [`audio_director`], kept so existing paths resolve.
-#[doc(hidden)]
-pub use audio_director as bgm;
-
 pub use audio_director::AudioBgmDirector;
 pub use boot::{BootConfig, BootSession, PauseMenuPress};

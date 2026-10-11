@@ -301,7 +301,7 @@ pub enum ZoneRampTick {
 /// sub-3..6: it allocates from the pool descriptor at `&DAT_80074304`, whose
 /// `+8` word is this routine's VA, and fills in exactly the `+0x80..+0xCA`
 /// fields read below. The port's spawn side is
-/// `legaia_engine_core::register_ramp::spawn_register_ramp`, and the
+/// `legaia_engine_field::register_ramp::spawn_register_ramp`, and the
 /// destination pointer is modelled as one of four named camera-configuration
 /// registers rather than a raw address. `engine-core::actor_handler` also
 /// knows this VA as the target of the MAN loader's retire sweep, which is

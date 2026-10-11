@@ -53,11 +53,12 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_menu::{FieldMenuPhase, FieldMenuRow};
 use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::input::PadButton;
 
 /// A player Seru spell (`0x81..=0x8B`, `docs/formats/spell-table.md`).
 const SPELL: u8 = 0x81;
@@ -151,7 +152,7 @@ fn booted(spells: &[u8], bag: &[u8]) -> Option<BootSession> {
     let overlay = s
         .host
         .index
-        .entry_bytes_extended(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
         .expect("PROT 0899");
     s.host.world.install_menu_overlay_tables(&overlay);
     // Player state: what a capture and a purchase leave behind.
@@ -159,7 +160,7 @@ fn booted(spells: &[u8], bag: &[u8]) -> Option<BootSession> {
     let rec = &mut s.host.world.party.roster.members[slot];
     // Prepend in reverse so the list reads in `spells` order.
     for &id in spells.iter().rev() {
-        legaia_engine_core::magic_xp::learn_spell_prepend(rec, id);
+        legaia_engine_battle::magic_xp::learn_spell_prepend(rec, id);
     }
     if !spells.is_empty() {
         // A caster with Seru magic carries a Ra-Seru: magic is learned
@@ -282,7 +283,7 @@ fn using_an_art_book_patches_the_learned_art_notice() {
     let book = (0u8..=255)
         .find(|&id| {
             effects.effect(id).is_some_and(|e| {
-                e.class == legaia_engine_core::items::ARTS_BOOK_CLASS_BASE
+                e.class == legaia_engine_menus::items::ARTS_BOOK_CLASS_BASE
                     && probe.host.world.tables.item_catalog.get(id).is_some()
             })
         })
@@ -372,9 +373,9 @@ fn a_confirmed_field_spell_routes_through_the_state_2_dispatch_and_heals() {
     // exercises the same dispatch.
     let Some(spell) = (0x81u8..=0x8B).chain(0u8..=0xFF).find(|&id| {
         catalog.get(id).is_some_and(|d| {
-            use legaia_engine_core::spells::SpellEffect;
+            use legaia_engine_battle::spells::SpellEffect;
             // A heal, so the commit has an HP delta to score.
-            legaia_engine_core::spell_menu::is_field_usable(&d.effect)
+            legaia_engine_menus::spell_menu::is_field_usable(&d.effect)
                 && matches!(
                     d.effect,
                     SpellEffect::Heal { .. } | SpellEffect::HealAll { .. }
@@ -383,7 +384,7 @@ fn a_confirmed_field_spell_routes_through_the_state_2_dispatch_and_heals() {
     }) else {
         panic!("the disc spell table carries no field-usable heal");
     };
-    let group = legaia_engine_core::spell_menu::spell_targets_group(
+    let group = legaia_engine_menus::spell_menu::spell_targets_group(
         catalog.get(spell).unwrap().target.retail_target_flag_bits(),
     );
     drop(probe);
@@ -414,7 +415,7 @@ fn a_confirmed_field_spell_routes_through_the_state_2_dispatch_and_heals() {
         panic!("the spell screen closed on the confirm");
     };
     let phase = session.phase().clone();
-    use legaia_engine_core::spell_menu::SpellMenuPhase;
+    use legaia_engine_menus::spell_menu::SpellMenuPhase;
     match (&phase, group) {
         (SpellMenuPhase::GroupConfirm { spell_id, .. }, true)
         | (SpellMenuPhase::TargetSelect { spell_id, .. }, false) => {

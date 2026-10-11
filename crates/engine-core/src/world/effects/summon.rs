@@ -12,7 +12,7 @@ impl World {
     /// Replaces any in-flight summon. Tick it with [`Self::tick_summon`].
     ///
     /// NOTE this drives the engine's **move-VM scene-graph stand-in**
-    /// ([`crate::summon::SummonScene`]), not the faithful player-summon render. A
+    /// ([`legaia_engine_effects::summon::SummonScene`]), not the faithful player-summon render. A
     /// live trace resolved that retail draws the player summon as an ordinary
     /// battle actor via the per-object TRS-keyframe path `FUN_80048A08` /
     /// `FUN_8004998C` (ported in [`legaia_engine_vm::anim_vm`]); see the
@@ -20,12 +20,12 @@ impl World {
     // REF: FUN_80048A08 (faithful player-summon render = battle-actor TRS-keyframe draw)
     pub fn spawn_summon(
         &mut self,
-        overlay: &legaia_asset::summon_overlay::SummonOverlay,
+        overlay: &legaia_overlay_images::summon_overlay::SummonOverlay,
         record_bytes: &[u8],
         model_base: usize,
         origin: [i16; 3],
     ) {
-        self.casting.active_summon = Some(crate::summon::SummonScene::spawn(
+        self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn(
             overlay,
             record_bytes,
             model_base,
@@ -81,14 +81,15 @@ impl World {
     /// frame step (`MoveVmGlobals::ramp_ratio`, the `DAT_1F800393` stand-in)
     /// times the rate byte's boot value.
     pub(super) fn effect_channel_delta(&self) -> u16 {
-        u16::from(self.move_vm.ramp_ratio.max(1)) * crate::summon::RETAIL_CHANNEL_DELTA
+        u16::from(self.move_vm.ramp_ratio.max(1))
+            * legaia_engine_effects::summon::RETAIL_CHANNEL_DELTA
     }
 
     /// Per-part render draws for the active summon's mesh-bearing parts (empty
     /// when no summon is playing). Each draw's `model_index` indexes
-    /// [`Self::global_tmd_pool`]. See [`crate::summon::SummonScene::part_draws`]
+    /// [`Self::global_tmd_pool`]. See [`legaia_engine_effects::summon::SummonScene::part_draws`]
     /// for the faithful-tick / interpreted-transform boundary.
-    pub fn active_summon_part_draws(&self) -> Vec<crate::summon::SummonPartDraw> {
+    pub fn active_summon_part_draws(&self) -> Vec<legaia_engine_effects::summon::SummonPartDraw> {
         self.casting
             .active_summon
             .as_ref()
@@ -110,8 +111,8 @@ impl World {
     pub(crate) fn request_summon_spawn(&mut self, spell_id: u8, origin: [i16; 3]) {
         // Every player summon seats its cast's own body as slot 7: the
         // archive twin for the base + evolved blocks, the `summon.dat` record
-        // for the rest (`crate::summon::summon_spawn_asset`).
-        if crate::summon::PLAYER_SUMMON_IDS.contains(&spell_id) {
+        // for the rest (`legaia_engine_effects::summon::summon_spawn_asset`).
+        if legaia_engine_effects::summon::PLAYER_SUMMON_IDS.contains(&spell_id) {
             self.casting.pending_summon_spawn = Some((spell_id, origin));
         }
     }

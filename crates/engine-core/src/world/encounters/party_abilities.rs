@@ -11,7 +11,7 @@ impl World {
     ///
     /// Mirrors the retail aggregator's bitfield pass: each member's record
     /// `+0xF4` 4×u32 field is zeroed and re-derived from the eight equipment
-    /// slots ([`crate::accessory_passives::AccessoryPassives::bits_for_equipment`]),
+    /// slots ([`legaia_engine_battle::accessory_passives::AccessoryPassives::bits_for_equipment`]),
     /// then all members' words OR into the global mask (the engine's
     /// [`crate::world::PartyState::party_ability_mask`], mirroring `DAT_80074358`). The rebuilt
     /// word 0 also lands in [`crate::world::PartyState::character_ability_bits`] - the mask the
@@ -28,7 +28,7 @@ impl World {
     /// refresh) and from the equip-commit paths, mirroring retail's
     /// rebuild-on-every-aggregator-pass behaviour.
     pub fn refresh_party_ability_bits(&mut self) {
-        use crate::accessory_passives::ABILITY_WORDS;
+        use legaia_engine_battle::accessory_passives::ABILITY_WORDS;
         if self.tables.accessory_passives.is_empty() {
             return;
         }
@@ -96,8 +96,10 @@ impl World {
     /// [`Self::party_has_ability`] = `FUN_800431D0`) and system flags
     /// `0x1D` / `0x1E` (via [`Self::system_flag_test`] = `FUN_8003CE64`).
     /// Refreshed onto the active region tracker before each step roll.
-    pub fn encounter_rate_modifiers(&self) -> crate::region_encounter::EncounterRateModifiers {
-        crate::region_encounter::EncounterRateModifiers {
+    pub fn encounter_rate_modifiers(
+        &self,
+    ) -> legaia_engine_battle::region_encounter::EncounterRateModifiers {
+        legaia_engine_battle::region_encounter::EncounterRateModifiers {
             high_encounter: self.party_has_ability(0x3B),
             low_encounter: self.party_has_ability(0x3C),
             flag_high: self.system_flag_test(0x1D),
@@ -109,9 +111,9 @@ impl World {
     /// live stats plus equipped-gear bonuses.
     ///
     /// For every party slot whose roster record carries real stats (live
-    /// attack `> 0`), this resolves a [`crate::battle_stats::BattleStats`] from
+    /// attack `> 0`), this resolves a [`legaia_engine_battle::battle_stats::BattleStats`] from
     /// the character's base attack / UDF / LDF and the modifiers of the items
-    /// in its equipment slots ([`crate::battle_stats::compute_battle_stats_default`]
+    /// in its equipment slots ([`legaia_engine_battle::battle_stats::compute_battle_stats_default`]
     /// against [`crate::world::DiscTables::equipment_table`]), then writes
     /// [`crate::world::BattleState::attack`] (= the attack **without** the equipment sum,
     /// which retail folds per command at swing time - see
@@ -145,7 +147,7 @@ impl World {
             // = 4 + level/10, capped 10). Captured before the `ap_gauges`
             // mutable borrow below; `rec` still owns the immutable roster borrow
             // through the stat fold.
-            let ap_base = crate::ap_gauge::ap_base_for_level(rec.level());
+            let ap_base = legaia_engine_battle::ap_gauge::ap_base_for_level(rec.level());
             // The MP ceiling the battle surfaces read. `character_max_mp` is
             // the only max-MP the world carries: the battle actor holds
             // current MP and no ceiling, so the battle party bar's MP field,
@@ -180,7 +182,7 @@ impl World {
             } else {
                 rec.hp_mp_sp().hp_max
             };
-            let record = crate::battle_stats::StatRecord {
+            let record = legaia_engine_battle::battle_stats::StatRecord {
                 base_attack: atk,
                 base_udf: udf,
                 base_ldf: ldf,
@@ -190,12 +192,12 @@ impl World {
                 base_int: int,
                 equip: rec.equipment().slots,
             };
-            let stats = crate::battle_stats::compute_battle_stats_with_passives(
+            let stats = legaia_engine_battle::battle_stats::compute_battle_stats_with_passives(
                 &record,
                 &self.tables.equipment_table,
                 &self.tables.accessory_passives,
                 &[],
-                &crate::battle_stats::StatusModifiers::default(),
+                &legaia_engine_battle::battle_stats::StatusModifiers::default(),
             );
             // Max-HP percent passives (indices 0x00 / 0x01) rebuild the
             // effective max HP from the base, capped at 9999 - applied to the
@@ -233,7 +235,7 @@ impl World {
             // attack is the aggregator's ATK minus the equipment sum - the
             // base plus any accessory percent boost - and the per-slot bytes
             // go to `battle_equip_atk` for `land_melee_hit` to fold per hit.
-            let mut equip_atk = [0u8; legaia_engine_vm::battle_formulas::EQUIP_SLOTS];
+            let mut equip_atk = [0u8; legaia_engine_battle_vm::battle_formulas::EQUIP_SLOTS];
             let mut equip_atk_sum: u16 = 0;
             for (i, &id) in record.equip.iter().enumerate() {
                 if id == 0 {

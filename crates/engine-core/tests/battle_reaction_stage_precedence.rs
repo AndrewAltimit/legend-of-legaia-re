@@ -17,7 +17,7 @@
 //!
 //! Disc-free: synthetic clips only.
 
-use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
+use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
 use legaia_engine_core::world::World;
 
 /// One-part clip whose frame `f` translates to `tx + f` on X, so a test can

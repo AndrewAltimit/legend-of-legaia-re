@@ -172,7 +172,7 @@ fn export_one(
 /// sub-1 BGM start (the id the controller script plays at entry -
 /// `man_field_scripts::scene_bgm_starts`), resolved the way the play hosts
 /// resolve it: global ids (`>= 2000`) through the `music_01` bank map
-/// ([`legaia_engine_core::music_labels::prot_entry_for_bgm_id`]), scene-local
+/// ([`legaia_engine_system::music_labels::prot_entry_for_bgm_id`]), scene-local
 /// ids through the scene's own SEQ/VAB entries.
 ///
 /// The render drives the engine's SPU + SsAPI sequencer sample-by-sample
@@ -185,14 +185,14 @@ fn export_scene_music(index: &ProtIndex, scene: &Scene, dir: &Path) -> Option<se
     use serde_json::json;
 
     let man = scene.field_man_payload(index).ok()??;
-    let mf = legaia_asset::man_section::parse(&man).ok()?;
-    let starts = legaia_engine_core::man_field_scripts::scene_bgm_starts(&mf, &man);
+    let mf = legaia_scene_formats::man_section::parse(&man).ok()?;
+    let starts = legaia_engine_field::man_field_scripts::scene_bgm_starts(&mf, &man);
     let bgm_id = starts.first()?.bgm_id;
 
     // Resolve the [VAB..][SEQ..] byte carriers.
     let (vab_carrier, seq_bytes): (std::sync::Arc<Vec<u8>>, Vec<u8>) = if bgm_id >= 2000 {
         // Global pool: one music_01 bank entry carries the whole pair.
-        let entry = legaia_engine_core::music_labels::prot_entry_for_bgm_id(bgm_id)?;
+        let entry = legaia_engine_system::music_labels::prot_entry_for_bgm_id(bgm_id)?;
         let bytes = index.entry_bytes(entry).ok()?;
         let vab_off = bytes.windows(4).position(|w| w == b"pBAV")?;
         let seq_off = vab_off + bytes[vab_off..].windows(4).position(|w| w == b"pQES")?;
@@ -256,14 +256,14 @@ fn export_scene_music(index: &ProtIndex, scene: &Scene, dir: &Path) -> Option<se
     let seconds = (pcm.len() / 2) as f32 / SPU_INTERNAL_RATE as f32;
     println!(
         "  [music] bgm {bgm_id}{}: {seconds:.1}s loop -> {file}",
-        legaia_engine_core::music_labels::label_for_bgm_id(bgm_id)
+        legaia_engine_system::music_labels::label_for_bgm_id(bgm_id)
             .map(|t| format!(" ({t})"))
             .unwrap_or_default()
     );
     Some(json!({
         "file": file,
         "bgm_id": bgm_id,
-        "title": legaia_engine_core::music_labels::label_for_bgm_id(bgm_id),
+        "title": legaia_engine_system::music_labels::label_for_bgm_id(bgm_id),
         "sample_rate": SPU_INTERNAL_RATE,
         "seamless_loop": looped,
         "loop_seconds": seconds,

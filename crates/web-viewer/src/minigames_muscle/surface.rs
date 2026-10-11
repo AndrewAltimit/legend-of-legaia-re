@@ -1,11 +1,11 @@
 //! The minigames page's dome 3D through the engine's own surface
-//! ([`legaia_engine_core::muscle_dome_scene::MuscleDomeSurface`]) - the
+//! ([`legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface`]) - the
 //! battle seats, the play-out choreography and the battle camera script the
 //! native window and the browser play page draw a leg with - so the three
 //! hosts frame a dome fight from one kernel.
 
 use super::*;
-use legaia_engine_core::muscle_dome_scene::{BeatKind, SelectFraming};
+use legaia_engine_minigame_scenes::muscle_dome_scene::{BeatKind, SelectFraming};
 use std::sync::Arc;
 
 #[wasm_bindgen]

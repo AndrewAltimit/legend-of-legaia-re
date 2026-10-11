@@ -5,7 +5,8 @@
 //! records that don't require disc data.
 
 use legaia_anm::{AnimPlayer, RECORD_HEADER_SIZE};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_tmd::mesh::tmd_to_vram_mesh_posed;
 
 /// Advance the world until the **actor pool's** next pass has run.

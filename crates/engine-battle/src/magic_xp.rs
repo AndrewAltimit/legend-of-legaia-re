@@ -13,7 +13,7 @@
 //!
 //! - [`thresholds_from_scus`] decodes the threshold table off the user's
 //!   `SCUS_942.54` (no Sony bytes committed - same pattern as
-//!   `legaia_engine_core::shop_catalog::ShopItemData::from_scus`);
+//!   `legaia_engine_menus::shop_catalog::ShopItemData::from_scus`);
 //! - the record accessors read/write the `+0x8` XP array through
 //!   [`legaia_save::CharacterRecord::raw`], so the accrued XP round-trips
 //!   through saves for free.
@@ -205,7 +205,7 @@ pub fn learn_spell_prepend(record: &mut CharacterRecord, spell_id: u8) {
 ///
 /// REF: FUN_801F69D8 (PROT 0905 / 0911 / 0919 heal arms)
 pub fn module_heal_xp_gain(spell_id: u8, magic_level: u8, hp: u16, max_hp: u16) -> u32 {
-    use legaia_engine_battle_vm::{cast_seru_ticks_a as a, cast_seru_ticks_b as b};
+    use legaia_engine_battle_vm::seru_magic_ticks::{self as a, self as b};
     let missing = i32::from(max_hp) - i32::from(hp);
     let (want, full, clamped) = match spell_id {
         0x83 => (

@@ -60,11 +60,12 @@ use anyhow::{Context, Result};
 use legaia_engine_audio::{Spu, spu::adsr::AdsrConfig, spu::reverb::ReverbMode};
 use legaia_mednafen::{PsxSpu, SaveState};
 
+use crate::BootSession;
 use crate::audio_trace_oracle::{
     AudioTraceBuildOptions, AudioTraceFrame, TraceBgmDirector, enter_scene_for_trace,
     sample_engine_frame_for_pcm, start_bgm_id_directly,
 };
-use crate::{BootConfig, BootSession};
+use legaia_engine_session::boot::BootConfig;
 
 /// PSX SPU internal output rate (Hz). [`Spu::tick`] yields one stereo
 /// sample at this rate.

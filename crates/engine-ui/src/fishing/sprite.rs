@@ -4,13 +4,13 @@
 //!
 //! Every fishing HUD glyph - the HI SCORE / POINT plates, the gauge labels and
 //! caps, the hook / catch / miss banners, the score digits - is one record of
-//! the overlay's sprite table ([`legaia_asset::fishing_sprites`]) drawn as a
+//! the overlay's sprite table ([`legaia_minigame_formats::fishing_sprites`]) drawn as a
 //! `POLY_GT4` out of the 4bpp page at `(832, 0)` with a palette of the
 //! `(0, 503)` strip. That page is the first TIM of the venue bundle's texture
 //! list (`other1`), so it is already resident wherever the pond is: the native
 //! window and the play page draw these primitives through the screen-primitive
 //! pass over the pond VRAM, and the minigames page rasterises them over its
-//! own pond VRAM ([`crate::screen_prim_raster`]).
+//! own pond VRAM ([`legaia_render_kernels::screen_prim_raster`]).
 //!
 //! [`fishing_hud_sprite_prims`] takes the same [`HudDraw`] list the text
 //! consumer ([`crate::fishing_hud_draws_for`]) does and covers the items that
@@ -18,9 +18,9 @@
 //! these sets [`crate::FishingHudAtlas::sprites_drawn`] so the text consumer
 //! leaves those items to them.
 
-use crate::screen_prim::{ScreenPrim, ScreenQuad};
 use crate::{BarAxis, HudDraw, number_digit_cells};
-use legaia_asset::fishing_sprites::FishingSprite;
+use legaia_minigame_formats::fishing_sprites::FishingSprite;
+use legaia_render_kernels::screen_prim::{ScreenPrim, ScreenQuad};
 
 /// The ordering-table bucket every HUD sprite links at: `_DAT_801D9158`,
 /// which the driver's setup state stores as `3` (`0x801CF114`) and the digit

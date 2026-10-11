@@ -94,7 +94,7 @@ pub struct BuildOptions<'a> {
     /// `(960,256)` that town/dungeon env meshes sample via CBA
     /// `(64,510)`). `None` skips the layer (legacy behaviour). Default
     /// `None`.
-    pub system_ui: Option<&'a legaia_asset::system_ui_bundle::SystemUiBundle>,
+    pub system_ui: Option<&'a legaia_ui_formats::system_ui_bundle::SystemUiBundle>,
 }
 
 impl Default for BuildOptions<'_> {

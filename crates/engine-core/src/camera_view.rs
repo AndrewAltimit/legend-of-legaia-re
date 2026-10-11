@@ -1,7 +1,7 @@
 //! Per-frame camera resolution: which camera owns this frame, and what its
 //! retail GTE inputs are.
 //!
-//! [`crate::camera::Camera`] holds the ten retail camera globals and the
+//! [`legaia_engine_field::camera::Camera`] holds the ten retail camera globals and the
 //! op-`0x45` event routing. This module is the layer above it that every host
 //! calls: it reads the live [`World`] and answers with a [`FieldCameraFrame`]
 //! (one arm per camera retail runs in a walkable scene) whose view resolves to
@@ -17,7 +17,7 @@
 //! camera, and that the op-`0x45` cutscene shots were re-mapped onto - while
 //! the native window consumed the retail model directly.
 //!
-//! The projection itself is [`legaia_engine_vm::psx_camera`], whose frame
+//! The projection itself is [`legaia_engine_battle_vm::psx_camera`], whose frame
 //! convention (every matrix is for the **Y-up** render frame; a host keeping
 //! raw retail Y-down world state post-multiplies one `scale(1,-1,1)`) is the
 //! one rule both hosts follow.
@@ -25,19 +25,20 @@
 //! REF: FUN_801DE084 (the op-`0x45` Configure apply handler), FUN_801DBE9C
 //! (the field follow camera), FUN_801E76D4 (the world-map controller).
 
-use crate::camera::Camera;
-use crate::world::{SceneMode, World};
-use legaia_engine_vm::psx_camera::{self, FieldCameraView};
+use crate::world::World;
+use legaia_engine_battle_vm::psx_camera::{self, FieldCameraView};
+use legaia_engine_field::camera::Camera;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Field follow-camera pitch (`_DAT_8007B790`), PSX 12-bit units - the town01
 /// anchor savestate's value (~39.6 deg down-tilt).
 ///
 /// **A fallback, not the field camera.** Retail derives the pitch per scene
 /// and per tile: the camera-region record the tile query hits is split into
-/// the camera parameter block (`FUN_801DBC20`, [`crate::camera_zone`]), the
+/// the camera parameter block (`FUN_801DBC20`, [`legaia_engine_field::camera_zone`]), the
 /// composer `FUN_801DAB90` turns the block plus the player's position into a
 /// target and the per-frame ease walks `_DAT_8007B790` toward it. That path
-/// is [`crate::camera::Camera::zone`], live whenever the world carries field
+/// is [`legaia_engine_field::camera::Camera::zone`], live whenever the world carries field
 /// terrain, and [`field_follow_view`] reads its output. This constant is what
 /// a world with **no** terrain loaded (a unit world, a bare test scene)
 /// frames with - the anchor state's own reading, which the zone camera
@@ -60,7 +61,7 @@ pub const FIELD_FOLLOW_YAW_UNITS: f32 = -160.0;
 /// battle - written per phase, unlike `OFX` / `OFY`.
 ///
 /// [`field_follow_view`] prefers the live
-/// [`crate::camera::RetailCamGlobals::h`] whenever the camera carries one -
+/// [`legaia_engine_battle_vm::retail_cam::RetailCamGlobals::h`] whenever the camera carries one -
 /// the zone camera's composed `B618`, or an op-`0x45` slot-`9` beat. Retail's
 /// scene-entry reset leaves `H` at `0` ("as the scene establishes it"), which
 /// is what makes this the fallback rather than dead code.
@@ -162,7 +163,7 @@ fn lead_actor_xz(world: &World) -> Option<(f32, f32)> {
 /// [`Camera::manual_orbit`] swings the yaw around the player in the compass
 /// sense - the PSX render yaw is its negation - and [`Camera::manual_zoom`]
 /// (the continuous wheel) and [`Camera::manual_tilt`] (clamped through
-/// [`follow_knobs::composed_pitch`](crate::camera::follow_knobs::composed_pitch))
+/// [`follow_knobs::composed_pitch`](legaia_engine_field::camera::follow_knobs::composed_pitch))
 /// dolly and pitch the pose **about the character's body**
 /// ([`FOLLOW_PIVOT_LIFT`]), so the character holds its screen point through
 /// both. None of them reaches a cutscene shot -
@@ -310,7 +311,7 @@ fn follow_view_with_knobs(
         focus: pivot,
         // The scene's pitch plus the user's tilt, clamped so the lens stays
         // above the floor and short of top-down.
-        pitch: crate::camera::follow_knobs::composed_pitch(retail.pitch, manual_tilt),
+        pitch: legaia_engine_field::camera::follow_knobs::composed_pitch(retail.pitch, manual_tilt),
         tr_eye: q.map(|c| c * manual_zoom),
         ..retail
     })
@@ -465,7 +466,7 @@ pub fn world_map_walk_vp(view: &FieldCameraView, player: [f32; 3], aspect: f32) 
 
 /// Which camera owns this frame. One arm per camera retail runs in a walkable
 /// scene; battle has its own kernel
-/// ([`legaia_engine_vm::battle_cam_script::battle_vp`]) and is not resolved
+/// ([`legaia_engine_battle_vm::battle_cam_script::battle_vp`]) and is not resolved
 /// here.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FieldCameraFrame {
@@ -582,7 +583,7 @@ pub const BATTLE_OT_SHIFT: u32 = 2;
 /// Every TMD prim handler behind `FUN_80043390` drops a primitive whose
 /// `OTZ` (mean corner `SZ >> ot_shift`) is below the scratch floor
 /// `0x1F80037E = 0x10` (`sub s1,s2,t4` / `bltz s1` at `0x80043870` in
-/// `FUN_80043768`); see `legaia_engine_ui::prim_near_reject`. The field and
+/// `FUN_80043768`); see `legaia_render_kernels::prim_near_reject`. The field and
 /// battle cameras both put the GTE eye depth in clip `w`, so `sz_per_w` is
 /// `1`. The kingdom overworld composes a world scale onto its camera and
 /// draws through the overlay's own replacement handlers, so it stays off, as
@@ -593,7 +594,7 @@ pub const BATTLE_OT_SHIFT: u32 = 2;
 ///
 /// REF: FUN_80043390, FUN_80043768
 /// The projection `H` the GPU polygon-size limit is tested under this frame
-/// (`legaia_engine_ui::prim_near_reject::gpu_span_rejected`), or `None` when
+/// (`legaia_render_kernels::prim_near_reject::gpu_span_rejected`), or `None` when
 /// the pass does not apply it. The limit is the GPU's, so it holds wherever
 /// the per-prim leaves hand it raw `SXY`: in battle (every catalogued battle
 /// camera reads `H = 256`; a summon close-up seats a combatant between the
@@ -631,7 +632,7 @@ pub fn prim_near_cut(mode: SceneMode, retail_camera: bool) -> Option<(f32, u32)>
 /// Resolve this frame's camera from the live world.
 ///
 /// `cutscene` is the host's already-glided cutscene view (see
-/// [`legaia_engine_vm::psx_camera::CutsceneCameraInterp`]) or `None` when no
+/// [`legaia_engine_battle_vm::psx_camera::CutsceneCameraInterp`]) or `None` when no
 /// timeline owns the frame; `scene_center_xz` is the host's fallback focus.
 ///
 /// The world-map gate is the one place a reading is easy to get wrong: a
@@ -826,7 +827,7 @@ mod tests {
         let base = field_follow_view(&Camera::default(), &w).unwrap();
         let mut cam = Camera::default();
         cam.manual_orbit = 0.5;
-        cam.distance = crate::camera::CameraDistance::Far;
+        cam.distance = legaia_engine_field::camera::CameraDistance::Far;
         cam.follow_slot = 0;
         let v = field_follow_view(&cam, &w).unwrap();
         assert!((v.yaw - (base.yaw - 0.5)).abs() < 1e-6);
@@ -844,7 +845,7 @@ mod tests {
     fn follow_view_tilts_and_zooms_about_the_character() {
         let w = world_with_player(300, -200);
         let mut cam = Camera::default();
-        cam.distance = crate::camera::CameraDistance::Far;
+        cam.distance = legaia_engine_field::camera::CameraDistance::Far;
         cam.zone.active = true;
         cam.globals.0[0] = FIELD_PITCH_UNITS as i32;
         cam.globals.0[1] = FIELD_FOLLOW_YAW_UNITS as i32;
@@ -906,7 +907,7 @@ mod tests {
         let w = world_with_player(300, -200);
         let mut cam = Camera::default();
         cam.manual_orbit = 0.3;
-        cam.distance = crate::camera::CameraDistance::Far;
+        cam.distance = legaia_engine_field::camera::CameraDistance::Far;
         let a = field_follow_view(&cam, &w).unwrap();
         cam.manual_tilt = 0.0;
         cam.manual_zoom = 1.0;
@@ -918,7 +919,7 @@ mod tests {
     /// The tilt clamps the composed pitch at both ends of the knob range.
     #[test]
     fn follow_view_tilt_clamps_to_the_knob_range() {
-        use crate::camera::follow_knobs::{PITCH_MAX, PITCH_MIN};
+        use legaia_engine_field::camera::follow_knobs::{PITCH_MAX, PITCH_MIN};
         let w = world_with_player(0, 0);
         let mut cam = Camera::default();
         cam.manual_tilt = 5.0;
@@ -985,10 +986,12 @@ mod tests {
         use legaia_engine_vm::field::CameraParam;
         let mut w = world_with_player(700, 800);
         assert!(!cutscene_owns_camera(&w), "no timeline");
-        w.cutscene.timeline = Some(crate::cutscene_timeline::CutsceneTimeline::new(
-            vec![0x4A, 0xFF, 0x7F],
-            0,
-        ));
+        w.cutscene.timeline = Some(
+            legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(
+                vec![0x4A, 0xFF, 0x7F],
+                0,
+            ),
+        );
         assert!(w.cutscene_timeline_active());
         assert!(!cutscene_owns_camera(&w), "timeline, nothing staged");
         w.camera.state.params = vec![CameraParam {

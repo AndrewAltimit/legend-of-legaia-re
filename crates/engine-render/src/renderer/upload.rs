@@ -175,7 +175,7 @@ impl Renderer {
 
     /// [`Self::upload_vram_mesh`] for the continent ground: each vertex also
     /// carries its cell's `[x0, z0, x1, z1, y00, y10, y01, y11]`
-    /// (`legaia_engine_core::overworld_draw_order::ground_flat_refs`), from
+    /// (`legaia_engine_field::overworld_draw_order::ground_flat_refs`), from
     /// which the vertex shader re-projects the cell's four corners and, on
     /// the overworld (a non-zero curvature scale), draws the whole cell at
     /// its ordering-table bucket's depth instead of its own per-pixel depth.
@@ -228,7 +228,8 @@ impl Renderer {
                 positions.len()
             );
         }
-        let prim_refs = legaia_engine_ui::prim_near_reject::prim_corner_refs(positions, indices);
+        let prim_refs =
+            legaia_render_kernels::prim_near_reject::prim_corner_refs(positions, indices);
         let mut bytes =
             Vec::with_capacity(positions.len() * crate::renderer::VRAM_VERTEX_STRIDE as usize);
         for (i, ((((pos, uv), ct), n), c)) in positions
@@ -352,7 +353,8 @@ impl Renderer {
                 positions.len()
             );
         }
-        let prim_refs = legaia_engine_ui::prim_near_reject::prim_corner_refs(positions, indices);
+        let prim_refs =
+            legaia_render_kernels::prim_near_reject::prim_corner_refs(positions, indices);
         let mut bytes =
             Vec::with_capacity(positions.len() * crate::renderer::COLOR_VERTEX_STRIDE as usize);
         for (i, (pos, c)) in positions.iter().zip(colors.iter()).enumerate() {

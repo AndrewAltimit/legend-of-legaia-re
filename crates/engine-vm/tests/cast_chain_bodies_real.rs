@@ -1,5 +1,5 @@
 //! Disc-gated: every phase-chain tick body
-//! (`legaia_engine_vm::cast_module_ticks::chain_bodies`) checked against its
+//! (`legaia_engine_battle_vm::cast_module_ticks::chain_bodies`) checked against its
 //! **owning** image's own bytes at slot-B base `0x801F69D8`.
 //!
 //! The descriptors are hand-read off the disassembly, and a band image ends
@@ -20,7 +20,7 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_engine_vm::cast_module_ticks::{
+use legaia_engine_battle_vm::cast_module_ticks::{
     CAST_MODULE_LINK_BASE, ChainBody, ChainClip, capture_trampoline_for, chain_bodies,
 };
 use std::path::PathBuf;

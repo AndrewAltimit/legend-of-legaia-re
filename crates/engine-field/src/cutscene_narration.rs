@@ -3,7 +3,7 @@
 //! The opening prologue scenes (`opdeene` / `opstati` / `opurud` / `map01`)
 //! play their on-screen narration from inline ASCII text pages embedded in the
 //! scene MAN's cutscene-timeline script (parsed by
-//! [`legaia_asset::cutscene_text`]). Retail routes the introducing op
+//! [`legaia_scene_formats::cutscene_text`]). Retail routes the introducing op
 //! (`0xCC 0xF8 0x80 N`, field-VM `0x4C` outer-nibble-8 sub-0) to a dedicated
 //! on-screen-text actor whose handler is `FUN_80037174` - a bottom-up **text
 //! crawl**, not a one-line caption.

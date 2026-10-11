@@ -17,10 +17,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
-use legaia_engine_vm::battle_action::ActionState;
+use legaia_engine_battle_vm::battle_action::ActionState;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::input::PadButton;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -60,7 +61,7 @@ fn card_sc(library: &std::path::Path, card: &str, save: &str) -> Option<Vec<u8>>
 
 /// Attack / Auto / confirm the target / page on - pad presses only.
 fn fight_pad(session: &BootSession) -> u16 {
-    use legaia_engine_core::battle_input::CommandPhase;
+    use legaia_engine_menus::battle_input::CommandPhase;
     let w = &session.host.world;
     if w.battle.item_menu.is_some() {
         return PadButton::Circle.mask();

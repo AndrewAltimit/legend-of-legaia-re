@@ -32,7 +32,7 @@ pub(crate) fn issue_reason(msg: &str) -> &'static str {
 pub(crate) fn lang_report_json(
     language: &str,
     report: &ImportReport,
-    sections: &[legaia_patcher::translation::SectionCounts],
+    sections: &[legaia_translate::SectionCounts],
 ) -> Result<JsValue, JsValue> {
     let out = Object::new();
     Reflect::set(&out, &"language".into(), &language.into())?;
@@ -256,7 +256,7 @@ pub fn lift_official_pack(
     } else {
         // The PAL accent bytes sit on the accent font's layout: stamp the
         // pack so the import writes that font and they draw.
-        pack.accents = legaia_patcher::translation::accents::AccentMode::Font
+        pack.accents = legaia_translate::accents::AccentMode::Font
             .header()
             .to_string();
         Default::default()

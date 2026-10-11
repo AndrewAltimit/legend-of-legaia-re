@@ -8,7 +8,7 @@ use super::super::*;
 pub fn victory_clip(
     archive_entry: &[u8],
     source_id: u16,
-) -> Result<legaia_asset::monster_archive::MonsterAnimation> {
+) -> Result<legaia_actor_formats::monster_archive::MonsterAnimation> {
     let tags = monster_archive::action_tags(archive_entry, source_id)?
         .ok_or_else(|| anyhow::anyhow!("monster id {source_id}: empty slot"))?;
     let anims = monster_archive::animations(archive_entry, source_id)?
@@ -103,7 +103,7 @@ pub fn base_loop_windows(player_file: &[u8]) -> Result<BTreeMap<usize, LoopWindo
 pub fn victory_cycle(
     archive_entry: &[u8],
     source_id: u16,
-    clip: &legaia_asset::monster_archive::MonsterAnimation,
+    clip: &legaia_actor_formats::monster_archive::MonsterAnimation,
 ) -> Result<Option<std::ops::Range<usize>>> {
     let Some(block) = monster_archive::decode_block(archive_entry, source_id)? else {
         return Ok(None);

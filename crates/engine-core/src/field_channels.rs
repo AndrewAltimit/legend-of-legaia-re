@@ -53,8 +53,8 @@
 //! `iVar24 + -0x7ff841a0` = struct base `0x8007BE60`), `8001b47c.txt`,
 //! `80029888.txt`, `8003c5f0.txt`.
 
-use legaia_asset::man_section::ManFile;
 use legaia_engine_vm::field::FieldCtx;
+use legaia_scene_formats::man_section::ManFile;
 
 /// One spawned per-actor script context (retail `FUN_8003A1E4` output).
 #[derive(Debug, Clone)]
@@ -179,7 +179,7 @@ pub fn spawn_channels(man_file: &ManFile, man: &[u8]) -> Vec<FieldChannel> {
 /// through the `FUN_8003C83C` actor-list walk.
 ///
 /// `binds` carries `(flat_record_index, contact_centre)` pairs (see
-/// [`crate::man_field_scripts::object_script_binds`]). Binds whose flat
+/// [`legaia_engine_field::man_field_scripts::object_script_binds`]). Binds whose flat
 /// record cannot be spanned are skipped. Spawn these AFTER the placement
 /// channels: a flat index `>= N0` aliases a placement channel's script id,
 /// and [`resolve_target`]'s first-match walk must keep the placement.
@@ -196,7 +196,7 @@ pub fn spawn_object_channels(
             continue;
         }
         let Some((record_offset, pc0, _len)) =
-            crate::man_field_scripts::flat_record_span(man_file, man, flat)
+            legaia_engine_field::man_field_scripts::flat_record_span(man_file, man, flat)
         else {
             continue;
         };

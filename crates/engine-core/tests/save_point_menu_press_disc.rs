@@ -28,10 +28,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker};
+use legaia_engine_core::world::World;
+use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
 fn extracted_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from)
@@ -58,7 +59,7 @@ fn save_point_slots(index: &ProtIndex) -> Vec<(String, Vec<u8>, u8)> {
         let Ok(Some(man)) = scene.field_man_payload(index) else {
             continue;
         };
-        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         let count = (*mf.header.partition_counts.get(1).unwrap_or(&0)).max(0) as usize;
@@ -109,7 +110,7 @@ fn talking_to_a_save_point_presses_the_menu_and_resumes_once() {
     let mut pressed = 0usize;
     let mut not_installed = Vec::new();
     for (scene, man, slot) in &slots {
-        let mf = legaia_asset::man_section::parse(man).expect("parse MAN");
+        let mf = legaia_scene_formats::man_section::parse(man).expect("parse MAN");
         let mut world = World::new();
         world.mode = SceneMode::Field;
         world.install_field_carriers_from_man(&mf, man);

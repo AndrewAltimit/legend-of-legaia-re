@@ -2,11 +2,13 @@
 //! [`World`]. Split out of `world.rs`.
 
 use super::*;
+use legaia_engine_field::man_field_scripts::FieldCarrierConfig;
+use legaia_engine_mode::mode::SceneMode;
 
-use crate::battle_events::BattleEvent;
-use crate::field_events::FieldEvent;
+use legaia_engine_battle::battle_events::BattleEvent;
+use legaia_engine_battle_vm::battle_action::{BattleActionHost, BattleActor, BattleEndCause, Pose};
+use legaia_engine_field::field_events::FieldEvent;
 use legaia_engine_vm as vm;
-use vm::battle_action::{BattleActionHost, BattleActor, BattleEndCause, Pose};
 use vm::effect_vm::EffectHost;
 use vm::field::{CameraParam, FieldCtx, FieldHost, Op49State, SceneFadeResult};
 use vm::move_vm::{ActorState as MoveActorState, MoveHost};
@@ -177,10 +179,9 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     /// census of a `kor5` memory-card state sees the store at `0x80023688`
     /// (`ra 0x80023AE8`) two vsyncs before each drained key-on.
     fn global_write_1d(&mut self, value: u16) {
-        self.world
-            .audio
-            .sfx_ring_ops
-            .push(crate::world::SfxRingOp::WriteSlot(3, value as i16));
+        self.world.audio.sfx_ring_ops.push(
+            legaia_engine_system::sound_state::SfxRingOp::WriteSlot(3, value as i16),
+        );
     }
 
     /// Ext `0x17` / `0x18` / `0x1A` / `0x19`: the object-effect table
@@ -208,7 +209,7 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         // Fighter and DEBUG MODE overlays write another value
         // (`docs/subsystems/move-vm.md`). Mid-Spirit captures confirm it on
         // the aura lane: authored `0x66`, gaining `0x66` a frame.
-        crate::summon::RETAIL_CHANNEL_DELTA as u8
+        legaia_engine_effects::summon::RETAIL_CHANNEL_DELTA as u8
     }
     fn ext_rand16(&mut self) -> u16 {
         // Retail ext 0x05/0x30 call the BIOS `A(2Fh) rand` thunk

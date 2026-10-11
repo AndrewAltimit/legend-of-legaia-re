@@ -17,7 +17,7 @@
 //! ```text
 //!   byte 0:  opcode
 //!   byte 1:  operand_b - a window id (index into the menu window
-//!            descriptor table at 0x801E4738, `legaia_asset::menu_windows`)
+//!            descriptor table at 0x801E4738, `legaia_game_tables::menu_windows`)
 //!   bytes 2-3: operand_w - little-endian u16, typically a packed (x, y)
 //! ```
 //!
@@ -70,7 +70,7 @@
 //! ## Wiring state: the shop choreography runs disc programs
 //!
 //! The bytecode source is resolved: the programs are **data resident in the
-//! menu overlay itself** (`legaia_asset::widget_script` - parse +
+//! menu overlay itself** (`legaia_game_tables::widget_script` - parse +
 //! `jal`-site scan of the PROT 0899 image). The production route is
 //! `engine-core`: `World::install_menu_overlay_tables` (called by both
 //! hosts with the real overlay bytes) resolves the programs, and
@@ -89,77 +89,22 @@
 pub mod actor_alloc;
 pub mod actor_node_pool;
 pub mod actor_tick;
-pub use legaia_engine_motion_vm::ambient_motion;
-pub use legaia_engine_motion_vm::ambient_motion_ops;
 pub mod anim_vm;
-pub use legaia_engine_battle_vm::battle_action;
-pub use legaia_engine_battle_vm::battle_actor_draw;
-pub use legaia_engine_battle_vm::battle_actor_tick;
-pub use legaia_engine_battle_vm::battle_actor_tint;
-pub use legaia_engine_battle_vm::battle_anim_rate;
-pub use legaia_engine_battle_vm::battle_approach;
-pub use legaia_engine_battle_vm::battle_arts_auto_combo;
-pub use legaia_engine_battle_vm::battle_attack_camera;
 pub mod battle_burst;
-pub use legaia_engine_battle_vm::battle_cam_script;
-pub use legaia_engine_battle_vm::battle_camera;
-pub use legaia_engine_battle_vm::battle_cast_census;
-pub use legaia_engine_battle_vm::battle_cast_cue;
-pub use legaia_engine_battle_vm::battle_cast_dispatch;
-pub use legaia_engine_battle_vm::battle_commit_log;
-pub use legaia_engine_battle_vm::battle_cue_group;
-pub use legaia_engine_battle_vm::battle_cursor_pose;
-pub use legaia_engine_battle_vm::battle_damage_wrappers;
-pub use legaia_engine_battle_vm::battle_formulas;
-pub use legaia_engine_battle_vm::battle_gauge;
-pub use legaia_engine_battle_vm::battle_gauge_rearm;
-pub use legaia_engine_battle_vm::battle_ground_grid;
-pub use legaia_engine_battle_vm::battle_hp_bar;
-pub use legaia_engine_battle_vm::battle_impact_fx;
-pub use legaia_engine_battle_vm::battle_intro_particles;
-pub use legaia_engine_battle_vm::battle_intro_styles;
-pub use legaia_engine_battle_vm::battle_intro_swirl;
-pub use legaia_engine_battle_vm::battle_intro_tiles;
-pub use legaia_engine_battle_vm::battle_intro_transition;
-pub use legaia_engine_battle_vm::battle_pose_blend;
-pub use legaia_engine_battle_vm::battle_record_writer;
-pub use legaia_engine_battle_vm::battle_separation;
-pub use legaia_engine_battle_vm::battle_stream_slot;
-pub use legaia_engine_battle_vm::battle_target_group;
-pub use legaia_engine_battle_vm::battle_trail;
-pub use legaia_engine_battle_vm::battle_value_readout;
-pub use legaia_engine_battle_vm::camera_mover;
-pub use legaia_engine_battle_vm::cast_fatal_decision;
-pub use legaia_engine_battle_vm::cast_module_camera;
-pub use legaia_engine_battle_vm::cast_module_ticks;
 // --- W1-C ---
-#[doc(hidden)]
-pub use legaia_engine_battle_vm::cast_seru_ticks_b;
 // --- end W1-C ---
 // --- W1-B ---
-#[doc(hidden)]
-pub use legaia_engine_battle_vm::cast_seru_ticks_a;
-pub use legaia_engine_battle_vm::seru_magic_ticks;
 // --- end W1-B ---
 // --- W1-D ---
-pub use legaia_engine_battle_vm::cast_arm_ticks;
 // --- end W1-D ---
 pub mod effect_vm;
 pub mod field;
-/// The field-VM bytecode disassembler now lives in the Track-1 `asset` crate
-/// (it is a side-effect-free width/format decoder); re-exported here so the
-/// engine's existing `legaia_engine_vm::field_disasm` / `crate::field_disasm`
-/// paths keep working.
-pub use legaia_asset::field_disasm;
 pub mod field_actor_billboard;
 pub mod field_ledge_hop_arc;
-pub use legaia_engine_motion_vm::motion_vm;
 pub mod move_buffer;
 pub mod move_ext_strip;
-pub use legaia_engine_battle_vm::move_no_effect_guard;
 pub mod move_vm;
 pub mod move_vm_overlay_ext;
-pub use legaia_engine_battle_vm::psx_camera;
 pub mod vdf_morph;
 pub mod vram_rect_copy;
 

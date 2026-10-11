@@ -8,7 +8,7 @@
 //!   sstate9 RAM dump; see [[project-load-screen-panel-source-pinned]]).
 //!   The tiles sit at their natural source coordinates `(160..192, 0..32)`,
 //!   so engines can sample them with the `OVERLAY_SYSTEM_UI_PANEL_*`
-//!   constants exported by `legaia_asset::title_pak`.
+//!   constants exported by `legaia_ui_formats::title_pak`.
 //! - **SLOT 1 / SLOT 2 pills** decoded from PROT 0899's save-menu TIM
 //!   with CLUT 7. The atlas keeps these at their existing source
 //!   coordinates `(33, 97/113, 45, 15)` for backward compatibility.
@@ -21,7 +21,7 @@
 //! 9-slice frame. Engines that need an opaque interior must draw it
 //! themselves.
 
-use legaia_asset::title_pak;
+use legaia_ui_formats::title_pak;
 
 mod atlas;
 mod build;

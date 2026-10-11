@@ -58,15 +58,17 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
 use legaia_engine_shell::replay::ReplayFile;
-use legaia_mednafen::ScenarioManifest;
 use legaia_parity::mode_trace_oracle::{
     ModeTraceFrame, build_engine_mode_trace_field_live,
     build_engine_mode_trace_new_game_battle_leg, first_mode_trace_divergence,
     load_runtime_mode_trace_from_save, save_ram_fingerprint,
 };
+use legaia_ram_image::ScenarioManifest;
 use sha2::{Digest, Sha256};
 
 /// Default location of the v0.1 replay file, relative to the workspace
@@ -564,8 +566,8 @@ fn print_scene_mode_transitions(scenario_label: &str, trace: &[ModeTraceFrame]) 
 /// Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 #[test]
 fn v0_1_battle_leg_reaches_battle_from_new_game() {
-    use legaia_engine_core::input::PadButton;
-    const TETSU: u16 = legaia_engine_core::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID as u16;
+    use legaia_engine_system::input::PadButton;
+    const TETSU: u16 = legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID as u16;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
@@ -718,9 +720,9 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
 /// for the opening). From there the walk is fully emergent.
 #[test]
 fn v0_1_battle_leg_walk_talk_accept() {
-    use legaia_engine_core::encounter_record::RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS as TUT;
-    use legaia_engine_core::input::PadButton;
-    const TETSU: u16 = legaia_engine_core::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID as u16;
+    use legaia_engine_battle::encounter_record::RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS as TUT;
+    use legaia_engine_system::input::PadButton;
+    const TETSU: u16 = legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID as u16;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

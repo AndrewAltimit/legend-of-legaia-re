@@ -28,12 +28,12 @@
 
 use super::*;
 
-use legaia_asset::field_objects::{FLAG_PLACED, WalkHeightfield};
-use legaia_asset::player_anm::PlayerAnmBundle;
-use legaia_asset::{character_pack, field_char_textures};
+use legaia_actor_formats::player_anm::PlayerAnmBundle;
+use legaia_actor_formats::{character_pack, field_char_textures};
 use legaia_engine_core::field_env;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
+use legaia_scene_formats::field_objects::{FLAG_PLACED, WalkHeightfield};
 use legaia_tmd::mesh::{VramMesh, tmd_to_vram_mesh_field_hybrid};
 use std::collections::HashMap;
 
@@ -91,9 +91,9 @@ impl FishingEnv {
             // `packet_color::textured`'s walk of `mesh.colors`, parallel to
             // `mesh.positions`.)
             let neutral = [
-                legaia_engine_core::packet_color::NEUTRAL,
-                legaia_engine_core::packet_color::NEUTRAL,
-                legaia_engine_core::packet_color::NEUTRAL,
+                legaia_engine_field::packet_color::NEUTRAL,
+                legaia_engine_field::packet_color::NEUTRAL,
+                legaia_engine_field::packet_color::NEUTRAL,
                 255,
             ];
             self.flat
@@ -170,7 +170,7 @@ pub(crate) struct FishingScene {
     pub(crate) region_block: Option<Vec<u8>>,
     /// The venue's three rods and their bend, off the same scene bank - the
     /// geometry the fishing line's rod end is a vertex of.
-    pub(crate) rod_mesh: Option<legaia_engine_core::fishing_actors::RodMesh>,
+    pub(crate) rod_mesh: Option<legaia_engine_fishing::fishing_actors::RodMesh>,
 }
 
 /// Frame-0 rigid transforms of scene-ANM record `anim_id - 1` for a bound
@@ -253,8 +253,8 @@ fn bake_env(
                 })
                 .flatten();
             match &offsets {
-                Some(o) => crate::field_scene::build_hybrid_env_mesh_posed(rtmd, o),
-                None => crate::field_scene::build_hybrid_env_mesh(rtmd, &res.vram),
+                Some(o) => legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o),
+                None => legaia_engine_core::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram),
             }
         });
         let (mesh, flat) = (&entry.0, &entry.1);
@@ -341,9 +341,9 @@ impl FishingScene {
     /// Falls back to the drawn walk ground without a map.
     fn seat_floor(&self, x: i16, z: i16) -> f32 {
         if let Some(buf) = self.map.as_deref() {
-            let ramp = legaia_engine_core::minigame_floor::height_ramp();
-            let grid = legaia_engine_core::minigame_floor::FloorGrid::new(buf);
-            return legaia_engine_core::fishing_chrome::float_actor_tick(grid, x, z, 0, &ramp).y
+            let ramp = legaia_engine_fishing::minigame_floor::height_ramp();
+            let grid = legaia_engine_fishing::minigame_floor::FloorGrid::new(buf);
+            return legaia_engine_fishing::fishing_chrome::float_actor_tick(grid, x, z, 0, &ramp).y
                 as f32;
         }
         self.ground
@@ -697,7 +697,7 @@ impl LegaiaMinigames {
             lead.z,
             lead.facing,
         );
-        let yaw = legaia_engine_core::fishing_actors::fish_camera(0, 0, 0, lead.facing).yaw;
+        let yaw = legaia_engine_fishing::fishing_actors::fish_camera(0, 0, 0, lead.facing).yaw;
         Some(legaia_engine_core::fishing_scene::sky_mesh(
             &view, lead.x, yaw,
         ))

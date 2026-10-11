@@ -4,7 +4,7 @@
 // --- Point exchange (prize shop) -------------------------------------------
 
 /// One prize row of the point-exchange screen, decoded from the overlay's
-/// per-venue table ([`legaia_asset::fishing_exchange`]) and optionally named
+/// per-venue table ([`legaia_minigame_formats::fishing_exchange`]) and optionally named
 /// from the SCUS item table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrizeRow {
@@ -44,7 +44,7 @@ pub struct PrizePurchase {
 /// The fishing point-exchange session: a venue's 6 prize rows plus a cursor,
 /// with the retail gating semantics of the exchange sub-screens
 /// (`FUN_801d0c3c` list / `FUN_801d092c` quantity / `FUN_801d06c8` confirm /
-/// `FUN_801d6f90` availability - see [`legaia_asset::fishing_exchange`]).
+/// `FUN_801d6f90` availability - see [`legaia_minigame_formats::fishing_exchange`]).
 ///
 /// The kernel is pure over the caller's state: the point pool, the persistent
 /// purchased bitmask, and the owned count come in per call (the engine keeps
@@ -65,8 +65,8 @@ impl PrizeExchange {
     /// SCUS item table when one is supplied.
     pub fn from_asset(
         venue: usize,
-        rows: &[legaia_asset::fishing_exchange::ExchangeRow],
-        names: Option<&legaia_asset::item_names::ItemNameTable>,
+        rows: &[legaia_minigame_formats::fishing_exchange::ExchangeRow],
+        names: Option<&legaia_game_tables::item_names::ItemNameTable>,
     ) -> Self {
         let rows = rows
             .iter()
@@ -89,7 +89,7 @@ impl PrizeExchange {
 
     /// The one-time bit index for `row` (`row + venue * 8`).
     pub fn purchase_bit(&self, row: usize) -> u32 {
-        legaia_asset::fishing_exchange::FishingExchange::purchase_bit(self.venue, row)
+        legaia_minigame_formats::fishing_exchange::FishingExchange::purchase_bit(self.venue, row)
     }
 
     /// The first *visible* row for the current point total: row 0 is hidden
@@ -119,7 +119,7 @@ impl PrizeExchange {
     }
 
     /// Row availability (drawn white vs grey; `FUN_801d6f90`): affordable,
-    /// the owned count is not at [`legaia_asset::fishing_exchange::OWNED_CAP`],
+    /// the owned count is not at [`legaia_minigame_formats::fishing_exchange::OWNED_CAP`],
     /// and a one-time row is not already latched in `purchased_mask`.
     pub fn is_available(&self, row: usize, points: i32, owned: u32, purchased_mask: u32) -> bool {
         // PORT: FUN_801d6f90 (row availability: afford + owned-cap + one-time latch)
@@ -127,7 +127,7 @@ impl PrizeExchange {
             return false;
         };
         (r.price as i64) <= points as i64
-            && owned != legaia_asset::fishing_exchange::OWNED_CAP
+            && owned != legaia_minigame_formats::fishing_exchange::OWNED_CAP
             && !self.is_latched(row, purchased_mask)
     }
 

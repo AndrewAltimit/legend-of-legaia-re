@@ -17,7 +17,7 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_asset::battle_data_pack;
+use legaia_actor_formats::battle_data_pack;
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_patcher::apply::{
@@ -471,9 +471,12 @@ fn astral_sword_model_carries_over_to_noa_by_moving_a_boundary() {
     // The assembled battle mesh carries the sword.
     let buf = re.read_entry(PLAYERS[1].entry).unwrap();
     let pack = battle_data_pack::detect(&buf).unwrap();
-    let armed =
-        legaia_asset::battle_char_assembly::assemble_character(&buf, &pack, &[0, 0, 0, ASTRAL, 0])
-            .unwrap();
+    let armed = legaia_actor_formats::battle_char_assembly::assemble_character(
+        &buf,
+        &pack,
+        &[0, 0, 0, ASTRAL, 0],
+    )
+    .unwrap();
     assert_eq!(armed.sections[3].id, ASTRAL as u32);
     let t = apply::read_equipment_table(&re).unwrap().unwrap();
     let astral = t.rows.iter().find(|r| r.id == ASTRAL).unwrap();
@@ -559,7 +562,7 @@ fn every_owner_lands_in_the_dmy_annex_without_a_relayout() {
     // descriptor table (the annexed offsets); everything else is retail.
     let re = DiscPatcher::open(patched.clone()).expect("reopen");
     let noa_head = re.read_entry_footprint(864).unwrap()[..0x8000].to_vec();
-    let table = legaia_asset::player_file_annex::chain(&noa_head).expect("annexed chain");
+    let table = legaia_actor_formats::player_file_annex::chain(&noa_head).expect("annexed chain");
     assert!(table.is_annexed());
     assert_eq!(
         noa_head[..table.table_offset],

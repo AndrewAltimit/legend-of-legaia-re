@@ -58,7 +58,7 @@ fn routine_refresh_plans_only_when_stale() {
     scus[0..8].copy_from_slice(b"PS-X EXE");
     scus[0x18..0x1C].copy_from_slice(&0x8001_0000u32.to_le_bytes()); // t_addr
     scus[0x1C..0x20].copy_from_slice(&0x7_0000u32.to_le_bytes()); // t_size
-    let off = legaia_asset::item_names::file_offset_for_va(&scus, ROUTINE_VA).unwrap();
+    let off = legaia_game_tables::item_names::file_offset_for_va(&scus, ROUTINE_VA).unwrap();
     let cur: Vec<u8> = assemble_routine()
         .iter()
         .flat_map(|w| w.to_le_bytes())

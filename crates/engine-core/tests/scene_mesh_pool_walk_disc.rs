@@ -19,7 +19,7 @@
 //! - **114** is the `u32 count` at the head of the type-`0x02` descriptor's
 //!   decompressed payload - retail's own enumeration, read off the disc.
 //! - **5** is `DAT_8007b6f8`, the prefix `FUN_80020f88` adds to every
-//!   placement's mesh id (`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`,
+//!   placement's mesh id (`legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS`,
 //!   pinned 14/14 against a live walk capture).
 //!
 //! That the two agree with the live pool's populated-slot count is the check;
@@ -54,7 +54,7 @@ fn town01_mesh_pack_is_the_descriptor_walk_not_a_byte_sweep() {
 
     let mut carriers = Vec::<(u32, usize)>::new();
     for entry in &scene.entries {
-        let meshes = legaia_asset::scene_asset_table::mesh_pool(&entry.bytes);
+        let meshes = legaia_scene_formats::scene_asset_table::mesh_pool(&entry.bytes);
         if !meshes.is_empty() {
             carriers.push((entry.idx, meshes.len()));
         }
@@ -72,7 +72,7 @@ fn town01_mesh_pack_is_the_descriptor_walk_not_a_byte_sweep() {
         .iter()
         .find(|e| e.idx == 4)
         .expect("town01 entry 4");
-    let table = legaia_asset::scene_asset_table::resolve(&bundle.bytes)
+    let table = legaia_scene_formats::scene_asset_table::resolve(&bundle.bytes)
         .expect("town01 entry 4 carries a scene asset table");
     let tmd_slot = table
         .table
@@ -110,7 +110,7 @@ fn every_block_walks_one_mesh_pack_and_every_member_parses() {
         };
         let mut carriers = Vec::new();
         for entry in &scene.entries {
-            let meshes = legaia_asset::scene_asset_table::mesh_pool(&entry.bytes);
+            let meshes = legaia_scene_formats::scene_asset_table::mesh_pool(&entry.bytes);
             if meshes.is_empty() {
                 continue;
             }
@@ -165,10 +165,10 @@ fn taiku_count4_bundle_registers_its_whole_pack_in_order() {
         .find(|e| e.idx == 372)
         .expect("taiku entry 372");
     assert!(
-        legaia_asset::scene_asset_table::resolve(&bundle.bytes).is_none(),
+        legaia_scene_formats::scene_asset_table::resolve(&bundle.bytes).is_none(),
         "the count-4 table is outside the strict detector - the case this pins"
     );
-    let pool = legaia_asset::scene_asset_table::mesh_pool(&bundle.bytes);
+    let pool = legaia_scene_formats::scene_asset_table::mesh_pool(&bundle.bytes);
     assert_eq!(pool.len(), 126, "the pack header's own member count");
     // The three placeholders: tiny, identical, and the pool's first slots.
     assert!(pool[..3].iter().all(|m| m.bytes.len() == 100));

@@ -163,7 +163,7 @@ pub struct AttackCamFraming {
 pub fn attack_camera_framing(
     actor: AttackCamActor,
     ctx: &mut AttackCamCtx,
-    table: &legaia_asset::battle_attack_camera_table::AttackCameraTracks,
+    table: &legaia_game_tables::battle_attack_camera_table::AttackCameraTracks,
 ) -> Option<AttackCamFraming> {
     let entry = art_arm(actor.character, actor.art_id)?;
     let mut p = CameraPose::seed(actor.pos, actor.facing);

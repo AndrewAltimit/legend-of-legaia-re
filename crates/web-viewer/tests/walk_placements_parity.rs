@@ -123,8 +123,8 @@ fn walk_placements_match_engine_for_every_kingdom() {
         let has = |pack: u32, col: u8, row: u8, x_off: i16, z_off: i16| {
             viewer.iter().any(|p| {
                 p.pack_index == pack
-                    && p.world_x == legaia_asset::field_objects::world_x(col, x_off)
-                    && p.world_z == legaia_asset::field_objects::world_z(row, z_off)
+                    && p.world_x == legaia_scene_formats::field_objects::world_x(col, x_off)
+                    && p.world_z == legaia_scene_formats::field_objects::world_z(row, z_off)
             })
         };
         match scene_name {

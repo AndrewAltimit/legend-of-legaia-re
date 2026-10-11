@@ -25,7 +25,7 @@ pub(super) fn starting_items(run: &mut Run<'_>) -> Result<()> {
     if seed_opts.is_active() {
         let report = apply::randomize_starting_items(patcher, seed, &seed_opts)?;
         let names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-            .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+            .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
         let item_name = |id: u8| -> String {
             names
                 .as_ref()

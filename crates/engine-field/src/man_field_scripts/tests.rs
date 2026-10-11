@@ -1,7 +1,7 @@
 //! Unit tests for `man_field_scripts`, extracted verbatim.
 
 use super::*;
-use legaia_asset::man_section::{ManFile, ManHeader};
+use legaia_scene_formats::man_section::{ManFile, ManHeader};
 
 /// Build a minimal one-partition-1-record MAN whose single record is a
 /// field-VM script: `[N=0][4-byte header][0x37 yield with inline
@@ -41,7 +41,7 @@ fn synthetic_man_with_tetsu_arm() -> (ManFile, Vec<u8>) {
         partitions: [vec![], vec![p1_0], vec![]],
         data_region_offset,
         // Sections all point past the script so they don't bound it.
-        sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+        sections: std::array::from_fn(|_| legaia_scene_formats::man_section::SectionRef {
             offset: man.len(),
             length: 0,
         }),
@@ -95,7 +95,7 @@ fn man_with_placement_script(script: &[u8]) -> (ManFile, Vec<u8>) {
         header,
         partitions: [vec![], vec![off0, off1], vec![]],
         data_region_offset,
-        sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+        sections: std::array::from_fn(|_| legaia_scene_formats::man_section::SectionRef {
             offset: man.len(),
             length: 0,
         }),
@@ -260,7 +260,7 @@ fn synthetic_man_with_gflag_set_26() -> (ManFile, Vec<u8>) {
         header,
         partitions: [vec![], vec![], vec![p2_0]],
         data_region_offset,
-        sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+        sections: std::array::from_fn(|_| legaia_scene_formats::man_section::SectionRef {
             offset: man.len(),
             length: 0,
         }),
@@ -315,7 +315,7 @@ fn synthetic_man_with_system_flag_0x193() -> (ManFile, Vec<u8>) {
         header,
         partitions: [vec![], vec![p1_0], vec![]],
         data_region_offset,
-        sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+        sections: std::array::from_fn(|_| legaia_scene_formats::man_section::SectionRef {
             offset: man.len(),
             length: 0,
         }),
@@ -407,7 +407,7 @@ fn man_with_placements(records: &[Vec<u8>]) -> (ManFile, Vec<u8>) {
         header,
         partitions: [vec![], offsets, vec![]],
         data_region_offset,
-        sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+        sections: std::array::from_fn(|_| legaia_scene_formats::man_section::SectionRef {
             offset: man.len(),
             length: 0,
         }),
@@ -746,7 +746,7 @@ fn empty_partition1_yields_no_records() {
         header,
         partitions: [vec![], vec![], vec![]],
         data_region_offset: 0x2B,
-        sections: std::array::from_fn(|_| legaia_asset::man_section::SectionRef {
+        sections: std::array::from_fn(|_| legaia_scene_formats::man_section::SectionRef {
             offset: 0x2B,
             length: 0,
         }),

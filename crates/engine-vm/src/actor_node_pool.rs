@@ -36,7 +36,7 @@
 //! feeds actor iteration order, which the recomp differential oracle
 //! compares per frame.
 //!
-//! REPLACED-BY: `legaia_engine_core::cutscene::sprite_stack_push`. That covers
+//! REPLACED-BY: `legaia_engine_system::movie::cutscene::sprite_stack_push`. That covers
 //! [`list_append_u16`], which is the same address ported a second time and is
 //! live on both hosts through the fog-particle pool. This section used to read
 //! it as a wiring gap owed by an unported producer; the producer
@@ -44,12 +44,12 @@
 //! `0x8003F800` that names this routine is that port's free-slot return.
 //!
 //! REPLACED-BY: the borrow-in-place chunk walk in
-//! `legaia_asset::parse_streaming_with`. That covers [`copy_blocks_32`], and
+//! `legaia_container_formats::parse_streaming_with`. That covers [`copy_blocks_32`], and
 //! this section used to leave it out - the audit attributed it here through
 //! the module tag while the prose named only the other two, which is a
 //! disclosure that reads as covering an anchor it never mentions. Its retail
 //! caller `FUN_8001FE70` **is** ported and live, as
-//! `legaia_asset::parse_streaming_with`, but the copy itself is retail's way of
+//! `legaia_container_formats::parse_streaming_with`, but the copy itself is retail's way of
 //! moving a chunk body into an aligned buffer and the Rust walker borrows the
 //! chunk in place instead. There is no destination buffer to copy into, so
 //! there is no call site - not a missing host. The kernel is kept for the two
@@ -325,7 +325,7 @@ impl ActorNodePool {
 ///
 /// PORT: FUN_8001FA68
 ///
-/// REPLACED-BY: `legaia_engine_core::cutscene::sprite_stack_push`, which is
+/// REPLACED-BY: `legaia_engine_system::movie::cutscene::sprite_stack_push`, which is
 /// this same address ported a second time and reached on both hosts.
 /// `FUN_8003F3FC` - named here as the missing producer - is ported: it is the
 /// per-particle half of `legaia_engine_core::fog_particles::FogPool::render_step`,
@@ -384,7 +384,7 @@ pub fn list_append_u16(count: &mut i16, entries: &mut [u16], value: u16) -> Opti
 /// PORT: FUN_8003D26C
 ///
 /// REPLACED-BY: the borrow-in-place chunk walk in
-/// `legaia_asset::parse_streaming_with` - there is no destination buffer to
+/// `legaia_container_formats::parse_streaming_with` - there is no destination buffer to
 /// copy into, so there is no call site.
 ///
 /// 32-byte-block copy - the unrolled `t0..t7` load/store loop the

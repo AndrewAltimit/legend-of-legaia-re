@@ -16,18 +16,18 @@
 //!   party member the playing clip's face tracks pick an eye + mouth frame,
 //!   and each is a VRAM-to-VRAM `MoveImage` from the band's face-frame strip
 //!   onto its live face rows. The stamp selection is the shared
-//!   `legaia_asset::face_anim::FaceFrameTables::stamps_with_art_window`; the
+//!   `legaia_actor_formats::face_anim::FaceFrameTables::stamps_with_art_window`; the
 //!   tracks come off the same player-file entries the native loader reads
 //!   (record[0] entries, the equipment-spliced swings, the art bank's
 //!   embedded entries), collected in
 //!   [`crate::play_battle_render`]'s party build.
 //! * **Status CLUT recolour** (`FUN_8004CE2C` pass 4): the Stone latch
 //!   `BattleHud::sync_status` arms on this host too, drained through the
-//!   shared `legaia_engine_core::battle_status_clut::StatusClutState::step`.
+//!   shared `legaia_engine_battle::battle_status_clut::StatusClutState::step`.
 //! * **Effect CLUT stage** (`FUN_801DEA50`'s palette arm): the
 //!   `World::battle.clut_stages` queue the effect-script walk fills on every
 //!   host, drained through the shared
-//!   `legaia_engine_core::battle_effect_clut::stage_effect_clut`.
+//!   `legaia_engine_battle::battle_effect_clut::stage_effect_clut`.
 //!
 //! The native window's fourth per-tick battle-VRAM body,
 //! `check_battle_vram_residency`, is a GPU-side invariant (which upload does
@@ -44,8 +44,8 @@
 
 use wasm_bindgen::prelude::*;
 
-use legaia_asset::face_anim::{ArtMouthTables, FaceFrameTables, FaceStamp, FaceTracks};
-use legaia_engine_core::world::SceneMode;
+use legaia_actor_formats::face_anim::{ArtMouthTables, FaceFrameTables, FaceStamp, FaceTracks};
+use legaia_engine_mode::mode::SceneMode;
 
 use crate::runtime::LegaiaRuntime;
 
@@ -175,10 +175,10 @@ impl LegaiaRuntime {
     // node, call the stamp pass with (band slot, char index, cursor
     // keyframes, playing action entry), skipping char 3 (Terra) and bands
     // >= 3. The stamp-selection half is `FaceFrameTables::stamps_with_art_window`
-    // (PORT: FUN_8004C7B4 in legaia_asset::face_anim).
+    // (PORT: FUN_8004C7B4 in legaia_actor_formats::face_anim).
     fn tick_battle_face_stamps_web(&mut self) {
-        use legaia_asset::face_anim::{ART_BAND_FIRST, ART_BAND_LAST, ArtMouthOverride};
-        use legaia_engine_vm::battle_action::BattleEndCause;
+        use legaia_actor_formats::face_anim::{ART_BAND_FIRST, ART_BAND_LAST, ArtMouthOverride};
+        use legaia_engine_battle_vm::battle_action::BattleEndCause;
         let Some(host) = self.scene_host.host() else {
             return;
         };
@@ -223,10 +223,13 @@ impl LegaiaRuntime {
             // (FUN_8004AD80), so the animator reads THAT entry's tracks
             // (record +0xB0 eyes / +0xBC mouth). Below the art base, the
             // playing clip's action slot picks the record[0] / swing entry.
-            let tracks = if action_id >= legaia_asset::battle_char_assembly::ART_ANIM_ID_BASE {
+            let tracks = if action_id
+                >= legaia_actor_formats::battle_char_assembly::ART_ANIM_ID_BASE
+            {
                 mf.art_tracks
                     .get(
-                        (action_id - legaia_asset::battle_char_assembly::ART_ANIM_ID_BASE) as usize,
+                        (action_id - legaia_actor_formats::battle_char_assembly::ART_ANIM_ID_BASE)
+                            as usize,
                     )
                     .and_then(|t| t.as_ref())
             } else {
@@ -285,7 +288,7 @@ impl LegaiaRuntime {
     /// Status CLUT recolour - the fourth pass of `FUN_8004CE2C`. An actor
     /// whose Stone latch fired this frame has its party CLUT row
     /// (`481 + slot`) restaged grey from the pristine palette copy
-    /// ([`legaia_engine_core::battle_status_clut`]); the latch itself is
+    /// ([`legaia_engine_battle::battle_status_clut`]); the latch itself is
     /// armed inside `BattleHud::sync_status`, which the battle tick already
     /// runs once per slot per frame on this host.
     fn tick_battle_status_clut_web(&mut self) {
@@ -304,7 +307,7 @@ impl LegaiaRuntime {
     /// table form (`FUN_801DEA50`, `0x801df0dc..0x801df134`). Each queued
     /// `0x801F6418` byte is a VRAM source x whose sixteen entries move onto
     /// `(224, 476)`, recolouring whatever the spawned move-FX prototype draws
-    /// ([`legaia_engine_core::battle_effect_clut`]). Drains unconditionally
+    /// ([`legaia_engine_battle::battle_effect_clut`]). Drains unconditionally
     /// so the queue cannot accumulate across a battle.
     fn tick_battle_effect_clut_web(&mut self) {
         let Some(host) = self.scene_host.host_mut() else {
@@ -319,7 +322,7 @@ impl LegaiaRuntime {
         };
         let mut dirty = false;
         for x in stages {
-            dirty |= legaia_engine_core::battle_effect_clut::stage_effect_clut(&mut br.vram, x);
+            dirty |= legaia_engine_battle::battle_effect_clut::stage_effect_clut(&mut br.vram, x);
         }
         if dirty {
             self.battle_vram.mark_dirty();
@@ -438,7 +441,7 @@ impl LegaiaRuntime {
         let has_active = |t: &FaceTracks| {
             t.eyes.iter().any(|r| r.end != 0) || t.mouth.iter().any(|r| r.end != 0)
         };
-        let base = legaia_asset::battle_char_assembly::ART_ANIM_ID_BASE as usize;
+        let base = legaia_actor_formats::battle_char_assembly::ART_ANIM_ID_BASE as usize;
         let mut out: Vec<u16> = mf
             .tracks
             .iter()
@@ -476,9 +479,12 @@ impl LegaiaRuntime {
                 .and_then(|a| a.battle_animation.as_ref())
                 .map(|p| (p.action_id(), p.current_frame(), true))
                 .unwrap_or((0, 0, false));
-            let tracks = if id >= legaia_asset::battle_char_assembly::ART_ANIM_ID_BASE {
+            let tracks = if id >= legaia_actor_formats::battle_char_assembly::ART_ANIM_ID_BASE {
                 mf.art_tracks
-                    .get((id - legaia_asset::battle_char_assembly::ART_ANIM_ID_BASE) as usize)
+                    .get(
+                        (id - legaia_actor_formats::battle_char_assembly::ART_ANIM_ID_BASE)
+                            as usize,
+                    )
                     .and_then(|t| t.as_ref())
             } else {
                 mf.tracks.get(id as usize).and_then(|t| t.as_ref())

@@ -49,7 +49,7 @@ fn reads_a_fight_out_of_ram() {
 /// takes its age off the two countdowns.
 #[test]
 fn reads_the_summon_flash_age_off_the_fade_block() {
-    use legaia_engine_vm::battle_action::SUMMON_FLASH_IN;
+    use legaia_engine_battle_vm::battle_action::SUMMON_FLASH_IN;
     let mut ram = vec![0u8; 0x20_0000];
     let actor = 0x8008_2BC4;
     put32(&mut ram, actor + 0x0C, FADE_ACTOR_TICK);
@@ -375,7 +375,7 @@ fn entered_arrows_undo_the_queue_builder() {
 /// without it alone.
 #[test]
 fn unlearning_undoes_the_absorb_grant() {
-    use legaia_engine_core::magic_xp::learn_spell_prepend;
+    use legaia_engine_battle::magic_xp::learn_spell_prepend;
     let mut rec = legaia_save::CharacterRecord::zeroed();
     learn_spell_prepend(&mut rec, 0x83);
     learn_spell_prepend(&mut rec, 0x85);
@@ -458,7 +458,7 @@ fn combatant_score_skips_a_missing_engine_max_mp() {
 /// The image child's glide-origin pair survives its env round trip.
 #[test]
 fn cam_align_env_round_trips() {
-    use legaia_engine_vm::battle_cam_script::BattleCamPose;
+    use legaia_engine_battle_vm::battle_cam_script::BattleCamPose;
     let live = BattleCamPose {
         pitch: 128.0,
         yaw: 3205.0,

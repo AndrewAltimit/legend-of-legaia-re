@@ -3,7 +3,7 @@
 //! the coin HUD, each sampling the machine's own art pages in VRAM.
 //!
 //! Every element is the emitter the overlay runs, projected through the
-//! machine's camera (`legaia_asset::minigame_slot_scene::project`, the GTE registers captured at the machine)
+//! machine's camera (`legaia_minigame_formats::minigame_slot_scene::project`, the GTE registers captured at the machine)
 //! and linked at a depth-derived ordering-table bucket, so the painter's order
 //! is retail's OT order rather than a hand-picked layer stack:
 //!
@@ -25,14 +25,14 @@
 //!
 //! The art the quads sample is the five-TIM pack (PROT 1200) uploaded at its
 //! own framebuffer destinations; a host that draws this list binds a VRAM
-//! holding it ([`legaia_asset::minigame_art::parse_art_pack`]).
+//! holding it ([`legaia_minigame_formats::minigame_art::parse_art_pack`]).
 
-use legaia_asset::minigame_art::{
+use legaia_minigame_formats::minigame_art::{
     SLOT_BONUS_CLUT_BASE, SLOT_DIGIT_CLUT, SLOT_SYMBOL_CLUT_BASE, SlotHudWidget,
 };
-use legaia_asset::minigame_slot_scene as sc;
+use legaia_minigame_formats::minigame_slot_scene as sc;
 
-use crate::screen_prim::{FlatQuad, ScreenPrim, ScreenQuad};
+use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, ScreenQuad};
 
 /// OT bucket of the dot matrix (`FUN_801d0e1c` links every dot and its
 /// `DR_TPAGE` at `ot + 0x28`, i.e. bucket 10).
@@ -73,14 +73,14 @@ const NEUTRAL: u32 = 0x0080_8080;
 /// table out of the overlay's own rodata (PROT 0975) - plus the VRAM the art
 /// pack uploads into, which is the whole texture set the machine samples.
 pub struct SlotCabinetAssets {
-    pub scene: legaia_asset::minigame_slot_scene::SlotScene,
-    pub cabinet: Option<legaia_asset::minigame_slot_scene::SlotCabinetMesh>,
-    pub hud: Vec<legaia_asset::minigame_art::SlotHudWidget>,
+    pub scene: legaia_minigame_formats::minigame_slot_scene::SlotScene,
+    pub cabinet: Option<legaia_minigame_formats::minigame_slot_scene::SlotCabinetMesh>,
+    pub hud: Vec<legaia_minigame_formats::minigame_art::SlotHudWidget>,
     pub vram: legaia_tim::Vram,
     /// The two rules pages' text and chart order (the overlay's own rodata).
-    pub rules: Option<legaia_asset::minigame_slot_scene::SlotRules>,
+    pub rules: Option<legaia_minigame_formats::minigame_slot_scene::SlotRules>,
     /// The per-symbol line payouts the second rules page charts
-    /// (`DAT_801d3598`, [`legaia_asset::slot_payout`]).
+    /// (`DAT_801d3598`, [`legaia_minigame_formats::slot_payout`]).
     pub payouts: [u8; 10],
     /// Whether the boot-resident system-UI sheet is in [`Self::vram`]
     /// ([`Self::with_system_ui`]) - the menu box border's texels.
@@ -93,9 +93,9 @@ impl SlotCabinetAssets {
     /// decode - the art pack or the scene graph; the cabinet mesh is
     /// optional, and without it the reels and furniture still draw.
     pub fn load(read: impl Fn(usize) -> Option<Vec<u8>>) -> Result<Self, String> {
-        use legaia_asset::minigame_art as art;
+        use legaia_minigame_formats::minigame_art as art;
         let art_raw = read(art::SLOT_ART_PROT_INDEX).ok_or("art pack (PROT 1200) unreadable")?;
-        let overlay = read(legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX)
+        let overlay = read(legaia_minigame_formats::slot_payout::SLOT_OVERLAY_PROT_INDEX)
             .ok_or("slot overlay (PROT 0975) unreadable")?;
         let tims = art::parse_art_pack(&art_raw)
             .map_err(|e| format!("art pack (PROT 1200) did not decode: {e:#}"))?;
@@ -106,7 +106,7 @@ impl SlotCabinetAssets {
         let hud = art::parse_slot_hud(&overlay).unwrap_or_default();
         let cabinet = sc::parse_cabinet(&art_raw).ok();
         let rules = sc::parse_rules(&overlay).ok();
-        let payouts = legaia_asset::slot_payout::parse(&overlay)
+        let payouts = legaia_minigame_formats::slot_payout::parse(&overlay)
             .map(|t| t.payouts)
             .unwrap_or_default();
         let mut vram = legaia_tim::Vram::new();
@@ -567,7 +567,7 @@ fn box_fill(rect: (i32, i32, i32, i32), half_x: bool, ot: u32, out: &mut Vec<Scr
 /// come out half as wide. Linked before the fill in the same bucket, so the
 /// GPU draws them over it.
 fn box_border(rect: (i32, i32, i32, i32), mode_320: bool, ot: u32, out: &mut Vec<ScreenPrim>) {
-    use legaia_asset::title_pak as tp;
+    use legaia_ui_formats::title_pak as tp;
     const TPAGE: u16 = 0x1E;
     const CLUT: u16 = 0x7FC0 + tp::OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW;
     let (px, py, pw, ph) = (rect.0 - 8, rect.1 - 8, rect.2 + 16, rect.3 + 16);
@@ -748,7 +748,11 @@ pub fn slot_menu_prims(
     }
     if fade > 0 {
         let f = fade.clamp(0, 0xFF) as u8;
-        out.push(crate::screen_prim::screen_fade_prim([f, f, f], 2, 0));
+        out.push(legaia_render_kernels::screen_prim::screen_fade_prim(
+            [f, f, f],
+            2,
+            0,
+        ));
     }
     out
 }

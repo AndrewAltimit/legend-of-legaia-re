@@ -12,8 +12,8 @@ use super::man_fit::{
 };
 use super::report::{ImportReport, IssueKind, SceneTrace, WritePath, sectors_for_overflow};
 use super::{encode_source, encode_translation, hint_agrees, pad_segment};
-use legaia_asset::man_edit::{self, TextSite};
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_scene_formats::man_edit::{self, TextSite};
 
 /// A dialog segment inside a scene MAN, validated against the disc and ready
 /// to write: its decompressed-domain offset, current on-disc byte length (the

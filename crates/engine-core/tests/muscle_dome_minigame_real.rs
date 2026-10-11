@@ -11,15 +11,15 @@
 //! knockout through the world tick. No Sony bytes are asserted,
 //! only structural facts. Skips + passes when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_asset::battle_char_assembly;
-use legaia_asset::muscle_dome as md;
-use legaia_asset::static_overlay;
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::muscle_dome::{
-    DomeCombatant, DomeDamageModel, MuscleCard, MuscleDomeSession, MusclePhase,
-};
+use legaia_actor_formats::battle_char_assembly;
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
+use legaia_engine_minigames::muscle_dome::{DomeCombatant, DomeDamageModel};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
+use legaia_minigame_formats::muscle_dome as md;
+use legaia_overlay_images::static_overlay;
 
 /// The pinned retail swing-cost value set (arts-command-gauge: favored /
 /// off-class / far).
@@ -56,7 +56,7 @@ fn real_hand() -> Option<([u8; 4], [u8; 4], Vec<u8>)> {
         .index
         .entry_bytes_extended(863)
         .expect("read PROT 0863");
-    let pack = legaia_asset::battle_data_pack::parse(&player).expect("player pack parses");
+    let pack = legaia_actor_formats::battle_data_pack::parse(&player).expect("player pack parses");
     let swings = battle_char_assembly::swing_battle_animations(&player, &pack, &[0u8; 5])
         .expect("swing records decode");
     let mut costs = [0u8; 4];

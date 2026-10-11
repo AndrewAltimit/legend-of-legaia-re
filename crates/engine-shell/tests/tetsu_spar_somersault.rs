@@ -19,14 +19,15 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::arts_command_input::ArtsInputPhase;
-use legaia_engine_core::battle_input::CommandPhase;
+use legaia_engine_battle::arts_command_input::ArtsInputPhase;
+use legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
 use legaia_engine_core::battle_tutorial::{TUTORIAL_ARM_FLAG, TutorialLesson};
-use legaia_engine_core::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::inventory_use::InventoryUseState;
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_menus::battle_input::CommandPhase;
+use legaia_engine_menus::inventory_use::InventoryUseState;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {

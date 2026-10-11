@@ -15,10 +15,10 @@
 //! Disc-gated: skips and passes when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_engine_audio::{SPU_INTERNAL_RATE, TestAudioSink};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::boot::FieldLiveOpts;
 use legaia_engine_session::{BootConfig, BootSession};
+use legaia_engine_system::input::PadButton;
 
 const DANCE_SUB_ID: u8 = 6;
 
@@ -79,12 +79,12 @@ fn the_dance_keys_its_own_cues_out_of_its_own_bank() {
     let bgm = s.bgm.as_ref().expect("audio");
     assert_eq!(
         bgm.last_started,
-        Some(legaia_engine_core::minigame_entry::DANCE_SHORT_SONG_BGM_ID),
+        Some(legaia_engine_mode::minigame_entry::DANCE_SHORT_SONG_BGM_ID),
         "the song starts as the count-in clears"
     );
     assert_eq!(
         bgm.prot_for_slot(2),
-        Some(legaia_asset::dance_art::DANCE_SFX_VAB_PROT_INDEX as u32),
+        Some(legaia_minigame_formats::dance_art::DANCE_SFX_VAB_PROT_INDEX as u32),
         "the dance's class-2 bank is resident"
     );
     eprintln!(
@@ -92,7 +92,7 @@ fn the_dance_keys_its_own_cues_out_of_its_own_bank() {
         bgm.bgm_tail().shared_spill()
     );
     assert!(
-        fired.contains(&legaia_engine_core::dance::COUNTIN_INTRO_CUE),
+        fired.contains(&legaia_engine_minigames::dance::COUNTIN_INTRO_CUE),
         "the count-in intro cue keys a voice: {fired:x?}"
     );
 
@@ -105,13 +105,13 @@ fn the_dance_keys_its_own_cues_out_of_its_own_bank() {
             0
         };
         song.extend(step(&mut s, pad));
-        if song.contains(&legaia_engine_core::dance::AWARD_MISS_CUE) {
+        if song.contains(&legaia_engine_minigames::dance::AWARD_MISS_CUE) {
             break;
         }
     }
     eprintln!("[ran] song fired {song:x?}");
     assert!(
-        song.contains(&legaia_engine_core::dance::AWARD_MISS_CUE),
+        song.contains(&legaia_engine_minigames::dance::AWARD_MISS_CUE),
         "a judged miss keys the miss cue: {song:x?}"
     );
 }

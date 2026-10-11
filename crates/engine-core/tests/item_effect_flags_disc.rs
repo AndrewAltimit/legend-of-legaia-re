@@ -1,5 +1,5 @@
 //! Disc-gated: applying the real on-disc item-effect descriptor table
-//! ([`legaia_asset::item_effect`], `DAT_800752C0`) over the vanilla item
+//! ([`legaia_game_tables::item_effect`], `DAT_800752C0`) over the vanilla item
 //! catalog corrects each consumable's field/battle usability gates to match
 //! retail. Skips without `LEGAIA_DISC_BIN`.
 //!
@@ -8,7 +8,7 @@
 //! byte is `0x84` (battle bit only) - status/death only matter in battle.
 
 use legaia_engine_core::Vfs;
-use legaia_engine_core::items::ItemCatalog;
+use legaia_engine_menus::items::ItemCatalog;
 use std::path::PathBuf;
 
 #[test]
@@ -25,8 +25,8 @@ fn effect_flags_correct_item_usability_gates() {
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
-    let effects =
-        legaia_asset::item_effect::ItemEffectTable::from_scus(&scus).expect("effect table parses");
+    let effects = legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus)
+        .expect("effect table parses");
 
     let mut catalog = ItemCatalog::vanilla();
     // Baseline: the curated catalog marks the cure/revive items field-usable.

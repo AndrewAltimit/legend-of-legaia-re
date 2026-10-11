@@ -115,7 +115,7 @@ impl BattleSlotHud {
     /// whose live HP already hit zero stays in the low band until the bar
     /// finishes draining.
     pub fn gauge_fill_indices(&self) -> (u8, u8) {
-        legaia_engine_vm::battle_gauge::gauge_colors(
+        legaia_engine_battle_vm::battle_gauge::gauge_colors(
             self.hp,
             self.hp_max,
             self.mp,

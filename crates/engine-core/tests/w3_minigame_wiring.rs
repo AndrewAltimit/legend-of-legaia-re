@@ -8,7 +8,8 @@
 //! exits go through the mode-24 door warp and which keep the plain
 //! suspend/restore contract.
 
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 
 // --- mode-24 minigame door warp: which exits take it -----------------------
 
@@ -92,8 +93,8 @@ fn the_baka_exit_runs_the_mode24_return_warp() {
     assert!(world.minigames.scene_backup.is_none(), "backup consumed");
 }
 
-fn baka_fight_for_test() -> legaia_engine_core::baka_fighter::BakaFight {
-    use legaia_engine_core::baka_fighter::{BakaFight, FighterConfig};
+fn baka_fight_for_test() -> legaia_engine_minigames::baka_fighter::BakaFight {
+    use legaia_engine_minigames::baka_fighter::{BakaFight, FighterConfig};
     let cfg = |roster_id: usize| FighterConfig {
         roster_id,
         damage_mod: 0,
@@ -107,12 +108,12 @@ fn baka_fight_for_test() -> legaia_engine_core::baka_fighter::BakaFight {
     BakaFight::new(cfg(0), cfg(1), 0xBAA5EED)
 }
 
-fn slot_machine_for_test() -> legaia_engine_core::slot_machine::SlotMachine {
-    use legaia_asset::slot_payout::SlotPayoutTable;
+fn slot_machine_for_test() -> legaia_engine_minigames::slot_machine::SlotMachine {
+    use legaia_minigame_formats::slot_payout::SlotPayoutTable;
     let payouts = SlotPayoutTable {
         payouts: [0, 2, 3, 4, 5, 6, 8, 10, 15, 20],
     };
-    legaia_engine_core::slot_machine::SlotMachine::new(payouts, 0x1234_5678, 60)
+    legaia_engine_minigames::slot_machine::SlotMachine::new(payouts, 0x1234_5678, 60)
 }
 
 // --- slot machine: both strips are built at session start -----------------
@@ -122,7 +123,7 @@ fn slot_machine_for_test() -> legaia_engine_core::slot_machine::SlotMachine {
 /// strip. This is what the reels show.
 #[test]
 fn a_new_machine_seeds_its_display_strips_from_the_permuted_symbol_strips() {
-    use legaia_engine_core::slot_machine::{REEL_COUNT, STRIP_LEN, SYMBOL_COUNT};
+    use legaia_engine_minigames::slot_machine::{REEL_COUNT, STRIP_LEN, SYMBOL_COUNT};
     let m = slot_machine_for_test();
     for reel in 0..REEL_COUNT {
         let strip = m.strips()[reel];
@@ -143,9 +144,8 @@ fn a_new_machine_seeds_its_display_strips_from_the_permuted_symbol_strips() {
 
 #[test]
 fn the_time_meter_climbs_through_selection_and_drains_once_it_ends() {
-    use legaia_engine_core::muscle_dome::{
-        MuscleCard, MuscleDomeSession, MusclePhase, TIME_METER_MAX,
-    };
+    use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
+    use legaia_engine_minigames::muscle_dome::TIME_METER_MAX;
     let hand = || {
         [0u8, 1, 2, 3].map(|i| MuscleCard {
             command_id: 0x0C + i,
@@ -184,7 +184,7 @@ fn the_time_meter_climbs_through_selection_and_drains_once_it_ends() {
 /// judge's acceptance window.
 #[test]
 fn the_displayed_combo_slot_is_not_the_judged_one() {
-    use legaia_engine_core::dance::{
+    use legaia_engine_minigames::dance::{
         BEAT_WINDOW, COMBO_FLASH_WINDOW, dance_beat_level_mask, dance_combo_window_bright,
     };
     assert_eq!(dance_beat_level_mask(0), 3);
@@ -211,7 +211,7 @@ fn the_displayed_combo_slot_is_not_the_judged_one() {
 /// zeros are blank slots and zero draws one `0` (the seeded units slot).
 #[test]
 fn the_dance_score_readout_blanks_leading_zeros() {
-    use legaia_engine_core::dance::dance_number_digits;
+    use legaia_engine_minigames::dance::dance_number_digits;
     assert_eq!(
         dance_number_digits(0),
         [None, None, None, None, None, None, None, Some(0)]
@@ -226,7 +226,7 @@ fn the_dance_score_readout_blanks_leading_zeros() {
 /// fraction grows.
 #[test]
 fn the_beat_track_notes_scroll_one_cell_per_beat() {
-    use legaia_engine_core::dance::{BEAT_PERIOD, dance_beat_track_note_x};
+    use legaia_engine_minigames::dance::{BEAT_PERIOD, dance_beat_track_note_x};
     let base = 60;
     assert_eq!(
         dance_beat_track_note_x(base, 1, 0) - dance_beat_track_note_x(base, 0, 0),
@@ -247,7 +247,7 @@ fn the_beat_track_notes_scroll_one_cell_per_beat() {
 /// when either the gold or the stock gate fails.
 #[test]
 fn the_coin_counter_prices_the_slot_entry_stake() {
-    use legaia_engine_core::slot_machine::{COIN_PRICE_GOLD, coin_exchange_quote};
+    use legaia_engine_minigames::slot_machine::{COIN_PRICE_GOLD, coin_exchange_quote};
     // The host lays 100 out as [0, 0, 1, 0, 0, 0, 0, 0] - units first.
     let digits = [0i8, 0, 1, 0, 0, 0, 0, 0];
     let cost = 100 * COIN_PRICE_GOLD;

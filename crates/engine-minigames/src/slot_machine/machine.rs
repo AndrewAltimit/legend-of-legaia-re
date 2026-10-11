@@ -1,15 +1,15 @@
 //! The [`SlotMachine`] session state, its sound latches and pacing constants, construction and read accessors.
 
 use super::*;
-use legaia_asset::slot_payout::{self, SlotPayoutTable};
 use legaia_engine_system::rand::BiosRand;
+use legaia_minigame_formats::slot_payout::{self, SlotPayoutTable};
 
 /// The outcome of one evaluated spin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpinResult {
     /// Winning payline index (`0` top / `1` middle / `2` bottom / `3`, `4` the
     /// two diagonals), or `None`. The index is also the medallion / lamp the
-    /// machine lights - see [`legaia_asset::minigame_slot_scene`].
+    /// machine lights - see [`legaia_minigame_formats::minigame_slot_scene`].
     pub line: Option<usize>,
     /// Winning symbol id, or `None`.
     pub symbol: Option<u8>,
@@ -125,7 +125,7 @@ pub struct SlotMachine {
     pub(super) caption_frame: i32,
     /// The five payline segments' model-space geometry (`DAT_801d3680`), when
     /// the host staged it ([`Self::with_paylines`]).
-    paylines: Vec<legaia_asset::minigame_slot_scene::PayLine>,
+    paylines: Vec<legaia_minigame_formats::minigame_slot_scene::PayLine>,
     /// The bonus-anticipation latch (`DAT_801d3ca4`): `1` while two landed
     /// reels show a punch (`9`) pair on any payline, `2` for a kick (`8`)
     /// pair, `0` otherwise - see [`Self::anticipation`].
@@ -275,11 +275,11 @@ impl SlotMachine {
     }
 
     /// Stage the overlay's payline geometry
-    /// ([`legaia_asset::minigame_slot_scene::parse_paylines`]) so every host
+    /// ([`legaia_minigame_formats::minigame_slot_scene::parse_paylines`]) so every host
     /// draws the paylines off the machine itself ([`Self::payline_segments`]).
     pub fn with_paylines(
         mut self,
-        paylines: Vec<legaia_asset::minigame_slot_scene::PayLine>,
+        paylines: Vec<legaia_minigame_formats::minigame_slot_scene::PayLine>,
     ) -> Self {
         self.paylines = paylines;
         self
@@ -451,7 +451,7 @@ impl SlotMachine {
     /// The bonus-anticipation latch (`DAT_801d3ca4`): `1` while two landed
     /// reels show a punch pair, `2` for a kick pair, `0` otherwise. Read by
     /// the marquee's legend tail, which scrolls message `4` / `5` for it
-    /// ([`legaia_asset::minigame_slot_scene::attract_legend`]).
+    /// ([`legaia_minigame_formats::minigame_slot_scene::attract_legend`]).
     pub fn anticipation(&self) -> i32 {
         self.anticipation
     }
@@ -469,13 +469,13 @@ impl SlotMachine {
     /// once per spin behind the guard `DAT_801d3ca8`; that half rides
     /// [`Self::tick`], which raises the sting and the reach loop.
     ///
-    /// [`PAYLINE_ROW_OFFSETS`]: legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS
+    /// [`PAYLINE_ROW_OFFSETS`]: legaia_minigame_formats::minigame_slot_scene::PAYLINE_ROW_OFFSETS
     // PORT: FUN_801d1af4 (PROT 0975)
     pub(super) fn anticipation_scan(&self) -> i32 {
-        use legaia_asset::slot_payout::{KICK_SYMBOL_ID, PUNCH_SYMBOL_ID};
+        use legaia_minigame_formats::slot_payout::{KICK_SYMBOL_ID, PUNCH_SYMBOL_ID};
         let landed: [bool; REEL_COUNT] = core::array::from_fn(|r| self.stopped[r].is_some());
         let (mut punch, mut kick) = (false, false);
-        for offs in legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS.iter() {
+        for offs in legaia_minigame_formats::minigame_slot_scene::PAYLINE_ROW_OFFSETS.iter() {
             let v = |r: usize| {
                 let row = (self.payline_row(r) as isize + offs[r] as isize)
                     .rem_euclid(STRIP_LEN as isize) as usize;

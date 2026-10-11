@@ -20,10 +20,10 @@
 //! has died. Both are static disassembly facts, so both are pinned here
 //! disc-free.
 
+use legaia_engine_battle::encounter_record::BOSS_TRANSITION_MONSTER_ID;
 use legaia_engine_core::battle_stage_module::{
     battle_init_stage_override, boss_transition_stage_id,
 };
-use legaia_engine_core::encounter_record::BOSS_TRANSITION_MONSTER_ID;
 use legaia_engine_core::overlay_loader::battle_stage_overlay_entry;
 
 #[test]

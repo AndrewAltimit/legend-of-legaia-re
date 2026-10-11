@@ -15,9 +15,10 @@
 //!
 //! Skips without `LEGAIA_DISC_BIN`.
 
+use legaia_engine_battle_vm::battle_action::ActionState;
 use legaia_engine_core::Vfs;
-use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::battle_action::ActionState;
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
 use std::path::PathBuf;
 
 fn scus() -> Option<Vec<u8>> {
@@ -40,7 +41,7 @@ fn armed_battle(scus: &[u8], spell_id: u8, mp: u16) -> World {
     w.mode = SceneMode::Battle;
     w.party.party_count = 3;
     w.set_spell_catalog(
-        legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(scus)
+        legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(scus)
             .expect("SCUS parses as a PSX-EXE"),
     );
     w.install_menu_text(scus);
@@ -82,7 +83,7 @@ fn the_state_machine_charges_the_discs_own_mp_cost() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let table = legaia_asset::spell_names::SpellNameTable::from_scus(&scus)
+    let table = legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus)
         .expect("the retail spell table decodes");
 
     // Gimard - the lowest player Seru id, and the one pinned by the capture
@@ -126,7 +127,7 @@ fn the_discs_class_byte_routes_the_capture_branch() {
     // `capture_class_records` is the census of `'c'`-class ids and their
     // streamed-module indices; the engine consumes it here as the source of a
     // *real* capture id rather than hard-coding one.
-    let capture = legaia_asset::spell_names::capture_class_records(&scus)
+    let capture = legaia_game_tables::spell_names::capture_class_records(&scus)
         .expect("the capture-class census decodes");
     assert!(
         !capture.is_empty(),
@@ -180,9 +181,9 @@ fn the_boot_catalog_resolves_every_monster_special_the_archive_casts() {
     let Some(scus) = scus() else {
         return;
     };
-    let table = legaia_asset::spell_names::SpellNameTable::from_scus(&scus)
+    let table = legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus)
         .expect("the retail spell table decodes");
-    let catalog = legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+    let catalog = legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(&scus)
         .expect("SCUS parses as a PSX-EXE");
 
     let host = legaia_engine_core::scene::SceneHost::open_disc(&path).expect("open the disc");
@@ -190,7 +191,7 @@ fn the_boot_catalog_resolves_every_monster_special_the_archive_casts() {
         .index
         .entry_bytes(MONSTER_ARCHIVE_PROT_INDEX)
         .expect("PROT 867 reads");
-    let slots = legaia_asset::monster_archive::slot_count(&archive) as u16;
+    let slots = legaia_actor_formats::monster_archive::slot_count(&archive) as u16;
 
     // The catalog is the disc table: no record on a capture-class id (its
     // cast is the module's), a record on every other id outside the player
@@ -217,7 +218,7 @@ fn the_boot_catalog_resolves_every_monster_special_the_archive_casts() {
     let mut live = 0usize;
     let mut missing = Vec::new();
     for id in 1..=slots {
-        let Ok(Some(rec)) = legaia_asset::monster_archive::record(&archive, id) else {
+        let Ok(Some(rec)) = legaia_actor_formats::monster_archive::record(&archive, id) else {
             continue;
         };
         for &sid in &rec.magic_attacks {
@@ -245,7 +246,7 @@ fn the_boot_catalog_resolves_every_monster_special_the_archive_casts() {
 
     // Gimard, pinned: the record's slot and the table's row agree with the
     // catalog on id, name and cost.
-    let gimard = legaia_asset::monster_archive::record(&archive, 10)
+    let gimard = legaia_actor_formats::monster_archive::record(&archive, 10)
         .expect("archive reads")
         .expect("id 10 is a record");
     assert!(

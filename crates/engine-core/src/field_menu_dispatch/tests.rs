@@ -1,5 +1,5 @@
 use super::*;
-use crate::field_menu::FieldMenuRow;
+use legaia_engine_menus::field_menu::FieldMenuRow;
 
 fn fresh_world() -> World {
     let mut world = World::new();
@@ -16,14 +16,14 @@ fn fresh_world() -> World {
     }
     world.party.inventory.insert(0x77, 3); // Healing Leaf (real item id)
     world.party.party_leader_slot = Some(0);
-    world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+    world.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
     world
 }
 
 fn fresh_save_slots() -> SaveRack {
     SaveRack::Blocks(
         (0..3)
-            .map(crate::save_select::SlotSnapshot::empty)
+            .map(legaia_engine_menus::save_select::SlotSnapshot::empty)
             .collect(),
     )
 }
@@ -52,7 +52,7 @@ fn status_and_magic_read_the_live_level() {
     assert_eq!(status_snapshots(&w)[0].level, 30);
     match build(FieldMenuRow::Magic, &w) {
         FieldMenuSubsession::Spells(s) => {
-            let m = crate::pause_screens::magic_screen_model(&s, None);
+            let m = legaia_engine_menus::pause_screens::magic_screen_model(&s, None);
             assert_eq!(m.casters[0].1, 30);
         }
         _ => panic!("expected Spells"),
@@ -72,12 +72,12 @@ fn build_items_returns_inventory_session() {
 /// completed use (the retail delete zeroes the whole bag-slot pair).
 #[test]
 fn throw_out_discard_applies_to_world_inventory() {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut w = fresh_world();
     let FieldMenuSubsession::Items(mut s) = build(FieldMenuRow::Items, &w) else {
         panic!("items session");
     };
-    let press = |s: &mut crate::pause_screens::PauseItemsSession, b: PadButton| {
+    let press = |s: &mut legaia_engine_menus::pause_screens::PauseItemsSession, b: PadButton| {
         s.input_pad_edge(b.mask());
     };
     press(&mut s, PadButton::Down); // -> Throw Out
@@ -101,8 +101,10 @@ fn status_equipment_rows_print_item_names() {
     let mut w = fresh_world();
     let mut names = vec![None; 256];
     names[0x43] = Some("Survival Knife".to_string());
-    w.menu.text = Some(crate::pause_screens::MenuTextTables {
-        item_names: Some(legaia_asset::item_names::ItemNameTable::from_names(names)),
+    w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+        item_names: Some(legaia_game_tables::item_names::ItemNameTable::from_names(
+            names,
+        )),
         ..Default::default()
     });
     let mut eq = w.party.roster.members[0].equipment();
@@ -277,8 +279,8 @@ fn arts_editor_open_button_is_inert_outside_the_status_screen() {
 
 #[test]
 fn arts_editor_view_projects_live_library_and_phase() {
-    use crate::tactical_arts_editor::SavedChain;
     use legaia_art::queue::Command;
+    use legaia_engine_battle::tactical_arts_editor::SavedChain;
 
     let w = fresh_world();
     let mut lib = ChainLibrary::new();
@@ -307,8 +309,8 @@ fn arts_editor_view_projects_live_library_and_phase() {
 
 #[test]
 fn arts_editor_view_hides_new_row_once_the_library_is_full() {
-    use crate::tactical_arts_editor::SavedChain;
     use legaia_art::queue::Command;
+    use legaia_engine_battle::tactical_arts_editor::SavedChain;
 
     let w = fresh_world();
     let mut lib = ChainLibrary::new();
@@ -377,7 +379,10 @@ fn apply_equip_outcome_writes_back_to_roster() {
     w.party.inventory.clear();
     w.party.inventory.insert(0x25, 1);
     let mut equip_table = EquipmentTable::new();
-    equip_table.set(0x25, crate::battle_stats::ItemModifier::default());
+    equip_table.set(
+        0x25,
+        legaia_engine_battle::battle_stats::ItemModifier::default(),
+    );
     let mut s = FieldMenuSubsession::build(
         FieldMenuRow::Equip,
         &w,
@@ -433,8 +438,14 @@ fn apply_equip_outcome_returns_the_swapped_out_item_to_the_bag() {
     w.party.roster.members[0].set_equipment(eq);
 
     let mut equip_table = EquipmentTable::new();
-    equip_table.set(0x25, crate::battle_stats::ItemModifier::default());
-    equip_table.set(0x26, crate::battle_stats::ItemModifier::default());
+    equip_table.set(
+        0x25,
+        legaia_engine_battle::battle_stats::ItemModifier::default(),
+    );
+    equip_table.set(
+        0x26,
+        legaia_engine_battle::battle_stats::ItemModifier::default(),
+    );
     let mut s = FieldMenuSubsession::build(
         FieldMenuRow::Equip,
         &w,

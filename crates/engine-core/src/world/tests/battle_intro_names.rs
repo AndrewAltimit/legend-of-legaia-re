@@ -2,9 +2,10 @@
 //! hold, the labels are one per monster group, and `0x0B` sweeps them.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 fn intro_world() -> World {
-    use crate::monster_catalog::MonsterDef;
+    use legaia_engine_battle::monster_catalog::MonsterDef;
     let mut world = World::new();
     world.party.party_count = 1;
     world.mode = SceneMode::Battle;
@@ -66,7 +67,7 @@ fn monster_0xb5_opens_without_names() {
 /// past the prompt: the ring, a picker, or the Begin / Reselect confirm.
 #[test]
 fn the_labels_never_share_a_frame_with_a_command_surface() {
-    use crate::battle_input::BattleCommandSession;
+    use legaia_engine_menus::battle_input::BattleCommandSession;
     let font = legaia_font::synthetic_for_tests();
     let mut world = intro_world();
     world.arm_battle_intro_names();
@@ -92,7 +93,7 @@ fn the_labels_never_share_a_frame_with_a_command_surface() {
 /// covers the leg.
 #[test]
 fn a_dome_leg_opens_on_the_opponents_name() {
-    use crate::muscle_dome::{MuscleCard, MuscleDomeSession};
+    use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession};
     let font = legaia_font::synthetic_for_tests();
     let card = MuscleCard {
         command_id: 0x0C,
@@ -127,7 +128,7 @@ fn a_dome_leg_opens_on_the_opponents_name() {
 /// under the sweep, and come up for their full hold after it.
 #[test]
 fn the_names_wait_out_the_entry_sweep() {
-    use legaia_engine_vm::battle_cam_script::{BattleCamPhase, BattleCamera};
+    use legaia_engine_battle_vm::battle_cam_script::{BattleCamPhase, BattleCamera};
     let font = legaia_font::synthetic_for_tests();
     let mut world = intro_world();
     let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);

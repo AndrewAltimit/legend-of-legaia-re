@@ -17,7 +17,7 @@ pub(crate) fn cmd_shops(input: &Path) -> Result<()> {
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let shops = apply::current_shops(&patcher)?;
     let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let nm = |id: u8| {
         item_names
             .as_ref()
@@ -44,7 +44,7 @@ pub(crate) fn cmd_casino(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let nm = |id: u16| {
         item_names
             .as_ref()
@@ -78,7 +78,7 @@ pub(crate) fn cmd_fishing(input: &Path) -> Result<()> {
         .read_entry(legaia_patcher::fishing_price::OVERLAY_PROT_INDEX)
         .context("read fishing overlay (PROT 972)")?;
     let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let nm = |id: u32| {
         item_names
             .as_ref()
@@ -113,7 +113,7 @@ pub(crate) fn cmd_earth_egg(input: &Path) -> Result<()> {
     match legaia_patcher::apply::current_earth_egg(&patcher)? {
         Some(info) => {
             let name = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-                .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus))
+                .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus))
                 .and_then(|t| t.name(info.item_id).map(str::to_string))
                 .unwrap_or_else(|| "Earth Egg".to_string());
             println!("Earth Egg exchange (Sol Tower Prize Counter):");
@@ -170,8 +170,8 @@ pub(crate) fn cmd_monster_stats(input: &Path) -> Result<()> {
     let entry = patcher
         .read_entry(legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY)
         .context("read monster battle_data archive")?;
-    let records =
-        legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
+    let records = legaia_actor_formats::monster_archive::records(&entry)
+        .context("decode monster archive records")?;
     println!(
         "{:>3}  {:<16} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}  {:>6} {:>7}",
         "id", "name", "hp", "mp", "atk", "def+", "def-", "int", "spd", "juggle", "(ticks)"
@@ -181,16 +181,17 @@ pub(crate) fn cmd_monster_stats(input: &Path) -> Result<()> {
         // many 60 Hz ticks the defender's `+0x1F7` byte holds for at the
         // normal speed scale - animation data, not a stat
         // (docs/subsystems/battle-formulas.md, "Juggle").
-        let (beat, ticks) = legaia_asset::monster_archive::light_flinch_window(&entry, r.id)
-            .ok()
-            .flatten()
-            .map(|w| {
-                let beat = w
-                    .gate_frame()
-                    .map_or_else(|| "?".to_string(), |b| format!("f{b}/{}", w.rate));
-                (beat, w.ticks())
-            })
-            .unwrap_or_else(|| ("-".to_string(), 0));
+        let (beat, ticks) =
+            legaia_actor_formats::monster_archive::light_flinch_window(&entry, r.id)
+                .ok()
+                .flatten()
+                .map(|w| {
+                    let beat = w
+                        .gate_frame()
+                        .map_or_else(|| "?".to_string(), |b| format!("f{b}/{}", w.rate));
+                    (beat, w.ticks())
+                })
+                .unwrap_or_else(|| ("-".to_string(), 0));
         println!(
             "{:>3}  {:<16} {:>6} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}  {:>6} {:>7}",
             r.id,
@@ -214,22 +215,22 @@ pub(crate) fn cmd_move_powers(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let entry = patcher
-        .read_entry(legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .read_entry(legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .context("read battle-action overlay entry 0898")?;
-    let records =
-        legaia_asset::move_power::parse(&entry).context("parse move-power table (PROT 0898)")?;
+    let records = legaia_game_tables::move_power::parse(&entry)
+        .context("parse move-power table (PROT 0898)")?;
 
     // Tag each power-table index with the spell-table name of a move id that
     // resolves to it (the move-id space is the spell-table id space).
-    let map = legaia_asset::move_power::parse_id_index_map(&entry);
+    let map = legaia_game_tables::move_power::parse_id_index_map(&entry);
     let spells = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-        .and_then(|scus| legaia_asset::spell_names::SpellNameTable::from_scus(&scus));
+        .and_then(|scus| legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus));
     let label = |idx: usize| -> String {
         let (Some(map), Some(spells)) = (map.as_ref(), spells.as_ref()) else {
             return String::new();
         };
         for move_id in 0u8..=0x7F {
-            if legaia_asset::move_power::index_for_move_id(map, move_id) != Some(idx as u8) {
+            if legaia_game_tables::move_power::index_for_move_id(map, move_id) != Some(idx as u8) {
                 continue;
             }
             if let Some(name) = spells.name(move_id).filter(|n| !n.is_empty()) {
@@ -248,11 +249,11 @@ pub(crate) fn cmd_move_powers(input: &Path) -> Result<()> {
 }
 
 pub(crate) fn cmd_affinity(input: &Path) -> Result<()> {
-    use legaia_asset::element_affinity::{ELEMENT_COUNT, Element, ElementAffinity};
+    use legaia_game_tables::element_affinity::{ELEMENT_COUNT, Element, ElementAffinity};
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let entry = patcher
-        .read_entry(legaia_asset::element_affinity::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .read_entry(legaia_game_tables::element_affinity::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .context("read battle-action overlay entry 0898")?;
     let aff =
         ElementAffinity::parse(&entry).context("parse element-affinity matrix (PROT 0898)")?;
@@ -312,7 +313,7 @@ pub(crate) fn cmd_equip_bonuses(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let nm = |id: u8| {
         item_names
             .as_ref()
@@ -381,7 +382,7 @@ pub(crate) fn cmd_drops(input: &Path) -> Result<()> {
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let drops = apply::current_drops(&patcher)?;
     let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let mut n = 0;
     for d in &drops {
         if d.item == 0 {
@@ -512,7 +513,7 @@ pub(crate) fn cmd_chests(input: &Path) -> Result<()> {
     // Resolve item ids -> names (SCUS table) and PROT-entry -> scene name
     // (CDNAME.TXT), both off the user's own disc. Purely for legibility.
     let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let name_of = |id: u8| -> String {
         item_names
             .as_ref()
@@ -699,7 +700,7 @@ pub(crate) fn cmd_steals(input: &Path) -> Result<()> {
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let steals = apply::current_steals(&patcher)?;
     let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let name_of = |id: u8| -> String {
         item_names
             .as_ref()
@@ -732,7 +733,7 @@ pub(crate) fn cmd_starting_items(input: &Path) -> Result<()> {
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let items = apply::current_starting_items(&patcher)?;
     let item_names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
-        .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+        .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(&scus));
     let name_of = |id: u8| -> String {
         item_names
             .as_ref()
@@ -835,8 +836,8 @@ pub(crate) fn cmd_delilas_pokes(custom_items: bool) -> Result<()> {
 ///   defect measured 60-150).
 /// - Every skeleton part carries geometry in every assembly.
 pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
-    use legaia_asset::battle_char_assembly as bca;
-    use legaia_asset::{battle_data_pack, monster_archive};
+    use legaia_actor_formats::battle_char_assembly as bca;
+    use legaia_actor_formats::{battle_data_pack, monster_archive};
 
     /// A baked hand's local-centroid magnitude ceiling (units). Retail
     /// hands sit 21-36 from the wrist pivot; the un-seated sibling fists

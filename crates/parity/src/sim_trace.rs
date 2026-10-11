@@ -18,7 +18,7 @@
 //! Retail-unit mapping on the engine side:
 //!
 //! - Every `cam.*` channel is the corresponding **live retail camera global**
-//!   off [`Camera::globals`](legaia_engine_core::camera::Camera), which is the
+//!   off [`Camera::globals`](legaia_engine_field::camera::Camera), which is the
 //!   same word `trace_capture.py` reads out of the recomp:
 //!
 //!   | channel | global | note |
@@ -49,8 +49,9 @@ use std::path::Path;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::{BootConfig, BootSession};
-use legaia_engine_core::world::SceneMode;
+use crate::BootSession;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::BootConfig;
 
 /// Camera pose sample in retail units.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,14 +123,14 @@ pub fn radians_to_units(rad: f32) -> u16 {
 /// for a mode.
 ///
 /// Delegates to
-/// [`GameMode::for_scene_mode`](legaia_engine_core::mode::GameMode::for_scene_mode)
+/// [`GameMode::for_scene_mode`](legaia_engine_mode::mode::GameMode::for_scene_mode)
 /// instead of carrying its own table:
 /// the five minigame variants all answer `0x19` (`OTHER MODE`) because in
 /// retail they *are* one mode, told apart by the warp sub-id register and not
 /// by the mode word. Spelling that out a second time here is how the trace
 /// channel came to report `None` for every minigame frame.
 pub fn scene_mode_to_retail(mode: SceneMode) -> Option<u16> {
-    legaia_engine_core::mode::GameMode::for_scene_mode(mode).map(|gm| gm.as_index() as u16)
+    legaia_engine_mode::mode::GameMode::for_scene_mode(mode).map(|gm| gm.as_index() as u16)
 }
 
 /// Sample one canonical frame from a live [`BootSession`].
@@ -222,7 +223,10 @@ pub fn build_sim_trace(
         None => BootSession::open(extracted_root, &cfg)?,
     };
     if field_live {
-        session.enter_field_live(scene_name, &crate::boot::FieldLiveOpts::default())?;
+        session.enter_field_live(
+            scene_name,
+            &legaia_engine_session::boot::FieldLiveOpts::default(),
+        )?;
     }
     let mut out = Vec::with_capacity((frames as usize).saturating_add(1));
     out.push(sample_frame(&session));

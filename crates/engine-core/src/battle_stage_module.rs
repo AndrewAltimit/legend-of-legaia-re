@@ -10,7 +10,7 @@
 //! same slot-B window (`docs/subsystems/cast-module.md`); the two ported here
 //! are the entry-968 and entry-969 bodies, which no PROT 0898 dispatch table
 //! names - the side-band tick `FUN_80056208` is their only caller
-//! ([`crate::battle_sideband`]).
+//! ([`legaia_engine_battle::battle_sideband`]).
 //!
 //! These are pure transition functions over a [`ArrivalView`] /
 //! [`FormTransitionView`] of the retail state they touch, returning the calls
@@ -50,7 +50,7 @@
 //! FUN_80024E80 (fade spawn), FUN_80050ED4 (spawn), FUN_80035F04 /
 //! FUN_8003541C (the banner), FUN_80056798 (battle RNG)
 
-use crate::fade::FadeTemplate;
+use legaia_engine_system::fade::FadeTemplate;
 
 /// Cue the arrival raises when the camera reaches its pull-back
 /// (`li a0,0x20a` at `0x801F6AC8`).
@@ -86,7 +86,7 @@ pub const FORM_TRANSITION_SHAKE: (i32, i32) = (0x780, 0x800);
 /// The arrival hand-back's `MoveImage` (`0x801F719C..0x801F71CC`): the
 /// empty `16 x 64` strip at `(0x340, 0xC0)` copied onto `(0x370, 0xC0)` -
 /// the ground grid's `(192..=255)^2` tile window on texture page 13
-/// ([`legaia_asset::battle_backdrop::GROUND_TSB`]). The strip is all index
+/// ([`legaia_scene_formats::battle_backdrop::GROUND_TSB`]). The strip is all index
 /// `0`, a transparent texel, so from the hand-back on the procedural floor
 /// draws nothing and the flesh shell is the only ground.
 pub const ARRIVAL_GROUND_BLANK: StageEffect = StageEffect::MoveImage {
@@ -117,7 +117,7 @@ pub mod records {
 ///
 /// `FUN_80055B6C` compares the formation cell's first monster id
 /// (`_DAT_8007BD0C`) against
-/// [`crate::encounter_record::BOSS_TRANSITION_MONSTER_ID`] and writes stage
+/// [`legaia_engine_battle::encounter_record::BOSS_TRANSITION_MONSTER_ID`] and writes stage
 /// id `2` (extraction entry 968) on a match - `0x80055D2C..0x80055D44`:
 /// `lbu v1,-0x42f4(v1); li v0,0xb5; bne v1,v0; li v0,0x2;
 /// sb v0,-0x49b6(at)`. No other condition: the override is a property of the
@@ -131,7 +131,9 @@ pub mod records {
 ///
 /// REF: FUN_80055B6C (the `0xB5 -> 2` stage-override arm at `0x80055D2C`)
 pub fn battle_init_stage_override(formation_slot0_monster_id: u8) -> Option<u8> {
-    (formation_slot0_monster_id == crate::encounter_record::BOSS_TRANSITION_MONSTER_ID).then_some(2)
+    (formation_slot0_monster_id
+        == legaia_engine_battle::encounter_record::BOSS_TRANSITION_MONSTER_ID)
+        .then_some(2)
 }
 
 /// Stage id the **mid-battle** boss-transition writer selects, or `None`
@@ -189,7 +191,8 @@ pub fn boss_transition_stage_id(
     formation_slot0_monster_id: u8,
     first_monster_seat_liveness: u16,
 ) -> Option<u8> {
-    (formation_slot0_monster_id == crate::encounter_record::BOSS_TRANSITION_MONSTER_ID
+    (formation_slot0_monster_id
+        == legaia_engine_battle::encounter_record::BOSS_TRANSITION_MONSTER_ID
         && first_monster_seat_liveness == 0)
         .then_some(3)
 }
@@ -197,7 +200,7 @@ pub fn boss_transition_stage_id(
 /// The camera globals the modules own while they run: the angle pair
 /// `0x8007B790` / `0x8007B792`, the translation trio `0x800840B8..C0` and the
 /// focus trio `0x80089118..20` (held un-negated, the way
-/// `legaia_engine_vm::battle_cam_script::BattleCamPose` holds it).
+/// `legaia_engine_battle_vm::battle_cam_script::BattleCamPose` holds it).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StageCamera {
     pub pitch: i32,
@@ -236,7 +239,7 @@ pub enum StageEffect {
     /// The arrival's phase 6 rebind of both backdrop copies' object table:
     /// slot 1 over slot 0 (`0x801F7148..0x801F7180`), so a two-object stage
     /// shell draws its object 1 alone from here on
-    /// ([`legaia_asset::battle_backdrop::drawn_object_indices_rebound`]).
+    /// ([`legaia_scene_formats::battle_backdrop::drawn_object_indices_rebound`]).
     RebindBackdrop,
     /// `FUN_80058490` (`MoveImage`): VRAM rect `(x, y, w, h)` onto
     /// `(dst_x, dst_y)`.
@@ -733,7 +736,7 @@ mod tests {
         else {
             unreachable!()
         };
-        let (page_x, page_y) = legaia_asset::battle_backdrop::ground_page_xy();
+        let (page_x, page_y) = legaia_scene_formats::battle_backdrop::ground_page_xy();
         assert_eq!((dst_x, dst_y), (page_x + 192 / 4, page_y + 192));
         assert_eq!((w, h), (64 / 4, 64));
     }

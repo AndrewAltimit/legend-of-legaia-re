@@ -23,7 +23,7 @@
 //! ## The gate, and what is seeded
 //!
 //! The routing key is disc data: the spell table's `+0x00` class byte `'c'`
-//! (`legaia_asset::spell_names::SpellEntry::is_capture_class`). A monster
+//! (`legaia_game_tables::spell_names::SpellEntry::is_capture_class`). A monster
 //! reaches that path only when its own record's magic list holds such an id,
 //! so the seeded state is one monster record's move list - the L3 shape, one
 //! write, with the content (the ids, their class bytes, their baked powers)
@@ -40,12 +40,15 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_engine_core::monster_catalog::{
+use legaia_engine_battle::monster_catalog::{
     MonsterCatalog, MonsterDef, catalog_from_monster_archive, vanilla_formation_table,
 };
-use legaia_engine_core::move_power::MovePowerCatalog;
-use legaia_engine_core::spells::{SpellCatalog, SpellDef, SpellEffect, SpellElement, SpellTarget};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::move_power::MovePowerCatalog;
+use legaia_engine_battle::spells::{
+    SpellCatalog, SpellDef, SpellEffect, SpellElement, SpellTarget,
+};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 use std::path::PathBuf;
 
 /// PROT entry holding the monster archive - the records whose magic lists are
@@ -95,7 +98,7 @@ fn prot_entry(dir: &std::path::Path, index: usize) -> Vec<u8> {
 
 /// Every spell id whose disc record carries the capture class byte.
 fn capture_class_ids(scus: &[u8]) -> Vec<u8> {
-    let table = legaia_asset::spell_names::SpellNameTable::from_scus(scus)
+    let table = legaia_game_tables::spell_names::SpellNameTable::from_scus(scus)
         .expect("the SCUS spell table parses");
     (0u8..=0xFF)
         .filter(|id| table.entry(*id).is_some_and(|e| e.is_capture_class()))
@@ -221,7 +224,7 @@ fn corpus(dir: &std::path::Path) -> Corpus {
     let scus = std::fs::read(dir.join("SCUS_942.54")).expect("read SCUS_942.54");
     let overlay = prot_entry(
         dir,
-        legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX,
+        legaia_game_tables::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX,
     );
     let archive867 = prot_entry(dir, MONSTER_ARCHIVE_PROT);
     let capture_ids = capture_class_ids(&scus);
@@ -306,7 +309,7 @@ fn drive_contrast(c: &Corpus, ids: &[u8]) -> (u16, u8, u16, u16, usize) {
     // property of the byte rather than of the harness: the record's `+0x00`
     // class is read twice - by `is_capture_class_move` (the routing this
     // ladder measures) and by the action-seed band pick
-    // (`legaia_engine_vm::battle_action`'s `action_seed`, which compares the
+    // (`legaia_engine_battle_vm::battle_action`'s `action_seed`, which compares the
     // same byte against `0x14`). Installing the table moves the whole Magic
     // band as well as the kernel.
     (monster_id, id_a, dmg_a, dmg_b, frame_a.abs_diff(frame_b))

@@ -55,7 +55,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::input::PadButton;
+use legaia_engine_system::input::PadButton;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 /// 320x240 keeps `stage_transform` at identity, so the JSON pens are raw
@@ -85,12 +85,12 @@ fn overlay_quads(rt: &mut LegaiaRuntime) -> usize {
 /// [`SHOP_FADE_FRAMES`](legaia_engine_core::menu_runtime::SHOP_FADE_FRAMES)
 /// with no window up - the overlay draws nothing but the fade prim - and
 /// every screen's incoming windows then slide in from their park edges over
-/// [`SHOP_SLIDE_FRAMES`](legaia_engine_core::shop::SHOP_SLIDE_FRAMES)
+/// [`SHOP_SLIDE_FRAMES`](legaia_engine_menus::shop::SHOP_SLIDE_FRAMES)
 /// (retail's per-vsync captures). A composition read before that is a read
 /// of the fade, not of the screen.
 fn settle_shop(rt: &mut LegaiaRuntime) {
     let frames = legaia_engine_core::menu_runtime::SHOP_FADE_FRAMES as usize
-        + usize::from(legaia_engine_core::shop::SHOP_SLIDE_FRAMES)
+        + usize::from(legaia_engine_menus::shop::SHOP_SLIDE_FRAMES)
         + 2;
     for _ in 0..frames {
         rt.play_shop_input(0);

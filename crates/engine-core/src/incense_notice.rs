@@ -75,7 +75,7 @@ pub const NOTICE_CONTENT_RECT: (i32, i32, i32, i32) = (0x22, 0x20, 0xFC, 0x0C);
 /// `0x801F1B98`).
 pub const NOTICE_TEXT_INSET: i32 = 0x0C;
 /// The caller-drawn frame extends past the content rect by this much on
-/// every side (the window-system convention `legaia_asset::menu_windows`
+/// every side (the window-system convention `legaia_game_tables::menu_windows`
 /// pins for the menu overlay's records).
 pub const NOTICE_FRAME_PAD: i32 = 8;
 
@@ -213,8 +213,10 @@ impl World {
         };
         // The handler tests the **packed** retail pad word against packed
         // masks; the world's input holds the raw word.
-        let pad = u32::from(crate::dev_menu::retail_packed(self.input.pad()));
-        let prev = u32::from(crate::dev_menu::retail_packed(self.input.pad_prev()));
+        let pad = u32::from(legaia_engine_system::pad::retail_packed(self.input.pad()));
+        let prev = u32::from(legaia_engine_system::pad::retail_packed(
+            self.input.pad_prev(),
+        ));
         let env = HubEnv {
             pad_edge: pad & !prev,
             pad_held: pad,

@@ -46,7 +46,7 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
 // **Native**: still unwired, and the blocker there is a texel source. The play
 // window draws each `ChromeDraw` as font text because no PROT 1203 art page is
 // resident in engine VRAM; the quad sink itself is not missing
-// (`legaia_engine_ui::screen_prim::ScreenQuad` carries POLY_GT4 corners,
+// (`legaia_render_kernels::screen_prim::ScreenQuad` carries POLY_GT4 corners,
 // per-vertex gouraud, CLUT/texpage, ABR and an OT bucket, and both hosts
 // consume its `build_geometry` output). The earlier reason on this row said the
 // sink was the gap; it is the page.
@@ -58,7 +58,7 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
 // JSON.
 //
 // (Everything upstream was already present:
-// `legaia_asset::baka_opponents::parse_baka_hud` is called by the play window -
+// `legaia_minigame_formats::baka_opponents::parse_baka_hud` is called by the play window -
 // `window/minigames.rs` stages the 51 records for the duel - and by the browser
 // duel page, which also decodes the PROT 1203 art pack the widgets sample; and
 // `BakaChrome` emits one
@@ -70,7 +70,7 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
 ///
 /// `FUN_801d5ed0(x, y, id, brightness, size)` draws widget `id` of the
 /// 51-record descriptor table `DAT_801d7160`
-/// ([`legaia_asset::baka_opponents::parse_baka_hud`]) as a POLY_GT4 centred
+/// ([`legaia_minigame_formats::baka_opponents::parse_baka_hud`]) as a POLY_GT4 centred
 /// on `(x, y)`:
 ///
 /// - half-extent per axis = `((cell * scale) >> 13) * size >> 12` (both
@@ -87,7 +87,7 @@ fn mips_scale(value: i32, factor: i32, shift: u32) -> i32 {
 /// bumps that slot to 3 - host-side scheduling this kernel leaves to the
 /// renderer.
 pub fn hud_widget_quad(
-    widget: &legaia_asset::baka_opponents::BakaHudWidget,
+    widget: &legaia_minigame_formats::baka_opponents::BakaHudWidget,
     x: i16,
     y: i16,
     brightness: i32,
@@ -144,7 +144,7 @@ pub struct EffectSpawnSpec {
 /// `(0xA0, 0x78)` through the shared part-spawn API `FUN_80021B04` at scale
 /// `0x1000`, then stamps `sprite_id` into the spawned part's `+0x50`. The
 /// dance overlay's cell-placed twin is `FUN_801d3fd0`
-/// (`legaia_engine_core::dance::step_mark_effect_spawn`).
+/// (`crate::dance::step_mark_effect_spawn`).
 pub fn center_effect_spawn(sprite_id: u16) -> EffectSpawnSpec {
     EffectSpawnSpec {
         x: 0xA0,

@@ -4,7 +4,7 @@
 //! the rock-paper-scissors exchange resolver, the HP-tiered damage kernel, the
 //! comeback-critical roll, the scripted-pattern CPU move picker, and the
 //! best-of-3 round/match bookkeeping - driven by the already-parsed roster +
-//! action tables ([`legaia_asset::baka_opponents`]). This is the *rules*
+//! action tables ([`legaia_minigame_formats::baka_opponents`]). This is the *rules*
 //! layer: it consumes chosen attack types (pad presses on the player side)
 //! and produces resolved exchanges, damage, round wins and the gold prize,
 //! exactly as the retail overlay does. The duel's 3D presentation (fighter

@@ -25,7 +25,7 @@ const EFFECT_TEXEL_WORLD: f32 = 1.0;
 /// applied to the sprite centre and before the projection - so the
 /// half-extents must be divided back out here or every battle effect draws
 /// `BATTLE_WORLD_SCALE` too large. The rule and its disassembly citation live
-/// in `legaia_engine_render::effect_billboard`, shared with the browser host.
+/// in `legaia_render_kernels::effect_billboard`, shared with the browser host.
 fn effect_sprite_corners(
     sprite: &legaia_engine_core::world::EffectSprite,
     right: Vec3,
@@ -34,7 +34,7 @@ fn effect_sprite_corners(
 ) -> [Vec3; 4] {
     let c = Vec3::from(sprite.world_pos);
     let (hw, hh) =
-        legaia_engine_render::effect_billboard::world_half_extents(sprite.size, view_scale);
+        legaia_render_kernels::effect_billboard::world_half_extents(sprite.size, view_scale);
     let rx = right * (hw * EFFECT_TEXEL_WORLD);
     let uy = up * (hh * EFFECT_TEXEL_WORLD);
     [c - rx + uy, c + rx + uy, c - rx - uy, c + rx - uy]
@@ -182,7 +182,7 @@ pub(crate) fn effect_sprite_line_geometry(
 /// `[0,0,0]` sentinel so the shader derives screen-space normals (flat-lit).
 /// See docs/subsystems/world-map.md "Ground texturing".
 pub(crate) fn heightfield_to_vram_mesh(
-    hf: &legaia_asset::field_objects::WalkHeightfield,
+    hf: &legaia_scene_formats::field_objects::WalkHeightfield,
 ) -> legaia_tmd::mesh::VramMesh {
     let n = hf.positions.len();
     // Winding reversed onto the scene TMDs' parity + the GROUND_SINK: the
@@ -216,7 +216,7 @@ pub(crate) fn heightfield_to_vram_mesh(
 /// ([`world-map-overlay.md`](../../../../../../docs/formats/world-map-overlay.md)).
 /// So what this draws is one polyline per (clip, part) through that part's
 /// decoded translation across the clip's frames -
-/// `legaia_asset::world_map_overlay::translation_path_segments`, the only
+/// `legaia_scene_formats::world_map_overlay::translation_path_segments`, the only
 /// geometric reading actually in the bytes. It used to call
 /// `wireframe_segments_3d`, which plots raw `i16` slices straddling the
 /// entry's nibble boundaries: a byte-diffing aid, not geometry.
@@ -232,9 +232,9 @@ pub(crate) fn heightfield_to_vram_mesh(
 /// This is an env-gated inspection overlay (`LEGAIA_WORLDMAP_SLOT4=1`); it is
 /// not a render path.
 pub(crate) fn world_map_slot4_line_geometry(
-    slot: &legaia_asset::world_map_overlay::KingdomSlot4,
+    slot: &legaia_scene_formats::world_map_overlay::KingdomSlot4,
 ) -> LineGeometry {
-    let segs = legaia_asset::world_map_overlay::translation_path_segments(slot);
+    let segs = legaia_scene_formats::world_map_overlay::translation_path_segments(slot);
     let mut pos: Vec<[f32; 3]> = Vec::with_capacity(segs.len() * 2);
     let mut col: Vec<[u8; 4]> = Vec::with_capacity(segs.len() * 2);
     let mut idx: Vec<u32> = Vec::with_capacity(segs.len() * 2);
@@ -272,10 +272,10 @@ pub(crate) fn scene_viewport_for(
     surface_w: u32,
     surface_h: u32,
 ) -> (Option<(u32, u32, u32, u32)>, f32) {
-    let ((x0, y0), scale) = legaia_engine_render::pause_menu::stage_transform(surface_w, surface_h);
+    let ((x0, y0), scale) = legaia_engine_ui::pause_menu::stage_transform(surface_w, surface_h);
     let (w, h) = (
-        legaia_engine_render::BOOT_UI_STAGE_W * scale,
-        legaia_engine_render::BOOT_UI_STAGE_H * scale,
+        legaia_engine_ui::BOOT_UI_STAGE_W * scale,
+        legaia_engine_ui::BOOT_UI_STAGE_H * scale,
     );
     if x0 < 0 || y0 < 0 || x0 as u32 + w > surface_w || y0 as u32 + h > surface_h {
         return (None, surface_w as f32 / surface_h.max(1) as f32);

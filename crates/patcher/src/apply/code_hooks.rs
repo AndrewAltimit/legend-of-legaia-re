@@ -348,7 +348,7 @@ pub fn inject_oscillating_ap(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeruTradeReport {
     /// The config written to the disc (enabled flag, master seed, offer cap).
-    pub config: legaia_asset::seru_trade::SeruTradeConfig,
+    pub config: legaia_game_tables::seru_trade::SeruTradeConfig,
 }
 
 /// Enable **seru trading** (see [`legaia_code_hooks::seru_trade`]): write a small config blob
@@ -368,7 +368,7 @@ pub fn enable_seru_trades(
     let scus = patcher
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for seru-trade config")?;
-    let config = legaia_asset::seru_trade::SeruTradeConfig {
+    let config = legaia_game_tables::seru_trade::SeruTradeConfig {
         enabled: true,
         seed,
         max_offers: max_offers.max(1),
@@ -387,9 +387,9 @@ pub fn enable_seru_trades(
 /// round-trip oracle.
 pub fn current_seru_trade(
     patcher: &DiscPatcher,
-) -> Option<legaia_asset::seru_trade::SeruTradeConfig> {
+) -> Option<legaia_game_tables::seru_trade::SeruTradeConfig> {
     let scus = patcher.read_named_file(SCUS_NAME)?;
-    legaia_asset::seru_trade::SeruTradeConfig::from_scus(&scus)
+    legaia_game_tables::seru_trade::SeruTradeConfig::from_scus(&scus)
 }
 
 /// Give the unnamed accessory (item `0xFD`) the display name **"Seru Bell"** so
@@ -406,7 +406,7 @@ pub fn inject_seru_bell_name(patcher: &mut DiscPatcher) -> Result<Option<String>
         .read_named_file(crate::steal::SCUS_NAME)
         .context("read SCUS_942.54")?;
     // Skip if it already has a name (don't stack injections on re-runs).
-    if let Some(table) = legaia_asset::item_names::ItemNameTable::from_scus(&scus)
+    if let Some(table) = legaia_game_tables::item_names::ItemNameTable::from_scus(&scus)
         && table.name(SERU_BELL_ID).is_some()
     {
         return Ok(None);

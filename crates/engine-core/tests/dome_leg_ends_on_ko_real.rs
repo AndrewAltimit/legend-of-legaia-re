@@ -16,14 +16,13 @@
 //!    overlay holds none and only reads it. So the cell is an input to the
 //!    battle, not a mode selector the arena could branch a timeout on.
 //! 3. **No dome round can raise the timed-fight HUD.** Every course-ladder
-//!    monster id is strictly below [`md::TIMED_FIGHT_MONSTER_ID`], the id the
+//!    monster id is strictly below [`legaia_engine_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID`], the id the
 //!    `Turns Left / HP Left` strip's draw sites gate on.
 //!
 //! No Sony bytes are asserted - only instruction *shapes* and counts, and the
 //! ordering of ids. Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_engine_core::mode::GameMode;
-use legaia_engine_core::muscle_dome as md;
+use legaia_engine_mode::mode::GameMode;
 
 /// Battle-action overlay: the image that draws the timed-fight strip and
 /// owns the battle round driver. Loads at the same base as the arena's.
@@ -94,13 +93,13 @@ fn refs_to(entry: &[u8], base: u32, imm: u16) -> Vec<Ref> {
 #[test]
 fn dome_round_hands_off_to_an_ordinary_battle_and_ends_on_a_ko() {
     let (Some(arena), Some(battle)) = (
-        prot_entry(md::ARENA_OVERLAY_PROT_INDEX as u32),
+        prot_entry(legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32),
         prot_entry(BATTLE_OVERLAY_PROT_INDEX),
     ) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let base = md::ARENA_OVERLAY_BASE_VA;
+    let base = legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_BASE_VA;
 
     // 1. The arena's only game-mode write hands the round to BattleInit.
     let mode_writes: Vec<Ref> = refs_to(&arena, base, GAME_MODE_IMM)
@@ -151,7 +150,8 @@ fn dome_round_hands_off_to_an_ordinary_battle_and_ends_on_a_ko() {
     // 3. The timed-fight strip is out of the dome's reach: its gate wants
     //    formation slot 0 == TIMED_FIGHT_MONSTER_ID, and no ladder round
     //    installs an id that high.
-    let ladder = md::parse_course_ladder(&arena).expect("the course ladder decodes off the disc");
+    let ladder = legaia_engine_minigames::muscle_dome::parse_course_ladder(&arena)
+        .expect("the course ladder decodes off the disc");
     let top = ladder
         .iter()
         .flat_map(|c| c.rounds.iter())
@@ -159,8 +159,8 @@ fn dome_round_hands_off_to_an_ordinary_battle_and_ends_on_a_ko() {
         .max()
         .expect("the ladder has rounds");
     assert!(
-        top < md::TIMED_FIGHT_MONSTER_ID,
+        top < legaia_engine_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID,
         "ladder tops out at {top:#x}, below the timed fight's {:#x}",
-        md::TIMED_FIGHT_MONSTER_ID
+        legaia_engine_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID
     );
 }

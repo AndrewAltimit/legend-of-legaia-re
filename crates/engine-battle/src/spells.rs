@@ -3,7 +3,7 @@
 //! Tactical Arts are character-driven attack chains; spells are the
 //! magic-side of the same command menu (ActionConstant `Magic = 0x02`,
 //! followed by a per-character spell list). This module mirrors the shape
-//! of `legaia_engine_core::items`: a typed catalog keyed by spell id, plus a pure
+//! of `legaia_engine_menus::items`: a typed catalog keyed by spell id, plus a pure
 //! [`cast_spell`] function that consumes a [`SpellSnapshot`] and returns
 //! a [`SpellOutcome`].
 //!
@@ -112,13 +112,13 @@ pub enum SpellTarget {
 impl SpellTarget {
     /// The two target bits of retail's spell-table `+2` stats byte for this
     /// shape: `0x02` = ally side, `0x20` = all targets. The inverse of
-    /// [`legaia_asset::spell_names::SpellStats::target_shape`], which is how
+    /// [`legaia_game_tables::spell_names::SpellStats::target_shape`], which is how
     /// [`crate::retail_magic`] fills the shape in the first place.
     ///
     /// It exists so the screens that branch on that byte can run retail's own
     /// predicate over it rather than re-deciding on the typed shape. The
     /// menu's `FUN_801D9110` confirm dispatch is one
-    /// (`legaia_engine_core::spell_menu::spell_targets_group`); the byte's other bits
+    /// (`legaia_engine_menus::spell_menu::spell_targets_group`); the byte's other bits
     /// (element / usability) belong to different readers and are not
     /// reconstructed here.
     ///
@@ -128,13 +128,13 @@ impl SpellTarget {
     pub const fn retail_target_flag_bits(self) -> u8 {
         match self {
             SpellTarget::OneEnemy => 0,
-            SpellTarget::AllEnemies => legaia_asset::spell_names::TARGET_ALL_BIT,
+            SpellTarget::AllEnemies => legaia_game_tables::spell_names::TARGET_ALL_BIT,
             SpellTarget::OneAlly | SpellTarget::SelfOnly => {
-                legaia_asset::spell_names::TARGET_ALLY_BIT
+                legaia_game_tables::spell_names::TARGET_ALLY_BIT
             }
             SpellTarget::AllAllies => {
-                legaia_asset::spell_names::TARGET_ALLY_BIT
-                    | legaia_asset::spell_names::TARGET_ALL_BIT
+                legaia_game_tables::spell_names::TARGET_ALLY_BIT
+                    | legaia_game_tables::spell_names::TARGET_ALL_BIT
             }
         }
     }
@@ -216,7 +216,7 @@ pub struct SpellDef {
     /// Spell-table `+0x01` **effect class** - the key `FUN_801F2160` bounds
     /// with `sltiu ..., 0x20` and dispatches a capture-class cast's module on
     /// (PROT `935 + class`, see
-    /// [`legaia_asset::cast_effect_pool::capture_module_prot`]). `0` on the
+    /// [`legaia_overlay_images::cast_effect_pool::capture_module_prot`]). `0` on the
     /// placeholder catalog and on any record built without the disc table;
     /// [`crate::retail_magic`] fills it from `SCUS_942.54`.
     pub effect_class: u8,

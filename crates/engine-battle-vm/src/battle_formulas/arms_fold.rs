@@ -19,7 +19,7 @@
 //! the same two-hop lookup the menu aggregator uses - item property record
 //! `DAT_80074368 + id*0xC` byte `+1` selects a row in the equipment stat table
 //! `DAT_80074F68 + row*8`, whose byte `+1` is the attack bonus
-//! (`legaia_asset::equip_stats`) - then folds it into ATK working:
+//! (`legaia_game_tables::equip_stats`) - then folds it into ATK working:
 //!
 //! | command | equipment slots read | record offsets | fold |
 //! |---|---|---|---|

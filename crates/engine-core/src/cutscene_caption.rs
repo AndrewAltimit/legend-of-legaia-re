@@ -47,14 +47,16 @@ pub fn decode_opdeene_caption(scene: &Scene) -> Option<CaptionImage> {
         .entries
         .iter()
         .find(|e| e.idx == OPDEENE_GEOMETRY_ENTRY)?;
-    let scan = legaia_asset::tim_scan::scan_entry(&entry.bytes);
+    let scan = legaia_container_formats::tim_scan::scan_entry(&entry.bytes);
     for (source, hit) in &scan.hits {
         if hit.width != CAPTION_W || hit.height != CAPTION_H || hit.bpp != 4 {
             continue;
         }
         let section: &[u8] = match source {
-            legaia_asset::tim_scan::Source::Lzs(i) => scan.lzs_sections.get(*i)?.as_slice(),
-            legaia_asset::tim_scan::Source::Raw => &entry.bytes,
+            legaia_container_formats::tim_scan::Source::Lzs(i) => {
+                scan.lzs_sections.get(*i)?.as_slice()
+            }
+            legaia_container_formats::tim_scan::Source::Raw => &entry.bytes,
         };
         let payload = section.get(hit.offset..hit.offset + hit.byte_len)?;
         let tim = legaia_tim::parse(payload).ok()?;

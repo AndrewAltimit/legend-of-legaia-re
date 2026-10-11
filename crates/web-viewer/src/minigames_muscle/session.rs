@@ -27,7 +27,7 @@ impl LegaiaMinigames {
             let raw = raw?;
             let move_power = move_power::parse(raw)?;
             let move_map = move_power::parse_id_index_map(raw)?;
-            let affinity = legaia_asset::element_affinity::parse(raw);
+            let affinity = legaia_game_tables::element_affinity::parse(raw);
             Some(MuscleTables {
                 hand,
                 move_power,
@@ -71,14 +71,15 @@ impl LegaiaMinigames {
             &self.entries,
             PLAYER_BATTLE_FILE_BASE + char_slot as u32,
         )?;
-        let pack = legaia_asset::battle_data_pack::parse(raw).ok()?;
+        let pack = legaia_actor_formats::battle_data_pack::parse(raw).ok()?;
         // Section defaults (id 0 per slot) - the browser has no save to read
         // an equipped set from. Read through the shared per-slot cost
         // function, the same one the battle Arts input prices its presses
         // with, so the dome and the battle cannot charge differently for
         // the same command.
         let costs =
-            legaia_asset::battle_char_assembly::swing_command_costs(raw, &pack, &[0u8; 5]).ok()?;
+            legaia_actor_formats::battle_char_assembly::swing_command_costs(raw, &pack, &[0u8; 5])
+                .ok()?;
         let mut out = [0u16; 4];
         for (i, c) in costs.iter().enumerate() {
             out[i] = (*c)? as u16;
@@ -94,9 +95,9 @@ impl LegaiaMinigames {
         level: u32,
     ) -> Option<(MuscleFighter, String)> {
         let scus = self.scus.as_ref()?;
-        let party = legaia_asset::new_game::StartingParty::from_scus(scus)?;
+        let party = legaia_game_tables::new_game::StartingParty::from_scus(scus)?;
         let m = party.member(char_slot)?;
-        let growth = legaia_asset::level_up_tables::growth_tables_from_scus(scus)?;
+        let growth = legaia_game_tables::level_up_tables::growth_tables_from_scus(scus)?;
         let params = growth.char_params(char_slot)?;
         // Template stat order == growth-param record order:
         // [hp, mp, agl, atk, udf, ldf, spd, int].
@@ -104,7 +105,7 @@ impl LegaiaMinigames {
             m.hp_max, m.mp_max, m.agl, m.atk, m.udf, m.ldf, m.spd, m.intel,
         ];
         let mut stats = base.map(u32::from);
-        let level = level.clamp(1, legaia_asset::level_up_tables::MAX_LEVEL as u32);
+        let level = level.clamp(1, legaia_game_tables::level_up_tables::MAX_LEVEL as u32);
         for from_level in 1..level as usize {
             for (i, p) in params.stats.iter().enumerate() {
                 let gain = growth.level_gain_core(p, from_level).unwrap_or(0);
@@ -157,9 +158,9 @@ impl LegaiaMinigames {
     /// The arena backdrop as retail draws it - the half-shell plus its
     /// half-turned second copy, less the object-1 dust decal - through the
     /// engine kernel every dome host shares
-    /// ([`legaia_engine_core::muscle_dome_scene::arena_ring`]).
+    /// ([`legaia_engine_minigame_scenes::muscle_dome_scene::arena_ring`]).
     pub(super) fn muscle_arena_hybrid(&self) -> Option<(legaia_tmd::mesh::VramMesh, Vec<u8>)> {
-        legaia_engine_core::muscle_dome_scene::arena_ring(self.muscle_arena_entry()?)
+        legaia_engine_minigame_scenes::muscle_dome_scene::arena_ring(self.muscle_arena_entry()?)
     }
 
     /// The player battle file (`data\battle\PLAYER1..3`) for a dome fighter
@@ -187,7 +188,7 @@ impl LegaiaMinigames {
         Vec<u32>,
     )> {
         let raw = self.muscle_player_file(char_slot)?;
-        let pack = legaia_asset::battle_data_pack::parse(raw).ok()?;
+        let pack = legaia_actor_formats::battle_data_pack::parse(raw).ok()?;
         let mut asm = bca::assemble_character(raw, &pack, &[0u8; 5]).ok()?;
         bca::relocate_tsb_cba(&mut asm.tmd, 0).ok()?;
         let tmd = legaia_tmd::parse(&asm.tmd).ok()?;
@@ -215,7 +216,7 @@ impl LegaiaMinigames {
         let raw = self.muscle_player_file(char_slot)?;
         let (asm, _, _) = self.muscle_fighter_build(char_slot)?;
         let anim = if (0xC..=0xF).contains(&slot) {
-            let pack = legaia_asset::battle_data_pack::parse(raw).ok()?;
+            let pack = legaia_actor_formats::battle_data_pack::parse(raw).ok()?;
             bca::swing_battle_animations(raw, &pack, &[0u8; 5])
                 .ok()?
                 .into_iter()

@@ -100,7 +100,7 @@ pub const ATLAS_RECT_PAGER_RIGHT: (u32, u32, u32, u32) = (124, 232, 16, 16);
 
 /// Atlas placement of the dialogue **page mark** - the two-frame "press"
 /// icon a waiting page shows at its box's lower-right rim (kind `1` of the
-/// cursor sprite primitive `FUN_8002B994`, [`crate::cursor_sprite`]). The
+/// cursor sprite primitive `FUN_8002B994`, [`legaia_engine_dialog::cursor_sprite`]). The
 /// frames' sheet cells `(224, 64)` / `(240, 64)` fall inside rows this atlas
 /// gives the load screen's empty-slot frame, so they are re-seated here;
 /// CLUT row 7, the pointing hand's.
@@ -150,7 +150,7 @@ pub const ATLAS_RECT_BATTLE_SEPARATOR: (u32, u32, u32, u32) = (96, 64, 8, 16);
 /// Atlas placement of the **HUD numeral strip** - ten 8x12 digit cells
 /// at an 8-px pitch, `0` first. Unlike every other rect in this atlas
 /// the source is not the system-UI sheet but the neighbouring
-/// **menu-glyph atlas** TIM (`legaia_asset::menu_glyph_atlas`, VRAM page
+/// **menu-glyph atlas** TIM (`legaia_ui_formats::menu_glyph_atlas`, VRAM page
 /// `(960, 256)`), decoded through its sub-palette 13 - the palette
 /// retail's own `SPRT` packets name for battle-HUD text.
 ///
@@ -172,7 +172,7 @@ pub const HUD_DIGIT_H: u32 = 12;
 
 /// Atlas placement of the **status-element badge block** - the nine 48x16
 /// word tags `FUN_8002C2E4`'s exclusive ladder selects from, sprite ids
-/// `0x18..=0x20` (`legaia_asset::ui_widgets::STATUS_BADGES`).
+/// `0x18..=0x20` (`legaia_ui_formats::ui_widgets::STATUS_BADGES`).
 ///
 /// On the sheet they are a two-column block at `(0 | 48, 48..=112)`; here
 /// they re-seat into a 4-wide grid because three of the sheet cells collide
@@ -190,7 +190,7 @@ pub const STATUS_BADGE_ATLAS_COLS: u32 = 4;
 pub const STATUS_BADGE_COUNT: usize = 9;
 
 /// Sheet cell + row-511 sub-palette of each status badge, in ladder order
-/// (`0x18` first). Mirrors what `legaia_asset::ui_widgets` reads out of the
+/// (`0x18` first). Mirrors what `legaia_ui_formats::ui_widgets` reads out of the
 /// widget-class table; the disc-gated oracle
 /// `crates/asset/tests/ui_widgets_real.rs` is what keeps the two honest.
 ///

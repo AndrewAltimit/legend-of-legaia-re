@@ -36,7 +36,7 @@
 //! No game bytes are committed: the string is the randomizer's own, and the
 //! write is validated against the user's disc at runtime.
 
-use legaia_asset::item_names;
+use legaia_game_tables::item_names;
 
 /// Item id of the unnamed accessory.
 pub const SERU_BELL_ID: u8 = 0xFD;
@@ -108,7 +108,7 @@ mod tests {
     /// passed explicitly (the pinned US-build VA wouldn't fall inside a tiny
     /// synthetic image).
     fn synth_scus() -> (Vec<u8>, u32) {
-        use legaia_asset::item_names::{RECORD_STRIDE, TABLE_VA};
+        use legaia_game_tables::item_names::{RECORD_STRIDE, TABLE_VA};
         const T_ADDR: u32 = 0x8001_0000;
         let table_off = (TABLE_VA - T_ADDR) as usize + 0x800;
         let table_bytes = 256 * RECORD_STRIDE;

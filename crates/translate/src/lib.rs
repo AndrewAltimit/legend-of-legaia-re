@@ -30,7 +30,7 @@
 //!   what English uses, what a pack uses and what import does with it, plus
 //!   the per-scene / per-name fast paths a live editor calls.
 //!
-//! `legaia-patcher` re-exports this crate as `legaia_patcher::translation`. See
+//! `legaia-patcher` re-exports this crate as `crate`. See
 //! `docs/tooling/translation/`.
 //!
 //! No Sony bytes ship with this crate: packs are generated from the user's

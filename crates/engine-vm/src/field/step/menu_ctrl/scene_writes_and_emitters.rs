@@ -50,7 +50,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             };
             let payload = &bytecode[operand + 1..];
-            let length = crate::field::dispatch_leaves::packet_length(payload);
+            let length = legaia_scene_formats::field_disasm::packet_length(payload);
             if first != 0 {
                 host.op4c_n_e_sub_1_text_actor(&payload[..length], ctx.script_id);
             }

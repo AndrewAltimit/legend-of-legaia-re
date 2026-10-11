@@ -9,7 +9,7 @@ impl MenuRuntimeHost<'_> {
     }
 
     /// The retail buy-list confirm dispatch for the row at `slot`
-    /// ([`crate::shop::buy_list_confirm_route`], `FUN_801DB21C` state 2):
+    /// ([`legaia_engine_menus::shop::buy_list_confirm_route`], `FUN_801DB21C` state 2):
     /// affordability against the purse first, then the item record's `+0`
     /// kind byte picks the follow-up screen. The kind comes from the
     /// on-disc item-effect tables ([`crate::world::DiscTables::item_effects`]); a
@@ -46,10 +46,10 @@ impl MenuRuntimeHost<'_> {
             .get(&item.item_id)
             .copied()
             .unwrap_or(0);
-        if held >= crate::shop::SHOP_HELD_CAP {
+        if held >= legaia_engine_menus::shop::SHOP_HELD_CAP {
             return Some(BuyListRoute::Refused);
         }
-        Some(crate::shop::buy_list_confirm_route(
+        Some(legaia_engine_menus::shop::buy_list_confirm_route(
             kind,
             self.world.party.money,
             price,
@@ -61,7 +61,7 @@ impl MenuRuntimeHost<'_> {
     ///
     /// The bound is retail's own - `min(gold / price, 99, 99 - held)` buying,
     /// the staged bag count selling - through
-    /// [`crate::shop::quantity_row_count`]. The screen used to offer a flat
+    /// [`legaia_engine_menus::shop::quantity_row_count`]. The screen used to offer a flat
     /// nine rows, which capped a purchase at nine copies however much gold or
     /// stack room the player had.
     fn shop_quantity_row_count(&self) -> u8 {

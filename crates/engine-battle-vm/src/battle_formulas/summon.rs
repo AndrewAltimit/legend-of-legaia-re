@@ -88,7 +88,7 @@ pub fn summon_defender_roll(defender: &SummonRollActor, rand: u16) -> u32 {
 /// indexed `matrix[attacker_element][defender_element]` (the disasm computes
 /// `def_elem + atk_elem*8`, so the **row is the attacker**, the column the
 /// defender). The matrix is parsed off the disc by
-/// [`legaia_asset::element_affinity`]; retail values are a small nudge -
+/// [`legaia_game_tables::element_affinity`]; retail values are a small nudge -
 /// 100 = neutral, 96 = same-element self-resist, 104 = opposite-element bonus.
 pub fn apply_element_affinity(roll: u32, affinity_pct: u8) -> u32 {
     roll.saturating_mul(affinity_pct as u32) / 100

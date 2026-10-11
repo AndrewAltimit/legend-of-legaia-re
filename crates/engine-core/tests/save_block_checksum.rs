@@ -246,7 +246,7 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
 /// original gap had.
 #[test]
 fn the_composer_writes_the_whole_magic_and_leaves_identity_to_its_owner() {
-    use legaia_engine_core::card_flow::{SAVE_HEADER_MAGIC, block_title_digits};
+    use legaia_engine_menus::card_flow::{SAVE_HEADER_MAGIC, block_title_digits};
 
     let mut block = dirty_block();
     let pristine = dirty_block();

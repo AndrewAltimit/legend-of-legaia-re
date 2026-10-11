@@ -8,7 +8,7 @@
 //! mode-24 init `FUN_80025980` is what turns that into a loaded overlay
 //! (`FUN_8003EBE4(sub_id + 0x4D)`) and calls its init entry. This module is
 //! that init: it resolves the same PROT entry through
-//! [`crate::minigame_entry::MinigameSubId::prot_index`], parses the overlay's
+//! [`legaia_engine_mode::minigame_entry::MinigameSubId::prot_index`], parses the overlay's
 //! own tables, and installs the session.
 //!
 //! ## Why the overlay is the data source
@@ -29,7 +29,7 @@
 // REF: FUN_80025980 (mode-24 OTHER INIT - the overlay load this mirrors)
 
 use super::*;
-use crate::minigame_entry::MinigameSubId;
+use legaia_engine_mode::minigame_entry::MinigameSubId;
 
 /// What draining a pending door-warp did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,7 +50,7 @@ pub enum MinigameWarpOutcome {
 impl SceneHost {
     /// Read the overlay for `slot` in its statically-recovered loaded form.
     fn minigame_overlay_bytes(&self, slot: MinigameSubId) -> Option<Vec<u8>> {
-        use legaia_asset::static_overlay;
+        use legaia_overlay_images::static_overlay;
         let rec = static_overlay::overlay_map().by_prot_index(slot.prot_index())?;
         let raw = self.index.entry_bytes_extended(rec.prot_index).ok()?;
         static_overlay::as_loaded(&raw, rec).ok()
@@ -105,27 +105,30 @@ impl SceneHost {
     }
 
     /// PROT 0972's species / spawn / cadence tables -> a live
-    /// [`crate::fishing::PondSession`] through
+    /// [`legaia_engine_fishing::fishing::PondSession`] through
     /// [`crate::world::World::enter_fishing_session`], which runs the
     /// bring-up's rod and lure ownership scans and seeds the session from the
     /// persistent save-block words (`exit_fishing` banks them back).
     ///
     /// The venue variant (`DAT_801d90d0`) comes off the departure scene the
     /// way the driver's setup state picks it
-    /// ([`crate::fishing::venue_for_departure_scene`]): the Sebucus door
+    /// ([`legaia_engine_fishing::fishing::venue_for_departure_scene`]): the Sebucus door
     /// (`map02`) opens Vidna, the Karisto door (`map03`) opens Buma. The
     /// suspended scene is still loaded here, so its raw CDNAME `#define` is
     /// the id retail backs up. A launcher that opens a session from any other
     /// scene gets Buma, the variant's zero.
     pub fn enter_fishing_from_overlay(&mut self, loaded: &[u8]) -> bool {
-        let Some(tables) = crate::fishing::FishingTables::from_overlay(loaded) else {
+        let Some(tables) = legaia_engine_fishing::fishing::FishingTables::from_overlay(loaded)
+        else {
             return false;
         };
         let venue = self
             .scene
             .as_ref()
             .map(|sc| sc.start + legaia_prot::cdname::RAW_TOC_INDEX_OFFSET)
-            .map_or(0, |id| crate::fishing::venue_for_departure_scene(id, 0));
+            .map_or(0, |id| {
+                legaia_engine_fishing::fishing::venue_for_departure_scene(id, 0)
+            });
         let venue_map = self.fishing_venue_map(venue);
         self.world.enter_fishing_session(&tables, venue, venue_map);
         // The point-exchange venue pages ride the same overlay image. Decoded
@@ -139,16 +142,19 @@ impl SceneHost {
             .text
             .as_ref()
             .and_then(|t| t.item_names.as_ref());
-        let venues = legaia_asset::fishing_exchange::parse(loaded).map(|ex| {
-            [0usize, 1].map(|v| crate::fishing::PrizeExchange::from_asset(v, &ex.venues[v], names))
+        let venues = legaia_minigame_formats::fishing_exchange::parse(loaded).map(|ex| {
+            [0usize, 1].map(|v| {
+                legaia_engine_fishing::fishing::PrizeExchange::from_asset(v, &ex.venues[v], names)
+            })
         });
         self.world.minigames.fishing_prize_venues = venues;
         // The hub menu's rows and help pages ride the same image.
         self.world.minigames.fishing_hub_text =
-            crate::fishing_hub::FishingHubText::from_overlay(loaded);
+            legaia_engine_fishing::fishing_hub::FishingHubText::from_overlay(loaded);
         // And the HUD sprite table every glyph, digit and gauge cap is cut
         // from (`FUN_801D63B0`'s records).
-        self.world.minigames.fishing_sprites = legaia_asset::fishing_sprites::parse(loaded);
+        self.world.minigames.fishing_sprites =
+            legaia_minigame_formats::fishing_sprites::parse(loaded);
         // And the lure row's captions, the labels resolved through the
         // same item table the exchange rows use.
         let names = self
@@ -158,7 +164,7 @@ impl SceneHost {
             .as_ref()
             .and_then(|t| t.item_names.as_ref());
         self.world.minigames.fishing_captions =
-            legaia_asset::fishing_captions::parse(loaded).map(|raw| {
+            legaia_minigame_formats::fishing_captions::parse(loaded).map(|raw| {
                 crate::world::FishingCaptionText::resolve(&raw, |id| {
                     names.and_then(|n| n.name(id)).map(str::to_string)
                 })
@@ -181,7 +187,10 @@ impl SceneHost {
     /// scene the minigames page reads its lure venue from, so the lure's
     /// walk-grid drift and water class come off the same bytes on every host
     /// whichever scene the session was opened from.
-    pub fn fishing_venue_map(&self, venue: usize) -> Option<crate::fishing::PondVenue> {
+    pub fn fishing_venue_map(
+        &self,
+        venue: usize,
+    ) -> Option<legaia_engine_fishing::fishing::PondVenue> {
         let scene =
             crate::scene::Scene::load(&self.index, crate::fishing_scene::FISHING_VENUE_SCENE)
                 .ok()?;
@@ -189,7 +198,7 @@ impl SceneHost {
         let map = self.index.entry_bytes_extended(idx).ok()?;
         let region_block = scene.field_map_region_block(&self.index).ok().flatten();
         let lead = crate::fishing_venue::party_placements(venue)[0];
-        Some(crate::fishing::PondVenue {
+        Some(legaia_engine_fishing::fishing::PondVenue {
             map,
             region_block,
             anchor_x: lead.x,
@@ -199,7 +208,7 @@ impl SceneHost {
         })
     }
 
-    /// PROT 0975's payout table -> a live [`crate::slot_machine::SlotMachine`].
+    /// PROT 0975's payout table -> a live [`legaia_engine_minigames::slot_machine::SlotMachine`].
     ///
     /// The playing balance is assigned from the casino coin bank, which is the
     /// overlay init's own `DAT_801d4114 = _DAT_800845A4`; `exit_slot_machine`
@@ -207,60 +216,68 @@ impl SceneHost {
     fn enter_slot_from_overlay(&mut self, loaded: &[u8]) -> bool {
         // The literal LCG seed the slot overlay's init writes to
         // `DAT_801d3c80`.
-        use crate::slot_machine::SLOT_RNG_SEED;
-        let Some(payouts) = legaia_asset::slot_payout::parse(loaded) else {
+        use legaia_engine_minigames::slot_machine::SLOT_RNG_SEED;
+        let Some(payouts) = legaia_minigame_formats::slot_payout::parse(loaded) else {
             return false;
         };
         let balance = self.world.minigames.casino_coins as i32;
-        let paylines =
-            legaia_asset::minigame_slot_scene::parse_paylines(loaded).unwrap_or_default();
+        let paylines = legaia_minigame_formats::minigame_slot_scene::parse_paylines(loaded)
+            .unwrap_or_default();
         // The init's `efect.dat` load (raw TOC `0x4B1`): the runtime SFX
         // descriptor bank every cue the machine raises resolves through.
         self.world.minigames.slot_sfx_bundle = self
             .index
-            .entry_bytes_extended(legaia_asset::minigame_sfx::SLOT_SFX_BANK_PROT_INDEX as u32)
+            .entry_bytes_extended(
+                legaia_minigame_formats::minigame_sfx::SLOT_SFX_BANK_PROT_INDEX as u32,
+            )
             .map(|b| b.to_vec())
             .unwrap_or_default();
         self.world.enter_slot_machine(
-            crate::slot_machine::SlotMachine::new(payouts, SLOT_RNG_SEED, balance)
-                .with_paylines(paylines),
+            legaia_engine_minigames::slot_machine::SlotMachine::new(
+                payouts,
+                SLOT_RNG_SEED,
+                balance,
+            )
+            .with_paylines(paylines),
         );
         true
     }
 
     /// PROT 0976's roster + action tables -> a live
-    /// [`crate::baka_fighter::BakaFight`].
+    /// [`legaia_engine_minigames::baka_fighter::BakaFight`].
     ///
     /// The cabinet boots at its attract card ([`BakaFight::with_attract`]),
     /// exactly as retail's sub-id-4 init leaves it at state `0x00`: the
     /// player select seats the picked party fighter, the opponent is the
-    /// cabinet's first rung ([`crate::baka_fighter::first_rung_roster`]), and
+    /// cabinet's first rung ([`legaia_engine_minigames::baka_fighter::first_rung_roster`]), and
     /// the cabinet climbs the ladder from there. Roster `0` only holds the
     /// player seat until the pick replaces it.
     ///
-    /// [`BakaFight::with_attract`]: crate::baka_fighter::BakaFight::with_attract The RNG seed is frame-derived,
+    /// [`BakaFight::with_attract`]: legaia_engine_minigames::baka_fighter::BakaFight::with_attract The RNG seed is frame-derived,
     /// so a replayed pad stream stays deterministic.
     fn enter_baka_from_overlay(&mut self, loaded: &[u8]) -> bool {
-        let Some(opponents) = legaia_asset::baka_opponents::parse(loaded) else {
+        let Some(opponents) = legaia_minigame_formats::baka_opponents::parse(loaded) else {
             return false;
         };
-        let Some(actions) = legaia_asset::baka_opponents::parse_actions(loaded) else {
+        let Some(actions) = legaia_minigame_formats::baka_opponents::parse_actions(loaded) else {
             return false;
         };
         let frame = self.world.frame as u32;
-        let opponent = crate::baka_fighter::first_rung_roster();
-        let seed = crate::baka_fighter::BAKA_RNG_BASE ^ frame;
-        let Some(fight) =
-            crate::baka_fighter::BakaFight::from_tables(&opponents, &actions, 0, opponent, seed)
-        else {
+        let opponent = legaia_engine_minigames::baka_fighter::first_rung_roster();
+        let seed = legaia_engine_minigames::baka_fighter::BAKA_RNG_BASE ^ frame;
+        let Some(fight) = legaia_engine_minigames::baka_fighter::BakaFight::from_tables(
+            &opponents, &actions, 0, opponent, seed,
+        ) else {
             return false;
         };
         let index = &self.index;
         let fight = fight
-            .with_roster_clip_headers(crate::baka_fighter::roster_clip_headers(|i| {
-                index.entry_bytes(i as u32).ok().map(|b| b.to_vec())
-            }))
-            .with_special_cameras(crate::baka_duel_scene::parse_special_cameras(loaded))
+            .with_roster_clip_headers(legaia_engine_minigames::baka_fighter::roster_clip_headers(
+                |i| index.entry_bytes(i as u32).ok().map(|b| b.to_vec()),
+            ))
+            .with_special_cameras(legaia_engine_minigames::baka_duel::parse_special_cameras(
+                loaded,
+            ))
             .with_impact_overlay(loaded)
             .with_attract();
         self.world.enter_baka_fighter(fight);
@@ -268,7 +285,7 @@ impl SceneHost {
     }
 
     /// The battle overlay's hand command-id table -> a live
-    /// [`crate::muscle_dome::MuscleDomeSession`].
+    /// [`legaia_engine_menus::muscle_dome_session::MuscleDomeSession`].
     ///
     /// `loaded` here is PROT **0977** (the arena door/init slot the warp
     /// selects), but the contest's own tables live in the battle overlay
@@ -277,9 +294,10 @@ impl SceneHost {
     /// resolves without one when it does not (the same disclosed fallback the
     /// native launcher takes).
     fn enter_muscle_from_overlay(&mut self, _loaded: &[u8]) -> bool {
-        use crate::muscle_dome::{DomeCombatant, DomeDamageModel, MuscleCard, MuscleDomeSession};
-        use legaia_asset::muscle_dome as md;
-        use legaia_asset::static_overlay;
+        use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession};
+        use legaia_engine_minigames::muscle_dome::{DomeCombatant, DomeDamageModel};
+        use legaia_minigame_formats::muscle_dome as md;
+        use legaia_overlay_images::static_overlay;
 
         /// The victory caption's Seru index. It names a *string*, not a prize.
         const CAPTION_SERU_INDEX: u8 = 1;
@@ -288,7 +306,9 @@ impl SceneHost {
         // the arena's runtime SFX descriptor bundle (the hub's tally cues).
         self.world.minigames.muscle_sfx_bundle = self
             .index
-            .entry_bytes_extended(legaia_asset::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX as u32)
+            .entry_bytes_extended(
+                legaia_minigame_formats::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX as u32,
+            )
             .map(|b| b.to_vec())
             .unwrap_or_default();
 
@@ -309,12 +329,12 @@ impl SceneHost {
         // The lead fighter - swing costs, HP, AP pool, stat profile - through
         // the one builder the native window's launcher uses too.
         let lead = self.dome_lead_fighter(&commands);
-        let hand: [MuscleCard; crate::muscle_dome::HAND_SLOTS] =
+        let hand: [MuscleCard; legaia_engine_minigames::muscle_dome::HAND_SLOTS] =
             std::array::from_fn(|i| MuscleCard {
                 command_id: commands[i],
                 cost: lead.costs[i],
             });
-        let opp_hand: [MuscleCard; crate::muscle_dome::HAND_SLOTS] =
+        let opp_hand: [MuscleCard; legaia_engine_minigames::muscle_dome::HAND_SLOTS] =
             std::array::from_fn(|i| MuscleCard {
                 command_id: commands[i],
                 cost: DOME_FAVORED_COST,
@@ -326,13 +346,15 @@ impl SceneHost {
         // archive does not decode keeps the stand-in.
         let arena_raw = self
             .index
-            .entry_bytes_extended(crate::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32)
+            .entry_bytes_extended(
+                legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32,
+            )
             .ok();
         if self.world.minigames.muscle_contest.is_none() {
             let flags = self.world.muscle_contest_flags();
-            self.world.minigames.muscle_contest = arena_raw
-                .as_deref()
-                .and_then(|a| crate::muscle_dome::DomeContest::from_overlay(a, &flags));
+            self.world.minigames.muscle_contest = arena_raw.as_deref().and_then(|a| {
+                legaia_engine_minigames::muscle_dome::DomeContest::from_overlay(a, &flags)
+            });
         }
         let (course, round) = self
             .world
@@ -342,7 +364,7 @@ impl SceneHost {
             .map_or((0, 0), |c| (c.course(), c.round()));
         let opponent_record = arena_raw
             .as_deref()
-            .and_then(crate::muscle_dome::parse_course_ladder)
+            .and_then(legaia_engine_minigames::muscle_dome::parse_course_ladder)
             .and_then(|ladder| {
                 let rounds = &ladder.get(course)?.rounds;
                 let n = (round as usize).min(rounds.len().saturating_sub(1));
@@ -350,7 +372,7 @@ impl SceneHost {
             })
             .and_then(|id| {
                 let archive = self.index.entry_bytes_extended(867).ok()?;
-                legaia_asset::monster_archive::record(&archive, id).ok()?
+                legaia_actor_formats::monster_archive::record(&archive, id).ok()?
             })
             .filter(|r| r.hp > 0);
         let (opponent, opponent_hp, opponent_budget) = match opponent_record.as_ref() {
@@ -387,7 +409,7 @@ impl SceneHost {
         if let Some(name) = opponent_name.filter(|n| !n.is_empty()) {
             session.set_opponent_name(name);
         }
-        let seed = crate::minigame_entry::DOME_SEED_SALT ^ self.world.frame as u32;
+        let seed = legaia_engine_mode::minigame_entry::DOME_SEED_SALT ^ self.world.frame as u32;
         if let Some(model) =
             DomeDamageModel::from_battle_overlay(&raw, [lead.profile, opponent], hp, seed)
         {
@@ -422,19 +444,25 @@ impl SceneHost {
     /// plain swings - retail's own answer for a character with no arts.
     fn dome_art_catalog(&self) -> Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> {
         let character = self.world.caster_character(0);
-        crate::muscle_dome::art_catalog_for(&self.world.tables.art_records, character)
+        legaia_engine_menus::muscle_dome_session::art_catalog_for(
+            &self.world.tables.art_records,
+            character,
+        )
     }
 
-    /// PROT 0980's baked step chart -> a live [`crate::dance::DanceGame`].
+    /// PROT 0980's baked step chart -> a live [`legaia_engine_minigames::dance::DanceGame`].
     ///
     /// The door warp opens the floor the hall's script asked for: the overlay's
     /// state 1 reads it off story flags `0x133` / `0x134` / `0x135` / `0x428`
-    /// ([`crate::dance::dance_mode_from_flags`]), so the qualifier, the finals,
+    /// ([`legaia_engine_minigames::dance::dance_mode_from_flags`]), so the qualifier, the finals,
     /// the how-to demo and free play each seat their own cast. On the short
     /// song.
     fn enter_dance_from_overlay(&mut self, loaded: &[u8]) -> bool {
-        let mode = crate::dance::dance_mode_from_flags(|f| self.world.system_flag_test(f));
-        let Some(mut game) = crate::dance::DanceGame::from_overlay_for_mode(loaded, mode, false)
+        let mode = legaia_engine_minigames::dance::dance_mode_from_flags(|f| {
+            self.world.system_flag_test(f)
+        });
+        let Some(mut game) =
+            legaia_engine_minigames::dance::DanceGame::from_overlay_for_mode(loaded, mode, false)
         else {
             return false;
         };
@@ -456,7 +484,9 @@ impl SceneHost {
     pub fn stage_dance_sfx_bundle(&mut self) {
         self.world.minigames.dance_sfx_bundle = self
             .index
-            .entry_bytes_extended(legaia_asset::dance_art::DANCE_SFX_BANK_PROT_INDEX as u32)
+            .entry_bytes_extended(
+                legaia_minigame_formats::dance_art::DANCE_SFX_BANK_PROT_INDEX as u32,
+            )
             .map(|b| b.to_vec())
             .unwrap_or_default();
     }
@@ -470,8 +500,8 @@ pub const DOME_STANDIN_BUDGET: u16 = 120;
 /// Stand-in HP, for a fighter with no HP.
 pub const DOME_STANDIN_HP: i32 = 400;
 /// Stand-in stat profile, for a fighter with no record.
-pub const DOME_STANDIN_COMBATANT: crate::muscle_dome::DomeCombatant =
-    crate::muscle_dome::DomeCombatant {
+pub const DOME_STANDIN_COMBATANT: legaia_engine_minigames::muscle_dome::DomeCombatant =
+    legaia_engine_minigames::muscle_dome::DomeCombatant {
         hp_max: DOME_STANDIN_HP as u16,
         int: 60,
         udf: 40,
@@ -485,7 +515,7 @@ pub const DOME_STANDIN_COMBATANT: crate::muscle_dome::DomeCombatant =
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DomeLeadFighter {
     /// Per-card AP cost, in hand order.
-    pub costs: [u16; crate::muscle_dome::HAND_SLOTS],
+    pub costs: [u16; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
     /// Entry HP (the lead record's live `+0x106`).
     pub hp: i32,
     /// Maximum HP (the lead record's `+0x104`), which the entry HP does not
@@ -494,7 +524,7 @@ pub struct DomeLeadFighter {
     /// AP pool (the lead record's live AGL `+0x110`).
     pub budget: u16,
     /// Damage-roll profile (max HP `+0x104`, live INT / UDF / LDF).
-    pub profile: crate::muscle_dome::DomeCombatant,
+    pub profile: legaia_engine_minigames::muscle_dome::DomeCombatant,
 }
 
 impl SceneHost {
@@ -514,7 +544,7 @@ impl SceneHost {
     /// shared path. A field that does not resolve keeps its stand-in.
     pub fn dome_lead_fighter(
         &self,
-        commands: &[u8; crate::muscle_dome::HAND_SLOTS],
+        commands: &[u8; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
     ) -> DomeLeadFighter {
         let lead = self.world.party.roster.members.first();
         let swing = self.lead_swing_costs();
@@ -539,7 +569,7 @@ impl SceneHost {
             .filter(|&a| a > 0)
             .unwrap_or(DOME_STANDIN_BUDGET);
         let profile = match live {
-            Some(l) => crate::muscle_dome::DomeCombatant {
+            Some(l) => legaia_engine_minigames::muscle_dome::DomeCombatant {
                 hp_max,
                 int: l.int,
                 udf: l.udf,
@@ -562,7 +592,7 @@ impl SceneHost {
     /// `None` when the file or its equipped sections do not decode.
     pub fn lead_swing_costs(&self) -> Option<[u8; 4]> {
         let raw = self.index.entry_bytes_extended(863).ok()?;
-        let pack = legaia_asset::battle_data_pack::parse(&raw).ok()?;
+        let pack = legaia_actor_formats::battle_data_pack::parse(&raw).ok()?;
         let equipped: [u8; 5] = self
             .world
             .party
@@ -574,9 +604,10 @@ impl SceneHost {
                 [slots[0], slots[1], slots[2], slots[3], slots[4]]
             })
             .unwrap_or_default();
-        let swings =
-            legaia_asset::battle_char_assembly::swing_battle_animations(&raw, &pack, &equipped)
-                .ok()?;
+        let swings = legaia_actor_formats::battle_char_assembly::swing_battle_animations(
+            &raw, &pack, &equipped,
+        )
+        .ok()?;
         let mut costs = [0u8; 4];
         for s in &swings {
             let i = s.slot.checked_sub(0xC)? as usize;

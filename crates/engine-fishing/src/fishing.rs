@@ -6,7 +6,7 @@
 //! and the catch-scoring / persistent-record model - composed into an
 //! interactive fight session. It consumes reel input and a per-frame fish pull
 //! and produces a running fight + a scored catch, driven by the already-parsed
-//! per-species table ([`legaia_asset::fishing_species`]).
+//! per-species table ([`legaia_minigame_formats::fishing_species`]).
 //!
 //! What is **Confirmed** (byte / formula pinned in
 //! [`docs/subsystems/minigame-fishing.md`](../../../docs/subsystems/minigame-fishing.md)):
@@ -53,8 +53,8 @@
 //! line with the project's split between simulation (this crate) and
 //! renderer-agnostic draw-list builders (`engine-ui`).
 
-use legaia_asset::fishing_species::FishingSpecies;
-use legaia_asset::fishing_species::{CADENCE_TOLERANCE, CadenceTemplate};
+use legaia_minigame_formats::fishing_species::FishingSpecies;
+use legaia_minigame_formats::fishing_species::{CADENCE_TOLERANCE, CadenceTemplate};
 
 use legaia_engine_system::rand::BiosRand;
 

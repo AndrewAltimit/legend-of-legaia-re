@@ -796,7 +796,7 @@ pub struct WalkHeightfield {
     /// draws it before - and therefore under - every other primitive in the
     /// frame, whatever its depth. Only the field ground pass (PROT 0900,
     /// [`GroundCellGate::WalkVisible`]) has the bit; the overworld emitter keys
-    /// every cell on its own corners (`legaia_engine_core::overworld_draw_order`)
+    /// every cell on its own corners (`legaia_engine_field::overworld_draw_order`)
     /// and leaves this `false`. Empty on a heightfield built without it.
     pub far_bucket: Vec<bool>,
 }

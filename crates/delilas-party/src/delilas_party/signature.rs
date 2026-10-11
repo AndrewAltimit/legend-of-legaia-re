@@ -322,7 +322,7 @@ pub(super) fn author_staged_cast_rows(
     archive: &[u8],
     options: &DelilasPartyOptions,
 ) -> Result<AuthoredCastRows> {
-    use legaia_asset::battle_char_assembly;
+    use legaia_actor_formats::battle_char_assembly;
     use legaia_party_swap::cast_stage;
 
     // Expand region writes into the offset-edit form

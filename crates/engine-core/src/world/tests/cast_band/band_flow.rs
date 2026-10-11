@@ -2,8 +2,9 @@
 //! party cast label.
 
 use super::*;
-use legaia_engine_vm::battle_action::ActionState;
-use legaia_engine_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+use legaia_engine_battle_vm::battle_action::ActionState;
+use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
@@ -22,7 +23,7 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
     assert_eq!(world.battle_ctx.action_state, ActionState::Begin.as_byte());
     assert_eq!(
         world.actors[0].battle.action_category,
-        legaia_engine_vm::battle_action::ActionCategory::Magic.as_byte()
+        legaia_engine_battle_vm::battle_action::ActionCategory::Magic.as_byte()
     );
     assert_eq!(world.actors[0].battle.params[0], 0x81);
     assert!(
@@ -129,7 +130,7 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
             .audio
             .battle_sfx_cues
             .iter()
-            .any(|c| c.kind == legaia_engine_vm::battle_action::SUMMON_FLASH_CUE),
+            .any(|c| c.kind == legaia_engine_battle_vm::battle_action::SUMMON_FLASH_CUE),
         "the 0x33 arm's 0x63 cue"
     );
 }
@@ -158,9 +159,9 @@ fn a_seru_cast_with_no_host_seat_still_folds_and_ends() {
 
 #[test]
 fn a_monster_cast_runs_the_magic_band_and_folds_on_leaving_the_wait() {
-    use crate::battle_events::BattleEvent;
-    use crate::monster_catalog::vanilla_monster_catalog;
-    use crate::spells::SpellCatalog;
+    use legaia_engine_battle::battle_events::BattleEvent;
+    use legaia_engine_battle::monster_catalog::vanilla_monster_catalog;
+    use legaia_engine_battle::spells::SpellCatalog;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -244,7 +245,7 @@ fn a_monster_cast_runs_the_magic_band_and_folds_on_leaving_the_wait() {
 
 #[test]
 fn a_party_cast_raises_no_spell_name_label() {
-    use crate::battle_events::BattleEvent;
+    use legaia_engine_battle::battle_events::BattleEvent;
     let mut world = seru_cast_world();
     confirm_cast(&mut world);
     for _ in 0..0x40 {

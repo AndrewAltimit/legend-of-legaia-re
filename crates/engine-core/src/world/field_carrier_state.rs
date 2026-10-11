@@ -4,11 +4,12 @@
 //! reads as one unit. Fields keep their retail provenance notes.
 
 use super::*;
+use legaia_engine_field::man_field_scripts::FieldCarrierConfig;
 
 /// Field-scene carrier entities: the per-entity FUN_801DA51C state machines ticked in field scenes and their battle / engage handoffs.
 pub struct FieldCarrierState {
     /// Per-entity **field** state machines - the same `FUN_801DA51C` SM the
-    /// overworld uses ([`legaia_engine_field::world_map_entity`]), but ticked in [`crate::world::SceneMode::Field`]
+    /// overworld uses ([`legaia_engine_field::world_map_entity`]), but ticked in [`legaia_engine_mode::mode::SceneMode::Field`]
     /// for the scene's MAN-placed actors. A scripted-encounter carrier (the
     /// Rim Elm Tetsu fight) sits Idle until [`crate::world::World::engage_field_carrier`]
     /// (the dialogue-accept) advances it to `Activating`; the next

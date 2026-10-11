@@ -11,8 +11,8 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (CI has no Sony disc).
 
-use legaia_engine_core::field_events::FieldEvent;
 use legaia_engine_core::scene::{BgmDirector, SceneHost};
+use legaia_engine_field::field_events::FieldEvent;
 
 /// Records which director hook each dispatched event hit.
 #[derive(Default)]
@@ -122,7 +122,7 @@ fn a_scene_local_start_plays_the_retail_fallback_bank() {
         .expect("read")
         .expect("the fallback id resolves");
     assert_eq!(
-        legaia_engine_core::music_labels::prot_entry_for_bgm_id(
+        legaia_engine_system::music_labels::prot_entry_for_bgm_id(
             legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID
         ),
         Some(990),

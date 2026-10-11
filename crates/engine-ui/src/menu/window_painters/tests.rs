@@ -1,7 +1,7 @@
 use super::*;
 
 // The rects are the disc records for these ids (menu-overlay window
-// table, `legaia_asset::menu_windows`); pinning them here keeps the
+// table, `legaia_game_tables::menu_windows`); pinning them here keeps the
 // pen arithmetic checkable without a disc.
 const W5: PainterRect = PainterRect {
     x: 58,

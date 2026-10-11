@@ -48,9 +48,9 @@
 //! - the landing search: walk up to `depth` rows ahead for the target symbol,
 //!   else stop on the next natural row (`FUN_801d2440`, [`land_row`]);
 //! - the win evaluation: five paylines - three horizontal and two diagonal
-//!   ([`legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS`]) - checked
+//!   ([`legaia_minigame_formats::minigame_slot_scene::PAYLINE_ROW_OFFSETS`]) - checked
 //!   all-equal on the display strip, highest-value line kept, normal payout =
-//!   `payout_table[symbol]` ([`legaia_asset::slot_payout`]), jackpot symbols
+//!   `payout_table[symbol]` ([`legaia_minigame_formats::slot_payout`]), jackpot symbols
 //!   `9` / `8` kick off a bonus round of 3 / 1 free spins, and a **bonus round
 //!   pays the product of the three payline `(value - 0xf)` factors** - no
 //!   equality gate, and the winning line is forced to the centre
@@ -73,7 +73,7 @@
 //! `FUN_801d2114` / `FUN_801d2440` (stop) -> `FUN_801d0554` (snap + claim) ->
 //! `FUN_801d13e8` (win eval).
 
-use legaia_asset::slot_payout;
+use legaia_minigame_formats::slot_payout;
 
 mod cash_out;
 mod coin_exchange;
@@ -148,7 +148,7 @@ pub const FEATURE_MODE_BONUS: u8 = 6;
 /// sized to guarantee the reel travels far enough for the conversion to arrive.
 pub const DISPLAY_REFRESH_LEAD: usize = 9;
 
-pub use legaia_asset::minigame_slot_scene::SlotScreen;
+use legaia_minigame_formats::minigame_slot_scene::SlotScreen;
 
 #[cfg(test)]
 mod tests;

@@ -2,6 +2,7 @@
 //! exchange and the per-frame tick.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Enter the fishing minigame on `session`, suspending the current scene
@@ -11,7 +12,7 @@ impl World {
     /// Takes a ready session; [`World::enter_fishing_session`] is the entry
     /// that builds one from the persistent save-block words, which is what
     /// every player-facing and debug path uses.
-    pub fn enter_fishing(&mut self, session: crate::fishing::PondSession) {
+    pub fn enter_fishing(&mut self, session: legaia_engine_fishing::fishing::PondSession) {
         if self.mode != SceneMode::Fishing {
             self.minigames.fishing_return_mode = self.mode;
         }
@@ -22,13 +23,13 @@ impl World {
 
     /// The persistent fishing words (`_DAT_8008444C..0x8008446C`) as the
     /// world holds them between sessions.
-    pub fn fishing_persist(&self) -> crate::fishing::FishingPersist {
+    pub fn fishing_persist(&self) -> legaia_engine_fishing::fishing::FishingPersist {
         let m = &self.minigames;
-        crate::fishing::FishingPersist {
+        legaia_engine_fishing::fishing::FishingPersist {
             lure: m.fishing_lure,
             rod: m.fishing_rod as i32,
             casts: m.fishing_casts,
-            record: crate::fishing::FishingRecord {
+            record: legaia_engine_fishing::fishing::FishingRecord {
                 points: m.fishing_points,
                 best_points: m.fishing_best_points,
                 best_fish: m.fishing_best_fish as usize,
@@ -41,7 +42,7 @@ impl World {
     /// them in the live save window, so they outlast the overlay.
     pub(in crate::world::frame_tick) fn bank_fishing_persist(
         &mut self,
-        p: crate::fishing::FishingPersist,
+        p: legaia_engine_fishing::fishing::FishingPersist,
     ) {
         let m = &mut self.minigames;
         m.fishing_lure = p.lure;
@@ -59,7 +60,7 @@ impl World {
     ///
     /// The bring-up's two ownership scans run first, as in retail: the rod
     /// scan ([`World::resolve_fishing_entry_rod`], `FUN_801CF070`) and the
-    /// lure gate ([`crate::fishing::select_owned_rod`] over the lure family,
+    /// lure gate ([`legaia_engine_fishing::fishing::select_owned_rod`] over the lure family,
     /// `FUN_801d712c`), each writing its corrected index back. `venue_map`
     /// gives the cast lure a world to land in (the venue scene's `.MAP`).
     ///
@@ -67,21 +68,25 @@ impl World {
     /// entry varies while a replayed pad stream stays deterministic.
     pub fn enter_fishing_session(
         &mut self,
-        tables: &crate::fishing::FishingTables,
+        tables: &legaia_engine_fishing::fishing::FishingTables,
         venue: usize,
-        venue_map: Option<crate::fishing::PondVenue>,
+        venue_map: Option<legaia_engine_fishing::fishing::PondVenue>,
     ) {
-        use crate::minigame_entry::FISHING_SEED_SALT;
+        use legaia_engine_mode::minigame_entry::FISHING_SEED_SALT;
         self.resolve_fishing_entry_rod();
         let bag = &self.party.inventory;
         let mut lure = self.minigames.fishing_lure;
-        crate::fishing::select_owned_rod(&mut lure, |id| {
+        legaia_engine_fishing::fishing::select_owned_rod(&mut lure, |id| {
             i32::from(bag.get(&(id as u8)).copied().unwrap_or(0))
         });
         self.minigames.fishing_lure = lure;
         let seed = FISHING_SEED_SALT ^ self.frame as u32;
-        let mut session =
-            crate::fishing::PondSession::from_tables(tables, venue, self.fishing_persist(), seed);
+        let mut session = legaia_engine_fishing::fishing::PondSession::from_tables(
+            tables,
+            venue,
+            self.fishing_persist(),
+            seed,
+        );
         if let Some(v) = venue_map {
             session.attach_venue(v);
         }
@@ -92,7 +97,7 @@ impl World {
     /// return it as a session's `rod_stat`.
     ///
     /// This is the fishing bring-up's own scan
-    /// ([`crate::fishing::entry_rod_index`], retail `FUN_801CF070` at
+    /// ([`legaia_engine_fishing::fishing::entry_rod_index`], retail `FUN_801CF070` at
     /// `0x801cf35c..0x801cf39c`) run against the live bag: it keeps
     /// [`crate::world::MinigameState::fishing_rod`] when that rod is held,
     /// otherwise steps forward with wrap, and lands on `0` for a party holding
@@ -105,9 +110,10 @@ impl World {
     /// the mode-24 door warp and both play hosts' debug launchers alike.
     pub fn resolve_fishing_entry_rod(&mut self) -> i32 {
         let bag = &self.party.inventory;
-        let rod = crate::fishing::entry_rod_index(self.minigames.fishing_rod, |id| {
-            i32::from(bag.get(&(id as u8)).copied().unwrap_or(0))
-        });
+        let rod =
+            legaia_engine_fishing::fishing::entry_rod_index(self.minigames.fishing_rod, |id| {
+                i32::from(bag.get(&(id as u8)).copied().unwrap_or(0))
+            });
         self.minigames.fishing_rod = rod;
         rod as i32
     }
@@ -119,8 +125,8 @@ impl World {
     /// [`crate::world::MinigameState`] (retail writes those cells in place;
     /// the next session seeds from them). No-op when fishing isn't active.
     ///
-    /// [`FishingRecord`]: crate::fishing::FishingRecord
-    pub fn exit_fishing(&mut self) -> Option<crate::fishing::PondSession> {
+    /// [`FishingRecord`]: legaia_engine_fishing::fishing::FishingRecord
+    pub fn exit_fishing(&mut self) -> Option<legaia_engine_fishing::fishing::PondSession> {
         if self.mode == SceneMode::Fishing {
             self.mode = self.minigames.fishing_return_mode;
         }
@@ -136,7 +142,10 @@ impl World {
     /// Open the fishing point-exchange (prize shop) list on `exchange`.
     /// The host renders [`crate::world::MinigameState::fishing_exchange`] and commits buys through
     /// [`World::fishing_exchange_buy`].
-    pub fn open_fishing_exchange(&mut self, mut exchange: crate::fishing::PrizeExchange) {
+    pub fn open_fishing_exchange(
+        &mut self,
+        mut exchange: legaia_engine_fishing::fishing::PrizeExchange,
+    ) {
         // Row 0 hides until strictly affordable - floor the cursor to the
         // first visible row for the current point pool.
         exchange.cursor = exchange
@@ -152,7 +161,7 @@ impl World {
 
     /// Commit a point-exchange purchase of `qty` units of `row`
     /// (`FUN_801d06c8`'s Yes arm): validates through
-    /// [`crate::fishing::PrizeExchange::buy`] against the persistent pool /
+    /// [`legaia_engine_fishing::fishing::PrizeExchange::buy`] against the persistent pool /
     /// purchased mask / live inventory count, then deducts
     /// [`crate::world::MinigameState::fishing_points`], latches the one-time bit, and grants the
     /// item into [`crate::world::PartyState::inventory`]. While a fishing session is live its
@@ -162,7 +171,7 @@ impl World {
         &mut self,
         row: usize,
         qty: u32,
-    ) -> Option<crate::fishing::PrizePurchase> {
+    ) -> Option<legaia_engine_fishing::fishing::PrizePurchase> {
         let ex = self.minigames.fishing_exchange.as_ref()?;
         let item_id = ex.rows.get(row)?.item_id;
         let owned = *self.party.inventory.get(&item_id).unwrap_or(&0) as u32;
@@ -189,7 +198,7 @@ impl World {
     }
 
     /// Advance the fishing minigame one frame, reading this frame's pad into
-    /// the session's [`PondInput`](crate::fishing::PondInput):
+    /// the session's [`PondInput`](legaia_engine_fishing::fishing::PondInput):
     ///
     /// - **Cast / confirm** is the [`Circle`] edge (retail packed bit
     ///   `0x20`): it starts the wind-up at the idle shore, locks the power
@@ -199,11 +208,11 @@ impl World {
     ///   `_DAT_8007b850` and classified by the ported decoder inside the
     ///   session, so holding both resolves to reel A as retail does.
     /// - **Strike credit**: the pre-hook band check's pad nudge, counted by
-    ///   [`crate::fishing_actors::bite_pad_nudge`] - one per fresh D-pad
+    ///   [`legaia_engine_fishing::fishing_actors::bite_pad_nudge`] - one per fresh D-pad
     ///   left, D-pad right, and reel press, the reel pair counting once
-    ///   ([`PondInput::from_engine_pad`](crate::fishing::PondInput::from_engine_pad)).
+    ///   ([`PondInput::from_engine_pad`](legaia_engine_fishing::fishing::PondInput::from_engine_pad)).
     ///
-    /// The frame's [`PondEvent`](crate::fishing::PondEvent)s land in
+    /// The frame's [`PondEvent`](legaia_engine_fishing::fishing::PondEvent)s land in
     /// [`crate::world::MinigameState::fishing_events`] for the hosts' banner
     /// one-shots, and the two sound-bearing ones queue their cues here.
     ///
@@ -225,14 +234,14 @@ impl World {
     /// casting-meter step is not byte-pinned; `FISHING_CAST_STEP` is the
     /// host rate.
     pub(in crate::world::frame_tick) fn tick_fishing(&mut self) {
-        use crate::fishing::{PondEvent, PondInput};
+        use legaia_engine_fishing::fishing::{PondEvent, PondInput};
         /// Per-frame casting-meter step (see the method note - not byte-pinned).
         const FISHING_CAST_STEP: i32 = 0x80;
         /// The lure-landing cue and the ring slot it is stored into.
         const LURE_DOWN_CUE: i16 = 0x204;
         const LURE_DOWN_CUE_SLOT: u8 = 2;
         /// Packed spread argument the strike splash fans its three parts by.
-        /// Direct form (bit [`crate::fishing_chrome::SPLASH_SUB_BLOCK_BIT`]
+        /// Direct form (bit [`legaia_engine_fishing::fishing_chrome::SPLASH_SUB_BLOCK_BIT`]
         /// clear); the value is the play window's, carried over unchanged.
         const SPLASH_SPREAD: i32 = 0x40;
         if self.minigames.fishing.is_none() {
@@ -259,9 +268,9 @@ impl World {
                 s.tick(pond_input, 1, FISHING_CAST_STEP);
                 for _ in 0..s.take_rod_creaks() {
                     // The hooked rod's creak, `0x201` into ring slot 1.
-                    self.audio
-                        .sfx_ring_ops
-                        .push(crate::world::SfxRingOp::WriteSlot(1, 0x201));
+                    self.audio.sfx_ring_ops.push(
+                        legaia_engine_system::sound_state::SfxRingOp::WriteSlot(1, 0x201),
+                    );
                 }
                 (s.take_events(), s.persist().casts != casts)
             }
@@ -275,7 +284,7 @@ impl World {
         if lure_down {
             self.audio
                 .sfx_ring_ops
-                .push(crate::world::SfxRingOp::WriteSlot(
+                .push(legaia_engine_system::sound_state::SfxRingOp::WriteSlot(
                     LURE_DOWN_CUE_SLOT,
                     LURE_DOWN_CUE,
                 ));
@@ -286,10 +295,10 @@ impl World {
             // event, not a venue actor, so every host that ticks the world
             // gets the burst.
             if matches!(e, PondEvent::Splash) {
-                let parts = crate::fishing_chrome::splash_burst(
-                    crate::fishing_actors::SCREEN_CENTRE.0,
-                    crate::fishing_actors::SCREEN_CENTRE.1,
-                    crate::minigame_fx::SPLASH_SPRITE_ID,
+                let parts = legaia_engine_fishing::fishing_chrome::splash_burst(
+                    legaia_engine_fishing::fishing_actors::SCREEN_CENTRE.0,
+                    legaia_engine_fishing::fishing_actors::SCREEN_CENTRE.1,
+                    legaia_engine_minigames::minigame_fx::SPLASH_SPRITE_ID,
                     SPLASH_SPREAD,
                 );
                 self.minigames.fx.spawn_splash(&parts);

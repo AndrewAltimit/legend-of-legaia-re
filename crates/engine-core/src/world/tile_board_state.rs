@@ -11,7 +11,7 @@ pub struct TileBoardState {
     /// movement in the `SceneMode::Field` tick. This is *not* general
     /// town locomotion (Legaia towns use free movement). See
     /// [`crate::tile_board`].
-    pub grid: Option<crate::tile_board::TileBoard>,
+    pub grid: Option<legaia_engine_minigames::tile_board::TileBoard>,
     /// While stepping on a tile board, the world `(x, z)` the player
     /// actor is interpolating toward (the destination tile centre).
     /// `None` when the player is idle and ready to accept a new
@@ -27,23 +27,23 @@ pub struct TileBoardState {
     /// The parsed op-49 board header (radius / mode flag / actor
     /// template ids) kept for the render + event consumers while the
     /// board is installed.
-    pub(crate) header: Option<crate::tile_board::TileBoardHeader>,
+    pub(crate) header: Option<legaia_engine_minigames::tile_board::TileBoardHeader>,
     /// Per-cell-value tile-actor table (retail `DAT_801f35bc`, 15 entries).
     /// Index = cell value: slot `0` = the player actor, `2..=14` = the
     /// per-value tile actors spawned at board install from
     /// `tile_template_base + (value - 2)`. Each entry is the actor-pool
     /// slot holding that value's instance, or `None` when the value is not
     /// present on the board / the pool was exhausted. Cleared on teardown.
-    pub(crate) actor_slots: [Option<u8>; crate::tile_board::TILE_ACTOR_TABLE_LEN],
+    pub(crate) actor_slots: [Option<u8>; legaia_engine_minigames::tile_board::TILE_ACTOR_TABLE_LEN],
     /// Per-frame tile-board draw list: one entry per drawn cell, naming the
     /// tile actor to draw and the world-centre position to draw it at
     /// (`overlay_0897_801e0f3c`). Refreshed every field tick while a board
     /// is installed (honouring the header `+6` full-vs-windowed mode and
     /// `+5` radius); empty otherwise. The deferred renderer consumes this
     /// to draw each tile actor's mesh at every listed cell.
-    pub draw_list: Vec<crate::tile_board::TileDraw>,
+    pub draw_list: Vec<legaia_engine_minigames::tile_board::TileDraw>,
     /// The walk SM's state (the controller's `+0x54`, values in
-    /// [`crate::tile_board::sm`]): the fade-in, walking, the quit prompt and
+    /// [`legaia_engine_minigames::tile_board::sm`]): the fade-in, walking, the quit prompt and
     /// the exit states down to teardown.
     pub(crate) sm: u8,
     /// The fade value (`+0x9C`, 4.12): what the SM copies into every tile
@@ -64,10 +64,10 @@ impl TileBoardState {
             target: None,
             armed: false,
             header: None,
-            actor_slots: [None; crate::tile_board::TILE_ACTOR_TABLE_LEN],
+            actor_slots: [None; legaia_engine_minigames::tile_board::TILE_ACTOR_TABLE_LEN],
             draw_list: Vec::new(),
-            sm: crate::tile_board::sm::WALK,
-            fade: crate::tile_board::FADE_FULL,
+            sm: legaia_engine_minigames::tile_board::sm::WALK,
+            fade: legaia_engine_minigames::tile_board::FADE_FULL,
             prompt_cursor: 0,
             saved_octant: 0,
         }

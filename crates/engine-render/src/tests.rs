@@ -3,8 +3,8 @@ use crate::renderer::letterbox_scale;
 use crate::shaders::*;
 // These UI helpers live in `legaia-engine-ui` and are on the crate root's
 // explicit re-export list.
-use crate::{apply_alpha, hp_bar_color_index, mp_bar_color_index};
 use glam::Mat4;
+use legaia_engine_ui::{apply_alpha, hp_bar_color_index, mp_bar_color_index};
 
 mod battle_hud;
 mod battle_intro_emitter;

@@ -2,7 +2,7 @@
 //!
 //! The play-window render path builds a looping `FieldClipPlayer` for each
 //! scene-actor placement from the scene's per-scene ANM bundle (the type-`0x05`
-//! section `legaia_asset::player_anm::find_in_entry` walks). That lookup is
+//! section `legaia_actor_formats::player_anm::find_in_entry` walks). That lookup is
 //! seeded with a descriptor count, and it turned out the count is NOT uniform:
 //! `town01`'s bundle surfaces at count 3, but the opening prologue scenes
 //! (`opdeene` / `opstati` / `opurud`) only surface theirs at count >= 5. The
@@ -31,7 +31,7 @@ fn bundle_at(scene: &Scene, desc: usize) -> bool {
     scene
         .entries
         .iter()
-        .any(|e| !legaia_asset::player_anm::find_in_entry(&e.bytes, desc).is_empty())
+        .any(|e| !legaia_actor_formats::player_anm::find_in_entry(&e.bytes, desc).is_empty())
 }
 
 /// The render path's actual search: first bundle across `[3, 5, 6, 7]`.

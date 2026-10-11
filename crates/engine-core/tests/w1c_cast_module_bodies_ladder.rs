@@ -1,5 +1,5 @@
 //! Disc-gated **cast-module body ladder**: every ported body in
-//! `legaia_engine_vm::cast_module_ticks`, reached the way its own dispatch
+//! `legaia_engine_battle_vm::cast_module_ticks`, reached the way its own dispatch
 //! reaches it, with the denominator taken from the sources.
 //!
 //! Why it exists. `cast_module_ticks.rs` is the one cast-band module whose
@@ -34,9 +34,10 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_asset::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::cast_module_ticks as ticks;
+use legaia_engine_battle_vm::cast_module_ticks as ticks;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_overlay_images::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -424,7 +425,8 @@ fn battle_world() -> World {
         world.actors[slot].battle.hp = 4000;
         world.actors[slot].battle.mp = 77;
         world.actors[slot].battle.liveness = 1;
-        world.actors[slot].battle.anim_rate = legaia_engine_vm::battle_anim_rate::AnimRate(8);
+        world.actors[slot].battle.anim_rate =
+            legaia_engine_battle_vm::battle_anim_rate::AnimRate(8);
     }
     // A monster seat casting at the party row - what a capture-class cast is.
     world.battle_ctx.active_actor = 3;
@@ -463,7 +465,7 @@ fn seeded_base(dir: &std::path::Path) -> World {
     base.install_menu_text(&scus);
     let mut archive =
         legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
-    let mut pool = legaia_asset::cast_effect_pool::CastEffectPool::new();
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
     for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
         let Some(entry) = archive.entries.get(idx as usize).cloned() else {
             continue;

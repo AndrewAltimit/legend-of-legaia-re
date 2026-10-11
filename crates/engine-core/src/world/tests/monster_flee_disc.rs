@@ -48,15 +48,17 @@ const TETSU_TRAINING: u16 = 0x4F;
 /// A lone-monster formation seated through the real battle entry, header
 /// byte `0` (the class town01 row 4 belongs to), against a one-member party
 /// with a starting character's stats.
-fn seat_lone(rec: &legaia_asset::monster_archive::MonsterRecord) -> World {
+fn seat_lone(rec: &legaia_actor_formats::monster_archive::MonsterRecord) -> World {
     let mut w = World::default();
     w.party.party_count = 1;
     w.tables
         .monster_catalog
-        .insert(crate::monster_catalog::monster_def_from_record(rec));
-    let formation = crate::monster_catalog::FormationDef::new(
+        .insert(legaia_engine_battle::monster_catalog::monster_def_from_record(rec));
+    let formation = legaia_engine_battle::monster_catalog::FormationDef::new(
         4,
-        vec![crate::monster_catalog::FormationSlot::new(rec.id)],
+        vec![legaia_engine_battle::monster_catalog::FormationSlot::new(
+            rec.id,
+        )],
     );
     w.enter_battle_from_formation(&formation);
     // A level-1 Vahn: healthy, ~80 HP, ~20 ATK.
@@ -89,7 +91,7 @@ fn the_sparring_partner_never_flees() {
         return;
     };
     let archive = prot_entry(&dir, MONSTER_ARCHIVE_PROT);
-    let rec = legaia_asset::monster_archive::record(&archive, TETSU_TRAINING)
+    let rec = legaia_actor_formats::monster_archive::record(&archive, TETSU_TRAINING)
         .expect("archive parses")
         .expect("Tetsu's training record");
     let mut w = seat_lone(&rec);
@@ -118,11 +120,11 @@ fn a_weak_wounded_random_monster_can_still_flee() {
         return;
     };
     let archive = prot_entry(&dir, MONSTER_ARCHIVE_PROT);
-    let slots = legaia_asset::monster_archive::slot_count(&archive) as u16;
+    let slots = legaia_actor_formats::monster_archive::slot_count(&archive) as u16;
     // The weakest record by HP + ATK that seats at all.
     let rec = (1..=slots)
         .filter_map(|id| {
-            legaia_asset::monster_archive::record(&archive, id)
+            legaia_actor_formats::monster_archive::record(&archive, id)
                 .ok()
                 .flatten()
         })

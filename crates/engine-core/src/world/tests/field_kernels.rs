@@ -1,13 +1,14 @@
 //! Tests of `legaia-engine-field` kernels that need `World` or the mode
 //! table, so they stay on the engine-core side of the crate split.
 
-use crate::field_anim::{FieldClipPlayer, FieldPlayerAnim, synth_anm_bundle};
-use crate::scene_transition_actor::{HeldTransition, SceneTransitionHold};
+use legaia_engine_field::field_anim::{FieldClipPlayer, FieldPlayerAnim, synth_anm_bundle};
+use legaia_engine_field::scene_transition_actor::{HeldTransition, SceneTransitionHold};
 use legaia_engine_mode::card_request::{CARD_REQUEST_MODE, request_card_mode};
 
 #[test]
 fn world_tick_drives_walk_idle_switch_into_pose_frame() {
-    use crate::world::{SceneMode, World};
+    use crate::world::World;
+    use legaia_engine_mode::mode::SceneMode;
     let mut w = World {
         mode: SceneMode::Field,
         ..World::default()
@@ -26,7 +27,7 @@ fn world_tick_drives_walk_idle_switch_into_pose_frame() {
     assert_eq!(pose.bone_outputs[0].0[0], 100, "idle record tag");
     assert!(!w.locomotion.player_anim.as_ref().unwrap().walking);
     // Held direction: locomotion flags the move, the walk clip plays.
-    w.set_pad(crate::input::PadButton::Up.mask());
+    w.set_pad(legaia_engine_system::input::PadButton::Up.mask());
     let _ = w.tick();
     let pose = w.actors[0].pose_frame.clone().expect("walk pose set");
     assert_eq!(pose.bone_outputs[0].0[0], 0, "walk record restarts");
@@ -58,11 +59,11 @@ fn the_card_request_matches_the_bgm_barrier_abort_mode() {
     // barrier bails out on - the two are the same gate seen from each end.
     assert_eq!(
         r.game_mode,
-        crate::mode_entry_init::FIELD_BGM_WAIT_ABORT_MODE
+        legaia_engine_system::mode_entry_init::FIELD_BGM_WAIT_ABORT_MODE
     );
     // And it is mode 22, the CARD init half.
     assert_eq!(
-        crate::mode::GameMode::from_index(r.game_mode as usize),
-        Some(crate::mode::GameMode::CardInit)
+        legaia_engine_mode::mode::GameMode::from_index(r.game_mode as usize),
+        Some(legaia_engine_mode::mode::GameMode::CardInit)
     );
 }

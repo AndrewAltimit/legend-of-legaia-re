@@ -109,7 +109,7 @@ impl PlayWindowApp {
         if self.session.host.world.game_over && !self.boot_ui.is_active() {
             self.session.host.world.game_over = false;
             self.boot_ui =
-                BootUiState::GameOver(legaia_engine_core::game_over::GameOverSession::new());
+                BootUiState::GameOver(legaia_engine_menus::game_over::GameOverSession::new());
             log::info!("play-window: party wipe -> title screen");
         }
         // When the boot UI is active, route input there and skip
@@ -255,7 +255,7 @@ impl PlayWindowApp {
             // retail's cue `0x20` belongs to the pad controller, not to
             // the actor it spawns.
             if !scripted {
-                self.fire_menu_cue(crate::bgm::RETAIL_MENU_CONFIRM_CUE);
+                self.fire_menu_cue(legaia_engine_session::audio_director::RETAIL_MENU_CONFIRM_CUE);
             }
             self.tick_menu_sfx();
             // The boot-UI arm waits for the wipe to spawn the menu

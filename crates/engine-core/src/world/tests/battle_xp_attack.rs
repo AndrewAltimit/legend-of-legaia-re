@@ -29,7 +29,7 @@ fn apply_battle_xp_sets_level_up_banner() {
     assert_eq!(banner.mp_gained, 5);
     assert_eq!(
         banner.frames_remaining,
-        crate::levelup::LevelUpBanner::DEFAULT_FRAMES
+        legaia_engine_battle::levelup::LevelUpBanner::DEFAULT_FRAMES
     );
 }
 
@@ -74,7 +74,7 @@ fn every_member_who_levels_gets_their_own_banner_in_turn() {
 
     // Drain: each banner runs its countdown, then the next takes the slot.
     for _ in 0..2 {
-        for _ in 0..=crate::levelup::LevelUpBanner::DEFAULT_FRAMES {
+        for _ in 0..=legaia_engine_battle::levelup::LevelUpBanner::DEFAULT_FRAMES {
             world.tick();
         }
         seen.push(
@@ -136,7 +136,9 @@ fn apply_battle_xp_no_alive_returns_empty() {
 
 #[test]
 fn apply_battle_loot_drops_item_when_chance_is_100() {
-    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{
+        FormationDef, FormationSlot, MonsterCatalog, MonsterDef,
+    };
     let mut cat = MonsterCatalog::new();
     let mut def = MonsterDef::new(7, "Slime", 10, 5);
     def.drop_item = Some(0x42);
@@ -162,7 +164,9 @@ fn apply_battle_loot_drops_item_when_chance_is_100() {
 /// 0x8004F0FC`): a purse already at the cap stays there.
 #[test]
 fn battle_gold_saturates_the_purse_at_99_999_999() {
-    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{
+        FormationDef, FormationSlot, MonsterCatalog, MonsterDef,
+    };
     let mut cat = MonsterCatalog::new();
     let mut def = MonsterDef::new(7, "Slime", 10, 5);
     def.gold = 600;
@@ -187,7 +191,9 @@ fn a_raseru_forbidden_fight_pays_no_gold_exp_or_drop() {
     // `_DAT_8007BAC0 != 0` zeroes the gold (`0x8004F0AC`), each member's EXP
     // share (`0x8004F274`) and skips the drop walk (`0x8004F480`) - the
     // `0x200` of the Rim Elm ambush included, not only an arena leg's word.
-    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{
+        FormationDef, FormationSlot, MonsterCatalog, MonsterDef,
+    };
     let mut cat = MonsterCatalog::new();
     let mut def = MonsterDef::new(7, "Slime", 10, 5);
     def.gold = 60;
@@ -216,7 +222,7 @@ fn a_raseru_forbidden_fight_pays_no_gold_exp_or_drop() {
         (15, 40, vec![0x42], 15),
         "baseline"
     );
-    let forbidden = legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN;
+    let forbidden = legaia_engine_battle_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN;
     let (gold, xp, drops, paid) = run(forbidden);
     assert_eq!((gold, xp, paid), (0, 0, 0));
     assert!(drops.is_empty());
@@ -399,7 +405,7 @@ fn spirit_gauge_clamps_at_full() {
 
 #[test]
 fn spell_damage_accrues_spirit_gauge() {
-    use crate::spells::{SpellElement, SpellOutcome};
+    use legaia_engine_battle::spells::{SpellElement, SpellOutcome};
     let mut world = World {
         party: crate::world::PartyState {
             party_count: 1,
@@ -654,7 +660,9 @@ fn any_battle_speed_requires_a_living_carrier() {
 /// over a party of three - three quarters of 48, a third each.
 #[test]
 fn the_result_window_prints_the_per_member_share() {
-    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    use legaia_engine_battle::monster_catalog::{
+        FormationDef, FormationSlot, MonsterCatalog, MonsterDef,
+    };
     let mut cat = MonsterCatalog::new();
     let mut def = MonsterDef::new(4, "Gobu Gobu", 10, 5);
     def.exp = 48;

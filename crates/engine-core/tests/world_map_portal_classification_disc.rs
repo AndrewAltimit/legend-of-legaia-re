@@ -18,8 +18,8 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::scene_asset_table;
-use legaia_engine_core::man_field_scripts::{PlacementKind, classify_placements};
+use legaia_engine_field::man_field_scripts::{PlacementKind, classify_placements};
+use legaia_scene_formats::scene_asset_table;
 
 fn extracted_prot() -> Option<PathBuf> {
     for p in [
@@ -83,7 +83,7 @@ fn classified_portals_carry_valid_map_ids_across_the_corpus() {
         let Some(man) = load_man_from_scene(&bytes) else {
             continue;
         };
-        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+        let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
             continue;
         };
         scenes_scanned += 1;

@@ -28,12 +28,13 @@
 //! (`with_attract`), so rung 1's card runs in production, but it does not
 //! hand the score tables over, so rung 2 is still unreached there.
 
-use legaia_engine_core::baka_fighter::{
+use legaia_engine_core::world::World;
+use legaia_engine_minigames::baka_fighter::{
     BakaFight, BakaScoreTables, FighterConfig, HP_START, MatchPhase, TALLY_COUNTERS,
     TALLY_FADE_GATE, TALLY_GOLD_COUNTER, baka_round_score, tally_drain_sequence, tally_drain_step,
 };
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
 
 /// PROT 0976 - the Baka Fighter overlay, which carries both bonus tables.
 const BAKA_OVERLAY_PROT_INDEX: u32 = 976;
@@ -203,7 +204,7 @@ fn rung2_the_disc_bonus_tables_reach_the_per_round_score_rows() {
     assert_eq!(perfect.combo_gain, tables.combo_bonus[3]);
     assert_eq!(
         perfect.bonus_gain,
-        legaia_engine_core::baka_fighter::BAKA_PERFECT_BONUS
+        legaia_engine_minigames::baka_fighter::BAKA_PERFECT_BONUS
     );
     let clamped = baka_round_score(999, &tables.combo_bonus, 0, &tables.health_bonus);
     assert_eq!(

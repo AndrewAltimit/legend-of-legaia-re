@@ -176,7 +176,7 @@ impl World {
     }
 
     /// Record the scene's object-bind rotations
-    /// ([`crate::man_field_scripts::object_script_bind_rots`]). Call before
+    /// ([`legaia_engine_field::man_field_scripts::object_script_bind_rots`]). Call before
     /// [`Self::seed_object_channels`], which seats each context's angles from
     /// them.
     pub fn set_object_bind_rots(&mut self, rots: std::collections::HashMap<usize, [u16; 3]>) {
@@ -289,7 +289,7 @@ impl World {
     /// places does not run its talk body: `dolk2`'s Noa (`P1[2]`) and the
     /// `town01` opening's `P1[10]` / `P1[11]` stay parked after their spawn
     /// section. A touch runs the engaged context as the interaction timeline
-    /// ([`crate::cutscene_timeline::CutsceneTimeline::interaction_slot`]).
+    /// ([`legaia_engine_field::cutscene_timeline::CutsceneTimeline::interaction_slot`]).
     // PORT: FUN_8003A1E4 (spawn-prologue pre-run -> initial actor positions)
     // REF: FUN_8003AEB0, FUN_80039B7C, FUN_8003BC08
     pub fn pre_run_field_channel_prologues(&mut self) {
@@ -431,11 +431,11 @@ impl World {
                 // own halt does in retail - is unchanged.
                 // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
                 if let Some(slot) = self.field_vm.executing_channel
-                    && let Some(ramp) = crate::inline_dialogue::TalkFaceRamp::from_own_acquire(
+                    && let Some(ramp) = legaia_engine_field::inline_dialogue::TalkFaceRamp::from_own_acquire(
                         bc, pc,
                     )
                     .or_else(|| {
-                        crate::inline_dialogue::TalkFaceRamp::from_npc_acquire(bc, pc)
+                        legaia_engine_field::inline_dialogue::TalkFaceRamp::from_npc_acquire(bc, pc)
                             .filter(|_| target.is_some())
                             .map(|(_, r)| r)
                     })
@@ -572,7 +572,7 @@ impl World {
     // REF: FUN_8003A1E4 (per-record context spawn)
     pub fn seed_field_channels(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
     ) {
         self.field_vm.pending_engagements.clear();
@@ -612,7 +612,7 @@ impl World {
     // REF: FUN_8003A55C (object bind: +0x50 flat script id + prologue pre-run)
     pub fn seed_object_channels(
         &mut self,
-        man_file: &legaia_asset::man_section::ManFile,
+        man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         binds: &[(usize, (i16, i16))],
     ) {

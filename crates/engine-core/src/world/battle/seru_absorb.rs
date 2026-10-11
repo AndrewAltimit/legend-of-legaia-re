@@ -27,14 +27,14 @@
 //!    (`_DAT_8007BAC0`), so none of those can absorb.
 //! 6. The Done band sees the non-zero byte: `FUN_801E92DC` prepends spell
 //!    `seru + 0x80` to the acting character's list (engine
-//!    [`crate::magic_xp::learn_spell_prepend`]) and raises the learn banner
+//!    [`legaia_engine_battle::magic_xp::learn_spell_prepend`]) and raises the learn banner
 //!    `0x59`, and the band holds `0xB4` frames on its `0x52` arm so the
 //!    banner can be read ([`vm::battle_action`]'s Done band, which reaches
 //!    this module through `BattleActionHost::learn_absorbed_seru`).
 //!
 //! This is the retail path, driven off the disc record's two bytes
-//! ([`crate::monster_catalog::MonsterDef::absorb_seru`] /
-//! [`crate::monster_catalog::MonsterDef::absorb_chance_pct`]). The engine's
+//! ([`legaia_engine_battle::monster_catalog::MonsterDef::absorb_seru`] /
+//! [`legaia_engine_battle::monster_catalog::MonsterDef::absorb_chance_pct`]). The engine's
 //! capture-spell path (`World::resolve_capture` plus the Seru registry) is a
 //! separate mechanism and is untouched.
 //!
@@ -123,7 +123,11 @@ impl World {
             .map(|rec| {
                 let list = rec.spell_list();
                 let n = usize::from(list.count).min(list.ids.len());
-                vm::battle_action::learned_seru_position(seru, armed && !no_reward, &list.ids[..n])
+                legaia_engine_battle_vm::battle_action::learned_seru_position(
+                    seru,
+                    armed && !no_reward,
+                    &list.ids[..n],
+                )
             })
             .unwrap_or(1);
         if known == 0 {
@@ -144,7 +148,7 @@ impl World {
         }
         let roster = self.party_roster_slot(usize::from(slot));
         if let Some(rec) = self.party.roster.members.get_mut(roster) {
-            crate::magic_xp::learn_spell_prepend(rec, seru.wrapping_add(0x80));
+            legaia_engine_battle::magic_xp::learn_spell_prepend(rec, seru.wrapping_add(0x80));
         }
     }
 }

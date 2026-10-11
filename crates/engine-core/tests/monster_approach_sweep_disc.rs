@@ -16,12 +16,13 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::monster_archive;
-use legaia_engine_core::monster_catalog::{
+use legaia_actor_formats::monster_archive;
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, catalog_from_monster_archive,
 };
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_action::ActionState;
+use legaia_engine_battle_vm::battle_action::ActionState;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 
 fn archive() -> Option<Vec<u8>> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

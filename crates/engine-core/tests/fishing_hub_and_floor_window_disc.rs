@@ -12,12 +12,13 @@
 //! Only structural facts are asserted - counts and non-emptiness, never text.
 //! Skips and passes without `LEGAIA_DISC_BIN`.
 
-use legaia_asset::static_overlay;
 use legaia_engine_core::field_submode_flag_window::{FLAG_WINDOW_RECORD, FLAG_WINDOW_SLOT};
-use legaia_engine_core::fishing_hub::HubScreen;
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_fishing::fishing_hub::HubScreen;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::PadButton;
+use legaia_overlay_images::static_overlay;
 
 fn host() -> Option<SceneHost> {
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
@@ -55,7 +56,7 @@ fn the_venue_hub_reads_the_disc_and_walks_both_help_pages() {
         return;
     };
     let rec = static_overlay::overlay_map()
-        .by_prot_index(legaia_asset::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
+        .by_prot_index(legaia_minigame_formats::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
         .expect("fishing overlay in static map");
     let raw = host
         .index

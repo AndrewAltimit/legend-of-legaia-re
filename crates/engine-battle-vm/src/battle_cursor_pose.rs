@@ -50,7 +50,7 @@
 //!   `crate::battle_commit_log::LogLaunch` for the step table.
 //!
 //! The array is the **screen-element placement table** at `0x80076C10`
-//! (`legaia_asset::screen_elements`), which is disc data; the port stages
+//! (`legaia_ui_formats::screen_elements`), which is disc data; the port stages
 //! only the records the log touches. This module used to call the array a
 //! per-actor animation-pose buffer - the record layout falsifies that:
 //! `FUN_801D5778` writes `dst[+0xA] = src[+0xA] - 0x140`, and `0x140` is the

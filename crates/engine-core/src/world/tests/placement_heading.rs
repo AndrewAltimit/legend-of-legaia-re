@@ -6,6 +6,7 @@
 
 use super::*;
 use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+use legaia_engine_mode::mode::SceneMode;
 
 fn world_with_placement() -> World {
     let mut w = World::new();

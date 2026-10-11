@@ -21,7 +21,7 @@ pub fn apply_equip_outcome(
     {
         let mut eq = member.equipment();
         // The outcome names an engine slot; the record byte is retail's.
-        let byte = crate::equip_session::record_byte_for_engine_slot(slot, char_slot);
+        let byte = legaia_engine_menus::equip_session::record_byte_for_engine_slot(slot, char_slot);
         if byte < eq.slots.len() {
             eq.slots[byte] = added;
             member.set_equipment(eq);
@@ -66,14 +66,14 @@ pub fn apply_equip_outcome(
 ///   once per use, not once per healed ally).
 ///
 /// The first two apply however the session ended; `used_item` is only ever
-/// `Some` alongside [`crate::inventory_use::InventoryUseState::Done`],
+/// `Some` alongside [`legaia_engine_menus::inventory_use::InventoryUseState::Done`],
 /// which is why the state gate sits on the effect loop rather than on the
 /// whole body - a Door of Light closes the screen with the inner flow still
 /// browsing, and its consumption must survive that.
 // REF: FUN_801D8734 (throw-out delete)
 // REF: FUN_80042310 (the one-copy bag decrement all three routes call)
 pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World) {
-    use crate::inventory_use::InventoryUseState;
+    use legaia_engine_menus::inventory_use::InventoryUseState;
     // Throw Out discards the **slot** the row named, which is what retail's
     // confirm zeroes. Only a session built without a slot-indexed bag falls
     // back to the id, and that removal cannot tell two stacks of one id apart.
@@ -103,8 +103,10 @@ pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World)
             // all-party one). `current_item` is unavailable here - it
             // returns `None` once the session reaches `Done`.
             for &slot in &session.used_slots {
-                if let crate::items::ItemOutcome::ArtLearned {
-                    character, art_id, ..
+                if let legaia_engine_menus::items::ItemOutcome::ArtLearned {
+                    character,
+                    art_id,
+                    ..
                 } = world.use_item(id, slot)
                 {
                     // Retail's applier calls `FUN_80035C00(slot, art)` here
@@ -118,7 +120,7 @@ pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World)
 
 /// Compose the window-8 "learned an art" notice: the disc template
 /// (`0x801E4700`) patched the way `FUN_801DCD58` patches it
-/// ([`crate::pause_screens::patch_notify_template`]) and expanded against the
+/// ([`legaia_engine_menus::pause_screens::patch_notify_template`]) and expanded against the
 /// party names and the arts-name table.
 ///
 /// `None` when the menu overlay's template is not installed - the notice is
@@ -127,11 +129,15 @@ pub fn art_learned_notice(
     world: &World,
     character: u8,
     art_id: u8,
-) -> Option<crate::pause_screens::ArtLearnedNotice> {
+) -> Option<legaia_engine_menus::pause_screens::ArtLearnedNotice> {
     let mut template = world.menu.notify_template.clone()?;
-    crate::pause_screens::patch_notify_template(&mut template, i16::from(character), art_id);
+    legaia_engine_menus::pause_screens::patch_notify_template(
+        &mut template,
+        i16::from(character),
+        art_id,
+    );
     let names = &world.party.party_names;
-    let lines = crate::pause_screens::expand_notify_lines(
+    let lines = legaia_engine_menus::pause_screens::expand_notify_lines(
         &template,
         |slot| {
             // `0xC1 0x63` names the leader (`DAT_80084597`); any other
@@ -148,7 +154,7 @@ pub fn art_learned_notice(
                 .map(str::to_string)
         },
     );
-    Some(crate::pause_screens::ArtLearnedNotice {
+    Some(legaia_engine_menus::pause_screens::ArtLearnedNotice {
         character,
         art_id,
         lines,
@@ -166,7 +172,7 @@ pub fn art_learned_notice(
 /// decrement - the consumption rides `session.inner`. What this adds is the
 /// escape / warp handoff, which is world state rather than bag state.
 pub fn apply_pause_items_outcome(
-    session: &crate::pause_screens::PauseItemsSession,
+    session: &legaia_engine_menus::pause_screens::PauseItemsSession,
     world: &mut World,
 ) -> Option<u32> {
     apply_inventory_outcome(&session.inner, world);
@@ -183,7 +189,8 @@ pub fn apply_pause_items_outcome(
     if let Some(warp) = session.staged_warp() {
         world.menu.pending_warp = Some(warp);
     }
-    if session.exit_code() == Some(crate::pause_screens::MENU_EXIT_CODE_FIELD_ESCAPE) {
+    if session.exit_code() == Some(legaia_engine_menus::pause_screens::MENU_EXIT_CODE_FIELD_ESCAPE)
+    {
         world.menu.pending_escape = true;
     }
     session.exit_code()
@@ -198,14 +205,14 @@ pub fn apply_pause_items_outcome(
 /// PORT: FUN_800402F4 (effect-apply handler, HP-heal arms) - a menu heal
 /// accrues a flat grant into the caster record's per-spell XP accumulator
 /// (`+0x5D0` off the `0x80084140` save-context window = record `+0x8`,
-/// [`crate::magic_xp::SPELL_XP_OFFSET`]): `+12` when the target's deficit
+/// [`legaia_engine_battle::magic_xp::SPELL_XP_OFFSET`]): `+12` when the target's deficit
 /// covered the full heal, `+4` when the heal was clipped (`+3` / `+1` per
 /// member on the multi-target arm). Outside battle the same handler then
 /// tests the `0x8007656C` threshold table against the accumulator, bumps
 /// the `+0x161 + slot` level byte (cap 9) and calls the notification
 /// setter `FUN_80035C00(slot, index)` - the `(_DAT_8007BB70,
 /// _DAT_8007BB78)` pair that opens window 7. The accrual + threshold walk
-/// is the shared kernel [`crate::magic_xp::accrue_and_level`] (the battle
+/// is the shared kernel [`legaia_engine_battle::magic_xp::accrue_and_level`] (the battle
 /// summon path drives the same one); the returned
 /// [`SpellLevelNotice`] is retail's setter pair plus the assembled prompt
 /// line, for the host to park on
@@ -257,17 +264,19 @@ pub fn apply_spell_outcome(
     //
     // Retail "full power": the deficit covered the spell's whole heal cap;
     // a clipped heal is the partial grant. The engine's cap analogue is the
-    // catalog's nominal amount ([`crate::spells::cast_spell`] returns
+    // catalog's nominal amount ([`legaia_engine_battle::spells::cast_spell`] returns
     // `min(nominal, deficit)`), and the group arm credits it per member -
     // `+3` full / `+1` clipped each, against the single cast's `+12` / `+4`.
     let nominal_heal = match def.as_ref().map(|d| &d.effect) {
-        Some(crate::spells::SpellEffect::Heal { amount }) => Some((*amount, false)),
-        Some(crate::spells::SpellEffect::HealAll { amount }) => Some((*amount, true)),
+        Some(legaia_engine_battle::spells::SpellEffect::Heal { amount }) => Some((*amount, false)),
+        Some(legaia_engine_battle::spells::SpellEffect::HealAll { amount }) => {
+            Some((*amount, true))
+        }
         _ => None,
     };
     // The group flow (retail sub-screen `0x10`) picks no row, so its outcome
     // carries the per-member grants instead of one `target_slot`.
-    let gain = if let crate::spells::SpellOutcome::MultiHeal { targets } = &outcome {
+    let gain = if let legaia_engine_battle::spells::SpellOutcome::MultiHeal { targets } = &outcome {
         let (nominal, _) = nominal_heal?;
         let mut total = 0u32;
         for (slot, amount) in targets {
@@ -277,7 +286,7 @@ pub fn apply_spell_outcome(
                 member.set_hp_mp_sp(hms);
             }
             world.mirror_roster_hp_mp(*slot as usize);
-            total += crate::magic_xp::menu_heal_xp_gain(true, *amount == nominal);
+            total += legaia_engine_battle::magic_xp::menu_heal_xp_gain(true, *amount == nominal);
         }
         if total == 0 {
             return None;
@@ -288,11 +297,11 @@ pub fn apply_spell_outcome(
         if let Some(target) = world.party.roster.members.get_mut(target_slot as usize) {
             let mut hms = target.hp_mp_sp();
             match outcome {
-                crate::spells::SpellOutcome::Heal { amount, .. } => {
+                legaia_engine_battle::spells::SpellOutcome::Heal { amount, .. } => {
                     hms.hp_cur = hms.hp_cur.saturating_add(amount).min(hms.hp_max);
                     healed = Some(amount);
                 }
-                crate::spells::SpellOutcome::Revive { hp, .. } => {
+                legaia_engine_battle::spells::SpellOutcome::Revive { hp, .. } => {
                     hms.hp_cur = hp.min(hms.hp_max);
                 }
                 _ => {}
@@ -302,11 +311,11 @@ pub fn apply_spell_outcome(
         world.mirror_roster_hp_mp(target_slot as usize);
         let healed = healed?;
         let (nominal, group_cast) = nominal_heal?;
-        crate::magic_xp::menu_heal_xp_gain(group_cast, healed == nominal)
+        legaia_engine_battle::magic_xp::menu_heal_xp_gain(group_cast, healed == nominal)
     };
     let thresholds = world.tables.magic_xp_thresholds;
     let record = world.party.roster.members.get_mut(caster_slot as usize)?;
-    let up = crate::magic_xp::accrue_and_level(
+    let up = legaia_engine_battle::magic_xp::accrue_and_level(
         record,
         spell_id,
         gain,
@@ -320,7 +329,7 @@ pub fn apply_spell_outcome(
         spell_index: up.spell_slot as u8,
         spell_id,
         new_level: up.new_level,
-        line: crate::magic_xp::magic_level_increased_message(&spell_name),
+        line: legaia_engine_battle::magic_xp::magic_level_increased_message(&spell_name),
     })
 }
 
@@ -328,7 +337,7 @@ pub fn apply_spell_outcome(
 pub fn apply_arts_outcome(
     editor: ChainEditor,
     library: &mut ChainLibrary,
-) -> Result<(), crate::tactical_arts_editor::SaveError> {
+) -> Result<(), legaia_engine_battle::tactical_arts_editor::SaveError> {
     editor.apply_outcome(library)
 }
 
@@ -336,18 +345,18 @@ pub fn apply_arts_outcome(
 ///
 /// The page permutes a copy; this replays its exchanges against the
 /// character's own `0x414` bytes through the ported swap
-/// ([`crate::save_subscreen::sub15_swap_rows`]), which is what keeps the
+/// ([`legaia_engine_menus::save_subscreen::sub15_swap_rows`]), which is what keeps the
 /// three parallel arrays - the id list, its companion byte list and the row
 /// words - in step. Returns how many exchanges landed.
 ///
 /// The live row count is re-derived first
-/// ([`crate::save_subscreen::sub15_list_len`], with the character's Ra-Seru
+/// ([`legaia_engine_menus::save_subscreen::sub15_list_len`], with the character's Ra-Seru
 /// slot): the record is the authority on how long the list is, and an
 /// exchange that names a row past its end is dropped rather than clamped -
 /// retail's own reject arm fires on the same count.
 pub fn apply_list_order_outcome(session: &ListOrderSession, world: &mut World) -> usize {
     let slot = session.char_slot() as usize;
-    let raseru = crate::equip_session::RETAIL_RASERU_EQUIP_BYTE
+    let raseru = legaia_engine_menus::equip_session::RETAIL_RASERU_EQUIP_BYTE
         .get(slot)
         .copied()
         .unwrap_or(3)
@@ -355,8 +364,8 @@ pub fn apply_list_order_outcome(session: &ListOrderSession, world: &mut World) -
     let Some(member) = world.party.roster.members.get_mut(slot) else {
         return 0;
     };
-    let len = usize::from(crate::save_subscreen::sub15_list_len(
-        crate::list_order::LIST_ORDER_STEP_MAGIC,
+    let len = usize::from(legaia_engine_menus::save_subscreen::sub15_list_len(
+        legaia_engine_menus::list_order::LIST_ORDER_STEP_MAGIC,
         &member.raw,
         raseru,
     ));
@@ -365,7 +374,7 @@ pub fn apply_list_order_outcome(session: &ListOrderSession, world: &mut World) -
         if a >= len || b >= len {
             continue;
         }
-        crate::save_subscreen::sub15_swap_rows(&mut member.raw, a, b);
+        legaia_engine_menus::save_subscreen::sub15_swap_rows(&mut member.raw, a, b);
         applied += 1;
     }
     applied

@@ -23,7 +23,7 @@ use super::*;
 /// the bound ones (37 of `town01`'s 46 placements). It is **not** unspawned,
 /// though: the sub-area window sweep `FUN_801D7B50` creates those nine, gated on
 /// the complementary anchor-tile bit
-/// [`CELL_BIND_OWNED`](legaia_asset::field_objects::CELL_BIND_OWNED) rather than
+/// [`CELL_BIND_OWNED`](legaia_scene_formats::field_objects::CELL_BIND_OWNED) rather than
 /// on a bind, so they draw unscripted and unposed.
 // REF: FUN_8003A55C, FUN_801D5630, FUN_800204f8, FUN_801D7B50
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -315,7 +315,7 @@ pub trait BattleActionHost {
     /// The `(class, tier)` pair of the **item-effect descriptor** item
     /// `item_id` resolves to - `+0` / `+1` of `0x800752C0 + subtype*4`, where
     /// `subtype` is the item property record's `+1` byte. This is
-    /// `legaia_asset::item_effect::ItemEffectTable::effect(id)` mapped to
+    /// `legaia_game_tables::item_effect::ItemEffectTable::effect(id)` mapped to
     /// `(ItemEffect::class, ItemEffect::tier)`.
     ///
     /// Seeds [`BattleActor::cast_class`] / [`BattleActor::cast_sub_class`] on
@@ -343,7 +343,7 @@ pub trait BattleActionHost {
     /// `(groups @ 0x801F6470, clut_map @ 0x801F6418)`.
     ///
     /// Both are disc-parsed by
-    /// `legaia_asset::move_power::EffectAuxTables` off PROT 0898. `None` =
+    /// `legaia_game_tables::move_power::EffectAuxTables` off PROT 0898. `None` =
     /// no battle-action overlay installed (disc-free battles), which makes
     /// the whole cue-group expansion a no-op rather than a synthetic one.
     fn cue_tables(&self) -> Option<(&[u8], &[u8])> {
@@ -448,7 +448,7 @@ pub trait BattleActionHost {
     /// (`DAT_80074F68 + row*8`, `+1`) for the id in that slot, resolved
     /// through the item property record's `+1` byte
     /// (`DAT_80074368 + id*0xC`) - the two-hop lookup
-    /// `legaia_asset::equip_stats` implements. Retail applies no empty-slot
+    /// `legaia_game_tables::equip_stats` implements. Retail applies no empty-slot
     /// or item-class guard on this path, so an empty slot reports whatever
     /// id `0` resolves to (normally `0`).
     ///
@@ -461,7 +461,7 @@ pub trait BattleActionHost {
 
     /// The **class byte** of the spell's static table record - `+0` of
     /// `DAT_800754C8 + spell_id*0xC` (see
-    /// [`legaia_asset::spell_names`](legaia_asset::spell_names)).
+    /// [`legaia_game_tables::spell_names`](legaia_game_tables::spell_names)).
     ///
     /// It is the one field the action SM keys two separate decisions on: the
     /// action-seed band pick ([`action_seed`](super::dispatch)'s Magic arm,
@@ -485,7 +485,7 @@ pub trait BattleActionHost {
     /// a host that supplies the table gets the capture route for free and
     /// cannot disagree with the band pick about what the same record says.
     fn is_capture_spell(&self, spell_id: u8) -> bool {
-        self.spell_class_byte(spell_id) == Some(legaia_asset::spell_names::CAPTURE_CLASS)
+        self.spell_class_byte(spell_id) == Some(legaia_game_tables::spell_names::CAPTURE_CLASS)
     }
 
     /// Lookup the MP cost for a spell. Retail reads the record's `+3` byte

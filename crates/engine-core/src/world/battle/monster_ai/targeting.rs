@@ -5,16 +5,16 @@ use super::*;
 
 impl World {
     /// Target **class** the generic core picks for a monster casting `def`, by
-    /// the spell's [`crate::spells::SpellTarget`] shape (monster's perspective:
+    /// the spell's [`legaia_engine_battle::spells::SpellTarget`] shape (monster's perspective:
     /// enemies = party band, allies = monster band). Single-enemy → a random
     /// living party slot; `AllEnemies` → class `8`; `AllAllies` → class `9`;
     /// `OneAlly` → the most-weakened living ally (or self); `SelfOnly` → self.
     pub(super) fn monster_cast_target_class(
         &mut self,
         slot: u8,
-        def: &crate::spells::SpellDef,
+        def: &legaia_engine_battle::spells::SpellDef,
     ) -> u8 {
-        use crate::spells::SpellTarget;
+        use legaia_engine_battle::spells::SpellTarget;
         let pc = self.party.party_count.max(1);
         let n = self.actors.len() as u8;
         match def.target {

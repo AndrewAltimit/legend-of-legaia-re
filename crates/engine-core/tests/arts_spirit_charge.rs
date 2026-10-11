@@ -19,10 +19,11 @@
 //!
 //! Disc-free; runs in CI.
 
-use legaia_engine_core::arts_command_input::ArtsInputScreen;
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_battle::arts_command_input::ArtsInputScreen;
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
 
 /// Vahn's Somersault: three commands, and the only art staged - so it is
 /// visit ordinal `0`, multiplier `11`, price `11 x 3`.
@@ -84,7 +85,7 @@ fn build_world() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("arts_spirit_charge_test");
@@ -118,7 +119,7 @@ fn walk_into_battle(w: &mut World) {
 /// arm (a plain two-swing attack); otherwise take `Command` and type the
 /// combo, then confirm.
 fn spirit_drops_over_one_turn(w: &mut World, combo: &[PadButton]) -> (Vec<i32>, Vec<u8>) {
-    use legaia_engine_core::battle_input::{AttackMode, BattleCommand, CommandPhase};
+    use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase};
 
     w.actors[0].battle.spirit_gauge = SPIRIT_SEED;
     let mut prev = i32::from(w.actors[0].battle.spirit_gauge);

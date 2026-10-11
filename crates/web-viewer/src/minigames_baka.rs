@@ -2,9 +2,9 @@
 //! the site's duel draws with, decoded from the visitor's own disc:
 //!
 //! * the two fighters' real 3D meshes - the player side out of the battle-form
-//!   party pack (PROT 1204, `legaia_asset::battle_char_pack`), the opponent out
+//!   party pack (PROT 1204, `legaia_actor_formats::battle_char_pack`), the opponent out
 //!   of its own per-rung pack (PROT `1206..=1219`,
-//!   [`legaia_asset::baka_opponents::parse_fighter_pack`]);
+//!   [`legaia_minigame_formats::baka_opponents::parse_fighter_pack`]);
 //! * their animation banks - the player's from the PROT 1203 battle-form ANM
 //!   bank (records `char*9 + action`, per `docs/formats/character-mesh.md`),
 //!   the opponent's from its own pack's anim chunk (canonical ANM records,
@@ -23,8 +23,10 @@ use super::*;
 #[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::AudioSink;
 
-use legaia_asset::baka_opponents::{self as baka};
-use legaia_asset::{DecodeMode, decode as decode_descriptor, pack as asset_pack, parse_player_lzs};
+use legaia_container_formats::{
+    DecodeMode, decode as decode_descriptor, pack as asset_pack, parse_player_lzs,
+};
+use legaia_minigame_formats::baka_opponents as baka;
 use legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid;
 
 /// Records per character bank in the PROT 1203 battle-form ANM bundle.
@@ -74,9 +76,10 @@ impl LegaiaMinigames {
     fn baka_fighter_mesh(&self, side: u32, id: u32) -> Option<FighterMesh> {
         let tmd_bytes = match side {
             0 => {
-                let raw =
-                    self.baka_entry(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX as usize)?;
-                let slots = legaia_asset::battle_char_pack::parse_slots(raw).ok()?;
+                let raw = self.baka_entry(
+                    legaia_actor_formats::battle_char_pack::PROT_ENTRY_INDEX as usize,
+                )?;
+                let slots = legaia_actor_formats::battle_char_pack::parse_slots(raw).ok()?;
                 slots.get(id as usize)?.tmd_bytes.clone()
             }
             1 => {
@@ -106,11 +109,11 @@ impl LegaiaMinigames {
         side: u32,
         id: u32,
         action: u32,
-    ) -> Option<(legaia_asset::player_anm::PlayerAnmBundle, usize)> {
+    ) -> Option<(legaia_actor_formats::player_anm::PlayerAnmBundle, usize)> {
         match side {
             0 => {
                 let entry = self.baka_entry(baka::BAKA_HUD_ART_PROT_INDEX)?;
-                let bundle = legaia_asset::player_anm::find_in_entry(entry, 4)
+                let bundle = legaia_actor_formats::player_anm::find_in_entry(entry, 4)
                     .into_iter()
                     .next()?;
                 let record = id as usize * BANK_RECORDS_PER_CHAR + action as usize;
@@ -120,7 +123,7 @@ impl LegaiaMinigames {
                 let prot_index = baka::fighter_pack_prot_index(id as usize)?;
                 let entry = self.baka_entry(prot_index)?;
                 let pack = baka::parse_fighter_pack(entry)?;
-                let bundle = legaia_asset::player_anm::parse(&pack.anim_bytes).ok()?;
+                let bundle = legaia_actor_formats::player_anm::parse(&pack.anim_bytes).ok()?;
                 Some((bundle, action as usize))
             }
             _ => None,
@@ -192,7 +195,7 @@ impl LegaiaMinigames {
     }
 
     /// One side's VITAL bar frame, as the HUD renderer lays it
-    /// ([`legaia_engine_core::baka_cabinet::vital_frame_cells`], the cell
+    /// ([`legaia_engine_minigames::baka_cabinet::vital_frame_cells`], the cell
     /// table at `0x801DBC34`): `side` 0 = the player's, 1 = the opponent's.
     ///
     /// ```json
@@ -222,24 +225,25 @@ impl LegaiaMinigames {
             .position(|t| t.image.fb_x == 320 && t.image.fb_y == 0)
             .map(|p| p.to_string())
             .unwrap_or("null".into());
-        let quads = legaia_engine_core::baka_cabinet::vital_frame_cells(side as usize, &cells[..])
-            .iter()
-            .map(|c| {
-                format!(
-                    concat!(
-                        r#"{{"x0":{},"y0":{},"x1":{},"y1":{},"#,
-                        r#""u0":{},"v0":{},"u1":{},"v1":{}}}"#
-                    ),
-                    c.x0, c.y0, c.x1, c.y1, c.uv[0].0, c.uv[0].1, c.uv[3].0, c.uv[3].1,
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(",");
+        let quads =
+            legaia_engine_minigames::baka_cabinet::vital_frame_cells(side as usize, &cells[..])
+                .iter()
+                .map(|c| {
+                    format!(
+                        concat!(
+                            r#"{{"x0":{},"y0":{},"x1":{},"y1":{},"#,
+                            r#""u0":{},"v0":{},"u1":{},"v1":{}}}"#
+                        ),
+                        c.x0, c.y0, c.x1, c.y1, c.uv[0].0, c.uv[0].1, c.uv[3].0, c.uv[3].1,
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
         format!(r#"{{"page":{page},"palette":0,"cells":[{quads}]}}"#)
     }
 
     /// One HUD widget resolved through the **ported POLY_GT4 emitter**
-    /// ([`legaia_engine_core::baka_fighter::hud_widget_quad`], `FUN_801d5ed0`):
+    /// ([`legaia_engine_minigames::baka_fighter::hud_widget_quad`], `FUN_801d5ed0`):
     ///
     /// ```json
     /// { "page": 5, "palette": 0, "x0": 104, "y0": 22, "x1": 215, "y1": 37,
@@ -278,8 +282,9 @@ impl LegaiaMinigames {
             .position(|t| t.image.fb_x == w.page_x() && t.image.fb_y == w.page_y())
             .map(|p| p.to_string())
             .unwrap_or("null".into());
-        let q =
-            legaia_engine_core::baka_fighter::hud_widget_quad(w, x, y, brightness, size, mirror);
+        let q = legaia_engine_minigames::baka_fighter::hud_widget_quad(
+            w, x, y, brightness, size, mirror,
+        );
         // The emitter hands back the four packet corners in `v0..v3` order;
         // the page samples an axis-aligned cell, so it wants the span.
         let (u0, v0) = q.uv[0];
@@ -545,8 +550,8 @@ impl LegaiaMinigames {
             }
         }
         if let Some(raw) =
-            self.baka_entry(legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX as usize)
-            && let Ok(atlases) = legaia_asset::battle_char_pack::parse_atlases(raw)
+            self.baka_entry(legaia_actor_formats::battle_char_pack::ATLAS_PROT_ENTRY_INDEX as usize)
+            && let Ok(atlases) = legaia_actor_formats::battle_char_pack::parse_atlases(raw)
         {
             for atlas in &atlases {
                 if let Ok(tim) = legaia_tim::parse(&atlas.tim_bytes) {
@@ -619,7 +624,7 @@ impl LegaiaMinigames {
 /// clip `[action record, whole frame]` (`BakaFight::motion`, the clip the
 /// actor shows - it plays an attack out past the booked exchange, then
 /// idles). `ghosts` are the special's afterimage passes that drew this tick.
-pub(crate) fn baka_state_json_for(f: &legaia_engine_core::baka_fighter::BakaFight) -> String {
+pub(crate) fn baka_state_json_for(f: &legaia_engine_minigames::baka_fighter::BakaFight) -> String {
     let phase = match f.phase() {
         MatchPhase::Fighting => "fighting",
         MatchPhase::RoundOver(_) => "round_over",
@@ -677,7 +682,7 @@ pub(crate) fn baka_state_json_for(f: &legaia_engine_core::baka_fighter::BakaFigh
         f.round(),
         f.hp(0),
         f.hp(1),
-        legaia_engine_core::baka_fighter::HP_START,
+        legaia_engine_minigames::baka_fighter::HP_START,
         f.round_wins(0),
         f.round_wins(1),
         f.combo(0),
@@ -705,7 +710,7 @@ pub(crate) fn baka_state_json_for(f: &legaia_engine_core::baka_fighter::BakaFigh
 /// `play_mg_baka_scene_*`) hand their `TmdRenderer`, so the two pages cannot
 /// read the same `BakaDuelSurface` into different layouts.
 pub(crate) mod duel_surface {
-    use legaia_engine_core::baka_duel_scene::BakaDuelSurface;
+    use legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface;
 
     /// Posed positions, `[x, y, z]` per vertex, raw retail world (Y down).
     pub(crate) fn positions(s: &BakaDuelSurface) -> Vec<f32> {
@@ -752,7 +757,7 @@ pub(crate) mod duel_surface {
 #[wasm_bindgen]
 impl LegaiaMinigames {
     /// Pose this page's duel on the engine's 3D surface
-    /// (`legaia_engine_core::baka_duel_scene::BakaDuelSurface::frame`) - the
+    /// (`legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface::frame`) - the
     /// call the native window and the play page make over the world's duel -
     /// and return its generation, or `-1` with no duel live. A generation the
     /// page has not seen means the static buffers and the VRAM changed (a new
@@ -832,7 +837,7 @@ impl LegaiaMinigames {
     /// `0x8000` left, `0x2000` right, `0x40` Cross, `0x800` Start) for the
     /// next [`Self::baka_tick`] - the edge the attract card, the player
     /// select and the "NEXT GAME / PAY OUT" sheet read
-    /// ([`legaia_engine_core::baka_fighter::BakaFight::set_cabinet_pad`]).
+    /// ([`legaia_engine_minigames::baka_fighter::BakaFight::set_cabinet_pad`]).
     pub fn baka_cabinet_pad(&mut self, packed_edge: u16) {
         if let Some(f) = self.baka.as_mut() {
             f.set_cabinet_pad(packed_edge);
@@ -873,9 +878,9 @@ impl LegaiaMinigames {
             // (not under the result screens or the NEXT GAME / PAY OUT
             // sheet), and the sheet's pot numeral over the run's winnings
             // accumulator - the placements both play hosts draw.
-            "draws_hud": legaia_engine_core::baka_cabinet::draws_hud(f.cabinet().state()),
+            "draws_hud": legaia_engine_minigames::baka_cabinet::draws_hud(f.cabinet().state()),
             "pot_digits": if f.cabinet().choice_sheet().is_some() {
-                legaia_engine_core::baka_cabinet::choice_pot_placements(self.baka_winnings)
+                legaia_engine_minigames::baka_cabinet::choice_pot_placements(self.baka_winnings)
             } else {
                 Vec::new()
             },
@@ -891,18 +896,18 @@ impl LegaiaMinigames {
 const ANNOUNCER_ROUNDS: i32 = 4;
 
 /// Every announcer line the duel's chrome can start, one per `(clip,
-/// channel)`: [`legaia_engine_core::baka_fighter_chrome::announcer_xa_prestage`]
+/// channel)`: [`legaia_engine_minigames::baka_fighter_chrome::announcer_xa_prestage`]
 /// over the staged rounds.
-fn announcer_cues() -> Vec<legaia_engine_core::baka_fighter_chrome::XaCue> {
+fn announcer_cues() -> Vec<legaia_engine_minigames::baka_fighter_chrome::XaCue> {
     let mut cues: Vec<_> = (0..ANNOUNCER_ROUNDS)
-        .flat_map(legaia_engine_core::baka_fighter_chrome::announcer_xa_prestage)
+        .flat_map(legaia_engine_minigames::baka_fighter_chrome::announcer_xa_prestage)
         .collect();
     // The Muscle Dome hub's two announcer lines share the lane: the minigames
     // page plays them off the same staged bank.
     cues.extend(
         legaia_engine_core::muscle_ringside::hub_xa_prestage()
             .into_iter()
-            .map(|c| legaia_engine_core::baka_fighter_chrome::XaCue {
+            .map(|c| legaia_engine_minigames::baka_fighter_chrome::XaCue {
                 clip: c.clip,
                 chan: c.channel,
                 dur: c.duration_sectors,
@@ -945,7 +950,7 @@ impl LegaiaMinigames {
     /// Start one announcer line - `FUN_8003D53C(clip, channel, dur)` cut at
     /// the retail read span, through the XA path the play page's clips take.
     /// Silent when the line did not stage or audio is off.
-    pub(crate) fn play_baka_xa(&mut self, xa: legaia_engine_core::baka_fighter_chrome::XaCue) {
+    pub(crate) fn play_baka_xa(&mut self, xa: legaia_engine_minigames::baka_fighter_chrome::XaCue) {
         let Some(pcm) = self.baka_xa.cut(xa.clip, xa.chan, u32::from(xa.dur)) else {
             return;
         };

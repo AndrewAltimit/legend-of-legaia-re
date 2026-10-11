@@ -22,10 +22,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::input::{InputState, PadButton};
 
 const SCENE: &str = "town01";
 const TRAINING_FORMATION_ID: u16 = 4;
@@ -315,9 +316,13 @@ fn an_item_turn_plays_the_item_clip_even_after_a_spirit_turn() {
         .iter()
         .find(|c| c.0 == VAHN_VOICE_SLOT)
         .expect("asserted above");
-    let (clip, _) =
-        legaia_engine_shell::bgm::read_xa_channel_span(&disc, slot as u8, channel as u8, dur)
-            .expect("the item voice's channel decodes off the disc");
+    let (clip, _) = legaia_engine_session::audio_director::read_xa_channel_span(
+        &disc,
+        slot as u8,
+        channel as u8,
+        dur,
+    )
+    .expect("the item voice's channel decodes off the disc");
     let peak = clip.pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
     eprintln!(
         "item voice: slot {slot:#x} ch {channel} span {dur} -> {} frames, peak {peak}",

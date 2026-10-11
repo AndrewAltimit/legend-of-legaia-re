@@ -97,7 +97,7 @@ pub struct EnvDraw {
     /// camera on those axes. `rugi`'s candle glows (`0x80`), the forest
     /// trees of `vell` / `vozz` (`0x180`) and the `0x380` billboards of
     /// `deene` / `retona` are such cells. Hosts resolve the basis per frame
-    /// through `legaia_engine_ui::gte::decoration_cell_basis`.
+    /// through `legaia_render_kernels::gte::decoration_cell_basis`.
     ///
     // REF: FUN_801F7088
     pub view_skip: u16,
@@ -110,7 +110,7 @@ impl EnvDraw {
     /// world position plus a coplanar `lift`.
     ///
     /// This is the composition the native window's placement passes build
-    /// with `legaia_engine_ui::battle_intro::placement_rotation`, as one
+    /// with `legaia_render_kernels::battle_intro::placement_rotation`, as one
     /// kernel for the bakes that write world-space vertices themselves (the
     /// dance hall and the fishing venue, on every host). A bake that reads
     /// [`Self::rot_y`] alone stands every tilted placement upright - the
@@ -152,7 +152,7 @@ pub enum EnvDrawDrop {
     /// **Neither** of retail's two placed-object sweeps would create this actor:
     /// the footprint-anchor tile carries no [`ObjectBind`] (so `FUN_8003A55C`
     /// skips it) *and* it is marked
-    /// [`CELL_BIND_OWNED`](legaia_asset::field_objects::CELL_BIND_OWNED) (so the
+    /// [`CELL_BIND_OWNED`](legaia_scene_formats::field_objects::CELL_BIND_OWNED) (so the
     /// window sweep `FUN_801D7B50` skips it too). No retail map has such a cell -
     /// the bind and the bit are complementary - so this is a malformed-map guard.
     Unbound {
@@ -212,7 +212,7 @@ pub fn env_pack_tmd_indices(scene: &Scene, res: &SceneResources) -> Vec<usize> {
 }
 
 /// Resolve placements (or terrain tiles - any
-/// [`legaia_asset::field_objects::Placement`] list) into environment draws.
+/// [`legaia_scene_formats::field_objects::Placement`] list) into environment draws.
 ///
 /// `env_tmds` is the [`env_pack_tmd_indices`] subset; `floor_lut` is the
 /// scene's MAN floor-height LUT (`Scene::field_floor_height_lut`). World Y
@@ -259,7 +259,7 @@ pub fn resolve_env_draws(
 pub fn env_draws_world_aabb(
     draw_lists: &[&[EnvDraw]],
     res: &crate::scene_resources::SceneResources,
-    ground: Option<&legaia_asset::field_objects::WalkHeightfield>,
+    ground: Option<&legaia_scene_formats::field_objects::WalkHeightfield>,
 ) -> Option<([f32; 3], [f32; 3])> {
     let mut lo = [f32::INFINITY; 3];
     let mut hi = [f32::NEG_INFINITY; 3];

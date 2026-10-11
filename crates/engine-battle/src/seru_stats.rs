@@ -13,7 +13,7 @@
 //! ## The growth source is RESOLVED - but not by this module
 //!
 //! The retail growth source is now pinned in
-//! [`legaia_asset::level_up_tables`]: static `SCUS_942.54` tables read by the
+//! [`legaia_game_tables::level_up_tables`]: static `SCUS_942.54` tables read by the
 //! **victory-path** level-up applier `FUN_801E9504` - a per-character parameter
 //! block at `DAT_80076918` (`{u16 start, u16 max, u8 jitter, u8 row}` per stat)
 //! selecting one of three growth curves at `DAT_800769CC`, with the per-level
@@ -59,7 +59,7 @@
 //!    Spirit, and the six u16 record-stat byte deltas. Engines populate this
 //!    from a [`crate::levelup::LevelUpObservation`] (averaging across the
 //!    observed range) for the flat-curve path; the faithful per-level source is
-//!    [`legaia_asset::level_up_tables`] (see the module note above).
+//!    [`legaia_game_tables::level_up_tables`] (see the module note above).
 //! 2. [`SeruStatTable`] - id-keyed map of grants. Engines compose one per
 //!    character from the Seru roster the player has equipped, sum the per-
 //!    Seru grants, and feed the resulting [`crate::levelup::StatGrowthCurve::PerLevel`]

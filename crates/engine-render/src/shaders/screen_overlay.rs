@@ -93,7 +93,7 @@ fn fetch_vram_word(uv: vec2<f32>, cba: u32, tsb: u32) -> u32 {
 }
 
 // The PSX texture blend at the framebuffer's 5-bit depth
-// (`legaia_engine_ui::screen_prim::psx_texture_blend`): `(t5 * c8) >> 7`,
+// (`legaia_render_kernels::screen_prim::psx_texture_blend`): `(t5 * c8) >> 7`,
 // saturated at 31, so a dim packet colour drops a faint texel to zero rather
 // than adding a fraction of a step. `texel` is the decoded 0..1 texel,
 // `factor` the vertex's `/128` colour factor. Exact at the neutral 0x80.

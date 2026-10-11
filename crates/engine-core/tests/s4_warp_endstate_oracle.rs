@@ -16,9 +16,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::field_events::FieldEvent;
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_mode::mode::SceneMode;
 
 /// The captured S4 warp end-state: world `(3264, 3520)` = tile `(25, 27)`.
 const S4_LAND: (u16, u16) = (3264, 3520);
@@ -91,7 +92,7 @@ fn engine_walk_touch_warp_matches_s4_capture() {
     }
     let retail_land = match library_save(S4_FINGERPRINT) {
         Some(path) => {
-            let st = legaia_pcsxr::SaveState::from_path(&path).expect("load s4 .sstate");
+            let st = legaia_pcsx_redux::SaveState::from_path(&path).expect("load s4 .sstate");
             assert_eq!(st.scene_name(), "town01", "S4 anchor scene");
             assert_eq!(st.game_mode(), 0x03, "S4 anchor field mode");
             let (x, z) = st.player_pos().expect("S4 player pos");

@@ -18,7 +18,7 @@
 /// Layout is `[count: u8][id: u8; 4]`, so a group holds at most four cues.
 ///
 /// The disc-side parser states the same stride as
-/// `legaia_asset::move_power::CUE_GROUP_STRIDE`; the two are pinned equal by
+/// `legaia_game_tables::move_power::CUE_GROUP_STRIDE`; the two are pinned equal by
 /// `constants_agree_with_the_disc_parser` below.
 pub const CUE_GROUP_STRIDE: usize = 5;
 
@@ -131,7 +131,7 @@ pub struct CueTables<'a> {
 /// [`cue_group_for`], this expands that site's group, and each
 /// [`CueSpawn`] is handed to
 /// [`BattleActionHost::spawn_cue`](crate::battle_action::BattleActionHost::spawn_cue).
-/// Both tables come off the disc - `legaia_asset::move_power::EffectAuxTables`
+/// Both tables come off the disc - `legaia_game_tables::move_power::EffectAuxTables`
 /// reads all three regions (`0x801F6324` prototypes, `0x801F6418` CLUT map,
 /// `0x801F6470` groups) off PROT 0898 - through
 /// [`BattleActionHost::cue_tables`](crate::battle_action::BattleActionHost::cue_tables),

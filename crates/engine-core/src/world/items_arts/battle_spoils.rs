@@ -69,7 +69,7 @@ impl World {
     pub fn resolve_battle_defense(
         &self,
         target_slot: u8,
-        info: &legaia_engine_vm::battle_action::ArtStrikeInfo,
+        info: &legaia_engine_battle_vm::battle_action::ArtStrikeInfo,
     ) -> u16 {
         let idx = target_slot as usize;
         // If we have a UDF / LDF split for the slot, pick the half that
@@ -117,8 +117,10 @@ impl World {
         // Retail scales the summed EXP by 3/4 then ceiling-divides among the
         // living members (`FUN_8004E568` `8004e568.txt:461`), NOT a plain
         // floor-divide of the raw sum.
-        let per_member_xp =
-            vm::battle_formulas::victory_exp_per_member(xp_reward, alive.len() as u32);
+        let per_member_xp = legaia_engine_battle_vm::battle_formulas::victory_exp_per_member(
+            xp_reward,
+            alive.len() as u32,
+        );
         if per_member_xp == 0 {
             return Vec::new();
         }
@@ -216,8 +218,8 @@ impl World {
     /// catalog still drives a battle-end transition.
     pub fn apply_battle_loot(
         &mut self,
-        formation: &crate::monster_catalog::FormationDef,
-        catalog: &crate::monster_catalog::MonsterCatalog,
+        formation: &legaia_engine_battle::monster_catalog::FormationDef,
+        catalog: &legaia_engine_battle::monster_catalog::MonsterCatalog,
     ) -> BattleRewards {
         let mut xp_total: u32 = 0;
         // Accumulated `gold >> 1` over dead enemies (the victory-gold accumulator
@@ -239,9 +241,10 @@ impl World {
                 continue;
             };
             xp_total = xp_total.saturating_add(def.exp as u32);
-            gold_acc =
-                gold_acc.saturating_add(vm::battle_formulas::victory_gold_per_monster(def.gold));
-            drop_seats.push(vm::battle_formulas::VictoryDropSeat {
+            gold_acc = gold_acc.saturating_add(
+                legaia_engine_battle_vm::battle_formulas::victory_gold_per_monster(def.gold),
+            );
+            drop_seats.push(legaia_engine_battle_vm::battle_formulas::VictoryDropSeat {
                 item: def.drop_item.unwrap_or(0),
                 chance_pct: def.drop_chance_pct,
                 captured: taken,
@@ -263,19 +266,22 @@ impl World {
                     .is_some_and(|rec| {
                         let b = rec.ability_bits();
                         u32::from_le_bytes([b[4], b[5], b[6], b[7]])
-                            & crate::battle_steal::ITEMS_UP_BIT
+                            & legaia_engine_battle::battle_steal::ITEMS_UP_BIT
                             != 0
                     })
         });
         let no_reward = self.special_battle_word() != 0;
-        let item = vm::battle_formulas::victory_drop_roll(&drop_seats, items_up, no_reward, || {
-            self.next_rand()
-        });
+        let item = legaia_engine_battle_vm::battle_formulas::victory_drop_roll(
+            &drop_seats,
+            items_up,
+            no_reward,
+            || self.next_rand(),
+        );
         let mut drops: Vec<u8> = Vec::new();
         // `FUN_80042F4C(item) == 99` skips the grant (`0x8004F5A8..0x8004F5BC`).
         if item != 0
             && self.party.inventory.get(&item).copied().unwrap_or(0)
-                != crate::battle_steal::HELD_CAP
+                != legaia_engine_battle::battle_steal::HELD_CAP
         {
             drops.push(item);
             let _ = self.party.inventory.add(item, 1);
@@ -305,7 +311,7 @@ impl World {
         let gold_credited = if no_reward {
             0
         } else {
-            vm::battle_formulas::victory_gold_finalize(gold_acc, more_gold)
+            legaia_engine_battle_vm::battle_formulas::victory_gold_finalize(gold_acc, more_gold)
         };
         if no_reward {
             xp_total = 0;
@@ -314,7 +320,8 @@ impl World {
         let alive = (0..usize::from(self.party.party_count))
             .filter(|&i| self.actors.get(i).is_some_and(|a| a.battle.hp > 0))
             .count() as u32;
-        let xp_share = vm::battle_formulas::victory_exp_per_member(xp_total, alive);
+        let xp_share =
+            legaia_engine_battle_vm::battle_formulas::victory_exp_per_member(xp_total, alive);
         let level_ups = if xp_total > 0 {
             self.apply_battle_xp(xp_total)
         } else {
@@ -323,7 +330,7 @@ impl World {
         // The spoils routine adds the gold to the purse and saturates it at
         // 99,999,999 (`lui a3,0x5f5` / `ori a3,a3,0xe0ff` at `0x8004F0C4`,
         // `slt` + store at `0x8004F0EC..0x8004F0FC`) - a cap ten times the
-        // shop sale's ([`crate::shop::GOLD_CAP`]).
+        // shop sale's ([`legaia_engine_menus::shop::GOLD_CAP`]).
         let new_money = (self.party.money as i64).saturating_add(gold_credited as i64);
         self.party.money = new_money.clamp(i32::MIN as i64, BATTLE_GOLD_CAP as i64) as i32;
         // NB: no scripted-boss "victory latch" here. The first-visit gate
@@ -351,7 +358,7 @@ impl World {
     ///
     /// The steal item + chance live in a static `SCUS_942.54` table
     /// (`DAT_80077828`), **not** the monster record, so the caller passes the
-    /// parsed [`legaia_asset::steal_table::StealTable`] (the engine reads the
+    /// parsed [`legaia_game_tables::steal_table::StealTable`] (the engine reads the
     /// disc-resident data the randomizer edits). This is the steal counterpart
     /// to the drop grant in [`Self::apply_battle_loot`]: a percent roll
     /// (`rand % 100 < chance`) then the same `inventory` add. See
@@ -359,7 +366,7 @@ impl World {
     pub fn apply_steal(
         &mut self,
         monster_id: u16,
-        steal_table: &legaia_asset::steal_table::StealTable,
+        steal_table: &legaia_game_tables::steal_table::StealTable,
     ) -> Option<u8> {
         let entry = steal_table.entry(monster_id).filter(|e| e.is_stealable())?;
         let roll = (self.next_rand() % 100) as u8;

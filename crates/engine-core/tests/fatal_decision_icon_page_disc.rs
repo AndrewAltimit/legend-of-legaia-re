@@ -13,7 +13,7 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_asset::summon_readef::SLOT_BYTES;
+use legaia_actor_formats::summon_readef::SLOT_BYTES;
 use legaia_engine_core::battle_sideband_textures::{
     formation_readef_groups, write_readef_group_textures,
 };

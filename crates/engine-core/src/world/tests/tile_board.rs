@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 fn pad_held(world: &mut World, mask: u16, frames: usize) {
     for _ in 0..frames {
@@ -30,7 +31,7 @@ fn tile_board_holding_right_steps_to_edge() {
 /// slot.
 #[test]
 fn tile_board_step_cues_clips_and_facing() {
-    use crate::world::SfxRingOp;
+    use legaia_engine_system::sound_state::SfxRingOp;
     let mut w = tile_board_world();
     let _ = w.take_sfx_ring_ops();
     w.set_pad(input::PadButton::Right.mask());
@@ -115,14 +116,14 @@ fn tile_board_gated_by_dialog() {
 /// Build the 14-byte op-0x49 sub-5 instruction (`[0x49, 0x05, ...13-byte
 /// header]`) from a [`TileBoardHeader`] and install the board on a fresh
 /// Field world with a player actor in slot 0.
-fn install_board(h: crate::tile_board::TileBoardHeader) -> World {
+fn install_board(h: legaia_engine_minigames::tile_board::TileBoardHeader) -> World {
     let mut w = install_board_raw(h);
     plain_start_cell(&mut w);
     // The walk SM's fade-in (state 1) ignores input until the tiles are at
     // full scale.
-    assert_eq!(w.board.sm, crate::tile_board::sm::FADE_IN);
+    assert_eq!(w.board.sm, legaia_engine_minigames::tile_board::sm::FADE_IN);
     let mut n = 0;
-    while w.board.sm == crate::tile_board::sm::FADE_IN {
+    while w.board.sm == legaia_engine_minigames::tile_board::sm::FADE_IN {
         let _ = w.tick();
         n += 1;
         assert!(n < 100, "fade-in finishes");
@@ -132,7 +133,7 @@ fn install_board(h: crate::tile_board::TileBoardHeader) -> World {
 }
 
 /// Install the board from its op-49 instruction without ticking.
-fn install_board_raw(h: crate::tile_board::TileBoardHeader) -> World {
+fn install_board_raw(h: legaia_engine_minigames::tile_board::TileBoardHeader) -> World {
     let mut w = World::new();
     w.mode = SceneMode::Field;
     w.player_actor_slot = Some(0);
@@ -163,8 +164,8 @@ fn install_board_raw(h: crate::tile_board::TileBoardHeader) -> World {
 fn plain_start_cell(w: &mut World) {
     let b = w.board.grid.as_mut().unwrap();
     let (c, r) = (
-        crate::tile_board::START_COL as usize,
-        crate::tile_board::START_ROW as usize,
+        legaia_engine_minigames::tile_board::START_COL as usize,
+        legaia_engine_minigames::tile_board::START_ROW as usize,
     );
     if c < b.width as usize && r < b.height as usize {
         let idx = r * b.width as usize + c;
@@ -186,7 +187,7 @@ fn finish_walk_in(w: &mut World) {
 /// The index of the cell one step "up" (row + 1) from the start cell.
 fn above_start(w: &World) -> usize {
     let b = w.board.grid.as_ref().unwrap();
-    b.width as usize + crate::tile_board::START_COL as usize
+    b.width as usize + legaia_engine_minigames::tile_board::START_COL as usize
 }
 
 /// Tick with no input until the board is torn down, returning the ticks it
@@ -212,8 +213,8 @@ fn hdr(
     radius: u8,
     mode_flag: u8,
     tile_template_base: u8,
-) -> crate::tile_board::TileBoardHeader {
-    crate::tile_board::TileBoardHeader {
+) -> legaia_engine_minigames::tile_board::TileBoardHeader {
+    legaia_engine_minigames::tile_board::TileBoardHeader {
         origin_x,
         origin_z,
         width,
@@ -235,7 +236,7 @@ fn install_spawns_tile_actor_per_present_cell_value() {
     let board = w.board.grid.as_ref().unwrap();
     let mut present = std::collections::BTreeSet::new();
     for &c in &board.cells {
-        if crate::tile_board::is_drawable_cell(c) {
+        if legaia_engine_minigames::tile_board::is_drawable_cell(c) {
             present.insert(c);
         }
     }
@@ -279,7 +280,9 @@ fn draw_list_places_each_cell_actor_at_world_centre() {
             (ex, ez),
             "retail (origin+idx)*0x80+0x40"
         );
-        assert!(crate::tile_board::is_drawable_cell(d.cell_value));
+        assert!(legaia_engine_minigames::tile_board::is_drawable_cell(
+            d.cell_value
+        ));
         assert_eq!(w.board.actor_slots[d.cell_value as usize], Some(d.slot));
         // The reposition pass moved the tile actor to the (last) cell centre.
         let a = &w.actors[d.slot as usize];
@@ -337,7 +340,8 @@ fn board_exit_despawns_tile_actors() {
     // exits.
     {
         let idx = above_start(&w);
-        w.board.grid.as_mut().unwrap().cells[idx] = crate::tile_board::CELL_EVENT_FIRST;
+        w.board.grid.as_mut().unwrap().cells[idx] =
+            legaia_engine_minigames::tile_board::CELL_EVENT_FIRST;
     }
     pad_held(&mut w, input::PadButton::Up.mask(), 20);
     assert!(
@@ -390,7 +394,8 @@ fn event_cell_arrival_writes_the_state_8_flags() {
         let mut w = install_board(h);
         {
             let idx = above_start(&w);
-            w.board.grid.as_mut().unwrap().cells[idx] = crate::tile_board::CELL_EVENT_FIRST + 2;
+            w.board.grid.as_mut().unwrap().cells[idx] =
+                legaia_engine_minigames::tile_board::CELL_EVENT_FIRST + 2;
         }
         if pre_set_test {
             w.system_flag_set(0x300 + 2);
@@ -414,7 +419,8 @@ fn trigger_cell_arrival_exits_without_flags() {
     let mut w = install_board(h);
     {
         let idx = above_start(&w);
-        w.board.grid.as_mut().unwrap().cells[idx] = crate::tile_board::CELL_TRIGGER;
+        w.board.grid.as_mut().unwrap().cells[idx] =
+            legaia_engine_minigames::tile_board::CELL_TRIGGER;
     }
     pad_held(&mut w, input::PadButton::Up.mask(), 20);
     tick_until_torn_down(&mut w);
@@ -429,8 +435,8 @@ fn plain_arrival_advances_every_animated_cell() {
     let mut w = tile_board_world();
     {
         let b = w.board.grid.as_mut().unwrap();
-        b.cells[8] = crate::tile_board::CELL_ANIM_LAST; // (2,2), not visited
-        b.cells[6] = crate::tile_board::CELL_ANIM_FIRST; // (0,2), not visited
+        b.cells[8] = legaia_engine_minigames::tile_board::CELL_ANIM_LAST; // (2,2), not visited
+        b.cells[6] = legaia_engine_minigames::tile_board::CELL_ANIM_FIRST; // (0,2), not visited
     }
     // One Right step to (1,0): an ordinary cell.
     w.set_pad(input::PadButton::Right.mask());
@@ -442,10 +448,13 @@ fn plain_arrival_advances_every_animated_cell() {
     assert_eq!(b.player_col, 1);
     assert_eq!(
         b.cells[8],
-        crate::tile_board::CELL_ANIM_FIRST,
+        legaia_engine_minigames::tile_board::CELL_ANIM_FIRST,
         "0xE wraps to 0xB"
     );
-    assert_eq!(b.cells[6], crate::tile_board::CELL_ANIM_FIRST + 1);
+    assert_eq!(
+        b.cells[6],
+        legaia_engine_minigames::tile_board::CELL_ANIM_FIRST + 1
+    );
 }
 
 /// The walk SM's fade (states 1 and `0xA`/`0xC`): the tiles grow in at
@@ -453,7 +462,7 @@ fn plain_arrival_advances_every_animated_cell() {
 /// excepted; teardown follows the park.
 #[test]
 fn the_board_fades_in_and_out_around_its_exit() {
-    use crate::tile_board::sm;
+    use legaia_engine_minigames::tile_board::sm;
     let mut w = World::new();
     w.mode = SceneMode::Field;
     w.player_actor_slot = Some(0);
@@ -466,9 +475,9 @@ fn the_board_fades_in_and_out_around_its_exit() {
     pad_held(&mut w, input::PadButton::Right.mask(), 1);
     assert_eq!(
         w.board.grid.as_ref().unwrap().player_col,
-        crate::tile_board::START_COL
+        legaia_engine_minigames::tile_board::START_COL
     );
-    assert!(w.board.fade > 0 && w.board.fade < crate::tile_board::FADE_FULL);
+    assert!(w.board.fade > 0 && w.board.fade < legaia_engine_minigames::tile_board::FADE_FULL);
     let v = w.board.draw_list.first().map(|d| d.cell_value).unwrap();
     let s = w.tile_board_cell_scale(v);
     assert!(s > 0.0 && s < 1.0, "a tile mid-fade draws small: {s}");
@@ -484,7 +493,8 @@ fn the_board_fades_in_and_out_around_its_exit() {
     // Event cell one row up the board: step onto it.
     {
         let idx = above_start(&w);
-        w.board.grid.as_mut().unwrap().cells[idx] = crate::tile_board::CELL_EVENT_FIRST;
+        w.board.grid.as_mut().unwrap().cells[idx] =
+            legaia_engine_minigames::tile_board::CELL_EVENT_FIRST;
     }
     let mut seen = Vec::new();
     w.set_pad(input::PadButton::Up.mask());
@@ -498,7 +508,7 @@ fn the_board_fades_in_and_out_around_its_exit() {
         if w.board.sm == sm::EVENT_FADE_OUT {
             // The event tile the player stands on keeps its size.
             assert_eq!(
-                w.tile_board_cell_scale(crate::tile_board::CELL_EVENT_FIRST),
+                w.tile_board_cell_scale(legaia_engine_minigames::tile_board::CELL_EVENT_FIRST),
                 1.0
             );
         }
@@ -517,7 +527,7 @@ fn the_board_fades_in_and_out_around_its_exit() {
 /// through the exit fade; cancel returns to walking.
 #[test]
 fn the_quit_prompt_opens_on_triangle_and_quits_on_row_0() {
-    use crate::tile_board::sm;
+    use legaia_engine_minigames::tile_board::sm;
     let mut w = install_board(hdr(9, 3, 0, 0, 8, 0, 0x30));
     let press = |w: &mut World, b: input::PadButton| {
         w.set_pad(b.mask());
@@ -552,7 +562,7 @@ fn the_quit_prompt_opens_on_triangle_and_quits_on_row_0() {
 /// start cell (`0x801EF630..0x801EF67C`, `0x801EFA88..0x801EFAF8`).
 #[test]
 fn the_player_walks_in_to_column_4_row_0_after_the_fade_in() {
-    use crate::tile_board::sm;
+    use legaia_engine_minigames::tile_board::sm;
     let mut w = World::new();
     w.mode = SceneMode::Field;
     w.player_actor_slot = Some(0);
@@ -601,7 +611,8 @@ fn the_walk_in_arrival_runs_on_the_start_cell() {
     assert!(w.try_install_tile_board(&instr));
     {
         let b = w.board.grid.as_mut().unwrap();
-        b.cells[crate::tile_board::START_COL as usize] = crate::tile_board::CELL_TRIGGER;
+        b.cells[legaia_engine_minigames::tile_board::START_COL as usize] =
+            legaia_engine_minigames::tile_board::CELL_TRIGGER;
     }
     tick_until_torn_down(&mut w);
     assert!(w.board.grid.is_none());
@@ -622,7 +633,7 @@ fn the_board_rotates_the_pad_by_the_cell_octant_and_restores_it() {
     let idx = above_start(&w);
     {
         let b = w.board.grid.as_mut().unwrap();
-        b.cells[crate::tile_board::START_COL as usize] = 5;
+        b.cells[legaia_engine_minigames::tile_board::START_COL as usize] = 5;
         b.cells[idx] = 3;
     }
     pad_held(&mut w, input::PadButton::Up.mask(), 1);

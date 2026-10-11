@@ -2,6 +2,7 @@
 //! vsync wait, the RNG draws, the pad latch and the frame-begin skip.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// The colour the frame is cleared to this tick - the one both hosts hand
@@ -94,7 +95,7 @@ impl World {
     /// [`Self::next_rand`]. The raw word's low bits have short periods.
     pub fn next_rng(&mut self) -> u32 {
         // Numerical Recipes LCG. Cheap, deterministic.
-        self.rng_state = legaia_engine_vm::battle_formulas::world_lcg_step(self.rng_state);
+        self.rng_state = legaia_engine_battle_vm::battle_formulas::world_lcg_step(self.rng_state);
         self.rng_state
     }
 

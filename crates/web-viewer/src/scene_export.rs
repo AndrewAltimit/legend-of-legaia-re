@@ -5,7 +5,7 @@
 //! per-draw `(translation, rotY, scale)` triples it builds model matrices
 //! from, then asks for the baked glTF. Texture indirection (page-local UVs +
 //! per-vertex `(cba, tsb)` sampled against VRAM) is baked into a single RGBA
-//! atlas by [`legaia_asset::scene_gltf`].
+//! atlas by [`legaia_actor_formats::scene_gltf`].
 //!
 //! Typical JS flow:
 //!
@@ -19,7 +19,7 @@
 //! ```
 
 use super::*;
-use legaia_asset::scene_gltf::{SceneInstance, SceneMesh, build_scene_glb};
+use legaia_actor_formats::scene_gltf::{SceneInstance, SceneMesh, build_scene_glb};
 
 /// Accumulated export session: registered meshes, placements, target VRAM.
 pub struct SceneExportState {

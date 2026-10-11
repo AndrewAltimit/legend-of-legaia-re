@@ -17,15 +17,16 @@
 //!    real actor slots with `ActorSpawned` events. Field-VM regressions
 //!    that fail to wire either half of this chain will fail here.
 
-use legaia_engine_core::field_events::FieldEvent;
-use legaia_engine_core::world::{FIELD_SPAWN_START_SLOT, SceneMode, World};
+use legaia_engine_core::world::{FIELD_SPAWN_START_SLOT, World};
+use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Build a minimal field-VM record exercising op `0x4C 0x80`:
 ///   - 1 child packet, body `[0xAA, 0xBB]`, packet terminator `0x00`.
 ///
 /// Matches the `[opcode, which, count, body..., 0x00]` encoding the
 /// dispatcher's halt-acquire prelude (`FUN_8003CA38` packet-length walker
-/// mirrored by `legaia_engine_vm::field::dispatch_leaves::packet_length`) expects.
+/// mirrored by `legaia_scene_formats::field_disasm::packet_length`) expects.
 fn op_4c_80_one_packet_record() -> Vec<u8> {
     vec![0x4C, 0x80, 0x01, 0xAA, 0xBB, 0x00]
 }

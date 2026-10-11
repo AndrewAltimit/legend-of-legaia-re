@@ -11,14 +11,14 @@
 //!
 //! Because the destination *name* is variable length, re-pointing a door at a
 //! differently-named scene changes the record's byte length. The
-//! [`legaia_asset::man_edit`] relocation engine makes that safe: it resizes the
+//! [`legaia_scene_formats::man_edit`] relocation engine makes that safe: it resizes the
 //! name and fixes the partition record-offset tables (the door dispatch index),
 //! the header section-0 offset, and any intra-record relative-jump deltas that
 //! straddle the edit. So - unlike encounters/chests, which are same-size edits -
 //! a door's destination can be **any** scene regardless of name length.
 //!
 //! [`SceneDoors`] locates a scene bundle's MAN, decompresses it, and enumerates
-//! its door sites ([`legaia_asset::man_edit::scene_change_sites`], the clean
+//! its door sites ([`legaia_scene_formats::man_edit::scene_change_sites`], the clean
 //! partition walk). [`SceneDoors::rebuild`] applies a set of destination
 //! rewrites, recompresses, and returns the new MAN stream + decompressed size
 //! when it fits the original compressed footprint and validates - the caller
@@ -53,8 +53,8 @@
 //! - Non-partition-2 sites (the handful of P0/P1 `0x3F` ops) are script
 //!   choreography by construction - excluded.
 
-use legaia_asset::man_edit::{self, DestEdit, SceneChangeSite};
-use legaia_asset::{man_section, scene_asset_table};
+use legaia_scene_formats::man_edit::{self, DestEdit, SceneChangeSite};
+use legaia_scene_formats::{man_section, scene_asset_table};
 
 /// MAN asset type byte in a scene bundle's descriptor table.
 const MAN_TYPE: u8 = 0x03;

@@ -10,7 +10,7 @@
 //! provenance note covers the dumps it was read from.
 
 /// Master game mode the CARD request leaf installs (`0x16` = 22, the
-/// memory-card / menu overlay pair's init half - `legaia_engine_core::mode::GameMode::CardInit`).
+/// memory-card / menu overlay pair's init half - `crate::mode::GameMode::CardInit`).
 pub const CARD_REQUEST_MODE: i16 = 0x16;
 
 /// What the CARD request leaf writes.
@@ -29,7 +29,7 @@ pub const CARD_REQUEST_MODE: i16 = 0x16;
 /// It is worth knowing that this leaf is the other half of a gate already
 /// ported: the field initialiser's BGM wait barrier spins until the audio
 /// driver acknowledges the track **unless** the master mode is `0x16`
-/// (`legaia_engine_core::mode_entry_init::FIELD_BGM_WAIT_ABORT_MODE`). So a CARD request
+/// (`legaia_engine_system::mode_entry_init::FIELD_BGM_WAIT_ABORT_MODE`). So a CARD request
 /// raised while a scene is loading is what lets that barrier give up.
 ///
 /// This function was previously in the port catalog's **ignore list** under a
@@ -48,14 +48,14 @@ pub struct CardRequest {
 ///
 /// PORT: FUN_801D84B4.
 ///
-/// WIRED: `legaia_engine_core::mode::ModeSeat::request_card_mode` applies both stores,
+/// WIRED: `crate::mode::ModeSeat::request_card_mode` applies both stores,
 /// and `engine-shell`'s `BootSession` opens the pause menu through it - the
 /// seat is the production owner of the mode word this leaf writes.
 ///
 /// The second store had "no engine counterpart at all, its consumer is not in
 /// the ported set" written on it. That was wrong on both halves: `0x8007BB00`
 /// is the front-end entry word, its two retail readers are `init.pak`'s
-/// hand-off arm (`0x801CF4B0`, ported at `legaia_engine_core::mode::ModeSeat::boot_handoff`)
+/// hand-off arm (`0x801CF4B0`, ported at `crate::mode::ModeSeat::boot_handoff`)
 /// and the title dispatcher's `Init` routing (`0x801DD97C`, already ported as
 /// `legaia_engine_system::mode_entry_init::ENTRY_WORD_ADDR`), and the seat now holds
 /// the word both of them read.

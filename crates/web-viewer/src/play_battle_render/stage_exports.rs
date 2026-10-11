@@ -215,12 +215,15 @@ impl LegaiaRuntime {
         let Some(ground) = self.battle_render.as_ref().and_then(|b| b.ground.as_ref()) else {
             return Vec::new();
         };
-        let near =
-            legaia_engine_vm::battle_ground_grid::battle_ambient_colour(self.battle_ambient_base());
-        if near == legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED {
+        let near = legaia_engine_battle_vm::battle_ground_grid::battle_ambient_colour(
+            self.battle_ambient_base(),
+        );
+        if near == legaia_engine_battle_vm::battle_ground_grid::GRID_RGBC_SETTLED {
             return ground.flat.clone();
         }
-        crate::packet_color::textured(&legaia_asset::battle_backdrop::build_ground_grid_rgbc(near))
+        crate::packet_color::textured(
+            &legaia_scene_formats::battle_backdrop::build_ground_grid_rgbc(near),
+        )
     }
 
     /// The battle ambient base (`World::battle_ambient_base`, 8 bits a
@@ -239,7 +242,7 @@ impl LegaiaRuntime {
         self.scene_host
             .host()
             .map(|h| h.world.battle_ambient_base())
-            .unwrap_or(legaia_engine_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL)
+            .unwrap_or(legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL)
     }
 
     /// The backdrop's per-draw depth cue this frame
@@ -277,7 +280,7 @@ impl LegaiaRuntime {
         let Some(br) = self.battle_render.as_ref().filter(|b| b.grid_far.is_some()) else {
             return "null".to_string();
         };
-        use legaia_engine_vm::battle_ground_grid as grid;
+        use legaia_engine_battle_vm::battle_ground_grid as grid;
         // The far colour `0x8007BB48` follows the same live base as the
         // near colour (both ramp through a summon close-up).
         let far = grid::grid_far_colour(self.battle_ambient_base(), br.outdoor)

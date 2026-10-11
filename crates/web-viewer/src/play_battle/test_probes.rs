@@ -56,7 +56,7 @@ impl LegaiaRuntime {
 
     /// How many weapon-trail draws (`World::battle_weapon_trail_draws`) the
     /// live battle plans this frame - the count the page's screen-FX pass
-    /// hands to `legaia_engine_ui::battle_trail::weapon_trail_prims`.
+    /// hands to `legaia_render_kernels::battle_trail::weapon_trail_prims`.
     pub fn debug_battle_weapon_trail_draw_count(&self) -> usize {
         self.scene_host
             .host()

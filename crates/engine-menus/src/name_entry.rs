@@ -50,9 +50,9 @@ pub const CHAR_CELLS: usize = CHAR_ROWS * GRID_COLS;
 pub const NAV_CELLS: usize = NAV_ROWS * GRID_COLS;
 
 /// Longest name the entry accepts, in glyphs. The template name field is 10
-/// bytes NUL-padded ([`legaia_asset::new_game::NAME_LEN`]), so nine glyphs fit
+/// bytes NUL-padded ([`legaia_game_tables::new_game::NAME_LEN`]), so nine glyphs fit
 /// with the terminator.
-pub const NAME_MAX: usize = legaia_asset::new_game::NAME_LEN - 1;
+pub const NAME_MAX: usize = legaia_game_tables::new_game::NAME_LEN - 1;
 
 /// The six selectable glyph rows, exactly as laid out in the retail charset
 /// grid at `0x801F29F0`. `|` marks a non-selectable group separator (the

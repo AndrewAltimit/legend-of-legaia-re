@@ -379,7 +379,7 @@ pub fn compare(
                 menu.subscreen,
                 menu.row,
                 match (menu.row, menu.equip_depth) {
-                    (legaia_engine_core::field_menu::FieldMenuRow::Equip, 0) => {
+                    (legaia_engine_menus::field_menu::FieldMenuRow::Equip, 0) => {
                         ", character picker"
                     }
                     (_, 1) => ", slot browse",

@@ -16,7 +16,7 @@ impl LegaiaRuntime {
     /// The *simulation* half was always shared - `World::tick_encounter` runs
     /// `tick_transition` on both hosts, so the clock, the BGM swap and the
     /// battle that opens never differed - and the *emitter* is shared now
-    /// too ([`legaia_engine_ui::battle_intro`]): all five style bodies (the
+    /// too ([`legaia_render_kernels::battle_intro`]): all five style bodies (the
     /// confetti, the shattering tiles, the curtain strips, the swirl fan)
     /// plus the backdrop and the fade come out of the same `BattleIntro` the
     /// native window ticks. What stays per-host is the readback that lands
@@ -95,10 +95,10 @@ impl LegaiaRuntime {
         self.battle_intro_geom = (!prims.is_empty()).then(|| {
             (
                 prims.len() as u32,
-                legaia_engine_ui::screen_prim::build_geometry(
+                legaia_render_kernels::screen_prim::build_geometry(
                     &prims,
-                    legaia_engine_ui::screen_prim::PSX_DISPLAY_W as u32,
-                    legaia_engine_ui::screen_prim::PSX_DISPLAY_H as u32,
+                    legaia_render_kernels::screen_prim::PSX_DISPLAY_W as u32,
+                    legaia_render_kernels::screen_prim::PSX_DISPLAY_H as u32,
                 ),
             )
         });
@@ -109,8 +109,8 @@ impl LegaiaRuntime {
     /// outside a transition or before the entity's first tick).
     fn tick_battle_intro_prims(
         &mut self,
-    ) -> Option<Vec<legaia_engine_ui::screen_prim::ScreenPrim>> {
-        use legaia_engine_core::encounter::EncounterPhase;
+    ) -> Option<Vec<legaia_render_kernels::screen_prim::ScreenPrim>> {
+        use legaia_engine_battle::encounter::EncounterPhase;
 
         let Some(host) = self.scene_host.host() else {
             self.drop_battle_intro();
@@ -157,18 +157,18 @@ impl LegaiaRuntime {
     ///
     /// * the **weapon-trail** bands (`World::battle_weapon_trail_draws` -
     ///   retail `FUN_8005112C` / `FUN_80048310`; packets from the shared
-    ///   `legaia_engine_ui::battle_trail::weapon_trail_prims` port of
+    ///   `legaia_render_kernels::battle_trail::weapon_trail_prims` port of
     ///   `FUN_800485BC`), projected with the page's own `battle_vp` in its
     ///   scaled placement space (`(pos + local) * BATTLE_WORLD_SCALE`, the
     ///   same composition the actor draws use - world Y goes through
     ///   as-is, the VP's trailing flip handles it);
     /// * the **move-FX afterimage streak** (the shared
-    ///   `legaia_engine_ui::streak_pass` schedule of `FUN_801E09F8`, quad
+    ///   `legaia_render_kernels::streak_pass` schedule of `FUN_801E09F8`, quad
     ///   packets from the ported `FUN_801E1AB0` / `FUN_801E1D98`) - the
     ///   layer this page previously did not draw at all.
     // REF: FUN_800485BC / FUN_801E1AB0 - per-host projection seat; the
     // packets and schedules live in engine-ui.
-    fn theeder_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+    fn theeder_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return Vec::new();
         };
@@ -180,9 +180,9 @@ impl LegaiaRuntime {
         // trailing flip carries the Y-down axis.
         let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
         let pose = self.battle_cam_pose();
-        let vp = legaia_engine_vm::battle_cam_script::battle_vp(&pose, scale, 4.0 / 3.0);
-        legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
-            legaia_engine_ui::battle_trail::project_stage_point_cols(
+        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(&pose, scale, 4.0 / 3.0);
+        legaia_render_kernels::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
+            legaia_render_kernels::battle_trail::project_stage_point_cols(
                 &vp,
                 [
                     f32::from(p[0]) * scale,
@@ -193,23 +193,23 @@ impl LegaiaRuntime {
         })
     }
 
-    fn battle_fx_screen_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
-        use legaia_engine_ui::battle_trail as bt;
-        use legaia_engine_ui::streak_pass::{
+    fn battle_fx_screen_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_engine_battle_vm::battle_trail::TRAIL_POINTS;
+        use legaia_render_kernels::battle_trail as bt;
+        use legaia_render_kernels::streak_pass::{
             MOVE_FX_STREAK_OT, StreakSource, clip_ribbon_quads, streak_quads_scheduled,
         };
-        use legaia_engine_vm::battle_trail::TRAIL_POINTS;
 
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let world = &host.world;
-        if world.mode != legaia_engine_core::world::SceneMode::Battle {
+        if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
             return Vec::new();
         }
         let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
         let pose = self.battle_cam_pose();
-        let vp = legaia_engine_vm::battle_cam_script::battle_vp(&pose, scale, 4.0 / 3.0);
+        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(&pose, scale, 4.0 / 3.0);
         let mut out = Vec::new();
         for d in world.battle_weapon_trail_draws() {
             let Some(actor) = world.actors.get(d.actor_slot as usize) else {
@@ -300,11 +300,11 @@ impl LegaiaRuntime {
         let inputs = host.battle_intro_style_inputs(formation_id);
         let overlay = host
             .index
-            .entry_bytes_extended(legaia_engine_ui::battle_intro::INTRO_OVERLAY_PROT)
+            .entry_bytes_extended(legaia_render_kernels::battle_intro::INTRO_OVERLAY_PROT)
             .ok();
         let shade = host
             .index
-            .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
+            .entry_bytes(legaia_actor_formats::field_char_textures::PROT_ENTRY_INDEX)
             .ok();
         BattleIntro::arm_for_battle(
             &inputs,
@@ -344,7 +344,7 @@ impl LegaiaRuntime {
     /// Land the drawn frame (RGBA readback, bottom-up rows, WebGL order) in
     /// the scene VRAM's display page and release the held copy, which the
     /// next field-VRAM pass runs - the native window's twin of the same
-    /// handshake (`legaia_engine_ui::vram_capture::land_display_frame`).
+    /// handshake (`legaia_render_kernels::vram_capture::land_display_frame`).
     pub fn play_land_frame_grab(&mut self, rgba: &[u8], width: u32, height: u32) {
         let row = width as usize * 4;
         if row == 0 || rgba.len() < row * height as usize {
@@ -362,7 +362,12 @@ impl LegaiaRuntime {
         let Some(res) = host.resources.as_mut() else {
             return;
         };
-        legaia_engine_ui::vram_capture::land_display_frame(&flipped, width, height, &mut res.vram);
+        legaia_render_kernels::vram_capture::land_display_frame(
+            &flipped,
+            width,
+            height,
+            &mut res.vram,
+        );
         host.world.land_framebuffer();
         self.field_vram_dirty = true;
     }
@@ -420,7 +425,7 @@ impl LegaiaRuntime {
     }
 
     /// This frame's screen-effect pushes that wash over the **text layer**
-    /// (`legaia_engine_ui::screen_prim::text_layer_washes`), as
+    /// (`legaia_render_kernels::screen_prim::text_layer_washes`), as
     /// `[[abr, r, g, b], ...]` in draw order; `[]` when none does.
     ///
     /// Retail links every glyph at OT bucket `1` and a push at bucket `0`
@@ -434,7 +439,7 @@ impl LegaiaRuntime {
             .scene_host
             .host()
             .map(|h| {
-                let mut w = legaia_engine_ui::screen_prim::text_layer_washes(
+                let mut w = legaia_render_kernels::screen_prim::text_layer_washes(
                     &h.world.screen_tint_push_args(),
                 );
                 // The world's one live fade washes the text too when its
@@ -442,7 +447,7 @@ impl LegaiaRuntime {
                 // field warp's id `0`); the summon band's flashes (id `1`)
                 // stay under it. The native window makes the same split.
                 for (rgb, abr, ot) in h.world.screen_fade_draws() {
-                    if legaia_engine_ui::screen_prim::push_covers_text(
+                    if legaia_render_kernels::screen_prim::push_covers_text(
                         i16::try_from(ot).unwrap_or(i16::MAX),
                     ) {
                         w.push((abr, [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8]));
@@ -499,7 +504,7 @@ impl LegaiaRuntime {
 
     /// The screen-prim run table, flattened to
     /// `[class_code, index_start, index_count]` triples. `class_code` is
-    /// `legaia_engine_ui::screen_prim::BlendClass::code`: `0` = opaque,
+    /// `legaia_render_kernels::screen_prim::BlendClass::code`: `0` = opaque,
     /// `1 + abr_mode` = semi-transparent - so `0` stays reserved for "no
     /// blending" and an ABR-0 (`0.5B + 0.5F`) run cannot be read as one.
     pub fn play_screen_prim_runs(&self) -> Vec<u32> {

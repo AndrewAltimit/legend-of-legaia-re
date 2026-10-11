@@ -1,29 +1,29 @@
 //! Field-player locomotion clip playback.
 //!
 //! Drives the party locomotion ANM bundle (PROT 0874 §1,
-//! [`legaia_asset::character_pack::field_locomotion_anm`]) at runtime: the
+//! [`legaia_actor_formats::character_pack::field_locomotion_anm`]) at runtime: the
 //! standing **idle** loop (bank slot
-//! [`legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT`]) while the player
+//! [`legaia_actor_formats::character_pack::LOCOMOTION_IDLE_SLOT`]) while the player
 //! stands, the **walk** loop (bank slot
-//! [`legaia_asset::character_pack::LOCOMOTION_WALK_SLOT`]) while pad / nav
+//! [`legaia_actor_formats::character_pack::LOCOMOTION_WALK_SLOT`]) while pad / nav
 //! locomotion moves the player - the same two records the retail player
 //! actor's `+0x4C` anim pointer alternates between (pinned live via
 //! `scripts/pcsx-redux/autorun_locomotion_clip_pin.lua`).
 //!
 //! REF: FUN_8001B964 - the retail per-actor animated renderer walks the
 //! record's per-(bone, frame) 8-byte entries each draw; the per-entry decode
-//! is ported at [`legaia_asset::player_anm::BoneTransform::decode`]
+//! is ported at [`legaia_actor_formats::player_anm::BoneTransform::decode`]
 //! (`FUN_8001BE80`). This module owns the playhead: it pre-decodes every
 //! frame of a clip and emits one [`PoseFrame`] per engine tick, which the
 //! host's posed-mesh rebuild consumes exactly like the battle
-//! `legaia_engine_core::battle_anim::MonsterAnimPlayer` output. A clip whose record
+//! `legaia_engine_battle::battle_anim::MonsterAnimPlayer` output. A clip whose record
 //! carries the blend gate is posed between two keyframes on the ticks that
 //! fall inside a frame, through the same blender
-//! ([`legaia_asset::player_anm::blend_bone_transform`]) the prop path samples
+//! ([`legaia_actor_formats::player_anm::blend_bone_transform`]) the prop path samples
 //! through.
 
+use legaia_actor_formats::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transform};
 use legaia_anm::PoseFrame;
-use legaia_asset::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transform};
 
 /// The clip rate `actor+0x6A` a field actor plays at: the placed-object
 /// template's `0x10` halved by `FUN_8003A55C`, and the value the player's
@@ -49,7 +49,7 @@ pub struct FieldClipPlayer {
     cursor: u32,
     /// Cursor units added per engine tick ([`clip_step`]).
     step: u32,
-    /// The record's blend gate ([`legaia_asset::player_anm::PlayerAnmRecord::blends`]):
+    /// The record's blend gate ([`legaia_actor_formats::player_anm::PlayerAnmRecord::blends`]):
     /// set, a cursor that falls inside a frame poses between it and the next.
     blend: bool,
     /// The clamp bit (`actor+0x62 & 8`) the frame blender reads on the last
@@ -343,7 +343,7 @@ impl FieldPlayerAnim {
     /// Both play hosts build the player's clips here, so a bank slot one host
     /// can play the other can too.
     pub fn from_locomotion_bank(bundle: &PlayerAnmBundle, leader: usize) -> Option<Self> {
-        use legaia_asset::character_pack::{
+        use legaia_actor_formats::character_pack::{
             LOCOMOTION_BANK_STRIDE, LOCOMOTION_IDLE_SLOT, LOCOMOTION_WALK_SLOT,
             locomotion_record_index,
         };
@@ -494,7 +494,7 @@ impl FieldPlayerAnim {
         if !script_moved && let Some(slot) = self.retail_slot.filter(|&s| self.has_bank_slot(s)) {
             let rewind = self.playing_slot != Some(slot);
             self.playing_slot = Some(slot);
-            self.walking = slot == legaia_asset::character_pack::LOCOMOTION_WALK_SLOT;
+            self.walking = slot == legaia_actor_formats::character_pack::LOCOMOTION_WALK_SLOT;
             let clip = self.bank[slot].as_mut().expect("has_bank_slot");
             if rewind {
                 clip.rewind();
@@ -526,7 +526,7 @@ impl FieldPlayerAnim {
 /// `r * 100 + f * 10 + b` (low byte).
 #[doc(hidden)]
 pub fn synth_anm_bundle(records: &[(u16, u8)]) -> PlayerAnmBundle {
-    use legaia_asset::player_anm::{ANM_MARKER_1, parse};
+    use legaia_actor_formats::player_anm::{ANM_MARKER_1, parse};
     let mut buf = Vec::new();
     buf.extend_from_slice(&(records.len() as u32).to_le_bytes());
     let mut off = (4 + 4 * records.len()) as u32;
@@ -553,7 +553,7 @@ pub fn synth_anm_bundle(records: &[(u16, u8)]) -> PlayerAnmBundle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::player_anm::{ANM_MARKER_1, parse};
+    use legaia_actor_formats::player_anm::{ANM_MARKER_1, parse};
 
     /// Synthetic 2-record bundle: record 0 = "walk" (2 bones, 3 frames),
     /// record 1 = "idle" (2 bones, 2 frames). Frame f bone b tags t_x with

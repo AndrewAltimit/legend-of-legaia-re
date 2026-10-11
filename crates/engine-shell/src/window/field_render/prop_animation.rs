@@ -73,7 +73,7 @@ impl PlayWindowApp {
             }
             // Keep enhanced lighting's emissive tags through the morph
             // (the Genesis Tree is a VDF-morphed terrain mesh).
-            legaia_engine_render::scene_lighting::tag_emissive_vram_mesh(raw, &mut vmesh, vram);
+            legaia_render_kernels::scene_lighting::tag_emissive_vram_mesh(raw, &mut vmesh, vram);
             rebuilds.push((mesh_idx, vmesh));
         }
         rebuilds
@@ -129,7 +129,7 @@ impl PlayWindowApp {
                 ),
             };
             if let Some(v) = self.cpu_vram_base.as_ref() {
-                legaia_engine_render::scene_lighting::tag_emissive_meshes(
+                legaia_render_kernels::scene_lighting::tag_emissive_meshes(
                     raw, &mut vmesh, &mut cmesh, v,
                 );
             }
@@ -259,15 +259,15 @@ impl PlayWindowApp {
                 {
                     let m3: [[f32; 3]; 3] =
                         std::array::from_fn(|row| std::array::from_fn(|col| p.model.col(col)[row]));
-                    legaia_engine_core::field_lit_mesh::shade_lit_rows(
+                    legaia_engine_field::field_lit_mesh::shade_lit_rows(
                         &mut vmesh.colors,
                         &posed_lit,
                         &light,
-                        &legaia_engine_core::field_lit_mesh::rotation_from_matrix(m3),
+                        &legaia_engine_field::field_lit_mesh::rotation_from_matrix(m3),
                     );
                 }
                 if let Some(v) = self.cpu_vram_base.as_ref() {
-                    legaia_engine_render::scene_lighting::tag_emissive_vram_mesh(
+                    legaia_render_kernels::scene_lighting::tag_emissive_vram_mesh(
                         raw, &mut vmesh, v,
                     );
                 }
@@ -286,7 +286,7 @@ impl PlayWindowApp {
             }
             if p.baked.color.is_some() {
                 let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(tmd, raw, &offsets);
-                legaia_engine_render::scene_lighting::tag_emissive_color_mesh(raw, &mut cmesh);
+                legaia_render_kernels::scene_lighting::tag_emissive_color_mesh(raw, &mut cmesh);
                 if !cmesh.is_empty()
                     && let Ok(m) = r.upload_color_mesh_blended(
                         &cmesh.positions,

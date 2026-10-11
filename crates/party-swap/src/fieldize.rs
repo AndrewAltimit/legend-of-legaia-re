@@ -29,9 +29,9 @@
 //! texture.
 
 use super::*;
-use legaia_asset::character_pack;
-use legaia_asset::pack::extract_pack;
-use legaia_asset::parse_player_lzs;
+use legaia_actor_formats::character_pack;
+use legaia_container_formats::pack::extract_pack;
+use legaia_container_formats::parse_player_lzs;
 
 mod atlas;
 mod decimate;
@@ -175,7 +175,7 @@ fn fieldize_pack_laddered(
 /// bake's own radial uses, inverted). Clamped to a sane figure range.
 fn slot_height_ratio(
     pack: &character_pack::CharacterPack,
-    retail_anm: &legaia_asset::player_anm::PlayerAnmBundle,
+    retail_anm: &legaia_actor_formats::player_anm::PlayerAnmBundle,
     slot: usize,
     source: &SlotSource,
 ) -> Result<f32> {
@@ -235,11 +235,14 @@ fn fieldize_pack_at(
     // already pose three differently-proportioned heroes in retail, and
     // scaling them for one slot would break the other two.
     let sec1_desc = &container.descriptors[character_pack::LOCOMOTION_SECTION];
-    let mut sec1_decoded =
-        legaia_asset::decode(prot_0874, sec1_desc, legaia_asset::DecodeMode::Lzs)
-            .context("LZS-decode PROT 0874 section 1 (party locomotion ANM)")?;
-    let retail_anm =
-        legaia_asset::player_anm::parse(&sec1_decoded).context("parse retail locomotion bundle")?;
+    let mut sec1_decoded = legaia_container_formats::decode(
+        prot_0874,
+        sec1_desc,
+        legaia_container_formats::DecodeMode::Lzs,
+    )
+    .context("LZS-decode PROT 0874 section 1 (party locomotion ANM)")?;
+    let retail_anm = legaia_actor_formats::player_anm::parse(&sec1_decoded)
+        .context("parse retail locomotion bundle")?;
     let mut sec1_scaled = false;
     for (slot, source) in sources.iter().enumerate().take(3) {
         let r = slot_height_ratio(&pack, &retail_anm, slot, source)
@@ -249,7 +252,7 @@ fn fieldize_pack_at(
         }
         for bank in 0..character_pack::LOCOMOTION_BANK_STRIDE {
             let rec = character_pack::locomotion_record_index(slot, bank);
-            legaia_asset::player_anm::scale_record_translations(&mut sec1_decoded, rec, r)
+            legaia_actor_formats::player_anm::scale_record_translations(&mut sec1_decoded, rec, r)
                 .with_context(|| format!("scale slot {slot} locomotion record {rec}"))?;
         }
         sec1_scaled = true;
@@ -258,7 +261,7 @@ fn fieldize_pack_at(
         ));
     }
     let anm = if sec1_scaled {
-        legaia_asset::player_anm::parse(&sec1_decoded)
+        legaia_actor_formats::player_anm::parse(&sec1_decoded)
             .context("re-parse scaled locomotion bundle")?
     } else {
         retail_anm
@@ -293,7 +296,11 @@ fn fieldize_pack_at(
     // Retail's own §0 carries ~19 KB of trailing pack padding, so padding
     // to the exact size is the retail shape.
     let sec0 = &container.descriptors[character_pack::CONTAINER_SECTION];
-    let sec0_decoded = legaia_asset::decode(prot_0874, sec0, legaia_asset::DecodeMode::Lzs)?;
+    let sec0_decoded = legaia_container_formats::decode(
+        prot_0874,
+        sec0,
+        legaia_container_formats::DecodeMode::Lzs,
+    )?;
     let bodies = extract_pack(&sec0_decoded)?;
     let mut new_bodies: Vec<Vec<u8>> = Vec::with_capacity(bodies.len());
     for (i, b) in bodies.iter().enumerate() {
@@ -334,7 +341,11 @@ fn fieldize_pack_at(
     // New §2: the atlas with each character entry's pixels + CLUT
     // repainted in place (same TIM sizes).
     let sec2 = &container.descriptors[2];
-    let mut sec2_new = legaia_asset::decode(prot_0874, sec2, legaia_asset::DecodeMode::Lzs)?;
+    let mut sec2_new = legaia_container_formats::decode(
+        prot_0874,
+        sec2,
+        legaia_container_formats::DecodeMode::Lzs,
+    )?;
     patch_atlas(&mut sec2_new, &slots)?;
 
     // §1 (locomotion): the original compressed byte span when untouched,

@@ -19,8 +19,9 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_asset::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_overlay_images::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
 use std::path::PathBuf;
 
 /// The six ids this lane ports, and the PROT entry each resolves to.
@@ -35,7 +36,7 @@ const IDS: [(u8, u32); 6] = [
 
 /// Hard stop on the walk. A body the engine runs ungated steps one arm a
 /// frame; one whose arms are paced on its own countdown
-/// (`legaia_engine_vm::cast_module_camera`, PROT 0903) holds each counted arm
+/// (`legaia_engine_battle_vm::cast_module_camera`, PROT 0903) holds each counted arm
 /// for as long as retail does - about 500 frames for Gimard - so anything
 /// past this is a body that never reported done.
 const MAX_FRAMES: usize = 1024;
@@ -115,7 +116,7 @@ fn every_player_seru_tick_walks_its_phase_chain_and_writes_state() {
 
     let mut archive =
         legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
-    let mut pool = legaia_asset::cast_effect_pool::CastEffectPool::new();
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
     for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
         let Some(entry) = archive.entries.get(idx as usize).cloned() else {
             continue;

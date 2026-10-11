@@ -40,7 +40,7 @@
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::monster_archive;
+use legaia_actor_formats::monster_archive;
 use legaia_party_swap::enemy_anim::{
     self, MirrorOptions, PAYOFF_FLOOR_FRAMES, RETAIL_STAGED_FLOOR, StagedPlan,
 };

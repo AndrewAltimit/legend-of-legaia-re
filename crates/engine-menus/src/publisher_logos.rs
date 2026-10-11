@@ -214,7 +214,7 @@ pub struct LogosAtlas {
 /// spawns and the game-mode `0x11` store - is host setup the shell owns.
 // PORT: FUN_801ce9c0 (mode-16 READ INIT body - the publisher-logo upload)
 pub fn build_atlas_from_init_pak(prot_0895_bytes: &[u8]) -> anyhow::Result<LogosAtlas> {
-    let pak = legaia_asset::init_pak::parse(prot_0895_bytes)?;
+    let pak = legaia_ui_formats::init_pak::parse(prot_0895_bytes)?;
     let mut tims = Vec::with_capacity(LOGO_COUNT);
     for logo in &pak.logos {
         let tim = legaia_tim::parse(logo.bytes)?;

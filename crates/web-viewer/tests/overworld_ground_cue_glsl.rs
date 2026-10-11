@@ -1,6 +1,6 @@
 //! The play page's GLSL ground cue (`overworldGroundCue` in
 //! `site/js/webgl-shaders.js`) against the engine kernel it mirrors,
-//! `legaia_engine_core::overworld_ground_cue`.
+//! `legaia_engine_field::overworld_ground_cue`.
 //!
 //! The native WGSL twin is run on a GPU by `engine-render`'s
 //! `overworld_flat_depth_gpu`; nothing runs the GLSL outside a browser. This
@@ -15,7 +15,7 @@
 //! term, a different operator) fails the shape match rather than being
 //! evaluated, which is the point - such a change needs this test revisited.
 
-use legaia_engine_core::overworld_ground_cue::{
+use legaia_engine_field::overworld_ground_cue::{
     GROUND_CUE_IR0_SHIFT, GROUND_CUE_NEAR_SZ, GROUND_FAR_COLOR, ground_cue_color,
 };
 

@@ -92,7 +92,7 @@
 //!   (`0x8004D6F8 lhu v1,0x894(v0)`), the greyed copy is staged at `ctx[+0xE34]`
 //!   and a 1-pixel-tall rect uploads it to VRAM CLUT row `481 + slot`
 //!   (`0x8004D764..0x8004D798`). Those rows are not missing either:
-//!   `legaia_asset::battle_char_palette` decodes the party CLUTs and the loader
+//!   `legaia_actor_formats::battle_char_palette` decodes the party CLUTs and the loader
 //!   STP-copies them to `481 + slot`.
 //!
 //!   The three things listed here as missing between those ends - a per-actor
@@ -115,7 +115,7 @@
 //!   one, and it is not an art record: retail's enemy-special status source is
 //!   the **move-power record's `+0x0A` impact-effect selector**, which
 //!   `FUN_801DEA50` parks at `ctx+0x1014` and `FUN_801E09F8` branches on at
-//!   the impact phase. `legaia_asset::move_power` has parsed that byte all
+//!   the impact phase. `legaia_game_tables::move_power` has parsed that byte all
 //!   along; nothing applied it. `engine-core`'s
 //!   `World::apply_enemy_move_status` now does, so a monster special puts
 //!   Venom / Toxic / Rot on a *party* slot in play.
@@ -148,7 +148,7 @@
 /// `FUN_80055854`.
 ///
 /// PORT: FUN_80055854
-/// REPLACED-BY: `legaia_asset::battle_char_palette`, the port of this
+/// REPLACED-BY: `legaia_actor_formats::battle_char_palette`, the port of this
 /// routine's one retail caller `FUN_80052FA0`, which parses the nested block
 /// into typed records instead of staging it word-wise between two raw `u32`
 /// buffers. Nothing in the engine holds a `&mut [u32]` destination for this
@@ -259,7 +259,7 @@ pub fn copy_nested_records(src: &[u32], dst: &mut [u32]) -> usize {
 /// `FUN_80046978`.
 ///
 /// PORT: FUN_80046978
-/// REPLACED-BY: `legaia_engine_ui::battle_intro::wash_prim` plus its two arm
+/// REPLACED-BY: `legaia_render_kernels::battle_intro::wash_prim` plus its two arm
 /// constants (`PARTICLE_WASH_RGB`, `battle_intro_swirl::LATE_WASH_RGB`),
 /// which push the same farthest-bucket ABR-2 full-screen quad retail's
 /// submit `FUN_80024EE4(otlen - 1, 2, rgb)` builds, once per frame on both

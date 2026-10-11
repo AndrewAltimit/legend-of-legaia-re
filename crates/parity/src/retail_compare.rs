@@ -40,14 +40,16 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use legaia_engine_core::scene::BgmDirector;
-use legaia_engine_core::world::SceneMode;
 use legaia_engine_core::world::SeededVramRect;
-use legaia_mednafen::game_anchors;
-use legaia_mednafen::{PsxGpu, SaveState as MednafenState, ScenarioManifest};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_mednafen::{PsxGpu, SaveState as MednafenState};
+use legaia_ram_image::ScenarioManifest;
+use legaia_ram_image::game_anchors;
 use serde::{Deserialize, Serialize};
 
-use crate::boot::{BootConfig, BootSession, FieldLiveOpts};
+use crate::boot::BootSession;
 use crate::retail_compare_image::{Frame, ImageScore};
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
 mod seeds;
 pub use seeds::*;
 mod scoring;
@@ -108,7 +110,7 @@ const PLAYER_SCRIPT_HEIGHT: u32 = 0x2000_0000;
 /// `_DAT_801F348C`, the field party HUD's idle countdown (`FUN_801D0D38`).
 const HUD_COUNTDOWN: u32 = 0x801F_348C;
 /// The field camera parameter block's base (`0x8007B600`; the block proper
-/// is `+6..+0x28`, [`legaia_engine_core::camera_zone::CameraZoneConfig::from_retail_block`]).
+/// is `+6..+0x28`, [`legaia_engine_field::camera_zone::CameraZoneConfig::from_retail_block`]).
 const CAMERA_BLOCK: u32 = 0x8007_B600;
 /// `DAT_801E46A4`, the menu overlay's current sub-screen id
 /// (`docs/subsystems/save-screen.md`).
@@ -208,7 +210,7 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
             continue;
         };
         for emulator in ["mednafen", "pcsx-redux"] {
-            let Some(path) = legaia_mednafen::scenarios::library_backup_for(emulator, library, fp)
+            let Some(path) = legaia_ram_image::scenarios::library_backup_for(emulator, library, fp)
             else {
                 continue;
             };

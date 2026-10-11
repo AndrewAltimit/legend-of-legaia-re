@@ -58,9 +58,11 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
         // head, body, footwear, Goods x3. The record's `+0x196` order is
         // `[body, head, weapon, weapon, footwear, goods x3]`, so reading it
         // in place put body armour on the weapon row.
-        let engine_slots =
-            crate::equip_session::engine_equip_from_record(member.equipment().slots, i as u8);
-        let equip_views: Vec<EquipSlotView> = crate::equip_session::BROWSE_SLOT_ORDER
+        let engine_slots = legaia_engine_menus::equip_session::engine_equip_from_record(
+            member.equipment().slots,
+            i as u8,
+        );
+        let equip_views: Vec<EquipSlotView> = legaia_engine_menus::equip_session::BROWSE_SLOT_ORDER
             .iter()
             .map(|&s| EquipSlotView {
                 label: equip_slot_label(s),
@@ -100,7 +102,7 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
             attack: world.battle.attack.get(i).copied().unwrap_or(0),
             defense: world.battle.defense.get(i).copied().unwrap_or(0),
             stats: stat_pairs,
-            stat_labels: crate::status_screen::RETAIL_STAT_LABELS,
+            stat_labels: legaia_engine_menus::status_screen::RETAIL_STAT_LABELS,
             equip: equip_views,
             elements: default_element_views(),
             // Record `+0x12E` - the packed ailment word. Retail keeps it as

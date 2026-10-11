@@ -40,7 +40,7 @@ pub struct PropGlb {
 /// wide enough for keyframe rounding, far under the smallest real swing
 /// (town01's shallowest one-shot ends 77 degrees out; its drawer slide ends
 /// 27 units out; true loops measure exactly 0).
-fn anim_is_cyclic(anim: &legaia_asset::monster_archive::MonsterAnimation) -> bool {
+fn anim_is_cyclic(anim: &legaia_actor_formats::monster_archive::MonsterAnimation) -> bool {
     let (Some(first), Some(last)) = (anim.frames.first(), anim.frames.last()) else {
         return true;
     };
@@ -79,7 +79,7 @@ pub fn export_animated_prop_glbs(
     let man = scene.field_man_payload(index).ok().flatten();
     let man_file = man
         .as_ref()
-        .and_then(|m| legaia_asset::man_section::parse(m).ok());
+        .and_then(|m| legaia_scene_formats::man_section::parse(m).ok());
     let binds = scene
         .field_object_binds(index)
         .ok()

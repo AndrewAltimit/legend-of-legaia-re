@@ -6,8 +6,8 @@
 //! no-op. Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. The patched
 //! image lives only in memory.
 
-use legaia_asset::fishing_exchange;
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_minigame_formats::fishing_exchange;
 use legaia_patcher::apply;
 use legaia_patcher::fishing_price::{self, OVERLAY_PROT_INDEX, plan_set_price, price_field_offset};
 

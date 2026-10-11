@@ -14,8 +14,9 @@
 //! Bytecode is hand-authored and the world is synthetic - no Sony bytes, no
 //! disc gate.
 
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
 use legaia_engine_field::escape_timer::TimerInk;
+use legaia_engine_mode::mode::SceneMode;
 
 /// The retail-frame sub-clock only fires on ~60 % of sim ticks, so a test that
 /// wants `n` drained frames has to run more ticks than that. Run until the

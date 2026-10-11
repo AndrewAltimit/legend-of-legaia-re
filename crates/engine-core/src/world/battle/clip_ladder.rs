@@ -50,7 +50,7 @@
 
 use super::*;
 
-use vm::battle_action::ActorFlags;
+use legaia_engine_battle_vm::battle_action::ActorFlags;
 
 /// First monster ids whose flinch commit at HP `0` is rewritten into a
 /// knockdown (`li a1,0xb3` / `li v0,0xb5` at `0x8004BE44` / `0x8004BE54`).
@@ -206,10 +206,10 @@ impl World {
         let tags: Vec<u8> = clips
             .iter()
             .map(|c| {
-                c.as_ref()
-                    .map_or(legaia_asset::monster_archive::NO_ACTION_ENTRY, |c| {
-                        c.action_id
-                    })
+                c.as_ref().map_or(
+                    legaia_actor_formats::monster_archive::NO_ACTION_ENTRY,
+                    |c| c.action_id,
+                )
             })
             .collect();
         Some(monster_reaction_map(&tags))
@@ -234,7 +234,9 @@ impl World {
         else {
             return false;
         };
-        let Some(player) = crate::battle_anim::MonsterAnimPlayer::new_one_shot(&clip) else {
+        let Some(player) =
+            legaia_engine_battle::battle_anim::MonsterAnimPlayer::new_one_shot(&clip)
+        else {
             return false;
         };
         let first_monster = self.battle_first_monster_byte();
@@ -316,12 +318,12 @@ impl World {
             // black reads the same `0`: re-stamping it there restarted the
             // fade, so the body never went and state `0x20`'s reaction hold
             // never let go.
-            if a.battle.render_flag != vm::battle_formulas::STATE_DEFEAT_FADE
+            if a.battle.render_flag != legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
                 && a.battle.render_color == 0
             {
-                a.battle.render_color = vm::battle_formulas::TINT_NEUTRAL;
+                a.battle.render_color = legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL;
             }
-            a.battle.render_flag = vm::battle_formulas::STATE_DEFEAT_FADE;
+            a.battle.render_flag = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
             if slot >= party {
                 self.resolve_monster_death_spoils(slot);
             }
@@ -399,7 +401,10 @@ impl World {
         // still name idle; forget it so the idle loop is re-installed.
         a.battle_pose = None;
         if a.battle_action_clips.is_some() {
-            self.apply_battle_pose(slot, vm::battle_action::Pose::Idle as u8);
+            self.apply_battle_pose(
+                slot,
+                legaia_engine_battle_vm::battle_action::Pose::Idle as u8,
+            );
         }
     }
 
@@ -465,8 +470,14 @@ mod tests {
         m.battle.hp = 0;
         world.finish_battle_reaction(1, 4);
         let b = &world.actors[1].battle;
-        assert_eq!(b.render_flag, vm::battle_formulas::STATE_DEFEAT_FADE);
-        assert_eq!(b.render_color, vm::battle_formulas::TINT_NEUTRAL);
+        assert_eq!(
+            b.render_flag,
+            legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
+        );
+        assert_eq!(
+            b.render_color,
+            legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL
+        );
         // A living monster's knockdown end does not.
         world.actors[1].battle.render_flag = 0;
         world.actors[1].battle.hp = 5;

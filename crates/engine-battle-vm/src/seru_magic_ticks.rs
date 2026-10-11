@@ -122,7 +122,7 @@
 //!
 //! Not ported, and disclosed per body below: the packet arms (`FUN_80021B04`
 //! / `FUN_80050ED4` spawn sites - those records are
-//! `legaia_asset::cast_effect_pool`'s), the camera arms (`FUN_801D829C` /
+//! `legaia_overlay_images::cast_effect_pool`'s), the camera arms (`FUN_801D829C` /
 //! `FUN_801DCEAC`), the seat **pose** fields (`+0x34` / `+0x38` / `+0x46` /
 //! `+0x36` / `+0x1BA` / `+0x176` / `+0x21B` / `+0x225` / `+0x21F`), the
 //! `+0x04` blend word, the per-arm frame gating (every body times its arms on

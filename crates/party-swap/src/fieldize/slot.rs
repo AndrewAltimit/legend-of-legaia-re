@@ -9,7 +9,7 @@ use super::roles::{
 };
 use super::{FIELD_BONES, FIELD_GROUPS};
 use crate::playerize::monster_pool_texels;
-use legaia_asset::character_pack;
+use legaia_actor_formats::character_pack;
 use legaia_tmd::descriptor::PacketShape;
 use legaia_tmd::encode::ModelPrim;
 
@@ -181,7 +181,7 @@ pub(super) enum DoubleSideScope {
 
 pub(super) fn fieldize_slot(
     pack: &character_pack::CharacterPack,
-    anm: &legaia_asset::player_anm::PlayerAnmBundle,
+    anm: &legaia_actor_formats::player_anm::PlayerAnmBundle,
     slot: usize,
     source: &SlotSource,
     decimate: f32,

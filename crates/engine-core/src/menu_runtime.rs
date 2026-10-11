@@ -18,13 +18,15 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use legaia_engine_menus::menu::{MenuCtx, MenuHost, open, step};
-pub use legaia_engine_menus::menu::{MenuInput, MenuState};
+use legaia_engine_menus::menu::{MenuInput, MenuState};
 use legaia_save::{EquipmentSlots, Party, SpellList};
 
-use crate::equipment::DiscEquipInfo;
-use crate::inn::InnSession;
-use crate::shop::{BuyListRoute, BuyRecipientEvent, BuyRecipientSession, ShopSession};
 use crate::world::World;
+use legaia_engine_menus::equipment::DiscEquipInfo;
+use legaia_engine_menus::inn::InnSession;
+use legaia_engine_menus::shop::{
+    BuyListRoute, BuyRecipientEvent, BuyRecipientSession, ShopSession,
+};
 
 mod host;
 mod notices;
@@ -74,7 +76,7 @@ pub enum MenuTickEvent {
 
 /// Per-frame menu runtime. Lives alongside the world; engines tick it
 /// after [`crate::world::World::tick`] when in
-/// [`crate::world::SceneMode::Menu`] (or whatever in-menu mode the engine
+/// [`legaia_engine_mode::mode::SceneMode::Menu`] (or whatever in-menu mode the engine
 /// uses).
 /// Ticks the field takes to fade to black when a shop opens - see
 /// [`MenuRuntime::shop_fade_level`].
@@ -100,7 +102,7 @@ pub struct MenuRuntime {
     /// Active seru-trade session, opened when the player picks **Trade** in the
     /// `ShopMenu` top picker (the randomizer's `--seru-trade` feature). Holds the
     /// vendor's offers for the current two-hour window; cleared on shop exit.
-    pub trade_session: Option<crate::seru_trade::SeruTradeSession>,
+    pub trade_session: Option<legaia_engine_battle::seru_trade::SeruTradeSession>,
     /// Offer index selected at `ShopTrade`, applied at `ShopTradeConfirm` (the
     /// `ShopTradeConfirm` cursor is the yes/no slot, not the offer).
     trade_pending_offer: usize,
@@ -128,7 +130,7 @@ pub struct MenuRuntime {
     /// with no Yes/No screen after it, and the list it came from stays
     /// parked behind the window. Both hosts read
     /// [`MenuRuntime::quantity_view`] for the window they draw.
-    pub quantity_session: Option<crate::shop::QuantityPicker>,
+    pub quantity_session: Option<legaia_engine_menus::shop::QuantityPicker>,
     /// The live casino **prize-exchange** session (menu-overlay sub-screen
     /// `0x20`, field-VM op-`0x49` sub-op 7). While `Some`,
     /// [`MenuRuntime::tick`] drives it instead of the menu VM - the session
@@ -136,7 +138,7 @@ pub struct MenuRuntime {
     /// it never enters the [`MenuState`] graph. Cleared when the browse
     /// cancel exits; the tick then calls `World::finish_prize_exchange` so
     /// the suspended field script resumes past the counter op.
-    pub prize_session: Option<crate::prize_exchange::PrizeExchangeSession>,
+    pub prize_session: Option<legaia_engine_minigames::prize_exchange::PrizeExchangeSession>,
     /// Cursor to restore after a stay-on-the-list route (a refused buy and
     /// the recipient-picker hand both keep the hand on the confirmed row;
     /// the VM's route reset would drop it to row 0).
@@ -156,10 +158,10 @@ pub struct MenuRuntime {
     /// while this is `Some`.
     point_card_toast: Option<i32>,
     /// The shop windows' open / close slides
-    /// ([`crate::shop::ShopSlides`]), stepped once per tick toward the
+    /// ([`legaia_engine_menus::shop::ShopSlides`]), stepped once per tick toward the
     /// current screen's window set. Hosts draw from
     /// [`Self::shop_slides`].
-    shop_slides: crate::shop::ShopSlides,
+    shop_slides: legaia_engine_menus::shop::ShopSlides,
     /// Free-running tick count, the engine's stand-in for retail's frame
     /// word `0x80084570` that the list kernel blink-gates its page
     /// triangles on ([`Self::ui_frame`]).
@@ -191,7 +193,7 @@ pub struct MenuRuntime {
     /// return; a host paints window 7 (`engine-ui`'s
     /// `char_prompt_draws_for`) while this is `Some` and holds the pad
     /// until a press clears it.
-    spell_level_notice: Option<crate::magic_xp::SpellLevelNotice>,
+    spell_level_notice: Option<legaia_engine_battle::magic_xp::SpellLevelNotice>,
     /// The live **art-learned notice**: `Some` while retail's window 8 is
     /// up. The Items use sub-screen opens it (script `0x801E4C60`, `[open
     /// window 8]`) when the applier changed `_DAT_8007BB78` - the Hyper-Art
@@ -199,13 +201,13 @@ pub struct MenuRuntime {
     /// cancel press before closing it (`0x801E4C68`). Hosts arm it from
     /// [`crate::world::MenuState::pending_art_notice`] and paint window 8
     /// (`engine-ui`'s `art_learned_notice_draws`) while this is `Some`.
-    art_learned_notice: Option<crate::pause_screens::ArtLearnedNotice>,
+    art_learned_notice: Option<legaia_engine_menus::pause_screens::ArtLearnedNotice>,
     /// Pending operation flagged by the host hooks; consumed inside
     /// [`MenuRuntime::tick`].
     pending: Option<PendingOp>,
     /// Last `ctx.state` the window-widget choreography reacted to. The
     /// shop states drive the disc-resolved widget scripts
-    /// ([`crate::menu_widget`]) through
+    /// ([`legaia_engine_menus::menu_widget`]) through
     /// [`World::run_shop_widget_open`] /
     /// [`World::run_shop_widget_sell_away`]; this cell edge-detects the
     /// state changes (retail's `FUN_801DAFD4` runs the scripts on the
@@ -240,7 +242,7 @@ pub struct QuantityView {
 /// the pad word their disassembly tests, so the two models meet here rather
 /// than in either host.
 fn menu_input_pad_word(input: MenuInput) -> u16 {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let mut w = 0u16;
     for (on, b) in [
         (input.cross, PadButton::Cross),
@@ -270,7 +272,7 @@ fn menu_input_pad_word(input: MenuInput) -> u16 {
 /// confirm, while the browser play page (which sends one edge per press)
 /// stepped once. The inverse of [`menu_input_pad_word`].
 pub fn menu_input_from_pad_edges(edge: u16) -> MenuInput {
-    use crate::input::PadButton;
+    use legaia_engine_system::input::PadButton;
     let on = |b: PadButton| edge & b.mask() != 0;
     MenuInput {
         cross: on(PadButton::Cross),
@@ -308,7 +310,7 @@ impl MenuRuntime {
             prize_session: None,
             stay_cursor: None,
             point_card_toast: None,
-            shop_slides: crate::shop::ShopSlides::default(),
+            shop_slides: legaia_engine_menus::shop::ShopSlides::default(),
             ui_frames: 0,
             shop_age: 0,
             quantity_list_row: 0,
@@ -331,7 +333,7 @@ struct MenuRuntimeHost<'a> {
     selected_char: &'a mut usize,
     shop_session: &'a mut Option<ShopSession>,
     inn_session: &'a mut Option<InnSession>,
-    trade_session: &'a mut Option<crate::seru_trade::SeruTradeSession>,
+    trade_session: &'a mut Option<legaia_engine_battle::seru_trade::SeruTradeSession>,
     trade_pending_offer: &'a mut usize,
     equip_info: &'a Option<DiscEquipInfo>,
     retail_equipment_buy: bool,

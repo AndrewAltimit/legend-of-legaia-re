@@ -16,7 +16,7 @@
 /// the sixteen-rung scratchpad ramp at `0x1F80035C`, sums them and shifts
 /// right by two (`0x800193DC..0x80019438`). It returns a floor elevation.
 /// Every other citation of it in this repo already says so -
-/// `legaia_asset::field_objects`, `legaia_asset::field_map`,
+/// `legaia_scene_formats::field_objects`, `legaia_scene_formats::field_map`,
 /// `World::sample_field_floor_height` - and this one line was the outlier.
 ///
 /// So the three live arms are a Y **override**, a Y **snap to floor**, and a

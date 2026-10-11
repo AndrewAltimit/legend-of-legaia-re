@@ -22,8 +22,8 @@
 //!      CDNAME-block sweep - see its `port-catalog-ignore.toml` row)
 //! REF: FUN_80026B4C
 
-use legaia_asset::categorize::Class;
-use legaia_asset::{tim_scan, tmd_scan};
+use legaia_container_formats::{tim_scan, tmd_scan};
+use legaia_disc_audit::categorize::Class;
 use legaia_mes::{Format as MesFormat, RECORD_MARKER};
 
 use crate::scene::{Scene, SceneEntry};
@@ -59,7 +59,7 @@ pub struct SceneTmd {
 }
 
 /// The scene MES container, re-exported from the dialog module that pages it.
-pub use crate::dialog::SceneMes;
+use legaia_engine_dialog::dialog::SceneMes;
 
 /// Typed snapshot of every asset the engine cares about after entering a
 /// scene. Built once per scene transition by
@@ -80,7 +80,7 @@ pub struct SceneAssets {
     pub tim_list_decoded: Option<Vec<u8>>,
     /// Every TIM the scene exposes, across all entries (raw bytes - does
     /// not include TIMs that live inside the LZS-decoded `tim_list_decoded`
-    /// buffer; engines that need those run [`legaia_asset::tim_scan`] over
+    /// buffer; engines that need those run [`legaia_container_formats::tim_scan`] over
     /// the decoded blob).
     pub tims: Vec<SceneTim>,
     /// Every TMD in the scene's entries.
@@ -149,7 +149,8 @@ impl SceneAssets {
             // type-2 arm would open. Entries already classified as
             // `SeqContainer` are tracked separately above.
             if entry.class != Class::SeqContainer
-                && let Some(off) = crate::chunk_install::seq_chunk_offset(&entry.bytes)
+                && let Some(off) =
+                    legaia_engine_system::chunk_install::seq_chunk_offset(&entry.bytes)
                 && validate_seq_header(&entry.bytes[off..])
             {
                 seq_in_stream_entries.push((entry.idx, off));

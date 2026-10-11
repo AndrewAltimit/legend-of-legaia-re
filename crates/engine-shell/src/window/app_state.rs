@@ -11,7 +11,7 @@ pub(crate) struct GroundSource {
     pub(crate) flat_refs: Vec<[f32; 8]>,
     /// The heightfield the mesh was built from - its per-vertex corner tiers
     /// are what the live floor-height ladder re-resolves.
-    pub(crate) hf: legaia_asset::field_objects::WalkHeightfield,
+    pub(crate) hf: legaia_scene_formats::field_objects::WalkHeightfield,
     /// The live (scratchpad-frame) ladder `vmesh.positions` were last
     /// re-resolved against; `None` while they are the baked build.
     pub(crate) lut_applied: Option<[i16; 16]>,
@@ -65,7 +65,7 @@ pub(crate) struct PosedPropDraw {
 /// face tracks (entry `+0x8C` eyes / `+0x98` mouth, indexed by the playing
 /// clip's `action_id`) plus the last applied stamp set, so the VRAM is only
 /// re-uploaded when the stamped face actually changes. See
-/// `legaia_asset::face_anim` / `tick_battle_face_stamps`.
+/// `legaia_actor_formats::face_anim` / `tick_battle_face_stamps`.
 pub(super) struct BattleMemberFace {
     /// World actor slot (= present-party band ordinal, 0..3).
     pub(super) actor_slot: usize,
@@ -74,16 +74,16 @@ pub(super) struct BattleMemberFace {
     pub(super) char_index: usize,
     /// Face tracks indexed by action slot (record[0] entries + the
     /// equipment-spliced swing slots 0xC..0xF).
-    pub(super) tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>>,
+    pub(super) tracks: Vec<Option<legaia_actor_formats::face_anim::FaceTracks>>,
     /// Face tracks of the art-bank records' embedded entries, indexed by
     /// bank record (= playing clip `action_id - 0x10`). Retail reads these
     /// through the `FUN_8004AD80`-installed entry pointer (bank record
     /// `+0x24`), i.e. record `+0xB0` eyes / `+0xBC` mouth - the mid-battle
     /// art-strike faces.
-    pub(super) art_tracks: Vec<Option<legaia_asset::face_anim::FaceTracks>>,
+    pub(super) art_tracks: Vec<Option<legaia_actor_formats::face_anim::FaceTracks>>,
     /// Stamp set applied on the previous frame (`None` = nothing applied
     /// yet, force the first stamp).
-    pub(super) last_stamps: Option<Vec<legaia_asset::face_anim::FaceStamp>>,
+    pub(super) last_stamps: Option<Vec<legaia_actor_formats::face_anim::FaceStamp>>,
     /// Victory-window frame counter - the engine's per-member equivalent
     /// of the retail global `gp+0x9EA` (reset to 0 when the win pose is
     /// staged, advanced per frame; the stamp pass halves it). `Some`
@@ -115,10 +115,10 @@ pub(super) struct WindowedCutscene {
     /// `true` once an audio track has been staged - the render loop then reads
     /// the audio cursor as the master clock instead of wall-clock.
     pub(super) has_audio: bool,
-    /// The shared pacing rule (`legaia_engine_core::cutscene::MovieClock`),
+    /// The shared pacing rule (`legaia_engine_system::movie::cutscene::MovieClock`),
     /// which the page's movie lane runs too: the audio cursor, or the wall
     /// clock once the cursor has sat at zero past the stall window.
-    pub(super) movie_clock: legaia_engine_core::cutscene::MovieClock,
+    pub(super) movie_clock: legaia_engine_system::movie::cutscene::MovieClock,
 }
 
 /// Pre-decoded publisher-logos atlas + GPU upload. Created once at boot
@@ -126,14 +126,14 @@ pub(super) struct WindowedCutscene {
 /// to sample one logo per frame.
 pub(super) struct PublisherLogosAssets {
     /// Per-logo source rects in atlas pixels.
-    pub(super) rects: [(u32, u32, u32, u32); legaia_engine_core::publisher_logos::LOGO_COUNT],
+    pub(super) rects: [(u32, u32, u32, u32); legaia_engine_menus::publisher_logos::LOGO_COUNT],
     /// GPU-resident sprite atlas (vertically stacked logos).
     pub(super) atlas: legaia_engine_render::UploadedSpriteAtlas,
 }
 
 /// Pre-decoded title-screen atlas + GPU upload. Created once at boot
 /// when the disc has a valid PROT 0888 (`sound_data2` per CDNAME,
-/// carries title art - see `legaia_asset::title_pak`); reused by
+/// carries title art - see `legaia_ui_formats::title_pak`); reused by
 /// [`BootUiState::Title`] to blit one quad per frame.
 pub(super) struct TitleScreenAssets {
     /// Source rect to sample for the title quad
@@ -146,7 +146,7 @@ pub(super) struct TitleScreenAssets {
 /// Pre-decoded menu-glyph atlas + GPU upload. Created once at boot
 /// when the disc has a readable `PROT.DAT` (the source TIM lives in
 /// the unindexed 240 KB pre-`init_data` gap; see
-/// [`legaia_asset::menu_glyph_atlas`]). Reused by [`BootUiState::Title`]
+/// [`legaia_ui_formats::menu_glyph_atlas`]). Reused by [`BootUiState::Title`]
 /// to render the "NEW GAME" / "CONTINUE" / "OPTIONS" menu rows in
 /// the retail small-caps font.
 pub(super) struct MenuGlyphAssets {
@@ -164,16 +164,16 @@ pub(super) struct MenuGlyphAssets {
 /// title background.
 pub(super) struct SaveMenuAssets {
     /// Source rects for the 9-slice panel tiles + slot pills.
-    pub(super) rects: legaia_engine_render::SaveMenuAtlasRects,
+    pub(super) rects: legaia_engine_ui::SaveMenuAtlasRects,
     /// GPU-resident sprite atlas (composite 256×256: panel tiles from
     /// system-UI TIM + slot pills from PROT 0899's save-menu TIM).
     pub(super) atlas: legaia_engine_render::UploadedSpriteAtlas,
     /// Battle-HUD badge cells inside that atlas: the nine status-element
     /// word tags and the eight element badges, `None` per cell this bake
     /// could not reach a palette for.
-    pub(super) badges: legaia_engine_render::battle_hud_chrome::BattleBadgeRects,
+    pub(super) badges: legaia_engine_ui::battle_hud_chrome::BattleBadgeRects,
     /// A fully-opaque 1x1 texel inside this bake
-    /// ([`legaia_engine_render::atlas_opaque_texel`]) - the surface the field
+    /// ([`legaia_engine_ui::atlas_opaque_texel`]) - the surface the field
     /// party HUD's translucent plate is drawn on, so the plate can sit in the
     /// sprite half beneath the readout it backs.
     pub(super) solid: Option<(u32, u32, u32, u32)>,
@@ -183,7 +183,7 @@ pub(super) struct SaveMenuAssets {
 /// `other6.lzs` slot 0 - the pages retail uploads at VRAM (320,0)/(320,256))
 /// baked per referenced 16-colour sub-palette into one GPU atlas, plus the
 /// PROT 0977 sprite descriptor table the shared quad emitters
-/// (`legaia_engine_render::other_game_hud`) place every screen from. Loaded on
+/// (`legaia_engine_ui::muscle_dome_hud`) place every screen from. Loaded on
 /// the first Muscle Dome entry; `None` without a disc.
 pub(super) struct MuscleHubAssets {
     /// `(sheet, sub-palette, atlas y offset)` of each baked page copy.
@@ -193,10 +193,10 @@ pub(super) struct MuscleHubAssets {
     pub(super) blocks: Vec<(u8, u8, u32)>,
     /// The two pages' palette STP classes: whether a semi-transparent hub
     /// packet blends or draws opaque (`ringside_backdrop::HubPaletteStp`).
-    pub(super) palette_stp: legaia_engine_render::ringside_backdrop::HubPaletteStp,
+    pub(super) palette_stp: legaia_engine_ui::ringside_backdrop::HubPaletteStp,
     /// Pristine parsed sprite table, cloned per frame - the retail emitters
     /// write their variant back into the shared records.
-    pub(super) table: Vec<legaia_engine_render::other_game_hud::HudSprite>,
+    pub(super) table: Vec<legaia_engine_ui::muscle_dome_hud::HudSprite>,
     /// GPU-resident atlas (vertically stacked `(sheet, sub-palette)` blocks).
     pub(super) atlas: legaia_engine_render::UploadedSpriteAtlas,
     /// `(still variant, atlas y offset)` of each ringside still baked into
@@ -230,7 +230,7 @@ pub(super) type NpcPoseVerify = std::collections::HashMap<(u8, usize), Vec<([i16
 /// (`glyph_u`-paged `u` + the widget record's `v/w/h`), when the draw pages
 /// the glyph strip and the parsed widget table is resident.
 pub(super) type ResolvedChromeDraw = (
-    legaia_engine_core::baka_fighter_chrome::ChromeDraw,
+    legaia_engine_minigames::baka_fighter_chrome::ChromeDraw,
     Option<(u8, u8, u8, u8)>,
 );
 
@@ -248,33 +248,33 @@ pub(super) struct PlayWindowApp {
     /// CPU-side atlas data waiting for renderer upload. Moved into
     /// `publisher_logos` on the first frame the renderer is available.
     pub(super) pending_publisher_logos_atlas:
-        Option<legaia_engine_core::publisher_logos::LogosAtlas>,
+        Option<legaia_engine_menus::publisher_logos::LogosAtlas>,
     /// Title-screen atlas (built once from PROT 0888). `None` if the
     /// disc isn't loaded or the title TIM doesn't parse.
     pub(super) title_screen: Option<TitleScreenAssets>,
     /// CPU-side title atlas waiting for renderer upload. Moved into
     /// `title_screen` on the first frame the renderer is available.
     pub(super) pending_title_screen_atlas:
-        Option<legaia_engine_core::title_screen_atlas::TitleScreenAtlas>,
+        Option<legaia_engine_menus::title_screen_atlas::TitleScreenAtlas>,
     /// Menu-glyph atlas (built once from raw `PROT.DAT` at 0x11218).
     /// `None` if the disc isn't loaded or the TIM doesn't parse.
     pub(super) menu_glyphs: Option<MenuGlyphAssets>,
     /// CPU-side menu-glyph atlas waiting for renderer upload. Moved
     /// into `menu_glyphs` on the first frame the renderer is available.
     pub(super) pending_menu_glyph_atlas:
-        Option<legaia_engine_core::menu_glyph_atlas::MenuGlyphAtlas>,
+        Option<legaia_engine_menus::menu_glyph_atlas::MenuGlyphAtlas>,
     /// Save-menu UI atlas (built once from PROT 0899). `None` if the
     /// disc isn't loaded or the save-menu TIM doesn't parse.
     pub(super) save_menu: Option<SaveMenuAssets>,
     /// CPU-side save-menu atlas waiting for renderer upload. Moved
     /// into `save_menu` on the first frame the renderer is available.
-    pub(super) pending_save_menu_atlas: Option<legaia_engine_core::save_menu_atlas::SaveMenuAtlas>,
+    pub(super) pending_save_menu_atlas: Option<legaia_engine_menus::save_menu_atlas::SaveMenuAtlas>,
     /// The menu overlay's window-descriptor table (PROT 0899 @0x15F20,
-    /// `legaia_asset::menu_windows`), parsed once at boot: the retail
+    /// `legaia_game_tables::menu_windows`), parsed once at boot: the retail
     /// window rect + content-renderer dispatch behind every pause-menu
     /// screen. `None` when the disc isn't loaded (pinned fallback rects
     /// in [`MENU_WINDOW_FALLBACK`] apply).
-    pub(super) menu_window_table: Option<legaia_asset::menu_windows::MenuWindowTable>,
+    pub(super) menu_window_table: Option<legaia_game_tables::menu_windows::MenuWindowTable>,
     /// Uploaded "It was the Seru." caption sprite atlas (opdeene's baked TIM,
     /// `World::cutscene.caption`). Uploaded lazily the first frame the caption
     /// image is present and dropped when it clears on scene change; holds
@@ -288,7 +288,7 @@ pub(super) struct PlayWindowApp {
     pub(super) scene_tmd_data: Vec<(legaia_tmd::Tmd, Vec<u8>)>,
     /// Field static-geometry draws: `(index into `meshes`, world model matrix)`
     /// per placed environment object, resolved at scene load from the field
-    /// map's object table (`legaia_asset::field_objects`). Empty for non-field
+    /// map's object table (`legaia_scene_formats::field_objects`). Empty for non-field
     /// scenes. Drawn in `SceneMode::Field` so the town renders its buildings /
     /// terrain at their world positions instead of all at the origin.
     pub(super) field_placement_draws: Vec<(usize, Mat4)>,
@@ -366,7 +366,7 @@ pub(super) struct PlayWindowApp {
     /// on its ground instead of floating over the bare clear colour.
     pub(super) field_terrain_draws: Vec<(usize, Mat4)>,
     /// The field's **light-source** row shading
-    /// (`legaia_engine_core::field_lit_mesh`): per env mesh with lit-row
+    /// (`legaia_engine_field::field_lit_mesh`): per env mesh with lit-row
     /// vertices, the CPU mesh + its lit vertices (keyed by `meshes` index),
     /// the shaded per-rotation variants, which variant each terrain /
     /// placement draw takes (parallel to the two draw lists) and the light
@@ -374,7 +374,7 @@ pub(super) struct PlayWindowApp {
     pub(super) field_lit: FieldLitMeshes,
     /// `LEGAIA_DIAG_DRAWS=<path>`: the per-draw census beside the uploaded
     /// meshes, written as texture families every frame
-    /// (`legaia_engine_core::draw_census`). `None` with the variable unset.
+    /// (`legaia_engine_system::draw_census`). `None` with the variable unset.
     pub(super) draw_census: Option<DrawCensusDiag>,
     /// Live floor-height-ladder patch for the four field draw lists above: the
     /// per-draw ladder rungs plus the ladder currently folded into their Y, so
@@ -417,7 +417,7 @@ pub(super) struct PlayWindowApp {
     /// idle/walk pair uses) - a slot with no spawn clip takes its first one
     /// from an ANIMATE cue.
     pub(super) npc_clip_players:
-        std::collections::HashMap<u8, legaia_engine_core::field_anim::FieldClipPlayer>,
+        std::collections::HashMap<u8, legaia_engine_field::field_anim::FieldClipPlayer>,
     pub(super) npc_anim_srcs: std::collections::HashMap<u8, (legaia_tmd::Tmd, Vec<u8>)>,
     /// The mesh source + rest pose of every NPC **without** a clip player,
     /// kept so an op-`0x4B` VDF morph on it (`World::npc_morphed_tmd`) can
@@ -459,8 +459,8 @@ pub(super) struct PlayWindowApp {
     /// a placement poses from (`special_model` placements use the
     /// locomotion bundle).
     pub(super) npc_anim_bundles: (
-        Option<legaia_asset::player_anm::PlayerAnmBundle>,
-        Option<legaia_asset::player_anm::PlayerAnmBundle>,
+        Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
+        Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     ),
     pub(super) npc_bundle_special: std::collections::HashMap<u8, bool>,
     /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
@@ -564,7 +564,7 @@ pub(super) struct PlayWindowApp {
     /// `World::battle.intro`, driven by `World::tick_encounter`. Armed by
     /// `take_battle_intro_prims` on the first transition frame and dropped when
     /// the phase ends. See `legaia_engine_render::battle_intro`.
-    pub(super) battle_intro: Option<legaia_engine_render::battle_intro::BattleIntro>,
+    pub(super) battle_intro: Option<legaia_render_kernels::battle_intro::BattleIntro>,
     /// GPU upload of the intro's captured VRAM page, kept for the whole
     /// transition so every frame's strips / tiles sample the captured field
     /// frame (and the shatter's shade page), not just the capture frame's.
@@ -606,16 +606,16 @@ pub(super) struct PlayWindowApp {
     /// member whose band pixels are the real texture-pool uploads. Driven
     /// per tick by `tick_battle_face_stamps`; cleared on battle exit.
     pub(super) battle_faces: Vec<BattleMemberFace>,
-    /// The static SCUS face-frame tables (`legaia_asset::face_anim`),
+    /// The static SCUS face-frame tables (`legaia_actor_formats::face_anim`),
     /// lazily read from the boot source's `SCUS_942.54` on first battle
     /// entry. `None` after a failed attempt (disc-free runs) - facial
     /// animation is skipped.
-    pub(super) face_tables: Option<legaia_asset::face_anim::FaceFrameTables>,
+    pub(super) face_tables: Option<legaia_actor_formats::face_anim::FaceFrameTables>,
     /// The static SCUS victory-window mouth-override table (the
     /// `0x80077E80` per-(char, staged-id) tracks), loaded alongside
     /// `face_tables`. `None` skips the override (the entry tracks still
     /// animate).
-    pub(super) art_mouth_tables: Option<legaia_asset::face_anim::ArtMouthTables>,
+    pub(super) art_mouth_tables: Option<legaia_actor_formats::face_anim::ArtMouthTables>,
     /// Whether the lazy `face_tables` load already ran (so a missing
     /// executable is only probed once).
     pub(super) face_tables_attempted: bool,
@@ -635,10 +635,10 @@ pub(super) struct PlayWindowApp {
     /// auxiliary / strike splash). Seeded from the session's phase edges and
     /// serviced once a frame in the redraw handler; the draws they produce are
     /// cached in `fishing_banner_draws` for the (immutable) HUD builder.
-    pub(super) fishing_banners: legaia_engine_render::FishingBanners,
+    pub(super) fishing_banners: legaia_engine_ui::FishingBanners,
     /// This frame's live fishing banner draws, produced by servicing
     /// `fishing_banners`. Empty whenever no banner is running.
-    pub(super) fishing_banner_draws: Vec<legaia_engine_render::HudDraw>,
+    pub(super) fishing_banner_draws: Vec<legaia_engine_ui::HudDraw>,
     // The dance pre-song count-in and the Disco King how-to tutorial used to
     // live here, as a host phase holding the parsed game pending. They are
     // `World::minigames.dance_countin` / `dance_tutorial` now, stepped by the
@@ -649,21 +649,22 @@ pub(super) struct PlayWindowApp {
     // `World::minigames.fishing_venue`.
     /// The duel overlay's parsed HUD widget table, for resolving chrome
     /// glyph draws (`parse_baka_hud`).
-    pub(super) baka_hud_widgets: Option<Vec<legaia_asset::baka_opponents::BakaHudWidget>>,
+    pub(super) baka_hud_widgets:
+        Option<Vec<legaia_minigame_formats::baka_opponents::BakaHudWidget>>,
     /// This frame's resolved chrome draws (the duel's own `BakaChrome`
     /// output): each with its stamped glyph cell rect (`u` paged through
     /// `glyph_u`, plus the record's `v/w/h`) when the draw pages the glyph
     /// strip and the widget table is resident.
     pub(super) baka_chrome_frame: Vec<ResolvedChromeDraw>,
-    /// The duel's 3D surface (`legaia_engine_core::baka_duel_scene`): the
+    /// The duel's 3D surface (`legaia_engine_minigame_scenes::baka_duel_scene`): the
     /// engine cache every duel host drives once a frame.
-    pub(super) baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
+    pub(super) baka_surface: legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface,
     /// This frame's GPU copy of that surface (see
     /// `PlayWindowApp::refresh_baka_duel_gpu`).
     pub(super) baka_gpu: Option<minigames::BakaDuelGpu>,
     /// The Muscle Dome's 3D arena surface - the engine kernel the browser
-    /// play page drives too (`legaia_engine_core::muscle_dome_scene`).
-    pub(super) muscle_surface: legaia_engine_core::muscle_dome_scene::MuscleDomeSurface,
+    /// play page drives too (`legaia_engine_minigame_scenes::muscle_dome_scene`).
+    pub(super) muscle_surface: legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface,
     /// The dome surface on the GPU while a dome session is live.
     pub(super) muscle_gpu: Option<minigames::BakaDuelGpu>,
     /// The fishing pond surface (`legaia_engine_core::fishing_scene`) and its
@@ -673,11 +674,11 @@ pub(super) struct PlayWindowApp {
     /// The slot machine's disc data, decoded on the first visit (`Some(None)`
     /// remembers a disc it did not decode on).
     pub(super) slot_cabinet_assets:
-        Option<Option<std::sync::Arc<legaia_engine_render::ui_slot_cabinet::SlotCabinetAssets>>>,
+        Option<Option<std::sync::Arc<legaia_engine_ui::slot_cabinet::SlotCabinetAssets>>>,
     /// The machine's VRAM on the GPU while it is on screen.
     pub(super) slot_gpu: Option<UploadedVram>,
     /// The marquee's legend / blink counters.
-    pub(super) slot_marquee_clock: legaia_engine_render::ui_slot_cabinet::SlotMarqueeClock,
+    pub(super) slot_marquee_clock: legaia_engine_ui::slot_cabinet::SlotMarqueeClock,
     /// This frame's composed dot buffer.
     pub(super) slot_dots: Vec<u8>,
     /// The dance venue on the GPU while the dance entry's globals are staged
@@ -721,7 +722,10 @@ pub(super) struct PlayWindowApp {
     /// built from (`SceneHost::battle_stage_object_indices`). A mid-fight
     /// change - the evolved-Cort arrival's slot-0 rebind - rebuilds them
     /// (`tick_battle_stage_shell`).
-    pub(super) battle_stage_shell: Option<(Vec<usize>, legaia_asset::battle_backdrop::SecondCopy)>,
+    pub(super) battle_stage_shell: Option<(
+        Vec<usize>,
+        legaia_scene_formats::battle_backdrop::SecondCopy,
+    )>,
     /// Mesh index of the flat tiled ground grid drawn under the battle actors
     /// (retail's `func_0x801d02c0` grid), textured from the constant retail
     /// page/CLUT/UV-window address where the scene battle VRAM places its own
@@ -747,9 +751,9 @@ pub(super) struct PlayWindowApp {
     pub(super) pad: u16,
     /// Presses since the last frame, so a key tapped between two redraws
     /// still reaches a tick (the browser page's `pulse` set).
-    pub(super) pad_taps: legaia_engine_core::input::PadTapLatch,
+    pub(super) pad_taps: legaia_engine_system::input::PadTapLatch,
     /// Input binding loaded from file (or default).
-    pub(super) mapping: legaia_engine_core::input::Mapping,
+    pub(super) mapping: legaia_engine_system::input::Mapping,
     /// Physical keys currently held.
     ///
     /// Only the **Key Config** sub-screen needs this: winit delivers a stream
@@ -765,7 +769,7 @@ pub(super) struct PlayWindowApp {
     /// screen. `None` when nothing new was pressed since the last tick.
     ///
     /// The vocabulary is the binding table's own
-    /// ([`legaia_engine_core::input::KEY_NAME_DOM_CODES`]), so the two hosts
+    /// ([`legaia_engine_system::input::KEY_NAME_DOM_CODES`]), so the two hosts
     /// bind out of the same key set - a key the table has no name for is not
     /// bindable on either.
     pub(super) pending_key_name: Option<&'static str>,
@@ -844,7 +848,7 @@ pub(super) struct PlayWindowApp {
     /// The save screen's shared driver: block-grid cursor + the card read
     /// behind it. Lives in `engine-core` so this window and the browser play
     /// page step the same cursor and gate the same confirms.
-    pub(super) save_flow: legaia_engine_core::save_screen::SaveScreenFlow,
+    pub(super) save_flow: legaia_engine_menus::save_screen::SaveScreenFlow,
     /// User-editable settings (BGM / SFX volume, message speed, …). Wired
     /// to the Options screen's [`OptionsSession`] and persisted via
     /// the engine's options round-trip path.
@@ -893,16 +897,16 @@ pub(super) struct PlayWindowApp {
     /// The current scene's derived point lights (world space), rebuilt by
     /// `upload_assets` at scene load and staged into the renderer each
     /// field frame together with the camera's view-projection.
-    pub(super) scene_point_lights: Vec<legaia_engine_render::scene_lights::ScenePointLight>,
+    pub(super) scene_point_lights: Vec<legaia_render_kernels::scene_lighting::ScenePointLight>,
     /// The MAN scene-actor props' light sets (enhanced lighting), each in
     /// world space at its spawn anchor; placed at the actor's live position
     /// per frame by `scene_lighting::place_prop_lights`.
-    pub(super) scene_prop_lights: Vec<legaia_engine_render::scene_lighting::PropLights>,
+    pub(super) scene_prop_lights: Vec<legaia_render_kernels::scene_lighting::PropLights>,
     /// Mouse drag-orbit state: the last cursor X (window pixels) while the
     /// left button is held, `None` when not dragging. A horizontal drag in
     /// field free-roam rotates `session.camera.manual_orbit`, which both
     /// the follow camera's render yaw and the movement compass
-    /// ([`legaia_engine_core::camera::Camera::compass_azimuth_units`]) read
+    /// ([`legaia_engine_field::camera::Camera::compass_azimuth_units`]) read
     /// - so orbiting the view keeps "screen up walks away from the camera".
     pub(super) orbit_drag_last_x: Option<f64>,
     /// Mouse drag-orbit state: the last cursor Y, paired with
@@ -932,7 +936,7 @@ pub(super) struct PlayWindowApp {
     /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
     /// the cached player position the kernel decides from. Retail keeps them
     /// in overlay globals; every host owning a screen keeps its own copy.
-    pub(super) field_party_hud: legaia_engine_core::world_map_panel_host::FieldPartyHud,
+    pub(super) field_party_hud: legaia_engine_field::world_map_panel_host::FieldPartyHud,
     /// Scene name the HUD driver was last armed for, so a scene change takes
     /// retail's rearm arm instead of comparing against the previous scene's
     /// player coordinates.
@@ -950,7 +954,7 @@ pub(super) struct PlayWindowApp {
     /// captured at startup, so the boot-UI NEW GAME handler can re-enter the
     /// opening cutscene scene (`opdeene`) with the same arming the startup
     /// `enter_field_live` used.
-    pub(super) field_live_opts: crate::boot::FieldLiveOpts,
+    pub(super) field_live_opts: legaia_engine_session::boot::FieldLiveOpts,
     /// Extracted-root directory, retained so the in-flow cutscene driver can
     /// resolve a field-VM FMV trigger's `MV*.STR` file (mirrors the headless
     /// `play` loop's `extracted_root.join(rel)`). `None` in disc-only runs,
@@ -968,8 +972,8 @@ pub(super) struct PlayWindowApp {
     pub(super) cutscene: Option<WindowedCutscene>,
     /// What the movie in flight did to the score - the engine-side policy
     /// the browser page's FMV lane consults too
-    /// ([`legaia_engine_core::movie_audio::MovieScore`]).
-    pub(super) movie_score: legaia_engine_core::movie_audio::MovieScore,
+    /// ([`legaia_engine_system::movie::movie_audio::MovieScore`]).
+    pub(super) movie_score: legaia_engine_system::movie::movie_audio::MovieScore,
     /// Eases the in-engine cutscene camera between Camera Configure beats so
     /// the opening choreography blends instead of cutting, on the shared
     /// retail-display-frame clock (`frame_step::CutsceneGlide`, the browser
@@ -984,11 +988,11 @@ pub(super) struct PlayWindowApp {
     /// op `0x3F` or the overworld talk-to), ticked for its typewriter reveal,
     /// and dropped when the world clears the request (the world owns dismissal
     /// via the field VM / overworld handler). `None` when no box is up.
-    pub(super) active_dialog: Option<legaia_engine_core::dialog::OwnedDialogPanel>,
+    pub(super) active_dialog: Option<legaia_engine_dialog::dialog::OwnedDialogPanel>,
     /// Spell/seru display-name table, read once from the boot SCUS so the shop's
     /// Trade screens can label each offer ("Gimard (Vahn) -> Orb"). `None` on
     /// disc-free runs or before the first lookup.
-    pub(super) seru_names: Option<legaia_asset::spell_names::SpellNameTable>,
+    pub(super) seru_names: Option<legaia_game_tables::spell_names::SpellNameTable>,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -1001,12 +1005,12 @@ pub(super) enum BootUiState {
     /// Boot publisher logos (PROT 0895). Runs before the title screen.
     /// The atlas + per-logo rects live on [`PlayWindowApp`] so the
     /// renderer can sample one quad per frame.
-    PublisherLogos(legaia_engine_core::publisher_logos::PublisherLogosSession),
+    PublisherLogos(legaia_engine_menus::publisher_logos::PublisherLogosSession),
     /// Title screen is active. Pad input drives the
-    /// [`legaia_engine_core::title::TitleSession`].
-    Title(legaia_engine_core::title::TitleSession),
+    /// [`legaia_engine_menus::title::TitleSession`].
+    Title(legaia_engine_menus::title::TitleSession),
     /// Save-select panel is active.
-    SaveSelect(legaia_engine_core::save_select::SaveSelectSession),
+    SaveSelect(legaia_engine_menus::save_select::SaveSelectSession),
     /// Field (pause) menu is active. The menu session itself is hosted by
     /// the [`BootSession`]
     /// (`session.field_menu`, the retail CARD mode pair / `game_mode 0x17`;
@@ -1024,7 +1028,7 @@ pub(super) enum BootUiState {
     },
     /// Game-over panel is active after a party wipe.
     #[allow(dead_code)]
-    GameOver(legaia_engine_core::game_over::GameOverSession),
+    GameOver(legaia_engine_menus::game_over::GameOverSession),
 }
 
 /// The single world-space Y negation of the **field render frame**: field
@@ -1087,7 +1091,7 @@ pub(super) struct FieldNpcDraw {
 }
 
 /// The field env meshes' light-source row shading (see
-/// `PlayWindowApp::field_lit` and `legaia_engine_core::field_lit_mesh`).
+/// `PlayWindowApp::field_lit` and `legaia_engine_field::field_lit_mesh`).
 #[derive(Default)]
 pub(super) struct FieldLitMeshes {
     /// `meshes` index -> the processed CPU mesh and its lit vertices, for
@@ -1126,12 +1130,13 @@ pub(super) struct WaterAnim {
 #[derive(Default)]
 pub(crate) struct DrawCensusDiag {
     /// Parallel to `meshes` (shorter when a later append has no census).
-    pub(super) meshes: Vec<Option<legaia_engine_core::draw_census::MeshCensus>>,
+    pub(super) meshes: Vec<Option<legaia_engine_system::draw_census::MeshCensus>>,
     /// Parallel to `field_lit.meshes`.
-    pub(super) lit: Vec<legaia_engine_core::draw_census::MeshCensus>,
+    pub(super) lit: Vec<legaia_engine_system::draw_census::MeshCensus>,
     /// The full walk-ground mesh and the visible-tile crop of it.
-    pub(super) ground: Option<legaia_engine_core::draw_census::MeshCensus>,
-    pub(super) ground_crop: Option<legaia_engine_core::draw_census::MeshCensus>,
+    pub(super) ground: Option<legaia_engine_system::draw_census::MeshCensus>,
+    pub(super) ground_crop: Option<legaia_engine_system::draw_census::MeshCensus>,
     /// The VDF morph rebuilds, keyed like `field_morph_live`.
-    pub(super) morph: std::collections::HashMap<usize, legaia_engine_core::draw_census::MeshCensus>,
+    pub(super) morph:
+        std::collections::HashMap<usize, legaia_engine_system::draw_census::MeshCensus>,
 }

@@ -7,7 +7,7 @@ use super::*;
 /// (glyph `0x1c`), the selected rod/lure label, and the lures-remaining
 /// count. Retail reads `_DAT_80084458` / `_DAT_8008444c` / `_DAT_80084450`
 /// and the live inventory count of the paired lure item
-/// (`legaia_engine_core::fishing::lure_item_id`); here they are caller
+/// (`legaia_engine_fishing::fishing::lure_item_id`); here they are caller
 /// parameters.
 // PORT: FUN_801d13f0 (persistent HUD: best-catch + capped point rows, rod label, lure count)
 pub fn persistent_hud_draws(

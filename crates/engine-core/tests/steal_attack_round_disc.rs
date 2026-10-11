@@ -8,7 +8,7 @@
 //! clips installed so its knockdown really plays. The steal fires where
 //! retail fires it - the end of the slain monster's knockdown clip
 //! (`FUN_8004AD80` `0x8004B29C..0x8004B65C`, ported as
-//! `legaia_engine_core::battle_steal`) - and the test asserts the item lands
+//! `legaia_engine_battle::battle_steal`) - and the test asserts the item lands
 //! in the bag and the element-`0x5B` caption was up while the battle ran.
 //!
 //! The steal row's chance is raised to 100 so a single fight decides; the
@@ -20,11 +20,12 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::steal_table::{StealEntry, StealTable};
-use legaia_engine_core::monster_catalog::{
+use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, catalog_from_monster_archive,
 };
-use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_game_tables::steal_table::{StealEntry, StealTable};
 
 const SKELETON_ID: u16 = 13;
 
@@ -107,7 +108,7 @@ fn fight(inp: &Inputs, steal_bit: bool) -> Outcome {
     w.set_battle_defense(0, 40);
     w.set_steal_table(StealTable::from_entries(entries));
     w.battle.ui_strings.merge_scus(&inp.scus);
-    w.menu.text = Some(legaia_engine_core::pause_screens::MenuTextTables::from_scus(&inp.scus));
+    w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables::from_scus(&inp.scus));
 
     let catalog = catalog_from_monster_archive(&inp.archive, &[SKELETON_ID]);
     let mut table = FormationTable::new();
@@ -127,10 +128,11 @@ fn fight(inp: &Inputs, steal_bit: bool) -> Outcome {
     // ends - the frame the death commit runs on.
     let slot = usize::from(w.party.party_count);
     // Positional, holes kept - the install both hosts make.
-    let clips = legaia_asset::monster_archive::animations_by_entry(&inp.archive, SKELETON_ID)
-        .ok()
-        .flatten()
-        .expect("skeleton clips");
+    let clips =
+        legaia_actor_formats::monster_archive::animations_by_entry(&inp.archive, SKELETON_ID)
+            .ok()
+            .flatten()
+            .expect("skeleton clips");
     assert!(
         clips.iter().flatten().any(|c| c.action_id == 4),
         "the Skeleton carries a knockdown entry"
@@ -182,7 +184,7 @@ fn an_evil_god_icon_kill_steals_through_the_live_round() {
     let caption = with.caption.expect("the 0x5B caption was raised");
     // Head + item-name token + tail: the stolen item's own disc name sits
     // inside the line the executable's template frames.
-    let scus_name = legaia_engine_core::pause_screens::MenuTextTables::from_scus(&inp.scus)
+    let scus_name = legaia_engine_menus::pause_screens::MenuTextTables::from_scus(&inp.scus)
         .item_name(with.item)
         .map(str::to_string)
         .expect("the stolen item has a name on the disc");

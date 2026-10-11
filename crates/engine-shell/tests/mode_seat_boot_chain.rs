@@ -18,9 +18,10 @@
 //! convention. No Sony bytes are asserted: the assertions are mode indices
 //! and a CDNAME scene label.
 
-use legaia_engine_core::mode::{BOOT_MODE_CHAIN, GameMode};
-use legaia_engine_shell::boot::FieldLiveOpts;
-use legaia_engine_shell::{BootConfig, BootSession};
+use legaia_engine_mode::mode::{BOOT_MODE_CHAIN, GameMode};
+use legaia_engine_session::boot::BootConfig;
+use legaia_engine_session::boot::FieldLiveOpts;
+use legaia_engine_shell::BootSession;
 use legaia_parity::mode_trace_oracle::build_engine_mode_trace_field_live;
 
 /// The opening town - the scene the new-game template names.

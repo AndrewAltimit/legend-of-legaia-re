@@ -7,13 +7,13 @@
 //! `World` implements it, each method a forward to the field or method the
 //! camera used to read directly.
 
-pub use legaia_engine_field::camera::*;
+use legaia_engine_field::camera::*;
 
-use crate::field_events::FieldEvent;
 use crate::world::World;
+use legaia_engine_field::field_events::FieldEvent;
 
 impl CameraWorld for World {
-    fn scene_mode(&self) -> crate::mode::SceneMode {
+    fn scene_mode(&self) -> legaia_engine_mode::mode::SceneMode {
         self.mode
     }
 
@@ -57,7 +57,7 @@ impl CameraWorld for World {
         self.flags.story_flags
     }
 
-    fn camera_registers(&self) -> &crate::register_ramp::CameraRegisterFile {
+    fn camera_registers(&self) -> &legaia_engine_field::register_ramp::CameraRegisterFile {
         &self.camera.registers
     }
 
@@ -129,7 +129,8 @@ impl CameraWorld for World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::SceneMode;
+
+    use legaia_engine_mode::mode::SceneMode;
     use legaia_engine_vm::Position as ActorVmPosition;
 
     fn world_with_actor_at(slot: u8, x: i16, z: i16) -> World {
@@ -165,7 +166,7 @@ mod tests {
         let mut c = Camera::default();
         c.follow_slot = 0;
         // Walk +Z one frame (speed 8) then advance the camera.
-        w.set_pad(crate::input::PadButton::Up.mask());
+        w.set_pad(legaia_engine_system::input::PadButton::Up.mask());
         let _ = w.tick();
         c.tick(&w);
         assert_eq!(w.actors[0].move_state.world_z, 108);
@@ -377,7 +378,7 @@ mod tests {
         // Free-roam clears it with the rest of the scripted pose, so a rolled
         // cutscene cannot leave the field camera tilted.
         let field = World {
-            mode: crate::mode::SceneMode::Field,
+            mode: legaia_engine_mode::mode::SceneMode::Field,
             ..World::default()
         };
         c.reset_for_free_roam(&field);
@@ -434,7 +435,7 @@ mod tests {
     #[test]
     fn route_camera_load_splits_the_record_into_the_parameter_block() {
         let mut w = World::default();
-        let mut payload = vec![0u8; crate::field_regions::ZONE_RECORD_STRIDE];
+        let mut payload = vec![0u8; legaia_engine_field::field_regions::ZONE_RECORD_STRIDE];
         payload[5] = 0x1A; // mode 1, strength 0xA
         payload[6] = 0x21;
         payload[10..12].copy_from_slice(&(-160i16).to_le_bytes());
@@ -470,7 +471,7 @@ mod tests {
     /// the follow view.
     #[test]
     fn zone_camera_composes_from_terrain_and_snaps_on_arrival() {
-        use crate::field_regions::ZONE_RECORD_STRIDE;
+        use legaia_engine_field::field_regions::ZONE_RECORD_STRIDE;
         let mut w = World {
             mode: SceneMode::Field,
             ..World::default()
@@ -534,7 +535,7 @@ mod tests {
         assert_eq!(c2.zone.loaded_record, None);
         assert_eq!(
             c2.zone.config,
-            crate::camera_zone::CameraZoneConfig::ZONE_MISS
+            legaia_engine_field::camera_zone::CameraZoneConfig::ZONE_MISS
         );
         assert_eq!(c2.globals.angles()[0], 0x1B8);
         assert_eq!(c2.globals.angles()[1], 0);
@@ -548,7 +549,7 @@ mod tests {
     /// alone on a frame the player did not move.
     #[test]
     fn zone_camera_mode5_focus_eases_from_its_own_value_not_the_player() {
-        use crate::field_regions::ZONE_RECORD_STRIDE;
+        use legaia_engine_field::field_regions::ZONE_RECORD_STRIDE;
         let mut w = World {
             mode: SceneMode::Field,
             ..World::default()
@@ -599,7 +600,7 @@ mod tests {
     /// A whole-map zone record world, snapped in: the fixture for the ease's
     /// three gates.
     fn gated_zone_world() -> (World, Camera) {
-        use crate::field_regions::ZONE_RECORD_STRIDE;
+        use legaia_engine_field::field_regions::ZONE_RECORD_STRIDE;
         let mut w = World {
             mode: SceneMode::Field,
             ..World::default()
@@ -714,7 +715,7 @@ mod tests {
             assert_eq!(c.globals.angles()[0], 450, "held: no ease");
             let x = i32::from(w.actors[0].move_state.world_x);
             let z = i32::from(w.actors[0].move_state.world_z);
-            let clamped = crate::camera_zone::clamp_focus(
+            let clamped = legaia_engine_field::camera_zone::clamp_focus(
                 [-x, -z],
                 c.zone.config.mode_nibble(),
                 c.zone.attrs.kind != 0,
@@ -928,7 +929,8 @@ mod tests {
         assert!((c.manual_tilt - 0.1).abs() < 1e-6);
         assert!((c.manual_zoom - 1.5).abs() < 1e-6);
 
-        w.cutscene.timeline = Some(crate::cutscene_timeline::CutsceneTimeline::new(vec![0], 0));
+        w.cutscene.timeline =
+            Some(legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(vec![0], 0));
         assert!(w.cutscene_timeline_active());
         assert!(!c.follow_knobs_live(&w));
         assert!(!c.orbit_by(&w, 1.0));

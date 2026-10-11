@@ -1,6 +1,6 @@
 use super::*;
 use crate::scene::SceneEntry;
-use legaia_asset::categorize::Class;
+use legaia_disc_audit::categorize::Class;
 use std::sync::Arc;
 
 /// Synthetic 16bpp TIM at `(fb_x, fb_y)` (4 px × 1 row, no CLUT).

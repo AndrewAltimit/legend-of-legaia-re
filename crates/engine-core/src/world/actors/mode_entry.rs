@@ -4,6 +4,7 @@
 //! Split out of `actors.rs`; no logic change.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Resolve a battle/party ordinal (actor slot, HUD row, VRAM texture
@@ -126,7 +127,7 @@ impl World {
     /// `monster_count` monster slots, mirroring the layout
     /// `FUN_800520F0` produces (slots 0..2 = party, 3..7 = monsters; total
     /// caps at 8). Actors are seated at the retail stage seats
-    /// ([`crate::battle_seats`]): the party at negative Z facing the
+    /// ([`legaia_engine_battle::battle_seats`]): the party at negative Z facing the
     /// monsters at positive Z, both rows selected by combatant count
     /// exactly like the setup `FUN_800513F0`.
     ///
@@ -138,7 +139,7 @@ impl World {
     /// `battle-scene` subcommand.
     ///
     /// The battle-action state machine is seeded at
-    /// [`legaia_engine_vm::battle_action::ActionState::Begin`].
+    /// [`legaia_engine_battle_vm::battle_action::ActionState::Begin`].
     // PORT: FUN_800513F0 (battle setup: seat stamping from the SCUS tables)
     pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
@@ -160,7 +161,7 @@ impl World {
         let actor_count =
             ((self.party.party_count as usize) + (monster_count as usize)).min(MAX_ACTORS);
         for i in 0..(self.party.party_count as usize).min(actor_count) {
-            let s = crate::battle_seats::party_seat(self.party.party_count, i);
+            let s = legaia_engine_battle::battle_seats::party_seat(self.party.party_count, i);
             let actor = self.spawn_actor(i);
             actor.move_state.world_x = s.x;
             actor.move_state.world_y = s.y;
@@ -172,7 +173,7 @@ impl World {
             actor.battle.facing_angle = 0;
         }
         for i in (self.party.party_count as usize)..actor_count {
-            let s = crate::battle_seats::monster_seat(
+            let s = legaia_engine_battle::battle_seats::monster_seat(
                 monster_count,
                 i - self.party.party_count as usize,
                 false,
@@ -199,14 +200,17 @@ impl World {
         }
         // Reset the battle ctx and seed at Begin via the public byte API to
         // avoid pulling battle_action::ActionState into world.rs imports.
-        self.battle_ctx = vm::battle_action::BattleActionCtx::new();
-        self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+        self.battle_ctx = legaia_engine_battle_vm::battle_action::BattleActionCtx::new();
+        self.battle_ctx.action_state =
+            legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte();
         // Battle init's ambient seed (`0x80051C70..0x80051C84`): the floor,
         // which the per-frame ramp lifts to the settled `0x80` while no cast
         // holds `ctx[+0x243]` - the fight's floor fades in from dark.
-        self.battle_ctx.ambient_base = vm::battle_ground_grid::AMBIENT_BASE_FLOOR;
-        self.battle.ambient_stored =
-            vm::battle_ground_grid::ambient_base_rgb(vm::battle_ground_grid::AMBIENT_BASE_FLOOR);
+        self.battle_ctx.ambient_base =
+            legaia_engine_battle_vm::battle_ground_grid::AMBIENT_BASE_FLOOR;
+        self.battle.ambient_stored = legaia_engine_battle_vm::battle_ground_grid::ambient_base_rgb(
+            legaia_engine_battle_vm::battle_ground_grid::AMBIENT_BASE_FLOOR,
+        );
         // Battle init spawns the backdrop records fresh: `+0x78` starts at 0.
         self.battle.backdrop_cue = 0;
         self.battle.end = None;
@@ -288,7 +292,7 @@ impl World {
     /// Only fires from [`SceneMode::Field`] (the only mode that runs the
     /// field VM and so the only one that can set the trigger). The pending
     /// id is always drained; an id whose runtime FMV slot points at a
-    /// cut/missing path ([`crate::cutscene::fmv_index_to_str_filename`]
+    /// cut/missing path ([`legaia_engine_system::movie::cutscene::fmv_index_to_str_filename`]
     /// returns `None`) is a no-op transition - the field continues - which
     /// matches the engine's documented "treat a cut slot as a no-op" rule.
     pub(crate) fn maybe_enter_pending_cutscene(&mut self) {
@@ -298,7 +302,7 @@ impl World {
         if self.mode != SceneMode::Field {
             return;
         }
-        if crate::cutscene::fmv_index_to_str_filename(fmv_id).is_some() {
+        if legaia_engine_system::movie::cutscene::fmv_index_to_str_filename(fmv_id).is_some() {
             self.cutscene.return_mode = Some(self.mode);
             self.mode = SceneMode::Cutscene;
             self.cutscene.active_fmv = Some(fmv_id);
@@ -314,11 +318,11 @@ impl World {
 
     /// The retail `MV*.STR` path of the active cutscene FMV, or `None` when
     /// no STR FMV is active. Convenience over
-    /// [`crate::cutscene::fmv_index_to_str_filename`].
+    /// [`legaia_engine_system::movie::cutscene::fmv_index_to_str_filename`].
     pub fn active_fmv_str_filename(&self) -> Option<&'static str> {
         self.cutscene
             .active_fmv
-            .and_then(crate::cutscene::fmv_index_to_str_filename)
+            .and_then(legaia_engine_system::movie::cutscene::fmv_index_to_str_filename)
     }
 
     /// End the active STR-FMV cutscene and return to the scene mode that was

@@ -25,7 +25,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
-use legaia_mednafen::{SaveState, ScenarioManifest};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::ScenarioManifest;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -142,13 +143,13 @@ fn town01_entry_positions_match_retail_actor_list() {
             .field_man_payload(&host.index)
             .expect("man payload")
             .expect("man bytes");
-        let mf = legaia_asset::man_section::parse(&man).expect("man parse");
+        let mf = legaia_scene_formats::man_section::parse(&man).expect("man parse");
         mf.header.partition_counts[0].max(0) as u8
     };
 
     // Patrol-locality bound for placed-vs-placed: the retail walker roams its
     // authored local route (<= 6 tiles) around the seat the pre-run pins.
-    let locality = legaia_engine_core::man_field_scripts::NPC_ROUTE_LOCALITY;
+    let locality = legaia_engine_field::man_field_scripts::NPC_ROUTE_LOCALITY;
 
     let mut compared = 0;
     let mut parked_both = 0;
@@ -247,7 +248,7 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
         .field_man_payload(&host.index)
         .expect("man payload")
         .expect("town01 has a MAN");
-    let mf = legaia_asset::man_section::parse(&man).expect("man parse");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("man parse");
     let n0 = mf.header.partition_counts[0].max(0) as u8;
     assert_eq!(n0, 36, "town01 partition-0 record count (disc invariant)");
     // The beat's NPC target 0x46 resolves as placement `0x46 - N0` = 34.
@@ -302,7 +303,7 @@ fn town01_mei_walk_on_beat_places_mei_at_the_door() {
     let mut n = 0u32;
     while host.world.cutscene_timeline_active() && n < 20000 {
         let pad = if n.is_multiple_of(2) {
-            legaia_engine_core::input::PadButton::Cross.mask()
+            legaia_engine_system::input::PadButton::Cross.mask()
         } else {
             0
         };

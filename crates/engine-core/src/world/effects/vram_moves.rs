@@ -2,6 +2,7 @@
 //! and part scrolls, and the VRAM appliers.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 // --- scripted VRAM MoveImage stamps (field-VM 0x4C n6 sub-0x60) ------------
 
@@ -99,7 +100,7 @@ impl World {
     /// battle effect lists)
     pub(crate) fn queue_battle_part_scrolls(
         &mut self,
-        parts: &mut [crate::summon::SummonPartRuntime],
+        parts: &mut [legaia_engine_effects::summon::SummonPartRuntime],
     ) {
         if self.mode != SceneMode::Battle {
             return;

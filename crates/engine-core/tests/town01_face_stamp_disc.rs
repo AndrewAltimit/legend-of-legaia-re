@@ -18,12 +18,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{
-    partition_record_span, partition2_record_gates, scene_man_carriers,
-};
+use legaia_engine_core::man_field_scripts::scene_man_carriers;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::{ScriptVramMove, World};
-use legaia_engine_vm::field_disasm::{InsnInfo, LinearWalker, MenuCtrlKind};
+use legaia_engine_field::man_field_scripts::{partition_record_span, partition2_record_gates};
+use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker, MenuCtrlKind};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -62,7 +61,7 @@ fn town01_opening_record_face_stamps_pinned_and_stamp_lands_in_vram() {
     let carrier = carriers.first().expect("town01 MAN carrier");
     assert_eq!(carrier.entry_idx, 4, "town01 bundle MAN lives in PROT[4]");
     let man = &carrier.payload;
-    let man_file = legaia_asset::man_section::parse(man).expect("parse town01 MAN");
+    let man_file = legaia_scene_formats::man_section::parse(man).expect("parse town01 MAN");
 
     // The opening record P2[3] is C1-gated on story flag 0x225.
     let (c1, _c2) = partition2_record_gates(&man_file, man, 3).expect("P2[3] gates");

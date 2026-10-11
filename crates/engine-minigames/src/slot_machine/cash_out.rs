@@ -4,7 +4,7 @@ use super::*;
 
 // --- The cash-out submenu ----------------------------------------------------
 
-/// Retail packed pad bits (`_DAT_8007B874`, `legaia_engine_core::retail_pad`) the
+/// Retail packed pad bits (`_DAT_8007B874`, `legaia_engine_system::retail_pad`) the
 /// cash-out flow tests. The face/shoulder byte is the low byte, the
 /// d-pad/system byte the high one.
 pub mod menu_pad {

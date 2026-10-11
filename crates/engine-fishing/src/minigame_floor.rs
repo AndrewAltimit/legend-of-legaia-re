@@ -692,7 +692,7 @@ impl MarkerFloor {
     /// Advance every marker actor one frame.
     ///
     /// `pack_bias` is retail's `_DAT_8007B6F8`
-    /// ([`legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS`]) - added to the
+    /// ([`legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS`]) - added to the
     /// table value before it reaches the set-model primitive, so the staged
     /// value is a **global pool** index. A host indexing the scene's own mesh
     /// pack passes `0` and gets the unbiased index instead.
@@ -747,8 +747,8 @@ pub const POLAR_SHIFT: u32 = 12;
 // [`crate::fishing_actors::water_tile_class`]) closed with it, as that note
 // predicted they would.
 //
-// [`SIN_TABLE_VA`]: legaia_asset::minigame_slot_scene::SIN_TABLE_VA
-// [`COS_TABLE_VA`]: legaia_asset::minigame_slot_scene::COS_TABLE_VA
+// [`SIN_TABLE_VA`]: legaia_minigame_formats::minigame_slot_scene::SIN_TABLE_VA
+// [`COS_TABLE_VA`]: legaia_minigame_formats::minigame_slot_scene::COS_TABLE_VA
 /// PORT: FUN_801d7bb8 - the hub overlays' **polar offset** helper.
 ///
 /// One of the small shared routines in the band above `0x801D0018`: the dumps
@@ -811,11 +811,11 @@ pub fn polar_offset(
 /// [`SIN_TABLE_VA`] / [`COS_TABLE_VA`]. No engine boot path extracts SCUS
 /// rodata, so the entries are recomputed analytically with the retail table's
 /// truncate-toward-zero rounding - the same stand-in
-/// `legaia_asset::minigame_slot_scene` uses, and the disc is its oracle
+/// `legaia_minigame_formats::minigame_slot_scene` uses, and the disc is its oracle
 /// (`engine-core/tests/minigame_polar_trig_tables_disc.rs`).
 ///
-/// [`SIN_TABLE_VA`]: legaia_asset::minigame_slot_scene::SIN_TABLE_VA
-/// [`COS_TABLE_VA`]: legaia_asset::minigame_slot_scene::COS_TABLE_VA
+/// [`SIN_TABLE_VA`]: legaia_minigame_formats::minigame_slot_scene::SIN_TABLE_VA
+/// [`COS_TABLE_VA`]: legaia_minigame_formats::minigame_slot_scene::COS_TABLE_VA
 pub fn polar_tables() -> (&'static [i16], &'static [i16]) {
     use std::sync::OnceLock;
     static TABLES: OnceLock<(Vec<i16>, Vec<i16>)> = OnceLock::new();
@@ -823,10 +823,10 @@ pub fn polar_tables() -> (&'static [i16], &'static [i16]) {
         let n = POLAR_ANGLE_MASK as usize + 1;
         (
             (0..n)
-                .map(|i| legaia_asset::minigame_slot_scene::sin_4096(i as i32) as i16)
+                .map(|i| legaia_minigame_formats::minigame_slot_scene::sin_4096(i as i32) as i16)
                 .collect(),
             (0..n)
-                .map(|i| legaia_asset::minigame_slot_scene::cos_4096(i as i32) as i16)
+                .map(|i| legaia_minigame_formats::minigame_slot_scene::cos_4096(i as i32) as i16)
                 .collect(),
         )
     });
@@ -1053,7 +1053,7 @@ mod tests {
     fn the_pack_bias_reaches_the_staged_index_through_the_pool() {
         use crate::dance_marker::{MarkerActor, MarkerScript};
         let script = MarkerScript::from_rows([vec![(7, 4)], vec![], vec![], vec![]]);
-        let bias = legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
+        let bias = legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
         let mut floor = MarkerFloor::from_tiles(
             vec![MarkerTile {
                 cell: (0, 0),

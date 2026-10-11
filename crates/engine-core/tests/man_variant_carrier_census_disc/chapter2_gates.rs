@@ -22,7 +22,7 @@ use super::*;
 /// switch state, tested by inline actor scripts only - not progression gates.)
 #[test]
 fn chapter2_sebucus_gate_spine() {
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some(index) = open_index() else { return };
     let gates = |scene_name: &str, rec: usize| -> (Vec<u16>, Vec<u16>) {
         let scene = Scene::load(&index, scene_name).expect("load");
@@ -30,7 +30,7 @@ fn chapter2_sebucus_gate_spine() {
             .field_man_payload(&index)
             .expect("payload")
             .expect("MAN");
-        let mf = legaia_asset::man_section::parse(&man).expect("parse");
+        let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
         partition2_record_gates(&mf, &man, rec).expect("gates")
     };
 
@@ -77,7 +77,7 @@ fn chapter2_sebucus_gate_spine() {
 /// - `taiku2` is a single-record sub-room variant: no gate family.
 #[test]
 fn chapter2_dungeon_gate_families() {
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some(index) = open_index() else { return };
     let gates = |scene_name: &str, rec: usize| -> (Vec<u16>, Vec<u16>) {
         let scene = Scene::load(&index, scene_name).expect("load");
@@ -85,7 +85,7 @@ fn chapter2_dungeon_gate_families() {
             .field_man_payload(&index)
             .expect("payload")
             .expect("MAN");
-        let mf = legaia_asset::man_section::parse(&man).expect("parse");
+        let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
         partition2_record_gates(&mf, &man, rec).expect("gates")
     };
 
@@ -137,8 +137,8 @@ fn chapter2_dungeon_gate_families() {
 ///   is a shared taiku/station area-progress flag. Poll never walked them.
 #[test]
 fn chapter2_balden_station_gate_families() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
+    use legaia_scene_formats::man_section::parse as parse_man;
     let Some(index) = open_index() else { return };
     let all_gates = |scene_name: &str| -> Vec<(Vec<u16>, Vec<u16>)> {
         let scene = Scene::load(&index, scene_name).expect("load");
@@ -199,8 +199,8 @@ fn chapter2_balden_station_gate_families() {
 ///   (`P2[3]`/`P2[4]`), `0x3BD` (`P2[6]`/`P2[7]`).
 #[test]
 fn chapter2_ropeway_jiji_gate_families() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
+    use legaia_scene_formats::man_section::parse as parse_man;
     let Some(index) = open_index() else { return };
     let gates = |scene_name: &str, rec: usize| -> (Vec<u16>, Vec<u16>) {
         let scene = Scene::load(&index, scene_name).expect("load");
@@ -258,8 +258,8 @@ fn chapter2_ropeway_jiji_gate_families() {
 /// - **stone** is trivial: a single `0x590` one-shot (`P2[6]`).
 #[test]
 fn chapter2_dohaty_retock_stone_gate_families() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
+    use legaia_scene_formats::man_section::parse as parse_man;
     let Some(index) = open_index() else { return };
     let all_gates = |scene_name: &str| -> Vec<(Vec<u16>, Vec<u16>)> {
         let scene = Scene::load(&index, scene_name).expect("load");
@@ -343,8 +343,8 @@ fn chapter2_dohaty_retock_stone_gate_families() {
 /// not the hub - the hub just mirrors two arc-completions.
 #[test]
 fn chapter2_map02_hub_gate_family() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
+    use legaia_scene_formats::man_section::parse as parse_man;
     let Some(index) = open_index() else { return };
     let scene = Scene::load(&index, "map02").expect("load map02");
     let man = scene
@@ -397,8 +397,8 @@ fn chapter2_map02_hub_gate_family() {
 /// `son`/`deroa` - none of them "jankeria", which resolves to no CDNAME scene.)
 #[test]
 fn nilboa_nivora_ravine_gate_family() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
+    use legaia_scene_formats::man_section::parse as parse_man;
     let Some(index) = open_index() else { return };
     let all_gates = |scene_name: &str| -> Vec<(Vec<u16>, Vec<u16>)> {
         let scene = Scene::load(&index, scene_name).expect("load");
@@ -453,8 +453,8 @@ fn nilboa_nivora_ravine_gate_family() {
 ///   cluster (`P2[2]` C2=`[0x41B,0x41C,0x436]`); routes to `korb2`/`kor`.
 #[test]
 fn map03_karisto_region_gate_families() {
-    use legaia_asset::man_section::{ManFile, parse as parse_man};
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
+    use legaia_scene_formats::man_section::{ManFile, parse as parse_man};
     let Some(index) = open_index() else { return };
     let payload = |scene_name: &str| -> Option<(ManFile, Vec<u8>)> {
         let scene = Scene::load(&index, scene_name).ok()?;

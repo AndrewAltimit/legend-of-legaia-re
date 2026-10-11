@@ -15,3 +15,5 @@ legaia-code-hooks.workspace = true
 legaia-disc-patch.workspace = true
 legaia-lzs.workspace = true
 legaia-mes.workspace = true
+legaia-game-tables.workspace = true
+legaia-scene-formats.workspace = true

@@ -95,13 +95,13 @@ impl MeshView {
 pub(crate) fn display_for_prot_entry(
     name: &str,
     bytes: &[u8],
-    backdrop_second_copy: Option<legaia_asset::battle_backdrop::SecondCopy>,
+    backdrop_second_copy: Option<legaia_scene_formats::battle_backdrop::SecondCopy>,
 ) -> Option<Display> {
-    let report = legaia_asset::categorize::classify(bytes);
+    let report = legaia_disc_audit::categorize::classify(bytes);
     let title = format!("{}  ({}, {} bytes)", name, report.class.name(), bytes.len());
 
     // 1. TIM passthrough (first u32 == 0x00000010).
-    if report.class == legaia_asset::categorize::Class::TimPassthrough
+    if report.class == legaia_disc_audit::categorize::Class::TimPassthrough
         && let Ok((rgba, w, h)) = load_tim(bytes, 0)
     {
         return Some(Display {
@@ -115,7 +115,7 @@ pub(crate) fn display_for_prot_entry(
     }
 
     // 2. Standalone TIM-pack: take the first item.
-    if report.class == legaia_asset::categorize::Class::TimPack {
+    if report.class == legaia_disc_audit::categorize::Class::TimPack {
         let items = legaia_prot::timpack::unpack(bytes);
         for item in &items {
             if let Ok((rgba, w, h)) = load_tim(item, 0) {
@@ -133,8 +133,8 @@ pub(crate) fn display_for_prot_entry(
 
     // 3. DATA_FIELD streaming: walk chunks, find a TIM_LIST chunk with a
     // first sub-TIM that decodes.
-    if report.class == legaia_asset::categorize::Class::DataFieldStreaming
-        && let Ok(stream) = legaia_asset::parse_streaming(bytes, 4096)
+    if report.class == legaia_disc_audit::categorize::Class::DataFieldStreaming
+        && let Ok(stream) = legaia_container_formats::parse_streaming(bytes, 4096)
     {
         for chunk in &stream.chunks {
             if chunk.type_byte != 0x01 {
@@ -146,7 +146,7 @@ pub(crate) fn display_for_prot_entry(
                 continue;
             }
             let pack_data = &bytes[data_start..data_end];
-            let Ok(items) = legaia_asset::pack::extract_pack(pack_data) else {
+            let Ok(items) = legaia_container_formats::pack::extract_pack(pack_data) else {
                 continue;
             };
             for item in &items {
@@ -174,12 +174,12 @@ pub(crate) fn display_for_prot_entry(
     // mesh under a per-stage transform that closes the shell. Drawing the
     // raw file instead shows a half bowl with a stray prop in it, which has
     // repeatedly been misread as a broken parse. See
-    // `legaia_asset::battle_backdrop`.
-    if report.class == legaia_asset::categorize::Class::SceneTmdStream
-        && let Some(s) = legaia_asset::scene_tmd_stream::detect(bytes)
+    // `legaia_scene_formats::battle_backdrop`.
+    if report.class == legaia_disc_audit::categorize::Class::SceneTmdStream
+        && let Some(s) = legaia_scene_formats::scene_tmd_stream::detect(bytes)
         && let Ok(tmd) = legaia_tmd::parse(&bytes[s.tmd_range()])
     {
-        use legaia_asset::battle_backdrop as backdrop;
+        use legaia_scene_formats::battle_backdrop as backdrop;
         let drawn = backdrop::drawn_objects_tmd(&tmd);
         let mut mesh = legaia_tmd::mesh::tmd_to_mesh(&drawn, &bytes[s.tmd_range()]);
         let second = backdrop_second_copy.unwrap_or(backdrop::SecondCopy::HalfTurn);
@@ -196,7 +196,7 @@ pub(crate) fn display_for_prot_entry(
         mesh.positions.extend_from_slice(&grid.positions);
         mesh.indices.extend(grid.indices.iter().map(|i| i + base));
         if !mesh.indices.is_empty() {
-            let shape = legaia_asset::scene_tmd_stream::shell_shape(&tmd);
+            let shape = legaia_scene_formats::scene_tmd_stream::shell_shape(&tmd);
             let placement = format!(
                 " - {}",
                 backdrop::describe_placement(shape.as_ref(), backdrop_second_copy)
@@ -230,8 +230,8 @@ pub(crate) fn display_for_prot_entry(
     // 5. Scene-VAB-prefixed stream: leading VAB at offset 4 (218 PROT
     // entries - the dominant distributed-VAB carrier). Play sample 0 of
     // the embedded bank.
-    if report.class == legaia_asset::categorize::Class::SceneVabStream
-        && let Some(s) = legaia_asset::scene_vab_stream::detect(bytes)
+    if report.class == legaia_disc_audit::categorize::Class::SceneVabStream
+        && let Some(s) = legaia_container_formats::scene_vab_stream::detect(bytes)
         && let Ok(pcm) = decode_vab_sample(bytes, s.vab_range().start, 0)
     {
         return Some(Display {

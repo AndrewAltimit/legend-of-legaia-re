@@ -262,7 +262,7 @@ fn mvmva(m: &[[i32; 3]; 3], v: [i32; 3]) -> [i32; 3] {
 /// each new column is one `MVMVA` of the current matrix against that column
 /// of the axis rotation, read out of the retail sine table.
 fn rotate(m: &mut [[i32; 3]; 3], axis: usize, angle: i32) {
-    use legaia_asset::minigame_slot_scene::{cos_4096, sin_4096};
+    use legaia_minigame_formats::minigame_slot_scene::{cos_4096, sin_4096};
     let a = angle & 0xFFF;
     let (s, c) = (sin_4096(a), cos_4096(a));
     let one = 0x1000;

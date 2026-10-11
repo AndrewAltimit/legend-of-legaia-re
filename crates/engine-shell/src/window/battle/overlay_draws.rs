@@ -17,18 +17,17 @@ impl PlayWindowApp {
     ) -> Vec<TextDraw> {
         if let Some(defeat) = self.session.host.world.battle_defeat_banner() {
             let windows =
-                legaia_engine_render::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y);
+                legaia_engine_ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y);
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-            let mut draws =
-                legaia_engine_render::battle_result_line_draws_for(&self.font, &windows);
-            legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);
+            let mut draws = legaia_engine_ui::battle_result_line_draws_for(&self.font, &windows);
+            legaia_engine_ui::scale_stage_text_draws(&mut draws, origin, scale);
             return draws;
         }
         let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
         };
         let leader = self.session.host.world.battle_spoils_leader();
-        let view = legaia_engine_render::BattleSpoilsView {
+        let view = legaia_engine_ui::BattleSpoilsView {
             xp: banner.xp,
             gold: banner.gold,
             level_ups: &banner.level_ups,
@@ -37,10 +36,10 @@ impl PlayWindowApp {
             subject: banner.subject,
             slide: banner.slide,
         };
-        let windows = legaia_engine_render::battle_spoils_windows(&view);
+        let windows = legaia_engine_ui::battle_spoils_windows(&view);
         let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-        let mut draws = legaia_engine_render::battle_spoils_draws_for(&self.font, &view, &windows);
-        legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);
+        let mut draws = legaia_engine_ui::battle_spoils_draws_for(&self.font, &view, &windows);
+        legaia_engine_ui::scale_stage_text_draws(&mut draws, origin, scale);
         draws
     }
 
@@ -51,28 +50,25 @@ impl PlayWindowApp {
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
+    ) -> Vec<legaia_engine_ui::SpriteDraw> {
         let Some(rects) = self.save_menu.as_ref().map(|a| &a.rects) else {
             return Vec::new();
         };
         // The loss window (screen element `0x42`) shares the report frame.
         if let Some(defeat) = self.session.host.world.battle_defeat_banner() {
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-            return legaia_engine_render::battle_defeat_windows(
-                defeat.line.as_deref(),
-                defeat.slide_y,
-            )
-            .iter()
-            .flat_map(|w| {
-                legaia_engine_render::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
-            })
-            .collect();
+            return legaia_engine_ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y)
+                .iter()
+                .flat_map(|w| {
+                    legaia_engine_ui::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
+                })
+                .collect();
         }
         let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
         };
         let leader = self.session.host.world.battle_spoils_leader();
-        let view = legaia_engine_render::BattleSpoilsView {
+        let view = legaia_engine_ui::BattleSpoilsView {
             xp: banner.xp,
             gold: banner.gold,
             level_ups: &banner.level_ups,
@@ -82,10 +78,10 @@ impl PlayWindowApp {
             slide: banner.slide,
         };
         let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-        legaia_engine_render::battle_spoils_windows(&view)
+        legaia_engine_ui::battle_spoils_windows(&view)
             .iter()
             .flat_map(|w| {
-                legaia_engine_render::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
+                legaia_engine_ui::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
             })
             .collect()
     }
@@ -157,9 +153,9 @@ impl PlayWindowApp {
             let mut draws = text_draws_for(
                 &self.font.layout_ascii("*"),
                 (i.x, i.y),
-                legaia_engine_render::MENU_TEXT_GOLD,
+                legaia_engine_ui::MENU_TEXT_GOLD,
             );
-            legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);
+            legaia_engine_ui::scale_stage_text_draws(&mut draws, origin, scale);
             out.extend(draws);
         }
         out

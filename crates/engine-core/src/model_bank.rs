@@ -51,7 +51,7 @@
 //! for the per-character equipment bytes (`0x8001EC54`). Naming that slot is
 //! the §0 pack's order, not the compare: `0xF0` Vahn,
 //! `0xF1` Noa, `0xF2` Gala and `0xF3` / `0xF4` the two auxiliary slots
-//! ([`legaia_asset::character_pack`]). The field overlay's own MAIN INIT binds
+//! ([`legaia_actor_formats::character_pack`]). The field overlay's own MAIN INIT binds
 //! the player actor the same way (`lhu v0,-0x47dc(v0)` into `actor+0x64` at
 //! `0x801D6F88..0x801D6F90`), which is the cross-check that `0x8007B824` is
 //! the player bank's base and not a scene quantity.
@@ -84,7 +84,7 @@
 //! REF: FUN_80026B4C, FUN_8001E890, FUN_8001E1B4, FUN_8001F05C, FUN_80020F88,
 //! REF: FUN_8003A1E4, FUN_80038158
 
-use legaia_asset::AssetType;
+use legaia_container_formats::AssetType;
 
 use crate::scene::Scene;
 use crate::scene_bundle::find_bundle;
@@ -97,8 +97,8 @@ use crate::scene_bundle::find_bundle;
 pub const PLAYER_BANK_BASE: u16 = 0;
 
 /// Members of the PROT 0874 §0 player pack - the `count` word the pack opens
-/// with, and [`legaia_asset::character_pack::SLOT_COUNT`].
-pub const PLAYER_BANK_LEN: u16 = legaia_asset::character_pack::SLOT_COUNT as u16;
+/// with, and [`legaia_actor_formats::character_pack::SLOT_COUNT`].
+pub const PLAYER_BANK_LEN: u16 = legaia_actor_formats::character_pack::SLOT_COUNT as u16;
 
 /// `*(u16*)0x8007B6F8` - the first pool id the current scene's own models
 /// occupy. `FUN_8001E890` computes it as `player_pack_count + 0x8007B824`
@@ -213,7 +213,7 @@ pub enum ModelSource {
     /// bundle detector does not accept - the MAN-less count-`5` table a
     /// v12-family scene such as `balden2` carries in its `lzs_container`
     /// entry, read with the retail walk
-    /// ([`legaia_asset::scene_asset_table::descriptor_bundle_walk`]).
+    /// ([`legaia_scene_formats::scene_asset_table::descriptor_bundle_walk`]).
     WalkedPack {
         entry_idx: u32,
         descriptor: usize,
@@ -258,7 +258,8 @@ impl SceneModelBank {
                         let Ok(decoded) = legaia_lzs::decompress(body, d.size as usize) else {
                             continue;
                         };
-                        let Ok(entries) = legaia_asset::pack::parse_pack(&decoded) else {
+                        let Ok(entries) = legaia_container_formats::pack::parse_pack(&decoded)
+                        else {
                             continue;
                         };
                         for member in 0..entries.len() {
@@ -285,11 +286,11 @@ impl SceneModelBank {
             // walks it with no count constraint. Read it the same way.
             let mut walked = None;
             for entry in &scene.entries {
-                if entry.class != legaia_asset::categorize::Class::LzsContainer {
+                if entry.class != legaia_disc_audit::categorize::Class::LzsContainer {
                     continue;
                 }
                 let Some(descs) =
-                    legaia_asset::scene_asset_table::descriptor_bundle_walk(&entry.bytes)
+                    legaia_scene_formats::scene_asset_table::descriptor_bundle_walk(&entry.bytes)
                 else {
                     continue;
                 };
@@ -323,11 +324,13 @@ impl SceneModelBank {
             }
             if !matches!(
                 entry.class,
-                legaia_asset::categorize::Class::DataFieldStreaming
+                legaia_disc_audit::categorize::Class::DataFieldStreaming
             ) {
                 continue;
             }
-            let Ok(report) = legaia_asset::parse_streaming(&entry.bytes, MAX_STREAM_CHUNKS) else {
+            let Ok(report) =
+                legaia_container_formats::parse_streaming(&entry.bytes, MAX_STREAM_CHUNKS)
+            else {
                 continue;
             };
             for chunk in &report.chunks {
@@ -338,7 +341,7 @@ impl SceneModelBank {
                         let Some(body) = entry.bytes.get(data..end) else {
                             continue;
                         };
-                        let Ok(entries) = legaia_asset::pack::parse_pack(body) else {
+                        let Ok(entries) = legaia_container_formats::pack::parse_pack(body) else {
                             continue;
                         };
                         for member in 0..entries.len() {
@@ -388,7 +391,7 @@ impl SceneModelBank {
     ///
     /// Returns `None` for the [`ModelBank::Player`] arm: those five meshes
     /// come from PROT 0874, which is not one of this scene's entries.
-    /// [`legaia_asset::character_pack`] is that half.
+    /// [`legaia_actor_formats::character_pack`] is that half.
     pub fn source_for_model_id(&self, id: i16) -> Option<ModelSource> {
         let r = resolve_model_id(id);
         match r.bank {
@@ -409,7 +412,7 @@ impl SceneModelBank {
                 let start = bundle.table_offset().saturating_add(d.data_offset as usize);
                 let decoded =
                     legaia_lzs::decompress(bundle.bytes().get(start..)?, d.size as usize).ok()?;
-                let entries = legaia_asset::pack::parse_pack(&decoded).ok()?;
+                let entries = legaia_container_formats::pack::parse_pack(&decoded).ok()?;
                 let e = entries.get(member)?;
                 decoded
                     .get(e.byte_offset..e.byte_offset + e.size)
@@ -429,7 +432,7 @@ impl SceneModelBank {
                 let entry = scene.entries.iter().find(|e| e.idx == entry_idx)?;
                 let (data, size) = stream_chunk_body(&entry.bytes, chunk_header)?;
                 let body = entry.bytes.get(data..data + size)?;
-                let entries = legaia_asset::pack::parse_pack(body).ok()?;
+                let entries = legaia_container_formats::pack::parse_pack(body).ok()?;
                 let e = entries.get(member)?;
                 body.get(e.byte_offset..e.byte_offset + e.size)
                     .map(<[u8]>::to_vec)
@@ -455,11 +458,11 @@ impl SceneModelBank {
 /// `(decoded payload, member spans)`.
 fn walked_pack(
     entry: &[u8],
-    d: &legaia_asset::scene_asset_table::DescriptorRecord,
+    d: &legaia_scene_formats::scene_asset_table::DescriptorRecord,
 ) -> Option<Vec<(usize, usize)>> {
     let decoded =
         legaia_lzs::decompress(entry.get(d.data_offset as usize..)?, d.size as usize).ok()?;
-    let entries = legaia_asset::pack::parse_pack(&decoded).ok()?;
+    let entries = legaia_container_formats::pack::parse_pack(&decoded).ok()?;
     Some(entries.iter().map(|e| (e.byte_offset, e.size)).collect())
 }
 
@@ -471,11 +474,11 @@ fn walked_member(
     member: usize,
 ) -> Option<Vec<u8>> {
     let entry = scene.entries.iter().find(|e| e.idx == entry_idx)?;
-    let descs = legaia_asset::scene_asset_table::descriptor_bundle_walk(&entry.bytes)?;
+    let descs = legaia_scene_formats::scene_asset_table::descriptor_bundle_walk(&entry.bytes)?;
     let d = descs.get(descriptor)?;
     let decoded =
         legaia_lzs::decompress(entry.bytes.get(d.data_offset as usize..)?, d.size as usize).ok()?;
-    let entries = legaia_asset::pack::parse_pack(&decoded).ok()?;
+    let entries = legaia_container_formats::pack::parse_pack(&decoded).ok()?;
     let e = entries.get(member)?;
     decoded
         .get(e.byte_offset..e.byte_offset + e.size)
@@ -493,7 +496,7 @@ impl SceneModelBank {
             std::collections::HashMap::new();
         let bundle = find_bundle(scene);
         let member = |body: &[u8], m: usize| -> Option<Vec<u8>> {
-            let entries = legaia_asset::pack::parse_pack(body).ok()?;
+            let entries = legaia_container_formats::pack::parse_pack(body).ok()?;
             let e = entries.get(m)?;
             body.get(e.byte_offset..e.byte_offset + e.size)
                 .map(<[u8]>::to_vec)
@@ -536,7 +539,9 @@ impl SceneModelBank {
                     if let std::collections::hash_map::Entry::Vacant(slot) = packs.entry(key) {
                         let entry = scene.entries.iter().find(|e| e.idx == entry_idx)?;
                         let descs =
-                            legaia_asset::scene_asset_table::descriptor_bundle_walk(&entry.bytes)?;
+                            legaia_scene_formats::scene_asset_table::descriptor_bundle_walk(
+                                &entry.bytes,
+                            )?;
                         let d = descs.get(descriptor)?;
                         let decoded = legaia_lzs::decompress(
                             entry.bytes.get(d.data_offset as usize..)?,

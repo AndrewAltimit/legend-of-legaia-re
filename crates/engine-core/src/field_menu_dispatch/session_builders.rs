@@ -29,7 +29,7 @@ pub(super) fn build_spell_session(world: &World, catalog: &SpellCatalog) -> Spel
                 // keyed by the roster record, not by battle ordinal (the
                 // `character_ability_bits` mirror is ordinal-indexed and
                 // names a different member once `active_party` reorders).
-                ability_bits: crate::spells::record_ability_word(member),
+                ability_bits: legaia_engine_battle::spells::record_ability_word(member),
                 // Retail resolves the Ra-Seru slot through the
                 // per-character offset table at 0x8007B424; the engine's
                 // roster always carries the Ra-Seru equipped, so the
@@ -202,7 +202,7 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
 ///
 /// A faithful walk of `FUN_80030628` case `0x19`
 /// (`0x80031870..0x800318dc`) over the disc placement table
-/// ([`legaia_asset::worldmap_menu`], installed by
+/// ([`legaia_game_tables::worldmap_menu`], installed by
 /// [`World::install_menu_text`]):
 ///
 /// - records run to the `name_idx == 0xFF` terminator (the parser already
@@ -221,7 +221,9 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
 /// opens an empty list rather than an invented one.
 ///
 /// PORT: FUN_80030628 (case 0x19: the landmark-list build)
-pub fn warp_destinations(world: &World) -> Vec<crate::pause_screens::WarpDestination> {
+pub fn warp_destinations(
+    world: &World,
+) -> Vec<legaia_engine_menus::pause_screens::WarpDestination> {
     let Some(menu) = world.menu.worldmap_menu.as_ref() else {
         return Vec::new();
     };
@@ -235,7 +237,7 @@ pub fn warp_destinations(world: &World) -> Vec<crate::pause_screens::WarpDestina
             continue;
         }
         last_accepted = Some(p.name_idx);
-        out.push(crate::pause_screens::WarpDestination {
+        out.push(legaia_engine_menus::pause_screens::WarpDestination {
             record_index: p.index,
             name: menu
                 .names
@@ -265,7 +267,8 @@ pub(super) fn build_equip_session(
             .get(slot as usize)
             .map(|c| {
                 let mut r = stat_record_from_character(c);
-                r.equip = crate::equip_session::engine_equip_from_record(r.equip, slot);
+                r.equip =
+                    legaia_engine_menus::equip_session::engine_equip_from_record(r.equip, slot);
                 r
             })
             .unwrap_or_default()
@@ -294,7 +297,7 @@ pub(super) fn build_equip_session(
     // builder, so the screens cannot disagree.
     match world.tables.equip_stats.as_ref() {
         Some(stats) => {
-            let mut info = crate::equipment::DiscEquipInfo::from_disc(stats);
+            let mut info = legaia_engine_menus::equipment::DiscEquipInfo::from_disc(stats);
             if let Some(effects) = world.tables.item_effects.as_ref() {
                 info.install_goods(effects);
             }
@@ -309,7 +312,7 @@ pub(super) fn build_equip_session(
 ///
 /// The rows are the character's own spell list in **record order** - the
 /// same `+0x13D` / `+0x161` pair the Magic screen lists and
-/// [`crate::save_subscreen::sub15_swap_rows`] exchanges - so a swap made on
+/// [`legaia_engine_menus::save_subscreen::sub15_swap_rows`] exchanges - so a swap made on
 /// the page is a swap on the Magic screen.
 pub(super) fn status_spell_rows(world: &World, catalog: &SpellCatalog) -> Vec<Vec<ListOrderRow>> {
     world
@@ -338,7 +341,7 @@ pub(super) fn status_spell_rows(world: &World, catalog: &SpellCatalog) -> Vec<Ve
 ///
 /// The step is the spell list's running twin, which is the one step of the
 /// three that carries the swap arm
-/// ([`crate::save_subscreen::sub15_list_source`]).
+/// ([`legaia_engine_menus::save_subscreen::sub15_list_source`]).
 pub(super) fn open_status_list_order(session: &StatusScreenSession) -> Option<ListOrderSession> {
     let slot = session.current().map(|s| s.slot)?;
     let rows = session.spell_rows_for_cursor().to_vec();

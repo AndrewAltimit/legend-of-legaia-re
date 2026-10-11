@@ -2,7 +2,7 @@
 //!
 //! The seeder's twelve words (`legaia_engine_core::scus_leaf_kernels::
 //! BOOT_OFFSET_TABLE`, installed at `0x800917B0`) and the audio side's
-//! `legaia_asset::sfx_table::spu_base_for_slot` are two transcriptions of one
+//! `legaia_game_tables::sfx_table::spu_base_for_slot` are two transcriptions of one
 //! retail table, reached from opposite ends: the seeder writes it, and
 //! `FUN_8002630C` reads `table[slot]` out of it to hand `SsVabOpenHead`.
 //!
@@ -13,10 +13,10 @@
 //!
 //! Disc-free - both sides are code literals.
 
-use legaia_asset::sfx_table::spu_base_for_slot;
 use legaia_engine_core::scus_leaf_kernels::{
     BOOT_OFFSET_TABLE, BOOT_OFFSET_TABLE_UNWRITTEN, seed_boot_offset_table,
 };
+use legaia_game_tables::sfx_table::spu_base_for_slot;
 
 /// Every slot the seeder writes is the base the VAB-open path reads for that
 /// slot, and the one slot it skips is the one with no base.

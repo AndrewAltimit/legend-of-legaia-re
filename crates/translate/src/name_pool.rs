@@ -31,7 +31,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use legaia_asset::item_names;
+use legaia_game_tables::item_names;
 
 use super::export::{NameRefs, name_table_refs};
 

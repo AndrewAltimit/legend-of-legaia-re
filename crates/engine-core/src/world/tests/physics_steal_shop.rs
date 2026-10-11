@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 // ------------------------------------------------------------------
 // tick_actor_physics + MoveBufferHost wiring
@@ -178,7 +179,7 @@ fn world_tick_runs_physics_pass_on_the_actor_game_tick() {
 
 #[test]
 fn apply_steal_grants_item_on_hit_and_respects_non_stealable() {
-    use legaia_asset::steal_table::{StealEntry, StealTable};
+    use legaia_game_tables::steal_table::{StealEntry, StealTable};
     // ids: 0 sentinel, 1 = 30%/0x7e, 2 = 0% (no steal), 3 = 100%/0x8a.
     let table = StealTable::from_entries(vec![
         StealEntry {
@@ -228,8 +229,8 @@ fn apply_steal_grants_item_on_hit_and_respects_non_stealable() {
 /// `0x800422F0..0x800422FC`), which caps the merged count.
 #[test]
 fn a_grant_onto_a_full_stack_stays_at_99() {
-    use legaia_asset::steal_table::{StealEntry, StealTable};
     use legaia_engine_minigames::prize_exchange::RedeemBag;
+    use legaia_game_tables::steal_table::{StealEntry, StealTable};
     let table = StealTable::from_entries(vec![
         StealEntry {
             chance_pct: 0,
@@ -270,13 +271,14 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
     let mut prices = [0u16; 256];
     prices[0x22] = 50;
     prices[0x34] = 120;
-    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data =
+        Some(legaia_engine_menus::shop_catalog::ShopItemData::from_prices(prices));
     // A two-id record is all tail: retail's builder offers it only to a party
     // holding the Platinum Card (`FUN_80042F4C(0xFF)`), so the party gets one.
     *world
         .party
         .inventory
-        .entry(crate::menu_list_rows::SHOP_TAIL_CARD_ID)
+        .entry(legaia_engine_menus::menu_list_rows::SHOP_TAIL_CARD_ID)
         .or_insert(0) = 1;
 
     let code = shop_op49_script();
@@ -396,7 +398,7 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
 
     // The walk SM fades the board in before it takes input.
     world.set_pad(0);
-    while world.board.sm == crate::tile_board::sm::FADE_IN {
+    while world.board.sm == legaia_engine_minigames::tile_board::sm::FADE_IN {
         let _ = world.tick();
     }
     // Plant an event cell on the start cell: the walk-in's arrival pass
@@ -404,7 +406,7 @@ fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
     {
         let b = world.board.grid.as_mut().unwrap();
         let idx = b.player_row as usize * b.width as usize + b.player_col as usize;
-        b.cells[idx] = crate::tile_board::CELL_EVENT_FIRST;
+        b.cells[idx] = legaia_engine_minigames::tile_board::CELL_EVENT_FIRST;
         let _ = world.tick();
     }
     // The exit runs its fade, park and teardown before the board goes.
@@ -443,7 +445,7 @@ fn tile_board_animated_cell_cycles_on_arrival() {
     // via a completed interpolation.
     {
         let b = w.board.grid.as_mut().unwrap();
-        b.cells[0] = crate::tile_board::CELL_ANIM_LAST; // 0xE wraps to 0xB
+        b.cells[0] = legaia_engine_minigames::tile_board::CELL_ANIM_LAST; // 0xE wraps to 0xB
         let (tx, tz) = b.player_world();
         w.board.target = Some((tx, tz));
     }
@@ -451,7 +453,7 @@ fn tile_board_animated_cell_cycles_on_arrival() {
     let _ = w.tick();
     assert_eq!(
         w.board.grid.as_ref().unwrap().cells[0],
-        crate::tile_board::CELL_ANIM_FIRST,
+        legaia_engine_minigames::tile_board::CELL_ANIM_FIRST,
         "0xE cycles back to 0xB on arrival"
     );
 }
@@ -556,16 +558,18 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     prices[0x34] = 120;
 
     let mut world = World::new();
-    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data =
+        Some(legaia_engine_menus::shop_catalog::ShopItemData::from_prices(prices));
     assert!(world.try_arm_field_shop(&shop_op49_script()));
     let sess = world.take_pending_field_shop().expect("shop opened");
 
     // The id + schedule phase are the stable derivations from the shop's
     // identity ("Shop", stock).
-    let expected = legaia_asset::seru_trade::vendor_id_from_shop("Shop", &[0x22, 0x34]);
+    let expected = legaia_game_tables::seru_trade::vendor_id_from_shop("Shop", &[0x22, 0x34]);
     assert_eq!(sess.vendor_id, expected);
     assert_ne!(sess.vendor_id, 0, "a real vendor gets a concrete id");
-    let expected_offset = legaia_asset::seru_trade::vendor_bucket_offset("Shop", &[0x22, 0x34]);
+    let expected_offset =
+        legaia_game_tables::seru_trade::vendor_bucket_offset("Shop", &[0x22, 0x34]);
     assert_eq!(sess.vendor_bucket_offset, expected_offset);
 
     // With trading enabled and a party that owns this vendor's wanted seru,
@@ -573,12 +577,12 @@ fn field_shop_carries_a_stable_vendor_id_that_drives_trading() {
     // the host drives). The bucket model trades a specific type, so the
     // fixture owns exactly the want of the vendor's phased schedule slot.
     let seed = 0x1234u64;
-    let bucket0 = legaia_asset::seru_trade::bucket_offer(
+    let bucket0 = legaia_game_tables::seru_trade::bucket_offer(
         seed,
         expected_offset as u32,
-        &legaia_asset::seru_trade::default_pool(),
+        &legaia_game_tables::seru_trade::default_pool(),
     );
-    world.tables.seru_trade_config = Some(legaia_asset::seru_trade::SeruTradeConfig {
+    world.tables.seru_trade_config = Some(legaia_game_tables::seru_trade::SeruTradeConfig {
         enabled: true,
         seed,
         max_offers: 4,
@@ -610,7 +614,8 @@ fn field_vm_op49_non_shop_payload_does_not_open_a_shop() {
     // mask rejects it as not a gold shop.
     let mut prices = [0u16; 256];
     prices[0x22] = 50;
-    world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+    world.shops.item_shop_data =
+        Some(legaia_engine_menus::shop_catalog::ShopItemData::from_prices(prices));
     let mut code = vec![0x49, 0x00, 0x00, 0x02, 0x34, 0x22];
     code.extend_from_slice(b"Shop\0");
     let mut ctx = FieldCtx::default();
@@ -641,12 +646,13 @@ fn field_vm_op49_trims_unsellable_padding_to_the_sellable_stock() {
     code.extend_from_slice(b"Shop\0");
     let open = |card: bool| {
         let mut world = World::new();
-        world.shops.item_shop_data = Some(crate::shop_catalog::ShopItemData::from_prices(prices));
+        world.shops.item_shop_data =
+            Some(legaia_engine_menus::shop_catalog::ShopItemData::from_prices(prices));
         if card {
             *world
                 .party
                 .inventory
-                .entry(crate::menu_list_rows::SHOP_TAIL_CARD_ID)
+                .entry(legaia_engine_menus::menu_list_rows::SHOP_TAIL_CARD_ID)
                 .or_insert(0) = 1;
         }
         let mut ctx = FieldCtx::default();
@@ -659,7 +665,7 @@ fn field_vm_op49_trims_unsellable_padding_to_the_sellable_stock() {
             .expect("the field VM opened the shop (padding doesn't reject it)")
             .inventory
     };
-    let ids = |inv: &crate::shop::ShopInventory| -> Vec<(u8, u32)> {
+    let ids = |inv: &legaia_engine_menus::shop::ShopInventory| -> Vec<(u8, u32)> {
         inv.items.iter().map(|i| (i.item_id, i.price)).collect()
     };
     let plain = open(false);
@@ -746,7 +752,7 @@ fn camera_configure_merges_params_across_beats() {
 
 #[test]
 fn field_vm_op43_ramp_subops_spawn_register_ramps() {
-    use crate::register_ramp::RampSlot;
+    use legaia_engine_field::register_ramp::RampSlot;
 
     let mut world = World::new();
     world.mode = SceneMode::Field;

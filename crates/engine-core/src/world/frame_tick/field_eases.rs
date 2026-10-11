@@ -49,7 +49,7 @@ impl World {
     /// registers `0x8007B60C`/`B610`/`B614`/`B618`.
     ///
     /// Two retail gates come first, both inside
-    /// [`legaia_engine_vm::ambient_motion::zone_ramp_tick`]: the
+    /// [`legaia_engine_motion_vm::ambient_motion::zone_ramp_tick`]: the
     /// player-engaged flag (`_DAT_8007C364[+0x10] & 0x80000`, host-substituted
     /// by "a dialog engagement is live", the same substitution the `4C E1`
     /// balloon uses) and the scratch system lock (`_DAT_1F800394 & 0x400`,
@@ -78,16 +78,18 @@ impl World {
         };
         let (px, pz) = (actor.move_state.world_x, actor.move_state.world_z);
         let engaged = self.dialogue_owns_input();
-        let mut writes: Vec<(crate::register_ramp::RampSlot, i32)> = Vec::new();
+        let mut writes: Vec<(legaia_engine_field::register_ramp::RampSlot, i32)> = Vec::new();
         let mut retire: Vec<usize> = Vec::new();
         for (i, ramp) in self.camera.register_ramps.iter().enumerate() {
             match ramp.tick(px, pz, engaged) {
-                legaia_engine_vm::ambient_motion::ZoneRampTick::Write { value, .. } => {
+                legaia_engine_motion_vm::ambient_motion::ZoneRampTick::Write { value, .. } => {
                     writes.push((ramp.slot, value));
                 }
-                legaia_engine_vm::ambient_motion::ZoneRampTick::Retire
-                | legaia_engine_vm::ambient_motion::ZoneRampTick::DivideByZero => retire.push(i),
-                legaia_engine_vm::ambient_motion::ZoneRampTick::Idle => {}
+                legaia_engine_motion_vm::ambient_motion::ZoneRampTick::Retire
+                | legaia_engine_motion_vm::ambient_motion::ZoneRampTick::DivideByZero => {
+                    retire.push(i)
+                }
+                legaia_engine_motion_vm::ambient_motion::ZoneRampTick::Idle => {}
             }
         }
         for (slot, value) in writes {
@@ -127,7 +129,7 @@ impl World {
     ///
     /// REF: FUN_801DA390 - this is the per-frame call site retail runs off the
     /// field frame pump; the ported kernel is
-    /// [`crate::camera_ease::ease_camera_offset`], which carries the tag.
+    /// [`legaia_engine_field::camera_ease::ease_camera_offset`], which carries the tag.
     ///
     /// Supplies the kernel's six actor-side inputs from the engine's own
     /// player actor. Two of them stand in for retail slots the engine does not
@@ -157,8 +159,8 @@ impl World {
             }
         };
         let (prev_y, prev_z) = self.camera.ease_prev_yz.unwrap_or((y, z));
-        self.camera.offset_ease =
-            crate::camera_ease::ease_camera_offset(crate::camera_ease::CameraEaseInput {
+        self.camera.offset_ease = legaia_engine_field::camera_ease::ease_camera_offset(
+            legaia_engine_field::camera_ease::CameraEaseInput {
                 pad: self.flags.story_flags,
                 scene_target: self.camera.scene_offset as u16,
                 player_footing: y as u16,
@@ -172,7 +174,8 @@ impl World {
                 // while the gap is small.
                 fast_flags: 0,
                 current: self.camera.offset_ease,
-            });
+            },
+        );
         self.camera.ease_prev_yz = Some((y, z));
     }
 
@@ -256,7 +259,7 @@ impl World {
     ///
     /// Only the player half is published. A scene NPC placement has no
     /// per-frame height controller in this engine (its Y is baked at scene
-    /// build by [`legaia_asset::field_objects::Placement::world_y`]), so a
+    /// build by [`legaia_scene_formats::field_objects::Placement::world_y`]), so a
     /// mirror on one would be a write with no reader - the same reason the
     /// whole field was withheld before, now true of one target instead of
     /// both.

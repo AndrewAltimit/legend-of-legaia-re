@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Per-monster-id scripted AI (the `FUN_801E9FD4` switch) end-to-end: a
 /// wounded monster whose id has a low-HP self-heal case folds that heal onto
@@ -6,9 +7,9 @@ use super::*;
 /// `0x52` at self when `HP <= maxHP/2` and its ability cooldown is clear.
 #[test]
 fn scripted_ai_monster_self_heals_when_wounded() {
-    use crate::monster_catalog::vanilla_monster_catalog;
-    use crate::spells::SpellCatalog;
-    use legaia_engine_vm::battle_action::ActionState;
+    use legaia_engine_battle::monster_catalog::vanilla_monster_catalog;
+    use legaia_engine_battle::spells::SpellCatalog;
+    use legaia_engine_battle_vm::battle_action::ActionState;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -64,8 +65,8 @@ fn scripted_ai_monster_self_heals_when_wounded() {
 /// that means a physical strike) and the gauge is left untouched.
 #[test]
 fn monster_8a_charge_gate_drives_cast_and_clamps_gauge() {
-    use crate::monster_catalog::vanilla_monster_catalog;
-    use crate::spells::SpellCatalog;
+    use legaia_engine_battle::monster_catalog::vanilla_monster_catalog;
+    use legaia_engine_battle::spells::SpellCatalog;
 
     let mut world = World {
         party: crate::world::PartyState {
@@ -166,8 +167,8 @@ fn monster_target_resolver_expands_class_to_correct_side() {
 /// turn. Monster id `0xB6` always casts, picking its spell purely by mode.
 #[test]
 fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
-    use crate::monster_catalog::MonsterDef;
-    use crate::spells::SpellCatalog;
+    use legaia_engine_battle::monster_catalog::MonsterDef;
+    use legaia_engine_battle::spells::SpellCatalog;
 
     let mut world = World {
         party: crate::world::PartyState {

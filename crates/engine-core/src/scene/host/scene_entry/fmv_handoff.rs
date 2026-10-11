@@ -95,7 +95,7 @@ impl SceneHost {
     /// next-game-mode byte (`0x8007B83C`). Mid-game FMVs therefore do **not**
     /// resume the trigger scene - `town01` triggers `fmv_id 1` and lands in
     /// `town0b`. The per-id map is
-    /// [`crate::cutscene::fmv_post_play_handoff`].
+    /// [`legaia_engine_system::movie::cutscene::fmv_post_play_handoff`].
     ///
     /// This is the single host of that map. Every host calls it after
     /// [`World::finish_cutscene`] and formats the returned outcome; the
@@ -105,7 +105,7 @@ impl SceneHost {
     // PORT: FUN_801cea3c
     pub fn apply_pending_fmv_handoff(&mut self) -> Option<FmvHandoffOutcome> {
         let fmv_id = self.world.take_finished_fmv()?;
-        let handoff = crate::cutscene::fmv_post_play_handoff(fmv_id);
+        let handoff = legaia_engine_system::movie::cutscene::fmv_post_play_handoff(fmv_id);
         Some(match handoff {
             FmvHandoff::Field { scene, door } => match self.enter_field_scene(scene, 0) {
                 Ok(()) => FmvHandoffOutcome::Entered {

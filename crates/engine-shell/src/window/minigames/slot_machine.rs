@@ -12,8 +12,8 @@ impl PlayWindowApp {
     /// overlay's payline table did not decode.
     pub(in crate::window) fn slot_payline_screen_prims(
         &self,
-    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
-        use legaia_engine_render::ui_slot_paylines as usp;
+    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_engine_ui::slot_paylines as usp;
         if self.session.host.world.mode != SceneMode::SlotMachine {
             return Vec::new();
         }
@@ -23,7 +23,7 @@ impl PlayWindowApp {
         // A rules page replaces the machine, paylines included.
         if matches!(
             m.screen(),
-            legaia_engine_core::slot_machine::SlotScreen::Instructions { .. }
+            legaia_minigame_formats::minigame_slot_scene::SlotScreen::Instructions { .. }
         ) {
             return Vec::new();
         }
@@ -75,13 +75,13 @@ impl PlayWindowApp {
         if self.slot_cabinet_assets.is_none() {
             let index = self.session.host.index.clone();
             let read = |i: usize| index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
-            let loaded = legaia_engine_render::ui_slot_cabinet::SlotCabinetAssets::load(read)
+            let loaded = legaia_engine_ui::slot_cabinet::SlotCabinetAssets::load(read)
                 .map_err(|e| log::warn!("slots: {e}"))
                 .ok()
                 .map(|a| {
                     // The resident system-UI sheet the submenu box's border
                     // samples (the browser pages upload the same TIM).
-                    use legaia_asset::title_pak as tp;
+                    use legaia_ui_formats::title_pak as tp;
                     match index.prot_dat_raw_bytes(
                         tp::OVERLAY_SYSTEM_UI_TIM_OFFSET as u64,
                         tp::OVERLAY_SYSTEM_UI_TIM_SIZE,
@@ -113,8 +113,8 @@ impl PlayWindowApp {
     /// machine or before its VRAM is resident.
     pub(in crate::window) fn slot_cabinet_screen_prims(
         &self,
-    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
-        use legaia_engine_render::ui_slot_cabinet as usc;
+    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_engine_ui::slot_cabinet as usc;
         if self.slot_gpu.is_none() || self.session.host.world.mode != SceneMode::SlotMachine {
             return Vec::new();
         }
@@ -130,13 +130,13 @@ impl PlayWindowApp {
         let menu = usc::slot_menu_prims(assets, m.screen(), m.fade_level());
         if matches!(
             m.screen(),
-            legaia_engine_core::slot_machine::SlotScreen::Instructions { .. }
+            legaia_minigame_formats::minigame_slot_scene::SlotScreen::Instructions { .. }
         ) {
             return menu;
         }
         let strips = m.strips();
         let dots = if self.slot_dots.is_empty() {
-            legaia_asset::minigame_slot_scene::clear_dots()
+            legaia_minigame_formats::minigame_slot_scene::clear_dots()
         } else {
             self.slot_dots.clone()
         };
@@ -172,14 +172,14 @@ impl PlayWindowApp {
         let Some(rules) = assets.rules.as_ref() else {
             return Vec::new();
         };
-        let mut d = legaia_engine_render::ui_slot_cabinet::slot_rules_text_draws_for(
+        let mut d = legaia_engine_ui::slot_cabinet::slot_rules_text_draws_for(
             &self.font,
             rules,
             m.screen(),
             m.fade_level(),
         );
         let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-        legaia_engine_render::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
+        legaia_engine_ui::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
         d
     }
 }

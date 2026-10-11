@@ -13,9 +13,9 @@
 //!
 //! Skips + passes without `LEGAIA_DISC_BIN`.
 
-use legaia_asset::item_names::ItemNameTable;
-use legaia_asset::monster_archive::SLOT_STRIDE;
+use legaia_actor_formats::monster_archive::SLOT_STRIDE;
 use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_game_tables::item_names::ItemNameTable;
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
@@ -63,7 +63,7 @@ fn unused_enemy_ids_are_valid_unused_records() {
             "Evil Bat clone id {id} must be byte-identical to the in-use Evil Bat (id {EVIL_BAT_INUSE_ID})"
         );
     }
-    let rec = legaia_asset::monster_archive::record(&archive, EVIL_BAT_INUSE_ID)
+    let rec = legaia_actor_formats::monster_archive::record(&archive, EVIL_BAT_INUSE_ID)
         .expect("decode record")
         .expect("record present");
     assert!(
@@ -74,7 +74,7 @@ fn unused_enemy_ids_are_valid_unused_records() {
 
     // "Comm" (78) is a complete, *distinct* record (not a clone of the Evil Bat).
     assert!(UNUSED_ENEMY_IDS.contains(&(COMM_ID as u8)));
-    let comm = legaia_asset::monster_archive::record(&archive, COMM_ID)
+    let comm = legaia_actor_formats::monster_archive::record(&archive, COMM_ID)
         .expect("decode Comm record")
         .expect("Comm record present");
     assert!(comm.hp > 0, "Comm is a populated record (HP {})", comm.hp);
@@ -260,8 +260,8 @@ fn seru_bell_name_injection_names_only_the_accessory() {
     assert_eq!(patcher.image().len(), original_len, "image size unchanged");
     let img = patcher.image();
     let (scus_lba, _) = find_file_in_image(img, "SCUS_942.54").unwrap();
-    let (ptr_off, _) = legaia_asset::item_names::name_ptr_slot(&scus, SERU_BELL_ID).unwrap();
-    let str_off = legaia_asset::item_names::file_offset_for_va(
+    let (ptr_off, _) = legaia_game_tables::item_names::name_ptr_slot(&scus, SERU_BELL_ID).unwrap();
+    let str_off = legaia_game_tables::item_names::file_offset_for_va(
         &base_scus,
         legaia_patcher::item_name::SERU_BELL_STRING_VA,
     )

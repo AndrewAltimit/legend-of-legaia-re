@@ -18,7 +18,7 @@ impl World {
     /// map. `None` for a party seat a small party leaves empty.
     pub(in crate::world) fn engine_slot_for_retail_pool(&self, retail: u8) -> Option<u8> {
         let pc = self.party.party_count.clamp(1, 3);
-        let fm = vm::cast_module_ticks::FIRST_MONSTER_SEAT;
+        let fm = legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT;
         if retail < fm {
             (retail < pc).then_some(retail)
         } else {
@@ -37,8 +37,8 @@ impl World {
     pub(in crate::world::battle::cast_band) fn cast_actor_state(
         &self,
         slot: u8,
-    ) -> vm::cast_module_ticks::CastActorState {
-        use vm::cast_module_ticks::{ANIM_RATE_NORMAL, CastActorState};
+    ) -> legaia_engine_battle_vm::cast_module_ticks::CastActorState {
+        use legaia_engine_battle_vm::cast_module_ticks::{ANIM_RATE_NORMAL, CastActorState};
         let Some(a) = self.actors.get(slot as usize) else {
             return CastActorState {
                 anim_rate: ANIM_RATE_NORMAL,
@@ -115,8 +115,8 @@ impl World {
                     .and_then(|p| p.hit_source())
                     .is_some_and(|src| {
                         let in_band = src.power_run[0]
-                            .wrapping_sub(vm::battle_action::HIT_POWER_BASE)
-                            < vm::battle_action::HIT_POWER_SPAN;
+                            .wrapping_sub(legaia_engine_battle_vm::battle_action::HIT_POWER_BASE)
+                            < legaia_engine_battle_vm::battle_action::HIT_POWER_SPAN;
                         let next = src.event_frames.get(usize::from(a.battle.input_cursor));
                         in_band && next.is_some_and(|&f| f != 0)
                     }),
@@ -160,7 +160,7 @@ impl World {
     /// against (`lw v1,4(a1)` with `a1 = 0x801C8FE0` at `0x801F8A20`, again
     /// at `0x801F8A4C`) and then overwrites with the accepted one (`sw a3,
     /// 4(v1)` at `0x801F8A90`). It is the AI's phase counter
-    /// ([`crate::monster_ai::MonsterAiState::counter`]): Rogue's picker reads
+    /// ([`legaia_engine_battle::monster_ai::MonsterAiState::counter`]): Rogue's picker reads
     /// the same byte back as its next attack, `counter - 0x50` (`0xB0` Wind /
     /// `0xB1` Thunder / `0xB2` Flame), so the roll that recolours the record
     /// is also what makes the attacks cycle. Battle init zeroes it, so the
@@ -179,8 +179,10 @@ impl World {
     /// battle with the same monster starts on its disc element.
     pub(in crate::world) fn apply_cast_element_change(&mut self, element: u8) {
         let first = self
-            .engine_slot_for_retail_pool(vm::cast_module_ticks::FIRST_MONSTER_SEAT)
-            .unwrap_or(vm::cast_module_ticks::FIRST_MONSTER_SEAT);
+            .engine_slot_for_retail_pool(
+                legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT,
+            )
+            .unwrap_or(legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT);
         if let Some(a) = self
             .actors
             .get_mut(first as usize)
@@ -194,9 +196,9 @@ impl World {
     pub(in crate::world::battle::cast_band) fn write_cast_actor_state(
         &mut self,
         slot: u8,
-        st: &vm::cast_module_ticks::CastActorState,
+        st: &legaia_engine_battle_vm::cast_module_ticks::CastActorState,
     ) {
-        use vm::battle_anim_rate::AnimRate;
+        use legaia_engine_battle_vm::battle_anim_rate::AnimRate;
         let Some(a) = self.actors.get_mut(slot as usize) else {
             return;
         };

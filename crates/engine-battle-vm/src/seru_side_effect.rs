@@ -4,7 +4,7 @@
 //! levelled Seru spell its secondary effect and that makes a boss look
 //! "immune" to ATK-down while SPD-down still lands.
 //!
-//! The table both halves index is [`legaia_asset::seru_side_effect`]
+//! The table both halves index is [`legaia_game_tables::seru_side_effect`]
 //! (`0x801F6870`, `[element][band]`, percent `5/10/15/20` by magic-level band);
 //! the full mechanism is written up in
 //! `docs/subsystems/battle-formulas.md` § "Seru-magic side-effects".
@@ -85,7 +85,7 @@
 //! returns before drawing: a synthetic battle stages nothing and its RNG
 //! stream is unchanged.
 
-use legaia_asset::seru_side_effect::{
+use legaia_game_tables::seru_side_effect::{
     MIN_LEVEL, RESIST_BYPASS_MIN_PCT, SeruSideEffectTable, SideEffectKind, level_band,
 };
 
@@ -298,7 +298,7 @@ pub fn apply_hit(kind: SideEffectKind, pct: u8, stats: &mut TargetStats) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::seru_side_effect::{
+    use legaia_game_tables::seru_side_effect::{
         RETAIL_CURE_CLASS_BY_BAND, RETAIL_PERCENT_BY_BAND, SIDE_EFFECT_TABLE_FILE_OFFSET,
     };
 

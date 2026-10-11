@@ -11,8 +11,10 @@ use std::path::Path;
 /// `SCUS_942.54`. Returns `None` (not an error) when the executable isn't
 /// reachable or doesn't parse, so a boot never fails just because the seed
 /// data is unavailable.
-pub(super) fn read_starting_party(scus: &[u8]) -> Option<legaia_asset::new_game::StartingParty> {
-    legaia_asset::new_game::StartingParty::from_scus(scus)
+pub(super) fn read_starting_party(
+    scus: &[u8],
+) -> Option<legaia_game_tables::new_game::StartingParty> {
+    legaia_game_tables::new_game::StartingParty::from_scus(scus)
 }
 
 /// Read + decode the new-game starting-inventory seed from a boot source's
@@ -20,8 +22,8 @@ pub(super) fn read_starting_party(scus: &[u8]) -> Option<legaia_asset::new_game:
 /// reachable or doesn't decode, so a boot never fails on missing seed data.
 pub(super) fn read_starting_inventory(
     scus: &[u8],
-) -> Option<legaia_asset::new_game::StartingInventory> {
-    legaia_asset::new_game::StartingInventory::from_scus(scus)
+) -> Option<legaia_game_tables::new_game::StartingInventory> {
+    legaia_game_tables::new_game::StartingInventory::from_scus(scus)
 }
 
 /// Read the raw `SCUS_942.54` bytes from a boot source. Returns `None`
@@ -87,7 +89,7 @@ pub fn attach_escape_icons(
 /// fails on missing SFX data - the director just keeps its empty bank and
 /// resolved cues no-op until one is staged.
 pub(super) fn read_sfx_bank(scus: &[u8]) -> Option<(legaia_engine_audio::SfxBank, Vec<(u8, u8)>)> {
-    let table = legaia_asset::sfx_table::SfxTable::from_scus(scus)?;
+    let table = legaia_game_tables::sfx_table::SfxTable::from_scus(scus)?;
     let bank = legaia_engine_audio::SfxBank::from_descriptors(
         table
             .active()
@@ -172,11 +174,11 @@ pub fn read_battle_xa_clip_bank(disc: &Path) -> Option<legaia_engine_audio::XaCl
 /// from a boot source's `SCUS_942.54` item table. Returns `None` when the
 /// executable isn't reachable or its item table doesn't parse, so a boot never
 /// fails on missing shop data - the engine then leaves shop stock host-supplied
-/// and unpriced. See [`legaia_engine_core::shop_catalog`].
+/// and unpriced. See [`legaia_engine_menus::shop_catalog`].
 pub(super) fn read_shop_item_data(
     scus: &[u8],
-) -> Option<legaia_engine_core::shop_catalog::ShopItemData> {
-    legaia_engine_core::shop_catalog::ShopItemData::from_scus(scus)
+) -> Option<legaia_engine_menus::shop_catalog::ShopItemData> {
+    legaia_engine_menus::shop_catalog::ShopItemData::from_scus(scus)
 }
 
 /// Read + parse the static item-effect descriptor table (`DAT_800752C0`, see
@@ -186,8 +188,8 @@ pub(super) fn read_shop_item_data(
 /// usability flags on its item catalog.
 pub(super) fn read_retail_item_effects(
     scus: &[u8],
-) -> Option<legaia_asset::item_effect::ItemEffectTable> {
-    legaia_asset::item_effect::ItemEffectTable::from_scus(scus)
+) -> Option<legaia_game_tables::item_effect::ItemEffectTable> {
+    legaia_game_tables::item_effect::ItemEffectTable::from_scus(scus)
 }
 
 /// Read the static equipment stat-bonus table (`DAT_80074F68`, see
@@ -201,17 +203,17 @@ pub(super) fn read_retail_item_effects(
 pub(super) fn read_retail_equip_tables(
     scus: &[u8],
 ) -> Option<(
-    legaia_engine_core::battle_stats::EquipmentTable,
-    legaia_engine_core::equipment::DiscEquipInfo,
-    legaia_asset::equip_stats::EquipStatTable,
+    legaia_engine_battle::battle_stats::EquipmentTable,
+    legaia_engine_menus::equipment::DiscEquipInfo,
+    legaia_game_tables::equip_stats::EquipStatTable,
 )> {
-    let table = legaia_asset::equip_stats::EquipStatTable::from_scus(scus)?;
-    let modifiers = legaia_engine_core::equipment::equip_modifier_table_from_disc(&table);
-    let mut restrictions = legaia_engine_core::equipment::DiscEquipInfo::from_disc(&table);
+    let table = legaia_game_tables::equip_stats::EquipStatTable::from_scus(scus)?;
+    let modifiers = legaia_engine_menus::equipment::equip_modifier_table_from_disc(&table);
+    let mut restrictions = legaia_engine_menus::equipment::DiscEquipInfo::from_disc(&table);
     // The Goods candidate lists are class-2 ids the equipment stat table does
     // not contain, so their index comes from the item-effect table instead -
     // without it the equip screen's three Goods rows browse an empty list.
-    if let Some(effects) = legaia_asset::item_effect::ItemEffectTable::from_scus(scus) {
+    if let Some(effects) = legaia_game_tables::item_effect::ItemEffectTable::from_scus(scus) {
         restrictions.install_goods(&effects);
     }
     // The raw records travel too: the Throw Out list builder reads each
@@ -225,6 +227,6 @@ pub(super) fn read_retail_equip_tables(
 /// back to the pinned `retail_seru_magic_catalog`.
 pub(super) fn read_retail_spell_catalog(
     scus: &[u8],
-) -> Option<legaia_engine_core::spells::SpellCatalog> {
-    legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(scus)
+) -> Option<legaia_engine_battle::spells::SpellCatalog> {
+    legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(scus)
 }

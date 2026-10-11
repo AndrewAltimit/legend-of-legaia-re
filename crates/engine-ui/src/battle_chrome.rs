@@ -13,7 +13,7 @@
 //! ## One sprite sheet, one 3-slice, four palettes
 //!
 //! The whole battle chrome samples the **resident system-UI TIM**
-//! ([`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`], `PROT.DAT`
+//! ([`legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`], `PROT.DAT`
 //! `0x18E0`), which uploads its pixels to VRAM page `(896, 256)` and its
 //! 16-row CLUT block packed into VRAM row **511** as 16 side-by-side
 //! sub-palettes. Text comes from the neighbouring menu-glyph atlas at page
@@ -29,7 +29,7 @@
 //! | `v = 64` | `(208,64)` / `(192,64)` / `(216,64)` | 12 (carved gold) | actor-name plaque |
 //!
 //! The `v = 64` row is the same art
-//! [`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_L`] pins for the
+//! [`legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_L`] pins for the
 //! field menu's tab banner, which is why the battle plaque and the pause
 //! menu's title tab look like the same object: they are.
 //!
@@ -40,7 +40,7 @@
 //! HP or MP bar primitive anywhere in the strip's packet run. A filled gauge
 //! in the party HUD is an engine invention, not retail.
 
-use legaia_asset::title_pak;
+use legaia_ui_formats::title_pak;
 
 /// VRAM page the system-UI sprite sheet uploads to.
 pub const WIDGET_PAGE: (u16, u16) = (896, 256);
@@ -283,11 +283,6 @@ pub const RECORD_PEN_DY: i16 = -2;
 /// therefore slides in from above the screen, and `+0x14` points at the name
 /// scratch buffer the string was measured out of.
 pub const PLAQUE_PLACEMENT_RECORD: usize = 68;
-
-/// The table itself is disc data - parser
-/// [`legaia_asset::screen_elements`], which also carries the corrected extent
-/// (103 records, not 200) and the per-family box heights.
-pub use legaia_asset::screen_elements;
 
 /// Glyph pen and plate rect for a placement record's `(x, y, w)`.
 ///
@@ -579,7 +574,7 @@ impl ChipCluster {
 
 /// The four battle rects the `engine-core` atlas bakes are these same rects.
 ///
-/// `legaia_asset::title_pak` owns the *source* side (which texels of the
+/// `legaia_ui_formats::title_pak` owns the *source* side (which texels of the
 /// system-UI sheet to copy); this module owns the *draw* side (where they
 /// land and how a run composes). They have to name one set of numbers.
 pub const fn battle_chrome_source_rects_match() -> bool {

@@ -1,13 +1,13 @@
 //! Valid item-id pool for drop randomization.
 //!
 //! Drawn from the static `SCUS_942.54` item-name table (see
-//! [`legaia_asset::item_names`]). Restricting the randomizer's replacement
+//! [`legaia_game_tables::item_names`]). Restricting the randomizer's replacement
 //! drops to ids that name a real item ensures it never assigns a drop the game
 //! has no name or handler for. Pass the retail executable (`SCUS_942.54`)
 //! bytes, not the disc image - the table lives in the executable's data segment.
 
 use anyhow::{Context, Result};
-use legaia_asset::item_names::ItemNameTable;
+use legaia_game_tables::item_names::ItemNameTable;
 
 /// Curated **fallback** set of quest / key items kept out of chest
 /// randomization when the disc's item table can't be read. Every entry is an
@@ -71,7 +71,7 @@ pub fn valid_item_pool(scus: &[u8]) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::item_names::ItemNameTable;
+    use legaia_game_tables::item_names::ItemNameTable;
 
     #[test]
     fn pool_excludes_sentinel_and_empty_slots() {

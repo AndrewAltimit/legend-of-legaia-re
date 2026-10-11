@@ -10,11 +10,11 @@
 //!
 //! Skips without `LEGAIA_DISC_BIN`.
 
+use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
 use legaia_engine_core::Vfs;
-use legaia_engine_core::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
-use legaia_engine_core::equip_session::EquipSession;
-use legaia_engine_core::equipment::{DiscEquipInfo, EquipSlot};
-use legaia_engine_core::world::ItemBag;
+use legaia_engine_menus::equip_session::EquipSession;
+use legaia_engine_menus::equipment::{DiscEquipInfo, EquipSlot};
+use legaia_engine_menus::item_bag::ItemBag;
 use std::path::PathBuf;
 
 fn scus() -> Option<Vec<u8>> {
@@ -34,8 +34,10 @@ fn goods_index_is_the_class_2_rows_with_a_passive() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or unreadable");
         return;
     };
-    let stats = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus).expect("equip table");
-    let effects = legaia_asset::item_effect::ItemEffectTable::from_scus(&scus).expect("effects");
+    let stats =
+        legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus).expect("equip table");
+    let effects =
+        legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus).expect("effects");
     let mut info = DiscEquipInfo::from_disc(&stats);
     assert_eq!(
         info.goods_count(),
@@ -53,10 +55,10 @@ fn goods_index_is_the_class_2_rows_with_a_passive() {
         let marker = effects
             .descriptor(effects.subtype(id))
             .map(|d| d.marker)
-            .unwrap_or(legaia_engine_core::menu_list_rows::GOODS_NO_PASSIVE_MARKER);
+            .unwrap_or(legaia_engine_menus::menu_list_rows::GOODS_NO_PASSIVE_MARKER);
         assert_eq!(
             listed,
-            kind == 2 && marker != legaia_engine_core::menu_list_rows::GOODS_NO_PASSIVE_MARKER,
+            kind == 2 && marker != legaia_engine_menus::menu_list_rows::GOODS_NO_PASSIVE_MARKER,
             "id {id:#04x}: kind {kind}, marker {marker:#04x}"
         );
         if listed {
@@ -75,8 +77,10 @@ fn a_goods_row_lists_accessories_and_an_armament_row_does_not() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or unreadable");
         return;
     };
-    let stats = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus).expect("equip table");
-    let effects = legaia_asset::item_effect::ItemEffectTable::from_scus(&scus).expect("effects");
+    let stats =
+        legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus).expect("equip table");
+    let effects =
+        legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus).expect("effects");
 
     // One Goods candidate and one class-1 helmet, both in the bag.
     let goods_id = (0u8..=u8::MAX)
@@ -90,7 +94,8 @@ fn a_goods_row_lists_accessories_and_an_armament_row_does_not() {
     let helmet_id = (0u8..=u8::MAX)
         .find(|&id| {
             stats.bonus(id).is_some_and(|b| {
-                b.slot() == legaia_asset::equip_stats::EquipSlot::Head && b.equips_party_slot(0)
+                b.slot() == legaia_game_tables::equip_stats::EquipSlot::Head
+                    && b.equips_party_slot(0)
             })
         })
         .expect("the disc carries a helmet Vahn can wear");
@@ -117,7 +122,7 @@ fn a_goods_row_lists_accessories_and_an_armament_row_does_not() {
     assert!(
         bare.items_for_slot(EquipSlot::Ring1.as_index())
             .iter()
-            .all(|r| r.id == legaia_engine_core::equip_session::REMOVE_ROW_ID),
+            .all(|r| r.id == legaia_engine_menus::equip_session::REMOVE_ROW_ID),
         "an un-widened table offers no Goods candidate"
     );
 

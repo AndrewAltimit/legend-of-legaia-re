@@ -10,19 +10,19 @@ impl PlayWindowApp {
     /// the retail-model entry session. Empty otherwise.
     ///
     /// Everything is composed by the shared
-    /// [`legaia_engine_render::arts_input`] builders off the same baked
+    /// [`legaia_engine_ui::arts_input`] builders off the same baked
     /// system-UI atlas the menu chrome samples, so this host and the
     /// browser play page draw one geometry.
     pub(in crate::window) fn arts_input_chrome_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
-        use legaia_engine_render::arts_input as ai;
+    ) -> Vec<legaia_engine_ui::SpriteDraw> {
+        use legaia_engine_ui::arts_input as ai;
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
-        if self.session.host.world.mode == legaia_engine_core::world::SceneMode::MuscleDome
+        if self.session.host.world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
             && !self.dome_battle_chrome_up()
         {
             return Vec::new();
@@ -97,7 +97,7 @@ impl PlayWindowApp {
     /// the frame and the rows cannot disagree.
     pub(in crate::window) fn battle_tutorial_stage_rect(&self) -> Option<(i32, i32, i32, i32)> {
         let tbox = self.session.host.world.battle_tutorial_box()?;
-        let width = legaia_engine_render::battle_tutorial_text_width(&self.font, &tbox.text);
+        let width = legaia_engine_ui::battle_tutorial_text_width(&self.font, &tbox.text);
         let (x, y, w, h) = tbox.rect(width)?;
         Some((x as i32, y as i32, w as i32, h as i32))
     }
@@ -111,8 +111,7 @@ impl PlayWindowApp {
             .world
             .battle_tutorial_boxes_on_screen()
             .filter_map(|tbox| {
-                let width =
-                    legaia_engine_render::battle_tutorial_text_width(&self.font, &tbox.text);
+                let width = legaia_engine_ui::battle_tutorial_text_width(&self.font, &tbox.text);
                 let (x, y, w, h) = tbox.rect(width)?;
                 Some(((x as i32, y as i32, w as i32, h as i32), tbox))
             })
@@ -128,7 +127,7 @@ impl PlayWindowApp {
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_render::SpriteDraw> {
+    ) -> Vec<legaia_engine_ui::SpriteDraw> {
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
@@ -138,7 +137,7 @@ impl PlayWindowApp {
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
         let mut out = Vec::new();
         for (rect, tbox) in self.battle_tutorial_stage_boxes() {
-            out.extend(legaia_engine_render::battle_tutorial_chrome_draws_for(
+            out.extend(legaia_engine_ui::battle_tutorial_chrome_draws_for(
                 &assets.rects,
                 rect,
                 tbox.waits_for_input,
@@ -149,7 +148,7 @@ impl PlayWindowApp {
         // Koru's timed-fight strip wears the same skin (both are text actors
         // registered with an explicit rect and style word `0x44`).
         if legaia_engine_core::timed_fight::timed_fight_strip(&self.session.host.world).is_some() {
-            out.extend(legaia_engine_render::timed_fight_strip_chrome_draws(
+            out.extend(legaia_engine_ui::timed_fight_strip_chrome_draws(
                 &assets.rects,
                 stage_origin,
                 stage_scale,

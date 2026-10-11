@@ -3,6 +3,7 @@
 //! Split out of `actors.rs`; no logic change.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// Advance the per-object battle animation of every actor carrying one,
@@ -71,7 +72,8 @@ impl World {
                 let b = &self.actors[i].battle;
                 b.queued_anim == id
                     && b.current_anim == id
-                    && b.flag_bits.has(vm::battle_action::ActorFlags::ADVANCE_DONE)
+                    && b.flag_bits
+                        .has(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE)
             });
             if restaged {
                 self.commit_staged_battle_anim_at_boundary(i);
@@ -80,7 +82,7 @@ impl World {
                 a.battle_staged_anim = None;
                 a.battle
                     .flag_bits
-                    .clear(vm::battle_action::ActorFlags::ADVANCE_DONE);
+                    .clear(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE);
                 if a.battle.queued_anim == id {
                     a.battle.queued_anim = 0;
                     a.battle.current_anim = 0;
@@ -100,11 +102,12 @@ impl World {
                 let a = &self.actors[i];
                 a.battle_action_clips.is_some()
                     && a.battle_reaction.is_none()
-                    && a.battle_pose != Some(vm::battle_action::Pose::Defeat as u8)
+                    && a.battle_pose
+                        != Some(legaia_engine_battle_vm::battle_action::Pose::Defeat as u8)
                     && matches!(&a.battle_animation, Some(p) if p.finished())
             };
             if restore_idle {
-                self.apply_battle_pose(i, vm::battle_action::Pose::Idle as u8);
+                self.apply_battle_pose(i, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
             }
             // The decoder's last-frame tween reads the clip queued behind
             // this one; recompute it before the step, like the draw that
@@ -115,7 +118,9 @@ impl World {
             // **Slowed** actor on idle: `andi v0,v0,0x1000` on `+0x16E` at
             // `0x800476E0`, then `+0x1D9 == 0` at `0x800476EC`. Every other
             // actor - idle included - advances on the `>> 1` branch.
-            let slowed = self.raw_status_word(i as u8) & vm::battle_anim_rate::SLOW_STATUS_BIT != 0;
+            let slowed = self.raw_status_word(i as u8)
+                & legaia_engine_battle_vm::battle_anim_rate::SLOW_STATUS_BIT
+                != 0;
             let actor = &mut self.actors[i];
             if let Some(player) = &mut actor.battle_animation {
                 player.set_tween_target(tween);
@@ -146,11 +151,15 @@ impl World {
                     let latched = actor
                         .battle
                         .flag_bits
-                        .has(vm::battle_action::ActorFlags::FX_SUPPRESSED);
+                        .has(legaia_engine_battle_vm::battle_action::ActorFlags::FX_SUPPRESSED);
                     if step != 0 && !latched && (actor.battle.hp != 0 || seru_staged) {
-                        let (sin, cos) =
-                            vm::battle_action::motion::trig12(actor.battle.facing_angle);
-                        let (dx, dz) = vm::battle_action::motion::end_root_step(sin, cos, step);
+                        let (sin, cos) = legaia_engine_battle_vm::battle_action::motion::trig12(
+                            actor.battle.facing_angle,
+                        );
+                        let (dx, dz) =
+                            legaia_engine_battle_vm::battle_action::motion::end_root_step(
+                                sin, cos, step,
+                            );
                         let ms = &mut actor.move_state;
                         ms.world_x = ms.world_x.wrapping_add(dx as i16);
                         ms.world_z = ms.world_z.wrapping_add(dz as i16);
@@ -171,11 +180,17 @@ impl World {
                 // and its idle loop after it: the permanent yellow halo).
                 let clip_key = player.attach_key();
                 let ring_id = if actor.battle_monster_id.is_none() {
-                    crate::battle_afterimage::party_ring_id(actor.battle.current_anim)
+                    legaia_engine_battle::battle_afterimage::party_ring_id(
+                        actor.battle.current_anim,
+                    )
                 } else {
-                    crate::battle_afterimage::monster_ring_id(clip_key, player.solo_flag())
+                    legaia_engine_battle::battle_afterimage::monster_ring_id(
+                        clip_key,
+                        player.solo_flag(),
+                    )
                 };
-                let ghost_eligible = crate::battle_afterimage::ghost_eligible(ring_id);
+                let ghost_eligible =
+                    legaia_engine_battle::battle_afterimage::ghost_eligible(ring_id);
                 actor.battle_pose_history.push_front(BattleGhostFrame {
                     pose: pose.clone(),
                     pos: [
@@ -188,7 +203,7 @@ impl World {
                 });
                 actor
                     .battle_pose_history
-                    .truncate(crate::battle_afterimage::HISTORY_DEPTH);
+                    .truncate(legaia_engine_battle::battle_afterimage::HISTORY_DEPTH);
                 actor.pose_frame = Some(pose);
                 // The loop-window rewind (`0x800477EC..0x80047878`) re-arms
                 // the effect script only for a party seat playing the art
@@ -314,15 +329,19 @@ impl World {
         // case keeps committing at once.
         // PORT: FUN_80047430 (`0x800478EC..0x80047948`, the looping-clip half)
         let bits = actor.battle.flag_bits;
-        if !bits.has(vm::battle_action::ActorFlags::WINDUP_DONE)
-            && bits.has(vm::battle_action::ActorFlags::ADVANCE_DONE)
+        if !bits.has(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE)
+            && bits.has(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE)
             && let Some(p) = actor.battle_animation.as_ref()
             && p.is_looping()
         {
             let (frames, lock) = p
                 .hit_source()
                 .map_or(([0; 4], 0), |s| (s.event_frames, s.event_lock));
-            if !vm::battle_action::event_commit_due(&frames, lock, p.current_frame()) {
+            if !legaia_engine_battle_vm::battle_action::event_commit_due(
+                &frames,
+                lock,
+                p.current_frame(),
+            ) {
                 return;
             }
         }
@@ -347,7 +366,9 @@ impl World {
     /// the framing (`0x8004E720`) and keeps the mirror.
     pub(in crate::world) fn retail_acting_slot(&self) -> u8 {
         match self.battle.victory {
-            Some(seq) if seq.cause != vm::battle_action::BattleEndCause::Escaped => {
+            Some(seq)
+                if seq.cause != legaia_engine_battle_vm::battle_action::BattleEndCause::Escaped =>
+            {
                 seq.pose_actor as u8
             }
             _ => self.battle_ctx.active_actor,
@@ -370,8 +391,8 @@ impl World {
 
     // PORT: FUN_8004AD80 (the commit body; boundary selection is the tick's)
     pub(in crate::world) fn commit_staged_battle_anim_at_boundary(&mut self, i: usize) {
+        use legaia_engine_battle_vm::battle_action::ActorFlags;
         use vm::anim_vm::{StagedAnimTarget, resolve_staged_anim};
-        use vm::battle_action::ActorFlags;
         let Some(actor) = self.actors.get_mut(i) else {
             return;
         };
@@ -381,11 +402,13 @@ impl World {
         // a banner in flight whose own actor commits again moves into the
         // `5..=8` retire band and restarts its clock.
         // REF: FUN_8004AD80
-        if let Some((stage, level)) = vm::battle_action::banner_cancel_on_commit(
-            self.battle_ctx.arts_banner_stage,
-            i as u8,
-            self.battle_ctx.active_actor,
-        ) {
+        if let Some((stage, level)) =
+            legaia_engine_battle_vm::battle_action::banner_cancel_on_commit(
+                self.battle_ctx.arts_banner_stage,
+                i as u8,
+                self.battle_ctx.active_actor,
+            )
+        {
             self.battle_ctx.arts_banner_stage = stage;
             self.battle_ctx.arts_banner_level = level;
         }
@@ -402,7 +425,8 @@ impl World {
             let b = &self.actors[i].battle;
             if self.actors[i].battle_monster_id.is_none()
                 && b.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
-                && b.action_category == vm::battle_action::ActionCategory::Attack.as_byte()
+                && b.action_category
+                    == legaia_engine_battle_vm::battle_action::ActionCategory::Attack.as_byte()
                 && b.latched_anim != 0x1A
             {
                 self.battle.move_label_closed = true;
@@ -443,7 +467,7 @@ impl World {
         // is the id space both battle-camera dispatch tables index.
         self.actors[i].battle.latched_anim = q;
         // The arts slow-motion arms (`FUN_8004AD80`; kernel
-        // `legaia_engine_vm::battle_anim_rate`). Order is retail's: the
+        // `legaia_engine_battle_vm::battle_anim_rate`). Order is retail's: the
         // unconditional decay first (`0x8004B080` - a non-normal actor's
         // committing clip rises to half speed), then the staged-id arms.
         // The SpecialStarter (`0x1A`) freezes every slot and puts the
@@ -452,7 +476,7 @@ impl World {
         // `ctx[+0x243]`). The restore back to normal is the SM's Done arm
         // (`FUN_801E93C8` via `battle_gauge_rearm::restore_anim_rates`).
         {
-            use vm::battle_anim_rate as rl;
+            use legaia_engine_battle_vm::battle_anim_rate as rl;
             let decayed = rl::commit_rate_decay(self.actors[i].battle.anim_rate);
             self.actors[i].battle.anim_rate = decayed;
             let marker = self.battle_ctx.gauge_rearm_latch != 0;
@@ -490,7 +514,9 @@ impl World {
                             .and_then(|k| b.starter_marks.and_then(|m| m.get(k).copied()))
                             .map(|w| w as u8);
                         let (stage, level) =
-                            vm::battle_action::banner_on_starter_commit(seat, pick);
+                            legaia_engine_battle_vm::battle_action::banner_on_starter_commit(
+                                seat, pick,
+                            );
                         self.battle_ctx.arts_banner_stage = stage;
                         self.battle_ctx.arts_banner_level = level;
                     }
@@ -522,7 +548,7 @@ impl World {
             let a = &mut self.actors[i];
             a.battle.current_anim = 0;
             a.battle_staged_anim = None;
-            self.apply_battle_pose(i, vm::battle_action::Pose::Idle as u8);
+            self.apply_battle_pose(i, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
             return;
         }
         // The art-constant arm (`staged >= 0x1B`, `0x8004BB5C..0x8004BC40`)
@@ -587,7 +613,9 @@ impl World {
                 && self.battle_ctx.gauge_rearm_latch != 2
                 && self.battle_ctx.active_actor < self.party.party_count
             {
-                let coin = (vm::battle_formulas::world_rand(&mut self.rng_state) & 1) as u8;
+                let coin =
+                    (legaia_engine_battle_vm::battle_formulas::world_rand(&mut self.rng_state) & 1)
+                        as u8;
                 self.battle_ctx.swing_yaw_seeds = self.battle_ctx.swing_yaw_seeds.wrapping_add(1);
                 self.battle_ctx.swing_yaw_coin = coin;
                 self.battle_ctx.camera_variant = 0;
@@ -623,10 +651,10 @@ impl World {
         // the loop-vs-once bit retail derives from the record kind isn't
         // modelled on MonsterAnimation.
         let player = clip.as_ref().and_then(|c| {
-            if c.action_id == vm::battle_action::WALK_TAG {
-                crate::battle_anim::MonsterAnimPlayer::new(c)
+            if c.action_id == legaia_engine_battle_vm::battle_action::WALK_TAG {
+                legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(c)
             } else {
-                crate::battle_anim::MonsterAnimPlayer::new_one_shot(c)
+                legaia_engine_battle::battle_anim::MonsterAnimPlayer::new_one_shot(c)
             }
         });
         match player {
@@ -711,13 +739,13 @@ impl World {
     /// The action **tag** of every installed action clip of the monster in
     /// `slot`, in entry order - the `+0x4C` table the battle action SM's
     /// `FUN_80050E2C` lookups scan
-    /// (`legaia_engine_vm::battle_action::monster_action_by_tag`).
+    /// (`legaia_engine_battle_vm::battle_action::monster_action_by_tag`).
     ///
     /// The clips are installed positionally
-    /// (`legaia_asset::monster_archive::animations_by_entry`), so a clip's
+    /// (`legaia_actor_formats::monster_archive::animations_by_entry`), so a clip's
     /// index is its entry index and its `action_id` is the entry's first
     /// byte. A hole - an entry with no decodable stream - has no byte to
-    /// report and reads as [`legaia_asset::monster_archive::NO_ACTION_ENTRY`],
+    /// report and reads as [`legaia_actor_formats::monster_archive::NO_ACTION_ENTRY`],
     /// which no searched tag equals; PROT 0867 carries no holes, so the list
     /// is the record's own. `None` for a party slot, an empty slot, or a
     /// monster whose clips were never installed.
@@ -729,10 +757,10 @@ impl World {
             clips
                 .iter()
                 .map(|c| {
-                    c.as_ref()
-                        .map_or(legaia_asset::monster_archive::NO_ACTION_ENTRY, |c| {
-                            c.action_id
-                        })
+                    c.as_ref().map_or(
+                        legaia_actor_formats::monster_archive::NO_ACTION_ENTRY,
+                        |c| c.action_id,
+                    )
                 })
                 .collect(),
         )
@@ -789,7 +817,7 @@ impl World {
     // REF: FUN_801D5854 - the SM's pose dispatch this hook answers; the
     // id->slot mapping is an engine interpretation, not a port of its body.
     pub fn apply_battle_pose(&mut self, slot: usize, pose_id: u8) {
-        use vm::battle_action::Pose;
+        use legaia_engine_battle_vm::battle_action::Pose;
         // Ready / recover play the idle loop (doc above): fold them into the
         // idle request so the loop is not restarted when the SM switches
         // between them.
@@ -826,7 +854,7 @@ impl World {
         // actions by first-byte search, not by pose id), so only the idle
         // request maps for monster slots; party tables are identity-ordered
         // and accept the full pose set.
-        if slot >= 3 && pose_id != vm::battle_action::Pose::Idle as u8 {
+        if slot >= 3 && pose_id != legaia_engine_battle_vm::battle_action::Pose::Idle as u8 {
             return;
         }
         if actor.battle_pose == Some(pose_id) {
@@ -839,10 +867,11 @@ impl World {
         };
         let selected = match clips.get(clip_slot).and_then(|c| c.as_ref()) {
             Some(clip) if clip_slot != 0 => {
-                crate::battle_anim::MonsterAnimPlayer::new_one_shot(clip).map(|p| (p, clip))
+                legaia_engine_battle::battle_anim::MonsterAnimPlayer::new_one_shot(clip)
+                    .map(|p| (p, clip))
             }
             _ => clips.first().and_then(|c| c.as_ref()).and_then(|clip| {
-                crate::battle_anim::MonsterAnimPlayer::new(clip).map(|p| (p, clip))
+                legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(clip).map(|p| (p, clip))
             }),
         };
         if let Some((player, clip)) = selected {
@@ -862,7 +891,7 @@ impl World {
     pub fn set_actor_battle_animation(
         &mut self,
         slot: usize,
-        player: crate::battle_anim::MonsterAnimPlayer,
+        player: legaia_engine_battle::battle_anim::MonsterAnimPlayer,
     ) {
         if let Some(actor) = self.actors.get_mut(slot) {
             actor.battle_animation = Some(player);

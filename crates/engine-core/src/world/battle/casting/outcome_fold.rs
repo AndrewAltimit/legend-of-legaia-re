@@ -3,15 +3,18 @@
 use super::*;
 
 impl World {
-    /// Fold a single-target [`crate::spells::SpellOutcome`] into live actor
+    /// Fold a single-target [`legaia_engine_battle::spells::SpellOutcome`] into live actor
     /// state and surface a HUD popup. Damage subtracts HP (and downs the
     /// target at zero); heals / revives add HP (capped); cures clear the
     /// target's status; buffs adjust a per-slot scalar with a turn timer
     /// ([`Self::apply_battle_buff`]); capture rolls vs the monster's weakened
     /// state ([`Self::resolve_capture`]); escape flags a return to the field
     /// ([`crate::world::BattleState::escaped`]). `Failed` is a no-op (MP already spent).
-    pub(in crate::world) fn fold_spell_outcome(&mut self, outcome: crate::spells::SpellOutcome) {
-        use crate::spells::SpellOutcome as O;
+    pub(in crate::world) fn fold_spell_outcome(
+        &mut self,
+        outcome: legaia_engine_battle::spells::SpellOutcome,
+    ) {
+        use legaia_engine_battle::spells::SpellOutcome as O;
         match outcome {
             O::Damage { target, amount, .. } => {
                 // The shared damage finisher fills the defender's spirit-art

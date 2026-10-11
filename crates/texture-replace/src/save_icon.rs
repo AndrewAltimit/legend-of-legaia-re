@@ -4,7 +4,7 @@
 //! The portraits live in a single 4bpp TIM in the menu overlay (PROT entry
 //! 899): sixteen 16x16 tiles row-interleaved across one 256x16 strip, with a
 //! 256-entry CLUT block that is **one 16-colour palette per tile**. Format
-//! detail in [`legaia_asset::save_icon`] and
+//! detail in [`legaia_ui_formats::save_icon`] and
 //! [`docs/formats/save-icon.md`](../../../docs/formats/save-icon.md).
 //!
 //! ## Why this is not just `tim-replace` on entry 899
@@ -32,11 +32,11 @@
 
 use anyhow::{Context, Result, bail};
 
-use legaia_asset::save_icon::{
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_ui_formats::save_icon::{
     self, CLUT_ENTRIES_PER_TILE, SaveIconSheet, TILE_BLOCK_BYTES, TILE_CLUT_BYTES, TILE_SIZE,
 };
-use legaia_asset::title_pak;
-use legaia_disc_patch::disc::DiscPatcher;
+use legaia_ui_formats::title_pak;
 
 /// PROT entry that carries the sheet.
 pub const PROT_ENTRY: u32 = save_icon::PROT_ENTRY as u32;
@@ -315,7 +315,7 @@ pub fn replace_slot(
 /// VRAM rect the card-block icon writer `FUN_801E1934` grabs), a tile
 /// in 0..3 also has a boot load-screen standalone portrait TIM in the
 /// pre-`init_data` head of `PROT.DAT`
-/// ([`legaia_asset::title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET`],
+/// ([`legaia_ui_formats::title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET`],
 /// indexed by char_id) which retail keeps byte-identical to the strip -
 /// it receives that side's new content too.
 ///

@@ -15,8 +15,9 @@
 //! stale value.
 
 use super::*;
-use crate::monster_catalog::{FormationDef, FormationSlot};
-use vm::battle_action::BattleEndCause;
+use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+use legaia_engine_battle_vm::battle_action::BattleEndCause;
+use legaia_engine_mode::mode::SceneMode;
 
 fn battle_world() -> World {
     let mut world = World {

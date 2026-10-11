@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::{battle_char_assembly, battle_data_pack, monster_archive};
+use legaia_actor_formats::{battle_char_assembly, battle_data_pack, monster_archive};
 use legaia_party_swap::playerize;
 
 fn prot_dir() -> Option<PathBuf> {

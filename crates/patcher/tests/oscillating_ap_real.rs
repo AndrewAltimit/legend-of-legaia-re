@@ -34,12 +34,12 @@ use legaia_arts_patch::arts_power::parse_combo;
 use legaia_arts_patch::oscillating_ap::{
     BITS_LEN, HOOK_DMG_VA, HOOK_LIST_VA, OscillatingApInjection,
 };
-use legaia_asset::item_names::file_offset_for_va;
 use legaia_code_hooks::arenas::{
     ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, HOOK_SETUP_VA, SCUS_GAP_END_VA,
     SCUS_GAP_VA, SLOT6_END_VA, SLOT6_VA,
 };
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 

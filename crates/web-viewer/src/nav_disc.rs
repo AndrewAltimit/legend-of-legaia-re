@@ -132,7 +132,8 @@ impl LegaiaViewer {
                 // Decode the item-name table so the enemy table can show drop
                 // names instead of raw ids. Silent on failure (regional build
                 // with a different table address) - the page falls back to ids.
-                if let Some(table) = legaia_asset::item_names::ItemNameTable::from_scus(&scus) {
+                if let Some(table) = legaia_game_tables::item_names::ItemNameTable::from_scus(&scus)
+                {
                     console_log(&format!(
                         "Decoded item-name table from SCUS ({} named ids)",
                         table.named_count()
@@ -149,24 +150,27 @@ impl LegaiaViewer {
                 // character - Vahn's weapon section is Noa's Ra-Seru one).
                 // Palette map of the system-UI page (which CLUT each widget
                 // sprite draws through) for the catalog's composite view.
-                if let Some(table) = legaia_asset::ui_widgets::WidgetTable::from_scus(&scus) {
-                    self.sheet_regions = Some(
-                        legaia_asset::tim_palette_context::sheet_palette_regions(&table),
-                    );
+                if let Some(table) = legaia_ui_formats::ui_widgets::WidgetTable::from_scus(&scus) {
+                    self.sheet_regions =
+                        Some(legaia_ui_formats::tim_palette_context::sheet_palette_regions(&table));
                 }
-                if let Some(table) = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus) {
+                if let Some(table) =
+                    legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus)
+                {
                     self.equip_stats = Some(table);
                 } else {
                     console_log("equip_stats::from_scus skipped: table not found in SCUS");
                 }
-                if let Some(table) = legaia_asset::spell_names::SpellNameTable::from_scus(&scus) {
+                if let Some(table) =
+                    legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus)
+                {
                     self.spell_names = Some(table);
                 } else {
                     console_log("spell_names::from_scus skipped: table not found in SCUS");
                 }
                 // Decode the per-monster steal table so the enemy table can show
                 // what the Evil God Icon steals from each monster (item + chance).
-                if let Some(table) = legaia_asset::steal_table::StealTable::from_scus(&scus) {
+                if let Some(table) = legaia_game_tables::steal_table::StealTable::from_scus(&scus) {
                     self.steal_table = Some(table);
                 } else {
                     console_log("steal_table::from_scus skipped: table not found in SCUS");
@@ -175,7 +179,9 @@ impl LegaiaViewer {
                 // `scene_tmd_stream` preview can place its second copy the
                 // way retail does - a half turn by default, a YZ-plane
                 // reflection for the stages this table names.
-                if let Some(table) = legaia_asset::battle_backdrop::MirrorXTable::from_scus(&scus) {
+                if let Some(table) =
+                    legaia_scene_formats::battle_backdrop::MirrorXTable::from_scus(&scus)
+                {
                     console_log(&format!(
                         "Decoded battle-backdrop mirror table from SCUS ({} stage slots)",
                         table.ids().len()
@@ -217,7 +223,7 @@ impl LegaiaViewer {
             .collect();
         self.tim_catalog = tim_catalog::build_from_spans(&prot_bytes, &spans);
         self.boot_cluts =
-            legaia_asset::tim_palette_context::BootClutVram::from_prot_dat(&prot_bytes);
+            legaia_ui_formats::tim_palette_context::BootClutVram::from_prot_dat(&prot_bytes);
         console_log(&format!(
             "Cataloged {} TIMs in PROT.DAT",
             self.tim_catalog.len()

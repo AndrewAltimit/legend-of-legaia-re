@@ -43,7 +43,7 @@ impl LegaiaViewer {
         if end > self.disc.len() {
             return "{\"records\":[]}".to_string();
         }
-        let records = match legaia_asset::monster_archive::records(&self.disc[off..end]) {
+        let records = match legaia_actor_formats::monster_archive::records(&self.disc[off..end]) {
             Ok(r) => r,
             Err(e) => return format!("{{\"error\":\"monster archive decode failed: {e}\"}}"),
         };
@@ -83,7 +83,7 @@ impl LegaiaViewer {
         // the entity SM turns into the scripted-fight flag. Decides the boost
         // profile and the Seru side-effect gates the table presents per row.
         let census = {
-            let mut c = legaia_asset::formation_census::FormationCensus::default();
+            let mut c = legaia_disc_audit::formation_census::FormationCensus::default();
             if let Some(entries) = parse_prot_toc(&self.disc) {
                 for e in entries {
                     let off = e.byte_offset as usize;
@@ -91,7 +91,8 @@ impl LegaiaViewer {
                     if end > self.disc.len() {
                         continue;
                     }
-                    for man in legaia_asset::formation_census::scene_mans(&self.disc[off..end]) {
+                    for man in legaia_disc_audit::formation_census::scene_mans(&self.disc[off..end])
+                    {
                         c.fold_man(&man);
                     }
                 }
@@ -104,18 +105,19 @@ impl LegaiaViewer {
             .and_then(|es| {
                 es.into_iter().find(|e| {
                     e.index
-                        == legaia_asset::seru_side_effect::BATTLE_ACTION_OVERLAY_PROT_INDEX as u32
+                        == legaia_game_tables::seru_side_effect::BATTLE_ACTION_OVERLAY_PROT_INDEX
+                            as u32
                 })
             })
             .and_then(|e| {
                 let off = e.byte_offset as usize;
                 let end = off.saturating_add(e.size_bytes as usize);
                 (end <= self.disc.len())
-                    .then(|| legaia_asset::element_affinity::parse(&self.disc[off..end]))
+                    .then(|| legaia_game_tables::element_affinity::parse(&self.disc[off..end]))
                     .flatten()
             });
         let element_name =
-            |id: u8| legaia_asset::element_affinity::Element::from_id(id).map(|e| e.name());
+            |id: u8| legaia_game_tables::element_affinity::Element::from_id(id).map(|e| e.name());
         let resist_bypass = |enemy_element: u8| -> Vec<&'static str> {
             (0u8..7)
                 .filter(|&summon| {
@@ -124,7 +126,9 @@ impl LegaiaViewer {
                             .as_ref()
                             .and_then(|a| a.affinity_pct(summon, enemy_element))
                             .map(|pct| {
-                                legaia_asset::seru_side_effect::resist_roll_bypassed(summon, pct)
+                                legaia_game_tables::seru_side_effect::resist_roll_bypassed(
+                                    summon, pct,
+                                )
                             })
                             .unwrap_or(false)
                 })
@@ -154,15 +158,15 @@ impl LegaiaViewer {
                         "scripted": census.rows_for(r.id as u8).default_scripted(),
                     },
                     "side_effects": {
-                        "scripted": legaia_asset::seru_side_effect::Susceptibility::for_record(&r.stats, true),
-                        "random": legaia_asset::seru_side_effect::Susceptibility::for_record(&r.stats, false),
+                        "scripted": legaia_game_tables::seru_side_effect::Susceptibility::for_record(&r.stats, true),
+                        "random": legaia_game_tables::seru_side_effect::Susceptibility::for_record(&r.stats, false),
                     },
                     "resist_bypass": resist_bypass(r.element),
                     "magic_count": r.magic_count,
                     "gold": r.gold,
                     "exp": r.exp,
                     "element": r.element,
-                    "element_name": legaia_asset::element_affinity::Element::from_id(r.element)
+                    "element_name": legaia_game_tables::element_affinity::Element::from_id(r.element)
                         .map(|e| e.name()),
                     "drop_item": r.drop_item,
                     "drop_item_name": drop_name(r.drop_item),
@@ -203,7 +207,7 @@ impl LegaiaViewer {
     /// per-vertex normals. Returns `None` for a filler / out-of-range id.
     fn build_monster_mesh(&self, id: u16) -> Option<legaia_tmd::mesh::VramMesh> {
         let slice = self.monster_archive_slice()?;
-        let mesh = legaia_asset::monster_archive::mesh(slice, id).ok()??;
+        let mesh = legaia_actor_formats::monster_archive::mesh(slice, id).ok()??;
         let tmd = legaia_tmd::parse(mesh.tmd_bytes()).ok()?;
         Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, mesh.tmd_bytes()))
     }
@@ -213,9 +217,9 @@ impl LegaiaViewer {
     fn build_monster_texture(
         &self,
         id: u16,
-    ) -> Option<legaia_asset::monster_archive::MonsterTexture> {
+    ) -> Option<legaia_actor_formats::monster_archive::MonsterTexture> {
         let slice = self.monster_archive_slice()?;
-        let mesh = legaia_asset::monster_archive::mesh(slice, id).ok()??;
+        let mesh = legaia_actor_formats::monster_archive::mesh(slice, id).ok()??;
         mesh.texture()
     }
 
@@ -338,7 +342,7 @@ impl LegaiaViewer {
         let Some(slice) = self.monster_archive_slice() else {
             return Vec::new();
         };
-        let Some(Some(mesh)) = legaia_asset::monster_archive::mesh(slice, id).ok() else {
+        let Some(Some(mesh)) = legaia_actor_formats::monster_archive::mesh(slice, id).ok() else {
             return Vec::new();
         };
         let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
@@ -354,7 +358,7 @@ impl LegaiaViewer {
         let Some(slice) = self.monster_archive_slice() else {
             return vec![0, 0];
         };
-        match legaia_asset::monster_archive::idle_animation(slice, id)
+        match legaia_actor_formats::monster_archive::idle_animation(slice, id)
             .ok()
             .flatten()
         {
@@ -372,7 +376,7 @@ impl LegaiaViewer {
         let Some(slice) = self.monster_archive_slice() else {
             return Vec::new();
         };
-        let Some(anim) = legaia_asset::monster_archive::idle_animation(slice, id)
+        let Some(anim) = legaia_actor_formats::monster_archive::idle_animation(slice, id)
             .ok()
             .flatten()
         else {
@@ -406,11 +410,11 @@ impl LegaiaViewer {
         let Some(slice) = self.monster_archive_slice() else {
             return "[]".to_string();
         };
-        let anims = match legaia_asset::monster_archive::animations(slice, id) {
+        let anims = match legaia_actor_formats::monster_archive::animations(slice, id) {
             Ok(Some(a)) => a,
             _ => return "[]".to_string(),
         };
-        let labels = legaia_asset::monster_archive::action_labels(&anims);
+        let labels = legaia_actor_formats::monster_archive::action_labels(&anims);
         let arr: Vec<serde_json::Value> = anims
             .iter()
             .enumerate()
@@ -436,7 +440,7 @@ impl LegaiaViewer {
         let Some(slice) = self.monster_archive_slice() else {
             return Vec::new();
         };
-        let Some(anims) = legaia_asset::monster_archive::animations(slice, id)
+        let Some(anims) = legaia_actor_formats::monster_archive::animations(slice, id)
             .ok()
             .flatten()
         else {
@@ -470,7 +474,7 @@ impl LegaiaViewer {
         let Some(slice) = self.monster_archive_slice() else {
             return Vec::new();
         };
-        legaia_asset::monster_gltf::export_glb(slice, id)
+        legaia_actor_formats::monster_gltf::export_glb(slice, id)
             .ok()
             .flatten()
             .unwrap_or_default()

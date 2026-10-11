@@ -84,7 +84,7 @@ impl FieldLight {
 
 /// q3.12 sine of a PSX 12-bit angle - the retail LUT at `0x80070A2C`
 /// (`4096 * sin` truncated toward zero). Same values as
-/// `legaia_engine_ui::gte::trig::psx_sin`, which the disc-gated LUT oracle
+/// `crate::gte::trig::psx_sin`, which the disc-gated LUT oracle
 /// pins entry for entry.
 fn psx_sin(angle: i16) -> i32 {
     let a = f64::from((angle as u16) & 0xFFF);

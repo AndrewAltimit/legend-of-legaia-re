@@ -44,7 +44,7 @@ fn opdeene_caption_is_a_bounded_beat_in_the_crawl_gap() {
         return;
     };
 
-    let cutscene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    let cutscene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.enter_field_scene(cutscene, 0).expect("enter opdeene");
 

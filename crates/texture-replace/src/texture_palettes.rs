@@ -7,7 +7,7 @@
 //! For the **system-UI sheet** (the 256x192 4 bpp TIM at `PROT.DAT` `0x18E0`
 //! uploaded to VRAM `(896, 256)`: menu and battle chrome, plates, status
 //! badges, gauge, button glyphs) it is disc data, and the one kernel that
-//! reads it is [`legaia_asset::tim_palette_context::texel_palettes`]: which
+//! reads it is [`legaia_ui_formats::tim_palette_context::texel_palettes`]: which
 //! widget record draws which texel through which CLUT cell, which record
 //! wins where two overlap, and which rectangle another TIM covers at
 //! runtime. The asset viewer's "as the game draws it" view reads the same
@@ -24,16 +24,16 @@
 
 use anyhow::Result;
 
-use legaia_asset::tim_palette_context::{
+use legaia_tim::multi_palette::{PaletteContext, own_palettes};
+use legaia_tim::{PixelMode, Tim};
+use legaia_ui_formats::tim_palette_context::{
     SheetRegion, parse_button_glyph_tim, parse_subpalette_ext_tim, sheet_palette_regions,
     texel_palettes,
 };
-use legaia_asset::ui_widgets::{
+use legaia_ui_formats::ui_widgets::{
     BUTTON_GLYPH_TIM_PROT_OFFSET, ClaimPart, SHEET_VRAM_ORIGIN, SUBPALETTE_EXT_FIRST,
     SUBPALETTE_EXT_TIM_PROT_OFFSET, WidgetTable,
 };
-use legaia_tim::multi_palette::{PaletteContext, own_palettes};
-use legaia_tim::{PixelMode, Tim};
 
 use legaia_disc_patch::disc::DiscPatcher;
 
@@ -262,7 +262,7 @@ mod tests {
     fn region(widget: u8, rect: (u16, u16, u16, u16), palette: u8) -> SheetRegion {
         SheetRegion {
             rect,
-            clut_fb: legaia_asset::ui_widgets::clut_fb(palette),
+            clut_fb: legaia_ui_formats::ui_widgets::clut_fb(palette),
             widget,
             class: 5,
             part: ClaimPart::Rect,

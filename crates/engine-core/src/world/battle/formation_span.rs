@@ -4,7 +4,7 @@
 //! initiative seeder `FUN_801DA780`, and again from the ring cancelled back to
 //! the round prompt (case `2`, `0x801D11E0`).
 //!
-//! The kernel is `legaia_engine_vm::battle_action::normalize_formation_span`;
+//! The kernel is `legaia_engine_battle_vm::battle_action::normalize_formation_span`;
 //! this module maps the engine's actor table onto the retail pool it walks.
 //!
 //! ## The two pools differ in layout, not in seating
@@ -61,7 +61,7 @@
 //! ([`crate::battle_cam_inputs::battle_formation_box`]).
 
 use super::*;
-use vm::battle_action::{FormationPos, normalize_formation_span};
+use legaia_engine_battle_vm::battle_action::{FormationPos, normalize_formation_span};
 
 /// Retail's pool width the kernel walks (`sltiu v0,v0,0x7` at `0x801DB3D4`):
 /// party slots `0..3`, monster slots `3..7`.
@@ -146,7 +146,7 @@ impl World {
     ///   `town0c`) and the first monster id `0x8007BD0C` is in `0x3D..=0x3F`.
     ///
     /// `family` counts the addends that fire. One selects rows `5..8`
-    /// ([`crate::battle_seats::MONSTER_SEATS_ALT`]; counts one and two are
+    /// ([`legaia_engine_battle::battle_seats::MONSTER_SEATS_ALT`]; counts one and two are
     /// authored identical to the normal family, three and four differ). Both
     /// select rows `9..12`, which the disc leaves zero-filled - every monster
     /// on the stage origin - and the port reproduces that.
@@ -159,9 +159,9 @@ impl World {
         let pc = usize::from(self.party.party_count.clamp(1, 3));
         for k in 0..usize::from(monster_count) {
             let s = if family == 1 {
-                crate::battle_seats::monster_seat(monster_count, k, true)
+                legaia_engine_battle::battle_seats::monster_seat(monster_count, k, true)
             } else {
-                crate::battle_seats::Seat { x: 0, y: 0, z: 0 }
+                legaia_engine_battle::battle_seats::Seat { x: 0, y: 0, z: 0 }
             };
             let Some(a) = self.actors.get_mut(pc + k) else {
                 break;

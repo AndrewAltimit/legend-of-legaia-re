@@ -12,10 +12,11 @@
 //! Disc-free: the row order needs an item-effect table, assembled here as a
 //! synthetic `PS-X EXE` image.
 
-use legaia_asset::item_effect::{
+use legaia_engine_core::world::World;
+use legaia_engine_menus::item_bag::ItemBag;
+use legaia_game_tables::item_effect::{
     HEAL_AMOUNT_TABLE_VA, ItemEffectTable, RECORD_COUNT, RECORD_STRIDE, TABLE_VA,
 };
-use legaia_engine_core::world::{ItemBag, World};
 
 const ITEM_TABLE_VA: u32 = 0x8007_4368;
 const ITEM_RECORD_STRIDE: u32 = 0x0C;
@@ -76,7 +77,7 @@ fn world() -> World {
     party.members[0].set_hp_mp_sp(hms);
     w.load_party(party);
     w.set_item_effects(table(&BAG_IDS));
-    w.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+    w.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
     w.party.inventory = holed_bag();
     w
 }
@@ -111,7 +112,7 @@ fn throw_out_zeroes_the_payloads_slot_not_the_first_stack_of_that_id() {
     assert_eq!(session.rows[5].slot, 8);
 
     // Drive the screen: Throw Out, step to the last row, confirm Yes.
-    use legaia_engine_core::input::PadButton as P;
+    use legaia_engine_system::input::PadButton as P;
     session.input_pad_edge(P::Down.mask()); // command window: Use -> Throw Out
     session.input_pad_edge(P::Cross.mask());
     for _ in 0..5 {
@@ -140,7 +141,7 @@ fn a_use_spends_the_payloads_slot() {
     let before_low = w.party.inventory.slot(4);
     let mut session = legaia_engine_core::field_menu_dispatch::build_pause_items_session(&w);
 
-    use legaia_engine_core::input::PadButton as P;
+    use legaia_engine_system::input::PadButton as P;
     session.input_pad_edge(P::Cross.mask()); // command window: Use
     for _ in 0..5 {
         session.input_pad_edge(P::Down.mask()); // row 5 = slot 8, the 2nd 0x79
@@ -166,7 +167,7 @@ fn a_use_spends_the_payloads_slot() {
 fn without_an_effect_table_the_session_carries_no_slots() {
     let mut w = World::new();
     w.load_party(legaia_save::Party::zeroed(1));
-    w.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+    w.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
     w.party.inventory = holed_bag();
     let session = legaia_engine_core::field_menu_dispatch::build_pause_items_session(&w);
     assert!(session.inner.bag_slots.is_empty());

@@ -33,11 +33,9 @@ use anyhow::{Context, Result};
 
 // The Legaia RAM anchors are shared with the mednafen reader - both land on the
 // same KSEG0-addressed 2 MiB image, so "which scene is this state in?" has one
-// implementation. Re-exported here so existing `legaia_pcsx_redux::SCENE_NAME_VA`
+// implementation. Re-exported here so existing `legaia_ram_image::game_anchors::SCENE_NAME_VA`
 // consumers keep resolving.
-pub use legaia_ram_image::game_anchors::{
-    GAME_MODE_VA, PLAYER_PTR_VA, PLAYER_X_OFF, PLAYER_Z_OFF, SCENE_NAME_VA, StateIdentity,
-};
+use legaia_ram_image::game_anchors::StateIdentity;
 
 /// PSX scratchpad base address (`0x1F800000`), the "fast RAM" the field and
 /// battle code keep their hot globals in.

@@ -24,9 +24,9 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_asset::spell_names::{SpellNameTable, SpellTargetShape};
-use legaia_engine_core::input::PadButton;
-use legaia_engine_vm::battle_commit_log::{NAME_X, ROW_Y_LOWER};
+use legaia_engine_battle_vm::battle_commit_log::{NAME_X, ROW_Y_LOWER};
+use legaia_engine_system::input::PadButton;
+use legaia_game_tables::spell_names::{SpellNameTable, SpellTargetShape};
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 /// Stage scale at the 960x720 surface (origin `(0, 0)`).

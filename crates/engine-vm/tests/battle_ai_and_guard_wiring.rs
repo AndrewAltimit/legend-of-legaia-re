@@ -6,10 +6,10 @@
 //! the seam: that the SM reaches them, with the right per-character inputs,
 //! and that the gates which keep them quiet in ordinary play really do.
 
-use legaia_engine_vm::battle_action::{
+use legaia_engine_battle_vm::battle_action::{
     ActionCategory, ActionState, BattleActionCtx, BattleActionHost, BattleActor, step,
 };
-use legaia_engine_vm::battle_arts_auto_combo::{ART_ACTION_BIAS, AUTO_FILL_ABILITY_BIT};
+use legaia_engine_battle_vm::battle_arts_auto_combo::{ART_ACTION_BIAS, AUTO_FILL_ABILITY_BIT};
 
 #[derive(Default)]
 struct Host {

@@ -2,7 +2,7 @@
 //! pinned PAL bases, and the pointer-walk locator for an unpinned executable.
 
 use super::super::markup;
-use legaia_asset::{item_names, new_game};
+use legaia_game_tables::{item_names, new_game};
 
 /// Longest string the pooled-name reader follows before calling a pointer bogus.
 pub(super) const MAX_STRLEN: usize = 512;

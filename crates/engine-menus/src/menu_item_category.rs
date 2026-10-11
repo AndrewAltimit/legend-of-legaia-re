@@ -2,7 +2,7 @@
 //! check the Best-Equipment chooser scores with.
 //!
 //! The menu overlay (PROT 0899, base `0x801CE818` -
-//! `legaia_asset::menu_windows::MENU_OVERLAY_BASE_VA`) carries a small
+//! `legaia_game_tables::menu_windows::MENU_OVERLAY_BASE_VA`) carries a small
 //! zero-terminated byte-pair table at VA `0x801E4B88` (file offset
 //! `0x16370`, computed with the same VA-to-file map as the window
 //! descriptor table at `0x801E4738`):
@@ -45,7 +45,7 @@ pub const CATEGORY_TABLE_VA: u32 = 0x801E_4B88;
 /// File offset of the table inside the as-loaded menu-overlay image
 /// (PROT 0899), via the same base the window-descriptor table uses.
 pub const CATEGORY_TABLE_OFFSET: usize =
-    (CATEGORY_TABLE_VA - legaia_asset::menu_windows::MENU_OVERLAY_BASE_VA) as usize;
+    (CATEGORY_TABLE_VA - legaia_game_tables::menu_windows::MENU_OVERLAY_BASE_VA) as usize;
 
 /// Parse bound: the retail table holds 27 entries; anything unterminated
 /// within this many entries is rejected as a mis-located read.
@@ -122,7 +122,7 @@ pub fn parse_category_table(overlay: &[u8]) -> Result<Vec<CategoryEntry>> {
 // `FieldMenuSubsession::tick_pad_edge` -> `EquipSession::input` ->
 // `EquipSession::best_equipment_now` -> the `weapon_category_score` closure ->
 // here; its retail caller is the same Best-Equipment chooser (`FUN_801CF88C`,
-// ported as `legaia_engine_core::equip_session::best_equipment_candidates`).
+// ported as `crate::equip_session::best_equipment_candidates`).
 //
 // The table itself comes off the disc: `World::install_menu_overlay_tables`
 // runs [`parse_category_table`] over the PROT 0899 image both hosts already

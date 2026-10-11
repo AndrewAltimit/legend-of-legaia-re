@@ -4,7 +4,7 @@
 //! The per-summon stager overlay (extraction PROT 903..=913 = raw TOC
 //! `0x389..=0x393`; Gimard *Burning Attack* = 903)
 //! carries real move-VM scene-graph part records, recovered by
-//! [`legaia_asset::summon_overlay`]. This module drives them: it seeds one
+//! [`legaia_overlay_images::summon_overlay`]. This module drives them: it seeds one
 //! move-VM [`ActorState`] per part from its record and ticks every part through
 //! the **already-ported move VM** each frame, exactly as the retail spawn helper
 //! `FUN_80021B04` stages a part (`actor[+0x48]` = record move-buffer base,
@@ -35,8 +35,8 @@
 //! [`crate::world::World::take_pending_summon_spawn`], and the host spawns the
 //! summon's namesake `battle_data` creature ([`summon_creature_id`]) as an
 //! ordinary battle actor - mesh + texture via
-//! [`legaia_asset::monster_archive::battle_render_mesh`], animation via
-//! [`legaia_asset::monster_archive::idle_animation`] →
+//! [`legaia_actor_formats::monster_archive::battle_render_mesh`], animation via
+//! [`legaia_actor_formats::monster_archive::idle_animation`] →
 //! [`crate::battle_anim::MonsterAnimPlayer`] → the rigid TRS-keyframe draw
 //! (`FUN_80048A08` / `FUN_8004998C`, ported in `legaia_engine_vm::anim_vm`). That
 //! is the production summon visual.
@@ -84,8 +84,8 @@
 //!   `FUN_801F7088` build is the **world-map top-view tile renderer** aliasing
 //!   the same `0x801Fxxxx` band, not the battle-summon code.)
 
-use legaia_asset::summon_overlay::{SummonOverlay, SummonPart};
 use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome, MoveHost};
+use legaia_overlay_images::summon_overlay::{SummonOverlay, SummonPart};
 
 mod part_draw;
 mod scene;

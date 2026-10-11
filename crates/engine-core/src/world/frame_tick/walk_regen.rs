@@ -4,15 +4,15 @@ use super::*;
 
 impl World {
     /// Field walk-regen driver: project the present party onto the
-    /// [`crate::walk_regen`] kernel, run one tick against
+    /// [`legaia_engine_field::walk_regen`] kernel, run one tick against
     /// [`crate::world::FieldLocomotion::walk_regen_steps`], and write the bumped gauges back into the
     /// roster records.
     ///
     /// REF: FUN_801D0B90
     ///
-    /// The kernel ([`crate::walk_regen::tick_walk_regen`]) is the retail
+    /// The kernel ([`legaia_engine_field::walk_regen::tick_walk_regen`]) is the retail
     /// body: it only runs while the accumulator exceeds
-    /// [`crate::walk_regen::WALK_REGEN_STEP_COST`] (`0x20`), subtracts that
+    /// [`legaia_engine_field::walk_regen::WALK_REGEN_STEP_COST`] (`0x20`), subtracts that
     /// cost, and bumps HP / MP / AP by `8` / `2` / `1` for each member whose
     /// ability-bitfield word 1 carries the walk-passive bit (`0x38` Life
     /// Source, `0x39` Magic Source, `0x3A` Mettle Source), each clamped at
@@ -44,8 +44,9 @@ impl World {
     /// Member order is the present party (retail walks the member-id table
     /// at `0x80084598`), resolved through [`Self::party_roster_slot`].
     pub(crate) fn tick_field_walk_regen(&mut self) {
-        use crate::walk_regen::{WalkGauge, WalkRegenMember};
-        if self.locomotion.walk_regen_steps <= crate::walk_regen::WALK_REGEN_STEP_COST {
+        use legaia_engine_field::walk_regen::{WalkGauge, WalkRegenMember};
+        if self.locomotion.walk_regen_steps <= legaia_engine_field::walk_regen::WALK_REGEN_STEP_COST
+        {
             return;
         }
         let count = (self.party.party_count.min(3) as usize).min(self.party.roster.members.len());
@@ -78,7 +79,11 @@ impl World {
         }
         let mut counter = self.locomotion.walk_regen_steps;
         let mut window = self.locomotion.walk_regen_window;
-        let armed = crate::walk_regen::tick_walk_regen(&mut counter, &mut members, &mut window);
+        let armed = legaia_engine_field::walk_regen::tick_walk_regen(
+            &mut counter,
+            &mut members,
+            &mut window,
+        );
         self.locomotion.walk_regen_steps = counter;
         self.locomotion.walk_regen_window = window;
         if armed {

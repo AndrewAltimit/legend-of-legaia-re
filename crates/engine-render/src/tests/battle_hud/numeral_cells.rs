@@ -19,7 +19,7 @@ use super::*;
 /// fields that really are proportional - the names and the diagnostic rows.
 #[test]
 fn numeral_fields_fit_their_widest_value_in_retail_cells() {
-    use crate::battle_chrome as bc;
+    use legaia_engine_ui::battle_chrome as bc;
     let left_of = |right: i16, digits: u16| bc::digits_left_of(right, digits);
     // The label cells are 16 wide, the `/` separator 8.
     let label_w = 16;

@@ -33,7 +33,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::input::PadButton;
+use legaia_engine_system::input::PadButton;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 use std::env;
 use std::f32::consts::{FRAC_PI_2, PI};

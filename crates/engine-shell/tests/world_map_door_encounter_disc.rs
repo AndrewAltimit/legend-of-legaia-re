@@ -28,9 +28,11 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::{SceneMode, world_map_camera_relative_bits};
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_core::world::world_map_camera_relative_bits;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

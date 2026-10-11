@@ -11,7 +11,7 @@
 //! `duration - DAT_1F800393` so the countdown immediately below expires the
 //! wait on that frame, and clears the mailbox.
 //!
-//! The port had the producer (`legaia_engine_vm::motion_vm::post_touch`) and
+//! The port had the producer (`legaia_engine_motion_vm::motion_vm::post_touch`) and
 //! the wait op, but not the mailbox between them: an NPC parked in a `0x05`
 //! wait ignored the player walking into it for the whole authored countdown.
 //!
@@ -21,9 +21,10 @@
 //! Disc-free: the world is synthetic, so nothing here is gated on
 //! `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::{FieldNpcAmbient, SceneMode, World};
-use legaia_engine_vm::ambient_motion::AmbientMotion;
+use legaia_engine_core::world::{FieldNpcAmbient, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_motion_vm::ambient_motion::AmbientMotion;
+use legaia_engine_system::input::PadButton;
 
 /// `World::terrain.collision_grid` is a `0x80 x 0x80` byte grid; the
 /// crate-private constants are mirrored here because this is an integration
@@ -130,7 +131,7 @@ fn walking_into_an_npc_ends_its_ambient_wait() {
 fn an_npc_with_no_default_move_record_is_not_woken_by_a_bump() {
     let mut world = world_with_npc_at((320, 350));
     world.npcs.ambient.get_mut(&1).unwrap().vm.default_move =
-        [legaia_engine_vm::ambient_motion::DEFAULT_MOVE_UNSET; 2];
+        [legaia_engine_motion_vm::ambient_motion::DEFAULT_MOVE_UNSET; 2];
     run(&mut world, 40);
     assert_eq!(
         npc_pc(&world),

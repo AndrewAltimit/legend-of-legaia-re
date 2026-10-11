@@ -48,7 +48,7 @@
 //! superseded - see `docs/formats/str-fmv-table.md`.)
 //!
 //! The disc-authoritative decoder is
-//! [`legaia_asset::fmv_dispatch::FmvTable`] - call paths that hold the
+//! [`legaia_game_tables::fmv_dispatch::FmvTable`] - call paths that hold the
 //! PROT 0970 overlay bytes (e.g. the shell's boot-cutscene player)
 //! should prefer `FmvTable::engine_path(fmv_id)`, which also carries
 //! the per-slot frame range the four `MV3.STR` segments need. The
@@ -77,18 +77,18 @@
 /// (`MV1A.STR` / `MOV15.STR` / `MOV.STR`) absent from the retail
 /// disc.
 ///
-/// Engines that drain a `legaia_engine_core::field_events::FieldEvent::FmvTrigger`
+/// Engines that drain a `legaia_engine_field::field_events::FieldEvent::FmvTrigger`
 /// event use this helper to resolve the operand to a path that their
 /// disc handle can open; ids `2..=5` all resolve to `MV3.STR` (the
 /// four frame-range segments - the segment window itself comes from
-/// [`legaia_asset::fmv_dispatch::FmvTable`], which is the preferred
+/// [`legaia_game_tables::fmv_dispatch::FmvTable`], which is the preferred
 /// resolver when disc bytes are available). A `None` result means the
 /// slot points at a cut/missing path; engines should treat it as a
 /// no-op (or surface a playback error if they want to surface it).
 ///
 /// Static fallback map pinned to the disc-decoded dispatch table
 /// (`FUN_801CEA3C`, table `0x801D0A6C`, stride `0x20`; parser
-/// `legaia_asset::fmv_dispatch`).
+/// `legaia_game_tables::fmv_dispatch`).
 // REF: FUN_801CEA3C
 pub fn fmv_index_to_str_filename(fmv_id: i16) -> Option<&'static str> {
     match fmv_id {
@@ -420,7 +420,7 @@ pub const STR_INIT_GAME_MODE: u8 = 0x1A;
 
 /// Number of FMV slots in the dispatch table at `0x801D0A6C`
 /// (9 retail + 14 dev). Matches
-/// [`legaia_asset::fmv_dispatch::FMV_SLOT_COUNT`].
+/// [`legaia_game_tables::fmv_dispatch::FMV_SLOT_COUNT`].
 pub const FMV_SLOT_COUNT: usize = 23;
 
 /// PSX-virtual address of the FMV dispatch table base.
@@ -711,7 +711,10 @@ mod tests {
         assert_eq!(FMV_STATE_TABLE_ADDR, 0x801D_0A6C);
         assert_eq!(FMV_STATE_SLOT_STRIDE, 0x20);
         assert_eq!(FMV_SLOT_COUNT, 23);
-        assert_eq!(FMV_SLOT_COUNT, legaia_asset::fmv_dispatch::FMV_SLOT_COUNT);
+        assert_eq!(
+            FMV_SLOT_COUNT,
+            legaia_game_tables::fmv_dispatch::FMV_SLOT_COUNT
+        );
     }
 
     #[test]

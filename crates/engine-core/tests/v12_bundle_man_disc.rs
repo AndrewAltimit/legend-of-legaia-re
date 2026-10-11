@@ -28,9 +28,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::scene_destinations;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::scene_bundle::{BundleSource, find_bundle, streaming_man_payloads};
+use legaia_engine_field::man_field_scripts::scene_destinations;
 
 fn extracted_root() -> Option<PathBuf> {
     for p in ["extracted", "../extracted", "../../extracted"] {
@@ -44,13 +44,16 @@ fn extracted_root() -> Option<PathBuf> {
 
 /// Load a scene's MAN through the engine's resolution order (bundle first,
 /// streaming variant fallback) and parse it.
-fn scene_man(index: &ProtIndex, name: &str) -> (legaia_asset::man_section::ManFile, Vec<u8>) {
+fn scene_man(
+    index: &ProtIndex,
+    name: &str,
+) -> (legaia_scene_formats::man_section::ManFile, Vec<u8>) {
     let scene = Scene::load(index, name).unwrap_or_else(|e| panic!("load {name}: {e:#}"));
     let man_bytes = scene
         .field_man_payload(index)
         .unwrap_or_else(|e| panic!("{name}: field_man_payload: {e:#}"))
         .unwrap_or_else(|| panic!("{name}: no MAN resolves"));
-    let mf = legaia_asset::man_section::parse(&man_bytes)
+    let mf = legaia_scene_formats::man_section::parse(&man_bytes)
         .unwrap_or_else(|e| panic!("{name}: parse MAN: {e:#}"));
     (mf, man_bytes)
 }

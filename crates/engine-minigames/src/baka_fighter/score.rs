@@ -5,7 +5,7 @@ use super::*;
 /// The two per-round score-bonus tables the overlay carries as rodata: the
 /// combo-bonus table `&DAT_801d70c4` (20 `i32` slots) and the health-bonus
 /// table `&DAT_801d711c` (`i16` slots). They are Sony bytes with no parser in
-/// `legaia_asset::baka_opponents`, so a host that wants the score rows
+/// `legaia_minigame_formats::baka_opponents`, so a host that wants the score rows
 /// populated reads them out of the overlay image itself; with no tables the
 /// rows stay at zero, which is what [`BakaFight`] does by default.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

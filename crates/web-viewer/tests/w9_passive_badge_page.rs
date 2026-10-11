@@ -9,7 +9,7 @@
 //! This one equips the accessory the way a player does, through the pause
 //! menu's Equip screen by pad, after seeding one copy into the bag (a shop
 //! purchase's worth). Which item grants the bit is read off the visitor's own
-//! executable (`legaia_asset::accessory_passive`), not written down here.
+//! executable (`legaia_game_tables::accessory_passive`), not written down here.
 //!
 //! The assertion is the badge itself, by contrast: the same menu walk with
 //! nothing seeded is the control, so whatever the field HUD draws after a
@@ -19,8 +19,8 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::input::PadButton;
 use legaia_engine_field::field_passive_hud::ability_bit;
+use legaia_engine_system::input::PadButton;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 const W: u32 = 960;
@@ -97,8 +97,8 @@ fn an_equipped_low_encounter_accessory_raises_the_badge_column() {
     };
     let bytes = std::fs::read(&disc).expect("read disc");
     let scus = legaia_iso::iso9660::read_file_in_image(&bytes, "SCUS_942.54").expect("SCUS");
-    let table =
-        legaia_asset::accessory_passive::AccessoryPassiveTable::from_scus(&scus).expect("table");
+    let table = legaia_game_tables::accessory_passive::AccessoryPassiveTable::from_scus(&scus)
+        .expect("table");
     // Every item that grants one of the six bits, in id order; the first one
     // the lead can wear in a Goods slot is the one the run equips (some of
     // them are not Goods at all - a used item's passive, a quest twin).

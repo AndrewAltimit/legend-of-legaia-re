@@ -848,7 +848,7 @@ impl EffectAuxTables {
 
     /// The cue-group table (`0x801F6470`) as the flat `[count][id; 4]` byte
     /// region the expander indexes - the shape
-    /// `legaia_engine_vm::battle_cue_group::CueTables::groups` takes.
+    /// `legaia_engine_battle_vm::battle_cue_group::CueTables::groups` takes.
     pub fn cue_group_bytes(&self) -> &[u8] {
         &self.groups
     }

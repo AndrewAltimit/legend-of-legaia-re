@@ -6,7 +6,7 @@
 //! copied there from the descriptor's `+0xC`). Its unit tests build synthetic
 //! descriptors, so they prove the mapping is *self*-consistent and nothing
 //! more. This test takes the **disc's own table** - PROT 0899 in its as-loaded
-//! form, parsed by `legaia_asset::menu_windows` - and asserts the dispatch
+//! form, parsed by `legaia_game_tables::menu_windows` - and asserts the dispatch
 //! resolves exactly the windows it claims to, at the ids the retail table puts
 //! them at.
 //!
@@ -15,11 +15,11 @@
 //!
 //! Skips and passes without `LEGAIA_DISC_BIN` + `extracted/PROT.DAT`.
 
-use legaia_asset::menu_windows::{
+use legaia_engine_ui::{CounterSource, MenuWindowPainter, menu_window_painters, painter_at};
+use legaia_game_tables::menu_windows::{
     self, MENU_OVERLAY_BASE_VA, MENU_OVERLAY_PROT_INDEX, MENU_WINDOW_COUNT, MenuWindowTable,
 };
-use legaia_asset::static_overlay;
-use legaia_engine_render::{CounterSource, MenuWindowPainter, menu_window_painters, painter_at};
+use legaia_overlay_images::static_overlay;
 use legaia_prot::archive::Archive;
 use std::path::PathBuf;
 
@@ -59,11 +59,11 @@ fn menu_window_table() -> Option<MenuWindowTable> {
 fn expected() -> Vec<(usize, MenuWindowPainter)> {
     use MenuWindowPainter as P;
     let gold = P::Counter {
-        pictogram: legaia_engine_render::COUNTER_PICTOGRAM_GOLD,
+        pictogram: legaia_engine_ui::COUNTER_PICTOGRAM_GOLD,
         source: CounterSource::PartyGold,
     };
     let coins = P::Counter {
-        pictogram: legaia_engine_render::COUNTER_PICTOGRAM_COINS,
+        pictogram: legaia_engine_ui::COUNTER_PICTOGRAM_COINS,
         source: CounterSource::CasinoCoins,
     };
     vec![
@@ -116,7 +116,7 @@ fn the_shop_window_ids_resolve_to_the_painters_the_host_expects() {
         return;
     };
     let gold = MenuWindowPainter::Counter {
-        pictogram: legaia_engine_render::COUNTER_PICTOGRAM_GOLD,
+        pictogram: legaia_engine_ui::COUNTER_PICTOGRAM_GOLD,
         source: CounterSource::PartyGold,
     };
     // 33 vendor plate / 32 purse / 34 item info / 37 sell quantity - the
@@ -154,10 +154,10 @@ fn window_35_is_the_pens_only_buy_quantity_renderer_both_hosts_guard_on() {
         "window 35's content renderer moved - both hosts' buy-quantity block \
          filters on this VA and would silently stop drawing"
     );
-    let r = legaia_engine_render::painter_rect(d);
+    let r = legaia_engine_ui::painter_rect(d);
     assert!(r.w > 0 && r.h > 0, "window 35 has a drawable extent");
     assert!(
-        legaia_engine_render::painter_for(d).is_none(),
+        legaia_engine_ui::painter_for(d).is_none(),
         "window 35 must stay outside the painter dispatch: its port returns \
          pens, not a draw list, so a painter mapping would draw it twice"
     );
@@ -185,10 +185,10 @@ fn window_39_is_the_pens_only_sell_detail_renderer_both_hosts_guard_on() {
         "window 39's content renderer moved - both hosts' sell-detail block \
          filters on this VA and would silently stop drawing"
     );
-    let r = legaia_engine_render::painter_rect(d);
+    let r = legaia_engine_ui::painter_rect(d);
     assert!(r.w > 0 && r.h > 0, "window 39 has a drawable extent");
     assert!(
-        legaia_engine_render::painter_for(d).is_none(),
+        legaia_engine_ui::painter_for(d).is_none(),
         "window 39 must stay outside the painter dispatch: its port returns \
          pens, not a draw list, so a painter mapping would draw it twice"
     );
@@ -206,7 +206,7 @@ fn painter_rects_come_off_the_descriptor_they_resolved_from() {
     for (id, painter) in menu_window_painters(&table) {
         let (d, p) = painter_at(&table, id, painter).expect("id resolves to its own painter");
         assert_eq!(p, painter);
-        let r = legaia_engine_render::painter_rect(d);
+        let r = legaia_engine_ui::painter_rect(d);
         assert_eq!((r.x, r.y, r.w, r.h), d.rect(), "window {id} rect");
         assert!(r.w > 0 && r.h > 0, "window {id} has a drawable extent");
     }

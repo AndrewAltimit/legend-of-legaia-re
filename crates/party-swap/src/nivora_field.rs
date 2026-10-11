@@ -39,9 +39,9 @@ use super::fieldize::{
 };
 use super::playerize::{merge_palettes, nearest_color};
 use super::*;
-use legaia_asset::character_pack;
-use legaia_asset::pack::parse_pack;
-use legaia_asset::parse_player_lzs;
+use legaia_actor_formats::character_pack;
+use legaia_container_formats::pack::parse_pack;
+use legaia_container_formats::parse_player_lzs;
 use legaia_tmd::descriptor::PacketShape;
 
 /// PROT entry of the nilboa TMD pack (re-exported from [`fieldize`]).
@@ -147,14 +147,14 @@ pub(super) fn hero_slot_source(prot_0874: &[u8], slot: usize) -> Result<HeroSour
     // and sample the one texpage the hero prims reference (0x1D). Same
     // side-by-side multi-row CLUT flatten as the scene-bundle path.
     let container = parse_player_lzs(prot_0874, character_pack::CONTAINER_DESCRIPTORS)?;
-    let sec2 = legaia_asset::decode(
+    let sec2 = legaia_container_formats::decode(
         prot_0874,
         &container.descriptors[2],
-        legaia_asset::DecodeMode::Lzs,
+        legaia_container_formats::DecodeMode::Lzs,
     )
     .context("PROT 0874 atlas section")?;
     let mut vram = vec![0u16; 1024 * 512];
-    for bytes in legaia_asset::pack::extract_pack(&sec2)? {
+    for bytes in legaia_container_formats::pack::extract_pack(&sec2)? {
         let Ok(tim) = legaia_tim::parse(bytes) else {
             continue;
         };
@@ -272,7 +272,7 @@ fn npc_target(
     if head >> 24 != 0x02 {
         bail!("NPC pack entry head {head:#x} is not a type-2 TMD stream");
     }
-    let bundle = legaia_asset::player_anm::find_in_entry(npc_bundle, 5)
+    let bundle = legaia_actor_formats::player_anm::find_in_entry(npc_bundle, 5)
         .into_iter()
         .next()
         .ok_or_else(|| anyhow::anyhow!("NPC bundle entry carries no ANM bundle"))?;
@@ -290,7 +290,7 @@ fn npc_target(
 pub(super) fn npc_target_at(
     pack: &[u8],
     sec0_tims: &[u8],
-    bundle: &legaia_asset::player_anm::PlayerAnmBundle,
+    bundle: &legaia_actor_formats::player_anm::PlayerAnmBundle,
     member: usize,
     idle_rec: usize,
     roles_override: Option<[usize; FIELD_BONES]>,
@@ -910,10 +910,10 @@ pub fn heroize_nilboa(
 ) -> Result<(NivoraFieldPatch, Vec<SlotReport>)> {
     let mut warnings = Vec::new();
     let container = parse_player_lzs(npc_bundle, 3).context("PROT 0638 container")?;
-    let mut sec0 = legaia_asset::decode(
+    let mut sec0 = legaia_container_formats::decode(
         npc_bundle,
         &container.descriptors[0],
-        legaia_asset::DecodeMode::Lzs,
+        legaia_container_formats::DecodeMode::Lzs,
     )
     .context("PROT 0638 TIM list")?;
 

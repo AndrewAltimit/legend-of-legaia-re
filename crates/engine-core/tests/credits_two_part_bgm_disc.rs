@@ -16,8 +16,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::mode_entry_init::FIELD_BGM_TWO_PART_ID;
 use legaia_engine_core::scene::SceneHost;
+use legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID;
 
 fn extracted_dir() -> Option<PathBuf> {
     ["extracted", "../extracted", "../../extracted"]
@@ -46,7 +46,7 @@ fn the_credits_theme_is_score_1062_over_bank_1056() {
         .music_bank_entry_bytes(FIELD_BGM_TWO_PART_ID as u16)
         .expect("read")
         .expect("the ending theme resolves");
-    let split = legaia_engine_core::chunk_install::owned_bank_offsets(&stream)
+    let split = legaia_engine_system::chunk_install::owned_bank_offsets(&stream)
         .expect("the composed stream splits into a bank and a score");
     let report = legaia_vab::parse(&stream, split.vab).expect("the bank parses");
     let seq = legaia_seq::Seq::parse(&stream[split.seq..]).expect("the score parses");

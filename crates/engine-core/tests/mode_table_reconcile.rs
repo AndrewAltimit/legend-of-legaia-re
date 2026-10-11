@@ -1,10 +1,10 @@
 //! Reconcile the engine's transcribed mode table (`engine_core::mode::TABLE`)
 //! against the dispatch table decoded straight off the user's executable
-//! (`legaia_asset::mode_table`). Skips and passes when `extracted/SCUS_942.54`
+//! (`legaia_game_tables::mode_table`). Skips and passes when `extracted/SCUS_942.54`
 //! isn't on disk - same gating pattern as the other SCUS-table tests so CI
 //! runs without Sony bytes.
 
-use legaia_engine_core::mode::{GameMode, TABLE};
+use legaia_engine_mode::mode::{GameMode, TABLE};
 use std::path::PathBuf;
 
 fn scus_path() -> Option<PathBuf> {
@@ -21,8 +21,8 @@ fn engine_table_matches_disc_recovered_table_or_skips() {
         return;
     };
     let bytes = std::fs::read(&path).expect("read SCUS");
-    let retail =
-        legaia_asset::mode_table::ModeTable::from_scus(&bytes).expect("parse retail mode table");
+    let retail = legaia_game_tables::mode_table::ModeTable::from_scus(&bytes)
+        .expect("parse retail mode table");
 
     assert_eq!(retail.entries.len(), TABLE.len());
     for (i, engine) in TABLE.iter().enumerate() {

@@ -32,8 +32,8 @@ use super::*;
 ///   underground beat).
 #[test]
 fn chapter3_karisto_castle_gate_families() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
+    use legaia_scene_formats::man_section::parse as parse_man;
     let Some(index) = open_index() else { return };
     let all_gates = |scene_name: &str| -> Vec<(Vec<u16>, Vec<u16>)> {
         let scene = Scene::load(&index, scene_name).expect("load");
@@ -115,8 +115,8 @@ fn chapter3_karisto_castle_gate_families() {
 /// code-path lead like `549`/`0x5D6`/`0x482`.
 #[test]
 fn chapter3_koin_family_and_writer_pins() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
+    use legaia_scene_formats::man_section::parse as parse_man;
     let Some(index) = open_index() else { return };
     let all_gates = |scene_name: &str| -> Vec<(Vec<u16>, Vec<u16>)> {
         let scene = Scene::load(&index, scene_name).expect("load");
@@ -257,8 +257,8 @@ fn chapter3_koin_family_and_writer_pins() {
 /// - **concend**: a single ungated epilogue record.
 #[test]
 fn chapter3_conkram_gate_families() {
-    use legaia_asset::man_section::parse as parse_man;
-    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
+    use legaia_scene_formats::man_section::parse as parse_man;
     let Some(index) = open_index() else { return };
     let all_gates = |scene_name: &str| -> Vec<(Vec<u16>, Vec<u16>)> {
         let scene = Scene::load(&index, scene_name).expect("load");

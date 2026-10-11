@@ -346,7 +346,8 @@ pub fn monster_cost_table(patcher: &DiscPatcher) -> Result<crate::encounter::Mon
         .context("read monster battle_data archive")?;
     let mut pairs: Vec<(u16, u32)> = Vec::new();
     for id in 1u16..=255 {
-        let Ok(Some(block)) = legaia_asset::monster_archive::decode_block(&entry, id) else {
+        let Ok(Some(block)) = legaia_actor_formats::monster_archive::decode_block(&entry, id)
+        else {
             continue;
         };
         if block.len() >= 12 {

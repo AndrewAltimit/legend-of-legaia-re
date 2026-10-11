@@ -14,9 +14,9 @@ fn with_ambient(w: &mut World, slot: u8, code: Vec<u8>) {
         FieldNpcAmbient {
             defers: false,
             walks: false,
-            variants: vec![(legaia_asset::man_motion::SELECTOR_DEFAULT, code)],
+            variants: vec![(legaia_scene_formats::man_motion::SELECTOR_DEFAULT, code)],
             live: None,
-            vm: vm::ambient_motion::AmbientMotion::new(u32::from(slot), 0),
+            vm: legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(u32::from(slot), 0),
         },
     );
 }
@@ -74,11 +74,11 @@ fn an_object_stream_swaps_its_records_model() {
             walks: false,
             // 0E 16 00 (model 22), wait 12, 0E 1B 00 (model 27), loop.
             variants: vec![(
-                legaia_asset::man_motion::SELECTOR_DEFAULT,
+                legaia_scene_formats::man_motion::SELECTOR_DEFAULT,
                 vec![0x0E, 0x16, 0x00, 0x05, 0x0C, 0x0E, 0x1B, 0x00, 0x01],
             )],
             live: None,
-            vm: vm::ambient_motion::AmbientMotion::new(5, 0),
+            vm: legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(5, 0),
         },
     );
     assert!(w.object_live_models().is_empty());

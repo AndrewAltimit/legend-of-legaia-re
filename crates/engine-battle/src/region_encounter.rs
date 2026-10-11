@@ -63,7 +63,7 @@
 //! PORT: FUN_801D9E1C
 //! REF: FUN_80056798, FUN_800431D0, FUN_8003CE64
 
-use legaia_asset::man_section;
+use legaia_scene_formats::man_section;
 
 /// Counter base term (`0x3ce` = 974) - the reset's centre value.
 pub const ENCOUNTER_COUNTER_BASE: i32 = 0x3ce;
@@ -176,7 +176,7 @@ pub struct RegionSetupBytes {
 /// Where the travel art puts the party back on the world map: the triple
 /// `0x80084628` (map word) / `0x80084624` (tile X) / `0x8008462C` (tile Z)
 /// the world-map panel's resolve scan compares against
-/// (`legaia_engine_core::world_map_panel_host::VisitedMap`). A region record on the
+/// (`legaia_engine_field::world_map_panel_host::VisitedMap`). A region record on the
 /// long layout writes it; so do the Door of Wind commit and a field-VM arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WorldMapReturn {
@@ -202,7 +202,7 @@ pub struct RegionBattleSetup {
     pub stage_variant: u8,
     /// `_DAT_8007B64B = (region[+8] >> 5) & 1` (`0x801DA09C..0x801DA0AC`):
     /// battle init keeps the backdrop shell's object 1 when set
-    /// (`legaia_asset::battle_backdrop`). `None` on the short layout, which
+    /// (`legaia_scene_formats::battle_backdrop`). `None` on the short layout, which
     /// leaves the byte alone.
     pub keep_backdrop_object_1: Option<bool>,
     /// Scratchpad `0x1F800394 & 0x100000` after the half: raised on every
@@ -259,7 +259,7 @@ pub fn region_battle_setup(bytes: &RegionSetupBytes) -> RegionBattleSetup {
 pub fn battle_stage_entry_for_variant(scene_index: u32, variant: u8) -> u32 {
     scene_index
         + u32::from(variant & 0x7F)
-        + legaia_asset::battle_backdrop::RUNTIME_ID_TO_PROT_OFFSET
+        + legaia_scene_formats::battle_backdrop::RUNTIME_ID_TO_PROT_OFFSET
 }
 
 impl EncounterRegion {
@@ -417,7 +417,7 @@ pub struct RegionGroup {
 
 /// The condition flag id that means "no flag test - this group always wins"
 /// (`FUN_801D9E1C` `0x801d9f50`).
-pub const DEFAULT_GROUP_FLAG: u16 = legaia_asset::man_section::CONDITION_DEFAULT_FLAG;
+pub const DEFAULT_GROUP_FLAG: u16 = legaia_scene_formats::man_section::CONDITION_DEFAULT_FLAG;
 
 /// Per-scene region-keyed encounter table.
 ///

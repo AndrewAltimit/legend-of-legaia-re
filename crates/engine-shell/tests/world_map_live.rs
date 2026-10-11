@@ -12,9 +12,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::input::PadButton;
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
+use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -348,7 +349,7 @@ fn overworld_scenes_load_nonempty_walkability_grid() {
 #[test]
 fn world_map_scene_transition_auto_enters_world_map() {
     use legaia_engine_core::scene::{SceneTickEvent, VecMapIdResolver};
-    use legaia_engine_core::world::SceneMode;
+    use legaia_engine_mode::mode::SceneMode;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
@@ -417,8 +418,8 @@ fn world_map_scene_transition_auto_enters_world_map() {
 /// to an unrelated scene instead of opening the fishing minigame.
 #[test]
 fn world_map_walking_onto_real_minigame_door_arms_the_warp() {
-    use legaia_engine_core::field_events::FieldEvent;
     use legaia_engine_core::world::WorldMapEntityConfig;
+    use legaia_engine_field::field_events::FieldEvent;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

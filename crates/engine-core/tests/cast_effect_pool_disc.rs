@@ -22,14 +22,15 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_asset::cast_effect_pool::{
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_battle_vm::cast_module_camera as cmc;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input::{InputState, PadButton};
+use legaia_overlay_images::cast_effect_pool::{
     CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST, CastEffectPool, capture_module_prot,
     seru_module_prot,
 };
-use legaia_engine_core::input::{InputState, PadButton};
-use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::cast_module_camera as cmc;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -98,7 +99,7 @@ fn the_band_parses_to_the_record_counts_the_doc_quotes() {
         let m = pool.module(entry).expect("exemplar loaded");
         assert_eq!(m.spawn_sites, sites, "PROT {entry} spawn sites");
         assert_eq!(m.parts.len(), records, "PROT {entry} distinct records");
-        let base = legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
+        let base = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
         assert_eq!(
             base + m.parts.first().unwrap().record_off as u32,
             first_va,
@@ -146,7 +147,7 @@ fn every_player_seru_cast_and_a_capture_cast_resolve_a_record_set() {
     // Every capture-class record on the disc must land inside the band, and
     // Blazing Slash `0x79` must land on the exemplar the doc decodes.
     let records =
-        legaia_asset::spell_names::capture_class_records(&scus).expect("SCUS is a PSX-EXE");
+        legaia_game_tables::spell_names::capture_class_records(&scus).expect("SCUS is a PSX-EXE");
     assert!(
         !records.is_empty(),
         "the disc carries capture-class records"
@@ -220,7 +221,7 @@ fn build_world() -> World {
     w.actors[0].move_state.field_72 = 4096;
     w.locomotion.camera_azimuth = 0;
 
-    use legaia_engine_core::encounter::{
+    use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
     let mut table = EncounterTable::new("cast_effect_pool_test");
@@ -296,7 +297,7 @@ fn a_live_cast_stages_its_module_records() {
     let pool = Arc::new(build_pool(&dir));
 
     let mut w = build_world();
-    w.tables.spell_catalog = legaia_engine_core::retail_magic::retail_seru_magic_catalog();
+    w.tables.spell_catalog = legaia_engine_battle::retail_magic::retail_seru_magic_catalog();
     // Teach the caster the whole player block at level 1.
     {
         let rec = &mut w.party.roster.members[0];
@@ -350,7 +351,7 @@ fn a_live_cast_stages_its_module_records() {
         }
         if matches!(
             w.battle.command.as_ref().map(|s| &s.phase),
-            Some(legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. })
+            Some(legaia_engine_menus::battle_input::CommandPhase::RoundPrompt { .. })
         ) {
             press(&mut w, PadButton::Cross);
         }
@@ -392,7 +393,7 @@ fn a_live_cast_stages_its_module_records() {
         for _ in 0..4 {
             match w.battle.command.as_ref().map(|c| &c.phase) {
                 None => break,
-                Some(legaia_engine_core::battle_input::CommandPhase::CommitConfirm { .. }) => {
+                Some(legaia_engine_menus::battle_input::CommandPhase::CommitConfirm { .. }) => {
                     press(&mut w, PadButton::Cross)
                 }
                 Some(_) => press(&mut w, PadButton::Down),
@@ -512,7 +513,8 @@ fn a_live_cast_stages_its_module_records() {
             })
             .collect();
         for p in &module.parts {
-            let va = legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE + p.record_off as u32;
+            let va = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE
+                + p.record_off as u32;
             assert!(
                 called.contains(&va) || hook_only.contains(&va),
                 "PROT {entry} record {va:#010x} is staged by one of its arms"

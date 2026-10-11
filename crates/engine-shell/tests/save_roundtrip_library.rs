@@ -31,8 +31,9 @@
 use std::path::{Path, PathBuf};
 
 use legaia_engine_core::card_write::write_save_into_card;
-use legaia_engine_core::world::SceneMode;
-use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_shell::boot::BootSession;
 use legaia_save::emu::MountedCard;
 use legaia_save::{SaveFile, SaveResume};
 
@@ -58,7 +59,7 @@ fn open_session() -> Option<BootSession> {
         return None;
     }
     let cfg = BootConfig {
-        scene: legaia_engine_shell::boot::DEFAULT_BOOT_SCENE.to_string(),
+        scene: legaia_engine_session::boot::DEFAULT_BOOT_SCENE.to_string(),
         enable_audio: false,
     };
     let mut roots = Vec::new();

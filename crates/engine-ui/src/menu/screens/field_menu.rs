@@ -14,7 +14,7 @@ pub struct FieldMenuRowView<'a> {
 /// the row index; greyed-out rows render dim.
 ///
 /// Layout follows the retail top-level pause menu's window-descriptor
-/// geometry (menu overlay window table, `legaia_asset::menu_windows`):
+/// geometry (menu overlay window table, `legaia_game_tables::menu_windows`):
 /// the command rows fill the id-50 list window (`list_pen` = its content
 /// origin, 7 rows at the retail 13-px list pitch), and the money +
 /// play-time lines fill the id-49 corner box (`money_pen`). The row

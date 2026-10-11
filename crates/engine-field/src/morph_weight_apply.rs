@@ -143,7 +143,7 @@
 //! the move-VM envelope (`FUN_80020740`). One buffer shape, two producers:
 //! that one takes a slot list, this one a block.
 
-pub use legaia_engine_vm::vdf_morph::VdfMorphRecord;
+use legaia_engine_vm::vdf_morph::VdfMorphRecord;
 use legaia_engine_vm::vdf_morph::apply_weighted_deltas;
 
 /// Bytes an 8-byte GTE vertex occupies.

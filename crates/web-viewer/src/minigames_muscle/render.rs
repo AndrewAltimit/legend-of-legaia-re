@@ -288,7 +288,7 @@ impl LegaiaMinigames {
     /// **not** on the playback. Returns `0` with no contest up.
     ///
     /// PORT: FUN_801d3444, through
-    /// [`MuscleDomeSession::tick_time_meter`](legaia_engine_core::muscle_dome::MuscleDomeSession::tick_time_meter)
+    /// [`MuscleDomeSession::tick_time_meter`](legaia_engine_menus::muscle_dome_session::MuscleDomeSession::tick_time_meter)
     pub fn muscle_tick_time_meter(&mut self, dt: u8) -> i32 {
         self.muscle
             .as_mut()
@@ -469,7 +469,7 @@ impl LegaiaMinigames {
     pub fn muscle_vram(&self, monster_id: u16, char_slot: u32) -> Vec<u8> {
         let mut vram = legaia_tim::Vram::new();
         if let Some(raw) = self.muscle_player_file(char_slot)
-            && let Ok(pack) = legaia_asset::battle_data_pack::parse(raw)
+            && let Ok(pack) = legaia_actor_formats::battle_data_pack::parse(raw)
         {
             if let Ok(uploads) = bca::character_texture_uploads(raw, &pack, &[0u8; 5], 0) {
                 for u in &uploads {
@@ -490,11 +490,11 @@ impl LegaiaMinigames {
                 cols.sort_unstable();
                 cols.dedup();
                 let pal = if char_slot == 0 {
-                    legaia_asset::battle_char_palette::find_record0(raw).and_then(|rec0| {
-                        legaia_asset::battle_char_palette::parse_record(raw, rec0).ok()
+                    legaia_actor_formats::battle_char_palette::find_record0(raw).and_then(|rec0| {
+                        legaia_actor_formats::battle_char_palette::parse_record(raw, rec0).ok()
                     })
                 } else {
-                    legaia_asset::battle_char_palette::collect_palette(raw, 0, &cols).ok()
+                    legaia_actor_formats::battle_char_palette::collect_palette(raw, 0, &cols).ok()
                 };
                 if let Some(pal) = pal {
                     for &row in &rows {

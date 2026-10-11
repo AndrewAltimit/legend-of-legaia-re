@@ -3,7 +3,7 @@
 //! TARGET actor's pose and tint it with an impact-config colour.
 //!
 //! PORT: FUN_8004CE2C (pass 2 - the per-character clip-tag arms; pass 4,
-//! the Stone CLUT recolour, is `legaia_engine_core::battle_status_clut`)
+//! the Stone CLUT recolour, is `legaia_engine_battle::battle_status_clut`)
 //! PORT: FUN_80050F30 (per-lane packed-colour ease - the tint's decay
 //! primitive, driven by the presentation tick `FUN_80050120` arm 0)
 //!
@@ -87,7 +87,7 @@
 //! lane 2 = B); the draw-time resolver `FUN_8004A908` shifts each lane
 //! `>> 2` into the mesh colour byte, so lane `0x200` = `0x80` = neutral.
 //! The impact tint values come from the disc's 5-entry impact-config
-//! table at `0x801F53D4` (`legaia_asset::move_power::
+//! table at `0x801F53D4` (`legaia_game_tables::move_power::
 //! parse_impact_effect_table`), 1-indexed by the `+0x21F` selector.
 
 /// Neutral actor colour-state word (all lanes `0x200` = RGB `0x808080`) -

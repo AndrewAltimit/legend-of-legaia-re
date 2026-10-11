@@ -80,14 +80,14 @@ impl LegaiaMinigames {
 
     /// The human's award sounds since the last call - what `FUN_801d1af4`'s
     /// dancer-0 arm raises for the press just judged
-    /// (`legaia_engine_core::dance::award_sounds`), as JSON:
+    /// (`legaia_engine_minigames::dance::award_sounds`), as JSON:
     /// `[{"cue":528}, {"sting":5}, {"sting":null}]`. A cue plays by id; a
     /// sting keys both [`Self::dance_sting_pcm`] layers at `r`, and `null`
     /// is the tier-2 site's `rand() % 3`, the page's to draw. A plain matched
     /// note, an unlanded groovy move and an empty triangle stock raise
     /// nothing.
     pub fn dance_take_award_sounds(&mut self) -> String {
-        use legaia_engine_core::dance::DanceAwardSound;
+        use legaia_engine_minigames::dance::DanceAwardSound;
         let sounds = self
             .dance
             .as_mut()
@@ -111,7 +111,7 @@ impl LegaiaMinigames {
     /// empty when the bank does not hold that tone.
     ///
     /// The retail `r` space is not just the tier-2 award's `rand() % 3`
-    /// (`legaia_engine_core::dance::STING_RANDOM_VARIANTS`) - the three
+    /// (`legaia_engine_minigames::dance::STING_RANDOM_VARIANTS`) - the three
     /// groovy-move tiers all key `STING_TIER_VARIANT` as well, so `r = 5` is a
     /// real sting and this accepts it.
     pub fn dance_sting_pcm(&self, r: u8, layer: u8) -> Vec<i16> {

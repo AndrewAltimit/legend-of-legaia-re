@@ -506,7 +506,7 @@ impl OscillatingApInjection {
 
         // --- SCUS fingerprints: setup site, list site, the anim commit ------
         let scus_off = |va: u32| -> Result<usize> {
-            legaia_asset::item_names::file_offset_for_va(scus, va)
+            legaia_game_tables::item_names::file_offset_for_va(scus, va)
                 .ok_or_else(|| anyhow::anyhow!("can't resolve SCUS VA {va:#x}"))
         };
         let setup_off = scus_off(HOOK_SETUP_VA)?;
@@ -1247,12 +1247,12 @@ mod tests {
         bad[off..off + 4].copy_from_slice(&nop().to_le_bytes());
         assert!(OscillatingApInjection::plan(&scus, &bad, 20).is_err());
         let mut bad = scus.clone();
-        let off = legaia_asset::item_names::file_offset_for_va(&bad, HOOK_LIST_VA).unwrap();
+        let off = legaia_game_tables::item_names::file_offset_for_va(&bad, HOOK_LIST_VA).unwrap();
         bad[off..off + 4].copy_from_slice(&nop().to_le_bytes());
         assert!(OscillatingApInjection::plan(&bad, &ov, 20).is_err());
         // A dirty slot 6 (another feature's bytes) is refused.
         let mut dirty = scus.clone();
-        let off = legaia_asset::item_names::file_offset_for_va(&dirty, SLOT6_VA).unwrap();
+        let off = legaia_game_tables::item_names::file_offset_for_va(&dirty, SLOT6_VA).unwrap();
         dirty[off] = 1;
         assert!(OscillatingApInjection::plan(&dirty, &ov, 20).is_err());
     }
@@ -1268,7 +1268,7 @@ mod tests {
         img[0x18..0x1C].copy_from_slice(&base.to_le_bytes());
         img[0x1C..0x20].copy_from_slice(&size.to_le_bytes());
         let mut put = |va: u32, w: u32| {
-            let off = legaia_asset::item_names::file_offset_for_va(&img, va).unwrap();
+            let off = legaia_game_tables::item_names::file_offset_for_va(&img, va).unwrap();
             img[off..off + 4].copy_from_slice(&w.to_le_bytes());
         };
         put(HOOK_SETUP_VA, HOOK_SETUP_W0);

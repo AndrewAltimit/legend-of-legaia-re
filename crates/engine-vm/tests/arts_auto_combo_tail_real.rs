@@ -1,5 +1,5 @@
 //! Disc-gated oracle for the auto-combo's art insertion tail
-//! (`legaia_engine_vm::battle_arts_auto_combo::insert_arts`, `FUN_801F0450`
+//! (`legaia_engine_battle_vm::battle_arts_auto_combo::insert_arts`, `FUN_801F0450`
 //! `0x801F0B4C..0x801F1274`) over the retail art-animation banks.
 //!
 //! The tail reads each record's combo string (`+0x00..+0x0A`) and the
@@ -22,7 +22,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_vm::battle_arts_auto_combo::{
+use legaia_engine_battle_vm::battle_arts_auto_combo::{
     ArtsTailInput, TAIL_COST_FIRST, TAIL_FIRST_ART, insert_arts,
 };
 
@@ -56,7 +56,7 @@ fn gate() -> Option<PathBuf> {
 fn bank(root: &std::path::Path, file: &str) -> (u8, Vec<[u8; 0xD0]>) {
     let raw = std::fs::read(root.join("PROT").join(file)).expect("read player file");
     let record0 =
-        legaia_asset::battle_char_assembly::decode_record0(&raw).expect("decode record[0]");
+        legaia_actor_formats::battle_char_assembly::decode_record0(&raw).expect("decode record[0]");
     let off = u32::from_le_bytes(record0[0x58..0x5C].try_into().unwrap()) as usize;
     let count = record0[off];
     let recs = (0..usize::from(count))

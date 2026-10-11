@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use legaia_asset::battle_texture_catalog::BattleTextureSlot;
+use legaia_actor_formats::battle_texture_catalog::BattleTextureSlot;
 
 mod randomize_args;
 mod translate_args;

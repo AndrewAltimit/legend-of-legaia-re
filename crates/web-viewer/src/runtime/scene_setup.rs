@@ -109,9 +109,9 @@ impl LegaiaRuntime {
             // host takes. Without it this page's word arrived at `MAIN MODE`
             // through `adopt_world_mode` alone, one frame late and with no
             // INIT frame in the trace at all.
-            let plan = self.seat_enter(legaia_engine_core::mode::GameMode::MainInit);
+            let plan = self.seat_enter(legaia_engine_mode::mode::GameMode::MainInit);
             debug_assert!(
-                matches!(plan, Some(legaia_engine_core::mode::ModeInitPlan::Stage(st))
+                matches!(plan, Some(legaia_engine_mode::mode::ModeInitPlan::Stage(st))
                     if st.overlay_entry == legaia_engine_menus::title_overlay::FIELD_SCENE_INIT_PC),
                 "MAIN INIT's plan should name the per-scene initializer"
             );
@@ -214,9 +214,9 @@ impl LegaiaRuntime {
         self.scene_anm = legaia_engine_core::npc_catalog::scene_anm_bundle(scene);
         self.locomotion_anm = host
             .index
-            .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+            .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
             .ok()
-            .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+            .and_then(|b| legaia_actor_formats::character_pack::field_locomotion_anm(&b).ok());
         // The actor layer resolves against the same TMD pool + VRAM, plus the
         // world's global pool for the `model >= 0xF0` specials - everything
         // the native play-window draws.
@@ -432,16 +432,16 @@ impl LegaiaRuntime {
         // pick binds scene records itself while the party-bank bit is down.
         let locomotion_bank = host
             .index
-            .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+            .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
             .ok()
-            .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+            .and_then(|b| legaia_actor_formats::character_pack::field_locomotion_anm(&b).ok());
         let lead = g.party_slot.unwrap_or(usize::MAX);
-        let rec = |slot| legaia_asset::character_pack::locomotion_record_index(lead, slot);
+        let rec = |slot| legaia_actor_formats::character_pack::locomotion_record_index(lead, slot);
         let bones = locomotion_bank
             .as_ref()
             .filter(|_| lead <= 2)
             .and_then(|bundle| {
-                let idx = rec(legaia_asset::character_pack::LOCOMOTION_IDLE_SLOT);
+                let idx = rec(legaia_actor_formats::character_pack::LOCOMOTION_IDLE_SLOT);
                 bundle.record(idx).ok().map(|r| r.bone_count as usize)
             });
         let mut tmd = g.tmd.clone();
@@ -469,7 +469,7 @@ impl LegaiaRuntime {
             .as_ref()
             .filter(|_| roster_lead <= 2)
             .and_then(|bundle| {
-                legaia_engine_core::field_anim::FieldPlayerAnim::from_locomotion_bank(
+                legaia_engine_field::field_anim::FieldPlayerAnim::from_locomotion_bank(
                     bundle,
                     roster_lead,
                 )

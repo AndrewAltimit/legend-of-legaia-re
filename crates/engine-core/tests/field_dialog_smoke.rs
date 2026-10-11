@@ -10,8 +10,9 @@
 //! drives the full field-VM-to-panel path with no disc, no asset loading, no
 //! winit.
 
-use legaia_engine_core::dialog::{OwnedDialogPanel, PanelState};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_dialog::dialog::{OwnedDialogPanel, PanelState};
+use legaia_engine_mode::mode::SceneMode;
 
 #[test]
 fn field_interact_opens_dialog_and_panel_emits_glyphs() {

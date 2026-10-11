@@ -12,17 +12,17 @@ impl SceneHost {
     /// `docs/subsystems/world-map.md`) - then:
     ///
     /// 1. Routes the region-keyed random-encounter table from the scene's MAN
-    ///    ([`crate::region_encounter::region_encounter_table_from_man`]) onto
+    ///    ([`legaia_engine_battle::region_encounter::region_encounter_table_from_man`]) onto
     ///    the overworld via [`crate::world::World::set_world_map_regions`], so
     ///    `tick_world_map`'s per-tile roll fires real encounters.
-    /// 2. Switches the world into [`crate::world::SceneMode::WorldMap`]
+    /// 2. Switches the world into [`legaia_engine_mode::mode::SceneMode::WorldMap`]
     ///    (installs the camera controller); the player actor + collision grid
     ///    that `enter_field_scene` set up stay in place.
     ///
     /// 3. Installs the scene's **interactive overworld entities** - the
     ///    portals (town/dungeon entrances) and dialog NPCs decoded from the
     ///    MAN actor-placement table and classified by their field-VM scripts
-    ///    ([`crate::man_field_scripts::classify_placements`]). Decorative /
+    ///    ([`legaia_engine_field::man_field_scripts::classify_placements`]). Decorative /
     ///    model-only placements are skipped; the entity *kind* comes from the
     ///    per-entity script, so this is disc-sourced, not synthetic.
     ///
@@ -41,22 +41,22 @@ impl SceneHost {
             .scene
             .as_ref()
             .and_then(|s| s.field_man_payload(&self.index).ok().flatten());
-        let table = man_bytes
-            .as_ref()
-            .and_then(|man| crate::region_encounter::region_encounter_table_from_man(name, man));
+        let table = man_bytes.as_ref().and_then(|man| {
+            legaia_engine_battle::region_encounter::region_encounter_table_from_man(name, man)
+        });
         // Each interactive placement → (config, spawn world position). The
         // positions drive the auto-engage-on-walkover trigger; Plain
         // (decorative / model-only) placements are skipped.
         let mut entities: Vec<(crate::world::WorldMapEntityConfig, (i16, i16))> = man_bytes
             .as_ref()
             .and_then(|man| {
-                legaia_asset::man_section::parse(man)
+                legaia_scene_formats::man_section::parse(man)
                     .ok()
                     .map(|mf| (mf, man))
             })
             .map(|(mf, man)| {
-                use crate::man_field_scripts::PlacementKind;
-                crate::man_field_scripts::classify_placements(&mf, man)
+                use legaia_engine_field::man_field_scripts::PlacementKind;
+                legaia_engine_field::man_field_scripts::classify_placements(&mf, man)
                     .into_iter()
                     .filter_map(|(p, kind)| {
                         let cfg = match kind {
@@ -94,7 +94,7 @@ impl SceneHost {
         // Overworld town/dungeon entrances: the `.MAP` walk-on kind-1 tile
         // triggers joined to their partition-2 records' `0x3F`
         // named-scene-change ops (see
-        // [`crate::man_field_scripts::overworld_portal_sites`]). This is the
+        // [`legaia_engine_field::man_field_scripts::overworld_portal_sites`]). This is the
         // real overworld hop mechanism - `map01` has NO partition-1 `Portal`
         // placements (the classifier finds zero there); its town/dungeon
         // entrances are these gate-1 triggers. Each site becomes an
@@ -103,12 +103,14 @@ impl SceneHost {
         // spawns and the arrival seat use), and the auto-engage-on-walkover
         // trigger fires it when the player steps onto that tile.
         if let (Some(man), Some(scene)) = (man_bytes.as_ref(), self.scene.as_ref())
-            && let Ok(mf) = legaia_asset::man_section::parse(man)
+            && let Ok(mf) = legaia_scene_formats::man_section::parse(man)
             && let Ok((primary, fallback)) = scene.field_tile_triggers(&self.index)
         {
             let mut triggers = primary;
             triggers.extend(fallback);
-            for site in crate::man_field_scripts::overworld_portal_sites(&mf, man, &triggers) {
+            for site in
+                legaia_engine_field::man_field_scripts::overworld_portal_sites(&mf, man, &triggers)
+            {
                 // Story-gate the entrance by its partition-2 record's C1/C2
                 // gates (retail `FUN_8003BDE0`): C1 blocks the spawn if ANY
                 // listed flag is set, C2 requires ALL set. Most overworld
@@ -117,11 +119,13 @@ impl SceneHost {
                 // out of the installed set once that story flag latches. A fresh
                 // Drake arrival (flag clear) keeps them reachable. See
                 // [`docs/subsystems/world-map.md`].
-                if let Some((c1, c2)) = crate::man_field_scripts::partition2_record_gates(
-                    &mf,
-                    man,
-                    site.record as usize,
-                ) && !self.world.p2_record_gates_pass(&c1, &c2)
+                if let Some((c1, c2)) =
+                    legaia_engine_field::man_field_scripts::partition2_record_gates(
+                        &mf,
+                        man,
+                        site.record as usize,
+                    )
+                    && !self.world.p2_record_gates_pass(&c1, &c2)
                 {
                     continue;
                 }
@@ -137,7 +141,7 @@ impl SceneHost {
                 // the field VM does on the crossing; a path that parks leaves
                 // the entrance shut, so no portal is installed. A record the
                 // walk cannot decide keeps the static primary / flag-SET pair.
-                use crate::man_field_scripts::{
+                use legaia_engine_field::man_field_scripts::{
                     RecordPathEnd, partition2_record_path_scene_change,
                 };
                 let live =
@@ -186,8 +190,11 @@ impl SceneHost {
                 .field_map_index(&self.index)
                 .and_then(|idx| self.index.entry_bytes_extended(idx).ok());
             if let Some(map) = map_bytes.as_deref() {
-                use crate::man_field_scripts::{RecordPathEnd, flat_record_path_walk};
-                for (flat, contact) in crate::man_field_scripts::object_script_binds(map, &triggers)
+                use legaia_engine_field::man_field_scripts::{
+                    RecordPathEnd, flat_record_path_walk,
+                };
+                for (flat, contact) in
+                    legaia_engine_field::man_field_scripts::object_script_binds(map, &triggers)
                 {
                     let Ok(record) = u8::try_from(flat) else {
                         continue;

@@ -6,7 +6,7 @@
 //! The Drake overworld (`map01`) is a hub: its controller lists a dozen
 //! destinations and its `.MAP` walk-on tile triggers install one overworld
 //! portal per town/dungeon entrance (see
-//! [`legaia_engine_core::man_field_scripts::overworld_portal_sites`]). The
+//! [`legaia_engine_field::man_field_scripts::overworld_portal_sites`]). The
 //! boss-spine oracle already covers `rikuroa` / `dolk` / `dolk2`; this file
 //! sweeps the other five interior legs - `cave01`, `vell`, `vozz`, `suimon`,
 //! `jou` - plus `dolk2`'s own onward destinations.
@@ -48,11 +48,12 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::{
+use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost, SceneTickEvent};
+use legaia_engine_core::world::WorldMapEntityConfig;
+use legaia_engine_field::man_field_scripts::{
     overworld_portal_sites, partition2_record_gates, scene_destinations,
 };
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost, SceneTickEvent};
-use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig};
+use legaia_engine_mode::mode::SceneMode;
 
 // ---------------------------------------------------------------------
 // Discovery + shared drive helpers
@@ -163,7 +164,7 @@ fn load_man(index: &ProtIndex, name: &str) -> Vec<u8> {
 /// Assert the named scene's MAN parses with the given partition counts.
 fn assert_scene_man(index: &ProtIndex, name: &str, want_counts: [i16; 3]) -> Vec<u8> {
     let man = load_man(index, name);
-    let mf = legaia_asset::man_section::parse(&man)
+    let mf = legaia_scene_formats::man_section::parse(&man)
         .unwrap_or_else(|e| panic!("{name}: parse MAN: {e:#}"));
     assert_eq!(
         mf.header.partition_counts, want_counts,
@@ -175,7 +176,7 @@ fn assert_scene_man(index: &ProtIndex, name: &str, want_counts: [i16; 3]) -> Vec
 /// The set of `0x3F` named-scene-change destinations decoded from a scene's MAN.
 fn scene_dest_names(index: &ProtIndex, name: &str) -> BTreeSet<String> {
     let man = load_man(index, name);
-    let mf = legaia_asset::man_section::parse(&man).expect("parse MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
     scene_destinations(&mf, &man)
         .into_iter()
         .map(|d| d.scene_name)
@@ -264,7 +265,7 @@ fn drive_and_assert_leg(dest: &str, want_counts: [i16; 3]) {
     host.world.set_pad(0);
     let mut entered = None;
     // + the scene-change hold (`FUN_80021934`'s countdown).
-    for _ in 0..12 + legaia_engine_core::scene_transition_actor::HOLD_TICKS {
+    for _ in 0..12 + legaia_engine_field::scene_transition_actor::HOLD_TICKS {
         if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
             entered = Some(name);
             break;
@@ -336,7 +337,7 @@ fn part_c_hub_leg_entrances_are_ungated() {
     };
     let index = host.index.clone();
     let man = load_man(&index, "map01");
-    let mf = legaia_asset::man_section::parse(&man).expect("parse map01 MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse map01 MAN");
 
     // Join the .MAP tile triggers to the partition-2 records to recover, per
     // destination, the record index the entrance spawns.
@@ -423,9 +424,9 @@ fn named_finding_suimon_and_dolk2_share_man_payload() {
     let suimon = load_man(&index, "suimon");
     let dolk2 = load_man(&index, "dolk2");
     assert_eq!(suimon.len(), 2345, "suimon's MAN is 2345 bytes");
-    let suimon_mf = legaia_asset::man_section::parse(&suimon).expect("parse suimon MAN");
+    let suimon_mf = legaia_scene_formats::man_section::parse(&suimon).expect("parse suimon MAN");
     assert_eq!(suimon_mf.header.partition_counts, [10, 7, 3]);
-    let dolk2_mf = legaia_asset::man_section::parse(&dolk2).expect("parse dolk2 MAN");
+    let dolk2_mf = legaia_scene_formats::man_section::parse(&dolk2).expect("parse dolk2 MAN");
     assert_eq!(dolk2_mf.header.partition_counts, [29, 73, 17]);
     assert_ne!(
         suimon, dolk2,

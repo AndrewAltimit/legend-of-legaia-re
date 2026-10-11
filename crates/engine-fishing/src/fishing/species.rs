@@ -91,12 +91,12 @@ pub fn band4_gate(
 
 /// The species-spawn lookup: `spawn_table[lure * 8 + band]`, where the table
 /// is a venue page of `8 x 8` u32 species ids
-/// ([`legaia_asset::fishing_species::parse_spawn_tables`]). Returns `None`
+/// ([`legaia_minigame_formats::fishing_species::parse_spawn_tables`]). Returns `None`
 /// for an out-of-range row/band or a species id past the 10-record table.
 // PORT: FUN_801d26cc (species lookup: spawn_table[lure*8 + band])
 pub fn spawn_species(table: &[[u32; 8]], lure: u32, band: u32) -> Option<usize> {
     let id = *table.get(lure as usize)?.get(band as usize)? as usize;
-    (id < legaia_asset::fishing_species::SPECIES_COUNT).then_some(id)
+    (id < legaia_minigame_formats::fishing_species::SPECIES_COUNT).then_some(id)
 }
 
 /// The reel-cadence recogniser: a 16-slot `{button, held-frames}` ring buffer

@@ -126,7 +126,7 @@
 //!
 //! ## Asset type 0x09 (TMD2)
 //!
-//! Streaming chunks of type `0x09` are tagged "TMD2" in `legaia_asset::AssetType`
+//! Streaming chunks of type `0x09` are tagged "TMD2" in `legaia_container_formats::AssetType`
 //! but parse as standard Legaia TMDs (magic `0x80000002`). The distinction is
 //! a dispatcher tag: the field engine routes type-0x02 chunks through one
 //! installer chain and type-0x09 chunks (which only appear in this pack)

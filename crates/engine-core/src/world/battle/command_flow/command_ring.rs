@@ -11,7 +11,7 @@ impl World {
     /// once the player confirms. No-op unless [`crate::world::BattleState::player_driven`].
     pub(in crate::world) fn open_battle_command(&mut self, actor: u8) {
         use crate::battle_flow::BattleFlowState as Flow;
-        use crate::battle_input::BattleCommandSession;
+        use legaia_engine_menus::battle_input::BattleCommandSession;
         if !self.battle.player_driven {
             return;
         }
@@ -64,10 +64,10 @@ impl World {
     /// On an abort (no valid target) it falls back to the first living monster
     /// so the loop never deadlocks.
     pub(in crate::world) fn tick_battle_command(&mut self) {
-        use crate::battle_input::{BattleCommandInput, CommandPhase, Resolution};
         use crate::battle_round::PendingPartyAction;
-        use crate::input::PadButton;
-        use crate::target_picker::CursorRow;
+        use legaia_engine_battle::target_picker::CursorRow;
+        use legaia_engine_menus::battle_input::{BattleCommandInput, CommandPhase, Resolution};
+        use legaia_engine_system::input::PadButton;
 
         let Some(mut session) = self.battle.command.take() else {
             return;
@@ -92,7 +92,7 @@ impl World {
         // The ring's two status refusals (`ring_arm_refused`): a press on
         // a refused arm is dropped with the buzz cue, and the ring stays up.
         if let CommandPhase::Menu { .. } = session.phase {
-            use crate::battle_input::BattleCommand;
+            use legaia_engine_menus::battle_input::BattleCommand;
             let status = self.raw_status_word(session.actor);
             let cursor_arm = session.menu_command();
             let mut refused = false;
@@ -107,14 +107,14 @@ impl World {
                 }
             }
             if refused {
-                self.audio
-                    .battle_sfx_cues
-                    .push(crate::battle_events::BattleSfxCue {
-                        kind: crate::arts_command_input::ROT_REFUSED_CUE,
+                self.audio.battle_sfx_cues.push(
+                    legaia_engine_battle::battle_events::BattleSfxCue {
+                        kind: legaia_engine_battle::arts_command_input::ROT_REFUSED_CUE,
                         timing_frames: 0,
                         actor_slot: session.actor,
                         target_slot: session.actor,
-                    });
+                    },
+                );
             }
         }
         let was_round_prompt = matches!(session.phase, CommandPhase::RoundPrompt { .. });
@@ -222,11 +222,12 @@ impl World {
                 self.battle_ctx.active_actor = session.actor;
                 if std::env::var_os("LEGAIA_ARTS_SAVED_LIST").is_some() {
                     let rows = self.build_battle_arts_rows(session.actor);
-                    self.battle.arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
-                        session.actor,
-                        session.actor,
-                        rows,
-                    ));
+                    self.battle.arts_menu =
+                        Some(legaia_engine_battle::battle_arts::BattleArtsSession::new(
+                            session.actor,
+                            session.actor,
+                            rows,
+                        ));
                 } else {
                     self.open_arts_command_input(session.actor);
                 }
@@ -362,7 +363,7 @@ impl World {
     ///
     /// **Disclosed stand-in.** Retail picks between the two shapes on the
     /// target monster record's `+0x1E` byte, which
-    /// `legaia_asset::monster_archive` does not parse and `MonsterDef` does
+    /// `legaia_actor_formats::monster_archive` does not parse and `MonsterDef` does
     /// not carry, so [`Self::attack_swing_class_of`] answers `0` and the
     /// live path always takes the two-arm-swing form. That is retail's own
     /// behaviour for every non-class-`2` target; only the low-swing collapse
@@ -374,10 +375,12 @@ impl World {
         // `FUN_801EED1C`'s head clears `0x801F696C` (`0x801EED88`); the
         // no-directional-input arm sets nothing.
         self.battle_ctx.super_trigger = false;
-        let mut queue = [0u8; vm::battle_action::ACTION_QUEUE_CAP];
-        let written = vm::battle_action::basic_attack_queue(&mut queue, swing_class, &mut || {
-            self.next_rand()
-        });
+        let mut queue = [0u8; legaia_engine_battle_vm::battle_action::ACTION_QUEUE_CAP];
+        let written = legaia_engine_battle_vm::battle_action::basic_attack_queue(
+            &mut queue,
+            swing_class,
+            &mut || self.next_rand(),
+        );
         let character = self.caster_character(self.party_roster_slot(actor as usize) as u8);
         if let Some(a) = self.actors.get_mut(actor as usize) {
             // Keep the seat's character key truthful on the plain-Attack path
@@ -410,7 +413,7 @@ impl World {
         };
         // Retail's table `0x8007BD10` holds a **1-based** char id; the
         // engine's `active_party` mirror holds the 0-based roster slot.
-        vm::battle_action::miracle_marker_armed(
+        legaia_engine_battle_vm::battle_action::miracle_marker_armed(
             roster_slot.wrapping_add(1),
             &record.equipment().slots,
         )
@@ -421,7 +424,7 @@ impl World {
     /// `FUN_801EED1C`'s no-input attack arm.
     ///
     /// Resolved through the slot's seated monster id and the catalog's
-    /// [`crate::monster_catalog::MonsterDef::swing_class`] (record `+0x1E`).
+    /// [`legaia_engine_battle::monster_catalog::MonsterDef::swing_class`] (record `+0x1E`).
     /// A party target, an empty slot, or a synthetic catalog with no disc
     /// record reads `0` - the class that takes the ordinary two-swing attack,
     /// which is retail's answer for every non-class-`2` target.
@@ -460,9 +463,12 @@ impl World {
     /// is ever tinted. Same law, engine seat numbering.
     ///
     /// REF: FUN_801DA6B4
-    fn apply_target_cursor_tint(&mut self, session: &crate::battle_input::BattleCommandSession) {
-        use crate::target_picker::{CursorRow, PickerState};
-        use vm::battle_action::{
+    fn apply_target_cursor_tint(
+        &mut self,
+        session: &legaia_engine_menus::battle_input::BattleCommandSession,
+    ) {
+        use legaia_engine_battle::target_picker::{CursorRow, PickerState};
+        use legaia_engine_battle_vm::battle_action::{
             CURSOR_BLEND_ON, CURSOR_COLOR_BRIGHT, CURSOR_COLOR_DIM, CURSOR_FLAG_DIMMED,
             CURSOR_FLAG_SELECTED,
         };

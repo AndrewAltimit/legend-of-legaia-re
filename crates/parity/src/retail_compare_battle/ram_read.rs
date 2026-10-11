@@ -93,7 +93,7 @@ impl RetailBattle {
             track_coin: game_anchors::u8_at(ram, ctx + 0x26D) & 1,
             gimard_countdown: game_anchors::u32_at(
                 ram,
-                legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA,
+                legaia_engine_battle_vm::cast_module_camera::GIMARD_COUNTDOWN_VA,
             ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             cam_tween: retail_cam_tween(ram, ctx),
@@ -170,7 +170,7 @@ impl RetailBattle {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
                     (in_ram(p)
                         && game_anchors::u8_at(ram, p + 0x21C)
-                            == legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE)
+                            == legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE)
                         .then(|| game_anchors::u32_at(ram, p + 4))
                 })
                 .collect(),
@@ -187,7 +187,7 @@ impl RetailBattle {
             },
             target_plate_cleared: game_anchors::u32_at(ram, TARGET_PLATE_WORD) == 0,
             spoils_caption: game_anchors::u8_at(ram, ctx + 0x18)
-                == legaia_engine_core::battle_steal::STEAL_CAPTION_ELEMENT,
+                == legaia_engine_battle::battle_steal::STEAL_CAPTION_ELEMENT,
             target_fade_lane: active.and_then(|p| {
                 let t = game_anchors::u8_at(ram, p + 0x1DD);
                 let tp = game_anchors::u32_at(ram, ACTOR_TABLE + u32::from(t.min(7)) * 4);

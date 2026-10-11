@@ -18,9 +18,9 @@
 //! `LEGAIA_DISC_BIN` is absent.
 
 use legaia_engine_core::Vfs;
-use legaia_engine_core::menu_item_category::{CATEGORY_MATCH_SCORE, category_check};
 use legaia_engine_core::scene::SceneHost;
 use legaia_engine_core::world::World;
+use legaia_engine_menus::menu_item_category::{CATEGORY_MATCH_SCORE, category_check};
 use std::path::PathBuf;
 
 fn disc_path() -> Option<PathBuf> {
@@ -34,7 +34,7 @@ fn booted_world(path: &PathBuf) -> World {
     let host = SceneHost::open_disc(path).expect("open disc");
     let overlay = host
         .index
-        .entry_bytes_extended(legaia_asset::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
         .expect("read PROT 0899 (extended)");
     let scus = legaia_engine_core::DiscVfs::open(path)
         .expect("open disc vfs")
@@ -109,7 +109,10 @@ fn the_scus_hook_installs_the_landmark_tables() {
         .worldmap_menu
         .as_ref()
         .expect("the boot hook left the landmark tables absent");
-    assert_eq!(menu.names.len(), legaia_asset::worldmap_menu::NAME_COUNT);
+    assert_eq!(
+        menu.names.len(),
+        legaia_game_tables::worldmap_menu::NAME_COUNT
+    );
     assert!(
         !menu.placements.is_empty(),
         "the placement walk found no records"

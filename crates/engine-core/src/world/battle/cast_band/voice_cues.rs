@@ -8,9 +8,9 @@ impl World {
     /// slot-B image calls the dispatcher `FUN_8004FCC8` with near its head
     /// (`docs/subsystems/cast-module.md`, "The cast's own CD-XA voice"),
     /// scanned off the module's bytes at cast time
-    /// ([`legaia_engine_vm::battle_cast_cue::module_head_cue`]) and run
+    /// ([`legaia_engine_battle_vm::battle_cast_cue::module_head_cue`]) and run
     /// through the dispatcher's CD-XA arm
-    /// ([`legaia_engine_vm::battle_cast_cue::admit_voice_cue`]).
+    /// ([`legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue`]).
     ///
     /// Retail raises it from inside the module's first tick, after the
     /// module's own poll of the side-band stage byte; the port raises it at
@@ -39,7 +39,8 @@ impl World {
         let Some(module) = pool.module(entry) else {
             return;
         };
-        let Some(head) = vm::battle_cast_cue::module_head_cue(&module.bytes) else {
+        let Some(head) = legaia_engine_battle_vm::battle_cast_cue::module_head_cue(&module.bytes)
+        else {
             return;
         };
         let id = head.resolve(|| self.next_rand());
@@ -47,7 +48,7 @@ impl World {
     }
 
     /// Run one CD-XA cue id through the dispatcher's CD-XA arm
-    /// ([`legaia_engine_vm::battle_cast_cue::admit_voice_cue`]) onto
+    /// ([`legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue`]) onto
     /// [`crate::world::AudioState::battle_xa_cues`] - the half of
     /// [`Self::emit_cast_module_voice`] after the module's head cue is
     /// resolved, and what a module arm's own `FUN_8004FCC8(id >= 0x100)` call
@@ -60,22 +61,24 @@ impl World {
             .xa_cue_durations
             .as_deref()
             .and_then(|t| t.get(usize::from(id).wrapping_sub(0x100)).copied());
-        let gates = vm::battle_cast_cue::VoiceCueGates {
+        let gates = legaia_engine_battle_vm::battle_cast_cue::VoiceCueGates {
             side_band_stage: 0,
             clip_span_left: self.audio.battle_xa_busy_frames,
         };
-        if let vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
-            vm::battle_cast_cue::admit_voice_cue(id, gates, raw)
+        if let legaia_engine_battle_vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
+            legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue(id, gates, raw)
         {
             // The starter holds the drive for the clip's read span
             // (`FUN_8003D53C`; the same latch `push_battle_xa_cue` arms for
             // the melee kernel's clips).
             self.audio.battle_xa_busy_frames = req.duration_sectors.min(u16::MAX as u32) as u16;
-            self.audio.battle_xa_cues.push(crate::sfx_cue::XaVoiceClip {
-                clip: req.clip_slot,
-                channel: req.channel,
-                duration_sectors: req.duration_sectors,
-            });
+            self.audio
+                .battle_xa_cues
+                .push(legaia_engine_battle::sfx_cue::XaVoiceClip {
+                    clip: req.clip_slot,
+                    channel: req.channel,
+                    duration_sectors: req.duration_sectors,
+                });
         }
     }
 
@@ -87,7 +90,7 @@ impl World {
     pub(in crate::world) fn cast_module_voice_candidates(
         &self,
         spell_id: u8,
-    ) -> Vec<crate::sfx_cue::XaVoiceClip> {
+    ) -> Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> {
         let Some(entry) = self.cast_module_for(spell_id) else {
             return Vec::new();
         };
@@ -99,16 +102,20 @@ impl World {
         else {
             return Vec::new();
         };
-        let ids: Vec<u16> = match vm::battle_cast_cue::module_head_cue(&module.bytes) {
-            Some(vm::battle_cast_cue::ModuleHeadCue::Literal(id)) => vec![id],
-            Some(vm::battle_cast_cue::ModuleHeadCue::Random { base, span }) => {
-                (0..u16::from(span.max(1)))
+        let ids: Vec<u16> =
+            match legaia_engine_battle_vm::battle_cast_cue::module_head_cue(&module.bytes) {
+                Some(legaia_engine_battle_vm::battle_cast_cue::ModuleHeadCue::Literal(id)) => {
+                    vec![id]
+                }
+                Some(legaia_engine_battle_vm::battle_cast_cue::ModuleHeadCue::Random {
+                    base,
+                    span,
+                }) => (0..u16::from(span.max(1)))
                     .map(|k| base.wrapping_add(k))
-                    .collect()
-            }
-            None => Vec::new(),
-        };
-        let open = vm::battle_cast_cue::VoiceCueGates {
+                    .collect(),
+                None => Vec::new(),
+            };
+        let open = legaia_engine_battle_vm::battle_cast_cue::VoiceCueGates {
             side_band_stage: 0,
             clip_span_left: 0,
         };
@@ -119,9 +126,9 @@ impl World {
                     .xa_cue_durations
                     .as_deref()
                     .and_then(|t| t.get(usize::from(id).wrapping_sub(0x100)).copied());
-                match vm::battle_cast_cue::admit_voice_cue(id, open, raw) {
-                    vm::battle_cast_cue::VoiceCueVerdict::Play(req) => {
-                        Some(crate::sfx_cue::XaVoiceClip {
+                match legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue(id, open, raw) {
+                    legaia_engine_battle_vm::battle_cast_cue::VoiceCueVerdict::Play(req) => {
+                        Some(legaia_engine_battle::sfx_cue::XaVoiceClip {
                             clip: req.clip_slot,
                             channel: req.channel,
                             duration_sectors: req.duration_sectors,

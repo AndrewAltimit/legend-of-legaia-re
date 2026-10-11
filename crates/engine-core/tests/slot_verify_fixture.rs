@@ -27,10 +27,10 @@
 //! LEGAIA_BLESS_SLOT_FIXTURE=1 cargo test -p legaia-engine-core --test integration slot_verify_fixture::
 //! ```
 
-use legaia_asset::slot_payout::SlotPayoutTable;
-use legaia_engine_core::slot_machine::{
+use legaia_engine_minigames::slot_machine::{
     ENTRY_LCG_SEED, SlotMachine, SlotPhase, SlotRng, build_reel,
 };
+use legaia_minigame_formats::slot_payout::SlotPayoutTable;
 
 /// Synthetic per-symbol payout table (u8, index = symbol id). Deliberately
 /// NOT the disc's values: the fixture tests the logic, not the data, and this

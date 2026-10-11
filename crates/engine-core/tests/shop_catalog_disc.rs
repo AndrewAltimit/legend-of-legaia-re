@@ -1,6 +1,6 @@
 //! Disc-gated: the engine builds **gold-shop stock from the disc** - per-scene
-//! item lists decoded from the scene MAN ([`legaia_asset::shop_stock`]) and
-//! priced from the SCUS item table ([`legaia_engine_core::shop_catalog`]).
+//! item lists decoded from the scene MAN ([`legaia_scene_formats::shop_stock`]) and
+//! priced from the SCUS item table ([`legaia_engine_menus::shop_catalog`]).
 //!
 //! Anchored on the Rim Elm "Variety Store", whose 10 ids are pinned from a live
 //! capture (shared ground truth with the randomizer's `shop_patch_real` test).
@@ -10,7 +10,7 @@
 
 use legaia_engine_core::Vfs;
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::shop_catalog::{self, ShopItemData};
+use legaia_engine_menus::shop_catalog::{self, ShopItemData};
 use std::path::PathBuf;
 
 /// Rim Elm Variety Store stock (order-independent), pinned from a live capture.
@@ -155,18 +155,20 @@ fn without_the_platinum_card_each_shop_loses_its_featured_band() {
         let Ok(bytes) = host.index.entry_bytes_extended(idx) else {
             continue;
         };
-        let Some(sc) = legaia_asset::shop_stock::locate(&bytes, Some(&data.sellable_mask())) else {
+        let Some(sc) =
+            legaia_scene_formats::shop_stock::locate(&bytes, Some(&data.sellable_mask()))
+        else {
             continue;
         };
         for rec in &sc.records {
             let count = usize::from(sc.decoded[rec.count_off]);
             let ids = &sc.decoded[rec.count_off + 1..rec.count_off + 1 + count];
             let card =
-                legaia_engine_core::shop::ShopInventory::from_stock_record(0, ids, true, |id| {
+                legaia_engine_menus::shop::ShopInventory::from_stock_record(0, ids, true, |id| {
                     data.price(id)
                 });
             let plain =
-                legaia_engine_core::shop::ShopInventory::from_stock_record(0, ids, false, |id| {
+                legaia_engine_menus::shop::ShopInventory::from_stock_record(0, ids, false, |id| {
                     data.price(id)
                 });
             shops += 1;

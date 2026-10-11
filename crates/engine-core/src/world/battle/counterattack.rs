@@ -9,7 +9,7 @@
 //!   (`0x801DAF74..0x801DB050`) - [`World::roll_counterattack`];
 //! * the strike loop's head consumes it on the monster's first frame
 //!   (`0x801E35F0..0x801E36E0`) - the action SM's half is
-//!   `legaia_engine_vm::battle_action`'s counter swap, which calls back into
+//!   `legaia_engine_battle_vm::battle_action`'s counter swap, which calls back into
 //!   [`World::begin_counterattack`] for the parts that are not actor or
 //!   context bytes: the timed message, the counterer's strike queue and the
 //!   cleared target plaque.

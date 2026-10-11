@@ -66,7 +66,7 @@ impl ResolvedTmd {
 
     /// [`ResolvedTmd::build_filtered_vram_mesh`] plus the per-vertex
     /// lit-row mask ([`legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit`]) -
-    /// what [`crate::fade::apply_prologue_lit_ambient`] keys on.
+    /// what [`legaia_engine_system::fade::apply_prologue_lit_ambient`] keys on.
     pub fn build_filtered_vram_mesh_lit(
         &self,
         vram: &Vram,
@@ -78,7 +78,7 @@ impl ResolvedTmd {
 
     /// [`ResolvedTmd::build_filtered_vram_mesh`] plus each lit-row vertex's
     /// normal + object colour ([`legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit_vertices`]) -
-    /// what [`crate::field_lit_mesh::shade_lit_rows`] shades.
+    /// what [`legaia_engine_field::field_lit_mesh::shade_lit_rows`] shades.
     pub fn build_filtered_vram_mesh_lit_vertices(
         &self,
         vram: &Vram,

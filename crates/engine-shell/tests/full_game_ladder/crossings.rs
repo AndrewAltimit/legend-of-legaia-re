@@ -63,12 +63,12 @@ pub(super) fn tiles_in_reach(session: &BootSession, tiles: &[(i16, i16)]) -> boo
 /// whose door re-enters by the junction band P2[3] (`0x3C8`).
 pub(super) fn reach_beat_waits(
     session: &BootSession,
-    mf: &legaia_asset::man_section::ManFile,
+    mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     rec: usize,
 ) -> bool {
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
-    use legaia_engine_core::man_field_scripts::partition_record_span;
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let Some(target) = BEAT_TARGET.with(|t| t.borrow().clone()) else {
         return false;
     };
@@ -121,8 +121,8 @@ pub(super) fn reach_beat_waits(
 /// body sets one of `flags` - the beats a milestone's missing reach flags
 /// wait on (`chitei2` P2[3], the junction's north-south band, sets `0x3C8`).
 pub(super) fn reach_flag_bands(session: &BootSession, flags: &[u16]) -> Vec<(i16, i16)> {
-    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
-    use legaia_engine_core::man_field_scripts::{partition_record_span, partition2_record_gates};
+    use legaia_engine_field::man_field_scripts::{partition_record_span, partition2_record_gates};
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
         return Vec::new();
     };

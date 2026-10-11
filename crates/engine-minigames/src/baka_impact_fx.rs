@@ -90,7 +90,7 @@ pub struct ImpactTemplates {
 
 impl ImpactTemplates {
     /// Read the four records out of the as-loaded Baka Fighter overlay
-    /// (`legaia_asset::static_overlay::as_loaded` of PROT 0976). `None` when
+    /// (`legaia_overlay_images::static_overlay::as_loaded` of PROT 0976). `None` when
     /// the image is too short to hold them.
     pub fn from_overlay(overlay_0976: &[u8]) -> Option<Self> {
         let read = |va: u32| -> Option<ImpactTemplate> {

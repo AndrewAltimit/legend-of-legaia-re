@@ -82,7 +82,7 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
         if let Some(lanes) = s.defeat_lanes
             && a.battle.hp == 0
         {
-            a.battle.render_flag = legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE;
+            a.battle.render_flag = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
             a.battle.render_color = lanes;
         }
         if s.status != 0 {

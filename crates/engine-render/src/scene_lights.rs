@@ -3,15 +3,15 @@
 //!
 //! The derivation (which prims emit, how samples cluster into lights, the
 //! nearest-to-player pick, the attenuation law) is the shared kernel
-//! [`crate::scene_lighting`] (`legaia_engine_ui::scene_lighting`), which the
+//! [`legaia_render_kernels::scene_lighting`] (`legaia_render_kernels::scene_lighting`), which the
 //! browser play page runs too; it is re-exported here under the module path
 //! the native host has always used. What stays here is the part only the
 //! wgpu renderer has: the per-light **shadow** view-projection.
 //!
 //! The WGSL consumer is `scene_point_gain` in `shaders.rs` (real variant
 //! compiled only into the scene pipelines);
-//! [`crate::scene_lighting::point_attenuation`] /
-//! [`crate::scene_lighting::point_gain`] are its CPU mirror for the analytic
+//! [`legaia_render_kernels::scene_lighting::point_attenuation`] /
+//! [`legaia_render_kernels::scene_lighting::point_gain`] are its CPU mirror for the analytic
 //! (non-shadow) part, asserted in lockstep by the tests below.
 //!
 //! # This is NOT retail
@@ -21,12 +21,7 @@
 
 use glam::{Mat4, Vec3};
 
-pub use crate::scene_lighting::{
-    CLUSTER_MAX_EXTENT, CLUSTER_MERGE_DIST, EMIT_MAX_TRI_AREA, EMIT_MIN_BRIGHT, EmitterSample,
-    MAX_SCENE_LIGHTS, RADIUS_MAX, RADIUS_MIN, RADIUS_SCALE, ScenePointLight,
-    cluster_all_scene_lights, cluster_scene_lights, color_mesh_emitters, nearest_lights,
-    point_attenuation, point_gain, transform_samples, vram_mesh_emitters,
-};
+use legaia_render_kernels::scene_lighting::ScenePointLight;
 
 /// Shadow-cone vertical field of view (radians). Wide, because the cone
 /// approximates a point source lighting the floor and walls around it.
@@ -52,6 +47,7 @@ pub fn light_view_proj(light: &ScenePointLight) -> Mat4 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_render_kernels::scene_lighting::MAX_SCENE_LIGHTS;
 
     /// The shadow view-projection maps a floor point under the light into
     /// the depth range and NDC square.

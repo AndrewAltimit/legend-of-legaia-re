@@ -60,7 +60,7 @@ const JOUINC_DOOR_RECORDS: std::ops::RangeInclusive<usize> = 2..=59;
 /// The jouind per-visit door/lift state band, reset by `jouina P1[0]`.
 const JOUIND_VISIT_BAND: [u16; 5] = [0x4BE, 0x4BF, 0x4C0, 0x4C1, 0x4C2];
 
-fn man_of(host: &SceneHost) -> (Vec<u8>, legaia_asset::man_section::ManFile) {
+fn man_of(host: &SceneHost) -> (Vec<u8>, legaia_scene_formats::man_section::ManFile) {
     let man_bytes = host
         .scene
         .as_ref()
@@ -68,7 +68,7 @@ fn man_of(host: &SceneHost) -> (Vec<u8>, legaia_asset::man_section::ManFile) {
         .field_man_payload(&host.index)
         .expect("MAN payload read")
         .expect("scene resolves its bundle MAN");
-    let man_file = legaia_asset::man_section::parse(&man_bytes).expect("MAN parses");
+    let man_file = legaia_scene_formats::man_section::parse(&man_bytes).expect("MAN parses");
     (man_bytes, man_file)
 }
 
@@ -82,13 +82,13 @@ fn jouinc_door_records_carry_the_busy_mutex_shape() {
     host.enter_field_scene("jouinc", 0).expect("enter jouinc");
     let (man_bytes, man_file) = man_of(&host);
     for record in JOUINC_DOOR_RECORDS {
-        let (c1, c2) = legaia_engine_core::man_field_scripts::partition2_record_gates(
+        let (c1, c2) = legaia_engine_field::man_field_scripts::partition2_record_gates(
             &man_file, &man_bytes, record,
         )
         .unwrap_or_else(|| panic!("P2[{record}] gates decode"));
         assert_eq!(c1, vec![DOOR_MUTEX_FLAG], "P2[{record}] C1 is the mutex");
         assert!(c2.is_empty(), "P2[{record}] has no C2 gate");
-        let (start, pc0, len) = legaia_engine_core::man_field_scripts::partition_record_span(
+        let (start, pc0, len) = legaia_engine_field::man_field_scripts::partition_record_span(
             &man_file, &man_bytes, 2, record,
         )
         .unwrap_or_else(|| panic!("P2[{record}] span resolves"));

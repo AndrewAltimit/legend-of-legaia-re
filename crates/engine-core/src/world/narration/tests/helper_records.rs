@@ -11,8 +11,8 @@ fn man_with_p2_records(
     records: &[Vec<u8>],
     n0: i16,
     n1: i16,
-) -> (legaia_asset::man_section::ManFile, Vec<u8>) {
-    use legaia_asset::man_section::{ManFile, ManHeader, SectionRef};
+) -> (legaia_scene_formats::man_section::ManFile, Vec<u8>) {
+    use legaia_scene_formats::man_section::{ManFile, ManHeader, SectionRef};
     let data_region_offset = 0x40usize;
     let mut man = vec![0u8; data_region_offset];
     let mut offsets = Vec::new();
@@ -99,7 +99,7 @@ fn helper_spawn_while_timeline_active_is_not_dropped() {
     // A second spawned record while a modal timeline (or another helper)
     // executes must not be dropped: both helper contexts coexist with the
     // active timeline in the bounded context table.
-    use crate::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
     let long_wait = &[0x4A, 0xFF, 0x7F]; // WAIT_FRAMES 0x7FFF: stays live
     let (mf, man) = man_with_p2_records(
         &[p2_record(&[], long_wait), p2_record(&[], long_wait)],
@@ -163,7 +163,8 @@ fn spawned_helper_record_rebases_global_index() {
 fn abandon_opening_chain_tears_down_and_reports() {
     let mut w = World::default();
     w.cutscene.opening_chain_active = true;
-    w.cutscene.timeline = Some(crate::cutscene_timeline::CutsceneTimeline::new(vec![0], 0));
+    w.cutscene.timeline =
+        Some(legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(vec![0], 0));
     assert!(w.cutscene_timeline_active());
     assert!(w.abandon_opening_chain());
     assert!(!w.cutscene.opening_chain_active);

@@ -3,6 +3,7 @@
 //! Extracted verbatim from `levelup.rs`.
 
 use super::*;
+use legaia_engine_system::rand::BiosRand;
 
 /// One level-up event returned by [`LevelUpTracker::grant_xp`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,7 +39,7 @@ pub struct LevelUpTracker {
     /// `current_level + 1`. Length should be `MAX_LEVEL - 1`.
     pub xp_table: Vec<u32>,
     /// Slots-1/2 per-level XP-threshold correction divisors
-    /// (`legaia_asset::level_up_tables::xp_correction_divisors_from_scus`,
+    /// (`legaia_game_tables::level_up_tables::xp_correction_divisors_from_scus`,
     /// indexed by the character's current level). When installed, slot 1
     /// (Noa) reaches each level `threshold * 0x14 / divisor[level]` XP
     /// *earlier* and slot 2 (Gala) that much *later*, mirroring the retail
@@ -59,7 +60,7 @@ pub struct LevelUpTracker {
     /// [`with_growth_tables`](Self::with_growth_tables). Needed (alongside
     /// [`jitter_rng`](Self::jitter_rng)) to apply the per-level jitter spread to
     /// the *unfloored* core in the exact applier order. `None` until installed.
-    pub growth_tables: Option<legaia_asset::level_up_tables::GrowthTables>,
+    pub growth_tables: Option<legaia_game_tables::level_up_tables::GrowthTables>,
     /// Opt-in PSX BIOS-rand stream for the per-level stat-growth jitter. `None`
     /// (the default) means **no jitter**: the tracker applies only the
     /// deterministic core and draws zero `rand()`, so every replay/determinism
@@ -108,14 +109,14 @@ impl LevelUpTracker {
     /// other slot takes the base unchanged (`FUN_801E9504`).
     ///
     /// PORT: FUN_801E9504 (slots-1/2 threshold correction; base formula in
-    /// legaia_asset::level_up_tables::xp_threshold_for)
+    /// legaia_game_tables::level_up_tables::xp_threshold_for)
     pub fn threshold_for(&self, slot: usize, level: u8) -> Option<u32> {
         let base = self.xp_table.get(level as usize - 1).copied()?;
         let Some(divs) = self.xp_corrections.as_ref() else {
             return Some(base);
         };
         let divisor = divs.get(level as usize).copied().unwrap_or(0);
-        let corr = legaia_asset::level_up_tables::xp_threshold_correction(base, divisor);
+        let corr = legaia_game_tables::level_up_tables::xp_threshold_correction(base, divisor);
         Some(match slot {
             1 => base.saturating_sub(corr),
             2 => base.saturating_add(corr),
@@ -187,10 +188,10 @@ impl LevelUpTracker {
     }
 
     /// Install per-character deterministic HP/MP growth curves from the parsed
-    /// static-SCUS growth tables (`legaia_asset::level_up_tables`).
+    /// static-SCUS growth tables (`legaia_game_tables::level_up_tables`).
     ///
     /// Uses the **jitter-free core** of the retail applier `FUN_801E9504`
-    /// ([`legaia_asset::level_up_tables::GrowthTables::level_gain_core`]) for the
+    /// ([`legaia_game_tables::level_up_tables::GrowthTables::level_gain_core`]) for the
     /// HP (stat 0) and MP (stat 1) growth records: per level `prev → prev+1`,
     /// `gain = max(1, (max-start) × curve[row][prev-1] / 0x24C0)`. This is the
     /// validated retail per-character growth (checked byte-exact against the Noa
@@ -206,9 +207,9 @@ impl LevelUpTracker {
     /// are unbiased). All six battle stats are grown alongside HP/MP.
     pub fn with_growth_tables(
         mut self,
-        tables: &legaia_asset::level_up_tables::GrowthTables,
+        tables: &legaia_game_tables::level_up_tables::GrowthTables,
     ) -> Self {
-        use legaia_asset::level_up_tables::GROWTH_CHAR_COUNT;
+        use legaia_game_tables::level_up_tables::GROWTH_CHAR_COUNT;
         // Retain the raw tables so an opt-in jitter pass can apply the spread to
         // the unfloored core in applier order (see `with_level_up_jitter`).
         self.growth_tables = Some(tables.clone());

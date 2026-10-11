@@ -20,9 +20,9 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use legaia_asset::scene_event_scripts::move_stager_records;
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_vm::move_vm::{ActorState, MoveHost, StepResult, step};
+use legaia_scene_formats::scene_event_scripts::move_stager_records;
 
 /// Opcode budget per record - large enough for a looping record to revisit
 /// its whole body many times, small enough to bound a runaway.

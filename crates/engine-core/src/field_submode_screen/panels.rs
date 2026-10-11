@@ -96,7 +96,7 @@ pub const RETAIL_WEAPON_SLOTS: [i16; 3] = [2, 3, 2];
 /// are weapon (overridden by the per-character halfword), helmet `1`, body
 /// armour `0`, footwear `4` and three Goods slots `5..7`. The engine's own
 /// array is weapon-first with a hand-guard slot retail has no row for
-/// ([`crate::equip_session::ARMAMENT_ENGINE_SLOTS`]), so a record has to be
+/// ([`legaia_engine_menus::equip_session::ARMAMENT_ENGINE_SLOTS`]), so a record has to be
 /// re-ordered before the ported kernel walks it - [`hub_panel_slots`].
 pub const HUB_PANEL_FIXED_SLOTS: [(usize, EquipSlot); 3] = [
     (0, EquipSlot::BodyArmor),
@@ -135,7 +135,7 @@ pub fn hub_panel_slots(equip: &[u8; 8], char_index: usize) -> [u8; 5] {
 /// The panel reads `+7 & 0x60` only; the Ra-Seru bit rides along because it is
 /// the same byte and the view carries it.
 pub fn disc_slot_bits(entry: DiscEquipEntry) -> u8 {
-    use legaia_asset::equip_stats::EquipSlot as Disc;
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
     let category = match entry.category {
         Disc::Body => 0x00,
         Disc::Head => 0x20,
@@ -151,9 +151,9 @@ pub const SUBMODE_PANEL_WIDTH: i16 = 0x60;
 
 /// Accept edge in the packed Legaia pad layout (Cross), standing in for
 /// `_DAT_800846D0`.
-pub const SUBMODE_ACCEPT_MASK: u32 = crate::dev_menu::PACK_CROSS as u32;
+pub const SUBMODE_ACCEPT_MASK: u32 = legaia_engine_system::pad::PACK_CROSS as u32;
 /// Back-out edge (Circle), standing in for `_DAT_800846D4`.
-pub const SUBMODE_BACK_MASK: u32 = crate::dev_menu::PACK_CIRCLE as u32;
+pub const SUBMODE_BACK_MASK: u32 = legaia_engine_system::pad::PACK_CIRCLE as u32;
 
 /// Panel-window record whose painter draws the Yes/No panel
 /// (`FUN_801F1950`).
@@ -178,7 +178,7 @@ pub const COIN_PANEL_WINDOW: usize = hub::window::TWO_OPTION;
 /// keeps them out of the dispatcher.
 pub const OP49_DEDICATED_SUB_OPS: [u8; 4] = [0, 3, 5, 7];
 
-pub use crate::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS;
+use legaia_engine_field::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS;
 
 /// The handler slot an op-`0x49` sub-op opens.
 ///

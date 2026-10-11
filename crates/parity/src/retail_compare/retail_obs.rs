@@ -66,7 +66,7 @@ pub struct RetailObs {
     /// rather than from a tile re-query, because which loader ran last is
     /// walk history the save does not carry (`kor5`'s tile-X 26 / 28 band
     /// loads `P2[1]` / `P2[0]`).
-    pub camera_block: Option<legaia_engine_core::camera_zone::CameraZoneConfig>,
+    pub camera_block: Option<legaia_engine_field::camera_zone::CameraZoneConfig>,
     /// The focus pair (`0x80089118` / `0x80089120`, stored form) on a
     /// walkable state whose focus is not on the player: history the seat
     /// cannot replay. The follow ease writes the focus only on a frame it
@@ -99,7 +99,7 @@ pub struct RetailObs {
     /// The live mode-3 CLUT-cell cyclers ([`retail_cell_fx`]), handed to the
     /// image child as `LEGAIA_SEAT_CLUT_FX` so the cycled palettes show the
     /// captured phase.
-    pub cell_fx: Vec<legaia_engine_core::clut_cell_fx::ClutCellFx>,
+    pub cell_fx: Vec<legaia_engine_field::clut_cell_fx::ClutCellFx>,
     /// The live fog-pool records ([`retail_fog`]), handed to the image child
     /// as `LEGAIA_SEAT_FOG` and installed on the frame it captures.
     pub fog: Vec<legaia_engine_core::fog_particles::FogParticle>,
@@ -127,7 +127,7 @@ pub struct RetailObs {
     /// The live image-panel widget ([`retail_panel`]), handed to the image
     /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
     /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
-    pub panel: Option<legaia_engine_core::screen_fx::PanelWidget>,
+    pub panel: Option<legaia_engine_effects::screen_fx::PanelWidget>,
     /// The frame's clear colour - the draw environment's `r0 / g0 / b0`
     /// (`0x8007BF5D..5F`) - handed to the image child as `LEGAIA_SEAT_CLEAR`
     /// ([`retail_clear_rgb`]).
@@ -239,7 +239,7 @@ impl RetailObs {
                 .then(|| camera_block_bytes(ram))
                 .flatten()
                 .and_then(|b| {
-                    legaia_engine_core::camera_zone::CameraZoneConfig::from_retail_block(&b)
+                    legaia_engine_field::camera_zone::CameraZoneConfig::from_retail_block(&b)
                 })
                 .filter(|b| camera_block_composed(ram, b)),
             seat_focus: match (class, player) {
@@ -539,7 +539,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             Ok(obs)
         }
         _ => {
-            let (st, gpu) = legaia_pcsxr::gpu::load_with_scus(&entry.path, scus)?;
+            let (st, gpu) = legaia_pcsx_redux::gpu::load_with_scus(&entry.path, scus)?;
             let frame = gpu
                 .as_ref()
                 .and_then(|g| Frame::from_vram_display(&g.vram, g.display_crop_rect()));

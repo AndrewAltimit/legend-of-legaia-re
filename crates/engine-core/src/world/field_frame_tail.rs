@@ -25,11 +25,12 @@
 //! The kernels below are what a host calls; what stays host-side is only what
 //! the host owns (GPU uploads, the NPC clip players it draws from).
 
-use legaia_asset::player_anm::PlayerAnmBundle;
+use legaia_actor_formats::player_anm::PlayerAnmBundle;
 
-use super::{SceneMode, World};
-use crate::field_anim::FieldClipPlayer;
+use super::World;
 use crate::field_env::{ANIM_CLAMP, PropAnim};
+use legaia_engine_field::field_anim::FieldClipPlayer;
+use legaia_engine_mode::mode::SceneMode;
 
 /// The anim-speed step every host ticks the effect scene-graphs at - the
 /// per-part wait-timer drain `0x0400` both hosts already passed by hand.
@@ -576,10 +577,10 @@ mod tests {
     fn an_npc_cue_binds_from_the_bank_the_live_party_bit_names() {
         // Locomotion record 4 is a 10-bone clip, scene record 4 a 10-bone
         // clip of another length - the two banks are told apart by frames.
-        let loco = crate::field_anim::synth_anm_bundle(&[(10, 2); 5]);
+        let loco = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 2); 5]);
         let mut scene_recs = vec![(10, 2); 4];
         scene_recs.push((10, 7));
-        let scene = crate::field_anim::synth_anm_bundle(&scene_recs);
+        let scene = legaia_engine_field::field_anim::synth_anm_bundle(&scene_recs);
         let mut w = World::new();
         w.mode = SceneMode::Field;
         let party = legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
@@ -603,7 +604,7 @@ mod tests {
     /// the actor's mesh to the bound clip's bone count.
     #[test]
     fn an_npc_cue_for_another_skeleton_is_refused() {
-        let loco = crate::field_anim::synth_anm_bundle(&[(10, 2), (2, 3)]);
+        let loco = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 2), (2, 3)]);
         let mut w = World::new();
         w.mode = SceneMode::Field;
         w.field_vm.channels.push(party_channel(

@@ -7,16 +7,16 @@
 //! * the **battle-stage backdrop**: the scene's `scene_tmd_stream` half-dome
 //!   rebuilt through [`SceneLoadKind::Battle`] (the Field build excludes the
 //!   stage textures), object-list-edited by
-//!   [`legaia_asset::battle_backdrop::drawn_objects_tmd`] (`FUN_800513F0`
+//!   [`legaia_scene_formats::battle_backdrop::drawn_objects_tmd`] (`FUN_800513F0`
 //!   drops object 1) and drawn **twice** - the second copy pre-appended here
 //!   under the per-stage transform (`SCUS_942.54` mirror table
-//!   `DAT_80078B50`, [`legaia_asset::battle_backdrop::MirrorXTable`];
+//!   `DAT_80078B50`, [`legaia_scene_formats::battle_backdrop::MirrorXTable`];
 //!   half-turn fallback) with [`legaia_tmd::mesh::VramMesh::append_scaled`]'s
 //!   winding flip, so the page uploads ONE mesh and the horizon closes;
 //! * the **ground grid** (`func_0x801d02c0`,
-//!   [`legaia_asset::battle_backdrop::build_ground_grid`]) plus its per-stage
+//!   [`legaia_scene_formats::battle_backdrop::build_ground_grid`]) plus its per-stage
 //!   depth-cue far colour (`DAT_80078C1C`,
-//!   [`legaia_engine_vm::battle_ground_grid::OutdoorCueTable`]);
+//!   [`legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable`]);
 //! * the **battle VRAM**: stage build + flame atlas (PROT 870,
 //!   [`legaia_engine_core::scene::upload_flame_atlas_into_vram`]) + per-slot
 //!   monster texture injection + the party texture bands, all into a
@@ -25,13 +25,13 @@
 //!   `crate::runtime::LegaiaRuntime::step_field_vram_fx`'s battle guard
 //!   always assumed);
 //! * **monster meshes** from the PROT 867 archive
-//!   ([`legaia_asset::monster_archive::MonsterMesh::battle_render_mesh`],
+//!   ([`legaia_actor_formats::monster_archive::MonsterMesh::battle_render_mesh`],
 //!   per-slot CBA/TSB relocation + texture injection), bound to the live
 //!   enemy actor slots with their idle + action clips installed on the world
 //!   so the shared battle SM poses them;
 //! * **party battle forms**, assembled per character from the player battle
 //!   files' equipment-id sections
-//!   ([`legaia_asset::battle_char_assembly`], PROT 863..866) and relocated
+//!   ([`legaia_actor_formats::battle_char_assembly`], PROT 863..866) and relocated
 //!   into the present-party ordinal's runtime VRAM band, with the real
 //!   texture-pool pixels + battle palette overlay (PROT 1204/1205 + the
 //!   PROT 1203 rest pose as the per-member fallback, exactly the native
@@ -44,7 +44,7 @@
 //! `R.v + T` composition every other site animator runs.
 //!
 //! The **battle camera** is the SAME phase-scripted retail camera the native
-//! window runs - [`legaia_engine_vm::battle_cam_script`] (`FUN_801D5854`
+//! window runs - [`legaia_engine_battle_vm::battle_cam_script`] (`FUN_801D5854`
 //! framing cases, `FUN_801D829C` glides): the dialogue close-up, the far
 //! "menu" framing with the idle orbit, and the per-character submenu
 //! close-up, driven from the live world state by the shared `drive` on the
@@ -77,7 +77,7 @@ use legaia_engine_core::scene::Scene;
 use legaia_engine_core::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_mode::mode::SceneMode;
 use wasm_bindgen::prelude::*;
 
 mod actor_exports;
@@ -115,7 +115,7 @@ pub(crate) fn web_log(s: &str) {
 struct WebStageShell {
     tmd: legaia_tmd::Tmd,
     raw: Vec<u8>,
-    second: legaia_asset::battle_backdrop::SecondCopy,
+    second: legaia_scene_formats::battle_backdrop::SecondCopy,
     objects: Vec<usize>,
 }
 
@@ -127,10 +127,10 @@ struct WebStageShell {
 fn stage_shell_mesh(
     tmd: &legaia_tmd::Tmd,
     raw: &[u8],
-    second: legaia_asset::battle_backdrop::SecondCopy,
+    second: legaia_scene_formats::battle_backdrop::SecondCopy,
     objects: &[usize],
 ) -> Option<BattleMesh> {
-    let tmd0 = legaia_asset::battle_backdrop::objects_tmd(tmd, objects);
+    let tmd0 = legaia_scene_formats::battle_backdrop::objects_tmd(tmd, objects);
     let (mut vmesh, _oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd0, raw);
     let mut flat = crate::packet_color::hybrid(&vmesh, &shading);
     let first = vmesh.clone();
@@ -148,7 +148,7 @@ fn stage_slot_mesh(tmd: &legaia_tmd::Tmd, raw: &[u8], objects: &[usize]) -> Opti
     if objects.is_empty() {
         return None;
     }
-    let tmd0 = legaia_asset::battle_backdrop::objects_tmd(tmd, objects);
+    let tmd0 = legaia_scene_formats::battle_backdrop::objects_tmd(tmd, objects);
     let (vmesh, _oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd0, raw);
     let flat = crate::packet_color::hybrid(&vmesh, &shading);
     (!vmesh.indices.is_empty()).then_some(BattleMesh { mesh: vmesh, flat })
@@ -325,7 +325,7 @@ impl BattleRender {
 struct WebBattleStage {
     vram: legaia_tim::Vram,
     dome: (legaia_tmd::Tmd, Vec<u8>),
-    second: legaia_asset::battle_backdrop::SecondCopy,
+    second: legaia_scene_formats::battle_backdrop::SecondCopy,
     grid_far: [f32; 3],
     outdoor: bool,
 }
@@ -336,12 +336,12 @@ struct WebBattleStage {
 struct PendingMonsterInstall {
     actor_idx: usize,
     tex_slot: u8,
-    idle: Option<legaia_asset::monster_archive::MonsterAnimation>,
+    idle: Option<legaia_actor_formats::monster_archive::MonsterAnimation>,
 }
 
 /// Flatten one animation frame to the `[tx, ty, tz, rx, ry, rz] x parts`
 /// stream the page animator consumes (angles unsigned 12-bit, `4096` = turn).
-fn flatten_frame(frame: &[legaia_asset::monster_archive::PartPose]) -> Vec<i32> {
+fn flatten_frame(frame: &[legaia_actor_formats::monster_archive::PartPose]) -> Vec<i32> {
     let mut out = Vec::with_capacity(frame.len() * 6);
     for t in frame {
         out.extend_from_slice(&[
@@ -402,22 +402,22 @@ impl LegaiaRuntime {
         let second = self
             .scus
             .as_deref()
-            .and_then(legaia_asset::battle_backdrop::MirrorXTable::from_scus)
+            .and_then(legaia_scene_formats::battle_backdrop::MirrorXTable::from_scus)
             .map(|t| t.second_copy_for_prot_index(stage_entry))
-            .unwrap_or(legaia_asset::battle_backdrop::SecondCopy::HalfTurn);
+            .unwrap_or(legaia_scene_formats::battle_backdrop::SecondCopy::HalfTurn);
         // Grid depth-cue far colour per stage class (`FUN_80050120`): the
         // sibling SCUS table picks the brightened outdoor arm on the 13
         // wide-open stages; indoor `>> 1` grey covers everything else.
         let grid_far_bytes = self
             .scus
             .as_deref()
-            .and_then(legaia_engine_vm::battle_ground_grid::OutdoorCueTable::from_scus)
+            .and_then(legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable::from_scus)
             .map(|t| t.far_colour_for_prot_index(stage_entry))
-            .unwrap_or(legaia_engine_vm::battle_ground_grid::GRID_FAR_INDOOR);
+            .unwrap_or(legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_INDOOR);
         let outdoor = self
             .scus
             .as_deref()
-            .and_then(legaia_engine_vm::battle_ground_grid::OutdoorCueTable::from_scus)
+            .and_then(legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable::from_scus)
             .is_some_and(|t| t.contains_prot_index(stage_entry));
         Some(WebBattleStage {
             vram,
@@ -481,7 +481,7 @@ impl LegaiaRuntime {
         let outdoor = stage.as_ref().is_some_and(|st| st.outdoor);
         // REF: FUN_800513f0 - the backdrop registration whose object-list
         // edit + second-copy transform this host consumes through
-        // `legaia_asset::battle_backdrop`, exactly like the native window.
+        // `legaia_scene_formats::battle_backdrop`, exactly like the native window.
         if let Some(WebBattleStage {
             dome: (tmd, raw),
             second,
@@ -497,7 +497,7 @@ impl LegaiaRuntime {
                 .host()
                 .map(|h| h.battle_stage_object_indices(tmd.objects.len()))
                 .unwrap_or_else(|| {
-                    legaia_asset::battle_backdrop::drawn_object_indices(tmd.objects.len())
+                    legaia_scene_formats::battle_backdrop::drawn_object_indices(tmd.objects.len())
                 });
             // The volumetric ground fog may not outshine the stage it lies
             // on: the native window's measurement, same kernel, same shell.
@@ -519,8 +519,8 @@ impl LegaiaRuntime {
             // page/CLUT/UV window the scene battle VRAM populates.
             // Pre-cue colour = the settled battle ambient (`0x8007B7B0` ->
             // `RGBC`), the same one the native host draws with.
-            let grid = legaia_asset::battle_backdrop::build_ground_grid_rgbc(
-                legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED,
+            let grid = legaia_scene_formats::battle_backdrop::build_ground_grid_rgbc(
+                legaia_engine_battle_vm::battle_ground_grid::GRID_RGBC_SETTLED,
             );
             if !grid.indices.is_empty() {
                 ground = Some(BattleMesh::textured(grid));
@@ -536,7 +536,7 @@ impl LegaiaRuntime {
         // injects its creature texture into the next one.
         let mut bound_slots: Vec<u8> = Vec::new();
         for (actor_idx, monster_id, slot) in monsters {
-            let mesh = match legaia_asset::monster_archive::mesh(&archive, monster_id) {
+            let mesh = match legaia_actor_formats::monster_archive::mesh(&archive, monster_id) {
                 Ok(Some(m)) => m,
                 Ok(None) => continue,
                 Err(e) => {
@@ -558,7 +558,7 @@ impl LegaiaRuntime {
             bound_slots.push(slot);
             let object_ids =
                 legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, mesh.tmd_bytes()).1;
-            let idle = legaia_asset::monster_archive::idle_animation(&archive, monster_id)
+            let idle = legaia_actor_formats::monster_archive::idle_animation(&archive, monster_id)
                 .ok()
                 .flatten();
             let rest_pose = idle

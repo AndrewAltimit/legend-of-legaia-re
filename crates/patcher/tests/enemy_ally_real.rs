@@ -20,8 +20,8 @@
 //! the data-edit randomizers this feature has no engine runtime oracle -
 //! verification is the byte/disassembly checks here plus an emulator playtest.
 
-use legaia_asset::item_names::file_offset_for_va;
 use legaia_disc_patch::disc::DiscPatcher;
+use legaia_game_tables::item_names::file_offset_for_va;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::enemy_ally::{

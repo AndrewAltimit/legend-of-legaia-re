@@ -48,7 +48,7 @@ fn map01_leg_stages_the_retail_flyin_camera_beats() {
         return;
     };
     host.world.begin_new_game();
-    host.enter_field_scene(legaia_asset::new_game::OPENING_CUTSCENE_SCENE, 0)
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE, 0)
         .expect("enter opdeene");
 
     // Run the chain to the map01 leg (zero input, by execution).
@@ -85,7 +85,7 @@ fn map01_leg_stages_the_retail_flyin_camera_beats() {
         // This is exactly why the windowed renderer replays drained
         // `apply == 0` beats as snaps before arming the glide.
         for ev in host.world.drain_field_events() {
-            let legaia_engine_core::field_events::FieldEvent::CameraConfigure {
+            let legaia_engine_field::field_events::FieldEvent::CameraConfigure {
                 params,
                 apply_trigger,
                 ..

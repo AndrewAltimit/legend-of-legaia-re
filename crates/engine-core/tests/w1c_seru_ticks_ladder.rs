@@ -1,6 +1,6 @@
 //! Disc-gated ladder for the **player Seru-magic tick bodies** of action ids
 //! `0x87..=0x8B` (PROT 0909..0913), ported in
-//! `legaia_engine_vm::cast_seru_ticks_b`.
+//! `legaia_engine_battle_vm::seru_magic_ticks`.
 //!
 //! Why disc-gated when `World::cast_module_for` is arithmetic. Without
 //! `SCUS_942.54` installed the resolver never consults the spell table's
@@ -19,10 +19,11 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_asset::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
-use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_anim_rate::AnimRate;
-use legaia_engine_vm::cast_seru_ticks_b as seru;
+use legaia_engine_battle_vm::battle_anim_rate::AnimRate;
+use legaia_engine_battle_vm::seru_magic_ticks as seru;
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
+use legaia_overlay_images::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
 use std::path::PathBuf;
 
 /// The summon seat every body in the band poses (`actor_table[7]`).
@@ -120,7 +121,7 @@ fn every_player_seru_tick_body_walks_its_phase_chain() {
     // does rather than a band with no module staged.
     let mut archive =
         legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
-    let mut pool = legaia_asset::cast_effect_pool::CastEffectPool::new();
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
     for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
         let Some(entry) = archive.entries.get(idx as usize).cloned() else {
             continue;

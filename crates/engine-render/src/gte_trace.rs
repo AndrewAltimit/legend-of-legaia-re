@@ -21,7 +21,7 @@
 //! expected output registers. `Cop2Trace::write_json_pretty` and
 //! `Cop2Trace::read_json` round-trip cleanly.
 
-use crate::gte::{CopOp, Gte, GteMat3, GteVec3, NullMem, ScreenXY};
+use legaia_render_kernels::gte::{CopOp, Gte, GteMat3, GteVec3, NullMem, ScreenXY};
 use serde::{Deserialize, Serialize};
 
 /// Snapshot of the entire GTE register file. The `serde` derives let
@@ -568,7 +568,7 @@ fn run_op(gte: &mut Gte, op: CopOp) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gte::{Gte, GteMat3, GteVec3};
+    use legaia_render_kernels::gte::{Gte, GteMat3, GteVec3};
 
     fn priming_gte() -> Gte {
         let mut g = Gte::new();

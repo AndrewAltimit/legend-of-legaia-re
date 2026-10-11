@@ -26,9 +26,10 @@
 //! therefore inverts the wave. `FloorWave::from_scene_and_world` is where that
 //! conversion lives so no host has to pick a sign.
 
-use legaia_asset::field_objects::Placement;
 use legaia_engine_core::field_env::{self, EnvDraw, FloorWave};
-use legaia_engine_core::world::{SceneMode, World};
+use legaia_engine_core::world::World;
+use legaia_engine_mode::mode::SceneMode;
+use legaia_scene_formats::field_objects::Placement;
 
 /// A placement standing on floor tier `nibble`, at pack slot 0.
 fn placed(nibble: u8) -> Placement {
@@ -224,7 +225,7 @@ fn op_4c_9e_reinstalls_the_ladder_and_the_draws_follow() {
 /// and a cell straddling both tilts - the drawn ground the floor sampler walks.
 #[test]
 fn op_4c_90_deforms_the_ground_heightfield_per_vertex() {
-    use legaia_asset::field_objects::{GROUND_PRIM_COLOR, WalkHeightfield};
+    use legaia_scene_formats::field_objects::{GROUND_PRIM_COLOR, WalkHeightfield};
     let mut man = [0i16; 16];
     man[4] = 0x40;
     man[5] = 0x80;
