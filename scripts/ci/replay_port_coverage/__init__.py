@@ -137,7 +137,7 @@ Usage:
     # the build artifacts in place so this is not 26 rebuilds.
     scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
         cargo llvm-cov clean --profraw-only
-        cargo llvm-cov -p "$pkg" --test integration --no-report "${t}::"
+        cargo llvm-cov -p "$pkg" --test integration --no-report -- "${t}::"
         cargo llvm-cov report --json --output-path "target/cov-$t.json"
     done
 
