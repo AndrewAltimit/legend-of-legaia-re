@@ -371,7 +371,7 @@ pub struct RetailBattle {
     pub defeat_lanes: Vec<Option<u32>>,
     /// Each pool slot's status word `+0x16E` (the ailment bits the tint
     /// pass colours a body by - `0x1` Venom `0xFF2020`, `0x2` Toxic, ...,
-    /// [`legaia_engine_vm::status_effects::display_flags`]), `None` for an
+    /// [`legaia_engine_battle_vm::status_effects::display_flags`]), `None` for an
     /// empty slot.
     pub status: Vec<Option<u16>>,
     /// The timed message up in the capture (HUD element `0x66`): the

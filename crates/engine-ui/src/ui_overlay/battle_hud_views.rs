@@ -116,7 +116,7 @@ pub struct HudSlotMeta {
 ///
 /// The ids are `FUN_8002C2E4`'s priority-ladder outputs and the ailment each
 /// one stands for is pinned in
-/// `legaia_engine_vm::status_effects::display_flags`. The id space is
+/// `legaia_engine_battle_vm::status_effects::display_flags`. The id space is
 /// mirrored here as literals rather than imported - not for a dependency
 /// reason (this crate depends on `engine-vm`) but because that module
 /// tabulates the ailment *bitmasks*, not this sprite-id band; the mapping is

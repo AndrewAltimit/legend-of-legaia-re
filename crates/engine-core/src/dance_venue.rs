@@ -121,7 +121,7 @@ pub fn psx_screen_xy(view: &FieldCameraView, p: [f32; 3]) -> [i64; 2] {
 fn screen_xy_of(h: f32, eye: [f32; 3]) -> [i64; 2] {
     let g = eye.map(|c| (c * VENUE_WORLD_SCALE) as i64);
     let sz3 = g[2].clamp(0, 0xFFFF) as u16;
-    let (q, _) = legaia_engine_vm::gte_divide::gte_divide(h as u16, sz3);
+    let (q, _) = legaia_render_kernels::gte::divide::gte_divide(h as u16, sz3);
     let ir = [g[0].clamp(-0x8000, 0x7FFF), g[1].clamp(-0x8000, 0x7FFF)];
     std::array::from_fn(|i| (GTE_SCREEN_OFFSET[i] + ((ir[i] * q) >> 16)).clamp(-0x400, 0x3FF))
 }

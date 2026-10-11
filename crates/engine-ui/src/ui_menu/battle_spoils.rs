@@ -44,8 +44,8 @@ pub struct BattleSpoilsView<'a> {
     pub leader: &'a str,
     /// Who the victory line names - the lead alone, or the lead's team -
     /// off the result-message build arms
-    /// ([`legaia_engine_vm::battle_party_panel::result_subject`]).
-    pub subject: legaia_engine_vm::battle_party_panel::ResultSubject,
+    /// ([`legaia_engine_battle_vm::battle_party_panel::result_subject`]).
+    pub subject: legaia_engine_battle_vm::battle_party_panel::ResultSubject,
     /// `(level_up, report)` rows each window sits below its rest seat this
     /// frame - the raise glide the results frame starts (`0` once landed).
     pub slide: (i32, i32),
@@ -119,10 +119,10 @@ pub fn battle_spoils_windows(view: &BattleSpoilsView<'_>) -> Vec<SpoilsWindow> {
     // Retail's two build arms word this line differently: a lone lead is
     // named, a party is the lead's team (`FUN_801D84C0`).
     let opening = match view.subject {
-        legaia_engine_vm::battle_party_panel::ResultSubject::Lead(_) => {
+        legaia_engine_battle_vm::battle_party_panel::ResultSubject::Lead(_) => {
             format!("{} won the battle!", view.leader)
         }
-        legaia_engine_vm::battle_party_panel::ResultSubject::LeadsTeam { .. } => {
+        legaia_engine_battle_vm::battle_party_panel::ResultSubject::LeadsTeam { .. } => {
             format!("{}'s team won the battle!", view.leader)
         }
     };
@@ -224,7 +224,7 @@ pub fn battle_spoils_draws_for(
 /// content box `288 x 42` at `(16, 160)`, which outset by the frame's six
 /// pixels is exactly the band [`SPOILS_REPORT_RECT`] measures, so the loss
 /// window reuses that rect. `line` is the defeat message
-/// (`legaia_engine_vm::battle_party_panel::DefeatText::compose`); `None` - a
+/// (`legaia_engine_battle_vm::battle_party_panel::DefeatText::compose`); `None` - a
 /// disc-free host - opens the frame empty.
 pub fn battle_defeat_windows(line: Option<&str>, slide_y: i32) -> Vec<SpoilsWindow> {
     let (x, y, w, h) = SPOILS_REPORT_RECT;
@@ -261,7 +261,7 @@ pub fn battle_result_line_draws_for(
 #[cfg(test)]
 mod spoils_subject_tests {
     use super::*;
-    use legaia_engine_vm::battle_party_panel::{ResultSubject, result_subject};
+    use legaia_engine_battle_vm::battle_party_panel::{ResultSubject, result_subject};
 
     fn opening(subject: ResultSubject) -> String {
         let view = BattleSpoilsView {

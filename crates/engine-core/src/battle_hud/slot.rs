@@ -143,7 +143,7 @@ impl BattleSlotHud {
     /// halfword `FUN_80047430` mirrors to the display record's `+0x6F6`.
     ///
     /// Built from the typed [`Self::status_icons`] set through
-    /// [`legaia_engine_vm::status_effects::pack_display_flags`]. Rot packs
+    /// [`legaia_engine_battle_vm::status_effects::pack_display_flags`]. Rot packs
     /// its **whole** limb group here rather than a single rolled bit: the HUD
     /// snapshot carries kinds, not instances, and the ladder only tests the
     /// group. Faint contributes no bit - it is the zero-HP arm of the ladder.
@@ -163,7 +163,7 @@ impl BattleSlotHud {
     /// [`StatusIcon::BaseWithCount`], whose "count" is [`Self::level`].
     // PORT: FUN_8002C2E4 (the selection; the kernel lives in engine-vm)
     pub fn status_element(&self) -> StatusIcon {
-        legaia_engine_vm::status_effects::status_icon(self.status_display_flags(), self.alive)
+        legaia_engine_battle_vm::status_effects::status_icon(self.status_display_flags(), self.alive)
     }
 
     /// The retail sprite id the status element resolves to (`0x18..=0x20`),

@@ -5,7 +5,7 @@
 //! line: their whole closure is inside this crate (plus the asset crates),
 //! so the crate sits strictly below `legaia-engine-vm` with no cycle.
 //! `legaia-engine-vm` re-exports every module here at its old path
-//! (`legaia_engine_vm::battle_action`, ...), so a consumer may name either.
+//! (`crate::battle_action`, ...), so a consumer may name either.
 //!
 //! `psx_camera` and `camera_mover` live here because the battle camera
 //! script and the GTE camera build call each other; the field-side camera
@@ -47,6 +47,7 @@ pub mod battle_intro_styles;
 pub mod battle_intro_swirl;
 pub mod battle_intro_tiles;
 pub mod battle_intro_transition;
+pub mod battle_party_panel;
 pub mod battle_pose_blend;
 pub mod battle_record_writer;
 pub mod battle_separation;
@@ -55,13 +56,20 @@ pub mod battle_target_group;
 pub mod battle_trail;
 pub mod battle_value_readout;
 pub mod camera_mover;
+pub mod camera_rel_actor;
+pub mod camera_rel_glide;
 pub mod cast_arm_ticks;
 pub mod cast_fatal_decision;
 pub mod cast_module_camera;
 pub mod cast_module_ticks;
 pub mod move_no_effect_guard;
+pub mod panel_backread_loader;
 pub mod psx_camera;
+pub mod retail_cam;
+pub mod scus_battle_helpers;
 pub mod seru_magic_ticks;
+pub mod seru_side_effect;
+pub mod status_effects;
 
 // Old paths of `seru_magic_ticks`, kept until consumers are rewritten.
 #[doc(hidden)]

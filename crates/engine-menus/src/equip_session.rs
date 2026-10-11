@@ -14,7 +14,7 @@ use crate::battle_stats::{
     BattleStats, EquipmentTable, ItemModifier, StatRecord, StatusModifiers, compute_battle_stats,
 };
 use crate::equipment::{DiscEquipInfo, EquipSlot, engine_slot_disc_category};
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 mod best_equipment;
 mod commit;

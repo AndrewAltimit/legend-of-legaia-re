@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::battle_round::{PendingPartyAction, RoundPhase};
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 /// A battle with a party of `party` standing members and one living monster
 /// seated behind them.

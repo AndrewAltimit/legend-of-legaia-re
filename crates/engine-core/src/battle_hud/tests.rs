@@ -1,5 +1,5 @@
 use super::*;
-use legaia_engine_vm::status_effects::StatusEffectTracker;
+use legaia_engine_battle_vm::status_effects::StatusEffectTracker;
 
 #[test]
 fn slot_hud_default_has_no_active_state() {
@@ -778,7 +778,7 @@ fn the_ring_marks_follow_the_word_and_the_members_status() {
     w.battle.command = Some(BattleCommandSession::new(0, 0));
     assert_eq!(
         battle_ring_marks(&w),
-        legaia_engine_vm::battle_party_panel::RingMarks::default()
+        legaia_engine_battle_vm::battle_party_panel::RingMarks::default()
     );
     w.actors[0].battle.field_flags = 0x18;
     assert!(
@@ -789,7 +789,7 @@ fn the_ring_marks_follow_the_word_and_the_members_status() {
     w.battle.special_word = 0x300;
     assert_eq!(
         battle_ring_marks(&w),
-        legaia_engine_vm::battle_party_panel::RingMarks {
+        legaia_engine_battle_vm::battle_party_panel::RingMarks {
             item_forbidden: true,
             raseru_forbidden: true,
             attack_rotted: true,
@@ -800,7 +800,7 @@ fn the_ring_marks_follow_the_word_and_the_members_status() {
     w.battle.command = Some(BattleCommandSession::new_round_open(0, 0, true));
     assert_eq!(
         battle_ring_marks(&w),
-        legaia_engine_vm::battle_party_panel::RingMarks::default()
+        legaia_engine_battle_vm::battle_party_panel::RingMarks::default()
     );
 }
 

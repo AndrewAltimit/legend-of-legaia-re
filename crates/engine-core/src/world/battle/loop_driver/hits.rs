@@ -460,7 +460,7 @@ impl World {
                 .apply_from_enemy_effect(target, effect);
             // Rot's applier rolls the disabled limb (`rand % 3`, the retail
             // `1 << (rand%3 + 3)` bit pick).
-            if applied == Some(legaia_engine_vm::status_effects::StatusKind::Rot) {
+            if applied == Some(legaia_engine_battle_vm::status_effects::StatusKind::Rot) {
                 let limb = (self.next_rand() % 3) as u8;
                 self.battle.status_effects.set_rot_limb(target, limb);
             }

@@ -21,17 +21,17 @@ pub struct BarSeed {
 }
 
 /// The status-word bits a seed carries over: the ailments the engine tracks
-/// as [`legaia_engine_vm::status_effects::StatusKind`]s. The AI-delegation
+/// as [`legaia_engine_battle_vm::status_effects::StatusKind`]s. The AI-delegation
 /// group `0x380` is left out - it is Rage's equipment passive or a charm, not
 /// an ailment the tracker models as one.
 pub fn seedable_status_bits(word: u16) -> u16 {
-    use legaia_engine_vm::status_effects::display_flags as f;
+    use legaia_engine_battle_vm::status_effects::display_flags as f;
     word & (f::AILMENT_MASK & !f::CONFUSE_MASK)
 }
 
 /// Raise the ailments `word` carries on engine slot `slot`.
 pub(super) fn seed_status(world: &mut legaia_engine_core::world::World, slot: u8, word: u16) {
-    use legaia_engine_vm::status_effects::{StatusKind, display_flags as f};
+    use legaia_engine_battle_vm::status_effects::{StatusKind, display_flags as f};
     let tracker = &mut world.battle.status_effects;
     for (bit, kind) in [
         (f::VENOM, StatusKind::Venom),

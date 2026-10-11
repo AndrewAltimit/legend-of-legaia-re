@@ -16,7 +16,7 @@
 //! builder) so the per-object rotations actually turn the limbs.
 //!
 //! Interpolation is the retail decoder's own blend
-//! ([`legaia_engine_vm::battle_pose_blend::blend_part_pose`]): the cursor's
+//! ([`legaia_engine_battle_vm::battle_pose_blend::blend_part_pose`]): the cursor's
 //! 1/16-keyframe nibble, translations lerped with an arithmetic shift, angles
 //! on the short arc, and the Euler-flip retry when a part's three angle steps
 //! total more than `0xC00`. The per-tick phase
@@ -25,14 +25,14 @@
 //! `(frame_dt * actor[+0x21D] * record[+0x78]) >> 1` per frame (`>> 2` only
 //! for a Slowed actor on idle), where `actor[+0x21D]` is the per-actor anim-rate byte
 //! (normal `8` - the arts slow-motion channel, see
-//! `legaia_engine_vm::battle_anim_rate`). [`step_for_rate`] is the Slowed-idle
+//! `legaia_engine_battle_vm::battle_anim_rate`). [`step_for_rate`] is the Slowed-idle
 //! advance at the normal rate; [`MonsterAnimPlayer::tick_rated`] applies the
 //! rate and the branch split. A zero clip rate (clip built
 //! without entry context) keeps the historical display default.
 
 use legaia_anm::PoseFrame;
 use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
-use legaia_engine_vm::battle_pose_blend::blend_part_pose;
+use legaia_engine_battle_vm::battle_pose_blend::blend_part_pose;
 
 /// Fixed-point fractional bits for the frame cursor (8.8): `1 << 8` phase units
 /// per keyframe.
@@ -136,8 +136,8 @@ pub struct TweenTarget {
 
 /// The committed entry's hit-event side, as the damage kernel `FUN_801EC3E4`
 /// and the anim tick's event-path commit read it
-/// ([`legaia_engine_vm::battle_action::hit_event_admits`] /
-/// [`legaia_engine_vm::battle_action::event_commit_due`]).
+/// ([`legaia_engine_battle_vm::battle_action::hit_event_admits`] /
+/// [`legaia_engine_battle_vm::battle_action::event_commit_due`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HitEventSource {
     /// Entry `+0x00..+0x04` - one power byte per hit.
@@ -161,7 +161,7 @@ pub struct HitEventSource {
 /// both scale by the
 /// per-actor anim-rate byte `actor[+0x21D]` - see
 /// [`MonsterAnimPlayer::tick_rated`] and
-/// `legaia_engine_vm::battle_anim_rate`.
+/// `legaia_engine_battle_vm::battle_anim_rate`.
 // PORT: FUN_80047430 - the per-frame anim-node cursor advance
 // (`node+0x68 += (DAT_1F800393 * actor[+0x21D] * record[+0x78]) >> 1`, Slowed
 // idle `>> 2`), reduced to the Slowed-idle case at the normal rate
@@ -381,7 +381,7 @@ impl MonsterAnimPlayer {
 
     /// Advance one tick under the retail anim-rate law: the effective step is
     /// `base_step * rate * (slowed_idle ? 1 : 2) / 8`
-    /// (`legaia_engine_vm::battle_anim_rate::scaled_anim_step`, mirroring the
+    /// (`legaia_engine_battle_vm::battle_anim_rate::scaled_anim_step`, mirroring the
     /// `FUN_80047430` `>> 1` / `>> 2` branch pair). At the normal rate `8`
     /// every clip runs at double the base step, idle included; only a Slowed
     /// actor's idle takes the base step itself. The arts slow-motion
@@ -389,11 +389,11 @@ impl MonsterAnimPlayer {
     // REF: FUN_80047430 (the rate-scaled cursor advance)
     pub fn tick_rated(
         &mut self,
-        rate: legaia_engine_vm::battle_anim_rate::AnimRate,
+        rate: legaia_engine_battle_vm::battle_anim_rate::AnimRate,
         slowed_idle: bool,
     ) -> PoseFrame {
         let step =
-            legaia_engine_vm::battle_anim_rate::scaled_anim_step(self.step, rate, slowed_idle);
+            legaia_engine_battle_vm::battle_anim_rate::scaled_anim_step(self.step, rate, slowed_idle);
         self.advance(step)
     }
 

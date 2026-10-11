@@ -10,6 +10,9 @@ autotests = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+legaia-engine-fishing.workspace = true
+legaia-render-kernels.workspace = true
+legaia-engine-battle-vm.workspace = true
 legaia-tim.workspace = true
 legaia-prot.workspace = true
 legaia-asset.workspace = true

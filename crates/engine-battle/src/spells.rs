@@ -20,7 +20,7 @@
 //! tables. Engines populate the catalog from disc data when the
 //! per-character spell list is known.
 
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 use std::collections::HashMap;
 
 /// Magic element. Matches the eight retail elemental columns plus a
@@ -647,9 +647,9 @@ pub enum SpellOutcome {
 /// Every engine cast path routes through this function so none of them can
 /// compare one price and charge another.
 ///
-/// REF: FUN_80035394 (the fold is [`legaia_engine_vm::battle_formulas::mp_cost_after_ability_bits`])
+/// REF: FUN_80035394 (the fold is [`legaia_engine_battle_vm::battle_formulas::mp_cost_after_ability_bits`])
 pub fn caster_mp_cost(spell: &SpellDef, ability_bits: u32) -> u16 {
-    use legaia_engine_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
+    use legaia_engine_battle_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
     mp_cost_after_ability_bits(
         spell.mp_cost as u16,
         MpCostModifier::from_ability_flags(ability_bits),

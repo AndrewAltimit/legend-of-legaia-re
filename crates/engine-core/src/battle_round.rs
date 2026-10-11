@@ -1,5 +1,5 @@
 //! Per-round battle lifecycle - wires the pure-code subsystems
-//! (`ap_gauge`, `battle_stats`, `legaia_engine_vm::status_effects`,
+//! (`ap_gauge`, `battle_stats`, `legaia_engine_battle_vm::status_effects`,
 //! `items`) into the actor / battle-action chain.
 //!
 //! A "round" in retail Legaia is one full pass through the turn-order
@@ -25,7 +25,7 @@ use crate::battle_stats::{
 };
 use crate::world::World;
 use legaia_engine_vm as vm;
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 /// One round of battle. Constructed by [`BattleRound::begin`]; consumed
 /// by [`BattleRound::end`].
@@ -421,7 +421,7 @@ mod tests {
         world
             .battle
             .status_effects
-            .apply(1, legaia_engine_vm::status_effects::StatusKind::Sleep);
+            .apply(1, legaia_engine_battle_vm::status_effects::StatusKind::Sleep);
 
         let mut per_slot: [Option<StatRecord>; 8] = Default::default();
         per_slot[1] = Some(StatRecord {
@@ -500,7 +500,7 @@ mod tests {
     /// monster is asleep so it never acts, and both sides carry enough HP to
     /// survive the tick budget.
     fn live_round_battle() -> World {
-        use legaia_engine_vm::status_effects::StatusKind;
+        use legaia_engine_battle_vm::status_effects::StatusKind;
         let mut world = World::new();
         world.enter_battle(1, 1); // slot 0 = party, slot 1 = monster
         world.toggles.live_gameplay_loop = true;

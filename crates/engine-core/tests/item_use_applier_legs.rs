@@ -335,7 +335,7 @@ fn a_table_without_a_class_14_row_seeds_no_strike_item() {
 /// zero HP (`beq v0,zero` at `0x80041BCC`) before touching the word.
 #[test]
 fn the_status_clear_arm_lifts_both_poisons_and_skips_a_dead_target() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let rows = [Row {
         id: 0x7E,
         kind: 2,

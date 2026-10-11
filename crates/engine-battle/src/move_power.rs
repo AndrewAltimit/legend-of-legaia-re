@@ -115,7 +115,7 @@ impl MovePowerCatalog {
 
     /// The roll-modulus base power `FUN_801dd0ac` derives from a move id's
     /// record (`(i16)power >> 2`), or `None` when the id has no record. This is
-    /// the `power` fed to [`legaia_engine_vm::battle_formulas::arts_physical_predamage`].
+    /// the `power` fed to [`legaia_engine_battle_vm::battle_formulas::arts_physical_predamage`].
     pub fn power_for_move_id(&self, move_id: u8) -> Option<i32> {
         self.record_for_move_id(move_id).map(|r| r.power())
     }

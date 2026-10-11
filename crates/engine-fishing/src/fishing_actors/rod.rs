@@ -310,7 +310,7 @@ fn rod_rtps(m: &[[i32; 3]; 3], tr: [i32; 3], v: [i16; 3]) -> ((i16, i16), i32, i
     };
     let ir = |r: usize| (mac(r) >> 12).clamp(-0x8000, 0x7FFF);
     let sz3 = (mac(2) >> 12).clamp(0, 0xFFFF) as u16;
-    let (div, _) = legaia_engine_vm::gte_divide::gte_divide(ROD_PROJECTION_H, sz3);
+    let (div, _) = legaia_render_kernels::gte::divide::gte_divide(ROD_PROJECTION_H, sz3);
     let screen =
         |ir: i64, of: i32| (((div * ir) + ((of as i64) << 16)) >> 16).clamp(-0x400, 0x3FF) as i16;
     (

@@ -58,7 +58,7 @@
 //! restorative item out across every living ally rather than asking for a
 //! single target.
 
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 /// The permanent stat-up consumables (class 6) by their **real** retail item
 /// ids + names (the `SCUS_942.54` item table). The *Water* line raises one

@@ -40,13 +40,13 @@ pub struct DanceGame {
     pub(super) parts: crate::minigame_actor::MinigameActorPool,
     /// The overlay's step-marker flipbook script (`0x801D44CC`), when the run
     /// was started from a real overlay image.
-    pub(super) marker_script: legaia_engine_vm::dance_marker::MarkerScript,
+    pub(super) marker_script: legaia_engine_fishing::dance_marker::MarkerScript,
     /// One flipbook cursor per marker class (clip `6..=9`). Retail runs one
     /// actor per drawn marker **cell**; every cell of a class reads the same
     /// row from the same cursor, so the engine keeps the four cursors rather
     /// than one per cell and a marker draw asks its class.
-    pub(super) markers: [legaia_engine_vm::dance_marker::MarkerActor;
-        legaia_engine_vm::dance_marker::MARKER_SCRIPT_ROWS],
+    pub(super) markers: [legaia_engine_fishing::dance_marker::MarkerActor;
+        legaia_engine_fishing::dance_marker::MARKER_SCRIPT_ROWS],
     /// The tick's camera keyframe track (`FUN_801CF470` at
     /// `0x801CF51C..0x801CF7D8`), when the run was started from a real
     /// overlay image.
@@ -188,7 +188,7 @@ impl DanceGame {
         game.mode = mode;
         game.widgets = dance_widgets_with_abr(overlay);
         game.kinds = cast.map(|c| c.kinds).unwrap_or_default();
-        game.marker_script = legaia_engine_vm::dance_marker::MarkerScript::from_overlay(
+        game.marker_script = legaia_engine_fishing::dance_marker::MarkerScript::from_overlay(
             overlay,
             legaia_asset::dance_chart::DANCE_OVERLAY_BASE_VA,
         )
@@ -287,13 +287,13 @@ impl DanceGame {
     /// by the kernel and left alone here: no host draws the floor's marker
     /// meshes yet, so there is no clip player to hand the actor to.
     ///
-    /// REF: FUN_801D0640 (kernel `legaia_engine_vm::dance_marker::step_marker`),
+    /// REF: FUN_801D0640 (kernel `legaia_engine_fishing::dance_marker::step_marker`),
     /// FUN_801D2A10 (the floor pass that spawns the actors)
     pub(super) fn advance_step_markers(&mut self, frame_delta: u32) {
         let delta = frame_delta.min(u32::from(u8::MAX)) as u8;
         let bias = legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
         for m in self.markers.iter_mut() {
-            legaia_engine_vm::dance_marker::step_marker(m, &self.marker_script, delta, bias, 0, 0);
+            legaia_engine_fishing::dance_marker::step_marker(m, &self.marker_script, delta, bias, 0, 0);
         }
     }
 

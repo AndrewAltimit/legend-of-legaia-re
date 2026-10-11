@@ -1165,11 +1165,11 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// `[4C, 0x8A, ...]` - the field light: the angle trio
     /// `_DAT_8007B780..84` and the back colour `_DAT_8007B788` the
     /// light-source TMD rows shade through
-    /// ([`legaia_engine_vm::field_light`]). `town01`'s `P1[0]` sets a white
+    /// ([`legaia_render_kernels::field_light`]). `town01`'s `P1[0]` sets a white
     /// back colour; `koin3`'s cutscene records drop it to black and back.
     fn op4c_n8_sub_a_write_quad(&mut self, slots: [i16; 3], packed: u32) {
         self.world.presentation.field_light =
-            legaia_engine_vm::field_light::FieldLight::from_op_4c_8a(slots, packed);
+            legaia_render_kernels::field_light::FieldLight::from_op_4c_8a(slots, packed);
     }
 
     fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {

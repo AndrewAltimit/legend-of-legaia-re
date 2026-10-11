@@ -97,7 +97,7 @@ pub struct BattleState {
     /// what **nothing during a fight writes except a debuff**, which is what
     /// makes it retail's own "has anything moved this stat since battle
     /// load?" probe - the compare the Seru side-effect stager gates on
-    /// ([`legaia_engine_vm::seru_side_effect::StatCompare`],
+    /// ([`legaia_engine_battle_vm::seru_side_effect::StatCompare`],
     /// `FUN_801F3D3C`). Seeded working-equal by
     /// [`crate::world::World::sync_battle_stat_bases`] at battle entry, so a
     /// slot that never took a debuff answers "unchanged".
@@ -255,8 +255,8 @@ pub struct BattleState {
     /// Sleep / Confuse / Curse / Stone / Faint). Populated by
     /// [`crate::world::World::fold_battle_event`] on `ApplyArtStrike` events whose
     /// `enemy_effect` is non-`None`; ticked per turn by engines that
-    /// drive a battle round. See [`legaia_engine_vm::status_effects`].
-    pub status_effects: vm::status_effects::StatusEffectTracker,
+    /// drive a battle round. See [`legaia_engine_battle_vm::status_effects`].
+    pub status_effects: legaia_engine_battle_vm::status_effects::StatusEffectTracker,
     /// Per-character AP gauge - drives Tactical-Arts command input.
     /// Index 0..=2 maps to party slots; engines call
     /// [`crate::ap_gauge::ApGauge::reset_for_turn`] at turn start and
@@ -780,7 +780,7 @@ impl BattleState {
             escape_timer_flag_word: 0,
             escape_timer_hud: None,
             escape_timer_actor: None,
-            status_effects: vm::status_effects::StatusEffectTracker::new(),
+            status_effects: legaia_engine_battle_vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             guarding: [false; 3],
             attack_ramp: 0,

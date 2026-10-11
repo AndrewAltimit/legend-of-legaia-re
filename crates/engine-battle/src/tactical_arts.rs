@@ -2,7 +2,7 @@
 //! **learn-on-use** check.
 //!
 //! The decision itself is retail's, not the engine's: every accepted art runs
-//! through [`legaia_engine_vm::battle_action::check_and_learn_art`]
+//! through [`legaia_engine_battle_vm::battle_action::check_and_learn_art`]
 //! (`FUN_801EFBFC`), which does a membership scan over the character record's
 //! learned-art list (count `+0x74D`, ascending ids `+0x74E..`) and, on a miss,
 //! inserts the id in sorted order. This tracker holds that list per character
@@ -25,7 +25,7 @@
 //! them as a caller-supplied `HashMap<u8, String>`. Without disc data the
 //! fallback is `"Art #N"`.
 
-use legaia_engine_vm::battle_action::{ArtUseCheck, check_and_learn_art};
+use legaia_engine_battle_vm::battle_action::{ArtUseCheck, check_and_learn_art};
 use std::collections::HashMap;
 
 /// Capacity of the retail learned-art id list (`record[+0x74E..]`, the bound

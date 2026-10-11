@@ -28,7 +28,7 @@ use legaia_engine_vm::battle_gauge_rearm::DamagePopupRing;
 pub use legaia_engine_vm::battle_gauge_rearm::POPUP_RING_SLOTS;
 pub use legaia_engine_vm::battle_value_readout::ComboStyle;
 use legaia_engine_vm::battle_value_readout::{COMBO_SLIDE_FRAMES, COMBO_SLIDE_IN_X, combo_slide};
-use legaia_engine_vm::status_effects::{StatusEffectTracker, StatusIcon, StatusKind};
+use legaia_engine_battle_vm::status_effects::{StatusEffectTracker, StatusIcon, StatusKind};
 mod plaques;
 pub use plaques::*;
 mod command_chips;

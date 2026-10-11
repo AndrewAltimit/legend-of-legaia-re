@@ -57,7 +57,7 @@ pub struct MonsterDef {
     /// spends [`MonsterDef::action_costs`] from it. This is the enemy analogue
     /// of the party-side Arts AP gauge: how many physical swings a monster lands
     /// on its turn is `agl / swing_cost` (capped at 15), computed by
-    /// [`legaia_engine_vm::battle_action::enemy_action_budget`]. `0` (the
+    /// [`legaia_engine_battle_vm::battle_action::enemy_action_budget`]. `0` (the
     /// disc-free / synthetic catalog default) leaves the monster on a single
     /// swing per turn, drawing no budget RNG.
     pub agl: u16,
@@ -66,7 +66,7 @@ pub struct MonsterDef {
     /// in `0x0C..=0x1F` and whose cost is not the `0xFF` "not-an-attack"
     /// sentinel). Populated from the monster archive in
     /// [`monster_def_from_record`]; the multi-action budget loop
-    /// ([`legaia_engine_vm::battle_action::enemy_action_budget`]) rolls a random
+    /// ([`legaia_engine_battle_vm::battle_action::enemy_action_budget`]) rolls a random
     /// candidate each pass and spends its cost from the [`MonsterDef::agl`]
     /// gauge. Empty (the synthetic default) means the monster falls back to one
     /// swing per turn.
@@ -96,7 +96,7 @@ pub struct MonsterDef {
     pub drop_item: Option<u8>,
     /// Drop chance in percent (record `+0x49`), as the victory drop roll
     /// reads it: `rand() % 100 < chance (+ the Items Up bonus)`, see
-    /// [`legaia_engine_vm::battle_formulas::victory_drop_roll`].
+    /// [`legaia_engine_battle_vm::battle_formulas::victory_drop_roll`].
     pub drop_chance_pct: u8,
     /// Seru id attached to this monster, if it carries one. A successful
     /// capture (capture spell / Genocide Crystal) feeds this id into the
@@ -146,7 +146,7 @@ pub struct MonsterDef {
     /// ticks (PROT 0907 Nighto, 0908, 0916) read the byte record-direct
     /// through `0x801C9348[seat - 3]` as a "big model" resist proxy, and
     /// Nighto's kill / confuse roll
-    /// ([`legaia_engine_vm::cast_seru_ticks_a::NightoRoll::target_immune`])
+    /// ([`legaia_engine_battle_vm::cast_seru_ticks_a::NightoRoll::target_immune`])
     /// forces the resist when it is non-zero **and** the fight is a scripted
     /// one (`ctx[+0x287]`). Its first reader is the model upload's VRAM rect
     /// widen, which the port's texture path does not consult.
@@ -335,7 +335,7 @@ impl MonsterCatalog {
 /// - `agl` <- `battle_stats()[0]` = AGL, **copied unchanged** - the per-round
 ///   action gauge (actor `+0x154`). Together with `action_costs` it drives the
 ///   enemy multi-action budget (how many swings the monster lands per turn; see
-///   [`legaia_engine_vm::battle_action::enemy_action_budget`]).
+///   [`legaia_engine_battle_vm::battle_action::enemy_action_budget`]).
 ///
 /// HP and MP are copied unchanged too, so they stay on the plain record fields.
 ///

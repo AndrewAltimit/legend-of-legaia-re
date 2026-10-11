@@ -487,7 +487,7 @@ pub fn world_map_marker_prim(
 /// primitive drawn.
 pub const WORLD_MAP_SKY_OT: u32 = u32::MAX;
 
-/// The overworld sky band's `SPRT`s ([`legaia_engine_vm::world_map_sky`]) as
+/// The overworld sky band's `SPRT`s ([`crate::world_map_sky`]) as
 /// opaque textured quads, both hosts' one wrapper.
 ///
 /// Retail draws the band first and the terrain over it. A screen primitive
@@ -498,8 +498,8 @@ pub const WORLD_MAP_SKY_OT: u32 = u32::MAX;
 /// The sprite's `u + w` / `v + h` edge can reach `256`, one past a `u8`
 /// corner: it is held at `255`, the same edge the other full-tile `SPRT`
 /// wrappers use.
-pub fn sky_band_prims(sprites: &[legaia_engine_vm::world_map_sky::SkySprite]) -> Vec<ScreenPrim> {
-    use legaia_engine_vm::world_map_sky::{SKY_CLUT, SKY_TPAGE};
+pub fn sky_band_prims(sprites: &[crate::world_map_sky::SkySprite]) -> Vec<ScreenPrim> {
+    use crate::world_map_sky::{SKY_CLUT, SKY_TPAGE};
     sprites
         .iter()
         .map(|s| {
@@ -1461,7 +1461,7 @@ mod tests {
 
     #[test]
     fn sky_band_quads_sit_on_the_far_plane_behind_the_scene() {
-        use legaia_engine_vm::world_map_sky::{SKY_CLUT, SKY_TPAGE, SkySprite};
+        use crate::world_map_sky::{SKY_CLUT, SKY_TPAGE, SkySprite};
         let s = SkySprite {
             x: 0,
             y: 0,

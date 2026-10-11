@@ -36,7 +36,7 @@
 //! success arm (`0x801E802C`), the sparring fight's exit arm (`0x801F735C`,
 //! PROT 0967) and Cort's form transition (PROT 0969). A party wipe is the one
 //! battle end that leaves it clear, which is why the port keys it on
-//! [`legaia_engine_vm::battle_action::BattleEndCause::PartyWipe`] alone.
+//! [`legaia_engine_battle_vm::battle_action::BattleEndCause::PartyWipe`] alone.
 //!
 //! Flags 14, 29 and 30 are cleared here too; the port reproduces the stores
 //! without a reading of what those three flags gate.

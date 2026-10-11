@@ -507,7 +507,7 @@ The rod actor is posed in **view space**:
 
 A hooked rod bent past its cap with the countdown `_DAT_801D90C4` spent raises the creak cue `0x201` into ring slot 1 (`0x801D2BD0`), then re-arms at `rand() % 200 + 60` vsyncs.
 
-Port: `fishing_actors` - `RodMesh` (the three rods and the bend, lifted off the venue scene's bank), `RodActor` (`tick` = `FUN_801D1C5C`, `drive` = the lure tick's rod writes), `rod_tip_screen` (the integer matrix chain and `RTPS` with the UNR divide, `legaia_engine_vm::gte_divide`) and `fishing_line` (the clip and the packet).
+Port: `fishing_actors` - `RodMesh` (the three rods and the bend, lifted off the venue scene's bank), `RodActor` (`tick` = `FUN_801D1C5C`, `drive` = the lure tick's rod writes), `rod_tip_screen` (the integer matrix chain and `RTPS` with the UNR divide, `legaia_render_kernels::gte::divide`) and `fishing_line` (the clip and the packet).
 
 `PondSession` spawns the rod at the cast lock and exposes `line_frame`, which every host calls once a frame with its own projection of the fish end. The native window and the browser play page project through the venue camera (`fishing_venue::fishing_line_frame`) and wrap the packet with `engine-ui::ui_fishing_line`; the minigames page projects its own lure and strokes the endpoints `fishing_line_json` returns. The port's lure exists from the landing, so the line is out while waiting and hooked, not during the flight.
 

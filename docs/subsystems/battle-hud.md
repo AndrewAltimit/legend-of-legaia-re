@@ -272,7 +272,7 @@ member, texels `(0, 0)` of the system-UI sheet through sub-palette 0, at
 
 The panel seats are the layout `FUN_801D84C0` publishes: its per-party-size
 anchors (solo `0x72`; pair `0x3F` / `0xA5`; trio `0x0C` / `0x72`, port
-[`battle_party_panel::panel_anchors`](../../crates/engine-vm/src/battle_party_panel.rs))
+[`battle_party_panel::panel_anchors`](../../crates/engine-battle-vm/src/battle_party_panel.rs))
 are the **name pen**, five pixels inside the panel plate.
 
 **The active-actor bar** is one full-width blue run at `(8, 188)`, interior 288,

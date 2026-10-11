@@ -83,10 +83,10 @@ pub struct ScreenFxState {
     /// angle trio `_DAT_8007B780..84` and back colour `_DAT_8007B788`.
     /// Every scene load resets it ([`FieldLight::SCENE_LOAD`],
     /// `FUN_8003AEB0`); op `4C 8A` sets it. See
-    /// [`legaia_engine_vm::field_light`].
+    /// [`legaia_render_kernels::field_light`].
     ///
-    /// [`FieldLight::SCENE_LOAD`]: legaia_engine_vm::field_light::FieldLight::SCENE_LOAD
-    pub field_light: legaia_engine_vm::field_light::FieldLight,
+    /// [`FieldLight::SCENE_LOAD`]: legaia_render_kernels::field_light::FieldLight::SCENE_LOAD
+    pub field_light: legaia_render_kernels::field_light::FieldLight,
 }
 
 /// One op-`4C 13` ramp of the field clear colour.
@@ -137,7 +137,7 @@ impl ScreenFxState {
             cinematic_bars: None,
             cinematic_bar: 0,
             clear_rgb: [0; 3],
-            field_light: legaia_engine_vm::field_light::FieldLight::SCENE_LOAD,
+            field_light: legaia_render_kernels::field_light::FieldLight::SCENE_LOAD,
             clear_ramp: None,
         }
     }

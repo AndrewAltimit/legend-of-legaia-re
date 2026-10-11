@@ -50,7 +50,7 @@
 //!
 //! The per-party-size X anchors below put a solo member in the middle and split
 //! a pair to the outsides - the same centring rule
-//! [`field_party_cursor`](crate::field_party_cursor) found in the field VM's
+//! [`field_party_cursor`](legaia_engine_vm::field_subsystem_enter) found in the field VM's
 //! member picker. Two independent subsystems agreeing on the layout convention.
 //!
 //! # Wiring status

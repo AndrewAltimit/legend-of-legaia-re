@@ -571,7 +571,7 @@ mod tests {
 pub use legaia_engine_field::field_save_screen_actor;
 pub use legaia_engine_field::morph_weight_apply;
 pub use legaia_engine_field::scene_transition_actor;
-pub use legaia_engine_vm::camera_rel_glide;
+pub use legaia_engine_battle_vm::camera_rel_glide;
 
 // The minigame rules engines live in `legaia-engine-minigames`; re-exported
 // here so every host and test keeps its `legaia_engine_core::<module>` path.

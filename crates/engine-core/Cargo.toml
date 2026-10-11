@@ -11,6 +11,8 @@ name = "legaia_engine_core"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-render-kernels.workspace = true
+legaia-engine-battle-vm.workspace = true
 anyhow.workspace = true
 log.workspace = true
 serde.workspace = true
@@ -43,6 +45,7 @@ legaia-gamedata.workspace = true
 legaia-bytes.workspace = true
 
 [dev-dependencies]
+legaia-engine-fishing.workspace = true
 tempfile.workspace = true
 # Disc-gated runtime oracle for the chest randomizer: patch a real disc's MAN in
 # memory, then drive the patched bytes through the field VM. legaia-patcher depends only

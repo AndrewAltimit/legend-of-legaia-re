@@ -23,7 +23,7 @@ use legaia_engine_vm::camera_mover::{AXIS_COUNT, CameraMover};
 use legaia_engine_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
 use serde::{Deserialize, Serialize};
 
-pub use legaia_engine_vm::retail_cam::RetailCamGlobals;
+pub use legaia_engine_battle_vm::retail_cam::RetailCamGlobals;
 
 mod event_routing;
 mod manual_knobs;

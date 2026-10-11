@@ -219,29 +219,6 @@ fn party_sizes_outside_one_to_three_take_no_arm() {
 }
 
 #[test]
-fn the_centring_matches_the_field_party_cursor() {
-    // FUN_801F1278 seeds a solo member into the *middle* cell and a pair
-    // into the outer two. The battle panels do the same with pixels.
-    let cells_one = crate::field_party_cursor::seed_member_cells(&[5]);
-    let cells_two = crate::field_party_cursor::seed_member_cells(&[5, 6]);
-    assert_eq!(cells_one[1], 5, "solo takes the middle cell");
-    assert_eq!(
-        (cells_two[0], cells_two[2]),
-        (5, 6),
-        "a pair takes the outers"
-    );
-    assert_eq!(
-        panel_anchors(1).unwrap().1,
-        None,
-        "solo positions one panel"
-    );
-    assert!(
-        panel_anchors(2).unwrap().1.is_some(),
-        "a pair positions two"
-    );
-}
-
-#[test]
 fn every_party_actor_is_reset_to_target_the_first_monster() {
     assert_eq!(PARTY_RESET.target_slot, 3);
     assert_eq!(PARTY_RESET.category, 0);

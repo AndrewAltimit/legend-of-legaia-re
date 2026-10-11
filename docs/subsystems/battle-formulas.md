@@ -1575,7 +1575,7 @@ carries the matching guard bit:
 | 27 | `0x400` | (the guard-disable status) |
 | 28 | `0x1C7F` | Master Guard (`0x1C`, all bits) |
 
-**Port.** `legaia_engine_vm::status_effects` follows the byte map (`4` = Toxic,
+**Port.** `legaia_engine_battle_vm::status_effects` follows the byte map (`4` = Toxic,
 `5` = Rot with a rolled disabled limb; Sleep and Confuse kinds remain
 host-drivable with no on-disc byte). The monster path is
 `engine-core::world::battle::monster_ai::enemy_impact_status_proc`, called by

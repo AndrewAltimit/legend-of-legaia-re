@@ -3,7 +3,7 @@
 //! results frame opens are the same framed window.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (disc-gated convention).
-use legaia_engine_vm::battle_party_panel::{
+use legaia_engine_battle_vm::battle_party_panel::{
     DEFEAT_WINDOW_ELEMENT, DefeatText, RESULT_WINDOW_ELEMENT, ResultSubject,
 };
 use legaia_patcher::disc::DiscPatcher;

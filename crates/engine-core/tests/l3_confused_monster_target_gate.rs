@@ -40,7 +40,7 @@
 
 use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 const PARTY: u8 = 3;
 const MONSTERS: u8 = 3;

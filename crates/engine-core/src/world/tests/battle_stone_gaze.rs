@@ -13,7 +13,7 @@
 //! reach-triage GATED row this converts.
 
 use super::*;
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 /// A battle with a monster caster in slot 3 whose AGL dwarfs the target's, so
 /// the retail roll `target_agl < rand % (atk + tgt)` lands for almost every
@@ -86,7 +86,7 @@ fn glare_lands_stone_and_the_clut_pass_greys_the_party_row() {
         let grey = vram.pixel(x, row);
         assert_eq!(
             grey,
-            legaia_engine_vm::scus_battle_helpers::bgr555_to_grey(orig),
+            legaia_engine_battle_vm::scus_battle_helpers::bgr555_to_grey(orig),
             "entry {x} desaturated by the FUN_8004CE2C kernel"
         );
     }

@@ -92,7 +92,7 @@ pub(super) fn bake_dance_markers(
     use legaia_engine_core::minigame_floor as mf;
 
     let Some(script) =
-        legaia_engine_vm::dance_marker::MarkerScript::from_overlay(overlay, DANCE_OVERLAY_BASE_VA)
+        legaia_engine_fishing::dance_marker::MarkerScript::from_overlay(overlay, DANCE_OVERLAY_BASE_VA)
     else {
         return DanceMarkers::default();
     };

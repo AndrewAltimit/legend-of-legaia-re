@@ -30,7 +30,7 @@
 //! lives in `crate::input` and is engine-side.
 
 use crate::items::{ItemCatalog, ItemEffect, ItemEntry, ItemOutcome, TargetSnapshot, status_bit};
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 /// Where the session is being driven from. Filters which items show up
 /// (`usable_in_battle` vs `usable_in_field`) and which targets are

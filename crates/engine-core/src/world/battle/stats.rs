@@ -531,8 +531,8 @@ impl World {
     pub(in crate::world) fn enemy_stat_compare(
         &self,
         slot: u8,
-    ) -> Option<vm::seru_side_effect::EnemyCompare> {
-        use vm::seru_side_effect::{EnemyCompare, StatCompare};
+    ) -> Option<legaia_engine_battle_vm::seru_side_effect::EnemyCompare> {
+        use legaia_engine_battle_vm::seru_side_effect::{EnemyCompare, StatCompare};
         if (slot as usize) < self.party.party_count as usize {
             return None;
         }
@@ -604,14 +604,14 @@ impl World {
     /// RNG stream.
     ///
     /// REF: FUN_801f3d3c (this is the live wiring; the routine itself is
-    /// ported at [`legaia_engine_vm::seru_side_effect::stage_side_effect`])
+    /// ported at [`legaia_engine_battle_vm::seru_side_effect::stage_side_effect`])
     pub(in crate::world) fn stage_seru_side_effect(
         &mut self,
         caster: u8,
         spell_id: u8,
         targets: &[u8],
     ) -> Option<(legaia_asset::seru_side_effect::SideEffectKind, u8)> {
-        use vm::seru_side_effect::{StagerInputs, StagerOutcome, StagerTarget, stage_side_effect};
+        use legaia_engine_battle_vm::seru_side_effect::{StagerInputs, StagerOutcome, StagerTarget, stage_side_effect};
         let table = self.tables.seru_side_effects.clone()?;
         let level = self.caster_magic_power_byte(caster, spell_id);
         // The summon creature's record element. Prefer the disc-resolved
@@ -694,14 +694,14 @@ impl World {
     ///
     /// REF: FUN_801ddb30 (this is the live wiring of
     /// `0x801DE60C..0x801DE8EC`; the switch itself is ported at
-    /// [`legaia_engine_vm::seru_side_effect::apply_hit`])
+    /// [`legaia_engine_battle_vm::seru_side_effect::apply_hit`])
     pub(in crate::world) fn apply_seru_side_effect(
         &mut self,
         slot: u8,
         kind: legaia_asset::seru_side_effect::SideEffectKind,
         pct: u8,
     ) {
-        use vm::seru_side_effect::{TargetStats, apply_hit};
+        use legaia_engine_battle_vm::seru_side_effect::{TargetStats, apply_hit};
         let i = slot as usize;
         if i >= self.battle.attack.len() || i >= self.actors.len() {
             return;

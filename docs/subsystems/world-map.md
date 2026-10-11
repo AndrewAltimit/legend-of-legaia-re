@@ -2260,7 +2260,7 @@ band top `-60`, sprites at `x = 0 / 41 / 169 / 297`). The band is mostly
 hidden at the walk camera's pitch and shows where the visible-tile window or
 the coast leaves the top of the frame open.
 
-Port: `legaia_engine_vm::world_map_sky` (the packets),
+Port: `legaia_render_kernels::world_map_sky` (the packets),
 `legaia_engine_core::world_map_sky` (the gate both hosts call), and
 `legaia_engine_ui::screen_prim::sky_band_prims`, which depth-tests each quad
 at the far plane so it lands only where the scene drew nothing.

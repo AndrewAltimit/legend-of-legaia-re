@@ -55,8 +55,8 @@ impl SceneLoadKind {
 
     /// Map to the engine-vm `SceneKindHint` consumed by
     /// [`SceneRenderPolicy::from_scene_kind`].
-    pub fn render_hint(self) -> legaia_engine_vm::prim_dispatch::SceneKindHint {
-        use legaia_engine_vm::prim_dispatch::SceneKindHint;
+    pub fn render_hint(self) -> legaia_render_kernels::prim_dispatch::SceneKindHint {
+        use legaia_render_kernels::prim_dispatch::SceneKindHint;
         match self {
             SceneLoadKind::Field => SceneKindHint::Field,
             SceneLoadKind::Battle => SceneKindHint::Battle,

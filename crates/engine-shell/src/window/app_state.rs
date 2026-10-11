@@ -1109,7 +1109,7 @@ pub(super) struct FieldLitMeshes {
     /// rest mesh takes.
     pub(super) posed: Vec<Option<usize>>,
     /// The light the variants were shaded under.
-    pub(super) light: Option<legaia_engine_vm::field_light::FieldLight>,
+    pub(super) light: Option<legaia_render_kernels::field_light::FieldLight>,
 }
 
 /// The scene's CLUT-walk shimmer (`legaia_engine_core::clut_walk_anim`, the

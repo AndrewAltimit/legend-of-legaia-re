@@ -18,7 +18,7 @@ pub(super) const MASTER_GUARD_BIT: u32 = 1 << 0x1C;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::world) struct ImpactStatusProc {
     /// The status byte to feed
-    /// [`legaia_engine_vm::status_effects::StatusEffectTracker::apply_from_enemy_effect`].
+    /// [`legaia_engine_battle_vm::status_effects::StatusEffectTracker::apply_from_enemy_effect`].
     pub effect: legaia_art::record::EnemyEffect,
     /// The rolled limb (`rand % 3`) when the selector was the Rot arm.
     pub rot_limb: Option<u8>,
@@ -194,7 +194,7 @@ impl World {
                 .battle
                 .status_effects
                 .apply_from_enemy_effect(target, proc.effect);
-            if let (Some(vm::status_effects::StatusKind::Rot), Some(limb)) =
+            if let (Some(legaia_engine_battle_vm::status_effects::StatusKind::Rot), Some(limb)) =
                 (applied, proc.rot_limb)
             {
                 self.battle.status_effects.set_rot_limb(target, limb);
@@ -207,7 +207,7 @@ impl World {
     /// `FUN_800402F4(9 | 10, ..)` calls (jump-table entries decoded off the
     /// disc: class 9 = `0x80041C70` `ori 0x4` Stone, class 10 = `0x80041E64`
     /// `ori 0x1000` Curse; roll kernel
-    /// [`vm::status_effects::agl_status_inflict_roll`]).
+    /// [`legaia_engine_battle_vm::status_effects::agl_status_inflict_roll`]).
     ///
     /// **Which moves** is the disclosed-inference half: the class byte is a
     /// literal in the streamed capture-class module code (no spell-table
@@ -251,7 +251,7 @@ impl World {
         move_id: u8,
         targets: &[u8],
     ) {
-        use vm::status_effects::{StatusKind, agl_status_inflict_roll};
+        use legaia_engine_battle_vm::status_effects::{StatusKind, agl_status_inflict_roll};
         /// Accessory-passive index `0x19` = **Curse Guard** (Magic Amulet).
         const CURSE_GUARD_BIT: u32 = 1 << 0x19;
         /// Accessory-passive index `0x1A` = **Stone Guard** (Stone Amulet).
@@ -409,6 +409,6 @@ impl World {
             .status_effects
             .statuses(slot)
             .iter()
-            .any(|s| s.kind == vm::status_effects::StatusKind::Confuse)
+            .any(|s| s.kind == legaia_engine_battle_vm::status_effects::StatusKind::Confuse)
     }
 }

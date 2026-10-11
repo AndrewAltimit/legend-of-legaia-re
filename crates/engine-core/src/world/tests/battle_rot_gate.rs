@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::input::PadButton;
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 fn arts_world() -> World {
     let mut world = World {

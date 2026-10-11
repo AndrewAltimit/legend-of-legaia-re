@@ -3,7 +3,7 @@
 //!
 //! Groups with flags `0x10..=0x17` carry no colour word: retail colours each
 //! corner through the GTE light (`NCCS` / `NCCT`, see
-//! [`legaia_engine_vm::field_light`]) against the draw's world normal. The
+//! [`legaia_render_kernels::field_light`]) against the draw's world normal. The
 //! mesh builders leave those vertices at the neutral `0x80`
 //! ([`legaia_tmd::mesh::LitVertex`] records what the shading needs), so a
 //! host that draws them unshaded paints every such face at its raw texel.
@@ -16,7 +16,7 @@
 //! needs one shaded colour stream per yaw; both hosts key their variants by
 //! [`draw_rotation`].
 
-use legaia_engine_vm::field_light::{self, FieldLight};
+use legaia_render_kernels::field_light::{self, FieldLight};
 use legaia_tmd::mesh::LitVertex;
 
 /// The q3.12 rotation retail draws a placed record with (`FUN_80026988` over

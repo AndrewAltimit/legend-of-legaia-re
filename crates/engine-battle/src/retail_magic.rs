@@ -51,7 +51,7 @@
 //! 7`), scaled by element affinity + status bits + the caster's magic-power byte
 //! (`FUN_801dd864`) and finalized by `FUN_801ddb30`. The bounded, state-free
 //! pieces of that chain are ported as pure kernels in
-//! [`legaia_engine_vm::battle_formulas`] (`summon_attacker_roll` /
+//! [`legaia_engine_battle_vm::battle_formulas`] (`summon_attacker_roll` /
 //! `summon_defender_roll` / `summon_predamage` / `heal_summon_amount` and the
 //! `apply_*` scale helpers), and the live battle rolls a damaging player cast
 //! through them: `engine-core`'s `World::player_summon_predamage` feeds the

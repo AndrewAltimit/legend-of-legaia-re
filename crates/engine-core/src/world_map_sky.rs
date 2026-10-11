@@ -1,7 +1,7 @@
 //! When the overworld sky band draws, and from which camera.
 //!
 //! The band itself - its projection, scroll, clipping and colour - is the
-//! `FUN_801F73E4` port [`legaia_engine_vm::world_map_sky`]; the primitive
+//! `FUN_801F73E4` port [`legaia_render_kernels::world_map_sky`]; the primitive
 //! both hosts link is `legaia_engine_ui::screen_prim::sky_band_prims`. This
 //! module is the one gate both hosts call between them, so neither decides
 //! on its own which frames carry a sky.
@@ -13,7 +13,7 @@
 //! [`Camera::globals`]. The top-view debug camera has no retail pose behind
 //! it and draws no band.
 
-use legaia_engine_vm::world_map_sky::{SKY_DIM_FLAG, SkySprite, sky_band_sprites};
+use legaia_render_kernels::world_map_sky::{SKY_DIM_FLAG, SkySprite, sky_band_sprites};
 
 use crate::camera::Camera;
 use crate::camera_view::FieldCameraFrame;

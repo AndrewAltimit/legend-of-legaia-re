@@ -28,7 +28,7 @@ pub struct BattleSpoilsBanner {
     pub level_ups: Vec<String>,
     /// Who the victory line names: the lead alone when the second party seat
     /// is empty, else the lead's team (`FUN_801D84C0`'s two build arms).
-    pub subject: vm::battle_party_panel::ResultSubject,
+    pub subject: legaia_engine_battle_vm::battle_party_panel::ResultSubject,
     /// `(level_up, report)` rows below rest - the windows' raise glide
     /// ([`crate::battle_hud::battle_result_windows_dy`]).
     pub slide: (i32, i32),
@@ -245,7 +245,7 @@ impl World {
     /// Who the battle-result messages name: participant ids in panel order,
     /// `0` for an empty seat - the shape of retail's `0x8007BD10` list the
     /// two build arms of `FUN_801D84C0` key on.
-    fn battle_result_subject(&self) -> vm::battle_party_panel::ResultSubject {
+    fn battle_result_subject(&self) -> legaia_engine_battle_vm::battle_party_panel::ResultSubject {
         let seats: [u8; 3] = std::array::from_fn(|i| {
             if i < usize::from(self.party.party_count) {
                 (self.party_roster_slot(i) as u8).wrapping_add(1)
@@ -253,7 +253,7 @@ impl World {
                 0
             }
         });
-        vm::battle_party_panel::result_subject(seats)
+        legaia_engine_battle_vm::battle_party_panel::result_subject(seats)
     }
 
     /// The loss window a host should be drawing this frame, or `None`.

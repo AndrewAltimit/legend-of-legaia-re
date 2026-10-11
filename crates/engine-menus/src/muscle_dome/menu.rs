@@ -575,16 +575,16 @@ impl MuscleDomeSession {
     }
 
     /// The marks the ring wears this frame (only while the ring is up), in
-    /// the battle's [`RingMarks`](legaia_engine_vm::battle_party_panel::RingMarks)
+    /// the battle's [`RingMarks`](legaia_engine_battle_vm::battle_party_panel::RingMarks)
     /// shape so the shared chip builder draws them.
-    pub fn ring_marks(&self) -> legaia_engine_vm::battle_party_panel::RingMarks {
+    pub fn ring_marks(&self) -> legaia_engine_battle_vm::battle_party_panel::RingMarks {
         let ring_up = self.phase == MusclePhase::Select
             && matches!(&self.menu, DomeMenu::Command(c) if matches!(c.phase, CommandPhase::Menu { .. }));
         if !ring_up {
             return Default::default();
         }
         let mark = |c| self.chip_mark(0, c);
-        legaia_engine_vm::battle_party_panel::RingMarks {
+        legaia_engine_battle_vm::battle_party_panel::RingMarks {
             item_forbidden: mark(DomeRingChip::Item) == Some(ChipMark::Forbidden),
             raseru_forbidden: mark(DomeRingChip::RaSeru) == Some(ChipMark::Forbidden),
             attack_rotted: mark(DomeRingChip::Attack) == Some(ChipMark::Blocked),

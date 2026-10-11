@@ -17,7 +17,7 @@
 //! Disc-free: the roster is seeded synthetically.
 
 use legaia_engine_core::world::World;
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 /// A world with one roster member carrying live HP, so `status_snapshots`
 /// emits a row for it (rows with `hp_max == 0` are filtered out).

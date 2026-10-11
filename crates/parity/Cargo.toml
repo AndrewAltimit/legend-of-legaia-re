@@ -11,6 +11,7 @@ name = "legaia_parity"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-battle-vm.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 log.workspace = true

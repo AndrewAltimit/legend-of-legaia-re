@@ -1,7 +1,7 @@
 //! Tactical-Art strike applier.
 //!
 //! Translates an
-//! [`legaia_engine_vm::battle_action::ArtStrikeInfo`] (resolved per-strike
+//! [`legaia_engine_battle_vm::battle_action::ArtStrikeInfo`] (resolved per-strike
 //! values from the actor's chosen art) into the concrete side-effects
 //! engines apply: HP deduction on the target, optional status flag, and a
 //! list of audio / visual cues scheduled for the right anim frame.
@@ -25,8 +25,8 @@
 
 use legaia_art::power::{PowerByte, PowerTarget};
 use legaia_art::record::{EnemyEffect, HitCue};
-use legaia_engine_vm::battle_action::ArtStrikeInfo;
-use legaia_engine_vm::battle_formulas::art_strike_damage_default;
+use legaia_engine_battle_vm::battle_action::ArtStrikeInfo;
+use legaia_engine_battle_vm::battle_formulas::art_strike_damage_default;
 
 /// Concrete side-effects an [`ArtStrikeInfo`] produces. Plain data -
 /// engines fold each field into their runtime in whatever order they like.
@@ -95,7 +95,7 @@ impl From<HitCue> for ScheduledCue {
 /// Compute the [`ArtStrikeOutcome`] for one strike.
 ///
 /// The damage formula is
-/// [`legaia_engine_vm::battle_formulas::art_strike_damage_default`] -
+/// [`legaia_engine_battle_vm::battle_formulas::art_strike_damage_default`] -
 /// `damage = max(1, attack × multiplier / 16 - defense)`. The multiplier
 /// is read from `info.power.multiplier` after [`PowerByte::from_byte`]
 /// decoding; "no damage" power bytes (terminator slots) yield
@@ -143,7 +143,7 @@ pub fn apply_art_strike_with_divisor(
     min_floor: u16,
     info: &ArtStrikeInfo,
 ) -> ArtStrikeOutcome {
-    use legaia_engine_vm::battle_formulas::art_strike_damage;
+    use legaia_engine_battle_vm::battle_formulas::art_strike_damage;
     let (damage, alt_range, power_target) = match info.power {
         Some(PowerByte::Damage(p)) => (
             Some(art_strike_damage(

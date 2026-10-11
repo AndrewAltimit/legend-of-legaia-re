@@ -364,7 +364,7 @@ impl LegaiaRuntime {
     /// `kind` is the `StatusKind` discriminant name (`"Stone"`, `"Toxic"`,
     /// ...). Returns `false` outside battle or for an unknown kind.
     pub fn debug_apply_battle_status(&mut self, slot: u8, kind: &str) -> bool {
-        use legaia_engine_vm::status_effects::StatusKind;
+        use legaia_engine_battle_vm::status_effects::StatusKind;
         let Some(host) = self.scene_host.host_mut() else {
             return false;
         };

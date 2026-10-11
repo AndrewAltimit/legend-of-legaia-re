@@ -592,8 +592,8 @@ pub fn arts_input_chrome_draws(
 /// chips are (`0x801D1D84..0x801D1E54`).
 ///
 /// Each stamp is `FUN_801DBDDC`'s quad
-/// ([`legaia_engine_vm::battle_party_panel::rot_stamp_on_arts_chip`]) at the
-/// anchor [`legaia_engine_vm::battle_party_panel::arts_entry_rot_stamps`]
+/// ([`legaia_engine_battle_vm::battle_party_panel::rot_stamp_on_arts_chip`]) at the
+/// anchor [`legaia_engine_battle_vm::battle_party_panel::arts_entry_rot_stamps`]
 /// picks from the limb bits and this caster's chip costs, so a stamp keeps
 /// the edge nearest the D-pad pinned as an off-class chip widens - the same
 /// law the chips follow. Bit `0x08` stamps Left, `0x10` Right, `0x20` both
@@ -605,7 +605,7 @@ pub fn arts_input_rot_stamp_draws(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    use legaia_engine_vm::battle_party_panel as bpp;
+    use legaia_engine_battle_vm::battle_party_panel as bpp;
     if !frame.chips_visible() {
         return Vec::new();
     }

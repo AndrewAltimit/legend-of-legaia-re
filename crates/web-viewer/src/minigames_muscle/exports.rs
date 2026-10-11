@@ -657,7 +657,7 @@ impl LegaiaMinigames {
             .map(|chip| {
                 let (x, y) = chip.anchor();
                 let mark_quad = (s.chip_mark(0, *chip) == Some(ChipMark::Forbidden)).then(|| {
-                    let q = legaia_engine_vm::battle_party_panel::cross_out_mark(x, y);
+                    let q = legaia_engine_battle_vm::battle_party_panel::cross_out_mark(x, y);
                     serde_json::json!({
                         "x": q.xy[0].0, "y": q.xy[0].1,
                         "dw": i32::from(q.xy[1].0) - i32::from(q.xy[0].0) + 1,

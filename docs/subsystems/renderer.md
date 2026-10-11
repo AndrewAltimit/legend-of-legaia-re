@@ -335,7 +335,7 @@ Provenance: the table's computed `jr` is not statically resolvable, so the
 map is read from the SCUS PSX-EXE directly (`t_addr = 0x80010000`, file
 offset = `VA - 0x80010000 + 0x800`).
 
-Port: `legaia_engine_vm::prim_dispatch` models the table - `slot_to_kind`
+Port: `legaia_render_kernels::prim_dispatch` models the table - `slot_to_kind`
 (topology-correct `PolyKind`), `slot_lit` (`NccMode` for slots 8-11) and
 `RenderMode::applies_depth_cue` (the cued banks). The `NCCS` / `NCCT` kernels
 are `legaia_engine_ui::gte::lighting`, exercised by the `gte_trace` parity
@@ -472,7 +472,7 @@ Evidence:
 **Port.** Both hosts run one kernel,
 [`field_lit_mesh`](../../crates/engine-field/src/field_lit_mesh.rs)
 (re-exported as `engine-core::field_lit_mesh`), over the light state in
-[`engine-vm::field_light`](../../crates/engine-vm/src/field_light.rs). The
+[`engine-vm::field_light`](../../crates/render-kernels/src/field_light.rs). The
 mesh builder keeps each lit vertex's normal and object colour
 (`legaia_tmd::mesh::LitVertex`). Because the intensity depends on the draw's
 rotation, a lit mesh gets one shaded copy per `(mesh, rotation)`:
@@ -2815,7 +2815,7 @@ animation re-targeting, the parity oracles.
 `OFX + (H * IR1) / SZ3`. The GTE approximates `1 / SZ3` with an Unsigned
 Newton-Raphson step seeded from a 257-entry table, then applies
 `OFX + (IR1 * (H / SZ3)) >> 16` with an arithmetic (floor) shift.
-`gte_divide` (`legaia_engine_vm::gte_divide`, re-exported as
+`gte_divide` (`legaia_render_kernels::gte::divide`, re-exported as
 `gte::gte_divide` so the simulation's own screen points - the fishing rod
 tip - divide the same way) reproduces two hardware quirks, and is used by
 `Gte::rtps` and its `Camera::transform` RTPT shim:

@@ -299,7 +299,7 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
 #[test]
 fn silenced_caster_cannot_open_the_magic_submenu() {
     use crate::spells::SpellCatalog;
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
 
     let mut world = World::new();
     world.mode = SceneMode::Battle;

@@ -332,11 +332,11 @@ impl World {
     /// knockdown `+0x1F1` when `+0x1F2` is set or the victim is down, else
     /// the flinch `+0x1EF`, or `+0x1F0` when that is zero.
     fn fatal_victim_reacts(&mut self, victim: u8) {
-        use vm::status_effects::StatusKind;
+        use legaia_engine_battle_vm::status_effects::StatusKind;
         self.battle.status_effects.cure(victim, StatusKind::Numb);
         let down = match self.actors.get_mut(usize::from(victim)) {
             Some(a) => {
-                a.battle.field_flags &= !vm::status_effects::display_flags::NUMB;
+                a.battle.field_flags &= !legaia_engine_battle_vm::status_effects::display_flags::NUMB;
                 a.battle.hp == 0
             }
             None => return,
@@ -451,7 +451,7 @@ impl World {
     /// The status bits an outcome ORs into `+0x16E`, through the typed
     /// tracker the engine's consumers read (the word is its packed form).
     fn install_fatal_status(&mut self, victim: u8, bits: u16) {
-        use vm::status_effects::{StatusKind, display_flags as f};
+        use legaia_engine_battle_vm::status_effects::{StatusKind, display_flags as f};
         for (bit, kind) in [
             (f::VENOM, StatusKind::Venom),
             (f::TOXIC, StatusKind::Toxic),

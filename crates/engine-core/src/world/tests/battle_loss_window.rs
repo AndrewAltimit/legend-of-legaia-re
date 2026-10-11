@@ -3,7 +3,7 @@
 //! replaces.
 
 use super::*;
-use legaia_engine_vm::battle_party_panel::DefeatText;
+use legaia_engine_battle_vm::battle_party_panel::DefeatText;
 
 /// A battle with a named lead, `party` members and one monster.
 fn loss_world(party: u8, word: u32) -> World {

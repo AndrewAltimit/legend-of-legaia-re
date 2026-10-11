@@ -61,7 +61,7 @@
 //! of the frame draws under the camera it expected.
 
 use crate::field_light::euler_rot;
-use crate::gte_divide::gte_divide;
+use crate::gte::divide::gte_divide;
 
 /// The sky texture's CLUT word - VRAM row 490, column 0, 256 entries.
 pub const SKY_CLUT: u16 = 0x7A80;
@@ -110,7 +110,7 @@ pub struct SkySprite {
 /// and `TR` = the raw eye trio.
 ///
 /// `globals` is the retail camera globals block
-/// ([`crate::retail_cam::RetailCamGlobals`]): pitch / yaw / roll, the eye
+/// ([`legaia_engine_battle_vm::retail_cam::RetailCamGlobals`]): pitch / yaw / roll, the eye
 /// trio, the focus trio and `H`.
 pub fn far_point_screen(globals: &[i32; 10]) -> (i32, i32) {
     let pitch = globals[0] as i16;

@@ -403,4 +403,27 @@ mod tests {
         assert!(!pending_is_consumed(0));
         assert!(!pending_is_consumed(0x8008_0000));
     }
+
+    #[test]
+    fn the_centring_matches_the_field_party_cursor() {
+        // FUN_801F1278 seeds a solo member into the *middle* cell and a pair
+        // into the outer two. The battle panels do the same with pixels.
+        let cells_one = seed_member_cells(&[5]);
+        let cells_two = seed_member_cells(&[5, 6]);
+        assert_eq!(cells_one[1], 5, "solo takes the middle cell");
+        assert_eq!(
+            (cells_two[0], cells_two[2]),
+            (5, 6),
+            "a pair takes the outers"
+        );
+        assert_eq!(
+            legaia_engine_battle_vm::battle_party_panel::panel_anchors(1).unwrap().1,
+            None,
+            "solo positions one panel"
+        );
+        assert!(
+            legaia_engine_battle_vm::battle_party_panel::panel_anchors(2).unwrap().1.is_some(),
+            "a pair positions two"
+        );
+    }
 }

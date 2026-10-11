@@ -695,7 +695,7 @@ fn fold_battle_event_pushes_status_into_tracker() {
     use legaia_art::queue::{ActionConstant, Character};
     use legaia_art::record::EnemyEffect;
     use legaia_engine_vm::battle_action::ArtStrikeInfo;
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
 
     let mut world = World::new();
     world.party.party_count = 4;
@@ -727,7 +727,7 @@ fn fold_battle_event_pushes_status_into_tracker() {
 
 #[test]
 fn tick_status_effects_drains_hp() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut world = World::new();
     world.actors[0].battle.hp = 100;
     world.actors[0].battle.max_hp = 160;

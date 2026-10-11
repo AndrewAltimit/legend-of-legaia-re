@@ -1177,7 +1177,7 @@ bytes. The signal keys on the VA and cannot see the image.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/seru_side_effect.rs:801f3d3c"
+key = "module-orphan:crates/engine-battle-vm/src/seru_side_effect.rs:801f3d3c"
 reason = """
 The corroboration exists; the distinctiveness filter hides it. Read against
 the disassembly, `FUN_801F3D3C` and its module sibling `FUN_801F3C34` form two

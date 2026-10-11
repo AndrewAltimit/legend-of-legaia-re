@@ -24,7 +24,7 @@ use legaia_engine_core::input::{InputState, PadButton};
 use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::world::{Actor, SceneMode, World};
 use legaia_engine_vm::battle_action::ActionState;
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 fn build_world() -> World {
     let mut w = World::new();

@@ -340,7 +340,7 @@ impl TargetPickerSession {
     ///
     /// REF: FUN_801D8A88, FUN_801D8D00, FUN_80019B28
     fn retail_enemy_step(&self, from: u8, dir: i8) -> Option<u8> {
-        use legaia_engine_vm::battle_action::{
+        use legaia_engine_battle_vm::battle_action::{
             PoolActor, TargetCycle, bearing_12bit_approx, build_attack_target_queue,
             cycle_attack_target,
         };

@@ -91,7 +91,7 @@ fn stage_impact(world: &mut World, target: u8) {
 /// and the `selector 5` half of this test fails at the `has(0, Rot)` assert.
 #[test]
 fn enemy_special_impact_selector_5_rots_the_party_target() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
 
     // Baseline: selector 0 = "no impact effect" -> no status anywhere.
     let mut none = flame_caster_battle(0);
@@ -135,7 +135,7 @@ fn enemy_special_impact_selector_5_rots_the_party_target() {
 /// draws its limb roll. Both guards block; an unrelated bit does not.
 #[test]
 fn enemy_special_rot_is_blocked_by_rot_guard_and_master_guard() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
 
     for bit in [1u32 << 0x18, 1u32 << 0x1C] {
         let mut world = flame_caster_battle(5);
@@ -163,7 +163,7 @@ fn enemy_special_rot_is_blocked_by_rot_guard_and_master_guard() {
 /// alone pins both halves: some seeds land, most do not.
 #[test]
 fn enemy_special_dot_arms_are_a_one_in_eight_roll() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
 
     const SEEDS: u32 = 64;
     for (selector, kind) in [(3u8, StatusKind::Venom), (4u8, StatusKind::Toxic)] {
@@ -190,7 +190,7 @@ fn enemy_special_dot_arms_are_a_one_in_eight_roll() {
 /// the ported `FUN_801E752C` ticker.
 #[test]
 fn enemy_applied_toxic_ticks_at_the_round_boundary() {
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
 
     // A seed on which the 1-in-8 gate lands (the scan above proves one exists).
     let seed = (0..64u32)

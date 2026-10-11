@@ -133,7 +133,7 @@ pub(super) fn panel_seats(count: usize) -> &'static [i32] {
 /// background ([`panel_seats`]).
 ///
 /// The anchors come from the ported kernel
-/// `legaia_engine_vm::battle_party_panel::panel_anchors` (retail's
+/// `legaia_engine_battle_vm::battle_party_panel::panel_anchors` (retail's
 /// `FUN_801D84C0` per-party-size table) - read directly, not mirrored.
 /// The seats that table leaves unwritten (a solo's trailing ordinals, a
 /// full party's third panel) fall back to the panel seat plus the pinned
@@ -141,7 +141,7 @@ pub(super) fn panel_seats(count: usize) -> &'static [i32] {
 /// against the same kernel.
 pub fn party_panel_stage_x(count: usize, ordinal: usize) -> i32 {
     let size = count.clamp(1, 3) as u8;
-    if let Some((primary, secondary)) = legaia_engine_vm::battle_party_panel::panel_anchors(size) {
+    if let Some((primary, secondary)) = legaia_engine_battle_vm::battle_party_panel::panel_anchors(size) {
         if ordinal == 0 {
             return i32::from(primary);
         }

@@ -351,12 +351,12 @@ pub struct ProjectedVertex {
 
 // ---- Perspective divide: Unsigned Newton-Raphson (UNR) reciprocal. --------
 //
-// The divide itself lives in `legaia_engine_vm::gte_divide`, the leaf the
+// The divide itself lives in `crate::gte::divide`, the leaf the
 // simulation links too, so a screen point `engine-core` needs and one this
 // crate draws divide identically. See docs/subsystems/renderer.md.
 #[cfg(test)]
-use legaia_engine_vm::gte_divide::GTE_DIV_TABLE;
-pub use legaia_engine_vm::gte_divide::gte_divide;
+use crate::gte::divide::GTE_DIV_TABLE;
+pub use crate::gte::divide::gte_divide;
 
 /// Apply a `gte_divide` quotient to one screen axis: multiply by the
 /// i16-saturated numerator (IR1 for X, IR2 for Y) and drop the 16 fractional

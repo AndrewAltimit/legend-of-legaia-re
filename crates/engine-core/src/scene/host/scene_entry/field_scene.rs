@@ -174,7 +174,7 @@ impl SceneHost {
         self.world.presentation.clear_ramp = None;
         // The same loader resets the field light - angle trio and back
         // colour (`0x8003B4B4..0x8003B4D8`); a scene's own `4C 8A` sets it.
-        self.world.presentation.field_light = legaia_engine_vm::field_light::FieldLight::SCENE_LOAD;
+        self.world.presentation.field_light = legaia_render_kernels::field_light::FieldLight::SCENE_LOAD;
         // Scripted CLUT-cell effects are scene-scoped (their cell operands
         // came from the previous scene's MAN); drop any in flight and re-pin
         // the frame-step factor `dt` (retail `DAT_1F800393`, the adaptive

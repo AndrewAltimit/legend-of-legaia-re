@@ -64,9 +64,9 @@ fn the_dance_venue_has_marker_cells_and_they_flip() {
     let Some(overlay) = dance_overlay(&index) else {
         panic!("dance overlay 0980 must resolve");
     };
-    let script = legaia_engine_vm::dance_marker::MarkerScript::from_overlay(&overlay, 0x801C_E818)
+    let script = legaia_engine_fishing::dance_marker::MarkerScript::from_overlay(&overlay, 0x801C_E818)
         .expect("the marker script table must parse out of the dance overlay");
-    for class in 0..legaia_engine_vm::dance_marker::MARKER_SCRIPT_ROWS {
+    for class in 0..legaia_engine_fishing::dance_marker::MARKER_SCRIPT_ROWS {
         eprintln!("[ok] marker class {class}: {} steps", script.steps(class));
     }
 
@@ -98,7 +98,7 @@ fn the_dance_venue_has_marker_cells_and_they_flip() {
         &fallback,
         script,
     );
-    let mut per_class = [0usize; legaia_engine_vm::dance_marker::MARKER_SCRIPT_ROWS];
+    let mut per_class = [0usize; legaia_engine_fishing::dance_marker::MARKER_SCRIPT_ROWS];
     for t in floor.tiles() {
         if let Some(c) = per_class.get_mut(t.actor.class as usize) {
             *c += 1;
@@ -113,7 +113,7 @@ fn the_dance_venue_has_marker_cells_and_they_flip() {
     // class inside the four-row table.
     for t in floor.tiles() {
         assert!(
-            (t.actor.class as usize) < legaia_engine_vm::dance_marker::MARKER_SCRIPT_ROWS,
+            (t.actor.class as usize) < legaia_engine_fishing::dance_marker::MARKER_SCRIPT_ROWS,
             "class {} is outside the script table",
             t.actor.class
         );

@@ -579,7 +579,7 @@ pub fn marker_template(marker: u16) -> Option<MarkerTemplate> {
 /// flipbook state the tick advances.
 ///
 /// The three fields the retail actor carries for this handler are exactly the
-/// three [`legaia_engine_vm::dance_marker::MarkerActor`] holds - `+0x50` the
+/// three [`crate::dance_marker::MarkerActor`] holds - `+0x50` the
 /// marker class (the script row), `+0x9C` the script cursor in halfwords,
 /// `+0x54` the ticks left on the current mesh - so the pool adds only the
 /// per-cell placement the floor pass already resolves.
@@ -592,7 +592,7 @@ pub struct MarkerTile {
     /// The tile record's rotation trio.
     pub rot: [u16; 3],
     /// The flipbook.
-    pub actor: legaia_engine_vm::dance_marker::MarkerActor,
+    pub actor: crate::dance_marker::MarkerActor,
 }
 
 /// The per-cell **step-marker actor pool** - the sink `floor_tile_spawns` and
@@ -611,7 +611,7 @@ pub struct MarkerTile {
 #[derive(Debug, Clone, Default)]
 pub struct MarkerFloor {
     tiles: Vec<MarkerTile>,
-    script: legaia_engine_vm::dance_marker::MarkerScript,
+    script: crate::dance_marker::MarkerScript,
 }
 
 impl MarkerFloor {
@@ -636,7 +636,7 @@ impl MarkerFloor {
         neighbour_block: bool,
         triggers_primary: &[legaia_engine_vm::field_regions::TileTrigger],
         triggers_fallback: &[legaia_engine_vm::field_regions::TileTrigger],
-        script: legaia_engine_vm::dance_marker::MarkerScript,
+        script: crate::dance_marker::MarkerScript,
     ) -> Self {
         let mut tiles = Vec::new();
         for spawn in floor_tile_spawns(grid, ramp, x0, z0, width, height, neighbour_block) {
@@ -660,7 +660,7 @@ impl MarkerFloor {
                 cell: (spawn.cell_x, spawn.cell_z),
                 pos: spawn.pos,
                 rot: spawn.rot,
-                actor: legaia_engine_vm::dance_marker::MarkerActor {
+                actor: crate::dance_marker::MarkerActor {
                     class: sub_index,
                     ..Default::default()
                 },
@@ -672,7 +672,7 @@ impl MarkerFloor {
     /// Build a pool from explicit tiles (hosts with no `.MAP`, and tests).
     pub fn from_tiles(
         tiles: Vec<MarkerTile>,
-        script: legaia_engine_vm::dance_marker::MarkerScript,
+        script: crate::dance_marker::MarkerScript,
     ) -> Self {
         MarkerFloor { tiles, script }
     }
@@ -704,7 +704,7 @@ impl MarkerFloor {
             // The clip-selector gate is the host's (`FUN_800204F8`), and a
             // marker tile carries no clip: pass the never-armed pair so the
             // report stays false rather than inventing a cursor.
-            legaia_engine_vm::dance_marker::step_marker(
+            crate::dance_marker::step_marker(
                 &mut t.actor,
                 &self.script,
                 frame_delta,
@@ -1005,7 +1005,7 @@ mod tests {
 
     #[test]
     fn a_marker_pool_flips_each_tile_through_its_own_class_row() {
-        use legaia_engine_vm::dance_marker::{MarkerActor, MarkerScript};
+        use crate::dance_marker::{MarkerActor, MarkerScript};
 
         // Two tiles on different class rows, so the test can tell a per-tile
         // cursor from a shared one.
@@ -1054,7 +1054,7 @@ mod tests {
 
     #[test]
     fn the_pack_bias_reaches_the_staged_index_through_the_pool() {
-        use legaia_engine_vm::dance_marker::{MarkerActor, MarkerScript};
+        use crate::dance_marker::{MarkerActor, MarkerScript};
         let script = MarkerScript::from_rows([vec![(7, 4)], vec![], vec![], vec![]]);
         let bias = legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
         let mut floor = MarkerFloor::from_tiles(

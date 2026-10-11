@@ -833,7 +833,7 @@ impl World {
     /// arms a physical strike for the action SM to run.
     /// True if `slot` carries any status that blocks all actions (Sleep /
     /// Stone / Faint), so it loses its turn. The blocking set is defined
-    /// by [`legaia_engine_vm::status_effects::StatusKind::blocks_actions`]; the
+    /// by [`legaia_engine_battle_vm::status_effects::StatusKind::blocks_actions`]; the
     /// battle turn loop ([`Self::advance_battle_mode`]) enforces it here.
     pub(in crate::world) fn actor_blocked_from_acting(&self, slot: u8) -> bool {
         self.battle
@@ -861,7 +861,7 @@ impl World {
             .status_effects
             .statuses(slot)
             .iter()
-            .any(|s| s.kind == vm::status_effects::StatusKind::Stone)
+            .any(|s| s.kind == legaia_engine_battle_vm::status_effects::StatusKind::Stone)
     }
 
     /// True if `slot` is out of the fight for wipe-detection purposes: either

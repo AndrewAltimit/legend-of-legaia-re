@@ -581,9 +581,9 @@ pub fn battle_raseru_cross_out(world: &crate::world::World) -> bool {
 /// PORT: FUN_801D0748 (phase-`0x28` arm, the four ring marks at `0x801D12C0..0x801D1360`)
 pub fn battle_ring_marks(
     world: &crate::world::World,
-) -> legaia_engine_vm::battle_party_panel::RingMarks {
+) -> legaia_engine_battle_vm::battle_party_panel::RingMarks {
     if !battle_command_chips(world).is_some_and(|c| c.phase == CommandChipPhase::CommandRing) {
-        return legaia_engine_vm::battle_party_panel::RingMarks::default();
+        return legaia_engine_battle_vm::battle_party_panel::RingMarks::default();
     }
     if world.mode == crate::world::SceneMode::MuscleDome {
         return world
@@ -595,7 +595,7 @@ pub fn battle_ring_marks(
     }
     let word = world.battle.special_word;
     let status = world.battle_command_status_word().unwrap_or(0);
-    legaia_engine_vm::battle_party_panel::RingMarks {
+    legaia_engine_battle_vm::battle_party_panel::RingMarks {
         item_forbidden: word & legaia_engine_vm::battle_formulas::SPECIAL_ARENA != 0,
         raseru_forbidden: battle_raseru_cross_out(world),
         attack_rotted: status & legaia_engine_vm::battle_formulas::ROT_ALL_LIMBS

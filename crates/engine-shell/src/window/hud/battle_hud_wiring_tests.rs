@@ -591,7 +591,7 @@ fn native_battle_hud_hp_tints_span_the_retail_tiers() {
 /// plus the +5 name inset.
 #[test]
 fn panel_stage_x_production_path_returns_the_kernel_anchors() {
-    use legaia_engine_vm::battle_party_panel::panel_anchors;
+    use legaia_engine_battle_vm::battle_party_panel::panel_anchors;
     for size in 1usize..=3 {
         let (primary, secondary) =
             panel_anchors(size as u8).expect("party sizes 1..=3 take a build arm");

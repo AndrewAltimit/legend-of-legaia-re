@@ -145,7 +145,7 @@ pub struct SceneResources {
     /// `_DAT_1F800394 & 1`: world-map scenes route every per-prim
     /// emit through the overlay variant (distance-cue fog), every
     /// other scene class uses the SCUS variant.
-    pub render_policy: legaia_engine_vm::prim_dispatch::SceneRenderPolicy,
+    pub render_policy: legaia_render_kernels::prim_dispatch::SceneRenderPolicy,
     /// Parsed kingdom slot-4 vertex pool (the per-kingdom object-mesh
     /// library), present only for `SceneLoadKind::WorldMap` scenes whose
     /// primary entry is a kingdom bundle (PROT 0085/0244/0391). `None`

@@ -8,7 +8,7 @@ use super::*;
 /// each mark decoded through its own 16-colour palette on CLUT row 476.
 ///
 /// - the red cross-out X, texels `(0, 96)`..`(63, 111)` through `(64, 476)` -
-///   the quad `legaia_engine_vm::battle_party_panel::cross_out_mark` samples;
+///   the quad `legaia_engine_battle_vm::battle_party_panel::cross_out_mark` samples;
 /// - the Rot stamp, `(80, 96)`..`(111, 119)` through `(176, 476)` -
 ///   `rot_stamp_on_chip` / `rot_stamp_on_arts_chip`;
 /// - the Curse plate, `(120, 96)`..`(183, 111)` through `(0, 476)` -

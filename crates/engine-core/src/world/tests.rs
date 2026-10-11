@@ -80,7 +80,7 @@ fn tile_board_world() -> World {
 #[cfg(test)]
 fn full_test_catalog() -> crate::items::ItemCatalog {
     use crate::items::{ItemCatalog, ItemEffect, ItemEntry, StatBoostTarget};
-    use legaia_engine_vm::status_effects::StatusKind;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut c = ItemCatalog::new();
     let mut add = |id, name, effect, b, f| {
         c.insert(ItemEntry {

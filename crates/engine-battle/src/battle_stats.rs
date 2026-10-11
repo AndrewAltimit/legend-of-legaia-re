@@ -20,7 +20,7 @@
 //!   Engines populate it once at startup (typically from the equipment
 //!   table extracted from the SCUS data section).
 //! - Status-effect modifiers fold in via [`StatusModifiers`], which
-//!   bridges from [`legaia_engine_vm::status_effects::StatusKind`].
+//!   bridges from [`legaia_engine_battle_vm::status_effects::StatusKind`].
 //!
 //! ## What this module does NOT own
 //!
@@ -32,7 +32,7 @@
 //!
 //! REF: FUN_801EC3E4
 
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 /// Stat record consumed by the aggregator. Fields mirror the relevant
 /// halfwords on the character record (see `docs/subsystems/battle.md`).
@@ -112,13 +112,13 @@ impl EquipmentTable {
 ///
 /// Retail scales the per-strike combat *rolls* by the poison status bits in
 /// `FUN_801DD864` (bit 1 Venom → ×9/10, then bit 2 Toxic → ×7/10; the exact
-/// kernel is `legaia_engine_vm::battle_formulas::apply_status_weaken`). This
+/// kernel is `legaia_engine_battle_vm::battle_formulas::apply_status_weaken`). This
 /// resolver mirrors those magnitudes at the stat line instead, which is
 /// equivalent for the linear roll terms. The other entries (Confuse accuracy,
 /// immobilised evasion, Curse) are engine models, exposed for override.
 ///
 /// REF: FUN_801DD864 (the bit-1 / bit-2 roll scales this resolver mirrors;
-/// the exact kernel port is `legaia_engine_vm::battle_formulas::apply_status_weaken`).
+/// the exact kernel port is `legaia_engine_battle_vm::battle_formulas::apply_status_weaken`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatusModifiers {
     /// Multiplier applied to ATK when the actor is Toxic. Default `0.7`

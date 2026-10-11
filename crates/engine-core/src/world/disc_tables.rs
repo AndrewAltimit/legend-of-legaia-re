@@ -135,7 +135,7 @@ pub struct DiscTables {
     /// The loss window's two text pieces (PROT 0898 `0x801F4C78` /
     /// `0x801F4C94`), installed with the move-power table. `None` on a
     /// disc-free host, where the loss window opens empty.
-    pub(crate) defeat_text: Option<legaia_engine_vm::battle_party_panel::DefeatText>,
+    pub(crate) defeat_text: Option<legaia_engine_battle_vm::battle_party_panel::DefeatText>,
     /// Player Seru spell id (`0x81..=0x8B`) -> the **summon creature's**
     /// record element (`+0x1D`), the byte the side-effect stager switches on
     /// and the affinity scale reads as the attacker element.

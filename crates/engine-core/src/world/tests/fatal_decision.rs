@@ -4,7 +4,7 @@
 
 use super::*;
 use legaia_engine_vm::cast_fatal_decision::{self as fd, FatalOutcome};
-use legaia_engine_vm::status_effects::StatusKind;
+use legaia_engine_battle_vm::status_effects::StatusKind;
 
 const VICTIM: u8 = 0;
 const CASTER: u8 = 1;

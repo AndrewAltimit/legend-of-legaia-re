@@ -442,7 +442,7 @@ Regression: `crates/engine-core/tests/game_over_routes_to_title.rs`.
 
 ## Status effects
 
-Each battle actor carries its ailments as the packed halfword `actor[+0x16E]`, mirrored for party slots to the character record (`+0x6F6` off `0x80084140`). The port keeps a typed instance list per actor (`StatusEffectTracker`, [`crates/engine-vm/src/status_effects.rs`](../../crates/engine-vm/src/status_effects.rs)) and packs the same word for the HUD (`display_flags`, `pack_display_flags`).
+Each battle actor carries its ailments as the packed halfword `actor[+0x16E]`, mirrored for party slots to the character record (`+0x6F6` off `0x80084140`). The port keeps a typed instance list per actor (`StatusEffectTracker`, [`crates/engine-battle-vm/src/status_effects.rs`](../../crates/engine-battle-vm/src/status_effects.rs)) and packs the same word for the HUD (`display_flags`, `pack_display_flags`).
 
 | Status | `+0x16E` bits | Kind byte | Retail effect | Port |
 |---|---|---|---|---|
@@ -674,7 +674,7 @@ Small modules the loop composes. Each mirrors one retail piece; detail that does
 | [`engine-battle::monster_ai`](../../crates/engine-battle/src/monster_ai.rs) | Per-monster-id scripted AI. | `FUN_801E9FD4` |
 | [`engine-battle::seru_learning`](../../crates/engine-battle/src/seru_learning.rs) | Capture-point accumulator + banner session. | - |
 | [`engine-battle::levelup`](../../crates/engine-battle/src/levelup.rs) | `LevelUpTracker`, growth curves ([level-up.md](level-up.md)). | `FUN_801E9504` |
-| [`engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs) | Typed statuses + the packed `+0x16E` word. | `FUN_801E752C`, appliers |
+| [`engine-vm::status_effects`](../../crates/engine-battle-vm/src/status_effects.rs) | Typed statuses + the packed `+0x16E` word. | `FUN_801E752C`, appliers |
 | `engine-battle::battle_return_flags` | Story-flag fold on battle return. | `FUN_8003AEB0` block `0x8003B530..0x8003B60C` |
 | [`engine-menus::game_over`](../../crates/engine-menus/src/game_over.rs) | Title hand-off after a wipe. | Stores at `0x8003B5D4` |
 

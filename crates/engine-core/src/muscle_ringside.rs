@@ -50,7 +50,7 @@ use crate::muscle_dome::{
     HUB_OPPONENT_CARD_HOLD_TICKS, HUB_ROUND_BANNER_HOLD_TICKS, HUB_SKIP_PAD_MASK, HubScreen,
     HubScreenStage,
 };
-use legaia_engine_vm::panel_backread_loader::backread_texture_variant;
+use legaia_engine_battle_vm::panel_backread_loader::backread_texture_variant;
 
 /// Which still a battle end leaves resident, as an extraction PROT index:
 /// `1221` (`int.tim`) at or above half HP, `1222` (`int2.tim`) below.

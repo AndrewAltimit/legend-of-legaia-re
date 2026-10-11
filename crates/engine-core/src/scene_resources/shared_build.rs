@@ -153,7 +153,7 @@ impl SceneResources {
             // SCUS variant. Callers that need the world-map overlay
             // variant should go through `build_targeted_with_options`
             // instead.
-            render_policy: legaia_engine_vm::prim_dispatch::SceneRenderPolicy::default(),
+            render_policy: legaia_render_kernels::prim_dispatch::SceneRenderPolicy::default(),
             // No scene-kind hint here; the world-map slot-4 pool is only
             // resolved on the `build_targeted_with_options` WorldMap path.
             world_map_slot4: None,

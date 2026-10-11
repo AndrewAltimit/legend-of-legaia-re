@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use legaia_engine_core::field_lit_mesh::{draw_rotation, has_lit_rows, shade_lit_rows};
 use legaia_engine_core::scene::ProtIndex;
 use legaia_engine_core::scene_assembly::assemble_field_scene;
-use legaia_engine_vm::field_light::FieldLight;
+use legaia_render_kernels::field_light::FieldLight;
 
 fn extracted_root() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

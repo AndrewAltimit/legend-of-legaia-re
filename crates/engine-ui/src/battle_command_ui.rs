@@ -491,15 +491,15 @@ pub const ITEM_MARK_ANCHOR: (i16, i16) = (0xCC, 0x22);
 /// Which marks the command ring wears this frame - one type from
 /// `engine-vm`, so `engine-core`'s `battle_hud::battle_ring_marks` hands it to
 /// this builder with no per-host copy.
-pub use legaia_engine_vm::battle_party_panel::RingMarks;
+pub use legaia_engine_battle_vm::battle_party_panel::RingMarks;
 
-/// One ring mark from a [`legaia_engine_vm::battle_party_panel::StripQuad`]:
+/// One ring mark from a [`legaia_engine_battle_vm::battle_party_panel::StripQuad`]:
 /// the quad's screen span (inclusive corners, so `x1 - x0 + 1` wide), drawn
 /// from the whole atlas cell `src` - the stretch the quad's texel span
 /// implies is the stretch the sprite's `dst / src` ratio reproduces.
 pub fn mark_sprite(
     src: (u32, u32, u32, u32),
-    q: legaia_engine_vm::battle_party_panel::StripQuad,
+    q: legaia_engine_battle_vm::battle_party_panel::StripQuad,
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> SpriteDraw {
@@ -523,7 +523,7 @@ pub fn mark_sprite(
 /// host's chrome atlas (`src` = [`crate::BattleChromeRects::cross_out`]).
 ///
 /// The quad's screen and texel spans are
-/// `legaia_engine_vm::battle_party_panel::cross_out_mark`'s - the port of
+/// `legaia_engine_battle_vm::battle_party_panel::cross_out_mark`'s - the port of
 /// `FUN_801DBC30` - so the mark is drawn 1:1 over `x-8 ..= x+0x37`,
 /// `y-4 ..= y+0xB`. It rides the chip sprites' list and draws after them, so
 /// it lands on top of the plate on both hosts.
@@ -533,7 +533,7 @@ pub fn cross_out_mark_sprite(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> SpriteDraw {
-    let q = legaia_engine_vm::battle_party_panel::cross_out_mark(anchor.0, anchor.1);
+    let q = legaia_engine_battle_vm::battle_party_panel::cross_out_mark(anchor.0, anchor.1);
     let mut s = mark_sprite(src, q, stage_origin, stage_scale);
     // A 1:1 blit: never sample past the cell.
     let scale = stage_scale.max(1);
@@ -551,7 +551,7 @@ pub fn rot_stamp_sprite(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> SpriteDraw {
-    let q = legaia_engine_vm::battle_party_panel::rot_stamp_on_chip(anchor.0, anchor.1);
+    let q = legaia_engine_battle_vm::battle_party_panel::rot_stamp_on_chip(anchor.0, anchor.1);
     mark_sprite(src, q, stage_origin, stage_scale)
 }
 
@@ -563,7 +563,7 @@ pub fn curse_plate_sprite(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> SpriteDraw {
-    let q = legaia_engine_vm::battle_party_panel::curse_plate_on_chip(anchor.0, anchor.1);
+    let q = legaia_engine_battle_vm::battle_party_panel::curse_plate_on_chip(anchor.0, anchor.1);
     mark_sprite(src, q, stage_origin, stage_scale)
 }
 

@@ -230,14 +230,14 @@ impl World {
     /// A target the mask leaves unchanged reports `NoEffect`, as the catalog's
     /// cure does for an unafflicted target.
     ///
-    /// [`StatusEffectTracker::display_flags`]: legaia_engine_vm::status_effects::StatusEffectTracker::display_flags
+    /// [`StatusEffectTracker::display_flags`]: legaia_engine_battle_vm::status_effects::StatusEffectTracker::display_flags
     fn apply_status_clear_item(
         &mut self,
         item_id: u8,
         target_slot: u8,
         hp: u16,
     ) -> Option<crate::items::ItemOutcome> {
-        use legaia_engine_vm::status_effects::StatusKind;
+        use legaia_engine_battle_vm::status_effects::StatusKind;
         let class = self.tables.item_effects.as_ref()?.effect(item_id)?.class;
         if class != vm::battle_action::EFFECT_SELECTOR_STATUS_CLEAR {
             return None;

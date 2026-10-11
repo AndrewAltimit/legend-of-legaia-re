@@ -147,7 +147,7 @@ Positions are documented by the schema; exact byte offsets are not pinned.
 | Hit Effect Cues (×4) | schema shape: a 32-bit word, high half = timing in frames, low half = constant (`0x1A`, `0x4C`, …). The runtime carrier is the 8-byte hit run in [Runtime cue playout](#runtime-cue-playout) |
 | Identifier | byte. Some values trigger special animations (`0x67` in Heaven's Drop = Thunderbolt) |
 | Anim Speed | byte. Lower = slower playback |
-| Effect on Enemy | status byte: `1` Toxic, `2` Numb, `3` Venom, `4` Sleep, `5` Confuse, `6` Curse, `7` Stone, `8` Faint (`legaia_engine_vm::status_effects`) |
+| Effect on Enemy | status byte: `1` Toxic, `2` Numb, `3` Venom, `4` Sleep, `5` Confuse, `6` Curse, `7` Stone, `8` Faint (`legaia_engine_battle_vm::status_effects`) |
 | Repeat Frames | 3 bytes: count, start frame, end frame. Replays a frame range; for some arts also repeats the damage of power bytes in the range (Super Tempest's 4 power bytes → 8 hits) |
 | Background | byte. `0` = regular, `2` = black (Super Arts and the Tornado Flame Hyper Art) |
 | Runtime Address | word, written by the runtime after the art is first used in battle; empty in static data |

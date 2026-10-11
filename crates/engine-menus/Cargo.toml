@@ -9,6 +9,7 @@ name = "legaia_engine_menus"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-battle-vm.workspace = true
 anyhow.workspace = true
 legaia-art.workspace = true
 legaia-asset.workspace = true

@@ -14,7 +14,7 @@
 //!
 //! [`still_sheet_rgba`] is the upload: it lays the entry's four bands down at
 //! the rectangles the loader's own rect stores name
-//! ([`legaia_engine_vm::panel_backread_loader::backread_slice_rect`]),
+//! ([`legaia_engine_battle_vm::panel_backread_loader::backread_slice_rect`]),
 //! relative to the region's origin, so the sheet's pixel `(x, y)` is VRAM
 //! `(384 + x, y)`. [`ringside_still_quads`] is the draw, and
 //! [`StillDraw::from_quad`] turns a quad's texture-page address back into a
@@ -29,7 +29,7 @@
 
 use crate::other_game_hud::{HudQuad, HudSprite};
 use legaia_asset::ringside_still as still;
-use legaia_engine_vm::panel_backread_loader::{BACKREAD_RECT_X, backread_slice_rect};
+use legaia_engine_battle_vm::panel_backread_loader::{BACKREAD_RECT_X, backread_slice_rect};
 
 /// GP0 command byte of the two packets: `0x2C`, a flat-shaded, textured,
 /// opaque, modulated four-point polygon (`POLY_FT4`).
