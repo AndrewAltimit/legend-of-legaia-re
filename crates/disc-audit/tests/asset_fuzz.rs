@@ -179,8 +179,8 @@ fn detector_modules_never_panic() {
         let _ = legaia_container_formats::effect_bundle::detect(&buf);
         let _ = legaia_scene_formats::scene_tmd_stream::detect(&buf);
         let _ = legaia_container_formats::tmd_size_prefix::detect(&buf);
-        let _ = legaia_sound_formats::scene_vab_stream::detect(&buf);
-        let _ = legaia_sound_formats::vab_multi_bank::detect(&buf);
+        let _ = legaia_container_formats::scene_vab_stream::detect(&buf);
+        let _ = legaia_container_formats::vab_multi_bank::detect(&buf);
         let _ = legaia_battle_models::battle_data_pack::detect(&buf);
         let _ = legaia_battle_models::battle_data_pack::parse(&buf);
         let _ = legaia_scene_formats::stage_geom::scan(&buf);

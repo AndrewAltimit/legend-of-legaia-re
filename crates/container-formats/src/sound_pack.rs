@@ -3,7 +3,7 @@
 //! ### What it is
 //!
 //! A per-scene sound pack is a **type-`0x02`-terminated streaming-chunk
-//! container** (the `FUN_8001FE70` walker; see [`legaia_container_formats::parse_streaming_with`]
+//! container** (the `FUN_8001FE70` walker; see [`crate::parse_streaming_with`]
 //! with [`StreamTerminator::TypeTwo`]) whose chunks are a **VAB + SEQ bundle**:
 //!
 //! | Chunk type | Role |
@@ -34,7 +34,7 @@
 
 use serde::Serialize;
 
-use legaia_container_formats::{StreamTerminator, parse_streaming_with};
+use crate::{StreamTerminator, parse_streaming_with};
 
 /// VAB header magic as a little-endian `u32` (`pBAV` on disk - PsyQ's `VABp`).
 pub const VAB_MAGIC_LE: u32 = 0x5641_4270;

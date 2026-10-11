@@ -236,7 +236,7 @@ fn the_multi_bank_vab_is_walked_not_swept() {
 
     let path = entry_path(&dir, 891).expect("entry 891");
     let bytes = std::fs::read(&path).expect("read entry 891");
-    let bank = legaia_sound_formats::vab_multi_bank::detect(&bytes).expect("detects");
+    let bank = legaia_container_formats::vab_multi_bank::detect(&bytes).expect("detects");
     assert_eq!(bank.count, 206);
     assert_eq!(
         bank.banks.len(),
@@ -247,7 +247,7 @@ fn the_multi_bank_vab_is_walked_not_swept() {
     // entry's size is the gap to the next entry.
     let last = bank.banks.last().unwrap();
     assert_eq!(
-        last.end_sector as usize * legaia_sound_formats::vab_multi_bank::SECTOR,
+        last.end_sector as usize * legaia_container_formats::vab_multi_bank::SECTOR,
         bytes.len(),
         "table[count] is the archive's sector count"
     );

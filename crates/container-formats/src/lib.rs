@@ -18,21 +18,29 @@
 //! - the detectors that need nothing above the container layer: the effect
 //!   bundle and `efect.dat` pack, the truncated DATA_FIELD stream, on-disc
 //!   ANM, size-prefixed TMD, and the TIM / TMD scanners.
+//! - the sound containers, which are chunk streams and descriptor banks
+//!   around audio data: [`sound_pack`], [`scene_vab_stream`],
+//!   [`vab_multi_bank`] and [`bse_bank`]. They find and bound the banks;
+//!   decoding a VAB or a SEQ is `legaia-vab` / `legaia-seq`.
 //!
-//! It is the bottom of the format stack: every scene, UI, minigame, sound
-//! and battle-model format crate sits on it, and it names none of them.
+//! It is the bottom of the format stack: every scene, UI, minigame and
+//! actor-model format crate sits on it, and it names none of them.
 
 use anyhow::{Result, bail};
 use serde::Serialize;
 
 pub mod anm_detect;
+pub mod bse_bank;
 pub mod data_field_truncated;
 pub mod efect_pack;
 pub mod effect_bundle;
 pub mod pack;
+pub mod scene_vab_stream;
+pub mod sound_pack;
 pub mod tim_scan;
 pub mod tmd_scan;
 pub mod tmd_size_prefix;
+pub mod vab_multi_bank;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum AssetType {

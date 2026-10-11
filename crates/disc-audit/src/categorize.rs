@@ -104,7 +104,7 @@ pub enum Class {
     /// `[u32 chunk0_header (type=0x00, size=N)][VABp sound bank][...]` -
     /// a streaming-format variant where the leading chunk is a Sony VAB
     /// instrument bank instead of a TMD. The single largest distributed
-    /// VAB carrier in the corpus (200+ entries). See [`legaia_sound_formats::scene_vab_stream`].
+    /// VAB carrier in the corpus (200+ entries). See [`legaia_container_formats::scene_vab_stream`].
     SceneVabStream,
     /// Strict 8-word v12 header - `[N+4, 0x12, 0, 0x14, ?, N, 0, N+2]` - used
     /// by 97 scene-named PROT entries (one per scene). Format meaning open;
@@ -169,7 +169,7 @@ pub enum Class {
     /// sound-init (`[u16 tag][u16 body_offset = 4][8-byte records]`). Two
     /// entries: extraction 888 (the one the loader reaches through raw TOC
     /// `0x37A`) and extraction 1195 (same format, no traced caller).
-    /// See [`legaia_sound_formats::bse_bank`].
+    /// See [`legaia_container_formats::bse_bank`].
     BseBank,
     /// Boot `init.pak` - the publisher / warning logo TIMs at fixed offsets
     /// plus the boot overlay's code and debug-string pool. See
@@ -190,7 +190,7 @@ pub enum Class {
     /// `0x8003E174`) = extraction 891, next to the dev path string.
     /// The extraction *filename* reads `level_up` - that is the +2 label shift
     /// (see `docs/formats/cdname.md`), not the block it belongs to.
-    /// See [`legaia_sound_formats::vab_multi_bank`].
+    /// See [`legaia_container_formats::vab_multi_bank`].
     VabMultiBank,
     /// Player battle file (`data\battle\PLAYER1..4`) - head words + LZS
     /// `record[0]` + a 12-byte `[id, offset, size]` descriptor table,
@@ -712,7 +712,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
     // VAB-prefixed scene stream - same outer wrapper as scene_tmd_stream, but
     // chunk0 carries a Sony VAB sound bank (`VABp` magic at +4). Strict
     // structural detector validates the magic + version + ps/ts counts.
-    if let Some(s) = legaia_sound_formats::scene_vab_stream::detect(buf) {
+    if let Some(s) = legaia_container_formats::scene_vab_stream::detect(buf) {
         let mut report = mk(
             Class::SceneVabStream,
             size,
@@ -730,7 +730,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
     // with VABp magic at `sector_nums[0] * 0x800 + 4`. Covers the level_up
     // cluster (206 VABp entries). Runs after scene_vab_stream so the more
     // common streaming wrapper claims its entries first.
-    if legaia_sound_formats::vab_multi_bank::detect(buf).is_some() {
+    if legaia_container_formats::vab_multi_bank::detect(buf).is_some() {
         return mk(
             Class::VabMultiBank,
             size,
@@ -886,7 +886,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
     // records]`. Runs before the statistical buckets: both carriers are sparse
     // or dense enough to land in one of them otherwise (`overlay_data_blob`
     // and `unknown_high_entropy` respectively).
-    if let Some(bank) = legaia_sound_formats::bse_bank::detect(buf) {
+    if let Some(bank) = legaia_container_formats::bse_bank::detect(buf) {
         let mut report = mk(
             Class::BseBank,
             size,

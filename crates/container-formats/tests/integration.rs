@@ -5,4 +5,7 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-container-formats --test integration <name>::`.
 
+mod bse_bank_real;
+mod bse_bank_tail_real;
 mod sound_pack_stream_real;
+mod sound_pack_vab_seq_real;

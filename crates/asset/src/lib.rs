@@ -6,9 +6,10 @@
 //! been rewritten to name the owning crate:
 //!
 //! - `legaia-container-formats` - asset-type dispatcher, descriptor,
-//!   DATA_FIELD stream, pack, the container-level detectors.
-//! - `legaia-scene-formats`, `legaia-minigame-formats`, `legaia-ui-formats`,
-//!   `legaia-sound-formats` - the formats by what they describe.
+//!   DATA_FIELD stream, pack, the container-level detectors, the sound
+//!   containers.
+//! - `legaia-scene-formats`, `legaia-minigame-formats`, `legaia-ui-formats` -
+//!   the formats by what they describe.
 //! - `legaia-battle-models`, `legaia-game-tables`, `legaia-overlay-images` -
 //!   models, static data tables, code-overlay images.
 //! - `legaia-disc-audit` - byte accounting, classification, catalogs.
@@ -240,13 +241,13 @@ pub use legaia_scene_formats::stage_geom;
 #[doc(hidden)]
 pub use legaia_scene_formats::world_map_overlay;
 #[doc(hidden)]
-pub use legaia_sound_formats::bse_bank;
+pub use legaia_container_formats::bse_bank;
 #[doc(hidden)]
-pub use legaia_sound_formats::scene_vab_stream;
+pub use legaia_container_formats::scene_vab_stream;
 #[doc(hidden)]
-pub use legaia_sound_formats::sound_pack;
+pub use legaia_container_formats::sound_pack;
 #[doc(hidden)]
-pub use legaia_sound_formats::vab_multi_bank;
+pub use legaia_container_formats::vab_multi_bank;
 #[doc(hidden)]
 pub use legaia_ui_formats::battle_ui_strings;
 #[doc(hidden)]

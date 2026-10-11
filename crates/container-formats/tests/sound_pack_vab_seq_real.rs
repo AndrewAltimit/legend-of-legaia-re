@@ -17,7 +17,7 @@
 use std::path::PathBuf;
 
 use legaia_prot::archive::Archive;
-use legaia_sound_formats::sound_pack;
+use legaia_container_formats::sound_pack;
 
 /// `sound_data2` PROT band that carries the clean `[VAB][samples][SEQ]` shape.
 const SOUND_DATA2_CLEAN: std::ops::RangeInclusive<usize> = 877..=885;

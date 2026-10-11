@@ -21,6 +21,8 @@ legaia-tmd.workspace = true
 
 [dev-dependencies]
 legaia-prot.workspace = true
+legaia-seq.workspace = true
+legaia-vab.workspace = true
 
 [[test]]
 name = "integration"

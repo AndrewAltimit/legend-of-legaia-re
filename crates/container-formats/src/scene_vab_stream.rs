@@ -12,7 +12,7 @@
 //!                                    ; (often empty / file ends here)
 //! ```
 //!
-//! Same outer wrapper as [`legaia_scene_formats::scene_tmd_stream`]: a 4-byte streaming chunk
+//! Same outer wrapper as `legaia_scene_formats::scene_tmd_stream`: a 4-byte streaming chunk
 //! header with type = 0x00 (the TIM dispatcher slot - repurposed by a
 //! specialized loader). The bytes from offset 4 onward are a Sony VAB sound
 //! bank (PsyQ format, `VABp` magic).

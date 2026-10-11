@@ -21,7 +21,7 @@
 //!   of both carriers, and that is the only thing separating this format from
 //!   any other 8-byte-stride table with a `[u16][u16 4]` header.
 
-use legaia_sound_formats::bse_bank::{self, CUE_ID_BASE, HEADER_BYTES, RECORD_BYTES};
+use legaia_container_formats::bse_bank::{self, CUE_ID_BASE, HEADER_BYTES, RECORD_BYTES};
 use std::path::PathBuf;
 
 /// Extraction entry of `bse.dat` (raw TOC `0x37A` = 890, minus the +2 CDNAME

@@ -12,10 +12,10 @@ legaia_asset::pack	legaia_container_formats::pack
 legaia_asset::tim_scan	legaia_container_formats::tim_scan
 legaia_asset::tmd_scan	legaia_container_formats::tmd_scan
 legaia_asset::tmd_size_prefix	legaia_container_formats::tmd_size_prefix
-legaia_asset::bse_bank	legaia_sound_formats::bse_bank
-legaia_asset::scene_vab_stream	legaia_sound_formats::scene_vab_stream
-legaia_asset::sound_pack	legaia_sound_formats::sound_pack
-legaia_asset::vab_multi_bank	legaia_sound_formats::vab_multi_bank
+legaia_asset::bse_bank	legaia_container_formats::bse_bank
+legaia_asset::scene_vab_stream	legaia_container_formats::scene_vab_stream
+legaia_asset::sound_pack	legaia_container_formats::sound_pack
+legaia_asset::vab_multi_bank	legaia_container_formats::vab_multi_bank
 legaia_asset::battle_backdrop	legaia_scene_formats::battle_backdrop
 legaia_asset::clut_walk	legaia_scene_formats::clut_walk
 legaia_asset::cutscene_text	legaia_scene_formats::cutscene_text

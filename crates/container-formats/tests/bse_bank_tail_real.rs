@@ -80,9 +80,9 @@ fn bse_tail_is_a_foreign_tone_table_or_skips() {
     };
 
     let bank =
-        legaia_sound_formats::bse_bank::detect(&bse).expect("entry 888 is a runtime SFX bank");
-    let table_end = legaia_sound_formats::bse_bank::HEADER_BYTES
-        + bank.records * legaia_sound_formats::bse_bank::RECORD_BYTES;
+        legaia_container_formats::bse_bank::detect(&bse).expect("entry 888 is a runtime SFX bank");
+    let table_end = legaia_container_formats::bse_bank::HEADER_BYTES
+        + bank.records * legaia_container_formats::bse_bank::RECORD_BYTES;
     assert_eq!(table_end, 0x94C, "the walk stops where the bank's rows end");
     assert_eq!(
         &bse[table_end..table_end + 4],

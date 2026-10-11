@@ -6,14 +6,14 @@ use super::*;
 // --- small fixed formats ---------------------------------------------------
 
 pub(super) fn walk_bse_bank(buf: &[u8], sink: &mut Sink) {
-    let Some(b) = legaia_sound_formats::bse_bank::detect(buf) else {
+    let Some(b) = legaia_container_formats::bse_bank::detect(buf) else {
         sink.note("bse_bank::detect returned None");
         return;
     };
     sink.claim(0, b.body_offset, OWNER_HEADER, "tag + body offset");
     sink.claim(
         b.body_offset,
-        b.body_offset + b.records * legaia_sound_formats::bse_bank::RECORD_BYTES,
+        b.body_offset + b.records * legaia_container_formats::bse_bank::RECORD_BYTES,
         OWNER_RECORD,
         format!("{} 8-byte records", b.records),
     );
@@ -574,9 +574,9 @@ pub fn seq_extent(buf: &[u8], off: usize) -> Option<usize> {
 /// the `count + 1` start sectors `FUN_8003E104` indexes, then each bank's two
 /// DATA_FIELD chunk headers. Nothing here rests on a magic sweep - the `pBAV`
 /// magic is only a gate on the class, never a claim boundary.
-/// See [`legaia_sound_formats::vab_multi_bank`].
+/// See [`legaia_container_formats::vab_multi_bank`].
 pub(super) fn walk_vab_multi_bank(buf: &[u8], sink: &mut Sink) {
-    use legaia_sound_formats::vab_multi_bank::{self, SECTOR};
+    use legaia_container_formats::vab_multi_bank::{self, SECTOR};
     let Some(r) = vab_multi_bank::detect(buf) else {
         sink.note("vab_multi_bank::detect declined");
         return;

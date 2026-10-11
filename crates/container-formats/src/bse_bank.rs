@@ -3,7 +3,7 @@
 //! This module recognises the **runtime SFX descriptor bank**: the rows that
 //! back cue ids `>= 0x200`, in exactly the row format the static
 //! `SCUS_942.54` table at `DAT_8006F198` uses for ids `< 0x200`
-//! ([`legaia_game_tables::sfx_table`]). `bse.dat` is the carrier that named the class; the
+//! (`legaia_game_tables::sfx_table`). `bse.dat` is the carrier that named the class; the
 //! field-mode occupant of the same role is a scene prescript's record 0.
 //!
 //! ### Identification (loader-grounded)
@@ -74,7 +74,7 @@
 //!
 //! ### Record columns
 //!
-//! Each record is 8 bytes. The columns are the [`legaia_game_tables::sfx_table`] columns -
+//! Each record is 8 bytes. The columns are the `legaia_game_tables::sfx_table` columns -
 //! not by analogy but because one block of code decodes both tables:
 //! `FUN_80016B6C` picks the arm at `0x80016C24` (`slti v0,s0,0x200`), resolves
 //! either `0x8006F198 + id*8` or this bank's `record[id - 0x200]`, and falls

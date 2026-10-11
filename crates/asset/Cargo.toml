@@ -39,7 +39,6 @@ legaia-minigame-formats.workspace = true
 legaia-overlay-images.workspace = true
 legaia-prot.workspace = true
 legaia-scene-formats.workspace = true
-legaia-sound-formats.workspace = true
 legaia-tim.workspace = true
 legaia-tmd.workspace = true
 legaia-ui-formats.workspace = true

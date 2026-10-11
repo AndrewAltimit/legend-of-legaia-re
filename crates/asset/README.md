@@ -13,7 +13,6 @@ the crate that owns it:
 | [`legaia-scene-formats`](../scene-formats/README.md) | Scene bundles, MAN, the field-VM disassembler, field objects and maps, world-map formats. |
 | [`legaia-minigame-formats`](../minigame-formats/README.md) | The minigames' tables, art packs and scene. |
 | [`legaia-ui-formats`](../ui-formats/README.md) | Title / system-UI packs, glyph atlas, save icons, screen-element and widget tables. |
-| [`legaia-sound-formats`](../sound-formats/README.md) | SFX descriptor bank, multi-bank VAB, sound pack, VAB-prefixed scene stream. |
 | [`legaia-battle-models`](../battle-models/README.md) | Monster archive, player battle files, the field character pack and its animation. |
 | [`legaia-game-tables`](../game-tables/README.md) | Static data tables from `SCUS_942.54` and the overlays. |
 | [`legaia-overlay-images`](../overlay-images/README.md) | Code-overlay image formats. |

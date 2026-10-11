@@ -44,7 +44,7 @@
 //!
 //! ### A bank is a two-chunk DATA_FIELD stream, not a bare VAB
 //!
-//! Each bank starts on its sector and is a [`crate::data_field`]-shaped chunk
+//! Each bank starts on its sector and is a DATA_FIELD-shaped chunk
 //! stream, terminated by a zero word and padded to the sector boundary:
 //!
 //! | Chunk | Header | Payload |

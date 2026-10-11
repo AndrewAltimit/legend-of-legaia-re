@@ -1263,7 +1263,6 @@ dependencies = [
  "legaia-overlay-images",
  "legaia-prot",
  "legaia-scene-formats",
- "legaia-sound-formats",
  "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
@@ -1347,8 +1346,10 @@ dependencies = [
  "legaia-bytes",
  "legaia-lzs",
  "legaia-prot",
+ "legaia-seq",
  "legaia-tim",
  "legaia-tmd",
+ "legaia-vab",
  "serde",
 ]
 
@@ -1399,7 +1400,6 @@ dependencies = [
  "legaia-overlay-images",
  "legaia-prot",
  "legaia-scene-formats",
- "legaia-sound-formats",
  "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
@@ -2101,18 +2101,6 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "legaia-sound-formats"
-version = "0.1.0"
-dependencies = [
- "legaia-bytes",
- "legaia-container-formats",
- "legaia-prot",
- "legaia-seq",
- "legaia-vab",
- "serde",
 ]
 
 [[package]]

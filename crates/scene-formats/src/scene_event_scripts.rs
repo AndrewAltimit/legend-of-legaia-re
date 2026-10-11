@@ -50,7 +50,7 @@
 //! CDNAME scene block, the one exception being `other4 + 1`. The record-count
 //! floor is where the shape stops degenerating: at `count == 1` the anchor
 //! `offsets[0] == 2 + 2*count` collapses to "the second `u16` is 4", which is
-//! byte-identical to a [`legaia_sound_formats::bse_bank`] header (`[u16 tag][u16 body_offset
+//! byte-identical to a [`legaia_container_formats::bse_bank`] header (`[u16 tag][u16 body_offset
 //! = 4]`), and both retail `bse_bank` carriers match it.
 //!
 //! The categorizer runs [`detect`] early - strong evidence outranks the
@@ -123,7 +123,7 @@ const MIN_PRESCRIPT_COUNT: u16 = 3;
 
 /// Record-count floor for [`detect_structural`]. One record leaves no table
 /// to anchor on - `offsets[0] == 2 + 2*count` degenerates to "the second `u16`
-/// is 4", the [`legaia_sound_formats::bse_bank`] header shape - so two is where the anchor
+/// is 4", the [`legaia_container_formats::bse_bank`] header shape - so two is where the anchor
 /// starts carrying evidence. `edteien`'s two-record prescript is the retail
 /// case that lives on this floor.
 const MIN_STRUCTURAL_COUNT: u16 = 2;

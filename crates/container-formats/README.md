@@ -20,13 +20,17 @@ type-specific handler; the payload is LZS-compressed (`FUN_8001A55C`, via
 | `effect_bundle`, `efect_pack` | The magic-prefixed effect bundle and the runtime `efect.dat` 2-pack. See [`effect.md`](../../docs/formats/effect.md). |
 | `anm_detect`, `tmd_size_prefix` | On-disc ANM and size-prefixed TMD detectors. |
 | `tim_scan`, `tmd_scan` | Find TIMs / Legaia TMDs embedded in an arbitrary buffer, raw or behind LZS. |
+| `sound_pack` | The `sound_data2` / `.dpk` VAB + SEQ bundle, a type-2-terminated chunk stream. See [`sound-driver.md`](../../docs/formats/sound-driver.md). |
+| `scene_vab_stream` | The chunk stream whose leading chunk is a VAB header. See [`vab.md`](../../docs/formats/vab.md). |
+| `vab_multi_bank` | `monster.snd`, the sector-indexed archive of per-monster chunk streams. |
+| `bse_bank` | `bse.dat`, the battle occupant of the runtime SFX descriptor bank. See [`bse-dat.md`](../../docs/formats/bse-dat.md). |
 
 ## Layering
 
 The bottom of the format stack. It depends on the leaf codecs
 (`legaia-lzs`, `legaia-bytes`, `legaia-anm`, `legaia-tim`, `legaia-tmd`) and
 must not depend on any crate that describes game content: the scene, UI,
-minigame, sound and battle-model format crates all sit on this one, and
+minigame and actor-model format crates all sit on this one, and
 [`legaia-disc-audit`](../disc-audit/README.md) sits on all of them.
 
 `legaia-asset` re-exports every item here at its old `legaia_asset::` path.
