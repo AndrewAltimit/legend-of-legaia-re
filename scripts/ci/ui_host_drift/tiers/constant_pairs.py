@@ -5,7 +5,7 @@ Rows: `ui_host_drift.rows.constant_pairs`.
 
 import re
 
-from ui_host_drift.roots import GATE_SCRIPT, REPO
+from ui_host_drift.roots import REPO
 from ui_host_drift.rows.constant_pairs import CONSTANT_PAIRS
 from ui_host_drift.rust_text import (
     BLOCK_COMMENT_RE,
@@ -13,6 +13,9 @@ from ui_host_drift.rust_text import (
     USE_STMT_RE,
     first_difference,
 )
+
+# Where this tier's rows are declared, as its own messages cite it.
+ROWS_FILE = "scripts/ci/ui_host_drift/rows/constant_pairs.py"
 
 CONST_DECL_RE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?const\s+{}\b", re.MULTILINE)
 
@@ -99,7 +102,7 @@ def check_constant_pairs() -> list[str]:
                 problems.append(
                     f"CONSTANT {name}: no `const {name}` in {rel}. Renamed or "
                     f"deleted? Update CONSTANT_PAIRS in "
-                    f"{GATE_SCRIPT} - an unresolvable pair checks nothing."
+                    f"{ROWS_FILE} - an unresolvable pair checks nothing."
                 )
                 missing = True
                 continue

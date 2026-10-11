@@ -5,7 +5,7 @@ Rows: `ui_host_drift.rows.sim_pairs`.
 
 import re
 
-from ui_host_drift.roots import GATE_SCRIPT, REPO
+from ui_host_drift.roots import REPO
 from ui_host_drift.rows.host_files import NATIVE_REDRAW
 from ui_host_drift.rows.sim_pairs import NATIVE_REDRAW_STEP_FILES, SIM_PAIRS
 from ui_host_drift.rust_text import (
@@ -14,6 +14,9 @@ from ui_host_drift.rust_text import (
     signature_end,
     strip_comments,
 )
+
+# Where this tier's rows are declared, as its own messages cite it.
+ROWS_FILE = "scripts/ci/ui_host_drift/rows/sim_pairs.py"
 
 # Splice depth guard: the step tree is shallow, so a deeper chain is a cycle.
 NATIVE_STEP_SPLICE_DEPTH = 8
@@ -206,7 +209,7 @@ def check_sim_pairs() -> tuple[list[str], list[str]]:
             problems.append(
                 f"STALE blocked_on ({pair['what']}): the two sites now agree, so "
                 f"the marker describes a gap that is closed. Drop `blocked_on` "
-                f"from the row in {GATE_SCRIPT} - a pending marker that "
+                f"from the row in {ROWS_FILE} - a pending marker that "
                 f"outlives its gap is a permanent exemption wearing a temporary "
                 f"name."
             )

@@ -5,8 +5,11 @@ Rows: `ui_host_drift.rows.diag_gates`.
 
 import re
 
-from ui_host_drift.roots import GATE_SCRIPT, REPO
+from ui_host_drift.roots import REPO
 from ui_host_drift.rows.diag_gates import DIAG_GATES, DIAG_ROOTS
+
+# Where this tier's rows are declared, as its own messages cite it.
+ROWS_FILE = "scripts/ci/ui_host_drift/rows/diag_gates.py"
 
 DIAG_ENV_RE = re.compile(r'"(LEGAIA_DIAG_[A-Z0-9_]+)"')
 
@@ -67,7 +70,7 @@ def check_diag_gates() -> tuple[list[str], int]:
     for env in sorted(found - set(declared)):
         problems.append(
             f"UNDECLARED DIAG GATE {env}: add it to DIAG_GATES in "
-            f"{GATE_SCRIPT} and say whether it is `additive` (draws "
+            f"{ROWS_FILE} and say whether it is `additive` (draws "
             f"something retail does not). An additive gate needs a default-off "
             f"twin in crates/web-viewer, or the browser draws it always."
         )

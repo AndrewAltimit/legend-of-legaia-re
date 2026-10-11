@@ -9,8 +9,6 @@ UI_SRC = REPO / "crates" / "engine-ui" / "src"
 # engine-ui plus the render kernels it builds on.
 UI_SRCS = [UI_SRC, REPO / "crates" / "render-kernels" / "src"]
 WAIVERS = Path(__file__).resolve().parent.parent / "ui-host-drift-waivers.toml"
-# The entry script's file name, as the gate's own messages cite it.
-GATE_SCRIPT = "check-ui-host-drift.py"
 
 # Source roots per host. `engine-render` counts as native: it wraps some
 # engine-ui builders in GPU-resident batches, so a call there is still the
