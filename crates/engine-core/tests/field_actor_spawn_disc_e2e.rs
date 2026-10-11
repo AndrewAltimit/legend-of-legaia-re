@@ -172,7 +172,7 @@ fn collect_0x4c_d8_sites(extracted: &std::path::Path) -> Vec<SpawnOpSite> {
 ///
 /// Within a scene the sites form a contiguous 9-byte-stride chain: that
 /// stride alignment is the structural proof that the encoding pinned in
-/// `World::op4c_n_d_sub8_call_d77f4` matches retail, since a wrong width
+/// `World::spawn_morph_actor` matches retail, since a wrong width
 /// would not land the next decode on a `0x4C` dispatch byte five times over.
 #[test]
 fn disc_corpus_contains_4c_d8_opcode_pattern() {

@@ -34,7 +34,7 @@ pub(super) fn op_4c_n9<H: FieldHost>(
                         bytecode[operand + 3 + i * 2],
                     ]);
                 }
-                host.op4c_n9_sub0_2_dde34(sub, b1, words);
+                host.start_floor_ladder_oscillator(sub, b1, words);
                 StepResult::Advance {
                     next_pc: pc + header_size + 8,
                 }
@@ -50,7 +50,7 @@ pub(super) fn op_4c_n9<H: FieldHost>(
                         bytecode[operand + 2 + i * 2],
                     ]);
                 }
-                host.op4c_n9_sub_e_table_copy(words);
+                host.install_floor_height_ladder(words);
                 StepResult::Advance {
                     next_pc: pc + header_size + 33,
                 }
@@ -62,7 +62,7 @@ pub(super) fn op_4c_n9<H: FieldHost>(
             // slot - a retire sweep and a two-byte advance, with
             // no registration and no park.
             0xF => {
-                host.op4c_n9_sub_f_retire_ladder_oscillators();
+                host.retire_floor_ladder_oscillators();
                 StepResult::Advance {
                     next_pc: pc + header_size + 1,
                 }
@@ -98,7 +98,7 @@ pub(super) fn op_4c_na<H: FieldHost>(
         let sub = op0 & 0x0F;
         let bit = bytecode[operand + 1];
         let target = i16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
-        if host.op4c_n_a_flag_set(ctx, sub, bit) {
+        if host.flag_bit_is_set(ctx, sub, bit) {
             StepResult::Advance {
                 next_pc: target as i32 as usize,
             }

@@ -735,7 +735,7 @@ pub fn colour_walk_group_stride(header: &PrimGroupHeader) -> usize {
 ///
 /// The sole `jal` to `0x801D5E20` in the corpus is `0x801D82F8`, inside the
 /// `REF`'d walker `FUN_801D8280`, which is the field VM's op `0x4C`
-/// outer-nibble-E sub-6 arm (`FieldActorSpawnHost::op4c_n_e_sub6_call_d8280`, three
+/// outer-nibble-E sub-6 arm (`FieldActorSpawnHost::hsv_grade_resident_meshes`, three
 /// `i16` operands, which the walker forwards as this routine's `a1..a3` - the
 /// hue / saturation / value deltas, `addu`-ed onto the `FUN_8001A78C` result
 /// at `0x801D5F10` / `0x801D5F20` / `0x801D5F30`). The disc issues that op in

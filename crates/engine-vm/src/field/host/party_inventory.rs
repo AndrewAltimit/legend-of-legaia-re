@@ -56,10 +56,12 @@ pub trait FieldPartyInventoryHost {
         let _ = leader_id;
     }
 
-    /// Inventory state read for op 0x4E sub-ops 0 and 1.
+    /// Op 0x4E sub-ops 0 and 1 - one character's HP or MP pair.
     ///
-    /// The original reads two `u16` values from the inventory page at
-    /// `0x80084340 + page * 0x414`:
+    /// The original reads two `u16` values from the character record
+    /// `page`, addressed as `0x80084340 + page * 0x414` (sub-op 0 is the
+    /// record's HP current / max `+0x106` / `+0x104`, sub-op 1 its MP
+    /// current / max `+0x10A` / `+0x108`):
     /// - sub-op 0: `state` from `+0x4CE`, `factor` from `+0x4CC`
     ///   (`DAT_8008480E + page*0x414` and `DAT_8008480C + page*0x414`).
     /// - sub-op 1: `state` from `+0x4D2`, `factor` from `+0x4D0`
@@ -68,7 +70,7 @@ pub trait FieldPartyInventoryHost {
     /// Returning `(0, 0)` (the default) makes the comparison resolve to
     /// false (`0 < 0` is false in both modes), matching the original's
     /// behaviour when the slots are zero-initialised.
-    fn inventory_compare_pair(&self, page: u8, sub_op: u8) -> (i32, i32) {
+    fn char_hp_mp_pair(&self, page: u8, sub_op: u8) -> (i32, i32) {
         let _ = (page, sub_op);
         (0, 0)
     }
@@ -97,12 +99,12 @@ pub trait FieldPartyInventoryHost {
     /// `0x80084140 + page * 0x414 + 0x6F8` = character record `page`'s
     /// displayed-level byte `+0x130`, then joins the shared 7-byte
     /// compare-and-skip continuation at `0x801E0B40`. Default returns 0.
-    fn op4e_char_level(&self, page: u8) -> i32 {
+    fn char_level(&self, page: u8) -> i32 {
         let _ = page;
         0
     }
 
-    /// Op 0x4C sub-3 sub-3 (refresh helper).
+    /// Op 0x4C sub-3 sub-3 - the party-roster rebuild.
     ///
     /// The original calls `FUN_801de190()` then writes `DAT_8007B648 = 0`.
     /// `FUN_801de190` is the **party-roster rebuild**: it clears the four
@@ -110,7 +112,7 @@ pub trait FieldPartyInventoryHost {
     /// `0x80084594` active members listed at `0x80084598` (at most three),
     /// and adds member 4 when system flag `0x13` is set (`FUN_8003CE64`).
     /// (An earlier note here guessed an inventory / menu re-raster.) PC += 2.
-    fn menu_refresh(&mut self) {}
+    fn rebuild_party_roster(&mut self) {}
 
     /// Op 0x4C sub-3 sub-2 (clear the 512-byte party/inventory state region).
     ///
@@ -121,16 +123,16 @@ pub trait FieldPartyInventoryHost {
     /// PC += 2.
     fn clear_party_state_region(&mut self) {}
 
-    /// Op 0x4C sub-2 (party-view-index swap).
+    /// Op 0x4C sub-2 - the camera-octant / pad-rotation setter.
     ///
-    /// 2-byte instruction `[4C, op0]`. The new view index is `op0 & 7`. The
-    /// original conditionally updates `_DAT_8007B5F0` (current view index)
+    /// 2-byte instruction `[4C, op0]`. The new octant is `op0 & 7`. The
+    /// original conditionally updates `_DAT_8007B5F0` (the pad-rotation octant)
     /// and adjusts `player_ctx[+0x26]` by `(new_index - old_index) * 0x200`
     /// - but only when `_DAT_8007B6B0 == -1000` (a "input idle" sentinel).
     ///
     /// Hosts model the policy. Returning the previous index is informational.
     /// The VM advances PC by 2 in both branches.
-    fn party_view_swap(&mut self, new_index: u8) {
+    fn set_camera_octant(&mut self, new_index: u8) {
         let _ = new_index;
     }
 
@@ -146,7 +148,7 @@ pub trait FieldPartyInventoryHost {
     /// labelled `FUN_8001ebec` the "retail dialog-box renderer" - that's
     /// wrong; the disassembly shows the TMD-pose copier described above.
     /// The real dialog SM is `FUN_80039b7c`, pager `FUN_801D84D0`.) PC += 2.
-    fn field_io_resync(&mut self) {}
+    fn copy_party_tmd_poses(&mut self) {}
 
     /// Op 0x4C outer-nibble-8 sub-2 - full HP/MP restore of one party slot.
     ///
@@ -174,7 +176,7 @@ pub trait FieldPartyInventoryHost {
     /// See `docs/subsystems/field-menu.md`.
     ///
     /// PC += 3.
-    fn op4c_n8_sub2_restore_party_slot(&mut self, slot: u8) {
+    fn restore_party_slot(&mut self, slot: u8) {
         let _ = slot;
     }
 
@@ -198,7 +200,7 @@ pub trait FieldPartyInventoryHost {
     /// to take the PC += 5 path. Default impl returns `None` (safe fallback).
     ///
     /// [`field_helpers::small_table_search`]: crate::field::dispatch_leaves::small_table_search
-    fn op4c_n_d_sub_c_party_search_set(&mut self, needle: u8) -> Option<usize> {
+    fn op4c_nd_subc_party_search_set(&mut self, needle: u8) -> Option<usize> {
         let _ = needle;
         None
     }
@@ -209,7 +211,7 @@ pub trait FieldPartyInventoryHost {
     /// 5-byte instruction `[4C, 0xDE, b1, ?, ?]`. Same control flow as
     /// sub-C but the party-record loop only **tests** for a match - no slot
     /// update. PC is `param_2 + 5` on miss, ce9c-jump on hit.
-    fn op4c_n_d_sub_e_party_search_query(&mut self, needle: u8) -> Option<usize> {
+    fn op4c_nd_sube_party_search_query(&mut self, needle: u8) -> Option<usize> {
         let _ = needle;
         None
     }
@@ -232,7 +234,7 @@ pub trait FieldPartyInventoryHost {
     ///
     /// [`field_helpers::load_u24_le`]: crate::field::dispatch_leaves::load_u24_le
     /// [`field_helpers::sign_extend_24`]: crate::field::dispatch_leaves::sign_extend_24
-    fn op4c_n_e_sub_5_add_coins(&mut self, coin_delta: i32) {
+    fn add_coins(&mut self, coin_delta: i32) {
         let _ = coin_delta;
     }
 
@@ -250,7 +252,7 @@ pub trait FieldPartyInventoryHost {
     /// The host decides the pool layout - this hook just answers
     /// "is there at least one actor of `type_byte` active?". Default impl
     /// returns `false` (no actor pool).
-    fn op4c_n_8_sub_b_actor_type_present(&self, type_byte: u8) -> bool {
+    fn op4c_n8_subb_actor_type_present(&self, type_byte: u8) -> bool {
         let _ = type_byte;
         false
     }
@@ -274,7 +276,7 @@ pub trait FieldPartyInventoryHost {
     /// The default impl returns [`ActorSearchResult::EmptySlot`] (advance,
     /// no match) which is the safest fallback for engines without an actor
     /// pool.
-    fn op4c_n_8_sub_d_actor_search(&self, char_idx: u8, marker: u8) -> ActorSearchResult {
+    fn op4c_n8_subd_actor_search(&self, char_idx: u8, marker: u8) -> ActorSearchResult {
         let _ = (char_idx, marker);
         ActorSearchResult::EmptySlot
     }
@@ -320,7 +322,7 @@ pub trait FieldPartyInventoryHost {
     /// side effect. Default is a no-op: the script still steps, the party just
     /// keeps the item. A host that owns an inventory overrides it, consumes one
     /// `item_id`, and on a miss runs the unequip fallback.
-    fn op4c_n5_sub2_take_item(&mut self, item_id: u8) {
+    fn take_item(&mut self, item_id: u8) {
         let _ = item_id;
     }
 }

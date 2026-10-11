@@ -46,7 +46,7 @@ pub(super) fn op_4c_n5<H: FieldHost>(
             } else {
                 ctx.flags &= !0x0100_0000;
             }
-            host.op4c_n5_sub0_set_actor_model(ctx, value, high);
+            host.set_actor_model(ctx, value, high);
             StepResult::Advance {
                 next_pc: pc + header_size + 3,
             }
@@ -59,7 +59,7 @@ pub(super) fn op_4c_n5<H: FieldHost>(
         // "halt at pc+2" - the host pumps its dialog state
         // machine through the side-effect hook.
         3 => {
-            host.op4c_n_5_sub_3_dialog_wait(ctx);
+            host.op4c_n5_sub3_dialog_wait(ctx);
             StepResult::Halt {
                 final_pc: pc + header_size + 1,
             }
@@ -71,7 +71,7 @@ pub(super) fn op_4c_n5<H: FieldHost>(
         // `DAT_8007B648`, snapshots state bytes, advances PC by
         // 2. Host returns `true` when still active.
         4 => {
-            if host.op4c_n_5_sub_4_dialog_advance(ctx) {
+            if host.op4c_n5_sub4_dialog_advance(ctx) {
                 StepResult::Halt { final_pc: pc }
             } else {
                 StepResult::Advance {
@@ -97,7 +97,7 @@ pub(super) fn op_4c_n5<H: FieldHost>(
             let world_z =
                 ((b2 & 0x7F) as u16) * 0x80 + 0x40 + if b2 & 0x80 != 0 { 0x40 } else { 0 };
             let is_player = ctx.flags & 0x0100_0000 != 0;
-            host.op4c_n5_sub1_npc_run(ctx, world_x, world_z, b3, move_id, is_player);
+            host.run_to_tile(ctx, world_x, world_z, b3, move_id, is_player);
             StepResult::Advance {
                 next_pc: pc + header_size + 5,
             }
@@ -109,12 +109,12 @@ pub(super) fn op_4c_n5<H: FieldHost>(
         // in the `jal 0x800430ac` delay slot and the `bne` target
         // `0x801E00B8` advances too, so **both** paths advance -
         // there is no poll and no halt here. See
-        // `FieldPartyInventoryHost::op4c_n5_sub2_take_item` for the arm.
+        // `FieldPartyInventoryHost::take_item` for the arm.
         2 => {
             if operand + 1 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            host.op4c_n5_sub2_take_item(bytecode[operand + 1]);
+            host.take_item(bytecode[operand + 1]);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }
@@ -152,7 +152,7 @@ pub(super) fn op_4c_n6<H: FieldHost>(
                     bytecode[operand + 2 + i * 2],
                 ]);
             }
-            host.op4c_n6_sub0_emitter6(words);
+            host.vram_move_image(words);
             StepResult::Advance {
                 next_pc: pc + header_size + 13,
             }
@@ -178,7 +178,7 @@ pub(super) fn op_4c_n6<H: FieldHost>(
                 let payload: [u8; 14] = bytecode[operand + 1..operand + 15]
                     .try_into()
                     .expect("14-byte payload slice");
-                host.op4c_n6_sub_61_emitter(ctx, payload);
+                host.spawn_clut_cell_fx(ctx, payload);
                 StepResult::Advance { next_pc: resume }
             } else {
                 StepResult::Halt { final_pc: pc }
@@ -230,7 +230,7 @@ pub(super) fn op_4c_n7<H: FieldHost>(
         let z0 = bytecode[operand + 2].wrapping_add(1);
         let z1 = bytecode[operand + 4].wrapping_add(2);
         let mask = if has_mask { bytecode[operand + 5] } else { 0 };
-        host.op4c_n7_tile_flag_bulk(sub, (x0, x1), (z0, z1), mask);
+        host.paint_collision_walls(sub, (x0, x1), (z0, z1), mask);
         // All four paints CONTINUE the slice - but every one of them
         // genuinely RETURNS from FUN_801de840. There is no label-call idiom
         // here; that reading was wrong. Per the disassembly:

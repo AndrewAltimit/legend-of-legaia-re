@@ -74,7 +74,7 @@ pub trait FieldCameraHost {
     ///
     /// The VM passes the sub-op verbatim so hosts pick the register
     /// themselves. PC += 10.
-    fn op43_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
+    fn spawn_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
         let _ = (sub_op, zone, start, end);
     }
 
@@ -126,7 +126,7 @@ pub trait FieldCameraHost {
     /// re-queried. PC += 2.
     fn camera_snap_and_clamp(&mut self) {}
 
-    /// Op 0x4C outer-nibble-0xC sub-0xF - position broadcast.
+    /// Op 0x4C outer-nibble-0xC sub-0xF - the script camera-focus override.
     ///
     /// 4-byte instruction `[4C, 0xCF, b1, b2]`. The original at lines
     /// 6912-6931 of the dump computes two 16-bit values and writes them to
@@ -141,7 +141,7 @@ pub trait FieldCameraHost {
     /// The original's three exits (`iVar18 = FUN_801e3620(); return iVar18;`
     /// and `goto code_r0x801e3620;`) all converge on the same "PC += 4" label.
     /// PC += 4 in every path.
-    fn op4c_n_c_sub_f_position_broadcast(&mut self, x_global: i16, z_global: i16) {
+    fn set_camera_focus_override(&mut self, x_global: i16, z_global: i16) {
         let _ = (x_global, z_global);
     }
 
@@ -159,7 +159,7 @@ pub trait FieldCameraHost {
         let _ = (x, z);
     }
 
-    /// Camera-anchored teleport (op 0x4C nE sub-3, 3 bytes).
+    /// Position-copy teleport onto a named actor (op 0x4C nE sub-3, 3 bytes).
     ///
     /// `[4C, 0xE3, actor_id]`. The original at lines 7208-7227 resolves
     /// the actor via `func_0x8003C83C(actor_id)`, then copies the active
@@ -174,7 +174,7 @@ pub trait FieldCameraHost {
     /// 0x801E00B8 +3 entry on the NPC path); if the actor lookup fails the
     /// original is a silent no-op. Hosts get the actor ID and decide
     /// whether to apply.
-    fn op4c_n_e_sub_3_actor_sync_camera(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
+    fn teleport_to_actor(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
         let _ = (ctx, actor_id);
     }
 }

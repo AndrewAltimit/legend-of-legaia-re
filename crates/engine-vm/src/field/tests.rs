@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// One observed `op34_sub1_spawn_attached` invocation.
+/// One observed `spawn_attached_light` invocation.
 #[derive(Debug, Default)]
 struct Op34Sub1Call {
     op0: u8,
@@ -19,8 +19,8 @@ struct Op34Sub1Call {
 struct TestHost {
     globals: u32,
     extras: u32,
-    screen_mode: u32,
-    screen_mode_table: Vec<Option<u32>>,
+    held_pad: u32,
+    pad_compass_entry: Vec<Option<u32>>,
     frame_delta: u16,
     cam_cfg_table: Vec<u16>,                    // index = op0 & 0x0F
     exec_moves: Vec<(u16, u8)>,                 // (script_id, move_id)
@@ -239,12 +239,12 @@ impl FieldFlagsHost for TestHost {
         self.extras
     }
 
-    fn screen_mode(&self) -> u32 {
-        self.screen_mode
+    fn held_pad(&self) -> u32 {
+        self.held_pad
     }
 
-    fn screen_mode_table(&self, index: u8) -> Option<u32> {
-        self.screen_mode_table
+    fn pad_compass_entry(&self, index: u8) -> Option<u32> {
+        self.pad_compass_entry
             .get(index as usize)
             .copied()
             .flatten()
@@ -275,7 +275,7 @@ impl FieldFlagsHost for TestHost {
             .unwrap_or(false)
     }
 
-    fn op4e_sub4_bios_rand(&mut self) -> i32 {
+    fn bios_rand(&mut self) -> i32 {
         self.op4e_sub4_bios_rand_calls += 1;
         self.op4e_sub4_bios_rand_value
     }
@@ -284,23 +284,23 @@ impl FieldFlagsHost for TestHost {
         self.slot_table_values.get(&slot).copied().unwrap_or(0)
     }
 
-    fn op4c_n_c_sub_a_set_slot(&mut self, slot: u8, value: i16) {
+    fn slot_table_write(&mut self, slot: u8, value: i16) {
         self.n_c_slot_writes.push((slot, value));
     }
 
-    fn op4c_n_c_sub_bc_adjust_slot(&mut self, slot: u8, delta: i16, subtract: bool) {
+    fn slot_table_adjust(&mut self, slot: u8, delta: i16, subtract: bool) {
         self.n_c_slot_adjusts.push((slot, delta, subtract));
     }
 
-    fn op4c_n_d_sub3_party_setup(&mut self, ab: u32, cd: u32, ef: u32) {
+    fn schedule_timed_flags(&mut self, ab: u32, cd: u32, ef: u32) {
         self.n_d_party_setups.push((ab, cd, ef));
     }
 
-    fn op4c_n_e_sub_e_snapshot_84570(&mut self) {
+    fn snapshot_play_clock(&mut self) {
         self.n_e_snapshot_84570_calls += 1;
     }
 
-    fn op4c_n_c_party_flag_test(&self, flag_idx: u16) -> bool {
+    fn op4c_nc_sub56_flag_test(&self, flag_idx: u16) -> bool {
         *self.n_c_party_flag_bits.get(&flag_idx).unwrap_or(&false)
     }
 }
@@ -335,31 +335,31 @@ impl FieldSceneHost for TestHost {
         self.scripted_encounter_windows.push(window.to_vec());
     }
 
-    fn op4c_n8_sub8_write_globals(&mut self, value: i16, b3: u8, b4: u8) {
+    fn set_door_of_light_destination(&mut self, value: i16, b3: u8, b4: u8) {
         self.n8_global_writes.push((value, b3, b4));
     }
 
-    fn op4c_n_d_sub_f_scene_byte_write(&mut self, value: u8) {
+    fn op4c_nd_subf_scene_ctrl_61_write(&mut self, value: u8) {
         self.n_d_scene_byte_writes.push(value);
     }
 
-    fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
+    fn trigger_fmv(&mut self, fmv_id: i16) {
         self.n_e_fmv_triggers.push(fmv_id);
     }
 
-    fn op4c_n_e_sub_c_capture_ddf48(&mut self) {
+    fn reroll_encounter_step_counter(&mut self) {
         self.n_e_capture_ddf48_calls += 1;
     }
 
-    fn op4c_n_c_sub9_globals_differ(&self) -> bool {
+    fn bgm_swap_pending(&self) -> bool {
         self.n_c_sub9_globals_differ
     }
 
-    fn op4c_n_e_sub9_clear_b9c4(&mut self) {
+    fn reset_party_pack_load_state(&mut self) {
         self.n_e_sub9_clears += 1;
     }
 
-    fn op4c_n_e_sub_a_call_c7ec(&mut self) {
+    fn trigger_game_over(&mut self) {
         self.n_e_sub_a_calls += 1;
     }
 }
@@ -369,11 +369,11 @@ impl FieldTerrainHost for TestHost {
         self.subtile_refresh_calls.push(0xD);
     }
 
-    fn op4c_n7_tile_flag_bulk(&mut self, sub: u8, x_range: (u8, u8), z_range: (u8, u8), mask: u8) {
+    fn paint_collision_walls(&mut self, sub: u8, x_range: (u8, u8), z_range: (u8, u8), mask: u8) {
         self.n7_tile_calls.push((sub, x_range, z_range, mask));
     }
 
-    fn op4c_n_8_sub_3_rect_tile_fill(
+    fn rect_tile_fill(
         &mut self,
         col_start: u8,
         row_start: u8,
@@ -385,27 +385,27 @@ impl FieldTerrainHost for TestHost {
             .push((col_start, row_start, col_end, row_end, value));
     }
 
-    fn op4c_n9_sub0_2_dde34(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
+    fn start_floor_ladder_oscillator(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
         self.n9_dde34_calls.push((sub, b1, words));
     }
 
-    fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
+    fn install_floor_height_ladder(&mut self, words: [i16; 16]) {
         self.n9_table_copies.push(words);
     }
 
-    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) {
+    fn retire_floor_ladder_oscillators(&mut self) {
         self.n9_callback_regs += 1;
     }
 
-    fn op4c_n_d_sub_a_collision_y_refresh(&mut self, _ctx: &mut FieldCtx) {
+    fn refresh_collision_y(&mut self, _ctx: &mut FieldCtx) {
         self.n_d_collision_y_calls += 1;
     }
 
-    fn op4c_n_c_sub_1_flag_loop_reset(&mut self, _flags: &[u8]) {
+    fn reset_fog_region_enables(&mut self, _flags: &[u8]) {
         self.n_c_sub_1_flag_loops += 1;
     }
 
-    fn op4c_n_e_sub_4_bbox_outside(&self, _ctx: &FieldCtx, bbox: [i16; 4]) -> bool {
+    fn outside_world_bbox(&self, _ctx: &FieldCtx, bbox: [i16; 4]) -> bool {
         self.n_e_sub_4_bboxes.borrow_mut().push(bbox);
         self.n_e_sub_4_outside
     }
@@ -442,7 +442,7 @@ impl FieldCameraHost for TestHost {
         self.subtile_refresh_calls.push(0x8);
     }
 
-    fn op43_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
+    fn spawn_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
         self.camera_ramp_calls.push((sub_op, zone, start, end));
     }
 
@@ -458,54 +458,54 @@ impl FieldCameraHost for TestHost {
         self.n_c_subtile_broadcasts.push((x, z));
     }
 
-    fn op4c_n_c_sub_f_position_broadcast(&mut self, x_global: i16, z_global: i16) {
+    fn set_camera_focus_override(&mut self, x_global: i16, z_global: i16) {
         self.n_c_sub_f_broadcasts.push((x_global, z_global));
     }
 
-    fn op4c_n_e_sub_3_actor_sync_camera(&mut self, _ctx: &mut FieldCtx, actor_id: u8) {
+    fn teleport_to_actor(&mut self, _ctx: &mut FieldCtx, actor_id: u8) {
         self.n_e_sub_3_camera_syncs.push(actor_id);
     }
 }
 
 impl FieldCameraMotionHost for TestHost {
-    fn op4c_n4_sub9_state(&self) -> Sub9State {
+    fn camera_offset_mode(&self) -> Sub9State {
         self.n4_sub9_state
     }
 
-    fn op4c_n4_sub9_default_write(&mut self, target: i16) {
+    fn write_camera_offset(&mut self, target: i16) {
         self.n4_sub9_default_writes.push(target);
     }
 
-    fn op4c_n4_sub9_default_ramp(&mut self, target: i16, ticks: u16) {
+    fn ramp_camera_offset(&mut self, target: i16, ticks: u16) {
         self.n4_sub9_default_ramps.push((target, ticks));
     }
 
-    fn op4c_n4_sub9_delta_write_or_ramp(&mut self, target: i16, ticks: u16) {
+    fn write_camera_offset_delta(&mut self, target: i16, ticks: u16) {
         self.n4_sub9_delta_calls.push((target, ticks));
     }
 
-    fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
+    fn set_shake_amplitude(&mut self, value: u8) {
         self.n8_b630_writes.push(value);
     }
 
-    fn op4c_n_d_sub_1_list_lookup_jump(&mut self, _ctx: &FieldCtx) -> Option<usize> {
+    fn jump_if_camera_glide_live(&mut self, _ctx: &FieldCtx) -> Option<usize> {
         self.n_d_sub_1_jump_target
     }
 
-    fn op4c_n_d_sub_7_register_list_walk(&mut self) {
+    fn retire_camera_movers(&mut self) {
         self.n_d_sub_7_list_walk_regs += 1;
     }
 
-    fn op4c_n_c_sub_d_camera_mover_live(&mut self) -> bool {
+    fn camera_glide_live(&mut self) -> bool {
         self.n_c_sub_d_queries += 1;
         !self.n_c_sub_d_mover_idle
     }
 
-    fn op4c_n_e_sub_7_camera_animate(&mut self, target: u32, duration: u16) {
+    fn op4c_ne_sub7_ramp_73ee4(&mut self, target: u32, duration: u16) {
         self.n_e_sub_7_camera_animates.push((target, duration));
     }
 
-    fn op4c_n_e_sub_8_camera_zoom(&mut self, zoom_x: i16, zoom_y: i16, zoom_z: i16, mode: i16) {
+    fn configure_crawl_roller(&mut self, zoom_x: i16, zoom_y: i16, zoom_z: i16, mode: i16) {
         self.n_e_sub_8_camera_zooms
             .push((zoom_x, zoom_y, zoom_z, mode));
     }
@@ -521,31 +521,31 @@ impl FieldScreenHost for TestHost {
         }
     }
 
-    fn menu_ctrl_sub1(&mut self, op0: u8, payload: &[u8; 5]) {
+    fn set_scene_colour(&mut self, op0: u8, payload: &[u8; 5]) {
         self.menu_sub1_calls.push((op0, *payload));
     }
 
-    fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
+    fn spawn_sprite_widget(&mut self, payload: &[u8]) {
         self.emitter_init_payloads.push(payload.to_vec());
     }
 
-    fn op43_widget_mask_rect(&mut self, words: [u16; 5]) {
+    fn tween_mask_rect(&mut self, words: [u16; 5]) {
         self.emitter_5_words.push(words);
     }
 
-    fn op43_widget_letterbox(&mut self, payload: &[u8]) {
+    fn configure_letterbox(&mut self, payload: &[u8]) {
         self.emitter_struct12_payloads.push(payload.to_vec());
     }
 
-    fn op43_vram_rect_copy(&mut self, calls: &[crate::vram_rect_copy::RectCopyCall]) {
+    fn queue_vram_rect_copies(&mut self, calls: &[crate::vram_rect_copy::RectCopyCall]) {
         self.emitter_split_calls.push(calls.to_vec());
     }
 
-    fn op43_widget_panel_spawn(&mut self, payload: &[u8; 13]) {
+    fn spawn_panel_widget(&mut self, payload: &[u8; 13]) {
         self.emitter_func13_payloads.push(*payload);
     }
 
-    fn op43_widget_panel_move(&mut self, words: [i16; 4]) {
+    fn move_panel_widget(&mut self, words: [i16; 4]) {
         self.emitter_4_words.push(words);
     }
 
@@ -553,43 +553,43 @@ impl FieldScreenHost for TestHost {
         self.ambient_particle_gate_writes.push(enabled);
     }
 
-    fn op4c_nibble4_global_write(&mut self, sub: u8, target: i32, ticks: u16) {
+    fn write_or_ramp_global_slot(&mut self, sub: u8, target: i32, ticks: u16) {
         self.n4_global_writes.push((sub, target, ticks));
     }
 
-    fn op4c_nibble4_global_pair_gate(&self) -> bool {
+    fn event_vibration_off(&self) -> bool {
         self.n4_global_pair_gated
     }
 
-    fn op4c_nibble4_global_pair_clear(&mut self) {
+    fn clear_rumble(&mut self) {
         self.n4_global_pair_clears += 1;
     }
 
-    fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
+    fn set_effect_colour(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
         self.op34_sub0_calls.push((op0, rgb, intensity));
     }
 
-    fn op4c_n6_sub0_emitter6(&mut self, words: [i16; 6]) {
+    fn vram_move_image(&mut self, words: [i16; 6]) {
         self.n6_sub0_calls.push(words);
     }
 
-    fn op4c_n8_sub_a_write_quad(&mut self, slots: [i16; 3], packed: u32) {
+    fn set_field_light(&mut self, slots: [i16; 3], packed: u32) {
         self.n8_quad_writes.push((slots, packed));
     }
 
-    fn op4c_n_e_sub_d_set_ba66(&mut self, value: u8) {
+    fn set_dither(&mut self, value: u8) {
         self.n_e_ba66_writes.push(value);
     }
 
-    fn op4c_n_d_sub_b_call_e57f0(&mut self, bytecode: &[u8]) {
+    fn spawn_clut_blend_fade(&mut self, bytecode: &[u8]) {
         self.n_d_sub_b_e57f0_calls.push(bytecode.to_vec());
     }
 
-    fn op4c_n_d_sub_4_vram_stp_set(&mut self, x: u16, y: u16) {
+    fn vram_stp_set(&mut self, x: u16, y: u16) {
         self.n_d_sub_4_vram_stp_set_calls.push((x, y));
     }
 
-    fn op4c_n_d_sub_5_vram_stp_clear(&mut self, x: u16, y: u16) {
+    fn vram_stp_clear(&mut self, x: u16, y: u16) {
         self.n_d_sub_5_vram_stp_clear_calls.push((x, y));
     }
 }
@@ -599,11 +599,11 @@ impl FieldAudioHost for TestHost {
         self.bgm_calls.push((text_id, sub_op));
     }
 
-    fn op4c_n_c_sub7_sound_trigger(&mut self, b1: u8, b2: u8) {
+    fn apply_item_effect(&mut self, b1: u8, b2: u8) {
         self.n_c_sound_triggers.push((b1, b2));
     }
 
-    fn op4c_n_d_sub_0_field_se_trigger(&mut self, a: u16, b: u16) {
+    fn op4c_nd_sub0_gated_call(&mut self, a: u16, b: u16) {
         self.n_d_sub_0_se_triggers.push((a, b));
     }
 }
@@ -634,7 +634,7 @@ impl FieldPartyInventoryHost for TestHost {
         self.party_leaders.push(leader_id);
     }
 
-    fn inventory_compare_pair(&self, page: u8, sub_op: u8) -> (i32, i32) {
+    fn char_hp_mp_pair(&self, page: u8, sub_op: u8) -> (i32, i32) {
         self.inventory_pairs
             .get(&(page, sub_op))
             .copied()
@@ -645,7 +645,7 @@ impl FieldPartyInventoryHost for TestHost {
         self.party_bank.get(&sub_op).copied().unwrap_or(0)
     }
 
-    fn menu_refresh(&mut self) {
+    fn rebuild_party_roster(&mut self) {
         self.menu_refresh_calls += 1;
     }
 
@@ -653,46 +653,46 @@ impl FieldPartyInventoryHost for TestHost {
         self.party_state_clears += 1;
     }
 
-    fn party_view_swap(&mut self, new_index: u8) {
+    fn set_camera_octant(&mut self, new_index: u8) {
         self.party_view_swaps.push(new_index);
     }
 
-    fn field_io_resync(&mut self) {
+    fn copy_party_tmd_poses(&mut self) {
         self.field_io_resync_calls += 1;
     }
 
-    fn op4c_n8_sub2_restore_party_slot(&mut self, slot: u8) {
+    fn restore_party_slot(&mut self, slot: u8) {
         self.n8_restored_slots.push(slot);
     }
 
-    fn op4e_char_level(&self, page: u8) -> i32 {
+    fn char_level(&self, page: u8) -> i32 {
         self.op4e_char_levels.get(&page).copied().unwrap_or(0)
     }
 
-    fn op4c_n_d_sub_c_party_search_set(&mut self, needle: u8) -> Option<usize> {
+    fn op4c_nd_subc_party_search_set(&mut self, needle: u8) -> Option<usize> {
         self.n_d_sub_c_calls.push(needle);
         self.n_d_sub_c_jump_target
     }
 
-    fn op4c_n_d_sub_e_party_search_query(&mut self, needle: u8) -> Option<usize> {
+    fn op4c_nd_sube_party_search_query(&mut self, needle: u8) -> Option<usize> {
         self.n_d_sub_e_calls.push(needle);
         self.n_d_sub_e_jump_target
     }
 
-    fn op4c_n_e_sub_5_add_coins(&mut self, coin_delta: i32) {
+    fn add_coins(&mut self, coin_delta: i32) {
         self.n_e_sub_5_coin_deltas.push(coin_delta);
     }
 
-    fn op4c_n_8_sub_b_actor_type_present(&self, type_byte: u8) -> bool {
+    fn op4c_n8_subb_actor_type_present(&self, type_byte: u8) -> bool {
         self.n_8_sub_b_present_types.contains(&type_byte)
     }
 
-    fn op4c_n_8_sub_d_actor_search(&self, char_idx: u8, marker: u8) -> ActorSearchResult {
+    fn op4c_n8_subd_actor_search(&self, char_idx: u8, marker: u8) -> ActorSearchResult {
         self.n_8_sub_d_queries.borrow_mut().push((char_idx, marker));
         self.n_8_sub_d_search_result
     }
 
-    fn op4c_n5_sub2_take_item(&mut self, item_id: u8) {
+    fn take_item(&mut self, item_id: u8) {
         self.n_5_sub_2_take_items.borrow_mut().push(item_id);
     }
 }
@@ -726,28 +726,28 @@ impl FieldDialogMenuHost for TestHost {
         self.op49_setups += 1;
     }
 
-    fn op43_three_actor_talk(&mut self, actor_ids: [u8; 3], arg_word: u16, arg_byte: u8) {
+    fn stage_three_actor_talk(&mut self, actor_ids: [u8; 3], arg_word: u16, arg_byte: u8) {
         self.three_actor_talks.push((actor_ids, arg_word, arg_byte));
     }
 
-    fn op4c_n8_sub9_set_73f00(&mut self, value: i16) {
+    fn set_dialog_auto_press(&mut self, value: i16) {
         self.n8_sub9_writes.push(value);
     }
 
-    fn op4c_n_e_sub0_state_write(&mut self, b1: u8) {
+    fn op4c_ne_sub0_state_write(&mut self, b1: u8) {
         self.n_e_sub0_writes.push(b1);
     }
 
-    fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
+    fn spawn_text_balloon(&mut self, text_buf: &[u8], script_id: u16) {
         self.n_e_sub_1_text_calls
             .push((text_buf.to_vec(), script_id));
     }
 
-    fn op4c_n_5_sub_3_dialog_wait(&mut self, _ctx: &mut FieldCtx) {
+    fn op4c_n5_sub3_dialog_wait(&mut self, _ctx: &mut FieldCtx) {
         self.n_5_sub_3_dialog_waits += 1;
     }
 
-    fn op4c_n_5_sub_4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
+    fn op4c_n5_sub4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
         self.n_5_sub_4_polls += 1;
         self.n_5_sub_4_dialog_active
     }
@@ -763,7 +763,7 @@ impl FieldActorHost for TestHost {
             .push((ctx.script_id, world_x, world_z, is_player));
     }
 
-    fn cam_cfg_lookup(&self, index: u8) -> Option<u16> {
+    fn compass_heading(&self, index: u8) -> Option<u16> {
         self.cam_cfg_table.get(index as usize).copied()
     }
 
@@ -788,15 +788,15 @@ impl FieldActorHost for TestHost {
             .push((face_id, payload_4, params, target));
     }
 
-    fn op43_sub9_tween(&mut self, _ctx: &mut FieldCtx, x: u16, y: u16, z: u16, ticks: u16) {
+    fn tween_actor_position(&mut self, _ctx: &mut FieldCtx, x: u16, y: u16, z: u16, ticks: u16) {
         self.sub9_tweens.push((x, y, z, ticks));
     }
 
-    fn op4c_nibble4_ctx_ramp(&mut self, _ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
+    fn ramp_ctx_slot(&mut self, _ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
         self.n4_ctx_ramps.push((sub, target, ticks));
     }
 
-    fn op4c_n4_sub5_write_immediate(
+    fn write_actor_look(
         &mut self,
         _ctx: &mut FieldCtx,
         b1: u8,
@@ -807,7 +807,7 @@ impl FieldActorHost for TestHost {
         self.n4_sub5_immediate.push((b1, w94, w96, w98));
     }
 
-    fn op4c_n4_sub5_ramp(
+    fn ramp_actor_look(
         &mut self,
         _ctx: &mut FieldCtx,
         b1: u8,
@@ -819,24 +819,24 @@ impl FieldActorHost for TestHost {
         self.n4_sub5_ramp.push((b1, w94, w96, w98, ticks));
     }
 
-    fn op4c_n5_sub0_set_actor_model(&mut self, _ctx: &mut FieldCtx, value: i16, high: bool) {
+    fn set_actor_model(&mut self, _ctx: &mut FieldCtx, value: i16, high: bool) {
         self.n5_sub0_calls.push((value, high));
     }
 
-    fn op4c_n_d_sub6_field74_mutate_ack(&mut self) {
+    fn op4c_nd_sub6_field_74_ack(&mut self) {
         self.n_d_sub6_acks += 1;
     }
 
-    fn op4c_n_c_sub_0_move_cancel(&mut self, _ctx: &mut FieldCtx) -> bool {
+    fn cancel_active_move(&mut self, _ctx: &mut FieldCtx) -> bool {
         self.n_c_sub_0_move_cancels += 1;
         self.n_c_sub_0_active
     }
 
-    fn op4c_n_c_sub_3_script_teleport(&mut self, _ctx: &mut FieldCtx) {
+    fn script_table_teleport(&mut self, _ctx: &mut FieldCtx) {
         self.n_c_sub_3_teleports += 1;
     }
 
-    fn op4c_n5_sub1_npc_run(
+    fn run_to_tile(
         &mut self,
         _ctx: &mut FieldCtx,
         world_x: u16,
@@ -851,27 +851,27 @@ impl FieldActorHost for TestHost {
 }
 
 impl FieldActorSpawnHost for TestHost {
-    fn op44_spawn_scene_record(&mut self, global_index: u8) {
+    fn spawn_scene_record(&mut self, global_index: u8) {
         self.counter_calls.push(global_index);
     }
 
-    fn menu_ctrl_clone_actor(&mut self, src_id: u8, tint_rgb: u32, fade_rate: i16) {
+    fn clone_actor(&mut self, src_id: u8, tint_rgb: u32, fade_rate: i16) {
         self.clone_actor_calls.push((src_id, tint_rgb, fade_rate));
     }
 
-    fn op43_alloc_scripted_actor(&mut self, b1: u8, b2: u8, b3: u8) {
+    fn spawn_shutter_blackout(&mut self, b1: u8, b2: u8, b3: u8) {
         self.scripted_actor_allocs.push((b1, b2, b3));
     }
 
-    fn op43_alloc_actor_with_mode(&mut self, sub_op: u8, mode: u8, args: [u8; 4]) {
+    fn op43_subdf_alloc_actor(&mut self, sub_op: u8, mode: u8, args: [u8; 4]) {
         self.actor_alloc_modes.push((sub_op, mode, args));
     }
 
-    fn op43_mark_actor_flag_8(&mut self, ctx: &mut FieldCtx) {
+    fn op43_sube_mark_actor_flag_8(&mut self, ctx: &mut FieldCtx) {
         self.mark_flag_8_calls.push(ctx.script_id);
     }
 
-    fn op34_capture_pc_for_existing_actor(
+    fn op34_sub2_capture_pc(
         &mut self,
         _ctx: &FieldCtx,
         b1: u8,
@@ -887,19 +887,19 @@ impl FieldActorSpawnHost for TestHost {
         }
     }
 
-    fn op4c_n_e_sub6_call_d8280(&mut self, words: [i16; 3]) {
+    fn hsv_grade_resident_meshes(&mut self, words: [i16; 3]) {
         self.n_e_d8280_calls.push(words);
     }
 
-    fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
+    fn spawn_morph_actor(&mut self, b1: u8, words: [i16; 3]) {
         self.n_d_sub8_calls.push((b1, words));
     }
 
-    fn op4c_n_d_sub_2_channel_spawn(&mut self, channel: u8) {
+    fn spawn_placement_if_absent(&mut self, channel: u8) {
         self.n_d_sub_2_channel_calls.push(channel);
     }
 
-    fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
+    fn actor_guard(&mut self, actor_id: u8) -> Option<()> {
         self.n_e_sub_b_actor_ids.push(actor_id);
         if self.n_e_sub_b_resolves {
             Some(())
@@ -908,7 +908,7 @@ impl FieldActorSpawnHost for TestHost {
         }
     }
 
-    fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
+    fn allocate_child_actors(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
         self.n_8_sub_0_allocator_calls.push((count, tail.to_vec()));
     }
 }
@@ -918,7 +918,7 @@ impl FieldActorFxHost for TestHost {
         self.effect_anim_calls.push((ctx.script_id, arg));
     }
 
-    fn op34_sub1_spawn_attached(
+    fn spawn_attached_light(
         &mut self,
         _ctx: &FieldCtx,
         ext: Option<u8>,
@@ -935,11 +935,11 @@ impl FieldActorFxHost for TestHost {
         self.op34_sub1_spawns
     }
 
-    fn op4c_n8_sub7_retire_reflections(&mut self) {
+    fn retire_reflections(&mut self) {
         self.n8_callback_regs += 1;
     }
 
-    fn op4c_n_8_sub_1_set_tint(
+    fn set_actor_tint(
         &mut self,
         _ctx: &mut FieldCtx,
         _target: Option<u8>,
@@ -951,7 +951,7 @@ impl FieldActorFxHost for TestHost {
             .push((model_id, anim_frame, tween_frames));
     }
 
-    fn op4c_n8_sub6_install_reflection(
+    fn install_reflection(
         &mut self,
         _ctx: &mut FieldCtx,
         source_id: u8,
@@ -961,7 +961,7 @@ impl FieldActorFxHost for TestHost {
         self.n8_sub6_source_present
     }
 
-    fn op4c_n6_sub_61_emitter(&mut self, _ctx: &mut FieldCtx, payload: [u8; 14]) {
+    fn spawn_clut_cell_fx(&mut self, _ctx: &mut FieldCtx, payload: [u8; 14]) {
         self.n_6_sub_61_emitter_calls.push(payload);
     }
 }
@@ -979,13 +979,13 @@ impl FieldPlayerHost for TestHost {
         self.inverted_y_writes.push(inverted_y);
     }
 
-    fn op4c_n_c_sub_e_set_b6ac(&mut self, value: u8) {
+    fn set_player_clip_override(&mut self, value: u8) {
         self.n_c_b6ac_writes.push(value);
     }
 }
 
 impl FieldHaltHost for TestHost {
-    fn op4c_n8_halt_acquire(&mut self, ctx: &mut FieldCtx, opcode_pc: u32) {
+    fn halt_acquire(&mut self, ctx: &mut FieldCtx, opcode_pc: u32) {
         ctx.saved_pc = opcode_pc;
         ctx.wait_accum = 0;
         ctx.flags |= 0x400;
@@ -996,7 +996,7 @@ impl FieldHaltHost for TestHost {
         self.halt_acquire_predicate
     }
 
-    fn op43_arc_target_halted(&self, _ctx: &FieldCtx, _ext: Option<u8>) -> bool {
+    fn arc_target_halted(&self, _ctx: &FieldCtx, _ext: Option<u8>) -> bool {
         self.arc_target_halted
     }
 

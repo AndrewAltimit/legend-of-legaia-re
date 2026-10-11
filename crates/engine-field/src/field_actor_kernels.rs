@@ -262,7 +262,7 @@ pub struct ColourTweenStep {
 /// Live on both hosts. The field VM's op `0x34` sub-0 arm - retail's
 /// `FUN_801DE840` at `0x801DFD68` and `0x801DFEE8`, the
 /// `_DAT_1F800394 & 0x800000` default side of the fork - reaches
-/// `World::op34_sub0_color_intensity_setup`, which builds the two
+/// `World::set_effect_colour`, which builds the two
 /// [`legaia_engine_system::fade::FadeTemplate`]s that arm reads off its stack and spawns
 /// each through `World::spawn_colour_tween`. The per-frame push is then the
 /// only representation of the effect; the float ramp that used to stand
@@ -331,7 +331,7 @@ pub fn tween_from_fade_template(
 /// The producer is the field VM's screen-effect arm
 /// (`FUN_801DE840` at `0x801DFD68`/`0x801DFEE8` → `FUN_801DE2B0`, ported as
 /// [`tween_from_fade_template`]), which reaches
-/// `World::op34_sub0_color_intensity_setup` on both hosts and seats its
+/// `World::set_effect_colour` on both hosts and seats its
 /// tweens through `World::spawn_colour_tween`.
 ///
 /// [`World::tick_handler_actors`]: legaia_engine_core::world::World::tick_handler_actors

@@ -12,7 +12,7 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
     /// [`legaia_engine_field::actor_look`].
     ///
     /// PORT: FUN_801DE840 (the nibble-4 sub-5 immediate arm)
-    fn op4c_n4_sub5_write_immediate(
+    fn write_actor_look(
         &mut self,
         ctx: &mut FieldCtx,
         b1: u8,
@@ -29,7 +29,7 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
     /// that changes (`0x801E12F8..0x801E138C`).
     ///
     /// PORT: FUN_801DE840 (the nibble-4 sub-5 ramp arm)
-    fn op4c_n4_sub5_ramp(
+    fn ramp_actor_look(
         &mut self,
         ctx: &mut FieldCtx,
         b1: u8,
@@ -47,7 +47,7 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
     // heading. nilboa's Delilas pair (`P1[4]` / `P1[5]`) stand at `0x300`
     // from their spawn prologue's `4C 48 00 03 00 00`.
     // REF: FUN_801DE840 (nibble-4 sub-8)
-    fn op4c_n4_heading_write(&mut self, ctx: &mut FieldCtx, value: u16) {
+    fn set_actor_heading(&mut self, ctx: &mut FieldCtx, value: u16) {
         match self.world.heading_owner(ctx) {
             Some(HeadingOwner::Player) => {
                 if let Some(a) = self
@@ -69,12 +69,12 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
         }
     }
 
-    fn op4c_nibble4_ctx_ramp(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
-        Self::op4c_nibble4_ctx_ramp(self, ctx, sub, target, ticks)
+    fn ramp_ctx_slot(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
+        Self::ramp_ctx_slot(self, ctx, sub, target, ticks)
     }
 
-    fn op43_sub9_tween(&mut self, ctx: &mut FieldCtx, x: u16, y: u16, z: u16, ticks: u16) {
-        Self::op43_sub9_tween(self, ctx, x, y, z, ticks)
+    fn tween_actor_position(&mut self, ctx: &mut FieldCtx, x: u16, y: u16, z: u16, ticks: u16) {
+        Self::tween_actor_position(self, ctx, x, y, z, ticks)
     }
 
     fn setup_animation(&mut self, _ctx: &mut FieldCtx, count: u8, base_id: u8, frames: &[u8]) {
@@ -103,7 +103,7 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
             });
     }
 
-    fn op43_arc_jump(
+    fn spawn_arc_jump(
         &mut self,
         _ctx: &FieldCtx,
         ext: Option<u8>,
@@ -126,11 +126,11 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
         Self::exec_move(self, ctx, move_id)
     }
 
-    fn op4c_n5_sub0_set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, _high: bool) {
-        Self::op4c_n5_sub0_set_actor_model(self, ctx, value, _high)
+    fn set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, _high: bool) {
+        Self::set_actor_model(self, ctx, value, _high)
     }
 
-    fn op4c_n5_sub1_npc_run(
+    fn run_to_tile(
         &mut self,
         ctx: &mut FieldCtx,
         world_x: u16,
@@ -139,10 +139,10 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
         move_id: u8,
         is_player: bool,
     ) {
-        Self::op4c_n5_sub1_npc_run(self, ctx, world_x, world_z, depth_byte, move_id, is_player)
+        Self::run_to_tile(self, ctx, world_x, world_z, depth_byte, move_id, is_player)
     }
 
-    fn op4c_n_c_sub_3_script_teleport(&mut self, ctx: &mut FieldCtx) {
-        Self::op4c_n_c_sub_3_script_teleport(self, ctx)
+    fn script_table_teleport(&mut self, ctx: &mut FieldCtx) {
+        Self::script_table_teleport(self, ctx)
     }
 }

@@ -2522,7 +2522,7 @@ The row-498 park-cell fades are a separate family: event-triggered MAN
   halt bit (`*(ctx+0x94)+0x10 &= ~0x400`).
 
 Port: `legaia_engine_field::clut_fx` (arithmetic) + `World::step_clut_fx` (the
-VRAM driver), fed by the `op4c_n6_sub_61_emitter` field-VM host hook.
+VRAM driver), fed by the `spawn_clut_cell_fx` field-VM host hook.
 
 `map01`'s field MAN holds exactly eight `4C 61` ops, all on row 498: four
 one-shots (`frames = 0`) copying cell `(112, 499)` onto `(0/16/32/48, 498)`,

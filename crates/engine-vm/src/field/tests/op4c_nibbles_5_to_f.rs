@@ -75,7 +75,7 @@ fn op_4c_n5_sub0_high_sets_flag_bit() {
 }
 
 // A host that uses the default `FieldHost` bodies (no overrides beyond the
-// three required methods), so the default `op4c_n5_sub0_set_actor_model`
+// three required methods), so the default `set_actor_model`
 // (the `FUN_80024e08` port) runs and mutates `ctx` itself. `WORLD_MAP` toggles
 // the `_DAT_8007B83C == 0xF` game-mode gate that mirrors the id into +0x60.
 struct DefaultModelHost<const WORLD_MAP: bool>;

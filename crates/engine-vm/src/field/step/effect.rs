@@ -23,7 +23,7 @@ pub(super) fn op_34<H: FieldHost>(
             };
             let rgb = [rgb_int[0], rgb_int[1], rgb_int[2]];
             let intensity = i16::from_le_bytes([rgb_int[3], rgb_int[4]]);
-            host.op34_sub0_color_intensity_setup(op0, rgb, intensity);
+            host.set_effect_colour(op0, rgb, intensity);
             StepResult::Advance {
                 next_pc: pc + header_size + 6,
             }
@@ -49,7 +49,7 @@ pub(super) fn op_34<H: FieldHost>(
                 _ => None,
             };
             let ext = crate::field::peek_extended(bytecode, pc);
-            let spawned = host.op34_sub1_spawn_attached(ctx, ext, &spawn, script);
+            let spawned = host.spawn_attached_light(ctx, ext, &spawn, script);
             let extra = match (spawned, script) {
                 (true, Some(_)) => 2 + bytecode.get(after + 1).copied().unwrap_or(0) as usize,
                 _ => 0,
@@ -70,7 +70,7 @@ pub(super) fn op_34<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             };
             let captured_pc_offset = pc + header_size + 2;
-            let captured = host.op34_capture_pc_for_existing_actor(ctx, b1, captured_pc_offset);
+            let captured = host.op34_sub2_capture_pc(ctx, b1, captured_pc_offset);
             if captured {
                 StepResult::Yield { resume_pc: pc }
             } else {

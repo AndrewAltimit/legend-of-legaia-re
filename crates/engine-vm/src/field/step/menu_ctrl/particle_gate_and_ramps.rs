@@ -49,7 +49,7 @@ pub(super) fn op_4c_n3<H: FieldHost>(
             }
         }
         3 => {
-            host.menu_refresh();
+            host.rebuild_party_roster();
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -135,7 +135,7 @@ pub(super) fn op_4c_n3<H: FieldHost>(
             }
         }
         0xF => {
-            host.field_io_resync();
+            host.copy_party_tmd_poses();
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -184,7 +184,7 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                 if ticks == 0 {
                     ctx.field_72 = target as u16;
                 } else {
-                    host.op4c_nibble4_ctx_ramp(ctx, sub, target, ticks);
+                    host.ramp_ctx_slot(ctx, sub, target, ticks);
                 }
                 advance
             }
@@ -199,7 +199,7 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                 if ticks == 0 {
                     ctx.field_6a = halved;
                 } else {
-                    host.op4c_nibble4_ctx_ramp(ctx, sub, halved, ticks);
+                    host.ramp_ctx_slot(ctx, sub, halved, ticks);
                 }
                 advance
             }
@@ -213,7 +213,7 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                         ctx.world_y = (-target) as u16;
                     }
                 } else {
-                    host.op4c_nibble4_ctx_ramp(ctx, sub, target, ticks);
+                    host.ramp_ctx_slot(ctx, sub, target, ticks);
                 }
                 advance
             }
@@ -236,7 +236,7 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                         ctx.field_28 = target;
                     }
                 } else {
-                    host.op4c_nibble4_ctx_ramp(ctx, sub, target, ticks);
+                    host.ramp_ctx_slot(ctx, sub, target, ticks);
                 }
                 advance
             }
@@ -247,10 +247,10 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                 // both ports of the pair and clears them together;
                 // otherwise the regular global-write/ramp dispatch
                 // proceeds with the per-sub slot.
-                if host.op4c_nibble4_global_pair_gate() {
-                    host.op4c_nibble4_global_pair_clear();
+                if host.event_vibration_off() {
+                    host.clear_rumble();
                 } else {
-                    host.op4c_nibble4_global_write(sub, target as i32, ticks);
+                    host.write_or_ramp_global_slot(sub, target as i32, ticks);
                 }
                 advance
             }
@@ -258,9 +258,9 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                 // ctx[+0x26] (`field_26`) write or ramp.
                 if ticks == 0 {
                     ctx.field_26 = target as u16;
-                    host.op4c_n4_heading_write(ctx, target as u16);
+                    host.set_actor_heading(ctx, target as u16);
                 } else {
-                    host.op4c_nibble4_ctx_ramp(ctx, sub, target, ticks);
+                    host.ramp_ctx_slot(ctx, sub, target, ticks);
                 }
                 advance
             }
@@ -268,7 +268,7 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                 // Global slot ramp/write. Sub-D additionally
                 // multiplies by `_DAT_8008457C` and shifts
                 // right 12; the host owns the transform.
-                host.op4c_nibble4_global_write(sub, target as i32, ticks);
+                host.write_or_ramp_global_slot(sub, target as i32, ticks);
                 advance
             }
             5 => {
@@ -286,12 +286,12 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                 let w98 = i16::from_le_bytes([bytecode[operand + 6], bytecode[operand + 7]]);
                 let sub5_ticks = u16::from_le_bytes([bytecode[operand + 8], bytecode[operand + 9]]);
                 if sub5_ticks == 0 {
-                    host.op4c_n4_sub5_write_immediate(ctx, b1, w94, w96, w98);
+                    host.write_actor_look(ctx, b1, w94, w96, w98);
                     StepResult::Advance {
                         next_pc: pc + header_size + 10,
                     }
                 } else {
-                    host.op4c_n4_sub5_ramp(ctx, b1, w94, w96, w98, sub5_ticks);
+                    host.ramp_actor_look(ctx, b1, w94, w96, w98, sub5_ticks);
                     // The ramp is scheduled, not waited on: the arm adds
                     // its extra 5 bytes (`addiu s8,s8,0x5` at 0x801E12A4)
                     // over the nibble-4 head's 6, schedules one
@@ -309,7 +309,7 @@ pub(super) fn op_4c_n4<H: FieldHost>(
             }
             9 => {
                 // sub-9: dispatch on two bits of the global story
-                // flag word. See `FieldCameraMotionHost::op4c_n4_sub9_state`.
+                // flag word. See `FieldCameraMotionHost::camera_offset_mode`.
                 //
                 // Every arm advances the 6 bytes, the ramp arms included:
                 // the nibble-4 head advances first (`addiu s8,s8,6` at
@@ -321,25 +321,25 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                 // instead re-ran it forever (conc3 `P2[10]` never reached
                 // its `SET 0x3E5`).
                 // REF: FUN_801DE840 (0x801E1480..0x801E1628)
-                match host.op4c_n4_sub9_state() {
+                match host.camera_offset_mode() {
                     Sub9State::PlayerRelative => {
                         // Player-relative write: `+0x4A = target +
                         // player_anchor[+0x16]` (ramped when ticks != 0).
                         // This arm never jumps (cutscene-dialogue overlay
                         // `case 9`, live-probe-pinned over the opening).
-                        host.op4c_n4_sub9_player_relative_write(target, ticks);
+                        host.write_camera_offset_player_relative(target, ticks);
                         advance
                     }
                     Sub9State::Default => {
                         if ticks == 0 {
-                            host.op4c_n4_sub9_default_write(target);
+                            host.write_camera_offset(target);
                         } else {
-                            host.op4c_n4_sub9_default_ramp(target, ticks);
+                            host.ramp_camera_offset(target, ticks);
                         }
                         advance
                     }
                     Sub9State::Delta => {
-                        host.op4c_n4_sub9_delta_write_or_ramp(target, ticks);
+                        host.write_camera_offset_delta(target, ticks);
                         advance
                     }
                 }

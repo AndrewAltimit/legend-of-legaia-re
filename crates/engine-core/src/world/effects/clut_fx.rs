@@ -74,7 +74,7 @@ fn apply_cell_write(vram: &mut legaia_tim::Vram, op: &ClutCellFxOp) {
 
 impl World {
     /// Spawn a scripted CLUT-cell effect from the field-VM `0x4C` n6
-    /// sub-`0x61` operand payload (the `op4c_n6_sub_61_emitter` host hook).
+    /// sub-`0x61` operand payload (the `spawn_clut_cell_fx` host hook).
     /// `frames == 0` queues the retail inline one-shot; `frames != 0` queues
     /// a cross-fade (the retail fade-actor spawn). Both are applied against
     /// the host's software VRAM by [`Self::step_clut_fx`].

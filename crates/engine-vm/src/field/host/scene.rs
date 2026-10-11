@@ -119,7 +119,9 @@ pub trait FieldSceneHost {
         let _ = window;
     }
 
-    /// Op 0x4C outer-nibble-8 sub-8 - write 3 globals.
+    /// Op 0x4C outer-nibble-8 sub-8 - set the Door of Light (Riremito)
+    /// destination: the map number and the arrival tile the travel art
+    /// resolves (`docs/subsystems/field-locomotion.md`).
     ///
     /// 6-byte instruction `[4C, 0x88, lo, hi, b3, b4]`. Writes:
     /// - `_DAT_80084628 = signed_16(operand[1..3])`
@@ -127,18 +129,18 @@ pub trait FieldSceneHost {
     /// - `_DAT_8008462C = b4`
     ///
     /// PC += 6.
-    fn op4c_n8_sub8_write_globals(&mut self, value: i16, b3: u8, b4: u8) {
+    fn set_door_of_light_destination(&mut self, value: i16, b3: u8, b4: u8) {
         let _ = (value, b3, b4);
     }
 
-    /// Op 0x4C outer-nibble-C sub-9 - global-pair compare gate.
+    /// Op 0x4C outer-nibble-C sub-9 - wait for the BGM swap.
     ///
     /// 2-byte instruction `[4C, 0xC9]`. The original at line 6851 reads two
-    /// 16-bit globals `_DAT_8007BAB8` and `_DAT_8007BA9C` and halts at PC if
+    /// 16-bit globals - `_DAT_8007BAB8`, the BGM index the resolver produced,
+    /// and `_DAT_8007BA9C`, the index actually loaded - and halts at PC if
     /// they differ; otherwise advances by 2. Default returns `false` (globals
-    /// match → advance). Real hosts return `true` to model an in-flight
-    /// transition.
-    fn op4c_n_c_sub9_globals_differ(&self) -> bool {
+    /// match → advance). Real hosts return `true` while a swap is in flight.
+    fn bgm_swap_pending(&self) -> bool {
         false
     }
 
@@ -146,7 +148,7 @@ pub trait FieldSceneHost {
     ///
     /// 3-byte instruction `[4C, 0xDF, value]`. Writes one byte at the
     /// per-scene state struct's `+0x61` offset. PC += 3.
-    fn op4c_n_d_sub_f_scene_byte_write(&mut self, value: u8) {
+    fn op4c_nd_subf_scene_ctrl_61_write(&mut self, value: u8) {
         let _ = value;
     }
 
@@ -164,7 +166,7 @@ pub trait FieldSceneHost {
     /// every movie on the disc. The trailing 3 bytes are reserved by
     /// the dispatcher's PC math but unused.
     // REF: FUN_801CEA3C
-    fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
+    fn trigger_fmv(&mut self, fmv_id: i16) {
         let _ = fmv_id;
     }
 
@@ -177,15 +179,16 @@ pub trait FieldSceneHost {
     /// seated by the engine host into the shared counter. No shipped script
     /// issues a clean `4C EC`. PC += 2.
     // REF: FUN_801DDF48
-    fn op4c_n_e_sub_c_capture_ddf48(&mut self) {}
+    fn reroll_encounter_step_counter(&mut self) {}
 
     /// Op 0x4C outer-nibble-E sub-9 - clear `_DAT_8007B9C4` then PC += 2.
     ///
     /// 1-byte instruction `[4C, 0xE9]`. The original at line 7362 clears
-    /// `_DAT_8007B9C4` (a global state byte) and tail-calls
+    /// `_DAT_8007B9C4` (the PROT 0874 party-pack load-state gate `FUN_8001E890`
+    /// branches on, `docs/reference/memory-map.md`) and tail-calls
     /// `switchD_801e0f24::caseD_4()` - which is the `addiu s8, s8, 0x2;
     /// j epilogue` block at `0x801df098`, i.e. PC += 2.
-    fn op4c_n_e_sub9_clear_b9c4(&mut self) {}
+    fn reset_party_pack_load_state(&mut self) {}
 
     /// Op 0x4C outer-nibble-E sub-A - call `FUN_8003C7EC` then halt at PC:
     /// the **scripted game-over trigger**.
@@ -199,5 +202,5 @@ pub trait FieldSceneHost {
     /// bit 1 of `DAT_8007B750`, and pauses the BGM
     /// (`FUN_800266E0(0x8007052C)`). The dispatcher then exits via
     /// `switchD_801e00f4::default()` → halt at PC for opcode 0x4C.
-    fn op4c_n_e_sub_a_call_c7ec(&mut self) {}
+    fn trigger_game_over(&mut self) {}
 }

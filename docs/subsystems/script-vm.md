@@ -1193,7 +1193,7 @@ channel, and all but six sit in partition-2 cutscene records.
 
 The engine runs the arc. `legaia_engine_vm::field_ledge_hop_arc::ScriptArcRequest`
 decodes the operand from the arm's loads; the cutscene timeline's `C3 F8` park
-and `FieldActorHost::op43_arc_jump` (NPC channels) both reach
+and `FieldActorHost::spawn_arc_jump` (NPC channels) both reach
 `World::start_field_script_arc`, and `World::tick_field_script_arcs` advances
 the clip and the watcher. An NPC's height lives in
 `World::script_actors.npc_heights` for as long as it stands where the arc put
@@ -1221,7 +1221,7 @@ is non-zero only while a placement's spawn section is being pre-run (set and
 cleared around the spawn loop at SCUS `0x8003B73C` / `0x8003B928` and around
 the two field-VM re-runs at `0x801E2820` / `0x801E2BBC`). The engine reads the
 halt it can see - an arc still in flight on that actor
-(`World::script_arc_target_halted`, the `FieldHaltHost::op43_arc_target_halted`
+(`World::script_arc_target_halted`, the `FieldHaltHost::arc_target_halted`
 hook) - and the VM returns `Halt` at the op on any refusal. The acquire's
 other clause (an NPC target with no `+0x94` owner) is not modelled.
 
@@ -2196,7 +2196,7 @@ The small leaf helpers in the dispatcher's call graph are pure arithmetic - no g
 Behaviour worth knowing beyond the signatures:
 
 - **`packet_length(buf)`** measures one variable-length packet of the in-game text encoding. It walks `buf` until any byte `<= 0x1E` (terminator); bytes `>= 0x1F` count as 1; bytes whose top nibble is `0xC` consume the next byte unconditionally and count as 2 (escape sequence). The count excludes the terminator; the dispatcher adds the opcode-prefix bytes and terminator itself when computing the PC delta.
-- **`party_flag_test(idx, flags)`** reads bit `idx` of a packed bit array, MSB-first per byte (bit 7 of `flags[0]` is index 0), returning `0xFF` when set and `0` otherwise. Out-of-range indices return `0` (the original would read past the array). `0x4C nC sub-5/6` reach the trigger-flag bank through the `op4c_n_c_party_flag_test(flag_idx)` host hook, with the index read via `load_u16_le`.
+- **`party_flag_test(idx, flags)`** reads bit `idx` of a packed bit array, MSB-first per byte (bit 7 of `flags[0]` is index 0), returning `0xFF` when set and `0` otherwise. Out-of-range indices return `0` (the original would read past the array). `0x4C nC sub-5/6` reach the trigger-flag bank through the `op4c_nc_sub56_flag_test(flag_idx)` host hook, with the index read via `load_u16_le`.
 - **`small_table_search(needle, table, lo, hi)`** searches `table[i * 2]` (stride 2, low byte of each short) across indices `[lo, hi)` and returns the matching index or [`SEARCH_NOT_FOUND`](../../crates/engine-vm/src/field/dispatch_leaves.rs) (`0x100`). Negative bounds or `lo >= hi` return `SEARCH_NOT_FOUND` without scanning.
 - **`load_u16_le` / `load_u24_le` / `load_u32_le`** assemble little-endian values from sequential bytes and return 0 for missing bytes. The 24-bit form pairs with `sign_extend_24(value)` for the opcodes that take a signed 24-bit immediate (`0x4C nE sub-5`).
 - **`tile_center(b)`** is the grid-byte to world-coordinate conversion: `b == 0` returns 0; otherwise `(b & 0x7F) << 7 | 0x40`, plus `0x40` if the high bit is set. Retail inlines it in nine dispatcher arms (`0x4C nE sub-3/4`, `MOVE_TO` at op `0x23`, the scene-change entry tile at op `0x3F`, the position-broadcast `0x4C nC sub-F`, ...).
@@ -2803,7 +2803,7 @@ opcode, so op `0x4C` `MENU_CTRL` and op `0x43` each spread over several.
 Only `FieldFlagsHost` has required methods (the global flag word and the frame delta). Every other
 method has a default body, so a host implements what it has state for and leaves the rest as empty
 `impl` blocks. One bound exists between supertraits: `FieldCameraMotionHost: FieldFlagsHost`, for
-the default `op4c_n4_sub9_state`, which reads the global flag word.
+the default `camera_offset_mode`, which reads the global flag word.
 
 `engine-core`'s `FieldHostImpl` mirrors the layout: `world/vm_hosts/field_host/<group>_host.rs`
 holds its impl of one supertrait, and the sibling files hold the `World` bodies those impls route

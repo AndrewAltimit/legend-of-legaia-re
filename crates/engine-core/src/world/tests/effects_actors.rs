@@ -320,7 +320,7 @@ fn banner_countdown_clears_after_frames() {
 
 /// Field-VM `4C 60` (literal-operand VRAM `MoveImage`): the executing VM
 /// decodes the six LE16 words, the world host queues the stamp
-/// (`op4c_n6_sub0_emitter6` -> `queue_script_vram_move`), and
+/// (`vram_move_image` -> `queue_script_vram_move`), and
 /// `apply_script_vram_moves` performs the `w x h` halfword rect copy against
 /// software VRAM. Operands are the retail town01 opening-record Noa
 /// face-frame stamp `(852, 336, 6, 16) -> (852, 268)`.

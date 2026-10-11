@@ -12,8 +12,8 @@
 //! | arm | encoding | host call |
 //! |---|---|---|
 //! | text balloon spawn + tick | `4C E1 <b1> <text…>` | `text_balloon::TextBalloon::spawn` / `::tick` (`FUN_8003C764` / `FUN_801DA7F0`) |
-//! | scripted game over | `4C EA` | `world::vm_hosts::op4c_n_e_sub_a_call_c7ec` (`FUN_8003C7EC`) |
-//! | take item | `4C 52 <id>` | `op4c_n5_sub2_take_item` (`FUN_800430AC`) + `equipment::party_unequip_accessory_by_id` |
+//! | scripted game over | `4C EA` | `world::vm_hosts::trigger_game_over` (`FUN_8003C7EC`) |
+//! | take item | `4C 52 <id>` | `take_item` (`FUN_800430AC`) + `equipment::party_unequip_accessory_by_id` |
 //! | camera-register zone ramp | `43 <3..=6> …` (10 bytes) | `register_ramp` (`FUN_8003C6A4`) |
 //!
 //! ## Two facts about the take-item arm this test is built around

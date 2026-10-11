@@ -153,11 +153,11 @@ impl FieldFlagsHost for ProbeHost {
         if self.yes { u32::MAX } else { 0 }
     }
 
-    fn screen_mode(&self) -> u32 {
+    fn held_pad(&self) -> u32 {
         if self.yes { u32::MAX } else { 0 }
     }
 
-    fn screen_mode_table(&self, _index: u8) -> Option<u32> {
+    fn pad_compass_entry(&self, _index: u8) -> Option<u32> {
         self.yes.then_some(0xF000)
     }
 
@@ -165,23 +165,23 @@ impl FieldFlagsHost for ProbeHost {
         self.yes
     }
 
-    fn op4c_n_c_party_flag_test(&self, _flag_idx: u16) -> bool {
+    fn op4c_nc_sub56_flag_test(&self, _flag_idx: u16) -> bool {
         self.yes
     }
 
-    fn op4c_n_a_flag_set(&self, _ctx: &FieldCtx, _bank: u8, _bit: u8) -> bool {
+    fn flag_bit_is_set(&self, _ctx: &FieldCtx, _bank: u8, _bit: u8) -> bool {
         self.yes
     }
 }
 
 impl FieldSceneHost for ProbeHost {
-    fn op4c_n_c_sub9_globals_differ(&self) -> bool {
+    fn bgm_swap_pending(&self) -> bool {
         self.yes
     }
 }
 
 impl FieldTerrainHost for ProbeHost {
-    fn op4c_n_e_sub_4_bbox_outside(&self, _ctx: &FieldCtx, _bbox: [i16; 4]) -> bool {
+    fn outside_world_bbox(&self, _ctx: &FieldCtx, _bbox: [i16; 4]) -> bool {
         self.yes
     }
 }
@@ -195,7 +195,7 @@ impl FieldCameraHost for ProbeHost {
 impl FieldCameraMotionHost for ProbeHost {}
 
 impl FieldScreenHost for ProbeHost {
-    fn op4c_nibble4_global_pair_gate(&self) -> bool {
+    fn event_vibration_off(&self) -> bool {
         self.yes
     }
 }
@@ -203,11 +203,11 @@ impl FieldScreenHost for ProbeHost {
 impl FieldAudioHost for ProbeHost {}
 
 impl FieldPartyInventoryHost for ProbeHost {
-    fn op4c_n_8_sub_b_actor_type_present(&self, _type_byte: u8) -> bool {
+    fn op4c_n8_subb_actor_type_present(&self, _type_byte: u8) -> bool {
         self.yes
     }
 
-    fn op4c_n_8_sub_d_actor_search(&self, _char_idx: u8, _marker: u8) -> ActorSearchResult {
+    fn op4c_n8_subd_actor_search(&self, _char_idx: u8, _marker: u8) -> ActorSearchResult {
         if self.yes {
             ActorSearchResult::Found
         } else {
@@ -215,7 +215,7 @@ impl FieldPartyInventoryHost for ProbeHost {
         }
     }
 
-    fn inventory_compare_pair(&self, _page: u8, _sub_op: u8) -> (i32, i32) {
+    fn char_hp_mp_pair(&self, _page: u8, _sub_op: u8) -> (i32, i32) {
         if self.yes {
             (i32::MAX, 0)
         } else {
@@ -227,13 +227,13 @@ impl FieldPartyInventoryHost for ProbeHost {
 impl FieldDialogMenuHost for ProbeHost {}
 
 impl FieldActorHost for ProbeHost {
-    fn op4c_n8_sub_c_branch_on_field_68(&self, _ctx: &FieldCtx) -> bool {
+    fn op4c_n8_subc_field_68_is_zero(&self, _ctx: &FieldCtx) -> bool {
         self.yes
     }
 }
 
 impl FieldActorSpawnHost for ProbeHost {
-    fn op4c_n_e_sub_b_actor_jump(&mut self, _actor_id: u8) -> Option<()> {
+    fn actor_guard(&mut self, _actor_id: u8) -> Option<()> {
         self.yes.then_some(())
     }
 }

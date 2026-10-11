@@ -309,10 +309,10 @@ fn cond_jmp_mode_0_jumps_when_flag_set() {
 #[test]
 fn cond_jmp_mode_1_table_match_jumps() {
     // mode=1, op1=3 (< 8 → table lookup path), table[3] = high-nibble
-    // value of screen_mode. delta = 0x20.
+    // value of held_pad. delta = 0x20.
     let mut host = TestHost {
-        screen_mode: 0x4000,
-        screen_mode_table: {
+        held_pad: 0x4000,
+        pad_compass_entry: {
             let mut v = vec![None; 8];
             v[3] = Some(0x4000);
             v
@@ -327,10 +327,10 @@ fn cond_jmp_mode_1_table_match_jumps() {
 
 #[test]
 fn cond_jmp_mode_1_table_mismatch_skips() {
-    // Same as above but screen_mode high nibble doesn't match table[3].
+    // Same as above but held_pad high nibble doesn't match table[3].
     let mut host = TestHost {
-        screen_mode: 0x1000,
-        screen_mode_table: {
+        held_pad: 0x1000,
+        pad_compass_entry: {
             let mut v = vec![None; 8];
             v[3] = Some(0x4000);
             v
@@ -344,9 +344,9 @@ fn cond_jmp_mode_1_table_mismatch_skips() {
 
 #[test]
 fn cond_jmp_mode_1_bit_test_path() {
-    // op1 = 8 → tests screen_mode bit 0x20.
+    // op1 = 8 → tests held_pad bit 0x20.
     let mut host = TestHost {
-        screen_mode: 0x20,
+        held_pad: 0x20,
         ..Default::default()
     };
     let mut ctx = FieldCtx::default();
@@ -355,7 +355,7 @@ fn cond_jmp_mode_1_bit_test_path() {
     assert_eq!(r, StepResult::Advance { next_pc: 19 });
 
     // Bit clear → skip.
-    host.screen_mode = 0;
+    host.held_pad = 0;
     let r = step(&mut host, &mut ctx, &[0x42, 0x01, 0x08, 0x10, 0x00], 0);
     assert_eq!(r, StepResult::Advance { next_pc: 5 });
 }

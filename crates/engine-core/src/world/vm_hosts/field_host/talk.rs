@@ -28,7 +28,7 @@ impl FieldHostImpl<'_> {
     // PORT: FUN_801D2D38
     // REF: FUN_801D27E0 (controller SM; state 0 = the position capture)
     // REF: FUN_8003C83C (id resolve), FUN_8003D064 (MAN-header pair read)
-    pub(super) fn op43_three_actor_talk(
+    pub(super) fn stage_three_actor_talk(
         &mut self,
         actor_ids: [u8; 3],
         arg_word: u16,
@@ -166,7 +166,7 @@ impl FieldHostImpl<'_> {
     /// dismissed it this frame. Returns `false` when there's no active
     /// dialog or when the dismiss button just fired (clears the request
     /// and unblocks the VM in one step).
-    pub(super) fn op4c_n_5_sub_4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
+    pub(super) fn op4c_n5_sub4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
         // When the inline-script field-VM runner owns the box, it advances /
         // dismisses it (see `World::drive_inline_dialogue`); the simplified
         // dialog-advance must not clear the box out from under it.

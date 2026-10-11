@@ -79,7 +79,7 @@
 //! the census lives in `engine-core/tests/field_actor_spawn_disc_e2e.rs` and
 //! is written up in
 //! [`script-vm-menuctrl.md`](../../../docs/subsystems/script-vm-menuctrl.md#where-0x4c-0xd8-occurs-on-the-disc).
-//! `FieldActorSpawnHost::op4c_n_d_sub8_call_d77f4` is the live engine hook for it.
+//! `FieldActorSpawnHost::spawn_morph_actor` is the live engine hook for it.
 //!
 //! ### The two buffers, and what fills them
 //!

@@ -29,7 +29,7 @@ impl FieldHostImpl<'_> {
     /// See `world::object_actor_height`.
     ///
     /// PORT: FUN_801DE840 (the nibble-8 sub-1 arm, `0x801E1FC4..0x801E2068`)
-    pub(super) fn op4c_n_8_sub_1_set_tint(
+    pub(super) fn set_actor_tint(
         &mut self,
         ctx: &mut FieldCtx,
         target: Option<u8>,
@@ -89,7 +89,7 @@ impl FieldHostImpl<'_> {
             });
     }
 
-    pub(super) fn op34_sub0_color_intensity_setup(
+    pub(super) fn set_effect_colour(
         &mut self,
         op0: u8,
         rgb: [u8; 3],
@@ -221,7 +221,7 @@ impl FieldHostImpl<'_> {
             .push(FieldEvent::EffectAnimTrigger { arg });
     }
 
-    pub(super) fn menu_ctrl_sub1(&mut self, op0: u8, payload: &[u8; 5]) {
+    pub(super) fn set_scene_colour(&mut self, op0: u8, payload: &[u8; 5]) {
         // Sub-op 0x12: the global multiply screen tint `DAT_8007BCB8/B9/BA =
         // payload[0..3]` (neutral 0x80), optionally ramped there over
         // `LE_u16(payload[3..5])` frames by the slot-job spawner

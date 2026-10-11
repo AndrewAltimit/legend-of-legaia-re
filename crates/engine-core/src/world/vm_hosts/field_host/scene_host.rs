@@ -67,7 +67,7 @@ impl<'a> FieldSceneHost for FieldHostImpl<'a> {
     }
 
     // PORT: FUN_8003C7EC
-    fn op4c_n_e_sub_a_call_c7ec(&mut self) {
+    fn trigger_game_over(&mut self) {
         // Field-VM op `4C EA` - the scripted game-over trigger. Retail
         // stores master mode 0x16 (22 = CARD INIT, the CARD/CONTINUE
         // title flow) + `_DAT_8007BB00 = 1` + clears `DAT_8007B750` bit 1,
@@ -86,11 +86,11 @@ impl<'a> FieldSceneHost for FieldHostImpl<'a> {
     // encounter step counter. No shipped script issues a clean `4C EC`
     // (field-op census), so this is reachable only from modded bytecode.
     // REF: FUN_801DDF48 (ported as region_encounter::encounter_counter_reroll)
-    fn op4c_n_e_sub_c_capture_ddf48(&mut self) {
+    fn reroll_encounter_step_counter(&mut self) {
         self.world.reroll_encounter_step_counter();
     }
 
-    fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
+    fn trigger_fmv(&mut self, fmv_id: i16) {
         // Field-VM op `0x4C 0xE2` - retail handler at 0x801E30E4 writes
         // the resolved s16 to `_DAT_8007BA78` (FMV index) and pokes
         // `_DAT_8007B83C = 0x1A` (next game mode = 26 = StrInit). We

@@ -938,7 +938,7 @@ the disc-gated test
 
 ### Engine port of the trigger flow
 
-The field-VM port handles the op as `op4c_n_e_sub2_fmv_trigger(fmv_id: i16)` in
+The field-VM port handles the op as `trigger_fmv(fmv_id: i16)` in
 [`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs); the world's
 [`FieldHostImpl`](../../crates/engine-core/src/world.rs) records the request as
 `World::cutscene.pending_fmv_trigger` plus a `FieldEvent::FmvTrigger { fmv_id }`.
@@ -1039,7 +1039,7 @@ An exec-breakpoint on the record dispatcher `FUN_8003BDE0` across the whole open
   record counts (`- N0 - N1`). See
   [`script-vm.md`](script-vm.md#0x44-0x4f-record-spawn--camera--render--state--move-block).
   Engine: `legaia_engine_vm` decodes it as `SpawnRecord` and the host installs the record
-  ([`FieldActorSpawnHost::op44_spawn_scene_record`](../../crates/engine-vm/src/field/host/actor_spawn.rs) →
+  ([`FieldActorSpawnHost::spawn_scene_record`](../../crates/engine-vm/src/field/host/actor_spawn.rs) →
   [`World::install_spawned_record`](../../crates/engine-core/src/world/narration.rs)).
 - **Walk-on tile trigger** (`map01` / `town01`). The per-frame tile trigger `FUN_801D1EC4` →
   `FUN_801D5630(1, x, z)` → `FUN_8003BDE0(x, z, rec[2], rec[3])` (ra `0x801D218C`): kind-1

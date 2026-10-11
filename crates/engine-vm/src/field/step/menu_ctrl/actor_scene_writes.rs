@@ -28,7 +28,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
         // Sub-0: 2-byte. Cancel move-table animation if active
         // (`func_0x800204F8`). Always advances PC += 2.
         0 => {
-            host.op4c_n_c_sub_0_move_cancel(ctx);
+            host.cancel_active_move(ctx);
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -37,7 +37,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
         // math. Helper `func_0x8003C8F0`/`8003D0BC` is overlay-
         // resident; hosts decide what fields to write. PC += 2.
         3 => {
-            host.op4c_n_c_sub_3_script_teleport(ctx);
+            host.script_table_teleport(ctx);
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -53,7 +53,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             }
             let flag_idx = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
-            let _bit_set = host.op4c_n_c_party_flag_test(flag_idx);
+            let _bit_set = host.op4c_nc_sub56_flag_test(flag_idx);
             // Both polarities (5 = jump-if-zero, 6 = jump-if-nonzero)
             // share the same dispatcher fallthrough - the original's
             // `joined_r0x801e28c4` block returns `param_2 + 4` either
@@ -70,7 +70,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             }
             let flag_idx = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
-            let _bit_set = host.op4c_n_c_party_flag_test(flag_idx);
+            let _bit_set = host.op4c_nc_sub56_flag_test(flag_idx);
             StepResult::Advance {
                 next_pc: pc + header_size + 3,
             }
@@ -78,7 +78,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
         // Sub-D: 2-byte. Wait for the cutscene camera mover: halt at PC
         // while a glide is in flight, else advance past the op.
         0xD => {
-            if host.op4c_n_c_sub_d_camera_mover_live() {
+            if host.camera_glide_live() {
                 StepResult::Halt { final_pc: pc }
             } else {
                 StepResult::Advance {
@@ -92,7 +92,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
         // Always advances PC += 2 (whether the array is empty
         // or the loop completes).
         1 => {
-            host.op4c_n_c_sub_1_flag_loop_reset(&[]);
+            host.reset_fog_region_enables(&[]);
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -125,7 +125,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
             let Some(&b2) = bytecode.get(operand + 2) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op4c_n_c_sub7_sound_trigger(b1, b2);
+            host.apply_item_effect(b1, b2);
             StepResult::Advance {
                 next_pc: pc + header_size + 3,
             }
@@ -142,7 +142,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
             }
             let slot = bytecode[operand + 1];
             let value = i16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
-            host.op4c_n_c_sub_a_set_slot(slot, value);
+            host.slot_table_write(slot, value);
             StepResult::Advance {
                 next_pc: pc + header_size + 4,
             }
@@ -159,7 +159,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
             } else {
                 raw as i16
             };
-            host.op4c_n_c_sub_bc_adjust_slot(slot, value, sub == 0xC);
+            host.slot_table_adjust(slot, value, sub == 0xC);
             StepResult::Advance {
                 next_pc: pc + header_size + 4,
             }
@@ -168,7 +168,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
             let Some(&value) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op4c_n_c_sub_e_set_b6ac(value);
+            host.set_player_clip_override(value);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }
@@ -176,7 +176,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
         // Sub-9: 2-byte `[4C, 0xC9]`. PC += 2 unless host says
         // globals differ, then halt at PC.
         9 => {
-            if host.op4c_n_c_sub9_globals_differ() {
+            if host.bgm_swap_pending() {
                 StepResult::Halt { final_pc: pc }
             } else {
                 StepResult::Advance {
@@ -205,7 +205,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
             };
             let x = resolve(b1, ctx.world_x);
             let z = resolve(b2, ctx.world_z);
-            host.op4c_n_c_sub_f_position_broadcast(x, z);
+            host.set_camera_focus_override(x, z);
             StepResult::Advance {
                 next_pc: pc + header_size + 3,
             }

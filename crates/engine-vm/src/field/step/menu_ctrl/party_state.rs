@@ -38,7 +38,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             }
             let a = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
             let b = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
-            host.op4c_n_d_sub_0_field_se_trigger(a, b);
+            host.op4c_nd_sub0_gated_call(a, b);
             StepResult::Advance {
                 next_pc: pc + header_size + 5,
             }
@@ -46,7 +46,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
         // Sub-1: 1-byte. Linked-list lookup via `FUN_8003CF04`.
         // Host returns `Some(new_pc)` for the ce9c-jump path,
         // `None` for PC += 4 on miss. Default host returns None.
-        1 => match host.op4c_n_d_sub_1_list_lookup_jump(ctx) {
+        1 => match host.jump_if_camera_glide_live(ctx) {
             Some(new_pc) => StepResult::Advance { next_pc: new_pc },
             None => StepResult::Advance {
                 next_pc: pc + header_size + 3,
@@ -60,7 +60,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             let Some(&b1) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op4c_n_d_sub_2_channel_spawn(b1);
+            host.spawn_placement_if_absent(b1);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }
@@ -69,7 +69,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
         // (`FUN_801DC0BC` on actor list 0, through `FUN_8003CF40`), then
         // advances: the arm at `0x801E2DB4` ends `addiu s8,s8,0x2`.
         7 => {
-            host.op4c_n_d_sub_7_register_list_walk();
+            host.retire_camera_movers();
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -93,7 +93,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
                 bytecode[operand + 12],
             ]);
             let ab = ((a as i32 as u32) << 16) | ((b as u16) as u32);
-            host.op4c_n_d_sub3_party_setup(ab, cd, ef);
+            host.schedule_timed_flags(ab, cd, ef);
             StepResult::Advance {
                 next_pc: pc + header_size + 13,
             }
@@ -110,7 +110,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             } else {
                 ctx.field_74 = (ctx.field_74 & 0x7CFF_FFFF) | 0x8000_0000 | (u32::from(b1) << 24);
             }
-            host.op4c_n_d_sub6_field74_mutate_ack();
+            host.op4c_nd_sub6_field_74_ack();
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }
@@ -130,7 +130,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
                     bytecode[operand + 3 + i * 2],
                 ]);
             }
-            host.op4c_n_d_sub8_call_d77f4(b1, words);
+            host.spawn_morph_actor(b1, words);
             StepResult::Advance {
                 next_pc: pc + header_size + 8,
             }
@@ -154,7 +154,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
         }
         0xA => {
             ctx.flags &= !0x2000_0000;
-            host.op4c_n_d_sub_a_collision_y_refresh(ctx);
+            host.refresh_collision_y(ctx);
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -172,7 +172,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             let Some(&b1) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op4c_n_d_sub_f_scene_byte_write(b1);
+            host.op4c_nd_subf_scene_ctrl_61_write(b1);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }
@@ -187,7 +187,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             if operand + 12 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            host.op4c_n_d_sub_b_call_e57f0(&bytecode[operand..operand + 12]);
+            host.spawn_clut_blend_fade(&bytecode[operand..operand + 12]);
             StepResult::Advance {
                 next_pc: pc + header_size + 12,
             }
@@ -199,7 +199,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             let Some(&b1) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            match host.op4c_n_d_sub_c_party_search_set(b1) {
+            match host.op4c_nd_subc_party_search_set(b1) {
                 Some(new_pc) => StepResult::Advance { next_pc: new_pc },
                 None => StepResult::Advance {
                     next_pc: pc + header_size + 4,
@@ -212,7 +212,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             let Some(&b1) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            match host.op4c_n_d_sub_e_party_search_query(b1) {
+            match host.op4c_nd_sube_party_search_query(b1) {
                 Some(new_pc) => StepResult::Advance { next_pc: new_pc },
                 None => StepResult::Advance {
                     next_pc: pc + header_size + 4,
@@ -235,7 +235,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             }
             let x = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
             let y = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
-            host.op4c_n_d_sub_4_vram_stp_set(x, y);
+            host.vram_stp_set(x, y);
             StepResult::Advance {
                 next_pc: pc + header_size + 5,
             }
@@ -252,7 +252,7 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             }
             let x = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
             let y = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
-            host.op4c_n_d_sub_5_vram_stp_clear(x, y);
+            host.vram_stp_clear(x, y);
             StepResult::Advance {
                 next_pc: pc + header_size + 5,
             }

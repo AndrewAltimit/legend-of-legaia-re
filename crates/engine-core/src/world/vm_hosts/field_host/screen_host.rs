@@ -3,7 +3,7 @@
 use super::*;
 
 impl<'a> FieldScreenHost for FieldHostImpl<'a> {
-    fn op4c_nibble4_global_write(&mut self, sub: u8, target: i32, ticks: u16) {
+    fn write_or_ramp_global_slot(&mut self, sub: u8, target: i32, ticks: u16) {
         let _ = ticks;
         let Some(ctrl) = self.world.world_map.ctrl.as_mut() else {
             return;
@@ -23,23 +23,23 @@ impl<'a> FieldScreenHost for FieldHostImpl<'a> {
     // advances the widgets and publishes `World::presentation.fx_frame`.
     // REF: FUN_801F8004 / FUN_801F8D4C / FUN_801F88FC / FUN_801F8E6C /
     // FUN_801F8F28 (spawn + control APIs)
-    fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
+    fn spawn_sprite_widget(&mut self, payload: &[u8]) {
         self.world.presentation.fx.sprite_spawn(payload);
     }
 
-    fn op43_widget_mask_rect(&mut self, words: [u16; 5]) {
+    fn tween_mask_rect(&mut self, words: [u16; 5]) {
         self.world.presentation.fx.mask_rect(words);
     }
 
-    fn op43_widget_letterbox(&mut self, payload: &[u8]) {
+    fn configure_letterbox(&mut self, payload: &[u8]) {
         self.world.presentation.fx.letterbox_config(payload);
     }
 
-    fn op43_widget_panel_spawn(&mut self, payload: &[u8; 13]) {
+    fn spawn_panel_widget(&mut self, payload: &[u8; 13]) {
         self.world.presentation.fx.panel_spawn(payload);
     }
 
-    fn op43_widget_panel_move(&mut self, words: [i16; 4]) {
+    fn move_panel_widget(&mut self, words: [i16; 4]) {
         self.world.presentation.fx.panel_move(words);
     }
 
@@ -47,12 +47,12 @@ impl<'a> FieldScreenHost for FieldHostImpl<'a> {
         Self::scene_fade(self, op0_word, op1_word)
     }
 
-    fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
-        Self::op34_sub0_color_intensity_setup(self, op0, rgb, intensity)
+    fn set_effect_colour(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
+        Self::set_effect_colour(self, op0, rgb, intensity)
     }
 
-    fn menu_ctrl_sub1(&mut self, op0: u8, payload: &[u8; 5]) {
-        Self::menu_ctrl_sub1(self, op0, payload)
+    fn set_scene_colour(&mut self, op0: u8, payload: &[u8; 5]) {
+        Self::set_scene_colour(self, op0, payload)
     }
 
     // Op `0x4C` outer-nibble-3 sub-0 / sub-1: the ambient-particle master
@@ -72,7 +72,7 @@ impl<'a> FieldScreenHost for FieldHostImpl<'a> {
     /// host's software VRAM.
     ///
     /// REF: FUN_801E57F0
-    fn op4c_n_d_sub_b_call_e57f0(&mut self, bytecode: &[u8]) {
+    fn spawn_clut_blend_fade(&mut self, bytecode: &[u8]) {
         self.world.spawn_clut_blend_fx(bytecode);
     }
 
@@ -87,7 +87,7 @@ impl<'a> FieldScreenHost for FieldHostImpl<'a> {
     /// PORT: FUN_80058490 (consumer: `jal` at 0x801E1B84)
     /// REF: FUN_801DE840 (sub-0x60 handler arm 0x801E1B28..0x801E1B90),
     /// FUN_8003CE9C (misaligned-u16 operand reads)
-    fn op4c_n6_sub0_emitter6(&mut self, words: [i16; 6]) {
+    fn vram_move_image(&mut self, words: [i16; 6]) {
         self.world.queue_script_vram_move(words);
     }
 
@@ -96,7 +96,7 @@ impl<'a> FieldScreenHost for FieldHostImpl<'a> {
     /// installs the HSV cycler (`34 30 06`) that darkens them for the night
     /// garden; without the bit, the entries the cycler takes to black read
     /// `0x0000` and the hedge texels behind them go transparent.
-    fn op4c_n_d_sub_4_vram_stp_set(&mut self, vram_x: u16, vram_y: u16) {
+    fn vram_stp_set(&mut self, vram_x: u16, vram_y: u16) {
         self.world
             .ambient
             .script_vram_stp
@@ -105,7 +105,7 @@ impl<'a> FieldScreenHost for FieldHostImpl<'a> {
 
     /// Op `4C D5` - clear the mask bit on a 16x1 VRAM run (every word but
     /// `0x8000`).
-    fn op4c_n_d_sub_5_vram_stp_clear(&mut self, vram_x: u16, vram_y: u16) {
+    fn vram_stp_clear(&mut self, vram_x: u16, vram_y: u16) {
         self.world
             .ambient
             .script_vram_stp
@@ -120,7 +120,7 @@ impl<'a> FieldScreenHost for FieldHostImpl<'a> {
     /// against the host's software VRAM.
     ///
     /// REF: FUN_800468a4 (the enqueue the drain runs each call through)
-    fn op43_vram_rect_copy(&mut self, calls: &[vm::vram_rect_copy::RectCopyCall]) {
+    fn queue_vram_rect_copies(&mut self, calls: &[vm::vram_rect_copy::RectCopyCall]) {
         self.world.queue_vram_rect_copies(calls);
     }
 
@@ -129,7 +129,7 @@ impl<'a> FieldScreenHost for FieldHostImpl<'a> {
     /// light-source TMD rows shade through
     /// ([`legaia_render_kernels::field_light`]). `town01`'s `P1[0]` sets a white
     /// back colour; `koin3`'s cutscene records drop it to black and back.
-    fn op4c_n8_sub_a_write_quad(&mut self, slots: [i16; 3], packed: u32) {
+    fn set_field_light(&mut self, slots: [i16; 3], packed: u32) {
         self.world.presentation.field_light =
             legaia_render_kernels::field_light::FieldLight::from_op_4c_8a(slots, packed);
     }

@@ -9,7 +9,7 @@
 //! (`docs/subsystems/script-vm-menuctrl.md`).
 //!
 //! The engine-vm dispatcher decodes the operand and calls the host hook
-//! `op4c_n_e_sub_5_add_coins`; until this module the world's host left that
+//! `add_coins`; until this module the world's host left that
 //! hook at its no-op default, so no script fee was ever charged.
 //!
 //! ## The arm, from the field overlay's bytes

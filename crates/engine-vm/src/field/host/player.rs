@@ -94,7 +94,7 @@ pub trait FieldPlayerHost {
     /// unreferenced `FUN_801E58A8`; a `lui`-pair sweep of every image finds
     /// no other. (An earlier note here named op `0x43` sub-1 as its reader;
     /// no instruction of that arm touches the word.) PC += 3.
-    fn op4c_n_c_sub_e_set_b6ac(&mut self, value: u8) {
+    fn set_player_clip_override(&mut self, value: u8) {
         let _ = value;
     }
 }

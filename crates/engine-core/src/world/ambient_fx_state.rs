@@ -54,7 +54,7 @@ pub struct AmbientFxState {
     pub clut_pending_game_ticks: u32,
     /// Live scripted CLUT-cell effects (field-VM `0x4C` n6 sub-`0x61`):
     /// pending one-shot cell writes and in-flight cross-fades. Spawned by
-    /// [`crate::world::World::spawn_clut_cell_fx`] (the `op4c_n6_sub_61_emitter` host
+    /// [`crate::world::World::spawn_clut_cell_fx`] (the `spawn_clut_cell_fx` host
     /// hook), stepped + applied against the host's software VRAM by
     /// [`crate::world::World::step_clut_fx`], cleared on scene entry.
     pub clut_fx: Vec<crate::world::ClutCellFx>,
@@ -66,7 +66,7 @@ pub struct AmbientFxState {
     /// Queued field-VM `4C 60` literal-operand VRAM `MoveImage` stamps (the
     /// sibling of [`crate::world::AmbientFxState::clut_fx`] - retail's one-shot face-frame stamps
     /// onto the player texture atlas). Queued by
-    /// [`crate::world::World::queue_script_vram_move`] (the `op4c_n6_sub0_emitter6` host
+    /// [`crate::world::World::queue_script_vram_move`] (the `vram_move_image` host
     /// hook), drained against the host's software VRAM by
     /// [`crate::world::World::apply_script_vram_moves`], cleared on scene entry.
     pub script_vram_moves: Vec<crate::world::ScriptVramMove>,
@@ -81,7 +81,7 @@ pub struct AmbientFxState {
     /// emission order the arm resolved them (one call, or two for a copy
     /// wider than a VRAM page). Queued by
     /// [`crate::world::World::queue_vram_rect_copies`] (the
-    /// `FieldScreenHost::op43_vram_rect_copy` host hook), drained against the
+    /// `FieldScreenHost::queue_vram_rect_copies` host hook), drained against the
     /// host's software VRAM by
     /// [`crate::world::World::apply_vram_rect_copies`].
     pub(crate) vram_rect_copies: Vec<legaia_engine_vm::vram_rect_copy::RectCopyCall>,

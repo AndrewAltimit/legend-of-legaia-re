@@ -175,7 +175,7 @@ impl FieldHostImpl<'_> {
     // the record walk is shared with
     // [`legaia_engine_field::man_field_scripts::partition_record_offset`], the descriptor
     // decode + ctx write-set live in [`apply_script_table_teleport`].
-    pub(super) fn op4c_n_c_sub_3_script_teleport(&mut self, ctx: &mut FieldCtx) {
+    pub(super) fn script_table_teleport(&mut self, ctx: &mut FieldCtx) {
         // Resolve against the scene's resident MAN (kept on the world while
         // per-actor channels run). Without one the trait's default no-op
         // semantics stand - there is no partition table to resolve against.

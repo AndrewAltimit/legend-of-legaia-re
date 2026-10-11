@@ -154,7 +154,7 @@ short-circuit conditions - leaves the counter standing.
 
 `legaia_engine_core::World` joins the installer and the drain: the field VM's
 operand triple reaches `World::schedule_timed_flags` through
-`FieldFlagsHost::op4c_n_d_sub3_party_setup`, and `World::tick_escape_timer` runs
+`FieldFlagsHost::schedule_timed_flags`, and `World::tick_escape_timer` runs
 the drain once per retail frame, raising each fired flag in the system-flag
 bank and publishing the readout.
 

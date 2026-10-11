@@ -3,7 +3,7 @@
 //!
 //! | row | encoding | gate | host |
 //! |---|---|---|---|
-//! | `world/vm_hosts.rs` `801d2d38` | `43 02 <a1> <a2> <a3> <lo> <hi> <b6>` | system flag `0xD`, the talk lock | `op43_three_actor_talk` (`FUN_801D2D38`) |
+//! | `world/vm_hosts.rs` `801d2d38` | `43 02 <a1> <a2> <a3> <lo> <hi> <b6>` | system flag `0xD`, the talk lock | `stage_three_actor_talk` (`FUN_801D2D38`) |
 //! | `engine-vm/escape_timer.rs` `801d2ebc` | `4C D3 …` (13 bytes) | a scene whose script arms the countdown | `schedule_timed_flags` -> `World::tick` -> `EscapeTimer::tick` |
 //!
 //! Both already had unit coverage, and both unit suites **synthesise** their

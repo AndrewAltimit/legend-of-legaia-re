@@ -28,7 +28,7 @@
 //! # Wiring status
 //!
 //! [`op43_sub12_calls`] is live: the field VM's sub-op `0x43`/`0x12` arm
-//! calls it and hands the resolved calls to `FieldHost::op43_vram_rect_copy`.
+//! calls it and hands the resolved calls to `FieldHost::queue_vram_rect_copies`.
 //!
 //! [`build_packet`] and [`enqueue`] are wired too: `World` implements the host
 //! trait method (`legaia_engine_core::world::vm_hosts`) by queueing the calls,
@@ -221,7 +221,7 @@ pub enum EnqueueOutcome {
 /// PORT: FUN_800468a4
 ///
 /// Wired through `World::apply_vram_rect_copies`, the drain behind the field
-/// VM's `op43_vram_rect_copy` hook on both hosts. That hook is only one of
+/// VM's `queue_vram_rect_copies` hook on both hosts. That hook is only one of
 /// retail's two routes here; the other is the actor tick's kind-7 draw arm,
 /// which the engine still has no actor kind for.
 pub fn enqueue(call: RectCopyCall, ot_len: i32, back_buffer: bool) -> EnqueueOutcome {

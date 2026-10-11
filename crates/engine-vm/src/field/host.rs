@@ -27,7 +27,7 @@
 //! implements the supertraits it has state for and leaves the rest as empty
 //! `impl` blocks. The one bound between supertraits is
 //! `FieldCameraMotionHost: FieldFlagsHost`, for the default
-//! [`FieldCameraMotionHost::op4c_n4_sub9_state`] that reads the global flag
+//! [`FieldCameraMotionHost::camera_offset_mode`] that reads the global flag
 //! word.
 
 mod actor;

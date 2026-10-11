@@ -21,7 +21,8 @@ pub trait FieldScreenHost {
         SceneFadeResult::Done
     }
 
-    /// Op 0x4C sub-1 (menu sub-dispatcher).
+    /// Op 0x4C sub-1 - the scene colour words: ambient base colour (`0x10`),
+    /// fog tint (`0x12`) and field clear colour (`0x13`).
     ///
     /// The original encodes a 7-byte instruction `[4C, op0, b1, b2, b3, b4, b5]`
     /// where `op0` selects the inner sub-op:
@@ -29,14 +30,14 @@ pub trait FieldScreenHost {
     /// - `0x12`: writes `DAT_8007BCB8/B9/BA = b1/b2/b3` (with optional
     ///   `func_0x8003C5F0` ramp via `LE_u16(b4..b5)`).
     /// - `0x13`: writes `DAT_8007B636/B635/B634 = b1/b2/b3` (with optional ramp).
-    /// - `0x14`: the **actor clone** - see [`super::FieldActorSpawnHost::menu_ctrl_clone_actor`],
+    /// - `0x14`: the **actor clone** - see [`super::FieldActorSpawnHost::clone_actor`],
     ///   which is the hook that carries it and the one sub-op of this nibble
     ///   whose instruction is eight bytes rather than seven.
     ///
     /// PC advances by 7 (= `param_2 + 7` non-extended) for every sub-op but
     /// `0x14`. Hosts model the per-sub-op behaviour internally; the VM just
     /// hands them the operand bytes.
-    fn menu_ctrl_sub1(&mut self, op0: u8, payload: &[u8; 5]) {
+    fn set_scene_colour(&mut self, op0: u8, payload: &[u8; 5]) {
         let _ = (op0, payload);
     }
 
@@ -47,7 +48,7 @@ pub trait FieldScreenHost {
     /// (`engine-effects::screen_fx::SpriteRecord`). PC += 21. `payload` runs
     /// from the record to the end of the script: the widget's own script
     /// starts at record `+0x13`, on the bytes after this instruction.
-    fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
+    fn spawn_sprite_widget(&mut self, payload: &[u8]) {
         let _ = payload;
     }
 
@@ -56,7 +57,7 @@ pub trait FieldScreenHost {
     /// 12-byte instruction; reads 5 u16s and calls
     /// `FUN_801F8D4C(l, t, r, b, dur)` - the PROT-0900 mask (iris) widget
     /// control API (`engine-effects::screen_fx::MaskWidget`). PC += 12.
-    fn op43_widget_mask_rect(&mut self, words: [u16; 5]) {
+    fn tween_mask_rect(&mut self, words: [u16; 5]) {
         let _ = words;
     }
 
@@ -65,7 +66,7 @@ pub trait FieldScreenHost {
     /// 14-byte instruction. The original calls `FUN_801F8F28(operand + 1)` -
     /// the PROT-0900 letterbox widget's six-i16 config
     /// (`engine-effects::screen_fx::Letterbox`). PC += 14.
-    fn op43_widget_letterbox(&mut self, payload: &[u8]) {
+    fn configure_letterbox(&mut self, payload: &[u8]) {
         let _ = payload;
     }
 
@@ -100,7 +101,7 @@ pub trait FieldScreenHost {
     ///
     /// [`vram_rect_copy::op43_sub12_calls`]: crate::vram_rect_copy::op43_sub12_calls
     /// [`vram_rect_copy::enqueue`]: crate::vram_rect_copy::enqueue
-    fn op43_vram_rect_copy(&mut self, calls: &[crate::vram_rect_copy::RectCopyCall]) {
+    fn queue_vram_rect_copies(&mut self, calls: &[crate::vram_rect_copy::RectCopyCall]) {
         let _ = calls;
     }
 
@@ -110,7 +111,7 @@ pub trait FieldScreenHost {
     /// `FUN_801F88FC(operand)` - the PROT-0900 image-panel widget spawner,
     /// reading its `[x][y][w][h][tex_x][tex_y]` record past the sub-op byte
     /// (`engine-effects::screen_fx::PanelWidget`). PC += 14.
-    fn op43_widget_panel_spawn(&mut self, payload: &[u8; 13]) {
+    fn spawn_panel_widget(&mut self, payload: &[u8; 13]) {
         let _ = payload;
     }
 
@@ -119,7 +120,7 @@ pub trait FieldScreenHost {
     /// 10-byte instruction `[43, 0x14, lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3]`.
     /// The original calls `FUN_801F8E6C(x, y, scale, dur)` - the PROT-0900
     /// panel widget's move/scale API (`scale` is 4.12 fixed). PC += 10.
-    fn op43_widget_panel_move(&mut self, words: [i16; 4]) {
+    fn move_panel_widget(&mut self, words: [i16; 4]) {
         let _ = words;
     }
 
@@ -145,15 +146,17 @@ pub trait FieldScreenHost {
     ///
     /// The host abstracts the fade pipeline; the VM hands over `op0`'s low
     /// nibble + RGB + intensity + the prior-fade-active hint. PC advances by 7.
-    fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
+    fn set_effect_colour(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
         let _ = (op0, rgb, intensity);
     }
 
     /// Op 0x4C outer-nibble-4 global-slot write or ramp.
     ///
-    /// Sub-ops `0xA / 0xB / 0xC / 0xD` write or ramp engine globals (the
-    /// originals are `_DAT_8007BCD0` / `_DAT_8007BCD4` / `_DAT_8007BCD8` /
-    /// `_DAT_8007B910`). Sub-`0xD` additionally multiplies the input by
+    /// Sub-ops `6 / 7` (the rumble pair, when the vibration gate allows) and
+    /// `0xA / 0xB / 0xC / 0xD` write or ramp engine globals: `_DAT_8007BCD0`
+    /// / `_DAT_8007BCD4` / `_DAT_8007BCD8` are the world-map horizon gate's
+    /// scale / step / layer, `_DAT_8007B910` the audio duck level.
+    /// Sub-`0xD` additionally multiplies the input by
     /// `_DAT_8008457C` and shifts right 12 bits - engines model the
     /// transform host-side so this hook receives the raw `target` and `sub`.
     ///
@@ -161,37 +164,40 @@ pub trait FieldScreenHost {
     /// frames.
     ///
     /// PC always advances by 6.
-    fn op4c_nibble4_global_write(&mut self, sub: u8, target: i32, ticks: u16) {
+    fn write_or_ramp_global_slot(&mut self, sub: u8, target: i32, ticks: u16) {
         let _ = (sub, target, ticks);
     }
 
-    /// Op 0x4C outer-nibble-4 sub-6 / sub-7 gate.
+    /// Op 0x4C outer-nibble-4 sub-6 / sub-7 gate: is event vibration off?
     ///
     /// Sub-6 (`_DAT_8007B92C`) and sub-7 (`_DAT_8007B930`) are a **paired**
-    /// global-slot write whose normal write/ramp path is gated by
-    /// `_DAT_800845A8`: when the gate is **set** (non-zero), the original
+    /// global-slot write - the live rumble state - whose normal write/ramp
+    /// path is gated by `_DAT_800845A8`, the options screen's Dual Shock
+    /// "Events" word (`docs/subsystems/field-menu.md`): when the gate is
+    /// **set** (non-zero, vibration off), the original
     /// short-circuits the write and instead clears **both** globals to zero
-    /// via the host's [`op4c_nibble4_global_pair_clear`]. When the gate is
+    /// via the host's [`clear_rumble`]. When the gate is
     /// clear (zero), the VM proceeds with the regular
-    /// [`op4c_nibble4_global_write`] dispatch on the selected slot.
+    /// [`write_or_ramp_global_slot`] dispatch on the selected slot.
     ///
     /// Default impl returns `false` (gate clear → write proceeds), which is
     /// the retail-default state at boot.
     ///
-    /// [`op4c_nibble4_global_pair_clear`]: Self::op4c_nibble4_global_pair_clear
-    /// [`op4c_nibble4_global_write`]: Self::op4c_nibble4_global_write
-    fn op4c_nibble4_global_pair_gate(&self) -> bool {
+    /// [`clear_rumble`]: Self::clear_rumble
+    /// [`write_or_ramp_global_slot`]: Self::write_or_ramp_global_slot
+    fn event_vibration_off(&self) -> bool {
         false
     }
 
-    /// Clear the paired sub-6 / sub-7 globals.
+    /// Op 0x4C outer-nibble-4 sub-6 / sub-7 with vibration off: clear the
+    /// rumble pair.
     ///
-    /// Fires when [`op4c_nibble4_global_pair_gate`] returns `true`. The
+    /// Fires when [`event_vibration_off`] returns `true`. The
     /// original zeroes `_DAT_8007B92C` and `_DAT_8007B930` together - the
     /// hook abstracts both writes into one call.
     ///
-    /// [`op4c_nibble4_global_pair_gate`]: Self::op4c_nibble4_global_pair_gate
-    fn op4c_nibble4_global_pair_clear(&mut self) {}
+    /// [`event_vibration_off`]: Self::event_vibration_off
+    fn clear_rumble(&mut self) {}
 
     /// Op 0x4C outer-nibble 3, sub-0 / sub-1 - the **ambient-particle master
     /// gate**.
@@ -233,11 +239,12 @@ pub trait FieldScreenHost {
     /// scroll-cell residue"). Hosts that own a software VRAM override this
     /// to queue/apply the copy (engine-core queues on the world and drains
     /// via `World::apply_script_vram_moves`).
-    fn op4c_n6_sub0_emitter6(&mut self, words: [i16; 6]) {
+    fn vram_move_image(&mut self, words: [i16; 6]) {
         let _ = words;
     }
 
-    /// Op 0x4C outer-nibble-8 sub-0xA - set 3 s16 + 1 u32 globals.
+    /// Op 0x4C outer-nibble-8 sub-0xA - set the **field light** (three
+    /// angles and the back colour).
     ///
     /// 11-byte instruction `[4C, 0x8A, lo0, hi0, lo1, hi1, lo2, hi2, w_b0, w_b1, w_b2, w_b3]`.
     /// Writes:
@@ -247,15 +254,17 @@ pub trait FieldScreenHost {
     /// - `_DAT_8007B788 = LE_u32(operand[7..11])` (read via `func_0x8003CEB8`).
     ///
     /// PC += 11.
-    fn op4c_n8_sub_a_write_quad(&mut self, slots: [i16; 3], packed: u32) {
+    fn set_field_light(&mut self, slots: [i16; 3], packed: u32) {
         let _ = (slots, packed);
     }
 
-    /// Op 0x4C outer-nibble-E sub-0xD - write `_DAT_8007BA66`.
+    /// Op 0x4C outer-nibble-E sub-0xD - set the dither word.
     ///
     /// 3-byte instruction `[4C, 0xED, value]`. Writes
-    /// `_DAT_8007BA66 = value` (zero-extended u16). PC += 3.
-    fn op4c_n_e_sub_d_set_ba66(&mut self, value: u8) {
+    /// `_DAT_8007BA66 = value` (zero-extended u16), the word the frame-begin
+    /// driver `FUN_80016B6C` copies into the DRAWENV `dtd` bit every frame
+    /// (`docs/subsystems/shading.md`). PC += 3.
+    fn set_dither(&mut self, value: u8) {
         let _ = value;
     }
 
@@ -276,7 +285,7 @@ pub trait FieldScreenHost {
     /// `bytecode` is the operand stream starting at `operand + 0` (the same
     /// `pbVar47` the original passes); hosts that model this opcode read
     /// fields at `bytecode[1..=12]`.
-    fn op4c_n_d_sub_b_call_e57f0(&mut self, bytecode: &[u8]) {
+    fn spawn_clut_blend_fade(&mut self, bytecode: &[u8]) {
         let _ = bytecode;
     }
 
@@ -294,7 +303,7 @@ pub trait FieldScreenHost {
     /// constants `s_StoreImage`/`s_LoadImage`/`s_DrawSync` confirm the
     /// shape). The host receives the rect origin and may emulate the
     /// read-modify-write against its own framebuffer. Default no-op.
-    fn op4c_n_d_sub_4_vram_stp_set(&mut self, vram_x: u16, vram_y: u16) {
+    fn vram_stp_set(&mut self, vram_x: u16, vram_y: u16) {
         let _ = (vram_x, vram_y);
     }
 
@@ -307,7 +316,7 @@ pub trait FieldScreenHost {
     /// 0x7FFF` - i.e. it clears bit 15 (STP) on every pixel that isn't
     /// already "STP-only" (`0x8000` = transparent black with STP set).
     /// Default no-op.
-    fn op4c_n_d_sub_5_vram_stp_clear(&mut self, vram_x: u16, vram_y: u16) {
+    fn vram_stp_clear(&mut self, vram_x: u16, vram_y: u16) {
         let _ = (vram_x, vram_y);
     }
 }

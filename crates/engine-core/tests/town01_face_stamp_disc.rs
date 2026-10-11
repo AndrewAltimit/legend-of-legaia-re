@@ -2,7 +2,7 @@
 //! field-VM `4C 60` literal-operand VRAM `MoveImage` ops in the Rim Elm
 //! opening timeline record (`docs/formats/character-mesh.md`, "Runtime
 //! scroll-cell residue") - decode to the pinned rects, and the engine's
-//! ported path (`op4c_n6_sub0_emitter6` -> `World::queue_script_vram_move`
+//! ported path (`vram_move_image` -> `World::queue_script_vram_move`
 //! -> `World::apply_script_vram_moves`) lands the stamp in software VRAM.
 //!
 //! What this catches:
@@ -119,7 +119,7 @@ fn town01_opening_record_face_stamps_pinned_and_stamp_lands_in_vram() {
     }
 
     // Engine path: queue both stamps through the world (the
-    // `op4c_n6_sub0_emitter6` host hook's target) and apply them against a
+    // `vram_move_image` host hook's target) and apply them against a
     // scratch software VRAM seeded with distinct source-rect content.
     let mut world = World::new();
     let mut vram = legaia_tim::Vram::new();

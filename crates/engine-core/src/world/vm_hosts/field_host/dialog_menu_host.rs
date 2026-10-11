@@ -46,11 +46,11 @@ impl<'a> FieldDialogMenuHost for FieldHostImpl<'a> {
         }
     }
 
-    fn op43_three_actor_talk(&mut self, actor_ids: [u8; 3], arg_word: u16, arg_byte: u8) {
-        Self::op43_three_actor_talk(self, actor_ids, arg_word, arg_byte)
+    fn stage_three_actor_talk(&mut self, actor_ids: [u8; 3], arg_word: u16, arg_byte: u8) {
+        Self::stage_three_actor_talk(self, actor_ids, arg_word, arg_byte)
     }
 
-    fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
+    fn spawn_text_balloon(&mut self, text_buf: &[u8], script_id: u16) {
         // Field-VM op `4C E1` - spawn the single-line text balloon
         // (`FUN_8003C764`). Replacing the Option is the retail
         // predecessor-kill (the handler's first lines kill any live
@@ -74,14 +74,14 @@ impl<'a> FieldDialogMenuHost for FieldHostImpl<'a> {
         Self::open_dialog(self, text_id, inline, world_x, world_z, depth_id)
     }
 
-    fn op4c_n_5_sub_4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
-        Self::op4c_n_5_sub_4_dialog_advance(self, _ctx)
+    fn op4c_n5_sub4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
+        Self::op4c_n5_sub4_dialog_advance(self, _ctx)
     }
 
     /// `[4C, 0x89, lo, hi]` - the pager's automatic-press countdown
     /// `_DAT_80073F00`, which a waiting box page counts down and then
     /// presses through ([`legaia_engine_dialog::dialog::OwnedDialogPanel::tick_at_auto`]).
-    fn op4c_n8_sub9_set_73f00(&mut self, value: i16) {
+    fn set_dialog_auto_press(&mut self, value: i16) {
         self.world.dialog.auto_press = value;
     }
 }

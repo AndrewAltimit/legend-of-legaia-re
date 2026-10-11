@@ -25,10 +25,9 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
     /// packed form (`lw v0, -0x47B0(at)` at `0x801DFC08`): the d-pad in
     /// `0xF000`, Triangle / Circle / Cross / Square in `0x10` / `0x20` /
     /// `0x40` / `0x80` - the word the tile board and the world-map panels
-    /// read. An earlier port kept a never-written `screen_mode` field here,
-    /// so every mode-1 test missed; Rim Elm's "stand here and press Down"
-    /// polls (`42 01 00 ..`, `town01` P2[12..14]) never saw the press.
-    fn screen_mode(&self) -> u32 {
+    /// read. Rim Elm's "stand here and press Down" polls (`42 01 00 ..`,
+    /// `town01` P2[12..14]) are mode-1 tests against it.
+    fn held_pad(&self) -> u32 {
         u32::from(legaia_engine_field::world_map_panel_host::packed_pad(
             self.world.input.pad(),
         ))
@@ -38,7 +37,7 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
     /// `0xF000` d-pad value op `0x42` mode 1 compares the held pad against
     /// (`bne v0, v1` at `0x801DFC14`) - Down, Down+Left, Left, Left+Up,
     /// Up, Up+Right, Right, Right+Down.
-    fn screen_mode_table(&self, index: u8) -> Option<u32> {
+    fn pad_compass_entry(&self, index: u8) -> Option<u32> {
         const PAD_COMPASS: [u32; 8] = [
             0x4000, 0xC000, 0x8000, 0x9000, 0x1000, 0x3000, 0x2000, 0x6000,
         ];
@@ -65,7 +64,7 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
     /// [`crate::world::FieldVmState::slot_table`].
     ///
     /// REF: FUN_801DE840 (the nibble-C sub-`0xA` arm)
-    fn op4c_n_c_sub_a_set_slot(&mut self, slot: u8, value: i16) {
+    fn slot_table_write(&mut self, slot: u8, value: i16) {
         self.world.field_vm.slot_table[usize::from(slot)] = value;
     }
 
@@ -75,7 +74,7 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
     /// for a `0xFFFF` literal.
     ///
     /// REF: FUN_801DE840 (the nibble-C sub-`0xB` / sub-`0xC` arms)
-    fn op4c_n_c_sub_bc_adjust_slot(&mut self, slot: u8, delta: i16, subtract: bool) {
+    fn slot_table_adjust(&mut self, slot: u8, delta: i16, subtract: bool) {
         let cell = &mut self.world.field_vm.slot_table[usize::from(slot)];
         *cell = if subtract {
             cell.wrapping_sub(delta)
@@ -94,7 +93,7 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
     // as one `EscapeTimer` plus the packed flag word, and `World::tick`
     // drains it once per retail frame.
     // REF: FUN_801DE840 case 0xD sub 3, FUN_801D2EBC (the drain)
-    fn op4c_n_d_sub3_party_setup(&mut self, ab: u32, cd: u32, ef: u32) {
+    fn schedule_timed_flags(&mut self, ab: u32, cd: u32, ef: u32) {
         self.world.schedule_timed_flags(ab, cd, ef);
     }
 }

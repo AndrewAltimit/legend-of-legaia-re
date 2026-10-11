@@ -5,7 +5,7 @@
 //! sub `3`) arms the timer; `FUN_801D2EBC` drains it once per frame, firing a
 //! below-threshold flag on the way down and an expiry flag at zero. The two
 //! halves are ported in different modules (`field` and `escape_timer`),
-//! and `FieldFlagsHost::op4c_n_d_sub3_party_setup` is the seam between them.
+//! and `FieldFlagsHost::schedule_timed_flags` is the seam between them.
 //!
 //! This test is the crate-local statement of that join, against a minimal
 //! host: it decodes a synthetic installer instruction through the real VM,
@@ -47,7 +47,7 @@ impl FieldFlagsHost for CaptureHost {
         1
     }
 
-    fn op4c_n_d_sub3_party_setup(&mut self, ab: u32, cd: u32, ef: u32) {
+    fn schedule_timed_flags(&mut self, ab: u32, cd: u32, ef: u32) {
         self.schedule = Some((ab, cd, ef));
     }
 }

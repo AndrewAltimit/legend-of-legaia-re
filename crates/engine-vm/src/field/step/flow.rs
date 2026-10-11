@@ -33,7 +33,7 @@ pub(super) fn op_4e<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             };
             let arg = i32::from(u16::from_le_bytes([arg_lo, arg_hi]));
-            let (state, factor) = host.inventory_compare_pair(page, sub_op);
+            let (state, factor) = host.char_hp_mp_pair(page, sub_op);
             let raw = factor.wrapping_mul(arg);
             let scaled = if raw < 0 { (raw + 0xFF) >> 8 } else { raw >> 8 };
             let cmp = mode_byte & 0x0F;
@@ -75,13 +75,13 @@ pub(super) fn op_4e<H: FieldHost>(
             let scaled = i32::from(u16::from_le_bytes([arg_lo, arg_hi]));
             let state: i32 = match sub_op {
                 // 0x801E0AC0: char record `page` level byte +0x130.
-                2 => host.op4e_char_level(page),
+                2 => host.char_level(page),
                 // 0x801E0AEC / 0x801E0B34: gold / coin bank (same globals
                 // as the 9-byte sub-10/11 forms, compared vs a u16 here).
                 3 => host.party_bank_value(10),
                 9 => host.party_bank_value(11),
                 // 0x801E0AFC: BIOS Rand() & 0xFF - a random-chance branch.
-                4 => host.op4e_sub4_bios_rand() & 0xFF,
+                4 => host.bios_rand() & 0xFF,
                 // 0x801E0B0C: slot table 0x801C6460[sub - 5] (s16).
                 _ => i32::from(host.slot_table_read(sub_op - 5)),
             };

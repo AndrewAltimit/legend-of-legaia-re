@@ -62,7 +62,7 @@ pub struct ClutCellFxOp {
 
 impl ClutCellFxOp {
     /// Decode from the 14-byte operand slice the field VM hands
-    /// `op4c_n6_sub_61_emitter` (instruction bytes `+2..+16`, i.e. operand
+    /// `spawn_clut_cell_fx` (instruction bytes `+2..+16`, i.e. operand
     /// offsets `+1..+15` relative to the `0x61` sub-byte).
     pub fn from_payload(payload: &[u8; 14]) -> Self {
         let w = |o: usize| i16::from_le_bytes([payload[o], payload[o + 1]]);

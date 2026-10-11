@@ -32,17 +32,17 @@ pub trait FieldFlagsHost {
 
     /// Read the word op 0x42 mode 1 tests, `_DAT_8007B850` - the **held
     /// pad**, packed (d-pad in `0xF000`, Triangle / Circle / Cross / Square
-    /// in `0x10` / `0x20` / `0x40` / `0x80`). The name is historical: the
-    /// word is not a screen mode. Bits `0x10/0x20/0x40/0x80` are
+    /// in `0x10` / `0x20` / `0x40` / `0x80`). Bits `0x10/0x20/0x40/0x80` are
     /// individually testable; bits `0xF000` are matched against the
     /// 8-entry compass table at `_DAT_801F28D0`.
-    fn screen_mode(&self) -> u32 {
+    fn held_pad(&self) -> u32 {
         0
     }
 
-    /// Look up the 0x42-mode-1 8-entry table `_DAT_801F28D0` (when `op1 < 8`).
+    /// Op `0x42` mode 1, `op1 < 8`: entry `index` of the 8-entry d-pad
+    /// compass table `_DAT_801F28D0` the held pad's `0xF000` is compared to.
     /// Default returns `None` so the test falls through to the skip path.
-    fn screen_mode_table(&self, index: u8) -> Option<u32> {
+    fn pad_compass_entry(&self, index: u8) -> Option<u32> {
         let _ = index;
         None
     }
@@ -52,7 +52,7 @@ pub trait FieldFlagsHost {
     /// The read side of op 0x4E sub-ops 5..=8 (`slot = sub_op - 5`, loader
     /// `0x801E0B0C`); the write side is op 0x4C outer-nibble-C sub-0xA
     /// (set) / sub-0xB (add) / sub-0xC (subtract) - see
-    /// [`Self::op4c_n_c_sub_a_set_slot`]. Default returns 0.
+    /// [`Self::slot_table_write`]. Default returns 0.
     fn slot_table_read(&self, slot: u8) -> i16 {
         let _ = slot;
         0
@@ -68,7 +68,7 @@ pub trait FieldFlagsHost {
     /// decompiled `return iVar18;` was the collapsed switch arm). The VM
     /// applies the `& 0xFF` mask itself; hosts return the raw PRNG value.
     /// Default returns 0.
-    fn op4e_sub4_bios_rand(&mut self) -> i32 {
+    fn bios_rand(&mut self) -> i32 {
         0
     }
 
@@ -137,7 +137,7 @@ pub trait FieldFlagsHost {
     ///
     /// `bit` is the operand byte; the VM masks the low 5 bits to match
     /// MIPS `sllv` shift semantics.
-    fn op4c_n_a_flag_set(&self, ctx: &FieldCtx, bank: u8, bit: u8) -> bool {
+    fn flag_bit_is_set(&self, ctx: &FieldCtx, bank: u8, bit: u8) -> bool {
         match bank {
             0 => ctx.flags & (1u32 << (bit & 0x1F)) != 0,
             1 => ctx.local_flags & (1u16 << (bit & 0x1F)) != 0,
@@ -152,7 +152,7 @@ pub trait FieldFlagsHost {
     /// `*(short *)(&DAT_801C6460 + slot * 2) = signed_16(operand[2..4])`.
     /// The slot table at `0x801C6460` is a 64-entry scratchpad zone shared
     /// between scripts; hosts can model it as their own slot array. PC += 5.
-    fn op4c_n_c_sub_a_set_slot(&mut self, slot: u8, value: i16) {
+    fn slot_table_write(&mut self, slot: u8, value: i16) {
         let _ = (slot, value);
     }
 
@@ -169,11 +169,12 @@ pub trait FieldFlagsHost {
     /// PC += 5.
     ///
     /// [`frame_delta`]: Self::frame_delta
-    fn op4c_n_c_sub_bc_adjust_slot(&mut self, slot: u8, delta: i16, subtract: bool) {
+    fn slot_table_adjust(&mut self, slot: u8, delta: i16, subtract: bool) {
         let _ = (slot, delta, subtract);
     }
 
-    /// Op 0x4C outer-nibble-D sub-3 - party state setup + FUN_801D596C.
+    /// Op 0x4C outer-nibble-D sub-3 - the **timed-flag schedule** and its
+    /// countdown actor (`FUN_801D596C`).
     ///
     /// 14-byte instruction `[4C, 0xD3, lo_a, hi_a, lo_b, hi_b, lo_c, hi_c,
     /// lo_d, hi_d, lo_e, hi_e, lo_f, hi_f]`. Reads two signed 16-bit values
@@ -190,18 +191,18 @@ pub trait FieldFlagsHost {
     /// `_DAT_800845B8 == 0` it retires it, otherwise (when none is live) it
     /// spawns descriptor `0x801F22DC` at `(+0x14, +0x16) = (0xC0, 0x10)`.
     /// PC += 14.
-    fn op4c_n_d_sub3_party_setup(&mut self, ab: u32, cd: u32, ef: u32) {
+    fn schedule_timed_flags(&mut self, ab: u32, cd: u32, ef: u32) {
         let _ = (ab, cd, ef);
     }
 
-    /// Op 0x4C outer-nibble-E sub-0xE - snapshot `_DAT_80084570`.
+    /// Op 0x4C outer-nibble-E sub-0xE - snapshot the play clock.
     ///
     /// 2-byte instruction `[4C, 0xEE]`. Writes
-    /// `_DAT_800845DC = _DAT_80084570` - a single-direction snapshot of the
-    /// party-leader/scene state. PC += 2.
-    fn op4c_n_e_sub_e_snapshot_84570(&mut self) {}
+    /// `_DAT_800845DC = _DAT_80084570`: the game-time play counter copied
+    /// into the word the Records screen prints as play time. PC += 2.
+    fn snapshot_play_clock(&mut self) {}
 
-    /// Read 16-bit value used by op 0x4C nC sub-5/6 - the operand-stream
+    /// Op 0x4C outer-nibble-C sub-5 / sub-6 flag test - the operand-stream
     /// equivalent of `func_0x8003CE9C` followed by [`party_flag_test`] over
     /// the trigger-flag bank.
     ///
@@ -217,7 +218,7 @@ pub trait FieldFlagsHost {
     ///
     /// [`field_helpers::load_u16_le`]: crate::field::dispatch_leaves::load_u16_le
     /// [`party_flag_test`]: crate::field::dispatch_leaves::party_flag_test
-    fn op4c_n_c_party_flag_test(&self, flag_idx: u16) -> bool {
+    fn op4c_nc_sub56_flag_test(&self, flag_idx: u16) -> bool {
         let _ = flag_idx;
         false
     }

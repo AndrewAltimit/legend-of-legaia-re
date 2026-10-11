@@ -100,7 +100,7 @@ pub trait FieldDialogMenuHost {
     /// face setup. If any ID fails to resolve, the call is skipped silently.
     ///
     /// PC += 8 in both branches.
-    fn op43_three_actor_talk(&mut self, actor_ids: [u8; 3], arg_word: u16, arg_byte: u8) {
+    fn stage_three_actor_talk(&mut self, actor_ids: [u8; 3], arg_word: u16, arg_byte: u8) {
         let _ = (actor_ids, arg_word, arg_byte);
     }
 
@@ -113,7 +113,7 @@ pub trait FieldDialogMenuHost {
     /// the goto as a function call). The label body sets `iVar45 = param_2 + 4`
     /// and exits the dispatch normally; `_DAT_80073F00` is the only side
     /// effect. PC += 4.
-    fn op4c_n8_sub9_set_73f00(&mut self, value: i16) {
+    fn set_dialog_auto_press(&mut self, value: i16) {
         let _ = value;
     }
 
@@ -127,7 +127,7 @@ pub trait FieldDialogMenuHost {
     /// PC += 3: the decompile's `goto LAB_801e00bc` hides the advance - the
     /// raw asm (0x801E306C) exits every path through the `addiu s8,s8,0x3`
     /// entry at 0x801E00B8, one instruction above that label.
-    fn op4c_n_e_sub0_state_write(&mut self, b1: u8) {
+    fn op4c_ne_sub0_state_write(&mut self, b1: u8) {
         let _ = b1;
     }
 
@@ -151,7 +151,7 @@ pub trait FieldDialogMenuHost {
     /// passed in lieu of the original `param_3` ctx pointer.
     ///
     /// [`field_helpers::packet_length`]: legaia_scene_formats::field_disasm::packet_length
-    fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
+    fn spawn_text_balloon(&mut self, text_buf: &[u8], script_id: u16) {
         let _ = (text_buf, script_id);
     }
 
@@ -172,7 +172,7 @@ pub trait FieldDialogMenuHost {
     /// The hook is purely a side-effect callback (the host pumps its dialog
     /// state machine). PC advances by 2 and the VM halts (yields to the
     /// host); the next pump reads from `pc + 2`.
-    fn op4c_n_5_sub_3_dialog_wait(&mut self, ctx: &mut FieldCtx) {
+    fn op4c_n5_sub3_dialog_wait(&mut self, ctx: &mut FieldCtx) {
         let _ = ctx;
     }
 
@@ -180,7 +180,7 @@ pub trait FieldDialogMenuHost {
     ///
     /// `[4C, 0x54]`. The original calls `FUN_801D65D8(0)` - the restore
     /// direction of the staged mode switch described on
-    /// [`Self::op4c_n_5_sub_3_dialog_wait`], not a dialog query - and:
+    /// [`Self::op4c_n5_sub3_dialog_wait`], not a dialog query - and:
     /// - Returns non-zero (switch still stepping) → halt at the standard
     ///   switch-default (PC unchanged for this pump cycle).
     /// - Returns zero (switch done) → clear `DAT_8007B648`, copy 6 bytes
@@ -189,7 +189,7 @@ pub trait FieldDialogMenuHost {
     /// The hook returns `true` when the dialog is still active (VM halts at
     /// PC), `false` when done (VM advances PC by 2). Default impl returns
     /// `false` - engines without a dialog renderer immediately complete.
-    fn op4c_n_5_sub_4_dialog_advance(&mut self, ctx: &mut FieldCtx) -> bool {
+    fn op4c_n5_sub4_dialog_advance(&mut self, ctx: &mut FieldCtx) -> bool {
         let _ = ctx;
         false
     }

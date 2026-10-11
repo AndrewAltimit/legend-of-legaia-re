@@ -24,7 +24,7 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     /// bits can override to always return `Default`.
     ///
     /// [`global_flags`]: super::FieldFlagsHost::global_flags
-    fn op4c_n4_sub9_state(&self) -> Sub9State {
+    fn camera_offset_mode(&self) -> Sub9State {
         let f = self.global_flags();
         if f & 0x0200_0000 != 0 {
             Sub9State::Delta
@@ -37,7 +37,7 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
 
     /// Op 0x4C outer-nibble-4 sub-9 - player-relative write (bit 24 set).
     ///
-    /// Fires when [`op4c_n4_sub9_state`] returns `PlayerRelative`. The arm
+    /// Fires when [`camera_offset_mode`] returns `PlayerRelative`. The arm
     /// writes **both** globals, not one: `_DAT_8007BCAC = target` at
     /// `0x801E1560` and `*(_DAT_801C6EA4 + 0x4A) = target + *(player + 0x16)`
     /// at `0x801E15B0` (each ramped via `func_0x8003C5F0` when `ticks != 0`).
@@ -46,37 +46,37 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     /// (`0x801DA398`), so while it is raised nothing else advances the
     /// accumulator. Default impl is a no-op.
     ///
-    /// [`op4c_n4_sub9_state`]: Self::op4c_n4_sub9_state
-    fn op4c_n4_sub9_player_relative_write(&mut self, target: i16, ticks: u16) {
+    /// [`camera_offset_mode`]: Self::camera_offset_mode
+    fn write_camera_offset_player_relative(&mut self, target: i16, ticks: u16) {
         let _ = (target, ticks);
     }
 
     /// Op 0x4C outer-nibble-4 sub-9 - default-path immediate write.
     ///
-    /// Fires when [`op4c_n4_sub9_state`] returns `Default` and `ticks == 0`.
+    /// Fires when [`camera_offset_mode`] returns `Default` and `ticks == 0`.
     /// The original writes `target` to `*(_DAT_801C6EA4 + 0x4A)` - a per-scene
     /// global. Default impl is a no-op.
     ///
-    /// [`op4c_n4_sub9_state`]: Self::op4c_n4_sub9_state
-    fn op4c_n4_sub9_default_write(&mut self, target: i16) {
+    /// [`camera_offset_mode`]: Self::camera_offset_mode
+    fn write_camera_offset(&mut self, target: i16) {
         let _ = target;
     }
 
     /// Op 0x4C outer-nibble-4 sub-9 - default-path ramp.
     ///
-    /// Fires when [`op4c_n4_sub9_state`] returns `Default` and `ticks != 0`.
+    /// Fires when [`camera_offset_mode`] returns `Default` and `ticks != 0`.
     /// The original schedules a ramp from the current value to `target` over
     /// `ticks` frames, then runs through the default-arm STATE_RESUME path.
     /// The VM surfaces a `Yield { resume_pc: pc }` after this hook fires.
     ///
-    /// [`op4c_n4_sub9_state`]: Self::op4c_n4_sub9_state
-    fn op4c_n4_sub9_default_ramp(&mut self, target: i16, ticks: u16) {
+    /// [`camera_offset_mode`]: Self::camera_offset_mode
+    fn ramp_camera_offset(&mut self, target: i16, ticks: u16) {
         let _ = (target, ticks);
     }
 
     /// Op 0x4C outer-nibble-4 sub-9 - delta-path write or ramp.
     ///
-    /// Fires when [`op4c_n4_sub9_state`] returns `Delta`. The original
+    /// Fires when [`camera_offset_mode`] returns `Delta`. The original
     /// computes `delta = target - *(_DAT_8007C364 + 0x16)` (the delta from
     /// the active script-context's anchor) and writes both:
     /// - `target` → `*(_DAT_801C6EA4 + 0x4A)` (the same default-path slot).
@@ -86,8 +86,8 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     /// slots then runs through STATE_RESUME. Engines compute the delta
     /// host-side from the target + active context - they own the anchor.
     ///
-    /// [`op4c_n4_sub9_state`]: Self::op4c_n4_sub9_state
-    fn op4c_n4_sub9_delta_write_or_ramp(&mut self, target: i16, ticks: u16) {
+    /// [`camera_offset_mode`]: Self::camera_offset_mode
+    fn write_camera_offset_delta(&mut self, target: i16, ticks: u16) {
         let _ = (target, ticks);
     }
 
@@ -115,11 +115,11 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     /// a camera shake.
     ///
     /// REF: FUN_801D9D30
-    fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
+    fn set_shake_amplitude(&mut self, value: u8) {
         let _ = value;
     }
 
-    /// Op 0x4C outer-nibble-D sub-1 - linked-list lookup gate.
+    /// Op 0x4C outer-nibble-D sub-1 - jump while a camera glide is live.
     ///
     /// 2-byte instruction `[4C, 0xD1]`. The original walks the global
     /// list-head at `_DAT_8007C34C` via `FUN_8003CF04(head, FUN_801DC0BC)`
@@ -134,13 +134,13 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     /// take the PC += 4 path. The default impl returns `None` - engines
     /// without a list-walking model fall through to the safe "no jump"
     /// branch.
-    fn op4c_n_d_sub_1_list_lookup_jump(&mut self, ctx: &FieldCtx) -> Option<usize> {
+    fn jump_if_camera_glide_live(&mut self, ctx: &FieldCtx) -> Option<usize> {
         let _ = ctx;
         None
     }
 
-    /// Op 0x4C outer-nibble-D sub-7 - register a list-walk callback then
-    /// halt at PC.
+    /// Op 0x4C outer-nibble-D sub-7 - retire every cutscene camera mover
+    /// (the `FUN_8003CF40` kill sweep keyed on `FUN_801DC0BC`).
     ///
     /// 1-byte instruction `[4C, 0xD7]`. The original sets `pcVar33 =
     /// FUN_801DC0BC` (the "delete-if-flag" predicate) then jumps to
@@ -148,7 +148,7 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     /// (a list-walk that invokes `pcVar33` per entry) and returns via the
     /// standard halt-acquire dispatcher. The script resumes when the walk
     /// finishes and re-arms the field VM.
-    fn op4c_n_d_sub_7_register_list_walk(&mut self) {}
+    fn retire_camera_movers(&mut self) {}
 
     /// Op 0x4C outer-nibble-C sub-D - **wait for the camera glide**.
     ///
@@ -166,11 +166,12 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     /// Returns `true` while a glide is in flight. The default reports one
     /// always, which parks the op - the behaviour of a host that does not
     /// model the mover.
-    fn op4c_n_c_sub_d_camera_mover_live(&mut self) -> bool {
+    fn camera_glide_live(&mut self) -> bool {
         true
     }
 
-    /// Camera position animate (op 0x4C nE sub-7, 7 bytes).
+    /// Write or ramp `_DAT_80073EE4` (op 0x4C nE sub-7, 7 bytes). The word's
+    /// reader is not identified, so the hook keeps its opcode coordinate.
     ///
     /// `[4C, 0xE7, t0, t1, t2, d0, d1]`. Mixed-width operand: a 24-bit LE
     /// `target` at bytes 1..3 and a 16-bit LE `duration` at bytes 4..5.
@@ -184,11 +185,13 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     ///   _DAT_80073EE4, target, duration)` to schedule the tween.
     ///
     /// PC advances by 7. Hosts model the camera tween however they like.
-    fn op4c_n_e_sub_7_camera_animate(&mut self, target: u32, duration: u16) {
+    fn op4c_ne_sub7_ramp_73ee4(&mut self, target: u32, duration: u16) {
         let _ = (target, duration);
     }
 
-    /// Camera zoom config (op 0x4C nE sub-8, 10 bytes).
+    /// Crawl-roller control (op 0x4C nE sub-8, 10 bytes): seed the roller's
+    /// three geometry words, or pause / resume / retire the live roller
+    /// (`docs/subsystems/cutscene.md`, "the crawl roller").
     ///
     /// `[4C, 0xE8, x0, x1, y0, y1, z0, z1, m0, m1]`. Four 16-bit LE values:
     /// `zoom_x`, `zoom_y`, `zoom_z`, and a `mode` selector. The agent's
@@ -210,7 +213,7 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     ///
     /// PC advances by 10. Default impl is a no-op; the host owns the camera
     /// struct.
-    fn op4c_n_e_sub_8_camera_zoom(&mut self, zoom_x: i16, zoom_y: i16, zoom_z: i16, mode: i16) {
+    fn configure_crawl_roller(&mut self, zoom_x: i16, zoom_y: i16, zoom_z: i16, mode: i16) {
         let _ = (zoom_x, zoom_y, zoom_z, mode);
     }
 }

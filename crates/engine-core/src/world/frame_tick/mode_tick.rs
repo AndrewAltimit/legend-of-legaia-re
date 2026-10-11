@@ -544,7 +544,7 @@ impl World {
                 // across the Field -> Battle transition (only Field ticks it
                 // otherwise, so it would stick mid-line forever), or the
                 // simplified `current_dialog` box on the field / overworld
-                // dismiss idiom (`op4c_n_5_sub_4_dialog_advance` /
+                // dismiss idiom (`op4c_n5_sub4_dialog_advance` /
                 // `tick_world_map_npc_dialog`).
                 if self.dialog.inline.is_some() {
                     self.drive_inline_dialogue();

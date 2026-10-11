@@ -39,7 +39,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             let blend = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 4..]);
             let ticks = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 6..]);
             let target = crate::field::peek_extended(bytecode, pc);
-            host.op4c_n_8_sub_1_set_tint(ctx, target, colour, blend, ticks);
+            host.set_actor_tint(ctx, target, colour, blend, ticks);
             StepResult::Advance {
                 next_pc: pc + header_size + 8,
             }
@@ -48,7 +48,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             let Some(&slot) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op4c_n8_sub2_restore_party_slot(slot);
+            host.restore_party_slot(slot);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }
@@ -71,7 +71,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                     as i16;
             }
             let source_id = bytecode[operand + 13];
-            host.op4c_n8_sub6_install_reflection(ctx, source_id, words);
+            host.install_reflection(ctx, source_id, words);
             StepResult::Advance {
                 next_pc: pc + header_size + 14,
             }
@@ -80,7 +80,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             let Some(&value) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op4c_n8_sub4_set_b630(value);
+            host.set_shake_amplitude(value);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }
@@ -93,7 +93,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             // sweep registers nothing and the script does not
             // park - a halt here would stall any scene that
             // issued it.
-            host.op4c_n8_sub7_retire_reflections();
+            host.retire_reflections();
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -105,7 +105,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             let value = i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
             let b3 = bytecode[operand + 3];
             let b4 = bytecode[operand + 4];
-            host.op4c_n8_sub8_write_globals(value, b3, b4);
+            host.set_door_of_light_destination(value, b3, b4);
             StepResult::Advance {
                 next_pc: pc + header_size + 5,
             }
@@ -126,7 +126,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                 bytecode[operand + 9],
                 0,
             ]);
-            host.op4c_n8_sub_a_write_quad([s0, s1, s2], packed);
+            host.set_field_light([s0, s1, s2], packed);
             StepResult::Advance {
                 next_pc: pc + header_size + 10,
             }
@@ -135,7 +135,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             if operand + 3 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            if host.op4c_n8_sub_c_branch_on_field_68(ctx) {
+            if host.op4c_n8_subc_field_68_is_zero(ctx) {
                 let target = i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
                 StepResult::Advance {
                     next_pc: target as i32 as usize,
@@ -153,7 +153,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             }
             let value = i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
-            host.op4c_n8_sub9_set_73f00(value);
+            host.set_dialog_auto_press(value);
             StepResult::Advance {
                 next_pc: pc + header_size + 3,
             }
@@ -174,7 +174,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
         // scene busy)` - the standard halt-acquire gate.
         5 | 0xE | 0xF => {
             if host.field_halt_acquire_predicate(ctx, op0) {
-                host.op4c_n8_halt_acquire(ctx, pc as u32);
+                host.halt_acquire(ctx, pc as u32);
                 StepResult::Advance {
                     next_pc: pc + header_size + 4,
                 }
@@ -192,7 +192,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             }
             let type_byte = bytecode[operand + 1];
-            if host.op4c_n_8_sub_b_actor_type_present(type_byte) {
+            if host.op4c_n8_subb_actor_type_present(type_byte) {
                 let target = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 2..]);
                 StepResult::Advance {
                     next_pc: target as usize,
@@ -212,7 +212,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             }
             let char_idx = bytecode[operand + 1];
             let marker = bytecode[operand + 2];
-            match host.op4c_n_8_sub_d_actor_search(char_idx, marker) {
+            match host.op4c_n8_subd_actor_search(char_idx, marker) {
                 ActorSearchResult::EmptySlot => StepResult::Advance {
                     next_pc: pc + header_size + 5,
                 },
@@ -251,7 +251,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                 } else {
                     &[][..]
                 };
-                host.op4c_n8_sub_0_actor_allocator(ctx, count, tail);
+                host.allocate_child_actors(ctx, count, tail);
                 StepResult::Advance { next_pc: resume }
             } else {
                 StepResult::Halt { final_pc: pc }
@@ -283,7 +283,7 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             let col_end = bytecode[operand + 3];
             let row_end = bytecode[operand + 4];
             let value = bytecode[operand + 5];
-            host.op4c_n_8_sub_3_rect_tile_fill(col_start, row_start, col_end, row_end, value);
+            host.rect_tile_fill(col_start, row_start, col_end, row_end, value);
             StepResult::Advance {
                 next_pc: pc + header_size + 6,
             }

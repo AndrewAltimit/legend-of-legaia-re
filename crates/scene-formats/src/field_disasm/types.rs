@@ -359,7 +359,7 @@ pub enum MenuCtrlKind {
     /// coords use the same `(byte & 0x7F)<<7 + (bit7 ? 0x80 : 0x40)` decode
     /// the placement header uses, and the `is_player` selector reads
     /// `ctx.flags & 0x0100_0000`. Drives the step handler's
-    /// `op4c_n5_sub1_npc_run` host hook.
+    /// `run_to_tile` host hook.
     Nibble5NpcRun {
         x_enc: u8,
         z_enc: u8,

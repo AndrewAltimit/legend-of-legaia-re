@@ -22,17 +22,20 @@ pub trait FieldAudioHost {
         let _ = (text_id, sub_op);
     }
 
-    /// Op 0x4C outer-nibble-C sub-7 - sound trigger.
+    /// Op 0x4C outer-nibble-C sub-7 - run the item-effect applier.
     ///
     /// 4-byte instruction `[4C, 0xC7, b1, b2]`. Calls
-    /// `func_0x800402F4(b1 + 0x0B, b2, 0, 0)` - likely a SE / BGM trigger
-    /// on bank `b1 + 0x0B`. PC += 4.
-    fn op4c_n_c_sub7_sound_trigger(&mut self, b1: u8, b2: u8) {
+    /// `func_0x800402F4(b1 + 0x0B, b2, 0, 0)` - the item / restore applier
+    /// (`docs/subsystems/inventory.md`), which dispatches on an effect
+    /// class (`b1 + 0x0B`) and tier (`b2`). Not a sound cue. PC += 4.
+    fn apply_item_effect(&mut self, b1: u8, b2: u8) {
         let _ = (b1, b2);
     }
 
-    /// Field SE trigger with conditional 16-bit pair (op 0x4C nD sub-0,
-    /// 6 bytes).
+    /// Gated two-word call (op 0x4C nD sub-0, 6 bytes). The callee
+    /// `func_0x8002B994` is the menu selection-cursor emitter
+    /// (`docs/reference/functions/menus.md`), not a sound trigger; what the
+    /// three gate words are is not established.
     ///
     /// `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]`. The original at lines 6936-6944
     /// reads the two 16-bit LE values; if any of three flag globals
@@ -41,7 +44,7 @@ pub trait FieldAudioHost {
     ///
     /// PC advances by 6 in both branches. The hook returns nothing - the
     /// host decides whether the SE fires based on its own gate state.
-    fn op4c_n_d_sub_0_field_se_trigger(&mut self, a: u16, b: u16) {
+    fn op4c_nd_sub0_gated_call(&mut self, a: u16, b: u16) {
         let _ = (a, b);
     }
 }

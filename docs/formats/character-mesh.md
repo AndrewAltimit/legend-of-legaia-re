@@ -351,7 +351,7 @@ re-upload of the band (the battle effect-texture path) restores the disc
 bytes.
 
 Port: `asset field-disasm` decodes the op as `MenuCtrl op0=0x60`; the world
-host's `FieldScreenHost::op4c_n6_sub0_emitter6` hook queues the six words
+host's `FieldScreenHost::vram_move_image` hook queues the six words
 (`World::queue_script_vram_move`) and the windowed host drains them into its
 software VRAM (`World::apply_script_vram_moves`, the `Vram::move_image`
 primitive the battle facial animator also uses).

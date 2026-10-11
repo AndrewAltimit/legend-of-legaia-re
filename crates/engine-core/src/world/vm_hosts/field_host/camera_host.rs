@@ -3,8 +3,8 @@
 use super::*;
 
 impl<'a> FieldCameraHost for FieldHostImpl<'a> {
-    fn op4c_n_e_sub_3_actor_sync_camera(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
-        Self::op4c_n_e_sub_3_actor_sync_camera(self, ctx, actor_id)
+    fn teleport_to_actor(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
+        Self::teleport_to_actor(self, ctx, actor_id)
     }
 
     // Op-0x43 sub-3..6 camera-register zone-ramp spawn (retail
@@ -13,7 +13,7 @@ impl<'a> FieldCameraHost for FieldHostImpl<'a> {
     // records ([`legaia_engine_field::camera_rig::CameraRig::register_ramps`]) and ticks each one's
     // `FUN_80037018` handler per frame ([`World::tick_register_ramps`]).
     // REF: FUN_8003C6A4 (kernel PORT lives in legaia_engine_field::register_ramp)
-    fn op43_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
+    fn spawn_camera_register_ramp(&mut self, sub_op: u8, zone: [u8; 4], start: i16, end: i16) {
         if let Some(ramp) =
             legaia_engine_field::register_ramp::spawn_register_ramp(sub_op, zone, start, end)
         {

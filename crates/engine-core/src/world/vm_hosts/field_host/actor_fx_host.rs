@@ -3,7 +3,7 @@
 use super::*;
 
 impl<'a> FieldActorFxHost for FieldHostImpl<'a> {
-    fn op4c_n_8_sub_1_set_tint(
+    fn set_actor_tint(
         &mut self,
         ctx: &mut FieldCtx,
         target: Option<u8>,
@@ -11,13 +11,13 @@ impl<'a> FieldActorFxHost for FieldHostImpl<'a> {
         blend: u16,
         ticks: u16,
     ) {
-        Self::op4c_n_8_sub_1_set_tint(self, ctx, target, colour, blend, ticks)
+        Self::set_actor_tint(self, ctx, target, colour, blend, ticks)
     }
 
     // `4C 86` / `4C 87` - the reflection controller's install and teardown,
     // consecutive slots of the nibble-8 sub-table.
     // REF: FUN_801E573C, FUN_8003CF40
-    fn op4c_n8_sub6_install_reflection(
+    fn install_reflection(
         &mut self,
         ctx: &mut FieldCtx,
         source_id: u8,
@@ -32,13 +32,13 @@ impl<'a> FieldActorFxHost for FieldHostImpl<'a> {
             .is_some()
     }
 
-    fn op4c_n8_sub7_retire_reflections(&mut self) {
+    fn retire_reflections(&mut self) {
         self.world.retire_reflection_controllers();
     }
 
     // Op `0x34` sub-1: the attached light (`FUN_801E5668`), seated on the
     // actor the op runs against. See `world/field_script_actors.rs`.
-    fn op34_sub1_spawn_attached(
+    fn spawn_attached_light(
         &mut self,
         _ctx: &FieldCtx,
         ext: Option<u8>,
@@ -58,7 +58,7 @@ impl<'a> FieldActorFxHost for FieldHostImpl<'a> {
     /// host's software VRAM on the retail game-tick cadence.
     ///
     /// PORT: FUN_801E4C58
-    fn op4c_n6_sub_61_emitter(&mut self, _ctx: &mut FieldCtx, payload: [u8; 14]) {
+    fn spawn_clut_cell_fx(&mut self, _ctx: &mut FieldCtx, payload: [u8; 14]) {
         self.world.spawn_clut_cell_fx(&payload);
     }
 }

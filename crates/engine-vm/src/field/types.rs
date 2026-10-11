@@ -1,7 +1,7 @@
 //! Field VM result / parameter value types surfaced by the [`FieldHost`]
 //! trait methods. Split out of `field.rs`.
 
-/// Tristate result for [`FieldPartyInventoryHost::op4c_n_8_sub_d_actor_search`] (op 0x4C
+/// Tristate result for [`FieldPartyInventoryHost::op4c_n8_subd_actor_search`] (op 0x4C
 /// n8 sub-D).
 ///
 /// The dispatcher's three-way branch maps:
@@ -35,7 +35,7 @@ pub struct CameraParam {
 /// Story-flag-driven dispatch path for op 0x4C outer-nibble-4 sub-9.
 ///
 /// The original VM branches on two bits of `_DAT_1F800394`. See
-/// [`FieldCameraMotionHost::op4c_n4_sub9_state`] for the bit table.
+/// [`FieldCameraMotionHost::camera_offset_mode`] for the bit table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Sub9State {
     /// Bits `0x02000000` clear, `0x01000000` clear - default path. Write or

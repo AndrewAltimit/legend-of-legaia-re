@@ -10,7 +10,7 @@ impl<'a> FieldActorSpawnHost for FieldHostImpl<'a> {
     // trait default (always a miss) skipped every guarded op, so koin3's
     // entry script never raised the bit-3 flag on the dance hall's props.
     // REF: FUN_8003C83C
-    fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
+    fn actor_guard(&mut self, actor_id: u8) -> Option<()> {
         let found = if actor_id == 0xF8 {
             self.world.player_actor_slot.is_some()
         } else {
@@ -34,7 +34,7 @@ impl<'a> FieldActorSpawnHost for FieldHostImpl<'a> {
     /// hold, bars open. Retail allocates a fresh actor per call and the two
     /// would then both emit; the engine keeps one, because a second envelope
     /// over the first is a script defect rather than an effect.
-    fn op43_alloc_scripted_actor(&mut self, b1: u8, b2: u8, b3: u8) {
+    fn spawn_shutter_blackout(&mut self, b1: u8, b2: u8, b3: u8) {
         self.world.presentation.cinematic_bars =
             Some(legaia_engine_field::field_actor_timers::ShutterBars::spawn(
                 i16::from(b1),
@@ -44,7 +44,7 @@ impl<'a> FieldActorSpawnHost for FieldHostImpl<'a> {
         self.world.presentation.cinematic_bar = 0;
     }
 
-    fn op44_spawn_scene_record(&mut self, global_index: u8) {
+    fn spawn_scene_record(&mut self, global_index: u8) {
         // Record the spawn request for SceneHost::tick to resolve against the
         // current scene MAN (the partition math needs the MAN header, which
         // the VM borrow precludes touching here). Retail spawns the record as
@@ -67,15 +67,15 @@ impl<'a> FieldActorSpawnHost for FieldHostImpl<'a> {
     // `FUN_8003C83C` resolve); the clone then ticks itself out through
     // `World::tick_handler_actors`.
     // REF: FUN_801D835C
-    fn menu_ctrl_clone_actor(&mut self, src_id: u8, tint_rgb: u32, fade_rate: i16) {
+    fn clone_actor(&mut self, src_id: u8, tint_rgb: u32, fade_rate: i16) {
         self.world.spawn_actor_clone(src_id, tint_rgb, fade_rate);
     }
 
-    fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
-        Self::op4c_n8_sub_0_actor_allocator(self, _ctx, count, tail)
+    fn allocate_child_actors(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
+        Self::allocate_child_actors(self, _ctx, count, tail)
     }
 
-    fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
-        Self::op4c_n_d_sub8_call_d77f4(self, b1, words)
+    fn spawn_morph_actor(&mut self, b1: u8, words: [i16; 3]) {
+        Self::spawn_morph_actor(self, b1, words)
     }
 }

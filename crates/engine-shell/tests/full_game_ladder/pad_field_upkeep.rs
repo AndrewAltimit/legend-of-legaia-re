@@ -530,7 +530,7 @@ thread_local! {
 }
 
 /// Does the record body carry the restore - op `4C 82 <slot>`, the
-/// per-party-slot HP/MP refill (`FieldPartyInventoryHost::op4c_n8_sub2_restore_party_slot`)
+/// per-party-slot HP/MP refill (`FieldPartyInventoryHost::restore_party_slot`)
 /// every bed and inn stay ends in - at a clean decode boundary?
 pub(super) fn record_restores(
     mf: &legaia_scene_formats::man_section::ManFile,

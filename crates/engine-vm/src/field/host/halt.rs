@@ -21,7 +21,7 @@ pub trait FieldHaltHost {
     /// The default impl performs the standard ctx mutation (saved_pc +
     /// wait_accum + halt bit). Real hosts can override to also mirror to
     /// the system actor or to refuse the acquire.
-    fn op4c_n8_halt_acquire(&mut self, ctx: &mut FieldCtx, opcode_pc: u32) {
+    fn halt_acquire(&mut self, ctx: &mut FieldCtx, opcode_pc: u32) {
         ctx.saved_pc = opcode_pc;
         ctx.wait_accum = 0;
         ctx.flags |= 0x400;
@@ -73,7 +73,7 @@ pub trait FieldHaltHost {
     /// in practice, an actor still in the air from an earlier arc. `ext`
     /// is the instruction's extended channel byte. A refused acquire leaves
     /// the PC on the instruction for a retry next frame. Default `false`.
-    fn op43_arc_target_halted(&self, ctx: &FieldCtx, ext: Option<u8>) -> bool {
+    fn arc_target_halted(&self, ctx: &FieldCtx, ext: Option<u8>) -> bool {
         let _ = (ctx, ext);
         false
     }

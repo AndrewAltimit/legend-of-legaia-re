@@ -992,7 +992,7 @@ impl World {
     /// from [`crate::scene_host::SceneHost::player_rig_mesh`].
     ///
     /// REF: FUN_80024E08 (the re-stage; the port for a placement is
-    /// `FieldHostImpl::op4c_n5_sub0_set_actor_model`), FUN_8003C83C
+    /// `FieldHostImpl::set_actor_model`), FUN_8003C83C
     pub fn field_player_set_model(&mut self, value: i16) -> bool {
         self.locomotion.player_party_bank = i32::from(value) >= 0xF0;
         self.locomotion.player_clip = 0;

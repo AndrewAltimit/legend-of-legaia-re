@@ -67,7 +67,7 @@
 //! REF: FUN_801DD9D4 - **not ported here, and it was tagged `PORT:` in error.**
 //! The field VM only ever passes this address as a *token*: op `0x43` sub-`0xE`
 //! hands it to `func_0x8003CF04(_DAT_8007C34C, FUN_801DD9D4)` as the actor-list
-//! search predicate ([`host::FieldActorSpawnHost::op43_mark_actor_flag_8`], whose default
+//! search predicate ([`host::FieldActorSpawnHost::op43_sube_mark_actor_flag_8`], whose default
 //! body is empty, and the `0x801DF8D8` tail note in
 //! `step::menu_ctrl::dialog_vram_wall_paint` that says the lookup is not modelled). The
 //! routine's own 69 instructions are a **per-actor GPU-primitive emitter** -

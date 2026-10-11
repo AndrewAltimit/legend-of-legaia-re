@@ -13,8 +13,8 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
             .push(FieldEvent::GiveItem { item_id });
     }
 
-    fn op4c_n5_sub2_take_item(&mut self, item_id: u8) {
-        Self::op4c_n5_sub2_take_item(self, item_id)
+    fn take_item(&mut self, item_id: u8) {
+        Self::take_item(self, item_id)
     }
 
     fn add_money(&mut self, delta: i32) {
@@ -85,7 +85,7 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
             .push(FieldEvent::SetPartyLeader { leader_id });
     }
 
-    fn menu_refresh(&mut self) {
+    fn rebuild_party_roster(&mut self) {
         self.world
             .pending_field_events
             .push(FieldEvent::MenuRefresh);
@@ -94,11 +94,11 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
     /// Op `0x4C 0xE5` - the casino coin bank's script delta (a cabinet's
     /// fee, the dome's entry fee, a prize price). The arm and its missing
     /// lower clamp are documented on [`crate::casino_coin_bank`].
-    fn op4c_n_e_sub_5_add_coins(&mut self, coin_delta: i32) {
+    fn add_coins(&mut self, coin_delta: i32) {
         self.world.add_script_coins(coin_delta);
     }
 
-    fn op4c_n8_sub2_restore_party_slot(&mut self, slot: u8) {
-        Self::op4c_n8_sub2_restore_party_slot(self, slot)
+    fn restore_party_slot(&mut self, slot: u8) {
+        Self::restore_party_slot(self, slot)
     }
 }

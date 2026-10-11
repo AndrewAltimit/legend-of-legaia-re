@@ -35,12 +35,13 @@ pub trait FieldActorHost {
         let _ = (ctx, world_x, world_z, is_player);
     }
 
-    /// Camera config (op 0x38, simple path). When `op1 & 0x7F == 0`, the
-    /// original copies `*(short *)(0x80073F04 + (op0 & 0xF) * 2)` into
-    /// `ctx.field_26`. The host owns the table - this method takes the
+    /// Op `0x38` simple path: one entry of the **compass heading table**.
+    /// When `op1 & 0x7F == 0`, the original copies
+    /// `*(short *)(0x80073F04 + (op0 & 0xF) * 2)` into `ctx.field_26`, the
+    /// actor's heading. The host owns the table - this method takes the
     /// `index = op0 & 0xF` and returns the u16 to write. Returning `None`
     /// keeps `ctx.field_26` unchanged (the VM still advances PC).
-    fn cam_cfg_lookup(&self, index: u8) -> Option<u16> {
+    fn compass_heading(&self, index: u8) -> Option<u16> {
         let _ = index;
         None
     }
@@ -51,11 +52,11 @@ pub trait FieldActorHost {
     /// target `0xF8`, which retail's prologue resolves to the player object
     /// (`FUN_8003C83C`) rather than to the context the caller passed. The
     /// actor is host state, so the host owns the write; called before
-    /// [`Self::cam_cfg_lookup`]'s context write.
+    /// [`Self::compass_heading`]'s context write.
     ///
     /// REF: FUN_801DE840 (case 0x38), FUN_8003C83C
     ///
-    /// See also [`Self::op4c_n4_heading_write`], the `4C 48` sibling.
+    /// See also [`Self::set_actor_heading`], the `4C 48` sibling.
     fn face_compass(&mut self, ctx: &mut FieldCtx, index: u8, player: bool) {
         let _ = (ctx, index, player);
     }
@@ -113,7 +114,7 @@ pub trait FieldActorHost {
     ///
     /// (When `t == 0`, the VM writes x/y/z to ctx if not `0xFFFF`, and that
     /// path doesn't need this hook.)
-    fn op43_sub9_tween(&mut self, ctx: &mut FieldCtx, x: u16, y: u16, z: u16, ticks: u16) {
+    fn tween_actor_position(&mut self, ctx: &mut FieldCtx, x: u16, y: u16, z: u16, ticks: u16) {
         let _ = (ctx, x, y, z, ticks);
     }
 
@@ -121,10 +122,10 @@ pub trait FieldActorHost {
     /// context's `+0x26`, the heading the resolved actor draws at. The actor
     /// is host state (a placement's heading table, the player's render
     /// heading), so the host mirrors the write. The ramp form arrives through
-    /// [`Self::op4c_nibble4_ctx_ramp`] with `sub == 8`.
+    /// [`Self::ramp_ctx_slot`] with `sub == 8`.
     ///
     /// REF: FUN_801DE840 (nibble-4 sub-8)
-    fn op4c_n4_heading_write(&mut self, ctx: &mut FieldCtx, value: u16) {
+    fn set_actor_heading(&mut self, ctx: &mut FieldCtx, value: u16) {
         let _ = (ctx, value);
     }
 
@@ -152,8 +153,8 @@ pub trait FieldActorHost {
     ///
     /// Sub-8 aims at the actor's heading, which the renderer draws from host
     /// state: its ramp arrives here, and its immediate write additionally
-    /// through [`Self::op4c_n4_heading_write`].
-    fn op4c_nibble4_ctx_ramp(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
+    /// through [`Self::set_actor_heading`].
+    fn ramp_ctx_slot(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
         let _ = (ctx, sub, target, ticks);
     }
 
@@ -173,7 +174,7 @@ pub trait FieldActorHost {
     /// lets the host write them. Default impl is a no-op.
     ///
     /// PC advances by 11 (= `header_size + 10`).
-    fn op4c_n4_sub5_write_immediate(
+    fn write_actor_look(
         &mut self,
         ctx: &mut FieldCtx,
         b1: u8,
@@ -200,7 +201,7 @@ pub trait FieldActorHost {
     /// The VM advances past the 11-byte instruction after this hook fires:
     /// the ramp runs as a scheduled actor (`0x801E12A4..0x801E138C`), and
     /// the script does not wait on it.
-    fn op4c_n4_sub5_ramp(
+    fn ramp_actor_look(
         &mut self,
         ctx: &mut FieldCtx,
         b1: u8,
@@ -256,7 +257,7 @@ pub trait FieldActorHost {
     /// [`model_pool_is_world_map`]: Self::model_pool_is_world_map
     ///
     /// PORT: FUN_80024e08
-    fn op4c_n5_sub0_set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, high: bool) {
+    fn set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, high: bool) {
         let _ = high; // wrapper/dispatch concern; the primitive ignores it.
         ctx.model_id = value as u16; // actor +0x64
         ctx.move_id = 0; // actor +0x5c
@@ -269,10 +270,10 @@ pub trait FieldActorHost {
 
     /// Is the world-map model pool active? Mirrors the retail game-mode global
     /// `_DAT_8007B83C == 0xF` that gates the `+0x60` model-index mirror in the
-    /// set-actor-model primitive ([`op4c_n5_sub0_set_actor_model`]). Default is
+    /// set-actor-model primitive ([`set_actor_model`]). Default is
     /// `false` (general field mode); the world-map host overrides it to `true`.
     ///
-    /// [`op4c_n5_sub0_set_actor_model`]: Self::op4c_n5_sub0_set_actor_model
+    /// [`set_actor_model`]: Self::set_actor_model
     fn model_pool_is_world_map(&self) -> bool {
         false
     }
@@ -285,7 +286,7 @@ pub trait FieldActorHost {
     /// directly.
     ///
     /// PC += 4 on no-jump.
-    fn op4c_n8_sub_c_branch_on_field_68(&self, ctx: &FieldCtx) -> bool {
+    fn op4c_n8_subc_field_68_is_zero(&self, ctx: &FieldCtx) -> bool {
         ctx.field_68 == 0
     }
 
@@ -298,7 +299,7 @@ pub trait FieldActorHost {
     ///
     /// Pure ctx mutation - host hook is a side-effect-only ack. Halt at PC
     /// (the dump exits via `goto LAB_801e00bc`).
-    fn op4c_n_d_sub6_field74_mutate_ack(&mut self) {}
+    fn op4c_nd_sub6_field_74_ack(&mut self) {}
 
     /// Op 0x4C outer-nibble-C sub-0 - cancel the active move-table animation.
     ///
@@ -313,7 +314,7 @@ pub trait FieldActorHost {
     /// engines without a move VM never trigger the cancel).
     ///
     /// PC always advances by 2 (whether the move was cancelled or not).
-    fn op4c_n_c_sub_0_move_cancel(&mut self, ctx: &mut FieldCtx) -> bool {
+    fn cancel_active_move(&mut self, ctx: &mut FieldCtx) -> bool {
         let _ = ctx;
         false
     }
@@ -334,7 +335,7 @@ pub trait FieldActorHost {
     /// scene table leave the default no-op in place.
     ///
     /// PC always advances by 2.
-    fn op4c_n_c_sub_3_script_teleport(&mut self, ctx: &mut FieldCtx) {
+    fn script_table_teleport(&mut self, ctx: &mut FieldCtx) {
         let _ = ctx;
     }
 
@@ -349,7 +350,7 @@ pub trait FieldActorHost {
     /// (`crate::field_ledge_hop_arc::spawn_arc_with_emitter`) and releases the
     /// halt when the arc lands (`FUN_801D5D60`). Default: no arc channel -
     /// the halt stays raised, which is the pre-arc behaviour.
-    fn op43_arc_jump(
+    fn spawn_arc_jump(
         &mut self,
         ctx: &FieldCtx,
         ext: Option<u8>,
@@ -372,7 +373,7 @@ pub trait FieldActorHost {
     /// the VM passes `true` when `ctx.flags & 0x0100_0000` is set (the
     /// player-vs-NPC bit). Default no-op - hosts that own the move-table
     /// consumer override.
-    fn op4c_n5_sub1_npc_run(
+    fn run_to_tile(
         &mut self,
         ctx: &mut FieldCtx,
         world_x: u16,

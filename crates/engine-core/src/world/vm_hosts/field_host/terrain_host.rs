@@ -9,12 +9,12 @@ impl<'a> FieldTerrainHost for FieldHostImpl<'a> {
     /// [`World::step_field_locomotion`] reads. The VM dispatcher has
     /// already turned the op operands into half-open tile ranges; we just
     /// apply the per-byte mutation. See [`World::paint_field_collision`].
-    fn op4c_n7_tile_flag_bulk(&mut self, sub: u8, x_range: (u8, u8), z_range: (u8, u8), mask: u8) {
+    fn paint_collision_walls(&mut self, sub: u8, x_range: (u8, u8), z_range: (u8, u8), mask: u8) {
         self.world
             .paint_field_collision(sub, x_range, z_range, mask);
     }
 
-    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) {
+    fn retire_floor_ladder_oscillators(&mut self) {
         // `4C 9F` is `FUN_8003CF40(_DAT_8007C34C, LAB_801DA930)`, a **retire
         // sweep** over the `0x801F27EC` handler - so it cancels every live
         // floor-height-ladder oscillator this scene spawned (sub-`0..2`),
@@ -43,7 +43,7 @@ impl<'a> FieldTerrainHost for FieldHostImpl<'a> {
     /// rungs alone. Updating the live rungs without the mirror left the
     /// follow camera framing `concnow`'s pre-install ladder while the player
     /// walked the installed one - the eye sank under the raised floor.
-    fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
+    fn install_floor_height_ladder(&mut self, words: [i16; 16]) {
         let terrain = &mut self.world.terrain;
         for (i, w) in words.into_iter().enumerate() {
             terrain.floor_height_lut[i] = w.wrapping_neg();
@@ -59,7 +59,7 @@ impl<'a> FieldTerrainHost for FieldHostImpl<'a> {
     /// `words` are the half-period, the amplitude and the burst-arm word.
     /// Retail seeds both the position and the rest height from the rung's
     /// current value, which is `World::terrain.floor_height_lut` here.
-    fn op4c_n9_sub0_2_dde34(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
+    fn start_floor_ladder_oscillator(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
         let seed = self
             .world
             .terrain
@@ -96,7 +96,7 @@ impl<'a> FieldTerrainHost for FieldHostImpl<'a> {
     /// covering region is off.
     ///
     /// PORT: FUN_801DE840 (the nibble-C sub-`1` arm)
-    fn op4c_n_c_sub_1_flag_loop_reset(&mut self, _flags: &[u8]) {
+    fn reset_fog_region_enables(&mut self, _flags: &[u8]) {
         let enables: Vec<bool> = self
             .world
             .fog

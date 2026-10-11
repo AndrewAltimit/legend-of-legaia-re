@@ -56,7 +56,7 @@ pub trait FieldTerrainHost {
     /// Default impl is a no-op; the VM still drives the loop for hosts that
     /// own the tile-flag bitmap. PC advances by 7 in the advance branches;
     /// the yield branches surface `Yield { resume_pc: pc + 7 }`.
-    fn op4c_n7_tile_flag_bulk(&mut self, sub: u8, x_range: (u8, u8), z_range: (u8, u8), mask: u8) {
+    fn paint_collision_walls(&mut self, sub: u8, x_range: (u8, u8), z_range: (u8, u8), mask: u8) {
         let _ = (sub, x_range, z_range, mask);
     }
 
@@ -85,7 +85,7 @@ pub trait FieldTerrainHost {
     ///
     /// Default impl is a no-op: the tile pool is engine-owned, and there
     /// is no shared in-VM scratch the rect-fill writes to.
-    fn op4c_n_8_sub_3_rect_tile_fill(
+    fn rect_tile_fill(
         &mut self,
         col_start: u8,
         row_start: u8,
@@ -105,7 +105,7 @@ pub trait FieldTerrainHost {
     /// `N ∈ {0, 1, 2}`. Reads `b1 = operand[1]`, three signed-16-bit words from
     /// `operand+2..8`, and calls `FUN_801DDE34(b1, op0 & 0x0F, w0, w1, w2)`.
     /// PC += 9.
-    fn op4c_n9_sub0_2_dde34(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
+    fn start_floor_ladder_oscillator(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
         let _ = (sub, b1, words);
     }
 
@@ -119,7 +119,7 @@ pub trait FieldTerrainHost {
     ///
     /// Engines model their own table; the VM hands over the 16 values. PC +=
     /// 0x22.
-    fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
+    fn install_floor_height_ladder(&mut self, words: [i16; 16]) {
         let _ = words;
     }
 
@@ -135,7 +135,7 @@ pub trait FieldTerrainHost {
     /// So it neither registers nor parks: the sweep ORs the kill bit into
     /// every node running that handler and the PC moves on two bytes,
     /// unconditionally. Fifteen shipped scenes issue it.
-    fn op4c_n9_sub_f_retire_ladder_oscillators(&mut self) {}
+    fn retire_floor_ladder_oscillators(&mut self) {}
 
     // Op 0x4C outer-nibble-D sub-9 - set inverted-Y mirror + clear flag.
     //
@@ -153,7 +153,7 @@ pub trait FieldTerrainHost {
     /// 2-byte instruction `[4C, 0xDA]`. Clears `ctx.flags & 0x20000000`, then
     /// calls `func_0x80019278(ctx)` (the collision-Y refresh helper) and
     /// writes the result into `ctx.world_y`. PC += 2.
-    fn op4c_n_d_sub_a_collision_y_refresh(&mut self, ctx: &mut FieldCtx) {
+    fn refresh_collision_y(&mut self, ctx: &mut FieldCtx) {
         let _ = ctx;
     }
 
@@ -180,7 +180,7 @@ pub trait FieldTerrainHost {
     /// (the loop body) and the PC delta is identical.
     ///
     /// [`field_helpers::party_flag_test`]: crate::field::dispatch_leaves::party_flag_test
-    fn op4c_n_c_sub_1_flag_loop_reset(&mut self, flags: &[u8]) {
+    fn reset_fog_region_enables(&mut self, flags: &[u8]) {
         let _ = flags;
     }
 
@@ -202,7 +202,7 @@ pub trait FieldTerrainHost {
     /// `bbox` is `[min_x, min_z, max_x, max_z]`, already converted. The
     /// default implementation is retail's test against the ctx's world
     /// position; hosts override only to observe or substitute it.
-    fn op4c_n_e_sub_4_bbox_outside(&self, ctx: &FieldCtx, bbox: [i16; 4]) -> bool {
+    fn outside_world_bbox(&self, ctx: &FieldCtx, bbox: [i16; 4]) -> bool {
         let x = ctx.world_x as i16;
         let z = ctx.world_z as i16;
         x < bbox[0] || z < bbox[1] || bbox[2] < x || bbox[3] < z

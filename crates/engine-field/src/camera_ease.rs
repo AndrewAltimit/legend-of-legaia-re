@@ -45,7 +45,7 @@
 //! both globals - it sets or ramps `scene_ctrl[+0x4A]`, and on its delta arm
 //! writes `_DAT_8007BCAC` in the same breath. `World` now implements all three
 //! of that opcode's host hooks
-//! (`FieldCameraMotionHost::op4c_n4_sub9_default_write` / `_default_ramp` /
+//! (`FieldCameraMotionHost::write_camera_offset` / `_default_ramp` /
 //! `_delta_write_or_ramp`) onto `crate::camera_rig::CameraRig::scene_offset` /
 //! `crate::camera_rig::CameraRig::offset_ease`, and `World::tick` steps the
 //! accumulator once a frame through [`ease_camera_offset`]. The accumulator is

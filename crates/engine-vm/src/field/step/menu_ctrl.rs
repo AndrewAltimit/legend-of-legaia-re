@@ -62,19 +62,19 @@ pub(super) fn op_4c<H: FieldHost>(
                 let Some(&b6) = bytecode.get(operand + 6) else {
                     return StepResult::Unknown { opcode, pc };
                 };
-                host.menu_ctrl_clone_actor(
+                host.clone_actor(
                     b6,
                     u32::from_le_bytes([b1, b2, b3, 0]),
                     i16::from_le_bytes([b4, b5]),
                 );
             }
-            host.menu_ctrl_sub1(op0, &[b1, b2, b3, b4, b5]);
+            host.set_scene_colour(op0, &[b1, b2, b3, b4, b5]);
             StepResult::Advance {
                 next_pc: pc + header_size + 6 + extra,
             }
         }
         2 => {
-            host.party_view_swap(op0 & 7);
+            host.set_camera_octant(op0 & 7);
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }

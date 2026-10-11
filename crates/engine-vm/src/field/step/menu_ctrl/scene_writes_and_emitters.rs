@@ -36,7 +36,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             let Some(&b1) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op4c_n_e_sub0_state_write(b1);
+            host.op4c_ne_sub0_state_write(b1);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }
@@ -52,7 +52,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             let payload = &bytecode[operand + 1..];
             let length = legaia_scene_formats::field_disasm::packet_length(payload);
             if first != 0 {
-                host.op4c_n_e_sub_1_text_actor(&payload[..length], ctx.script_id);
+                host.spawn_text_balloon(&payload[..length], ctx.script_id);
             }
             StepResult::Advance {
                 next_pc: pc + header_size + 2 + length,
@@ -63,7 +63,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             }
             let fmv_id = i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
-            host.op4c_n_e_sub2_fmv_trigger(fmv_id);
+            host.trigger_fmv(fmv_id);
             StepResult::Advance {
                 next_pc: pc + header_size + 5,
             }
@@ -80,7 +80,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             let Some(&actor_id) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op4c_n_e_sub_3_actor_sync_camera(ctx, actor_id);
+            host.teleport_to_actor(ctx, actor_id);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }
@@ -95,7 +95,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             }
             let target = crate::field::dispatch_leaves::load_u24_le(&bytecode[operand + 1..]);
             let duration = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 4..]);
-            host.op4c_n_e_sub_7_camera_animate(target, duration);
+            host.op4c_ne_sub7_ramp_73ee4(target, duration);
             StepResult::Advance {
                 next_pc: pc + header_size + 6,
             }
@@ -116,7 +116,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             let zoom_z =
                 crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 5..]) as i16;
             let mode = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 7..]) as i16;
-            host.op4c_n_e_sub_8_camera_zoom(zoom_x, zoom_y, zoom_z, mode);
+            host.configure_crawl_roller(zoom_x, zoom_y, zoom_z, mode);
             StepResult::Advance {
                 next_pc: pc + header_size + 9,
             }
@@ -150,7 +150,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
                 hi_corner(bytecode[operand + 3]),
                 hi_corner(bytecode[operand + 4]),
             ];
-            if host.op4c_n_e_sub_4_bbox_outside(ctx, bbox) {
+            if host.outside_world_bbox(ctx, bbox) {
                 StepResult::Advance {
                     next_pc: rel_jump(
                         pc + header_size + 5,
@@ -174,7 +174,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             }
             let raw = crate::field::dispatch_leaves::load_u24_le(&bytecode[operand + 1..]);
             let coin_delta = crate::field::dispatch_leaves::sign_extend_24(raw);
-            host.op4c_n_e_sub_5_add_coins(coin_delta);
+            host.add_coins(coin_delta);
             StepResult::Advance {
                 next_pc: pc + header_size + 4,
             }
@@ -190,7 +190,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
                     bytecode[operand + 2 + i * 2],
                 ]);
             }
-            host.op4c_n_e_sub6_call_d8280(words);
+            host.hsv_grade_resident_meshes(words);
             StepResult::Advance {
                 next_pc: pc + header_size + 7,
             }
@@ -199,7 +199,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
         // `caseD_4` (the standard `addiu s8, s8, 0x2; j epilogue`
         // block at 0x801df098).
         9 => {
-            host.op4c_n_e_sub9_clear_b9c4();
+            host.reset_party_pack_load_state();
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -207,11 +207,11 @@ pub(super) fn op_4c_ne<H: FieldHost>(
         // Sub-A: 1-byte. Call overlay-resident `func_0x8003C7EC`,
         // halt at PC.
         0xA => {
-            host.op4c_n_e_sub_a_call_c7ec();
+            host.trigger_game_over();
             StepResult::Halt { final_pc: pc }
         }
         0xC => {
-            host.op4c_n_e_sub_c_capture_ddf48();
+            host.reroll_encounter_step_counter();
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }
@@ -220,7 +220,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             let Some(&b1) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.op4c_n_e_sub_d_set_ba66(b1);
+            host.set_dither(b1);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }
@@ -241,7 +241,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             }
             let actor_id = bytecode[operand + 1];
             let next_pc = pc + header_size + 4;
-            match host.op4c_n_e_sub_b_actor_jump(actor_id) {
+            match host.actor_guard(actor_id) {
                 Some(()) => StepResult::Advance { next_pc },
                 None => {
                     let skip =
@@ -257,7 +257,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             }
         }
         0xE => {
-            host.op4c_n_e_sub_e_snapshot_84570();
+            host.snapshot_play_clock();
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }

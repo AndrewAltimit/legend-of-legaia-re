@@ -178,7 +178,7 @@ The `FUN_801DAB90` build path is the inverse (camera-actor state + globals → t
 `+0xD != 0`: spawn the cross-fade actor instead (`FUN_80020DE0` with descriptor `DAT_801F2918`, `ctx+0x90` = the operand pointer, `ctx+0x94` = the calling script context, counter `+0x54` and scratch `+0x98` zeroed) - its per-tick handler is `FUN_801E4794`.
 One of the two emitters behind the world-map CLUT cycling (rows 506/508/509 + the `(48, 500)` cell); map01's MAN carries eight of these ops on the row-498 strip park row. See [`world-map.md`](../../subsystems/world-map.md) "Ocean animation".
 
-Ported as the `op4c_n6_sub_61_emitter` host hook in `crates/engine-vm/src/field.rs`, fulfilled by `World::spawn_clut_cell_fx` / `World::step_clut_fx` (`crates/engine-core`, kernel `legaia_engine_field::clut_fx`).
+Ported as the `spawn_clut_cell_fx` host hook in `crates/engine-vm/src/field.rs`, fulfilled by `World::spawn_clut_cell_fx` / `World::step_clut_fx` (`crates/engine-core`, kernel `legaia_engine_field::clut_fx`).
 
 ### `801E4794`
 

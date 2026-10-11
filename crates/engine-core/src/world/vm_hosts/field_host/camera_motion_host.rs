@@ -20,11 +20,11 @@ impl<'a> FieldCameraMotionHost for FieldHostImpl<'a> {
     // that same bit is `FUN_801DA390`'s input lock (`0x801DA398`), so while
     // it is raised the easing returns before its first store.
     // REF: FUN_801DA390 (the easing), FUN_801D6704 (seeds the accumulator)
-    fn op4c_n4_sub9_default_write(&mut self, target: i16) {
+    fn write_camera_offset(&mut self, target: i16) {
         self.world.camera.scene_offset = target;
     }
 
-    fn op4c_n4_sub9_default_ramp(&mut self, target: i16, ticks: u16) {
+    fn ramp_camera_offset(&mut self, target: i16, ticks: u16) {
         // Retail schedules a ramp over `ticks` frames through the register
         // ramp helper; the engine has one ramp mechanism and this is not it,
         // so the endpoint is posted immediately and the per-frame easing
@@ -35,21 +35,21 @@ impl<'a> FieldCameraMotionHost for FieldHostImpl<'a> {
         self.world.camera.scene_offset = target;
     }
 
-    fn op4c_n4_sub9_delta_write_or_ramp(&mut self, target: i16, ticks: u16) {
+    fn write_camera_offset_delta(&mut self, target: i16, ticks: u16) {
         let _ = ticks;
         self.world.camera.scene_offset = target;
         let footing = self.world.camera_ease_player_footing();
         self.world.camera.offset_ease = i32::from(target.wrapping_sub(footing));
     }
 
-    fn op4c_n4_sub9_player_relative_write(&mut self, target: i16, ticks: u16) {
+    fn write_camera_offset_player_relative(&mut self, target: i16, ticks: u16) {
         let _ = ticks;
         let footing = self.world.camera_ease_player_footing();
         self.world.camera.scene_offset = target.wrapping_add(footing);
         self.world.camera.offset_ease = i32::from(target);
     }
 
-    fn op4c_n_c_sub_d_camera_mover_live(&mut self) -> bool {
+    fn camera_glide_live(&mut self) -> bool {
         self.world.camera.state.glide_frames > 0
     }
 
@@ -59,7 +59,7 @@ impl<'a> FieldCameraMotionHost for FieldHostImpl<'a> {
     /// only input to `FUN_801D9D30`, so the field script is the sole source
     /// of a camera shake. The world holds it for the camera to read; see
     /// [`legaia_engine_field::camera_rig::CameraRig::shake_amplitude`].
-    fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
+    fn set_shake_amplitude(&mut self, value: u8) {
         self.world.camera.shake_amplitude = value;
     }
 }

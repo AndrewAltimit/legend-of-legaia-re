@@ -26,7 +26,7 @@ impl FieldHostImpl<'_> {
     /// `FieldPlayerHost::player_set_model`.
     ///
     /// PORT: FUN_80024E08 (the model re-stage, through the live-model seat)
-    pub(super) fn op4c_n5_sub0_set_actor_model(
+    pub(super) fn set_actor_model(
         &mut self,
         ctx: &mut FieldCtx,
         value: i16,
@@ -48,7 +48,7 @@ impl FieldHostImpl<'_> {
         }
     }
 
-    pub(super) fn op4c_n8_sub_0_actor_allocator(
+    pub(super) fn allocate_child_actors(
         &mut self,
         _ctx: &mut FieldCtx,
         count: u8,
@@ -91,7 +91,7 @@ impl FieldHostImpl<'_> {
             .push(FieldEvent::ActorAllocate { records });
     }
 
-    pub(super) fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
+    pub(super) fn spawn_morph_actor(&mut self, b1: u8, words: [i16; 3]) {
         // Synchronous actor allocator (see retail `FUN_801D77F4` body
         // dumped at `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`).
         // The dispatcher packs the four args

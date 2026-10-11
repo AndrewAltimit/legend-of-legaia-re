@@ -803,7 +803,7 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
 /// character and the script's precondition silently fails.
 ///
 /// Wired. `FieldHostImpl` in `legaia_engine_core::world::vm_hosts` overrides
-/// `op4c_n5_sub2_take_item` - consume one from the bag, and **only** on the
+/// `take_item` - consume one from the bag, and **only** on the
 /// `0x100` miss call this kernel.
 ///
 /// The order is asserted rather than described: `world::tests::take_item`

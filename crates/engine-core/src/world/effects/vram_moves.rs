@@ -29,7 +29,7 @@ pub struct ScriptVramMove {
 impl ScriptVramMove {
     /// Build from the six decoded operand words in instruction order
     /// `[src_x, src_y, w, h, dst_x, dst_y]` - the payload the field VM hands
-    /// the `FieldScreenHost::op4c_n6_sub0_emitter6` host hook.
+    /// the `FieldScreenHost::vram_move_image` host hook.
     pub fn from_words(words: [i16; 6]) -> Self {
         Self {
             src: (words[0], words[1]),
@@ -40,7 +40,7 @@ impl ScriptVramMove {
 }
 
 impl World {
-    /// Queue a field-VM `4C 60` VRAM `MoveImage` (the `op4c_n6_sub0_emitter6`
+    /// Queue a field-VM `4C 60` VRAM `MoveImage` (the `vram_move_image`
     /// host hook). Applied against the host's software VRAM by
     /// [`Self::apply_script_vram_moves`] - the queue keeps `World`
     /// renderer-free, mirroring the [`Self::spawn_clut_cell_fx`] /

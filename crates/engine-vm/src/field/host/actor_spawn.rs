@@ -16,7 +16,7 @@ pub trait FieldActorSpawnHost {
     /// cutscene records (e.g. the opening chain's `opstati` / `opurud` legs).
     /// The host owns the partition math + the record install.
     // REF: FUN_8003BDE0
-    fn op44_spawn_scene_record(&mut self, global_index: u8) {
+    fn spawn_scene_record(&mut self, global_index: u8) {
         let _ = global_index;
     }
 
@@ -43,18 +43,18 @@ pub trait FieldActorSpawnHost {
     /// `beqz s5,0x801e0eb0` skips straight to the exit.
     // REF: FUN_801D835C (the clone helper), FUN_8003C83C (id resolve),
     // REF: FUN_8003CEB8 (u24 operand), FUN_8003CE9C (s16 operand)
-    fn menu_ctrl_clone_actor(&mut self, src_id: u8, tint_rgb: u32, fade_rate: i16) {
+    fn clone_actor(&mut self, src_id: u8, tint_rgb: u32, fade_rate: i16) {
         let _ = (src_id, tint_rgb, fade_rate);
     }
 
-    /// Op 0x43 sub-12 (allocate scripted actor).
+    /// Op 0x43 sub-12 - the shutter blackout (close / hold / open ticks).
     ///
     /// 5-byte instruction `[43, 0xC, b1, b2, b3]`. Mirrors `FUN_801de754`
     /// which allocates a fresh actor via `func_0x80020DE0(&DAT_801F2858,
     /// _DAT_8007C34C)` and writes the three operand bytes into the new
     /// actor's `+0xB8`, `+0xBA`, `+0xBC` u16 slots. The VM doesn't track
     /// the actor pool - hosts model their own scripted-actor system.
-    fn op43_alloc_scripted_actor(&mut self, b1: u8, b2: u8, b3: u8) {
+    fn spawn_shutter_blackout(&mut self, b1: u8, b2: u8, b3: u8) {
         let _ = (b1, b2, b3);
     }
 
@@ -70,7 +70,7 @@ pub trait FieldActorSpawnHost {
     /// - `+0x50 = mode` (3 for sub-D, 0 for sub-F).
     ///
     /// `mode` is decoded by the VM (3 if sub_op == 0xD else 0).
-    fn op43_alloc_actor_with_mode(&mut self, sub_op: u8, mode: u8, args: [u8; 4]) {
+    fn op43_subdf_alloc_actor(&mut self, sub_op: u8, mode: u8, args: [u8; 4]) {
         let _ = (sub_op, mode, args);
     }
 
@@ -82,7 +82,7 @@ pub trait FieldActorSpawnHost {
     /// `FUN_801DD9D4` (a compare, not a call) - and if found sets
     /// `actor[+0x10] |= 0x8`. The VM passes the
     /// active ctx so hosts can correlate. PC += 2.
-    fn op43_mark_actor_flag_8(&mut self, ctx: &mut FieldCtx) {
+    fn op43_sube_mark_actor_flag_8(&mut self, ctx: &mut FieldCtx) {
         let _ = ctx;
     }
 
@@ -107,7 +107,7 @@ pub trait FieldActorSpawnHost {
     ///
     /// The default impl returns `false` so hosts without an actor pool
     /// just fall through to the `Advance` path.
-    fn op34_capture_pc_for_existing_actor(
+    fn op34_sub2_capture_pc(
         &mut self,
         ctx: &FieldCtx,
         b1: u8,
@@ -142,16 +142,18 @@ pub trait FieldActorSpawnHost {
     /// spawns synchronously: FUN_801D77F4 returns with the slot already
     /// populated, and the parent script advances by 9 unconditionally.
     /// Hosts emit `FieldEvent::ActorSpawned` directly from this hook.
-    fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
+    fn spawn_morph_actor(&mut self, b1: u8, words: [i16; 3]) {
         let _ = (b1, words);
     }
 
-    /// Op 0x4C outer-nibble-E sub-6 - `FUN_801D8280` 3-arg call.
+    /// Op 0x4C outer-nibble-E sub-6 - HSV colour grade of every resident mesh.
     ///
     /// 8-byte instruction `[4C, 0xE6, lo0, hi0, lo1, hi1, lo2, hi2]`. Calls
-    /// `FUN_801D8280(s16_a, s16_b, s16_c)` - an overlay-resident helper.
-    /// PC += 8.
-    fn op4c_n_e_sub6_call_d8280(&mut self, words: [i16; 3]) {
+    /// `FUN_801D8280(dh, ds, dv)`, which walks the resident-object table
+    /// `DAT_8007C018` and hands each object to `FUN_801D5E20`, a destructive
+    /// hue / saturation / value shift of the TMD's packed colour words
+    /// (`docs/subsystems/cutscene.md`). PC += 8.
+    fn hsv_grade_resident_meshes(&mut self, words: [i16; 3]) {
         let _ = words;
     }
 
@@ -168,7 +170,7 @@ pub trait FieldActorSpawnHost {
     ///
     /// Hosts that don't yet model the channel resolver should leave this as
     /// a no-op - the halt-at-PC behaviour is handled by the dispatcher.
-    fn op4c_n_d_sub_2_channel_spawn(&mut self, channel: u8) {
+    fn spawn_placement_if_absent(&mut self, channel: u8) {
         let _ = channel;
     }
 
@@ -188,7 +190,7 @@ pub trait FieldActorSpawnHost {
     /// The host returns `Some(())` when the actor exists, `None` on a miss.
     /// Default impl returns `None` - engines without an actor pool always
     /// take the skip.
-    fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
+    fn actor_guard(&mut self, actor_id: u8) -> Option<()> {
         let _ = actor_id;
         None
     }
@@ -210,7 +212,7 @@ pub trait FieldActorSpawnHost {
     /// `+0x90`, not by the parent script's PC.
     ///
     /// Default no-op. Hosts that model actor allocation override.
-    fn op4c_n8_sub_0_actor_allocator(&mut self, ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
+    fn allocate_child_actors(&mut self, ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
         let _ = (ctx, count, tail);
     }
 }

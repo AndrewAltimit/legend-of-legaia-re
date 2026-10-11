@@ -7,7 +7,7 @@ impl FieldHostImpl<'_> {
     // PORT: FUN_800430AC
     // REF: FUN_80042310
     // REF: FUN_80042EE0
-    pub(super) fn op4c_n5_sub2_take_item(&mut self, item_id: u8) {
+    pub(super) fn take_item(&mut self, item_id: u8) {
         // Op 0x4C n5 sub-2 TAKE_ITEM `[4C, 52, item_id]`, the give-side mirror
         // of `give_item` above. Retail's arm at `0x801E1ABC` consumes one of
         // the id from the bag (`FUN_80042310(item_id, 1)`) and, **only when
@@ -108,7 +108,7 @@ impl FieldHostImpl<'_> {
     /// "every active member". The port keeps that: an operand past the end
     /// of the roster is a no-op, matching a write into a record the game
     /// never populated.
-    pub(super) fn op4c_n8_sub2_restore_party_slot(&mut self, slot: u8) {
+    pub(super) fn restore_party_slot(&mut self, slot: u8) {
         let Some(member) = self.world.party.roster.members.get_mut(slot as usize) else {
             return;
         };

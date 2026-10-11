@@ -1134,7 +1134,7 @@ jump-table slot `0x801CEF58`); the scene reset `FUN_8003A024` zeroes it.
 updaters (`0x801D1344` and siblings), so in retail the shake is a field effect
 and no caller is resident during a fight.
 
-The port models the opcode (`FieldCameraMotionHost::op4c_n8_sub4_set_b630` ->
+The port models the opcode (`FieldCameraMotionHost::set_shake_amplitude` ->
 `World::camera.shake_amplitude`) and steps the kernel from the shared battle
 camera, which owns the same translation pair. The offset is held beside the
 framing pose rather than inside it, so a live shake cannot stall a rate-clamped

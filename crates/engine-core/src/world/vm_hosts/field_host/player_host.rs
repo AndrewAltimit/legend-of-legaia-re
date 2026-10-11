@@ -44,7 +44,7 @@ impl<'a> FieldPlayerHost for FieldHostImpl<'a> {
     /// which the settle tail and the player clip arms read.
     ///
     /// REF: FUN_801DE840 (the nibble-C sub-`0xE` arm)
-    fn op4c_n_c_sub_e_set_b6ac(&mut self, value: u8) {
+    fn set_player_clip_override(&mut self, value: u8) {
         self.world.locomotion.clip_override = u32::from(value);
     }
 }

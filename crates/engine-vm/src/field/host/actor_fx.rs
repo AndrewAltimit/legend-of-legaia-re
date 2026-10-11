@@ -31,7 +31,7 @@ pub trait FieldActorFxHost {
     /// Returns `true` when a light was spawned: only then does the VM consume
     /// the `0x40` block as part of the instruction. Default: no light pool,
     /// the skip path.
-    fn op34_sub1_spawn_attached(
+    fn spawn_attached_light(
         &mut self,
         ctx: &FieldCtx,
         ext: Option<u8>,
@@ -55,7 +55,7 @@ pub trait FieldActorFxHost {
     ///
     /// No shipped scene issues it; the four `4C 86` carriers drop their
     /// controllers on the scene boundary instead.
-    fn op4c_n8_sub7_retire_reflections(&mut self) {}
+    fn retire_reflections(&mut self) {}
 
     /// Set the actor's draw **tint** (op 0x4C n8 sub-1, 9 bytes).
     ///
@@ -80,7 +80,7 @@ pub trait FieldActorFxHost {
     /// host whose runner hands the op a stand-in context must land the tint
     /// on the named actor, not on `ctx`. The VM always advances PC by 9
     /// (10 with the prefix); the default impl is a no-op.
-    fn op4c_n_8_sub_1_set_tint(
+    fn set_actor_tint(
         &mut self,
         ctx: &mut FieldCtx,
         target: Option<u8>,
@@ -115,7 +115,7 @@ pub trait FieldActorFxHost {
     /// branch is taken.
     ///
     /// The default impl returns `false` (no actor pool).
-    fn op4c_n8_sub6_install_reflection(
+    fn install_reflection(
         &mut self,
         ctx: &mut FieldCtx,
         source_id: u8,
@@ -125,7 +125,8 @@ pub trait FieldActorFxHost {
         false
     }
 
-    /// Op 0x4C n6 sub-0x61 - 16-byte halt-acquire emitter (FUN_801E4C58 caller).
+    /// Op 0x4C n6 sub-0x61 - scripted CLUT-cell effect behind the 16-byte
+    /// halt-acquire arm (FUN_801E4C58 caller).
     ///
     /// `payload` is the 14-byte operand slice (bytes +1..+15 of the
     /// instruction, including the gating word at +0xD..=+0xE). The VM has
@@ -136,7 +137,7 @@ pub trait FieldActorFxHost {
     /// [`super::FieldHaltHost::field_halt_acquire_apply`]).
     ///
     /// Default no-op. Hosts that model the emitter graph override.
-    fn op4c_n6_sub_61_emitter(&mut self, ctx: &mut FieldCtx, payload: [u8; 14]) {
+    fn spawn_clut_cell_fx(&mut self, ctx: &mut FieldCtx, payload: [u8; 14]) {
         let _ = (ctx, payload);
     }
 }

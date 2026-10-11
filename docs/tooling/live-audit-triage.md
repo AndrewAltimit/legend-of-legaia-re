@@ -111,7 +111,7 @@ a defect.
 
 A default method in a `trait` body has no `impl` block, so it was filed as a
 free function while a caller writing `host.method(...)` is matched against
-methods only. The two never met. Control: `op4c_n5_sub0_set_actor_model`
+methods only. The two never met. Control: `set_actor_model`
 (`80024e08`) is the `FieldHost` default body; the production implementor
 `FieldHostImpl` does not override it, so the default is what runs. **Fix:**
 `trait Name { }` bodies are scanned alongside `impl` blocks and a default method
@@ -265,7 +265,7 @@ crates; each row's site names the owning crate.
 | `8001fa68` | `list_append_u16` | `crates/engine-vm/src/actor_node_pool.rs` | REPLACE |
 | `80020424` / `80020454` / `800204a4` | `alloc_list_head` / `alloc_and_append` / `free` | `crates/engine-vm/src/actor_node_pool.rs` | DISCLOSE |
 | `80021b04` | `spawn_move_actor` | `crates/engine-vm/src/move_vm/spawn.rs` | REPLACE |
-| `80024e08` | `op4c_n5_sub0_set_actor_model` | `crates/engine-vm/src/field/host/actor.rs` | FALSE INERT |
+| `80024e08` | `set_actor_model` | `crates/engine-vm/src/field/host/actor.rs` | FALSE INERT |
 | `8003c9ac` | `motion_pause_kick` + module | `crates/engine-field/src/motion_pause.rs` | WIRE (wired) |
 | `8003fb10` | `validate_action` | `crates/engine-battle-vm/src/battle_action/validator.rs` | WIRE (wired) |
 | `80046898` | `item_count_gate` | `crates/engine-battle-vm/src/battle_action/validator.rs` | WIRE (wired) |
@@ -294,7 +294,7 @@ Grouped by the defect that hid the edge. This is the regression set.
   the field-FX debug key. The edge is real, so `NOT WIRED:` would be false. The
   caller reads only `node.mode` for a log line, though: the routing the port
   exists for (sending `SoundEmitter` to the audio host) has no consumer.
-- **Trait default method.** `op4c_n5_sub0_set_actor_model`, as above.
+- **Trait default method.** `set_actor_model`, as above.
 - **Type-anchor granularity.** `MapObject` (behaviour in the free
   `parse_map_objects`), `ClutCellFx` (`World::step_clut_fx` plus `read_cell`),
   `OptionsPhase` (`OptionsSession::tick`, live through the `web-viewer` roots).
@@ -443,7 +443,7 @@ section.
 - **`apply_shake`** (`801d9d30`) is `DISCLOSE`. Its `amplitude` is a `1..=0x15`
   shift count read from `_DAT_8007B630`, whose only retail writer is a field-VM
   opcode (`overlay_0897_801de840.txt` `0x801E2134`, a 3-byte instruction). The
-  port models the opcode (`FieldCameraMotionHost::op4c_n8_sub4_set_b630` ->
+  port models the opcode (`FieldCameraMotionHost::set_shake_amplitude` ->
   `World::camera.shake_amplitude`). The global's second reader is the field
   follow camera `FUN_801DB510`, which loads it at `0x801DB850` and folds the
   shake into its zone ease; the port's follow camera consumes it too.
@@ -640,7 +640,7 @@ Rows with their own findings:
 - **`ease_camera_offset`** (`801da390`). `zone_angle` is the camera-zone
   record's `+0x4A`; its retail writer is field-VM op `0x4C` outer-nibble-4
   sub-9, the same opcode that writes `_DAT_8007BCAC` on its delta arm
-  (`op4c_n4_sub9_default_write` / `_default_ramp` / `_delta_write_or_ramp`). The
+  (`write_camera_offset` / `_default_ramp` / `_delta_write_or_ramp`). The
   channel is a height, not a yaw; see the camera-ease block below.
 - **`reset_pool`** (`8003cda8`). The player's `player_scale_ramps` outlives a
   scene, and `World::install_field_player` resets it there.
@@ -1030,7 +1030,7 @@ backwards in one direction:
 | `mode_entry_init::field_prim_buffer_bytes` | `REPLACE` | `engine-render`'s wgpu draw lists; the backend owns the allocation, so an arena size has no consumer |
 | `fade_ramp` | `DISCLOSE` | the battle-teardown owner: substituting `FadeRamp` for `FadeState` moves the fade's lifetime, which is a behaviour change, not a call |
 | `camera_ease` | `DISCLOSE`, since closed as `WIRE` | `World`, whose `FieldCameraMotionHost::op4c_n4_sub9_*` hooks were no-op defaults. They are implemented now, so the offset is posted and stepped - see the camera-ease block below |
-| `vram_rect_copy` | `DISCLOSE` | `engine-render`, which implements no `FieldScreenHost::op43_vram_rect_copy`; the software VRAM it would blit inside already exists |
+| `vram_rect_copy` | `DISCLOSE` | `engine-render`, which implements no `FieldScreenHost::queue_vram_rect_copies`; the software VRAM it would blit inside already exists |
 | `panel_backread_loader` | `DISCLOSE` | its only retail caller `FUN_80025358` is unported |
 | `mode::mode_init_bare` | `DISCLOSE` | a production owner of `ModeDriver` - `engine-session`'s `BootSession::tick` handing frame sequencing to the driver |
 | `mode_entry_init::field_bgm_plan` | `DISCLOSE`, since closed as `WIRE` | the two-part arm is the credits theme; `mode_entry_init::two_part_bgm_stream` stages its score and bank at scene entry, so the plan is live |
@@ -1225,7 +1225,7 @@ post the accumulator itself because that same bit is `FUN_801DA390`'s input
 lock (`0x801DA398`), so the easing returns before its first store while it is
 raised.
 
-`FieldCameraMotionHost::op4c_n4_sub9_player_relative_write`'s hook doc named only the
+`FieldCameraMotionHost::write_camera_offset_player_relative`'s hook doc named only the
 `scene_ctrl[+0x4A]` store and missed the `_DAT_8007BCAC = target` one at
 `0x801E1560`; it is corrected with the hook.
 
@@ -1241,7 +1241,7 @@ globals as unset, with the field-VM arms identified. They are op `0x4C`
 outer-nibble-4 subs `0xA`/`0xB`/`0xC`, whose immediate stores are the
 branch-delay slots at `0x801E1648` (`sw v0,-0x4330(v1)`), `0x801E1688`
 (`-0x432c`) and `0x801E16C8` (`-0x4328`). `World` now implements
-`FieldScreenHost::op4c_nibble4_global_write` onto the tuple, so a scene script that
+`FieldScreenHost::write_or_ramp_global_slot` onto the tuple, so a scene script that
 sets the globals arms the gate the way `FUN_801D1344` does. Sub `0xD` scales by
 `_DAT_8008457C >> 12` into `0x8007B910` (`0x801E1700..0x801E1720`) and is
 dropped - the engine has no consumer, and parking it somewhere would only
@@ -1420,7 +1420,7 @@ withdrawn claim is only useful with its refutation attached.
 
 | Anchor | The claim that does not hold |
 |---|---|
-| `801de2b0` | Named a host hook for field-VM op `0x34` sub-0 as missing. The hook exists and is live (`World::op34_sub0_color_intensity_setup`), and both retail call sites are in that op's sub-0 arm - `jal 0x801DE2B0` at `0x801DFD68` and `0x801DFEE8`, on the `_DAT_1F800394 & 0x800000` default side of the fork. The gap behind that was a representation conflict, since resolved in favour of the push: the op seats its tweens through `World::spawn_colour_tween` and the float ramp beside them is gone. |
+| `801de2b0` | Named a host hook for field-VM op `0x34` sub-0 as missing. The hook exists and is live (`World::set_effect_colour`), and both retail call sites are in that op's sub-0 arm - `jal 0x801DE2B0` at `0x801DFD68` and `0x801DFEE8`, on the `_DAT_1F800394 & 0x800000` default side of the fork. The gap behind that was a representation conflict, since resolved in favour of the push: the op seats its tweens through `World::spawn_colour_tween` and the float ramp beside them is gone. |
 | `801cee80` | Named `FUN_80025980` at `0x80025AA0` as the retail caller, ported in `engine-core::world::mode_world`. That `jal` is one arm of a seven-way jump table (`sltiu v0,v1,0x7`, base `lui v0,0x8001; addiu v0,v0,0xae4`) dispatching per minigame sub-id into the **slot-A overlay's own** routine at this VA, which has a real prologue. The body ported here is different bytes - its dump opens `sh a1,0x16(v0)`, mid-function code storing through a register nothing in the window sets. So the port has no identified caller, and whether the VA is a function entry wants a re-dump. |
 | `8004c650` | Called the walked table a runtime table and made staging it the prerequisite. The walk is over the **static** SCUS arts-name table `DAT_80075EC4` (`lbu v1,0x5ec4(a2)` at `0x8004C664`, 20-byte stride, `0x63` sentinel); `0x80076C10` is only the placement block the X is written into. `legaia_art::arts_table::parse_from_scus` already decodes that table and is live. |
 | `801d4c50` | Made "the duel host must stage art at all" the prerequisite. The browser minigames host stages the duel's art in full - both fighters' meshes, both anim banks, the stage set and the duel VRAM - and still does not call this walk, because `legaia_minigame_formats::baka_opponents::parse_fighter_pack` walks the same chunk chain into typed sub-assets. |

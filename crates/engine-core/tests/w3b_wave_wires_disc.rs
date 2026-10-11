@@ -18,7 +18,7 @@
 //! |---|---|---|
 //! | actor clone | `4C 14 <r> <g> <b> <rate:i16> <src>` | `World::spawn_actor_clone` (`FUN_801D835C`), then `World::tick_handler_actors`' clip-fade kernel (`FUN_801D820C`) |
 //! | reflection install | `4C 86 <w0..w5:i16> <src>` | `World::spawn_reflection_controller` (`FUN_801E573C`), then `tick_reflection_controllers` (`FUN_801E5154`) |
-//! | screen-effect tween | `34 0x <r> <g> <b> <dur:i16>` | `op34_sub0_color_intensity_setup` (`FUN_801DE2B0` spawn), then the pool's `ScreenTintPush` (`FUN_80024EE4`) |
+//! | screen-effect tween | `34 0x <r> <g> <b> <dur:i16>` | `set_effect_colour` (`FUN_801DE2B0` spawn), then the pool's `ScreenTintPush` (`FUN_80024EE4`) |
 //!
 //! ## What is seeded, and why that is not inventing content
 //!

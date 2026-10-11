@@ -12,7 +12,7 @@ impl FieldHostImpl<'_> {
     // stepping onto the player's spot facing his way (`CC 09 E3 F8` in
     // `stone`). Headings copy in the engine's own space on both sides.
     // REF: FUN_801DE840 (0x801E3108..0x801E31B0), FUN_8003C83C
-    pub(super) fn op4c_n_e_sub_3_actor_sync_camera(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
+    pub(super) fn teleport_to_actor(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
         let w = &mut *self.world;
         let src = if actor_id == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET {
             w.player_actor_slot
@@ -104,7 +104,7 @@ impl FieldHostImpl<'_> {
         }
     }
 
-    pub(super) fn op4c_nibble4_ctx_ramp(
+    pub(super) fn ramp_ctx_slot(
         &mut self,
         ctx: &mut FieldCtx,
         sub: u8,
@@ -165,7 +165,7 @@ impl FieldHostImpl<'_> {
     /// Retail passes `&target[+0x14]` as the start block, so the ease begins
     /// at the target's **live** position; the engine reads the same triple
     /// off whichever seat it resolves the ctx to.
-    pub(super) fn op43_sub9_tween(
+    pub(super) fn tween_actor_position(
         &mut self,
         ctx: &mut FieldCtx,
         x: u16,
@@ -248,7 +248,7 @@ impl FieldHostImpl<'_> {
         // spawned partition-2 record's context inherits - so without this arm
         // a scene-arrival record's `0x23` yanked the player wherever the
         // record seated its own actor, the hide box `(127,127)` included.
-        // This is the same law [`Self::op4c_n5_sub1_npc_run`] already carries
+        // This is the same law [`Self::run_to_tile`] already carries
         // for the `4C 51` form; the slice's write-through surfaces the move
         // into the placement-keyed NPC state.
         // REF: FUN_8003C83C (cross-context target resolve)
@@ -346,7 +346,7 @@ impl FieldHostImpl<'_> {
     /// (the dispatcher indexes the SCUS compass LUT at `0x80073F04`), the same
     /// LUT the paired `0x38` CAM_CFG uses.
     // PORT: FUN_801DE840 (nibble-5 sub-1: position write + heading LUT + move-anim)
-    pub(super) fn op4c_n5_sub1_npc_run(
+    pub(super) fn run_to_tile(
         &mut self,
         ctx: &mut FieldCtx,
         world_x: u16,

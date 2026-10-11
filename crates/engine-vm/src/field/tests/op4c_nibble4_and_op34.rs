@@ -27,7 +27,7 @@ fn menu_sub_0_masks_leader_to_low_3_bits() {
 fn menu_sub_1_advances_seven_and_dispatches_to_host() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
-    // op0 = 0x12 → high nibble 1 → menu_ctrl_sub1.
+    // op0 = 0x12 → high nibble 1 → set_scene_colour.
     let r = step(
         &mut host,
         &mut ctx,
@@ -211,7 +211,7 @@ fn op_4c_outer_dispatcher_has_no_remaining_pending_arms() {
     // `Advance` / `Halt` / `Yield` / `Unknown` - none returns
     // `Pending`. n8 sub-3 (box-fill table via FUN_801D5630) was the
     // last truly-pending case; it now invokes
-    // [`FieldTerrainHost::op4c_n_8_sub_3_rect_tile_fill`] and advances PC.
+    // [`FieldTerrainHost::rect_tile_fill`] and advances PC.
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x4C, 0x83, 0, 0, 0, 0, 0], 0);
@@ -609,7 +609,7 @@ fn op_4c_n4_sub_9_delta_ramp_advances() {
 
 #[test]
 fn op_4c_n4_sub_9_state_default_when_no_story_bits_set() {
-    // Verify the FieldCameraMotionHost::op4c_n4_sub9_state default impl reads global flags.
+    // Verify the FieldCameraMotionHost::camera_offset_mode default impl reads global flags.
     let host = TestHost {
         globals: 0x0000_0000,
         ..TestHost::default()
