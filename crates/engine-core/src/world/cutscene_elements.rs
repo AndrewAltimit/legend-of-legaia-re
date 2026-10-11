@@ -180,7 +180,7 @@ impl World {
     /// PORT: FUN_801D6704
     ///
     /// WIRED: the field arm of `Scene::enter_field_scene`
-    /// (`scene/host/scene_entry.rs`) calls this beside the
+    /// (`scene_host/scene_entry.rs`) calls this beside the
     /// `legaia_engine_system::mode_entry_init::field_spawn` that seats the player, so every
     /// cold field entry on both hosts installs exactly one emitter. What no
     /// host yet DRAWS is the particles themselves: the channel fills

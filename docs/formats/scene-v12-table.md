@@ -229,7 +229,7 @@ A `.PCH` embeds nothing. Read with the superseded entry size, extraction entries
 
 What is true of `dolk2` and `rikuroa`: they are the two scenes whose **own** base+3 bundle is the MAN-less `count = 4` form (types `[1, 2, 6, 0x14]`; the type-`0x14` slot is a small LZS filler, not a MAN carrier). Their partition scripts come from a standalone `data_field_streaming` entry in each block whose type-3 chunk is a plain MAN (`dolk2` extraction 70, partitions `[29, 73, 17]`; `rikuroa` extraction 157, `[13, 29, 64]`).
 
-The live script heap at the Mt. Rikuroa Caruban beat byte-matches the `0157` chunk ([script-vm.md](../subsystems/script-vm.md#a-second-script-byte-carrier-the-streaming-variant-man)). The engine resolves it via the `field_man_payload` streaming fallback (`legaia_engine_core::scene_bundle::streaming_man_payloads`, disc-gated `crates/engine-core/tests/v12_bundle_man_disc.rs`).
+The live script heap at the Mt. Rikuroa Caruban beat byte-matches the `0157` chunk ([script-vm.md](../subsystems/script-vm.md#a-second-script-byte-carrier-the-streaming-variant-man)). The engine resolves it via the `field_man_payload` streaming fallback (`legaia_engine_scene::scene_bundle::streaming_man_payloads`, disc-gated `crates/engine-scene/tests/v12_bundle_man_disc.rs`).
 
 ## Ruled out
 

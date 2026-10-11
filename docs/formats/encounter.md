@@ -234,11 +234,11 @@ The id is **not** an inline script literal. It is **town01 MAN formation index 4
 
 A live save state's table is byte-identical to the engine's MAN parse (`legaia_scene_formats::man_section` → `encounter_man::scene_encounter_from_man`, 7 formations). The carrier points `actor[+0x94]` at row 4 and `FUN_801DA51C` copies it on the dialogue accept.
 
-Not an inline `[count=1][0x4F]` operand: an opcode-aware walk of town01's partition-1 scripts finds none, and a naive `0x37` / `0x41` byte scan only lands inside embedded dialog text (`crates/engine-core/tests/town01_p1_arm_sites.rs`; survey CLI `legaia-engine man-scripts --scene <name>`).
+Not an inline `[count=1][0x4F]` operand: an opcode-aware walk of town01's partition-1 scripts finds none, and a naive `0x37` / `0x41` byte scan only lands inside embedded dialog text (`crates/engine-scene/tests/town01_p1_arm_sites.rs`; survey CLI `legaia-engine man-scripts --scene <name>`).
 
 ### The carrier entity
 
-The actor that installs this fight is the one town01 partition-1 placement at **tile (76, 65)** with **model byte `0x6A`**, mirrored as `RIM_ELM_SPARRING_CARRIER_TILE` / `RIM_ELM_SPARRING_CARRIER_MODEL` in [`encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs) and locked by `crates/engine-core/tests/rim_elm_sparring_carrier.rs`.
+The actor that installs this fight is the one town01 partition-1 placement at **tile (76, 65)** with **model byte `0x6A`**, mirrored as `RIM_ELM_SPARRING_CARRIER_TILE` / `RIM_ELM_SPARRING_CARRIER_MODEL` in [`encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs) and locked by `crates/engine-scene/tests/rim_elm_sparring_carrier.rs`.
 
 **The install is disc-visible.** The sparring prompt is an ordinary MES-embedded **option picker** (`legaia_mes::scan_pickers` / `Picker::jump_target`; runner in [`script-vm.md`](../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)), four options wide. The fight option's branch runs `3E FF 04`: partition-1 **record 10**, offset `+0x07F7`, three instructions past the `4A 10 00` `WaitFrames 16` at `+0x07EE`. It is the only `3E FF` in the scene's talk records. The other three options run a talk reply and no fight.
 

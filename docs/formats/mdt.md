@@ -74,7 +74,7 @@ Examples (verified by mednafen save-state diff against `_DAT_8007B888`):
 The `+0x04` u32 in the scene_asset_table header is the sum of the descriptors' decompressed sizes; retail never reads it (`FUN_80020224` reads `+0x00` then steps from `+0x08`) - see [scene-bundles.md](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle).
 
 - Each descriptor (including `desc[4]` = Move) is its own independently LZS-compressed stream at `data_offset` bytes into the bundle entry (`Archive::read_entry`), decompressing to exactly `size` bytes. The payload lies inside the entry's own sectors - an entry's size is the sector gap to the next TOC entry ([prot.md](prot.md)).
-- See [`engine-core::scene_bundle::extract_move_payload`](../subsystems/engine.md) for the canonical pattern.
+- See [`engine-scene::scene_bundle::extract_move_payload`](../subsystems/engine.md) for the canonical pattern.
 
 `scene_asset_table::move_descriptor` exposes the slot lookup as a typed accessor:
 

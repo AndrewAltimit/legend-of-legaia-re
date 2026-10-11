@@ -433,7 +433,7 @@ row corrected: the sub-state switch on `+0x5A` is two switches, not one.
 
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/scene/host/scene_entry.rs:801d1ec4"
+key = "module-orphan:crates/engine-core/src/scene_host/scene_entry.rs:801d1ec4"
 reason = """
 The finding appeared when overlay_cutscene_str_0970_801cea3c.txt was dumped: the
 sibling tag 801cea3c now has a corroborating dump from PROT 0970 (cutscene_str),
@@ -954,7 +954,7 @@ the routines that were inlined.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/cd_dma.rs:8005ea84"
+key = "module-orphan:crates/engine-scene/src/cd_dma.rs:8005ea84"
 reason = """
 A layer boundary, visible in the bytes. FUN_8005EA84 forms 0x800796E0
 (`lui s1,0x8008` / `addiu s1,s1,-0x6920` at 0x8005EA9C) - the libcd streaming-read
@@ -1011,7 +1011,7 @@ conflict.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/overlay_loader.rs:8003ebe4"
+key = "module-orphan:crates/engine-scene/src/overlay_loader.rs:8003ebe4"
 reason = """
 The two loaders are twins that deliberately share NO datum, which makes the
 orphan verdict structural. Read side by side: 8003EBE4 writes gp+0x924

@@ -56,7 +56,7 @@ Three of the nine paths (`\DATA\MOV.STR;1`, `\DATA\MOV15.STR;1`, `\MOV\MV1A.STR;
 
 ## Return-scene labels (`0x801CE8AC`)
 
-The same overlay data section carries seven CDNAME-shape labels: `town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`. These are the **post-FMV return scenes**: after the play loop exits, the master dispatch (`FUN_801CEA3C`) copies the label for the just-played `fmv_id` into the next-scene name global `0x80084548`, writes a spawn/door word to `0x80084540`, and hands the game mode back to the field chain (see the mapping table below). They match `legaia_engine_core::scene::FMV_TRIGGER_FIELD_SCENES`.
+The same overlay data section carries seven CDNAME-shape labels: `town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`. These are the **post-FMV return scenes**: after the play loop exits, the master dispatch (`FUN_801CEA3C`) copies the label for the just-played `fmv_id` into the next-scene name global `0x80084548`, writes a spawn/door word to `0x80084540`, and hands the game mode back to the field chain (see the mapping table below). They match `legaia_engine_scene::scene::FMV_TRIGGER_FIELD_SCENES`.
 
 ## FMV dispatch table (`0x801D0A6C`, 23 × 32 B)
 

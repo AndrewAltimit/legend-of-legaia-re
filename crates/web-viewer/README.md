@@ -648,7 +648,7 @@ the answer to "a `scene_asset_table` entry viewed alone shows one
 object-local mesh at the origin". The build is the engine-parity path:
 `SceneResources::build_targeted_with_options` (field-mode VRAM pre-pass +
 the LZS-packed environment TMD pack), the shared
-`engine-core::field_env` kernel (env-pack vote + `.MAP` object-grid
+`engine-scene::field_env` kernel (env-pack vote + `.MAP` object-grid
 placement resolution + floor-height-LUT world Y), the terrain-tile layer,
 and the walk-ground heightfield. Accessors mirror the kingdom `pack_*`
 family: `field_scene_mesh(slot)` + `field_scene_mesh_*` per-mesh arrays,

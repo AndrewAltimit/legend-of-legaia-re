@@ -1134,10 +1134,10 @@ impl SceneHost {
             // Decode the "It was the Seru." caption image from the scene's
             // geometry pack (PROT 0749). It is a baked TIM, not text - the host
             // blits it, faded, in the gap between the two narration crawls (see
-            // `crate::cutscene_caption`). `None` when the disc / entry is absent.
+            // `legaia_engine_scene::cutscene_caption`). `None` when the disc / entry is absent.
             if let Some(scene) = self.scene.as_ref() {
                 self.world.cutscene.caption =
-                    crate::cutscene_caption::decode_opdeene_caption(scene);
+                    legaia_engine_scene::cutscene_caption::decode_opdeene_caption(scene);
                 if self.world.cutscene.caption.is_some() {
                     log::info!("prologue: decoded 'It was the Seru.' caption image (PROT 0749)");
                 }

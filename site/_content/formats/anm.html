@@ -15,7 +15,7 @@
     <dt>Marker</dt><dd>No magic word; every record header carries <code>marker_1 = 0x080C</code></dd>
     <dt>Size / stride</dt><dd>Record = <code>16 + 8 &times; bones &times; frames</code> bytes; one 8-byte entry per (bone, frame)</dd>
     <dt>Parser</dt><dd><code>crates/anm</code>, <code>legaia_actor_formats::player_anm</code>, <code>legaia_actor_formats::character_pack::field_locomotion_anm</code></dd>
-    <dt>Engine</dt><dd><code>engine-core::field_env::PropAnim</code>, <code>engine-vm::anim_vm</code>, <code>engine-vm::actor_tick</code></dd>
+    <dt>Engine</dt><dd><code>engine-scene::field_env::PropAnim</code>, <code>engine-vm::anim_vm</code>, <code>engine-vm::actor_tick</code></dd>
     <dt>Confidence</dt><dd>Confirmed - decode and playback traced in disassembly; decoded bundles byte-match the runtime copies in save states</dd>
     <dt>Used by</dt><dd><a href="../subsystems/field-locomotion.html">field locomotion</a>, <a href="../subsystems/script-vm.html">field script VM</a>, <a href="../characters.html">characters</a> and <a href="../npcs.html">NPC</a> viewers</dd>
   </dl>

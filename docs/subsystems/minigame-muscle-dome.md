@@ -56,7 +56,7 @@ flowchart TD
 
 The arena is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 105` (`sub_id 5`), which sets game mode `0x18` and loads the door/init slot PROT 0977. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `engine-mode::minigame_entry::MinigameSubId`.
 
-Every dome door on the disc is in `koin1` P1[9] - three sites in one record, which is the **course menu**: each arm debits its entry fee through `0x4C 0xE5` and latches one of the course flags before its own `0x3E 0x69`. `taiku` carries none (its only `0x3E` sites are `0xFF` interacts), so it is not the arena's door despite the label. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+Every dome door on the disc is in `koin1` P1[9] - three sites in one record, which is the **course menu**: each arm debits its entry fee through `0x4C 0xE5` and latches one of the course flags before its own `0x3E 0x69`. `taiku` carries none (its only `0x3E` sites are `0xFF` interacts), so it is not the arena's door despite the label. Census test: `crates/engine-scene/tests/minigame_entry_census_disc.rs`.
 
 **How the two routines are reached.**
 
@@ -858,7 +858,7 @@ The `Turns Left / HP Left` strip lives in the battle overlay and its phase-`0x14
 | HP-Left number | `DAT_801F6959 = DAT_801C937C[+0x14c] * 100 / DAT_801C937C[+0x14e]`, drawn at x=`0xD2`, 3 digits |
 | Draw calls | `func_0x8003541c` registers the label (key `1`, `addiu a0,zero,1` at `0x801D0F98`); one `func_0x8003563c` per number - the per-actor draw-record queue append ([`script-vms.md`](../reference/functions/script-vms.md)), not a gauge routine |
 
-- `0x8007BD0C` is the four-slot **formation cell** the encounter reader fills ([`encounter.md`](../formats/encounter.md), `engine-battle::encounter_record`, `capture_observations::battle_init_overlay::FORMATION_CELL_ADDR`). Monster `0xB6` is **Koru** (PROT 867 slot `(0xB6-1) * 0x14000`); the neighbouring `0xB5` tested at `0x801D0DEC` is the final-form Cort, which `engine-core::overlay_loader` special-cases.
+- `0x8007BD0C` is the four-slot **formation cell** the encounter reader fills ([`encounter.md`](../formats/encounter.md), `engine-battle::encounter_record`, `capture_observations::battle_init_overlay::FORMATION_CELL_ADDR`). Monster `0xB6` is **Koru** (PROT 867 slot `(0xB6-1) * 0x14000`); the neighbouring `0xB5` tested at `0x801D0DEC` is the final-form Cort, which `engine-scene::overlay_loader` special-cases.
 - The dome cannot satisfy the gate: its highest roster id is `0xAA`, the cell has one writer in the arena overlay (`FUN_801D1510`) and none in the battle overlay.
 - The `× 100` is a shift-add chain at `0x801D0F38..0x801D0F4C` (`sll 1`, `addu`, `sll 3`, `addu`, `sll 2`); an independently based dump (`overlay_0896_801f04b0.txt`) reproduces it. `DAT_801C937C` is actor-table index 3, the first **enemy** slot, so the percentage is the opponent's and there is one number on screen.
 - Phase `0x14` computes and stamps; phase `0x6E` (and the input arm around `0x801D2900`) only re-stamps the two globals. The function contains exactly two ratio computations, both in the `0x14` arm.

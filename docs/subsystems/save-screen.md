@@ -135,7 +135,7 @@ overlay). Only two write a dereferenceable pointer: this arm, and
 `DAT_801F2278` (kind `0x0B`). Every other writer stores `0` or the `1`
 sentinel. A kind byte other than `0x0B` is therefore always a field script's
 own operand, so "which of these screens can retail reach" is a disc question;
-`crates/engine-core/tests/op49_sub_op_census.rs` measures it. See
+`crates/engine-scene/tests/op49_sub_op_census.rs` measures it. See
 [field-menu.md](field-menu.md#top-level-pause-menu).
 
 The port carries the byte rather than a pointer: `SubmodeScreen::park_sub_op`,

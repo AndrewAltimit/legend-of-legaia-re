@@ -110,7 +110,7 @@ impl LegaiaMinigames {
         // which carries a display index, not the action constant - the
         // constants live in the per-character art records (PROT `0x05C4`)
         // this page does not decode. The arena-door warp path
-        // (`engine-core::scene::host::minigame_warp`) and the native window's
+        // (`engine-core::scene_host::host::minigame_warp`) and the native window's
         // own dome entry both install one through
         // `muscle_dome::art_catalog_for`; this panel owes the art-record
         // decode, not another filter.

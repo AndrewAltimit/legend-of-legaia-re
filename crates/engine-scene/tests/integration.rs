@@ -5,7 +5,6 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-engine-scene --test integration <name>::`.
 
-mod battle_stage_boss_transition;
 mod cd_dma_real_prot;
 mod coplanar_residual_disc;
 mod env_clut_coverage_disc;

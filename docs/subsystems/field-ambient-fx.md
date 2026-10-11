@@ -913,7 +913,7 @@ oscillators.
 ## Port notes
 
 - Walker tables: `legaia_scene_formats::clut_walk::{from_scene_bundle, scene_park_strips}`
-  feeding `engine-core::clut_walk_anim`. VDF packs: `legaia_scene_formats::scene_vdf`.
+  feeding `engine-scene::clut_walk_anim`. VDF packs: `legaia_scene_formats::scene_vdf`.
 - Ambient tree: `engine-core::world::ambient` (pool capped at the retail 143,
   op-`0x25` record 0 refused), installed by the scene-entry prologue pre-run
   (`World::pre_run_field_channel_prologues` executing each op-`0x34` sub-3,

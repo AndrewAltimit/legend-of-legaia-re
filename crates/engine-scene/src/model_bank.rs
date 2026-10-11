@@ -237,11 +237,9 @@ impl SceneModelBank {
     ///
     /// `SceneHost::model_bank` holds one per loaded scene, rebuilt on every
     /// field entry; both hosts resolve a scripted mesh re-bind's operand
-    /// through it ([`World::field_npc_live_model`] then [`Self::tmd_bytes`]) -
+    /// through it (`World::field_npc_live_model` then [`Self::tmd_bytes`]) -
     /// the native window in `upload_assets`, the browser through the
     /// `play_npc_live_model` export its NPC draw consults.
-    ///
-    /// [`World::field_npc_live_model`]: crate::world::World::field_npc_live_model
     pub fn build(scene: &Scene) -> Self {
         let mut sources = Vec::new();
         let bundle_entry = if let Some(bundle) = find_bundle(scene) {

@@ -701,7 +701,7 @@ impl World {
     /// actor other than the record's own (often the neighbouring placement,
     /// sometimes a second actor the same talk turns to), and
     /// the 24 in object records and 861 in cutscene records have no own
-    /// actor at all (`crates/engine-core/tests/talk_face_acquire_bind_disc.rs`).
+    /// actor at all (`crates/engine-scene/tests/talk_face_acquire_bind_disc.rs`).
     /// A bind the channel set cannot resolve falls back to the conversation's
     /// own placement; a window with no player or nothing to face closes at
     /// once rather than holding the talk's player-targeted ops.

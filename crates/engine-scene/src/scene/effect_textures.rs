@@ -52,7 +52,7 @@ const BEFECT_ETIM_SECTION: usize = 2;
 ///
 /// This makes the texels resident for effect-model rendering. (It does *not*
 /// feed the 2D `efect.dat` sprite-atlas billboards, which sample a separate
-/// page-`(0,0)` 8bpp source - see [`crate::world::World::active_effect_sprites`]
+/// page-`(0,0)` 8bpp source - see `World::active_effect_sprites`
 /// and the open atlas-source thread in `docs/formats/effect.md`.)
 ///
 /// Mirrors `seed_global_tmd_pool_from_befect_data`'s LZS path. Soft-fails;

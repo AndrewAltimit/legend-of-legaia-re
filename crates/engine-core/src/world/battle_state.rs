@@ -479,10 +479,10 @@ pub struct BattleState {
     /// [`crate::world::World::battle_stage_id`].
     pub stage_id: u8,
     /// PROT 0968's own data words while it runs.
-    pub(crate) arrival: legaia_engine_scene::battle_stage_module::ArrivalState,
+    pub(crate) arrival: crate::battle_stage_module::ArrivalState,
     /// The backdrop actors' object table has had slot 1 copied over slot 0 -
     /// the arrival's hand-back rebind
-    /// ([`legaia_engine_scene::battle_stage_module::StageEffect::RebindBackdrop`]). Both
+    /// ([`crate::battle_stage_module::StageEffect::RebindBackdrop`]). Both
     /// hosts build the stage shell from
     /// [`crate::scene_host::SceneHost::battle_stage_object_indices`], which reads
     /// it; reset at battle entry.
@@ -529,11 +529,11 @@ pub struct BattleState {
     /// entry.
     pub vram_loads: crate::battle_party_form::VramWriteLog,
     /// PROT 0969's own data words while it runs.
-    pub(crate) form_transition: legaia_engine_scene::battle_stage_module::FormTransitionState,
+    pub(crate) form_transition: crate::battle_stage_module::FormTransitionState,
     /// The camera globals a stage module owns while it runs; `None` when the
     /// phase-scripted battle camera owns them. `World::battle_cam_pose`
     /// reads this first, so both hosts draw the module's camera.
-    pub stage_camera: Option<legaia_engine_scene::battle_stage_module::StageCamera>,
+    pub stage_camera: Option<crate::battle_stage_module::StageCamera>,
     /// The arrival's boss-name banner, `(text, pen x, pen y)` - up from its
     /// phase 5 until the round opens (retail's text actor, swept by flow
     /// state `0x0B`'s `FUN_800355F0`). Measured by the host's font, so the

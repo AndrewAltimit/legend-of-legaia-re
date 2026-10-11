@@ -605,7 +605,7 @@ pub fn scripted_event_record_ranges(bundle: &BundleSource) -> Option<ScriptedEve
 /// The VDF buffer is the retail `DAT_8007B7DC` install target the
 /// asset-dispatcher case 7 builds; the body bytes are the
 /// `[u32 count][u32 byte_offsets[count]][bodies]` layout the field-VM
-/// `0x4C 0xD8` opcode resolves via [`crate::world::World::vdf_record_bytes`].
+/// `0x4C 0xD8` opcode resolves via `World::vdf_record_bytes`.
 ///
 /// PORT: FUN_8001fbcc
 ///
@@ -614,7 +614,7 @@ pub fn scripted_event_record_ranges(bundle: &BundleSource) -> Option<ScriptedEve
 /// Retail walks the chunk's sub-entries and materializes a parallel pointer
 /// table at `0x80083E58`; the engine keeps the raw chunk body instead and
 /// indexes the embedded `count`/`byte_offsets` table lazily per record in
-/// [`crate::world::World::vdf_record_bytes`] (which mirrors the *consumer*
+/// `World::vdf_record_bytes` (which mirrors the *consumer*
 /// `FUN_801D77F4`), so no separate pointer array is built.
 ///
 /// REF: FUN_801D77F4

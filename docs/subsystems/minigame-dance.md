@@ -33,7 +33,7 @@ The contest is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E`
 
 The `sub_id` → PROT arithmetic is the one place retail's loader steps: `prot_index = sub_id + (2 if sub_id >= 6) + 0x4D + 0x37F`, so `sub_id 6` resolves to 0980 rather than 0978.
 
-A disc-wide walk of every scene MAN puts every dance door in `koin3`: P1[16] plus the partition-2 contest records P2[6] and P2[9]. A fourth site sits in P2[5], inside a record whose walk desyncs upstream in dialogue, so only its raw byte window resolves. The hall's own scene module `other7` carries **no** genuine warp; its `0x3E` hits are cross-context text phantoms. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+A disc-wide walk of every scene MAN puts every dance door in `koin3`: P1[16] plus the partition-2 contest records P2[6] and P2[9]. A fourth site sits in P2[5], inside a record whose walk desyncs upstream in dialogue, so only its raw byte window resolves. The hall's own scene module `other7` carries **no** genuine warp; its `0x3E` hits are cross-context text phantoms. Census test: `crates/engine-scene/tests/minigame_entry_census_disc.rs`.
 
 `FUN_801cf470` has no `jal` caller. It is the `+0x08` tick word of the static 24-byte actor template at `0x801D42E4`. The sub-id-6 init `FUN_801CEF54` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CF210`), and the per-frame pool walk reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`.
 

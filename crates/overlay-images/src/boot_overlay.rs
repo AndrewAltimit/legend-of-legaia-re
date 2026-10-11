@@ -322,7 +322,7 @@ pub const SECTOR_BYTES: i32 = 0x800;
 /// The negative branch only triggers below `-0x7FF`, so small negative inputs
 /// still go through the positive path.
 ///
-/// `engine-core::stream_file::bytes_to_sectors_floor` is **not** a rival
+/// `engine-scene::stream_file::bytes_to_sectors_floor` is **not** a rival
 /// spelling of this to be reconciled with: it is the `srl a1, 0xB` of a
 /// *different* pair of routines (`FUN_80055A5C` seek / `FUN_800559EC` read),
 /// where discarding a sub-sector remainder is the retail behaviour. Round-up

@@ -58,7 +58,7 @@ fn field_scene_assembles_full_maps() {
         // This disjunction is deliberately weak and is NOT the floor guard: the
         // terrain half stays satisfied when the floor-height LUT disappears, so
         // a scene can pass here with no ground surface and every prop flattened
-        // to y = 0. `engine-core/tests/field_floor_layer_disc.rs` is the guard -
+        // to y = 0. `engine-scene/tests/field_floor_layer_disc.rs` is the guard -
         // it asserts the MAN -> LUT chain over all 101 field-map blocks. Do not
         // reformulate this line as the floor coverage; it once let 79 scenes
         // ship floorless.

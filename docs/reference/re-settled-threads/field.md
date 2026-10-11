@@ -127,7 +127,7 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | World-map CLUT cycling beyond the ocean head | closed (operand table + emitter + cadence pinned) | `capture` | [details ↓](#world-map-clut-cycling-beyond-the-ocean-head---closed-operand-table--emitter--cadence-all-pinned) |
 | `init_data` UI-tile page residency; the map03 terrain column | resolved (both premises falsified) | `capture` | [details ↓](#init_data-ui-tile-pages---journey-dependent-residency-resolved-map03-texture-column-resolved---not-uploaded-premise-falsified) |
 | What transitions retail into game over? | resolved | `capture` + `disassembly` | Retail has **no** mode-`0x12` transition. A wipe exits battle to mode 2; MAIN INIT `FUN_8003AEB0`'s back-from-battle arm stores `game_mode = 0x16` (CARD INIT) + `_DAT_8007BB00 = 1` at `0x8003B5D4`, landing on the **title screen** - no GAME OVER art, no menu. Three more sites carry the identical pair (`FUN_8003C7EC`, `FUN_801D84B4`, the STR attract exit `0x801CF048`). Mode 18/19 + PROT 0902 are an unreachable dev harness. Both port hosts hold, draw nothing and hand to the title. [details](../../subsystems/battle.md#party-wipe--the-game-over-overlay) |
-| Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved | `disassembly` + `capture` | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows (C1=[`0x27C`], C2=[`0x142`]) - eight `CC <crowd> E3 <day>` seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3` parks the day cohort at `(127,127)`. garmel: the Zeto stager `P2[12]` materializes P1[3]/P1[4] beside the player (n3 sub-7 player-coord copy `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms. See [script-vm.md](../../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-core/tests/man_midvisit_rearrangement_disc.rs`. |
+| Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved | `disassembly` + `capture` | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows (C1=[`0x27C`], C2=[`0x142`]) - eight `CC <crowd> E3 <day>` seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3` parks the day cohort at `(127,127)`. garmel: the Zeto stager `P2[12]` materializes P1[3]/P1[4] beside the player (n3 sub-7 player-coord copy `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms. See [script-vm.md](../../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-scene/tests/man_midvisit_rearrangement_disc.rs`. |
 | Region story-flag gate families (record-header C1/C2 gates) | resolved (structure, play order by milestone brackets, the two undecided orders unobservable) | `capture` + `disassembly` | [details ↓](#region-story-flag-gate-families) |
 | Extraction-0874 §2 (`player.lzs`) F-variant pixels | resolved - installing event named | `capture` + `disassembly` | [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer) |
 | Which chapter-1 scenes the engine can load, script, walk and leave | resolved as a per-scene verdict; four of the five late "one-way" rooms leave in-engine | `disassembly` + `capture` | [details ↓](#chapter-1-scene-frontier) |
@@ -451,7 +451,7 @@ Anim tick `FUN_800204F8` (`ghidra/scripts/funcs/800204f8.txt`):
   `AC F8 08` / `AD F8 08` again, then `A2 F8 02` handing the player back to the locomotion move.
   Every bit is an `ANIM_*` bit; none is a per-record local flag.
 
-**Port.** `engine-core::field_env::PropAnimBank` holds a cross-context cursor per target byte
+**Port.** `engine-scene::field_env::PropAnimBank` holds a cross-context cursor per target byte
 (`actor_clips`, keyed the way the resolver keys its walk). `World::step_inline_dialogue` binds the
 poked actor's `+0x62` into the executing context around each `2B` / `2C` / `2D`, mirrors it back, and
 parks on the spin - the bind / re-sync / mirror-back discipline `World::step_prop_interaction` runs a
@@ -845,7 +845,7 @@ The `map03` terrain rect is `map03`'s own content, and the engine pre-pass write
 - Direct pre-pass measurement: `map03` uploads 58 TIMs, and the `576..640 x 320..448` region holds 7945
   real terrain texels with 37 stray `0x3332` cells scattered in-tile - no hole.
 - PROT 0392 slot 0 is byte-identical to 0391 slot 0, which the engine uploads (the kingdom
-  sibling-skip in `crates/engine-core/src/scene_resources.rs`), so uploading 0392 as well would write
+  sibling-skip in `crates/engine-scene/src/scene_resources.rs`), so uploading 0392 as well would write
   identical bytes to identical cells.
 - Limit of the evidence: the comparison is a pre-pass measurement, not a full VRAM oracle, because the
   capture corpus has no `map03`-WorldMap-resident save.
@@ -1404,7 +1404,7 @@ op-`0x49` sub-op.
   Sub-screen `4` draws window `6`, six static VAs in the overlay pool loaded at
   `0x801d636c..0x801d6448` (a pre-battle briefing); sub-screen `3` draws window `5`, whose two headings
   (`0x801CEC78` / `0x801CEC94`) are a battle-start ready check, not a "really leave?" gate.
-- **Reachability.** `crates/engine-core/tests/op49_sub_op_census.rs` walks every scene MAN's field-VM
+- **Reachability.** `crates/engine-scene/tests/op49_sub_op_census.rs` walks every scene MAN's field-VM
   script and tallies the sub-op operands twice - a bounded, offset-deduped opcode walk and a raw byte
   upper bound - and kinds `7` and `0x0D` appear in both. The walk decodes no tile-board sub-op (`5`)
   that the byte bound finds, so an absent walk row means "not decoded here", not "not on the disc".

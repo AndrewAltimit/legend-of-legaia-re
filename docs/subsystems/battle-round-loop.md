@@ -759,7 +759,7 @@ let tracker = LevelUpTracker::new().with_observed_curve(0, &obs);
 
 ### CDNAME -> MV STR label map
 
-`engine_core::scene::cutscene_str_for(scene_label)` (`crates/engine-core/src/scene/cutscene.rs`) is a static label -> file helper derived from CDNAME ordering; `cutscene_label_for_str(filename)` is its inverse (case-insensitive on the basename).
+`engine_scene::scene::cutscene_str_for(scene_label)` (`crates/engine-scene/src/scene/cutscene.rs`) is a static label -> file helper derived from CDNAME ordering; `cutscene_label_for_str(filename)` is its inverse (case-insensitive on the basename).
 
 | CDNAME | STR file | Scene context |
 |---|---|---|

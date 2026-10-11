@@ -79,7 +79,7 @@ fn build_seq_bytes() -> Vec<u8> {
 /// Engine-side audio device: holds a `Spu`, builds a fresh `Sequencer` per
 /// `start` call from raw SEQ bytes, mixes both into a render loop. This is
 /// the shape we want a real engine to wear - the consumer of
-/// `engine-core::scene::BgmDirector::start` should look like this.
+/// `engine-core::scene_host::BgmDirector::start` should look like this.
 ///
 /// `bank` must have been uploaded into [`Self::spu`] - the test fixture
 /// uploads via [`AudioDevice::install_bank_into_self`] so the same SPU

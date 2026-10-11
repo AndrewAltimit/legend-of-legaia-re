@@ -170,7 +170,7 @@ Two dispatcher cases register into the runtime TMD pointer table `DAT_8007C018`,
 
 Many character meshes reference CLUT rows that live in **different PROT entries** from their TMD source. The runtime asset chain stitches them together - the loader puts the relevant TIMs into VRAM before the TMD is rendered.
 
-Engines that drive a from-scratch scene loop call [`SceneResources::build_targeted`](../../crates/engine-core/src/scene_resources.rs) once per scene transition. The builder:
+Engines that drive a from-scratch scene loop call [`SceneResources::build_targeted`](../../crates/engine-scene/src/scene_resources.rs) once per scene transition. The builder:
 
 1. Builds the scene's mesh pool from the descriptor walk (above), and the shared blocks' contribution from the `player_data` character pack - the 5-mesh head. The walk accepts any descriptor count retail does, including the MAN-less count-4 tables of the v12-family and chapter-2 dungeons; only a block with no walkable table falls back to a TMD-magic sweep of its entries.
 2. Collects the union of all prim-target rectangles (CLUT rows + texture-page UV bboxes the meshes will sample).
@@ -201,7 +201,7 @@ The block sweep walks *entries*, and two classes in a scene's CDNAME block are n
 - **v12 trigger sidecars** (`Class::SceneV12Table`) - streamed through the conditional `.PCH` trigger channel, never the VRAM/TMD pre-pass. The exception is a sidecar that *hosts* the scene's v12-embedded asset bundle (`rikuroa` / `dolk2`).
 - **pochi-filler slots** (`Class::PochiFiller`) - reserved-but-unused slots (`pochipochi...`). A pochi slot is **one 2048-byte sector** and carries no TIM: all 266 of them are that one size, and a TIM-header sweep over the whole corpus returns nothing. The pages that erase a scene's **ground-tile atlas** at tpage `0x0C` are real, but they belong to the `scene_tmd_stream` entry that *follows* the slot, reached by the superseded entry-size expression ([`prot.md`](../formats/prot.md)); a slot sized as the sector gap to its successor has no reach at all (see [`pochi.md`](../formats/pochi.md) and [`world-map.md`](world-map.md#ground-texturing)). Retail never dispatches a reserved slot; neither does the build, which is what keeps the neighbour's pages out of field VRAM.
 
-Both skips apply in every `SceneLoadKind`. Regression: `crates/engine-core/tests/field_ground_texture_pages_disc.rs`.
+Both skips apply in every `SceneLoadKind`. Regression: `crates/engine-scene/tests/field_ground_texture_pages_disc.rs`.
 
 ### Battle-boot pre-load (`build_battle_boot_vram`)
 
@@ -209,7 +209,7 @@ Both skips apply in every `SceneLoadKind`. Regression: `crates/engine-core/tests
 
 This builder's CLUT pass is a no-op: `battle_data_pack::clut_uploads` returns no placements, because the `battle_data` post-TMD descriptor at `u32[3..0x20]` does not yield a confident `(fb_x, fb_y)` per record from the on-disc bytes (see [`battle-data-pack.md`](../formats/battle-data-pack.md)). The call still walks the pack and uploads the TIM-shaped textures it carries. The returned VRAM is intentionally separate from the scene's field VRAM - battle init merges it with the scene-specific upload pass; field rendering does not.
 
-The legacy [`SceneResources::build`](../../crates/engine-core/src/scene_resources.rs) (no shared blocks, unfiltered upload) is preserved for tests + diagnostic surfaces; engines should prefer `build_targeted` for production scene loads. The asset-viewer's `--vram-extra-dir` flag remains the manual workaround for browsing extracted `tim_scan/` dirs that aren't tied to a CDNAME scene.
+The legacy [`SceneResources::build`](../../crates/engine-scene/src/scene_resources.rs) (no shared blocks, unfiltered upload) is preserved for tests + diagnostic surfaces; engines should prefer `build_targeted` for production scene loads. The asset-viewer's `--vram-extra-dir` flag remains the manual workaround for browsing extracted `tim_scan/` dirs that aren't tied to a CDNAME scene.
 
 To find which PROT entry provides a missing CLUT row, run:
 

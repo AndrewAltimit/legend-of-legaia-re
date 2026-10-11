@@ -2081,7 +2081,7 @@ kit itself ships no third-party audio.
 The world geometry, textures, packet-colour shading, placement transforms,
 floor heights, walk surface, doorway trigger/landing data, shoreline morph
 deltas and the BGM render are the engine's own retail-parity kernels
-(`engine-core::scene_assembly` and friends - the same code the site's
+(`engine-scene::scene_assembly` and friends - the same code the site's
 field-scene viewer renders). What is approximated: NPCs loop their spawn
 clip instead of running their field-VM scripts, non-door props free-run
 instead of waiting for script triggers, a door's full record choreography

@@ -108,7 +108,7 @@ pub struct FieldSceneAnim {
 }
 
 // Hybrid env-mesh builders - in the shared assembly kernel
-// (`engine-core::scene_assembly`) so the browser pages and the native
+// (`engine-scene::scene_assembly`) so the browser pages and the native
 // `export-glb` path bake identical meshes.
 use legaia_engine_scene::scene_assembly::{build_hybrid_env_mesh, build_hybrid_env_mesh_posed};
 

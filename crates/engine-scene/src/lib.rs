@@ -8,10 +8,10 @@
 //! rustdoc cannot resolve a link into a dependent crate. See the crate
 //! README for the module map.
 
-pub mod battle_stage_module;
 pub mod cd_dma;
 pub mod clut_walk_anim;
 pub mod coplanar_draws;
+pub mod cutscene_caption;
 pub mod field_env;
 pub mod man_field_scripts;
 pub mod model_bank;

@@ -93,7 +93,7 @@ pub struct FieldRender {
     /// [`LegaiaRuntime::field_player_occluded`] - the same
     /// `engine_core::field_occlusion` kernel the native play-window runs.
     pub occluders: legaia_engine_core::field_occlusion::FieldOccluders,
-    /// Cross-draw coplanar lifts (`engine_core::coplanar_draws`), applied to
+    /// Cross-draw coplanar lifts (`engine_scene::coplanar_draws`), applied to
     /// each draw's translation by the position accessors - the same map the
     /// native play-window (`coplanar_env_offsets`) and the field-scene viewer
     /// compute. Without it every placement/terrain pair that meets on one

@@ -54,6 +54,7 @@ flowchart BT
     EMG["engine-minigames"]
     EMENU["engine-menus"]
     EMGS["engine-minigame-scenes"]
+    ESCN["engine-scene<br/>Scene, ProtIndex"]
     CORE["engine-core<br/>World, SceneHost"]
     EUI["engine-ui"]
     EREN["engine-render<br/>wgpu"]
@@ -86,6 +87,8 @@ flowchart BT
     EMG --> EFISH
     EMENU --> EMG
     EMGS --> EMENU
+    ESCN --> EFIELD
+    CORE --> ESCN
     CORE --> EFX
     CORE --> EMGS
     EUI --> RK
@@ -109,6 +112,7 @@ The shape to read off it:
 - **The format-family crates are the top of the preservation stack.** `container-formats`, `scene-formats`, `actor-formats`, `minigame-formats`, `ui-formats`, `game-tables` and `overlay-images` hold the Legaia-specific formats over the per-format parsers. `asset` is the `asset` command-line binary over them and `disc-audit`; it has no library.
 - **`engine-system`, `engine-dialog` and the VM crates are the bottom of the engine stack.** `engine-battle-vm`, `engine-motion-vm` and `engine-vm` hold the bytecode interpreters and state machines. They know nothing about GPU, audio or the `World`; each reaches the rest of the engine through a `Host` trait. The three VM crates are siblings: `engine-vm` depends on no engine crate at all, the other two only on `engine-system`, and none of them names another.
 - **A ring of `World`-free kernel crates sits above them** (`engine-mode`, `engine-battle`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-minigames`, `engine-menus`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
+- **`engine-scene` is the disc-facing half of scene handling.** It resolves a CDNAME scene to its PROT entries (`Scene`, `ProtIndex`), decodes what the scene is built from (`SceneResources`, `SceneAssets`, the model bank, the environment draw resolver and assembly kernel) and holds the virtual filesystem. It names no `World`, so a tool that only reads scenes links it without the simulation.
 - **`engine-core` is where they meet.** It owns `World` and `SceneHost` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`shop`, `dance`, `tile_board`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
 - **Presentation is a separate branch.** `render-kernels` -> `engine-ui` -> `engine-render` and `engine-audio` do not depend on `engine-core`; the hosts compose them with it. `render-kernels` is also what the effect, field and minigame kernels link for GTE math.
 - **`engine-session` and `engine-screens` are the host-shared top.** `BootSession` (scene host + per-frame order + BGM director) and the shop-family screens are written once and ticked by both play hosts.
@@ -158,16 +162,17 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-minigames` | `engine-fishing`, `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `save` | Minigame rules engines. |
 | `engine-menus` | `engine-minigames`, `engine-field`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `ui-formats`, `art`, `font`, `save`, `tim` | Menu, title and memory-card front end. |
 | `engine-minigame-scenes` | `engine-menus`, `engine-minigames`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-system`, `render-kernels`, `actor-formats`, `container-formats`, `game-tables`, `minigame-formats`, `overlay-images`, `scene-formats`, `tim`, `tmd` | The minigames' 3D scene surfaces. |
-| `engine-core` | every `engine-*` kernel crate above, `render-kernels`, `disc-audit` + the format-family and parser crates | `World`, scene host and loading, battle loop, menu runtime, saves. |
+| `engine-scene` | `engine-field`, `engine-battle`, `engine-dialog`, `engine-mode`, `engine-system`, `render-kernels`, `disc-audit` + the format-family and parser crates | Scene resolution and loading, environment draws, virtual filesystem; no `World`. |
+| `engine-core` | `engine-scene`, every `engine-*` kernel crate above, `render-kernels` + the format-family and parser crates | `World`, scene host, battle loop, menu runtime, saves. |
 | `engine-ui` | `render-kernels`, `engine-battle-vm`, `game-tables`, `minigame-formats`, `ui-formats`, `tim`, `font` | Draw-list builders; no wgpu. |
 | `engine-render` | `engine-ui`, `render-kernels`, `engine-battle-vm`, `tim`, `font` | wgpu renderer. |
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
-| `engine-session` | `engine-core`, `engine-audio`, `engine-menus`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
-| `engine-screens` | `engine-core`, `engine-ui`, `engine-battle`, `engine-effects`, `engine-menus`, `engine-mode`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | Shop / prize / inn / banner screens both hosts draw. |
-| `parity` | `engine-session`, `engine-core`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
-| `engine-shell` | `parity`, `engine-session`, `engine-screens`, `engine-core`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
-| `web-viewer` | `engine-session`, `engine-screens`, `engine-core`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
-| `asset-viewer` | `engine-core`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
+| `engine-session` | `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
+| `engine-screens` | `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-effects`, `engine-menus`, `engine-mode`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | Shop / prize / inn / banner screens both hosts draw. |
+| `parity` | `engine-session`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
+| `engine-shell` | `parity`, `engine-session`, `engine-screens`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
+| `web-viewer` | `engine-session`, `engine-screens`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
+| `asset-viewer` | `engine-core`, `engine-scene`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
 
 ### The layering gate
 
@@ -251,7 +256,7 @@ A feature wired into one host and not another is a defect class of its own. The 
 
 ### The browser host
 
-`legaia_web_viewer::runtime::LegaiaRuntime` owns a real [`SceneHost`](../../crates/engine-core/src/scene/host.rs), so the browser executes the same field / event VM, free-movement controller, floor sampler, NPC motion VMs, interaction probe and inline-dialogue runner as the native window. The per-frame contract is small: hand the engine a pad word, tell it the camera azimuth (so the d-pad remaps camera-relative), tick it, draw what it reports. Rendering goes through the site's shared WebGL TMD renderer rather than `engine-render`'s wgpu path.
+`legaia_web_viewer::runtime::LegaiaRuntime` owns a real [`SceneHost`](../../crates/engine-core/src/scene_host.rs), so the browser executes the same field / event VM, free-movement controller, floor sampler, NPC motion VMs, interaction probe and inline-dialogue runner as the native window. The per-frame contract is small: hand the engine a pad word, tell it the camera azimuth (so the d-pad remaps camera-relative), tick it, draw what it reports. Rendering goes through the site's shared WebGL TMD renderer rather than `engine-render`'s wgpu path.
 
 It reaches field and town scenes (map, player, NPCs, doors, dialogue), live battles (`play_battle*`), the title and opening chain (`boot_title`, `play_cutscene`, `play_fmv`), the pause menu and shops (`play_menu`, `play_shop`), the minigames (`play_minigames`, `play_fishing`) and audio (`play_bgm`, `play_sfx`, `play_xa`). Each screen is drawn from engine state through the shared `engine-ui` builders.
 

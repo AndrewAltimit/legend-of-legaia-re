@@ -32,7 +32,7 @@ Dump files are `ghidra/scripts/funcs/overlay_fishing_<addr>.txt` for every `FUN_
 
 The pond is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 100` (`sub_id 0`), which sets game mode `0x18` (`OTHER INIT`) and loads PROT 0972. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `legaia_engine_mode::minigame_entry::MinigameSubId`; the mode pair is `GameMode::OtherInit` / `OtherMode` (`crates/engine-mode/src/mode.rs`).
 
-The op is the only way in: there is no menu entry and no dedicated opcode, and the venue bundle `other1` carries essentially no field-VM script of its own. A disc-wide walk of every scene MAN finds the fishing door at exactly two sites, both signboard placements on the overworld: `map02` P1[7] and `map03` P1[19]. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+The op is the only way in: there is no menu entry and no dedicated opcode, and the venue bundle `other1` carries essentially no field-VM script of its own. A disc-wide walk of every scene MAN finds the fishing door at exactly two sites, both signboard placements on the overworld: `map02` P1[7] and `map03` P1[19]. Census test: `crates/engine-scene/tests/minigame_entry_census_disc.rs`.
 
 The entry is the ordinary scene-backup -> overlay-load -> return-to-field sequence of any mode-24 minigame, so the game returns to the exact field state it suspended.
 

@@ -641,7 +641,7 @@ impl World {
     ///
     /// (`FUN_801DC6B4` at `0x801dc88c..0x801dc8e4`.) Which of those a real
     /// disc ever arms is measured by
-    /// `crates/engine-core/tests/op49_sub_op_census.rs`.
+    /// `crates/engine-scene/tests/op49_sub_op_census.rs`.
     ///
     /// REF: FUN_801de840 (op `0x49` Idle arm, `_DAT_8007B450 = operand`)
     /// REF: FUN_801dc6b4 (the routing consumer)

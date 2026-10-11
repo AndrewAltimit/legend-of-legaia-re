@@ -751,7 +751,7 @@ legaia-engine play-window --scene opdeene --cutscene-map legaia-cutscene-map.tom
 ```
 
 Explicit entries win; missing keys fall through to `cutscene_str_for`. API:
-[`CutsceneMap::from_toml_path`](../../crates/engine-core/src/scene/cutscene.rs) /
+[`CutsceneMap::from_toml_path`](../../crates/engine-scene/src/scene/cutscene.rs) /
 `from_toml_str` / `to_toml_string`.
 
 ## STR/MDEC FMV overlay residency
@@ -791,7 +791,7 @@ town0b  map01  chitei2  map02  jou  uru2  town0e
 These are the **destinations the master dispatch hands control to after playback**, one per
 mid-game `fmv_id` (1..4, 6..8). They are *not* the trigger-scene set - the `4C E2` ops live in a
 different scene set, with only `chitei2` in both (a scene that returns to itself).
-[`cutscene_str_for`](../../crates/engine-core/src/scene/cutscene.rs) covers the `op*` / `ed*`
+[`cutscene_str_for`](../../crates/engine-scene/src/scene/cutscene.rs) covers the `op*` / `ed*`
 scenes in CDNAME order; its sibling constant `FMV_TRIGGER_FIELD_SCENES` records this label list.
 
 ## Field-VM FMV-trigger op
@@ -1051,7 +1051,7 @@ An exec-breakpoint on the record dispatcher `FUN_8003BDE0` across the whole open
   record; `gate = 0` records are object-binds consumed at scene init (`FUN_8003A55C`) and never
   spawn. Engine:
   [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-field/src/field_regions.rs),
-  [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs), `SceneHost`'s
+  [`Scene::field_tile_triggers`](../../crates/engine-scene/src/scene/scene_ty.rs), `SceneHost`'s
   `spawn_arrival_trigger_record`.
 
 Before spawning, `FUN_8003BDE0` checks the P2 record's **C1/C2 story-flag gates** against the
@@ -1266,7 +1266,7 @@ Evidence (cold-boot probes in `scripts/pcsx-redux/`):
   interleaved) - the pixels live only in VRAM.
 
 **Port.** On entering `opdeene`,
-[`cutscene_caption::decode_opdeene_caption`](../../crates/engine-core/src/cutscene_caption.rs)
+[`cutscene_caption::decode_opdeene_caption`](../../crates/engine-scene/src/cutscene_caption.rs)
 locates the TIM in PROT 0749's LZS sections and decodes it to RGBA (its background palette entry
 is `0x0000`, so `legaia_tim::decode_rgba8` gives it alpha 0), stored on
 `World::cutscene.caption`. [`World::tick`](../../crates/engine-core/src/world/frame_tick/mode_tick.rs)

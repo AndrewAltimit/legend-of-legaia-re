@@ -189,7 +189,7 @@ byte-consistent):
 - Placements parked at world `(16320, 16320)` (tile `(127, 127)` + half-tile
   bits) are conditional spawns the scripts place later.
 
-Disc-gated pin: `engine-core/tests/field_npc_placements_disc.rs`.
+Disc-gated pin: `engine-scene/tests/field_npc_placements_disc.rs`.
 
 **The `scene_event_scripts` prescript is a move-VM stager table, not field-VM
 bytecode.** Its `[u16 count][u16 offsets[count]]` records are **move-VM
@@ -378,7 +378,7 @@ scripted menu press (a save point's `49 01`) or an op-`0x44` spawn
 the spawn arm reaches a handful of placements disc-wide - most seated on the
 parked sentinel `(127, 127)` - and none of the records they spawn changes
 scene; the set is printed by
-`crates/engine-core/tests/field_text_free_spawn_touch_disc.rs`.
+`crates/engine-scene/tests/field_text_free_spawn_touch_disc.rs`.
 
 The **scene system script** (ctx `0xFB`, MAN `P1[0]`) is an ordinary context
 too. `FUN_8003AB2C` binds it to an actor whose tick is the SYSTEM entity SM
@@ -713,7 +713,7 @@ poke), and no `FUN_801E4470` actor sat in the lists.
 | 5 | **Arm the timed sound-source auto-release** for `signed16(operand0, operand1)` vsyncs: `func_0x800267A8(0, operand)` at `0x801E01B4`, whose tick half `FUN_800267FC` runs from the frame-begin driver. Not a volume set - the volume the arm applies is a *side effect* of the libsnd wrapper it tail-calls, and the operand is a deadline. Port: `engine-core::World::arm_sound_release`. |
 | 6 | Flag set. |
 | 7 | Target-sound-set (`_DAT_8007B880`). |
-| 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-core::scene::bgm_reattach_volume`. |
+| 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-core::scene_host::bgm_reattach_volume`. |
 | 9 | **Start behind a load barrier** - stalls the script until the previous BGM load has settled, then makes sub-op 1's own track select. [Detail](#sub-op-9-is-a-start-not-a-queue). |
 | 10 | **Swap-commit** - waits on flag bit 3 (the resolver's load-settle bit), releases the paused BGM slot (`FUN_800266E0` + `FUN_80026520`), sets ack bit 4, clears pause bit 1. [Detail](#sub-op-0xa-is-the-swap-commit). Port: `BgmDirector::unhalt_pause` via `SceneHost::route_bgm_events`. |
 | 11 | `_DAT_8007BA9C = -1` - arms sub-op 9's barrier (no resolved index equals `-1`). |
@@ -1692,7 +1692,7 @@ Three things follow:
 
 ### Disc-wide SYSTEM-flag census tooling
 
-An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but the **setter** that opens it (`0x5x` SET / `0x6x` CLEAR) almost always lives in a *different* scene's MAN. To resolve a gate to its writer, `legaia_engine_core::man_field_scripts` walks the flag ops out of the decoded MAN:
+An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but the **setter** that opens it (`0x5x` SET / `0x6x` CLEAR) almost always lives in a *different* scene's MAN. To resolve a gate to its writer, `legaia_engine_scene::man_field_scripts` walks the flag ops out of the decoded MAN:
 
 - `walk_partition_gflag_sites` reports every flag site in a MAN partition at real opcode boundaries, tagging each with its bank (`FlagBank::Scratchpad` for the `0x2E`/`0x2F` global ops, `FlagBank::System` for the `0x50..=0x7F` ops), the full flag number (`(lead & 0x8F) << 8 | operand` for system flags), and the SET/CLEAR/TEST kind.
 - `system_flag_census` runs that walk over **every** CDNAME scene's MAN across all three partitions and returns `flag -> [(scene, partition, record, op, kind)]`, sorted by flag number - the setter-vs-gate map the progress-gate RE consumes.
@@ -1760,7 +1760,7 @@ The same shape sits one branch level up: `P1[0]`'s first-arrival arm spawns `P2[
 The from-scratch engine executes this chain organically - the host re-runs the entry script on the battle-to-field mode edge (`SceneHost::tick`) and the spawned record's own script bytes land `0x142`; disc-gated oracle `engine-core/tests/organic_beat_records_disc.rs`.
 Thirteen retail blocks ship such a **streaming variant MAN** (extraction indices: `dolk2` 70, `rikuroa2` 122, `rikuroa` 157, `rayman` 201, `station` 228, `balden2` 320, `ropeway2` 339, `taiku` 373, `doman` 401, `taiku2` 427, `nilboa2` 648, `edbalden` 792, `eddoman` 817); for the v12-family dungeons (`rikuroa` / `dolk2`, whose own bundle is the MAN-less `count=4` form) the streaming carrier is the scene's **only** MAN.
 
-`system_flag_census` (and the motion / op-`0x49` censuses) walk **every** carrier per scene - the bundle MAN plus the streaming variants, enumerated by `legaia_engine_core::man_field_scripts::scene_man_carriers` - so the variant-resident writers surface: the `0x142` setters above, the `0x63A` beat writers. Disc-gated pins: `crates/engine-core/tests/man_variant_carrier_census_disc.rs`. CLI: `legaia-engine man-scripts --scene <name> --variant <entry_idx>` targets a variant carrier directly (census rows tag them `VARIANT-MAN`); `--p2-gates` prints every partition-2 record's C1/C2 header gate lists + name (the `FUN_8003BDE0` spawn-condition surface the inline-op censuses cannot see).
+`system_flag_census` (and the motion / op-`0x49` censuses) walk **every** carrier per scene - the bundle MAN plus the streaming variants, enumerated by `legaia_engine_scene::man_field_scripts::scene_man_carriers` - so the variant-resident writers surface: the `0x142` setters above, the `0x63A` beat writers. Disc-gated pins: `crates/engine-scene/tests/man_variant_carrier_census_disc.rs`. CLI: `legaia-engine man-scripts --scene <name> --variant <entry_idx>` targets a variant carrier directly (census rows tag them `VARIANT-MAN`); `--p2-gates` prints every partition-2 record's C1/C2 header gate lists + name (the `FUN_8003BDE0` spawn-condition surface the inline-op censuses cannot see).
 
 **Carriers are byte-unique, and every per-scene count depends on it.**
 No two MAN carriers on the disc share bytes, so walking every carrier of every
@@ -2722,7 +2722,7 @@ records and 861 in cutscene records have no own actor to fall back on. The
 port resolves the bind through the scene's channel set
 (`World::talk_face_target`), falling back to the conversation's own placement
 only for an id no channel carries. The census is
-`crates/engine-core/tests/talk_face_acquire_bind_disc.rs`.
+`crates/engine-scene/tests/talk_face_acquire_bind_disc.rs`.
 
 **The end rule is the dialog SM's, not the acquire's.** Once a box's lines are
 scanned, `FUN_80039B7C` hands the byte after them to `FUN_80038050`

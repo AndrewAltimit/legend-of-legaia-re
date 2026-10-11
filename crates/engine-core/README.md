@@ -1,8 +1,11 @@
 # legaia-engine-core
 
-The simulation half of the from-scratch engine: virtual filesystem, asset
-cache, frame timing, world state, and the rules engines. Everything here
-is renderer-agnostic.
+The simulation half of the from-scratch engine: frame timing, world state,
+the scene host that ticks a loaded scene, and the rules engines. Everything
+here is renderer-agnostic. The disc-facing half - resolving a CDNAME scene to
+PROT entries and loading what it is built from - is
+[`legaia-engine-scene`](../engine-scene/README.md), which this crate depends
+on.
 
 No `wgpu` / windowing / audio dependencies - the asset crates (Track 1)
 talk to this layer, and the render and audio crates read from it. That
@@ -11,12 +14,10 @@ native window.
 
 ## Contents
 
-- [`Vfs` trait](#vfs-trait)
-- [Asset cache](#asset-cache)
 - [Frame timing](#frame-timing)
 - [Composite `World`](#composite-world)
 - [Battle helpers](#battle-helpers) - `art_strike`, `ap_gauge`, `battle_stats`, `items`, `battle_round`, `battle_input`, `battle_hud`, `inventory_use`, `tactical_arts_editor`, `man_field_scripts`, field-resident carrier SM, `cutscene`
-- [Scene resources + VRAM](#scene-resources--vram)
+- [Scene staging + export](#scene-staging--export)
 - [Dialogue, save/load, and loot](#dialogue-saveload-and-loot)
 - [Minigame rules engines](#minigame-rules-engines)
 - [Smaller modules worth knowing](#smaller-modules-worth-knowing)
@@ -25,26 +26,6 @@ native window.
 - [See also](#see-also)
 
 ## What it provides
-
-### `Vfs` trait
-
-Source of asset bytes. Three backends:
-
-- `DirVfs` - filesystem-backed, rooted at a directory. Used in
-  development against the output of `legaia-extract`.
-- `DiscVfs` - reads directly from a disc image, so end users don't need
-  to extract anything ahead of time. This is the backend behind the
-  shipped end-user model (`legaia-engine` pointed straight at a `.bin`).
-- `MemoryVfs` - in-memory bytes, for tests and the WASM build.
-
-All three yield raw bytes addressed by a logical name (e.g.
-`"prot/0123_some_entry.bin"`). The asset crates above this layer turn
-bytes into typed structures.
-
-### Asset cache
-
-A bounded in-memory cache keyed by Vfs name. Avoids re-decoding the same
-TIM/TMD/VAB on every frame when an actor is referenced repeatedly.
 
 ### Frame timing
 
@@ -368,9 +349,9 @@ composes them.
   town01 survey finds no inline `[1][0x4F]` Tetsu literal, confirming the
   indexed formation-table install path (see `encounter_record`). The
   decoders live in `legaia-engine-field`, where every census takes the MAN
-  carriers it walks; this module holds what needs a
-  loaded `Scene` - `scene_man_carriers` and the scene-name entry points of
-  the system-flag, op-`0x49` window and motion-flag censuses.
+  carriers it walks; what needs a loaded `Scene` - `scene_man_carriers` and
+  the scene-name entry points of the system-flag, op-`0x49` window and
+  motion-flag censuses - is `legaia_engine_scene::man_field_scripts`.
 - **Field-resident carrier SM.** `World` ticks the ported `FUN_801DA51C`
   entity SM (`legaia_engine_field::world_map_entity`) in `SceneMode::Field` as well as
   on the overworld. `install_field_carriers([FieldCarrierConfig])` places the
@@ -394,24 +375,23 @@ composes them.
   resolved STR and calls `World::finish_cutscene()` to return to the
   field. Cut/missing slots drain as a no-op.
 
-## Scene resources + VRAM
+## Scene staging + export
 
-`scene_resources` turns a scene's PROT bundle into the resources a host
-needs. `build_targeted` is the runtime VRAM pre-pass: it resolves what
-each scene actually uploads, rather than blanket-loading the block.
+Scene resources, the environment draw resolver and the full-scene assembly
+kernel are in [`legaia-engine-scene`](../engine-scene/README.md). What stays
+here is the part that needs a `World`:
 
-`FIELD_SHARED_BLOCKS` names the blocks that stay resident across a scene
-transition - the player TMD lives here, which is why the party mesh
-survives a door without a reload.
+`scene_staging` answers the scene questions that take simulation state:
+`placed_draw_live` (is a placed object drawn against the running world's
+windowed static-object list), `story_hidden_records_for_scene` (the
+story-hidden record set, from a scratch `World` staged at the scene's
+free-roam visit) and `assemble_field_scene`, the full static assembly over
+that set - the one build the browser field-scene page and the native
+`export-glb` path both read.
 
-`scene_assembly` is the shared full-scene assembly kernel over those
-resources: `assemble_field_scene` resolves the env pack, the `.MAP`
-placement/terrain draws (object binds included, so each placed draw
-carries its posing clip), the walk-ground heightfield and the coplanar
-lifts - the one build the browser field-scene page and the native
-`export-glb` path both read. `packet_color` carries the hybrid
-textured/vertex-colour side channel, `npc_catalog` the MAN placement
-walk, and `glb_export` composes all of it (plus per-NPC and animated-prop
+`npc_catalog` is the MAN placement walk over a built `SceneResources` and
+the world's global model pool, and `glb_export` composes the assembly, the
+catalog and a stepped `World` (plus per-NPC and animated-prop
 bakes through `legaia_actor_formats::{scene,character}_gltf`) into the
 `legaia-engine export-glb` artifact set, `--items` included
 (`export_equipment_item_glbs` over the shared
@@ -553,7 +533,7 @@ crate keeps their `World` glue and scene assembly (`dance_venue`,
   scene-init sweep. `World::recentre_field_window` (`world/static_window.rs`)
   runs it on every camera re-centre retail runs it on and keeps the result as
   `FieldTerrain::static_window`; both play hosts gate the sweep's placements on
-  that list through `field_env::placed_draw_live` (whole map by default,
+  that list through `scene_staging::placed_draw_live` (whole map by default,
   retail windowing behind the `retail_static_window` option).
 - `target_picker::enemy_menu_rows` + `layout_enemy_menu_rows` - the enemy
   target-menu row dedup / labelling and the overlap-relaxation layout
@@ -583,9 +563,8 @@ crate keeps their `World` glue and scene assembly (`dance_venue`,
   `legaia-engine-field`; this module holds the field HUD
   queries that read `World`. See
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md#the-panel-actor-state-machines).
-- `scene::DefaultMapIdResolver` - scene-name → map-id resolution. (Effect lookup,
-  `EffectCatalog`, is `legaia_engine_vm::effect_vm`'s; the scene host loads
-  it from `efect.dat`.)
+- Effect lookup (`EffectCatalog`) is `legaia_engine_vm::effect_vm`'s; the
+  scene host loads it from `efect.dat`.
 
 ## Other major modules
 
@@ -594,10 +573,10 @@ crate keeps their `World` glue and scene assembly (`dance_venue`,
   live in `legaia-engine-mode` and reach the world only through the
   `ModeWorld` trait; this module implements it for `World` and keeps the
   field-entry demo handler.
-- `scene` - the scene-loading shell: PROT asset indexing, per-CDNAME-block
-  bundle resolution, BGM lookup, and `SceneHost` (`enter_field_scene`).
-- `model_bank` - the retail model pool `DAT_8007C018` and the id space a
-  placement's model byte and the scripted-motion VM's op `0x0E` share.
+- `scene_host` - `SceneHost`: owns the `World` and the `ProtIndex`, enters
+  scenes (`enter_field_scene`), ticks them, and drains the per-frame queues
+  the field VM fills (door warps, BGM route through `BgmDirector`, FMV
+  handoff). The `Scene` it loads is `legaia_engine_scene::scene`'s.
 - `levelup` / `inn` / `equip_session` / `spells` - the post-battle
   `LevelUpTracker`, the inn rest session, the equipment session, and the
   spell catalog + cast resolver (`levelup` and `spells` in
@@ -632,8 +611,6 @@ crate keeps their `World` glue and scene assembly (`dance_venue`,
   (`FUN_801E9FD4`), all in `legaia-engine-battle`.
 - `new_game` - seeds live party records from the `SCUS_942.54` starting-party
   template.
-- `cd_dma` / `overlay_loader` / `stream_file` - the CD streaming host traits
-  and overlay / stream loaders.
 
 ## Module index
 
@@ -655,12 +632,10 @@ docs carry the retail provenance.
   mapped in [the `engine-battle` README](../engine-battle/README.md).
 - **Field** - `field_ground` (walk-ground heightfield as a render surface),
   `field_view_window` (the visible-tile crop), `field_occlusion` (the
-  occlusion fade's visibility gate), `coplanar_draws`, `drop_shadow`,
+  occlusion fade's visibility gate), `drop_shadow`,
   `fog_particles` (retail `fog_set`), `fog_volume` (volumetric fog, an
-  enhancement), `clut_walk_anim` (the CLUT-walk shimmer),
-  `place_name_banner`, `field_submode_screen` / `field_submode_code_lock` /
+  enhancement), `place_name_banner`, `field_submode_screen` / `field_submode_code_lock` /
   `field_submode_flag_window` (op-`0x49` submode host and two handlers).
-- **Cutscene** - `cutscene_caption`.
 - **Overworld** - `overworld_curvature`, `world_map_markers` (not retail:
   marker quads), `world_map_sky` (which frames draw the sky band).
 - **Menus + screens** - `menu_validator`, `dev_menu_host`. The menu cursor
@@ -674,14 +649,16 @@ docs carry the retail provenance.
   leaves (`dance_tutorial`, `baka_fighter_chrome`, `baka_impact_fx`,
   `other_game_overlay`) are in `legaia-engine-minigames`, and
   `minigame_floor` and `fishing_chrome` in `legaia-engine-fishing`.
-- **Scene loading + session** - `scene_assets`, `scene_bundle`,
-  `scene_live` (a headless live scene preview for viewers),
+- **Scene session** - `scene_live` (a headless live scene preview for
+  viewers),
   `resume` (where a load resumes and a New Game starts),
   `scus_leaf_kernels`.
 - **Cheats** - `cheats` (the play hosts' cheat mutations) and
   `cheat_applier` (parsed GameShark codes → engine cells, over
   `engine-system`'s `ram_map`).
-- **Below this crate** - the runtime system (pad input, the stream chunk
+- **Below this crate** - scene resolution and loading, the virtual
+  filesystem and the CD streaming host traits are
+  [`legaia-engine-scene`](../engine-scene/README.md); the runtime system (pad input, the stream chunk
   installer, movies, sound state, fades, mode-entry initialisers, the RAM
   map) is [`legaia-engine-system`](../engine-system/README.md); the menu
   front end (items, equipment, the menu sessions, title, name entry, the

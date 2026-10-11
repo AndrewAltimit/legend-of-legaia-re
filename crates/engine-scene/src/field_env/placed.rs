@@ -126,11 +126,9 @@ pub fn resolve_placed_env_draws(
 /// the *actor*, so a parked actor draws nothing, while a raw `.MAP` walk
 /// resurrects post-story scenery in a cold scene.
 ///
-/// `hidden_records` is [`World::hidden_object_records`] (flat partition-0
+/// `hidden_records` is `World::hidden_object_records` (flat partition-0
 /// record indices); a draw whose anchor has no bind is untouched (the window
 /// sweep's bindless actors have no script to hide them).
-///
-/// [`World::hidden_object_records`]: crate::world::World::hidden_object_records
 // REF: FUN_8003A55C (bind-time prologue seats the object's actor)
 pub fn retain_visible_placed_draws(
     draws: &mut Vec<EnvDraw>,
@@ -183,12 +181,10 @@ pub fn retain_visible_landmark_placements(
 /// `draws`): the bind record's `actor[+0x72]` as a factor (`0x1000` = `1.0`),
 /// `1.0` for a draw with no bind or no listed scale.
 ///
-/// `record_scales` is [`World::object_render_scales`]. Both hosts fold the
+/// `record_scales` is `World::object_render_scales`. Both hosts fold the
 /// factor into the draw's model matrix after the rotation (`T * R * S`), which
 /// is where retail's `ScaleMatrix` lands it: the scale multiplies the actor's
 /// rotation matrix, never its translation.
-///
-/// [`World::object_render_scales`]: crate::world::World::object_render_scales
 // REF: FUN_8001ADA4 (case 5 scale compose, `0x8001B240..0x8001B28C`)
 pub fn placed_render_scales(
     draws: &[EnvDraw],
@@ -207,15 +203,12 @@ pub fn placed_render_scales(
 }
 
 /// Re-seat every placed draw whose bind record follows the floor
-/// ([`World::object_floor_follow_records`]) on the floor sample under it - the
+/// (`World::object_floor_follow_records`) on the floor sample under it - the
 /// Y the field actor tick writes over the `.MAP` sweep's `lut[nibble] + y_off`
 /// once the actor is in view. `floor_y(record, x, z)` is
-/// [`World::object_floor_follow_y`] over the scene's live world; it answers
+/// `World::object_floor_follow_y` over the scene's live world; it answers
 /// `None` for a record that keeps its seat. The one kernel both play hosts
 /// run on their placed layer before baking it.
-///
-/// [`World::object_floor_follow_records`]: crate::world::World::object_floor_follow_records
-/// [`World::object_floor_follow_y`]: crate::world::World::object_floor_follow_y
 // REF: FUN_8003BC08 (height arm), FUN_80019278
 pub fn follow_floor_placed_draws(
     draws: &mut [EnvDraw],
@@ -234,9 +227,7 @@ pub fn follow_floor_placed_draws(
 
 /// The bind record each placed draw's actor runs (parallel to `draws`), or
 /// `None` for an unbound draw - the key hosts look a draw's live
-/// [`World::object_draw_displacements`] entry up by.
-///
-/// [`World::object_draw_displacements`]: crate::world::World::object_draw_displacements
+/// `World::object_draw_displacements` entry up by.
 pub fn placed_bind_records(
     draws: &[EnvDraw],
     binds: Option<&HashMap<(u8, u8), ObjectBind>>,
@@ -252,11 +243,10 @@ pub fn placed_bind_records(
 }
 
 /// Per-draw scripted displacement of a placed-object list: each draw's bind
-/// record looked up in `record_moves` ([`World::object_draw_displacements`]),
+/// record looked up in `record_moves` (`World::object_draw_displacements`),
 /// `[0, 0, 0]` for an unbound or unmoved draw. Both hosts add it to the
 /// draw's translation every frame.
 ///
-/// [`World::object_draw_displacements`]: crate::world::World::object_draw_displacements
 /// Which placed draws a bind record's scripted-motion stream drives: the
 /// **first** placement of each record, in `.MAP` order. The installer
 /// `FUN_8003A9D4` binds a MAN tail-section-1 stream to the field actor whose
@@ -290,14 +280,14 @@ pub fn placed_draw_displacements(
 
 /// The rotation that takes an object drawn at its bind-time angles `seed` to
 /// the angles its actor holds now, `live` (both PSX `(pitch, yaw, roll)`, see
-/// [`crate::world::World::object_draw_turns`]): `R(live) * R(seed)^-1`, with
+/// `World::object_draw_turns`): `R(live) * R(seed)^-1`, with
 /// `R = Rx * Ry * Rz` in the retail field frame - the composition
 /// `FUN_80026988` builds for the case-5 draw. Column-major 4x4, rotation
 /// only.
 ///
 /// A host turns a placed draw about its own origin `o` (the model's
 /// translation) as `T(o) * M * T(-o) * model`, before the
-/// [`crate::world::World::object_draw_displacements`] translation.
+/// `World::object_draw_displacements` translation.
 // REF: FUN_80026988, FUN_8001ADA4
 pub fn object_turn_matrix(seed: [u16; 3], live: [u16; 3]) -> [f32; 16] {
     let r = |a: [u16; 3]| -> [[f32; 3]; 3] {
@@ -340,15 +330,12 @@ pub fn turn_placed_model(model: &[f32; 16], turn: &[f32; 16]) -> [f32; 16] {
 
 /// A placed draw's model at its actor's live state: turned about its own
 /// origin by the record's scripted turn ([`turn_placed_model`],
-/// [`World::object_draw_turn_matrices`]), then translated by its scripted
-/// displacement ([`World::object_draw_displacements`]) - retail's case-5 draw
+/// `World::object_draw_turn_matrices`), then translated by its scripted
+/// displacement (`World::object_draw_displacements`) - retail's case-5 draw
 /// reads the actor, not the `.MAP` record. `record` is the draw's bind record
 /// ([`placed_bind_records`]); an unbound, unturned, unmoved draw keeps
 /// `model`. The field's placed objects and the overworld's landmarks both go
 /// through it on the native window, which used to spell it twice.
-///
-/// [`World::object_draw_turn_matrices`]: crate::world::World::object_draw_turn_matrices
-/// [`World::object_draw_displacements`]: crate::world::World::object_draw_displacements
 pub fn live_placed_model(
     model: &[f32; 16],
     record: Option<usize>,
@@ -368,14 +355,12 @@ pub fn live_placed_model(
 }
 
 /// Per placed draw, the env-pack slot a scripted-motion stream's op `0x0E`
-/// swapped in ([`World::object_live_models`]), `None` for a draw that keeps
+/// swapped in (`World::object_live_models`), `None` for a draw that keeps
 /// its own mesh. Only the draw the stream drives swaps - the **first**
 /// placement of its record ([`stream_bound_draws`]) - and only a slot below
 /// `0xF0` (the stream's sentinel range). Both play hosts, field and overworld
 /// alike, ask this; the native overworld pass and the page each spelled the
 /// first-draw rule themselves.
-///
-/// [`World::object_live_models`]: crate::world::World::object_live_models
 // REF: FUN_8003A9D4
 pub fn placed_model_swaps(
     records: &[Option<usize>],

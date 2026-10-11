@@ -1500,7 +1500,7 @@ boot-then-scene order:
    `FUN_800198E0`. Row layout:
    [`npc-palette.md`](../formats/npc-palette.md#boot-resident-strip-band-rows-510511).
 2. **The shared CDNAME blocks**
-   [`FIELD_SHARED_BLOCKS`](../../crates/engine-core/src/scene_resources.rs)
+   [`FIELD_SHARED_BLOCKS`](../../crates/engine-scene/src/scene_resources.rs)
    (`init_data` + `player_data`) - what retail keeps resident across field
    transitions.
 3. **The scene's own TIMs**, in two passes
@@ -2098,7 +2098,7 @@ and the site's WebGL viewers:
 |---|---|---|
 | Double-sided pairs | `legaia_tmd::mesh::mark_double_sided_pairs` | flag both copies; the shader discards the away-facing one |
 | Intra-mesh decals | `legaia_tmd::mesh::separate_coplanar_prims` | nudge each overlapping layer half a unit toward its visible side |
-| Cross-draw overlaps | `legaia_engine_core::coplanar_draws` | lift the smaller / later draw `DRAW_NUDGE` per rank |
+| Cross-draw overlaps | `legaia_engine_scene::coplanar_draws` | lift the smaller / later draw `DRAW_NUDGE` per rank |
 | Walk-ground vs floor art | `coplanar_draws::GROUND_SINK` | sink the ground layer `0.4` units at render sites |
 | Depth precision | reversed-Z (native), scaled near plane (WebGL) | keeps sub-unit offsets resolvable at any distance |
 
@@ -2192,7 +2192,7 @@ no clip control and keeps a fixed-function 24-bit buffer, so its single-mesh
 projection scales the near plane with the framing distance (`buildMvp`).
 
 **Oracle and known residual.**
-`engine-core/tests/coplanar_residual_disc.rs` rebuilds a scene's final
+`engine-scene/tests/coplanar_residual_disc.rs` rebuilds a scene's final
 world-space triangle soup as the hosts draw it (hybrid passes, yaw-instanced
 draws, lifts applied, ground sunk) and scans for surviving coplanar
 overlapping pairs; `DIAG_ALL=1` sweeps the whole field corpus. It tolerates

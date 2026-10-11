@@ -793,7 +793,7 @@ pub(crate) enum Cmd {
     /// When `--str-file` is provided the STR video is pre-decoded headlessly
     /// (frame count logged) before scene ticking begins. The scene label
     /// patterns that identify in-engine cutscenes (as opposed to FMV) are
-    /// described by `engine_core::scene::is_cutscene_label`.
+    /// described by `engine_scene::scene::is_cutscene_label`.
     #[command(display_order = 20)]
     Play {
         /// Starting scene name. Default: `town01`.

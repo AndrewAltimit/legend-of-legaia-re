@@ -190,7 +190,7 @@ its walls and props, flattened onto the origin plane, over nothing.
 
 So a floorless field scene is a symptom of MAN resolution, not of this file: the
 map parses, the object layer resolves, and the placement counts stay right.
-`crates/engine-core/tests/field_floor_layer_disc.rs` is the corpus-wide guard -
+`crates/engine-scene/tests/field_floor_layer_disc.rs` is the corpus-wide guard -
 it asserts the MAN and the LUT resolve for every field-map block on the disc bar
 three named ones, because a draw-count assertion cannot see this failure.
 

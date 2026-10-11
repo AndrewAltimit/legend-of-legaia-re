@@ -347,7 +347,7 @@ with waivers in
 
 `engine-core` hands hosts their behaviour through traits, and several give
 every method a default body - `BgmDirector`, in
-`crates/engine-core/src/scene/host.rs`, is the one to look at. That is a
+`crates/engine-core/src/scene_host.rs`, is the one to look at. That is a
 deliberate convenience (a test stub can implement it with an empty block) and
 a silent failure mode: a host that never types `start_owned_vab` loses every
 global-pool track, which is every real music cue, with no compile error and
@@ -1309,7 +1309,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 | walk ground | `field_ground::render_positions` / `render_indices` / `crop_indices` |
 | visible-tile crop | `field_view_window::field_view_cells`, `framing_is_retail`, `terrain_draw_visible` |
 | script arcs (op `0x43`), attached lights (op `0x34` sub-1) | `World::script_actors`; lights through `light_pool_prims` ([`script-vm.md`](../subsystems/script-vm.md#0x34-sub-1-is-an-attached-light)) |
-| CLUT-walk shimmer | `engine-core::clut_walk_anim` (`ClutWalkAnim::install`); parser `legaia_scene_formats::clut_walk` |
+| CLUT-walk shimmer | `engine-scene::clut_walk_anim` (`ClutWalkAnim::install`); parser `legaia_scene_formats::clut_walk` |
 | occlusion fade | `field_occlusion::host_fade_armed`, `FadeRamp`, `player_body_centre` |
 | scene lights | `engine-screens::field_frame::field_scene_lights` |
 | clear colour | `engine-screens::field_frame::frame_clear_color`, `battle_stage_clear::scene_clear` |

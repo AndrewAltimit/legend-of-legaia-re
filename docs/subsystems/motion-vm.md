@@ -1252,13 +1252,13 @@ packs LZS-decodes and every member's first word is `0x80000002`. The ten
 bundles with no type-`0x02` descriptor take their models from a type-`0x02`
 DATA_FIELD chunk instead (`bubu1` 173 members, `edbubu` 160).
 
-Parser: `legaia_engine_core::model_bank` (`SceneModelBank::build` walks a
+Parser: `legaia_engine_scene::model_bank` (`SceneModelBank::build` walks a
 scene the way the loader registers it; `resolve_model_id` applies the `0xF0`
 split). `SceneHost` holds one per loaded scene, rebuilt on every field entry,
 and it is what both hosts resolve a live op-`0x0E` re-bind through -
 `World::field_npc_live_model` for the id, `SceneModelBank::tmd_bytes` for the
 bytes. Disc-gated oracles:
-[`model_bank_disc.rs`](../../crates/engine-core/tests/model_bank_disc.rs) for
+[`model_bank_disc.rs`](../../crates/engine-scene/tests/model_bank_disc.rs) for
 the bank against the `DAT_8007B774` counter, and
 [`model_rebind_live_disc.rs`](../../crates/engine-core/tests/model_rebind_live_disc.rs)
 for every authored operand in `koin3` resolving to a parseable mesh.
@@ -1374,7 +1374,7 @@ are field-VM script bytes in the streaming variant MAN carriers
 [`script-vm.md`](script-vm.md#a-second-script-byte-carrier-the-streaming-variant-man))
 or, for the town01 opening one-shot `549`, a direct code path (see
 [`world-map.md`](world-map.md), "Gate-flag setters beyond a scene's bundle MAN").
-Disc-gated anchor test: `crates/engine-core/tests/motion_flag_census_disc.rs`.
+Disc-gated anchor test: `crates/engine-scene/tests/motion_flag_census_disc.rs`.
 
 ## Provenance
 

@@ -37,7 +37,7 @@ impl LegaiaRuntime {
 
     /// The scene AABB the world map's top-view debug camera frames: the
     /// **world-space** union of the scene's static env draws, through the
-    /// shared kernel `engine_core::field_env::env_draws_world_aabb` the
+    /// shared kernel `engine_scene::field_env::env_draws_world_aabb` the
     /// native window also calls. Built on first use and cached until the next
     /// scene rebuild - no other camera reads it, so a field session never pays
     /// for it.

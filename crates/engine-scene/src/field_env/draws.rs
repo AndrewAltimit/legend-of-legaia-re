@@ -46,7 +46,6 @@ pub struct EnvDraw {
     /// dropping it does more than leave a prop upright: a mesh authored off
     /// its own origin also lands in the wrong place, because the rotation is
     /// about the origin, not the geometry's centre.
-    ///
     // REF: FUN_80026988, FUN_8003A55C, FUN_8001ADA4
     pub rot_x: u16,
     /// See [`Self::rot_x`].
@@ -83,7 +82,7 @@ pub struct EnvDraw {
     /// The object-grid cell `(col, row)` whose word selected this draw's
     /// record - the cell retail's per-cell decoration pass (`FUN_801F7088`)
     /// walks, and so the key the camera's visible-tile crop
-    /// ([`crate::field_view_window`]) tests.
+    /// (`legaia_engine_core::field_view_window`) tests.
     pub cell: (u8, u8),
     /// The record's `+0x1E` cull radius ([`Placement::cull_radius`]), which
     /// widens that per-cell window test.
@@ -98,7 +97,6 @@ pub struct EnvDraw {
     /// trees of `vell` / `vozz` (`0x180`) and the `0x380` billboards of
     /// `deene` / `retona` are such cells. Hosts resolve the basis per frame
     /// through `legaia_render_kernels::gte::decoration_cell_basis`.
-    ///
     // REF: FUN_801F7088
     pub view_skip: u16,
 }
@@ -116,7 +114,6 @@ impl EnvDraw {
     /// [`Self::rot_y`] alone stands every tilted placement upright - the
     /// dance hall's 21 tilted draws include its three video walls, which a
     /// yaw-only bake buried inside the back wall.
-    ///
     // REF: FUN_80026988
     pub fn place_point(&self, p: [f32; 3], lift: [f32; 3]) -> [f32; 3] {
         let [x, y, z] = self.rotate(p);
@@ -129,7 +126,6 @@ impl EnvDraw {
 
     /// The rotation half of [`Self::place_point`]: `Rx * Ry * Rz` applied to
     /// a direction (a normal, an extent corner), no translation.
-    ///
     // REF: FUN_80026988
     pub fn rotate(&self, v: [f32; 3]) -> [f32; 3] {
         rotate_euler([self.rot_x, self.rot_y, self.rot_z], v)
@@ -241,7 +237,7 @@ pub fn resolve_env_draws(
 ///
 /// Each mesh's object-local vertex extent is carried through its own
 /// placement transform - `T(world_xyz) . Ry(rot_y)`, the yaw-only form
-/// [`crate::field_occlusion::FieldOccluders::add_instanced_mesh`] already
+/// `legaia_engine_core::field_occlusion::FieldOccluders::add_instanced_mesh` already
 /// instances with - and the boxes are unioned. `ground`, when present, is
 /// already world-space (`WalkHeightfield::positions` are
 /// `(col*128, -lut[nibble], row*128)`) and joins the union directly.

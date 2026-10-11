@@ -26,7 +26,7 @@ The crate root (`src/lib.rs`) holds the glue every embedding shares:
 - [`AudioBgmDirector`](../engine-session/src/audio_director.rs) - (defined in
   `legaia_engine_session::audio_director`, generic over the audio output;
   the name here is its type alias over the cpal output) the
-  `legaia_engine_core::scene::BgmDirector` that parses the SEQ bytes the
+  `legaia_engine_core::scene_host::BgmDirector` that parses the SEQ bytes the
   field VM resolves through the BGM table, builds a sequencer, and feeds a
   cpal-backed audio output. Field-VM op `0x35` (BGM start) routes here.
 - [`cutscene_av`](src/cutscene_av.rs) - STR (MDEC video + interleaved XA

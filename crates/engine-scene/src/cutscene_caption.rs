@@ -15,7 +15,7 @@
 //! faded, over the gap. No Sony bytes live here: the pixels are decoded from the
 //! user's disc at runtime.
 
-use legaia_engine_scene::scene::Scene;
+use crate::scene::Scene;
 
 /// PROT entry carrying the `opdeene` geometry/texture pack (72 TMDs + 51 TIMs),
 /// loaded at its extended footprint. The caption TIM lives among that pack's

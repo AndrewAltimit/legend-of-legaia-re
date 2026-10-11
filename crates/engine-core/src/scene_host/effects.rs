@@ -1,6 +1,6 @@
 //! Effect-bundle / global-TMD-pool / VRAM-upload seeding constants and helpers.
 //!
-//! Extracted verbatim from `scene/host.rs`.
+//! Extracted verbatim from `scene_host.rs`.
 
 use super::*;
 

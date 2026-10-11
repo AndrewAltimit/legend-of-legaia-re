@@ -279,7 +279,7 @@ pub(super) struct PlayWindowApp {
     /// `World::cutscene.caption`). Uploaded lazily the first frame the caption
     /// image is present and dropped when it clears on scene change; holds
     /// `(atlas, width, height)`. The caption is a pre-rendered scene texture,
-    /// not font text - see [`legaia_engine_core::cutscene_caption`].
+    /// not font text - see [`legaia_engine_scene::cutscene_caption`].
     pub(super) caption_atlas: Option<(legaia_engine_render::UploadedSpriteAtlas, u32, u32)>,
     pub(super) uploaded_vram: Option<UploadedVram>,
     pub(super) meshes: Vec<UploadedVramMesh>,

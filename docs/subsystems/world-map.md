@@ -1379,7 +1379,7 @@ against the per-scene walkability grid at `*(_DAT_1F8003EC) + 0x4000`
 wall data there: the `.MAP`'s `+0x4000..+0x8000` region holds thousands of
 wall sub-cells (high-nibble bits: `map01` about 7968, `map02` about 2283,
 `map03` about 3837). The engine loads it through
-[`Scene::field_collision_grid`](../../crates/engine-core/src/scene.rs) and
+[`Scene::field_collision_grid`](../../crates/engine-scene/src/scene.rs) and
 steps the player through `World::advance_with_collision`, as on the field.
 
 The world-map capture's copy of `FUN_801CFE4C` matches the field overlay's
@@ -1602,9 +1602,9 @@ world-map frame arm steps the same slice the field arm does
 
 The overworld shares game mode `0x03` with towns, so retail distinguishes it
 by the loaded scene; the engine uses
-[`is_world_map_scene`](../../crates/engine-core/src/scene.rs) (the three
+[`is_world_map_scene`](../../crates/engine-scene/src/scene.rs) (the three
 kingdom `mapNN` labels). When a scene transition resolves to an overworld
-scene, [`SceneHost::tick`](../../crates/engine-core/src/scene.rs) routes it
+scene, [`SceneHost::tick`](../../crates/engine-core/src/scene_host.rs) routes it
 through `SceneHost::enter_world_map_scene`: `enter_field_scene` (resources,
 walkability grid, player), then the region-keyed encounter table from the
 scene's MAN, the typed entities, and the switch into `SceneMode::WorldMap`.
@@ -1618,7 +1618,7 @@ routine.
 A scene's on-map entities are the **MAN partition-1 actor-placement records**,
 decoded by `FUN_8003A1E4` and ported as
 [`ManFile::actor_placements`](../../crates/scene-formats/src/man_section.rs) /
-[`Scene::field_actor_placements`](../../crates/engine-core/src/scene.rs). The
+[`Scene::field_actor_placements`](../../crates/engine-scene/src/scene.rs). The
 scene-init routine `FUN_8003AEB0` runs `FUN_8003A1E4` over records `1..N1`
 (record `0` is the scene-entry controller, the
 [system script](field-locomotion.md)). Each record is:
@@ -1706,7 +1706,7 @@ see them.
 (`SceneHost::destination_resolver()`). The `0x3F` op's `i16 index` is a
 story / entry id in its own space (observed past `u8` range, e.g. `630`), so
 the resolver keys on `i16` and is not the `u8`-keyed
-[`MapIdResolver`](../../crates/engine-core/src/scene/resolvers.rs) (which
+[`MapIdResolver`](../../crates/engine-scene/src/scene/resolvers.rs) (which
 serves the `0x3E` door-warp's selectors `0..=6`). The field-VM executor drives
 `0x3F` as a live named scene change: it decodes the name, calls
 `host.scene_transition_named`, and `SceneHost::tick` drains
@@ -2014,7 +2014,7 @@ dispatch `FUN_80043390` selects the renderer by the group header's
 `flags >> 1` (`0x80043614`), and the untextured slots 12..=15 (F3 / F4 / G3 /
 G4, descriptor rows 2/3 of `DAT_8007326C`) are populated in the SCUS row
 `0x8007657C` and the overlay row `0x801F8968` alike. The port's shared pack
-kernel `legaia_engine_core::scene_assembly::build_hybrid_pack_mesh` builds
+kernel `legaia_engine_scene::scene_assembly::build_hybrid_pack_mesh` builds
 both.
 
 #### Which PROT entry is the walk `.MAP`
@@ -2136,7 +2136,7 @@ capture at the gate holds both actors at `(0x3FC0, 0x3FC0)` with meshes
 resolved. The port pre-runs the prologues at scene entry
 (`World::hidden_object_records`; `map01` hides partition-0 records 9 and 11)
 and all three hosts drop each placed record whose bind is hidden
-(`legaia_engine_core::field_env::retain_visible_landmark_placements`). The
+(`legaia_engine_scene::field_env::retain_visible_landmark_placements`). The
 decoration sweep runs no script and is never filtered. `map02` and `map03`
 park no landmark on a cold entry.
 
@@ -2219,7 +2219,7 @@ body `0x801F7668..0x801F76E0`) is instruction-identical over this cell kernel.
 Sampling only the cell's own nibble instead of the corner mean snaps edge
 cells a whole tier and shears a terraced town (Vidna / `balden`). Port:
 `legaia_scene_formats::field_objects` carries the corner block on each terrain
-`Placement`, `engine-core::field_env` applies the mean, and
+`Placement`, `engine-scene::field_env` applies the mean, and
 `parse_walk_decorations` is the sweep.
 
 After the cell loop the routine sets the far colour and calls the ground
@@ -2416,7 +2416,7 @@ cells shows as the clear colour; see the mesh-id rule in
 into `WalkHeightfield::cba_tsb`, so one ground mesh samples all pages.
 `GROUND_ATLAS_TPAGE` / `_CLUT` remain as the grass fallback for cells whose
 record carries no terrain run. Pin:
-`crates/engine-core/tests/field_ground_surface_disc.rs`.
+`crates/engine-scene/tests/field_ground_surface_disc.rs`.
 
 **The atlas page is contested VRAM.** `0x0C` = fb `(768, 0)` is also where a
 scene block's battle-side character pages land: two `64 x 256` pages at
@@ -2426,7 +2426,7 @@ the scene's own atlas, and the ground then samples character texels (Jeremi
 renders a grid of grey tiles, Mt. Dhini a vine pattern). The source and the
 build rule are on
 [`pochi.md`](../formats/pochi.md#the-stale-scratch-hazard-belongs-to-the-next-entry);
-regression `crates/engine-core/tests/field_ground_texture_pages_disc.rs`.
+regression `crates/engine-scene/tests/field_ground_texture_pages_disc.rs`.
 
 ### Water and CLUT animation
 
@@ -2485,7 +2485,7 @@ plus TIM CLUTs for rows 500 / 501 / 508. **`map02` / `map03` ship only rows
 from the Drake upload - `map01` is always the first world map, and the
 resident Sebucus / Karisto captures hold `map01`'s bytes on those rows.
 
-**Port.** `legaia_engine_core::clut_walk_anim::ClutWalkAnim` is the one
+**Port.** `legaia_engine_scene::clut_walk_anim::ClutWalkAnim` is the one
 stepper both hosts and the field-scene viewer run: `install` resolves the
 table (the kingdom's slot 5 on an overworld, the scene bundle's type-6 table
 on a field scene), parks the strips, and parks the Drake complement for rows

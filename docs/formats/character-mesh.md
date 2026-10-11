@@ -862,7 +862,7 @@ feed through a parallel consumer struct at `actor[+0x234]` - see `anm.md`
 
 | Function | Role |
 |---|---|
-| `FUN_80020224` → `FUN_8001F05C` case 2 → `FUN_80026B4C` | Descriptor walk installing PROT 0874 §0's five field TMDs into `DAT_8007C018[0..=4]`. Field caller: `FUN_801D6704` → `FUN_80020118` → `FUN_8001E890`. Port: [`seed_global_tmd_pool_from_befect_data`](../../crates/engine-core/src/scene.rs). |
+| `FUN_80020224` → `FUN_8001F05C` case 2 → `FUN_80026B4C` | Descriptor walk installing PROT 0874 §0's five field TMDs into `DAT_8007C018[0..=4]`. Field caller: `FUN_801D6704` → `FUN_80020118` → `FUN_8001E890`. Port: [`seed_global_tmd_pool_from_befect_data`](../../crates/engine-core/src/scene_host.rs). |
 | `FUN_8001ED60` / `FUN_8001E1B4` | Boot: size and allocate the §0 / §1 buffers from the container header. |
 | `FUN_8001E890` | Field player loader: decodes §0..§2, registers the pack, caps `nobj` to 10 for the three party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`, calls `FUN_8001EBEC`. |
 | `FUN_8001EBEC` | Field equipment swap: copies one of two template group descriptors over a visible group. |

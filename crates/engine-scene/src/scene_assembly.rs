@@ -7,7 +7,7 @@
 //! why it must stay one kernel): the browser field-scene page
 //! (`web-viewer::field_scene` wraps [`AssembledScene`] with its render
 //! caches), the browser play page's mesh builders, and the native
-//! `legaia-engine export-glb` world exporter ([`crate::glb_export`]).
+//! `legaia-engine export-glb` world exporter (`legaia_engine_core::glb_export`).
 //!
 //! The hybrid mesh builders here merge the two primitive families every env
 //! pack mixes - VRAM-textured prims and untextured `F*`/`G*` vertex-colour
@@ -94,7 +94,6 @@ pub fn draw_rot_y_radians(rot_y: u16) -> f32 {
 /// (the flip commutes with a rotation about Y), i.e. what
 /// [`draw_rot_y_radians`] encodes; a record with a pitch or roll is the
 /// case a yaw-only placement stands upright.
-///
 // REF: FUN_80026988
 pub fn draw_rotation_quat(d: &EnvDraw) -> [f32; 4] {
     placement_rotation_quat([d.rot_x, d.rot_y, d.rot_z])
@@ -104,7 +103,6 @@ pub fn draw_rotation_quat(d: &EnvDraw) -> [f32; 4] {
 /// `[rot_x, rot_y, rot_z]` alone - what the browser page's `.glb` export
 /// session holds for a draw (`scene_export_add_instance_euler`), so a
 /// page-baked glb and the native `export-glb` orient a tilted record alike.
-///
 // REF: FUN_80026988
 pub fn placement_rotation_quat(rot: [u16; 3]) -> [f32; 4] {
     let r = |v| crate::field_env::rotate_euler(rot, v);

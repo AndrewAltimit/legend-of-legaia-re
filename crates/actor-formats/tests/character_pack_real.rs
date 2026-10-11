@@ -16,7 +16,7 @@
 //! - The disc-form group-count drift (we pin `nobj = 12/12/12/3/2` because the
 //!   engine relies on the active-party slots carrying group 10 / 11 to drive
 //!   the equipment swap; if a future extractor change rebakes the pack, the
-//!   `engine_core::scene::seed_global_tmd_pool_from_befect_data` consumer
+//!   `engine_core::scene_host::seed_global_tmd_pool_from_befect_data` consumer
 //!   would silently regress without this guard).
 
 use std::path::PathBuf;

@@ -15,7 +15,7 @@
 //! rather than relying on those offsets.
 //!
 //! Engines build a [`SceneAssets`] once per scene transition and query it
-//! through the [`crate::scene::SceneHost`] for the duration of the scene.
+//! through the `SceneHost` for the duration of the scene.
 //!
 //! PORT: FUN_8001F7C0
 //! REF: FUN_800255B8 (the per-kind file fetch, replaced here by the
@@ -63,7 +63,7 @@ use legaia_engine_dialog::dialog::SceneMes;
 
 /// Typed snapshot of every asset the engine cares about after entering a
 /// scene. Built once per scene transition by
-/// [`crate::scene::SceneHost::enter_field_scene`] (or directly by engines
+/// `SceneHost::enter_field_scene` (or directly by engines
 /// that drive their own scene loop) and queried by the per-VM Host impls,
 /// the renderer, and the audio mixer.
 ///
@@ -103,7 +103,7 @@ pub struct SceneAssets {
     pub vab_entries: Vec<u32>,
     /// Per-record event-script bytecode. Each entry is one record's bytes
     /// verbatim (no frame-divider sentinel stripping - that happens in
-    /// [`crate::world::World::load_field_record`]).
+    /// `World::load_field_record`).
     pub event_records: Vec<Vec<u8>>,
 }
 

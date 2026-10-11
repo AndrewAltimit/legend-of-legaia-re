@@ -45,7 +45,7 @@ glb-export/town01/
 Everything composes through the same kernels the browser viewers render
 with, so the export matches the on-screen pages:
 
-- **World glb** - `engine-core::scene_assembly::assemble_field_scene` (the
+- **World glb** - `engine-core::scene_staging::assemble_field_scene` (the
   field-scene page's build): ground heightfield (with the shared
   `GROUND_SINK`, minus the steep triangles of sloped far-bucket cells -
   see `field_ground::flat_refs`; a glb has no ordering table to draw them
@@ -172,7 +172,7 @@ objects - the village centre, not the map-grid centre), composition
   `0x4C 0x35` reset-hold, so a builder should trigger it once on approach;
   retail advances those only while the bind script runs - or leaves the
   template flags alone, the windmill, whose sails spin forever under the
-  unconditional anim tick (`legaia_engine_core::field_env::prop_spawn_free_runs`).
+  unconditional anim tick (`legaia_engine_scene::field_env::prop_spawn_free_runs`).
   A keyframe-shape test is only the no-bind fallback: the windmill's
   0..179-degree spin ends displaced from frame 0 and its four-blade
   symmetry is what makes the loop seamless, so shape alone misreads
@@ -216,7 +216,7 @@ Transforms are in the **export frame**: the site renderers' convention
 mirror-handedness and all), already multiplied by `scale`. Rotations
 carry all three authored placement angles: each world-glb instance node
 and each manifest prop instance (`rotation_xyzw`) holds the quaternion
-`legaia_engine_core::scene_assembly::draw_rotation_quat` builds from the
+`legaia_engine_scene::scene_assembly::draw_rotation_quat` builds from the
 record's `Rx * Ry * Rz` composition - the `EnvDraw::rotate` kernel the
 play hosts place with - conjugated by the export frame's Y flip
 (`F * R * F`, `F = diag(1, -1, 1)`), so a pitched or rolled record (a

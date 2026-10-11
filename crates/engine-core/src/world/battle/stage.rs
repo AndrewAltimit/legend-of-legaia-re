@@ -17,7 +17,7 @@
 //! Stage `1`'s behaviour is the sparring-prompt machine
 //! (`world/battle/tutorial.rs`); stages `2` / `3` - the two phases of the
 //! Cort fight - are the two stage modules
-//! ([`legaia_engine_scene::battle_stage_module`]), driven from the side-band.
+//! ([`crate::battle_stage_module`]), driven from the side-band.
 
 use super::*;
 
@@ -55,7 +55,7 @@ impl World {
     /// Returns `true` when the arm fired.
     ///
     /// REF: FUN_801E6968 (the arm's kernel is
-    /// [`legaia_engine_scene::battle_stage_module::boss_transition_stage_id`])
+    /// [`crate::battle_stage_module::boss_transition_stage_id`])
     pub(in crate::world) fn run_boss_transition_arm(&mut self) -> bool {
         let Some(id) = self.formation_slot0_monster_id() else {
             return false;
@@ -64,9 +64,7 @@ impl World {
         let Some(liveness) = self.actors.get(first_seat).map(|a| a.battle.liveness) else {
             return false;
         };
-        let Some(stage) =
-            legaia_engine_scene::battle_stage_module::boss_transition_stage_id(id, liveness)
-        else {
+        let Some(stage) = crate::battle_stage_module::boss_transition_stage_id(id, liveness) else {
             return false;
         };
         self.battle.stage_id = stage;

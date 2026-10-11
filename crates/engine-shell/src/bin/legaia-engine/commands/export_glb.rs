@@ -1,6 +1,6 @@
 //! `export-glb`: bake a scene (or every scene) into the textured `.glb` +
 //! manifest set for Unity / VRChat world building. Thin driver over the
-//! shared kernels: `engine-core::scene_assembly` (the same assembly the
+//! shared kernels: `engine-scene::scene_assembly` (the same assembly the
 //! browser field-scene page renders) + `engine-core::glb_export` (the
 //! composition + baking). See `docs/tooling/vrchat-world-export.md`.
 

@@ -337,7 +337,7 @@ The port's battle resource build uploads every TIM in the bundle
 holding the address. `town01`'s semi-transparent cloud band (`(768, 0)` at `v`
 191..254, palette `1` of row 473, a greyscale + STP ramp) would then draw
 through a sibling's rainbow CLUT-cycling ramp as flat green rectangles.
-`engine-core::scene::upload_battle_stage_tims_into_vram` re-uploads the
+`engine-scene::scene::upload_battle_stage_tims_into_vram` re-uploads the
 selected entry's own TIMs last; both hosts call it from `build_battle_stage`.
 Sweeps: `rim_elms_four_stage_streams_all_claim_the_same_vram` and
 `the_selected_stage_entry_owns_its_vram_after_the_reupload`.
@@ -511,7 +511,7 @@ depth-tested mesh draws the same band once the arc stands where retail's
 does.
 
 The spin is `World::tick_battle_backdrop_spin` (once a battle frame) and
-`legaia_engine_core::scene::backdrop_slot_1_basis`; both play hosts draw
+`legaia_engine_core::scene_host::backdrop_slot_1_basis`; both play hosts draw
 slot 1 as one unbaked copy, twice a frame, under that basis
 (`SceneHost::battle_stage_layers`).
 

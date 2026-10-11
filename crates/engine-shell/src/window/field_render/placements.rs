@@ -255,7 +255,7 @@ impl PlayWindowApp {
     ///
     /// Built off the same static draw list the occluder set and the coplanar
     /// pass use, through the shared kernel
-    /// `engine_core::field_env::env_draws_world_aabb` the browser play page
+    /// `engine_scene::field_env::env_draws_world_aabb` the browser play page
     /// also calls. It used to be the union of the uploaded meshes' *local*
     /// vertex extents: every env-pack mesh is authored about its own origin,
     /// so that box sat near `(0,0,0)` while the geometry it was meant to
@@ -345,7 +345,7 @@ impl PlayWindowApp {
         // The environment meshes are the scene's geometry-pack TMDs, in scan
         // order; `pack_index` indexes that subset of `res.tmds`. Pack
         // selection (the per-entry TMD-count vote) + the placement -> draw
-        // resolution live in the shared kernel `engine_core::field_env`, so
+        // resolution live in the shared kernel `engine_scene::field_env`, so
         // the web viewer's assembled scene view resolves the exact same
         // draws; this method only adds the uploaded-mesh bridge and the
         // render-frame model matrix.

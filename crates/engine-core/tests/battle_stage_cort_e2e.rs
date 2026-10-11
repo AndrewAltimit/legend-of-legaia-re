@@ -20,11 +20,11 @@ use legaia_engine_battle::encounter_record::BOSS_TRANSITION_MONSTER_ID;
 use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, MonsterCatalog, MonsterDef,
 };
-use legaia_engine_core::world::{Actor, World};
-use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_scene::battle_stage_module::{
+use legaia_engine_core::battle_stage_module::{
     ARRIVAL_CUE, ARRIVAL_DROP_HEIGHT, FORM_TRANSITION_ACTION_STATE, FORM_TRANSITION_CUE,
 };
+use legaia_engine_core::world::{Actor, World};
+use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::{InputState, PadButton};
 
 const BOSS_NAME: &str = "Boss";

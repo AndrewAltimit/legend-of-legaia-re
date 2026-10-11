@@ -97,6 +97,7 @@ CORE_SRC = REPO / "crates" / "engine-core" / "src"
 # Kernel crates under engine-core whose traits engine-core implements.
 SPLIT_SRCS = [
     REPO / "crates" / "engine-field" / "src",
+    REPO / "crates" / "engine-scene" / "src",
     REPO / "crates" / "engine-menus" / "src",
     REPO / "crates" / "engine-dialog" / "src",
     REPO / "crates" / "engine-system" / "src",
@@ -124,7 +125,7 @@ FN_RE = re.compile(r"\bfn\s+(?P<name>[a-z0-9_]+)\s*[<(]")
 
 # `impl [<generics>] [path::]Trait[<args>] for Type {`. The trait path is
 # allowed to be qualified because a host can write
-# `impl legaia_engine_core::scene::BgmDirector for SomeDirector<'_>`, and a
+# `impl legaia_engine_core::scene_host::BgmDirector for SomeDirector<'_>`, and a
 # pattern that only matched the bare name would silently drop exactly the
 # host this gate exists to compare.
 IMPL_RE = re.compile(
@@ -299,7 +300,7 @@ SELFTEST_IMPLS: list[tuple[str, str, str | None, str | None]] = [
     ("bare trait name",
      "impl BgmDirector for AudioBgmDirector {", "BgmDirector", "AudioBgmDirector"),
     ("fully qualified trait path",
-     "impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_> {",
+     "impl legaia_engine_core::scene_host::BgmDirector for WebBgmDirector<'_> {",
      "BgmDirector", "WebBgmDirector<'_>"),
     ("lifetime generics on the impl",
      "impl<'a> CdDmaHost for DiscHost<'a> {", "CdDmaHost", "DiscHost<'a>"),

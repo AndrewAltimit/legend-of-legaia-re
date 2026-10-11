@@ -105,7 +105,7 @@ impl PropAnimBank {
     /// Caruban is what spawns the P2[53] revival. Its stand-in clip never
     /// draws: both hosts pose only `anim_id != 0` placements. An unposed
     /// touch-class object stays with the walk-touch dispatch
-    /// ([`crate::world::FieldPropState::walk_touch`]), which resolves its
+    /// (`FieldPropState::walk_touch`), which resolves its
     /// record's arm against the live flags at contact time.
     ///
     /// `clip` resolves an anim id to `(frame_count, scaled_step, step_div)`

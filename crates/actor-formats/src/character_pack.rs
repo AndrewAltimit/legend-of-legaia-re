@@ -43,7 +43,7 @@
 //! The retail loader chain that installs section 0 into `DAT_8007C018[0..4]`
 //! via `FUN_8001F05C` case 2 → `FUN_80026B4C` is not yet pinned. The
 //! engine routes the disc bytes directly through this parser (see
-//! `engine_core::scene::seed_global_tmd_pool_from_befect_data`).
+//! `engine_core::scene_host::seed_global_tmd_pool_from_befect_data`).
 
 use anyhow::{Context, Result, bail};
 

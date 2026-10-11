@@ -1303,7 +1303,7 @@ decoded slot of any player file (nor any raw PROT entry or `SCUS_942.54` as an 8
 They are plain PSX TIMs in each scene's own `scene_tmd_stream` entries, uploaded by
 `FUN_8001FE70` at battle init - see [`npc-palette.md`](npc-palette.md). The engine consequence
 (field scene-loads exclude these packs from VRAM entirely) is wired through
-[`SceneResources::SceneLoadKind`](../../crates/engine-core/src/scene_resources.rs).
+[`SceneResources::SceneLoadKind`](../../crates/engine-scene/src/scene_resources.rs).
 
 ## CLI
 

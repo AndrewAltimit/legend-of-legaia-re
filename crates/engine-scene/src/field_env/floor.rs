@@ -6,7 +6,6 @@ use super::*;
 /// (`4096` = full revolution) applied to a direction: the rotation half of
 /// [`EnvDraw::place_point`], free of a draw so a caller holding only a
 /// placement's three angles composes the same matrix.
-///
 // REF: FUN_80026988
 pub fn rotate_euler(rot: [u16; 3], v: [f32; 3]) -> [f32; 3] {
     let a = |v: u16| f32::from(v & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
@@ -33,7 +32,7 @@ pub fn rotate_euler(rot: [u16; 3], v: [f32; 3]) -> [f32; 3] {
 /// it keeps the rungs each draw used and re-resolves the height per frame
 /// through [`FloorWave`] instead of re-walking the map. The walk-ground
 /// heightfield is the per-vertex half of the same wave
-/// ([`crate::field_ground::live_render_positions`]).
+/// (`legaia_engine_core::field_ground::live_render_positions`).
 ///
 /// This mirrors exactly what [`Placement::world_y`] consumes: a terrain /
 /// decoration cell's four corner tiles, or a placed object's single

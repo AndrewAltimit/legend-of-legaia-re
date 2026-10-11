@@ -16,8 +16,8 @@
 
 use std::path::PathBuf;
 
+use legaia_engine_core::battle_stage_module::{ARRIVAL_GROUND_BLANK, StageEffect};
 use legaia_engine_core::scene_host::SceneHost;
-use legaia_engine_scene::battle_stage_module::{ARRIVAL_GROUND_BLANK, StageEffect};
 use legaia_engine_scene::scene::Scene;
 use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,

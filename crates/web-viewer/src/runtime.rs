@@ -123,7 +123,7 @@ pub struct LegaiaRuntime {
     pub(crate) camera_azimuth_override: Option<u16>,
     /// Lazily-built scene AABB - the **world-space** union of the scene's
     /// static env draws, through the same
-    /// `engine_core::field_env::env_draws_world_aabb` kernel the native window
+    /// `engine_scene::field_env::env_draws_world_aabb` kernel the native window
     /// calls. Used only by the world map's top-view debug camera. Cleared on
     /// every scene rebuild.
     pub(crate) scene_aabb: Option<([f32; 3], [f32; 3])>,

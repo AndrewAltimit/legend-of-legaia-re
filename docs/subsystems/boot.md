@@ -626,7 +626,7 @@ The SCUS-side CD I/O is layered. Bottom-up:
 | `FUN_8005E788` | Streaming-read **starter**: copies `DAT_800796C8` → `DAT_800796CC` and `DAT_800796C4` → `DAT_800796D8`, registers `FUN_8005E574`, sets the initial LBA via `FUN_8005C42C(FUN_8005BD70())`. |
 | `FUN_8005E9A4` | Public streaming-read API: `(sector_count, dest_buffer, mode_flags)`. Sets the streaming globals and calls `FUN_8005E788(0)`; the caller must SetLoc first. Sector size from `mode_flags & 0x30`: `0` → `0x200` (2048, data), `0x20` → `0x249` (2336, XA), else `0x246`. |
 | `FUN_8005E4D4` | Sync LBA-based reader: `(sector_count, lba, dest_buffer)`. Wraps `FUN_8005C328` + `CdControl(SetLoc)` + `FUN_8005E9A4` + the block-mode completion poll `FUN_8005EA84(0, …)`. |
-| `FUN_8005EA84` | Streaming-read completion sync: `(poll_once, result)` → sectors remaining, `0` = complete, `-1` = timed out. Detail below the table. Port: `engine-core::cd_dma::stream_read_sync`. |
+| `FUN_8005EA84` | Streaming-read completion sync: `(poll_once, result)` → sectors remaining, `0` = complete, `-1` = timed out. Detail below the table. Port: `engine-scene::cd_dma::stream_read_sync`. |
 | `FUN_8003D3C4` | Path-based ISO9660 file loader: `(path, dest)`. Wraps `FUN_8005DBB4` + SetLoc + `FUN_8005E9A4`. Used for `.STR` / `.XA` filesystem files. |
 | `FUN_8003E4E8` | Boot-time TOC loader: `(filename_str, do_read_flag)`; reads 3 sectors into `0x801C70F0`. |
 | `FUN_8003E800` | Async sector-count loader: `(dest, sector_count, flags)`. Queues via `gp+0x97c` (**count**) / `gp+0x894` (dest) and kicks `FUN_8003F128`, which forms the LBA from the `CdlLOC` at `0x8008BC5C`. Used by both overlay loaders. |
@@ -655,7 +655,7 @@ callback code, not the PsyQ `libcd` BIOS path. It splits into two tiers with
 different port status.
 
 **The queue tier is arithmetic over the PROT TOC and is ported** in
-`engine-core::cd_dma` (`FUN_8003E800`, `FUN_8003F128`, `FUN_8003E8A8` and the
+`engine-scene::cd_dma` (`FUN_8003E800`, `FUN_8003F128`, `FUN_8003E8A8` and the
 enqueue below):
 
 - **`FUN_8003DDA0`** - index-based streaming **enqueue**. Reads the in-RAM TOC:

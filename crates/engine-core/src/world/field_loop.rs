@@ -600,9 +600,7 @@ impl World {
         // The stage id as battle init leaves it: the tutorial arm
         // `enter_battle` consumed, or the `0xB5` override (`FUN_80055B6C`,
         // `0x80055D2C..0x80055D44`), which pages the arrival module in.
-        if let Some(stage) =
-            legaia_engine_scene::battle_stage_module::battle_init_stage_override(lead_monster)
-        {
+        if let Some(stage) = crate::battle_stage_module::battle_init_stage_override(lead_monster) {
             self.battle.stage_id = stage;
         }
         let stage_set = self.battle.stage_id != 0;

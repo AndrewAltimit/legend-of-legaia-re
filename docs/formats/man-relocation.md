@@ -94,7 +94,7 @@ fixups (all offsets per [`man_section`](../../crates/scene-formats/src/man_secti
   entry the MAN actually lives in. A scene may have no MAN of its own, one
   bundle MAN, or a bundle MAN plus a streaming variant carrier
   (`legaia_scene_formats::man_section` parses all of them identically); the enumerator
-  is `legaia_engine_core::man_field_scripts::scene_man_carriers`. Every carrier
+  is `legaia_engine_scene::man_field_scripts::scene_man_carriers`. Every carrier
   on the disc is byte-unique, so a name that appears to resolve the *same* MAN
   as another scene is a framing bug, not a shared asset - a CDNAME block whose
   window is a subset of its neighbour's (the two head defines keep unshifted

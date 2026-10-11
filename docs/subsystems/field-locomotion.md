@@ -727,7 +727,7 @@ The `.MAP` file's `+0x10000..+0x12000` region is a per-tile trigger block. For k
 | 2 | `[tile_x][tile_z][coarse: i8][quads: u8]` | **Elevation override** for a ramp / staircase tile ([above](#floor-height-two-models)): `coarse` x `-0x20`, four 2-bit sub-cell steps in `quads` x `-0x10`. |
 | 3 | `[x0, z0, x1, z1, type, 0, 0, 0]` | **Region AABB** - the resumable point-in-AABB scan `FUN_80017FBC` (body at `+0x1000E`, count at `+0x10010`). Region types feed the bitmask `_DAT_8007B8F4` and the camera zone query `FUN_801DBA20`. |
 
-The per-tile lookup `FUN_801D5630(kind, x, z)` scans the `+0x10000` block first and **falls back to the `+0x12000` window**. Port: [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-field/src/field_regions.rs), `IntraSceneTeleport`, `RegionTable`, and [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs). See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned) for the opening-chain use.
+The per-tile lookup `FUN_801D5630(kind, x, z)` scans the `+0x10000` block first and **falls back to the `+0x12000` window**. Port: [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-field/src/field_regions.rs), `IntraSceneTeleport`, `RegionTable`, and [`Scene::field_tile_triggers`](../../crates/engine-scene/src/scene/scene_ty.rs). See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned) for the opening-chain use.
 
 #### The walk-on dispatcher `FUN_801D1EC4`
 
@@ -917,7 +917,7 @@ So a **multi-object placed prop is posed, not stamped**: its TMD objects are the
 
 **The other descriptor bits do not change on-screen pixels.** Flags `0x1000` is read after the on-screen probe `FUN_8001B73C`: a miss with the bit set skips the draw. The two `+0x74` bits make the colour word's high byte non-zero, which the prim dispatcher `FUN_80043390` reads as a blend argument (`0x800433C0..0x800433CC`): far colour from the low 24 bits, `IR0` cleared (`0x800434D4`), the depth-cue handler bank, ABR `0`, no semi-transparency - a depth cue at `IR0 = 0`, the identity. Across the disc's window placements two have kind `0` (`ropeway` descriptor `122`, `suimon` descriptor `233`); none carries flags `0x1000`.
 
-**Port.** `legaia_engine_core::field_env::object_binds` (bind lookup + header decode; anchor tile `Placement::anchor_col` / `anchor_row`) and `resolve_placed_env_draws` (`EnvDraw::anim_id`); disc-gated `crates/engine-core/tests/field_object_binds_disc.rs`.
+**Port.** `legaia_engine_scene::field_env::object_binds` (bind lookup + header decode; anchor tile `Placement::anchor_col` / `anchor_row`) and `resolve_placed_env_draws` (`EnvDraw::anim_id`); disc-gated `crates/engine-scene/tests/field_object_binds_disc.rs`.
 
 `World::recentre_field_window` (`world/static_window.rs`) is the re-centre pair: it re-latches the box through `refresh_region_attributes` and re-plans the list against the `.MAP` descriptor region held on `FieldTerrain::static_window`. It runs from the field entry, the warp landing, the `0x23` / `4C 51` player arms, the leader swap, and a host debug seat (`LEGAIA_SEAT`, `play_debug_seat`). Both play hosts ask one kernel per placed draw, `field_env::placed_draw_live`: a bound draw is always live; a window-owned one is live only while the list holds a drawn actor for it, under the `retail_static_window` option.
 
@@ -956,7 +956,7 @@ An actor is born with the placed-object template `DAT_80073E70`'s `+0x62 = 0x001
 
 Live PCSX-Redux Rim Elm captures read those words back off the actor list: a resting door is `+0x62 = 0x001F` / cursor `0`; the door the player stands at is `0x011D` / cursor `479` (`= 30 * 16 - 1`); one that has played back shut is `0x019D` / cursor `0`. The scene's NPCs sit at the untouched template `0x0015`.
 
-**Port.** `legaia_engine_core::field_env`: `PropAnim::tick` (the `FUN_800204f8` arithmetic), `decode_prop_program` (the record's spawn / touch command shape + the `0x31` class bits), and `PropAnimBank`, one cursor **per placement** plus each prop's record, parked cursor and `+0x10` word. The touch / interact dispatch runs the record through the field VM ([above](#engine-model)). Hosts keep the baked frame-0 mesh for a prop at rest and re-pose only running clips.
+**Port.** `legaia_engine_scene::field_env`: `PropAnim::tick` (the `FUN_800204f8` arithmetic), `decode_prop_program` (the record's spawn / touch command shape + the `0x31` class bits), and `PropAnimBank`, one cursor **per placement** plus each prop's record, parked cursor and `+0x10` word. The touch / interact dispatch runs the record through the field VM ([above](#engine-model)). Hosts keep the baked frame-0 mesh for a prop at rest and re-pose only running clips.
 
 The bank also holds the **unposed** interact-gated binds. `FUN_8003A55C` copies the header's anim byte into `+0x5C` (`0x8003A8DC`) without branching on it, so a bind whose anim byte is `0` is still examined for its record. `rikuroa` P0[2], the Genesis Tree, has no clip: its body polls `0x28A` / `0x142`, and examining it after Caruban spawns P2[53], the revival that carries the party down to `map01`.
 

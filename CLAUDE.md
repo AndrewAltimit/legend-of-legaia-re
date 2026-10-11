@@ -273,7 +273,8 @@ The edges among the engine's kernel crates are a committed table (`scripts/ci/cr
 
 | Crate | Binary | Scope |
 |---|---|---|
-| [`crates/engine-core`](crates/engine-core/README.md) | - | The renderer-free simulation half: `World`, scene host and loading, battle loop, menu runtime, LGSF saves, and the `World` / `Scene` entry points of the sessions that live in the kernel crates below it. |
+| [`crates/engine-core`](crates/engine-core/README.md) | - | The renderer-free simulation half: `World`, the scene host (`scene_host::SceneHost`) that ticks a loaded scene, battle loop, menu runtime, LGSF saves, and the `World` entry points of the sessions that live in the kernel crates below it. |
+| [`crates/engine-scene`](crates/engine-scene/README.md) | - | The disc-facing half below `engine-core`: `Scene` / `ProtIndex` scene resolution, `SceneResources` / `SceneAssets` loading, the model bank, the environment draw resolver and assembly kernel, the `Vfs` backends, the CD streaming host traits. Names no `World`. |
 | [`crates/engine-battle`](crates/engine-battle/README.md) | - | The battle kernels that never touch `World`: monster AI, spoils, AP gauge, stats, catalogs, encounters, level-up, Seru learning, arts tracking, per-frame animation passes. |
 | [`crates/engine-minigames`](crates/engine-minigames/README.md) | - | The minigame rules engines (slot machine, Baka Fighter, dance, prize exchange, Muscle Dome ladder), with no world, scene or renderer. Fishing is `engine-fishing`. |
 | [`crates/engine-fishing`](crates/engine-fishing/README.md) | - | The fishing rules engine below `engine-minigames`: `PondSession`, the rod / lure / line actors, venue chrome, hub screen and venue floor grid. |

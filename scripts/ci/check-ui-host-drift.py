@@ -1286,14 +1286,14 @@ SIM_PAIRS: list[dict[str, object]] = [
         "calls, so both must hand the combined draw list to the same "
         "coplanar kernel (see the native pairing above for the failure this "
         "catches). The field-scene viewer's whole assembly now lives in the "
-        "shared kernel `engine-core::scene_assembly::assemble_field_scene` "
+        "shared kernel `engine-scene::scene_assembly::assemble_field_scene_with` "
         "(which the native export-glb path also reads), so the viewer side "
         "of this pair is checked at the kernel",
         "sites": {
             "web_play": (WEB_PLAY, "build_field_render"),
             "web_viewer": (
-                "crates/engine-core/src/scene_assembly.rs",
-                "assemble_field_scene",
+                "crates/engine-scene/src/scene_assembly.rs",
+                "assemble_field_scene_with",
             ),
         },
         "mode": "symbols_all",
@@ -2840,6 +2840,7 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-fishing",
     REPO / "crates" / "engine-effects",
     REPO / "crates" / "engine-field",
+    REPO / "crates" / "engine-scene",
     REPO / "crates" / "engine-menus",
     REPO / "crates" / "engine-dialog",
     REPO / "crates" / "engine-system",
@@ -3403,7 +3404,7 @@ OWNED_TYPES: list[dict[str, object]] = [
     },
     {
         "type": "SceneHost",
-        "defined_in": "crates/engine-core/src/scene/host.rs",
+        "defined_in": "crates/engine-core/src/scene_host.rs",
         "why": "the scene host is what drains the per-frame queues the field "
         "VM fills - the minigame door warp, the staged menu warp, the BGM "
         "route. A host that keeps a bare `World` instead reaches the same "
@@ -3725,6 +3726,7 @@ SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-fishing" / "src",
     REPO / "crates" / "engine-effects" / "src",
     REPO / "crates" / "engine-field" / "src",
+    REPO / "crates" / "engine-scene" / "src",
     REPO / "crates" / "engine-menus" / "src",
     REPO / "crates" / "engine-dialog" / "src",
     REPO / "crates" / "engine-system" / "src",
@@ -4495,6 +4497,7 @@ ENGINE_API_CRATES = (
     "engine-battle",
     "engine-effects",
     "engine-field",
+    "engine-scene",
     "engine-menus",
     "engine-mode",
     "engine-dialog",

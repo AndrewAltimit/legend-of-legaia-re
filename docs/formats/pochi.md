@@ -83,7 +83,7 @@ The rendering hazard behind that reading is real, and belongs to the **`scene_tm
 - Uploaded last in a field build, those pages erase the atlas. Jeremi's floor becomes a grid of grey "tombstones", Mt. Dhini's a repeating vine / crack pattern.
 - A sweep that scans every entry of a CDNAME block for TIMs reaches them only by reading past the pochi slot's end, which the superseded entry-size expression allowed ([`prot.md`](prot.md)). Rim Elm is unaffected because its sibling slots are all `scene_tmd_stream` entries, which the field build already excludes.
 
-With an entry sized as the sector gap to its successor, a pochi slot has no reach. The engine's field VRAM pre-pass skips `Class::PochiFiller` entries outright (`legaia_engine_core::scene_resources`). The disc-gated regression `field_ground_texture_pages_disc` pins both halves: every pochi-filler entry is one sector carrying no TIM, and the built VRAM does not contain the neighbour's page.
+With an entry sized as the sector gap to its successor, a pochi slot has no reach. The engine's field VRAM pre-pass skips `Class::PochiFiller` entries outright (`legaia_engine_scene::scene_resources`). The disc-gated regression `field_ground_texture_pages_disc` pins both halves: every pochi-filler entry is one sector carrying no TIM, and the built VRAM does not contain the neighbour's page.
 
 ## See also
 

@@ -142,7 +142,7 @@ impl World {
     /// monster slot dead + `DAT_8007BD0C == 0xB5` boss-transition arm,
     /// `0x801E6CE4..0x801E6D64`) is the second battle stage-id writer - the
     /// Cort form transition to stage 3 / entry 969 - ported separately as
-    /// [`legaia_engine_scene::battle_stage_module::boss_transition_stage_id`], run at the
+    /// [`crate::battle_stage_module::boss_transition_stage_id`], run at the
     /// head of cleanup state `0x50` by [`World::run_boss_transition_arm`].
     ///
     /// REF: FUN_800402F4 (the revive arm this calls - case 4, tier 1 = full

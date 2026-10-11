@@ -63,6 +63,7 @@ mod battle_real_data_chain;
 mod battle_scene_smoke;
 mod battle_seats_disc;
 mod battle_shout_cue;
+mod battle_stage_boss_transition;
 mod battle_stage_cort_e2e;
 mod battle_stage_entries_real;
 mod battle_stat_seeding;

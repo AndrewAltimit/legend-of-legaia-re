@@ -116,13 +116,13 @@ pub struct CutsceneState {
     /// roller [`crate::world::CutsceneState::narration`].
     pub card: Option<Vec<String>>,
     /// The `opdeene` "It was the Seru." caption, decoded to RGBA at scene
-    /// entry ([`crate::cutscene_caption::decode_opdeene_caption`]). `Some`
+    /// entry ([`legaia_engine_scene::cutscene_caption::decode_opdeene_caption`]). `Some`
     /// only while `opdeene` is loaded; the host uploads it once as a sprite
     /// atlas and blits it, faded by [`crate::world::CutsceneState::caption_alpha`]. Unlike
     /// the crawl / card this is a pre-rendered image, not font text - retail
     /// draws it as a scene textured quad, so the engine blits the scene
-    /// texture rather than rendering a string. See [`crate::cutscene_caption`].
-    pub caption: Option<crate::cutscene_caption::CaptionImage>,
+    /// texture rather than rendering a string. See [`legaia_engine_scene::cutscene_caption`].
+    pub caption: Option<legaia_engine_scene::cutscene_caption::CaptionImage>,
     /// The live `4C E1` single-line text balloon, spawned by the field-VM
     /// menu-ctrl sub-op (`FUN_8003C764`) and ticked per frame
     /// ([`legaia_engine_dialog::text_balloon::TextBalloon::tick`], the `FUN_801DA7F0`

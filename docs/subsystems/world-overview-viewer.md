@@ -181,7 +181,7 @@ resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
 
 - Each stamped mesh is uploaded **whole**: the `pack_mesh_*` accessors
   build the slot through the shared pack kernel
-  `legaia_engine_core::scene_assembly::build_hybrid_pack_mesh` - the
+  `legaia_engine_scene::scene_assembly::build_hybrid_pack_mesh` - the
   textured prims first, then the untextured `F*`/`G*` vertex-colour prims
   appended with `(cba, tsb) = (0, blend)` - and `pack_mesh_flat_rgba` is the
   index-aligned `[r, g, b, flag]` packet-colour stream (`flag` 255 =

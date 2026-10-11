@@ -33,7 +33,7 @@ impl SceneEntry {
 /// Frame-divider note: many records open with the four-byte sentinel
 /// `0xFFFF 0x0000` (the field VM's "frame divider"). [`record`] returns the
 /// raw record bytes as-is; the VM-side helper
-/// [`crate::world::World::load_field_record`] is responsible for skipping
+/// `World::load_field_record` is responsible for skipping
 /// the sentinel before dispatch.
 #[derive(Debug)]
 pub struct EventScripts<'a> {
@@ -168,7 +168,7 @@ impl Scene {
     /// records (100% valid stager leads across the corpus - the field-resident
     /// sibling of the per-summon stagers, installed by field-VM op `0x34`
     /// sub-3 → `FUN_800252EC`, ported as
-    /// [`crate::world::World::spawn_field_stager`]). The install ops live in
+    /// `World::spawn_field_stager`). The install ops live in
     /// the scene MAN's own scripts (partition-1 effect-actor records +
     /// partition-2 cutscene timelines); record 0 is typically the master
     /// ambient record installed on entry. Installer id = record index,
@@ -601,7 +601,7 @@ impl Scene {
     /// buffer sliced from the script block's start (so relative jumps wrap
     /// against the slice base, matching the retail `buffer_base =
     /// script_start`) and `pc0` is the first opcode's offset into that slice.
-    /// Feed both to [`crate::world::World::load_field_script_at`].
+    /// Feed both to `World::load_field_script_at`.
     ///
     /// Resolves for any scene whose `scene_asset_table` / `scene_scripted_
     /// asset_table` bundle carries a MAN - which includes `town01` and the
@@ -619,7 +619,7 @@ impl Scene {
     /// Note that the entry script's `0x4C` nibble-7 wall-paint deltas are
     /// gated behind system-flag tests, so they only fire once the world's
     /// story flags are seeded to a matching scene-entry state; the base
-    /// collision grid ([`crate::world::FieldTerrain::collision_grid`]) is independent of the
+    /// collision grid (`FieldTerrain::collision_grid`) is independent of the
     /// entry script.
     ///
     /// Resolution order matches [`Self::field_man_payload`]: the asset-table
@@ -659,7 +659,7 @@ impl Scene {
     /// [`legaia_scene_formats::scene_asset_table`] field scenes (town01 etc.) thanks
     /// to the relaxed detector.
     ///
-    /// Wire the pair via [`crate::world::World::install_man_encounter`].
+    /// Wire the pair via `World::install_man_encounter`.
     ///
     /// REF: FUN_8003AEB0 (installs the encounter section into the runtime
     /// control block); the byte-level walk lives in

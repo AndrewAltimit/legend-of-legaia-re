@@ -82,7 +82,7 @@ pub fn object_binds(
 
 /// Flat MAN record -> the env-pack slots of every placed object whose
 /// footprint-anchor tile binds it: the meshes a bound object's op-`0x4B`
-/// morph lanes ([`crate::world::World::arm_field_morph`]) reach. One record
+/// morph lanes (`World::arm_field_morph`) reach. One record
 /// can bind several placements (`rikuroa`'s Genesis tree is three objects on
 /// three records, each its own mesh).
 // REF: FUN_8003A55C
