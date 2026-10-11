@@ -16,7 +16,7 @@
 //! its own animation and effects; only how hard it hits changes. PROT 0898 is
 //! stored raw (no LZS), so the write is strictly same-size and in place.
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// Re-exported [`crate::drops::DropMode`] so the move-power pass shares the
 /// CLI's `shuffle` / `random` vocabulary.

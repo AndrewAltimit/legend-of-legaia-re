@@ -68,13 +68,13 @@
 
 use anyhow::{Result, bail};
 
-use crate::mips::*;
 use crate::super_art_list::{
     ARROW_BITS, ARROWS_COUNT_SHIFT, GLYPH_BUF_BYTES, GLYPH_HI, GLYPH_LO_BASE, MARKER_HI,
     MARKERS_SHIFT, PERFORMED_COUNT_SHIFT, PERFORMED_MASK, STYLE_ART_END, STYLE_DEFAULT,
     STYLE_SUPER_END, SUPER_ARTS_PER_CHAR, SuperArtRow,
 };
 use legaia_code_hooks::arenas::Edit;
+use legaia_code_hooks::mips::*;
 
 /// PROT entry of the menu overlay.
 pub const MENU_PROT_INDEX: usize = 899;
@@ -632,9 +632,9 @@ mod tests {
         );
     }
 
-    use crate::mips_sim::Cpu;
     use crate::super_art_list::{ARROWS_STRIDE, SUP_STRIDE, arrow_code};
     use legaia_art::queue::Command;
+    use legaia_code_hooks::mips_sim::Cpu;
 
     const ROW_VA: u32 = 0x801E_8000;
     const SUP_VA: u32 = 0x8007_8A88;

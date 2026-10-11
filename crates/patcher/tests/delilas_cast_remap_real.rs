@@ -4,12 +4,12 @@
 //! partially-patched module refuses, and every touched sector stays
 //! EDC/ECC-valid. Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_patcher::delilas_cast::{
+use legaia_delilas_party::delilas_cast::{
     CastRoute, assemble_delilas_arena, assemble_hook, install_cast_hook, install_cast_label_gate,
     install_delilas_arena, install_stage_caves, install_strike_morph, patch_module_958,
     patch_module_960,
 };
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 fn load_disc() -> Option<Vec<u8>> {
     let path = std::env::var("LEGAIA_DISC_BIN").ok()?;
@@ -514,7 +514,8 @@ fn chain_admission_tier_lands() {
 
     let mut p = DiscPatcher::open(original).expect("patcher");
     assert!(
-        legaia_patcher::delilas_cast::install_chain_admission_tier(&mut p).expect("tier installs")
+        legaia_delilas_party::delilas_cast::install_chain_admission_tier(&mut p)
+            .expect("tier installs")
     );
     let entry = p.read_entry(898).expect("prot 898");
     let w = u32::from_le_bytes(entry[TIER_OFF..TIER_OFF + 4].try_into().unwrap());
@@ -527,6 +528,7 @@ fn chain_admission_tier_lands() {
 
     // Idempotence.
     assert!(
-        !legaia_patcher::delilas_cast::install_chain_admission_tier(&mut p).expect("tier re-apply")
+        !legaia_delilas_party::delilas_cast::install_chain_admission_tier(&mut p)
+            .expect("tier re-apply")
     );
 }

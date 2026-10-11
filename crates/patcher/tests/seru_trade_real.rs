@@ -7,9 +7,9 @@
 
 use legaia_asset::seru_trade;
 use legaia_asset::seru_trade::{DEFAULT_MAX_OFFERS, SeruTradeConfig};
+use legaia_code_hooks::seru_overlay;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::seru_overlay;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -528,8 +528,8 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
         );
         // Never inside a save-screen card buffer or other runtime data: a
         // pause-menu save returns to the menu with 0899 still resident.
-        let hit = legaia_patcher::space_ledger::overlapping_buffer(
-            legaia_patcher::space_ledger::Image::Prot(seru_overlay::HANDLER_OVL_PROT_INDEX),
+        let hit = legaia_disc_patch::space_ledger::overlapping_buffer(
+            legaia_disc_patch::space_ledger::Image::Prot(seru_overlay::HANDLER_OVL_PROT_INDEX),
             va,
             va + bytes.len() as u32,
         );

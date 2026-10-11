@@ -583,9 +583,9 @@ pub(crate) enum TimExportFormatArg {
     Indexed,
 }
 
-impl From<TimExportFormatArg> for legaia_patcher::texture::ExportFormat {
+impl From<TimExportFormatArg> for legaia_texture_replace::texture::ExportFormat {
     fn from(a: TimExportFormatArg) -> Self {
-        use legaia_patcher::texture::ExportFormat as F;
+        use legaia_texture_replace::texture::ExportFormat as F;
         match a {
             TimExportFormatArg::Image => F::Image,
             TimExportFormatArg::Composite => F::Composite,

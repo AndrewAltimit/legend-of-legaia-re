@@ -43,7 +43,7 @@ use std::collections::{BTreeMap, HashSet};
 use legaia_art::arts_table::{self, RawArtRecord};
 use legaia_art::queue::{Character, Command};
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// ISO 9660 file holding the arts-name table.
 pub const SCUS_NAME: &str = "SCUS_942.54";

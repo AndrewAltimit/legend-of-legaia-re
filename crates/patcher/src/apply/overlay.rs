@@ -39,13 +39,13 @@ fn find_pochi_host(patcher: &DiscPatcher, need_bytes: usize) -> Option<usize> {
     best.map(|(_, idx)| idx)
 }
 
-/// Inject the **custom-overlay vertical slice** (see [`crate::seru_overlay`]):
+/// Inject the **custom-overlay vertical slice** (see [`legaia_code_hooks::seru_overlay`]):
 /// proves the retail custom-overlay load path end to end, triggered by **opening
 /// a shop**. Overwrites a pochi slot with a tiny sentinel-writing overlay, bakes
 /// a gap loader stub with that slot's real disc LBA, and detours the field-VM
 /// op-0x49 arm edge (overlay 0897) into the stub. The stub gates on the sub-op
 /// (only a merchant, sub-op `0`), FlushCaches, runs the overlay (which writes
-/// [`crate::seru_overlay::SENTINEL`] to [`crate::seru_overlay::SENTINEL_ADDR`]),
+/// [`legaia_code_hooks::seru_overlay::SENTINEL`] to [`legaia_code_hooks::seru_overlay::SENTINEL_ADDR`]),
 /// then resumes the field VM - so the load fires when the player opens a vendor.
 /// No Sony bytes.
 pub fn inject_overlay_slice(patcher: &mut DiscPatcher) -> Result<OverlaySliceReport> {
@@ -53,13 +53,13 @@ pub fn inject_overlay_slice(patcher: &mut DiscPatcher) -> Result<OverlaySliceRep
 }
 
 /// As [`inject_overlay_slice`], but `gated` selects whether the op-`0x49` stub's
-/// sub-op gate is live (see [`crate::seru_overlay::assemble_shop_loader_stub_gated`]).
+/// sub-op gate is live (see [`legaia_code_hooks::seru_overlay::assemble_shop_loader_stub_gated`]).
 /// `gated = false` is the diagnostic build that fires on every op-`0x49` arm.
 pub fn inject_overlay_slice_opts(
     patcher: &mut DiscPatcher,
     gated: bool,
 ) -> Result<OverlaySliceReport> {
-    use crate::seru_overlay as ov;
+    use legaia_code_hooks::seru_overlay as ov;
 
     let overlay = ov::words_to_bytes(&ov::assemble_sentinel_overlay());
     let sectors = ov::sectors_for(overlay.len());
@@ -134,7 +134,7 @@ pub fn inject_overlay_slice_opts(
 /// mode's mode-table handler word (guarded against an unexpected build). All 7
 /// minigames stay intact. No Sony bytes.
 pub fn inject_overlay_slice_dead_mode(patcher: &mut DiscPatcher) -> Result<OverlaySliceReport> {
-    use crate::seru_overlay as ov;
+    use legaia_code_hooks::seru_overlay as ov;
 
     let overlay = ov::words_to_bytes(&ov::assemble_sentinel_overlay());
     let sectors = ov::sectors_for(overlay.len());
@@ -246,13 +246,13 @@ pub fn inject_overlay_slice_warp(patcher: &mut DiscPatcher) -> Result<OverlaySli
 
 /// As [`inject_overlay_slice_warp`], but `draw` selects the payload: `false` =
 /// the sentinel slice (load proof, immediate field reload); `true` = the draw-side
-/// overlay ([`crate::seru_overlay::assemble_draw_overlay`]) that hands off to mode
+/// overlay ([`legaia_code_hooks::seru_overlay::assemble_draw_overlay`]) that hands off to mode
 /// 13 and renders on screen each frame before returning to the field.
 pub fn inject_overlay_slice_warp_opts(
     patcher: &mut DiscPatcher,
     draw: bool,
 ) -> Result<OverlaySliceReport> {
-    use crate::seru_overlay as ov;
+    use legaia_code_hooks::seru_overlay as ov;
 
     let overlay = if draw {
         ov::words_to_bytes(&ov::assemble_draw_overlay())
@@ -381,7 +381,7 @@ pub fn inject_overlay_slice_warp_opts(
 /// overlay, FUN_80025980 redirect, mode-24 return) is identical to the warp draw
 /// build; only the trigger site differs.
 pub fn inject_overlay_slice_picker(patcher: &mut DiscPatcher) -> Result<OverlaySliceReport> {
-    use crate::seru_overlay as ov;
+    use legaia_code_hooks::seru_overlay as ov;
 
     let overlay = ov::words_to_bytes(&ov::assemble_draw_overlay());
     let sectors = ov::sectors_for(overlay.len());
@@ -487,7 +487,7 @@ pub fn inject_overlay_slice_picker(patcher: &mut DiscPatcher) -> Result<OverlayS
 /// trade action is wired in. No pochi overlay, no warp infra -- only two PROT-0899
 /// edits plus a draw stub + label in the SCUS gap.
 pub fn inject_native_trade_row(patcher: &mut DiscPatcher) -> Result<()> {
-    use crate::seru_overlay as ov;
+    use legaia_code_hooks::seru_overlay as ov;
 
     // 1. Cursor clamp 3 -> 4 in the dispatcher FUN_801dafd4 (overlay 0899).
     let menu_entry = patcher
@@ -586,8 +586,8 @@ pub fn inject_native_trade_row(patcher: &mut DiscPatcher) -> Result<()> {
 /// returns to the picker on exit. Pure overlay-0899 + SCUS-gap edits; the shop is
 /// never torn down. All PROT-0899 sites are guarded against the recognized US build.
 pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
-    use crate::seru_overlay as ov;
     use legaia_asset::seru_trade as st;
+    use legaia_code_hooks::seru_overlay as ov;
 
     let base = ov::SLOT_A_BASE;
     let menu = patcher
@@ -620,7 +620,7 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
     }
     // The row-2 load is `lui a0,hi; addiu a0,a0,lo` forming "@Quit". A
     // language pack that lengthened "@Quit" moved it and rewrote this pair
-    // (`translation::code_strings`), so the pair's shape is the guard and the
+    // (`legaia_translate::code_strings`), so the pair's shape is the guard and the
     // address it forms is where "@Quit" lives now.
     let row2 = words2(ov::ROW2_STR_LOAD_VA)?;
     if row2[0] & 0xFFFF_0000 != ov::ROW2_STR_LOAD_OLD[0] & 0xFFFF_0000

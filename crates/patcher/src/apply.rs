@@ -10,7 +10,6 @@ pub(crate) use anyhow::{Context, Result};
 
 pub(crate) use crate::casino::{self, CasinoExchange};
 pub(crate) use crate::chest::SceneChests;
-pub(crate) use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 pub use crate::door::DoorSiteClass;
 pub(crate) use crate::door::SceneDoors;
 pub(crate) use crate::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
@@ -19,8 +18,9 @@ pub(crate) use crate::house_door::SceneHouseDoors;
 pub(crate) use crate::map_door::SceneMapDoors;
 pub(crate) use crate::monster_class;
 pub(crate) use crate::monster_stats;
-pub(crate) use crate::rng::SplitMix64;
 pub(crate) use crate::shop::SceneShops;
+pub(crate) use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+pub(crate) use legaia_disc_patch::rng::SplitMix64;
 
 /// `SCUS_942.54` filename (the static-table container).
 const SCUS_NAME: &str = "SCUS_942.54";
@@ -68,8 +68,8 @@ mod super_arts_pack;
 /// passes only test whether an item / monster name is **non-empty**, which a
 /// translation preserves.
 ///
-/// Both in-browser [`crate::translation`] callers and the CLI honour this.
-pub use crate::translation::import_pack as import_language_pack;
+/// Both in-browser [`legaia_translate`] callers and the CLI honour this.
+pub use legaia_translate::import_pack as import_language_pack;
 
 pub use arts_name_fix::*;
 pub use arts_power::*;

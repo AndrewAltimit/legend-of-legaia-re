@@ -19,11 +19,11 @@
 
 use std::path::{Path, PathBuf};
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
-use legaia_patcher::translation::markup::{self, Target};
-use legaia_patcher::translation::{LanguagePack, import_pack};
+use legaia_translate::markup::{self, Target};
+use legaia_translate::{LanguagePack, import_pack};
 
 /// Every language pack the repo ships.
 fn shipped_packs() -> Vec<(String, LanguagePack)> {
@@ -423,7 +423,7 @@ fn shipped_pack_resumes_into_a_working_pack() {
         .find(|(n, _)| n == "fr")
         .expect("the French pack ships");
     let patcher = DiscPatcher::open(original).expect("open disc");
-    let base = legaia_patcher::translation::export_pack(&patcher).expect("export");
+    let base = legaia_translate::export_pack(&patcher).expect("export");
 
     let mut working = base.into_skeleton("fr", vec!["someone".into()]);
     let merged = working.merge_translations(&shipped);

@@ -36,7 +36,7 @@ pub(crate) struct RandomizeArgs {
     #[arg(long, default_value_t = false)]
     pub(crate) equipment_drops: bool,
     /// Per-battle chance (percent) for the `--equipment-drops` bonus drop.
-    #[arg(long, default_value_t = legaia_patcher::bonus_drop::DEFAULT_CHANCE_PCT)]
+    #[arg(long, default_value_t = legaia_code_hooks::bonus_drop::DEFAULT_CHANCE_PCT)]
     pub(crate) equipment_drop_chance: u8,
     /// Bank a slice of the formation's experience into the party whenever they
     /// **successfully run away** (a same-size code hook into the battle-action
@@ -46,7 +46,7 @@ pub(crate) struct RandomizeArgs {
     pub(crate) flee_exp: bool,
     /// Percentage of the formation's experience banked on a successful escape
     /// (only with `--flee-exp`).
-    #[arg(long, default_value_t = legaia_patcher::flee_exp::DEFAULT_PCT)]
+    #[arg(long, default_value_t = legaia_code_hooks::flee_exp::DEFAULT_PCT)]
     pub(crate) flee_exp_pct: u8,
     /// With `--enemy-ally-pct`% probability per battle, **charm a random enemy**
     /// onto the party's side as an uncontrolled ally (a same-size code hook into
@@ -115,7 +115,7 @@ pub(crate) struct RandomizeArgs {
     /// Tactical Arts shout banks carry is picked by
     /// `--delilas-arts-voice`. Mutually exclusive with `--delilas-challenge`.
     #[arg(long, value_name = "V,N,G", value_parser = parse_delilas_party)]
-    pub(crate) delilas_party: Option<legaia_patcher::delilas_party::PartyMapping>,
+    pub(crate) delilas_party: Option<legaia_delilas_party::delilas_party::PartyMapping>,
     /// With `--delilas-party`: keep Che's welded giant hammer on his
     /// swapped mesh instead of replacing it with a mirrored fist and
     /// fusing the host's own weapon into the hand. Comparison build:
@@ -129,7 +129,7 @@ pub(crate) struct RandomizeArgs {
     /// mapped sibling with the tuned pitch/formant map; `removed`
     /// silences arts shouts (attack grunts remain).
     #[arg(long, value_name = "MODE", default_value = "original")]
-    pub(crate) delilas_arts_voice: legaia_patcher::delilas_voice_fx::ArtsVoiceMode,
+    pub(crate) delilas_arts_voice: legaia_delilas_party::delilas_voice_fx::ArtsVoiceMode,
     /// With `--delilas-party`: how much of the hero's Tactical Arts kit
     /// becomes the sibling's. `hybrid` (default) keeps every host art's
     /// own animation and only reskins one Hyper into the sibling's
@@ -138,7 +138,7 @@ pub(crate) struct RandomizeArgs {
     /// art after the clip it plays, and blanks every art the Super and
     /// Miracle Arts do not need out of the matcher.
     #[arg(long, value_name = "MODE", default_value = "hybrid")]
-    pub(crate) delilas_moves: legaia_patcher::delilas_party::DelilasMoveMode,
+    pub(crate) delilas_moves: legaia_delilas_party::delilas_party::DelilasMoveMode,
     /// **Show Super Arts on the in-battle move list**: list a character's
     /// Super Arts on the Tactical-Arts list the Triangle button opens in
     /// battle, which retail never draws at all. A Super Art appears once you
@@ -181,7 +181,7 @@ pub(crate) struct RandomizeArgs {
     pub(crate) super_arts_pack: bool,
     /// Per-battle percentage chance a capturable enemy is shiny (only with
     /// `--shiny-seru`).
-    #[arg(long, default_value_t = legaia_patcher::shiny_seru::DEFAULT_PCT)]
+    #[arg(long, default_value_t = legaia_code_hooks::shiny_seru::DEFAULT_PCT)]
     pub(crate) shiny_pct: u8,
     /// **Jewel fix**: make the boss cinematic casts respect elemental guards.
     /// In retail, Xain's Bloody Horns / Terio Punch (+ Bull Charge), Cort's
@@ -287,7 +287,7 @@ pub(crate) struct RandomizeArgs {
     /// The art's menu AP number is rewritten to match (a grant shows `0`).
     /// **Mutually exclusive with `--shiny-seru`** (same arena bytes).
     #[arg(long, value_name = "COMBO=AMOUNT", value_delimiter = ',', value_parser = parse_arts_ap_grant)]
-    pub(crate) arts_ap_grant: Vec<legaia_patcher::arts_ap_grant::ArtApSpec>,
+    pub(crate) arts_ap_grant: Vec<legaia_arts_patch::arts_ap_grant::ArtApSpec>,
     /// **Set what a Tactical Art costs in AP** ("arts AP-cost"). Same
     /// `[CHARACTER:]COMBO=AMOUNT` syntax as `--arts-ap-grant`; `AMOUNT` is the
     /// flat AP (Spirit) the art charges per use (1..=100), replacing retail's
@@ -298,7 +298,7 @@ pub(crate) struct RandomizeArgs {
     /// the config table's "leave at retail" value, so the cheapest art is 1 AP.
     /// **Mutually exclusive with `--shiny-seru`** (same arena bytes).
     #[arg(long, value_name = "COMBO=AMOUNT", value_delimiter = ',', value_parser = parse_arts_ap_cost)]
-    pub(crate) arts_ap_cost: Vec<legaia_patcher::arts_ap_grant::ArtApSpec>,
+    pub(crate) arts_ap_cost: Vec<legaia_arts_patch::arts_ap_grant::ArtApSpec>,
     /// **Oscillating AP costs**: every battle, each Tactical Art is dealt at
     /// random onto the *cost* side (retail: pays its AP, full damage) or the
     /// *grant* side (castable at any AP level, *adds* the AP it would have

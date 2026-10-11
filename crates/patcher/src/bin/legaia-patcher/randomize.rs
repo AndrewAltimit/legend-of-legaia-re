@@ -6,11 +6,11 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_disc_patch::ppf;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 use legaia_patcher::items::valid_item_pool;
-use legaia_patcher::ppf;
 
 use crate::cli::{RandomizeArgs, mode_str};
 use crate::disc_io::{check_usa_disc, cue_contents, load_image, note_overwrite, with_extension};
@@ -113,8 +113,8 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let chest_mode = args.chests.mode();
     let steal_mode = args.steals.mode();
     let arts_mode = args.arts.mode().map(|m| match m {
-        DropMode::Shuffle => legaia_patcher::arts::ArtsMode::Shuffle,
-        DropMode::Random => legaia_patcher::arts::ArtsMode::Random,
+        DropMode::Shuffle => legaia_arts_patch::arts::ArtsMode::Shuffle,
+        DropMode::Random => legaia_arts_patch::arts::ArtsMode::Random,
     });
     let door_mode = args.doors.mode();
     let shop_mode = args.shops.mode();
@@ -185,7 +185,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         if needs_pool {
             legaia_patcher::unused::extend_pool(
                 &mut pool,
-                legaia_patcher::custom_items::CUSTOM_ITEM_IDS,
+                legaia_delilas_challenge::custom_items::CUSTOM_ITEM_IDS,
             );
         } else if !args.delilas_challenge {
             println!(
@@ -386,17 +386,17 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             || arts_ap
             || oscillating
         {
-            legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
+            legaia_delilas_party::delilas_party::CastRoutePolicy::ArenaTaken
         } else {
-            legaia_patcher::delilas_party::CastRoutePolicy::Install
+            legaia_delilas_party::delilas_party::CastRoutePolicy::Install
         };
-        match legaia_patcher::delilas_party::apply_delilas_party_with(
+        match legaia_delilas_party::delilas_party::apply_delilas_party_with(
             &mut patcher,
             mapping,
             args.delilas_arts_voice,
             args.delilas_moves,
             cast_route,
-            legaia_patcher::delilas_party::DelilasPartyOptions {
+            legaia_delilas_party::delilas_party::DelilasPartyOptions {
                 keep_che_hammer: args.delilas_che_hammer,
             },
         ) {
@@ -556,7 +556,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             let combo: String = e
                 .combo
                 .iter()
-                .map(legaia_patcher::arts_power::command_glyph)
+                .map(legaia_arts_patch::arts_power::command_glyph)
                 .collect();
             let old: String = e
                 .old_power
@@ -577,7 +577,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             let key: Vec<u8> = combo.iter().map(|c| c.as_byte()).collect();
             let combo_s: String = combo
                 .iter()
-                .map(legaia_patcher::arts_power::command_glyph)
+                .map(legaia_arts_patch::arts_power::command_glyph)
                 .collect();
             if !changed.contains(&key) {
                 println!("arts-power: {combo_s} already at {value:#04X} (or has no damage byte)");
@@ -641,7 +641,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             .collect();
         let report = apply::inject_arts_ap_grant(&mut patcher, &specs)?;
         for g in &report.resolved {
-            let combo = legaia_patcher::arts_ap_grant::combo_str(&g.combo);
+            let combo = legaia_arts_patch::arts_ap_grant::combo_str(&g.combo);
             let what = if g.mode.is_grant() {
                 format!("grants {} AP", g.mode.amount())
             } else {
@@ -653,7 +653,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             );
         }
         for spec in &specs {
-            let combo_s = legaia_patcher::arts_ap_grant::combo_str(&spec.combo);
+            let combo_s = legaia_arts_patch::arts_ap_grant::combo_str(&spec.combo);
             let who = match spec.character {
                 Some(c) => format!("{c:?}:"),
                 None => String::new(),
@@ -1298,8 +1298,8 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push(format!(
             "arts = {:?}",
             match arts_mode {
-                legaia_patcher::arts::ArtsMode::Shuffle => "shuffle",
-                legaia_patcher::arts::ArtsMode::Random => "random",
+                legaia_arts_patch::arts::ArtsMode::Shuffle => "shuffle",
+                legaia_arts_patch::arts::ArtsMode::Random => "random",
             }
         ));
         manifest.push(format!(
@@ -1628,7 +1628,7 @@ pub(crate) fn cmd_verify(
     println!("disc: {disc_label}");
     let ppf = std::fs::read(patch).with_context(|| format!("read patch {}", patch.display()))?;
     let applied =
-        legaia_patcher::ppf::apply_ppf3(&mut image, &ppf).context("apply PPF to disc image")?;
+        legaia_disc_patch::ppf::apply_ppf3(&mut image, &ppf).context("apply PPF to disc image")?;
     // Re-parse the patched image end to end as a sanity check.
     let patcher = DiscPatcher::open(image).context("patched image no longer parses as a disc")?;
     let drops = apply::current_drops(&patcher)

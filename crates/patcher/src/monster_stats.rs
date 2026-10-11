@@ -34,7 +34,7 @@
 //! scripted formations fixed (`crate::encounter`); this is the matching guard on
 //! the stat side.
 //!
-//! Each edit re-packs the monster's slot through [`crate::monster::repack_slot`]:
+//! Each edit re-packs the monster's slot through [`legaia_disc_patch::monster::repack_slot`]:
 //! the decoded block length is unchanged, so the slot stays its original
 //! `0x14000`-byte footprint and every other monster's slot offset is fixed - a
 //! same-size, in-place byte edit, exactly like the drop randomizer.
@@ -92,10 +92,10 @@
 //! compose multiplicatively, so an `Nx` record really is an `Nx` fight, up to
 //! the loader's own integer rounding.
 
-use crate::monster::repack_slot;
 use crate::monster_class::{MonsterClass, MonsterClasses};
-use crate::rng::SplitMix64;
 use anyhow::Result;
+use legaia_disc_patch::monster::repack_slot;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// How a randomizer reassigns values. Re-exported [`crate::drops::DropMode`] so
 /// the monster-stat pass shares the CLI's `shuffle` / `random` vocabulary.

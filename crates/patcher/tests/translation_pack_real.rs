@@ -14,9 +14,9 @@
 
 use std::collections::BTreeMap;
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::translation::{LanguagePack, export_pack, import_pack, pack::Entry};
+use legaia_translate::{LanguagePack, export_pack, import_pack, pack::Entry};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -294,7 +294,7 @@ fn over_budget_and_non_latin_report_per_entry_and_touch_nothing() {
 #[test]
 fn export_keeps_every_script_walked_man_line() {
     use legaia_asset::man_edit::{TextSite, text_site};
-    use legaia_patcher::translation::{export::SceneManText, segments};
+    use legaia_translate::{export::SceneManText, segments};
 
     let Some(original) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

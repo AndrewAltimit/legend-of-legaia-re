@@ -20,7 +20,7 @@
 //! a combined [`MAX_STARTING_ITEMS`]. This keeps a full random fill *additive*
 //! to the forced convenience items rather than crowding it out. The patch is the
 //! same size as the original code (no executable growth or relocation) and is
-//! applied through [`crate::disc::DiscPatcher::patch_named_file`] like the steal
+//! applied through [`legaia_disc_patch::disc::DiscPatcher::patch_named_file`] like the steal
 //! table.
 //!
 //! The write lands **directly** in the new game's owned-item list - the single
@@ -39,7 +39,7 @@ use legaia_asset::new_game::{
     WARP_ALL_FLAGS_LO, WARP_FLAGS_SC_OFFSET, WARP_SEED_LEN,
 };
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// Number of MIPS instructions the reclaimable inventory-seed region holds
 /// (40 bytes / 4).

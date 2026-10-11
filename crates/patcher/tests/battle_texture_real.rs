@@ -1,4 +1,4 @@
-//! Disc-gated oracle for [`legaia_patcher::battle_texture`] - export and
+//! Disc-gated oracle for [`legaia_texture_replace::battle_texture`] - export and
 //! replacement of the headerless party-character art in the player battle
 //! files (PROT 863..866).
 //!
@@ -14,9 +14,9 @@
 //! `LEGAIA_DISC_BIN`.
 
 use legaia_asset::battle_texture_catalog::BattleTextureSlot;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
-use legaia_patcher::battle_texture::{self, BattleTextureTarget, PaletteSource};
-use legaia_patcher::disc::DiscPatcher;
+use legaia_texture_replace::battle_texture::{self, BattleTextureTarget, PaletteSource};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

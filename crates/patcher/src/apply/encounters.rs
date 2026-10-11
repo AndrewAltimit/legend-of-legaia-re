@@ -342,7 +342,7 @@ pub fn randomize_encounters_scoped(
 /// [`crate::encounter::MonsterCostTable`].
 pub fn monster_cost_table(patcher: &DiscPatcher) -> Result<crate::encounter::MonsterCostTable> {
     let entry = patcher
-        .read_entry(crate::disc::MONSTER_ARCHIVE_ENTRY)
+        .read_entry(legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY)
         .context("read monster battle_data archive")?;
     let mut pairs: Vec<(u16, u32)> = Vec::new();
     for id in 1u16..=255 {

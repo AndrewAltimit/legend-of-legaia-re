@@ -1,7 +1,7 @@
 //! The cast bed's intro boost.
 
 use super::load_disc;
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// The whole-body speed profile of a rebuilt art stream, measured off the
 /// readef slot itself: `speed[j]` is the mean per-part translation delta
@@ -14,7 +14,7 @@ use legaia_patcher::disc::DiscPatcher;
 /// they are unpacked locally rather than through the crate's own decoder so
 /// the assertion does not measure the patcher with the patcher's tools.
 pub(super) fn stream_speed(readef: &[u8], slot: usize, entry_index: usize) -> Vec<f64> {
-    use legaia_patcher::party_swap::winpose::READEF_SLOT;
+    use legaia_party_swap::winpose::READEF_SLOT;
     let off = legaia_asset::battle_char_assembly::art_me_slot(slot, false) * READEF_SLOT;
     let ar = legaia_asset::me_archive::parse(&readef[off..off + READEF_SLOT]).expect("ME archive");
     let body = ar.entry(entry_index).expect("art entry");
@@ -68,7 +68,7 @@ fn cast_bed_intro_boost_is_audible_scoped_and_guarded() {
     assert_ne!(coding & 0x03, 0, "bed is stereo");
 
     assert!(
-        legaia_patcher::delilas_xa_voice::boost_cast_bed_intro(&mut p).expect("remaster"),
+        legaia_delilas_party::delilas_xa_voice::boost_cast_bed_intro(&mut p).expect("remaster"),
         "first apply remasters"
     );
     let (after, _) = p.read_xa_channel_payload(FILE, CHAN).expect("re-read");
@@ -117,7 +117,7 @@ fn cast_bed_intro_boost_is_audible_scoped_and_guarded() {
 
     // Double-application guard.
     assert!(
-        !legaia_patcher::delilas_xa_voice::boost_cast_bed_intro(&mut p).expect("re-apply"),
+        !legaia_delilas_party::delilas_xa_voice::boost_cast_bed_intro(&mut p).expect("re-apply"),
         "second apply is a no-op"
     );
     let (again, _) = p.read_xa_channel_payload(FILE, CHAN).expect("read 3");

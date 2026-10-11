@@ -8,10 +8,10 @@
 //! mode, no quest item is moved out of its chest and none is dropped into a
 //! chest that didn't already hold it. Skips without `LEGAIA_DISC_BIN`.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::chest::SceneChests;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {

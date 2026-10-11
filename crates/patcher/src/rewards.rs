@@ -2,7 +2,7 @@
 //!
 //! Both knobs are plain data edits to the monster archive (PROT entry 867) -
 //! the same decoded-record head the drop randomizer and the difficulty scale
-//! edit, re-packed through [`crate::monster::repack_slot`] so every slot keeps
+//! edit, re-packed through [`legaia_disc_patch::monster::repack_slot`] so every slot keeps
 //! its `0x14000`-byte footprint.
 //!
 //! ## EXP multiplier
@@ -11,7 +11,7 @@
 //! ([`EXP_OFFSET`]): the spoils routine `FUN_8004E568` sums it `* 3/4` across
 //! dead enemies and splits the total among living party members. Scaling the
 //! record field therefore scales every EXP grant - including the flee-EXP
-//! hook's, which sums the same field ([`crate::flee_exp`]).
+//! hook's, which sums the same field ([`legaia_code_hooks::flee_exp`]).
 //!
 //! The multiplier reuses [`crate::monster_stats::ScalePermille`]
 //! (`0.1x..=5.0x`), so the CLI flag and the browser slider share one parser,
@@ -37,9 +37,9 @@
 //! `100` still passes through the retail roll (`rand % 100 < 100` always
 //! hits), `0` never does.
 
-use crate::monster::repack_slot;
 use crate::monster_stats::ScalePermille;
 use anyhow::Result;
+use legaia_disc_patch::monster::repack_slot;
 
 /// Decoded-record byte offset of the base EXP reward (`u16` LE).
 pub const EXP_OFFSET: usize = 0x46;

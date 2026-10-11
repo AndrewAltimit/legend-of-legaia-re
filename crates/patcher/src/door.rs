@@ -286,7 +286,7 @@ impl SceneDoors {
         if !man_edit::validate(&new_man, &exp_refs) {
             return None;
         }
-        let stream = crate::compress_within(&new_man, self.compressed_budget)?;
+        let stream = legaia_disc_patch::compress_within(&new_man, self.compressed_budget)?;
         Some((stream, new_man.len() as u32))
     }
 }

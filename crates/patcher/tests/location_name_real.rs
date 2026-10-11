@@ -5,9 +5,9 @@
 //! re-applying is a no-op, and an oversized/non-ASCII name is refused. Gates
 //! on `LEGAIA_DISC_BIN`; skips+passes when unset.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::location_name::{self, current_name, list_names, plan_rename, slot_offset};
 
 fn load_disc() -> Option<Vec<u8>> {

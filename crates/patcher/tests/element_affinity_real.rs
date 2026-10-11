@@ -10,8 +10,8 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_asset::element_affinity::{BATTLE_ACTION_OVERLAY_PROT_INDEX, ElementAffinity};
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {

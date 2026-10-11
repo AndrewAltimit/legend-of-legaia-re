@@ -44,12 +44,12 @@ pub(super) fn reskin_signature_art(
     let mut notes = Vec::new();
 
     let scus = patcher
-        .read_named_file(crate::arts::SCUS_NAME)
+        .read_named_file(legaia_arts_patch::arts::SCUS_NAME)
         .context("read SCUS for the art rename")?;
     let old = art.retail_name;
     let new = signature_name(sibling);
-    let edits =
-        crate::arts::ArtsEdits::locate(patcher.image()).context("locate arts-name table")?;
+    let edits = legaia_arts_patch::arts::ArtsEdits::locate(patcher.image())
+        .context("locate arts-name table")?;
     let target = edits
         .records()
         .iter()
@@ -94,7 +94,7 @@ pub(super) fn reskin_signature_art(
     name_bytes.resize(old.len(), 0);
     patcher
         .patch_named_file(
-            crate::arts::SCUS_NAME,
+            legaia_arts_patch::arts::SCUS_NAME,
             field.file_offset as u64,
             &name_bytes,
         )
@@ -118,7 +118,7 @@ pub(super) fn reskin_signature_art(
     }
     let layout = arts_table::combo_string_layout(&scus, target.cmd_ptr)
         .with_context(|| format!("decode {} combo layout", String::from_utf8_lossy(old)))?;
-    let plan = vec![crate::arts::ComboEdit {
+    let plan = vec![legaia_arts_patch::arts::ComboEdit {
         cmd_ptr: target.cmd_ptr,
         direction_slots: layout.direction_slots.clone(),
         old_directions: layout.directions.clone(),
@@ -131,7 +131,7 @@ pub(super) fn reskin_signature_art(
     // still runs for the clip's authored duration.
     use legaia_asset::battle_char_assembly;
     let char_edits = edits.player_edits(&plan, character);
-    let index = crate::arts::player_entry_index(character);
+    let index = legaia_arts_patch::arts::player_entry_index(character);
     let entry = patcher
         .read_entry(index)
         .with_context(|| format!("read player file PROT {index}"))?;
@@ -199,11 +199,11 @@ pub(super) fn reskin_signature_art(
             bail!("monster {source_id} is missing a stage of {chain_entries:?}");
         }
         for (i, c) in chain_entries.iter().zip(&chain) {
-            if c.part_count != party_swap::CANONICAL_PARTS {
+            if c.part_count != legaia_party_swap::CANONICAL_PARTS {
                 bail!(
                     "monster {source_id} entry {i} has {} parts, expected {}",
                     c.part_count,
-                    party_swap::CANONICAL_PARTS
+                    legaia_party_swap::CANONICAL_PARTS
                 );
             }
         }
@@ -382,21 +382,20 @@ pub(super) fn reskin_signature_art(
         // a silent skip would leave the art displaying its new combo in
         // the menu while still answering to the old one in battle.
         let (lzs_off, recompressed) =
-            crate::arts::patch_player_record0_full(&entry, &char_edits, &offset_edits).ok_or_else(
-                || {
+            legaia_arts_patch::arts::patch_player_record0_full(&entry, &char_edits, &offset_edits)
+                .ok_or_else(|| {
                     anyhow::anyhow!(
                         "{who}'s record0 will not fit its LZS footprint with the \
                          signature-art and idle edits applied"
                     )
-                },
-            )?;
+                })?;
         patcher
             .patch_prot_entry(index, lzs_off as u64, &recompressed)
             .context("write player record0 combo matcher + anim rate")?;
     }
     for (off, bytes) in edits.glyph_patches(&plan) {
         patcher
-            .patch_named_file(crate::arts::SCUS_NAME, off, &bytes)
+            .patch_named_file(legaia_arts_patch::arts::SCUS_NAME, off, &bytes)
             .context("write combo display glyph")?;
     }
     notes.push(format!(
@@ -448,7 +447,11 @@ pub(super) fn reskin_signature_art(
         let base = (fanfare.base_id - 0x100) as usize;
         for n in [base, base + 3] {
             patcher
-                .patch_named_file(crate::arts::SCUS_NAME, (toff + n * 2) as u64, &entry_val)
+                .patch_named_file(
+                    legaia_arts_patch::arts::SCUS_NAME,
+                    (toff + n * 2) as u64,
+                    &entry_val,
+                )
                 .context("write fanfare duration")?;
         }
         notes.push(format!(
@@ -527,7 +530,7 @@ pub(super) fn retime_camera_arm(
     patcher: &mut DiscPatcher,
     slot: usize,
     art: &HostArt,
-    rebuilt: &crate::party_swap::winpose::RebuiltArtSlot,
+    rebuilt: &legaia_party_swap::winpose::RebuiltArtSlot,
 ) -> Result<String> {
     let (frames, retail) = (rebuilt.frames, rebuilt.retail_frames);
     if retail == 0 || (frames == retail && rebuilt.stages == 1) {

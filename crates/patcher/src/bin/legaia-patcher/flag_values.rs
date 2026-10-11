@@ -5,9 +5,9 @@
 use anyhow::{Context, Result};
 
 /// Resolve a user seed string to a numeric seed (shared with the in-browser
-/// patcher via [`legaia_patcher::rng::seed_from_str`]).
+/// patcher via [`legaia_disc_patch::rng::seed_from_str`]).
 pub(crate) fn resolve_seed(seed: &str) -> u64 {
-    legaia_patcher::rng::seed_from_str(seed)
+    legaia_disc_patch::rng::seed_from_str(seed)
 }
 
 /// Parse an item id from a decimal or `0x`-hex string (e.g. `154` or `0x9a`).
@@ -111,7 +111,7 @@ pub(crate) fn parse_arts_power(s: &str) -> Result<(Vec<legaia_art::queue::Comman
     let (combo_str, val_str) = s.split_once('=').with_context(|| {
         format!("invalid arts power {s:?} (expected COMBO=VALUE, e.g. RDLDL=0x16)")
     })?;
-    let combo = legaia_patcher::arts_power::parse_combo(combo_str.trim())
+    let combo = legaia_arts_patch::arts_power::parse_combo(combo_str.trim())
         .with_context(|| format!("invalid combo {combo_str:?} (use L/R/D/U glyphs, e.g. RDLDL)"))?;
     let vs = val_str.trim();
     let value = if let Some(hex) = vs.strip_prefix("0x").or_else(|| vs.strip_prefix("0X")) {
@@ -120,7 +120,7 @@ pub(crate) fn parse_arts_power(s: &str) -> Result<(Vec<legaia_art::queue::Comman
         vs.parse::<u8>()
     }
     .with_context(|| format!("invalid power value in {s:?} (expected 0 or 0x0C..=0x1F)"))?;
-    if value != 0 && !legaia_patcher::arts_power::is_power_byte(value) {
+    if value != 0 && !legaia_arts_patch::arts_power::is_power_byte(value) {
         anyhow::bail!(
             "power value {value:#04x} is not a damage tier: use 0 (disable) or 0x0C..=0x1F"
         );
@@ -153,7 +153,7 @@ pub(crate) fn parse_super_art_power(s: &str) -> Result<(&'static legaia_art::Sup
         }
         None => (None, name_str),
     };
-    let matches = legaia_patcher::super_art_power::find_super_art(name_str.trim(), character);
+    let matches = legaia_arts_patch::super_art_power::find_super_art(name_str.trim(), character);
     let art = match matches.len() {
         1 => matches[0],
         0 => anyhow::bail!(
@@ -177,7 +177,7 @@ pub(crate) fn parse_super_art_power(s: &str) -> Result<(&'static legaia_art::Sup
         vs.parse::<u8>()
     }
     .with_context(|| format!("invalid power value in {s:?} (expected 0 or 0x0C..=0x1F)"))?;
-    if !legaia_patcher::super_art_power::is_accepted_power(value) {
+    if !legaia_arts_patch::super_art_power::is_accepted_power(value) {
         anyhow::bail!(
             "power value {value:#04x} is not a damage tier: use 0 (disable) or 0x0C..=0x1F"
         );
@@ -216,7 +216,7 @@ fn parse_arts_ap_entry(
         }
         None => (None, combo_str),
     };
-    let combo = legaia_patcher::arts_power::parse_combo(combo_str.trim())
+    let combo = legaia_arts_patch::arts_power::parse_combo(combo_str.trim())
         .with_context(|| format!("invalid combo {combo_str:?} (use L/R/D/U glyphs, e.g. RDLDL)"))?;
     let vs = val_str.trim();
     let amount = if let Some(hex) = vs.strip_prefix("0x").or_else(|| vs.strip_prefix("0X")) {
@@ -225,29 +225,29 @@ fn parse_arts_ap_entry(
         vs.parse::<u8>()
     }
     .with_context(|| format!("invalid AP amount in {s:?} (expected 1..=100)"))?;
-    if amount < 1 || u16::from(amount) > legaia_patcher::arts_ap_grant::AP_CAP {
+    if amount < 1 || u16::from(amount) > legaia_arts_patch::arts_ap_grant::AP_CAP {
         anyhow::bail!("arts {what} amount {amount} out of range (use 1..=100)");
     }
     Ok((character, combo, amount))
 }
 
-/// Parse an `--arts-ap-grant` entry into a [`legaia_patcher::arts_ap_grant::ArtApSpec`].
-pub(crate) fn parse_arts_ap_grant(s: &str) -> Result<legaia_patcher::arts_ap_grant::ArtApSpec> {
+/// Parse an `--arts-ap-grant` entry into a [`legaia_arts_patch::arts_ap_grant::ArtApSpec`].
+pub(crate) fn parse_arts_ap_grant(s: &str) -> Result<legaia_arts_patch::arts_ap_grant::ArtApSpec> {
     let (character, combo, amount) = parse_arts_ap_entry(s, "AP-grant")?;
-    Ok(legaia_patcher::arts_ap_grant::ArtApSpec {
+    Ok(legaia_arts_patch::arts_ap_grant::ArtApSpec {
         character,
         combo,
-        mode: legaia_patcher::arts_ap_grant::ApMode::Grant(amount),
+        mode: legaia_arts_patch::arts_ap_grant::ApMode::Grant(amount),
     })
 }
 
-/// Parse an `--arts-ap-cost` entry into a [`legaia_patcher::arts_ap_grant::ArtApSpec`].
-pub(crate) fn parse_arts_ap_cost(s: &str) -> Result<legaia_patcher::arts_ap_grant::ArtApSpec> {
+/// Parse an `--arts-ap-cost` entry into a [`legaia_arts_patch::arts_ap_grant::ArtApSpec`].
+pub(crate) fn parse_arts_ap_cost(s: &str) -> Result<legaia_arts_patch::arts_ap_grant::ArtApSpec> {
     let (character, combo, amount) = parse_arts_ap_entry(s, "AP-cost")?;
-    Ok(legaia_patcher::arts_ap_grant::ArtApSpec {
+    Ok(legaia_arts_patch::arts_ap_grant::ArtApSpec {
         character,
         combo,
-        mode: legaia_patcher::arts_ap_grant::ApMode::Cost(amount),
+        mode: legaia_arts_patch::arts_ap_grant::ApMode::Cost(amount),
     })
 }
 
@@ -280,8 +280,10 @@ pub(crate) fn clock_seed() -> u64 {
 
 /// Parse a `--delilas-party` mapping: three comma-separated sibling names in
 /// Vahn, Noa, Gala order, each used once (`gi,lu,che`).
-pub(crate) fn parse_delilas_party(s: &str) -> Result<legaia_patcher::delilas_party::PartyMapping> {
-    legaia_patcher::delilas_party::PartyMapping::parse(s)
+pub(crate) fn parse_delilas_party(
+    s: &str,
+) -> Result<legaia_delilas_party::delilas_party::PartyMapping> {
+    legaia_delilas_party::delilas_party::PartyMapping::parse(s)
 }
 
 #[cfg(test)]

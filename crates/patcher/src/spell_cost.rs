@@ -15,7 +15,7 @@
 //! internal-tier entry never gains a cost. The table lives in `SCUS_942.54`, so
 //! the edit is a same-size in-place SCUS patch (like the steal randomizer).
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// Re-exported [`crate::drops::DropMode`] so the MP-cost pass shares the CLI's
 /// `shuffle` / `random` vocabulary.

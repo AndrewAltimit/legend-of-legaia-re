@@ -1,4 +1,4 @@
-//! Disc-gated tests for the **shiny Seru** feature (see `legaia_patcher::shiny_seru`):
+//! Disc-gated tests for the **shiny Seru** feature (see `legaia_code_hooks::shiny_seru`):
 //! a rare capturable enemy with +35% stats whose captured Seru deals +35% damage
 //! forever (+ translucent summon and a "+35% DMG!" cast banner). The injection is
 //! nine same-size detours + their routines, split across a new preserved
@@ -22,13 +22,13 @@ use legaia_code_hooks::arenas::{
     self, BATTLE_ACTION_OVERLAY_PROT_INDEX, HOOK_SETUP_VA, MENU_OVERLAY_PROT_INDEX,
     OVERLAY_BASE_VA, SCUS_GAP_END_VA, SCUS_GAP_VA,
 };
-use legaia_iso::iso9660::read_file_in_image;
-use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::shiny_seru::{
+use legaia_code_hooks::shiny_seru::{
     self, HOOK_BANNER_VA, HOOK_BMENU_LVL_VA, HOOK_CAPTURE_VA, HOOK_DAMAGE_VA, HOOK_FADE_VA,
     HOOK_GRANT_SHIFT_VA, HOOK_GRANT_VA, HOOK_MENU_VA, ShinySeruInjection,
 };
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_iso::iso9660::read_file_in_image;
+use legaia_patcher::apply;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

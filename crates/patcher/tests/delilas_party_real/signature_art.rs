@@ -4,11 +4,11 @@
 use super::cast_bed::stream_speed;
 use super::load_disc;
 use super::move_modes::{SLOTS, run_mapped};
-use legaia_patcher::delilas_party::{
+use legaia_delilas_party::delilas_party::{
     CastRoutePolicy, DelilasMoveMode as MoveMode, PartyMapping, Sibling, apply_delilas_party,
 };
-use legaia_patcher::delilas_voice_fx::ArtsVoiceMode;
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_delilas_party::delilas_voice_fx::ArtsVoiceMode;
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 /// Every hero slot gets its mapped sibling's signature special: renamed,
 /// re-combo'd, and driven by that sibling's own choreography instead of
@@ -26,8 +26,8 @@ fn every_slot_gets_its_siblings_signature_art() {
         return;
     };
     use legaia_asset::battle_char_assembly as bca;
-    use legaia_patcher::delilas_party::READEF_ENTRY;
-    use legaia_patcher::party_swap::winpose;
+    use legaia_delilas_party::delilas_party::READEF_ENTRY;
+    use legaia_party_swap::winpose;
 
     /// One hero slot's expected reskin. Combo glyphs: 1 L, 2 R, 3 D, 4 U,
     /// so the three retail combos read R D L D L / L L R L R / R R L L L.
@@ -471,9 +471,9 @@ fn every_slot_gets_its_siblings_signature_art() {
                 "slot {slot}: idle frame 0 moved the torso off the host rest ground spot"
             );
             let rig = if slot == 1 {
-                &legaia_patcher::party_swap::RIG_NOA
+                &legaia_party_swap::RIG_NOA
             } else {
-                &legaia_patcher::party_swap::RIG_VAHN_GALA
+                &legaia_party_swap::RIG_VAHN_GALA
             };
             let feet = [
                 rig.channel_for_canonical[11] as usize,
@@ -688,7 +688,7 @@ fn the_signature_effect_script_lives_in_the_bank_the_runtime_walks() {
     const SIGNATURE_COMBO: [u8; 5] = [1, 2, 4, 4, 3];
     for (slot, ch) in SLOTS {
         let entry = patched
-            .read_entry(legaia_patcher::arts::player_entry_index(ch))
+            .read_entry(legaia_arts_patch::arts::player_entry_index(ch))
             .expect("player file");
         let rec0 = bca::decode_record0(&entry).expect("record0");
         let bank = bca::art_animation_bank(&rec0).expect("art bank");
@@ -726,7 +726,7 @@ fn the_signature_effect_script_lives_in_the_bank_the_runtime_walks() {
         // And the retail row it replaced really did carry those ids, so
         // the check above cannot go vacuous on a future disc.
         let retail_entry = retail
-            .read_entry(legaia_patcher::arts::player_entry_index(ch))
+            .read_entry(legaia_arts_patch::arts::player_entry_index(ch))
             .expect("retail player file");
         let retail_rec0 = bca::decode_record0(&retail_entry).expect("retail record0");
         let retail_bank = bca::art_animation_bank(&retail_rec0).expect("retail art bank");

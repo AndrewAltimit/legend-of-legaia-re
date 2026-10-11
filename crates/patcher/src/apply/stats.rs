@@ -19,7 +19,7 @@ pub struct MonsterStatsReport {
     /// so the edit was skipped (the original stats are kept). Our LZS re-packer
     /// isn't byte-identical to Sony's, so a record already near the slot limit
     /// can rarely overflow; skipping keeps the rest of the patch valid (mirrors
-    /// the drop randomizer, see [`crate::monster`]).
+    /// the drop randomizer, see [`legaia_disc_patch::monster`]).
     pub skipped: Vec<u16>,
 }
 
@@ -125,7 +125,7 @@ pub struct AttackCountReport {
     pub entries_changed: usize,
     /// Monster ids whose re-packed slot would overflow the `0x14000` footprint,
     /// so the edit was skipped (the original costs are kept). Same rare LZS
-    /// re-pack guard as the drop / stat passes (see [`crate::monster`]).
+    /// re-pack guard as the drop / stat passes (see [`legaia_disc_patch::monster`]).
     pub skipped: Vec<u16>,
 }
 

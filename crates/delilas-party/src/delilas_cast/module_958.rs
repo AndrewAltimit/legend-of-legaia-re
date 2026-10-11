@@ -21,7 +21,7 @@ use legaia_disc_patch::disc::DiscPatcher;
 /// A PARTY caster resolves staged ids through the player record[0]
 /// action-offset table, which has exactly 12 rows (`0x00..0x0B`) - ids
 /// `>= 0x0C` index past it. The staged-row machinery
-/// (`party_swap::cast_stage`) authors real content on rows `0x0A`/`0x0B`
+/// (`legaia_party_swap::cast_stage`) authors real content on rows `0x0A`/`0x0B`
 /// only, so the walk is folded to stay inside that pair:
 /// `0A,0B,B(restage),A,B,B`. The restage still bumps the `+0x1DC`
 /// counter, so each stage boundary restarts a clip rather than freezing.

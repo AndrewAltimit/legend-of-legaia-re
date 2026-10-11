@@ -4,9 +4,9 @@
 //! stocks priced (non-quest) items. Gates on `LEGAIA_DISC_BIN`.
 
 use legaia_asset::item_names;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 use legaia_patcher::item_price::{CHEST_EQUIPMENT_PRICES, price_patches, sellable_pool};
 

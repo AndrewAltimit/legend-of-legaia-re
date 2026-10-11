@@ -2,11 +2,11 @@
 //! everything the swap claims to change, prove idempotence + determinism.
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_patcher::delilas_party::{
+use legaia_delilas_party::delilas_party::{
     CastRoutePolicy, DelilasMoveMode as MoveMode, PartyMapping, Sibling, apply_delilas_party,
 };
-use legaia_patcher::delilas_voice_fx::ArtsVoiceMode;
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_delilas_party::delilas_voice_fx::ArtsVoiceMode;
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 mod cast_bed;
 mod move_modes;
@@ -91,8 +91,9 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     // match the hero tiles, and every other tile is retail.
     {
         let retail = DiscPatcher::open(original.clone()).expect("open retail");
-        let sheet_r = legaia_patcher::save_icon::read_sheet(&retail).expect("retail sheet");
-        let sheet_p = legaia_patcher::save_icon::read_sheet(&reopened).expect("patched sheet");
+        let sheet_r = legaia_texture_replace::save_icon::read_sheet(&retail).expect("retail sheet");
+        let sheet_p =
+            legaia_texture_replace::save_icon::read_sheet(&reopened).expect("patched sheet");
         for (a, b) in [(0usize, 12usize), (1, 13), (2, 11)] {
             assert_eq!(
                 sheet_p.tile_block_pixels(b).unwrap(),
@@ -188,7 +189,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     // decodes to RETAIL Vahn's grunt (the samples are byte-copies, so the
     // decoded prefix over the copied span must match exactly).
     {
-        use legaia_patcher::delilas_voice::{BATTLE_BANK_ENTRY, MONSTER_SND_ENTRY};
+        use legaia_delilas_party::delilas_voice::{BATTLE_BANK_ENTRY, MONSTER_SND_ENTRY};
         let retail = DiscPatcher::open(original.clone()).expect("open retail");
         let tone_vag = |vab: &legaia_vab::VabReport, prog: usize, tone: usize| -> usize {
             let page = vab
@@ -447,7 +448,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     // 3*char+2) reparses with the retail entry count and frame counts,
     // and its streams decode through the retail codec.
     {
-        use legaia_patcher::delilas_party::READEF_ENTRY;
+        use legaia_delilas_party::delilas_party::READEF_ENTRY;
         let retail = DiscPatcher::open(original.clone()).expect("open retail");
         let r_readef = retail.read_entry_footprint(READEF_ENTRY).expect("readef");
         let p_readef = reopened.read_entry_footprint(READEF_ENTRY).expect("readef");
@@ -482,7 +483,7 @@ fn default_mapping_swaps_models_names_and_is_idempotent() {
     // TOC now carry the siblings' SPU-ADPCM grunts - every clip differs
     // from retail and its head still decodes as SPU-ADPCM with energy.
     {
-        use legaia_patcher::delilas_voice::MONSTER_SND_ENTRY;
+        use legaia_delilas_party::delilas_voice::MONSTER_SND_ENTRY;
         let retail = DiscPatcher::open(original.clone()).expect("open retail");
         let r_snd = retail.read_entry(MONSTER_SND_ENTRY).expect("monster.snd");
         let p_snd = reopened.read_entry(MONSTER_SND_ENTRY).expect("monster.snd");

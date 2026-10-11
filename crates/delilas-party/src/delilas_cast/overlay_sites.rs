@@ -170,7 +170,7 @@ const BLOCK_REACTION_RETAIL: u32 = 0x2402_000B; // li v0, 0xB
 const BLOCK_REACTION_PATCHED: u32 = 0x2402_0006; // li v0, 0x06
 
 /// Re-home the party Block reaction onto action row `0x06`
-/// (`party_swap::cast_stage::BLOCK_ROW_RELOCATED`).
+/// (`legaia_party_swap::cast_stage::BLOCK_ROW_RELOCATED`).
 ///
 /// The cast route hands rows `0x0A`/`0x0B` to the Megaton Press module,
 /// and row `0x0B` is retail's Block row - so before the rows are

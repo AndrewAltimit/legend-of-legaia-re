@@ -18,9 +18,9 @@
 use std::collections::BTreeSet;
 
 use legaia_asset::battle_data_pack;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::weapon_specialty::{
     self, FAVORED_COST, Family, arm_cost_offset, cost_for, weapon_family,
 };

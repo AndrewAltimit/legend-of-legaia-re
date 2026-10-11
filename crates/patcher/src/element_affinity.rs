@@ -16,8 +16,8 @@
 //! untouched, so the change is purely *which element beats which*. PROT 0898 is
 //! stored raw (no LZS), so the write is strictly same-size and in place.
 
-use crate::rng::SplitMix64;
 use legaia_asset::element_affinity::ELEMENT_COUNT;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// Re-exported [`crate::drops::DropMode`] so the affinity pass shares the CLI's
 /// `shuffle` / `random` vocabulary.

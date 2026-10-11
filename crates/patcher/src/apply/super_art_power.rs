@@ -1,4 +1,4 @@
-//! Super Art damage-power edits. See [`crate::super_art_power`] for the pin: a
+//! Super Art damage-power edits. See [`legaia_arts_patch::super_art_power`] for the pin: a
 //! Super Art's per-strike power bytes live at `record+0x24` of its own
 //! `0xD0`-stride art record in the character's player battle file `record0`
 //! (PROT `0863`/`0864`/`0865`), addressed by the finisher action constant.
@@ -37,8 +37,11 @@ pub fn set_super_art_power(
     if edits.is_empty() {
         return Ok(report);
     }
-    let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), crate::arts::SCUS_NAME)
-        .context("read SCUS_942.54 (arts-name table, needed to locate the art block)")?;
+    let scus = legaia_iso::iso9660::read_file_in_image(
+        patcher.image(),
+        legaia_arts_patch::arts::SCUS_NAME,
+    )
+    .context("read SCUS_942.54 (arts-name table, needed to locate the art block)")?;
 
     for ch in Character::all() {
         let want: Vec<(u8, u8)> = edits
@@ -49,15 +52,15 @@ pub fn set_super_art_power(
         if want.is_empty() {
             continue;
         }
-        let index = crate::super_art_power::player_entry_index(ch);
+        let index = legaia_arts_patch::super_art_power::player_entry_index(ch);
         let entry = patcher
             .read_entry(index)
             .with_context(|| format!("read player file PROT {index}"))?;
 
         // Locate first, so a build whose records don't carry the expected names
         // is refused before anything is written.
-        let located =
-            crate::super_art_power::super_art_powers(&scus, &entry, ch).unwrap_or_default();
+        let located = legaia_arts_patch::super_art_power::super_art_powers(&scus, &entry, ch)
+            .unwrap_or_default();
         for (s, _) in edits.iter().filter(|(s, _)| s.character == ch) {
             if !located.iter().any(|r| r.finisher == s.finisher) {
                 anyhow::bail!(
@@ -70,7 +73,9 @@ pub fn set_super_art_power(
         }
 
         let Some((lzs_off, recompressed, applied)) =
-            crate::super_art_power::patch_player_record0_super_power(&scus, &entry, ch, &want)
+            legaia_arts_patch::super_art_power::patch_player_record0_super_power(
+                &scus, &entry, ch, &want,
+            )
         else {
             continue; // every requested value already in place, or no damage byte
         };

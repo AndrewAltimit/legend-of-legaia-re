@@ -7,8 +7,8 @@
 //! Uses only the one disc `LEGAIA_DISC_BIN` points at, so it skips+passes when
 //! that env var is unset (no PAL disc is required or committed).
 
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::translation::diff;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_translate::diff;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

@@ -1,5 +1,5 @@
 //! Tactical-Art damage-power edits ("arts power-down"). See
-//! [`crate::arts_power`] for the pin: each art's per-strike power bytes live at
+//! [`legaia_arts_patch::arts_power`] for the pin: each art's per-strike power bytes live at
 //! `record+0x24` in the `0xD0`-stride art records of the character's player
 //! battle file `record0` (PROT `0863`/`0864`/`0865`).
 
@@ -37,18 +37,18 @@ pub fn set_arts_power(
     let mut matched = vec![false; edits.len()];
 
     for ch in Character::all() {
-        let index = crate::arts_power::player_entry_index(ch);
+        let index = legaia_arts_patch::arts_power::player_entry_index(ch);
         let entry = patcher
             .read_entry(index)
             .with_context(|| format!("read player file PROT {index}"))?;
         // Only pass the edits whose combo exists in this file.
-        let dec = match crate::arts::player_record0_decoded(&entry) {
+        let dec = match legaia_arts_patch::arts::player_record0_decoded(&entry) {
             Some(d) => d,
             None => continue,
         };
         let mut file_edits: Vec<(Vec<Command>, u8)> = Vec::new();
         for (ei, (combo, value)) in edits.iter().enumerate() {
-            if !crate::arts_power::find_records_by_combo(&dec, combo).is_empty() {
+            if !legaia_arts_patch::arts_power::find_records_by_combo(&dec, combo).is_empty() {
                 matched[ei] = true;
                 file_edits.push((combo.clone(), *value));
             }
@@ -57,7 +57,7 @@ pub fn set_arts_power(
             continue;
         }
         if let Some((lzs_off, recompressed, applied)) =
-            crate::arts_power::patch_player_record0_power(&entry, &file_edits)
+            legaia_arts_patch::arts_power::patch_player_record0_power(&entry, &file_edits)
         {
             patcher
                 .patch_prot_entry(index, lzs_off as u64, &recompressed)
@@ -77,7 +77,7 @@ pub fn set_arts_power(
         let combo: String = edits[i]
             .0
             .iter()
-            .map(crate::arts_power::command_glyph)
+            .map(legaia_arts_patch::arts_power::command_glyph)
             .collect();
         anyhow::bail!("no Tactical Art has combo {combo} (nothing to power-edit)");
     }

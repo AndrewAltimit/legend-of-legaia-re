@@ -30,7 +30,7 @@ pub struct DropApplyReport {
     /// (the original drop is kept). Our LZS re-packer isn't byte-identical to
     /// Sony's, so a record already near the `0x14000` slot limit can rarely
     /// overflow; skipping keeps the rest of the patch valid. See
-    /// [`crate::monster`].
+    /// [`legaia_disc_patch::monster`].
     pub skipped: Vec<u16>,
 }
 
@@ -47,7 +47,7 @@ pub fn apply_drop_plan(
         let slot = patcher
             .monster_slot(a.monster_id)
             .with_context(|| format!("read monster {} slot", a.monster_id))?;
-        let new_slot = match crate::monster::set_drop(&slot, a.item, a.chance) {
+        let new_slot = match legaia_disc_patch::monster::set_drop(&slot, a.item, a.chance) {
             Ok(s) => s,
             Err(_) => {
                 // The only expected failure here is the slot-overflow guard;

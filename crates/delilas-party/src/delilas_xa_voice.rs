@@ -49,7 +49,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::delilas_party::PartyMapping;
 use crate::delilas_voice::{MONSTER_SND_ENTRY, monster_vab_offset};
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// Playback rate a tone's pitch attrs imply, from the PsyQ convention:
 /// keying the center note plays the sample at 44100 Hz, and these banks
@@ -248,7 +248,7 @@ fn spirit_xa_pick(sibling: crate::delilas_party::Sibling) -> Option<(&'static st
 /// Idempotence: retail is digitally silent through +0.8 s; a stream
 /// already carrying energy at +0.15..0.6 s is left alone (guard, not a
 /// byte compare - re-shifting a shifted stream would stack).
-pub fn boost_cast_bed_intro(patcher: &mut crate::disc::DiscPatcher) -> Result<bool> {
+pub fn boost_cast_bed_intro(patcher: &mut legaia_disc_patch::disc::DiscPatcher) -> Result<bool> {
     const FILE: &str = "XA/XA20.XA";
     const CHAN: u8 = 2;
     /// Stereo frames per audio sector (18 groups x 112 frames).

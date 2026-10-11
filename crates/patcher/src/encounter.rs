@@ -39,7 +39,7 @@ use legaia_asset::man_section::{self, EncounterSection};
 use legaia_asset::scene_asset_table;
 
 use crate::drops::DropMode;
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// MAN asset type byte in a scene bundle's descriptor table.
 const MAN_TYPE: u8 = 0x03;
@@ -309,7 +309,8 @@ impl SceneEncounters {
         if decoded.len() != man.size as usize {
             return None;
         }
-        let compressed_budget = crate::man_compressed_budget(&table, man_offset, entry.len());
+        let compressed_budget =
+            legaia_disc_patch::man_compressed_budget(&table, man_offset, entry.len());
         Self::from_man_bytes(decoded, entry_idx, man_offset, compressed_budget, false)
     }
 
@@ -810,7 +811,7 @@ impl SceneEncounters {
         if self.raw_in_place {
             return Some(self.decoded.clone());
         }
-        crate::compress_within(&self.decoded, self.compressed_budget)
+        legaia_disc_patch::compress_within(&self.decoded, self.compressed_budget)
     }
 }
 

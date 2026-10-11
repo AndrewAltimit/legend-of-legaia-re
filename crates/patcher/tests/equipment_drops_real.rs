@@ -1,6 +1,6 @@
 //! Disc-gated tests for the **bonus equipment drop** - the additive code hook
 //! that grants one extra random equipment piece from the battle-end reward
-//! routine (see `legaia_patcher::bonus_drop`).
+//! routine (see `legaia_code_hooks::bonus_drop`).
 //!
 //! The injection is two same-size `SCUS_942.54` edits: a detour at the
 //! reward-routine hook (`0x8004f610`) and a routine + equipment-id table written
@@ -20,13 +20,13 @@
 //! emulator playtest.
 
 use legaia_asset::item_names::file_offset_for_va;
-use legaia_iso::iso9660::read_file_in_image;
-use legaia_patcher::apply;
-use legaia_patcher::bonus_drop::{
+use legaia_code_hooks::bonus_drop::{
     self, BonusDropInjection, DISPLACED, HOOK_VA, RETURN_VA, ROUTINE_VA, assemble_routine,
     detour_words,
 };
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_iso::iso9660::read_file_in_image;
+use legaia_patcher::apply;
 use legaia_patcher::equipment::{equipment_ids, equipment_pool};
 use std::collections::HashSet;
 

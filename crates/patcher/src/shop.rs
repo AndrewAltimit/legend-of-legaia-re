@@ -100,7 +100,7 @@ impl SceneShops {
         Some(Self {
             entry_idx,
             man_offset: located.man_offset,
-            compressed_budget: crate::man_compressed_budget(
+            compressed_budget: legaia_disc_patch::man_compressed_budget(
                 &table,
                 located.man_offset,
                 entry.len(),
@@ -133,7 +133,7 @@ impl SceneShops {
 
     /// Recompress the (mutated) MAN; `None` if it would overflow the footprint.
     pub fn repack(&self) -> Option<Vec<u8>> {
-        crate::compress_within(&self.decoded, self.compressed_budget)
+        legaia_disc_patch::compress_within(&self.decoded, self.compressed_budget)
     }
 }
 

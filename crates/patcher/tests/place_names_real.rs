@@ -15,10 +15,10 @@
 //! when unset.
 
 use legaia_asset::place_names::{WORLD_MAP_NAME_CAPACITY, WORLD_MAP_RECORD_STRIDE};
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_iso::write::{is_form2, mode2_form1_sector_is_valid};
 use legaia_patcher::apply::{self, RenameTarget};
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::location_name::ManPlaceNames;
 
 /// The three kingdom bundles whose MAN trails the world-map location table.

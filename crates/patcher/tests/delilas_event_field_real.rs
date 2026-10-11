@@ -1,7 +1,7 @@
 //! Disc oracle for the event-scene field mirrors of `--delilas-party`
 //! (`stone` map-stone confrontation, `taiku2` floating castle, `conc2`
 //! past Conkram): apply
-//! [`legaia_patcher::nivora_field::apply_event_field`] on a scratch
+//! [`legaia_delilas_party::nivora_field::apply_event_field`] on a scratch
 //! copy and prove, per scene:
 //!
 //! - the rebuilt bundle keeps its footprint and every section decodes
@@ -20,10 +20,10 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_asset::monster_archive::PartPose;
-use legaia_patcher::delilas_party::PartyMapping;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::nivora_field::apply_event_field;
-use legaia_patcher::party_swap::event_field::{EVENT_SCENES, EventSceneSpec};
+use legaia_delilas_party::delilas_party::PartyMapping;
+use legaia_delilas_party::nivora_field::apply_event_field;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_party_swap::event_field::{EVENT_SCENES, EventSceneSpec};
 
 fn load_disc() -> Option<Vec<u8>> {
     let path = std::env::var("LEGAIA_DISC_BIN").ok()?;

@@ -12,7 +12,7 @@ pub struct EquipmentDropReport {
     pub chance_pct: u8,
 }
 
-/// Inject the **additive** bonus equipment drop (see [`crate::bonus_drop`]): a
+/// Inject the **additive** bonus equipment drop (see [`legaia_code_hooks::bonus_drop`]): a
 /// code hook into the battle-end reward routine that, on a `chance_pct` roll
 /// once per battle, grants one extra random equipment id picked from the disc's
 /// own equipment pool - *on top of* the normal drop, which is left untouched.
@@ -28,10 +28,10 @@ pub fn inject_equipment_bonus_drop(
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for equipment-drop injection")?;
     let ids = crate::equipment::equipment_ids(&scus).context("build equipment id pool")?;
-    let plan = crate::bonus_drop::BonusDropInjection::plan(&scus, &ids, chance_pct)?;
+    let plan = legaia_code_hooks::bonus_drop::BonusDropInjection::plan(&scus, &ids, chance_pct)?;
 
     // Detour at the hook site, then the routine + table blob.
-    let detour: Vec<u8> = crate::bonus_drop::detour_words()
+    let detour: Vec<u8> = legaia_code_hooks::bonus_drop::detour_words()
         .iter()
         .flat_map(|w| w.to_le_bytes())
         .collect();
@@ -56,7 +56,7 @@ pub struct FleeExpReport {
     pub pct: u8,
 }
 
-/// Inject the **run-away EXP reward** (see [`crate::flee_exp`]): a code hook into
+/// Inject the **run-away EXP reward** (see [`legaia_code_hooks::flee_exp`]): a code hook into
 /// the battle-action escape teardown that, whenever the party successfully flees,
 /// banks `pct`% of the fled formation's experience into every party member's
 /// cumulative-XP cell. Vanilla awards nothing for running.
@@ -70,16 +70,16 @@ pub fn inject_flee_exp(patcher: &mut DiscPatcher, pct: u8) -> Result<FleeExpRepo
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for flee-EXP injection")?;
     let overlay = patcher
-        .read_entry(crate::flee_exp::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .read_entry(legaia_code_hooks::flee_exp::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .context("read battle-action overlay for flee-EXP injection")?;
-    let plan = crate::flee_exp::FleeExpInjection::plan(&scus, &overlay, pct)?;
+    let plan = legaia_code_hooks::flee_exp::FleeExpInjection::plan(&scus, &overlay, pct)?;
 
     // The escape-teardown detour lives in the overlay PROT entry (raw, linear
     // from base); the routine blob lives in the SCUS rodata gap.
     let detour: Vec<u8> = plan.detour.iter().flat_map(|w| w.to_le_bytes()).collect();
     patcher
         .patch_prot_entry(
-            crate::flee_exp::BATTLE_ACTION_OVERLAY_PROT_INDEX,
+            legaia_code_hooks::flee_exp::BATTLE_ACTION_OVERLAY_PROT_INDEX,
             plan.overlay_hook_off as u64,
             &detour,
         )
@@ -168,7 +168,7 @@ pub struct ShinySeruReport {
     pub pct: u8,
 }
 
-/// Inject the **shiny Seru** feature (see [`crate::shiny_seru`]): with `pct`%
+/// Inject the **shiny Seru** feature (see [`legaia_code_hooks::shiny_seru`]): with `pct`%
 /// probability per battle, the frontmost *capturable* enemy spawns with +35%
 /// stats; capturing it flags the learned Seru so its spell deals +35% damage
 /// forever (the flag persists in the spell-level byte's high bit and is masked
@@ -194,10 +194,15 @@ pub fn inject_shiny_seru(patcher: &mut DiscPatcher, pct: u8) -> Result<ShinySeru
     let archive = patcher
         .read_entry(MONSTER_ARCHIVE_ENTRY)
         .context("read monster battle_data archive for shiny-seru allowlist")?;
-    let capturable = crate::shiny_seru::capturable_monster_ids(&archive)
+    let capturable = legaia_code_hooks::shiny_seru::capturable_monster_ids(&archive)
         .context("derive capturable-Seru ids")?;
-    let plan =
-        crate::shiny_seru::ShinySeruInjection::plan(&scus, &ov0898, &ov0899, pct, &capturable)?;
+    let plan = legaia_code_hooks::shiny_seru::ShinySeruInjection::plan(
+        &scus,
+        &ov0898,
+        &ov0899,
+        pct,
+        &capturable,
+    )?;
 
     for edit in &plan.edits {
         match edit.prot_index {
@@ -220,10 +225,10 @@ pub fn inject_shiny_seru(patcher: &mut DiscPatcher, pct: u8) -> Result<ShinySeru
 pub struct ArtsApGrantReport {
     /// Every resolved override: the exact `(character, row)` art it landed on,
     /// its mode + amount, and the menu display byte that was rewritten with it.
-    pub resolved: Vec<crate::arts_ap_grant::ResolvedArtAp>,
+    pub resolved: Vec<legaia_arts_patch::arts_ap_grant::ResolvedArtAp>,
 }
 
-/// Inject the **arts AP override** feature (see [`crate::arts_ap_grant`]): make
+/// Inject the **arts AP override** feature (see [`legaia_arts_patch::arts_ap_grant`]): make
 /// each targeted Tactical Art either *grant* `amount` AP (Spirit,
 /// `actor[+0x170]`, clamped at 100) and be castable at any AP level, or cost a
 /// flat `amount` instead of retail's computed `multiplier x command_count`.
@@ -237,16 +242,18 @@ pub struct ArtsApGrantReport {
 /// a combo is unknown, or a hosted region isn't dead space.
 pub fn inject_arts_ap_grant(
     patcher: &mut DiscPatcher,
-    specs: &[crate::arts_ap_grant::ArtApSpec],
+    specs: &[legaia_arts_patch::arts_ap_grant::ArtApSpec],
 ) -> Result<ArtsApGrantReport> {
     let scus = patcher
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for arts-ap-grant injection")?;
     let ov0898 = patcher
-        .read_entry(crate::arts_ap_grant::OVERLAY_PROT_INDEX)
+        .read_entry(legaia_arts_patch::arts_ap_grant::OVERLAY_PROT_INDEX)
         .context("read battle-action overlay (0898) for arts-ap-grant injection")?;
-    let (config, resolved) = crate::arts_ap_grant::resolve(&scus, specs)?;
-    let plan = crate::arts_ap_grant::ArtsApGrantInjection::plan(&scus, &ov0898, config, resolved)?;
+    let (config, resolved) = legaia_arts_patch::arts_ap_grant::resolve(&scus, specs)?;
+    let plan = legaia_arts_patch::arts_ap_grant::ArtsApGrantInjection::plan(
+        &scus, &ov0898, config, resolved,
+    )?;
 
     for edit in &plan.edits {
         match edit.prot_index {
@@ -284,7 +291,7 @@ pub struct OscillatingApReport {
     pub bits_va: u32,
 }
 
-/// Inject **oscillating AP costs** (see [`crate::oscillating_ap`]): every
+/// Inject **oscillating AP costs** (see [`legaia_arts_patch::oscillating_ap`]): every
 /// battle deals each Tactical Art onto the *cost* side (retail) or the *grant*
 /// side (admitted at any AP level, adds the AP it would have cost, deals
 /// `damage_pct` percent of its damage), re-rolled per art per battle. Four
@@ -305,9 +312,11 @@ pub fn inject_oscillating_ap(
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for oscillating-ap injection")?;
     let ov0898 = patcher
-        .read_entry(crate::oscillating_ap::OVERLAY_PROT_INDEX)
+        .read_entry(legaia_arts_patch::oscillating_ap::OVERLAY_PROT_INDEX)
         .context("read battle-action overlay (0898) for oscillating-ap injection")?;
-    let plan = crate::oscillating_ap::OscillatingApInjection::plan(&scus, &ov0898, damage_pct)?;
+    let plan = legaia_arts_patch::oscillating_ap::OscillatingApInjection::plan(
+        &scus, &ov0898, damage_pct,
+    )?;
 
     for edit in &plan.edits {
         match edit.prot_index {
@@ -342,7 +351,7 @@ pub struct SeruTradeReport {
     pub config: legaia_asset::seru_trade::SeruTradeConfig,
 }
 
-/// Enable **seru trading** (see [`crate::seru_trade`]): write a small config blob
+/// Enable **seru trading** (see [`legaia_code_hooks::seru_trade`]): write a small config blob
 /// (enabled flag + master `seed` + per-vendor offer cap) into preserved
 /// `SCUS_942.54` rodata padding. The engine reads the blob and, at
 /// runtime, lets vendors offer to swap one of a character's seru for a different
@@ -364,7 +373,7 @@ pub fn enable_seru_trades(
         seed,
         max_offers: max_offers.max(1),
     };
-    let plan = crate::seru_trade::SeruTradePlan::plan(&scus, config)?;
+    let plan = legaia_code_hooks::seru_trade::SeruTradePlan::plan(&scus, config)?;
     patcher
         .patch_named_file(SCUS_NAME, plan.config_off as u64, &plan.blob)
         .context("write seru-trade config blob")?;
@@ -430,7 +439,7 @@ pub struct JewelFixReport {
     pub sites_patched: usize,
 }
 
-/// Apply the **jewel fix** (see [`crate::jewel_fix`]): retarget the damage
+/// Apply the **jewel fix** (see [`legaia_code_hooks::jewel_fix`]): retarget the damage
 /// calls of the boss cinematic casts - Xain's Bloody Horns / Terio Punch (and
 /// module-sharing Bull Charge), Cort's Guilty Cross, and the
 /// Delilas trio's Blazing Slash / Megaton Press / Plasma Strike - from the
@@ -446,13 +455,13 @@ pub struct JewelFixReport {
 /// unrecognized build is refused without touching the disc.
 pub fn apply_jewel_fix(patcher: &mut DiscPatcher) -> Result<JewelFixReport> {
     let mut modules = std::collections::BTreeMap::new();
-    for index in crate::jewel_fix::MODULE_INDICES {
+    for index in legaia_code_hooks::jewel_fix::MODULE_INDICES {
         let bytes = patcher
             .read_entry(index)
             .with_context(|| format!("read cast module PROT {index} for jewel fix"))?;
         modules.insert(index, bytes);
     }
-    let plan = crate::jewel_fix::JewelFix::plan(&modules)?;
+    let plan = legaia_code_hooks::jewel_fix::JewelFix::plan(&modules)?;
     for &(index, offset, word) in &plan.writes {
         patcher
             .patch_prot_entry(index, offset as u64, &word.to_le_bytes())
@@ -470,7 +479,7 @@ pub struct ApproachFixReport {
     pub changed: bool,
 }
 
-/// Apply the **attack-approach softlock fix** (see [`crate::approach_fix`]):
+/// Apply the **attack-approach softlock fix** (see [`legaia_code_hooks::approach_fix`]):
 /// rewrite the state-`0x19` arm's redundant per-frame facing recompute into a
 /// guard that re-stages a monster's approach animation when it dies
 /// mid-approach (the actual defect behind the "endless camera orbit"
@@ -482,11 +491,11 @@ pub struct ApproachFixReport {
 /// verified before writing; an unrecognized build is refused without
 /// touching the disc, and an already-fixed image is a no-op.
 pub fn apply_approach_fix(patcher: &mut DiscPatcher) -> Result<ApproachFixReport> {
-    let index = crate::approach_fix::BATTLE_ACTION_OVERLAY_PROT_INDEX;
+    let index = legaia_code_hooks::approach_fix::BATTLE_ACTION_OVERLAY_PROT_INDEX;
     let overlay = patcher
         .read_entry(index)
         .with_context(|| format!("read battle-action overlay PROT {index} for approach fix"))?;
-    match crate::approach_fix::plan(&overlay)? {
+    match legaia_code_hooks::approach_fix::plan(&overlay)? {
         None => Ok(ApproachFixReport { changed: false }),
         Some(fix) => {
             patcher

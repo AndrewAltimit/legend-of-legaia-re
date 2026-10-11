@@ -3,9 +3,9 @@
 //! Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. Patched images live only
 //! in memory.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 use std::collections::BTreeMap;
 

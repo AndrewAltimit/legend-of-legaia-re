@@ -10,7 +10,7 @@
 //! prize's price both cheapens it and makes it show up sooner.
 //!
 //! This module edits those `price` u32s in place. PROT 972 is a **raw** overlay
-//! (no LZS), so an edit is a direct same-size [`crate::disc::DiscPatcher::patch_prot_entry`]
+//! (no LZS), so an edit is a direct same-size [`legaia_disc_patch::disc::DiscPatcher::patch_prot_entry`]
 //! write - no recompression. A prize is targeted by its **item id** (the SCUS
 //! item-name id space), which is stable across the two venue pages, so
 //! e.g. the Buma **Water Egg** (id `0x6F`) is found by id rather than a fixed

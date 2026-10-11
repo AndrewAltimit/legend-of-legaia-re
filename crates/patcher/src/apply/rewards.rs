@@ -12,7 +12,7 @@ pub struct RewardReport {
     pub monsters_changed: usize,
     /// Monster ids whose re-packed slot would overflow the `0x14000` footprint,
     /// so the edit was skipped (the original value is kept). Same rare LZS
-    /// re-pack guard as the drop / stat passes (see [`crate::monster`]).
+    /// re-pack guard as the drop / stat passes (see [`legaia_disc_patch::monster`]).
     pub skipped: Vec<u16>,
 }
 

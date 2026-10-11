@@ -1,7 +1,7 @@
 //! Equipment classification: recover which item ids are equippable gear
 //! (weapons / armor / accessories) from the disc's own item-name table.
 //!
-//! This is the id pool the **bonus equipment drop** ([`crate::bonus_drop`])
+//! This is the id pool the **bonus equipment drop** ([`legaia_code_hooks::bonus_drop`])
 //! embeds in its injected reward-routine table - the low-chance extra drop picks
 //! uniformly from it. A monster has a single drop slot, so equipment is not a
 //! data edit of that slot (which would destroy the normal drop) but an additive

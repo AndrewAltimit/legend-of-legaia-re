@@ -53,8 +53,8 @@ use anyhow::{Context, Result, bail};
 use legaia_tmd::encode::ModelObject;
 
 use crate::equip_transplant::{find_weapon_record, section_clut_cols, weapon_section};
-use crate::party_swap::weapon_fuse::{BareFrame, weapon_fusion_record};
 use legaia_asset::battle_data_pack::BattleDataPack;
+use legaia_party_swap::weapon_fuse::{BareFrame, weapon_fusion_record};
 
 /// 3-vector.
 pub type V3 = [f64; 3];

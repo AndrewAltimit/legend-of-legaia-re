@@ -100,7 +100,8 @@ impl SceneChests {
         if decoded.len() != man.size as usize {
             return None;
         }
-        let compressed_budget = crate::man_compressed_budget(&table, man_offset, entry.len());
+        let compressed_budget =
+            legaia_disc_patch::man_compressed_budget(&table, man_offset, entry.len());
         Self::from_man_bytes(decoded, entry_idx, man_offset, compressed_budget, false)
     }
 
@@ -214,7 +215,7 @@ impl SceneChests {
         if self.raw_in_place {
             return Some(self.decoded.clone());
         }
-        crate::compress_within(&self.decoded, self.compressed_budget)
+        legaia_disc_patch::compress_within(&self.decoded, self.compressed_budget)
     }
 }
 

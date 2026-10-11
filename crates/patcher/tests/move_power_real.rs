@@ -13,8 +13,8 @@
 use legaia_asset::move_power::{
     self, BATTLE_ACTION_OVERLAY_PROT_INDEX, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
 };
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {

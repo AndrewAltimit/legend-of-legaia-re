@@ -73,7 +73,7 @@ pub(super) const MODULE_959_WIPE_EDIT: WordEdit = WordEdit {
 ///   its smash stage (the module writes the same index for both caster
 ///   kinds).
 /// - **Retail** (the default once the staged rows are authored): leave
-///   the increment alone - `party_swap::cast_stage` gives the player
+///   the increment alone - `legaia_party_swap::cast_stage` gives the player
 ///   rows `0x0A`/`0x0B` real wind-up/payoff records (Block re-homed to
 ///   row `0x06`), and the monster side keeps its retail two-stage
 ///   choreography.
@@ -182,7 +182,7 @@ pub(super) const MODULE_959_TEARDOWN_EDITS: &[WordEdit] = &[
 /// `pin_stage` selects the staged-index handling (see
 /// [`MODULE_959_STAGE_EDIT`]): `false` keeps the retail two-stage step
 /// (the caster rows must have been authored by
-/// `party_swap::cast_stage`); `true` pins both stages to row `0x0A`
+/// `legaia_party_swap::cast_stage`); `true` pins both stages to row `0x0A`
 /// (the fallback when the staged-row rewrite could not land). A stage
 /// pin left by an earlier build is restored to retail when
 /// `pin_stage` is `false`.

@@ -1,5 +1,5 @@
 //! Disc-gated tests for **enemy HP bars** - the code hook that draws a red HP
-//! gauge over every living monster in battle (see `legaia_patcher::enemy_hp_bar`).
+//! gauge over every living monster in battle (see `legaia_code_hooks::enemy_hp_bar`).
 //!
 //! The injection is five same-size edits: a two-word detour at the head of the
 //! damage-popup renderer in the battle-action overlay (PROT 898, VA
@@ -22,14 +22,14 @@
 
 use legaia_asset::item_names::file_offset_for_va;
 use legaia_code_hooks::arenas::OVERLAY_BASE_VA;
-use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
-use legaia_iso::write::mode2_form1_sector_is_valid;
-use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::enemy_hp_bar::{
+use legaia_code_hooks::enemy_hp_bar::{
     EnemyHpBarInjection, FRAG_A_VA, FRAG_B_VA, FRAG_C_VA, FRAG_S_VA, HOOK_VA, OVERLAY_PROT_INDEX,
     assemble,
 };
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
+use legaia_iso::write::mode2_form1_sector_is_valid;
+use legaia_patcher::apply;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

@@ -7,8 +7,8 @@
 //! image lives only in memory.
 
 use legaia_asset::fishing_exchange;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::fishing_price::{self, OVERLAY_PROT_INDEX, plan_set_price, price_field_offset};
 
 /// Water Egg item id (SCUS item-name id space).

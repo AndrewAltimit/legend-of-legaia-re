@@ -1,5 +1,5 @@
 //! Disc-gated joint-continuity oracle for the rebuilt battle idle
-//! (`party_swap::winpose::rebuild_idle_stream`).
+//! (`legaia_party_swap::winpose::rebuild_idle_stream`).
 //!
 //! Battle poses are FLAT: every part carries an absolute `R * v + T`
 //! about the object origin, so nothing in the stream forces the skeleton
@@ -24,7 +24,7 @@ use std::path::PathBuf;
 
 use legaia_asset::monster_archive::PartPose;
 use legaia_asset::{battle_char_assembly, monster_archive};
-use legaia_patcher::party_swap::{self, PlayerRig, winpose};
+use legaia_party_swap::{PlayerRig, winpose};
 
 fn prot_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -70,7 +70,7 @@ const PART_NAMES: [&str; 15] = [
 ];
 
 /// PSX rotation order `Rz * Ry * Rx`, angles in 1/4096 turns (a copy of
-/// the crate-private `party_swap::rot_matrix` - the probe has to redo the
+/// the crate-private `legaia_party_swap::rot_matrix` - the probe has to redo the
 /// pose math the engine does).
 fn rot_matrix(p: &PartPose) -> [[f32; 3]; 3] {
     let rad = |r: u16| (r as f32) * std::f32::consts::TAU / 4096.0;
@@ -216,9 +216,17 @@ struct Host {
 
 fn hosts(dir: &std::path::Path) -> Vec<Host> {
     [
-        ("0863_edstati3.BIN", &party_swap::RIG_VAHN_GALA, "Vahn"),
-        ("0864_edstati3.BIN", &party_swap::RIG_NOA, "Noa"),
-        ("0865_battle_data.BIN", &party_swap::RIG_VAHN_GALA, "Gala"),
+        (
+            "0863_edstati3.BIN",
+            &legaia_party_swap::RIG_VAHN_GALA,
+            "Vahn",
+        ),
+        ("0864_edstati3.BIN", &legaia_party_swap::RIG_NOA, "Noa"),
+        (
+            "0865_battle_data.BIN",
+            &legaia_party_swap::RIG_VAHN_GALA,
+            "Gala",
+        ),
     ]
     .into_iter()
     .map(|(f, rig, who)| Host {

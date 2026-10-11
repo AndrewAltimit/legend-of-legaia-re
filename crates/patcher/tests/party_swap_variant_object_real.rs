@@ -1,5 +1,5 @@
 //! Disc-gated oracle for the swapped player file's **equipment-variant**
-//! objects (`party_swap::playerize`).
+//! objects (`legaia_party_swap::playerize`).
 //!
 //! A section's surplus objects are not spare decoration. The first one is
 //! the `0xFF` **variant**, and the per-frame pass `FUN_8004CCD4` installs
@@ -33,7 +33,7 @@
 use std::path::PathBuf;
 
 use legaia_asset::{battle_char_assembly, battle_data_pack};
-use legaia_patcher::party_swap::{self, PlayerRig, playerize};
+use legaia_party_swap::{PlayerRig, playerize};
 use legaia_tmd::encode::{ModelObject, decode_model};
 
 fn prot_dir() -> Option<PathBuf> {
@@ -131,11 +131,16 @@ struct Host {
 
 fn hosts(dir: &std::path::Path) -> Vec<Host> {
     [
-        ("0863_edstati3.BIN", &party_swap::RIG_VAHN_GALA, "Vahn", 0),
-        ("0864_edstati3.BIN", &party_swap::RIG_NOA, "Noa", 1),
+        (
+            "0863_edstati3.BIN",
+            &legaia_party_swap::RIG_VAHN_GALA,
+            "Vahn",
+            0,
+        ),
+        ("0864_edstati3.BIN", &legaia_party_swap::RIG_NOA, "Noa", 1),
         (
             "0865_battle_data.BIN",
-            &party_swap::RIG_VAHN_GALA,
+            &legaia_party_swap::RIG_VAHN_GALA,
             "Gala",
             2,
         ),

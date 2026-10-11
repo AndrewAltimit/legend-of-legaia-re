@@ -1,5 +1,5 @@
 //! Disc-gated tests for the **attack-approach softlock fix** (see
-//! `legaia_patcher::approach_fix`): rewriting the battle-action state-`0x19`
+//! `legaia_code_hooks::approach_fix`): rewriting the battle-action state-`0x19`
 //! arm's redundant facing recompute into a guard that re-stages a monster's
 //! dead approach animation (the summon-then-melee clip death behind the
 //! "endless camera orbit" softlock) by bouncing the state byte back to
@@ -21,13 +21,13 @@
 //! library park savestates (the engine does not execute overlay
 //! code).
 
-use legaia_iso::iso9660::read_file_in_image;
-use legaia_patcher::apply;
-use legaia_patcher::approach_fix::{
+use legaia_code_hooks::approach_fix::{
     BATTLE_ACTION_OVERLAY_PROT_INDEX, OVERLAY_BASE_VA, STOCK_WINDOW, WINDOW_VA, assemble_window,
     plan,
 };
-use legaia_patcher::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_iso::iso9660::read_file_in_image;
+use legaia_patcher::apply;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

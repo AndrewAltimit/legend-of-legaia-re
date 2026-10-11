@@ -40,13 +40,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::equip_transplant::{
     self, Transplant, packed_len, records_with_transplants, transplant_weapon,
 };
-use crate::party_swap::playerize::{rebuild_player_file, rebuild_player_file_unbounded};
 use anyhow::{Context, Result, bail};
 use legaia_asset::battle_data_pack;
 use legaia_asset::equip_stats::{BONUS_STRIDE, EquipSlot, EquipStatTable, bonus_table_file_offset};
+use legaia_party_swap::playerize::{rebuild_player_file, rebuild_player_file_unbounded};
 
-use crate::disc::DiscPatcher;
 use crate::weapon_specialty::{self, PLAYERS, arm_cost_offset, up_cost_offset};
+use legaia_disc_patch::disc::DiscPatcher;
 
 use super::SCUS_NAME;
 
@@ -1088,7 +1088,9 @@ fn annex_rebuilt_files(
     let wanted: u32 = files
         .iter()
         .map(|(_, f, _)| {
-            (f.len().saturating_sub(crate::disc::PLAYER_FILE_DATA_BASE) / 0x800) as u32
+            (f.len()
+                .saturating_sub(legaia_disc_patch::disc::PLAYER_FILE_DATA_BASE)
+                / 0x800) as u32
         })
         .sum();
     match patcher.annex_free_sectors() {

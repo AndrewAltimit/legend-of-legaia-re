@@ -3,11 +3,11 @@
 
 use super::load_disc;
 use legaia_art::queue::Character;
-use legaia_patcher::delilas_party::{
+use legaia_delilas_party::delilas_party::{
     CastRoutePolicy, DelilasMoveMode as MoveMode, PartyMapping, Sibling, apply_delilas_party,
 };
-use legaia_patcher::delilas_voice_fx::ArtsVoiceMode;
-use legaia_patcher::disc::DiscPatcher;
+use legaia_delilas_party::delilas_voice_fx::ArtsVoiceMode;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// The three `--delilas-arts-voice` modes against the retail shout
 /// banks: `original` leaves XA2 byte-identical, `removed` leaves every
@@ -27,13 +27,13 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
     let probe = *chans
         .iter()
         .find(|&&c| {
-            legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&retail, "XA/XA2.XA", c)
+            legaia_delilas_party::delilas_xa_voice::read_xa_channel_pcm(&retail, "XA/XA2.XA", c)
                 .map(|(pcm, _)| pcm.iter().any(|&s| s.unsigned_abs() > 1000))
                 .unwrap_or(false)
         })
         .expect("XA2 has a voiced channel");
     let (retail_pcm, _) =
-        legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&retail, "XA/XA2.XA", probe)
+        legaia_delilas_party::delilas_xa_voice::read_xa_channel_pcm(&retail, "XA/XA2.XA", probe)
             .expect("read");
 
     let run = |mode: ArtsVoiceMode| -> DiscPatcher {
@@ -53,7 +53,7 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
     // original: the shout bank survives byte-identical
     let p_orig = run(ArtsVoiceMode::Original);
     let (pcm, _) =
-        legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_orig, "XA/XA2.XA", probe)
+        legaia_delilas_party::delilas_xa_voice::read_xa_channel_pcm(&p_orig, "XA/XA2.XA", probe)
             .expect("read");
     assert_eq!(pcm, retail_pcm, "original mode must not touch XA2");
 
@@ -61,7 +61,7 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
     let p_rm = run(ArtsVoiceMode::Removed);
     for &c in &chans {
         if let Ok((pcm, _)) =
-            legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_rm, "XA/XA2.XA", c)
+            legaia_delilas_party::delilas_xa_voice::read_xa_channel_pcm(&p_rm, "XA/XA2.XA", c)
         {
             assert!(
                 pcm.iter().all(|&s| s.unsigned_abs() <= 24),
@@ -73,7 +73,7 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
     // adjusted: voiced, different from retail, deterministic
     let p_adj = run(ArtsVoiceMode::Adjusted);
     let (adj, _) =
-        legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_adj, "XA/XA2.XA", probe)
+        legaia_delilas_party::delilas_xa_voice::read_xa_channel_pcm(&p_adj, "XA/XA2.XA", probe)
             .expect("read");
     assert!(
         adj.iter().any(|&s| s.unsigned_abs() > 1000),
@@ -82,7 +82,7 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
     assert_ne!(adj, retail_pcm, "adjusted mode left retail audio untouched");
     let p_adj2 = run(ArtsVoiceMode::Adjusted);
     let (adj2, _) =
-        legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_adj2, "XA/XA2.XA", probe)
+        legaia_delilas_party::delilas_xa_voice::read_xa_channel_pcm(&p_adj2, "XA/XA2.XA", probe)
             .expect("read");
     assert_eq!(adj, adj2, "adjusted mode must be byte-deterministic");
 
@@ -95,15 +95,16 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
     let fan_chans = retail.xa_channels("XA/XA1.XA").expect("xa1 channels");
     for &c in fan_chans.iter().take(8) {
         let Ok((r, _)) =
-            legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&retail, "XA/XA1.XA", c)
+            legaia_delilas_party::delilas_xa_voice::read_xa_channel_pcm(&retail, "XA/XA1.XA", c)
         else {
             continue;
         };
         if !r.iter().any(|&s| s.unsigned_abs() > 1000) {
             continue; // never voiced in retail
         }
-        let (a, _) = legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_adj, "XA/XA1.XA", c)
-            .expect("read patched fanfare");
+        let (a, _) =
+            legaia_delilas_party::delilas_xa_voice::read_xa_channel_pcm(&p_adj, "XA/XA1.XA", c)
+                .expect("read patched fanfare");
         let audible = |p: &[i16]| p.iter().filter(|s| s.unsigned_abs() > 200).count();
         // The signature special's channel pair plus the GENERIC
         // Super-chain channel (`0x101` -> channel 1, fired by a special
@@ -115,11 +116,12 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
         // head loud). Asserted both ways so neither half can rot: the
         // special's channels must be digitally silent, the rest of the
         // bank must keep its coverage.
-        let sig = legaia_patcher::delilas_party::signature_fanfare_channels(0)
+        let sig = legaia_delilas_party::delilas_party::signature_fanfare_channels(0)
             .expect("Vahn's slot has a signature fanfare pair");
         let generic = legaia_art::hyper_fanfare::GENERIC_FANFARE_CHANNEL;
-        let (o, _) = legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_orig, "XA/XA1.XA", c)
-            .expect("read original fanfare");
+        let (o, _) =
+            legaia_delilas_party::delilas_xa_voice::read_xa_channel_pcm(&p_orig, "XA/XA1.XA", c)
+                .expect("read original fanfare");
         if c == sig.0 || c == sig.1 || c == generic {
             for (mode, pcm) in [("adjusted", &a), ("original", &o)] {
                 assert!(
@@ -156,20 +158,20 @@ fn art_bank(
     ch: Character,
 ) -> Vec<legaia_asset::battle_char_assembly::ArtAnimRecord> {
     let entry = patcher
-        .read_entry(legaia_patcher::arts::player_entry_index(ch))
+        .read_entry(legaia_arts_patch::arts::player_entry_index(ch))
         .expect("player file");
     let rec0 = legaia_asset::battle_char_assembly::decode_record0(&entry).expect("record0");
     legaia_asset::battle_char_assembly::art_animation_bank(&rec0).expect("art bank")
 }
 
 fn me_slot(patcher: &DiscPatcher, slot: usize) -> Vec<u8> {
-    use legaia_patcher::delilas_party::READEF_ENTRY;
+    use legaia_delilas_party::delilas_party::READEF_ENTRY;
     let readef = patcher
         .read_entry_footprint(READEF_ENTRY)
         .expect("readef.DAT");
     let off = legaia_asset::battle_char_assembly::art_me_slot(slot, false)
-        * legaia_patcher::party_swap::winpose::READEF_SLOT;
-    readef[off..off + legaia_patcher::party_swap::winpose::READEF_SLOT].to_vec()
+        * legaia_party_swap::winpose::READEF_SLOT;
+    readef[off..off + legaia_party_swap::winpose::READEF_SLOT].to_vec()
 }
 
 fn run_mode(original: &[u8], moves: MoveMode) -> DiscPatcher {

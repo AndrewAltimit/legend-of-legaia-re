@@ -18,10 +18,12 @@
 //! Gates on `LEGAIA_DISC_BIN`; skips+passes when unset. Patched images live
 //! only in memory.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::SECTOR_SIZE;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::texture::{TextureTarget, read_texture, replace_texture, texture_catalogs};
+use legaia_texture_replace::texture::{
+    TextureTarget, read_texture, replace_texture, texture_catalogs,
+};
 use legaia_tim::encode::{EncodeOptions, encode_replacement};
 
 fn load_disc() -> Option<Vec<u8>> {

@@ -1,11 +1,11 @@
 //! Drop-table randomization: reassign monster item drops from a seed.
 //!
 //! Pure planning logic - it decides *what* each monster should drop; applying
-//! the plan to the disc is [`crate::monster::set_drop`]. Deterministic in
+//! the plan to the disc is [`legaia_disc_patch::monster::set_drop`]. Deterministic in
 //! `(current drops, item pool, seed, mode)` so a published seed always
 //! reproduces the same drop table.
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// How drops are reassigned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

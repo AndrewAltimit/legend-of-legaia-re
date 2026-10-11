@@ -19,7 +19,7 @@
 //! [`StatMode::Random`] it draws each row's tuple from its category pool. The
 //! table lives in `SCUS_942.54`, so the edit is a same-size in-place SCUS patch.
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// Re-exported [`crate::drops::DropMode`] so the bonus pass shares the CLI's
 /// `shuffle` / `random` vocabulary.

@@ -23,8 +23,8 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 
 use legaia_asset::{monster_archive, monster_model};
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
-use legaia_patcher::ppf;
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_disc_patch::ppf;
 
 use crate::disc_io::{cue_contents, load_image, note_overwrite};
 

@@ -9,11 +9,11 @@
 //! image size is unchanged, and a fixed seed is byte-deterministic. Skips +
 //! passes without `LEGAIA_DISC_BIN`.
 
+use legaia_arts_patch::arts::ArtsMode;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply::{self, ArtSite};
-use legaia_patcher::arts::ArtsMode;
-use legaia_patcher::disc::DiscPatcher;
 use std::collections::{BTreeMap, BTreeSet};
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -134,12 +134,12 @@ fn run(mode: ArtsMode, seed: u64) {
     // character's player-data file (`record0`), so the trigger matches the menu.
     // And at least one matcher record must actually differ from vanilla.
     for ch in legaia_art::queue::Character::all() {
-        let index = legaia_patcher::arts::player_entry_index(ch);
+        let index = legaia_arts_patch::arts::player_entry_index(ch);
         let vanilla_entry = base.read_entry(index).expect("read vanilla player file");
         let patched_entry = patcher.read_entry(index).expect("read patched player file");
-        let vanilla_rec0 = legaia_patcher::arts::player_record0_decoded(&vanilla_entry)
+        let vanilla_rec0 = legaia_arts_patch::arts::player_record0_decoded(&vanilla_entry)
             .expect("decode vanilla record0");
-        let patched_rec0 = legaia_patcher::arts::player_record0_decoded(&patched_entry)
+        let patched_rec0 = legaia_arts_patch::arts::player_record0_decoded(&patched_entry)
             .expect("decode patched record0");
         assert_ne!(
             vanilla_rec0, patched_rec0,
@@ -147,7 +147,7 @@ fn run(mode: ArtsMode, seed: u64) {
         );
         for a in after.iter().filter(|a| a.character == ch && !a.is_miracle) {
             assert!(
-                legaia_patcher::arts::record0_has_combo(&patched_rec0, &a.commands),
+                legaia_arts_patch::arts::record0_has_combo(&patched_rec0, &a.commands),
                 "{ch:?} art {}: display combo not present as a matcher record (display/trigger desync)",
                 a.index
             );

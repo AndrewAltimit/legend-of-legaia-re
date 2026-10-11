@@ -11,9 +11,9 @@
 //!
 //! Skips + passes without `LEGAIA_DISC_BIN`.
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::translation::{LanguagePack, export_pack, import_pack};
+use legaia_translate::{LanguagePack, export_pack, import_pack};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

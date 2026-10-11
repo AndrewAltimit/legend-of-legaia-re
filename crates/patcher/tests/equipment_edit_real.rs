@@ -18,12 +18,12 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_asset::battle_data_pack;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_patcher::apply::{
     self, CostTarget, EquipOwnerEdit, EquipmentEdits, FallThrough, SwingCostEdit, SwingRecord,
     SwingSection,
 };
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::weapon_specialty::{PLAYERS, arm_cost_offset, up_cost_offset};
 
 fn load_disc() -> Option<Vec<u8>> {

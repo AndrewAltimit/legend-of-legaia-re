@@ -17,8 +17,8 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_asset::monster_archive::{self, SLOT_STRIDE};
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::apply;
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::monster_stats::{ScalePermille, StatScale};
 use legaia_patcher::rewards::scale_exp_value;
 

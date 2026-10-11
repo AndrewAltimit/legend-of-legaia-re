@@ -45,8 +45,8 @@
 
 use anyhow::{Result, bail};
 
-use crate::mips::{A1, addiu, j, lui};
 use legaia_code_hooks::arenas::{ARENA1_END_VA, ARENA1_VA, Edit, SCUS_TABLE_RANGES};
+use legaia_code_hooks::mips::{A1, addiu, j, lui};
 
 /// The hook site: the banner path's `li a0,0x4C` at `0x8004BC3C`.
 pub const HOOK_VA: u32 = 0x8004_BC3C;
@@ -131,7 +131,7 @@ impl ArtsNameFixInjection {
 
         let hook_off = scus_off(scus, HOOK_VA)?;
         for (i, &want) in HOOK_DISPLACED.iter().enumerate() {
-            let got = crate::mips::read_word(scus, hook_off + i * 4)?;
+            let got = legaia_code_hooks::mips::read_word(scus, hook_off + i * 4)?;
             if got != want {
                 bail!(
                     "arts-name-fix: SCUS {va:#x} = {got:#010x}, expected {want:#010x} \
@@ -178,7 +178,7 @@ fn scus_off(scus: &[u8], va: u32) -> Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mips_sim::Cpu;
+    use legaia_code_hooks::mips_sim::Cpu;
 
     /// The routine replays exactly the words the hook displaces, and its
     /// return jump targets the word after the hook - the pairing that pins
@@ -224,14 +224,20 @@ mod tests {
             // measure stub: v0 = width; redraw stub: return immediately.
             cpu.load_words(
                 MEASURE,
-                &[crate::mips::addiu(
-                    crate::mips::V0,
-                    crate::mips::ZERO,
+                &[legaia_code_hooks::mips::addiu(
+                    legaia_code_hooks::mips::V0,
+                    legaia_code_hooks::mips::ZERO,
                     width as u16,
                 )],
             );
-            cpu.load_words(MEASURE + 4, &[crate::mips::jr(crate::mips::RA), 0]);
-            cpu.load_words(REDRAW, &[crate::mips::jr(crate::mips::RA), 0]);
+            cpu.load_words(
+                MEASURE + 4,
+                &[legaia_code_hooks::mips::jr(legaia_code_hooks::mips::RA), 0],
+            );
+            cpu.load_words(
+                REDRAW,
+                &[legaia_code_hooks::mips::jr(legaia_code_hooks::mips::RA), 0],
+            );
             cpu.wr32(BANNER + 0x74C, NAME);
             cpu.r[29] = 0x801F_F000; // sp
             cpu.pc = HOOK_VA;

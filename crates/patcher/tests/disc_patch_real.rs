@@ -7,9 +7,9 @@
 //! image anywhere - the edit lives only in memory.
 
 use legaia_asset::monster_archive::{self, SLOT_STRIDE};
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -47,7 +47,7 @@ fn patch_monster_drop_round_trips_through_the_disc() {
     // Build the re-packed slot and patch it onto the disc.
     let slot = patcher.monster_slot(id).unwrap();
     assert_eq!(slot.len(), SLOT_STRIDE);
-    let repacked = legaia_patcher::monster::set_drop(&slot, new_item, new_chance).unwrap();
+    let repacked = legaia_disc_patch::monster::set_drop(&slot, new_item, new_chance).unwrap();
     patcher.patch_monster_slot(id, &repacked).unwrap();
 
     // Re-decode the patched archive straight off the patched disc image.

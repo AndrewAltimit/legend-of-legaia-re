@@ -25,9 +25,9 @@
 //! applier over the block in the in-crate interpreter.
 
 use legaia_asset::item_names::file_offset_for_va;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::super_arts_pack::{
     self as pack, BLOCK, BLOCK_SECTORS, BLOCK_VA, FIND_TABLE_VA, HOOK_APPLIER_VA, HOOK_BANNER_VA,
     HOOK_BOUND_VA, HOOK_EXIT_SEED_VA, HOOK_FIND_HI_VA, HOOK_KEEP_NAME_VA, HOOK_QUEUE_DELAY_VA,

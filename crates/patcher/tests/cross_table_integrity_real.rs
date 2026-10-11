@@ -46,9 +46,9 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_asset::item_names::{self, ItemNameTable};
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_prot::cdname;
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -274,7 +274,7 @@ fn every_starting_inventory_id_names_a_real_item() {
 
 #[test]
 fn every_art_display_combo_is_recognized_by_the_matcher() {
-    use legaia_patcher::arts::{player_entry_index, player_record0_decoded, record0_has_combo};
+    use legaia_arts_patch::arts::{player_entry_index, player_record0_decoded, record0_has_combo};
 
     let Some(disc) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

@@ -13,13 +13,12 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_asset::monster_archive as ma;
-use legaia_patcher::delilas_party::{CastRoutePolicy, PartyMapping, apply_delilas_party};
-use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
-use legaia_patcher::enemy_anim_mirror::{
+use legaia_delilas_party::delilas_party::{CastRoutePolicy, PartyMapping, apply_delilas_party};
+use legaia_delilas_party::enemy_anim_mirror::{
     RetailSources, apply_enemy_anim_mirror, staged_entries, staged_plan,
 };
-use legaia_patcher::party_swap;
-use legaia_patcher::party_swap::enemy_anim;
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_party_swap::enemy_anim;
 
 fn load_disc() -> Option<Vec<u8>> {
     let path = std::env::var("LEGAIA_DISC_BIN").ok()?;
@@ -221,7 +220,7 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
         for (i, a) in anims.iter().enumerate() {
             assert_eq!(
                 a.part_count,
-                party_swap::CANONICAL_PARTS,
+                legaia_party_swap::CANONICAL_PARTS,
                 "{who} entry {i}: part count"
             );
         }
@@ -258,7 +257,7 @@ fn mirrored_duel_blocks_fight_with_the_heroes_clips() {
         // the playing clip's cursor to reach keyframe 22, whichever hero
         // wears her block. Under the folded stage walk that tick rides
         // the restaged wind-up row (chain[0]).
-        if sibling == legaia_patcher::delilas_party::Sibling::Lu {
+        if sibling == legaia_delilas_party::delilas_party::Sibling::Lu {
             let gated = plan.chain[0];
             assert!(
                 spans[gated].3 >= 23,
@@ -373,9 +372,9 @@ fn enemy_bake_holds_the_whole_rig_alignment_bound() {
         .expect("archive");
     // Every pairing (the mapping is a free permutation).
     for (entry, who, rig) in [
-        (863usize, "Vahn", &party_swap::RIG_VAHN_GALA),
-        (864, "Noa", &party_swap::RIG_NOA),
-        (865, "Gala", &party_swap::RIG_VAHN_GALA),
+        (863usize, "Vahn", &legaia_party_swap::RIG_VAHN_GALA),
+        (864, "Noa", &legaia_party_swap::RIG_NOA),
+        (865, "Gala", &legaia_party_swap::RIG_VAHN_GALA),
     ] {
         let file = patcher.read_entry_footprint(entry).expect("player file");
         for id in [162u16, 163, 164] {
@@ -434,18 +433,19 @@ fn every_mapping_permutation_fits_the_slot_budget() {
 
     // The nine (hero slot, block) swapped+renamed slots, cached once.
     let rigs = [
-        &party_swap::RIG_VAHN_GALA,
-        &party_swap::RIG_NOA,
-        &party_swap::RIG_VAHN_GALA,
+        &legaia_party_swap::RIG_VAHN_GALA,
+        &legaia_party_swap::RIG_NOA,
+        &legaia_party_swap::RIG_VAHN_GALA,
     ];
     let names = ["Vahn", "Noa", "Gala"];
     let mut swapped: std::collections::BTreeMap<(usize, u16), Vec<u8>> = Default::default();
     for (slot, name) in names.iter().enumerate() {
         for id in [162u16, 163, 164] {
-            let out = party_swap::swap_into_block(&players[slot], rigs[slot], &retail_archive, id)
-                .unwrap_or_else(|e| panic!("{name} -> {id}: {e:#}"));
+            let out =
+                legaia_party_swap::swap_into_block(&players[slot], rigs[slot], &retail_archive, id)
+                    .unwrap_or_else(|e| panic!("{name} -> {id}: {e:#}"));
             let mut block = out.block;
-            legaia_patcher::delilas_party::rename_block(&mut block, name)
+            legaia_delilas_party::delilas_party::rename_block(&mut block, name)
                 .unwrap_or_else(|e| panic!("{name} -> {id}: rename: {e:#}"));
             let slot_bytes =
                 ma::encode_slot(&block).unwrap_or_else(|e| panic!("{name} -> {id}: encode: {e:#}"));
@@ -530,8 +530,8 @@ fn every_mapping_permutation_fits_the_slot_budget() {
 /// anchor.
 #[test]
 fn signature_special_becomes_a_physical_attack_of_the_staged_chain() {
-    use legaia_patcher::delilas_party::Sibling;
-    use legaia_patcher::delilas_signature_attack as sig;
+    use legaia_delilas_party::delilas_party::Sibling;
+    use legaia_delilas_party::delilas_signature_attack as sig;
 
     let Some(original) = load_disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

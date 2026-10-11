@@ -9,7 +9,7 @@ use super::{
     SCRATCH_AP_OFF, SCRATCH_ARROWS_OFF, SCRATCH_NAME_OFF, STYLE_ART_END, STYLE_DEFAULT,
     STYLE_SUPER_END, SUPER_ARTS_PER_CHAR,
 };
-use crate::mips::*;
+use legaia_code_hooks::mips::*;
 
 // --- Routine assembly --------------------------------------------------------
 

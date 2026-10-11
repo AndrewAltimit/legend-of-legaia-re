@@ -9,22 +9,22 @@
 //! byte offset (`--offset`, plus `--lzs-section`); the **battle** tier is
 //! keyed by `--entry` + `--battle-slot`, because its blocks are not TIMs
 //! and have no magic word to be an offset *of* - see
-//! [`legaia_patcher::battle_texture`].
+//! [`legaia_texture_replace::battle_texture`].
 
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
 use legaia_asset::battle_texture_catalog::BattleTextureSlot;
-use legaia_patcher::battle_texture::{self, BattleTextureTarget};
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::monster_texture::{self, MonsterTextureTarget};
-use legaia_patcher::ppf;
-use legaia_patcher::texture::{
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_disc_patch::ppf;
+use legaia_texture_replace::battle_texture::{self, BattleTextureTarget};
+use legaia_texture_replace::monster_texture::{self, MonsterTextureTarget};
+use legaia_texture_replace::texture::{
     ExportFormat, TextureTarget, export_texture_png, read_texture, replace_texture_png,
     texture_catalogs,
 };
-use legaia_patcher::texture_palettes::texture_palettes;
+use legaia_texture_replace::texture_palettes::texture_palettes;
 use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
 use legaia_tim::multi_palette::View;
 
@@ -118,13 +118,13 @@ pub(crate) fn cmd_tim_list(input: &Path, entry: Option<u32>, tier: TimTierArg) -
     }
     let mut monster_n = 0usize;
     if matches!(tier, TimTierArg::Monster | TimTierArg::All)
-        && entry.is_none_or(|e| e == legaia_patcher::disc::MONSTER_ARCHIVE_ENTRY as u32)
+        && entry.is_none_or(|e| e == legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY as u32)
     {
         for m in &monster_texture::catalog(&patcher)? {
             monster_n += 1;
             println!(
                 "monst{:>5}  {:>7}  {:>10}  {:>4}x{:<4}  {:>3}  {:>5}  {:>7}  {} #{}",
-                legaia_patcher::disc::MONSTER_ARCHIVE_ENTRY,
+                legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY,
                 m.id,
                 m.id,
                 m.width(),
@@ -298,7 +298,10 @@ pub(crate) fn cmd_tim_palette_map(
     println!("    x    y    w    h  palette  part   widget(s)");
     // One row per distinct (rect, palette): several records draw the same
     // sprite (the four party slots, the two framed-window styles).
-    let mut rows: Vec<(&legaia_patcher::texture_palettes::PaletteRegion, Vec<u8>)> = Vec::new();
+    let mut rows: Vec<(
+        &legaia_texture_replace::texture_palettes::PaletteRegion,
+        Vec<u8>,
+    )> = Vec::new();
     for r in &pals.regions {
         match rows
             .iter_mut()

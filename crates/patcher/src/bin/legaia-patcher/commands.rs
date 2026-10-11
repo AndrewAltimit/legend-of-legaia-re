@@ -7,8 +7,8 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 
 use crate::disc_io::load_image;
 
@@ -168,7 +168,7 @@ pub(crate) fn cmd_monster_stats(input: &Path) -> Result<()> {
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
     let entry = patcher
-        .read_entry(legaia_patcher::disc::MONSTER_ARCHIVE_ENTRY)
+        .read_entry(legaia_disc_patch::disc::MONSTER_ARCHIVE_ENTRY)
         .context("read monster battle_data archive")?;
     let records =
         legaia_asset::monster_archive::records(&entry).context("decode monster archive records")?;
@@ -583,9 +583,9 @@ pub(crate) fn cmd_arts(input: &Path) -> Result<()> {
     for ch in Character::all() {
         // Join the per-strike damage-power bytes (record0 +0x24) for this char.
         let power_by_combo: std::collections::HashMap<Vec<u8>, Vec<u8>> = patcher
-            .read_entry(legaia_patcher::arts_power::player_entry_index(ch))
+            .read_entry(legaia_arts_patch::arts_power::player_entry_index(ch))
             .ok()
-            .and_then(|entry| legaia_patcher::arts_power::labeled_art_powers(&scus, &entry, ch))
+            .and_then(|entry| legaia_arts_patch::arts_power::labeled_art_powers(&scus, &entry, ch))
             .map(|list| {
                 list.into_iter()
                     .map(|a| (a.combo.iter().map(|c| c.as_byte()).collect(), a.power))
@@ -594,14 +594,14 @@ pub(crate) fn cmd_arts(input: &Path) -> Result<()> {
             .unwrap_or_default();
         println!("{}:", ch.name());
         for e in entries.iter().filter(|e| e.character == ch) {
-            let combo = legaia_patcher::arts::pretty_combo(&e.commands);
+            let combo = legaia_arts_patch::arts::pretty_combo(&e.commands);
             let key: Vec<u8> = e.commands.iter().map(|c| c.as_byte()).collect();
             let power = power_by_combo.get(&key);
             let tiers = match power {
                 Some(p) if !p.is_empty() => p
                     .iter()
                     .map(|&b| {
-                        legaia_patcher::arts_power::power_tier(b)
+                        legaia_arts_patch::arts_power::power_tier(b)
                             .map(|(u, m)| format!("{}x{m}", if u { "U" } else { "L" }))
                             .unwrap_or_else(|| format!("{b:02X}"))
                     })
@@ -627,9 +627,11 @@ pub(crate) fn cmd_arts(input: &Path) -> Result<()> {
         // are listed from their own record0 records (located by finisher
         // constant, name-validated) with the chain that triggers them.
         let supers = patcher
-            .read_entry(legaia_patcher::super_art_power::player_entry_index(ch))
+            .read_entry(legaia_arts_patch::super_art_power::player_entry_index(ch))
             .ok()
-            .and_then(|entry| legaia_patcher::super_art_power::super_art_powers(&scus, &entry, ch))
+            .and_then(|entry| {
+                legaia_arts_patch::super_art_power::super_art_powers(&scus, &entry, ch)
+            })
             .unwrap_or_default();
         if !supers.is_empty() {
             println!("  -- Super Arts (no combo, no AP; the chain arts pay) --");
@@ -641,7 +643,7 @@ pub(crate) fn cmd_arts(input: &Path) -> Result<()> {
                 s.power
                     .iter()
                     .map(|&b| {
-                        legaia_patcher::arts_power::power_tier(b)
+                        legaia_arts_patch::arts_power::power_tier(b)
                             .map(|(u, m)| format!("{}x{m}", if u { "U" } else { "L" }))
                             .unwrap_or_else(|| format!("{b:02X}"))
                     })
@@ -649,7 +651,7 @@ pub(crate) fn cmd_arts(input: &Path) -> Result<()> {
                     .join(",")
             };
             // Project the trigger pattern onto the named arts it chains.
-            let chain: Vec<String> = legaia_patcher::super_art_power::super_arts_for(ch)
+            let chain: Vec<String> = legaia_arts_patch::super_art_power::super_arts_for(ch)
                 .into_iter()
                 .find(|t| t.finisher == s.finisher)
                 .map(|t| {
@@ -775,7 +777,7 @@ pub(crate) fn cmd_starting_items(input: &Path) -> Result<()> {
 /// the PCSX-Redux probes (`autorun_delilas_dome_course.lua` /
 /// `autorun_delilas_reward_trace.lua`). Static data - no disc required.
 pub(crate) fn cmd_delilas_pokes(custom_items: bool) -> Result<()> {
-    use legaia_patcher::{custom_items as ci, delilas_dome};
+    use legaia_delilas_challenge::{custom_items as ci, dome as delilas_dome};
 
     let mut writes = delilas_dome::probe_ram_writes();
     if custom_items {
@@ -835,7 +837,6 @@ pub(crate) fn cmd_delilas_pokes(custom_items: bool) -> Result<()> {
 pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
     use legaia_asset::battle_char_assembly as bca;
     use legaia_asset::{battle_data_pack, monster_archive};
-    use legaia_patcher::party_swap;
 
     /// A baked hand's local-centroid magnitude ceiling (units). Retail
     /// hands sit 21-36 from the wrist pivot; the un-seated sibling fists
@@ -875,9 +876,9 @@ pub(crate) fn cmd_delilas_verify(input: &Path) -> Result<()> {
     }
 
     let rigs = [
-        &party_swap::RIG_VAHN_GALA,
-        &party_swap::RIG_NOA,
-        &party_swap::RIG_VAHN_GALA,
+        &legaia_party_swap::RIG_VAHN_GALA,
+        &legaia_party_swap::RIG_NOA,
+        &legaia_party_swap::RIG_VAHN_GALA,
     ];
     let mut failures = 0usize;
     for &(slot, _, _) in &mapping {

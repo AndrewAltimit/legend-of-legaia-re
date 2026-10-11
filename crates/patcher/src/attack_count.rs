@@ -67,10 +67,10 @@
 //! same reason as the difficulty scale: the tutorial fight stays
 //! byte-identical at every setting.
 
-use crate::monster::repack_slot;
 use crate::monster_stats::ScalePermille;
 use anyhow::Result;
 use legaia_asset::monster_archive::MonsterRecord;
+use legaia_disc_patch::monster::repack_slot;
 
 /// Byte offset of the AGL-cost byte inside a `+0x4C` action entry.
 pub const COST_OFFSET: usize = 0x74;

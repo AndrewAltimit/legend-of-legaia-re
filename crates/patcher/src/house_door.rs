@@ -57,7 +57,7 @@ use legaia_asset::field_disasm::{self, InsnInfo};
 use legaia_asset::{man_section, scene_asset_table};
 
 use crate::drops::DropMode;
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 const MAN_TYPE: u8 = 0x03;
 /// The system/player script channel a cross-context op targets to act on the
@@ -205,7 +205,7 @@ impl SceneHouseDoors {
     /// Recompress the (mutated) MAN; `None` if it would overflow the footprint
     /// (these are same-size edits, so it fits whenever the original did).
     pub fn repack(&self) -> Option<Vec<u8>> {
-        crate::compress_within(&self.decoded, self.compressed_budget)
+        legaia_disc_patch::compress_within(&self.decoded, self.compressed_budget)
     }
 }
 

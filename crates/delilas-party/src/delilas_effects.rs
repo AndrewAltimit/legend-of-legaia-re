@@ -91,7 +91,7 @@
 use anyhow::{Context, Result, bail};
 
 use crate::delilas_party::Sibling;
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// PROT entry of the raw battle-action overlay (load base
 /// [`BATTLE_OVERLAY_BASE`]).

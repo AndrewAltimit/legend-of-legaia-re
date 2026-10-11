@@ -99,7 +99,7 @@ use anyhow::{Result, bail};
 
 use legaia_asset::item_names;
 
-use crate::mips::*;
+use legaia_code_hooks::mips::*;
 
 /// PROT entry index of the battle-action overlay that hosts the victory check.
 /// (Same overlay the flee-EXP / move-power / element-affinity randomizers edit.)
@@ -160,7 +160,7 @@ pub const VICTORY_PATCHED: u32 = 0x3042_0384;
 /// Default per-battle probability (percent) that an enemy is charmed.
 pub const DEFAULT_PCT: u8 = 20;
 
-// MIPS R3000 encoders + register aliases are shared in `crate::mips`.
+// MIPS R3000 encoders + register aliases are shared in `legaia_code_hooks::mips`.
 
 /// Assemble the charm routine for a `pct`-percent per-battle chance. Rolls the
 /// BIOS RNG; on a hit AND only when the fight has a 2nd enemy (so single-enemy
@@ -401,14 +401,18 @@ mod tests {
         let blob_len = assemble_routine(20).len() * 4;
         assert!(ROUTINE_VA + blob_len as u32 <= ROUTINE_REGION_END_VA);
         // And it must start at/after the bonus-equipment routine + its max table.
-        let bonus_end =
-            crate::bonus_drop::ROUTINE_VA + 22 * 4 + crate::bonus_drop::MAX_TABLE_LEN as u32;
+        let bonus_end = legaia_code_hooks::bonus_drop::ROUTINE_VA
+            + 22 * 4
+            + legaia_code_hooks::bonus_drop::MAX_TABLE_LEN as u32;
         assert!(
             ROUTINE_VA >= bonus_end,
             "enemy-ally routine overlaps the bonus-drop region"
         );
         // ...and below the flee-EXP routine.
-        assert_eq!(ROUTINE_REGION_END_VA, crate::flee_exp::ROUTINE_VA);
+        assert_eq!(
+            ROUTINE_REGION_END_VA,
+            legaia_code_hooks::flee_exp::ROUTINE_VA
+        );
     }
 
     #[test]

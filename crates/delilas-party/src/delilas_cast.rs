@@ -39,7 +39,7 @@
 //!    (branch to the settle tail), and the finale teardown corpse-model
 //!    (neutralise its stream words at the settle tail). The fourth - the
 //!    caster staged-clip rows - is fixed on the DATA side by default:
-//!    `party_swap::cast_stage` authors real wind-up/payoff records on the
+//!    `legaia_party_swap::cast_stage` authors real wind-up/payoff records on the
 //!    player rows the module stages (Block re-homed to a spare row, see
 //!    [`relocate_block_reaction`]), so the module's retail two-stage step
 //!    survives on both caster kinds; the stage-pin edit remains only as

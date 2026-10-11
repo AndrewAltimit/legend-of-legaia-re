@@ -153,7 +153,7 @@ impl EarthEggExchange {
                 return Some(Self {
                     entry_idx,
                     man_offset,
-                    compressed_budget: crate::man_compressed_budget(
+                    compressed_budget: legaia_disc_patch::man_compressed_budget(
                         &table,
                         man_offset,
                         entry.len(),
@@ -207,7 +207,7 @@ impl EarthEggExchange {
     /// Recompress the (possibly edited) MAN; `None` if it would overflow the
     /// zero-slack footprint.
     pub fn repack(&self) -> Option<Vec<u8>> {
-        crate::compress_within(&self.decoded, self.compressed_budget)
+        legaia_disc_patch::compress_within(&self.decoded, self.compressed_budget)
     }
 }
 

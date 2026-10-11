@@ -1,5 +1,5 @@
 //! Disc oracle for the nilboa field-mesh mirror of `--delilas-party`:
-//! apply [`legaia_patcher::nivora_field::apply_nivora_field`] on a
+//! apply [`legaia_delilas_party::nivora_field::apply_nivora_field`] on a
 //! scratch copy and prove:
 //!
 //! - the PROT 0639 pack re-parses with every untouched member
@@ -21,9 +21,9 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_asset::monster_archive::PartPose;
-use legaia_patcher::delilas_party::PartyMapping;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::nivora_field::apply_nivora_field;
+use legaia_delilas_party::delilas_party::PartyMapping;
+use legaia_delilas_party::nivora_field::apply_nivora_field;
+use legaia_disc_patch::disc::DiscPatcher;
 
 const PACK_ENTRY: usize = 639;
 const BUNDLE_ENTRY: usize = 638;

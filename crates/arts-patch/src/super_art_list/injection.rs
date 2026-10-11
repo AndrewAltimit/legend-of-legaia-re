@@ -14,12 +14,12 @@ use super::{
     SCAN_HEAD_VA, SCAN_HEAD_W, SCAN_HIT_VA, SCAN_HIT_W, SCRATCH_ARROWS_OFF, SCRATCH_BYTES,
     SUP_STRIDE, SUPER_ARTS_PER_CHAR,
 };
-use crate::mips::*;
 use anyhow::{Result, bail};
 use legaia_code_hooks::arenas::{
     ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, Edit, OVERLAY_TABLE_RANGES,
     SCUS_GAP_END_VA, SCUS_GAP_VA, SCUS_TABLE_RANGES, SLOT6_END_VA, SLOT6_VA,
 };
+use legaia_code_hooks::mips::*;
 
 // --- Planning ----------------------------------------------------------------
 

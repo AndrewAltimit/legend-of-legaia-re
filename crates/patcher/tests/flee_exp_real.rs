@@ -1,5 +1,5 @@
 //! Disc-gated tests for the **run-away EXP reward** - the code hook that banks a
-//! slice of a fled fight's experience into the party (see `legaia_patcher::flee_exp`).
+//! slice of a fled fight's experience into the party (see `legaia_code_hooks::flee_exp`).
 //!
 //! The injection is two same-size edits: a detour at the battle-action escape
 //! teardown (PROT entry 898, the raw overlay, VA `0x801E5A10`) and an EXP-grant
@@ -19,13 +19,13 @@
 //! verification is the byte/disassembly checks here plus an emulator playtest.
 
 use legaia_asset::item_names::file_offset_for_va;
-use legaia_iso::iso9660::read_file_in_image;
-use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::flee_exp::{
+use legaia_code_hooks::flee_exp::{
     self, BATTLE_ACTION_OVERLAY_PROT_INDEX, DISPLACED, FleeExpInjection, HOOK_VA, OVERLAY_BASE_VA,
     ROUTINE_VA, assemble_routine, detour_words,
 };
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_iso::iso9660::read_file_in_image;
+use legaia_patcher::apply;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

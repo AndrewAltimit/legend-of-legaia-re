@@ -1,4 +1,4 @@
-//! Disc-gated tests for the **jewel fix** (see `legaia_patcher::jewel_fix`):
+//! Disc-gated tests for the **jewel fix** (see `legaia_code_hooks::jewel_fix`):
 //! retargeting the boss cinematic cast modules' damage calls from the
 //! resist-ladder-bypassing wrapper `FUN_801DD6B4` (finisher `param_5 = 1`) to
 //! the guard-respecting `FUN_801DD4B0` (`param_5 = 0`), so elemental jewels /
@@ -27,13 +27,13 @@
 
 use std::collections::BTreeMap;
 
-use legaia_iso::iso9660::read_file_in_image;
-use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::jewel_fix::{
+use legaia_code_hooks::jewel_fix::{
     BLOODY_HORNS_PROT_INDEX, JewelFix, MODULE_INDICES, SITES, TERIO_PUNCH_PROT_INDEX, bypass_word,
     respect_word,
 };
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_iso::iso9660::read_file_in_image;
+use legaia_patcher::apply;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

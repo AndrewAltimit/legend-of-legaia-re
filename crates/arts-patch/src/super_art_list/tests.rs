@@ -3,7 +3,6 @@ use super::hook_asm::{
 };
 use super::rows::{SuperArtRow, arrow_code};
 use super::*;
-use crate::mips::*;
 use crate::super_art_power::GRID_BIAS;
 use anyhow::Result;
 use legaia_art::queue::{Character, Command};
@@ -11,6 +10,7 @@ use legaia_code_hooks::arenas::{
     ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SLOT6_END_VA,
     SLOT6_VA,
 };
+use legaia_code_hooks::mips::*;
 
 /// Decode a branch's word offset back out of an encoded instruction.
 fn br_off(w: u32) -> i32 {
@@ -619,7 +619,7 @@ fn expected_glyph_string(input: &[Command], ends: &[usize]) -> Vec<u8> {
 
 // --- Execution ------------------------------------------------------------
 
-use crate::mips_sim::Cpu;
+use legaia_code_hooks::mips_sim::Cpu;
 
 /// One simulated character: which arts are learned, which Supers performed
 /// (bits = trigger rows), and the AP-sorted SUP records `(ap, thr, row)`.

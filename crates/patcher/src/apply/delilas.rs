@@ -93,7 +93,7 @@ pub fn inject_delilas_dome(patcher: &mut DiscPatcher) -> Result<bool> {
     let cur = overlay
         .get(seed_off..seed_off + 4)
         .map(|w| u32::from_le_bytes(w.try_into().unwrap()));
-    if cur == Some(crate::mips::j(ROUTINE_VA)) {
+    if cur == Some(legaia_code_hooks::mips::j(ROUTINE_VA)) {
         if let Some(w) = legaia_delilas_challenge::dome::plan_routine_refresh(&scus)? {
             patcher
                 .patch_named_file(SCUS_NAME, w.off as u64, &w.bytes)
@@ -186,7 +186,7 @@ fn inject_reward_grant(patcher: &mut DiscPatcher, items: &[u8]) -> Result<bool> 
     let cur = overlay
         .get(hook_off..hook_off + 4)
         .map(|w| u32::from_le_bytes(w.try_into().unwrap()));
-    if cur == Some(crate::mips::j(GRANT_VA)) {
+    if cur == Some(legaia_code_hooks::mips::j(GRANT_VA)) {
         return Ok(false);
     }
     let scus = patcher
@@ -315,7 +315,7 @@ pub fn apply_delilas_challenge(
     let (new_man, grown) = sites
         .build(rewards)
         .map_err(|e| anyhow::anyhow!("delilas-challenge build: {e}"))?;
-    let Some(stream) = crate::compress_within(&new_man, sites.compressed_budget) else {
+    let Some(stream) = legaia_disc_patch::compress_within(&new_man, sites.compressed_budget) else {
         anyhow::bail!(
             "recompressed koin1 MAN overflows its {}-byte footprint",
             sites.compressed_budget

@@ -124,12 +124,12 @@ use crate::arts_ap_grant::{
     HOOK_C_W0, HOOK_D_VA, HOOK_D_W0, NUM_CHARS, NUM_ROWS, OVERLAY_BASE_VA, RET_A_VA, RET_D_VA,
     assemble_refund, assert_not_in_tables, assert_zero, ov_hook, words_to_bytes,
 };
-use crate::mips::*;
 use legaia_code_hooks::arenas::{
     ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, Edit, HOOK_SETUP_VA, HOOK_SETUP_W0,
     OVERLAY_TABLE_RANGES, RAND_FUNC_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SCUS_TABLE_RANGES,
     SLOT6_END_VA, SLOT6_VA,
 };
+use legaia_code_hooks::mips::*;
 
 /// PROT entry index of the battle-action overlay (0898) hosting the detours.
 pub use crate::arts_ap_grant::OVERLAY_PROT_INDEX;
@@ -701,7 +701,7 @@ impl OscillatingApInjection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mips_sim::Cpu;
+    use legaia_code_hooks::mips_sim::Cpu;
 
     const BITS: u32 = SCUS_GAP_VA + 39 * 4;
     const CNT: u32 = BITS + 16;

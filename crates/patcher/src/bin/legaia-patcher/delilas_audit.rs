@@ -36,8 +36,7 @@ use anyhow::{Context, Result};
 use legaia_asset::battle_char_assembly as bca;
 use legaia_asset::monster_archive::PartPose;
 use legaia_asset::{battle_data_pack, me_archive};
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::party_swap;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_tmd::encode::{ModelObject, decode_model};
 
 use crate::disc_io::load_image;
@@ -211,10 +210,10 @@ pub(crate) fn cmd_delilas_audit(
         let mut census_fails = 0usize;
         let mut me_diffs = 0usize;
         {
-            let windows = party_swap::winpose::base_loop_windows(&p.file)?;
-            let base_off =
-                party_swap::winpose::base_slot_index(slot) * party_swap::winpose::READEF_SLOT;
-            let span = base_off..base_off + party_swap::winpose::READEF_SLOT;
+            let windows = legaia_party_swap::winpose::base_loop_windows(&p.file)?;
+            let base_off = legaia_party_swap::winpose::base_slot_index(slot)
+                * legaia_party_swap::winpose::READEF_SLOT;
+            let span = base_off..base_off + legaia_party_swap::winpose::READEF_SLOT;
             let (Some(pb), Some(rb)) = (p.readef.get(span.clone()), r.readef.get(span)) else {
                 anyhow::bail!("{who}: readef base slot out of range");
             };

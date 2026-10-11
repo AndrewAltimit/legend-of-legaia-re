@@ -4,16 +4,16 @@
 //! These are the 16x16 faces the save UI draws and the memory-card block
 //! icon is cut from. They are a distinct command family from `tim-replace`
 //! because the sheet has one palette per tile and stores each tile's rows
-//! 128 bytes apart - see [`legaia_patcher::save_icon`] for why the generic
+//! 128 bytes apart - see [`legaia_texture_replace::save_icon`] for why the generic
 //! texture path would repaint every portrait at once.
 
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::ppf;
-use legaia_patcher::save_icon::{self, SLOT_COUNT};
+use legaia_disc_patch::disc::DiscPatcher;
+use legaia_disc_patch::ppf;
+use legaia_texture_replace::save_icon::{self, SLOT_COUNT};
 use legaia_tim::encode::decode_png_rgba;
 
 use crate::disc_io::{cue_contents, load_image, note_overwrite};

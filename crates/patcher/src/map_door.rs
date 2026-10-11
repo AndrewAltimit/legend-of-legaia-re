@@ -57,7 +57,7 @@
 //! The edit is a same-size 2-byte in-place write per record (the `.MAP` is
 //! raw, not LZS) - no relocation, and the trigger tiles never move.
 
-use crate::rng::SplitMix64;
+use legaia_disc_patch::rng::SplitMix64;
 
 /// On-disc footprint of a per-scene `.MAP` field-map file (PROT entry sized
 /// exactly this; the trigger block occupies the last `0x2000` bytes). Mirrors

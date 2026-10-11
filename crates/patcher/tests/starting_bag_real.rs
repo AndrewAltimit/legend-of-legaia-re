@@ -9,8 +9,8 @@
 //! at new game) needs a boot test. Skips + passes without `LEGAIA_DISC_BIN`.
 
 use legaia_asset::field_disasm::{self, FlagKind, InsnInfo};
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply;
-use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::starting_bag::{self, SceneBagInject};
 
 fn load_disc() -> Option<Vec<u8>> {

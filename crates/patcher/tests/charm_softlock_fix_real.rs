@@ -32,13 +32,13 @@
 //! checks here plus an emulator playtest.
 
 use legaia_asset::item_names::file_offset_for_va;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::charm_fix::{
     self, BATTLE_ACTION_OVERLAY_PROT_INDEX, CharmVictoryFix, HOOK_ORIG, HOOK_VA, KEEP_VA,
     OVERLAY_BASE_VA, REROLL_VA, ROUTINE_VA, assemble_routine, detour_word,
 };
-use legaia_patcher::disc::DiscPatcher;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
