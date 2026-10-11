@@ -220,7 +220,7 @@ impl RodMesh {
         let rest = self.rods.get(rod)?.as_deref()?;
         let staged = match self.bend.as_deref() {
             Some(entry) => {
-                legaia_engine_vm::vdf_morph::stage_group_morph(rest, 0, &[(entry, weight)])
+                legaia_scene_formats::vdf_morph::stage_group_morph(rest, 0, &[(entry, weight)])
             }
             None => rest.to_vec(),
         };

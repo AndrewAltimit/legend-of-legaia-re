@@ -532,7 +532,7 @@ impl World {
 
     /// The mesh a part draw renders: its pool TMD with the part's live VDF
     /// morph lanes staged onto every group they name (`FUN_8001C604` +
-    /// `FUN_8005B038`, [`vm::vdf_morph::sum_group_deltas`]), or `None` when
+    /// `FUN_8005B038`, [`legaia_scene_formats::vdf_morph::sum_group_deltas`]), or `None` when
     /// the part carries no armed lane or no lane resolves (the host draws
     /// the rest mesh from [`Self::global_tmd`]). In battle the lanes index
     /// the battle pack `vdf.dat` ([`crate::world::DiscTables::battle_vdf`]);
@@ -567,7 +567,11 @@ impl World {
         }
         let mut tmd = rest.tmd.clone();
         for (group, obj) in tmd.objects.iter_mut().enumerate() {
-            let deltas = vm::vdf_morph::sum_group_deltas(obj.vertices.len(), group as u32, &slots);
+            let deltas = legaia_scene_formats::vdf_morph::sum_group_deltas(
+                obj.vertices.len(),
+                group as u32,
+                &slots,
+            );
             for (v, d) in obj.vertices.iter_mut().zip(deltas) {
                 v.x = v.x.wrapping_add(d[0]);
                 v.y = v.y.wrapping_add(d[1]);

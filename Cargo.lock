@@ -1586,7 +1586,6 @@ version = "0.1.0"
 dependencies = [
  "legaia-engine-field",
  "legaia-engine-system",
- "legaia-engine-vm",
  "legaia-game-tables",
  "legaia-minigame-formats",
  "legaia-render-kernels",

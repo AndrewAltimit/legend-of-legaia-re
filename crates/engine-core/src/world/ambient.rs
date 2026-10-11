@@ -477,7 +477,7 @@ impl World {
             if self.ambient.fx[idx].prev_morph_weights != weights {
                 for &(vdf_idx, _) in &lanes {
                     if let Some(entry) = self.vdf_record_bytes(vdf_idx) {
-                        for rec in legaia_engine_vm::vdf_morph::parse_vdf_morph_records(entry) {
+                        for rec in legaia_scene_formats::vdf_morph::parse_vdf_morph_records(entry) {
                             if !dirty.contains(&(pack_slot, rec.group_id)) {
                                 dirty.push((pack_slot, rec.group_id));
                             }
@@ -723,7 +723,7 @@ impl World {
             .iter()
             .filter_map(|&(idx, w)| Some((self.vdf_record_bytes(idx)?, w as i16)))
             .collect();
-        legaia_engine_vm::vdf_morph::sum_group_deltas(n_verts, group, &slots)
+        legaia_scene_formats::vdf_morph::sum_group_deltas(n_verts, group, &slots)
     }
 
     /// The combined live morph deltas for `(pack_slot, group)` - retail

@@ -40,7 +40,7 @@
 //! [u32 delta_count]` - and its deltas follow at `+0xC` as 8-byte
 //! `[i16 dx][i16 dy][i16 dz][pad]` triples. That body is the same shape the
 //! VDF morph stager `FUN_8001C604` walks
-//! ([`legaia_engine_vm::vdf_morph::VdfMorphRecord`]), which is why this
+//! ([`legaia_scene_formats::vdf_morph::VdfMorphRecord`]), which is why this
 //! module reuses that record type rather than declaring its own.
 //!
 //! The **cursor advance** is not the body length. Both passes of this routine
@@ -95,7 +95,7 @@
 //!   `0x8007B7DC` (asset-dispatcher case 7), `block = base + u32_at(base + 4 +
 //!   idx*4)`, and the block opens with its own `u32` record count followed by
 //!   the 12-byte record headers this module parses. That is why the record
-//!   type here is [`legaia_engine_vm::vdf_morph::VdfMorphRecord`] and not a
+//!   type here is [`legaia_scene_formats::vdf_morph::VdfMorphRecord`] and not a
 //!   shape of its own - one buffer, two walkers.
 //! - `actor+0x48` <- the TMD base, read from the resident-object table at
 //!   `0x8007C018` by the instruction's second operand (the same table
@@ -143,8 +143,8 @@
 //! the move-VM envelope (`FUN_80020740`). One buffer shape, two producers:
 //! that one takes a slot list, this one a block.
 
-use legaia_engine_vm::vdf_morph::VdfMorphRecord;
-use legaia_engine_vm::vdf_morph::apply_weighted_deltas;
+use legaia_scene_formats::vdf_morph::VdfMorphRecord;
+use legaia_scene_formats::vdf_morph::apply_weighted_deltas;
 
 /// Bytes an 8-byte GTE vertex occupies.
 pub const VERTEX_BYTES: usize = 8;

@@ -29,8 +29,8 @@
 //! lanes with sub-entry indices, the ramp envelope (`FUN_80020740`) moves
 //! each lane's weight, and the morph stager `FUN_8001C604` applies the
 //! weighted deltas to the actor's TMD group vertices per frame. The record
-//! walk itself is ported at `legaia_engine_vm::vdf_morph`
-//! (`parse_vdf_morph_records`); this module owns the on-disc pack framing.
+//! walk itself is [`crate::vdf_morph`] (`parse_vdf_morph_records`); this
+//! module owns the on-disc pack framing.
 //!
 //! REF: FUN_8001FBCC, FUN_8001C604
 
@@ -58,7 +58,7 @@ impl SceneVdf {
     /// Sub-entry `i`'s bytes: `[u32 record_count][records...]`, bounded by
     /// the next sub-entry's offset (or the pack end for the last one). This
     /// is the slice the `0x80083E58` pointer table hands to `FUN_8001C604` -
-    /// feed it to `legaia_engine_vm::vdf_morph::parse_vdf_morph_records`.
+    /// feed it to [`crate::vdf_morph::parse_vdf_morph_records`].
     pub fn sub_entry(&self, i: usize) -> Option<&[u8]> {
         let start = *self.offsets.get(i)?;
         let end = self.offsets.get(i + 1).copied().unwrap_or(self.bytes.len());

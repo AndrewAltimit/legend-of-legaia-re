@@ -33,4 +33,5 @@ pub mod scene_v12_table;
 pub mod scene_vdf;
 pub mod shop_stock;
 pub mod stage_geom;
+pub mod vdf_morph;
 pub mod world_map_overlay;

@@ -198,8 +198,9 @@ The crate's remaining modules are what the VMs import; by family:
   `FUN_80020740`).
 - **Move VM extension** - `move_vm_overlay_ext` / `move_ext_strip` (the
   op-`0x2F` extension VM `FUN_801D362C` and its sub-op `0x2C` scanline strip
-  `FUN_801D31B0`) and `vdf_morph` (VDF vertex-morph staging `FUN_8001C604`
-  and the move-VM actor's morph lanes).
+  `FUN_801D31B0`) and `vdf_morph` (the move-VM actor's morph lanes and
+  their ramp envelope; the record walk and weighted-delta blend they feed
+  are `legaia_scene_formats::vdf_morph`).
 - **Field VM leaves** - `field::dispatch_leaves` (the dispatcher's operand
   and table helpers), `field_actor_billboard`, `field_ledge_hop_arc` and
   `vram_rect_copy` (GP0 `0x80`, field-VM sub-op `0x43`/`0x12`): each is a
