@@ -36,7 +36,7 @@ DIAG_GATES: list[dict[str, object]] = [
         "additive": True,
         "web_toggle": None,
         "waiver": (
-            "the gate lives in the shared engine-ui leaf (`ui_overlay::"
+            "the gate lives in the shared engine-ui leaf (`battle_hud::"
             "diag_hud_enabled`), so it is one implementation both hosts call "
             "rather than a per-host twin. `std::env::var` answers Err under "
             "wasm32, which makes the browser default-off by construction."
