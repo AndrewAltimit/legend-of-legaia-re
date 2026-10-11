@@ -1098,7 +1098,7 @@ impl World {
                     _ => None,
                 };
                 if let Some((channel, duration_sectors)) = grunt {
-                    self.push_battle_xa_cue(legaia_engine_battle::sfx_cue::XaVoiceClip {
+                    self.push_battle_xa_cue(legaia_engine_system::sound_state::XaVoiceClip {
                         clip: GRUNT_CLIP_SLOT,
                         channel,
                         duration_sectors,

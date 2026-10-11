@@ -22,14 +22,14 @@ pub struct AudioState {
     /// per-character `XA30` grunt) and the party voice leg of the sound
     /// funnel resolves (`XA27` for `0x10C`). Drained by the hosts into the
     /// XA mixing path ([`crate::world::World::drain_battle_xa_cues`]).
-    pub battle_xa_cues: Vec<legaia_engine_battle::sfx_cue::XaVoiceClip>,
+    pub battle_xa_cues: Vec<legaia_engine_system::sound_state::XaVoiceClip>,
     /// Cast voices this round's committed spells **may** raise, listed at the
     /// round's start so a host whose clip decode is asynchronous can have
     /// them resident before the cast arms
     /// ([`crate::world::World::drain_battle_xa_prestage`]). Advisory: nothing
     /// plays from this list; the cast still raises its clip on
     /// [`Self::battle_xa_cues`].
-    pub battle_xa_prestage: Vec<legaia_engine_battle::sfx_cue::XaVoiceClip>,
+    pub battle_xa_prestage: Vec<legaia_engine_system::sound_state::XaVoiceClip>,
     /// Frames the modelled CD drive stays busy after a clip start - the
     /// read span in vsyncs (`dur * 2.5` sectors at 150/s = `dur / 60` s). The
     /// funnel's voice leg drops a request while it is non-zero
@@ -52,7 +52,7 @@ pub struct AudioState {
     /// leg. Drained by both hosts' field SFX routing
     /// ([`crate::world::World::drain_field_xa_cues`]); see
     /// [`crate::world::World::push_field_xa_cue`].
-    pub(crate) field_xa_cues: Vec<legaia_engine_battle::sfx_cue::XaVoiceClip>,
+    pub(crate) field_xa_cues: Vec<legaia_engine_system::sound_state::XaVoiceClip>,
     /// Every CD-XA one-shot the loaded scene's field scripts can start,
     /// listed at scene load so a host whose clip decode is asynchronous can
     /// have them resident before the op fires
@@ -62,7 +62,7 @@ pub struct AudioState {
     /// [`crate::world::World::queue_xa_prestage`]). Advisory, like
     /// [`Self::battle_xa_prestage`]: the op still raises its clip on
     /// [`Self::field_xa_cues`].
-    pub(crate) field_xa_prestage: Vec<legaia_engine_battle::sfx_cue::XaVoiceClip>,
+    pub(crate) field_xa_prestage: Vec<legaia_engine_system::sound_state::XaVoiceClip>,
     /// Vsyncs the modelled drive stays busy after a field clip start - the
     /// field's reading of `_DAT_8007BC20 != 0`, which a one-shot holds at `2`
     /// until the callback ring's end-of-clip teardown. Same `dur`-vsyncs span

@@ -48,16 +48,7 @@
 /// (`docs/formats/sfx-table.md`).
 pub const RUNTIME_BANK_ID_BASE: u16 = 0x200;
 
-/// XA arts-voice clip request (the `FUN_8003D53C` call, decoded).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct XaVoiceClip {
-    /// Clip-table index (`0x801C6ED8` table).
-    pub clip: u32,
-    /// XA channel within the clip file.
-    pub channel: u32,
-    /// Play length in sectors: `(raw*60 + 99) / 100`.
-    pub duration_sectors: u32,
-}
+use legaia_engine_system::sound_state::XaVoiceClip;
 
 /// What one cue routed to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

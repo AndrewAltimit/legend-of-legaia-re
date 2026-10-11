@@ -11,7 +11,7 @@
 //! either host.
 //!
 //! The requests use the battle's clip-request shape
-//! ([`legaia_engine_battle::sfx_cue::XaVoiceClip`]), so a host plays them through the same
+//! ([`legaia_engine_system::sound_state::XaVoiceClip`]), so a host plays them through the same
 //! `play_xa_clip` it already drives for the battle grunt and sting; both
 //! hosts drain the queue in their field SFX routing (`route_field_sfx`).
 //!
@@ -36,14 +36,14 @@ use super::*;
 /// resync over is missed (the clip then stages on first use, as before), and
 /// a hit is a lead rather than a proof - which is all an advisory prestage
 /// list needs. Empty when `man` does not parse.
-pub fn scene_xa_prestage(man: &[u8]) -> Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> {
+pub fn scene_xa_prestage(man: &[u8]) -> Vec<legaia_engine_system::sound_state::XaVoiceClip> {
     use legaia_scene_formats::field_disasm::{
         DisasmError, InsnInfo, LinearWalker, man_script_spans,
     };
     let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
         return Vec::new();
     };
-    let mut out: Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> = Vec::new();
+    let mut out: Vec<legaia_engine_system::sound_state::XaVoiceClip> = Vec::new();
     for (_, _, start, pc0, len) in man_script_spans(&man_file, man) {
         let Some(body) = man.get(start..start + len) else {
             continue;
@@ -58,7 +58,7 @@ pub fn scene_xa_prestage(man: &[u8]) -> Vec<legaia_engine_battle::sfx_cue::XaVoi
                         continue;
                     }
                     let arg = word1 as i16;
-                    let clip = legaia_engine_battle::sfx_cue::XaVoiceClip {
+                    let clip = legaia_engine_system::sound_state::XaVoiceClip {
                         clip: u32::from((arg >> 3) as u8),
                         channel: u32::from((arg & 7) as u8),
                         duration_sectors: u32::from(word0),
@@ -93,7 +93,7 @@ pub fn scene_xa_prestage(man: &[u8]) -> Vec<legaia_engine_battle::sfx_cue::XaVoi
 /// as [`scene_xa_prestage`].
 pub fn scene_minigame_door_xa_prestage(
     man: &[u8],
-) -> Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> {
+) -> Vec<legaia_engine_system::sound_state::XaVoiceClip> {
     use legaia_engine_mode::minigame_entry::MinigameSubId;
     use legaia_scene_formats::field_disasm::{
         DisasmError, InsnInfo, LinearWalker, man_script_spans,
@@ -130,7 +130,7 @@ pub fn scene_minigame_door_xa_prestage(
     Vec::new()
 }
 
-impl From<crate::muscle_ringside::HubXaCue> for legaia_engine_battle::sfx_cue::XaVoiceClip {
+impl From<crate::muscle_ringside::HubXaCue> for legaia_engine_system::sound_state::XaVoiceClip {
     fn from(c: crate::muscle_ringside::HubXaCue) -> Self {
         Self {
             clip: u32::from(c.clip),
@@ -147,7 +147,7 @@ impl World {
     /// and the dome hub's two
     /// ([`crate::muscle_ringside::hub_xa_prestage`]). Skips a clip already
     /// listed.
-    pub fn queue_xa_prestage<C: Into<legaia_engine_battle::sfx_cue::XaVoiceClip>>(
+    pub fn queue_xa_prestage<C: Into<legaia_engine_system::sound_state::XaVoiceClip>>(
         &mut self,
         clips: impl IntoIterator<Item = C>,
     ) {
@@ -164,7 +164,9 @@ impl World {
     /// clips asynchronously (the browser page) stages each ahead of its op;
     /// one that reads the disc synchronously (the native window) drains and
     /// drops it.
-    pub fn drain_field_xa_prestage(&mut self) -> Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> {
+    pub fn drain_field_xa_prestage(
+        &mut self,
+    ) -> Vec<legaia_engine_system::sound_state::XaVoiceClip> {
         std::mem::take(&mut self.audio.field_xa_prestage)
     }
 
@@ -181,7 +183,7 @@ impl World {
         self.audio.field_xa_busy_frames = dur;
         self.audio
             .field_xa_cues
-            .push(legaia_engine_battle::sfx_cue::XaVoiceClip {
+            .push(legaia_engine_system::sound_state::XaVoiceClip {
                 clip: u32::from(clip),
                 channel: u32::from(channel),
                 duration_sectors: u32::from(dur),
@@ -191,7 +193,7 @@ impl World {
     /// Take this tick's field CD-XA clip requests, oldest first. Both hosts
     /// call it from their field SFX routing and play each request through
     /// their `play_xa_clip`.
-    pub fn drain_field_xa_cues(&mut self) -> Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> {
+    pub fn drain_field_xa_cues(&mut self) -> Vec<legaia_engine_system::sound_state::XaVoiceClip> {
         std::mem::take(&mut self.audio.field_xa_cues)
     }
 
@@ -234,7 +236,7 @@ mod tests {
             legaia_engine_minigames::baka_fighter::BakaFight::new(duel_cfg(0), duel_cfg(1), 1);
         w.enter_baka_fighter(fight);
         let listed = w.drain_field_xa_prestage();
-        let want: Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> =
+        let want: Vec<legaia_engine_system::sound_state::XaVoiceClip> =
             legaia_engine_minigames::baka_fighter_chrome::announcer_xa_prestage(0)
                 .into_iter()
                 .map(Into::into)
@@ -265,7 +267,7 @@ mod tests {
         use legaia_engine_mode::minigame_entry::MinigameSubId;
         let mut w = World::default();
         w.request_minigame_warp(MinigameSubId::MuscleDome.sub_id());
-        let want: Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> =
+        let want: Vec<legaia_engine_system::sound_state::XaVoiceClip> =
             crate::muscle_ringside::hub_xa_prestage()
                 .into_iter()
                 .map(Into::into)
@@ -294,7 +296,7 @@ mod tests {
         assert!(w.field_xa_busy());
         assert_eq!(
             w.drain_field_xa_cues(),
-            vec![legaia_engine_battle::sfx_cue::XaVoiceClip {
+            vec![legaia_engine_system::sound_state::XaVoiceClip {
                 clip: 0x10,
                 channel: 7,
                 duration_sectors: 3

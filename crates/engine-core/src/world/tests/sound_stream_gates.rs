@@ -158,7 +158,7 @@ fn the_xa_arm_queues_the_clip_it_starts() {
     assert_eq!(pc, 5);
     assert_eq!(
         w.drain_field_xa_cues(),
-        vec![legaia_engine_battle::sfx_cue::XaVoiceClip {
+        vec![legaia_engine_system::sound_state::XaVoiceClip {
             clip: 0x10,
             channel: 7,
             duration_sectors: 0x135,

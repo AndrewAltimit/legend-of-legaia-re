@@ -311,7 +311,7 @@ mod tests {
         }
         assert_eq!(
             clips,
-            vec![legaia_engine_battle::sfx_cue::XaVoiceClip {
+            vec![legaia_engine_system::sound_state::XaVoiceClip {
                 clip: u32::from(VOICE_CLIP),
                 channel: u32::from(VOICE_CHANNEL),
                 duration_sectors: u32::from(VOICE_DURATION),

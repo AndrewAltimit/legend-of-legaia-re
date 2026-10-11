@@ -11,7 +11,7 @@ pub struct XaCue {
     pub dur: u16,
 }
 
-impl From<XaCue> for legaia_engine_battle::sfx_cue::XaVoiceClip {
+impl From<XaCue> for legaia_engine_system::sound_state::XaVoiceClip {
     fn from(c: XaCue) -> Self {
         Self {
             clip: u32::from(c.clip),

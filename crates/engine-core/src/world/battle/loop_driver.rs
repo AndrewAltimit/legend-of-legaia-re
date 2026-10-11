@@ -768,7 +768,7 @@ impl World {
     /// REF: FUN_8003D53C
     pub(in crate::world) fn push_battle_xa_cue(
         &mut self,
-        cue: legaia_engine_battle::sfx_cue::XaVoiceClip,
+        cue: legaia_engine_system::sound_state::XaVoiceClip,
     ) {
         self.audio.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
         self.audio.battle_xa_cues.push(cue);

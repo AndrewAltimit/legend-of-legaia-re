@@ -198,7 +198,7 @@ impl World {
     /// `legaia_engine_audio::XaClipBank` plays each one; the request is a
     /// `(clip_slot, channel, duration_sectors)` triple in the retail
     /// starter's own terms.
-    pub fn drain_battle_xa_cues(&mut self) -> Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> {
+    pub fn drain_battle_xa_cues(&mut self) -> Vec<legaia_engine_system::sound_state::XaVoiceClip> {
         std::mem::take(&mut self.audio.battle_xa_cues)
     }
 
@@ -208,7 +208,9 @@ impl World {
     /// can resolve to, both candidates of a coin-flip module included. A host
     /// that decodes clips lazily stages these ahead; one that decodes on
     /// demand drains and drops them. Nothing plays from here.
-    pub fn drain_battle_xa_prestage(&mut self) -> Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> {
+    pub fn drain_battle_xa_prestage(
+        &mut self,
+    ) -> Vec<legaia_engine_system::sound_state::XaVoiceClip> {
         std::mem::take(&mut self.audio.battle_xa_prestage)
     }
 

@@ -69,7 +69,7 @@ fn koin1_lists_the_dome_hub_lines_on_load() {
     };
     host.enter_field_scene("koin1", 0).expect("koin1 loads");
     let listed = host.world.drain_field_xa_prestage();
-    let hub: Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> =
+    let hub: Vec<legaia_engine_system::sound_state::XaVoiceClip> =
         legaia_engine_core::muscle_ringside::hub_xa_prestage()
             .into_iter()
             .map(Into::into)

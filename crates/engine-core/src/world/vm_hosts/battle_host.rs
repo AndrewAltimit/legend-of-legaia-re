@@ -636,7 +636,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue(cue_id, gates, raw)
             {
                 self.world
-                    .push_battle_xa_cue(legaia_engine_battle::sfx_cue::XaVoiceClip {
+                    .push_battle_xa_cue(legaia_engine_system::sound_state::XaVoiceClip {
                         clip: req.clip_slot,
                         channel: req.channel,
                         duration_sectors: req.duration_sectors,

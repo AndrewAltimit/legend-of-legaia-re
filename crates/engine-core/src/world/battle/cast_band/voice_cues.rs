@@ -74,7 +74,7 @@ impl World {
             self.audio.battle_xa_busy_frames = req.duration_sectors.min(u16::MAX as u32) as u16;
             self.audio
                 .battle_xa_cues
-                .push(legaia_engine_battle::sfx_cue::XaVoiceClip {
+                .push(legaia_engine_system::sound_state::XaVoiceClip {
                     clip: req.clip_slot,
                     channel: req.channel,
                     duration_sectors: req.duration_sectors,
@@ -90,7 +90,7 @@ impl World {
     pub(in crate::world) fn cast_module_voice_candidates(
         &self,
         spell_id: u8,
-    ) -> Vec<legaia_engine_battle::sfx_cue::XaVoiceClip> {
+    ) -> Vec<legaia_engine_system::sound_state::XaVoiceClip> {
         let Some(entry) = self.cast_module_for(spell_id) else {
             return Vec::new();
         };
@@ -128,7 +128,7 @@ impl World {
                     .and_then(|t| t.get(usize::from(id).wrapping_sub(0x100)).copied());
                 match legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue(id, open, raw) {
                     legaia_engine_battle_vm::battle_cast_cue::VoiceCueVerdict::Play(req) => {
-                        Some(legaia_engine_battle::sfx_cue::XaVoiceClip {
+                        Some(legaia_engine_system::sound_state::XaVoiceClip {
                             clip: req.clip_slot,
                             channel: req.channel,
                             duration_sectors: req.duration_sectors,
