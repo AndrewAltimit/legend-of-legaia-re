@@ -1,5 +1,5 @@
 [package]
-name = "legaia-pcsxr"
+name = "legaia-pcsx-redux"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 autotests = false
 
 [lib]
-name = "legaia_pcsxr"
+name = "legaia_pcsx_redux"
 path = "src/lib.rs"
 
 [[bin]]

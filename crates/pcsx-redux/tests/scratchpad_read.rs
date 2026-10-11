@@ -12,7 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_pcsxr::{SCRATCHPAD_LEN, SaveState};
+use legaia_pcsx_redux::{SCRATCHPAD_LEN, SaveState};
 
 /// `teien_field_run` in `scripts/scenarios.toml`.
 const TEIEN_FIELD_RUN: &str = "0f0f5384290739532d20a93d2759d36aa16fc551051ebc071f671b443ae6dbb8";

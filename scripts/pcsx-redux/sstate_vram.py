@@ -5,7 +5,7 @@ The Lua build this repo drives has no `PCSX.getVRAM()`, but every save state
 (`ckpt_<f>.rawsstate` from autorun_w5b_field_watch.lua's LEGAIA_CKPTS, or a
 gzipped library `.sstate`) carries VRAM as one length-delimited protobuf field
 of exactly 1024 * 512 halfwords. This walks the message tree the same way
-`legaia-pcsxr` finds main RAM (by size, not by field number) and writes that
+`legaia-pcsx-redux` finds main RAM (by size, not by field number) and writes that
 field out raw: 1024 x 512 little-endian halfwords, row-major.
 
 Usage: sstate_vram.py <state> <out.bin>

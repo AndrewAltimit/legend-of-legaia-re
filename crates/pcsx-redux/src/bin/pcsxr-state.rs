@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use legaia_pcsxr::SaveState;
+use legaia_pcsx_redux::SaveState;
 
 #[derive(Parser)]
 #[command(name = "pcsxr-state", about = "PCSX-Redux .sstate main-RAM reader")]
@@ -183,7 +183,7 @@ fn main() -> Result<()> {
             out,
             display_crop,
         } => {
-            let gpu = legaia_pcsxr::gpu::PcsxGpu::from_path(&save)?;
+            let gpu = legaia_pcsx_redux::gpu::PcsxGpu::from_path(&save)?;
             let (x, y, w, h) = if display_crop {
                 gpu.display_crop_rect()
             } else {

@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_pcsxr::SaveState;
+use legaia_pcsx_redux::SaveState;
 
 /// Find `extracted/SCUS_942.54` and point `LEGAIA_SCUS` at it (the anchor search
 /// reads it). Returns false if not present.

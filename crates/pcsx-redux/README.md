@@ -1,4 +1,4 @@
-# legaia-pcsxr
+# legaia-pcsx-redux
 
 PCSX-Redux save-state (`.sstate`) main-RAM reader - the bridge that lets the
 cataloged PCSX-Redux **playthrough anchors** (`s1_newgame_field` ..
@@ -24,7 +24,7 @@ happens to start at payload offset `0x27`, but the anchor search makes the reade
 robust to that.)
 
 ```rust
-let st = legaia_pcsxr::SaveState::from_path(path)?;       // gunzip + anchor search
+let st = legaia_pcsx_redux::SaveState::from_path(path)?;       // gunzip + anchor search
 assert_eq!(st.scene_name(), "town01");
 assert_eq!(st.game_mode(), 0x03);                          // 0x03 field, 0x15 battle
 let (x, z) = st.player_pos().unwrap();                     // player+0x14/+0x18 as i16
@@ -77,7 +77,7 @@ engine's behaviour against the captured retail facts. The anchor search reads
   walk-touch warp lands where the S4 capture recorded.
 - `crates/engine-core/tests/opening_progression_oracle.rs` - S1..S5 codify the
   retail opening progression (scene / game-mode / player position).
-- `crates/pcsxr/tests/anchor_load.rs` - the reader's own oracle (reads back each
+- `crates/pcsx-redux/tests/anchor_load.rs` - the reader's own oracle (reads back each
   anchor's pinned facts).
 
 Depends only on `legaia-ram-image` (for the anchor search), `flate2` and

@@ -21,7 +21,7 @@ way `mednafen-state vram-dump --display-crop` reads it.
 | script phase | [`retail_compare_script.rs`](../../crates/parity/src/retail_compare_script.rs) | Read the running field contexts off the actor lists, run the engine to the same script phase |
 | frame channel | [`retail_compare_image.rs`](../../crates/parity/src/retail_compare_image.rs) | Crop retail's frame, render the engine's, the metric |
 | `legaia-engine retail-compare` | [`retail_compare_cli.rs`](../../crates/parity/src/retail_compare_cli.rs) | Human report (markdown + JSON + side-by-side PNGs) |
-| PCSX-Redux GPU reader | [`legaia_pcsxr::gpu`](../../crates/pcsxr/src/gpu.rs) | VRAM + GP1 control log out of a `.sstate` |
+| PCSX-Redux GPU reader | [`legaia_pcsx_redux::gpu`](../../crates/pcsx-redux/src/gpu.rs) | VRAM + GP1 control log out of a `.sstate` |
 | driver | [`scripts/ci/retail-compare.py`](../../scripts/ci/retail-compare.py) | Resolves the gitignored data, builds, runs, blesses / checks |
 | ratchet test | [`retail_compare_corpus.rs`](../../crates/engine-shell/tests/retail_compare_corpus.rs) | Disc-gated; fails on any per-state channel drop |
 | baseline | [`retail-compare-baseline.json`](../../scripts/ci/retail-compare-baseline.json) | Scores and classes only - no pixels, no RAM |
@@ -210,7 +210,7 @@ come out in the engine's own schema on both sides.
 
 A PCSX-Redux state carries its GPU as one protobuf submessage: the `GPUSTAT`
 word, a `0x400`-byte log of the last value written to each GP1 command, and
-the 1 MiB VRAM. `legaia_pcsxr::gpu` finds it by shape (a `0x400` and a
+the 1 MiB VRAM. `legaia_pcsx_redux::gpu` finds it by shape (a `0x400` and a
 `0x100000` member side by side) and reads the display start off `GP1(0x05)`
 and the mode off `GP1(0x08)` - the same pair a mednafen state stores as
 `DisplayFB_XStart/YStart` and `DisplayMode` - so both emulators crop the

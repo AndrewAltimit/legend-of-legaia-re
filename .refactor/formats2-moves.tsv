@@ -114,3 +114,4 @@ legaia_mednafen::WatchpointSpec	legaia_ram_image::WatchpointSpec
 legaia_mednafen::game_mode_label	legaia_ram_image::game_mode_label
 legaia_mednafen::identify	legaia_ram_image::identify
 legaia_mednafen::ram_slice	legaia_ram_image::ram_slice
+legaia_pcsxr	legaia_pcsx_redux

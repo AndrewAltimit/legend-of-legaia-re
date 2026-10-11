@@ -2,7 +2,7 @@
 //!
 //! Both emulators' state readers land on the same thing - a KSEG0-addressed
 //! 2 MiB main-RAM byte slice - so the "which scene is this state in?" question
-//! has one implementation, not two. `legaia_pcsxr::SaveState` already exposed
+//! has one implementation, not two. `legaia_pcsx_redux::SaveState` already exposed
 //! these as inherent methods; this module is the shared body both crates call,
 //! so a mednafen `.mc{0..9}` and a PCSX-Redux `.sstate` answer identically.
 //!
@@ -26,7 +26,7 @@ pub const PLAYER_Z_OFF: u32 = 0x18;
 /// states carry the scratchpad as its own container entry (`ScratchRAM.data8`),
 /// so the live grid is readable offline from a `.mc`. A PCSX-Redux `.sstate`
 /// carries it too - in a 64 KiB `hardware` blob whose offset 0 is the
-/// scratchpad - but `legaia_pcsxr` exposes only main RAM, so today the grid
+/// scratchpad - but `legaia_pcsx_redux` exposes only main RAM, so today the grid
 /// read goes through this reader.
 pub const FIELD_ENV_PTR_SPAD: u32 = 0x1F80_03EC;
 /// Byte offset of the scratchpad window inside the 1 KiB scratchpad blob.

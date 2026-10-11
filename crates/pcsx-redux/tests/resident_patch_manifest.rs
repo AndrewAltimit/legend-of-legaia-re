@@ -95,7 +95,7 @@ fn patched_sites(ram: &[u8], retail: &[u8]) -> Vec<u32> {
 
 fn state_ram(path: &Path) -> Option<Vec<u8>> {
     match path.extension().and_then(|e| e.to_str()) {
-        Some("sstate") => legaia_pcsxr::SaveState::from_path(path)
+        Some("sstate") => legaia_pcsx_redux::SaveState::from_path(path)
             .ok()
             .map(|s| s.main_ram().to_vec()),
         Some("mcr") => legaia_mednafen::container::SaveState::from_path(path)

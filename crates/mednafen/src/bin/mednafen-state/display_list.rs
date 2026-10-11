@@ -29,7 +29,7 @@ use std::path::Path;
 
 /// Load a whole main-RAM image from either a mednafen save state or a raw
 /// 2 MiB dump. PCSX-Redux states are handled by `pcsxr-state extract` on the
-/// script side (this crate cannot depend on `legaia-pcsxr` - the dependency
+/// script side (this crate cannot depend on `legaia-pcsx-redux` - the dependency
 /// runs the other way).
 fn load_ram(path: &Path) -> Result<Vec<u8>> {
     let raw = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;

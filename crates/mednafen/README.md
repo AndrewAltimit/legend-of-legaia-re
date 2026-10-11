@@ -73,7 +73,7 @@ target in world units, alongside the walk-view / top-view mode flag.
 states, mirroring `pcsxr-state identify` so `scripts/mednafen/state-index.py`
 can sweep both emulators' corpora into one scene index. Unreadable states report
 as an `!` row instead of aborting the sweep. The anchors live in
-`legaia_ram_image::game_anchors`, which `legaia-pcsxr` reads through too - so a mednafen `.mc`
+`legaia_ram_image::game_anchors`, which `legaia-pcsx-redux` reads through too - so a mednafen `.mc`
 and a PCSX-Redux `.sstate` answer "which scene is this?" identically.
 
 `display-list` reads a frame's libgpu ordering table straight out of a RAM

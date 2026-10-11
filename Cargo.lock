@@ -1478,7 +1478,7 @@ dependencies = [
  "legaia-mednafen",
  "legaia-mes",
  "legaia-patcher",
- "legaia-pcsxr",
+ "legaia-pcsx-redux",
  "legaia-prot",
  "legaia-save",
  "legaia-seq",
@@ -1666,7 +1666,7 @@ dependencies = [
  "legaia-mednafen",
  "legaia-mes",
  "legaia-parity",
- "legaia-pcsxr",
+ "legaia-pcsx-redux",
  "legaia-prot",
  "legaia-save",
  "legaia-seq",
@@ -1918,7 +1918,7 @@ dependencies = [
  "legaia-game-tables",
  "legaia-mednafen",
  "legaia-overlay-images",
- "legaia-pcsxr",
+ "legaia-pcsx-redux",
  "legaia-prot",
  "legaia-save",
  "legaia-seq",
@@ -1979,7 +1979,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "legaia-pcsxr"
+name = "legaia-pcsx-redux"
 version = "0.1.0"
 dependencies = [
  "anyhow",

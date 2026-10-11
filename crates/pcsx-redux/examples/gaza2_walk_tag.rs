@@ -1,9 +1,9 @@
 //! One-off reader for the Gaza 2 parked savestate: dump each monster seat's
 //! action-tag table (record +0x4C, count +0x4A) to test whether tag 0x20
 //! (the state-0x14 walk lookup) exists. Usage:
-//!   cargo run -p legaia-pcsxr --example gaza2_walk_tag -- <path.sstate>
+//!   cargo run -p legaia-pcsx-redux --example gaza2_walk_tag -- <path.sstate>
 
-use legaia_pcsxr::SaveState;
+use legaia_pcsx_redux::SaveState;
 
 fn main() {
     let path = std::env::args()

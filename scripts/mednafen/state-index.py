@@ -184,7 +184,7 @@ def main() -> int:
         if not b.exists():
             print(
                 f"[state-index] missing {b} - build with:\n"
-                f"    cargo build --release -p legaia-mednafen -p legaia-pcsxr",
+                f"    cargo build --release -p legaia-mednafen -p legaia-pcsx-redux",
                 file=sys.stderr,
             )
             return 2
