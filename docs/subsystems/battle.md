@@ -349,7 +349,7 @@ For the JP archive, `MonsterRecord::decode_all` reports zero populated slots bec
 
 ### The instant-death / status-resist gate (record `+0x20`)
 
-Three slot-B summon ticks share one gate:
+Three slot-B summon ticks share one gate. Nighto and Aluru use it ahead of a roll that can set the target's HP to zero (`sh zero,0x14c` at `0x801F7E58` in PROT 0907 and `0x801F7E14` in PROT 0916); Zenoir uses it for an effect on actors that are already dead:
 
 ```text
 801F6BF0  lbu  v0,0x287(a1)          ; the scripted-fight flag
@@ -364,12 +364,14 @@ Three slot-B summon ticks share one gate:
 | Summon | PROT | Sites | Extra |
 |---|---|---|---|
 | Nighto | 0907 | `0x801F6BF0` / `0x801F6C18` | The resist arm sets module word `0x801F853C`; the arm-13 fork reads it to abandon both the instant-death and the confuse outcome. |
-| Zenoir | 0908 | `0x801F81F0` / `0x801F8208` | Also tests the formation cell `_DAT_8007BD0C` against `0x4D` / `0xAD` / `0xAE`. |
+| Zenoir | 0908 | `0x801F81F0` / `0x801F8208` | Not a kill roll: the site runs only for an actor already at zero HP (`lhu v0,0x14c(a0)` / `bnez` at `0x801F81D0`) and gates an addition to its `+0x1BA`. It also tests the formation cell `_DAT_8007BD0C` against `0x4D` / `0xAD` / `0xAE` and excludes them (`0x801F8218..0x801F8230`) - monster ids 77, 173 and 174, the three Berserkers, which the `+0x20` byte does not cover. |
 | Aluru | 0916 | `0x801F6D44` / `0x801F6D70` | - |
 
 Over 84 images with 113 materialisations of `0x801C9348`, exactly three loads at `+0x20` follow one, plus the model-upload site in PROT 0898 (the controls `+0x1F` and `+0x3E` return 12 and 1 at their known sites).
 
-This is not a dedicated immunity table: `+0x20` is the texture-page width flag, and the summons reuse it as a "big model" proxy. The set is every named boss plus the Evil Fly / Death Wings / Demon Fly family. The port carries it as `MonsterDef::wide_texture_page`, which feeds the Nighto roll's resist input. There is separately no per-monster immunity for the Seru-magic **stat debuffs** ([`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)).
+This is not a dedicated immunity table: `+0x20` is the texture-page width flag, and the summons reuse it as a "big model" proxy. The set is not "every boss": the byte is `1` on most large boss models and also on the Evil Fly / Death Wings / Demon Fly, Gizam and Gilium families, and it is `0` on all three Berserker records (ids 77, 173, 174), which therefore take the ordinary roll in their scripted fights ([glitches/status-and-damage.md](../reference/glitches/status-and-damage.md#every-berserker-can-be-killed-outright)).
+
+The port carries it as `MonsterDef::wide_texture_page`, which feeds the Nighto roll's resist input. There is separately no per-monster immunity for the Seru-magic **stat debuffs** ([`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)).
 
 ### Monster archive (PROT entry 867)
 
@@ -450,7 +452,7 @@ The persistent party record: stride `0x414` per character at `0x80084708 + n*0x4
 | `+0x161..+0x184` | Per-spell level / rank, same index. Floored to `1` when learned. |
 | `+0x196..+0x19D` | Equipment slot bytes (8 slots). |
 | `+0x2A7..+0x2B0` | NUL-padded ASCII display name, 9 bytes. In the retail SC save block: `game+0x66F + n*0x414`, SC `+0x86F` for slot 0 ([`save-screen.md`](save-screen.md)). `legaia_save::CharacterRecord::name`. |
-| `+0x2B0..+0x37F` | Active spell-slot array, stride `0x14`, filled by `FUN_80042DBC`. Slot `+1..+4` = counter bytes, `+5` = level. |
+| `+0x2B0..+0x37F` | Summon stash, stride `0x14`: where `FUN_80042DBC` parks an equipment-granted summon's counter (`+1..+4`) and level (`+5`) when its item comes off, and `FUN_800432BC` reads them back. Slots `0..4` are used; slot 0 is shared by Palma, Meta, Terra and Ozma ([glitch page](../reference/glitches/summons-and-jette.md)). |
 
 ### The three parallel spell arrays
 
@@ -506,7 +508,7 @@ A per-frame SCUS helper over the three active party members. It:
 
 1. Clamps each stat maximum to a per-field ceiling (`0x80042C0C..0x80042CE0`): `+0x104` at `9999`, `+0x108` at `999`, `+0x10C` at `100`, `+0x110` at `280`, then `999` each for `+0x112` / `+0x114` / `+0x116` / `+0x118` / `+0x11A`. The currents are handled by the [clamp triple](#why-the-pair-order-is-max-cur).
 2. ORs each character's ability block `+0xF4..+0x100` into the global 4 x u32 mask at `0x80074358..0x80074368` - the "currently active accessory effects" register every other system reads.
-3. Calls `FUN_800432BC` / `FUN_80042DBC` to add or remove temporary spells per the active spell-slot layout at `+0x2B0`.
+3. Calls `FUN_800432BC` / `FUN_80042DBC` to add or remove temporary spells per the summon-stash layout at `+0x2B0`.
 
 Related helpers:
 

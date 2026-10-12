@@ -1115,7 +1115,8 @@ fix for a **retail bug** that the pack's longer names ("Blazing Typhoon",
   arts-name table (the real names of regular and Hyper Arts) and the arts
   animation data (placeholder names for regular / Hyper Arts, the *real* names
   of Super Arts and the Miracle finisher). The banner routine `FUN_8004AD80`
-  first measures the name behind the fixed pointer at `0x80076024` - always
+  first measures the name behind the fixed pointer at `0x80076024` (the `+0xC`
+  name field of arts-name row 17, `0x80075EC4 + 17*0x14 + 0xC`) - always
   "Vulture Blade" (the measure at `0x8004BBB4`) - and a later check re-measures
   with the correct table name **only for regular / Hyper Arts**. A Super or
   Miracle finisher keeps Vulture Blade's width, so its banner is centred for the

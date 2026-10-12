@@ -287,7 +287,7 @@ attacks = [{ name = "Shadow Break", mp = 200 }]
 exp_reward = 12750
 gold_reward = 10000
 recommended_level = "34"
-notes = "Spawns up to three clones; clone-spawn refills MP."
+notes = "Clone adds a copy while fewer than three monsters are seated (at most two Clones). A coin flip picks the decoy; when the original becomes the decoy the real Jette is the new actor, with full MP."
 
 [[boss]]
 name = "Cort"

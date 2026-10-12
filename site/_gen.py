@@ -175,8 +175,13 @@ DESCRIPTIONS: dict[str, str] = {
     ),
     "writeups/index": (
         "Technical deep-dives from reverse engineering Legend of Legaia: a "
-        "retail softlock's anatomy, fishing's rarest catch, and six tiers of "
-        "patching a sealed disc."
+        "retail softlock's anatomy, fishing's rarest catch, the community's "
+        "glitch list traced to its causes, and the tiers of patching a sealed disc."
+    ),
+    "writeups/glitches/index": (
+        "Legend of Legaia's known glitches and oversights, each traced into the "
+        "disc's own code: the cause in plain words, a diagram, and the addresses "
+        "to verify it in a debugger."
     ),
 }
 
@@ -523,6 +528,15 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("writeups/index.html",        "Technical write-ups",           "writeups/index",             "writeups/index.html"),
     ("writeups/gaza-orbit-softlock.html", "The endless camera orbit - anatomy of a retail softlock", "writeups/gaza-orbit-softlock", "writeups/gaza-orbit-softlock.html"),
     ("writeups/spirit-fish.html", "The Spirit fish gate - fishing's rarest catch, decompiled", "writeups/spirit-fish", "writeups/spirit-fish.html"),
+    ("writeups/glitches/index.html", "Glitches and oversights, traced", "writeups/glitches/index", "writeups/glitches/index.html"),
+    ("writeups/glitches/name-centering.html", "Off-centre attack names", "writeups/glitches/name-centering", "writeups/glitches/name-centering.html"),
+    ("writeups/glitches/turn-order-and-arts.html", "Turn order, double attacks and kicks", "writeups/glitches/turn-order-and-arts", "writeups/glitches/turn-order-and-arts.html"),
+    ("writeups/glitches/status-and-damage.html", "Status rolls, jewels and boss immunities", "writeups/glitches/status-and-damage", "writeups/glitches/status-and-damage.html"),
+    ("writeups/glitches/lapis-and-cort.html", "Lapis and Mystic Shield Cort", "writeups/glitches/lapis-and-cort", "writeups/glitches/lapis-and-cort.html"),
+    ("writeups/glitches/summons-and-jette.html", "Ra-Seru levels, Orb and Jette's Clone", "writeups/glitches/summons-and-jette", "writeups/glitches/summons-and-jette.html"),
+    ("writeups/glitches/items-and-equipment.html", "Items, stats and equipment", "writeups/glitches/items-and-equipment", "writeups/glitches/items-and-equipment.html"),
+    ("writeups/glitches/field-sequence-breaks.html", "Incense, doors and the Door of Light", "writeups/glitches/field-sequence-breaks", "writeups/glitches/field-sequence-breaks.html"),
+    ("writeups/glitches/field-oddities.html", "WORK ERR, missing encounters and script slips", "writeups/glitches/field-oddities", "writeups/glitches/field-oddities.html"),
     ("writeups/disc-patching/index.html","Patching a sealed disc",   "writeups/disc-patching/index","writeups/disc-patching/index.html"),
     ("writeups/disc-patching/a-static-tables.html","Tier A - static-table overwrites","writeups/disc-patching/a-static-tables","writeups/disc-patching/a-static-tables.html"),
     ("writeups/disc-patching/b-lzs-slots.html","Tier B - editing inside LZS","writeups/disc-patching/b-lzs-slots","writeups/disc-patching/b-lzs-slots.html"),

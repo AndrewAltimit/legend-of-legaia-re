@@ -1871,7 +1871,8 @@ of the saved bitfield but isn't proven free at runtime - it's a tunable constant
 Opt-in flags that ride the same reclaimable seed region as the starting items,
 built for fast-travel and pacing testing. Door of Wind (item `0x89`) is the warp
 consumable: using one opens a menu to teleport to any town you have already
-visited. Incense (item `0x8A`) lowers the random-encounter rate for a while.
+visited. Incense (item `0x8A`) suppresses random encounters outright for a
+window of walk ticks.
 
 **`--door-of-wind [N]`** seeds Door of Wind into the new game's starting bag -
 `N` of them (1..=99; the default when the flag is given bare is 10). It is

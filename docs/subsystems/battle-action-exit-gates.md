@@ -12,7 +12,7 @@ This page documents both gates, the invariant each relies on, the mechanism that
 | Invariant | displayed HP minus live HP equals the pending accumulator, on every party slot | a clip with root motion is playing while the poll fails |
 | Broken by | a displayed/live mismatch left with a zero accumulator | a stale exit-to-idle flag (`+0x1DC` bit 2) ending the approach clip |
 | Retail trigger | a restore's assigning seed landing on a drain still in flight | a monster with no walk tag `0x20` starting a melee while its flinch clip still plays |
-| Caught in unmodified play | no - every capture needed an external HP write | yes - Gaza 2, scenario `battle_gaza2_park_0x19` |
+| Caught in unmodified play | no capture; a pad-reachable trigger is read from the code (the Point Card aimed at a party member) | yes - Gaza 2, scenario `battle_gaza2_park_0x19` |
 | Self-recovers | on a poison / regen tick of the affected member | never |
 | Disc patch | none | `legaia-patcher --approach-softlock-fix` |
 | Port | same conventions, seeds paired at every call site | approach drive runs in every approach state |
@@ -168,7 +168,7 @@ Two retail quirks sit in the non-party arms. Nothing draws the values they corru
 | **Effect** | Every action whose actor targets that slot (`+0x1DD` in `0..2`) or the whole party (`+0x1DD == 8`) reaches `0x51`, is told "not settled", and never decrements its countdown. Monster-targeted actions in between complete normally. |
 | **Recovery** | `FUN_801E752C` force-assigns `+0x172 = +0x14C` after each of its own HP writes (`0x801E7600`, `0x801E7698`, one per status bit). A poison or regen tick on the affected member clears the park. It is the only re-sync in the dumped battle corpus. |
 | **Reproduction** | Offset one party slot's `+0x172` by a single point and clear its `+0x10`: the next party-targeted action hangs. Probe `scripts/pcsx-redux/autorun_gaza2_hpbar_settle.lua`. |
-| **Retail status** | Reachable on paper through the Final Heal race below. Not captured from unmodified play: every recorded `0x51` park needed an external HP write. |
+| **Retail status** | Reachable on paper two ways: the Final Heal race below, and the Point Card used on a party member, whose discharge arm (`0x8004209C`) writes live HP and seeds neither `+0x10` nor `+0x172` ([`glitches/items-and-equipment.md`](../reference/glitches/items-and-equipment.md)). Not captured from unmodified play: every recorded `0x51` park needed an external HP write. |
 | **Disc patch** | None. |
 | **Port** | Reproduces both seeding conventions; keeps live-HP writes and readout seeds paired per call site ([below](#port-the-seed-is-per-call-site)). |
 

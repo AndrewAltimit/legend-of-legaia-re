@@ -1,0 +1,519 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">glitches</a> &middot; items, stats and equipment</div>
+  <h1>Items, stats and equipment</h1>
+  <p class="lede">Five reported oversights in how Legend of Legaia handles items, stat boosts and equipment, each followed through the game's own code on the USA disc: a stat boost that is said to overflow, story events that take equipment without telling the rest of the game, a Point Card that can freeze a battle, a coin vendor that sells a hundredth item, and a prize that can be announced and never handed over.</p>
+</header>
+
+<div class="notice">
+  <div class="notice-title">How to read this page</div>
+  Everything here is read from the instructions and data on the disc. <strong>None of it was captured on a running game.</strong> Where a section says something "should" happen, that is a prediction that follows from the code and is marked as untested. Each glitch has an address table so another reader with a debugger can check it.
+</div>
+
+<section class="doc-section" id="stat-boost-overflow">
+  <h2>Stat boost overflow</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>Using permanent stat-boost items past a stat's limit overflows the stat (community report)</dd>
+    <dt>Cause</dt><dd>Not found for the permanent items: every one adds and then clamps. The one-battle boosts next door do saturate or wrap.</dd>
+    <dt>Where</dt><dd>Item applier <code>FUN_800402F4</code> in <code>SCUS_942.54</code>; turn-order key <code>FUN_801DA780</code> in PROT 0898</dd>
+    <dt>Affects</dt><dd>Candidates: Elixir stacking, the Speed-derived turn order, the enemy cast Jugger Power</dd>
+    <dt>Status</dt><dd><span class="tag tag-open">Not confirmed</span> for the Waters and Honey; the in-battle sites are candidates, read from the code</dd>
+  </dl>
+
+  <p>The permanent stat items - the six Waters, Honey and Miracle Water - cannot overflow anything on the USA disc. Each adds a small fixed amount to a 16-bit number and immediately compares the result with a ceiling, writing the ceiling back if it was passed. The largest value that ever exists before the compare is 1003 (10015 for HP). A 16-bit number holds up to 65535, so there is no room for a wrap.</p>
+  <p>The boosts that last one battle are a different story. Elixirs multiply a battle stat by 1.2 and can be stacked without limit until the stat pins at 65535. The number that decides turn order is built from Speed and stored in 16 bits with no ceiling, so a hugely boosted Speed can wrap it to a small value and the character acts <em>late</em>. And one enemy self-buff, Jugger Power, has no ceiling at all. These are the places a "stat boost overflow" can really happen, offered as candidates for what the report saw.</p>
+  <p>Three numbers are easy to mix up. The <strong>stored</strong> stat is what the items write. The <strong>live</strong> stat is the stored one plus accessory percentages, capped again. Equipment is in neither: the menu adds it into a total for display, so a figure above 999 on the status screen is a sum on screen, not a stored value.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 640 300" role="img" aria-label="Top: a Power Water used at 996 adds 4 to make 1000, fails the below-1000 compare and is stored as 999. Bottom: a 16-bit ruler from 0 to 65535 drawn to scale, with the permanent ceiling 999 at the far left, the half-way mark 32768 where the turn-order key starts to wrap, and the Elixir pin at 65535" xmlns="http://www.w3.org/2000/svg">
+      <text class="dg-label dg-start" x="20" y="20">Permanent item: add, then clamp</text>
+      <rect class="dg-node" x="20" y="32" width="130" height="48" rx="4"/>
+      <text class="dg-label" x="85" y="53">stored 996</text>
+      <text class="dg-sub" x="85" y="69">record +0x124</text>
+      <rect class="dg-node" x="180" y="32" width="130" height="48" rx="4"/>
+      <text class="dg-label" x="245" y="53">+4 = 1000</text>
+      <text class="dg-sub" x="245" y="69">addiu at 0x800411F0</text>
+      <rect class="dg-node-accent" x="340" y="32" width="130" height="48" rx="4"/>
+      <text class="dg-label" x="405" y="53">below 1000?</text>
+      <text class="dg-sub" x="405" y="69">sltiu at 0x800411FC</text>
+      <rect class="dg-node-ok" x="500" y="32" width="120" height="48" rx="4"/>
+      <text class="dg-label" x="560" y="53">stored 999</text>
+      <text class="dg-sub" x="560" y="69">ceiling 0x3E7</text>
+      <path class="dg-edge" d="M150,56 L180,56"/>
+      <path d="M180.0,56.0 L172.0,60.0 L172.0,52.0 z" fill="var(--dg-accent)"/>
+      <path class="dg-edge" d="M310,56 L340,56"/>
+      <path d="M340.0,56.0 L332.0,60.0 L332.0,52.0 z" fill="var(--dg-accent)"/>
+      <path class="dg-edge" d="M470,56 L500,56" style="stroke:var(--ok)"/>
+      <path d="M500.0,56.0 L492.0,60.0 L492.0,52.0 z" fill="var(--ok)"/>
+      <text class="dg-label dg-start" x="20" y="122">One-battle boosts: the 16-bit range, to scale</text>
+      <rect class="dg-node-warn" x="320.004" y="150" width="279.996" height="26" rx="4"/>
+      <text class="dg-label" x="460.002" y="167">turn-order key can wrap</text>
+      <rect class="dg-node" x="40" y="150" width="280.004" height="26" rx="4"/>
+      <text class="dg-label" x="180.002" y="167">key stays in order</text>
+      <path class="dg-edge-dim" d="M40,190 L600,190"/>
+      <path class="dg-edge-dim" d="M40,184 L40,196"/>
+      <text class="dg-sub dg-start" x="40" y="212">0</text>
+      <path class="dg-edge-dim" d="M320.004,184 L320.004,196"/>
+      <text class="dg-sub" x="320.004" y="212">32768 (0x8000)</text>
+      <path class="dg-edge-dim" d="M600,184 L600,196"/>
+      <text class="dg-edge-label" x="600" y="212" text-anchor="end">65535 (0xFFFF)</text>
+      <path class="dg-edge" d="M48.5365,140 L48.5365,196" style="stroke:var(--ok)"/>
+      <text class="dg-sub dg-start" x="54.5365" y="144">999: ceiling of every permanent stat</text>
+      <text class="dg-sub dg-start" x="20" y="244">Elixir: stat x 1.2 per use, no stacking limit, pinned at 65535</text>
+      <text class="dg-sub dg-start" x="20" y="262">From 999 the pin is reached after 23 uses; from 300 after 30.</text>
+      <text class="dg-sub dg-start" x="20" y="280">Turn-order key = SPD + random(0..SPD/2) + 1, stored in 16 bits with no ceiling.</text>
+      </svg>
+    <figcaption>Top: the permanent items always end on a clamp. Bottom: the full 16-bit range to scale. Permanent stats live in the sliver at the far left; a stacked Elixir can walk a battle stat all the way to the right, and past the half-way mark the turn-order number no longer fits.</figcaption>
+  </figure>
+
+  <details class="disclosure">
+    <summary>The instructions</summary>
+    <div class="disclosure-body">
+      <p>Class 6 (permanent stat-up) is arm <code>0x8004112C</code> of the applier; the tier byte picks one of seven arms through the table at <code>0x800151B0</code>. All seven have this shape:</p>
+<pre>800411e8  lhu v0,0x6ec(v1)      ; stored ATK (record +0x124)
+800411f0  addiu v0,v0,0x4
+800411f4  sh v0,0x6ec(v1)
+800411fc  sltiu v0,v0,0x3e8     ; below 1000?
+80041200  bne v0,zero,&lt;exit&gt;
+8004120c  _sh v0,0x6ec(v1)      ; otherwise store 999</pre>
+      <p>The item menu then rebuilds the live stats (<code>jal 0x80042558</code> at <code>0x801D8540</code>, PROT 0899), and that routine clamps again at <code>0x80042C0C..0x80042CE0</code>. The Elixir arm (class 7, <code>0x80041464</code>) computes <code>stat + stat/5</code> and stores <code>0xFFFF</code> when the sum is larger (<code>0x800414D8..0x80041510</code> for Speed). The turn-order key is <code>SPD + rand() % (SPD/2 + 1) + 1</code>, stored by <code>sh a0,0x16c(a1)</code> at <code>0x801DA84C</code>. Jugger Power (cast <code>0xBA</code>, PROT 0945) adds a quarter to ten stat halfwords at <code>0x801F6DA0..0x801F6E34</code> with no compare.</p>
+      <p>A sweep for sign-extending loads of the battle stats finds none for ATK, defence, SPD or INT, so a pinned value does not turn negative.</p>
+    </div>
+  </details>
+
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x800402F4</code></td><td>SCUS</td><td>Item applier; class table <code>0x80014FA0</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x8004112C</code></td><td>SCUS</td><td>Permanent stat-up arm; tier table <code>0x800151B0</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80041178</code></td><td>SCUS</td><td>Life Water: record <code>+0x11C</code> +16, ceiling 9999</td><td>disassembly</td></tr>
+      <tr><td><code>0x800411C4</code></td><td>SCUS</td><td>Power Water: <code>+0x124</code> +4, ceiling 999</td><td>disassembly</td></tr>
+      <tr><td><code>0x800413F4</code></td><td>SCUS</td><td>Guardian Water: <code>+0x126</code> and <code>+0x128</code> +4, ceiling 999</td><td>disassembly</td></tr>
+      <tr><td><code>0x80041210</code></td><td>SCUS</td><td>Swift Water: <code>+0x12A</code> +4, ceiling 999</td><td>disassembly</td></tr>
+      <tr><td><code>0x8004125C</code></td><td>SCUS</td><td>Wisdom Water: <code>+0x12C</code> +4, ceiling 999</td><td>disassembly</td></tr>
+      <tr><td><code>0x800412A8</code></td><td>SCUS</td><td>Magic Water: <code>+0x11E</code> +8, ceiling 999</td><td>disassembly</td></tr>
+      <tr><td><code>0x800412F4</code></td><td>SCUS</td><td>Honey / Miracle Water: +4 to eight fields, AGL ceiling 280</td><td>disassembly</td></tr>
+      <tr><td><code>0x8003FB10</code></td><td>SCUS</td><td>Usability check that greys an item nobody can benefit from</td><td>disassembly</td></tr>
+      <tr><td><code>0x80042558</code></td><td>SCUS</td><td>Live-stat rebuild; clamps at <code>0x80042C0C..0x80042CE0</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80041464</code></td><td>SCUS</td><td>Elixir arm; pins at <code>0xFFFF</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801DA84C</code></td><td>PROT 0898</td><td>Unclamped 16-bit store of the turn-order key (actor <code>+0x16C</code>)</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F6DA0</code></td><td>PROT 0945</td><td>Jugger Power stat block, through <code>0x801F6E44</code></td><td>disassembly</td></tr>
+      <tr><td>reaching the key wrap in play</td><td>-</td><td>About thirty Speed or Wonder Elixirs on one character in one battle</td><td>inference</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Verifying it</h3>
+  <p>Set Vahn's stored ATK (<code>0x8008482C</code>) to <code>0x03E6</code> and use a Power Water: it reads back <code>0x03E7</code>, and at that value the menu refuses the item. For the turn order, write <code>0xFFFF</code> to a party actor's <code>+0x164</code> and <code>+0x166</code> in battle and break at <code>0x801DA84C</code>: the value stored is below <code>0x8000</code> and that character acts late.</p>
+  <p>What would settle the report itself: the stored stat halfword before and after the item use that appeared to overflow. No USA code path wraps there. Related reference: <a href="../../formats/item-effect-table.html">item-effect table</a>, <a href="../../formats/save-record.html">character record</a>, <a href="../../subsystems/battle-formulas.html">battle formulas</a>.</p>
+</section>
+
+<section class="doc-section" id="story-equipment-removal">
+  <h2>Story equipment removal skips the re-check</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>When the plot takes a piece of equipment, its bonus keeps working until something else re-checks equipment (community report)</dd>
+    <dt>Cause</dt><dd>The script's take-item instruction empties the equipment slot but never calls the routine that turns slots into bonuses</dd>
+    <dt>Where</dt><dd>Field script instruction <code>4C 52</code> at <code>0x801E1ABC</code> (PROT 0897) and <code>FUN_800430AC</code> in <code>SCUS_942.54</code></dd>
+    <dt>Affects</dt><dd>Nine story hand-overs of a wearable item, listed below, when the item is equipped at that moment</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - the mechanism and the nine sites; how long the stale bonus lasts is only partly traced</dd>
+  </dl>
+
+  <p>An accessory's effect is not looked up when it is needed. One routine "bakes" it into each character: it reads the eight equipment slots and writes out a set of ability bits and a block of live stats. Battle, the random-encounter roll and the menus all read the baked copy, never the slots.</p>
+  <p>When the story takes an item, the script instruction first tries the bag. If the item is not there because it is being worn, it clears the equipment slot directly - and stops. It does not run the bake, so the baked copy still says the item is on.</p>
+  <p>The game does have a script instruction that writes an equipment slot <em>and</em> re-bakes; it is the one that grows the Ra-Seru. The take-item fallback simply does not use it.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 640 250" role="img" aria-label="The story&#x27;s take-item instruction clears only the equipment slot byte. The rebuild routine, which copies the slot&#x27;s effect into the ability bit and the live stat, is not called, so those two keep the old value" xmlns="http://www.w3.org/2000/svg">
+      <rect class="dg-node-warn" x="20" y="20" width="220" height="52" rx="4"/>
+      <text class="dg-label" x="130" y="43">Story takes the item</text>
+      <text class="dg-sub" x="130" y="59">op 4C 52 -&gt; FUN_800430AC</text>
+      <rect class="dg-node-ok" x="400" y="20" width="220" height="52" rx="4"/>
+      <text class="dg-label" x="510" y="43">Rebuild</text>
+      <text class="dg-sub" x="510" y="59">FUN_80042558</text>
+      <path class="dg-edge-dim" d="M240,46 L400,46"/>
+      <text class="dg-sub" x="320" y="38">never called</text>
+      <rect class="dg-node" x="20" y="150" width="190" height="60" rx="4"/>
+      <text class="dg-label" x="115" y="177">Equipment slot</text>
+      <text class="dg-sub" x="115" y="193">record +0x19B..+0x19D</text>
+      <rect class="dg-node-accent" x="225" y="150" width="190" height="60" rx="4"/>
+      <text class="dg-label" x="320" y="177">Ability bit</text>
+      <text class="dg-sub" x="320" y="193">record +0xF4..+0x103</text>
+      <rect class="dg-node-accent" x="430" y="150" width="190" height="60" rx="4"/>
+      <text class="dg-label" x="525" y="177">Live stat</text>
+      <text class="dg-sub" x="525" y="193">record +0x104..+0x11A</text>
+      <path class="dg-edge" d="M115,72 L115,150" style="stroke:var(--warn)"/>
+      <path d="M115.0,150.0 L111.0,142.0 L119.0,142.0 z" fill="var(--warn)"/>
+      <text class="dg-sub dg-start" x="123" y="115">set to 0</text>
+      <path class="dg-edge" d="M470,72 L330,150" style="stroke:var(--ok)"/>
+      <path d="M330.0,150.0 L335.0,142.6 L338.9,149.6 z" fill="var(--ok)"/>
+      <path class="dg-edge" d="M540,72 L540,150" style="stroke:var(--ok)"/>
+      <path d="M540.0,150.0 L536.0,142.0 L544.0,142.0 z" fill="var(--ok)"/>
+      <text class="dg-sub dg-start" x="548" y="115">rebuilt</text>
+      <text class="dg-sub" x="320" y="230">Until the rebuild runs, battle and menus read the two right-hand boxes:</text>
+      <text class="dg-sub" x="320" y="244">the item still counts as worn.</text>
+      </svg>
+    <figcaption>The take-item instruction touches one byte. The two things the rest of the game actually reads are only refreshed by the rebuild routine, which this path never calls.</figcaption>
+  </figure>
+
+  <div class="table-wrap"><table>
+    <thead><tr><th>Item</th><th>Effect left behind</th><th>Scene</th><th>Script location (PROT / record / offset)</th></tr></thead>
+    <tbody>
+      <tr><td>Yuma's Ring (<code>0xAF</code>)</td><td>Max MP +10%</td><td>Jeremi (<code>geremi</code>)</td><td>166 / P2[16] / <code>+0x0109</code></td></tr>
+      <tr><td>Earth Egg (<code>0x6E</code>)</td><td>Earth Guard</td><td>Jeremi</td><td>166 / P2[19] / <code>+0x1056</code></td></tr>
+      <tr><td>Water Egg (<code>0x6F</code>)</td><td>Water Guard</td><td>Jeremi</td><td>166 / P2[19] / <code>+0x1192</code></td></tr>
+      <tr><td>Light Egg (<code>0x70</code>)</td><td>Light Guard</td><td>Jeremi</td><td>166 / P2[19] / <code>+0x12CE</code></td></tr>
+      <tr><td>Dark Stone (<code>0x71</code>)</td><td>Dark Guard</td><td>Jeremi</td><td>166 / P2[19] / <code>+0x1409</code></td></tr>
+      <tr><td>Ra-Seru Egg (<code>0xAB</code>)</td><td>Thunder Guard</td><td>East Voz Forest (<code>vozz</code>)</td><td>104 / P2[17] / <code>+0x01D7</code></td></tr>
+      <tr><td>Star Pearl (<code>0xAE</code>)</td><td>INT +5%</td><td>Shadow Gate (<code>stone</code>)</td><td>175 / P1[4] / <code>+0x018D</code></td></tr>
+      <tr><td>Nemesis Gem (<code>0xB5</code>)</td><td>High Encounter (whole party)</td><td>Jette's Fortress entrance (<code>deroa</code>)</td><td>606 / P2[4] / <code>+0x03D4</code></td></tr>
+      <tr><td>Fire Droplet (<code>0xBC</code>)</td><td>Maximum AP</td><td>Usha Research Center (<code>doman</code>, variant script)</td><td>401 / P1[15] / <code>+0x1F82</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>The list is computed, not picked: every take-item instruction on the disc was decoded, and these nine are the ones whose item carries a wearable effect. All the others take key items or consumables and leave nothing behind.</p>
+
+  <h3>How long it lasts</h3>
+  <p>Until the next event that re-bakes. Entering any scene always does. So do using an item or magic from the menu, equipping or removing anything, Best Equipment, and buying-and-equipping in a shop. The field scene is reloaded after a battle, which would limit the stale bonus to a single battle fought before leaving the room; that part rests on the engine documentation and was not re-read. The in-field save screen does <em>not</em> re-bake. Whether simply closing the pause menu does is not traced.</p>
+
+  <details class="disclosure">
+    <summary>The instructions</summary>
+    <div class="disclosure-body">
+<pre>801e1ac4  lbu a0,1(s6)              ; item id
+801e1ac8  jal 0x80042310            ; remove one from the bag
+801e1adc  bne v0,v1,0x801e00b8      ; found in the bag: done
+801e1ae8  jal 0x800430ac            ; not in the bag: unequip it
+801e1af0  j 0x801e3628              ; exit - no jal 0x80042558</pre>
+      <p><code>FUN_800430AC</code> walks each party member's three accessory slots (record <code>+0x19B..+0x19D</code>), zeroes the first match with <code>sb zero,0x196(v1)</code> at <code>0x80043108</code> and returns. It has one caller on the disc.</p>
+      <p>The rebuild <code>FUN_80042558</code> zeroes the ability words at <code>0x800425EC</code>, walks the slots at <code>0x80042620..0x8004270C</code>, applies the percentage boosts and clamps. Every reference to it on the disc is a call, and none is in the battle program. The instruction that does it properly is <code>0x3B</code> at <code>0x801E07DC</code>: <code>jal 0x80042558</code> at <code>0x801E0810</code> with the slot store <code>sb v1,0x75e(v0)</code> in its delay slot.</p>
+    </div>
+  </details>
+
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td>record <code>+0x196..+0x19D</code></td><td>RAM</td><td>Equipment slots; the last three are the accessories</td><td>disassembly</td></tr>
+      <tr><td>record <code>+0xF4..+0x103</code></td><td>RAM</td><td>Ability bits, one per effect</td><td>disassembly</td></tr>
+      <tr><td>record <code>+0x104..+0x11A</code></td><td>RAM</td><td>Live stats (stored base at <code>+0x11C..+0x12C</code>)</td><td>disassembly</td></tr>
+      <tr><td><code>0x80074358</code></td><td>SCUS</td><td>Party-wide ability mask</td><td>disassembly</td></tr>
+      <tr><td><code>0x80042558</code></td><td>SCUS</td><td>The rebuild</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E1ABC</code></td><td>PROT 0897</td><td>Take-item instruction <code>4C 52</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80042310</code></td><td>SCUS</td><td>Bag remove; returns <code>0x100</code> when absent</td><td>disassembly</td></tr>
+      <tr><td><code>0x800430AC</code></td><td>SCUS</td><td>Unequip by id, no rebuild</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E07DC</code></td><td>PROT 0897</td><td>Instruction <code>0x3B</code>: equipment-slot write with rebuild</td><td>disassembly</td></tr>
+      <tr><td><code>0x8003B2B8</code></td><td>SCUS</td><td>Rebuild call in the scene-entry routine <code>FUN_8003AEB0</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80024378</code></td><td>SCUS</td><td>Save-screen driver reloading the field program with no scene init</td><td>disassembly</td></tr>
+      <tr><td>the nine sites above</td><td>PROT scene scripts</td><td>Decoded take-item instructions joined to the item table</td><td>disc data</td></tr>
+      <tr><td>scene reload after battle</td><td>-</td><td>Bounds the stale bonus to one battle</td><td>repo doc</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Verifying it</h3>
+  <p>Equip Yuma's Ring on Vahn: <code>0x800847FC</code> has bit <code>0x4</code> and the live max MP at <code>0x80084810</code> is 110% of the stored one at <code>0x80084826</code>. Give the ring to Zalan. Straight afterwards the slot bytes at <code>0x800848A3..0x800848A5</code> hold no ring, but the bit and the live max MP are unchanged. A breakpoint on <code>0x80042558</code> that logs the caller shows which event finally clears it. Related reference: <a href="../../formats/accessory-passive-table.html">accessory passives</a>, <a href="../../subsystems/script-vm.html">field script VM</a>.</p>
+</section>
+
+<section class="doc-section" id="point-card-softlock">
+  <h2>Point Card softlock</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>Using the Point Card in battle on one of your own characters hangs the battle (community report)</dd>
+    <dt>Cause</dt><dd>The target cursor can step onto an ally, and the Point Card's damage skips the HP-counter bookkeeping the end of the action waits on</dd>
+    <dt>Where</dt><dd>Item window at <code>0x801D18F8</code> and the action state machine in PROT 0898; discharge arm <code>0x8004209C</code> in <code>SCUS_942.54</code></dd>
+    <dt>Affects</dt><dd>Any party member as the target, as long as the Point Card holds points</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - from the instructions; not run</dd>
+  </dl>
+
+  <p>Two separate mistakes line up.</p>
+  <p><strong>The cursor can reach an ally.</strong> The Point Card is meant for enemies. When you pick it, the game builds a ring of targets that starts from whoever this character aimed at last. It builds the ring first and only afterwards checks that the last target was an enemy. If the last thing this character did was aimed at an ally - any healing item or Elixir, whose cursor starts on the user - that ally is already in the ring. The cursor is moved to an enemy, but one press of Left steps back onto the ally.</p>
+  <p><strong>The hit breaks the HP display.</strong> The Point Card's damage routine subtracts HP and does nothing else. Every other routine that changes a party member's HP also notes how far the on-screen number still has to count. At the end of an action the game waits until on-screen HP equals real HP. Here they differ and nothing is counting, so it waits forever while the camera circles.</p>
+  <p>This is the same end state as the first of the two known battle softlocks - the HP-counter wait - reached a new way, from the controller on an unmodified disc. It is not the approach softlock described in <a href="../gaza-orbit-softlock.html">the endless camera orbit</a>.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 640 330" role="img" aria-label="Top: the four-entry target ring. Its first entry is the acting character&#x27;s last target, here a stale ally seat; the next three are monsters. The cursor starts on the first monster and one press of Left moves it to the ally. Bottom: after the Point Card hit the real HP is 188 while the on-screen HP still reads 600, and the countdown that would close the 412-point gap is zero" xmlns="http://www.w3.org/2000/svg">
+      <text class="dg-label dg-start" x="20" y="20">1. The target ring is built before the last target is checked</text>
+      <rect class="dg-node-warn" x="20" y="32" width="144" height="52" rx="4"/>
+      <text class="dg-label" x="92" y="55">ctx+0x245: head</text>
+      <text class="dg-sub" x="92" y="71">ally seat 0 (stale)</text>
+      <rect class="dg-node-accent" x="172" y="32" width="144" height="52" rx="4"/>
+      <text class="dg-label" x="244" y="55">ctx+0x246</text>
+      <text class="dg-sub" x="244" y="71">monster seat 3</text>
+      <rect class="dg-node" x="324" y="32" width="144" height="52" rx="4"/>
+      <text class="dg-label" x="396" y="55">ctx+0x247</text>
+      <text class="dg-sub" x="396" y="71">monster seat 4</text>
+      <rect class="dg-node" x="476" y="32" width="144" height="52" rx="4"/>
+      <text class="dg-label" x="548" y="55">ctx+0x248</text>
+      <text class="dg-sub" x="548" y="71">monster seat 5</text>
+      <path class="dg-edge" d="M244,112 L92,112" style="stroke:var(--warn)"/>
+      <path d="M92.0,112.0 L100.0,108.0 L100.0,116.0 z" fill="var(--warn)"/>
+      <text class="dg-sub" x="168" y="104">Left</text>
+      <text class="dg-sub" x="244" y="128">cursor starts here</text>
+      <text class="dg-sub" x="92" y="128">and lands here</text>
+      <text class="dg-label dg-start" x="20" y="166">2. The hit lowers real HP but not the number on screen</text>
+      <text class="dg-sub dg-start" x="20" y="196">real HP</text>
+      <rect class="dg-node-warn" x="130" y="182" width="150.4" height="22" rx="4"/>
+      <text class="dg-sub dg-start" x="288.4" y="197">188  (actor +0x14C)</text>
+      <text class="dg-sub dg-start" x="20" y="230">on-screen HP</text>
+      <rect class="dg-node" x="130" y="216" width="480" height="22" rx="4"/>
+      <text class="dg-label" x="370" y="231">600  (actor +0x172)</text>
+      <text class="dg-sub dg-start" x="20" y="264">left to count</text>
+      <rect fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3" x="130" y="250" width="329.6" height="22" rx="4"/>
+      <text class="dg-label" x="294.8" y="265">should be 412, is 0  (actor +0x10)</text>
+      <text class="dg-sub dg-start" x="20" y="294">The end-of-action check waits until real and on-screen HP match.</text>
+      <text class="dg-sub dg-start" x="20" y="310">Nothing is counting, so it never ends. (Example figures: a 412-point hit at 600 HP.)</text>
+      </svg>
+    <figcaption>Top: the ring keeps the stale ally in its first slot. Bottom: the bars are to scale for an example 412-point hit; the dashed bar is the countdown that should exist and does not.</figcaption>
+  </figure>
+
+  <ol class="steps">
+    <li><b>Aim at an ally</b><span>A healing item or Elixir leaves an ally seat in the actor's target byte <code>+0x1DD</code>.</span></li>
+    <li><b>Pick the Point Card</b><span>The ring is built at <code>0x801D18F8</code>; the enemy check comes after, at <code>0x801D1918</code>.</span></li>
+    <li><b>Press Left</b><span>The cycler <code>FUN_801D8D00</code> returns the ring head: the ally.</span></li>
+    <li><b>The hit lands</b><span>Arm <code>0x8004209C</code> lowers HP and seeds no countdown.</span></li>
+    <li><b>The wait</b><span>State <code>0x51</code> asks <code>FUN_801E7250</code> every frame and is always told "not settled".</span></li>
+  </ol>
+
+  <p>Predictions from the code, none of them tested: it hangs on <em>any</em> party target, not only the user; it hangs whether or not the hit is lethal; with an empty Point Card nothing is written and the battle continues; aimed at a monster it is harmless.</p>
+
+  <details class="disclosure">
+    <summary>The instructions</summary>
+    <div class="disclosure-body">
+<pre>801d18f8  jal 0x801d8a88       ; build the target ring
+801d1918  lbu v0,0x1dd(v0)     ; only now read the stored target
+801d1924  sltiu v0,v0,5        ; a monster seat (3..7)?
+801d1930  jal 0x801db8b4       ; if not: first living monster</pre>
+      <p>The Magic window runs the same two steps in the right order (check at <code>0x801D1C8C</code>, build at <code>0x801D1CC0</code>). The builder stores the unchecked target as the ring head with <code>sb v0,0x245(v1)</code> at <code>0x801D8B30</code>. The picker stores the cycler's answer at <code>0x801D2630</code> and its confirm path never re-checks it.</p>
+<pre>801e4084  addiu v0,zero,0xfe   ; item 0xFE?
+801e40bc  addiu v0,zero,0xe
+801e40c0  sb v0,0x1e8(s3)      ; applier selector = 0x0E</pre>
+      <p>The discharge arm spends <code>min(bank, 9999)</code> from <code>0x800845B4</code>, queues a reaction clip and writes HP at <code>0x8004219C</code>. It writes neither the countdown at actor <code>+0x10</code> nor the displayed HP at <code>+0x172</code>; the heal and revive arms of the same routine do, at <code>0x800408FC</code>, <code>0x80040D28</code> and <code>0x800410BC</code>. The settle check compares <code>+0x14C</code> with <code>+0x172</code> at <code>0x801E72A8..0x801E72B4</code>.</p>
+    </div>
+  </details>
+
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x800845B4</code></td><td>RAM</td><td>Point Card bank</td><td>disassembly</td></tr>
+      <tr><td><code>0x80074F50</code>, <code>0x800754B8</code></td><td>SCUS</td><td>Item <code>0xFE</code> record and its descriptor (flags <code>0xC4</code>: enemy side, battle, single)</td><td>disc data</td></tr>
+      <tr><td><code>0x801D18E0</code></td><td>PROT 0898</td><td>Item window, enemy single-target arm</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D8A88</code></td><td>PROT 0898</td><td>Ring builder; head store <code>0x801D8B30</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801D8D00</code></td><td>PROT 0898</td><td>Ring cycler</td><td>disassembly</td></tr>
+      <tr><td><code>ctx[+0x244..+0x248]</code></td><td>RAM</td><td>Ring count, head, three more seats</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D23F0</code></td><td>PROT 0898</td><td>Target picker; store at <code>0x801D2630</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801D19A0</code></td><td>PROT 0898</td><td>Ally-item arm seeding the user's own seat</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E4080</code></td><td>PROT 0898</td><td>Action state <code>0x3E</code>: selector override for item <code>0xFE</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801E4134</code></td><td>PROT 0898</td><td>Action state <code>0x3F</code>: call into the applier</td><td>disassembly</td></tr>
+      <tr><td><code>0x8004209C</code></td><td>SCUS</td><td>Point Card discharge arm, through <code>0x8004219C</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801E7250</code></td><td>PROT 0898</td><td>HP-counter settle check</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E6044</code></td><td>PROT 0898</td><td>Action state <code>0x51</code> gate</td><td>disassembly</td></tr>
+      <tr><td>actor <code>+0x10</code>, <code>+0x14C</code>, <code>+0x172</code>, <code>+0x1DD</code></td><td>RAM</td><td>Countdown, real HP, on-screen HP, target seat</td><td>disassembly</td></tr>
+      <tr><td>the hang itself</td><td>-</td><td>Follows from the two defects; not run</td><td>inference</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Verifying it</h3>
+  <p>Use a healing item on the acting character, or open and cancel its ally cursor. Next turn pick the Point Card and press Left: a breakpoint at <code>0x801D2630</code> shows a seat of 0, 1 or 2. Confirm, then watch the action state byte sit at <code>0x51</code> with its timer frozen at <code>0x3C</code>, the target's <code>+0x14C</code> different from its <code>+0x172</code> and its <code>+0x10</code> zero. Writing <code>+0x172 = +0x14C</code> by hand should release the battle. Related reference: <a href="../../subsystems/battle-action.html">battle action state machine</a>.</p>
+  <p>Open: one community report says the character is revived at once before the freeze. That was not traced.</p>
+</section>
+
+<section class="doc-section" id="jp-coin-vendor-99">
+  <h2>Coin vendor purchases past 99 (Japanese release)</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>On the Japanese release a coin vendor sells an item while 99 are held; the coins go and the count stays 99 (community report)</dd>
+    <dt>Cause</dt><dd>The bag silently trims a stack to 99, and the purchase never checks whether its item fitted; only a check before the confirm box prevents the loss</dd>
+    <dt>Where</dt><dd>Prize session <code>FUN_801DC1CC</code> in PROT 0899; bag add <code>FUN_800421D4</code> in <code>SCUS_942.54</code></dd>
+    <dt>Affects</dt><dd>Every coin prize row on the Japanese release (inferred)</dd>
+    <dt>Status</dt><dd><span class="tag tag-partial">Partially explained</span> - USA paths read; the Japanese difference is inferred</dd>
+  </dl>
+
+  <p>Only the USA disc was read. On it, the coin counter has one check before the Yes / No box - "do you hold fewer than 99?" - and after that it adds the item and takes the coins with no further test. The bag's add routine never refuses anything: it adds, then quietly trims the stack back to 99.</p>
+  <p>With the front check in place the trim never matters. Without it you get exactly the report: the coins go, the item is added and trimmed off again. So the Japanese build must be missing that one check. The reverse idea - check present, trim missing - would produce stacks above 99, which is not what is reported.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 640 240" role="img" aria-label="Two rows. USA disc: holding 99, the purchase reaches a held-count check and is refused with a buzz. Japanese disc as inferred: the check is absent, so the item is added and trimmed back to 99 and the coins are still deducted" xmlns="http://www.w3.org/2000/svg">
+      <text class="dg-label dg-start" x="20" y="20">USA disc (read from the code)</text>
+      <rect class="dg-node" x="20" y="32" width="130" height="50" rx="4"/>
+      <text class="dg-label" x="85" y="54">Confirm</text>
+      <text class="dg-sub" x="85" y="70">holding 99</text>
+      <rect class="dg-node-ok" x="180" y="32" width="170" height="50" rx="4"/>
+      <text class="dg-label" x="265" y="54">Fewer than 99 held?</text>
+      <text class="dg-sub" x="265" y="70">0x801DC3DC..0x801DC3F0</text>
+      <rect class="dg-node-ok" x="380" y="32" width="240" height="50" rx="4"/>
+      <text class="dg-label" x="500" y="54">No: buzz, nothing bought</text>
+      <text class="dg-sub" x="500" y="70">coins and stack unchanged</text>
+      <path class="dg-edge" d="M150,57 L180,57"/>
+      <path d="M180.0,57.0 L172.0,61.0 L172.0,53.0 z" fill="var(--dg-accent)"/>
+      <path class="dg-edge" d="M350,57 L380,57" style="stroke:var(--ok)"/>
+      <path d="M380.0,57.0 L372.0,61.0 L372.0,53.0 z" fill="var(--ok)"/>
+      <text class="dg-label dg-start" x="20" y="128">Japanese disc (inferred from the report)</text>
+      <rect class="dg-node" x="20" y="140" width="130" height="50" rx="4"/>
+      <text class="dg-label" x="85" y="162">Confirm</text>
+      <text class="dg-sub" x="85" y="178">holding 99</text>
+      <rect fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3" x="180" y="140" width="130" height="50" rx="4"/>
+      <text class="dg-label" x="245" y="169">check absent</text>
+      <rect class="dg-node-warn" x="340" y="140" width="140" height="50" rx="4"/>
+      <text class="dg-label" x="410" y="162">Add 1, trim to 99</text>
+      <text class="dg-sub" x="410" y="178">FUN_800421D4</text>
+      <rect class="dg-node-warn" x="510" y="140" width="110" height="50" rx="4"/>
+      <text class="dg-label" x="565" y="162">Coins - price</text>
+      <text class="dg-sub" x="565" y="178">no test</text>
+      <path class="dg-edge" d="M150,165 L180,165"/>
+      <path d="M180.0,165.0 L172.0,169.0 L172.0,161.0 z" fill="var(--dg-accent)"/>
+      <path class="dg-edge" d="M310,165 L340,165" style="stroke:var(--warn)"/>
+      <path d="M340.0,165.0 L332.0,169.0 L332.0,161.0 z" fill="var(--warn)"/>
+      <path class="dg-edge" d="M480,165 L510,165" style="stroke:var(--warn)"/>
+      <path d="M510.0,165.0 L502.0,169.0 L502.0,161.0 z" fill="var(--warn)"/>
+      <text class="dg-sub dg-start" x="20" y="212">The trim is in both builds. It only costs the player anything</text>
+      <text class="dg-sub dg-start" x="20" y="226">when the check in front of it is missing.</text>
+      </svg>
+    <figcaption>The USA row is read from the code. The Japanese row is what the USA code does with its held-count check removed.</figcaption>
+  </figure>
+
+  <p>The USA disc has a relative of this fault. Stackable shop items go through a quantity screen capped at <code>99 - held</code>, but equipment does not: the buy confirm tests only gold, and the "to the bag" row adds the item and debits gold with no held-count read between them. Buying a hundredth copy of one piece of equipment should take the gold and leave 99. That is inferred from the instructions and untested.</p>
+
+  <details class="disclosure">
+    <summary>The instructions</summary>
+    <div class="disclosure-body">
+<pre>801dc3dc  jal 0x80042f4c          ; held count
+801dc3ec  slti v0,v0,0x63
+801dc3f0  bne v0,zero,0x801dc408  ; fewer than 99: open Yes / No
+801dc3f8  jal 0x80035bd0          ; otherwise buzz and stay
+
+801dc514  jal 0x800421d4          ; commit: bag add, result ignored
+801dc550  sw v1,0x464(a0)         ; coins -= price
+
+800422f0  slti v0,v0,0x64         ; bag add: over 99?
+800422fc  li v1,0x63              ; then 99
+80042300  sb v1,0x1819(a0)</pre>
+    </div>
+  </details>
+
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801DC1CC</code></td><td>PROT 0899</td><td>Prize-exchange session</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E4518</code></td><td>PROT 0899</td><td>Prize table: 8-byte rows of item, one-shot flag, coin price; <code>0x60</code> per vendor</td><td>disc data</td></tr>
+      <tr><td><code>0x800845A4</code></td><td>RAM</td><td>Coin bank</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DC3C0</code></td><td>PROT 0899</td><td>Affordability and held-count checks, through <code>0x801DC3F8</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801DC4C0</code></td><td>PROT 0899</td><td>Commit: add, debit, set the row's one-shot flag</td><td>disassembly</td></tr>
+      <tr><td><code>0x80042F4C</code></td><td>SCUS</td><td>Held count of an item</td><td>disassembly</td></tr>
+      <tr><td><code>0x800421D4</code></td><td>SCUS</td><td>Bag add; trim at <code>0x800422E0..0x80042300</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801DB21C</code>, <code>0x801DB380</code></td><td>PROT 0899</td><td>Gold-shop equipment buy with no held-count check</td><td>disassembly</td></tr>
+      <tr><td>the missing check on the Japanese disc</td><td>-</td><td>The <code>jal 0x80042f4c</code> / <code>slti 0x63</code> pair</td><td>inference</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Verifying it</h3>
+  <p>On the USA disc hold 99 of a prize item and try the counter: it buzzes and no box opens. Force the branch at <code>0x801DC3F0</code> to be taken and buy: the coins drop and the count stays at 99, which is the reported behaviour. On a Japanese disc, find the matching routine and look for the absent compare against <code>0x63</code>. Related reference: <a href="../../subsystems/shop.html">shops and the prize exchange</a>, <a href="../../subsystems/inventory.html">inventory</a>.</p>
+</section>
+
+<section class="doc-section" id="war-god-icon-missable">
+  <h2>War God Icon can be missed for good</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>The War God Icon is lost for good if the Muscle Dome Expert Course is beaten before defeating Jette (community report)</dd>
+    <dt>Cause</dt><dd>The item and its "already awarded" flag are handed out by two different pieces of code that disagree about what clearing the course means</dd>
+    <dt>Where</dt><dd>Arena settlement <code>FUN_801D0F60</code> in PROT 0977; lobby victory scene, record P2[9] of scene <code>koin1</code> (PROT 543)</dd>
+    <dt>Affects</dt><dd>The <strong>Master</strong> course - not Expert as reported - won while it is still shortened</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - from the instructions and the scene script; not run</dd>
+  </dl>
+
+  <div class="notice warn">
+    <div class="notice-title">Correction to the report</div>
+    The dome's three courses are Beginner, Expert and Master. The Icon belongs to <strong>Master</strong>. Nothing in the script or the arena program ties it to the Expert course.
+  </div>
+
+  <p>The prize is split in two. The <strong>item</strong> is added by the arena program, and only when the contest ended on its thirteenth fight and an "already awarded" flag is clear. The <strong>flag</strong> is set by the lobby's victory scene, which only asks: was this a Master contest, and was it won?</p>
+  <p>Early in the story the Master course is cut short to 8, 11 or 12 fights. Winning the shortened course is still a win as far as the victory scene is concerned, so it sets the flag and plays the presentation - the announcer names the Icon. But the arena saw fewer than thirteen fights and added nothing. From then on the flag is set, and the arena skips the item every time, including after a full thirteen-fight win.</p>
+  <p>The last of the three story flags that lengthen the course is set inside Jette's Fortress. That is where "before defeating Jette" comes from.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 640 300" role="img" aria-label="A ruler of the thirteen Master-course fights. The arena gives the War God Icon only on fight 13. Three bars show the shortened courses of 8, 11 and 12 fights that apply while story flags 0x378, 0x382 and 0x471 are clear; winning any of them sets the awarded flag 0x6CB without giving the item. The full 13-fight bar gives the item" xmlns="http://www.w3.org/2000/svg">
+      <text class="dg-label dg-start" x="20" y="20">Master course, fights 1 to 13</text>
+      <rect class="dg-node" x="60" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="79" y="48">1</text>
+      <rect class="dg-node" x="100" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="119" y="48">2</text>
+      <rect class="dg-node" x="140" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="159" y="48">3</text>
+      <rect class="dg-node" x="180" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="199" y="48">4</text>
+      <rect class="dg-node" x="220" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="239" y="48">5</text>
+      <rect class="dg-node" x="260" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="279" y="48">6</text>
+      <rect class="dg-node" x="300" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="319" y="48">7</text>
+      <rect class="dg-node" x="340" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="359" y="48">8</text>
+      <rect class="dg-node" x="380" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="399" y="48">9</text>
+      <rect class="dg-node" x="420" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="439" y="48">10</text>
+      <rect class="dg-node" x="460" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="479" y="48">11</text>
+      <rect class="dg-node" x="500" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="519" y="48">12</text>
+      <rect class="dg-node-ok" x="540" y="30" width="38" height="26" rx="4"/>
+      <text class="dg-label" x="559" y="48">13</text>
+      <text class="dg-sub" x="559" y="72">item</text>
+      <rect class="dg-node-warn" x="60" y="92" width="318" height="24" rx="4"/>
+      <text class="dg-label dg-start" x="68" y="108">0x378 clear: ends at 8</text>
+      <rect class="dg-node-warn" x="60" y="126" width="438" height="24" rx="4"/>
+      <text class="dg-label dg-start" x="68" y="142">0x382 clear: ends at 11</text>
+      <rect class="dg-node-warn" x="60" y="160" width="478" height="24" rx="4"/>
+      <text class="dg-label dg-start" x="68" y="176">0x471 clear: ends at 12</text>
+      <rect class="dg-node-ok" x="60" y="194" width="518" height="24" rx="4"/>
+      <text class="dg-label dg-start" x="68" y="210">all three set: 13 fights</text>
+      <path class="dg-edge-dim" d="M540,62 L540,218"/>
+      <text class="dg-sub dg-start" x="20" y="242">Arena program: gives the item only on fight 13, and only while flag 0x6CB is clear.</text>
+      <text class="dg-sub dg-start" x="20" y="258">Lobby scene: sets flag 0x6CB after any won Master contest, whatever its length.</text>
+      <text class="dg-sub dg-start" x="20" y="274">A win on a shortened course sets the flag with no item.</text>
+      <text class="dg-sub dg-start" x="20" y="290">After that the 13-fight win is refused too.</text>
+      </svg>
+    <figcaption>Each bar is a Master course as long as it runs while the named story flag is clear. Only the full bar reaches the fight the arena program pays out on, but the lobby sets the "awarded" flag after a win on any of them.</figcaption>
+  </figure>
+
+  <div class="table-wrap"><table>
+    <thead><tr><th>Story flag</th><th>Course length while it is clear</th><th>Set by</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x378</code></td><td>8 fights</td><td><code>map03</code> P2[15] and scripts in nine other scenes</td></tr>
+      <tr><td><code>0x382</code></td><td>11 fights</td><td>Scripts in eleven scenes</td></tr>
+      <tr><td><code>0x471</code></td><td>12 fights</td><td><code>chitei2</code> P1[0] only (Jette's Fortress), after a staged fight that precedes the Jette fight</td></tr>
+    </tbody>
+  </table></div>
+  <p>The tests overwrite one another in order, so the last missing flag decides: with all three missing the course runs 12 fights.</p>
+
+  <details class="disclosure">
+    <summary>The instructions and script bytes</summary>
+    <div class="disclosure-body">
+<pre>801ced44  jal 0x8003ce64   ; flag 0x378 missing: length 8
+801ced6c  jal 0x8003ce64   ; flag 0x382 missing: length 11
+801ced94  jal 0x8003ce64   ; flag 0x471 missing: length 12
+
+801d111c  slti a1,a1,0xd          ; round reached below 13?
+801d1124  bnez a1,0x801d1148      ; yes: no item
+801d112c  jal 0x8003ce64          ; flag 0x6CB
+801d1134  bnez v0,0x801d114c      ; set: no item
+801d1140  jal 0x800421d4          ; War God Icon (item 0xCD) x1</pre>
+      <p>The arena never sets <code>0x6CB</code>. A win sets flag <code>0x50A</code> at <code>0x801D101C</code>, and the lobby's winner scene is gated on that flag. In that scene, at record <code>+0x0369</code>, <code>76 CB</code> tests <code>0x6CB</code> and <code>75 38</code> tests the Master-chosen flag <code>0x538</code>; the target at <code>+0x03E1</code> begins with <code>56 CB</code>, set <code>0x6CB</code>. The item appears there as a name in the text only - the record contains no give-item instruction - and neither test looks at the number of fights. No instruction on the disc clears <code>0x6CB</code>.</p>
+    </div>
+  </details>
+
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>koin1</code> P1[9] <code>+0x0B6F</code></td><td>PROT 543</td><td>Master row of the course menu; sets flag <code>0x538</code></td><td>disc data</td></tr>
+      <tr><td><code>0x801CED28</code></td><td>PROT 0977</td><td>Course-length overrides, through <code>0x801CEDA4</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801CEE10</code></td><td>PROT 0977</td><td>Win latch store (<code>0x801D1ADC</code>)</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D1A90</code>, <code>0x801D1A94</code></td><td>PROT 0977</td><td>Course index, round reached</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D0F60</code></td><td>PROT 0977</td><td>Settlement; item test <code>0x801D111C..0x801D1144</code></td><td>disassembly</td></tr>
+      <tr><td><code>koin1</code> P1[0] <code>+0x0181</code></td><td>PROT 543</td><td>Lobby dispatch of the result scenes</td><td>disc data</td></tr>
+      <tr><td><code>koin1</code> P2[9] <code>+0x0369</code></td><td>PROT 543</td><td>The two flag tests</td><td>disc data</td></tr>
+      <tr><td><code>koin1</code> P2[9] <code>+0x03E1</code></td><td>PROT 543</td><td>Set flag <code>0x6CB</code></td><td>disc data</td></tr>
+      <tr><td><code>0x80085831</code> bit <code>0x10</code></td><td>RAM</td><td>Flag <code>0x6CB</code>: Icon presented</td><td>disc data</td></tr>
+      <tr><td><code>0x800857FF</code> bit <code>0x80</code></td><td>RAM</td><td>Flag <code>0x538</code>: Master chosen</td><td>disc data</td></tr>
+      <tr><td><code>0x800857F9</code> bit <code>0x20</code></td><td>RAM</td><td>Flag <code>0x50A</code>: contest won</td><td>disassembly</td></tr>
+      <tr><td><code>0x800857C7</code> bit <code>0x80</code></td><td>RAM</td><td>Flag <code>0x378</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x800857C8</code> bit <code>0x20</code></td><td>RAM</td><td>Flag <code>0x382</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x800857E6</code> bit <code>0x40</code></td><td>RAM</td><td>Flag <code>0x471</code></td><td>disassembly</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Verifying it</h3>
+  <p>From a save with flag <code>0x471</code> clear, win the Master course. It ends after fight 12; a breakpoint at <code>0x801D1124</code> shows the branch taken and the item add skipped; after the lobby scene, byte <code>0x80085831</code> has bit <code>0x10</code> set. The counter-test: clear that bit, set <code>0x471</code>, win thirteen fights, and the item arrives. Clearing bit <code>0x10</code> at <code>0x80085831</code> should repair an affected save.</p>
+  <p>Open: whether the party can leave Jette's Fortress between the last flag being set and the Jette fight was not checked.</p>
+</section>

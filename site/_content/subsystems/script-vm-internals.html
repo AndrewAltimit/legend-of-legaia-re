@@ -60,7 +60,7 @@
       <tr><td><code>38</code></td><td>CAM_CFG (facing)</td><td>3</td><td>Set the actor's heading from the 8-direction compass at <code>0x80073F04</code>, or halt-acquire it; despite the legacy name it is not a camera op</td></tr>
       <tr><td><code>39</code></td><td>GIVE_ITEM</td><td>2</td><td>Add one of item <code>id</code> - the treasure-chest path; the id is the inline byte, not a per-scene table (the chest's "There is a ..." text names the item separately)</td></tr>
       <tr><td><code>3A</code></td><td>ADD_MONEY</td><td>4</td><td>Signed 24-bit gold delta, clamped to <code>0..9,999,999</code></td></tr>
-      <tr><td><code>3B</code></td><td>SET_ITEM_COUNT</td><td>3</td><td>Write one per-character inventory byte, then refresh the display</td></tr>
+      <tr><td><code>3B</code></td><td>SET_EQUIP_SLOT</td><td>3</td><td>Write one equipment-slot byte of a character record, then rebuild the derived stats</td></tr>
       <tr><td><code>3C 3D</code></td><td>PARTY_ADD / REMOVE</td><td>2</td><td>Sorted insert / remove, cap 4, leader fix-up</td></tr>
       <tr><td><code>3E</code></td><td>BATTLE / MINIGAME</td><td>3+</td><td><code>op0 == 0xFF</code> or <code>&lt; 100</code>: scripted battle on formation row <code>op1</code>; <code>op0 &ge; 100</code>: minigame door-warp (<a href="#op-3e">below</a>)</td></tr>
       <tr><td><code>3F</code></td><td>SCENE_CHANGE</td><td>7 + len</td><td>Named warp <code>[idx:i16][len][name][x][z][dir]</code>: destination scene name, entry tile and arrival facing</td></tr>

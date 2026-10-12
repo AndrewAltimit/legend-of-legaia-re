@@ -106,8 +106,8 @@
       <tr><td><code>+0x000</code></td><td>4</td><td><code>xp_cumulative</code></td><td>cumulative experience - "Max Exp" target; what the level-up applier compares against the threshold</td></tr>
       <tr><td><code>+0x004</code></td><td>4</td><td><code>xp_next_threshold</code></td><td>next-level XP threshold - the status screen's "next" readout (<a href="#xp-fields">note</a>); seeded per character to <code>reach(L2)</code></td></tr>
       <tr><td><code>+0x008</code></td><td>8</td><td>header tail</td><td>unmapped</td></tr>
-      <tr><td><code>+0x010</code></td><td>228</td><td>stat block</td><td>partially mapped via the per-frame stat aggregator</td></tr>
-      <tr><td><code>+0x0F4</code></td><td>16</td><td><code>ability_bits</code></td><td>OR'd into the shared ability bitfield by the per-frame aggregator (<a href="accessory-passive-table.html">accessory passives</a>)</td></tr>
+      <tr><td><code>+0x010</code></td><td>228</td><td>stat block</td><td>partially mapped via the stat aggregator</td></tr>
+      <tr><td><code>+0x0F4</code></td><td>16</td><td><code>ability_bits</code></td><td>OR'd into the shared ability bitfield by the stat aggregator (<a href="accessory-passive-table.html">accessory passives</a>)</td></tr>
       <tr><td><code>+0x104</code></td><td>2</td><td><code>hp_max_live</code></td><td>effective max, aggregator-rebuilt</td></tr>
       <tr><td><code>+0x106</code></td><td>2</td><td><code>hp_curr_live</code></td><td>"Infinite HP"; walk-regen bumps it, clamping at <code>+0x104</code></td></tr>
       <tr><td><code>+0x108</code> / <code>+0x10A</code></td><td>2+2</td><td><code>mp_max_live</code> / <code>mp_curr_live</code></td><td>"Max MP"; each pair is (max, cur)</td></tr>
@@ -126,18 +126,18 @@
       <tr><td><code>+0x131</code></td><td>1</td><td>unread</td><td>the new-game seed inits it to 1 (<code>sb $v0, 0x6F9($s0)</code> at <code>0x800561C8</code>) and nothing on the disc reads it. <code>+0x132..+0x13B</code> unmapped</td></tr>
       <tr><td><code>+0x13C</code></td><td>1</td><td><code>learned_spell_count</code></td><td>length byte of the id list below - "Magic Slot Activator" writes <code>0x24</code> here (<a href="#spell-count">note</a>)</td></tr>
       <tr><td><code>+0x13D</code> / <code>+0x149</code> / <code>+0x155</code></td><td>3&times;12</td><td><code>magic_group_0..2</code></td><td>"Magic Modifier 1..12" - three copies of the slot</td></tr>
-      <tr><td><code>+0x161</code></td><td>16</td><td><code>summon_levels</code></td><td>"All Summons Level 9" - one byte per summon id (<a href="#summon-levels">note</a>); <code>+0x179..+0x184</code> unmapped</td></tr>
+      <tr><td><code>+0x161</code></td><td>36</td><td><code>spell_levels</code></td><td>per-spell level, parallel to the ids at <code>+0x13D</code>; the "All Summons Level 9" target, because summons are list entries (<a href="#summon-levels">note</a>)</td></tr>
       <tr><td><code>+0x185</code></td><td>1</td><td><code>displayed_skill_count</code></td><td>menu-overlay art roster count</td></tr>
       <tr><td><code>+0x186</code></td><td>16</td><td><code>displayed_skill_ids</code></td><td>"Has all Arts"; item-use learn does an <strong>ordered</strong> insert, keeping the list sorted ascending by id (the applier arm at <code>0x80041FB4</code>, not a head insert). Fifteen arts per character, so the 16th slot <code>+0x195</code> is never reached - the patcher's <code>--show-super-arts</code> keeps its performed-Super mask there</td></tr>
       <tr><td><code>+0x196</code></td><td>1</td><td><code>armor_id</code></td><td>"Armor Modifier" / "Best Equipment"</td></tr>
       <tr><td><code>+0x197</code></td><td>1</td><td><code>head_gear_id</code></td><td>"Head Gear Modifier"</td></tr>
       <tr><td><code>+0x198</code></td><td>1</td><td><code>weapon_id</code></td><td>"Weapon Modifier"</td></tr>
-      <tr><td><code>+0x199</code></td><td>1</td><td><code>accessory_or_seru_lock</code></td><td>"Activate Meta/Terra/Ozma at Lv9" - the Seru lock byte the menu reads to gate summon access</td></tr>
+      <tr><td><code>+0x199</code></td><td>1</td><td><code>ra_seru_item_id</code></td><td>the Ra-Seru equipment byte. "Activate Meta at Lv9" writes item <code>0x09</code> (final-form Ra-Seru Meta) here; the grant scan in <code>FUN_80042558</code> then inserts spell <code>0x9E</code></td></tr>
       <tr><td><code>+0x19A</code></td><td>1</td><td><code>leg_gear_id</code></td><td>"Leg Gear Modifier"</td></tr>
       <tr><td><code>+0x19B</code> .. <code>+0x19D</code></td><td>3</td><td><code>accessory_1..3_id</code></td><td>"Accessory N Modifier"; <code>+0x19E..+0x1A6</code> unmapped</td></tr>
       <tr><td><code>+0x1A7</code> / <code>+0x1B7</code></td><td>16+16</td><td><code>auto_command_string_a</code> / <code>_b</code></td><td>the battle menu's <strong>Auto</strong> replay queue, primary and secondary AP band (<a href="#auto-command">note</a>); <code>+0x1C7..+0x2A6</code> unmapped</td></tr>
       <tr><td><code>+0x2A7</code></td><td>9</td><td>display name</td><td>NUL-padded</td></tr>
-      <tr><td><code>+0x2B0</code></td><td>14&times;0x14</td><td><code>active_spell_slots[14]</code></td><td>runtime active-spell slots (<code>active_spell_slot()</code> accessor); <code>+0x380..+0x413</code> unmapped</td></tr>
+      <tr><td><code>+0x2B0</code></td><td>14&times;0x14</td><td><code>summon_stash_slots[14]</code></td><td>stash slots: the level (<code>+5</code>) and u32 counter (<code>+1..+4</code>) of an equipment-granted summon while its item is unequipped; code addresses slots 0..4 only (<code>active_spell_slot()</code> accessor); <code>+0x380..+0x413</code> unmapped</td></tr>
     </tbody>
   </table>
   </div>
@@ -168,10 +168,13 @@
   for the id list at <code>+0x13D</code>. "Activating" the list is just declaring it 36 entries long. Treat it as
   a count when writing: a value past the real id run displays uninitialised slots rather than granting spells.</p>
 
-  <h3 id="summon-levels"><code>+0x161..+0x178</code> is the summon-level array, not spell levels</h3>
-  <p>One byte per summon id, stamped <code>0x09</code> by the All Summons Level 9 cheat. Any per-spell levels sit
-  in the magic-group window at <code>+0x13D..+0x160</code>. Accessor <code>summon_levels()</code>; the older
-  <code>SpellList::levels</code> is kept for compatibility only.</p>
+  <h3 id="summon-levels"><code>+0x161..</code> is the per-spell level array, parallel to the ids at <code>+0x13D..</code></h3>
+  <p><code>+0x161 + i</code> is the level of the spell whose id is at <code>+0x13D + i</code>, with the u32 counter at
+  <code>+0x08 + i * 4</code> as the third parallel array: the insert routine <code>FUN_800432BC</code> shifts and writes all
+  three together, and <code>FUN_80042DBC</code> compacts all three together. Summons are ordinary entries of this list
+  (ids <code>0x99..0xA0</code>), which is why the All Summons Level 9 cheat, stamping <code>0x09</code> across
+  <code>+0x161..</code>, raises them: it raises every listed spell. There is no separate per-summon-id level array.
+  The <code>summon_levels()</code> accessor reads the first 16 bytes of this array.</p>
 
   <h3 id="cap-constant"><code>+0x120</code> is the record-stat cap constant</h3>
   <p>Always <code>100</code>: the hard ceiling record-side stats clamp against, rewritten by the level-up
@@ -224,10 +227,10 @@
           <tr><td>Level 99</td><td><code>0x80084838</code></td><td><code>+0x130</code></td><td>level_displayed</td></tr>
           <tr><td>Magic Slot Activator</td><td><code>0x80084844</code></td><td><code>+0x13C</code></td><td>learned_spell_count</td></tr>
           <tr><td>Magic Modifier 1</td><td><code>0x80084845</code> / <code>51</code> / <code>5D</code></td><td><code>+0x13D</code> / <code>+0x149</code> / <code>+0x155</code></td><td>three magic-group copies</td></tr>
-          <tr><td>All Summons Level 9</td><td><code>0x80084869..86</code></td><td><code>+0x161..+0x178</code></td><td>summon_levels</td></tr>
+          <tr><td>All Summons Level 9</td><td><code>0x80084869..86</code></td><td><code>+0x161..+0x178</code></td><td>spell_levels (first 16 list positions)</td></tr>
           <tr><td>Has all Arts</td><td><code>0x8008488D..9A</code></td><td><code>+0x185..+0x192</code></td><td>displayed_skill_count + ids</td></tr>
           <tr><td>Best Equipment</td><td><code>0x8008489E</code> / <code>A0</code> / <code>A2</code></td><td><code>+0x196</code> / <code>+0x198</code> / <code>+0x19A</code></td><td>armor / weapon / leg gear</td></tr>
-          <tr><td>Activate Meta at Lv9</td><td><code>0x800848A1</code></td><td><code>+0x199</code></td><td>accessory_or_seru_lock</td></tr>
+          <tr><td>Activate Meta at Lv9</td><td><code>0x800848A1</code></td><td><code>+0x199</code></td><td>ra_seru_item_id</td></tr>
           <tr><td>Accessory 1 Modifier</td><td><code>0x800848A3</code></td><td><code>+0x19B</code></td><td>accessory_1_id</td></tr>
           <tr><td>Max Exp</td><td><code>0x80084708</code> / <code>0A</code></td><td><code>+0x000</code> / <code>+0x002</code></td><td>xp_cumulative (combined u32)</td></tr>
         </tbody>

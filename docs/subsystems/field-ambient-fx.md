@@ -160,8 +160,11 @@ A stager part is an ordinary actor out of the scene's shared actor pool, and
 the pool is small and fixed. `FUN_800203EC` seeds the free stack with `0x8E`
 down to `0` - **143 slots**, `0xD8` bytes apart - `FUN_80020454` pops one per
 spawn (returning null when the stack is empty, which `FUN_80020DE0` treats as
-an error and reports through `FUN_800567A8`), and `FUN_800204A4` pushes it
-back. Every actor in the scene draws on that pool, not the ambient tree alone.
+an error: it increments the failed-spawn counter `0x8007B8A0`, logs through
+`FUN_800567A8` and returns null; the frame driver `FUN_80016444` prints
+`WORK ERR%d` with that counter every frame it is non-zero - see
+[`field-oddities.md`](../reference/glitches/field-oddities.md#work-err-on-mt-rikuroa)),
+and `FUN_800204A4` pushes it back. Every actor in the scene draws on that pool, not the ambient tree alone.
 
 ```mermaid
 stateDiagram-v2

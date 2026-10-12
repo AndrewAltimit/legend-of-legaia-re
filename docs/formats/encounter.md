@@ -347,7 +347,7 @@ The only static writer is the world-map debug menu's `ENCOUNT` row (`FUN_801EA9B
 
 #### Steps that do not roll
 
-Before the rate scale, the reader returns without touching the counter on any of these, and on a zero second argument (`0x801DA130..0x801DA180`):
+The reader leaves at its very top when the formation table's count byte is zero (`beq` at `0x801D9E68`) or when bit `0x8000` of the transient flag word `0x1F800394` is set (`andi v0,v0,0x8000` / `bne` at `0x801D9E7C..0x801D9E80`). Before the rate scale, it also returns without touching the counter on any of these, and on a zero second argument (`0x801DA130..0x801DA180`):
 
 | Test | What it is |
 |---|---|

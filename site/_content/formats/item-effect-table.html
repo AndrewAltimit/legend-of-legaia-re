@@ -80,7 +80,7 @@
     <tr><td><code>6</code></td><td>permanent stat-up (tier = which stat)</td><td>Miracle Water, the Water line</td></tr>
     <tr><td><code>7</code></td><td>temporary stat buff (one battle, &times;6/5)</td><td>Power Elixir</td></tr>
     <tr><td><code>11</code>/<code>12</code>/<code>13</code></td><td>arts book (Fire/Wind/Thunder; tier = the art id granted)</td><td>Fire Book I</td></tr>
-    <tr><td><code>14</code></td><td>Point Card strike - reachable code, <strong>no item on the disc reaches it</strong></td><td>-</td></tr>
+    <tr><td><code>14</code></td><td>Point Card strike - reached by item <code>0xFE</code> through an id test in the battle action state machine, not through a descriptor</td><td>Point Card</td></tr>
     <tr><td><code>126</code>/<code>127</code></td><td>summon flute</td><td>Lippian Flute</td></tr>
     <tr><td><code>128</code> / <code>129</code></td><td>field escape (dungeon) / field warp (city)</td><td>Door of Light / Door of Wind</td></tr>
     <tr><td><code>130</code></td><td>reduce encounter rate</td><td>Incense</td></tr>
@@ -89,9 +89,9 @@
   <h3 id="arts-books">Arts books: the tier is an art id</h3>
   <p>Classes <code>11</code>/<code>12</code>/<code>13</code> write the tier byte verbatim into a per-character learned-art list (kept sorted by id), so the tier <em>is</em> the art the book grants, not a book level. The character comes from the class alone - <code>class - 11</code> is the roster slot (0 / 1 / 2) - and the target the menu highlights is never read, so a Fire Book always lands on the same roster slot. The field VM's grant arm <code>4C C7</code> calls the same applier with the slot plus <code>0xB</code>. On disc the nine books carry tiers Fire <code>3/2/1</code>, Wind <code>5/4/1</code>, Thunder <code>3/2/1</code> for I/II/III, all with flag <code>0x83</code> (field use only).</p>
   <details class="disclosure">
-    <summary>Class 14: the Point Card strike nothing sells</summary>
+    <summary>Class 14: the Point Card strike, reached by item id</summary>
     <div class="disclosure-body">
-      <p>The class-14 arm of the apply handler takes <code>min(points_bank, 9999)</code> off the Point Card bank and applies it as battle damage - a strike scaling with how much the player has shopped. Decoding all 256 item records finds no item carrying class 14, so retail never opens the arm. Unused content, not a missing item.</p>
+      <p>The class-14 arm of the apply handler takes <code>min(points_bank, 9999)</code> off the Point Card bank and applies it as battle damage - a strike scaling with how much the player has shopped. Decoding all 256 item records finds no item carrying class 14, but the arm is live: the battle action state machine tests for item <code>0xFE</code> at <code>0x801E4080</code> and forces the selector to <code>0x0E</code> at <code>0x801E40C0</code>, so the Point Card itself runs it.</p>
     </div>
   </details>
 </section>

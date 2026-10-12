@@ -974,8 +974,9 @@ state carry it:
   `sh` of every pair. `World::sync_battle_stat_bases` writes them at battle
   entry and nothing but a debuff writes one afterwards.
 - **Scripted flag.** `BattleState::scripted_fight`, derived at battle entry
-  from the formation's `record[+0]` header byte, ORed with the `no_escape` latch
-  the field VM's scripted-battle op sets.
+  from the formation's `record[+0]` header byte, ORed with a `no_escape` a host
+  or test raised before entry. The field VM's scripted-battle op writes no flag
+  of its own, so a `3E FF` row with a zero header byte is an escapable fight.
 - **Boost profile.** The enemy seed picks `MonsterDef::installed_stats` by that
   flag; the catalog keeps the raw block (`MonsterDef::raw_stats`) to derive
   either profile.

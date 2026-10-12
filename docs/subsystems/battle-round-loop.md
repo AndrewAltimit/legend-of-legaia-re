@@ -602,7 +602,7 @@ Context fields: `ctx[+0]` = party count, `ctx[+1]` = monster count, `ctx[+0x13]`
 
 ### The two AI gates
 
-- **`ctx+0x28a` (battle mode)** gates the multi-phase boss cases. Its writer is the SM's `case 0xFF`, a scripted phase-transition pseudo-action a boss issues at an HP / script boundary. It reads `0` until then. Advancing it walks a multi-phase boss to its next scripted cast on the following turn (`World::battle_mode`; proven by the `0xB6` phase-walk test).
+- **`ctx+0x28a` (battle mode)** gates the multi-phase boss cases. Its writer is the SM's `case 0xFF`, the round-end arm every battle reaches once per round: the end-of-action gate stores state `0xFF` when the turn cursor reaches the round bound (`0x801E67DC`), and the arm increments the byte (`0x801E6800..0x801E6810`). It is a round counter, `0` during the first round. Advancing it walks a round-scripted boss to its next scripted cast on the following round (`World::battle_mode`; proven by the `0xB6` phase-walk test).
 - **`actor+0x16e & 0x380`** is not a monster flag. `FUN_80047430` sets it only on party slots (`slot < 3`) whose character record carries the Rage passive (`+0xF8 & 0x2000`), delegating that member to `FUN_801E7320`. A normal monster keeps `0x380` clear, so its `!ai380` scripted-cast cases fire and `monster_setup` stays dormant - which is what the port does (monster actors carry `field_flags == 0`).
 
 ### Enemy-ally charm at the end-of-action gate (the charm battle softlock)

@@ -20,7 +20,7 @@ Port module names are given as `crate::module`: `engine-battle-vm::battle_action
 | Address | Name | Role | Section |
 |---|---|---|---|
 | `FUN_8004E2F0` | range metric | Distance between attacker and target, `0` = in range | [Range metric](#fun_8004e2f0---battle-range--reach-metric) |
-| `FUN_80042558` | stat aggregator | Rebuilds each character's effective stats and ability bitfield every frame | [Stat aggregator](#fun_80042558---per-frame-stat-aggregator) |
+| `FUN_80042558` | stat aggregator | Rebuilds each character's effective stats and ability bitfield on scene entry, menu actions and field-VM op `0x3B` | [Stat aggregator](#fun_80042558---per-frame-stat-aggregator) |
 | `FUN_801E752C` | DoT ticker | Per-round Venom / Toxic drain and Grail recovery | [DoT ticker](#fun_801e752c---per-round-status-dot-ticker) |
 | `FUN_801DD4B0` / `FUN_801DD6B4` | damage-roll wrappers | One hit's net damage, with or without the party resist ladder | [Damage-roll wrappers](#fun_801dd4b0--fun_801dd6b4---per-move-damage-roll-wrappers) |
 | `FUN_801F3C34` / `FUN_801F3D3C` | follow-up guard / installer | Seru-magic side-effect latch and its element-keyed installer | [Follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34) |
@@ -94,6 +94,8 @@ return 0 if in_range else (i16)d
 Port: `legaia_engine_battle_vm::battle_action::motion::range_metric`, assembled from live state by `World::battle_range_metric` (`engine-core::world::battle::locomotion`).
 
 ### `FUN_80042558` - per-frame stat aggregator
+
+Despite the name it does not run per frame: its callers are scene entry, menu item / magic use, equip changes and field-VM op `0x3B`, and none is in the battle overlay.
 
 SCUS-resident. `FUN_801E295C` does not call it, but reads the ability bitmask it maintains: 4 x u32 at `0x80074358..0x80074368`, OR-aggregated from each character record's `+0xF4..0x100` block.
 

@@ -20,7 +20,7 @@ every retail row.
 
 ## Indexing (Ghidra-traced)
 
-From the per-frame stat aggregator `FUN_80042558`
+From the stat aggregator `FUN_80042558` (event-driven, not per-frame)
 (`ghidra/scripts/funcs/80042558.txt`, static `SCUS_942.54`), which walks each
 active party member's eight equipment-slot bytes at char record `+0x196`:
 

@@ -588,7 +588,7 @@ frame step of `4` (see [measured arm timing](#measured-arm-timing)).
 | 2 | countdown gate | 64 |
 | 3 | places the creature half a unit from the victim toward the caster, facing the victim; spawns the arrival records | 1 |
 | 4 | camera cut, gate | 9 |
-| 5 | gate; prints the spell name | 8 |
+| 5 | gate; prints the spell name, measured, at `x = 0xAC - width/2` (PROT 0903 and 0905 centre on 172, eight sibling modules on 166, the rest on 160 - see [name-centering.md](../reference/glitches/name-centering.md)) | 8 |
 | 6 | camera cut, gate; replaces the caption with the actor record's attack name (`FUN_8003541C(.., 0x96, ..)`); spawns the fire tunnel | 99 |
 | 7 | `0xC0`-frame pan, gate | 1 |
 | 8 | gate; spawns the breath | 15 |
@@ -1242,7 +1242,8 @@ Notes on individual arms:
   (`FUN_80042310`) or a roll against the static steal table
   ([`functions/cast-modules.md`](../reference/functions/cast-modules.md)).
   The module's wrapper belongs to its `0xB9` body.
-- **PROT 0943's `0xB5` body drains MP and sits at `0x801F6A04`.**
+- **PROT 0943's `0xB5` body (Lapis Wave) zeroes every party seat's current
+  and maximum MP and sits at `0x801F6A04`.**
   `0x801F69D8` there is the head table: eleven words holding two stacked
   five-arm tables (the `0xB5` body's at `0x801F69D8`, the `0x40` body's at
   `0x801F69F0`, one zero word between), with the first prologue at file
