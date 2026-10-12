@@ -3879,9 +3879,6 @@ sections:
   - key: 'man:4:0x6d38'
     translation: 'oublier'
     budget: 9
-  - key: 'man:4:0x6d5c'
-    translation: 'house Mei''s et Juno''s'
-    budget: 29
   - key: 'man:4:0x6d7b'
     translation: 'fille sucre une Mei, an'
     budget: 30
@@ -3897,39 +3894,21 @@ sections:
   - key: 'man:4:0x6e16'
     translation: 'Nene, soeur jeune.'
     budget: 21
-  - key: 'man:4:0x6e64'
-    translation: 'this in Statue Memoire The'
-    budget: 28
-  - key: 'man:4:0x6e82'
-    translation: 'record to it Talk cave.'
-    budget: 33
   - key: 'man:4:0x6ea5'
     translation: 'adventure ta pendant.'
     budget: 22
   - key: 'man:4:0x7508'
     translation: 'Ancien: {c1:00}!'
     budget: 18
-  - key: 'man:4:0x751c'
-    translation: 'ici be would tu knew I.'
-    budget: 25
   - key: 'man:4:0x759c'
     translation: 'Village Elder : Le mysterieux'
     budget: 29
   - key: 'man:4:0x75bb'
     translation: 'Arbre Genese. C''est apaisant'
     budget: 32
-  - key: 'man:4:0x75dd'
-    translation: 'tree this liked always You.'
-    budget: 34
   - key: 'man:4:0x7602'
     translation: 'Village Elder : Demain, tu vas'
     budget: 33
-  - key: 'man:4:0x7625'
-    translation: 'Were adult. an hunter, a become'
-    budget: 31
-  - key: 'man:4:0x7646'
-    translation: 'hunt? successful a for praying'
-    budget: 34
   - key: 'man:4:0x766f'
     translation: 'Oui'
     budget: 3
@@ -3939,18 +3918,9 @@ sections:
   - key: 'man:4:0x7703'
     translation: 'Alors aussi, prierai'
     budget: 22
-  - key: 'man:4:0x771b'
-    translation: 'success your.'
-    budget: 17
   - key: 'man:4:0x7735'
     translation: 'Village Elder: Me trompe. Peut-etre'
     budget: 35
-  - key: 'man:4:0x775a'
-    translation: 'return safe the for praying you''re'
-    budget: 34
-  - key: 'man:4:0x777e'
-    translation: 'now out are who hunters the of.'
-    budget: 31
   - key: 'man:4:0x77cb'
     translation: 'Ancien: {c1:00},'
     budget: 18
@@ -3969,15 +3939,9 @@ sections:
   - key: 'man:4:0x7851'
     translation: 'very!'
     budget: 12
-  - key: 'man:4:0x7860'
-    translation: 'you, on counting I''m: Elder Village'
-    budget: 35
   - key: 'man:4:0x7885'
     translation: 'du fond de mon coeur !'
     budget: 28
-  - key: 'man:4:0x78a3'
-    translation: 'ha, ha! Ha, ha,'
-    budget: 15
   - key: 'man:4:0x7a5f'
     translation: 'Mei: {c1:00}! Cherchais'
     budget: 26
@@ -3993,9 +3957,6 @@ sections:
   - key: 'man:4:0x7af0'
     translation: 'clothes? hunting What'
     budget: 33
-  - key: 'man:4:0x7b18'
-    translation: 'wrong? Something Is'
-    budget: 21
   - key: 'man:4:0x7b2f'
     translation: 'Il y a un probleme?'
     budget: 19
@@ -4008,9 +3969,6 @@ sections:
   - key: 'man:4:0x7b7a'
     translation: 'tomorrow hunting wear to you'
     budget: 28
-  - key: 'man:4:0x7b98'
-    translation: 'remember now I Sorry, I''m.'
-    budget: 33
   - key: 'man:4:0x7bbb'
     translation: 'ha. Ha, joking just was I'
     budget: 25
@@ -10995,9 +10953,6 @@ sections:
   - key: 'man:53:0x361'
     translation: 'Ha ha ha!'
     budget: 11
-  - key: 'man:53:0x36f'
-    translation: 'ha, ha! Ha, ha,'
-    budget: 15
   - key: 'man:53:0x381'
     translation: 'Je t''aime!'
     budget: 13
@@ -12510,9 +12465,6 @@ sections:
   - key: 'man:53:0x4d51'
     translation: 'Songi: Avec la puissance Seru'
     budget: 31
-  - key: 'man:53:0x4d72'
-    translation: 'ha, ha! Ha, ha,'
-    budget: 15
   - key: 'man:53:0x4d86'
     translation: 'j''aurai le Maitre arrogant'
     budget: 33
@@ -18306,9 +18258,6 @@ sections:
   - key: 'man:129:0x1fd4'
     translation: '{c1:01}: Maman?'
     budget: 11
-  - key: 'man:129:0x202a'
-    translation: 'ha, ha! Ha, ha,'
-    budget: 15
   - key: 'man:129:0x20d5'
     translation: '{c1:01}: Qui est ca?'
     budget: 16
@@ -47700,9 +47649,6 @@ sections:
   - key: 'man:562:0x183a'
     translation: 'Ha, ha!'
     budget: 7
-  - key: 'man:562:0x1844'
-    translation: 'ha, ha! Ha, ha,'
-    budget: 15
   - key: 'man:562:0x1856'
     translation: 'J''ai failli me tuer de rire!'
     budget: 33
@@ -69454,9 +69400,6 @@ sections:
   - key: 'raw:339:0x26a8'
     translation: 'vaincquent la'
     budget: 18
-  - key: 'raw:339:0x26cd'
-    translation: 'and the others put back {c1:00}'
-    budget: 26
   - key: 'raw:339:0x26e9'
     translation: '"Livre Prophetie 1"'
     budget: 29
@@ -69532,9 +69475,6 @@ sections:
   - key: 'raw:339:0x2ab1'
     translation: 'trouve la.'
     budget: 17
-  - key: 'raw:339:0x2ad5'
-    translation: 'and the others put back {c1:00}'
-    budget: 26
   - key: 'raw:339:0x2af1'
     translation: '"Livre Prophetie 2"'
     budget: 29
@@ -69592,9 +69532,6 @@ sections:
   - key: 'raw:339:0x2ded'
     translation: 'grave-les au coeur.'
     budget: 33
-  - key: 'raw:339:0x2e21'
-    translation: 'and the others put back {c1:00}'
-    budget: 26
   - key: 'raw:339:0x2e3d'
     translation: '"Livre Prophetie 3"'
     budget: 29
@@ -69661,9 +69598,6 @@ sections:
   - key: 'raw:339:0x31aa'
     translation: 'chemin ancien.'
     budget: 32
-  - key: 'raw:339:0x31e1'
-    translation: 'and the others put back {c1:00}'
-    budget: 26
   - key: 'raw:339:0x31fd'
     translation: '"Livre Prophetie 4"'
     budget: 29
@@ -71569,9 +71503,6 @@ sections:
   - key: 'raw:401:0xbdc'
     translation: 'correctement, prix.'
     budget: 30
-  - key: 'raw:401:0xbfc'
-    translation: 'as a prize. {c2:bd}'
-    budget: 14
   - key: 'raw:401:0xc1a'
     translation: 'Mme Usha: Premiere'
     budget: 25
