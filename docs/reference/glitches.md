@@ -77,7 +77,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 | Case | Status | Cause |
 |---|---|---|
 | Incense trigger bypass | explained | The Incense expiry sets the movement lock mid-frame; the player still steps onto the trigger tile, and a locked crossing is recorded without running. |
-| Incense carry-over into a new game | explained | The Incense window is one number in the program's own memory, outside the block that is saved, loaded or rebuilt for a new game. |
+| Incense carry-over ("New Game+") | explained | The Incense window is one number in the program's own memory, outside the block that is saved, loaded or rebuilt for a new game. |
 | Juggernaut's Room door | partially explained | While the guards stand there the door has no lock of its own; two guard bodies are the whole gate. How the trick passes them is not traced. |
 | Noa's sigil and the Door of Light in Nivora | explained | The crest stands inside a nine-by-nine map rectangle marked Door of Light allowed, listed ahead of the tunnel rectangles that forbid it. |
 

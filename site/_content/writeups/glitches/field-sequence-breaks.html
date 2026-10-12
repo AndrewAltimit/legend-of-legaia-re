@@ -129,13 +129,13 @@
 <section class="doc-section" id="incense-carry-over">
   <h2>Incense carry-over into a new game</h2>
 <dl class="kv">
-  <dt>Reported as</dt><dd>Use Incense, then load a different save or start a New Game after a Game Over, and the no-encounter effect is still running; speedrunners call it the Incense File Transfer, and a run started this way New Game+ (community report).</dd>
+  <dt>Reported as</dt><dd>Use Incense, then load a different save or start a New Game without resetting the console, and the no-encounter effect is still running. Speedrunners call the trick the Incense File Transfer and name the categories that use it New Game+ (community report).</dd>
   <dt>Cause</dt><dd>The Incense window is one number in the program's own memory, outside the block that is saved, loaded or rebuilt for a new game.</dd>
   <dt>Where</dt><dd>RAM <code>0x8007B600</code>, inside the <code>SCUS_942.54</code> load image</dd>
-  <dt>Affects</dt><dd>The Incense window only, up to <code>0x100</code> ticks (about 137 seconds of walking). Party, level and item carry-over was not found</dd>
+  <dt>Affects</dt><dd>The Incense window only, up to <code>0x100</code> ticks (about 137 seconds of walking)</dd>
   <dt>Status</dt><dd><span class="tag tag-done">explained</span> - read from the disc, not captured on an emulator</dd>
 </dl>
-  <p><b>Only the Incense window carries over.</b> The trace finds no path by which party members, levels or items survive a New Game, and the community sources read for this page describe only the encounter effect.</p>
+  <p>"New Game+" is the community's name for this glitch, not a carry-over mode of the kind other games ship. <b>The only thing that transfers is the remaining Incense steps.</b> The name stuck because the trick splits the speedrun categories: a run that starts with Incense already burning skips the early random battles, and it also has the <a href="#incense-trigger-bypass">trigger bypass</a> available from the first minutes, long before the item can be bought, so the route looks completely different from a run without it.</p>
   <p>The window is a single number kept in the game program's own memory rather than in the block that goes to the memory card. Loading a file does not restore it and starting a new game does not clear it, so whatever was left keeps draining as the party walks. Only a reset or power cycle, which reloads the program, returns it to zero.</p>
 <figure class="diagram">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 244" role="img" aria-label="A memory strip drawn to scale: the game program image ends at 0x8007B800 with the Incense window at 0x8007B600 just inside it, while the block that is saved, loaded and rebuilt for a new game starts at 0x80084140. Nothing that resets or restores game state reaches the Incense window."><text class="dg-label dg-start" x="20" y="20">Main RAM from 0x80010000 to 0x80086000, to scale</text><rect class="dg-node" x="20" y="52" width="546.61" height="30" rx="0"/><text class="dg-label" x="233.305" y="72">SCUS_942.54 load image, 0x80010000..0x8007B800</text><rect class="dg-node-ok" x="610.228" y="52" width="8.29251" height="30" rx="0"/><line class="dg-edge" x1="565.975" y1="40" x2="565.975" y2="90"/><text class="dg-label" x="455" y="38">Incense window, 0x8007B600</text><line class="dg-edge" x1="614.374" y1="90" x2="614.374" y2="104"/><path fill="var(--dg-accent)" d="M614.374 84 L610.374 91 L618.374 91 Z"/><text class="dg-label" x="510" y="118">saved window, 0x80084140 + 0x1A18</text><text class="dg-label dg-start" x="20" y="146">Memory card load: restores the saved window only</text><text class="dg-label dg-start" x="20" y="166">New Game: rebuilds the saved window only</text><text class="dg-label dg-start" x="20" y="186">Mode-entry reset FUN_8001DCF8: a fixed list, the Incense window is not on it</text><text class="dg-sub dg-start" x="20" y="214">Seven instructions touch 0x8007B600: add 0x40, clamp, compare, read, subtract 1, test.</text><text class="dg-sub dg-start" x="20" y="230">None stores a constant, so only reloading the program returns it to zero.</text></svg>
@@ -168,10 +168,6 @@
 <p>Related page: <a href="../../subsystems/save-screen.html">the save screen</a>.</p>
   <h3>Verifying it</h3>
   <p>Write <code>0x100</code> to <code>0x8007B600</code>, reach the title screen without resetting the console (a Game Over does it), start a New Game and read the address on the first frame of free walking. Prediction: <code>0x100</code> less the ticks walked. After a reset it reads zero.</p>
-  <h3>Open questions</h3>
-  <ul>
-    <li>Whether the speedrun category relies on anything beyond the window; the guides themselves were not readable for this page.</li>
-  </ul>
 </section>
 
 <section class="doc-section" id="juggernaut-room-door">

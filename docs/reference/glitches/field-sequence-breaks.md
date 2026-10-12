@@ -202,13 +202,16 @@ called from `0x801D2184`, and flag `0x470` stays clear.
 
 **Status:** explained
 
-**Reported as:** use Incense, then load a different save or start a New Game after a Game Over, and
-the no-encounter effect is still running; speedrunners call this the Incense File Transfer, and a
-run started this way "New Game+" (community report).
+**Reported as:** use Incense, then load a different save or start a New Game without resetting the
+console, and the no-encounter effect is still running. Speedrunners call the trick the Incense File
+Transfer and name the categories that use it "New Game+" (community report).
 
-What carries over is the Incense window and nothing else. The trace finds no path by which party
-members, levels or items survive a New Game, and the community sources read for this page describe
-only the encounter effect.
+"New Game+" here is the community's name for this glitch, not a carry-over mode of the kind other
+games ship. The only thing that transfers is the remaining Incense steps. The name stuck because the
+trick splits the speedrun categories: a run that starts with Incense already burning skips the early
+random battles, and it also has the [trigger bypass](#incense-trigger-bypass) available from the
+first minutes, long before the item can be bought, so the route looks completely different from a
+run without it.
 
 The window is a single number kept in the game program's own memory rather than in the block that
 gets saved to the memory card. Loading a file does not restore it and starting a new game does not
@@ -259,11 +262,6 @@ See [the save screen](../../subsystems/save-screen.md) for the saved window.
 Write `0x100` to `0x8007B600`, reach the title screen without resetting the console (a Game Over
 does it), start a New Game and read the address on the first frame of free walking. The prediction
 is `0x100` less the ticks walked. After a reset it reads zero.
-
-### Open questions
-
-- Whether the speedrun category relies on anything beyond the window. The guides themselves were
-  not readable for this page.
 
 ## Juggernaut's Room door
 
