@@ -2,12 +2,11 @@
 # CI + GitHub Pages deploy for legend-of-legaia-re.
 # Modeled on faultline/.github/workflows/main-ci.yml (same self-hosted runner
 # convention). Tailored:
-#   - Pull requests run the disc-free gates (`gates`) and a lint pass
-#     (`pr-lint`: fmt, clippy, wasm32 type-check) on every push to the PR.
-#     The full build + test pass (`ci`) stays on push-to-main and
-#     workflow_dispatch; tests are expected to have been run locally before
-#     a PR is opened. The deploy-pages job packages the wasm build with
-#     `wasm-pack`.
+#   - Pull requests run the disc-free gates (`gates`) and `pr-lint` (fmt,
+#     clippy, wasm32 type-check, then the disc-free test suite) on every
+#     push to the PR, so a red test stops a merge instead of breaking main.
+#     The release builds (`ci`) stay on push-to-main and workflow_dispatch.
+#     The deploy-pages job packages the wasm build with `wasm-pack`.
 #   - No scenarios symlink to materialize.
 #   - cargo runs directly on the runner (no docker-compose `rust-ci` service
 #     in this repo yet; the only compose service here is `ghidra`).
@@ -234,9 +233,9 @@ jobs:
       # empty staging area, so the staged mode would report "0 warnings across
       # 0 files" forever - a green line that measured nothing.
       #
-      # Only the summary line is echoed. The corpus carries ~1.4k untagged
-      # citations from before the tag convention existed, and a step that
-      # prints all of them every run teaches people to skip the whole job.
+      # Only the summary line is echoed. The corpus carries a backlog of
+      # untagged citations from before the tag convention existed, and a step
+      # that prints all of them every run teaches people to skip the whole job.
       # The number is the signal; drill in locally with --scan-all.
       - name: Port-tag drift (advisory)
         run: |
@@ -245,14 +244,16 @@ jobs:
           rm -f port-tags.log
 
   # -- PR Lint ----------------------------------------------------------------
-  # The fast cargo half of `ci` for pull requests: format, clippy and the
-  # wasm32 type-check (`#[cfg(target_arch = "wasm32")]` code is invisible to
-  # every host-target pass). No test run and no release build - those stay on
-  # push-to-main, after merge.
+  # The cargo half of `ci` for pull requests: format, clippy, the wasm32
+  # type-check (`#[cfg(target_arch = "wasm32")]` code is invisible to every
+  # host-target pass) and the test suite. Only the release builds wait for
+  # push-to-main. The job keeps its name because branch protection keys on it.
   pr-lint:
     name: PR Lint
     runs-on: self-hosted
-    timeout-minutes: 60
+    # Same budget as `ci`: a cold cache after a big change can push the test
+    # build alone past half an hour on the shared runner.
+    timeout-minutes: 120
     if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     steps:
       - name: Checkout
@@ -273,6 +274,11 @@ jobs:
       - name: wasm32 type-check
         run: scripts/ci/check-wasm-target.sh
 
+      # No disc here, so every disc-gated test skips and passes; this is the
+      # disc-free suite. Last, so a format or lint failure reports first.
+      - name: Test
+        run: cargo test --workspace --profile release-test
+
   # -- Cargo CI ---------------------------------------------------------------
   ci:
     name: Legaia CI
@@ -281,7 +287,7 @@ jobs:
     # 30 minutes on the shared runner; match the disc-test job's budget.
     timeout-minutes: 120
     # The full build + test pass runs on push-to-main and workflow_dispatch;
-    # pull requests get `pr-lint` instead.
+    # pull requests get `pr-lint` (the same tests, without the release builds).
     if: github.event_name != 'pull_request'
     steps:
       - name: Checkout
