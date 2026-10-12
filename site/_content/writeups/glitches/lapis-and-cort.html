@@ -1,0 +1,480 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">glitches</a> &middot; Lapis and Mystic Shield Cort</div>
+  <h1>Lapis and Mystic Shield Cort</h1>
+  <p class="lede">Three boss oversights, explained from the game's own code on the USA disc: why the super-boss Lapis stops casting Lapis Wave once the party has left and come back, why that fight can be fled at all, and why Mushura and Theeder land extra hits on Cort while his Mystic Shield is up - and why only Mushura's add up to extra damage.</p>
+</header>
+
+<div class="notice">
+  <div class="notice-title">How to read this page</div>
+  The causes are read from the game's code and the disc's data. The key numbers are also <strong>measured in a running game</strong> (PCSX-Redux, retail USA disc): the Mystic Shield hit counts and damage, Lapis's stats, the Lapis Wave MP wipe, the MP check and Jedo's kill. None of those measurements is a played fight at the boss; <a href="#captures">how the captures were made</a> says exactly what was forced or written by hand, and every result below is labelled where one of those applies. Where the page still predicts something, it says so. All addresses are USA <code>SCUS_942.54</code> runtime addresses.
+</div>
+
+<section class="doc-section" id="vocabulary">
+  <h2>Shared vocabulary</h2>
+  <p>Each fighter in a battle has an actor record. Pointers to them sit in a table at <code>0x801C9370</code>: party in slots 0-2, enemies in slots 3-6, a summoned creature in slot 7. The battle's shared state is the context at <code>*0x8007BD24</code>. The battle logic is PROT entry 0898 (loaded at <code>0x801CE818</code>); each spell and summon is its own small module, PROT entries 0903-0966, all loaded at <code>0x801F69D8</code> (see <a href="../../subsystems/battle.html">battle</a> and <a href="../../subsystems/battle-action.html">battle action</a>).</p>
+  <table>
+    <thead><tr><th>Actor offset</th><th>Field</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x14C</code> / <code>+0x14E</code></td><td>HP, current / maximum</td></tr>
+      <tr><td><code>+0x150</code> / <code>+0x152</code></td><td>MP, current / maximum</td></tr>
+      <tr><td><code>+0x1D9</code> / <code>+0x1DA</code></td><td>Animation clip now playing / clip staged to play next</td></tr>
+      <tr><td><code>+0x1DE</code> / <code>+0x1DF</code></td><td>Chosen action category / action id</td></tr>
+      <tr><td><code>+0x1EF..+0x1F2</code></td><td>Reaction clips: flinch, alternate flinch, knockdown, get-up</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="captures">
+  <h2>How the captures were made</h2>
+  <p>No save in front of Lapis or Cort was available, so the fights were built from a nearby one. Each measurement on this page has this pedigree:</p>
+  <ul>
+    <li><strong>Forced formation.</strong> Every fight starts from a retail save state at the Queen Bee fight in Rim Elm - a scripted battle about to begin, with Vahn alone. At the instruction that reads the first byte of that battle's formation row (<code>0x801DA600</code>) the row is overwritten in memory: <code>01 00 00 01 B4</code> for Cort, and <code>00 00 00 01 A7 00 00 00</code> for Lapis, the exact bytes of the disc's own row. Everything after that read is the game's code on the game's data: the flag, the monster load, the stat boost, the boss's turn logic, Cort casting and losing his own Mystic Shield. What is <em>not</em> the real fight: the party (Vahn alone, at opening-chapter stats), the stage (Rim Elm) and the frame load, which is lighter than with three characters on screen.</li>
+    <li><strong>Injected casts.</strong> Vahn owns none of these spells. When his turn is set up, his queued action is rewritten to the spell; the game then loads and runs the spell's module itself.</li>
+    <li><strong>Poked values.</strong> Vahn's HP is held at 9000 so he survives, and his MP is topped up. For the summon measurements his magic level for the spell is set to 1 - at the default the damage roll saturates at 9999 and hides the shield's halving. For the "no shield" baseline Cort's HP is written to 25000 and the game breaks the shield itself on the next frame. For the Lapis MP check, Vahn's current MP is written to 0 once. "Captured on a poked state" below means one of these.</li>
+    <li><strong>Which runs are cited.</strong> A first batch of these runs held Vahn's HP with a write that began before the battle existed, and so also wrote field memory for the first few seconds. Every experiment was rerun with that write confined to the battle. The reruns gave the same counts, and they are the ones cited; the single exception is marked where it is used.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="lapis-wave-current-mp">
+  <h2>Lapis Wave checks current MP</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>Lapis Wave tests the party's current MP where it was meant to test maximum MP, so Lapis can be killed outright with magic the party is not supposed to have (community report)</dd>
+    <dt>Cause</dt><dd>Lapis decides whether to cast by counting party members with current MP above zero; leaving a battle saves current MP only, so a returning party reads 0 of its full maximum and is never targeted again</dd>
+    <dt>Where</dt><dd>Lapis's turn logic at <code>0x801EBC38</code> in PROT entry 0898; the wave itself at <code>0x801F6A04</code> in PROT entry 0943</dd>
+    <dt>Affects</dt><dd>The Lapis fight only</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">explained</span> - from disassembly and disc data; the wave, the check and the Jedo kill each captured in a forced fight, the flee-and-return route not played through</dd>
+  </dl>
+
+  <p>Lapis Wave is not a damage attack. It sets both the <strong>current and the maximum MP</strong> of every party member to zero for the rest of that battle. That is why MP items do nothing afterwards: there is no maximum left to fill. In the captured fight Lapis casts it before the party can enter a command, and Vahn's MP goes from 27 / 27 to 0 / 0.</p>
+  <p>The check the report describes is in Lapis's turn logic, not in the attack. Each time Lapis acts it counts the party members whose <em>current</em> MP is above zero and casts the wave only if it finds one. A party at zero current MP is left alone, whatever its maximum is: with Vahn's current MP written to 0 and his maximum left at 27, Lapis attacked physically on both of its turns and never cast the wave (captured on a poked state).</p>
+  <p>Leaving a battle writes each member's current MP back to their permanent record and never writes the maximum. So a party that takes one wave and flees walks away at 0 MP with its real maximum untouched. On the return visit Lapis sees nobody with MP and never casts the wave; an MP item works again; and a caster who gets a turn before Lapis's next one can cast.</p>
+  <p>The spell that ends the fight is Jedo. Its module has two outcomes: against a fight flagged as scripted it deals normal rolled damage, against an unflagged one it sets every living enemy's HP to zero with no roll. The Lapis fight is unflagged (<a href="#lapis-can-be-escaped-from">next section</a>), so the kill is certain: an injected Jedo took Lapis from 64800 HP to 0 in a single write. A check on maximum MP would have fired on the returning party and closed the route; whether the designers meant that field is an inference, not something the code states.</p>
+  <p>These pieces were captured one at a time. The wave, the check at zero MP and the Jedo kill are each observed; the flee, the return visit and the MP item between them are read from the code and have not been played through as one route.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two visits to Lapis compared. First visit: the party member holds 27 of 27 MP, the check on current MP fires, Lapis Wave leaves 0 of 0. After fleeing the saved record keeps maximum 27, so on the return visit the member holds 0 of 27, the check does not fire, an MP item restores MP and Jedo can be cast.">
+      <defs><marker id="lc-a1" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-sub dg-start" x="12" y="22">First visit</text>
+      <rect class="dg-node" x="12" y="32" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="87" y="55">MP 27 / 27</text>
+      <text class="dg-sub" x="87" y="74">+0x150 / +0x152</text>
+      <path class="dg-edge" d="M162 60 L194 60" marker-end="url(#lc-a1)"/>
+      <rect class="dg-node-warn" x="196" y="32" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="271" y="55">+0x150 != 0</text>
+      <text class="dg-sub" x="271" y="74">check fires</text>
+      <path class="dg-edge" d="M346 60 L378 60" marker-end="url(#lc-a1)"/>
+      <rect class="dg-node" x="380" y="32" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="455" y="55">Lapis Wave</text>
+      <text class="dg-sub" x="455" y="74">both fields zeroed</text>
+      <path class="dg-edge" d="M530 60 L562 60" marker-end="url(#lc-a1)"/>
+      <rect class="dg-node-warn" x="564" y="32" width="144" height="56" rx="4"/>
+      <text class="dg-label" x="636" y="55">MP 0 / 0</text>
+      <text class="dg-sub" x="636" y="74">items do nothing</text>
+
+      <path class="dg-edge-dim" d="M636 88 L636 128 L130 128 L130 196" marker-end="url(#lc-a1)"/>
+      <text class="dg-edge-label" x="361" y="120" text-anchor="middle">flee: only current MP is saved, the record keeps maximum 27</text>
+
+      <text class="dg-sub dg-start" x="12" y="186">Return visit</text>
+      <rect class="dg-node" x="12" y="198" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="87" y="221">MP 0 / 27</text>
+      <text class="dg-sub" x="87" y="240">+0x150 / +0x152</text>
+      <path class="dg-edge" d="M162 226 L194 226" marker-end="url(#lc-a1)"/>
+      <rect class="dg-node-ok" x="196" y="198" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="271" y="221">+0x150 == 0</text>
+      <text class="dg-sub" x="271" y="240">check does not fire</text>
+      <path class="dg-edge" d="M346 226 L378 226" marker-end="url(#lc-a1)"/>
+      <rect class="dg-node" x="380" y="198" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="455" y="221">MP item</text>
+      <text class="dg-sub" x="455" y="240">maximum is still 27</text>
+      <path class="dg-edge" d="M530 226 L562 226" marker-end="url(#lc-a1)"/>
+      <rect class="dg-node-accent" x="564" y="198" width="144" height="56" rx="4"/>
+      <text class="dg-label" x="636" y="221">Jedo</text>
+      <text class="dg-sub" x="636" y="240">enemy HP set to 0</text>
+      <text class="dg-sub dg-start" x="12" y="284">The check reads +0x150 (current). Reading +0x152 (maximum) would fire on the return visit too.</text>
+    </svg>
+    <figcaption>What Lapis's check sees on each visit, with the numbers of the captured fight (Vahn alone, 27 MP). Captured: the top row, the check not firing at 0 / 27 (current MP written by hand) and the Jedo kill (injected cast). From the code: the flee and the MP item.</figcaption>
+  </figure>
+
+  <ol class="steps steps-vertical">
+    <li><b>Forced ambush</b><span>Battle setup compares the first enemy id with <code>0xA7</code> (Lapis) and forces a back attack, so Lapis acts before the party can enter a command. Captured: the first action of the fight is Lapis's. <code>0x80051FC4</code></span></li>
+    <li><b>The check</b><span>Lapis's turn counts party actors with <code>+0x150</code> (current MP) non-zero. None: an ordinary attack. One or more, and Lapis holds 255 MP: Lapis Wave. <code>0x801EBC68</code></span></li>
+    <li><b>The wave</b><span>For every party seat: current MP and maximum MP both written to zero. Captured: 27 / 27 to 0 / 0, and the cast costs Lapis 255 of its 4000 MP. <code>0x801F6D08</code>, <code>0x801F6D1C</code></span></li>
+    <li><b>The exit</b><span>Fleeing copies current MP to the character record. Maximum MP is not copied. <code>0x801E7C78</code></span></li>
+    <li><b>The return</b><span>The battle reloads MP from the record: 0 current, full maximum. The check finds nobody and never fires.</span></li>
+    <li><b>The kill</b><span>Jedo on an unflagged fight sets each living enemy's HP to 0. Captured: 64800 to 0. <code>0x801F8814</code></span></li>
+  </ol>
+
+  <details>
+    <summary>Register-level walkthrough</summary>
+    <p><strong>Ambush</strong>, <code>FUN_80051D84</code> in <code>SCUS_942.54</code>:</p>
+<pre><code>80051fc0  lbu  v1,-0x42f4(v1)     ; first formation id, 0x8007BD0C
+80051fc4  li   v0,0xa7
+80051fc8  bne  v1,v0,0x80052068
+80051fd0  li   v0,0x1
+80051fe0  sb   v0,0x290(v1)       ; ctx[+0x290] = 1, back attack</code></pre>
+    <p><strong>The check</strong>, <code>FUN_801E9FD4</code> in PROT entry 0898. The routine switches on the enemy id through a jump table at <code>0x801CF1CC</code> (index <code>id - 4</code>); the entry at <code>0x801CF458</code> sends Lapis to <code>0x801EBC38</code>:</p>
+<pre><code>801ebc60  lw    v0,0x0(v1)        ; party actor i
+801ebc68  lhu   v0,0x150(v0)      ; current MP
+801ebc70  beq   v0,zero,&lt;next&gt;
+801ebc78  addiu s1,s1,0x1         ; count members with MP
+801ebc90  beq   v0,zero,0x801ebdac  ; nobody: generic pick
+801ebc98  lhu   v0,0x150(s4)      ; Lapis's own MP
+801ebca0  sltiu v0,v0,0xff
+801ebca4  bne   v0,zero,0x801ebdac  ; needs 255
+801ebcac  sb    v0,0x1de(s4)      ; category 2, magic
+801ebcb4  li    v0,0xb5           ; Lapis Wave -&gt; +0x1DF</code></pre>
+    <p><strong>The wave</strong>, <code>FUN_801F6A04</code> in PROT entry 0943, third arm, once per party seat. The module calls no damage routine anywhere:</p>
+<pre><code>801f6cf4  lhu v0,0x150(v1)
+801f6cfc  sh  v0,0x178(v1)        ; MP readout drains from the old value
+801f6d08  sh  zero,0x150(v0)      ; current MP = 0
+801f6d1c  sh  zero,0x152(v1)      ; maximum MP = 0</code></pre>
+    <p><strong>The exit</strong>, <code>FUN_801E791C</code> in PROT entry 0898: actor <code>+0x150</code> is stored to the character record's current MP (<code>+0x10A</code>) at <code>0x801E7C78..0x801E7C80</code>. The routine has no store of <code>+0x152</code>.</p>
+    <p><strong>Jedo</strong>, <code>FUN_801F6A58</code> in PROT entry 0931:</p>
+<pre><code>801f87d4  lbu v0,0x287(v1)        ; scripted-fight flag
+801f87dc  bne v0,zero,0x801f8844
+801f8804  lhu v0,0x14c(a0)        ; each enemy seat 3..6
+801f8814  sh  zero,0x14c(a0)      ; HP = 0
+801f8820  sb  a2,0x21c(v0)        ; defeat fade</code></pre>
+    <p><strong>Nighto</strong> (PROT entry 0907) also reaches its kill on this fight, as a roll: the resist test is skipped when the flag is clear (<code>0x801F6BF0</code>), the resist roll is <code>rand % (0x13 - magic_level) &lt; 9</code> (<code>0x801F6C28</code>), and the kill is <code>rand % 8 == 0</code> (<code>0x801F6B50</code>, store at <code>0x801F7E58</code>). At magic level 9 that is about 11% per cast.</p>
+  </details>
+
+  <h3>Addresses</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x80051FC0..0x80051FE0</code></td><td><code>SCUS_942.54</code>, <code>FUN_80051D84</code></td><td>Enemy id <code>0xA7</code> forces the back attack, <code>ctx[+0x290] = 1</code></td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801CF1CC</code>, word at <code>0x801CF458</code></td><td>PROT 0898</td><td>Turn-logic jump table; Lapis's arm is <code>0x801EBC38</code></td><td>disc data</td></tr>
+      <tr><td><code>0x801EBC38..0x801EBCB4</code></td><td>PROT 0898, <code>FUN_801E9FD4</code></td><td>Count party <code>+0x150</code>, require own MP of 255, queue action <code>0xB5</code></td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F6A04</code></td><td>PROT 0943</td><td>Lapis Wave body</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F6CFC</code>, <code>0x801F6D08</code>, <code>0x801F6D1C</code></td><td>PROT 0943</td><td>Stores to <code>+0x178</code>, <code>+0x150</code>, <code>+0x152</code> for each party seat</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801E7C78..0x801E7C80</code></td><td>PROT 0898, <code>FUN_801E791C</code></td><td>Flee: current MP saved to record <code>+0x10A</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80084708 + n * 0x414</code></td><td>RAM</td><td>Character record; <code>+0x108</code> maximum MP, <code>+0x10A</code> current MP</td><td>repo doc</td></tr>
+      <tr><td><code>0x801F87D4..0x801F8820</code></td><td>PROT 0931, <code>FUN_801F6A58</code></td><td>Jedo, flag clear: every living enemy's HP set to 0</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F833C</code>, <code>0x801F8438</code></td><td>PROT 0931</td><td>Jedo, flag set: rolled damage instead</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F6BF0</code>, <code>0x801F6C28</code>, <code>0x801F6B50</code>, <code>0x801F7E58</code></td><td>PROT 0907, <code>FUN_801F69E8</code></td><td>Nighto: resist gate, resist roll, kill roll, kill store</td><td>disassembly</td></tr>
+      <tr><td>Spell record <code>0xB5</code></td><td><code>SCUS_942.54</code> <a href="../../formats/spell-table.html">spell table</a></td><td>Lapis Wave: cost 255, targets the whole party</td><td>disc data</td></tr>
+      <tr><td>Monster record 167, <code>+0x20</code></td><td>PROT 0867</td><td>Lapis's resist byte is 1</td><td>disc data</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Scope</h3>
+  <ul>
+    <li>The code does not require the escape. Any party that walks in with every member at zero current MP is never waved. Captured on a poked state: with Vahn's current MP written to 0 before Lapis's first pick and the maximum left at 27, Lapis opened with a physical attack, attacked physically again on its next turn and kept all 4000 MP. Those two turns are all the capture covers. The reported route is flee and return, which works because the wave itself produces the zero.</li>
+    <li>One member holding a single point of MP re-arms the wave for everyone. The count has no "is this member alive" test, so a fallen member's MP counts.</li>
+    <li>Lapis needs 255 MP of its own for each cast.</li>
+    <li>That MP items do nothing at zero maximum is a community report consistent with the code; the item routine's cap was not re-read for this page.</li>
+  </ul>
+
+  <h3>Verifying it</h3>
+  <p>Observed in the forced Lapis fight (forced formation, Vahn alone with 27 MP; see <a href="#captures">how the captures were made</a>):</p>
+  <ul>
+    <li>Lapis acts first, with no command prompt before it, and the action is Lapis Wave: the cast loads PROT entry 0943 and costs Lapis 255 MP.</li>
+    <li>Vahn's <code>+0x150</code> and <code>+0x152</code> both go from 27 to 0 during the wave. On its next turn, with the party at 0 / 0, Lapis attacks physically.</li>
+    <li>With <code>+0x150</code> written to 0 and <code>+0x152</code> left at 27, no wave is cast. The maximum being non-zero when the check runs is what tells the two fields apart.</li>
+    <li>Jedo, injected: <code>ctx[+0x287]</code> reads 0 at <code>0x801F87DC</code>, the write at <code>0x801F8814</code> zeroes Lapis's 64800 HP, and the damage roll at <code>0x801F8438</code> never runs.</li>
+  </ul>
+  <p>The run that shows the wave also carries two unrelated one-byte writes to Vahn's character record (a summon level stash and his Ra-Seru item byte), made for a different question.</p>
+  <p>Still to check in a played game:</p>
+  <ul>
+    <li>After a real escape, read the character record: <code>+0x108</code> unchanged, <code>+0x10A</code> zero.</li>
+    <li>On the return visit, break at <code>0x801EBC68</code>: <code>+0x150</code> reads 0, <code>+0x152</code> the real maximum, and the branch at <code>0x801EBC90</code> is taken.</li>
+  </ul>
+
+  <h3>Open questions</h3>
+  <ul>
+    <li>Whether the check was meant to read maximum MP. The code is equally consistent with a check written for the in-battle case, where both fields are zero after a wave.</li>
+    <li>Whether the restored caster reliably acts before Lapis (speed 451) was not simulated.</li>
+    <li>The route as a whole (wave, flee, return, MP item, Jedo) has not been played through in one capture; the flee's save of current MP and the MP item rest on the code alone.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="lapis-can-be-escaped-from">
+  <h2>Lapis can be escaped from</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>The party can run from Lapis, unlike other bosses (community report)</dd>
+    <dt>Cause</dt><dd>"No escape" is one byte at the start of the fight's formation row, and Lapis's row has it at zero</dd>
+    <dt>Where</dt><dd>Mt. Dhini scene data (PROT entry 0383), formation row 11; read by the escape roll at <code>0x801E7B14</code></dd>
+    <dt>Affects</dt><dd>Lapis, plus the Rim Elm opening fights and Gold Face at the Shadow Gate</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">explained</span> - from disassembly and disc data; the clear flag and Lapis's stats captured in a forced fight, the Run command itself not driven</dd>
+  </dl>
+
+  <p>Each scene carries a table of enemy formations, eight bytes a row. The first byte of a row says "this is a scripted fight". When it is non-zero the game sets a flag for the battle, and the escape roll fails whenever that flag is set. Nothing else makes a fight inescapable: not the script command that starts it, and nothing in the monster's own data.</p>
+  <p>Lapis's row has zero there. The fight is started by a script command exactly like a boss fight, yet the battle treats it as an ordinary encounter, so Run, the escape accessories and the Spikefish Flute all work. A fight started from that row's exact bytes reads the flag as zero from start to finish; choosing Run was not part of that capture.</p>
+
+  <div class="byte-map" role="img" aria-label="Lapis's formation row in the Mt. Dhini scene: scripted byte 00, two reserved bytes, count 01, monster id A7, three empty slots">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x00</span><span class="bm-name">00</span><span class="bm-size">scripted?</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">+0x01</span><span class="bm-name">00 00</span><span class="bm-size">reserved</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0x03</span><span class="bm-name">01</span><span class="bm-size">count</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0x04</span><span class="bm-name">A7</span><span class="bm-size">Lapis</span></div>
+    <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">+0x05</span><span class="bm-name">00 00 00</span><span class="bm-size">empty</span></div>
+  </div>
+  <p class="dg-note">Lapis: Mt. Dhini (<code>deene</code>), row 11, at offset <code>0x38C3</code> of the decoded scene data.</p>
+  <div class="byte-map" role="img" aria-label="Cort's formation row for comparison: scripted byte 01, two reserved bytes, count 01, monster id B4, three empty slots">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x00</span><span class="bm-name">01</span><span class="bm-size">scripted?</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">+0x01</span><span class="bm-name">00 00</span><span class="bm-size">reserved</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0x03</span><span class="bm-name">01</span><span class="bm-size">count</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0x04</span><span class="bm-name">B4</span><span class="bm-size">Cort</span></div>
+    <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">+0x05</span><span class="bm-name">00 00 00</span><span class="bm-size">empty</span></div>
+  </div>
+  <p class="dg-note">For comparison, Cort: scene <code>chitei2</code>, row 13. The only difference that matters is the first byte.</p>
+
+  <p>The same flag feeds every other boss protection in the battle code, so the Lapis fight loses those as well. This is what lets the instant-kill summons of the <a href="#lapis-wave-current-mp">previous section</a> land.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>What reads the flag</th><th>Effect on the Lapis fight</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td>Escape roll, <code>0x801E7B14</code></td><td>The party can flee</td><td>disassembly</td></tr>
+      <tr><td>Jedo's kill arm, <code>0x801F87D4</code></td><td>Certain kill</td><td>disassembly, capture</td></tr>
+      <tr><td>Nighto's resist gate, <code>0x801F6BF0</code></td><td>Kill and confuse rolls run although Lapis's record has the resist byte set</td><td>disassembly</td></tr>
+      <tr><td>Zenoir's and Aluru's resist gates</td><td>Same gate as Nighto</td><td>repo doc</td></tr>
+      <tr><td>Seru-magic stat debuffs, <code>FUN_801F3D3C</code></td><td>Land on every hit, with no suppression roll</td><td>repo doc</td></tr>
+      <tr><td>Enemy stat boost at battle load, <code>FUN_80054CB0</code></td><td>The random-encounter profile is installed instead of the boss one</td><td>disassembly, capture</td></tr>
+      <tr><td>Spikefish Flute, PROT 0925</td><td>Its flee outcome runs</td><td>repo doc</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The stat-boost row means Lapis is weaker in attack and defence, and stronger in magic, than stat lists say:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th></th><th>ATK</th><th>Upper defence</th><th>Lower defence</th><th>INT</th></tr></thead>
+    <tbody>
+      <tr><td>Lapis's record on the disc</td><td>680</td><td>975</td><td>987</td><td>999</td></tr>
+      <tr><td><strong>Installed in the Lapis fight</strong> (flag clear)</td><td><strong>680</strong></td><td><strong>1705</strong></td><td><strong>1726</strong></td><td><strong>1248</strong></td></tr>
+      <tr><td>What a flagged boss fight would install</td><td>850</td><td>1950</td><td>1974</td><td>1123</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The middle row is read from Lapis's actor in the forced fight, along with HP 64800 and MP 4000. The same rule shows on unmodified save states of another unflagged scripted fight, Tetsu's opening spar: the flag reads 0 and his record's 24 / 16 / 12 / 99 is installed as 24 / 28 / 21 / 123, while flagged Gaza and evolved Cort states read 4 and carry the boss boost (see <a href="../../subsystems/battle-formulas.html">battle formulas</a> for the two profiles).</p>
+  <p>Published stat lists, this project's own curated bestiary included, show 850 / 1950 / 1974 / 1123 for Lapis. That is the boss boost applied uniformly to every enemy - a derived column, not a reading of this fight.</p>
+
+  <details>
+    <summary>Register-level walkthrough</summary>
+    <p><strong>Where the flag comes from</strong>, <code>FUN_801DA51C</code> in PROT entry 0897, at battle launch:</p>
+<pre><code>801da5f8  lw  v0,0x94(s1)         ; the formation row
+801da600  lbu v0,0x0(v0)          ; its first byte
+801da608  beq v0,zero,0x801da620
+801da610  lbu v0,-0x42a0(v1)      ; per-battle flags, 0x8007BD60
+801da618  ori v0,v0,0x80
+801da61c  sb  v0,-0x42a0(v1)</code></pre>
+    <p><strong>The latch</strong>, <code>FUN_800513F0</code> in <code>SCUS_942.54</code>, <code>0x80051430..0x80051444</code>: <code>ctx[+0x287] = (flags &gt;&gt; 5) &amp; 4</code>, stored before any monster is loaded. The same routine then clears bit <code>0x80</code> of <code>0x8007BD60</code> again (<code>0x80051A14</code>), so during a fight only <code>ctx[+0x287]</code> tells a flagged fight from an unflagged one.</p>
+    <p><strong>The escape roll</strong>, <code>FUN_801E791C</code> in PROT entry 0898:</p>
+<pre><code>801e7afc  sltu v0,s2,s3           ; party roll &lt; enemy roll
+801e7b00  bne  v0,zero,0x801e7b24 ; fail
+801e7b14  lbu  v0,0x287(v0)
+801e7b1c  beq  v0,zero,0x801e7b40 ; flag clear: success path</code></pre>
+    <p><strong>The script command</strong>: in the Mt. Dhini scene data the fight starts with <code>3E FF 0B</code> at offset <code>0x3840</code> - "scripted battle, formation row 11". The command itself writes no flag (see <a href="../../formats/encounter.html">encounter records</a>).</p>
+    <p><strong>The stat boost</strong>, <code>FUN_80054CB0</code> in <code>SCUS_942.54</code> (<code>s4</code> is the monster record):</p>
+<pre><code>80055234  lbu  v0,0x287(v0)
+8005523c  beq  v0,zero,0x800552ac ; flag clear: second block
+80055248  lhu  v0,0x12(s4)        ; flagged: ATK += ATK &gt;&gt; 2
+80055264  lhu  v1,0x14(s4)        ;          UDF += UDF
+80055280  lhu  v1,0x16(s4)        ;          LDF += LDF
+8005529c  lhu  v0,0x18(s4)        ;          INT += INT &gt;&gt; 3
+800552ac  lhu  v1,0x14(s4)        ; clear:   UDF += (UDF &gt;&gt; 1) + (UDF &gt;&gt; 2)
+800552d0  lhu  v1,0x16(s4)        ;          LDF += (LDF &gt;&gt; 1) + (LDF &gt;&gt; 2)
+800552f8  lhu  v0,0x18(s4)        ;          INT += INT &gt;&gt; 2</code></pre>
+    <p>The clear block leaves ATK alone. Its two shifts round down separately, so 975 becomes <code>975 + 487 + 243 = 1705</code>, one less than a straight "times 7/4" would give.</p>
+  </details>
+
+  <h3>Addresses</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801DA5F8..0x801DA61C</code></td><td>PROT 0897, <code>FUN_801DA51C</code></td><td>Row byte 0 non-zero raises bit <code>0x80</code> of <code>0x8007BD60</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80051430..0x80051444</code></td><td><code>SCUS_942.54</code>, <code>FUN_800513F0</code></td><td><code>ctx[+0x287] = (flags &gt;&gt; 5) &amp; 4</code></td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x80051A14</code></td><td><code>SCUS_942.54</code>, <code>FUN_800513F0</code></td><td>Bit <code>0x80</code> of <code>0x8007BD60</code> cleared again after the latch</td><td>disassembly</td></tr>
+      <tr><td><code>0x80055234..0x80055308</code></td><td><code>SCUS_942.54</code>, <code>FUN_80054CB0</code></td><td>Stat boost: boss block, or the clear block at <code>0x800552AC</code></td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801E7AFC..0x801E7B24</code></td><td>PROT 0898, <code>FUN_801E791C</code></td><td>Escape roll: flag set forces the failure arm</td><td>disassembly</td></tr>
+      <tr><td>Scene data offset <code>0x3840</code></td><td>PROT 0383 (<code>deene</code>)</td><td><code>3E FF 0B</code>: scripted battle on formation row 11</td><td>disc data</td></tr>
+      <tr><td>Scene data offset <code>0x38C3</code></td><td>PROT 0383 (<code>deene</code>)</td><td>Row 11: <code>00 00 00 01 A7 00 00 00</code></td><td>disc data</td></tr>
+      <tr><td>Monster record 167</td><td>PROT 0867</td><td>Lapis before the boost: ATK 680, upper defence 975, lower defence 987, INT 999</td><td>disc data</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Scope: every scripted fight with the byte at zero</h3>
+  <p>Joining every scripted-battle command on the disc to the formation row it names gives this complete list:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Scene</th><th>Command</th><th>Row</th><th>Enemies</th></tr></thead>
+    <tbody>
+      <tr><td><code>deene</code> (Mt. Dhini)</td><td><code>3E FF 0B</code></td><td>11</td><td>Lapis</td></tr>
+      <tr><td><code>town01</code> (Rim Elm)</td><td><code>3E FF 04</code></td><td>4</td><td>Tetsu, the opening spar</td></tr>
+      <tr><td><code>town0b</code>, <code>town0c</code> (Rim Elm)</td><td><code>3E FF 03</code></td><td>3</td><td>Queen Bee and three Killer Bees</td></tr>
+      <tr><td><code>town0b</code> (Rim Elm)</td><td><code>3E 00 02</code></td><td>2</td><td>One Gimard</td></tr>
+      <tr><td><code>stone</code> (Shadow Gate)</td><td><code>3E 00 03</code></td><td>3</td><td>Gold Face</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Every other scripted fight names a flagged row: the Piura pair, Zeto, every Songi, the Viguro pair, every Caruban, Dohati, every Berserker, the Kemaro pair, Van Saryu, Xain, the late Tetsu, both Gaza fights, the three Delilas siblings, Koru, Rogue, Jette and both Cort forms. Lapis is the only late-game boss on the unflagged side.</p>
+
+  <h3>Verifying it</h3>
+  <p>Observed in a fight forced from the disc row's bytes (see <a href="#captures">how the captures were made</a>):</p>
+  <ul>
+    <li><code>ctx[+0x287]</code> reads 0 for the whole fight; a flagged boss reads 4. The flags byte <code>0x8007BD60</code> is no use for this check: its bit <code>0x80</code> is cleared during setup in every fight.</li>
+    <li>Lapis's actor at <code>*(0x801C9370 + 0xC)</code> reads 680 / 1705 / 1726 / 1248 at <code>+0x158</code> / <code>+0x15C</code> / <code>+0x160</code> / <code>+0x168</code>.</li>
+  </ul>
+  <p>Still to check: choose Run in the Lapis fight and break at <code>0x801E7B14</code>. The prediction is <code>ctx[+0x287] = 0</code> and, on a winning roll, the success path at <code>0x801E7B40</code>.</p>
+
+  <h3>Open questions</h3>
+  <ul>
+    <li>The escape itself was not driven in a capture; that it succeeds rests on the code of the roll and on the flag reading 0.</li>
+    <li>The fight was started by forcing the formation row, not by reaching Lapis on Mt. Dhini. Everything that depends on the row and on Lapis's own data is the real game; the party and the stage are not.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="mystic-shield-sweep-summons">
+  <h2>Mushura and Theeder against Mystic Shield</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>Mushura and Theeder do excessive damage to Cort while his Mystic Shield is up; Crazy Driver racks up hits on the shield, the only place in the game where that happens (community report)</dd>
+    <dt>Cause</dt><dd>Both summons rely on the target's flinch animation to stop repeat hits, and Mystic Shield removes Cort's flinch. Mushura then hits on every tick it touches him; Theeder hits twice, which only cancels the shield's halving</dd>
+    <dt>Where</dt><dd>Hit tests at <code>0x801F7870</code> (Mushura, PROT entry 0915) and <code>0x801F7CF0</code> (Theeder, PROT entry 0904); shield setup at <code>0x801F7690</code> (PROT entry 0940)</dd>
+    <dt>Affects</dt><dd>Cort's first form for his first 25000 HP</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">explained</span> - mechanism from disassembly; hit counts and damage measured in a forced Cort fight with injected casts</dd>
+  </dl>
+
+  <p>The two summons turn out to be different cases. <strong>Mushura</strong>'s Crazy Driver really does deal excess damage to shielded Cort: measured, 28 run-over hits where an unshielded cast lands 4, and 2252 damage against 784 - about 2.9 times an unshielded cast. <strong>Theeder</strong> only slips past the shield: its beam lands 2 hits where an unshielded cast lands 1, each at half strength, for 284 damage against 282. The shield is cancelled out, not exceeded.</p>
+  <p>Element, overflow and a special formula play no part. Every summon uses the same damage roll, and the shield halves every hit on Cort - these two included.</p>
+  <p>The difference is how these two decide <em>when</em> to hit. Most summons hit on a fixed beat of their animation. Mushura and Theeder are sweeps: on every tick they test each enemy for contact with the rolling body or the swinging beam, and hit whatever is touching. The one thing that stops them from hitting the same enemy again is a test that the enemy is standing idle. A hit makes the enemy flinch or fall, and an enemy in the middle of that reaction is skipped.</p>
+  <p>Mystic Shield wipes Cort's four reaction animations so that he stands unmoved behind it. Animation number zero is the idle stance. So a hit now tells Cort to play "idle", he is still idle at the next contact, and the sweep hits him again. Mushura rolls back and forth across him and stays in contact for many ticks. Theeder's beam crosses him exactly twice.</p>
+  <p>Mule, a Ra-Seru summon built the same way, has an extra line at the same spot: if Mystic Shield is up, skip the hit. Mushura and Theeder lack it. Three summons share the pattern and one of them is guarded.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 720 286" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="HP taken from Cort by one cast, bars to scale. Theeder: 282 with no shield, 141 with the shield and his reaction clips restored, 284 with the shield as shipped. Mushura: 784 with no shield, 390 with the shield and clips restored, 2252 with the shield as shipped."><text class="dg-sub dg-start" x="12" y="18">HP taken from Cort by one cast at magic level 1. Bars are to scale.</text><text class="dg-label dg-start" x="12" y="46">Theeder</text><text class="dg-sub dg-start" x="28" y="67">No shield</text><rect class="dg-node" x="200" y="54" width="45.1" height="18"/><text class="dg-label dg-start" x="253.1" y="68">282</text><text class="dg-sub dg-start" x="283.1" y="68">1 hit</text><text class="dg-sub dg-start" x="28" y="93">Shield, clips restored</text><rect class="dg-node-ok" x="200" y="80" width="22.6" height="18"/><text class="dg-label dg-start" x="230.6" y="94">141</text><text class="dg-sub dg-start" x="260.6" y="94">1 hit</text><text class="dg-sub dg-start" x="28" y="119">Shield as shipped</text><rect class="dg-node-warn" x="200" y="106" width="45.4" height="18"/><text class="dg-label dg-start" x="253.4" y="120">284</text><text class="dg-sub dg-start" x="283.4" y="120">2 hits</text><text class="dg-label dg-start" x="12" y="152">Mushura</text><text class="dg-sub dg-start" x="28" y="173">No shield</text><rect class="dg-node" x="200" y="160" width="125.4" height="18"/><text class="dg-label dg-start" x="333.4" y="174">784</text><text class="dg-sub dg-start" x="363.4" y="174">4 + 1 hits</text><text class="dg-sub dg-start" x="28" y="199">Shield, clips restored</text><rect class="dg-node-ok" x="200" y="186" width="62.4" height="18"/><text class="dg-label dg-start" x="270.4" y="200">390</text><text class="dg-sub dg-start" x="300.4" y="200">4 + 1 hits</text><text class="dg-sub dg-start" x="28" y="225">Shield as shipped</text><rect class="dg-node-warn" x="200" y="212" width="360.3" height="18"/><text class="dg-label dg-start" x="568.3" y="226">2252</text><text class="dg-sub dg-start" x="606.3" y="226">28 + 1 hits</text><path class="dg-edge-dim" d="M200 246 L584 246"/><path class="dg-edge-dim" d="M200 242 L200 250"/><text class="dg-sub" x="200" y="264">0</text><path class="dg-edge-dim" d="M280 242 L280 250"/><text class="dg-sub" x="280" y="264">500</text><path class="dg-edge-dim" d="M360 242 L360 250"/><text class="dg-sub" x="360" y="264">1000</text><path class="dg-edge-dim" d="M440 242 L440 250"/><text class="dg-sub" x="440" y="264">1500</text><path class="dg-edge-dim" d="M520 242 L520 250"/><text class="dg-sub" x="520" y="264">2000</text><text class="dg-sub dg-start" x="596" y="264">HP</text></svg>
+    <figcaption>One cast each on Cort, captured in a forced Cort fight with injected casts, Vahn alone, magic level set to 1 (<a href="#captures">pedigree</a>). "No shield" is Cort after the game has broken the shield at 25000 HP. "Shield, clips restored" is a control: the shield is still up and Cort's four reaction clips are written back by hand, which shows the shield working as designed. Mushura's "+ 1" is its opening strike before the run-over.</figcaption>
+  </figure>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Cast</th><th>Cort's state</th><th>Hits</th><th>Roll per hit</th><th>HP lost</th></tr></thead>
+    <tbody>
+      <tr><td>Theeder</td><td>shield broken by the game at 25000 HP</td><td>1</td><td>282</td><td>282</td></tr>
+      <tr><td>Theeder</td><td>shield up</td><td><strong>2</strong></td><td>142, 142</td><td><strong>284</strong></td></tr>
+      <tr><td>Theeder</td><td>shield up, reaction clips written back to <code>03 02 04 05</code></td><td>1</td><td>141</td><td>141</td></tr>
+      <tr><td>Mushura</td><td>shield broken by the game at 25000 HP</td><td>4 run-over + 1 opening</td><td>610 to 639, then quartered</td><td>784</td></tr>
+      <tr><td>Mushura</td><td>shield up</td><td><strong>28</strong> run-over + 1 opening</td><td>304 to 321, then quartered</td><td><strong>2252</strong></td></tr>
+      <tr><td>Mushura</td><td>shield up, reaction clips written back to <code>03 02 04 05</code></td><td>4 run-over + 1 opening</td><td>304 to 320, then quartered</td><td>390</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul>
+    <li><strong>Theeder</strong> deals 284 where the shield should allow 141: twice the intended figure, and level with an unshielded cast.</li>
+    <li><strong>Mushura</strong> deals 2252 where the shield should allow 390: 5.8 times the intended figure, and 2.9 times an unshielded cast. Under the shield it touched Cort on 28 ticks, in five contact windows of 4, 2, 9, 8 and 5 ticks, and hit on every one. Without the shield it touched him on 38 ticks and hit 4 times, once per window.</li>
+    <li><strong>The control rows settle the cause.</strong> With the shield still up and only the reaction clips put back, both casts return to their normal hit counts and keep the halved rolls. The extra hits come from the blanked clips alone. The same shows on an ordinary enemy with no shield anywhere: a Gobu Gobu with its HP raised and its reaction clips written to zero took 2 Theeder hits where it normally takes 1, and 12 to 24 Mushura hits (until it died) where it normally takes 4.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 720 262" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Theeder's beam over one sweep of 16 ticks. The beam swings 0x100 either side of the target on a sine and is inside the 0x30 hit cone only at tick 8 and tick 16. Tick 8 hits with or without the shield; tick 16 hits only under the shield, because unshielded Cort is on his knockdown clip."><text class="dg-sub dg-start" x="12.0" y="18.0">Where Theeder's beam points on each tick of the sweep, relative to the target.</text><rect class="dg-node-ok" x="92" y="115.6" width="568" height="24.8"/><path class="dg-edge-dim" d="M92 128 L660 128"/><text class="dg-edge-label" x="84" y="66" text-anchor="end">+0x100</text><text class="dg-edge-label" x="84" y="132" text-anchor="end">on target</text><text class="dg-edge-label" x="84" y="198" text-anchor="end">-0x100</text><path class="dg-edge" d="M92.0 128.0 L95.5 125.4 L99.1 122.8 L102.7 120.2 L106.2 117.7 L109.8 115.1 L113.3 112.6 L116.8 110.1 L120.4 107.6 L124.0 105.2 L127.5 102.7 L131.1 100.4 L134.6 98.0 L138.2 95.8 L141.7 93.5 L145.2 91.3 L148.8 89.2 L152.3 87.1 L155.9 85.1 L159.4 83.2 L163.0 81.3 L166.6 79.5 L170.1 77.8 L173.6 76.2 L177.2 74.6 L180.8 73.1 L184.3 71.7 L187.9 70.4 L191.4 69.2 L194.9 68.1 L198.5 67.0 L202.1 66.1 L205.6 65.2 L209.1 64.5 L212.7 63.8 L216.2 63.3 L219.8 62.8 L223.3 62.5 L226.9 62.2 L230.4 62.1 L234.0 62.0 L237.5 62.1 L241.1 62.2 L244.7 62.5 L248.2 62.8 L251.8 63.3 L255.3 63.8 L258.9 64.5 L262.4 65.2 L266.0 66.1 L269.5 67.0 L273.0 68.1 L276.6 69.2 L280.1 70.4 L283.7 71.7 L287.2 73.1 L290.8 74.6 L294.4 76.2 L297.9 77.8 L301.5 79.5 L305.0 81.3 L308.5 83.2 L312.1 85.1 L315.6 87.1 L319.2 89.2 L322.8 91.3 L326.3 93.5 L329.9 95.8 L333.4 98.0 L337.0 100.4 L340.5 102.7 L344.0 105.2 L347.6 107.6 L351.1 110.1 L354.7 112.6 L358.2 115.1 L361.8 117.7 L365.4 120.2 L368.9 122.8 L372.4 125.4 L376.0 128.0 L379.6 130.6 L383.1 133.2 L386.7 135.8 L390.2 138.3 L393.8 140.9 L397.3 143.4 L400.8 145.9 L404.4 148.4 L407.9 150.8 L411.5 153.3 L415.1 155.6 L418.6 158.0 L422.2 160.2 L425.7 162.5 L429.2 164.7 L432.8 166.8 L436.3 168.9 L439.9 170.9 L443.4 172.8 L447.0 174.7 L450.6 176.5 L454.1 178.2 L457.7 179.8 L461.2 181.4 L464.8 182.9 L468.3 184.3 L471.8 185.6 L475.4 186.8 L478.9 187.9 L482.5 189.0 L486.1 189.9 L489.6 190.8 L493.2 191.5 L496.7 192.2 L500.2 192.7 L503.8 193.2 L507.3 193.5 L510.9 193.8 L514.5 193.9 L518.0 194.0 L521.5 193.9 L525.1 193.8 L528.7 193.5 L532.2 193.2 L535.8 192.7 L539.3 192.2 L542.8 191.5 L546.4 190.8 L550.0 189.9 L553.5 189.0 L557.0 187.9 L560.6 186.8 L564.2 185.6 L567.7 184.3 L571.2 182.9 L574.8 181.4 L578.3 179.8 L581.9 178.2 L585.5 176.5 L589.0 174.7 L592.5 172.8 L596.1 170.9 L599.7 168.9 L603.2 166.8 L606.8 164.7 L610.3 162.5 L613.9 160.2 L617.4 158.0 L621.0 155.6 L624.5 153.3 L628.0 150.8 L631.6 148.4 L635.1 145.9 L638.7 143.4 L642.2 140.9 L645.8 138.3 L649.4 135.8 L652.9 133.2 L656.5 130.6 L660.0 128.0"/><path class="dg-edge-dim" d="M376.0 50 L376.0 119"/><path class="dg-edge-dim" d="M660.0 68 L660.0 119"/><rect class="dg-node" x="124.5" y="99.7" width="6" height="6" rx="3"/><rect class="dg-node" x="160.0" y="78.3" width="6" height="6" rx="3"/><rect class="dg-node" x="195.5" y="64.0" width="6" height="6" rx="3"/><rect class="dg-node" x="231.0" y="59.0" width="6" height="6" rx="3"/><rect class="dg-node" x="266.5" y="64.0" width="6" height="6" rx="3"/><rect class="dg-node" x="302.0" y="78.3" width="6" height="6" rx="3"/><rect class="dg-node" x="337.5" y="99.7" width="6" height="6" rx="3"/><rect class="dg-node-accent" x="370.0" y="122.0" width="12" height="12" rx="6"/><rect class="dg-node" x="408.5" y="150.3" width="6" height="6" rx="3"/><rect class="dg-node" x="444.0" y="171.7" width="6" height="6" rx="3"/><rect class="dg-node" x="479.5" y="186.0" width="6" height="6" rx="3"/><rect class="dg-node" x="515.0" y="191.0" width="6" height="6" rx="3"/><rect class="dg-node" x="550.5" y="186.0" width="6" height="6" rx="3"/><rect class="dg-node" x="586.0" y="171.7" width="6" height="6" rx="3"/><rect class="dg-node" x="621.5" y="150.3" width="6" height="6" rx="3"/><rect class="dg-node-warn" x="654.0" y="122.0" width="12" height="12" rx="6"/><text class="dg-label" x="376.0" y="42">tick 8: hits either way</text><text class="dg-label" x="700.0" y="60" style="text-anchor:end">tick 16: hits only under the shield</text><path class="dg-edge-dim" d="M92 216 L660 216"/><path class="dg-edge-dim" d="M92.0 212 L92.0 220"/><text class="dg-sub" x="92.0" y="233.0">tick 0</text><text class="dg-sub" x="92.0" y="247.0">phase 0</text><path class="dg-edge-dim" d="M234.0 212 L234.0 220"/><text class="dg-sub" x="234.0" y="233.0">tick 4</text><text class="dg-sub" x="234.0" y="247.0">phase 0x400</text><path class="dg-edge-dim" d="M376.0 212 L376.0 220"/><text class="dg-sub" x="376.0" y="233.0">tick 8</text><text class="dg-sub" x="376.0" y="247.0">phase 0x800</text><path class="dg-edge-dim" d="M518.0 212 L518.0 220"/><text class="dg-sub" x="518.0" y="233.0">tick 12</text><text class="dg-sub" x="518.0" y="247.0">phase 0xC00</text><path class="dg-edge-dim" d="M660.0 212 L660.0 220"/><text class="dg-sub" x="660.0" y="233.0">tick 16</text><text class="dg-sub" x="660.0" y="247.0">phase 0x1000</text><text class="dg-sub dg-start" x="134.6" y="153.4">hit cone, 0x30 either side</text></svg>
+    <figcaption>To scale, from the sweep's own arithmetic and the captured phase values: at the measured frame timing the sweep is 16 ticks over 64 frames. The target stands on the beam's centre line and is inside the hit cone only at tick 8 and tick 16. Unshielded Cort is hit at tick 8 and is on his knockdown clip at tick 16; shielded Cort is still "idle" and is hit at both.</figcaption>
+  </figure>
+
+  <div class="notice warn">
+    <div class="notice-title">How far the numbers carry</div>
+    Each figure is one cast in a forced fight with a one-character party. Theeder's count of two depends only on the sweep's step: the same arithmetic gives two cone hits for frame steps of 2, 3 and 4, one at 5 and six at 1 (only 4 was observed; the rest is calculation). Mushura's count is a count of contact ticks, so it moves with the frame rate: the measured cast ran at a frame step of 3 to 4, and the real fight, with three characters on screen, runs heavier frames and should see fewer contact ticks. The 28-to-4 ratio is a measurement of that run, not a constant.
+  </div>
+
+  <ol class="steps steps-vertical">
+    <li><b>Shield goes up</b><span>On his first action Cort casts Mystic Shield. The module stores its effect handle in <code>0x8007BD84</code> and zeroes Cort's reaction clips <code>+0x1EF..+0x1F2</code>. <code>0x801F7678</code>, <code>0x801F7690</code></span></li>
+    <li><b>Every hit is halved</b><span>While the handle is set, the damage routine halves any hit on an enemy. Measured: Theeder rolls 282 without the shield and 142 with it. <code>0x801DDB98</code></span></li>
+    <li><b>The sweep tests for idle</b><span>Mushura and Theeder skip an enemy whose playing clip <code>+0x1D9</code> is not zero. <code>0x801F7870</code>, <code>0x801F7CF0</code></span></li>
+    <li><b>The hit stages a reaction</b><span>After the damage, the module stages a clip id taken from Cort's reaction clips - all of which the shield has set to zero.</span></li>
+    <li><b>Still idle</b><span>Clip zero is the idle clip, so <code>+0x1D9</code> stays zero and the next contact hits again. Captured: it read 0 at every one of the 16 Theeder and 28 Mushura tests under the shield.</span></li>
+    <li><b>Shield breaks</b><span>At half HP the per-frame pass restores the clips to <code>3, 2, 4, 5</code> and clears the handle. <code>0x8004D5C4</code></span></li>
+  </ol>
+
+  <details>
+    <summary>Register-level walkthrough</summary>
+    <p><strong>Cort's first action</strong>: his turn logic at <code>0x801EB988</code> in PROT entry 0898 queues action <code>0xAC</code> while <code>ctx[+0x28A]</code> is zero.</p>
+    <p><strong>Shield setup</strong>, the <code>0xAC</code> body in <code>FUN_801F7240</code>, PROT entry 0940:</p>
+<pre><code>801f7678  sw  v0,-0x427c(v1)      ; 0x8007BD84 = effect handle
+801f7690  sb  zero,0x1ef(v0)
+801f769c  sb  zero,0x1f0(v0)
+801f76a8  sb  zero,0x1f1(v0)
+801f76b4  sb  zero,0x1f2(v0)</code></pre>
+    <p><strong>Mushura</strong>, <code>FUN_801F69D8</code> in PROT entry 0915, every tick for every enemy seat. The clip load is reached only on a tick whose range test reads contact, so each time it runs is one contact tick:</p>
+<pre><code>801f7844  jal  0x8004e2f0         ; range test (slot 7, seat); 0 = touching
+801f7860  lhu  v0,0x14c(v1)       ; alive
+801f7870  lbu  v0,0x1d9(v1)       ; playing clip
+801f7878  bne  v0,zero,&lt;next&gt;     ; the only re-hit lockout
+801f789c  jal  0x801dd0ac         ; damage roll, power 0x12
+801f78f0  srl  s0,s0,0x2          ; a quarter, floor 1
+801f79c4  lbu  v0,0x1ef(v1)       ; flinch id (0x1f0 if zero)
+801f79dc  sb   v0,0x1da(v1)       ; stage it</code></pre>
+    <p><strong>Theeder</strong>, <code>FUN_801F69D8</code> in PROT entry 0904, every tick for every enemy seat:</p>
+<pre><code>801f7ce0  lhu  v1,0x14c(a0)       ; alive
+801f7cf0  lbu  v0,0x1d9(a0)       ; playing clip
+801f7cf8  bne  v0,zero,&lt;next&gt;     ; the same lockout
+801f7d0c  addiu v0,v0,-0x30       ; beam bearing vs victim bearing
+801f7d10  sltiu v0,v0,0xfb1       ; inside the 0x30 cone
+801f7d38  jal  0x801dd0ac         ; damage roll, power 0x11, not quartered
+801f7df0  lbu  v0,0x1f2(v1)       ; get-up id non-zero: stage the knockdown id +0x1F1
+801f7e0c  lbu  v0,0x1ef(v1)       ; otherwise the flinch id (0x1f0 if zero)
+801f7e24  sb   v0,0x1da(v1)       ; stage it</code></pre>
+    <p>A living victim that has a get-up clip is knocked down, not flinched (<code>0x801F7DF0..0x801F7E08</code>). Unshielded Cort, whose clips are <code>3, 2, 4, 5</code>, is staged clip 4: after Theeder's hit his <code>+0x1D9</code> reads 4 for the rest of the sweep, and after each Mushura hit it reads 3.</p>
+    <p><strong>Theeder's sweep.</strong> The sweep adds <code>(frame step * speed scalar) &lt;&lt; 3</code> to a phase word each tick (<code>0x801F7AC8..0x801F7AF0</code>) and ends when the phase reaches <code>0x1000</code> (<code>0x801F7EE8..0x801F7EF4</code>). The beam points at the summon's facing plus <code>sin[phase] &gt;&gt; 4</code>, a swing of <code>0x100</code> either side. Measured step 4 and scalar 8 give 256 a tick and 16 ticks; the two hits on shielded Cort land at phase 2048 and 4096.</p>
+    <p><strong>Mule</strong>, <code>FUN_801F69FC</code> in PROT entry 0929 - the guarded sibling:</p>
+<pre><code>801f7e08  lbu  v0,0x1d9(v1)       ; the same lockout
+801f7e10  bne  v0,zero,&lt;next&gt;
+801f7e34  lw   v0,-0x427c(v0)     ; 0x8007BD84, the shield handle
+801f7e3c  bne  v0,zero,&lt;next&gt;     ; shield up: no hit at all
+801f7e4c  jal  0x801dd0ac</code></pre>
+    <p>Mule's guard is read from the code only. A Mule cast on shielded Cort made no damage call, but both passes that reached the lockout left at a position test just before the shield test (<code>0x801F7E2C</code>), so the guard itself never ran.</p>
+    <p><strong>Why only these.</strong> Across all 64 spell and summon modules, a test of <code>+0x1D9</code> sitting directly in front of a damage-roll call occurs three times: Theeder, Mushura and Mule. Every other read of that byte is a wait for an animation to finish.</p>
+    <p><strong>The halving</strong>, <code>FUN_801DDB30</code> in PROT entry 0898, <code>0x801DDB98..0x801DDBC8</code>: with an enemy defender and the handle non-null, the attack value becomes <code>def + (atk - def) / 2</code>.</p>
+  </details>
+
+  <h3>Addresses</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801EB988..0x801EB9B4</code></td><td>PROT 0898, <code>FUN_801E9FD4</code></td><td>Cort's turn logic queues <code>0xAC</code> while <code>ctx[+0x28A]</code> is zero</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F7678</code></td><td>PROT 0940, <code>FUN_801F7240</code></td><td>Shield handle stored to <code>0x8007BD84</code></td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F7690..0x801F76B4</code></td><td>PROT 0940</td><td>First enemy seat's reaction clips <code>+0x1EF..+0x1F2</code> zeroed</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801DDB98..0x801DDBC8</code></td><td>PROT 0898, <code>FUN_801DDB30</code></td><td>Halve the hit on an enemy while the handle is set</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x8004D534..0x8004D658</code></td><td><code>SCUS_942.54</code>, <code>FUN_8004CE2C</code></td><td>Break at half HP: clips restored to <code>3, 2, 4, 5</code>, handle cleared</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F7870</code> / <code>0x801F789C</code></td><td>PROT 0915, <code>FUN_801F69D8</code></td><td>Mushura: idle test / damage roll</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F78F0</code></td><td>PROT 0915</td><td>Mushura: roll quartered, minimum 1</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F79C4..0x801F79E8</code></td><td>PROT 0915</td><td>Mushura: flinch staged from <code>+0x1EF</code> / <code>+0x1F0</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801F7CF0</code> / <code>0x801F7D38</code></td><td>PROT 0904, <code>FUN_801F69D8</code></td><td>Theeder: idle test / damage roll</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F7D0C..0x801F7D14</code></td><td>PROT 0904</td><td>Theeder: cone test, <code>0x30</code> either side</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F7AC8..0x801F7AF0</code></td><td>PROT 0904</td><td>Theeder: phase step <code>(frame step * scalar) &lt;&lt; 3</code> per tick</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F7EE8..0x801F7EF4</code></td><td>PROT 0904</td><td>Theeder: sweep ends at phase <code>0x1000</code></td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F7DF0..0x801F7E08</code></td><td>PROT 0904</td><td>Theeder: knockdown <code>+0x1F1</code> staged when <code>+0x1F2</code> is non-zero</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F7E0C..0x801F7E24</code></td><td>PROT 0904</td><td>Theeder: flinch staged from <code>+0x1EF</code> / <code>+0x1F0</code> otherwise</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F7E08</code> / <code>0x801F7E34</code> / <code>0x801F7E4C</code></td><td>PROT 0929, <code>FUN_801F69FC</code></td><td>Mule: idle test / shield test / damage roll</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F7E2C</code></td><td>PROT 0929</td><td>Mule: position test in front of the shield test</td><td>disassembly, capture</td></tr>
+      <tr><td>Monster record 180</td><td>PROT 0867</td><td>Cort: HP 50000, element dark, size byte <code>0x16</code></td><td>disc data</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Scope</h3>
+  <ul>
+    <li>Only Cort's first form (id <code>0xB4</code>, scene <code>chitei2</code>, formation row 13) while the shield handle is set: his first 25000 of 50000 HP.</li>
+    <li>The cause is "no reaction clips", so any monster whose data supplies no reaction clips at all would be hit the same way by these two summons. That set has not been listed.</li>
+    <li>Each extra hit also earns its own summon experience, applies its own Seru side-effect and shows its own damage number: twice for Theeder, 28 times for the measured Mushura cast.</li>
+    <li>The shield can break in the middle of a Mushura cast. Once Cort is at or below half HP the per-frame pass restores his clips, one more hit lands on the clip that was already staged, and the rest of the cast is one hit per contact window. This was seen in one run from the first batch described under <a href="#captures">how the captures were made</a> (the batch whose HP hold also wrote field memory before the battle), with the magic level left alone so that each hit took 2499: Cort crossed 25000 on the tenth run-over hit and the cast ended with 13.</li>
+    <li>Mule is the opposite case by its code: under the shield its sweep is written not to hit at all.</li>
+  </ul>
+
+  <h3>Verifying it</h3>
+  <p>The three checks, as run on the forced Cort fight:</p>
+  <ul>
+    <li>Execute breakpoints at <code>0x801F789C</code> (Mushura) and <code>0x801F7D38</code> (Theeder) count 28 and 2 with the shield up, 4 and 1 once the game has broken it.</li>
+    <li><code>+0x1D9</code> of the actor at <code>*(0x801C9370 + 0xC)</code> reads 0 throughout under the shield; without it, 3 after a Mushura hit and 4 after a Theeder hit.</li>
+    <li>Writing <code>03 02 04 05</code> to that actor's <code>+0x1EF..+0x1F2</code> with the shield up returns the counts to 4 and 1 while the rolls stay halved. The missing reaction is the cause and the shield handle is not.</li>
+  </ul>
+  <p>Still to check: the same breakpoints in the real <code>chitei2</code> fight, with three party members on screen, give Mushura's count at the real frame timing.</p>
+
+  <h3>Open questions</h3>
+  <ul>
+    <li>Mushura's hit count in the real fight. The measured 28 comes from a one-character party on another stage, and the count follows frame timing.</li>
+    <li>A target that is only flinched (it has no get-up clip) and is back on idle within 32 frames is hit again at Theeder's second crossing; whether that is intended is unknown. Cort, once unshielded, is knocked down and is not.</li>
+    <li>Which monsters, if any, ship with no reaction clips.</li>
+    <li>Mule's shield guard has not been seen to run.</li>
+  </ul>
+</section>

@@ -52,6 +52,30 @@ pub(super) fn earth_egg_price(run: &mut Run<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Fortress encounter fix: both Absolute Fortress scene MANs stop reading the
+/// Floating Castle's stale "no battles" flag. Seedless; runs ahead of the
+/// randomizers that re-pack the same MANs, which then carry it forward.
+pub(super) fn fortress_encounter_fix(run: &mut Run<'_>) -> Result<()> {
+    let args = run.args;
+    let patcher = &mut run.patcher;
+    let manifest = &mut run.manifest;
+    if args.fortress_encounter_fix {
+        let report = apply::apply_fortress_encounter_fix(patcher)?;
+        println!(
+            "fortress-encounter-fix: {}",
+            if report.changed() {
+                "Absolute Fortress encounter tables patched (the Floating Castle's stale flag is ignored)"
+            } else {
+                "already applied"
+            }
+        );
+        manifest.push("fortress_encounter_fix = true".to_string());
+    } else {
+        manifest.push("fortress_encounter_fix = false".to_string());
+    }
+    Ok(())
+}
+
 /// Place renames: the SCUS landmark cell, the world-map label records, and
 /// every scene MAN whose entry banner carries the name.
 pub(super) fn rename_location(run: &mut Run<'_>) -> Result<()> {

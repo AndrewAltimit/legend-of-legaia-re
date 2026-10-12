@@ -172,7 +172,10 @@ auto-fill arm in `battle_action::dispatch` raises it).
 The stage site's tail (`0x801E3768..0x801E37BC`) re-reads the acting
 character's record `+0xF4` and, when it carries `0x2000`, increments
 `ctx[+0x16]` - but only while the counter is already non-zero
-(`beq v0,zero,0x801E37C0` at `0x801E37B4`). So the first pass stages with the
+(`beq v0,zero,0x801E37C0` at `0x801E37B4`). So when the counter is `0` at the
+first stage - which needs an attacker to have passed the state `0x19` exit
+since the last manual command entry, because the gauge build at `0x801D3B3C`
+leaves the Low command's AP cost in the same byte - the first pass stages with the
 counter at `0`, the end-of-stream refill lifts it to `1` while the first
 pass's last clip is still in flight (its hits read `1` and still carry), and
 the second pass's first stage lifts it to `2` - the value that ends the damage
@@ -596,7 +599,7 @@ lands the total on this hit, `APPLY_MODE_CARRY` lands nothing, anything else
 keeps the cursor-parked / last-beat pair.
 
 The size-class byte the early arm needs is `legaia_actor_formats::monster_archive::MonsterRecord::swing_class` (record `+0x1E`), projected into the catalog as `MonsterDef::swing_class`, which also fills the no-input attack queue's class input (`World::attack_swing_class_of`). A synthetic catalog leaves it `0` - the class
-that connects with everything - so a disc-free session never takes the early arm. The `ctx[+0x16]` pair counter the carry arm reads is written by the strike
+that connects with everything - so a disc-free session never takes the early arm. The `ctx[+0x16]` pair counter the carry arm reads is also the Low command's AP-cost byte, written by the arts-entry gauge build at `0x801D3B3C` on every manual command entry and cleared only on the state `0x19` exit (`0x801E35B4`); inside the action state machine it is written by the strike
 loop's own Attack x2 refill and by the stage site's per-stage bump, both
 described in §2.
 

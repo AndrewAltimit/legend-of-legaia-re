@@ -26,7 +26,7 @@ game loads from it into RAM at runtime.
 | `Region` variant | Product codes | Notes |
 |---|---|---|
 | `Region::Na` | `SCUS-94254` | NA retail; anchor build for this project. Default. |
-| `Region::Jp` | `SCPS-10059`, `SCPS-91246` | JP retail + "PlayStation The Best" reissue. RAM addresses shifted by `+0x1B90` relative to NA. |
+| `Region::Jp` | `SCPS-10059`, `SCPS-91246` | JP retail + "PlayStation The Best" reissue. A separate compile; the `+0x1B90` shift relative to NA holds only for the cells it was derived from. |
 | `Region::Eu` | `SCES-01752`, `SCES-01944–47` | EU EN + FR/DE/IT/ES localisations. Same `PROT.DAT` layout as NA with the text swapped; the executables differ in battle spoils and stat boost (see [Known builds](#known-builds)). No address shift is applied. |
 
 `Region::from_product_code(code)` maps a disc ID prefix to the right variant.  
@@ -85,7 +85,13 @@ Only the *byte* `0x8007B98F` has no accessor of its own - it is reached as the h
 byte of the word at `0x8007B98C`. Published GameShark codes additionally prove all
 three are runtime-writable by external POKE.
 
-The `0x1B90`-byte shift between the JP and NA addresses of the debug-menu byte is what `Region::translate_addr` applies: the two executables are read as sharing one RAM-resident layout, relocated. That rests on the published cheat pair, not on a JP disassembly.
+The `0x1B90`-byte shift between the JP and NA addresses of the debug-menu byte is what `Region::translate_addr` applies. It holds for the cells it was derived from (the published cheat pair), not for the build as a whole: `SCPS_100.59` is a separate compile, not the NA layout relocated, and no single shift maps NA addresses onto it.
+
+- **Save-window cells.** The inventory bag sits at `0x801CBFC8`, gold at `0x801CAC0C` and coins at `0x801CAC14` (NA `0x80085958` / `0x8008459C` / `0x800845A4`).
+- **Overlay load bases.** Slot A (PROT 0897 / 0898 / 0899) loads at `0x801D05C8` (NA `0x801CE818`) and the slot-B cast modules (PROT 0903..0966) at `0x801F9DB0` (NA `0x801F69D8`) - shifts of `0x1DB0` and `0x33D8`.
+- **Battle-context fields** sit `0xA0` lower: scripted-fight flag `ctx[+0x1E7]` against NA `ctx[+0x287]`, cast phase `ctx[+0x1D9]` against `ctx[+0x279]`, round counter `ctx[+0x1EA]` against `ctx[+0x28A]`.
+
+The French `SCES_019.44` is the NA code relocated, with slot A at `0x801CF0A8` and slot B at `0x801F7400`.
 
 ## Debug input bindings
 

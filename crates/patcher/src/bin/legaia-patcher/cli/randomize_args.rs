@@ -209,6 +209,19 @@ pub(crate) struct RandomizeArgs {
     /// behave byte-for-byte like retail.
     #[arg(long, default_value_t = false)]
     pub(crate) approach_softlock_fix: bool,
+    /// Fix **no random encounters in Jette's Absolute Fortress**. The escape
+    /// clock in Zora's Floating Castle switches battles off for its last
+    /// minute by raising a story flag that nothing ever lowers, and both
+    /// Fortress scenes open their encounter tables with a copy of the
+    /// castle's "this flag means no battles" group - so a save that left the
+    /// castle with under a minute showing finds the whole Fortress silent,
+    /// with the Door of Light greyed out. This rewrites that leading group in
+    /// the `deroa` and `chitei2` scene MANs (14 bytes each, same size) into a
+    /// duplicate of the scene's own post-Jette group, so the Fortress never
+    /// reads the stale flag. It heals a save that is already affected; a
+    /// healthy save and the castle itself play exactly as retail.
+    #[arg(long, default_value_t = false)]
+    pub(crate) fortress_encounter_fix: bool,
     /// Set how much **AP the Spirit command charges** into the battle AP
     /// gauge (retail 32). `0` makes Spirit a pure defensive stance (guard
     /// boost, no AP); `100` fills the whole gauge in one press; a **negative**

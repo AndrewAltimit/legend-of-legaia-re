@@ -30,7 +30,10 @@ Four patching families share the machinery:
 - **The randomizer** - seeded reassignment of gameplay data (drops,
   encounters, chests, steals, Tactical Arts combos, doors, shops, casino
   prizes, starting items and level, prices, equipment and battle-tuning
-  tables), plus the hand-assembled MIPS hooks detoured into dead space.
+  tables), plus the hand-assembled MIPS hooks detoured into dead space and
+  the seedless retail-bug fixes. The Fortress encounter fix
+  (`fortress_encounter_fix`, a scene-MAN encounter-table edit) lives here;
+  the two battle-code fixes are `legaia-code-hooks`'.
 - **New-content mods** - seedless structural rebuilds shipped as flags and
   untouched by the seed: the Delilas party swap, the Delilas Challenge, the
   custom items, the Super Arts move list and ZetaPhoenix's Super Arts Pack.

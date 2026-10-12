@@ -1,0 +1,374 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">glitches</a> &middot; Incense, doors and the Door of Light</div>
+  <h1>Incense, doors and the Door of Light</h1>
+  <p class="lede">Four ways Legend of Legaia lets a player go where the story is not ready for them: an Incense notice that swallows a cutscene trigger, an Incense effect that outlives its save file, a boss-room door that opens to one button press from beside its guards, and one patch of floor in Nivora Ravine where a Door of Light works. Each is traced to the code and scene data on the USA disc.</p>
+</header>
+
+<div class="notice">
+  <div class="notice-title">How to read this page</div>
+  Everything here is read from the disassembly of the game program and its field overlay (PROT entry 0897, load base <code>0x801CE818</code>) and from the scene files. The Juggernaut Room door is also captured on an emulator, and its section says how each capture was set up; so is one reading in the carry-over section. The rest is static: where those sections say what a debugger shows, that is a prediction from the code. The player's <strong>movement lock</strong> is bit <code>0x80000</code> of <code>player[+0x10]</code>, with the player actor at <code>*0x8007C364</code>; a tile is 128 units, and the player's tile is its position shifted right by 7.
+</div>
+
+<section class="doc-section" id="incense-trigger-bypass">
+  <h2>Incense trigger bypass</h2>
+<dl class="kv">
+  <dt>Reported as</dt><dd>When the notice that the Incense has worn off appears on the step that would have entered a cutscene trigger or loading zone, the notice wins and the trigger never fires (community report).</dd>
+  <dt>Cause</dt><dd>The Incense expiry sets the movement lock mid-frame; the player still steps onto the trigger tile, and a locked crossing is recorded without running.</dd>
+  <dt>Where</dt><dd>Field overlay, PROT 0897: <code>FUN_801D0B90</code> (walk tick) and <code>FUN_801D1EC4</code> (walk-on dispatcher)</dd>
+  <dt>Affects</dt><dd>Walk-on records and intra-scene teleports that are one tile deep on the line walked; Jette and the three Uru Mais dreams match on the disc</dd>
+  <dt>Status</dt><dd><span class="tag tag-done">explained</span> - read from the disc, not captured on an emulator</dd>
+</dl>
+  <p>The trigger code never looks at the Incense. What the two share is the <b>movement lock</b>, the bit that tells the game a script or window owns the player.</p>
+  <p>Each frame the game asks once whether the player is free. If so it runs the walk tick, then moves the player, then compares the player's tile with the last one to see whether a trigger tile was entered. When the Incense runs out, the walk tick raises the lock so its notice window can take the pad. That happens <em>after</em> the frame's question and <em>before</em> the move, and the player still moves that frame.</p>
+<figure class="diagram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 250" role="img" aria-label="Four steps of one frame in call order: gate, walk tick, mover, trigger test. On the expiry frame the walk tick sets the movement lock after the gate has passed; the mover still moves the player across a tile edge and the trigger test stores the tile without running its record."><text class="dg-label dg-start" x="10" y="20">The frame the Incense runs out - FUN_801D1344, in call order</text><rect class="dg-node" x="10" y="34" width="145" height="70" rx="3"/><text class="dg-label" x="82.5" y="55">1  Gate</text><text class="dg-label" x="82.5" y="74">0x801D1694</text><text class="dg-sub" x="82.5" y="92">lock clear: carry on</text><line class="dg-edge" x1="155" y1="69" x2="158" y2="69"/><path fill="var(--dg-accent)" d="M165 69 L158 65 L158 73 Z"/><rect class="dg-node-warn" x="165" y="34" width="145" height="70" rx="3"/><text class="dg-label" x="237.5" y="55">2  Walk tick</text><text class="dg-label" x="237.5" y="74">0x801D0D14</text><text class="dg-sub" x="237.5" y="92">1 to 0: LOCK SET</text><line class="dg-edge" x1="310" y1="69" x2="313" y2="69"/><path fill="var(--dg-accent)" d="M320 69 L313 65 L313 73 Z"/><rect class="dg-node" x="320" y="34" width="145" height="70" rx="3"/><text class="dg-label" x="392.5" y="55">3  Mover</text><text class="dg-label" x="392.5" y="74">0x801D0334</text><text class="dg-sub" x="392.5" y="92">player still moves</text><line class="dg-edge" x1="465" y1="69" x2="468" y2="69"/><path fill="var(--dg-accent)" d="M475 69 L468 65 L468 73 Z"/><rect class="dg-node-warn" x="475" y="34" width="145" height="70" rx="3"/><text class="dg-label" x="547.5" y="55">4  Trigger test</text><text class="dg-label" x="547.5" y="74">0x801D2158</text><text class="dg-sub" x="547.5" y="92">locked: tile stored</text><rect class="dg-node-warn" x="165" y="112" width="455" height="8" rx="2"/><text class="dg-label" x="392" y="136">movement lock set from here to the end of the frame</text><rect class="dg-node" x="140" y="156" width="120" height="40" rx="0"/><text class="dg-sub" x="200" y="212">tile before</text><rect class="dg-node-warn" x="260" y="156" width="120" height="40" rx="0"/><text class="dg-sub" x="320" y="212">trigger tile</text><rect class="dg-node" x="380" y="156" width="120" height="40" rx="0"/><text class="dg-sub" x="440" y="212">tile after</text><rect class="dg-node-accent" x="244" y="170" width="10" height="12" rx="2"/><rect class="dg-node-accent" x="264" y="170" width="10" height="12" rx="2"/><line class="dg-edge" x1="254" y1="164" x2="261" y2="164"/><path fill="var(--dg-accent)" d="M268 164 L261 160 L261 168 Z"/><text class="dg-sub dg-start" x="510" y="174">each tile is</text><text class="dg-sub dg-start" x="510" y="188">128 units wide</text><text class="dg-sub dg-start" x="10" y="174">player crosses</text><text class="dg-sub dg-start" x="10" y="188">the tile edge</text><text class="dg-label" x="320" y="238">last tile = trigger tile, FUN_8003BDE0 never called: the trigger is spent</text></svg>
+<figcaption>The frame the Incense runs out, in call order. The lock is set after the gate has already let the frame through and before the trigger test, so the move happens and the trigger does not. Predicted from the disassembly; not an emulator capture.</figcaption>
+</figure>
+  <p>If that move crosses onto a trigger tile, the trigger test finds a new tile and a locked player. Its rule for that case is to write the tile down as handled and do nothing else. Once the notice is dismissed the player is standing on the trigger tile, and only a fresh crossing fires a trigger. The trigger is spent without running.</p>
+  <p>The Incense drains by time spent moving: one use is <code>0x40</code> walk ticks of <code>0x20</code> vsyncs each, about 34 seconds of walking, capped at <code>0x100</code> ticks (about 137 seconds). That is why a fixed walking route reproduces the skip. This is read from the code; it has not been captured on an emulator.</p>
+<figure class="diagram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 250" role="img" aria-label="Four steps of one frame in call order: gate, walk tick, mover, trigger test. On an ordinary frame the lock stays clear and the trigger test spawns the record of the tile just entered."><text class="dg-label dg-start" x="10" y="20">An ordinary frame - FUN_801D1344, in call order</text><rect class="dg-node" x="10" y="34" width="145" height="70" rx="3"/><text class="dg-label" x="82.5" y="55">1  Gate</text><text class="dg-label" x="82.5" y="74">0x801D1694</text><text class="dg-sub" x="82.5" y="92">lock clear: carry on</text><line class="dg-edge" x1="155" y1="69" x2="158" y2="69"/><path fill="var(--dg-accent)" d="M165 69 L158 65 L158 73 Z"/><rect class="dg-node" x="165" y="34" width="145" height="70" rx="3"/><text class="dg-label" x="237.5" y="55">2  Walk tick</text><text class="dg-label" x="237.5" y="74">0x801D0CDC</text><text class="dg-sub" x="237.5" y="92">no expiry: no lock</text><line class="dg-edge" x1="310" y1="69" x2="313" y2="69"/><path fill="var(--dg-accent)" d="M320 69 L313 65 L313 73 Z"/><rect class="dg-node" x="320" y="34" width="145" height="70" rx="3"/><text class="dg-label" x="392.5" y="55">3  Mover</text><text class="dg-label" x="392.5" y="74">0x801D0334</text><text class="dg-sub" x="392.5" y="92">moves the player</text><line class="dg-edge" x1="465" y1="69" x2="468" y2="69"/><path fill="var(--dg-accent)" d="M475 69 L468 65 L468 73 Z"/><rect class="dg-node-ok" x="475" y="34" width="145" height="70" rx="3"/><text class="dg-label" x="547.5" y="55">4  Trigger test</text><text class="dg-label" x="547.5" y="74">0x801D2184</text><text class="dg-sub" x="547.5" y="92">record spawns</text><rect fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3" x="165" y="112" width="455" height="8" rx="2"/><text class="dg-sub" x="392" y="136">movement lock stays clear</text><rect class="dg-node" x="140" y="156" width="120" height="40" rx="0"/><text class="dg-sub" x="200" y="212">tile before</text><rect class="dg-node-ok" x="260" y="156" width="120" height="40" rx="0"/><text class="dg-sub" x="320" y="212">trigger tile</text><rect class="dg-node" x="380" y="156" width="120" height="40" rx="0"/><text class="dg-sub" x="440" y="212">tile after</text><rect class="dg-node-accent" x="244" y="170" width="10" height="12" rx="2"/><rect class="dg-node-accent" x="264" y="170" width="10" height="12" rx="2"/><line class="dg-edge" x1="254" y1="164" x2="261" y2="164"/><path fill="var(--dg-accent)" d="M268 164 L261 160 L261 168 Z"/><text class="dg-sub dg-start" x="510" y="174">each tile is</text><text class="dg-sub dg-start" x="510" y="188">128 units wide</text><text class="dg-sub dg-start" x="10" y="174">player crosses</text><text class="dg-sub dg-start" x="10" y="188">the tile edge</text><text class="dg-label" x="320" y="238">new tile and player free: FUN_8003BDE0 spawns the tile's record</text></svg>
+<figcaption>For comparison, an ordinary frame: the lock stays clear and the trigger test spawns the record of the tile just entered.</figcaption>
+</figure>
+  <h3>Mechanism</h3>
+<ol class="steps steps-vertical">
+  <li><b>0x801D1694</b><span>Gate: the per-frame player routine tests the lock once. A free player continues.</span></li>
+  <li><b>0x801D0D14</b><span>Walk tick: the Incense window goes from 1 to 0, the notice record is installed and the movement lock is set.</span></li>
+  <li><b>0x801D01F0</b><span>Mover: its own lock test only skips the menu-button block, so the player still moves and can cross a tile edge.</span></li>
+  <li><b>0x801D2158</b><span>Trigger test: new tile plus locked player takes the exit that stores the tile and performs no lookup.</span></li>
+  <li><b>0x8007BDC8</b><span>After the notice the last tile equals the current tile, so nothing fires until another crossing.</span></li>
+</ol>
+  <p>Which triggers the consumed crossing can skip:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Trigger</th><th>Path</th><th>Skippable</th></tr></thead>
+<tbody>
+<tr><td>Walk-on record: cutscene, walk-on boss fight, named scene exit</td><td>crossing arm, <code>FUN_801D5630(1)</code>, <code>FUN_8003BDE0</code></td><td><b>yes</b></td></tr>
+<tr><td>Intra-scene teleport (a map door)</td><td>crossing arm, <code>FUN_801D5630(0)</code>, timer <code>0x8007B6B0</code></td><td><b>yes</b>, same locked exit</td></tr>
+<tr><td>A strip more than one tile deep along the path</td><td>each further crossing is a new compare</td><td>first tile only</td></tr>
+<tr><td>Stand-here-and-press records armed by <code>2E 13</code></td><td>unchanged-tile arm</td><td>not applicable</td></tr>
+<tr><td>Landing-tile record after a teleport</td><td>timer half, <code>0x801D2030</code></td><td>no</td></tr>
+<tr><td>Scene-entry scripts and position polls</td><td>field VM, every tick</td><td>no</td></tr>
+<tr><td>NPC talk, doors opened by body contact</td><td>mover touch dispatch</td><td>no</td></tr>
+</tbody>
+</table></div>
+  <p>Known skips matched to trigger records on the disc:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Skip</th><th>Scene</th><th>Trigger tiles</th><th>Record</th></tr></thead>
+<tbody>
+<tr><td>Jette</td><td><code>chitei2</code></td><td><code>(18, 14)</code>, one tile</td><td>P2[11], gates C1 <code>0x470</code> / C2 <code>0x4F0</code>, runs <code>3E FF 0C</code></td></tr>
+<tr><td>Vahn's dream</td><td><code>uru</code></td><td><code>(110..112, 35)</code></td><td>P2[29], no gates, exit to <code>urudre1</code></td></tr>
+<tr><td>Noa's dream</td><td><code>uru</code></td><td><code>(10..12, 98)</code></td><td>P2[33], no gates, exit to <code>urudre2</code></td></tr>
+<tr><td>Gala's dream</td><td><code>uru</code></td><td><code>(80..82, 99)</code></td><td>P2[31], no gates, exit to <code>urudre3</code></td></tr>
+</tbody>
+</table></div>
+<details class="disclosure">
+<summary>Instruction-level walkthrough</summary>
+<p>The Incense part of the walk tick. The lines from <code>0x801D0D04</code> on run only on the tick that takes the window from 1 to 0.</p>
+<pre><code>801d0cd4  lw    v0,-0x4a00(v1)     ; 0x8007B600, the window
+801d0cdc  beq   v0,zero,exit       ; already 0: nothing to do
+801d0ce0  addiu v0,v0,-1
+801d0ce4  bne   v0,zero,exit
+801d0ce8  sw    v0,-0x4a00(v1)     ; delay slot: store window - 1
+801d0d04  sw    v0,-0x4bb0(v1)     ; 0x8007B450 = 0x801F2278 (notice record)
+801d0d08  lw    v0,0x10(a0)        ; a0 = player
+801d0d0c  lui   v1,0x8
+801d0d10  or    v0,v0,v1
+801d0d14  sw    v0,0x10(a0)        ; the lock
+801d0d20  jal   0x80020de0         ; spawn the notice actor</code></pre>
+<p>The mover's lock test skips only <code>0x801D01F8..0x801D0330</code>, the pause-menu open. <code>0x801D0334</code> is the movement body.</p>
+<pre><code>801d01e4  lw   v0,0x10(v0)         ; player[+0x10]
+801d01ec  and  v0,v0,v1            ; &amp; 0x80000
+801d01f0  bnez v0,0x801d0334       ; locked: skip the menu-button block only</code></pre>
+<p>The dispatcher's tile compare. The locked exit sits before both lookups.</p>
+<pre><code>801d2068  tile = player[+0x14] &gt;&gt; 7, player[+0x18] &gt;&gt; 7
+801d2110  0x1F800394 &amp;= ~0x80000   ; re-poll bit cleared on every crossing
+801d2140  andi v0,v0,0x600         ; grid cell: a trigger tile?
+801d2144  beqz v0,0x801d226c       ; no: store tile, return
+801d2158  bnez v0,0x801d2270       ; LOCKED: store tile, return
+801d2168  jal  0x801d5630          ; kind 1 lookup, then jal 0x8003bde0
+801d21c8  jal  0x801d5630          ; kind 0 lookup, then timer = 0x26
+801d2270  sw   s0,-0x4238(v0)      ; last tile = this tile</code></pre>
+<p>The walk tick itself runs only when the accumulator at <code>0x801F2274</code> holds <code>0x21</code> or more, and takes <code>0x20</code> off it. The mover adds the frame's vsync count (<code>0x1F800393</code>) at <code>0x801D08EC..0x801D0928</code> on any frame with non-zero movement.</p>
+</details>
+  <h3>Addresses</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td><code>0x801D1344</code></td><td>PROT 0897</td><td>Per-frame player routine; gate 0x801D1694, calls at 0x801D16EC, 0x801D16F4, 0x801D1744</td><td>disassembly</td></tr>
+<tr><td><code>0x801D0B90</code></td><td>PROT 0897</td><td>Walk tick; Incense drain 0x801D0CD4..0x801D0CE8, lock store 0x801D0D14</td><td>disassembly</td></tr>
+<tr><td><code>0x801D01B0</code></td><td>PROT 0897</td><td>Mover; lock branch 0x801D01F0, movement body 0x801D0334, accumulator feed 0x801D08EC</td><td>disassembly</td></tr>
+<tr><td><code>0x801D1BA0</code></td><td>PROT 0897</td><td>Settle; calls the walk-on dispatcher at 0x801D1D80</td><td>disassembly</td></tr>
+<tr><td><code>0x801D1EC4</code></td><td>PROT 0897</td><td>Walk-on dispatcher; tile compare 0x801D2068, locked exit 0x801D2158</td><td>disassembly</td></tr>
+<tr><td><code>0x801D5630</code></td><td>PROT 0897</td><td>Per-tile trigger lookup</td><td>disassembly</td></tr>
+<tr><td><code>0x801F1E48</code></td><td>PROT 0897</td><td>Wear-off notice; record 0x801F2278, kind table 0x801F33A4</td><td>disassembly</td></tr>
+<tr><td><code>0x801DA174</code></td><td>PROT 0897</td><td>Encounter roll skips while the window is non-zero</td><td>disassembly</td></tr>
+<tr><td><code>0x80046870</code></td><td>SCUS</td><td>Window top-up: add 0x40, cap 0x100</td><td>disassembly</td></tr>
+<tr><td><code>0x80046898</code></td><td>SCUS</td><td>Use validator: window below 0xE0</td><td>disassembly</td></tr>
+<tr><td><code>0x8003BDE0</code></td><td>SCUS</td><td>Record spawn with the C1 / C2 header gates</td><td>repo doc</td></tr>
+<tr><td><code>0x8007B600</code></td><td>RAM</td><td>Incense window, in walk ticks</td><td>disassembly</td></tr>
+<tr><td><code>0x801F2274</code></td><td>RAM</td><td>Walk-tick accumulator, in vsyncs</td><td>disassembly</td></tr>
+<tr><td><code>0x8007BDC8 / 0x8007BDCC</code></td><td>RAM</td><td>Last tile seen by the dispatcher</td><td>disassembly</td></tr>
+<tr><td><code>0x8007B450</code></td><td>RAM</td><td>Submode cell the notice record is installed in</td><td>disassembly</td></tr>
+<tr><td><code>chitei2 .PCH (18,14,11,1)</code></td><td>disc</td><td>Jette trigger tile</td><td>disc data</td></tr>
+<tr><td><code>uru .PCH records 29 / 33 / 31</code></td><td>disc</td><td>Dream trigger strips</td><td>disc data</td></tr>
+</tbody>
+</table></div>
+  <h3>Scope</h3>
+  <p>Between the gate and the mover call the only code is the walk tick, and the Incense edge is its only lock write, so Incense is the only source of this on the walking path. The kingdom overworld runs the same routine. The skip lasts one pass: the record never ran, so its one-shot flag is not set and a later crossing of the same tile fires it.</p>
+<p>Related pages: <a href="../../subsystems/field-locomotion.html">field locomotion</a>, <a href="../../formats/scene-v12-table.html">the walk-on trigger sidecar</a>, <a href="../../subsystems/field-menu.html">the pause menu</a>.</p>
+  <h3>Verifying it</h3>
+  <p>Break on <code>0x801D0D14</code>. On the hit, note the player position, run to <code>0x801D2068</code> in the same frame and compare the new tile against <code>0x8007BDC8</code> / <code>0x8007BDCC</code>. To force the case, write <code>1</code> to <code>0x8007B600</code> and <code>0x21</code> to <code>0x801F2274</code> on the frame before the player's centre crosses into <code>chitei2</code> tile <code>(18, 14)</code>. Prediction: the branch at <code>0x801D2158</code> is taken, <code>0x8003BDE0</code> is not called from <code>0x801D2184</code>, and flag <code>0x470</code> stays clear.</p>
+  <h3>Open questions</h3>
+  <ul>
+    <li>The community reports that the Jette skip costs the Door of Light for the rest of the game; that is not traced. A capture of 0x1F800394 after the skip, and of whether FUN_801D9E1C still reaches 0x801DA058, would settle it.</li>
+    <li>The routine that releases the lock after the notice is not traced.</li>
+    <li>The out-of-bounds uses in the community reports are not matched to specific tiles.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="incense-carry-over">
+  <h2>Incense carry-over into a new game</h2>
+<dl class="kv">
+  <dt>Reported as</dt><dd>Use Incense, then load a different save or start a New Game without resetting the console, and the no-encounter effect is still running. Speedrunners call the trick the Incense File Transfer and name the categories that use it New Game+ (community report).</dd>
+  <dt>Cause</dt><dd>The Incense window is one number in the program's own memory, outside the block that is saved, loaded or rebuilt for a new game.</dd>
+  <dt>Where</dt><dd>RAM <code>0x8007B600</code>, inside the <code>SCUS_942.54</code> load image</dd>
+  <dt>Affects</dt><dd>The Incense window only, up to <code>0x100</code> ticks (about 137 seconds of walking)</dd>
+  <dt>Status</dt><dd><span class="tag tag-done">explained</span> - read from the disc; the carry-over itself is not captured on an emulator</dd>
+</dl>
+  <p>"New Game+" is the community's name for this glitch, not a carry-over mode of the kind other games ship. <b>The only thing that transfers is the remaining Incense steps.</b> The name stuck because the trick splits the speedrun categories: a run that starts with Incense already burning skips the early random battles, and it also has the <a href="#incense-trigger-bypass">trigger bypass</a> available from the first minutes, long before the item can be bought, so the route looks completely different from a run without it.</p>
+  <p>The window is a single number kept in the game program's own memory rather than in the block that goes to the memory card. Loading a file does not restore it and starting a new game does not clear it, so whatever was left keeps draining as the party walks. Only a reset or power cycle, which reloads the program, returns it to zero.</p>
+<figure class="diagram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 244" role="img" aria-label="A memory strip drawn to scale: the game program image ends at 0x8007B800 with the Incense window at 0x8007B600 just inside it, while the block that is saved, loaded and rebuilt for a new game starts at 0x80084140. Nothing that resets or restores game state reaches the Incense window."><text class="dg-label dg-start" x="20" y="20">Main RAM from 0x80010000 to 0x80086000, to scale</text><rect class="dg-node" x="20" y="52" width="546.61" height="30" rx="0"/><text class="dg-label" x="233.305" y="72">SCUS_942.54 load image, 0x80010000..0x8007B800</text><rect class="dg-node-ok" x="610.228" y="52" width="8.29251" height="30" rx="0"/><line class="dg-edge" x1="565.975" y1="40" x2="565.975" y2="90"/><text class="dg-label" x="455" y="38">Incense window, 0x8007B600</text><line class="dg-edge" x1="614.374" y1="90" x2="614.374" y2="104"/><path fill="var(--dg-accent)" d="M614.374 84 L610.374 91 L618.374 91 Z"/><text class="dg-label" x="510" y="118">saved window, 0x80084140 + 0x1A18</text><text class="dg-label dg-start" x="20" y="146">Memory card load: restores the saved window only</text><text class="dg-label dg-start" x="20" y="166">New Game: rebuilds the saved window only</text><text class="dg-label dg-start" x="20" y="186">Mode-entry reset FUN_8001DCF8: a fixed list, the Incense window is not on it</text><text class="dg-sub dg-start" x="20" y="214">Seven instructions touch 0x8007B600: add 0x40, clamp, compare, read, subtract 1, test.</text><text class="dg-sub dg-start" x="20" y="230">None stores a constant, so only reloading the program returns it to zero.</text></svg>
+<figcaption>Main RAM to scale. The Incense window sits just inside the top of the program image; saving, loading and New Game all act on the block further up.</figcaption>
+</figure>
+  <p>Two consequences follow. Saving, using Incense and reloading keeps both the effect and the item. And because the wear-off notice still appears, the trigger bypass becomes available in a file that owns no Incense.</p>
+  <h3>Mechanism</h3>
+<ol class="steps steps-vertical">
+  <li><b>0x8007B600</b><span>The window sits inside the program image, which ends at 0x8007B800; its value in the file is zero.</span></li>
+  <li><b>0x80084140</b><span>The save block is a 0x1A18-byte copy of the live window further up in memory.</span></li>
+  <li><b>0x80046870</b><span>Seven instructions on the disc touch the window: the top-up, the validator, the drain and the encounter test. None stores a constant.</span></li>
+  <li><b>FUN_8001DCF8</b><span>The mode-entry reset writes a fixed list of globals; the Incense window is not on it.</span></li>
+</ol>
+  <h3>Addresses</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td><code>0x8007B600</code></td><td>SCUS data</td><td>Incense window; value in the file is 0</td><td>disc data</td></tr>
+<tr><td><code>0x80046870 / 0x8004687C / 0x8004688C</code></td><td>SCUS</td><td>Top-up: the only writes besides the drain</td><td>disassembly</td></tr>
+<tr><td><code>0x80046898</code></td><td>SCUS</td><td>Validator read</td><td>disassembly</td></tr>
+<tr><td><code>0x801D0CD4 / 0x801D0CE8</code></td><td>PROT 0897</td><td>Walk-tick read and decrement</td><td>disassembly</td></tr>
+<tr><td><code>0x801DA174</code></td><td>PROT 0897</td><td>Encounter test</td><td>disassembly</td></tr>
+<tr><td><code>0x8001DCF8</code></td><td>SCUS</td><td>Mode-entry reset; callers 0x800160AC, 0x8001D7D8, 0x8002577C, 0x80025FD4, 0x80055D5C</td><td>disassembly</td></tr>
+<tr><td><code>0x80034A6C</code></td><td>SCUS</td><td>New-game data init, called at 0x8001DED8</td><td>repo doc</td></tr>
+<tr><td><code>0x80084140 + 0x1A18</code></td><td>RAM</td><td>The window that is saved and reset</td><td>repo doc</td></tr>
+<tr><td><code>0x8007B5FC</code></td><td>SCUS data</td><td>Encounter step counter; value in the file is 0x3CE (974), not saved</td><td>disc data, capture</td></tr>
+</tbody>
+</table></div>
+  <h3>Scope</h3>
+  <p>The most that can be carried is the cap, <code>0x100</code> ticks. Any other global kept outside <code>0x80084140..0x80085B58</code> and off the reset list behaves the same way.</p>
+  <p>The encounter step counter <code>0x8007B5FC</code> is another number outside the saved window. Its value in the program file is <code>0x3CE</code> (974), and that is what it holds after a power-on and a memory-card load; this one is a capture, on an unmodified played save loaded from a cold boot. The first battle after a cold load in a room with encounter rate 18 therefore comes on step 55, every time. Whether the counter is on the reset list is not checked here.</p>
+<p>Related page: <a href="../../subsystems/save-screen.html">the save screen</a>.</p>
+  <h3>Verifying it</h3>
+  <p>Write <code>0x100</code> to <code>0x8007B600</code>, reach the title screen without resetting the console (a Game Over does it), start a New Game and read the address on the first frame of free walking. Prediction: <code>0x100</code> less the ticks walked. After a reset it reads zero.</p>
+</section>
+
+<section class="doc-section" id="juggernaut-room-door">
+  <h2>Juggernaut's Room door</h2>
+<dl class="kv">
+  <dt>Reported as</dt><dd>The two guards in front of the Juggernaut Room in Ratayu castle, who stand aside only for a party at level 99, can be beaten early: "you come at it from the side", stand at an exact spot beside one guard, and one press of the interact button opens the door (community report; the method is shown in <a href="https://www.youtube.com/shorts/z5rk_CL5H9Q">this community video</a>).</dd>
+  <dt>Cause</dt><dd>From a strip beside a guard, one interact press lands in his talk box and the door's box at once; he makes it a talk, and the door, later in the actor list, gets it.</dd>
+  <dt>Where</dt><dd>Scene <code>retockin</code> (Ratayu interior), door to <code>jagaroom</code>; interact probe <code>FUN_801CF9F4</code> in the field overlay, PROT 0897</dd>
+  <dt>Affects</dt><dd>This door, in both story states that have the guards, from either side; the same last-hit rule applies wherever an NPC and a prop share an interact point</dd>
+  <dt>Status</dt><dd><span class="tag tag-done">explained</span> - traced in the disassembly and captured on an emulator; the player was placed by poked coordinates and then driven by pad</dd>
+</dl>
+  <p><b>Nothing gets past the guards.</b> The door has no lock of its own while they stand there; the guards are the lock. Standing beside one of them, a single press of the interact button reaches a point that is inside the guard's talk box and the door's box at the same time. The guard makes the press count as a talk; the door, which comes later in the game's list of actors, is the one that receives it. The door opens and its own script walks the party through.</p>
+  <p>The spot is narrow. Along the outer side of each guard there is a strip about eight units wide where he does not stop a player walking up. Stand in that strip level with the guard, face diagonally toward the door and press: the game checks one point 64 units across and 64 units up, and from the strip that point is close enough to both the guard and the door.</p>
+<figure class="diagram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 356" role="img" aria-label="To-scale top-down plan of the Juggernaut Room door in Ratayu castle, one pixel per world unit, north up. The door prop is centred at 3584, 7424 with an interact box 80 units each way. Two guards stand at 3520, 7296 and 3648, 7296, each with a talk box 72 units each way. The lower edge of the door box overlaps the top of both talk boxes. A narrow standing strip lies just outside each guard, at x 3442 to 3448 and x 3720 to 3726, z 7282 to 7302; from either strip the interact point, 64 units across and 64 up, lands in the overlap."><rect fill="var(--dg-ink-dim)" fill-opacity="0.16" stroke="var(--dg-line)" x="40" y="106" width="52" height="64"/><rect fill="var(--dg-ink-dim)" fill-opacity="0.16" stroke="var(--dg-line)" x="348" y="106" width="52" height="64"/><text class="dg-sub" x="66" y="142">wall</text><text class="dg-sub" x="374" y="142">wall</text><rect class="dg-node-accent" x="140" y="26" width="160" height="160"/><rect class="dg-node-ok" x="140" y="162" width="160" height="24"/><rect fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3" x="92" y="106" width="128" height="128"/><rect fill="none" stroke="var(--warn)" stroke-width="1.8" x="84" y="162" width="144" height="144"/><rect fill="none" stroke="var(--warn)" stroke-width="1.8" x="212" y="162" width="144" height="144"/><rect fill="var(--ok)" x="77" y="227" width="8" height="22"/><rect fill="var(--ok)" x="355" y="227" width="8" height="22"/><polyline class="dg-edge-dim" points="48,338 80,306 80,260"/><path fill="var(--dg-ink-dim)" d="M80 251 L76 260 L84 260 Z"/><polyline class="dg-edge-dim" points="392,338 360,306 360,260"/><path fill="var(--dg-ink-dim)" d="M360 251 L356 260 L364 260 Z"/><line class="dg-edge" x1="80" y1="242" x2="137" y2="185"/><path fill="var(--dg-accent)" d="M144 178 L135 181 L141 187 Z"/><circle fill="var(--dg-accent)" cx="80" cy="242" r="4"/><line class="dg-edge" x1="360" y1="242" x2="303" y2="185"/><path fill="var(--dg-accent)" d="M296 178 L305 181 L299 187 Z"/><circle fill="var(--dg-accent)" cx="360" cy="242" r="4"/><circle fill="var(--warn)" cx="156" cy="234" r="6"/><circle fill="var(--warn)" cx="284" cy="234" r="6"/><text class="dg-sub" x="156" y="256">guard</text><text class="dg-sub" x="284" y="256">guard</text><rect fill="var(--dg-accent)" x="206" y="103" width="28" height="6" rx="0"/><text class="dg-label" x="220" y="72">door</text><text class="dg-sub" x="220" y="86">(3584, 7424)</text><line fill="none" stroke="var(--dg-ink-dim)" stroke-width="1" x1="92" y1="330" x2="92" y2="340"/><text class="dg-sub" x="92" y="348">x 3456</text><line fill="none" stroke="var(--dg-ink-dim)" stroke-width="1" x1="220" y1="330" x2="220" y2="340"/><text class="dg-sub" x="220" y="348">x 3584</text><line fill="none" stroke="var(--dg-ink-dim)" stroke-width="1" x1="348" y1="330" x2="348" y2="340"/><text class="dg-sub" x="348" y="348">x 3712</text><line fill="none" stroke="var(--dg-ink-dim)" stroke-width="1" x1="34" y1="234" x2="40" y2="234"/><text class="dg-sub dg-start" x="2" y="230">z 7296</text><line fill="none" stroke="var(--dg-ink-dim)" stroke-width="1" x1="34" y1="106" x2="40" y2="106"/><text class="dg-sub dg-start" x="2" y="102">z 7424</text><rect class="dg-node-accent" x="412" y="24" width="14" height="12" rx="0"/><text class="dg-label dg-start" x="432" y="34">Door prop</text><text class="dg-sub dg-start" x="432" y="48">its box: 80 units each way</text><circle fill="var(--warn)" cx="419" cy="68" r="5"/><text class="dg-label dg-start" x="432" y="72">Two guards, 128 apart</text><text class="dg-sub dg-start" x="432" y="86">(3520, 7296) and (3648, 7296)</text><text class="dg-sub dg-start" x="432" y="100">outline: talk box, 72 each way</text><rect class="dg-node-ok" x="412" y="114" width="14" height="12" rx="0"/><text class="dg-label dg-start" x="432" y="124">Inside both boxes</text><text class="dg-sub dg-start" x="432" y="138">the press counts as a talk,</text><text class="dg-sub dg-start" x="432" y="152">and the door receives it</text><rect fill="var(--ok)" x="415" y="164" width="8" height="16" rx="0"/><text class="dg-label dg-start" x="432" y="176">Where to stand</text><text class="dg-sub dg-start" x="432" y="190">x 3442..3448 or 3720..3726</text><text class="dg-sub dg-start" x="432" y="204">z 7282..7302</text><line class="dg-edge" x1="412" y1="230" x2="421" y2="221"/><path fill="var(--dg-accent)" d="M427 215 L418 218 L424 224 Z"/><text class="dg-label dg-start" x="432" y="228">The interact point</text><text class="dg-sub dg-start" x="432" y="242">64 across and 64 up: from</text><text class="dg-sub dg-start" x="432" y="256">(3444, 7288) it is (3508, 7352)</text><rect fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3" x="412" y="270" width="14" height="12" rx="0"/><text class="dg-label dg-start" x="432" y="280">Walk-on tile (27, 57)</text><text class="dg-sub dg-start" x="432" y="294">not reachable on foot</text><rect fill="var(--dg-ink-dim)" fill-opacity="0.16" stroke="var(--dg-line)" x="412" y="308" width="14" height="12" rx="0"/><text class="dg-label dg-start" x="432" y="318">Wall</text><text class="dg-sub dg-start" x="432" y="332">walking stops at z = 7314</text></svg>
+<figcaption>The door, both guards and the two standing strips, to scale at one pixel per world unit (a floor tile is 128 units). The arrows are the interact point of a player facing diagonally at the door; each ends inside the door's box and a guard's talk box at once. The dashed lines are the captured approach. A community screenshot of the method shows Vahn immediately to the right of the right-hand guard, which is the right-hand strip.</figcaption>
+</figure>
+  <p>A little too low and the guard just talks. A little too high and nothing happens. At the very top of the strip, against the wall, the guard talks without any button press, which is the sign players use to know they are in the right column.</p>
+  <p>The door is unlocked for a story reason. It is the route to the boss on the first trip through the castle, so its script opens on touch, and the room is closed before and after that by standing two guards in front of it. A party that reaches level 99 and talks to Saryu gets the guards removed and a key, and only then does the door ask for the key.</p>
+  <p>Behind the door, once the Saryu story is done, the chest gives the <b>Evil Talisman</b> and asks for no key. Before that the room is empty. Nothing is duplicated and nothing locks: the room's exit puts the party back in front of the guards, and reaching level 99 later still gives the key, which then opens a room whose chest is already taken.</p>
+  <h3>Mechanism</h3>
+<ol class="steps steps-vertical">
+  <li><b>retockin P0[0] +0x16</b><span>Door prop, centre (3584, 7424): flag 0x650 set opens it; flag 0x64F set asks for key item 0xBF; with neither set the script jumps straight to open and leave, and writes no flag.</span></li>
+  <li><b>0x801F2254</b><span>The interact button tests one point 64 units out on a compass of eight. At heading 0xA00 it is (x + 64, z + 64); at 0x600 it is (x - 64, z + 64).</span></li>
+  <li><b>0x801CFB40</b><span>The box test walks the whole actor list with no early exit. Every hit overwrites the player's partner slot; a talk-class actor (within 72 units) adds result bit 1, a static prop (within 80) adds bit 4.</span></li>
+  <li><b>0x801D0860</b><span>The caller tests bit 1 only, then posts the touch event to the partner slot: the last actor hit, not the one that supplied the bit.</span></li>
+  <li><b>0x8003B8D4</b><span>Scene init creates the scripted actors before the placed props and the list is appended at the tail, so the door (list index 46) is after both guards (21, 22).</span></li>
+  <li><b>(3444, 7288)</b><span>From x 3442..3448, z 7282..7302 the point is inside the left guard's box and the door's box. The mirror is x 3720..3726 at heading 0x600.</span></li>
+</ol>
+  <p>Why a player can stand there at all: a guard does not keep the player out of a square around him. A step is refused only when one of three leading points, 63 or 64 units ahead, comes within 40 units of the guard, and only along the axis of that step.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Moving</th><th>Left guard refuses the step while</th><th>Consequence</th></tr></thead>
+<tbody>
+<tr><td>Z+ (up)</td><td>x in <code>(3448, 3592)</code> and z in <code>(7193, 7273)</code></td><td>at x 3448 or less the player walks straight up past him</td></tr>
+<tr><td>X+ (right)</td><td>x in <code>(3416, 3496)</code> and z in <code>(7224, 7368)</code></td><td>above z 7224 the player cannot drift right, so x stays in the strip</td></tr>
+<tr><td>Z+ at the wall</td><td>wall at z <code>7360..7423</code>, probe 47 ahead</td><td>the climb ends at z 7314</td></tr>
+</tbody>
+</table></div>
+  <p>The two guards' Z+ bands overlap on x <code>(3576, 3592)</code>, so there is no way up between them. The tile behind them, <code>(27, 57)</code>, carries an ungated walk-on exit to the room, but an exhaustive flood of every position reachable in 2-unit steps finds none on that tile while the guards are present. It is not how players get in.</p>
+  <p>The guard's unprompted talk at the top of the strip is the same rule pointing the other way. With right held at z 7314, one leading point is inside the door's box and two are inside the guard, who is hit last; a prop contact auto-posts to the partner slot, and the slot holds the guard.</p>
+  <p>The door in each story state:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>State</th><th>Guards</th><th>Door and room</th></tr></thead>
+<tbody>
+<tr><td>First arrival in Ratayu (<code>0x357</code> set, <code>0x502</code> clear)</td><td>standing, with a different line</td><td>opens to the trick; room empty</td></tr>
+<tr><td>The story approach (<code>0x502</code> set, <code>0x33E</code> clear)</td><td>parked off the map</td><td>opens on touch</td></tr>
+<tr><td><code>0x33E</code> set, <code>0x64F</code> clear</td><td>standing</td><td>opens to the trick; chest present once <code>0x33F</code> is set</td></tr>
+<tr><td>Level 99, talked to Saryu (<code>0x64F</code> set)</td><td>parked off the map</td><td>takes item <code>0xBF</code>, sets <code>0x650</code>, opens</td></tr>
+</tbody>
+</table></div>
+  <h3>The capture</h3>
+  <p>PCSX-Redux on the retail disc, starting from a memory-card load made in Ratayu town after a cold boot. The player was <b>placed by poking coordinates</b>: onto the castle-front walk-on tile, then onto a map-door tile so that the game's own warp lands the party in the guard hall, then onto open floor below the guard. From that seat everything is pad input, and nothing the mechanism reads is poked.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Seat</th><th>Pad input</th><th>Rest position, heading</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><code>(3412, 7192)</code></td><td>hold UP+RIGHT to z 7280, release, press Cross</td><td><code>(3444, 7288)</code>, <code>0xA00</code></td><td><b>partner slot = door</b>; door flags <code>0x08008880</code> to <code>0x08008981</code>; guards untouched; scene is <code>jagaroom</code> 77 vsyncs after the press</td></tr>
+<tr><td><code>(3396, 7176)</code></td><td>same, stopped lower</td><td><code>(3444, 7272)</code>, <code>0xA00</code></td><td>below the window: the guard takes the event and his line plays</td></tr>
+<tr><td><code>(3396, 7176)</code></td><td>same, stopped higher</td><td><code>(3444, 7308)</code>, <code>0xA00</code></td><td>above the window: partner slot = door, nothing posted</td></tr>
+<tr><td><code>(3412, 7192)</code></td><td>hold UP+RIGHT, never press</td><td><code>(3444, 7314)</code></td><td>the guard engages with no button: the auto-talk</td></tr>
+<tr><td><code>(3444, 7232)</code></td><td>hold UP, press Cross</td><td><code>(3444, 7280)</code>, <code>0x800</code></td><td>facing straight up: nothing</td></tr>
+<tr><td><code>(3756, 7192)</code></td><td>hold UP+LEFT to z 7280, release, press Cross</td><td><code>(3724, 7288)</code>, <code>0x600</code></td><td><b>the mirror</b>: partner slot = door; scene is <code>jagaroom</code> 75 vsyncs after the press</td></tr>
+</tbody>
+</table></div>
+  <p>On every diagonal approach x froze at 3444, inside the computed 3442..3448, and the three outcomes by z bracket the window's edges. After the first run the room loads with the player free, the chest parked off the map and no flag change in 500 vsyncs.</p>
+  <p>The chest was opened in one further run with story flags <code>0x33E</code> and <code>0x33F</code> poked set, so that line is <b>captured on a poked state</b>: the chest is at (4992, 2496), talking to it adds one item <code>0x76</code> and sets <code>0x64C</code>, the key count stays 0 and <code>0x64F</code> / <code>0x650</code> stay clear.</p>
+<details class="disclosure">
+<summary>The door script, the probe and the window arithmetic</summary>
+<p>The door prop's touch script, by record offset. A flag test jumps when the flag is set.</p>
+<pre><code>+0x0E  76 50   test flag 0x650 -&gt; +0x5B    ; already unlocked: open
++0x12  76 4F   test flag 0x64F -&gt; +0x19    ; guards dismissed: insert the key
++0x16  26      jump            -&gt; +0x5B    ; neither flag: open anyway
++0x19  56 50   set flag 0x650 ; 4C 52 BF   ; take item 0xBF
++0x5B  door swing ; 31 00 ; C7 F8 9B 3B 32 ; walk the player to (3584, 7616)
++0xAC  3F ..   scene change to jagaroom</code></pre>
+<p>The interact path. The store at <code>0x801CFB40</code> runs on every box hit.</p>
+<pre><code>801cfb40  sw   t3,0x98(t6)          ; partner slot = this actor
+801d0854  jal  0x801cf9f4
+801d085c  andi v0,v0,1
+801d0860  beqz v0,0x801d08dc        ; no talk-class hit: nothing
+801d0868  lw   a0,0x98(s2)          ; whoever was hit last
+801d086c  jal  0x801d5b5c           ; touch event</code></pre>
+<p>The window for the left guard at heading <code>0xA00</code>: the guard's box needs <code>x + 64</code> in (3448, 3592) and <code>z + 64</code> in (7224, 7368); the door's box needs <code>x + 64</code> in (3504, 3664) and <code>z + 64</code> in (7344, 7504). Together: x in (3440, 3528), z in (7280, 7304), of which only x up to 3448 is reachable. On the game's even position lattice that is 44 positions, 8 units wide and 22 deep.</p>
+<p>Position bytes decode as <code>(b &amp; 0x7F) * 128 + 64</code>, plus 64 when bit 7 is set: the guards' <code>1B B8</code> and <code>1C B8</code> are (3520, 7296) and (3648, 7296). The bit-4 auto-post is the test at <code>0x801D0800</code> and the post at <code>0x801D0750</code>.</p>
+<p>The chest is <code>jagaroom</code> P1[27]: seated only when flag <code>0x33F</code> is set, it tests its own taken flag <code>0x64C</code> and gives item <code>0x76</code>. <code>0x33F</code> is set by <code>retockin</code> P2[37], the record after the Saryu awakening, and by P1[1]. The room's exit, P2[11], returns to <code>retockin</code> at (3584, 7232).</p>
+</details>
+  <h3>Addresses</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td><code>retockin P0[0], MAN offset 0x172</code></td><td>disc</td><td>Door script; tests at +0x0E and +0x12, jump at +0x16, exit at +0xAC</td><td>disc data, capture</td></tr>
+<tr><td><code>retockin P2[32], MAN offset 0x30E2</code></td><td>disc</td><td>Ungated walk-on exit to jagaroom; unreachable on foot with the guards present</td><td>disc data</td></tr>
+<tr><td><code>retockin P1[20] 0x1424, P1[21] 0x151A</code></td><td>disc</td><td>The two guards, world (3520, 7296) and (3648, 7296)</td><td>disc data, capture</td></tr>
+<tr><td><code>retockin P1[29], MAN offset 0x1E17</code></td><td>disc</td><td>Level compares at +0x26C and +0x387; sets 0x64F at +0x503; gives 0xBF at +0x5DA</td><td>disc data</td></tr>
+<tr><td><code>.MAP trigger (28,58,0,0)</code></td><td>disc</td><td>Binds the door prop to its tile; prop centre (3584, 7424)</td><td>disc data, capture</td></tr>
+<tr><td><code>.PCH trigger (27,57,32,1)</code></td><td>disc</td><td>Walk-on tile behind the guards</td><td>disc data</td></tr>
+<tr><td><code>flags 0x64F, 0x650</code></td><td>flag bank 0x80085758</td><td>Guards dismissed; door unlocked</td><td>disc data</td></tr>
+<tr><td><code>flags 0x33E, 0x357, 0x502</code></td><td>flag bank 0x80085758</td><td>Story states that place the guards</td><td>disc data</td></tr>
+<tr><td><code>0x801CF9F4</code></td><td>PROT 0897</td><td>Interact box test; partner-slot store at 0x801CFB40 on every hit, no early exit</td><td>disassembly, capture</td></tr>
+<tr><td><code>0x801D085C..0x801D086C</code></td><td>PROT 0897</td><td>Bit-1 test, then touch post to player+0x98</td><td>disassembly, capture</td></tr>
+<tr><td><code>0x801D0800 / 0x801D0750</code></td><td>PROT 0897</td><td>Bit-4 test and the auto-post, also to player+0x98</td><td>disassembly, capture</td></tr>
+<tr><td><code>0x801F2254</code></td><td>PROT 0897</td><td>Interact compass, eight points 64 units out</td><td>disc data</td></tr>
+<tr><td><code>0x801D5B5C</code></td><td>PROT 0897</td><td>Touch event post</td><td>repo doc</td></tr>
+<tr><td><code>0x801CFE4C / 0x801CFC40</code></td><td>PROT 0897</td><td>Per-step collision and the actor probe</td><td>disassembly</td></tr>
+<tr><td><code>0x801F21B4</code></td><td>PROT 0897</td><td>Actor probe offsets, file offset 0x2399C</td><td>disc data</td></tr>
+<tr><td><code>0x80020454</code></td><td>SCUS</td><td>Actor list tail append</td><td>disassembly</td></tr>
+<tr><td><code>0x8003B8D4 / 0x8003B908</code></td><td>SCUS</td><td>Scene init: partition-1 actors, then placed props</td><td>disassembly</td></tr>
+<tr><td><code>jagaroom P1[27]</code></td><td>disc</td><td>Chest: seated on 0x33F, taken flag 0x64C, gives item 0x76</td><td>disc data; capture on a poked state</td></tr>
+<tr><td><code>flags 0x33F, 0x64C</code></td><td>flag bank 0x80085758</td><td>Chest present; chest taken</td><td>disc data</td></tr>
+</tbody>
+</table></div>
+  <h3>Scope</h3>
+  <p>The trick works in both guarded states and on either side of the door. The ending's copy of the scene, <code>edretoin</code>, carries the same door record and walk-on record. The rule behind it is general: an interact press goes to the last actor in the list whose box the point is in, not to the actor that made it count as a talk, and props are always later in the list than NPCs.</p>
+<p>Related pages: <a href="../../subsystems/field-locomotion.html">field locomotion</a>, <a href="../../reference/scene-names.html">scene names</a>.</p>
+  <h3>Verifying it</h3>
+  <p>In <code>retockin</code> with the guards present, walk the player to <code>(3444, 7288)</code> facing heading <code>0xA00</code> and press the interact button with a breakpoint on <code>0x801D086C</code>. <code>a0</code> is the door actor, not the guard, and the scene changes to <code>jagaroom</code> about 77 vsyncs later. From z 7272 <code>a0</code> is the guard; from z 7308 the breakpoint is not reached. A coordinate poke that skips the map door measures the poke: the guards stay culled against the old region box and the player walks through them.</p>
+  <h3>Open questions</h3>
+  <ul>
+    <li>The chest pickup is captured on poked story flags. The same run from a played save made after the Saryu story would make it a plain capture.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="noa-sigil-door-of-light">
+  <h2>Noa's sigil and the Door of Light in Nivora</h2>
+<dl class="kv">
+  <dt>Reported as</dt><dd>In Nivora Ravine, where the Door of Light is greyed out, standing on the glowing crest on Noa's route makes it usable (community report).</dd>
+  <dt>Cause</dt><dd>The crest stands inside a nine-by-nine map rectangle marked Door of Light allowed, listed ahead of the tunnel rectangles that forbid it.</dd>
+  <dt>Where</dt><dd>Scene <code>nilboa</code> region table; <code>FUN_801D9E1C</code> (PROT 0897) and <code>FUN_80030628</code> (SCUS)</dd>
+  <dt>Affects</dt><dd>Tiles x <code>46..54</code>, z <code>60..68</code> of Nivora Ravine; no other scene has such a pocket</dd>
+  <dt>Status</dt><dd><span class="tag tag-done">explained</span> - read from the disc, not captured on an emulator</dd>
+</dl>
+  <p>The crest does nothing to the Door. It stands inside a small rectangle of the map that is marked <b>Door of Light allowed</b>, surrounded by tunnels that are marked not allowed.</p>
+  <p>Every dungeon map is divided into rectangles that set the random encounters for that area. Each rectangle also carries one bit saying whether a Door of Light may be used there. Every time the player steps onto a new tile the game finds the first rectangle that contains it and copies that bit into a flag; the item menu greys the Door when the flag says no.</p>
+<figure class="diagram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 312" role="img" aria-label="Tile map of Nivora Ravine drawn two pixels per tile. Twelve tunnel rectangles are marked Door of Light blocked; six rectangles at the edges and one nine by nine box at tiles 46 to 54, 60 to 68 are marked allowed. An enlarged inset shows the crest's three by three test area overlapping the east edge of the allowed box, with its last column outside."><text class="dg-label dg-start" x="20" y="16">Nivora Ravine, 128 x 128 tiles</text><rect fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3" x="20" y="26" width="256" height="256" rx="0"/><rect class="dg-node-warn" x="112" y="98" width="16" height="100" rx="0"/><rect class="dg-node-warn" x="112" y="98" width="66" height="26" rx="0"/><rect class="dg-node-warn" x="108" y="176" width="72" height="34" rx="0"/><rect class="dg-node-warn" x="54" y="204" width="58" height="78" rx="0"/><rect class="dg-node-warn" x="208" y="62" width="68" height="34" rx="0"/><rect class="dg-node-warn" x="72" y="98" width="108" height="108" rx="0"/><rect class="dg-node-warn" x="180" y="94" width="54" height="116" rx="0"/><rect class="dg-node-warn" x="206" y="26" width="70" height="34" rx="0"/><rect class="dg-node-warn" x="74" y="26" width="58" height="78" rx="0"/><rect class="dg-node-warn" x="178" y="26" width="30" height="42" rx="0"/><rect class="dg-node-warn" x="108" y="206" width="54" height="76" rx="0"/><rect class="dg-node-warn" x="236" y="96" width="2" height="112" rx="0"/><rect class="dg-node-ok" x="170" y="206" width="106" height="76" rx="0"/><rect class="dg-node-ok" x="130" y="26" width="50" height="66" rx="0"/><rect class="dg-node-ok" x="20" y="242" width="34" height="40" rx="0"/><rect class="dg-node-ok" x="20" y="196" width="34" height="86" rx="0"/><rect class="dg-node-ok" x="20" y="134" width="40" height="38" rx="0"/><rect class="dg-node-ok" x="20" y="26" width="54" height="146" rx="0"/><rect class="dg-node-ok" x="112" y="146" width="18" height="18" rx="0"/><rect class="dg-node-ok" x="20" y="292" width="12" height="10" rx="0"/><text class="dg-sub dg-start" x="38" y="301">Door of Light allowed</text><rect class="dg-node-warn" x="200" y="292" width="12" height="10" rx="0"/><text class="dg-sub dg-start" x="218" y="301">blocked</text><text class="dg-label" x="512" y="32">the crossing, enlarged</text><text class="dg-sub" x="512" y="46">tiles x 42..58, z 56..72</text><rect class="dg-node-warn" x="410" y="52" width="204" height="204" rx="0"/><rect class="dg-node-ok" x="458" y="100" width="108" height="108" rx="0"/><rect class="dg-node-accent" x="542" y="124" width="36" height="36" rx="0"/><rect class="dg-node" x="506" y="148" width="12" height="12" rx="0"/><text class="dg-label" x="512" y="80">tunnel: +8 = 0x20</text><text class="dg-label" x="506" y="192">+8 = 0x80</text><text class="dg-sub" x="537" y="139" style="text-anchor:end">crest</text><text class="dg-sub" x="486" y="158">road</text><line class="dg-edge-dim" x1="130" y1="146" x2="410" y2="52"/><line class="dg-edge-dim" x1="130" y1="164" x2="410" y2="256"/><text class="dg-sub dg-start" x="410" y="276">box: x 46..54, z 60..68</text><text class="dg-sub dg-start" x="410" y="290">crest test: x 53..55, z 62..64</text><text class="dg-sub dg-start" x="410" y="304">column 55 is outside the box</text></svg>
+<figcaption>Nivora's region rectangles at two pixels per tile (z increases downward in this drawing), with the crossing enlarged. The crest's test area overlaps the east edge of the allowed box.</figcaption>
+</figure>
+  <p>In Nivora the tunnel rectangles say no. A nine-by-nine box over the ravine's two-level crossing says yes, and it comes earlier in the list, so it wins wherever it overlaps. The crest sits on the east edge of that box. Step onto it and the flag flips; one tile further east it flips back.</p>
+  <p>Any walkable tile of the box has the same effect; the crest is the landmark that happens to be in it. Leaving this way during the party split skips the prompt that regroups the party; what the game does next in that state is not traced.</p>
+  <h3>Mechanism</h3>
+<ol class="steps steps-vertical">
+  <li><b>0x8003093C</b><span>The item menu dims the Door of Light when bit 0x100000 of the transient flag word is set.</span></li>
+  <li><b>0x801D9FE8</b><span>On every tile step the region reader takes the first record whose tile box contains the player.</span></li>
+  <li><b>0x801DA064</b><span>It sets both Door bits, then clears the Door of Light bit only if the record&#x27;s byte +8 has bit 7.</span></li>
+  <li><b>nilboa region records</b><span>Nivora&#x27;s tunnel records carry +8 = 0x20; records 1 and 20, the box at 46..54, 60..68, carry 0x80 and come first.</span></li>
+  <li><b>nilboa P1[0] +0x4D4</b><span>The crest&#x27;s test area is tiles 53..55, 62..64; columns 53 and 54 are inside the box.</span></li>
+</ol>
+  <p>Nivora's region records (both story groups carry the same Door bits):</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Records</th><th>Tile box (x, z)</th><th>Rate</th><th>Byte +8</th><th>Door of Light</th></tr></thead>
+<tbody>
+<tr><td>0 / 19</td><td><code>75..128, 90..128</code></td><td>0</td><td><code>A2</code> / <code>A1</code></td><td>allowed</td></tr>
+<tr><td><b>1 / 20</b></td><td><b><code>46..54, 60..68</code></b></td><td>0</td><td><b><code>80</code></b></td><td><b>allowed</b></td></tr>
+<tr><td>2 / 21</td><td><code>55..79, 0..32</code></td><td>0</td><td><code>80</code></td><td>allowed</td></tr>
+<tr><td>3..6 / 22..25</td><td>strips at x <code>0..26</code></td><td>20 or 0</td><td><code>80</code> / <code>A0</code></td><td>allowed</td></tr>
+<tr><td>7..18 / 26..37</td><td>the twelve tunnel boxes</td><td>20</td><td><code>20</code></td><td>blocked</td></tr>
+</tbody>
+</table></div>
+<details class="disclosure">
+<summary>Instruction-level walkthrough</summary>
+<p>The item menu's test:</p>
+<pre><code>80030930  addiu v0,zero,0x88
+8003093c  lui   v0,0x1f80 ; lw v0,0x394(v0)
+80030944  lui   v1,0x10   ; and v0,v0,v1
+8003094c  bnez  v0,0x800309ec       ; dimmed row</code></pre>
+<p>The only writer of the two Door bits:</p>
+<pre><code>801da064  lbu  v0,8(s2)             ; region byte +8
+801da068  lui  a0,0x30
+801da080  or   a0,v1,a0             ; 0x1F800394 |= 0x300000: both Doors blocked
+801da090  sltiu v0,v0,0xc           ; needs a region stride of 12 or more
+801da0b8  andi v0,v0,0x80           ; bit 7: clear 0x100000, Door of Light allowed
+801da0d8  andi v0,v0,0x40           ; bit 6: clear 0x200000, Door of Wind allowed</code></pre>
+<p>Region record 1 is <code>2E 3C 36 44 00 81 00 01 80 87 5D 42</code>: box 46, 60, 54, 68; rate 0; byte <code>+8 = 0x80</code>; return to <code>map03</code> tile (93, 66). Tunnel record 7 is <code>2E 24 35 55 14 81 07 0D 20 87 5D 42</code>.</p>
+</details>
+  <h3>Addresses</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td><code>0x80030628</code></td><td>SCUS</td><td>Use list builder; Door tests at 0x80030930..0x80030974</td><td>disassembly</td></tr>
+<tr><td><code>0x801D9E1C</code></td><td>PROT 0897</td><td>Region reader; match 0x801D9FE8..0x801DA050, Door bits 0x801DA064..0x801DA0F0</td><td>disassembly</td></tr>
+<tr><td><code>0x1F800394 bits 0x100000 / 0x200000</code></td><td>scratchpad</td><td>Door of Light / Door of Wind blocked</td><td>disassembly</td></tr>
+<tr><td><code>0x80084624 / 0x80084628 / 0x8008462C</code></td><td>RAM</td><td>Door of Light return point (map03, tile 93, 66 from Nivora)</td><td>disassembly</td></tr>
+<tr><td><code>*0x801C6EA4 +0x28, +0x5F</code></td><td>RAM</td><td>Region table pointer and record stride</td><td>disassembly</td></tr>
+<tr><td><code>0x801D8A58</code></td><td>PROT 0899</td><td>Door of Light confirm; consumes item 0x88</td><td>repo doc</td></tr>
+<tr><td><code>nilboa region records 1 and 20</code></td><td>disc</td><td>The allowed box, byte +8 = 0x80</td><td>disc data</td></tr>
+<tr><td><code>nilboa region records 7..18 and 26..37</code></td><td>disc</td><td>Tunnel boxes, byte +8 = 0x20</td><td>disc data</td></tr>
+<tr><td><code>nilboa P0[24], P0[7]</code></td><td>disc</td><td>Crest prop; rotating-road prop at (50, 64)</td><td>disc data</td></tr>
+<tr><td><code>nilboa P1[0] +0x4D4</code></td><td>disc</td><td>Crest box test, tiles 53..55, 62..64</td><td>disc data</td></tr>
+<tr><td><code>nilboa P2[4..6], P2[28]</code></td><td>disc</td><td>Tunnel-mouth prompts; regroup record that clears flag 0x00D</td><td>disc data</td></tr>
+</tbody>
+</table></div>
+  <h3>Scope</h3>
+  <p>Across every scene's bundle MAN, <code>nilboa</code> is the only scene where a live story group mixes allowed and blocked records so as to leave a walk-in pocket (7 of 19 allowed, in both groups). The one other mixed group is <code>rikuroa</code>'s default group, with a single blocked record among eleven. The per-scene variant MANs are not part of this scan. No field script changes the Door bits: ops <code>2E</code> / <code>2F</code> appear only with bit numbers 0, 16 to 19, 22 and 24 to 27.</p>
+<p>Related pages: <a href="../../formats/encounter.html">encounter and region tables</a>, <a href="../../subsystems/script-vm.html">the field script VM</a>.</p>
+  <h3>Verifying it</h3>
+  <p>In <code>nilboa</code> during the split, watch bit 20 of <code>0x1F800394</code>. Prediction: it reads 1 in the tunnels and drops to 0 on the step that brings the player's tile to x <code>46..54</code>, z <code>60..68</code>. A breakpoint at <code>0x801DA0C8</code> stops on the clear, with <code>s2</code> pointing at the matched record.</p>
+  <h3>Open questions</h3>
+  <ul>
+    <li>Whether the box was left allowed on purpose or kept a default byte nobody restricted.</li>
+    <li>Which of the three split characters can reach the box; the community report says Noa.</li>
+    <li>What the game does after a lone character leaves with flag 0x00D set.</li>
+  </ul>
+</section>

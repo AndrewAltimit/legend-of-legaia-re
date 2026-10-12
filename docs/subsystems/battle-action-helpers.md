@@ -20,7 +20,7 @@ Port module names are given as `crate::module`: `engine-battle-vm::battle_action
 | Address | Name | Role | Section |
 |---|---|---|---|
 | `FUN_8004E2F0` | range metric | Distance between attacker and target, `0` = in range | [Range metric](#fun_8004e2f0---battle-range--reach-metric) |
-| `FUN_80042558` | stat aggregator | Rebuilds each character's effective stats and ability bitfield every frame | [Stat aggregator](#fun_80042558---per-frame-stat-aggregator) |
+| `FUN_80042558` | stat aggregator | Rebuilds each character's effective stats and ability bitfield on scene entry, menu actions and field-VM op `0x3B` | [Stat aggregator](#fun_80042558---per-frame-stat-aggregator) |
 | `FUN_801E752C` | DoT ticker | Per-round Venom / Toxic drain and Grail recovery | [DoT ticker](#fun_801e752c---per-round-status-dot-ticker) |
 | `FUN_801DD4B0` / `FUN_801DD6B4` | damage-roll wrappers | One hit's net damage, with or without the party resist ladder | [Damage-roll wrappers](#fun_801dd4b0--fun_801dd6b4---per-move-damage-roll-wrappers) |
 | `FUN_801F3C34` / `FUN_801F3D3C` | follow-up guard / installer | Seru-magic side-effect latch and its element-keyed installer | [Follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34) |
@@ -94,6 +94,8 @@ return 0 if in_range else (i16)d
 Port: `legaia_engine_battle_vm::battle_action::motion::range_metric`, assembled from live state by `World::battle_range_metric` (`engine-core::world::battle::locomotion`).
 
 ### `FUN_80042558` - per-frame stat aggregator
+
+Despite the name it does not run per frame: its callers are scene entry, menu item / magic use, equip changes and field-VM op `0x3B`, and none is in the battle overlay.
 
 SCUS-resident. `FUN_801E295C` does not call it, but reads the ability bitmask it maintains: 4 x u32 at `0x80074358..0x80074368`, OR-aggregated from each character record's `+0xF4..0x100` block.
 
@@ -510,7 +512,7 @@ The file analysed here is extraction 905, the spell-`0x83` slot. PROT 903 (Gimar
 **Spawning parts.** Decompiled with `ghidra/scripts/dump_summon_overlay.py`:
 
 - The overlay spawns part-actors through the SCUS part-stager **`FUN_80021B04(world_pos, render_slots, record_ptr, 0x1000)`**. `param_1` is the world position written to `actor[+0x14..0x18]`, `param_3` a part record, and the actor is allocated from the effect pool `DAT_8007062c`.
-- The thin pool wrapper **`FUN_80050ED4`** stores the spawned actor pointer in the first free slot of the 0x60-pointer pool at `DAT_801C90F0`, then forwards the same arguments (see `ghidra/scripts/funcs/80050ed4.txt`). It is the dominant call form in the high-summon and enemy boss stagers.
+- The thin pool wrapper **`FUN_80050ED4`** stores the spawned actor pointer in the first free slot among the first `0x60` words of the pool at `DAT_801C90F0`, then forwards the same arguments (see `ghidra/scripts/funcs/80050ed4.txt`). The array itself is `0x80` words: battle init `FUN_80055B6C` zeroes `0x80` (`0x8005603C..0x80056050`), and the flush `FUN_80050E74` and the per-frame release in `FUN_800480D8` both walk `0x80`. No code on the disc references the last 32 words, so they stay zero. It is the dominant call form in the high-summon and enemy boss stagers.
 - The same stagers flush what they seated through **`FUN_80050E74`**. See [`functions/game-modes.md`](../reference/functions/game-modes.md#move--animation-subsystem) for the per-slot writes and why it is not the same walk as the battle-teardown loop in `FUN_800480D8`.
 - Three staging functions drive the spawn: **`FUN_801F16A0`**, **`FUN_801F36A0`**, **`FUN_801F4DD0`**. `FUN_801F16A0` phase 0 is a `do { FUN_80021B04(...) } while(< 8)` loop spawning **8** flame parts with `rand()`-seeded actor params (`actor[+0x84]`, `actor[+0xb4] = rng%15 + 16`, `actor[+0xb6] = rng%255 + 512`, `actor[+0x28]`); phase 1 spawns 1 more part. Per-frame motion is the standard actor tick consuming those fields.
 

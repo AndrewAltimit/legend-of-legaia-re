@@ -60,6 +60,7 @@ pub mod equip_mask;
 pub mod equip_transplant;
 pub mod equipment;
 pub mod fishing_price;
+pub mod fortress_encounter_fix;
 pub mod house_door;
 pub mod item_name;
 pub mod item_price;

@@ -160,6 +160,7 @@ legaia-patcher randomize --input DISC.bin --seed pal --shiny-seru               
 legaia-patcher randomize --input DISC.bin --seed swap --seru-trade                        # every merchant grows a Trade row: swap one Seru for another
 legaia-patcher randomize --input DISC.bin --seed fair --jewel-fix                         # boss cinematic casts respect elemental guards
 legaia-patcher randomize --input DISC.bin --seed fair --approach-softlock-fix              # dead approach animations re-stage instead of wedging
+legaia-patcher randomize --input DISC.bin --seed fair --fortress-encounter-fix             # Jette's Absolute Fortress rolls battles on a save with the stale castle flag
 legaia-patcher randomize --input DISC.bin --seed fair --delilas-challenge                  # Muscle Dome option: a new 2-round Delilas course
 legaia-patcher fishing   --input DISC.bin                                                 # read-only: list fishing-exchange prizes + prices
 legaia-patcher randomize --input DISC.bin --seed fish --fishing-price 0x6F=500            # Buma Water Egg costs 500 fishing points
@@ -250,6 +251,7 @@ unless asked for:
 | `--seru-trade` | vendors swap one of a character's seru for another, reseeding every two in-game hours | `--seru-trade-offers N` caps offers per vendor | [Seru trading](#seru-trading) |
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
+| `--fortress-encounter-fix` | Jette's Absolute Fortress stops obeying the Floating Castle's stale "no battles" flag, so a save that left the castle with under a minute on the clock gets its random battles (and the Door of Light there) back | - | [Fortress encounter fix](#fortress-encounter-fix) |
 | `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--delilas-party V,N,G` | play as the Delilas siblings: the party wears Gi / Lu / Che battle models (any permutation over Vahn, Noa, Gala) while the ravine duels + dome Master legs field Vahn / Noa / Gala models | - | [Delilas party swap](#delilas-party-swap) |
 | `--delilas-arts-voice MODE` | with the swap: what the arts shout AND Super/Hyper fanfare banks carry - `original` (default; the retail hero shouts stay), `adjusted` (re-voiced toward the siblings), `removed` | `original` | [Delilas party swap](#delilas-party-swap) |
@@ -1542,6 +1544,32 @@ instead of parking the battle forever. The anatomy of the defect is in
 [battle-action.md](../subsystems/battle-action.md#root-cause-the-walk-tag-fallback-in-state-0x14);
 the patch is under [internals](randomizer-internals.md#approach-softlock-fix).
 
+### Fortress encounter fix
+
+`--fortress-encounter-fix` restores random battles in Jette's Absolute Fortress
+on a save that carries the Floating Castle's stale flag. The castle's six-minute
+escape clock switches battles off for its last minute by raising system flag
+`0x15`, and the record that ends a successful escape never lowers it. Both
+Fortress scenes (`deroa`, `chitei2`) open their encounter tables with a copy of
+the castle's "this flag means no battles" group, so a file that left the castle
+with under a minute showing finds the whole Fortress silent and the Door of
+Light greyed out there. The defect is traced in
+[field-oddities.md](../reference/glitches/field-oddities.md#no-encounters-in-jettes-absolute-fortress).
+
+The fix rewrites that leading group in both scenes into a duplicate of the
+scene's own post-Jette group, so the Fortress never tests flag `0x15`:
+
+- **It heals an affected save.** The flag stays set in the save and nothing in
+  the Fortress reads it any more; no save edit is needed.
+- **A healthy save is unaffected.** Before Jette the walk falls through to the
+  same rooms and rates; after Jette it selects a row that reads the same as
+  retail's.
+- **The castle is untouched.** Its last-minute quiet window still works, and the
+  flag is still raised there.
+
+Seedless, and it combines with every other option. On in the web Balanced / Full
+Chaos presets. [Internals](randomizer-internals.md#fortress-encounter-fix).
+
 ### Delilas Challenge
 
 `--delilas-challenge` adds a fourth option to the Muscle Dome enrollment clerk:
@@ -1871,7 +1899,8 @@ of the saved bitfield but isn't proven free at runtime - it's a tunable constant
 Opt-in flags that ride the same reclaimable seed region as the starting items,
 built for fast-travel and pacing testing. Door of Wind (item `0x89`) is the warp
 consumable: using one opens a menu to teleport to any town you have already
-visited. Incense (item `0x8A`) lowers the random-encounter rate for a while.
+visited. Incense (item `0x8A`) suppresses random encounters outright for a
+window of walk ticks.
 
 **`--door-of-wind [N]`** seeds Door of Wind into the new game's starting bag -
 `N` of them (1..=99; the default when the flag is given bare is 10). It is

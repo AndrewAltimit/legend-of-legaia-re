@@ -1296,6 +1296,14 @@ The arbitrary-write investigation over the unchecked item-add helper `FUN_800421
   `LEGAIA_ACTORS` a dump of the six field actor lists, `LEGAIA_TRIGGERS` the
   scene's kind-0 / kind-1 / kind-2 trigger tables read out of the live field
   buffer `*(0x1F8003EC)`. Frame numbers are vsyncs since the state load.
+- **Position pokes and the region box:** a position poke that moves the
+  player to another region of a scene without passing through a map door
+  leaves the region box (`0x1F800384..87`) stale. Actors outside the old box
+  keep the visibility-cull bit set by `FUN_801D79E8`, and the collision and
+  interact box tests (`FUN_801CF754`, `FUN_801CF9F4`) skip culled actors, so
+  the player walks through NPCs that would block a played game. Poke the
+  player onto a kind-0 map-door tile instead and let the game's own warp land
+  and re-latch the box.
 - **What it answered:** the clip-base writers and the per-tick system-channel
   reset, the timed kind-0 warp's timings and the idle clip through it
   ([`field-locomotion.md`](../subsystems/field-locomotion.md#retail-capture-of-the-base-writers));

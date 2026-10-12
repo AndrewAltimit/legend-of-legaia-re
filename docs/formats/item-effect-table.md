@@ -119,7 +119,7 @@ record `+8` pointer):
 | `7` | temporary stat buff (one battle) | Power Elixir - "Increase attacking power for one battle." |
 | `8` | cure single status | Antidote - "Cure Venom. Ally." |
 | `11`/`12`/`13` | arts book (Fire/Wind/Thunder; tier = the art id it grants, [below](#arts-books-class-111213-the-tier-is-an-art-id)) | Fire Book I - "Book of Hyper Arts. For Meta." |
-| `14` | Point Card strike - **no item on the disc reaches it** (see below) | - |
+| `14` | Point Card strike - reached by item `0xFE` through an id test in the battle action SM, not through a descriptor (see below) | Point Card |
 | `126`/`127` | summon flute | Lippian Flute - "Flute that calls the Lippian monster." |
 | `128` | field escape (dungeon) | Door of Light - "Teleport out of dungeons." |
 | `129` | field warp (city) | Door of Wind - "Teleport to another city." |
@@ -158,12 +158,16 @@ On disc the nine rows are `(class, tier)` = Fire `3/2/1`, Wind `5/4/1`, Thunder
 `3/2/1` for books I/II/III, all with flag byte `0x83` (base + field-use only,
 no battle bit). Books III all share tier `1`.
 
-**Class 14 is reachable code with no reachable data.** Arm `14` (`0x8004209C`)
+**Class 14 has no descriptor row, and is live all the same.** Arm `14` (`0x8004209C`)
 takes `min(_DAT_800845B4, 9999)` off the Point Card bank and applies it as
 battle damage - a Point Card strike scaling with how much the player has shopped.
-Decoding all 256 item records against this table finds **no item carrying class
-14**, so retail never opens the arm; the `LEGAIA_POINT_CARD_MAX` probe knob
-reaches it only by forcing the bank. Unused content, not a missing item.
+Decoding all 256 item records against this table finds no item carrying class
+14: the Point Card's own descriptor (subtype `0x7E`) is `01 00 C4 41`. The arm is
+reached by item id instead. State `0x3E` of the battle action SM `FUN_801E295C`
+tests `actor[+0x1DF] == 0xFE` at `0x801E4080..0x801E4088` and overwrites the
+seeded selector `actor[+0x1E8]` with `0x0E` at `0x801E40C0`, so a Point Card used
+in battle with a non-zero bank runs the strike. See
+[`glitches/items-and-equipment.md`](../reference/glitches/items-and-equipment.md).
 
 ## Heal-amount table (`0x8007655C`)
 
@@ -222,7 +226,7 @@ clamped to `0xFFFF`, for the rest of the battle. `param_2` = `tier`:
 | 1 | SPD (`+0x164/+0x166`) | Speed Elixir (`0x8D`) |
 | 2 | DEF, both facets (`+0x15C/+0x15E` + `+0x160/+0x162`) | Shield Elixir (`0x8C`) |
 | 3 | ATK (`+0x158/+0x15A`) | Power Elixir (`0x8B`) |
-| 4 | **all** - SPD + DEF + ATK + AGL (`+0x168/+0x16A`) | Wonder Elixir (`0x8E`) |
+| 4 | **all** - SPD + DEF + ATK + INT (`+0x168/+0x16A`) | Wonder Elixir (`0x8E`) |
 
 **Class 5 - Fury Boost** (`0x81`): extends the action gauge for one battle
 (sets the actor `+0x1F9` gauge flag); no stat target. See the buff-selector
@@ -309,7 +313,7 @@ The **class-7 one-battle buff Elixirs** are seeded by `ItemCatalog::apply_buff_i
 (battle-only) and applied in `World::use_item` through the shared buff path
 (`apply_battle_buff`, the same `×6/5` ramp + revert-on-expiry / revert-at-battle-end
 bookkeeping as buff *spells*): Power/Shield/Speed Elixir ramp ATK / DEF / SPD,
-Wonder Elixir ramps all four (SPD + DEF + ATK + AGL). The disc-gated
+Wonder Elixir ramps all four (SPD + DEF + ATK + INT). The disc-gated
 `elixir_battle_buffs_seed_and_ramp_from_disc` test pins that Power Elixir ramps a
 100 ATK scalar to 120 and Wonder Elixir installs four buff trackers without
 compounding.

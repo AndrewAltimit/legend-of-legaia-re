@@ -135,7 +135,7 @@ After the copy the reader clears `entity[+0x94]` and advances the entity's 5-sta
 **What `record[+0]` holds depends on the arm:**
 
 - An **inline-script** arm points `+0x94` at the install opcode, so `record[+0]` *is* that opcode - non-zero by construction, and the bit is always raised.
-- The **`3E FF <row>`** arm and the **random roll** point `+0x94` at a MAN formation row (`ctrl[+0x20] + 1 + row * ctrl[+0x5D]`), so the predicate is authored per row. Retail's scripted and boss rows are exactly the rows with a non-zero byte: `rikuroa` rows 16 and 17 (the lone Caruban fight) read `01 00 00`, while its sixteen random rows read `00 00 00`.
+- The **`3E FF <row>`** arm and the **random roll** point `+0x94` at a MAN formation row (`ctrl[+0x20] + 1 + row * ctrl[+0x5D]`), so the predicate is authored per row. Retail's boss rows are the rows with a non-zero byte, with one late-game exception - `deene` row 11 (Lapis) reads `00 00 00 01 A7 00 00 00` - and four early scripted rows that are also zero (`town01` row 4, `town0b` / `town0c` row 3, `town0b` row 2, `stone` row 3): `rikuroa` rows 16 and 17 (the lone Caruban fight) read `01 00 00`, while its sixteen random rows read `00 00 00`.
 
 What the raised bit changes is tabulated under [the per-battle flags byte](#the-per-battle-flags-byte-dat_8007bd60).
 
@@ -347,7 +347,7 @@ The only static writer is the world-map debug menu's `ENCOUNT` row (`FUN_801EA9B
 
 #### Steps that do not roll
 
-Before the rate scale, the reader returns without touching the counter on any of these, and on a zero second argument (`0x801DA130..0x801DA180`):
+The reader leaves at its very top when the formation table's count byte is zero (`beq` at `0x801D9E68`) or when bit `0x8000` of the transient flag word `0x1F800394` is set (`andi v0,v0,0x8000` / `bne` at `0x801D9E7C..0x801D9E80`). That bit is up only while a menu or op-`0x49` submode is open: the installer `FUN_801F1278` clears it on entry (`0x801F12D0`) and sets it at `0x801F1360`, and `FUN_801F159C` clears it at `0x801F167C..0x801F1684` when the subsystem's `ctrl[+0x3E]` returns to zero. Before the rate scale, it also returns without touching the counter on any of these, and on a zero second argument (`0x801DA130..0x801DA180`):
 
 | Test | What it is |
 |---|---|
@@ -356,11 +356,13 @@ Before the rate scale, the reader returns without touching the counter on any of
 | `_DAT_8007B6B0 > 0` | The kind-0 warp timer between a teleport tile and its landing. |
 | `_DAT_8007B600 != 0` | The Incense window (`0x801DA174`). |
 
+The zero-second-argument exit is at `0x801DA16C`. Apart from op `0x3E`'s region re-read, which passes a literal `0`, the caller passes the return of `FUN_800243F0`, which is `0` only on the frame the party's battle-file streaming finishes (`jal 0x80052770` / `bne` / clear at `0x80024C50..0x80024C60`), `-1` while streaming and `0x80` once done (`0x80024BB4..0x80024BB8`). A capture of a walked run sees exactly one zero-argument call.
+
 A step onto a door therefore never also starts a fight, and a step that does roll raises the same engaged bit, stopping the player for the battle intro. The engine reads the first three as `World::encounter_roll_held` and the trigger's lock as `World::encounter_owns_player`; `world_map_door_encounter_disc` pins both on `map01`'s door to `dolk2`.
 
 ### The trigger
 
-The scaled rate is subtracted from the step counter `_DAT_8007B5FC`. At `<= 0`, two RNG draws pick a formation in `[region[6], region[6] + region[7])` and the roll installs:
+The scaled rate is subtracted from the step counter `_DAT_8007B5FC`. A counter already at zero starts a battle on the next step even in a rate-0 region: the `bgtz` at `0x801DA218` falls through. At `<= 0`, two RNG draws pick a formation in `[region[6], region[6] + region[7])` and the roll installs:
 
 ```c
 *(short *)(actor + 0x88) = formation_id;

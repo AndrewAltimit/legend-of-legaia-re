@@ -145,6 +145,30 @@ pub(super) fn earth_egg_price(run: &mut PatchRun<'_>) -> StepResult {
     Ok(())
 }
 
+/// Fortress encounter fix: both Absolute Fortress scene MANs (`deroa`,
+/// `chitei2`) stop reading the Floating Castle's stale "no battles" flag, so
+/// a save that left the castle with under a minute on the clock rolls
+/// battles there again. Seedless; a failure aborts the run, like the other
+/// fixes, rather than shipping an image without the fix that was asked for.
+pub(super) fn fortress_encounter_fix(run: &mut PatchRun<'_>) -> StepResult {
+    let PatchOptions {
+        fortress_encounter_fix,
+        ..
+    } = *run.opts;
+    if fortress_encounter_fix {
+        let rep = apply::apply_fortress_encounter_fix(&mut run.patcher)
+            .map_err(|e| format!("fortress-encounter-fix: {e:#}"))?;
+        run.summary.push_str(if rep.changed() {
+            "fortress-encounter-fix: Absolute Fortress encounter tables patched (the Floating Castle's stale flag is ignored)\n"
+        } else {
+            "fortress-encounter-fix: already applied\n"
+        });
+    } else {
+        run.summary.push_str("fortress-encounter-fix: untouched\n");
+    }
+    Ok(())
+}
+
 /// Place renames: newline-separated `target=name` lines (a name may contain
 /// spaces, so only the newline splits entries). `target` is a landmark index
 /// or the place's current name. Each rename propagates to all three carriers -

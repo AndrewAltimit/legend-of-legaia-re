@@ -1,0 +1,587 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">glitches</a> &middot; field oddities</div>
+  <h1>WORK ERR, missing encounters and script slips</h1>
+  <p class="lede">Four community-reported oddities that live in the field and battle runtime rather than in one attack or item: a debug counter that reaches the screen on Mt. Rikuroa, the random battles that stop in Jette's Absolute Fortress, the camera orbit that ends the Gaza rematch, and three small slips in the English script. Each is explained from the game's own code and data, with the addresses to check.</p>
+</header>
+
+<div class="notice">
+  <div class="notice-title">How this page was made</div>
+  The base of every section is static analysis of the USA disc: disassembly of <code>SCUS_942.54</code> and its overlays, and data decoded from the disc. Two sections also rest on emulator captures, and each says which kind. The Mt. Rikuroa capture is on a poked state: a retail cold boot from a memory-card save, with story flags cleared and the player teleported. The Fortress captures are one played memory-card save and one edited copy of it. The bath scene is read against the Japanese disc (<code>SCPS_100.59</code>) as well. Where a step is inferred rather than read or observed, the text says so. PROT numbers are extraction indices; <code>P1[n]</code> and <code>P2[n]</code> are records of a scene's script partitions 1 and 2.
+</div>
+<section class="doc-section" id="work-err-rikuroa">
+  <h2>WORK ERR on Mt. Rikuroa</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>The debug text &ldquo;WORK ERR2&rdquo; appears in the top-left corner on Mt. Rikuroa right after the Golem fight, as the cave collapses, and stays (community reports)</dd>
+    <dt>Cause</dt><dd>The rock and dust burst after the Golem fight fills the fixed 143-slot actor pool; the number is how many requests arrived while it was full</dd>
+    <dt>Where</dt><dd><code>SCUS_942.54</code>: print in <code>FUN_80016444</code>, counter <code>0x8007B8A0</code>, spawn <code>FUN_80020DE0</code>, effect stager <code>FUN_80021B04</code></dd>
+    <dt>Affects</dt><dd>Any scene, minigame or battle stage that runs the pool dry</dd>
+    <dt>Status</dt><dd><span class="tag tag-partial">Partially explained</span> - the message is proven and the event that fills the pool is captured; the failed request itself was never caught</dd>
+  </dl>
+
+  <p>Everything that moves in a scene - the player, each townsperson, each door and prop, each rock and dust puff of a visual effect, each open dialogue box - is an <em>actor</em>, and all of them come out of one fixed pool of <strong>143 slots</strong>. When something asks for a slot and the pool is empty, the request fails, an error counter goes up by one, and from then on the frame loop prints <code>WORK ERR</code> followed by that counter on every frame.</p>
+  <p>So &ldquo;WORK ERR2&rdquo; is not error number two. It says that <strong>two actor requests have failed</strong> since the current stage was set up. There is no separate &ldquo;WORK ERR1&rdquo; message: the digit is a <code>%d</code>.</p>
+  <p>Mt. Rikuroa uses 97 of the 143 slots just standing still. When the Golem is beaten the game does not rebuild the scene: it restores the mountain exactly as it was before the fight, every actor included, and at once plays the cave collapse, which throws up to <strong>40 rocks and dust puffs</strong> at the same moment a dialogue box opens. Replayed from a memory-card save, that moment leaves between four slots and no slots to spare. One or two more actors alive on that frame and their requests fail: the counter reads 1 or 2 and stays on screen until the next screen change. Nothing else breaks; a rock or two never appears.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 800 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The 143-slot actor pool as three bars drawn to scale. When Mt. Rikuroa loads, 97 slots are taken and 46 are free. When the field resumes after the Golem fight, 110 are taken and 33 are free. At the peak of the cave collapse all 143 are taken: 7 sentinels, 82 props and NPCs, 40 effect parts, 3 dialogue-box actors and 11 others.">
+      <text x="40" y="32" class="dg-label dg-start">Scene loaded: 97 of 143</text>
+      <rect x="40" y="42" width="35" height="34" class="dg-node"/>
+      <text x="57.5" y="64" class="dg-sub">7</text>
+      <rect x="75" y="42" width="410" height="34" class="dg-node-accent"/>
+      <text x="280" y="64" class="dg-label">82 props and NPCs</text>
+      <rect x="485" y="42" width="40" height="34" class="dg-node"/>
+      <text x="505" y="64" class="dg-sub">8</text>
+      <rect x="525" y="42" width="230" height="34" class="dg-group"/>
+      <text x="640" y="64" class="dg-label">46 free</text>
+
+      <text x="40" y="118" class="dg-label dg-start">Field resumes after the Golem: 110 of 143</text>
+      <rect x="40" y="128" width="550" height="34" class="dg-node-accent"/>
+      <text x="315" y="150" class="dg-label">110 live: everything from before the fight is restored</text>
+      <rect x="590" y="128" width="165" height="34" class="dg-group"/>
+      <text x="672.5" y="150" class="dg-label">33 free</text>
+
+      <text x="40" y="204" class="dg-label dg-start">Peak of the cave collapse: 143 of 143</text>
+      <rect x="40" y="214" width="35" height="34" class="dg-node"/>
+      <text x="57.5" y="236" class="dg-sub">7</text>
+      <rect x="75" y="214" width="410" height="34" class="dg-node-accent"/>
+      <text x="280" y="236" class="dg-label">82 props and NPCs</text>
+      <rect x="485" y="214" width="200" height="34" class="dg-node-warn"/>
+      <text x="585" y="236" class="dg-label">40 rocks and dust puffs</text>
+      <rect x="685" y="214" width="15" height="34" class="dg-node"/>
+      <rect x="700" y="214" width="55" height="34" class="dg-node"/>
+      <text x="727.5" y="236" class="dg-sub">11</text>
+      <path class="dg-edge" d="M755 204 L755 258"/>
+      <text x="40" y="270" class="dg-sub dg-start">7 list sentinels</text>
+      <text x="748" y="270" class="dg-sub" style="text-anchor:end">3 dialogue-box actors and 11 others; slot 143 is the last: the next request fails</text>
+    </svg>
+    <figcaption>The actor pool at three moments, to scale (143 slots of <code>0xD8</code> bytes). The top bar is measured on a loaded save. The other two are captured on a poked state: flags cleared and the player teleported to replay the climb. The pool is full in 7 of 32 replays, and no request was seen to fail.</figcaption>
+  </figure>
+
+  <h3>The chain from text to cause</h3>
+  <ol class="steps steps-vertical">
+    <li><b>The print</b><span>The frame driver <code>FUN_80016444</code> loads the signed 16-bit counter at <code>0x8007B8A0</code> (<code>lh a1,0x588(gp)</code> at <code>0x800164B0</code>) and, when it is non-zero, calls the dev text formatter <code>FUN_8001A068</code> with the string at <code>0x800100F4</code>. Unlike the two prints above it, it is not behind the development switch <code>gp+0x3B8</code>.</span></li>
+    <li><b>The counter</b><span>Cleared by stage init <code>FUN_8001E1B4</code> at <code>0x8001E304</code>; incremented in exactly one place, <code>0x80020E0C..0x80020E1C</code>.</span></li>
+    <li><b>The failing spawn</b><span>That place is the failure arm of the actor spawn <code>FUN_80020DE0</code>: it calls the pop <code>FUN_80020454</code>, and when the pop returns null it bumps the counter, logs to the dev console and returns 0.</span></li>
+    <li><b>The pool</b><span><code>FUN_800203EC</code> seeds a free stack of 143 slot pointers, <code>0x8007C5AC + i * 0xD8</code>. The pop refuses when the top index at <code>0x8007C348</code> is negative; free slots = top index + 1. Stage init takes 7 slots as list sentinels, leaving 136.</span></li>
+    <li><b>The battle return keeps the pool</b><span>Stage init always clears the counter, but skips the reseed and the seven pops when the field resumes from a battle: resume word <code>0x8007B8B8 == 2</code> and next mode 2 (<code>bne</code> at <code>0x8001E308</code>, <code>beq</code> at <code>0x8001E31C</code> to <code>0x8001E36C</code>). The pool block is parked on the way into the fight and copied back, so every actor alive before the fight is alive after it.</span></li>
+    <li><b>The collapse</b><span>The Golem record <code>P2[47]</code> is respawned by the system script when the field returns, and its post-battle arm installs two effect trees (<code>34 30 0D</code>, <code>34 30 07</code>). Their parts are spawned by <code>FUN_80021B04</code> (<code>jal 0x80020de0</code> at <code>0x80021B78</code>), two to seven per frame at the peak.</span></li>
+  </ol>
+
+  <details>
+    <summary>The instructions</summary>
+<pre><code>800164b0  lh    a1,0x588(gp)        ; counter at 0x8007B8A0
+800164b8  beq   a1,zero,0x800164cc
+800164c0  lui   a0,0x8001
+800164c4  jal   0x8001a068          ; dev text formatter
+800164c8  _addiu a0,a0,0xf4         ; "WORK ERR%d"
+
+80020df4  jal   0x80020454          ; pop a slot off the free stack
+80020dfc  move  s0,v0
+80020e00  bne   s0,zero,0x80020e34  ; got one: initialise it
+80020e0c  lhu   a1,-0x4760(a1)      ; 0x8007B8A0
+80020e14  addiu a1,a1,0x1
+80020e1c  sh    a1,-0x4760(at)
+80020e2c  j     0x80020f74          ; return 0
+
+8001e304  sh    zero,-0x4760(at)    ; counter = 0, always
+8001e308  bne   v1,v0,0x8001e324    ; resume word 0x8007B8B8 != 2 -> reseed
+8001e314  lh    v0,-0x47c4(v0)      ; 0x8007B83C, next mode
+8001e31c  beq   v0,v1,0x8001e36c    ; == 2 -> skip the reseed and the seven pops
+8001e324  jal   0x800203ec</code></pre>
+    <p>The stage-init branch is read from the instructions. The park of the pool block (in the mode-entry prologue <code>FUN_80016230</code>) and the <code>0x7B0C</code>-byte copy back are read from the decompiled C and not re-read as instructions; their consequence is what the capture shows.</p>
+  </details>
+
+  <h3>What the pool holds, measured</h3>
+  <p>The scene is <code>rikuroa</code>: its field map is PROT entry 153, its walk-on triggers PROT entry 154 and its story-state script container the variant MAN in PROT entry 157 (13 / 29 / 64 records in its three partitions). The Golem record <code>P2[47]</code> sits on tiles <code>(69,97)</code> to <code>(69,99)</code>: it sets flag <code>0x285</code> and starts a scripted battle against formation row 16 (<code>3E FF 10</code>).</p>
+  <div class="notice">
+    <div class="notice-title">Capture pedigree</div>
+    A retail disc cold-booted in PCSX-Redux, and a memory-card save loaded through the title screen: Vahn alone on Mt. Rikuroa, just after the Golem. No save from before the Golem was available, so this is <strong>captured on a poked state</strong>: story flags <code>0x281..0x286</code>, <code>0x300</code> and <code>0x366</code> were cleared, the player's position was written to stand on each trigger tile in route order, and the Golem's HP was set to 1. The triggers, the battle, the return and the collapse then ran on the game's own code.
+  </div>
+  <table>
+    <thead><tr><th>At scene entry</th><th>Slots</th><th>Read from</th></tr></thead>
+    <tbody>
+      <tr><td>List sentinels</td><td>7</td><td><code>FUN_8001E1B4</code></td></tr>
+      <tr><td>Props and NPCs: script placements 1..28</td><td>28</td><td>the MAN header count</td></tr>
+      <tr><td>Props and NPCs: map objects with a script (doors, props)</td><td>54</td><td>the 128 x 128 object map of PROT entry 153</td></tr>
+      <tr><td>The player and the other system actors</td><td>8</td><td>measured; among them list-0 ticks <code>0x801D6058</code>, <code>0x801DA51C</code>, <code>0x801E76D4</code>, <code>0x80036D80</code>, <code>0x801D84D0</code></td></tr>
+      <tr><td><strong>Total</strong></td><td><strong>97 of 143</strong></td><td>free-stack top 45: 46 free</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>Moment (one replay)</th><th>Free slots</th></tr></thead>
+    <tbody>
+      <tr><td>Scene loaded from the card</td><td>46</td></tr>
+      <tr><td>After the four trigger records on the climb</td><td>44</td></tr>
+      <tr><td>Field resumes after the battle</td><td>33</td></tr>
+      <tr><td>First rock burst, 160 vsyncs later</td><td>15</td></tr>
+      <tr><td>Second rock burst, 237 vsyncs after the return</td><td>3</td></tr>
+      <tr><td>Third burst, 446 vsyncs after the return</td><td>9</td></tr>
+      <tr><td>At rest afterwards</td><td>43</td></tr>
+    </tbody>
+  </table>
+  <p>Thirty-two replays of the same battle, differing only in when Cross is pressed after the fight, bottom out at:</p>
+  <table>
+    <thead><tr><th>Fewest free slots</th><th>4</th><th>3</th><th>2</th><th>1</th><th>0</th></tr></thead>
+    <tbody>
+      <tr><td>Replays</td><td>2</td><td>15</td><td>2</td><td>6</td><td>7</td></tr>
+    </tbody>
+  </table>
+  <p>At zero free the pool holds 82 props and NPCs, 40 effect parts (tick <code>0x80021DF4</code>), 7 sentinels, 3 dialogue-box actors, 4 list-8 actors and 7 others. The spread between replays is whether the three-actor &ldquo;!&rdquo; text box is open on the burst's peak frame. In none of the 32 did a request arrive while the stack was empty: the counter stayed zero.</p>
+  <p>With breakpoints on the spawn, 81 of the 96 spawns between the field's return and the peak come from return address <code>0x80021B80</code>, the effect-tree stager <code>FUN_80021B04</code> with template <code>0x8007062C</code>. The stager tests the result (<code>bnez s0</code> at <code>0x80021B84</code>), so a failed part is simply a rock or dust puff that is not drawn.</p>
+  <p>The number on screen is then a derivation, and it is <strong>inference</strong>: the counter goes up once per request made while the stack is empty, the stager asks for two to seven slots a frame at the peak, and parts free themselves shortly after. A run one or two actors heavier than the replay fails one or two requests in a single frame and recovers. What supplies those last actors in a player's run is not identified. Three candidates are tested and ruled out on the same set-up: finished cutscene records do not accumulate, ordinary random battles do not leak slots, and nothing survives a real scene change.</p>
+
+  <h3>Addresses</h3>
+  <table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x800100F4</code></td><td>SCUS_942.54</td><td>the <code>WORK ERR%d</code> string</td><td>disc data</td></tr>
+      <tr><td><code>0x800164B0..0x800164C8</code></td><td>SCUS_942.54</td><td>the print, in <code>FUN_80016444</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x8007B8A0</code></td><td>RAM</td><td>failed-spawn counter, signed 16-bit</td><td>disassembly</td></tr>
+      <tr><td><code>0x8001E304</code></td><td>SCUS_942.54</td><td>counter clear, in stage init <code>FUN_8001E1B4</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x8001E308..0x8001E31C</code></td><td>SCUS_942.54</td><td>battle-return test: skips the reseed, to <code>0x8001E36C</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x8007B8B8</code>, <code>0x8007B83C</code></td><td>RAM</td><td>resume word; next mode</td><td>disassembly</td></tr>
+      <tr><td><code>0x80020E00..0x80020E30</code></td><td>SCUS_942.54</td><td>failure arm of the spawn <code>FUN_80020DE0</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80020454</code></td><td>SCUS_942.54</td><td>free-stack pop; null when the top index is negative</td><td>disassembly</td></tr>
+      <tr><td><code>0x800203EC</code></td><td>SCUS_942.54</td><td>seed: top <code>0x8E</code>, 143 slots of <code>0xD8</code> bytes</td><td>disassembly</td></tr>
+      <tr><td><code>0x8007C348</code></td><td>RAM</td><td>pool control block: <code>+0x00</code> top index, <code>+0x28</code> free stack</td><td>disassembly</td></tr>
+      <tr><td><code>0x8007C5AC</code></td><td>RAM</td><td>slot 0; slot i at <code>+ i * 0xD8</code>, last slot <code>0x80083D7C</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80016230</code></td><td>SCUS_942.54</td><td>mode-entry prologue: parks the pool block when the field is left for a battle</td><td>inference (decompiled C)</td></tr>
+      <tr><td><code>0x80021B78</code></td><td>SCUS_942.54</td><td>the spawn call in the effect-tree stager <code>FUN_80021B04</code>; result tested at <code>0x80021B84</code></td><td>disassembly</td></tr>
+      <tr><td>return address <code>0x80021B80</code></td><td>SCUS_942.54</td><td>81 of 96 spawns between the battle return and the peak; template <code>0x8007062C</code></td><td>capture (poked state)</td></tr>
+      <tr><td>PROT entry 153</td><td>disc</td><td>Mt. Rikuroa field map: 54 bound objects</td><td>disc data</td></tr>
+      <tr><td>PROT entry 154</td><td>disc</td><td>walk-on triggers; the Golem record on tiles <code>(69,97)..(69,99)</code></td><td>disc data</td></tr>
+      <tr><td>PROT entry 157</td><td>disc</td><td>variant MAN: 13 / 29 / 64 records; <code>P2[47]</code> is the Golem record, effect installs at <code>+0x23</code></td><td>disc data</td></tr>
+      <tr><td>97 of 143 at scene entry</td><td>RAM</td><td>82 props and NPCs, 7 sentinels, 8 system actors</td><td>capture</td></tr>
+      <tr><td>143 of 143 at the collapse peak</td><td>RAM</td><td>zero free in 7 of 32 replays; no failed spawn</td><td>capture (poked state)</td></tr>
+    </tbody>
+  </table>
+  <p class="dg-note">The same routine prints <code>PRG ERR%d</code> (<code>0x80010100</code>, counter <code>0x8007B828</code>) and <code>READ ERR%d</code> (<code>0x80010134</code>, counter <code>gp+0x556</code>) the same way.</p>
+  <p>Mt. Rikuroa is singled out by the burst, not by its standing load: read from catalogued save states at rest it has 44 to 46 slots free, and the scenes <code>ropeway</code> (15), <code>garmel</code> (20 to 27), <code>koin3</code> (21) and <code>dolk</code> (25) are tighter.</p>
+
+  <h3>Verifying it</h3>
+  <p>Put an execute breakpoint on <code>0x80020E0C</code> and play the climb from the mountain entrance through the Golem, from a save made before the Golem tile (flag <code>0x284</code> clear). A hit is a failed spawn: the caller's return address is at <code>sp+0x38</code> and <code>s1</code> is the template of the actor that did not get a slot. The word at <code>0x8007C348</code>, logged every frame, shows the load directly: <code>0x8E</code> is an empty pool, <code>-1</code> is exhaustion. That played, unpoked run is the one measurement still missing.</p>
+</section>
+<section class="doc-section" id="fortress-no-encounters">
+  <h2>No encounters in Jette's Absolute Fortress</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>In some files Jette's Absolute Fortress has no random battles at all, before Jette is fought; it survives a reset and a memory-card load, and Incense and the encounter accessories make no difference (community reports, one first-hand: Reddit, r/LegendofLegaia, &ldquo;Jette's fortress no random encounter&rdquo;)</dd>
+    <dt>Cause</dt><dd>Escaping Zora's Floating Castle with under a minute on the clock leaves its &ldquo;no battles&rdquo; flag set for good, and the Fortress's encounter tables still obey it</dd>
+    <dt>Where</dt><dd>Clock actor <code>0x801D2EBC</code> and roll <code>FUN_801D9E1C</code> in PROT entry 0897; scripts in PROT entry 373; tables in PROT entries 606 and 706</dd>
+    <dt>Affects</dt><dd>Both Fortress scenes, in any file that had less than 1:00 left during a successful castle escape</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - a real defect; the flag write and the silent Fortress are captured on an edited save, and the castle escape itself was not played to its last minute</dd>
+  </dl>
+
+  <p>The cause is in Zora's Floating Castle, hours earlier. When the castle is falling the game gives six minutes to get out, and it switches random battles off for the last minute by raising a story flag. The record that ends a successful escape <strong>stops the clock but never lowers the flag</strong>, so a file that reached the exit with less than a minute showing keeps it for good.</p>
+  <p>In the castle that no longer matters. But the Fortress's two encounter tables were built from the castle's and still begin with the same &ldquo;this flag means no battles&rdquo; group. In that file the whole Fortress is silent, and the Door of Light is greyed out there as well. No item, accessory or reset changes it, because the flag is saved with the file. A file that escaped with more than a minute to spare is unaffected.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 800 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline. The Floating Castle escape clock runs from 6:00 to 0:00; under 1:00 the clock sets flag 0x15. File A reaches the exit with 2:00 left: the flag stays clear and the Fortress rolls at rate 18. File B reaches the exit with 0:30 left: the flag was set at 1:00, nothing clears it, and hours later the Fortress reads it and has no battles.">
+      <text x="60" y="24" class="dg-label dg-start">Floating Castle escape clock</text>
+      <text x="680" y="24" class="dg-label">Jette's Absolute Fortress</text>
+      <rect x="60" y="36" width="366.7" height="28" class="dg-node-accent"/>
+      <text x="243" y="55" class="dg-label">random battles on</text>
+      <rect x="426.7" y="36" width="73.3" height="28" class="dg-node-warn"/>
+      <text x="463.3" y="54" class="dg-sub">no battles</text>
+      <path class="dg-edge-dim" d="M60 64 L60 70 M133.3 64 L133.3 70 M206.7 64 L206.7 70 M280 64 L280 70 M353.3 64 L353.3 70 M500 64 L500 70"/>
+      <text x="60" y="82" class="dg-sub">6:00</text>
+      <text x="133.3" y="82" class="dg-sub">5:00</text>
+      <text x="206.7" y="82" class="dg-sub">4:00</text>
+      <text x="280" y="82" class="dg-sub">3:00</text>
+      <text x="353.3" y="82" class="dg-sub">2:00</text>
+      <text x="426.7" y="82" class="dg-sub">1:00</text>
+      <text x="500" y="82" class="dg-sub">0:00</text>
+      <rect x="60" y="94" width="24.4" height="10" class="dg-node"/>
+      <text x="92" y="103" class="dg-sub dg-start">0:20, to scale: lost at every scene entry</text>
+      <path class="dg-edge-dim" d="M426.7 88 L426.7 252"/>
+
+      <text x="60" y="134" class="dg-label dg-start">File A: reaches the exit with 2:00 left</text>
+      <rect x="60" y="142" width="293.3" height="28" class="dg-group"/>
+      <text x="206.7" y="160" class="dg-sub">flag 0x15 clear</text>
+      <path class="dg-edge" d="M353.3 138 L353.3 174"/>
+      <text x="353.3" y="188" class="dg-sub">exit</text>
+      <path class="dg-edge-dim" d="M353.3 156 L572 156"/>
+      <path d="M572 151 L580 156 L572 161 z" fill="var(--text-dim)"/>
+      <rect x="580" y="136" width="200" height="40" rx="4" class="dg-node-ok"/>
+      <text x="680" y="153" class="dg-label">rate 18: battles</text>
+      <text x="680" y="168" class="dg-sub">default group</text>
+
+      <text x="60" y="214" class="dg-label dg-start">File B: reaches the exit with 0:30 left</text>
+      <rect x="60" y="222" width="366.7" height="28" class="dg-group"/>
+      <text x="243" y="240" class="dg-sub">flag 0x15 clear</text>
+      <rect x="426.7" y="222" width="36.6" height="28" class="dg-node-warn"/>
+      <text x="436" y="214" class="dg-sub dg-start">set at 1:00</text>
+      <path class="dg-edge" d="M463.3 218 L463.3 254"/>
+      <text x="463.3" y="268" class="dg-sub">exit</text>
+      <path d="M463.3 236 L572 236" fill="none" stroke="var(--warn)" stroke-width="2"/>
+      <path d="M572 231 L580 236 L572 241 z" fill="var(--warn)"/>
+      <rect x="580" y="216" width="200" height="40" rx="4" class="dg-node-warn"/>
+      <text x="680" y="233" class="dg-label">rate 0: no battles</text>
+      <text x="680" y="248" class="dg-sub">group 0, the whole map</text>
+      <text x="500" y="148" class="dg-sub">hours of play later</text>
+      <text x="420" y="288" class="dg-sub">The escape record stops the clock and never clears the flag; nothing after the castle sets or clears it.</text>
+    </svg>
+    <figcaption>The castle clock to scale, and two files. The clock raises flag <code>0x15</code> whenever less than 1:00 remains; the exit times shown are examples. The flag write is captured on an edited save; a played escape ending under 1:00 was not observed end to end.</figcaption>
+  </figure>
+
+  <h3>Check and fix</h3>
+  <table>
+    <thead><tr><th></th><th>How</th></tr></thead>
+    <tbody>
+      <tr><td>Check, no tools</td><td>In the Fortress, open Items: the Door of Light is greyed out. In a healthy file it is usable there</td></tr>
+      <tr><td>Check, RAM</td><td>byte <code>0x8008575A</code>, bit <code>0x04</code> set (system flag <code>0x15</code>)</td></tr>
+      <tr><td>Check, memory card</td><td>byte <code>+0x161A</code> of the save block, bit <code>0x04</code></td></tr>
+      <tr><td>Fix, RAM</td><td>clear bit <code>0x04</code> of <code>0x8008575A</code> once, then save. It stays clear: nothing sets it after the castle</td></tr>
+      <tr><td>Fix, memory card</td><td>clear bit <code>0x04</code> at save-block <code>+0x161A</code> and re-sum the block (<code>+0x1FFC</code> is the wrapping sum of the first <code>0x7FF</code> little-endian words)</td></tr>
+      <tr><td>Fix, disc</td><td>patch the disc with <code>--fortress-encounter-fix</code> (below): the Fortress stops reading the flag, so an affected save needs no edit</td></tr>
+      <tr><td>Avoid</td><td>reach the Floating Castle's exit with more than 1:00 on the clock</td></tr>
+    </tbody>
+  </table>
+  <p>The clock is not gentle: the scene loader takes <strong>20 seconds</strong> off a running clock on every scene entry, and the castle is two scenes, so each crossing between them costs 20 seconds on top of the walking.</p>
+
+  <h3>The fix</h3>
+  <p>The patcher's <code>--fortress-encounter-fix</code> (a checkbox in the <a href="../../tooling/rom-patcher.html">browser patcher</a>; <a href="../../tooling/randomizer.html#fortress-encounter-fix">reference</a>) closes it on the disc, and it <strong>heals a save that already carries the flag</strong>. In both Fortress scenes it rewrites the leading group of the encounter table - 14 bytes of each scene's data, same size - into a duplicate of the scene's own post-Jette group: the first condition tests flag <code>0x521</code> instead of <code>0x15</code>, and its row becomes a copy of that group's whole-map row. The Fortress then never reads flag <code>0x15</code>. A healthy file sees the same rooms and rates as before, and after Jette the same quiet Fortress.</p>
+  <p>The castle is not touched: its last minute stays quiet and the flag is still left set afterwards, with nothing left to read it. The missing op itself, a <code>60 15</code> in the escape-success record, is not added - the castle's script ships as a raw chunk of a streamed file, where a two-byte insertion cannot be made in place.</p>
+
+  <h3>The cause, step by step</h3>
+  <ol class="steps steps-vertical">
+    <li><b>The countdown op</b><span>Field-script op <code>4C D3</code> arms a countdown kept in the saved game state: two flag ids, a duration and a threshold (handler <code>0x801E2BDC..0x801E2C38</code> in PROT entry 0897), and spawns a clock actor.</span></li>
+    <li><b>The clock actor</b><span><code>0x801D2EBC</code> takes the play-clock delta off the remaining time each tick. On expiry it sets the first flag (<code>0x801D2F60</code>); whenever the remaining time is below the threshold it sets the second (<code>0x801D2F84</code>). The flag ids come from RAM, not from constants in the code.</span></li>
+    <li><b>The castle arms it</b><span><code>taiku</code> <code>P2[29]</code> (PROT entry 373), the Mist Generator scene, clears flag <code>0x15</code> (<code>60 15</code> at <code>+0x1508</code>) and then arms the clock at <code>+0x1533</code>: expiry flag <code>0x396</code>, warning flag <code>0x15</code>, 21600 ticks (6:00), threshold 3600 ticks (1:00). The castle's encounter table opens with a flag-<code>0x15</code> group that is one whole-map rate-0 row: the last minute has no battles by design.</span></li>
+    <li><b>Nothing clears it</b><span>The success record <code>taiku</code> <code>P2[16]</code> issues the same op with duration 0, which stops the clock, and never issues <code>60 15</code>. The whole disc has one script clear of flag <code>0x15</code> - the one that runs before the clock is armed - and no native call clears it by constant id.</span></li>
+    <li><b>The Fortress reads it</b><span>Flag <code>0x15</code> heads the condition list of exactly three scenes: the second castle scene, and the two Fortress scenes <code>deroa</code> and <code>chitei2</code>. Their first row is the castle's row carried over: whole map, rate 0, both Doors blocked.</span></li>
+  </ol>
+
+  <details>
+    <summary>The instructions</summary>
+<pre><code>801e2bdc  jal 0x8003ce9c ; addiu a0,s6,1      ; u16 operand 1
+801e2be8  jal 0x8003ce9c ; move  s1,v0        ; u16 operand 2
+801e2bfc  sll s1,s1,0x10 ; or s1,s1,v0
+801e2c08  sw  s1,0x480(s0)                    ; +0x482 = operand 1, +0x480 = operand 2
+801e2c14  sw  v0,0x478(s0)                    ; duration (non-zero = running)
+801e2c1c  sw  v0,0x47c(s0)                    ; threshold
+801e2c20  sw  v1,0x460(s0)                    ; remaining = duration
+801e2c2c  jal 0x801d596c                      ; spawn the clock actor
+
+801d2f44  lw   v0,0x460(s1) ; subu v0,v0,v1 ; sw v0,0x460(s1)
+801d2f50  bgtz v0,0x801d2f68
+801d2f58  lh   a0,0x482(s1) ; sw zero,0x478(s1)
+801d2f60  jal  0x8003ce08   ; andi a0,a0,0xfff     ; expired: set flag "operand 1"
+801d2f68  lw   v0,0x460(s1) ; lw v1,0x47c(s1)
+801d2f74  slt  v0,v0,v1     ; beqz v0,0x801d2f8c
+801d2f80  lw   a0,0x480(s1)
+801d2f84  jal  0x8003ce08   ; andi a0,a0,0xfff     ; remaining &lt; threshold: set flag "operand 2"</code></pre>
+    <p>The 20-second charge is at <code>0x8003B62C..0x8003B648</code> in the scene loader (<code>addiu v0,v0,-0x4b0</code> on the remaining time when a clock is running). Loading a save while a clock is running restores it to its full duration (<code>0x8003B96C..0x8003B98C</code>).</p>
+  </details>
+
+  <h3>What the report describes</h3>
+  <table>
+    <thead><tr><th>Report</th><th>Explanation</th></tr></thead>
+    <tbody>
+      <tr><td>No encounters anywhere in the Fortress</td><td>the flag-<code>0x15</code> group: one whole-map rate-0 row in both scenes</td></tr>
+      <tr><td>Jette and Cort still there</td><td>the file is before Jette; the post-collapse flag <code>0x521</code> is not involved</td></tr>
+      <tr><td>Survives a full restart and a memory-card load</td><td>the flag bank is in the saved game state, save-block <code>+0x1618</code></td></tr>
+      <tr><td>Incense and both Bells (the encounter-rate accessories) change nothing</td><td>all three scale or suspend a rate that is already 0</td></tr>
+      <tr><td>The locked Fortress was visited before Conkram</td><td>coincidence: read from the scripts, that visit changes none of the three condition flags; the flag was set in the castle</td></tr>
+      <tr><td>&ldquo;Sometimes&rdquo;, across the community</td><td>it depends on how much time was left on the castle clock</td></tr>
+    </tbody>
+  </table>
+
+  <h3>What was captured</h3>
+  <div class="notice">
+    <div class="notice-title">Capture pedigree</div>
+    PCSX-Redux on the retail disc: cold boot, Continue, card load, then the pad walks up and down the interior's main hall. The save is a played one from inside the Fortress, before Jette. The key run is <strong>captured on a poked state</strong>: the castle's clock words were written into a copy of that save (an edited save), because the castle escape itself was not played to its last minute. The remaining runs poke one flag byte in RAM.
+  </div>
+  <table>
+    <thead><tr><th>Run</th><th>State</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>Played</td><td>the save as played</td><td>rate 18 on all 55 steps; counter 974 down to 2; battle rolled</td></tr>
+      <tr><td>Edited save</td><td>clock words in the save block (flag pair <code>0x03960015</code> at <code>+0x480</code>, threshold 3600, duration 3900), checksum restamped</td><td>rate 18 for 23 steps; then the clock actor sets flag <code>0x15</code> from return address <code>0x801D2F8C</code> at 3598 ticks left; the next 104 steps drain 0; the Door of Light is blocked</td></tr>
+      <tr><td>RAM poke</td><td>byte <code>0x8008575A</code> bit <code>0x04</code> set</td><td>row 0, rate 0: 128 steps, counter fixed at 974, no battle</td></tr>
+      <tr><td>RAM poke</td><td>byte <code>0x800857FC</code> bit <code>0x40</code> set (flag <code>0x521</code>)</td><td>the same, with the Door of Light still allowed</td></tr>
+      <tr><td>RAM poke</td><td>flag <code>0x15</code> set and the step counter written to 0</td><td>battle on the first step: a counter resting at zero is not the fault</td></tr>
+    </tbody>
+  </table>
+  <p>Played saves support the reading without any poke: the saves of one full playthrough between the castle and the Fortress's collapse hold the castle's stop-op flag pair <code>0x03960382</code> at save-block <code>+0x480</code>, exactly as the handler stores it. All of that playthrough's post-castle saves have flag <code>0x15</code> clear, and it has normal Fortress battles: a file that left the castle with more than a minute to spare.</p>
+
+  <h3>The quiet states that are intended</h3>
+  <ul>
+    <li><strong>The collapse flag, <code>0x521</code>.</strong> Set by the scene that follows Jette's defeat and the Cort confrontation (<code>chitei2</code> <code>P2[15]</code> and <code>P2[19]</code>), never cleared. Both scenes then select an all-zero group, for the escape and for good. This is the designers switching the dungeon off.</li>
+    <li><strong>Safe rooms.</strong> In the interior's default table each zero-rate box outlines one room: Jette's room, the antechamber before it, the council chamber and Mist Generator room, the two elevator shafts and the bridge. Every ordinary room and corridor rolls at rate 18. Measured over enclosed floor tiles, 39% of the interior and 8% of the entrance is rate 0.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 840 348" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The two Fortress scenes as 128 by 128 tile grids with their default encounter regions drawn to scale. The entrance is almost entirely rate 18 with one silent pocket, the boarding room. The interior has seven rate 0 boxes, each one room: Jette's room, the antechamber, the council and Mist Generator rooms, two elevator shafts and a bridge.">
+      <rect x="40" y="50" width="256" height="256" fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3"/>
+      <rect x="84" y="226" width="52" height="80" class="dg-node-ok"/>
+      <rect x="40" y="154" width="144" height="72" class="dg-node-ok"/>
+      <rect x="184" y="50" width="112" height="256" class="dg-node-ok"/>
+      <rect x="126" y="50" width="58" height="104" class="dg-node-ok"/>
+      <rect x="40" y="50" width="86" height="104" class="dg-node-ok"/>
+      <rect x="136" y="206" width="44" height="68" class="dg-node"/>
+      <rect x="340" y="50" width="256" height="256" fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3"/>
+      <rect x="408" y="220" width="26" height="86" class="dg-node-ok"/>
+      <rect x="462" y="50" width="44" height="48" class="dg-node-ok"/>
+      <rect x="502" y="50" width="94" height="162" class="dg-node-ok"/>
+      <rect x="512" y="214" width="84" height="92" class="dg-node-ok"/>
+      <rect x="434" y="214" width="70" height="92" class="dg-node-ok"/>
+      <rect x="540" y="234" width="16" height="46" class="dg-node-ok"/>
+      <rect x="512" y="236" width="84" height="40" class="dg-node-ok"/>
+      <rect x="462" y="100" width="38" height="54" class="dg-node"/>
+      <rect x="412" y="50" width="50" height="102" class="dg-node-ok"/>
+      <rect x="340" y="50" width="72" height="92" class="dg-node"/>
+      <rect x="512" y="50" width="34" height="68" class="dg-node"/>
+      <rect x="512" y="250" width="36" height="12" class="dg-node"/>
+      <rect x="536" y="244" width="22" height="24" class="dg-node"/>
+      <rect x="340" y="174" width="60" height="128" class="dg-node"/>
+      <rect x="340" y="228" width="60" height="74" class="dg-node"/>
+      <text x="376" y="100" class="dg-sub">Jette</text>
+      <text x="370" y="205" class="dg-sub">council</text>
+      <text x="370" y="262" class="dg-sub">Mist</text><text x="370" y="276" class="dg-sub">Gen.</text>
+      <text x="168" y="34" class="dg-label">Entrance (deroa), default group</text>
+      <text x="468" y="34" class="dg-label">Interior (chitei2), default group</text>
+      <text x="168" y="322" class="dg-sub">128 x 128 tiles</text><text x="168" y="337" class="dg-sub">8% of the enclosed floor is rate 0</text>
+      <text x="468" y="322" class="dg-sub">128 x 128 tiles</text><text x="468" y="337" class="dg-sub">39% of the enclosed floor is rate 0</text>
+      <rect x="640" y="60" width="18" height="18" class="dg-node-ok"/><text x="666" y="74" class="dg-edge-label">rate 18: steps count</text>
+      <rect x="640" y="90" width="18" height="18" class="dg-node"/><text x="666" y="104" class="dg-edge-label">rate 0 box: a safe room</text>
+      <rect x="640" y="120" width="18" height="18" fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3"/><text x="666" y="134" class="dg-edge-label">rate 0 catch-all</text>
+      <text x="640" y="170" class="dg-edge-label">Boss, cutscene and transport</text>
+      <text x="640" y="186" class="dg-edge-label">rooms never roll.</text>
+      <text x="640" y="216" class="dg-edge-label">Flag 0x521 or 0x15 set:</text>
+      <text x="640" y="232" class="dg-edge-label">both maps are all rate 0.</text>
+    </svg>
+    <figcaption>Default-state encounter regions of the two Fortress scenes, to scale, stacked in the order the game searches them (earlier records on top). The boxes are drawn by tile area; the percentages count enclosed floor tiles of the wall grid.</figcaption>
+  </figure>
+
+  <h3>The tables</h3>
+  <table>
+    <thead><tr><th>Scene</th><th>Order</th><th>Flag</th><th>Regions in the group</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td><code>deroa</code></td><td>0</td><td><code>0x0015</code></td><td>one, whole map, rate 0</td><td>no encounters</td></tr>
+      <tr><td></td><td>1</td><td><code>0x0521</code></td><td>one, whole map, rate 0</td><td>no encounters</td></tr>
+      <tr><td></td><td>2</td><td><code>0x046D</code></td><td>eight: two rate-0 pockets, five rate-18 rooms, catch-all</td><td>normal</td></tr>
+      <tr><td></td><td>3</td><td>default</td><td>seven: one rate-0 pocket, five rate-18 rooms, catch-all</td><td>normal</td></tr>
+      <tr><td><code>chitei2</code></td><td>0</td><td><code>0x0015</code></td><td>one, whole map, rate 0</td><td>no encounters</td></tr>
+      <tr><td></td><td>1</td><td><code>0x0521</code></td><td>two, both rate 0</td><td>no encounters</td></tr>
+      <tr><td></td><td>2</td><td>default</td><td>sixteen: seven rate-0 boxes, eight rate-18 boxes, catch-all</td><td>mixed</td></tr>
+    </tbody>
+  </table>
+  <p class="dg-note">Row 0 of both scenes blocks both Doors and returns to tile <code>(0, 0)</code>, like the castle's row; every other Fortress row allows the Door of Light and returns to tile <code>(66, 113)</code>.</p>
+
+  <details>
+    <summary>How the roll reads them, step by step</summary>
+    <ol>
+      <li>A step is a change of the player's 128-unit tile by at most one on each axis (<code>0x801D9ED4..0x801D9F0C</code>).</li>
+      <li>The condition list is walked in order (<code>0x801D9F30..0x801D9FD8</code>): the first record whose flag is <code>0xFFFF</code> or set wins.</li>
+      <li>The first region of that group whose box contains the tile wins (<code>0x801D9FE8..0x801DA054</code>).</li>
+      <li>The step does nothing while the player's engaged bit is up, while <code>0x8007B6B4</code> is non-zero, while the warp timer <code>0x8007B6B0</code> is positive, or while the Incense window <code>0x8007B600</code> is non-zero (<code>0x801DA130..0x801DA180</code>). The roll is not reached at all while a menu or scripted submode is open (bit <code>0x8000</code> of <code>0x1F800394</code>, raised at <code>0x801F1360</code>, dropped at <code>0x801F1684</code>).</li>
+      <li>The rate is scaled by the setting byte <code>0x8007B5F8</code>, the High and Low Encounter accessories, and system flags <code>0x1D</code> (doubled) and <code>0x1E</code> (halved) (<code>0x801DA198..0x801DA204</code>).</li>
+      <li>The result is subtracted from the counter <code>0x8007B5FC</code>; at zero or below a battle starts (<code>bgtz</code> at <code>0x801DA218</code>) and the counter is reset to between 488 and 1460. The counter is not saved: after power-on it holds 974, so the first battle after a cold load in a rate-18 room comes on step 55.</li>
+    </ol>
+    <p>Things that thin battles without stopping them: the two drinkable-water props in Rogue's Tower set system flags <code>0x1D</code> (rate doubled) and <code>0x1E</code> (rate halved) and nothing clears either, so with a Low Encounter accessory rate 18 can become 4; a scene load with the counter below 487 adds half of a fresh roll (<code>0x8003AC7C..0x8003AC90</code>); Incense suspends the roll while its window is open. None of them produces a silent Fortress.</p>
+  </details>
+
+  <h3>Addresses</h3>
+  <table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801D9E1C</code></td><td>PROT 0897</td><td>per-step region encounter roll</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D9F30..0x801D9FD8</code></td><td>PROT 0897</td><td>condition-list walk; first set flag wins</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D9FE8..0x801DA054</code></td><td>PROT 0897</td><td>region search; first matching box wins</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DA130..0x801DA180</code></td><td>PROT 0897</td><td>the four gates that hold a step</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DA198..0x801DA204</code></td><td>PROT 0897</td><td>rate scaling</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DA208..0x801DA21C</code></td><td>PROT 0897</td><td>counter subtract and test</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E2BDC..0x801E2C38</code></td><td>PROT 0897</td><td>op <code>4C D3</code> handler: arms the countdown</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D2EBC</code></td><td>PROT 0897</td><td>clock actor; flag sets at <code>0x801D2F60</code> (expiry) and <code>0x801D2F84</code> (below threshold)</td><td>disassembly; capture (edited save)</td></tr>
+      <tr><td><code>0x801F1360</code>, <code>0x801F1684</code></td><td>PROT 0897</td><td>set and clear of bit <code>0x8000</code> of <code>0x1F800394</code> while a menu or submode is open</td><td>disassembly</td></tr>
+      <tr><td><code>0x8003CE08</code>, <code>0x8003CE64</code></td><td>SCUS_942.54</td><td>flag set; flag test: byte <code>0x80085758 + (id &gt;&gt; 3)</code>, mask <code>0x80 &gt;&gt; (id &amp; 7)</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x8003B62C..0x8003B648</code></td><td>SCUS_942.54</td><td>scene loader: 1200 ticks off a running clock per scene entry</td><td>disassembly</td></tr>
+      <tr><td><code>0x8003B96C..0x8003B98C</code></td><td>SCUS_942.54</td><td>card load restores a running clock to its full duration</td><td>disassembly; capture (edited save)</td></tr>
+      <tr><td><code>0x8003AC7C..0x8003AC90</code></td><td>SCUS_942.54</td><td>scene-entry counter top-up</td><td>disassembly</td></tr>
+      <tr><td><code>0x800845A0</code>, <code>0x800845B8</code>, <code>0x800845BC</code>, <code>0x800845C0</code></td><td>RAM</td><td>clock: remaining, duration, threshold, flag pair; save-block <code>+0x460</code>, <code>+0x478</code>, <code>+0x47C</code>, <code>+0x480</code></td><td>disassembly; capture (played saves)</td></tr>
+      <tr><td><code>0x8007B5FC</code></td><td>RAM</td><td>encounter step counter, signed word; not saved, 974 after power-on</td><td>disassembly; capture</td></tr>
+      <tr><td><code>0x8007B600</code></td><td>RAM</td><td>Incense window</td><td>disassembly</td></tr>
+      <tr><td><code>0x8008575A</code> mask <code>0x04</code></td><td>RAM</td><td>system flag <code>0x15</code>; save-block <code>+0x161A</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x800857FC</code> mask <code>0x40</code></td><td>RAM</td><td>system flag <code>0x521</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x8008575B</code> masks <code>0x04</code>, <code>0x02</code></td><td>RAM</td><td>system flags <code>0x1D</code>, <code>0x1E</code></td><td>disassembly</td></tr>
+      <tr><td>PROT entry 373, <code>P2[29]</code> <code>+0x1508</code>, <code>+0x1533</code></td><td>disc</td><td><code>taiku</code>: the one clear of flag <code>0x15</code>, then the arming op</td><td>disc data</td></tr>
+      <tr><td>PROT entry 373, <code>P2[16]</code> <code>+0x13</code></td><td>disc</td><td><code>taiku</code>: escape success; stops the clock, no clear of <code>0x15</code></td><td>disc data</td></tr>
+      <tr><td>PROT entry 373, <code>P2[12]</code></td><td>disc</td><td><code>taiku</code>: the script-side set of flag <code>0x15</code> (<code>50 15</code>)</td><td>disc data</td></tr>
+      <tr><td>PROT entry 606, MAN offset <code>0x5B4B</code></td><td>disc</td><td><code>deroa</code> encounter section, <code>0x152</code> bytes</td><td>disc data</td></tr>
+      <tr><td>PROT entry 706, MAN offset <code>0x6A1A</code></td><td>disc</td><td><code>chitei2</code> encounter section, <code>0x166</code> bytes</td><td>disc data</td></tr>
+      <tr><td>PROT entry 706, <code>P2[15]</code>, <code>P2[19]</code></td><td>disc</td><td>setters of flag <code>0x521</code></td><td>disc data</td></tr>
+      <tr><td>PROT entries 703, 603</td><td>disc</td><td>wall grids of <code>chitei2</code> and <code>deroa</code>: 1287 of 3304 and 274 of 3341 enclosed tiles are rate 0</td><td>disc data</td></tr>
+      <tr><td>PROT entry 697, P1 records 29, 30</td><td>disc</td><td>setters of flags <code>0x1D</code>, <code>0x1E</code></td><td>disc data</td></tr>
+      <tr><td>a real escape under 1:00 leaves the flag set</td><td>-</td><td>the one step not observed end to end</td><td>inference</td></tr>
+    </tbody>
+  </table>
+  <p>The encounter format itself is on the <a href="../../formats/encounter.html">encounter page</a>.</p>
+
+  <h3>Verifying it</h3>
+  <p>On an affected file, read byte <code>0x8008575A</code> (or save-block <code>+0x161A</code>): bit <code>0x04</code> is set. In the Fortress, break at <code>0x801DA208</code>: register <code>s0</code> holds the final per-step rate and <code>s2</code> points at the region record that won; the branch at <code>0x801D9FC8</code> shows which group was selected. To see the cause itself, play the Floating Castle escape with a breakpoint at <code>0x801D2F84</code>, let the clock fall below 1:00, reach the exit, and read the byte on the overworld. That played escape is the one observation still missing; the save of any player with the silent Fortress settles it equally. Also not measured: whether returning from a battle charges the clock the same 20 seconds as a scene change.</p>
+</section>
+<section class="doc-section" id="gaza-2-softlock">
+  <h2>Gaza 2 softlock</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>In the Gaza rematch the battle stops and the camera circles the party forever (community report)</dd>
+    <dt>Cause</dt><dd>A monster walking to its target is carried only by its Move animation; a leftover flinch flag swaps that animation for idle and the wait never ends</dd>
+    <dt>Where</dt><dd>Battle action state machine <code>FUN_801E295C</code>, PROT entry 0898, state <code>0x19</code></dd>
+    <dt>Affects</dt><dd>Nearly every monster, bosses included, when a melee directly follows a flinch</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - traced in full on <a href="../gaza-orbit-softlock.html">its own write-up</a>; the key addresses re-read here</dd>
+  </dl>
+
+  <p>This one has <a href="../gaza-orbit-softlock.html">a full write-up of its own</a>, with the evidence behind it and the patch. In short: a monster that starts a melee attack out of reach has to walk to its target. Almost no monster has a dedicated approach animation, so the game plays the ordinary Move loop and waits in a state that only re-measures the distance. That state has <strong>no movement code and no timeout</strong>.</p>
+  <p>If the monster is still flinching from a hit when its attack begins - a summon is the usual cause - a leftover &ldquo;go back to idle when this clip ends&rdquo; flag is still set. The Move loop plays one cycle, the flag swaps it for the idle pose, the monster stops short, and the wait never ends. The camera's idle sweep runs on its own, so the screen keeps orbiting.</p>
+
+  <ol class="steps steps-vertical">
+    <li><b>Flinch</b><span>The hit-reaction stager in <code>FUN_800402F4</code> queues the flinch clip and raises bit 2 of <code>actor+0x1DC</code> (<code>ori v0,v0,0x4</code> at <code>0x80042140</code>).</span></li>
+    <li><b>Attack setup, state <code>0x14</code></b><span>Out of reach, no tag-<code>0x20</code> walk action (<code>jal 0x80050e2c</code> at <code>0x801E3268</code>, miss tested at <code>0x801E327C</code>): the Move clip is staged at <code>0x801E32B0</code> and state <code>0x19</code> stored at <code>0x801E32D0</code>.</span></li>
+    <li><b>Mid-clip commit</b><span>The Move clip is installed by the path that clears bits 0..1 only (<code>andi v0,v0,0xfc</code> at <code>0x80047A38</code>). Bit 2 survives.</span></li>
+    <li><b>First natural end</b><span><code>FUN_80047430</code> tests bit 2 (<code>0x80047B38</code>) and queues idle over the Move clip (<code>sb zero,0x1da(s2)</code> at <code>0x80047B44</code>).</span></li>
+    <li><b>Parked</b><span>State <code>0x19</code> re-checks the range every frame at <code>0x801E3594</code> and falls to the stall label <code>0x801E35D0</code>, forever.</span></li>
+  </ol>
+
+  <h3>Addresses</h3>
+  <table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801E31F4..0x801E32DC</code></td><td>PROT 0898</td><td>state <code>0x14</code> walk-tag fallback</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E3568..0x801E3588</code></td><td>PROT 0898</td><td>nine redundant facing words in state <code>0x19</code>; the patch site, overlay offset <code>+0x14D50</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80047B38..0x80047B50</code></td><td>SCUS_942.54</td><td>natural-end test of bit 2 and the idle install</td><td>disassembly</td></tr>
+      <tr><td><code>0x80047A38</code></td><td>SCUS_942.54</td><td>mid-clip commit mask <code>0xFC</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80042124..0x80042170</code></td><td>SCUS_942.54</td><td>flinch stager: bit 2, then bit 0</td><td>disassembly</td></tr>
+      <tr><td><code>0x8004E2F0</code>, <code>0x80050E2C</code></td><td>SCUS_942.54</td><td>range check; action-tag scan</td><td>repo doc</td></tr>
+      <tr><td>actor <code>+0x1D9</code>, <code>+0x1DA</code>, <code>+0x1DC</code></td><td>RAM</td><td>playing clip, queued clip, anim event flags</td><td>disassembly</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Verifying it</h3>
+  <p>In a stalled battle the context state byte (<code>*0x8007BD24 + 0x07</code>) reads <code>0x19</code>, the attacker's <code>+0x1D9</code> and <code>+0x1DA</code> are both zero and its position does not change. To provoke it, set bit 2 of a monster's <code>+0x1DC</code> while it is in state <code>0x14</code>. The fix is the <em>Approach-softlock fix</em> toggle in the <a href="../../tooling/rom-patcher.html">ROM patcher</a>.</p>
+</section>
+<section class="doc-section" id="dialogue-inconsistencies">
+  <h2>Dialogue inconsistencies</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>&ldquo;Van Saryu&rdquo; against &ldquo;Bon Saryu&rdquo;, &ldquo;Moustache&rdquo; against &ldquo;Whiskers&rdquo;, and the bath scene in Usha's Research Center, where Noa turns to Vahn and the answer on offer reads &ldquo;I'm too shy&rdquo; where it should be &ldquo;He's too shy&rdquo; (community report)</dd>
+    <dt>Cause</dt><dd>The English script renders one thing two ways; in the bath scene it turns a question and answer about the researcher into ones about Vahn</dd>
+    <dt>Where</dt><dd>Scene text in PROT entries 146, 70 and 401; one monster name in PROT entry 867</dd>
+    <dt>Affects</dt><dd>Text only - no flag, item or branch changes</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - the two word pairs are read from the disc text; the bath scene is a pronoun error, settled against the Japanese disc</dd>
+  </dl>
+
+  <h3>Van Saryu and Bon Saryu</h3>
+  <p>The lord of Ratayu has a title in front of his name exactly twice on the disc, spelled differently each time. Every other mention is the bare name. Neither spelling is the established one.</p>
+  <table>
+    <thead><tr><th>Spelling</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td><code>Van</code></td><td>the battle name of monster id 137, in the monster archive (PROT entry 867)</td></tr>
+      <tr><td><code>Bon</code></td><td>the signature on a letter in Ratayu: scene <code>retock</code>, PROT entry 146, MAN offset <code>0x380C</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Moustache and Whiskers</h3>
+  <p>Both words occur in one exchange and nowhere else: the audience with King Drake in <code>dolk2</code> (the variant MAN in PROT entry 70). Drake names the thing, and Noa repeats it back as a different word.</p>
+  <table>
+    <thead><tr><th>MAN offset</th><th>Speaker</th><th>Word</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x6D86</code></td><td>King Drake</td><td><code>moustache</code></td></tr>
+      <tr><td><code>0x6DB6</code></td><td>Noa</td><td><code>Whiskers</code>, twice</td></tr>
+      <tr><td><code>0x6E39</code></td><td>King Drake</td><td><code>moustache</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>The bath scene in Usha's Research Center</h3>
+  <p>A researcher refuses to share the bath with Noa. Noa turns to Vahn and, in the Japanese script, asks him whether &ldquo;this person&rdquo; dislikes her; the player picks Vahn's answer, either that the man is embarrassed or that the bath is too small. The English changed her question to &ldquo;You don't like me?&rdquo; and the first answer to &ldquo;I'm too shy&rdquo;, so it reads as if Vahn were the one refusing. The rest of the scene is translated straight, which is why Noa's next line - said while turning back to the researcher - and Gala's scolding no longer fit. <strong>The line should be &ldquo;He's too shy&rdquo;.</strong></p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 800 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Four beats of the bath scene. Noa turns to Vahn; Noa asks Vahn a question; Vahn answers through the choice box; Noa turns to the researcher. In the Japanese script the question is about this person and the answer has no subject, meaning he is too shy. In the English script the question is You don't like me and the answer is I'm too shy, so the last beat no longer fits.">
+      <rect x="20" y="24" width="175" height="46" rx="4" class="dg-node"/>
+      <text x="107.5" y="43" class="dg-label">Noa turns to Vahn</text>
+      <text x="107.5" y="59" class="dg-sub">+0x4F4, then he to her</text>
+      <rect x="215" y="24" width="175" height="46" rx="4" class="dg-node"/>
+      <text x="302.5" y="43" class="dg-label">Noa asks Vahn</text>
+      <text x="302.5" y="59" class="dg-sub">+0x55B</text>
+      <rect x="410" y="24" width="175" height="46" rx="4" class="dg-node-accent"/>
+      <text x="497.5" y="43" class="dg-label">Vahn answers</text>
+      <text x="497.5" y="59" class="dg-sub">choice box, +0x57D</text>
+      <rect x="605" y="24" width="175" height="46" rx="4" class="dg-node"/>
+      <text x="692.5" y="43" class="dg-label">Noa turns to him</text>
+      <text x="692.5" y="59" class="dg-sub">the researcher, +0x5DB</text>
+      <path class="dg-edge" d="M195 47 L208 47 M390 47 L403 47 M585 47 L598 47"/>
+      <path d="M208 42 L215 47 L208 52 z M403 42 L410 47 L403 52 z M598 42 L605 47 L598 52 z" fill="var(--dg-accent)"/>
+
+      <text x="107.5" y="118" class="dg-label">Japanese script</text>
+      <rect x="215" y="94" width="175" height="46" rx="4" class="dg-node-ok"/>
+      <text x="302.5" y="113" class="dg-label">about "this person"</text>
+      <text x="302.5" y="129" class="dg-sub">third person</text>
+      <rect x="410" y="94" width="175" height="46" rx="4" class="dg-node-ok"/>
+      <text x="497.5" y="113" class="dg-label">"(he is) too shy"</text>
+      <text x="497.5" y="129" class="dg-sub">no subject in the line</text>
+      <text x="692.5" y="113" class="dg-label">fits</text>
+      <text x="692.5" y="129" class="dg-sub">she calls the researcher odd</text>
+
+      <text x="107.5" y="188" class="dg-label">English script</text>
+      <rect x="215" y="164" width="175" height="46" rx="4" class="dg-node-warn"/>
+      <text x="302.5" y="183" class="dg-label">"You don't like me?"</text>
+      <text x="302.5" y="199" class="dg-sub">second person: Vahn</text>
+      <rect x="410" y="164" width="175" height="46" rx="4" class="dg-node-warn"/>
+      <text x="497.5" y="183" class="dg-label">"I'm too shy"</text>
+      <text x="497.5" y="199" class="dg-sub">first person: Vahn</text>
+      <text x="692.5" y="183" class="dg-label">no longer fits</text>
+      <text x="692.5" y="199" class="dg-sub">Vahn never refused anything</text>
+    </svg>
+    <figcaption>The exchange around the choice box. The script structure is identical on the USA and Japanese discs; the offsets are relative to the start of the USA record. Only the pronouns of the question and of option 1 differ.</figcaption>
+  </figure>
+
+  <p>The scene is <code>P2[4]</code> of <code>doman</code> (the variant MAN in PROT entry 401): MAN offset <code>0x923E</code> on the USA disc, <code>0x9BC7</code> in the same entry of the Japanese disc (<code>SCPS_100.59</code>). It plays once: its header blocks it when system flag <code>0x3FB</code> is set, and the record ends by setting that flag (<code>53 FB</code> at <code>0x9BCB</code>). The structure is the same on both discs: the same nineteen face-turn ops in the same order, one choice box, the same rejoin, and no branch on who is in the party.</p>
+  <table>
+    <thead><tr><th>Beat</th><th>USA</th><th>Japanese</th><th>What the script does</th></tr></thead>
+    <tbody>
+      <tr><td>Noa turns to the player</td><td><code>+0x4F4</code></td><td><code>+0x562</code></td><td><code>CC 1F 85 0F 00 F8</code>: channel <code>0x1F</code> (Noa) faces channel <code>0xF8</code> (the player)</td></tr>
+      <tr><td>The player turns to Noa</td><td><code>+0x516</code></td><td><code>+0x584</code></td><td><code>CC F8 85 0F 00 1F</code></td></tr>
+      <tr><td>Noa's question</td><td><code>+0x55B</code></td><td><code>+0x5DB</code></td><td>spoken to Vahn. Japanese: about &ldquo;this person&rdquo; (<em>kono hito</em>), the researcher. English: &ldquo;You don't like me?&rdquo;</td></tr>
+      <tr><td>The choice box</td><td><code>+0x57D</code></td><td><code>+0x600</code></td><td>two options, Vahn's replies. Option 1 in Japanese has no subject: an explanation that someone is embarrassed. English: &ldquo;I'm too shy&rdquo;</td></tr>
+      <tr><td>After option 1</td><td><code>+0x5DB</code></td><td><code>+0x678</code></td><td>Noa turns to the researcher (<code>CC 1F 85 14 00 25</code>) and calls him odd</td></tr>
+      <tr><td>After option 2</td><td><code>+0x66E</code></td><td><code>+0x71B</code></td><td>the same turn to the researcher before her reply</td></tr>
+      <tr><td>The researcher's own excuse</td><td><code>+0x8C3</code></td><td>-</td><td>in English, the same words as option 1, now from the right speaker</td></tr>
+    </tbody>
+  </table>
+  <p>At the choice Vahn is the speaker and Noa the listener, as in every choice box; the two face-turn ops just before the question are the evidence of who is addressed. Read from the English alone, it is tempting to conclude that the choice box speaks for the researcher. It does not: the box is in the same place and belongs to the player on both discs, and only the pronouns are wrong. Reading the subjectless Japanese line as &ldquo;he&rdquo; is inference, but it is forced by the question it answers and by Noa's reply.</p>
+  <p>Three other things in the English scene look odd and are <strong>not</strong> errors, because the Japanese script has them too: the researcher's lines carry no name tag; Noa calls the place a hot spring where Gala and the researcher call it a bath; and Gala's &ldquo;floating&rdquo; place renders a Japanese phrase for a building up in the air.</p>
+
+  <h3>Addresses</h3>
+  <table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td>monster id 137</td><td>PROT entry 867</td><td>the <code>Van</code> spelling</td><td>disc data</td></tr>
+      <tr><td>MAN offset <code>0x380C</code></td><td>PROT entry 146</td><td>the <code>Bon</code> spelling</td><td>disc data</td></tr>
+      <tr><td>MAN offsets <code>0x6D86</code>, <code>0x6DB6</code>, <code>0x6E39</code></td><td>PROT entry 70</td><td><code>moustache</code>, <code>Whiskers</code>, <code>moustache</code></td><td>disc data</td></tr>
+      <tr><td>MAN offset <code>0x923E</code></td><td>PROT entry 401, USA</td><td>bath scene, <code>P2[4]</code>, 2451 bytes</td><td>disc data</td></tr>
+      <tr><td>MAN offset <code>0x9BC7</code></td><td>PROT entry 401, Japanese disc</td><td>the same record, 2708 bytes</td><td>disc data</td></tr>
+      <tr><td>MAN offsets <code>0x9732</code>, <code>0x9754</code></td><td>PROT entry 401, USA</td><td>the two face-turn ops before the question</td><td>disc data</td></tr>
+      <tr><td>MAN offset <code>0x97BB</code></td><td>PROT entry 401, USA</td><td>the two-option picker <code>27 32 00 D2 00</code>; Japanese <code>27 4C 00 FC 00</code> at record <code>+0x600</code></td><td>disc data</td></tr>
+      <tr><td>MAN offset <code>0x9819</code></td><td>PROT entry 401, USA</td><td>Noa turns to the researcher after option 1</td><td>disc data</td></tr>
+      <tr><td><code>0x800857D7</code> mask <code>0x10</code></td><td>RAM</td><td>system flag <code>0x3FB</code>, the scene's one-shot latch</td><td>disassembly</td></tr>
+      <tr><td>option 1 means &ldquo;he is too shy&rdquo;</td><td>-</td><td>the reading of the subjectless Japanese line</td><td>inference</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Verifying it</h3>
+  <p>Export the disc text with <code>legaia-patcher translate export</code> and search for the words above; each exported key carries the PROT entry and MAN offset. The bath record decodes on either disc with <code>legaia-engine man-scripts --variant 401 --disasm-partition 2 --disasm-record 4</code>. To replay the scene on a save that has seen it, clear flag <code>0x3FB</code> and step onto the record's trigger tile.</p>
+</section>
+<section class="doc-section" id="summon-flutes">
+  <h2>Appendix: the two summon flutes</h2>
+  <p>Support data for the flute pages: which item is which action, and which cast module it loads. Read from the <a href="../../formats/item-effect-table.html">item-effect table</a> in <code>SCUS_942.54</code> and the dispatch tables in PROT entry 0898.</p>
+  <table>
+    <thead><tr><th></th><th>Lippian Flute</th><th>Spikefish Flute</th></tr></thead>
+    <tbody>
+      <tr><td>Item id</td><td><code>0x98</code></td><td><code>0x99</code></td></tr>
+      <tr><td>Item record</td><td><code>0x80074A88</code>, subtype <code>0x27</code></td><td><code>0x80074A94</code>, subtype <code>0x28</code></td></tr>
+      <tr><td>Effect descriptor</td><td><code>0x8007535C</code>: <code>7E 00 C4 41</code></td><td><code>0x80075360</code>: <code>7F 00 E4 41</code></td></tr>
+      <tr><td>Class, target</td><td>126, one enemy, battle only</td><td>127, all enemies, battle only</td></tr>
+      <tr><td>Action id</td><td><code>0x96</code></td><td><code>0x97</code></td></tr>
+      <tr><td>Tick table <code>0x801CF4EC</code></td><td>row 21: <code>jal 0x801F6A18</code></td><td>row 22: <code>jal 0x801F6A00</code></td></tr>
+      <tr><td>Stager table <code>0x801F6734</code></td><td>row 21: <code>0x801F7820</code></td><td>row 22: <code>0x801F7AE8</code></td></tr>
+      <tr><td>Cast module</td><td>PROT entry 0924</td><td>PROT entry 0925</td></tr>
+    </tbody>
+  </table>
+  <p class="dg-note">Item id <code>0x98</code> and action id <code>0x98</code> are different things: the Lippian Flute casts action <code>0x96</code>, and action <code>0x98</code> is a null row whose module, PROT entry 0926, is a stub. The step from effect class to action id is taken from the project's cast-module reference, not re-read from the enqueue code.</p>
+</section>

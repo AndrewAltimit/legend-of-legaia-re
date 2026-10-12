@@ -1,0 +1,486 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">glitches</a> &middot; turn order, double attacks and kicks</div>
+  <h1>Turn order, double attacks and kicks</h1>
+  <p class="lede">Four oddities players have reported, traced to the game's own code: the Spikefish Flute cancelling enemy turns (the Koru flute glitch), the War God Icon sometimes giving one attack string where two are expected, Side Kick missing floating enemies even with War God Boots, and a level-3 dance special swallowing the next one. Each section says what happens in plain words first, then gives the addresses so other reverse engineers can check it.</p>
+</header>
+
+<div class="notice">
+  <div class="notice-title">How to read this page</div>
+  Everything here is read from the USA release's executable, its overlays and the data on the disc. Three of the four cases were also <strong>watched in a running game</strong>, and each section says exactly how: the dance lock with scripted button presses and nothing written to memory; the War God Icon refusal and the flute's early round end on <em>poked states</em>, meaning some memory values were written by hand to set the situation up, and the section lists which. Side Kick is read from the code and data only. Addresses are for the USA build (<code>SCUS_942.54</code>) unless a table says otherwise; <code>ctx</code> means the battle context block, found through the pointer at <code>0x8007BD24</code>.
+</div>
+
+<section class="doc-section" id="spikefish-flute-koru">
+  <h2>The Spikefish Flute cancels enemy turns (the Koru flute glitch)</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>In a boss fight the flute skips the party's remaining turns, and for every party member who already acted it also cancels an enemy turn, slowest enemy first. Against Koru it can stop Dead End Crisis for good (community report).</dd>
+    <dt>Cause</dt><dd>The flute's turn-skip adds one to the round's turn count per <em>living</em> party member instead of per member still waiting, so the round ends early</dd>
+    <dt>Where</dt><dd>Spikefish cast module, PROT entry 0925, tail at <code>0x801F79B8</code>; round-over test in the battle overlay, PROT entry 0898, at <code>0x801E67C8</code></dd>
+    <dt>Affects</dt><dd>Every fight flagged as scripted (boss fights), on the USA, Japanese and French discs; only Koru's script can be pushed off its end</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - from the code and disc data; the early round end and a boss's thrown-away decision were captured on a poked state in the evolved Cort fight; Koru's own fight was not run</dd>
+  </dl>
+
+  <p>A battle round is a <strong>count</strong>, not a list of turns. One byte counts how many turns have been taken this round, and the round ends when that count reaches the number of fighters. Who goes next is decided fresh after every action: the fighter holding the highest unspent initiative key.</p>
+  <p>The flute is an escape item. In a fight flagged as scripted it cannot flee, so only the tail of its code runs, and that tail is meant to throw away the party's remaining turns. It does it by adding one to the turn count for <strong>every living party member</strong>, subtracting one, and zeroing the party's keys. With <em>p</em> party members already done, the count runs <em>p</em> too far and the round ends <em>p</em> turns early. Only monsters still hold keys, and the highest key always goes first, so the turns that fall off the end belong to the slowest enemies.</p>
+
+  <figure class="diagram">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 225" role="img" aria-label="Flute used third: two normal turns then a jump of three takes the cursor from 2 to 5, past the round end at 4, so Koru never acts"><text x="60" y="24" class="dg-label dg-start">Turn cursor ctx+0x1A: turns taken this round</text><line x1="60" y1="150" x2="540" y2="150" class="dg-edge"/><line x1="60" y1="150" x2="60" y2="156" class="dg-edge"/><text x="60" y="172" class="dg-sub">0</text><line x1="156" y1="150" x2="156" y2="156" class="dg-edge"/><text x="156" y="172" class="dg-sub">1</text><line x1="252" y1="150" x2="252" y2="156" class="dg-edge"/><text x="252" y="172" class="dg-sub">2</text><line x1="348" y1="150" x2="348" y2="156" class="dg-edge"/><text x="348" y="172" class="dg-sub">3</text><line x1="444" y1="150" x2="444" y2="156" class="dg-edge"/><text x="444" y="172" class="dg-sub">4</text><line x1="540" y1="150" x2="540" y2="156" class="dg-edge"/><text x="540" y="172" class="dg-sub">5</text><line x1="444" y1="50" x2="444" y2="150" class="dg-edge-dim"/><text x="438" y="62" class="dg-label" style="text-anchor:end">round ends at 4</text><rect x="61" y="100" width="94" height="30" class="dg-node"/><text x="108" y="120" class="dg-label">Vahn</text><rect x="157" y="100" width="94" height="30" class="dg-node"/><text x="204" y="120" class="dg-label">Noa</text><rect x="253" y="100" width="286" height="30" class="dg-node-warn"/><text x="348" y="120" class="dg-label">Gala: flute, cursor +3</text><text x="320" y="205" class="dg-label" style="fill:var(--warn)">Cursor passes 4: Koru never acts, round counter 4 to 5</text></svg>
+    <figcaption>Flute used third on the round where Dead End Crisis is due. Two normal turns move the turn cursor to 2; the flute moves it three, past the round end at 4. Koru is never reached.</figcaption>
+  </figure>
+  <figure class="diagram">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 225" role="img" aria-label="Flute used first: the jump of three takes the cursor from 0 to 3, one short of the round end at 4, so Koru takes the last turn"><text x="60" y="24" class="dg-label dg-start">Turn cursor ctx+0x1A: turns taken this round</text><line x1="60" y1="150" x2="540" y2="150" class="dg-edge"/><line x1="60" y1="150" x2="60" y2="156" class="dg-edge"/><text x="60" y="172" class="dg-sub">0</text><line x1="156" y1="150" x2="156" y2="156" class="dg-edge"/><text x="156" y="172" class="dg-sub">1</text><line x1="252" y1="150" x2="252" y2="156" class="dg-edge"/><text x="252" y="172" class="dg-sub">2</text><line x1="348" y1="150" x2="348" y2="156" class="dg-edge"/><text x="348" y="172" class="dg-sub">3</text><line x1="444" y1="150" x2="444" y2="156" class="dg-edge"/><text x="444" y="172" class="dg-sub">4</text><line x1="540" y1="150" x2="540" y2="156" class="dg-edge"/><text x="540" y="172" class="dg-sub">5</text><line x1="444" y1="50" x2="444" y2="150" class="dg-edge-dim"/><text x="438" y="62" class="dg-label" style="text-anchor:end">round ends at 4</text><rect x="61" y="100" width="286" height="30" class="dg-node-accent"/><text x="204" y="120" class="dg-label">Vahn: flute, cursor +3</text><rect x="349" y="100" width="94" height="30" class="dg-node-ok"/><text x="396" y="120" class="dg-label">Koru</text><text x="320" y="205" class="dg-label" style="fill:var(--ok)">Cursor stops at 3: Noa and Gala are skipped, Koru still acts</text></svg>
+    <figcaption>Flute used first. The same jump of three lands one short of 4, so exactly one more turn is played, and Koru is the only fighter left holding a key.</figcaption>
+  </figure>
+
+  <p>So a flute used as the round's first action skips nobody: the rest of the party loses its turns and every enemy still acts. The boss's place in the order does not matter, only how many party members went before the flute. A boss that has already acted has nothing left to lose.</p>
+
+  <h3>Why Koru never recovers</h3>
+  <p>Koru has no timer. His script picks a move from the battle's round number, and only round number 4 means Dead End Crisis. The round number rises at every round end whoever acted. End that round before he moves and the number is 5, which his script has no entry for; it does not come back to 4 until the byte wraps. The on-screen countdown is <code>4 - round number</code> stored in one byte, which is why it reads 255. Nothing writes 255 anywhere.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Counter</th><th>Countdown shown</th><th>Spell id stored</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>4</td><td><code>0xA2</code></td></tr>
+      <tr><td>1</td><td>3</td><td><code>0xA3</code></td></tr>
+      <tr><td>2</td><td>2</td><td><code>0xA4</code></td></tr>
+      <tr><td>3</td><td>1</td><td><code>0xA5</code></td></tr>
+      <tr><td>4</td><td>0</td><td><code>0xA1</code> Dead End Crisis</td></tr>
+      <tr><td>5 and up</td><td>255, 254, ...</td><td>nothing scripted</td></tr>
+    </tbody>
+  </table></div>
+  <p>With nothing scripted, the generic monster picker is all that is left. Koru's record carries no usable spell, so it builds a plain attack from his two costed attack animations. Both list their hit at frame 200, on clips only 64 and 30 frames long, so the hit never fires: the animation plays and nothing lands. His real specials take their damage and effect sprites from his own cast module, which a plain attack never runs.</p>
+  <p>In an ordinary, non-scripted fight the same item ends the battle: the party walks off and the escape teardown runs.</p>
+
+  <h3>The boss still decides on a turn it never gets</h3>
+  <ol class="steps">
+    <li><b>Flute ends</b><span>party keys are zero, the count is already too high</span></li>
+    <li><b>Pick</b><span>the boss holds the highest key, so it is picked and its script chooses a move &middot; <code>0x801E5D58</code>, <code>0x801DAF48</code></span></li>
+    <li><b>Round-over test</b><span>the count has reached the end; the chosen move is discarded &middot; <code>0x801E67C8</code></span></li>
+    <li><b>Next round</b><span>round number +1, every key rolled again &middot; <code>0x801E6810</code>, <code>0x801DA780</code></span></li>
+  </ol>
+  <p>For Koru this changes nothing, because his script keeps no memory. For a boss whose script writes something down at the moment it chooses, that note still changes on the discarded turn. Evolved Cort is the clear case: the game records "Ultra Charge was used" when he <em>decides</em>, not when the move plays, and clears it when he decides on Final Crisis. A thrown-away decision can therefore wipe out a charged Final Crisis, or make him fire one next turn without ever visibly charging.</p>
+  <p>Keys are rolled fresh every round (speed plus a random amount up to half of it), so a fast party's flute user sometimes rolls first, and then the flute skips nobody. That is the "sometimes" in reports about other bosses.</p>
+
+  <h3>What each boss loses</h3>
+  <p>Each row is read from that boss's own script in the battle overlay.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Boss</th><th>Move</th><th>What a flute skip does</th></tr></thead>
+    <tbody>
+      <tr><td>Koru</td><td>Dead End Crisis</td><td>Gone for good; the script runs off its end and the countdown shows 255</td></tr>
+      <tr><td>Cort, first form</td><td>Mystic Shield</td><td>Cannot be skipped: on the opening round his key is forced to 30000, so he always moves before any flute. Later picks are fresh rolls; a skipped turn costs only that turn</td></tr>
+      <tr><td>Cort, evolved</td><td>Ultra Charge into Final Crisis</td><td>The charge is a flag his script flips when it picks, not when the move plays. A discarded Final Crisis pick erases the charge (observed); a discarded Ultra Charge pick (1 in 4 with 200 MP) arms a Final Crisis with no charge shown and no MP spent on it</td></tr>
+      <tr><td>Zeto</td><td>Call Wave into Big Wave</td><td>The latch is written by the move itself, so a discarded pick changes nothing; a skipped Big Wave is chosen again next turn</td></tr>
+      <tr><td>Xain</td><td>Bull Charge into Terio Punch</td><td>Same latch as Zeto</td></tr>
+      <tr><td>Gi, Che, Lu</td><td>Blazing Slash / Megaton Press / Plasma Strike on every round whose counter is 2 mod 3</td><td>Not made up; the next one is three rounds later</td></tr>
+      <tr><td>Van Saryu</td><td>Jugger Power (once, at one third HP)</td><td>A discarded pick spends the one use; it is never cast</td></tr>
+      <tr><td>Rogue</td><td>Element Change on even rounds</td><td>A skipped change leaves the old element's attack in use</td></tr>
+    </tbody>
+  </table></div>
+  <p>The flag applies to every fight launched from a formation row whose first byte is non-zero: the two Piura, Caruban and Golem in Rikuroa, the Viguro pair, Zeto, all three Songi, all three Berserkers, Van Saryu, Dohati, Xain, the Kemaro pair, the Puera fights and Zora in the Floating Castle, late Tetsu, both Gaza, Lu / Che / Gi, Koru, Rogue, Jette, Caruban $2 / $3 and both Cort forms. Lapis, the opening Tetsu, Queen Bee and Gold Face are not flagged, so there the flute simply flees.</p>
+
+  <h3>Watched in the evolved Cort fight</h3>
+  <p><strong>Captured on a poked state.</strong> The run starts from a save state of the real evolved Cort fight as reached in play (Vahn, Noa and Gala; the scripted-fight byte reads 4), on the retail disc; that state has an unrelated place-name patch resident in memory. Written by hand: party HP held at 9000; party speed, so that the order is seat 0, seat 1, Cort, seat 2; the queued actions of seats 1 and 2, changed to the Spikefish cast; and, on the opening round only, one random draw in Cort's script so that he takes Ultra Charge. His Final Crisis pick on the next round was not forced.</p>
+
+  <figure class="diagram">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 232" role="img" aria-label="Captured round in the evolved Cort fight: the first party member attacks and moves the turn cursor from 0 to 1, the flute tail moves it from 1 to 3, Cort&#x27;s script picks Final Crisis and clears his charge flag, and the end of the flute action moves the cursor to 4, the round end, so Cort never acts"><text x="60" y="24" class="dg-label dg-start">Turn cursor ctx+0x1A in the captured round (four fighters)</text><line x1="60" y1="150" x2="540" y2="150" class="dg-edge"/><line x1="60" y1="150" x2="60" y2="156" class="dg-edge"/><text x="60" y="172" class="dg-sub">0</text><line x1="156" y1="150" x2="156" y2="156" class="dg-edge"/><text x="156" y="172" class="dg-sub">1</text><line x1="252" y1="150" x2="252" y2="156" class="dg-edge"/><text x="252" y="172" class="dg-sub">2</text><line x1="348" y1="150" x2="348" y2="156" class="dg-edge"/><text x="348" y="172" class="dg-sub">3</text><line x1="444" y1="150" x2="444" y2="156" class="dg-edge"/><text x="444" y="172" class="dg-sub">4</text><line x1="540" y1="150" x2="540" y2="156" class="dg-edge"/><text x="540" y="172" class="dg-sub">5</text><line x1="444" y1="50" x2="444" y2="150" class="dg-edge-dim"/><text x="438" y="62" class="dg-label" style="text-anchor:end">round ends at 4</text><rect x="61" y="100" width="94" height="30" class="dg-node"/><text x="108" y="120" class="dg-label">attack</text><rect x="157" y="100" width="190" height="30" class="dg-node-warn"/><text x="252" y="120" class="dg-label">flute tail: cursor +2</text><rect x="349" y="100" width="94" height="30" class="dg-node-warn"/><text x="396" y="120" class="dg-label">+1 at end</text><text x="108" y="92" class="dg-sub">seat 0</text><text x="300" y="92" class="dg-sub">seat 1 casts the flute</text><line x1="348" y1="134" x2="348" y2="150" class="dg-edge" style="stroke:var(--warn)"/><text x="320" y="196" class="dg-label">At cursor 3 Cort&#x27;s script picks Final Crisis: charge flag 1 to 0</text><text x="320" y="216" class="dg-label" style="fill:var(--warn)">Cursor reaches 4: the round is over and Cort, key 184, never acts</text></svg>
+    <figcaption>The captured round, to the same scale as the diagrams above. The flute tail takes the cursor from 1 to 3, Cort's script runs and clears his charge, and the end of the flute's action takes the cursor to 4. Cort still held a key and was never given the turn.</figcaption>
+  </figure>
+
+  <div class="table-wrap"><table>
+    <thead><tr><th>Moment</th><th>What happened</th><th>Charge flag <code>0x801C8FE4</code></th><th>Turn cursor</th></tr></thead>
+    <tbody>
+      <tr><td>Opening round, after a party action</td><td>Cort's script runs and stores at <code>0x801EBAD4</code></td><td>0 to 1</td><td>2</td></tr>
+      <tr><td>Opening round, later</td><td>Cort is dispatched and Ultra Charge plays</td><td>1</td><td>3</td></tr>
+      <tr><td>Next round, seat 0 attacks</td><td>An ordinary turn</td><td>1</td><td>0 to 1</td></tr>
+      <tr><td>Next round, seat 1 casts the flute</td><td>The tail at <code>0x801F79E0</code> runs once per living party seat, three passes, and zeroes the party keys</td><td>1</td><td>1 to 3</td></tr>
+      <tr><td>State 0x50 after the flute</td><td>Cort's script runs, queues Final Crisis and stores at <code>0x801EBB14</code></td><td><b>1 to 0</b></td><td>3</td></tr>
+      <tr><td>State 0x5A</td><td>Round over: cursor 4 equals the fighter count, round counter 1 to 2, keys rolled again</td><td>0</td><td>4</td></tr>
+    </tbody>
+  </table></div>
+  <p>Three more runs of the same fight show the other case: with the flute user as the first party member to act, the cursor goes to 3 of 4, the other two party turns are dropped and Cort takes his turn.</p>
+  <p>Not watched: Koru's own fight (the 255 countdown and the attacks that never land rest on the code and his monster record), the Ultra Charge direction of the thrown-away decision, and Van Saryu's one-time Jugger Power.</p>
+
+  <h3>The Japanese and French discs</h3>
+  <p>The trick is not particular to the USA disc. The Japanese build (<code>SCPS_100.59</code>) is a different compile with its overlays loaded higher and some context fields at other offsets, and every link of the chain is there with the same logic. Koru's monster data is byte-identical from the end of his name onward. The French build (<code>SCES_019.44</code>) is the USA code relocated: its flute tail (<code>0x801F83E0</code>) and round-over step (<code>0x801E70EC</code>) match instruction for instruction. Neither regional disc was run; this is from their code.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Link</th><th>USA</th><th>Japan</th></tr></thead>
+    <tbody>
+      <tr><td>Scripted-fight test in the flute module</td><td><code>0x801F73E8</code>, <code>ctx+0x287</code></td><td><code>0x801FA858</code>, <code>ctx+0x1E7</code></td></tr>
+      <tr><td>Tail entry</td><td><code>0x801F79B8</code></td><td><code>0x801FAE58</code></td></tr>
+      <tr><td>+1 per living party seat</td><td><code>0x801F79D8..0x801F79FC</code></td><td><code>0x801FAE7C..0x801FAEA0</code></td></tr>
+      <tr><td>Item refund</td><td><code>0x801F7A08..0x801F7A30</code></td><td><code>0x801FAEAC..0x801FAED4</code></td></tr>
+      <tr><td>-1</td><td><code>0x801F7A54..0x801F7A60</code></td><td><code>0x801FAEF8..0x801FAF04</code></td></tr>
+      <tr><td>Party keys zeroed</td><td><code>0x801F7A70</code> / <code>7A7C</code> / <code>7A88</code></td><td><code>0x801FAF14</code> / <code>AF24</code> / <code>AF34</code></td></tr>
+      <tr><td>End-of-action step and round-over compare</td><td><code>0x801E679C..0x801E67E4</code></td><td><code>0x801E96E4..0x801E9730</code></td></tr>
+      <tr><td>Round counter and its one writer</td><td><code>ctx+0x28A</code>, <code>0x801E6810</code></td><td><code>ctx+0x1EA</code>, <code>0x801E9760</code></td></tr>
+      <tr><td>Koru's script and jump table</td><td><code>0x801EB52C</code>, <code>0x801CF49C</code></td><td><code>0x801EEA10</code>, <code>0x801D1258</code></td></tr>
+      <tr><td>Countdown 4 - counter</td><td><code>0x801D0F94..0x801D0FA4</code></td><td><code>0x801D2ED0..0x801D2EE8</code></td></tr>
+      <tr><td>State 0x50 calls the picker</td><td><code>0x801E5D58</code></td><td><code>0x801E8C74</code></td></tr>
+      <tr><td>Picker calls the monster AI</td><td><code>0x801DAF48</code></td><td><code>0x801DE304</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <details class="disclosure">
+    <summary>The instructions</summary>
+    <div class="disclosure-body">
+      <p>The cast module <code>FUN_801F6A00</code> (PROT 0925). <code>s4 = ctx + 0x11</code>, so <code>0x9(s4)</code> is the turn cursor <code>ctx+0x1A</code>:</p>
+      <pre><code>801f73e8  lbu  v0,0x287(a0)        ; scripted-fight byte
+801f73f0  bne  v0,zero,0x801f79b8  ; scripted: skip the escape
+801f79e0  lhu  v0,0x14c(v0)        ; seat HP
+801f79f0  lbu  v0,0x9(s4)
+801f79fc  sb   v0,0x9(s4)          ; cursor += 1 per LIVING party seat
+801f7a2c  jal  0x800421d4          ; refund an unspent Item turn
+801f7a60  sb   v0,0x9(s4)          ; cursor -= 1
+801f7a70  sh   zero,0x16c(v1)      ; party keys = 0 (also 7a7c, 7a88)</code></pre>
+      <p>The end-of-action gate in <code>FUN_801E295C</code> (PROT 0898):</p>
+      <pre><code>801e67a4  addiu v0,v0,1            ; cursor += 1
+801e67b4  lbu  v1,0(a2)            ; party count
+801e67b8  lbu  a0,1(a2)            ; monster count
+801e67bc  lbu  a1,0x14(s5)         ; ctx+0x25, dropped without acting
+801e67c8  slt  v0,v0,v1            ; cursor &lt; party + monsters - dropped ?</code></pre>
+      <p>Koru's arm of the monster AI:</p>
+      <pre><code>801eb538  lbu   v1,0x28a(v0)       ; round counter
+801eb540  sltiu v0,v1,5
+801eb544  beqz  v0,0x801ebdac      ; 5 or more: nothing scripted</code></pre>
+      <p>Evolved Cort's arm. Both stores are inside the pick; neither of his cast modules (PROT 0961, 0962) touches the word:</p>
+      <pre><code>801eba74  lw    v0,4(s0)           ; 0x801C8FE4, the charge flag
+801eba7c  bnez  v0,0x801ebae8      ; charged: the Final Crisis arm
+801eba8c  andi  v0,v0,3            ; else a 1-in-4 roll, needs 200 MP
+801ebab8  sb    v0,0x1df(s4)       ; queue 0xA5 Ultra Charge
+801ebad4  sw    v0,4(s0)           ; flag += 1
+801ebaec  li    v0,0xb4            ; queue Final Crisis
+801ebb14  sw    v0,4(v1)           ; flag -= 1</code></pre>
+      <p>With <code>P</code> seated party members, <code>L</code> alive, <code>M</code> monsters and <code>c</code> turns taken before the flute user: the cursor is <code>c + L</code> after the flute's turn, and the round continues only while it is below <code>P + M - ctx[+0x25]</code>.</p>
+      <p>Zeto and Xain keep their two-step latch at <code>0x801C8FF0 + seat*4</code>; their scripts only read it and the cast modules write it, which is why a discarded pick costs them nothing. First-form Cort's key is forced to 30000 by the seeder when the first formation id is <code>0xB4</code> and the round counter is 0 (<code>0x801DAAB8..0x801DAAF0</code>).</p>
+    </div>
+  </details>
+
+  <h3>Addresses</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801F6A00</code></td><td>PROT 0925</td><td>Spikefish cast module body</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F73E8</code></td><td>PROT 0925</td><td>Reads the scripted-fight byte ctx+0x287</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F78F8</code></td><td>PROT 0925</td><td>Ordinary fight: stores action state 0x65 (escape)</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F79B8..0x801F7A88</code></td><td>PROT 0925</td><td>The tail: cursor +1 per living seat, item refund, -1, party keys zeroed</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x800421D4</code></td><td>SCUS</td><td>Give-item routine used for the refund</td><td>disassembly</td></tr>
+      <tr><td><code>ctx+0x1A</code></td><td>RAM (ctx = *0x8007BD24)</td><td>Turn cursor: turns taken this round</td><td>disassembly, capture</td></tr>
+      <tr><td><code>ctx+0x25</code></td><td>RAM</td><td>Fighters dropped from the round without acting</td><td>disassembly</td></tr>
+      <tr><td><code>ctx+0x287</code></td><td>RAM</td><td>Scripted-fight byte; reads 4 in boss fights reached in play</td><td>disassembly, capture</td></tr>
+      <tr><td><code>ctx+0x28A</code></td><td>RAM</td><td>Round counter</td><td>disassembly, capture</td></tr>
+      <tr><td><code>actor+0x16C</code></td><td>RAM (table 0x801C9370)</td><td>Initiative key, 0 = spent</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E679C..0x801E67E4</code></td><td>PROT 0898</td><td>End-of-action gate; round-over compare at 0x801E67C8</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801E6800..0x801E6810</code></td><td>PROT 0898</td><td>Round counter +1</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DA780</code></td><td>PROT 0898</td><td>Initiative seeder, called every round from 0x801D0ED8</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DAAB8..0x801DAAF0</code></td><td>PROT 0898</td><td>Seeder: formation 0xB4, round 0, seat-3 key = 30000</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DABA4</code></td><td>PROT 0898</td><td>Next-fighter picker; calls monster AI at 0x801DAF48</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E5D58</code></td><td>PROT 0898</td><td>State 0x50 calls the picker before the 0x5A test</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801CF1CC</code></td><td>PROT 0898</td><td>Monster AI jump table, index monster id - 4</td><td>disc data</td></tr>
+      <tr><td><code>0x801EB52C</code></td><td>PROT 0898</td><td>Koru's AI arm; sltiu v0,v1,5 at 0x801EB540</td><td>disassembly</td></tr>
+      <tr><td><code>0x801CF49C</code></td><td>PROT 0898</td><td>Koru's five-entry jump table</td><td>disc data</td></tr>
+      <tr><td><code>0x801D0F94..0x801D0FA4</code></td><td>PROT 0898</td><td>Countdown 4 - counter stored at 0x801F6958</td><td>disassembly</td></tr>
+      <tr><td><code>0x801EC468</code></td><td>PROT 0898</td><td>Melee kernel's hit-frame gate</td><td>disassembly</td></tr>
+      <tr><td><code>monster 0xB6, entries 5 and 6</code></td><td>PROT 0867</td><td>Hit frame 200, cost 200, clips 64 / 30 frames</td><td>disc data</td></tr>
+      <tr><td><code>0x801C8FE4</code></td><td>RAM</td><td>Shared one-word AI latch in the per-battle block 0x801C8FE0 (zeroed at 0x8005601C): evolved Cort's charge, Van Saryu's one-shot, Rogue's element</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801EBAD4 / 0x801EBB14</code></td><td>PROT 0898</td><td>Evolved Cort: charge flag +1 on the Ultra Charge pick / -1 on the Final Crisis pick</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801EBDA8</code></td><td>PROT 0898</td><td>Van Saryu: one-shot flag +1 on the Jugger Power pick</td><td>disassembly</td></tr>
+      <tr><td><code>0x801C8FF0 + seat*4</code></td><td>RAM</td><td>Two-step latch, set and cleared by the cast module (PROT 0946 0x801F6CCC / 0x801F6BEC, PROT 0953 0x801F6DD0 / 0x801F6C90)</td><td>disassembly</td></tr>
+      <tr><td><code>0x801EB7CC..0x801EB81C</code></td><td>PROT 0898</td><td>Gi / Che / Lu: special when round counter % 3 == 2</td><td>disassembly</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Verifying it</h3>
+  <p>The Koru half is the part still to be run. Break on <code>0x801F79F0</code> and <code>0x801E67C8</code>. Watch the byte at <code>ctx+0x1A</code>, the byte at <code>ctx+0x28A</code>, the byte at <code>0x801F6958</code>, and the halfword <code>+0x16C</code> of all four fighters. With the flute used second or third on the round where the counter reads 4, the three party keys drop to zero together, the cursor jumps by (living party - 1), and the counter goes 4 to 5 while Koru's key is still non-zero. Repeat with the flute used first: Koru acts.</p>
+  <p>For a thrown-away decision, add a write watch on <code>0x801C8FE4</code> and a breakpoint on the action dispatch at <code>0x801E2CDC</code>: the word changes in state 0x50 and no dispatch for the boss follows before the round counter moves.</p>
+  <p>Open: whether a member who is alive but cannot act (petrified or captured) shifts the overshoot by one, since the flute's loop tests HP only; the two uncaptured rows above (evolved Cort's Ultra Charge direction, Van Saryu); and which of the flagged Rikuroa rows belongs to which of Caruban, the Golem and the Piura.</p>
+</section>
+
+<section class="doc-section" id="war-god-icon-single-attack">
+  <h2>The War God Icon sometimes gives only one attack string</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>The accessory should make the wearer attack twice in a row, but it randomly fails to; players describe it in solo Muscle Dome Master Course fights (<a href="https://gamefaqs.gamespot.com/boards/197766-legend-of-legaia/75401453">community report</a>).</dd>
+    <dt>Cause</dt><dd>The "second pass used" byte doubles as the Low command's AP cost, so typing commands sets it; only an attacker stepping up to a target clears it</dd>
+    <dt>Where</dt><dd>Battle action state machine <code>FUN_801E295C</code> and the arts gauge build <code>FUN_801D388C</code>, PROT entry 0898; byte at <code>ctx+0x16</code></dd>
+    <dt>Affects</dt><dd>Every wearer, plain attacks, Arts and counterattacks; in practice one-on-one fights with hand-typed commands</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - read from the code, and the refusal captured on a poked state (the wearer was nudged into reach); a refusal with nothing nudged, and how often Noa or Gala hit it, are not measured</dd>
+  </dl>
+
+  <p>There is no dice roll. At the end of the first attack string the game grants the replay only if a one-byte pass counter reads zero.</p>
+  <p>That byte is shared with something unrelated: the AP cost of the <strong>Low</strong> command on the arts-entry screen. Every time a fighter's command gauge is built for typing commands by hand, the byte is set to that cost, 30. A doubled attack also leaves it at 2 or more. The game clears it in exactly one place: at the end of the short "step up to the target" phase of an attack.</p>
+  <p>So the marker reads "second pass already used" at the start of every round whose commands were typed, and stays that way until some attacker, party or monster, has to close the distance to a target. If the wearer swings before anyone has done that and is <strong>already within reach</strong>, the step-up phase is skipped, nothing has cleared the byte, and the replay is refused. The single pass that does run deals its damage normally.</p>
+
+  <figure class="diagram">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 304" role="img" aria-label="Attack state flow and the pass counter: state 0x14 goes to state 0x19, whose exit clears the byte, then to the strike loop 0x1E; an attacker already in reach goes straight to 0x1E without the clear. Below, two rounds with hand-typed commands: the byte starts at 30; if the wearer swings first while in reach it reaches 32 and the second pass is refused, and if anyone steps up first it is 0 and the second pass is granted"><rect x="20" y="60" width="130" height="44" class="dg-node"/><text x="85" y="78" class="dg-label">state 0x14</text><text x="85" y="94" class="dg-sub">range check</text><rect x="250" y="14" width="160" height="44" class="dg-node-ok"/><text x="330" y="32" class="dg-label">state 0x19</text><text x="330" y="48" class="dg-sub">step up: byte = 0</text><rect x="470" y="60" width="150" height="44" class="dg-node"/><text x="545" y="78" class="dg-label">state 0x1E</text><text x="545" y="94" class="dg-sub">strike loop</text><line x1="150" y1="72" x2="241" y2="45" class="dg-edge"/><path d="M250,42 l-9,-4.5 l0,9 z" style="fill:var(--dg-accent)"/><text x="150" y="40" class="dg-sub dg-start">out of reach</text><line x1="410" y1="42" x2="461" y2="66" class="dg-edge"/><path d="M470,70 l-9,-4.5 l0,9 z" style="fill:var(--dg-accent)"/><line x1="150" y1="94" x2="461" y2="94" class="dg-edge" style="stroke:var(--warn)"/><path d="M470,94 l-9,-4.5 l0,9 z" style="fill:var(--warn)"/><text x="310" y="114" class="dg-label" style="fill:var(--warn)">already in reach: byte not cleared</text><text x="20" y="146" class="dg-label dg-start">The byte ctx+0x16 through one round, commands typed by hand</text><text x="20" y="164" class="dg-sub dg-start">The wearer attacks first and is already in reach</text><rect x="20" y="172" width="138" height="44" class="dg-node"/><text x="89" y="190" class="dg-label">commands typed</text><text x="89" y="206" class="dg-sub">byte set to 30</text><line x1="158" y1="194" x2="165" y2="194" class="dg-edge" style="stroke:var(--warn)"/><path d="M174,194 l-9,-4.5 l0,9 z" style="fill:var(--warn)"/><rect x="174" y="172" width="138" height="44" class="dg-node-warn"/><text x="243" y="190" class="dg-label">wearer swings</text><text x="243" y="206" class="dg-sub">in reach: no clear</text><line x1="312" y1="194" x2="319" y2="194" class="dg-edge" style="stroke:var(--warn)"/><path d="M328,194 l-9,-4.5 l0,9 z" style="fill:var(--warn)"/><rect x="328" y="172" width="138" height="44" class="dg-node-warn"/><text x="397" y="190" class="dg-label">two strikes</text><text x="397" y="206" class="dg-sub">30, 31, 32</text><line x1="466" y1="194" x2="473" y2="194" class="dg-edge" style="stroke:var(--warn)"/><path d="M482,194 l-9,-4.5 l0,9 z" style="fill:var(--warn)"/><rect x="482" y="172" width="138" height="44" class="dg-node-warn"/><text x="551" y="190" class="dg-label">string end: 32</text><text x="551" y="206" class="dg-sub">second pass refused</text><text x="20" y="240" class="dg-sub dg-start">Any attacker, party or monster, has to step up before the wearer</text><rect x="20" y="248" width="138" height="44" class="dg-node"/><text x="89" y="266" class="dg-label">commands typed</text><text x="89" y="282" class="dg-sub">byte set to 30</text><line x1="158" y1="270" x2="165" y2="270" class="dg-edge" style="stroke:var(--ok)"/><path d="M174,270 l-9,-4.5 l0,9 z" style="fill:var(--ok)"/><rect x="174" y="248" width="138" height="44" class="dg-node-ok"/><text x="243" y="266" class="dg-label">someone steps up</text><text x="243" y="282" class="dg-sub">byte = 0</text><line x1="312" y1="270" x2="319" y2="270" class="dg-edge" style="stroke:var(--ok)"/><path d="M328,270 l-9,-4.5 l0,9 z" style="fill:var(--ok)"/><rect x="328" y="248" width="138" height="44" class="dg-node-ok"/><text x="397" y="266" class="dg-label">wearer swings</text><text x="397" y="282" class="dg-sub">byte stays 0</text><line x1="466" y1="270" x2="473" y2="270" class="dg-edge" style="stroke:var(--ok)"/><path d="M482,270 l-9,-4.5 l0,9 z" style="fill:var(--ok)"/><rect x="482" y="248" width="138" height="44" class="dg-node-ok"/><text x="551" y="266" class="dg-label">string end: 0</text><text x="551" y="282" class="dg-sub">second pass granted</text></svg>
+    <figcaption>Only the step-up state clears the byte, and typing commands sets it to 30. A wearer who swings first while already in reach meets a non-zero byte at the end of the string; once anyone has stepped up, the same attack doubles.</figcaption>
+  </figure>
+
+  <p>Fighters are not walked back after an action. A monster that has just hit the wearer is left standing at the very edge of the wearer's reach, and which side of the edge depends on the knock-back of the move it used and on who the wearer is: Vahn's reach is 43 units shorter than Noa's and 96 shorter than Gala's. The failing round is: the wearer is the first to attack, types commands by hand, and targets the monster that hit them last round while it is still within reach. In a crowded fight the other attackers shove the target away and clear the byte, so it almost never lines up. In a one-on-one fight, which is where players report it, it can.</p>
+  <p><strong>Avoiding it:</strong> choose Auto instead of typing commands, attack a different monster, or let anyone else attack first.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Sets the byte non-zero</th><th>Clears it</th><th>Leaves it as it is</th></tr></thead>
+    <tbody>
+      <tr><td>Typing commands (the Low cost, 30)</td><td>A party attacker who has to step up</td><td>A party attacker already in reach</td></tr>
+      <tr><td>A granted second pass (one plus its strikes)</td><td>A monster attack that starts out of reach, for all but six monsters</td><td>A monster already in reach, and the six that walk in: the three Caruban, Evil Shadow, Shade, Nightmare</td></tr>
+      <tr><td></td><td></td><td>Magic, items, Spirit</td></tr>
+    </tbody>
+  </table></div>
+  <p>Being in reach is not enough on its own: a wearer who starts in reach with a clean byte still doubles. A counterattack by the wearer is decided the same way, since the counterer takes over inside the strike loop and inherits whatever the byte holds. Nothing else cuts the second string: the target cannot die between the passes (the first pass's damage is held back until the second ends), there is no AP check, and monsters never counter.</p>
+
+  <h3>Watched in play</h3>
+  <p>Two fights were run on the retail disc: three-on-one against Gaza and one-on-one against a Gobu Gobu. No available save has the Icon equipped, so in <strong>every</strong> run the ability bit was written onto Vahn by hand (bit <code>0x2000</code> set in the word at <code>0x800847FC</code>). The Gaza state has an unrelated arts-AP patch resident in the battle overlay; the Gobu Gobu state is retail apart from four data bytes.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>What</th><th>How it was set up</th><th>What was seen</th></tr></thead>
+    <tbody>
+      <tr><td>A normal double</td><td>Ability bit poked, nothing else</td><td>Out of reach, state 0x19, clear at <code>0x801E35B4</code>, strikes with the byte at 0, the check at <code>0x801E3A18</code> reads 0, grant, the second pass bumps the byte to 6. No HP is written until the second pass ends</td></tr>
+      <tr><td>In reach with a clean byte</td><td>Ability bit poked; Vahn's position not touched</td><td>The monster steps up to hit Vahn, which clears the byte, and stays beside him. Vahn takes the in-reach bypass and the check still reads 0: granted</td></tr>
+      <tr><td>The refusal</td><td><b>Captured on a poked state</b>: ability bit; HP 9000 on both sides; Vahn's maximum HP raised each round so that he acts first; Vahn moved 49 to 78 units toward the target at the range test</td><td>Bypass taken, two strikes bump the byte from 30 to 32, the check reads 32, recovery, no second pass. One string, damage 84 to 88 committed normally. Three rounds running</td></tr>
+      <tr><td>The control</td><td>The same run, with the byte also poked to 0 at <code>0x801E3A10</code></td><td>Second pass runs, 178 committed instead of 88. The next round, with no such poke, is refused again</td></tr>
+      <tr><td>Every store to the byte</td><td>A write breakpoint over <code>ctx+0x14..0x17</code> through both fights: about sixty attacks, a monster's magic cast, manual and Auto entry</td><td>Only the four stores listed below write <code>ctx+0x16</code>. No summon, cast-module action or item use ran under the watch; for those the list rests on a reference sweep of every code image</td></tr>
+      <tr><td>Battle setup</td><td>A save taken at the first prompt of the Gaza fight</td><td><code>ctx+0x14..0x17</code> read 00 00 00 00</td></tr>
+      <tr><td>The gauge store</td><td>Manual entry, both fights</td><td>Opening directional entry sets <code>ctx+0x15</code> and <code>ctx+0x16</code> to 30 every time; under Auto the byte keeps its old value</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>How close an unassisted wearer gets.</strong> With his position left alone, Vahn attacking the Gobu Gobu that had just hit him was 0 to 49 units outside reach in eleven rounds and inside it in one. In ten of those eleven the margin is smaller than his own 43-unit handicap, so Noa or Gala standing in the same spot would have been in reach; that is an inference from Vahn's numbers, not a capture with them wearing the Icon. Against Gaza with three attackers, every start was far out of reach.</p>
+
+  <details class="disclosure">
+    <summary>The instructions</summary>
+    <div class="disclosure-body">
+      <p><code>s5 = ctx + 0x11</code>: <code>5(s5)</code> is the pass counter <code>ctx+0x16</code>, <code>4(s5)</code> the strike cursor, <code>2(s5)</code> the acting seat. The grant, at the end of the string:</p>
+      <pre><code>801e39bc  sltiu v0,v0,3            ; party seat
+801e39fc  lw    v0,0x6bc(v0)       ; character record +0xF4
+801e3a04  andi  v0,v0,0x2000       ; War God Icon bit
+801e3a10  lbu   v0,5(s5)           ; pass counter
+801e3a18  bnez  v0,0x801e3a74      ; NON-ZERO: no second pass
+801e3a38  sb    zero,4(s5)         ; rewind the strike cursor
+801e3a40  sb    v0,5(s5)           ; counter += 1</code></pre>
+      <p>The one clear, on leaving state <code>0x19</code>, and the bypass in state <code>0x14</code>:</p>
+      <pre><code>801e35b0  sb    v0,7(v1)           ; state = 0x1E
+801e35b4  sb    zero,5(s5)         ; pass counter = 0
+
+801e31f4  jal   0x8004e2f0         ; range check
+801e3200  bnez  v0,0x801e3230      ; out of reach: approach
+801e3210  sb    v0,7(v1)           ; in reach: state = 0x1E, counter untouched</code></pre>
+      <p>The store outside the attack loop, in the arts gauge build (case 9 of <code>FUN_801D388C</code>, <code>s4 = ctx + 0x11</code>):</p>
+      <pre><code>801d3b3c  sb    v0,3(a2)           ; a2 = s4 + i, i = 0..3: ctx+0x14+i
+801d3bc8  sltiu v0,a3,4            ; Left, High, Low, Right</code></pre>
+      <p><code>i = 2</code>, the Low command, is <code>ctx+0x16</code>. Four stores cover the byte and no others: the gauge cost (<code>0x801D3B3C</code>), the clear (<code>0x801E35B4</code>), a per-strike bump that only fires when it is already non-zero (<code>0x801E37BC</code>) and the grant (<code>0x801E3A40</code>). Reading the counter as private to the attack loop misses the first of these. The list comes from a reference sweep of the executable and every overlay that follows the context pointer through both its <code>lui</code>-relative and <code>gp</code>-relative loads.</p>
+      <p>Battle setup zeroes the byte: <code>FUN_80055B6C</code> clears the whole battle block (<code>0x80055F14..0x80055F24</code>). So in a fight entered with Auto the first attack always doubles, and with typed commands the byte is already 30 before the first swing.</p>
+      <p>Reach: a party attacker is in reach of a monster when <code>reach_bias[character] + distance &lt; size * 16</code>, with the bias table at <code>0x80078878</code> (+43 Vahn, 0 Noa, -53 Gala) and <code>size</code> the monster record's byte <code>+0x1F</code>. The walk chain (states <code>0x15..0x18</code>) needs an action entry tagged <code>0x20</code>; six of the 186 monster records have one.</p>
+      <p>The damage kernel withholds the HP write only while the counter is below 2 (<code>0x801EE114</code>), so a refused pass, whose byte is 2 or more, still applies its damage. The per-strike bump is a one-byte increment: a byte left stale long enough wraps through zero and the next string is granted again.</p>
+    </div>
+  </details>
+
+  <h3>Addresses</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>ctx+0x16</code></td><td>RAM (ctx = *0x8007BD24)</td><td>Attack x2 pass counter, and the Low command's AP cost on the arts-entry screen</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x80084140 + (id-1)*0x414 + 0x6BC</code></td><td>RAM</td><td>Character record +0xF4; bit 0x2000 is the War God Icon</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E39BC..0x801E3A64</code></td><td>PROT 0898</td><td>Second-pass grant and its guards; zero test at 0x801E3A18</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801E3768..0x801E37BC</code></td><td>PROT 0898</td><td>Per-strike counter bump</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801E35B4</code></td><td>PROT 0898</td><td>The only clear, on the state 0x19 exit</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801D3B3C</code></td><td>PROT 0898</td><td>Gauge build in FUN_801D388C: per-command AP cost into ctx+0x14+i; i = 2 is the counter</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801E31F4..0x801E3210</code></td><td>PROT 0898</td><td>State 0x14: in reach goes straight to 0x1E</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801E3260</code></td><td>PROT 0898</td><td>Looks up the tag-0x20 walk entry that selects the walk chain</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E3548..0x801E3558</code></td><td>PROT 0898</td><td>State 0x18 into 0x1E, no clear</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E3664..0x801E36DC</code></td><td>PROT 0898</td><td>Counterattack swap inside the strike loop</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DAF74..0x801DB050</code></td><td>PROT 0898</td><td>Counter latch 0x801F6970: armed only against a party seat with the Counterattack bit</td><td>disassembly</td></tr>
+      <tr><td><code>0x801EE0F8..0x801EE120</code></td><td>PROT 0898</td><td>Damage kernel carry test, counter below 2 (twin at 0x801EE954)</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x8004E2F0</code></td><td>SCUS</td><td>Range metric, 0 = in reach; party-on-monster test at 0x8004E344..0x8004E36C</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x80078878</code></td><td>SCUS</td><td>Reach bias per character: +43, 0, -53</td><td>disc data</td></tr>
+      <tr><td><code>monster record +0x1F</code></td><td>PROT 0867</td><td>Size byte; the reach threshold is size * 16</td><td>disc data</td></tr>
+      <tr><td><code>0x80055F14..0x80055F24</code></td><td>SCUS</td><td>Battle init FUN_80055B6C zeroes the battle block, context included</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DA850..0x801DA8C4</code></td><td>PROT 0898</td><td>Seeder's wound bonus for a party seat, from max HP - HP</td><td>disassembly</td></tr>
+      <tr><td><code>0x801CEDA4 / 0x801CEDA8</code></td><td>PROT 0898</td><td>Jump-table slots of states 0x18 / 0x19</td><td>disc data</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Verifying it</h3>
+  <p>Watch the byte at <code>ctx+0x16</code>. Break on <code>0x801E3A18</code>: a non-zero read there is a refused second pass. Break on <code>0x801E320C</code> with <code>ctx+0x13 &lt; 3</code> to catch the in-reach bypass, and on <code>0x801E31FC</code> to log the range result. Writing zero to the byte at <code>0x801E3A10</code> restores the double.</p>
+  <p>The run that would close the remaining gap: a memory-card save with the Icon on Noa or Gala in a one-on-one Muscle Dome fight, commands typed by hand, the wearer faster than the opponent, logging the range result and the string-end read over ten rounds. The prediction is "in reach" and a non-zero read on most rounds that follow the opponent's attack.</p>
+  <p>Open: a refusal with nothing nudged; how often a Noa or Gala wearer starts in reach; the wearer's own counterattack and the one-byte wrap are read from the code, not captured.</p>
+</section>
+
+<section class="doc-section" id="side-kick-war-god-boots">
+  <h2>Side Kick's first hit misses floating enemies even with War God Boots</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>War God Boots let Gala's low kick hit floating enemies, but Side Kick still misses its first hit against them (community report).</dd>
+    <dt>Cause</dt><dd>Reach is a property of each hit's power byte. The boots swap in a different low-kick record; Side Kick is an art with its own fixed bytes</dd>
+    <dt>Where</dt><dd>Melee kernel <code>FUN_801EC3E4</code>, PROT entry 0898, test at <code>0x801EC488</code>; bytes in Gala's battle file, PROT entry 0865</dd>
+    <dt>Affects</dt><dd>One art hit in the whole game; the floating monsters listed below</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - from the code and disc data, no capture</dd>
+  </dl>
+
+  <p>Whether a hit can reach a floating enemy is decided by the hit's own <strong>power byte</strong>, not by anything on the attacker. Low hits come in two encodings: one that cannot reach a floater and one that always connects.</p>
+
+  <figure class="diagram">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 210" role="img" aria-label="The power byte range 0x0C to 0x1F in four bands; Side Kick first hit 0x12 and the ordinary low kick 0x13 fall in the low restricted band that misses floating enemies, while the War God Boots low kick 0x1D and Side Kick second hit 0x17 are in the free bands"><text x="40" y="24" class="dg-label dg-start">Power byte of one hit, 0x0C to 0x1F</text><rect x="40" y="80" width="140" height="44" class="dg-node"/><text x="110" y="98" class="dg-label">high, restricted</text><text x="110" y="114" class="dg-sub">0C..10</text><rect x="180" y="80" width="140" height="44" class="dg-node-warn"/><text x="250" y="98" class="dg-label">low, restricted</text><text x="250" y="114" class="dg-sub">11..15</text><rect x="320" y="80" width="140" height="44" class="dg-node-ok"/><text x="390" y="98" class="dg-label">high, free</text><text x="390" y="114" class="dg-sub">16..1A</text><rect x="460" y="80" width="140" height="44" class="dg-node-ok"/><text x="530" y="98" class="dg-label">low, free</text><text x="530" y="114" class="dg-sub">1B..1F</text><line x1="222" y1="58" x2="222" y2="80" class="dg-edge"/><text x="222" y="50" class="dg-label" style="fill:var(--warn)">Side Kick hit 1: 12</text><line x1="362" y1="58" x2="362" y2="80" class="dg-edge"/><text x="362" y="50" class="dg-label" style="fill:var(--ok)">hit 2: 17</text><line x1="250" y1="124" x2="250" y2="146" class="dg-edge"/><text x="250" y="162" class="dg-label" style="fill:var(--warn)">Low kick, other boots: 13</text><line x1="530" y1="124" x2="530" y2="146" class="dg-edge"/><text x="530" y="162" class="dg-label" style="fill:var(--ok)">Low kick, War God Boots: 1D</text><text x="320" y="196" class="dg-sub">A floating enemy (class 2) cannot be hit by bytes 11..15</text></svg>
+    <figcaption>The twenty power-byte values in their four bands. Side Kick's first hit sits in the same restricted band as an ordinary low kick; only the War God Boots' own kick record moves out of it.</figcaption>
+  </figure>
+
+  <p>The boots grant no ability. Every pair of shoes ships its own Low and High kick, and the War God Boots' Low kick simply carries the always-connects byte where Gala's other shoes carry the restricted one.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Footwear</th><th>Low kick</th><th>High kick</th></tr></thead>
+    <tbody>
+      <tr><td>none / Power Shoes / Fighting Boots</td><td><code>13</code> restricted</td><td><code>0E</code> restricted</td></tr>
+      <tr><td><b>War God Boots</b></td><td><code>1D</code> free</td><td><code>18</code> free</td></tr>
+      <tr><td>Ra-Seru Thongs</td><td><code>13</code> restricted</td><td><code>18</code> free</td></tr>
+    </tbody>
+  </table></div>
+  <p>Side Kick is not a shoe's kick. It is an art, stored in Gala's art bank with the fixed power run <code>12 17</code>. The first byte is the restricted kind, so the first hit misses a floater; the second connects. Changing boots never touches an art record. Across all three characters' art banks it is the only hit encoded this way.</p>
+
+  <details class="disclosure">
+    <summary>The instructions</summary>
+    <div class="disclosure-body">
+      <pre><code>801ec488  sltiu v0,a3,3            ; party attacker only
+801ec494  lbu   a0,0(a1)           ; this hit's power byte
+801ec49c  sltiu a1,a0,0x16         ; 0x16 and up always connects
+801ec4c0  lbu   v1,0x1e(v0)        ; target monster record +0x1E
+801ec4cc  sltiu v0,a0,0x11         ; class 2: bytes 0x11..0x15 miss
+801ec53c  sltiu v0,v0,0x11         ; class 3: bytes below 0x11 miss
+801ec554  sb    v0,0x263(v1)       ; miss flag, no roll, no damage</code></pre>
+      <p>Direction commands play swing records spliced from the equipped items (the footwear section's first record is the Low kick, its second the High kick; the power run is the record's first bytes). Arts play a record from the art bank, selected as record <code>constant - 0x10</code>, power run at <code>+0x24</code>. Side Kick is Gala's action constant <code>0x23</code>.</p>
+    </div>
+  </details>
+
+  <h3>Who and what it applies to</h3>
+  <p><strong>Floating monsters</strong> (height class 2): Evil Fly, Death Wings, Demon Fly, Drake Ghost, Guardian, Ghost Knight, the Theeder, Vera, Nighto, Viguro, Gola Gola, Slippery, Puera and Gilium families, Pump Bat, Devil Pump, Boogie Pump, Hornet, Killer Bee, Queen Bee, Spikefish, Mad Bird, Wailing Bird, Mage, Sorcerer, Thermo, Amethyst, Garnet, Topaz, the Evil Bat records, Lapis, Rogue and Zora.</p>
+  <p><strong>Short monsters</strong> (class 3, missed by restricted High kicks): Mushroom, Mushrin, Mush Mush, Frog, Gel Frog, King Frog.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Character</th><th>Reaches floaters</th><th>Restricted</th></tr></thead>
+    <tbody>
+      <tr><td>Vahn</td><td>Triumph Boots, Ra-Seru Boots</td><td>none, Warrior, Ironman, Master, Expert, Hero Boots</td></tr>
+      <tr><td>Noa</td><td>nothing</td><td>every shoe, Ra-Seru Shoes included</td></tr>
+      <tr><td>Gala</td><td>War God Boots</td><td>none, Power Shoes, Fighting Boots, Ra-Seru Thongs</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Addresses</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801EC488..0x801EC554</code></td><td>PROT 0898</td><td>Limb-versus-height miss test in the melee kernel FUN_801EC3E4</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F64EC</code></td><td>PROT 0898</td><td>Power multiplier table 0C 12 14 16 1C</td><td>disc data</td></tr>
+      <tr><td><code>monster record +0x1E</code></td><td>PROT 0867</td><td>Height class: 2 floating, 3 short</td><td>disc data</td></tr>
+      <tr><td><code>ctx+0x263</code></td><td>RAM</td><td>Miss strobe</td><td>disassembly</td></tr>
+      <tr><td><code>0x80052FA0 / 0x800557B8</code></td><td>SCUS</td><td>Battle-file assembler and swing-record copy</td><td>repo doc</td></tr>
+      <tr><td><code>footwear section +0x04 / +0x08</code></td><td>PROT 0863..0865</td><td>Offsets of the Low / High swing records; power run at record +0</td><td>disc data</td></tr>
+      <tr><td><code>art bank record (0x23-0x10), +0x24</code></td><td>PROT 0865</td><td>Side Kick's power run 12 17, hit frames 7 and 16</td><td>disc data</td></tr>
+      <tr><td><code>Side Kick = action constant 0x23</code></td><td>-</td><td>Gala's learned-art slot 8</td><td>repo doc</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Verifying it</h3>
+  <p>Fight an Evil Fly with Gala in War God Boots and break on <code>0x801EC494</code>. A plain Low reads <code>0x1D</code> and connects. Side Kick reads <code>0x12</code> on its first hit, branches to <code>0x801EC548</code> and sets the miss flag; its second reads <code>0x17</code> and connects. Changing the art record's first power byte from <code>0x12</code> to <code>0x1C</code> (same multiplier, free range) makes the first hit land.</p>
+  <p>Open: whether <code>0x12</code> is a deliberate low sweep or an authoring slip cannot be told from the data.</p>
+</section>
+
+<section class="doc-section" id="dance-level-3-special">
+  <h2>The level-3 dance special swallows the next special</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>In the dance minigame, the level-3 special animation "eats" the next special if two level-3 specials are done in a row (community report). The special is the Triangle move, the lesson's "groovy move". An early fan guide gives the same warning: used at level 3, it lasts so long that you miss the next move.</dd>
+    <dt>Cause</dt><dd>Presses are only judged while the idle or dance loop plays; the level-3 Triangle move runs 6.83 beats, past the next scoring slot and the next combo's first note</dd>
+    <dt>Where</dt><dd>Dance overlay, PROT entry 0980: per-dancer tick <code>FUN_801D1358</code>, gate at <code>0x801D168C</code></dd>
+    <dt>Affects</dt><dd>Every dancer and every triggered move; worst at level 3</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - read from code and data, and captured in the running game with scripted button presses and nothing written to memory</dd>
+  </dl>
+
+  <p>A dancer's button presses are judged only while its body is playing the idle or the basic dance loop. Every triggered move, whether a combo finisher, the Triangle "groovy move" or the flinch after a wrong press, is a one-shot animation, and until it reaches its last frame the judge is not called at all. A press made during it is not stored, not counted as a miss, and for Triangle does not use up one of the three per song. It vanishes.</p>
+  <p>The level-3 animations are the longest. The level-3 Triangle move lasts 6.83 beats. The next scoring slot closes at most 4.75 beats after the press, so a second Triangle there is always lost. The next level-3 combo starts 6 beats after the press, so its first note is lost too and that combo cannot be completed. A Triangle on the last note of that combo, 8 beats on, does register.</p>
+  <p>Holding the button does not help: the game only sees a button on the frame it goes down.</p>
+
+  <figure class="diagram">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 288" role="img" aria-label="Beat ruler from 0 to 8 after a Triangle press, with the three input locks to scale: level 1 lasts 2.56 beats, level 2 4.91 beats and level 3 6.83 beats. The next scoring slot at beat 4 lies inside the level 2 and level 3 locks, the first note of the next combo at beat 6 lies inside the level 3 lock, and its notes at beats 7 and 8 are judged"><text x="50" y="18" class="dg-label dg-start">Beats after a Triangle press that was judged</text><text x="50" y="33" class="dg-sub dg-start">each box is one beat&#x27;s timing window, 0.75 of a beat; dashed ones carry no level-3 note</text><rect x="50" y="54" width="49.32" height="18" class="dg-node-accent"/><rect x="116" y="54" width="49.32" height="18" fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3"/><rect x="182" y="54" width="49.32" height="18" fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3"/><rect x="248" y="54" width="49.32" height="18" fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3"/><rect x="314" y="54" width="49.32" height="18" class="dg-node-accent"/><rect x="380" y="54" width="49.32" height="18" fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3"/><rect x="446" y="54" width="49.32" height="18" class="dg-node-accent"/><rect x="512" y="54" width="49.32" height="18" class="dg-node-accent"/><rect x="578" y="54" width="49.32" height="18" class="dg-node-accent"/><text x="74.66" y="49" class="dg-sub">press</text><text x="338.66" y="49" class="dg-sub">next slot</text><text x="536.66" y="49" class="dg-sub">next combo: notes 1, 2, 3</text><line x1="50" y1="72" x2="627.32" y2="72" class="dg-edge"/><line x1="50" y1="72" x2="50" y2="78" class="dg-edge"/><text x="50" y="92" class="dg-sub">0</text><line x1="116" y1="72" x2="116" y2="78" class="dg-edge"/><text x="116" y="92" class="dg-sub">1</text><line x1="182" y1="72" x2="182" y2="78" class="dg-edge"/><text x="182" y="92" class="dg-sub">2</text><line x1="248" y1="72" x2="248" y2="78" class="dg-edge"/><text x="248" y="92" class="dg-sub">3</text><line x1="314" y1="72" x2="314" y2="78" class="dg-edge"/><text x="314" y="92" class="dg-sub">4</text><line x1="380" y1="72" x2="380" y2="78" class="dg-edge"/><text x="380" y="92" class="dg-sub">5</text><line x1="446" y1="72" x2="446" y2="78" class="dg-edge"/><text x="446" y="92" class="dg-sub">6</text><line x1="512" y1="72" x2="512" y2="78" class="dg-edge"/><text x="512" y="92" class="dg-sub">7</text><line x1="578" y1="72" x2="578" y2="78" class="dg-edge"/><text x="578" y="92" class="dg-sub">8</text><line x1="314" y1="98" x2="314" y2="212" class="dg-edge-dim"/><line x1="363.32" y1="98" x2="363.32" y2="212" class="dg-edge-dim"/><line x1="446" y1="98" x2="446" y2="212" class="dg-edge-dim"/><line x1="495.32" y1="98" x2="495.32" y2="212" class="dg-edge-dim"/><rect x="50" y="108" width="169.11" height="24" class="dg-node-ok"/><text x="58" y="124" class="dg-label dg-start">level 1: 2.56 beats</text><rect x="50" y="144" width="324.13" height="24" class="dg-node-warn"/><text x="58" y="160" class="dg-label dg-start">level 2: 4.91 beats</text><rect x="50" y="180" width="450.96" height="24" class="dg-node-warn"/><text x="58" y="196" class="dg-label dg-start">level 3: 6.83 beats</text><text x="338" y="232" class="dg-label" style="fill:var(--warn)">next slot: Triangle not judged, not spent (levels 2 and 3)</text><text x="400" y="252" class="dg-label" style="fill:var(--warn)">first note of the next combo: not judged (level 3)</text><text x="400" y="272" class="dg-label" style="fill:var(--ok)">notes 2 and 3 are judged; Triangle on note 3 pays in full</text></svg>
+    <figcaption>Input locks after a Triangle press, drawn to scale on the beat ruler. The level-2 and level-3 locks cover the whole of the next scoring slot; the level-3 lock also covers the first note of the next combo.</figcaption>
+  </figure>
+
+  <div class="table-wrap"><table>
+    <thead><tr><th>Move</th><th>Frames of animation</th><th>Lock, game frames</th><th>Lock, delta units</th><th>Lock, beats</th></tr></thead>
+    <tbody>
+      <tr><td>wrong-press flinch</td><td>30</td><td>40</td><td>120</td><td>4.27</td></tr>
+      <tr><td>level-1 combo</td><td>15 / 20</td><td>20 / 27</td><td>60 / 81</td><td>2.14 / 2.88</td></tr>
+      <tr><td>level-2 combo</td><td>26</td><td>35</td><td>105</td><td>3.74</td></tr>
+      <tr><td>level-3 combo</td><td>30</td><td>40</td><td>120</td><td>4.27</td></tr>
+      <tr><td>level-1 Triangle</td><td>18</td><td>24</td><td>72</td><td>2.56</td></tr>
+      <tr><td>level-2 Triangle</td><td>34</td><td>46</td><td>138</td><td>4.91</td></tr>
+      <tr><td><b>level-3 Triangle</b></td><td>48</td><td><b>64</b></td><td>192</td><td><b>6.83</b></td></tr>
+    </tbody>
+  </table></div>
+  <p>Triangle pays its real reward only on a combo slot (every fourth beat) inside the timing window. A press made up to 0.75 beat into one slot can be followed on the next slot no later than 4.75 beats afterwards:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>First move</th><th>Lock, beats</th><th>What it costs afterwards</th></tr></thead>
+    <tbody>
+      <tr><td>level-1 Triangle</td><td>2.56</td><td>nothing: a press on the next slot is judged</td></tr>
+      <tr><td>level-2 Triangle</td><td>4.91</td><td>the whole next slot, every time</td></tr>
+      <tr><td>level-3 Triangle</td><td>6.83</td><td>the whole next slot, and the first note of the next level-3 combo, 6 beats on. A press 8 beats on is judged</td></tr>
+      <tr><td>level-3 combo finisher</td><td>4.27</td><td>a next-slot press is judged only if it comes at least 4.27 beats (40 game frames) after the finishing press</td></tr>
+      <tr><td>wrong-press flinch</td><td>4.27</td><td>as for a level-3 finisher</td></tr>
+    </tbody>
+  </table></div>
+  <p>The level-3 chart places one three-note combo per eight beats, so two combo finishers in a row never collide. A Triangle dropped inside the lock does not reduce the stock. A Triangle pressed after the lock ends but outside a combo-slot window does spend one, for only a few points, which is the other way a second special can feel swallowed. Triangle pressed together with Square or Circle is judged as Triangle alone, so "with the last command of a combination" means "instead of it".</p>
+  <p>The code also has a per-dancer "queued move" flag that would start a follow-up move when the current one ends. The move number is written on every completed combo, but the flag itself is only ever written zero: nothing else on the disc that can be loaded with the dance hall refers to it, and a write watch during the runs saw only the two zero stores. The follow-up never fires. It reads as an unfinished "chain the next move" path, which is an inference.</p>
+
+  <h3>Watched in play</h3>
+  <p>The qualifier (Noa and two rivals) was run in the retail dance hall. Every input went through the emulator's controller; level 3 was reached by pressing the chart's own notes; <strong>nothing was written to memory</strong>. The run starts from a save state taken on the way into the hall, which then loads the dance code from the retail disc. That state has an unrelated patch resident in the main executable: four code sites differ from the disc, none in the frame-timing or animation code, and the dance overlay's code is byte-identical to the disc's.</p>
+  <p>Triangle on consecutive combo slots at level 3:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Game frame</th><th>Beat</th><th>Animation bound</th><th>Judge called</th><th>Triangles left</th><th>Score</th></tr></thead>
+    <tbody>
+      <tr><td>543</td><td>51</td><td>loop to 17</td><td>yes</td><td>3 to 2</td><td>180 to 255</td></tr>
+      <tr><td>581</td><td>55</td><td>17</td><td><b>no</b>, though the press is in the pad word</td><td>2</td><td>255</td></tr>
+      <tr><td>607</td><td>57</td><td>loop again</td><td>yes</td><td>2</td><td>255</td></tr>
+      <tr><td>618</td><td>59</td><td>loop to 17</td><td>yes</td><td>2 to 1</td><td>255 to 330</td></tr>
+      <tr><td>656</td><td>63</td><td>17</td><td><b>no</b></td><td>1</td><td>330</td></tr>
+      <tr><td>693</td><td>67</td><td>loop to 17</td><td>yes</td><td>1 to 0</td><td>330 to 405</td></tr>
+    </tbody>
+  </table></div>
+  <p>The gate stayed shut for exactly 64 game frames after each judged level-3 Triangle. Other runs: from the start of a song, the level-1 Triangle reopens the gate after 24 frames and the next press is judged, the level-2 Triangle holds it for 46 and the press on the next slot is neither judged nor spent. With the next combo played normally after a level-3 Triangle, its first note is not judged, the other two score as plain hits and the combo does not close. With Triangle pressed on that combo's last note instead, it is judged and pays in full. A dropped Triangle held down for 80 frames, through the end of the lock, shows in the pad word on one frame only and never fires.</p>
+
+  <details class="disclosure">
+    <summary>The instructions</summary>
+    <div class="disclosure-body">
+      <pre><code>801d168c  lw   v0,0x10(s1)         ; idle clip id
+801d1690  lh   v1,0x5c(s0)         ; clip bound right now
+801d1698  beq  v1,v0,0x801d16b4    ; idle: judge
+801d16a0  lw   v0,0x18(s1)         ; dance-loop clip id
+801d16ac  bne  v1,v0,0x801d1750    ; anything else: skip the judge
+801d16b4  jal  0x801d1af4          ; judge / award routine</code></pre>
+      <p>The clip driver <code>FUN_800204F8</code> steps the cursor by <code>(rate * 2 + div - 1) / div</code> times the frame-delta byte at <code>0x1F800393</code> and raises the end flag at <code>frames * 16 - 1</code>. Noa's moves all run at rate 8 with divisor 4, a step of 4. The hall runs at a frame delta of 3: the dance init writes the frame-step floor (<code>0x801CF070</code>) and the frame driver <code>FUN_80016B6C</code> applies it, and it read 3 on every play frame. So the cursor moves 12 per game frame and the gate is shut for exactly <code>ceil((frames * 16 - 1) / 12)</code> game frames after the judged one. There is no extra frame for the release: the driver call at the end of the tick that binds the clip is already its first step.</p>
+      <p>The beat clock advances by the same frame delta times ten, with a beat of <code>0x119</code> units, so one beat is 28.1 delta units or 9.37 game frames. A level-2 Triangle reopens the gate 1380 beat-clock units after the press; the next slot's window has closed by 1333.</p>
+    </div>
+  </details>
+
+  <h3>Addresses</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801D1358</code></td><td>PROT 0980</td><td>Per-dancer tick</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D168C..0x801D16B4</code></td><td>PROT 0980</td><td>Judging gate: bound clip must be idle or dance loop</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801D14C8</code></td><td>PROT 0980</td><td>Clip end-flag test (+0x62 &amp; 0x100)</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D1AF4</code></td><td>PROT 0980</td><td>Judge / award routine</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D1C9C</code></td><td>PROT 0980</td><td>Triangle clip pick, lane*2 + 0x10</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D1CA8..0x801D1CCC</code></td><td>PROT 0980</td><td>Combo-slot and window test for Triangle</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D1C98</code></td><td>PROT 0980</td><td>Triangle stock decrement</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D1E5C / 0x801D1F9C</code></td><td>PROT 0980</td><td>Direction arms skip when the hit latch 0x801D548C is set, so Triangle pre-empts them</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D534C</code></td><td>RAM</td><td>Triangle stock, one word per dancer</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801D55CC / 0x801D560C</code></td><td>RAM</td><td>Queued-move flag (only ever written zero) and move number</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801D4E1C</code></td><td>PROT 0980</td><td>Dancer descriptor table; move pairs from +0x28</td><td>disc data</td></tr>
+      <tr><td><code>0x801D509C</code></td><td>PROT 0980</td><td>Step chart, three rows of 0x20 beats</td><td>disc data</td></tr>
+      <tr><td><code>0x801CF070</code></td><td>PROT 0980</td><td>Dance init writes the frame-step floor, 3</td><td>disassembly</td></tr>
+      <tr><td><code>0x8007B9D8</code></td><td>RAM</td><td>Frame-step floor</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x80016B6C</code></td><td>SCUS</td><td>Frame driver that rebuilds 0x1F800393 and applies the floor</td><td>disassembly</td></tr>
+      <tr><td><code>0x800204F8</code></td><td>SCUS</td><td>Clip driver</td><td>disassembly</td></tr>
+      <tr><td><code>0x1F800393</code></td><td>RAM</td><td>Frame-delta byte both clocks scale by; 3 in the hall</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x8007B874</code></td><td>RAM</td><td>Pad word of newly pressed buttons; Triangle is 0x0010</td><td>capture</td></tr>
+      <tr><td><code>clip records 7..17</code></td><td>PROT 1229</td><td>Frame counts of Noa's moves</td><td>disc data</td></tr>
+      <tr><td><code>beat 0x119, window 0xD2</code></td><td>-</td><td>Beat clock constants</td><td>repo doc</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Verifying it</h3>
+  <p>Break on <code>0x801D16B4</code> for dancer 0 and log the frame number. After a level-3 Triangle the next hit comes 64 game frames later at the hall's frame delta of 3. Or watch the bound clip id at actor <code>+0x5C</code>: presses made while it reads <code>0x11</code> show in the pad word at <code>0x8007B874</code> but never reach <code>0x801D1AF4</code>, and the stock word at <code>0x801D534C</code> does not change.</p>
+  <p>The capture ran the qualifier only; the gate is the same code in every mode of the minigame.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p><a href="../../subsystems/battle-action.html">Battle action state machine</a> &middot; <a href="../../subsystems/battle-formulas.html">damage formulas</a> &middot; <a href="../../formats/art-data.html">art data</a> &middot; <a href="../../formats/battle-data-pack.html">player battle files</a> &middot; <a href="../../formats/accessory-passive-table.html">accessory passives</a> &middot; <a href="../../subsystems/arts-command-gauge.html">the arts command gauge</a> &middot; <a href="../gaza-orbit-softlock.html">the endless camera orbit</a></p>
+</section>

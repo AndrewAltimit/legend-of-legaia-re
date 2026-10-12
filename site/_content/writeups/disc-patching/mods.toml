@@ -298,6 +298,18 @@ test = "encounter_patch_real.rs"
 notes = "incl. encounter-scope + on-by-default solo-strong pass"
 
 [[mod]]
+key = "fortress_encounter_fix"
+name = "Fortress encounter fix"
+flag = "--fortress-encounter-fix"
+tier = "C"
+target = "Encounter condition list of the deroa (PROT 606) and chitei2 (PROT 706) scene MANs: condition 0's flag id and its one region row, 14 decoded bytes per scene"
+edit = "in-place"
+gap = false
+status = "shipped"
+test = "fortress_encounter_fix_real.rs"
+notes = "A retail bug fix. Leaving Zora's Floating Castle with under a minute on the escape clock leaves its 'no battles' flag set for good, and both Absolute Fortress scenes still open their encounter tables with a copy of the castle's flag-gated silent group. The fix turns that group into a duplicate of the scene's own post-Jette group, so the Fortress never reads the flag - which heals a save that already carries it. Seedless."
+
+[[mod]]
 key = "house_door"
 name = "House doors (intra-town)"
 flag = "--house-doors"

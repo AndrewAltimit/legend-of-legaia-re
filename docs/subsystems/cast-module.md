@@ -588,7 +588,7 @@ frame step of `4` (see [measured arm timing](#measured-arm-timing)).
 | 2 | countdown gate | 64 |
 | 3 | places the creature half a unit from the victim toward the caster, facing the victim; spawns the arrival records | 1 |
 | 4 | camera cut, gate | 9 |
-| 5 | gate; prints the spell name | 8 |
+| 5 | gate; prints the spell name, measured, at `x = 0xAC - width/2` (PROT 0903 and 0905 centre on 172, eight sibling modules on 166, the rest on 160 - see [name-centering.md](../reference/glitches/name-centering.md)) | 8 |
 | 6 | camera cut, gate; replaces the caption with the actor record's attack name (`FUN_8003541C(.., 0x96, ..)`); spawns the fire tunnel | 99 |
 | 7 | `0xC0`-frame pan, gate | 1 |
 | 8 | gate; spawns the breath | 15 |
@@ -1242,7 +1242,8 @@ Notes on individual arms:
   (`FUN_80042310`) or a roll against the static steal table
   ([`functions/cast-modules.md`](../reference/functions/cast-modules.md)).
   The module's wrapper belongs to its `0xB9` body.
-- **PROT 0943's `0xB5` body drains MP and sits at `0x801F6A04`.**
+- **PROT 0943's `0xB5` body (Lapis Wave) zeroes every party seat's current
+  and maximum MP and sits at `0x801F6A04`.**
   `0x801F69D8` there is the head table: eleven words holding two stacked
   five-arm tables (the `0xB5` body's at `0x801F69D8`, the `0x40` body's at
   `0x801F69F0`, one zero word between), with the first prologue at file
@@ -1263,7 +1264,15 @@ Notes on individual arms:
   (`+0x1EF..+0x1F2 = 3, 2, 4, 5`), retires the effect, fires cue `0x10D` and
   clears the word. Engine: `MonsterAiState::flag_bd84`,
   `World::tick_mystic_shield_break`. It is the one module effect retail keeps
-  alive across actions; the engine stages no visual for it.
+  alive across actions; the engine stages no visual for it. The blanked reaction
+  run has a second consequence: Mushura (PROT 0915, lockout load `0x801F7870`)
+  and Theeder (PROT 0904, `0x801F7CF0`) use `+0x1D9 == 0` as their only re-hit
+  lockout, a hit stages clip `0`, and the lockout never engages. Captured on a
+  forced `0xB4` fight with injected casts: Mushura's run-over hits on every
+  contact tick (28 against 4 unshielded) and Theeder hits at both centre
+  crossings (2 against 1); restoring the run to `3, 2, 4, 5` with the handle
+  still set returns both counts to normal. Mule (PROT 0929) tests the handle at
+  `0x801F7E34` in front of its roll.
 - **Neither `0x40` (Curse) nor `0x53` (Curse All) has a retail caster.** No
   monster record's `+0x21..+0x23` magic slots name them (disc-gated assertion
   in `crates/engine-battle-vm/tests/cast_arm_retail_gating.rs`, with Cort's `0x37`
@@ -1368,7 +1377,8 @@ later arm stores to the seat's `+0x34` / `+0x38`. Port:
 Arms 10 to 12 are ramps on `ctx[+0x6D8]`. Arm 10 zeroes it (`0x801F7768`).
 Arm 11 adds `(step * scalar) >> 1` a pass and holds below `0x100`
 (`0x801F778C..0x801F77BC`) before it retargets and zeroes the word. Arm 12
-adds `(step * scalar) << 3` until `0x1000` (`0x801F7AE4` / `0x801F7EF0`). The
+adds `(step * scalar) << 3` until `0x1000` (`0x801F7AE4` / `0x801F7EF0`); at the
+captured step 4 and scalar 8 that is 256 a pass, 16 passes over 64 vsyncs. The
 word is a sweep **phase**: the ray runs from a root `0x5C` ahead of the summon
 (height `-0x11D`) to a tip `2/3` of a unit away at the summon's facing plus
 `sin[phase & 0xFFF] / 16` (`0x801F7B90..0x801F7C4C`), so it swings `+-0x100`
@@ -1376,7 +1386,12 @@ word is a sweep **phase**: the ray runs from a root `0x5C` ahead of the summon
 the root) reaches only the monsters in that arc. The port runs both ramps at
 64 ticks (`theeder_ramp_per_tick`), builds the ray with `theeder_ray_tip`,
 tests the cone against it, and gives the module a profile whose outcome arm is
-the sweep, so the band holds `0x36` until the phase has run its turn.
+the sweep, so the band holds `0x36` until the phase has run its turn. A hit in
+the sweep arm stages the victim's knockdown id `+0x1F1` when its get-up id
+`+0x1F2` is non-zero (`0x801F7DF0..0x801F7E08`) and the flinch id `+0x1EF` /
+`+0x1F0` only otherwise (`0x801F7E0C..0x801F7E24`); the playing-clip test at
+`0x801F7CF0` then keeps the second centre crossing from hitting a victim that
+is still reacting.
 
 The packet arms are drawn:
 

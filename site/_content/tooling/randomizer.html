@@ -633,6 +633,18 @@
   </div></details>
 </section>
 
+<section class="doc-section" id="fortress-encounter-fix">
+  <h3>Fortress encounter fix</h3>
+  <p>In some retail saves Jette's Absolute Fortress has no random battles at all and the Door of Light is greyed out inside it; this brings both back, including on a save that is already affected.</p>
+  <table class="layout">
+    <thead><tr><th>Flag</th><th>Values</th><th>Notes</th></tr></thead>
+    <tbody><tr><td>--fortress-encounter-fix</td><td>toggle, seedless</td><td>On in the Balanced / Full Chaos presets. A healthy save, and Zora's Floating Castle itself, play as retail.</td></tr></tbody>
+  </table>
+  <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
+    <p>Zora's Floating Castle switches battles off for the last minute of its escape clock by raising system flag <code>0x15</code>, and the record that ends a successful escape never lowers it. Both Fortress scenes (<code>deroa</code>, <code>chitei2</code>) open their encounter condition list with a copy of the castle's flag-gated silent group. The fix rewrites that group - 14 decoded bytes of each scene MAN, same size - into a duplicate of the scene's own post-Jette group (flag <code>0x521</code>), so the Fortress never tests flag <code>0x15</code>. The duplicate is checked to read the same as the group retail reaches one record later, so no other story state changes. Full story: <a href="../writeups/glitches/field-oddities.html#fortress-no-encounters">no encounters in Jette's Absolute Fortress</a>.</p>
+  </div></details>
+</section>
+
 <section class="doc-section" id="delilas-challenge">
   <h3>Delilas Challenge</h3>
   <p>The Muscle Dome clerk gains a fourth course: Che and Lu Delilas together, then Gi with two borrowed tricks; a full clear pays 5,000 coins and, with custom items on, three items retail never shipped.</p>

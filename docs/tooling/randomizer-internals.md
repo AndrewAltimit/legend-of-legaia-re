@@ -179,6 +179,7 @@ may occupy is listed once, with its owner, in `legaia_disc_patch::space_ledger`.
 | `--seru-trade` | two edits in PROT 0899 | PROT 0899 dead band `0x801EA440..0x801EB340` | [Seru trading](#seru-trading) |
 | `--jewel-fix` | thirteen `jal` words in PROT 944 / 952 / 953 / 958 / 959 / 960 | in place | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | nine words at PROT 0898 `0x801E3568` | in place | [Approach-softlock fix](#approach-softlock-fix) |
+| `--fortress-encounter-fix` | 14 decoded bytes in each of the `deroa` (PROT 606) and `chitei2` (PROT 706) scene MANs | in place (data edit, no code) | [Fortress encounter fix](#fortress-encounter-fix) |
 | `--show-super-arts` | SCUS `0x800343C4`, `0x80034450`; PROT 0898 `0x801EFBCC`, `0x801D3748`; four PROT 0899 detours | all four arena regions + PROT 0899 dead band | [Show Super Arts](#show-super-arts-on-the-in-battle-move-list) |
 | `--super-arts-pack` | fourteen words over ten sites + the banner fix at `0x8004BC3C` | `DMY.DAT` annex, streamed to `0x801FD000`; loader stub in `ARENA1` | [Super Arts Pack](#super-arts-pack-by-zetaphoenix) |
 | `--arts-ap-grant` / `--arts-ap-cost` | three detours in PROT 0898 `FUN_801EED1C` | arena regions | [Arts AP override](#arts-ap-override) |
@@ -802,6 +803,63 @@ bounces once, retail re-stages, the boss walks in (~19 units/vsync), the strike
 lands and the round completes. The no-Move-clip edge case is vacuous: a roster
 sweep (`monster_move_tags` example) finds all 186 monsters carry tag `1`.
 
+### Fortress encounter fix
+
+`--fortress-encounter-fix` restores random battles in Jette's Absolute Fortress
+on a save that carries the Floating Castle's stale flag
+(`fortress_encounter_fix` module). Seedless, in place, and a data edit: no
+instruction changes.
+
+- **The defect.** The castle's escape clock (`0x801D2EBC`, armed by field-VM op
+  `4C D3` in `taiku` P2[29]) raises system flag `0x15` while under a minute
+  remains, which selects a whole-map rate-0 group in the castle's encounter
+  table. The escape-success record stops the clock and never clears the flag.
+  Both Fortress scenes open their condition list with a byte copy of that group,
+  so the flag silences them for the rest of the file. Full trace:
+  [field-oddities.md](../reference/glitches/field-oddities.md#no-encounters-in-jettes-absolute-fortress).
+- **The edit.** In each scene's MAN section 0, condition record 0 changes from
+  `{flag 0x15, 1 row}` to `{flag 0x521, 1 row}` and region row 0 changes from
+  the castle's row (`00 00 80 80 00 80 00 01 20 00 00 00`: both Doors blocked,
+  no return point) to a copy of the whole-map row of group 1, the scene's own
+  post-Jette group. Group 0 becomes a duplicate of group 1 and the list never
+  tests flag `0x15`.
+- **Why it is exact.** With flag `0x521` clear, condition 0 fails as it does on
+  a healthy retail file and the walk reaches the same later groups. With it
+  set, condition 0 wins with a row whose payload equals what group 1 yields for
+  every tile: `locate` requires group 1 to hold a row with group 0's box, every
+  other row of it to lie inside that box, and all of them to share bytes
+  `+4..+12`. In `deroa` group 1 is that one row; in `chitei2` it is that row
+  plus a pocket row with the same payload.
+- **Why not an unused flag.** Retargeting condition 0 at a flag nothing sets is
+  also same-size, but it rests on a disc-wide negative, and this defect is the
+  counter-example: flag `0x15`'s writer is a native routine that takes its flag
+  id from script operands, invisible to a census of script set ops and of
+  constant-id `FUN_8003CE08` callers alike. The duplicate needs no such proof.
+- **Guard.** Anything but the retail shape or the fixed shape is refused. Both
+  scenes are planned and re-packed before either is written, so a refusal or a
+  footprint overflow leaves the image untouched; an already-fixed scene is a
+  no-op.
+- **Not changed.** The castle's tables, and the root cause: the clear
+  (`60 15`) is two more bytes in `taiku` P2[16], and `taiku`'s only MAN is a
+  raw type-3 chunk of a DATA_FIELD stream (PROT entry 373) that the patcher
+  rewrites same-size only. Outside the castle the two Fortress scenes are the
+  only condition lists that name the flag, and no field script tests it, so the
+  flag is inert once they stop reading it.
+- **Order.** It runs with the other fixes, ahead of the randomizers that
+  re-pack the same MANs (encounters, chests, doors); those never touch the
+  condition or region arrays, so the fix holds in either order.
+
+**Verified by** the `fortress_encounter_fix_real` disc oracle (retail baseline
+and the disc-wide list of condition lists naming flag `0x15`; the 14-byte
+surgical diff; the same winning row as a healthy retail file for every tile
+under every state of flags `0x15` / `0x521` / `0x46D`; EDC/ECC-valid sectors;
+determinism, idempotence, composition with the encounter / chest / door
+randomizers in both orders, and a clean refusal) and at **runtime** by
+`fortress_encounter_fix_runtime_e2e`: with flag `0x15` set in the engine's flag
+bank, the port of the retail roll `FUN_801D9E1C` is silent on the retail tables
+and rolls a battle on step 55 of a rate-18 room on the patched ones, with the
+Door of Light gate following.
+
 ### Show Super Arts on the in-battle move list
 
 `--show-super-arts` lists a character's Super Arts on the Tactical-Arts list
@@ -1115,7 +1173,8 @@ fix for a **retail bug** that the pack's longer names ("Blazing Typhoon",
   arts-name table (the real names of regular and Hyper Arts) and the arts
   animation data (placeholder names for regular / Hyper Arts, the *real* names
   of Super Arts and the Miracle finisher). The banner routine `FUN_8004AD80`
-  first measures the name behind the fixed pointer at `0x80076024` - always
+  first measures the name behind the fixed pointer at `0x80076024` (the `+0xC`
+  name field of arts-name row 17, `0x80075EC4 + 17*0x14 + 0xC`) - always
   "Vulture Blade" (the measure at `0x8004BBB4`) - and a later check re-measures
   with the correct table name **only for regular / Hyper Arts**. A Super or
   Miracle finisher keeps Vulture Blade's width, so its banner is centred for the
@@ -1484,6 +1543,8 @@ counter stay zero on disc; the roll fills them per battle.
 | `crates/patcher` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
 | `crates/patcher` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
 | `crates/patcher` `approach_fix_real` | disc-gated | apply the approach-softlock fix: assert the baseline window at PROT 898 `+0x14D50` holds the stock nine facing-recompute words (and the pose/range-check context around it matches the documented disassembly), then off the patched image that exactly the nine window words changed, the image still parses, the edit is byte-deterministic, and a second application is a clean no-op |
+| `crates/patcher` `fortress_encounter_fix_real` | disc-gated | apply the Fortress encounter fix: assert both scene MANs (PROT 606 / 706) open with the retail flag-`0x15` group and that outside the Floating Castle they are the only condition lists naming that flag, then off the patched image that neither tests it, that every tile reads a healthy file's row under every flag state, that only the 14 targeted bytes moved, every changed sector is EDC/ECC-valid, the edit is deterministic and idempotent, composes with the MAN-rewriting randomizers in both orders, and a non-retail table is refused with nothing written |
+| `crates/parity` `fortress_encounter_fix_runtime_e2e` | disc-gated | walk a rate-18 tile of each Fortress scene through the engine's region roll with flag `0x15` set: silent on the retail MAN, a battle on step 55 on the patched one, Door of Light gate following; a flag-clear baseline keeps it non-vacuous |
 | `crates/patcher` `jewel_fix_real` | disc-gated | apply the jewel fix: assert all thirteen cast-module call sites across PROT 944 / 952 / 953 / 958 / 959 / 960 hold the stock `jal FUN_801DD6B4` word, then off the patched image that every site reads `jal FUN_801DD4B0` and that per touched window exactly the planned words changed - the 09xx extents tile exactly, so each window is asserted to hold no other module's head and each site to lie inside its own extent - plus the image still parses, the edit is byte-deterministic, and re-application / an unrecognized build is refused |
 | `crates/patcher` `fishing_price_real` | disc-gated | apply a fishing-exchange price edit: assert the Buma Water Egg row is at PROT 972 offset 0x9874 (20000 points), then off the patched image that the price becomes the target as a same-size u32, exactly the targeted price words changed, the overlay re-parses, re-applying is a no-op, and an absent item is refused |
 | `crates/patcher` `location_name_real` | disc-gated | rename world-map locations: assert the pinned landmark names decode at their SCUS coordinates (idx 3/4 = element caves at 0x64378/0x64398), then off the patched image that a rename is a same-size 32-byte slot overwrite re-parsing to the NUL-terminated new name, only the targeted slots change, re-applying is a no-op, and an oversized / non-ASCII / OOB name is refused |

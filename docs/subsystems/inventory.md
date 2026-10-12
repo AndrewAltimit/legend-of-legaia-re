@@ -207,7 +207,9 @@ The item-use applier `FUN_800402F4` dispatches on the descriptor's **class** byt
 
 Ports: `legaia_engine_battle_vm::battle_action::selector_insert_displayed_skill` for the insert, `World::use_item` for the seat. The record-side capture and the menu reader are on [level-up.md](level-up.md#arts-book-skill-list).
 
-**The Point Card strike** (class `14`, arm `0x8004209C`) spends `min(bank, 0x270F)` of the Point Card counter `_DAT_800845B4` and applies it as HP damage with the cast band's usual kill-capable clamp. No retail item row resolves to the class: decoding all 256 static item rows through the effect descriptors finds zero class-`14` descriptors. On the shipped disc it is reachable code over unreachable data, and only an edited effect table opens it. The engine's catalog seeder therefore sweeps the id space for the class rather than naming ids. Port: `legaia_engine_battle_vm::battle_action::selector_point_card` against `World::minigames.point_card`, the same purse a shop buy credits ([`shop.md`](shop.md)).
+**The Point Card strike** (class `14`, arm `0x8004209C`) spends `min(bank, 0x270F)` of the Point Card counter `_DAT_800845B4` and applies it as HP damage with the cast band's usual kill-capable clamp. No retail item row resolves to the class: decoding all 256 static item rows through the effect descriptors finds zero class-`14` descriptors. The arm is reached by id instead: battle action state `0x3E` tests `actor[+0x1DF] == 0xFE` (`0x801E4080`) and forces the selector `actor[+0x1E8] = 0x0E` (`0x801E40C0`), so the Point Card (descriptor `01 00 C4 41`, one enemy, battle-only) runs it. A descriptor-keyed catalog sweep for class `14` therefore finds no carrier; the carrier is item `0xFE`.
+
+Port: `legaia_engine_battle_vm::battle_action::selector_point_card` against `World::minigames.point_card`, the same purse a shop buy credits ([`shop.md`](shop.md)).
 
 ## What the port does
 

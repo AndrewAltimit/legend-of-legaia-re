@@ -42,6 +42,7 @@ mod field_prop_colliders_live;
 mod firetail_movefx_liveness;
 mod fmv_table_roundtrip;
 mod fog_sheet_colour_retail_capture_disc;
+mod fortress_encounter_fix_runtime_e2e;
 mod house_door_randomizer_runtime_e2e;
 mod live_npc_resume_idle;
 mod map_door_randomizer_runtime_e2e;

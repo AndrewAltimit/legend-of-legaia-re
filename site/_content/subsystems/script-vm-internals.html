@@ -60,7 +60,7 @@
       <tr><td><code>38</code></td><td>CAM_CFG (facing)</td><td>3</td><td>Set the actor's heading from the 8-direction compass at <code>0x80073F04</code>, or halt-acquire it; despite the legacy name it is not a camera op</td></tr>
       <tr><td><code>39</code></td><td>GIVE_ITEM</td><td>2</td><td>Add one of item <code>id</code> - the treasure-chest path; the id is the inline byte, not a per-scene table (the chest's "There is a ..." text names the item separately)</td></tr>
       <tr><td><code>3A</code></td><td>ADD_MONEY</td><td>4</td><td>Signed 24-bit gold delta, clamped to <code>0..9,999,999</code></td></tr>
-      <tr><td><code>3B</code></td><td>SET_ITEM_COUNT</td><td>3</td><td>Write one per-character inventory byte, then refresh the display</td></tr>
+      <tr><td><code>3B</code></td><td>SET_EQUIP_SLOT</td><td>3</td><td>Write one equipment-slot byte of a character record, then rebuild the derived stats</td></tr>
       <tr><td><code>3C 3D</code></td><td>PARTY_ADD / REMOVE</td><td>2</td><td>Sorted insert / remove, cap 4, leader fix-up</td></tr>
       <tr><td><code>3E</code></td><td>BATTLE / MINIGAME</td><td>3+</td><td><code>op0 == 0xFF</code> or <code>&lt; 100</code>: scripted battle on formation row <code>op1</code>; <code>op0 &ge; 100</code>: minigame door-warp (<a href="#op-3e">below</a>)</td></tr>
       <tr><td><code>3F</code></td><td>SCENE_CHANGE</td><td>7 + len</td><td>Named warp <code>[idx:i16][len][name][x][z][dir]</code>: destination scene name, entry tile and arrival facing</td></tr>
@@ -232,7 +232,7 @@
   <details class="disclosure">
     <summary><code>4C D3</code> timed flags and <code>4C D4 / D5</code> STP bits</summary>
     <div class="disclosure-body">
-      <p><strong><code>4C D3 expiry:u16 below:u16 duration:u32 threshold:u32</code></strong> (14 bytes) schedules a countdown in the save block. The per-tick consumer <code>FUN_801D2EBC</code> sets the expiry flag at zero and the below flag while under the threshold. Retail use: <code>chitei2</code>'s collapsing-dungeon escape (flag <code>0x4C7</code>, 2400, threshold 910). A mid-timer save keeps it.</p>
+      <p><strong><code>4C D3 expiry:u16 below:u16 duration:u32 threshold:u32</code></strong> (14 bytes) schedules a countdown in the save block. The per-tick consumer <code>FUN_801D2EBC</code> sets the expiry flag at zero and the below flag while under the threshold. Retail uses: <code>chitei2</code>'s collapsing-dungeon escape (flag <code>0x4C7</code>, 2400, threshold 910) and the Floating Castle escape in <code>taiku</code> (expiry flag <code>0x396</code>, below flag <code>0x15</code>, 21600, threshold 3600). A mid-timer save keeps it.</p>
       <p><strong><code>4C D4 / D5 x:u16 y:u16</code></strong> (6 bytes) read a 16&times;1 VRAM strip, set (<code>D4</code>, non-zero pixels) or clear (<code>D5</code>) the transparency bit, and write it back. It decides whether a CLUT entry a colour cycler later takes to black reads as opaque black or as transparent - <code>teien</code> marks its hedge CLUTs before installing the dusk cycler.</p>
     </div>
   </details>

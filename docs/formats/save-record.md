@@ -11,7 +11,7 @@ contiguously in main RAM at `0x80084708 + slot * 0x414`:
 | 3 | `0x80085344` | Terra (New Game template's 4th roster entry; never a savable battle-party member) |
 
 The display name sits at record offset `+0x2A7` (9 bytes, NUL-padded),
-bounded by the active-spell table at `+0x2B0`.
+bounded by the summon-stash table at `+0x2B0`.
 
 Slot 3's `0x414` footprint ends exactly where the fourth flag bank
 begins (`0x80085344 + 0x414 = 0x80085758`); the item bag starts further
@@ -44,7 +44,7 @@ fix-up, and `write_retail_char_records` applies it for its callers; see
 Field offsets are pinned by a fusion of three sources:
 
 - decompiled function dumps under `ghidra/scripts/funcs/` (notably
-  `FUN_80042558` per-frame stat aggregator, `FUN_800431D0`
+  `FUN_80042558` stat aggregator, `FUN_800431D0`
   ability-bitmap reader, `FUN_80042DBC` spell-list pop, and the
   level-up overlay applier);
 - captured save-state observations in
@@ -74,7 +74,7 @@ Field offsets are pinned by a fusion of three sources:
 +0x010  u8[228]  stat_block_unmapped      ; (function partially mapped via
                                            ; FUN_80042558; not all bytes named)
 +0x0F4  u8[16]   ability_bits             ; OR'd into 0x80074358 by the
-                                           ; per-frame aggregator
+                                           ; stat aggregator FUN_80042558
 +0x104  u16 LE   hp_max_live              ; effective max, aggregator-rebuilt
 +0x106  u16 LE   hp_curr_live             ; "Infinite HP" cheat target; walk-
                                            ; regen bumps it clamping at +0x104
@@ -115,11 +115,10 @@ Field offsets are pinned by a fusion of three sources:
 +0x13D  u8[12]   magic_group_0            ; "Magic Modifier 1..12" hits
 +0x149  u8[12]   magic_group_1            ; second copy of the slot
 +0x155  u8[12]   magic_group_2            ; third copy of the slot
-+0x161  u8[16]   summon_levels            ; "All Summons Level 9" target.
-                                           ; Distinct from the spell list -
-                                           ; the prior `levels` parallel array
-                                           ; interpretation was wrong.
-+0x179  u8[12]   post_summon_unmapped
++0x161  u8[36]   spell_levels             ; per-spell level, parallel to the
+                                           ; ids at +0x13D ("All Summons
+                                           ; Level 9" target - summons are
+                                           ; list entries)
 +0x185  u8       displayed_skill_count    ; menu-overlay skill roster count
 +0x186  u8[16]   displayed_skill_ids      ; "Has all Arts" target. Ordered insert
                                            ; on item-use spell-learn. Fifteen
@@ -131,9 +130,14 @@ Field offsets are pinned by a fusion of three sources:
 +0x196  u8       armor_id                 ; "Armor Modifier" / "Best Equipment"
 +0x197  u8       head_gear_id             ; "Head Gear Modifier"
 +0x198  u8       weapon_id                ; "Weapon Modifier"
-+0x199  u8       accessory_or_seru_lock   ; "Activate Meta/Terra/Ozma at Lv9"
-                                           ; - the "Seru lock byte" the menu
-                                           ; reads to gate summon access
++0x199  u8       ra_seru_item_id          ; the Ra-Seru equipment byte for Vahn
+                                           ; and Gala. Noa's Ra-Seru is one byte
+                                           ; lower, at +0x198 (equipment index 2).
+                                           ; "Activate Meta at Lv9" writes item
+                                           ; 0x09 (final-form Ra-Seru Meta)
+                                           ; here; the grant scan in
+                                           ; FUN_80042558 then inserts spell
+                                           ; 0x9E
 +0x19A  u8       leg_gear_id              ; "Leg Gear Modifier"
 +0x19B  u8       accessory_1_id           ; "Accessory 1 Modifier"
 +0x19C  u8       accessory_2_id           ; "Accessory 2 Modifier"
@@ -142,9 +146,13 @@ Field offsets are pinned by a fusion of three sources:
 +0x1A7  u8[16]   auto_command_string_a   ; the Auto command string, primary AP band
 +0x1B7  u8[16]   auto_command_string_b   ; the same, secondary band
 +0x1C7  u8[233]  post_equipment_unmapped_b
-+0x2B0  ...      active_spell_slots[14]   ; 14 × 0x14-byte active-spell
-                                           ; runtime slots - covered by the
-                                           ; `active_spell_slot()` accessor
++0x2B0  ...      summon_stash_slots[14]   ; 14 x 0x14-byte stash slots: the
+                                           ; level (+5) and u32 counter
+                                           ; (+1..+4) of an equipment-granted
+                                           ; summon while its item is
+                                           ; unequipped. Code addresses slots
+                                           ; 0..4 only. Accessor
+                                           ; `active_spell_slot()`
 +0x380  u8[148]  tail_unmapped
 ```
 
@@ -203,10 +211,11 @@ The mapping from cheat description to record offset is:
 | `Level 99` | `0x80084838` | `+0x130` | magic_rank |
 | `Magic Slot Activator` | `0x80084844` | `+0x13C` | magic_slot_activator |
 | `Magic Modifier 1` | `0x80084845` / `0x80084851` / `0x8008485D` | `+0x13D` / `+0x149` / `+0x155` | three magic-group copies |
-| `All Summons Level 9` | `0x80084869..0x80084886` | `+0x161..+0x178` | summon_levels |
+| `All Summons Level 9` | `0x80084869..0x80084886` | `+0x161..+0x178` | spell_levels (first 16 list positions) |
 | `Has all Arts` | `0x8008488D..0x8008489A` | `+0x185..+0x192` | displayed_skill_count + ids |
 | `Best Equipment` | `0x8008489E` / `0x800848A0` / `0x800848A2` | `+0x196` / `+0x198` / `+0x19A` | armor / weapon / leg gear |
-| `Activate Meta at Lv9` | `0x800848A1` | `+0x199` | accessory_or_seru_lock |
+| `Activate Meta at Lv9` | `0x800848A1` | `+0x199` | ra_seru_item_id (value `0x09`, the final form; triggers the Meta grant) |
+| `Activate Terra at Lv9` / `Activate Ozma at Lv9` | `0x80084CB4` / `0x800850C9` | Noa `+0x198` / Gala `+0x199` | the Ra-Seru byte, but the values written (`0x12`, `0x1B`) are an unnamed item gap and the Ra-Seru Blade, not the final forms `0x11` / `0x19`, so neither reaches the grant scan |
 | `Accessory 1 Modifier` | `0x800848A3` | `+0x19B` | accessory_1_id |
 | `Max Exp` | `0x80084708` / `0x8008470A` | `+0x000` / `+0x002` | xp_cumulative (combined u32) |
 
@@ -259,7 +268,7 @@ through) returns that single store, and no halfword or word access spans
 `legaia_save::CharacterRecord::magic_rank()` reads this byte, so it is in fact the
 **level** byte under a legacy name, and `level()` / `set_level()` read and write the
 same byte. `+0x100` is not a level cell: it is word 3 of the ability bitfield
-`+0xF4..+0x103`, which the per-frame aggregator `FUN_80042558` zeroes (the four
+`+0xF4..+0x103`, which the stat aggregator `FUN_80042558` zeroes (the four
 `sw zero` at `0x800425EC..0x800425F8`, the last one `sw zero,0x100(s0)`) and rebuilds
 from equipment ([`accessory-passive-table.md`](accessory-passive-table.md)), so a
 level kept there reads back as `0` after the next stat refresh.
@@ -297,18 +306,17 @@ whatever `+0x13D..` already held. Treat `+0x13C` as a count when writing it: a
 value past the real id run displays uninitialised slots rather than granting
 spells.
 
-### `+0x161..+0x178` is the summon-level array, not spell levels.
+### `+0x161..` is the per-spell level array, parallel to the ids at `+0x13D..`.
 
-The prior `SpellList::levels` field claimed `+0x161..+0x184` was a
-parallel "spell level" array. The GameShark `All Summons Level 9`
-cheat stamps `0x09` into 16 bytes at `+0x161..+0x178` - with one
-byte per summon ID, not per spell. The corrected layout puts the
-per-spell levels (if any) in the magic-group window at `+0x13D..+0x160`
-where the cheat database has 12 named modifiers, and treats
-`+0x161..+0x178` as the 16-summon level array.
-
-The original `SpellList::levels` accessor is preserved for
-backwards compatibility; new code should prefer `summon_levels()`.
+`+0x161 + i` is the level of the spell whose id is at `+0x13D + i`, with the u32 counter at
+`+0x08 + i * 4` as the third parallel array. The insert routine `FUN_800432BC` writes all three at
+index 0 (`sb t3,0x13d(t0)` at `0x80043378`, `sb t1,0x161(t0)` at `0x8004337C`, `sw t2,0x8(t0)` at
+`0x80043380`) after shifting all three up by one, and `FUN_80042DBC` compacts all three together.
+Summons are ordinary entries of this list (ids `0x99..0xA0`), which is why the GameShark
+`All Summons Level 9` code, stamping `0x09` across `+0x161..`, raises them: it raises every listed
+spell. There is no separate per-summon-id level array
+([battle.md](../subsystems/battle.md#the-three-parallel-spell-arrays)). The `legaia_save`
+accessor `summon_levels()` reads the first 16 bytes of this array.
 
 ### Why a u16 XP field appeared to sit at `+0x004`.
 

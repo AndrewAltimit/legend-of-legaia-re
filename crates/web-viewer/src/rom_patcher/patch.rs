@@ -98,6 +98,7 @@ pub(super) struct PatchOptions<'a> {
     pub(super) swing_costs: &'a str,
     pub(super) equip_owners: &'a str,
     pub(super) enemy_hp_bar: bool,
+    pub(super) fortress_encounter_fix: bool,
 }
 
 impl PatchOptions<'_> {
@@ -362,6 +363,10 @@ const STAGES: &[Stage] = &[
         steps: &[battle_hooks::approach_softlock_fix],
     },
     Stage {
+        label: "Fortress encounter fix",
+        steps: &[world::fortress_encounter_fix],
+    },
+    Stage {
         label: "Delilas Challenge",
         steps: &[delilas::delilas_challenge],
     },
@@ -573,6 +578,11 @@ async fn run_stages<'a>(
 /// melee clip death that parks the battle in an infinite range poll - the
 /// "endless camera orbit" softlock), so the monster resumes walking instead
 /// of wedging the fight; healthy fights are byte-identical (also seedless).
+/// `fortress_encounter_fix` rewrites the leading encounter group of both
+/// Absolute Fortress scenes (`deroa`, `chitei2`) so they stop reading the
+/// Floating Castle's stale "no battles" flag - a save that left the castle
+/// with under a minute on the escape clock gets its Fortress battles (and the
+/// Door of Light there) back; a healthy save is unaffected (seedless).
 /// `fishing_prices` is a
 /// comma/space-separated list of `item=points` pairs that set the
 /// fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).
@@ -742,6 +752,7 @@ pub async fn patch_rom(
     swing_costs: &str,
     equip_owners: &str,
     enemy_hp_bar: bool,
+    fortress_encounter_fix: bool,
     progress: Option<js_sys::Function>,
 ) -> Result<JsValue, JsValue> {
     let opts = PatchOptions {
@@ -807,6 +818,7 @@ pub async fn patch_rom(
         swing_costs,
         equip_owners,
         enemy_hp_bar,
+        fortress_encounter_fix,
     };
     let mut prog = Progress::new(progress, PATCH_ROM_STAGES);
     let run = run_stages(image, &opts, &mut prog).await.map_err(err)?;

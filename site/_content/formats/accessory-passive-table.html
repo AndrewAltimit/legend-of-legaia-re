@@ -32,8 +32,8 @@
     <li><b>Global mask</b><span>all three members OR'd together</span></li>
     <li><b>Point of use</b><span>each mechanic tests its own bit</span></li>
   </ol>
-  <p>The stat aggregator rebuilds this chain every frame, so un-equipping takes effect immediately.</p>
-  <p>The per-frame stat aggregator walks each active party member's eight equipment-slot bytes
+  <p>The stat aggregator rebuilds this chain on every equipment change (it is event-driven, not per-frame), so un-equipping takes effect immediately.</p>
+  <p>The stat aggregator walks each active party member's eight equipment-slot bytes
   (<a href="save-record.html">record</a> <code>+0x196</code>) and resolves each item to an index:</p>
   <pre><code>kind = item_table[id].byte(+0)
 if kind == 1: index = equip_bonus[sub].byte(+5)

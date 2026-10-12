@@ -484,9 +484,18 @@ at `~0x801E2C08` (0897 file `+0x143F0`). The per-tick consumer `FUN_801d2ebc`
 decrements by the clock delta, calls `FUN_8003CE08(expiry & 0xFFF)` and
 disarms on expiry, and `FUN_8003CE08(below & 0xFFF)` when under the threshold
 (`0x88888889` magic divide for the seconds display). The slots live in the
-persisted `0x80084140` save block. Retail use: `chitei2`'s collapsing-dungeon
-escape timer (flag `0x4C7`, duration 2400, threshold 910), with disarm records
-in `chitei2` / `map03`.
+persisted `0x80084140` save block (remaining `+0x460`, duration `+0x478`,
+threshold `+0x47C`, flag pair `+0x480`). Retail uses: `chitei2`'s
+collapsing-dungeon escape timer (flag `0x4C7`, duration 2400, threshold 910),
+with disarm records in `chitei2` / `map03`; and the Floating Castle escape,
+armed by `taiku` `P2[29]` at `+0x1533` with expiry flag `0x396`, below flag
+`0x15`, duration 21600 and threshold 3600, and stopped by `taiku` `P2[16]` with
+a zero duration. The stop does not clear the below flag, and flag `0x15` heads
+the encounter condition lists of `deroa` and `chitei2`
+([`field-oddities.md`](../reference/glitches/field-oddities.md#no-encounters-in-jettes-absolute-fortress)).
+The scene loader takes `0x4B0` ticks off a running clock on every scene entry
+(`0x8003B62C..0x8003B648`), and a card load restores it to the full duration
+(`0x8003B96C..0x8003B98C`).
 
 ### 0x4C nibble-D sub-4 / sub-5 - VRAM STP-bit set/clear
 
