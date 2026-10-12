@@ -4,8 +4,10 @@ Four field sequence breaks, each traced to the code and scene data that produce 
 notice that swallows a walk-on trigger, the Incense effect that outlives a save file, the door to
 the Juggernaut Room in Ratayu, and the one spot in Nivora Ravine where a Door of Light works.
 Everything on this page is read from the disassembly of `SCUS_942.54` and the field overlay (PROT
-entry 0897, load base `0x801CE818`) and from the scene files on the USA disc. None of it is an
-emulator capture: where the page says what a debugger shows, that is a prediction from the code.
+entry 0897, load base `0x801CE818`) and from the scene files on the USA disc. The Juggernaut Room
+door is also captured in an emulator, and its section says how each capture was set up; so is one
+reading in the carry-over section, the encounter step counter after a cold load. The rest is
+static: where those sections say what a debugger shows, that is a prediction from the code.
 
 Shared terms:
 
@@ -248,12 +250,18 @@ file that owns no Incense.
 | `0x8001DCF8` | SCUS | Mode-entry reset; called from `0x800160AC`, `0x8001D7D8`, `0x8002577C`, `0x80025FD4`, `0x80055D5C` | disassembly |
 | `0x80034A6C` | SCUS | New-game data init | repo doc |
 | `0x80084140` + `0x1A18` | RAM | The window that is saved and reset | repo doc |
+| `0x8007B5FC` | SCUS data | Encounter step counter; file value `0x3CE` (974), not saved | disc data, capture |
 
 ### Scope
 
 The most that can be carried is the cap, `0x100` ticks, about 137 seconds of walking. Any other
-global kept outside `0x80084140..0x80085B58` and off the reset list behaves the same way; the
-encounter step counter `0x8007B5FC` is a candidate and is not checked here.
+global kept outside `0x80084140..0x80085B58` and off the reset list behaves the same way.
+
+The encounter step counter `0x8007B5FC` is another global outside the saved window. Its value in
+the SCUS file is `0x3CE` (974), and that is what it holds after a power-on and a memory-card load
+(capture, on an unmodified played save loaded from a cold boot). The first battle after a cold
+load in a room with encounter rate 18 therefore comes on step 55, every time. Whether the counter
+is on the reset list is not checked here.
 
 See [the save screen](../../subsystems/save-screen.md) for the saved window.
 
@@ -265,104 +273,245 @@ is `0x100` less the ticks walked. After a reset it reads zero.
 
 ## Juggernaut's Room door
 
-**Status:** partially explained
+**Status:** explained (capture)
 
 **Reported as:** the two guards in front of the Juggernaut Room in Ratayu castle, who stand aside
-only for a party at level 99, can be passed early by standing at an exact spot in front of one of
-them (community report).
+only for a party at level 99, can be beaten early: "you come at it from the side", stand at an
+exact spot beside one guard, and one press of the interact button opens the door (community
+report; the method is shown in
+[this community video](https://www.youtube.com/shorts/z5rk_CL5H9Q)).
 
-The door has no lock of its own while the guards are there. The level-99 rule is enforced by two
-guard bodies standing in front of an open door, and by nothing else.
+Nothing gets past the guards. The door has no lock of its own while they stand there; the guards
+are the lock. Standing beside one of them, a single press of the interact button reaches a point
+that is inside the guard's talk box and the door's box at the same time. The guard makes the press
+count as a talk; the door, which comes later in the game's list of actors, is the one that receives
+it. The door opens and its own script walks the party through.
 
-The reason is the story. On the first trip through the castle this door is the route to the boss,
-so it has to open. After the boss the room is closed again, and it is closed by placing two guards
-in front of it; the door's script is left as it was. A party that reaches level 99 and talks to
-Saryu gets the guards removed and a key, and only then does the door ask for the key.
+The spot is narrow. Along the outer side of each guard there is a strip about eight units wide
+where he does not stop a player walking up. Stand in that strip level with the guard, face
+diagonally toward the door and press: the game checks one point 64 units across and 64 units up,
+and from the strip that point is close enough to both the guard and the door. A little too low and
+the guard just talks. A little too high and nothing happens. At the very top of the strip, against
+the wall, the guard talks without any button press, which is the sign players use to know they are
+in the right column.
 
-So any way of touching the door or stepping on the tile behind the guards enters the room. How the
-trick gets past the guards is the part not traced: the collision arithmetic leaves no gap between
-them.
+The door is unlocked for a story reason. It is the route to the boss on the first trip through the
+castle, so its script opens on touch, and the room is closed before and after that by standing two
+guards in front of it. A party that reaches level 99 and talks to Saryu gets the guards removed
+and a key, and only then does the door ask for the key.
+
+Behind the door, once the Saryu story is done, the chest gives the Evil Talisman and asks for no
+key. Before that the room is empty. Nothing is duplicated and nothing locks: the room's exit puts
+the party back in front of the guards, and reaching level 99 later still gives the key, which then
+opens a room whose chest is already taken.
 
 ### Mechanism
 
-The door is in `retockin` (Ratayu interior) and leads to `jagaroom` (Juggernaut Room).
+The door is in `retockin` (Ratayu interior) and leads to `jagaroom` (Juggernaut Room). A tile is
+128 units; `MoveTo` position bytes decode as `(b & 0x7F) * 128 + 64`, plus 64 more when bit 7 is
+set.
 
-The door prop is partition-0 record 0, bound to tile `(28, 58)`. Its touch script begins:
+| Actor | World (x, z) | Live list index | Class |
+|---|---|---|---|
+| Guard, partition-1 record 20 | (3520, 7296) | 21 | moving, talk class (`flags 0x08020880`) |
+| Guard, partition-1 record 21 | (3648, 7296) | 22 | same |
+| Door prop, partition-0 record 0 | (3584, 7424) | 46 | static (`flags 0x08008880`) |
+
+The guards' position bytes are `1B B8` and `1C B8`: tile columns 27 and 28, half a tile above row
+56, which is the lower edge of trigger row 57. The door's `.MAP` object record carries offsets
+`(-64, +64)` from tile `(28, 58)`, no footprint deltas and flag `0x8` clear, so its collision
+centre is its position.
+
+**The door script.** Partition-0 record 0 begins:
 
 ```text
 +0x0E  76 50   test flag 0x650 -> +0x5B    ; already unlocked: open
 +0x12  76 4F   test flag 0x64F -> +0x19    ; guards dismissed: insert the key
 +0x16  26      jump            -> +0x5B    ; neither flag: open anyway
 +0x19  56 50   set flag 0x650 ; 4C 52 BF   ; take item 0xBF
-+0x5B  door swing ...
++0x5B  door swing ; 31 00 ; C7 F8 9B 3B 32 ; walk the player to (3584, 7616)
 +0xAC  3F ..   scene change to jagaroom
 ```
 
 A flag test jumps when the flag is set. With `0x64F` and `0x650` both clear the script goes
-straight to the open-and-leave sequence.
+straight to the open-and-leave sequence and writes no flag.
 
-The `.PCH` record `(27, 57, 32, 1)` puts partition-2 record 32 on tile `(27, 57)`. That record has
-no header gates and its body is the same scene change, with no flag test.
+**The interact probe posts to the last actor it hit.** The interact button tests one point, one of
+eight compass points 64 units out (table `0x801F2254`); at heading `0xA00` it is `(x + 64, z + 64)`
+and at `0x600` it is `(x - 64, z + 64)`. `FUN_801CF9F4` walks the whole actor list with no early
+exit. A moving-class actor is hit strictly within 72 units on both axes, a static one within 80.
+Every hit overwrites the player's partner slot and ORs a result bit: bit 1 for the talk class
+(`flags & 0x40020000`), bit 4 for a static prop. The caller tests bit 1 only, then posts to the
+slot:
 
-The guards are partition-1 records 20 and 21, at tile columns 27 and 28. Their entry script parks
-them off the map unless `!0x64F && (0x33E || (0x357 && !0x502))`.
+```text
+801cfb40  sw   t3,0x98(t6)          ; every box hit: partner slot = this actor
+801d0854  jal  0x801cf9f4
+801d085c  andi v0,v0,1
+801d0860  beqz v0,0x801d08dc        ; no talk-class hit: nothing
+801d0868  lw   a0,0x98(s2)          ; whoever was hit last
+801d086c  jal  0x801d5b5c           ; touch event
+```
 
-Saryu is partition-1 record 29. It compares each of the three party slots against 99 (`4E pp 20
-63`). When all pass and `0x64F` is clear it sets `0x64F`, moves both guards off the map and gives
-item `0xBF`. That is the only place the disc sets `0x64F`.
+The list is built by tail append (`FUN_80020454`), and scene init creates every partition-1 actor
+(the loop at `0x8003B8D4`) before the placed props (`0x8003B908`). The door is therefore after
+both guards. A point inside a guard's box and the door's box returns bit 1 from the guard and
+leaves the door in the slot.
 
-With `0x33E`, `0x33B` and `0x357` all clear, the scene's live encounter regions have a real
-encounter rate and the guards are parked: this is the castle as a dungeon, with the door open.
-That the designers closed the room afterwards with guards alone is an inference from these states.
+**The window.** For the left guard and heading `0xA00`:
 
-**What is not traced.** A guard blocks through the actor probe `FUN_801CFC40`, which
-`FUN_801CFE4C` calls three times per step with offsets from the table at `0x801F21B4`: three
-points 63 or 64 units ahead, spread 32 to each side. A moving actor stops a probe point within 40
-units on each axis. That makes each guard a square 144 units wide that the player's centre cannot
-enter, and two guards one tile (128 units) apart overlap by 16 units. A straight walk between them
-does not fit.
+- guard box: `x + 64` in `(3448, 3592)`, `z + 64` in `(7224, 7368)`
+- door box: `x + 64` in `(3504, 3664)`, `z + 64` in `(7344, 7504)`
+- both: player `x` in `(3440, 3528)`, `z` in `(7280, 7304)`
 
-One reading consistent with the community wording is that the interact button does the work. It
-uses a different test, a single point 64 units ahead of the player, checked through
-`FUN_801CF9F4`. If that point reaches the door prop from in front of the guards, the door's touch
-event `FUN_801D5B5C` runs its script from there. This is a hypothesis; the door's collision
-footprint and the order the candidates are tested in are not computed.
+Only `x <= 3448` of that is reachable (below). On the game's even position lattice the window is
+`x` 3442..3448, `z` 7282..7302: 44 positions, 8 units wide and 22 deep. The mirror beside the
+right guard is `x` 3720..3726 at heading `0x600`.
+
+**A guard is two leading-edge bands, not an exclusion square.** `FUN_801CFE4C` calls the actor
+probe `FUN_801CFC40` three times per step, at points 63 or 64 units ahead and 0 or 32 to either
+side (table `0x801F21B4`). A step is refused when one of those points lies strictly within 40
+units of the guard on both axes. For the left guard:
+
+| Moving | Refused while |
+|---|---|
+| Z+ (up) | `x` in `(3448, 3592)` and `z` in `(7193, 7273)` |
+| X+ (right) | `x` in `(3416, 3496)` and `z` in `(7224, 7368)` |
+
+A player at `x <= 3448` therefore walks straight up past the guard's outer side, and once above
+`z = 7224` the X+ band holds `x` where it is. The wall stops the climb at `z = 7314`: wall bytes
+`C0` in grid row 58, columns 24..26 and 29..31, cover `z` 7360..7423 under the probe's row bias,
+and the Z+ wall probe is 47 units ahead. The two guards' Z+ bands overlap on `x` in
+`(3576, 3592)`, so there is no way up between them. The tempting reading, a 144-unit square
+around each guard that the player's centre cannot enter, fails because the test is on the leading
+points and only along the axis of the step.
+
+Getting `x` into the 8-unit slot is the hard part. Walking straight up with `x >= 3450` stops at
+`z = 7194`. On a diagonal approach `x` keeps growing until `z` passes 7224, so the diagonal has to
+start from the right place.
+
+**The walk-on tile is unreachable.** The `.PCH` record `(27, 57, 32, 1)` puts partition-2 record
+32, an ungated scene change to `jagaroom`, on tile `(27, 57)`. Restating the two collision
+routines over `retockin`'s wall grid and flooding every position reachable in 2-unit steps gives,
+with the guards present, `x` 3090..3448 and 3720..4080 for `z >= 7296`, and no position on the
+tile (`x` 3456..3583). With the guards removed the same flood reaches it. The tile is not how
+players get in.
+
+**Why the guard talks by himself.** At the top of the column (`z = 7314`) with right held, the
+three X+ points are at `z + 32`, `z` and `z - 32`. The first is inside the door box (`7346 >
+7344`), which sets bit 4; the other two are inside the guard, who is the last link. The step
+dispatch tests bit 4 at `0x801D0800` and auto-posts the partner slot at `0x801D0750..0x801D0754`,
+which holds the guard. A static-prop contact is answered by the NPC: the same last-hit rule,
+pointing the other way.
+
+**When the guards are there.** Their entry script parks them off the map unless
+`!0x64F && (0x33E || (0x357 && !0x502))`.
+
+| State | Guards | Door and room |
+|---|---|---|
+| First arrival in Ratayu (`0x357` set, `0x502` clear) | standing, with a different line | opens to the trick; room empty |
+| `0x502` set, `0x33E` clear (the story approach) | parked off the map | opens on touch |
+| `0x33E` set, `0x64F` clear | standing | opens to the trick; chest present once `0x33F` is set |
+| Level 99, talked to Saryu (`0x64F` set) | parked off the map | takes item `0xBF`, sets `0x650`, opens |
+
+`0x502` is set by `retock` partition-2 record 33, the continuation of Noa being taken. The
+walk-on records on the tiles in front of the door (partition-2 records 45..47, tiles x 26..29,
+z 54..57) require `0x502`, which places the story approach in that phase. That the designers
+closed the room with guards alone is an inference from these states.
+
+Saryu is partition-1 record 29. It compares each of the three party slots against 99
+(`4E pp 20 63`). When all pass and `0x64F` is clear it sets `0x64F`, moves both guards off the map
+and gives item `0xBF` (Evil Seru Key). That is the only place the disc sets `0x64F`, and
+`0x64F` is the only flag the record tests, so a party that used the trick still gets the key.
+
+**Behind the door.** The chest is `jagaroom` partition-1 record 27. Its prologue seats it at world
+(4992, 2496) only when flag `0x33F` is set; its body tests only its own taken flag `0x64C`, then
+gives item `0x76` (Evil Talisman). The key is consumed by the door alone. `0x33F` is set by
+`retockin` partition-2 record 37, the record after the Saryu awakening, and by partition-1 record
+1. The room's story records are gated on flags the trick does not set (partition-2 record 8 on
+`0x33B`, record 9 on `0x34F`), and partition-2 record 11 returns to `retockin` at (3584, 7232),
+in front of the guards with the way down free.
+
+### The capture
+
+PCSX-Redux on the retail disc, starting from a memory-card load made in Ratayu town after a cold
+boot (`0x357` set; `0x33E`, `0x502`, `0x64F`, `0x650` clear). The player was **placed by poking
+coordinates**: onto the castle-front walk-on tile, then onto a map-door tile so that the game's
+own warp lands the party in the guard hall and re-latches the region box, then onto open floor
+below the guard. From that seat everything is pad input, and nothing the mechanism reads is poked.
+In the hall, pad UP is world Z+ and pad RIGHT is world X+.
+
+| Seat | Pad input | Rest position, heading | Result |
+|---|---|---|---|
+| (3412, 7192) | hold UP+RIGHT to `z >= 7280`, release, press Cross | (3444, 7288), `0xA00` | partner slot = door; door flags `0x08008880` to `0x08008981`; guards untouched; scene is `jagaroom` 77 vsyncs after the press |
+| (3396, 7176) | same, stopped lower | (3444, 7272), `0xA00` | below the window: the guard takes the event and his line plays |
+| (3396, 7176) | same, stopped higher | (3444, 7308), `0xA00` | above the window: partner slot = door, nothing posted |
+| (3412, 7192) | hold UP+RIGHT, never press | (3444, 7314) | at `z = 7314` the guard engages with no button: the auto-talk |
+| (3444, 7232) | hold UP, press Cross | (3444, 7280), `0x800` | facing straight up: nothing |
+| (3756, 7192) | hold UP+LEFT to `z >= 7280`, release, press Cross | (3724, 7288), `0x600` | the mirror: partner slot = door; scene is `jagaroom` 75 vsyncs after the press |
+
+`x` froze at 3444 on every diagonal approach, inside the computed 3442..3448; the top of the
+column is `z = 7314` as computed; the three outcomes by `z` bracket the window edges. The
+community screenshot of the method shows Vahn standing immediately to the right of the right-hand
+guard, which is the right-hand window.
+
+After the first run the room loads with the player free, the chest actor parked off the map and
+no flag change in 500 vsyncs. The chest was opened in one further run with flags `0x33E` and
+`0x33F` poked set, so that line is **captured on a poked state**: the chest actor is at
+(4992, 2496), talking to it adds one item `0x76` and sets `0x64C`, the count of `0xBF` stays 0 and
+`0x64F` / `0x650` stay clear.
+
+A poke that skips the map door measures the poke and not the game: the guards keep their
+visibility-cull bit against the stale region box, the box tests skip culled actors, and the player
+walks through a guard.
 
 ### Addresses
 
 | Address | Image | What | Evidence |
 |---|---|---|---|
-| `retockin` P0[0], MAN offset `0x172` | disc | Door script; tests at `+0x0E`, `+0x12`, jump at `+0x16`, exit at `+0xAC` | disc data |
-| `retockin` P2[32], MAN offset `0x30E2` | disc | Ungated walk-on exit to `jagaroom` | disc data |
-| `retockin` P1[20] `0x1424`, P1[21] `0x151A` | disc | The two guards | disc data |
+| `retockin` P0[0], MAN offset `0x172` | disc | Door script; tests at `+0x0E`, `+0x12`, jump at `+0x16`, exit at `+0xAC` | disc data, capture |
+| `retockin` P2[32], MAN offset `0x30E2` | disc | Ungated walk-on exit to `jagaroom`; unreachable on foot with the guards present | disc data |
+| `retockin` P1[20] `0x1424`, P1[21] `0x151A` | disc | The two guards, world (3520, 7296) and (3648, 7296) | disc data, capture |
 | `retockin` P1[29], MAN offset `0x1E17` | disc | Level compares at `+0x26C` and `+0x387`; sets `0x64F` at `+0x503`; gives `0xBF` at `+0x5DA` | disc data |
-| `.MAP` trigger `(28,58,0,0)` | disc | Binds the door prop to its tile | disc data |
+| `.MAP` trigger `(28,58,0,0)` | disc | Binds the door prop to its tile; prop centre (3584, 7424) | disc data, capture |
 | `.PCH` trigger `(27,57,32,1)` | disc | Walk-on tile behind the guards | disc data |
 | `0x64F`, `0x650` | flag bank | Guards dismissed; door unlocked | disc data |
 | `0x33E`, `0x357`, `0x502` | flag bank | Story states that place the guards | disc data |
-| `0x801CFE4C`, `0x801CFC40` | PROT 0897 | Per-step collision and the actor probe | repo doc |
+| `0x801CF9F4` | PROT 0897 | Interact box test; `sw t3,0x98(t6)` at `0x801CFB40` on every hit, no early exit | disassembly, capture |
+| `0x801D085C..0x801D086C` | PROT 0897 | Bit-1 test, then touch post to `player+0x98` | disassembly, capture |
+| `0x801D0800`, `0x801D0750` | PROT 0897 | Bit-4 test and the auto-post, also to `player+0x98` | disassembly, capture |
+| `0x801F2254` | PROT 0897 | Interact compass, eight points 64 units out | disc data |
+| `0x801D5B5C` | PROT 0897 | Touch event post | repo doc |
+| `0x801CFE4C`, `0x801CFC40` | PROT 0897 | Per-step collision and the actor probe | disassembly |
 | `0x801F21B4` | PROT 0897 | Actor probe offsets (file offset `0x2399C`) | disc data |
-| `0x801CF9F4`, `0x801D5B5C` | PROT 0897 | Interact box test; touch event post | repo doc |
+| `0x80020454` | SCUS | Actor list tail append | disassembly |
+| `0x8003B8D4`, `0x8003B908` | SCUS | Scene init: partition-1 actors, then placed props | disassembly |
+| `jagaroom` P1[27] | disc | Chest: seated on `0x33F`, taken flag `0x64C`, gives `0x76` | disc data; capture on a poked state |
+| `0x33F`, `0x64C` | flag bank | Chest present; chest taken | disc data |
 
 ### Scope
 
-`edretoin`, the ending's copy of the scene, carries the same door record and walk-on record.
+The trick works in both guarded states, on either side of the door. `edretoin`, the ending's copy
+of the scene, carries the same door record and walk-on record.
+
+The rule behind it is general: an interact press goes to the last actor in the list whose box the
+point is in, not to the actor that made it count as a talk. Wherever an NPC and a static prop
+share a probe point they swap events, and props are always later in the list than NPCs.
 
 See [field locomotion](../../subsystems/field-locomotion.md) for the collision probes and
 [scene names](../scene-names.md) for the scene table.
 
 ### Verifying it
 
-In `retockin` with `0x33E` set and `0x64F` clear, move the player to tile `(27, 57)`. The
-prediction is a call `FUN_8003BDE0(27, 57, 32, 1)` and the scene change, which shows the tile has
-no gate. To settle how the trick works, perform it with breakpoints on `FUN_801D5B5C` and on the
-return of `FUN_801CF9F4`, and log which actor the probe hit and the player's position.
+In `retockin` with the guards present, walk the player to (3444, 7288) facing heading `0xA00` and
+press the interact button with a breakpoint on `0x801D086C`. `a0` is the door actor, not the
+guard, and the scene changes to `jagaroom` about 77 vsyncs later. Repeat from `z = 7272` and
+`a0` is the guard; from `z = 7308` the breakpoint is not reached.
 
 ### Open questions
 
-- How the player gets past, or reaches through, the guards.
-- The exact position the guards' z byte `0xB8` encodes.
-- What `jagaroom` does when entered after the boss with `0x64F` clear.
+- The chest pickup is captured on poked story flags. The same run from a played save made after
+  the Saryu story, standing in the guard hall, would make it a plain capture.
 
 ## Noa's sigil and the Door of Light in Nivora
 

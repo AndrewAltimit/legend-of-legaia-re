@@ -101,7 +101,10 @@ s5 + 0x24)` where `s5` is the executing script's context, retargeted by the
 `0x80` cross-context prefix. `FUN_80021B04` copies `ctx[+0x14..+0x1A]` into
 the part's world position (`0x80021B94..`) and `ctx[+0x24..+0x2A]` into its
 render banks (`0x80021D8C..`), so a scripted install stages where its actor
-stands - not at the player.
+stands - not at the player. The stager spawns its parts through
+`jal 0x80020de0` at `0x80021B78` (template `0x8007062C`, tick `FUN_80021DF4`,
+list `0x8007C350`) and tests the result (`bnez s0` at `0x80021B84`), so a
+failed spawn drops the part.
 
 The carrier is not a distinguished kind of script. Many scenes put the
 install on a dedicated effect-actor record (`install id N` + infinite loop -
@@ -215,6 +218,15 @@ from the stage init that fills it:
 | `+0x04`, `+0x08`, `+0x0C`, `+0x10`, `+0x18`, `+0x14`, `+0x24` (pop order) | seven actor-list **sentinel nodes**, each a pool slot popped by `FUN_80020424` and left pointing at itself | per-stage init `FUN_8001E1B4` (`0x8001E324..0x8001E364`) |
 | `+0x1C` | the **player** actor | field MAIN_INIT `FUN_801D6704` at `0x801D6D7C`: the return of the spawn allocator `FUN_80020DE0(0x800705FC, *(block + 4))` |
 | `+0x28 + 4*i` | the free stack itself, 143 slot pointers | `FUN_800203EC`, then the pop / push pair |
+
+The reseed `FUN_800203EC` and the seven sentinel pops are skipped when the
+field resumes from a battle - resume word `0x8007B8B8 == 2` and next mode
+`0x8007B83C == 2` (`bne` at `0x8001E308`, `beq` at `0x8001E31C` to
+`0x8001E36C`). The failed-spawn counter is still cleared (`0x8001E304`). In
+capture the pool comes back from the Golem battle on `rikuroa` with every
+pre-battle actor live (33 free against 44 before the trigger). The park of the
+block into VRAM (`FUN_80016230`) and the `0x7B0C`-byte copy back are read from
+the decompiled C only.
 
 So the channel resolver `FUN_8003C83C` (and the inline copy of it in
 `FUN_8003A9D4`) does not index this block by channel either: `0xF8` reads

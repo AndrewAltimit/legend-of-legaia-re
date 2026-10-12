@@ -2,9 +2,13 @@
 
 Four battle oversights that share one theme: a rule the player assumes is general turns out to be
 a special case in the code. Each section states the cause in plain words, then the instructions
-and disc bytes that carry it. Everything here is read statically from the USA disc
-(`SCUS_942.54`); none of it is an emulator capture, and each section says which parts are proven
-from the code and which are predicted from it.
+and disc bytes that carry it.
+
+Most of the page is read statically from the USA disc (`SCUS_942.54`). Two things go further. The
+Tough Love section is also measured in a running game, on a poked state that the section
+describes. The boss-debuff section also reads the Japanese (`SCPS_100.59`) and French
+(`SCES_019.44`) builds. The jewel and Berserker sections are static analysis only; each says which
+parts are proven from the code and which are predicted from it.
 
 Address conventions used on this page:
 
@@ -15,35 +19,51 @@ Address conventions used on this page:
   0..2 party, 3..6 monsters, 7 the summon body). The monster **record** pointer table is
   `0x801C9348[slot - 3]`. `0x8007BD10[slot]` holds the party character ids (1 Vahn, 2 Noa, 3 Gala)
   and `0x8007BD0C[i]` the formation's monster ids. The RNG is `FUN_80056798`.
+- A **battle frame** is one pass of the battle logic. The game spends 1 to 4 vertical blanks
+  (60ths of a second) on each, and stores that number, the **frame step**, at `0x1F800393`.
 
 Related pages: [battle.md](../../subsystems/battle.md),
 [battle-formulas.md](../../subsystems/battle-formulas.md),
 [battle-round-loop.md](../../subsystems/battle-round-loop.md),
+[battle-actor-rendering.md](../../subsystems/battle-actor-rendering.md),
 [cast-module.md](../../subsystems/cast-module.md),
 [art-data.md](../../formats/art-data.md), [spell-table.md](../../formats/spell-table.md),
 [accessory-passive-table.md](../../formats/accessory-passive-table.md).
 
 ## Tough Love and Love You roll their status every frame
 
-**Status:** partially explained
+**Status:** explained
 **Reported as:** Tough Love and Love You attempt to apply the status they cause seven times during
 the animation, which makes it nearly guaranteed (community report).
 
-Noa's Tough Love and her Super Art Love You do not use the normal "status on hit" slot of an art
-at all. That slot is empty on both. Their effect is written by hand into a routine that runs once
-per battle frame.
+Noa's Tough Love and her Super Art Love You do not roll for their status when they hit. The normal
+"status on hit" slot of an art is empty on both. Their effect is written by hand into a routine
+that runs once per battle frame.
 
-While Noa is the acting character, is playing one of those two animations, and has already
-delivered at least one strike of it, the routine flips a coin every frame. On heads it sets the
-"confused, acts for the other side" bits on her target. Nothing records that the coin has already
-come up heads and nothing checks a resistance, so the flip repeats on every following frame until
-the animation is replaced. The chance that the status has landed after `N` frames is `1 - 0.5^N`:
-50% after one frame, 93.75% after four, 99.2% after seven.
+From the frame in which the first blow lands until the animation runs out, 20 keyframes later,
+that routine flips a coin every battle frame and puts the confusion status on Noa's target
+whenever it comes up heads. Nothing records that the coin has already come up heads and nothing
+checks a resistance. How many flips fit into those 20 keyframes depends only on how many vertical
+blanks the game is spending per battle frame:
+
+| Frame step | Tough Love: rolls | Chance it is on at the end | Love You: rolls | Love You: rolls after its last hit |
+|---|---|---|---|---|
+| 4 (slowest the game allows) | 10 | 99.90% (a miss is 1 in 1,024) | 40 | 34 |
+| 3 | 14 | 99.994% (1 in 16,384) | 54 | 46 |
+| 2 | 20 | 99.9999% (1 in 1,048,576) | 80 | 68 |
+
+Each roll is exactly one in two, so after `N` rolls the chance is `1 - 0.5^N`. For Love You only
+the rolls after its fourth hit count, because every hit wipes the status again; even the smallest
+figure, 34, leaves a miss at 1 in 17 billion.
 
 So the report is right in kind - it is a repeated roll, and it is close to unmissable - but the
-roll is tied to frames, not to hits, and the number seven is not confirmed. The frame count depends
-on how fast the animation plays and how it ends, and the static estimate below gives a range rather
-than one number.
+roll is tied to frames, not to hits, and the count is never seven. Seven rolls would be 99.22%;
+the frame step is capped at 4, so 10 is the fewest either art can make. Another community figure,
+"about 13", is the Tough Love count at a frame step of 3.
+
+The status is the confusion group: the monster keeps its chosen action but aims it at its own
+side. It has no timer; it ends when the monster next takes damage. That is why it sticks only when
+the art is the last hit the monster takes: a later swing in the same chain removes it.
 
 The effect is switched off in every scripted fight, which covers the bosses, and against one
 optional boss by monster id.
@@ -56,10 +76,13 @@ optional boss by monster id.
    is record 33 (id `0x31`): four strikes at keyframes `0x19 0x1A 0x1B 0x1C`, clip key `0x2D`,
    rate 2. Both name the same 44-keyframe stream. The status selector at entry `+0x7A` is `0` on
    both, so the on-hit ladder in `FUN_801EC3E4` (`lbu v0,0x7a(t4)` at `0x801EE3D4`) does nothing
-   for them.
-2. **The applier is the per-frame actor pass.** `FUN_8004CE2C` in `SCUS_942.54` is called from the
-   battle actor tick `FUN_8004DA00` (`jal` at `0x8004DC4C`). It loads the acting actor from
-   `ctx[+0x13]` and the target from that actor's `+0x1DD`, and for character id 2 runs:
+   for them. Both entries carry `+0x76 = 1`, which disables the early cut a queued follow-up would
+   otherwise make, so each always plays all 44 keyframes.
+2. **The applier is the per-frame actor pass.** `FUN_8004CE2C` in `SCUS_942.54` is the last call
+   of `FUN_8004DA00` (`jal` at `0x8004DC4C`), the per-frame battle voice-seek selector that a
+   resident system actor ticks; every path through that tick reaches the call, so the pass is
+   entered once per battle frame. It loads the acting actor from `ctx[+0x13]` and the target from
+   that actor's `+0x1DD`, and for character id 2 runs:
 
    ```text
    8004d0a4  lw   v0,0x22c(s0)         ; animation node
@@ -77,57 +100,125 @@ optional boss by monster id.
    8004d120  sh   v0,0x16e(s1)
    ```
 
+   There is no latch and no edge test: every pass inside the window reaches `0x8004D0F4`.
 3. **Nothing ends the window but the clip.** `actor[+0x1F4]` is the per-clip strike counter.
    `FUN_801EC3E4` raises it each time a strike event fires (`0x801EECDC..0x801EECE8`), and the
-   animation commit `FUN_8004AD80` zeroes it when the next clip is installed (`0x8004B064`). There
-   is no test of the target's current status and no latch, so the block above runs again on every
-   frame in between.
-4. **Why it is a per-frame roll (inference).** Every damaging physical hit clears the "wakes when
-   hit" status group on the defender: `andi v0,a1,0xf07f` / `sh v0,0x16e(a2)` at `0x801EDA5C`. The
-   bits `0x380` are inside that group. Love You lands four hits, so a status applied by one hit
-   would be wiped by the next; re-asserting it every frame is the simplest way to make it survive.
+   animation commit `FUN_8004AD80` zeroes it (`0x8004B064`) when the next clip is installed, which
+   for these two arts happens only when the cursor reaches the end of the stream
+   (`0x80047A48..0x80047A60` in `FUN_80047430`). The animation driver runs before the actor pass
+   within a frame, so the frame of the first strike already rolls and the frame that ends the clip
+   does not.
+4. **Every hit wipes the status, and the roll puts it back.** Every damaging physical hit clears
+   the "wakes when hit" status group on the defender: `andi v0,a1,0xf07f` / `sh v0,0x16e(a2)` at
+   `0x801EDA5C`. The bits `0x380` are inside that group. In the running game Love You's second,
+   third and fourth hits each take the word from `0x380` back to 0, and a roll in the same frame
+   or a later one sets it again. The same strip removes the status when Tough Love is not the last
+   hit of the chain. That a status applied by one hit would not survive the next is the likely
+   reason the designers made it a per-frame roll; the intent is inference.
+5. **What the bits are.** `0x0080 | 0x0100 | 0x0200` are always set and tested as one group, the
+   "action handed to the AI" status. On a monster that is confusion: when its action is seeded the
+   target is re-rolled onto the monster side, and the pick can be the monster itself
+   ([battle-round-loop.md](../../subsystems/battle-round-loop.md)). No code counts the group down.
+   Its only clears in `SCUS_942.54` and PROT 0898 are the two damage strips (`0x801EDA5C` for
+   physical hits and `0x801DE2EC` in the magic finisher `FUN_801DDB30`), a KO and the end of the
+   battle.
 
-### The frame count is an estimate
+### The roll count
 
-The clip cursor advances each frame by `(frame_step * speed * rate) >> 1` sixteenths of a keyframe
-(`0x80047730..0x80047764` in `FUN_80047430`; frame step `0x1F800393`, speed `actor[+0x21D]`, rate
-entry `+0x78`). The art commit writes speed 4 to every actor (`0x8004BB60..0x8004BBA4`). With a
-frame step of 2 that is one keyframe per frame for Tough Love and half a keyframe per frame for
-Love You.
+The window is a stretch of the clip cursor, which counts sixteenths of a keyframe.
 
-The window opens at keyframe 24, where the first strike fires (`frame + 1 >= 0x19`). It closes at
-the clip's natural end, keyframe 44, or two keyframes after the last strike when another clip is
-already staged behind it (`0x80047900..0x80047948`). Under those assumptions:
+- It opens in the frame the cursor first satisfies `(cursor >> 4) + 1 >= 0x19`, the first strike
+  keyframe of both arts: cursor 384, keyframe 24.
+- It closes in the frame the cursor reaches the stream length, `44 * 16 = 704`.
+- The cut two keyframes after the last strike, which a queued follow-up action triggers for most
+  clips, does not apply: it is skipped for an entry with `+0x76` set (`0x80047940..0x80047948`).
+  With two more swings queued behind it Tough Love still plays to 704.
 
-| Art | Rolls if cut after the last strike | Rolls if the clip runs out |
-|---|---|---|
-| Tough Love | about 4 | about 20 |
-| Love You | about 14 | about 40 |
+The cursor advances each frame by `(frame_step * speed * rate) >> 1` (`0x80047730..0x80047764`;
+speed `actor[+0x21D]`, rate entry `+0x78`). The art commit writes speed 2 to every actor when
+`ctx[+0x243]` is set and 4 otherwise (`0x8004BB64..0x8004BBA4`). Tough Love runs at 4; Love You,
+staged as a Super Art, at 2. Tough Love therefore advances `8 * step` per frame and Love You
+`2 * step`, and the number of rolls is the number of frames the cursor spends in `[384, 704)`:
+`320 / (8 * step)` and `320 / (2 * step)`, rounded up.
 
-For Love You only the rolls after its last hit decide the outcome, because each hit clears the
-bits. The reported seven sits inside these ranges; this page does not derive it.
+| Art | Step 2 | Step 3 | Step 4 |
+|---|---|---|---|
+| Tough Love | 20 | 14 | 10 |
+| Love You | 80 | 54 | 40 |
+| Love You, at or after its last hit (cursor 432 on) | 68 | 46 | 34 |
+
+At step 3 the Tough Love count is 13 instead of 14 when the cursor does not land on 384 exactly.
+
+Which column a player gets depends on the frame step, which is the pacer's measure of the slowest
+of the last 16 frames (`0x80017098..0x8001715C`), capped at 4. Battle save states made on a
+timing-accurate emulator mostly hold 2 or 3, which points to 14 to 20 rolls for Tough Love on a
+console (inference). No value gives fewer than 10.
+
+Nothing in the window happens seven times: one strike or four, 20 keyframes, and 10 or more
+passes. The tempting reading - one roll per hit, or a fixed seven - fails on the first count.
+
+### How it was measured
+
+The counts come from a running game (PCSX-Redux, retail disc), with breakpoints on the pass entry
+`0x8004CE2C`, on `0x8004D0F4` where the roll is read, on the status write, and on the strike
+counter's bump and clears.
+
+They are **captured on a poked state**, which is weaker than played input. The starting point is a
+random encounter (three monsters, scripted-fight flag clear) in which Noa is on the first swing of
+an auto-executing chain. The unconsumed tail of her action queue at `actor[+0x1DF]` is rewritten so
+that the retail queue consumer stages Tough Love behind the ordinary art starter, or Love You
+behind the Super Art starter. The art commit, the animation, the strikes, the damage, the roll and
+the status write are then retail code running. The code under test was compared word for word with
+the disc images first.
+
+| Art | Frame step | Rolls | Rolls at or after the last hit | Status writes |
+|---|---|---|---|---|
+| Tough Love | 4 (the emulator's own pacing) | 10 | 10 | 7 |
+| Tough Love | 3 (forced) | 14 | 14 | 6 |
+| Tough Love | 2 (forced) | 20 | 20 | 8 |
+| Tough Love, two swings queued after it | 4 | 10 | 10 | 3 |
+| Love You | 4 (the emulator's own pacing) | 40 | 34 | 26 |
+| Love You | 3 (forced) | 54 | 46 | 28 |
+
+"Forced" means the frame-step byte `0x1F800393` was also overwritten each frame. Love You at step 2
+(80 and 68) is not captured; it is the same formula the six captures fit. In the first run the
+ten rolls read `1 0 0 1 0 0 0 0 0 1` (0 applies): seven writes, the first on the second roll, and
+the word then stays `0x0380` for the rest of the capture. Seven writes out of ten rolls is chance,
+not a count the code makes. In the queued-swings run the status is on when the clip ends and Noa's
+next swing clears it.
 
 ### Addresses
 
 | Address | Image | What | Evidence |
 |---|---|---|---|
-| `0x8004CE2C` | `SCUS_942.54` | Per-frame battle actor pass | disassembly |
-| `0x8004D0A4..0x8004D120` | `SCUS_942.54` (file `0x3D8A4`) | Noa's clip-key arm: gates, roll, write | disassembly |
+| `0x8004CE2C` | `SCUS_942.54` | Per-frame battle actor pass; entered once per battle frame | disassembly, capture |
+| `0x8004D0A4..0x8004D120` | `SCUS_942.54` (file `0x3D8A4`) | Noa's clip-key arm: gates, roll, write | disassembly, capture |
 | `0x8004D0EC` | `SCUS_942.54` | The `rand()` call of the 1-in-2 roll | disassembly |
-| `0x8004DC4C` | `SCUS_942.54` | `jal 0x8004CE2C` inside `FUN_8004DA00` | disassembly |
+| `0x8004D0F4` | `SCUS_942.54` | Instruction after the call, where the roll is read; one hit per roll | disassembly, capture |
+| `0x8004DC4C` | `SCUS_942.54` | `jal 0x8004CE2C`, the last call of `FUN_8004DA00` | disassembly |
 | entry `+0x77` | PROT 0864 `record[0]`, art bank at decoded `+0x5A30`, records 19 and 33 | Clip keys `0x29` (Tough Love) and `0x2D` (Love You) | disc data |
 | entry `+0x7A` | same records | Status selector, `0` on both arts | disc data |
-| `actor[+0x1F4]` | RAM | Per-clip strike counter; raised at `0x801EECE8`, zeroed at `0x8004B064` | disassembly |
-| `actor[+0x16E]` bits `0x0380` | RAM | AI-delegation (confuse) bits the arm sets | disassembly |
+| entry `+0x76` | same records | `1` on both: no early cut after the last strike | disc data |
+| entry `+0x78` | same records | Playback rate: 4 (Tough Love), 2 (Love You) | disc data |
+| `actor[+0x1F4]` | RAM | Per-clip strike counter; raised at `0x801EECE8`, zeroed at `0x8004B064` | disassembly, capture |
+| `actor[+0x16E]` bits `0x0380` | RAM | AI-delegation (confusion) group the arm sets | disassembly |
 | `ctx[+0x287]` | RAM | Scripted-fight flag; non-zero disables the arm | disassembly |
 | `0x8007BD0C` | RAM | First formation monster id, compared with `0xA7` | disassembly |
-| `0x801EDA5C` | PROT 0898 | Damage clears status mask `0x0F80` on the defender | disassembly |
-| `0x80047730..0x80047764` | `SCUS_942.54` | Clip cursor advance | disassembly |
+| `0x801EDA5C` | PROT 0898 | A damaging physical hit clears status mask `0x0F80` on the defender | disassembly, capture |
+| `0x801DE2EC` | PROT 0898 | The same clear in the magic damage finisher `FUN_801DDB30` | disassembly |
+| `0x80047730..0x80047764` | `SCUS_942.54` | Clip cursor advance | disassembly, capture |
+| `0x80047A48..0x80047A60` | `SCUS_942.54` | Clip-end test against the stream length | disassembly, capture |
+| `0x80047940..0x80047948` | `SCUS_942.54` | Early-cut veto on entry `+0x76` | disassembly, capture |
+| `0x8004BB64..0x8004BBA4` | `SCUS_942.54` | Art commit: speed 2 or 4 from `ctx[+0x243]` | disassembly, capture |
+| `0x1F800393` | RAM (scratchpad) | Frame step, 1..4 | disassembly |
+| `0x80017098..0x8001715C` | `SCUS_942.54` | Pacer that sets the frame step; frame-cost ring at `0x80084098` | disassembly |
 
 ### Scope
 
 - The arm never fires in a scripted fight (`ctx[+0x287] != 0`) or when the first monster of the
   formation is id 167 (Lapis).
+- The status holds only until the target's next damage. Used mid-chain, or followed by another
+  character's attack on the same monster, it is gone again.
 - No other player art inflicts a status, single-roll or otherwise. Across the four party art banks
   (PROT entries 0863..0866) entry `+0x7A` is only ever `0`, `1` (Vahn's fire arts: Fiery Miyawaki,
   Beatdunk, Beatfire, Tornado Flame, Fire Tackle) or `2` (Gala's Thunder Punch records). Selectors
@@ -140,19 +231,20 @@ bits. The reported seven sits inside these ranges; this page does not derive it.
 
 ### Verifying it
 
-Put an execution counter on `0x8004D0EC` and use each art once against a random encounter: the
-count is the number of rolls. A breakpoint on `0x8004D120` shows which roll first sets the bits,
-and a write watch on the target's `+0x16E` shows Love You's later hits clearing `0x380` and the
-next frame setting it again. Reading `0x1F800393` and Noa's `+0x21D` during the clip pins the
-pacing the estimate above assumes.
+Count executions of `0x8004D0F4` while Noa uses either art in a random encounter: that is the
+number of rolls, and `v0 & 1 == 0` marks the ones that apply. Read `0x1F800393` in the same frames
+to see which column of the table the run belongs to. A write watch on the target's `+0x16E` shows
+each Love You hit clearing `0x380` at `0x801EDA60` and a later roll setting it again.
 
 ### Open questions
 
-- The exact number of rolls for each art.
+- The frame step a real console holds while these two animations play, which picks between 14 and
+  20 rolls for Tough Love. It does not change the outcome: every possible value gives 10 or more.
+- A played confirmation, with the art entered from the arts menu instead of a rewritten queue.
 - Whether a strike that misses still opens the window. The counter is raised on the routine's
   common exit path, which suggests it does.
-- Whether the actor pass runs before or after the animation tick within a frame, which moves the
-  count by one.
+- Which action-state store raises `ctx[+0x243]` for a Super Art. The speed-2 case is measured; its
+  setter is not named.
 
 ## Seven boss attacks ignore the defensive jewels
 
@@ -273,9 +365,13 @@ monster's ATK, defence and INT above the record values, and it writes the raised
 base as well. From the first frame of every boss fight the base no longer equals the record, so
 the debuff code concludes the stat has already been lowered and prints "No effect.".
 
-Speed and MP are not boosted, which is why those two side effects still work on bosses. The repo's
-comparison of the regional executables records the boost as USA-only; on a disc without it the same
-compare passes until the first debuff lands. Only the USA disc is examined here.
+Speed and MP are not boosted, which is why those two side effects still work on bosses.
+
+The boost is in the USA executable only. The Japanese (`SCPS_100.59`) and French (`SCES_019.44`)
+loaders go from the stat copy straight to the spell-list loop, and both carry the same
+base-versus-record compare in the debuff code. On those discs the compare passes until the first
+debuff lands: the first attack-down, defence-down or intelligence-down on a boss works, and a
+second one of the same kind is refused.
 
 ### Mechanism
 
@@ -318,7 +414,26 @@ compare passes until the first debuff lands. Only the USA disc is examined here.
    8005529c  INT  += INT >> 3      ; sh 0x16a / sh 0x168
    ```
 
-   SPD, AGL, HP and MP are left alone.
+   SPD, AGL, HP and MP are left alone. The same block holds the random-encounter arm
+   (`0x800552AC..0x80055300`: both defences `+ half + quarter`, INT `+ quarter`, ATK untouched),
+   so ordinary monsters are tougher on the USA disc as well. It never shows in the debuffs because
+   the stager skips the compare for them.
+5. **The other builds.** The whole block `0x80055228..0x8005530C` - the flag load and both arms -
+   is absent from the Japanese and French loaders. Each writes the record stat unchanged into the
+   current and the base halfword, clears two bytes and falls into the spell-list loop. The stager
+   is unchanged: the French one matches the USA routine instruction for instruction once
+   addresses are masked, and the Japanese one is a different compile with the same level gate,
+   suppression roll, jump table, stat pairs and shared compare.
+
+   | Build | Loader: what follows the stat copy | Stager | Shared compare | Scripted-fight flag |
+   |---|---|---|---|---|
+   | USA `SCUS_942.54` | the boost block `0x80055228..0x8005530C`, then the spell loop at `0x80055310` | `0x801F3D3C`, PROT 0898 at base `0x801CE818` | `0x801F43F0` | `ctx[+0x287]` |
+   | France `SCES_019.44` | byte clears at `0x80055B0C` / `0x80055B18`, then the spell loop at `0x80055B1C` | `0x801F468C`, PROT 0898 at base `0x801CF0A8` | `0x801F4D40` | `ctx[+0x2A7]` |
+   | Japan `SCPS_100.59` | byte clears at `0x80057004` / `0x80057010`, then the spell loop at `0x80057014` | `0x801F7394`, PROT 0898 at base `0x801D05C8` | `0x801F79BC` | `ctx[+0x1E7]` |
+
+   The Japanese jump table is at `0x801D1880`; its arms compare the same pairs (earth `+0x15E`
+   against record `+0x14` at `0x801F7588`, fire `+0x15A` against `+0x12` at `0x801F7728`, thunder
+   `+0x16A` against `+0x18` at `0x801F78D8`).
 
 ### Addresses
 
@@ -332,6 +447,12 @@ compare passes until the first debuff lands. Only the USA disc is examined here.
 | `0x801DE648..0x801DE8EC` | PROT 0898 | Finisher tail that applies the debuff to both halfwords | disassembly |
 | `0x80054CB0` | `SCUS_942.54` | Monster stat loader | disassembly |
 | `0x80055234..0x800552A8` | `SCUS_942.54` | Scripted-fight boost | disassembly |
+| `0x800552AC..0x80055300` | `SCUS_942.54` | Random-encounter boost | disassembly |
+| `0x80055B1C` | `SCES_019.44` | Spell-list loop directly after the stat copy: no boost block | disassembly |
+| `0x80057014` | `SCPS_100.59` | Spell-list loop directly after the stat copy: no boost block | disassembly |
+| `0x801F468C`, `0x801F4D40` | French PROT 0898 (base `0x801CF0A8`) | Debuff stager and its shared compare | disassembly |
+| `0x801F7394`, `0x801F79BC` | Japanese PROT 0898 (base `0x801D05C8`) | Debuff stager and its shared compare | disassembly |
+| `0x801D1880` | Japanese PROT 0898 (file `0x12B8`) | Seven-entry element jump table | disc data |
 | `ctx[+0x287]` | RAM | Scripted-fight flag | disassembly |
 | record `+0x12`, `+0x14`, `+0x18` | PROT 0867 monster record | ATK, upper defence, INT | disc data |
 
@@ -348,19 +469,25 @@ survives the suppression roll. In random encounters the three compares are skipp
 stack.
 
 One example with the real numbers: Zeto's record reads ATK 108, upper defence 95, INT 117, SPD 66.
-The USA loader installs 135, 190, 131 and 66.
+The USA loader installs 135, 190, 131 and 66 (`108 + 27`, `95 + 95`, `117 + 14`). Published stat
+lists, this project's curated table included, print the boosted boss figures for every enemy, so
+the list value is the installed base and the record value is the lower number.
+
+On the Japanese and French discs the fight starts with base equal to record, so the first of each
+of the three debuffs is staged and the second is refused. The code that decides this is read in
+both builds; the on-screen result there is inference, not a capture.
 
 ### Verifying it
 
 In a boss fight, cast a level-3 or higher fire spell and break on `0x801F43F0`: `v1` holds the
 boosted base (135 for Zeto) and `v0` the record value (108), the branch is not taken, and
 `0x801F6960` stays zero. Writing the record value back into the actor's `+0x15A` and casting again
-lets the debuff land.
+lets the debuff land. On a Japanese disc the same break is `0x801F79BC`, where `a0` and `v0` are
+equal on the first cast.
 
 ### Open questions
 
-- The compare has not been read in a JP or PAL executable here; the regional claim rests on the
-  loader comparison in [battle.md](../../subsystems/battle.md).
+- A boss debuff landing on a Japanese or PAL disc has not been watched in a running game.
 - The arms treat target byte `8` and the multi-target values differently (`0x801F3F04`,
   `0x801F3F48`); which player spells use which value is not enumerated.
 
@@ -424,6 +551,7 @@ effect and then adds the three Berserker ids by hand. Nighto and Aluru never rec
 | `0x801F6DE4..0x801F6E1C` | PROT 0916 | Aluru's roll; resist word `0x80209010` | disassembly |
 | `0x801F7E14` | PROT 0916 | Aluru's kill store | disassembly |
 | `0x801F81F0..0x801F8230` | PROT 0908 | Zenoir's gate and Berserker id list | disassembly |
+| `0x801F87DC`, `0x801F8814`, `0x801F8438` | PROT 0931 | Jedo: flag test, kill store (flag clear), rolled damage (flag set) | disassembly; capture on a forced Lapis formation with an injected cast |
 | `ctx[+0x287]` | RAM | Scripted-fight flag | disassembly |
 
 ### Scope
@@ -469,6 +597,18 @@ The exposed rows other than the Berserkers are ordinary monsters and capturable 
 a scripted row. Records with the byte set that never sit on a scripted row, where it therefore
 plays no part: the Evil Fly family, Gizam, Gilium, the low-HP Tetsu and Lapis.
 
+Lapis is the case that shows the byte alone protects nothing. Its only formation row has a zero
+header byte, so the scripted-fight flag is clear in that fight, the gate is never consulted, and
+Lapis rolls like a random encounter although its byte is `1`. The flag reads 0 for the whole
+fight in a capture on a forced formation (the Lapis row's bytes written over another scripted
+fight's row as it loads); see [lapis-and-cort.md](lapis-and-cort.md). The hand-written id-167
+exception in the Tough Love arm above exists for the same reason.
+
+Jedo is no third route against a Berserker. Its module (PROT entry 0931, spell `0x9D`) branches on
+the scripted-fight flag alone at `0x801F87DC`: clear, it sets every living enemy's HP to zero
+(`0x801F8814`); set, it takes the rolled-damage path (`0x801F8438`). A Berserker fight is flagged,
+so Jedo only deals damage there.
+
 ### Verifying it
 
 In a Berserker fight, break on `0x801F6C20` during a Nighto cast or `0x801F6D78` during an Aluru
@@ -477,11 +617,6 @@ reads 1 and the resist arm is taken. A level-9 Aluru should kill a Berserker on 
 
 ### Open questions
 
-- Lapis sits only on a formation row whose header byte is zero. If the scripted-fight flag is
-  clear in that fight the gate is never consulted and Lapis rolls like a random encounter. The
-  hand-written id-167 exception in the Tough Love arm above points the same way. Reading
-  `ctx[+0x287]` during the Lapis fight settles it.
-- Jedo is documented as branching on the scripted-fight flag alone
-  ([battle-formulas.md](../../subsystems/battle-formulas.md)), which would give no third route
-  against a Berserker; that is not re-read here.
-- Instant-death sources outside these two summons are not surveyed.
+- Nighto and Aluru have not been cast on a Berserker in a running game; the result above is read
+  from the gate and the three records.
+- Instant-death sources outside these two summons and Jedo are not surveyed.

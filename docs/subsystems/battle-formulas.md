@@ -1080,7 +1080,7 @@ combat stats, picking a profile by the scripted-fight flag `ctx[+0x287]`
 `FUN_800513F0`):
 
 ```text
-profile A (flag clear, random encounters):  UDF, LDF += (x>>1) + (x>>2)   // x7/4
+profile A (flag clear, random encounters):  UDF, LDF += (x>>1) + (x>>2)   // x7/4, each shift truncating
                                             INT += INT >> 2               // x5/4
                                             ATK unchanged
 profile B (flag set, scripted fights):      ATK += ATK >> 2               // x5/4

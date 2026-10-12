@@ -1,8 +1,10 @@
 # Items, stats and equipment
 
-Five reported oversights in how the game handles items, stat boosts and equipment, each traced through the USA
-executable and overlays. Every claim here is read from instructions or decoded from disc bytes; none of it is a runtime
-capture, and each section says which parts are proven and which are predictions that follow from the code.
+Five reported oversights in how the game handles items, stat boosts and equipment, each traced through the executable
+and overlays. Every claim here is read from instructions or decoded from disc bytes. One case, the Speed Elixir one,
+was also observed in a running game, captured on a poked state as its section describes; the other four have not been
+run, and each section says which parts are proven and which are predictions that follow from the code. The USA build
+is the one read throughout; the Elixir and coin-vendor sections also read the Japanese and French builds.
 
 Images and bases used on this page:
 
@@ -14,6 +16,14 @@ Images and bases used on this page:
 | menu | PROT entry 0899 | `0x801CE818` |
 | arena | PROT entry 0977 | `0x801CE818` |
 | cast 0945 | PROT entry 0945 | `0x801F69D8` |
+| Japanese executable | `SCPS_100.59` | `0x80010000` |
+| Japanese PROT 0898 / 0899 | the same entries on the Japanese disc | `0x801D05C8` |
+| French executable | `SCES_019.44` | `0x80010000` |
+| French PROT 0898 / 0899 | the same entries on the French disc | `0x801CF0A8` |
+
+The Japanese build is a separate compile, so its routines sit at different addresses and its globals at different RAM
+cells. For every routine cited here the French build is the USA code relocated. An address with no build named is a
+USA address.
 
 Shared anchors:
 
@@ -26,84 +36,209 @@ Shared anchors:
   clears, `FUN_8003CE64` tests.
 - The bag is `(id, count)` byte pairs at `0x80085958` (window `+0x1818`).
 
-## Stat boost overflow
+## Speed Elixirs and void turns (stat boost overflow)
 
-**Status:** not confirmed
-**Reported as:** using permanent stat-boost items past a stat's limit overflows the stat.
+**Status:** explained (the freeze is not traced)
+**Reported as:** stacking Speed Elixirs in battle makes the turn-order number go negative; the character stops getting
+turns and "void turns" appear, where the camera swings to a spot where nobody stands and nothing happens. A dead enemy
+can take a turn, and the game can freeze (community report).
 
-The permanent stat items cannot overflow anything on the USA disc. Each one adds a small fixed amount to a 16-bit stat
-and then immediately compares the result against a ceiling, writing the ceiling back when it is exceeded. The largest
-value that ever exists before the compare is `1003` (or `10015` for HP), far below the `65535` a 16-bit field holds.
+The list entry is about Elixirs used in battle, and about Speed in particular. A Speed Elixir or a Wonder Elixir
+multiplies a character's battle Speed by 1.2, and nothing stops a second, tenth or twentieth one from doing it again.
+On the USA disc the Speed stat itself is safe: it stops at 65,535. The overflow is one step further on, in the number
+the game rolls from Speed every round to decide who acts next.
 
-What does misbehave is nearby: the boosts that only last one battle. Elixirs multiply a battle stat by 1.2 with no limit
-on how many times they stack, the turn-order number derived from Speed is stored in 16 bits without a ceiling, and one
-enemy self-buff has no ceiling at all. Those are the candidates for what the report describes, and they are presented
-as candidates, not as a confirmed match.
+That turn-order number is kept in 16 bits. The routine that picks the next fighter walks the seats in order and
+remembers the best number so far, but it reads the remembered number as *signed* and each new candidate as *unsigned*.
+A number of 32,768 or more therefore beats everything when it is the candidate and then reads as negative when it is
+the remembered best, so the very next seat takes the lead from it - even a seat whose number is zero.
 
-Three numbers are easy to confuse. The **stored base** stat is what the items write. The **live** stat is the base plus
-accessory percentages, capped again. Equipment is in neither: the menu adds equipment bonuses into a display total,
-and battle folds them in separately, so a menu figure above 999 is a sum on screen and not a stored value.
+Two things follow. The over-boosted character can never be picked, and neither can anyone seated before them, because
+each of those lost the lead to the big number on the way past. And the round still hands out one turn per living
+fighter, so the turns those characters should have had go to whichever later seats are left. Once those have all acted
+their numbers are zero, every remaining seat ties at zero, and the game picks one of them at random without asking
+whether anyone is there. An empty enemy slot gives the **void turn**: the camera frames a spot with nobody in it and
+the turn ends at once. A fighter who has already acted gets a second action. A defeated enemy's slot can be picked the
+same way.
+
+The effect has a window. From an ordinary Speed it takes roughly 16 to 26 Elixirs on one character to open it, and a
+few more close it again: once Speed is pinned at 65,535 the sum wraps all the way round to an ordinary positive number
+and the character simply acts first.
+
+The mechanism is read from the instructions and was then observed in a running game, captured on a poked state: Speed
+or the turn-order number was written directly in an emulator, not reached by using Elixirs. The reported freeze has
+not been reproduced or traced.
 
 ### Mechanism
 
-The permanent items:
-
-1. Honey (`0x65`), Miracle Water (`0x6D`) and the six Waters (`0x82..0x87`) carry effect class 6 with tier `0..6`
-   ([`item-effect-table.md`](../../formats/item-effect-table.md)).
-2. Class 6 is arm `0x8004112C` of the item applier `FUN_800402F4`. The tier indexes a seven-entry jump table at
-   `0x800151B0`.
-3. Every arm has one shape - load, add, store, compare, store the ceiling:
+1. **The boost.** Speed Elixir (`0x8D`, tier 1) and Wonder Elixir (`0x8E`, tier 4) are effect class 7, arm
+   `0x80041464` of the item applier `FUN_800402F4`. Each does `x += x / 5` on both halfwords of the actor's Speed pair,
+   `+0x164` (working) and `+0x166` (base), and stores `0xFFFF` when the sum is larger. There is no "already boosted"
+   guard, so `N` uses give `SPD * 1.2^N`, floored at each step. The round reset copies base to working, and both were
+   boosted, so the value lasts the whole battle.
 
    ```text
-   800411e8  lhu v0,0x6ec(v1)      ; record +0x124, ATK
-   800411f0  addiu v0,v0,0x4
-   800411f4  sh v0,0x6ec(v1)
-   800411fc  sltiu v0,v0,0x3e8     ; below 1000?
-   80041200  bne v0,zero,<exit>
-   80041204  _li v0,0x3e7
-   8004120c  _sh v0,0x6ec(v1)      ; otherwise store 999
+   800414d8  lhu v1,0x164(a0)        ; SPD
+   800414e4  multu v1,v0             ; * 0xCCCCCCCD, then srl 2: v1 / 5
+   800414f8  addu s1,v1,v0
+   800414fc  sltu v0,a2,s1           ; a2 = 0xFFFF
+   80041500  bne v0,zero,0x80041510  ; over: store 0xFFFF
    ```
 
-4. The item menu re-derives the live stats straight afterwards: `jal 0x80042558` at `0x801D8540` in PROT entry 0899,
-   following the `jal 0x800402F4` at `0x801D8538`.
-5. `FUN_80042558` copies record `+0x11C..+0x12C` to the live block `+0x104..+0x11A`, applies accessory percentages,
-   and clamps every field at `0x80042C0C..0x80042CE0` (HP `0x270F`, MP `0x3E7`, AGL `0x118`, the rest `0x3E7`).
-6. The usability check `FUN_8003FB10` greys the item out when no target can benefit (`sltiu 0x270f` at `0x8003FF44`
-   is the HP arm), so the menu refuses a Water at the ceiling before the applier runs.
+2. **The key.** Once per round `FUN_801DA780` in PROT entry 0898 seeds every fighter's turn-order key at actor
+   `+0x16C`:
 
-The in-battle candidates:
+   ```text
+   801da800  lhu a0,0x164(a1)        ; SPD
+   801da840  addu a0,a0,v1           ; + rand() % (SPD/2 + 1)
+   801da844  addiu a0,a0,1
+   801da84c  sh a0,0x16c(a1)         ; 16-bit store, no ceiling
+   ```
 
-- **Elixirs saturate.** Class 7 (Power, Shield, Speed, Wonder Elixir) multiplies both halfwords of a battle-actor stat
-  pair by 6/5 and pins the result at `0xFFFF`. There is no "already boosted" guard, so `N` uses give `stat * 1.2^N`
-  until the pin. A stat of 300 pins after 30 uses, 999 after 23.
+   `key = (SPD + rand() % (SPD/2 + 1) + 1) & 0xFFFF`. The adjustments that follow are 16-bit too (`lhu` / `sh`): the
+   wounded bonus, the halving under Slow at `0x801DA908`, and `+0x1000` for Speed Chain at `0x801DAA08`.
+3. **The picker.** `FUN_801DABA4` picks the next actor in the loop at `0x801DAC7C..0x801DAD60`. It starts with seat 0's
+   key as the running maximum and walks seats 1 to 6:
 
-  ```text
-  800414d8  lhu v1,0x164(a0)        ; SPD
-  800414e4  multu v1,v0             ; * 0xCCCCCCCD, then srl 2: v1 / 5
-  800414f8  addu s1,v1,v0
-  800414fc  sltu v0,a2,s1           ; a2 = 0xFFFF
-  80041500  bne v0,zero,0x80041510  ; over: store 0xFFFF
-  ```
+   ```text
+   801daca4  sll v0,a1,0x10
+   801daca8  lhu v1,0x16c(v1)        ; candidate key, zero-extended
+   801dacac  sra v0,v0,0x10          ; running maximum, sign-extended
+   801dacb0  slt v0,v0,v1            ; (signed) max < (unsigned) candidate?
+   801dad60  sb v0,0x274(a1)         ; the chosen seat
+   ```
 
-- **The turn-order key wraps.** `FUN_801DA780` in PROT entry 0898 computes `key = SPD + rand() % (SPD/2 + 1) + 1` in
-  32 bits and stores it with `sh a0,0x16c(a1)` at `0x801DA84C`. Nothing clamps it. Once SPD is `0x8000` or more the sum
-  can pass `0xFFFF` and the stored key becomes a small number, so an over-boosted character acts late instead of first.
-  With SPD pinned at `0xFFFF` the stored key is only the random term. This is arithmetic read from the instructions;
-  that a player reaches it (roughly thirty Speed or Wonder Elixirs on one character in one battle) is inference.
-- **No stat is read as signed.** A sweep of PROT entry 0898 and SCUS for sign-extending halfword loads at actor
-  `+0x154..+0x16A` finds one, the AGL gauge at `0x801F0A30`. ATK, UDF, LDF, SPD and INT are always loaded unsigned, so a
-  pinned attack value does not turn negative.
-- **Jugger Power wraps.** Cast `0xBA` in PROT entry 0945 adds a quarter to all ten stat halfwords with
-  `lhu` / `srl 2` / `addu` / `sh` at `0x801F6DA0..0x801F6E34` and never compares the result. It is an enemy self-buff;
-  the wrap would shrink the caster's own stats after enough casts (22 from a stat of 500).
+   When the test passes the candidate becomes the maximum and the tie list restarts with that seat; when the two are
+   equal (`0x801DACD8`) the seat joins the tie list; the result is a random member of the list (`jal rand` at
+   `0x801DAD0C`).
+4. **What a key of `0x8000` or more does.** As a candidate it is read as `32768..65535` and always passes the test, so
+   every earlier seat loses the maximum to it. As the running maximum it is read as negative, so the next seat always
+   replaces it, whatever that seat's key is, and the equality test never matches it. The seat holding it is never the
+   result unless it is seat 6, the last one walked.
+5. **Where the freed turns go.** The later seats act in key order as usual, and each key is zeroed as its turn starts.
+   After that the maximum collapses to 0 at the first seat behind the over-boosted one, every further seat with key 0
+   ties, and one of them is drawn at random. The loop has no HP test, no "is this slot populated" test and no
+   "key is not zero" test; the sweep above it only zeroes the keys of fallen fighters.
+6. **The void turn.** The turn-start arm of the action state machine `FUN_801E295C` (`0x801E2C50..0x801E2D54`) takes
+   the seat from `ctx[+0x274]` unchecked: it loads the actor pointer from `0x801C9370[seat]`, zeroes its key and calls
+   the camera framing routine (`jal 0x801d5854` with the seat in `a0`). The unused seats of a short enemy row still
+   have allocated, zero-filled actor records, so the camera frames an empty seat and the turn falls straight through
+   to its end.
+
+How Speed maps to the key, from the formula in step 2 (the wounded bonus and Speed Chain shift the edges slightly up,
+Slow halves the key):
+
+| Battle Speed | Stored key | Result |
+|---|---|---|
+| below 21,845 | always below `0x8000` | normal turn order |
+| 21,845 to 32,766 | `0x8000` or more on some rolls | locked out on those rounds |
+| 32,767 to 43,689 (`0x7FFF..0xAAA9`) | always `0x8000` or more | locked out every round |
+| 43,690 to 65,534 | `0x8000` or more unless the sum passes `0xFFFF` and wraps | locked out on fewer and fewer rounds |
+| 65,535 (the USA ceiling) | `rand() % 0x8000`, always below `0x8000` | acts first |
+
+Number of Speed or Wonder Elixirs used on one character (arithmetic from step 1):
+
+| Battle Speed at the start | First use that can lock out | First use that always does | Use that reaches 65,535 |
+|---|---|---|---|
+| 200 | 26 | 29 | 32 |
+| 331 | 24 | 26 | 30 |
+| 500 | 21 | 23 | 27 |
+| 999 | 17 | 20 | 23 |
+| 1254 | 16 | 18 | 22 |
+
+### The Japanese and French builds
+
+The picker is the same in all three builds: the Japanese compare is at `0x801DE048..0x801DE080` and the French one at
+`0x801DB524..0x801DB55C`, instruction for instruction the USA loop. The key seed is the same code too (Japanese
+`0x801DDBFC` onward).
+
+The Elixir arm differs. The Japanese executable `SCPS_100.59` has no saturation: its class-7 arm
+(`0x800425F0..0x8004295C`) ends every pair of every tier in a plain 16-bit store.
+
+```text
+80042608  lhu v0,0x164(a0)
+8004261c  srl v0,v0,2             ; after the multiply: v0 / 5
+80042620  addu v1,v1,v0
+80042624  sh v1,0x164(a0)         ; no compare
+```
+
+On the Japanese disc the boosted stat itself wraps to a small number once it passes 65,535: an Attack of 300 becomes
+59,077 on the twenty-ninth Power Elixir and 5,356 on the thirtieth. The USA arm (`0x800414D8` onward) and the French
+arm (`0x80041E24` onward) both carry the `0xFFFF` ceiling. The localisation closed the stat wrap and left the picker
+as it was.
+
+### Captures
+
+Observed in PCSX-Redux on the unpatched USA disc, in a battle of three party members (seats 0 to 2, Speed 331, 364 and
+310) against one enemy in seat 3, with seats 4 to 6 empty. Every member queued a plain attack through scripted pad
+presses. These are captures on a poked state: either Speed (`+0x164` and `+0x166`) was written at the entry of
+`FUN_801DA780`, or the key was written at the first command menu. No Elixir was used, so the Elixir arm itself was not
+exercised at run time. Breakpoints logged the sum before the store at `0x801DA84C` and the tie list and result at
+`0x801DAD60`.
+
+| What was poked | Keys, seats 0 to 3 | Turns observed |
+|---|---|---|
+| nothing (control) | `01ED 0186 0140 0094` | seats 0, 1, 2, 3 |
+| seat 0 Speed `0xFFFF` | sum `0x146A9` stored as `46A9` | seat 0 acts first; an ordinary round |
+| seat 1 Speed `0x8000` | `01ED A9E5 0140 0094` | seat 2, seat 3, seat 5 (empty: a void turn), seat 2 a second time |
+| seat 0 Speed `0xFFFF`, seat 1 Speed `0x8000` | `46A9 A9E5 0140 0094` | seat 2, seat 3, seat 5, seat 6 (both empty) |
+| seat 0 key `0xA9E5`, written at the first menu | `A9E5 021C 0191 0095` | seat 1 (already chosen when the key was written), seat 2, seat 3, seat 5 (empty) |
+
+In every run the round lasted four turns for four living fighters, whoever took them. In the third and fourth runs
+seats 0 and 1 never acted, and in the fourth seat 0 was locked out while holding the largest positive key in the
+battle. In the third run seat 2's second turn played its attack out in full again. In the last run seat 0 never acted,
+and the draw that landed on seat 5 was logged with a tie list of seats 1 to 6.
+
+### What it is not
+
+The permanent stat items - Honey (`0x65`), Miracle Water (`0x6D`) and the six Waters (`0x82..0x87`) - cannot overflow
+anything. They are effect class 6, arm `0x8004112C` of the same applier, and every tier adds a small amount to a 16-bit
+stat in the character record and immediately compares the result against a ceiling:
+
+```text
+800411e8  lhu v0,0x6ec(v1)      ; record +0x124, ATK
+800411f0  addiu v0,v0,0x4
+800411f4  sh v0,0x6ec(v1)
+800411fc  sltiu v0,v0,0x3e8     ; below 1000?
+80041200  bne v0,zero,<exit>
+8004120c  _sh v0,0x6ec(v1)      ; otherwise store 999
+```
+
+The largest value that exists before the compare is `1003` (`10015` for HP). The item menu then rebuilds the live
+stats (`jal 0x80042558` at `0x801D8540` in PROT entry 0899), which clamps again at `0x80042C0C..0x80042CE0`, and the
+usability check `FUN_8003FB10` greys a Water out at the ceiling before the applier runs. The Japanese arm
+(`0x800420F4`, tier table `0x80015814`) and the French arm (`0x80041A9C`) carry the same thirteen compares with the
+same ceilings. A menu figure above 999 is the stored stat plus equipment, summed for display.
+
+Two nearby things are also not this report. The battle stats themselves are never read as signed, so a pinned Attack
+or Speed does not turn negative; the sign trouble is confined to the key, which is sign-extended with `sll` / `sra` and
+not with a signed load. And the enemy self-buff Jugger Power (cast `0xBA`, PROT entry 0945) adds a quarter to ten stat
+halfwords at `0x801F6DA0..0x801F6E34` with no compare at all, which would shrink the caster's own stats after enough
+casts; it is an enemy move and has nothing to do with Elixirs.
 
 ### Addresses
 
 | Address | Image | What | Evidence |
 |---|---|---|---|
-| `0x80074368 + id*0xC` | SCUS | item record: `+0` kind, `+1` subtype, `+2` price | disc data |
-| `0x800752C0 + subtype*4` | SCUS | effect descriptor: class, tier, flags, passive index | disc data |
 | `0x800402F4` | SCUS | item applier; class jump table `0x80014FA0` | disassembly |
+| `0x80041464` | SCUS | class 7 arm (Elixirs); Speed pair `0x800414D8..0x80041568`, ceiling `0xFFFF` | disassembly |
+| `0x800425F0` | `SCPS_100.59` | Japanese class 7 arm, through `0x8004295C`; no ceiling | disassembly |
+| `0x80041E24` | `SCES_019.44` | French Elixir arithmetic, with the `0xFFFF` ceiling | disassembly |
+| actor `+0x164`, `+0x166` | RAM | battle Speed, working and base | disassembly |
+| actor `+0x16C` | RAM | turn-order key, 16 bits | disassembly |
+| `0x801DA780` | PROT 0898 | key seed; store at `0x801DA84C` | disassembly |
+| `0x801DA84C` | PROT 0898 | sum `0x146A9` stored as `0x46A9`; `0xA9E5` stored from Speed `0x8000` | capture (poked Speed) |
+| `0x801DA908`, `0x801DAA08` | PROT 0898 | Slow halving and Speed Chain `+0x1000`, both 16-bit | disassembly |
+| `0x801DABA4` | PROT 0898 | next-actor picker; compare `0x801DACA4..0x801DACB0` | disassembly |
+| `0x801DAD60` | PROT 0898 | result store to `ctx[+0x274]`; empty seats 5 and 6 drawn, seat 2 drawn twice | capture (poked Speed or key) |
+| `0x801E2C50` | PROT 0898 | turn start, through `0x801E2D54`: seat taken unchecked, camera call | disassembly |
+| `0x801C9370` | RAM | actor pointer table indexed by seat | disassembly |
+| `0x801DDBFC` | Japanese PROT 0898 | key seed, same code | disassembly |
+| `0x801DE048` | Japanese PROT 0898 | picker compare, through `0x801DE080` | disassembly |
+| `0x801DB524` | French PROT 0898 | picker compare, through `0x801DB55C` | disassembly |
+| one turn per living fighter | - | round length seen in every capture; the counter at `0x801F69D0` is not traced | inference |
+| a defeated enemy taking a turn | - | the tie list admits any key-0 seat; not captured | community report |
+| the freeze | - | not reproduced, not traced | community report |
 | `0x8004112C` | SCUS | class 6 arm (permanent stat-up); tier table `0x800151B0` | disassembly |
 | `0x80041178` | SCUS | tier 0 Life Water: record `+0x11C` `+16`, ceiling `0x270F` | disassembly |
 | `0x800411C4` | SCUS | tier 1 Power Water: `+0x124` `+4`, ceiling `0x3E7` | disassembly |
@@ -112,31 +247,48 @@ The in-battle candidates:
 | `0x8004125C` | SCUS | tier 4 Wisdom Water: `+0x12C` `+4`, ceiling `0x3E7` | disassembly |
 | `0x800412A8` | SCUS | tier 5 Magic Water: `+0x11E` `+8`, ceiling `0x3E7` | disassembly |
 | `0x800412F4` | SCUS | tier 6 Honey / Miracle Water: `+4` to eight fields, AGL ceiling `0x118` | disassembly |
+| `0x800420F4` | `SCPS_100.59` | Japanese class 6 arm (tier table `0x80015814`), same ceilings | disassembly |
+| `0x80041A9C` | `SCES_019.44` | French class 6 arm, same ceilings | disassembly |
 | `0x8003FB10` | SCUS | usability check that greys an item with no valid target | disassembly |
 | `0x80042558` | SCUS | live-stat rebuild; clamps `0x80042C0C..0x80042CE0` | disassembly |
-| `0x80041464` | SCUS | class 7 arm (Elixirs); SPD pair clamp `0x800414D8..0x80041568` | disassembly |
-| `0x801DA780` | PROT 0898 | turn-order key; unclamped store at `0x801DA84C` to actor `+0x16C` | disassembly |
 | `0x801F6DA0` | PROT 0945 | Jugger Power stat block, through `0x801F6E44` | disassembly |
 
 ### Scope
 
-The Elixir pin and the key wrap apply to any actor an Elixir can target and to every pair class 7 touches: SPD,
-UDF + LDF, ATK, and the fourth pair `+0x168/+0x16A` on the Wonder Elixir. The Jugger Power wrap applies to whichever
-monster casts `0xBA`.
+Which party members lose their turns depends on where the over-boosted one stands, because the picker walks the seats
+in order:
+
+| Over-boosted seat | Never picked while the key is `0x8000` or more |
+|---|---|
+| 0 (first party member) | seat 0 |
+| 1 | seats 0 and 1 |
+| 2 | seats 0, 1 and 2: the whole party |
+
+The enemies sit in the later seats and always act. The freed turns are drawn from the seats behind the over-boosted
+one, so with seat 2 over-boosted every extra turn goes to an enemy slot - a living enemy acting again, an empty slot or
+a fallen one.
+
+The Wonder Elixir boosts Speed along with three other pairs (Attack, both defences, and `+0x168/+0x16A`, which is
+Intelligence), so it counts toward the same total as the Speed Elixir. The Power and Shield Elixirs pin their stats at
+65,535 on the USA and French discs with no known side effect; on the Japanese disc those stats wrap.
 
 ### Verifying it
 
-- Set Vahn's stored ATK (`0x8008482C`) to `0x03E6` and use a Power Water: it reads back `0x03E7`. At `0x03E7` the menu
-  refuses the item.
-- In battle, write `0xFFFF` to a party actor's `+0x164` and `+0x166`, break at `0x801DA84C` and read `a0`: the value
-  stored is below `0x8000`, and that character acts late.
+- On a poked state: at the entry of `0x801DA780`, write `0x8000` to `+0x164` and `+0x166` of the party member in seat
+  1. A breakpoint at `0x801DA84C` shows `a0` between `0x8001` and `0xC001`; a breakpoint at `0x801DAD60` never shows
+  seat 0 or seat 1 as the result, and shows an empty seat once seats 2 and up have acted.
+- Unpoked: use Speed Elixirs on one character until the count in the table above is reached and watch the same two
+  breakpoints. This has not been done.
+- The permanent items: set Vahn's stored ATK (`0x8008482C`) to `0x03E6` and use a Power Water. It reads back `0x03E7`,
+  and at `0x03E7` the menu refuses the item.
 
 ### Open questions
 
-- What the original report observed. If it is a Water or Honey effect, the record halfword before and after the use
-  settles it; no USA code path wraps there.
-- Whether the Japanese and PAL appliers carry the same compares.
-- Whether the fourth class-7 pair `+0x168/+0x16A` is INT or AGL; it is clamped the same way under either name.
+- The freeze. A battle with one enemy already defeated and a later-seated party member's Speed in the lock-out band
+  would show it: the action state byte `ctx[+0x07]` at the moment it stops advancing, and the fallen actor's
+  `+0x1DE` / `+0x1DF`, name the cause.
+- A played reproduction, with real Elixirs in place of written values.
+- The exact rule for how many turns a round hands out (the reader of the counter at `0x801F69D0`).
 
 ## Story equipment removal skips the re-check
 
@@ -387,27 +539,63 @@ by hand releases the battle.
 
 ## Coin vendor purchases past 99 (Japanese release)
 
-**Status:** partially explained
+**Status:** explained
 **Reported as:** on the Japanese release a coin vendor lets a purchase through while 99 are already held; the coins are
 taken and the count stays at 99.
 
-Only the USA disc is read here. The USA purchase path and the USA bag routine are both proven; what the Japanese build
-lacks is inferred from them.
+At a coin prize counter the Japanese game asks one question before the Yes / No box: can the coins cover the price? It
+never looks at how many of the item are already held. After Yes it adds the item and subtracts the coins with no
+further test.
 
-The coin counter never asks the bag whether an item fitted. It has one check before the Yes / No box - "fewer than 99
-held?" - and after that it adds the item and subtracts the coins unconditionally. The bag's add routine never refuses
-either: it adds and then silently trims the stack back to 99.
+The bag's add routine never refuses anything. It adds, and then silently trims the stack back to 99. So a hundredth
+copy costs the coins, is added, and is trimmed off again - the report exactly.
 
-On the USA disc the front check is present, so the trim never matters. Take the front check away and the result is
-exactly the report: the coins go, the item is added and trimmed off again. The opposite hypothesis - the check present
-but the trim missing - would give stacks above 99, which is not what is reported.
+The USA build added two things in front of that. The prize list draws a row dimmed when 99 are held, and the confirm
+step asks "fewer than 99 held?" and buzzes when the answer is no. The French build carries both. The commit and the
+trimming add behind them are unchanged in every build, which is why the same hole is still open in one other place:
+equipment bought "to the bag" in an ordinary gold shop.
+
+Both the Japanese and the USA code are read from the instructions; the Japanese result on screen has not been
+captured.
 
 ### Mechanism
 
-1. The prize session is `FUN_801DC1CC` in PROT entry 0899. Its table is at `0x801E4518`: 8-byte records of
+The Japanese build, PROT entry 0899 at load base `0x801D05C8`:
+
+1. The prize session is `0x801DE978..0x801DEE64` (file offset `0xE3B0`). Its call list is the USA session's call for
+   call with one call missing: the held-count lookup.
+2. On confirm (`0x801DEB1C..0x801DEBAC`, file `0xE554`) the only test is coins against price:
+
+   ```text
+   801deb6c  slt v0,v0,v1            ; coins < price?
+   801deb70  beqz v0,0x801deb88      ; can afford: open the Yes / No box
+   801deb78  jal 0x8002cabc          ; otherwise buzz
+   ```
+
+   Nothing sits between the compare and the confirm window.
+3. The commit (`0x801DEC5C..0x801DED24`, file `0xE694`) calls the bag add with a quantity of 1 (`jal 0x80043210` at
+   `0x801DECA8`), ignores what it returns, subtracts the price from the coin bank (`0x801DECD8..0x801DECF0`) and sets
+   the row's one-shot flag.
+4. The bag add in `SCPS_100.59` is `0x80043210` (file `0x33A10`). It ends with the trim and returns the slot index
+   either way:
+
+   ```text
+   8004332c  addu v0,v1,v0           ; count + quantity
+   80043334  slti v0,v0,0x64
+   80043340  addiu v1,zero,0x63      ; over 99: 99
+   8004334c  sb v1,-0x4037(at)       ; count byte of the slot
+   ```
+
+5. The prize-list row draw (`0x801D8014..0x801D80A8`, file `0x7A4C`) picks the normal text colour, a second colour
+   for a one-shot row and the dim colour when the row is unaffordable. It makes no held-count call. A search of the
+   whole image agrees: the Japanese PROT entry 0899 contains no signed compare against `0x63` at all.
+
+The USA build, PROT entry 0899 at `0x801CE818`:
+
+1. The prize session is `FUN_801DC1CC`. Its table is at `0x801E4518`: 8-byte records of
    `[i16 item id][i16 one-shot flag][u32 coin price]`, `0x60` bytes per vendor
-   ([`shop.md`](../../subsystems/shop.md)).
-2. On confirm:
+   ([`shop.md`](../../subsystems/shop.md)). The Japanese table at `0x801E7A3C` has the same record shape.
+2. On confirm the held-count test follows the coin test:
 
    ```text
    801dc3c0  lw v0,0x45a4(a2)        ; coins
@@ -419,7 +607,9 @@ but the trim missing - would give stacks above 99, which is not what is reported
    801dc3f8  jal 0x80035bd0          ; otherwise buzz and stay
    ```
 
-3. The commit has no test:
+3. The row draw makes the same lookup at `0x801D5ED4..0x801D5EF4` (`jal 0x80042f4c` / `slti v0,v0,0x63`) and uses
+   text colour 0, the dim one, when 99 are held. These two are the only compares against `0x63` in the image.
+4. The commit has no test, as in the Japanese build:
 
    ```text
    801dc514  jal 0x800421d4          ; bag add (id, 1), result ignored
@@ -427,51 +617,60 @@ but the trim missing - would give stacks above 99, which is not what is reported
    801dc550  sw v1,0x464(a0)         ; coins -= price
    ```
 
-4. The bag add `FUN_800421D4` ends with the trim and returns the slot index either way:
+5. The bag add `FUN_800421D4` trims at `0x800422E0..0x80042300` (`slti v0,v0,0x64`, then `0x63` stored).
 
-   ```text
-   800422e8  addu v0,v1,v0           ; count + quantity
-   800422f0  slti v0,v0,0x64
-   800422fc  li v1,0x63              ; over 99: 99
-   80042300  sb v1,0x1819(a0)
-   ```
+The French build has both USA additions: the front check at `0x801DCEF8..0x801DCF10` (`jal 0x80043898` /
+`slti 0x63`) and the row dim at `0x801D69E4`, in its PROT entry 0899 at load base `0x801CF0A8`.
 
 ### Addresses
 
 | Address | Image | What | Evidence |
 |---|---|---|---|
-| `0x801DC1CC` | PROT 0899 | prize-exchange session; phase word `0x801E46AC` | disassembly |
-| `0x801E4518` | PROT 0899 | prize table, 8-byte records, `0x60` per vendor | disc data |
-| `0x800845A4` | RAM | coin bank | disassembly |
-| `0x801DC3C0` | PROT 0899 | affordability and held-count checks, through `0x801DC3F8` | disassembly |
-| `0x801DC4C0` | PROT 0899 | commit: add, debit, set one-shot flag | disassembly |
+| `0x801DE978` | Japanese PROT 0899 (file `0xE3B0`) | prize-exchange session, through `0x801DEE64` | disassembly |
+| `0x801DEB1C` | Japanese PROT 0899 (file `0xE554`) | confirm: coins against price only, then the confirm window | disassembly |
+| `0x801DEC5C` | Japanese PROT 0899 (file `0xE694`) | commit: `jal 0x80043210` at `0x801DECA8`, coins minus price | disassembly |
+| `0x801D8014` | Japanese PROT 0899 (file `0x7A4C`) | prize-list row draw, no held-count call | disassembly |
+| `0x801E7A3C` | Japanese PROT 0899 (file `0x17474`) | prize table, same record shape as USA | disc data |
+| `0x80043210` | `SCPS_100.59` (file `0x33A10`) | bag add; trim at `0x80043334..0x8004334C` | disassembly |
+| `0x80043088` | `SCPS_100.59` | held count; not called from the prize session | disassembly |
+| `0x801CAC14`, `0x801CBFC8` | Japanese RAM | coin bank; bag, two bytes per slot | disassembly |
+| `0x801DC1CC` | PROT 0899 | USA prize-exchange session; phase word `0x801E46AC` | disassembly |
+| `0x801E4518` | PROT 0899 | USA prize table, 8-byte records, `0x60` per vendor | disc data |
+| `0x800845A4` | RAM | USA coin bank | disassembly |
+| `0x801DC3C0` | PROT 0899 | USA affordability and held-count checks, through `0x801DC3F8` | disassembly |
+| `0x801D5ED4` | PROT 0899 | USA prize-list row draw: dim text colour when 99 are held | disassembly |
+| `0x801DC4C0` | PROT 0899 | USA commit: add, debit, set one-shot flag | disassembly |
 | `0x80042F4C` | SCUS | held count of an item id, 0 when absent | disassembly |
 | `0x800421D4` | SCUS | bag add; trim at `0x800422E0..0x80042300` | disassembly |
-| `0x801DB21C` | PROT 0899 | gold-shop buy-list confirm; tests gold only | disassembly |
-| `0x801DB380` | PROT 0899 | buy recipient picker; "to the bag" row at `0x801DB478` | disassembly |
-| the missing check on the Japanese disc | - | the `jal 0x80042f4c` / `slti 0x63` pair | inference |
+| `0x801DCEF8`, `0x801D69E4` | French PROT 0899 | front check and row dim, as on USA | disassembly |
+| `0x801DB21C` | PROT 0899 | USA gold-shop buy-list confirm; one compare, gold against price, at `0x801DB314` | disassembly |
+| `0x801DB380` | PROT 0899 | USA buy recipient picker; "to the bag" row `0x801DB478..0x801DB4C8` | disassembly |
+| `0x801DDB14` | Japanese PROT 0899 | "to the bag" row, through `0x801DDB6C`; `jal 0x80043210` at `0x801DDB2C` | disassembly |
+| the Japanese result on screen | - | coins taken, count stays 99 | community report |
 
 ### Scope
 
 Every giver on the disc goes through the same trimming add, so a chest, a battle drop or a prize at 99 is discarded
 without a message.
 
-The USA gold shop has a sibling of the reported fault. Stackable items go through a quantity screen capped at
-`99 - held`, but equipment does not. The buy-list confirm `FUN_801DB21C` tests only gold before routing on the item
+Every build has a sibling of the reported fault in the gold shop. Stackable items go through a quantity screen capped
+at `min(gold / price, 99, 99 - held)` (`jal 0x80042ee0` at `0x801DB8B0` on USA, `0x801DDEF8..0x801DDF5C` on the
+Japanese disc), but equipment does not. The buy-list confirm `FUN_801DB21C` tests only gold before routing on the item
 kind, and the recipient picker's "to the bag" row runs `jal 0x800421d4` at `0x801DB490` and then debits gold with no
-held-count read between them. Buying a hundredth copy of one piece of equipment should take the gold and leave 99.
-This is inferred from the instructions and untested.
+held-count read for the item between them. Buying a hundredth copy of one piece of equipment takes the gold and leaves
+99. This is read from the instructions of the USA and Japanese builds, and the French build is the USA code
+relocated; it has not been run.
 
 ### Verifying it
 
-On the USA disc hold 99 of a prize item and try the counter: the buzz plays and no box opens. Force the branch at
-`0x801DC3F0` to be taken and buy: the coins drop and the count stays `0x63`, which is the reported behaviour. On a
-Japanese disc, find the matching routine and look for the absent `slti ...,0x63`.
+On a Japanese disc hold 99 of a prize item and buy another: a breakpoint at `0x801DEB70` shows the branch to the
+confirm window taken, and after Yes the coin word at `0x801CAC14` drops by the price while the count byte stays
+`0x63`. On the USA disc the same attempt buzzes and no box opens; forcing the branch at `0x801DC3F0` to be taken
+reproduces the Japanese behaviour.
 
 ### Open questions
 
-- The Japanese code itself.
-- Whether the USA equipment sibling is reachable in normal play.
+- A run of the equipment sibling: hold 99 of one weapon, buy one more to the bag, read gold and the count byte.
 
 ## War God Icon can be missed for good
 

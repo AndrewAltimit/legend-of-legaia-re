@@ -6,8 +6,13 @@
 
 <div class="notice">
   <div class="notice-title">How far this goes</div>
-  Every case here is read from the disassembly and the disc's data. None has been watched in a running game yet, so an outcome is a prediction from the code until a debugger confirms it, and each case names the breakpoint or memory watch that would. Where a trace stopped short, the page says so.
+  Every case starts from the disassembly and the disc's data. Many have also been watched in a running game, and several were checked against the Japanese and French discs. Each case says which kind of evidence it rests on, and where a capture used poked values or an edited save instead of ordinary play. Where an outcome is still a prediction from the code, the case names the breakpoint or memory watch that would settle it.
 </div>
+
+<section class="doc-section" id="explorer" data-doc="-">
+  <h2>Browse them interactively</h2>
+  <p>The same cases are collected in a single navigable explainer, with a diagram and an address table per case: <a href="https://claude.ai/artifact/6iFdbAaDrpepojhKRnVuCM">Legaia Glitch Casebook</a>.</p>
+</section>
 
 <section class="doc-section" id="cases">
   <h2>The cases</h2>
@@ -17,9 +22,9 @@
   <div class="table-wrap"><table>
     <thead><tr><th>Case</th><th>Status</th><th>Cause</th></tr></thead>
     <tbody>
-      <tr><td><a href="name-centering.html#ultimate-rave">&quot;Ultimate Rave&quot; is drawn off-centre</a></td><td><span class="tag tag-done">explained</span></td><td>The caption&#x27;s X is the literal 100 in the cast module instead of 160 minus half the measured width, so the 78 px string sits 21 px left.</td></tr>
-      <tr><td><a href="name-centering.html#sibling-captions">Other captions with a fixed or shifted position</a></td><td><span class="tag tag-done">explained</span></td><td>Three more captions use a typed-in X instead of a measured one, and ten summon spell names are centred on 166 or 172 rather than 160.</td></tr>
-      <tr><td><a href="name-centering.html#finisher-names">Super Art and Miracle finisher names are off-centre</a></td><td><span class="tag tag-done">explained</span></td><td>The banner is centred for the fixed name &quot;Vulture Blade&quot;; only arts with a row in the arts-name table get re-centred, and finishers have none.</td></tr>
+      <tr><td><a href="name-centering.html#ultimate-rave">&quot;Ultimate Rave&quot; is drawn off-centre</a></td><td><span class="tag tag-done">explained</span></td><td>The caption&#x27;s X is the literal 100, right for the ten-character Japanese name it was typed in for; the 78 px English string drawn there sits 21 px left.</td></tr>
+      <tr><td><a href="name-centering.html#sibling-captions">Other captions with a fixed or shifted position</a></td><td><span class="tag tag-done">explained</span></td><td>Three more captions keep an X typed in for their Japanese names, and ten summon spell names are centred on 166 or 172 rather than 160.</td></tr>
+      <tr><td><a href="name-centering.html#finisher-names">Super Art and Miracle finisher names are off-centre</a></td><td><span class="tag tag-done">explained</span></td><td>The English banner is centred for the fixed name &quot;Vulture Blade&quot; where the Japanese code centred each art&#x27;s own name; finishers have no table row to fix it.</td></tr>
     </tbody>
   </table></div>
   <h3><a href="turn-order-and-arts.html">Turn order, double attacks and kicks</a></h3>
@@ -28,9 +33,9 @@
     <thead><tr><th>Case</th><th>Status</th><th>Cause</th></tr></thead>
     <tbody>
       <tr><td><a href="turn-order-and-arts.html#spikefish-flute-koru">Spikefish Flute cancels enemy turns (the Koru flute glitch)</a></td><td><span class="tag tag-done">explained</span></td><td>The flute&#x27;s turn-skip adds one to the round&#x27;s turn count per living party member instead of per member still waiting, so the round ends early.</td></tr>
-      <tr><td><a href="turn-order-and-arts.html#war-god-icon-single-attack">War God Icon sometimes gives only one attack string</a></td><td><span class="tag tag-partial">partially explained</span></td><td>The second pass needs a counter to be zero, and that counter is only cleared when an attacker has to step up to its target.</td></tr>
+      <tr><td><a href="turn-order-and-arts.html#war-god-icon-single-attack">War God Icon sometimes gives only one attack string</a></td><td><span class="tag tag-done">explained</span></td><td>The &#x27;second pass used&#x27; byte doubles as the Low command&#x27;s AP cost, so typing commands sets it; only an attacker stepping up to a target clears it.</td></tr>
       <tr><td><a href="turn-order-and-arts.html#side-kick-war-god-boots">Side Kick still misses floating enemies with War God Boots</a></td><td><span class="tag tag-done">explained</span></td><td>Reach is a property of each hit&#x27;s power byte; the boots swap in a different low-kick record, but Side Kick is an art with its own fixed bytes.</td></tr>
-      <tr><td><a href="turn-order-and-arts.html#dance-level-3-special">Level-3 dance special swallows the next special</a></td><td><span class="tag tag-partial">partially explained</span></td><td>Presses are only judged while the idle or dance loop plays; the level-3 Triangle move runs 6.83 beats, past the next scoring slot.</td></tr>
+      <tr><td><a href="turn-order-and-arts.html#dance-level-3-special">Level-3 dance special swallows the next special</a></td><td><span class="tag tag-done">explained</span></td><td>Presses are only judged while the idle or dance loop plays; the level-3 Triangle move runs 6.83 beats, past the next scoring slot and the next combo&#x27;s first note.</td></tr>
     </tbody>
   </table></div>
   <h3><a href="status-and-damage.html">Status rolls, jewels and boss immunities</a></h3>
@@ -38,7 +43,7 @@
   <div class="table-wrap"><table>
     <thead><tr><th>Case</th><th>Status</th><th>Cause</th></tr></thead>
     <tbody>
-      <tr><td><a href="status-and-damage.html#tough-love-love-you">Tough Love and Love You roll their status every frame</a></td><td><span class="tag tag-partial">partially explained</span></td><td>A hand-written per-frame routine flips a 50% coin every frame of the animation after the first strike, with nothing to stop it repeating.</td></tr>
+      <tr><td><a href="status-and-damage.html#tough-love-love-you">Tough Love and Love You roll their status every frame</a></td><td><span class="tag tag-done">explained</span></td><td>A hand-written routine flips a 50% coin every battle frame from the first hit to the end of the animation: 10 to 20 flips for Tough Love, 40 to 80 for Love You.</td></tr>
       <tr><td><a href="status-and-damage.html#jewel-bypass">Seven boss attacks ignore the defensive jewels</a></td><td><span class="tag tag-done">explained</span></td><td>These attacks use a physical (ATK-based) damage wrapper that tells the shared finisher to skip its jewel block; it reads as intended.</td></tr>
       <tr><td><a href="status-and-damage.html#usa-boss-debuffs">USA bosses cannot have ATK, INT or DEF lowered</a></td><td><span class="tag tag-done">explained</span></td><td>The debuff only lands if the boss&#x27;s base stat still equals its disc record, and the USA difficulty boost changes the base before the fight starts.</td></tr>
       <tr><td><a href="status-and-damage.html#berserker-instant-death">Every Berserker can be killed outright</a></td><td><span class="tag tag-done">explained</span></td><td>Instant-death summons treat a monster as a boss by a texture-size byte in its record, and that byte is 0 on all three Berserkers.</td></tr>
@@ -51,7 +56,7 @@
     <tbody>
       <tr><td><a href="lapis-and-cort.html#lapis-wave-current-mp">Lapis Wave checks current MP</a></td><td><span class="tag tag-done">explained</span></td><td>Lapis only casts the wave at members with current MP above zero, and fleeing saves current MP only, so a returning party at 0 of full MP is never targeted.</td></tr>
       <tr><td><a href="lapis-and-cort.html#lapis-can-be-escaped-from">Lapis can be escaped from</a></td><td><span class="tag tag-done">explained</span></td><td>&quot;No escape&quot; is one byte at the start of a fight&#x27;s formation row, and the row for Lapis has it at zero.</td></tr>
-      <tr><td><a href="lapis-and-cort.html#mystic-shield-sweep-summons">Mushura and Theeder against Mystic Shield</a></td><td><span class="tag tag-done">explained</span></td><td>Both summons rely on the target&#x27;s flinch animation to stop repeat hits, and Mystic Shield removes Cort&#x27;s flinch, so they hit on every tick of contact.</td></tr>
+      <tr><td><a href="lapis-and-cort.html#mystic-shield-sweep-summons">Mushura and Theeder against Mystic Shield</a></td><td><span class="tag tag-done">explained</span></td><td>Mystic Shield blanks Cort&#x27;s flinch, the only thing that stops these sweeps re-hitting: Mushura hits on every contact tick, Theeder twice, which just cancels the halving.</td></tr>
     </tbody>
   </table></div>
   <h3><a href="summons-and-jette.html">Ra-Seru levels, Orb and Jette&#x27;s Clone</a></h3>
@@ -69,10 +74,10 @@
   <div class="table-wrap"><table>
     <thead><tr><th>Case</th><th>Status</th><th>Cause</th></tr></thead>
     <tbody>
-      <tr><td><a href="items-and-equipment.html#stat-boost-overflow">Stat boost overflow</a></td><td><span class="tag tag-open">not confirmed</span></td><td>Not found for the permanent items: each adds, then clamps. One-battle boosts nearby do saturate or wrap and are the candidates.</td></tr>
+      <tr><td><a href="items-and-equipment.html#stat-boost-overflow">Speed Elixirs and void turns</a></td><td><span class="tag tag-done">explained</span></td><td>The turn-order number rolled from Speed is 16 bits and the next-fighter picker reads its best-so-far as signed, so 32,768 or more can never win.</td></tr>
       <tr><td><a href="items-and-equipment.html#story-equipment-removal">Story equipment removal skips the re-check</a></td><td><span class="tag tag-done">explained</span></td><td>The script&#x27;s take-item instruction empties the equipment slot but never calls the routine that turns slots into bonuses.</td></tr>
       <tr><td><a href="items-and-equipment.html#point-card-softlock">Point Card softlock</a></td><td><span class="tag tag-done">explained</span></td><td>The target cursor can step onto an ally, and the Point Card&#x27;s damage skips the HP-counter bookkeeping the end of the action waits on.</td></tr>
-      <tr><td><a href="items-and-equipment.html#jp-coin-vendor-99">Coin vendor sells past 99 (Japanese release)</a></td><td><span class="tag tag-partial">partially explained</span></td><td>The bag silently trims a stack to 99 and the purchase never checks that its item fitted; only a check before the confirm box prevents the loss.</td></tr>
+      <tr><td><a href="items-and-equipment.html#jp-coin-vendor-99">Coin vendor sells past 99 (Japanese release)</a></td><td><span class="tag tag-done">explained</span></td><td>The Japanese prize counter only asks whether the coins cover the price; the bag then adds the item and silently trims the stack back to 99.</td></tr>
       <tr><td><a href="items-and-equipment.html#war-god-icon-missable">War God Icon can be missed for good</a></td><td><span class="tag tag-done">explained</span></td><td>The item and its &#x27;already awarded&#x27; flag come from two pieces of code that disagree about what clearing the course means.</td></tr>
     </tbody>
   </table></div>
@@ -83,7 +88,7 @@
     <tbody>
       <tr><td><a href="field-sequence-breaks.html#incense-trigger-bypass">Incense trigger bypass</a></td><td><span class="tag tag-done">explained</span></td><td>The Incense expiry sets the movement lock mid-frame; the player still steps onto the trigger tile, and a locked crossing is recorded without running.</td></tr>
       <tr><td><a href="field-sequence-breaks.html#incense-carry-over">Incense carry-over (&quot;New Game+&quot;)</a></td><td><span class="tag tag-done">explained</span></td><td>The Incense window is one number in the program&#x27;s own memory, outside the block that is saved, loaded or rebuilt for a new game.</td></tr>
-      <tr><td><a href="field-sequence-breaks.html#juggernaut-room-door">Juggernaut&#x27;s Room door</a></td><td><span class="tag tag-partial">partially explained</span></td><td>While the guards stand there the door has no lock of its own; two guard bodies are the whole gate. How the trick passes them is not traced.</td></tr>
+      <tr><td><a href="field-sequence-breaks.html#juggernaut-room-door">Juggernaut&#x27;s Room door</a></td><td><span class="tag tag-done">explained</span></td><td>From a strip beside a guard, one interact press lands in his talk box and the door&#x27;s box at once; he makes it a talk, and the door, later in the actor list, gets it.</td></tr>
       <tr><td><a href="field-sequence-breaks.html#noa-sigil-door-of-light">Noa&#x27;s sigil and the Door of Light in Nivora</a></td><td><span class="tag tag-done">explained</span></td><td>The crest stands inside a nine-by-nine map rectangle marked Door of Light allowed, listed ahead of the tunnel rectangles that forbid it.</td></tr>
     </tbody>
   </table></div>
@@ -92,10 +97,10 @@
   <div class="table-wrap"><table>
     <thead><tr><th>Case</th><th>Status</th><th>Cause</th></tr></thead>
     <tbody>
-      <tr><td><a href="field-oddities.html#work-err-rikuroa">WORK ERR on Mt. Rikuroa</a></td><td><span class="tag tag-partial">partially explained</span></td><td>The scene asked for more actors than the fixed 143-slot pool holds; the number shown is how many requests have failed.</td></tr>
-      <tr><td><a href="field-oddities.html#fortress-no-encounters">No encounters in Jette&#x27;s Absolute Fortress</a></td><td><span class="tag tag-partial">partially explained</span></td><td>Story-gated encounter tables: one flag switches the Fortress off after Jette, and much of the interior is zero-rate even before that.</td></tr>
+      <tr><td><a href="field-oddities.html#work-err-rikuroa">WORK ERR on Mt. Rikuroa</a></td><td><span class="tag tag-partial">partially explained</span></td><td>The rock and dust burst after the Golem fight fills the fixed 143-slot actor pool; the number is how many requests arrived while it was full.</td></tr>
+      <tr><td><a href="field-oddities.html#fortress-no-encounters">No encounters in Jette&#x27;s Absolute Fortress</a></td><td><span class="tag tag-done">explained</span></td><td>Escaping Zora&#x27;s Floating Castle with under a minute on the clock leaves its &quot;no battles&quot; flag set for good, and the Fortress&#x27;s encounter tables still obey it.</td></tr>
       <tr><td><a href="field-oddities.html#gaza-2-softlock">Gaza 2 softlock</a></td><td><span class="tag tag-done">explained</span></td><td>A walking monster is carried only by its Move animation; a leftover flinch flag swaps it for idle and the wait for range never ends.</td></tr>
-      <tr><td><a href="field-oddities.html#dialogue-inconsistencies">Dialogue inconsistencies</a></td><td><span class="tag tag-partial">partially explained</span></td><td>The English script renders one thing two ways; in the bath scene a choice box also speaks for a character who is not the hero.</td></tr>
+      <tr><td><a href="field-oddities.html#dialogue-inconsistencies">Dialogue inconsistencies</a></td><td><span class="tag tag-done">explained</span></td><td>The English script renders one thing two ways; in the bath scene it turns a question and answer about the researcher into ones about Vahn.</td></tr>
     </tbody>
   </table></div>
 </section>
@@ -105,7 +110,7 @@
   <ul>
     <li>Each case opens with the report in the community's words, then the cause in one line, then the mechanism.</li>
     <li>Addresses are PlayStation virtual addresses for the North American release. <code>0x8000xxxx</code> is the always-resident executable; <code>0x801C0000+</code> is overlay space and only holds that code while the named PROT entry is loaded. Other regional releases use different addresses.</li>
-    <li>Evidence labels: <em>disassembly</em> means the instructions were read; <em>disc data</em> means the value was decoded from the game's records; <em>repo doc</em> means it comes from an existing page and was not re-read; <em>inference</em> is reasoning from those.</li>
+    <li>Evidence labels: <em>capture</em> means it was observed under an emulator; <em>disassembly</em> means the instructions were read; <em>disc data</em> means the value was decoded from the game's records; <em>repo doc</em> means it comes from an existing page and was not re-read; <em>inference</em> is reasoning from those.</li>
     <li>No game data appears on these pages, only addresses, offsets, names and the project's own diagrams.</li>
   </ul>
 </section>

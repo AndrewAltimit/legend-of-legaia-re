@@ -232,7 +232,7 @@
   <details class="disclosure">
     <summary><code>4C D3</code> timed flags and <code>4C D4 / D5</code> STP bits</summary>
     <div class="disclosure-body">
-      <p><strong><code>4C D3 expiry:u16 below:u16 duration:u32 threshold:u32</code></strong> (14 bytes) schedules a countdown in the save block. The per-tick consumer <code>FUN_801D2EBC</code> sets the expiry flag at zero and the below flag while under the threshold. Retail use: <code>chitei2</code>'s collapsing-dungeon escape (flag <code>0x4C7</code>, 2400, threshold 910). A mid-timer save keeps it.</p>
+      <p><strong><code>4C D3 expiry:u16 below:u16 duration:u32 threshold:u32</code></strong> (14 bytes) schedules a countdown in the save block. The per-tick consumer <code>FUN_801D2EBC</code> sets the expiry flag at zero and the below flag while under the threshold. Retail uses: <code>chitei2</code>'s collapsing-dungeon escape (flag <code>0x4C7</code>, 2400, threshold 910) and the Floating Castle escape in <code>taiku</code> (expiry flag <code>0x396</code>, below flag <code>0x15</code>, 21600, threshold 3600). A mid-timer save keeps it.</p>
       <p><strong><code>4C D4 / D5 x:u16 y:u16</code></strong> (6 bytes) read a 16&times;1 VRAM strip, set (<code>D4</code>, non-zero pixels) or clear (<code>D5</code>) the transparency bit, and write it back. It decides whether a CLUT entry a colour cycler later takes to black reads as opaque black or as transparent - <code>teien</code> marks its hedge CLUTs before installing the dusk cycler.</p>
     </div>
   </details>

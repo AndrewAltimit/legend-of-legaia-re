@@ -92,6 +92,8 @@ auto-end:      when cost[seat] > pool for all four seats
 turn length    ~ floor(AGL / cost), and never more than the 16-byte command buffer
 ```
 
+The third of the cost bytes, `ctx[+0x16]` (the Low command), is the same byte the battle action state machine uses as the War God Icon's Attack x2 pass counter, so every manual command entry leaves that counter non-zero until an attacker passes the state `0x19` exit (`0x801E35B4`). The "Auto" path does not build the gauge and leaves the byte alone.
+
 ## How the gauge consumes it
 
 `FUN_801D388C` is the battle action/animation event handler, driven by the battle main dispatcher [`FUN_801D0748`](../reference/functions.md). Its **case `9` / `0x2C`** builds the gauge and reads the cost:

@@ -1,82 +1,188 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">glitches</a> &middot; items, stats and equipment</div>
   <h1>Items, stats and equipment</h1>
-  <p class="lede">Five reported oversights in how Legend of Legaia handles items, stat boosts and equipment, each followed through the game's own code on the USA disc: a stat boost that is said to overflow, story events that take equipment without telling the rest of the game, a Point Card that can freeze a battle, a coin vendor that sells a hundredth item, and a prize that can be announced and never handed over.</p>
+  <p class="lede">Five reported oversights in how Legend of Legaia handles items, stat boosts and equipment, each followed through the game's own code: stacked Speed Elixirs that lock characters out of their turns and hand turns to empty slots, story events that take equipment without telling the rest of the game, a Point Card that can freeze a battle, a Japanese coin vendor that sells a hundredth item, and a prize that can be announced and never handed over.</p>
 </header>
 
 <div class="notice">
   <div class="notice-title">How to read this page</div>
-  Everything here is read from the instructions and data on the disc. <strong>None of it was captured on a running game.</strong> Where a section says something "should" happen, that is a prediction that follows from the code and is marked as untested. Each glitch has an address table so another reader with a debugger can check it.
+  Everything here is read from the instructions and data on the disc - the USA disc throughout, plus the Japanese and French discs for the Elixir and coin-vendor sections. One section, the Speed Elixir one, was also <strong>observed in a running game, captured on a poked state</strong>: values were written by hand in an emulator, as that section spells out. The other four were not run. Where a section says something "should" happen, that is a prediction that follows from the code and is marked as untested. Each glitch has an address table so another reader with a debugger can check it.
 </div>
 
 <section class="doc-section" id="stat-boost-overflow">
-  <h2>Stat boost overflow</h2>
+  <h2>Speed Elixirs and void turns</h2>
   <dl class="kv">
-    <dt>Reported as</dt><dd>Using permanent stat-boost items past a stat's limit overflows the stat (community report)</dd>
-    <dt>Cause</dt><dd>Not found for the permanent items: every one adds and then clamps. The one-battle boosts next door do saturate or wrap.</dd>
-    <dt>Where</dt><dd>Item applier <code>FUN_800402F4</code> in <code>SCUS_942.54</code>; turn-order key <code>FUN_801DA780</code> in PROT 0898</dd>
-    <dt>Affects</dt><dd>Candidates: Elixir stacking, the Speed-derived turn order, the enemy cast Jugger Power</dd>
-    <dt>Status</dt><dd><span class="tag tag-open">Not confirmed</span> for the Waters and Honey; the in-battle sites are candidates, read from the code</dd>
+    <dt>Reported as</dt><dd>"Stat boost overflow": stacking Speed Elixirs in battle makes the turn-order number go negative. The character stops getting turns and "void turns" appear, where the camera swings to a spot where nobody stands and nothing happens. A dead enemy can take a turn, and the game can freeze (community report)</dd>
+    <dt>Cause</dt><dd>The turn-order number rolled from Speed is kept in 16 bits, and the routine that picks the next fighter reads its best-so-far as signed, so a number of 32,768 or more can never win</dd>
+    <dt>Where</dt><dd>Key seed <code>FUN_801DA780</code> and next-actor picker <code>FUN_801DABA4</code> in PROT 0898; Elixir arm <code>0x80041464</code> in <code>SCUS_942.54</code></dd>
+    <dt>Affects</dt><dd>The over-boosted character and every party member seated before them; all three builds read (USA, Japanese, French)</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - read from the instructions and captured on a poked state; the freeze is not traced</dd>
   </dl>
 
-  <p>The permanent stat items - the six Waters, Honey and Miracle Water - cannot overflow anything on the USA disc. Each adds a small fixed amount to a 16-bit number and immediately compares the result with a ceiling, writing the ceiling back if it was passed. The largest value that ever exists before the compare is 1003 (10015 for HP). A 16-bit number holds up to 65535, so there is no room for a wrap.</p>
-  <p>The boosts that last one battle are a different story. Elixirs multiply a battle stat by 1.2 and can be stacked without limit until the stat pins at 65535. The number that decides turn order is built from Speed and stored in 16 bits with no ceiling, so a hugely boosted Speed can wrap it to a small value and the character acts <em>late</em>. And one enemy self-buff, Jugger Power, has no ceiling at all. These are the places a "stat boost overflow" can really happen, offered as candidates for what the report saw.</p>
-  <p>Three numbers are easy to mix up. The <strong>stored</strong> stat is what the items write. The <strong>live</strong> stat is the stored one plus accessory percentages, capped again. Equipment is in neither: the menu adds it into a total for display, so a figure above 999 on the status screen is a sum on screen, not a stored value.</p>
+  <p>This entry is about Elixirs used in battle, and about Speed in particular. A Speed Elixir or a Wonder Elixir multiplies a character's battle Speed by 1.2, and nothing stops the next one from doing it again. On the USA disc the Speed stat itself is safe - it stops at 65,535. The overflow is one step further on, in the number the game rolls from Speed every round to decide who acts next.</p>
+  <p>That turn-order number is kept in 16 bits. The routine that picks the next fighter walks the seats in order and remembers the best number so far, but it reads the remembered number as <em>signed</em> and each new candidate as <em>unsigned</em>. A number of 32,768 or more therefore beats everything when it is the candidate, and then reads as negative when it is the remembered best - so the very next seat takes the lead from it, even a seat whose number is zero.</p>
 
   <figure class="diagram">
-    <svg viewBox="0 0 640 300" role="img" aria-label="Top: a Power Water used at 996 adds 4 to make 1000, fails the below-1000 compare and is stored as 999. Bottom: a 16-bit ruler from 0 to 65535 drawn to scale, with the permanent ceiling 999 at the far left, the half-way mark 32768 where the turn-order key starts to wrap, and the Elixir pin at 65535" xmlns="http://www.w3.org/2000/svg">
-      <text class="dg-label dg-start" x="20" y="20">Permanent item: add, then clamp</text>
-      <rect class="dg-node" x="20" y="32" width="130" height="48" rx="4"/>
-      <text class="dg-label" x="85" y="53">stored 996</text>
-      <text class="dg-sub" x="85" y="69">record +0x124</text>
-      <rect class="dg-node" x="180" y="32" width="130" height="48" rx="4"/>
-      <text class="dg-label" x="245" y="53">+4 = 1000</text>
-      <text class="dg-sub" x="245" y="69">addiu at 0x800411F0</text>
-      <rect class="dg-node-accent" x="340" y="32" width="130" height="48" rx="4"/>
-      <text class="dg-label" x="405" y="53">below 1000?</text>
-      <text class="dg-sub" x="405" y="69">sltiu at 0x800411FC</text>
-      <rect class="dg-node-ok" x="500" y="32" width="120" height="48" rx="4"/>
-      <text class="dg-label" x="560" y="53">stored 999</text>
-      <text class="dg-sub" x="560" y="69">ceiling 0x3E7</text>
-      <path class="dg-edge" d="M150,56 L180,56"/>
-      <path d="M180.0,56.0 L172.0,60.0 L172.0,52.0 z" fill="var(--dg-accent)"/>
-      <path class="dg-edge" d="M310,56 L340,56"/>
-      <path d="M340.0,56.0 L332.0,60.0 L332.0,52.0 z" fill="var(--dg-accent)"/>
-      <path class="dg-edge" d="M470,56 L500,56" style="stroke:var(--ok)"/>
-      <path d="M500.0,56.0 L492.0,60.0 L492.0,52.0 z" fill="var(--ok)"/>
-      <text class="dg-label dg-start" x="20" y="122">One-battle boosts: the 16-bit range, to scale</text>
-      <rect class="dg-node-warn" x="320.004" y="150" width="279.996" height="26" rx="4"/>
-      <text class="dg-label" x="460.002" y="167">turn-order key can wrap</text>
-      <rect class="dg-node" x="40" y="150" width="280.004" height="26" rx="4"/>
-      <text class="dg-label" x="180.002" y="167">key stays in order</text>
-      <path class="dg-edge-dim" d="M40,190 L600,190"/>
-      <path class="dg-edge-dim" d="M40,184 L40,196"/>
-      <text class="dg-sub dg-start" x="40" y="212">0</text>
-      <path class="dg-edge-dim" d="M320.004,184 L320.004,196"/>
-      <text class="dg-sub" x="320.004" y="212">32768 (0x8000)</text>
-      <path class="dg-edge-dim" d="M600,184 L600,196"/>
-      <text class="dg-edge-label" x="600" y="212" text-anchor="end">65535 (0xFFFF)</text>
-      <path class="dg-edge" d="M48.5365,140 L48.5365,196" style="stroke:var(--ok)"/>
-      <text class="dg-sub dg-start" x="54.5365" y="144">999: ceiling of every permanent stat</text>
-      <text class="dg-sub dg-start" x="20" y="244">Elixir: stat x 1.2 per use, no stacking limit, pinned at 65535</text>
-      <text class="dg-sub dg-start" x="20" y="262">From 999 the pin is reached after 23 uses; from 300 after 30.</text>
-      <text class="dg-sub dg-start" x="20" y="280">Turn-order key = SPD + random(0..SPD/2) + 1, stored in 16 bits with no ceiling.</text>
+    <svg viewBox="0 0 640 300" role="img" aria-label="A 16-bit number line from 0 to 65535, drawn to scale, with the half from 32768 up marked as read negative and never picked. Five bars show the range the turn-order number can roll for a character who started at Speed 331: with no Elixir it is a sliver at the far left; after 24 Elixirs it straddles the boundary; after 26 it lies wholly in the negative half; after 28 it runs off the right end and wraps round to the left; pinned at 65535 after 30 it lies wholly in the left half. Two captured values are marked: 0x46A9 on the left and 0xA9E5 on the right" xmlns="http://www.w3.org/2000/svg">
+      <text class="dg-label dg-start" x="16" y="20">The turn-order number one round can roll, on the 16-bit line (to scale)</text>
+      <rect class="dg-node-warn" x="404.003" y="34" width="207.997" height="180" rx="4"/>
+      <rect class="dg-node" x="196" y="34" width="208.003" height="180" rx="4"/>
+      <text class="dg-sub" x="300.002" y="51">0 to 32,767: normal turn order</text>
+      <text class="dg-label" style="fill:var(--warn)" x="508.002" y="51">negative: never picked</text>
+      <text class="dg-sub dg-start" x="16" y="76">No Elixir: Speed 331</text>
+      <rect fill="var(--ok)" x="198.107" y="66" width="3" height="12" rx="4"/>
+      <text class="dg-sub dg-start" x="16" y="104">24 Elixirs: Speed 26,193</text>
+      <rect fill="var(--ok)" x="362.273" y="94" width="41.7301" height="12" rx="4"/>
+      <rect fill="var(--warn)" x="404.003" y="94" width="41.4064" height="12" rx="4"/>
+      <text class="dg-sub dg-start" x="16" y="132">26 Elixirs: Speed 37,717</text>
+      <rect fill="var(--warn)" x="435.425" y="122" width="119.712" height="12" rx="4"/>
+      <text class="dg-sub dg-start" x="16" y="160">28 Elixirs: Speed 54,312</text>
+      <rect fill="var(--warn)" x="540.766" y="150" width="71.2408" height="12" rx="4"/>
+      <rect fill="var(--ok)" x="196" y="150" width="101.145" height="12" rx="4"/>
+      <text class="dg-sub dg-start" x="16" y="188">30 Elixirs: 65,535, pinned</text>
+      <rect fill="var(--ok)" x="196" y="178" width="208.003" height="12" rx="4"/>
+      <path class="dg-edge-dim" style="stroke-dasharray:none" d="M196,214 L612,214"/>
+      <path class="dg-edge-dim" style="stroke-dasharray:none" d="M196,209 L196,219"/>
+      <text class="dg-sub dg-start" x="196" y="232">0</text>
+      <path class="dg-edge-dim" style="stroke-dasharray:none" d="M404.003,209 L404.003,219"/>
+      <text class="dg-sub" x="404.003" y="232">32,768 (0x8000)</text>
+      <path class="dg-edge-dim" style="stroke-dasharray:none" d="M612,209 L612,219"/>
+      <text class="dg-sub" x="567" y="232">65,535 (0xFFFF)</text>
+      <path class="dg-edge-dim" d="M310.825,219 L310.825,258"/>
+      <text class="dg-sub" style="font-family:var(--font-mono);fill:var(--dg-ink)" x="310.825" y="272">0x46A9 (Speed 0xFFFF)</text>
+      <text class="dg-sub" x="310.825" y="287">captured: acts first</text>
+      <path class="dg-edge-dim" d="M472.083,219 L472.083,258"/>
+      <text class="dg-sub" style="font-family:var(--font-mono);fill:var(--dg-ink)" x="472.083" y="272">0xA9E5 (Speed 0x8000)</text>
+      <text class="dg-sub" x="472.083" y="287">captured: never acts</text>
       </svg>
-    <figcaption>Top: the permanent items always end on a clamp. Bottom: the full 16-bit range to scale. Permanent stats live in the sliver at the far left; a stacked Elixir can walk a battle stat all the way to the right, and past the half-way mark the turn-order number no longer fits.</figcaption>
+    <figcaption>Each bar is the range the turn-order number can land in for one round, for a character who started the battle at Speed 331. Green lies in the half the picker reads correctly; amber lies in the half it reads as negative. Past 26 Elixirs the bar runs off the right-hand end and comes back in on the left, and at the 65,535 ceiling the effect is gone. The two marked values were captured with Speed written by hand.</figcaption>
   </figure>
+
+  <p>Two things follow. The over-boosted character can never be picked, and neither can anyone seated before them, because each of those lost the lead to the big number on the way past. And the round still hands out one turn per living fighter, so the turns those characters should have had go to whichever later seats are left. Once those have acted their numbers are zero, every remaining seat ties at zero, and the game draws one at random without asking whether anyone is there:</p>
+  <ul>
+    <li>an empty enemy slot - the <strong>void turn</strong>: the camera frames a spot with nobody in it and the turn ends at once;</li>
+    <li>a fighter who has already acted, who gets a second action;</li>
+    <li>a defeated enemy's slot, which the draw does not exclude.</li>
+  </ul>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 640 262" role="img" aria-label="Seven battle seats in a row for a capture in which the party member in seat 1 has an over-large turn-order number. Seats 0 and 1 are marked never picked, seats 2 and 3 act normally, seats 4 to 6 are empty with a number of zero. Below, the four turns of the round as captured: seat 2, seat 3, then empty seat 5 as a void turn, then seat 2 again" xmlns="http://www.w3.org/2000/svg">
+      <text class="dg-label dg-start" x="20" y="20">Seat 1 over-boosted: the picker walks the seats left to right</text>
+      <rect class="dg-node-warn" x="20" y="32" width="80" height="62" rx="4"/>
+      <text class="dg-label" x="60" y="51">seat 0</text>
+      <text class="dg-sub" x="60" y="66">party</text>
+      <text class="dg-sub" style="font-family:var(--font-mono);fill:var(--dg-ink)" x="60" y="83">01ED</text>
+      <rect class="dg-node-warn" x="106.667" y="32" width="80" height="62" rx="4"/>
+      <text class="dg-label" x="146.667" y="51">seat 1</text>
+      <text class="dg-sub" x="146.667" y="66">boosted</text>
+      <text class="dg-sub" style="font-family:var(--font-mono);fill:var(--dg-ink)" x="146.667" y="83">A9E5</text>
+      <rect class="dg-node-ok" x="193.333" y="32" width="80" height="62" rx="4"/>
+      <text class="dg-label" x="233.333" y="51">seat 2</text>
+      <text class="dg-sub" x="233.333" y="66">party</text>
+      <text class="dg-sub" style="font-family:var(--font-mono);fill:var(--dg-ink)" x="233.333" y="83">0140</text>
+      <rect class="dg-node-ok" x="280" y="32" width="80" height="62" rx="4"/>
+      <text class="dg-label" x="320" y="51">seat 3</text>
+      <text class="dg-sub" x="320" y="66">enemy</text>
+      <text class="dg-sub" style="font-family:var(--font-mono);fill:var(--dg-ink)" x="320" y="83">0094</text>
+      <rect fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3" x="366.667" y="32" width="80" height="62" rx="4"/>
+      <text class="dg-label" x="406.667" y="51">seat 4</text>
+      <text class="dg-sub" x="406.667" y="66">empty</text>
+      <text class="dg-sub" style="font-family:var(--font-mono);fill:var(--dg-ink)" x="406.667" y="83">0000</text>
+      <rect fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3" x="453.333" y="32" width="80" height="62" rx="4"/>
+      <text class="dg-label" x="493.333" y="51">seat 5</text>
+      <text class="dg-sub" x="493.333" y="66">empty</text>
+      <text class="dg-sub" style="font-family:var(--font-mono);fill:var(--dg-ink)" x="493.333" y="83">0000</text>
+      <rect fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3" x="540" y="32" width="80" height="62" rx="4"/>
+      <text class="dg-label" x="580" y="51">seat 6</text>
+      <text class="dg-sub" x="580" y="66">empty</text>
+      <text class="dg-sub" style="font-family:var(--font-mono);fill:var(--dg-ink)" x="580" y="83">0000</text>
+      <path class="dg-edge" style="stroke:var(--warn)" d="M20,104 L186.667,104"/>
+      <text class="dg-label" style="fill:var(--warn)" x="103.333" y="122">never picked</text>
+      <path class="dg-edge" style="stroke:var(--ok)" d="M193.333,104 L620,104"/>
+      <text class="dg-label" style="fill:var(--ok)" x="406.667" y="122">every turn of the round is drawn from these seats</text>
+      <text class="dg-label dg-start" x="20" y="160">The round as captured (Speed written by hand): four turns, four living fighters</text>
+      <rect class="dg-node" x="20" y="172" width="138" height="48" rx="4"/>
+      <text class="dg-label" x="89" y="192">Turn 1</text>
+      <text class="dg-sub" x="89" y="208">seat 2 attacks</text>
+      <rect class="dg-node" x="174" y="172" width="138" height="48" rx="4"/>
+      <text class="dg-label" x="243" y="192">Turn 2</text>
+      <text class="dg-sub" x="243" y="208">seat 3 attacks</text>
+      <path class="dg-edge" d="M158,196 L174,196"/>
+      <path d="M174,196 L166,200 L166,192 z" fill="var(--dg-accent)"/>
+      <rect class="dg-node-warn" x="328" y="172" width="138" height="48" rx="4"/>
+      <text class="dg-label" x="397" y="192">Turn 3: void turn</text>
+      <text class="dg-sub" x="397" y="208">seat 5, nobody there</text>
+      <path class="dg-edge" style="stroke:var(--warn)" d="M312,196 L328,196"/>
+      <path d="M328,196 L320,200 L320,192 z" fill="var(--warn)"/>
+      <rect class="dg-node-warn" x="482" y="172" width="138" height="48" rx="4"/>
+      <text class="dg-label" x="551" y="192">Turn 4</text>
+      <text class="dg-sub" x="551" y="208">seat 2 attacks again</text>
+      <path class="dg-edge" style="stroke:var(--warn)" d="M466,196 L482,196"/>
+      <path d="M482,196 L474,200 L474,192 z" fill="var(--warn)"/>
+      <text class="dg-sub dg-start" x="20" y="244">Seats 0 and 1 hold their numbers all round and never act.</text>
+      </svg>
+    <figcaption>The seat row and the round are one capture: the Speed of the party member in seat 1 was written as 32,768 in an emulator, giving the number <code>A9E5</code>. Seats 0 and 1 never acted; the two turns they freed went to an empty seat and to seat 2 a second time.</figcaption>
+  </figure>
+
+  <p>The effect has a window. From an ordinary Speed it takes roughly 16 to 26 Elixirs on one character to open it, and a few more close it again: once Speed is pinned at 65,535 the sum wraps all the way round to an ordinary positive number and the character simply acts first.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Battle Speed at the start</th><th>First Elixir that can lock the character out</th><th>First that always does</th><th>Elixir that reaches 65,535</th></tr></thead>
+    <tbody>
+      <tr><td>200</td><td>26th</td><td>29th</td><td>32nd</td></tr>
+      <tr><td>331</td><td>24th</td><td>26th</td><td>30th</td></tr>
+      <tr><td>500</td><td>21st</td><td>23rd</td><td>27th</td></tr>
+      <tr><td>999</td><td>17th</td><td>20th</td><td>23rd</td></tr>
+      <tr><td>1254</td><td>16th</td><td>18th</td><td>22nd</td></tr>
+    </tbody>
+  </table></div>
+  <p>Speed and Wonder Elixirs count toward the same total. Which party members lose their turns depends on where the boosted one stands: in the first seat only that character is locked out, in the second seat the first two are, and in the third seat the whole party is - and then every freed turn goes to an enemy slot, living, empty or fallen.</p>
+
+  <h3>What was captured, and how</h3>
+  <p>The mechanism was read from the instructions and then observed in PCSX-Redux on the unpatched USA disc, in a battle of three party members (seats 0 to 2, Speed 331, 364 and 310) against one enemy in seat 3. These are <strong>captures on a poked state</strong>: Speed, or the turn-order number itself, was written directly in the emulator. No Elixir was used, so the Elixir routine itself was not exercised in a running game, and nobody has yet played the 24-odd Elixirs out by hand. Commands were entered by scripted pad presses (a plain attack for every member).</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>What was written</th><th>Numbers, seats 0 to 3</th><th>Turns observed</th></tr></thead>
+    <tbody>
+      <tr><td>nothing (control)</td><td><code>01ED 0186 0140 0094</code></td><td>seats 0, 1, 2, 3</td></tr>
+      <tr><td>seat 0 Speed <code>0xFFFF</code></td><td>sum <code>0x146A9</code> stored as <code>46A9</code></td><td>seat 0 acts first; an ordinary round</td></tr>
+      <tr><td>seat 1 Speed <code>0x8000</code></td><td><code>01ED A9E5 0140 0094</code></td><td>seat 2, seat 3, seat 5 (empty: a void turn), seat 2 a second time</td></tr>
+      <tr><td>seat 0 Speed <code>0xFFFF</code> and seat 1 Speed <code>0x8000</code></td><td><code>46A9 A9E5 0140 0094</code></td><td>seat 2, seat 3, seat 5, seat 6 (both empty)</td></tr>
+      <tr><td>seat 0 number <code>0xA9E5</code>, written at the first menu</td><td><code>A9E5 021C 0191 0095</code></td><td>seat 1 (already chosen when the number was written), seat 2, seat 3, seat 5 (empty)</td></tr>
+    </tbody>
+  </table></div>
+  <p>Every round lasted four turns for four living fighters, whoever took them. Not captured: a defeated enemy taking a turn (the battle had one enemy, so no fallen seat existed) and the freeze, which has been neither reproduced nor traced.</p>
+
+  <h3>The Japanese and French builds</h3>
+  <p>The picker is the same in all three builds, instruction for instruction. The Elixir routine is not: the Japanese executable has no ceiling on it, so on the Japanese disc the boosted stat itself wraps round to a small number once it passes 65,535 - an Attack of 300 is 59,077 after the twenty-ninth Power Elixir and 5,356 after the thirtieth. The USA and French builds stop the stat at 65,535. The localisation closed the stat wrap and left the picker as it was.</p>
+
+  <h3>What it is not</h3>
+  <p>The permanent stat items - the six Waters, Honey and Miracle Water - cannot overflow anything. Each adds a small fixed amount to a 16-bit number and immediately compares the result with a ceiling (999, or 9,999 for HP and 280 for agility), writing the ceiling back if it was passed. The largest value that ever exists before the compare is 1003 (10015 for HP). The Japanese and French builds carry the same compares with the same ceilings. A status-screen figure above 999 is the stored stat plus equipment, summed for display.</p>
 
   <details class="disclosure">
     <summary>The instructions</summary>
     <div class="disclosure-body">
-      <p>Class 6 (permanent stat-up) is arm <code>0x8004112C</code> of the applier; the tier byte picks one of seven arms through the table at <code>0x800151B0</code>. All seven have this shape:</p>
+      <p>The Elixir arm (class 7, <code>0x80041464</code>) computes <code>stat + stat/5</code> on both halfwords of a battle stat pair and stores <code>0xFFFF</code> when the sum is larger (<code>0x800414D8..0x80041510</code> for Speed, actor <code>+0x164</code> and <code>+0x166</code>). There is no "already boosted" guard. Once a round the key is seeded:</p>
+<pre>801da800  lhu a0,0x164(a1)        ; SPD
+801da840  addu a0,a0,v1           ; + rand() % (SPD/2 + 1)
+801da844  addiu a0,a0,1
+801da84c  sh a0,0x16c(a1)         ; 16-bit store, no ceiling</pre>
+      <p>The wounded bonus, the halving under Slow (<code>0x801DA908</code>) and Speed Chain's <code>+0x1000</code> (<code>0x801DAA08</code>) are 16-bit too. The picker starts with seat 0's key as the running maximum and walks seats 1 to 6:</p>
+<pre>801daca4  sll v0,a1,0x10
+801daca8  lhu v1,0x16c(v1)        ; candidate key, zero-extended
+801dacac  sra v0,v0,0x10          ; running maximum, sign-extended
+801dacb0  slt v0,v0,v1            ; (signed) max &lt; (unsigned) candidate?
+801dad60  sb v0,0x274(a1)         ; the chosen seat</pre>
+      <p>A passing test makes the candidate the maximum and restarts the tie list; equality (<code>0x801DACD8</code>) adds the seat to the list; the result is a random member (<code>jal rand</code> at <code>0x801DAD0C</code>). A key of <code>0x8000</code> or more always passes as a candidate and always loses as the maximum, and the equality test never matches it. The loop has no HP test, no "is this slot populated" test and no "key is not zero" test.</p>
+      <p>The turn start (<code>0x801E2C50..0x801E2D54</code> in <code>FUN_801E295C</code>) takes the seat from <code>ctx[+0x274]</code> unchecked, loads the actor pointer from <code>0x801C9370[seat]</code>, zeroes its key and calls the camera framing routine (<code>jal 0x801d5854</code>). Unused enemy seats still have zero-filled actor records, so the camera frames an empty seat and the turn falls through to its end.</p>
+      <p>From the seed formula: below Speed 21,845 the key is always under <code>0x8000</code>; from 21,845 to 32,766 it passes <code>0x8000</code> on some rolls; from 32,767 to 43,689 on every roll; from 43,690 to 65,534 the sum increasingly passes <code>0xFFFF</code> and wraps back; at 65,535 the key is <code>rand() % 0x8000</code>.</p>
+      <p>The Japanese Elixir arm (<code>0x800425F0..0x8004295C</code> in <code>SCPS_100.59</code>) ends in a plain store with no compare: <code>lhu v0,0x164(a0)</code> at <code>0x80042608</code>, <code>addu v1,v1,v0</code> at <code>0x80042620</code>, <code>sh v1,0x164(a0)</code> at <code>0x80042624</code>.</p>
+      <p>The permanent items are class 6, arm <code>0x8004112C</code>; the tier byte picks one of seven arms through the table at <code>0x800151B0</code>, all of this shape:</p>
 <pre>800411e8  lhu v0,0x6ec(v1)      ; stored ATK (record +0x124)
 800411f0  addiu v0,v0,0x4
 800411f4  sh v0,0x6ec(v1)
 800411fc  sltiu v0,v0,0x3e8     ; below 1000?
 80041200  bne v0,zero,&lt;exit&gt;
 8004120c  _sh v0,0x6ec(v1)      ; otherwise store 999</pre>
-      <p>The item menu then rebuilds the live stats (<code>jal 0x80042558</code> at <code>0x801D8540</code>, PROT 0899), and that routine clamps again at <code>0x80042C0C..0x80042CE0</code>. The Elixir arm (class 7, <code>0x80041464</code>) computes <code>stat + stat/5</code> and stores <code>0xFFFF</code> when the sum is larger (<code>0x800414D8..0x80041510</code> for Speed). The turn-order key is <code>SPD + rand() % (SPD/2 + 1) + 1</code>, stored by <code>sh a0,0x16c(a1)</code> at <code>0x801DA84C</code>. Jugger Power (cast <code>0xBA</code>, PROT 0945) adds a quarter to ten stat halfwords at <code>0x801F6DA0..0x801F6E34</code> with no compare.</p>
-      <p>A sweep for sign-extending loads of the battle stats finds none for ATK, defence, SPD or INT, so a pinned value does not turn negative.</p>
+      <p>The item menu then rebuilds the live stats (<code>jal 0x80042558</code> at <code>0x801D8540</code>, PROT 0899), which clamps again at <code>0x80042C0C..0x80042CE0</code>. One enemy move does wrap a stat - Jugger Power (cast <code>0xBA</code>, PROT 0945) adds a quarter to ten stat halfwords at <code>0x801F6DA0..0x801F6E34</code> with no compare - but it is an enemy self-buff and unrelated to Elixirs.</p>
     </div>
   </details>
 
@@ -84,6 +190,20 @@
     <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
     <tbody>
       <tr><td><code>0x800402F4</code></td><td>SCUS</td><td>Item applier; class table <code>0x80014FA0</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80041464</code></td><td>SCUS</td><td>Elixir arm; Speed pair <code>0x800414D8..0x80041568</code>, ceiling <code>0xFFFF</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x800425F0</code></td><td><code>SCPS_100.59</code> (Japan)</td><td>Elixir arm, through <code>0x8004295C</code>; no ceiling</td><td>disassembly</td></tr>
+      <tr><td><code>0x80041E24</code></td><td><code>SCES_019.44</code> (France)</td><td>Elixir arithmetic, with the <code>0xFFFF</code> ceiling</td><td>disassembly</td></tr>
+      <tr><td>actor <code>+0x164</code>, <code>+0x166</code>, <code>+0x16C</code></td><td>RAM</td><td>Battle Speed (working, base); turn-order key</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DA780</code></td><td>PROT 0898</td><td>Key seed; 16-bit store at <code>0x801DA84C</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801DA84C</code></td><td>PROT 0898</td><td>Sum <code>0x146A9</code> stored as <code>0x46A9</code>; <code>0xA9E5</code> stored from Speed <code>0x8000</code></td><td>capture (poked Speed)</td></tr>
+      <tr><td><code>0x801DA908</code>, <code>0x801DAA08</code></td><td>PROT 0898</td><td>Slow halving and Speed Chain <code>+0x1000</code>, both 16-bit</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DABA4</code></td><td>PROT 0898</td><td>Next-actor picker; mixed compare at <code>0x801DACA4..0x801DACB0</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801DAD60</code></td><td>PROT 0898</td><td>Result store; empty seats 5 and 6 drawn, seat 2 drawn twice</td><td>capture (poked Speed or key)</td></tr>
+      <tr><td><code>0x801E2C50</code></td><td>PROT 0898</td><td>Turn start, through <code>0x801E2D54</code>: seat taken unchecked, camera call</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DDBFC</code>, <code>0x801DE048</code></td><td>Japanese PROT 0898 (base <code>0x801D05C8</code>)</td><td>Key seed; picker compare through <code>0x801DE080</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801DB524</code></td><td>French PROT 0898 (base <code>0x801CF0A8</code>)</td><td>Picker compare, through <code>0x801DB55C</code></td><td>disassembly</td></tr>
+      <tr><td>one turn per living fighter</td><td>-</td><td>Seen in every capture; the counter at <code>0x801F69D0</code> is not traced</td><td>inference</td></tr>
+      <tr><td>a defeated enemy taking a turn; the freeze</td><td>-</td><td>The draw admits any seat with key 0; neither was captured</td><td>community report</td></tr>
       <tr><td><code>0x8004112C</code></td><td>SCUS</td><td>Permanent stat-up arm; tier table <code>0x800151B0</code></td><td>disassembly</td></tr>
       <tr><td><code>0x80041178</code></td><td>SCUS</td><td>Life Water: record <code>+0x11C</code> +16, ceiling 9999</td><td>disassembly</td></tr>
       <tr><td><code>0x800411C4</code></td><td>SCUS</td><td>Power Water: <code>+0x124</code> +4, ceiling 999</td><td>disassembly</td></tr>
@@ -92,18 +212,16 @@
       <tr><td><code>0x8004125C</code></td><td>SCUS</td><td>Wisdom Water: <code>+0x12C</code> +4, ceiling 999</td><td>disassembly</td></tr>
       <tr><td><code>0x800412A8</code></td><td>SCUS</td><td>Magic Water: <code>+0x11E</code> +8, ceiling 999</td><td>disassembly</td></tr>
       <tr><td><code>0x800412F4</code></td><td>SCUS</td><td>Honey / Miracle Water: +4 to eight fields, AGL ceiling 280</td><td>disassembly</td></tr>
+      <tr><td><code>0x800420F4</code>, <code>0x80041A9C</code></td><td><code>SCPS_100.59</code>, <code>SCES_019.44</code></td><td>Japanese and French permanent stat-up arms, same ceilings</td><td>disassembly</td></tr>
       <tr><td><code>0x8003FB10</code></td><td>SCUS</td><td>Usability check that greys an item nobody can benefit from</td><td>disassembly</td></tr>
       <tr><td><code>0x80042558</code></td><td>SCUS</td><td>Live-stat rebuild; clamps at <code>0x80042C0C..0x80042CE0</code></td><td>disassembly</td></tr>
-      <tr><td><code>0x80041464</code></td><td>SCUS</td><td>Elixir arm; pins at <code>0xFFFF</code></td><td>disassembly</td></tr>
-      <tr><td><code>0x801DA84C</code></td><td>PROT 0898</td><td>Unclamped 16-bit store of the turn-order key (actor <code>+0x16C</code>)</td><td>disassembly</td></tr>
       <tr><td><code>0x801F6DA0</code></td><td>PROT 0945</td><td>Jugger Power stat block, through <code>0x801F6E44</code></td><td>disassembly</td></tr>
-      <tr><td>reaching the key wrap in play</td><td>-</td><td>About thirty Speed or Wonder Elixirs on one character in one battle</td><td>inference</td></tr>
     </tbody>
   </table></div>
 
   <h3>Verifying it</h3>
-  <p>Set Vahn's stored ATK (<code>0x8008482C</code>) to <code>0x03E6</code> and use a Power Water: it reads back <code>0x03E7</code>, and at that value the menu refuses the item. For the turn order, write <code>0xFFFF</code> to a party actor's <code>+0x164</code> and <code>+0x166</code> in battle and break at <code>0x801DA84C</code>: the value stored is below <code>0x8000</code> and that character acts late.</p>
-  <p>What would settle the report itself: the stored stat halfword before and after the item use that appeared to overflow. No USA code path wraps there. Related reference: <a href="../../formats/item-effect-table.html">item-effect table</a>, <a href="../../formats/save-record.html">character record</a>, <a href="../../subsystems/battle-formulas.html">battle formulas</a>.</p>
+  <p>On a poked state: at the entry of <code>0x801DA780</code>, write <code>0x8000</code> to <code>+0x164</code> and <code>+0x166</code> of the party member in seat 1. A breakpoint at <code>0x801DA84C</code> shows <code>a0</code> between <code>0x8001</code> and <code>0xC001</code>; a breakpoint at <code>0x801DAD60</code> never shows seat 0 or seat 1 as the result, and shows an empty seat once seats 2 and up have acted. Unpoked, use Speed Elixirs on one character up to the count in the table and watch the same two breakpoints.</p>
+  <p>Still open: the freeze (a battle with one enemy already defeated and a later-seated party member in the lock-out band would show where the action state stops); a played reproduction with real Elixirs; and the exact rule for how many turns a round hands out. Related reference: <a href="../../formats/item-effect-table.html">item-effect table</a>, <a href="../../subsystems/battle-action.html">battle action state machine</a>, <a href="../../subsystems/battle-formulas.html">battle formulas</a>.</p>
 </section>
 
 <section class="doc-section" id="story-equipment-removal">
@@ -314,60 +432,74 @@
   <h2>Coin vendor purchases past 99 (Japanese release)</h2>
   <dl class="kv">
     <dt>Reported as</dt><dd>On the Japanese release a coin vendor sells an item while 99 are held; the coins go and the count stays 99 (community report)</dd>
-    <dt>Cause</dt><dd>The bag silently trims a stack to 99, and the purchase never checks whether its item fitted; only a check before the confirm box prevents the loss</dd>
-    <dt>Where</dt><dd>Prize session <code>FUN_801DC1CC</code> in PROT 0899; bag add <code>FUN_800421D4</code> in <code>SCUS_942.54</code></dd>
-    <dt>Affects</dt><dd>Every coin prize row on the Japanese release (inferred)</dd>
-    <dt>Status</dt><dd><span class="tag tag-partial">Partially explained</span> - USA paths read; the Japanese difference is inferred</dd>
+    <dt>Cause</dt><dd>The Japanese prize counter only asks whether the coins cover the price; the bag then adds the item and silently trims the stack back to 99</dd>
+    <dt>Where</dt><dd>Japanese prize session <code>0x801DE978</code> in PROT 0899 and bag add <code>0x80043210</code> in <code>SCPS_100.59</code>; USA counterparts <code>FUN_801DC1CC</code> and <code>FUN_800421D4</code></dd>
+    <dt>Affects</dt><dd>Every coin prize row on the Japanese release; equipment bought "to the bag" in a gold shop on every release</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - Japanese, USA and French code read; not run</dd>
   </dl>
 
-  <p>Only the USA disc was read. On it, the coin counter has one check before the Yes / No box - "do you hold fewer than 99?" - and after that it adds the item and takes the coins with no further test. The bag's add routine never refuses anything: it adds, then quietly trims the stack back to 99.</p>
-  <p>With the front check in place the trim never matters. Without it you get exactly the report: the coins go, the item is added and trimmed off again. So the Japanese build must be missing that one check. The reverse idea - check present, trim missing - would produce stacks above 99, which is not what is reported.</p>
+  <p>At a coin prize counter the Japanese game asks one question before the Yes / No box: can the coins cover the price? It never looks at how many of the item you already hold. After Yes it adds the item and takes the coins with no further test.</p>
+  <p>The bag's add routine never refuses anything: it adds, then quietly trims the stack back to 99. So a hundredth copy costs the coins, is added, and is trimmed off again - exactly the report.</p>
+  <p>The USA build added two things in front of that. The prize list draws a row dimmed when you hold 99, and the confirm step asks "fewer than 99 held?" and buzzes if not. The French build carries both. The purchase itself and the trimming add are the same in every build.</p>
 
   <figure class="diagram">
-    <svg viewBox="0 0 640 240" role="img" aria-label="Two rows. USA disc: holding 99, the purchase reaches a held-count check and is refused with a buzz. Japanese disc as inferred: the check is absent, so the item is added and trimmed back to 99 and the coins are still deducted" xmlns="http://www.w3.org/2000/svg">
-      <text class="dg-label dg-start" x="20" y="20">USA disc (read from the code)</text>
-      <rect class="dg-node" x="20" y="32" width="130" height="50" rx="4"/>
-      <text class="dg-label" x="85" y="54">Confirm</text>
-      <text class="dg-sub" x="85" y="70">holding 99</text>
-      <rect class="dg-node-ok" x="180" y="32" width="170" height="50" rx="4"/>
-      <text class="dg-label" x="265" y="54">Fewer than 99 held?</text>
-      <text class="dg-sub" x="265" y="70">0x801DC3DC..0x801DC3F0</text>
-      <rect class="dg-node-ok" x="380" y="32" width="240" height="50" rx="4"/>
-      <text class="dg-label" x="500" y="54">No: buzz, nothing bought</text>
-      <text class="dg-sub" x="500" y="70">coins and stack unchanged</text>
-      <path class="dg-edge" d="M150,57 L180,57"/>
-      <path d="M180.0,57.0 L172.0,61.0 L172.0,53.0 z" fill="var(--dg-accent)"/>
-      <path class="dg-edge" d="M350,57 L380,57" style="stroke:var(--ok)"/>
-      <path d="M380.0,57.0 L372.0,61.0 L372.0,53.0 z" fill="var(--ok)"/>
-      <text class="dg-label dg-start" x="20" y="128">Japanese disc (inferred from the report)</text>
-      <rect class="dg-node" x="20" y="140" width="130" height="50" rx="4"/>
-      <text class="dg-label" x="85" y="162">Confirm</text>
-      <text class="dg-sub" x="85" y="178">holding 99</text>
-      <rect fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3" x="180" y="140" width="130" height="50" rx="4"/>
-      <text class="dg-label" x="245" y="169">check absent</text>
+    <svg viewBox="0 0 640 244" role="img" aria-label="Two rows. USA and French builds: at 99 held the prize row is drawn dim, and confirming reaches a fewer-than-99 test that buzzes and buys nothing. Japanese build: confirming while holding 99 passes the only test, coins against price, there is no held-count check, the item is added and trimmed back to 99, and the coins are deducted" xmlns="http://www.w3.org/2000/svg">
+      <text class="dg-label dg-start" x="20" y="20">USA and French builds (read from the code)</text>
+      <rect class="dg-node" x="20" y="32" width="150" height="50" rx="4"/>
+      <text class="dg-label" x="95" y="54">Row dim at 99 held</text>
+      <text class="dg-sub" x="95" y="70">0x801D5ED4</text>
+      <rect class="dg-node-ok" x="196" y="32" width="216" height="50" rx="4"/>
+      <text class="dg-label" x="304" y="54">Confirm: fewer than 99 held?</text>
+      <text class="dg-sub" x="304" y="70">0x801DC3DC..0x801DC3F0</text>
+      <rect class="dg-node-ok" x="436" y="32" width="184" height="50" rx="4"/>
+      <text class="dg-label" x="528" y="54">No: buzz, nothing bought</text>
+      <text class="dg-sub" x="528" y="70">coins and stack unchanged</text>
+      <path class="dg-edge" d="M170,57 L196,57"/>
+      <path d="M196,57 L188,61 L188,53 z" fill="var(--dg-accent)"/>
+      <path class="dg-edge" style="stroke:var(--ok)" d="M412,57 L436,57"/>
+      <path d="M436,57 L428,61 L428,53 z" fill="var(--ok)"/>
+      <text class="dg-label dg-start" x="20" y="128">Japanese build (read from the code)</text>
+      <rect class="dg-node" x="20" y="140" width="150" height="50" rx="4"/>
+      <text class="dg-label" x="95" y="162">Confirm, holding 99</text>
+      <text class="dg-sub" x="95" y="178">one test: 0x801DEB6C</text>
+      <rect fill="none" stroke="var(--dg-ink-dim)" stroke-dasharray="4 3" x="190" y="140" width="130" height="50" rx="4"/>
+      <text class="dg-label" x="255" y="162">no held-count</text>
+      <text class="dg-label" x="255" y="178">check</text>
       <rect class="dg-node-warn" x="340" y="140" width="140" height="50" rx="4"/>
       <text class="dg-label" x="410" y="162">Add 1, trim to 99</text>
-      <text class="dg-sub" x="410" y="178">FUN_800421D4</text>
-      <rect class="dg-node-warn" x="510" y="140" width="110" height="50" rx="4"/>
-      <text class="dg-label" x="565" y="162">Coins - price</text>
-      <text class="dg-sub" x="565" y="178">no test</text>
-      <path class="dg-edge" d="M150,165 L180,165"/>
-      <path d="M180.0,165.0 L172.0,169.0 L172.0,161.0 z" fill="var(--dg-accent)"/>
-      <path class="dg-edge" d="M310,165 L340,165" style="stroke:var(--warn)"/>
-      <path d="M340.0,165.0 L332.0,169.0 L332.0,161.0 z" fill="var(--warn)"/>
-      <path class="dg-edge" d="M480,165 L510,165" style="stroke:var(--warn)"/>
-      <path d="M510.0,165.0 L502.0,169.0 L502.0,161.0 z" fill="var(--warn)"/>
-      <text class="dg-sub dg-start" x="20" y="212">The trim is in both builds. It only costs the player anything</text>
-      <text class="dg-sub dg-start" x="20" y="226">when the check in front of it is missing.</text>
+      <text class="dg-sub" x="410" y="178">0x80043210</text>
+      <rect class="dg-node-warn" x="500" y="140" width="120" height="50" rx="4"/>
+      <text class="dg-label" x="560" y="162">Coins - price</text>
+      <text class="dg-sub" x="560" y="178">0x801DECF0</text>
+      <path class="dg-edge" d="M170,165 L190,165"/>
+      <path d="M190,165 L182,169 L182,161 z" fill="var(--dg-accent)"/>
+      <path class="dg-edge" style="stroke:var(--warn)" d="M320,165 L340,165"/>
+      <path d="M340,165 L332,169 L332,161 z" fill="var(--warn)"/>
+      <path class="dg-edge" style="stroke:var(--warn)" d="M480,165 L500,165"/>
+      <path d="M500,165 L492,169 L492,161 z" fill="var(--warn)"/>
+      <text class="dg-sub dg-start" x="20" y="214">The trim is in every build. It only costs the player anything</text>
+      <text class="dg-sub dg-start" x="20" y="228">when nothing in front of it asks how many are held.</text>
       </svg>
-    <figcaption>The USA row is read from the code. The Japanese row is what the USA code does with its held-count check removed.</figcaption>
+    <figcaption>Both rows are read from the code of the build they name. The USA build put two checks in front of a purchase path that is otherwise the Japanese one.</figcaption>
   </figure>
 
-  <p>The USA disc has a relative of this fault. Stackable shop items go through a quantity screen capped at <code>99 - held</code>, but equipment does not: the buy confirm tests only gold, and the "to the bag" row adds the item and debits gold with no held-count read between them. Buying a hundredth copy of one piece of equipment should take the gold and leave 99. That is inferred from the instructions and untested.</p>
+  <p>Because only the coin counter was fixed, every release still has a relative of this fault in the ordinary gold shop. Stackable items go through a quantity screen capped at <code>99 - held</code>, but equipment does not: the buy confirm tests only gold, and the "to the bag" row adds the item and debits gold with no held-count read between them. Buying a hundredth copy of one piece of equipment takes the gold and leaves 99. That is read from the instructions of the USA and Japanese builds (the French build is the USA code relocated) and has not been run.</p>
 
   <details class="disclosure">
     <summary>The instructions</summary>
     <div class="disclosure-body">
+      <p>Japanese build - PROT 0899 at load base <code>0x801D05C8</code>, executable <code>SCPS_100.59</code>. The session's call list is the USA one with a single call missing, the held-count lookup.</p>
+<pre>801deb6c  slt v0,v0,v1            ; confirm: coins &lt; price?
+801deb70  beqz v0,0x801deb88      ; can afford: open the Yes / No box
+801deb78  jal 0x8002cabc          ; otherwise buzz
+
+801deca8  jal 0x80043210          ; commit: bag add (id, 1), result ignored
+
+80043334  slti v0,v0,0x64         ; bag add: over 99?
+80043340  addiu v1,zero,0x63      ; then 99
+8004334c  sb v1,-0x4037(at)</pre>
+      <p>After the add the commit subtracts the price from the coin bank at <code>0x801DECD8..0x801DECF0</code>. The Japanese prize-list row draw (<code>0x801D8014..0x801D80A8</code>) dims a row only when it is unaffordable. The whole Japanese PROT 0899 contains no signed compare against <code>0x63</code>.</p>
+      <p>USA build - PROT 0899 at <code>0x801CE818</code>:</p>
 <pre>801dc3dc  jal 0x80042f4c          ; held count
 801dc3ec  slti v0,v0,0x63
 801dc3f0  bne v0,zero,0x801dc408  ; fewer than 99: open Yes / No
@@ -379,26 +511,38 @@
 800422f0  slti v0,v0,0x64         ; bag add: over 99?
 800422fc  li v1,0x63              ; then 99
 80042300  sb v1,0x1819(a0)</pre>
+      <p>The USA row draw makes the same held-count lookup at <code>0x801D5ED4..0x801D5EF4</code> and picks the dim text colour at 99; those two sites are the only compares against <code>0x63</code> in the image. The French build has both, at <code>0x801DCEF8..0x801DCF10</code> and <code>0x801D69E4</code> (load base <code>0x801CF0A8</code>).</p>
     </div>
   </details>
 
   <div class="table-wrap"><table>
     <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
     <tbody>
-      <tr><td><code>0x801DC1CC</code></td><td>PROT 0899</td><td>Prize-exchange session</td><td>disassembly</td></tr>
-      <tr><td><code>0x801E4518</code></td><td>PROT 0899</td><td>Prize table: 8-byte rows of item, one-shot flag, coin price; <code>0x60</code> per vendor</td><td>disc data</td></tr>
-      <tr><td><code>0x800845A4</code></td><td>RAM</td><td>Coin bank</td><td>disassembly</td></tr>
-      <tr><td><code>0x801DC3C0</code></td><td>PROT 0899</td><td>Affordability and held-count checks, through <code>0x801DC3F8</code></td><td>disassembly</td></tr>
-      <tr><td><code>0x801DC4C0</code></td><td>PROT 0899</td><td>Commit: add, debit, set the row's one-shot flag</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DE978</code></td><td>Japanese PROT 0899 (file <code>0xE3B0</code>)</td><td>Prize-exchange session, through <code>0x801DEE64</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801DEB1C</code></td><td>Japanese PROT 0899 (file <code>0xE554</code>)</td><td>Confirm: coins against price only, then the confirm window</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DEC5C</code></td><td>Japanese PROT 0899 (file <code>0xE694</code>)</td><td>Commit: <code>jal 0x80043210</code> at <code>0x801DECA8</code>, coins minus price</td><td>disassembly</td></tr>
+      <tr><td><code>0x801D8014</code></td><td>Japanese PROT 0899 (file <code>0x7A4C</code>)</td><td>Prize-list row draw, no held-count call</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E7A3C</code></td><td>Japanese PROT 0899 (file <code>0x17474</code>)</td><td>Prize table, same record shape as USA</td><td>disc data</td></tr>
+      <tr><td><code>0x80043210</code></td><td><code>SCPS_100.59</code> (file <code>0x33A10</code>)</td><td>Bag add; trim at <code>0x80043334..0x8004334C</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80043088</code></td><td><code>SCPS_100.59</code></td><td>Held count; not called from the prize session</td><td>disassembly</td></tr>
+      <tr><td><code>0x801CAC14</code>, <code>0x801CBFC8</code></td><td>Japanese RAM</td><td>Coin bank; bag, two bytes per slot</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DC1CC</code></td><td>PROT 0899</td><td>USA prize-exchange session</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E4518</code></td><td>PROT 0899</td><td>USA prize table: 8-byte rows of item, one-shot flag, coin price; <code>0x60</code> per vendor</td><td>disc data</td></tr>
+      <tr><td><code>0x800845A4</code></td><td>RAM</td><td>USA coin bank</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DC3C0</code></td><td>PROT 0899</td><td>USA affordability and held-count checks, through <code>0x801DC3F8</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801D5ED4</code></td><td>PROT 0899</td><td>USA prize-list row draw: dim text colour when 99 are held</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DC4C0</code></td><td>PROT 0899</td><td>USA commit: add, debit, set the row's one-shot flag</td><td>disassembly</td></tr>
       <tr><td><code>0x80042F4C</code></td><td>SCUS</td><td>Held count of an item</td><td>disassembly</td></tr>
       <tr><td><code>0x800421D4</code></td><td>SCUS</td><td>Bag add; trim at <code>0x800422E0..0x80042300</code></td><td>disassembly</td></tr>
-      <tr><td><code>0x801DB21C</code>, <code>0x801DB380</code></td><td>PROT 0899</td><td>Gold-shop equipment buy with no held-count check</td><td>disassembly</td></tr>
-      <tr><td>the missing check on the Japanese disc</td><td>-</td><td>The <code>jal 0x80042f4c</code> / <code>slti 0x63</code> pair</td><td>inference</td></tr>
+      <tr><td><code>0x801DCEF8</code>, <code>0x801D69E4</code></td><td>French PROT 0899</td><td>Front check and row dim, as on USA</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DB21C</code>, <code>0x801DB380</code></td><td>PROT 0899</td><td>USA gold-shop equipment buy with no held-count check ("to the bag" row <code>0x801DB478..0x801DB4C8</code>)</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DDB14</code></td><td>Japanese PROT 0899</td><td>The same "to the bag" row, through <code>0x801DDB6C</code></td><td>disassembly</td></tr>
+      <tr><td>the Japanese result on screen</td><td>-</td><td>Coins taken, count stays 99</td><td>community report</td></tr>
     </tbody>
   </table></div>
 
   <h3>Verifying it</h3>
-  <p>On the USA disc hold 99 of a prize item and try the counter: it buzzes and no box opens. Force the branch at <code>0x801DC3F0</code> to be taken and buy: the coins drop and the count stays at 99, which is the reported behaviour. On a Japanese disc, find the matching routine and look for the absent compare against <code>0x63</code>. Related reference: <a href="../../subsystems/shop.html">shops and the prize exchange</a>, <a href="../../subsystems/inventory.html">inventory</a>.</p>
+  <p>On a Japanese disc hold 99 of a prize item and buy another: a breakpoint at <code>0x801DEB70</code> shows the branch to the confirm window taken, and after Yes the coin word at <code>0x801CAC14</code> drops by the price while the item's count byte stays <code>0x63</code>. On the USA disc the same attempt buzzes and no box opens; forcing the branch at <code>0x801DC3F0</code> to be taken reproduces the Japanese behaviour. Still unrun on any release: holding 99 of one weapon and buying one more to the bag. Related reference: <a href="../../subsystems/shop.html">shops and the prize exchange</a>, <a href="../../subsystems/inventory.html">inventory</a>.</p>
 </section>
 
 <section class="doc-section" id="war-god-icon-missable">

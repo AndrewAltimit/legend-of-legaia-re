@@ -226,7 +226,7 @@ clamped to `0xFFFF`, for the rest of the battle. `param_2` = `tier`:
 | 1 | SPD (`+0x164/+0x166`) | Speed Elixir (`0x8D`) |
 | 2 | DEF, both facets (`+0x15C/+0x15E` + `+0x160/+0x162`) | Shield Elixir (`0x8C`) |
 | 3 | ATK (`+0x158/+0x15A`) | Power Elixir (`0x8B`) |
-| 4 | **all** - SPD + DEF + ATK + AGL (`+0x168/+0x16A`) | Wonder Elixir (`0x8E`) |
+| 4 | **all** - SPD + DEF + ATK + INT (`+0x168/+0x16A`) | Wonder Elixir (`0x8E`) |
 
 **Class 5 - Fury Boost** (`0x81`): extends the action gauge for one battle
 (sets the actor `+0x1F9` gauge flag); no stat target. See the buff-selector
@@ -313,7 +313,7 @@ The **class-7 one-battle buff Elixirs** are seeded by `ItemCatalog::apply_buff_i
 (battle-only) and applied in `World::use_item` through the shared buff path
 (`apply_battle_buff`, the same `×6/5` ramp + revert-on-expiry / revert-at-battle-end
 bookkeeping as buff *spells*): Power/Shield/Speed Elixir ramp ATK / DEF / SPD,
-Wonder Elixir ramps all four (SPD + DEF + ATK + AGL). The disc-gated
+Wonder Elixir ramps all four (SPD + DEF + ATK + INT). The disc-gated
 `elixir_battle_buffs_seed_and_ramp_from_disc` test pins that Power Elixir ramps a
 100 ATK scalar to 120 and Wonder Elixir installs four buff trackers without
 compounding.

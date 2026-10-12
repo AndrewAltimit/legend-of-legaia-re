@@ -179,7 +179,8 @@ Slot `0xFF` of the jump table at `0x801CED44` points at `0x801E67E8`, whose whol
 
 The full step body for state `0x1E`:
 
-Counters `actor[+0x15]` (per-strike index) + `actor[+0x16]` (combo bit). Reads the
+Counters `ctx[+0x15]` (per-strike index) + `ctx[+0x16]` (Attack x2 pass counter, a byte
+shared with the arts-entry gauge's Low-command cost). Reads the
 per-actor attack-script byte stream at `actor[+0x1DF + +0x15]`. The inner step writes
 `actor[+0x1DA] = next_anim_id` and OR's `+0x1DC |= 2`. The byte read is **gated on
 `+0x1DC` bit `0x2` being clear** (`0x801E370C`: `lbu +0x1DC; andi 0x2; bne -> skip`) -
@@ -291,7 +292,11 @@ Final anim match → falls into the swing apex frame.
 
 #### State `0x19` - Attack - short-step (party attackers, and walk-less monsters via the `0x14` fallback)
 
-Idle pose + facing + range recheck. While range > 0 → stays (no movement code, no timeout - see the park section below). Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and clears the **context** byte `ctx[+0x16]`, the Attack x2 pass counter (`sb zero,5(s5)` at `0x801E35B4`, `s5 = ctx + 0x11`). This is the counter's only clear: the in-range exit of state `0x14` (`0x801E320C`) and the monster walk chain's entry from `0x18` (`0x801E3550`) reach `0x1E` without it, so a War God Icon wearer whose attack starts in reach keeps a stale counter and is refused the second pass at `0x801E3A18`.
+Idle pose + facing + range recheck. While range > 0 → stays (no movement code, no timeout - see the park section below). Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and clears the **context** byte `ctx[+0x16]`, the Attack x2 pass counter (`sb zero,5(s5)` at `0x801E35B4`, `s5 = ctx + 0x11`).
+
+This is the counter's only clear: the in-range exit of state `0x14` (`0x801E320C`) and the monster walk chain's entry from `0x18` (`0x801E3550`) reach `0x1E` without it. Only six monster records carry the tag-`0x20` walk entry that selects that chain (Caruban, Caruban $2, Caruban $3, Evil Shadow, Shade, Nightmare); every other monster comes through `0x19` and clears the counter whenever its melee starts out of reach.
+
+The byte is not private to the strike loop: the arts-entry gauge build writes the Low command's AP cost to it at `0x801D3B3C` on every manual command entry, so it is non-zero (30 for a single-width command) at the start of each such round. A War God Icon wearer whose attack starts in reach before any attacker has passed the `0x19` exit therefore meets a non-zero counter and is refused the second pass at `0x801E3A18`.
 
 **Next:** `0x1E`.
 

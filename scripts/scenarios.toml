@@ -1848,7 +1848,7 @@ ram_fingerprint_sha256 = "9a06b7e988a4a5e215eac2ab0af395c9f931026950a1add7fb77f2
 backup_fingerprint = "5e24762bd6926e85609f1b2d8971ade83066c93192f09068908740caedf2efa1"
 phase = "battle"
 expected_game_mode = 0x15
-description = "Enemy boss Cort casting Mystic Shield mid-cast (final-boss battle). Loader-B current-id 0x8007BC4C = 0x2D -> stager extraction 0940 (byte-resident at slot B 0x801F69D8). Enemy-cast stager leg."
+description = "Enemy boss Cort casting Mystic Shield mid-cast, in a forced encounter (scene town01, ctx[+0x287] = 0, random-encounter stat profile) - not the chitei2 final-boss battle. Loader-B current-id 0x8007BC4C = 0x2D -> stager extraction 0940 (byte-resident at slot B 0x801F69D8). Enemy-cast stager leg."
 topics = ["battle", "Cort", "boss", "stager", "loader-B", "Mystic Shield", "enemy cast"]
 
 [[scenarios]]

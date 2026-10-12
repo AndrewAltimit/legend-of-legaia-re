@@ -2,9 +2,9 @@
 
 Known glitches and oversights of the North American release, each traced as far as the disc's own code and data allow. The list of cases is a community compilation; every entry states its cause, the addresses it rests on, what else the same cause affects and how to check it in a debugger.
 
-Every page is static analysis of `SCUS_942.54` and the PROT overlays. No case is confirmed by a runtime capture, so each outcome is a prediction from the code until someone watches it happen; the *Verifying it* section of each entry names the breakpoint or watch that settles it. Each claim carries an evidence label: `disassembly` (the instructions were read), `disc data` (the value was decoded from the game's records), `repo doc` (taken from an existing page and not re-read), `inference`, or `community report`.
+Every case starts from the disassembly of `SCUS_942.54` and the PROT overlays. Many are also observed in a running game, and several are compared against the Japanese and French builds. Each claim carries an evidence label: `capture` (observed under an emulator; the entry says whether the state was played, poked or an edited save), `disassembly` (the instructions were read), `disc data` (the value was decoded from the game's records), `repo doc` (taken from an existing page and not re-read), `inference`, or `community report`. Where an outcome is still a prediction from the code, the entry says so and its *Verifying it* section names the breakpoint or watch that settles it.
 
-A status of *explained* means the cause is located in the code and accounts for the report. *Partially explained* means the mechanism is located but a quantity or a trigger is not. *Not confirmed* means no cause was found that produces the report as described.
+A status of *explained* means the cause is located in the code and accounts for the report. *Partially explained* means the mechanism is located but a quantity or a trigger is not. *Not confirmed* means no cause was found that produces the report as described. *Intended behaviour* means the code does what its data says and the report describes a design choice.
 
 ## Off-centre attack names
 
@@ -12,9 +12,9 @@ A status of *explained* means the cause is located in the code and accounts for 
 
 | Case | Status | Cause |
 |---|---|---|
-| "Ultimate Rave" is drawn off-centre | explained | The caption's X is the literal 100 in the cast module instead of 160 minus half the measured width, so the 78 px string sits 21 px left. |
-| Other captions with a fixed or shifted position | explained | Three more captions use a typed-in X instead of a measured one, and ten summon spell names are centred on 166 or 172 rather than 160. |
-| Super Art and Miracle finisher names are off-centre | explained | The banner is centred for the fixed name "Vulture Blade"; only arts with a row in the arts-name table get re-centred, and finishers have none. |
+| "Ultimate Rave" is drawn off-centre | explained | The caption's X is the literal 100, right for the ten-character Japanese name it was typed in for; the 78 px English string drawn there sits 21 px left. |
+| Other captions with a fixed or shifted position | explained | Three more captions keep an X typed in for their Japanese names, and ten summon spell names are centred on 166 or 172 rather than 160. |
+| Super Art and Miracle finisher names are off-centre | explained | The English banner is centred for the fixed name "Vulture Blade" where the Japanese code centred each art's own name; finishers have no table row to fix it. |
 
 ## Turn order, double attacks and kicks
 
@@ -23,9 +23,9 @@ A status of *explained* means the cause is located in the code and accounts for 
 | Case | Status | Cause |
 |---|---|---|
 | Spikefish Flute cancels enemy turns (the Koru flute glitch) | explained | The flute's turn-skip adds one to the round's turn count per living party member instead of per member still waiting, so the round ends early. |
-| War God Icon sometimes gives only one attack string | partially explained | The second pass needs a counter to be zero, and that counter is only cleared when an attacker has to step up to its target. |
+| War God Icon sometimes gives only one attack string | explained | The 'second pass used' byte doubles as the Low command's AP cost, so typing commands sets it; only an attacker stepping up to a target clears it. |
 | Side Kick still misses floating enemies with War God Boots | explained | Reach is a property of each hit's power byte; the boots swap in a different low-kick record, but Side Kick is an art with its own fixed bytes. |
-| Level-3 dance special swallows the next special | partially explained | Presses are only judged while the idle or dance loop plays; the level-3 Triangle move runs 6.83 beats, past the next scoring slot. |
+| Level-3 dance special swallows the next special | explained | Presses are only judged while the idle or dance loop plays; the level-3 Triangle move runs 6.83 beats, past the next scoring slot and the next combo's first note. |
 
 ## Status rolls, jewels and boss immunities
 
@@ -33,7 +33,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 
 | Case | Status | Cause |
 |---|---|---|
-| Tough Love and Love You roll their status every frame | partially explained | A hand-written per-frame routine flips a 50% coin every frame of the animation after the first strike, with nothing to stop it repeating. |
+| Tough Love and Love You roll their status every frame | explained | A hand-written routine flips a 50% coin every battle frame from the first hit to the end of the animation: 10 to 20 flips for Tough Love, 40 to 80 for Love You. |
 | Seven boss attacks ignore the defensive jewels | explained | These attacks use a physical (ATK-based) damage wrapper that tells the shared finisher to skip its jewel block; it reads as intended. |
 | USA bosses cannot have ATK, INT or DEF lowered | explained | The debuff only lands if the boss's base stat still equals its disc record, and the USA difficulty boost changes the base before the fight starts. |
 | Every Berserker can be killed outright | explained | Instant-death summons treat a monster as a boss by a texture-size byte in its record, and that byte is 0 on all three Berserkers. |
@@ -46,7 +46,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 |---|---|---|
 | Lapis Wave checks current MP | explained | Lapis only casts the wave at members with current MP above zero, and fleeing saves current MP only, so a returning party at 0 of full MP is never targeted. |
 | Lapis can be escaped from | explained | "No escape" is one byte at the start of a fight's formation row, and the row for Lapis has it at zero. |
-| Mushura and Theeder against Mystic Shield | explained | Both summons rely on the target's flinch animation to stop repeat hits, and Mystic Shield removes Cort's flinch, so they hit on every tick of contact. |
+| Mushura and Theeder against Mystic Shield | explained | Mystic Shield blanks Cort's flinch, the only thing that stops these sweeps re-hitting: Mushura hits on every contact tick, Theeder twice, which just cancels the halving. |
 
 ## Ra-Seru levels, Orb and Jette's Clone
 
@@ -64,10 +64,10 @@ A status of *explained* means the cause is located in the code and accounts for 
 
 | Case | Status | Cause |
 |---|---|---|
-| Stat boost overflow | not confirmed | Not found for the permanent items: each adds, then clamps. One-battle boosts nearby do saturate or wrap and are the candidates. |
+| Speed Elixirs and void turns | explained | The turn-order number rolled from Speed is 16 bits and the next-fighter picker reads its best-so-far as signed, so 32,768 or more can never win. |
 | Story equipment removal skips the re-check | explained | The script's take-item instruction empties the equipment slot but never calls the routine that turns slots into bonuses. |
 | Point Card softlock | explained | The target cursor can step onto an ally, and the Point Card's damage skips the HP-counter bookkeeping the end of the action waits on. |
-| Coin vendor sells past 99 (Japanese release) | partially explained | The bag silently trims a stack to 99 and the purchase never checks that its item fitted; only a check before the confirm box prevents the loss. |
+| Coin vendor sells past 99 (Japanese release) | explained | The Japanese prize counter only asks whether the coins cover the price; the bag then adds the item and silently trims the stack back to 99. |
 | War God Icon can be missed for good | explained | The item and its 'already awarded' flag come from two pieces of code that disagree about what clearing the course means. |
 
 ## Incense, doors and the Door of Light
@@ -78,7 +78,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 |---|---|---|
 | Incense trigger bypass | explained | The Incense expiry sets the movement lock mid-frame; the player still steps onto the trigger tile, and a locked crossing is recorded without running. |
 | Incense carry-over ("New Game+") | explained | The Incense window is one number in the program's own memory, outside the block that is saved, loaded or rebuilt for a new game. |
-| Juggernaut's Room door | partially explained | While the guards stand there the door has no lock of its own; two guard bodies are the whole gate. How the trick passes them is not traced. |
+| Juggernaut's Room door | explained | From a strip beside a guard, one interact press lands in his talk box and the door's box at once; he makes it a talk, and the door, later in the actor list, gets it. |
 | Noa's sigil and the Door of Light in Nivora | explained | The crest stands inside a nine-by-nine map rectangle marked Door of Light allowed, listed ahead of the tunnel rectangles that forbid it. |
 
 ## WORK ERR, missing encounters and script slips
@@ -87,10 +87,10 @@ A status of *explained* means the cause is located in the code and accounts for 
 
 | Case | Status | Cause |
 |---|---|---|
-| WORK ERR on Mt. Rikuroa | partially explained | The scene asked for more actors than the fixed 143-slot pool holds; the number shown is how many requests have failed. |
-| No encounters in Jette's Absolute Fortress | partially explained | Story-gated encounter tables: one flag switches the Fortress off after Jette, and much of the interior is zero-rate even before that. |
+| WORK ERR on Mt. Rikuroa | partially explained | The rock and dust burst after the Golem fight fills the fixed 143-slot actor pool; the number is how many requests arrived while it was full. |
+| No encounters in Jette's Absolute Fortress | explained | Escaping Zora's Floating Castle with under a minute on the clock leaves its "no battles" flag set for good, and the Fortress's encounter tables still obey it. |
 | Gaza 2 softlock | explained | A walking monster is carried only by its Move animation; a leftover flinch flag swaps it for idle and the wait for range never ends. |
-| Dialogue inconsistencies | partially explained | The English script renders one thing two ways; in the bath scene a choice box also speaks for a character who is not the hero. |
+| Dialogue inconsistencies | explained | The English script renders one thing two ways; in the bath scene it turns a question and answer about the researcher into ones about Vahn. |
 
 ## Related pages
 

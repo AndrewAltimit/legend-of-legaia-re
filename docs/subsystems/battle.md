@@ -322,14 +322,16 @@ The record bytes are not what the player fights on the NTSC-U disc. After the co
 | Stat | Scripted fight (profile B) | Random encounter (profile A) |
 |---|---|---|
 | ATK (`+0x12`) | `+= ATK >> 2` (x5/4) | unchanged |
-| UDF (`+0x14`) | `x 2` | `+= (UDF >> 1) + (UDF >> 2)` (x7/4) |
-| LDF (`+0x16`) | `x 2` | `+= (LDF >> 1) + (LDF >> 2)` (x7/4) |
+| UDF (`+0x14`) | `x 2` | `+= (UDF >> 1) + (UDF >> 2)` (x7/4, each shift truncating: `975 -> 1705`, not `1706`) |
+| LDF (`+0x16`) | `x 2` | `+= (LDF >> 1) + (LDF >> 2)` (x7/4, each shift truncating: `987 -> 1726`, not `1727`) |
 | INT (`+0x18`) | `+= INT >> 3` (x9/8) | `+= INT >> 2` (x5/4) |
 | HP / MP / AGL / SPD | unchanged | unchanged |
 
-The flag is bit `0x80` of `DAT_8007BD60`, raised for a formation row with a non-zero header byte ([`encounter.md`](../formats/encounter.md#the-per-battle-flags-byte-dat_8007bd60)). Both branches are save-state pinned. Boss captures carry `+0x287 == 4` and profile B: Gaza Sim-Seru (id 166) raw `ATK 288, UDF 222, LDF 200, INT 220` reads `360 / 444 / 400 / 247` in battle. Random-encounter captures carry `0` and profile A: a world-map Gobu Gobu raw `17 / 15 / 14 / 10` reads `17 / 25 / 24 / 12`. The same flag gates which Seru-magic side-effect debuffs can land ([`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)).
+The flag is bit `0x80` of `DAT_8007BD60`, raised for a formation row with a non-zero header byte ([`encounter.md`](../formats/encounter.md#the-per-battle-flags-byte-dat_8007bd60)). Both branches are save-state pinned. Boss captures carry `+0x287 == 4` and profile B: Gaza Sim-Seru (id 166) raw `ATK 288, UDF 222, LDF 200, INT 220` reads `360 / 444 / 400 / 247` in battle. Random-encounter captures carry `0` and profile A: a world-map Gobu Gobu raw `17 / 15 / 14 / 10` reads `17 / 25 / 24 / 12`. A scripted fight whose formation row has a zero header byte takes profile A as well: Tetsu's opening spar (raw `24 / 16 / 12 / 99`) reads `24 / 28 / 21 / 123`, and a Lapis fight forced from the disc row's bytes (raw `680 / 975 / 987 / 999`) reads `680 / 1705 / 1726 / 1248`.
 
-Accessors: `MonsterRecord::battle_stats()` (profile B), `battle_stats_random()` (profile A), `battle_stats_for(scripted)`. The curated `enemies.toml` bestiary holds profile B for every enemy, which overstates a random encounter's UDF / LDF by 8/7 and its ATK by 5/4. The cross-region difficulty difference was first surfaced by **Zetopheonix**.
+The same flag gates which Seru-magic side-effect debuffs can land ([`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)). The stager that applies the gate is the same in the other builds - `0x801F468C` in the French PROT 0898 (base `0x801CF0A8`, shared compare `0x801F4D40`, flag `ctx[+0x2A7]`) and `0x801F7394` in the Japanese one (base `0x801D05C8`, shared compare `0x801F79BC`, flag `ctx[+0x1E7]`) - so the boss ATK / DEF / INT lockout is a product of the USA boost alone.
+
+Accessors: `MonsterRecord::battle_stats()` (profile B), `battle_stats_random()` (profile A), `battle_stats_for(scripted)`. The curated `enemies.toml` bestiary holds profile B for every enemy, which overstates a profile-A fight's UDF / LDF by 8/7 and its ATK by 5/4 and understates its INT by 9/10. Lapis is the one late-game boss this misstates: its only formation row is unflagged, so the fight installs `680 / 1705 / 1726 / 1248` where the bestiary lists `850 / 1950 / 1974 / 1123`. The cross-region difficulty difference was first surfaced by **Zetopheonix**.
 
 **Port.** Battle entry seeds ATK / UDF / LDF / INT through `MonsterDef::installed_stats(scripted)` (`engine-battle::monster_catalog`) and AGL / SPD / HP / MP from the plain record fields. The accuracy / evasion bytes clamp the *boosted* INT, because the interrupt roll reads actor `+0x168`. Both defence facets are seeded into `World::battle.defense_split`: the melee kernel picks UDF or LDF by the swing's command parity (`FUN_801EC3E4` at `0x801ECE14`), and a Defense buff moves both halves together.
 
@@ -340,6 +342,7 @@ The boost is specific to `SCUS_942.54`. In the JP original (`SCPS_100.59`) and t
 | Executable | Record copy | Spell loop |
 |---|---|---|
 | `SCUS_942.54` | `0x8005516C..0x8005520C`, then the boost block | after the boost |
+| `SCES_019.44` | `0x80055A60..0x80055B00` | from `0x80055B1C` |
 | `SCES_019.45` | `0x80055FC0..0x80056060` | from `0x8005607C` |
 | `SCPS_100.59` | `0x80056EE0..0x80056FF8` (each stat loaded twice), byte clears at `0x80057004` | from `0x80057014` |
 
@@ -577,7 +580,7 @@ The same tint triple is what a landing hit stamps on the struck actor. The melee
 | Noa | `0x29` / `0x2D` | any | target `+0x16E` takes bits `0x380`, gated below |
 | a monster | `0x3B` | any | acting `+0x21C = 3`, target `4` while acting `+0x21B == 0x13`; both `0` when it reads `0` |
 
-The two Gala tint-only arms are open-ended: `slti v0,v0,0x20` / `0x40` at `0x8004D14C` / `0x8004D168` gate the start and nothing gates the end. Noa's arm needs a landed hit (acting `+0x1F4 != 0`), an ordinary fight (`ctx[+0x287] == 0`), an even `rand()` (`0x8004D0EC`) and a first monster other than `0xA7` (the byte read is `gp+0x9F4` = `0x8007BD0C`). The pass spans `0x8004D01C..0x8004D32C`.
+The two Gala tint-only arms are open-ended: `slti v0,v0,0x20` / `0x40` at `0x8004D14C` / `0x8004D168` gate the start and nothing gates the end. Noa's arm needs a fired strike (acting `+0x1F4 != 0`), an ordinary fight (`ctx[+0x287] == 0`), an even `rand()` (`0x8004D0EC`) and a first monster other than `0xA7` (the byte read is `gp+0x9F4` = `0x8007BD0C`). It has no latch, so it rolls on every battle frame the clip cursor sits in `[384, 704)`: from the first strike keyframe to the end of the 44-keyframe stream, which both art entries always reach because their `+0x76` is `1` ([glitches/status-and-damage.md](../reference/glitches/status-and-damage.md#the-roll-count)). The pass spans `0x8004D01C..0x8004D32C`.
 
 The tag-`0x67` ribbon call is surfaced as `ClipImpactWrite::effect_at_target`, staged on `World::battle.clip_ribbon` and drawn on both hosts by `render-kernels::streak_pass::clip_ribbon_quads`.
 
