@@ -55,7 +55,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 | Case | Status | Cause |
 |---|---|---|
 | Meta, Terra and Ozma inherit Palma's level | explained | The three Ra-Seru summons are inserted from stash slot 0, the slot that stores Palma's level when the Earth Talisman comes off. |
-| Orb's animation can glitch | not confirmed | Not established: the spell's cast module has five state-dependent spots, and none is shown to produce a visible fault. |
+| Orb's legs sometimes do not unfold | partially explained | A stale "return to idle" flag on the summon creature's actor throws away Orb's queued unfold, which Orb queues only once; what sets the flag in play is not found. |
 | Jette's Clone refills his MP and moves him | explained | Clone builds a new monster from Jette's record, copies only current HP onto it, then a coin flip picks which of the two becomes the 1 HP decoy. |
 
 ## Items, stats and equipment

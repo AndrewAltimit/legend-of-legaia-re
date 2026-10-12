@@ -481,7 +481,7 @@ The Move clip is played by the per-frame tick `FUN_80047430` and its commit `FUN
 - **A looping clip loops by re-committing.** There is no loop counter. When the cursor `node+0x68` passes the stream's frame count, the tick calls the commit, which re-installs the still-queued `+0x1DA` and zeroes the cursor. Gaza's Move stream is 5 frames at rate 2 with speed scale 8: one cycle is ~12 vsyncs.
 - **The two commit paths treat `+0x1DC` differently.** The natural-end path tests bit 2 (`& 0x4`): if set it **stages idle over whatever is queued** (`sb zero,0x1da` at `0x80047B44`), clears bits 0-2 (`andi 0xF8`, `0x80047B50`) and commits. The mid-clip event path (bit 0 = commit now, bit 1 = commit at event frame, `0x80047A38`) clears only bits 0-1 (`andi 0xFC`) and **preserves bit 2**.
 
-Bit 2 is written by `FUN_800402F4`: a surviving target's light flinch is staged as `+0x1DA = +0x1EF`, `+0x1DC |= 4` and `|= 1` (`0x80042124..0x80042170`). Normally the flinch's own natural end consumes the bit and the actor returns to idle.
+Bit 2 is written by `FUN_800402F4`: a surviving target's light flinch is staged as `+0x1DA = +0x1EF`, `+0x1DC |= 4` and `|= 1` (`0x80042124..0x80042170`). Normally the flinch's own natural end consumes the bit and the actor returns to idle. The summon seat routine `FUN_801F19EC` does not reset `+0x1DC` either (it clears `+0x1D9` at `0x801F1DD8` and has no store to `+0x1DC`), so the same bit left on actor slot 7 survives into the next summon; with it set, a clip a cast module stages without a commit flag is replaced by idle at the natural end - the mechanism behind Orb's legs staying folded ([glitch page](../reference/glitches/summons-and-jette.md)).
 
 The sequence that parks:
 

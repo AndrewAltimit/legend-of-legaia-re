@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">glitches</a> &middot; Ra-Seru levels, Orb and Jette's Clone</div>
   <h1>Ra-Seru levels, Orb and Jette's Clone</h1>
-  <p class="lede">Three community-reported oddities, read against the game's own code: why Meta, Terra and Ozma can arrive at Palma's level, what in the Orb summon could misbehave, and why Jette's Clone sometimes hands him a full MP bar in a different seat. Everything here comes from the disassembly and disc data of the USA release; nothing was captured on an emulator, and each section says what is proven and what is only predicted.</p>
+  <p class="lede">Three community-reported oddities, read against the game's own code: why Meta, Terra and Ozma can arrive at Palma's level, why the Orb summon's legs sometimes stay folded inside its sphere, and why Jette's Clone sometimes hands him a full MP bar in a different seat. The first two carry observations from a running game, made on poked states - a value written by hand to set the situation up, named in each section. Jette's Clone is read from the disassembly and disc data alone. Each section says what is proven and what is only predicted.</p>
 </header>
 
 <div class="notice">
   <div class="notice-title">Reading the addresses</div>
-  Addresses are runtime addresses on the USA disc (<code>SCUS_942.54</code>). A character's record is <code>0x80084708 + character * 0x414</code> (Vahn 0, Noa 1, Gala 2; see the <a href="../../formats/save-record.html">save record</a>). In battle, <code>ctx</code> is the context the word at <code>0x8007BD24</code> points to, and the actor table at <code>0x801C9370</code> holds eight seats: 0-2 the party, 3-6 monsters, 7 the summon creature (see <a href="../../subsystems/battle.html">battle</a>).
+  Addresses are runtime addresses on the USA disc (<code>SCUS_942.54</code>) unless a Japanese (<code>SCPS_100.59</code>) or French (<code>SCES_019.44</code>) one is named. A character's record is <code>0x80084708 + character * 0x414</code> (Vahn 0, Noa 1, Gala 2; see the <a href="../../formats/save-record.html">save record</a>). In battle, <code>ctx</code> is the context the word at <code>0x8007BD24</code> points to, and the actor table at <code>0x801C9370</code> holds eight seats: 0-2 the party, 3-6 monsters, 7 the summon creature (see <a href="../../subsystems/battle.html">battle</a>).
 </div>
 
 <section class="doc-section" id="ra-seru-summon-level">
@@ -15,8 +15,8 @@
     <dt>Reported as</dt><dd>Getting Meta, Terra or Ozma sets their level to Palma's level (community report)</dd>
     <dt>Cause</dt><dd>The three Ra-Seru summons are inserted from the same per-character "stash slot 0" that stores Palma's level when the Earth Talisman is taken off</dd>
     <dt>Where</dt><dd><code>FUN_80042558</code> in <code>SCUS_942.54</code>: three <code>clear a2</code> at <code>0x800427AC</code>, <code>0x800427CC</code>, <code>0x800427E8</code></dd>
-    <dt>Affects</dt><dd>Meta, Terra, Ozma only; the donor is always Palma, on the same character</dd>
-    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - from the disassembly; not captured live</dd>
+    <dt>Affects</dt><dd>Meta, Terra, Ozma only; the donor is always Palma, on the same character. The same on the Japanese and French discs</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - from the disassembly; the level copy captured on a poked state</dd>
   </dl>
 
   <p>Summons that come from equipment are not learned for good. Every time the game rebuilds a character's stats it looks at the eight equipment bytes and makes sure the matching summon is in the spell list. When a Talisman comes off, its summon is removed and its level and experience are parked in a small per-character stash, so they return when the Talisman goes back on.</p>
@@ -27,8 +27,9 @@
     <figcaption>Stash slots in one character's record and the summons that use them. Slot 0 is filled only when Palma is removed, but four summons read it. Meta, Terra and Ozma are never removed, so they never write a slot of their own.</figcaption>
   </figure>
 
-  <p>So when a Ra-Seru reaches its final form and its summon is inserted, the level and experience come out of the stash that only Palma ever fills. The summon arrives with whatever Palma had <strong>on that same character, the last time the Earth Talisman was taken off them</strong>. If that never happened, the stash is still zero and the insert routine turns level 0 into level 1 - the ordinary result.</p>
+  <p>Each Ra-Seru grows through story scenes, and the scene that gives it its last form is also the moment its summon appears: Meta under Sol Tower, Terra on Mt. Rikuroa, Ozma in East Voz Forest. The summon is inserted with the level and experience out of the stash that only Palma ever fills. It arrives with whatever Palma had <strong>on that same character, the last time the Earth Talisman was taken off them</strong>. If that never happened, the stash is still zero and the insert routine turns level 0 into level 1 - the ordinary result.</p>
   <p>That makes the precise statement narrower than the report: the summon inherits the <em>stashed</em> Palma level of the <em>same character</em>, not the live level of a Palma currently equipped on someone.</p>
+  <p>The level half of this is observed in a running game, captured on a poked state: with Vahn's stash level byte written to 7 and his Ra-Seru byte written to the final form, Meta appeared at the head of his spell list at level 7. The details are under <a href="#ra-seru-verify">Verifying it</a>.</p>
 
   <h3>Where the bytes live</h3>
   <div class="byte-map">
@@ -49,9 +50,9 @@
       <tr><td><code>0x74</code> Light Talisman</td><td><code>0x9C</code> Horn</td><td>2</td><td><code>0x80042844</code></td></tr>
       <tr><td><code>0x75</code> Dark Talisman</td><td><code>0x9D</code> Jedo</td><td>3</td><td><code>0x80042860</code></td></tr>
       <tr><td><code>0x76</code> Evil Talisman</td><td><code>0x99</code> Evil Seru Magic</td><td>4</td><td><code>0x80042878</code></td></tr>
-      <tr><td><code>0x09</code> Ra-Seru Meta, final form</td><td><code>0x9E</code> Meta</td><td><strong>0</strong></td><td><code>0x800427AC</code></td></tr>
-      <tr><td><code>0x11</code> Ra-Seru Terra, final form</td><td><code>0x9F</code> Terra</td><td><strong>0</strong></td><td><code>0x800427CC</code></td></tr>
-      <tr><td><code>0x19</code> Ra-Seru Ozma, final form</td><td><code>0xA0</code> Ozma</td><td><strong>0</strong></td><td><code>0x800427E8</code></td></tr>
+      <tr><td><code>0x09</code> Ra-Seru Meta, form 9 of 9</td><td><code>0x9E</code> Meta</td><td><strong>0</strong></td><td><code>0x800427AC</code></td></tr>
+      <tr><td><code>0x11</code> Ra-Seru Terra, form 8 of 8</td><td><code>0x9F</code> Terra</td><td><strong>0</strong></td><td><code>0x800427CC</code></td></tr>
+      <tr><td><code>0x19</code> Ra-Seru Ozma, form 7 of 7</td><td><code>0xA0</code> Ozma</td><td><strong>0</strong></td><td><code>0x800427E8</code></td></tr>
     </tbody>
   </table>
 
@@ -70,8 +71,43 @@
 8004337c  sb t1,0x161(t0)     ; level
 80043380  sw t2,0x8(t0)       ; experience
 8004338c  sb v0,0x13c(t0)     ; count + 1</code></pre>
-    <p>The only writer of a stash slot is <code>FUN_80042DBC</code> (level through <code>lbu v0,0x161(v0)</code> at <code>0x80042E64</code> and <code>sb v0,0x2b5(v1)</code> at <code>0x80042E6C</code>). Its one caller is the revoke scan of the same function (<code>jal</code> at <code>0x80042978</code>), which dispatches <code>id - 0x99</code> through a five-entry jump table at <code>0x800151D0</code>, bounded by <code>sltiu v0,v1,0x5</code> at <code>0x800428BC</code>. The table stops at <code>0x9D</code>, so Meta, Terra and Ozma are never removed and never write a stash.</p>
+    <p>The only writer of a stash slot is <code>FUN_80042DBC</code> (level through <code>lbu v0,0x161(v0)</code> at <code>0x80042E64</code> and <code>sb v0,0x2b5(v1)</code> at <code>0x80042E6C</code>). Its one caller is the revoke scan of the same function (<code>jal</code> at <code>0x80042978</code>), which dispatches <code>id - 0x99</code> through a five-entry jump table at <code>0x800151D0</code>, bounded by <code>sltiu v0,v1,0x5</code> at <code>0x800428BC</code>. The table stops at <code>0x9D</code>, so Meta, Terra and Ozma are never removed and never write a stash. The insert reads the stash and leaves it as it was.</p>
   </details>
+
+  <h3>Where the final form is written</h3>
+  <p>A Ra-Seru changes form when a scene script runs the field script's "set equipment slot" opcode, <code>0x3B</code> (<a href="../../subsystems/script-vm.html">script VM</a>). The opcode stores the item id into the equipment byte and rebuilds the character's stats in the same step, so the scene that writes the final form is the one that inserts the summon. Every Ra-Seru stage on the disc is one such opcode, and each final form is written at exactly one place:</p>
+  <table class="data-table">
+    <thead><tr><th>Scene</th><th>Script bytes</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>korb3</code>, Sol Tower underground</td><td><code>3B 03 09</code></td><td>Vahn, slot 3: Ra-Seru Meta form 9. Grants Meta</td></tr>
+      <tr><td><code>rikuroa</code>, Mt. Rikuroa</td><td><code>3B 12 11</code></td><td>Noa, slot 2: Ra-Seru Terra form 8. Grants Terra</td></tr>
+      <tr><td><code>vozz</code>, East Voz Forest</td><td><code>3B 23 19</code></td><td>Gala, slot 3: Ra-Seru Ozma form 7. Grants Ozma</td></tr>
+    </tbody>
+  </table>
+  <p>Noa's Ra-Seru sits in equipment slot 2, Vahn's and Gala's in slot 3. The scan reads all eight bytes, so the slot makes no difference to it.</p>
+  <details class="disclosure">
+    <summary>The opcode, instruction by instruction</summary>
+    <p>The arm is <code>0x801E07DC..0x801E081C</code> of <code>FUN_801DE840</code> in the field overlay (PROT entry 0897). The store sits in the delay slot of the call to the stat rebuild:</p>
+<pre><code>801e07e4  lbu v0,0x0(s6)      ; selector
+801e07e8  lbu v1,0x1(s6)      ; item id
+801e07ec  srl s2,v0,0x4       ; character
+801e07f0  andi s7,v0,0xf      ; slot
+801e0810  jal 0x80042558      ; the stat rebuild, grant scan included
+801e0814  sb v1,0x75e(v0)     ; delay slot: record +0x196 + slot = item</code></pre>
+    <p>The stat rebuild has other callers. One runs when a battle returns to the field (the call at <code>0x8003B2B8</code>), so an equipment byte changed by any means takes effect at the latest at the next battle exit.</p>
+  </details>
+
+  <h3>The other discs</h3>
+  <p>The Japanese and French executables pass slot 0 for all three Ra-Seru summons as well, so this is not something the USA release introduced.</p>
+  <table class="data-table">
+    <thead><tr><th>Build</th><th>Meta, Terra, Ozma slot arguments</th><th>Shared insert</th></tr></thead>
+    <tbody>
+      <tr><td>USA <code>SCUS_942.54</code></td><td><code>clear a2</code> at <code>0x800427AC</code>, <code>0x800427CC</code>, <code>0x800427E8</code></td><td><code>0x800432BC</code></td></tr>
+      <tr><td>Japan <code>SCPS_100.59</code></td><td><code>move a2,zero</code> in the delay slot of each arm's <code>j 0x80043a88</code>; arms end at <code>0x800439B8</code>, <code>0x800439D8</code>, <code>0x800439F4</code></td><td><code>0x800440EC</code></td></tr>
+      <tr><td>France <code>SCES_019.44</code></td><td><code>move a2,zero</code> at <code>0x800430F8</code>, <code>0x80043118</code>, <code>0x80043134</code></td><td><code>0x80043C08</code></td></tr>
+    </tbody>
+  </table>
+  <p class="dg-note">On the Japanese disc Palma's arm (<code>0x80043A14</code>) passes slot 0 too, Mule 1, Horn 2, Jedo 3, the Evil Talisman 4, and the removal scan is bounded at five entries at <code>0x80043AC0</code>. The French executable is the USA code relocated. All read from the disassembly.</p>
 
   <h3>Addresses</h3>
   <table class="data-table">
@@ -79,97 +115,160 @@
     <tbody>
       <tr><td><code>0x80042558</code></td><td>SCUS</td><td><code>FUN_80042558</code>, stat and equipment aggregator. Grant scan <code>0x80042714..0x8004288C</code>, revoke scan <code>0x80042894..0x80042990</code></td><td>disassembly</td></tr>
       <tr><td><code>0x800427AC</code>, <code>0x800427CC</code>, <code>0x800427E8</code></td><td>SCUS</td><td>The three <code>clear a2</code> giving Meta, Terra, Ozma slot 0</td><td>disassembly</td></tr>
-      <tr><td><code>0x800432BC</code></td><td>SCUS</td><td><code>FUN_800432BC</code>, insert from a stash slot; level floor at <code>0x8004331C..0x80043324</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x800432BC</code></td><td>SCUS</td><td><code>FUN_800432BC</code>, insert from a stash slot; level floor at <code>0x8004331C..0x80043324</code>. Seen entered with character 0, spell <code>0x9E</code>, slot 0</td><td>disassembly; capture (poked)</td></tr>
       <tr><td><code>0x80042DBC</code></td><td>SCUS</td><td><code>FUN_80042DBC</code>, remove a spell and park it</td><td>disassembly</td></tr>
       <tr><td><code>0x800431FC</code>, <code>0x80043264</code></td><td>SCUS</td><td>"Spell already listed?" and "item in accessory bytes <code>+0x19B..+0x19D</code>?"</td><td>disassembly</td></tr>
       <tr><td><code>0x800151D0</code></td><td>SCUS, file offset <code>0x59D0</code></td><td>Five-word jump table of the revoke scan</td><td>disc data</td></tr>
-      <tr><td><code>0x800849BD</code>, <code>0x80084DD1</code>, <code>0x800851E5</code></td><td>RAM</td><td>Stash slot 0 level byte: Vahn, Noa, Gala. Experience is the four bytes below each</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E07DC..0x801E081C</code></td><td>PROT 0897</td><td>Opcode <code>0x3B</code> arm of <code>FUN_801DE840</code>: equipment-byte store at <code>0x801E0814</code>, in the delay slot of the stat-rebuild call at <code>0x801E0810</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x8003B2B8</code></td><td>SCUS</td><td>Stat-rebuild call on the return from battle to the field</td><td>capture (poked)</td></tr>
+      <tr><td><code>3B 03 09</code>, <code>3B 12 11</code>, <code>3B 23 19</code></td><td>scene scripts of <code>korb3</code>, <code>rikuroa</code>, <code>vozz</code></td><td>The three final-form writes</td><td>disc data</td></tr>
+      <tr><td><code>0x800849BD</code>, <code>0x80084DD1</code>, <code>0x800851E5</code></td><td>RAM</td><td>Stash slot 0 level byte: Vahn, Noa, Gala. Experience is the four bytes below each</td><td>disassembly; capture (poked, Vahn)</td></tr>
+      <tr><td><code>0x800848A1</code>, <code>0x80084CB4</code>, <code>0x800850C9</code></td><td>RAM</td><td>The Ra-Seru equipment byte of Vahn (slot 3), Noa (slot 2), Gala (slot 3)</td><td>disc data; capture</td></tr>
+      <tr><td>item ids <code>0x01..0x09</code>, <code>0x0A..0x11</code>, <code>0x13..0x19</code></td><td>SCUS item-name table</td><td>The nine forms of Ra-Seru Meta, eight of Terra, seven of Ozma. <code>0x12</code> and <code>0x1A</code> are unnamed gaps; <code>0x1B</code> is the Ra-Seru Blade</td><td>disc data</td></tr>
       <tr><td><code>0x80084844</code>, <code>0x80084845</code>, <code>0x80084869</code>, <code>0x80084710</code></td><td>RAM</td><td>Vahn's spell count, first id, first level, first experience word</td><td>disassembly</td></tr>
     </tbody>
   </table>
-  <p>Two things are inference rather than proof. That nothing else touches the stash rests on a search of the dumped functions, not of every overlay byte. And that the story grant <em>is</em> the equipment byte changing to the final Ra-Seru form follows from this scan being the only code found that inserts these three spells; the script that upgrades the Ra-Seru is not traced.</p>
+  <p>One thing is inference rather than proof: that nothing else touches the stash rests on a search of the dumped functions, not of every overlay byte.</p>
 
   <h3>What else follows</h3>
   <ul>
-    <li>Experience is copied with the level, so the summon is also as far from its next level as the parked Palma was.</li>
+    <li>Experience is copied with the level, so the summon is also as far from its next level as the parked Palma was. This half is read from the disassembly only; the stash experience was zero in the captured run.</li>
     <li>It is per character: a Palma levelled on Vahn does nothing for Noa's Terra.</li>
     <li>It needs a Palma <em>removal</em> first. A Palma that is still equipped has not been parked.</li>
     <li>It is one-way. Meta's progress never flows back to Palma, and Mule, Horn, Jedo and Evil Seru Magic keep their own slots.</li>
+    <li>The widely circulated cheat codes "Activate Terra at Lv9" and "Activate Ozma at Lv9" write <code>0x12</code> to <code>0x80084CB4</code> and <code>0x1B</code> to <code>0x800850C9</code>. Neither is a Ra-Seru form - <code>0x12</code> is an unnamed gap and <code>0x1B</code> is the Ra-Seru Blade - so neither inserts a summon this way. The Meta code writes <code>0x09</code> to <code>0x800848A1</code>, which does. All three values are "first form + 8", which is the final form for Meta alone.</li>
   </ul>
 
-  <h3>Verifying it</h3>
+  <h3 id="ra-seru-verify">Verifying it</h3>
+  <p><strong>Observed, captured on a poked state.</strong> The run starts from a retail save state in Rim Elm with Vahn alone: Gimard at level 2, stash slot 0 all zero, Ra-Seru Meta form 1. Two bytes are written by hand - <code>0x800849BD = 0x07</code> (stash slot 0 level) and <code>0x800848A1 = 0x09</code> (the final form). At the next battle exit the stat rebuild runs, <code>FUN_800432BC</code> is entered with character 0, spell <code>0x9E</code>, slot 0, and on the next frame Vahn's list reads ids <code>9E 81</code>, levels <code>07 02</code>, with the stash unchanged. Since both bytes were written by hand, this shows the read side on live code. The battle in that run is a forced formation, which touches nothing in the character record.</p>
+  <p>The write side shows in played saves with nothing poked: records where the Earth Talisman has been taken off read level 1 in stash slot 0, records where it never was read zero. No save examined carries a parked Palma above level 1, so they are consistent with the mechanism without proving it on their own.</p>
+  <p>To repeat it:</p>
   <ol>
     <li>Equip the Earth Talisman on Vahn, raise Palma, unequip it. <code>0x800849BD</code> now holds Palma's level.</li>
-    <li>With Meta not yet listed, set one of Vahn's equipment bytes (<code>0x8008489E..0x800848A5</code>) to <code>0x09</code>. After the next stat rebuild <code>0x80084845</code> reads <code>0x9E</code> and <code>0x80084869</code> equals the stash byte.</li>
+    <li>With Meta not yet listed, set Vahn's Ra-Seru byte <code>0x800848A1</code> to <code>0x09</code> (Noa: <code>0x80084CB4</code> to <code>0x11</code>; Gala: <code>0x800850C9</code> to <code>0x19</code>). A poke alone does nothing until the stat rebuild runs: on an equipment change, the script opcode, or the next return from a battle. Afterwards <code>0x80084845</code> reads <code>0x9E</code> and <code>0x80084869</code> equals the stash byte.</li>
     <li>Control: zero <code>0x800849B9..0x800849BD</code> first, and Meta arrives at level 1.</li>
     <li>A breakpoint at <code>0x8004287C</code> shows <code>a1 = 0x9E</code>, <code>a2 = 0</code>.</li>
   </ol>
-  <p>Open: which script writes the final-form item id, and whether the Japanese and PAL executables use separate slots.</p>
+  <p>Open: the experience half of the copy is not observed (repeat the capture with a non-zero counter in <code>0x800849B9..0x800849BC</code>), and a fully played instance - Talisman worn, Palma levelled, Talisman removed, then the story scene - is not captured.</p>
 </section>
 
 <section class="doc-section" id="orb-animation">
-  <h2>Orb's animation can glitch</h2>
+  <h2>Orb's legs sometimes do not unfold</h2>
   <dl class="kv">
-    <dt>Reported as</dt><dd>Orb's animation can glitch sometimes (community report)</dd>
-    <dt>Cause</dt><dd>Not established. The spell's module has five state-dependent spots; none is shown to produce a visible fault</dd>
-    <dt>Where</dt><dd>Orb cast module, PROT entry 0911, loaded at <code>0x801F69D8</code></dd>
-    <dt>Affects</dt><dd>Unknown - the report does not say what the glitch looks like, or whether it means the spell Orb (<code>0x89</code>) or the enemy Orb</dd>
-    <dt>Status</dt><dd><span class="tag tag-open">Not confirmed</span> - candidates listed; a capture is needed</dd>
+    <dt>Reported as</dt><dd>Orb's animation can glitch sometimes: now and then the legs of the player's Orb summon do not come out of its sphere during the summon animation. Hard to recreate; seen in Rogue's Tower among other places (community report)</dd>
+    <dt>Cause</dt><dd>A "return to idle" flag left set on the summon creature's actor makes the animation code throw away Orb's queued unfold, and Orb only queues it once. What sets the flag in ordinary play is not found</dd>
+    <dt>Where</dt><dd>Queued at <code>0x801F7410..0x801F741C</code> (Orb cast module, PROT entry 0911); discarded at <code>0x80047B30..0x80047B58</code> in <code>SCUS_942.54</code></dd>
+    <dt>Affects</dt><dd>The player's Orb summon (spell <code>0x89</code>). Cosmetic: the heal, captions and timing are unchanged</dd>
+    <dt>Status</dt><dd><span class="tag tag-partial">Partially explained</span> - mechanism read end to end and the symptom reproduced on a poked state; the trigger in play is open</dd>
   </dl>
 
-  <p>This section reads the spell's cast module and lists what in it depends on anything outside itself. It does not claim to have found the reported glitch.</p>
-  <p>The module spawns four parts and then sixteen light motes at random offsets around the caster, pulls the motes in over a fixed countdown, drops the Orb creature in from above, and heals the party row. Most summons let each part move under its own script. Orb is different: the module itself repositions the sixteen motes every pass, through sixteen pointers it saved when it spawned them.</p>
+  <p>Orb's creature arrives curled inside its sphere, drops to the ground, and on the frame it lands the game queues the "legs unfold" animation to start when the current animation finishes. Nothing forces it to start; it waits its turn.</p>
+  <p>The game also has a per-actor "go back to idle when this animation ends" switch, which a hit reaction uses so the actor returns to its standing pose afterwards. The summon creature's actor is reused from one summon to the next, and that switch is not reset when a new creature is put in it.</p>
+  <p>If the switch is on, the queued unfold is thrown away at the very moment it should start, and idle - the curled pose - plays instead. Orb asks for the unfold only once, so the creature stays in its sphere for the rest of the spell while the heal, the captions and the timing all play normally.</p>
 
   <figure class="diagram">
-    <svg viewBox="0 0 640 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The sixteen saved mote pointers of the Orb cast module at 0x801F85E0: a valid pointer has its position written every pass; a zero pointer would send the writes to addresses 0x14 to 0x18"><text class="dg-label" x="320" y="24">0x801F85E0: sixteen saved mote pointers, 4 bytes each</text><rect class="dg-node" x="32" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="50" y="63">0</text><rect class="dg-node" x="68" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="86" y="63">1</text><rect class="dg-node" x="104" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="122" y="63">2</text><rect class="dg-node" x="140" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="158" y="63">3</text><rect class="dg-node" x="176" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="194" y="63">4</text><rect class="dg-node" x="212" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="230" y="63">5</text><rect class="dg-node" x="248" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="266" y="63">6</text><rect class="dg-node" x="284" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="302" y="63">7</text><rect class="dg-node" x="320" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="338" y="63">8</text><rect class="dg-node" x="356" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="374" y="63">9</text><rect class="dg-node" x="392" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="410" y="63">10</text><rect class="dg-node" x="428" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="446" y="63">11</text><rect class="dg-node" x="464" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="482" y="63">12</text><rect class="dg-node" x="500" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="518" y="63">13</text><rect class="dg-node" x="536" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="554" y="63">14</text><rect class="dg-node" x="572" y="40" width="36" height="36" rx="4"/><text class="dg-label" x="590" y="63">15</text><text class="dg-sub" x="320" y="94">phase 2 stores the spawn result unchecked; phase 3 writes through every entry</text><path class="dg-edge" d="M167 100 V122"/><g class="dg-arrow"><path d="M167 130 l-4 -8 h8 z"/></g><path class="dg-edge-dim" d="M473 100 V122"/><g class="dg-arrow"><path d="M473 130 l-4 -8 h8 z"/></g><rect class="dg-node-ok" x="32" y="130" width="270" height="54" rx="4"/><text class="dg-label" x="167" y="152">pointer valid</text><text class="dg-sub" x="167" y="170">mote +0x14 / +0x16 / +0x18 updated</text><rect class="dg-node-warn" x="338" y="130" width="270" height="54" rx="4"/><text class="dg-label" x="473" y="152">pointer 0 (candidate, not confirmed)</text><text class="dg-sub" x="473" y="170">writes land at 0x14 / 0x16 / 0x18</text></svg>
-    <figcaption>The pointer table the module keeps for its motes. Candidate 1 is what happens if an entry is zero; it is a prediction from the code, not an observed fault.</figcaption>
+    <svg viewBox="0 0 640 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline of the Orb creature's clip from the frame it is seated: it lands at frame 100 and the unfold is queued, the curled clip ends at frame 187; with bit 0x4 of +0x1DC clear the unfold clip plays and completes at frame 419, with the bit set the curled clip loops to the end of the cast"><text class="dg-label dg-start" x="40" y="20">seated</text><text class="dg-sub dg-start" x="40" y="35">clip 0</text><text class="dg-label" x="160" y="20">lands</text><text class="dg-sub" x="160" y="35">+0x1DA 0 to 1</text><text class="dg-label" x="264" y="20">clip 0 ends</text><text class="dg-sub" x="264" y="35">+0x1DC bit 0x4?</text><text class="dg-label" x="377" y="20">close-up</text><text class="dg-sub" x="377" y="35">Holy Orb</text><text class="dg-label" x="543" y="20">unfold done</text><path fill="none" stroke="var(--dg-ink-dim)" stroke-width="1.2" d="M40 52 H620"/><path fill="none" stroke="var(--dg-ink-dim)" stroke-width="1" d="M40 46 V58"/><text class="dg-sub" x="40" y="72">0</text><path fill="none" stroke="var(--dg-ink-dim)" stroke-width="1" d="M160 46 V58"/><text class="dg-sub" x="160" y="72">100</text><path fill="none" stroke="var(--dg-ink-dim)" stroke-width="1" d="M264 46 V58"/><text class="dg-sub" x="264" y="72">187</text><path fill="none" stroke="var(--dg-ink-dim)" stroke-width="1" d="M377 46 V58"/><text class="dg-sub" x="377" y="72">281</text><path fill="none" stroke="var(--dg-ink-dim)" stroke-width="1" d="M543 46 V58"/><text class="dg-sub" x="543" y="72">419</text><text class="dg-label dg-start" x="40" y="100">Bit clear: clip 1 is committed and the legs unfold</text><rect class="dg-node" x="40" y="108" width="120" height="28" rx="3"/><text class="dg-label" x="100" y="126">clip 0: drops</text><rect class="dg-node-accent" x="160" y="108" width="104" height="28" rx="3"/><text class="dg-label" x="212" y="126">unfold queued</text><rect class="dg-node-ok" x="264" y="108" width="279" height="28" rx="3"/><text class="dg-label" x="403" y="126">clip 1: legs unfold</text><rect class="dg-node-ok" x="543" y="108" width="77" height="28" rx="3"/><text class="dg-label" x="581" y="126">stands</text><text class="dg-label dg-start" x="40" y="168">Bit set: idle replaces the queued unfold</text><rect class="dg-node" x="40" y="176" width="120" height="28" rx="3"/><text class="dg-label" x="100" y="194">clip 0: drops</text><rect class="dg-node-accent" x="160" y="176" width="104" height="28" rx="3"/><text class="dg-label" x="212" y="194">unfold queued</text><rect class="dg-node-warn" x="264" y="176" width="356" height="28" rx="3"/><text class="dg-label" x="442" y="194">clip 0 again, looping: stays in its sphere</text><text class="dg-sub dg-start" x="40" y="228">Queued once, at 0x801F741C. Thrown away at 0x80047B44 when the bit is set.</text></svg>
+    <figcaption>The creature's clip over one cast, to scale, in display frames from the moment it is seated (measured on one cast with nothing written by hand beyond the injected action). Both rows are identical until the curled clip ends at frame 187; the flag decides what plays next.</figcaption>
   </figure>
 
-  <h3>The candidates</h3>
+  <p>Turning the switch on by hand reproduces exactly the reported picture. That is a capture on a poked state: it shows what the switch does, not who flips it. What turns it on during ordinary play is not found, which is why this case is partially explained and not explained.</p>
+  <p>It is the same stale switch, read by the same instructions, that causes the <a href="../gaza-orbit-softlock.html">Gaza camera-orbit softlock</a>. There a flinch leaves it set on a monster and the monster's walk-in is replaced by idle; here something leaves it set on the summon seat and Orb's unfold is replaced by idle.</p>
+
+  <h3>The mechanism, step by step</h3>
+  <p>The creature is battle seat 7. Three bytes of its actor steer its clip: <code>+0x1D9</code> the clip playing, <code>+0x1DA</code> the clip queued to play next, and <code>+0x1DC</code> the animation flags, whose bit <code>0x4</code> means "exit to idle at the end of this clip". Clip 0 is the curled pose (18 frames, legs part-way out near its end); clip 1 is the full unfold (29 frames), ending with the creature standing.</p>
   <ol class="steps steps-vertical">
-    <li><b>Unchecked failed spawns</b><span>The pool spawn <code>FUN_80050ED4</code> returns 0 when its 96-word pool at <code>0x801C90F0</code> or the actor allocator is full. Orb stores the result without a test (<code>0x801F6EC0</code>, <code>0x801F7064</code>) and later writes through all sixteen. A failed mote would be missing, and the writes would land at addresses <code>0x14</code>, <code>0x16</code>, <code>0x18</code>. Whether the pools can be that full during a cast is not established.</span></li>
-    <li><b>Random by design</b><span>Each pair of motes rolls four random numbers for its start offset (<code>0x801F6CDC</code>, <code>0x801F6D08</code>, <code>0x801F6D38</code>, <code>0x801F6D70</code>), so no two casts look alike. Variation, not a defect - but possibly what was seen.</span></li>
-    <li><b>Stale mote pointers</b><span>Would matter if a mote retired early. Its script at <code>0x801F8194</code> waits <code>0xFFF</code> frames before halting, far longer than the pull-in, and the pointers are unused afterwards. Reads as safe.</span></li>
-    <li><b>The pool flush overshoots</b><span><code>FUN_80050E74</code> clears <code>0x80</code> words where the allocator fills only <code>0x60</code>, so any non-zero word in <code>0x801C9270..0x801C92EF</code> is treated as an actor and halted. What lives there is not identified, and every module that flushes shares this.</span></li>
-    <li><b>Leftover scratch</b><span>The countdown (<code>0x801F8558</code>) and both tables sit in the module image, zero on disc, and are written before they are read. Reads as safe.</span></li>
+    <li><b>Seat</b><span>After pulling sixteen light motes in to the caster, the module seats the creature (<code>jal 0x801f19ec</code> at <code>0x801F70B0</code>), presets the clip cursor to <code>0x30</code> of clip 0's 288 units (<code>0x801F70E4</code>) and puts it at height <code>-0x320</code> (<code>0x801F70F0</code>).</span></li>
+    <li><b>Drop</b><span>A descent, not a timer: each pass adds the frame delta times a speed scalar to the height (<code>0x801F73DC..0x801F7400</code>) and holds while it is negative.</span></li>
+    <li><b>Landing frame</b><span>On the pass the height reaches zero the module adds one to the queued-clip byte (<code>0x801F7410..0x801F741C</code>) and sets no commit flag. This is its only write to <code>+0x1DA</code>.</span></li>
+    <li><b>The curled clip ends</b><span>The animation tick <code>FUN_80047430</code> tests bit <code>0x4</code> of <code>+0x1DC</code> (<code>0x80047B30..0x80047B3C</code>). If set, it zeroes the queued clip (<code>0x80047B44</code>). Then it commits whatever is queued and clears the low three flag bits (<code>0x80047B50..0x80047B58</code>).</span></li>
+    <li><b>Two outcomes</b><span>Bit clear: clip 1 is committed and the legs unfold. Bit set: clip 0 is committed again and loops, and nothing queues clip 1 a second time.</span></li>
   </ol>
+  <p>What lets the bit survive into a new summon: the seat routine <code>FUN_801F19EC</code> clears the playing clip (<code>0x801F1DD8</code>) and writes two other bytes, but has no store to <code>+0x1DC</code>. Of the three bytes that steer the creature's clip, it is the one a new summon inherits from whatever was done to seat 7 before.</p>
 
   <details class="disclosure">
-    <summary>Module walkthrough</summary>
-    <p>The tick is <code>FUN_801F69D8</code>; its phase byte is <code>ctx[+0x279]</code>.</p>
-    <ul>
-      <li><strong>Phase 2</strong> (<code>0x801F6BB8</code>): four parts through <code>FUN_80021B04</code> (records <code>0x801F804C</code>, <code>0x801F8098</code>, <code>0x801F80E4</code>, <code>0x801F8130</code>), then sixteen motes (<code>sltiu v0,s2,0x10</code> at <code>0x801F7068</code>) on record <code>0x801F8190</code>. X is <code>rand % 511 + 0x100</code> with a random sign, Y is <code>-(rand % 511)</code>, Z is <code>rand % 255 + 0x300</code>. Offsets go to <code>0x801F8560 + i * 8</code>, pointers to <code>0x801F85E0 + i * 4</code>.</li>
-      <li><strong>Phase 3</strong> (<code>0x801F707C</code>): loads each pointer (<code>lw a0,0x0(a3)</code> at <code>0x801F7210</code>) and writes the position (<code>+0x16</code> at <code>0x801F7230</code>, <code>+0x18</code> at <code>0x801F72CC</code>, <code>+0x14</code> at <code>0x801F7368</code>), then flushes the pool and places the creature in seat 7.</li>
-      <li><strong>Phase 4</strong> lowers the creature; <strong>phase 5</strong> jumps to <strong>9</strong> (<code>sb s7,0x279(s5)</code> at <code>0x801F7780</code>), which flushes again and heals.</li>
-      <li>The same unchecked shape recurs with the object pointer at <code>ctx[+0x102C]</code>: stored at <code>0x801F76B0</code>, dereferenced at <code>0x801F78D0..0x801F78E4</code>.</li>
-    </ul>
+    <summary>The two instruction sequences</summary>
+    <p>The landing frame in the Orb module (PROT entry 0911):</p>
+<pre><code>801f7408  bltz v0,0x801f7fb4      ; still above the ground: hold
+801f7410  lbu  v0,0x1da(s4)
+801f7414  sh   zero,0x36(s4)      ; height = 0
+801f7418  addiu v0,v0,0x1
+801f741c  sb   v0,0x1da(s4)       ; queued clip = queued clip + 1</code></pre>
+    <p>The natural end of a clip in the animation tick (<code>SCUS_942.54</code>):</p>
+<pre><code>80047b30  lbu  v0,0x1dc(s2)
+80047b38  andi v0,v0,0x4
+80047b3c  beq  v0,zero,0x80047b48
+80047b44  sb   zero,0x1da(s2)     ; bit 0x4 set: queued clip = 0 (idle)
+80047b50  andi v0,v0,0xf8
+80047b54  jal  0x8004ad80         ; commit whatever is queued
+80047b58  sb   v0,0x1dc(s2)       ; +0x1DC &amp;= 0xF8</code></pre>
   </details>
+
+  <h3>What the captures show</h3>
+  <p>Every cast below is injected: where a party member's action is seeded, the queued action is rewritten to Orb, and the game then loads and runs the spell itself. Where something else was written by hand, the table says so.</p>
+  <table class="data-table">
+    <thead><tr><th>Cast</th><th>Written by hand</th><th>At the end of the curled clip</th><th>Rest of the cast</th></tr></thead>
+    <tbody>
+      <tr><td>Reference</td><td>nothing</td><td><code>+0x1DC</code> 0; clip 1 committed</td><td>Unfolds and stands</td></tr>
+      <tr><td>Bit set early</td><td>seat 7 <code>+0x1DC = 4</code>, before the creature is seated</td><td>the bit is still 4 after the seat; <code>+0x1DA</code> goes 1 to 0, the cursor wraps</td><td><strong>Stays in its sphere to the end</strong></td></tr>
+      <tr><td>Bit set late</td><td>seat 7 <code>+0x1DC = 4</code>, four frames after the landing</td><td>the same</td><td><strong>The same</strong></td></tr>
+      <tr><td>Stale clip ids</td><td>seat 7 <code>+0x1D9</code>, <code>+0x1DA</code>, <code>+0x1DB</code> set to 1, and to 2, before the seat</td><td>both read 0 again by the landing</td><td>Unfolds and stands</td></tr>
+      <tr><td>Forced frame step</td><td>frame-step byte <code>0x1F800393</code> held at 1, 2, 3, 4 and 6</td><td>landing always at cursor 120 of 288</td><td>Unfolds and stands, every time</td></tr>
+    </tbody>
+  </table>
+  <p>In the two bit-set casts the creature lands with its legs part-way out, snaps back inside the sphere when the curled clip wraps, and stays folded through the "Holy Orb" close-up, the ring burst and the white-out.</p>
+
+  <h3>What it is not</h3>
+  <ul>
+    <li><strong>A disc loading race.</strong> The unfold is queued by a byte increment on the pass the creature's height reaches zero, about 100 frames after a seat that itself runs only once the creature is installed. A late load delays the seat and everything after it together.</li>
+    <li><strong>Frame-rate dependence.</strong> The descent and the clip cursor scale with the same frame delta, so they cannot drift apart; the forced-step casts all land at the same cursor and unfold.</li>
+    <li><strong>Leftover clip ids from the previous summon.</strong> Stale <code>+0x1D9</code> / <code>+0x1DA</code> values are cleared before the landing.</li>
+    <li><strong>A failed sparkle spawn.</strong> The module moves its sixteen motes through pointers it stores without testing them (<code>0x801F6EC0</code>, <code>0x801F7064</code>), and the pool spawn <code>FUN_80050ED4</code> returns 0 when its 96 usable slots are taken. That does not happen in ordinary play: the game releases every retired effect each battle frame (<code>0x8004814C..0x80048184</code> in <code>FUN_800480D8</code>), a state taken going into an Orb cast reads 0 slots used and 123 free actors against the 20 needed, and in two live casts - one a random battle in Rogue's Tower with three party members and two enemies - all sixteen spawns return actors. A failed spawn would cost one mote, not the creature's pose.</li>
+    <li><strong>The effect-pool clean-up overrunning the pool.</strong> <code>FUN_80050E74</code> walks <code>0x80</code> words where the allocator fills <code>0x60</code>, but the array really is <code>0x80</code> words (battle init zeroes that many at <code>0x8005603C..0x80056050</code>) and no code on the disc references the last 32, so they stay zero and are skipped.</li>
+    <li><strong>Rogue's Tower itself.</strong> One Orb cast in a Rogue's Tower random battle, with screenshots through the whole animation, matches a reference cast on the plains. One clean cast does not clear a location for a fault that happens "sometimes".</li>
+  </ul>
+
+  <h3>Where the flag could come from</h3>
+  <p>Not found. Measured so far: battle setup leaves seat 7 all zero; eighteen other player summons followed to their end (<code>0x81</code>, <code>0x83</code>, <code>0x84</code>, <code>0x86..0x88</code>, <code>0x8A..0x8C</code>, <code>0x8E..0x90</code>, <code>0x92..0x95</code>, <code>0x98</code>) and six more from other runs (<code>0x82</code>, <code>0x85</code>, <code>0x8D</code>, <code>0x89</code>, <code>0x96</code>, <code>0x99</code>) all finish with the flag byte at 0; seven long ones (<code>0x91</code>, <code>0x9A</code>, <code>0x9B</code>, <code>0x9D..0xA0</code>) read 0 as far as they were followed but were not followed to their last phase; and one Rogue's Tower enemy special cast before the party's Orb leaves it at 0.</p>
+  <p>What remains is inference: a routine outside the spell modules that stages a reaction on whatever actor it is pointed at. After a summon ends, seat 7 keeps a non-zero HP and is no longer animated, so a flag set on it then is never used up by a clip ending and is still there at the next seat. Code outside the spell modules that sets the bit includes the hit flinch at <code>0x80042144</code> (the setter in the Gaza softlock), <code>0x8004F8D0</code> and <code>0x8004BF08</code> in <code>SCUS_942.54</code>, and <code>0x801E19DC</code>, <code>0x801E4868</code>, <code>0x801E5E9C</code>, <code>0x801EEC84</code> in the battle overlay (PROT entry 0898). The list comes from a pattern scan and is a floor; which of them can be handed seat 7 is not traced.</p>
 
   <h3>Addresses</h3>
   <table class="data-table">
     <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
     <tbody>
-      <tr><td><code>0x801F69D8</code></td><td>PROT 0911</td><td><code>FUN_801F69D8</code>, the Orb cast tick</td><td>disassembly</td></tr>
-      <tr><td><code>0x801F7FE8</code></td><td>PROT 0911</td><td>Stager hook called from part scripts</td><td>disassembly</td></tr>
-      <tr><td><code>0x801F8190</code></td><td>PROT 0911</td><td>Mote part record; script from <code>0x801F8194</code></td><td>disc data</td></tr>
-      <tr><td><code>0x801F8558</code>, <code>0x801F8560</code>, <code>0x801F85E0</code></td><td>PROT 0911</td><td>Countdown, sixteen offsets, sixteen saved pointers</td><td>disassembly</td></tr>
-      <tr><td><code>0x801F6EC0</code>, <code>0x801F7064</code></td><td>PROT 0911</td><td>The two unchecked stores of a spawn result</td><td>disassembly</td></tr>
-      <tr><td><code>0x80050ED4</code></td><td>SCUS</td><td><code>FUN_80050ED4</code>, pool spawn; 0 on a full pool or allocator</td><td>disassembly</td></tr>
-      <tr><td><code>0x80050E74</code></td><td>SCUS</td><td><code>FUN_80050E74</code>, pool flush over <code>0x80</code> words</td><td>disassembly</td></tr>
-      <tr><td><code>0x80021B04</code>, <code>0x80056798</code></td><td>SCUS</td><td>Part seater; random number source</td><td>disassembly; repo doc</td></tr>
-      <tr><td><code>0x801C90F0</code></td><td>RAM</td><td>Part pool: <code>0x60</code> words allocated, <code>0x80</code> flushed</td><td>disassembly</td></tr>
-      <tr><td><code>0x801C938C</code></td><td>RAM</td><td>Actor table entry 7, the summon creature</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F69D8</code></td><td>PROT 0911</td><td><code>FUN_801F69D8</code>, the Orb cast tick; phase byte <code>ctx[+0x279]</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801F70B0</code></td><td>PROT 0911</td><td>The seat call, <code>jal 0x801f19ec</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801F70E4</code>, <code>0x801F70F0</code></td><td>PROT 0911</td><td>Cursor preset <code>0x30</code>; height <code>-0x320</code></td><td>disassembly; capture</td></tr>
+      <tr><td><code>0x801F73DC..0x801F7408</code></td><td>PROT 0911</td><td>The descent and its "still above the ground" hold</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F7410..0x801F741C</code></td><td>PROT 0911</td><td>Landing frame: <code>+0x1DA</code> incremented, no commit flag</td><td>disassembly; capture</td></tr>
+      <tr><td><code>0x801F7420..0x801F7440</code></td><td>PROT 0911</td><td>Countdown seed for the next phase</td><td>disassembly</td></tr>
+      <tr><td><code>0x80047B30..0x80047B58</code></td><td>SCUS</td><td>Natural clip end in the animation tick <code>FUN_80047430</code>: bit <code>0x4</code> zeroes the queued clip, then the commit <code>FUN_8004AD80</code></td><td>disassembly; capture (poked)</td></tr>
+      <tr><td><code>0x801F19EC</code></td><td>PROT 0898</td><td><code>FUN_801F19EC</code>, the summon seat routine. Clears <code>+0x1D9</code> at <code>0x801F1DD8</code>; no store to <code>+0x1DC</code></td><td>disassembly; capture (poked)</td></tr>
+      <tr><td><code>0x801C938C</code>, <code>0x800EDDB4</code></td><td>RAM</td><td>Actor table entry 7, and the seat 7 actor record it points to in battle</td><td>disassembly; capture</td></tr>
+      <tr><td><code>0x800EDF8D</code>, <code>0x800EDF8E</code>, <code>0x800EDF90</code></td><td>RAM</td><td>Seat 7's playing clip, queued clip and flags (<code>+0x1D9</code>, <code>+0x1DA</code>, <code>+0x1DC</code>). Writing 4 to the last reproduces the symptom</td><td>capture (poked)</td></tr>
+      <tr><td><code>0x1F800393</code></td><td>scratchpad</td><td>The frame-step byte (<a href="../../subsystems/move-vm.html">move VM</a>)</td><td>repo doc</td></tr>
+      <tr><td><code>0x801F6EC0</code>, <code>0x801F7064</code></td><td>PROT 0911</td><td>The two unchecked stores of a mote spawn result, into the table at <code>0x801F85E0</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80050ED4</code>, <code>0x80050E74</code></td><td>SCUS</td><td>Pool spawn (searches <code>0x60</code> words) and pool flush (walks <code>0x80</code>)</td><td>disassembly</td></tr>
+      <tr><td><code>0x8004814C..0x80048184</code></td><td>SCUS</td><td><code>FUN_800480D8</code>: per-frame release of retired pool slots, <code>0x80</code> words</td><td>disassembly</td></tr>
+      <tr><td><code>0x8005603C..0x80056050</code></td><td>SCUS</td><td><code>FUN_80055B6C</code>: pool zeroed at battle init, <code>0x80</code> words</td><td>disassembly</td></tr>
+      <tr><td><code>0x801C90F0</code></td><td>RAM</td><td>Part pool: <code>0x80</code> words, of which the allocator uses <code>0x60</code></td><td>disassembly; capture</td></tr>
+      <tr><td><code>0x80042144</code>, <code>0x8004F8D0</code>, <code>0x8004BF08</code></td><td>SCUS</td><td>Code outside the spell modules that sets bit <code>0x4</code> of an actor's <code>+0x1DC</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801E19DC</code>, <code>0x801E4868</code>, <code>0x801E5E9C</code>, <code>0x801EEC84</code></td><td>PROT 0898</td><td>The same, in the battle overlay</td><td>disassembly</td></tr>
     </tbody>
   </table>
 
-  <h3>The capture that would settle it</h3>
-  <p>First, a description of the symptom: missing sparkles, a mis-posed creature, a stall - and which Orb. Then, with the spell loaded in a debugger:</p>
+  <h3>What else follows</h3>
   <ul>
-    <li>Break at <code>0x801F6EC0</code> and <code>0x801F7064</code> on <code>v0 == 0</code>. A hit means a mote failed to spawn.</li>
-    <li>Write-watch <code>0x00000014..0x00000019</code> during the cast.</li>
-    <li>At entry to <code>0x80050E74</code>, look for non-zero words in <code>0x801C9270..0x801C92EF</code>.</li>
+    <li>Any summon that queues its next clip once, without a commit flag, shares the exposure. Which others do is not enumerated.</li>
+    <li>The enemy Orb is a different animation path and is not examined; neither are the Japanese and PAL discs for this case.</li>
   </ul>
-  <p>A cast where one of these fires, recorded with what the screen shows, tells which candidate - if any - is the glitch.</p>
+
+  <h3>Verifying it</h3>
+  <ul>
+    <li><strong>To reproduce:</strong> start an Orb cast and write 4 to <code>0x800EDF90</code> at any time from before the creature is seated to the end of the curled clip, about 187 frames after the seat. The creature stays in its sphere.</li>
+    <li><strong>To recognise a real occurrence:</strong> log seat 7's <code>+0x1D9</code>, <code>+0x1DA</code>, <code>+0x1DC</code> and the clip cursor (<code>+0x68</code> of the node at actor <code>+0x22C</code>) every frame of an Orb cast. In the fault <code>+0x1DC</code> has bit <code>0x4</code> set between the seat and the end of the curled clip, and <code>+0x1DA</code> goes from 1 to 0 at the wrap.</li>
+    <li><strong>The measurement that would settle it:</strong> a write breakpoint on <code>0x800EDF90</code> that records the program counter whenever bit <code>0x4</code> becomes set while no cast is running - or a save state taken during a bad cast, or just before one with the preceding action known.</li>
+  </ul>
+  <p>Open: what sets the bit on seat 7 in ordinary play; the endings of the seven long summons; and which other summon modules queue a clip once without a commit flag.</p>
 </section>
 
 <section class="doc-section" id="jette-clone">
@@ -277,5 +376,5 @@
     <li>Replacing the <code>andi v0,v0,0x1</code> at <code>0x801F813C</code> with a constant forces either outcome.</li>
     <li>With Jette's MP at 0, the gate at <code>0x801EB8FC</code> never selects Clone.</li>
   </ul>
-  <p>Open: whether any targeting or display state still points at the old seat after an odd roll; whether the reset is an intended part of the shell game or a side effect of reusing the monster initialiser (the code reads as the latter, but intent is inference); and the Japanese and PAL releases, which are not examined.</p>
+  <p>Open: whether any targeting or display state still points at the old seat after an odd roll; whether the reset is an intended part of the shell game or a side effect of reusing the monster initialiser (the code reads as the latter, but intent is inference); and the Japanese and PAL releases, which are not examined for this case.</p>
 </section>

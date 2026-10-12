@@ -130,7 +130,9 @@ Field offsets are pinned by a fusion of three sources:
 +0x196  u8       armor_id                 ; "Armor Modifier" / "Best Equipment"
 +0x197  u8       head_gear_id             ; "Head Gear Modifier"
 +0x198  u8       weapon_id                ; "Weapon Modifier"
-+0x199  u8       ra_seru_item_id          ; the Ra-Seru equipment byte.
++0x199  u8       ra_seru_item_id          ; the Ra-Seru equipment byte for Vahn
+                                           ; and Gala. Noa's Ra-Seru is one byte
+                                           ; lower, at +0x198 (equipment index 2).
                                            ; "Activate Meta at Lv9" writes item
                                            ; 0x09 (final-form Ra-Seru Meta)
                                            ; here; the grant scan in
@@ -212,7 +214,8 @@ The mapping from cheat description to record offset is:
 | `All Summons Level 9` | `0x80084869..0x80084886` | `+0x161..+0x178` | spell_levels (first 16 list positions) |
 | `Has all Arts` | `0x8008488D..0x8008489A` | `+0x185..+0x192` | displayed_skill_count + ids |
 | `Best Equipment` | `0x8008489E` / `0x800848A0` / `0x800848A2` | `+0x196` / `+0x198` / `+0x19A` | armor / weapon / leg gear |
-| `Activate Meta at Lv9` | `0x800848A1` | `+0x199` | ra_seru_item_id |
+| `Activate Meta at Lv9` | `0x800848A1` | `+0x199` | ra_seru_item_id (value `0x09`, the final form; triggers the Meta grant) |
+| `Activate Terra at Lv9` / `Activate Ozma at Lv9` | `0x80084CB4` / `0x800850C9` | Noa `+0x198` / Gala `+0x199` | the Ra-Seru byte, but the values written (`0x12`, `0x1B`) are an unnamed item gap and the Ra-Seru Blade, not the final forms `0x11` / `0x19`, so neither reaches the grant scan |
 | `Accessory 1 Modifier` | `0x800848A3` | `+0x19B` | accessory_1_id |
 | `Max Exp` | `0x80084708` / `0x8008470A` | `+0x000` / `+0x002` | xp_cumulative (combined u32) |
 

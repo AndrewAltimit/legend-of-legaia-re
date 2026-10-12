@@ -132,7 +132,7 @@
       <tr><td><code>+0x196</code></td><td>1</td><td><code>armor_id</code></td><td>"Armor Modifier" / "Best Equipment"</td></tr>
       <tr><td><code>+0x197</code></td><td>1</td><td><code>head_gear_id</code></td><td>"Head Gear Modifier"</td></tr>
       <tr><td><code>+0x198</code></td><td>1</td><td><code>weapon_id</code></td><td>"Weapon Modifier"</td></tr>
-      <tr><td><code>+0x199</code></td><td>1</td><td><code>ra_seru_item_id</code></td><td>the Ra-Seru equipment byte. "Activate Meta at Lv9" writes item <code>0x09</code> (final-form Ra-Seru Meta) here; the grant scan in <code>FUN_80042558</code> then inserts spell <code>0x9E</code></td></tr>
+      <tr><td><code>+0x199</code></td><td>1</td><td><code>ra_seru_item_id</code></td><td>the Ra-Seru equipment byte for Vahn and Gala; Noa's is one byte lower, at <code>+0x198</code>. "Activate Meta at Lv9" writes item <code>0x09</code> (final-form Ra-Seru Meta) here; the grant scan in <code>FUN_80042558</code> then inserts spell <code>0x9E</code></td></tr>
       <tr><td><code>+0x19A</code></td><td>1</td><td><code>leg_gear_id</code></td><td>"Leg Gear Modifier"</td></tr>
       <tr><td><code>+0x19B</code> .. <code>+0x19D</code></td><td>3</td><td><code>accessory_1..3_id</code></td><td>"Accessory N Modifier"; <code>+0x19E..+0x1A6</code> unmapped</td></tr>
       <tr><td><code>+0x1A7</code> / <code>+0x1B7</code></td><td>16+16</td><td><code>auto_command_string_a</code> / <code>_b</code></td><td>the battle menu's <strong>Auto</strong> replay queue, primary and secondary AP band (<a href="#auto-command">note</a>); <code>+0x1C7..+0x2A6</code> unmapped</td></tr>
@@ -230,7 +230,8 @@
           <tr><td>All Summons Level 9</td><td><code>0x80084869..86</code></td><td><code>+0x161..+0x178</code></td><td>spell_levels (first 16 list positions)</td></tr>
           <tr><td>Has all Arts</td><td><code>0x8008488D..9A</code></td><td><code>+0x185..+0x192</code></td><td>displayed_skill_count + ids</td></tr>
           <tr><td>Best Equipment</td><td><code>0x8008489E</code> / <code>A0</code> / <code>A2</code></td><td><code>+0x196</code> / <code>+0x198</code> / <code>+0x19A</code></td><td>armor / weapon / leg gear</td></tr>
-          <tr><td>Activate Meta at Lv9</td><td><code>0x800848A1</code></td><td><code>+0x199</code></td><td>ra_seru_item_id</td></tr>
+          <tr><td>Activate Meta at Lv9</td><td><code>0x800848A1</code></td><td><code>+0x199</code></td><td>ra_seru_item_id (value <code>0x09</code>, the final form; triggers the Meta grant)</td></tr>
+          <tr><td>Activate Terra / Ozma at Lv9</td><td><code>0x80084CB4</code> / <code>0x800850C9</code></td><td>Noa <code>+0x198</code> / Gala <code>+0x199</code></td><td>the Ra-Seru byte, but the values written (<code>0x12</code>, <code>0x1B</code>) are an unnamed item gap and the Ra-Seru Blade, not the final forms <code>0x11</code> / <code>0x19</code>, so neither reaches the grant scan</td></tr>
           <tr><td>Accessory 1 Modifier</td><td><code>0x800848A3</code></td><td><code>+0x19B</code></td><td>accessory_1_id</td></tr>
           <tr><td>Max Exp</td><td><code>0x80084708</code> / <code>0A</code></td><td><code>+0x000</code> / <code>+0x002</code></td><td>xp_cumulative (combined u32)</td></tr>
         </tbody>
