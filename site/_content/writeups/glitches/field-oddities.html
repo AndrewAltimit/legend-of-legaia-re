@@ -232,10 +232,15 @@
       <tr><td>Check, memory card</td><td>byte <code>+0x161A</code> of the save block, bit <code>0x04</code></td></tr>
       <tr><td>Fix, RAM</td><td>clear bit <code>0x04</code> of <code>0x8008575A</code> once, then save. It stays clear: nothing sets it after the castle</td></tr>
       <tr><td>Fix, memory card</td><td>clear bit <code>0x04</code> at save-block <code>+0x161A</code> and re-sum the block (<code>+0x1FFC</code> is the wrapping sum of the first <code>0x7FF</code> little-endian words)</td></tr>
+      <tr><td>Fix, disc</td><td>patch the disc with <code>--fortress-encounter-fix</code> (below): the Fortress stops reading the flag, so an affected save needs no edit</td></tr>
       <tr><td>Avoid</td><td>reach the Floating Castle's exit with more than 1:00 on the clock</td></tr>
     </tbody>
   </table>
   <p>The clock is not gentle: the scene loader takes <strong>20 seconds</strong> off a running clock on every scene entry, and the castle is two scenes, so each crossing between them costs 20 seconds on top of the walking.</p>
+
+  <h3>The fix</h3>
+  <p>The patcher's <code>--fortress-encounter-fix</code> (a checkbox in the <a href="../../tooling/rom-patcher.html">browser patcher</a>; <a href="../../tooling/randomizer.html#fortress-encounter-fix">reference</a>) closes it on the disc, and it <strong>heals a save that already carries the flag</strong>. In both Fortress scenes it rewrites the leading group of the encounter table - 14 bytes of each scene's data, same size - into a duplicate of the scene's own post-Jette group: the first condition tests flag <code>0x521</code> instead of <code>0x15</code>, and its row becomes a copy of that group's whole-map row. The Fortress then never reads flag <code>0x15</code>. A healthy file sees the same rooms and rates as before, and after Jette the same quiet Fortress.</p>
+  <p>The castle is not touched: its last minute stays quiet and the flag is still left set afterwards, with nothing left to read it. The missing op itself, a <code>60 15</code> in the escape-success record, is not added - the castle's script ships as a raw chunk of a streamed file, where a two-byte insertion cannot be made in place.</p>
 
   <h3>The cause, step by step</h3>
   <ol class="steps steps-vertical">

@@ -530,6 +530,12 @@
       </label>
 
       <label class="rom-check-row">
+        <input type="checkbox" id="rom-fortress-fix">
+        <span>Fortress encounter fix <span class="rom-opt-note">- random battles return to Jette's Absolute Fortress (bug fix)</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Leaving Zora's Floating Castle with under a minute on the escape clock leaves a "no battles" flag set for good, and retail's Absolute Fortress still obeys it: no random battles anywhere inside, and the Door of Light greyed out. With the fix the Fortress ignores that flag, which also heals a save that already has it. Unaffected saves and the castle itself play as retail. Unaffected by the seed; <a href="../writeups/glitches/field-oddities.html#fortress-no-encounters">full write-up</a>.</span></span></span>
+      </label>
+
+      <label class="rom-check-row">
         <input type="checkbox" id="rom-delilas-challenge">
         <span>Delilas Challenge <span class="rom-opt-note">- a new Delilas dome course at the Muscle Dome</span>
           <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The Muscle Dome clerk gains a fourth option: a new course where Che and Lu Delilas fight you <strong>together</strong>, then Gi finishes the gauntlet. Unlocks after the Koru event in Nivora Ravine; a full clear pays 5,000 coins plus a Honey (or the three custom items, below). Repeatable, and a loss just returns you to Sol.</p><p>Gi brings two borrowed moves - Spore Gas, and Divide once his health drops below half (he splits in two, at the cost of Blazing Slash).</p><p>Unaffected by the seed. <a href="randomizer.html#delilas-challenge">Details</a>.</p></span></span></span>
@@ -842,7 +848,7 @@
     <summary>Presets and modes, briefly</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Vanilla</strong> leaves everything off. <strong>Item Mix-up</strong> shuffles loot only. <strong>Balanced</strong> shuffles loot, encounters (kingdom pool), arts and gear bonuses, turns on the code-hook extras and both bug fixes, and starts the party at level 5. <strong>Full Chaos</strong> randomizes everything with the world-wide monster pool. Editing any control flips the row to <em>Custom</em>.</li>
+        <li><strong>Vanilla</strong> leaves everything off. <strong>Item Mix-up</strong> shuffles loot only. <strong>Balanced</strong> shuffles loot, encounters (kingdom pool), arts and gear bonuses, turns on the code-hook extras and the three bug fixes, and starts the party at level 5. <strong>Full Chaos</strong> randomizes everything with the world-wide monster pool. Editing any control flips the row to <em>Custom</em>.</li>
         <li><strong>Shuffle</strong> permutes what is already on the disc, so totals and difficulty are preserved. <strong>Randomize</strong> draws each slot fresh from the valid pool.</li>
         <li>Several code-hook features share one small arena of unused executable bytes, so only one of Shiny Seru, the Super Arts move list, the Super Arts Pack, the per-art AP overrides and the Delilas Challenge can be on at once; the page flags the conflict as soon as it exists.</li>
         <li>The language pack is applied around the randomizer passes and validated against your disc first; the coverage report says what landed. Per-feature mechanics, table locations and the code-injection details are on the <a href="randomizer.html">randomizer page</a>.</li>

@@ -176,6 +176,7 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     delilas::delilas_party(&mut run)?;
     battle_hooks::jewel_fix(&mut run)?;
     battle_hooks::approach_softlock_fix(&mut run)?;
+    world::fortress_encounter_fix(&mut run)?;
     battle_hooks::spirit_ap(&mut run)?;
     battle_hooks::damage_ap(&mut run)?;
     world::fishing_price(&mut run)?;

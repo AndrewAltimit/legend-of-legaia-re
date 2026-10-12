@@ -14,6 +14,7 @@
  * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, oscillating_ap, enemy_stat_scale,
  * exp_scale, seru_catch_rate, delilas_party, delilas_arts_voice,
  * delilas_moves, enemy_attack_count, swing_costs, equip_owners, enemy_hp_bar,
+ * fortress_encounter_fix,
  * progress?)
  * -> Promise<{ data, summary, seed, lang }>`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml, relayout?) -> { ok, language, applied, skipped, message, report }`,
@@ -256,6 +257,7 @@ function init() {
   const superArtsPackChk = $('rom-super-arts-pack');
   const jewelFixChk = $('rom-jewel-fix');
   const approachFixChk = $('rom-approach-fix');
+  const fortressFixChk = $('rom-fortress-fix');
   const delilasChallengeChk = $('rom-delilas-challenge');
   const customItemsChk = $('rom-custom-items');
   const delilasPartySel = $('rom-delilas-party');
@@ -620,6 +622,7 @@ function init() {
     superArtsPackChk.checked = !!cfg.superArtsPack;
     jewelFixChk.checked = cfg.jewelFix;
     approachFixChk.checked = cfg.approachFix;
+    fortressFixChk.checked = !!cfg.fortressFix;
     delilasChallengeChk.checked = cfg.delilasChallenge;
     customItemsChk.checked = cfg.customItems;
     delilasPartySel.value = cfg.delilasParty ?? '';
@@ -840,6 +843,7 @@ function init() {
     const superArtsPack = superArtsPackChk.checked;
     const jewelFix = jewelFixChk.checked;
     const approachFix = approachFixChk.checked;
+    const fortressFix = fortressFixChk.checked;
     const delilasChallenge = delilasChallengeChk.checked;
     const customItems = customItemsChk.checked;
     // Prices & names = the structured rows serialized to the raw inputs'
@@ -988,7 +992,7 @@ function init() {
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !superArtPower &&
       !artsApGrant && !artsApCost &&
       !spiritAp && !damageAp && !oscillatingAp && !enemyStatScale && !expScale && !seruCatchRate && !delilasParty &&
-      !attackCount && !swingCosts && !equipOwners && !enemyHpBar
+      !attackCount && !swingCosts && !equipOwners && !enemyHpBar && !fortressFix
     );
     if (!baseActive && texSpecs.length === 0) {
       setStatus('Enable at least one option (pick a preset, a language, a texture, or flip a toggle).', 'err');
@@ -1025,7 +1029,7 @@ function init() {
       let langReport = null;
       if (baseActive) {
         const langRelayout = langActive && !!(langRelayoutChk && langRelayoutChk.checked);
-        const result = await mod.patch_rom(buf, seed, langPack, langRelayout, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, oscillatingAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, attackCount, swingCosts, equipOwners, enemyHpBar, onPatchProgress);
+        const result = await mod.patch_rom(buf, seed, langPack, langRelayout, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, oscillatingAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, attackCount, swingCosts, equipOwners, enemyHpBar, fortressFix, onPatchProgress);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';

@@ -45,6 +45,7 @@ mod equipment_drops_real;
 mod equipment_edit_real;
 mod fishing_price_real;
 mod flee_exp_real;
+mod fortress_encounter_fix_real;
 mod house_door_classifier_real;
 mod house_door_patch_real;
 mod item_price_real;

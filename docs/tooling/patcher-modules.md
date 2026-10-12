@@ -328,6 +328,20 @@ walking. Same-size word edits in the overlay, checked against the stock words
 first. See
 [`docs/tooling/randomizer.md` § Approach-softlock fix](randomizer.md#approach-softlock-fix).
 
+## Fortress encounter fix (`fortress_encounter_fix` module)
+
+`--fortress-encounter-fix` stops Jette's Absolute Fortress obeying the Floating
+Castle's stale "no battles" flag. Both Fortress scene MANs (`deroa`, PROT entry
+606; `chitei2`, PROT entry 706) open their encounter condition list with a
+flag-`0x15` group copied from the castle, and the castle's escape clock leaves
+that flag set for good on any file that dipped under a minute. The module
+rewrites condition 0's flag id to the scene's post-Jette flag `0x521` and its
+single region row to a copy of that group's whole-map row - 14 decoded bytes,
+same size - then LZS re-packs the MAN into its own footprint. `locate` accepts
+the retail shape and the fixed shape and refuses anything else; the `apply`
+entry plans and re-packs both scenes before it writes either. See
+[`docs/tooling/randomizer.md` § Fortress encounter fix](randomizer.md#fortress-encounter-fix).
+
 ## Fishing prize prices (`fishing_price` module)
 
 `--fishing-price ITEM=POINTS` sets the fishing-point cost of a fishing-exchange

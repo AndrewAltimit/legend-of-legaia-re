@@ -289,7 +289,9 @@ Fortress is silent, and the Door of Light is greyed out there as well. No item, 
 changes it, because the flag is saved with the file. A file that escaped with more than a minute
 to spare is unaffected.
 
-The flag is one bit in the save and can be cleared; the check and the fix are in a table below.
+The flag is one bit in the save and can be cleared; the check and the save-side fix are in a table
+below. On the disc side the patcher's `--fortress-encounter-fix` makes the Fortress ignore the
+flag, which also repairs a file that already has it.
 
 Two other quiet states exist and are intended: once Jette is beaten a second flag switches the
 Fortress off permanently, and the boss room, the room before it, the council and Mist Generator
@@ -435,8 +437,21 @@ visit as they entered it. This is a reading of the scripts; the route was not wa
 | Fix, memory card | clear bit `0x04` at save-block `+0x161A` and re-sum the block (`+0x1FFC` is the wrapping sum of the first `0x7FF` little-endian words) |
 | Avoid | reach the Floating Castle's exit with more than 1:00 on the clock |
 
-On the disc, the fault is one missing op: a `60 15` in `taiku` `P2[16]`, or the removal of group 0
-from the two Fortress condition lists, closes it.
+#### The fix
+
+The patcher's `--fortress-encounter-fix`
+([`randomizer.md`](../../tooling/randomizer.md#fortress-encounter-fix)) closes it on the disc, and
+it heals a save that already carries the flag. In both Fortress scenes it rewrites the leading
+condition group - 14 bytes of each scene's MAN, same size - into a duplicate of the scene's own
+post-Jette group: condition 0 tests flag `0x521` instead of `0x15`, and its row becomes a copy of
+that group's whole-map row. The Fortress then never reads flag `0x15`. With `0x521` clear the walk
+falls through to the same rooms and rates as on a healthy file; with it set it selects a row that
+reads the same as the one retail reaches one record later.
+
+The castle is not touched: its last minute stays quiet, the flag is still raised there, and it
+still stays set afterwards - with nothing left to read it. The missing op itself, a `60 15` in
+`taiku` `P2[16]`, is not added: the castle's MAN ships as a raw chunk of a streamed file, where a
+two-byte insertion cannot be made in place.
 
 #### What was captured
 
