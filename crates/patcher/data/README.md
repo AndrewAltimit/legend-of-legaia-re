@@ -22,7 +22,7 @@ patch. The pack's find/replace slots 0..4 per character reproduce the retail
 Super Art trigger patterns, which this repository already documents in
 [`crates/art/src/super_art.rs`](../../art/src/super_art.rs); the seventeen
 animation edit-lists are `(offset, value)` scripts over art records, not copied
-game data. **The licence has not been agreed in writing yet - confirm terms with
-ZetaPhoenix before this file ships in a tagged release.** If he asks for it to be
+game data. ZetaPhoenix has agreed to the pack being included in and distributed with this
+project, tagged releases included. If he asks for it to be
 withdrawn, delete this file and the `super_arts_pack` module: nothing else in the
 crate depends on it.

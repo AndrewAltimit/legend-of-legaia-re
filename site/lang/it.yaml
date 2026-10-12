@@ -18453,9 +18453,6 @@ sections:
   - key: 'man:104:0x4170'
     translation: 'tua. Non la tocchero.'
     budget: 26
-  - key: 'man:104:0x4196'
-    translation: 'tamper with it.'
-    budget: 18
   - key: 'man:104:0x41af'
     translation: 'E inoltre,'
     budget: 21
@@ -46512,9 +46509,6 @@ sections:
   - key: 'man:543:0x477a'
     translation: 'Una melodia familiare'
     budget: 21
-  - key: 'man:543:0x47b7'
-    translation: 'ER NOT HERE'
-    budget: 25
   - key: 'man:543:0x47d2'
     translation: 'te, parlando cosi''?'
     budget: 21

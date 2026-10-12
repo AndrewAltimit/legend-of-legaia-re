@@ -1204,10 +1204,14 @@ def _playability_tiles() -> list[str]:
     defines the measurement.
 
     * Full-game ladder (`scripts/replays/full_game_baseline.toml`): of the
-      story segments the spine defines, how many a cold New Game clears in
-      order at tier `progresses` (scripted traversal reaches the next
-      milestone) and at tier `pad` (pad input alone reaches it). The
-      denominator is the baseline's own segment count.
+      story segments the spine defines, how many reach their next milestone
+      at tier `progresses` (scripted traversal) and at tier `pad` (pad input
+      alone). Every segment starts from a retail save at its milestone, and
+      both tiles say so. The denominator is the baseline's own segment count.
+    * The continuous run (`[continuous] reached` in the same baseline): how
+      many of those milestones one New Game reaches in order when it is never
+      re-seeded. The segmented tiles sit at their ceiling; this one does not,
+      so it is drawn beside them rather than left in the baseline.
     * Retail compare (`scripts/ci/retail-compare-baseline.json`): the mean
       `image` score - the fraction of 8x8 blocks whose mean colour is within
       tolerance of retail's frame - over the baselined states that carry one.
@@ -1241,24 +1245,41 @@ def _playability_tiles() -> list[str]:
         k = int(head["contiguous_progresses"])
         tiles.append(tile(
             f"{k}<small>/{n}</small>",
-            "story milestones the engine reaches in order from a New Game",
+            "story segments that reach their next milestone, each started from a retail save",
             100.0 * k / n,
-            f"Full-game ladder: {k} of {n} story milestones reached in order",
-            f"Full-game ladder: a cold New Game is driven segment by segment along the "
-            f"story spine; {k} of its {n} segments reach their next milestone in order "
-            f"(tier 'progresses': scripted traversal plus the story beats).",
+            f"Full-game ladder: {k} of {n} story segments reach their next milestone, "
+            f"each started from a retail save",
+            f"Full-game ladder: the story spine is driven segment by segment, each "
+            f"segment seeded from the retail save taken at its milestone; {k} of the "
+            f"{n} segments reach their next milestone (tier 'progresses': scripted "
+            f"traversal plus the story beats).",
             href))
     if n and "contiguous_pad" in head:
         k = int(head["contiguous_pad"])
         tiles.append(tile(
             f"{k}<small>/{n}</small>",
-            "of them reached in order on pad input alone",
+            "of them on pad input alone, still from a retail save each",
             100.0 * k / n,
-            f"Full-game ladder: {k} of {n} story milestones reached in order on pad input only",
+            f"Full-game ladder: {k} of {n} story segments reach their next milestone "
+            f"on pad input only, each started from a retail save",
             f"Full-game ladder, tier 'pad': {k} of {n} segments reach their next "
-            f"milestone, in order from a New Game, with nothing but pad input - the "
-            f"strictest tier the ladder measures.",
+            f"milestone with nothing but pad input. Each still starts from the retail "
+            f"save at its milestone, with a retail player's party and bag.",
             href))
+    reached = lb.get("continuous", {}).get("reached")
+    if n and isinstance(reached, int):
+        tiles.append(tile(
+            f"{reached}<small>/{n}</small>",
+            "milestones one unbroken New Game reaches on its own saves",
+            100.0 * reached / n,
+            f"Continuous run: one New Game reaches {reached} of {n} story milestones "
+            f"in order without a retail save",
+            f"Continuous run: one New Game plays toward each milestone in turn on pad "
+            f"input, never re-seeded from a retail save and reloading only the engine's "
+            f"own saves; it reaches {reached} of {n} before it stalls. The gap to the "
+            f"segmented tiles is how much of each stretch rests on arriving with a "
+            f"retail player's party.",
+            href + "#the-continuous-run"))
 
     rc = ROOT.parent / "scripts" / "ci" / "retail-compare-baseline.json"
     try:

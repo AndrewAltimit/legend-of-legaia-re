@@ -50,6 +50,15 @@ packs at [`site/lang/`](../../../site/lang/) are exactly this, and a disc-free
 test (`translation_shipped_packs.rs`) fails the build if any tracked pack
 still carries a `source:` field.
 
+A `source:` field is not the only way the game's text gets into a pack. A bulk
+fill can hand back the English line itself with its words in reverse order,
+and nothing disc-free can tell, because the shipped pack has nothing to compare
+against. The same test file therefore carries a disc-gated check
+(`shipped_translations_are_not_the_source_reversed`) that reads the source off
+the disc and fails on a translation that is its own line reversed, whole or
+with words dropped. A line nobody translated is left out of the pack - the
+importer leaves it byte-identical - rather than filled with English.
+
 A distributable pack has no source to self-check against, so its `budget` is
 only a *hint*. `import` (and `translate stats --input`) re-measures every
 target on the disc being patched - the string's own span, the segment's own

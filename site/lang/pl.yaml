@@ -41574,9 +41574,6 @@ sections:
   - key: 'man:445:0x1f7f'
     translation: '{c1:01}: {c1:00}, co to milosc?'
     budget: 23
-  - key: 'man:445:0x1fae'
-    translation: 'Figure it out myself!'
-    budget: 29
   - key: 'man:445:0x1ff0'
     translation: '{c1:01}: Wiec nie znasz'
     budget: 26
@@ -47949,9 +47946,6 @@ sections:
   - key: 'man:571:0x13c7'
     translation: 'Chcesz to?'
     budget: 10
-  - key: 'man:571:0x13e4'
-    translation: 'I''ll sell it to you for'
-    budget: 29
   - key: 'man:571:0x1403'
     translation: 'Dam za to 90,000G.'
     budget: 18
@@ -71992,9 +71986,6 @@ sections:
   - key: 'raw:401:0x66fd'
     translation: 'w gorach polnocy'
     budget: 29
-  - key: 'raw:401:0x671c'
-    translation: '{c1:01}, is also in the mo'
-    budget: 28
   - key: 'raw:401:0x6751'
     translation: 'Zamek Latajacy!'
     budget: 34

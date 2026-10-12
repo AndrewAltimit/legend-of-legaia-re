@@ -447,3 +447,90 @@ fn shipped_pack_resumes_into_a_working_pack() {
         "a working pack keeps the source text (locally, never committed)"
     );
 }
+
+/// The words of a pack string, for comparing a translation against the line
+/// it replaces: ASCII letter runs (apostrophes kept), lower-cased, with the
+/// `{..}` markup tokens dropped.
+fn text_words(s: &str) -> Vec<String> {
+    let mut plain = String::with_capacity(s.len());
+    let mut in_token = false;
+    for c in s.chars() {
+        match c {
+            '{' => in_token = true,
+            '}' => {
+                in_token = false;
+                plain.push(' ');
+            }
+            _ if in_token => {}
+            _ => plain.push(c),
+        }
+    }
+    plain
+        .split(|c: char| !(c.is_ascii_alphabetic() || c == '\''))
+        .filter(|w| !w.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect()
+}
+
+/// `needle` occurs in `hay` in order (not necessarily contiguously).
+fn is_subsequence(needle: &[String], hay: &[String]) -> bool {
+    let mut it = hay.iter();
+    needle.iter().all(|w| it.any(|h| h == w))
+}
+
+/// A shipped translation is never the line's own English with the words in
+/// reverse order. A bulk fill has produced exactly that (the source sentence
+/// read back to front, whole or with words dropped), which is both unreadable
+/// in game and the game's own text in a pack whose point is to carry none.
+/// The disc-free gate cannot see it - a shipped pack has no `source:` to
+/// compare against - so this reads the source off the user's disc.
+///
+/// Only the key is reported on failure: the offending text is the game's.
+#[test]
+fn shipped_translations_are_not_the_source_reversed() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let patcher = DiscPatcher::open(original).expect("open disc");
+    let base = legaia_translate::export_pack(&patcher).expect("export");
+    let mut source = std::collections::HashMap::new();
+    for (_, entries) in base.sections.iter() {
+        for e in entries {
+            source.insert(e.key.clone(), text_words(&e.source));
+        }
+    }
+
+    let mut compared = 0usize;
+    for (name, pack) in shipped_packs() {
+        for (section, entries) in pack.sections.iter() {
+            for e in entries {
+                let Some(src) = source.get(&e.key) else {
+                    continue;
+                };
+                compared += 1;
+                let got = text_words(&e.translation);
+                let mut reversed = src.clone();
+                reversed.reverse();
+                // A palindromic word list ("Ha, ha, ha!") reads the same both
+                // ways, and a line left in English is not this defect.
+                if got.len() < 3 || got == *src || *src == reversed {
+                    continue;
+                }
+                let whole = got == reversed;
+                let partial =
+                    got.len() >= 4 && is_subsequence(&got, &reversed) && !is_subsequence(&got, src);
+                assert!(
+                    !(whole || partial),
+                    "{name}.yaml [{section}] {}: the translation is the source line's \
+                     words in reverse order - translate it or drop the entry",
+                    e.key
+                );
+            }
+        }
+    }
+    assert!(
+        compared > 10_000,
+        "only {compared} shipped entries matched a key of a fresh export"
+    );
+}

@@ -14,8 +14,10 @@
 #   3 progresses  the next milestone is reached by seated traversal + beats
 #   4 pad         the next milestone is reached with pad input only
 #
-# The headline counts are how many milestones a cold New Game reaches
-# contiguously at each tier; tier_sum is the sum over all segments.
+# The headline counts are how many segments, taken in spine order, reach
+# their next milestone at each tier; tier_sum is the sum over all segments.
+# Every segment is seeded from the retail save at its milestone, so these
+# are not what one New Game reaches - that is `[continuous]` below.
 # See docs/tooling/full-game-ladder.md.
 
 [headline]
