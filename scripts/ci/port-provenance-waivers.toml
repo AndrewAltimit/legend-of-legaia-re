@@ -1277,16 +1277,6 @@ machine (801F747C / 801F7628), a different image the stage id pages in.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-effects/src/action_effect_script.rs:80026be0"
-reason = """
-FUN_80026BE0 is fourteen instructions: `jal 0x8005B818` with a0 = 0xA0,
-then `0x80070A2C` stored to 0x8007B81C and `0x80070A2C + 0x800` to
-0x8007B7F8 (0x80026BF0..0x80026C0C) - the LUT pair the tag says it installs.
-Its one datum is the SCUS sine table, which the module's overlay siblings
-(801DEA50 / 801E09F8) reach through those two pointers, never by address.
-"""
-
-[[waiver]]
 key = "non-entry:crates/engine-fishing/src/minigame_floor.rs:801d79e0"
 reason = """
 An entry, and a duplicate rather than a non-function: PROT 0972 (fishing)
