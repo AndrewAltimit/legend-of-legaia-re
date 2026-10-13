@@ -117,6 +117,15 @@ pub(super) fn progress_digest(s: &NativeSession) -> u64 {
             );
         }
     }
+    // The L1 map display owns the pad on a kingdom map: its mode, cursor,
+    // overlay and panned camera are what a press moves there. The fade-up
+    // ramp into it counts too.
+    let _ = write!(
+        h,
+        "{:?}|{:?}|",
+        w.world_map.map_display,
+        w.world_map.ctrl.as_ref().map(|c| c.entry_fade.ramp)
+    );
     let _ = write!(h, "${}|bag{}", w.party.money, w.party.inventory.len());
     h.0.finish()
 }
@@ -192,6 +201,10 @@ pub(super) fn held_by(s: &NativeSession) -> String {
                 variant(&format!("{:?}", w.battle_ctx.action_state)),
                 if absorbing { ":hp-bar-absorbing" } else { "" }
             );
+        }
+        SceneMode::WorldMap if w.world_map.map_display.is_some() => {
+            let mode = w.world_map.map_display.as_ref().map_or(0, |d| d.mode);
+            return format!("map-display:mode{mode:#x}");
         }
         SceneMode::Field | SceneMode::WorldMap => {}
         // The pond names its sub-screen: an idle shore waiting for a cast

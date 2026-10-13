@@ -819,6 +819,7 @@ impl World {
             } else if panel.is_done() {
                 tl.pc = panel.pc;
                 tl.dialog = None;
+                end_interaction_at_post_box_byte(tl);
             } else if panel.is_waiting_for_input() {
                 // Multi-page conversation: turn the page in place (the
                 // timeline stays parked on the segment until the last
@@ -827,6 +828,7 @@ impl World {
                 if panel.is_done() {
                     tl.pc = panel.pc;
                     tl.dialog = None;
+                    end_interaction_at_post_box_byte(tl);
                 }
             } else {
                 // Still typing or scrolling: the pager's skip latch
@@ -1261,6 +1263,37 @@ fn end_talk_at_post_box_byte(id: &mut legaia_engine_field::inline_dialogue::Inli
     {
         id.parked_pc = Some(pc);
         id.done = true;
+    }
+}
+
+/// [`end_talk_at_post_box_byte`] for a touch-resumed placement context the
+/// engine runs as the interaction timeline
+/// ([`legaia_engine_field::cutscene_timeline::CutsceneTimeline::interaction_slot`]):
+/// it is the same dialog-SM context, so the byte after a dismissed box gets
+/// the same verdict. A parking byte ends the interaction with the cursor left
+/// on it, and [`World::release_interaction_context`] hands that cursor back
+/// to the placement's channel for the next touch to run.
+///
+/// Without it the context ran the parking jump as an op. `town0d`'s Tetsu
+/// (`P1[9]`) closes his "Nothing in particular." branch with a box followed
+/// by `26 02 00` / `26 3A F6`, the loop-back to his greeting: the talk
+/// restarted from its first line on every way out and never handed the
+/// player back. A spawned cutscene record keeps running through; the rule is
+/// the touched actor's.
+///
+/// REF: FUN_80039B7C (`0x80039C84..0x80039D60`, the talk end after a box),
+/// FUN_80038050
+fn end_interaction_at_post_box_byte(
+    tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
+) {
+    if tl.interaction_slot.is_none() {
+        return;
+    }
+    if let legaia_engine_field::inline_dialogue::TalkDispatch::EndParked(pc) =
+        legaia_engine_field::inline_dialogue::talk_dispatch(&tl.bytecode, tl.pc)
+    {
+        tl.pc = pc;
+        tl.done = true;
     }
 }
 

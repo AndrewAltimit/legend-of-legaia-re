@@ -99,6 +99,13 @@ pub(super) fn write_report(
         md,
         "- save-screen commits {saves}, save / load round trips {trips}, shops opened {shops}"
     );
+    let talks: u32 = r.outcomes.iter().map(|o| o.stats.talk_visits).sum();
+    let seats: u32 = r.outcomes.iter().map(|o| o.stats.talk_seats).sum();
+    let opens: u32 = r.outcomes.iter().map(|o| o.stats.talk_opens).sum();
+    let _ = writeln!(
+        md,
+        "- talk visits {talks}, seated at a target {seats}, conversations opened {opens}"
+    );
     let _ = writeln!(md, "- pause-menu sub-screens entered: {menu_rows:?}");
     let _ = writeln!(md, "- runs that reached each mode: {modes:?}");
     let moved = r

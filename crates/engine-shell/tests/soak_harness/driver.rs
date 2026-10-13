@@ -167,6 +167,17 @@ pub(super) fn confirm(
         f.signature(),
     );
     let softlock = matches!(f.detector, "softlock");
+    // A `control_starved` window is evidence only as the policy pressed it:
+    // every way out a player would try, tried. Zeroing inside it leaves a
+    // stream that confirms one looping picker option for the whole window,
+    // which starves on a healthy conversation too. Only the pads ahead of
+    // the window are reduced.
+    let reducible = if f.detector == "control_starved" {
+        pads.len()
+            .saturating_sub(Tunables::from_env().starve_frames as usize + 1)
+    } else {
+        pads.len()
+    };
     let budget = env_u64("LEGAIA_SOAK_MINIMIZE").unwrap_or(24) as usize;
     std::thread::Builder::new()
         .name("soak-confirm".into())
@@ -193,14 +204,14 @@ pub(super) fn confirm(
             let mut best = pads.clone();
             let mut tries = 0usize;
             let mut chunks = 2usize;
-            while tries < budget && chunks <= best.len() {
-                let size = best.len().div_ceil(chunks);
+            while tries < budget && chunks <= reducible {
+                let size = reducible.div_ceil(chunks);
                 let mut changed = false;
                 for c in 0..chunks {
                     if tries >= budget {
                         break;
                     }
-                    let (a, b) = (c * size, ((c + 1) * size).min(best.len()));
+                    let (a, b) = (c * size, ((c + 1) * size).min(reducible));
                     if a >= b || best[a..b].iter().all(|&p| p == 0) {
                         continue;
                     }

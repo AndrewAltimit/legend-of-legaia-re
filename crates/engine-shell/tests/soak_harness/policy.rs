@@ -217,7 +217,13 @@ impl Policy {
             SceneMode::Field | SceneMode::WorldMap => {
                 // A dialogue or a picker owns the pad: mostly confirm, some
                 // directions (pickers), some cancel.
-                if w.dialogue_owns_input() && self.rng.chance(70) {
+                // A script that holds the player (a cutscene timeline, an
+                // engaging record) pages its own text boxes, which
+                // `dialogue_owns_input` does not see: it gets the same
+                // presses.
+                if (w.dialogue_owns_input() || w.script_context_engages_player())
+                    && self.rng.chance(70)
+                {
                     let want = match self.rng.below(10) {
                         0..=5 => b(PadButton::Cross),
                         6..=7 => self.random_dir(),
