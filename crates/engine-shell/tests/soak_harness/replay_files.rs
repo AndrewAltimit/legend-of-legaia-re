@@ -14,6 +14,10 @@ pub(super) const SCENE_TAG: &str = "# soak-scene = ";
 pub(super) const SEED_TAG: &str = "# soak-seed = ";
 pub(super) const SIG_TAG: &str = "# soak-signature = ";
 pub(super) const MIN_DISTINCT_TAG: &str = "# soak-min-distinct = ";
+/// The `control_starved` window a replay was recorded under, when it was not
+/// the default (`LEGAIA_SOAK_STARVE_FRAMES`): a shorter window is a shorter
+/// replay, and the replay must be judged by the window that made it.
+pub(super) const STARVE_TAG: &str = "# soak-starve-frames = ";
 
 pub(super) fn replay_text(
     spec: &RunSpec,
@@ -48,6 +52,9 @@ pub(super) fn replay_text(
         // frozen window was dropped, so the detector must not ask for it.
         let _ = writeln!(out, "{MIN_DISTINCT_TAG}{n}");
     }
+    if let Some(n) = env_u64("LEGAIA_SOAK_STARVE_FRAMES") {
+        let _ = writeln!(out, "{STARVE_TAG}{n}");
+    }
     let _ = writeln!(
         out,
         "# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell \
@@ -62,6 +69,7 @@ pub(super) struct LoadedReplay {
     pub(super) pads: Vec<u16>,
     pub(super) signature: Option<String>,
     pub(super) min_distinct: Option<usize>,
+    pub(super) starve_frames: Option<u64>,
 }
 
 impl LoadedReplay {
@@ -70,6 +78,9 @@ impl LoadedReplay {
         let mut t = Tunables::from_env();
         if let Some(n) = self.min_distinct {
             t.min_distinct = n;
+        }
+        if let Some(n) = self.starve_frames {
+            t.starve_frames = n;
         }
         t
     }
@@ -100,6 +111,7 @@ pub(super) fn load_replay(path: &Path) -> LoadedReplay {
         pads,
         signature: parse_tag(&text, SIG_TAG),
         min_distinct: parse_tag(&text, MIN_DISTINCT_TAG).and_then(|s| s.parse().ok()),
+        starve_frames: parse_tag(&text, STARVE_TAG).and_then(|s| s.parse().ok()),
     }
 }
 

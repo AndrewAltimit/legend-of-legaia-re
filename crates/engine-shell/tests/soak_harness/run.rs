@@ -1123,7 +1123,10 @@ pub(super) fn run_one(
                 .timeline
                 .iter()
                 .chain(w.field_vm.helper_contexts.iter())
-                .map(|c| &c.bytecode);
+                .map(|c| &c.bytecode)
+                // The inline runner's record too: an NPC talk or a prop
+                // record is a script body like the others.
+                .chain(w.dialog.inline.iter().map(|d| &d.bytecode));
             for bc in bodies {
                 let mut h = std::collections::hash_map::DefaultHasher::new();
                 h.write(bc);
