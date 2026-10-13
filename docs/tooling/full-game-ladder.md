@@ -177,6 +177,74 @@ milestones reached in order. The distance between that and the segmented
 headline is the measurement - how much of each stretch's pass rests on
 arriving with a retail player's party.
 
+### What a continuous run exercises that a seeded one cannot
+
+A seeded segment starts from state retail wrote, so anything the engine
+would have had to write itself before that point is never asked of it. The
+continuous run is the only pass in which those writes are load-bearing:
+
+- **Scripted grants.** A flag, an item or an equipment change an earlier
+  scene's script makes is in every later anchor, whether or not the port
+  runs the op correctly. Op `0x3B` (`SET_EQUIP_SLOT`, how a Ra-Seru is put
+  on and grows a stage) is the case in point: a port that mis-applied it
+  still passed every segment, because each seed already wore the Ra-Seru.
+- **Joins after a reload.** A member who joins takes a level-1 record from
+  the SCUS starting-party template. A seeded segment's save already carries
+  all four records (retail's New Game seeds them), so the join never reads
+  the template. A run that reloads its own save, whose roster holds only
+  the members who have joined, does - in a session where no New Game ran.
+- **The pause menu's commits.** The seeded pad hand opens the Equip screen
+  only to guard a boss's element. A hand that has to wear what it finds
+  uses the Best Equipment row, whose swaps do not end the session and so
+  travel a different path back to the record than a single-slot confirm.
+- **Growth.** Levels, gold and the bag are whatever the run earned. The
+  seeded passes flee every random encounter, which costs them nothing; a
+  run that does the same reaches its first boss at level 1.
+
+So the continuous hand differs from the pad tier's in two ways, both things
+a player does and both off in the segmented passes:
+
+- It **takes the random encounters it expects to win.** At each round
+  prompt it prices the fight - what the foes still hold, times what the
+  run's fights have cost so far in party HP per foe HP, times `(n + 1) / 2`
+  for a group of `n` - and fights while that is under three fifths of what
+  the party has left. The exchange rate is learned across the whole run, so
+  the hand takes on larger groups as the party levels and gears up, and a
+  fight that turns goes back to Run on the next prompt.
+- It **wears what it picks up**: before each stretch, Start, Equip, each
+  member, the Best Equipment row.
+
+It still does not shop, and it still takes the cheapest route between two
+milestones, with the beats pass only where a door refuses or a reach flag
+is unset. That second limit decides where it stops. A `scene` milestone is
+reached on arrival, so the hand walks on past what retail did there: Noa's
+stretch begins in `cave01` beside the way out to `map01`, and the hand
+leaves by it, without the staged talks with Terra (`cave01` P1[2], the
+`0x158`..`0x15E` chain every later anchor carries, whose late stages run the
+`4C 82` restore), the cave's fixed fights (P1[3..7]) or its item pickups
+(P1[9..12]). She then climbs `rikuroa` alone at level 1 with an empty bag,
+where the retail anchor holds her at level 6.
+
+### The carried-state diff
+
+Under `LEGAIA_FGL_TRACE` the run prints, at each milestone reached and at
+the stall, the engine's own state beside the retail anchor's for the same
+milestone: each member's level, XP, HP, MP and equipment bytes, the present
+party, gold and the bag, then the flags each side holds that the other does
+not. It is the instrument that tells an engine defect from a weak party:
+
+| The diff shows | Reading |
+|---|---|
+| An equipment byte or bag item retail holds and the engine never gained | A scripted grant: find the op that writes it in the scene the anchors bracket. |
+| A member present in the roster with no record line (zero max HP) | A join that found no template row. |
+| Lower level and XP, same equipment | Growth: the hand fled or the fights paid nothing. |
+| Flags the anchor has and the engine lacks | Beats retail played that the hand walked past; optional ones (a chest, a talk) show here too. |
+| Flags the engine has and the anchor lacks | A beat retail had not played yet, or a latch. |
+
+Chapter-1 anchors come from several sessions, some with cheat-seeded
+parties (three members before the story joins them, a full bag), so a line
+of the retail side is evidence only where the next anchor agrees with it.
+
 [`scripts/ci/play-depth.py`](../../scripts/ci/play-depth.py) prints this
 figure beside the retail-compare image floor, from the committed baselines.
 

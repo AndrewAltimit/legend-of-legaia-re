@@ -253,7 +253,8 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
                 if FLEE_ENCOUNTERS.with(std::cell::Cell::get)
                     && !w.battle.no_escape
                     && (!heal() || losing_race(w))
-                    && !runs_failing(w) =>
+                    && !runs_failing(w)
+                    && !worth_fighting(w) =>
             {
                 PadButton::Right.mask()
             }
@@ -478,6 +479,10 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         let foe_now = foe_hp(session);
         if foe_now < foe_prev {
             foe_dropped_at = t;
+            EXCHANGE.with(|e| {
+                let (lost, dealt) = e.get();
+                e.set((lost, dealt + u64::from(foe_prev - foe_now)));
+            });
         }
         foe_prev = foe_now;
         let party_now = party_hp(session);
@@ -550,6 +555,10 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         }
         for (i, (a, b)) in party_prev.iter().zip(&party_now).enumerate().take(3) {
             run[i] += u32::from(a.saturating_sub(*b));
+            EXCHANGE.with(|e| {
+                let (lost, dealt) = e.get();
+                e.set((lost + u64::from(a.saturating_sub(*b)), dealt));
+            });
             BIGGEST_HIT.with(|h| h.set(h.get().max(run[i])));
         }
         ROUND_LOSS.with(|r| r.set(run));
