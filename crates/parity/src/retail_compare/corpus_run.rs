@@ -169,6 +169,18 @@ pub(super) fn run_one(
         return report;
     }
     if retail.class == StateClass::Battle {
+        if retail.seat_battle_on_region(opts.extracted)
+            && let Some(seat) = retail.save.as_ref().and_then(|s| s.ext_v2.field_position)
+        {
+            report.detail.insert(
+                "seat".into(),
+                format!(
+                    "no position snapshot; seated at {seat:?}, the tile nearest the entry \
+                     operand {:?} whose regions read mask {:#X}",
+                    retail.entry_operand, retail.region_mask
+                ),
+            );
+        }
         run_battle(opts, entry, &retail, &mut report);
         return report;
     }

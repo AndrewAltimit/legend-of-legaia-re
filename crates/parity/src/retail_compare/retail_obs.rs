@@ -46,6 +46,14 @@ pub struct RetailObs {
     pub bgm_sounding: bool,
     /// `_DAT_8007B854 != 0`.
     pub fog_gate: bool,
+    /// The region-type mask `_DAT_8007B8F4`: `1 << type` over every `.MAP`
+    /// region holding the player's tile, rebuilt by the field's per-tile
+    /// refresh (`FUN_800180EC`) and left alone by a fight - on every battle
+    /// capture that holds a position snapshot it is the mask of that tile.
+    pub region_mask: u32,
+    /// The destination-entry operand `_DAT_80073EF4` / `_DAT_80073EF8`: where
+    /// the scene's last entry seated the player.
+    pub entry_operand: (i16, i16),
     /// The visible-tile window, scratchpad `0x1F8003E8..EB` as signed tile
     /// offsets `[near X, near Z, far X, far Z]`
     /// (`docs/formats/encounter.md`): the field primer's stamp, or whatever
@@ -231,6 +239,11 @@ impl RetailObs {
             bgm_sounding: game_anchors::u16_at(ram, BGM_PLAYING) != 0
                 && game_anchors::u16_at(ram, BGM_SLOT + 6) != 0,
             fog_gate,
+            region_mask: game_anchors::u32_at(ram, REGION_MASK),
+            entry_operand: (
+                rd32(ram, ENTRY_OPERAND) as i16,
+                rd32(ram, ENTRY_OPERAND + 4) as i16,
+            ),
             view_window: None,
             save,
             hud_countdown: matches!(class, StateClass::Field | StateClass::WorldMap)
@@ -509,6 +522,70 @@ impl RetailObs {
 }
 
 impl RetailObs {
+    /// Stand a battle capture that holds no position snapshot on the region
+    /// its fight was entered from.
+    ///
+    /// The mode-change prologue `FUN_80016230` stores the snapshot only when
+    /// the field run (mode `3`) is the mode handing over (`lh v1,0x494(gp)`
+    /// / `bne v1,v0` at `0x800163E0..0x800163E8`), so a fight started another
+    /// way leaves `(0, 0)`, and a card load of that window seats the scene's
+    /// default arrival. The entry script then reads the default tile's
+    /// region: `town01`'s loop selects `0x19D` there, where the capture holds
+    /// `0x19F` - the type-4 arm, the east half of the village.
+    ///
+    /// What the capture does keep is the region-type mask
+    /// ([`Self::region_mask`]). The seat taken is the tile nearest the entry
+    /// operand whose `.MAP` regions rebuild that mask
+    /// (`field_regions::region_type_mask`): the region the player stood in,
+    /// not the spot - nothing in the state records that.
+    ///
+    /// Lands the save once to read the scene's region table. Returns whether
+    /// it seated.
+    pub fn seat_battle_on_region(&mut self, extracted: &Path) -> bool {
+        use legaia_engine_field::field_regions::{RegionTable, region_type_mask};
+        let Some(save) = self.save.clone() else {
+            return false;
+        };
+        if self.class != StateClass::Battle
+            || save.ext_v2.field_position.is_some()
+            || self.region_mask == 0
+        {
+            return false;
+        }
+        let cfg = legaia_engine_session::session::BootConfig {
+            scene: self.scene.clone(),
+            enable_audio: false,
+        };
+        let Ok(mut session) = legaia_engine_session::native::NativeSession::open(extracted, &cfg)
+        else {
+            return false;
+        };
+        let opts = legaia_engine_session::session::FieldLiveOpts {
+            live_loop: true,
+            player_battle: true,
+            ..Default::default()
+        };
+        let _landing = session.resume_save(save, &self.scene, &opts);
+        let block = &session.host.world.terrain.map_region_block;
+        let Some(table) = RegionTable::parse(block) else {
+            return false;
+        };
+        let tile = |w: i16| (i32::from(w) - 0x40) >> 7;
+        let (ox, oz) = (tile(self.entry_operand.0), tile(self.entry_operand.1));
+        let seat = (0..0x80)
+            .flat_map(|tx| (0..0x80).map(move |tz| (tx, tz)))
+            .filter(|&(tx, tz)| region_type_mask(Some(&table), tx, tz) == self.region_mask)
+            .min_by_key(|&(tx, tz)| ((tx - ox).pow(2) + (tz - oz).pow(2), tx, tz));
+        let Some((tx, tz)) = seat else {
+            return false;
+        };
+        let centre = |t: i32| ((t << 7) + 0x40) as i16;
+        if let Some(save) = self.save.as_mut() {
+            save.ext_v2.field_position = Some((centre(tx), centre(tz)));
+        }
+        true
+    }
+
     /// Read the visible-tile window off a state's 1 KiB scratchpad image
     /// (index `0` = `0x1F800000`). Field states only: the overworld draws
     /// through its own terrain pass and a battle leaves the bytes stale.

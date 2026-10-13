@@ -12,6 +12,13 @@ const SHINY_SERU_PATCH: &str = "shiny-seru";
 const SHINY_BOOST_NUM: u32 = 135;
 const SHINY_BOOST_DEN: u32 = 100;
 
+/// `LEGAIA_RC_SEED_TRACE=1`: one stderr line per stream the search tried
+/// (what it reached, and the ground drift it measured) and one for the
+/// undrift re-run's verdict.
+fn seed_trace() -> bool {
+    std::env::var_os("LEGAIA_RC_SEED_TRACE").is_some()
+}
+
 pub(super) fn run_battle(
     opts: &RunOptions<'_>,
     entry: &CorpusEntry,
@@ -93,6 +100,25 @@ pub(super) fn run_battle(
                     e
                 });
             }
+            if seed_trace() {
+                match &run {
+                    Ok(e) => eprintln!(
+                        "[seed] {} seed={seed:#010X} victims={victims} mode={:?} prompt={:?} \
+                         surprise={} driven={:?} inflight={:?} age_short={:?} drift={:?}",
+                        entry.label,
+                        e.mode,
+                        e.prompt_tick,
+                        e.surprise_opening,
+                        e.driven,
+                        e.inflight,
+                        e.age_short,
+                        e.ground_drift,
+                    ),
+                    Err(err) => {
+                        eprintln!("[seed] {} seed={seed:#010X} failed: {err:#}", entry.label)
+                    }
+                }
+            }
             match run {
                 Ok(e)
                     if e.mode == legaia_engine_mode::mode::SceneMode::Battle
@@ -134,7 +160,25 @@ pub(super) fn run_battle(
             &b,
             seed,
             reached_victims,
-        ) {
+        )
+        .inspect(|e| {
+            if seed_trace() {
+                eprintln!(
+                    "[seed] {} undrift seed={seed:#010X} from {:?}: mode={:?} driven={:?} \
+                     age_short={:?} drift={:?} residual {:?} against the first run's {:?}",
+                    entry.label,
+                    b.seeded_ground(),
+                    e.mode,
+                    e.driven,
+                    e.age_short,
+                    e.ground_drift,
+                    crate::retail_compare_battle::ground_residual(battle, &b, e),
+                    reached.as_ref().and_then(|r| {
+                        crate::retail_compare_battle::ground_residual(battle, battle, r)
+                    }),
+                );
+            }
+        }) {
             // Kept only when it stands the combatants nearer retail's pairs
             // than the first run did - a replay whose push depends on where
             // it starts can land further off.

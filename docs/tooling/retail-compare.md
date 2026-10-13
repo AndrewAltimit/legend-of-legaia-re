@@ -1718,18 +1718,51 @@ holds the flag. `town01`'s sparring record reads `50 19 · 50 00 · 52 3C ·
 land without `0x23C` and carry both bits through the seed. The comparand
 keeps the latches.
 
-What the window does not reach stays a seeding limit. `town0b`'s Gimard
-fight is row `2` and its pending flags are raised further from the entry op
-than the window, so `rim_elm_gimard_*` and `shiny_refactor_gimard_*` still
-read `-sys 0x30C` / `0x30E` and `-sys 0x528`. A capture whose formation
-cell matches no registered row has no row to key the arms on.
+Both battle forms of the entry op are arms. The handler sends `op0 == 0xFF`
+and `op0 < 100` down one arm and reads only the row byte (`FUN_801DE840`,
+`0x801E06FC..0x801E074C`), and `town0b`'s Gimard fight is entered in the second
+form: the three talk records `P1[7]` / `P1[8]` / `P1[9]` read `53 0C` /
+`53 0D` / `53 0E` then `3E 00 02`, and the arrival cutscene `P2[26]` reads
+`53 0B`, `3E 00 02`. Held back, the pending flag no longer engages the
+post-fight placement at the landing, the loop runs its pass, and
+`rim_elm_gimard_seru_capture_*` and `shiny_refactor_gimard_*` carry `0x30C` /
+`0x30E`, the room bit `0x528` and the selector through the seed.
 
-The boss states made from a debug start (`cort_*`, `zora_glare_petrify_*`:
-eleven system flags set, the same stale entry operand in two different
-scenes) hold selector bit `0x19F` in both scenes. No pass of either scene's
-loop selected it - the fights were entered without the scenes' own
-arrivals - so the engine's settle, which does run a pass, reads `0x19D`.
-That is capture history, not a selector the seed could seat.
+What a latch cannot hold back is a loop the fight's record parked. The three
+captures of the arrival fight (`battle_gimard_tail_fire_a` / `_b`,
+`battle_melee_hit_spark`) hold no selector bit at all: `town0b`'s first pass
+set `0x528`, reached `44 79` at `+0x452` (flag `0x307` still down), spawned
+`P2[26]` and yielded, and the record held the player from there to its
+`3E 00 02` - the pass never reached the selector at `+0x4D3`. The seed lands
+with `0x307` up, so its pass skips the spawn, runs on and selects `0x19D`.
+Holding `0x307` back would replay the whole cutscene inside the settle window.
+A capture whose formation cell matches no registered row has no row to key
+the arms on.
+
+### A fight entered without a position snapshot
+
+The save window's position snapshot (`0x80084568` / `0x8008456C`) is written
+by the mode-change prologue `FUN_80016230` only when the field run is the mode
+handing over (`lh v1,0x494(gp)`, `bne v1,v0` against `3` at
+`0x800163E0..0x800163E8`). The boss states made from a debug start (`cort_*`,
+`zora_glare_petrify_*`: eleven system flags set, in `town01`) hold `(0, 0)`
+there, so a card load of the window seats `town01`'s default arrival, whose
+region the entry loop reads as `0x19D`. The captures hold `0x19F`, the loop's
+type-4 arm (`42 00 04` at `+0x15E`, set at `+0x1F6`).
+
+The region is recoverable where the spot is not. The region-type mask
+`_DAT_8007B8F4` is rebuilt by the field's per-tile refresh, and a fight leaves
+it as the field left it: on every battle capture that does hold a snapshot,
+the scene's `.MAP` region table rebuilds the captured mask at the snapshot's
+tile. The
+seven snapshot-less states read `0x11` - a type-0 box inside the type-4 east
+half of the village - while their entry operand `(3776, 11712)` is a tile of
+mask `0x09`. So the player walked east before the fight, and the seed stands
+it on the tile nearest the entry operand whose regions rebuild the captured
+mask (`RetailObs::seat_battle_on_region`; the report's `seat` detail names the
+tile). That is the region the player stood in, not the position: nothing in
+the state records the latter, and nothing a battle channel reads depends on
+it.
 
 ### A flag the entry raises on every load
 
