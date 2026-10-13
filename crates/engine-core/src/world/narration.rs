@@ -1275,8 +1275,8 @@ fn end_talk_at_post_box_byte(id: &mut legaia_engine_field::inline_dialogue::Inli
 /// to the placement's channel for the next touch to run.
 ///
 /// Without it the context ran the parking jump as an op. `town0d`'s Tetsu
-/// (`P1[9]`) closes his "Nothing in particular." branch with a box followed
-/// by `26 02 00` / `26 3A F6`, the loop-back to his greeting: the talk
+/// closes his "Nothing in particular." branch with a box followed by
+/// `26 02 00` / `26 3A F6`, the loop-back to his greeting: the talk
 /// restarted from its first line on every way out and never handed the
 /// player back. A spawned cutscene record keeps running through; the rule is
 /// the touched actor's.

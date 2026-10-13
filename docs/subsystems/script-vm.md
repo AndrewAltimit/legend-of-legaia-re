@@ -2782,8 +2782,36 @@ there - through the loop-back, the selectors and the acquire, which is not an
 end. `crates/engine-core/tests/inn_stay_field_vm_disc.rs` pins the innkeeper: the
 stay parks at `+0x18A` and the second talk opens at the greeting again. Not
 modelled: a talk that ends on a raw `0x21` keeps its entry (retail's cursor
-moves past the `0x21`), and prop-bound records (doors, cupboards) run their tail
-through, since only NPC talks are captured.
+moves past the `0x21`).
+
+The rule is the dialog SM's, so it is every touched context's, and the port
+applies it on all three of its runners. The verdict call sits on the SM's one
+path past a finished box (`jal 0x80038050` at `0x80039C84`), and the `0`
+return clears the context's `+0x10 & 0x100` with no test of what kind of
+actor it belongs to.
+
+- **An NPC talk** runs on the inline runner, as above.
+- **A prop record** (a spring, a cupboard, a door) runs on the prop runner
+  (`World::step_prop_interaction`), which parks the prop's cursor on the
+  byte. The disc's prop records are written to the rule: a box is followed
+  by `0x48`, `0x24` or `0x25` where the record goes on (Rim Elm's cupboard:
+  its message box, `48`, a `26` to the shared tail, then the `2B 07` close
+  pass), by a picker's option bytes, and by a bare `0x26` where the
+  interaction is over. A spring is the plain case - `izumi`'s asks
+  "Do you wish to drink this water?" behind a Yes / No picker, and each
+  arm's last box is followed by a `26` back to the question. Run at once,
+  that jump asks again for good; parked, it is what the next press of the
+  button runs.
+- **A touch-resumed placement context** the engine runs as the interaction
+  timeline (a boss stager, a `B1 <id> 08` engagement:
+  `CutsceneTimeline::interaction_slot`) ends the same way, with the cursor
+  handed back to the placement's channel. `town0d`'s Tetsu closes his
+  "Nothing in particular." branch with a box, then `26 02 00` and the `26`
+  loop-back to his greeting; his other branches lead back to a picker.
+  Without the rule no option left the conversation.
+
+A spawned cutscene record keeps running past its boxes: it is not a touched
+context, and its boxes are followed by `0x48` or `0x24`.
 
 Two ops are easy to mistake for a dialog opener and are not: `0x3F` is the
 named scene-change, and `4C 53` / `4C 54` (`FUN_801D65D8`) are polls a script

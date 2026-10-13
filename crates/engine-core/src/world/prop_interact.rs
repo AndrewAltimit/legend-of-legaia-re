@@ -374,9 +374,9 @@ impl World {
                     id.panel = None;
                 } else if panel.is_done() {
                     // Dismissed: resume the record just past the segment -
-                    // which for the cupboard is the close pass (`48`, then
-                    // `2B 07` set reverse, ...), so the doors swing shut as
-                    // the window drops. Retail sequences it identically: the
+                    // which for the cupboard is `48`, a `26` to the shared
+                    // tail and the close pass (`2B 07` set reverse, ...), so
+                    // the doors swing shut as the window drops. Retail sequences it identically: the
                     // pager returns to SM state 0 and the script continues -
                     // unless the byte after the box parks the talk.
                     id.pc = panel.pc;

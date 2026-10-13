@@ -217,6 +217,27 @@ selecting which stat. The amounts and caps:
 | 5 | Max MP | `+0x11E` | `+8` | `999` | Magic Water (`0x87`) |
 | 6 | **all** (AGL/HP/ATK/SPD/INT/MP/DEF) | - | `+4` each | AGL `280`, HP `9999`, else `999` | Honey (`0x65`), Miracle Water (`0x6D`) |
 
+The handler writes the **base** window (`+0x11C..+0x12C`) and nothing else:
+Life Water is `lhu / addiu 0x10 / sh` on `+0x11C` and the `9999` clamp
+(`0x8004119C..0x800411C0`), and every other arm has that shape on its own
+halfword. The live window follows because the menu's use routine calls the
+stat aggregator straight after it (`FUN_801D8308`: `jal 0x800402F4` at
+`0x801D8538`, `jal 0x80042558` at `0x801D8540`). The aggregator copies each
+base value over its live one, adds the equipment's percent boosts off the
+base - ability bit 0 a tenth of base Max HP, bit 1 a quarter, bits 2 and 3
+the same two for Max MP (`0x800429A0..0x80042A5C`) - clamps to `9999` /
+`999`, and lowers a current value that now exceeds its maximum
+(`0x80042CE4..0x80042D18`). So a raised maximum is the base plus whatever
+boost is worn, and the gain is not refilled: current HP / MP stay where they
+were.
+
+Port: `World::apply_stat_up_item` raises the base window and
+`World::rebuild_live_hp_mp` rebuilds the two maxima from it; the combat
+stats take the base raise and the same increment on the live value, which
+the battle seed re-derives from the base. A library save shows the rebuild
+on its own: a record with base Max HP `521` under a +10% accessory carries
+a live maximum of `573`.
+
 **Class 7 - one-battle buff** (battle-use, flag byte `0x84`). Multiplies the
 **battle-actor** stat halfwords by `6/5` (+20%, the handler's `uVar + uVar/5`),
 clamped to `0xFFFF`, for the rest of the battle. `param_2` = `tier`:
