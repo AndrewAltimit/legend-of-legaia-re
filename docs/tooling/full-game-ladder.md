@@ -123,6 +123,9 @@ A milestone may also name `via` scenes: story waypoints the anchors show the ret
 | Zora Castle | `nilboa` (its own start scene), then `deene` and `son` | Koru's fight thaws the overworld's way south ([route notes](#route-notes)). |
 | Noaru Valley | `chitei2` (its own start scene), then `concend`, `jou` and `retockin` | `chitei2`'s chain ends on the `0x4C8` that opens the `map03` portal to `concend`; the way back from Drake was by land and cart, not the Uru Mais warp. |
 | Sol Tower | `dohaty` (its own start scene) | Its P2[13] sets the `0x1D4` every `station` placement, the ticket seller among them, waits on. |
+| Zeto's dungeon | `vozz` (its own start scene) | A run that walks in from Drake arrives at `vozz`'s east mouth and can walk straight back out to `map01`, on the side `garmel`'s door is not; the way on is the Genesis Tree beat (`vozz` P1[7]), whose flight lands by `bylon`. |
+| Sky Gardens | `garmel` (its own start scene) | `garmel`'s transport pads join the Songi band to the `map01` door, so the cheapest route leaves the dungeon; the story's way out is the Zeto fight (`garmel` P2[12], `0x198`). |
+| Ratayu | `retona` (its own start scene) | A run that arrives at Mt. Letona's trailhead has reached the `mt_letona` milestone on its first step and would turn round; the anchor gained the summit chain (`0x354`..`0x357`, `0x367`). |
 | Dohati Castle | `retock` (its own start scene), then `jagaroom` twice | Ratayu's west gate (`retock` P2[27]) turns the party back until `0x33E` is set. `jagaroom`'s entry script raises it only once Eliza's scene (`retock` P2[33], `0x33C`), the talk `jagaroom` P1[8] (`0x351`), the door cutscene `jagaroom` P2[8] (`0x33B`) and the return `jagaroom` P2[9] (`0x34F`) have played in that order. |
 
 A waypoint whose own arrival script carries the party on counts as visited: `concend`'s P2[0] is its beat, and it ends in the hop to `town0d`. Part A checks every waypoint is a disc scene.
@@ -200,6 +203,12 @@ continuous run is the only pass in which those writes are load-bearing:
 - **Growth.** Levels, gold and the bag are whatever the run earned. The
   seeded passes flee every random encounter, which costs them nothing; a
   run that does the same reaches its first boss at level 1.
+- **Fights the seeded hand flees.** A hand that takes random encounters
+  commits casts and arts at the same foe in one round. A party cast whose
+  target an art felled first was left on the corpse (the turn picker's
+  dead-target redirect `FUN_801DB124` was asked only for strikes), and its
+  summon walked at a victim the range poll never reaches: state `0x36`
+  held the fight until the tick cap.
 
 So the continuous hand differs from the pad tier's in two ways, both things
 a player does and both off in the segmented passes:
@@ -244,6 +253,28 @@ not. It is the instrument that tells an engine defect from a weak party:
 Chapter-1 anchors come from several sessions, some with cheat-seeded
 parties (three members before the story joins them, a full bag), so a line
 of the retail side is evidence only where the next anchor agrees with it.
+
+### A later start
+
+`LEGAIA_FGL_CONTINUOUS_FROM` seeds the run once from a later milestone's
+anchor. Its first stretch is the seeded pad pass played by the continuous
+hand; every stretch after it starts where the engine's own run arrived,
+which is the scene's door rather than the spot the retail save was taken
+at. A stall on a second stretch is therefore read against the anchor's
+position before its flags:
+
+| The stall shows | Reading |
+|---|---|
+| The milestone was reached in a second or two and the next hop has no path | A `scene` milestone reached on arrival: the stretch's story lies deeper in the scene and the cheapest route walks back out. The start scene becomes a waypoint of the next milestone. |
+| A reach band or a door a walk component short, in a dungeon the seeded segment starts inside | The way through is a link the planner does not model (a pad, a ride, a switch). |
+| `party wiped` on a boss the seeded segment beats | The party the run carried in: levels, MP spent on the way, what it wears. |
+| `battle unresolved` with no `[commit]` and no `[hit]` to the end | The engine parked: read the action state and the last commits. |
+
+Only the last is an engine defect on its face. The flags a run holds that
+its anchor lacks are mostly positional - the entry scripts' zone and camera
+bands (`garmel` P1[0] keeps `0x527`..`0x52E` and `0x19D`..`0x1A5` for
+where the player stands) - and `LEGAIA_FGL_SITES` names the record behind
+any that is not.
 
 [`scripts/ci/play-depth.py`](../../scripts/ci/play-depth.py) prints this
 figure beside the retail-compare image floor, from the committed baselines.
@@ -613,7 +644,13 @@ map as its street:
   all land on one tile and which leaves the scene by neither `0x3F` nor a
   movie - is an edge the same way. Rogue Tower's floors join only through
   these: `rugi` P2[0..37] fade out, test `0x462`, and snap the party to one
-  landing on either branch.
+  landing on either branch. A pad with no fork that seats the player
+  somewhere else on the way lands where its last snap does, provided every
+  story flag it raises it lowers again: `garmel`'s transport pads P2[0] /
+  P2[1] / P2[8] / P2[9] show the tank room at (8, 117) and then seat the
+  party on the far pad. A record that leaves a flag up is a story beat, not
+  a way across (`rayman` P2[19] seats the player three times and raises
+  `0x1FC`).
 - a **transporter** - the same kind of record whose player moves are walk
   legs (op `0x47` on the `0xF8` channel, `C7 F8 x z mode`) - is an edge to
   its last leg's tile: `deroa`'s shaft platforms (P2[12] / P2[13] / P2[14])
@@ -629,7 +666,7 @@ map as its street:
 - **Cross-axis offset.** The follower leaves a cross-axis offset of a few units alone while the other axis still has ground to cover. Chasing its own overshoot flips the diagonal every frame, and along a terrace edge the side-step toward the drop is a ledge hop (`tunnela`'s corridor at (89, 79) drops the party to (89, 80), a one-way hop it cannot climb back).
 - **A script that fires and changes no flag** more than a couple of dozen times on one walk makes that walk a stall. `retock` P2[26], the Mt. Letona checkpoint, turns the party back every time it is crossed without Lord Saryu's key. The count is per record as well as per park site: `jouinc`'s camera bands P2[3..57], one every three tiles of the way to `jouind`, all park at the same `pc` and op, and are distinct records, not one script firing repeatedly.
 - **A script that carries the walker to a landing it has carried it to before**, leaving the same flags, is a loop after the third time, even when the flags it toggles keep the first count from building. `chitei2`'s transport rides between (98, 102) and (94, 22), each ride flipping the car's flags (met on a walk to P2[9]).
-- **Teleports and notches.** The follower presses a teleport waypoint until the jump lands, and backs out of a diagonal-wall notch where all four lattice steps read blocked.
+- **Teleports and notches.** The follower presses a teleport waypoint until the jump lands, and backs out of a diagonal-wall notch where all four lattice steps read blocked. The lattice cannot say which neighbouring cell the free movement reaches, so each second the walk stays wedged it heads for the next open cell in turn: on `retona`'s stair landing at (16, 99) the nearest one lies west, and the slide toward it carries the player straight back.
 - **The action button.** Held against something for a second, the follower tries the action button. In a field the tap waits for a frame the player did not move: the stall counter also counts a run step that stays inside one cell, and a tap there would stand the player still one frame in every few.
 - **A script that runs on the way and changes nothing** - no flag, no cell, no scene (an examined prop with nothing to say) - leaves the route as it was rather than re-planning the walk component.
 - **Walk-on bands.** Walks avoid the live walk-on bands unless one is the only way through. A band whose record's story gates shut it is walkable, and so is an inert band that only sets the camera or the view, such as `retona` P2[0] across the summit's passes. A band that turns the party back (`retona` P2[24], until `0x367`) stays avoided.
@@ -926,6 +963,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_PROBE_AT=<scene>:<x>,<z>;U;R;...` | Seats the player at the start of the first pad hop in that scene and holds each listed direction for 40 frames, printing where it went. |
 | `LEGAIA_FGL_EDGES=<scene>,...` | Part A: each named scene's out- and in-edges (`*` marks a scripted one). |
 | `LEGAIA_FGL_GAINED=<id>,...` | Part A: every flag each named milestone's anchor gained or lost over its predecessor, with its disc SET sites - the evidence a waypoint is chosen from. |
+| `LEGAIA_FGL_SITES=0x19F,...` | Part A: every disc site that sets or clears each named flag - how a flag in the carried-state diff is traced to the record that wrote it. |
 
 Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal too, the gap is a join the walls do not show - a script or a story gate - not the planner. And `PROBE_AT` is the way to ask the engine, rather than the lattice, whether a spot can be walked off.
 

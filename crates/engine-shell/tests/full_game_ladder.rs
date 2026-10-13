@@ -409,6 +409,40 @@ fn part_a_spine_is_anchored_ordered_and_routed() {
         }
     }
 
+    // `LEGAIA_FGL_SITES=0x19F,0x52B,...`: every disc site that sets or clears
+    // each named flag - how a flag in the continuous run's carried-state diff
+    // is traced to the record that wrote it.
+    if let Ok(list) = std::env::var("LEGAIA_FGL_SITES") {
+        for f in list.split(',').filter_map(|s| {
+            let s = s.trim();
+            u16::from_str_radix(s.strip_prefix("0x").unwrap_or(s), 16).ok()
+        }) {
+            let sites = |kind: FlagKind| -> String {
+                let v: Vec<String> = census
+                    .get(&f)
+                    .into_iter()
+                    .flatten()
+                    .filter(|s| s.kind == kind)
+                    .map(|s| {
+                        format!(
+                            "{} P{}[{}]{}",
+                            s.scene_name,
+                            s.partition,
+                            s.record,
+                            if s.clean { "" } else { "?" }
+                        )
+                    })
+                    .collect();
+                v.join(" / ")
+            };
+            eprintln!(
+                "[sites] 0x{f:03X} set: {} | clear: {}",
+                sites(FlagKind::Set),
+                sites(FlagKind::Clear)
+            );
+        }
+    }
+
     // Routes for the pairs the order check skipped (an off-order anchor).
     for w in spine.windows(2) {
         if w[0].order_check && w[1].order_check {
