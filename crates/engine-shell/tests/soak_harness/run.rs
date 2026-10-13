@@ -35,6 +35,8 @@ pub(super) struct RunStats {
     /// interact probe answers from.
     pub(super) talk_visits: u32,
     pub(super) talk_seats: u32,
+    /// Seats taken at an examined prop rather than an actor.
+    pub(super) prop_seats: u32,
     /// Seats whose action press took the frame off free roam.
     pub(super) talk_opens: u32,
 }
@@ -355,7 +357,8 @@ pub(super) fn run_one(
     let opts = FieldLiveOpts {
         // `LEGAIA_SOAK_NO_ENCOUNTERS=1` disarms the random-encounter roll - a
         // triage control that separates a scripted battle from a random one.
-        live_loop: !env_flag("LEGAIA_SOAK_NO_ENCOUNTERS"),
+        // A `+talk` run leaves it disarmed too (`split_talk`).
+        live_loop: !env_flag("LEGAIA_SOAK_NO_ENCOUNTERS") && !label.contains("+talk"),
         player_battle: true,
         battle_bgm: None,
     };
@@ -685,8 +688,11 @@ pub(super) fn run_one(
         {
             let n = stats.talk_visits as usize;
             stats.talk_visits += 1;
-            if seat_at_talk_target(&mut session, n).is_some() {
+            if let Some(target) = seat_at_talk_target(&mut session, n) {
                 stats.talk_seats += 1;
+                if matches!(target, TalkTarget::Prop(_)) {
+                    stats.prop_seats += 1;
+                }
                 forced_pads.extend([0, b(PadButton::Cross), 0]);
                 talk_check = Some(frame + 4);
             }
