@@ -1664,6 +1664,21 @@ into (`pause_menu::stage_transform`), not from the capture's origin, so a
 surface the window manager resized off `960 x 720` still compares the
 picture.
 
+### One binary, one frame
+
+A gated child is tick-locked and every seed is an environment variable, so
+two runs of one binary on one state produce the same PNG byte for byte. When
+they do not, the split is found in three reads, cheapest first: the child's
+`capture at tick` line (the same tick rules out the gate), the draw census's
+CPU VRAM (`LEGAIA_DIAG_DRAWS`; identical VRAM rules out every texel and CLUT
+clock), then the census's per-triangle file for one family
+(`LEGAIA_DIAG_DRAW_TRIS`), which says whether the mesh-space corners or only
+their screen positions moved. `cort_evolved_pre_battle` drifted `1000` to
+`1008` scored blocks that way with identical mesh corners: one placed draw's
+translation moved a unit, because the coplanar draw-lift pass
+(`legaia_engine_scene::coplanar_draws`) ranked a mesh's planes in hash-map
+iteration order, which is per process. The planes come out in key order now.
+
 ### Comparing a frame draw by draw
 
 A block score says where a frame differs, not which draw makes it differ.
