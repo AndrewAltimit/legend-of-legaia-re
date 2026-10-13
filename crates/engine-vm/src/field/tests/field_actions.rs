@@ -257,15 +257,15 @@ fn add_money_min_negative() {
     assert_eq!(host.money_deltas, vec![-8388608]);
 }
 
-// -- 0x3B SET_ITEM_COUNT --------------------------------------------
+// -- 0x3B SET_EQUIP_SLOT --------------------------------------------
 
 #[test]
-fn set_item_count_passes_raw_slot_and_count() {
+fn set_equip_slot_passes_raw_selector_and_item() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x3B, 0x23, 0x05], 0);
     assert_eq!(r, StepResult::Advance { next_pc: 3 });
-    assert_eq!(host.item_writes, vec![(0x23u8, 0x05u8)]);
+    assert_eq!(host.equip_writes, vec![(0x23u8, 0x05u8)]);
 }
 
 // -- 0x3C / 0x3D party ----------------------------------------------

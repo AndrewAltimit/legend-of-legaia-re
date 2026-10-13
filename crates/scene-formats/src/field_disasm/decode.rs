@@ -312,9 +312,9 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
             need(2)?;
             mk(
                 header_size + 2,
-                InsnInfo::SetItemCount {
-                    slot: bytecode[operand],
-                    count: bytecode[operand + 1],
+                InsnInfo::SetEquipSlot {
+                    selector: bytecode[operand],
+                    item: bytecode[operand + 1],
                 },
             )
         }

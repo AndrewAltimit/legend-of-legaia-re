@@ -43,6 +43,78 @@ fn reload(inp: &Inputs, cp: &Checkpoint, opts: &FieldLiveOpts) -> Result<NativeS
     Ok(session)
 }
 
+/// One save's carried state, a line per member: what a stretch is played
+/// with. Ids only, no names.
+fn carried(sf: &legaia_save::SaveFile) -> String {
+    let mut out = String::new();
+    for (i, m) in sf.party.members.iter().enumerate() {
+        let v = m.hp_mp_sp();
+        if v.hp_max == 0 {
+            continue;
+        }
+        out.push_str(&format!(
+            "      member {i}: lv {} xp {} hp {}/{} mp {}/{} equip {:02X?}\n",
+            m.level(),
+            m.cumulative_xp(),
+            v.hp_cur,
+            v.hp_max,
+            v.mp_cur,
+            v.mp_max,
+            m.equipment().slots
+        ));
+    }
+    let bag: Vec<String> = sf
+        .ext
+        .inventory
+        .iter()
+        .map(|(id, n)| format!("{id:02X}x{n}"))
+        .collect();
+    out.push_str(&format!(
+        "      roster {:?} gold {} bag [{}]",
+        sf.ext_v2.active_party,
+        sf.ext.money,
+        bag.join(" ")
+    ));
+    out
+}
+
+/// The engine's own state beside the retail anchor's for milestone `m`: the
+/// diff that tells an engine defect (a flag, a member or an item the run
+/// should hold) from a party a retail player had grown further.
+fn print_state_diff(session: &mut NativeSession, inp: &Inputs, m: &Milestone) {
+    let mine = session.host.world.save_full();
+    eprintln!("    [state] engine, against the {} anchor:", m.id);
+    eprintln!("{}", carried(&mine));
+    let Some(a) = m
+        .anchor
+        .as_ref()
+        .and_then(|r| load_anchor(&inp.library, r).ok())
+    else {
+        return;
+    };
+    if let Ok(sf) =
+        legaia_save::SaveFile::from_retail_sc_block(&a.sc, legaia_save::RETAIL_SC_PARTY_RECORDS)
+    {
+        eprintln!("    [state] retail anchor at {}:", m.id);
+        eprintln!("{}", carried(&sf));
+    }
+    let have = flags_of_world(session);
+    let show = |s: Vec<&u16>| {
+        s.iter()
+            .map(|f| format!("0x{f:03X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    eprintln!(
+        "    [state] flags the anchor has and the engine lacks: {}",
+        show(a.flags.difference(&have).collect())
+    );
+    eprintln!(
+        "    [state] flags the engine has and the anchor lacks: {}",
+        show(have.difference(&a.flags).collect())
+    );
+}
+
 #[test]
 fn part_c_continuous_run() {
     let Some(inp) = inputs() else { return };
@@ -96,6 +168,9 @@ fn part_c_continuous_run() {
                 Ok(Ok(())) => {
                     reached_count = i + 1;
                     cp = checkpoint(&mut session);
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        print_state_diff(&mut session, &inp, to);
+                    }
                     eprintln!(
                         "[run {i:2}] {:24} -> {:24} reached ({:.1}s, attempt {attempt})",
                         spine[i].id,
@@ -125,6 +200,7 @@ fn part_c_continuous_run() {
                 _ => wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS,
             };
             if !again {
+                print_state_diff(&mut session, &inp, to);
                 stall = Some(format!(
                     "{} -> {} (attempt {attempt}): {err}",
                     spine[i].id, to.id

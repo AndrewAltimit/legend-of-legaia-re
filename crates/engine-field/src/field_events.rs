@@ -42,8 +42,10 @@ pub enum FieldEvent {
     /// Field-VM op 0x3A (add or subtract money). Already sign-extended
     /// from the 24-bit operand.
     AddMoney { delta: i32 },
-    /// Field-VM op 0x3B (set inventory slot count).
-    SetItemCount { slot_byte: u8, count: u8 },
+    /// Field-VM op 0x3B (`SET_EQUIP_SLOT`): one equipment byte of a
+    /// character record written. `selector` is the raw operand, character
+    /// in the high nibble and slot byte in the low.
+    SetEquipSlot { selector: u8, item_id: u8 },
     /// Field-VM op 0x3C (party_add).
     PartyAdd { char_id: u8, accepted: bool },
     /// Field-VM op 0x3D (party_remove).
@@ -210,8 +212,12 @@ impl FieldEvent {
             }
             FieldEvent::DialogDismissed => "DialogDismissed".into(),
             FieldEvent::AddMoney { delta } => format!("AddMoney({delta})"),
-            FieldEvent::SetItemCount { slot_byte, count } => {
-                format!("SetItemCount(slot={slot_byte:#x}, count={count})")
+            FieldEvent::SetEquipSlot { selector, item_id } => {
+                format!(
+                    "SetEquipSlot(char={}, slot={}, item={item_id:#x})",
+                    selector >> 4,
+                    selector & 0xF
+                )
             }
             FieldEvent::PartyAdd {
                 char_id, accepted, ..
@@ -331,9 +337,9 @@ mod tests {
                 depth_id: 0,
             },
             FieldEvent::AddMoney { delta: -500 },
-            FieldEvent::SetItemCount {
-                slot_byte: 0x12,
-                count: 99,
+            FieldEvent::SetEquipSlot {
+                selector: 0x12,
+                item_id: 0x11,
             },
             FieldEvent::PartyAdd {
                 char_id: 3,

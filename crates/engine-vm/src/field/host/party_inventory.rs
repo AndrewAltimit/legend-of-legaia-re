@@ -26,13 +26,17 @@ pub trait FieldPartyInventoryHost {
         let _ = delta;
     }
 
-    /// Set an inventory slot's count (op 0x3B). Slot encoding: low nibble +
-    /// (high nibble * page-stride) - i.e. `slot_byte` is the raw operand.
-    /// The original computes `*(byte*)(0x80084340 + (slot & 0xF) +
-    /// (slot >> 4) * 0x414) = count;` then refreshes via
-    /// `func_0x80042558()`. Hosts decide their own inventory layout.
-    fn set_item_count(&mut self, slot_byte: u8, count: u8) {
-        let _ = (slot_byte, count);
+    /// Write one equipment slot of a character record (op 0x3B,
+    /// `SET_EQUIP_SLOT`). `selector` is the raw operand: the high nibble is
+    /// the character record, the low nibble the slot byte. Retail stores
+    /// `*(u8*)(0x80084140 + 0x75E + (selector & 0xF) + (selector >> 4) *
+    /// 0x414) = item` - record `selector >> 4`'s equipment byte `+0x196 +
+    /// (selector & 0xF)` - in the delay slot of its `FUN_80042558` call
+    /// (`0x801E0810`), which rebuilds that record's ability bits and live
+    /// stats. Nothing touches the bag: this is how a Ra-Seru is put on and
+    /// grows a stage (`3B 03 xx` for the first character's slot 3).
+    fn set_equip_slot(&mut self, selector: u8, item: u8) {
+        let _ = (selector, item);
     }
 
     /// Add a character to the active party (op 0x3C). The original maintains
