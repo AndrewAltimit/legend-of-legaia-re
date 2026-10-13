@@ -24,10 +24,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_ground;
-use legaia_engine_core::field_view_window::{self, CellKey};
 use legaia_engine_field::camera::FieldCullView;
 use legaia_engine_field::field_regions::{self, RegionTable};
+use legaia_engine_scene::field_ground;
+use legaia_engine_scene::field_view_window::{self, CellKey};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_system::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
 

@@ -32,7 +32,7 @@ pub fn rotate_euler(rot: [u16; 3], v: [f32; 3]) -> [f32; 3] {
 /// it keeps the rungs each draw used and re-resolves the height per frame
 /// through [`FloorWave`] instead of re-walking the map. The walk-ground
 /// heightfield is the per-vertex half of the same wave
-/// (`legaia_engine_core::field_ground::live_render_positions`).
+/// (`crate::field_ground::live_render_positions`).
 ///
 /// This mirrors exactly what [`Placement::world_y`] consumes: a terrain /
 /// decoration cell's four corner tiles, or a placed object's single

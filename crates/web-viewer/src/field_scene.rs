@@ -68,7 +68,7 @@ pub struct FieldScenePack {
     /// ground's drawn positions were last re-resolved against
     /// ([`LegaiaViewer::field_scene_ground_live_positions`]).
     pub ground_lut_applied: Option<Vec<[i16; 16]>>,
-    /// Each ground vertex's cell ([`legaia_engine_core::field_ground::vertex_cells`]),
+    /// Each ground vertex's cell ([`legaia_engine_scene::field_ground::vertex_cells`]),
     /// the key its room's ladder is looked up by.
     pub ground_cells: Vec<Option<(i32, i32)>>,
     /// Per-placement windowed-list identity
@@ -194,7 +194,7 @@ pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) 
     pack.ground_cells = pack
         .ground
         .as_ref()
-        .map(legaia_engine_core::field_ground::vertex_cells)
+        .map(legaia_engine_scene::field_ground::vertex_cells)
         .unwrap_or_default();
     pack.locomotion_anm = index
         .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
@@ -726,7 +726,7 @@ impl LegaiaViewer {
     }
 
     /// The walk-ground heightfield's drawn positions under the live ladder
-    /// ([`legaia_engine_core::field_ground::live_render_positions`], the play
+    /// ([`legaia_engine_scene::field_ground::live_render_positions`], the play
     /// hosts' kernel), when the ladder moved since the last call - empty
     /// otherwise, so the page re-uploads only on a frame it changed.
     pub fn field_scene_ground_live_positions(&mut self) -> Vec<f32> {
@@ -1036,7 +1036,7 @@ impl LegaiaViewer {
         // Ground sinks below the env pack's authored floor art, through the
         // same `field_ground` render kernel the play page and the native
         // window build their ground from.
-        legaia_engine_core::field_ground::render_positions(hf)
+        legaia_engine_scene::field_ground::render_positions(hf)
             .into_iter()
             .flatten()
             .collect()
@@ -1044,15 +1044,15 @@ impl LegaiaViewer {
 
     /// The ground's per-vertex flat-depth references, eight floats per vertex
     /// in [`Self::field_scene_ground_positions`] order - the shared
-    /// [`legaia_engine_core::field_ground::flat_refs`] the play page and the
+    /// [`legaia_engine_scene::field_ground::flat_refs`] the play page and the
     /// native window upload too, which marks each sloped far-bucket cell so
     /// the shader draws it under everything, as retail's ground pass does.
     pub fn field_scene_ground_flat_refs(&self) -> Vec<f32> {
         let Some(hf) = self.field_scene.as_ref().and_then(|f| f.ground.as_ref()) else {
             return Vec::new();
         };
-        let positions = legaia_engine_core::field_ground::render_positions(hf);
-        legaia_engine_core::field_ground::flat_refs(hf, &positions)
+        let positions = legaia_engine_scene::field_ground::render_positions(hf);
+        legaia_engine_scene::field_ground::flat_refs(hf, &positions)
             .into_iter()
             .flatten()
             .collect()

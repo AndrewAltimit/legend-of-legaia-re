@@ -204,7 +204,7 @@ impl PlayWindowApp {
     /// cropped ground and the lit env meshes synced to it.
     pub(super) fn sync_field_view(
         &mut self,
-    ) -> Option<legaia_engine_core::field_view_window::ViewCells> {
+    ) -> Option<legaia_engine_scene::field_view_window::ViewCells> {
         // Retail's visible-tile crop: the cell rectangle the field render
         // library walks this frame (`field_view_window`, the shared kernel the
         // browser play page asks too). The terrain draws are gated per draw
@@ -212,7 +212,7 @@ impl PlayWindowApp {
         // rectangle moves.
         let view_cells = legaia_engine_core::field_view_window::field_view_cells(
             &self.session.host.world,
-            legaia_engine_core::field_view_window::framing_is_retail(&self.session.camera)
+            legaia_engine_scene::field_view_window::framing_is_retail(&self.session.camera)
                 && !self.field_debug_camera,
         );
         self.sync_ground_wave();

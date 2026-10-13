@@ -677,7 +677,7 @@ impl FieldActors {
     pub fn culled(
         &self,
         host: &SceneHost,
-        cells: Option<&legaia_engine_core::field_view_window::ViewCells>,
+        cells: Option<&legaia_engine_scene::field_view_window::ViewCells>,
     ) -> Vec<u8> {
         let (Some(n), Some(_)) = (self.npcs.as_ref(), cells) else {
             return Vec::new();

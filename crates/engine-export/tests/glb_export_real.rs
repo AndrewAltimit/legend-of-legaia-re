@@ -443,7 +443,7 @@ fn town01_world_export_drops_steep_far_bucket_sheets_only() {
     let a = assemble_field_scene(&index, "town01").expect("assemble town01");
     let scene = Scene::load(&index, "town01").expect("load town01");
     let hf = a.ground.as_ref().expect("town01 has a walk ground");
-    let refs = legaia_engine_core::field_ground::flat_refs(hf, &hf.positions);
+    let refs = legaia_engine_scene::field_ground::flat_refs(hf, &hf.positions);
 
     // Per triangle: a steep cell is often one flat half and one vertical
     // half, and the flat half is floor (dropping the whole quad holed the
@@ -456,7 +456,7 @@ fn town01_world_export_drops_steep_far_bucket_sheets_only() {
     let mut sliver = None;
     for q in hf.indices.as_chunks::<6>().0 {
         let v = q[0] as usize;
-        if !legaia_engine_core::field_ground::is_far_bucket_ref(&refs[v]) {
+        if !legaia_engine_scene::field_ground::is_far_bucket_ref(&refs[v]) {
             continue;
         }
         let steep = [&q[0..3], &q[3..6]]

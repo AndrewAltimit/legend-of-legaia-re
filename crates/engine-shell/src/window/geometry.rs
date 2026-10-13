@@ -187,9 +187,9 @@ pub(crate) fn heightfield_to_vram_mesh(
     let n = hf.positions.len();
     // Winding reversed onto the scene TMDs' parity + the GROUND_SINK: the
     // shared render kernel the browser play page's ground exports also run
-    // (`legaia_engine_core::field_ground`).
-    let indices = legaia_engine_core::field_ground::render_indices(hf);
-    let positions = legaia_engine_core::field_ground::render_positions(hf);
+    // (`legaia_engine_scene::field_ground`).
+    let indices = legaia_engine_scene::field_ground::render_indices(hf);
+    let positions = legaia_engine_scene::field_ground::render_positions(hf);
     legaia_tmd::mesh::VramMesh {
         positions,
         uvs: hf.uvs.clone(),

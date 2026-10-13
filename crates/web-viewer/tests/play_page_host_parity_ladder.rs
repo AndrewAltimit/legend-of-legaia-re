@@ -71,7 +71,7 @@ fn occlusion_focus_is_the_shared_body_centre_and_drops_under_a_scripted_shot() {
     assert_eq!(focus.len(), 6, "free-roam field has a focus + feet point");
     // The feet-line anchor: the same floor-tier sample, half a character
     // height below the centre (Y-up draw frame), straight under it.
-    let half = legaia_engine_core::field_occlusion::HALF_CHAR_HEIGHT;
+    let half = legaia_engine_scene::field_occlusion::HALF_CHAR_HEIGHT;
     assert_eq!((focus[3], focus[5]), (focus[0], focus[2]));
     assert!(
         (focus[1] - focus[4] - half).abs() < 1e-3,

@@ -156,7 +156,7 @@ pub fn ndc_at_w(m: &[f32; 16], w: f32) -> f32 {
 /// Per-vertex flat-depth references for a heightfield laid out as
 /// `WalkHeightfield` builds it - four vertices per cell, in the order
 /// `(x0, z0) (x1, z0) (x0, z1) (x1, z1)` - given its drawn positions
-/// (`legaia_engine_core::field_ground::render_positions`). Each vertex carries its
+/// (`legaia_engine_scene::field_ground::render_positions`). Each vertex carries its
 /// cell's `[x0, z0, x1, z1, y00, y10, y01, y11]`, from which the mesh
 /// shaders re-project all four corners and take the cell's key.
 ///

@@ -92,7 +92,7 @@ pub struct FieldRender {
     /// (terrain + placements, retail Y-down world), ray-cast per frame by
     /// [`LegaiaRuntime::field_player_occluded`] - the same
     /// `engine_core::field_occlusion` kernel the native play-window runs.
-    pub occluders: legaia_engine_core::field_occlusion::FieldOccluders,
+    pub occluders: legaia_engine_scene::field_occlusion::FieldOccluders,
     /// Cross-draw coplanar lifts (`engine_scene::coplanar_draws`), applied to
     /// each draw's translation by the position accessors - the same map the
     /// native play-window (`coplanar_env_offsets`) and the field-scene viewer
@@ -325,7 +325,7 @@ pub fn build_field_render(
         .flatten()
         .filter(|h| !h.indices.is_empty());
     let occluders =
-        legaia_engine_core::field_occlusion::FieldOccluders::build(&[&terrain, &placements], res);
+        legaia_engine_scene::field_occlusion::FieldOccluders::build(&[&terrain, &placements], res);
     // Cross-draw coplanar lifts over the combined layers (terrain first, then
     // placements - the same concatenation the native shell and the field-scene
     // viewer rank, so all three hosts lift the same draws).

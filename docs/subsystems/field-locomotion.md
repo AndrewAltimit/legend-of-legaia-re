@@ -929,7 +929,7 @@ So a **multi-object placed prop is posed, not stamped**: its TMD objects are the
 
 That option **defaults on** in both hosts, because window-owned props are other sub-areas' scenery: `retona`'s cloud bowl (env pack 37, a `5550 x 2971 x 5754` shell) otherwise covers the cave the `retona_field_card_boot` player stands in. At `town01`'s seat it hides 7 of 46 placed draws, at `vell`'s 62 of 105. The cost is retail's own pop-in on a region change without a re-centre; off draws the whole map. Disc-gated: `crates/engine-core/tests/field_static_window_disc.rs`, which also checks that the two sweeps partition every drawn placement.
 
-The per-cell ground and decoration passes read a second window, the camera's visible tile window at `0x1F8003E8..EB` ([`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)), which the port tracks (`Camera::zone.view_window`) and crops by at retail framing (`engine-core::field_view_window`, `World::toggles.view_window_crop`); see [engine.md](engine.md#the-visible-tile-crop-follows-the-framing).
+The per-cell ground and decoration passes read a second window, the camera's visible tile window at `0x1F8003E8..EB` ([`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)), which the port tracks (`Camera::zone.view_window`) and crops by at retail framing (`engine-scene::field_view_window`, `World::toggles.view_window_crop`); see [engine.md](engine.md#the-visible-tile-crop-follows-the-framing).
 
 ### The door swing: how a bind script drives the clip
 

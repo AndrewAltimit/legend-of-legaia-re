@@ -12,8 +12,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::field_occlusion::FieldOccluders;
 use legaia_engine_scene::field_env;
+use legaia_engine_scene::field_occlusion::FieldOccluders;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,

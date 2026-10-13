@@ -14,8 +14,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_ground;
 use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::field_ground;
 
 const SCENE: &str = "jouina";
 

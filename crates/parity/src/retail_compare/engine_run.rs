@@ -363,7 +363,7 @@ pub(super) fn sample_engine(
             .npcs
             .cull_view
             .as_ref()
-            .map(|v| legaia_engine_core::field_view_window::view_cells(v).window),
+            .map(|v| legaia_engine_scene::field_view_window::view_cells(v).window),
         save,
         menu_subscreen,
         script: None,

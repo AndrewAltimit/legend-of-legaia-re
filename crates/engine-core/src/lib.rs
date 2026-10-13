@@ -20,7 +20,6 @@ pub mod dance_venue;
 pub mod dev_menu;
 pub mod dev_menu_host;
 pub mod disc_readers;
-pub mod field_ground;
 pub mod field_menu_dispatch;
 pub mod field_occlusion;
 pub mod field_view_window;

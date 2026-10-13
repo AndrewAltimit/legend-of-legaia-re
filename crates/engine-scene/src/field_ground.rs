@@ -22,23 +22,17 @@
 //! culled the whole floor under the Genesis-tree vignette, which the native
 //! window and retail both draw.
 //!
-//! [`GROUND_SINK`]: legaia_engine_scene::coplanar_draws::GROUND_SINK
+//! [`GROUND_SINK`]: crate::coplanar_draws::GROUND_SINK
 
 use legaia_scene_formats::field_objects::WalkHeightfield;
 
 /// The heightfield's vertex positions as drawn: authored positions sunk by
-/// [`legaia_engine_scene::coplanar_draws::GROUND_SINK`] (retail Y-down frame, so the sink
+/// [`crate::coplanar_draws::GROUND_SINK`] (retail Y-down frame, so the sink
 /// is added).
 pub fn render_positions(hf: &WalkHeightfield) -> Vec<[f32; 3]> {
     hf.positions
         .iter()
-        .map(|p| {
-            [
-                p[0],
-                p[1] + legaia_engine_scene::coplanar_draws::GROUND_SINK,
-                p[2],
-            ]
-        })
+        .map(|p| [p[0], p[1] + crate::coplanar_draws::GROUND_SINK, p[2]])
         .collect()
 }
 
@@ -70,11 +64,7 @@ pub fn live_render_positions(hf: &WalkHeightfield, world_lut: &[i16; 16]) -> Vec
         .zip(&hf.corner_tiers)
         .map(|(p, &tier)| {
             let y = f32::from(world_lut[usize::from(tier & 0x0F)]);
-            [
-                p[0],
-                y + legaia_engine_scene::coplanar_draws::GROUND_SINK,
-                p[2],
-            ]
+            [p[0], y + crate::coplanar_draws::GROUND_SINK, p[2]]
         })
         .collect()
 }
@@ -123,11 +113,7 @@ pub fn live_render_positions_by_cell<'a>(
         .map(|(i, (p, &tier))| {
             let lut = lut_of(cells.get(i).copied().flatten());
             let y = f32::from(lut[usize::from(tier & 0x0F)]);
-            [
-                p[0],
-                y + legaia_engine_scene::coplanar_draws::GROUND_SINK,
-                p[2],
-            ]
+            [p[0], y + crate::coplanar_draws::GROUND_SINK, p[2]]
         })
         .collect()
 }
@@ -294,7 +280,7 @@ mod tests {
         // The script swells tier 1 to 80 up: only the tier-1 corners move.
         lut[1] = -80;
         let live = live_render_positions(&hf, &lut);
-        let sink = legaia_engine_scene::coplanar_draws::GROUND_SINK;
+        let sink = crate::coplanar_draws::GROUND_SINK;
         assert_eq!(live[0][1], sink);
         assert_eq!(live[1][1], sink);
         assert_eq!(live[2][1], -80.0 + sink);
@@ -316,10 +302,7 @@ mod tests {
         assert_eq!(pos.len(), hf.positions.len());
         for (a, b) in pos.iter().zip(&hf.positions) {
             assert_eq!(a[0], b[0]);
-            assert_eq!(
-                a[1],
-                b[1] + legaia_engine_scene::coplanar_draws::GROUND_SINK
-            );
+            assert_eq!(a[1], b[1] + crate::coplanar_draws::GROUND_SINK);
             assert_eq!(a[2], b[2]);
         }
     }

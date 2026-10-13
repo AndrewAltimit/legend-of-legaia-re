@@ -106,7 +106,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // (stone plaza, paths, riverbank).
         if layer_on("tiles") {
             for (di, (mesh_idx, model)) in app.field_terrain_draws.iter().enumerate() {
-                if !legaia_engine_core::field_view_window::terrain_draw_visible(
+                if !legaia_engine_scene::field_view_window::terrain_draw_visible(
                     view_cells.as_ref(),
                     app.field_terrain_cell_keys
                         .get(di)
@@ -142,7 +142,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // no textured prims.
         if layer_on("ctiles") {
             for (di, (mesh_idx, model)) in app.field_terrain_color_draws.iter().enumerate() {
-                if !legaia_engine_core::field_view_window::terrain_draw_visible(
+                if !legaia_engine_scene::field_view_window::terrain_draw_visible(
                     view_cells.as_ref(),
                     app.field_terrain_color_cell_keys
                         .get(di)

@@ -18,7 +18,7 @@ impl PlayWindowApp {
         &mut self,
         prep: FramePrep,
         battle_intro: &mut Option<legaia_render_kernels::battle_intro::BattleIntro>,
-        view_cells: Option<legaia_engine_core::field_view_window::ViewCells>,
+        view_cells: Option<legaia_engine_scene::field_view_window::ViewCells>,
         cutscene_cam: Option<super::redraw_passes::CutsceneCam>,
     ) {
         let FramePrep {

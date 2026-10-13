@@ -155,7 +155,7 @@ pub struct OptionsState {
     /// region) reaches, as the field render library (`FUN_801F7088`) does.
     /// Mirrors into `legaia_engine_core::world::WorldToggles::view_window_crop`.
     /// **Default on**, and only effective at retail framing
-    /// (`legaia_engine_core::field_view_window::framing_is_retail`): the window is sized
+    /// (`legaia_engine_scene::field_view_window::framing_is_retail`): the window is sized
     /// for retail's frustum, so a farther or re-aimed camera draws the whole
     /// map instead of opening black edges. Off draws the whole map always.
     pub retail_view_window: bool,

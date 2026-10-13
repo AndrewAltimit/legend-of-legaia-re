@@ -191,10 +191,10 @@ pub struct LegaiaRuntime {
     /// [`crate::play_battle`]'s `rebuild_screen_geom`.
     pub(crate) screen_prims_base: legaia_engine_screens::screen_layers::HostScreenPrims,
     /// The camera-occlusion fade's strength ramp
-    /// (`engine-core::field_occlusion::FadeRamp`), stepped once per drawn
+    /// (`engine-scene::field_occlusion::FadeRamp`), stepped once per drawn
     /// field frame by [`Self::play_occlusion_fade`] - the native window's
     /// `occl_fade_strength` twin.
-    pub(crate) occl_fade: legaia_engine_core::field_occlusion::FadeRamp,
+    pub(crate) occl_fade: legaia_engine_scene::field_occlusion::FadeRamp,
     /// SCUS item-name table, parsed once at `load_disc` - the labels the field
     /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
     pub(crate) item_names: Option<legaia_game_tables::item_names::ItemNameTable>,
