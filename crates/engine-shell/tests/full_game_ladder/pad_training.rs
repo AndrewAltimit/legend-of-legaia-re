@@ -80,7 +80,10 @@ fn outing(session: &mut NativeSession, floor: u32) -> Result<Option<String>, Str
         let far = |t: &(i16, i16)| {
             (i32::from(t.0) - i32::from(home.0)).abs() + (i32::from(t.1) - i32::from(home.1)).abs()
         };
-        marks.sort_by_key(|t| std::cmp::Reverse(far(t)));
+        // Farthest first, ties by tile: the placements come out of a hash
+        // map, and the outing must not depend on its order.
+        marks.sort_by_key(|t| (std::cmp::Reverse(far(t)), *t));
+        marks.dedup();
         // One landmark per neighbourhood, farthest first.
         for t in marks {
             if far(&t) >= 8

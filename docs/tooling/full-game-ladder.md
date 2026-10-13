@@ -203,36 +203,90 @@ continuous run is the only pass in which those writes are load-bearing:
 - **Growth.** Levels, gold and the bag are whatever the run earned. The
   seeded passes flee every random encounter, which costs them nothing; a
   run that does the same reaches its first boss at level 1.
-- **Fights the seeded hand flees.** A hand that takes random encounters
-  commits casts and arts at the same foe in one round. A party cast whose
-  target an art felled first was left on the corpse (the turn picker's
-  dead-target redirect `FUN_801DB124` was asked only for strikes), and its
-  summon walked at a victim the range poll never reaches: state `0x36`
-  held the fight until the tick cap.
+- **The shop screen.** No seeded pass talks to a merchant. A hand that buys
+  drives the merchant's op `0x49` through the talk that reaches it, the buy
+  list, the quantity stepper and the equipment recipient picker, and comes
+  back to the same counter later. The picker's rows are the present party
+  in party-list order (`FUN_801DB380`), and the talk parks on the shop op
+  until the screen closes, then resumes past it.
+- **Captured Seru.** A party that fights learns Seru magic and casts it, in
+  rounds where another member's strike may land first: a cast queued at a
+  monster that has since died goes through the turn picker's dead-target
+  redirect (`FUN_801DB124`'s Magic arm) like a strike does.
 
-So the continuous hand differs from the pad tier's in two ways, both things
-a player does and both off in the segmented passes:
+### How the continuous hand plays
 
-- It **takes the random encounters it expects to win.** At each round
-  prompt it prices the fight - what the foes still hold, times what the
-  run's fights have cost so far in party HP per foe HP, times `(n + 1) / 2`
-  for a group of `n` - and fights while that is under three fifths of what
-  the party has left. The exchange rate is learned across the whole run, so
-  the hand takes on larger groups as the party levels and gears up, and a
-  fight that turns goes back to Run on the next prompt.
-- It **wears what it picks up**: before each stretch, Start, Equip, each
-  member, the Best Equipment row.
+The continuous hand is the pad tier's hand plus what a player who means to
+finish the game does between fights. Everything below is off in the
+segmented passes, which play exactly as the sections further down describe.
 
-It still does not shop, and it still takes the cheapest route between two
-milestones, with the beats pass only where a door refuses or a reach flag
-is unset. That second limit decides where it stops. A `scene` milestone is
-reached on arrival, so the hand walks on past what retail did there: Noa's
-stretch begins in `cave01` beside the way out to `map01`, and the hand
-leaves by it, without the staged talks with Terra (`cave01` P1[2], the
-`0x158`..`0x15E` chain every later anchor carries, whose late stages run the
-`4C 82` restore), the cave's fixed fights (P1[3..7]) or its item pickups
-(P1[9..12]). She then climbs `rikuroa` alone at level 1 with an empty bag,
-where the retail anchor holds her at level 6.
+**On arrival in a field scene**, before it heads for the next door, it runs
+one upkeep pass, in this order:
+
+1. **Shops.** It walks to each placed NPC whose record (or a record it
+   spawns) carries a priced stock list (op `0x49` sub-0) and talks. The
+   ladder plays the host's part for the screen: it opens the staged shop in
+   a menu runtime of its own (`MenuRuntime::open_field_overlay_requests`),
+   steps it on pad edges with the field frozen
+   (`MenuRuntime::step_field_session`), and lets the merchant's record
+   resume once the screen has closed. It buys three healing items first,
+   then the affordable piece of equipment that improves a present member's
+   slot the most (through the recipient picker, which equips it on the
+   spot), then healing items up to ten. A merchant is visited again only
+   with a different purse or bag.
+2. **Equipment.** Start, Equip, each member, the Best Equipment row.
+3. **Rest.** Under four fifths of its HP in a scene that rolls no
+   encounters, it takes the scene's rest: a bed's walk-on band, or a
+   keeper whose record runs the `4C 82` restore. A keeper's offer is a
+   picker, answered with the option whose branch reaches the restore
+   soonest. Where encounters roll, only a rest within 32 tiles is worth the
+   walk, and only to a party under half.
+4. **The scene's story.** It plays the beats pass
+   ([below](#the-beats-pass)) without waiting for a door to refuse, for up
+   to twelve rounds while a round still gains a flag (a staged talk plays
+   one stage a contact: `cave01` P1[2], Terra, raises `0x158`..`0x15E` one
+   talk at a time). Outside the milestone's own scene this pass walks only
+   the bands that carry the story - a record that raises a still-clear flag
+   the anchors ahead carry and that nothing in the scene lowers again. A
+   room marker is raised on the way in and cleared on the way out, and
+   crossing a dungeon for one costs fights and buys nothing.
+5. **Training.** While a present member is more than a level short of the
+   target, and the scene has a rest, it trains from that bed: out to where
+   the encounters roll (the scene itself when its rest is close by, else
+   the next scene of the route), walking legs and taking the fights it
+   prices as winnable until a member is under 55%, then back to the bed. It
+   spends nothing from the bag on those legs. When the levels are there it
+   shops and rests once more and moves on. A walk that stalls ends the
+   training, not the stretch.
+
+The **level target** is the anchors' own curve: each character's level in
+the anchor five milestones ahead, read only as far as every later anchor
+agrees with it (several chapter-1 anchors are other sessions), and leaving
+out the anchors outside the order check. Five ahead, because a party is
+trained where the rests are, not inside the dungeon an anchor was saved in.
+
+**Which beats it plays** is still the next anchor's flags. One exception:
+standing early in the scene of the milestone after next, it plays toward
+that milestone's anchor as well. Noa's stretch begins in `cave01` during the
+stretch that ends at `ravine`, whose anchor is another session's and
+carries none of the cave's flags.
+
+**In a fight** it takes the random encounters it expects to win. At each
+round prompt it prices the fight - what the foes still hold, times what the
+run's fights have cost so far in party HP per foe HP, times `(n + 1) / 2`
+for a group of `n` - and fights while that is under three fifths of what
+the party has left. The exchange rate is learned across the whole run, so
+the hand takes on larger groups as the party levels and gears up, and a
+fight that turns goes back to Run on the next prompt.
+
+**Its bag is for the fights.** On the road a party of two or more spends a
+restorative only under 45%, a lone member under 65%; it does not open the
+menu on an empty bag. Before a staged fight it wears what the last chest
+held, takes a rest that is close by, and opens the bag only under three
+fifths.
+
+What it still does not do: sell, use magic outside battle, or leave the
+cheapest route for a chest that sets no flag an anchor carries.
 
 ### The carried-state diff
 
@@ -973,10 +1027,11 @@ Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal 
   scene graph, not locomotion; the pad tier is the locomotion claim.
 - The seated tier talks only to NPCs whose record reaches a flag the next
   anchor carries or a destination the route needs, and picks conversation
-  options by rotation, not by reading them. Neither tier buys, and only the
-  pad tier opens the pause menu (to heal, or to equip a boss's elemental
-  guard on a retry); a beat that waits on a purchase or an equip reads as a
-  stall at that beat.
+  options by rotation, not by reading them. Neither segmented tier buys,
+  and only the pad tier opens the pause menu (to heal, or to equip a boss's
+  elemental guard on a retry); a beat that waits on a purchase or an equip
+  reads as a stall at that beat. The continuous run's hand does buy
+  ([above](#how-the-continuous-hand-plays)).
 - The fighter guards only a foe that hits hard every other round, never
   targets a weakness, changes equipment only to guard a boss's element after
   losing to it, and flees a random encounter. A fight that needs anything
@@ -993,10 +1048,10 @@ Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal 
   of those flags but the last is in the next anchor, so a flag-reach test
   alone never picks the controller. A crossing whose beat changed scene lets
   the landing's arrival run before the position is read.
-- The pad hand heals only with items it already carries and with a free
-  or affordable rest in a scene that rolls no encounters, and wards off
-  encounters only with an Incense it carries; it does not buy items or use
-  magic.
+- The segmented pad hand heals only with items it already carries and with
+  a free or affordable rest in a scene that rolls no encounters, and wards
+  off encounters only with an Incense it carries; it does not buy items or
+  use magic.
 - Routes follow `0x3F` names and FMV hand-offs, and prefer walk-on bands. A
   transport an entry script spawns on a story flag (`map01`'s P1[0] spawns
   the P2[31] / P2[32] flights on `0x2C3` / `0x2C5`; `station`'s spawns the

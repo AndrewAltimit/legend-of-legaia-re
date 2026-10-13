@@ -67,6 +67,13 @@ fn gear_worth(w: &legaia_engine_core::world::World, id: u8) -> i32 {
 /// bag buys those first.
 fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option<Want> {
     use legaia_engine_menus::equipment::EquipSlot;
+    // Only the continuous hand buys. A segmented pass whose talk reaches a
+    // counter (`doman` P1's merchant, on the way to Nivora) looks and
+    // leaves: the screen still has to open and close for the merchant's
+    // record to resume.
+    if !continuous::PLAYS_ON.with(std::cell::Cell::get) {
+        return None;
+    }
     use legaia_engine_menus::items::ItemEffect;
     use legaia_game_tables::equip_stats::EquipSlot as Disc;
     let session = menu.shop_session.as_ref()?;
@@ -245,12 +252,10 @@ fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> u16 {
 
 /// Play the host's part for a shop the field VM just staged: open the
 /// screen, shop on pad edges with the field frozen, and let the merchant's
-/// script resume once the screen has closed. A no-op unless the continuous
-/// hand is playing and a shop is pending or open.
+/// script resume once the screen has closed. Every pass does this - the
+/// record is parked on its shop op until a host closes the screen - and
+/// only the continuous hand buys. A no-op with no shop pending or open.
 pub(super) fn service_shop(session: &mut NativeSession) {
-    if !continuous::PLAYS_ON.with(std::cell::Cell::get) {
-        return;
-    }
     let w = &session.host.world;
     if w.shops.pending_shop.is_none() && !w.shops.shop_open {
         return;

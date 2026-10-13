@@ -569,6 +569,15 @@ immediately**, returning the replaced piece to the bag; the purchase
 itself never enters the bag. Same Point Card accrual and toast. Port:
 `engine-menus::shop::BuyRecipientSession`.
 
+The picker's rows are the **present party**, not the four character
+records: the cursor kernel is handed `DAT_80084594 + 1` rows (`lbu
+a1,0x454(s1)` / `addiu a1,a1,1` at `0x801DB434`), and a confirmed row
+resolves to its character through the party list (`lbu s0,0x457(v0)` at
+`0x801DB554`, the byte at `0x80084597 + row`). That character id indexes
+both the mask table and the record the piece is written into (`char *
+0x414`, `0x801DB678`). A lone Noa is row 1, and a member who has not
+joined has no row.
+
 Both prices are the **item table's** halfword (`0x80074368 + id*0xC +
 2`) - the retail item shop carries no per-shop gold price, which is
 why the sell-side proceeds derive from the same table the buy list
@@ -681,6 +690,15 @@ sub-0 payloads (inn / save prompts carry MES text, not a priced item list) fail
 the validation and arm nothing; with no `item_shop_data` installed (disc-free)
 the path is inert. `play-window` wires this end to end (it opens the menu-runtime
 shop on the pending signal and finishes on close).
+
+A merchant's record reaches the op through a **talk**, so the context that
+parks on it is the inline dialogue runner
+(`World::step_inline_dialogue`), not the field script. The runner holds the
+conversation on the op for as long as the shop is armed and takes the Done
+edge on the frame after the screen closes, which is what clears the arm
+(`op49_clear`). A talk that ended at the op instead would leave the arm
+standing with nothing to resume it, and the next talk to reach a shop op
+would spend that stale Done edge and open no shop.
 
 Buy **prices** come from the static `SCUS_942.54` item table - the `u16` at item
 record `+2` (`legaia_game_tables::item_names::item_price`, base `TABLE_BASE_VA`), the

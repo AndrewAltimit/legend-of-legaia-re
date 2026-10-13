@@ -824,6 +824,8 @@ pub(super) fn rest_sites(session: &NativeSession) -> (BTreeMap<u8, (u8, u8)>, Ve
                     .any(|&r| record_restores(&mf, &man, 2, r))
         })
         .collect();
+    let mut keepers = keepers;
+    keepers.sort_unstable();
     (beds, keepers)
 }
 
@@ -898,6 +900,10 @@ pub(super) fn pad_rest_to(
                     .any(|&r| record_restores(&mf, &man, 2, r))
         })
         .collect();
+    // The placements live in a hash map: fix the order the keepers are
+    // tried in, so a run does not depend on it.
+    let mut keepers = keepers;
+    keepers.sort_unstable();
     if trace {
         eprintln!(
             "    [rest] {name}: weakest {} per-mille; beds {beds:?}; keepers {keepers:?}",

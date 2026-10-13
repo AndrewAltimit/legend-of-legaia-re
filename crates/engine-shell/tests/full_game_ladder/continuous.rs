@@ -22,9 +22,11 @@ const CONTINUOUS_WIPE_ATTEMPTS: u32 = PAD_WIPE_ATTEMPTS;
 thread_local! {
     /// Set for the continuous run: the hand plays to keep a party it will
     /// still be holding thirty milestones on, not to cross one stretch.
-    /// It takes the random encounters it expects to win ([`worth_fighting`])
-    /// and wears what it picks up ([`pad_equip_best`]). The segmented passes
-    /// leave it clear and play exactly as before.
+    /// It takes the random encounters it expects to win ([`worth_fighting`]),
+    /// shops ([`pad_shop`]), wears what it buys and finds
+    /// ([`pad_equip_best`]), rests ([`pad_rest`]), plays each scene's story
+    /// on arrival and trains from a bed ([`pad_train`]). The segmented
+    /// passes leave it clear.
     pub(super) static PLAYS_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// What the run's fights have cost so far: party HP lost and foe HP
     /// taken, summed over every battle. Their ratio is the price of a fight
