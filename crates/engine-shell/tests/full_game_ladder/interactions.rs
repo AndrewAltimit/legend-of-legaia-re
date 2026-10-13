@@ -117,7 +117,8 @@ pub(super) fn interact_at(
         if !matches!(r, Run::Released) || !walking(session) {
             return r;
         }
-        let gained = flags_of_world(session) != before;
+        // A merchant's talk gains no flag; the visit itself is the gain.
+        let gained = flags_of_world(session) != before || take_shop_visited();
         last = r;
         if gained {
             break;
@@ -169,6 +170,7 @@ pub(super) fn page_talk(session: &mut NativeSession) -> Option<Run> {
             Ok(_) => {}
             Err(e) => return Some(Run::Error(format!("{e:#}"))),
         }
+        service_shop(session);
     }
     Some(Run::Parked(format!(
         "{} at {}",
@@ -232,8 +234,16 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
                 // behind the wall row 118 their talk paints away).
                 let (px, pz) = player_xz(session);
                 let me = dispatch_tile(px, pz);
-                let near = (me.0 - i32::from(npc_tile.0)).abs() <= 2
-                    && (me.1 - i32::from(npc_tile.1)).abs() <= 2;
+                // The continuous hand leans in from a tile further off: a
+                // long body (`cave01` P1[2], Terra) stops the walk three
+                // tiles short of its anchor.
+                let reach = if continuous::PLAYS_ON.with(std::cell::Cell::get) {
+                    3
+                } else {
+                    2
+                };
+                let near = (me.0 - i32::from(npc_tile.0)).abs() <= reach
+                    && (me.1 - i32::from(npc_tile.1)).abs() <= reach;
                 if attempt > 0 || !near {
                     continue;
                 }
@@ -302,7 +312,8 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
         if !matches!(r, Run::Released) || !walking(session) {
             return r;
         }
-        let gained = flags_of_world(session) != before;
+        // A merchant's talk gains no flag; the visit itself is the gain.
+        let gained = flags_of_world(session) != before || take_shop_visited();
         last = r;
         if gained {
             break;

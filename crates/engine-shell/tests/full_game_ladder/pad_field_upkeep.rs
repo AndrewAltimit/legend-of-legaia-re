@@ -94,8 +94,39 @@ pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usi
     use legaia_engine_menus::inventory_use::InventoryUseState;
     use legaia_engine_menus::items::ItemEffect;
     use legaia_engine_menus::pause_screens::PauseItemsFocus;
+    // The continuous hand keeps its bag for the fights. Training from a
+    // bed it spends nothing on the road; a party of two or more spends a
+    // restorative there only under 45% (a lone member has nobody to bring
+    // it back, and tops up under 65%); and it does not open
+    // the menu on an empty bag.
+    let plays_on = continuous::PLAYS_ON.with(std::cell::Cell::get);
+    let threshold = if plays_on && threshold == 800 {
+        if TRAINING.with(std::cell::Cell::get) {
+            return 0;
+        }
+        if session.host.world.present_party_list().len() >= 2 {
+            450
+        } else {
+            650
+        }
+    } else {
+        threshold
+    };
     if !walking(session) || !released(session) || party_hp_permille(session) >= threshold {
         return 0;
+    }
+    if plays_on {
+        let w = &session.host.world;
+        let holds_heal = w.party.inventory.iter().any(|(&id, &n)| {
+            n > 0
+                && w.tables.item_catalog.get(id).is_some_and(|e| {
+                    e.usable_in_field
+                        && matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
+                })
+        });
+        if !holds_heal {
+            return 0;
+        }
     }
     open_pause_menu(session);
     if session.field_menu.is_none() {
@@ -210,6 +241,11 @@ pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usi
         );
     }
     used
+}
+
+thread_local! {
+    /// Set while the continuous hand trains from a bed ([`pad_train`]).
+    pub(super) static TRAINING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 thread_local! {
@@ -501,6 +537,33 @@ pub(super) fn pad_equip_best(session: &mut NativeSession) -> usize {
     changed
 }
 
+/// Walk into a fight ready, as the continuous hand does: restoratives up
+/// to nine tenths, and where the bag cannot do it and the scene has a rest,
+/// the rest. The segmented passes heal with [`pad_field_heal`] alone.
+pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, String> {
+    if !continuous::PLAYS_ON.with(std::cell::Cell::get) {
+        pad_field_heal(session, 900);
+        return Ok(None);
+    }
+    // What the last chest held goes on first.
+    pad_equip_best(session);
+    // A rest close by is free; the bag is for the fight, and is opened
+    // before it only by a party under three fifths.
+    if party_hp_permille(session) < 900
+        && rest_close_by(session)
+        && let Some(s) = pad_rest_to(session, 900, true)?
+    {
+        return Ok(Some(s));
+    }
+    if party_hp_permille(session) < 600 {
+        pad_field_heal(session, 900);
+    }
+    if party_hp_permille(session) >= 700 {
+        return Ok(None);
+    }
+    pad_rest_to(session, 900, true)
+}
+
 /// Burn an Incense with the pad, as a player does who is too hurt to survive
 /// the next encounter and has nothing to heal with: when the weakest member
 /// is still below `threshold` per-mille after [`pad_field_heal`], the scene
@@ -675,18 +738,117 @@ pub(super) fn record_restores(
 /// dealt streams (`LEGAIA_FGL_RNG_SEED`), against 3 of 21 walking straight
 /// out to `map01`.
 pub(super) fn pad_rest(session: &mut NativeSession) -> Result<Option<String>, String> {
+    // The continuous hand keeps the party it has to finish the game with:
+    // it rests whenever a member is under four fifths, saves its items for
+    // the road, and takes a rest a rolling scene offers (`cave01`'s Terra).
+    let plays_on = continuous::PLAYS_ON.with(std::cell::Cell::get);
+    if !plays_on {
+        return pad_rest_to(session, 500, false);
+    }
+    if !session.host.world.scene_can_roll_encounters() {
+        return pad_rest_to(session, 800, true);
+    }
+    // Where encounters roll, the walk to a bed costs what the walk out
+    // does: only a rest close by is worth it, and only to a party under
+    // half.
+    if !rest_close_by(session) {
+        return Ok(None);
+    }
+    pad_rest_to(session, 500, true)
+}
+
+/// Is one of the scene's rests within [`REST_REACH`] tiles of the player?
+pub(super) fn rest_close_by(session: &NativeSession) -> bool {
+    let (px, pz) = player_xz(session);
+    let me = dispatch_tile(px, pz);
+    let (beds, keepers) = rest_sites(session);
+    let w = &session.host.world;
+    let near = |t: (i32, i32)| (t.0 - me.0).abs() + (t.1 - me.1).abs() <= REST_REACH;
+    beds.values()
+        .any(|&(x, z)| near((i32::from(x), i32::from(z))))
+        || keepers.iter().any(|s| {
+            w.npcs
+                .positions
+                .get(s)
+                .is_some_and(|&(x, z)| near(dispatch_tile(x, z)))
+        })
+}
+
+/// Tiles (Manhattan) the continuous hand walks to a rest in a scene that
+/// rolls encounters.
+const REST_REACH: i32 = 32;
+
+/// The rests the loaded scene offers under the live flags: the first tile
+/// of each walk-on band whose partition-2 record runs the restore, and the
+/// talk NPCs whose record (or a record it spawns) does.
+pub(super) fn rest_sites(session: &NativeSession) -> (BTreeMap<u8, (u8, u8)>, Vec<u8>) {
+    use legaia_engine_field::man_field_scripts::partition2_record_gates;
+    let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
+        return (BTreeMap::new(), Vec::new());
+    };
+    let doors: BTreeSet<u8> = overworld_portal_sites(&mf, &man, &triggers)
+        .iter()
+        .map(|s| s.record)
+        .collect();
+    let mut beds: BTreeMap<u8, (u8, u8)> = BTreeMap::new();
+    for t in triggers.iter().filter(|t| t.gate == 1) {
+        let owner = triggers
+            .iter()
+            .find(|u| (u.tile_x, u.tile_z) == (t.tile_x, t.tile_z));
+        if owner.is_none_or(|u| u.record != t.record || u.gate != 1) || doors.contains(&t.record) {
+            continue;
+        }
+        let rec = usize::from(t.record);
+        let open = partition2_record_gates(&mf, &man, rec)
+            .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2));
+        if open && record_restores(&mf, &man, 2, rec) {
+            beds.entry(t.record).or_insert((t.tile_x, t.tile_z));
+        }
+    }
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let w = &session.host.world;
+    let keepers: Vec<u8> = w
+        .npcs
+        .positions
+        .keys()
+        .copied()
+        .filter(|s| w.npcs.dialog.contains_key(s) || w.npcs.dialog_prologue.contains_key(s))
+        // A record that stages a fight restores the party after it
+        // (`cave01` P1[3..7], Terra's sparring monsters): not a rest.
+        .filter(|&s| !record_stages_fight(&mf, &man, 1, usize::from(s)))
+        .filter(|&s| {
+            record_restores(&mf, &man, 1, usize::from(s))
+                || spawned_p2(&mf, &man, 1, usize::from(s), n0 + n1, 3)
+                    .iter()
+                    .any(|&r| record_restores(&mf, &man, 2, r))
+        })
+        .collect();
+    (beds, keepers)
+}
+
+/// [`pad_rest`] with its line: rest when the weakest member is below `line`
+/// per-mille. `anywhere` takes the rest of a scene that rolls encounters
+/// too, and leaves the bag alone.
+pub(super) fn pad_rest_to(
+    session: &mut NativeSession,
+    line: u32,
+    anywhere: bool,
+) -> Result<Option<String>, String> {
     use legaia_engine_field::man_field_scripts::partition2_record_gates;
     if session.host.world.mode != SceneMode::Field
-        || session.host.world.scene_can_roll_encounters()
+        || (!anywhere && session.host.world.scene_can_roll_encounters())
         || !walking(session)
         || !released(session)
-        || party_hp_permille(session) >= 500
+        || party_hp_permille(session) >= line
     {
         return Ok(None);
     }
-    pad_field_heal(session, 500);
-    if party_hp_permille(session) >= 500 {
-        return Ok(None);
+    if !anywhere {
+        pad_field_heal(session, 500);
+        if party_hp_permille(session) >= 500 {
+            return Ok(None);
+        }
     }
     let name = scene_name(session);
     if !RESTED.with(|r| r.borrow_mut().insert(name.clone())) {
@@ -728,6 +890,7 @@ pub(super) fn pad_rest(session: &mut NativeSession) -> Result<Option<String>, St
         .keys()
         .copied()
         .filter(|s| w.npcs.dialog.contains_key(s) || w.npcs.dialog_prologue.contains_key(s))
+        .filter(|&s| !anywhere || !record_stages_fight(&mf, &man, 1, usize::from(s)))
         .filter(|&s| {
             record_restores(&mf, &man, 1, usize::from(s))
                 || spawned_p2(&mf, &man, 1, usize::from(s), n0 + n1, 3)
@@ -762,14 +925,16 @@ pub(super) fn pad_rest(session: &mut NativeSession) -> Result<Option<String>, St
             Run::Error(e) => return Err(e),
             Run::Released | Run::Parked(_) => {}
         }
-        if party_hp_permille(session) >= 500 {
+        if party_hp_permille(session) >= line {
             // A rest that worked may be taken again after the next fights.
             RESTED.with(|r| r.borrow_mut().remove(&name));
             return Ok(None);
         }
     }
     for slot in keepers {
+        RESTING.with(|r| r.set(anywhere));
         let r = talk_to(session, slot);
+        RESTING.with(|r| r.set(false));
         if trace {
             eprintln!(
                 "    [rest] {name} talk P1[{slot}] -> {r:?}; weakest now {} per-mille",
@@ -782,7 +947,7 @@ pub(super) fn pad_rest(session: &mut NativeSession) -> Result<Option<String>, St
             Run::Error(e) => return Err(e),
             Run::Released | Run::Parked(_) => {}
         }
-        if party_hp_permille(session) >= 500 {
+        if party_hp_permille(session) >= line {
             // A rest that worked may be taken again after the next fights.
             RESTED.with(|r| r.borrow_mut().remove(&name));
             return Ok(None);

@@ -228,6 +228,7 @@ pub(super) fn picker_pad(session: &NativeSession) -> Option<u16> {
     }
     let want = split_stay_option(session)
         .or_else(|| beat_progress_option(session))
+        .or_else(|| rest_option(session))
         .unwrap_or((visit - 1) % n);
     Some(if cursor < want {
         PadButton::Down.mask()
@@ -236,6 +237,72 @@ pub(super) fn picker_pad(session: &NativeSession) -> Option<u16> {
     } else {
         PadButton::Cross.mask()
     })
+}
+
+thread_local! {
+    /// Set while the continuous hand takes a rest ([`pad_rest_to`]): a
+    /// picker met then is the keeper's offer.
+    pub(super) static RESTING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// While the continuous hand rests, the option of the open picker whose
+/// branch reaches the restore (`4C 82`) soonest: an innkeeper's "stay?" is
+/// a picker, and the rotation's answer to it is as often No.
+pub(super) fn rest_option(session: &NativeSession) -> Option<usize> {
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode};
+    if !RESTING.with(std::cell::Cell::get) {
+        return None;
+    }
+    let w = &session.host.world;
+    let (bc, pc0) = match w.dialog.inline.as_ref() {
+        Some(id) if id.panel.as_ref().is_some_and(|p| p.menu_active()) => {
+            (id.bytecode.clone(), id.pc)
+        }
+        _ => {
+            let tl = w
+                .cutscene
+                .timeline
+                .iter()
+                .filter(|t| t.dialog.is_some())
+                .chain(
+                    w.field_vm
+                        .helper_contexts
+                        .iter()
+                        .filter(|t| t.dialog.is_some()),
+                )
+                .next()?;
+            (tl.bytecode.clone(), tl.pc)
+        }
+    };
+    let bc = bc.as_slice();
+    let mut pc = pc0;
+    let mut picker = None;
+    for _ in 0..16 {
+        let Ok(i) = decode(bc, pc) else { break };
+        if let InsnInfo::Picker { count, targets, .. } = i.info {
+            picker = Some((count as usize, targets));
+            break;
+        }
+        pc += i.size.max(1);
+    }
+    let (count, targets) = picker?;
+    let reach = |mut at: usize| -> Option<usize> {
+        for n in 0..400 {
+            if bc.get(at) == Some(&0x4C) && bc.get(at + 1) == Some(&0x82) {
+                return Some(n);
+            }
+            let i = decode(bc, at).ok()?;
+            at = match i.info {
+                InsnInfo::JmpRel { target, .. } => target,
+                _ => at + i.size.max(1),
+            };
+        }
+        None
+    };
+    (0..count.min(4))
+        .filter_map(|k| reach(targets[k]).map(|n| (n, k)))
+        .min()
+        .map(|(_, k)| k)
 }
 
 thread_local! {
@@ -600,6 +667,7 @@ pub(super) fn run(session: &mut NativeSession, budget: usize, stop_on_release: b
             Ok(_) => {}
             Err(e) => return Run::Error(format!("{e:#}")),
         }
+        service_shop(session);
         if session.host.world.active_fmv().is_some() {
             session.host.world.finish_cutscene();
             if let Some(FmvHandoffOutcome::Entered { scene, .. }) =

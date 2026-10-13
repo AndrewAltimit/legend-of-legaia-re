@@ -31,6 +31,11 @@ thread_local! {
     /// the hand has learned, which falls as the party levels and gears up.
     /// Opens on a lone level-1 member's first fights, a little over one HP
     /// lost for each one dealt.
+    /// The scene of the milestone after next, and the flags the next two
+    /// anchors carry between them: what the continuous hand's beats pass
+    /// plays toward when it stands in that scene early.
+    pub(super) static PLAYED_AHEAD: std::cell::RefCell<Option<(String, BTreeSet<u16>)>> =
+        const { std::cell::RefCell::new(None) };
     pub(super) static EXCHANGE: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((110, 100)) };
 }
 
@@ -181,8 +186,54 @@ fn part_c_continuous_run() {
         })
         .collect();
 
+    // The level each character holds in each anchor, read as a player's
+    // own growth curve: a line counts only as far as every later anchor
+    // agrees with it (several chapter-1 anchors are other sessions).
+    let mut anchor_levels: Vec<Vec<u8>> = spine
+        .iter()
+        .map(|m| {
+            // An anchor outside the order check is not a point on the
+            // playthrough's curve (a door-tile poke, the debug credits).
+            m.anchor
+                .as_ref()
+                .filter(|_| m.order_check)
+                .and_then(|r| load_anchor(&inp.library, r).ok())
+                .and_then(|a| {
+                    legaia_save::SaveFile::from_retail_sc_block(
+                        &a.sc,
+                        legaia_save::RETAIL_SC_PARTY_RECORDS,
+                    )
+                    .ok()
+                })
+                .map(|sf| {
+                    sf.party
+                        .members
+                        .iter()
+                        .map(|m| {
+                            if m.hp_mp_sp().hp_max == 0 {
+                                u8::MAX
+                            } else {
+                                m.level()
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .collect();
+    for j in (0..anchor_levels.len().saturating_sub(1)).rev() {
+        let next = anchor_levels[j + 1].clone();
+        for (c, lv) in anchor_levels[j].iter_mut().enumerate() {
+            *lv = (*lv).min(next.get(c).copied().unwrap_or(u8::MAX));
+        }
+        if anchor_levels[j].is_empty() {
+            anchor_levels[j] = next;
+        }
+    }
+
     let opts = live_opts(true);
     PLAYS_ON.with(|p| p.set(true));
+    reset_shopping();
     let mut session = open_session(&inp.extracted);
     // `LEGAIA_FGL_CONTINUOUS_FROM=<milestone>` starts the run at a later
     // milestone, seeded once from that milestone's retail anchor and never
@@ -213,8 +264,27 @@ fn part_c_continuous_run() {
     let mut stall: Option<String> = None;
     'spine: for i in start..spine.len() - 1 {
         let to = &spine[i + 1];
+        // What the retail run had played by the next milestone and the one
+        // after it: chapter 1's anchors come from several sessions, and a
+        // stretch whose own anchor is another session's (the `ravine` state)
+        // would otherwise walk past the beats the next one records.
+        // Only in that later milestone's own scene: a run that stands there
+        // early is already where its stretch begins.
+        let played = spine.get(i + 2).and_then(|m| {
+            let mut flags = anchor_flags[i + 1].clone()?;
+            flags.extend(anchor_flags[i + 2].as_ref()?);
+            Some((m.scene.clone(), flags))
+        });
+        PLAYED_AHEAD.with(|a| *a.borrow_mut() = played);
         NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = anchor_flags[i + 1].clone());
         LEARNED_CADENCE.with(|l| l.set(None));
+        let ahead = (i + LEVEL_LOOKAHEAD).min(spine.len() - 1);
+        TARGET_LEVELS.with(|t| {
+            *t.borrow_mut() = anchor_levels[ahead]
+                .iter()
+                .map(|&lv| if lv == u8::MAX { 0 } else { lv })
+                .collect();
+        });
         let mut prepare: Option<u8> = None;
         let mut attempt = 0u32;
         let t0 = std::time::Instant::now();
@@ -296,6 +366,8 @@ fn part_c_continuous_run() {
     }
 
     PLAYS_ON.with(|p| p.set(false));
+    TARGET_LEVELS.with(|t| t.borrow_mut().clear());
+    PLAYED_AHEAD.with(|a| *a.borrow_mut() = None);
     let denom = spine.len() - 1 - start;
     eprintln!();
     eprintln!(

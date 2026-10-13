@@ -425,9 +425,13 @@ pub fn recipient_window_draws(inputs: &ScreenInputs<'_>) -> (Vec<TextDraw>, Vec<
         inputs.menu.equip_info.as_ref(),
         session.item_id,
     );
-    let rows: Vec<ui::RecipientMemberView<'_>> = members
+    // The picker's rows are the present party in party-list order, the
+    // compare model is per character record.
+    let present = inputs.world.present_party_list();
+    let rows: Vec<ui::RecipientMemberView<'_>> = present
         .iter()
         .take(session.can_equip.len())
+        .filter_map(|&ch| members.get(usize::from(ch)))
         .enumerate()
         .map(|(i, m)| ui::RecipientMemberView {
             name: m.name.as_str(),

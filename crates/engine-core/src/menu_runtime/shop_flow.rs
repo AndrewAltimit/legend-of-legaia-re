@@ -438,7 +438,13 @@ impl MenuRuntime {
             Disc::Footwear => EquipSlot::Boot,
         };
         let idx = slot.as_index() as usize;
-        let Some(record) = world.party.roster.members.get_mut(party_index as usize) else {
+        // The picker's row is a party-list position; the record it equips
+        // is that entry's character (`0x80084597 + row`, then
+        // `char * 0x414` at `0x801DB678`).
+        let Some(&ch) = world.present_party_list().get(party_index as usize) else {
+            return false;
+        };
+        let Some(record) = world.party.roster.members.get_mut(usize::from(ch)) else {
             return false;
         };
         let mut equip = record.equipment();

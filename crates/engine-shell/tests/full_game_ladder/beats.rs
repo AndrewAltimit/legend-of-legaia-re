@@ -82,9 +82,61 @@ pub(super) fn play_beats(
         }
         m
     };
+    // The continuous hand's own pass (a scene played before any door has
+    // refused) walks only the bands that carry the story: a record that,
+    // itself or through what it spawns, raises a still-clear flag the
+    // anchors ahead carry and that nothing in the scene lowers again. A
+    // room marker is raised on the way in and cleared on the way out, and
+    // crossing a dungeon for one costs fights and buys nothing.
+    let story_bands: Option<BTreeSet<usize>> = PROACTIVE.with(std::cell::Cell::get).then(|| {
+        use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+        let w = &session.host.world;
+        let sites: Vec<_> = (0..3)
+            .flat_map(|part| walk_partition_gflag_sites(&mf, &man, part))
+            .collect();
+        let lowered: BTreeSet<u16> = sites
+            .iter()
+            .filter(|s| s.bank == FlagBank::System && s.kind == FlagKind::Clear && s.clean)
+            .map(|s| s.flag)
+            .collect();
+        let setters: BTreeSet<usize> = walk_partition_gflag_sites(&mf, &man, 2)
+            .iter()
+            .filter(|s| {
+                s.bank == FlagBank::System
+                    && s.kind == FlagKind::Set
+                    && s.clean
+                    && !s.text_alias
+                    && !s.debug_menu
+                    && !w.system_flag_test(s.flag)
+                    && next_anchor_has(s.flag)
+                    && !lowered.contains(&s.flag)
+            })
+            .map(|s| s.record)
+            .collect();
+        let n0 = mf.partitions.first().map_or(0, Vec::len);
+        let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+        first_tile
+            .keys()
+            .map(|&r| usize::from(r))
+            .filter(|&r| {
+                setters.contains(&r)
+                    || spawned_p2(&mf, &man, 2, r, n0 + n1, 3)
+                        .iter()
+                        .any(|s| setters.contains(s))
+            })
+            .collect()
+    });
     let mut idle: BTreeMap<u8, BTreeSet<u16>> = BTreeMap::new();
     let mut rearmed: BTreeSet<u8> = BTreeSet::new();
-    for _round in 0..BEAT_ROUNDS {
+    // The continuous hand stays while a round still gains: a staged talk
+    // (`cave01` P1[2], Terra's seven-stage `0x158`..`0x15E` chain) plays one
+    // stage a contact.
+    let rounds = if continuous::PLAYS_ON.with(std::cell::Cell::get) {
+        BEAT_ROUNDS * 4
+    } else {
+        BEAT_ROUNDS
+    };
+    for _round in 0..rounds {
         let round_start = flags_of_world(session);
         let stale: Vec<u8> = idle
             .iter()
@@ -140,7 +192,10 @@ pub(super) fn play_beats(
             ran += 1;
             if pad_hand() {
                 // A player walks into a boss at full strength.
-                pad_field_heal(session, 900);
+                if let Some(s) = pad_ready(session)? {
+                    finish(session, log, ran);
+                    return Ok(Some(s));
+                }
                 // Walk up to the stager; its touch dispatch runs off the
                 // locomotion step, as it does for a player.
                 let avoid = pad_avoid(session, None);
@@ -211,8 +266,12 @@ pub(super) fn play_beats(
             // A talk that stages a fight (Xain, `tunnelc` P1[4]: his
             // second stage's option 0 runs `3E FF 0A`) is a boss approach:
             // a player walks into it at full strength, as into a stager.
-            if pad_hand() && record_stages_fight(&mf, &man, 1, usize::from(slot)) {
-                pad_field_heal(session, 900);
+            if pad_hand()
+                && record_stages_fight(&mf, &man, 1, usize::from(slot))
+                && let Some(s) = pad_ready(session)?
+            {
+                finish(session, log, ran);
+                return Ok(Some(s));
             }
             let r = talk_to(session, slot);
             let r = fight_committed(session, r);
@@ -241,6 +300,12 @@ pub(super) fn play_beats(
                 && RAN_ON_WALK.with(|t| t.borrow().contains(&(name.clone(), rec)))
             {
                 walked.insert(rec);
+            }
+            if story_bands
+                .as_ref()
+                .is_some_and(|b| !b.contains(&usize::from(rec)))
+            {
+                continue;
             }
             if doors.contains(&rec)
                 || walked.contains(&rec)
@@ -286,8 +351,12 @@ pub(super) fn play_beats(
             // before stepping on. So is any walk in a scene where such a band
             // is live, since the route to another beat can cross it: the
             // walk to `jagaroom` P2[4] runs over P2[9]'s tiles.
-            if pad_hand() && boss_band_live {
-                pad_field_heal(session, 900);
+            if pad_hand()
+                && boss_band_live
+                && let Some(s) = pad_ready(session)?
+            {
+                finish(session, log, ran);
+                return Ok(Some(s));
             }
             PLAYING_BEAT.with(|b| b.set(Some(rec)));
             let r = if pad_hand() {
@@ -722,6 +791,13 @@ pub(super) fn trace_beat(
         tile_of(px, pz),
         session.frames
     );
+}
+
+thread_local! {
+    /// Set while the continuous hand plays a scene on arrival, before any
+    /// door has refused: the pass then walks only the bands that carry the
+    /// story.
+    pub(super) static PROACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 thread_local! {
