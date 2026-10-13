@@ -396,7 +396,7 @@ impl LegaiaMinigames {
     /// The hub's **first visit** at `tick` ticks in (no pad input), as
     /// retail-placed rows: `{ ok, arm, done, rows }`.
     ///
-    /// The arms are `legaia_engine_core::muscle_ringside::FirstVisitHub` -
+    /// The arms are `legaia_engine_minigames::muscle_ringside::FirstVisitHub` -
     /// the intro strip, the brick wall rising under it, the course-title
     /// zoom, the course card (`FUN_801D042C`, course `course`), the wall
     /// draining and the ROUND card (`round` is the displayed number) - and
@@ -408,7 +408,7 @@ impl LegaiaMinigames {
     /// shade between the wall and the screens. `arm` is the arm name
     /// (`intro`, `title`, `card`, `drain`, `round`, `done`).
     pub fn muscle_first_visit_json(&self, tick: i32, course: i32, round: i32) -> String {
-        use legaia_engine_core::muscle_ringside::FirstVisitHub;
+        use legaia_engine_minigames::muscle_ringside::FirstVisitHub;
         // The walk is deterministic and bounded; replay it to `tick`.
         let mut hub = FirstVisitHub::new();
         for _ in 0..tick.clamp(0, 4096) {
@@ -425,7 +425,7 @@ impl LegaiaMinigames {
     /// so a press ends the two card holds early and the announcer lines play
     /// - what both play hosts do through `World::tick_muscle_hub`.
     pub fn muscle_first_visit_reset(&mut self) {
-        self.muscle_hub = Some(legaia_engine_core::muscle_ringside::FirstVisitHub::new());
+        self.muscle_hub = Some(legaia_engine_minigames::muscle_ringside::FirstVisitHub::new());
     }
 
     /// Step the live first visit one tick. `pressed` is whether the player
@@ -465,11 +465,11 @@ impl LegaiaMinigames {
     /// [`Self::muscle_first_visit_json`]).
     fn first_visit_rows_json(
         &self,
-        hub: &legaia_engine_core::muscle_ringside::FirstVisitHub,
+        hub: &legaia_engine_minigames::muscle_ringside::FirstVisitHub,
         course: i32,
         round: i32,
     ) -> String {
-        use legaia_engine_core::muscle_ringside::FirstVisitArm as A;
+        use legaia_engine_minigames::muscle_ringside::FirstVisitArm as A;
         use legaia_engine_ui::muscle_dome_hud as hud;
         use legaia_engine_ui::ringside_backdrop as rb;
         let Some(raw) = entry_bytes(&self.prot, &self.entries, 977) else {
@@ -539,24 +539,24 @@ impl LegaiaMinigames {
     /// neutral modulation). `quads` is empty while the level is zero.
     ///
     /// The level is retail's `*(0x801D1A7C)` across hub arms `0x0A..0x0C`
-    /// ([`legaia_engine_core::muscle_ringside::HubBackdrop`]), replayed to
+    /// ([`legaia_engine_minigames::muscle_ringside::HubBackdrop`]), replayed to
     /// `tick` beside the INTERVAL envelope and the tally roll the same way
     /// the play hosts' `HubTimers` steps them; once the screen has drained it
     /// holds at the level the backdrop climbs back to (this page's own ROUND
     /// banner follows on its key, not on retail's arm `0x15`). The variant is
     /// the loader's pick over the fighter's HP as the leg ended
-    /// ([`legaia_engine_core::muscle_ringside::still_prot_index`]: below half
+    /// ([`legaia_engine_minigames::muscle_ringside::still_prot_index`]: below half
     /// of `hp_max` selects `int2.tim`). The quads are
     /// [`legaia_engine_ui::ringside_backdrop::ringside_still_quads`]
     /// resolved onto the sheet through their texture pages
     /// (`StillDraw::from_quad`).
     pub fn muscle_interval_still_json(&self, tick: i32, hp_cur: u32, hp_max: u32) -> String {
-        use legaia_engine_core::muscle_ringside::{BackdropStage, HubBackdrop};
+        use legaia_engine_minigames::muscle_ringside::{BackdropStage, HubBackdrop};
         use legaia_engine_ui::ringside_backdrop as rb;
         let Some(run) = self.muscle_run.as_ref() else {
             return r#"{"ok":false}"#.to_string();
         };
-        let still = legaia_engine_core::muscle_ringside::still_prot_index(
+        let still = legaia_engine_minigames::muscle_ringside::still_prot_index(
             hp_cur.min(0xFFFF) as u16,
             hp_max.min(0xFFFF) as u16,
         );

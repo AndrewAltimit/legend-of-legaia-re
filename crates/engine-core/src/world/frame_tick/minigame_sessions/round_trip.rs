@@ -136,7 +136,7 @@ impl World {
         if legaia_engine_mode::minigame_entry::MinigameSubId::from_sub_id(sub_id)
             == Some(legaia_engine_mode::minigame_entry::MinigameSubId::MuscleDome)
         {
-            self.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
+            self.queue_xa_prestage(legaia_engine_minigames::muscle_ringside::hub_xa_prestage());
         }
     }
 

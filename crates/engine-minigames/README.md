@@ -16,6 +16,7 @@ Hosts and tests name the modules here directly
 | `minigame_actor` / `minigame_fx` | The overlay band's shared actor record and effect-part pool. |
 | `other_game_overlay` | PROT 0977 kernels shared by the hub-band games (step scaling, voice cues, the score-tally ramp). |
 | `muscle_dome` | The Muscle Dome's World-free half: the PROT 0977 course ladder and score tables, the contest ladder above a leg (`DomeContest`: cursor word, course gating, leg scoring, coin settlement), the fighter stat profiles and `DomeDamageModel`, and the hub screen envelopes. See [`minigame-muscle-dome.md`](../../docs/subsystems/minigame-muscle-dome.md). |
+| `muscle_ringside` | The Muscle Dome contest hub's screens (`FUN_801CF870`): the first-visit strip, the ROUND card, the INTERVAL tally and its cue ring, the ringside-still backdrop, and `HubTimers`, which steps them off a `HubTickInputs`. |
 | `prize_exchange` | The casino prize-exchange sub-screen `0x20`: the menu overlay's prize table, its 4-state browse / confirm / commit machine, and `apply_redeem` over any bag implementing `RedeemBag`. See [`shop.md`](../../docs/subsystems/shop.md). |
 | `tile_board` | The op-`0x49` tile board: cell codes, header, walk state machine, fades, prompt. See [`tile-board.md`](../../docs/subsystems/tile-board.md). |
 
@@ -47,7 +48,10 @@ simulation crate:
 - **The Muscle Dome leg** - a leg is an ordinary battle under the hood
   (spells, the battle command menu, the arts input), so `MuscleDomeSession`,
   its command menu, the ring / magic gates and the loadouts built off a live
-  roster stay in `engine-core::world_views::muscle_dome`; `muscle_ringside` stays too.
+  roster stay in `engine-core::world_views::muscle_dome`. The contest hub's
+  screen timers (`muscle_ringside`) are here: `HubTimers::tick` takes the four
+  things it reads off the simulation as `HubTickInputs`, which
+  `World::tick_muscle_hub` fills.
 - **The engine bag** - `prize_exchange::apply_redeem` is generic over
   `RedeemBag`; `engine-menus` implements it for the world's `ItemBag`.
   `tile_board`'s per-cell draw assembly reads the `World` and is

@@ -33,7 +33,6 @@ pub mod menu_runtime;
 pub mod menu_validator;
 pub mod minigame_status;
 pub mod move_buffer_host;
-pub mod muscle_ringside;
 pub mod new_game;
 pub mod npc_catalog;
 pub mod options;

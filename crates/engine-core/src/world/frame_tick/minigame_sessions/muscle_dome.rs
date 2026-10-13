@@ -42,7 +42,7 @@ impl World {
         self.minigames.muscle_playback_frames = 0;
         self.mode = SceneMode::MuscleDome;
         // The hub's announcer lines, staged ahead of the first visit's arms.
-        self.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
+        self.queue_xa_prestage(legaia_engine_minigames::muscle_ringside::hub_xa_prestage());
     }
 
     /// Leave the arena **at the player's request** - the escape both hosts
@@ -151,8 +151,9 @@ impl World {
                 }
                 None => (fought, 0),
             };
-            self.minigames.muscle_ringside_still =
-                Some(crate::muscle_ringside::still_prot_index(hp_cur, hp_max));
+            self.minigames.muscle_ringside_still = Some(
+                legaia_engine_minigames::muscle_ringside::still_prot_index(hp_cur, hp_max),
+            );
         }
         session
     }
@@ -547,7 +548,7 @@ impl World {
     }
 
     /// Advance the arena hub's screen timers one tick
-    /// ([`crate::muscle_ringside::HubTimers`], `FUN_801CF870`'s screen arms),
+    /// ([`legaia_engine_minigames::muscle_ringside::HubTimers`], `FUN_801CF870`'s screen arms),
     /// off this tick's leg / contest edges and pad. Runs every tick in every
     /// mode - the INTERVAL screen plays after the leg has closed - and is
     /// called by the shared scene host right after [`Self::tick`], so the
@@ -560,7 +561,16 @@ impl World {
         // `_DAT_80084580`, the voice/SFX volume each tally cue halves.
         let volume_word = self.audio.levels.voice_volume as u32;
         let mut timers = std::mem::take(&mut self.minigames.muscle_hub);
-        let frame = timers.tick(self, pad, volume_word);
+        let frame = timers.tick(
+            legaia_engine_minigames::muscle_ringside::HubTickInputs {
+                leg_open: self.minigames.muscle_dome.is_some(),
+                contest: self.minigames.muscle_contest.as_ref(),
+                ringside_still: self.minigames.muscle_ringside_still,
+                between_legs: self.muscle_hub_between_legs(),
+            },
+            pad,
+            volume_word,
+        );
         self.minigames.muscle_hub = timers;
         if frame.next_leg {
             self.begin_next_muscle_leg();
@@ -587,7 +597,9 @@ impl World {
 
     /// Drain the CD-XA line and the tally voice keys the hub fired since the
     /// last drain, for the host to sound.
-    pub fn take_muscle_hub_sounds(&mut self) -> crate::muscle_ringside::HubTimersFrame {
+    pub fn take_muscle_hub_sounds(
+        &mut self,
+    ) -> legaia_engine_minigames::muscle_ringside::HubTimersFrame {
         std::mem::take(&mut self.minigames.muscle_hub_sounds)
     }
 
@@ -597,7 +609,7 @@ impl World {
     /// re-arming the round trip (the departure scene stays backed up from
     /// the door). A no-op when the hub is not between legs.
     ///
-    /// [`Self::tick_muscle_hub`] calls it on [`crate::muscle_ringside::HubTimersFrame::next_leg`].
+    /// [`Self::tick_muscle_hub`] calls it on [`legaia_engine_minigames::muscle_ringside::HubTimersFrame::next_leg`].
     pub fn begin_next_muscle_leg(&mut self) {
         if !self.muscle_hub_between_legs() {
             return;

@@ -51,7 +51,7 @@ fn every_scene_lists_its_field_xa_one_shots_at_load() {
     names.dedup();
 
     let hub: Vec<legaia_engine_system::sound_state::XaVoiceClip> =
-        legaia_engine_core::muscle_ringside::hub_xa_prestage()
+        legaia_engine_minigames::muscle_ringside::hub_xa_prestage()
             .into_iter()
             .map(Into::into)
             .collect();
