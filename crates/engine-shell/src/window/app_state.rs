@@ -852,7 +852,7 @@ pub(super) struct PlayWindowApp {
     /// User-editable settings (BGM / SFX volume, message speed, …). Wired
     /// to the Options screen's [`OptionsSession`] and persisted via
     /// the engine's options round-trip path.
-    pub(super) options_state: legaia_engine_core::options::OptionsState,
+    pub(super) options_state: legaia_engine_menus::options::OptionsState,
     /// Opt-in dynamic-lighting enhancement (NON-RETAIL - the field path has
     /// no light source). Seeded from `--dynamic-lighting`, toggled at
     /// runtime with the `I` key; mirrored into the renderer via

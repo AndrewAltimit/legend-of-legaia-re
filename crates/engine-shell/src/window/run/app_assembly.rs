@@ -190,7 +190,7 @@ impl PlayWindowApp {
             card: mounted_card,
             save_flow: legaia_engine_menus::save_screen::SaveScreenFlow::new(),
             options_state: {
-                let mut o = legaia_engine_core::options::OptionsState::load_or_default(
+                let mut o = legaia_engine_menus::options::OptionsState::load_or_default(
                     &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
                 );
                 // `LEGAIA_BATTLE_CAMERA_OPTION=<0|1|2>`: the retail-compare image

@@ -92,8 +92,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
-use legaia_engine_core::options::OptionsSetting;
 use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
+use legaia_engine_menus::options::OptionsSetting;
 use legaia_engine_menus::save_screen::{SaveCommitKind, card_port_snapshot};
 use legaia_engine_menus::save_select::{
     SaveRack, SaveSelectMode, SelectPhase, SlotContent, SlotSnapshot,

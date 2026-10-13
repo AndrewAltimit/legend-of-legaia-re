@@ -37,7 +37,7 @@
 //! the end of every `World::tick` while
 //! `WorldToggles::volumetric_fog` is raised (the one
 //! engine-side setting both play hosts flip, from
-//! `legaia_engine_core::options::OptionsState::volumetric_fog`). Each host draws
+//! `legaia_engine_menus::options::OptionsState::volumetric_fog`). Each host draws
 //! `World::fog_volume_frame` after its 3D scene and before
 //! its HUD: the native renderer's `fog_volume` pass and the browser play
 //! page's `webgl-fog-volume.js`, two transcriptions of one shading recipe

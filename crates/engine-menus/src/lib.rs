@@ -46,6 +46,7 @@ pub mod menu_widget;
 pub mod muscle_dome_session;
 pub mod name_entry;
 pub mod option_values;
+pub mod options;
 pub mod party_state;
 pub mod pause_screens;
 pub mod publisher_logos;

@@ -13,7 +13,7 @@ pub struct WorldToggles {
     /// them regardless.
     pub entry_pulse_enabled: bool,
     /// Photosensitivity guard over the ambient CLUT-cell cyclers (see
-    /// [`crate::options::OptionsState::reduce_flashing`]). When `true`
+    /// [`legaia_engine_menus::options::OptionsState::reduce_flashing`]). When `true`
     /// (the default - a host that never plumbs options stays safe),
     /// [`crate::world::World::step_ambient_fx`] slew-limits the **applied** luminance
     /// channels (`v_add`, `white`) toward each cell's simulated target
@@ -24,15 +24,15 @@ pub struct WorldToggles {
     pub(crate) reduce_flashing: bool,
     /// Retail's **visible-tile crop** on the field ground + decoration layers
     /// ([`crate::field_view_window::field_view_cells`]), from
-    /// [`crate::options::OptionsState::retail_view_window`]. Default on; it
+    /// [`legaia_engine_menus::options::OptionsState::retail_view_window`]. Default on; it
     /// only takes effect at retail framing.
     pub(crate) view_window_crop: bool,
     /// The volumetric ground-fog **enhancement**
     /// ([`legaia_render_kernels::fog_volume`], stepped by `World::tick`), from
-    /// [`crate::options::OptionsState::volumetric_fog`]. Default **off** here
+    /// [`legaia_engine_menus::options::OptionsState::volumetric_fog`]. Default **off** here
     /// so headless hosts (replays, oracles) carry no enhancement; the play
     /// hosts push their option (default on) through
-    /// [`crate::options::OptionsState::apply_to_world`]. Off resets the bank,
+    /// [`crate::options::apply_to_world`]. Off resets the bank,
     /// so every host draws exactly what it drew without the feature.
     pub volumetric_fog: bool,
     // --- live gameplay loop (Field <-> Battle round trip) -----------------
@@ -102,13 +102,13 @@ pub struct WorldToggles {
     /// The options screen's **Battle Camera** row (config word
     /// `0x800846C0`, Close / Normal / Far), which the battle camera's action
     /// shots read (`BattleCamera::set_camera_option`). Hosts mirror their
-    /// `OptionsState` onto this through `OptionsState::apply_to_world`.
+    /// `OptionsState` onto this through `crate::options::apply_to_world`.
     pub battle_camera: legaia_engine_menus::option_values::BattleCameraOpt,
     /// The options screen's **Field HP Display** row (config word
     /// `0x800845C4`, Immediate / Gradual / Display Off). The field party
     /// HUD (`FUN_801D0D38`) reads it as its idle delay - `0x28` frames,
     /// `0xA0` frames, or never - so hosts mirror their `OptionsState` onto
-    /// this through `OptionsState::apply_to_world` and both ask
+    /// this through `crate::options::apply_to_world` and both ask
     /// `world_map_panel_host::field_hud_view_mode`.
     pub(crate) field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt,
     /// Draw the overworld's per-placement **entity markers**

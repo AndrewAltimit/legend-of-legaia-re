@@ -1713,7 +1713,7 @@ row`, `h = choices * 13 - 4`, flipped up by `choices * 13 + 0x1C` when the
 bottom would pass y = `0xB0`. `FUN_801D2B44` lists the choices at a 13-px
 pitch, text inset `+0x14`, cursor at the content origin.
 
-**Port**: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
+**Port**: `engine-menus::options` (`OPTIONS_DISPLAY_ROWS`,
 `options_display_rows`, the `OptionsSession` Browsing -> Editing SM,
 `options_popup_content_rect`) + `engine-ui::options_draws_for`. Sound drives
 the mixer's monaural downmix (`AudioOut::set_mono`); Field HP Display sets the

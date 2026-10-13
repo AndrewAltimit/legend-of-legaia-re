@@ -92,7 +92,7 @@ pub struct FieldLocomotion {
     /// Field Move option: `false` = Walk, `true` = Run (retail config word
     /// `0x800846CC`, the pause menu's "Field Move" row - see
     /// [`legaia_engine_menus::option_values::FieldMoveOpt`]). Hosts mirror their
-    /// [`crate::options::OptionsState`] onto this the way they mirror
+    /// [`legaia_engine_menus::options::OptionsState`] onto this the way they mirror
     /// [`crate::world::FieldLocomotion::precise_movement`].
     ///
     /// This is the *default*, not the state: the run button INVERTS it, so

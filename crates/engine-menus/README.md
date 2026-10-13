@@ -57,8 +57,11 @@ link into a dependent crate.
   `MuscleDomeSession`, its command menu, ring and loadout kernels, over the
   contest ladder `legaia-engine-minigames` carries)
   and `option_values` (the options screen's value enums - Select Attack,
-  battle camera, field HP display, ... - which engine-core's `options`
-  session stores).
+  battle camera, field HP display, ...).
+- **Options** - `options`: `OptionsState` and its TOML persistence, the
+  options screen session and its row model, the key-rebind flow over
+  `key_rebind`, and the retail-deviation report. The push of the simulation
+  knobs onto a `World` is `engine-core::options::apply_to_world`.
 - **Spells** - `spell_menu` (the out-of-battle cast flow) and
   `spell_party_broadcast` (`FUN_8003053C`).
 - **Menu overlay** - `menu_widget` (the window-widget choreography:

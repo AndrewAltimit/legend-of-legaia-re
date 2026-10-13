@@ -249,7 +249,7 @@ crates; each row's site names the owning crate.
 | `801d6f90` | `is_available` | `crates/engine-fishing/src/fishing/prize.rs` | FALSE INERT |
 | `801d712c` | `select_owned_rod` | `crates/engine-fishing/src/fishing/rod_menu.rs` | FALSE INERT |
 | `801d8258` | `arm` | `crates/engine-field/src/world_map.rs` | DISCLOSE |
-| `801da9f8` | `OptionsPhase` | `crates/engine-core/src/options.rs` | FALSE INERT |
+| `801da9f8` | `OptionsPhase` | `crates/engine-menus/src/options.rs` | FALSE INERT |
 | `801dd0c0` | `category_check` | `crates/engine-menus/src/menu_item_category.rs` | WIRE (wired) |
 | `801e1208` | `classify_card_directory` | `crates/engine-menus/src/save_select/card_directory.rs` | WIRE (wired) |
 | `801e295c` | `advance_battle_mode` | `crates/engine-core/src/world/battle/monster_ai/action_pick.rs` | WIRE (wired) |

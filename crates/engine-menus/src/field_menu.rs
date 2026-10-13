@@ -11,7 +11,7 @@
 //! - **Magic** → [`crate::spell_menu::SpellMenuSession`].
 //! - **Equip** → [`crate::equip_session::EquipSession`].
 //! - **Status** → [`crate::status_screen::StatusScreenSession`].
-//! - **Options** → `legaia_engine_core::options::OptionsSession`.
+//! - **Options** → `crate::options::OptionsSession`.
 //! - **Load** → [`crate::save_select::SaveSelectSession`] in Load mode.
 //! - **Save** → [`crate::save_select::SaveSelectSession`] in Save mode.
 //!

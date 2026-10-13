@@ -191,11 +191,11 @@ fn retail_windowing_hides_only_window_placements_the_list_lacks() {
             "{name}: a draw is hidden with windowing off"
         );
         // Retail: only window-sweep placements the list does not hold drop.
-        let opts = legaia_engine_core::options::OptionsState {
+        let opts = legaia_engine_menus::options::OptionsState {
             retail_static_window: true,
             ..Default::default()
         };
-        opts.apply_to_world(&mut e.host.world);
+        legaia_engine_core::options::apply_to_world(&opts, &mut e.host.world);
         let sw = &e.host.world.terrain.static_window;
         let hidden: Vec<PlacedWindowKey> = e
             .keys
@@ -255,11 +255,11 @@ fn default_windowing_hides_other_regions_and_the_seat_recentres() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let opts = legaia_engine_core::options::OptionsState::default();
+    let opts = legaia_engine_menus::options::OptionsState::default();
     assert!(opts.retail_static_window, "retail windowing is the default");
 
     let mut e = enter(&disc, "retona");
-    opts.apply_to_world(&mut e.host.world);
+    legaia_engine_core::options::apply_to_world(&opts, &mut e.host.world);
     assert!(e.host.world.debug_seat_player(8536, 12638));
     let sw = &e.host.world.terrain.static_window;
     let bowl = e
@@ -278,7 +278,7 @@ fn default_windowing_hides_other_regions_and_the_seat_recentres() {
         .count();
 
     let mut e = enter(&disc, "town01");
-    opts.apply_to_world(&mut e.host.world);
+    legaia_engine_core::options::apply_to_world(&opts, &mut e.host.world);
     assert!(e.host.world.debug_seat_player(4160, 11840));
     let sw = &e.host.world.terrain.static_window;
     let near_hidden: Vec<_> = e

@@ -399,8 +399,10 @@ impl PlayWindowApp {
         // world state, and the knobs are host policy (options file + `R`
         // key), not world state. The browser page pushes the same set
         // through the same call.
-        self.options_state
-            .apply_to_world(&mut self.session.host.world);
+        legaia_engine_core::options::apply_to_world(
+            &self.options_state,
+            &mut self.session.host.world,
+        );
         // `set_pad` also latches the run button off the same word, so
         // there is nothing host-side to keep in sync.
         // A `LEGAIA_BATTLE_DRIVE` capture walks the fight's pad path

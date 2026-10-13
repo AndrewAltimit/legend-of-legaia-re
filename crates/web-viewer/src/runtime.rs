@@ -361,7 +361,7 @@ pub struct LegaiaRuntime {
     /// The commit path is [`Self::persist_and_apply_options`], mirroring the
     /// native `persist_and_apply_options` leg for leg: apply the live audio
     /// side effects, then write the state out.
-    pub(crate) options_state: legaia_engine_core::options::OptionsState,
+    pub(crate) options_state: legaia_engine_menus::options::OptionsState,
     /// A title -> load score hand-off the page asked for before entering the
     /// save's scene ([`crate::play_bgm`]'s `play_bgm_title_handoff`): run by
     /// the scene entry once the save has landed, or by the next tick when

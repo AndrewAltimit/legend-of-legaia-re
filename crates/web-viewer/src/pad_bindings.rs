@@ -31,7 +31,7 @@
 //!
 //! "Starts at", because the table is now **editable**: the options screen's
 //! Key Config screen ([`legaia_engine_menus::key_rebind::KeyRebindSession`],
-//! reached through [`legaia_engine_core::options::OptionsSession`]) commits
+//! reached through [`legaia_engine_menus::options::OptionsSession`]) commits
 //! binds into it, and [`store_mapping`] round-trips the result through
 //! `localStorage` under [`BINDINGS_STORAGE_KEY`] - the browser twin of the
 //! native window's `legaia-input.toml`. A page that folded

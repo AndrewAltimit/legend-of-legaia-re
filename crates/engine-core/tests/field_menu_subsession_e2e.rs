@@ -19,12 +19,12 @@ use legaia_engine_core::field_menu_dispatch::{
     FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome, apply_inventory_outcome,
     apply_spell_outcome,
 };
-use legaia_engine_core::options::OptionsState;
 use legaia_engine_core::world::World;
 use legaia_engine_menus::field_menu::{
     FieldMenuInput, FieldMenuPhase, FieldMenuRow, FieldMenuSession,
 };
 use legaia_engine_menus::items::ItemCatalog;
+use legaia_engine_menus::options::OptionsState;
 use legaia_engine_menus::save_select::{SaveRack, SaveSelectMode, SlotSnapshot};
 use legaia_engine_system::input::PadButton;
 

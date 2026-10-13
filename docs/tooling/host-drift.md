@@ -1391,7 +1391,7 @@ screens.
 | pause-menu stack | `field_menu_dispatch::tick_root_list`, `tick_open_subsession`, `finish_subsession`; per host: rack I/O, key table, options store (`SubsessionHandoff`) |
 | pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`) |
 | boot Options | The title row opens the pause menu on the Options sub-screen (`open_menu_row_from_title`, `play_menu_open_row`); a `menu_from_title` / `PlayMenu::from_title` flag returns to the title. |
-| Options rows | `OptionsSession::screen_model`; simulation knobs `OptionsState::apply_to_world` |
+| Options rows | `OptionsSession::screen_model`; simulation knobs `engine-core::options::apply_to_world` |
 | shop / prize / inn step | `MenuRuntime::poll_field_overlay` (the open plus the opening tick's no-edge step), `step_field_session` (every later tick; returns the cue), `suspends_field` (an inn is a field dialogue and is not suspended) |
 | shop-family draw | `legaia_engine_screens::shop_overlay_frame`; frame rect from `shop_panel_rows` + `shop_panel_frame_rect`; labels `menu_runtime::shop_root_labels`, `MenuState::item_label` |
 | Seru-trade text | `seru_trade::trade_screen_text` |

@@ -17,11 +17,11 @@ use legaia_engine_battle::battle_stats::EquipmentTable;
 use legaia_engine_battle::spells::SpellCatalog;
 use legaia_engine_battle::tactical_arts_editor::ChainLibrary;
 use legaia_engine_core::field_menu_dispatch::{FieldMenuSubsession, apply_list_order_outcome};
-use legaia_engine_core::options::OptionsState;
 use legaia_engine_core::world::World;
 use legaia_engine_menus::field_menu::FieldMenuRow;
 use legaia_engine_menus::items::ItemCatalog;
 use legaia_engine_menus::list_order::LIST_ORDER_PAGE_ROWS;
+use legaia_engine_menus::options::OptionsState;
 use legaia_engine_menus::save_select::{SaveRack, SlotSnapshot};
 use legaia_engine_system::input::PadButton;
 

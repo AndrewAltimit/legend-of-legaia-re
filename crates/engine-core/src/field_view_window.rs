@@ -217,7 +217,7 @@ pub fn framing_is_retail(camera: &Camera) -> bool {
 /// `None` when:
 ///
 /// - the crop knob is off ([`crate::world::WorldToggles::view_window_crop`],
-///   from [`crate::options::OptionsState::retail_view_window`]);
+///   from [`legaia_engine_menus::options::OptionsState::retail_view_window`]);
 /// - `retail_framing` is false - the host passes [`framing_is_retail`] and
 ///   clears it under its own debug camera. The window is authored for
 ///   retail's frustum, so under a wider or re-aimed view it would open black

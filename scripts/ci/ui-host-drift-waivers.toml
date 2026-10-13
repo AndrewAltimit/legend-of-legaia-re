@@ -194,7 +194,7 @@ nothing can produce an out-of-range `y`: `0xF0` is the 320x240 stage's own
 height, every rect in the disc window table passes, and the one rect retail
 stamps per open - the options value popup, window 47 - is already flipped up by
 its own rule when its bottom would pass `0xB0`
-(`engine-core::options::options_popup_content_rect`). Gating a host on this
+(`engine-menus::options::options_popup_content_rect`). Gating a host on this
 adds a branch nothing can take. Second, the guard is only half of a pair: the
 fill it gates is `FUN_80034B6C`'s mode selector plus packed RGB word, which has
 no port, so the engine's boxes are UI-atlas sprites whose colour comes from the

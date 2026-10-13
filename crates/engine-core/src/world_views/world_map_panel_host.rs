@@ -176,9 +176,9 @@ mod tests {
     /// Off never draws - and the scene kind changes none of it.
     #[test]
     fn the_hp_display_option_drives_the_hud_idle_on_every_scene_kind() {
-        use crate::options::OptionsState;
         use crate::world::World;
         use legaia_engine_menus::option_values::HpDisplayOpt;
+        use legaia_engine_menus::options::OptionsState;
         use legaia_engine_mode::mode::SceneMode;
         for (opt, mode, first_draw) in [
             (HpDisplayOpt::Immediate, 0, Some(0x28u32)),
@@ -192,7 +192,7 @@ mod tests {
                     field_hp_display: opt,
                     ..OptionsState::default()
                 };
-                o.apply_to_world(&mut w);
+                crate::options::apply_to_world(&o, &mut w);
                 assert_eq!(field_hud_view_mode(&w), mode, "{opt:?} on {scene:?}");
                 let mut hud = FieldPartyHud::new();
                 let drew = (0..=0x100u32).find(|_| {

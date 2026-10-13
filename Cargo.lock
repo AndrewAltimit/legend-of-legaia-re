@@ -1550,9 +1550,7 @@ dependencies = [
  "legaia-ui-formats",
  "legaia-vab",
  "log",
- "serde",
  "tempfile",
- "toml",
 ]
 
 [[package]]
@@ -1652,6 +1650,7 @@ dependencies = [
  "legaia-tim",
  "legaia-ui-formats",
  "serde",
+ "toml",
 ]
 
 [[package]]
