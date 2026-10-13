@@ -643,6 +643,26 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             return None;
         }
     }
+    if trace {
+        // A cast band that never returned: the stager's phase and whom the
+        // caster's creature was walking onto.
+        let w = &session.host.world;
+        let caster = usize::from(w.battle_ctx.active_actor);
+        let target = w.actors.get(caster).map(|a| a.battle.active_target);
+        eprintln!(
+            "    [battle] stuck cast: stager {:?}; module phase {}; creature seat {:?}; caster {caster} target {target:?} (active {:?}, hp {:?}, liveness {:?}); queue {:02X?}",
+            w.casting
+                .summon_stager
+                .as_ref()
+                .map(|s| (s.spell_id, s.phase, s.walked, s.goal)),
+            w.casting.module_phase,
+            w.casting.summon_actor_slot,
+            target.and_then(|t| w.actors.get(usize::from(t)).map(|a| a.active)),
+            target.and_then(|t| w.actors.get(usize::from(t)).map(|a| a.battle.hp)),
+            target.and_then(|t| w.actors.get(usize::from(t)).map(|a| a.battle.liveness)),
+            w.actors.get(caster).map(|a| a.battle.params),
+        );
+    }
     Some(Run::Battle(format!(
         "battle unresolved after {spent} ticks: {}",
         battle_snapshot(session)

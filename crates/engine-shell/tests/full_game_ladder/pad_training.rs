@@ -85,7 +85,8 @@ fn outing(session: &mut NativeSession, floor: u32) -> Result<Option<String>, Str
         for t in marks {
             if far(&t) >= 8
                 && !goals.iter().any(|(g, _)| {
-                    (i32::from(g.0) - i32::from(t.0)).abs() + (i32::from(g.1) - i32::from(t.1)).abs()
+                    (i32::from(g.0) - i32::from(t.0)).abs()
+                        + (i32::from(g.1) - i32::from(t.1)).abs()
                         < 12
                 })
             {
@@ -190,6 +191,19 @@ pub(super) fn pad_train(
     TRAINING.with(|t| t.set(true));
     let r = pad_train_from(session, graph, out, &home, home_rolls);
     TRAINING.with(|t| t.set(false));
+    // Training is the hand's own errand: a walk that stalled on the way
+    // out ends it, and the stretch goes on from wherever the party stands.
+    // Only a wipe is the stretch's.
+    let r = match r {
+        Err(e) if !e.contains("party wiped") && wiped(session).is_none() => {
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!("    [train] ended: {e}");
+            }
+            let here = scene_name(session);
+            Ok((here != home).then_some(here))
+        }
+        other => other,
+    };
     PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
     PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
     r

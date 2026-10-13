@@ -35,7 +35,7 @@ pub(super) fn take_shop_visited() -> bool {
 }
 
 /// Healing items the hand keeps in the bag when a merchant sells them.
-const HEAL_STOCK: u8 = 8;
+const HEAL_STOCK: u8 = 10;
 
 /// What the hand wants from the open buy list next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,11 +57,7 @@ enum Want {
 /// the same slot.
 fn gear_worth(w: &legaia_engine_core::world::World, id: u8) -> i32 {
     w.tables.equipment_table.get(id).map_or(0, |m| {
-        i32::from(m.atk)
-            + i32::from(m.udf)
-            + i32::from(m.ldf)
-            + i32::from(m.spd)
-            + i32::from(m.int)
+        i32::from(m.atk) + i32::from(m.udf) + i32::from(m.ldf) + i32::from(m.spd) + i32::from(m.int)
     })
 }
 
@@ -90,18 +86,17 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
             (it.price > 0).then_some((row, it.item_id, it.price, u32::from(amount)))
         })
         .max_by_key(|&(row, _, price, amount)| (amount * 1000 / price, std::cmp::Reverse(row)));
-    let heals_held: u32 = w
-        .party
-        .inventory
-        .iter()
-        .filter(|&(&id, _)| {
-            w.tables
-                .item_catalog
-                .get(id)
-                .is_some_and(|e| matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll))
-        })
-        .map(|(_, &n)| u32::from(n))
-        .sum();
+    let heals_held: u32 =
+        w.party
+            .inventory
+            .iter()
+            .filter(|&(&id, _)| {
+                w.tables.item_catalog.get(id).is_some_and(|e| {
+                    matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
+                })
+            })
+            .map(|(_, &n)| u32::from(n))
+            .sum();
     let heal_want = |target: u32| -> Option<Want> {
         let (row, id, price, _) = heal_row?;
         let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held(id));
@@ -151,10 +146,9 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
             if gain <= 0 || held(it.item_id) > 0 {
                 continue;
             }
-            if best
-                .as_ref()
-                .is_none_or(|&(g, p, _)| (gain, std::cmp::Reverse(it.price)) > (g, std::cmp::Reverse(p)))
-            {
+            if best.as_ref().is_none_or(|&(g, p, _)| {
+                (gain, std::cmp::Reverse(it.price)) > (g, std::cmp::Reverse(p))
+            }) {
                 best = Some((
                     gain,
                     it.price,
@@ -381,23 +375,6 @@ pub(super) fn merchants(session: &NativeSession) -> Vec<u8> {
     if stock.is_empty() {
         return Vec::new();
     }
-    if std::env::var_os("LEGAIA_FGL_SHOP_DEBUG").is_some() {
-        for part in 0..3 {
-            for rec in 0..mf.partitions.get(part).map_or(0, Vec::len) {
-                if let Some((start, _, len)) = partition_record_span(&mf, &man, part, rec)
-                    && stock.iter().any(|&o| o >= start && o < start + len)
-                {
-                    eprintln!(
-                        "      [shop-debug] {}: stock in P{part}[{rec}]; placed {:?}; talks {}",
-                        scene_name(session),
-                        w.npcs.positions.get(&(rec as u8)),
-                        w.npcs.dialog.contains_key(&(rec as u8))
-                            || w.npcs.dialog_prologue.contains_key(&(rec as u8))
-                    );
-                }
-            }
-        }
-    }
     let holds = |part: usize, rec: usize| {
         partition_record_span(&mf, &man, part, rec)
             .is_some_and(|(start, _, len)| stock.iter().any(|&o| o >= start && o < start + len))
@@ -456,7 +433,9 @@ pub(super) fn pad_shop(session: &mut NativeSession) -> Result<Option<String>, St
     for slot in keepers {
         pad_budget(session)?;
         take_shop_visited();
+        SHOPPING.with(|s| s.set(true));
         let r = pad_talk_to(session, slot);
+        SHOPPING.with(|s| s.set(false));
         if trace {
             eprintln!("    [shop] {name} talk P1[{slot}] -> {r:?}");
         }

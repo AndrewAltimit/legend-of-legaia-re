@@ -659,6 +659,23 @@ impl World {
                     }
                     break;
                 }
+                // A merchant's op `0x49` sub-0 under its open shop: the
+                // record parks on the op, as every context that reaches it
+                // does - retail re-runs the instruction each frame while the
+                // park word `_DAT_8007B450` is up and takes the Done edge
+                // (`sw zero,-0x4bb0(s0)`, then the advance) once the menu
+                // overlay has closed. Ending the talk here instead left the
+                // shop's arm standing with nothing to resume it, so the next
+                // talk to reach a shop op took that stale Done edge and
+                // walked past its own shop: every second visit to a counter
+                // opened nothing.
+                // REF: FUN_801DE840 (op `0x49`'s Armed / Done arms)
+                FieldStepResult::Halt { final_pc }
+                    if (b & 0x7F) == 0x49 && host.world.shops.shop_armed =>
+                {
+                    id.pc = final_pc;
+                    break;
+                }
                 // Any other halt/hold, an unhandled op, or an end: stop.
                 // (Unlike the cutscene timeline the runner does not force-
                 // advance past these - an inline script that can't proceed

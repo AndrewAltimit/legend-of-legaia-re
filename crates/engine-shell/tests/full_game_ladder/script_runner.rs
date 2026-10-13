@@ -243,16 +243,24 @@ thread_local! {
     /// Set while the continuous hand takes a rest ([`pad_rest_to`]): a
     /// picker met then is the keeper's offer.
     pub(super) static RESTING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Set while the continuous hand talks to a merchant ([`pad_shop`]): a
+    /// picker met then is the counter's "what will it be?".
+    pub(super) static SHOPPING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// While the continuous hand rests, the option of the open picker whose
-/// branch reaches the restore (`4C 82`) soonest: an innkeeper's "stay?" is
-/// a picker, and the rotation's answer to it is as often No.
+/// While the continuous hand rests or shops, the option of the open picker
+/// whose branch reaches what it came for soonest - the restore (`4C 82`) or
+/// the shop op (`49 00`): an innkeeper's "stay?" and a counter's "buy?" are
+/// pickers, and the rotation's answer to one is as often No.
 pub(super) fn rest_option(session: &NativeSession) -> Option<usize> {
     use legaia_scene_formats::field_disasm::{InsnInfo, decode};
-    if !RESTING.with(std::cell::Cell::get) {
+    let errand: [u8; 2] = if RESTING.with(std::cell::Cell::get) {
+        [0x4C, 0x82]
+    } else if SHOPPING.with(std::cell::Cell::get) {
+        [0x49, 0x00]
+    } else {
         return None;
-    }
+    };
     let w = &session.host.world;
     let (bc, pc0) = match w.dialog.inline.as_ref() {
         Some(id) if id.panel.as_ref().is_some_and(|p| p.menu_active()) => {
@@ -288,7 +296,7 @@ pub(super) fn rest_option(session: &NativeSession) -> Option<usize> {
     let (count, targets) = picker?;
     let reach = |mut at: usize| -> Option<usize> {
         for n in 0..400 {
-            if bc.get(at) == Some(&0x4C) && bc.get(at + 1) == Some(&0x82) {
+            if bc.get(at) == Some(&errand[0]) && bc.get(at + 1) == Some(&errand[1]) {
                 return Some(n);
             }
             let i = decode(bc, at).ok()?;
