@@ -623,6 +623,7 @@ impl World {
         {
             session.no_escape = no_escape;
             session.phase = CommandPhase::RoundPrompt { cursor: 0 };
+            self.start_round_prompt_glide();
         }
     }
 

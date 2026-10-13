@@ -807,7 +807,12 @@ engine's plates still mid-rise while retail's had long since landed
 Two limits to read a residual by. The RAM cannot say how long ago a glide
 landed, and the displayed frame is two frame steps older:
 `battle_noa_miracle_art_combo`'s plates landed inside that window, so its frame
-shows them still rising while the seat lands them. And a replayed cast or
+shows them still rising while the seat lands them. `koru_strip_forced` is the
+round prompt's twin: its RAM holds no glide record, its newest packet pool
+draws `Begin` and `Run` five pixels short of their seats, and the frame on
+screen shows them closer still, with the panel mid-rise and no D-pad glyph
+([battle-hud](../subsystems/battle-hud.md#the-round-prompt-opens-on-a-glide)).
+And a replayed cast or
 strike reaches its phase on its own clock, which the raise does not share:
 `nivora_duel_mid_blazing_slash` holds plaque and bar ten vsyncs into the raise
 (six on screen), and `battle_melee_hit_spark`'s cluster is twelve vsyncs into

@@ -416,7 +416,9 @@ pub fn battle_hud_draws_for(
     if !frame.panels_parked && bar_member.is_none() {
         for (ordinal, (i, slot)) in live_party.iter().take(3).enumerate() {
             let px = seats[ordinal];
-            let py = PANEL_Y;
+            // The open glide ([`BattleHudFrame::panels_dy`]) moves the whole
+            // panel, content and all.
+            let py = PANEL_Y + frame.panels_dy;
             let (base, hp_tint, mp_tint) = tints(slot);
             panel_plate(&mut text, &mut sprites, (px, py, PANEL_W, PANEL_H));
 

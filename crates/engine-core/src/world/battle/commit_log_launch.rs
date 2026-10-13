@@ -69,10 +69,22 @@ impl World {
     /// Note a HUD element raise for the two action plates that glide in:
     /// `FUN_801D8DE8(0x44 | 0x51, 0)` from the action seed's banner plan
     /// starts that plate's glide from seat A.
-    pub(in crate::world) fn note_action_plate_raise(&mut self, element: u8, mode: u8) {
+    pub(crate) fn note_action_plate_raise(&mut self, element: u8, mode: u8) {
         use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
         use legaia_engine_battle_vm::battle_cue_group::{HUD_CASTER_BANNER, HUD_TARGET_BANNER};
         if mode & 1 != 0 {
+            // The Done band's teardown. The actor plaque's unload
+            // (`li a0,0x44` at `0x801E61FC`) is issued for every category
+            // but Run and stands for the list wipe ahead of it
+            // (`FUN_801D99BC`, `0x801E6170`): the target plaque is gone
+            // unless the sweep that follows re-spawns it on its closing
+            // glide (`FUN_801D8DE8(0x51, 1)`, `0x801E6344`).
+            if element == HUD_CASTER_BANNER {
+                self.battle.action_hud_wiped = true;
+                self.battle.target_plaque_glide = None;
+            } else if element == HUD_TARGET_BANNER && self.battle.action_hud_wiped {
+                self.battle.target_plaque_glide = Some(LogLaunch::new(true));
+            }
             return;
         }
         if element == HUD_CASTER_BANNER {
@@ -80,6 +92,7 @@ impl World {
             // content is behind it.
             self.battle.action_plaque_glide = Some(LogLaunch::new(false));
             self.battle.target_plate_cleared = false;
+            self.battle.action_hud_wiped = false;
             self.battle.counter_hud = None;
             // The seed's own record-7 open (`0x801E2F24..0x801E2F44`): the
             // Attack arm and the Magic arm past its item-class branch fall
@@ -94,6 +107,7 @@ impl World {
         } else if element == HUD_TARGET_BANNER {
             self.battle.target_plaque_glide = Some(LogLaunch::new(false));
             self.battle.target_plate_cleared = false;
+            self.battle.action_hud_wiped = false;
         }
     }
 
@@ -115,6 +129,13 @@ impl World {
             && actor.battle.active_target < self.party.party_count
     }
 
+    /// Start the round prompt's open glide: sub-draw step 0 spawning its
+    /// five records at seat A ([`crate::world::BattleState::round_prompt_glide`]).
+    pub(crate) fn start_round_prompt_glide(&mut self) {
+        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+        self.battle.round_prompt_glide = Some(LogLaunch::new(false));
+    }
+
     /// Land every HUD widget glide in flight on its rest seat, as
     /// `FUN_801D9BBC` does once a glide's `elapsed` reaches its `total`. The
     /// retail-compare capture seats this when the retail state's glides had
@@ -125,6 +146,7 @@ impl World {
             self.battle.target_plaque_glide.as_mut(),
             self.battle.readout_bar_glide.as_mut(),
             self.battle.result_windows_glide.as_mut(),
+            self.battle.round_prompt_glide.as_mut(),
         ]
         .into_iter()
         .flatten()
@@ -137,7 +159,10 @@ impl World {
     /// `elapsed` - the record's `+0x04` / `+0x06` target seat names the
     /// widget: `(16, 12)` the actor plaque (record `0x44`), `(16, 192)` the
     /// readout bar (record 7), any other seat on the bar's row the target
-    /// plaque (record `0x51`, `x = 304 - w`). Returns whether a glide the
+    /// plaque (record `0x51`, `x = 304 - w`); the round prompt's chips land
+    /// on `(104, 86)` / `(180, 86)` (records 0 / 3) and its panels on row
+    /// `168` at any `x` but the combo cluster's `168` (records 6 / `0x4E` /
+    /// `0x4F`, re-seated per party size). Returns whether a glide the
     /// engine holds took the seat. The retail-compare capture seats this
     /// from a capture whose glides were in flight; no game path calls it.
     pub fn seat_battle_hud_glide(&mut self, target: [i16; 2], elapsed: u8) -> bool {
@@ -145,6 +170,8 @@ impl World {
             [16, 12] => self.battle.action_plaque_glide.as_mut(),
             [16, 192] => self.battle.readout_bar_glide.as_mut(),
             [_, 192] => self.battle.target_plaque_glide.as_mut(),
+            [104 | 180, 86] => self.battle.round_prompt_glide.as_mut(),
+            [x, 168] if x != 168 => self.battle.round_prompt_glide.as_mut(),
             _ => None,
         };
         match glide {
@@ -159,12 +186,13 @@ impl World {
     /// One tick of the two action-plate glides, on the step the commit log's
     /// launch takes ([`BATTLE_PASS_STEP_PER_TICK`]; `FUN_801D9BBC` walks
     /// every tracked widget in one pass).
-    pub(in crate::world) fn step_action_plate_glides(&mut self) {
+    pub(crate) fn step_action_plate_glides(&mut self) {
         let step = BATTLE_PASS_STEP_PER_TICK;
         for g in [
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
             self.battle.readout_bar_glide.as_mut(),
+            self.battle.round_prompt_glide.as_mut(),
         ]
         .into_iter()
         .flatten()

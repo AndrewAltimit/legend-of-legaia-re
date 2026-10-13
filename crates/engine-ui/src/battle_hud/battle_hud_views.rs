@@ -375,6 +375,12 @@ pub struct BattleHudFrame<'a> {
     /// / magic window is browsed, parked by the ring and every action but a
     /// party-wide one).
     pub panels_parked: bool,
+    /// Rows the roster panels sit below their rest seat this frame, while
+    /// the round prompt's open glide raises them from seat A
+    /// (`engine-core::battle_hud::battle_round_prompt_panels_dy`): records
+    /// 6 / `0x4E` / `0x4F` spawn at `y = 236` and walk to `170`. `0` at
+    /// rest.
+    pub panels_dy: i32,
     /// The `Begin` breadcrumb tab is up at `(16, 12)` and the plaque sits
     /// behind it at `(68, 12)` - retail's placement records 1 and 26, the
     /// shape every command-entry step from the ring on carries

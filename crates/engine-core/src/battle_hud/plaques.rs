@@ -218,6 +218,67 @@ pub(super) fn plate_glide_dy(
     (seat_a - seat_b) - (seat_a - seat_b) * i32::from(g.elapsed) / i32::from(g.total.max(1))
 }
 
+/// Seat A / seat B rows of a roster panel (records 6 / `0x4E` / `0x4F`:
+/// `y = 236` -> `170`), off the placement table.
+pub(super) const ROSTER_PANEL_SEATS_Y: (i32, i32) = (236, 170);
+
+/// Seat A / seat B columns of the round prompt's two chips: `Begin`
+/// (record 0, `x = 142` -> `104`) and `Run` (record 3, `142` -> `180`). Both
+/// spawn on the cluster centre and unfold away from it.
+pub(super) const ROUND_PROMPT_CHIP_SEATS_X: [(i32, i32); 2] = [(142, 104), (142, 180)];
+
+/// The round prompt's open glide while the prompt is what the frame draws.
+fn round_prompt_glide(
+    world: &crate::world::World,
+) -> Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch> {
+    (world.mode == legaia_engine_mode::mode::SceneMode::Battle
+        && battle_hud_phase(world) == BattleHudPhase::RoundPrompt)
+        .then_some(world.battle.round_prompt_glide.as_ref())
+        .flatten()
+}
+
+/// How far the roster panels sit below their rest row this frame: the rise
+/// sub-draw step 0 starts when a round's prompt opens
+/// ([`crate::world::BattleState::round_prompt_glide`]). `0` once landed and
+/// on every other surface that shows the panels.
+pub fn battle_round_prompt_panels_dy(world: &crate::world::World) -> i32 {
+    let (a, b) = ROSTER_PANEL_SEATS_Y;
+    plate_glide_dy(round_prompt_glide(world), a, b)
+}
+
+/// Each command chip's offset from its rest seat this frame, in chip order:
+/// the round prompt's `Begin` and `Run` unfolding from the cluster centre.
+/// Zero on every other cluster and once the glide has landed.
+pub fn battle_chip_offsets(world: &crate::world::World) -> [(i32, i32); 4] {
+    let g = round_prompt_glide(world);
+    let mut out = [(0, 0); 4];
+    for (o, (a, b)) in out.iter_mut().zip(ROUND_PROMPT_CHIP_SEATS_X) {
+        o.0 = plate_glide_dy(g, a, b);
+    }
+    out
+}
+
+/// Whether the command cluster's D-pad glyph draws this frame. The menu
+/// SM runs the glide stepper ahead of its state switch and leaves without
+/// dispatching while it reports a glide in flight (`jal 0x801D9BBC` at
+/// `0x801D0B2C`, `bne s0,zero` at `0x801D0B38`, the exit at `0x801D0BA0`;
+/// the stepper returns `total - elapsed + 1` of the first record whose flag
+/// byte `+3` is set, `0x801D9C08` / `0x801D9D04..0x801D9D18`), and the
+/// glyph is drawn by the state's own arm
+/// (`FUN_801DB8F4(0x98, 0x58)` at `0x801D1030` for the round prompt). So a
+/// prompt whose chips are still unfolding shows no glyph:
+/// `koru_strip_forced` holds `Begin` and `Run` five pixels short of their
+/// seats and no glyph packet.
+///
+/// The same early exit keeps the state from reading the pad until the
+/// glides land; the port's command session takes input from its first
+/// frame.
+///
+/// REF: FUN_801D0748, FUN_801DB8F4
+pub fn battle_chip_dpad_visible(world: &crate::world::World) -> bool {
+    round_prompt_glide(world).is_none_or(|g| g.settled())
+}
+
 /// Seat A / seat B rows of the level-up window (records `0x45..=0x4B`:
 /// `y = -24` -> `14`) and of the report / loss window (`0x41` / `0x42`:
 /// `236` -> `160`), off the placement table.
@@ -272,7 +333,12 @@ pub fn battle_target_plaque_dy(world: &crate::world::World) -> i32 {
         return 0;
     }
     let (a, b) = TARGET_PLAQUE_SEATS_Y;
-    plate_glide_dy(world.battle.target_plaque_glide.as_ref(), a, b)
+    match world.battle.target_plaque_glide.as_ref() {
+        // The teardown's closing launch (mode `1`): seat B back down to
+        // seat A.
+        Some(g) if g.inbound => (a - b) * i32::from(g.elapsed) / i32::from(g.total.max(1)),
+        g => plate_glide_dy(g, a, b),
+    }
 }
 
 /// Seat A / seat B rows of the active-actor bar (record 7: `y = 234` ->
@@ -321,12 +387,27 @@ pub const ROW_PLATE_SPELL_IDS: [u8; 3] = [0x8D, 0x86, 0x82];
 /// `w = 59`; `249` for `Gobu Gobu`, `w = 55`), it rises from `y = 236` to
 /// `194`, and its name payload carries the `0xCE` badge escape in front of
 /// the name. Live from the strike loop (`0x1E`) through the Done band in
-/// every party-attack capture, absent from every monster-action one, and
-/// closed in `0x51` only for a monster target under categories `1..=3`
-/// (`0x801E6314..0x801E6348`).
+/// every party-attack capture, absent from every monster-action one. The
+/// `0x51` teardown wipes it with the rest of the handle list
+/// (`0x801E6170`) and re-spawns it on a closing glide only for a monster
+/// target under categories `1..=3` (`0x801E6314..0x801E6348`), so it is
+/// gone sixteen vsyncs into the teardown at the latest.
 pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Option<u8>)> {
     use legaia_engine_battle_vm::battle_action::ActionCategory;
     if battle_hud_phase(world) != BattleHudPhase::Action || world.battle.target_plate_cleared {
+        return None;
+    }
+    // Past the Done band's teardown the plaque is its closing glide or
+    // nothing ([`crate::world::BattleState::action_hud_wiped`]):
+    // `rim_elm_gimard_seru_capture_after`, held in `0x52` behind the capture
+    // banner, shows none.
+    if world.battle.action_hud_wiped
+        && !world
+            .battle
+            .target_plaque_glide
+            .as_ref()
+            .is_some_and(|g| g.inbound && !g.settled())
+    {
         return None;
     }
     // A dome play-out: the fighter's plays name the opponent here, the

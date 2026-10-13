@@ -48,6 +48,9 @@ impl World {
         if self.battle.commit_log_launch.is_some() {
             self.launch_commit_log(true);
         }
+        if round_open {
+            self.start_round_prompt_glide();
+        }
         self.battle.command = Some(if round_open {
             BattleCommandSession::new_round_open(actor, actor, self.battle.no_escape)
         } else {

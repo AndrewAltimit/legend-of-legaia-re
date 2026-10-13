@@ -106,6 +106,7 @@ impl PlayWindowApp {
                 plaque_dy: bh::battle_action_plaque_dy(w_ref),
                 target_plaque_dy: bh::battle_target_plaque_dy(w_ref),
                 bar_dy: bh::battle_readout_bar_dy(w_ref),
+                panels_dy: bh::battle_round_prompt_panels_dy(w_ref),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),
@@ -273,6 +274,12 @@ impl PlayWindowApp {
                     chips: &views,
                     cursor,
                     phase,
+                    offsets: legaia_engine_core::battle_hud::battle_chip_offsets(
+                        &self.session.host.world,
+                    ),
+                    dpad: legaia_engine_core::battle_hud::battle_chip_dpad_visible(
+                        &self.session.host.world,
+                    ),
                 },
                 legaia_engine_core::battle_hud::battle_ring_marks(&self.session.host.world),
                 origin,

@@ -311,6 +311,7 @@ impl LegaiaRuntime {
                 plaque_dy: world.map(bh::battle_action_plaque_dy).unwrap_or(0),
                 target_plaque_dy: world.map(bh::battle_target_plaque_dy).unwrap_or(0),
                 bar_dy: world.map(bh::battle_readout_bar_dy).unwrap_or(0),
+                panels_dy: world.map(bh::battle_round_prompt_panels_dy).unwrap_or(0),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
@@ -350,6 +351,18 @@ impl LegaiaRuntime {
     /// feeds both halves of the cluster (the plate sprites and the labels),
     /// so the page's two draw arrays cannot disagree about whether the menu
     /// is up.
+    /// The command cluster's open glide this frame: each chip's offset from
+    /// its seat and whether the D-pad glyph draws
+    /// (`battle_hud::battle_chip_offsets` / `battle_chip_dpad_visible`), at
+    /// rest without a world. The native window reads the same pair.
+    pub(crate) fn battle_chip_glide(&self) -> ([(i32, i32); 4], bool) {
+        use legaia_engine_core::battle_hud as bh;
+        match self.scene_host.host().map(|h| &h.world) {
+            Some(w) => (bh::battle_chip_offsets(w), bh::battle_chip_dpad_visible(w)),
+            None => ([(0, 0); 4], true),
+        }
+    }
+
     pub(crate) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
         use legaia_engine_core::battle_hud::battle_command_chips;
         use legaia_engine_menus::battle_input::CommandChipPhase;
@@ -464,6 +477,8 @@ impl LegaiaRuntime {
                     chips: &views,
                     cursor,
                     phase,
+                    offsets: self.battle_chip_glide().0,
+                    dpad: self.battle_chip_glide().1,
                 },
                 self.scene_host
                     .host()
@@ -510,6 +525,8 @@ impl LegaiaRuntime {
                         chips: &views,
                         cursor,
                         phase,
+                        offsets: self.battle_chip_glide().0,
+                        dpad: self.battle_chip_glide().1,
                     },
                     origin,
                     scale,
@@ -747,6 +764,8 @@ impl LegaiaRuntime {
                                 chips: &views,
                                 cursor,
                                 phase,
+                                offsets: self.battle_chip_glide().0,
+                                dpad: self.battle_chip_glide().1,
                             },
                             origin,
                             scale,

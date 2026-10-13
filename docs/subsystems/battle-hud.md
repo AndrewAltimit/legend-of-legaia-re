@@ -506,6 +506,44 @@ element:
 | `party_battle_gobu_gobu` / `terra_party_battle` | three / two panels |
 | `evil_medallion_rage_battle` (action `0x0A`) | nothing |
 
+#### The round prompt opens on a glide
+
+Step 0 is `[5][1][2]` with pairs `00/0 03/0 06/0 4E/0 4F/0`: every record on
+mode `0`, so each spawns at seat A and glides to seat B over sixteen vsyncs.
+
+| Record | Element | Seat A -> seat B |
+|---|---|---|
+| 0 | `Begin` | `x = 142 -> 104` |
+| 3 | `Run` | `x = 142 -> 180` |
+| 6 / `0x4E` / `0x4F` | roster panels | `y = 236 -> 170` |
+
+The two chips unfold from the cluster centre and the panels rise from under
+the screen.
+
+**No D-pad glyph until it lands.** The menu SM runs the glide stepper ahead of
+its state switch and leaves without dispatching while the stepper reports a
+glide in flight (`jal 0x801D9BBC` at `0x801D0B2C`, `bne s0,zero` at
+`0x801D0B38`, the exit at `0x801D0BA0`). `FUN_801D9BBC` returns
+`total - elapsed + 1` of the first record whose flag byte `+3` is set
+(`0x801D9C08`, `0x801D9D04..0x801D9D18`). The glyph is drawn by the state's own
+arm (`FUN_801DB8F4(0x98, 0x58)` at `0x801D1030` for `0x1E`), so an unfolding
+prompt shows none: the packet pool of `koru_strip_forced` holds `Begin` and
+`Run` five pixels short of their seats, the panel nine rows short of its own,
+and no glyph packet. The same early exit keeps the state from reading the pad;
+a press made while the stepper's return is under `6` is parked in
+`ctx[+0x884]` for the first dispatched frame (`0x801D0B5C..0x801D0B98`,
+directional-buttons entry only).
+
+Port: `BattleState::round_prompt_glide`, started where the round prompt opens
+(`World::open_battle_command`, `arm_round_open_prompt`) and stepped with the
+action plates. `battle_hud::battle_round_prompt_panels_dy`,
+`battle_chip_offsets` and `battle_chip_dpad_visible` hand both hosts the
+offsets (`BattleHudFrame::panels_dy`, `BattleCommandMenuFrame::offsets` /
+`dpad`). Differences from retail: the port's command session takes the pad
+from its first frame, and the other steps' glides (the ring's four arms
+sliding in from the right, the tab and plaque, the AP plate) are drawn at
+rest.
+
 #### Action-phase openers
 
 The action SM raises the bar from three places:
@@ -537,7 +575,7 @@ at `(16, 192)` and the move name, and no cluster record). Port:
 | Record | Element | Behaviour |
 |---|---|---|
 | 68 | actor plaque | at `(16, 12)` through every action |
-| 81 | target plaque | a party member's action on a monster; `x` written to `304 - w` so the blue plate's cap ends at 312; rises from `y = 236` to the bar's row; closed in `0x51` only for categories `1..=3` |
+| 81 | target plaque | a party member's action on a monster; `x` written to `304 - w` so the blue plate's cap ends at 312; rises from `y = 236` to the bar's row; wiped by the `0x51` teardown, sliding back out for categories `1..=3` |
 | 76 / 77 | move name | `y = 150`, four X fields written to `0xA0 - width / 2`; plain glyphs, no plate |
 | 80 | combo cluster anchor | `(328, 170)` to `(168, 170)` over sixteen frames |
 
@@ -567,6 +605,15 @@ it out to seat A. A `0x51` capture taken before the teardown still shows the
 cluster at rest (`noa_levelup_fight_pre`); the continuation band `0x52` shows
 none (`rim_elm_gimard_seru_capture_after`). Port:
 `BattleHud::close_combo_on_fade_down`, keyed on the action SM's teardown latch.
+
+**The target plaque leaves the same way.** The wipe takes record 81 with the
+rest of the list, and the sweep re-spawns it with mode `1` only for a monster
+target under categories `1..=3` (`FUN_801D8DE8(0x51, 1)` at `0x801E6344`): it
+slides from its row back to `y = 236` over sixteen vsyncs and is gone, and a
+plaque the sweep does not re-spawn is gone at the wipe. The same `0x52` capture
+shows none. Port: `BattleState::action_hud_wiped`, set on the teardown's
+actor-plaque unload, with the closing launch on `target_plaque_glide`
+(`battle_hud::battle_target_plaque` / `battle_target_plaque_dy`).
 
 #### Party HP / MP seed
 

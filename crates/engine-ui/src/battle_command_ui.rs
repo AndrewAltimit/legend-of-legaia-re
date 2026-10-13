@@ -394,6 +394,16 @@ pub struct BattleCommandMenuFrame<'a> {
     pub cursor: Option<usize>,
     /// Which selection surface these chips belong to.
     pub phase: ChipPhase,
+    /// Each chip's offset from its seat this frame, in chip order - the
+    /// open glide of a cluster whose records spawn at seat A
+    /// (`engine-core::battle_hud::battle_chip_offsets`: the round prompt's
+    /// `Begin` and `Run` unfold from the cluster centre). Zero at rest.
+    pub offsets: [(i32, i32); 4],
+    /// Draw the D-pad glyph. The menu SM leaves before its state arm - the
+    /// glyph's emitter - while any widget glide is in flight, so a cluster
+    /// still unfolding shows none
+    /// (`engine-core::battle_hud::battle_chip_dpad_visible`).
+    pub dpad: bool,
 }
 
 /// Modulation colour of every chip plate and of the D-pad glyph: the
@@ -486,9 +496,11 @@ pub fn battle_command_chip_sprites(
         };
         any = true;
         // Frame style 2 (gold) on the highlighted arm, 1 (blue) on the rest.
+        let (px, py) = seat.plate_origin();
+        let (dx, dy) = frame.offsets.get(i).copied().unwrap_or((0, 0));
         out.extend(plate_run_of(
             atlas.run(frame.cursor == Some(i)),
-            seat.plate_origin(),
+            (px + dx, py + dy),
             seat.cluster().interior_w,
             CHIP_COLOR,
             stage_origin,
@@ -498,7 +510,7 @@ pub fn battle_command_chip_sprites(
     // The D-pad glyph sits at the centre of whichever cluster this
     // phase is drawing - retail draws exactly one, every frame of all
     // three selection states.
-    if any {
+    if any && frame.dpad {
         let (dx, dy, dw, dh) = frame.phase.cluster().dpad_rect();
         out.push(SpriteDraw {
             dst: (
@@ -706,7 +718,11 @@ pub fn battle_command_chip_text(
         let text = if chip.enabled { chip.label } else { "-" };
         let layout = font.layout_ascii(text);
         let (lx, ly) = seat.label_seat();
-        let pen = (stage_origin.0 + lx * scale, stage_origin.1 + ly * scale);
+        let (dx, dy) = frame.offsets.get(i).copied().unwrap_or((0, 0));
+        let pen = (
+            stage_origin.0 + (lx + dx) * scale,
+            stage_origin.1 + (ly + dy) * scale,
+        );
         for g in &layout.glyphs {
             out.push(TextDraw {
                 dst: (
@@ -742,6 +758,8 @@ mod tests {
             chips,
             cursor: Some(cursor),
             phase: ChipPhase::CommandRing,
+            offsets: [(0, 0); 4],
+            dpad: true,
         }
     }
 
@@ -1001,6 +1019,8 @@ mod tests {
                     chips: &all,
                     cursor: Some(0),
                     phase,
+                    offsets: [(0, 0); 4],
+                    dpad: true,
                 },
                 (0, 0),
                 1,
@@ -1024,6 +1044,8 @@ mod tests {
                 chips: &[],
                 cursor: None,
                 phase: ChipPhase::CommandRing,
+                offsets: [(0, 0); 4],
+                dpad: true,
             },
             (0, 0),
             1,
@@ -1088,6 +1110,41 @@ mod tests {
         assert!(gold.iter().any(|s| s.dst.0 == item.0));
     }
 
+    /// An unfolding cluster: each chip's plate and label ride its offset,
+    /// and the D-pad glyph is not drawn until the glide lands.
+    #[test]
+    fn an_unfolding_prompt_offsets_its_chips_and_holds_the_dpad_back() {
+        let font = legaia_font::Font::placeholder();
+        let all = chips(2);
+        let rest = BattleCommandMenuFrame {
+            chips: &all,
+            cursor: None,
+            phase: ChipPhase::RoundPrompt,
+            offsets: [(0, 0); 4],
+            dpad: true,
+        };
+        let open = BattleCommandMenuFrame {
+            offsets: [(38, 0), (-38, 0), (0, 0), (0, 0)],
+            dpad: false,
+            ..rest
+        };
+        let a = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &rest, (0, 0), 2);
+        let b = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &open, (0, 0), 2);
+        assert_eq!(b.len(), a.len() - 1, "no D-pad glyph while unfolding");
+        // Begin's five pieces move right by 38 stage pixels, Run's left.
+        for (r, o) in a.iter().zip(&b).take(5) {
+            assert_eq!(o.dst.0, r.dst.0 + 38 * 2);
+            assert_eq!(o.dst.1, r.dst.1);
+        }
+        for (r, o) in a.iter().zip(&b).skip(5).take(5) {
+            assert_eq!(o.dst.0, r.dst.0 - 38 * 2);
+        }
+        let ta = battle_command_chip_text(&font, &rest, (0, 0), 2);
+        let tb = battle_command_chip_text(&font, &open, (0, 0), 2);
+        assert_eq!(ta.len(), tb.len());
+        assert_eq!(tb[0].dst.0, ta[0].dst.0 + 38 * 2);
+    }
+
     /// The directional-buttons entry highlights nothing: four blue chips,
     /// and an unavailable command's chip is as bright as the rest.
     #[test]
@@ -1098,6 +1155,8 @@ mod tests {
             chips: &all,
             cursor: None,
             phase: ChipPhase::CommandRing,
+            offsets: [(0, 0); 4],
+            dpad: true,
         };
         let sprites = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &frame, (0, 0), 1);
         let blue_v = title_pak::OVERLAY_SYSTEM_UI_BATTLE_PLATE_BODY.1;

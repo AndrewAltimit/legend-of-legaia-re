@@ -444,6 +444,16 @@ pub struct BattleState {
     /// the item pre-arm for a party actor (`0x801E3DA0..0x801E3DC0`)
     /// ([`crate::battle_hud::battle_readout_bar_dy`]).
     pub(crate) readout_bar_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// The round prompt's open glide. The menu SM's round-start arm runs
+    /// sub-draw step 0 (`FUN_801D388C(0)` at `0x801D0EE4`), whose five pairs
+    /// are all mode `0`: `Begin` (record 0), `Run` (record 3) and the three
+    /// roster panels (records 6 / `0x4E` / `0x4F`) spawn at seat A and
+    /// `FUN_801D9BBC` walks each to seat B over the same `0x10` vsyncs - the
+    /// chips unfold from the cluster centre, the panels rise from under the
+    /// screen. `None` before a round's first prompt
+    /// ([`crate::battle_hud::battle_round_prompt_panels_dy`],
+    /// [`crate::battle_hud::battle_chip_offsets`]).
+    pub(crate) round_prompt_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The result windows' raise glide: the results frame spawns the report
     /// (`0x41`) or loss (`0x42`) window and the level-up window
     /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks
@@ -456,6 +466,15 @@ pub struct BattleState {
     /// `0x801E36CC`, `s1 = 0x80076C10`), so the counterer's strikes carry no
     /// target plaque. The next action seed's raise rewrites it.
     pub target_plate_cleared: bool,
+    /// The Done band's teardown has wiped this action's HUD elements. The
+    /// `0x51` hold, once its countdown is under `0xC`, resets the whole
+    /// handle list (`FUN_801D99BC` at `0x801E6170`) and then re-spawns the
+    /// elements that leave on a glide with mode `1`, seat B to seat A: the
+    /// target plaque only for a monster target under categories `1..=3`
+    /// (`FUN_801D8DE8(0x51, 1)` at `0x801E6344`). So past the teardown the
+    /// plaque is either sliding out ([`Self::target_plaque_glide`], a
+    /// closing launch) or gone. Cleared by the next action seed's raise.
+    pub(crate) action_hud_wiped: bool,
     /// The counterer whose strikes the counterattack swap is running, while
     /// the HUD still holds the elements the **monster's** action seed opened.
     /// The swap runs no seed pass, so retail keeps the readout bar the
@@ -816,8 +835,10 @@ impl BattleState {
             action_plaque_glide: None,
             target_plaque_glide: None,
             readout_bar_glide: None,
+            round_prompt_glide: None,
             result_windows_glide: None,
             target_plate_cleared: false,
+            action_hud_wiped: false,
             counter_hud: None,
             sideband: Default::default(),
             stage_id: 0,
