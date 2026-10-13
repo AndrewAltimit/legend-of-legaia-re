@@ -594,8 +594,9 @@ pub fn walk_partition_gflag_sites(
 
 /// A system flag a field-VM record **SETs on its way into a scripted battle**:
 /// a `0x5x SET` followed, within [`BATTLE_ENTRY_ARM_WINDOW`] coherently
-/// decoded instructions, by the `3E FF <row>` battle-entry op that hands
-/// formation-table row `row` to the entity SM
+/// decoded instructions, by the battle-entry op (`3E FF <row>`, or the
+/// `3E <op0 < 100> <row>` form the handler sends down the same arm) that
+/// hands formation-table row `row` to the entity SM
 /// (`World::trigger_scripted_battle`).
 ///
 /// This is the shape of retail's one-shot sparring-tutorial arm: town01's
@@ -637,9 +638,9 @@ pub const BATTLE_ENTRY_ARM_WINDOW: usize = 4;
 /// Each partition's records are walked as field-VM scripts; at every system
 /// SET a fresh walk from the instruction after it decodes up to
 /// [`BATTLE_ENTRY_ARM_WINDOW`] instructions and stops at the first decode
-/// error. A `3E` with `op0 == 0xFF` in that run (the scripted-battle form -
-/// the door-warp form `op0 >= 100` is not an entry) pairs the SET with the
-/// op's row operand.
+/// error. A `3E` in either scripted-battle form in that run (`op0 == 0xFF`
+/// or `op0 < 100` - the door-warp form `op0 >= 100` is not an entry) pairs
+/// the SET with the op's row operand.
 pub fn walk_battle_entry_arms(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntryArm> {
     let mut out = Vec::new();
     for partition in 0..3 {
@@ -714,18 +715,26 @@ pub fn record_battle_entry_rows(
         .collect()
 }
 
-/// The row operand of a scripted-battle `3E FF <row>` reached within
+/// The row operand of a scripted-battle `3E <op0> <row>` reached within
 /// [`BATTLE_ENTRY_ARM_WINDOW`] coherently decoded instructions from `pc`, or
 /// `None` when the run ends (a decode error, the body end) first.
+///
+/// Both battle forms of the op count. The handler branches to the battle arm
+/// on `op0 == 0xFF` and falls into the same arm on `op0 < 100`
+/// (`FUN_801DE840`, `beq v1,v0,0x801E070C` / `sltiu v0,v1,0x64` at
+/// `0x801E06FC..0x801E0704`), and the arm reads only the row byte
+/// (`lbu v1,0x1(s6)` at `0x801E074C`). `town0b`'s three Gimard talk records
+/// enter row `2` as `3E 00 02`, each one instruction after its pending-flag
+/// SET (`53 0C` / `53 0D` / `53 0E`).
 fn battle_entry_row_after(body: &[u8], pc: usize) -> Option<u8> {
     LinearWalker::new(body, pc)
         .take(BATTLE_ENTRY_ARM_WINDOW)
         .map_while(Result::ok)
         .find_map(|insn| match insn.info {
             InsnInfo::WarpOrInteract {
-                op0: 0xFF,
                 op1,
                 is_warp: false,
+                ..
             } => Some(op1),
             _ => None,
         })
