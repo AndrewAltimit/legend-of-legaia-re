@@ -296,6 +296,22 @@ has that the engine never set, each with the disc sites that SET it
 (scene, partition, record) from the system-flag census. That is the "which
 flag was never set" answer, and usually names the record to look at next.
 
+### An unresolved battle: parked or outlasted
+
+A `battle unresolved` line prints the action state the fight was in on the
+tick the budget ran out, which is not evidence the state machine sat there.
+A stall whose line reads `ctx[7]=0x70 ... no command session` with the round
+phase at `Execute` and nothing pending is what any enemy cast looks like
+mid-action. The budget ends a fight 36 000 ticks after a foe last lost HP
+([Tick caps](#tick-caps)), so the two HP totals in the line are current, and
+a fight that is still trading blows reaches it as readily as one that froze.
+
+`LEGAIA_FGL_TRACE=1 LEGAIA_FGL_TRACE_HITS=1` settles which: it prints every
+commit, every HP change and each round's party loss. A parked engine shows
+no `[commit]` and no `[hit]` after some tick; a hand that is outlasted shows
+commits to the end, nearly all of them `Item` and `Spirit`. The second is
+the fighter's policy, and the fix belongs in what it chooses.
+
 ### A pad wipe that moves with an unrelated change
 
 The pad tier is deterministic, but every random draw it meets - the
@@ -741,7 +757,7 @@ A battle is fought through the command ring, one pad edge at a time, by a fighte
 For each member, in order of priority:
 
 1. **Revive.** A member who is down gets a revive.
-2. **Heal.** A member in danger gets a heal: a party heal when two or more are in danger, else the smallest single heal that lifts the worst-off member clear, aimed at that member. Heals the round's earlier members already committed count as landed, so two members never spend their turns on one wound.
+2. **Heal.** A member in danger gets a heal: a party heal when two or more are in danger, else the smallest single heal that lifts the worst-off member clear (in a solo duel, clear after the foe's next round too - see [Guards and boss reads](#guards-and-boss-reads)), aimed at that member. Heals the round's earlier members already committed count as landed, so two members never spend their turns on one wound.
 3. **Cast.** Otherwise a member with an affordable damaging Seru spell casts the strongest one.
 4. **Attack.** Otherwise it attacks through `Command`, entering the longest art its command pool pays for and spending the rest on plain directions. Whether a matched art fires is the queue builder's call, out of the Spirit gauge. The plan runs up to nine commands, the length of each character's Miracle Art.
 
@@ -756,6 +772,8 @@ A random encounter that interrupts a pad-tier walk is fled (the round prompt's R
 
 - After two failed runs with nothing to heal with, against foes whose combined max HP is at most four times the party's, the hand fights instead. A lone chapter-1 Vahn on `map01` can fail to flee a pair of 99 HP monsters six rounds running.
 - A member in danger is healed before the run, unless the foes' last round took half or more of what the party still holds: a heal does not win that race, and the run is the better draw.
+
+The foe row of a `[battle]` line lists every seated monster, and it can grow during a fight: a Green Slime's Divide seats a clone behind the monsters already there ([`cast-module.md`](../subsystems/cast-module.md), `World::apply_glare_divide_split`), up to the five monster seats. A two-monster `map01` formation that ends as `mobs[0/76 0/69 69/69 69/69]` is the Gobu Gobu and the first slime dead and two clones standing, not a second formation.
 
 ### Guards and boss reads
 
@@ -831,6 +849,20 @@ while it sits below five eighths of its HP or within three twentieths again
 of the foe's worst unguarded round so far: a Delilas round's size follows its
 swing count, and Che's went from 716 to 903 two rounds apart.
 
+A duel's heal is sized by the round it has to outlast. A lone member has
+nobody to swing while it heals, so a heal the foe's next round undoes buys
+no turn: Che's rounds take 300..700 from Gala (and about 100..200 on the
+third, its special), and a Healing Leaf's 200 lifts Gala over the heal line
+only until that round lands. A hand that picks the smallest heal clearing
+the line then spends two turns in three on items and never reaches the HP
+its Arts round waits for - it stays alive and deals nothing until the
+battle goes unresolved. So in a solo duel the heal must leave the member
+clear of the line after another round the size of the foe's worst so far,
+capped at full HP, and when no item does that it is the largest in the bag
+(the Healing Flower's 800). Whether the smaller-heal hand wins is a matter
+of the dealt stream, which is how a change to anything that draws before
+the fight turned this one from a win into a stall.
+
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per
 round, so the first may act after the foe), but never with the same item
@@ -841,7 +873,7 @@ another beat can cross the band.
 
 ### Tick caps
 
-A fight runs at least 60 000 ticks and goes on past that while a foe's HP is still dropping, up to 240 000. It is unresolved only once 12 000 ticks pass with no foe losing HP.
+A fight runs at least 60 000 ticks and goes on past that while a foe's HP is still dropping, up to 600 000. It is unresolved only once 36 000 ticks pass with no foe losing HP (`BATTLE_TICKS`, `BATTLE_STALL_TICKS`, `BATTLE_TICKS_CAP`).
 
 ## Input conventions in both passes
 
