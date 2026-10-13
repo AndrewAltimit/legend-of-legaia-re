@@ -152,6 +152,13 @@ impl PlayWindowApp {
         {
             self.session.host.world.seed_battle_backdrop_slot_1_yaw(yaw);
         }
+        // ... and, once a cast capture's gate holds, the summon close-up's
+        // accumulator (`PhaseGate::accum_align`).
+        if let Some(gate) = self.screenshot.as_ref().and_then(|sc| sc.phase_gate)
+            && gate.met(&self.session.host.world)
+        {
+            gate.align_camera(&mut self.session.host.world);
+        }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).
         if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)

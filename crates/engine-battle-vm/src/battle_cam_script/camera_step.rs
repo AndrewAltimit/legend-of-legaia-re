@@ -21,6 +21,20 @@ const ESCAPE_EYE_Z_BACK_PER_VSYNC: f32 = 32.0;
 /// focus trio is read off live actor pairs that a replay lands within a few
 /// units of).
 const ALIGN_ANGLE_TOLERANCE: f32 = 2.0;
+/// The yaw endpoint band inside which [`BattleCamera::align_glide_origin`]
+/// carries retail's remaining distance over to the engine's own endpoint:
+/// under the `0x80` the yaw ladder's nearest rungs stand apart, so a wrong
+/// rung or side still reads as one.
+const ALIGN_YAW_EASE_BAND: f32 = 64.0;
+/// ... and how far apart the two focus endpoints may stand (X and Z summed,
+/// world units) for that to be the same framing of the same bodies: a yaw
+/// that agrees over a body standing somewhere else agrees by accident (the
+/// parked Gaza of `battle_gaza2_park_0x19_target_vahn`, whose engine twin
+/// is still walking in from 1800 units off).
+const ALIGN_FOCUS_EASE_BAND: f32 = 256.0;
+/// How far [`BattleCamera::align_close_up_accum`] moves the close-up
+/// accumulator: one three-vsync pass, `8` a vsync.
+const CLOSE_UP_ALIGN_TOLERANCE: u32 = 24;
 const ALIGN_TR_TOLERANCE: f32 = 2.0;
 const ALIGN_FOCUS_TOLERANCE: f32 = 8.0;
 
@@ -592,6 +606,26 @@ impl BattleCamera {
         if ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE {
             self.pose.yaw = nearest(self.pose.yaw, live.yaw);
             mask |= 2;
+        } else if ang(target.yaw, end.yaw) <= ALIGN_YAW_EASE_BAND
+            && (target.focus[0] - end.focus[0]).abs() + (target.focus[2] - end.focus[2]).abs()
+                <= ALIGN_FOCUS_EASE_BAND
+        {
+            // The same framing of the same bodies on ground a few units off:
+            // the yaw endpoint carries a heading, which a replay lands within
+            // a band of, not on. When the two eases close on their endpoints
+            // from **opposite** sides the live yaws differ by where each
+            // glide set out from, not by the framing, so the engine's is
+            // put as far short of its own endpoint as retail's live yaw
+            // still stood from its - the channel then reads the endpoints'
+            // difference. Eases on the same side, or an engine glide that
+            // has landed, keep the engine's own yaw.
+            let signed = |a: f32, b: f32| (a - b + 2048.0).rem_euclid(4096.0) - 2048.0;
+            let own = signed(self.pose.yaw, target.yaw);
+            let left = signed(live.yaw, end.yaw);
+            if own.abs() > ALIGN_ANGLE_TOLERANCE && own * left < 0.0 {
+                self.pose.yaw = nearest(self.pose.yaw, target.yaw + left);
+                mask |= 2;
+            }
         }
         for k in 0..3 {
             if (target.tr[k] - end.tr[k]).abs() <= ALIGN_TR_TOLERANCE {
@@ -604,6 +638,72 @@ impl BattleCamera {
             }
         }
         mask
+    }
+
+    /// Phase-align the close-up accumulator `ctx[+0x87C]` to a retail
+    /// instant while the summon close-up ([`SUMMON_CAST_STATES`]) owns the
+    /// camera, and carry the pose with it; returns whether anything moved.
+    ///
+    /// Two clocks part between a capture and its replay there:
+    ///
+    /// - **The accumulator at the flash.** The flash that dates a `0x34`
+    ///   capture is spawned by the invoke clip's first effect record, so the
+    ///   accumulator at a given flash age is the accumulator at the spawn
+    ///   plus `8` a vsync. Retail's stands on `248`, `256` or `264` at Vahn's
+    ///   spawn across the captures - its passes are two or three vsyncs
+    ///   long frame by frame, and both clocks move a whole pass at a time -
+    ///   where the port's vsync-paced clip spawns on `264` every time. Which
+    ///   of those a capture holds is its frame-step history, recorded
+    ///   nowhere.
+    /// - **The pass boundary.** A retail capture is the state after a whole
+    ///   pass: the accumulator and the walker have both just stepped. The
+    ///   port adds `8` every display frame and steps the camera every
+    ///   [`Self::frame_step`] of them, so a gate that holds between two
+    ///   camera steps reads a pose up to two frames of accumulator old (at
+    ///   step `3`, where the three-frame tween lands every pass, that is the
+    ///   whole of the difference).
+    ///
+    /// The close-up is linear in the accumulator and re-armed every pass, so
+    /// the eased pose trails its target by a constant and moves by the
+    /// target's own difference: the pose is carried from the accumulator of
+    /// the last camera step to retail's - with the pitch ramp, while it has
+    /// not reached its cap - and the pass restarts here. An
+    /// accumulator further than [`CLOSE_UP_ALIGN_TOLERANCE`] from retail's
+    /// is left alone: that is a cue on another frame, not a pass boundary.
+    /// The capture harness's handle, the accumulator twin of
+    /// [`Self::align_orbit_yaw`]; nothing in play calls it.
+    pub fn align_close_up_accum(&mut self, accum: u32) -> bool {
+        let have = self.attack.ctx.accum;
+        // The accumulator the pose was last stepped on.
+        let stepped = have.saturating_sub(
+            self.frame_accum as u32 * crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE,
+        );
+        if self.phase != BattleCamPhase::Action
+            || !SUMMON_CAST_STATES.contains(&self.last_action_state)
+            || have.abs_diff(accum) > CLOSE_UP_ALIGN_TOLERANCE
+            || (have == accum && stepped == accum)
+        {
+            return false;
+        }
+        // The pitch ramp `ctx[+0x26E]` runs beside the accumulator from the
+        // same commit until its cap, so while the two still agree it is
+        // carried too (an early `0x33` capture is pitched by it).
+        use crate::battle_attack_camera::AttackCamCtx;
+        let cap = u32::from(AttackCamCtx::RAMP_CAP);
+        let ramp = self.attack.ctx.ramp;
+        let tracks = u32::from(ramp) == have.min(cap);
+        let ramp_at = |a: u32| if tracks { a.min(cap) as u8 } else { ramp };
+        let (old, _) = summon_cast_framing(self.actor, self.acting_body, stepped, ramp_at(stepped));
+        let (new, _) = summon_cast_framing(self.actor, self.acting_body, accum, ramp_at(accum));
+        let turn = (new.yaw - old.yaw + 2048.0).rem_euclid(4096.0) - 2048.0;
+        self.pose.yaw = (self.pose.yaw + turn).rem_euclid(4096.0);
+        self.pose.pitch += new.pitch - old.pitch;
+        self.pose.tr[1] += new.tr[1] - old.tr[1];
+        self.pose.tr[2] += new.tr[2] - old.tr[2];
+        self.attack.ctx.accum = accum;
+        self.attack.ctx.ramp = ramp_at(accum);
+        self.frame_accum = 0;
+        true
     }
 
     /// Retail's `ctx[+0x87C]` - the close-up accumulator the framing

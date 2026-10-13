@@ -71,7 +71,38 @@ impl RetailBattle {
         }
         self.engine_ground()
     }
+}
 
+/// How [`RetailBattle::undrift`] moves the acting seat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UndriftActing {
+    /// With its **target's** drift, when it walked at all: the pair keeps
+    /// the first run's geometry (`battle_melee_hit_spark`'s Vahn stays on
+    /// his side of the monster, at the same distance) and lands on retail's
+    /// ground. A seat that did not walk (a caster) stays put.
+    WithTarget,
+    /// Back by its **own** drift, like every other combatant: the seat whose
+    /// replayed travel is not its target's push (`rim_elm_gimard_seru_capture_*`'s
+    /// Vahn ends a swing `108` units off the pair his target's drift names).
+    Own,
+}
+
+impl UndriftActing {
+    pub const ALL: [Self; 2] = [Self::WithTarget, Self::Own];
+
+    /// How many times the rule is re-run on its own latest drift. The
+    /// target's-drift rule is one step by construction (its acting seat is
+    /// not placed by its own travel); the own-drift rule is a fixed-point
+    /// iteration.
+    pub const fn rounds(self) -> usize {
+        match self {
+            Self::WithTarget => 1,
+            Self::Own => 3,
+        }
+    }
+}
+
+impl RetailBattle {
     /// This capture with every combatant's ground pair moved back by what
     /// the engine's replay of the action moved it
     /// (`EngineBattle::ground_drift`), or `None` when nothing moved enough
@@ -91,14 +122,13 @@ impl RetailBattle {
     /// The acting seat is the exception. Its own drift is its approach,
     /// which ends at its target from wherever it starts, and the direction
     /// it walks in is the heading every framing case subtracts - so taking
-    /// the walk off its start turns the shot. An acting seat that walked
-    /// moves with its **target's** drift instead: the pair keeps the
-    /// geometry of the first run (`battle_melee_hit_spark`'s Vahn stays on
-    /// his side of the monster, at the same distance) and lands on retail's
-    /// ground. One that did not walk (a caster) stays put.
+    /// the walk off its start turns the shot. `acting` picks its rule
+    /// ([`UndriftActing`]); the caller tries both and keeps the run that
+    /// lands nearer retail's ground.
     pub fn undrift(
         &self,
         drift: &[Option<[i32; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+        acting_rule: UndriftActing,
     ) -> Option<Self> {
         // Past the end signal the sequencer poses the winners, and a win
         // pose's own travel is not a push the capture holds twice.
@@ -117,7 +147,12 @@ impl RetailBattle {
             let target_drift = target
                 .filter(|&t| t != acting)
                 .and_then(|t| measured.get(t).copied().flatten());
-            *own = significant(*own).and_then(|_| significant(target_drift));
+            *own = match acting_rule {
+                UndriftActing::WithTarget => {
+                    significant(*own).and_then(|_| significant(target_drift))
+                }
+                UndriftActing::Own => significant(*own),
+            };
         }
         let mut out = self.clone();
         let mut moved = false;
@@ -239,7 +274,10 @@ impl RetailBattle {
         if let Some(f) = g.fade.as_mut() {
             f.age = f.age.saturating_sub(self.display_lag);
         }
-        if let Some(a) = g.cam_accum.as_mut() {
+        for a in [g.cam_accum.as_mut(), g.accum_align.as_mut()]
+            .into_iter()
+            .flatten()
+        {
             *a = a.saturating_sub(u32::from(self.display_lag) * 8);
         }
         if let Some(d) = g.done_hold.as_mut() {
@@ -290,6 +328,12 @@ impl RetailBattle {
         let module_countdown = (entry == GIMARD_MODULE
             && module_phase.is_some_and(|p| (1..GIMARD_WALK_ARM).contains(&p)))
         .then_some(self.gimard_countdown);
+        // The close-up's accumulator is a clock of its own - a second one
+        // beside the flash's age, and a pass-quantised one in retail - so
+        // it is aligned once the gate holds.
+        let accum_align = ((0x33..=0x34).contains(&self.action_state)
+            && self.caster_clip == SUMMON_INVOKE_CLIP)
+            .then_some(self.cam_accum);
         Some(PhaseGate {
             action_state: self.action_state,
             fade: self.summon_fade,
@@ -298,6 +342,7 @@ impl RetailBattle {
             walk_yaw,
             done_hold,
             module_countdown,
+            accum_align,
         })
     }
 }

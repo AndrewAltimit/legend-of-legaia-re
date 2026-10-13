@@ -845,11 +845,25 @@ engine's own replay measures the push:
 2. The second run is kept when it stands the placed combatants nearer their
    captured pairs than the first (`ground_residual`).
 3. The acting seat's own drift is its approach, whose direction is the heading
-   every framing case subtracts. A seat that walked therefore moves with its
-   **target's** drift (the pair keeps the first run's geometry); a caster that
-   stood stays put.
-4. A capture past the end signal is not re-run: the win pose's own travel is not
+   every framing case subtracts, so it is tried under two rules
+   (`UndriftActing`). Under the first a seat that walked moves with its
+   **target's** drift (the pair keeps the first run's geometry) and a caster
+   that stood stays put. Under the second it moves back by its **own** drift
+   like everyone else.
+4. A replayed push depends on where it starts, so one step back can still
+   stand a combatant short. The own-drift rule is re-run on each run's own
+   drift (`captured - drift` again) for as long as the residual falls, three
+   rounds at most. It does not converge on every capture:
+   `rim_elm_gimard_victory` reads `78`, `56`, then `89` and keeps the second.
+   The own-drift run replaces the target's-drift one only when it stands the
+   fight at least `UNDRIFT_MIN` nearer: `noa_levelup_fight_pre` reads `53`
+   against `56`, two replays of one push, and keeps the first rule.
+5. A capture past the end signal is not re-run: the win pose's own travel is not
    a push the capture holds twice.
+
+The second rule is what `rim_elm_gimard_seru_capture_before` / `_after` need:
+Vahn ends his swing `108` units off the pair his target's drift names, and
+the yaw his heading feeds read `82` off with it.
 
 ### Combatants that had already acted
 
@@ -1303,6 +1317,9 @@ Notes on the rows:
   by its per-frame delta. Its `+0x7C` block's countdowns give its age:
   `delay0 - delay` in the start delay, `delay0 + duration0 - duration - 1` once
   landed (the landing frame steps both).
+- **Accumulator alignment.** Either `0x33` / `0x34` gate also carries
+  retail's accumulator as a value to align to, not to wait on (`k<acc>`,
+  [below](#an-ease-out-camera-carries-its-history)).
 - **Invoke clip.** `0x33` runs until the clip's first effect record fires. The
   clip's commit zeroes the accumulator, which then gains `8` a vsync. The
   framing prologue adds its `8` on the commit frame itself, so the accumulator
@@ -2278,6 +2295,18 @@ which is the previous framing's leftover (an earlier action's side-and-tilt
 coin, the orbit's clock at the commit) and is recorded nowhere in the state.
 It is the in-action twin of [the orbit alignment](#battle-states).
 
+The yaw has a second tier, for a framing of the same bodies on ground a few
+units off. Its endpoint carries a heading, which a replay lands within a band
+of and not on, so an endpoint up to `64` units from the step table's - with
+the two focus endpoints within `256` world units, X and Z summed - is still
+the same framing. When the two eases then close on their endpoints from
+**opposite** sides, the live yaws differ by where each glide set out from:
+the engine's is put as far short of its own endpoint as retail's live yaw
+stood from its, and the channel reads the endpoints' difference. Eases on the
+same side, and an engine glide that has landed, keep the engine's own yaw.
+`rim_elm_gimard_victory` is the case: its endpoints stand `24` apart, retail
+`27` under its own and the engine `97` over.
+
 The yaw counter `ctx[+0x6DA]` is aligned the same way, as the clock it is.
 The action SM's prologue adds `max(1, 4 * frame_step / 3)` to it every pass
 (`0x801E29E4..0x801E2A24`), from whichever rung of the per-action ladder the
@@ -2444,18 +2473,42 @@ every pass, so it moves with the phase of both clips):
   Both clocks run in vsyncs (the fade one per tick, the scene's waits drained
   `8` a tick), so the fan's program ends earlier than retail's for a reason
   the capture cannot show; the gate lands one frame after it.
-- **A flash is gated on its own age.** A summon capture in `0x33` before
-  the flash is placed by the close-up's accumulator `ctx[+0x87C]` and reads
-  exact (`gimard_summon_start`, `juggernaut_summon_mid_cast`). Once the
-  flash-in is up the gate is the fade actor's age, and the accumulator is a
-  second clock: the flash is spawned by the invoke clip's first effect
-  record, not at an accumulator value. At the same fade age the engine's
-  accumulator stands `0`, `8` or `16` further than retail's across the `0x34`
-  captures (TR y `+0` / `+16` / `+32`, TR z and yaw in proportion - `mule` and
-  `nighto` exact, `orb` and `terra` one pass, `viguro`, `aluru`, `iota`,
-  `meta`, `freed` and `swordie` two), with the framing law itself agreeing:
-  every one of them reads case `0x12`'s target for its own accumulator, and
-  retail's live words trail its step table by the same `14` / `14` / `37`.
+- **The close-up's accumulator is a second clock.** A summon capture in
+  `0x33` before the flash is placed by the close-up's accumulator
+  `ctx[+0x87C]`; once the flash-in is up the gate is the fade actor's age,
+  and the flash is spawned by the invoke clip's first effect record, not at
+  an accumulator value. Two things part the engine's accumulator from
+  retail's at the gated instant, and neither is the framing law - every such
+  capture reads case `0x12`'s target for its own accumulator:
+
+  - *The accumulator at the spawn.* Retail's stands on `248`, `256` or `264`
+    when Vahn's flash spawns (`accumulator - 8 * flash age` across the
+    step-`2` captures); the engine's vsync-paced clip spawns on `264` every
+    time. Retail's passes are two or three vsyncs long frame by frame and
+    both clocks move a whole pass at a time, so which of the three a capture
+    holds is its frame-step history. Left alone the engine stood `0`, `8` or
+    `16` ahead (TR y `+0` / `+16` / `+32`, TR z and yaw in proportion).
+  - *The pass boundary.* A capture is the state after a whole pass - the
+    accumulator and the camera walker have both just stepped. The engine
+    adds `8` every display frame and steps its camera every frame step of
+    them, so a gate that holds between two camera steps reads a pose up to
+    two frames of accumulator old. On a step-`3` capture, where the
+    three-frame tween lands every pass, that is the whole difference
+    (`gizam` one frame, `theeder` two).
+
+  Both are aligned once the gate holds (`PhaseGate::accum_align`, the `k`
+  suffix of `LEGAIA_CAPTURE_GATE`; `BattleCamera::align_close_up_accum`): the
+  close-up is linear in the accumulator and re-armed every pass, so its eased
+  pose trails the target by a constant and is carried from the accumulator of
+  the last camera step to retail's. The pitch ramp `ctx[+0x26E]` runs beside
+  the accumulator until its cap and is carried with it, which is what pitches
+  an early `0x33` capture (`theeder`, two frames of ramp short without it).
+  A gap wider than one three-vsync pass (`24`) is left for the channel to
+  read. The image gate takes the display
+  lag off the value, as it does off the flash's age. With it the summon
+  close-ups read their framing (`freed`, `iota`, `meta`, `orb`, `swordie`
+  and `gizam` exact); what the rest still show is the caster's body pair,
+  which the focus and the heading are read off.
 - **A wait lasts as long as the stream took.** `flute_lippian_midcast` and
   `flute_spikefish_midcast` are captured in `0x32`, which runs case 6 on the
   caster every pass and holds until the sound bank is resident

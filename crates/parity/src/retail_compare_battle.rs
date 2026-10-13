@@ -57,6 +57,7 @@ mod engine_run;
 mod frame_step;
 mod hud_glide;
 mod inflight_seeds;
+pub use inflight_seeds::UndriftActing;
 mod ram_read;
 mod scoring;
 mod seed_plan;

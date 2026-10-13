@@ -53,6 +53,12 @@ pub struct PhaseGate {
     /// value) - so the engine frame is the first one whose own countdown
     /// has drained as far.
     pub module_countdown: Option<i32>,
+    /// For a capture in the summon close-up `0x33` / `0x34`: retail's
+    /// close-up accumulator `ctx[+0x87C]` at the gated instant. Not a
+    /// predicate - the flash's age or [`Self::cam_accum`] places the frame -
+    /// but the value the engine's accumulator is aligned to once the gate
+    /// holds ([`Self::align_camera`]).
+    pub accum_align: Option<u32>,
 }
 
 /// How far a walk-arm yaw base has swung from its seat (`0x200`), in
@@ -80,6 +86,9 @@ impl PhaseGate {
         if let Some(c) = self.module_countdown {
             s.push_str(&format!(",c{c}"));
         }
+        if let Some(k) = self.accum_align {
+            s.push_str(&format!(",k{k}"));
+        }
         s
     }
 
@@ -97,6 +106,14 @@ impl PhaseGate {
 
     pub fn from_env(s: &str) -> Option<Self> {
         let mut parts: Vec<&str> = s.split(',').map(str::trim).collect();
+        let accum_align = match parts.last() {
+            Some(t) if t.starts_with('k') => {
+                let k = t[1..].parse().ok()?;
+                parts.pop();
+                Some(k)
+            }
+            _ => None,
+        };
         let module_countdown = match parts.last() {
             Some(t) if t.starts_with('c') => {
                 let c = t[1..].parse().ok()?;
@@ -154,7 +171,20 @@ impl PhaseGate {
             walk_yaw,
             done_hold,
             module_countdown,
+            accum_align,
         })
+    }
+
+    /// Once the gate holds, phase-align the summon close-up's accumulator
+    /// to the capture's ([`Self::accum_align`],
+    /// `BattleCamera::align_close_up_accum`); returns whether it moved. The
+    /// headless seed calls it before it samples `camera`, the image child on
+    /// the frame it captures.
+    pub fn align_camera(&self, world: &mut legaia_engine_core::world::World) -> bool {
+        match (self.accum_align, world.battle.camera.as_mut()) {
+            (Some(accum), Some(cam)) => cam.align_close_up_accum(accum),
+            _ => false,
+        }
     }
 
     /// Whether `world` is at this phase: the action SM on the same state

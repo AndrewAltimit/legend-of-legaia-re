@@ -527,6 +527,7 @@ pub fn run_engine_battle(
                     );
                 }
                 if gate.met(&session.host.world) {
+                    gate.align_camera(&mut session.host.world);
                     phase_tick = Some(t);
                     break;
                 }
