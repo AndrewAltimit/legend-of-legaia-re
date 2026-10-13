@@ -809,6 +809,11 @@ impl World {
     /// and 7 of [`Self::field_menu_open_allowed`].
     fn field_menu_press_reaches_accept(&self) -> bool {
         self.scene_mode_takes_menu_open()
+            // The overworld map display: while its fade-up ramp runs
+            // `FUN_801D1344` returns before it calls the pad controller
+            // (`0x801D1344..0x801D1388`), and once the display is up the
+            // walk frame is not run at all (mode `0x0D`).
+            && !self.map_display_owns_pad()
             && self.flags.story_flags & FIELD_SYSTEM_LOCK_BIT == 0
             && !legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp)
             && !self.cutscene.opening_chain_active

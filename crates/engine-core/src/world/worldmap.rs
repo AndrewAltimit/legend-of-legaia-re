@@ -250,6 +250,19 @@ impl World {
         }
     }
 
+    /// Whether the map display, or the fade-up ramp into it, holds the pad
+    /// away from the walk frame's controller `FUN_801D01B0`.
+    ///
+    /// REF: FUN_801D1344 (the `0x8007BAF4 != 0` head)
+    pub fn map_display_owns_pad(&self) -> bool {
+        self.world_map.map_display.is_some()
+            || self
+                .world_map
+                .ctrl
+                .as_ref()
+                .is_some_and(|c| self.mode == SceneMode::WorldMap && c.entry_fade.ramp != 0)
+    }
+
     /// Retail's dev flag `_DAT_8007B868`, which the map display's label pass
     /// reads as "show every place" (`0x801CF3A8`). `0` in retail.
     pub fn map_display_show_all(&self) -> bool {

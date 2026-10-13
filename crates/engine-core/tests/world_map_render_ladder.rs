@@ -253,6 +253,11 @@ fn rung2b_map_display(w: &mut World) -> Result<(), String> {
     ) {
         return Err("the display did not take the camera".into());
     }
+    // The walk frame's pad controller is not run, so the pause menu's
+    // accept is out of reach for as long as the display is up.
+    if w.field_menu_open_allowed() {
+        return Err("the pause menu stayed openable under the map display".into());
+    }
     // The display owns the frame: the d-pad pans its camera, not the player.
     let player = w.actors[0].move_state.world_x;
     let cam = d.cam_x;
