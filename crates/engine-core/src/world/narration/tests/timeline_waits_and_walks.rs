@@ -440,3 +440,44 @@ fn cutscene_timeline_party_bank_clip_does_not_park_the_latch_spin() {
     assert!(tl.player_clip_wait.is_none());
     assert_eq!(tl.pc, 6, "stepped past onto the wait");
 }
+
+/// Op `0x4A` credits the game frame's length on each game frame and passes
+/// on the first one whose sum reaches the operand, the frame that reaches the
+/// op included (`0x801E09CC..0x801E0A00`): at step `3` a `4A 1E 00` holds its
+/// record for `3 * (ceil(30 / 3) - 1) = 27` vsyncs, which is what a
+/// per-vsync capture of `opdeene`'s opening record reads for every one of its
+/// thirty-frame waits. The first wait here only lands the record on the
+/// frame grid.
+#[test]
+fn a_wait_holds_for_whole_game_frames_less_the_one_that_reached_it() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    for (step, wait, held) in [
+        (3u8, 30u8, 27u32),
+        (3, 5, 3),
+        (3, 40, 39),
+        (2, 30, 28),
+        (2, 5, 4),
+    ] {
+        let mut w = World {
+            mode: legaia_engine_mode::mode::SceneMode::Field,
+            ..World::default()
+        };
+        w.set_frame_step_floor(step);
+        let bc = vec![
+            0x4A, 0x01, 0x00, // lands on the next game frame
+            0x4A, wait, 0x00, // the measured wait
+            0x4A, 0xFF, 0x7F, // keeps the timeline up
+        ];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        let mut on_wait = 0u32;
+        for _ in 0..200 {
+            w.tick();
+            match w.cutscene.timeline.as_ref().map(|tl| tl.pc) {
+                Some(3) => on_wait += 1,
+                Some(6) => break,
+                _ => {}
+            }
+        }
+        assert_eq!(on_wait, held, "4A {wait} at step {step}");
+    }
+}

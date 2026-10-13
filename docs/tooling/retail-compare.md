@@ -1467,19 +1467,25 @@ turn to land compares the engine's turn mid-ramp against retail's landed one.
 40-vsync `B8 08 86 28`, and the capture itself says how long retail has sat
 there: flat 5's walk cursor `+0x54` reads `54` of its `128`, with the turn
 long landed. The gate aligns the two on the shot instead - the record's
-4800-vsync camera glide, `939` vsyncs in on both sides - and on that clock the
-engine's record reaches the walk `925` vsyncs after the glide starts where
-retail's reached it after `885`, so the engine is sampled `15` vsyncs into
-the turn. The forty vsyncs are the engine's record running long, and the
-state brackets where: flat 8's looping clip `4` (bound by `A2 08 04` at
-`+0x58E`, cursor `+0x68 = 144`) puts that bind about `401` vsyncs after the
-glide starts, a dozen *later* than the engine's `388` - the `0x4A` waits
-rounding up to retail's three-vsync frame. Retail therefore makes up some
-fifty vsyncs between `+0x58E` and `+0x6EE`, where the only time that is not a
-`0x4A` wait is the four end-latch spins on flat 5 (`AD 05 08` after clips
-`8`, `9`, `8` reversed and `7`; `30`, `60`, `29` and `60` engine ticks by
-`FUN_800204F8`'s step and wrap over the scene bank's frame counts). Which of
-them retail clears sooner is not pinned.
+4800-vsync camera glide, `939` vsyncs in on both sides - so the channel is
+only as good as the record's pace against its own shot. A per-vsync capture of
+the record (`scripts/pcsx-redux/autorun_opdeene_pacing.lua`) has retail reach
+the walk `888` vsyncs after the glide starts, fifty-one before the capture
+instant, so the 40-vsync turn has been landed for about ten.
+
+An engine that credits a `0x4A` wait one unit per vsync reaches the walk at
+`925` and is sampled fifteen vsyncs into the turn. Nothing in the record is
+missing there: every wait between the glide's start and the walk holds up to
+two vsyncs longer than retail's, because retail credits the three-vsync game
+frame that reaches the op as well
+([cutscene](../subsystems/cutscene.md#record-pacing---the-60-hz-sub-clock)).
+With the wait sum moved on the game-frame grid the engine's record stands on
+retail's vsync at every wait up to the last vignette (`+0x67A`, `675` vsyncs
+into the glide on both sides), reaches the walk at `896`, and the turn has
+landed when the gate samples it. The eight vsyncs left are the end-latch spins
+on flat 5 (`AD 05 08` after clips `8`, `9` and `8` reversed: `27`, `57` and
+`27` vsyncs in retail, `30`, `60` and `29` in the engine), which the actor's
+clip tick paces rather than the wait.
 
 ## The image channel
 

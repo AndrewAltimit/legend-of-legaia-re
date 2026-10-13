@@ -661,17 +661,15 @@ impl World {
     /// factor = the logic tick's `dt` in display frames) into `ctx[+0x54]`
     /// per visit, and the camera mover accumulates the same `dt` into its
     /// progress - so a logic tick running once per `dt` display frames credits
-    /// exactly one display frame of wait per display frame either way.
+    /// one display frame of wait per display frame on average.
     ///
-    /// The engine's sim clock runs at 100 Hz, so stepping the timeline once
-    /// per sim tick drained every `WaitFrames` 1.67x too fast. The narration
-    /// roller was already corrected onto the retail-frame sub-clock
-    /// ([`legaia_engine_vm::frame_clock::FrameClock::display_frame_step`]); the timeline is paced off
-    /// the same sub-clock here so wait-dominated legs keep retail wall-time
-    /// too. (Measured against a headless retail capture of the New Game
-    /// opening chain: before, the roller-bound `opdeene` leg matched retail
-    /// wall-time to ~1% while the wait-bound `opstati` / `opurud` legs ran
-    /// ~15% / ~30% short.)
+    /// The contexts are stepped on every vsync, and the wait op's credit
+    /// follows retail's game frame rather than the step: the field host's
+    /// frame delta is the frame's length on the vsyncs that are game frames
+    /// and zero between them
+    /// ([`legaia_engine_vm::frame_clock::FrameClock::script_frame_delta`]), so
+    /// a wait holds for retail's `s * (ceil(N / s) - 1)` vsyncs. The
+    /// narration roller counts the same display frames.
     // REF: FUN_8002519C
     // REF: FUN_801DC0BC
     pub fn step_spawned_record_contexts(&mut self) {

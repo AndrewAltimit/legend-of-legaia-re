@@ -88,6 +88,14 @@ pub struct FrameClock {
     ///
     /// REF: FUN_801DA51C
     pub game_tick_fired: bool,
+    /// Whether the current world tick ran the game-tick clock at all - a tick
+    /// in a mode whose handler runs the master frame driver. While it is up,
+    /// [`FrameClock::game_tick_fired`] says which vsyncs are retail game
+    /// frames, and a field-VM op that credits `DAT_1F800393` credits
+    /// [`FrameClock::frame_step`] on those and nothing between them
+    /// ([`FrameClock::script_frame_delta`]). Down before the first tick and
+    /// under a mode with no actor pass, where a script step counts one vsync.
+    pub game_tick_live: bool,
     /// Monotonic count of sim ticks that ran, advanced once per
     /// `World::tick`. It is the world's cheapest "a frame actually ran"
     /// witness - the mode driver's frame-begin-skip test probes it to tell an
@@ -148,6 +156,7 @@ impl FrameClock {
             frame_step_telemetry: crate::actor_tick::FrameStepTelemetry::new(),
             actor_vsync_accum: 0,
             game_tick_fired: false,
+            game_tick_live: false,
             // Every sim tick is a retail display frame under the 1:1
             // denomination, so there is no phase to prime: a world that ticks
             // exactly once advances the roller and the retail-frame-paced
@@ -161,10 +170,65 @@ impl FrameClock {
             battle_frame_step_seed: None,
         }
     }
+
+    /// What a field-VM op that reads `DAT_1F800393` credits on this world
+    /// tick.
+    ///
+    /// Retail runs each script context once per game frame and adds the
+    /// frame's length in vsyncs to whatever it is timing: op `0x4A`
+    /// `WAIT_FRAMES` does `ctx[+0x54] += DAT_1F800393` on every visit and
+    /// passes on the first visit whose sum reaches the operand
+    /// (`0x801E09CC..0x801E0A00`). The visit that reaches the op is credited
+    /// too, so a wait of `N` at step `s` holds its context for
+    /// `s * (ceil(N / s) - 1)` vsyncs - `27` for `4A 1E 00` at step `3`, not
+    /// `30` and not `29`.
+    ///
+    /// The engine steps a context every vsync, so it credits the whole step
+    /// on the vsyncs that are game frames ([`Self::game_tick_fired`]) and
+    /// nothing on the ones between: the sum moves exactly as retail's does,
+    /// and a context that reaches a wait between two game frames falls onto
+    /// the frame grid at its first credit. One vsync a step while the
+    /// game-tick clock is not running ([`Self::game_tick_live`]).
+    ///
+    /// REF: FUN_801DE840 (op 0x4A, `0x801E09CC`), FUN_80016B6C (the step)
+    pub fn script_frame_delta(&self) -> u16 {
+        if !self.game_tick_live {
+            1
+        } else if self.game_tick_fired {
+            u16::from(self.frame_step.max(1))
+        } else {
+            0
+        }
+    }
 }
 
 impl Default for FrameClock {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A script step credits the whole game frame on the vsync that is one,
+    /// nothing between two, and one vsync while the game-tick clock is down.
+    #[test]
+    fn script_frame_delta_follows_the_game_tick() {
+        let mut c = FrameClock::new();
+        c.frame_step = 3;
+        assert_eq!(c.script_frame_delta(), 1, "clock not running");
+        c.game_tick_live = true;
+        assert_eq!(c.script_frame_delta(), 0, "between game frames");
+        c.game_tick_fired = true;
+        assert_eq!(c.script_frame_delta(), 3, "on the game frame");
+        // Over two frames of `frame_step` vsyncs the credit is that many.
+        let mut sum = 0;
+        for vsync in 0..6 {
+            c.game_tick_fired = vsync % 3 == 2;
+            sum += c.script_frame_delta();
+        }
+        assert_eq!(sum, 6);
     }
 }

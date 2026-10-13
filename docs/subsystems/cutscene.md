@@ -1501,17 +1501,42 @@ them through the same factor:
 
 `DAT_1F800393` is the adaptive frame-skip factor - the number of display frames one logic tick
 spans (it reads `2`-`3` through the opening chain). A logic tick that runs once per `dt` display
-frames and credits `dt` per visit banks exactly one unit per display frame, so **every authored
-duration is a duration in 60 Hz frames**, independent of the skip factor.
+frames and credits `dt` per visit banks one unit per display frame on average, so **every
+authored duration is a duration in 60 Hz frames**, to within one game frame.
 
-The engine's sim clock runs at 100 Hz, so everything a record can time runs on a 60 Hz sub-clock
-(`field_frame_accum += 60; step = accum >= 100`):
-[`World::step_spawned_record_contexts`](../../crates/engine-core/src/world/narration.rs) paces
-the modal timeline and the concurrent helper contexts off it, the narration roller counts the
-same display frames, and `World::clock.display_frames` counts elapsed display frames for
-consumers that advance in retail-frame time across a variable number of sim ticks - the camera
-glide diffs it rather than counting sim ticks. Stepping a record at the sim rate instead drains
-`WaitFrames` 1.67x fast.
+That last game frame is measurable. The op credits the frame that *reaches* it as well, and
+passes on the first visit whose sum is at or past the operand (`0x801E09CC..0x801E0A00`:
+`ctx[+0x54] += DAT_1F800393`, compare, clear on the pass), so a wait of `N` at step `s` holds its
+record for `s * (ceil(N / s) - 1)` vsyncs:
+
+| Operand | Held at step `3` | Held at step `2` |
+|---|---|---|
+| `5` | `3` | `4` |
+| `10` | `9` | `8` |
+| `30` | `27` | `28` |
+| `40` | `39` | `38` |
+| `45` | `42` | `44` |
+
+The step-`3` column is what a per-vsync capture of `opdeene`'s opening record reads at every one
+of its waits (`scripts/pcsx-redux/autorun_opdeene_pacing.lua`; `opdeene` runs at `3` because its
+prescript stager raises the frame-step floor).
+
+One engine tick is one vsync, and the record contexts are stepped on every one
+([`World::step_spawned_record_contexts`](../../crates/engine-core/src/world/narration.rs)), so the
+field VM's frame delta is the game frame's length on the vsyncs that are game frames and zero
+between them (`FrameClock::script_frame_delta`, keyed on the actor pool's game-tick clock). The
+wait sum then moves exactly as retail's does, and a record that reaches a wait between two game
+frames falls onto the frame grid at its first credit. Crediting one unit per vsync instead holds
+a wait for `N - 1` ticks - up to two vsyncs long per wait at step `3`, which over the opening
+record's waits put it some thirty vsyncs behind retail by its last vignette. The narration roller
+counts the same display frames, and `World::clock.display_frames` counts elapsed display frames
+for consumers that advance in retail-frame time - the camera glide diffs it rather than counting
+ticks.
+
+What a record times through an actor is not on the frame grid yet. An end-latch spin on a poked
+NPC clip (`AD <id> 08`) holds for the clip's length at the per-vsync step, where retail's actor
+tick steps the cursor once a game frame by `rate * step`: the opening record's four spins on
+flat 5 hold `27` / `57` / `27` / `60` vsyncs in retail and `30` / `60` / `29` / `60` in the engine.
 
 The disc-gated oracle
 [`opening_chain_wall_time`](../../crates/engine-core/tests/opening_chain_wall_time.rs) pins the

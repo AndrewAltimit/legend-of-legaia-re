@@ -333,6 +333,9 @@ impl World {
         let cadence = self.clock.frame_step.max(1);
         let actor_tick_fired = self.clock.actor_vsync_accum >= cadence && runs_master_driver;
         self.clock.game_tick_fired = actor_tick_fired;
+        // The script contexts stepped below time themselves on this clock
+        // (`FrameClock::script_frame_delta`).
+        self.clock.game_tick_live = self.clock.display_frame_step == 1 && runs_master_driver;
         if actor_tick_fired {
             self.clock.actor_vsync_accum = 0;
             self.tick_actor_physics();

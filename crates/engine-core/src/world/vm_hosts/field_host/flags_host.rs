@@ -12,9 +12,9 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
     }
 
     fn frame_delta(&self) -> u16 {
-        // Default world ticks one logical frame per `tick()`. Engines that
-        // run faster-than-frame can override this on a custom host wrapper.
-        1
+        // Retail's `DAT_1F800393` as a script context sees it: the game
+        // frame's length on the vsyncs that are game frames, nothing between.
+        self.world.clock.script_frame_delta()
     }
 
     fn extra_flags(&self) -> u32 {
