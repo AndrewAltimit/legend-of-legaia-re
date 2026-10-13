@@ -20,6 +20,14 @@ pub(super) const SAVE_ENTRY_ARTIFACTS: &[(&str, &str)] = &[
         "softlock|korb3|free-roam:immobile@tile(36,26)",
         "korb3's default entry seat is walled once the save's flags gate off the arrival cutscene that moves the party off it",
     ),
+    (
+        "confined|dream|tile(64,62)",
+        "dream's closing record returns the party to the scene it fell asleep in by a flag the sleep sets; entered by name, no branch matches and the record ends on the hidden party",
+    ),
+    (
+        "softlock|dream|free-roam:immobile@tile(64,62)",
+        "dream's closing record returns the party to the scene it fell asleep in by a flag the sleep sets; entered by name, no branch matches and the record ends on the hidden party",
+    ),
 ];
 
 pub(super) fn write_report(

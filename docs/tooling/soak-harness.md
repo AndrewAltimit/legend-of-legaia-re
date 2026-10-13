@@ -68,7 +68,7 @@ from one carries its card. The card does not enter the run's seed.
 
 An `@<save>` run still enters its scene by name, not through a door the
 save's story opens, so a finding only such a run raises needs that door
-before it is an engine defect. Two of the shape are known. From `PRO-04` on,
+before it is an engine defect. Three of the shape are known. From `PRO-04` on,
 `map01`'s entry script (`P1[0]`, behind system flag `0x3BA`) walls in Rim
 Elm's footprint (tiles `95..97 x 24..27` and row 25 from 94 to 98, leaving
 `(96, 27)`); the `town0b` and `town0c` exits land on `(96, 25)`, inside
@@ -76,9 +76,16 @@ those walls, so `town0c@PRO-04` leaves the party boxed in on the overworld. That
 the chapter-1 town: in this stretch of the story the party's Rim Elm is
 `town0d`, which the spine reaches through `concend`, not the overworld. And `korb3`'s default entry seat is walled
 on all four sides once the arrival cutscene that moves the party off it is
-gated off by the save's flags. Both are listed in the harness's `SAVE_ENTRY_ARTIFACTS`: when every
-hit of such a signature comes from an `@<save>` run, the report names it on a
-"known entry artifact" line instead of the findings table.
+gated off by the save's flags. A third is `dream`: a save whose flags arm one
+of its vignettes plays it, and the closing record then picks the scene to
+return to (`3F` to `doman`, `bubu1`, `son`, ...) by a flag the sleep that
+leads there sets. Entered by name no branch matches, the record ends on its
+`0x21`, and the party is left hidden where the vignette put it
+(`dream+talk@...:PRO-12`). It becomes an engine defect only if a sleep that
+sets the flag still ends there. All three are listed in the harness's
+`SAVE_ENTRY_ARTIFACTS`: when every hit of such a signature comes from an
+`@<save>` run, the report names it on a "known entry artifact" line instead
+of the findings table.
 
 `opurud+rt` once failed its save / load round trip on the party records
 (records 1 and 2 read zero at their first byte after the resume). That one
