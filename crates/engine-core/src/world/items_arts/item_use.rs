@@ -611,8 +611,18 @@ impl World {
     }
 
     /// Rebuild roster record `rslot`'s live HP / MP maxima from its base
-    /// window, the way the stat aggregator does, and carry them to the
-    /// member's battle actor and MP ceiling.
+    /// window ([`Self::rebuild_record_live_hp_mp`]) and carry them to the
+    /// member's battle actor.
+    pub(crate) fn rebuild_live_hp_mp(&mut self, rslot: usize) {
+        self.rebuild_record_live_hp_mp(rslot);
+        self.mirror_roster_hp_mp(rslot);
+    }
+
+    /// Rebuild roster record `rslot`'s live HP / MP maxima from its base
+    /// window, the way the stat aggregator does, and publish the MP ceiling.
+    /// The record only: the battle actor is not touched, so the aggregator
+    /// pass can run mid-battle, where the actor and not the record holds the
+    /// live HP.
     ///
     /// The aggregator copies the base maxima over the live ones
     /// (`+0x11C -> +0x104`, `+0x11E -> +0x108`, `0x800425C4..0x80042600`),
@@ -623,12 +633,19 @@ impl World {
     /// (`0x80042C0C..0x80042C38`), and lowers a current value that now
     /// exceeds its maximum (`0x80042CE4..0x80042D18`).
     ///
+    /// A record with an empty base window is left alone: it was never built
+    /// by the aggregator (a synthetic party that sets its live maxima
+    /// directly), and a rebuild would zero it.
+    ///
     /// REF: FUN_80042558
-    pub(crate) fn rebuild_live_hp_mp(&mut self, rslot: usize) {
+    pub(crate) fn rebuild_record_live_hp_mp(&mut self, rslot: usize) {
         let Some(rec) = self.party.roster.members.get(rslot) else {
             return;
         };
         let base = rec.record_stats();
+        if base.hp_max == 0 {
+            return;
+        }
         let bits = self
             .tables
             .accessory_passives
@@ -655,7 +672,6 @@ impl World {
                 self.set_character_max_mp(member as u8, hms.mp_max);
             }
         }
-        self.mirror_roster_hp_mp(rslot);
     }
 
     /// Apply a permanent [`legaia_engine_menus::items::ItemOutcome::StatRaised`] to party

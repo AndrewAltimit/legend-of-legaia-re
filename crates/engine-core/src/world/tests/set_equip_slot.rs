@@ -51,3 +51,50 @@ fn a_second_write_replaces_the_slot_without_returning_the_old_item() {
     assert_eq!(world.party.roster.members[0].equipment().slots[3], 0x02);
     assert!(world.party.inventory.iter().all(|(_, &n)| n == 0));
 }
+
+/// The aggregator call the store rides in rebuilds the record's live HP / MP
+/// maxima from its base window under the new equipment (`FUN_80042558`: a
+/// tenth of the base for ability bit 0, a quarter for bit 1, the same two
+/// for MP on bits 2 and 3, then the current values clamped down). Putting a
+/// Max HP +10% accessory on raises the maximum; taking it off drops it and
+/// the current HP with it.
+#[test]
+fn set_equip_slot_rebuilds_the_live_maxima_from_the_base_window() {
+    use legaia_engine_battle::accessory_passives::AccessoryPassives;
+    let mut world = field_world(1);
+    world.set_accessory_passives(AccessoryPassives::from_entries([(0xD0, 0), (0xD1, 3)], []));
+    let rec = &mut world.party.roster.members[0];
+    let mut base = rec.record_stats();
+    base.hp_max = 537;
+    base.mp_max = 80;
+    rec.set_record_stats(base);
+    let mut hms = rec.hp_mp_sp();
+    (hms.hp_max, hms.hp_cur, hms.mp_max, hms.mp_cur) = (537, 537, 80, 80);
+    rec.set_hp_mp_sp(hms);
+
+    // Slot 5 takes the Max HP +10% accessory, slot 6 the Max MP +25% one.
+    world.load_field_script(vec![0x3B, 0x05, 0xD0, 0x3B, 0x06, 0xD1, 0x00]);
+    let _ = world.tick();
+    let hms = world.party.roster.members[0].hp_mp_sp();
+    assert_eq!((hms.hp_max, hms.mp_max), (537 + 53, 80 + 20));
+    assert_eq!(
+        (hms.hp_cur, hms.mp_cur),
+        (537, 80),
+        "a raise is not a refill"
+    );
+
+    // Healed to the boosted maxima, then both accessories come off.
+    let rec = &mut world.party.roster.members[0];
+    let mut hms = rec.hp_mp_sp();
+    (hms.hp_cur, hms.mp_cur) = (590, 100);
+    rec.set_hp_mp_sp(hms);
+    world.load_field_script(vec![0x3B, 0x05, 0x00, 0x3B, 0x06, 0x00, 0x00]);
+    let _ = world.tick();
+    let hms = world.party.roster.members[0].hp_mp_sp();
+    assert_eq!((hms.hp_max, hms.mp_max), (537, 80));
+    assert_eq!(
+        (hms.hp_cur, hms.mp_cur),
+        (537, 80),
+        "current follows the maximum down"
+    );
+}

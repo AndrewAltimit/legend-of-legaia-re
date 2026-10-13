@@ -7,7 +7,8 @@ impl World {
     /// Rebuild every party member's ability bitfield from their equipped
     /// items, plus the party-global mask.
     ///
-    /// PORT: FUN_80042558 (ability-bit rebuild + global-mask OR arms)
+    /// PORT: FUN_80042558 (ability-bit rebuild + global-mask OR arms, and
+    /// the live HP / MP maxima through [`Self::rebuild_record_live_hp_mp`])
     ///
     /// Mirrors the retail aggregator's bitfield pass: each member's record
     /// `+0xF4` 4×u32 field is zeroed and re-derived from the eight equipment
@@ -52,6 +53,13 @@ impl World {
                 bytes[w * 4..w * 4 + 4].copy_from_slice(&word.to_le_bytes());
             }
             self.party.roster.members[rslot].set_ability_bits(bytes);
+            // The same pass rebuilds the record's live HP / MP maxima from
+            // its base window under the bits just derived, so an equipment
+            // change - the equip screen, a shop's equip-now, a script's
+            // `0x3B` - moves the maxima with the accessory. Without it the
+            // ending's unequip left a Max HP +10% on a record whose
+            // accessory was gone.
+            self.rebuild_record_live_hp_mp(rslot);
             for (g, w) in global.iter_mut().zip(words.iter()) {
                 *g |= *w;
             }

@@ -139,7 +139,8 @@ what holds the frame:
 | state | policy |
 |---|---|
 | field / overworld | segments of: held walks (one direction or a diagonal, sometimes with Cross taps), Cross/Circle mashing, a Start tap, idle, and chaos (random masks of every button but Start) |
-| dialogue owns input, or a script holds the player | mostly Cross, some directions (pickers), some Circle - a cutscene timeline pages its own text boxes, and the ending's last record waits on a held confirm |
+| dialogue owns input, or a script holds the player | mostly Cross, some directions, some Circle - a cutscene timeline pages its own text boxes, and the ending's last record waits on a held confirm |
+| a picker is up | a random number of Down taps, then Cross - mashing confirm only ever takes a picker's first rows, and a conversation whose way out is its last option then reads as one that cannot be left |
 | pause menu | random taps for a random budget, then Circle until it closes |
 | battle | mostly the route ladder's fighter (Begin, Attack, Auto, confirm the target, Cross any message box), otherwise random taps |
 | minigame / other | random face buttons and held directions, and rarely Start - the minigames' escape |
@@ -377,6 +378,7 @@ regression.
 | `town0d_tetsu_talk_never_ends` | `concend+talk`: Tetsu's conversation in `town0d` restarted from its greeting on every way out, "Nothing in particular." included | a touch-resumed placement context ends at the parking byte after a dismissed box, as the inline runner does |
 | `izumi_spring_question_never_ends` | `izumi`: the spring asked "Do you wish to drink this water?" again after either answer, for good | a prop record ends at the parking byte after a dismissed box too |
 | `map01_life_water_live_max_stale` | `map01@...:PRO-01`: a Life Water under a Max HP +10% accessory left the live maximum one short of the base's rebuild, and the next battle healed past it | a stat-up item raises the base window and the live maxima are rebuilt from it |
+| `edlast_ending_unequip_live_max_stale` | `edbalden+rt@...:PRO-00`: the ending's scripted unequip left a Max HP +10% on a record whose accessory was gone | the aggregator pass every equipment change runs rebuilds the live maxima with the ability bits |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);
