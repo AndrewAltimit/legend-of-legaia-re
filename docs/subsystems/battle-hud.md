@@ -421,6 +421,22 @@ unavailable command, which still gets its chip, while a *forbidden* command
 wears the red cross-out X (`FUN_801DBC30`, port
 `battle_party_panel::cross_out_mark`).
 
+**The selection cue is the plate, not a tint.** Every chip packet carries the
+neutral colour `0x808080` and every label the same glyph palette, the `-` of an
+unavailable command included: the `koru_strip_forced` and
+`v0_1_battle_command_submenu` display lists hold both round-prompt chips and
+all four ring arms on CLUT `0x7FC4` at `0x808080`. A highlight exists only
+under the Battle Command option's cross-button value (`_DAT_800846C8 != 0`):
+the menu SM's pre-dispatch block stamps the highlighted arm's text actor
+`+0x1D = 2` and every other arm `1` (`0x801D0850..0x801D089C` for the Left arm,
+one such block per direction). That byte is the frame style, so the highlighted
+chip draws widget record `2`, the carved-gold plate run the actor plaque wears
+(tile-set 4, sub-palette 12), and the rest record `1`, the blue run. On the
+option's default, the directional buttons, the block is skipped and all chips
+are blue. Port: `battle_hud::battle_chip_highlight` gates the highlight on
+`WorldToggles::battle_command`, and `battle_command_ui` draws the gold run for
+the chip it names.
+
 **Port.** [`engine-ui::battle_command_ui`](../../crates/engine-ui/src/battle_command_ui.rs)
 draws the plate run, both clusters, the shared D-pad glyph cell and the `-`
 chip, and both hosts seat their command menu through it. The two clusters are
@@ -879,6 +895,22 @@ The port raises both a mode-tick **after** the fight has handed the frame back
 to the field, where retail raises them on the battle result screen, so the
 widget is not gated on battle mode. A multi-line message grows the interior by
 the 14-px text pitch per extra row and nothing else moves.
+
+### The bottom message bar (record `0x5B`)
+
+The steal captions ("Stole the ...", a thief's loot handed back) rise on the
+active-actor bar's seat, and they are a framed window like the banner above,
+not a plate run like the bar. Placement record 91 ships seats `(16, 236)` /
+`(16, 194)` and content box `288 x 12` - the bar's (record 7) - but node kind
+`13` against the bar's `0`, and frame style `0x44` against the bar's `0x2B`.
+Style `0x44` is widget record `0x44`, byte-identical to the banner's record
+`3`.
+
+`player_steal_skeleton_banner` shows the result: the blue marble fill inside
+the gold border over `(8, 184)..(312, 212)`, the pen `(16, 192)` inflated by
+the class-0 frame's 8 pixels, with the caption on the pen. Port:
+`BattleHudFrame::message_bar` draws `class0_frame_draws_at` on the bar's name
+pen; while it is up neither the bar nor the target plaque on that row draws.
 
 ### The battle-intro enemy-name banner
 

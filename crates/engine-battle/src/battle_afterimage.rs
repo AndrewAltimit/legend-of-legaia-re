@@ -27,11 +27,19 @@
 //!   ([`monster_ring_id`]): on the disc only the solo / special entries
 //!   qualify and no idle entry does, so an idle or walking monster never
 //!   ghosts.
-//! * **Colour**: the ghost is drawn **flat-coloured and additive** - the
-//!   draw wrapper `FUN_80043390` decodes the colour word's mode byte
-//!   (`0x85`): bit `0x80` sets the GP0 ABE (semi-transparent) command bit,
-//!   low bits `0x01` = ABR mode 1 (additive), bit `0x04` selects the
-//!   flat-colour prim bank with the GTE far colour = the ghost RGB. The base
+//! * **Colour**: the ghost is the body's **texture modulated by the ghost
+//!   colour, added over the frame**. The walk writes the render node's
+//!   colour word `+0x74 = rgb | 0x85000000` and weight `+0x78 = 0x1000`
+//!   (`0x800493D8`, `0x800494A4..0x800494C4`) and calls the ordinary object
+//!   draw. The draw wrapper `FUN_80043390` decodes the mode byte: bit
+//!   `0x80` sets the GP0 ABE (semi-transparent) command bit, low bits
+//!   `0x01` = ABR mode 1 (additive), bit `0x04` selects prim bank 2
+//!   (`0xA0`, `0x800434D8..0x800434E8`). That bank shares the tint bank's
+//!   handlers for kinds 12..=17 and swaps kinds 18 / 19 for single-colour
+//!   ones (`0x800457C4`, `0x80045988`): its kind 18 runs one DPCS on the
+//!   prim's colour word and writes a `0x24` `POLY_FT3` (`0x800458E0`). The
+//!   packets stay textured; at weight `0x1000` the DPCS output is the far
+//!   colour, the ghost RGB, so the GPU draws `texel * rgb / 128`. The base
 //!   RGB is per-character (SCUS table `0x80076908`, indexed by character id;
 //!   monsters share `0x80076914`), and each drawn ghost then steps the word
 //!   down by `0x101010` (`0x80049520..0x80049530`) so the older ghost is
@@ -41,8 +49,9 @@
 //!
 //! This module is the renderer-free kernel: the schedule, gate and colour
 //! law. `World::battle_ghost_draws` binds it to the live pose history; each
-//! host draws the returned poses as flat-coloured additive copies of the
-//! actor's mesh.
+//! host draws the returned poses as additive copies of the actor's textured
+//! mesh, the ghost colour staged as a full-weight depth cue
+//! ([`ghost_far_colour`], [`GHOST_ABR`]).
 
 /// Depth of the retail history ring (`0x1F` shifts + slot 0).
 pub const HISTORY_DEPTH: usize = 32;
@@ -66,6 +75,18 @@ pub const GHOST_COLOR_MONSTER: [u8; 3] = [0x50, 0x50, 0x30];
 
 /// Per-drawn-ghost colour decay (`colour - 0x101010`, `0x80049520`).
 pub const GHOST_COLOR_DECAY: u8 = 0x10;
+
+/// The ghost word's blend rule: mode byte `0x85`, ABR bits `1` - `B + F`
+/// (`lui v0,0x8100` at `0x800494AC`).
+pub const GHOST_ABR: u8 = 1;
+
+/// A ghost colour as the hosts' per-draw cue far colour (display `0..1`).
+/// The walk stores weight `0x1000` (`0x800493D8`), so the DPCS output - the
+/// packet's modulation colour - is this colour whatever the prim baked, and
+/// the textured pipeline's `texel * colour / 128` does the rest.
+pub fn ghost_far_colour(color: [u8; 3]) -> [f32; 3] {
+    color.map(|c| f32::from(c) / 255.0)
+}
 
 /// Ring-id threshold: a ghost draws only for history ids **greater than**
 /// `0x10` (`sltiu 0x11` at `0x80049460`).

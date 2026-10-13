@@ -1115,18 +1115,24 @@ impl PlayWindowApp {
     /// the retail walk `FUN_80049348` (`legaia_engine_battle::battle_afterimage`
     /// holds the schedule/gate/colour kernel; `World::battle_ghost_draws`
     /// binds it to the live pose history). Each ghost is the actor's full
-    /// mesh at a historical pose, drawn **flat-coloured and additive** - the
-    /// retail draw wrapper `FUN_80043390` decodes the ghost colour word's
-    /// mode byte `0x85` into the GP0 ABE bit + ABR mode 1 (B + F) with the
-    /// GTE far colour as the flat RGB - so it uploads on the colour-mesh
-    /// pipeline with every prim's blend word forced semi-transparent
-    /// additive.
+    /// mesh at a historical pose, drawn through the body's own textured
+    /// path: the walk only rewrites the render node's colour word
+    /// (`+0x74 = rgb | 0x85000000`) and weight (`+0x78 = 0x1000`) and calls
+    /// the ordinary object draw `FUN_80048A08`. The dispatcher
+    /// `FUN_80043390` turns the mode byte into the ABE bit, ABR 1 (B + F)
+    /// and prim bank 2 (`0xA0`), whose handlers still emit textured packets
+    /// (`0x24` `POLY_FT3` at `0x800458E0` for kind 18) with the DPCS output
+    /// as the packet colour. At weight `0x1000` that output is the far
+    /// colour, so a ghost is the body's texture modulated by the ghost
+    /// colour (`texel * rgb / 128`), added over the frame - not a flat fill.
+    /// So it uploads on the textured pipeline with every prim's TSB raised
+    /// to semi-transparent additive; the draw site stages the colour as a
+    /// full-weight cue.
     // REF: FUN_80049348 - the retail ghost walk this pass draws for.
     pub(super) fn build_battle_ghost_uploads(
         &self,
         r: &legaia_engine_render::Renderer,
-    ) -> Vec<(UploadedColorMesh, Mat4, [f32; 3], [f32; 3])> {
-        use legaia_engine_render::psx_blend::pack_blend_word;
+    ) -> Vec<super::redraw_stage::BattleGhostUpload> {
         let world = &self.session.host.world;
         let mut out = Vec::new();
         if world.mode != SceneMode::Battle {
@@ -1148,15 +1154,32 @@ impl PlayWindowApp {
             let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
                 continue;
             };
-            let vmesh =
+            let mut vmesh =
                 legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &g.pose.bone_outputs);
             if vmesh.indices.is_empty() {
                 continue;
             }
-            let colors = vec![g.color; vmesh.positions.len()];
-            let blend = vec![pack_blend_word(true, 1); vmesh.positions.len()];
-            match r.upload_color_mesh_blended(&vmesh.positions, &colors, &vmesh.indices, &blend) {
-                Ok(m) => {
+            // The live body's per-slot texture relocation
+            // (`build_posed_actor_overrides`), then the ghost word's blend.
+            if let Some(slot) = actor.battle_tex_slot {
+                for ct in &mut vmesh.cba_tsb {
+                    ct[0] = legaia_actor_formats::monster_archive::relocate_cba(ct[0], slot);
+                    ct[1] = legaia_actor_formats::monster_archive::relocate_tsb(ct[1], slot);
+                }
+            }
+            legaia_engine_battle::battle_body_blend::apply_body_blend(
+                &mut vmesh.cba_tsb,
+                Some(legaia_engine_battle::battle_afterimage::GHOST_ABR),
+            );
+            match r.upload_vram_mesh(
+                &vmesh.positions,
+                &vmesh.uvs,
+                &vmesh.cba_tsb,
+                &vmesh.normals,
+                &vmesh.colors,
+                &vmesh.indices,
+            ) {
+                Ok(mesh) => {
                     // Same placement law as the live battle body
                     // (`actor_model`'s battle arm), at the ghost's own
                     // historical position.
@@ -1182,7 +1205,13 @@ impl PlayWindowApp {
                         g.pos,
                         g.color
                     );
-                    out.push((m, model, gpos, bpos));
+                    out.push(super::redraw_stage::BattleGhostUpload {
+                        mesh,
+                        model,
+                        ghost_pos: gpos,
+                        body_pos: bpos,
+                        color: g.color,
+                    });
                 }
                 Err(e) => log::warn!("ghost mesh upload: {e:#}"),
             }

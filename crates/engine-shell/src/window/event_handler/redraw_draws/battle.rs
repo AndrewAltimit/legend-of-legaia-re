@@ -113,13 +113,18 @@ impl<'m> DrawCtx<'_, 'm> {
     pub(super) fn push_battle_ghosts(&self, out: &mut DrawLists<'m>, actor_cam: Mat4) {
         let store = &self.store;
         let battle_ghost_uploads = &store.posed.battle_ghost_uploads;
-        let DrawLists { color_draws, .. } = out;
+        let DrawLists { draws, .. } = out;
         use legaia_engine_battle::battle_afterimage as ai;
         let eye = ai::camera_eye_from_vp(&actor_cam.to_cols_array());
-        for (mesh, model, gpos, bpos) in battle_ghost_uploads {
+        for g in battle_ghost_uploads {
             let push = match eye {
                 Some(e) => {
-                    let k = ai::ghost_eye_push_scale(e, *gpos, *bpos, ai::GHOST_EYE_PUSH_MARGIN);
+                    let k = ai::ghost_eye_push_scale(
+                        e,
+                        g.ghost_pos,
+                        g.body_pos,
+                        ai::GHOST_EYE_PUSH_MARGIN,
+                    );
                     let ev = Vec3::from(e);
                     Mat4::from_translation(ev)
                         * Mat4::from_scale(Vec3::splat(k))
@@ -127,10 +132,18 @@ impl<'m> DrawCtx<'_, 'm> {
                 }
                 None => Mat4::IDENTITY,
             };
-            color_draws.push(ColorSceneDraw {
-                mesh,
-                mvp: actor_cam * push * *model,
-                cue: None,
+            // The walk's `+0x78 = 0x1000` (`0x800493D8`): the DPCS output is
+            // the far colour whatever the prim's baked colour, so the cue
+            // is a constant full weight toward the ghost colour.
+            draws.push(SceneDraw {
+                mesh: &g.mesh,
+                mvp: actor_cam * push * g.model,
+                cue: Some(legaia_engine_render::DrawCue {
+                    far: ai::ghost_far_colour(g.color),
+                    near_z: -1.0,
+                    far_z: 0.0,
+                    max_ir0: 1.0,
+                }),
             });
         }
     }

@@ -421,6 +421,53 @@ pub struct SaveMenuAtlasRects {
     /// The battle screen's own skin, when the atlas carries it. See
     /// [`BattleChromeRects`].
     pub battle: Option<BattleChromeRects>,
+    /// The **dark** class-0 window skin - widget record `0x43`, tile-set 1
+    /// on sub-palette 3: the frame a battle prompt that waits for
+    /// acknowledgement wears. `None` when the atlas was built without it;
+    /// such a box falls back to the blue skin. See [`Class0SkinRects`].
+    pub class0_dark: Option<Class0SkinRects>,
+}
+
+/// Atlas cells of one **class-0 window skin**: the eight border quads of a
+/// tile-set (`0x80073A00 + tileset * 0x20`, four corners then the top /
+/// bottom / left / right edge tiles) and the widget record's own fill rect,
+/// the marble patch `FUN_8002BDC4` tiles under the border.
+///
+/// Widget record `3` (and `0x44`, byte-identical) is tile-set 0 on
+/// sub-palette 2, the blue marble the [`SaveMenuAtlasRects`] `panel_*` cells
+/// carry. Record `0x43` is tile-set 1 on sub-palette 3 - every cell 32 texel
+/// rows lower, a near-black marble - and is what
+/// [`SaveMenuAtlasRects::class0_dark`] holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Class0SkinRects {
+    pub tl: (u32, u32, u32, u32),
+    pub tr: (u32, u32, u32, u32),
+    pub bl: (u32, u32, u32, u32),
+    pub br: (u32, u32, u32, u32),
+    pub top: (u32, u32, u32, u32),
+    pub bot: (u32, u32, u32, u32),
+    pub left: (u32, u32, u32, u32),
+    pub right: (u32, u32, u32, u32),
+    /// The raw (unshaded) 32x32 fill patch.
+    pub fill: (u32, u32, u32, u32),
+}
+
+impl Class0SkinRects {
+    /// From nine cells in tile-set order - the four corners (TL, TR, BL,
+    /// BR), the four edges (top, bottom, left, right) - then the fill.
+    pub const fn from_cells(c: [(u32, u32, u32, u32); 9]) -> Self {
+        Self {
+            tl: c[0],
+            tr: c[1],
+            bl: c[2],
+            br: c[3],
+            top: c[4],
+            bot: c[5],
+            left: c[6],
+            right: c[7],
+            fill: c[8],
+        }
+    }
 }
 
 /// The battle HUD's source rects inside the baked atlas - the disc's own

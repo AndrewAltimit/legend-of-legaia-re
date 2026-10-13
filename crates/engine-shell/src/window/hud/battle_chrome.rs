@@ -183,7 +183,11 @@ impl PlayWindowApp {
             CommandChipPhase::AttackMode => ChipPhase::AttackMode,
             CommandChipPhase::CommitConfirm => ChipPhase::CommitConfirm,
         };
-        Some((chips.chips, chips.cursor, phase))
+        let highlight = legaia_engine_core::battle_hud::battle_chip_highlight(
+            &self.session.host.world,
+            chips.cursor,
+        );
+        Some((chips.chips, highlight, phase))
     }
 
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
@@ -259,9 +263,15 @@ impl PlayWindowApp {
             // engine read, the same call the browser page makes.
             out.extend(bcu::battle_command_menu_sprites(
                 &rects,
+                // Widget record 2's gold run, the highlighted arm's plate.
+                Some([
+                    assets.rects.tab_cap_l,
+                    assets.rects.tab_body,
+                    assets.rects.tab_cap_r,
+                ]),
                 &bcu::BattleCommandMenuFrame {
                     chips: &views,
-                    cursor: Some(cursor),
+                    cursor,
                     phase,
                 },
                 legaia_engine_core::battle_hud::battle_ring_marks(&self.session.host.world),

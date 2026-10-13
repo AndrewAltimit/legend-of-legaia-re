@@ -41,7 +41,9 @@ fn arts_input_screen(
 /// onto the leaf crate's own enum).
 pub(super) type CommandChips = (
     Vec<(String, bool)>,
-    usize,
+    // The highlighted chip (`battle_hud::battle_chip_highlight`): `None`
+    // under the directional-buttons command entry.
+    Option<usize>,
     legaia_engine_ui::battle_command_ui::ChipPhase,
 );
 

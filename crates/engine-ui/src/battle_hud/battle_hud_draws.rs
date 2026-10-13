@@ -384,8 +384,17 @@ pub fn battle_hud_draws_for(
     let box_covers = |top: i32, height: i32| {
         host_box_rows.is_some_and(|(box_top, box_bot)| box_top < top + height && box_bot > top)
     };
-    let panels_covered = box_covers(PANEL_Y, PANEL_H);
     let bar_covered = box_covers(BAR_Y, PLATE_H);
+    // The box's drawn frame in surface pixels: what it hides of a surface
+    // drawn under it.
+    let host_box_frame = frame.host_box.map(|(x, y, w, h)| {
+        (
+            origin.0 + (x - HOST_BOX_SKIN) * scale,
+            origin.1 + (y - HOST_BOX_SKIN) * scale,
+            (w + 2 * HOST_BOX_SKIN) * scale,
+            (h + 2 * HOST_BOX_SKIN) * scale,
+        )
+    });
 
     // ---- Surface 1: the resting roster panels ----
     //
@@ -395,8 +404,16 @@ pub fn battle_hud_draws_for(
     // while the bar or a command-entry session owns the frame; the engine
     // stage is 240 lines, so `y = 230` would still be visible here and the
     // port omits the draws instead.
+    //
+    // A host box over the panels does not park them. Retail keeps the
+    // cluster's text actors on the list and the box, a later node, paints
+    // over them: `v0_1_battle_command_menu` holds the panel at `(114, 168)`
+    // under the waiting explainer, its name row showing above the box's
+    // frame. The hosts composite every glyph over every sprite, so the
+    // panels are cut to what the box leaves visible instead of layered.
     let seats = panel_seats(live_party.len().min(3));
-    if !frame.panels_parked && bar_member.is_none() && !panels_covered {
+    let (panel_text_from, panel_sprites_from) = (text.len(), sprites.len());
+    if !frame.panels_parked && bar_member.is_none() {
         for (ordinal, (i, slot)) in live_party.iter().take(3).enumerate() {
             let px = seats[ordinal];
             let py = PANEL_Y;
@@ -543,6 +560,10 @@ pub fn battle_hud_draws_for(
                 origin.1 + (py - 16) * scale,
             );
         }
+    }
+    if let Some(hole) = host_box_frame {
+        cut_draws_under(&mut text, panel_text_from, hole, scale);
+        cut_draws_under(&mut sprites, panel_sprites_from, hole, scale);
     }
 
     // ---- Surface 2: the active-actor bar ----
@@ -901,11 +922,26 @@ pub fn battle_hud_draws_for(
 
     // ---- The message bar ----
     //
-    // Placement record 91: the same content box as the active-actor bar
-    // (`(16, 194)`, interior 288) on the same blue plate run, one line of
-    // glyphs on the bar's name pen.
+    // Placement record 91: the active-actor bar's seat and content box
+    // (`(16, 194)`, 288 wide), but a **framed window**, not a plate run. The
+    // record's node kind `+0x10` is `13` where the bar's (record 7) is `0`,
+    // and its frame style `+0x0E` is `0x44` - widget record `0x44`, the
+    // class-0 frame the top message banner and the tutorial prompts wear
+    // (`FUN_8002C69C` indexes the widget table by that byte, `0x8002C798`).
+    // `player_steal_skeleton_banner` shows it: the blue marble fill inside
+    // the gold border over `(8, 184)..(312, 212)`, the pen's 8-px inflation.
+    // A host without the system-UI atlas keeps the plate run.
     if let Some(message) = message_bar.filter(|_| !bar_covered) {
-        plate_run(&mut text, &mut sprites, BAR_X, BAR_Y, BAR_INTERIOR_W, false);
+        match frame.chrome {
+            Some(rects) => sprites.extend(crate::battle_hud_chrome::class0_frame_draws_at(
+                rects,
+                BAR_NAME,
+                (BAR_INTERIOR_W, crate::battle_hud_chrome::BANNER_INTERIOR_H),
+                origin,
+                scale as u32,
+            )),
+            None => plate_run(&mut text, &mut sprites, BAR_X, BAR_Y, BAR_INTERIOR_W, false),
+        }
         // The bar's text can carry a `0xCE` button escape (PROT 0954's stop
         // prompt), parked at `U+E000 + byte`, and the steal captions carry
         // their accented glyphs as Latin-1 characters: hand the font the
@@ -1122,4 +1158,55 @@ pub fn battle_hud_draws_for(
     }
 
     BattleHudDraws { text, sprites }
+}
+
+/// Cut the draws from index `from` on down to what the opaque rect `hole`
+/// (surface pixels) leaves visible: a draw inside it goes, one crossing an
+/// edge is split into the pieces outside. `scale` is surface pixels per
+/// stage pixel - a draw's `src` is in stage texels - so a cut stays on a
+/// texel boundary.
+fn cut_draws_under(draws: &mut Vec<TextDraw>, from: usize, hole: (i32, i32, i32, i32), scale: i32) {
+    let (hx0, hy0) = (hole.0, hole.1);
+    let (hx1, hy1) = (hole.0 + hole.2, hole.1 + hole.3);
+    let tail = draws.split_off(from.min(draws.len()));
+    for d in tail {
+        let (x0, y0) = (d.dst.0, d.dst.1);
+        let (x1, y1) = (x0 + d.dst.2 as i32, y0 + d.dst.3 as i32);
+        if x1 <= hx0 || x0 >= hx1 || y1 <= hy0 || y0 >= hy1 {
+            draws.push(d);
+            continue;
+        }
+        // The piece of the draw covering surface rect `(px0, py0)..(px1, py1)`.
+        // A stretched draw (a solid-texel rect) keeps its source whole.
+        let texel_mapped = d.dst.2 == d.src.2 * scale as u32 && d.dst.3 == d.src.3 * scale as u32;
+        let piece = |px0: i32, py0: i32, px1: i32, py1: i32| {
+            (px1 > px0 && py1 > py0).then(|| TextDraw {
+                dst: (px0, py0, (px1 - px0) as u32, (py1 - py0) as u32),
+                src: if texel_mapped {
+                    (
+                        d.src.0 + ((px0 - x0) / scale) as u32,
+                        d.src.1 + ((py0 - y0) / scale) as u32,
+                        ((px1 - px0) / scale) as u32,
+                        ((py1 - py0) / scale) as u32,
+                    )
+                } else {
+                    d.src
+                },
+                color: d.color,
+            })
+        };
+        // Above and below span the draw's width; left and right fill the
+        // rows between them.
+        let (my0, my1) = (y0.max(hy0), y1.min(hy1));
+        draws.extend(
+            [
+                piece(x0, y0, x1, hy0.min(y1)),
+                piece(x0, hy1.max(y0), x1, y1),
+                piece(x0, my0, hx0.min(x1), my1),
+                piece(hx1.max(x0), my0, x1, my1),
+            ]
+            .into_iter()
+            .flatten(),
+        );
+    }
 }

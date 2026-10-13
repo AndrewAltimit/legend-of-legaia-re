@@ -19,11 +19,23 @@ pub(super) struct FrameView {
     pub in_world_map: bool,
 }
 
+/// One arts after-image ghost this frame draws: the body's mesh at a
+/// historical pose, uploaded textured with the ghost word's blend.
+pub(super) struct BattleGhostUpload {
+    pub mesh: UploadedVramMesh,
+    pub model: Mat4,
+    /// The ghost's historical position and the live body's, for the eye push.
+    pub ghost_pos: [f32; 3],
+    pub body_pos: [f32; 3],
+    /// The ghost colour word's RGB - the DPCS far colour at full weight.
+    pub color: [u8; 3],
+}
+
 /// The frame's skinned and re-posed meshes, owned by the frame.
 pub(super) struct PosedFrame {
     pub posed_overrides: Vec<Option<UploadedVramMesh>>,
     pub player_color_posed: Option<UploadedColorMesh>,
-    pub battle_ghost_uploads: Vec<(UploadedColorMesh, Mat4, [f32; 3], [f32; 3])>,
+    pub battle_ghost_uploads: Vec<BattleGhostUpload>,
     pub posed_prop_baked_v: Vec<(usize, Mat4, Option<usize>)>,
     pub posed_prop_baked_c: Vec<(usize, Mat4, Option<usize>)>,
     pub posed_prop_live_v: Vec<(UploadedVramMesh, Mat4, Option<usize>)>,

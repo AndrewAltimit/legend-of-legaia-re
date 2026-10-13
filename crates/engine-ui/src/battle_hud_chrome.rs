@@ -191,10 +191,40 @@ pub fn class0_fill_draws_at(
         }
         return out;
     }
-    let raw = rects.panel_filigree;
-    if raw.2 == 0 || raw.3 == 0 {
+    class0_fill_rows_at(rects.panel_filigree, frame, stage_origin, stage_scale)
+}
+
+/// [`class0_fill_draws_at`]'s exact arm for any skin: the frame rect covered
+/// by one-row strips of the raw fill patch `raw`, each tinted to its row's
+/// grey. Bands of [`CLASS0_FILL_TILE`] rows restart the texture, band `k`
+/// runs `0x40 + k * (0x900 / h)` to the next band's top and the last ends on
+/// `0x88`, the GPU's interpolation down a band taken per row.
+///
+/// REF: FUN_8002BDC4
+pub fn class0_fill_rows_at(
+    raw: (u32, u32, u32, u32),
+    frame: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let (fx, fy, fw, fh) = frame;
+    let s = stage_scale as i32;
+    let mut out = Vec::new();
+    if fw <= 0 || fh <= 0 || raw.2 == 0 || raw.3 == 0 {
         return out;
     }
+    let mut push = |src: (u32, u32, u32, u32), x: i32, y: i32, w: i32, h: i32, grey: f32| {
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + x * s,
+                stage_origin.1 + y * s,
+                w as u32 * stage_scale,
+                h as u32 * stage_scale,
+            ),
+            src,
+            color: [grey, grey, grey, 1.0],
+        });
+    };
     let step = 0x900 / fh;
     let mut band_y = 0;
     let mut top = CLASS0_FILL_TOP;
@@ -240,10 +270,55 @@ pub fn class0_frame_draws_at(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
+    let frame = banner_frame_at(pen, content.0, content.1);
+    let mut out = class0_fill_draws_at(rects, frame, stage_origin, stage_scale);
+    let skin = Class0SkinRects {
+        tl: rects.panel_tl,
+        tr: rects.panel_tr,
+        bl: rects.panel_bl,
+        br: rects.panel_br,
+        top: rects.panel_top,
+        bot: rects.panel_bot,
+        left: rects.panel_left,
+        right: rects.panel_right,
+        fill: rects.panel_filigree,
+    };
+    class0_border_draws(&mut out, &skin, pen, content, stage_origin, stage_scale);
+    out
+}
+
+/// A class-0 frame in an explicit skin: the row-shaded fill
+/// ([`class0_fill_rows_at`]) under the tile-set's border. The blue skin's
+/// [`class0_frame_draws_at`] is this with the save screen's pre-shaded
+/// one-band tile for the fill; the dark skin
+/// ([`SaveMenuAtlasRects::class0_dark`], widget record `0x43`) comes through
+/// here.
+pub fn class0_skin_frame_draws_at(
+    skin: &Class0SkinRects,
+    pen: (i32, i32),
+    content: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let frame = banner_frame_at(pen, content.0, content.1);
+    let mut out = class0_fill_rows_at(skin.fill, frame, stage_origin, stage_scale);
+    class0_border_draws(&mut out, skin, pen, content, stage_origin, stage_scale);
+    out
+}
+
+/// The eight border quads of a class-0 frame: corners first, then the four
+/// tiled edges, each run's last tile clipped to the remainder.
+fn class0_border_draws(
+    out: &mut Vec<SpriteDraw>,
+    rects: &Class0SkinRects,
+    pen: (i32, i32),
+    content: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) {
     let (fx, fy, fw, fh) = banner_frame_at(pen, content.0, content.1);
     let (ix, iy, iw, ih) = banner_interior_at(pen, content.0, content.1);
     let s = stage_scale as i32;
-    let mut out = class0_fill_draws_at(rects, (fx, fy, fw, fh), stage_origin, stage_scale);
     let mut blit = |src: (u32, u32, u32, u32), x: i32, y: i32, w: u32, h: u32| {
         if w == 0 || h == 0 {
             return;
@@ -261,11 +336,11 @@ pub fn class0_frame_draws_at(
     };
     let b = BANNER_BORDER as u32;
     // Corners.
-    blit(rects.panel_tl, fx, fy, b, b);
-    blit(rects.panel_tr, fx + fw - BANNER_BORDER, fy, b, b);
-    blit(rects.panel_bl, fx, fy + fh - BANNER_BORDER, b, b);
+    blit(rects.tl, fx, fy, b, b);
+    blit(rects.tr, fx + fw - BANNER_BORDER, fy, b, b);
+    blit(rects.bl, fx, fy + fh - BANNER_BORDER, b, b);
     blit(
-        rects.panel_br,
+        rects.br,
         fx + fw - BANNER_BORDER,
         fy + fh - BANNER_BORDER,
         b,
@@ -275,20 +350,19 @@ pub fn class0_frame_draws_at(
     // interior's own left edge, last tile clipped.
     let mut done = 0;
     while done < iw {
-        let w = (rects.panel_top.2 as i32).min(iw - done) as u32;
-        blit(rects.panel_top, ix + done, fy, w, b);
-        blit(rects.panel_bot, ix + done, fy + fh - BANNER_BORDER, w, b);
+        let w = (rects.top.2 as i32).min(iw - done) as u32;
+        blit(rects.top, ix + done, fy, w, b);
+        blit(rects.bot, ix + done, fy + fh - BANNER_BORDER, w, b);
         done += w as i32;
     }
     // Left and right columns tile down the interior height.
     let mut done = 0;
     while done < ih {
-        let h = (rects.panel_left.3 as i32).min(ih - done) as u32;
-        blit(rects.panel_left, fx, iy + done, b, h);
-        blit(rects.panel_right, fx + fw - BANNER_BORDER, iy + done, b, h);
+        let h = (rects.left.3 as i32).min(ih - done) as u32;
+        blit(rects.left, fx, iy + done, b, h);
+        blit(rects.right, fx + fw - BANNER_BORDER, iy + done, b, h);
         done += h as i32;
     }
-    out
 }
 
 /// The class-0 frame around a **measured text actor's** centre rect - the
@@ -318,6 +392,34 @@ pub fn text_actor_frame_draws_for(
     let (x, y, w, h) = rect;
     class0_frame_draws_at(
         rects,
+        (x, y),
+        (w, h + 2 * BANNER_PEN_INSET),
+        stage_origin,
+        stage_scale,
+    )
+}
+
+/// [`text_actor_frame_draws_for`] in the **dark** skin - the frame of a
+/// text actor registered with style byte `0x43`, a battle prompt that waits
+/// for acknowledgement. `FUN_801F747C` passes `0x44 - waits` as the style
+/// (`0x801F75B8`), the frame emitter indexes the widget table with it
+/// (`FUN_8002C69C`, `0x8002C798`), and record `0x43` is tile-set 1 on
+/// sub-palette 3 where `0x44` is tile-set 0 on sub-palette 2. Same class,
+/// same bias, so the geometry is the blue frame's: the
+/// `v0_1_battle_command_menu` display list draws the explainer (centre rect
+/// `(23, 194, 275, 10)`) with its fill tiles from texel `(128, 32)` and
+/// every sprite under CLUT `(48, 511)`.
+///
+/// REF: FUN_801F747C, FUN_8002C69C, FUN_8002BDC4
+pub fn text_actor_dark_frame_draws_for(
+    skin: &Class0SkinRects,
+    rect: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let (x, y, w, h) = rect;
+    class0_skin_frame_draws_at(
+        skin,
         (x, y),
         (w, h + 2 * BANNER_PEN_INSET),
         stage_origin,

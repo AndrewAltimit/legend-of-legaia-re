@@ -42,6 +42,35 @@ pub const ATLAS_RECT_FILIGREE: (u32, u32, u32, u32) = (0, 200, 32, 32);
 /// interior keeps its 29-row slice ([`title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR`]).
 pub(super) const FILIGREE_SRC: (u32, u32, u32, u32) = (128, 0, 32, 32);
 
+/// The **dark class-0 window skin**: widget record `0x43` of the table at
+/// `0x800732A4` (`00 01 00 03 80 20 20 20 F8 FF F8 FF` - class 0, tile-set 1,
+/// sub-palette 3, fill rect `(128, 32, 32, 32)`, seat bias `(-8, -8)`) and
+/// its tile-set at `0x80073A20`, the eight border quads. Every cell is the
+/// blue skin's (record `3`, tile-set 0) 32 texel rows lower.
+///
+/// It is the frame of a battle prompt that waits for acknowledgement: the
+/// tutorial emitter registers such a box with style byte `0x44 - 1`
+/// (`FUN_801F747C`), and the frame emitter `FUN_8002C69C` indexes the widget
+/// table with that byte (`0x8002C798..0x8002C7AC`).
+///
+/// Order: the four corners (TL, TR, BL, BR), top, bottom, left, right, then
+/// the fill. Natural sheet coordinates - the atlas's `(128..192, 32..64)`
+/// block is otherwise unused.
+pub const ATLAS_RECTS_CLASS0_DARK: [(u32, u32, u32, u32); 9] = [
+    (160, 32, 4, 4),
+    (188, 32, 4, 4),
+    (160, 60, 4, 4),
+    (188, 60, 4, 4),
+    (164, 32, 24, 4),
+    (164, 60, 24, 4),
+    (160, 36, 4, 24),
+    (188, 36, 4, 24),
+    (128, 32, 32, 32),
+];
+/// Row-511 sub-palette the dark skin decodes through (widget record `0x43`
+/// byte `+3`; CLUT `0x7FC0 + 3`, VRAM `(48, 511)`).
+pub(super) const CLASS0_DARK_CLUT_ROW: usize = 3;
+
 /// Atlas placement of the status-page **AP gauge** pieces, copied from
 /// CLUT row 4 of the system-UI TIM (the status gauge palette - purple
 /// frame + red "AP" chip). Packed in the free strip right of the

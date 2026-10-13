@@ -226,6 +226,7 @@ impl OptionsState {
         world.locomotion.run_default = self.field_move == FieldMoveOpt::Run;
         world.toggles.reduce_flashing = self.reduce_flashing;
         world.toggles.select_attack = self.battle_select_attack;
+        world.toggles.battle_command = self.battle_command;
         world.toggles.battle_camera = self.battle_camera;
         world.toggles.field_hp_display = self.field_hp_display;
         world.terrain.static_window.retail_windowing = self.retail_static_window;

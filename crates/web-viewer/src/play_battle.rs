@@ -182,7 +182,9 @@ fn battle_hud_popup_views(hud: &BattleHud) -> Vec<HudPopupView> {
 /// onto the leaf crate's own enum).
 pub(crate) type CommandChips = (
     Vec<(String, bool)>,
-    usize,
+    // The highlighted chip (`battle_hud::battle_chip_highlight`): `None`
+    // under the directional-buttons command entry.
+    Option<usize>,
     legaia_engine_ui::battle_command_ui::ChipPhase,
 );
 

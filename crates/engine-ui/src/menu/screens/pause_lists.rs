@@ -987,6 +987,7 @@ mod pause_list_tests {
     fn test_rects() -> SaveMenuAtlasRects {
         let z = (0, 0, 0, 0);
         SaveMenuAtlasRects {
+            class0_dark: None,
             panel_tl: z,
             panel_tr: z,
             panel_bl: z,

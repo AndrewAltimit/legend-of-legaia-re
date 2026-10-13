@@ -92,6 +92,13 @@ pub struct WorldToggles {
     /// `0x801D15E0..0x801D1650`. Hosts mirror their `OptionsState` onto this
     /// the way they mirror [`crate::world::FieldLocomotion::run_default`].
     pub(crate) select_attack: legaia_engine_menus::option_values::SelectAttackOpt,
+    /// The options screen's **Battle Command** row (config word
+    /// `0x800846C8`): directional buttons, or the cross button over a
+    /// highlighted arm. Only the second highlights a command chip - the menu
+    /// SM's pre-dispatch block (`FUN_801D0748`, `0x801D07FC..0x801D0AC0`)
+    /// runs under `_DAT_800846C8 != 0` and stamps the highlighted arm's
+    /// frame style. Read by `battle_hud::battle_chip_highlight`.
+    pub battle_command: legaia_engine_menus::option_values::BattleCommandOpt,
     /// The options screen's **Battle Camera** row (config word
     /// `0x800846C0`, Close / Normal / Far), which the battle camera's action
     /// shots read (`BattleCamera::set_camera_option`). Hosts mirror their
@@ -133,6 +140,7 @@ impl WorldToggles {
             use_vm_dialogue: false,
             use_damage_finish: true,
             select_attack: legaia_engine_menus::option_values::SelectAttackOpt::default(),
+            battle_command: legaia_engine_menus::option_values::BattleCommandOpt::default(),
             battle_camera: legaia_engine_menus::option_values::BattleCameraOpt::default(),
             field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt::Immediate,
             overworld_marker_overlay: false,

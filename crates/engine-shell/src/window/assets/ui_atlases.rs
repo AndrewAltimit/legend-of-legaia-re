@@ -10,6 +10,9 @@ fn save_menu_rects(
     atlas_data: &legaia_engine_menus::save_menu_atlas::SaveMenuAtlas,
 ) -> legaia_engine_ui::SaveMenuAtlasRects {
     legaia_engine_ui::SaveMenuAtlasRects {
+        class0_dark: Some(legaia_engine_ui::Class0SkinRects::from_cells(
+            atlas_data.band_class0_dark(),
+        )),
         panel_tl: atlas_data.band_panel_tl(),
         panel_tr: atlas_data.band_panel_tr(),
         panel_bl: atlas_data.band_panel_bl(),

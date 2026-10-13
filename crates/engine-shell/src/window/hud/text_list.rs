@@ -562,7 +562,7 @@ impl PlayWindowApp {
                     &self.font,
                     &bcu::BattleCommandMenuFrame {
                         chips: &views,
-                        cursor: Some(cursor),
+                        cursor,
                         phase,
                     },
                     origin,
@@ -841,7 +841,7 @@ impl PlayWindowApp {
                                 &self.font,
                                 &bcu::BattleCommandMenuFrame {
                                     chips: &views,
-                                    cursor: Some(cursor),
+                                    cursor,
                                     phase,
                                 },
                                 origin,

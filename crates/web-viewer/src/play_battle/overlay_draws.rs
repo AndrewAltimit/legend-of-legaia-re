@@ -365,7 +365,8 @@ impl LegaiaRuntime {
             CommandChipPhase::AttackMode => ChipPhase::AttackMode,
             CommandChipPhase::CommitConfirm => ChipPhase::CommitConfirm,
         };
-        Some((chips.chips, chips.cursor, phase))
+        let highlight = legaia_engine_core::battle_hud::battle_chip_highlight(world, chips.cursor);
+        Some((chips.chips, highlight, phase))
     }
 
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
@@ -455,9 +456,13 @@ impl LegaiaRuntime {
             // engine read, the same call the native window makes.
             out.extend(bcu::battle_command_menu_sprites(
                 &rects,
+                // Widget record 2's gold run, the highlighted arm's plate.
+                assets
+                    .chrome_rects()
+                    .map(|r| [r.tab_cap_l, r.tab_body, r.tab_cap_r]),
                 &bcu::BattleCommandMenuFrame {
                     chips: &views,
-                    cursor: Some(cursor),
+                    cursor,
                     phase,
                 },
                 self.scene_host
@@ -503,7 +508,7 @@ impl LegaiaRuntime {
                     assets.font_ref(),
                     &bcu::BattleCommandMenuFrame {
                         chips: &views,
-                        cursor: Some(cursor),
+                        cursor,
                         phase,
                     },
                     origin,
@@ -740,7 +745,7 @@ impl LegaiaRuntime {
                             font,
                             &bcu::BattleCommandMenuFrame {
                                 chips: &views,
-                                cursor: Some(cursor),
+                                cursor,
                                 phase,
                             },
                             origin,

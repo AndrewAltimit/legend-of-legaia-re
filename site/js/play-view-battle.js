@@ -231,9 +231,10 @@
         });
         /* Arts after-image ghosts: the engine's ghost plan (rate-scheduled
          * pose-history depths + per-character colour with the per-ghost
-         * decay) drawn as flat-coloured additive copies behind the body -
-         * the saturated cue (nearZ -1, maxIr0 1) paints the whole mesh the
-         * ghost RGB, and the mesh's forced ABE|ABR1 prims ride the blend
+         * decay) drawn as additive copies behind the body - the saturated
+         * cue (nearZ -1, maxIr0 1) is the walk's full weight, so every
+         * texel is modulated by the ghost RGB (`texel * rgb / 128`) in
+         * place of its packet colour, and the mesh's ABE|ABR1 prims ride the blend
          * pass with `strictDepth` (gl.LESS), so a ghost pose coincident
          * with the live body is rejected fragment-for-fragment instead of
          * additively washing the whole mesh - the retail look of a trail
@@ -408,23 +409,28 @@
         };
         /* Arts after-image ghosts (retail FUN_80049348, plan from the shared
          * `World::battle_ghost_draws`): two extra copies of the actor mesh on
-         * the flat-colour path (flatRgba flag 0), every prim forced
-         * semi-transparent additive (TSB = ABE bit | ABR mode 1), posed per
-         * frame from the engine's pose-history ring and coloured per draw by
-         * the cue override. Guarded so a cached WASM without the export just
-         * skips the layer. */
+         * the body's own textured path, every prim raised to
+         * semi-transparent additive (the ABE bit and ABR mode 1 ORed into
+         * its TSB, as FUN_80043390 ORs the ghost word's mode byte into each
+         * packet), posed per frame from the engine's pose-history ring.
+         * Retail's ghost is not a flat fill: the walk hands the ordinary
+         * object draw a colour word and a full weight, and the prim bank it
+         * selects still emits textured packets, so the ghost is the body's
+         * texture modulated by the ghost colour - the per-draw cue below.
+         * Guarded so a cached WASM without the export just skips the
+         * layer. */
         if (rec.objectIds.length
             && typeof rt.play_battle_actor_ghosts === 'function') {
           const gcb = rt.play_battle_actor_cba_tsb(i);
           const ghostCt = new Uint16Array(gcb.length);
           for (let k = 0; k + 1 < gcb.length; k += 2) {
             ghostCt[k] = gcb[k];
-            ghostCt[k + 1] = 0x8020;   /* ABE | ABR 1 (B + F additive) */
+            ghostCt[k + 1] = gcb[k + 1] | 0x8020;   /* ABE | ABR 1 (B + F) */
           }
-          const ghostFlat = new Uint8Array((base.length / 3) * 4);
           for (let g = 0; g < 2; g++) {
             const gid = up(BATTLE_MESH_BASE + 32 + i * 2 + g, base,
-              rt.play_battle_actor_uvs(i), ghostCt, idx, ghostFlat);
+              rt.play_battle_actor_uvs(i), ghostCt, idx,
+              (actorFlat && actorFlat.length) ? actorFlat : null);
             if (gid) rec.ghostMeshIds.push(gid);
           }
         }

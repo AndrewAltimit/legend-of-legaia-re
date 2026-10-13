@@ -781,8 +781,24 @@ explainer under the intro (centre rect `(23, 194, 275, 10)`, style byte
 sprites under CLUT `(48, 511)` - the whole tile-set one skin row down and one
 palette on, a near-black marble - where the intro's `0x44` samples `(128, 0)`
 under `(32, 511)`. Retail adds no marker sprite for the wait; the skin is the
-signal. The port's atlas carries tile-set 0 only, so its waiting box wears the
-blue frame and the dialog pager's confirm hand in the dark skin's place.
+signal.
+
+The style byte parts them because it **is** the widget record: the frame
+emitter `FUN_8002C69C` indexes the widget table `0x800732A4` with it
+(`0x8002C798..0x8002C7AC`). Record `0x44` is byte-identical to the message
+banner's record `3` (class 0, tile-set 0, sub-palette 2, fill rect
+`(128, 0, 32, 32)`), and record `0x43` is class 0 on tile-set 1 and
+sub-palette 3 with fill rect `(128, 32, 32, 32)` - same class, same `(-8, -8)`
+bias, so the same geometry in the other skin. The port bakes both skins into
+its system-UI atlas (`save_menu_atlas::ATLAS_RECTS_CLASS0_DARK`) and
+`engine-ui::battle_tutorial_box` picks by the box's wait flag
+(`battle_hud_chrome::text_actor_dark_frame_draws_for`).
+
+A waiting box does not park the roster panels under it. They stay on the list
+and the box, a later node, paints over them: the same frame shows the panel's
+name row above the explainer's top edge. The hosts composite glyphs over
+sprites, so the HUD builder cuts the panels to what the box leaves visible
+(`cut_draws_under`) instead of layering them.
 
 The key decides how long a box stays. A self-dismissing prompt (key `1`) is
 never timed out: the next key-`1` registration reuses its node, and the only
