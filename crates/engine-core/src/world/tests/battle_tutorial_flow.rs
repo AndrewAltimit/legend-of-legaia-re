@@ -121,6 +121,37 @@ fn the_disc_arm_flag_runs_the_tutorial_for_exactly_one_battle() {
     );
 }
 
+/// The same tail's flag writes past the stage-id pair (`FUN_801DA51C`,
+/// `0x801DA6C4..0x801DA6EC`): under the report arm every entry raises flags
+/// `0` and `3`, and every entry lowers `0x35`, armed or not.
+#[test]
+fn battle_entry_raises_the_report_flags_only_under_their_arm() {
+    use crate::battle_tutorial::{
+        BATTLE_ENTRY_CLEARED_FLAG, BATTLE_REPORT_ARM_FLAG, BATTLE_REPORT_FLAG,
+    };
+
+    let mut world = World::new();
+    world.system_flag_set(BATTLE_ENTRY_CLEARED_FLAG);
+    world.enter_battle(3, 2);
+    assert!(
+        !world.system_flag_test(BATTLE_REPORT_FLAG) && !world.system_flag_test(0),
+        "an unarmed entry reports nothing"
+    );
+    assert!(
+        !world.system_flag_test(BATTLE_ENTRY_CLEARED_FLAG),
+        "0x35 is lowered on every entry"
+    );
+
+    world.system_flag_set(BATTLE_REPORT_ARM_FLAG);
+    world.enter_battle(3, 2);
+    assert!(world.system_flag_test(BATTLE_REPORT_FLAG));
+    assert!(world.system_flag_test(0));
+    assert!(
+        world.system_flag_test(BATTLE_REPORT_ARM_FLAG),
+        "the arm is a mode, not a one-shot: the tail only tests it"
+    );
+}
+
 /// A forced (debug) tutorial still consumes a raised arm, so it cannot leave
 /// the flag behind to fire a second time on the next fight.
 #[test]

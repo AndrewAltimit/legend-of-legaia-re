@@ -111,6 +111,28 @@ pub const TUTORIAL_STAGE_ID: u8 = 1;
 /// REF: FUN_801DA51C, FUN_8003CE64, FUN_8003CE34
 pub const TUTORIAL_ARM_FLAG: u16 = 0x19;
 
+/// System flag the battle-entry tail tests after the stage-id pair: while it
+/// is up, every fight entered from the field raises flag `0` and
+/// [`BATTLE_REPORT_FLAG`] (`jal FUN_8003CE64` with `a0 = 0x13` at
+/// `0x801DA6C8`, the two `FUN_8003CE08` calls at `0x801DA6D8` / `0x801DA6E0`).
+///
+/// REF: FUN_801DA51C, FUN_8003CE64, FUN_8003CE08
+pub const BATTLE_REPORT_ARM_FLAG: u16 = 0x13;
+
+/// System flag the tail raises under [`BATTLE_REPORT_ARM_FLAG`]: "a fight was
+/// just entered". A scene entry script reads it on the return - `cave01`'s
+/// `P1[0]` spawns Terra's after-battle record on it, which clears it.
+///
+/// REF: FUN_801DA51C
+pub const BATTLE_REPORT_FLAG: u16 = 0x03;
+
+/// System flag the tail lowers on every entry, armed or not
+/// (`jal FUN_8003CE34` with `a0 = 0x35` at `0x801DA6E8`, the join the SM's
+/// states 2 and 3 enter on).
+///
+/// REF: FUN_801DA51C, FUN_8003CE34
+pub const BATTLE_ENTRY_CLEARED_FLAG: u16 = 0x35;
+
 /// Battle-stage id installed at battle entry, given whether
 /// [`TUTORIAL_ARM_FLAG`] was set when the entry ran.
 ///

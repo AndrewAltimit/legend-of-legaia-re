@@ -1755,6 +1755,35 @@ which can write any index. These menus are per-scene and write named flags.
 A live whole-playthrough capture (PCSX-Redux exec-bps on `0x8003CE08`/`0x8003CE34`, probe `autorun_flag_firehose.lua`) shows every story-flag write across the chapter-1 scenes returning to the dispatcher's own `0x5x`/`0x6x` arms (`ra 0x801E3598` / `0x801E35C0`, field overlay resident) - the ops above are the **only** story-flag writers observed. The remaining callers touch only low system indices: `0`/`3` staged by the world-map entity SM (`FUN_801DA51C`), `0x35` set at battle-end victory (`FUN_8004E568`) and cleared by the entity SM, `0xB`/`0xC`/`0x18` interaction/engagement locks, `0xE` by two dispatcher spawn ops.
 That result is chapter-1-scoped: the mode-24 minigame overlays add native story-flag writers that are simply not resident in chapter 1 ([below](#native-flag-bank-writers-the-minigame-result-toggle-0x50a--the-0x5d6-negative)).
 
+### The entity SM's battle-entry flags
+
+The field entity tick `FUN_801DA51C` writes four low system flags on its way
+into a fight, in the state that copies the encounter record into the
+formation cell (`0x801DA698..0x801DA6EC`):
+
+| Flag | Write | Site |
+|---|---|---|
+| `0x19` | tested, and cleared when set; the stage-id byte `0x8007B64A` takes `1` | `0x801DA698..0x801DA6B0` |
+| `0x13` | tested only | `0x801DA6C8` |
+| `0x00`, `0x03` | set, while `0x13` is up | `0x801DA6D8` / `0x801DA6E0` |
+| `0x35` | cleared on every entry (the join states 2 and 3 enter on) | `0x801DA6E8` |
+
+`0x19` is the sparring tutorial's one-shot arm
+([battle-command-flow](battle-command-flow.md)). `0x13` is a mode rather than
+a latch: the tail never clears it, so every fight entered while it is up
+reports itself through `0x03`. The reader is a scene entry script on the
+return from the fight - `cave01`'s install slice tests `0x03` (`70 03` at
+`P1[0]` `+0x77`, behind a clear `0x142`) and spawns `P2[17]`, Terra's
+after-battle coaching, whose first op clears the flag (`60 03`). `0x35` is the
+victory latch the results sequencer raises on its results frame
+(`FUN_8004E568`, `0x8004EECC`), so it reads "the last fight was won" from
+that frame until the next entry.
+
+Port: `World::apply_battle_entry_flag_tail` beside the tutorial arm in
+`World::enter_battle`; the flags are `engine-core::battle_tutorial`'s
+`BATTLE_REPORT_ARM_FLAG`, `BATTLE_REPORT_FLAG` and
+`BATTLE_ENTRY_CLEARED_FLAG`.
+
 The executed script bytes at the Mt. Rikuroa post-Caruban beat live in a heap-resident carrier that is **not** the scene's asset-table bundle MAN: it is a second, plain MAN shipped as the type-3 chunk of a standalone `data_field_streaming` PROT entry (the chunk header is the ordinary sub-asset descriptor `[u24 size][u8 type=0x03]`; the payload parses with `legaia_scene_formats::man_section` like any MAN).
 The resident copy byte-matches PROT `0157_rikuroa`'s chunk, and the story-flag `0x142` SET (`51 42`) it carries as a *beat* is the post-victory cutscene record `P2[50]`, whose C1 gate is `0x142` itself (the self-latching one-shot). The carrier's `P1[10..12]` hold the same `51 42`, but each is one arm of a `Clear`-labelled developer flag menu ([above](#shipped-scene-scripts-carry-developer-flag-setting-menus)) - a nine-flag Set ladder and its mirrored Clear ladder, not the beat.
 The carrier's records also pin **how** `P2[50]` runs: the boss stager `P1[3]` SETs the transient marker `0x289` (`52 89`) right before its battle-entry op (`3E FF 11`),

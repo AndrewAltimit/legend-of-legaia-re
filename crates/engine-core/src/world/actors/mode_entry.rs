@@ -264,6 +264,31 @@ impl World {
         if self.battle.tutorial_pending || armed_by_disc {
             self.arm_battle_tutorial();
         }
+        self.apply_battle_entry_flag_tail();
+    }
+
+    /// The system-flag writes the field entity SM makes on its way into a
+    /// fight, after the stage-id pair [`Self::take_battle_tutorial_arm`]
+    /// covers: with flag [`BATTLE_REPORT_ARM_FLAG`] up it raises flags `0`
+    /// and [`BATTLE_REPORT_FLAG`], and on every entry it lowers
+    /// [`BATTLE_ENTRY_CLEARED_FLAG`].
+    ///
+    /// The report flag is what a scene's entry script reads on the return
+    /// from the fight: `cave01`'s install slice tests it (`70 03` at
+    /// `P1[0] +0x77`) and spawns Terra's after-battle coaching record, which
+    /// clears it as its first op (`60 03`). Without the write the record
+    /// never ran, and no fight in Noa's opening drew a comment.
+    ///
+    /// REF: FUN_801DA51C (`0x801DA6C4..0x801DA6EC`)
+    pub(crate) fn apply_battle_entry_flag_tail(&mut self) {
+        use crate::battle_tutorial::{
+            BATTLE_ENTRY_CLEARED_FLAG, BATTLE_REPORT_ARM_FLAG, BATTLE_REPORT_FLAG,
+        };
+        if self.system_flag_test(BATTLE_REPORT_ARM_FLAG) {
+            self.system_flag_set(0);
+            self.system_flag_set(BATTLE_REPORT_FLAG);
+        }
+        self.system_flag_clear(BATTLE_ENTRY_CLEARED_FLAG);
     }
 
     /// Place the world into [`SceneMode::WorldMap`] and install a
