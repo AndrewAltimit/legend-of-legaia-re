@@ -4,15 +4,11 @@
 use super::*;
 
 impl PlayWindowApp {
-    /// Advance the Muscle Dome contest's round **time meter** one frame.
-    ///
-    /// Retail runs the meter from the arena's per-frame driver with the frame
-    /// delta from scratchpad `0x1F800393`; the engine ticks a fixed one per
-    /// frame. No-op outside a contest.
+    /// Advance the Muscle Dome contest's round **time meter** one frame - the
+    /// session's step (`BootSession::step_muscle_time_meter`), which the
+    /// browser play page names the same way. No-op outside a contest.
     pub(in crate::window) fn tick_muscle_time_meter(&mut self) {
-        if let Some(s) = self.session.host.world.minigames.muscle_dome.as_mut() {
-            s.tick_time_meter(1);
-        }
+        self.session.step_muscle_time_meter();
     }
 }
 

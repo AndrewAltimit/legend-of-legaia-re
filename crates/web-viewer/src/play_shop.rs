@@ -57,27 +57,21 @@ use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 use wasm_bindgen::prelude::*;
 
 impl LegaiaRuntime {
-    /// Hand a field-VM-armed shop to the menu runtime. Called once per
-    /// [`LegaiaRuntime::tick_frame`], mirroring the native window's
-    /// `take_pending_field_shop` drain.
+    /// Hand a field-VM-armed shop or prize counter to the menu runtime.
+    /// Called once per [`LegaiaRuntime::tick_frame`]; the open and the
+    /// screen's first no-edge step are the shared poll
+    /// (`MenuRuntime::poll_field_overlay`, the native window's
+    /// `poll_field_shop` too). The press this tick carried already went to
+    /// the field (the Cross that closed the merchant's line), so the screen
+    /// steps on no edge; without the step its fade and window slides would
+    /// run one tick behind the window's.
     pub(crate) fn poll_field_shop(&mut self) {
         let Some(host) = self.scene_host.host_mut() else {
             return;
         };
-        // The shared drain (`MenuRuntime::open_field_overlay_requests`, the
-        // native window's too): a gold shop or the casino prize counter.
-        let opened = self.menu.open_field_overlay_requests(&mut host.world);
-        // The screen takes its first step on the tick that opened it, on no
-        // edge - the native window's `menu_edge = 0` beat. The press this
-        // tick carried already went to the field (the Cross that closed the
-        // merchant's line), and handing it to the screen too would commit
-        // the picker's first row on the same press. Without the step the
-        // page's fade and window slides ran one tick behind the window's.
-        if !opened {
+        let Some(cue) = self.menu.poll_field_overlay(&mut host.world) else {
             return;
-        }
-        let edge = legaia_engine_core::menu_runtime::MenuRuntime::session_edge(opened, 0);
-        let cue = self.menu.step_field_session(&mut host.world, edge);
+        };
         if let Some(cue) = cue {
             self.play_sfx(u32::from(cue));
         }

@@ -1763,6 +1763,7 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-core",
  "legaia-engine-effects",
+ "legaia-engine-fishing",
  "legaia-engine-menus",
  "legaia-engine-mode",
  "legaia-engine-scene",

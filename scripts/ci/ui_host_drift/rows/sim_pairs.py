@@ -56,14 +56,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "drained the field VM's op-`0x49` shop and prize-counter requests "
         "itself and spelled the opening tick's no-edge rule (the Cross that "
         "closed the merchant's line must not also commit the picker's first "
-        "row). Both open through `MenuRuntime::open_field_overlay_requests` "
-        "and pick the opening tick's edge with `MenuRuntime::session_edge`",
+        "row). The open and that first no-edge step are one kernel, "
+        "`MenuRuntime::poll_field_overlay`, which each host's "
+        "`poll_field_shop` step calls",
         "sites": {
-            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "native": ("crates/engine-shell/src/window/session_steps.rs", "poll_field_shop"),
             "web": ("crates/web-viewer/src/play_shop.rs", "poll_field_shop"),
         },
         "mode": "symbols_all",
-        "symbols": ["open_field_overlay_requests", "session_edge"],
+        "symbols": ["poll_field_overlay"],
     },
     {
         "what": "dance auto-end, native vs play page - once the song-over arm "
@@ -181,15 +182,17 @@ SIM_PAIRS: list[dict[str, object]] = [
         "took the pending spawn, seated it, took the cue and classified it "
         "itself, and the two had drifted on the classification's arms (the "
         "native window logged a voice arm the page dropped; the cue is a "
-        "byte, so that arm cannot arise). Both run "
-        "`battle_fx::spawn_pending_move_fx` and enqueue the ring value it "
-        "returns",
+        "byte, so that arm cannot arise). The spawn, the enqueue of its "
+        "ring value and the scene-graph tick are one session step, "
+        "`BootSession::step_effect_scene_graphs` (over "
+        "`battle_fx::spawn_pending_move_fx`), which each host's "
+        "`tick_world_effects` step calls",
         "sites": {
-            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "native": ("crates/engine-shell/src/window/session_steps.rs", "tick_world_effects"),
             "web": ("crates/web-viewer/src/runtime/frame.rs", "tick_world_effects"),
         },
         "mode": "symbols_all",
-        "symbols": ["spawn_pending_move_fx"],
+        "symbols": ["step_effect_scene_graphs"],
     },
     {
         "what": "dialog picker option labels, native vs play page - both "

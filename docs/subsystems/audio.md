@@ -1734,10 +1734,11 @@ still calls the cue drainer `FUN_80016B6C` (`jal` at `0x80025F9C`, after
 default handler `FUN_80025EEC`. A cue already delayed when the screen opened
 therefore keeps ageing under it and fires on time.
 
-Both hosts step the scheduler once per sim tick under such a screen: the native
-window's frozen arms call `tick_menu_sfx`, and the page's frame loop, which runs
-no `tick_frame` while the field is frozen, calls the export
-`play_tick_overlay_sfx`, the same scheduler step. Menu blips themselves fire
+Both hosts step the scheduler once per sim tick under such a screen, through
+one session step, `BootSession::step_overlay_sfx`: the native window's frozen
+arms call it as `tick_menu_sfx`, and the page's frame loop, which runs no
+`tick_frame` while the field is frozen, calls it through the export
+`play_tick_overlay_sfx`. Menu blips themselves fire
 immediately on both.
 
 ### Minigame announcer lines are listed ahead of use

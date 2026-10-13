@@ -644,7 +644,16 @@ impl LegaiaRuntime {
     /// Returns the cues that keyed a voice this step.
     // REF: FUN_80025F74, FUN_80016B6C
     pub fn play_tick_overlay_sfx(&mut self) -> u32 {
-        let Some(report) = self.audio_director().map(|d| d.tick_sfx_frame()) else {
+        // Build the director on first use, then the session's step
+        // (`BootSession::step_overlay_sfx`, the native window's
+        // `tick_menu_sfx`). With no session there is only the page's own
+        // director to step.
+        let _ = self.audio_director();
+        let report = match self.scene_host.session_mut() {
+            Some(s) => s.step_overlay_sfx(),
+            None => self.scene_host.director_mut().map(|d| d.tick_sfx_frame()),
+        };
+        let Some(report) = report else {
             return 0;
         };
         let keyed = report.fired.len() as u32;

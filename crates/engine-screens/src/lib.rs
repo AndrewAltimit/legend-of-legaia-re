@@ -25,12 +25,14 @@ use legaia_game_tables::menu_windows::MenuWindowTable;
 
 mod banners;
 pub mod field_frame;
+mod fishing;
 mod panel;
 mod prize;
 pub mod screen_layers;
 mod shop;
 
 pub use banners::banner_stage_draws;
+pub use fishing::fishing_banner_frame;
 pub use panel::{FallbackPanel, fallback_panel_draws, panel_frame_rect};
 pub use prize::{coin_counter_window_draws, prize_window_draws};
 pub use shop::{

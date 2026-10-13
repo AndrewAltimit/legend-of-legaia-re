@@ -38,6 +38,7 @@ use crate::audio_director::AudioDirector;
 mod construct;
 mod disc_tables;
 mod field_menu;
+mod frame_steps;
 mod frame_tick;
 mod scene_entry;
 

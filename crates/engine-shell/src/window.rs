@@ -71,6 +71,8 @@ mod run;
 mod save_rack_disk;
 #[path = "window/screens.rs"]
 mod screens;
+#[path = "window/session_steps.rs"]
+mod session_steps;
 #[path = "window/str_player.rs"]
 mod str_player;
 #[path = "window/title_save_draws.rs"]
