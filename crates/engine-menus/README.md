@@ -50,7 +50,9 @@ link into a dependent crate.
 - **Battle command input** - `battle_input` (`BattleCommandSession`, the
   player-driven command picker the live battle loop opens per party turn,
   and the chip-cluster model both it and the dome project), `battle_open`
-  (the formation open banner and its hold timers), `timed_fight` (Koru's
+  (the formation open banner and its hold timers), `battle_flow` (the
+  command-flow state byte `ctx[+0x06]` as a projection of the session's
+  phases, and the tutorial box the flow state is showing), `timed_fight` (Koru's
   turn-limit gate and strip readout) and `muscle_dome_session` (one Muscle Dome leg:
   `MuscleDomeSession`, its command menu, ring and loadout kernels, over the
   contest ladder `legaia-engine-minigames` carries)

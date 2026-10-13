@@ -275,7 +275,7 @@ fn battle_item_menu_cancel_reopens_command_menu() {
 /// state retail stores as the window opens (`FUN_801D0748`'s `0x28` arms).
 #[test]
 fn opening_the_item_window_moves_the_flow_byte_onto_it() {
-    use crate::battle_flow::BattleFlowState;
+    use legaia_engine_menus::battle_flow::BattleFlowState;
     use legaia_engine_system::input::PadButton;
 
     let mut world = World {

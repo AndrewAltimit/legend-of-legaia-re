@@ -18,6 +18,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod battle_flow;
 pub mod battle_input;
 pub mod battle_open;
 pub mod card_bu_io;

@@ -32,6 +32,7 @@ pub mod battle_stage_module;
 pub mod battle_stats;
 pub mod battle_status_clut;
 pub mod battle_steal;
+pub mod battle_tutorial;
 pub mod encounter;
 pub mod encounter_formation;
 pub mod encounter_man;

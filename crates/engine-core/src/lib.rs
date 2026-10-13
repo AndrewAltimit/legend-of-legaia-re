@@ -7,12 +7,10 @@
 
 pub mod actor_alloc_host;
 pub mod battle_cam_inputs;
-pub mod battle_flow;
 pub mod battle_hud;
 pub mod battle_party_form;
 pub mod battle_round;
 pub mod battle_sideband_textures;
-pub mod battle_tutorial;
 pub mod camera_view;
 pub mod card_write;
 pub mod cheat_applier;

@@ -58,7 +58,7 @@ mod value_readout;
 /// One on-screen sparring-tutorial box with its stage rect `(x, y, w, h)`.
 pub(crate) type TutorialStageBox<'a> = (
     (i32, i32, i32, i32),
-    &'a legaia_engine_core::battle_flow::ActiveTutorialBox,
+    &'a legaia_engine_menus::battle_flow::ActiveTutorialBox,
 );
 
 /// Top-left anchor of the battle HUD's slot-row block, in surface pixels
@@ -369,7 +369,7 @@ mod live_hud_tests;
 
 #[cfg(test)]
 mod tests {
-    use legaia_engine_core::battle_tutorial::BoxStyle;
+    use legaia_engine_battle::battle_tutorial::BoxStyle;
 
     /// The tutorial box rect is in 320x240 stage space, so the page's own
     /// stage transform must carry it - the same law the native window applies

@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::battle_tutorial::{
+use legaia_engine_battle::battle_tutorial::{
     self as tut, BattleTutorial, BattleTutorialScript, TutorialInputs, TutorialLesson,
 };
 use legaia_prot::archive::Archive;
@@ -166,7 +166,7 @@ fn the_prot_index_loader_returns_the_same_corpus() {
     };
     let index = legaia_engine_scene::scene::ProtIndex::open_extracted(&extracted)
         .expect("open extracted PROT index");
-    let via_host = BattleTutorialScript::from_prot(&index);
+    let via_host = legaia_engine_core::disc_readers::battle_tutorial::script_from_prot(&index);
     let via_archive =
         BattleTutorialScript::from_overlay(&overlay_967().unwrap(), tut::OVERLAY_967_BASE_VA);
     assert_eq!(via_host.len(), via_archive.len());
@@ -181,8 +181,8 @@ fn the_prot_index_loader_returns_the_same_corpus() {
 /// lesson walks the machine forward.
 #[test]
 fn a_live_battle_shows_the_real_prompts_in_order() {
-    use legaia_engine_core::battle_flow::BattleFlowState;
     use legaia_engine_core::world::World;
+    use legaia_engine_menus::battle_flow::BattleFlowState;
     use legaia_engine_system::input::PadButton;
 
     let Some(bytes) = overlay_967() else {

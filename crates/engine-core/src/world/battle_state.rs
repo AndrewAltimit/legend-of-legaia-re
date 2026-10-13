@@ -394,9 +394,9 @@ pub struct BattleState {
     /// The battle **command-flow** cursor - retail `ctx[+0x06]`, the byte the
     /// menu-half SM `FUN_801D0748` runs on and the key the sparring-tutorial
     /// hook table indexes. Recomposed each frame from the live command session
-    /// plus submenus by [`crate::battle_flow::flow_state_for`]; the turn-start
+    /// plus submenus by [`legaia_engine_menus::battle_flow::flow_state_for`]; the turn-start
     /// prompt is raised directly by `World::open_battle_command`.
-    pub flow: crate::battle_flow::BattleFlowState,
+    pub flow: legaia_engine_menus::battle_flow::BattleFlowState,
     /// The live loop's round state - which of retail's two round bands the
     /// battle is in (the command band collects every party member's command
     /// before the execution band dispatches anyone by initiative), the
@@ -598,14 +598,14 @@ pub struct BattleState {
     pub camera: Option<legaia_engine_battle_vm::battle_cam_script::BattleCamera>,
     /// The sparring-tutorial prompt machine, armed only for the Tetsu
     /// tutorial fight (battle-stage id
-    /// [`crate::battle_tutorial::TUTORIAL_STAGE_ID`]) via
+    /// [`legaia_engine_battle::battle_tutorial::TUTORIAL_STAGE_ID`]) via
     /// [`crate::world::World::arm_battle_tutorial`]. `None` in every other battle - which is
     /// every battle but one, matching retail's stage-overlay dispatch.
-    pub tutorial: Option<crate::battle_tutorial::BattleTutorial>,
+    pub tutorial: Option<legaia_engine_battle::battle_tutorial::BattleTutorial>,
     /// Prompt text for [`crate::world::BattleState::tutorial`], read off the user's own disc
     /// copy of overlay 967. Empty when the host had no disc to read - the
     /// tutorial then emits no boxes rather than inventing text.
-    pub tutorial_script: crate::battle_tutorial::BattleTutorialScript,
+    pub tutorial_script: legaia_engine_battle::battle_tutorial::BattleTutorialScript,
     /// Tutorial boxes waiting to be shown, front first. While non-empty the
     /// whole battle loop is parked - the port of retail's `ctx[+0x6B2]`
     /// message-box guard, which makes `FUN_801D0748` return early.
@@ -613,7 +613,8 @@ pub struct BattleState {
     /// The queue is retail's single battle message box, so it carries more
     /// than the tutorial: the battle-open formation banner
     /// ([`crate::world::World::raise_battle_open_banner`]) rides it too.
-    pub tutorial_boxes: std::collections::VecDeque<crate::battle_flow::ActiveTutorialBox>,
+    pub tutorial_boxes:
+        std::collections::VecDeque<legaia_engine_menus::battle_flow::ActiveTutorialBox>,
     /// The sparring tutorial's **standing prompt**: the last self-dismissing
     /// box to leave [`Self::tutorial_boxes`]. Retail registers such a prompt
     /// as a text actor under sort key `1` (`FUN_801F747C` -> `FUN_8003541C`
@@ -626,7 +627,7 @@ pub struct BattleState {
     /// category ring). It holds nothing: the battle loop parks on the queue
     /// alone. Hosts draw it with the queue's front group
     /// ([`crate::world::World::battle_tutorial_boxes_on_screen`]).
-    pub tutorial_standing: Option<crate::battle_flow::ActiveTutorialBox>,
+    pub tutorial_standing: Option<legaia_engine_menus::battle_flow::ActiveTutorialBox>,
     /// The battle screen's chip / banner labels, read off the user's own disc
     /// ([`legaia_ui_formats::battle_ui_strings`]). Empty when the host had no disc
     /// to read - the port's own wording is used then, so the surfaces still
@@ -849,7 +850,7 @@ impl BattleState {
             arts_menu: None,
             arts_input: None,
             swing_costs: [[legaia_engine_battle::arts_command_input::FAVORED_COST; 4]; 3],
-            flow: crate::battle_flow::BattleFlowState::Idle,
+            flow: legaia_engine_menus::battle_flow::BattleFlowState::Idle,
             round_flow: crate::battle_round::RoundFlow::default(),
             inflight_seed: None,
             forced_monster_cast: None,
@@ -886,7 +887,7 @@ impl BattleState {
             auto_combo: Default::default(),
             camera: None,
             tutorial: None,
-            tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
+            tutorial_script: legaia_engine_battle::battle_tutorial::BattleTutorialScript::default(),
             tutorial_boxes: std::collections::VecDeque::new(),
             tutorial_standing: None,
             ui_strings: legaia_ui_formats::battle_ui_strings::BattleUiStrings::default(),

@@ -137,12 +137,12 @@ impl World {
     /// the `ctx[+0x6B4]` countdown section, which runs on every hook frame.
     ///
     /// Only the completion tail arms the countdown in the engine
-    /// ([`crate::battle_tutorial::BattleTutorial::arm_countdown`]), so this
+    /// ([`legaia_engine_battle::battle_tutorial::BattleTutorial::arm_countdown`]), so this
     /// is idle until the fourth lesson is done; then it holds the fight until
     /// the countdown runs out (or a press lands with the sign-off box gone),
     /// and its expiry is the fight's exit arm.
     fn run_sparring_hook_frame(&mut self) {
-        use crate::battle_tutorial::{COMPLETION_FADE, CountdownTick};
+        use legaia_engine_battle::battle_tutorial::{COMPLETION_FADE, CountdownTick};
         // The completion tail runs on every hook frame, not only on a flow
         // edge: a lesson counter bumped to `4` outside a flow change (the
         // action SM's `case 0xFF`, `World::advance_battle_mode`) closes the
@@ -518,10 +518,10 @@ impl World {
     /// A world with no caption text (no disc) skips the hold outright rather
     /// than showing an empty window.
     fn raise_sparring_caption(&mut self) {
-        use crate::battle_flow::ActiveTutorialBox;
-        use crate::battle_tutorial::{
+        use legaia_engine_battle::battle_tutorial::{
             SPARRING_CAPTION_FRAMES, SPARRING_CAPTION_RECT, SPARRING_CAPTION_STYLE,
         };
+        use legaia_engine_menus::battle_flow::ActiveTutorialBox;
         let Some(text) = self
             .battle
             .ui_strings

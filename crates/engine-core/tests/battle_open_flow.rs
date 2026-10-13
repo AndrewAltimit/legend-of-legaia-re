@@ -25,8 +25,8 @@
 //! the flow byte and the box queue are engine state.
 
 use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
-use legaia_engine_core::battle_flow::BattleFlowState;
 use legaia_engine_core::world::World;
+use legaia_engine_menus::battle_flow::BattleFlowState;
 use legaia_engine_menus::battle_input::{
     BattleCommand, BattleCommandSession, CommandPhase, RoundChoice,
 };

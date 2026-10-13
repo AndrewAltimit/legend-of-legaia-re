@@ -24,7 +24,7 @@ use super::*;
 pub(super) fn fight_pad(session: &NativeSession) -> u16 {
     use legaia_engine_battle::arts_command_input::ArtsInputPhase;
     use legaia_engine_battle::battle_magic::SpellPhase;
-    use legaia_engine_core::battle_tutorial::TutorialLesson;
+    use legaia_engine_battle::battle_tutorial::TutorialLesson;
     use legaia_engine_menus::battle_input::CommandPhase;
     use legaia_engine_menus::inventory_use::InventoryUseState;
     let w = &session.host.world;

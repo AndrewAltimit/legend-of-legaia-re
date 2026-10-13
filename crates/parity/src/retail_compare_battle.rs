@@ -42,7 +42,7 @@ use legaia_engine_capture::bar_seeds::*;
 use legaia_engine_capture::battle_drive::*;
 use legaia_engine_capture::hud_glide::*;
 use legaia_engine_capture::phase_gate::*;
-use legaia_engine_core::battle_flow::BattleFlowState;
+use legaia_engine_menus::battle_flow::BattleFlowState;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_ram_image::game_anchors;
 use serde::{Deserialize, Serialize};
@@ -99,8 +99,8 @@ const BATTLE_ID_WORD: u32 = 0x8007_B7FC;
 /// its arm, and the victory latch it lowers.
 pub(crate) const BATTLE_ENTRY_TAIL_FLAGS: [u16; 3] = [
     0,
-    legaia_engine_core::battle_tutorial::BATTLE_REPORT_FLAG,
-    legaia_engine_core::battle_tutorial::BATTLE_ENTRY_CLEARED_FLAG,
+    legaia_engine_battle::battle_tutorial::BATTLE_REPORT_FLAG,
+    legaia_engine_battle::battle_tutorial::BATTLE_ENTRY_CLEARED_FLAG,
 ];
 /// The options screen's Battle Camera config word.
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;

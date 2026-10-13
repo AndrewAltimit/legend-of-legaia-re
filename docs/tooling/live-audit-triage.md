@@ -463,7 +463,7 @@ Six disclosures in the `engine-vm` battle band named the wrong blocker:
 | `80046a20` `gauge_colors` | the HUD's bar colour is a constant of the widget | a per-frame index, from the readout-tint siblings |
 | `801d829c` `build_camera_angle_tween` | the engine has no walker | the native battle camera is one |
 | `801f0450` (arts auto-combo) | the caller is the unported flow SM `FUN_801D388C` | the caller is the action SM's own `Begin` arm |
-| `801dba04` / `801db81c` / `801da34c` | `FUN_801D0748` is not ported | its state space is `engine-core::battle_flow`, and it is live |
+| `801dba04` / `801db81c` / `801da34c` | `FUN_801D0748` is not ported | its state space is `engine-menus::battle_flow`, and it is live |
 | `801e22c8` `expand_cue_group` | neither cue table is parsed | both are, as `move_power::EffectAuxTables` (`0x801F6470`); the blocker was the caller |
 
 - **The position accessor.** `BattleActionHost::actor_position(slot)` is the

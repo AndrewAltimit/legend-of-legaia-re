@@ -16,7 +16,7 @@ The port runs the same flow on both play hosts: round prompt, direct-commit D-pa
 | Command-step helper | `FUN_801D388C(step)` (window choreography per step), cursor step `FUN_801D32BC` |
 | Next-member scans | `FUN_801DB81C` (from the current member), `FUN_801DBA04` (from zero) |
 | Stage overlays | 967 tutorial hook `FUN_801F6B70`; 968 arrival `FUN_801F69F4`; 969 form transition `FUN_801F69D8`; all ticked by the SCUS side-band `FUN_80056208` |
-| Port | `engine-menus::battle_input`, `engine-core::battle_flow` / `battle_tutorial` / `battle_stage_module` / `battle_sideband`, `engine-ui::battle_command_ui` |
+| Port | `engine-menus::battle_input`, `engine-menus::battle_flow` / `battle_tutorial` / `battle_stage_module` / `battle_sideband`, `engine-ui::battle_command_ui` |
 
 ```mermaid
 stateDiagram-v2
@@ -115,7 +115,7 @@ through rather than by being handled.
 That band is what pins the tutorial's table. Its nine live slots are exactly
 these ten states **minus the magic window** - the sparring fight teaches attacks,
 items, spirit and hyper arts, and never magic. Engine mirror
-[`engine-core::battle_flow`](../../crates/engine-core/src/battle_flow.rs), which
+[`engine-menus::battle_flow`](../../crates/engine-menus/src/battle_flow.rs), which
 carries that cross-check as a test.
 
 <a id="the-state-chain"></a>
@@ -824,10 +824,10 @@ because the string is the overlay's own, not heap; and kind `0x0D`'s slot in the
 `FUN_80030628`'s epilogue - so registering a prompt draws nothing that frame,
 and the box first appears on the next walk.
 
-Engine port: [`engine-core::battle_tutorial`](../../crates/engine-core/src/battle_tutorial.rs).
+Engine port: [`engine-battle::battle_tutorial`](../../crates/engine-battle/src/battle_tutorial.rs).
 The prompt **text is Sony data living in the overlay**, so the port commits only
 the string *addresses* and reads the text off the user's own disc at runtime
-(`BattleTutorialScript::from_overlay` / `::from_prot`) - the same rule the item /
+(`BattleTutorialScript::from_overlay`, fed by `engine-core::disc_readers::battle_tutorial::script_from_prot`) - the same rule the item /
 spell / dialog parsers follow. Disc-gated oracle
 `crates/engine-core/tests/battle_tutorial_disc.rs`.
 

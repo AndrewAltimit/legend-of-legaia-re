@@ -10,7 +10,7 @@ impl World {
     /// queued action / target is filled in by [`Self::tick_battle_command`]
     /// once the player confirms. No-op unless [`crate::world::BattleState::player_driven`].
     pub(in crate::world) fn open_battle_command(&mut self, actor: u8) {
-        use crate::battle_flow::BattleFlowState as Flow;
+        use legaia_engine_menus::battle_flow::BattleFlowState as Flow;
         use legaia_engine_menus::battle_input::BattleCommandSession;
         if !self.battle.player_driven {
             return;
@@ -168,7 +168,7 @@ impl World {
         if self.battle.tutorial.is_some()
             && let Some(res) = resolution
         {
-            use crate::battle_flow::BattleFlowState as Flow;
+            use legaia_engine_menus::battle_flow::BattleFlowState as Flow;
             let rejected = match res {
                 // Attack is the only command that reaches Confirmed with a
                 // target in the engine; it commits category 3.

@@ -1785,7 +1785,7 @@ victory latch the results sequencer raises on its results frame
 that frame until the next entry.
 
 Port: `World::apply_battle_entry_flag_tail` beside the tutorial arm in
-`World::enter_battle`; the flags are `engine-core::battle_tutorial`'s
+`World::enter_battle`; the flags are `engine-battle::battle_tutorial`'s
 `BATTLE_REPORT_ARM_FLAG`, `BATTLE_REPORT_FLAG` and
 `BATTLE_ENTRY_CLEARED_FLAG`.
 

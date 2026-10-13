@@ -1266,7 +1266,7 @@ VAs, which no sibling image can share.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/battle_tutorial.rs:801da51c"
+key = "module-orphan:crates/engine-battle/src/battle_tutorial.rs:801da51c"
 reason = """
 The tag claims only the battle-entry stage-id tail, and the bytes say so:
 `li a0,0x19` (0x801DA67C), `jal 0x8003CE64` with `sb zero,-0x49B6(s0)` in its

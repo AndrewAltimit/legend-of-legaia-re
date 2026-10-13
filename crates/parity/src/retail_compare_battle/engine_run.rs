@@ -151,7 +151,7 @@ pub fn entry_latches(extracted: &Path, retail: &RetailObs, battle: &RetailBattle
     // holds it for this fight and no entry script had read it yet: `cave01`'s
     // install slice spawns Terra's after-battle record on it.
     let tail: Vec<u16> = {
-        use legaia_engine_core::battle_tutorial::{BATTLE_REPORT_ARM_FLAG, BATTLE_REPORT_FLAG};
+        use legaia_engine_battle::battle_tutorial::{BATTLE_REPORT_ARM_FLAG, BATTLE_REPORT_FLAG};
         (held.contains(&BATTLE_REPORT_ARM_FLAG) && held.contains(&BATTLE_REPORT_FLAG))
             .then_some(BATTLE_REPORT_FLAG)
             .into_iter()

@@ -392,7 +392,7 @@ impl World {
         let group = self.next_battle_tutorial_group();
         self.battle
             .tutorial_boxes
-            .push_back(crate::battle_flow::ActiveTutorialBox {
+            .push_back(legaia_engine_menus::battle_flow::ActiveTutorialBox {
                 text: banner.line(&leader, template.as_deref()),
                 style: BANNER_BOX_STYLE,
                 waits_for_input: false,

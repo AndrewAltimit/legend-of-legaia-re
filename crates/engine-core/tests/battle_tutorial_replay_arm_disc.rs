@@ -11,7 +11,7 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG;
+use legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG;
 use legaia_engine_core::world::World;
 use legaia_engine_field::man_field_scripts::walk_battle_entry_arms;
 use legaia_engine_scene::scene::{ProtIndex, Scene};

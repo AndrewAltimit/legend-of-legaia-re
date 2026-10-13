@@ -37,7 +37,7 @@
 //! Only **nine** of the 91 slots are live; the other 82 point at the shared
 //! no-op tail. Each live handler then switches on `ctx[0x28A]` - the same
 //! byte the battle-action SM's `case 0xFF` increments
-//! ([`crate::world::World::advance_battle_mode`]) - which the tutorial reads
+//! (`legaia_engine_core::world::World::advance_battle_mode`) - which the tutorial reads
 //! as the **lesson index** (0 attacks, 1 items, 2 spirit, 3 hyper arts,
 //! 4 -> done).
 //!
@@ -96,7 +96,7 @@ pub const TUTORIAL_STAGE_ID: u8 = 1;
 /// ```
 ///
 /// (`-0x49b6` off a `lui 0x8008` base is `_DAT_8007B64A`, the stage-id byte
-/// [`legaia_engine_scene::overlay_loader::battle_stage_overlay_entry`] maps.)
+/// `legaia_engine_scene::overlay_loader::battle_stage_overlay_entry` maps.)
 ///
 /// The setter is disc data, not code: a disc-wide field-VM flag census finds
 /// exactly **one** site writing this flag, in town01's own Tetsu sparring
@@ -746,7 +746,7 @@ impl BattleTutorial {
 
     /// Advance the lesson counter - the battle-action SM's `case 0xFF`
     /// (`ctx[0x28A] += 1`), mirrored by
-    /// [`crate::world::World::advance_battle_mode`].
+    /// `legaia_engine_core::world::World::advance_battle_mode`.
     pub fn advance_lesson(&mut self) {
         self.lesson = self.lesson.saturating_add(1);
     }
@@ -962,33 +962,6 @@ impl BattleTutorialScript {
             strings.insert(va, text);
         }
         Self { strings }
-    }
-
-    /// Read the prompt corpus straight off the booted disc.
-    ///
-    /// Resolves the `battle_tutorial` row of the static-overlay map (extraction
-    /// PROT [`OVERLAY_967_PROT_INDEX`], base [`OVERLAY_967_BASE_VA`]), reads
-    /// that entry through the host's PROT index, slices it to its as-loaded
-    /// form and parses the strings. This is what a host calls to prime
-    /// [`crate::world::World::prime_battle_tutorial`] with real text; the bytes
-    /// never leave the user's own disc.
-    ///
-    /// Returns an empty script (not an error) when the entry can't be read, so
-    /// a host booted against a partial disc still runs the battle - it just
-    /// shows no boxes.
-    pub fn from_prot(index: &legaia_engine_scene::scene::ProtIndex) -> Self {
-        let Some(rec) =
-            legaia_overlay_images::static_overlay::overlay_map().by_label("battle_tutorial")
-        else {
-            return Self::default();
-        };
-        let Ok(bytes) = index.entry_bytes(rec.prot_index) else {
-            return Self::default();
-        };
-        match legaia_overlay_images::static_overlay::as_loaded(&bytes, rec) {
-            Ok(loaded) => Self::from_overlay(&loaded, rec.base_va),
-            Err(_) => Self::default(),
-        }
     }
 
     /// Resolve a message to its text, if the disc supplied it.

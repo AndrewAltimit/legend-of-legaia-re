@@ -510,14 +510,14 @@ pub(super) fn apply_battle_tutorial_env(session: &mut NativeSession) {
             session
                 .host
                 .world
-                .system_flag_clear(legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG);
+                .system_flag_clear(legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG);
             log::info!("play-window: LEGAIA_BATTLE_TUTORIAL=0 suppressed the sparring arm");
         }
         Some(forced) => {
             session
                 .host
                 .world
-                .system_flag_set(legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG);
+                .system_flag_set(legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG);
             let n = session.host.world.battle.tutorial_script.len();
             log::info!(
                 "play-window: LEGAIA_BATTLE_TUTORIAL forced the sparring arm for the next \

@@ -3,7 +3,7 @@
 //! return to the field.
 
 use super::*;
-use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
+use legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG;
 use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 use legaia_engine_battle_vm::battle_action::BattleEndCause;
 use legaia_engine_mode::mode::SceneMode;
@@ -40,7 +40,7 @@ fn the_disc_armed_spar_seats_vahn_alone_and_hands_the_party_back() {
     enter(&mut world);
     assert_eq!(
         world.battle.stage_id,
-        crate::battle_tutorial::TUTORIAL_STAGE_ID
+        legaia_engine_battle::battle_tutorial::TUTORIAL_STAGE_ID
     );
     assert_eq!(world.party.party_count, 1, "Vahn alone");
     assert_eq!(

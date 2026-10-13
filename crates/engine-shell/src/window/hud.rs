@@ -16,7 +16,7 @@ mod text_list;
 /// One on-screen sparring-tutorial box with its stage rect `(x, y, w, h)`.
 pub(super) type TutorialStageBox<'a> = (
     (i32, i32, i32, i32),
-    &'a legaia_engine_core::battle_flow::ActiveTutorialBox,
+    &'a legaia_engine_menus::battle_flow::ActiveTutorialBox,
 );
 
 /// Project the simulation's arts-input phase onto the presentation

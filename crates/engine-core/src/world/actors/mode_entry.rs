@@ -233,7 +233,7 @@ impl World {
         self.battle.tutorial = None;
         self.battle.tutorial_boxes.clear();
         self.battle.tutorial_standing = None;
-        self.battle.flow = crate::battle_flow::BattleFlowState::Idle;
+        self.battle.flow = legaia_engine_menus::battle_flow::BattleFlowState::Idle;
         self.battle.round_flow = crate::battle_round::RoundFlow::default();
         self.battle.commit_log_launch = None;
         self.battle.intro_names_frames = 0;
@@ -281,7 +281,7 @@ impl World {
     ///
     /// REF: FUN_801DA51C (`0x801DA6C4..0x801DA6EC`)
     pub(crate) fn apply_battle_entry_flag_tail(&mut self) {
-        use crate::battle_tutorial::{
+        use legaia_engine_battle::battle_tutorial::{
             BATTLE_ENTRY_CLEARED_FLAG, BATTLE_REPORT_ARM_FLAG, BATTLE_REPORT_FLAG,
         };
         if self.system_flag_test(BATTLE_REPORT_ARM_FLAG) {

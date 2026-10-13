@@ -1,4 +1,4 @@
-use legaia_engine_core::battle_flow::BattleFlowState;
+use legaia_engine_menus::battle_flow::BattleFlowState;
 use legaia_engine_mode::mode::SceneMode;
 
 /// Ticks the pad path may take to reach a menu capture's surface.

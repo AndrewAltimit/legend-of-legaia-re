@@ -580,7 +580,7 @@ pub const TEXT_ESCAPE_LEAD: u8 = 0xC0;
 /// REF: FUN_80035F04 - the pixel-width half of the same measurement pair.
 ///
 /// REPLACED-BY: `str::lines()` over the decoded prompt - the representation
-/// the port measures in. `legaia_engine_core::battle_tutorial::TutorialPrompts`
+/// the port measures in. `legaia_engine_battle::battle_tutorial::TutorialPrompts`
 /// folds `0x7C` to `'\n'` while it decodes and
 /// `legaia_engine_ui::battle_tutorial_box` counts and lays out with
 /// `str::lines()`, live on both hosts (`World::battle_tutorial_box` reaches
