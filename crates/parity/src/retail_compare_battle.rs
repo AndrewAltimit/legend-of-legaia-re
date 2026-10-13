@@ -370,6 +370,12 @@ pub struct RetailBattle {
     /// and the per-actor draw skips it, so the seed lands it there rather
     /// than standing a body retail no longer draws.
     pub defeat_lanes: Vec<Option<u32>>,
+    /// Each pool slot's initiative key `+0x16C`. The round's seeder
+    /// `FUN_801DA780` gives every living combatant a non-zero key and the
+    /// action SM's `0x0C` dispatch zeroes the one it takes
+    /// (`sh zero,0x16c(s3)` at `0x801E2CDC`), so a living combatant reading
+    /// `0` has already acted in the capture's round.
+    pub init_keys: Vec<Option<u16>>,
     /// Each pool slot's status word `+0x16E` (the ailment bits the tint
     /// pass colours a body by - `0x1` Venom `0xFF2020`, `0x2` Toxic, ...,
     /// [`legaia_engine_battle_vm::status_effects::display_flags`]), `None` for an

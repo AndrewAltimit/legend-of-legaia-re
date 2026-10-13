@@ -13,6 +13,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             facing: None,
             defeat_lanes: None,
             status: 0,
+            spent_key: false,
         },
         BarSeed {
             slot: 4,
@@ -22,6 +23,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             facing: Some(0x9F0),
             defeat_lanes: Some(0),
             status: 0,
+            spent_key: false,
         },
         BarSeed {
             slot: 2,
@@ -31,6 +33,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             facing: None,
             defeat_lanes: None,
             status: 0x1,
+            spent_key: true,
         },
         BarSeed {
             slot: 3,
@@ -40,6 +43,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             facing: None,
             defeat_lanes: Some(0xd0d),
             status: 0x1C10,
+            spent_key: true,
         },
     ];
     assert_eq!(bar_seeds_from_env(&bar_seeds_to_env(&seeds)), seeds);

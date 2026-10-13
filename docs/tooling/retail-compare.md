@@ -105,6 +105,7 @@ Two environment switches open up a battle state's `camera` channel:
 |---|---|
 | `LEGAIA_RC_CAM_TRACE=1` | to the `camera` detail: the engine's camera phase, live pose and glide target against retail's live pose and tween-table endpoints, the origin-alignment mask, and per combatant both sides' live pair, body pair, heading, clip and monster size class |
 | `LEGAIA_RC_POS_TRACE=1` | on stderr, one line per drive tick: the acting seat, the action state and each of the first four combatants' live pair, body pair, heading, clip and target |
+| `LEGAIA_RC_SEED_TRACE=1` | on stderr, one line per stream the battle search tried (prompt, drive or cast outcome, surprise opening, measured ground drift) and one for the undrift re-run's verdict |
 
 The first says which component of a framing misses its endpoint and which
 input put it there - a heading, a body pair, a yaw counter; the second
@@ -666,6 +667,7 @@ for a reason that is not a port defect:
 | [Stand the combatants](#where-the-combatants-stand) | live ground `+0x34` / `+0x38`, heading `+0x46`, tint lanes `+0x04` | `RetailBattle::seeded_ground`, the `:x:z[:facing][:d<hex>]` tail of `LEGAIA_BATTLE_BARS` |
 | [Land the HUD](#hud-glides-the-capture-had-landed) | glide records at `ctx[+0x11B4]` | `LEGAIA_SEAT_HUD_GLIDES_LANDED`, `LEGAIA_SEAT_HUD_GLIDES` |
 | [Take back double pushes](#a-push-the-capture-already-holds) | - (measured from the engine's own replay) | `RetailBattle::undrift`, `ground_residual` |
+| [Sit out spent turns](#combatants-that-had-already-acted) | initiative keys `+0x16C` | `RetailBattle::engine_spent_keys`, the `:k` tail of `LEGAIA_BATTLE_BARS` |
 | [Take back rewards](#rewards-already-granted) | EXP share `gp+0xA04`, stat window, banner element `ctx[+0x26]` | `ungrant_results_rewards`, `ungrant_magic_level_up` |
 | [Place the phase](#placing-the-phase) | command-flow byte `ctx[+0x06]`, cursor `ctx[+0x07]`, seat `ctx[+0x13]` | `SeedPlan` |
 
@@ -813,6 +815,51 @@ engine's own replay measures the push:
    stood stays put.
 4. A capture past the end signal is not re-run: the win pose's own travel is not
    a push the capture holds twice.
+
+### Combatants that had already acted
+
+A capture of a party member's action sits somewhere inside a round, and the
+drive replays that round from its prompt. The round's seeder `FUN_801DA780`
+gives every living combatant a non-zero initiative key `+0x16C`, and the
+action SM's `0x0C` dispatch zeroes the one it takes (`sh zero,0x16c(s3)` at
+`0x801E2CDC`), so a living combatant whose key reads `0` has already had its
+turn. Replayed with a key, it acts a second time before the capture's seat
+does:
+
+- it walks off the ground the seed stood it on, and the framing follows a
+  geometry the capture never held;
+- it swings at a party the capture holds already hurt by its first swing.
+  `player_steal_skeleton_banner`'s lone Vahn stands on `17` of `219` HP behind
+  two skeletons whose keys are both spent. Replayed, they kill him on every
+  stream but one, and on that one the second skeleton walks `740` units
+  before he moves.
+
+So on a pad-driven capture of a **party** seat, every other living combatant
+whose key the capture holds spent has its engine key zeroed on the first
+battle tick (`RetailBattle::engine_spent_keys`; the `:k` tail of a
+`LEGAIA_BATTLE_BARS` entry carries it to the image child, and
+`apply_bar_seeds` clears `init_key`). The setup seeder has drawn by then, so
+the stream is unchanged; the capture's seat keeps the key it rolled and the
+round is its own. Six captures move, none down:
+
+| State | `camera` | `image` |
+|---|---|---|
+| `player_steal_skeleton_banner` | `.836` to `.999` | `.238` to `.673` |
+| `rim_elm_gimard_victory` | `.874` to `.985` | `.657` to `.791` |
+| `super_queue_replace_*` (three) | `.850` to `.968` | `.550` to `.654` |
+| `battle_vahn_tri_somersault_super` | `.848` to `1.0` | `.577` to `.711` |
+
+Two limits are measured rather than argued:
+
+- **A monster's action keeps every key.** Its drive plays the party's turns
+  on purpose (the Spirit commits that keep a caster standing until its turn).
+  With the party sat out the three parked-Gaza frames score worse (`image`
+  `.718` to `.551`, `.620` to `.595`, `.608` to `.503`) and two Delilas casts
+  read their depth a step early (`camera` `1.0` to `.999`).
+- **A revived victim keeps its key.** A victim seeded at `1` HP for the
+  replayed kill reads a spent key as well. Sat out, the two
+  `rim_elm_gimard_seru_capture_*` drives frame Vahn's last swing some fifty
+  yaw units further off (`camera` `.962` to `.932`, `.953` to `.918`).
 
 ### Rewards already granted
 
@@ -2079,21 +2126,16 @@ is where the glide starts from:
 Pitch `0x80` already reached and `TR.y = 972` do not fit a single glide step,
 so the capture's own glide history is not fully explained either.
 
-The order is not what parts the two sides, and replaying retail's round does
-not close the gap. The capture is round `0` (`ctx[+0x28A] = 0`) with both
-initiative keys `+0x16C` spent, and a key is spent only by the action SM's
-`0x0C` dispatch (`sh zero,0x16c(s3)` at `0x801E2CDC`), so Gobu Gobu had
-already dispatched in retail too - and all twelve battle streams put it
-ahead of Vahn in the engine. What parts them is where that action left the
-two: retail stands Gobu Gobu on `(0, 0)` and Vahn on `(-7, -338)`, the
-engine's swing walks Gobu Gobu about `250` units on and pushes Vahn `164`
-back. Seeding the spent keys into the replay (the monster sits the round
-out) stands both on retail's ground but starts Vahn's glide from the commit
-confirm's case-9 swing instead, and the frame scores worse on all three
-(`image` `.493` to `.343`), as it does on most of the battle class's other
-drives. Preferring a stream on which no bystander walked finds none that
-seats Vahn first in round `0`; the one it takes plays a monster cast first
-and scores `.278`.
+The capture is round `0` (`ctx[+0x28A] = 0`) with both initiative keys
+`+0x16C` spent, so Gobu Gobu had already dispatched in retail - and every
+battle stream puts it ahead of Vahn in the engine too. What parted the two
+sides was that turn played twice: retail stands Gobu Gobu on `(0, 0)` and Vahn
+on `(-7, -338)`, and a replayed swing walks Gobu Gobu about `250` units on and
+pushes Vahn `164` back. With the spent key seeded
+([above](#combatants-that-had-already-acted)) the monster sits the round out,
+both stand on retail's ground, and the focus reads `(-11, -381)` on both
+sides; what is left of the channel is the mid-glide yaw (`3127` against
+`3205`).
 
 ### An ease-out camera carries its history
 
@@ -2247,15 +2289,14 @@ every pass, so it moves with the phase of both clips):
   position, and the state holds the victim where its knock-back left it, not
   where it stood when the cast began (`4038` retail against `3983`) - a
   seeding limit.
-- **A counter the drive has to wait for.**
+- **A counter is the round's last turn.**
   `battle_vahn_tri_somersault_super` is Vahn's Super Art played as a
-  counterattack on a monster's swing. The drive plays rounds until a counter
-  fires on the capture's seat and cursor, and that is many rounds in (the
-  engine's Vahn reaches it some 1100 HP lower than retail's), so the swing it
-  counters comes from another monster at another seat: the case-7 focus is
-  the midpoint with a target on the far side of the party. The rounds are
-  the drive's own; nothing in the capture recovers the history that put
-  retail's counter on monster slot 4.
+  counterattack on a monster's swing. The capture holds every key spent but
+  the third monster's, so the round it replays is that monster's turn alone:
+  it strikes Vahn, the counter fires, and the case-7 two-shot reads retail's
+  yaw `799` and its focus to nine units. Played with every key live, the
+  drive waited many rounds for a counter on the capture's seat and cursor
+  and took one off another monster on the far side of the party.
 - **A numeral that sank instead of rising.** Retail's floating value rises
   `3/2` of its ring timer above the struck actor's display trio
   (`FUN_801DF6B8`, `0x801DF780..0x801DF7B4`), toward `-Y`. The hosts project

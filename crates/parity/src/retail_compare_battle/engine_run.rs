@@ -356,6 +356,7 @@ pub fn run_engine_battle(
     let facing = battle.seeded_facing();
     let defeat_lanes = battle.engine_defeat_lanes();
     let status = battle.engine_status();
+    let spent = battle.engine_spent_keys();
     let hp_seed: Vec<BarSeed> = {
         let world = &session.host.world;
         let pc = world.party.party_count.clamp(1, 3) as usize;
@@ -384,6 +385,7 @@ pub fn run_engine_battle(
                         .then(|| status.get(slot).copied().flatten())
                         .flatten()
                         .map_or(0, seedable_status_bits),
+                    spent_key: spent.get(slot).copied().unwrap_or(false),
                 })
             })
             .collect()
