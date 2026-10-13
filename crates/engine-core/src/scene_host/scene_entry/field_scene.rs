@@ -238,6 +238,15 @@ impl SceneHost {
         // always has valid data to read. The roster guard inside makes this a
         // no-op on every later entry (door transitions, save-loaded sessions).
         if let Some(defaults) = self.new_game_defaults.as_ref() {
+            // The starting-party template is a disc table, not New Game
+            // state: a member who joins after a card load takes their
+            // level-1 record from it (`World::set_active_party`), and the
+            // roster guard below skips the seed on exactly those sessions.
+            // Installed here it reaches every host that carries the
+            // defaults, the browser page included.
+            if self.world.tables.starting_party.is_none() {
+                self.world.tables.starting_party = Some(defaults.party.clone());
+            }
             self.world.seed_cold_boot_defaults(defaults);
         }
         // Prescript-record-as-field-VM is a MAN-less fallback only: the
