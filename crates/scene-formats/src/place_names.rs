@@ -49,12 +49,14 @@
 //!   +0x08  0x18 name, NUL-padded ASCII
 //! ```
 //!
-//! The consumer is the label pass at `0x801CEBB6..0x801CEC30` in the field
-//! overlay: for every record whose region matches the live kingdom and whose
-//! discovery flag is set (or with the debug-all flag `_DAT_8007B868`), it
-//! projects `(x << 7, y << 7)` to screen through `FUN_8003D368` and draws
-//! `record + 8` with `FUN_80036888`, then underlines it with the measured
-//! width. That is the "names overlaid where the places are" display.
+//! The consumer is the label pass at `0x801CF368..0x801CF438` in the map
+//! display module (PROT 0981): for every record whose region matches the
+//! live kingdom and whose discovery flag is set (or with the dev flag
+//! `_DAT_8007B868`), it projects `(x << 7, -0x200, y << 7)` to screen through
+//! `FUN_8003D368`, draws `record + 8` with `FUN_80036888`, and boxes it in a
+//! window of the measured width. That is the "names overlaid where the
+//! places are" display; the engine side is
+//! `legaia_engine_field::map_display`.
 //!
 //! All three kingdom MANs carry a **byte-identical** copy of the whole
 //! table - each one is filtered by `region` at draw time - so renaming a

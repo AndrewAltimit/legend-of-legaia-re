@@ -757,6 +757,19 @@ impl World {
                 }
                 None
             }
+            SceneMode::WorldMap if self.world_map.map_display.is_some() => {
+                // The map display (retail game mode `0x0D`) owns the frame:
+                // its handler `FUN_80025F2C` runs the display tick and the
+                // render tick, and none of the walk frame.
+                if let Some(ctrl) = self.world_map.ctrl.as_mut() {
+                    // The walk controller's one-tick reports do not outlive
+                    // the frame that raised them.
+                    ctrl.map_display_requested = false;
+                    ctrl.entry_fade_draw = None;
+                }
+                self.tick_map_display();
+                None
+            }
             SceneMode::WorldMap => {
                 // The opening chain's `map01` fly-in leg runs its cutscene
                 // record over the world map (Mist title card + crawl + the

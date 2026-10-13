@@ -198,25 +198,19 @@ pub struct WorldMapController {
     /// This tick's full-screen grey fade quad (retail `FUN_80024EE4(1, 2,
     /// grey * 0x010101)`), or `None` on a frame with no live ramp.
     ///
-    /// NOT WIRED: the blocker is a full-screen quad sink, not this producer.
-    /// The ramp is computed and the quad is staged every frame it should be;
-    /// what no host has is a draw list that accepts a screen-space
-    /// `FadeQuad` at the world-map layer - `engine-render` composites the
-    /// world map straight to the framebuffer with no overlay pass in front of
-    /// it, and the browser page has no equivalent seam either. Wiring it is
-    /// the same sink both hosts need for `entry_fade`, so it is one change on
-    /// two surfaces, not a call insertion.
+    /// WIRED: `World::map_display_fade_push_args` turns it into the retail
+    /// `(layer, blend, packed)` triple and `World::screen_tint_push_args`
+    /// carries it into the screen-primitive list both hosts composite
+    /// (`engine-screens::screen_layers`).
     pub entry_fade_draw: Option<FadeQuad>,
     /// Raised for exactly one tick when the fade-up reaches `0x100` - retail's
     /// `_DAT_8007B83C = 0xC` (MAPDSIP INIT) master-mode store.
     ///
-    /// NOT WIRED: the mode this requests does not exist in the port. Retail's
-    /// `_DAT_8007B83C = 0xC` hands the frame to the MAPDSIP overlay; the
-    /// engine's `SceneMode` has no map-display variant to switch into, so
-    /// there is nothing for a host to hand off *to* - and that absence is
-    /// also why the ramp self-clears here instead of parking at `0xFF` the way
-    /// retail's global does until the overlay swap clears it. The prerequisite
-    /// is the screen, not a consumer of the flag.
+    /// WIRED: `World::tick_world_map` opens the map display on it
+    /// ([`crate::map_display::MapDisplay`], the PROT 0981 module), which then
+    /// owns the overworld frame until its own exit. Retail leaves the ramp
+    /// parked at `0xFF` for the overlay swap to clear; the port clears it on
+    /// the report, and the display's first frame holds the black instead.
     pub map_display_requested: bool,
     /// SFX cues the controller raised this tick ([`MAP_DISPLAY_SFX`] is the
     /// only producer). `World::tick_world_map` drains it onto the SFX ring

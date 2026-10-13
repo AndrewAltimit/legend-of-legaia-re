@@ -38,16 +38,16 @@ VRAM; **OT** = the GPU ordering table.
 | Sky band | `FUN_801F73E4` | `world_map_sky`, `screen_prim::sky_band_prims` |
 | Water shimmer | Kingdom-bundle slot-5 CLUT-walk table, `FUN_8001ADA4` case `0xB` | `clut_walk_anim::ClutWalkAnim` |
 | Horizon plane | `FUN_801D7EA0` | `world_map_horizon::emit_horizon` |
-| Map display (L1) | Fade ramp `FUN_800196A4`, modes 12 / 13, PROT 0981 | Arm + ramp modelled (`WorldMapEntryFade`); the screen itself is not ported |
+| Map display (L1) | Fade ramp `FUN_800196A4`, modes 12 / 13, PROT 0981 (`FUN_801CE850`) | `WorldMapEntryFade`, `map_display::MapDisplay`, `world_map_labels` |
 | Top-view debug + dev menu | `FUN_801E76D4`, `FUN_801EAD98` | `WorldMapController`, `DevMenuSession` (opt-in) |
 | Pause / panel actors | `FUN_801ED308` and five siblings | `world_map_panel_actors`, `PanelActorHost` |
 
 Both play hosts (native `play-window` and the browser play page) walk the
 overworld, enter and leave towns, roll encounters, and draw ground, landmarks,
-sky, water shimmer and the distance cue through shared kernels. Two things are
-not there: the L1 map display (retail's PROT 0981 screen with the place
-labels), and retail's top-view camera - the port's debug top view uses a
-synthetic framing.
+sky, water shimmer and the distance cue through shared kernels, and L1 opens
+the map display with its place labels. Two things are not there: the map
+display's player pointer (a move-VM effect the module spawns), and retail's
+top-view *debug* camera - the port's debug top view uses a synthetic framing.
 
 ## Contents
 
@@ -127,9 +127,10 @@ stateDiagram-v2
 
 Port: `WorldMapController` models the arm and the ramp
 (`WorldMapEntryFade`, port of `FUN_800196A4`) and raises
-`map_display_requested` when the ramp completes. No host consumes it: the
-engine has no map-display mode, so L1 on the overworld plays the cue and
-returns to the walk.
+`map_display_requested` when the ramp completes; `World::tick_world_map`
+opens [the map display](#the-map-display---prot-0981) on it. The ramp's quad
+reaches both hosts as a `FUN_80024EE4` push
+(`World::map_display_fade_push_args`).
 
 Because the overworld is a field-run scene, the pause menu opens there through
 the field path too - the Save row is legal only on the three kingdom scenes
@@ -177,13 +178,13 @@ The image holds **one framed function and three frameless leaves**:
 
 | Entry | Bytes | What it is |
 |---|---|---|
-| `0x801CE850` | 3164 | The top-view tick, and the prologue the table above names. A six-arm mode dispatcher: `sltiu a0, 6` against the mode word `0x801CF76C`, table at `0x801CE838`. All six arms are `jr $v0` targets inside this one body - `0x801CE9C4` is an arm, not a function head. |
+| `0x801CE850` | 3164 | The display tick, and the prologue the table above names. A six-arm mode dispatcher: `sltiu a0, 6` against the mode word `0x801CF76C`, table at `0x801CE838`. All six arms are `jr $v0` targets inside this one body - `0x801CE9C4` is an arm, not a function head. |
 | `0x801CF4AC` | 316 | Enter / reset. Zeroes the mode word, sets the record cursor `0x801CF77C` and its neighbour to `-1`, and snapshots the live world-map state - the `0x800840B8` quad, the scroll trio `0x8007B790`, the camera pair `0x80089118`, the projection word `0x8007B6F4` and four scratchpad bytes - into the image's own zeroed block at `0x801CF70C..0x801CF790`. Sets the game-mode word `0x8007B83C = 0x0D`. |
-| `0x801CF5E8` | 144 | The location-record stepper. Walks the `DAT_80073EE0` table (count byte at `[0]`, `0x20` stride) up or down by `a0` until a record's `region` matches `uRam8007b970`, wrapping on the count, and stores the index back. |
+| `0x801CF5E8` | 144 | The location-record stepper. Walks the `DAT_80073EE0` table (count byte at `[0]`, `0x20` stride) backward (`a0 != 0`, wrapping from below zero to the last record) or forward (running off the end parks it on `-1`) until a record's `region` matches `uRam8007b970`, and stores the index back. |
 | `0x801CF678` | 112 | The camera clamp: bounds `_DAT_80089118` to `[-0x3380, -0xD00]` and `_DAT_80089120` to `[-0x3580, -0xC00]`. |
 
-None of the four is ported; the engine has no map-display mode (see
-[entering the map display](#entering-the-map-display)).
+All four are ported in `legaia_engine_field::map_display`; the next section
+is what they do.
 
 PROT 0981 and PROT 0897's head never coexist: they are alternative occupants
 of slot A. The mode-12 handler swaps 0981 in over 0897's first `0x4000` bytes
@@ -267,28 +268,119 @@ Port: `legaia_engine_field::world_map_dim::emit_screen_dim`, gated by
 `WorldMapController::run_screen_dim` and called once per frame from the
 world-map tick.
 
-### The place-label pass - `0x801CEBB6..0x801CEC30`
+### The map display - PROT 0981
 
-The named markers drawn over the map ("Rim Elm", "Sol Tower", ...) come from a
-per-frame loop over the **world-map location table**: the trailing data of the
-kingdom scene MAN, reached through the section pointer `DAT_80073EE0` the MAN
-walker installs. Byte layout and the other two carriers a place name has are
-on [`place-names.md`](../formats/place-names.md).
+`FUN_801CE850` is called once a frame by the mode-13 handler `FUN_80025F2C`,
+between the frame prologue `FUN_8001698C` and the render tick
+`FUN_80016444(0)`. The walk frame `FUN_801D1344` does not run: the display
+owns the pad, and the player, the field VM and the encounter roll all stand
+still under it. It is a state machine on the mode word `0x801CF76C`:
 
-Per record (`0x20` bytes: region, map x, map y, discovery flag, 24-byte name):
+| Mode | Arm | What the frame does |
+|---|---|---|
+| `0` | `0x801CE8B0` | Seeds the fade timer `0x801CF778` with `4`. |
+| `1` | `0x801CE8D8` | Stages the survey camera, flattens the curvature table (`FUN_800271A8(0, 0)`), clamps the camera, spawns the player's map pointer. |
+| `2` | `0x801CE9C4` | Counts the timer down; below zero it seats the camera over the player and enters mode `0x32`. |
+| `0x32` | (past the table) | Interactive. No arm runs; the tail does everything. |
+| `3` | `0x801CEA74` | Counts the timer up; at `5` it restores the walk camera, the tile window and the curvature table. |
+| `4` | `0x801CEB98` | Kills the pointer and spawns the walk frame's fade-in, `FUN_801D58F0(2, 0xFFFFFF, 0, 0, 8, 0)`. |
+| `5` | `0x801CEBE8` | Stores game mode `0xC`, clears the entry ramp `_DAT_8007BAF4` and the player's movement lock; the mode-12 handler puts the field overlay's head back. |
+
+**Fade.** After the arm, every frame but mode `0`'s draws
+`FUN_80024EE4(0, 2, grey * 0x010101)` with `grey = min(timer << 6, 0xFF)`
+(`0x801CEC4C..0x801CEC90`): a subtractive wash, black while the timer is `4`
+or more. Opening therefore holds the black the entry ramp ended on for two
+frames and clears in three steps; leaving darkens in the same steps.
+
+**Survey camera** (mode `1`, `0x801CE8EC..0x801CE950`): `TR = (0, 0, 0x9470)`
+at `0x800840B8`, rotation trio `0x8007B790 = (0x300, 0, 0)`, projection
+`0x8007B6F4 = 0x170`, camera height `0x8008911C = 0`, and the visible tile
+window `0x1F8003E8..EB = (-0x1C, -0x1A, 0x1C, 0x1A)`. The translation
+`_DAT_80089118` / `_DAT_80089120` is the negated world point the survey looks
+at, in whole tiles, bounded by `FUN_801CF678`.
+
+**Pad** (mode `0x32`; packed bits, held word `_DAT_8007B850`, edge word
+`_DAT_8007B874`):
+
+| Bits | Effect |
+|---|---|
+| edge `0x21` (L2, Circle) | Leave: cue `0x37`, mode `3`. Tested before everything else. |
+| held `0x8000` / `0x2000` / `0x1000` / `0x4000` (d-pad) | Pan the camera one tile (`0x80`) a frame. |
+| edge `0x80` (Square) | Step the place cursor `0x801CF77C` back one record of this kingdom; cue `0x20`. |
+| edge `0x20` (Circle) | Step it forward. Unreachable: the leave test consumes the same bit first. |
+| edge `0x110` (Triangle, Select) | Cycle the overlay mode `0x801CF73C` through `0` / `1` / `2`; cue `0x20`. |
+
+The three cues are bare stores into SFX ring slot 0 (`sh id, 0x8007B6D8`).
+
+The cursor is `-1` for the player or a record index. A step clears the seat
+state `0x801CF784`; the next frame picks the target (the record's cell, or
+the player's tile) and copies it into the camera. The one-tile-a-frame ease
+that follows the copy (`0x801CEEF8..0x801CEF64`) never has a distance to
+close, so the camera snaps. The stepper does not read the discovery flag: the
+cursor visits a place whose label is still hidden.
+
+**Mini-map panel** (overlay mode `0`, `0x801CF020..0x801CF344`), every piece
+linked at ordering-table bucket 1:
+
+| Piece | Call | Source |
+|---|---|---|
+| Player dot | `FUN_8001CD68(tx*2/3 + 0xB, (0x80 - tz)*2/3 + 0x81, 3, 3, ...)` | texpage `0xD`, `(0, 0x10)`, CLUT `0x77C0`, semi-transparent |
+| View box | `FUN_8001CD68(max(cx*2/3 - 0xF, 3), max(cz*2/3 + 0xC3, 0x7B), 0x30, 0x30, ...)` | texpage `0xD`, `(0x10, 0)`, CLUT `0x77C0` |
+| Mini-map | `FUN_8001CD68(4, 0x7C, 0x60, 0x60, ...)` | texpage `0x2D` (additive), `(0x80, 0)`, CLUT `0x77D0` |
+| Backing | `POLY_F4` `0x2A505050`, `(3, 0x7B)..(0x65, 0xDD)`, under `SetDrawMode(tpage = 0x4C)` | subtractive grey |
+| Compass | `E` `(0x120, 0x68)`, `W` `(0x10, 0x68)`, `N` `(0x98, 0xA)`, `S` `(0x98, 0xCA)` through `FUN_80036888`, each on a `0x10 x 0x10` plate two pixels up and left | plate: texpage `0xD`, `(0, 0x28)` |
+
+`tx` / `tz` are the player's tile, `cx` the camera's focus tile and `cz` the
+stored (negative) camera Z in tiles. The textures are the kingdom scene
+pack's own and are resident for the whole overworld - a walk-frame save
+state already holds the kingdom's 96 x 96 mini-map at VRAM `(864, 0)`.
+
+<a id="the-place-label-pass"></a>
+**Place labels** (overlay modes `0` and `1`, `0x801CF368..0x801CF438`). The
+loop walks the **world-map location table**: the trailing data of the kingdom
+scene MAN, reached through the pointer `DAT_80073EE0` the MAN walker
+installs. Byte layout and the other two carriers a place name has are on
+[`place-names.md`](../formats/place-names.md). Per record:
 
 | Step | Call | Note |
 |---|---|---|
-| Kingdom filter | `record.region == uRam8007b970` | all three kingdom MANs carry the *whole* 29-record table; `region` is what selects the visible subset |
-| Discovery gate | `FUN_8003CE64(record.discovery_flag)` | `_DAT_8007B868` (debug show-all) bypasses it |
-| Place | `FUN_8003D368((x << 7, y << 7))` | the record's map cell projected to screen |
-| Draw | `FUN_80036888(&record.name, 0, 0, screen)` | the shared glyph renderer |
-| Underline | `FUN_8002C69C(x, y, FUN_80035F04(&name), 8)` | width measured off the same string |
+| Kingdom filter | `record.region == uRam8007b970` | all three kingdom MANs carry the *whole* 29-record table; `region` selects the visible subset |
+| Discovery gate | `FUN_8003CE64(record.discovery_flag)` | `_DAT_8007B868` (dev: show all) bypasses it |
+| Place | `FUN_8003D368((x << 7, -0x200, y << 7))` | the record's map cell, 512 units above the plane, through `RTPS` |
+| Name | `FUN_80036888(&record.name, 0, 0, sx, sy - 1)` | the shared glyph renderer |
+| Box | `FUN_80034B6C(0)`, `FUN_8002C69C(sx, sy, FUN_80035F04(&name), 8)` | window style `0`, as wide as the name |
+
+Window style `0` is descriptor `0x800732A4[0]`, byte for byte the dialog
+skin's (`0x44`): each name sits in an ordinary gradient-filled window, not on
+an underline.
 
 A marker's label, position and visibility are one record. Renaming a place is
 a same-size overwrite of its 24-byte name field, which the
 [randomizer](../tooling/randomizer.md#location-names) does in all three
-kingdom MANs at once. See `ghidra/scripts/funcs/overlay_world_map_top_801ce9c4.txt`.
+kingdom MANs at once. See
+`ghidra/scripts/funcs/overlay_monster_test_0981_801ce850.txt`.
+
+**Port.** The state machine, the stepper, the clamp and the panel geometry
+are `legaia_engine_field::map_display`. `World::tick_world_map` opens the
+display on the ramp's hand-off, and while it is up `World::tick` runs
+`tick_map_display` in place of the whole overworld arm. The camera is a
+`FieldCameraFrame::WorldMapDisplay` (`camera_view::map_display_frame`):
+the walk frame's composition under the survey pose, with the curvature bend
+off. The scene load installs the table
+(`World::install_world_map_locations`). `engine-core::world_map_labels`
+gates and projects the labels and builds the panel's primitives, which ride
+the shared screen-primitive list (`engine-screens::screen_layers`); the names,
+their boxes and the compass letters are `engine-ui::map_label_*`, which each
+host calls from its text and chrome passes. Disc pin:
+`crates/engine-core/tests/map_display_disc.rs`.
+
+Not ported: the player's **map pointer**. Mode `1` spawns it through
+`FUN_80021B04` at the player's position with the move-VM program at
+`0x801CF6E8`, whose first halfword it patches with
+`0x8007BB38 - 0x8007BA6C` (the value its `pointer %d` debug print shows), and
+the tail calls the actor's handler every frame. `MapDisplay::pointer_alive`
+carries its lifetime; nothing draws it. The retail visible tile window is not
+applied either - the port draws the kingdom whole.
 
 ### `FUN_801EAD98` - world map debug menu renderer (7280 bytes)
 

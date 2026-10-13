@@ -62,6 +62,7 @@ pub mod incense_window;
 pub mod inline_dialogue;
 pub mod leader_swap;
 pub mod man_field_scripts;
+pub mod map_display;
 pub mod morph_weight_apply;
 pub mod motion_pause;
 pub mod move_vm_globals;

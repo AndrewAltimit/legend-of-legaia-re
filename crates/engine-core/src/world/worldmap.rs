@@ -57,6 +57,7 @@ impl World {
         let pad = self.input.pad();
         let pad_held = pad & !self.input.pad_prev();
         let mut ctrl_sfx = Vec::new();
+        let mut open_map_display = false;
         if let Some(ctrl) = &mut self.world_map.ctrl {
             ctrl.tick(pad, pad_held);
             // Retail runs the top-view screen-dim pass (`FUN_801E75DC`)
@@ -66,6 +67,19 @@ impl World {
             // so this costs one flag test on the common path.
             ctrl.run_screen_dim();
             ctrl_sfx = ctrl.drain_sfx();
+            // The fade-up reached `0x100`: retail stores game mode `0xC`,
+            // whose handler swaps PROT 0981 in and calls its enter routine.
+            // The display's mode-0 frame runs here too, so the black the
+            // ramp ended on is held across the hand-off rather than dropped
+            // for a frame (retail's mode-12 frame is the disc load).
+            if ctrl.map_display_requested {
+                open_map_display = true;
+            }
+        }
+        if open_map_display {
+            self.world_map.map_display =
+                Some(legaia_engine_field::map_display::MapDisplay::enter());
+            self.tick_map_display();
         }
         // The map-display arm's cue is a `jal FUN_80035B50` (`0x801D0220`) -
         // the same SFX-ring producer the field VM's op `0x36` sub `0` calls -
@@ -145,6 +159,152 @@ impl World {
         if let Some(formation_id) = self.world_map.pending_encounter.take() {
             self.begin_world_map_encounter(formation_id);
         }
+    }
+
+    /// The live kingdom index (`0x8007B970`): the one the entry fade derives
+    /// from the scene PROT base, else the active kingdom scene's.
+    pub fn world_map_kingdom_index(&self) -> Option<u8> {
+        self.world_map
+            .ctrl
+            .as_ref()
+            .and_then(|c| {
+                legaia_engine_field::world_map::kingdom_index_for_scene_base(c.scene_base)
+                    .or(c.entry_fade.kingdom_index)
+            })
+            .or_else(|| kingdom_index_for_scene_label(&self.active_scene_label))
+    }
+
+    /// Install the kingdom MAN's world-map location table (`DAT_80073EE0`),
+    /// the pointer the MAN loader `FUN_8003AEB0` stores for the map display.
+    /// `man` is the decompressed scene MAN, or `None` for a scene without
+    /// one. Any open map display is dropped: the table it indexes is gone.
+    pub fn install_world_map_locations(&mut self, man: Option<&[u8]>) {
+        self.world_map.map_display = None;
+        self.world_map.locations = man
+            .and_then(legaia_scene_formats::place_names::world_map_table)
+            .map(|t| {
+                t.locations
+                    .into_iter()
+                    .map(|l| legaia_engine_field::map_display::MapLocation {
+                        region: l.region,
+                        map_x: l.map_x,
+                        map_y: l.map_y,
+                        discovery_flag: l.discovery_flag,
+                        name: l.name.into_bytes(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
+
+    /// One frame of the map display: the module tick, its ring cues, and on
+    /// the way out the walk frame's fade-in and the hand-back.
+    ///
+    /// The cues are bare stores into ring slot 0 (`sh id,0x8007B6D8`), not
+    /// calls to the cursor producer. The exit fade is
+    /// `FUN_801D58F0(2, 0xFFFFFF, 0, 0, 8, 0)` - the field overlay's fade
+    /// spawner, which sits past the `0x4000` bytes PROT 0981 replaces.
+    ///
+    /// REF: FUN_80025F2C (the mode-`0x0D` handler), FUN_801D58F0
+    pub(crate) fn tick_map_display(&mut self) {
+        use legaia_engine_field::map_display::EXIT_FADE;
+        use legaia_engine_field::world_map_panel_host::packed_pad;
+        let raw_held = self.input.pad();
+        let raw_edge = raw_held & !self.input.pad_prev();
+        let player = self.world_map_player_xz();
+        let kingdom = self.world_map_kingdom_index().map_or(u32::MAX, u32::from);
+        let Some(mut display) = self.world_map.map_display.take() else {
+            return;
+        };
+        let tick = display.tick(
+            packed_pad(raw_held),
+            packed_pad(raw_edge),
+            player,
+            &self.world_map.locations,
+            kingdom,
+        );
+        for id in tick.sfx {
+            self.audio
+                .sfx_ring_ops
+                .push(legaia_engine_system::sound_state::SfxRingOp::WriteSlot(
+                    0, id,
+                ));
+        }
+        if tick.spawn_exit_fade {
+            let (kind, from, to, delay, duration, hold) = EXIT_FADE;
+            let rgb = |w: u32| [0u32, 8, 16].map(|s| ((w >> s) & 0xFF) as i16);
+            legaia_engine_system::fade::spawn_fade(
+                &mut self.presentation.fade,
+                &legaia_engine_system::fade::FadeTemplate {
+                    kind,
+                    duration,
+                    start_rgb: rgb(from),
+                    end_rgb: rgb(to),
+                    mode: [delay, hold, 0],
+                },
+                0,
+            );
+        }
+        if !tick.exit {
+            self.world_map.map_display = Some(display);
+        }
+    }
+
+    /// Retail's dev flag `_DAT_8007B868`, which the map display's label pass
+    /// reads as "show every place" (`0x801CF3A8`). `0` in retail.
+    pub fn map_display_show_all(&self) -> bool {
+        self.audio.dual_mode_gate != 0
+    }
+
+    /// The map display's mini-map panel this frame
+    /// ([`legaia_engine_field::map_display::MapDisplay::chrome`]), `None`
+    /// while the display is down, in a fade, or cycled off the panel.
+    pub fn map_display_chrome(&self) -> Option<legaia_engine_field::map_display::MapChrome> {
+        if self.mode != SceneMode::WorldMap {
+            return None;
+        }
+        self.world_map
+            .map_display
+            .as_ref()?
+            .chrome(self.world_map_player_xz())
+    }
+
+    /// The overworld leader's world `(x, z)`, the origin when none is seated.
+    pub(crate) fn world_map_player_xz(&self) -> (i32, i32) {
+        self.player_actor_slot
+            .and_then(|s| self.actors.get(s as usize))
+            .map(|a| {
+                (
+                    i32::from(a.move_state.world_x),
+                    i32::from(a.move_state.world_z),
+                )
+            })
+            .unwrap_or((0, 0))
+    }
+
+    /// The full-screen subtractive washes the map display's two fades draw
+    /// this frame, as `FUN_80024EE4`'s `(layer, blend, packed)` triples: the
+    /// L1 fade-up `FUN_800196A4` (`(1, 2, grey)`) and the display's own
+    /// timer fade (`(0, 2, grey)`, `0x801CEC4C..0x801CEC90`).
+    ///
+    /// REF: FUN_800196A4, FUN_80024EE4
+    pub fn map_display_fade_push_args(&self) -> Vec<(i16, i16, u32)> {
+        let mut out = Vec::new();
+        if self.mode != SceneMode::WorldMap {
+            return out;
+        }
+        if let Some(q) = self.world_map.ctrl.as_ref().and_then(|c| c.entry_fade_draw) {
+            out.push((1, 2, u32::from(q.grey) * 0x01_01_01));
+        }
+        if let Some(grey) = self
+            .world_map
+            .map_display
+            .as_ref()
+            .and_then(|d| d.fade_grey())
+        {
+            out.push((0, 2, u32::from(grey) * 0x01_01_01));
+        }
+        out
     }
 
     /// Move the overworld player actor from the held d-pad, bounded by the

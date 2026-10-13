@@ -1126,6 +1126,27 @@ impl PlayWindowApp {
             legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
+        // The overworld map display (retail game mode `0x0D`): each
+        // discovered place's name over its box, and the mini-map panel's
+        // compass letters.
+        {
+            let world = &self.session.host.world;
+            let labels = legaia_engine_core::world_map_labels::map_display_labels_now(world);
+            let marks = legaia_engine_core::world_map_labels::map_display_compass_marks(world);
+            if !labels.is_empty() || !marks.is_empty() {
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                let rows: Vec<legaia_engine_ui::MapLabelDraw<'_>> = labels
+                    .iter()
+                    .map(|l| (l.name.as_slice(), l.sx, l.sy))
+                    .collect();
+                let mut draws = legaia_engine_ui::map_label_text_draws_for(&self.font, &rows);
+                draws.extend(legaia_engine_ui::map_compass_text_draws_for(
+                    &self.font, &marks,
+                ));
+                legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                out.extend(draws);
+            }
+        }
         // The tile board's quit prompt (walk-SM state 5): the title and the
         // two rows, read off the field overlay's own strings.
         if let Some(lay) = self.tile_board_prompt_layout()

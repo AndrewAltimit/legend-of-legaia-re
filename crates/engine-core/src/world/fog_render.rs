@@ -104,7 +104,11 @@ impl World {
         let dt = self.fog.pending_dt.min(u32::from(u8::MAX)) as u8;
         self.fog.pending_dt = 0;
         self.fog.depth_view = Some(*view);
-        if !Self::fog_mode(self.mode) || !self.fog.gate {
+        // The overworld map display stops the pass: its field caller
+        // `FUN_801D0D38` is reached from the walk frame `FUN_801D1344`, which
+        // the mode-13 handler does not run (and whose bytes PROT 0981 has
+        // replaced).
+        if !Self::fog_mode(self.mode) || !self.fog.gate || self.world_map.map_display.is_some() {
             self.fog.quads.clear();
             return &self.fog.quads;
         }

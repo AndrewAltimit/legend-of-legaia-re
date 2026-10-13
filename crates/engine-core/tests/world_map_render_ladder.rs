@@ -228,6 +228,72 @@ fn rung2_map_display_fade(w: &mut World) -> Result<(), String> {
     Ok(())
 }
 
+/// Rung 2b. The hand-off opens the **map display** (retail game mode `0x0D`,
+/// PROT 0981's `FUN_801CE850`): it owns the overworld frame, pans a tile a
+/// frame under the d-pad, fades in from the black the ramp ended on, and
+/// Circle walks its exit - cue `0x37`, the fade out, the walk frame's
+/// fade-in, the hand-back.
+fn rung2b_map_display(w: &mut World) -> Result<(), String> {
+    use legaia_engine_field::map_display::{MODE_INTERACTIVE, PAD_RIGHT, SFX_EXIT};
+    use legaia_engine_system::sound_state::SfxRingOp;
+    let Some(d) = w.world_map.map_display.as_ref() else {
+        return Err("the hand-off opened no map display".into());
+    };
+    if d.mode != MODE_INTERACTIVE || !d.camera_staged {
+        return Err(format!(
+            "the display never reached its interactive mode: {d:?}"
+        ));
+    }
+    if w.map_display_fade_push_args() != vec![(0, 2, 0)] {
+        return Err("the open display still carries a fade".into());
+    }
+    if !matches!(
+        legaia_engine_core::camera_view::map_display_frame(w),
+        Some(legaia_engine_core::camera_view::FieldCameraFrame::WorldMapDisplay { .. })
+    ) {
+        return Err("the display did not take the camera".into());
+    }
+    // The display owns the frame: the d-pad pans its camera, not the player.
+    let player = w.actors[0].move_state.world_x;
+    let cam = d.cam_x;
+    for _ in 0..3 {
+        frame(w, raw(PAD_RIGHT));
+    }
+    let d = w.world_map.map_display.as_ref().expect("display");
+    if w.actors[0].move_state.world_x != player {
+        return Err("the walk frame ran under the map display".into());
+    }
+    if d.cam_x == cam {
+        return Err("the d-pad did not pan the display camera".into());
+    }
+    let _ = w.take_sfx_ring_ops();
+    // Circle (packed 0x20) leaves.
+    tap(w, raw(0x0020));
+    let sfx = w.take_sfx_ring_ops();
+    if !sfx.contains(&SfxRingOp::WriteSlot(0, SFX_EXIT)) {
+        return Err(format!("the exit raised no cue: {sfx:?}"));
+    }
+    let mut frames = 0;
+    while w.world_map.map_display.is_some() {
+        frame(w, 0);
+        frames += 1;
+        if frames > 32 {
+            return Err("the exit never handed the frame back".into());
+        }
+    }
+    if w.screen_fade_draws().is_empty() {
+        return Err("the exit spawned no walk-frame fade-in".into());
+    }
+    if legaia_engine_core::camera_view::map_display_frame(w).is_some() {
+        return Err("the closed display kept the camera".into());
+    }
+    // Let the fade-in run out before the next rung reads a quiet frame.
+    for _ in 0..16 {
+        frame(w, 0);
+    }
+    Ok(())
+}
+
 /// Rung 3. The top-view toggle. Retail compares the two pad *words* for
 /// equality, so the chord is exact: R1+R2 held with Cross the only new press.
 fn rung3_top_view_toggle(w: &mut World) -> Result<(), String> {
@@ -686,9 +752,10 @@ fn rung12_fade_flash(w: &mut World) -> Result<(), String> {
 fn world_map_render_ladder() {
     let mut w = overworld();
     type Rung = (&'static str, fn(&mut World) -> Result<(), String>);
-    let rungs: [Rung; 12] = [
+    let rungs: [Rung; 13] = [
         ("quiet-overworld", rung1_quiet_overworld),
         ("map-display-fade", rung2_map_display_fade),
+        ("map-display", rung2b_map_display),
         ("top-view-toggle", rung3_top_view_toggle),
         ("screen-dim", rung4_screen_dim),
         ("top-view-camera", rung5_top_view_camera),
@@ -715,7 +782,7 @@ fn world_map_render_ladder() {
             }
         }
     }
-    eprintln!("world_map_render_ladder: score {score}/12");
+    eprintln!("world_map_render_ladder: score {score}/13");
     assert!(stall.is_none(), "{}", stall.unwrap());
 }
 

@@ -69,6 +69,16 @@ pub struct WorldMapState {
     /// the per-vsync port lands retail's `dt = 3` displacement over time
     /// (`10` units every `3` vsyncs). Cleared when no direction is held.
     pub(crate) walk_carry: i32,
+    /// The kingdom MAN's world-map location table (`DAT_80073EE0`, the
+    /// section-5 trailer): the places the map display labels and its cursor
+    /// steps between. Installed at scene load
+    /// ([`crate::world::World::install_world_map_locations`]); empty off the
+    /// three kingdom maps.
+    pub locations: Vec<legaia_engine_field::map_display::MapLocation>,
+    /// The live map display (retail game mode `0x0D`, PROT 0981), `Some` from
+    /// the frame the L1 fade-up completes until its exit hands the frame back
+    /// to the walk. While it is up it owns the whole overworld frame.
+    pub map_display: Option<legaia_engine_field::map_display::MapDisplay>,
 }
 
 impl WorldMapState {
@@ -85,6 +95,8 @@ impl WorldMapState {
             last_tile: None,
             seat_hold_tile: None,
             walk_carry: 0,
+            locations: Vec::new(),
+            map_display: None,
         }
     }
 }

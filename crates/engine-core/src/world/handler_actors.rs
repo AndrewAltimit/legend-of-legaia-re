@@ -191,6 +191,7 @@ impl World {
         self.screen_tint_pushes()
             .into_iter()
             .map(|p| (p.kind, p.blend, p.packed))
+            .chain(self.map_display_fade_push_args())
             .collect()
     }
 
