@@ -322,14 +322,22 @@ impl PlayWindowApp {
     }
 
     /// Advance the SFX scheduler while a boot-UI arm owns the frame. The
-    /// scene tick is skipped then, and with it `drain_and_log_battle_events`
-    /// (the only other place the scheduler ticks), so a menu cue queued on
+    /// scene tick is skipped then, and with it the tick's audio frame
+    /// ([`Self::tick_sfx`], the only other place the scheduler ticks), so a menu cue queued on
     /// the pause menu would otherwise wait for the menu to close to sound.
     ///
     /// The step is the session's (`BootSession::step_overlay_sfx`), which the
     /// browser play page runs under the same screens.
     pub(super) fn tick_menu_sfx(&mut self) {
         let _ = self.session.step_overlay_sfx();
+    }
+
+    /// The tick's audio frame: the duck ramp, the delay scheduler and the
+    /// cues that matured (`BootSession::step_audio_frame`), after every step
+    /// of the tick that queues one. The browser play page runs the same
+    /// session step in its own `tick_sfx`, at the same point of its frame.
+    pub(super) fn tick_sfx(&mut self) {
+        let _ = self.session.step_audio_frame();
     }
 
     /// Score the title screen: start the global-pool title theme

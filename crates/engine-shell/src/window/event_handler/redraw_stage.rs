@@ -254,7 +254,6 @@ impl PlayWindowApp {
             u8,
             Option<(legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh)>,
         )>,
-        field_tail_ticks: u32,
     ) -> PosedFrame {
         let r = self
             .win
@@ -334,7 +333,7 @@ impl PlayWindowApp {
             self.npc_morph_static.insert(slot, (vm, cm));
         }
 
-        let npc_frames = self.pose_npc_clips(field_tail_ticks);
+        let npc_frames = self.pose_npc_clips();
         PosedFrame {
             posed_overrides,
             player_color_posed,
@@ -579,9 +578,10 @@ impl PlayWindowApp {
     }
 
     /// Pose each placed NPC's clip frame for this redraw (memoised in
-    /// `npc_pose_cache`) and advance its playhead by the ticks that ran the
-    /// field's tail. Returns the `(slot, pose key)` each slot shows.
-    fn pose_npc_clips(&mut self, field_tail_ticks: u32) -> Vec<(u8, usize)> {
+    /// `npc_pose_cache`). The playheads are stepped per sim tick, in
+    /// `drain_anim_cues`; this pass only reads them. Returns the
+    /// `(slot, pose key)` each slot shows.
+    fn pose_npc_clips(&mut self) -> Vec<(u8, usize)> {
         let r = self
             .win
             .renderer
@@ -591,16 +591,14 @@ impl PlayWindowApp {
         // clip and draw its posed mesh halves.
         //
         // The playhead advances in SIM-TICK time, not render-frame time:
-        // each redraw shows the clip's current frame and then advances the
-        // playhead by `run_ticks` (the number of 60 Hz sim ticks this
-        // redraw drained). Ticking once per *redraw* (what this did
-        // before) tied the animation rate to the display's refresh rate -
-        // on a 144 Hz monitor every NPC animated 2.4x too fast, and any
-        // screenshot oracle over an animated field scene was only
-        // reproducible while the engine held exactly 60 fps. At a steady
-        // 60 Hz (1 tick per redraw) the emitted frame sequence is
-        // unchanged. The player and prop clips already advance inside
-        // `World::tick`; this brings the NPC clips onto the same clock.
+        // the session's `step_npc_clip_players` steps it once per tick of
+        // the field's tail (from `drain_anim_cues`), under the world's
+        // per-tick gate, and a redraw shows wherever the last tick left it.
+        // A pure-refresh redraw (no tick ran) therefore shows the same
+        // frame again, so a 144 Hz display holds each frame for the same
+        // wall-clock time a 60 Hz one does. The player and prop clips
+        // advance inside `World::tick`; the NPC clips are on the same
+        // clock.
         //
         // The skinned mesh for a `(slot, clip frame)` is a **constant** -
         // the clip is a short loop over a fixed pose set - so it is skinned
@@ -631,15 +629,15 @@ impl PlayWindowApp {
                     continue;
                 };
                 // A slot the world drives poses off its own cursor (the
-                // actor's `+0x62` word holds a chest lid shut / open);
-                // anything else free-runs as before.
-                let world_driven = world.sync_npc_clip(*slot, player);
+                // actor's `+0x62` word holds a chest lid shut / open). The
+                // tick's step already did this; repeated here it is a
+                // no-op, and it covers a cursor seated with no tick behind
+                // it (a scene rebuild, a capture seed).
+                world.sync_npc_clip(*slot, player);
                 // `pose_key()` is the pose this redraw shows (`frame * 16`
                 // plus the sub-frame a blend-gated clip poses in between);
-                // take it as the cache key and read its pose WITHOUT moving
-                // the playhead, then advance by the sim ticks this redraw
-                // ran (0 on a pure-refresh frame, so a 144 Hz display holds
-                // each frame for the same wall-clock time a 60 Hz one does).
+                // take it as the cache key and read its pose without moving
+                // the playhead.
                 // A script's look rotation (`4C 45`) turns one object -
                 // the head - on top of the keyframe, so it is part of
                 // the pose the cache keys: its angles ride the key's
@@ -653,9 +651,6 @@ impl PlayWindowApp {
                 let mut pose = player.current_pose();
                 if let Some(l) = look {
                     legaia_engine_field::actor_look::apply_look(&mut pose.bone_outputs, l);
-                }
-                if !world_driven {
-                    player.advance(field_tail_ticks);
                 }
                 npc_frames.push(key);
                 if cache.contains_key(&key) {

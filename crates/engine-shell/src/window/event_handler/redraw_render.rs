@@ -18,7 +18,6 @@ impl PlayWindowApp {
         &mut self,
         prep: FramePrep,
         battle_intro: &mut Option<legaia_render_kernels::battle_intro::BattleIntro>,
-        field_tail_ticks: u32,
         view_cells: Option<legaia_engine_core::field_view_window::ViewCells>,
         cutscene_cam: Option<super::redraw_passes::CutsceneCam>,
     ) {
@@ -39,8 +38,7 @@ impl PlayWindowApp {
             in_world_map,
         } = self.stage_frame_render_state(cutscene_cam);
         self.drain_frame_mesh_uploads();
-        let posed =
-            self.pose_frame_meshes(field_morph_rebuilds, npc_morph_rebuilds, field_tail_ticks);
+        let posed = self.pose_frame_meshes(field_morph_rebuilds, npc_morph_rebuilds);
         let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),

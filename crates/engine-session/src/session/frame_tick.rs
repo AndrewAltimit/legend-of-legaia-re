@@ -225,21 +225,54 @@ impl<S: AudioSink> BootSession<S> {
     }
 
     /// One frame under the naming prompt: the edge drives the entry SM
-    /// (`World::step_name_entry_frame`, which also passes the display frame)
-    /// and the camera's half still runs, because retail's field frame keeps
-    /// stepping the camera mover around the prompt actor - the opening's
-    /// last glide lands under it. `false` when no prompt is open. The native
-    /// window's per-tick arm calls this too.
+    /// (`World::step_name_entry`), one display frame passes and the camera's
+    /// half still runs, because retail's field frame keeps stepping the
+    /// camera mover around the prompt actor - the opening's last glide lands
+    /// under it. `false` when no prompt is open. The native window's
+    /// per-tick arm calls this too.
     pub fn step_name_entry_frame(&mut self, edge: u16) -> bool {
-        if !self.host.world.step_name_entry_frame(edge) {
+        if !self.host.world.name_entry_active() {
             return false;
         }
+        self.host
+            .world
+            .step_name_entry(legaia_engine_menus::name_entry::NameEntryInput::from_pad_edge(edge));
+        self.pass_name_entry_frame();
+        true
+    }
+
+    /// `steps` frames under the naming prompt with no edge of their own: a
+    /// host whose input clock is the display frame (the browser page routes
+    /// one edge per animation frame through `World::step_name_entry`) passes
+    /// the sim steps that frame owes here. No-op when no prompt is open.
+    ///
+    /// Each step is one retail frame, which under the prompt is one vsync:
+    /// the name-entry actor holds the frame-step floor at `1` while it is up
+    /// (`FUN_801F03F0`, save `0x801F0468` / hold `0x801F0488`), and the
+    /// field frame it runs inside steps the camera mover once. So the
+    /// camera's half runs once **per step** - zero times on a redraw that
+    /// owes no step, twice on one that owes two - which is also what
+    /// [`Self::step_name_entry_frame`] runs per tick. A host that ran it
+    /// once per display frame stepped the mover (and drew the shake stream)
+    /// at its refresh rate.
+    // REF: FUN_801F03F0, FUN_801DC0BC
+    pub fn pass_name_entry_frames(&mut self, steps: u32) {
+        if !self.host.world.name_entry_active() {
+            return;
+        }
+        for _ in 0..steps {
+            self.pass_name_entry_frame();
+        }
+    }
+
+    /// One display frame under the prompt and the camera's half of it.
+    fn pass_name_entry_frame(&mut self) {
+        self.host.world.name_entry_display_frames(1);
         legaia_engine_core::frame_step::camera_after_world_tick(
             &mut self.camera,
             &mut self.host.world,
             false,
         );
-        true
     }
 
     pub fn tick(&mut self) -> Result<SceneTickEvent> {

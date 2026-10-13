@@ -52,7 +52,7 @@ impl PlayWindowApp {
         // tick / pose / drawlist / acquire / uniforms / encode / submit /
         // present.
         legaia_engine_render::profile::begin_frame();
-        let field_tail_ticks = self.run_frame_ticks();
+        self.run_frame_ticks();
         self.seat_capture_frame();
         self.sync_minigame_caption_title();
         legaia_engine_render::profile::mark("tick");
@@ -69,13 +69,7 @@ impl PlayWindowApp {
         let mut battle_intro = prep.battle_intro.take();
         if self.win.renderer.is_some() && self.uploaded_vram.is_some() && self.font_atlas.is_some()
         {
-            self.render_scene_frame(
-                prep,
-                &mut battle_intro,
-                field_tail_ticks,
-                view_cells,
-                cutscene_cam,
-            );
+            self.render_scene_frame(prep, &mut battle_intro, view_cells, cutscene_cam);
         }
         // The transition emitter was taken out of `self` for the render
         // borrow; put it back so its working set survives to the next frame.
@@ -88,8 +82,9 @@ impl PlayWindowApp {
 impl PlayWindowApp {
     /// One sim tick of ANIMATE-cue handling through the shared kernel
     /// (`World::drain_field_anim_cues`): the player's scripted gestures land
-    /// on the world's own clip player, and each NPC re-target swaps this
-    /// window's clip player for the slot.
+    /// on the world's own clip player, each NPC re-target swaps this
+    /// window's clip player for the slot, and every player then takes the
+    /// tick's step (`step_npc_clip_players`).
     ///
     /// The incoming clip restarts at frame 0 and reuses the same low frame
     /// indices, so the outgoing clip's pose-cache entries for the slot would
@@ -110,6 +105,14 @@ impl PlayWindowApp {
             self.npc_pose_cache.retain(|(s, _), _| *s != r.slot);
             self.npc_pose_verify.retain(|(s, _), _| *s != r.slot);
         }
+        // ...then this tick's step of every player, the session's kernel
+        // and the page's: gated per tick on the field owning the frame.
+        legaia_engine_session::session::step_npc_clip_players(
+            &self.session.host.world,
+            self.npc_clip_players
+                .iter_mut()
+                .map(|(slot, player)| (*slot, player)),
+        );
     }
 
     /// Screen-space stage position (retail 320x240) an actor's origin

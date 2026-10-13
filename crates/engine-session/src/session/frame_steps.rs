@@ -13,11 +13,46 @@
 //! readout - rather than performing a host duty through a callback.
 
 use legaia_engine_audio::AudioSink;
+use legaia_engine_field::field_anim::FieldClipPlayer;
 use legaia_engine_menus::game_over::GameOverSession;
 use legaia_engine_mode::mode::SceneMode;
 
 use super::BootSession;
 use crate::audio_director::SfxFrameReport;
+
+/// One sim tick of the hosts' field-NPC clip players.
+///
+/// The players are host-side - each host keys its pose cache or its JSON on
+/// them - but the step is one rule: while the field owns the frame
+/// (`World::field_npc_clips_advance`), a slot the world drives is posed off
+/// the world's cursor (`World::sync_npc_clip`, the actor's `+0x62` word as
+/// `World::tick_npc_clips` left it this tick) and any other slot free-runs
+/// one frame. Returns whether the players ran.
+///
+/// The gate is asked **per tick**, as retail's per-actor anim tick is
+/// reached per field frame: a display frame that drains several ticks
+/// across a mode edge (the tick that enters a battle, the one that returns
+/// from it) advances the clips for exactly the ticks the field owned. A
+/// host that asked once per redraw and advanced by the frame's tick count
+/// ran the whole batch under whichever mode the last tick left.
+///
+/// A host calls it from its clip-cue step, after the tick's `A2` / `4C 51`
+/// re-targets, so a clip bound this tick takes its first step this tick.
+// REF: FUN_800204F8 (advance half; the world-driven cursor is `World::tick_npc_clips`)
+pub fn step_npc_clip_players<'a>(
+    world: &legaia_engine_core::world::World,
+    players: impl IntoIterator<Item = (u8, &'a mut FieldClipPlayer)>,
+) -> bool {
+    if !world.field_npc_clips_advance() {
+        return false;
+    }
+    for (slot, player) in players {
+        if !world.sync_npc_clip(slot, player) {
+            player.advance(1);
+        }
+    }
+    true
+}
 
 impl<S: AudioSink> BootSession<S> {
     /// The party-wipe probe: consume the world's `game_over` flag and hand
@@ -134,6 +169,31 @@ impl<S: AudioSink> BootSession<S> {
             }
         }
         cues.len() as u32
+    }
+
+    /// The **audio frame** of a field or battle tick: the duck ramp toward
+    /// the world's configured level, the delay scheduler, and every cue that
+    /// matured this tick (`AudioDirector::tick_audio_frame`).
+    ///
+    /// A host calls it once per sim tick, after every step of the tick that
+    /// can queue a cue - the session tick's field routing, the minigame and
+    /// Baka drains, the effect step, the menu session, the battle-event
+    /// drain - and ahead of the field-event drain. A zero-delay cue therefore
+    /// sounds on the tick that raised it on both hosts. The battle's CD-XA
+    /// requests (clips, arts shouts) are issued ahead of it, in the
+    /// battle-event step.
+    ///
+    /// Under a screen that freezes the field the frame tail does not run and
+    /// the scheduler alone is stepped, by [`Self::step_overlay_sfx`].
+    ///
+    /// `None` with no director attached.
+    pub fn step_audio_frame(&mut self) -> Option<SfxFrameReport> {
+        let configured = self.host.world.audio.levels.configured_level;
+        let report = self.bgm.as_mut()?.tick_audio_frame(configured);
+        for (id, voice) in &report.fired {
+            log::debug!("SFX cue {id:#04x} fired on voice {voice}");
+        }
+        Some(report)
     }
 
     /// One sim tick of the SFX scheduler while a menu-overlay screen (the

@@ -44,6 +44,7 @@ mod scene_entry;
 
 use disc_tables::*;
 pub use disc_tables::{BATTLE_XA_CLIP_SLOTS, attach_escape_icons};
+pub use frame_steps::step_npc_clip_players;
 
 /// What one menu-button press did ([`BootSession::press_field_menu`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

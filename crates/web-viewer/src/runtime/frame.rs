@@ -106,14 +106,15 @@ impl LegaiaRuntime {
         // Sound-effect channel: feed the footstep cadence this tick's movement
         // magnitude, advance the delay scheduler, key whatever matured.
         //
-        // **After** the two queue drains above, not before them. The native
-        // window enqueues a battle tick's cues and calls `tick_sfx_frame` in
-        // the same pass (`drain_and_log_battle_events`), so a cue whose
-        // `timing_frames` is `0` - every strike impact, every minigame blip -
-        // sounds on the tick that raised it. Advancing the scheduler first
-        // made this host's copy of that cue wait a whole frame, which is not
-        // a delay anyone can hear on its own but puts the impact one frame
-        // off the animation it is supposed to land on.
+        // **After** the two queue drains above, not before them. The audio
+        // frame is one session step on both hosts
+        // (`BootSession::step_audio_frame`), which the native window runs
+        // from its own `tick_sfx` right after its battle-event drain, so a
+        // cue whose `timing_frames` is `0` - every strike impact, every
+        // minigame blip - sounds on the tick that raised it. Advancing the
+        // scheduler first made this host's copy of that cue wait a whole
+        // frame, which is not a delay anyone can hear on its own but puts
+        // the impact one frame off the animation it is supposed to land on.
         self.tick_sfx();
         // The field-to-battle intro emitter: armed while the encounter
         // session sits in `Transition`, dropped when it leaves; caches this

@@ -491,20 +491,16 @@ impl LegaiaRuntime {
             }
         }
         self.route_field_xa();
-        // The duck rests on the world's configured level - a loaded save's
-        // own - and ramps in every mode (the ramp back to full outlives the
-        // battle).
-        let configured = self
+        // The audio frame is the session's step, the one the native window
+        // runs at the same point of its frame: the duck ramp toward the
+        // world's configured level (a loaded save's own; it ramps in every
+        // mode, and the ramp back to full outlives the battle), the delay
+        // scheduler and the matured cues.
+        let report = self
             .scene_host
-            .host()
-            .map(|h| h.world.audio.levels.configured_level);
-        let Some(configured) = configured else {
-            return;
-        };
-        if let Some(report) = self
-            .audio_director()
-            .map(|d| d.tick_audio_frame(configured))
-        {
+            .session_mut()
+            .and_then(|s| s.step_audio_frame());
+        if let Some(report) = report {
             self.sfx.count(report);
         }
     }

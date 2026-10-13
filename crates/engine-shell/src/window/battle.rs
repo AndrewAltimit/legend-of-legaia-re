@@ -104,7 +104,8 @@ impl PlayWindowApp {
         // Battle sound cues: the art-strike outcomes resolve per-strike SFX
         // cues (kind = the SfxBank id, played directly without classify_cue).
         // Enqueue each into the director's SfxScheduler at its strike-relative
-        // timing, then advance the scheduler one frame and fire any matured cue
+        // timing; the tick's audio frame (`tick_sfx`, the next step of the
+        // frame path) advances the scheduler and fires any matured cue
         // through the scene VAB. Drain first so the world borrow ends before
         // the director borrow. SFX touch the SPU only - no RNG - so battle
         // determinism stays bit-exact.
@@ -124,7 +125,6 @@ impl PlayWindowApp {
         // clips out of its boot-staged bank on demand, so it has nothing to
         // stage ahead. Drained so the list does not grow.
         let _ = self.session.host.world.drain_battle_xa_prestage();
-        let duck_ref = self.session.host.world.audio.levels.configured_level;
         if let Some(bgm) = self.session.bgm.as_mut() {
             for xa in &xa_cues {
                 let fired = bgm
@@ -139,9 +139,6 @@ impl PlayWindowApp {
                 );
             }
             bgm.enqueue_battle_cues(&cues, &self.session.host.index);
-            for (id, voice) in bgm.tick_audio_frame(duck_ref).fired {
-                log::debug!("battle SFX cue {id:#04x} fired on voice {voice}");
-            }
             for shout in &shouts {
                 match bgm.play_art_shout(shout.cslot, shout.action) {
                     Some(ch) => log::debug!(

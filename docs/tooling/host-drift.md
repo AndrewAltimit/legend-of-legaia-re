@@ -1316,6 +1316,7 @@ method is the kernel call plus the single thing only that host holds.
 | `tick_world_effects` | `BootSession::step_effect_scene_graphs` | the summon creature's mesh bind, ahead of the kernel |
 | `tick_muscle_time_meter` | `BootSession::step_muscle_time_meter` | nothing |
 | `tick_fishing_banners` | `engine-screens::fishing_banner_frame` | the cache its `&self` draw pass reads |
+| `tick_sfx` | `BootSession::step_audio_frame` | the page's footstep cadence and field CD-XA lane, ahead of the kernel; the window nothing |
 
 `take_party_wipe` consumes `World::game_over` on the take and is handed one
 term, whether a host screen already owns the frame. `poll_field_overlay` opens
@@ -1324,7 +1325,7 @@ tick-counted fade starts on the opening tick on both hosts; the window's
 per-tick session step (an inn prompt does not suspend the field) skips the
 tick the poll answered on.
 
-Three more session steps run inside a host step that is named differently on
+Five more session steps run inside a host step that is named differently on
 each side, so they pair by call rather than by step name:
 
 | Kernel | Native caller | Page caller |
@@ -1332,13 +1333,34 @@ each side, so they pair by call rather than by step name:
 | `BootSession::enqueue_minigame_sfx_cues` | `tick_minigame_extras` | `tick_minigame_ui` |
 | `BootSession::enqueue_baka_sfx_cues` | `drain_baka_sfx_cues`, its own step | `tick_baka_ui`, inside `tick_minigame_ui` |
 | `BootSession::step_overlay_sfx` | `tick_menu_sfx`, in the arms that freeze the field | the export `play_tick_overlay_sfx`, from the page's frame loop |
+| `session::step_npc_clip_players` | `drain_anim_cues`, after the tick's re-targets | `drive_npc_clips` (`FieldActors::drive`), after the same |
+| `BootSession::pass_name_entry_frames` / `step_name_entry_frame` | the per-tick naming-prompt arm (`step_name_entry_frame`) | the export `name_entry_advance_frames`, with the frame's sim steps |
 
-What is still spelled per host is the **audio frame** itself. The page runs
-`AudioDirector::tick_audio_frame` in its `tick_sfx` step; the window runs the
-same call at the end of the audio block of `drain_and_log_battle_events`. Both
-land after every cue the tick queued, so a zero-delay cue sounds on its own
-tick on either host, but the call has two homes and `tick_sfx` stays a
-declared page-only step until the window's moves out of the battle drain.
+`step_audio_frame` is the tick's **audio frame**: the duck ramp toward the
+world's configured level, the delay scheduler, and the cues that matured
+(`AudioDirector::tick_audio_frame`). Both hosts call it after every step of
+the tick that queues a cue - the battle-event step last among them - and ahead
+of the field-event drain, so a zero-delay cue sounds on its own tick on either
+host. The battle's CD-XA requests (clips, arts shouts) are issued in the
+battle-event step, ahead of it. Under a screen that freezes the field neither
+host reaches it; `step_overlay_sfx` steps the scheduler alone there.
+
+`step_npc_clip_players` asks `World::field_npc_clips_advance` **per tick**.
+Retail reaches the per-actor anim tick (`FUN_800204F8`) once per field frame,
+so a display frame that drains several ticks across a mode edge advances the
+clips for exactly the ticks the field owned. The window used to ask once per
+redraw, in its draw pass, and advance by the frame's tick count - the whole
+batch under whichever mode the last tick left - so the redraw that entered a
+battle dropped its field ticks and the one that returned from it ran its
+battle ticks as clip frames. Its draw pass now only reads the playheads.
+
+`pass_name_entry_frames` runs the camera's half once per **sim step** under
+the naming prompt. The name-entry actor holds the frame-step floor at `1`
+while it is up (`FUN_801F03F0`), so a retail frame there is one vsync and the
+field frame around the prompt steps the camera mover once per vsync. The page
+used to pass the frame's steps in one call and run the camera half once per
+display frame - never on a 30 Hz frame's second step, and once too many on a
+redraw that owed no step - which also moved its draws of the shake stream.
 
 ### Camera
 

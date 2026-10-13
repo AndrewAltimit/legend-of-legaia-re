@@ -8,9 +8,8 @@ use super::redraw::tick_menu_runtime_session;
 impl PlayWindowApp {
     /// Drain this redraw's sim ticks (the shared `frame_step::SimStepper`
     /// rule, or one tick under a `--screenshot` capture), ending a finished
-    /// windowed movie first. Returns the ticks that ran the field's whole
-    /// tail - the NPC clip playheads in the draw pass advance by this.
-    pub(super) fn run_frame_ticks(&mut self) -> u32 {
+    /// windowed movie first.
+    pub(super) fn run_frame_ticks(&mut self) {
         let dt = self.win.advance_tick(100);
         // The shared frame-step rule (`frame_step::SimStepper`): whole 1/60 s
         // ticks, at most four a frame, and a backlog past four dropped rather
@@ -52,12 +51,6 @@ impl PlayWindowApp {
         let held_pad = self.pad;
         let first_tick_pad = self.pad_taps.take_frame_word(held_pad);
         let mut first_tick = true;
-        // Ticks this frame that ran the field's whole tail. The NPC clip
-        // playheads in the draw pass advance by this, not by `run_ticks`, so
-        // a tick the field sat frozen under (a shop, the naming prompt, the
-        // pause menu) moves no clip - the browser page, which skips its whole
-        // `tick_frame` on those frames, freezes them the same way.
-        let mut field_tail_ticks = 0;
         for _ in 0..run_ticks {
             // A phase-gated capture stops ticking the frame its phase is
             // reached, so the frame drawn is that one and not up to three
@@ -71,9 +64,10 @@ impl PlayWindowApp {
                 held_pad
             };
             self.tick_no += 1;
-            if self.sim_tick() {
-                field_tail_ticks += 1;
-            }
+            // A tick the field sat frozen under (a shop, the naming prompt,
+            // the pause menu) returns before its tail, so it moves no NPC
+            // clip: the players step in the tail's `drain_anim_cues`.
+            self.sim_tick();
         }
         // The tap was one tick held; the word the key events maintain is
         // the held set again. The scripted harnesses own the pad word and
@@ -84,7 +78,6 @@ impl PlayWindowApp {
         if self.screenshot.is_some() {
             self.pad_taps.clear();
         }
-        field_tail_ticks
     }
 
     /// One sim tick, after the pad word and `tick_no` are set: the scripted
@@ -549,7 +542,7 @@ impl PlayWindowApp {
     fn tick_side_channels(&mut self) {
         // Baka Fighter duel: drain the exchange-hit SFX cue the rules
         // kernel queued this tick and enqueue it into the SFX scheduler
-        // (the per-frame `tick_sfx_frame` below fires it against the
+        // (the tick's audio frame, `tick_sfx` below, fires it against the
         // resident class-2 sound bank).
         self.drain_baka_sfx_cues();
         // Minigame side-channels: the dance count-in + tutorial + effect
@@ -634,6 +627,9 @@ impl PlayWindowApp {
         // fold their gameplay-state side into the world (HP /
         // status), and ring them into the HUD log.
         self.drain_and_log_battle_events();
+        // The audio frame, once every cue of the tick is queued: the duck
+        // ramp, the delay scheduler, the matured cues.
+        self.tick_sfx();
         // Route field events: ActorSpawned events whose actor
         // carries a `tmd_ref` queue a render-pass mesh upload
         // so spawn-record actors appear in the scene.
