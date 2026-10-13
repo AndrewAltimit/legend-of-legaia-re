@@ -1093,6 +1093,58 @@ SIM_PAIRS: list[dict[str, object]] = [
         "mode": "symbols_same",
         "symbols": ["advance_play_time"],
     },
+    {
+        "what": "light-source rows, native vs play page - TMD rows with group "
+        "flags 0x10..=0x17 carry no colour word; retail's NCCS / NCCT handlers "
+        "colour them from the live field light, whose scene-load back colour "
+        "(0x202020) is the dim ambient every scene starts under. Both hosts "
+        "shade through `field_lit_mesh` under `World::presentation.field_light`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/field_render.rs",
+                "rebuild_field_lit_meshes",
+            ),
+            "web": ("crates/web-viewer/src/play/field_mesh.rs", "field_mesh_posed_lit"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_lit_mesh", "field_light"],
+    },
+    {
+        "what": "light-source rows in a graded scene, native vs play page - the "
+        "native mesh upload used to replace the light kernel with a flat 0x20 "
+        "on the three prologue legs (keyed on `scene_color_grade`) while the "
+        "page shaded them like any scene. Neither mesh build may key its lit "
+        "rows on the grade: the grade is the palette's and the baked words'",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/assets/scene_geometry.rs", None),
+            "web": ("crates/web-viewer/src/play/field_mesh.rs", None),
+        },
+        "mode": "symbols_same",
+        "symbols": ["scene_color_grade", "frame_grade"],
+    },
+    {
+        "what": "placed-object live model, native vs play page - retail's "
+        "case-5 draw reads the actor, so a placed object a script has turned "
+        "(op 0x38, `4C 48`) or moved (`A3`, `4C 42`) draws turned about its own "
+        "origin and then displaced. The page used to take the two tables apart "
+        "and redo the composition in JavaScript, conjugated into its Y-up "
+        "frame; both hosts now hand `World::object_draw_turn_matrices` and "
+        "`World::object_draw_displacements` to `field_env::live_placed_model`, "
+        "and the page flips the finished model once",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (
+                "crates/web-viewer/src/play/placements.rs",
+                "field_placement_live_models",
+            ),
+        },
+        "mode": "symbols_all",
+        "symbols": [
+            "live_placed_model",
+            "object_draw_turn_matrices",
+            "object_draw_displacements",
+        ],
+    },
 ]
 
 

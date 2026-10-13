@@ -486,7 +486,8 @@ its bone (`tmd_to_vram_mesh_posed_rot_lit`) before the draw's rotation folds
 in. `play-window` re-shades a prop off its rest pose every frame; the two
 browser pages re-pose positions only and keep the frame-0 colours. The
 kingdom overworld packs carry no light-source rows, so the world-overview
-page has nothing to shade, and the prologue legs keep their ambient restage.
+page has nothing to shade. The prologue legs shade like any scene: their dim
+ambient is the scene-load back colour.
 
 ### The baked colour word and the depth cue
 
@@ -1624,8 +1625,10 @@ retail state holds them at yaw `0x600` / `0xE00` where the `.MAP` authored
 object (`man_field_scripts::object_script_bind_rots`), lets op `0x38` and
 `4C 48` move them, and both hosts turn a placed draw about its origin by the
 difference (`World::object_draw_turn_matrices`,
-`field_env::turn_placed_model`; the play page reads `field_placement_turns`)
-before the scripted displacement (`World::object_draw_displacements`).
+`field_env::turn_placed_model`) before the scripted displacement
+(`World::object_draw_displacements`) - one composition,
+`field_env::live_placed_model`, which the play page reaches through
+`field_placement_live_models`.
 
 **A placed object can lose its `.MAP` lift.** The scene-init sweep seats a
 bound object at `lut[nibble] + y_off` (`FUN_8003A55C`, `0x8003A640`), but the
