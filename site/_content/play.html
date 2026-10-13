@@ -106,17 +106,6 @@
 }
 
 .play-canvas-wrap { position: relative; }
-/* Fullscreen keeps the wrap itself at 4:3 and centres it, so the overlay
-   canvas and the dialogue box - both positioned against the wrap - stay
-   pixel-aligned with the GL view without per-child overrides. The letterbox
-   is painted by ::backdrop rather than by growing the wrap. */
-.play-canvas-wrap:fullscreen {
-  inset: 0; margin: auto;
-  width: min(100vw, calc(100vh * 4 / 3));
-  height: min(100vh, calc(100vw * 3 / 4));
-  max-width: none; /* the sticky-column width cap must not shrink fullscreen */
-}
-.play-canvas-wrap:fullscreen::backdrop { background: #05070c; }
 .play-canvas {
   width: 100%; aspect-ratio: 4 / 3; display: block;
   background: #05070c; border: 1px solid var(--border); outline: none;
@@ -178,11 +167,43 @@
    the button rows, because the pinned column has to fit the window - and it
    keeps the canvas's width so the two read as one block. */
 @media (min-width: 981px) {
-  .play-viewport:has(> .play-mg-caption:not([hidden])) .play-canvas-wrap,
+  .play-viewport:has(.play-mg-caption:not([hidden])) .play-canvas-wrap,
   .play-mg-caption {
     max-width: max(320px, calc((100vh - var(--topbar-h) - 13rem) * 4 / 3));
     margin-inline: auto;
   }
+}
+/* Fullscreen presents `.play-screen`: the 4:3 canvas wrap, and under it the
+   minigame status strip when a game is live.
+   The browser's own sheet sizes a fullscreen element to the whole screen
+   with `!important` (width / height 100%, inset 0, margin 0), so the element
+   that goes fullscreen cannot itself be the 4:3 box: a wrap that was asked
+   to be `min(100vw, 100vh * 4/3)` wide came out the screen's full width, its
+   4:3 canvas ran taller than the screen, and the bottom of the picture was
+   cut off. The screen-sized element is therefore a flex column that centres
+   the wrap, and the wrap takes its 4:3 width from the height that is left.
+   The overlay canvas and the dialogue box are positioned against the wrap,
+   so they stay pixel-aligned with the GL view. The strip takes its height
+   out of the picture's letterbox: it is never drawn over the picture. */
+.play-screen:fullscreen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: #05070c;
+  --play-fs-cap: 0px;
+}
+.play-screen:fullscreen:has(> .play-mg-caption:not([hidden])) { --play-fs-cap: 4.4rem; }
+.play-screen:fullscreen::backdrop { background: #05070c; }
+.play-viewport .play-screen:fullscreen > .play-canvas-wrap,
+.play-viewport .play-screen:fullscreen > .play-mg-caption {
+  flex: none; margin: 0;
+  /* the sticky-column width cap must not shrink fullscreen */
+  width: min(100vw, calc((100vh - var(--play-fs-cap)) * 4 / 3)); max-width: none;
+}
+/* The reserved height holds three unwrapped rows, which is every game's most
+   on a landscape screen. A narrow portrait screen wraps them; it also has
+   letterbox to spare under the picture, so the strip may grow there. */
+.play-viewport .play-screen:fullscreen > .play-mg-caption {
+  min-height: var(--play-fs-cap);
+  border: 0; background: transparent;
 }
 .play-hud {
   display: flex; gap: 0.9rem; flex-wrap: wrap;
@@ -338,16 +359,21 @@
 
     <div class="play-stage" id="play-stage" style="display: none;">
       <div class="play-viewport">
-        <div class="play-canvas-wrap">
-          <canvas id="play-canvas" class="play-canvas" width="960" height="720" tabindex="0"></canvas>
-          <canvas id="play-menu-canvas" class="play-menu-overlay" width="960" height="720"></canvas>
-          <div class="play-focus-veil" id="play-veil">Click to take the controls</div>
-          <div class="play-dialog is-hidden" id="play-dialog"></div>
+        <!-- What the Fullscreen button presents: the picture, and the
+             minigame status strip under it. -->
+        <div class="play-screen" id="play-screen">
+          <div class="play-canvas-wrap">
+            <canvas id="play-canvas" class="play-canvas" width="960" height="720" tabindex="0"></canvas>
+            <canvas id="play-menu-canvas" class="play-menu-overlay" width="960" height="720"></canvas>
+            <div class="play-focus-veil" id="play-veil">Click to take the controls</div>
+            <div class="play-dialog is-hidden" id="play-dialog"></div>
+          </div>
+          <!-- A minigame's status rows and key hints, as the engine exports
+               them (`play_mg_caption_json`, play-minigames.js
+               `captionSync`): shown here rather than in the frame, where the
+               game's own chrome draws over the text layer. -->
+          <div class="play-mg-caption" id="play-mg-caption" hidden></div>
         </div>
-        <!-- A minigame's status rows and key hints (play-minigames.js
-             `captionTake`): the engine's own lines, shown here rather than
-             over the frame, where the game's chrome now draws on top. -->
-        <div class="play-mg-caption" id="play-mg-caption" hidden></div>
         <div class="play-hud">
           <span><b>Scene</b> <span id="hud-scene">-</span></span>
           <span><b>Mode</b> <span id="hud-mode">-</span></span>
@@ -2292,12 +2318,15 @@
     canvas.focus();
   });
 
-  /* Fullscreen the canvas wrap (not the canvas itself) so the menu overlay,
-   * focus veil and dialogue box come along - they are positioned against the
-   * wrap. The GL canvas is CSS-sized, so no backing-store resize is needed.
+  /* Fullscreen `.play-screen` - the canvas wrap plus the minigame status
+   * strip - not the canvas itself, so the menu overlay, focus veil and
+   * dialogue box (positioned against the wrap) and a minigame's status rows
+   * all come along. The browser sizes the fullscreen element to the screen;
+   * the 4:3 wrap is laid out inside it (see the `.play-screen:fullscreen`
+   * rules). The GL canvas is CSS-sized, so no backing-store resize is needed.
    * Safari still needs the webkit-prefixed entry points. */
   const fsBtn = document.getElementById('play-fullscreen');
-  const canvasWrap = document.querySelector('.play-canvas-wrap');
+  const canvasWrap = document.getElementById('play-screen');
   const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
   const fsSupported = !!(canvasWrap && (canvasWrap.requestFullscreen
     || canvasWrap.webkitRequestFullscreen));
