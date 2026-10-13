@@ -1615,6 +1615,7 @@ Shapes the corpus separates, each with what it indicates:
 | camera and dialogue off together, `script` detail says the gate was not met | a record the phase gate could not bring the engine to ([above](#mid-script-states)) |
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
+| `view_window` at `0` beside that selector pair (`cort_evolved_approach_cutscene`) | the same pass: each selector arm applies its own op `0x46` window ([below](#the-region-selector-band-and-the-entry-order)) |
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
 | retail's camera focus thousands of units off its player (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the seed lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
@@ -1657,6 +1658,22 @@ fifth (by a tenth even with `--flags-first`), so the order stands and the
 bit is a seeding limit. The opening legs are pre-run already, and there the run
 stops where retail's does (`World::pre_run_entry_script`), so the two
 `opdeene` states carry retail's selector through the seed.
+
+The `view_window` channel follows the bit, because each selector arm ends on
+its own op `0x46`. `jouind`'s entry `P1[0]` carries nine of them:
+
+| Region type | Selector | Arm | Window |
+|---|---|---|---|
+| `2` | `0x19D` | `+0x1C1` | `46 24 F4 FA 06 0A` = `(-12, -6, 6, 10)` |
+| `3` | `0x19E` | `+0x214` | `46 24 F6 FA 0A 0D` = `(-10, -6, 10, 13)` |
+| `4` | `0x19F` | `+0x267` | `46 24 F9 F9 08 27` = `(-7, -7, 8, 39)` |
+
+`cort_evolved_approach_cutscene` reads `(-7, -7, 8, 39)` against the engine's
+`(-10, -6, 10, 13)`: the window of the `0x19F` arm retail took at the arrival
+tile against the window of the `0x19E` arm the seed takes at the seat, all
+four bytes apart. It is the same one pass, scored twice - there is no second
+divergence in the window bytes, and none in the op `0x46` handler, which
+every other field state in the corpus agrees on.
 
 The same pass picks the frame's clear colour. `town01`'s entry loop sets
 `4C 13` to the cave brown `(60, 40, 20)` while the player stands in its
