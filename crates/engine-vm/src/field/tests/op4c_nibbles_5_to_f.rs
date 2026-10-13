@@ -327,13 +327,14 @@ fn op_4c_n5_sub_2_advances_even_with_a_host_that_does_nothing() {
     );
 }
 
+/// The extended form with a non-zero frame count is the one shape that
+/// acquires (`FUN_801DE840`, `0x801E1B9C..0x801E1BBC`).
 #[test]
-fn op_4c_n6_sub_61_acquires_and_advances_sixteen() {
-    // 16-byte instruction; TestHost's predicate defaults to `false`, so
-    // arm it for the acquire-success path.
+fn op_4c_n6_sub_61_extended_fade_acquires_and_advances() {
+    // `CC <target> 61 ..` with frames (operand `+0xD`) = 0x0E0D.
     let bytecode = [
-        0x4Cu8, 0x61, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
-        0x0E,
+        0xCCu8, 0xF8, 0x61, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
+        0x0D, 0x0E,
     ];
     let mut host = TestHost {
         halt_acquire_predicate: true,
@@ -341,14 +342,14 @@ fn op_4c_n6_sub_61_acquires_and_advances_sixteen() {
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 16 });
+    assert_eq!(r, StepResult::Advance { next_pc: 17 });
     // ctx mutation: halt bit set, saved_pc and wait_accum updated.
     assert_eq!(ctx.flags & 0x400, 0x400);
     assert_eq!(ctx.saved_pc, 0);
     assert_eq!(ctx.wait_accum, 0);
     // Apply hook fired with which = 0x61.
     assert!(host.halt_acquire_calls.iter().any(|(w, _, _)| *w == 0x61));
-    // Emitter received bytes +2..+15 (14 data bytes; sub-byte 0x61 stripped).
+    // Emitter received the 14 data bytes (sub-byte 0x61 stripped).
     assert_eq!(host.n_6_sub_61_emitter_calls.len(), 1);
     assert_eq!(
         host.n_6_sub_61_emitter_calls[0],
@@ -359,18 +360,52 @@ fn op_4c_n6_sub_61_acquires_and_advances_sixteen() {
 }
 
 #[test]
-fn op_4c_n6_sub_61_halts_when_predicate_refuses() {
+fn op_4c_n6_sub_61_extended_fade_halts_when_predicate_refuses() {
     let bytecode = [
-        0x4Cu8, 0x61, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00,
+        0xCCu8, 0xF8, 0x61, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00,
     ];
-    // halt_acquire_predicate defaults to false → refuse.
+    // halt_acquire_predicate defaults to false -> refuse.
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Halt { final_pc: 0 });
     assert!(host.n_6_sub_61_emitter_calls.is_empty());
     assert_eq!(ctx.flags & 0x400, 0, "ctx unmutated on refusal");
+}
+
+/// A plain `4C 61`, and a zero-frame one-shot of either form, skip the
+/// acquire and call the emitter with no owner: the halt bit stays down and
+/// the predicate is never asked. `map01`'s entry issues four plain one-shots.
+#[test]
+fn op_4c_n6_sub_61_plain_or_one_shot_never_halts() {
+    let plain_fade = [
+        0x4Cu8, 0x61, 0x00, 0x00, 0xF2, 0x01, 0x70, 0x00, 0xF3, 0x01, 0x00, 0x00, 0xF2, 0x01, 0x10,
+        0x00,
+    ];
+    let plain_one_shot = [
+        0x4Cu8, 0x61, 0x00, 0x00, 0xF2, 0x01, 0x70, 0x00, 0xF3, 0x01, 0x00, 0x00, 0xF2, 0x01, 0x00,
+        0x00,
+    ];
+    let extended_one_shot = [
+        0xCCu8, 0xF8, 0x61, 0x00, 0x00, 0xF2, 0x01, 0x70, 0x00, 0xF3, 0x01, 0x00, 0x00, 0xF2, 0x01,
+        0x00, 0x00,
+    ];
+    for bytecode in [&plain_fade[..], &plain_one_shot[..], &extended_one_shot[..]] {
+        // The predicate refuses: were it asked, the op would halt at PC.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, bytecode, 0);
+        assert_eq!(
+            r,
+            StepResult::Advance {
+                next_pc: bytecode.len()
+            }
+        );
+        assert_eq!(ctx.flags & 0x400, 0, "no halt-acquire on this shape");
+        assert!(host.halt_acquire_calls.is_empty());
+        assert_eq!(host.n_6_sub_61_emitter_calls.len(), 1);
+    }
 }
 
 #[test]

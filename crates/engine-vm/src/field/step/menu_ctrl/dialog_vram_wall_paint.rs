@@ -157,32 +157,47 @@ pub(super) fn op_4c_n6<H: FieldHost>(
                 next_pc: pc + header_size + 13,
             }
         }
-        // Sub-0x61: 16-byte `[4C, 0x61, ...14 operand bytes]`.
-        // Halt-acquire emitter variant - dispatcher lines 6330-6364.
-        // Predicate checks: `ctx.field_94 != 0 || ctx == player`
-        // AND `ctx.flags & 0x400 == 0 || _DAT_801c6ea4+8 != 0`.
-        // On success: standard mutation, optional system-channel
-        // mirror, emitter call, advance PC by 16. On failure:
-        // halt at PC. Modeled through the shared host predicate
-        // with `which = 0x61`.
+        // Sub-0x61: 16-byte `[4C, 0x61, ...14 operand bytes]`, the CLUT-cell
+        // emitter `FUN_801E4C58`.
+        //
+        // The halt-acquire is conditional twice over (`0x801E1B9C..
+        // 0x801E1BBC`): the arm reads the opcode byte back (`lbu v0,0(s0)`,
+        // `andi 0x80`) and the frame count at operand `+0xD`, and branches
+        // straight to the emitter call - with `a0 = 0`, no owning context -
+        // unless the op is the **extended** form *and* the count is non-zero.
+        // Only a cross-context fade waits for its end; a plain `4C 61`, or a
+        // zero-frame one-shot of either form, never raises the halt bit.
+        // Every kingdom map's entry script issues plain one-shots
+        // (`map01 P1[0] +0x56..+0x86`, behind flag `0x27B`): halted by them,
+        // the system context returned at the halted-target early-out on the
+        // `CD F8` box test its per-frame loop opens with, for the whole
+        // visit.
+        //
+        // The acquire itself, when it runs: predicate `ctx.field_94 != 0 ||
+        // ctx == player` AND `ctx.flags & 0x400 == 0 || _DAT_801c6ea4+8 !=
+        // 0`; on success the standard mutation and the optional
+        // system-channel mirror, on failure halt at PC (`0x801E1C4C`).
+        // Modeled through the shared host predicate with `which = 0x61`.
         0x61 => {
             if operand + 15 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            if host.field_halt_acquire_predicate(ctx, 0x61) {
-                let resume = pc + header_size + 15;
+            let resume = pc + header_size + 15;
+            let frames = u16::from_le_bytes([bytecode[operand + 13], bytecode[operand + 14]]);
+            if header_size == 2 && frames != 0 {
+                if !host.field_halt_acquire_predicate(ctx, 0x61) {
+                    return StepResult::Halt { final_pc: pc };
+                }
                 ctx.flags |= 0x400;
                 ctx.wait_accum = 0;
                 ctx.saved_pc = pc as u32;
                 host.field_halt_acquire_apply(ctx, 0x61, resume, [0; 3]);
-                let payload: [u8; 14] = bytecode[operand + 1..operand + 15]
-                    .try_into()
-                    .expect("14-byte payload slice");
-                host.spawn_clut_cell_fx(ctx, payload);
-                StepResult::Advance { next_pc: resume }
-            } else {
-                StepResult::Halt { final_pc: pc }
             }
+            let payload: [u8; 14] = bytecode[operand + 1..operand + 15]
+                .try_into()
+                .expect("14-byte payload slice");
+            host.spawn_clut_cell_fx(ctx, payload);
+            StepResult::Advance { next_pc: resume }
         }
         _ => StepResult::Halt { final_pc: pc },
     }
