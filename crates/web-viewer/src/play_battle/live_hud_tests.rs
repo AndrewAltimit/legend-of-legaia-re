@@ -93,6 +93,12 @@ fn live_battle_overlay_carries_bars_and_enemy_target_strip() {
             .is_some_and(|h| h.world.battle.command.is_some()),
         "player-driven battle opens the command menu"
     );
+    // The round prompt opens on a sixteen-vsync glide (sub-draw step 0
+    // spawns the panels under the screen); the packet-pinned bands are
+    // where it lands.
+    for _ in 0..16 {
+        rt.tick_frame().expect("tick");
+    }
 
     // (1) The retail party surface reaches the page's overlay draw list.
     // 960x720 -> stage scale 3, origin (0,0). At rest that surface is the
