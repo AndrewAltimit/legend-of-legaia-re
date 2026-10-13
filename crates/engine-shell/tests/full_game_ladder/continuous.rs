@@ -295,7 +295,9 @@ fn part_c_continuous_run() {
             LOST_TO_ELEMENT.with(|l| l.set(None));
             let played = catch_unwind(AssertUnwindSafe(|| {
                 PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
-                PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
+                // This hand takes the fights it can win, so a stretch's
+                // battles run long past the fleeing hand's allowance.
+                PAD_BATTLE_LEFT.with(|l| l.set(4 * PAD_BATTLE_ALLOWANCE));
                 if let Some(element) = prepare {
                     pad_equip_guard(&mut session, element);
                 }

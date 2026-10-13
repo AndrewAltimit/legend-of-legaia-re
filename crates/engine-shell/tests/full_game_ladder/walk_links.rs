@@ -593,6 +593,13 @@ pub(super) fn door_openings(session: &NativeSession) -> HashMap<(u8, u8), Option
                     kind: FlagKind::Set,
                     bit: 0,
                 } if insn.extended.is_none() => return Some(boxed),
+                // A prop that parks itself on the hide tile is out of the
+                // way as surely: `vozz` P0[1], the thickets across East
+                // Voz's paths, run `23 7F 7F` on the action button once
+                // `0x079` is up.
+                InsnInfo::MoveTo { xb: 0x7F, zb: 0x7F } if insn.extended.is_none() => {
+                    return Some(boxed);
+                }
                 InsnInfo::BBoxTest {
                     x_min,
                     z_min,

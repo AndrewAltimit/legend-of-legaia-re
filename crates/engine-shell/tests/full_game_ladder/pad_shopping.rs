@@ -27,6 +27,12 @@ thread_local! {
     /// `(scene, gold, bag size)` at the last visit to a scene's merchants:
     /// the hand comes back only with a different purse or bag.
     static SHOPPED: std::cell::RefCell<HashMap<String, (i32, usize)>> = Default::default();
+    /// Shop screens opened this run: how a merchant visit tells a counter
+    /// that sold from one that only talked.
+    static SHOP_OPENS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Per scene, the raised story flags its counters were last found
+    /// closed on and that the scene can lower again ([`open_counters`]).
+    static CLOSED_ON: std::cell::RefCell<HashMap<String, BTreeSet<u16>>> = Default::default();
 }
 
 /// Did a shop screen open and close since the last call?
@@ -34,8 +40,9 @@ pub(super) fn take_shop_visited() -> bool {
     SHOP_VISITED.with(|v| v.replace(false))
 }
 
-/// Healing items the hand keeps in the bag when a merchant sells them.
-const HEAL_STOCK: u8 = 10;
+/// Healing items the hand keeps in the bag for each present member when a
+/// merchant sells them: the road between two counters is a dungeon or two.
+const HEAL_STOCK: u8 = 15;
 
 /// What the hand wants from the open buy list next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,7 +127,13 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     if let Some(want) = heal_want(3) {
         return Some(want);
     }
-    // Equipment.
+    // Equipment. At a counter with no healing row, a bag short of its
+    // three heals keeps their price back for the counter that has one.
+    let reserve: i32 = if heal_row.is_none() && heals_held < 3 {
+        300
+    } else {
+        0
+    };
     let info = menu.equip_info.as_ref()?;
     let party = w.present_party_list();
     let mut best: Option<(i32, u32, Want)> = None;
@@ -128,7 +141,7 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         let Some(entry) = info.entry(it.item_id) else {
             continue;
         };
-        if entry.is_ra_seru || i64::from(it.price) > i64::from(gold) {
+        if entry.is_ra_seru || i64::from(it.price) + i64::from(reserve) > i64::from(gold) {
             continue;
         }
         let slot = match entry.category {
@@ -172,7 +185,7 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     if let Some((_, _, want)) = best {
         return Some(want);
     }
-    heal_want(u32::from(HEAL_STOCK))
+    heal_want(u32::from(HEAL_STOCK) * (w.present_party_list().len().clamp(1, 3) as u32))
 }
 
 /// The pad edge that moves a kind-4 list cursor (seven rows a page, Left /
@@ -198,6 +211,10 @@ const CANCEL: u16 = PadButton::Triangle as u16;
 
 /// One pad edge for the open shop screen.
 fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> u16 {
+    // The casino prize counter: the hand looks and leaves.
+    if menu.prize_session.is_some() {
+        return CANCEL;
+    }
     let want = next_want(menu, w);
     if let Some(q) = menu.quantity_view() {
         return match want {
@@ -257,7 +274,11 @@ fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> u16 {
 /// only the continuous hand buys. A no-op with no shop pending or open.
 pub(super) fn service_shop(session: &mut NativeSession) {
     let w = &session.host.world;
-    if w.shops.pending_shop.is_none() && !w.shops.shop_open {
+    if w.shops.pending_shop.is_none()
+        && !w.shops.shop_open
+        && w.shops.pending_prize_exchange.is_none()
+        && !w.shops.prize_exchange_open
+    {
         return;
     }
     let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
@@ -334,6 +355,7 @@ pub(super) fn service_shop(session: &mut NativeSession) {
         }
         let _ = menu.step_field_session(w, 0);
         SHOP_VISITED.with(|v| v.set(true));
+        SHOP_OPENS.with(|n| n.set(n.get() + 1));
         if trace {
             let bought: Vec<String> = w
                 .party
@@ -421,7 +443,10 @@ pub(super) fn pad_shop(session: &mut NativeSession) -> Result<Option<String>, St
     let name = scene_name(session);
     let w = &session.host.world;
     let key = (w.party.money, w.party.inventory.iter().count());
-    if w.party.money <= 0 || SHOPPED.with(|s| s.borrow().get(&name) == Some(&key)) {
+    // A scene shopped in with this purse and bag is passed by, unless its
+    // counters were closed on story flags that have since come down.
+    let reopened = counters_reopened(session);
+    if w.party.money <= 0 || (!reopened && SHOPPED.with(|s| s.borrow().get(&name) == Some(&key))) {
         return Ok(None);
     }
     let keepers = merchants(session);
@@ -435,23 +460,31 @@ pub(super) fn pad_shop(session: &mut NativeSession) -> Result<Option<String>, St
             session.host.world.party.money
         );
     }
-    for slot in keepers {
-        pad_budget(session)?;
-        take_shop_visited();
-        SHOPPING.with(|s| s.set(true));
-        let r = pad_talk_to(session, slot);
-        SHOPPING.with(|s| s.set(false));
-        if trace {
-            eprintln!("    [shop] {name} talk P1[{slot}] -> {r:?}");
+    let mut closed = visit_merchants(session, &name, &keepers)?;
+    if let Some(left) = closed.1.take() {
+        return Ok(Some(left));
+    }
+    // A counter that only talked is closed by the story (`dolk2`'s dealers
+    // call out their sale and sell nothing while the festival flag `0x27D`
+    // is up): the hand plays what ends that, then comes back.
+    CLOSED_ON.with(|c| c.borrow_mut().remove(&name));
+    if !closed.0.is_empty() {
+        let before = flags_of_world(session);
+        let (held, left) = open_counters(session, &closed.0)?;
+        if let Some(s) = left {
+            return Ok(Some(s));
         }
-        match r {
-            Run::Entered(s) => return Ok(Some(s)),
-            Run::Battle(b) => return Err(format!("shop talk P1[{slot}]: {b}")),
-            Run::Error(e) => return Err(e),
-            Run::Released | Run::Parked(_) => {}
+        if flags_of_world(session) != before && scene_name(session) == name {
+            let again = merchants(session);
+            closed = visit_merchants(session, &name, &again)?;
+            if let Some(left) = closed.1.take() {
+                return Ok(Some(left));
+            }
         }
-        if let Some(w) = wiped(session) {
-            return Err(w);
+        // Still closed: the hand comes back once a flag it is closed on
+        // has come down (the way out of `dolk2` ends the festival too).
+        if !closed.0.is_empty() && !held.is_empty() {
+            CLOSED_ON.with(|c| c.borrow_mut().insert(name.clone(), held));
         }
     }
     let w = &session.host.world;
@@ -460,8 +493,204 @@ pub(super) fn pad_shop(session: &mut NativeSession) -> Result<Option<String>, St
     Ok(None)
 }
 
+/// Were the loaded scene's counters last found closed on a story flag that
+/// has since come down?
+pub(super) fn counters_reopened(session: &NativeSession) -> bool {
+    let w = &session.host.world;
+    CLOSED_ON.with(|c| {
+        c.borrow()
+            .get(&scene_name(session))
+            .is_some_and(|held| held.iter().any(|&f| !w.system_flag_test(f)))
+    })
+}
+
+/// Talk to each merchant in turn. Returns the ones whose talk opened no
+/// shop screen, and the scene a talk left for.
+fn visit_merchants(
+    session: &mut NativeSession,
+    name: &str,
+    keepers: &[u8],
+) -> Result<(Vec<u8>, Option<String>), String> {
+    let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+    let mut closed = Vec::new();
+    for &slot in keepers {
+        pad_budget(session)?;
+        take_shop_visited();
+        let opens = SHOP_OPENS.with(std::cell::Cell::get);
+        SHOPPING.with(|s| s.set(true));
+        let r = pad_talk_to(session, slot);
+        SHOPPING.with(|s| s.set(false));
+        if trace {
+            eprintln!("    [shop] {name} talk P1[{slot}] -> {r:?}");
+        }
+        match r {
+            Run::Entered(s) => return Ok((closed, Some(s))),
+            Run::Battle(b) => return Err(format!("shop talk P1[{slot}]: {b}")),
+            Run::Error(e) => return Err(e),
+            Run::Released | Run::Parked(_) => {}
+        }
+        if let Some(w) = wiped(session) {
+            return Err(w);
+        }
+        if SHOP_OPENS.with(std::cell::Cell::get) == opens {
+            closed.push(slot);
+        }
+    }
+    Ok((closed, None))
+}
+
+/// Play what re-opens the counters of `closed`, the merchants whose talk
+/// sold nothing. A closed counter's record tests a story flag that is up
+/// and branches round its shop op; the scene lowers that flag again in some
+/// record. The hand talks to the NPC whose record, or a record it spawns,
+/// does (a staged talk, one stage a contact), and failing that steps onto
+/// the walk-on band whose record does. Returns the flags the counters are
+/// closed on that the scene can lower, and the scene a beat left for.
+fn open_counters(
+    session: &mut NativeSession,
+    closed: &[u8],
+) -> Result<(BTreeSet<u16>, Option<String>), String> {
+    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
+        return Ok((BTreeSet::new(), None));
+    };
+    let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+    let name = scene_name(session);
+    let sites: Vec<_> = (1..3)
+        .flat_map(|part| walk_partition_gflag_sites(&mf, &man, part))
+        .filter(|s| s.clean && s.bank == FlagBank::System)
+        .collect();
+    let held: BTreeSet<u16> = {
+        let w = &session.host.world;
+        sites
+            .iter()
+            .filter(|s| {
+                s.partition == 1
+                    && s.kind == FlagKind::Test
+                    && closed.iter().any(|&c| usize::from(c) == s.record)
+                    && w.system_flag_test(s.flag)
+            })
+            .map(|s| s.flag)
+            .collect()
+    };
+    let lowers = |part: usize, held: &BTreeSet<u16>| -> BTreeSet<usize> {
+        sites
+            .iter()
+            .filter(|s| s.partition == part && s.kind == FlagKind::Clear && held.contains(&s.flag))
+            .map(|s| s.record)
+            .collect()
+    };
+    // Only the flags some record of the scene lowers again.
+    let held: BTreeSet<u16> = held
+        .into_iter()
+        .filter(|f| {
+            sites
+                .iter()
+                .any(|s| s.kind == FlagKind::Clear && s.flag == *f)
+        })
+        .collect();
+    if held.is_empty() {
+        return Ok((held, None));
+    }
+    let (low1, low2) = (lowers(1, &held), lowers(2, &held));
+    let up = |s: &NativeSession| held.iter().any(|&f| s.host.world.system_flag_test(f));
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let reaches = |part: usize, rec: usize| {
+        (part == 2 && low2.contains(&rec))
+            || spawned_p2(&mf, &man, part, rec, n0 + n1, 3)
+                .iter()
+                .any(|r| low2.contains(r))
+    };
+    let mut talkers: Vec<u8> = {
+        let w = &session.host.world;
+        w.npcs
+            .positions
+            .keys()
+            .copied()
+            .filter(|s| !closed.contains(s))
+            .filter(|s| w.npcs.dialog.contains_key(s) || w.npcs.dialog_prologue.contains_key(s))
+            .filter(|s| {
+                w.npcs.positions.get(s).is_some_and(|&(x, z)| {
+                    let t = dispatch_tile(x, z);
+                    t.0 < 126 && t.1 < 126
+                })
+            })
+            .filter(|&s| low1.contains(&usize::from(s)) || reaches(1, usize::from(s)))
+            .collect()
+    };
+    talkers.sort_unstable();
+    if trace {
+        eprintln!(
+            "    [shop] {name}: counters {closed:?} closed on {held:03X?}; lowered by P1{low1:?} P2{low2:?}; talks {talkers:?}"
+        );
+    }
+    for slot in talkers {
+        // A staged talk plays one stage a contact.
+        for _ in 0..6 {
+            if !up(session) || !walking(session) || scene_name(session) != name {
+                break;
+            }
+            pad_budget(session)?;
+            let before = flags_of_world(session);
+            let r = pad_talk_to(session, slot);
+            if trace {
+                eprintln!("    [shop] {name} talk P1[{slot}] (to open the counters) -> {r:?}");
+            }
+            match r {
+                Run::Entered(s) => return Ok((held, Some(s))),
+                Run::Battle(b) => return Err(format!("talk P1[{slot}]: {b}")),
+                Run::Error(e) => return Err(e),
+                Run::Released | Run::Parked(_) => {}
+            }
+            if let Some(w) = wiped(session) {
+                return Err(w);
+            }
+            if flags_of_world(session) == before {
+                break;
+            }
+        }
+    }
+    if !up(session) || !walking(session) || scene_name(session) != name {
+        return Ok((held, None));
+    }
+    let mut bands: Vec<(u8, (u8, u8))> = Vec::new();
+    for t in triggers.iter().filter(|t| t.gate == 1) {
+        if reaches(2, usize::from(t.record)) && !bands.iter().any(|b| b.0 == t.record) {
+            bands.push((t.record, (t.tile_x, t.tile_z)));
+        }
+    }
+    for (rec, tile) in bands {
+        if !up(session) {
+            break;
+        }
+        pad_budget(session)?;
+        let r = match pad_step_onto(session, tile) {
+            Ok(Walk::Entered(s)) => Run::Entered(s),
+            Ok(Walk::Arrived) => run_while_moving(session, DEEP_EXIT_TICKS),
+            Err(e) => Run::Parked(e),
+        };
+        if trace {
+            eprintln!(
+                "    [shop] {name} band P2[{rec}] at {tile:?} (to open the counters) -> {r:?}"
+            );
+        }
+        match r {
+            Run::Entered(s) => return Ok((held, Some(s))),
+            Run::Battle(b) => return Err(format!("band P2[{rec}]: {b}")),
+            Run::Error(e) => return Err(e),
+            Run::Released | Run::Parked(_) => {}
+        }
+        if let Some(w) = wiped(session) {
+            return Err(w);
+        }
+    }
+    Ok((held, None))
+}
+
 /// Forget which scenes were shopped in: a new run, or a reload.
 pub(super) fn reset_shopping() {
     SHOPPED.with(|s| s.borrow_mut().clear());
+    CLOSED_ON.with(|c| c.borrow_mut().clear());
     SHOP_MENU.with(|m| *m.borrow_mut() = None);
 }

@@ -232,8 +232,11 @@ one upkeep pass, in this order:
    resume once the screen has closed. It buys three healing items first,
    then the affordable piece of equipment that improves a present member's
    slot the most (through the recipient picker, which equips it on the
-   spot), then healing items up to ten. A merchant is visited again only
-   with a different purse or bag.
+   spot), then healing items up to fifteen for each present member. At a
+   counter that sells no healing item, a bag short of its three keeps 300
+   gold back for the counter that does. A merchant is visited again only
+   with a different purse or bag, or once a counter the story had closed
+   has opened ([below](#a-counter-the-story-has-closed)).
 2. **Equipment.** Start, Equip, each member, the Best Equipment row.
 3. **Rest.** Under four fifths of its HP in a scene that rolls no
    encounters, it takes the scene's rest: a bed's walk-on band, or a
@@ -250,6 +253,10 @@ one upkeep pass, in this order:
    the anchors ahead carry and that nothing in the scene lowers again. A
    room marker is raised on the way in and cleared on the way out, and
    crossing a dungeon for one costs fights and buys nothing.
+   The extra rounds past the segmented pass's three go on only while a
+   round raises a flag the pass has not seen up before: a room marker
+   toggles with every walk across the scene (`bylon`'s `0x528` / `0x529`),
+   and a round that only moved those gained nothing.
 5. **Training.** While a present member is more than a level short of the
    target, and the scene has a rest, it trains from that bed: out to where
    the encounters roll (the scene itself when its rest is close by, else
@@ -257,7 +264,12 @@ one upkeep pass, in this order:
    prices as winnable until a member is under 55%, then back to the bed. It
    spends nothing from the bag on those legs. When the levels are there it
    shops and rests once more and moves on. A walk that stalls ends the
-   training, not the stretch.
+   training, not the stretch, and an outing leg that does not arrive sends
+   the next one somewhere else.
+
+A talk or a stay that carries the party out of the scene (`dolk2`'s inn
+plays Noa's dream and brings it back) leaves the rest of the pass for the
+return: the scene's story and its training still follow.
 
 The **level target** is the anchors' own curve: each character's level in
 the anchor five milestones ahead, read only as far as every later anchor
@@ -279,6 +291,10 @@ the party has left. The exchange rate is learned across the whole run, so
 the hand takes on larger groups as the party levels and gears up, and a
 fight that turns goes back to Run on the next prompt.
 
+**Its MP is for the fights it cannot run from.** In a random encounter a
+member casts only a spell that leaves it half its MP; a fight that forbids
+running is cast at freely.
+
 **Its bag is for the fights.** On the road a party of two or more spends a
 restorative only under 45%, a lone member under 65%; it does not open the
 menu on an empty bag. Before a staged fight it wears what the last chest
@@ -287,6 +303,32 @@ fifths.
 
 What it still does not do: sell, use magic outside battle, or leave the
 cheapest route for a chest that sets no flag an anchor carries.
+
+### A counter the story has closed
+
+A merchant's talk can run and sell nothing. `dolk2`'s Arms Dealer (P1[11])
+and Tool Dealer (P1[12]) each test `0x27D` ahead of their shop op and, while
+it is up, call out their sale and loop back. The flag is the festival's:
+the market's walk-on band P2[11] raises it (with its own latch `0x27C`) the
+first time the party crosses `(69..71, 94)` after Caruban, which is on the
+way to both counters. The keepers P1[13] and P1[46] test it too. Three records
+lower it again: P2[14], the last stage of Noa's talk ladder (P1[2] raises
+`0x2FE`, then `0x2FF`, then spawns it), and P2[16] / P2[15], which the gate
+bands P2[0] / P2[1] spawn in place of their scene change while it is up.
+
+So when a talk opens no shop screen, the hand reads the merchant's record
+for a system flag it tests that is up and that some record of the scene
+lowers, and plays what lowers it: first the NPC whose record, or a record
+it spawns, does (one stage a contact, up to six), then a walk-on band whose
+record does. It then goes back to the counters. A counter still closed
+after that is remembered with the flags it was closed on, and the hand
+looks in again before it leaves the scene once one of them has come down.
+
+### Budget
+
+A stretch has the pad segment's walking budget, and four times its battle
+allowance: this hand takes the fights it can win, so a stretch's battles
+run long past the fleeing hand's.
 
 ### The carried-state diff
 
@@ -668,7 +710,10 @@ map as its street:
   button-gated contact) whose resumed record reaches `31 00` opens the same
   way on the action button, which the follower taps when held against it:
   `chitei2` P0[2], the gate at (41, 122) in front of the kind-0 teleport at
-  (41, 124) into the Jette pocket. The touch is read from the record's resume point (past its first
+  (41, 124) into the Jette pocket. A prop whose resumed record parks itself
+  on the hide tile (`23 7F 7F`) opens the same way: `vozz` P0[1], the
+  thickets across East Voz's paths, once `0x079` is up - the flag P1[1]
+  raises with the item that cuts them. The touch is read from the record's resume point (past its first
   `21`) with story-flag tests followed against the live flags; a door whose
   opening sits behind a box test of the player opens only from a cell inside
   that box (`ropeway` P0[2], the Octam station door, opens for a player on
@@ -763,7 +808,8 @@ The pad hand's beats are the seated tier's, played as a player plays them:
   a round before the party acts, and a three-monster group can catch Run
   several rounds running), the hand heals through the pause menu:
   Start, Items, Use, the first HP restorative, the weakest member, Circle
-  back out;
+  back out. The list's hand walks every bag row, usable in the field or
+  not, so the hand steps down to the restorative's row;
 - still below half HP after that, in a scene that rolls encounters, with an
   Incense (`0x8A`) in the bag and its window `_DAT_8007B600` run out, the
   hand burns one: Start, Items, Use, the Incense row, Yes. The region roll
@@ -1009,6 +1055,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
 | `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
+| `LEGAIA_FGL_HEAL_DEBUG=1` | Each pad edge of the field heal with the Items screen's focus, list rows, usable rows and target rows. |
 | `LEGAIA_FGL_WALK_DEBUG` | A stalled walk's wall map, the scene's teleports, tile triggers and door colliders. |
 | `LEGAIA_FGL_PLAN_DEBUG` | Each object-door edge the planner adds. |
 | `LEGAIA_FGL_COMP_DEBUG` | The tile map of every walk component a plan failed inside (`o` reached, `A` avoided door tile, `b` actor box, `G` the goal), with the overworld's installed entities, the live NPCs, the solid props with their bind records, and the self-opening doors. Beside it, a sub-cell flood of the wall bits alone. |

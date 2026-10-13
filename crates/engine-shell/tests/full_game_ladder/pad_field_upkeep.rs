@@ -167,11 +167,11 @@ pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usi
                             && matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
                     })
                 };
-                let want = p
-                    .inner
-                    .filtered_items
-                    .iter()
-                    .position(|&i| p.inner.items.get(i).is_some_and(|&id| heals(id)));
+                // The hand walks every bag row, usable here or not
+                // (`PauseItemsSession::list_cursor`): a row the field cannot
+                // use above the first restorative (a Fury Boost bought at
+                // the same counter) is stepped over, not confirmed.
+                let want = p.rows.iter().position(|r| heals(r.id));
                 match (p.focus, &p.inner.state) {
                     _ if party_hp_permille(session) >= threshold || want.is_none() || used >= 4 => {
                         PadButton::Circle.mask()
@@ -183,11 +183,12 @@ pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usi
                             PadButton::Up.mask()
                         }
                     }
-                    (PauseItemsFocus::List, InventoryUseState::Browsing { cursor }) => {
+                    (PauseItemsFocus::List, InventoryUseState::Browsing { .. }) => {
                         let want = want.unwrap_or(0);
-                        if *cursor < want {
+                        let cursor = p.list_cursor();
+                        if cursor < want {
                             PadButton::Down.mask()
-                        } else if *cursor > want {
+                        } else if cursor > want {
                             PadButton::Up.mask()
                         } else {
                             PadButton::Cross.mask()
@@ -216,6 +217,26 @@ pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usi
             }
             Some(_) => PadButton::Circle.mask(),
         };
+        if std::env::var_os("LEGAIA_FGL_HEAL_DEBUG").is_some() {
+            let sub = match session.field_menu_sub.as_ref() {
+                None => format!("root {:?}", menu.phase()),
+                Some(FieldMenuSubsession::Items(p)) => format!(
+                    "items focus {:?} cmd {} state {:?} items {:02X?} filtered {:?} targets {:?}",
+                    p.focus,
+                    p.command_cursor,
+                    p.inner.state,
+                    p.inner.items,
+                    p.inner.filtered_items,
+                    p.inner
+                        .targets
+                        .iter()
+                        .map(|t| (t.is_enemy, t.alive, t.hp, t.hp_max))
+                        .collect::<Vec<_>>()
+                ),
+                Some(_) => "other".into(),
+            };
+            eprintln!("      [heal-debug] pad {pad:04X} used {used} {sub}");
+        }
         if pad == 0 {
             let _ = session.tick();
             continue;

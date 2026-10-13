@@ -136,7 +136,12 @@ pub(super) fn play_beats(
     } else {
         BEAT_ROUNDS
     };
-    for _round in 0..rounds {
+    // Every flag the pass has seen up: the continuous hand's extra rounds
+    // go on only while a round raises one it has not seen before. A room
+    // marker toggles with every walk across the scene (`bylon`'s `0x528` /
+    // `0x529`), and a round that only moved those gained nothing.
+    let mut seen = flags_of_world(session);
+    for round in 0..rounds {
         let round_start = flags_of_world(session);
         let stale: Vec<u8> = idle
             .iter()
@@ -596,7 +601,10 @@ pub(super) fn play_beats(
                 Run::Released | Run::Parked(_) => {}
             }
         }
-        if flags_of_world(session) == round_start {
+        let now = flags_of_world(session);
+        let fresh = now.difference(&seen).next().is_some();
+        seen.extend(now.iter().copied());
+        if now == round_start || (round + 1 >= BEAT_ROUNDS && !fresh) {
             break;
         }
     }

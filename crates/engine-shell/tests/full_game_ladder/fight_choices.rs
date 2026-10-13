@@ -517,10 +517,32 @@ pub(super) fn wanted_spell(
     m: &legaia_engine_battle::battle_magic::BattleSpellSession,
 ) -> Option<usize> {
     use legaia_engine_battle::spells::SpellEffect;
+    // The continuous hand keeps half its MP for the fights it cannot run
+    // from: a random encounter is cast at only out of the upper half.
+    let floor = if continuous::PLAYS_ON.with(std::cell::Cell::get) && !w.battle.no_escape {
+        w.party
+            .roster
+            .members
+            .get(w.party_roster_slot(usize::from(m.actor)))
+            .map_or(0, |r| u32::from(r.hp_mp_sp().mp_max) / 2)
+    } else {
+        0
+    };
+    let mp = w
+        .actors
+        .get(usize::from(m.actor))
+        .map_or(0, |a| u32::from(a.battle.mp));
     m.spells
         .iter()
         .enumerate()
         .filter(|(_, r)| r.affordable)
+        .filter(|(_, r)| {
+            floor == 0
+                || w.tables
+                    .spell_catalog
+                    .get(r.id)
+                    .is_some_and(|d| mp >= floor + u32::from(d.mp_cost))
+        })
         .filter_map(|(i, r)| match w.tables.spell_catalog.get(r.id)?.effect {
             SpellEffect::Damage { base_power, .. } => {
                 Some((i, u32::from(base_power) * spell_affinity_pct(w, r.id)))

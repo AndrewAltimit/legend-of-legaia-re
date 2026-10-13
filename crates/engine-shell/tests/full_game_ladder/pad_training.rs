@@ -26,7 +26,7 @@ pub(super) const LEVEL_LOOKAHEAD: usize = 5;
 const TRAIN_ROUNDS: usize = 24;
 
 /// Walk legs one outing takes.
-const OUTING_LEGS: usize = 60;
+const OUTING_LEGS: usize = 160;
 
 /// The present members still more than a level short of the target.
 pub(super) fn under_levelled(session: &NativeSession) -> Vec<(u8, u8, u8)> {
@@ -137,18 +137,29 @@ fn outing(session: &mut NativeSession, floor: u32) -> Result<Option<String>, Str
             Ok(Walk::Entered(s)) => return Ok(Some(s)),
             Ok(Walk::Arrived) => {}
             Err(e) => {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "      [train] leg {leg} to {goal:?} from {:?}: {}",
+                        tile_of(before.0, before.1),
+                        e.chars().take(160).collect::<String>()
+                    );
+                }
                 if let Some(w) = wiped(session) {
                     return Err(w);
                 }
                 if e.contains("party wiped") {
                     return Err(e);
                 }
-                // A leg that went nowhere is a wall: try another goal.
-                if out && player_xz(session) == before {
+                // A leg that did not arrive is a wall on the way: the next
+                // outing heads somewhere else. One that went nowhere at
+                // all counts toward giving the outing up.
+                if out {
                     pick += 1;
-                    failed += 1;
-                    if failed >= goals.len() {
-                        break;
+                    if player_xz(session) == before {
+                        failed += 1;
+                        if failed >= goals.len() {
+                            break;
+                        }
                     }
                 }
             }

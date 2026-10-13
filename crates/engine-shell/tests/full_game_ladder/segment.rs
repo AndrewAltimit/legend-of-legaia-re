@@ -179,13 +179,18 @@ pub(super) fn traverse(
         {
             // Upkeep first, as a player arriving in a town: the shop, what
             // it sold, the bed.
+            // A talk or a stay that carried the party off (`dolk2`'s inn
+            // plays Noa's dream and brings it back) leaves the rest of the
+            // scene for the return.
             if let Some(s) = pad_shop(session).map_err(|e| format!("in {cur}, shopping: {e}"))? {
                 trail.push(format!("{s}(shop talk)"));
+                beaten.remove(&cur);
                 continue;
             }
             pad_equip_best(session);
             if let Some(s) = pad_rest(session).map_err(|e| format!("in {cur}, resting: {e}"))? {
                 trail.push(format!("{s}(rest)"));
+                beaten.remove(&cur);
                 continue;
             }
             let mut log = Vec::new();
@@ -241,6 +246,20 @@ pub(super) fn traverse(
                 }
             }
             continue;
+        }
+        // A counter the story had closed on arrival may have opened since
+        // (`dolk2`'s dealers sell again once the festival is over): the
+        // continuous hand looks in again before it leaves.
+        if pad
+            && continuous::PLAYS_ON.with(std::cell::Cell::get)
+            && session.host.world.mode == SceneMode::Field
+            && counters_reopened(session)
+        {
+            if let Some(s) = pad_shop(session).map_err(|e| format!("in {cur}, shopping: {e}"))? {
+                trail.push(format!("{s}(shop talk)"));
+                continue;
+            }
+            pad_equip_best(session);
         }
         let goal = vias.get(via).unwrap_or(&target.scene).clone();
         // In the target scene with its beat unplayed, or stuck on a door:
