@@ -1215,6 +1215,12 @@ an orbit clock. `evil_medallion_rage_battle` is one.
   so `0x70` is not reached. Why is open.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on a
   given seat) can run out of budget or end the fight first.
+- **A fading body retail does not draw.** `player_steal_skeleton_banner` holds
+  the killed skeleton in its defeat fade - lanes `0xF0`, mode word
+  `0x81000000`, node colour `0x3C3C3C`, sunk `183` - and the frame's ordering
+  table carries no packet for it: every monster packet is the standing
+  skeleton's, opaque at colour `0x44`. The engine draws the body lying at
+  those lanes. Which test drops it in retail is open.
 
 ### Replayed casts
 
