@@ -132,6 +132,16 @@ impl<S: AudioSink> BootSession<S> {
         if let Some(steal) = self.steal_table.clone() {
             world.set_steal_table(steal);
         }
+        // The SCUS starting-party template is a disc table like the ones
+        // above, not New Game state: a member who joins after a card load
+        // takes their level-1 record from it exactly as one who joins in
+        // the run that started the game (`World::set_active_party`). Left
+        // to the New Game path alone, a resumed save reached Noa's `cave01`
+        // join with no template, and she arrived as a zeroed record - no
+        // name for the naming prompt to confirm, 0 / 0 HP.
+        if world.tables.starting_party.is_none() {
+            world.tables.starting_party = self.starting_party.clone();
+        }
 
         // Scene label + encounter fallback + the loop / player-battle / BGM
         // arming are the browser host's business too, so they live in one
