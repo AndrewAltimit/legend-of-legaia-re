@@ -19,8 +19,14 @@
  * single-mesh `uploadMesh` / `render` path, the field's assembled scene
  * meshes untouched underneath); the dome's hub screens draw on a 2D layer
  * canvas this script inserts between the GL
- * view and the page's text overlay, so the engine's HUD lines
- * (`minigame_overlay_draws`) still read on top. */
+ * view and the page's text overlay.
+ *
+ * The engine's status rows (`minigame_status`, the port's own readout of the
+ * rules state plus the key hints - not retail chrome) arrive in the overlay
+ * draw list as glyph quads at fixed stage pens. This page lifts them out of
+ * the frame into the caption strip under the canvas (`captionTake`): the
+ * play page draws the games' own chrome over its text layer, as the native
+ * window does, and a row left in the frame is covered by it. */
 (function () {
   'use strict';
 
@@ -748,6 +754,131 @@
   }
 
   /* ================================================================== */
+  /* Status caption. The engine's minigame status rows (`minigame_status` -
+   * the port's readout of the rules state and the key hints, not retail
+   * chrome) come back from the overlay exports as font-atlas glyph quads
+   * pinned at fixed 320x240 stage pens, drawn where each game's own chrome
+   * lives. The games' chrome draws over this page's text layer, so a row
+   * left there is covered: the Baka title logo sits on the prompt line, and
+   * the line runs off the frame's right edge besides. The rows are lifted
+   * out of the draw list here, read back to text through the atlas grid, and
+   * shown in the strip under the canvas, where they wrap. Fullscreen
+   * presents the canvas wrap alone, so it shows the frame without them.
+   *
+   * A row is a run of glyph cells in one status ink, on one of the status
+   * pens, starting at the pen's x and advancing by no more than a cell - so
+   * retail-placed text that happens to share a line (the Baka round digit,
+   * the fishing hub's rows) is not taken with it. */
+  const GLYPH_W = 14, GLYPH_H = 15, FIRST_CHAR = 0x20;   /* legaia-font atlas grid */
+  const PEN_X = 8;                                       /* minigame_status::PEN_* */
+  const PEN_ROWS = [44, 62, 80];                         /* contest, status, prompt */
+  const PEN_EXTRA = 98;      /* the dance beat track; the fishing affordances */
+  const STATUS_INKS = [      /* text_lines::STATUS_ROW_*; play_fishing's two */
+    [1, 1, 1], [0.7, 0.85, 1], [0.65, 0.72, 0.8],
+  ];
+
+  const CAP = { el: null, pending: [], shown: '' };
+
+  function statusInk(c) {
+    for (let i = 0; i < STATUS_INKS.length; i++) {
+      const k = STATUS_INKS[i];
+      if (Math.abs(c[0] - k[0]) < 0.01 && Math.abs(c[1] - k[1]) < 0.01
+        && Math.abs(c[2] - k[2]) < 0.01 && c[3] > 0.99) return i;
+    }
+    return -1;
+  }
+
+  /* The engine's stage transform for a surface (`stage_transform`: the
+   * 320x240 stage at an integer scale, centred). */
+  function stageOf(ov) {
+    const s = Math.max(1, Math.min(4, Math.floor(ov.width / HUD_W), Math.floor(ov.height / HUD_H)));
+    return [Math.floor((ov.width - HUD_W * s) / 2), Math.floor((ov.height - HUD_H * s) / 2), s];
+  }
+
+  /* Lift the status rows out of `texts` (an overlay export's glyph quads on
+   * surface `ov`) and queue them for the caption. Returns the quads that
+   * stay in the frame. `game` is the live game's label; `stage` is the
+   * export's own `[x0, y0, scale]` when it carries one. */
+  function captionTake(texts, ov, game, stage) {
+    if (!game || !texts || !texts.length || !ensureCaption()) return texts;
+    const st = stage || stageOf(ov);
+    const sc = st[2];
+    const lines = new Map();      /* "pen:ink" -> candidate quads */
+    for (let i = 0; i < texts.length; i++) {
+      const t = texts[i];
+      if (t.src[2] !== GLYPH_W || t.src[3] !== GLYPH_H || t.dst[3] !== GLYPH_H * sc) continue;
+      const pen = (t.dst[1] - st[1]) / sc;
+      if (pen !== PEN_EXTRA && PEN_ROWS.indexOf(pen) < 0) continue;
+      const ink = statusInk(t.color);
+      if (ink < 0) continue;
+      const key = pen + ':' + ink;
+      if (!lines.has(key)) lines.set(key, []);
+      lines.get(key).push(i);
+    }
+    if (!lines.size) return texts;
+    const drop = new Set();
+    const rows = [];
+    for (const [key, idx] of lines) {
+      const pen = +key.split(':')[0];
+      /* The dance beat track is the game's own beat bar spelt in ASCII, its
+       * notes at their scroll positions rather than in a run: redundant
+       * beside the bar the frame draws, so it is dropped, not captioned. */
+      if (pen === PEN_EXTRA && game === 'dance') { idx.forEach((i) => drop.add(i)); continue; }
+      if (pen === PEN_EXTRA && game !== 'fishing') continue;
+      idx.sort((a, b) => texts[a].dst[0] - texts[b].dst[0]);
+      if (texts[idx[0]].dst[0] !== st[0] + PEN_X * sc) continue;
+      let text = '';
+      let prev = null;
+      for (const i of idx) {
+        const t = texts[i];
+        if (prev !== null && t.dst[0] - prev > GLYPH_W * sc) break;
+        prev = t.dst[0];
+        text += String.fromCharCode(FIRST_CHAR + (t.src[1] / GLYPH_H) * 16 + t.src[0] / GLYPH_W);
+        drop.add(i);
+      }
+      rows.push({ pen, bright: statusInk(texts[idx[0]].color) === 0, text });
+    }
+    rows.sort((a, b) => a.pen - b.pen);
+    for (const r of rows) CAP.pending.push(r);
+    return drop.size ? texts.filter((_, i) => !drop.has(i)) : texts;
+  }
+
+  function ensureCaption() {
+    if (CAP.el) return CAP.el;
+    CAP.el = document.getElementById('play-mg-caption');
+    return CAP.el;
+  }
+
+  /* Start of an overlay pass: nothing is queued yet. */
+  function captionBegin() { CAP.pending.length = 0; }
+
+  /* End of an overlay pass: show what the pass queued. The strip keeps its
+   * place for as long as a game is live, so the controls under it do not
+   * jump each time a phase puts rows up or takes them down. */
+  function captionCommit(live) {
+    const el = ensureCaption();
+    if (!el) return;
+    const key = (live ? '1' : '0') + CAP.pending.map((r) => (r.bright ? '!' : ' ') + r.text).join('\n');
+    if (key === CAP.shown) return;
+    CAP.shown = key;
+    el.hidden = !live;
+    el.classList.toggle('is-empty', !CAP.pending.length);
+    el.textContent = '';
+    for (const r of CAP.pending) {
+      const line = document.createElement('div');
+      line.className = 'play-mg-line' + (r.bright ? ' is-bright' : '');
+      /* The engine separates a row's clauses with runs of spaces. */
+      for (const part of r.text.trim().split(/ {3,}/)) {
+        if (!part) continue;
+        const span = document.createElement('span');
+        span.textContent = part.replace(/ {2,}/g, '  ');
+        line.appendChild(span);
+      }
+      el.appendChild(line);
+    }
+  }
+
+  /* ================================================================== */
 
   function teardown(rt, view) {
     if (S.game && (S.game !== 'slot' || S.slotVram)) releaseRenderer(rt, view);
@@ -816,6 +947,10 @@
     frame,
     /* Which game owns the view (`null` outside one). */
     active: () => S.game,
+    /* The status caption: `captionBegin` opens an overlay pass,
+     * `captionTake` lifts the status rows out of one export's glyph quads,
+     * `captionCommit` shows the pass's rows under the canvas. */
+    captionBegin, captionTake, captionCommit,
     /* The fishing prize-exchange panel, for a page control that wants to
      * open it directly. */
     openPrizes(rt, view) {

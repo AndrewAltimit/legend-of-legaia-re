@@ -158,6 +158,32 @@
   pointer-events: none; image-rendering: pixelated;
 }
 
+/* Minigame status strip: the engine's status rows and key hints, under the
+   canvas instead of inside the frame. It wraps where the in-frame line ran
+   off the right edge, and holds its two-line place while a game is live so
+   the rows below it do not jump between phases. */
+.play-mg-caption {
+  box-sizing: border-box;
+  min-height: 3.1rem; padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border); border-top: 0; background: var(--bg-card);
+  font-family: var(--font-mono); font-size: 0.76rem; line-height: 1.5;
+  color: var(--text-muted); overflow-wrap: anywhere;
+}
+.play-mg-caption[hidden] { display: none; }
+.play-mg-caption.is-empty { visibility: hidden; }
+.play-mg-line.is-bright { color: var(--text-bright); }
+.play-mg-line span + span::before { content: "\00b7"; margin: 0 0.5em; color: var(--text-dim); }
+/* Pinned column only (the single-column layout below 981px lets the canvas
+   run full width): the strip takes its height out of the canvas, not out of
+   the button rows, because the pinned column has to fit the window - and it
+   keeps the canvas's width so the two read as one block. */
+@media (min-width: 981px) {
+  .play-viewport:has(> .play-mg-caption:not([hidden])) .play-canvas-wrap,
+  .play-mg-caption {
+    max-width: max(320px, calc((100vh - var(--topbar-h) - 13rem) * 4 / 3));
+    margin-inline: auto;
+  }
+}
 .play-hud {
   display: flex; gap: 0.9rem; flex-wrap: wrap;
   font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-muted);
@@ -318,6 +344,10 @@
           <div class="play-focus-veil" id="play-veil">Click to take the controls</div>
           <div class="play-dialog is-hidden" id="play-dialog"></div>
         </div>
+        <!-- A minigame's status rows and key hints (play-minigames.js
+             `captionTake`): the engine's own lines, shown here rather than
+             over the frame, where the game's chrome now draws on top. -->
+        <div class="play-mg-caption" id="play-mg-caption" hidden></div>
         <div class="play-hud">
           <span><b>Scene</b> <span id="hud-scene">-</span></span>
           <span><b>Mode</b> <span id="hud-mode">-</span></span>

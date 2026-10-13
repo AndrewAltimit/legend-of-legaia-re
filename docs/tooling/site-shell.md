@@ -559,3 +559,34 @@ surface (the floating damage numeral) needs the sim paused on the frame you
 found it, or the screenshot lands after it expires: poll
 `play_overlay_draws_json`, then `window.__playView.setPaused(true)`, then
 shoot.
+
+### The play page's minigame status rows sit under the canvas
+
+The engine's minigame status rows (`engine-core::minigame_status`, and the
+fishing rows in `web-viewer::play_fishing`) are the port's own readout of the
+rules state plus the key hints - not retail chrome. They reach the page inside
+the overlay draw lists as font-atlas glyph quads at fixed stage pens, the
+positions the native window prints them at.
+
+The play page draws a game's own chrome (screen primitives) over its text
+layer, as the native window does, so a row left in the frame is covered by
+whatever the game draws there - the Baka Fighter title logo sits on the prompt
+line - and a long row runs off the frame's right edge. `captionTake` in
+`play-minigames.js` therefore lifts the rows out of the list before the blit
+and shows them in `#play-mg-caption`, the strip under the canvas, where they
+wrap. The dance beat track is dropped outright: it is the game's own beat bar
+spelt in ASCII.
+
+A row is recognised by shape, because the export carries quads and no strings:
+glyph cells in a status ink, on a status pen, starting at the pen's x and
+advancing by at most one cell. The text is read back through the atlas grid
+(`0x20 + row * 16 + col`). That couples the page to the pens and inks in
+`minigame_status` and `text_lines`; a row moved there shows up again inside the
+frame. Fullscreen presents the canvas wrap alone, so it shows the frame
+without the strip.
+
+To reach a minigame from a driver, enter any scene and call
+`window.__playRuntime.play_mg_debug_warp(n)`: 0 fishing, 3 slot machine,
+4 Baka Fighter, 5 Muscle Dome, 6 dance. Use the GPU backend
+(`--use-angle=vulkan --enable-gpu --ignore-gpu-blocklist`); software rendering
+drops key presses at these frame rates.
