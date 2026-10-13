@@ -103,12 +103,14 @@
 //! every monster would fail it until the player opened target select, and the
 //! summon fade's zero would be **permanent** rather than a 32-frame dip.
 //!
-//! The twin is therefore kept, with two known divergences, both recorded rather
+//! The twin is therefore kept, with two known gaps in it, both recorded rather
 //! than papered over:
 //!
-//! * **Empty seats are under-rejected.** A monster slot that was never seated
-//!   reads `+0x21C == 0` and joins the centroid at the origin, pulling the aim
-//!   toward the middle of the stage. Retail rejects it on `+0x4 == 0`.
+//! * **Empty seats need a second test.** A monster slot that was never seated
+//!   reads `+0x21C == 0`, and counted it joins the centroid at the origin,
+//!   pulling the aim toward the middle of the stage. Retail rejects it on
+//!   `+0x4 == 0`; the callers reject it on the seat itself (the cast's
+//!   re-face on a zero max HP, the spell camera on the missing monster id).
 //! * **A monster that dies during a summon is over-rejected.** State `0x36`'s
 //!   `+0x21C` clear is gated on `+0x14C != 0` (`0x801E4CE4`), so a slot that
 //!   died mid-fade keeps `0xFF` for the rest of the battle, while retail's
