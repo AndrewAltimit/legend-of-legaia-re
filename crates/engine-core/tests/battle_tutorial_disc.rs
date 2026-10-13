@@ -244,7 +244,16 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
         "lesson 0 names [Attack] next"
     );
 
-    // Running is refused for the whole sparring fight.
+    // Running is refused for the whole sparring fight. The ring `Begin`
+    // opened is still gliding in and the menu SM dispatches nothing under
+    // it (`World::battle_command_pad_held`): let it land first.
+    for _ in 0..64 {
+        if !world.battle_command_pad_held() {
+            break;
+        }
+        world.input.set_pad(0);
+        world.tick();
+    }
     world.battle.tutorial_boxes.clear();
     world.battle.command = Some(legaia_engine_menus::battle_input::BattleCommandSession {
         actor: 0,

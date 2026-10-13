@@ -413,7 +413,11 @@ pub fn battle_hud_draws_for(
     // panels are cut to what the box leaves visible instead of layered.
     let seats = panel_seats(live_party.len().min(3));
     let (panel_text_from, panel_sprites_from) = (text.len(), sprites.len());
-    if !frame.panels_parked && bar_member.is_none() {
+    // The panels and the bar are one seat's two tenants, except while the
+    // ring opens: step 1 sinks the panels as it raises the bar, and both are
+    // on screen for the glide (`ap_plate_dx` is non-zero exactly then).
+    let ring_opening = frame.ap_plate_dx != 0;
+    if !frame.panels_parked && (bar_member.is_none() || ring_opening) {
         for (ordinal, (i, slot)) in live_party.iter().take(3).enumerate() {
             let px = seats[ordinal];
             // The open glide ([`BattleHudFrame::panels_dy`]) moves the whole
@@ -714,11 +718,14 @@ pub fn battle_hud_draws_for(
         // plaque drops in beside it (record 26 at `(68, 14)`) - two gold
         // plates, `Begin | Vahn`, the trail the item window continues.
         let plaque_x = if frame.begin_tab {
+            // The tab walks in from the prompt's `Begin` seat as the ring
+            // opens (`frame.begin_tab_offset`).
+            let (tab_dx, tab_dy) = frame.begin_tab_offset;
             plate_run(
                 &mut text,
                 &mut sprites,
-                BEGIN_TAB_X,
-                BEGIN_TAB_Y,
+                BEGIN_TAB_X + tab_dx,
+                BEGIN_TAB_Y + tab_dy,
                 BEGIN_TAB_INTERIOR_W,
                 true,
             );
@@ -726,8 +733,8 @@ pub fn battle_hud_draws_for(
                 &mut text,
                 font,
                 BEGIN_TAB_LABEL,
-                BEGIN_TAB_X + PLATE_CAP_W,
-                BEGIN_TAB_Y + PLAQUE_CONTENT_DY,
+                BEGIN_TAB_X + tab_dx + PLATE_CAP_W,
+                BEGIN_TAB_Y + tab_dy + PLAQUE_CONTENT_DY,
                 white,
             );
             PLAQUE_BEHIND_TAB_X
@@ -735,8 +742,10 @@ pub fn battle_hud_draws_for(
             PLAQUE_X
         };
         // The action plaque glides in from its parked seat above the top
-        // edge; the ring's trail is a different record and rests.
-        let plaque_y = PLAQUE_Y + if frame.begin_tab { 0 } else { frame.plaque_dy };
+        // edge, and so does the ring's (record `0x1A`) as the ring opens;
+        // every later command-entry step snaps it, and the host's
+        // `plaque_dy` is `0` there.
+        let plaque_y = PLAQUE_Y + frame.plaque_dy;
         plate_run(
             &mut text,
             &mut sprites,
@@ -979,7 +988,9 @@ pub fn battle_hud_draws_for(
                 full_mark: rects.gauge_100,
             },
             value,
-            origin,
+            // The slide in with the ring ([`BattleHudFrame::ap_plate_dx`])
+            // moves the whole plate.
+            (origin.0 + frame.ap_plate_dx * scale, origin.1),
             scale as u32,
         ));
     }

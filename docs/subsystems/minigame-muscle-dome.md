@@ -959,7 +959,7 @@ Battle context (offsets relative to `_DAT_8007BD24` unless noted):
 | `ctx+0x6d8` | u16 | AP spent this round (pennant cursor) | Confirmed |
 | `ctx+0x6dc` | u16 | remaining AP budget (seeded from actor `+0x154`) | Confirmed |
 | `ctx+0x880` | u32 | chosen direction bitmask | Confirmed |
-| `ctx+0x884` | u32 | latched input mask for the round | Inferred |
+| `ctx+0x884` | u32 | the press parked while a widget glide was landing, read by the first dispatched pass ([the stepper's return](battle-hud.md#the-steppers-return-holds-the-pad)) | Confirmed |
 | `ctx+0x1074[0..0x27]` | ptr[40] | active sprite-handle array (flags at `ctx+0x11B7` / `ctx+0x11B4`) | Confirmed |
 | `ctx+0x1114 … +0x1120` | ptr[4] | the four direction-slot sprite handles | Confirmed |
 | `ctx+0x11b4[0..0x27]` | u8[40] / `+ i*0xC` records | per-handle active flags and glide records (walked by `FUN_801D9BBC`) | Confirmed |

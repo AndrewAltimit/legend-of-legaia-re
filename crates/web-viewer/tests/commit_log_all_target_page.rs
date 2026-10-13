@@ -199,8 +199,10 @@ fn an_all_target_spell_commit_lands_the_row_label_on_the_page() {
                         pad = PadButton::Left.mask();
                     }
                 }
-                (Some(r), None) if f == r + 10 => pad = PadButton::Right.mask(),
-                (Some(r), None) if f == r + 30 => {
+                // The ring opens on a glide and reads no pad until its arms
+                // land (sixteen frames and the landing pass).
+                (Some(r), None) if f == r + 24 => pad = PadButton::Right.mask(),
+                (Some(r), None) if f == r + 44 => {
                     pad = PadButton::Cross.mask();
                     commit_at = Some(f);
                 }

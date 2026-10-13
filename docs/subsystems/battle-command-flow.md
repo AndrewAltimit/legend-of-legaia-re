@@ -600,7 +600,10 @@ and the engine syncs it at the same point
 
 A queued box parks the whole battle tick (`World::live_battle_tick` returns
 early), which is the port of retail returning before it reads the flow state
-while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). A hook that takes the
+while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). The same exit holds the
+pad while a tracked widget glide is in flight - the round prompt unfolding,
+the ring's arms sliding in - and parks one late press for the first dispatched
+pass; see [the stepper's return](battle-hud.md#the-steppers-return-holds-the-pad). A hook that takes the
 rewind exit discards the action and reopens the command menu.
 
 **No host arms it.** `World::enter_battle` consumes the disc's own one-shot

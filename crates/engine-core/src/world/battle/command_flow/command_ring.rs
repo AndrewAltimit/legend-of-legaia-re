@@ -132,6 +132,13 @@ impl World {
         {
             session.phase = CommandPhase::CommitConfirm { cursor: 0 };
         }
+        // `Begin` onto the ring is sub-draw step 1 (`li a0,0x1` /
+        // `jal 0x801D388C` at `0x801D109C`): its records spawn at seat A
+        // and glide in, and the ring reads no pad until they land.
+        // REF: FUN_801D0748 (state 0x1E confirm arm)
+        if was_round_prompt && matches!(session.phase, CommandPhase::Menu { .. }) {
+            self.start_ring_open_glide();
+        }
         // Target-cursor tint: retail stamps the four monster slots bright /
         // dimmed while the cursor is walking them and clears the tint the
         // moment it closes.

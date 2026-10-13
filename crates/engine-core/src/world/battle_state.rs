@@ -454,6 +454,16 @@ pub struct BattleState {
     /// ([`crate::battle_hud::battle_round_prompt_panels_dy`],
     /// [`crate::battle_hud::battle_chip_offsets`]).
     pub(crate) round_prompt_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// The ring's open glide. The round prompt's confirm arm runs sub-draw
+    /// step 1 (`FUN_801D388C(1)` at `0x801D109C`), whose twelve pairs are
+    /// `09/0 0A/0 08/0 0B/0 01/0 05/0 06/1 4E/1 4F/1 07/0 1A/0 52/0`: the
+    /// four arms slide in from the right, `Begin` (record 1) walks from its
+    /// prompt seat to the tab seat, `Run` (record 5) leaves to the right,
+    /// the roster panels sink (mode `1`, seat B to seat A), the bar rises,
+    /// the plaque drops in behind the tab and the AP plate slides in - all
+    /// on the one sixteen-vsync step. `None` before a round's first ring
+    /// (the `battle_hud::battle_ring_*` helpers and the plate offsets).
+    pub(crate) ring_open_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// What the glide stepper returned on this tick's pass - retail's `s0`
     /// at `0x801D0B34`, the value the menu SM leaves in `ctx[+0x6B2]`.
     /// Non-zero while a tracked glide is in flight and on the pass it lands;
@@ -849,6 +859,7 @@ impl BattleState {
             target_plaque_glide: None,
             readout_bar_glide: None,
             round_prompt_glide: None,
+            ring_open_glide: None,
             widget_glide_return: 0,
             widget_glide_latch: 0,
             command_pad_buffer: None,

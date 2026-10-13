@@ -136,6 +136,13 @@ impl World {
         self.battle.round_prompt_glide = Some(LogLaunch::new(false));
     }
 
+    /// Start the ring's open glide: sub-draw step 1 spawning its twelve
+    /// records ([`crate::world::BattleState::ring_open_glide`]).
+    pub(crate) fn start_ring_open_glide(&mut self) {
+        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+        self.battle.ring_open_glide = Some(LogLaunch::new(false));
+    }
+
     /// Land every HUD widget glide in flight on its rest seat, as
     /// `FUN_801D9BBC` does once a glide's `elapsed` reaches its `total`. The
     /// retail-compare capture seats this when the retail state's glides had
@@ -147,6 +154,7 @@ impl World {
             self.battle.readout_bar_glide.as_mut(),
             self.battle.result_windows_glide.as_mut(),
             self.battle.round_prompt_glide.as_mut(),
+            self.battle.ring_open_glide.as_mut(),
         ]
         .into_iter()
         .flatten()
@@ -157,6 +165,26 @@ impl World {
         self.battle.widget_glide_latch = 0;
     }
 
+    /// Land the command surfaces' own glides - the round prompt's and the
+    /// ring's - and open the menu SM's gate, leaving the action plates
+    /// where they are. A capture drive calls it every tick it steers: it
+    /// walks the command flow to the phase a retail state froze, and the
+    /// ticks a player spends waiting out each glide are not part of that
+    /// state (the battle camera's prompt orbit runs on them). No game path
+    /// calls it.
+    pub fn release_command_pad_hold(&mut self) {
+        for g in [
+            self.battle.round_prompt_glide.as_mut(),
+            self.battle.ring_open_glide.as_mut(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            g.elapsed = g.total;
+        }
+        self.battle.widget_glide_latch = 0;
+    }
+
     /// Seat the HUD widget glide whose retail record lands on `target` at
     /// `elapsed` - the record's `+0x04` / `+0x06` target seat names the
     /// widget: `(16, 12)` the actor plaque (record `0x44`), `(16, 192)` the
@@ -164,7 +192,10 @@ impl World {
     /// plaque (record `0x51`, `x = 304 - w`); the round prompt's chips land
     /// on `(104, 86)` / `(180, 86)` (records 0 / 3) and its panels on row
     /// `168` at any `x` but the combo cluster's `168` (records 6 / `0x4E` /
-    /// `0x4F`, re-seated per party size). Returns whether a glide the
+    /// `0x4F`, re-seated per party size); the ring's arms land on
+    /// `(160 | 248, 64)` / `(204, 32 | 96)` (records 9 / `0x0A` / 8 /
+    /// `0x0B`), its plaque on `(68, 12)` (record `0x1A`) and its AP plate on
+    /// `(208, 172)` (record `0x52`). Returns whether a glide the
     /// engine holds took the seat. The retail-compare capture seats this
     /// from a capture whose glides were in flight; no game path calls it.
     pub fn seat_battle_hud_glide(&mut self, target: [i16; 2], elapsed: u8) -> bool {
@@ -173,6 +204,9 @@ impl World {
             [16, 192] => self.battle.readout_bar_glide.as_mut(),
             [_, 192] => self.battle.target_plaque_glide.as_mut(),
             [104 | 180, 86] => self.battle.round_prompt_glide.as_mut(),
+            [160 | 248, 64] | [204, 32 | 96] | [68, 12] | [208, 172] => {
+                self.battle.ring_open_glide.as_mut()
+            }
             [x, 168] if x != 168 => self.battle.round_prompt_glide.as_mut(),
             _ => None,
         };
@@ -212,6 +246,7 @@ impl World {
             self.battle.target_plaque_glide.as_mut(),
             self.battle.readout_bar_glide.as_mut(),
             self.battle.round_prompt_glide.as_mut(),
+            self.battle.ring_open_glide.as_mut(),
         ]
         .into_iter()
         .flatten()
@@ -303,6 +338,7 @@ impl World {
             self.battle.target_plaque_glide.as_ref(),
             self.battle.readout_bar_glide.as_ref(),
             self.battle.round_prompt_glide.as_ref(),
+            self.battle.ring_open_glide.as_ref(),
         ]
         .into_iter()
         .flatten()

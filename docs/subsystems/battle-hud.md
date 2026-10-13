@@ -523,26 +523,95 @@ the screen.
 **No D-pad glyph until it lands.** The menu SM runs the glide stepper ahead of
 its state switch and leaves without dispatching while the stepper reports a
 glide in flight (`jal 0x801D9BBC` at `0x801D0B2C`, `bne s0,zero` at
-`0x801D0B38`, the exit at `0x801D0BA0`). `FUN_801D9BBC` returns
-`total - elapsed + 1` of the first record whose flag byte `+3` is set
-(`0x801D9C08`, `0x801D9D04..0x801D9D18`). The glyph is drawn by the state's own
+`0x801D0B38`, the exit at `0x801D0BA0`). The glyph is drawn by the state's own
 arm (`FUN_801DB8F4(0x98, 0x58)` at `0x801D1030` for `0x1E`), so an unfolding
 prompt shows none: the packet pool of `koru_strip_forced` holds `Begin` and
 `Run` five pixels short of their seats, the panel nine rows short of its own,
-and no glyph packet. The same early exit keeps the state from reading the pad;
-a press made while the stepper's return is under `6` is parked in
-`ctx[+0x884]` for the first dispatched frame (`0x801D0B5C..0x801D0B98`,
-directional-buttons entry only).
+and no glyph packet.
 
-Port: `BattleState::round_prompt_glide`, started where the round prompt opens
-(`World::open_battle_command`, `arm_round_open_prompt`) and stepped with the
-action plates. `battle_hud::battle_round_prompt_panels_dy`,
-`battle_chip_offsets` and `battle_chip_dpad_visible` hand both hosts the
-offsets (`BattleHudFrame::panels_dy`, `BattleCommandMenuFrame::offsets` /
-`dpad`). Differences from retail: the port's command session takes the pad
-from its first frame, and the other steps' glides (the ring's four arms
-sliding in from the right, the tab and plaque, the AP plate) are drawn at
-rest.
+#### The ring opens on a glide
+
+Step 1 is `[12][1][4]` with pairs
+`09/0 0A/0 08/0 0B/0 01/0 05/0 06/1 4E/1 4F/1 07/0 1A/0 52/0`, run by the
+round prompt's confirm arm (`jal 0x801D388C` at `0x801D109C`):
+
+| Record | Element | Seat the step starts from -> seat it lands on |
+|---|---|---|
+| 9 / `0x0A` / 8 / `0x0B` | the four ring arms | `x = seat + 168 -> seat` (`328 -> 160` for record 9) |
+| 1 | `Begin`, now the tab | `(104, 88) -> (16, 14)`, from the prompt's own `Begin` seat |
+| 5 | `Run` | `x = 180 -> 328`, off the right edge |
+| 6 / `0x4E` / `0x4F` | roster panels (mode `1`) | `y = 170 -> 236`, sinking |
+| 7 | the bar | `y = 236 -> 194` |
+| `0x1A` | the plaque behind the tab | `y = -24 -> 14` |
+| `0x52` | the AP plate | `x = 328 -> 208` |
+
+#### The stepper's return holds the pad
+
+`FUN_801D9BBC` returns a value the menu SM reads as "a glide is still up":
+
+- it is seeded from the first live record's flag byte `+3`
+  (`0x801D9C00..0x801D9C08`), which is `ctx[+0x1B]` at spawn
+  (`lbu a2,0xa(s1)` at `0x801D93C0`) - `1` from the round reset
+  (`0x801D88FC..0x801D8900`), cleared only around the arts entry's own spawns
+  (`0x801D3D40`);
+- every record still in flight after its step rewrites it to
+  `total - elapsed + 1` (`0x801D9D04..0x801D9D18`);
+- a record that lands leaves it alone and retires (`sb zero,0(a1)` at
+  `0x801D9D1C`).
+
+So the pass a glide lands on still returns the flag, and the first zero return
+is the pass after. The menu SM's pre-dispatch block acts on it:
+
+```text
+s0 = FUN_801D9BBC()                              ; 0x801D0B2C
+if s0 != 0 || ctx[+0x26A] != 0 {
+    if s0 < 6 && s2 != 0 && ctx[+0x884] == 0 && _DAT_800846C8 == 0 {
+        ctx[+0x884] = s2                         ; 0x801D0B5C..0x801D0B98
+    }
+    ctx[+0x6B2] = s0; return                     ; 0x801D0B9C..0x801D0BA4
+}
+if ctx[+0x6B2] != 0 && stage_id != 0 {           ; 0x801D0BA8..0x801D0BCC
+    ctx[+0x6B2] = 0; return
+}
+...
+if s2 == 0 && ctx[+0x884] != 0 { s2 = ctx[+0x884] }   ; 0x801D0C1C..0x801D0C3C
+ctx[+0x884] = 0                                  ; 0x801D0C58
+```
+
+No state arm runs under a glide, so nothing reads the pad and the state's own
+draws are not issued. A press made while the return is under `6` - the last
+passes of the glide and the pass it lands on - is parked in `ctx[+0x884]`, one
+press only, and only under the Battle Command option's directional-buttons
+value (`_DAT_800846C8 == 0`). The first dispatched pass reads the parked word
+when it has no press of its own, and the park is emptied either way. A battle
+with a stage module paged in (`_DAT_8007B64A != 0`) spends one more pass
+clearing `ctx[+0x6B2]` before it dispatches.
+
+Port: `BattleState::round_prompt_glide` and `ring_open_glide`, started where
+the round prompt opens (`World::open_battle_command`, `arm_round_open_prompt`)
+and where `Begin` takes the ring (`World::tick_battle_command`), and stepped
+with the action plates by `World::step_action_plate_glides`, which also keeps
+the stepper's return. `World::battle_command_glide_gate` is the pre-dispatch
+block, ahead of every command surface in the battle tick, and
+`World::take_command_pad_buffer` hands the round prompt and the ring the
+parked press. `battle_hud::battle_round_prompt_panels_dy`,
+`battle_chip_offsets`, `battle_chip_dpad_visible`, `battle_begin_tab_offset`,
+`battle_ring_ap_plate_dx` and the two plate offsets
+(`battle_action_plaque_dy`, `battle_readout_bar_dy`) hand both hosts the
+seats.
+
+Differences from retail:
+
+- the port ticks once per vsync and retail's pass spans the frame step, so the
+  parking window opens on the tick the return first reads `5` rather than on
+  the pass that contains it - one vsync later at the battle's step of `2`;
+- the pad word is the newly-pressed edge alone; retail's also carries the
+  held-for-32-vsyncs term (`_DAT_8007B938`);
+- the `ctx[+0x26A]` term of the exit is not modelled;
+- `Run` sliding off the right edge as the ring opens is not drawn;
+- the steps past the ring - the windows, the attack-mode prompt, the target
+  cursors, the commit confirm - draw at rest and hold no pad. Their glides
+  are the same kernel over their own records.
 
 #### Action-phase openers
 

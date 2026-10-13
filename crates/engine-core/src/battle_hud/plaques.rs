@@ -237,25 +237,83 @@ fn round_prompt_glide(
         .flatten()
 }
 
+/// The ring's open glide while the ring is what the frame draws
+/// ([`crate::world::BattleState::ring_open_glide`]), still in flight.
+pub(super) fn ring_open_glide(
+    world: &crate::world::World,
+) -> Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch> {
+    (world.mode == legaia_engine_mode::mode::SceneMode::Battle
+        && battle_command_surface(world) == Some(CommandSurface::Ring))
+    .then_some(world.battle.ring_open_glide.as_ref())
+    .flatten()
+    .filter(|g| !g.settled())
+}
+
+/// Seat A / seat B columns of a ring arm (records 9 / `0x0A` / 8 / `0x0B`):
+/// every arm spawns `168` to the right of its seat (`x = 328` -> `160` for
+/// record 9) and slides in on its own row.
+pub(super) const RING_ARM_SEATS_X: (i32, i32) = (328, 160);
+
+/// Seat A / seat B of the `Begin` tab (record 1): the round prompt's own
+/// `Begin` seat `(104, 88)` to the tab seat `(16, 14)`.
+pub(super) const BEGIN_TAB_SEATS: ((i32, i32), (i32, i32)) = ((104, 88), (16, 14));
+
+/// Seat A / seat B rows of the plaque behind the tab (record `0x1A`:
+/// `y = -24` -> `14`).
+pub(super) const TAB_PLAQUE_SEATS_Y: (i32, i32) = (-24, 14);
+
+/// Seat A / seat B rows of the ring's bar (record 7 as step 1 opens it:
+/// `y = 236` -> `194`).
+pub(super) const RING_BAR_SEATS_Y: (i32, i32) = (236, 194);
+
+/// Seat A / seat B columns of the ring's AP plate (record `0x52`:
+/// `x = 328` -> `208`).
+pub(super) const RING_AP_PLATE_SEATS_X: (i32, i32) = (328, 208);
+
 /// How far the roster panels sit below their rest row this frame: the rise
 /// sub-draw step 0 starts when a round's prompt opens
-/// ([`crate::world::BattleState::round_prompt_glide`]). `0` once landed and
-/// on every other surface that shows the panels.
+/// ([`crate::world::BattleState::round_prompt_glide`]), and the sink step 1
+/// runs as the ring opens (`06/1 4E/1 4F/1`: seat B back down to seat A,
+/// [`crate::world::BattleState::ring_open_glide`]). `0` once landed and on
+/// every other surface that shows the panels.
 pub fn battle_round_prompt_panels_dy(world: &crate::world::World) -> i32 {
     let (a, b) = ROSTER_PANEL_SEATS_Y;
+    if let Some(g) = ring_open_glide(world) {
+        return (a - b) * i32::from(g.elapsed) / i32::from(g.total.max(1));
+    }
     plate_glide_dy(round_prompt_glide(world), a, b)
 }
 
 /// Each command chip's offset from its rest seat this frame, in chip order:
-/// the round prompt's `Begin` and `Run` unfolding from the cluster centre.
-/// Zero on every other cluster and once the glide has landed.
+/// the round prompt's `Begin` and `Run` unfolding from the cluster centre,
+/// and the ring's four arms sliding in from the right. Zero on every other
+/// cluster and once the glide has landed.
 pub fn battle_chip_offsets(world: &crate::world::World) -> [(i32, i32); 4] {
-    let g = round_prompt_glide(world);
     let mut out = [(0, 0); 4];
+    if let Some(g) = ring_open_glide(world) {
+        let (a, b) = RING_ARM_SEATS_X;
+        return [(plate_glide_dy(Some(g), a, b), 0); 4];
+    }
+    let g = round_prompt_glide(world);
     for (o, (a, b)) in out.iter_mut().zip(ROUND_PROMPT_CHIP_SEATS_X) {
         o.0 = plate_glide_dy(g, a, b);
     }
     out
+}
+
+/// The `Begin` tab's offset from its seat this frame: record 1 walking from
+/// the round prompt's `Begin` seat as the ring opens. `(0, 0)` at rest.
+pub fn battle_begin_tab_offset(world: &crate::world::World) -> (i32, i32) {
+    let g = ring_open_glide(world);
+    let ((ax, ay), (bx, by)) = BEGIN_TAB_SEATS;
+    (plate_glide_dy(g, ax, bx), plate_glide_dy(g, ay, by))
+}
+
+/// How far right of its seat the ring's AP plate sits this frame: record
+/// `0x52` sliding in as the ring opens. `0` at rest.
+pub fn battle_ring_ap_plate_dx(world: &crate::world::World) -> i32 {
+    let (a, b) = RING_AP_PLATE_SEATS_X;
+    plate_glide_dy(ring_open_glide(world), a, b)
 }
 
 /// Whether the command cluster's D-pad glyph draws this frame. The menu
@@ -277,7 +335,15 @@ pub fn battle_chip_offsets(world: &crate::world::World) -> [(i32, i32); 4] {
 ///
 /// REF: FUN_801D0748, FUN_801DB8F4
 pub fn battle_chip_dpad_visible(world: &crate::world::World) -> bool {
-    round_prompt_glide(world).is_none_or(|g| g.settled() && world.battle.widget_glide_return == 0)
+    if ring_open_glide(world).is_some() {
+        return false;
+    }
+    let ring_landing = battle_command_surface(world) == Some(CommandSurface::Ring)
+        && world.battle.ring_open_glide.is_some()
+        && world.battle.widget_glide_return != 0;
+    !ring_landing
+        && round_prompt_glide(world)
+            .is_none_or(|g| g.settled() && world.battle.widget_glide_return == 0)
 }
 
 /// Seat A / seat B rows of the level-up window (records `0x45..=0x4B`:
@@ -314,9 +380,15 @@ pub(super) const TARGET_PLAQUE_SEATS_Y: (i32, i32) = (236, 194);
 /// `FUN_801D9BBC` glides it down over `ctx[+0x1C] = 0x10` frames. So a frame
 /// taken the step the seed ran - the `super_queue_*` captures at `0x14` -
 /// shows no plaque, and one taken half a glide later shows it half in.
-/// Outside the action phase (the command ring's `Begin | <name>` trail) the
-/// plaque is a different record and this is `0`.
+/// On the command ring the plaque is a different record (`0x1A`, behind the
+/// `Begin` tab), which drops in from the same parked row as the ring opens
+/// ([`crate::world::BattleState::ring_open_glide`]); every later
+/// command-entry step snaps it and this is `0`.
 pub fn battle_action_plaque_dy(world: &crate::world::World) -> i32 {
+    if let Some(g) = ring_open_glide(world) {
+        let (a, b) = TAB_PLAQUE_SEATS_Y;
+        return plate_glide_dy(Some(g), a, b);
+    }
     if battle_hud_phase(world) != BattleHudPhase::Action
         || world.mode != legaia_engine_mode::mode::SceneMode::Battle
     {
@@ -348,9 +420,15 @@ pub(super) const READOUT_BAR_SEATS_Y: (i32, i32) = (234, 192);
 
 /// How far the active-actor bar sits below its rest seat this frame - the
 /// raise glide record 7 runs when the action seed (or the item pre-arm)
-/// opens it ([`crate::world::BattleState::readout_bar_glide`]). `0` outside
-/// the action phase, where the bar is the command ring's or a target step's.
+/// opens it ([`crate::world::BattleState::readout_bar_glide`]), and the same
+/// rise as the ring opens (step 1's `07/0`,
+/// [`crate::world::BattleState::ring_open_glide`]). `0` on every other
+/// command-entry step, which snaps the bar.
 pub fn battle_readout_bar_dy(world: &crate::world::World) -> i32 {
+    if let Some(g) = ring_open_glide(world) {
+        let (a, b) = RING_BAR_SEATS_Y;
+        return plate_glide_dy(Some(g), a, b);
+    }
     if battle_hud_phase(world) != BattleHudPhase::Action
         || world.mode != legaia_engine_mode::mode::SceneMode::Battle
     {

@@ -916,6 +916,13 @@ impl BattleDrive {
     /// accumulator short of retail's, or in `0x6F` with the pull-in not yet
     /// down to retail's depth, and releases them otherwise.
     pub fn steer(&self, world: &mut legaia_engine_core::world::World) {
+        // The drive presses through the command flow on its own clock; the
+        // glides that hold a player's pad are landed under it, so reaching
+        // a phase costs the ticks it always did. Once the phase is reached
+        // its own glide is the capture's to seat, and runs untouched.
+        if !self.reached(world) {
+            world.release_command_pad_hold();
+        }
         let Self::Action {
             seat,
             state: want,

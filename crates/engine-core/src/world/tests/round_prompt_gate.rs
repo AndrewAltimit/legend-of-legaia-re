@@ -95,8 +95,9 @@ fn the_first_live_pass_is_the_one_after_the_landing() {
     assert!(on_prompt(&world));
     // Pass 17 dispatches the state.
     tick(&mut world, PadButton::Left.mask());
-    assert!(battle_chip_dpad_visible(&world));
     assert!(!on_prompt(&world), "Begin taken on the first live pass");
+    // ...and the ring it opens is under its own glide: no glyph again.
+    assert!(!battle_chip_dpad_visible(&world));
 }
 
 /// A press made while the return is under `6` is parked and handed to the
@@ -182,4 +183,30 @@ fn a_staged_battle_spends_one_more_pass() {
         world.step_action_plate_glides();
         assert!(!world.battle_command_glide_gate());
     }
+}
+
+/// `Begin` onto the ring runs sub-draw step 1, whose glides hold the pad
+/// the same way: the ring's arms take no press until they have landed.
+#[test]
+fn the_ring_reads_no_pad_until_its_arms_land() {
+    let mut world = prompt_world();
+    for _ in 0..16 {
+        tick(&mut world, 0);
+    }
+    tick(&mut world, PadButton::Left.mask());
+    assert!(!on_prompt(&world), "Begin taken");
+    assert!(world.battle.ring_open_glide.is_some_and(|g| !g.settled()));
+    assert!(world.battle_command_pad_held());
+    // Down is the ring's Spirit arm, a direct commit - once the ring is
+    // live. Under the glide it is dropped.
+    tick(&mut world, 0);
+    tick(&mut world, PadButton::Down.mask());
+    assert!(
+        matches!(
+            world.battle.command.as_ref().map(|c| &c.phase),
+            Some(CommandPhase::Menu { .. })
+        ),
+        "no arm taken under the glide"
+    );
+    assert!(!world.battle.round_flow.committed(0), "no commit either");
 }
