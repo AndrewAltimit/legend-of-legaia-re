@@ -2,14 +2,34 @@
 
 use super::*;
 
+/// The members a pause-menu picker lists, as `(roster id, record)`: the
+/// **present party** in party-list order, not every roster record.
+///
+/// Retail's item and spell flows hand the cursor kernel the party count
+/// (`lbu a1,0x454(s0)` over `0x80084140`, i.e. `0x80084594`) and resolve the
+/// picked row through the roster id bytes (`lbu a2,0x458(v0)`, `0x80084598 +
+/// cursor`) before calling the applier - `FUN_801D8308` at `0x801D83C0` /
+/// `0x801D851C` for an item, `FUN_801D9594` at `0x801D964C` / `0x801D96BC`
+/// for a spell. The New Game template seeds every record, so a roster walk
+/// offered Noa, Gala and Terra as heal targets to a Vahn travelling alone,
+/// and an item used on one of them was spent on a member not in the party.
+// REF: FUN_801D8308, FUN_801D9594
+fn present_members(world: &World) -> Vec<(usize, &legaia_save::CharacterRecord)> {
+    world
+        .present_party_list()
+        .into_iter()
+        .filter_map(|slot| {
+            let i = usize::from(slot);
+            let member = world.party.roster.members.get(i)?;
+            (member.hp_mp_sp().hp_max != 0).then_some((i, member))
+        })
+        .collect()
+}
+
 pub(super) fn build_spell_session(world: &World, catalog: &SpellCatalog) -> SpellMenuSession {
     let names = roster_names(world);
-    let party: Vec<SpellCasterSlot> = world
-        .party
-        .roster
-        .members
-        .iter()
-        .enumerate()
+    let party: Vec<SpellCasterSlot> = present_members(world)
+        .into_iter()
         .map(|(i, member)| {
             let hms = member.hp_mp_sp();
             let list = member.spell_list();
@@ -38,12 +58,8 @@ pub(super) fn build_spell_session(world: &World, catalog: &SpellCatalog) -> Spel
             }
         })
         .collect();
-    let targets: Vec<SpellTargetRow> = world
-        .party
-        .roster
-        .members
-        .iter()
-        .enumerate()
+    let targets: Vec<SpellTargetRow> = present_members(world)
+        .into_iter()
         .map(|(i, member)| {
             let hms = member.hp_mp_sp();
             SpellTargetRow {
@@ -94,12 +110,8 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
             (v, Vec::new())
         }
     };
-    let targets: Vec<InvTargetRow> = world
-        .party
-        .roster
-        .members
-        .iter()
-        .enumerate()
+    let targets: Vec<InvTargetRow> = present_members(world)
+        .into_iter()
         .map(|(i, member)| {
             let hms = member.hp_mp_sp();
             let mut row = InvTargetRow::new(i as u8, names.get(i).cloned().unwrap_or_default())

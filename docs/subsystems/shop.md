@@ -700,6 +700,13 @@ edge on the frame after the screen closes, which is what clears the arm
 standing with nothing to resume it, and the next talk to reach a shop op
 would spend that stale Done edge and open no shop.
 
+The casino prize counter (sub-7) parks the same way. Retail's op `0x49`
+does not look at the sub-op while the park word is up: `FUN_801DE840`
+loads `_DAT_8007B450` at `0x801E08C8`, takes the Done arm on `1`, and on
+any other non-zero value returns the unchanged PC (`bne v0,zero` at
+`0x801E097C`), so every screen the op opens holds its record until that
+screen closes.
+
 Buy **prices** come from the static `SCUS_942.54` item table - the `u16` at item
 record `+2` (`legaia_game_tables::item_names::item_price`, base `TABLE_BASE_VA`), the
 same field the gold-debiting buy handler `FUN_801db380` reads (`_DAT_8008459C -=

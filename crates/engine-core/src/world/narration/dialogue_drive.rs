@@ -669,9 +669,17 @@ impl World {
                 // talk to reach a shop op took that stale Done edge and
                 // walked past its own shop: every second visit to a counter
                 // opened nothing.
+                //
+                // The op's Armed arm does not look at the sub-op: any park
+                // word that is neither `0` nor `1` returns the unchanged PC
+                // (`bne v0,zero` at `0x801E097C`). The casino prize counter
+                // (sub-7, `koin1` / `balden`) is the same host-closed screen
+                // as the gold shop and parks the same way.
                 // REF: FUN_801DE840 (op `0x49`'s Armed / Done arms)
                 FieldStepResult::Halt { final_pc }
-                    if (b & 0x7F) == 0x49 && host.world.shops.shop_armed =>
+                    if (b & 0x7F) == 0x49
+                        && (host.world.shops.shop_armed
+                            || host.world.shops.prize_exchange_armed) =>
                 {
                     id.pc = final_pc;
                     break;

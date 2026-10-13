@@ -144,6 +144,42 @@ fn status_snapshots_list_the_present_party_only() {
     assert_eq!(slots, vec![2, 0]);
 }
 
+/// The Items and Magic pickers list the present party in party-list order,
+/// as the Status list does: retail hands the cursor kernel the party count
+/// and resolves the picked row through the roster id bytes (`FUN_801D8308`
+/// `0x801D83C0` / `0x801D851C`, `FUN_801D9594` `0x801D964C` / `0x801D96BC`).
+/// Walking every roster record offered members who are not in the party as
+/// targets, and a heal used on one was spent on nobody the player holds.
+#[test]
+fn item_and_spell_pickers_list_the_present_party_only() {
+    let mut w = fresh_world();
+    w.install_present_party_list(vec![0]);
+    match build(FieldMenuRow::Items, &w) {
+        FieldMenuSubsession::Items(p) => {
+            let slots: Vec<u8> = p.inner.targets.iter().map(|t| t.slot).collect();
+            assert_eq!(slots, vec![0], "a lone traveller is the only item target");
+        }
+        _ => panic!("expected Items variant"),
+    }
+    w.install_present_party_list(vec![2, 0]);
+    match build(FieldMenuRow::Items, &w) {
+        FieldMenuSubsession::Items(p) => {
+            let slots: Vec<u8> = p.inner.targets.iter().map(|t| t.slot).collect();
+            assert_eq!(slots, vec![2, 0], "party-list order, by roster id");
+        }
+        _ => panic!("expected Items variant"),
+    }
+    match build(FieldMenuRow::Magic, &w) {
+        FieldMenuSubsession::Spells(sm) => {
+            let casters: Vec<u8> = sm.party().iter().map(|c| c.slot).collect();
+            let targets: Vec<u8> = sm.targets().iter().map(|t| t.slot).collect();
+            assert_eq!(casters, vec![2, 0]);
+            assert_eq!(targets, vec![2, 0]);
+        }
+        _ => panic!("expected Spells variant"),
+    }
+}
+
 #[test]
 fn build_spells_session_population() {
     let w = fresh_world();
