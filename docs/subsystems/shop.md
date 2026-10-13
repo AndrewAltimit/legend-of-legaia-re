@@ -262,6 +262,17 @@ table through the row-order byte array at `DAT_801EF0E0`; the window renderer
 draws **no currency footer** - the counter is its own window (45), and
 `FUN_801D5DE0` reads the coin bank `_DAT_800845A4` only to decide a row's ink.
 
+**The counter's cues.** The session `FUN_801DC1CC` never picks a cue for a
+plain step: the list kernel `FUN_801D688C` pushes `0x21` (step), `0x36`
+(confirm) or `0x37` (cancel) itself, and the session overwrites it through
+`FUN_80035BD0` where it disagrees. A redeem the coin bank or the 99 cap
+refuses replaces the confirm with the buzz `0x23` (`0x801DC3F8`). A confirm on
+the Yes / No prompt replaces it with cue `0`, which plays nothing
+(`0x801DC474`, and again on the Yes leg at `0x801DC48C`), so No is silent and
+Yes is heard as the coin jingle `0x25` the commit state pushes on the next
+frame (`0x801DC4C0`). Port: `PrizeEvent::cue`, returned to both hosts by
+`MenuRuntime::step_field_session` on the channel the shop's own screens use.
+
 ### The buy-list builder (`FUN_80030628` case `0x0B`)
 
 The buy list is built once, at window create / content refresh, by the SCUS

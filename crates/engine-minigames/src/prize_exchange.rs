@@ -121,6 +121,15 @@ pub const PRIZE_EXCHANGE_VISITED_FLAG: u16 = 8;
 pub const SFX_BUZZ: u8 = 0x23;
 /// SFX cue for the commit's coin jingle (`FUN_80035B50(0x25)`).
 pub const SFX_COIN_JINGLE: u8 = 0x25;
+/// SFX cue the list kernel `FUN_801D688C` raises on a cursor step
+/// (`li a0,0x21` at `0x801D692C` and its three siblings).
+pub const SFX_LIST_MOVE: u8 = 0x21;
+/// SFX cue the list kernel raises on its confirm edge (`li a0,0x36` at
+/// `0x801D68CC`).
+pub const SFX_LIST_CONFIRM: u8 = 0x36;
+/// SFX cue the list kernel raises on its cancel edge (`li a0,0x37` at
+/// `0x801D68F4`).
+pub const SFX_LIST_CANCEL: u8 = 0x37;
 
 /// Why a redeem attempt buzzed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,8 +182,10 @@ pub enum PrizeEvent {
     OpenedConfirm,
     /// Confirm-prompt cursor moved.
     ConfirmMoved,
-    /// Backed out of the Yes/No prompt (No row or cancel button).
+    /// Confirmed the Yes/No prompt on its No row: back to the list.
     BackToList,
+    /// Backed out of the Yes/No prompt with the cancel button.
+    ConfirmCancelled,
     /// Yes committed: the host applies [`apply_redeem`] with these values,
     /// then calls [`PrizeExchangeSession::rebuild`]. Carries the commit
     /// jingle [`SFX_COIN_JINGLE`].
@@ -185,6 +196,36 @@ pub enum PrizeEvent {
     },
     /// Browse cancelled - session over (retail exits to sub-screen `0`).
     Exit,
+}
+
+impl PrizeEvent {
+    /// The cue this frame leaves in the SFX ring, or `None` for a silent
+    /// one.
+    ///
+    /// The list kernel `FUN_801D688C` pushes its own cue first - step `0x21`,
+    /// confirm `0x36`, cancel `0x37` - and the screen then overwrites it
+    /// through `FUN_80035BD0` where it disagrees:
+    ///
+    /// - a refused redeem replaces the confirm with the buzz `0x23`
+    ///   (`0x801DC3F8`);
+    /// - a confirm on the Yes/No prompt replaces it with cue `0`, which
+    ///   plays nothing (`0x801DC474`, and again on the Yes leg at
+    ///   `0x801DC48C`), so the No row is silent and Yes is heard only as
+    ///   the coin jingle state 3 pushes on the next frame (`0x801DC4C0`).
+    ///
+    /// The port's commit is one event, so the jingle rides the same frame.
+    ///
+    /// REF: FUN_801DC1CC, FUN_801D688C
+    pub fn cue(&self) -> Option<u8> {
+        match self {
+            PrizeEvent::None | PrizeEvent::BackToList => None,
+            PrizeEvent::Moved | PrizeEvent::ConfirmMoved => Some(SFX_LIST_MOVE),
+            PrizeEvent::Refused(_) => Some(SFX_BUZZ),
+            PrizeEvent::OpenedConfirm => Some(SFX_LIST_CONFIRM),
+            PrizeEvent::ConfirmCancelled | PrizeEvent::Exit => Some(SFX_LIST_CANCEL),
+            PrizeEvent::Redeemed { .. } => Some(SFX_COIN_JINGLE),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,7 +351,7 @@ impl PrizeExchangeSession {
                 CursorNav::Cancel => {
                     self.cursor &= legaia_engine_system::menu_input::CURSOR_INDEX_MASK;
                     self.phase = Phase::Browse;
-                    PrizeEvent::BackToList
+                    PrizeEvent::ConfirmCancelled
                 }
                 CursorNav::Moved => PrizeEvent::ConfirmMoved,
                 CursorNav::None => PrizeEvent::None,
@@ -358,6 +399,59 @@ pub fn apply_redeem(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A whole visit at the counter, read as the cues it leaves in the ring:
+    /// step, a refused redeem, the prompt, No (silent), the prompt again,
+    /// the cancel button, the prompt, Yes (the jingle), leave.
+    #[test]
+    fn a_counter_visit_leaves_the_retail_cues() {
+        let mut s = PrizeExchangeSession::new(block(), |_| false);
+        let mut cues = Vec::new();
+        let mut step = |s: &mut PrizeExchangeSession, n: NavButtons, coins: u32| {
+            let e = s.tick(n, coins, |_| 0);
+            cues.push(e.cue());
+            e
+        };
+        step(&mut s, nav(false, false, false, true), 1000); // down
+        step(&mut s, nav(false, false, true, false), 1000); // up
+        assert!(matches!(
+            step(&mut s, nav(true, false, false, false), 0),
+            PrizeEvent::Refused(_)
+        ));
+        step(&mut s, nav(true, false, false, false), 1000); // prompt
+        assert_eq!(
+            step(&mut s, nav(true, false, false, false), 1000),
+            PrizeEvent::BackToList
+        );
+        step(&mut s, nav(true, false, false, false), 1000); // prompt
+        assert_eq!(
+            step(&mut s, nav(false, true, false, false), 1000),
+            PrizeEvent::ConfirmCancelled
+        );
+        step(&mut s, nav(true, false, false, false), 1000); // prompt
+        step(&mut s, nav(false, false, true, false), 1000); // to Yes
+        assert!(matches!(
+            step(&mut s, nav(true, false, false, false), 1000),
+            PrizeEvent::Redeemed { .. }
+        ));
+        step(&mut s, nav(false, true, false, false), 1000); // leave
+        assert_eq!(
+            cues,
+            vec![
+                Some(0x21),
+                Some(0x21),
+                Some(0x23),
+                Some(0x36),
+                None,
+                Some(0x36),
+                Some(0x37),
+                Some(0x36),
+                Some(0x21),
+                Some(0x25),
+                Some(0x37),
+            ]
+        );
+    }
 
     /// A map-shaped stand-in for the engine bag; the engine's own
     /// `ItemBag` impl is pinned in `legaia-engine-core`.

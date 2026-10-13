@@ -349,6 +349,10 @@ impl MenuRuntime {
         let event = session.tick(buttons, coins, |id| {
             inventory.get(&id).copied().unwrap_or(0)
         });
+        // The counter's cue for this frame, on the channel the shop's
+        // screens use (`MenuRuntime::step_field_session` hands it to the
+        // host's blip path).
+        self.ui_cue = event.cue();
         match event {
             legaia_engine_minigames::prize_exchange::PrizeEvent::Redeemed {
                 item_id,
