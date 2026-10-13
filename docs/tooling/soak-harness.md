@@ -81,7 +81,7 @@ of its vignettes plays it, and the closing record then picks the scene to
 return to (`3F` to `doman`, `bubu1`, `son`, ...) by a flag the sleep that
 leads there sets. Entered by name no branch matches, the record ends on its
 `0x21`, and the party is left hidden where the vignette put it
-(`dream+talk@...:PRO-12`). It becomes an engine defect only if a sleep that
+(`dream+talk` from `PRO-02`, `PRO-07` and `PRO-12`, each vignette on its own tile). It becomes an engine defect only if a sleep that
 sets the flag still ends there. All three are listed in the harness's
 `SAVE_ENTRY_ARTIFACTS`: when every hit of such a signature comes from an
 `@<save>` run, the report names it on a "known entry artifact" line instead

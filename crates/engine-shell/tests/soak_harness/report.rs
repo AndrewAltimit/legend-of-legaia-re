@@ -10,7 +10,9 @@ pub(super) type SigRow = (u8, String, Vec<(usize, usize)>);
 /// that the save's story reaches through a door it never opens (see
 /// `docs/tooling/soak-harness.md`). A signature here whose every hit comes
 /// from an `@<save>` run is listed apart from the findings, with its reason;
-/// the same signature from a plain run is still a finding.
+/// the same signature from a plain run is still a finding. An entry ending in
+/// `*` matches by prefix: `dream` plays one of several vignettes by the
+/// save's flags, and each leaves the party on its own tile.
 pub(super) const SAVE_ENTRY_ARTIFACTS: &[(&str, &str)] = &[
     (
         "softlock|map01|free-roam:immobile@tile(96,25)",
@@ -21,14 +23,25 @@ pub(super) const SAVE_ENTRY_ARTIFACTS: &[(&str, &str)] = &[
         "korb3's default entry seat is walled once the save's flags gate off the arrival cutscene that moves the party off it",
     ),
     (
-        "confined|dream|tile(64,62)",
+        "confined|dream|*",
         "dream's closing record returns the party to the scene it fell asleep in by a flag the sleep sets; entered by name, no branch matches and the record ends on the hidden party",
     ),
     (
-        "softlock|dream|free-roam:immobile@tile(64,62)",
+        "softlock|dream|free-roam:immobile*",
         "dream's closing record returns the party to the scene it fell asleep in by a flag the sleep sets; entered by name, no branch matches and the record ends on the hidden party",
     ),
 ];
+
+/// The reason `sig` is a known save-entry artifact, if it is one.
+fn entry_artifact(sig: &str) -> Option<&'static str> {
+    SAVE_ENTRY_ARTIFACTS
+        .iter()
+        .find(|(s, _)| match s.strip_suffix('*') {
+            Some(prefix) => sig.starts_with(prefix),
+            None => *s == sig,
+        })
+        .map(|&(_, why)| why)
+}
 
 pub(super) fn write_report(
     src: &Source,
@@ -58,7 +71,7 @@ pub(super) fn write_report(
     // Known `@<save>` entry artifacts come out of the table.
     let (artifacts, rows): (Vec<SigRow>, Vec<SigRow>) =
         rows.into_iter().partition(|(_, sig, hits)| {
-            SAVE_ENTRY_ARTIFACTS.iter().any(|(s, _)| s == sig)
+            entry_artifact(sig).is_some()
                 && hits
                     .iter()
                     .all(|&(oi, _)| r.outcomes[oi].spec.scene.contains('@'))
@@ -134,10 +147,7 @@ pub(super) fn write_report(
     );
     let _ = writeln!(md, "- distinct finding signatures: {}", rows.len());
     for (_, sig, hits) in &artifacts {
-        let why = SAVE_ENTRY_ARTIFACTS
-            .iter()
-            .find(|(s, _)| s == sig)
-            .map_or("", |(_, w)| w);
+        let why = entry_artifact(sig).unwrap_or("");
         let _ = writeln!(
             md,
             "- known `@<save>` entry artifact (not a finding): `{}` x{} - {why}",
