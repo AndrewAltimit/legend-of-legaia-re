@@ -15,10 +15,10 @@
 //! `under` / `over` split follows retail's text bucket: retail links every
 //! glyph at bucket `1` (`screen_prim::TEXT_OT_BUCKET`), so the widgets
 //! (buckets `4` / `0xC` / `0x10` / `0x1C`, `screen_fx::OT_*`) and every
-//! deeper push draw under the text, and only bucket `0` covers it. Ties that
-//! cross a host's layering - a page that draws both lists in one sort under
-//! its text canvas - are the documented layering difference
-//! (`docs/tooling/host-drift.md`), not an ordering one.
+//! deeper push draw under the text, and only bucket `0` covers it. Both
+//! hosts present scene, `under`, text, `over`; the page composites its text
+//! canvas into the frame between the two lists
+//! (`docs/tooling/host-drift.md`).
 //!
 //! What a host still builds itself is what needs its own camera or VRAM
 //! residency ([`HostScreenPrims`]); everything the world decides alone -
@@ -175,8 +175,7 @@ pub fn compose_screen_prims(
     // the farthest bucket of the table (`FUN_801F73E4`, the first call of
     // the terrain sweep), so the party HUD draws over it. Over the text it
     // filled the panels' clear-depth pixels and hid the names behind the
-    // horizon on the native window (the page draws its HUD canvas over both
-    // lists, so only the native window showed it).
+    // horizon.
     let mut under = world_map_sky;
     // The field scene's own ordering-table effects, sorted as one list
     // under the text: fog sheets, drop shadows, move strips, attached

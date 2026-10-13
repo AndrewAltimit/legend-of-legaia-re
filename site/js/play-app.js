@@ -201,6 +201,24 @@ void main() {
 }
 `;
 
+  /* The text-layer composite (`ScreenPrimPass.drawLayer`): one oversized
+   * triangle over the viewport, sampling the 2D canvas texel for texel. */
+  const VS_LAYER = `#version 300 es
+out vec2 v_uv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  v_uv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, -1.0, 1.0);
+}
+`;
+  const FS_LAYER = `#version 300 es
+precision mediump float;
+uniform sampler2D u_layer;
+in vec2 v_uv;
+out vec4 o_color;
+void main() { o_color = texture(u_layer, v_uv); }
+`;
+
   /* Byte layout of `legaia_render_kernels::screen_prim::ScreenVertex`. Pinned on
    * the Rust side by `the_vertex_field_offsets_match_the_layout_hosts_read_as_bytes`
    * so a field reorder fails a test rather than a shader. */
@@ -254,19 +272,31 @@ void main() {
       gl.bindVertexArray(null);
     }
 
-    /* Draw one frame's screen primitives over whatever is already in the
-     * framebuffer. `vertexBytes` is a Uint8Array in the ScreenVertex layout,
-     * `indices` a Uint32Array, `runs` a Uint32Array of
-     * `[class_code, index_start, index_count]` triples where class_code 0 is
-     * opaque and `1 + abr` is semi-transparent. */
-    draw(vertexBytes, indices, runs, depthAffine) {
+    /* Upload one frame's screen primitives. `vertexBytes` is a Uint8Array in
+     * the ScreenVertex layout, `indices` a Uint32Array, `runs` a Uint32Array
+     * of `[class_code, index_start, index_count]` triples where class_code 0
+     * is opaque and `1 + abr` is semi-transparent. The runs are drawn by
+     * `drawRuns`, in two halves with the page's text layer between them. */
+    upload(vertexBytes, indices, runs, depthAffine) {
       const gl = this.gl;
-      if (!indices.length || !runs.length) return;
       gl.bindVertexArray(this.vao);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
       gl.bufferData(gl.ARRAY_BUFFER, vertexBytes, gl.STREAM_DRAW);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo);
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STREAM_DRAW);
+      gl.bindVertexArray(null);
+      this.runs = runs;
+      this.depthAffine = depthAffine;
+    }
+
+    /* Draw runs `[from, to)` of the uploaded frame over whatever is already
+     * in the framebuffer. */
+    drawRuns(from, to) {
+      const gl = this.gl;
+      const runs = this.runs;
+      const depthAffine = this.depthAffine;
+      if (!runs || to <= from) return;
+      gl.bindVertexArray(this.vao);
       gl.useProgram(this.program);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.renderer.tex);
@@ -289,7 +319,7 @@ void main() {
       gl.depthMask(false);
       gl.disable(gl.CULL_FACE);
       let blendOn = false;
-      for (let i = 0; i + 2 < runs.length; i += 3) {
+      for (let i = from * 3; i + 2 < runs.length && i < to * 3; i += 3) {
         const code = runs[i], start = runs[i + 1], count = runs[i + 2];
         if (!count) continue;
         if (code === 0) {
@@ -310,37 +340,87 @@ void main() {
       gl.bindVertexArray(null);
     }
 
+    /* Composite a 2D canvas (the page's text / HUD layer) into the GL frame,
+     * pixel for pixel over the whole viewport. Used only on a frame whose
+     * `over` list is not empty: those primitives draw AFTER the text (a warp
+     * fade, the pause wipe, the cinematic bars cover it, as on the native
+     * window), which a DOM canvas stacked above the GL view cannot be under.
+     * The canvas holds premultiplied colour, so the blend is `ONE,
+     * ONE_MINUS_SRC_ALPHA`. */
+    drawLayer(canvas) {
+      const gl = this.gl;
+      if (!this.layerProgram) {
+        this.layerProgram = compileProgramPair(gl, VS_LAYER, FS_LAYER, 'layer');
+        this.locLayer = gl.getUniformLocation(this.layerProgram, 'u_layer');
+        this.layerTex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.layerTex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      }
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.layerTex);
+      /* The unpack flags are context state every other upload on the page
+       * relies on being off: set for this one call, restored after it. */
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.bindVertexArray(null);
+      gl.useProgram(this.layerProgram);
+      gl.uniform1i(this.locLayer, 0);
+      const depthWasOn = gl.isEnabled(gl.DEPTH_TEST);
+      gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(false);
+      gl.disable(gl.CULL_FACE);
+      gl.enable(gl.BLEND);
+      gl.blendEquation(gl.FUNC_ADD);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.disable(gl.BLEND);
+      gl.depthMask(true);
+      if (depthWasOn) gl.enable(gl.DEPTH_TEST);
+    }
+
     dispose() {
       const gl = this.gl;
       gl.deleteProgram(this.program);
+      if (this.layerProgram) gl.deleteProgram(this.layerProgram);
+      if (this.layerTex) gl.deleteTexture(this.layerTex);
       gl.deleteVertexArray(this.vao);
       gl.deleteBuffer(this.vbo);
       gl.deleteBuffer(this.ibo);
     }
   }
 
-  function compileScreenPrimProgram(gl) {
-    const mk = (type, src, tag) => {
+  function compileProgramPair(gl, vsSrc, fsSrc, tag) {
+    const mk = (type, src, kind) => {
       const s = gl.createShader(type);
       gl.shaderSource(s, src);
       gl.compileShader(s);
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-        throw new Error(tag + ': ' + gl.getShaderInfoLog(s));
+        throw new Error(tag + ' ' + kind + ': ' + gl.getShaderInfoLog(s));
       }
       return s;
     };
-    const v = mk(gl.VERTEX_SHADER, VS_SCREEN_PRIM, 'screen-prim VS');
-    const f = mk(gl.FRAGMENT_SHADER, FS_SCREEN_PRIM, 'screen-prim FS');
+    const v = mk(gl.VERTEX_SHADER, vsSrc, 'VS');
+    const f = mk(gl.FRAGMENT_SHADER, fsSrc, 'FS');
     const p = gl.createProgram();
     gl.attachShader(p, v);
     gl.attachShader(p, f);
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-      throw new Error('screen-prim link: ' + gl.getProgramInfoLog(p));
+      throw new Error(tag + ' link: ' + gl.getProgramInfoLog(p));
     }
     gl.deleteShader(v);
     gl.deleteShader(f);
     return p;
+  }
+
+  function compileScreenPrimProgram(gl) {
+    return compileProgramPair(gl, VS_SCREEN_PRIM, FS_SCREEN_PRIM, 'screen-prim');
   }
 
   class PlayView {

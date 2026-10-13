@@ -70,38 +70,48 @@ impl LegaiaRuntime {
     /// first frames sat on the frozen field and then cut to black. The shop
     /// and menu steps call this after every tick they run.
     ///
-    /// The page draws both lists through one ordering-table sort under its
-    /// HUD canvas (`under` then `over`), where the native window draws its
-    /// text between them - the layering difference
-    /// `docs/tooling/host-drift.md` records; the append order is shared.
+    /// The two lists stay two: each goes through its own ordering-table walk
+    /// and `over`'s runs follow `under`'s in one buffer, with the boundary
+    /// handed to the page ([`Self::play_screen_prim_over_run_start`]). The
+    /// page draws `under`, then its text layer, then `over` - the native
+    /// window's present order, so a fade that covers the text covers it on
+    /// both hosts.
     pub(crate) fn rebuild_screen_geom(&mut self) {
+        use legaia_render_kernels::screen_prim::{
+            DrawRun, PSX_DISPLAY_H, PSX_DISPLAY_W, build_geometry,
+        };
         let pause_wipe = self
             .scene_host
             .session()
             .and_then(|s| s.pause_wipe().fade_level());
-        let prims = match self.scene_host.host() {
-            Some(h) => {
-                let (mut under, over) = legaia_engine_screens::screen_layers::compose_screen_prims(
-                    &h.world,
-                    &self.menu,
-                    pause_wipe,
-                    self.screen_prims_base.clone(),
-                );
-                under.extend(over);
-                under
-            }
-            None => Vec::new(),
+        let (under, over) = match self.scene_host.host() {
+            Some(h) => legaia_engine_screens::screen_layers::compose_screen_prims(
+                &h.world,
+                &self.menu,
+                pause_wipe,
+                self.screen_prims_base.clone(),
+            ),
+            None => (Vec::new(), Vec::new()),
         };
-        self.battle_intro_geom = (!prims.is_empty()).then(|| {
-            (
-                prims.len() as u32,
-                legaia_render_kernels::screen_prim::build_geometry(
-                    &prims,
-                    legaia_render_kernels::screen_prim::PSX_DISPLAY_W as u32,
-                    legaia_render_kernels::screen_prim::PSX_DISPLAY_H as u32,
-                ),
-            )
-        });
+        let count = under.len() + over.len();
+        if count == 0 {
+            self.battle_intro_geom = None;
+            self.screen_over_run_start = 0;
+            return;
+        }
+        let (w, h) = (PSX_DISPLAY_W as u32, PSX_DISPLAY_H as u32);
+        let mut geom = build_geometry(&under, w, h);
+        let top = build_geometry(&over, w, h);
+        self.screen_over_run_start = geom.runs.len() as u32;
+        let (vertex_base, index_base) = (geom.vertices.len() as u32, geom.indices.len() as u32);
+        geom.vertices.extend(top.vertices);
+        geom.indices
+            .extend(top.indices.into_iter().map(|i| i + vertex_base));
+        geom.runs.extend(top.runs.into_iter().map(|r| DrawRun {
+            index_start: r.index_start + index_base,
+            ..r
+        }));
+        self.battle_intro_geom = Some((count as u32, geom));
     }
 
     /// The intro emitter's half of [`Self::tick_battle_intro`]: arm /
@@ -500,6 +510,15 @@ impl LegaiaRuntime {
             .as_ref()
             .map(|(_, g)| g.indices.clone())
             .unwrap_or_default()
+    }
+
+    /// How many of [`Self::play_screen_prim_runs`]' runs belong to the
+    /// **under** list: the page draws runs `[0, n)` after the 3D scene, its
+    /// text layer next, and runs `[n, ..)` - the `over` list - last. The
+    /// split is `screen_layers::compose_screen_prims`' own, which follows
+    /// retail's text bucket (`screen_prim::TEXT_OT_BUCKET`).
+    pub fn play_screen_prim_over_run_start(&self) -> u32 {
+        self.screen_over_run_start
     }
 
     /// The screen-prim run table, flattened to

@@ -182,6 +182,10 @@ pub struct LegaiaRuntime {
     /// alongside for the page's early-out.
     pub(crate) battle_intro_geom:
         Option<(u32, legaia_render_kernels::screen_prim::OverlayGeometry)>,
+    /// How many of [`Self::battle_intro_geom`]'s leading runs are the
+    /// **under** list (drawn before the page's text layer); the rest are
+    /// `over`. See `rebuild_screen_geom`.
+    pub(crate) screen_over_run_start: u32,
     /// The last tick's host-projected screen layers, recomposed with the
     /// world's live layers and the shop / pause fades by
     /// [`crate::play_battle`]'s `rebuild_screen_geom`.
@@ -418,6 +422,7 @@ impl LegaiaRuntime {
             battle_vram: Default::default(),
             disc_files: Vec::new(),
             battle_intro_geom: None,
+            screen_over_run_start: 0,
             screen_prims_base: Default::default(),
             occl_fade: Default::default(),
             field_party_hud: Default::default(),

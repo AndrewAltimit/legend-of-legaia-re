@@ -95,6 +95,29 @@ fn play_page_draws_the_field_screen_effect_wash() {
             "tick {f}: every run is opaque - the wash lost its ABR mode"
         );
 
+        // (2b) the run table is two lists end to end - `under`, then `over`,
+        // which the page draws on either side of its text layer - and the
+        // boundary is inside it. Every run's indices stay inside the buffer,
+        // which a lost rebase of the `over` half would break.
+        let split = rt.play_screen_prim_over_run_start() as usize;
+        assert!(
+            split <= runs.len() / 3,
+            "tick {f}: the over-list boundary {split} is past the {} runs",
+            runs.len() / 3
+        );
+        let index_count = rt.play_screen_prim_indices().len() as u32;
+        let vertex_count = (rt.play_screen_prim_vertex_bytes().len() / STRIDE) as u32;
+        assert!(
+            runs.chunks(3).all(|r| r[1] + r[2] <= index_count),
+            "tick {f}: a draw run reaches past the index buffer"
+        );
+        assert!(
+            rt.play_screen_prim_indices()
+                .iter()
+                .all(|&i| i < vertex_count),
+            "tick {f}: an index reaches past the vertex buffer"
+        );
+
         // (3) the wash is not black. `packed == 0` draws nothing under either
         // equation, so a colour stream of zeros is the shape a lost channel
         // swap or a dropped operand takes.

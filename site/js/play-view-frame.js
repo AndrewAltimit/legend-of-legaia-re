@@ -701,6 +701,8 @@
        * blitted onto the 2D overlay canvas over the GL view. Skipped while VR
        * presents. */
       if (!skipDraw) this._drawOverlay();
+      /* ... and the screen primitives that cover it. */
+      this._drawScreenPrimsOver();
     }
 
     /* One frame of the screen-space PSX primitive pass.
@@ -716,6 +718,7 @@
      * a driver that cannot link the pass: either way the page keeps playing
      * with the pass switched off for the session. */
     _drawScreenPrims(rt) {
+      this._screenOver = null;
       if (this._screenPrimBroken) return;
       if (typeof rt.play_screen_prim_count !== 'function') return;
       let n = 0;
@@ -723,15 +726,58 @@
       if (n <= 0) return;
       try {
         if (!this._screenPrims) this._screenPrims = new ScreenPrimPass(this.renderer);
-        this._screenPrims.draw(
+        const runs = rt.play_screen_prim_runs();
+        const total = (runs.length / 3) | 0;
+        /* A cached WASM predating the split draws everything here, under
+         * the text - the order this page had before it. */
+        const split = (typeof rt.play_screen_prim_over_run_start === 'function')
+          ? Math.min(rt.play_screen_prim_over_run_start() >>> 0, total) : total;
+        this._screenPrims.upload(
           rt.play_screen_prim_vertex_bytes(),
           rt.play_screen_prim_indices(),
-          rt.play_screen_prim_runs(),
+          runs,
           (typeof rt.play_fx_depth_affine === 'function') ? rt.play_fx_depth_affine() : null,
         );
+        this._screenPrims.drawRuns(0, split);
+        if (split < total) this._screenOver = [split, total];
       } catch (e) {
         this._screenPrimBroken = true;
+        this._screenOver = null;
         try { console.warn('screen-prim pass disabled:', e); } catch (_) { /* no console */ }
+      }
+    }
+
+    /* The `over` half of the frame's screen primitives: the ones the engine
+     * places AFTER the text layer (`screen_layers::compose_screen_prims`) -
+     * a warp's fade, the shop and pause wipes, the cinematic bars, the
+     * battle numerals, the minigame chrome. The native window presents
+     * scene, `under`, 2D overlay, `over`; this page's text is a 2D canvas
+     * stacked above the GL view, so on a frame that carries `over`
+     * primitives the 2D layers are composited into the GL frame first
+     * (`ScreenPrimPass.drawLayer`) and their DOM canvases hidden for that
+     * frame. A frame without any keeps the plain DOM stack. */
+    _drawScreenPrimsOver() {
+      const span = this._screenOver;
+      this._screenOver = null;
+      const layers = [document.getElementById('play-minigame-layer'), this.menuOverlay]
+        .filter(c => c && !c.hidden && c.width > 0 && c.height > 0);
+      let inGl = false;
+      if (span && this._screenPrims && !this._screenPrimBroken) {
+        try {
+          for (const c of layers) this._screenPrims.drawLayer(c);
+          inGl = true;
+          this._screenPrims.drawRuns(span[0], span[1]);
+        } catch (e) {
+          this._screenPrimBroken = true;
+          inGl = false;
+          try { console.warn('screen-prim pass disabled:', e); } catch (_) { /* no console */ }
+        }
+      }
+      if (inGl !== !!this._layersInGl) {
+        this._layersInGl = inGl;
+        for (const c of [document.getElementById('play-minigame-layer'), this.menuOverlay]) {
+          if (c) c.style.visibility = inGl ? 'hidden' : '';
+        }
       }
     }
 
