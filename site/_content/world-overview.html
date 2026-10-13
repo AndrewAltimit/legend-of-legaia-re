@@ -180,9 +180,12 @@
   cursor: pointer;
 }
 .wo-tab.is-active {
-  background: rgba(244,180,26,0.18);
-  border-color: rgba(244,180,26,0.6);
-  color: #F4B41A;
+  /* Theme tokens, not the map's amber literal: that amber as a label on its
+     own tint is 1.6:1 on the light theme's white card. */
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
+  color: var(--warn-text);
+  font-weight: 600;
 }
 .wo-layout {
   display: grid; gap: 1.25rem;
@@ -218,7 +221,7 @@
 }
 .wo-mode-group button.wo-mode + button.wo-mode { border-left: 1px solid var(--border); }
 .wo-mode-group button.wo-mode.is-active {
-  background: var(--accent, #5a7ad8); color: #fff;
+  background: var(--acc-fill); color: #fff;
   font-weight: 600;
 }
 #wo-mesh-label, .wo-hover-3d {
