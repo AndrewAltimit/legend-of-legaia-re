@@ -16,3 +16,10 @@
 # changes = [
 #   ["states/<state>/<channel>", 0.98, 0.95],
 # ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Field-VM waits now credit on the game-frame grid (capture-verified at steps 2, 3 and 4), which moves 623 pixels around Vahn at the cabinet and flips one scored block. The capture is parked late in the sit-down clip while the gate samples the engine at the clip's start; that mismatch predates the change. Patched-disc state, outside the ratchet."
+changes = [
+  ["states/minigame_baka_pcsx/image", 0.962, 0.961],
+]
