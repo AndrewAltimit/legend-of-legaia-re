@@ -575,8 +575,9 @@ def run_one_kingdom(save: Path, bundle: str, extracted_root: Path,
                 "unresolved": unresolved,
             }
             if rec is not None:
+                # The record's developer label is disc text; the index is
+                # enough to cross-reference it and is all that is emitted.
                 entry["man_record_index"] = rec["id"]
-                entry["man_record_name"] = rec["name"]
                 entry["script_positioned"] = rec["script_positioned"]
             placements.append(entry)
 

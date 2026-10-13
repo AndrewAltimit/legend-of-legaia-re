@@ -5,8 +5,8 @@
     "cdname": "map01",
     "prot_base": 85,
     "camera": {
-      "x": 1192,
-      "z": 6877,
+      "x": 11712,
+      "z": 2112,
       "azimuth": 0,
       "zoom": 1.0
     },
@@ -24,7 +24,6 @@
     "placements": [
       {
         "id": 1,
-        "name": "テルマ",
         "tmd_slot": 34,
         "flag": 11,
         "flags": "0x0B",
@@ -52,7 +51,6 @@
       },
       {
         "id": 2,
-        "name": "イベント屋",
         "tmd_slot": 35,
         "flag": 0,
         "flags": "0x00",
@@ -80,7 +78,6 @@
       },
       {
         "id": 3,
-        "name": "分離ヴァン",
         "tmd_slot": 240,
         "flag": 2,
         "flags": "0x02",
@@ -103,7 +100,6 @@
       },
       {
         "id": 4,
-        "name": "分離ノア",
         "tmd_slot": 241,
         "flag": 9,
         "flags": "0x09",
@@ -126,7 +122,6 @@
       },
       {
         "id": 5,
-        "name": "分離ガラ",
         "tmd_slot": 242,
         "flag": 16,
         "flags": "0x10",
@@ -149,7 +144,6 @@
       },
       {
         "id": 6,
-        "name": "ソーン",
         "tmd_slot": 36,
         "flag": 14,
         "flags": "0x0E",
@@ -177,7 +171,6 @@
       },
       {
         "id": 7,
-        "name": "赤ちゃん",
         "tmd_slot": 37,
         "flag": 15,
         "flags": "0x0F",
@@ -205,7 +198,6 @@
       },
       {
         "id": 8,
-        "name": "カマーンソーン族",
         "tmd_slot": 0,
         "flag": 0,
         "flags": "0x00",
@@ -230,1185 +222,9 @@
         },
         "class": "landmark",
         "class_note": null
-      },
-      {
-        "id": 9,
-        "name": "リムエルム",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          14784
-        ],
-        "x_enc": 0,
-        "z_enc": 115,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 10,
-        "name": "ドルク南",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 11,
-        "name": "ドルク北",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 12,
-        "name": "リクロア山北",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 13,
-        "name": "リクロア山南",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 14,
-        "name": "ふきだまりの洞窟",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 15,
-        "name": "ヴェルルの森",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 16,
-        "name": "ヴォズズの森北",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 17,
-        "name": "ヴォズズの森南",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 18,
-        "name": "ノア外出",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          16000,
-          0,
-          320
-        ],
-        "x_enc": 252,
-        "z_enc": 2,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 19,
-        "name": "バイロン北西",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 20,
-        "name": "バイロン南",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 21,
-        "name": "バイロン北東",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 22,
-        "name": "じじいの洞窟",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 23,
-        "name": "ノアへ移動",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          9984
-        ],
-        "x_enc": 0,
-        "z_enc": 205,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 24,
-        "name": "ドルク川消失",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          12608
-        ],
-        "x_enc": 0,
-        "z_enc": 98,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 25,
-        "name": "亀",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          9792
-        ],
-        "x_enc": 0,
-        "z_enc": 76,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 26,
-        "name": "旅人の泉",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 27,
-        "name": "水門西",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          6848
-        ],
-        "x_enc": 0,
-        "z_enc": 53,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 28,
-        "name": "水門東",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          6848
-        ],
-        "x_enc": 0,
-        "z_enc": 53,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 29,
-        "name": "渓谷１内",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          2560,
-          0,
-          192
-        ],
-        "x_enc": 147,
-        "z_enc": 1,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 30,
-        "name": "渓谷１外",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          2560,
-          0,
-          192
-        ],
-        "x_enc": 147,
-        "z_enc": 1,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 31,
-        "name": "渓谷２内",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          2560,
-          0,
-          192
-        ],
-        "x_enc": 147,
-        "z_enc": 1,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 32,
-        "name": "渓谷２外",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          2560,
-          0,
-          192
-        ],
-        "x_enc": 147,
-        "z_enc": 1,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 33,
-        "name": "渓谷３内",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          2560,
-          0,
-          192
-        ],
-        "x_enc": 147,
-        "z_enc": 1,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 34,
-        "name": "渓谷３外",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          2560,
-          0,
-          192
-        ],
-        "x_enc": 147,
-        "z_enc": 1,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 35,
-        "name": "渓谷４内",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          2560,
-          0,
-          192
-        ],
-        "x_enc": 147,
-        "z_enc": 1,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 36,
-        "name": "渓谷４外",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          2560,
-          0,
-          192
-        ],
-        "x_enc": 147,
-        "z_enc": 1,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 37,
-        "name": "リムエルムにバリア",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          6720
-        ],
-        "x_enc": 0,
-        "z_enc": 52,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 38,
-        "name": "リクロア山で木が復活",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          12608
-        ],
-        "x_enc": 0,
-        "z_enc": 98,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 39,
-        "name": "バイロン寺院炎上",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          9024
-        ],
-        "x_enc": 0,
-        "z_enc": 70,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 40,
-        "name": "ヴォズズで木が復活",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          6720
-        ],
-        "x_enc": 0,
-        "z_enc": 52,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 41,
-        "name": "ガーメル城が崩壊",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          9024
-        ],
-        "x_enc": 0,
-        "z_enc": 70,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 42,
-        "name": "墜落",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          6720
-        ],
-        "x_enc": 0,
-        "z_enc": 52,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 43,
-        "name": "Ｄ",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          384,
-          0,
-          576
-        ],
-        "x_enc": 130,
-        "z_enc": 4,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 44,
-        "name": "Ｕ",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          384,
-          0,
-          576
-        ],
-        "x_enc": 130,
-        "z_enc": 4,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 45,
-        "name": "Ｘ",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          384,
-          0,
-          576
-        ],
-        "x_enc": 130,
-        "z_enc": 4,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 46,
-        "name": "生物城",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          14784
-        ],
-        "x_enc": 0,
-        "z_enc": 115,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 47,
-        "name": "オープニング",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          5952
-        ],
-        "x_enc": 0,
-        "z_enc": 46,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 48,
-        "name": "体験版でヴァンが行く",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          6720
-        ],
-        "x_enc": 0,
-        "z_enc": 52,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 49,
-        "name": "ヴァン走る",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          4608
-        ],
-        "x_enc": 0,
-        "z_enc": 163,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 50,
-        "name": "テルマの採点",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          12352
-        ],
-        "x_enc": 0,
-        "z_enc": 96,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 164,
-          "byte_end": 3128,
-          "body_bytes": 2964,
-          "nobj": 1,
-          "md5": "84dcca68ccfc"
-        },
-        "class": "landmark",
-        "class_note": null
       }
     ],
-    "world_placed_count": 43,
+    "world_placed_count": 1,
     "script_positioned_count": 7,
     "tmd_pack": {
       "count": 40,
@@ -1874,8 +690,8 @@
         "body_bytes": 284,
         "nobj": 1,
         "md5": "3b0459979e74",
-        "class": "npc_token",
-        "note": "4-point star primitive (~284B); generic actor base"
+        "class": "decoration",
+        "note": "crossed-quad billboard tree (top view reads as a star); walk .MAP stamps it on ~68 forest cells (recs 478/479)"
       },
       {
         "pack_slot": 11,
@@ -1884,8 +700,8 @@
         "body_bytes": 352,
         "nobj": 1,
         "md5": "ad1e77399133",
-        "class": "npc_token",
-        "note": "4-point star primitive (~352B); generic actor base"
+        "class": "decoration",
+        "note": "crossed-quad billboard tree variant; walk .MAP stamps it on ~117 forest cells (recs 429/475..477)"
       },
       {
         "pack_slot": 12,
@@ -2156,7 +972,7 @@
         "chain_size": 12,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "テルマ"
+        "man_record_index": 1
       },
       {
         "pack_slot": 35,
@@ -2171,7 +987,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "イベント屋"
+        "man_record_index": 2
       },
       {
         "pack_slot": 36,
@@ -2186,7 +1002,7 @@
         "chain_size": 14,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "ソーン"
+        "man_record_index": 6
       },
       {
         "pack_slot": 37,
@@ -2201,7 +1017,7 @@
         "chain_size": 2,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "赤ちゃん"
+        "man_record_index": 7
       },
       {
         "pack_slot": 0,
@@ -2216,7 +1032,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "カマーンソーン族"
+        "man_record_index": 8
       },
       {
         "pack_slot": 31,
@@ -2439,8 +1255,8 @@
     "cdname": "map02",
     "prot_base": 244,
     "camera": {
-      "x": 1824,
-      "z": 8202,
+      "x": 7136,
+      "z": 4160,
       "azimuth": 0,
       "zoom": 1.0
     },
@@ -2458,7 +1274,6 @@
     "placements": [
       {
         "id": 1,
-        "name": "フラグ",
         "tmd_slot": 33,
         "flag": 0,
         "flags": "0x00",
@@ -2486,7 +1301,6 @@
       },
       {
         "id": 2,
-        "name": "イベント屋",
         "tmd_slot": 33,
         "flag": 0,
         "flags": "0x00",
@@ -2514,7 +1328,6 @@
       },
       {
         "id": 3,
-        "name": "ＳＤ獣車",
         "tmd_slot": 31,
         "flag": 9,
         "flags": "0x09",
@@ -2542,7 +1355,6 @@
       },
       {
         "id": 4,
-        "name": "ＳＤ客車",
         "tmd_slot": 30,
         "flag": 11,
         "flags": "0x0B",
@@ -2570,7 +1382,6 @@
       },
       {
         "id": 5,
-        "name": "ＳＤ客車２",
         "tmd_slot": 30,
         "flag": 11,
         "flags": "0x0B",
@@ -2598,7 +1409,6 @@
       },
       {
         "id": 6,
-        "name": "看板１",
         "tmd_slot": 28,
         "flag": 0,
         "flags": "0x00",
@@ -2626,7 +1436,6 @@
       },
       {
         "id": 7,
-        "name": "釣り場看板",
         "tmd_slot": 32,
         "flag": 0,
         "flags": "0x00",
@@ -2651,457 +1460,9 @@
         },
         "class": "landmark",
         "class_note": null
-      },
-      {
-        "id": 8,
-        "name": "亀",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          9792
-        ],
-        "x_enc": 0,
-        "z_enc": 76,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 9,
-        "name": "ばばあの洞窟",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 10,
-        "name": "ジェレミ",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 11,
-        "name": "バルデンヌ",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 12,
-        "name": "レイマン",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 13,
-        "name": "ストーンヘンジ",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 14,
-        "name": "レトック南",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 15,
-        "name": "レトック西",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 16,
-        "name": "ドハティ城",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          14528
-        ],
-        "x_enc": 0,
-        "z_enc": 113,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 17,
-        "name": "創世樹４再生イベント",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          6464,
-          0,
-          448
-        ],
-        "x_enc": 50,
-        "z_enc": 3,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 18,
-        "name": "創世樹５再生イベント",
-        "tmd_slot": 0,
-        "flag": 1,
-        "flags": "0x01",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          11200,
-          0,
-          448
-        ],
-        "x_enc": 87,
-        "z_enc": 3,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 19,
-        "name": "ドハティ城の崩壊イベント",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          6720
-        ],
-        "x_enc": 0,
-        "z_enc": 52,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 20,
-        "name": "★風来獣車発進",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          9856
-        ],
-        "x_enc": 0,
-        "z_enc": 204,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 21,
-        "name": "全体フラグ立てる",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10816
-        ],
-        "x_enc": 0,
-        "z_enc": 84,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 22,
-        "name": "★風来獣車ＩＮセブクス",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          7296
-        ],
-        "x_enc": 0,
-        "z_enc": 184,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 23,
-        "name": "★風来獣車ＯＵＴセブクス",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          7296
-        ],
-        "x_enc": 0,
-        "z_enc": 184,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 148,
-          "byte_end": 1428,
-          "body_bytes": 1280,
-          "nobj": 1,
-          "md5": "863d097a748d"
-        },
-        "class": "landmark",
-        "class_note": null
       }
     ],
-    "world_placed_count": 18,
+    "world_placed_count": 2,
     "script_positioned_count": 5,
     "tmd_pack": {
       "count": 36,
@@ -3435,6 +1796,16 @@
     },
     "unplaced_slot1_tmds": [
       {
+        "pack_slot": 0,
+        "byte_offset": 148,
+        "byte_end": 1428,
+        "body_bytes": 1280,
+        "nobj": 1,
+        "md5": "863d097a748d",
+        "class": "unknown",
+        "note": null
+      },
+      {
         "pack_slot": 1,
         "byte_offset": 1428,
         "byte_end": 3064,
@@ -3531,8 +1902,8 @@
         "body_bytes": 284,
         "nobj": 1,
         "md5": "6d282256139d",
-        "class": "npc_token",
-        "note": "4-point star primitive (~284B); generic actor base"
+        "class": "decoration",
+        "note": "crossed-quad billboard tree; walk .MAP stamps it on ~75 forest cells (recs 409/462/463)"
       },
       {
         "pack_slot": 11,
@@ -3541,8 +1912,8 @@
         "body_bytes": 352,
         "nobj": 1,
         "md5": "271bf3e642ae",
-        "class": "npc_token",
-        "note": "4-point star primitive (~352B); generic actor base"
+        "class": "decoration",
+        "note": "crossed-quad billboard tree variant; walk .MAP stamps it on ~138 forest cells (recs 447/459..461)"
       },
       {
         "pack_slot": 12,
@@ -3763,7 +2134,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "フラグ"
+        "man_record_index": 1
       },
       {
         "pack_slot": 33,
@@ -3778,7 +2149,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "イベント屋"
+        "man_record_index": 2
       },
       {
         "pack_slot": 31,
@@ -3793,7 +2164,7 @@
         "chain_size": 11,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "ＳＤ獣車"
+        "man_record_index": 3
       },
       {
         "pack_slot": 30,
@@ -3808,7 +2179,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "ＳＤ客車"
+        "man_record_index": 4
       },
       {
         "pack_slot": 30,
@@ -3823,7 +2194,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "ＳＤ客車２"
+        "man_record_index": 5
       },
       {
         "pack_slot": 28,
@@ -3838,7 +2209,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "看板１"
+        "man_record_index": 6
       },
       {
         "pack_slot": 32,
@@ -3853,7 +2224,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "釣り場看板"
+        "man_record_index": 7
       },
       {
         "pack_slot": 12,
@@ -4832,8 +3203,8 @@
     "cdname": "map03",
     "prot_base": 391,
     "camera": {
-      "x": 1118,
-      "z": 9705,
+      "x": 12192,
+      "z": 9024,
       "azimuth": 0,
       "zoom": 1.0
     },
@@ -4851,7 +3222,6 @@
     "placements": [
       {
         "id": 1,
-        "name": "大空城",
         "tmd_slot": 44,
         "flag": 0,
         "flags": "0x00",
@@ -4879,7 +3249,6 @@
       },
       {
         "id": 2,
-        "name": "イベント屋",
         "tmd_slot": 42,
         "flag": 0,
         "flags": "0x00",
@@ -4907,7 +3276,6 @@
       },
       {
         "id": 3,
-        "name": "ＳＤ獣車",
         "tmd_slot": 41,
         "flag": 7,
         "flags": "0x07",
@@ -4935,7 +3303,6 @@
       },
       {
         "id": 4,
-        "name": "ＳＤ客車",
         "tmd_slot": 40,
         "flag": 10,
         "flags": "0x0A",
@@ -4963,7 +3330,6 @@
       },
       {
         "id": 5,
-        "name": "大空城のかげ",
         "tmd_slot": 45,
         "flag": 0,
         "flags": "0x00",
@@ -4991,7 +3357,6 @@
       },
       {
         "id": 6,
-        "name": "大空城のかげ１",
         "tmd_slot": 45,
         "flag": 0,
         "flags": "0x00",
@@ -5019,7 +3384,6 @@
       },
       {
         "id": 7,
-        "name": "大空城のかげ２",
         "tmd_slot": 45,
         "flag": 0,
         "flags": "0x00",
@@ -5047,7 +3411,6 @@
       },
       {
         "id": 8,
-        "name": "大空城本体",
         "tmd_slot": 46,
         "flag": 0,
         "flags": "0x00",
@@ -5075,7 +3438,6 @@
       },
       {
         "id": 9,
-        "name": "大空城のかけら",
         "tmd_slot": 47,
         "flag": 0,
         "flags": "0x00",
@@ -5103,7 +3465,6 @@
       },
       {
         "id": 10,
-        "name": "岩のかけら０",
         "tmd_slot": 48,
         "flag": 0,
         "flags": "0x00",
@@ -5131,7 +3492,6 @@
       },
       {
         "id": 11,
-        "name": "岩のかけら１",
         "tmd_slot": 49,
         "flag": 0,
         "flags": "0x00",
@@ -5159,7 +3519,6 @@
       },
       {
         "id": 12,
-        "name": "バルコニー",
         "tmd_slot": 50,
         "flag": 0,
         "flags": "0x00",
@@ -5187,7 +3546,6 @@
       },
       {
         "id": 13,
-        "name": "橋のパーツ縁付き",
         "tmd_slot": 51,
         "flag": 0,
         "flags": "0x00",
@@ -5215,7 +3573,6 @@
       },
       {
         "id": 14,
-        "name": "橋のパーツ",
         "tmd_slot": 52,
         "flag": 0,
         "flags": "0x00",
@@ -5243,7 +3600,6 @@
       },
       {
         "id": 15,
-        "name": "橋のパーツ１",
         "tmd_slot": 52,
         "flag": 0,
         "flags": "0x00",
@@ -5271,7 +3627,6 @@
       },
       {
         "id": 16,
-        "name": "大空城後地",
         "tmd_slot": 35,
         "flag": 0,
         "flags": "0x00",
@@ -5299,7 +3654,6 @@
       },
       {
         "id": 17,
-        "name": "レクタス",
         "tmd_slot": 39,
         "flag": 5,
         "flags": "0x05",
@@ -5327,7 +3681,6 @@
       },
       {
         "id": 18,
-        "name": "パラシュ",
         "tmd_slot": 53,
         "flag": 0,
         "flags": "0x00",
@@ -5355,7 +3708,6 @@
       },
       {
         "id": 19,
-        "name": "釣り場看板",
         "tmd_slot": 54,
         "flag": 0,
         "flags": "0x00",
@@ -5380,597 +3732,9 @@
         },
         "class": "landmark",
         "class_note": null
-      },
-      {
-        "id": 20,
-        "name": "★獣車駅",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 21,
-        "name": "★コル",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 22,
-        "name": "★ブブゴルド",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 23,
-        "name": "★ニルボア",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          14784
-        ],
-        "x_enc": 0,
-        "z_enc": 115,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 24,
-        "name": "★ドーマン研究所",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 25,
-        "name": "★ウルメイス",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 26,
-        "name": "★ディーネさん",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 27,
-        "name": "★コンクラム",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 28,
-        "name": "★ジッツ地底宮",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10304
-        ],
-        "x_enc": 0,
-        "z_enc": 80,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 29,
-        "name": "大空城落下",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10944
-        ],
-        "x_enc": 0,
-        "z_enc": 85,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 30,
-        "name": "駅上空の大空城",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          12992
-        ],
-        "x_enc": 0,
-        "z_enc": 101,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 31,
-        "name": "創世樹６再生演出",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10944
-        ],
-        "x_enc": 0,
-        "z_enc": 85,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 32,
-        "name": "創世樹７再生演出",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10944
-        ],
-        "x_enc": 0,
-        "z_enc": 85,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 33,
-        "name": "★デーネからソーンへ",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          9856
-        ],
-        "x_enc": 0,
-        "z_enc": 204,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 34,
-        "name": "★パラ",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          5952
-        ],
-        "x_enc": 0,
-        "z_enc": 46,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 35,
-        "name": "ヒルポナス崩壊後",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          6976
-        ],
-        "x_enc": 0,
-        "z_enc": 54,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 36,
-        "name": "★列車暴走中",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          5952
-        ],
-        "x_enc": 0,
-        "z_enc": 46,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 37,
-        "name": "★風来獣車ＩＮカリスト",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          7296
-        ],
-        "x_enc": 0,
-        "z_enc": 184,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 38,
-        "name": "★風来獣車ＯＵＴカリスト",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          7296
-        ],
-        "x_enc": 0,
-        "z_enc": 184,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 39,
-        "name": "★デロアにおかえり",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          10816
-        ],
-        "x_enc": 0,
-        "z_enc": 84,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
-      },
-      {
-        "id": 40,
-        "name": "デバッグ用サンプルイベント",
-        "tmd_slot": 0,
-        "flag": 0,
-        "flags": "0x00",
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          64,
-          0,
-          8000
-        ],
-        "x_enc": 0,
-        "z_enc": 62,
-        "script_positioned": false,
-        "tmd_source": {
-          "kind": "scene_tmd_pack",
-          "pack_slot": 0,
-          "byte_offset": 228,
-          "byte_end": 412,
-          "body_bytes": 184,
-          "nobj": 1,
-          "md5": "07516192e278"
-        },
-        "class": "landmark",
-        "class_note": null
       }
     ],
-    "world_placed_count": 23,
+    "world_placed_count": 2,
     "script_positioned_count": 17,
     "tmd_pack": {
       "count": 56,
@@ -6484,6 +4248,16 @@
     },
     "unplaced_slot1_tmds": [
       {
+        "pack_slot": 0,
+        "byte_offset": 228,
+        "byte_end": 412,
+        "body_bytes": 184,
+        "nobj": 1,
+        "md5": "07516192e278",
+        "class": "unknown",
+        "note": null
+      },
+      {
         "pack_slot": 1,
         "byte_offset": 412,
         "byte_end": 3440,
@@ -6670,8 +4444,8 @@
         "body_bytes": 472,
         "nobj": 1,
         "md5": "046072473ac2",
-        "class": "npc_token",
-        "note": "small octahedron primitive (~472B); generic actor base"
+        "class": "decoration",
+        "note": "tree/prop mesh; walk .MAP stamps it on ~109 cells (recs 474/489/490)"
       },
       {
         "pack_slot": 20,
@@ -6680,8 +4454,8 @@
         "body_bytes": 476,
         "nobj": 1,
         "md5": "1ca0ac3daca6",
-        "class": "npc_token",
-        "note": "small octahedron primitive (~476B); same family as karisto.19"
+        "class": "decoration",
+        "note": "tree/prop mesh; walk .MAP stamps it on ~20 cells (recs 475/491)"
       },
       {
         "pack_slot": 21,
@@ -6690,8 +4464,8 @@
         "body_bytes": 452,
         "nobj": 1,
         "md5": "2b885faa08a4",
-        "class": "npc_token",
-        "note": "small octahedron primitive (~452B); same family as karisto.19"
+        "class": "decoration",
+        "note": "tree/prop mesh; walk .MAP stamps it on ~30 cells (recs 476/492)"
       },
       {
         "pack_slot": 22,
@@ -6701,7 +4475,7 @@
         "nobj": 1,
         "md5": "ba3ab2038c13",
         "class": "decoration",
-        "note": "5-pointed star / umbrella shape"
+        "note": "tree/prop mesh (5-pointed star / umbrella shape); walk .MAP stamps it on ~15 cells (recs 477/493)"
       },
       {
         "pack_slot": 23,
@@ -6710,8 +4484,8 @@
         "body_bytes": 452,
         "nobj": 1,
         "md5": "4aaed054d59f",
-        "class": "npc_token",
-        "note": "small octahedron primitive (~452B); same family as karisto.19"
+        "class": "decoration",
+        "note": "tree/prop mesh; walk .MAP stamps it on ~9 cells (recs 478/494)"
       },
       {
         "pack_slot": 24,
@@ -6902,7 +4676,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "大空城"
+        "man_record_index": 1
       },
       {
         "pack_slot": 42,
@@ -6917,7 +4691,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "イベント屋"
+        "man_record_index": 2
       },
       {
         "pack_slot": 41,
@@ -6932,7 +4706,7 @@
         "chain_size": 11,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "ＳＤ獣車"
+        "man_record_index": 3
       },
       {
         "pack_slot": 40,
@@ -6947,7 +4721,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "ＳＤ客車"
+        "man_record_index": 4
       },
       {
         "pack_slot": 45,
@@ -6962,7 +4736,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "大空城のかげ"
+        "man_record_index": 5
       },
       {
         "pack_slot": 45,
@@ -6977,7 +4751,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "大空城のかげ１"
+        "man_record_index": 6
       },
       {
         "pack_slot": 45,
@@ -6992,7 +4766,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "大空城のかげ２"
+        "man_record_index": 7
       },
       {
         "pack_slot": 46,
@@ -7007,7 +4781,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "大空城本体"
+        "man_record_index": 8
       },
       {
         "pack_slot": 47,
@@ -7022,7 +4796,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "大空城のかけら"
+        "man_record_index": 9
       },
       {
         "pack_slot": 48,
@@ -7037,7 +4811,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "岩のかけら０"
+        "man_record_index": 10
       },
       {
         "pack_slot": 49,
@@ -7052,7 +4826,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "岩のかけら１"
+        "man_record_index": 11
       },
       {
         "pack_slot": 50,
@@ -7067,7 +4841,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "バルコニー"
+        "man_record_index": 12
       },
       {
         "pack_slot": 51,
@@ -7082,7 +4856,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "橋のパーツ縁付き"
+        "man_record_index": 13
       },
       {
         "pack_slot": 52,
@@ -7097,7 +4871,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "橋のパーツ"
+        "man_record_index": 14
       },
       {
         "pack_slot": 52,
@@ -7112,7 +4886,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "橋のパーツ１"
+        "man_record_index": 15
       },
       {
         "pack_slot": 35,
@@ -7127,7 +4901,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "大空城後地"
+        "man_record_index": 16
       },
       {
         "pack_slot": 39,
@@ -7142,7 +4916,7 @@
         "chain_size": 14,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "レクタス"
+        "man_record_index": 17
       },
       {
         "pack_slot": 53,
@@ -7157,7 +4931,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "パラシュ"
+        "man_record_index": 18
       },
       {
         "pack_slot": 54,
@@ -7172,7 +4946,7 @@
         "chain_size": 1,
         "kind": "man_actor",
         "class": "landmark",
-        "man_record_name": "釣り場看板"
+        "man_record_index": 19
       },
       {
         "pack_slot": 34,

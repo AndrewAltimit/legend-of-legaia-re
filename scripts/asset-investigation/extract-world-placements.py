@@ -21,20 +21,31 @@ referenced by a placement record exists inside this pack (max scene slot
 global TMD pool (party-character overlays) and aren't served by the
 kingdom pack.
 
-Records per kingdom (b + c iterable, indices a+1..total-1):
-- Drake  (PROT 85, scene `map01`): a=12, b=9, c=42 -> 50 placements
-- Sebucus(PROT 244, scene `map02`): a=33, b=8, c=16 -> 23 placements
-- Karisto(PROT 391, scene `map03`): a=25, b=20, c=21 -> 40 placements
+Records per kingdom. The MAN header's three counts are its three record
+partitions; only **partition 1** holds actor placements, and its record 0 is
+the scene-entry controller, so `FUN_8003AEB0` runs the walker over records
+`1..b-1`:
+- Drake  (PROT 85, scene `map01`): a=12, b=9,  c=42 -> 8 placements
+- Sebucus(PROT 244, scene `map02`): a=33, b=8,  c=16 -> 7 placements
+- Karisto(PROT 391, scene `map03`): a=25, b=20, c=21 -> 19 placements
+
+Partition 2 (the `c` records) is the scene's event / trigger scripts. They
+have no placement header: read through this layout their "tile" bytes are
+field-VM script bytes, which decode to a column of points on the map's west
+edge. They are not emitted.
 
 Per-record format (verbatim from the FUN_8003A1E4 walker at 0x8003A2B0):
-  u8 n_chars          ; count of 2-byte Shift-JIS name characters
-  u8[2 * n_chars]     ; Shift-JIS encoded name
+  u8 n_locals         ; count of 2-byte entries preceding the header (in the
+                      ; retail kingdom MANs these bytes spell the record's
+                      ; Shift-JIS developer label; the label is disc text and
+                      ; is NOT written to the output)
+  u8[2 * n_locals]
   u8 tmd_slot         ; scene-relative TMD pool index
                       ; if < 0xF0: idx = slot + scene_TMD_base
                       ; if >=0xF0: idx = slot - 0xF0 + global_TMD_base
                       ;            (global "story-character" overlay TMDs)
-  u8 flag             ; high nibble seems to encode actor category
-  u8 x_enc, z_enc     ; ((b & 0x7F) << 7) + 0x80/0x40 (sign-flag in MSB)
+  u8 flag             ; animation id (see docs/subsystems/world-map.md)
+  u8 x_enc, z_enc     ; ((b & 0x7F) << 7) + (bit7 ? 0x80 : 0x40)
 
 Records with both x_enc and z_enc set to 0x7F have NO static world
 position - those actors are positioned by the field-VM script at runtime
@@ -179,8 +190,11 @@ def parse_placements(man: bytes) -> dict:
     data_area = off_tbl + total * 3
     placements = []
     skipped_no_pos = 0
-    # Caller iterates s4 in [1, total-a) -> a3 in [a+1, total).
-    for s4 in range(1, total - a):
+    # FUN_8003AEB0 runs the walker over partition-1 records 1..b-1 (record 0
+    # is the scene-entry controller) -> a3 in [a+1, a+b). Partition 2 is
+    # event scripts with no placement header; walking into it reads script
+    # bytes as tile coordinates.
+    for s4 in range(1, b):
         a3 = a + s4
         if a3 >= total:
             break
@@ -192,10 +206,8 @@ def parse_placements(man: bytes) -> dict:
         s1 = name_end
         if s1 + 4 > len(man):
             break
-        try:
-            name = man[rec_off + 1:name_end].decode("shift_jis", errors="replace")
-        except Exception:
-            name = repr(man[rec_off + 1:name_end])
+        # The 2*n bytes before the header are the record's developer label
+        # on the retail kingdom MANs. It is disc text: never emitted.
         tmd, flag, x_enc, z_enc = man[s1], man[s1 + 1], man[s1 + 2], man[s1 + 3]
         # (0x7F, 0x7F) = "no static position; spawn point set by field-VM script"
         script_positioned = (x_enc == 0x7F and z_enc == 0x7F)
@@ -205,7 +217,6 @@ def parse_placements(man: bytes) -> dict:
         z = ((z_enc & 0x7F) << 7) + (0x80 if (z_enc & 0x80) else 0x40)
         placements.append({
             "id": s4,
-            "name": name,
             "tmd_slot": tmd,
             "flag": flag,
             "flags": f"0x{flag:02X}",  # legacy field name for site compat
@@ -340,11 +351,21 @@ def main():
 
     payload = {}
     for base, key, label, cdname in KINGDOMS:
-        matches = sorted(prot_dir.glob(f"{base:04d}_*.BIN"))
-        if not matches:
-            sys.exit(f"PROT entry {base:04d}_*.BIN missing under {prot_dir}.\n"
+        # The 7-asset bundle is entry `base` on an extraction whose entry
+        # sizes over-read into the neighbour, and entry `base + 1` on a
+        # correctly-sized one (entry `base` is then the scene's prescript
+        # alone). Same probe order as the site's `set_scene_kingdom`.
+        prot_path = None
+        for idx in (base, base + 1):
+            for cand in sorted(prot_dir.glob(f"{idx:04d}_*.BIN")):
+                if find_asset_table(cand.read_bytes()) is not None:
+                    prot_path = cand
+                    break
+            if prot_path is not None:
+                break
+        if prot_path is None:
+            sys.exit(f"no 7-asset bundle at PROT entry {base:04d} or {base + 1:04d} under {prot_dir}.\n"
                      f"Run `target/release/legaia-extract <DISC> --out /tmp/legaia-extract` first.")
-        prot_path = matches[0]
         man = extract_slot(prot_path, slot=2, expected_type=0x03, lzs_bin=lzs_bin)
         parsed = parse_placements(man)
         tmd_pack = extract_slot(prot_path, slot=1, expected_type=0x02, lzs_bin=lzs_bin)
@@ -456,8 +477,8 @@ def main():
                         "class", "landmark"
                     ),
                 }
-                if actor.get("man_record_name"):
-                    entry["man_record_name"] = actor["man_record_name"]
+                if actor.get("man_record_index") is not None:
+                    entry["man_record_index"] = actor["man_record_index"]
                 live_placements.append(entry)
                 if kind == "bulk_terrain":
                     bulk_terrain_placements.append(entry)

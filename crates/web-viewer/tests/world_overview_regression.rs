@@ -173,8 +173,8 @@ fn sha256_prefix12(buf: &[u8]) -> String {
     s
 }
 
-/// Walked MAN placement record (the world-position-bearing subset of the
-/// per-kingdom placement asset).
+/// Walked MAN partition-1 actor-placement record (`ManFile::actor_placements`
+/// is the library decoder; this is the same header walked independently).
 #[derive(Debug)]
 struct Placement {
     id: i16,
@@ -206,7 +206,12 @@ fn parse_placements(man: &[u8]) -> Option<Vec<Placement>> {
     let data_area = off_tbl + total * 3;
     let mut out = Vec::new();
     let a_pos = a as usize;
-    for s4 in 1..(total - a_pos) {
+    // Partition 1 only, from record 1: `FUN_8003AEB0` runs the placement
+    // walker over records `1..N1` (record 0 is the scene-entry controller).
+    // Partition 2 is the scene's event scripts and has no placement header -
+    // read as one, its script bytes decode to a column of points on the map's
+    // west edge, which is what the page's top-down map once plotted.
+    for s4 in 1..(b.max(0) as usize) {
         let a3 = a_pos + s4;
         if a3 >= total {
             break;
