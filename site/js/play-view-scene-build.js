@@ -201,7 +201,7 @@
             draw.placeIdx = i;
             /* The mesh the placement draws with no model swap live. */
             if (!anim) draw.baseMeshId = meshId;
-            /* Where the record put it, for `_applyObjectMoves`. */
+            /* Where the record put it, for `_applyObjectLive`'s release. */
             draw.baseX = draw.x;
             draw.baseZ = draw.z;
             /* Overworld decorations (the placed list past the landmarks):
@@ -235,8 +235,7 @@
         rt.field_placement_scales ? rt.field_placement_scales() : null,
         rt.field_decoration_start ? rt.field_decoration_start() : undefined);
       this._floorWaveLive = false;
-      this._objectMovesLive = false;
-      this._objectTurnsLive = false;
+      this._objectLive = false;
       this._objectTintsLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */

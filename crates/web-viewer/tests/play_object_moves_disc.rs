@@ -1,6 +1,6 @@
 //! Disc-gated: the browser play page draws a placed object where its actor
-//! is, through `LegaiaRuntime::field_placement_moves` - the table the page's
-//! `_applyObjectMoves` folds into each placed draw.
+//! is, through `LegaiaRuntime::field_placement_live_models` - the engine-built
+//! model the page's `_applyObjectLive` adopts for each moved or turned draw.
 //!
 //! `chitei2`'s collapse is the case: the boulder pieces (partition-0 records
 //! 28..30) are born parked 700 units up, and the boulder beat the escape walk
@@ -24,13 +24,28 @@ fn disc_bytes() -> Option<Vec<u8>> {
     std::fs::read(PathBuf::from(path)).ok()
 }
 
-/// `(placement, [dx, dy, dz])` for every moved placement this frame.
+/// `(placement, [dx, dy, dz])` (retail frame, Y-down) for every moved
+/// placement this frame: the live model's translation against the
+/// placement's spawn position. The export is in the page's Y-up frame, so
+/// the Y it carries is the negated retail one.
 fn moves(rt: &LegaiaRuntime) -> Vec<(usize, [i32; 3])> {
-    rt.field_placement_moves()
-        .chunks(3)
+    let live = rt.field_placement_live_models();
+    let spawn = rt.field_placement_positions();
+    live.chunks(16)
+        .zip(spawn.chunks(3))
         .enumerate()
-        .filter(|(_, d)| d.iter().any(|&v| v != 0.0))
-        .map(|(i, d)| (i, [d[0] as i32, d[1] as i32, d[2] as i32]))
+        .filter(|(_, (m, _))| m[15] != 0.0)
+        .map(|(i, (m, p))| {
+            (
+                i,
+                [
+                    (m[12] - p[0]).round() as i32,
+                    (-m[13] - p[1]).round() as i32,
+                    (m[14] - p[2]).round() as i32,
+                ],
+            )
+        })
+        .filter(|(_, d)| *d != [0; 3])
         .collect()
 }
 

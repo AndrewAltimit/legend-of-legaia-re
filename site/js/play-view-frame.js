@@ -275,9 +275,8 @@
        * nibble-9): fold its live rungs into the baked static draws so the drawn
        * ground undulates with the walk heightfield. Costs one WASM call per
        * frame and nothing else on a scene whose script never moves the ladder. */
+      this._applyObjectLive(rt);
       this._applyFloorWave(rt);
-      this._applyObjectMoves(rt);
-      this._applyObjectTurns(rt);
       this._applyObjectParked(rt);
       this._applyObjectModels(rt);
       this._applyObjectTints(rt);
