@@ -34,6 +34,25 @@ impl<S: AudioSink> BootSession<S> {
         }
     }
 
+    /// The scripted field VRAM effects the play hosts drain once per sim tick
+    /// (`World::step_field_vram_effects`: the native window's
+    /// `apply_world_clut_fx`, the page's `step_field_vram_fx`), for a
+    /// headless driver, against the scene's own VRAM image.
+    ///
+    /// Like [`Self::fog_render_tick`] the step is not presentation-only. A
+    /// cross-context CLUT-cell fade (`CC <id> 61 ..` with a frame count) is a
+    /// halt-acquire op: it raises the issuing context's halt bit and the
+    /// fade's last row clears it, so a driver that never steps the fades
+    /// leaves that context halted for the whole run. Returns whether a VRAM
+    /// word changed.
+    pub fn field_vram_tick(&mut self) -> bool {
+        let host = &mut self.host;
+        let Some(res) = host.resources.as_mut() else {
+            return false;
+        };
+        host.world.step_field_vram_effects(&mut res.vram, false)
+    }
+
     /// Start a **global-pool** `music_01` track (`bgm_id >= 2000`) through the
     /// BGM director: resolve the bank entry, upload its own VAB, and play its
     /// SEQ. This is how a minigame (or any caller with a disc-pinned track id)

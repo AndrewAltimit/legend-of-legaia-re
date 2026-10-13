@@ -589,7 +589,12 @@ started from:
   is held on "You did well." at `town01` `P1[10]` `+0x804`, past the
   sparring fight's `3E FF 04` / `21` at `+0x7F7`; opened at the entry, the
   talk only reached that line through the fight, and the frame was sampled
-  with no box.
+  with no box. The same capture holds the system context on its install park
+  (`+0x9F`): the return engaged Tetsu from the install slice (`B1 2E 08`
+  behind the `0x23C` test), so the loop never ran a pass. An engagement is
+  therefore taken early on the same rule as a resume
+  ([below](#a-record-that-took-the-player-at-the-install-pass)) - left to the
+  settle tick, the loop selected `0x19D` first.
 - **Paging.** From the settle tick on, while the record sits in a dialog box
   short of the gate PC, `Cross` is pressed every other tick - the presses
   the player made to page the conversation to where it was captured. A
@@ -748,6 +753,7 @@ true:
 |---|---|---|
 | Settle before arming | An encounter armed at boot owns the first tick, so the scene's entry scripts never run. On an overworld that leaves the ambient-particle gate clear, and the emitter that draws the stream once a frame never draws | The child settles `SETTLE_TICKS` first (`LEGAIA_BATTLE_SETTLE`) and installs the fight's roster after the settle, since a scripted duel's entry can re-seat the party |
 | Fog render step | It is not presentation-only: it writes the live count and depth view the next tick's spawns read, and a spawn draws the stream | The headless seed runs `BootSession::fog_render_tick` after every tick; the child is tick-locked (one tick per redraw) |
+| Field VRAM effects | A cross-context CLUT-cell fade (`CC <id> 61 ..` with a frame count) halts the context that issued it until its last row is written, and the fades are stepped from the hosts' VRAM pass | The headless seed runs `BootSession::field_vram_tick` after every field tick, and the child's settle loop does the same |
 | Mid-fight bars | A child on full bars has its monster AI pick from a different table | The seeded HP / MP reach the child on the same first battle tick (`LEGAIA_BATTLE_BARS`) |
 
 ### Where the combatants stand
@@ -1683,6 +1689,7 @@ Shapes the corpus separates, each with what it indicates:
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
 | `view_window` at `0` beside that selector pair (`cort_evolved_approach_cutscene`) | the same pass: each selector arm applies its own op `0x46` window ([below](#the-region-selector-band-and-the-entry-order)) |
+| a room or selector bit down in the engine only, the system script's PC never moving off its loop head | the system context halted, or a record holding the player from the landing: a pre-fight flag ([below](#a-pre-fight-flag-runs-the-entrys-post-battle-branch)), or a halt nothing clears |
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
 | retail's camera focus thousands of units off its player (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the seed lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
@@ -1742,6 +1749,15 @@ four bytes apart. It is the same one pass, scored twice - there is no second
 divergence in the window bytes, and none in the op `0x46` handler, which
 every other field state in the corpus agrees on.
 
+The band need not be keyed on the region type. `nilboa` and `garmel` select
+a room bit in `0x528..0x52E` by `CD F8` tile boxes instead, tested in a fixed
+order, and a record that carries the player out of the box the loop last
+selected leaves the same residue: `nivora_cutscene_delilas_intro` and
+`koru_strip_forced` hold `0x52C` (box `[26,0..126,87]`) with the player at
+tile `(112, 114)`, inside the box of `0x52B` the seed selects there, and
+`chapter2_garmel_pre_zeto` holds `0x529` and `0x19E` with the player on a
+tile no box covers.
+
 The same pass picks the frame's clear colour. `town01`'s entry loop sets
 `4C 13` to the cave brown `(60, 40, 20)` while the player stands in its
 tile box `[0, 0 .. 44, 55]` and black elsewhere
@@ -1795,6 +1811,29 @@ post-fight placement at the landing, the loop runs its pass, and
 `rim_elm_gimard_seru_capture_*` and `shiny_refactor_gimard_*` carry `0x30C` /
 `0x30E`, the room bit `0x528` and the selector through the seed.
 
+The fight's entry writes flags of its own. The field entity SM's entry tail
+(`FUN_801DA51C`, `0x801DA6C4..0x801DA6EC`) raises system flags `0` and `3`
+while flag `0x13` is up and lowers the victory latch `0x35`
+([script-vm](../subsystems/script-vm.md#the-entity-sms-battle-entry-flags)). Flag `3` is what
+a scene entry reads on the return: `cave01`'s install slice spawns Terra's
+after-battle record on it (`70 03` at `P1[0]` `+0x77`), and that record clears
+it. A capture of the fight holds it for *this* fight, so it is an entry latch
+like the others - `terra_party_battle` landed with it up, ran Terra's comment
+inside the settle window and entered the fight with the system loop parked
+behind the box (`0x528` down). Two more rules follow from the same tail:
+
+- **A battle-id fight never ran it.** The boss casts captured in `jou` were
+  entered by a development launcher (battle-id word `0x8007B7FC` non-zero), not
+  by the field entity, and hold the victory latch of an earlier fight right
+  through theirs. The seed's forced entry is the field's, so on such a capture
+  the three flags the tail wrote go back to the capture's own
+  (`RetailBattle::battle_id`, `BATTLE_ENTRY_TAIL_FLAGS`).
+- **The victory latch is read at the phase.** The results sequencer raises
+  `0x35` on the results frame (`FUN_8004E568`, `0x8004EECC`). Flags are
+  otherwise read at the first prompt, before the drive; on a drive that
+  reached its phase this one bit is read there, as a victim's HP is
+  (`noa_levelup_banner`).
+
 What a latch cannot hold back is a loop the fight's record parked. The three
 captures of the arrival fight (`battle_gimard_tail_fire_a` / `_b`,
 `battle_melee_hit_spark`) hold no selector bit at all: `town0b`'s first pass
@@ -1805,6 +1844,16 @@ with `0x307` up, so its pass skips the spawn, runs on and selects `0x19D`.
 Holding `0x307` back would replay the whole cutscene inside the settle window.
 A capture whose formation cell matches no registered row has no row to key
 the arms on.
+
+Nor does the arm window reach a flag the record raised long before its entry
+op. `korb3`'s Gaza record `P2[2]` sets `0x41D` as its first op (`+0x1E`) and
+enters row `15` at `+0x115E`, a whole cutscene later, and the entry script
+reads `0x41D` up with `0x41E` down as the return: it sets `0x41E` and spawns
+`P2[3]`, which sets `0x511` and holds the player, so the loop never selects
+`0x528`. The four `battle_gaza2_*` captures score those three bits. Widening
+the window to the record is not a rule the disc supports: `town0b`'s `0x307`
+sits in the same position and is the flag whose absence replays the arrival
+cutscene.
 
 ### A fight entered without a position snapshot
 
@@ -2380,6 +2429,18 @@ every pass, so it moves with the phase of both clips):
   Both clocks run in vsyncs (the fade one per tick, the scene's waits drained
   `8` a tick), so the fan's program ends earlier than retail's for a reason
   the capture cannot show; the gate lands one frame after it.
+- **A flash is gated on its own age.** A summon capture in `0x33` before
+  the flash is placed by the close-up's accumulator `ctx[+0x87C]` and reads
+  exact (`gimard_summon_start`, `juggernaut_summon_mid_cast`). Once the
+  flash-in is up the gate is the fade actor's age, and the accumulator is a
+  second clock: the flash is spawned by the invoke clip's first effect
+  record, not at an accumulator value. At the same fade age the engine's
+  accumulator stands `0`, `8` or `16` further than retail's across the `0x34`
+  captures (TR y `+0` / `+16` / `+32`, TR z and yaw in proportion - `mule` and
+  `nighto` exact, `orb` and `terra` one pass, `viguro`, `aluru`, `iota`,
+  `meta`, `freed` and `swordie` two), with the framing law itself agreeing:
+  every one of them reads case `0x12`'s target for its own accumulator, and
+  retail's live words trail its step table by the same `14` / `14` / `37`.
 - **A wait lasts as long as the stream took.** `flute_lippian_midcast` and
   `flute_spikefish_midcast` are captured in `0x32`, which runs case 6 on the
   caster every pass and holds until the sound bank is resident

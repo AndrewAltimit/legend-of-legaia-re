@@ -745,6 +745,7 @@ pub(super) fn arm_launch_battle(
                     log::error!("play-window: LEGAIA_BATTLE_SETTLE tick: {e:#}");
                     break;
                 }
+                session.field_vram_tick();
                 session.fog_render_tick();
             }
             session.set_host_drains_queues(true);

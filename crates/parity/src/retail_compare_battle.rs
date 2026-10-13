@@ -92,6 +92,16 @@ const BACKDROP_SLOT_1_YAW: u32 = 0x8008_91D2;
 /// Present-party list: pool slot -> roster character id (1-based; `4` is
 /// the AI-companion seat).
 const SEAT_CHARS: u32 = 0x8007_BD10;
+/// The battle-id word a development launcher writes ([`RetailBattle::battle_id`]).
+const BATTLE_ID_WORD: u32 = 0x8007_B7FC;
+/// The system flags the field entity SM's battle-entry tail writes
+/// (`FUN_801DA51C`, `0x801DA6C4..0x801DA6EC`): `0` and the report flag under
+/// its arm, and the victory latch it lowers.
+pub(crate) const BATTLE_ENTRY_TAIL_FLAGS: [u16; 3] = [
+    0,
+    legaia_engine_core::battle_tutorial::BATTLE_REPORT_FLAG,
+    legaia_engine_core::battle_tutorial::BATTLE_ENTRY_CLEARED_FLAG,
+];
 /// The options screen's Battle Camera config word.
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 /// Eight-slot battle actor pointer table.
@@ -237,6 +247,12 @@ pub struct RetailBattle {
     pub run_state: u8,
     pub stage_id: u8,
     pub scripted: bool,
+    /// The battle-id word `0x8007B7FC`: non-zero on a fight a development
+    /// launcher entered by monster id rather than the field entity SM
+    /// `FUN_801DA51C` (the boss casts captured in `jou`). Such a fight never
+    /// ran the SM's entry tail, so the system flags the tail writes are the
+    /// save's ([`BATTLE_ENTRY_TAIL_FLAGS`]).
+    pub battle_id: u8,
     /// `0x8007BD60 & 0x1F` - the battle-stage variant the region reader
     /// stamped for the tile the fight started on; battle init loads the
     /// backdrop from entry `scene_index + variant` (`FUN_800513F0`).
