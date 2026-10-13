@@ -65,11 +65,27 @@ fn inline_dialogue_runs_branch_flag_set_through_field_vm() {
         assert!(guard < 50, "menu never became active");
     }
     slide_menu_in(&mut world);
+    // The pager is silent while it types and while the menu slides in:
+    // retail's `FUN_801D84D0` carries two cue calls, both in the picker's
+    // cursor handler, and none on the typewriter.
+    use legaia_engine_dialog::dialog::{PICKER_CONFIRM_CUE, PICKER_MOVE_CUE};
+    use legaia_engine_system::sound_state::SfxRingOp;
+    assert_eq!(world.take_sfx_ring_ops(), vec![], "typing raises no cue");
     // Move the cursor to option B and confirm.
     world.step_inline_dialogue(false, false, true);
     assert_eq!(world.dialog.inline.as_ref().unwrap().last_choice, None);
+    assert_eq!(
+        world.take_sfx_ring_ops(),
+        vec![SfxRingOp::Push(PICKER_MOVE_CUE)],
+        "a cursor move cues 0x21 (`0x801D9510`)"
+    );
     world.step_inline_dialogue(true, false, false);
     assert_eq!(world.dialog.inline.as_ref().unwrap().last_choice, Some(1));
+    assert_eq!(
+        world.take_sfx_ring_ops(),
+        vec![SfxRingOp::Push(PICKER_CONFIRM_CUE)],
+        "the committing confirm cues 0x20 (`0x801D9530`)"
+    );
 
     // The VM should run branch B (SET flag 6) and surface the "b" reply.
     let mut guard = 0;

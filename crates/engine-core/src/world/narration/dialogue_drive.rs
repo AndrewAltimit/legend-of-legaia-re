@@ -74,11 +74,17 @@ impl World {
         // A box is open: tick the typewriter + route input.
         if let Some(panel) = id.panel.as_mut() {
             if panel.menu_active() {
+                // The pager's cursor handler cues once when the cursor ends
+                // the frame somewhere else (`0x801D9508..0x801D9514`).
+                let mut moved = false;
                 if up {
-                    panel.move_picker_cursor(-1);
+                    moved |= panel.move_picker_cursor(-1);
                 }
                 if down {
-                    panel.move_picker_cursor(1);
+                    moved |= panel.move_picker_cursor(1);
+                }
+                if moved {
+                    self.push_sfx_cue(legaia_engine_dialog::dialog::PICKER_MOVE_CUE);
                 }
             }
             // Whether the menu was already open BEFORE this frame's typewriter
@@ -110,6 +116,7 @@ impl World {
                     // scene-change run before the reply box). A user choice is
                     // progress - clear the wrap map so menu records that
                     // re-emit their menu by jumping back still cycle.
+                    self.push_sfx_cue(legaia_engine_dialog::dialog::PICKER_CONFIRM_CUE);
                     let choice = panel.picker_cursor();
                     let target = panel.picker().and_then(|pk| pk.jump_target(choice));
                     id.last_choice = Some(choice);

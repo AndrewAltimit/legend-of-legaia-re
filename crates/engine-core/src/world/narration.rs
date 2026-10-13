@@ -774,11 +774,15 @@ impl World {
         let confirm = pressed(self, legaia_engine_system::input::PadButton::Cross)
             || pressed(self, legaia_engine_system::input::PadButton::Circle);
         if panel.menu_active() {
+            let mut moved = false;
             if pressed(self, legaia_engine_system::input::PadButton::Up) {
-                panel.move_picker_cursor(-1);
+                moved |= panel.move_picker_cursor(-1);
             }
             if pressed(self, legaia_engine_system::input::PadButton::Down) {
-                panel.move_picker_cursor(1);
+                moved |= panel.move_picker_cursor(1);
+            }
+            if moved {
+                self.push_sfx_cue(legaia_engine_dialog::dialog::PICKER_MOVE_CUE);
             }
         }
         // One-frame rule (see `step_inline_dialogue`): a menu that opened
@@ -804,6 +808,7 @@ impl World {
                 // record replay already-played choreography before
                 // re-wrapping. Re-emission menus live in interaction
                 // records (the inline runner), not timeline records.
+                self.push_sfx_cue(legaia_engine_dialog::dialog::PICKER_CONFIRM_CUE);
                 let choice = panel.picker_cursor();
                 let target = panel.picker().and_then(|pk| pk.jump_target(choice));
                 match target {
