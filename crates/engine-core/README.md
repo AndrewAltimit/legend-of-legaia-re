@@ -27,9 +27,10 @@ nothing.
   and the scene assembly they need.
 - **Saves.** `World::save_full` / `load_full` over the LGSF container in
   `legaia-save`, and the retail memory-card write.
-- **Scene staging and export.** The scene questions that take simulation
-  state (which placed objects are live, which records the story hides) and
-  the `.glb` export built on them.
+- **Scene staging.** The scene questions that take simulation state: which
+  placed objects are live, which records the story hides. The `.glb` export
+  built on them is [`engine-export`](../engine-export/README.md), above this
+  crate.
 
 ## The split line
 

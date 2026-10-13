@@ -11,7 +11,7 @@
 //!
 //! Shared by the browser NPC page + play page (`web-viewer::field_npc` wraps
 //! this with its render caches) and the native `legaia-engine export-glb`
-//! NPC exporter ([`crate::glb_export`]).
+//! NPC exporter (`legaia_engine_export::glb_export`).
 
 use crate::world::{FIELD_OFFMAP_HIDE_XZ, GlobalTmd};
 use legaia_engine_field::man_field_scripts::{PlacementKind, classify_placements};

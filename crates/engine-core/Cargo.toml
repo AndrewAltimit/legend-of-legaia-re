@@ -18,7 +18,6 @@ legaia-engine-battle-vm.workspace = true
 anyhow.workspace = true
 log.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 toml = { workspace = true, features = ["display"] }
 legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true

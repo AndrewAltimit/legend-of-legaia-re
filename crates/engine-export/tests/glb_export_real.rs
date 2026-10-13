@@ -6,12 +6,12 @@
 //!
 //! Skips silently when `extracted/` or `LEGAIA_DISC_BIN` is missing.
 
-use legaia_engine_core::glb_export::{
+use legaia_engine_core::npc_catalog::catalog_scene_npcs;
+use legaia_engine_core::scene_staging::assemble_field_scene;
+use legaia_engine_export::glb_export::{
     FloorSampler, GlbExportOptions, export_animated_prop_glbs, export_npc_glbs,
     export_scene_traversal, export_world_glb, world_manifest,
 };
-use legaia_engine_core::npc_catalog::catalog_scene_npcs;
-use legaia_engine_core::scene_staging::assemble_field_scene;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::PathBuf;
 
@@ -254,7 +254,7 @@ fn equipment_item_export_bakes_named_animated_glbs() {
     let scus = std::fs::read(extracted.join("SCUS_942.54")).ok();
 
     let export =
-        legaia_engine_core::glb_export::export_equipment_item_glbs(&index, scus.as_deref())
+        legaia_engine_export::glb_export::export_equipment_item_glbs(&index, scus.as_deref())
             .expect("items export");
 
     // The four player files together offer well over a hundred equippable
@@ -328,7 +328,7 @@ fn equipment_item_export_bakes_named_animated_glbs() {
 
     // Manifest cross-references: every listed file name matches the stem
     // and flavour of the record it came from.
-    let manifest = legaia_engine_core::glb_export::items_manifest(&export);
+    let manifest = legaia_engine_export::glb_export::items_manifest(&export);
     let rows = manifest["items"].as_array().expect("items array");
     assert_eq!(rows.len(), export.items.len());
     for (row, it) in rows.iter().zip(&export.items) {
@@ -359,7 +359,7 @@ fn party_field_export_bakes_vahn_noa_gala_with_idle_and_walk() {
         include_sky: false,
     };
     let export =
-        legaia_engine_core::glb_export::export_party_field_glbs(&index, &opts).expect("party");
+        legaia_engine_export::glb_export::export_party_field_glbs(&index, &opts).expect("party");
     let names: Vec<&str> = export
         .members
         .iter()
@@ -410,7 +410,7 @@ fn party_field_export_bakes_vahn_noa_gala_with_idle_and_walk() {
             m.character
         );
     }
-    let manifest = legaia_engine_core::glb_export::party_manifest(&export, &opts);
+    let manifest = legaia_engine_export::glb_export::party_manifest(&export, &opts);
     let npcs = manifest["npcs"].as_array().expect("npcs");
     assert_eq!(npcs.len(), 3);
     for (n, m) in npcs.iter().zip(&export.members) {

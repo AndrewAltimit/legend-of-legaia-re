@@ -43,8 +43,9 @@ What stays above, in `engine-core`:
   the story-hidden record set (a scratch `World` staged at the scene's
   free-roam visit), and `assemble_field_scene`, which hands that set to
   `scene_assembly::assemble_field_scene_with`.
-- `npc_catalog` and `glb_export` - the first resolves placements against the
-  world's global model pool, the second steps a `World` to bake animation.
+- `npc_catalog` - resolves placements against the world's global model pool.
+  (`glb_export`, which steps a `World` to bake animation, is its own crate
+  above `engine-core`: `engine-export`.)
 - The per-subsystem disc readers that return another kernel crate's types
   (`battle_open`, `dance`).
 

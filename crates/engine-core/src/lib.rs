@@ -31,7 +31,6 @@ pub mod fishing_scene;
 pub mod fishing_venue;
 pub mod fog_particles;
 pub mod frame_step;
-pub mod glb_export;
 pub mod live_loop;
 pub mod menu_runtime;
 pub mod menu_validator;

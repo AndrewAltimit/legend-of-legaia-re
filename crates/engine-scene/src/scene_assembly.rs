@@ -7,7 +7,7 @@
 //! why it must stay one kernel): the browser field-scene page
 //! (`web-viewer::field_scene` wraps [`AssembledScene`] with its render
 //! caches), the browser play page's mesh builders, and the native
-//! `legaia-engine export-glb` world exporter (`legaia_engine_core::glb_export`).
+//! `legaia-engine export-glb` world exporter (`legaia_engine_export::glb_export`).
 //!
 //! The hybrid mesh builders here merge the two primitive families every env
 //! pack mixes - VRAM-textured prims and untextured `F*`/`G*` vertex-colour

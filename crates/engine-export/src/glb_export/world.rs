@@ -53,7 +53,7 @@ pub fn export_world_glb(
         // shows (town01's cell (30, 38)). Judged per TRIANGLE: such a cell
         // is often one flat half and one vertical half, and dropping the
         // whole quad holes the floor where the flat half was.
-        let refs = crate::field_ground::flat_refs(hf, &hf.positions);
+        let refs = legaia_engine_core::field_ground::flat_refs(hf, &hf.positions);
         let sheet = |far: bool, t: &[u32]| {
             let ys = t.iter().map(|&i| hf.positions[i as usize][1]);
             far && ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min)
@@ -63,7 +63,7 @@ pub fn export_world_glb(
         for q in hf.indices.as_chunks::<6>().0 {
             let far = refs
                 .get(q[0] as usize)
-                .is_some_and(crate::field_ground::is_far_bucket_ref);
+                .is_some_and(legaia_engine_core::field_ground::is_far_bucket_ref);
             let before = indices.len();
             for t in q.as_chunks::<3>().0.iter().filter(|t| !sheet(far, *t)) {
                 indices.extend_from_slice(t);
@@ -253,7 +253,7 @@ fn bake_vdf_pulse_anim(
     use legaia_actor_formats::scene_gltf::{SceneMorphTarget, SceneWeightsAnim};
 
     // The same setup `SceneHost::enter_field_scene` runs before arming.
-    let mut w = crate::world::World {
+    let mut w = legaia_engine_core::world::World {
         clock: legaia_engine_vm::frame_clock::FrameClock {
             frame_step: 2,
             ..Default::default()
@@ -365,7 +365,7 @@ fn bake_vdf_pulse_anim(
     // Sample the envelope for one full period (fingerprint recurrence),
     // closing the loop with a final key equal to the first.
     const MAX_TICKS: usize = 3600;
-    let sample_lanes = |w: &crate::world::World, lanes: &[u8]| -> Vec<f32> {
+    let sample_lanes = |w: &legaia_engine_core::world::World, lanes: &[u8]| -> Vec<f32> {
         let (weights, _, _) = w
             .ambient
             .entry_vdf_pulse

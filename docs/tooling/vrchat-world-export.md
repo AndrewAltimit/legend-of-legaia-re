@@ -257,7 +257,7 @@ raw-units export whose instances get the full `scale`).
 
 ## Verification
 
-Disc-gated oracle `crates/engine-core/tests/glb_export_real.rs`: assembles
+Disc-gated oracle `crates/engine-export/tests/glb_export_real.rs`: assembles
 town01, bakes all three families, validates every glb container (magic,
 length, JSON chunk), asserts the sky filter, the bind-resolve that feeds
 the prop split, clip counts against manifest cross-references, both
