@@ -48,9 +48,17 @@ fn scene_man(
 }
 
 /// `(scene, row, track word after the replay, battle sound set)`.
-const BOSS_ENTRIES: [(&str, u16, u16, i32); 3] = [
+///
+/// `nilboa`'s rows `30` and `31` are the second and third Delilas duels: their
+/// records (`P2[22]`, `P2[23]`) start no track, and are spawned by the entry
+/// script's return arms for the previous duel's marker (`0x477` / `0x478`),
+/// which park the track on `4096`
+/// (`man_field_scripts::spawn_flag_arm_words`).
+const BOSS_ENTRIES: [(&str, u16, u16, i32); 5] = [
     ("korb3", 15, 2028, -1),
     ("nilboa", 29, 2028, -1),
+    ("nilboa", 30, 4096, -1),
+    ("nilboa", 31, 4096, 4),
     ("jouine", 21, 2071, 8),
 ];
 
@@ -77,7 +85,7 @@ fn boss_records_replay_their_theme_and_sound_set() {
         let mut world = World::new();
         world.install_field_carriers_from_man(&man_file, &man);
         world.audio.battle_sound_set = 0;
-        world.audio.current_bgm = Some(4096);
+        world.audio.current_bgm = Some(2054);
         assert!(
             world.replay_scripted_battle_score(row),
             "{scene}: row {row} has a record that picks its music"

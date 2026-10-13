@@ -751,6 +751,12 @@ fn battle_entry_row_after(body: &[u8], pc: usize) -> Option<u8> {
 /// starts contributes the later one; a sub-op `5` timed release is not
 /// carried, because the record issues it on the occupant its own sub-op `9`
 /// is about to displace (the commit `0xA` releases that occupant).
+///
+/// A record that starts no track before its entry op fights under the word
+/// of the arm that spawned it, so its words open with that arm's start
+/// ([`spawn_flag_arm_words`]): `nilboa`'s second and third Delilas duels are
+/// entered by the records the previous duel's return spawns, under the `4096`
+/// park that return selected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BattleEntryScore {
     /// Partition the carrying record lives in (`0..3`).
@@ -801,6 +807,20 @@ pub fn walk_battle_entry_scores(man_file: &ManFile, man: &[u8]) -> Vec<BattleEnt
                         is_warp: false,
                     } => {
                         let mut words = start_run.clone();
+                        if words.is_empty() {
+                            // The record starts no track of its own: the
+                            // word it fights under is the one the arm that
+                            // spawned it left.
+                            let flat = man_file
+                                .header
+                                .partition_counts
+                                .iter()
+                                .take(partition)
+                                .map(|&c| c.max(0) as usize)
+                                .sum::<usize>()
+                                + index;
+                            words = spawn_flag_arm_words(man_file, man, flat);
+                        }
                         words.extend(sound_set);
                         if !words.is_empty() {
                             out.push(BattleEntryScore {
@@ -817,6 +837,98 @@ pub fn walk_battle_entry_scores(man_file: &ManFile, man: &[u8]) -> Vec<BattleEnt
         }
     }
     out
+}
+
+/// How many decoded instructions may sit between the taken target of a
+/// system-flag test and the op-`0x44` spawn behind it for the test to count
+/// as the spawn's guard ([`spawn_flag_arm_words`]): the marker's own clear.
+pub const SPAWN_GUARD_WINDOW: usize = 2;
+
+/// The op-`0x35` track start a script runs **under the same system flag that
+/// guards its spawn of flat record `flat`**, with the control words
+/// (`2` / `3` / `4` / `0xA`) directly after it.
+///
+/// A scene entry that returns from a scripted fight keys two arms on the
+/// fight's marker flag, in two places: its install slice picks the track
+/// (`74 <F> -> T2`, `T2: 35 <id> 01`) and its per-frame body consumes the
+/// marker and spawns the record that continues the story
+/// (`74 <F> -> T`, `T: 64 <F> · 44 <flat>`). `nilboa`'s entry does this for
+/// each Delilas duel: marker `0x477` / `0x478` parks the track (`4096`) and
+/// spawns flat `0x64` / `0x65`, marker `0x479` starts `2028` and spawns
+/// `0x66`. The spawned record runs under the track its own marker's arm
+/// chose - and when that record goes on to enter the *next* fight without
+/// starting a track (`nilboa` `P2[22]` enters row `30`, `P2[23]` row `31`),
+/// that word is the one the fight holds ([`BattleEntryScore`]).
+///
+/// The guard is the test whose taken target is the nearest at or before the
+/// spawn, within [`SPAWN_GUARD_WINDOW`] instructions of it; the words are the
+/// run of op-`0x35` instructions at the taken target of any other test of the
+/// same flag in the same record, kept when it opens on a start (sub-op `1` /
+/// `9`). Empty when the spawn has no flag guard or the flag keys no start.
+pub fn spawn_flag_arm_words(man_file: &ManFile, man: &[u8], flat: usize) -> Vec<(u16, u8)> {
+    for partition in 0..3 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for index in 0..count {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            let insns: Vec<_> = LinearWalker::new(body, pc0).flatten().collect();
+            // Every `(flag, taken target)` test in the record.
+            let tests: Vec<(u16, usize)> = insns
+                .iter()
+                .filter_map(|i| match i.info {
+                    InsnInfo::SystemFlag {
+                        kind: FlagKind::Test,
+                        idx,
+                        target: Some(t),
+                        ..
+                    } => Some((idx, t)),
+                    _ => None,
+                })
+                .collect();
+            for (at, insn) in insns.iter().enumerate() {
+                if !matches!(insn.info, InsnInfo::SpawnRecord { global_index }
+                    if usize::from(global_index) == flat)
+                {
+                    continue;
+                }
+                let window_start = insns[at.saturating_sub(SPAWN_GUARD_WINDOW)].pc;
+                let Some(&(flag, guard_target)) = tests
+                    .iter()
+                    .filter(|&&(_, t)| t >= window_start && t <= insn.pc)
+                    .max_by_key(|&&(_, t)| t)
+                else {
+                    continue;
+                };
+                for &(_, arm) in tests
+                    .iter()
+                    .filter(|&&(f, t)| f == flag && t != guard_target)
+                {
+                    let words: Vec<(u16, u8)> = LinearWalker::new(body, arm)
+                        .map_while(Result::ok)
+                        .map_while(|i| match i.info {
+                            InsnInfo::Bgm { text_id, sub_op } => Some((text_id, sub_op)),
+                            _ => None,
+                        })
+                        .filter(|&(_, sub)| matches!(sub, 1 | 2 | 3 | 4 | 9 | 0xA))
+                        .collect();
+                    if matches!(words.first(), Some(&(_, 1 | 9))) {
+                        return words;
+                    }
+                }
+            }
+        }
+    }
+    Vec::new()
 }
 
 /// How many decoded instructions before an op-`0x44` spawn a track start may

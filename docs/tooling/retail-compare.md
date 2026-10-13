@@ -1317,30 +1317,43 @@ selection (`World::replay_scripted_battle_score`, read off the MAN by
 `man_field_scripts::walk_battle_entry_scores`; `play-window --battle` replays
 the same words). Each goes through the field VM's own op-`0x35` handler.
 
-**What the replay cannot reach** is a word an *earlier* beat chose. `nilboa`'s
-entry picks its track by which duel-return marker is up, clears it and spawns
-the post-duel record; each duel record raises its own marker immediately before
-its `3E FF`:
+**A record that starts no track fights under its spawner's.** `nilboa`'s
+entry script `P1[0]` keys two arms on each duel-return marker. Its install
+slice picks the track (`74 <marker>` to a `35 <id> 01` at `+0x2C..+0x61`), and
+its per-frame body consumes the marker and spawns the record that carries the
+story on (`74 <marker>` / `64 <marker>` / `44 <flat>` at `+0x4A4..+0x4D1`):
 
-| Marker up at entry | Track |
-|---|---|
-| `0x477` / `0x478` | `4096` |
-| `0x479` | `2028` |
-| `0x47A` | stop |
-| none | `2054` |
+| Marker up at entry | Track | Spawns |
+|---|---|---|
+| `0x477` | `4096` | `P2[22]`, which enters the Lu duel (row `30`) |
+| `0x478` | `4096` | `P2[23]`, which enters the Gi duel (row `31`) |
+| `0x479` | `2028` | `P2[24]` |
+| `0x47A` | pause | `P2[25]` |
+| none | `2054` | nothing |
 
-A battle capture therefore holds the marker of the fight in progress, while
-retail's word is the `4096` the **previous** duel's return parked - which no
-flag in the capture names. The marker is one of the fight's
+Each duel record raises the *next* marker immediately before its `3E FF` and
+starts no track itself - it only selects a sound set, `-1` for Lu and `4` for
+Gi. So the word a duel holds is the `4096` its spawning arm parked on the
+return from the duel before it, while the marker the capture holds is the
+fight's own. That marker is one of the fight's
 [entry latches](#a-pre-fight-flag-runs-the-entrys-post-battle-branch), so the
-seed's entry does not see it and takes the no-marker arm:
-`nivora_duel_pre_plasma_strike` (marker `0x478`) and
-`nivora_duel_mid_blazing_slash` (Gi duel, row `31`, marker `0x479`) both read
-`2054` against `4096`. Landing with the marker up would return from the wrong
-fight (`0x478` picks `4096` by coincidence, `0x479` picks `2028`). The duel
-record itself starts no track (it selects sound set `4`, which the replay does
-carry), so there is no start to replay. See
+seed's entry does not see it and takes the no-marker arm (`2054`); landing
+with it up would return from the wrong fight (`0x478` picks `4096` by
+coincidence, `0x479` picks `2028`).
+
+The replay reads the chain off the disc instead. A record whose run to its
+`3E FF` holds no start opens its words with the start its spawner runs under
+the flag that guards the spawn (`man_field_scripts::spawn_flag_arm_words`: the
+test whose taken target sits within two instructions of the `44`, then the
+op-`0x35` run at the taken target of that flag's other test in the same
+record). The Lu and Gi duels replay `4096` and then their own sound set, and
+`nivora_duel_pre_plasma_strike` and `nivora_duel_mid_blazing_slash` hold
+retail's word. See
 [audio](../subsystems/audio.md#the-battle-sound-set-picks-the-fights-track).
+
+**What the replay cannot reach** is a word chosen by a beat no flag test ties
+to the fight's record: a track an earlier record started that a later one,
+reached by a walk or a talk rather than a spawn, fights under.
 
 ## Menu states
 

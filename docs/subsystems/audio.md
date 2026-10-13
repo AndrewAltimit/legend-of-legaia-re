@@ -585,6 +585,15 @@ it, then the last sound-set selection
 evolved-Cort fights then play their event's theme instead of the scene
 entry's track and the default battle theme.
 
+A record that starts no track before its entry op fights under the word of
+the arm that spawned it. `nilboa`'s second and third Delilas duels are entered
+by the records the entry script spawns on the return from the duel before
+(`P2[22]` behind marker `0x477`, `P2[23]` behind `0x478`), and the entry's
+install slice parks the track on `4096` under the same marker. The replay
+therefore opens those rows' words with the start the spawner runs under the
+flag that guards the spawn (`man_field_scripts::spawn_flag_arm_words`), then
+the record's own sound set: `-1` for the Lu duel, `4` for the Gi duel.
+
 **Track changes are hard cuts.** Retail BGM changes cut (or run a short
 `SsSeqSetVol` ramp), so `start_inner` calls `AudioOut::swap_bgm` when a track
 is already playing: it keys off the outgoing sequencer - its notes release
