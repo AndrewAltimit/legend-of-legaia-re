@@ -269,6 +269,15 @@ the after-image ghost and the move-FX streak use, and the mask beside it is
 `World::battle_actor_draw_plan`. Its caller's gate (`slti 0xa1` at `0x8001AEE8`)
 tests the body's view depth `+0x34` against a near plane, not an actor id. `see ghidra/scripts/funcs/800480d8.txt`.
 
+Ahead of all of that sits a **part-actor collect**, behind two bytes: `ctx+0x272`
+non-zero (`beq` at `0x8004810C`) and `0x8007BD71 == 0xFF` (`bne` at
+`0x80048120`). When both hold it calls four battle-overlay routines
+(`jal 0x801E0080`, `0x801E09F8`, `0x801DF6B8`, `0x801E2524`), then walks the `0x80`
+slots of the part-actor pool `DAT_801C90F0` (`0x8004814C..0x80048188`) and nulls
+every slot whose actor carries the halt bit `+0x10 & 8`. A set `ctx+0x272` is
+cleared whether or not the second byte let the collect run (`sb zero,0x272(v0)`
+at `0x800481B0`), so the arm is one-shot. It is the collecting half of the protocol `FUN_80050E74` raises.
+
 ### `801F69D8`
 
 The row's `overlay_world_map_top_ext` qualifier is load-bearing, because this VA
