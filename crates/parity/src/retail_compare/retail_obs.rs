@@ -440,6 +440,7 @@ impl RetailObs {
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
         }
+        env.push(("LEGAIA_SEAT_FRAME_STEP", self.frame_step().to_string()));
         if let Some(f) = self.page_mark {
             env.push(("LEGAIA_SEAT_PAGE_MARK", f.to_string()));
         }
@@ -461,6 +462,14 @@ impl RetailObs {
             }
         }
         env
+    }
+
+    /// The frame step retail was running at the capture instant, in vsyncs a
+    /// game frame ([`crate::retail_compare_battle::frame_step`], half the
+    /// display lag). It is load history the engine's fixed tick does not
+    /// measure, so the seed hands it over (`World::seed_frame_step`).
+    pub fn frame_step(&self) -> u8 {
+        (self.scripts.display_lag / 2).clamp(1, 4) as u8
     }
 
     /// The player heading the seed stands the player in: retail's `+0x26`

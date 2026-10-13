@@ -300,6 +300,14 @@ pub(super) fn seed_new_game_party(session: &mut NativeSession) {
 /// at that state's own player position. The play page's twin is
 /// `play_debug_seat`.
 pub(super) fn apply_debug_seat_env(session: &mut NativeSession) {
+    // `LEGAIA_SEAT_FRAME_STEP=<n>` (the retail-compare image channel): the
+    // vsyncs a game frame retail had measured at the capture instant.
+    if let Some(step) = std::env::var("LEGAIA_SEAT_FRAME_STEP")
+        .ok()
+        .and_then(|s| s.trim().parse::<u8>().ok())
+    {
+        session.host.world.seed_frame_step(step);
+    }
     if let Ok(seat) = std::env::var("LEGAIA_SEAT") {
         let xz: Vec<i16> = seat
             .split(',')
