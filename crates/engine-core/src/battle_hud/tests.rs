@@ -162,6 +162,10 @@ fn the_round_prompt_opens_on_a_glide_from_seat_a() {
     }
     assert_eq!(battle_chip_offsets(&w), [(0, 0); 4]);
     assert_eq!(battle_round_prompt_panels_dy(&w), 0);
+    // The landing pass still leaves ahead of the state's arm (the stepper
+    // returns the record's flag); the glyph draws from the pass after.
+    assert!(!battle_chip_dpad_visible(&w));
+    w.step_action_plate_glides();
     assert!(battle_chip_dpad_visible(&w));
 
     // The capture seat: a retail record landing on a chip's or a panel's

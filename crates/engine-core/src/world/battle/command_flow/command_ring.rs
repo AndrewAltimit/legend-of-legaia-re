@@ -70,7 +70,6 @@ impl World {
         use crate::battle_round::PendingPartyAction;
         use legaia_engine_battle::target_picker::CursorRow;
         use legaia_engine_menus::battle_input::{BattleCommandInput, CommandPhase, Resolution};
-        use legaia_engine_system::input::PadButton;
 
         let Some(mut session) = self.battle.command.take() else {
             return;
@@ -82,16 +81,9 @@ impl World {
         // test - see `super::super::validator_host`.
         let (party, monsters) = self.battle_target_rows();
 
-        let mut ev = BattleCommandInput {
-            up: self.input.just_pressed(PadButton::Up),
-            down: self.input.just_pressed(PadButton::Down),
-            left: self.input.just_pressed(PadButton::Left),
-            right: self.input.just_pressed(PadButton::Right),
-            cross: self.input.just_pressed(PadButton::Cross),
-            circle: self.input.just_pressed(PadButton::Circle),
-            // The ring's Attack arm reads the option word with the pad.
-            select_attack: self.toggles.select_attack,
-        };
+        // The pad word of a dispatched pass: a press parked while the
+        // prompt's glide was landing stands in for a tick with none.
+        let mut ev: BattleCommandInput = self.take_command_pad_buffer();
         // The ring's two status refusals (`ring_arm_refused`): a press on
         // a refused arm is dropped with the buzz cue, and the ring stays up.
         if let CommandPhase::Menu { .. } = session.phase {

@@ -454,6 +454,19 @@ pub struct BattleState {
     /// ([`crate::battle_hud::battle_round_prompt_panels_dy`],
     /// [`crate::battle_hud::battle_chip_offsets`]).
     pub(crate) round_prompt_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// What the glide stepper returned on this tick's pass - retail's `s0`
+    /// at `0x801D0B34`, the value the menu SM leaves in `ctx[+0x6B2]`.
+    /// Non-zero while a tracked glide is in flight and on the pass it lands;
+    /// the menu SM dispatches no state while it is
+    /// (`World::battle_command_glide_gate`).
+    pub(crate) widget_glide_return: u8,
+    /// `ctx[+0x6B2]`: the last non-zero stepper return, which costs a staged
+    /// battle (stage id non-zero) one more undispatched pass.
+    pub(crate) widget_glide_latch: u8,
+    /// `ctx[+0x884]`: the press parked while the stepper's return was under
+    /// `World::GLIDE_PAD_BUFFER_BELOW`, handed to the first dispatched pass
+    /// that reads no press of its own.
+    pub(crate) command_pad_buffer: Option<legaia_engine_menus::battle_input::BattleCommandInput>,
     /// The result windows' raise glide: the results frame spawns the report
     /// (`0x41`) or loss (`0x42`) window and the level-up window
     /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks
@@ -836,6 +849,9 @@ impl BattleState {
             target_plaque_glide: None,
             readout_bar_glide: None,
             round_prompt_glide: None,
+            widget_glide_return: 0,
+            widget_glide_latch: 0,
+            command_pad_buffer: None,
             result_windows_glide: None,
             target_plate_cleared: false,
             action_hud_wiped: false,

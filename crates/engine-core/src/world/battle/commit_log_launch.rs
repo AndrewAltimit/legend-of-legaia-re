@@ -153,6 +153,8 @@ impl World {
         {
             g.elapsed = g.total;
         }
+        self.battle.widget_glide_return = 0;
+        self.battle.widget_glide_latch = 0;
     }
 
     /// Seat the HUD widget glide whose retail record lands on `target` at
@@ -174,20 +176,37 @@ impl World {
             [x, 168] if x != 168 => self.battle.round_prompt_glide.as_mut(),
             _ => None,
         };
-        match glide {
-            Some(g) => {
-                g.elapsed = elapsed.min(g.total);
-                true
-            }
-            None => false,
-        }
+        let Some(g) = glide else {
+            return false;
+        };
+        g.elapsed = elapsed.min(g.total);
+        // What the stepper returned on the pass the capture froze.
+        let ret = if g.settled() {
+            0
+        } else {
+            g.total - g.elapsed + 1
+        };
+        self.battle.widget_glide_return = ret;
+        true
     }
 
-    /// One tick of the two action-plate glides, on the step the commit log's
+    /// One tick of the tracked widget glides, on the step the commit log's
     /// launch takes ([`BATTLE_PASS_STEP_PER_TICK`]; `FUN_801D9BBC` walks
-    /// every tracked widget in one pass).
+    /// every tracked widget in one pass), and the pass's return value.
+    ///
+    /// The stepper returns `a3`: seeded from the first live record's flag
+    /// byte `+3` (`0x801D9C00..0x801D9C08`), then rewritten to
+    /// `total - elapsed + 1` by every record still in flight after its step
+    /// (`0x801D9D04..0x801D9D18`). A record that lands this pass leaves it
+    /// alone and retires (`sb zero,0(a1)` at `0x801D9D1C`), so the landing
+    /// pass still returns the flag and the pass after it returns `0`. The
+    /// flag is `ctx[+0x1B]` at spawn (`lbu a2,0xa(s1)` at `0x801D93C0`),
+    /// which the round reset seeds to [`Self::GLIDE_BLOCKING_FLAG`].
+    ///
+    /// PORT: FUN_801D9BBC (the return value)
     pub(crate) fn step_action_plate_glides(&mut self) {
         let step = BATTLE_PASS_STEP_PER_TICK;
+        let mut ret = 0u8;
         for g in [
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
@@ -197,7 +216,136 @@ impl World {
         .into_iter()
         .flatten()
         {
+            // A landed record is retired: the stepper skips it.
+            if g.settled() {
+                continue;
+            }
+            if ret == 0 {
+                ret = Self::GLIDE_BLOCKING_FLAG;
+            }
             g.step(step);
+            if !g.settled() {
+                ret = g.total - g.elapsed + 1;
+            }
+        }
+        self.battle.widget_glide_return = ret;
+    }
+
+    /// The flag byte a glide record carries: `ctx[+0x1B]`, `1` from the
+    /// round reset (`li v0,0x1` / `sb v0,0x1b(a0)` at
+    /// `0x801D88FC..0x801D8900`). The arts entry's own spawns clear it
+    /// around their `FUN_801D8DE8` call (`0x801D3D40`) and restore it.
+    pub(crate) const GLIDE_BLOCKING_FLAG: u8 = 1;
+
+    /// A press is parked only while the stepper's return is under this
+    /// (`sltiu v0,s0,0x6` at `0x801D0B3C` / `0x801D0B58`): the last passes
+    /// of a glide and the pass it lands on.
+    pub(crate) const GLIDE_PAD_BUFFER_BELOW: u8 = 6;
+
+    /// The menu SM's pre-dispatch gate: whether this tick's pass leaves
+    /// without running a command state.
+    ///
+    /// `FUN_801D0748` calls the glide stepper ahead of its state switch
+    /// (`jal 0x801D9BBC` at `0x801D0B2C`) and, on a non-zero return, stores
+    /// it in `ctx[+0x6B2]` and exits (`0x801D0B9C..0x801D0BA4`) - no state
+    /// arm runs, so nothing reads the pad and the state's own draws (the
+    /// D-pad glyph) are not issued. On the way out it parks the pad word:
+    ///
+    /// ```text
+    /// if ret < 6 && s2 != 0 && ctx[+0x884] == 0 && _DAT_800846C8 == 0 {
+    ///     ctx[+0x884] = s2                    ; 0x801D0B5C..0x801D0B98
+    /// }
+    /// ```
+    ///
+    /// `_DAT_800846C8` is the Battle Command option, so only the
+    /// directional-buttons entry parks a press. The first pass with a zero
+    /// return then takes one more exit when a stage module is paged in
+    /// (`ctx[+0x6B2] != 0` and stage id `_DAT_8007B64A != 0`,
+    /// `0x801D0BA8..0x801D0BCC`), clearing the latch.
+    ///
+    /// The parked word is consumed by [`Self::take_command_pad_buffer`].
+    /// Not modelled: the same exit under `ctx[+0x26A] != 0`
+    /// (`0x801D0B4C..0x801D0B54`), and the held-for-32-vsyncs term of `s2`
+    /// (`_DAT_8007B938`) - the port's word is the newly-pressed edge alone.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D0B2C..0x801D0BCC`)
+    pub(in crate::world) fn battle_command_glide_gate(&mut self) -> bool {
+        use legaia_engine_menus::option_values::BattleCommandOpt;
+        let ret = self.battle.widget_glide_return;
+        if ret != 0 {
+            let pressed = self.input.pad() & !self.input.pad_prev() != 0;
+            if ret < Self::GLIDE_PAD_BUFFER_BELOW
+                && pressed
+                && self.battle.command_pad_buffer.is_none()
+                && self.toggles.battle_command == BattleCommandOpt::DirectionalButtons
+            {
+                self.battle.command_pad_buffer = Some(self.battle_command_pad_edges());
+            }
+            self.battle.widget_glide_latch = ret;
+            return true;
+        }
+        if self.battle.widget_glide_latch != 0 {
+            self.battle.widget_glide_latch = 0;
+            if self.battle.stage_id != 0 {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Whether the next battle tick's menu pass will leave without reading
+    /// the pad ([`Self::battle_command_glide_gate`]): a tracked glide is
+    /// still in flight, or a staged battle owes its latch pass. What a pad
+    /// script waits out before it presses on a freshly opened prompt.
+    pub fn battle_command_pad_held(&self) -> bool {
+        [
+            self.battle.action_plaque_glide.as_ref(),
+            self.battle.target_plaque_glide.as_ref(),
+            self.battle.readout_bar_glide.as_ref(),
+            self.battle.round_prompt_glide.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|g| !g.settled())
+            || (self.battle.stage_id != 0
+                && (self.battle.widget_glide_return != 0 || self.battle.widget_glide_latch != 0))
+    }
+
+    /// This tick's command pad edges.
+    pub(in crate::world) fn battle_command_pad_edges(
+        &self,
+    ) -> legaia_engine_menus::battle_input::BattleCommandInput {
+        use legaia_engine_system::input::PadButton;
+        legaia_engine_menus::battle_input::BattleCommandInput {
+            up: self.input.just_pressed(PadButton::Up),
+            down: self.input.just_pressed(PadButton::Down),
+            left: self.input.just_pressed(PadButton::Left),
+            right: self.input.just_pressed(PadButton::Right),
+            cross: self.input.just_pressed(PadButton::Cross),
+            circle: self.input.just_pressed(PadButton::Circle),
+            // The ring's Attack arm reads the option word with the pad.
+            select_attack: self.toggles.select_attack,
+        }
+    }
+
+    /// The pad word a dispatched pass reads: this tick's edges, or the
+    /// parked press when the tick has none. The park is emptied either way
+    /// (`bne s2,zero` at `0x801D0C1C`, `move s2,v0` at `0x801D0C3C`,
+    /// `sw zero,0x884(v1)` at `0x801D0C58`).
+    ///
+    /// PORT: FUN_801D0748 (`0x801D0C1C..0x801D0C58`)
+    pub(in crate::world) fn take_command_pad_buffer(
+        &mut self,
+    ) -> legaia_engine_menus::battle_input::BattleCommandInput {
+        let live = self.battle_command_pad_edges();
+        let parked = self.battle.command_pad_buffer.take();
+        let pressed = self.input.pad() & !self.input.pad_prev() != 0;
+        match parked {
+            Some(p) if !pressed => legaia_engine_menus::battle_input::BattleCommandInput {
+                select_attack: live.select_attack,
+                ..p
+            },
+            _ => live,
         }
     }
 

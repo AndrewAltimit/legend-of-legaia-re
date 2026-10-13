@@ -270,13 +270,14 @@ pub fn battle_chip_offsets(world: &crate::world::World) -> [(i32, i32); 4] {
 /// `koru_strip_forced` holds `Begin` and `Run` five pixels short of their
 /// seats and no glyph packet.
 ///
-/// The same early exit keeps the state from reading the pad until the
-/// glides land; the port's command session takes input from its first
-/// frame.
+/// The same early exit keeps the state from reading the pad
+/// (`World::battle_command_glide_gate`), and the pass a glide lands on
+/// still exits - the stepper returns the record's flag there - so the glyph
+/// first draws on the pass after.
 ///
 /// REF: FUN_801D0748, FUN_801DB8F4
 pub fn battle_chip_dpad_visible(world: &crate::world::World) -> bool {
-    round_prompt_glide(world).is_none_or(|g| g.settled())
+    round_prompt_glide(world).is_none_or(|g| g.settled() && world.battle.widget_glide_return == 0)
 }
 
 /// Seat A / seat B rows of the level-up window (records `0x45..=0x4B`:

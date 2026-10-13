@@ -92,6 +92,15 @@ fn wait_for_prompt(w: &mut World, spawn_requests: &mut usize) -> bool {
 }
 
 fn press(w: &mut World, b: PadButton) {
+    // The menu SM reads no pad while the prompt's glide is in flight
+    // (`World::battle_command_pad_held`): wait it out, as a player does.
+    for _ in 0..64 {
+        if !w.battle_command_pad_held() {
+            break;
+        }
+        w.set_pad(0);
+        let _ = w.tick();
+    }
     w.set_pad(InputState::mask_of([b]));
     let _ = w.tick();
     w.set_pad(0);

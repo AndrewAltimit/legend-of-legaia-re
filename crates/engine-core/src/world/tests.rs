@@ -346,6 +346,7 @@ mod move_vm_flags;
 mod party_composition;
 mod physics_steal_shop;
 mod placement_heading;
+mod round_prompt_gate;
 mod player_clip_pick;
 mod player_scale;
 mod save_state;
