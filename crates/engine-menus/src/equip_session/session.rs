@@ -210,6 +210,12 @@ pub struct EquipSession {
     pub(super) weapon_category: Vec<crate::menu_item_category::CategoryEntry>,
     /// The character picker owns the pad ([`Self::set_slot_cursor_hidden`]).
     slot_cursor_hidden: bool,
+    /// Swaps the Best Equipment row made on this session's own record and
+    /// bag, as `(engine slot, removed, added)` in the order they landed.
+    /// Retail's applier (`FUN_801CF760`) writes the live record and the bag
+    /// directly; the session edits copies, so its host replays these when
+    /// the session closes ([`Self::best_equipment_swaps`]).
+    pub(super) best_swaps: Vec<(u8, u8, u8)>,
 }
 
 impl EquipSession {
@@ -235,7 +241,17 @@ impl EquipSession {
             active_party_slot: 0,
             weapon_category: Vec::new(),
             slot_cursor_hidden: false,
+            best_swaps: Vec::new(),
         }
+    }
+
+    /// Every swap the Best Equipment row committed during this session, as
+    /// `(engine slot, removed, added)`. Unlike a single-slot confirm these
+    /// do not end the session, so they are not in [`Self::outcome`]: the
+    /// host applies them to the live record and bag however the session
+    /// ended.
+    pub fn best_equipment_swaps(&self) -> &[(u8, u8, u8)] {
+        &self.best_swaps
     }
 
     /// Hide the slot-browse hand while the Equip screen's character picker

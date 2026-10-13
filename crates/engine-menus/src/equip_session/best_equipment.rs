@@ -88,12 +88,19 @@ impl EquipSession {
     /// none, other rows hand off to sub-screen `0x14`)
     pub fn slot_browse_confirm(&mut self, row: u8, candidates: [u8; 4]) -> SlotBrowseOutcome {
         if row == SLOT_BROWSE_BEST_ROW {
+            let before = self.record.equip;
             let changed = apply_best_equipment(
                 &mut self.record.equip,
                 candidates,
                 ARMAMENT_ENGINE_SLOTS,
                 &mut self.inventory,
             );
+            for slot in ARMAMENT_ENGINE_SLOTS {
+                if self.record.equip[slot] != before[slot] {
+                    self.best_swaps
+                        .push((slot as u8, before[slot], self.record.equip[slot]));
+                }
+            }
             if changed > 0 {
                 self.preview_stats = compute_battle_stats(
                     &self.record,
