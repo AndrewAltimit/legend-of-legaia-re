@@ -3,7 +3,7 @@
  * Part of the PlayView class (play-app.js): what the engine reports about
  * the field scene each frame and the renderer has to follow - the static
  * placement window and cull, the field light, the view window, ground and
- * floor waves, and the moved / turned / parked / re-modelled / tinted
+ * floor waves, and the live (moved / turned), parked, re-modelled and tinted
  * objects.
  *
  * Classic script. Requires play-app.js first. */
@@ -139,99 +139,61 @@
       if (!wave.length) {
         if (!this._floorWaveLive) return;
         for (const d of this.staticDraws) {
-          if (d.floorIdx === undefined) continue;
-          d.y = d.baseY - (d.moveDy || 0);
+          if (d.floorIdx === undefined || d.liveModel) continue;
+          d.y = d.baseY;
           if (d.model) d.model[13] = d.y;
         }
         this._floorWaveLive = false;
         return;
       }
       for (const d of this.staticDraws) {
-        if (d.floorIdx === undefined || d.floorIdx >= wave.length) continue;
-        d.y = d.baseY - wave[d.floorIdx] - (d.moveDy || 0);
+        if (d.floorIdx === undefined || d.floorIdx >= wave.length || d.liveModel) continue;
+        d.y = d.baseY - wave[d.floorIdx];
         if (d.model) d.model[13] = d.y;
       }
       this._floorWaveLive = true;
     }
 
-    /* A placed object a script has moved - an `A3` seat, an op-`4C 42` lift
-     * under its actor's 0x20000000 height law (chitei2's falling boulder) -
-     * draws at its actor, as retail's case-5 draw does. The engine hands back
-     * a per-placement [dx, dy, dz] (retail frame, Y-down) or an EMPTY array
-     * while nothing has moved; `_objectMovesLive` returns the draws to the
-     * record's seat on the falling edge. Runs after `_applyFloorWave`, whose
-     * Y it composes with through `moveDy`. The native window folds the same
-     * table (`World::object_draw_displacements`) into its placed draws. */
-    _applyObjectMoves(rt) {
-      if (!rt.field_placement_moves) return;
-      const mv = rt.field_placement_moves();
-      if (!mv.length && !this._objectMovesLive) return;
-      for (const d of this.staticDraws) {
-        if (d.placeIdx === undefined || d.baseX === undefined) continue;
-        const k = d.placeIdx * 3;
-        const dx = k + 2 < mv.length ? mv[k] : 0;
-        const dy = k + 2 < mv.length ? mv[k + 1] : 0;
-        const dz = k + 2 < mv.length ? mv[k + 2] : 0;
-        const prevDy = d.moveDy || 0;
-        if (d.x === d.baseX + dx && d.z === d.baseZ + dz && prevDy === dy) continue;
-        d.x = d.baseX + dx;
-        d.z = d.baseZ + dz;
-        /* The page's world frame negates retail Y. */
-        d.y += prevDy - dy;
-        d.moveDy = dy;
-        if (d.model) {
-          d.model[12] = d.x;
-          d.model[13] = d.y;
-          d.model[14] = d.z;
-        }
-      }
-      this._objectMovesLive = mv.length > 0;
-    }
-
-    /* A placed object a script has turned - op 0x38's compass write, op
-     * `4C 48`'s heading write (town0c's exit rocks, turned off the road once
-     * the story opens it) - draws at its actor's live angles, as retail's
-     * case-5 draw does. The engine hands back a per-placement 3x3 (column-
-     * major, page frame) to left-multiply into each draw's linear part, or an
-     * EMPTY array while nothing has turned; `_objectTurnsLive` restores the
-     * baked parts on the falling edge. The native window folds the same
-     * table (`World::object_draw_turn_matrices`) into its placed draws. */
-    _applyObjectTurns(rt) {
-      if (!rt.field_placement_turns) return;
-      const tv = rt.field_placement_turns();
-      if (!tv.length && !this._objectTurnsLive) return;
+    /* A placed object a script has moved (an `A3` seat, an op-`4C 42` lift -
+     * chitei2's falling boulder) or turned (op 0x38, `4C 48` - town0c's exit
+     * rocks) draws at its actor, as retail's case-5 draw does. The engine
+     * composes the whole model - spawn transform, floor offset, turn about
+     * the draw's origin, displacement - through the kernel the native window
+     * runs (`field_env::live_placed_model`) and hands it over in the page's
+     * frame: 16 floats per placement, all zero for one nothing has touched,
+     * EMPTY while nothing is live. The page does no matrix math here; it
+     * adopts the model or returns the draw to the one it baked. Runs BEFORE
+     * `_applyFloorWave`, which leaves a live draw's Y to the engine and
+     * re-seats a draw this pass has just released. */
+    _applyObjectLive(rt) {
+      if (!rt.field_placement_live_models) return;
+      const live = rt.field_placement_live_models();
+      if (!live.length && !this._objectLive) return;
+      let released = false;
       for (const d of this.staticDraws) {
         if (d.placeIdx === undefined) continue;
-        const k = d.placeIdx * 9;
-        const t = k + 8 < tv.length ? tv.slice(k, k + 9) : null;
-        const turned = t && !(t[0] === 1 && t[4] === 1 && t[8] === 1);
-        if (!turned) {
-          /* Back to the baked draw: a yaw-only placement drops the matrix
-           * this pass made for it, a tilted one gets its linear part back. */
-          if (d.turnModel) { delete d.model; d.turnModel = false; }
-          else if (d.model && d.baseLin) {
-            for (let c = 0; c < 3; c++) {
-              for (let row = 0; row < 3; row++) d.model[c * 4 + row] = d.baseLin[c * 4 + row];
-            }
+        const k = d.placeIdx * 16;
+        if (k + 15 < live.length && live[k + 15] !== 0) {
+          if (!d.liveModel) {
+            d.liveModel = true;
+            d.bakedModel = d.model || null;
           }
-          continue;
-        }
-        /* A yaw-only placement draws through the builder at draw time; a
-         * turned one needs a whole matrix, built from the same law. */
-        if (!d.model) {
-          d.model = placementModelScaledY(d.x, d.y, d.z, d.rotY, d.scale);
-          d.turnModel = true;
-        }
-        if (!d.baseLin) d.baseLin = Array.from(d.model.slice(0, 12));
-        for (let c = 0; c < 3; c++) {
-          for (let row = 0; row < 3; row++) {
-            let v = 0;
-            for (let j = 0; j < 3; j++) v += t[j * 3 + row] * d.baseLin[c * 4 + j];
-            d.model[c * 4 + row] = v;
-          }
+          d.model = live.subarray(k, k + 16);
+          d.x = d.model[12];
+          d.y = d.model[13];
+          d.z = d.model[14];
+        } else if (d.liveModel) {
+          d.liveModel = false;
+          if (d.bakedModel) d.model = d.bakedModel; else delete d.model;
+          d.bakedModel = null;
+          d.x = d.baseX;
+          d.z = d.baseZ;
+          released = true;
         }
       }
-      this._objectTurnsLive = tv.length > 0;
+      /* A released draw's Y is the floor pass's again. */
+      if (released) this._floorWaveLive = true;
+      this._objectLive = live.length > 0;
     }
 
     /* A camera-facing terrain / decoration cell (record flags +0x12 & 0x380:

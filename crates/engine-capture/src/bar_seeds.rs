@@ -18,6 +18,11 @@ pub struct BarSeed {
     /// The ailments the capture's status word `+0x16E` carries
     /// ([`seedable_status_bits`]); `0` for none.
     pub status: u16,
+    /// The capture holds this combatant's initiative key `+0x16C` spent: it
+    /// had already dispatched in the round the capture was taken in
+    /// (`sh zero,0x16c(s3)` at `0x801E2CDC`, the action SM's `0x0C`), so it
+    /// sits out the first round the seed plays.
+    pub spent_key: bool,
 }
 
 /// The status-word bits a seed carries over: the ailments the engine tracks
@@ -85,13 +90,17 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
             a.battle.render_flag = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
             a.battle.render_color = lanes;
         }
+        if s.spent_key {
+            a.battle.init_key = 0;
+        }
         if s.status != 0 {
             seed_status(world, s.slot, s.status);
         }
     }
 }
 
-/// `slot:hp:mp[:x:z],...` for `LEGAIA_BATTLE_BARS`.
+/// `slot:hp:mp[:x:z[:facing]][:d<lanes>][:s<status>][:k],...` for
+/// `LEGAIA_BATTLE_BARS`.
 pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
     seeds
         .iter()
@@ -105,9 +114,14 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
                 Some(l) => format!("{head}:d{l:x}"),
                 None => head,
             };
-            match s.status {
+            let head = match s.status {
                 0 => head,
                 w => format!("{head}:s{w:x}"),
+            };
+            if s.spent_key {
+                format!("{head}:k")
+            } else {
+                head
             }
         })
         .collect::<Vec<_>>()
@@ -118,9 +132,13 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
 pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
     v.split(',')
         .filter_map(|e| {
-            let (e, status) = match e.trim().rsplit_once(":s") {
+            let (e, spent_key) = match e.trim().strip_suffix(":k") {
+                Some(head) => (head, true),
+                None => (e.trim(), false),
+            };
+            let (e, status) = match e.rsplit_once(":s") {
                 Some((head, w)) => (head, u16::from_str_radix(w, 16).ok()?),
-                None => (e.trim(), 0),
+                None => (e, 0),
             };
             let (e, defeat_lanes) = match e.rsplit_once(":d") {
                 Some((head, l)) => (head, Some(u32::from_str_radix(l, 16).ok()?)),
@@ -146,6 +164,7 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
                 facing,
                 defeat_lanes,
                 status,
+                spent_key,
             })
         })
         .collect()

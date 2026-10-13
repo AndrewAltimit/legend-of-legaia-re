@@ -79,22 +79,27 @@ caves (records 9 and 10, Ancient Wind Cave and Ancient Water Cave) share flag
 
 ### The label pass
 
-The consumer is the per-frame loop at `0x801CEBB6..0x801CEC30` in the world-map
-band. Per record:
+The consumer is the per-frame loop at `0x801CF368..0x801CF438` in the map
+display module (PROT 0981, game mode `0x0D` - the screen L1 opens on a
+kingdom map). Per record:
 
 ```c
 if (record.region == current_kingdom &&
-    (FUN_8003CE64(record.discovery_flag) || _DAT_8007B868 /* debug: show all */)) {
-    pos = (record.map_x << 7, record.map_y << 7);
-    screen = FUN_8003D368(pos);              // world -> screen projection
-    FUN_80036888(&record.name, 0, 0, screen.x, screen.y);   // draw the label
+    (FUN_8003CE64(record.discovery_flag) || _DAT_8007B868 /* dev: show all */)) {
+    pos = (record.map_x << 7, -0x200, record.map_y << 7);
+    FUN_8003D368(&pos, &screen);             // RTPS, world -> screen
+    FUN_80036888(&record.name, 0, 0, screen.x, screen.y - 1);  // the name
+    FUN_80034B6C(0);                         // window style 0
     width = FUN_80035F04(&record.name);      // measure it
-    FUN_8002C69C(screen.x, screen.y, width, 8);             // underline
+    FUN_8002C69C(screen.x, screen.y, width, 8);                // its box
 }
 ```
 
 So the name is drawn **at the place's own map position**, gated on having
-discovered it. `see ghidra/scripts/funcs/overlay_world_map_top_801ce9c4.txt`.
+discovered it, inside a dialog-skin window as wide as the name. `see
+ghidra/scripts/funcs/overlay_monster_test_0981_801ce850.txt`. The screen
+around the loop, and the port, are on
+[`world-map.md`](../subsystems/world-map.md#the-map-display---prot-0981).
 
 ## Site 3 - the scene display name
 

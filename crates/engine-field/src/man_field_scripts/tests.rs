@@ -998,6 +998,18 @@ fn battle_entry_arm_needs_a_scripted_entry_within_the_window() {
     assert!(walk_battle_entry_arms(&mf, &man).is_empty());
 }
 
+/// The `op0 < 100` form of `0x3E` is the same battle entry as `3E FF`: the
+/// handler falls into one arm for both and reads only the row. `town0b`'s
+/// Gimard talk records carry it as `53 0C . 3E 00 02`.
+#[test]
+fn battle_entry_arm_pairs_through_the_low_op0_entry_form() {
+    let (mf, man) =
+        man_with_placement_script(&[0x4A, 0x10, 0x00, 0x53, 0x0C, 0x3E, 0x00, 0x02, 0x21]);
+    let arms = walk_battle_entry_arms(&mf, &man);
+    let flags: Vec<(u16, u8)> = arms.iter().map(|a| (a.flag, a.row)).collect();
+    assert_eq!(flags, vec![(0x30C, 2)]);
+}
+
 // ---- developer flag-menu arms (`debug_flag_menu_arm`) ----
 
 /// The shipped two-option toggle: the picker's last label, the `0x21` stop,

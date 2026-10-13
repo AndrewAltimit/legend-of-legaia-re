@@ -215,10 +215,24 @@ impl LegaiaRuntime {
         });
         // The Incense wear-off notice (`FUN_801F1E48`) shares the channel.
         let notice = self.scene_host.host().and_then(|h| h.incense_notice_line());
+        // The overworld map display's place labels and compass letters
+        // (PROT 0981's label pass) share it as well.
+        let (map_labels, map_marks) = self
+            .scene_host
+            .host()
+            .map(|h| {
+                (
+                    legaia_engine_core::world_map_labels::map_display_labels_now(&h.world),
+                    legaia_engine_core::world_map_labels::map_display_compass_marks(&h.world),
+                )
+            })
+            .unwrap_or_default();
+        let has_map = !map_labels.is_empty() || !map_marks.is_empty();
         if (self.dialog_snapshot().is_none()
             && !has_balloon
             && prompt.is_none()
-            && notice.is_none())
+            && notice.is_none()
+            && !has_map)
             || !self.ensure_menu_assets()
         {
             return CLOSED.to_string();
@@ -273,6 +287,19 @@ impl LegaiaRuntime {
                 legaia_engine_core::incense_notice::notice_text_pen(),
                 line,
             ));
+        }
+        if has_map {
+            let rows: Vec<ui::MapLabelDraw<'_>> = map_labels
+                .iter()
+                .map(|l| (l.name.as_slice(), l.sx, l.sy))
+                .collect();
+            if let Some(rects) = assets.chrome_rects() {
+                sprites.extend(ui::map_label_chrome_draws_for(
+                    rects, font, &rows, origin, scale,
+                ));
+            }
+            texts.extend(ui::map_label_text_draws_for(font, &rows));
+            texts.extend(ui::map_compass_text_draws_for(font, &map_marks));
         }
 
         let Some(snap) = snap else {

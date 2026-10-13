@@ -65,8 +65,10 @@ impl ResolvedTmd {
     }
 
     /// [`ResolvedTmd::build_filtered_vram_mesh`] plus the per-vertex
-    /// lit-row mask ([`legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit`]) -
-    /// what [`legaia_engine_system::fade::apply_prologue_lit_ambient`] keys on.
+    /// lit-row mask ([`legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit`]):
+    /// which vertices carry no baked colour word. A baked word authored at
+    /// exactly `0x80` reads the same colour, so only the mask tells them
+    /// apart.
     pub fn build_filtered_vram_mesh_lit(
         &self,
         vram: &Vram,

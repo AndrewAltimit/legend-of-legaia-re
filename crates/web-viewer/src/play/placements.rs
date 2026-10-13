@@ -81,67 +81,60 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
-    /// Per-placement **scripted displacement** (parallel to
-    /// [`Self::field_placement_slots`]), flattened `[dx, dy, dz]` in retail
-    /// world units (Y-down): how far a script has moved the placed object's
-    /// actor from its bind seat - an `A3` seat, an op-`4C 42` lift under the
-    /// actor's `0x20000000` height law (`chitei2`'s falling boulder). Retail
-    /// draws a placed object at its actor, so the page adds this to each
-    /// draw's translation. **Empty** while no placement has moved, which is
-    /// nearly every frame of nearly every scene. The same
-    /// `World::object_draw_displacements` table the native play-window folds
-    /// into its placed draws.
-    pub fn field_placement_moves(&self) -> Vec<f32> {
+    /// Per-placement **live model** (parallel to
+    /// [`Self::field_placement_slots`]), 16 column-major floats per placement
+    /// in the page's Y-up frame: where a placed object whose actor a script
+    /// has moved (an `A3` seat, an op-`4C 42` lift under the `0x20000000`
+    /// height law - `chitei2`'s falling boulder) or turned (op `0x38`,
+    /// `4C 48` - `town0c`'s exit rocks) draws this frame. Retail's case-5
+    /// draw reads the actor, not the `.MAP` record.
+    ///
+    /// A placement nothing has moved or turned carries sixteen zeros (its
+    /// `[15]` is `0`, which no model's is) and keeps the draw the page baked;
+    /// the array is **empty** while no placement is live, which is nearly
+    /// every frame of nearly every scene.
+    ///
+    /// The composition is the native play-window's, not a second one: the
+    /// spawn model [`legaia_render_kernels::scene_lighting::placement_model`] over the coplanar lift
+    /// and the placed floor offset, through
+    /// [`field_env::live_placed_model`] (turn about the draw's own origin,
+    /// then displace), and only then into the page's frame
+    /// ([`y_up_model`]).
+    pub fn field_placement_live_models(&self) -> Vec<f32> {
         let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
         let moves = h.world.object_draw_displacements();
-        if moves.is_empty() {
-            return Vec::new();
-        }
-        let per = field_env::placed_draw_displacements(&f.placement_records, &moves);
-        if per.iter().all(|d| *d == [0; 3]) {
-            return Vec::new();
-        }
-        per.into_iter().flatten().map(|v| v as f32).collect()
-    }
-
-    /// Per-placement **scripted turn** (parallel to
-    /// [`Self::field_placement_slots`]), flattened 9 column-major floats per
-    /// placement: the rotation a script's op `0x38` / `4C 48` put on the
-    /// placed object's actor, relative to its bind-time `.MAP` angles, in the
-    /// page's Y-up frame (`F * turn * F`, `F = scale(1,-1,1)`). The page
-    /// left-multiplies each draw's linear part by it, about the draw's own
-    /// origin. Identity for an unturned placement; **empty** while nothing has
-    /// turned. The same `World::object_draw_turn_matrices` table the native
-    /// play-window folds into its placed draws.
-    pub fn field_placement_turns(&self) -> Vec<f32> {
-        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
-            return Vec::new();
-        };
         let turns = h.world.object_draw_turn_matrices();
-        if turns.is_empty() {
+        let live =
+            |r: &Option<usize>| r.is_some_and(|r| turns.contains_key(&r) || moves.contains_key(&r));
+        if !f.placement_records.iter().any(live) {
             return Vec::new();
         }
-        let ident: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let mut out = Vec::with_capacity(f.placement_records.len() * 9);
-        for r in &f.placement_records {
-            let lin = r
-                .and_then(|r| turns.get(&r))
-                .map(|t| {
-                    // Column-major 3x3, conjugated by the Y flip: an element
-                    // that mixes Y with X or Z changes sign.
-                    let mut m = [0.0f32; 9];
-                    for c in 0..3 {
-                        for row in 0..3 {
-                            let flip = if (row == 1) != (c == 1) { -1.0 } else { 1.0 };
-                            m[c * 3 + row] = flip * t[c * 4 + row];
-                        }
-                    }
-                    m
-                })
-                .unwrap_or(ident);
-            out.extend_from_slice(&lin);
+        let floor = h.world.placed_floor_offsets(
+            f.floor_lut,
+            f.placements.iter().map(|d| &d.floor),
+            &f.window_keys,
+        );
+        let mut out = Vec::with_capacity(f.placements.len() * 16);
+        for (i, (d, record)) in f.placements.iter().zip(&f.placement_records).enumerate() {
+            if !live(record) {
+                out.extend_from_slice(&[0.0; 16]);
+                continue;
+            }
+            let lift = f.coplanar_offsets.get(d).copied().unwrap_or([0.0; 3]);
+            let spawn = legaia_render_kernels::scene_lighting::placement_model(
+                [
+                    d.world_x as f32 + lift[0],
+                    d.world_y as f32 + lift[1] + floor.get(i).copied().unwrap_or(0) as f32,
+                    d.world_z as f32 + lift[2],
+                ],
+                [d.rot_x, d.rot_y, d.rot_z],
+                f.placement_scales.get(i).copied().unwrap_or(1.0),
+            )
+            .to_cols_array();
+            let model = field_env::live_placed_model(&spawn, *record, &turns, &moves);
+            out.extend_from_slice(&y_up_model(&model));
         }
         out
     }
@@ -367,5 +360,73 @@ impl LegaiaRuntime {
                     .unwrap_or(-1)
             })
             .collect()
+    }
+}
+
+/// A retail-frame (Y-down) column-major model in the page's Y-up world:
+/// `diag(1, -1, 1) * model`, which negates the Y row of every column. The
+/// page draws retail-frame vertices through it, so the flip sits on the left
+/// of the whole composition - the one place the placed draws' frame change
+/// is written.
+fn y_up_model(model: &[f32; 16]) -> [f32; 16] {
+    let mut out = *model;
+    for c in 0..4 {
+        out[c * 4 + 1] = -out[c * 4 + 1];
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The page-frame model of a turned, moved placement is the conjugated
+    /// turn on the flipped spawn linear part and the flipped displacement on
+    /// the flipped origin - the arithmetic the page used to spell itself, now
+    /// one flip over the native composition.
+    #[test]
+    fn y_up_of_the_native_live_model_is_the_page_frame_composition() {
+        let spawn = legaia_render_kernels::scene_lighting::placement_model(
+            [120.0, -48.0, 900.0],
+            [0x155, 0x300, 0xE20],
+            0.5,
+        )
+        .to_cols_array();
+        let turn = field_env::object_turn_matrix([0x155, 0x300, 0xE20], [0x400, 0x0C0, 0x010]);
+        let turns = std::collections::HashMap::from([(7usize, turn)]);
+        let moves = std::collections::HashMap::from([(7usize, [30, -700, -12])]);
+        let got = y_up_model(&field_env::live_placed_model(
+            &spawn,
+            Some(7),
+            &turns,
+            &moves,
+        ));
+
+        let flip = |r: usize, c: usize| if (r == 1) != (c == 1) { -1.0f32 } else { 1.0 };
+        let base = y_up_model(&spawn);
+        let mut want = base;
+        for c in 0..3 {
+            for row in 0..3 {
+                want[c * 4 + row] = (0..3)
+                    .map(|j| flip(row, j) * turn[j * 4 + row] * base[c * 4 + j])
+                    .sum();
+            }
+        }
+        want[12] += 30.0;
+        want[13] -= -700.0;
+        want[14] += -12.0;
+        for (g, w) in got.iter().zip(want) {
+            assert!((g - w).abs() < 1e-3, "{got:?} vs {want:?}");
+        }
+        // An untouched record keeps the spawn model, flipped.
+        assert_eq!(
+            y_up_model(&field_env::live_placed_model(
+                &spawn,
+                Some(8),
+                &turns,
+                &moves
+            )),
+            base
+        );
     }
 }

@@ -69,6 +69,12 @@ pub fn field_hud_suppressed(world: &crate::world::World, host_panel_owns_frame: 
         // overlay owns the frame, and because a term present on one host only
         // is the drift this kernel exists to end.
         || world.name_entry_active()
+        // The overworld map display. PROT 0981 is loaded over the field
+        // overlay's first `0x4000` bytes (`0x801CE818..0x801D2818`), which is
+        // where `FUN_801D0D38` itself sits, and the mode-13 handler calls the
+        // display tick instead of the walk frame - so the readout's painter
+        // is neither called nor resident while the display is up.
+        || world.world_map.map_display.is_some()
         // The field-to-battle transition. Its overlay, PROT 0979
         // `field_battle_intro`, loads into slot A at `0x801CE818` - the slot
         // the field overlay (0897) and so `FUN_801D0D38` itself live in - so

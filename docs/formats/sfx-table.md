@@ -598,6 +598,43 @@ silent"). A port that wants a footstep has to author one. See
 `ghidra/scripts/funcs/80018db0.txt`, `80035b50.txt`, `800250d4.txt`,
 `8001d230.txt`.
 
+## The dialog box cues its picker, not its text
+
+The dialog pager `FUN_801D84D0` (field overlay, PROT 0897) calls the push
+producer `FUN_80035B50` twice, and both calls sit in the option picker's
+shared cursor handler (`0x801D941C..0x801D95A8`):
+
+| Site | Cue | When |
+|---|---|---|
+| `0x801D9510` | `0x21` | The cursor `+0xC` of the box differs from the value the handler loaded on entry (`beq s0,v0` at `0x801D9508`): an Up / Down edge that moved it. A press clamped at either end of a `0x2A` menu is silent. |
+| `0x801D9530` | `0x20` | The edge word has a bit of the confirm mask `0x800846D0` - the press that commits the choice. |
+
+Nothing else in the routine reaches the ring: no store into `0x8007B6D8..DE`
+and no other producer call. So the typewriter is silent, turning a page is
+silent and dismissing a box is silent - **there is no text blip to port**.
+`see ghidra/scripts/funcs/overlay_world_map_801d84d0.txt` (the capture is the
+0897 image at the same addresses).
+
+Port: `legaia_engine_dialog::dialog::{PICKER_MOVE_CUE, PICKER_CONFIRM_CUE}`.
+`OwnedDialogPanel::move_picker_cursor` reports whether the cursor moved, and
+the three runners that drive a picker - the inline interaction script, the
+prop interaction and the script-context dialog - push the cue through
+`World::push_sfx_cue`, the ring both hosts replay.
+
+## A door has no cue of its own
+
+A scene change plays nothing by itself. The field overlay's every producer
+call is one of: the pause-menu open (`0x801D02D8` / `0x801D02E8`), the
+map-display arm (`0x801D0220`), the ledge hop's take-off and landing
+(`0x801D230C` / `0x801D23E8`), the scripted-scene actor behind the travel arts
+(`0x801D4BB4`, `0x801D4CD8`, `0x801D533C`), the dialog picker above, the field
+VM's op `0x36` (`0x801E0348`), the unreferenced equip applier (`0x801E5B28`), and the panel / name-entry / save screens from
+`0x801E9E08` up. None is in the warp-tile arm, the walk-on trigger dispatch or
+the scene-change routine `FUN_8001FD44`, and the overlay stores into the ring
+directly nowhere. A door that sounds does so because its own record carries an
+op `0x36` ahead of the `0x3F` - a script literal, like the two trigger cues of
+the walk capture above.
+
 ## Provenance
 
 The table is decoded from the disc and cross-checked byte-for-byte against live

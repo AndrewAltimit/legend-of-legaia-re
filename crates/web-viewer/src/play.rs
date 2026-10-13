@@ -62,8 +62,8 @@ pub struct FieldRender {
     /// the native play-window asks per frame.
     pub window_keys: Vec<Option<field_env::PlacedWindowKey>>,
     /// Per-placement bind record (parallel to [`Self::placements`], `None` =
-    /// unbound): the key [`LegaiaRuntime::field_placement_moves`] looks a
-    /// script's live object displacement up by.
+    /// unbound): the key [`LegaiaRuntime::field_placement_live_models`] looks
+    /// a script's live object turn and displacement up by.
     pub placement_records: Vec<Option<usize>>,
     /// Bulk terrain-tile draws (ground / decor tiles). `FLAG_PLACED` records
     /// are excluded - they are already drawn, posed, by the placement layer

@@ -44,15 +44,29 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
         }
     }
 
-    fn set_item_count(&mut self, slot_byte: u8, count: u8) {
-        if count == 0 {
-            self.world.party.inventory.remove(&slot_byte);
-        } else {
-            self.world.party.inventory.insert(slot_byte, count);
+    /// Op `0x3B` `SET_EQUIP_SLOT`: the store at `0x801E0814` writes record
+    /// `selector >> 4`'s equipment byte `+0x196 + (selector & 0xF)`, and the
+    /// `FUN_80042558` call it sits in the delay slot of re-derives that
+    /// record's ability bits and stats. The bag is not involved: the item
+    /// the script names was never in it (a Ra-Seru stage), and the one it
+    /// replaces does not go back.
+    // REF: FUN_801DE840 (op 0x3B arm, 0x801E07DC..0x801E081C)
+    fn set_equip_slot(&mut self, selector: u8, item: u8) {
+        let (rec, slot) = (usize::from(selector >> 4), usize::from(selector & 0xF));
+        if let Some(member) = self.world.party.roster.members.get_mut(rec) {
+            let mut eq = member.equipment();
+            if let Some(byte) = eq.slots.get_mut(slot) {
+                *byte = item;
+                member.set_equipment(eq);
+            }
         }
+        self.world.refresh_party_ability_bits();
         self.world
             .pending_field_events
-            .push(FieldEvent::SetItemCount { slot_byte, count });
+            .push(FieldEvent::SetEquipSlot {
+                selector,
+                item_id: item,
+            });
     }
 
     fn party_add(&mut self, char_id: u8) -> bool {

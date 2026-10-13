@@ -131,8 +131,12 @@ impl FieldHostImpl<'_> {
                 mode: [0, 1, 0],
             };
             let kind = self.world.presentation.effect_kind;
-            self.world
-                .spawn_colour_tween(tween_from_fade_template(&walk_out, kind));
+            if let Some(out) = self
+                .world
+                .spawn_colour_tween(tween_from_fade_template(&walk_out, kind))
+            {
+                self.world.tick_spawned_colour_tween(out);
+            }
         }
 
         let blend: i16 = if op0 & 1 != 0 { 2 } else { 1 };
@@ -179,6 +183,9 @@ impl FieldHostImpl<'_> {
         self.world.presentation.effect_tween_slot = self
             .world
             .spawn_colour_tween(tween_from_fade_template(&walk_in, kind));
+        if let Some(slot) = self.world.presentation.effect_tween_slot {
+            self.world.tick_spawned_colour_tween(slot);
+        }
     }
 
     pub(super) fn effect_anim_trigger(&mut self, ctx: &mut FieldCtx, arg: u8) {

@@ -237,7 +237,7 @@ fn field_event_tag(e: &legaia_engine_field::field_events::FieldEvent) -> &'stati
         E::OpenDialog { .. } => "OpenDialog",
         E::DialogDismissed => "DialogDismissed",
         E::AddMoney { .. } => "AddMoney",
-        E::SetItemCount { .. } => "SetItemCount",
+        E::SetEquipSlot { .. } => "SetEquipSlot",
         E::PartyAdd { .. } => "PartyAdd",
         E::PartyRemove { .. } => "PartyRemove",
         E::FieldInteract { .. } => "FieldInteract",

@@ -83,6 +83,60 @@ fn fishing_session_starts_and_the_hud_draws() {
         stage[2].as_i64().unwrap_or(0) >= 1,
         "stage scale must be at least 1: {hud}"
     );
+
+    // The phase line, the reel hint and the session affordances are the
+    // caption's - strings for the strip under the canvas, not glyph quads in
+    // the frame. All three session actions are named.
+    let cap: serde_json::Value =
+        serde_json::from_str(&rt.play_mg_caption_json()).expect("caption json");
+    assert_eq!(cap["game"].as_str(), Some("fishing"), "{cap}");
+    let rows = cap["rows"].as_array().expect("rows");
+    let kinds: Vec<_> = rows.iter().filter_map(|r| r["kind"].as_str()).collect();
+    assert_eq!(kinds, ["readout", "hint", "hint"], "{cap}");
+    assert!(
+        rows[0]["clauses"][0]
+            .as_str()
+            .is_some_and(|s| s.starts_with("FISHING")),
+        "{cap}"
+    );
+    let keys: Vec<_> = rows[2]["clauses"]
+        .as_array()
+        .expect("clauses")
+        .iter()
+        .filter_map(|c| c.as_str())
+        .collect();
+    assert_eq!(keys.len(), 3, "{cap}");
+    for (clause, action) in keys.iter().zip(["= menu", "= quit", "= prizes"]) {
+        assert!(
+            clause.ends_with(action),
+            "{clause:?} should name {action:?}"
+        );
+    }
+    // The frame's own text is the retail HUD's, and none of it is a row the
+    // caption carries. The regression this pins: the status rows used to be
+    // glyph quads in this list, each starting at the stage's x = 8 pen on
+    // one of three fixed lines, where the retail rows have no glyph.
+    let (x0, y0, scale) = (
+        stage[0].as_i64().unwrap_or(0),
+        stage[1].as_i64().unwrap_or(0),
+        stage[2].as_i64().unwrap_or(1),
+    );
+    for q in texts {
+        let dst = q["dst"].as_array().expect("dst");
+        let at = (dst[0].as_i64().unwrap_or(0), dst[1].as_i64().unwrap_or(0));
+        for line in [62, 80, 98] {
+            assert_ne!(
+                at,
+                (x0 + 8 * scale, y0 + line * scale),
+                "a status row is back in the frame: {q}"
+            );
+        }
+    }
+
+    rt.play_fishing_stop();
+    let cap: serde_json::Value =
+        serde_json::from_str(&rt.play_mg_caption_json()).expect("caption json");
+    assert!(cap["game"].is_null(), "the caption clears on quit: {cap}");
 }
 
 /// The page contributes no cast/reel input path of its own - the pad word it

@@ -151,36 +151,27 @@ impl LegaiaRuntime {
         prims
     }
 
-    /// The slot HUD rows, the engine's (`minigame_status::slot_status_rows`)
-    /// through the shared draw kernel the native window calls. Like the
-    /// window, only while the machine itself is not drawn: its own marquee,
-    /// lamps and coin readout carry all of it.
-    pub(crate) fn slot_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+    /// The machine's one text draw: its rules pages
+    /// (`slot_cabinet::slot_rules_text_draws_for`, the native window's twin),
+    /// up while the machine draws itself. Without the machine on screen the
+    /// frame carries no slot text at all - the fallback status rows
+    /// (`minigame_status::slot_status_rows`) are the caption's.
+    pub(crate) fn slot_rules_text_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         let Some(m) = self.slot_session() else {
             return Vec::new();
         };
-        if let Some(c) = self.minigame_art().and_then(|a| a.slot_cabinet.as_ref()) {
-            // The machine draws itself; the rules pages' text is the one
-            // text draw it owes (`slot_cabinet::slot_rules_text_draws_for`,
-            // the native window's twin).
-            return c
-                .rules
-                .as_ref()
-                .map(|r| {
-                    legaia_engine_ui::slot_cabinet::slot_rules_text_draws_for(
-                        font,
-                        r,
-                        m.screen(),
-                        m.fade_level(),
-                    )
-                })
-                .unwrap_or_default();
-        }
-        let rows = legaia_engine_core::minigame_status::slot_status_rows(m);
-        legaia_engine_ui::text_lines::status_row_draws_for(
-            font,
-            rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
-        )
+        self.minigame_art()
+            .and_then(|a| a.slot_cabinet.as_ref())
+            .and_then(|c| c.rules.as_ref())
+            .map(|r| {
+                legaia_engine_ui::slot_cabinet::slot_rules_text_draws_for(
+                    font,
+                    r,
+                    m.screen(),
+                    m.fade_level(),
+                )
+            })
+            .unwrap_or_default()
     }
 }
 

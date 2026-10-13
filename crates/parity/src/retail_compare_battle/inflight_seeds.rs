@@ -148,6 +148,51 @@ impl RetailBattle {
         out
     }
 
+    /// Per engine battle slot, whether the combatant had already acted in
+    /// the round a pad-driven **party action** capture was taken in: alive,
+    /// not the acting seat, and its initiative key [`Self::init_keys`] spent.
+    ///
+    /// The drive replays the capture's round from its prompt. Left with a
+    /// key, such a combatant acts a second time before the capture's seat
+    /// does: it walks off the ground the seed stood it on, and it swings at
+    /// a party the capture holds already hurt by its first swing.
+    /// `player_steal_skeleton_banner`'s lone Vahn stands on `17` HP behind
+    /// two skeletons whose keys are spent - replayed, they kill him on all
+    /// but one of the streams, and on that one the second skeleton walks
+    /// `740` units before he moves.
+    ///
+    /// A victim the seed revives for the replayed kill
+    /// ([`Self::action_victims`]) keeps its key, though the capture reads it
+    /// spent as well: sat out, the two `rim_elm_gimard_seru_capture_*` drives
+    /// frame Vahn's last swing some fifty yaw units further off retail's.
+    ///
+    /// A capture of a **monster's** action keeps every key: its drive plays
+    /// the party's turns on purpose (the Spirit commits that keep a caster
+    /// standing), and with the party sat out the three parked-Gaza frames
+    /// measured worse (`image` `.718` to `.551` on the first).
+    pub fn engine_spent_keys(&self) -> [bool; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [false; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        let SeedPlan::Action { seat, .. } = self.seed_plan() else {
+            return out;
+        };
+        if seat >= 3 {
+            return out;
+        }
+        let pc = usize::from(self.party_count);
+        let acting = usize::from(engine_seat(self.active_actor, self.party_count));
+        for (s, o) in out.iter_mut().enumerate() {
+            let pool = if s < pc { s } else { 3 + (s - pc) };
+            let alive = if s < pc {
+                self.party.get(s).copied().flatten()
+            } else {
+                self.monsters.get(s - pc).copied().flatten()
+            }
+            .is_some_and(|c| c.hp != 0);
+            *o = s != acting && alive && self.init_keys.get(pool).copied().flatten() == Some(0);
+        }
+        out
+    }
+
     /// [`Self::defeat_lanes`] re-keyed to engine battle slots.
     pub fn engine_defeat_lanes(
         &self,

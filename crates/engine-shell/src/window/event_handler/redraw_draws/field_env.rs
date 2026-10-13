@@ -203,12 +203,12 @@ impl<'m> DrawCtx<'_, 'm> {
         // its actor's live position: retail's case-5 draw reads
         // the actor, not the `.MAP` record. The shared kernel is
         // `World::object_draw_displacements`; the browser play
-        // page folds the same table in (`field_placement_moves`).
+        // page takes the composed model (`field_placement_live_models`).
         let object_moves = app.session.host.world.object_draw_displacements();
         // ... and at its actor's live angles: a script that turns
         // the object (op `0x38`, `4C 48`) turns the drawn mesh
         // about its origin (`World::object_draw_turn_matrices`,
-        // the browser page's `field_placement_turns`).
+        // folded into the same `field_placement_live_models` on the page).
         let object_turns = app.session.host.world.object_draw_turn_matrices();
         // A placed object a script parks at the hide box after
         // the scene built its draw lists (`rugi`'s entry script

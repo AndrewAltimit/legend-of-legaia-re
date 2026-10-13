@@ -11,8 +11,9 @@
 //! spins on the poked NPC clips, halt clears that end an actor's leg, `4C 45`
 //! ramps that do not yield, and a `3F` that does not wait for the crawl - so
 //! a regression in any of them moves it by tens to hundreds of frames. The
-//! band allows for retail's three-frame step (`DAT_1F800393 == 3` in the
-//! capture), which the engine's one-frame step does not reproduce.
+//! record's `0x4A` waits hold for retail's count at its three-frame step
+//! (`DAT_1F800393 == 3` in the capture); the band allows for what the engine
+//! still paces a vsync at a time - the clip end latches and the actor turns.
 //!
 //! Skip-passes without disc data (CLAUDE.md convention).
 

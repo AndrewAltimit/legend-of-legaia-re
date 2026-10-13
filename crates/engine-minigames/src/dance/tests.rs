@@ -943,18 +943,15 @@ fn the_hud_frame_resolves_its_own_rows() {
         solo.iter().any(|r| !r.dim),
         "a score readout takes the bright pen"
     );
-    // The human's own beat track is the host's row, not the frame's: the
-    // frame carries the rivals' only.
-    let rival_tracks = versus
-        .iter()
-        .filter(|r| r.text.len() == 8 && r.text.chars().all(|c| "<>^.".contains(c)))
-        .count();
-    assert_eq!(rival_tracks, 2);
-    assert!(
-        !solo
-            .iter()
-            .any(|r| r.text.len() == 8 && r.text.chars().all(|c| "<>^.".contains(c)))
-    );
+    // The human's own beat track is the frame's row too - no host prints a
+    // second one - and the rival flag adds the two rivals'.
+    let tracks = |rows: &[DanceHudRow]| {
+        rows.iter()
+            .filter(|r| r.text.len() == 8 && r.text.chars().all(|c| "<>^.".contains(c)))
+            .count()
+    };
+    assert_eq!(tracks(&solo), 1);
+    assert_eq!(tracks(&versus), 3);
 }
 
 #[test]

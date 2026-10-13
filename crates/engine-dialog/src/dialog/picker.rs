@@ -2,6 +2,15 @@
 
 use super::*;
 
+/// SFX cue the pager raises when the option cursor moves: `jal
+/// FUN_80035B50` with `a0 = 0x21` at `0x801D9510`, inside the shared cursor
+/// handler of `FUN_801D84D0`.
+pub const PICKER_MOVE_CUE: i16 = 0x21;
+/// SFX cue the pager raises on the confirm edge that commits a choice: `jal
+/// FUN_80035B50` with `a0 = 0x20` at `0x801D9530`, behind the test of the
+/// edge word against the confirm mask `0x800846D0`.
+pub const PICKER_CONFIRM_CUE: i16 = 0x20;
+
 impl OwnedDialogPanel {
     /// Confirm the highlighted menu option: apply its relative jump and resume
     /// the dialogue at the chosen branch's reply (mirrors the retail inline-
@@ -129,10 +138,16 @@ impl OwnedDialogPanel {
     /// at the ends for a `0x2A` menu (the shared cursor handler at
     /// `0x801D941C` tests for its state `0x12`). No-op when the box isn't a
     /// menu, and while an open menu still slides in.
-    pub fn move_picker_cursor(&mut self, delta: i32) {
+    ///
+    /// Returns whether the cursor moved - retail's test for the move cue
+    /// ([`PICKER_MOVE_CUE`]): the handler compares the cursor it loaded on
+    /// entry against the stored one (`beq s0,v0` at `0x801D9508`), so a
+    /// clamped press at either end of a `0x2A` menu is silent.
+    pub fn move_picker_cursor(&mut self, delta: i32) -> bool {
         if self.menu_active && !self.picker_takes_input() {
-            return;
+            return false;
         }
+        let before = self.picker_cursor;
         if let Some(p) = &self.picker
             && p.n > 0
         {
@@ -144,6 +159,7 @@ impl OwnedDialogPanel {
                 ((next % n + n) % n) as usize
             };
         }
+        self.picker_cursor != before
     }
 
     /// Open the menu: set it active with its slide state - the press's

@@ -166,6 +166,7 @@ impl LegaiaRuntime {
             FieldCameraFrame::Follow(v) => ("follow", Some(*v)),
             FieldCameraFrame::Venue(v) => ("venue", Some(*v)),
             FieldCameraFrame::WorldMapWalk { view, .. } => ("worldmap_walk", Some(*view)),
+            FieldCameraFrame::WorldMapDisplay { view, .. } => ("worldmap_display", Some(*view)),
             FieldCameraFrame::WorldMapTopView { .. } => ("worldmap_topview", None),
             FieldCameraFrame::HostDebugOrbit => ("host_debug_orbit", None),
         };

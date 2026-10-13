@@ -38,11 +38,35 @@ impl World {
         self.clock.frame_step_floor = floor;
         self.clock.frame_step = floor;
     }
+
+    /// Run the game tick at `step` vsyncs a frame, a cadence retail
+    /// **measured** rather than installed: `FUN_80016B6C` steps by the longest
+    /// of its last sixteen frame times, raised to the floor, so a scene that
+    /// costs more than two fields a frame runs at `3` on a floor of `2`
+    /// (`koin3`'s dance hall does). The engine's own resolver has no frame
+    /// time to measure and keeps the floor; a host standing the engine where
+    /// a retail capture stood hands it the capture's step here. Never below
+    /// the installed floor, which stays what it was.
+    ///
+    /// REF: FUN_80016B6C
+    pub fn seed_frame_step(&mut self, step: u8) {
+        self.clock.frame_step = step.max(self.clock.frame_step_floor).max(1);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_seeded_step_rides_above_the_floor_and_never_under_it() {
+        let mut w = World::new();
+        w.set_frame_step_floor(2);
+        w.seed_frame_step(3);
+        assert_eq!((w.clock.frame_step, w.clock.frame_step_floor), (3, 2));
+        w.seed_frame_step(1);
+        assert_eq!(w.clock.frame_step, 2);
+    }
 
     #[test]
     fn name_entry_holds_the_floor_at_one_and_hands_it_back() {

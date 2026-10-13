@@ -301,10 +301,13 @@ Three consequences:
   either. See [`cutscene.md`](cutscene.md).
 - **Durations are display frames.** Op-`0x4A` `WAIT_FRAMES` adds
   `DAT_1F800393` - the adaptive frame-skip factor, i.e. the logic tick's `dt`
-  in display frames - to `ctx[+0x54]` per visit, so a wait of `N` elapses in
-  `N` display frames whatever the skip factor. An engine ticking at a
-  different rate has to pace the VM off a display-frame sub-clock, not its own
-  tick (see [`cutscene.md`](cutscene.md#record-pacing---the-60-hz-sub-clock)).
+  in display frames - to `ctx[+0x54]` per visit, the visit that reaches the op
+  included, and passes on the first visit whose sum reaches the operand
+  (`0x801E09CC..0x801E0A00`). A wait of `N` at step `s` therefore holds its
+  context for `s * (ceil(N / s) - 1)` display frames: `N` to within one game
+  frame, and never more. An engine that steps a context every vsync credits
+  the step on the vsyncs that are game frames and nothing between them (see
+  [`cutscene.md`](cutscene.md#record-pacing---the-60-hz-sub-clock)).
 
 ### Engagement and the system script
 

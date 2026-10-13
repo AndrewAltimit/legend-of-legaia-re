@@ -177,6 +177,74 @@ milestones reached in order. The distance between that and the segmented
 headline is the measurement - how much of each stretch's pass rests on
 arriving with a retail player's party.
 
+### What a continuous run exercises that a seeded one cannot
+
+A seeded segment starts from state retail wrote, so anything the engine
+would have had to write itself before that point is never asked of it. The
+continuous run is the only pass in which those writes are load-bearing:
+
+- **Scripted grants.** A flag, an item or an equipment change an earlier
+  scene's script makes is in every later anchor, whether or not the port
+  runs the op correctly. Op `0x3B` (`SET_EQUIP_SLOT`, how a Ra-Seru is put
+  on and grows a stage) is the case in point: a port that mis-applied it
+  still passed every segment, because each seed already wore the Ra-Seru.
+- **Joins after a reload.** A member who joins takes a level-1 record from
+  the SCUS starting-party template. A seeded segment's save already carries
+  all four records (retail's New Game seeds them), so the join never reads
+  the template. A run that reloads its own save, whose roster holds only
+  the members who have joined, does - in a session where no New Game ran.
+- **The pause menu's commits.** The seeded pad hand opens the Equip screen
+  only to guard a boss's element. A hand that has to wear what it finds
+  uses the Best Equipment row, whose swaps do not end the session and so
+  travel a different path back to the record than a single-slot confirm.
+- **Growth.** Levels, gold and the bag are whatever the run earned. The
+  seeded passes flee every random encounter, which costs them nothing; a
+  run that does the same reaches its first boss at level 1.
+
+So the continuous hand differs from the pad tier's in two ways, both things
+a player does and both off in the segmented passes:
+
+- It **takes the random encounters it expects to win.** At each round
+  prompt it prices the fight - what the foes still hold, times what the
+  run's fights have cost so far in party HP per foe HP, times `(n + 1) / 2`
+  for a group of `n` - and fights while that is under three fifths of what
+  the party has left. The exchange rate is learned across the whole run, so
+  the hand takes on larger groups as the party levels and gears up, and a
+  fight that turns goes back to Run on the next prompt.
+- It **wears what it picks up**: before each stretch, Start, Equip, each
+  member, the Best Equipment row.
+
+It still does not shop, and it still takes the cheapest route between two
+milestones, with the beats pass only where a door refuses or a reach flag
+is unset. That second limit decides where it stops. A `scene` milestone is
+reached on arrival, so the hand walks on past what retail did there: Noa's
+stretch begins in `cave01` beside the way out to `map01`, and the hand
+leaves by it, without the staged talks with Terra (`cave01` P1[2], the
+`0x158`..`0x15E` chain every later anchor carries, whose late stages run the
+`4C 82` restore), the cave's fixed fights (P1[3..7]) or its item pickups
+(P1[9..12]). She then climbs `rikuroa` alone at level 1 with an empty bag,
+where the retail anchor holds her at level 6.
+
+### The carried-state diff
+
+Under `LEGAIA_FGL_TRACE` the run prints, at each milestone reached and at
+the stall, the engine's own state beside the retail anchor's for the same
+milestone: each member's level, XP, HP, MP and equipment bytes, the present
+party, gold and the bag, then the flags each side holds that the other does
+not. It is the instrument that tells an engine defect from a weak party:
+
+| The diff shows | Reading |
+|---|---|
+| An equipment byte or bag item retail holds and the engine never gained | A scripted grant: find the op that writes it in the scene the anchors bracket. |
+| A member present in the roster with no record line (zero max HP) | A join that found no template row. |
+| Lower level and XP, same equipment | Growth: the hand fled or the fights paid nothing. |
+| Flags the anchor has and the engine lacks | Beats retail played that the hand walked past; optional ones (a chest, a talk) show here too. |
+| Flags the engine has and the anchor lacks | A beat retail had not played yet, or a latch. |
+
+Chapter-1 anchors come from several sessions, some with cheat-seeded
+parties (three members before the story joins them, a full bag), so a line
+of the retail side is evidence only where the next anchor agrees with it.
+
 [`scripts/ci/play-depth.py`](../../scripts/ci/play-depth.py) prints this
 figure beside the retail-compare image floor, from the committed baselines.
 
@@ -227,6 +295,22 @@ Under each failed seated segment, the ladder lists the flags the next anchor
 has that the engine never set, each with the disc sites that SET it
 (scene, partition, record) from the system-flag census. That is the "which
 flag was never set" answer, and usually names the record to look at next.
+
+### An unresolved battle: parked or outlasted
+
+A `battle unresolved` line prints the action state the fight was in on the
+tick the budget ran out, which is not evidence the state machine sat there.
+A stall whose line reads `ctx[7]=0x70 ... no command session` with the round
+phase at `Execute` and nothing pending is what any enemy cast looks like
+mid-action. The budget ends a fight 36 000 ticks after a foe last lost HP
+([Tick caps](#tick-caps)), so the two HP totals in the line are current, and
+a fight that is still trading blows reaches it as readily as one that froze.
+
+`LEGAIA_FGL_TRACE=1 LEGAIA_FGL_TRACE_HITS=1` settles which: it prints every
+commit, every HP change and each round's party loss. A parked engine shows
+no `[commit]` and no `[hit]` after some tick; a hand that is outlasted shows
+commits to the end, nearly all of them `Item` and `Spirit`. The second is
+the fighter's policy, and the fix belongs in what it chooses.
 
 ### A pad wipe that moves with an unrelated change
 
@@ -673,7 +757,7 @@ A battle is fought through the command ring, one pad edge at a time, by a fighte
 For each member, in order of priority:
 
 1. **Revive.** A member who is down gets a revive.
-2. **Heal.** A member in danger gets a heal: a party heal when two or more are in danger, else the smallest single heal that lifts the worst-off member clear, aimed at that member. Heals the round's earlier members already committed count as landed, so two members never spend their turns on one wound.
+2. **Heal.** A member in danger gets a heal: a party heal when two or more are in danger, else the smallest single heal that lifts the worst-off member clear (in a solo duel, clear after the foe's next round too - see [Guards and boss reads](#guards-and-boss-reads)), aimed at that member. Heals the round's earlier members already committed count as landed, so two members never spend their turns on one wound.
 3. **Cast.** Otherwise a member with an affordable damaging Seru spell casts the strongest one.
 4. **Attack.** Otherwise it attacks through `Command`, entering the longest art its command pool pays for and spending the rest on plain directions. Whether a matched art fires is the queue builder's call, out of the Spirit gauge. The plan runs up to nine commands, the length of each character's Miracle Art.
 
@@ -688,6 +772,8 @@ A random encounter that interrupts a pad-tier walk is fled (the round prompt's R
 
 - After two failed runs with nothing to heal with, against foes whose combined max HP is at most four times the party's, the hand fights instead. A lone chapter-1 Vahn on `map01` can fail to flee a pair of 99 HP monsters six rounds running.
 - A member in danger is healed before the run, unless the foes' last round took half or more of what the party still holds: a heal does not win that race, and the run is the better draw.
+
+The foe row of a `[battle]` line lists every seated monster, and it can grow during a fight: a Green Slime's Divide seats a clone behind the monsters already there ([`cast-module.md`](../subsystems/cast-module.md), `World::apply_glare_divide_split`), up to the five monster seats. A two-monster `map01` formation that ends as `mobs[0/76 0/69 69/69 69/69]` is the Gobu Gobu and the first slime dead and two clones standing, not a second formation.
 
 ### Guards and boss reads
 
@@ -763,6 +849,20 @@ while it sits below five eighths of its HP or within three twentieths again
 of the foe's worst unguarded round so far: a Delilas round's size follows its
 swing count, and Che's went from 716 to 903 two rounds apart.
 
+A duel's heal is sized by the round it has to outlast. A lone member has
+nobody to swing while it heals, so a heal the foe's next round undoes buys
+no turn: Che's rounds take 300..700 from Gala (and about 100..200 on the
+third, its special), and a Healing Leaf's 200 lifts Gala over the heal line
+only until that round lands. A hand that picks the smallest heal clearing
+the line then spends two turns in three on items and never reaches the HP
+its Arts round waits for - it stays alive and deals nothing until the
+battle goes unresolved. So in a solo duel the heal must leave the member
+clear of the line after another round the size of the foe's worst so far,
+capped at full HP, and when no item does that it is the largest in the bag
+(the Healing Flower's 800). Whether the smaller-heal hand wins is a matter
+of the dealt stream, which is how a change to anything that draws before
+the fight turned this one from a win into a stall.
+
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per
 round, so the first may act after the foe), but never with the same item
@@ -773,7 +873,7 @@ another beat can cross the band.
 
 ### Tick caps
 
-A fight runs at least 60 000 ticks and goes on past that while a foe's HP is still dropping, up to 240 000. It is unresolved only once 12 000 ticks pass with no foe losing HP.
+A fight runs at least 60 000 ticks and goes on past that while a foe's HP is still dropping, up to 600 000. It is unresolved only once 36 000 ticks pass with no foe losing HP (`BATTLE_TICKS`, `BATTLE_STALL_TICKS`, `BATTLE_TICKS_CAP`).
 
 ## Input conventions in both passes
 

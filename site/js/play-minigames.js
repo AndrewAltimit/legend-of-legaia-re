@@ -19,8 +19,14 @@
  * single-mesh `uploadMesh` / `render` path, the field's assembled scene
  * meshes untouched underneath); the dome's hub screens draw on a 2D layer
  * canvas this script inserts between the GL
- * view and the page's text overlay, so the engine's HUD lines
- * (`minigame_overlay_draws`) still read on top. */
+ * view and the page's text overlay.
+ *
+ * The engine's status rows (`minigame_status`, the port's own readout of the
+ * rules state plus the key hints - not retail chrome) are not in any draw
+ * list. They arrive as strings (`play_mg_caption_json`) and go to the caption
+ * strip under the canvas (`captionSync`): the play page draws the games' own
+ * chrome over its text layer, as the native window does, and a row in the
+ * frame would be covered by it. */
 (function () {
   'use strict';
 
@@ -748,6 +754,48 @@
   }
 
   /* ================================================================== */
+  /* Status caption. The engine's minigame status rows (`minigame_status` -
+   * the port's readout of the rules state and the key hints, not retail
+   * chrome) are exported as strings (`play_mg_caption_json`): the game, and
+   * its rows in reading order, each a `kind` ("readout" | "hint") and its
+   * clauses. They are shown in the strip under the canvas, where they wrap,
+   * and are never drawn in the frame - the games' chrome draws over this
+   * page's text layer and would cover them. The strip rides the fullscreen
+   * presentation (it sits inside the fullscreened element, under the
+   * picture).
+   *
+   * The strip is hidden outside a minigame. Inside one it keeps its place
+   * even on a frame with no rows, so the controls under it do not jump each
+   * time a phase puts rows up or takes them down. */
+  const CAP = { el: null, shown: null };
+
+  function captionSync(rt) {
+    if (!CAP.el) CAP.el = document.getElementById('play-mg-caption');
+    const el = CAP.el;
+    if (!el || typeof rt.play_mg_caption_json !== 'function') return;
+    let json;
+    try { json = rt.play_mg_caption_json(); } catch (e) { return; }
+    if (json === CAP.shown) return;
+    CAP.shown = json;
+    let cap = null;
+    try { cap = JSON.parse(json); } catch (e) { cap = null; }
+    const rows = (cap && cap.game && cap.rows) || [];
+    el.hidden = !(cap && cap.game);
+    el.classList.toggle('is-empty', !rows.length);
+    el.textContent = '';
+    for (const r of rows) {
+      const line = document.createElement('div');
+      line.className = 'play-mg-line' + (r.kind === 'readout' ? ' is-bright' : '');
+      for (const clause of r.clauses) {
+        const span = document.createElement('span');
+        span.textContent = clause;
+        line.appendChild(span);
+      }
+      el.appendChild(line);
+    }
+  }
+
+  /* ================================================================== */
 
   function teardown(rt, view) {
     if (S.game && (S.game !== 'slot' || S.slotVram)) releaseRenderer(rt, view);
@@ -782,6 +830,7 @@
   function frame(rt, view, skipDraw) {
     if (!rt || !view || typeof rt.play_mg_game_json !== 'function') return false;
     prizeFrame(rt, view);
+    captionSync(rt);
     const info = parse(() => rt.play_mg_game_json());
     if (!info || !info.game) {
       if (S.game) teardown(rt, view);

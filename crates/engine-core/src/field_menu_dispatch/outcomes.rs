@@ -3,51 +3,75 @@
 
 use super::*;
 
+/// Write one equipment swap the menu committed onto the live record and
+/// bag: `added` leaves the bag for engine slot `slot` of `char_slot`, and
+/// the item it replaces (`removed`, `0` for none) goes back.
+fn write_equip_swap(world: &mut World, char_slot: u8, slot: u8, added: u8, removed: u8) {
+    let Some(member) = world.party.roster.members.get_mut(char_slot as usize) else {
+        return;
+    };
+    let mut eq = member.equipment();
+    // The swap names an engine slot; the record byte is retail's.
+    let byte = legaia_engine_menus::equip_session::record_byte_for_engine_slot(slot, char_slot);
+    if byte >= eq.slots.len() {
+        return;
+    }
+    eq.slots[byte] = added;
+    member.set_equipment(eq);
+    // Reconcile the bag with the swap the session computed on its own
+    // (cloned) copy: the newly-equipped item leaves inventory, the
+    // swapped-out item (if any) returns to it. Without this the equipped
+    // item stays in the bag (duplication) and the old one is lost.
+    if added != 0
+        && let Some(qty) = world.party.inventory.get_mut(&added)
+    {
+        *qty = qty.saturating_sub(1);
+        if *qty == 0 {
+            world.party.inventory.remove(&added);
+        }
+    }
+    if removed != 0 {
+        let _ = world.party.inventory.add(removed, 1);
+    }
+}
+
 /// Apply a finished [`EquipSession`] to a `world.party.roster` member. Returns
-/// `Some(EquipOutcome)` when a swap was committed; `None` for cancelled
-/// sessions.
+/// `Some(EquipOutcome)` when the session ended on an outcome; `None` for a
+/// session still open.
+///
+/// Two kinds of commit reach the record. The Best Equipment row's swaps
+/// ([`EquipSession::best_equipment_swaps`]) do not end the session - retail's
+/// applier `FUN_801CF760` writes the record and the bag where it stands and
+/// the slot browser stays up - so they are replayed first, whatever the
+/// session's closing outcome. A single-slot confirm is the outcome itself.
+// REF: FUN_801CF760
 pub fn apply_equip_outcome(
     session: &EquipSession,
     char_slot: u8,
     world: &mut World,
 ) -> Option<EquipOutcome> {
-    let outcome = session.outcome()?;
-    if let EquipOutcome::Committed {
+    let best = session.best_equipment_swaps();
+    for &(slot, removed, added) in best {
+        write_equip_swap(world, char_slot, slot, added, removed);
+    }
+    let outcome = session.outcome();
+    let committed = matches!(outcome, Some(EquipOutcome::Committed { .. }));
+    if let Some(EquipOutcome::Committed {
         slot,
         added,
         removed,
-    } = outcome
-        && let Some(member) = world.party.roster.members.get_mut(char_slot as usize)
+    }) = outcome
     {
-        let mut eq = member.equipment();
-        // The outcome names an engine slot; the record byte is retail's.
-        let byte = legaia_engine_menus::equip_session::record_byte_for_engine_slot(slot, char_slot);
-        if byte < eq.slots.len() {
-            eq.slots[byte] = added;
-            member.set_equipment(eq);
-            // Reconcile the bag with the swap the session computed on its own
-            // (cloned) copy: the newly-equipped item leaves inventory, the
-            // swapped-out item (if any) returns to it. Without this the equipped
-            // item stays in the bag (duplication) and the old one is lost.
-            if added != 0
-                && let Some(qty) = world.party.inventory.get_mut(&added)
-            {
-                *qty = qty.saturating_sub(1);
-                if *qty == 0 {
-                    world.party.inventory.remove(&added);
-                }
-            }
-            if removed != 0 {
-                let _ = world.party.inventory.add(removed, 1);
-            }
-        }
+        write_equip_swap(world, char_slot, slot, added, removed);
+    }
+    if committed || !best.is_empty() {
         // An equipment change can add / remove an accessory passive; rebuild
         // the ability bitfields immediately (retail re-derives them every
         // aggregator pass) so menu + battle consumers see the new bits
         // without waiting for the next battle entry.
         world.refresh_party_ability_bits();
     }
-    Some(outcome)
+    outcome
 }
 
 /// Apply a finished [`InventoryUseSession`] to the world. Folds the

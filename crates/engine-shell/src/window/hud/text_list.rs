@@ -1,15 +1,15 @@
-//! The HUD text list for one frame ([`PlayWindowApp::build_hud`]) and the
-//! minigame status-row helpers it lays out through.
+//! The HUD text list for one frame ([`PlayWindowApp::build_hud`]).
+//!
+//! The minigame status rows (`engine-core::minigame_status`) are **not** in
+//! this list: they are caption data, shown in the title bar
+//! (`PlayWindowApp::sync_minigame_caption_title`) where no game chrome can
+//! cover them.
 
 use super::*;
 
 impl PlayWindowApp {
-    /// One minigame status row (dance / fishing / slots / Baka Fighter) at
-    /// its pen on the shared 320x240 stage, scaled onto the surface. The
-    /// browser play page composes the same rows at the same pens
-    /// (`PEN_STATUS` / `PEN_PROMPT` in `play_minigames.rs`) through the stage
-    /// transform; this host used to lay them out in raw surface pixels, a
-    /// third the size and pinned to the window corner instead of the stage.
+    /// One line of this window's own text at a pen on the shared 320x240
+    /// stage, scaled onto the surface through the stage transform.
     pub(super) fn stage_status_row(
         &self,
         text: &str,
@@ -19,24 +19,6 @@ impl PlayWindowApp {
         h: u32,
     ) -> Vec<TextDraw> {
         let mut d = text_draws_for(&self.font.layout_ascii(text), pen, color);
-        let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-        legaia_engine_ui::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
-        d
-    }
-
-    /// The engine's minigame status rows (`engine-core::minigame_status`),
-    /// through the shared draw kernel and scaled onto the surface through
-    /// the one stage transform the page applies to the same rows.
-    pub(super) fn stage_status_rows(
-        &self,
-        rows: &[legaia_engine_core::minigame_status::StatusRow],
-        w: u32,
-        h: u32,
-    ) -> Vec<TextDraw> {
-        let mut d = legaia_engine_ui::text_lines::status_row_draws_for(
-            &self.font,
-            rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
-        );
         let (stage_origin, stage_scale) = self.save_select_stage(w, h);
         legaia_engine_ui::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
         d
@@ -170,29 +152,13 @@ impl PlayWindowApp {
                 out.extend(text_draws_for(&layout3, (8, 44), white));
             }
         }
-        // Dance minigame HUD: the running score / groove gauge / active lane,
-        // the arrow the current beat calls for, and the last press judgement.
-        // The three arrows are the retail pad bits (Square/Circle/Triangle).
-        //
-        // Withheld while the pre-song count-in is up - the shared phase
-        // predicate answers that for both hosts.
+        // Dance minigame HUD. Withheld while the pre-song count-in is up -
+        // the shared phase predicate answers that for both hosts. The score /
+        // called-arrow status rows are the title bar's caption, not text here.
         if self.session.host.world.mode == SceneMode::Dance
             && self.session.host.world.minigames.dance_status_visible()
             && let Some(g) = &self.session.host.world.minigames.dance
         {
-            // Score / gauge / lane, the called arrow with the last
-            // judgement, and the beat track (`FUN_801d2524`'s displayed
-            // combo slot and scrolling notes) - the engine's rows, shared
-            // with the browser page.
-            out.extend(self.stage_status_rows(
-                &legaia_engine_core::minigame_status::dance_status_rows(
-                    g,
-                    self.session.host.world.minigames.dance_last_judge.as_ref(),
-                ),
-                w,
-                h,
-            ));
-
             // The retail-coordinate HUD frame: the HUD driver's per-frame
             // list (`DanceGame::hud_draws`, FUN_801d231c) laid out at its
             // 320x240 stage positions and upscaled with the stage transform.
@@ -327,28 +293,12 @@ impl PlayWindowApp {
                 stage_scale,
             ));
         }
-        // Fishing minigame HUD: the phase-specific line (cast-power bar while
-        // casting; tension + strength while fighting; the catch result when
-        // done) plus the running point total.
+        // Fishing minigame HUD. The phase line, the reel hint and the session
+        // affordances are the title bar's caption
+        // (`minigame_status::fishing_status_rows`), not text here.
         if self.session.host.world.mode == SceneMode::Fishing
-            && let Some(s) = &self.session.host.world.minigames.fishing
+            && self.session.host.world.minigames.fishing.is_some()
         {
-            // The phase line + key hint are one engine derivation both play
-            // hosts print (`PondSession::status_rows`).
-            let (line, hint) = s.status_rows("Circle", "Cross", "Square");
-            out.extend(self.stage_status_row(&line, (8, 62), white, w, h));
-            out.extend(self.stage_status_row(&hint, (8, 80), dim, w, h));
-            // The session affordances on their own row - with the reel hint
-            // they overran the stage on one line. The browser play page
-            // prints the same three on the same row with its own keys.
-            out.extend(self.stage_status_row(
-                "Triangle = menu, Start = quit, P = prizes",
-                (8, 98),
-                dim,
-                w,
-                h,
-            ));
-
             // The overlay's developer readout (FUN_801d2050): the wander
             // actor's tile pair + settled height, shown only when the
             // dev-menu session (the engine's `_DAT_8007B9B0` print-flag
@@ -504,36 +454,18 @@ impl PlayWindowApp {
             legaia_engine_ui::scale_stage_text_draws(&mut ex_draws, stage_origin, stage_scale);
             out.extend(ex_draws);
         }
-        // Slot-machine minigame HUD: the three payline symbols, the balance /
-        // bet readout, and the phase-specific prompt.
-        // Only while the machine itself is not on screen: once its art is
-        // resident the cabinet's own marquee, lamps and coin readout carry
-        // all of this.
-        if self.session.host.world.mode == SceneMode::SlotMachine
-            && self.slot_gpu.is_none()
-            && let Some(m) = &self.session.host.world.minigames.slot_machine
-        {
-            out.extend(self.stage_status_rows(
-                &legaia_engine_core::minigame_status::slot_status_rows(m),
-                w,
-                h,
-            ));
-        }
-        // The machine's rules pages are its one text draw.
+        // The slot machine's rules pages are its one text draw. Its status
+        // rows (the fallback readout while the machine itself is not on
+        // screen) are the title bar's caption.
         if self.slot_gpu.is_some() {
             out.extend(self.slot_rules_text_draws(w, h));
         }
-        // Baka Fighter minigame HUD: HP bars as numbers, round pips, the
-        // last-exchange readout, and the input prompt.
+        // Baka Fighter minigame HUD. The HP / round-wins readout and the
+        // input prompt are the title bar's caption; what draws here is the
+        // game's own chrome.
         if self.session.host.world.mode == SceneMode::BakaFighter
             && let Some(f) = &self.session.host.world.minigames.baka_fighter
         {
-            out.extend(self.stage_status_rows(
-                &legaia_engine_core::minigame_status::baka_status_rows(f),
-                w,
-                h,
-            ));
-
             // The duel's three number drawers, at their ported cell layouts:
             // the one-glyph round digit, the 8 px right-aligned score field,
             // and the 0x10 px "GET COIN" numeral strip for the prize. The
@@ -638,16 +570,9 @@ impl PlayWindowApp {
                 ));
             }
         }
-        // Muscle Dome rows (`minigame_status`): the Ra-Seru list stand-in and
-        // the between-turn / decided prompts. They also carry why the retail
-        // "Turns Left / HP Left" strip is not among them.
-        if self.session.host.world.mode == SceneMode::MuscleDome {
-            out.extend(self.stage_status_rows(
-                &legaia_engine_core::minigame_status::muscle_status_rows(&self.session.host.world),
-                w,
-                h,
-            ));
-        }
+        // The Muscle Dome's status rows (`minigame_status::muscle_status_rows`:
+        // the Ra-Seru list stand-in and the between-turn prompts) are the
+        // title bar's caption, not text here.
         // Shop / inn / prize / coin-counter overlay group (the shared
         // `legaia_engine_screens` frame) plus the field's own stage windows,
         // scaled through the one stage transform both hosts share.
@@ -1125,6 +1050,27 @@ impl PlayWindowApp {
             let mut draws = legaia_engine_ui::text_balloon_text_draws_for(&self.font, text, pen);
             legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
+        }
+        // The overworld map display (retail game mode `0x0D`): each
+        // discovered place's name over its box, and the mini-map panel's
+        // compass letters.
+        {
+            let world = &self.session.host.world;
+            let labels = legaia_engine_core::world_map_labels::map_display_labels_now(world);
+            let marks = legaia_engine_core::world_map_labels::map_display_compass_marks(world);
+            if !labels.is_empty() || !marks.is_empty() {
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                let rows: Vec<legaia_engine_ui::MapLabelDraw<'_>> = labels
+                    .iter()
+                    .map(|l| (l.name.as_slice(), l.sx, l.sy))
+                    .collect();
+                let mut draws = legaia_engine_ui::map_label_text_draws_for(&self.font, &rows);
+                draws.extend(legaia_engine_ui::map_compass_text_draws_for(
+                    &self.font, &marks,
+                ));
+                legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+                out.extend(draws);
+            }
         }
         // The tile board's quit prompt (walk-SM state 5): the title and the
         // two rows, read off the field overlay's own strings.

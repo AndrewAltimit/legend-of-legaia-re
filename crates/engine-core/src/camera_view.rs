@@ -464,6 +464,31 @@ pub fn world_map_walk_vp(view: &FieldCameraView, player: [f32; 3], aspect: f32) 
     )
 }
 
+/// The map display's frame while its survey camera is staged
+/// ([`legaia_engine_field::map_display::MapDisplay::camera_staged`]), else
+/// `None`. The pose is the three stores at `0x801CE8EC..0x801CE928`; the
+/// focus is the display's camera translation, which retail holds negated.
+///
+/// REF: FUN_801CE850
+pub fn map_display_frame(world: &World) -> Option<FieldCameraFrame> {
+    use legaia_engine_field::map_display::{CAMERA_H, CAMERA_ROT, CAMERA_TR};
+    let d = world.world_map.map_display.as_ref()?;
+    if !d.camera_staged {
+        return None;
+    }
+    Some(FieldCameraFrame::WorldMapDisplay {
+        view: FieldCameraView {
+            focus: [0.0; 3],
+            pitch: to_rad(f32::from(CAMERA_ROT[0])),
+            yaw: to_rad(f32::from(CAMERA_ROT[1])),
+            roll: to_rad(f32::from(CAMERA_ROT[2])),
+            h: CAMERA_H as f32,
+            tr_eye: CAMERA_TR.map(|c| c as f32),
+        },
+        player: [-(d.cam_x as f32), 0.0, -(d.cam_z as f32)],
+    })
+}
+
 /// Which camera owns this frame. One arm per camera retail runs in a walkable
 /// scene; battle has its own kernel
 /// ([`legaia_engine_battle_vm::battle_cam_script::battle_vp`]) and is not resolved
@@ -477,6 +502,14 @@ pub enum FieldCameraFrame {
     Cutscene(FieldCameraView),
     /// Kingdom overworld, walk mode: the retail player-follow vantage.
     WorldMapWalk {
+        view: FieldCameraView,
+        player: [f32; 3],
+    },
+    /// Kingdom overworld, the L1 **map display** (game mode `0x0D`): the
+    /// survey pose PROT 0981 stages - `TR = (0, 0, 0x9470)`, pitch `0x300`,
+    /// `H = 0x170` - composed like the walk frame, over the display's own
+    /// camera translation instead of the player. `player` is that focus.
+    WorldMapDisplay {
         view: FieldCameraView,
         player: [f32; 3],
     },
@@ -512,7 +545,8 @@ impl FieldCameraFrame {
             FieldCameraFrame::Cutscene(v)
             | FieldCameraFrame::Follow(v)
             | FieldCameraFrame::Venue(v) => Some(v),
-            FieldCameraFrame::WorldMapWalk { view, player } => Some(FieldCameraView {
+            FieldCameraFrame::WorldMapWalk { view, player }
+            | FieldCameraFrame::WorldMapDisplay { view, player } => Some(FieldCameraView {
                 focus: player,
                 tr_eye: view.tr_eye.map(|c| c / WORLD_MAP_WORLD_SCALE),
                 ..view
@@ -662,6 +696,9 @@ pub fn resolve_field_camera(
             .as_ref()
             .map(|c| (c.azimuth, c.zoom, c.camera_x, c.camera_z, c.is_top_view()))
             .unwrap_or((0, 0, 0, 0, false));
+        if let Some(frame) = map_display_frame(world) {
+            return frame;
+        }
         if top_view {
             return FieldCameraFrame::WorldMapTopView {
                 azimuth: az,
@@ -718,7 +755,8 @@ pub fn frame_vp(
         FieldCameraFrame::Cutscene(v)
         | FieldCameraFrame::Follow(v)
         | FieldCameraFrame::Venue(v) => Some(v.vp(aspect)),
-        FieldCameraFrame::WorldMapWalk { view, player } => {
+        FieldCameraFrame::WorldMapWalk { view, player }
+        | FieldCameraFrame::WorldMapDisplay { view, player } => {
             Some(world_map_walk_vp(view, *player, aspect))
         }
         FieldCameraFrame::WorldMapTopView { azimuth, zoom, pan } => {
@@ -745,7 +783,8 @@ pub fn frame_eye(frame: &FieldCameraFrame) -> Option<[f32; 3]> {
         FieldCameraFrame::Cutscene(v)
         | FieldCameraFrame::Follow(v)
         | FieldCameraFrame::Venue(v) => Some(v.eye()),
-        FieldCameraFrame::WorldMapWalk { view, player } => {
+        FieldCameraFrame::WorldMapWalk { view, player }
+        | FieldCameraFrame::WorldMapDisplay { view, player } => {
             // The walk camera orbits the player through the 6x world scale,
             // so its eye divides back out of that frame.
             let e = view.eye();
@@ -782,6 +821,10 @@ pub fn frame_curve_scale(overworld: bool, frame: &FieldCameraFrame) -> f32 {
     match frame {
         F::WorldMapWalk { .. } => 1.0,
         F::Cutscene(_) | F::Follow(_) => CUTSCENE_WORLD_SCALE,
+        // The map display flattens the curvature table for its own
+        // duration (`FUN_800271A8(0, 0)` at `0x801CE958`, rebuilt from the
+        // saved coefficients on the way out at `0x801CEB88`).
+        F::WorldMapDisplay { .. } => 0.0,
         // A minigame venue is never the overworld; flat.
         F::WorldMapTopView { .. } | F::HostDebugOrbit | F::Venue(_) => 0.0,
     }

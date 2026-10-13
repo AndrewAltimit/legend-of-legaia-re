@@ -88,6 +88,14 @@ const CAM_EYE: u32 = 0x8008_40B8;
 /// the view orbits, stored **negated** (`engine-core::world::camera_world`, axes 6 / 8).
 const CAM_FOCUS: u32 = 0x8008_9118;
 const BGM_ID: u32 = 0x8007_BAC8;
+/// The destination-entry operand `_DAT_80073EF4` / `_DAT_80073EF8`: the
+/// world `(X, Z)` every field entry seats the player from (the MAN loader
+/// `FUN_8003AEB0` copies a card load's position snapshot into the pair,
+/// `0x8003B764..0x8003B798`; the facing word follows at [`ARRIVAL_FACING`]).
+const ENTRY_OPERAND: u32 = 0x8007_3EF4;
+/// The region-type mask `_DAT_8007B8F4` (`FUN_800180EC`'s rebuild, the word
+/// field-VM op `0x42` mode 0 tests).
+const REGION_MASK: u32 = 0x8007_B8F4;
 /// The arrival facing `_DAT_80073EFC` (op `0x3F`'s compass write, zeroed by
 /// the card load), which the entry script's `4C 3A` copies onto the player.
 const ARRIVAL_FACING: u32 = 0x8007_3EFC;

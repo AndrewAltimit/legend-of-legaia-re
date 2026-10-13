@@ -440,3 +440,107 @@ fn cutscene_timeline_party_bank_clip_does_not_park_the_latch_spin() {
     assert!(tl.player_clip_wait.is_none());
     assert_eq!(tl.pc, 6, "stepped past onto the wait");
 }
+
+/// Op `0x4A` credits the game frame's length on each game frame and passes
+/// on the first one whose sum reaches the operand, the frame that reaches the
+/// op included (`0x801E09CC..0x801E0A00`): at step `3` a `4A 1E 00` holds its
+/// record for `3 * (ceil(30 / 3) - 1) = 27` vsyncs. The first wait here only
+/// lands the record on the frame grid.
+///
+/// Every row is a hold a per-vsync capture of retail's opening chain reads
+/// (`scripts/pcsx-redux/autorun_opdeene_pacing.lua` from `s1_newgame_field`),
+/// at a constant step for the whole hold: step `3` in `opdeene`, step `2` in
+/// `opstati` (`P2[0]`: `+0x2F7`, `+0x341`, `+0x34B`, `+0x34E`) and `opurud`
+/// (`P2[9]` `+0x9D`), step `4` in `opurud` (`+0x17A`, `+0x228`, `+0x25D`,
+/// `+0x277`, `+0x28D`). No field scene steps by `1`.
+#[test]
+fn a_wait_holds_for_whole_game_frames_less_the_one_that_reached_it() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    for (step, wait, held) in [
+        // Step 3: operand 0, 1 and 2 past a multiple.
+        (3u8, 30u8, 27u32),
+        (3, 40, 39),
+        (3, 5, 3),
+        (3, 8, 6),
+        // Step 2: even and odd operands.
+        (2, 30, 28),
+        (2, 32, 30),
+        (2, 6, 4),
+        (2, 90, 88),
+        (2, 45, 44),
+        // Step 4.
+        (4, 90, 88),
+        (4, 50, 48),
+        (4, 45, 44),
+        (4, 15, 12),
+        (4, 5, 4),
+    ] {
+        let mut w = World {
+            mode: legaia_engine_mode::mode::SceneMode::Field,
+            ..World::default()
+        };
+        w.set_frame_step_floor(step);
+        let bc = vec![
+            0x4A, 0x01, 0x00, // lands on the next game frame
+            0x4A, wait, 0x00, // the measured wait
+            0x4A, 0xFF, 0x7F, // keeps the timeline up
+        ];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        let mut on_wait = 0u32;
+        for _ in 0..200 {
+            w.tick();
+            match w.cutscene.timeline.as_ref().map(|tl| tl.pc) {
+                Some(3) => on_wait += 1,
+                Some(6) => break,
+                _ => {}
+            }
+        }
+        assert_eq!(on_wait, held, "4A {wait} at step {step}");
+    }
+}
+
+/// A screen-effect tween a record spawns is ticked in the frame that spawned
+/// it, so its clock and the sum of the wait behind it move together:
+/// `minigame_dance_pcsx` is parked on `koin3` `P2[6]`'s `4A 1E 00` behind
+/// `34 01 FF FF FF 1E 00` with the walk-in's clock `+0xC8` and the wait's
+/// `+0x54` both at `21`, on a step-`3` frame.
+#[test]
+fn a_spawned_screen_tween_keeps_step_with_the_wait_behind_it() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    for step in [2u8, 3] {
+        let mut w = World {
+            mode: legaia_engine_mode::mode::SceneMode::Field,
+            ..World::default()
+        };
+        w.set_frame_step_floor(step);
+        let bc = vec![
+            0x4A, 0x01, 0x00, // lands on the next game frame
+            0x34, 0x01, 0xFF, 0xFF, 0xFF, 0x1E, 0x00, // subtractive white walk-in
+            0x4A, 0x1E, 0x00, // the wait the capture is parked on
+            0x4A, 0xFF, 0x7F, // keeps the timeline up
+        ];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        let mut seen = 0;
+        for _ in 0..40 {
+            w.tick();
+            let Some(tl) = w.cutscene.timeline.as_ref() else {
+                break;
+            };
+            if tl.pc != 10 {
+                continue;
+            }
+            let clock = w
+                .presentation
+                .effect_tween_slot
+                .and_then(|s| w.actors[s].colour_tween)
+                .map(|t| t.clock);
+            assert_eq!(
+                clock,
+                Some(tl.ctx.wait_accum as u16),
+                "step {step}: the tween's clock is the wait's sum"
+            );
+            seen += 1;
+        }
+        assert!(seen >= 20, "step {step}: the record sat on the wait");
+    }
+}

@@ -1,56 +1,226 @@
-//! The in-world minigame **status rows**: the engine's own affordance text
-//! both play hosts print over the slot machine, the Baka Fighter duel, the
-//! Muscle Dome leg and the dance floor, in 320x240 stage space.
+//! The in-world minigame **status caption**: the engine's own readout of the
+//! rules state plus the key hints, for the slot machine, the Baka Fighter
+//! duel, the Muscle Dome leg, the dance floor and the fishing pond.
 //!
 //! None of it is retail - each machine's own HUD is drawn by the retail-shaped
 //! builders beside it (the dance frame rows, the Baka digit strips and chrome
-//! labels, the slot paylines). These rows are the port's readout of the rules
-//! state while those pages are partial, and they used to be written out twice,
-//! once per host. The copies had drifted in wording (a Muscle Dome turn
-//! boundary that told the player to press Cross when retail's turn top is
-//! automatic, a slot exit that read "quit" on one host and "leave" on the
-//! other) and in space: the native window drew the Muscle Dome rows and the
-//! dance beat track in raw surface pixels, top-left at a fraction of the
-//! page's size, while the page stage-scaled them. One builder per game here,
-//! one draw kernel in `engine-ui` (`text_lines::status_row_draws_for`), and
-//! each host applies its one stage transform.
+//! labels, the slot paylines). These rows are the port's readout while those
+//! pages are partial, and one builder per game here authors them for every
+//! host, so the wording cannot drift between hosts.
+//!
+//! The rows are **data, not a draw list**, and they carry no stage position.
+//! A status row printed inside the 320x240 frame is covered by whatever the
+//! game draws there - both play hosts draw a game's screen primitives over
+//! their text layer, so the Baka Fighter title logo sat on the prompt line -
+//! and a long row ran off the frame's right edge. [`caption`] is the one
+//! entry point, and each host shows what it returns **outside the game
+//! picture**: the browser play page in the strip under its canvas (the
+//! `play_mg_caption_json` export), the native window in its title bar
+//! ([`MinigameCaption::title_line`]).
 
 use crate::world::World;
+use legaia_engine_fishing::fishing::PondSession;
 use legaia_engine_menus::muscle_dome_session::MusclePhase;
 use legaia_engine_minigames::baka_fighter::{BakaFight, MatchPhase};
-use legaia_engine_minigames::dance::{
-    DanceGame, GAUGE_STEP, Judge, dance_beat_track_note_x, dance_combo_window_bright,
-    dance_number_digits,
-};
+use legaia_engine_minigames::dance::{DanceGame, Judge, dance_number_digits};
 use legaia_engine_minigames::muscle_dome::TIME_METER_MAX;
 use legaia_engine_minigames::slot_machine::{SlotMachine, SlotPhase};
+use legaia_engine_mode::mode::SceneMode;
 
-/// The contest line's pen (Muscle Dome ladder position).
-pub const PEN_CONTEST: (i32, i32) = (8, 44);
-/// The status line's pen.
-pub const PEN_STATUS: (i32, i32) = (8, 62);
-/// The prompt line's pen.
-pub const PEN_PROMPT: (i32, i32) = (8, 80);
-/// The extra row's pen (the dance beat track).
-pub const PEN_EXTRA: (i32, i32) = (8, 98);
+/// What a caption row says. A host may weight the two differently (the page
+/// brightens the readout); the order of the rows is the reading order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowKind {
+    /// The rules state: scores, HP, the turn reached, the phase.
+    Readout,
+    /// What the player can press, and what the last press did.
+    Hint,
+}
 
-/// One positioned row of status text in stage space. `bright` picks the
-/// highlight ink over the dim one.
+impl RowKind {
+    /// The page-facing name (`play_mg_caption_json`'s `kind`).
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Readout => "readout",
+            Self::Hint => "hint",
+        }
+    }
+}
+
+/// One caption row: its role and its clauses in reading order. A clause is
+/// one statement ("coins 50", "Start = quit"); the host picks the separator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusRow {
-    pub text: String,
-    pub pen: (i32, i32),
-    pub bright: bool,
+    pub kind: RowKind,
+    pub clauses: Vec<String>,
 }
 
 impl StatusRow {
-    fn new(text: impl Into<String>, pen: (i32, i32), bright: bool) -> Self {
+    /// A row of `clauses`. Empty clauses are dropped, so a builder can pass a
+    /// phase that has nothing to say without leaving a dangling separator.
+    fn new<S: Into<String>>(kind: RowKind, clauses: impl IntoIterator<Item = S>) -> Self {
         Self {
-            text: text.into(),
-            pen,
-            bright,
+            kind,
+            clauses: clauses
+                .into_iter()
+                .map(Into::into)
+                .filter(|c: &String| !c.trim().is_empty())
+                .collect(),
         }
     }
+
+    fn readout<S: Into<String>>(clauses: impl IntoIterator<Item = S>) -> Self {
+        Self::new(RowKind::Readout, clauses)
+    }
+
+    fn hint<S: Into<String>>(clauses: impl IntoIterator<Item = S>) -> Self {
+        Self::new(RowKind::Hint, clauses)
+    }
+
+    /// The row as one line of text.
+    pub fn line(&self) -> String {
+        self.clauses.join("  ")
+    }
+}
+
+/// Which minigame a caption belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusGame {
+    Slot,
+    Baka,
+    Muscle,
+    Dance,
+    Fishing,
+}
+
+impl StatusGame {
+    /// The game whose session owns `mode`.
+    pub fn of_mode(mode: SceneMode) -> Option<Self> {
+        match mode {
+            SceneMode::SlotMachine => Some(Self::Slot),
+            SceneMode::BakaFighter => Some(Self::Baka),
+            SceneMode::MuscleDome => Some(Self::Muscle),
+            SceneMode::Dance => Some(Self::Dance),
+            SceneMode::Fishing => Some(Self::Fishing),
+            _ => None,
+        }
+    }
+
+    /// The page-facing label (`play_mg_caption_json`'s `game`).
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Slot => "slot",
+            Self::Baka => "baka",
+            Self::Muscle => "muscle",
+            Self::Dance => "dance",
+            Self::Fishing => "fishing",
+        }
+    }
+}
+
+/// What only the host can answer about a caption: which of its own surfaces
+/// already carries a row's content, and what its keys are called.
+#[derive(Debug, Clone, Copy)]
+pub struct StatusHost<'a> {
+    /// The slot machine itself is on screen (its art decoded and the host
+    /// draws the cabinet). Its marquee, lamps and coin readout then carry
+    /// everything the slot rows say, so the caption has no rows.
+    pub slot_machine_drawn: bool,
+    /// The host's names for the fishing keys.
+    pub fishing_keys: FishingKeys<'a>,
+}
+
+/// A host's names for the keys the fishing rows mention. The pond is the one
+/// game whose rows name host keys rather than pad buttons, because the page's
+/// bindings are the visitor's to change.
+#[derive(Debug, Clone, Copy)]
+pub struct FishingKeys<'a> {
+    pub cast: &'a str,
+    pub reel_a: &'a str,
+    pub reel_b: &'a str,
+    /// Opens the venue hub (the pad's Triangle).
+    pub menu: &'a str,
+    /// The engine's minigame escape (the pad's Start).
+    pub quit: &'a str,
+    /// Opens the point exchange: a key on the native window, a button beside
+    /// the frame on the page.
+    pub prizes: &'a str,
+}
+
+/// A live minigame's caption: the game and its rows this frame. `rows` is
+/// empty on a frame the game has nothing to say (the Muscle Dome's command
+/// ring, a decided leg, the dance count-in, a slot machine that draws
+/// itself). The game is still live then, so a host keeps the caption's seat
+/// rather than collapsing it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MinigameCaption {
+    pub game: StatusGame,
+    pub rows: Vec<StatusRow>,
+}
+
+impl MinigameCaption {
+    /// The caption as one line - a window title, a log line. Rows are
+    /// separated by `" | "`, clauses by two spaces. Empty when no row is up.
+    pub fn title_line(&self) -> String {
+        self.rows
+            .iter()
+            .map(StatusRow::line)
+            .collect::<Vec<_>>()
+            .join(" | ")
+    }
+}
+
+/// The status caption for the minigame that owns the world this frame, or
+/// `None` outside one. The one entry point every play host reads: which game
+/// is live is the world's mode, and each game's rows come from its builder
+/// below.
+pub fn caption(world: &World, host: &StatusHost<'_>) -> Option<MinigameCaption> {
+    let game = StatusGame::of_mode(world.mode)?;
+    let mg = &world.minigames;
+    let rows = match game {
+        StatusGame::Slot if host.slot_machine_drawn => Vec::new(),
+        StatusGame::Slot => mg
+            .slot_machine
+            .as_ref()
+            .map(slot_status_rows)
+            .unwrap_or_default(),
+        StatusGame::Baka => mg
+            .baka_fighter
+            .as_ref()
+            .map(baka_status_rows)
+            .unwrap_or_default(),
+        StatusGame::Muscle => muscle_status_rows(world),
+        // Withheld while the pre-song count-in banner is up: the rule lives
+        // with the phase (`dance_status_visible`), not with a host.
+        StatusGame::Dance if !mg.dance_status_visible() => Vec::new(),
+        StatusGame::Dance => mg
+            .dance
+            .as_ref()
+            .map(|g| dance_status_rows(g, mg.dance_last_judge.as_ref()))
+            .unwrap_or_default(),
+        StatusGame::Fishing => mg
+            .fishing
+            .as_ref()
+            .map(|s| fishing_status_rows(s, &host.fishing_keys))
+            .unwrap_or_default(),
+    };
+    Some(MinigameCaption { game, rows })
+}
+
+/// The fishing pond's three rows: the phase line and the reel hint (the
+/// session's own derivation, [`PondSession::status_rows`]), then the session
+/// affordances - venue hub, quit, point exchange.
+pub fn fishing_status_rows(s: &PondSession, keys: &FishingKeys<'_>) -> Vec<StatusRow> {
+    let (line, hint) = s.status_rows(keys.cast, keys.reel_a, keys.reel_b);
+    vec![
+        StatusRow::readout([line]),
+        StatusRow::hint([hint]),
+        StatusRow::hint([
+            format!("{} = menu", keys.menu),
+            format!("{} = quit", keys.quit),
+            format!("{} = prizes", keys.prizes),
+        ]),
+    ]
 }
 
 /// The slot machine's two rows: reels / balance / feature, then the phase
@@ -63,11 +233,10 @@ pub fn slot_status_rows(m: &SlotMachine) -> Vec<StatusRow> {
         m.payline_symbol(2)
     );
     let feature = match m.feature_mode() {
-        6 => format!("  BONUS x{}", m.bonus_spins()),
+        6 => format!("BONUS x{}", m.bonus_spins()),
         0 => String::new(),
-        mode => format!("  feature {mode}"),
+        mode => format!("feature {mode}"),
     };
-    let l1 = format!("SLOTS  {reels}  coins {}{feature}", m.balance());
     let prompt = match m.phase() {
         SlotPhase::Idle if !m.can_spin() => "not enough coins".to_string(),
         // `spin_cost` is 1 in the feature modes 4..=6 and 3 otherwise.
@@ -83,12 +252,13 @@ pub fn slot_status_rows(m: &SlotMachine) -> Vec<StatusRow> {
         SlotPhase::Leaving | SlotPhase::CashedOut => "cashed out".to_string(),
     };
     vec![
-        StatusRow::new(l1, PEN_STATUS, true),
-        StatusRow::new(
-            format!("{prompt}   (Start = cash out + quit)"),
-            PEN_PROMPT,
-            false,
-        ),
+        StatusRow::readout([
+            "SLOTS".to_string(),
+            reels,
+            format!("coins {}", m.balance()),
+            feature,
+        ]),
+        StatusRow::hint([prompt, "Start = cash out + quit".to_string()]),
     ]
 }
 
@@ -97,27 +267,22 @@ pub fn slot_status_rows(m: &SlotMachine) -> Vec<StatusRow> {
 pub fn baka_status_rows(f: &BakaFight) -> Vec<StatusRow> {
     if f.cabinet().front_end() {
         // The cabinet's attract card and player select: no duel yet, so the
-        // rows name the screen and its keys instead of the fight's numbers.
-        let line = match f.select_lineup() {
-            Some((cursor, _)) => format!(
-                "PLAYER SELECT  {}   Left/Right pick, Cross confirms",
-                ["Vahn", "Noa", "Gala"].get(cursor).copied().unwrap_or("?")
-            ),
+        // row names the screen and its keys instead of the fight's numbers.
+        let row = match f.select_lineup() {
+            Some((cursor, _)) => StatusRow::hint([
+                format!(
+                    "PLAYER SELECT  {}",
+                    ["Vahn", "Noa", "Gala"].get(cursor).copied().unwrap_or("?")
+                ),
+                "Left/Right pick, Cross confirms".to_string(),
+            ]),
             None if f.cabinet().state() == legaia_engine_minigames::baka_cabinet::ST_ATTRACT => {
-                "BAKA FIGHTER   Start or Cross to begin".to_string()
+                StatusRow::hint(["BAKA FIGHTER", "Start or Cross to begin"])
             }
-            None => "BAKA FIGHTER".to_string(),
+            None => StatusRow::hint(["BAKA FIGHTER"]),
         };
-        return vec![StatusRow::new(line, PEN_PROMPT, false)];
+        return vec![row];
     }
-    let l1 = format!(
-        "BAKA  you {}hp (wins {})  vs  foe {}hp (wins {})  round {}",
-        f.hp(0),
-        f.round_wins(0),
-        f.hp(1),
-        f.round_wins(1),
-        f.round() + 1
-    );
     let status = match f.phase() {
         MatchPhase::MatchOver(0) if f.cabinet().choice_sheet().is_some() => {
             "NEXT GAME / PAY OUT: Left/Right, Cross confirms".to_string()
@@ -143,12 +308,17 @@ pub fn baka_status_rows(f: &BakaFight) -> Vec<StatusRow> {
         },
     };
     vec![
-        StatusRow::new(l1, PEN_STATUS, true),
-        StatusRow::new(
-            format!("{status}   Square/Circle/Cross attack (Start = quit)"),
-            PEN_PROMPT,
-            false,
-        ),
+        StatusRow::readout([
+            "BAKA".to_string(),
+            format!("you {}hp (wins {})", f.hp(0), f.round_wins(0)),
+            format!("foe {}hp (wins {})", f.hp(1), f.round_wins(1)),
+            format!("round {}", f.round() + 1),
+        ]),
+        StatusRow::hint([
+            status,
+            "Square/Circle/Cross attack".to_string(),
+            "Start = quit".to_string(),
+        ]),
     ]
 }
 
@@ -182,23 +352,16 @@ pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
     let mut out = Vec::new();
     if let Some(c) = world.minigames.muscle_contest.as_ref() {
         let flags = world.muscle_contest_flags();
-        out.push(StatusRow::new(
-            format!(
-                "Course {}  Round {}/{}   Coins banked: {}",
-                c.course() + 1,
-                c.round() + 1,
-                c.staged_course_length(&flags),
-                c.tally(),
-            ),
-            PEN_CONTEST,
-            true,
-        ));
+        out.push(StatusRow::readout([
+            format!("Course {}", c.course() + 1),
+            format!("Round {}/{}", c.round() + 1, c.staged_course_length(&flags)),
+            format!("Coins banked: {}", c.tally()),
+        ]));
     }
-    out.push(StatusRow::new(
-        format!("      Turn: {}         HP Left: {}", s.turn(), s.hp_left()),
-        PEN_STATUS,
-        true,
-    ));
+    out.push(StatusRow::readout([
+        format!("Turn: {}", s.turn()),
+        format!("HP Left: {}", s.hp_left()),
+    ]));
     let status = match s.phase() {
         // The Ra-Seru list, opened from the ring's Right chip.
         MusclePhase::Select if s.magic_open() => {
@@ -219,22 +382,20 @@ pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
                     )
                 })
                 .unwrap_or_else(|| "(no Seru learned)".to_string());
-            format!(
-                "Ra-Seru {}/{}: {}   MP {}   (Up/Down, Cross = cast, Circle = back)",
-                cursor + 1,
-                rows.len().max(1),
-                line,
-                s.mp(0),
-            )
+            vec![
+                format!("Ra-Seru {}/{}: {}", cursor + 1, rows.len().max(1), line),
+                format!("MP {}", s.mp(0)),
+                "Up/Down, Cross = cast, Circle = back".to_string(),
+            ]
         }
         // The ring, the entry and the confirm draw as battle chrome.
-        MusclePhase::Select => String::new(),
-        MusclePhase::Resolve => "resolving...".to_string(),
+        MusclePhase::Select => Vec::new(),
+        MusclePhase::Resolve => vec!["resolving...".to_string()],
         // Retail's turn top is automatic (`World::tick` calls `next_turn`
         // with no press), so this row names no button.
         // The turn's play-out: the acting side and its running damage tally,
         // held for as long as the surface replays the plays.
-        MusclePhase::TurnOver => match world.muscle_playback_tally() {
+        MusclePhase::TurnOver => vec![match world.muscle_playback_tally() {
             Some((attacker, total)) => format!(
                 "{} attack  TOTAL {total}",
                 if attacker == 0 { "Your" } else { "Foe's" }
@@ -243,31 +404,25 @@ pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
                 let [taken, dealt] = s.last_turn_damage();
                 format!("turn: dealt {dealt}, took {taken}")
             }
-        },
-        MusclePhase::Won | MusclePhase::Lost => String::new(),
+        }],
+        MusclePhase::Won | MusclePhase::Lost => Vec::new(),
     };
-    out.push(StatusRow::new(
-        format!(
-            "{status}   you {}hp  foe {}hp  time {}/{}   (Start = quit)",
-            s.hp(0),
-            s.hp(1),
-            s.time_meter(),
-            TIME_METER_MAX,
-        ),
-        PEN_PROMPT,
-        false,
-    ));
+    out.push(StatusRow::hint(status.into_iter().chain([
+        format!("you {}hp", s.hp(0)),
+        format!("foe {}hp", s.hp(1)),
+        format!("time {}/{}", s.time_meter(), TIME_METER_MAX),
+        "Start = quit".to_string(),
+    ])));
     out
 }
 
-/// The dance floor's rows: score / gauge / lane, the arrow the beat calls for
-/// with the last judgement, and the beat track - the COMBO / beat label and
-/// the upcoming eight cells of the dancer's own chart row at the ported
-/// scroll positions (`FUN_801d2524`).
+/// The dance floor's two rows: score / gauge / lane, then the arrow the beat
+/// calls for with the last judgement.
 ///
-/// The displayed combo slot uses the track renderer's own level-widened beat
-/// mask and narrow flash window, which is NOT the judge's combo slot
-/// (`DanceGame::on_combo_slot`) - the judged cell is not the displayed cell.
+/// The beat track is not a caption row. It is the game's own beat bar, which
+/// the HUD frame draws at retail's anchor - as the retail quads when the
+/// hall's HUD page is resident, as `DanceGame::hud_frame_rows`' text cells
+/// when it is not - so a second copy spelt in ASCII would say nothing new.
 pub fn dance_status_rows(g: &DanceGame, last_judge: Option<&Judge>) -> Vec<StatusRow> {
     let arrow = match g.required_symbol() {
         Some(1) => "< (Square)",
@@ -291,74 +446,89 @@ pub fn dance_status_rows(g: &DanceGame, last_judge: Option<&Judge>) -> Vec<Statu
             None => ' ',
         })
         .collect();
-    let mut out = vec![
-        StatusRow::new(
-            format!(
-                "DANCE  score {}  gauge {}  lane {}",
-                score_digits.trim_start(),
-                g.gauge(),
-                g.lane()
-            ),
-            PEN_STATUS,
-            true,
-        ),
-        StatusRow::new(
-            format!("press {arrow}   {judge}   (Start = quit)"),
-            PEN_PROMPT,
-            false,
-        ),
-    ];
-    let beat = g.beat_index();
-    let frac = g.intra_beat_phase();
-    let level = g.gauge() / GAUGE_STEP;
-    let bright = dance_combo_window_bright(beat, level, frac);
-    out.push(StatusRow::new(
-        if bright { "COMBO" } else { "beat " },
-        PEN_EXTRA,
-        bright,
-    ));
-    // The x base is this row's pen, not the overlay's screen constant; the
-    // per-note offset is retail's.
-    const TRACK_BASE_X: i32 = 60;
-    if let Some(row) = g.chart_row(g.lane()) {
-        for i in 0..8u32 {
-            let cell = row[((beat + i) % row.len() as u32) as usize];
-            let glyph = match cell {
-                1 => "<",
-                2 => ">",
-                3 => "^",
-                _ => ".",
-            };
-            out.push(StatusRow::new(
-                glyph,
-                (dance_beat_track_note_x(TRACK_BASE_X, i, frac), PEN_EXTRA.1),
-                i == 0 && !g.in_dead_zone(),
-            ));
-        }
-    }
-    out
+    vec![
+        StatusRow::readout([
+            "DANCE".to_string(),
+            format!("score {}", score_digits.trim_start()),
+            format!("gauge {}", g.gauge()),
+            format!("lane {}", g.lane()),
+        ]),
+        StatusRow::hint([
+            format!("press {arrow}"),
+            judge.to_string(),
+            "Start = quit".to_string(),
+        ]),
+    ]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn no_dome_session_draws_no_rows() {
-        assert!(muscle_status_rows(&World::new()).is_empty());
+    const KEYS: FishingKeys<'static> = FishingKeys {
+        cast: "Circle",
+        reel_a: "Cross",
+        reel_b: "Square",
+        menu: "Triangle",
+        quit: "Start",
+        prizes: "P",
+    };
+
+    fn host(slot_machine_drawn: bool) -> StatusHost<'static> {
+        StatusHost {
+            slot_machine_drawn,
+            fishing_keys: KEYS,
+        }
     }
 
-    #[test]
-    fn every_row_sits_on_the_stage_pens() {
-        let pens = [PEN_CONTEST, PEN_STATUS, PEN_PROMPT, PEN_EXTRA];
+    fn slot_machine() -> SlotMachine {
         use legaia_engine_minigames::slot_machine::SYMBOL_COUNT;
         use legaia_minigame_formats::slot_payout::SlotPayoutTable;
         let payouts = SlotPayoutTable {
             payouts: [2u8; SYMBOL_COUNT],
         };
-        let rows = slot_status_rows(&SlotMachine::new(payouts, 1, 50));
+        SlotMachine::new(payouts, 1, 50)
+    }
+
+    #[test]
+    fn no_dome_session_has_no_rows() {
+        assert!(muscle_status_rows(&World::new()).is_empty());
+    }
+
+    #[test]
+    fn no_minigame_mode_has_no_caption() {
+        assert_eq!(caption(&World::new(), &host(false)), None);
+    }
+
+    #[test]
+    fn slot_rows_are_a_readout_then_the_keys() {
+        let rows = slot_status_rows(&slot_machine());
         assert_eq!(rows.len(), 2);
-        assert!(rows.iter().all(|r| pens.contains(&r.pen)));
-        assert!(rows[1].text.ends_with("(Start = cash out + quit)"));
+        assert_eq!(rows[0].kind, RowKind::Readout);
+        assert_eq!(rows[0].clauses[0], "SLOTS");
+        assert_eq!(rows[0].clauses.last().unwrap(), "coins 50");
+        assert_eq!(rows[1].kind, RowKind::Hint);
+        assert_eq!(rows[1].clauses.last().unwrap(), "Start = cash out + quit");
+    }
+
+    #[test]
+    fn a_slot_machine_that_draws_itself_keeps_the_caption_live_and_empty() {
+        let mut w = World::new();
+        w.mode = SceneMode::SlotMachine;
+        w.minigames.slot_machine = Some(slot_machine());
+        let fallback = caption(&w, &host(false)).expect("slot mode is a minigame");
+        assert_eq!(fallback.game, StatusGame::Slot);
+        assert_eq!(fallback.rows.len(), 2);
+        assert!(fallback.title_line().contains(" | "));
+        let drawn = caption(&w, &host(true)).expect("still live");
+        assert!(drawn.rows.is_empty());
+        assert_eq!(drawn.title_line(), "");
+    }
+
+    #[test]
+    fn an_empty_clause_leaves_no_separator() {
+        let row = StatusRow::hint(["press - (rest)", "", "Start = quit"]);
+        assert_eq!(row.clauses.len(), 2);
+        assert_eq!(row.line(), "press - (rest)  Start = quit");
     }
 }

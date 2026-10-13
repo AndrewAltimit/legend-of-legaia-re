@@ -346,6 +346,8 @@ is reached at runtime.
 | play clock | `symbols_same` on `advance_play_time` across the two menu draw sites. |
 | walk-ground render surface | `symbols_all` on `field_ground::render_positions` (the sink) and `render_indices` (the winding) across the native mesh builder and the play page's ground exports. |
 | CD-XA staging | `symbols_all` on `xa_banks::install_shout_file` / `install_clip_file` across the native boot's two bank readers and the play page's `play_xa_install`. |
+| placed-object live model | `symbols_all` on `field_env::live_placed_model` + `object_draw_turn_matrices` + `object_draw_displacements` across the native redraw and the play page's `field_placement_live_models`. |
+| light-source rows | `symbols_all` on `field_lit_mesh` + `field_light` across the native `rebuild_field_lit_meshes` and the play page's `field_mesh_posed_lit`; `symbols_same` on `scene_color_grade` / `frame_grade` across the two mesh builds, so neither keys its lit rows on the grade. |
 | visible-tile crop | `symbols_all` on `field_view_window::field_view_cells` + `framing_is_retail` (whether a frame crops), `terrain_draw_visible` (the terrain list) and `field_ground::crop_indices` (the ground) across the native redraw / ground re-upload and the play page's crop exports. |
 | dance-hall placement composition | `symbols_all` on `EnvDraw::place_point` across the native venue upload (`build_dance_venue_gpu`) and the browser bake (`DanceEnv::append_draw`). |
 | Muscle Dome surface cadence | `symbols_all` on `MuscleDomeSurface::frame_at` + `sim_ticks` across the native `refresh_muscle_dome_gpu` and the play page's `play_mg_muscle_scene_frame`. |
@@ -1184,7 +1186,7 @@ decidable per instance, not from a source pattern.
 | **A draw list that carries half a mesh.** | A surface running `tmd_to_vram_mesh` alone drops every untextured prim. | Assert the **untextured corner count**, never the total. |
 | **Length parity is not coverage.** | A white `a_flat_rgba` stream has the right length. | Assert content. |
 | **Two hosts agreeing on a wrong law.** | Both laid the crawl out in surface pixels with 1x glyphs. | Only a retail frame flags it. |
-| **A hint string is an unpaired constant.** | Slot and Baka prompts named retired buttons on both hosts. | One engine text taking each host's key names (`PondSession::status_rows`, `minigame_status`). |
+| **A hint string is an unpaired constant.** | Slot and Baka prompts named retired buttons on both hosts. | One engine text taking each host's key names (`minigame_status::caption` over a `StatusHost`). |
 | **A stateless replay standing in for a stateful kernel.** | The minigames page replayed `FirstVisitHub` by tick: no press, no XA line. | Step a live hub (`muscle_first_visit_reset` / `_step`). |
 | **Two hosts running different engines.** | Fishing was modelled twice; `catch_hud_draws` got a literal `0` depth because one model had no `DAT_801d9298`. | Delete the second model. |
 
@@ -1217,9 +1219,7 @@ reverse-engineering questions, so they are not on
 | battle body blend | Native keys the posed override by TMD index (two bodies sharing a TMD share one); the page orders blend passes per mesh, not per prim. |
 | save rack port 1 | Native mounts its `.lgsf` directory as port 1 and `--card` as port 2; the page mounts two card images and resumes `.lgsf` through the save bar. Closing it is storage work. |
 | per-tick screen owners | Both hosts hand a frame to the pause menu, then name entry, then a menu-overlay screen, each spelling that order itself; no gate reads the JS side. |
-| placed-object move / turn tables | The page still applies them in `play-view-field-sync.js`, in its own Y-up frame. |
-| prologue lit-row ambient | Native stages the dim ambient (`0x20`, `DAT_8007B788`) on light-source rows; the page draws them neutral. |
-| screen prims vs text | The page concatenates `under` and `over` into one sort; native draws its text between them. |
+| lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
 | STR decoders | The page counts assembled frames and assumes 4-bit XA; native counts decoded frames and reads the bit depth. |
 | shop panel rows, inn prompt text | Written once per host over shared leaves; they agree today. |
 | level-up banner without menu chrome | Raw surface pixels natively, stage-scaled on the page; only a run with no system-UI atlas takes that path. |
@@ -1227,7 +1227,8 @@ reverse-engineering questions, so they are not on
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | fishing exchange panel pen | Native adds the venue overlay's idle sway (`FUN_801d03b0`). |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
-| absent on both | Dialogue text blip, door cue, footstep cue, casino prize-counter cues, world-map location labels ([`place-names.md`](../formats/place-names.md)), the Baka in-duel pause menu (`0xBE` / `0xBF`; the pause edge `0x110` includes Triangle, which the cameo test reads held). |
+| absent on both | The map display's player pointer ([`world-map.md`](../subsystems/world-map.md#the-map-display---prot-0981)), the Baka in-duel pause menu (`0xBE` / `0xBF`; the pause edge `0x110` includes Triangle, which the cameo test reads held). |
+| not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
 
 ### The minigames page has no `World`
 
@@ -1353,7 +1354,9 @@ skips the picker's story baseline, which would otherwise clear system flags
 |---|---|
 | NPC draw pose (hide, heading, tilt, `actor+0x72` render scale) | `World::field_npc_draw_pose`, `field_npc_render_y`; look key `ActorLook::pose_key_bits` |
 | scripted mesh re-bind | `World::field_npc_live_model` through `SceneHost::model_bank` ([below](#scripted-mesh-re-bind-op-0x0e)) |
-| placed-model swaps | `field_env::placed_model_swaps`, `live_placed_model` |
+| placed-model swaps | `field_env::placed_model_swaps` |
+| placed-object live model (script-turned, script-moved) | `field_env::live_placed_model` over `World::object_draw_turn_matrices` + `object_draw_displacements` ([below](#placed-object-live-model)) |
+| light-source rows | `engine-field::field_lit_mesh` under `World::presentation.field_light`, in every scene ([below](#light-source-rows-in-a-graded-scene)) |
 | placement tilt | `field_env::EnvDraw::place_point` (`Rx * Ry * Rz`, `FUN_80026988`) |
 | scene-hidden lead | `World::actor_hidden_by_scene` |
 | walk ground | `field_ground::render_positions` / `render_indices` / `crop_indices` |
@@ -1363,7 +1366,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 | occlusion fade | `field_occlusion::host_fade_armed`, `FadeRamp`, `player_body_centre` |
 | scene lights | `engine-screens::field_frame::field_scene_lights` |
 | clear colour | `engine-screens::field_frame::frame_clear_color`, `battle_stage_clear::scene_clear` |
-| prologue grade | `World::frame_grade`; lit-row restage `engine-system::fade::apply_prologue_lit_ambient` over `legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit` |
+| prologue grade | `World::frame_grade` |
 | object-effect clip (field-VM `4C C2 1`) | `World::object_effect_mesh_clip` ([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)) |
 | world-map markers | `legaia_engine_core::world_map_markers` + `screen_prim::world_map_marker_prim` |
 | narration crawl, title card | `cutscene_text_stage_draws` (stage pixels) |
@@ -1377,6 +1380,45 @@ ticks it headless, and `web-viewer::field_actors::FieldActors` +
 `LegaiaRuntime` side by side and requires floor-wave offsets, ground positions,
 prop pose keys, actor transforms and the **written** VRAM texel set to agree
 tick for tick.
+
+<a id="placed-object-live-model"></a>
+
+**Placed-object live model.** Retail's case-5 draw (`FUN_8001ADA4`) reads the
+actor, not the `.MAP` record, so a placed object a script turns (op `0x38`,
+`4C 48`) or moves (`A3`, `4C 42` under the `0x20000000` height law) draws
+turned about its own origin and then displaced. `field_env::live_placed_model`
+is that composition, in the retail Y-down frame, and both hosts hand it the
+same two world tables. The native window passes its baked model. The page
+passes the spawn model it rebuilds from the same inputs
+(`scene_lighting::placement_model` over the coplanar lift and
+`World::placed_floor_offsets`) and flips the **result** into its Y-up frame
+once (`field_placement_live_models`), so `play-view-field-sync.js` adopts a
+finished matrix or returns the draw to the one it baked - it holds no rotation
+or displacement arithmetic. A page that takes the two tables apart instead has
+to conjugate the turn and negate the displacement's Y itself, which is a
+second spelling of the composition in a second frame.
+
+<a id="light-source-rows-in-a-graded-scene"></a>
+
+**Light-source rows in a graded scene.** The dim ambient a prologue leg shows
+is not a prologue staging: every scene load resets the back colour
+`_DAT_8007B788` to `0x202020` with the light trio (`FUN_8003AEB0`,
+`0x8003B4B4..0x8003B4D8`), and `FieldLight::SCENE_LOAD` carries it. So the lit
+rows of `opdeene` / `opstati` / `opurud` go through `field_lit_mesh` like any
+scene's, on both hosts, and neither mesh build keys its lit rows on
+`World::scene_color_grade`. Across the three legs the only drawn lit rows are
+five terrain meshes of `opstati` (env slots `1`, `4`, `13`, `14`, `15`);
+`opdeene` holds twelve lit vertices on two meshes no draw list places, and
+`opurud` none.
+
+What neither host matches is the step after it. In palette-collapse mode the
+shaders run every packet colour but an exact `0x80` through
+`prologue_sepia_word`, the port's stand-in for the two `4C E6` ops rewriting
+the resident TMDs' **baked** colour words. A lit row has no baked word - its
+colour is computed per draw - so retail's lit rows reach the GPU as the light
+kernel left them and the port's take the sepia curve on top. That is a
+difference from retail on both hosts, pending a retail frame of `opstati`
+to size it; no state in the library holds that scene.
 
 <a id="scripted-mesh-re-bind-op-0x0e"></a>
 
@@ -1444,9 +1486,23 @@ remap dropped, and binds the four ABR equations through
 `TmdRenderer._setSemiBlend` (`blendColor` carries mode 0's `0.5` and mode 3's
 `0.25`).
 
+**Present order.** The composer returns two lists, and the frame is scene,
+`under`, the text layer, `over` on both hosts. The native renderer takes them
+as `RenderTarget::SceneWithScreenPrims { under_overlay, prims }`. The page
+builds each list through its own ordering-table walk into one buffer and
+reports the boundary (`play_screen_prim_over_run_start`); it draws the leading
+runs after the 3D pass and the rest after its text. Its text is a 2D canvas
+stacked above the GL view, which nothing in GL can draw over, so on a frame
+that carries `over` primitives `ScreenPrimPass.drawLayer` composites the 2D
+layers into the GL frame first and their DOM canvases are hidden for that
+frame; a frame with none keeps the plain DOM stack. One sort over both lists
+under the canvas left every `over` primitive beneath the text: a warp's fade,
+the shop and pause wipes and the cinematic bars darkened the scene and left
+the dialogue, the party readout and the menu at full brightness.
+
 | Layer | Kernel | Notes |
 |---|---|---|
-| append order, under / over the HUD | `engine-screens::screen_layers::compose_screen_prims` over `HostScreenPrims` | A tie inside a bucket breaks by append order. Native draws `under_overlay` (fog, move strips, light pools) before its 2D overlays, so the HUD stays bright under a subtractive light mask, as retail's does. |
+| append order, under / over the HUD | `engine-screens::screen_layers::compose_screen_prims` over `HostScreenPrims` | A tie inside a bucket breaks by append order. Both hosts draw `under` (fog, move strips, light pools) before the text layer, so the HUD stays bright under a subtractive light mask, as retail's does, and `over` after it. |
 | battle transition (confetti, shatter, curtain, swirl, ring, backdrop, fade) | `render-kernels::battle_intro` | Per host: turning the drawn frame into RGBA (`Renderer::capture_rgba`; `gl.readPixels` into `play_intro_land_capture`). The page has one VRAM texture, so `field_vram_bytes` returns the captured clone while one is live. |
 | field fog sheets | `World::fog_render_step(&view)` + `screen_prim::fog_puff_prim` | Retail's `FUN_8003F348` ages and emits in the render pass. Both resolve the camera without the cutscene view; gate `World::fog.gate`. Depth through `World::field_fx_view` ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)). |
 | screen-effect wash (op `0x34` sub-0) | `screen_prim::screen_effect_push_prims`, `_split` | `FUN_80024EE4(a0, a1, packed)`: `a0` is an OT bucket, `a1` an ABR equation, `packed` a GP0 colour word with red in the low byte. Glyphs sit at bucket `1`; a push at bucket `0` draws over them ([`cutscene.md`](../subsystems/cutscene.md#a-push-in-front-of-the-text-or-behind-it)). |
@@ -1725,7 +1781,27 @@ inside it. Tier 12 measures the inside, and the pair carries a
 | dance | `World::enter_dance` (arms `dance_countin`), `dance::CountIn`, `FinishCountdown`, `DanceTutorial`; `DanceGame::advance_body_clips`, `DanceCastSurface::frame`; `dance_venue::DanceVenue::build`, `sync_dance_venue`; `stage_dance_hud_vram`, with `World::minigames.dance_hud_art_staged` as the one residency predicate; `World::finish_dance_if_over` | Mesh build and instance transform. |
 | Muscle Dome | `MuscleDomeSession::select_input`; `muscle_dome_scene::MuscleDomeSurface` (`frame_at`, `sim_ticks`, `DomeCamera::vp_raw`); `muscle_ringside::HubTimers::tick`, `HubBackdrop`, `FirstVisitHub`; `ringside_backdrop::ringside_still_quads`, `first_visit_hub_draw`; `SceneHost::dome_lead_fighter`; `World::leave_muscle_dome` | The minigames page keeps its own dome panel (`minigame-muscle.js`). |
 | effect parts | `legaia_engine_minigames::minigame_fx::MinigameFxPool` on `World::minigames.fx`, drawn by `engine-ui::minigame_fx::fx_part_draws` | The minigames page keeps its own instance of the type. |
-| status rows | `engine-core::minigame_status` + `engine-ui::text_lines::status_row_draws_for` | each host's stage transform |
+| status rows | `engine-core::minigame_status::caption` (rows as data: kind + clauses, no stage position) | where the caption shows, and `StatusHost` |
+
+**The status rows are a caption, not a draw.** They are the port's readout of
+the rules state plus the key hints, authored once per game in
+`minigame_status`, and no builder emits them as glyph quads. Both hosts draw a
+game's screen primitives over their text layer, so a row printed in the frame
+at a fixed stage pen lost to the game's own chrome on both: the Baka Fighter
+title logo covered the prompt row, and a long row ran off the right edge. Each
+host shows the caption outside the game picture instead.
+
+| Host | Reads | Shows it in |
+|---|---|---|
+| native window | `PlayWindowApp::minigame_caption` | the title bar (`sync_minigame_caption_title`, `MinigameCaption::title_line`) |
+| browser play page | `LegaiaRuntime::minigame_caption`, exported as `play_mg_caption_json` | the strip under the canvas, which rides fullscreen ([site-shell](site-shell.md#the-play-pages-minigame-status-rows-sit-under-the-canvas)) |
+
+The native window uses the title bar because its default surface is exactly
+the 4:3 stage: there is no margin to move a row into, and every pixel of the
+surface belongs to the game. A `StatusHost` carries the two things only a host
+knows - whether its slot machine draws itself (the rows are then empty) and
+what its fishing keys are called. A tier-3 `SIM_PAIRS` row requires both
+`minigame_caption` sites to build one.
 
 <a id="the-fishing-point-exchange-sub-screen-one-session-on-two-hosts-a-query-on-the-third"></a>
 
@@ -1795,9 +1871,11 @@ pixel changes. The `/world-overview/` viewer's ocean plane stays flat.
 **The `opdeene` billboards.** The scene pack's one-quad billboards (pack slots
 `4 8 9 10 11 13 16 28`, each a single `FT4` on descriptor row 4) carry disc
 colour word `0x80`, which retail's prologue grade rewrites to `(98, 94, 42)`.
-`0x80` is also the marker the mesh builder uses for light-source rows, so the
-lit-row ambient restage keys on a per-vertex mask
-(`tmd_to_vram_mesh_filtered_lit`) instead of on the value. Retail holds its own
+`0x80` is also the marker the mesh builder uses for light-source rows, so
+anything that treats lit rows apart keys on the builder's per-vertex mask
+(`tmd_to_vram_mesh_filtered_lit_vertices`, what `field_lit_mesh` shades)
+instead of on the value: a colour-keyed pass over the lit rows drew these
+billboards black. Retail holds its own
 exactly-black words (`2712` of `18425`) and draws those meshes dark.
 
 ## The field readout over the battle transition

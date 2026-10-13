@@ -56,7 +56,11 @@ fn render_mnemonic(insn: &Insn) -> String {
         CamCfg { op0, op1 } => format!("CamCfg op0=0x{op0:02X} op1=0x{op1:02X}"),
         GiveItem { item_id } => format!("GiveItem item_id={item_id}"),
         AddMoney { signed_24 } => format!("AddMoney delta={signed_24}"),
-        SetItemCount { slot, count } => format!("SetItemCount slot={slot} count={count}"),
+        SetEquipSlot { selector, item } => format!(
+            "SetEquipSlot char={} slot={} item=0x{item:02X}",
+            selector >> 4,
+            selector & 0xF
+        ),
         PartyAdd { char_id } => format!("PartyAdd char_id={char_id}"),
         PartyRemove { char_id } => format!("PartyRemove char_id={char_id}"),
         CondJmp {

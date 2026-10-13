@@ -260,16 +260,24 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["install_clip_file"],
     },
     {
-        "what": "fishing session affordance row, native vs play page - each "
-        "host names the same three session actions (menu, quit, prizes) "
-        "with its own keys; the page once printed only the menu, so a "
-        "player there never learned how to leave or reach the exchange",
+        "what": "minigame status caption, native vs play page - the engine's "
+        "status rows (rules readout + key hints for the slot machine, Baka "
+        "Fighter, the Muscle Dome, the dance and fishing) are one row model, "
+        "`minigame_status::caption`, shown outside the game picture: the "
+        "window's title bar, the page's strip under the canvas. Each host "
+        "used to draw them in the frame as glyph quads at fixed stage pens, "
+        "under the game's own chrome, and the page then picked them back "
+        "out of its draw list by pen and ink. Both sites must build the "
+        "caption from a `StatusHost` - which is where a host says whether "
+        "its slot machine draws itself and names all of its fishing keys "
+        "(the page once printed only the menu key, so a player there never "
+        "learned how to leave or reach the exchange)",
         "sites": {
-            "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
-            "web": ("crates/web-viewer/src/play_fishing.rs", "fishing_status_draws"),
+            "native": ("crates/engine-shell/src/window/minigames.rs", "minigame_caption"),
+            "web": ("crates/web-viewer/src/play_minigames.rs", "minigame_caption"),
         },
-        "mode": "pattern_same",
-        "pattern": r"= (menu|quit|prizes)\b",
+        "mode": "symbols_all",
+        "symbols": ["StatusHost", "FishingKeys", "slot_machine_drawn", "prizes"],
     },
     {
         "what": "effect-pool billboard TSB word, native vs play page (battle "
@@ -557,7 +565,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "status line and no frame at all. Both sites must read the rows",
         "sites": {
             "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
-            "web": (WEB_PLAY_ARENA, "dance_status_draws"),
+            "web": (WEB_PLAY_ARENA, "dance_hud_text_draws"),
         },
         "mode": "symbols_all",
         "symbols": ["hud_frame_rows"],
@@ -1092,6 +1100,58 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_same",
         "symbols": ["advance_play_time"],
+    },
+    {
+        "what": "light-source rows, native vs play page - TMD rows with group "
+        "flags 0x10..=0x17 carry no colour word; retail's NCCS / NCCT handlers "
+        "colour them from the live field light, whose scene-load back colour "
+        "(0x202020) is the dim ambient every scene starts under. Both hosts "
+        "shade through `field_lit_mesh` under `World::presentation.field_light`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/field_render.rs",
+                "rebuild_field_lit_meshes",
+            ),
+            "web": ("crates/web-viewer/src/play/field_mesh.rs", "field_mesh_posed_lit"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_lit_mesh", "field_light"],
+    },
+    {
+        "what": "light-source rows in a graded scene, native vs play page - the "
+        "native mesh upload used to replace the light kernel with a flat 0x20 "
+        "on the three prologue legs (keyed on `scene_color_grade`) while the "
+        "page shaded them like any scene. Neither mesh build may key its lit "
+        "rows on the grade: the grade is the palette's and the baked words'",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/assets/scene_geometry.rs", None),
+            "web": ("crates/web-viewer/src/play/field_mesh.rs", None),
+        },
+        "mode": "symbols_same",
+        "symbols": ["scene_color_grade", "frame_grade"],
+    },
+    {
+        "what": "placed-object live model, native vs play page - retail's "
+        "case-5 draw reads the actor, so a placed object a script has turned "
+        "(op 0x38, `4C 48`) or moved (`A3`, `4C 42`) draws turned about its own "
+        "origin and then displaced. The page used to take the two tables apart "
+        "and redo the composition in JavaScript, conjugated into its Y-up "
+        "frame; both hosts now hand `World::object_draw_turn_matrices` and "
+        "`World::object_draw_displacements` to `field_env::live_placed_model`, "
+        "and the page flips the finished model once",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (
+                "crates/web-viewer/src/play/placements.rs",
+                "field_placement_live_models",
+            ),
+        },
+        "mode": "symbols_all",
+        "symbols": [
+            "live_placed_model",
+            "object_draw_turn_matrices",
+            "object_draw_displacements",
+        ],
     },
 ]
 

@@ -29,7 +29,7 @@ struct TestHost {
     bgm_calls: Vec<(u16, u8)>,                  // (text_id, sub_op)
     give_item_calls: Vec<u8>,                   // GIVE_ITEM item_id list
     money_deltas: Vec<i32>,
-    item_writes: Vec<(u8, u8)>, // (slot_byte, count)
+    equip_writes: Vec<(u8, u8)>, // (selector, item)
     party_added: Vec<u8>,
     party_removed: Vec<u8>,
     scripted_battles: Vec<(u8, u8)>, // op 0x3E `op0 < 100` / `0xFF` (op0, row)
@@ -617,8 +617,8 @@ impl FieldPartyInventoryHost for TestHost {
         self.money_deltas.push(delta);
     }
 
-    fn set_item_count(&mut self, slot_byte: u8, count: u8) {
-        self.item_writes.push((slot_byte, count));
+    fn set_equip_slot(&mut self, selector: u8, item: u8) {
+        self.equip_writes.push((selector, item));
     }
 
     fn party_add(&mut self, char_id: u8) -> bool {

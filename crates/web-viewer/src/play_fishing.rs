@@ -51,16 +51,6 @@ use legaia_engine_ui::{
 };
 use wasm_bindgen::prelude::*;
 
-/// Stage-pixel pen for the phase / prompt status line, matching the native
-/// window's fishing line at `(8, 62)`.
-const STATUS_PEN: (i32, i32) = (8, 62);
-/// Second status row (the native window's `(8, 80)` hint line).
-const HINT_PEN: (i32, i32) = (8, 80);
-/// Third row: the session affordances (menu / quit / prizes), the native
-/// window's `(8, 98)` line. Its own row because the reel hint plus the
-/// affordances overrun the 320-pixel stage on one line.
-const KEYS_PEN: (i32, i32) = (8, 98);
-
 /// The empty payload. Kept as one literal so every early return agrees.
 const CLOSED: &str = r#"{"open":false,"sprites":[],"texts":[],"bars":[]}"#;
 
@@ -203,40 +193,6 @@ impl LegaiaRuntime {
     /// world.
     fn fishing_session(&self) -> Option<&PondSession> {
         self.scene_host.host()?.world.minigames.fishing.as_ref()
-    }
-
-    /// The phase / prompt status rows the native window prints above the retail
-    /// HUD, so a player can tell which phase the session is in before the
-    /// sprite page exists. The text is the engine's (`PondSession::status_rows`);
-    /// the key names are read from the page's **live** binding table
-    /// ([`crate::pad_bindings::live_mapping`]), so a rebind shows here. The
-    /// trailing affordances are the ones the native window lists (menu, quit,
-    /// prizes): Triangle opens the venue hub, Start is the engine's minigame
-    /// escape, and the prize exchange is this page's button beside the frame
-    /// (the native window's `P` key).
-    fn fishing_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        let Some(s) = self.fishing_session() else {
-            return Vec::new();
-        };
-        let white = [1.0, 1.0, 1.0, 1.0];
-        let dim = [0.65, 0.72, 0.8, 1.0];
-        let mapping = crate::pad_bindings::live_mapping();
-        let key = |button: &'static str| -> String {
-            mapping
-                .key_label_for_button(button)
-                .unwrap_or(button)
-                .to_string()
-        };
-        let (line, hint) = s.status_rows(&key("Circle"), &key("Cross"), &key("Square"));
-        let keys = format!(
-            "{} = menu, {} = quit, Prize exchange button = prizes",
-            key("Triangle"),
-            key("Start")
-        );
-        let mut out = ui::text_draws_for(&font.layout_ascii(&line), STATUS_PEN, white);
-        out.extend(ui::text_draws_for(&font.layout_ascii(&hint), HINT_PEN, dim));
-        out.extend(ui::text_draws_for(&font.layout_ascii(&keys), KEYS_PEN, dim));
-        out
     }
 
     /// The venue hub's draws (menu, help pages, tackle list) - empty while no
@@ -499,7 +455,9 @@ impl LegaiaRuntime {
             None => FishingCaptions::placeholder(),
         };
         let mut texts = ui::fishing_hud_draws_for(font, &items, &captions, &atlas, (0, 0));
-        texts.extend(self.fishing_status_draws(font));
+        // The phase line, the reel hint and the session affordances are not
+        // text in this frame: they are the caption
+        // (`play_mg_caption_json`, `minigame_status::fishing_status_rows`).
         // The venue's point-exchange sub-screen, when one is open. This page
         // used to answer the rows as a JSON side-channel only
         // (`play_fishing_prizes_json`), so the screen the native window

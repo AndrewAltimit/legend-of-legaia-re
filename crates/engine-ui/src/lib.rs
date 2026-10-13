@@ -78,6 +78,7 @@ mod text_balloon_box;
 pub mod text_lines;
 mod tile_board_prompt;
 mod title_save;
+mod world_map_labels;
 
 pub use battle_hud::*;
 pub use battle_timed_fight_strip::*;
@@ -91,6 +92,7 @@ pub use menu::window_dispatch::*;
 pub use text_balloon_box::*;
 pub use tile_board_prompt::*;
 pub use title_save::*;
+pub use world_map_labels::*;
 
 /// One textured quad in screen space. Coordinates are pixel-space relative
 /// to the top-left of the surface; the renderer converts to NDC at draw

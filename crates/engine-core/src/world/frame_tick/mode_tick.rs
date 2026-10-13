@@ -333,6 +333,9 @@ impl World {
         let cadence = self.clock.frame_step.max(1);
         let actor_tick_fired = self.clock.actor_vsync_accum >= cadence && runs_master_driver;
         self.clock.game_tick_fired = actor_tick_fired;
+        // The script contexts stepped below time themselves on this clock
+        // (`FrameClock::script_frame_delta`).
+        self.clock.game_tick_live = self.clock.display_frame_step == 1 && runs_master_driver;
         if actor_tick_fired {
             self.clock.actor_vsync_accum = 0;
             self.tick_actor_physics();
@@ -752,6 +755,19 @@ impl World {
                     self.tick_field_attached_lights();
                     self.tick_screen_fx();
                 }
+                None
+            }
+            SceneMode::WorldMap if self.world_map.map_display.is_some() => {
+                // The map display (retail game mode `0x0D`) owns the frame:
+                // its handler `FUN_80025F2C` runs the display tick and the
+                // render tick, and none of the walk frame.
+                if let Some(ctrl) = self.world_map.ctrl.as_mut() {
+                    // The walk controller's one-tick reports do not outlive
+                    // the frame that raised them.
+                    ctrl.map_display_requested = false;
+                    ctrl.entry_fade_draw = None;
+                }
+                self.tick_map_display();
                 None
             }
             SceneMode::WorldMap => {

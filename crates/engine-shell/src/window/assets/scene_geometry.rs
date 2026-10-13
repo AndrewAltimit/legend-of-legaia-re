@@ -204,26 +204,6 @@ impl PlayWindowApp {
             // green CLUT[0]" shells over correctly-textured geometry
             // that the unfiltered builder produces.
             let (mut vmesh, lit_vertices) = rtmd.build_filtered_vram_mesh_lit_vertices(&res.vram);
-            let lit_rows: Vec<bool> = lit_vertices.iter().map(Option::is_some).collect();
-            let prologue_graded = self.session.host.world.scene_color_grade().is_some();
-            // Prologue dim ambient on the LIT prim rows. Retail stages the
-            // GTE back/ambient colour `DAT_8007B788` = `0x00202020` (dim,
-            // R=G=B=32) for the prologue cutscene legs vs `0x00FFFFFF` in
-            // town01; the lit rows (0/1) carry no baked colour word, and
-            // their GPU modulation colour comes out of the GTE lighting
-            // sum, whose prologue floor is that dim ambient - so the
-            // opdeene cave-wall shells render dark like the retail tableau
-            // backdrop. Keyed on the builder's lit-row MASK, not on the
-            // colour: a baked word authored at exactly 0x80 reads the same
-            // colour, and the colour test turned every such prim (the
-            // jungle's one-quad bush / branch billboards) black. Scoped to
-            // the prologue legs by the same gate as the sepia grade.
-            if prologue_graded {
-                legaia_engine_system::fade::apply_prologue_lit_ambient(
-                    &mut vmesh.colors,
-                    &lit_rows,
-                );
-            }
             // Coplanar z-fight resolution (`legaia_tmd::mesh::coplanar`):
             // flag double-sided prim pairs for the shaders' per-prim
             // facing discard (retail NCLIP keeps only the camera-facing
@@ -314,10 +294,11 @@ impl PlayWindowApp {
                 Ok(m) => {
                     // The light-source rows: keep the processed mesh so
                     // each env draw can take a copy shaded at its own
-                    // rotation (`rebuild_field_lit_meshes`). The prologue
-                    // legs keep their ambient restage above.
-                    if !prologue_graded
-                        && lit_vertices.len() == vmesh.colors.len()
+                    // rotation (`rebuild_field_lit_meshes`) - the prologue
+                    // legs included: their dim ambient is the scene-load
+                    // back colour the light kernel already carries, not a
+                    // second staging.
+                    if lit_vertices.len() == vmesh.colors.len()
                         && legaia_engine_field::field_lit_mesh::has_lit_rows(&lit_vertices)
                     {
                         lit_sources.insert(meshes.len(), (vmesh.clone(), lit_vertices));
@@ -430,8 +411,7 @@ impl PlayWindowApp {
                             // Light-source rows: each prop's draw takes a
                             // copy shaded at its own rotation
                             // (`rebuild_field_lit_meshes`).
-                            if self.session.host.world.scene_color_grade().is_none()
-                                && posed_lit.len() == vmesh.colors.len()
+                            if posed_lit.len() == vmesh.colors.len()
                                 && legaia_engine_field::field_lit_mesh::has_lit_rows(&posed_lit)
                             {
                                 lit_sources.insert(meshes.len(), (vmesh.clone(), posed_lit));

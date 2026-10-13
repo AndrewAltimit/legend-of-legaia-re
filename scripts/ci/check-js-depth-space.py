@@ -50,6 +50,9 @@ WAIVED = {
     "compares its depth against log2(w)",
     ("webgl-prim-replay.js", "FS_REPLAY"): "no page loads webgl-prim-replay.js; "
     "it draws into its own context",
+    ("play-app.js", "FS_LAYER"): "the text-layer composite "
+    "(`ScreenPrimPass.drawLayer`) draws with the depth test disabled and the "
+    "depth mask off, so its fragment depth is neither compared nor written",
 }
 
 SHADER_RE = re.compile(r"const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*`#version 300 es(.*?)`", re.S)

@@ -122,6 +122,7 @@ mod walk_links;
 
 use beat_records::*;
 use beats::*;
+use continuous::{EXCHANGE, worth_fighting};
 use crossings::*;
 use disc_graph::*;
 use fight_choices::*;

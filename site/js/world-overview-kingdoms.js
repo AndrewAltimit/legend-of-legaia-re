@@ -1,8 +1,8 @@
 /* world-overview-kingdoms.js - per-kingdom data for the world-overview page.
  *
  * The PROT range, camera anchors, top-view framing, fog tint and unplaced-
- * landmark footprint of each of the three kingdoms, plus the fog defaults
- * and the placement-list names and colours. Data only. Published as
+ * landmark footprint of each of the three kingdoms, plus the fog defaults.
+ * Data only. Published as
  * window.LegaiaWorldOverviewKingdoms.
  *
  * Classic script; loads before world-overview-app.js. */
@@ -70,14 +70,8 @@
    * over a ~16384-unit reference). Overwritten when the user uploads a
    * fog_probe.lut.bin via the fog-LUT picker. */
   const DEFAULT_FOG_PARAMS = { enable: 0, zShift: 5, farRef: 12000, color: null };
-  const LIST_NAMES = {
-    0: 'player/system', 1: 'entities', 2: 'background',
-    3: 'reserve_3', 4: 'reserve_4', 5: 'reserve_5', 6: 'extra',
-  };
-  const LIST_COLORS = { 0: '#56B6F5', 1: '#79D279', 2: '#C0C0C0', 6: '#E07028' };
-
   window.LegaiaWorldOverviewKingdoms = {
     KINGDOM_PROT, KINGDOM_CAM, KINGDOM_TOPVIEW_CAM, UNPLACED_TARGET_FOOTPRINT,
-    KINGDOM_FOG_TINT, DEFAULT_FOG_PARAMS, LIST_NAMES, LIST_COLORS,
+    KINGDOM_FOG_TINT, DEFAULT_FOG_PARAMS,
   };
 })();

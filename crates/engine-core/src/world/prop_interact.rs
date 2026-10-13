@@ -333,11 +333,15 @@ impl World {
         // keeps ticking underneath (the cupboard holds open at its clamp).
         if let Some(panel) = id.panel.as_mut() {
             if panel.menu_active() {
+                let mut moved = false;
                 if up {
-                    panel.move_picker_cursor(-1);
+                    moved |= panel.move_picker_cursor(-1);
                 }
                 if down {
-                    panel.move_picker_cursor(1);
+                    moved |= panel.move_picker_cursor(1);
+                }
+                if moved {
+                    self.push_sfx_cue(legaia_engine_dialog::dialog::PICKER_MOVE_CUE);
                 }
             }
             // Same one-frame rule as the inline runner: a menu that opened
@@ -358,6 +362,7 @@ impl World {
                     // Opened this frame, or still sliding in (the pager reads the
                     // choice only once the slide rests): nothing to commit yet.
                 } else if panel.menu_active() {
+                    self.push_sfx_cue(legaia_engine_dialog::dialog::PICKER_CONFIRM_CUE);
                     let choice = panel.picker_cursor();
                     let target = panel.picker().and_then(|pk| pk.jump_target(choice));
                     id.last_choice = Some(choice);

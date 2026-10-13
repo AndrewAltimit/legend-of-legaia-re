@@ -210,6 +210,23 @@ impl PlayWindowApp {
                 stage_scale,
             ));
         }
+        // The overworld map display's place labels: one dialog-skin box per
+        // discovered place, at its projected map position.
+        let labels =
+            legaia_engine_core::world_map_labels::map_display_labels_now(&self.session.host.world);
+        if !labels.is_empty() {
+            let draws: Vec<legaia_engine_ui::MapLabelDraw<'_>> = labels
+                .iter()
+                .map(|l| (l.name.as_slice(), l.sx, l.sy))
+                .collect();
+            out.extend(legaia_engine_ui::map_label_chrome_draws_for(
+                &assets.rects,
+                &self.font,
+                &draws,
+                stage_origin,
+                stage_scale,
+            ));
+        }
         if let Some(lay) = self.tile_board_prompt_layout()
             && let Some(cursor) = self.session.host.world.tile_board_prompt_cursor()
         {

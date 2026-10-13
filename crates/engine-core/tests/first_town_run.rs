@@ -169,7 +169,7 @@ fn first_town_drives_scene_to_field_event_emission() {
             FieldEvent::OpenDialog { .. } => "OpenDialog",
             FieldEvent::DialogDismissed => "DialogDismissed",
             FieldEvent::AddMoney { .. } => "AddMoney",
-            FieldEvent::SetItemCount { .. } => "SetItemCount",
+            FieldEvent::SetEquipSlot { .. } => "SetEquipSlot",
             FieldEvent::PartyAdd { .. } => "PartyAdd",
             FieldEvent::PartyRemove { .. } => "PartyRemove",
             FieldEvent::FieldInteract { .. } => "FieldInteract",

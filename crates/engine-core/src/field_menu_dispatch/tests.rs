@@ -425,6 +425,64 @@ fn apply_equip_outcome_writes_back_to_roster() {
     }
 }
 
+/// The Best Equipment row (slot-browse row 0) commits on the session's own
+/// record and does not end the session, so its swaps reach the world when the
+/// session closes - on a cancel as well, since retail's applier
+/// (`FUN_801CF760`) has already written the record by then.
+#[test]
+fn best_equipment_reaches_the_roster_when_the_session_is_cancelled() {
+    let mut w = fresh_world();
+    w.party.inventory.clear();
+    // Without disc restrictions the id's upper bits name the engine slot:
+    // `0x45 >> 5` is slot 2, body armour, which ranks on its defence.
+    w.party.inventory.insert(0x45, 1);
+    let mut equip_table = EquipmentTable::new();
+    equip_table.set(
+        0x45,
+        legaia_engine_battle::battle_stats::ItemModifier {
+            udf: 8,
+            ldf: 7,
+            ..Default::default()
+        },
+    );
+    let mut s = FieldMenuSubsession::build(
+        FieldMenuRow::Equip,
+        &w,
+        &OptionsState::default(),
+        &fresh_save_slots(),
+        &ChainLibrary::new(),
+        &SpellCatalog::vanilla(),
+        &equip_table,
+    );
+    // Character picker, then Best Equipment on row 0, then back out.
+    s.tick_pad_edge(PadButton::Cross.mask());
+    s.tick_pad_edge(PadButton::Cross.mask());
+    for _ in 0..3 {
+        if !s.is_done() {
+            s.tick_pad_edge(PadButton::Circle.mask());
+        }
+    }
+    assert!(s.is_done());
+    let FieldMenuSubsession::Equip {
+        session, char_slot, ..
+    } = &s
+    else {
+        panic!("expected Equip variant");
+    };
+    assert_eq!(session.best_equipment_swaps().len(), 1);
+    let outcome = apply_equip_outcome(session, *char_slot, &mut w);
+    assert_eq!(outcome, Some(EquipOutcome::Cancelled));
+    assert!(
+        w.party.roster.members[0].equipment().slots.contains(&0x45),
+        "the swap Best Equipment made must be on the live record"
+    );
+    assert_eq!(
+        w.party.inventory.get(&0x45),
+        None,
+        "and the item it put on must have left the bag"
+    );
+}
+
 /// Equipping over an occupied slot returns the swapped-out item to the bag
 /// and removes the newly-equipped one - no item loss, no duplication.
 #[test]

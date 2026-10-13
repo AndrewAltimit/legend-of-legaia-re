@@ -105,6 +105,7 @@ Two environment switches open up a battle state's `camera` channel:
 |---|---|
 | `LEGAIA_RC_CAM_TRACE=1` | to the `camera` detail: the engine's camera phase, live pose and glide target against retail's live pose and tween-table endpoints, the origin-alignment mask, and per combatant both sides' live pair, body pair, heading, clip and monster size class |
 | `LEGAIA_RC_POS_TRACE=1` | on stderr, one line per drive tick: the acting seat, the action state and each of the first four combatants' live pair, body pair, heading, clip and target |
+| `LEGAIA_RC_SEED_TRACE=1` | on stderr, one line per stream the battle search tried (prompt, drive or cast outcome, surprise opening, measured ground drift) and one for the undrift re-run's verdict |
 
 The first says which component of a framing misses its endpoint and which
 input put it there - a heading, a body pair, a yaw counter; the second
@@ -261,6 +262,20 @@ also holds its tile against them until the player steps off
 portal that already fired, and re-engaging it crossed the door a second time
 inside the settle window. BGM starts are recorded by a director on the scene
 host's event route.
+
+The seed also hands over the **frame step** retail was running at
+(`RetailObs::frame_step`, rebuilt from the frame-time ring at `0x80084098` as
+the display lag is; `World::seed_frame_step`, `LEGAIA_SEAT_FRAME_STEP` for the
+image child). The step is measured, not installed: `FUN_80016B6C` takes the
+longest of its last sixteen frame times and only raises it to the floor
+`0x8007B9D8`, so a scene on a floor of `2` runs at `3` wherever a frame costs
+more than two fields. Many of the field captures do - `koin1`,
+`koin3`, `kor5`, `teien`, `jouine`, the overworld - and the engine, whose tick
+is scheduled rather than measured, keeps the floor. That is load history like
+the camera block, and it decides which sums a script's `0x4A` wait can hold
+([cutscene](../subsystems/cutscene.md#record-pacing---the-60-hz-sub-clock)): a
+gate on a wait of `15` is never met on a step of `2`. The seeded step never
+goes under the engine's own floor.
 
 **The image channel** comes from `play-window`, the real renderer, run as a
 child process from a scratch directory under the report, and seeded the same
@@ -666,6 +681,7 @@ for a reason that is not a port defect:
 | [Stand the combatants](#where-the-combatants-stand) | live ground `+0x34` / `+0x38`, heading `+0x46`, tint lanes `+0x04` | `RetailBattle::seeded_ground`, the `:x:z[:facing][:d<hex>]` tail of `LEGAIA_BATTLE_BARS` |
 | [Land the HUD](#hud-glides-the-capture-had-landed) | glide records at `ctx[+0x11B4]` | `LEGAIA_SEAT_HUD_GLIDES_LANDED`, `LEGAIA_SEAT_HUD_GLIDES` |
 | [Take back double pushes](#a-push-the-capture-already-holds) | - (measured from the engine's own replay) | `RetailBattle::undrift`, `ground_residual` |
+| [Sit out spent turns](#combatants-that-had-already-acted) | initiative keys `+0x16C` | `RetailBattle::engine_spent_keys`, the `:k` tail of `LEGAIA_BATTLE_BARS` |
 | [Take back rewards](#rewards-already-granted) | EXP share `gp+0xA04`, stat window, banner element `ctx[+0x26]` | `ungrant_results_rewards`, `ungrant_magic_level_up` |
 | [Place the phase](#placing-the-phase) | command-flow byte `ctx[+0x06]`, cursor `ctx[+0x07]`, seat `ctx[+0x13]` | `SeedPlan` |
 
@@ -813,6 +829,51 @@ engine's own replay measures the push:
    stood stays put.
 4. A capture past the end signal is not re-run: the win pose's own travel is not
    a push the capture holds twice.
+
+### Combatants that had already acted
+
+A capture of a party member's action sits somewhere inside a round, and the
+drive replays that round from its prompt. The round's seeder `FUN_801DA780`
+gives every living combatant a non-zero initiative key `+0x16C`, and the
+action SM's `0x0C` dispatch zeroes the one it takes (`sh zero,0x16c(s3)` at
+`0x801E2CDC`), so a living combatant whose key reads `0` has already had its
+turn. Replayed with a key, it acts a second time before the capture's seat
+does:
+
+- it walks off the ground the seed stood it on, and the framing follows a
+  geometry the capture never held;
+- it swings at a party the capture holds already hurt by its first swing.
+  `player_steal_skeleton_banner`'s lone Vahn stands on `17` of `219` HP behind
+  two skeletons whose keys are both spent. Replayed, they kill him on every
+  stream but one, and on that one the second skeleton walks `740` units
+  before he moves.
+
+So on a pad-driven capture of a **party** seat, every other living combatant
+whose key the capture holds spent has its engine key zeroed on the first
+battle tick (`RetailBattle::engine_spent_keys`; the `:k` tail of a
+`LEGAIA_BATTLE_BARS` entry carries it to the image child, and
+`apply_bar_seeds` clears `init_key`). The setup seeder has drawn by then, so
+the stream is unchanged; the capture's seat keeps the key it rolled and the
+round is its own. Six captures move, none down:
+
+| State | `camera` | `image` |
+|---|---|---|
+| `player_steal_skeleton_banner` | `.836` to `.999` | `.238` to `.673` |
+| `rim_elm_gimard_victory` | `.874` to `.985` | `.657` to `.791` |
+| `super_queue_replace_*` (three) | `.850` to `.968` | `.550` to `.654` |
+| `battle_vahn_tri_somersault_super` | `.848` to `1.0` | `.577` to `.711` |
+
+Two limits are measured rather than argued:
+
+- **A monster's action keeps every key.** Its drive plays the party's turns
+  on purpose (the Spirit commits that keep a caster standing until its turn).
+  With the party sat out the three parked-Gaza frames score worse (`image`
+  `.718` to `.551`, `.620` to `.595`, `.608` to `.503`) and two Delilas casts
+  read their depth a step early (`camera` `1.0` to `.999`).
+- **A revived victim keeps its key.** A victim seeded at `1` HP for the
+  replayed kill reads a spent key as well. Sat out, the two
+  `rim_elm_gimard_seru_capture_*` drives frame Vahn's last swing some fifty
+  yaw units further off (`camera` `.962` to `.932`, `.953` to `.918`).
 
 ### Rewards already granted
 
@@ -1168,6 +1229,12 @@ an orbit clock. `evil_medallion_rage_battle` is one.
   so `0x70` is not reached. Why is open.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on a
   given seat) can run out of budget or end the fight first.
+- **A fading body retail does not draw.** `player_steal_skeleton_banner` holds
+  the killed skeleton in its defeat fade - lanes `0xF0`, mode word
+  `0x81000000`, node colour `0x3C3C3C`, sunk `183` - and the frame's ordering
+  table carries no packet for it: every monster packet is the standing
+  skeleton's, opaque at colour `0x44`. The engine draws the body lying at
+  those lanes. Which test drops it in retail is open.
 
 ### Replayed casts
 
@@ -1317,30 +1384,43 @@ selection (`World::replay_scripted_battle_score`, read off the MAN by
 `man_field_scripts::walk_battle_entry_scores`; `play-window --battle` replays
 the same words). Each goes through the field VM's own op-`0x35` handler.
 
-**What the replay cannot reach** is a word an *earlier* beat chose. `nilboa`'s
-entry picks its track by which duel-return marker is up, clears it and spawns
-the post-duel record; each duel record raises its own marker immediately before
-its `3E FF`:
+**A record that starts no track fights under its spawner's.** `nilboa`'s
+entry script `P1[0]` keys two arms on each duel-return marker. Its install
+slice picks the track (`74 <marker>` to a `35 <id> 01` at `+0x2C..+0x61`), and
+its per-frame body consumes the marker and spawns the record that carries the
+story on (`74 <marker>` / `64 <marker>` / `44 <flat>` at `+0x4A4..+0x4D1`):
 
-| Marker up at entry | Track |
-|---|---|
-| `0x477` / `0x478` | `4096` |
-| `0x479` | `2028` |
-| `0x47A` | stop |
-| none | `2054` |
+| Marker up at entry | Track | Spawns |
+|---|---|---|
+| `0x477` | `4096` | `P2[22]`, which enters the Lu duel (row `30`) |
+| `0x478` | `4096` | `P2[23]`, which enters the Gi duel (row `31`) |
+| `0x479` | `2028` | `P2[24]` |
+| `0x47A` | pause | `P2[25]` |
+| none | `2054` | nothing |
 
-A battle capture therefore holds the marker of the fight in progress, while
-retail's word is the `4096` the **previous** duel's return parked - which no
-flag in the capture names. The marker is one of the fight's
+Each duel record raises the *next* marker immediately before its `3E FF` and
+starts no track itself - it only selects a sound set, `-1` for Lu and `4` for
+Gi. So the word a duel holds is the `4096` its spawning arm parked on the
+return from the duel before it, while the marker the capture holds is the
+fight's own. That marker is one of the fight's
 [entry latches](#a-pre-fight-flag-runs-the-entrys-post-battle-branch), so the
-seed's entry does not see it and takes the no-marker arm:
-`nivora_duel_pre_plasma_strike` (marker `0x478`) and
-`nivora_duel_mid_blazing_slash` (Gi duel, row `31`, marker `0x479`) both read
-`2054` against `4096`. Landing with the marker up would return from the wrong
-fight (`0x478` picks `4096` by coincidence, `0x479` picks `2028`). The duel
-record itself starts no track (it selects sound set `4`, which the replay does
-carry), so there is no start to replay. See
+seed's entry does not see it and takes the no-marker arm (`2054`); landing
+with it up would return from the wrong fight (`0x478` picks `4096` by
+coincidence, `0x479` picks `2028`).
+
+The replay reads the chain off the disc instead. A record whose run to its
+`3E FF` holds no start opens its words with the start its spawner runs under
+the flag that guards the spawn (`man_field_scripts::spawn_flag_arm_words`: the
+test whose taken target sits within two instructions of the `44`, then the
+op-`0x35` run at the taken target of that flag's other test in the same
+record). The Lu and Gi duels replay `4096` and then their own sound set, and
+`nivora_duel_pre_plasma_strike` and `nivora_duel_mid_blazing_slash` hold
+retail's word. See
 [audio](../subsystems/audio.md#the-battle-sound-set-picks-the-fights-track).
+
+**What the replay cannot reach** is a word chosen by a beat no flag test ties
+to the fight's record: a track an earlier record started that a later one,
+reached by a walk or a talk rather than a spawn, fights under.
 
 ## Menu states
 
@@ -1454,19 +1534,25 @@ turn to land compares the engine's turn mid-ramp against retail's landed one.
 40-vsync `B8 08 86 28`, and the capture itself says how long retail has sat
 there: flat 5's walk cursor `+0x54` reads `54` of its `128`, with the turn
 long landed. The gate aligns the two on the shot instead - the record's
-4800-vsync camera glide, `939` vsyncs in on both sides - and on that clock the
-engine's record reaches the walk `925` vsyncs after the glide starts where
-retail's reached it after `885`, so the engine is sampled `15` vsyncs into
-the turn. The forty vsyncs are the engine's record running long, and the
-state brackets where: flat 8's looping clip `4` (bound by `A2 08 04` at
-`+0x58E`, cursor `+0x68 = 144`) puts that bind about `401` vsyncs after the
-glide starts, a dozen *later* than the engine's `388` - the `0x4A` waits
-rounding up to retail's three-vsync frame. Retail therefore makes up some
-fifty vsyncs between `+0x58E` and `+0x6EE`, where the only time that is not a
-`0x4A` wait is the four end-latch spins on flat 5 (`AD 05 08` after clips
-`8`, `9`, `8` reversed and `7`; `30`, `60`, `29` and `60` engine ticks by
-`FUN_800204F8`'s step and wrap over the scene bank's frame counts). Which of
-them retail clears sooner is not pinned.
+4800-vsync camera glide, `939` vsyncs in on both sides - so the channel is
+only as good as the record's pace against its own shot. A per-vsync capture of
+the record (`scripts/pcsx-redux/autorun_opdeene_pacing.lua`) has retail reach
+the walk `888` vsyncs after the glide starts, fifty-one before the capture
+instant, so the 40-vsync turn has been landed for about ten.
+
+An engine that credits a `0x4A` wait one unit per vsync reaches the walk at
+`925` and is sampled fifteen vsyncs into the turn. Nothing in the record is
+missing there: every wait between the glide's start and the walk holds up to
+two vsyncs longer than retail's, because retail credits the three-vsync game
+frame that reaches the op as well
+([cutscene](../subsystems/cutscene.md#record-pacing---the-60-hz-sub-clock)).
+With the wait sum moved on the game-frame grid the engine's record stands on
+retail's vsync at every wait up to the last vignette (`+0x67A`, `675` vsyncs
+into the glide on both sides), reaches the walk at `896`, and the turn has
+landed when the gate samples it. The eight vsyncs left are the end-latch spins
+on flat 5 (`AD 05 08` after clips `8`, `9` and `8` reversed: `27`, `57` and
+`27` vsyncs in retail, `30`, `60` and `29` in the engine), which the actor's
+clip tick paces rather than the wait.
 
 ## The image channel
 
@@ -1596,6 +1682,7 @@ Shapes the corpus separates, each with what it indicates:
 | camera and dialogue off together, `script` detail says the gate was not met | a record the phase gate could not bring the engine to ([above](#mid-script-states)) |
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
+| `view_window` at `0` beside that selector pair (`cort_evolved_approach_cutscene`) | the same pass: each selector arm applies its own op `0x46` window ([below](#the-region-selector-band-and-the-entry-order)) |
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
 | retail's camera focus thousands of units off its player (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the seed lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
@@ -1638,6 +1725,22 @@ fifth (by a tenth even with `--flags-first`), so the order stands and the
 bit is a seeding limit. The opening legs are pre-run already, and there the run
 stops where retail's does (`World::pre_run_entry_script`), so the two
 `opdeene` states carry retail's selector through the seed.
+
+The `view_window` channel follows the bit, because each selector arm ends on
+its own op `0x46`. `jouind`'s entry `P1[0]` carries nine of them:
+
+| Region type | Selector | Arm | Window |
+|---|---|---|---|
+| `2` | `0x19D` | `+0x1C1` | `46 24 F4 FA 06 0A` = `(-12, -6, 6, 10)` |
+| `3` | `0x19E` | `+0x214` | `46 24 F6 FA 0A 0D` = `(-10, -6, 10, 13)` |
+| `4` | `0x19F` | `+0x267` | `46 24 F9 F9 08 27` = `(-7, -7, 8, 39)` |
+
+`cort_evolved_approach_cutscene` reads `(-7, -7, 8, 39)` against the engine's
+`(-10, -6, 10, 13)`: the window of the `0x19F` arm retail took at the arrival
+tile against the window of the `0x19E` arm the seed takes at the seat, all
+four bytes apart. It is the same one pass, scored twice - there is no second
+divergence in the window bytes, and none in the op `0x46` handler, which
+every other field state in the corpus agrees on.
 
 The same pass picks the frame's clear colour. `town01`'s entry loop sets
 `4C 13` to the cave brown `(60, 40, 20)` while the player stands in its
@@ -1682,18 +1785,51 @@ holds the flag. `town01`'s sparring record reads `50 19 · 50 00 · 52 3C ·
 land without `0x23C` and carry both bits through the seed. The comparand
 keeps the latches.
 
-What the window does not reach stays a seeding limit. `town0b`'s Gimard
-fight is row `2` and its pending flags are raised further from the entry op
-than the window, so `rim_elm_gimard_*` and `shiny_refactor_gimard_*` still
-read `-sys 0x30C` / `0x30E` and `-sys 0x528`. A capture whose formation
-cell matches no registered row has no row to key the arms on.
+Both battle forms of the entry op are arms. The handler sends `op0 == 0xFF`
+and `op0 < 100` down one arm and reads only the row byte (`FUN_801DE840`,
+`0x801E06FC..0x801E074C`), and `town0b`'s Gimard fight is entered in the second
+form: the three talk records `P1[7]` / `P1[8]` / `P1[9]` read `53 0C` /
+`53 0D` / `53 0E` then `3E 00 02`, and the arrival cutscene `P2[26]` reads
+`53 0B`, `3E 00 02`. Held back, the pending flag no longer engages the
+post-fight placement at the landing, the loop runs its pass, and
+`rim_elm_gimard_seru_capture_*` and `shiny_refactor_gimard_*` carry `0x30C` /
+`0x30E`, the room bit `0x528` and the selector through the seed.
 
-The boss states made from a debug start (`cort_*`, `zora_glare_petrify_*`:
-eleven system flags set, the same stale entry operand in two different
-scenes) hold selector bit `0x19F` in both scenes. No pass of either scene's
-loop selected it - the fights were entered without the scenes' own
-arrivals - so the engine's settle, which does run a pass, reads `0x19D`.
-That is capture history, not a selector the seed could seat.
+What a latch cannot hold back is a loop the fight's record parked. The three
+captures of the arrival fight (`battle_gimard_tail_fire_a` / `_b`,
+`battle_melee_hit_spark`) hold no selector bit at all: `town0b`'s first pass
+set `0x528`, reached `44 79` at `+0x452` (flag `0x307` still down), spawned
+`P2[26]` and yielded, and the record held the player from there to its
+`3E 00 02` - the pass never reached the selector at `+0x4D3`. The seed lands
+with `0x307` up, so its pass skips the spawn, runs on and selects `0x19D`.
+Holding `0x307` back would replay the whole cutscene inside the settle window.
+A capture whose formation cell matches no registered row has no row to key
+the arms on.
+
+### A fight entered without a position snapshot
+
+The save window's position snapshot (`0x80084568` / `0x8008456C`) is written
+by the mode-change prologue `FUN_80016230` only when the field run is the mode
+handing over (`lh v1,0x494(gp)`, `bne v1,v0` against `3` at
+`0x800163E0..0x800163E8`). The boss states made from a debug start (`cort_*`,
+`zora_glare_petrify_*`: eleven system flags set, in `town01`) hold `(0, 0)`
+there, so a card load of the window seats `town01`'s default arrival, whose
+region the entry loop reads as `0x19D`. The captures hold `0x19F`, the loop's
+type-4 arm (`42 00 04` at `+0x15E`, set at `+0x1F6`).
+
+The region is recoverable where the spot is not. The region-type mask
+`_DAT_8007B8F4` is rebuilt by the field's per-tile refresh, and a fight leaves
+it as the field left it: on every battle capture that does hold a snapshot,
+the scene's `.MAP` region table rebuilds the captured mask at the snapshot's
+tile. The
+seven snapshot-less states read `0x11` - a type-0 box inside the type-4 east
+half of the village - while their entry operand `(3776, 11712)` is a tile of
+mask `0x09`. So the player walked east before the fight, and the seed stands
+it on the tile nearest the entry operand whose regions rebuild the captured
+mask (`RetailObs::seat_battle_on_region`; the report's `seat` detail names the
+tile). That is the region the player stood in, not the position: nothing in
+the state records the latter, and nothing a battle channel reads depends on
+it.
 
 ### A flag the entry raises on every load
 
@@ -1968,21 +2104,56 @@ usual two game frames, measured off the tween itself: the walk-in actor
 frame, so the tick the RAM holds built a push of clock `18` (grey `170`); the
 draw buffer's list is the frame before (clock `15`, grey `141`), and the
 displayed buffer's floor, read against the draw buffer's, sits under a push
-of about `117..125` - clock `12`, one more frame back. The engine gates on
-the displayed wait, but its frame step is `2` against retail's `3`, so the
-push it draws comes from clock `14` rather than `12`; gating it earlier still
-does not raise the score, because what parts the frames is not the fade.
+of about `117..125` - clock `12`, one more frame back.
+
+The engine draws that push too, and two things had to hold for it. The hall
+sits on a frame-step floor of `2` and retail runs it at `3`, so on the engine's
+own cadence the displayed wait of `15` is not a sum the record ever holds: it
+gated a vsync late, on `16`. The seed hands the engine the capture's measured
+step ([above](#the-seeding-model)), and the gate is met on `15` (`21` on the
+RAM's side). And the tween is ticked in the frame its op ran - the state holds
+its clock and the wait's sum on the same `21` - where the engine's actor pass,
+which runs ahead of its script pass, first ticked it a frame later and drew
+every scripted fade one frame light. With both, the dancers' colours sit within
+a few levels of retail's (`(26, 20, 7)` against `(23, 18, 7)` over the centre
+pair) where the late gate read them darker and the late tween eight levels
+brighter.
+
+What still parts the frames is not the fade. The engine's floor is black under
+a push retail's floor is still green under, so its cells are darker before the
+subtract: the strobe's phase.
 Retail's own two buffers - one game frame apart - agree on only `0.80` of
 the blocks: the floor's palette strobe and a spotlight beam (the CLUT-cell
 cycler parts on row `507`) that is on in the displayed frame and off in the
-drawn one. The engine frame agrees with the draw buffer on `0.84` and with
-the display on `0.69`; the residual is that frame-to-frame strobe, a capture
+drawn one. The cell values the seed installs are the RAM's, two game frames
+past the displayed frame's, and a strobe a move program re-keys every tick has
+no rewind. The engine frame agrees with the draw buffer on `0.84` and with the
+display on about `0.7`; the residual is that frame-to-frame strobe, a capture
 limit.
 
 The phase gate resumes record 6 and replays that staging, which puts the
 camera exactly on retail's shot and the player on retail's `(5952, 12992)`.
 An engine that stepped the placements the record pokes left the player at
 `(6208, 13120)`; no poke engages a placement, so none runs.
+
+### A capture parked on an end latch has no phase to gate on
+
+`minigame_baka_pcsx` is `koin1` with the player's talk to the Baka Fighter
+cabinet (flat `64`) parked on `AD F8 08` at `+0x41`, the spin on the end latch
+of the sit-down clip the record poked just before (`B8 F8 84 17`, `B3 F8 0A`,
+`AC F8 08`). The state says how far that clip has run: the player holds clip
+`4`, fifteen frames at three cursor units a vsync, on cursor `219` of `239` -
+seven vsyncs short of the latch - and the frame on screen shows him seated
+with his back to the camera.
+
+The gate has a wait for a `0x4A` park and a glide for a camera mover, and
+nothing for a latch: it is met on the first tick the engine's record stands on
+the `AD`, where the clip has only begun, so the engine frame catches Vahn
+swinging a leg over the stool. The blocks around him move by one with any
+change that shifts the tick the record arrives on: the frames an engine built
+before and after the `0x4A` grid credit differ in `623` pixels, all inside the
+box around the stool, and in one scored block. A gate that carried the clip
+cursor the way it carries the glide would close it.
 
 ### An attack-face capture frames the shot the state before it armed
 
@@ -2010,21 +2181,16 @@ is where the glide starts from:
 Pitch `0x80` already reached and `TR.y = 972` do not fit a single glide step,
 so the capture's own glide history is not fully explained either.
 
-The order is not what parts the two sides, and replaying retail's round does
-not close the gap. The capture is round `0` (`ctx[+0x28A] = 0`) with both
-initiative keys `+0x16C` spent, and a key is spent only by the action SM's
-`0x0C` dispatch (`sh zero,0x16c(s3)` at `0x801E2CDC`), so Gobu Gobu had
-already dispatched in retail too - and all twelve battle streams put it
-ahead of Vahn in the engine. What parts them is where that action left the
-two: retail stands Gobu Gobu on `(0, 0)` and Vahn on `(-7, -338)`, the
-engine's swing walks Gobu Gobu about `250` units on and pushes Vahn `164`
-back. Seeding the spent keys into the replay (the monster sits the round
-out) stands both on retail's ground but starts Vahn's glide from the commit
-confirm's case-9 swing instead, and the frame scores worse on all three
-(`image` `.493` to `.343`), as it does on most of the battle class's other
-drives. Preferring a stream on which no bystander walked finds none that
-seats Vahn first in round `0`; the one it takes plays a monster cast first
-and scores `.278`.
+The capture is round `0` (`ctx[+0x28A] = 0`) with both initiative keys
+`+0x16C` spent, so Gobu Gobu had already dispatched in retail - and every
+battle stream puts it ahead of Vahn in the engine too. What parted the two
+sides was that turn played twice: retail stands Gobu Gobu on `(0, 0)` and Vahn
+on `(-7, -338)`, and a replayed swing walks Gobu Gobu about `250` units on and
+pushes Vahn `164` back. With the spent key seeded
+([above](#combatants-that-had-already-acted)) the monster sits the round out,
+both stand on retail's ground, and the focus reads `(-11, -381)` on both
+sides; what is left of the channel is the mid-glide yaw (`3127` against
+`3205`).
 
 ### An ease-out camera carries its history
 
@@ -2178,15 +2344,14 @@ every pass, so it moves with the phase of both clips):
   position, and the state holds the victim where its knock-back left it, not
   where it stood when the cast began (`4038` retail against `3983`) - a
   seeding limit.
-- **A counter the drive has to wait for.**
+- **A counter is the round's last turn.**
   `battle_vahn_tri_somersault_super` is Vahn's Super Art played as a
-  counterattack on a monster's swing. The drive plays rounds until a counter
-  fires on the capture's seat and cursor, and that is many rounds in (the
-  engine's Vahn reaches it some 1100 HP lower than retail's), so the swing it
-  counters comes from another monster at another seat: the case-7 focus is
-  the midpoint with a target on the far side of the party. The rounds are
-  the drive's own; nothing in the capture recovers the history that put
-  retail's counter on monster slot 4.
+  counterattack on a monster's swing. The capture holds every key spent but
+  the third monster's, so the round it replays is that monster's turn alone:
+  it strikes Vahn, the counter fires, and the case-7 two-shot reads retail's
+  yaw `799` and its focus to nine units. Played with every key live, the
+  drive waited many rounds for a counter on the capture's seat and cursor
+  and took one off another monster on the far side of the party.
 - **A numeral that sank instead of rising.** Retail's floating value rises
   `3/2` of its ring timer above the struck actor's display trio
   (`FUN_801DF6B8`, `0x801DF780..0x801DF7B4`), toward `-Y`. The hosts project

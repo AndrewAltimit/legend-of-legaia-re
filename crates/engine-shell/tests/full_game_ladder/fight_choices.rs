@@ -223,9 +223,20 @@ pub(super) fn wanted_item(
         .filter_map(|&id| Some((item_restore(w, id, worst, hp[worst])?, id)))
         .filter(|&(r, _)| r > 0)
         .collect();
+    // A lone member has nobody to swing while it heals, so a heal the foe's
+    // next round undoes buys no turn: a Healing Leaf's 200 a round into Che
+    // Delilas's 300..700 kept Gala alive and never attacking until the battle
+    // cap. In a duel the heal must leave the member clear of the line after
+    // another round the size of the foe's worst (capped at full HP), and
+    // when none does it is the largest.
+    let need = if duel {
+        (limit(worst) + threat).min(u32::from(w.actors[worst].battle.max_hp))
+    } else {
+        limit(worst)
+    };
     let enough = singles
         .iter()
-        .filter(|&&(r, _)| hp[worst] + r >= limit(worst))
+        .filter(|&&(r, _)| hp[worst] + r >= need)
         .min();
     enough
         .or_else(|| singles.iter().max())

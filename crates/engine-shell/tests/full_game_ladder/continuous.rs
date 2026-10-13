@@ -19,6 +19,53 @@ use super::*;
 /// wipe, the guard retry included - the pad pass's allowance.
 const CONTINUOUS_WIPE_ATTEMPTS: u32 = PAD_WIPE_ATTEMPTS;
 
+thread_local! {
+    /// Set for the continuous run: the hand plays to keep a party it will
+    /// still be holding thirty milestones on, not to cross one stretch.
+    /// It takes the random encounters it expects to win ([`worth_fighting`])
+    /// and wears what it picks up ([`pad_equip_best`]). The segmented passes
+    /// leave it clear and play exactly as before.
+    pub(super) static PLAYS_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// What the run's fights have cost so far: party HP lost and foe HP
+    /// taken, summed over every battle. Their ratio is the price of a fight
+    /// the hand has learned, which falls as the party levels and gears up.
+    /// Opens on a lone level-1 member's first fights, a little over one HP
+    /// lost for each one dealt.
+    pub(super) static EXCHANGE: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((110, 100)) };
+}
+
+/// Is the random encounter on the table one the continuous hand takes? A
+/// player who means to finish the game fights what it can beat: that is
+/// where levels and gold come from, and a party that flees everything
+/// reaches the first boss at level 1.
+///
+/// The read is the one a player makes at the round prompt: what the foes
+/// still hold, what fights have cost so far ([`EXCHANGE`]), and what the
+/// party has left. Foes act until they fall, so a group of `n` costs about
+/// `(n + 1) / 2` times what its HP alone would. The fight is taken while
+/// that cost is under three fifths of the party's remaining HP, and it is
+/// asked again every round - a fight going badly turns back into a run.
+pub(super) fn worth_fighting(w: &legaia_engine_core::world::World) -> bool {
+    if !PLAYS_ON.with(std::cell::Cell::get) {
+        return false;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let party: u64 = (0..n).map(|i| u64::from(w.actors[i].battle.hp)).sum();
+    let foes: Vec<u64> = w
+        .actors
+        .iter()
+        .skip(n)
+        .filter(|a| a.battle.max_hp > 0 && a.battle.hp > 0)
+        .map(|a| u64::from(a.battle.hp))
+        .collect();
+    if foes.is_empty() {
+        return false;
+    }
+    let (lost, dealt) = EXCHANGE.with(std::cell::Cell::get);
+    let cost = foes.iter().sum::<u64>() * lost / dealt.max(1) * (foes.len() as u64 + 1) / 2;
+    cost * 5 <= party * 3
+}
+
 /// The engine's own save at the last milestone reached.
 struct Checkpoint {
     save: legaia_save::SaveFile,
@@ -43,6 +90,78 @@ fn reload(inp: &Inputs, cp: &Checkpoint, opts: &FieldLiveOpts) -> Result<NativeS
     Ok(session)
 }
 
+/// One save's carried state, a line per member: what a stretch is played
+/// with. Ids only, no names.
+fn carried(sf: &legaia_save::SaveFile) -> String {
+    let mut out = String::new();
+    for (i, m) in sf.party.members.iter().enumerate() {
+        let v = m.hp_mp_sp();
+        if v.hp_max == 0 {
+            continue;
+        }
+        out.push_str(&format!(
+            "      member {i}: lv {} xp {} hp {}/{} mp {}/{} equip {:02X?}\n",
+            m.level(),
+            m.cumulative_xp(),
+            v.hp_cur,
+            v.hp_max,
+            v.mp_cur,
+            v.mp_max,
+            m.equipment().slots
+        ));
+    }
+    let bag: Vec<String> = sf
+        .ext
+        .inventory
+        .iter()
+        .map(|(id, n)| format!("{id:02X}x{n}"))
+        .collect();
+    out.push_str(&format!(
+        "      roster {:?} gold {} bag [{}]",
+        sf.ext_v2.active_party,
+        sf.ext.money,
+        bag.join(" ")
+    ));
+    out
+}
+
+/// The engine's own state beside the retail anchor's for milestone `m`: the
+/// diff that tells an engine defect (a flag, a member or an item the run
+/// should hold) from a party a retail player had grown further.
+fn print_state_diff(session: &mut NativeSession, inp: &Inputs, m: &Milestone) {
+    let mine = session.host.world.save_full();
+    eprintln!("    [state] engine, against the {} anchor:", m.id);
+    eprintln!("{}", carried(&mine));
+    let Some(a) = m
+        .anchor
+        .as_ref()
+        .and_then(|r| load_anchor(&inp.library, r).ok())
+    else {
+        return;
+    };
+    if let Ok(sf) =
+        legaia_save::SaveFile::from_retail_sc_block(&a.sc, legaia_save::RETAIL_SC_PARTY_RECORDS)
+    {
+        eprintln!("    [state] retail anchor at {}:", m.id);
+        eprintln!("{}", carried(&sf));
+    }
+    let have = flags_of_world(session);
+    let show = |s: Vec<&u16>| {
+        s.iter()
+            .map(|f| format!("0x{f:03X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    eprintln!(
+        "    [state] flags the anchor has and the engine lacks: {}",
+        show(a.flags.difference(&have).collect())
+    );
+    eprintln!(
+        "    [state] flags the engine has and the anchor lacks: {}",
+        show(have.difference(&a.flags).collect())
+    );
+}
+
 #[test]
 fn part_c_continuous_run() {
     let Some(inp) = inputs() else { return };
@@ -63,6 +182,7 @@ fn part_c_continuous_run() {
         .collect();
 
     let opts = live_opts(true);
+    PLAYS_ON.with(|p| p.set(true));
     let mut session = open_session(&inp.extracted);
     if let Err(e) = seed(&mut session, &spine[0], None, &opts) {
         panic!("continuous run: New Game did not seed: {e}");
@@ -88,6 +208,7 @@ fn part_c_continuous_run() {
                 if let Some(element) = prepare {
                     pad_equip_guard(&mut session, element);
                 }
+                pad_equip_best(&mut session);
                 let mut trail = vec![scene_name(&session)];
                 traverse(&mut session, &graph, to, true, &mut trail)
                     .map_err(|e| format!("{e} [trail {}]", trail.join(">")))
@@ -96,6 +217,9 @@ fn part_c_continuous_run() {
                 Ok(Ok(())) => {
                     reached_count = i + 1;
                     cp = checkpoint(&mut session);
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        print_state_diff(&mut session, &inp, to);
+                    }
                     eprintln!(
                         "[run {i:2}] {:24} -> {:24} reached ({:.1}s, attempt {attempt})",
                         spine[i].id,
@@ -125,6 +249,7 @@ fn part_c_continuous_run() {
                 _ => wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS,
             };
             if !again {
+                print_state_diff(&mut session, &inp, to);
                 stall = Some(format!(
                     "{} -> {} (attempt {attempt}): {err}",
                     spine[i].id, to.id
@@ -151,6 +276,7 @@ fn part_c_continuous_run() {
         }
     }
 
+    PLAYS_ON.with(|p| p.set(false));
     let denom = spine.len() - 1;
     eprintln!();
     eprintln!(

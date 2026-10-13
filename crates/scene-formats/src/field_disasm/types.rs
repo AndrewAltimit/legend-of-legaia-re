@@ -50,8 +50,8 @@ pub enum InsnInfo {
     GiveItem { item_id: u8 },
     /// `0x3A ADD_MONEY` - 24-bit signed delta.
     AddMoney { signed_24: i32 },
-    /// `0x3B SET_ITEM_COUNT`.
-    SetItemCount { slot: u8, count: u8 },
+    /// `0x3B SET_EQUIP_SLOT`: `selector` is `(char << 4) | slot byte`.
+    SetEquipSlot { selector: u8, item: u8 },
     /// `0x3C PARTY_ADD`.
     PartyAdd { char_id: u8 },
     /// `0x3D PARTY_REMOVE`.

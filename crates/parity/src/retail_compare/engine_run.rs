@@ -129,6 +129,8 @@ pub fn run_engine_with(
             session.host.world.load_full(save);
         }
     }
+    // Retail's measured frame step is load history (`World::seed_frame_step`).
+    session.host.world.seed_frame_step(retail.frame_step());
     let mut director = RecordingDirector::default();
     // The entry itself may already have queued a start.
     session.host.route_bgm_events(&mut director)?;

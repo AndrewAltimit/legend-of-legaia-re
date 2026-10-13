@@ -137,6 +137,50 @@ drops the scroller and turns on `position: sticky` under the top bar; where it
 is too wide the wrapper keeps the horizontal scroller and a static header. It
 runs in the docs zone only, on load, on resize and once fonts settle.
 
+## One right edge per column
+
+Prose is capped at `--measure` (46rem) so a line stays readable. That is right
+on the 880px docs column, where the measure is most of the column, and wrong
+on a wider one: a 46rem paragraph or callout sitting among 1400px grids, tiles
+and tables stops at half the page and reads as a section that failed to load.
+Nothing errors, and it is invisible below about 1300px of viewport, where the
+column is not yet wider than the measure.
+
+Three column shapes, each with one rule for where text ends:
+
+| Column | Pages | Text ends at |
+|---|---|---|
+| Docs (880px) | every docs page not listed below | `--measure` |
+| App (1400 / 1480px) | home, `.wide-page` (`WIDE_PAGES` in `_gen.py`) | the column: `--measure` is `none` |
+| Prose with a breakout | `.wide-page.prose-page` (`PROSE_WIDE_PAGES`), `.dp-page` | the docs column; the named exhibit alone is wide |
+
+A `.prose-page` is a long-form page that is wide for one exhibit, such as a
+many-column table. Its header and sections keep the docs column, and a
+`section.doc-section.breakout` takes the full width and lifts the measure
+inside itself, so the exhibit's own caption follows the exhibit. The
+disc-patching write-ups (`.dp-page`) are the same shape with their own named
+breakouts.
+
+A breakout spans its grid cell, and in the docs zone that cell sits between
+the sidebar and the TOC rail: at a 1440px viewport it is no wider than the
+docs column, so widening the page's `max-width` alone gives the exhibit
+nothing. A `.prose-page` therefore drops the TOC rail's column until the
+viewport is wide enough to hold both (the `Responsive shell` block, 1101px to
+1679px), which is what lets a ten-column table sit unscrolled on a 1440px
+desktop.
+
+The policy is one custom property, so it holds only while every prose cap is
+spelled `max-width: var(--measure)`. A literal `72ch` on a new component is
+exactly how the home page's port-status caption stayed at half width after the
+status list beside it had been exempted by hand. Width caps that are not prose
+measures - the hero copy beside its video, a card in a grid track - are sized
+by their own layout and keep literal values.
+
+Checking it needs a browser. Load each page at 1440 and 1920 wide and, for
+every block container in `.content`, report a child narrower than 70% of the
+container while a sibling spans it; then look at the flagged pages, since a
+`.prose-page` section beside its breakout is flagged by design.
+
 ## The cascade-order trap
 
 A `@media` block contributes **nothing** to specificity. These two rules are
@@ -515,3 +559,61 @@ surface (the floating damage numeral) needs the sim paused on the frame you
 found it, or the screenshot lands after it expires: poll
 `play_overlay_draws_json`, then `window.__playView.setPaused(true)`, then
 shoot.
+
+### The play page's minigame status rows sit under the canvas
+
+The engine's minigame status rows (`engine-core::minigame_status`) are the
+port's own readout of the rules state plus the key hints - not retail chrome.
+They are data, not a draw list: `minigame_status::caption` returns the live
+game and its rows, and no builder emits them as glyph quads. The play page
+draws a game's own chrome (screen primitives) over its text layer, as the
+native window does, so a row in the frame would be covered by whatever the
+game draws there - the Baka Fighter title logo sat on the prompt line - and a
+long row ran off the frame's right edge.
+
+The page reads the rows through one export, `play_mg_caption_json`:
+
+```json
+{ "game": "baka", "rows": [
+    { "kind": "readout", "clauses": ["BAKA", "you 3200hp (wins 0)", "round 1"] },
+    { "kind": "hint", "clauses": ["choose your attack", "Start = quit"] } ] }
+```
+
+| Field | Meaning |
+|---|---|
+| `game` | `slot` / `baka` / `muscle` / `dance` / `fishing`, or `null` outside a minigame |
+| `rows` | reading order; may be empty while a game is live (a phase with nothing to say) |
+| `kind` | `readout` (the rules state) or `hint` (what to press) |
+| `clauses` | one statement each; the page separates them with a middle dot |
+
+`captionSync` in `play-minigames.js` writes them into `#play-mg-caption`, the
+strip under the canvas, where they wrap. It hides the strip when `game` is
+`null` and keeps its two-line seat while a game is live, so the controls under
+it do not jump between phases. The page holds no pen, ink or glyph constant:
+what the strip shows is whatever the export says.
+
+Two rows are decided in Rust, where they are authored. The dance beat track is
+not a caption row - it is the game's own beat bar, which the HUD frame draws.
+The slot machine's rows are a fallback for a machine that is not on screen:
+the caption stays live and empty once the cabinet draws itself.
+
+#### Fullscreen
+
+The Fullscreen button presents `#play-screen`, which holds the canvas wrap and
+the strip, so the rows come along. The strip takes its height out of the
+picture's letterbox and is never drawn over the picture.
+
+The element that goes fullscreen cannot itself be the 4:3 box. A browser's own
+sheet sizes a fullscreen element to the whole screen with `!important`
+(`width` / `height: 100%`, `inset: 0`, `margin: 0`), which no author rule
+overrides. A wrap asked to be `min(100vw, 100vh * 4/3)` wide therefore comes
+out the screen's full width, its 4:3 canvas runs taller than the screen, and
+the bottom of the picture is cut off. `.play-screen:fullscreen` is a flex
+column that centres the wrap, and the wrap takes its width from the height
+left after the strip.
+
+To reach a minigame from a driver, enter any scene and call
+`window.__playRuntime.play_mg_debug_warp(n)`: 0 fishing, 3 slot machine,
+4 Baka Fighter, 5 Muscle Dome, 6 dance. Use the GPU backend
+(`--use-angle=vulkan --enable-gpu --ignore-gpu-blocklist`); software rendering
+drops key presses at these frame rates.

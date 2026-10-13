@@ -387,15 +387,17 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x3B - SET_ITEM_COUNT. 3-byte instruction.
+        // 0x3B - SET_EQUIP_SLOT `[3B, (char << 4) | slot, item]`. 3-byte
+        // instruction: the store at `0x801E0814` writes one equipment byte
+        // of a character record, then `FUN_80042558` rebuilds its stats.
         0x3B => {
-            let Some(&slot) = bytecode.get(operand) else {
+            let Some(&selector) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let Some(&count) = bytecode.get(operand + 1) else {
+            let Some(&item) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            host.set_item_count(slot, count);
+            host.set_equip_slot(selector, item);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,
             }

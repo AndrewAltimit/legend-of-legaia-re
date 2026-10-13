@@ -161,3 +161,64 @@ impl PlayWindowApp {
         self.tick_slot_marquee();
     }
 }
+
+/// The window's own title, shown whenever no minigame caption is up.
+pub(super) const WINDOW_TITLE: &str = "legaia-engine";
+
+impl PlayWindowApp {
+    /// The live minigame's status caption (`engine-core::minigame_status`),
+    /// the one row model the browser play page exports as
+    /// `play_mg_caption_json`. `None` outside a minigame.
+    ///
+    /// This host's two answers: the slot machine draws itself once its art
+    /// is uploaded, and the fishing rows name pad buttons (the window's key
+    /// map is fixed) plus `P`, the key that opens the point exchange.
+    pub(super) fn minigame_caption(
+        &self,
+    ) -> Option<legaia_engine_core::minigame_status::MinigameCaption> {
+        use legaia_engine_core::minigame_status as ms;
+        ms::caption(
+            &self.session.host.world,
+            &ms::StatusHost {
+                slot_machine_drawn: self.slot_gpu.is_some(),
+                fishing_keys: ms::FishingKeys {
+                    cast: "Circle",
+                    reel_a: "Cross",
+                    reel_b: "Square",
+                    menu: "Triangle",
+                    quit: "Start",
+                    prizes: "P",
+                },
+            },
+        )
+    }
+
+    /// The title bar text for this frame: the window's name, then the
+    /// minigame caption when one has rows.
+    pub(super) fn window_title_line(&self) -> String {
+        match self.minigame_caption().map(|c| c.title_line()) {
+            Some(line) if !line.is_empty() => format!("{WINDOW_TITLE} - {line}"),
+            _ => WINDOW_TITLE.to_string(),
+        }
+    }
+
+    /// Show the minigame caption in the **title bar**, outside the game
+    /// picture. The rows used to be printed inside the frame at fixed stage
+    /// pens, where they lost to the game's own chrome: this window draws a
+    /// game's screen primitives after its text layer, so the Baka Fighter
+    /// title logo sat on the prompt row, and a long row ran off the frame's
+    /// right edge. The default window is exactly the 4:3 stage, with no
+    /// margin to move them into, so the caption leaves the surface
+    /// altogether - which also keeps it out of every captured frame.
+    /// Written only when the line changes.
+    pub(super) fn sync_minigame_caption_title(&mut self) {
+        let line = self.window_title_line();
+        if line == self.caption_title {
+            return;
+        }
+        if let Some(w) = self.win.window.as_ref() {
+            w.set_title(&line);
+        }
+        self.caption_title = line;
+    }
+}

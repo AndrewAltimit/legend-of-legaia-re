@@ -353,6 +353,7 @@ mod script_teleport;
 mod scripted_menu_press;
 mod seru_absorb;
 mod seru_side_effect_live_disc;
+mod set_equip_slot;
 mod shiny;
 mod slide;
 mod sound_stream_gates;

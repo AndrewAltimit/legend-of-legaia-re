@@ -30,12 +30,19 @@
 //!    `set_pad`), so the page adds no input path. The per-game state JSON the
 //!    standalone renderers read (`slot_state_json` ...) is rebuilt here over
 //!    the *world's* session instead of the standalone's private one.
-//! 3. **The text HUD**, through [`LegaiaRuntime::minigame_overlay_draws`]:
-//!    the same `format!` lines the native window prints at `(8, 62)` /
-//!    `(8, 80)`, stage-scaled onto the overlay canvas. Native is the poorer
-//!    host here (it draws no art for three of the four); the page draws the
-//!    art *and* the lines, so a disc whose art does not decode still tells the
-//!    player which phase the session is in.
+//! 3. **The text HUD**, in two parts that never share a surface.
+//!    [`LegaiaRuntime::minigame_overlay_draws`] carries the text that belongs
+//!    to the game picture - the retail-placed digit strips, chrome labels and
+//!    frame rows - stage-scaled onto the overlay canvas.
+//!    [`LegaiaRuntime::play_mg_caption_json`] carries the engine's **status
+//!    rows** (`legaia_engine_core::minigame_status`: the port's readout of
+//!    the rules state plus the key hints) as strings, which the page shows in
+//!    the caption strip under the canvas. They are never glyph quads in the
+//!    frame: the page draws a game's screen primitives over its text layer,
+//!    so a row placed there is covered by the game's own chrome. The native
+//!    window reads the same model and shows it in its title bar. A disc
+//!    whose art does not decode still tells the player which phase the
+//!    session is in, through the caption.
 //!
 //! Exit is the engine's: Start leaves any minigame (`World::poll_minigame_escape`)
 //! and each game's own `exit_*` runs the bookkeeping - the slot cash-out into
@@ -365,30 +372,66 @@ impl LegaiaRuntime {
         }
     }
 
+    /// The live minigame's status caption (`engine-core::minigame_status`),
+    /// the one row model the native window shows in its title bar. `None`
+    /// outside a minigame.
+    ///
+    /// This host's two answers: the slot machine draws itself once its
+    /// resident set decoded, and the fishing rows name the keys of the
+    /// page's **live** binding table ([`crate::pad_bindings::live_mapping`],
+    /// so a rebind shows) plus the prize-exchange button beside the frame.
+    pub(crate) fn minigame_caption(
+        &self,
+    ) -> Option<legaia_engine_core::minigame_status::MinigameCaption> {
+        use legaia_engine_core::minigame_status as ms;
+        let host = self.scene_host.host()?;
+        let mapping = crate::pad_bindings::live_mapping();
+        let key = |button: &'static str| mapping.key_label_for_button(button).unwrap_or(button);
+        ms::caption(
+            &host.world,
+            &ms::StatusHost {
+                slot_machine_drawn: self.play_mg_slot_cabinet_ready(),
+                fishing_keys: ms::FishingKeys {
+                    cast: key("Circle"),
+                    reel_a: key("Cross"),
+                    reel_b: key("Square"),
+                    menu: key("Triangle"),
+                    quit: key("Start"),
+                    prizes: "Prize exchange button",
+                },
+            },
+        )
+    }
+
     /// Overlay quads (surface pixels) for the active in-world minigame,
     /// appended to `play_overlay_draws_json`'s lists. Empty outside one.
     /// Read-only by design (the composite holds the menu assets borrowed);
     /// any per-frame state moves in [`Self::tick_minigame_ui`].
+    ///
+    /// The text here is the game picture's own: the retail-placed strips,
+    /// labels and frame rows. The engine's status rows are not in it - they
+    /// are the caption ([`Self::play_mg_caption_json`]).
     pub(crate) fn minigame_overlay_draws(
         &self,
         font: &legaia_font::Font,
         surface_w: u32,
         surface_h: u32,
     ) -> (Vec<SpriteDraw>, Vec<TextDraw>) {
-        // The dance's status rows are withheld while the pre-song count-in
-        // banner is up, off the same shared phase predicate the native HUD
-        // reads - the rule lives with the phase, not with either draw list.
-        let dance_status = self
+        // The dance HUD frame is withheld while the pre-song count-in banner
+        // is up, off the same shared phase predicate the native HUD reads -
+        // the rule lives with the phase, not with either draw list.
+        let dance_hud = self
             .scene_host
             .host()
             .is_some_and(|h| h.world.minigames.dance_status_visible());
         let mut texts = match self.minigame_ui.game {
-            Some(ActiveGame::Slot) => self.slot_status_draws(font),
-            Some(ActiveGame::Baka) => self.baka_status_draws(font),
-            Some(ActiveGame::Muscle) => self.muscle_status_draws(font),
-            Some(ActiveGame::Dance) if !dance_status => Vec::new(),
-            Some(ActiveGame::Dance) => self.dance_status_draws(font),
-            Some(ActiveGame::Fishing) | None => Vec::new(),
+            Some(ActiveGame::Slot) => self.slot_rules_text_draws(font),
+            Some(ActiveGame::Baka) => self.baka_hud_text_draws(font),
+            Some(ActiveGame::Dance) if dance_hud => self.dance_hud_text_draws(font),
+            Some(ActiveGame::Dance)
+            | Some(ActiveGame::Muscle)
+            | Some(ActiveGame::Fishing)
+            | None => Vec::new(),
         };
         if self.minigame_ui.game == Some(ActiveGame::Dance) {
             texts.extend(self.dance_countin_and_tutorial_draws(font));
@@ -574,6 +617,40 @@ impl LegaiaRuntime {
                 ),
                 "player_char": ui.baka.player_char,
             },
+        })
+        .to_string()
+    }
+
+    /// The live minigame's status caption, as strings for the strip under
+    /// the canvas:
+    ///
+    /// ```json
+    /// { "game": "baka", "rows": [
+    ///     { "kind": "readout", "clauses": ["BAKA", "you 3200hp (wins 0)"] },
+    ///     { "kind": "hint", "clauses": ["choose your attack", "Start = quit"] } ] }
+    /// ```
+    ///
+    /// `game` is `null` outside a minigame, and the page hides the strip.
+    /// With a game live `rows` may still be empty (a phase with nothing to
+    /// say); the page keeps the strip's seat so the controls under it do not
+    /// jump. Rows are in reading order; `kind` is `readout` (the rules state)
+    /// or `hint` (what to press); a clause is one statement, and the page
+    /// picks the separator. The model is
+    /// `legaia_engine_core::minigame_status::caption`, the one the native
+    /// window writes into its title bar.
+    pub fn play_mg_caption_json(&self) -> String {
+        let caption = self.minigame_caption();
+        serde_json::json!({
+            "game": caption.as_ref().map(|c| c.game.label()),
+            "rows": caption
+                .map(|c| c.rows)
+                .unwrap_or_default()
+                .iter()
+                .map(|r| serde_json::json!({
+                    "kind": r.kind.label(),
+                    "clauses": r.clauses,
+                }))
+                .collect::<Vec<_>>(),
         })
         .to_string()
     }

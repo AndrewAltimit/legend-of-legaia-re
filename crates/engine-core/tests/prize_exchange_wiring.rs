@@ -133,6 +133,54 @@ fn redeem_and_exit_through_the_menu_runtime() {
     );
 }
 
+/// The counter's cues at the surface both hosts key from:
+/// `MenuRuntime::step_field_session` returns the frame's cue, and each host
+/// hands it to its blip path. A visit - step, a redeem the coin bank cannot
+/// cover, the prompt, No, the prompt, Yes, leave - reads as retail's ring:
+/// `0x21`, the buzz `0x23`, the list confirm `0x36`, silence, `0x36`, the
+/// step onto Yes, the coin jingle `0x25`, the cancel `0x37`.
+#[test]
+fn the_counter_hands_the_hosts_its_cues() {
+    use legaia_engine_system::input::PadButton as B;
+    let mut w = prize_world();
+    w.minigames.casino_coins = 0;
+    assert!(w.try_arm_prize_exchange(&[0x49, 0x07, 0x00]));
+    let session = w.take_pending_prize_exchange().unwrap();
+    let mut menu = MenuRuntime::new(std::env::temp_dir());
+    menu.open_prize_exchange(session);
+
+    let mut cues = Vec::new();
+    let mut edge = |menu: &mut MenuRuntime, w: &mut World, b: B| {
+        cues.push(menu.step_field_session(w, b as u16));
+        // An edge-free tick between presses raises nothing.
+        assert_eq!(menu.step_field_session(w, 0), None);
+    };
+    edge(&mut menu, &mut w, B::Down);
+    edge(&mut menu, &mut w, B::Cross); // 500-coin prize, empty bank: buzz
+    w.minigames.casino_coins = 1_000;
+    edge(&mut menu, &mut w, B::Cross); // prompt
+    edge(&mut menu, &mut w, B::Cross); // No (the default row)
+    edge(&mut menu, &mut w, B::Cross); // prompt
+    edge(&mut menu, &mut w, B::Up); // onto Yes
+    edge(&mut menu, &mut w, B::Cross); // commit
+    assert_eq!(w.minigames.casino_coins, 500);
+    cues.push(menu.step_field_session(&mut w, B::Circle as u16)); // leave
+    assert!(!menu.is_open());
+    assert_eq!(
+        cues,
+        vec![
+            Some(0x21),
+            Some(0x23),
+            Some(0x36),
+            None,
+            Some(0x36),
+            Some(0x21),
+            Some(0x25),
+            Some(0x37),
+        ]
+    );
+}
+
 /// A refused redeem (short coins) leaves everything untouched and the
 /// session browsing.
 #[test]

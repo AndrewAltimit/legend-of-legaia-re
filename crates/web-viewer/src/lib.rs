@@ -336,6 +336,11 @@ pub struct LegaiaViewer {
     /// accessors so the viewer draws the landmark meshes on top of the
     /// continent terrain instead of the misaligned overview-frame JSON layer.
     walk_placements: Option<Vec<WalkPlacement>>,
+    /// World-map labels of the currently-loaded kingdom (the location table
+    /// trailing the kingdom MAN, filtered to the kingdom's region). Built by
+    /// [`LegaiaViewer::set_scene_kingdom`]; consumed by
+    /// `world_map_labels_json` for the page's top-down map.
+    world_map_labels: Option<Vec<WorldMapLabel>>,
     /// Assembled full field/town scene (env mesh pack + `.MAP` placement /
     /// terrain draws + walk-ground heightfield), loaded through the engine's
     /// real scene loaders. Populated by [`LegaiaViewer::set_scene_field`];
@@ -591,6 +596,80 @@ pub struct WalkPlacement {
     /// page applies `rotY = -(rot_y & 0xFFF) * PI / 2048`. The record's
     /// X/Z tilts are zero on all three retail walk maps and aren't carried.
     pub rot_y: u16,
+    /// `true` for a **placed** object (record flag `0x4`, the set
+    /// `FUN_8003A55C` spawns as an actor - towns, towers, gates, bridges),
+    /// `false` for a decoration-layer stamp (trees, mountain groups, props).
+    /// The page's top-down map draws the two as separate dot families.
+    pub placed: bool,
+}
+
+/// One world-map label of the loaded kingdom: a record of the 29-entry
+/// location table trailing the kingdom MAN
+/// ([`legaia_scene_formats::place_names::world_map_table`]), already filtered
+/// to the kingdom's own `region` and lifted into world coordinates.
+///
+/// The coordinates are the ones the game's own map display projects the name
+/// from (`map << 7`, the label pass at `0x801CF368` in PROT 0981), which is
+/// the same `col*128` walk frame [`build_walk_ground`] and
+/// [`build_walk_placements`] are built in - so a label lands on its town on
+/// the page's top-down map with no further transform.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorldMapLabel {
+    /// Record index in the 29-entry table.
+    pub index: usize,
+    /// World X (`map_x << 7`).
+    pub world_x: i32,
+    /// World Z (`map_y << 7`).
+    pub world_z: i32,
+    /// Discovery-flag index the retail label pass gates the name on.
+    pub discovery_flag: u16,
+    /// The in-game place name, read from the caller's disc.
+    pub name: String,
+}
+
+/// The region byte the location table files a kingdom's records under
+/// (`0` Drake, `1` Sebucus, `2` Karisto), from the kingdom bundle's PROT base.
+pub fn kingdom_region(prot_base: u32) -> Option<u8> {
+    match prot_base {
+        85 => Some(0),
+        244 => Some(1),
+        391 => Some(2),
+        _ => None,
+    }
+}
+
+/// Resolve the world-map labels of the kingdom whose bundle sits at
+/// `prot_base`: decode the kingdom MAN (slot 2 of the bundle at `prot_base`,
+/// else `prot_base + 1` - the probe order [`resolve_walk_map_and_lut`] uses),
+/// read its trailing location table and keep the records of this kingdom's
+/// region. `None` when the base is not a kingdom's or no table decodes.
+pub fn build_world_map_labels(
+    disc: &[u8],
+    entries: &[EntryMeta],
+    prot_base: u32,
+) -> Option<Vec<WorldMapLabel>> {
+    let region = kingdom_region(prot_base)?;
+    let table = [prot_base, prot_base + 1].into_iter().find_map(|idx| {
+        let meta = entries.iter().find(|e| e.index == idx)?;
+        let off = meta.byte_offset as usize;
+        let end = off.checked_add(meta.size_bytes as usize)?;
+        let man = legaia_scene_formats::kingdom_bundle::decode_slot(disc.get(off..end)?, 2).ok()?;
+        legaia_scene_formats::place_names::world_map_table(&man)
+    })?;
+    Some(
+        table
+            .locations
+            .into_iter()
+            .filter(|l| l.region == region)
+            .map(|l| WorldMapLabel {
+                index: l.index,
+                world_x: (l.map_x as i32) << 7,
+                world_z: (l.map_y as i32) << 7,
+                discovery_flag: l.discovery_flag,
+                name: l.name,
+            })
+            .collect(),
+    )
 }
 
 /// Resolve the kingdom's walk-frame pack-mesh stamps in the same world frame
@@ -634,6 +713,7 @@ pub fn build_walk_placements(
                 world_y: p.world_y(&lut),
                 world_z: p.world_z,
                 rot_y: p.rot_y,
+                placed: p.flags & legaia_scene_formats::field_objects::FLAG_PLACED != 0,
             })
         })
         .collect();

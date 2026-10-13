@@ -250,6 +250,13 @@ impl SceneHost {
             .map(|man| crate::place_name_banner::man_scene_name_bytes(man))
             .unwrap_or_default();
         self.world.man_load_place_name_banner(&banner_name);
+        // The loader also installs the section-5 trailer pointer
+        // `DAT_80073EE0` - on a kingdom map, the location table the map
+        // display labels.
+        // PORT: FUN_8003AEB0 (live wiring; the table parser is
+        //       `legaia_scene_formats::place_names::world_map_table`)
+        self.world
+            .install_world_map_locations(self.field_man_cache.as_deref().map(|m| m.as_slice()));
         // Scan the cached MAN for scripted gold charges (inn gate + debit
         // pairs) so the inn UI can open with this scene's real cost.
         self.scene_gold_charges = self

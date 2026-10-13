@@ -390,6 +390,117 @@ pub(super) fn pad_equip_guard(session: &mut NativeSession, element: u8) -> usize
     before - after.min(before)
 }
 
+/// Put on what the bag holds, with the pad, as a player does after opening
+/// a chest or leaving a shop: Start, Equip, the member, the Best Equipment
+/// row at the top of the slot list (retail's `FUN_801CF760`), then Circle
+/// back out. Once for each present member, and only when the bag holds
+/// equipment at all. Returns how many members' equipment changed.
+pub(super) fn pad_equip_best(session: &mut NativeSession) -> usize {
+    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menus::equip_session::{EquipState, SLOT_BROWSE_BEST_ROW};
+    use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
+    let worn = |s: &NativeSession| -> Vec<[u8; 8]> {
+        let w = &s.host.world;
+        w.present_party_list()
+            .iter()
+            .filter_map(|&m| w.party.roster.members.get(usize::from(m)))
+            .map(|m| m.equipment().slots)
+            .collect()
+    };
+    let holds_gear = |s: &NativeSession| {
+        let w = &s.host.world;
+        w.party
+            .inventory
+            .iter()
+            .any(|(&id, &qty)| qty > 0 && w.tables.equipment_table.get(id).is_some())
+    };
+    if !walking(session) || !released(session) || !holds_gear(session) {
+        return 0;
+    }
+    let before = worn(session);
+    let equip_row = FieldMenuRow::Equip.index();
+    let list = session.host.world.present_party_list();
+    let pos = |s: u8| list.iter().position(|&x| x == s).unwrap_or(0);
+    for &member in &list {
+        open_pause_menu(session);
+        if session.field_menu.is_none() {
+            break;
+        }
+        let mut pressed = false;
+        for _ in 0..200 {
+            let Some(menu) = session.field_menu.as_ref() else {
+                break;
+            };
+            let pad = match session.field_menu_sub.as_ref() {
+                None if pressed => PadButton::Circle.mask(),
+                None => match menu.phase() {
+                    FieldMenuPhase::Browsing { cursor } if cursor < equip_row => {
+                        PadButton::Down.mask()
+                    }
+                    FieldMenuPhase::Browsing { cursor } if cursor > equip_row => {
+                        PadButton::Up.mask()
+                    }
+                    FieldMenuPhase::Browsing { .. } => PadButton::Cross.mask(),
+                    _ => 0,
+                },
+                Some(FieldMenuSubsession::Equip { .. }) if pressed => PadButton::Circle.mask(),
+                Some(FieldMenuSubsession::Equip {
+                    session: es,
+                    char_slot,
+                    picking,
+                }) => {
+                    if *picking {
+                        match pos(*char_slot).cmp(&pos(member)) {
+                            std::cmp::Ordering::Less => PadButton::Down.mask(),
+                            std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                            std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                        }
+                    } else if *char_slot != member {
+                        PadButton::Circle.mask()
+                    } else {
+                        match es.state() {
+                            EquipState::SlotPicker { cursor } if cursor > SLOT_BROWSE_BEST_ROW => {
+                                PadButton::Up.mask()
+                            }
+                            EquipState::SlotPicker { .. } => {
+                                pressed = true;
+                                PadButton::Cross.mask()
+                            }
+                            EquipState::Done(_) => 0,
+                            _ => PadButton::Circle.mask(),
+                        }
+                    }
+                }
+                Some(_) => PadButton::Circle.mask(),
+            };
+            if pad == 0 {
+                let _ = session.tick();
+                continue;
+            }
+            tap_pad(session, pad);
+        }
+        for _ in 0..16 {
+            if session.field_menu.is_none() {
+                break;
+            }
+            tap_pad(session, PadButton::Circle.mask());
+        }
+    }
+    let after = worn(session);
+    let changed = before.iter().zip(&after).filter(|(a, b)| a != b).count();
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [equip] best equipment: {changed} member(s) changed; worn {after:02X?}; menu {}",
+            if session.field_menu.is_some() {
+                "STILL OPEN"
+            } else {
+                "closed"
+            }
+        );
+    }
+    changed
+}
+
 /// Burn an Incense with the pad, as a player does who is too hurt to survive
 /// the next encounter and has nothing to heal with: when the weakest member
 /// is still below `threshold` per-mille after [`pad_field_heal`], the scene

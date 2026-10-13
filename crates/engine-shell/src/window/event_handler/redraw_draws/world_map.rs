@@ -90,9 +90,9 @@ impl<'m> DrawCtx<'_, 'm> {
         // walk re-skins Rim Elm, `map01` record 8). The kernels are the
         // field branch's - `World::object_draw_displacements`,
         // `World::object_live_models` on a record's first draw - and
-        // the browser page folds the same two tables into its
-        // overworld placements (`field_placement_moves` /
-        // `field_placement_models`).
+        // the browser page takes the same two through its
+        // `field_placement_live_models` / `field_placement_models`
+        // exports.
         let wm_moves = app.session.host.world.object_draw_displacements();
         let wm_turns = app.session.host.world.object_draw_turn_matrices();
         let wm_models = app.session.host.world.object_live_models();
