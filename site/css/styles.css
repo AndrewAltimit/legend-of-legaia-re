@@ -3887,6 +3887,19 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
   .toc-rail { display: none; }
 }
 
+/* A prose page with a breakout (.prose-page) gives the TOC rail's column to
+   the exhibit until the viewport can afford both: the breakout spans the
+   grid cell, and with the rail in place that cell is no wider than the docs
+   column below about 1560px - so the wide table the page exists for was
+   scrolling inside an 808px frame on a 1440px desktop. The headings stay
+   reachable through the sidebar and the page's own links. */
+@media (min-width: 1101px) and (max-width: 1679px) {
+  .zone-docs .app:has(> .content.prose-page) {
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  }
+  .zone-docs .app:has(> .content.prose-page) > .toc-rail { display: none; }
+}
+
 /* Phone / narrow tablet: the icon rail folds into the sidebar, and the
    sidebar becomes an off-canvas drawer. Content then owns the full width. */
 @media (max-width: 880px) {

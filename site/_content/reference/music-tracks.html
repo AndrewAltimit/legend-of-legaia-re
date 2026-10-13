@@ -4,7 +4,7 @@
   <p class="lede">What is this track actually called? The tune that plays in Rim Elm has a working title in the game's own debug sound test, a place it plays, a name on the published soundtrack album, and a proposed English title - and the four do not line up one-to-one. This page is the cross-reference: every BGM cue across all four naming spaces, plus the join that ties the sound-test order to the actual files on the disc.</p>
 </header>
 
-<style>.mt-filter { margin: 0 0 0.75rem; } .mt-filter input { background: var(--bg-card); color: var(--text); border: 1px solid var(--border-hi); border-radius: 4px; padding: 0.35rem 0.55rem; font: inherit; max-width: 100%; }</style>
+<style>/* The two Japanese-title columns break between any two characters, so a table at its minimum width squeezes them to a couple of glyphs per line; a floor keeps a title on one or two lines. */ #mt-table td:nth-child(3), #mt-table td:nth-child(7) { min-width: 8.5em; } .mt-filter { margin: 0 0 0.75rem; } .mt-filter input { background: var(--bg-card); color: var(--text); border: 1px solid var(--border-hi); border-radius: 4px; padding: 0.35rem 0.55rem; font: inherit; max-width: 100%; }</style>
 
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
@@ -99,7 +99,7 @@
   <p><code>#</code> is the debug sound-test order. <code>-</code> marks a column the source leaves blank. &ldquo;OST gloss&rdquo; is the English reading of the OST title; &ldquo;Relocalization&rdquo; is Stann0x's proposed English title.</p>
   <div class="mt-filter"><label>Filter <input type="search" id="mt-filter" placeholder="id, scene, title" autocomplete="off"></label> <span id="mt-count" class="hint"></span></div>
   <div class="table-wrap">
-  <table id="mt-table">
+  <table id="mt-table" class="compact">
     <thead><tr><th>#</th><th>ID</th><th>Debug title (JP)</th><th>Debug romaji</th><th>Debug gloss</th><th>In-game context</th><th>OST title (JP)</th><th>OST romaji</th><th>OST gloss</th><th>Relocalization</th></tr></thead>
     <tbody>
       <tr><td>0</td><td>M01</td><td>霧のあるフィールド</td><td>KIRI NO ARU FĪRUDO</td><td>Field with mist</td><td>Overworld with mist</td><td>霧の荒野</td><td>KIRI NO KŌYA</td><td>The misty wasteland</td><td>The Misty Barren Fields</td></tr>

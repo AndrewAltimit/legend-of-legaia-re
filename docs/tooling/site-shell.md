@@ -161,6 +161,14 @@ inside itself, so the exhibit's own caption follows the exhibit. The
 disc-patching write-ups (`.dp-page`) are the same shape with their own named
 breakouts.
 
+A breakout spans its grid cell, and in the docs zone that cell sits between
+the sidebar and the TOC rail: at a 1440px viewport it is no wider than the
+docs column, so widening the page's `max-width` alone gives the exhibit
+nothing. A `.prose-page` therefore drops the TOC rail's column until the
+viewport is wide enough to hold both (the `Responsive shell` block, 1101px to
+1679px), which is what lets a ten-column table sit unscrolled on a 1440px
+desktop.
+
 The policy is one custom property, so it holds only while every prose cap is
 spelled `max-width: var(--measure)`. A literal `72ch` on a new component is
 exactly how the home page's port-status caption stayed at half width after the
