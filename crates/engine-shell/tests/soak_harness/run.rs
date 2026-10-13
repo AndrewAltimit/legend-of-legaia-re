@@ -463,6 +463,8 @@ pub(super) fn run_one(
     let mut traced_scripts: BTreeSet<u64> = BTreeSet::new();
     let mut traced_stats: Vec<(u8, u16, u16, u16, u16)> = Vec::new();
     let mut starved_since: Option<u64> = None;
+    type StarvedAt = (Option<usize>, Option<usize>, Option<usize>, Option<usize>);
+    let mut starved_seen: BTreeSet<StarvedAt> = BTreeSet::new();
     let mut starved_scene = session.host.world.active_scene_label.clone();
     // Starts `true`: the cold entry seat is the harness's, not a door's.
     let mut was_free = true;
@@ -944,16 +946,35 @@ pub(super) fn run_one(
         // them. A battle, the pause menu or a minigame pauses this clock.
         if !field_frame {
             starved_since = None;
+            starved_seen.clear();
         } else {
             let w = &session.host.world;
             let free = round_trip_ready(&session) && !w.script_context_engages_player();
             if free || w.active_scene_label != starved_scene {
                 starved_since = None;
+                starved_seen.clear();
                 starved_scene = w.active_scene_label.clone();
             } else {
-                let since = *starved_since.get_or_insert(frame);
                 let holder = held_by(&session);
                 let kind = holder.split('@').next().unwrap_or("").to_string();
+                // A script that reaches a PC this stretch has not been at is
+                // a scene still playing - the ending's credits run their
+                // record start to finish for minutes - and restarts the
+                // clock. What is left is a script going round: every PC it
+                // steps on, it has stepped on before.
+                let at = (
+                    w.cutscene.timeline.as_ref().map(|tl| tl.pc),
+                    w.cutscene
+                        .timeline
+                        .as_ref()
+                        .and_then(|tl| tl.dialog.as_ref().map(|d| d.pc)),
+                    w.field_vm.helper_contexts.first().map(|h| h.pc),
+                    w.dialog.inline.as_ref().map(|d| d.pc),
+                );
+                if starved_seen.insert(at) {
+                    starved_since = Some(frame);
+                }
+                let since = *starved_since.get_or_insert(frame);
                 // A text box waits for its confirm press for as long as it
                 // takes, so the window must hold the presses that would have
                 // paged a conversation through: without them the field is
