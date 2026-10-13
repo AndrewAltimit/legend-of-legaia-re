@@ -294,6 +294,8 @@ A re-target whose bone count differs from the clip the slot was first bound with
 
 Because a party placement carries the bit, the port does not infer "this is the player" from it. Retail's `0x23` and `4C 51` player arms compare the context **pointer** against `_DAT_8007C364` (`bne s5,v0` at `0x801E1954`); the port's test is `FieldHostImpl::ctx_is_player`. Disc-gated: `crates/engine-core/tests/field_party_gesture_bank_disc.rs` spawns every story record that drops a party member's bit and asserts every party re-target is a ten-bone hero pose.
 
+A talk is the case with no channel stepping: the inline dialogue runner steps a cross-context op on the talker's own context, and a talker that carries the bit (`31 18` in its prologue) reads as the player there. So a seat the talk aims at another actor (`A3 <id> x z`, `<id>` not `0xF8`) runs on a copy of the context without the bit and lands on the placement the id names, or on nobody. `vozz` P1[1] parks its two companion actors with `A3 06 7F 7F` / `A3 07 7F 7F` at the end of the talk that hands over item `0xAA`; taken on the player arm, those seats put the player on the hide tile.
+
 <a id="wall-slide-resolution"></a>
 
 ### Wall-slide resolution (`FUN_80046494`)
@@ -474,6 +476,8 @@ Each row is classed by its bind record's spawn-prologue `0x31` ops (`interact` /
 **Prop bind records run through the field VM.** A static-class touch or an interact-class confirm press (`World::field_interact_prop_anchor`) starts `World::start_prop_interaction`: the bind record runs through the inline field-VM runner from the prop's parked cursor (`PropAnimState::parked_pc`, the engine's `actor+0x9E`), with the context bridged to the prop actor - `ctx.local_flags` is `+0x62`, `ctx.flags` is `+0x10`, `ctx.field_6a` is `+0x6A`.
 
 Waitable ops (`2D 08` until the anim tick latches the clip end, `4A` frame waits) park the run; `0x1F` segments open the real dialog panel (name escapes via `OwnedDialogPanel::substitutions`); `39` GIVE_ITEM grants through the host; the raw `21` ends the interaction and re-parks the record. The player's movement lock is held for the run.
+
+The record's own MOVE_TO (`23 <x> <z>`, no target byte) seats the prop actor itself - the op's non-player arm stores the tile into the executing actor - and the placement's contact box and collider rows move with it (`World::seat_prop`). `vozz` P0[1] is bound to every thicket across East Voz's paths: examined while `0x079` is up, it plays its cue, waits and runs `23 7F 7F`, and the thicket is on the hide tile. Each placement is its own actor, so each thicket is cut on its own.
 
 Disc-gated `engine-core/tests/field_prop_anim_disc.rs`: a closed door blocks at the retail standoff, opens on the blocked step's touch and stops blocking via its `31 00`; the cupboard blocks silently, opens only on interact, grants once under its `70 xx` guard, and swings shut when the box is dismissed.
 
@@ -1476,6 +1480,7 @@ Two non-retail, opt-in knobs (play-window keybinds, persisted in `legaia-options
 - **Terrain slow.** The controller's half-speed test (cell flag `0x4000` with scene control byte `+0x61 == 1`) has no counterpart in the port's locomotion step.
 - **NPC walk clips.** A script-walked scene NPC glides in its current pose; see [motion-derived animation](#motion-derived-locomotion-animation).
 - **Static facing fallback.** A placement whose prologue the entry pre-run does not execute takes the fall-through leg's facing, so a later-chapter branch's facing is not selected for it.
+- **A prop that seats itself still draws where it stood.** The hosts hide a placed object by its bind record ([`World::hidden_object_records`](../../crates/engine-core/src/world/narration/field_channels.rs)), and one record binds many placements; the per-placement seat moves the collider only. `vozz`'s cut thickets are walkable and still drawn.
 - **Travel-art part stages** are counted, not drawn ([above](#the-travel-arts-in-the-engine)).
 - More open questions: [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 

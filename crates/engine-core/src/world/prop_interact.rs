@@ -424,6 +424,8 @@ impl World {
             id.ctx.local_flags = prop.anim.flags;
         }
         let mut parked = false;
+        // Where the record's own `23 <x> <z>` seated the prop this slice.
+        let mut own_seat: Option<(i32, i32)> = None;
         let door_teleports = self.props.bank.props.get(&anchor).is_some_and(|p| {
             self.props
                 .walk_touch_records
@@ -590,6 +592,23 @@ impl World {
                     &mut id.ctx
                 };
                 let step = field_step_routed(&mut host, ctx, &id.bytecode, id.pc);
+                // The record's own MOVE_TO seats the prop actor itself
+                // (`0x801DECAC`, the non-player arm: the tile goes into the
+                // executing actor's `+0x14` / `+0x18`). `vozz` P0[1], a
+                // thicket across East Voz's paths, parks itself on the hide
+                // tile with `23 7F 7F` once the player examines it holding
+                // `0x079`.
+                // REF: FUN_801DE840 (0x23 arm)
+                if b == 0x23
+                    && matches!(step, FieldStepResult::Advance { .. })
+                    && let (Some(&xb), Some(&zb)) =
+                        (id.bytecode.get(id.pc + 1), id.bytecode.get(id.pc + 2))
+                {
+                    let decode = |b: u8| -> i32 {
+                        i32::from(b & 0x7F) * 0x80 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 }
+                    };
+                    own_seat = Some((decode(xb), decode(zb)));
+                }
                 if player_target && matches!(b & 0x7F, 0x2B..=0x2D) {
                     let hint = host.world.player_clip_frames_hint();
                     host.world.props.bank.player_clip(hint).flags = player_ctx.local_flags;
@@ -640,6 +659,9 @@ impl World {
         // Mirror the context back onto the live prop: anim word, rate, and
         // the `+0x10` class word (whose bit `0` is the door's collision-off).
         self.sync_prop_from_ctx(anchor, &id.ctx);
+        if let Some(seat) = own_seat {
+            self.seat_prop(anchor, seat);
+        }
         if parked {
             id.park_frames = id.park_frames.saturating_add(1);
             if id.park_frames > PROP_RUN_PARK_TIMEOUT {
@@ -672,6 +694,25 @@ impl World {
         }
         self.set_player_engaged(false);
         self.dialog.inline = None;
+    }
+
+    /// Move prop `anchor`'s actor to `seat`: its position, its contact-box
+    /// centre and its collider rows travel together, so a prop that parks
+    /// itself on the hide tile stops blocking where it stood - retail's
+    /// candidate walk `FUN_801CF754` culls an actor that far from the player.
+    fn seat_prop(&mut self, anchor: (u8, u8), seat: (i32, i32)) {
+        let Some(prop) = self.props.bank.props.get_mut(&anchor) else {
+            return;
+        };
+        let (dx, dz) = (seat.0 - prop.world.0, seat.1 - prop.world.1);
+        prop.world = seat;
+        prop.collider = (prop.collider.0 + dx, prop.collider.1 + dz);
+        for c in &mut self.props.colliders {
+            if c.anchor == Some(anchor) {
+                c.center = (c.center.0 + dx, c.center.1 + dz);
+                c.live = (c.live.0 + dx, c.live.1 + dz);
+            }
+        }
     }
 
     /// Copy the executing context's actor words back onto the live prop and
@@ -908,6 +949,48 @@ mod tests {
             },
         );
         (w, anchor)
+    }
+
+    /// A prop whose record parks itself (`23 7F 7F`) leaves the collision
+    /// layer where it stood: its collider rows move with the actor.
+    #[test]
+    fn a_prop_that_parks_itself_takes_its_collider_along() {
+        let mut w = World::new();
+        w.install_field_player(0);
+        let record = vec![
+            0x00, 0x00, // header
+            0x23, 0x7F, 0x7F, // MoveTo the hide tile
+            0x21, // end of interaction
+        ];
+        let anchor = (16, 19);
+        w.props.bank.props.insert(
+            anchor,
+            PropAnimState {
+                anim: PropAnim::spawned(1, 4, false, 0),
+                program: PropProgram::default(),
+                world: (2240, 2496),
+                collider: (2240, 2496),
+                record: 1,
+                record_body: std::sync::Arc::new(record),
+                parked_pc: 2,
+                cflags: 0x4000_0000,
+            },
+        );
+        w.props.colliders.push(crate::world::FieldPropCollider {
+            anchor: Some(anchor),
+            center: (2240, 2496),
+            live: (2240, 2496),
+            moving_box: false,
+            interact: true,
+            solid: true,
+        });
+        assert!(w.start_prop_interaction(anchor));
+        for _ in 0..4 {
+            w.step_prop_interaction();
+        }
+        let hide = 0x7F * 0x80 + 0x40;
+        assert_eq!(w.props.colliders[0].center, (hide, hide));
+        assert_eq!(w.props.bank.props[&anchor].world, (hide, hide));
     }
 
     /// A prop record whose box is followed by a bare `0x26` back to its own

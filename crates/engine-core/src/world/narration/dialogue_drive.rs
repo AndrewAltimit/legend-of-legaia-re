@@ -444,6 +444,22 @@ impl World {
                     .then_some(ext_target)
                     .flatten()
                     .filter(|&t| t != 0xFB);
+            // A seat aimed at ANOTHER actor (`A3 <id> x z`) from a talker
+            // whose own context carries the party-bank class bit (`31 18` in
+            // its prologue): the port reads the player arm off that bit when
+            // no channel is stepping, so run on the talker's context the
+            // seat moved the PLAYER. Retail takes the player arm on an
+            // identity compare of the resolved context against the player
+            // (`bne s5,v0` at `0x801DEC7C`), which a companion's record
+            // fails. `vozz` P1[1] parks its two helper actors with
+            // `A3 06 7F 7F` / `A3 07 7F 7F`, and the player went to the
+            // off-map hide tile with them.
+            // REF: FUN_8003C83C, FUN_801DE840 (0x23 arm, 0x801DEC7C)
+            let other_seat = (op == 0x23
+                && !player_seat
+                && id.ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0)
+                .then_some(ext_target)
+                .flatten();
             let talker = host.world.dialog.stepping_inline_npc;
             if let Some(t) = run_target {
                 let view = host.world.channel_view();
@@ -481,6 +497,24 @@ impl World {
                     if let Some(a) = host.world.actors.get_mut(usize::from(slot)) {
                         a.move_state.world_y = y;
                     }
+                }
+                r
+            } else if let Some(t) = other_seat {
+                let mut other = id.ctx.clone();
+                other.flags &= !legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
+                let r = vm::field::step(&mut host, &mut other, &id.bytecode, id.pc);
+                // The seat lands on the placement the id names, when it
+                // names one; an id no channel carries moves nobody.
+                let view = host.world.channel_view();
+                let seated = legaia_engine_field::field_channels::resolve_target(view, t)
+                    .map(|ci| &view[ci])
+                    .filter(|ch| !ch.object_bind)
+                    .and_then(|ch| u8::try_from(ch.placement_index).ok());
+                if let Some(slot) = seated
+                    && let Some(pos) = host.world.npcs.positions.get_mut(&slot)
+                {
+                    *pos = (other.world_x as i16, other.world_z as i16);
+                    host.world.npcs.motions.remove(&slot);
                 }
                 r
             } else {
@@ -658,6 +692,28 @@ impl World {
                         id.done = true;
                     }
                     break;
+                }
+                // The same wait in a lead whose talker the port holds no clip
+                // cursor for (a placement on the party clip bank, `31 18`):
+                // nothing ticks toward the latch, but in retail it always
+                // lands - the anim tick raises it when the bound clip runs
+                // out - and the record goes on from the op behind the wait.
+                // The lead's fallback to its first text segment skipped
+                // everything between the two: `vozz` P1[1] gives item `0xAA`
+                // and raises `0x079` there, after `2C 08` / `2D 08`. The
+                // wait is taken as a clip of no length.
+                // REF: FUN_800204F8
+                FieldStepResult::Halt { final_pc }
+                    if (b & 0x7F) == 0x2D
+                        && ext_target.is_none()
+                        && id.fallback_segment_pc.is_some()
+                        && id.bytecode.get(final_pc + 1) == Some(&8) =>
+                {
+                    if final_pc < id.visited.len() {
+                        id.visited[final_pc] = true;
+                    }
+                    id.pc = final_pc + 2;
+                    id.park_frames = 0;
                 }
                 // A merchant's op `0x49` sub-0 under its open shop: the
                 // record parks on the op, as every context that reaches it

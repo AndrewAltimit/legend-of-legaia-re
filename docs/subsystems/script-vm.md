@@ -943,7 +943,12 @@ walks the player out of the cave this way; the disassembler prints the op as
 `Yield (Standard)`, which is its dispatch class, not what it does. A record
 that waits for a player gesture pokes the clip and spins on its end latch
 (`A2 F8 <clip>` / `AC F8 08` / `AD F8 08`), and when the clip binds from the
-scene bank the spin lasts the clip's frames. Engine port:
+scene bank the spin lasts the clip's frames. A talk's lead waits on the
+talker's **own** latch the same way (`2C 08` / `2D 08`); where the port holds
+no clip cursor for that talker the wait is a clip of no length and the
+record runs on from the op behind it, since the grant and the flag a chest
+or a giver writes sit between the wait and the first box (`vozz` P1[1]:
+`39 AA`, `50 79`). Engine port:
 `CutsceneTimeline::player_glide` and `player_clip_wait`, on the modal
 timeline and on concurrent helpers alike, and `InlineDialogue::player_glide`
 for a touched object's record (`tower`'s floor doors glide the player into
