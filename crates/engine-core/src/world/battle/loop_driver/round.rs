@@ -474,8 +474,14 @@ impl World {
     ///
     /// The engine seats its first monster at `party_count` rather than at
     /// retail's fixed slot 3, so the kernel runs in retail's slot space and
-    /// the result maps back. Magic and item commands carry their own target
-    /// resolution at dispatch and are left alone here.
+    /// the result maps back.
+    ///
+    /// A single-target **cast** is asked too: a Seru summon walks its
+    /// creature onto the victim and its module holds on the same range poll
+    /// (PROT 0903's arm 11), so a cast left on a corpse holds state `0x36`
+    /// for good. The kernel's Item arm covers only ids `0xFE` / `0x98`,
+    /// which the engine folds on its own target list at dispatch; an item
+    /// command is not asked here.
     ///
     /// REF: FUN_801DABA4 (party arm, `0x801DAEC4..0x801DAF1C`)
     /// REF: FUN_801DB124 (`vm::battle_action::redirect_dead_target`)
@@ -506,6 +512,43 @@ impl World {
                 };
                 Pending::Art {
                     sequence,
+                    target_row,
+                    target_slot,
+                }
+            }
+            // A single-target cast (category `2`, the spell id in `+0x1DF`).
+            // The call at `0x801DAF14` has no category gate in front of it,
+            // and the kernel's Magic arm re-rolls when the spell-table class
+            // byte is `>= 0xA` or the dead target is an enemy slot
+            // (`0x801DB198..0x801DB1D8`). A group cast carries the side code
+            // `8` / `9` in `+0x1DD`, which fails the kernel's `< 8` test, so
+            // only the single shapes are asked.
+            Pending::Spell {
+                spell_id,
+                target_row,
+                target_slot,
+            } => {
+                use legaia_engine_battle::spells::SpellTarget;
+                use legaia_engine_battle::target_picker::CursorRow;
+                let single = self.tables.spell_catalog.get(spell_id).is_some_and(|d| {
+                    matches!(
+                        d.target,
+                        SpellTarget::OneEnemy | SpellTarget::OneAlly | SpellTarget::SelfOnly
+                    )
+                });
+                let party_count = self.party.party_count.clamp(1, 3);
+                let target_slot = match (single, target_row) {
+                    (false, _) => target_slot,
+                    (true, CursorRow::Enemy) => {
+                        self.redirect_dead_battle_target(party_count + target_slot, 2, spell_id)
+                            - party_count
+                    }
+                    (true, CursorRow::Ally) => {
+                        self.redirect_dead_battle_target(target_slot, 2, spell_id)
+                    }
+                };
+                Pending::Spell {
+                    spell_id,
                     target_row,
                     target_slot,
                 }
