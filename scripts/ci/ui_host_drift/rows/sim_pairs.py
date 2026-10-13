@@ -260,16 +260,24 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["install_clip_file"],
     },
     {
-        "what": "fishing session affordance row, native vs play page - each "
-        "host names the same three session actions (menu, quit, prizes) "
-        "with its own keys; the page once printed only the menu, so a "
-        "player there never learned how to leave or reach the exchange",
+        "what": "minigame status caption, native vs play page - the engine's "
+        "status rows (rules readout + key hints for the slot machine, Baka "
+        "Fighter, the Muscle Dome, the dance and fishing) are one row model, "
+        "`minigame_status::caption`, shown outside the game picture: the "
+        "window's title bar, the page's strip under the canvas. Each host "
+        "used to draw them in the frame as glyph quads at fixed stage pens, "
+        "under the game's own chrome, and the page then picked them back "
+        "out of its draw list by pen and ink. Both sites must build the "
+        "caption from a `StatusHost` - which is where a host says whether "
+        "its slot machine draws itself and names all of its fishing keys "
+        "(the page once printed only the menu key, so a player there never "
+        "learned how to leave or reach the exchange)",
         "sites": {
-            "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
-            "web": ("crates/web-viewer/src/play_fishing.rs", "fishing_status_draws"),
+            "native": ("crates/engine-shell/src/window/minigames.rs", "minigame_caption"),
+            "web": ("crates/web-viewer/src/play_minigames.rs", "minigame_caption"),
         },
-        "mode": "pattern_same",
-        "pattern": r"= (menu|quit|prizes)\b",
+        "mode": "symbols_all",
+        "symbols": ["StatusHost", "FishingKeys", "slot_machine_drawn", "prizes"],
     },
     {
         "what": "effect-pool billboard TSB word, native vs play page (battle "
@@ -557,7 +565,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "status line and no frame at all. Both sites must read the rows",
         "sites": {
             "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
-            "web": (WEB_PLAY_ARENA, "dance_status_draws"),
+            "web": (WEB_PLAY_ARENA, "dance_hud_text_draws"),
         },
         "mode": "symbols_all",
         "symbols": ["hud_frame_rows"],

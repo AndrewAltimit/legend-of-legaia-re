@@ -54,6 +54,7 @@ impl PlayWindowApp {
         legaia_engine_render::profile::begin_frame();
         let field_tail_ticks = self.run_frame_ticks();
         self.seat_capture_frame();
+        self.sync_minigame_caption_title();
         legaia_engine_render::profile::mark("tick");
         self.apply_floor_wave();
         let view_cells = self.sync_field_view();

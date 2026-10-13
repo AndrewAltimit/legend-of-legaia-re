@@ -325,20 +325,6 @@ impl LegaiaRuntime {
                 .is_some_and(|h| h.world.minigames.muscle_hub.covers_leg())
     }
 
-    /// The Muscle Dome HUD rows, the engine's
-    /// (`minigame_status::muscle_status_rows`) through the shared draw kernel
-    /// the native window calls.
-    pub(crate) fn muscle_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        let Some(host) = self.scene_host.host() else {
-            return Vec::new();
-        };
-        let rows = legaia_engine_core::minigame_status::muscle_status_rows(&host.world);
-        legaia_engine_ui::text_lines::status_row_draws_for(
-            font,
-            rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
-        )
-    }
-
     /// The two hub-page TIMs out of the dome data container (extraction
     /// 1220, LZS section 0 = `[12-byte header][TIM][TIM]`), CLUTs as uploaded.
     fn muscle_hub_tims(&self) -> Option<(legaia_tim::Tim, legaia_tim::Tim)> {
@@ -447,16 +433,15 @@ impl LegaiaRuntime {
         legaia_engine_ui::baka_strips::baka_hud_prims(&views)
     }
 
-    /// The native window's Baka Fighter HUD lines.
-    pub(crate) fn baka_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+    /// The Baka Fighter frame's text: the retail number drawers and, while
+    /// the HUD pages are not resident, the chrome labels - what the native
+    /// window draws. The status rows (`minigame_status::baka_status_rows`)
+    /// are the caption's, not this list's.
+    pub(crate) fn baka_hud_text_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         let Some(f) = self.baka_session() else {
             return Vec::new();
         };
-        let rows = legaia_engine_core::minigame_status::baka_status_rows(f);
-        let mut out = legaia_engine_ui::text_lines::status_row_draws_for(
-            font,
-            rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
-        );
+        let mut out = Vec::new();
         // The duel's three retail number drawers - the round digit, the
         // right-aligned score field and the `0x10` px "GET COIN" strip - at
         // the ported cell layout the native window draws. This page printed
@@ -522,41 +507,24 @@ impl LegaiaRuntime {
         self.scene_host.host()?.world.minigames.dance.as_ref()
     }
 
-    /// The native window's dance HUD lines: score / gauge / lane, the arrow
-    /// the beat calls for, the last judgement, and the scrolling beat track
-    /// at the ported note positions.
-    pub(crate) fn dance_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+    /// The dance HUD frame's text fallback, in retail's 320x240 stage
+    /// coordinates. The score / called-arrow status rows
+    /// (`minigame_status::dance_status_rows`) are the caption's, not this
+    /// list's.
+    pub(crate) fn dance_hud_text_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         let Some(g) = self.dance_session() else {
             return Vec::new();
         };
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
-        // Score / gauge / lane, the called arrow with the last judgement and
-        // the beat track: the engine's rows
-        // (`minigame_status::dance_status_rows`), the ones the native window
-        // draws.
-        let rows = legaia_engine_core::minigame_status::dance_status_rows(
-            g,
-            host.world.minigames.dance_last_judge.as_ref(),
-        );
-        let mut out = legaia_engine_ui::text_lines::status_row_draws_for(
-            font,
-            rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
-        );
+        let mut out = Vec::new();
         // The retail-coordinate HUD frame - the three dancers' score
-        // readouts, their box brackets, the Lv gauges and the rivals' beat
-        // tracks - laid out by the engine
-        // (`DanceGame::hud_frame_rows`, the presentation half of
-        // `FUN_801d231c`). This host drew none of it: the frame's whole
-        // resolution lived inside the native window's dance block, so the
-        // browser showed the two plain status lines above and nothing else,
-        // for a run driven by the same `DanceGame`.
-        //
-        // These rows are in retail's 320x240 stage coordinates and the two
-        // lines above are in this page's own pen space; both go through the
-        // caller's single `scale_stage_text_draws`, which is the transform
-        // the native window also applies to this block.
+        // readouts, their box brackets, the Lv gauges and the beat tracks -
+        // laid out by the engine (`DanceGame::hud_frame_rows`, the
+        // presentation half of `FUN_801d231c`), and scaled by the caller's
+        // single `scale_stage_text_draws`, the transform the native window
+        // applies to this block.
         // With the hall's HUD page resident the frame draws as retail's own
         // quads in the prim pass (`dance_hud_prims`); these rows are the
         // fallback without it - the same either/or the native window takes.

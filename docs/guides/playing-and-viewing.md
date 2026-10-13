@@ -337,6 +337,11 @@ buys one). Each
 loads that minigame's overlay off the disc and installs a session, so the rules,
 tables and scoring all come from the disc rather than from hardcoded numbers.
 
+While a minigame is up, the port's own status readout and key hints (which
+button attacks, how to quit) sit **outside** the game picture, so the game's
+own chrome never covers them: in the window's title bar in `play-window`, and
+in the strip under the canvas on the browser play page, fullscreen included.
+
 The browser play page carries the fishing entry as a **Fish here** button under
 the canvas. Cross casts and reels, Square reels harder, Cross recasts once a
 catch resolves - the same pad the field controller reads, because the driver is

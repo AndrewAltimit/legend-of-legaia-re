@@ -128,12 +128,7 @@
         ctx.fillRect(st[0] + b.x * st[2], st[1] + b.y * st[2],
           Math.max(1, b.w * st[2]), Math.max(1, b.h * st[2]));
       }
-      /* The phase / key-hint rows go to the caption strip, not over the
-       * pond (the "Fish here" button reaches this with no minigame mode up). */
-      const mg = window.LegaiaPlayMinigames;
-      const texts = mg ? mg.captionTake(hud.texts, ov, 'fishing', hud.stage) : hud.texts;
-      this._mgCaptionLive = true;
-      if (this._menuFont) this._menuFont.blit(ctx, texts);
+      if (this._menuFont) this._menuFont.blit(ctx, hud.texts);
       this._overlayActive = true;
       return true;
     }
@@ -149,14 +144,7 @@
       const ov = this.menuOverlay;
       if (!ov) return;
       const ctx = this._menuCtx || (this._menuCtx = ov.getContext('2d'));
-      /* A minigame's status rows leave the frame for the caption strip under
-       * the canvas (play-minigames.js `captionTake`); the pass is bracketed
-       * here so a frame that draws none clears the strip. */
-      const mg = window.LegaiaPlayMinigames;
-      if (mg) mg.captionBegin();
-      this._mgCaptionLive = false;
       this._drawOverlayBase(ctx, ov);
-      if (mg) mg.captionCommit(this._mgCaptionLive || !!mg.active());
       /* Developer-menu overlay (the visitor's explicit opt-in - the browser
        * twin of the native LEGAIA_DEV_MENU surface). Painted last so it rides
        * whatever the base layers drew, the same way the native window folds
@@ -275,11 +263,7 @@
           ctx.fillRect(0, 0, ov.width, ov.height);
         }
         if (this._menuChrome) this._menuChrome.blit(ctx, shop.sprites);
-        /* An in-world minigame's status rows ride this list; they are shown
-         * under the canvas instead, clear of the game's own chrome. */
-        const mg = window.LegaiaPlayMinigames;
-        const texts = mg ? mg.captionTake(shop.texts, ov, mg.active(), null) : shop.texts;
-        if (this._menuFont) this._menuFont.blit(ctx, texts);
+        if (this._menuFont) this._menuFont.blit(ctx, shop.texts);
         this._overlayActive = true;
         overlayDrew = true;
       }

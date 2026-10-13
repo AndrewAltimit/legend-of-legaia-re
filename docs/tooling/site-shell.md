@@ -562,28 +562,55 @@ shoot.
 
 ### The play page's minigame status rows sit under the canvas
 
-The engine's minigame status rows (`engine-core::minigame_status`, and the
-fishing rows in `web-viewer::play_fishing`) are the port's own readout of the
-rules state plus the key hints - not retail chrome. They reach the page inside
-the overlay draw lists as font-atlas glyph quads at fixed stage pens, the
-positions the native window prints them at.
+The engine's minigame status rows (`engine-core::minigame_status`) are the
+port's own readout of the rules state plus the key hints - not retail chrome.
+They are data, not a draw list: `minigame_status::caption` returns the live
+game and its rows, and no builder emits them as glyph quads. The play page
+draws a game's own chrome (screen primitives) over its text layer, as the
+native window does, so a row in the frame would be covered by whatever the
+game draws there - the Baka Fighter title logo sat on the prompt line - and a
+long row ran off the frame's right edge.
 
-The play page draws a game's own chrome (screen primitives) over its text
-layer, as the native window does, so a row left in the frame is covered by
-whatever the game draws there - the Baka Fighter title logo sits on the prompt
-line - and a long row runs off the frame's right edge. `captionTake` in
-`play-minigames.js` therefore lifts the rows out of the list before the blit
-and shows them in `#play-mg-caption`, the strip under the canvas, where they
-wrap. The dance beat track is dropped outright: it is the game's own beat bar
-spelt in ASCII.
+The page reads the rows through one export, `play_mg_caption_json`:
 
-A row is recognised by shape, because the export carries quads and no strings:
-glyph cells in a status ink, on a status pen, starting at the pen's x and
-advancing by at most one cell. The text is read back through the atlas grid
-(`0x20 + row * 16 + col`). That couples the page to the pens and inks in
-`minigame_status` and `text_lines`; a row moved there shows up again inside the
-frame. Fullscreen presents the canvas wrap alone, so it shows the frame
-without the strip.
+```json
+{ "game": "baka", "rows": [
+    { "kind": "readout", "clauses": ["BAKA", "you 3200hp (wins 0)", "round 1"] },
+    { "kind": "hint", "clauses": ["choose your attack", "Start = quit"] } ] }
+```
+
+| Field | Meaning |
+|---|---|
+| `game` | `slot` / `baka` / `muscle` / `dance` / `fishing`, or `null` outside a minigame |
+| `rows` | reading order; may be empty while a game is live (a phase with nothing to say) |
+| `kind` | `readout` (the rules state) or `hint` (what to press) |
+| `clauses` | one statement each; the page separates them with a middle dot |
+
+`captionSync` in `play-minigames.js` writes them into `#play-mg-caption`, the
+strip under the canvas, where they wrap. It hides the strip when `game` is
+`null` and keeps its two-line seat while a game is live, so the controls under
+it do not jump between phases. The page holds no pen, ink or glyph constant:
+what the strip shows is whatever the export says.
+
+Two rows are decided in Rust, where they are authored. The dance beat track is
+not a caption row - it is the game's own beat bar, which the HUD frame draws.
+The slot machine's rows are a fallback for a machine that is not on screen:
+the caption stays live and empty once the cabinet draws itself.
+
+#### Fullscreen
+
+The Fullscreen button presents `#play-screen`, which holds the canvas wrap and
+the strip, so the rows come along. The strip takes its height out of the
+picture's letterbox and is never drawn over the picture.
+
+The element that goes fullscreen cannot itself be the 4:3 box. A browser's own
+sheet sizes a fullscreen element to the whole screen with `!important`
+(`width` / `height: 100%`, `inset: 0`, `margin: 0`), which no author rule
+overrides. A wrap asked to be `min(100vw, 100vh * 4/3)` wide therefore comes
+out the screen's full width, its 4:3 canvas runs taller than the screen, and
+the bottom of the picture is cut off. `.play-screen:fullscreen` is a flex
+column that centres the wrap, and the wrap takes its width from the height
+left after the strip.
 
 To reach a minigame from a driver, enter any scene and call
 `window.__playRuntime.play_mg_debug_warp(n)`: 0 fishing, 3 slot machine,

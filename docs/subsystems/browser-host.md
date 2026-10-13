@@ -550,9 +550,14 @@ themselves on every host (the field-VM op-`0x3E` arm and the world-map
 shared scene host drains it). This module is their presentation: the runtime
 synthesises a compact PROT image of just the minigame entries so the
 standalone minigames page's decoders and renderers serve the in-world
-session, live state reads off the world's own sessions, the text HUD rides
-`minigame_overlay_draws`, input is the pad word through the engine's own
-tick, and Start exits back to the field with coins and prizes settled.
+session, live state reads off the world's own sessions, the game picture's own
+text rides `minigame_overlay_draws`, input is the pad word through the engine's
+own tick, and Start exits back to the field with coins and prizes settled.
+The engine's status rows - the port's readout of the rules state plus the key
+hints, fishing's included - are not in that draw list: `play_mg_caption_json`
+exports them as strings (`engine-core::minigame_status::caption`) and the page
+shows them in the strip under the canvas
+([site-shell](../tooling/site-shell.md#the-play-pages-minigame-status-rows-sit-under-the-canvas)).
 `site/js/play-minigames.js` also carries the fishing prize-exchange panel
 over `play_fishing_prizes_json` / `play_fishing_prize_buy`. Disc-gated oracle:
 `crates/web-viewer/tests/play_minigames_host.rs`. The overlays' own BGM tracks start through the

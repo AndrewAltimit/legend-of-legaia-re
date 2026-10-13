@@ -124,20 +124,36 @@ fn the_play_page_cabinet_climbs_or_exits_by_itself() {
         return;
     }
 
-    // The tally drains, then the sheet comes up: its labels and pot digits
-    // join the overlay.
-    let before = overlay_quads(&mut rt);
+    // The tally drains, then the sheet comes up. The cabinet's own state is
+    // read off the status caption - its hint row names the sheet - which is
+    // strings beside the frame, not quads in it. (This loop used to count the
+    // overlay's font quads and wait for a jump of ten: that jump was the
+    // status row's own text getting longer, drawn in the frame.)
+    let sheet_hint = |rt: &LegaiaRuntime| {
+        let cap = json(rt.play_mg_caption_json());
+        cap["rows"].as_array().is_some_and(|rows| {
+            rows.iter().any(|r| {
+                r["kind"] == "hint"
+                    && r["clauses"][0]
+                        .as_str()
+                        .is_some_and(|c| c.starts_with("NEXT GAME / PAY OUT"))
+            })
+        })
+    };
     let mut sheet = false;
     for _ in 0..0x600 {
         tick(&mut rt, 1);
-        if overlay_quads(&mut rt) > before + 10 {
+        if sheet_hint(&rt) {
             sheet = true;
             break;
         }
     }
+    assert!(sheet, "the NEXT GAME / PAY OUT sheet never came up");
+    // The sheet's pot numeral is the frame's own text: font cells at the
+    // ported strip layout, in the overlay draw list.
     assert!(
-        sheet,
-        "the NEXT GAME / PAY OUT sheet never reached the overlay"
+        overlay_quads(&mut rt) > 0,
+        "the sheet's pot numeral never reached the overlay"
     );
     press(&mut rt, CROSS); // NEXT GAME is the default row
     let mut seated = false;

@@ -79,7 +79,38 @@ fn warp_into(rt: &mut LegaiaRuntime, sub_id: u8, expect_mode: &str, expect_game:
     );
 }
 
-/// The overlay draw list must carry HUD rows while the game is up.
+fn caption_json(rt: &LegaiaRuntime) -> serde_json::Value {
+    serde_json::from_str(&rt.play_mg_caption_json()).expect("caption json")
+}
+
+/// The caption's rows as `(kind, clauses)`, asserting it belongs to `game`.
+fn caption_rows(rt: &LegaiaRuntime, game: &str) -> Vec<(String, Vec<String>)> {
+    let cap = caption_json(rt);
+    assert_eq!(cap["game"].as_str(), Some(game), "{cap}");
+    cap["rows"]
+        .as_array()
+        .expect("rows")
+        .iter()
+        .map(|r| {
+            let kind = r["kind"].as_str().expect("kind").to_string();
+            assert!(kind == "readout" || kind == "hint", "{cap}");
+            let clauses: Vec<String> = r["clauses"]
+                .as_array()
+                .expect("clauses")
+                .iter()
+                .map(|c| c.as_str().expect("clause").to_string())
+                .collect();
+            assert!(
+                !clauses.is_empty() && clauses.iter().all(|c| !c.trim().is_empty()),
+                "{game}: a row with nothing to say: {cap}"
+            );
+            (kind, clauses)
+        })
+        .collect()
+}
+
+/// The overlay draw list must carry the game picture's own text while the
+/// game is up.
 fn assert_hud_rows(rt: &mut LegaiaRuntime, game: &str) {
     let ov: serde_json::Value =
         serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
@@ -120,6 +151,11 @@ fn assert_start_exits(rt: &mut LegaiaRuntime, game: &str) {
     // Nothing else is up in a quiet field, so the overlay payload closes
     // once the minigame rows are gone (the field party HUD is idle-gated).
     let _ = ov;
+    let cap = caption_json(rt);
+    assert!(
+        cap["game"].is_null() && cap["rows"].as_array().is_some_and(|r| r.is_empty()),
+        "{game}: the caption must clear on quit: {cap}"
+    );
 }
 
 #[test]
@@ -144,6 +180,12 @@ fn casino_door_warp_draws_the_slot_machine_and_start_leaves() {
         rt.play_screen_prim_count() > 1014,
         "the screen-prim pass must carry the machine: {}",
         rt.play_screen_prim_count()
+    );
+    // ...and the caption is live with nothing to add: the fallback status
+    // rows are for a machine that is not on screen.
+    assert!(
+        caption_rows(&rt, "slot").is_empty(),
+        "a machine that draws itself needs no status rows"
     );
 
     // The retail machine's presentation off the disc.
@@ -272,6 +314,10 @@ fn arena_door_warp_draws_the_muscle_dome_and_start_leaves() {
         "the leg's battle chrome never came up past the hub"
     );
     assert_hud_rows(&mut rt, "muscle");
+    // The command ring is battle chrome; the dome's status rows only speak
+    // between turns and over the Ra-Seru list, so the caption is live here
+    // whatever it holds.
+    let _ = caption_rows(&rt, "muscle");
     assert_start_exits(&mut rt, "muscle");
 }
 
@@ -282,7 +328,20 @@ fn duel_door_warp_draws_baka_fighter_and_start_leaves() {
         return;
     };
     warp_into(&mut rt, SUB_BAKA, "BakaFighter", "baka");
-    assert_hud_rows(&mut rt, "baka");
+    // The attract card. Its prompt is the caption's one row - and it is NOT
+    // text in the frame, where the title logo draws over the text layer: with
+    // the HUD pages resident the card's own widgets are retail quads in the
+    // prim pass, so the overlay's font list is empty.
+    let rows = caption_rows(&rt, "baka");
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].0, "hint");
+    assert_eq!(rows[0].1, ["BAKA FIGHTER", "Start or Cross to begin"]);
+    let ov: serde_json::Value =
+        serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
+    assert!(
+        ov["texts"].as_array().is_none_or(|t| t.is_empty()),
+        "the attract card carries no font text - the prompt is the caption's: {ov}"
+    );
     let g = game_json(&rt);
     let opp = g["baka"]["opponent"].as_u64().expect("opponent") as u32;
     assert!((1..=16).contains(&opp), "ladder roster id: {g}");
@@ -340,23 +399,35 @@ fn dance_door_warp_draws_the_hall_and_start_leaves() {
         rt.play_screen_prim_count() >= 1,
         "the count-in banner draws as screen-space primitives"
     );
-    // Run the count-in out; the status readout (and its font rows) arm
-    // behind it.
-    let mut armed = false;
+    // The count-in withholds the status rows: the caption is live and empty.
+    assert!(
+        caption_rows(&rt, "dance").is_empty(),
+        "no status rows over the count-in"
+    );
+    // Run the count-in out; the status readout arms behind it - as caption
+    // rows, never as font rows in the frame.
+    let mut rows = Vec::new();
     for _ in 0..16 {
         tick(&mut rt, 20);
-        let ov: serde_json::Value =
-            serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
-        if ov["open"].as_bool() == Some(true) {
-            armed = true;
+        rows = caption_rows(&rt, "dance");
+        if !rows.is_empty() {
             break;
         }
     }
-    assert!(
-        armed,
-        "the dance status readout arms once the count-in clears"
+    assert_eq!(
+        rows.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(),
+        ["readout", "hint"],
+        "the dance status readout arms once the count-in clears: {rows:?}"
     );
-    assert_hud_rows(&mut rt, "dance");
+    assert_eq!(rows[0].1[0], "DANCE");
+    assert_eq!(rows[1].1.last().map(String::as_str), Some("Start = quit"));
+    // No row spells the beat track: that is the game's own beat bar.
+    assert!(
+        rows.iter()
+            .flat_map(|r| &r.1)
+            .all(|c| !c.starts_with("beat") && !c.starts_with("COMBO")),
+        "{rows:?}"
+    );
     // With the hall's HUD page resident the score boxes / digits / `Lv.`
     // gauges draw as retail's own quads in the screen-prim pass.
     assert!(

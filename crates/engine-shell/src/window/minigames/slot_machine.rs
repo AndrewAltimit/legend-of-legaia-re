@@ -158,7 +158,7 @@ impl PlayWindowApp {
 
     /// The slot machine's rules-page text (`slot_cabinet::
     /// slot_rules_text_draws_for`) in surface pixels; empty off a rules page.
-    /// The browser play page draws the same list (`slot_status_draws`).
+    /// The browser play page draws the same list (`slot_rules_text_draws`).
     pub(in crate::window) fn slot_rules_text_draws(&self, w: u32, h: u32) -> Vec<TextDraw> {
         if self.session.host.world.mode != SceneMode::SlotMachine {
             return Vec::new();

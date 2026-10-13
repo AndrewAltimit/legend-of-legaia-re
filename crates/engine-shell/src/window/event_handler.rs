@@ -29,7 +29,7 @@ mod redraw_tick;
 
 impl ApplicationHandler for PlayWindowApp {
     fn resumed(&mut self, evl: &ActiveEventLoop) {
-        if !self.win.open(evl, "legaia-engine") {
+        if !self.win.open(evl, minigames::WINDOW_TITLE) {
             return;
         }
         // Opt-in PSX-faithful rendering: affine (perspective-incorrect) UV

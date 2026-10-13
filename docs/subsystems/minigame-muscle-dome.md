@@ -1054,14 +1054,14 @@ The port models the same two layers and shares every rule between the native `pl
 
 **Playback.** The port resolves a turn in one tick, so the action band has a stand-in: after `Resolve` the leg holds at `TurnOver` for the surface's replay (`muscle_dome_scene::turn_playback_ticks`, one play every `PLAY_CADENCE_TICKS`; `World::muscle_playback_frames`). One schedule, `turn_timeline`, feeds the surface, the hold and the tally: the leg's first acting play walks its attacker in on its walk clip (tag `1`), each play swings, and each attacker's string closes on the done band's `0x3C`-frame tail; the knockdown lands on the play that ends the leg.
 
-The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`): the acting side's plaque holds the top-left seat and the running tally of the side acting (`World::muscle_playback_tally`) rides the status rows as text - the dome VRAM carries no `(448, 0)` page for the `etim` TOTAL cells.
+The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`): the acting side's plaque holds the top-left seat and the running tally of the side acting (`World::muscle_playback_tally`) rides the status caption as text - the dome VRAM carries no `(448, 0)` page for the `etim` TOTAL cells.
 
 **Host models** (where the port runs something other than retail's mechanism):
 
 - The opponent commits greedily in deal order out of the player's own direction deck. Only the monster's stats are real; its own action stream is not modelled.
 - **Auto** fills the string greedily in deal order rather than reloading the saved string and rebuilding it per round.
 - The ring's **Item** arm always refuses (the session carries no bag). **Spirit** commits an empty string.
-- The **Ra-Seru list** is drawn as text rows (`engine-core::minigame_status::muscle_status_rows`); its window's pieces are not pinned.
+- The **Ra-Seru list** is a row of the status caption (`engine-core::minigame_status::muscle_status_rows`), shown outside the game picture - the native title bar, the play page's strip under the canvas; its window's pieces are not pinned.
 - **Run** ends the leg on the press; the escape roll is not modelled.
 - The approach length and per-swing cadence are the port's clock, not retail's root-motion arithmetic.
 - The **minigames page's** standalone panel installs no art catalog, so its turn resolves the raw direction string: its only art source is the SCUS arts-*name* table, which carries a display index rather than an action constant, and it does not decode the per-character art records (PROT `0x05C4`). Its arts banner is unaffected.

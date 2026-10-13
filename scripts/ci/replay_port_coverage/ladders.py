@@ -448,7 +448,7 @@ CANONICAL_LADDERS = [
     # union lacked - what each adds is an untagged host draw or a state flip,
     # which this report cannot key on and the triage page records by name:
     # `play_minigames_host` drives the four door-warp minigames on the page
-    # (the Baka digit strips are its only driver of `baka_status_draws`), and
+    # (the Baka digit strips are its only driver of `baka_hud_text_draws`), and
     # `conc_flag_6de_position_latch_disc` walks the player across `conc`'s
     # `CD F8` box both ways, which makes `sync_field_ctx_player_anchor`
     # observable as a flip rather than as a call.

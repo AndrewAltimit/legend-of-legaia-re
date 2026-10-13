@@ -945,6 +945,9 @@ pub(super) struct PlayWindowApp {
     /// draws no such text); `F1` toggles, and `LEGAIA_DIAG_HUD` starts it on
     /// so the existing diagnostic env var reaches this surface too.
     pub(super) diag_rows: bool,
+    /// The title bar text last written (`sync_minigame_caption_title`): the
+    /// window's name, plus the live minigame's status caption.
+    pub(super) caption_title: String,
     /// Phase J3 pad-capture state. `Some` when the user invoked the
     /// `record` subcommand; the keyboard handler appends transitions
     /// to `events` and the close handler flushes a `j-replay-v1` file

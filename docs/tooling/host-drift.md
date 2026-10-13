@@ -1186,7 +1186,7 @@ decidable per instance, not from a source pattern.
 | **A draw list that carries half a mesh.** | A surface running `tmd_to_vram_mesh` alone drops every untextured prim. | Assert the **untextured corner count**, never the total. |
 | **Length parity is not coverage.** | A white `a_flat_rgba` stream has the right length. | Assert content. |
 | **Two hosts agreeing on a wrong law.** | Both laid the crawl out in surface pixels with 1x glyphs. | Only a retail frame flags it. |
-| **A hint string is an unpaired constant.** | Slot and Baka prompts named retired buttons on both hosts. | One engine text taking each host's key names (`PondSession::status_rows`, `minigame_status`). |
+| **A hint string is an unpaired constant.** | Slot and Baka prompts named retired buttons on both hosts. | One engine text taking each host's key names (`minigame_status::caption` over a `StatusHost`). |
 | **A stateless replay standing in for a stateful kernel.** | The minigames page replayed `FirstVisitHub` by tick: no press, no XA line. | Step a live hub (`muscle_first_visit_reset` / `_step`). |
 | **Two hosts running different engines.** | Fishing was modelled twice; `catch_hud_draws` got a literal `0` depth because one model had no `DAT_801d9298`. | Delete the second model. |
 
@@ -1781,7 +1781,27 @@ inside it. Tier 12 measures the inside, and the pair carries a
 | dance | `World::enter_dance` (arms `dance_countin`), `dance::CountIn`, `FinishCountdown`, `DanceTutorial`; `DanceGame::advance_body_clips`, `DanceCastSurface::frame`; `dance_venue::DanceVenue::build`, `sync_dance_venue`; `stage_dance_hud_vram`, with `World::minigames.dance_hud_art_staged` as the one residency predicate; `World::finish_dance_if_over` | Mesh build and instance transform. |
 | Muscle Dome | `MuscleDomeSession::select_input`; `muscle_dome_scene::MuscleDomeSurface` (`frame_at`, `sim_ticks`, `DomeCamera::vp_raw`); `muscle_ringside::HubTimers::tick`, `HubBackdrop`, `FirstVisitHub`; `ringside_backdrop::ringside_still_quads`, `first_visit_hub_draw`; `SceneHost::dome_lead_fighter`; `World::leave_muscle_dome` | The minigames page keeps its own dome panel (`minigame-muscle.js`). |
 | effect parts | `legaia_engine_minigames::minigame_fx::MinigameFxPool` on `World::minigames.fx`, drawn by `engine-ui::minigame_fx::fx_part_draws` | The minigames page keeps its own instance of the type. |
-| status rows | `engine-core::minigame_status` + `engine-ui::text_lines::status_row_draws_for` | each host's stage transform |
+| status rows | `engine-core::minigame_status::caption` (rows as data: kind + clauses, no stage position) | where the caption shows, and `StatusHost` |
+
+**The status rows are a caption, not a draw.** They are the port's readout of
+the rules state plus the key hints, authored once per game in
+`minigame_status`, and no builder emits them as glyph quads. Both hosts draw a
+game's screen primitives over their text layer, so a row printed in the frame
+at a fixed stage pen lost to the game's own chrome on both: the Baka Fighter
+title logo covered the prompt row, and a long row ran off the right edge. Each
+host shows the caption outside the game picture instead.
+
+| Host | Reads | Shows it in |
+|---|---|---|
+| native window | `PlayWindowApp::minigame_caption` | the title bar (`sync_minigame_caption_title`, `MinigameCaption::title_line`) |
+| browser play page | `LegaiaRuntime::minigame_caption`, exported as `play_mg_caption_json` | the strip under the canvas, which rides fullscreen ([site-shell](site-shell.md#the-play-pages-minigame-status-rows-sit-under-the-canvas)) |
+
+The native window uses the title bar because its default surface is exactly
+the 4:3 stage: there is no margin to move a row into, and every pixel of the
+surface belongs to the game. A `StatusHost` carries the two things only a host
+knows - whether its slot machine draws itself (the rows are then empty) and
+what its fishing keys are called. A tier-3 `SIM_PAIRS` row requires both
+`minigame_caption` sites to build one.
 
 <a id="the-fishing-point-exchange-sub-screen-one-session-on-two-hosts-a-query-on-the-third"></a>
 

@@ -303,9 +303,11 @@ impl DanceGame {
     /// The HUD frame as laid-out rows - the presentation half of
     /// [`Self::hud_draws`] (`FUN_801d231c`).
     ///
-    /// The human dancer's own beat track (`slot == 0`) is skipped: both hosts
-    /// already carry the full player track in their own status block, at a
-    /// pen of their choosing rather than at retail's anchor.
+    /// Every beat track the emitter names is a row, the human dancer's own
+    /// (`slot == 0`) included, each at retail's anchor. These rows are what a
+    /// host draws while the hall's HUD page is not resident, so they are the
+    /// only beat bar on screen then: no host prints a second player track of
+    /// its own.
     pub fn hud_frame_rows(&self, rival_hud: bool) -> Vec<DanceHudRow> {
         let beat = self.beat_index();
         let mut out = Vec::new();
@@ -342,9 +344,6 @@ impl DanceGame {
                     });
                 }
                 DanceHudDraw::BeatTrack { slot, x, y } => {
-                    if slot == 0 {
-                        continue;
-                    }
                     if let Some(row) = self.chart_row(self.dancer_lane(slot)) {
                         let text: String = (0..8u32)
                             .map(|i| match row[((beat + i) % row.len() as u32) as usize] {
