@@ -807,13 +807,23 @@ engine's plates still mid-rise while retail's had long since landed
 Two limits to read a residual by. The RAM cannot say how long ago a glide
 landed, and the displayed frame is two frame steps older:
 `battle_noa_miracle_art_combo`'s plates landed inside that window, so its frame
-shows them still rising while the seat lands them. `koru_strip_forced` is the
-round prompt's twin: its RAM holds no glide record, its newest packet pool
-draws `Begin` and `Run` five pixels short of their seats, and the frame on
-screen shows them closer still, with the panel mid-rise and no D-pad glyph
+shows them still rising while the seat lands them.
+
+The round prompt's open glide is the one case the packets recover
 ([battle-hud](../subsystems/battle-hud.md#the-round-prompt-opens-on-a-glide)).
-And a replayed cast or
-strike reaches its phase on its own clock, which the raise does not share:
+`koru_strip_forced`'s RAM holds no glide record - the stepper clears a record
+on the pass that snaps it - yet the frame on screen shows the panel mid-rise,
+no D-pad glyph, and `Begin` ten pixels short of its seat. The two ordering
+tables hold the frame being built and the one the GPU drew before it: one
+draws the `Begin` left cap (`SPRT`, CLUT `0x7FC4`, texel `(208, 0)`) at rest
+on `x = 96`, the other on `x = 101`, fourteen vsyncs into the glide. The
+displayed frame is one frame step older than the older table, so a prompt
+capture with an empty glide table takes that table's `elapsed` less one step
+as the prompt's seat (`round_prompt_pool_seat`; twelve here, which is the
+`x = 106` on screen).
+
+The second limit: a replayed cast or strike reaches its phase on its own
+clock, which the raise does not share:
 `nivora_duel_mid_blazing_slash` holds plaque and bar ten vsyncs into the raise
 (six on screen), and `battle_melee_hit_spark`'s cluster is twelve vsyncs into
 its slide (eight on screen), which leaves it off the right edge.

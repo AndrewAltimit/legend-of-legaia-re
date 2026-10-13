@@ -525,9 +525,9 @@ its state switch and leaves without dispatching while the stepper reports a
 glide in flight (`jal 0x801D9BBC` at `0x801D0B2C`, `bne s0,zero` at
 `0x801D0B38`, the exit at `0x801D0BA0`). The glyph is drawn by the state's own
 arm (`FUN_801DB8F4(0x98, 0x58)` at `0x801D1030` for `0x1E`), so an unfolding
-prompt shows none: the packet pool of `koru_strip_forced` holds `Begin` and
-`Run` five pixels short of their seats, the panel nine rows short of its own,
-and no glyph packet.
+prompt shows none: the older of `koru_strip_forced`'s two ordering tables
+holds `Begin` and `Run` five pixels short of their seats, the panel nine rows
+short of its own, and no glyph packet.
 
 #### The ring opens on a glide
 

@@ -102,7 +102,18 @@ impl RetailBattle {
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
                 game_anchors::u8_at(ram, ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE) == 0
             }),
-            hud_glides: hud_glide_seats(ram, ctx, display_lag_vsyncs(ram)),
+            hud_glides: {
+                let mut seats = hud_glide_seats(ram, ctx, display_lag_vsyncs(ram));
+                // A round prompt whose open glide the table has already
+                // cleared can still be unfolding on screen.
+                if game_anchors::u8_at(ram, ctx + 6) == 0x1E
+                    && seats.is_empty()
+                    && let Some(seat) = round_prompt_pool_seat(ram, frame_step(ram))
+                {
+                    seats.push(seat);
+                }
+                seats
+            },
             entry_counter: game_anchors::u8_at(ram, ENTRY_COUNTER),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
