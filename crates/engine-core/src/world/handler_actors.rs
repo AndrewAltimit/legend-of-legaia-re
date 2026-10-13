@@ -634,6 +634,42 @@ impl World {
         a.colour_tween = Some(tween);
     }
 
+    /// Give a tween a script just spawned its first handler call, in the game
+    /// frame that spawned it.
+    ///
+    /// Retail's frame walks the script's actor before the node its spawn
+    /// linked, so the tween is ticked in the frame the op ran: a capture
+    /// parked on the `4A` behind `34 01 FF FF FF 1E` (`koin3` `P2[6]`) holds
+    /// the tween's clock `+0xC8` and the wait's sum `+0x54` on the same
+    /// value, `21`, and both gain the frame step a frame. The engine's actor
+    /// pass runs ahead of its script pass, so without this the tween's clock
+    /// trails the wait by one game frame and every scripted fade draws one
+    /// frame light. Only on a vsync that is a game frame: a script that
+    /// spawns between two is not on retail's grid, and the pass that follows
+    /// is less than a frame away.
+    ///
+    /// REF: FUN_8002519C (the walk), FUN_801DDC20 (the handler)
+    pub(crate) fn tick_spawned_colour_tween(&mut self, slot: usize) {
+        if !(self.clock.game_tick_live && self.clock.game_tick_fired) {
+            return;
+        }
+        let delta = self.clock.frame_step.max(1);
+        let Some(a) = self.actors.get_mut(slot) else {
+            return;
+        };
+        let Some(tween) = a.colour_tween else {
+            return;
+        };
+        let mut t = tween;
+        t.flags = a.physics.status_flags;
+        let step = legaia_engine_field::actor_colour_tween::step_colour_tween(t, delta);
+        let mut next = tween;
+        next.clock = step.clock;
+        a.colour_tween = Some(next);
+        a.physics.status_flags = step.flags;
+        a.tint_push = step.push;
+    }
+
     /// Spawn a colour tween on a free slot. `None` on a full pool.
     pub fn spawn_colour_tween(&mut self, tween: ColourTween) -> Option<usize> {
         let slot = self.spawn_handler_actor(ActorHandler::ColourTween)?;

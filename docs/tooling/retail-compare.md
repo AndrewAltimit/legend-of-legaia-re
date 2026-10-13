@@ -263,6 +263,20 @@ portal that already fired, and re-engaging it crossed the door a second time
 inside the settle window. BGM starts are recorded by a director on the scene
 host's event route.
 
+The seed also hands over the **frame step** retail was running at
+(`RetailObs::frame_step`, rebuilt from the frame-time ring at `0x80084098` as
+the display lag is; `World::seed_frame_step`, `LEGAIA_SEAT_FRAME_STEP` for the
+image child). The step is measured, not installed: `FUN_80016B6C` takes the
+longest of its last sixteen frame times and only raises it to the floor
+`0x8007B9D8`, so a scene on a floor of `2` runs at `3` wherever a frame costs
+more than two fields. Many of the field captures do - `koin1`,
+`koin3`, `kor5`, `teien`, `jouine`, the overworld - and the engine, whose tick
+is scheduled rather than measured, keeps the floor. That is load history like
+the camera block, and it decides which sums a script's `0x4A` wait can hold
+([cutscene](../subsystems/cutscene.md#record-pacing---the-60-hz-sub-clock)): a
+gate on a wait of `15` is never met on a step of `2`. The seeded step never
+goes under the engine's own floor.
+
 **The image channel** comes from `play-window`, the real renderer, run as a
 child process from a scratch directory under the report, and seeded the same
 way: the lifted save is written as a scratch LGSF file whose resume point is
@@ -2090,21 +2104,56 @@ usual two game frames, measured off the tween itself: the walk-in actor
 frame, so the tick the RAM holds built a push of clock `18` (grey `170`); the
 draw buffer's list is the frame before (clock `15`, grey `141`), and the
 displayed buffer's floor, read against the draw buffer's, sits under a push
-of about `117..125` - clock `12`, one more frame back. The engine gates on
-the displayed wait, but its frame step is `2` against retail's `3`, so the
-push it draws comes from clock `14` rather than `12`; gating it earlier still
-does not raise the score, because what parts the frames is not the fade.
+of about `117..125` - clock `12`, one more frame back.
+
+The engine draws that push too, and two things had to hold for it. The hall
+sits on a frame-step floor of `2` and retail runs it at `3`, so on the engine's
+own cadence the displayed wait of `15` is not a sum the record ever holds: it
+gated a vsync late, on `16`. The seed hands the engine the capture's measured
+step ([above](#the-seeding-model)), and the gate is met on `15` (`21` on the
+RAM's side). And the tween is ticked in the frame its op ran - the state holds
+its clock and the wait's sum on the same `21` - where the engine's actor pass,
+which runs ahead of its script pass, first ticked it a frame later and drew
+every scripted fade one frame light. With both, the dancers' colours sit within
+a few levels of retail's (`(26, 20, 7)` against `(23, 18, 7)` over the centre
+pair) where the late gate read them darker and the late tween eight levels
+brighter.
+
+What still parts the frames is not the fade. The engine's floor is black under
+a push retail's floor is still green under, so its cells are darker before the
+subtract: the strobe's phase.
 Retail's own two buffers - one game frame apart - agree on only `0.80` of
 the blocks: the floor's palette strobe and a spotlight beam (the CLUT-cell
 cycler parts on row `507`) that is on in the displayed frame and off in the
-drawn one. The engine frame agrees with the draw buffer on `0.84` and with
-the display on `0.69`; the residual is that frame-to-frame strobe, a capture
+drawn one. The cell values the seed installs are the RAM's, two game frames
+past the displayed frame's, and a strobe a move program re-keys every tick has
+no rewind. The engine frame agrees with the draw buffer on `0.84` and with the
+display on about `0.7`; the residual is that frame-to-frame strobe, a capture
 limit.
 
 The phase gate resumes record 6 and replays that staging, which puts the
 camera exactly on retail's shot and the player on retail's `(5952, 12992)`.
 An engine that stepped the placements the record pokes left the player at
 `(6208, 13120)`; no poke engages a placement, so none runs.
+
+### A capture parked on an end latch has no phase to gate on
+
+`minigame_baka_pcsx` is `koin1` with the player's talk to the Baka Fighter
+cabinet (flat `64`) parked on `AD F8 08` at `+0x41`, the spin on the end latch
+of the sit-down clip the record poked just before (`B8 F8 84 17`, `B3 F8 0A`,
+`AC F8 08`). The state says how far that clip has run: the player holds clip
+`4`, fifteen frames at three cursor units a vsync, on cursor `219` of `239` -
+seven vsyncs short of the latch - and the frame on screen shows him seated
+with his back to the camera.
+
+The gate has a wait for a `0x4A` park and a glide for a camera mover, and
+nothing for a latch: it is met on the first tick the engine's record stands on
+the `AD`, where the clip has only begun, so the engine frame catches Vahn
+swinging a leg over the stool. The blocks around him move by one with any
+change that shifts the tick the record arrives on: the frames an engine built
+before and after the `0x4A` grid credit differ in `623` pixels, all inside the
+box around the stool, and in one scored block. A gate that carried the clip
+cursor the way it carries the glide would close it.
 
 ### An attack-face capture frames the shot the state before it armed
 

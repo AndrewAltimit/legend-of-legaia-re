@@ -1509,17 +1509,20 @@ passes on the first visit whose sum is at or past the operand (`0x801E09CC..0x80
 `ctx[+0x54] += DAT_1F800393`, compare, clear on the pass), so a wait of `N` at step `s` holds its
 record for `s * (ceil(N / s) - 1)` vsyncs:
 
-| Operand | Held at step `3` | Held at step `2` |
+| Step | Scene and record | Operand → vsyncs held |
 |---|---|---|
-| `5` | `3` | `4` |
-| `10` | `9` | `8` |
-| `30` | `27` | `28` |
-| `40` | `39` | `38` |
-| `45` | `42` | `44` |
+| `2` | `opstati` `P2[0]`, `opurud` `P2[9]` | `6` → `4`, `30` → `28`, `32` → `30`, `45` → `44`, `80` → `78`, `90` → `88` |
+| `3` | `opdeene` `P2[18]`, `opstati` `P2[0]` | `5` → `3`, `8` → `6`, `10` → `9`, `30` → `27`, `40` → `39`, `45` → `42` |
+| `4` | `opurud` `P2[9]` | `5` → `4`, `15` → `12`, `45` → `44`, `50` → `48`, `75` → `72`, `90` → `88`, `430` → `428` |
 
-The step-`3` column is what a per-vsync capture of `opdeene`'s opening record reads at every one
-of its waits (`scripts/pcsx-redux/autorun_opdeene_pacing.lua`; `opdeene` runs at `3` because its
-prescript stager raises the frame-step floor).
+Every row is read off a per-vsync capture of the zero-input opening chain
+(`scripts/pcsx-redux/autorun_opdeene_pacing.lua` from the New Game state): all 59 waits the chain
+holds at one step from end to end fit the formula, at every residue of the operand the chain
+offers. The step is the adaptive one, not the floor - `opdeene` runs at `3` because its prescript
+stager raises the floor, while `opstati` and `opurud` sit on a floor of `2` and step by `2`, `3` or
+`4` as their frames cost. A wait the step changes under still fits the per-visit rule (each visit
+adds that frame's step). No field scene steps by `1`: that floor belongs to the name entry, the
+menus and the battle.
 
 One engine tick is one vsync, and the record contexts are stepped on every one
 ([`World::step_spawned_record_contexts`](../../crates/engine-core/src/world/narration.rs)), so the
