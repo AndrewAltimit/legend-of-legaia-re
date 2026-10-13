@@ -1,6 +1,6 @@
 //! `FUN_800265E8`'s boot table is the per-slot SPU RAM base table.
 //!
-//! The seeder's twelve words (`legaia_engine_core::scus_leaf_kernels::
+//! The seeder's twelve words (`legaia_engine_system::scus_leaf_kernels::
 //! BOOT_OFFSET_TABLE`, installed at `0x800917B0`) and the audio side's
 //! `legaia_game_tables::sfx_table::spu_base_for_slot` are two transcriptions of one
 //! retail table, reached from opposite ends: the seeder writes it, and
@@ -13,7 +13,7 @@
 //!
 //! Disc-free - both sides are code literals.
 
-use legaia_engine_core::scus_leaf_kernels::{
+use legaia_engine_system::scus_leaf_kernels::{
     BOOT_OFFSET_TABLE, BOOT_OFFSET_TABLE_UNWRITTEN, seed_boot_offset_table,
 };
 use legaia_game_tables::sfx_table::spu_base_for_slot;

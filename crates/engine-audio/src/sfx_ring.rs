@@ -164,7 +164,7 @@ impl SfxCueRing {
     }
 
     /// REF: FUN_80035BAC - ported (and wired to the cursor/delay pair) as
-    /// `legaia_engine_core::scus_leaf_kernels::SfxCueDelays::set_delay`.
+    /// `legaia_engine_system::scus_leaf_kernels::SfxCueDelays::set_delay`.
     ///
     /// `FUN_80035BAC(delay)` - write the countdown of the slot the last
     /// [`Self::push_cue`] wrote: `lh v1,0x15a(gp)`, then `sw` of the

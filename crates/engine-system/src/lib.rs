@@ -28,5 +28,6 @@ pub mod ram_map;
 pub mod rand;
 pub mod retail_pad;
 pub mod scene_name_sync;
+pub mod scus_leaf_kernels;
 pub mod sound_state;
 pub mod story_flag_state;

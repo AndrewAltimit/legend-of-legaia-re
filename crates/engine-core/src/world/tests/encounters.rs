@@ -1051,6 +1051,6 @@ fn a_scene_load_clears_the_tile_board_with_the_control_block() {
     assert!(!world.board.armed);
     assert_eq!(
         world.scene_control_block,
-        crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET
+        legaia_engine_system::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET
     );
 }

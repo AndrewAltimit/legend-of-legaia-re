@@ -522,8 +522,10 @@ impl FogPool {
         // MAIN_INIT's `jal 0x8001FA00` at `0x801D7384` seeds this stack:
         // `table[i] = i` for `i < n`, then `top = n - 1`.
         let mut seeded = [0u16; FOG_POOL_SLOTS];
-        self.free_top =
-            crate::scus_leaf_kernels::init_identity_index_list(&mut seeded, FOG_POOL_SLOTS as i16);
+        self.free_top = legaia_engine_system::scus_leaf_kernels::init_identity_index_list(
+            &mut seeded,
+            FOG_POOL_SLOTS as i16,
+        );
         self.free_table = seeded.iter().map(|&i| i as i16).collect();
         for (i, r) in self.records.iter_mut().enumerate() {
             *r = FogParticle {

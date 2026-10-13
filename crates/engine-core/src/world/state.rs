@@ -277,7 +277,7 @@ pub struct World {
     /// and reset on every scene load.
     ///
     /// REF: FUN_8003A024
-    pub scene_control_block: crate::scus_leaf_kernels::SceneControlBlockReset,
+    pub scene_control_block: legaia_engine_system::scus_leaf_kernels::SceneControlBlockReset,
 
     /// The system flags the active scene's own field-VM records SET on
     /// their way into a `3E FF <row>` scripted battle entry, each paired
@@ -419,7 +419,7 @@ impl World {
             seru: SeruState::new(),
             clock: FrameClock::new(),
             ambient: AmbientFxState::new(),
-            scene_control_block: crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET,
+            scene_control_block: legaia_engine_system::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET,
             shops: ShopState::new(),
             menu: MenuState::new(),
             active_scene_label: String::new(),

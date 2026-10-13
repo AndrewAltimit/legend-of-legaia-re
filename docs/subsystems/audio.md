@@ -152,7 +152,7 @@ and the battle mode init closes it before the battle loader fills slot 2
 checks behind each pin: [`formats/sfx-table.md`](../formats/sfx-table.md#which-prot-entry-reaches-which-slot).
 
 The seeder and the reader are ported at opposite ends and never meet:
-`legaia_engine_core::scus_leaf_kernels::seed_boot_offset_table` writes the
+`legaia_engine_system::scus_leaf_kernels::seed_boot_offset_table` writes the
 twelve-word image and `legaia_game_tables::sfx_table::spu_base_for_slot` answers the
 query the engine's audio host actually makes, returning the same values as
 literals. `crates/engine-core/tests/infra_boot_offset_table.rs` asserts the two

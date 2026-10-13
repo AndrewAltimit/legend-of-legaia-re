@@ -1,0 +1,725 @@
+//! Small `SCUS_942.54`-resident leaf kernels: setters, seeders and one list
+//! initialiser that the overlays call but that have no home of their own.
+//!
+//! Every one of these is a self-entry body ending in `jr ra`. Most are read
+//! out of `extracted/SCUS_942.54` at the file offsets noted per item, because
+//! their Ghidra dumps carry **decompiled C only** (`0 instructions`) - one of
+//! the catalogued decompiler artifacts - so those rows come from the
+//! executable itself with `scripts/ghidra-analysis/disasm-overlay-fn.py
+//! --base 0x80010000 --header 0x800`. [`text_line_count`] is the exception:
+//! `ghidra/scripts/funcs/8003cba8.txt` prints all 20 of its instructions.
+//!
+//! PORT: FUN_80035BAC - SFX-cue delay set on the parked slot.
+//! PORT: FUN_800267A8 - timed sound-source arm.
+//! PORT: FUN_8003A024 - scene control-block allocate + reset.
+//!
+//! Those three are live: the SFX-cue delay set and the timed sound arm are the
+//! field VM's own op `0x36` sub-`4` and op `0x35` sub-`5` bodies
+//! (`legaia_engine_core::world::vm_hosts`), and the scene control-block reset
+//! (its body over a `World` is `legaia_engine_core::scus_leaf_kernels`) runs
+//! from `legaia_engine_core::scene_host::SceneHost::load_scene`. The other four carry
+//! their `PORT` tag and their own per-item wiring disclosure on the item:
+//! [`init_identity_index_list`], [`StagedCharacterSelector::set_pair`],
+//! [`seed_boot_offset_table`] and [`text_line_count`].
+//!
+//! REF: FUN_800267FC - the tick half of the timed sound-source pair, ported
+//! in [`crate::sound_state`].
+//! REF: FUN_80035B50 - the SFX enqueue that parks the slot the delay set
+//! writes through.
+//! REF: FUN_80062004 - the libsnd `SsSeqSetVol` shim the arm tail-calls.
+//! REF: FUN_80017888 - the allocator the scene control-block reset calls.
+//! REF: FUN_8003A110 - the per-scene populate pass that runs after the reset.
+
+/// Identity index-list init (`FUN_8001FA00`, file offset `0x10200`,
+/// 13 instructions).
+///
+/// Fills `list[i] = i` for `i in 0..n` and returns `n - 1`, which is the
+/// value retail stores through the `count_out` pointer. Nothing is written to
+/// the list when `n <= 0` (`blez a2`), but the `n - 1` store is
+/// **unconditional** - it sits after the loop's exit label, so a zero-length
+/// call still parks `-1`.
+///
+/// The `-1` is not an error code: it is the *top index* convention the
+/// matching pop / push pair at `0x8001FA34` / `0x8001FA68` consumes, where an
+/// empty list is `-1` rather than `0`.
+///
+/// PORT: FUN_8001FA00
+/// REF: FUN_801D6704 - MAIN_INIT, which seeds the list.
+///
+/// The list is the **fog-particle pool's free stack**, not a cutscene sprite
+/// list: MAIN_INIT allocates the `0x824`-byte pool at `0x801D7364`, parks it
+/// at `_DAT_8007B7E0`, and calls this with `(pool, pool + 4, 0x50)` at
+/// `0x801D7384`, so the eighty slot indices are seeded `0..79` with the top
+/// index `79` stored at the pool's `+0`. The pop and push are
+/// `crate::movie::cutscene::sprite_stack_pop` / `sprite_stack_push`
+/// (`FUN_8001FA34` / `FUN_8001FA68`), whose one consumer is that pool.
+///
+/// WIRED: `legaia_engine_core::fog_particles::FogPool::reset` seeds its free stack
+/// through this on every field reset, on both hosts.
+pub fn init_identity_index_list(list: &mut [u16], n: i16) -> i16 {
+    if n > 0 {
+        for (i, slot) in list.iter_mut().take(n as usize).enumerate() {
+            *slot = i as u16;
+        }
+    }
+    n.wrapping_sub(1)
+}
+
+/// The per-slot SFX-cue delay table `DAT_8007C338`, indexed by the parked
+/// slot number at `gp+0x15A`.
+///
+/// `FUN_80035BAC` (file offset `0x263AC`, 9 instructions) is the only writer
+/// that stores a **non-zero** delay: it sign-extends its `i16` argument and
+/// stores it as a full word at `DAT_8007C338 + slot * 4`. The enqueue path
+/// and the overwrite at `0x80035BD0` both store zero there, so a non-zero
+/// entry means "this cue is scheduled, not fired".
+///
+/// The slot index is read fresh from `gp+0x15A` on every call
+/// (`lh v1,0x15a(gp)`), so the delay lands on whichever slot the enqueue
+/// last parked - the caller does not name it.
+///
+/// The table is the **timer half** of the four-slot pending-cue ring: the
+/// enqueue `FUN_80035B50` writes the cue id into `DAT_8007B6D8[slot]`, parks
+/// `slot` at `gp+0x15A` and zeroes `DAT_8007C338[slot]` in the same body, and
+/// the frame-begin drain ages that word by the frame step
+/// (`legaia_engine_audio::sfx_ring::CueSlot::timer`). So a non-zero entry here
+/// is a cue that is scheduled but has not played.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SfxCueDelays {
+    slots: Vec<i32>,
+}
+
+/// Slots in the retail pending-cue ring (`slti v0,a2,0x4` in the drain,
+/// `li v0,0x4` in the enqueue's wrap test at `0x80035B94`).
+pub const SFX_CUE_SLOTS: usize = 4;
+
+impl SfxCueDelays {
+    /// A table with `slots` entries, all zero (fired immediately).
+    pub fn new(slots: usize) -> Self {
+        Self {
+            slots: vec![0; slots],
+        }
+    }
+
+    /// `FUN_80035BAC(delay)` against the currently parked slot.
+    ///
+    /// Returns `false` when the parked slot is outside the table; retail does
+    /// no bounds check at all, so a host that can produce an out-of-range
+    /// `gp+0x15A` is describing a state retail would have corrupted.
+    pub fn set_delay(&mut self, parked_slot: i16, delay: i16) -> bool {
+        let Ok(idx) = usize::try_from(parked_slot) else {
+            return false;
+        };
+        match self.slots.get_mut(idx) {
+            Some(cell) => {
+                // `sll a0,a0,0x10; sra a0,a0,0x10; sw a0,(v1)` - a
+                // sign-extended halfword stored as a word.
+                *cell = i32::from(delay);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The delay currently parked on `slot`.
+    pub fn delay(&self, slot: usize) -> Option<i32> {
+        self.slots.get(slot).copied()
+    }
+
+    /// The enqueue's half of the pair: park `slot` and clear its delay, the
+    /// `sw zero,0x0(v1)` at `0x80035B9C`. Returns the next round-robin slot
+    /// (`gp+0x158`, wrapping at [`SFX_CUE_SLOTS`]).
+    ///
+    /// REF: FUN_80035B50
+    pub fn park(&mut self, slot: i16) -> i16 {
+        if let Ok(idx) = usize::try_from(slot)
+            && let Some(cell) = self.slots.get_mut(idx)
+        {
+            *cell = 0;
+        }
+        let next = slot.wrapping_add(1);
+        if next as usize == SFX_CUE_SLOTS {
+            0
+        } else {
+            next
+        }
+    }
+}
+
+/// The side-band sound-bank request / acknowledge pair
+/// `_DAT_8007BABC` / `_DAT_8007BAA0`.
+///
+/// `_DAT_8007BABC` is the **requested** bank id for the variable `vab_01`
+/// side-band slot (audio slot `3`, installed by `FUN_800243F0` - see
+/// `docs/subsystems/audio.md`); `_DAT_8007BAA0` is the id that driver has
+/// **acknowledged**, which it latches from the request inside `FUN_800243F0`
+/// (`0x8002448C` on the dev shortcut, `0x800244F0` on the retail arm). The
+/// sentinel `-1` on the acknowledge cell means *idle*: the field overlay
+/// seeds the pair `(8, -1)` at init (`0x801D6880..0x801D688C`) and tears it
+/// down to `(-1, -1)` (`0x801D74AC..0x801D74B8`).
+///
+/// Three field-side consumers share one protocol, all read off the
+/// disassembly:
+///
+/// * **request** - store the new id only while the previous one is settled
+///   or the driver is idle, else halt at PC (`0x801E0360..0x801E0388`, the
+///   field VM's op-`0x36` sub-`1`; the identical guard is inlined at
+///   `0x801D4B58..0x801D4B90`).
+/// * **barrier** - halt at PC until `request == acked` (op-`0x36` sub-`2`,
+///   `0x801E0394..0x801E03B4`; a synchronous busy-wait around a
+///   `FUN_800243F0` call at `0x801D72E4..0x801D7300`).
+/// * **precondition** - the SFX enqueue (sub-`0`) and the whole bit-15-clear
+///   XA arm refuse to run while the pair is unsettled.
+///
+/// The engine's bank loads are synchronous, so [`Self::settle`] is applied in
+/// the same host call that takes a request; the guard shapes still matter
+/// because a script that re-requests without a settle is what retail parks
+/// on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SoundStreamRequest {
+    /// `_DAT_8007BABC` - the requested side-band bank id.
+    pub requested: i32,
+    /// `_DAT_8007BAA0` - the id the driver acknowledged; [`Self::IDLE`]
+    /// while nothing is in flight.
+    pub acked: i32,
+}
+
+impl Default for SoundStreamRequest {
+    fn default() -> Self {
+        Self::IDLE_PAIR
+    }
+}
+
+impl SoundStreamRequest {
+    /// The `-1` sentinel both cells carry when no bank is in flight.
+    pub const IDLE: i32 = -1;
+
+    /// The teardown state `(-1, -1)` retail writes at `0x801D74AC`.
+    pub const IDLE_PAIR: Self = Self {
+        requested: Self::IDLE,
+        acked: Self::IDLE,
+    };
+
+    /// The field overlay's init state `(8, -1)` (`0x801D6880`).
+    pub const FIELD_INIT: Self = Self {
+        requested: 8,
+        acked: Self::IDLE,
+    };
+
+    /// `request == acked` - the barrier op-`0x36` sub-`2` waits on.
+    pub fn is_settled(self) -> bool {
+        self.requested == self.acked
+    }
+
+    /// Whether a new request may be stored: settled, or the driver idle.
+    ///
+    /// Retail tests `acked == -1` as the escape, **not** `requested == -1`
+    /// (`beq v1,a0` then `bne a0,-1` at `0x801E0374..0x801E037C`), so a
+    /// pending request cannot be replaced just because it was itself the
+    /// sentinel.
+    pub fn accepts_request(self) -> bool {
+        self.is_settled() || self.acked == Self::IDLE
+    }
+
+    /// Store a new request. Returns `false` (and changes nothing) when the
+    /// previous one is still in flight - retail halts the script at PC there.
+    pub fn request(&mut self, id: i32) -> bool {
+        if !self.accepts_request() {
+            return false;
+        }
+        self.requested = id;
+        true
+    }
+
+    /// The driver's latch `acked = requested` (`FUN_800243F0`).
+    pub fn settle(&mut self) {
+        self.acked = self.requested;
+    }
+}
+
+/// The staged-character selector pair (`FUN_80035C00`, file offset `0x26400`,
+/// four instructions).
+///
+/// The whole body is `sh a0,0x858(gp)` / `sh a1,0x860(gp)` / `jr ra`, i.e. it
+/// writes `_DAT_8007BB70` and `_DAT_8007BB78` and nothing else - no read, no
+/// gate, no side effect. The pause-menu notify / message-box path reads the
+/// pair back as a character-record selector.
+///
+/// The **8 bytes between** the two cells are deliberately untouched, which is
+/// what separates this setter from the clear at `0x80035C10` (that one zeroes
+/// `gp+0x854`, `gp+0x864` and `gp+0x86C` - a disjoint set).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StagedCharacterSelector {
+    /// `gp+0x858` (`_DAT_8007BB70`).
+    pub primary: u16,
+    /// `gp+0x860` (`_DAT_8007BB78`).
+    pub secondary: u16,
+}
+
+impl StagedCharacterSelector {
+    /// `FUN_80035C00(a, b)`.
+    ///
+    /// PORT: FUN_80035C00
+    ///
+    /// REPLACED-BY: the two notices' own values - `field_menu_dispatch::apply_spell_outcome`
+    /// returns a `magic_xp::SpellLevelNotice`, the Hyper-Art book arm sets
+    /// `MenuState::pending_art_notice`, and both hosts arm the window from those
+    /// (`MenuRuntime::arm_spell_level_notice` / `arm_art_learned_notice`).
+    ///
+    /// REF: FUN_800402F4 - the item / spell effect applier, the only caller.
+    ///
+    /// Retail stages the pair for exactly two menu windows. All three `jal`s
+    /// to `0x80035C00` on the disc sit in the applier `FUN_800402F4`:
+    /// `0x80040884` and `0x80040CC8` follow a menu-cast heal's spell-level
+    /// bump (`sb` of the incremented level byte `+0x729` after the
+    /// `0x8007656C` threshold compare), and `0x8004208C` follows the
+    /// Hyper-Art book's art insert, skipped when the mode word is `0x15`
+    /// (battle). The menu overlay seeds both cells to `0xFF` before the apply,
+    /// opens window 7 (spell level) or window 8 (art learned) when they
+    /// changed, and its renderers read `secondary + primary * 0x414` as a
+    /// record offset (`docs/subsystems/field-menu.md`).
+    ///
+    /// The port carries the same two facts as values instead of two `gp`
+    /// cells: `apply_spell_outcome` returns the level-up as a
+    /// `SpellLevelNotice` (caster slot, spell index), and the book arm stores
+    /// an `ArtLearnedNotice` on `MenuState::pending_art_notice`. The native
+    /// window (`window/boot_cutscene.rs`) and the browser play page
+    /// (`play_menu.rs`) each take those and arm the matching window, so no
+    /// host reads a staged cell and none is owed one. The type stays as the
+    /// documented shape of the pair.
+    pub fn set_pair(&mut self, primary: u16, secondary: u16) {
+        self.primary = primary;
+        self.secondary = secondary;
+    }
+}
+
+/// The five `gp` cells `FUN_800267A8` (file offset `0x16FA8`, 21
+/// instructions) writes when it arms the timed sound-source release.
+///
+/// This is the **arm** half of the pair whose tick half
+/// ([`crate::sound_state::SoundReleaseTimer`]) is already ported. The tick
+/// consumes three of these cells; the arm writes two more:
+///
+/// | Cell | Written |
+/// |---|---|
+/// | `gp+0x808` | `1` - the armed flag |
+/// | `gp+0x80C` | `_DAT_8007B910`, latched |
+/// | `gp+0x810` | the caller's tag |
+/// | `gp+0x814` | the caller's deadline |
+/// | `gp+0x81C` | `0` - elapsed |
+///
+/// It then tail-calls the libsnd volume shim `FUN_80062004` with three
+/// arguments the disassembly makes explicit and the C rendering blurs:
+/// `(*(i16*)0x80070536, (i16)(latched_level >> 1), deadline | 1)`. The middle
+/// argument is the `sll a1,a1,0xf; sra a1,a1,0x10` pair at `0x800267E0` -
+/// a halving with a sign-extending truncation, not a plain shift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimedSoundArm {
+    /// `gp+0x810`.
+    pub tag: u32,
+    /// `gp+0x814`, in vsyncs.
+    pub deadline: u32,
+    /// `gp+0x80C` - the level latched off `_DAT_8007B910` at arm time.
+    pub latched_level: i32,
+}
+
+impl TimedSoundArm {
+    /// `FUN_800267A8(tag, deadline)` with the live `_DAT_8007B910`.
+    pub fn arm(tag: u32, deadline: u32, brightness_level: i32) -> Self {
+        Self {
+            tag,
+            deadline,
+            latched_level: brightness_level,
+        }
+    }
+
+    /// The second argument handed to `FUN_80062004`.
+    ///
+    /// `(level << 15) >> 16` - the low 16 bits of `level * 2` interpreted as
+    /// a signed halfword and shifted back down, which for the retail range
+    /// `0..=0xFF` is exactly `level / 2`.
+    pub fn shim_level(&self) -> i16 {
+        ((self.latched_level << 15) >> 16) as i16
+    }
+
+    /// The third argument handed to `FUN_80062004` (`ori a2,a2,1`).
+    pub fn shim_deadline(&self) -> u32 {
+        self.deadline | 1
+    }
+}
+
+/// The twelve-word table `FUN_800265E8` (file offset `0x16DE8`, 33
+/// instructions) seeds at `0x800917B0`, plus the three enable halfwords it
+/// sets alongside.
+///
+/// The stores are issued out of order (the classic MIPS scheduling the
+/// decompiler re-sorts); in address order the image is the table below.
+/// Word `+0x24` is **never written** - the routine leaves it at whatever the
+/// loader left there, which is why the array is `Option`-free but the gap is
+/// called out here.
+///
+/// The region the offsets index is **SPU RAM**, and the index is the VAB
+/// slot: `FUN_8002630C` materialises `0x800917B0` at `0x80026340` and reads
+/// `table[slot]` as the address it hands `SsVabOpenHead`. That is why every
+/// literal ends in the low byte `0x10` and the values ascend to `0x6F010` -
+/// they are bank bases inside one region, and the low three nibbles `0x010`
+/// hold for six of the seven because banks are placed on coarse boundaries,
+/// not because the encoding requires it (`0x6C810` does not).
+///
+/// The eight distinct slots and the four aliased pairs are the same ones
+/// [`legaia_game_tables::sfx_table::spu_base_for_slot`] returns; word `+0x24`
+/// (slot 9) being unwritten is that helper's `None`.
+pub const BOOT_OFFSET_TABLE: [u32; 12] = [
+    0x0000_1010, // +0x00
+    0x0001_0010, // +0x04
+    0x0003_3010, // +0x08
+    0x0006_0010, // +0x0C
+    0x0006_5010, // +0x10
+    0x0001_0010, // +0x14
+    0x0003_3010, // +0x18
+    0x0006_5010, // +0x1C
+    0x0006_C810, // +0x20
+    0x0000_0000, // +0x24 - NOT written by the routine
+    0x0000_1010, // +0x28
+    0x0006_F010, // +0x2C
+];
+
+/// The index into [`BOOT_OFFSET_TABLE`] the seeder skips.
+pub const BOOT_OFFSET_TABLE_UNWRITTEN: usize = 9;
+
+/// The three enable halfwords `FUN_800265E8` sets to `1`, as absolute
+/// addresses: `sh v0,0x4(v1)` / `0x64(v1)` / `0x94(v1)` off the base
+/// `0x8007051C`.
+pub const BOOT_ENABLE_FLAG_ADDRS: [u32; 3] = [0x8007_0520, 0x8007_0580, 0x8007_05B0];
+
+/// Seed the twelve-word table, the way `FUN_800265E8` does: every word of
+/// [`BOOT_OFFSET_TABLE`] except index [`BOOT_OFFSET_TABLE_UNWRITTEN`], which
+/// the routine skips and therefore leaves at whatever the loader put there.
+///
+/// The three enable halfwords it sets alongside are
+/// [`BOOT_ENABLE_FLAG_ADDRS`]; they are addresses, not part of this array.
+///
+/// PORT: FUN_800265E8
+/// REF: FUN_8002630C - the VAB-open path that reads the seeded table.
+///
+/// REPLACED-BY: `legaia_engine_audio`'s flat `SpuRam`, which places each
+/// bank at the transfer address its loader hands it - the port keeps no
+/// slot-indexed SPU base map for a boot seeder to fill. Retail's call site is
+/// the boot path's `jal` at `0x8001601C`.
+///
+/// The reader is **identified** - `FUN_8002630C`, the libsnd VAB
+/// open path, materialises `0x800917B0` at `0x80026340` and indexes it by the
+/// VAB slot (`sll v0,slot,2; addu v0,v0,base; lw a2,0x0(v0)`) to get the SPU
+/// address it hands `SsVabOpenHead`. These twelve words are therefore the
+/// per-slot **SPU RAM bases**, which is also why they match
+/// [`legaia_game_tables::sfx_table::spu_base_for_slot`] word for word (see
+/// [`docs/formats/sfx-table.md`](../../../docs/formats/sfx-table.md)).
+///
+/// What is missing is the boot path, not the reader - but the reason recorded
+/// here for *why* used to be wrong, and the correction narrows it rather than
+/// changing the verdict. The claim was "the engine's audio host asks
+/// `spu_base_for_slot` directly". It does not: grep the workspace and that
+/// helper's only references outside its own module are in the guard test
+/// `crates/engine-core/tests/infra_boot_offset_table.rs`. Nothing in
+/// `engine-audio`, `engine-shell` or `web-viewer` consults a per-slot SPU
+/// base at all - the mixer owns one flat `SpuRam` and places a bank at the
+/// transfer address it is handed, so retail's twelve-word slot map has no
+/// consumer on either side of it. Wiring this means giving the audio host a
+/// slot-addressed SPU layout first, which is a representation the port does
+/// not have, not a call it has not made.
+///
+/// That test is also what makes a call site here **provably** unobservable
+/// rather than merely uninteresting: it asserts the seeded table and
+/// `spu_base_for_slot` agree word for word, so a caller could not change any
+/// value any consumer reads. A wire whose two paths leave identical state
+/// certifies itself and measures nothing, which is why this row is replaced
+/// rather than pending.
+pub fn seed_boot_offset_table(table: &mut [u32; 12]) {
+    for (i, word) in BOOT_OFFSET_TABLE.iter().enumerate() {
+        if i == BOOT_OFFSET_TABLE_UNWRITTEN {
+            continue;
+        }
+        table[i] = *word;
+    }
+}
+
+/// The reset image `FUN_8003A024` (file offset `0x2A824`, 59 instructions)
+/// writes over the freshly allocated **scene control block** - the `0x64`-byte
+/// struct every field / cutscene subsystem reaches through `_DAT_801C6EA4`.
+///
+/// The routine is `FUN_80017888(0, 0x64)` followed by a flat run of stores.
+/// The fields it sets non-zero are the ones below; every other byte of the
+/// `0x64` is explicitly zeroed, so the block is fully defined after the call -
+/// nothing is left at allocator residue. The per-scene contents (`+0x00`
+/// motion-VM script table, `+0x04` zone / camera-region records, `+0x20`
+/// encounter table bases) are installed afterwards by `FUN_8003A110` from the
+/// scene MAN; what this routine parks in `+0x00` / `+0x04` is the same static
+/// fallback table for both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneControlBlockReset {
+    /// `+0x00` and `+0x04` - both seeded with the same static table pointer.
+    pub fallback_table: u32,
+    /// `+0x12`.
+    pub field_12: u16,
+    /// `+0x14`.
+    pub field_14: u16,
+    /// `+0x4C`.
+    pub field_4c: u16,
+    /// `+0x4E`.
+    pub field_4e: u16,
+    /// `+0x50`.
+    pub field_50: u16,
+}
+
+/// The literal image `FUN_8003A024` installs.
+pub const SCENE_CONTROL_BLOCK_RESET: SceneControlBlockReset = SceneControlBlockReset {
+    fallback_table: 0x8007_3EE8,
+    field_12: 0x26,
+    field_14: 0x10,
+    field_4c: 0x40,
+    field_4e: 0x08,
+    field_50: 0x04,
+};
+
+/// Size of the scene control block, in bytes (`FUN_80017888(0, 0x64)`).
+pub const SCENE_CONTROL_BLOCK_SIZE: usize = 0x64;
+
+/// The error code `FUN_8003A024` parks in `_DAT_8007B828` when the allocation
+/// **fails**.
+///
+/// The store is guarded by `bne a0,zero` on the allocator's return value, and
+/// the null pointer is written to `_DAT_801C6EA4` in that branch's delay slot
+/// regardless - so retail carries on and dereferences it. This is a genuine
+/// out-of-memory path, not a normal one.
+pub const SCENE_CONTROL_BLOCK_ALLOC_FAIL_CODE: u32 = 0x1BC;
+
+/// The two globals the reset clears alongside the block: the scene-scoped
+/// scratch word `_DAT_8007B630` and the tile-descriptor pointer
+/// `_DAT_8007B450` (the one the field VM's `0x49` opcode installs a tile board
+/// into - see `docs/subsystems/tile-board.md`).
+pub const SCENE_RESET_CLEARED_GLOBALS: [u32; 2] = [0x8007_B630, 0x8007_B450];
+
+/// The dialog-string **line separator** `FUN_8003CBA8` counts.
+pub const TEXT_LINE_BREAK: u8 = 0x7C;
+
+/// Low bound of the two-byte escape lead the same walk skips over
+/// (`(byte & 0xF0) == 0xC0`, i.e. `0xC0..=0xCF`).
+pub const TEXT_ESCAPE_LEAD_MASK: u8 = 0xF0;
+/// What the masked byte must equal for the escape skip to fire.
+pub const TEXT_ESCAPE_LEAD: u8 = 0xC0;
+
+/// Rendered **line count** of a NUL-terminated dialog string (`FUN_8003CBA8`,
+/// 20 instructions, `see ghidra/scripts/funcs/8003cba8.txt`).
+///
+/// Read off the disassembly, not the C. The whole body is one walk:
+///
+/// ```text
+///   lbu v0,0(a0) ; beq v0,zero,ret ; _li v1,1     ; count = 1, even when empty
+/// loop:
+///   bne v0,0x7c,skip ; _nop ; addiu v1,v1,1       ; count += 1 per '|'
+/// skip:
+///   andi v0,v0,0xf0 ; bne v0,0xc0,adv ; _nop
+///   addiu a0,a0,1                                 ; escape lead: skip one more
+/// adv:
+///   addiu a0,a0,1 ; lbu v0,0(a0) ; bne v0,zero,loop
+/// ```
+///
+/// Two details the shape hides and a caller has to honour:
+///
+/// * the `li v1,0x1` seed sits in the **delay slot** of the empty-string
+///   branch, so it is executed either way - an empty string measures **one**
+///   line, not zero. That is what makes `lines * 14 - 4` a legal box height
+///   for every prompt.
+/// * the `0xC0..=0xCF` bytes are two-byte escape leads and the walk consumes
+///   the follower **without testing it**, so a `0x7C` in a follower position
+///   is not a line break. A decode that maps every byte through measures such
+///   a prompt one line too tall and two glyphs too wide.
+///
+/// Retail's escape skip has no bounds test: a lead byte immediately before the
+/// terminator steps the cursor *past* the NUL and the walk keeps reading. The
+/// port stops at the end of the slice instead - a port-side tightening, and
+/// the only place this diverges from the retail arithmetic.
+///
+/// PORT: FUN_8003CBA8
+/// REF: FUN_801F747C - the tutorial text-box helper that measures with it.
+/// REF: FUN_80035F04 - the pixel-width half of the same measurement pair.
+///
+/// REPLACED-BY: `str::lines()` over the decoded prompt - the representation
+/// the port measures in. `legaia_engine_battle::battle_tutorial::TutorialPrompts`
+/// folds `0x7C` to `'\n'` while it decodes and
+/// `legaia_engine_ui::battle_tutorial_box` counts and lays out with
+/// `str::lines()`, live on both hosts (`World::battle_tutorial_box` reaches
+/// the native window's HUD pass and the browser play page's battle draws). So
+/// the measurement retail takes over raw bytes is already produced, over a
+/// `String`, by code a player's frame runs.
+///
+/// No host is owed rather than none has got round to it: this kernel walks the
+/// retail byte string, which no engine type holds any more, so a call site
+/// would have to un-decode the prompt first. The one place the two could
+/// disagree is the `0xC0..=0xCF` escape lead, and **no prompt in the PROT 0967
+/// corpus carries one**, so the difference is not observable on this disc
+/// either. The kernel stays as the byte-exact reference the divergence note
+/// above is measured against.
+pub fn text_line_count(s: &[u8]) -> u32 {
+    let mut count = 1u32;
+    let mut i = 0usize;
+    while let Some(&c) = s.get(i) {
+        if c == 0 {
+            break;
+        }
+        if c == TEXT_LINE_BREAK {
+            count += 1;
+        }
+        if c & TEXT_ESCAPE_LEAD_MASK == TEXT_ESCAPE_LEAD {
+            i += 1;
+        }
+        i += 1;
+    }
+    count
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_identity_list_uses_a_top_index_not_a_length() {
+        let mut list = [0xFFFF_u16; 4];
+        assert_eq!(init_identity_index_list(&mut list, 4), 3);
+        assert_eq!(list, [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn a_non_positive_count_still_parks_the_top_index() {
+        let mut list = [0xAAAA_u16; 4];
+        assert_eq!(init_identity_index_list(&mut list, 0), -1);
+        assert_eq!(list, [0xAAAA; 4], "blez a2 skips the whole loop");
+        assert_eq!(init_identity_index_list(&mut list, -3), -4);
+    }
+
+    #[test]
+    fn the_sfx_delay_lands_on_the_parked_slot() {
+        let mut t = SfxCueDelays::new(8);
+        assert!(t.set_delay(3, 0x40));
+        assert_eq!(t.delay(3), Some(0x40));
+        assert_eq!(t.delay(2), Some(0));
+    }
+
+    #[test]
+    fn the_sfx_delay_is_sign_extended_to_a_word() {
+        let mut t = SfxCueDelays::new(2);
+        assert!(t.set_delay(0, -2));
+        assert_eq!(
+            t.delay(0),
+            Some(-2),
+            "sll/sra before the sw - a negative halfword stays negative"
+        );
+    }
+
+    #[test]
+    fn an_out_of_range_parked_slot_is_reported_rather_than_written() {
+        let mut t = SfxCueDelays::new(2);
+        assert!(!t.set_delay(9, 1));
+        assert!(!t.set_delay(-1, 1));
+    }
+
+    #[test]
+    fn the_selector_setter_writes_exactly_two_cells() {
+        let mut s = StagedCharacterSelector::default();
+        s.set_pair(0x11, 0x22);
+        assert_eq!(
+            s,
+            StagedCharacterSelector {
+                primary: 0x11,
+                secondary: 0x22
+            }
+        );
+    }
+
+    #[test]
+    fn the_sound_arm_halves_the_latched_level_for_the_shim() {
+        let a = TimedSoundArm::arm(7, 60, 0xD7);
+        assert_eq!(a.shim_level(), 0x6B, "0xD7 >> 1");
+        assert_eq!(a.shim_deadline(), 61, "deadline | 1");
+        assert_eq!(a.latched_level, 0xD7);
+    }
+
+    #[test]
+    fn the_shim_deadline_or_never_clears_a_bit() {
+        assert_eq!(TimedSoundArm::arm(0, 61, 0).shim_deadline(), 61);
+        assert_eq!(TimedSoundArm::arm(0, 0, 0).shim_deadline(), 1);
+    }
+
+    #[test]
+    fn the_scene_reset_seeds_both_table_slots_from_one_pointer() {
+        // `+0x00` and `+0x04` take the same word, and it is also mirrored to
+        // the sibling global 0x801C6EA0.
+        assert_eq!(SCENE_CONTROL_BLOCK_RESET.fallback_table, 0x8007_3EE8);
+        assert_eq!(SCENE_CONTROL_BLOCK_SIZE, 0x64);
+        assert_eq!(SCENE_CONTROL_BLOCK_ALLOC_FAIL_CODE, 0x1BC);
+        assert_eq!(
+            SCENE_RESET_CLEARED_GLOBALS,
+            [0x8007_B630, 0x8007_B450],
+            "-0x49d0 and -0x4bb0 off 0x80080000"
+        );
+    }
+
+    #[test]
+    fn an_empty_string_still_measures_one_line() {
+        // `li v1,0x1` is the delay slot of the empty-string branch, so it
+        // runs before the early return.
+        assert_eq!(text_line_count(b""), 1);
+        assert_eq!(text_line_count(b"\0"), 1);
+        assert_eq!(text_line_count(b"HELLO"), 1);
+    }
+
+    #[test]
+    fn each_pipe_adds_a_line() {
+        assert_eq!(text_line_count(b"A|B"), 2);
+        assert_eq!(text_line_count(b"A|B|C"), 3);
+        // A trailing separator counts: retail tests the byte, not what
+        // follows it.
+        assert_eq!(text_line_count(b"A|"), 2);
+        assert_eq!(text_line_count(b"|||"), 4);
+    }
+
+    #[test]
+    fn a_separator_inside_an_escape_pair_is_not_a_break() {
+        // `0xC0..=0xCF` is a two-byte lead; the follower is consumed without
+        // being tested, so this `0x7C` is data.
+        assert_eq!(text_line_count(&[0xC3, 0x7C, b'A']), 1);
+        // The same byte one position later IS a break.
+        assert_eq!(text_line_count(&[0xC3, b'A', 0x7C, b'B']), 2);
+        // Every lead in the band skips, and nothing outside it does.
+        for lead in 0xC0u8..=0xCF {
+            assert_eq!(text_line_count(&[lead, 0x7C]), 1, "lead {lead:#04x}");
+        }
+        for lead in [0xB0u8, 0xBF, 0xD0, 0xDF] {
+            assert_eq!(text_line_count(&[lead, 0x7C]), 2, "non-lead {lead:#04x}");
+        }
+    }
+
+    #[test]
+    fn a_lead_byte_before_the_terminator_stops_at_the_slice_end() {
+        // Retail would step past the NUL here; the port stops instead. The
+        // count is the same either way for a well-formed string.
+        assert_eq!(text_line_count(&[b'A', 0xC5]), 1);
+        assert_eq!(text_line_count(&[b'A', 0xC5, 0x00]), 1);
+    }
+
+    #[test]
+    fn the_boot_table_repeats_three_of_its_offsets() {
+        // +0x04 / +0x14, +0x08 / +0x18, +0x10 / +0x1C are the same words.
+        assert_eq!(BOOT_OFFSET_TABLE[1], BOOT_OFFSET_TABLE[5]);
+        assert_eq!(BOOT_OFFSET_TABLE[2], BOOT_OFFSET_TABLE[6]);
+        assert_eq!(BOOT_OFFSET_TABLE[4], BOOT_OFFSET_TABLE[7]);
+        assert_eq!(BOOT_OFFSET_TABLE[0], BOOT_OFFSET_TABLE[10]);
+        assert_eq!(BOOT_OFFSET_TABLE[BOOT_OFFSET_TABLE_UNWRITTEN], 0);
+        assert!(
+            BOOT_OFFSET_TABLE
+                .iter()
+                .enumerate()
+                .all(|(i, w)| i == BOOT_OFFSET_TABLE_UNWRITTEN || w & 0xFF == 0x10)
+        );
+    }
+}

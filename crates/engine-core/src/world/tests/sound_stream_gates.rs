@@ -9,8 +9,8 @@
 //! instruction next frame".
 
 use super::*;
-use crate::scus_leaf_kernels::SoundStreamRequest;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::scus_leaf_kernels::SoundStreamRequest;
 
 /// One `36` instruction followed by a `00` HALT, run once from a fresh
 /// world seeded with `pair` / `dual_mode`. Returns the PC afterwards; `0`
