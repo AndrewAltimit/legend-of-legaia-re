@@ -12,8 +12,10 @@
   /* ---------- Per-kingdom data (world-overview-kingdoms.js) ----------- */
   const {
     KINGDOM_PROT, KINGDOM_CAM, KINGDOM_TOPVIEW_CAM, UNPLACED_TARGET_FOOTPRINT,
-    KINGDOM_FOG_TINT, DEFAULT_FOG_PARAMS, LIST_NAMES, LIST_COLORS,
+    KINGDOM_FOG_TINT, DEFAULT_FOG_PARAMS,
   } = window.LegaiaWorldOverviewKingdoms;
+  /* ---------- Top-down map (world-overview-minimap.js) ---------------- */
+  const { createMinimap, classifyGround } = window.LegaiaWorldOverviewMinimap;
   /* ---------- Quick-travel menu panel (world-overview-quick-travel.js) -- */
   const { renderQuickTravel } = window.LegaiaWorldOverviewQuickTravel;
   /* ---------- Ground sampler + camera framing (world-overview-ground.js) */
@@ -26,7 +28,7 @@
   const $canvas3d   = document.getElementById('wo-canvas3d');
   const $canvas2d   = document.getElementById('wo-canvas2d');
   const $statsDl    = document.getElementById('wo-stats-dl');
-  const $listCounts = document.getElementById('wo-list-counts');
+  const $legend     = document.getElementById('wo-map-legend');
   const $meshLabel  = document.getElementById('wo-mesh-label');
   const $meshInfo   = document.getElementById('wo-mesh-info');
   const $prev       = document.getElementById('wo-prev-mesh');
@@ -45,10 +47,31 @@
   const $showLandmarks = document.getElementById('wo-show-landmarks');
   const $lockTopView = document.getElementById('wo-lock-topview');
   const $exportGlb  = document.getElementById('wo-export-glb');
-  let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
+  /* Top-down map: the per-kingdom plot data gathered from the disc the last
+   * time that kingdom's assembled scene loaded, keyed by tab id. */
+  const minimap = $canvas2d ? createMinimap({ canvas: $canvas2d, hover: $hover }) : null;
+  const minimapData = {};
   let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'mesh' (single TMD inspector) */
   let   fogLut      = null;     /* Uint16Array(512) BGR555 entries, or null */
   let   fogParams   = { ...DEFAULT_FOG_PARAMS };
+
+  /* Authored default-state suppression for script-managed walk stamps.
+   * Drake has two golden-bridge (mesh 6) stamps: record 441, a plain
+   * decoration at the road crossing (12224, 6336), and record 349, a
+   * placed+interactive record (flags 0x0017) whose grid cell sits over
+   * the river at (10688, 5312). Retail spawns record 349 as an actor
+   * (live render-list capture: rec 349 -> pool 11) and runs its MAN
+   * interaction script's leading ops at spawn (FUN_8003A55C's inline
+   * stepper), which manage where/whether it rests - the raw grid cell
+   * is not its retail resting draw position, and retail's default map
+   * shows a single bridge at the record-441 site. The static viewer
+   * can't run MAN scripts, so the grid-cell draw is suppressed here
+   * (the same reason the legacy JSON layer skips `script_positioned`
+   * placements). Keyed by kingdom tab id; matched on
+   * (pack mesh, world x, world z). */
+  const WALK_STAMP_SUPPRESS = {
+    drake: [{ mesh: 6, x: 10688, z: 5312 }],
+  };
 
   /* ---------- State ----------- */
   let viewer = null;          /* LegaiaViewer (WASM) - created after load */
@@ -121,7 +144,7 @@
     placements = null;
   }
   updateSnapshot();
-  drawScatter();
+  refreshMinimap();
 
   /* Render a "load a disc" placeholder on first paint so the canvas
    * isn't an empty black square. Default mode is 'world' (assembled scene
@@ -691,7 +714,7 @@
     document.querySelectorAll('.wo-tab').forEach(b => b.classList.toggle('is-active', b.dataset.k === k));
     currentMeshIdx = 0;
     updateSnapshot();
-    drawScatter();
+    refreshMinimap();
     if (!viewer) {
       /* No disc loaded yet. Both 'world' and 'mesh' modes need the WASM
        * viewer + a parsed PROT TOC. Show the friendly placeholder so the
@@ -788,6 +811,11 @@
     glRenderer.setGroundEnable(!$showTerrain || $showTerrain.checked);
     /* Terrain-height sampler for the VR "on the ground" mode. */
     groundSampler = groundQuads > 0 ? buildGroundSampler() : null;
+    /* The top-down map plots this same load: gathered here, off the
+     * accessors rather than the draw list, so the "landmarks + trees"
+     * toggle hides the 3D layer without emptying the map. */
+    minimapData[currentKingdom] = gatherMinimapData();
+    refreshMinimap();
     /* Upload a single pack mesh on demand; return true if its mesh data
      * is renderable. The accessors hand back the HYBRID stream (the shared
      * `build_hybrid_pack_mesh` kernel): the textured prims first, then the
@@ -838,23 +866,6 @@
      * below). Each stamp draws its pack mesh at world (x, y, z) with scale
      * 1 and the shared (1,-1,1) Y-flip; world Y comes from the
      * floor-height LUT so the mesh sits on the heightfield. */
-    /* Authored default-state suppression for script-managed walk stamps.
-     * Drake has two golden-bridge (mesh 6) stamps: record 441, a plain
-     * decoration at the road crossing (12224, 6336), and record 349, a
-     * placed+interactive record (flags 0x0017) whose grid cell sits over
-     * the river at (10688, 5312). Retail spawns record 349 as an actor
-     * (live render-list capture: rec 349 -> pool 11) and runs its MAN
-     * interaction script's leading ops at spawn (FUN_8003A55C's inline
-     * stepper), which manage where/whether it rests - the raw grid cell
-     * is not its retail resting draw position, and retail's default map
-     * shows a single bridge at the record-441 site. The static viewer
-     * can't run MAN scripts, so the grid-cell draw is suppressed here
-     * (the same reason the legacy JSON layer skips `script_positioned`
-     * placements). Keyed by kingdom tab id; matched on
-     * (pack mesh, world x, world z). */
-    const WALK_STAMP_SUPPRESS = {
-      drake: [{ mesh: 6, x: 10688, z: 5312 }],
-    };
     let walkLandmarkCount = 0;
     const showLandmarks = !$showLandmarks || $showLandmarks.checked;
     if (showLandmarks) {
@@ -1297,104 +1308,123 @@
   /* Apply initial active tab */
   document.querySelectorAll('.wo-tab').forEach(b => b.classList.toggle('is-active', b.dataset.k === currentKingdom));
 
-  /* ---------- Snapshot stats + scatter ----------- */
+  /* ---------- Snapshot stats + top-down map ----------- */
+
+  /* Everything the top-down map plots for the loaded kingdom, read off the
+   * same WASM accessors the assembled scene draws from - so the two views
+   * cannot disagree about where anything is. Stamps the 3D scene suppresses
+   * (WALK_STAMP_SUPPRESS) are left out here too and counted. */
+  function gatherMinimapData() {
+    const ground = classifyGround(viewer.walk_ground_positions(), viewer.walk_ground_cba_tsb());
+    if (!ground) return null;
+    const suppress = WALK_STAMP_SUPPRESS[currentKingdom] || [];
+    const stamps = [];
+    let suppressed = 0;
+    const n = viewer.walk_placement_count();
+    const slots = n > 0 ? viewer.walk_placement_slots() : [];
+    const pos = n > 0 ? viewer.walk_placement_positions() : [];
+    /* Guarded like walk_placement_rot_y: a stale cached WASM without the
+     * accessor still plots, as one undivided family. */
+    const layer = (n > 0 && typeof viewer.walk_placement_placed === 'function')
+      ? viewer.walk_placement_placed() : null;
+    for (let i = 0; i < n; i++) {
+      const x = pos[i * 3], z = pos[i * 3 + 2];
+      if (suppress.some((s) => s.mesh === slots[i] && s.x === x && s.z === z)) {
+        suppressed++;
+        continue;
+      }
+      stamps.push({ x, z, slot: slots[i], placed: layer ? layer[i] === 1 : false });
+    }
+    let labels = null;
+    if (typeof viewer.world_map_labels_json === 'function') {
+      try {
+        labels = JSON.parse(viewer.world_map_labels_json())
+          .map((l) => ({ x: l.world_x, z: l.world_z, name: l.name, index: l.index }));
+      } catch (e) { labels = null; }
+    }
+    return {
+      ground, stamps, suppressed,
+      labels: labels || [],
+      hasLabels: labels !== null,
+      hasLayers: layer !== null,
+    };
+  }
+
+  function refreshMinimap() {
+    if (!minimap) return;
+    const title = KINGDOM_PROT[currentKingdom].label;
+    const data = minimapData[currentKingdom] || null;
+    const hint = viewer
+      ? ['Open the assembled scene to plot', title]
+      : ['Load a disc image to plot', title];
+    const drawn = minimap.show(currentKingdom, title, data, hint);
+    renderMinimapLegend(data, drawn.labelsDrawn);
+  }
+
+  /* The legend under the map: one row per dot family, in the dot's own
+   * colour and shape, with its count - and one row for what is deliberately
+   * not plotted, so nothing goes missing silently. */
+  function renderMinimapLegend(data, labelsDrawn) {
+    if ($legend) {
+      if (!data) {
+        $legend.innerHTML = '';
+      } else {
+        const objects = data.stamps.filter((s) => s.placed).length;
+        const rows = [];
+        const hidden = data.labels.length - labelsDrawn;
+        rows.push(`<li><span class="wo-key wo-key-place"></span>named places: ${data.labels.length}` +
+          (data.hasLabels ? '' : ' (this site bundle predates the label reader)') +
+          (hidden > 0 ? ` (${hidden} unlabelled - hover it)` : '') + '</li>');
+        if (data.hasLayers) {
+          rows.push(`<li title="Objects the game spawns on the map: gates, towers, bridges, rail."><span class="wo-key wo-key-object"></span>placed objects: ${objects}</li>`);
+          rows.push(`<li title="Trees, mountain groups and small props."><span class="wo-key wo-key-deco"></span>decorations: ${data.stamps.length - objects}</li>`);
+        } else {
+          rows.push(`<li><span class="wo-key wo-key-deco"></span>map stamps: ${data.stamps.length}</li>`);
+        }
+        const k = placements?.[currentKingdom];
+        const scripted = k ? (k.script_positioned_count ?? 0) : 0;
+        const omitted = [];
+        if (scripted) omitted.push(`${scripted} script-positioned actor${scripted === 1 ? '' : 's'}`);
+        if (data.suppressed) omitted.push(`${data.suppressed} script-managed stamp${data.suppressed === 1 ? '' : 's'}`);
+        if (omitted.length) {
+          rows.push(`<li class="wo-key-note">not plotted, no fixed position: ${omitted.join(', ')}</li>`);
+        }
+        $legend.innerHTML = rows.join('');
+      }
+    }
+    if ($nameList) {
+      $nameList.innerHTML = '';
+      if (!data) {
+        $nameList.innerHTML = '<li class="wo-key-note">Place names are read from your disc.</li>';
+        return;
+      }
+      for (const l of data.labels) {
+        const li = document.createElement('li');
+        li.innerHTML = `<span class="wo-key wo-key-place"></span><span class="wo-name">${escapeHtml(l.name)}</span> ` +
+          `<span class="wo-coord">(${l.x}, ${l.z})</span>`;
+        li.addEventListener('pointerenter', () => minimap.highlightPlace(l));
+        li.addEventListener('pointerleave', () => minimap.highlightPlace(null));
+        li.addEventListener('click', () => minimap.highlightPlace(l));
+        $nameList.appendChild(li);
+      }
+    }
+  }
 
   function updateSnapshot() {
     if (!placements || !placements[currentKingdom]) {
       $statsDl.innerHTML = '<dt>data</dt><dd>placement JSON missing</dd>';
-      $listCounts.innerHTML = '';
-      if ($nameList) $nameList.innerHTML = '';
       return;
     }
     const k = placements[currentKingdom];
-    const placed = k.world_placed_count ?? k.placements.filter(p => !p.script_positioned).length;
-    const scripted = k.script_positioned_count ?? (k.placements.length - placed);
+    const fixed = k.world_placed_count ?? k.placements.filter(p => !p.script_positioned).length;
+    const scripted = k.script_positioned_count ?? (k.placements.length - fixed);
     const packCount = k.tmd_pack ? k.tmd_pack.count : (k.tmd_count ?? '?');
     const globalRefs = k.placements.filter(p => p.tmd_slot >= 0xF0).length;
     $statsDl.innerHTML = `
-      <dt>cdname</dt>          <dd>${k.cdname || k.label}</dd>
+      <dt>kingdom</dt>         <dd>${escapeHtml(k.label)} <span class="wo-coord" title="internal scene id">${escapeHtml(k.cdname || '')}</span></dd>
       <dt>PROT base</dt>       <dd>${k.prot_base ?? '?'}</dd>
-      <dt>records</dt>         <dd>${k.placements.length} total</dd>
-      <dt>world-placed</dt>    <dd>${placed}</dd>
-      <dt>script-positioned</dt><dd>${scripted}</dd>
-      <dt>TMD pack</dt>        <dd>${packCount} meshes (slot 1, type 0x02)</dd>
-      <dt>global TMD refs</dt> <dd>${globalRefs} placement(s) use the global pool (slot &ge; 0xF0) - rendered as placeholders pending disc-side global mesh bundle</dd>
+      <dt>mesh pack</dt>       <dd>${packCount} meshes</dd>
+      <dt>scripted actors</dt> <dd>${k.placements.length} (${fixed} at a fixed tile, ${scripted} positioned by script; ${globalRefs} use a party model)</dd>
     `;
-    const counts = {};
-    k.placements.forEach(p => { if (!p.script_positioned) counts[p.list] = (counts[p.list] || 0) + 1; });
-    $listCounts.innerHTML = Object.entries(counts).sort((a,b)=>+a[0]-+b[0]).map(([li, n]) =>
-      `<li><span class="legend-swatch swatch-list-${li}"></span>list ${li} (${LIST_NAMES[li]||'?'}): ${n}</li>`
-    ).join('');
-    if ($nameList) {
-      const named = k.placements
-        .filter(p => !p.script_positioned && p.name && p.name.trim())
-        .slice(0, 60);
-      $nameList.innerHTML = named.map(p =>
-        `<li><span class="legend-swatch swatch-list-${p.list}"></span><span class="wo-name">${escapeHtml(p.name)}</span> <span class="wo-coord">(${p.pos[0]}, ${p.pos[2]})</span></li>`
-      ).join('');
-    }
-  }
-  function drawScatter() {
-    if (!$canvas2d) return;
-    const ctx = $canvas2d.getContext('2d');
-    const W = $canvas2d.width, H = $canvas2d.height;
-    ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, W, H);
-    scatterDots = [];
-    if (!placements || !placements[currentKingdom]) return;
-    const k = placements[currentKingdom];
-    const [wx, wz] = k.world_extent || [16320, 16320];
-    /* grid */
-    ctx.strokeStyle = 'rgba(120,130,200,0.15)';
-    for (let i = 0; i <= 8; i++) {
-      const t = i/8;
-      ctx.beginPath();
-      ctx.moveTo(t*W, 0); ctx.lineTo(t*W, H);
-      ctx.moveTo(0, t*H); ctx.lineTo(W, t*H);
-      ctx.stroke();
-    }
-    /* placements */
-    k.placements.forEach(p => {
-      if (p.script_positioned) return;
-      const x = p.pos[0] / wx * W;
-      const y = p.pos[2] / wz * H;
-      const color = LIST_COLORS[p.list] || '#FFF';
-      ctx.beginPath();
-      ctx.arc(x, y, 3, 0, 2*Math.PI);
-      ctx.fillStyle = color; ctx.fill();
-      scatterDots.push({ x, y, p });
-    });
-  }
-
-  /* Hover tooltip over the scatter */
-  if ($canvas2d) {
-    $canvas2d.addEventListener('mousemove', ev => {
-      const rect = $canvas2d.getBoundingClientRect();
-      const mx = (ev.clientX - rect.left) * ($canvas2d.width / rect.width);
-      const my = (ev.clientY - rect.top) * ($canvas2d.height / rect.height);
-      let best = null, bestD = Infinity;
-      for (const d of scatterDots) {
-        const dx = d.x - mx, dy = d.y - my;
-        const r2 = dx*dx + dy*dy;
-        if (r2 < bestD) { bestD = r2; best = d; }
-      }
-      if (best && bestD < 64) {
-        const p = best.p;
-        let src = '';
-        if (p.tmd_source) {
-          if (p.tmd_source.kind === 'scene_tmd_pack') {
-            src = `  pack[${p.tmd_source.pack_slot}] nobj=${p.tmd_source.nobj} (${p.tmd_source.body_bytes}B)`;
-          } else if (p.tmd_source.kind === 'global_pool') {
-            src = `  global[${p.tmd_source.global_index}]`;
-          }
-        }
-        const slot = `0x${p.tmd_slot.toString(16).padStart(2,'0').toUpperCase()}`;
-        const cls = p.class ? `  class=${p.class}` : '';
-        const note = p.class_note ? `  ${p.class_note}` : '';
-        $hover.textContent = `${p.name || '(unnamed)'}  -  (${p.pos[0]}, ${p.pos[2]})  tmd_slot=${slot}${src}${cls}${note}`;
-      } else {
-        $hover.innerHTML = '&nbsp;';
-      }
-    });
-    $canvas2d.addEventListener('mouseleave', () => { $hover.innerHTML = '&nbsp;'; });
   }
 })();

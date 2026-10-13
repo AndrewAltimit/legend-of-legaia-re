@@ -90,7 +90,49 @@ impl LegaiaViewer {
                 ps.len()
             ));
         }
+        self.world_map_labels = build_world_map_labels(&self.disc, &entries, prot_base);
         Ok(count)
+    }
+
+    /// Per-placement layer, one byte per walk-frame stamp in placement order:
+    /// `1` = a **placed** object (record flag `0x4` - towns, towers, gates,
+    /// bridges), `0` = a decoration-layer stamp (trees, mountain groups,
+    /// props). Index-aligned with [`Self::walk_placement_slots`].
+    pub fn walk_placement_placed(&self) -> Vec<u8> {
+        self.walk_placements
+            .as_ref()
+            .map(|ps| ps.iter().map(|p| p.placed as u8).collect())
+            .unwrap_or_default()
+    }
+
+    /// The loaded kingdom's world-map labels as JSON: the records of the
+    /// location table trailing the kingdom MAN that belong to this kingdom,
+    /// in table order. `[]` until a kingdom is loaded.
+    ///
+    /// ```json
+    /// [ { "index": 0, "world_x": 5632, "world_z": 9856,
+    ///     "discovery_flag": 1156, "name": "..." }, ... ]
+    /// ```
+    ///
+    /// `world_x` / `world_z` are in the walk frame the `walk_ground_*` and
+    /// `walk_placement_*` accessors use. The names are read from the loaded
+    /// disc; nothing here is baked into the site.
+    pub fn world_map_labels_json(&self) -> String {
+        let rows: Vec<serde_json::Value> = self
+            .world_map_labels
+            .iter()
+            .flatten()
+            .map(|l| {
+                serde_json::json!({
+                    "index": l.index,
+                    "world_x": l.world_x,
+                    "world_z": l.world_z,
+                    "discovery_flag": l.discovery_flag,
+                    "name": l.name,
+                })
+            })
+            .collect();
+        serde_json::Value::Array(rows).to_string()
     }
 
     /// Number of walk-frame placed landmarks for the currently-loaded kingdom

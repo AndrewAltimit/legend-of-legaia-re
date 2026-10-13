@@ -47,6 +47,7 @@ impl LegaiaViewer {
             sheet_regions: None,
             walk_ground: None,
             walk_placements: None,
+            world_map_labels: None,
             field_scene: None,
             field_npcs: None,
             prot_index: None,
@@ -81,6 +82,7 @@ impl LegaiaViewer {
         self.sheet_regions = None;
         self.walk_ground = None;
         self.walk_placements = None;
+        self.world_map_labels = None;
         self.field_scene = None;
         self.field_npcs = None;
         self.prot_index = None;

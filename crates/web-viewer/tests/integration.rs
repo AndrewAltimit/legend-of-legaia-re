@@ -92,6 +92,7 @@ mod vab_duration_sweep;
 mod view_window_crop_page;
 mod walk_ground_parity;
 mod walk_placements_parity;
+mod world_map_labels_real;
 mod world_map_pack_hybrid_real;
 mod world_map_sublist_sfx_page;
 mod world_overview_clut_walk_real;

@@ -21,6 +21,7 @@ VR presentation of the same scene is in [`vr-mode.md`](vr-mode.md).
 | Water animation | the kingdom bundle's slot-5 CLUT-walk table, stepped on retail's cadence | [ocean](#ocean-tile---disc-side-asset--13-frame-clut-animation), [plumbing](#web-overview-shader-plumbing) |
 | Ocean backdrop | a flat quad past the continent, sampling the walked ocean CLUT | [plumbing](#web-overview-shader-plumbing) |
 | Distance haze | the depth LUT in `SCUS_942.54` + a per-kingdom tint | [fog](#distance-cue-fog-pass) |
+| Top-down map (2D side panel) | the same heightfield cells and stamps, plus the kingdom MAN's world-map label table | [top-down map](#top-down-map) |
 | Legacy overview-frame layers (hidden) | capture JSON: MAN-table landmarks, live-RAM actors, unplaced-mesh grid | [layout engine](#layout-engine-for-unplaced-slot-1-tmds), [bulk terrain](#bulk-terrain-placement-resolver-man-0x7f-sentinels) |
 
 ```mermaid
@@ -238,8 +239,69 @@ slot-1 TMDs" below) are in the top-down *overview* coordinate frame
 (mednafen captures / MAN overview coords), which is misaligned with the
 walk-view heightfield. The walk-frame placements above supersede them for the
 landmark layer; the `SHOW_LEGACY_PLACEMENTS` flag in `world-overview-app.js`
-still re-enables the old overview-frame code (preserved for the snapshot
-panel + the unplaced-layout toggles).
+still re-enables the old overview-frame code (preserved for the
+unplaced-layout toggles). The page's [top-down map](#top-down-map) plots the
+walk-frame layers, not these.
+
+## Top-down map
+
+Beside the 3D canvas the page draws the loaded kingdom as a 2D plan
+(`site/js/world-overview-minimap.js`). It is the assembled scene's data seen
+from straight above, not a second data source: the app gathers it off the same
+WASM accessors, in the same load, that the 3D draw list is built from.
+
+| Layer | Source | Drawn as |
+|---|---|---|
+| Land outline | `walk_ground_positions` reduced to one cell per quad, less the cells on the water pages `0x1B` / `0x1C` (`walk_ground_cba_tsb`) - the heightfield covers the whole grid, sea included | a 128 x 128 land mask over the sea colour |
+| Decorations | `walk_placement_*` stamps whose record has no placed flag | small dots |
+| Placed objects | stamps whose record carries flag `0x4` (`walk_placement_placed`) | squares |
+| Named places | `world_map_labels_json` - the kingdom's records of the location table trailing the kingdom MAN | circles, labelled |
+
+**Frame.** The label table's coordinates are `map << 7`, the position the
+game's own map display projects each name from (the label pass at
+`0x801CF368` in PROT 0981, [`place-names.md`](../formats/place-names.md#the-label-pass)).
+That is the walk frame the heightfield and the stamps are built in, so a label
+lands on its town with no transform. `build_world_map_labels` filters the
+29-record table by the kingdom's `region` byte; the disc-gated
+`crates/web-viewer/tests/world_map_labels_real.rs` asserts every label falls
+inside its own kingdom's heightfield bounds and that the three kingdoms
+partition the table.
+
+**Orientation and fit.** Screen-right is world `+X` and screen-up is world
+`+Z`, the basis of the 3D scene's default camera (`buildWorldOrbitVp` at
+`yaw = 0`). The plot is fitted to the bounding box of the land cells, widened
+to hold every marker, with a fixed margin and one scale for both axes, so a kingdom that is wider than tall is
+letterboxed rather than stretched. Nothing is clamped to the canvas: a record
+with no position is not plotted.
+
+**What is left out, and counted.** The legend names two families it does not
+plot: the MAN partition-1 actors parked at the `(0x7F, 0x7F)` sentinel, which
+a script positions at runtime ([below](#bulk-terrain-placement-resolver-man-0x7f-sentinels)),
+and any stamp the 3D scene suppresses through `WALK_STAMP_SUPPRESS`.
+
+**Names.** The place names are read from the reader's disc when the kingdom
+loads and are never written into the site. `site/world-overview.json` carries
+coordinates, ids and counts only: the MAN actor records' developer labels
+(Shift-JIS, in the bytes before each placement header) are disc text and
+`extract-world-placements.py` does not emit them. Without a disc the canvas
+shows a prompt instead of a plot.
+
+**Only partition 1 is a placement.** The kingdom MAN's header counts are its
+three record partitions, and `FUN_8003AEB0` runs the placement walker over
+partition-1 records `1..N1` alone ([`world-map.md`](world-map.md#entity--actor-placement-table)):
+8 / 7 / 19 records for `map01` / `map02` / `map03`. Partition 2 is the scene's
+event scripts. Walking on into it reads field-VM script bytes as a placement
+header - a zero "tile X" on almost every record, which decodes to world
+`x = 64` - and yields a column of points down the map's west edge. The
+extractor stops at the partition boundary.
+
+**Presentation.** Colours are CSS custom properties on the side column
+(`--wo-map-*`), read by the canvas and used directly by the legend keys, with a
+light-theme override; the backing store is sized by `devicePixelRatio`. Labels
+are placed greedily around their markers and one that would overlap another is
+dropped, leaving the hover readout and the list beside the map (whose rows ring
+their marker) to name it. `window.__woMinimap` reports the last draw - counts
+per family, labels drawn, markers off the canvas - for headless verification.
 
 ## Ocean tile - disc-side asset + 13-frame CLUT animation
 

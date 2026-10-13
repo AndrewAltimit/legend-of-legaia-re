@@ -140,6 +140,27 @@
   </ul>
 </section>
 
+<section class="doc-section" id="top-down-map">
+  <h2>Top-down map</h2>
+  <p>Beside the 3D canvas the page draws the loaded kingdom as a 2D plan. It is the assembled scene's data seen from straight above, not a second data source: the page gathers it off the same accessors, in the same load, that the 3D draw list is built from.</p>
+  <table class="data-table">
+    <thead><tr><th>Layer</th><th>Source</th><th>Drawn as</th></tr></thead>
+    <tbody>
+      <tr><td>Land outline</td><td>The heightfield reduced to one cell per quad, less the cells on the water texture pages <code>0x1B</code> / <code>0x1C</code> - the heightfield covers the whole grid, sea included</td><td>A 128 &times; 128 land mask over the sea colour</td></tr>
+      <tr><td>Decorations</td><td>Walk <code>.MAP</code> stamps whose record has no placed flag</td><td>Small dots</td></tr>
+      <tr><td>Placed objects</td><td>Stamps whose record carries flag <code>0x4</code></td><td>Squares</td></tr>
+      <tr><td>Named places</td><td>The kingdom's records of the location table trailing the kingdom MAN</td><td>Circles, labelled</td></tr>
+    </tbody>
+  </table>
+  <ul class="bullets">
+    <li><strong>One frame.</strong> The label table's coordinates are <code>map &lt;&lt; 7</code>, the position the game's own map screen projects each name from. That is the walk frame the heightfield and the stamps are built in, so a label lands on its town with no transform. A disc-gated test asserts every label falls inside its own kingdom's heightfield bounds and that the three kingdoms partition the 29-record table.</li>
+    <li><strong>Orientation and fit.</strong> Screen-right is world <code>+X</code> and screen-up is world <code>+Z</code>, the basis of the 3D scene's default camera. The plot is fitted to the bounding box of the land cells, widened to hold every marker, with a fixed margin and one scale for both axes, so a kingdom wider than it is tall is letterboxed, not stretched. Nothing is clamped to the canvas: a record with no position is not plotted.</li>
+    <li><strong>Left out, and counted.</strong> The legend names what it does not plot: the scripted actors parked at the <code>(0x7F, 0x7F)</code> sentinel (below), and any stamp the 3D scene suppresses.</li>
+    <li><strong>Names come from your disc.</strong> Place names are read when the kingdom loads and are never written into the site; the committed placement JSON carries coordinates, ids and counts only. Without a disc the canvas shows a prompt.</li>
+    <li><strong>Only partition 1 is a placement.</strong> The kingdom MAN's three header counts are its three record partitions, and the placement walker runs over partition 1 alone - 8 / 7 / 19 actor records for the three kingdoms. Partition 2 is the scene's event scripts; read as placements, their script bytes give a zero tile X on almost every record and decode to a column of points down the map's west edge. The extractor stops at the partition boundary.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="sentinel-placements">
   <h2>Script-placed actors</h2>
   <p>Some MAN placement records carry no real coordinate: the encoded pair <code>(0x7F, 0x7F)</code> decodes to the world's north-east corner and means "a script will put me somewhere". Retail's placement walker sees a leading op <code>0x24</code> / <code>0x25</code> in the record's trailing bytes and enters a field-VM loop that writes the actor's position from per-record state - bytecode that branches on actor type, story flags and overlay tables, so it is not resolved statically.</p>

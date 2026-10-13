@@ -60,15 +60,14 @@
 
     <aside class="wo-side">
       <h3>Top-down placement map</h3>
-      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">2D minimap of every world-placed actor. Always available - baked from the disc into <code>world-overview.json</code>. Hover a dot for the location's in-game name.</p>
-      <canvas id="wo-canvas2d" width="280" height="280" aria-label="Top-down placement scatter"></canvas>
+      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">The kingdom from straight above, north up - the same data and the same orientation as the 3D scene. Read from your disc. Hover or tap a marker for what it is.</p>
+      <canvas id="wo-canvas2d" width="280" height="280" aria-label="Top-down map of the kingdom: land outline, named places, placed objects and decorations"></canvas>
       <div id="wo-hover" class="wo-hover-2d">&nbsp;</div>
+      <ul id="wo-map-legend" class="wo-list-counts" aria-label="Map legend"></ul>
+      <h3 style="margin-top:1rem">Named places</h3>
+      <ul id="wo-name-list" class="wo-name-list"></ul>
       <h3 style="margin-top:1rem">Snapshot</h3>
       <dl id="wo-stats-dl"></dl>
-      <h3 style="margin-top:1rem">Placements by list</h3>
-      <ul id="wo-list-counts" class="wo-list-counts"></ul>
-      <h3 style="margin-top:1rem">Named locations</h3>
-      <ul id="wo-name-list" class="wo-name-list"></ul>
     </aside>
   </div>
 </section>
@@ -113,9 +112,15 @@
       <li><strong>lock to retail top-view</strong> flattens the camera to the straight-down view the game's own debug menu uses.</li>
     </ul>
     <p>
-      The <strong>top-down placement map</strong> on the right plots the parsed placement positions
-      (Drake adds actor placements resolved from a live capture); <strong>Placements by list</strong>
-      counts them per placement list, colour-matched to the dots.
+      The <strong>top-down placement map</strong> on the right is the same kingdom seen from
+      straight above, north up, fitted to the land. Gold circles are the <strong>named places</strong>
+      - the labels the game itself draws on its own map screen, read from your disc with their map
+      positions. Blue squares are the <strong>placed objects</strong> the game spawns on the
+      continent (gates, towers, bridges, rail) and the small green dots are the <strong>decorations</strong> (trees,
+      mountain groups, props) - the two layers the 3D scene draws, at the same positions. Labels that
+      would collide are left off; hover or tap a marker, or a row of the list, to pick it out. The
+      legend counts each family, and counts what is deliberately not plotted: actors the game
+      positions by script have no fixed spot on the map.
     </p>
     <h3>Exporting</h3>
     <p>
@@ -226,11 +231,34 @@
   text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--text-dim);
 }
+/* The top-down map's colours. The canvas reads these, and the legend keys
+   use them directly, so a dot and its legend row cannot disagree; the light
+   theme overrides them below. */
+.wo-side {
+  --wo-map-sea: #1d456e;
+  --wo-map-land: #36452f;
+  --wo-map-place: #f4b41a;
+  --wo-map-object: #6cc4ff;
+  --wo-map-deco: #86b470;
+  --wo-map-ink: #f2f4f8;
+  --wo-map-halo: rgba(8, 10, 18, 0.88);
+}
+:root[data-theme="light"] .wo-side {
+  --wo-map-sea: #a9cbea;
+  --wo-map-land: #dfe6cf;
+  --wo-map-place: #e0a100;
+  --wo-map-object: #0b4f9c;
+  --wo-map-deco: #4a7a39;
+  --wo-map-ink: #14181f;
+  --wo-map-halo: rgba(255, 255, 255, 0.92);
+}
+/* Sized in CSS; the script sizes the backing store by devicePixelRatio. */
 #wo-canvas2d {
-  width: 280px; height: 280px;
-  background: #0a0a1a;
+  width: 100%; max-width: 320px; aspect-ratio: 1 / 1; height: auto;
+  background: var(--wo-map-sea);
   border: 1px solid var(--border);
   display: block;
+  touch-action: manipulation;
 }
 /* The quick-travel map draws at its 600x450 attribute size; without a CSS cap
    that intrinsic width is what a phone gets laid out to. Hit-testing already
@@ -249,18 +277,20 @@
   font-family: var(--font-mono); font-size: 0.78rem;
 }
 .wo-list-counts li { display: flex; align-items: center; gap: 0.5rem; padding: 0.1rem 0; }
-.legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
-.swatch-list-0 { background: #56B6F5; }
-.swatch-list-1 { background: #79D279; }
-.swatch-list-2 { background: #C0C0C0; }
-.swatch-list-6 { background: #E07028; }
+.wo-list-counts { margin-top: 0.4rem; }
+/* Legend keys: the marker's own shape and colour. */
+.wo-key { display: inline-block; flex-shrink: 0; box-sizing: border-box; }
+.wo-key-place  { width: 10px; height: 10px; border-radius: 50%; background: var(--wo-map-place); border: 1.5px solid var(--wo-map-halo); }
+.wo-key-object { width: 8px; height: 8px; margin: 0 1px; background: var(--wo-map-object); border: 1px solid var(--wo-map-halo); }
+.wo-key-deco   { width: 4px; height: 4px; margin: 0 3px; background: var(--wo-map-deco); }
+.wo-key-note   { color: var(--text-dim); }
 .wo-hover-2d {
   min-height: 1.4em;
   margin-top: 0.4rem;
   padding: 0.25rem 0.4rem;
   font-family: var(--font-mono); font-size: 0.74rem;
   color: var(--text-dim);
-  background: rgba(20, 22, 38, 0.7);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 3px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -274,7 +304,9 @@
   display: flex; align-items: center; gap: 0.4rem;
   padding: 0.1rem 0;
   border-bottom: 1px dotted rgba(120,130,200,0.1);
+  cursor: default;
 }
+.wo-name-list li:hover { background: var(--bg-card-hi); }
 .wo-name-list .wo-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .wo-name-list .wo-coord { color: var(--text-dim); font-size: 0.72rem; }
 </style>
@@ -292,5 +324,6 @@
 <script src="js/webgl-tmd-assembled-scene.js"></script>
 <script src="js/world-overview-kingdoms.js"></script>
 <script src="js/world-overview-quick-travel.js"></script>
+<script src="js/world-overview-minimap.js"></script>
 <script src="js/world-overview-ground.js"></script>
 <script src="js/world-overview-app.js"></script>
