@@ -137,6 +137,42 @@ drops the scroller and turns on `position: sticky` under the top bar; where it
 is too wide the wrapper keeps the horizontal scroller and a static header. It
 runs in the docs zone only, on load, on resize and once fonts settle.
 
+## One right edge per column
+
+Prose is capped at `--measure` (46rem) so a line stays readable. That is right
+on the 880px docs column, where the measure is most of the column, and wrong
+on a wider one: a 46rem paragraph or callout sitting among 1400px grids, tiles
+and tables stops at half the page and reads as a section that failed to load.
+Nothing errors, and it is invisible below about 1300px of viewport, where the
+column is not yet wider than the measure.
+
+Three column shapes, each with one rule for where text ends:
+
+| Column | Pages | Text ends at |
+|---|---|---|
+| Docs (880px) | every docs page not listed below | `--measure` |
+| App (1400 / 1480px) | home, `.wide-page` (`WIDE_PAGES` in `_gen.py`) | the column: `--measure` is `none` |
+| Prose with a breakout | `.wide-page.prose-page` (`PROSE_WIDE_PAGES`), `.dp-page` | the docs column; the named exhibit alone is wide |
+
+A `.prose-page` is a long-form page that is wide for one exhibit, such as a
+many-column table. Its header and sections keep the docs column, and a
+`section.doc-section.breakout` takes the full width and lifts the measure
+inside itself, so the exhibit's own caption follows the exhibit. The
+disc-patching write-ups (`.dp-page`) are the same shape with their own named
+breakouts.
+
+The policy is one custom property, so it holds only while every prose cap is
+spelled `max-width: var(--measure)`. A literal `72ch` on a new component is
+exactly how the home page's port-status caption stayed at half width after the
+status list beside it had been exempted by hand. Width caps that are not prose
+measures - the hero copy beside its video, a card in a grid track - are sized
+by their own layout and keep literal values.
+
+Checking it needs a browser. Load each page at 1440 and 1920 wide and, for
+every block container in `.content`, report a child narrower than 70% of the
+container while a sibling spans it; then look at the flagged pages, since a
+`.prose-page` section beside its breakout is flagged by design.
+
 ## The cascade-order trap
 
 A `@media` block contributes **nothing** to specificity. These two rules are

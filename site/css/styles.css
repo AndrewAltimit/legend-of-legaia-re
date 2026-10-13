@@ -34,6 +34,11 @@
 
    Prose measure: paragraphs and lists inside section.doc-section are capped
    at --measure; tables, figures, grids and code blocks use the full column.
+   That holds on the 880px docs column, where the measure is most of the
+   column. A wider column (home, .wide-page) lifts the measure instead - see
+   "Column width policy" beside .content.wide-page. Cap prose with
+   var(--measure), never a literal ch / px width, or the wide pages cannot
+   lift it.
    ===================================================================== */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
@@ -587,6 +592,30 @@ body.nav-open { overflow: hidden; }
  * for readability. */
 .content.wide-page {
   max-width: 1480px;
+}
+
+/* Column width policy. Every block in a column shares one right edge, or the
+ * page reads as broken: a 46rem paragraph among 1400px grids and tables looks
+ * like half the page failed to load.
+ *   docs column (880px)   prose at --measure, which is most of the column.
+ *   app pages             home and .wide-page lay out dashboards, grids and
+ *                         viewers at up to 1480px, so the measure is lifted
+ *                         and intro text, callouts and narrow tables follow
+ *                         the column.
+ *   .wide-page.prose-page a long-form docs page that is wide for one exhibit
+ *                         (a many-column table). The page keeps the docs
+ *                         column and its measure; only section.breakout takes
+ *                         the full width, and lifts the measure inside itself.
+ * The disc-patching write-ups (.dp-page, below) are the same third shape with
+ * their own named breakouts. */
+.page-home .content,
+.content.wide-page:not(.prose-page),
+.content.prose-page section.doc-section.breakout {
+  --measure: none;
+}
+.content.prose-page > .page-header,
+.content.prose-page > section.doc-section:not(.breakout) {
+  max-width: var(--max-content-w);
 }
 
 /* Write-up pages: running text, headings, callouts, and lists keep the original
@@ -3544,7 +3573,7 @@ a.stat-link:hover .lbl { color: var(--text); }
   color: var(--text-muted);
 }
 .ip-count { font-size: 0.8rem; color: var(--text-dim); }
-.ip-lede { margin: 0.5rem 0 0.9rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.55; max-width: 72ch; }
+.ip-lede { margin: 0.5rem 0 0.9rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.55; max-width: var(--measure); }
 .ip-key { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 2px; margin: 0 0.3em 0 0.1em; vertical-align: baseline; }
 /* One hue, three lightness steps (ordinal ramp validated against --bg-card):
    ported is the strongest, then engine-native, then no retail behaviour. The
@@ -3703,7 +3732,7 @@ a.stat-link:hover .lbl { color: var(--text); }
 .tile.wide .shot { width: 260px; height: auto; min-height: 118px; flex: none; border-bottom: none; border-right: 1px solid var(--line-soft); }
 .tile.wide .tile-body { justify-content: center; gap: 0.4rem; padding: 1.1rem 1.4rem; }
 .tile.wide .tile-body h3 { font-size: 1rem; }
-.tile.wide .tile-body p { max-width: 70ch; font-size: 0.85rem; }
+.tile.wide .tile-body p { max-width: var(--measure); font-size: 0.85rem; }
 
 @media (max-width: 1180px) {
   .tiles, .tiles.cols3 { grid-template-columns: repeat(2, 1fr); }

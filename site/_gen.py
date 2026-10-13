@@ -387,6 +387,14 @@ WIDE_PAGES: set[str] = {
     "tooling/translation-workbench",
 }
 
+# Wide pages that are long-form prose with one wide exhibit. They keep the
+# docs column and its reading measure; only a `section.doc-section.breakout`
+# spans the wide column. See "Column width policy" in css/styles.css.
+PROSE_WIDE_PAGES: set[str] = {
+    "reference/music-tracks",
+    "reference/scene-names",
+}
+
 
 # ---------------------------------------------------------------------------
 # Script cache-busting
@@ -460,7 +468,9 @@ def html_template(page_title: str, depth: int, active_key: str, body: str, extra
     wasm_js = "../" * depth + "js/wasm-loader.js"
     util_js = "../" * depth + "js/site-util.js"
     favicon = "../" * depth + "img/favicon.svg"
-    if active_key in WIDE_PAGES:
+    if active_key in PROSE_WIDE_PAGES:
+        content_cls = "content wide-page prose-page"
+    elif active_key in WIDE_PAGES:
         content_cls = "content wide-page"
     elif active_key.startswith("writeups/disc-patching/"):
         # Write-up pages use one consistent measure for prose, diagrams, and the
