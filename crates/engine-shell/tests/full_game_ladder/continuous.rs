@@ -184,15 +184,34 @@ fn part_c_continuous_run() {
     let opts = live_opts(true);
     PLAYS_ON.with(|p| p.set(true));
     let mut session = open_session(&inp.extracted);
-    if let Err(e) = seed(&mut session, &spine[0], None, &opts) {
-        panic!("continuous run: New Game did not seed: {e}");
+    // `LEGAIA_FGL_CONTINUOUS_FROM=<milestone>` starts the run at a later
+    // milestone, seeded once from that milestone's retail anchor and never
+    // again. It is a probe, not the score: the party it sets out with is
+    // retail's, so the baseline is not asserted.
+    let from_id = std::env::var("LEGAIA_FGL_CONTINUOUS_FROM").ok();
+    let start = from_id.as_deref().map_or(0, |id| {
+        spine
+            .iter()
+            .position(|m| m.id == id)
+            .unwrap_or_else(|| panic!("LEGAIA_FGL_CONTINUOUS_FROM: no milestone `{id}`"))
+    });
+    let seed_at = (0..=start)
+        .rev()
+        .find(|&j| spine[j].seeds_next)
+        .unwrap_or(start);
+    let seed_anchor = spine[seed_at]
+        .anchor
+        .as_ref()
+        .and_then(|r| load_anchor(&inp.library, r).ok());
+    if let Err(e) = seed(&mut session, &spine[seed_at], seed_anchor.as_ref(), &opts) {
+        panic!("continuous run: {} did not seed: {e}", spine[seed_at].id);
     }
     let mut cp = checkpoint(&mut session);
 
     let mut reached_count = 0usize;
     let mut reloads = 0u32;
     let mut stall: Option<String> = None;
-    'spine: for i in 0..spine.len() - 1 {
+    'spine: for i in start..spine.len() - 1 {
         let to = &spine[i + 1];
         NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = anchor_flags[i + 1].clone());
         LEARNED_CADENCE.with(|l| l.set(None));
@@ -215,7 +234,7 @@ fn part_c_continuous_run() {
             }));
             let err = match played {
                 Ok(Ok(())) => {
-                    reached_count = i + 1;
+                    reached_count = i + 1 - start;
                     cp = checkpoint(&mut session);
                     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                         print_state_diff(&mut session, &inp, to);
@@ -277,15 +296,19 @@ fn part_c_continuous_run() {
     }
 
     PLAYS_ON.with(|p| p.set(false));
-    let denom = spine.len() - 1;
+    let denom = spine.len() - 1 - start;
     eprintln!();
     eprintln!(
-        "[headline] one continuous New Game reaches {reached_count}/{denom} milestones on pad input, {reloads} reload(s) of its own saves"
+        "[headline] one continuous run from {} reaches {reached_count}/{denom} milestones on pad input, {reloads} reload(s) of its own saves",
+        spine[start].id
     );
     if let Some(s) = &stall {
         eprintln!("[stall] {s}");
     }
     eprintln!();
+    if from_id.is_some() {
+        return;
+    }
     eprintln!("# paste into scripts/replays/full_game_baseline.toml when the score rises:");
     eprintln!("[continuous]");
     eprintln!("reached = {reached_count}");
