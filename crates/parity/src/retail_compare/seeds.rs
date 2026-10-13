@@ -499,21 +499,21 @@ pub fn rewind_morph_weights(
     }
 }
 
-/// The fog pool pointer (`_DAT_8007B7E0`, [`legaia_engine_core::fog_particles`]).
+/// The fog pool pointer (`_DAT_8007B7E0`, [`legaia_engine_field::fog_particles`]).
 pub(super) const FOG_POOL_PTR: u32 = 0x8007_B7E0;
 
 /// Every live record of a retail state's fog pool: 80 `0x18`-byte records
 /// from pool `+0xA4`, alive byte `+0x05`
-/// ([`legaia_engine_core::fog_particles`] has the layout).
-pub fn retail_fog(ram: &[u8]) -> Vec<legaia_engine_core::fog_particles::FogParticle> {
+/// ([`legaia_engine_field::fog_particles`] has the layout).
+pub fn retail_fog(ram: &[u8]) -> Vec<legaia_engine_field::fog_particles::FogParticle> {
     let pool = game_anchors::u32_at(ram, FOG_POOL_PTR);
     if (pool & 0xFFE0_0000) != 0x8000_0000 {
         return Vec::new();
     }
-    (0..legaia_engine_core::fog_particles::FOG_POOL_SLOTS as u32)
+    (0..legaia_engine_field::fog_particles::FOG_POOL_SLOTS as u32)
         .map(|i| pool + 0xA4 + i * 0x18)
         .filter(|&r| game_anchors::u8_at(ram, r + 5) != 0)
-        .map(|r| legaia_engine_core::fog_particles::FogParticle {
+        .map(|r| legaia_engine_field::fog_particles::FogParticle {
             age: game_anchors::u16_at(ram, r),
             rate: game_anchors::u16_at(ram, r + 2),
             slot: game_anchors::u8_at(ram, r + 4),

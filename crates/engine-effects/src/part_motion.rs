@@ -25,7 +25,7 @@
 
 use legaia_engine_vm::move_vm::ActorState;
 
-use crate::action_effect_script::{RotationLut, retail_rotation_lut};
+use legaia_engine_battle_vm::rotation_lut::{RotationLut, retail_rotation_lut};
 
 /// `(rate * delta) >> 6` - the per-channel step, in the 32-bit product retail
 /// takes (`mult` twice, `mflo`, `sra 6`).

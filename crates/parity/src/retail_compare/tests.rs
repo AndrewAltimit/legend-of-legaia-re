@@ -184,7 +184,7 @@ fn cell_fx_and_fog_seeds_round_trip_through_their_env_forms() {
         white: 256,
     }];
     assert_eq!(cell_fx_from_env(&cell_fx_env(&fx)), fx);
-    let fog = vec![legaia_engine_core::fog_particles::FogParticle {
+    let fog = vec![legaia_engine_field::fog_particles::FogParticle {
         age: 0x480,
         rate: 12,
         slot: 77,

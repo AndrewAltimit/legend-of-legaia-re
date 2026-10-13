@@ -5,7 +5,7 @@
 //! (`FUN_8003F348` at `0x80026F24`, gated on game mode `3` and
 //! `_DAT_8007B854`), two textured semi-transparent quads per live particle
 //! through `FUN_8003F86C`. The simulation of that pass is
-//! `legaia_engine_core::fog_particles` and its `World::fog_render_step`
+//! `legaia_engine_field::fog_particles` and its `World::fog_render_step`
 //! seam; this file is the page's draw-path call into it, the twin of the
 //! native window's `take_field_fog_prims`. Both wrap the quads through
 //! `legaia_render_kernels::screen_prim::fog_puff_prim`, and both resolve the

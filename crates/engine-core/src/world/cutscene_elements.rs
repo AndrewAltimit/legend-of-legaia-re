@@ -277,7 +277,7 @@ impl World {
         fog.overworld = overworld;
         let window = self.terrain.region_attributes.box_bytes;
         let [player_x, _, player_z] = self.fog_player_world_pos();
-        let trig = legaia_engine_effects::action_effect_script::retail_rotation_lut();
+        let trig = legaia_engine_battle_vm::rotation_lut::retail_rotation_lut();
         for el in live.iter_mut() {
             match &mut el.kind {
                 // The emitter's handler (`FUN_801D6058`) is field-overlay code

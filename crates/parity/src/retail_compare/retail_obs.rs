@@ -110,7 +110,7 @@ pub struct RetailObs {
     pub cell_fx: Vec<legaia_engine_field::clut_cell_fx::ClutCellFx>,
     /// The live fog-pool records ([`retail_fog`]), handed to the image child
     /// as `LEGAIA_SEAT_FOG` and installed on the frame it captures.
-    pub fog: Vec<legaia_engine_core::fog_particles::FogParticle>,
+    pub fog: Vec<legaia_engine_field::fog_particles::FogParticle>,
     /// The live draw-kind-4 sprite-arm sheets ([`retail_sprite_arms`]),
     /// handed to the image child as `LEGAIA_SEAT_SPRITE_ARMS` and installed on
     /// the frame it captures.

@@ -1,6 +1,6 @@
 //! Volumetric ground fog - an **enhancement**, not a retail system.
 //!
-//! Retail's only fog is the `fog_set` puff pool (`legaia_engine_core::fog_particles`):
+//! Retail's only fog is the `fog_set` puff pool (`legaia_engine_field::fog_particles`):
 //! two additive billboards per particle, drifting on fixed per-region
 //! headings, blind to every actor. This module layers a low, drifting mist
 //! bank over the scenes that already read as misty, and lets the characters

@@ -134,7 +134,7 @@ pub fn venue_camera_view(
 ) -> legaia_engine_battle_vm::psx_camera::FieldCameraView {
     let reset = fc::venue_camera_reset();
     let publish = legaia_engine_fishing::fishing_actors::fish_camera(x, y, z, facing);
-    let s = crate::camera_view::CUTSCENE_WORLD_SCALE;
+    let s = legaia_engine_field::camera::CUTSCENE_WORLD_SCALE;
     let to_rad = |u: i32| u as f32 * (std::f32::consts::TAU / 4096.0);
     legaia_engine_battle_vm::psx_camera::FieldCameraView {
         focus: [

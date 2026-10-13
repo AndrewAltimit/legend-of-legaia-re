@@ -71,7 +71,7 @@ pub struct FogVolume {
 
 /// How much bank the field tile `(tile_x, tile_z)` may carry under the
 /// scene's fog-region table: retail's spawner rule (`FUN_801D629C`,
-/// `0x801D6320..0x801D63B8`, `legaia_engine_core::fog_particles::FogPool::spawn`) - the
+/// `0x801D6320..0x801D63B8`, `legaia_engine_field::fog_particles::FogPool::spawn`) - the
 /// **first** region whose open box holds the tile decides, and a disabled
 /// hit ends the search, so an earlier disabled box carves a hole out of a
 /// later enabled one. No containing region means no fog. An empty table

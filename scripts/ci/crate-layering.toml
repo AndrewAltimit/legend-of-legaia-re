@@ -126,7 +126,7 @@ deps = [
 [[coupling]]
 from = "engine-field"
 to = "engine-battle-vm"
-items = ["camera_mover", "retail_cam", "psx_camera", "battle_camera::apply_shake", "battle_action::motion::trig12"]
+items = ["camera_mover", "retail_cam", "psx_camera", "battle_camera::apply_shake", "battle_action::motion::trig12", "rotation_lut::RotationLut"]
 reason = "the shared GTE camera, its mover and the 12-bit trig live with the battle camera script that calls them"
 
 [[coupling]]

@@ -22,7 +22,7 @@ link into a dependent crate.
 ## Modules
 
 - `action_effect_script` - the battle action's 8-byte **effect-script** record
-  walk (`FUN_801DEA50`): frame gates, facing rotation via `RetailRotationLut`
+  walk (`FUN_801DEA50`): frame gates, facing rotation via `engine-battle-vm`'s `RetailRotationLut`
   (the `0x80070A2C` trunc-sine pair), the move-power record index, and the
   target band the terminator's homing seed sweeps. Driven per battle frame by
   `World::tick_battle_animations` over each actor's committed clip

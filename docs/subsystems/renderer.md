@@ -1775,7 +1775,7 @@ particle's depth, not a world-space quad
 The records come from the ambient emitter's spawner `FUN_801D629C`
 ([`field-ambient-fx.md`](field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)).
 
-Port: `engine-core::fog_particles` is the pool and the pass's arithmetic,
+Port: `engine-field::fog_particles` is the pool and the pass's arithmetic,
 `World::fog_render_step` is the draw-path call each host makes with its
 follow camera, and the quads join this pass through
 `screen_prim::fog_puff_prim`. Each quad carries a scene depth and is

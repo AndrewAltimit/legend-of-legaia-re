@@ -65,6 +65,7 @@ pub mod panel_backread_loader;
 pub mod psx_camera;
 pub mod retail_cam;
 pub mod rgb_wash_scale;
+pub mod rotation_lut;
 pub mod seru_magic_ticks;
 pub mod seru_side_effect;
 pub mod status_effects;

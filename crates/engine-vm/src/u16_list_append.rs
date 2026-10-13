@@ -22,7 +22,7 @@
 /// REPLACED-BY: `legaia_engine_system::movie::cutscene::sprite_stack_push`, which is
 /// this same address ported a second time and reached on both hosts.
 /// `FUN_8003F3FC` - named here as the missing producer - is ported: it is the
-/// per-particle half of `legaia_engine_core::fog_particles::FogPool::render_step`,
+/// per-particle half of `legaia_engine_field::fog_particles::FogPool::render_step`,
 /// and the `jal` at `0x8003F800` this routine is the callee of is that port's
 /// `free_slot`, which returns a dead record's index through
 /// `sprite_stack_push`. So the producer exists, has a host, and already calls

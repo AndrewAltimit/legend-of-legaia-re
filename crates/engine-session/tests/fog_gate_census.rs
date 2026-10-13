@@ -1,7 +1,7 @@
 //! Disc-gated: which scene scripts raise the field fog gate, and that the
 //! native engine draws the fog those scenes ask for.
 //!
-//! The fog pool (`legaia_engine_core::fog_particles`) draws nothing until a
+//! The fog pool (`legaia_engine_field::fog_particles`) draws nothing until a
 //! script raises `_DAT_8007B854` through field-VM op `0x4C` nibble-3 sub-0
 //! (`[4C, 0x30]`, `0x801E0F38`); sub-1 (`[4C, 0x31]`) clears it. This file
 //! is the disc-wide census of both sites over every scene MAN's field-VM
@@ -15,7 +15,7 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` / `extracted/` are missing.
 
 use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
-use legaia_engine_core::fog_particles::{
+use legaia_engine_field::fog_particles::{
     FOG_CAP_DEFAULT, FOG_CLUT, FOG_LEFT_UV_ROW, FOG_RIGHT_UV_ROW, FOG_TPAGE, FOG_UV_ROWS,
 };
 use legaia_engine_field::man_field_scripts::partition_record_span;

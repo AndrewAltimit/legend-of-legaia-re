@@ -915,7 +915,7 @@ impl PlayWindowApp {
         })
     }
 
-    /// This frame's field fog sheets (`legaia_engine_core::fog_particles`):
+    /// This frame's field fog sheets (`legaia_engine_field::fog_particles`):
     /// the pool's render step (`FUN_8003F348` / `FUN_8003F3FC`, run from
     /// retail's field render pass) through the follow camera this frame
     /// draws the field with, wrapped by the shared `fog_puff_prim` so the

@@ -43,7 +43,7 @@ use legaia_tim::Vram;
 /// the mode initialiser `FUN_8001DCF8` loads `0x6000` into the diagonal of
 /// `_DAT_8007BF10` for mode `2` **and** mode `0x18`
 /// (`0x8001DF4C..0x8001DF70`), the same 6x the field frames through.
-const VENUE_WORLD_SCALE: f32 = crate::camera_view::CUTSCENE_WORLD_SCALE;
+const VENUE_WORLD_SCALE: f32 = legaia_engine_field::camera::CUTSCENE_WORLD_SCALE;
 
 fn angle_rad(units: u16) -> f32 {
     f32::from(units as i16) / 4096.0 * std::f32::consts::TAU

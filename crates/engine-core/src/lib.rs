@@ -26,7 +26,6 @@ pub mod field_view_window;
 pub mod fishing_exchange_input;
 pub mod fishing_scene;
 pub mod fishing_venue;
-pub mod fog_particles;
 pub mod frame_step;
 pub mod live_loop;
 pub mod menu_runtime;

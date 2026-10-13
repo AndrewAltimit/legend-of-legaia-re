@@ -35,7 +35,7 @@
 //!
 //! **Fog.** The half-sheet emitter `FUN_8003F86C` links at `(SZ - 0x10) >> 5`
 //! of the same base on the overworld (`0x8003F978..0x8003F9D8`, see
-//! `legaia_engine_core::fog_particles`).
+//! `crate::fog_particles`).
 //!
 //! Both keys index the one table `*0x1F8003F4` points into, so they are on
 //! one scale: a cell covers a sheet exactly when its bucket is the lower.
@@ -68,7 +68,7 @@
 //! The mesh shaders compute a cell's key from its four corners
 //! ([`ground_flat_refs`] packs them per vertex): `OVERWORLD_FLAT_DEPTH_WGSL`
 //! in `engine-render` and `overworldFlatDepth` in the play page's GLSL
-//! (`site/js/webgl-shaders.js`). `legaia_engine_core::fog_particles::FogQuad::depth`
+//! (`site/js/webgl-shaders.js`). `crate::fog_particles::FogQuad::depth`
 //! carries the sheet's side.
 
 /// Bits an `SZ` is shifted right by to form a bucket index (`srl t9,t9,5` at

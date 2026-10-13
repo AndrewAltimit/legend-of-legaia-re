@@ -54,7 +54,7 @@
 /// `crate::movie::cutscene::sprite_stack_pop` / `sprite_stack_push`
 /// (`FUN_8001FA34` / `FUN_8001FA68`), whose one consumer is that pool.
 ///
-/// WIRED: `legaia_engine_core::fog_particles::FogPool::reset` seeds its free stack
+/// WIRED: `legaia_engine_field::fog_particles::FogPool::reset` seeds its free stack
 /// through this on every field reset, on both hosts.
 pub fn init_identity_index_list(list: &mut [u16], n: i16) -> i16 {
     if n > 0 {

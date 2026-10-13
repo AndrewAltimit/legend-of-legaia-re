@@ -56,7 +56,10 @@ a dependent crate.
   `field_lit_mesh` (the light-source TMD rows' shading; see
   [`docs/subsystems/shading.md`](../../docs/subsystems/shading.md)),
   `packet_color` (per-vertex packet colour streams), `overworld_draw_order`
-  and `overworld_ground_cue` (`FUN_801F89B8`'s continent-cell colour).
+  and `overworld_ground_cue` (`FUN_801F89B8`'s continent-cell colour), and
+  `fog_particles` (the scene fog pool `FogPool`: the per-scene cap, spawn,
+  the free stack, and the render step that projects each particle through a
+  `FogView` into `FogQuad`s).
 - **Field camera** - `camera` (`Camera`, the follow / zone / scripted
   camera both hosts tick, with `CameraDistance` and the camera-zone request
   and cull-view types). Generic over `CameraWorld`, the slice of the world it

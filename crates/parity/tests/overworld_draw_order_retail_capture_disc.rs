@@ -24,7 +24,7 @@
 use legaia_engine_battle_vm::psx_camera::{
     FieldCameraView, mat4_mul, mat4_scale, mat4_translation,
 };
-use legaia_engine_core::fog_particles::{
+use legaia_engine_field::fog_particles::{
     FOG_CLUT, FOG_POOL_SLOTS, FOG_TPAGE, FogFrameEnv, FogPool, FogQuad, FogView,
 };
 use legaia_engine_field::overworld_draw_order as order;

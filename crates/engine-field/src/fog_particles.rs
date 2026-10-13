@@ -90,11 +90,11 @@
 //! corners. The overworld's mesh dispatch hands the same table to its prim
 //! leaves, and both hosts' mesh shaders bend the continent by it per vertex.
 //! The link key puts the sheet in the one ordering table the continent's
-//! cells link into; [`legaia_engine_field::overworld_draw_order`] turns both keys into the
+//! cells link into; [`crate::overworld_draw_order`] turns both keys into the
 //! flat depths the hosts draw with.
 
 use legaia_engine_battle_vm::psx_camera::FieldCameraView;
-use legaia_engine_effects::action_effect_script::RotationLut;
+use legaia_engine_battle_vm::rotation_lut::RotationLut;
 use legaia_render_kernels::fog_volume::FogRegion;
 
 /// Pool capacity - `pool[+2]`, `addiu a2,zero,0x50` at `0x801D7374`.
@@ -283,7 +283,7 @@ pub struct FogQuad {
     /// The sheet's scene depth for a depth-tested draw, in the mesh frame's
     /// normalised depth (`legaia_render_kernels::screen_prim::CornerDepth`'s
     /// convention): its **bucket's**, flat across the sheet
-    /// ([`legaia_engine_field::overworld_draw_order::fog_flat_sz`]), so the continent -
+    /// ([`crate::overworld_draw_order::fog_flat_sz`]), so the continent -
     /// which draws at its own cells' bucket depths - covers it exactly where
     /// retail's ordering table draws a cell after it.
     /// That bucket depth is the overworld arm's ([`FogPool::overworld`]),
@@ -306,7 +306,7 @@ pub struct FogView {
     h: f32,
     /// The mesh frame's `clip.w` per unit of this view's `w`: `1` where the
     /// hosts draw the meshes through this very matrix (the field follow and
-    /// cutscene poses), [`crate::camera_view::WORLD_MAP_WORLD_SCALE`] on the
+    /// cutscene poses), `legaia_engine_core::camera_view::WORLD_MAP_WORLD_SCALE` on the
     /// overworld walk frame, which composes the 6x world scale into its
     /// matrix (`camera_view::world_map_walk_vp`) while the fog projects
     /// through the `1x` field view of the same pose. Screen positions are
@@ -361,27 +361,26 @@ impl FogView {
         let v = [p[0] as f32, -(p[1] as f32), p[2] as f32, 1.0];
         let w = m[3] * v[0] + m[7] * v[1] + m[11] * v[2] + m[15] * v[3];
         (w.is_finite() && w > 0.5)
-            .then(|| legaia_engine_field::overworld_draw_order::ndc_at_w(m, w * self.depth_scale))
+            .then(|| crate::overworld_draw_order::ndc_at_w(m, w * self.depth_scale))
     }
 
     /// The `(a, b)` of `ndc = a + b / w` that [`Self::ndc_at_sz`] and
     /// [`Self::ndc_depth`] evaluate, bit for bit
-    /// ([`legaia_engine_field::overworld_draw_order::depth_affine`] of this matrix).
+    /// ([`crate::overworld_draw_order::depth_affine`] of this matrix).
     /// A host that compares depths in `w` rather than in normalised depth
     /// inverts a depth it was handed through exactly this pair: the browser
     /// play page, whose 24-bit depth buffer cannot hold the quarter-bucket
     /// margin between a fog sheet and the overworld cells of its bucket.
     pub fn depth_affine(&self) -> (f32, f32) {
-        legaia_engine_field::overworld_draw_order::depth_affine(&self.vp)
+        crate::overworld_draw_order::depth_affine(&self.vp)
     }
 
     /// The mesh frame's normalised depth of a point at retail view depth
     /// `sz` (the base matrix's scaled space, `1x` eye depth times
-    /// [`crate::camera_view::CUTSCENE_WORLD_SCALE`]); `None` for `sz <= 0`.
+    /// [`crate::camera::CUTSCENE_WORLD_SCALE`]); `None` for `sz <= 0`.
     pub fn ndc_at_sz(&self, sz: f32) -> Option<f32> {
-        let w = sz / crate::camera_view::CUTSCENE_WORLD_SCALE * self.depth_scale;
-        (w.is_finite() && w > 0.5)
-            .then(|| legaia_engine_field::overworld_draw_order::ndc_at_w(&self.vp, w))
+        let w = sz / crate::camera::CUTSCENE_WORLD_SCALE * self.depth_scale;
+        (w.is_finite() && w > 0.5).then(|| crate::overworld_draw_order::ndc_at_w(&self.vp, w))
     }
 
     /// Project a raw retail world point (Y-down). Returns `(sx, sy, sz)` in
@@ -405,7 +404,7 @@ impl FogView {
     pub fn project_gte(&self, p: [i32; 3]) -> Option<(i16, i16, u16)> {
         let (sx, sy, w) = self.project_f(p)?;
         let px = |v: f32| (v.round() as i32).clamp(-1024, 1023) as i16;
-        let sz = (w * crate::camera_view::CUTSCENE_WORLD_SCALE).round();
+        let sz = (w * crate::camera::CUTSCENE_WORLD_SCALE).round();
         Some((px(sx), px(sy), sz.clamp(0.0, 65535.0) as u16))
     }
 
@@ -432,7 +431,7 @@ impl FogView {
     }
 }
 
-/// Per-frame inputs of the render step, gathered by [`crate::world::World`].
+/// Per-frame inputs of the render step, gathered by `legaia_engine_core::world::World`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FogFrameEnv {
     /// `DAT_1F800393` - frames since the last rendered frame.
@@ -595,7 +594,7 @@ impl FogPool {
     ///
     /// PORT: FUN_801D629C, overlay_field_0897_801d629c
     ///
-    /// WIRED: [`crate::world::World::tick_cutscene_elements`] calls this for
+    /// WIRED: `legaia_engine_core::world::World::tick_cutscene_elements` calls this for
     /// every tile the ambient emitter names, on both hosts.
     pub fn spawn(
         &mut self,
@@ -648,7 +647,7 @@ impl FogPool {
                 f32::from(y),
                 f32::from((tile_z << 7) as i16),
             ];
-            let depth = view.eye_space(p)[2] * crate::camera_view::CUTSCENE_WORLD_SCALE;
+            let depth = view.eye_space(p)[2] * crate::camera::CUTSCENE_WORLD_SCALE;
             if depth > FOG_OVERWORLD_MAX_DEPTH as f32 {
                 return false;
             }
@@ -709,7 +708,7 @@ impl FogPool {
     ///
     /// PORT: FUN_8003F348, FUN_8003F3FC
     ///
-    /// WIRED: [`crate::world::World::fog_render_step`] on both hosts.
+    /// WIRED: `legaia_engine_core::world::World::fog_render_step` on both hosts.
     pub fn render_step(&mut self, view: &FogView, env: &FogFrameEnv) -> &[FogQuad] {
         self.quads.clear();
         let mut live = 0u16;
@@ -804,7 +803,7 @@ fn emit_half(
         return (false, None);
     };
     // Retail's view depth `SZ`, in the base matrix's scaled space.
-    let sz = w * crate::camera_view::CUTSCENE_WORLD_SCALE;
+    let sz = w * crate::camera::CUTSCENE_WORLD_SCALE;
     // 0x8003F958..0x8003F984: the overworld near cull and OT bias.
     if overworld && sz < FOG_OVERWORLD_NEAR_Z {
         return (false, None);
@@ -870,13 +869,13 @@ fn emit_half(
             ot_index: (bucket_z.max(0.0) as u32) >> 5,
             sz,
             // Overworld: the bucket's flat depth, a quarter bucket behind
-            // the cells that link there (legaia_engine_field::overworld_draw_order).
+            // the cells that link there (crate::overworld_draw_order).
             // Field: the particle's own depth - retail links the sheet at
             // `SZ >> 5` in the ordering table the field meshes sort into,
             // so a nearer ledge, trunk or prop draws over it.
             depth: if overworld {
-                view.ndc_at_sz(legaia_engine_field::overworld_draw_order::fog_flat_sz(
-                    legaia_engine_field::overworld_draw_order::fog_ot_index(sz),
+                view.ndc_at_sz(crate::overworld_draw_order::fog_flat_sz(
+                    crate::overworld_draw_order::fog_ot_index(sz),
                 ))
             } else {
                 view.ndc_at_sz(sz)
@@ -923,8 +922,8 @@ mod tests {
         assert_eq!(fog_cap_for_man(&[0x05]), FOG_CAP_DEFAULT);
     }
 
-    fn lut() -> &'static legaia_engine_effects::action_effect_script::RetailRotationLut {
-        legaia_engine_effects::action_effect_script::retail_rotation_lut()
+    fn lut() -> &'static legaia_engine_battle_vm::rotation_lut::RetailRotationLut {
+        legaia_engine_battle_vm::rotation_lut::retail_rotation_lut()
     }
 
     /// A view that looks straight down -Z... expressed as the identity-ish
