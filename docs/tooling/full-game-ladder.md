@@ -1374,6 +1374,19 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   hazard set holds only the doors whose records the live flags let spawn,
   so a spent beat's band does not wall off the corridor it lies in.
 
+### Nivora
+
+- The `nivora` anchor is a save taken inside the Three Tunnels: the split
+  cutscene (`0x47C`) has played, both boulders are pushed (`0x457`) and
+  `P2[32]` (`0x47E`) is behind it. A run of its own meets the boulders
+  unpushed. `P1[13]` / `P1[14]` push only while `0x4F2` is up, and
+  `nilboa`'s entry script raises it each pass that the leader or member
+  `0x31` stands in the box `(53..55, 62..64)` clear of the sub-boxes its
+  `4C E4` tests exclude, and lowers it otherwise.
+- `P2[32]`'s C2 gate is `0x370`, which `doman`'s Dr. Usha (`P1[2]` /
+  `P1[15]`) raises in the lab; the `usha_research` milestone is reached on
+  the street the `map03` door lands on, a walk component away from it.
+
 ### Overworld and dungeon joins
 
 - From `rim_elm_restored`, `vell` has no walkable way: on `map01` Rim Elm's
