@@ -496,6 +496,17 @@ pub(super) fn panic_text(p: &(dyn std::any::Any + Send)) -> String {
     }
 }
 
+/// `LEGAIA_FGL_RNG_SEED=<u32>` (decimal or `0x` hex): the world rand state
+/// a pad pass starts from in place of the one it would have, so a route can
+/// be played under another hand. Part B applies it to each pad segment's
+/// seed, part C to its New Game (or to the checkpoint it resumes).
+pub(super) fn rng_seed_override() -> Option<u32> {
+    let s = std::env::var("LEGAIA_FGL_RNG_SEED").ok()?;
+    let s = s.trim();
+    s.strip_prefix("0x")
+        .map_or_else(|| s.parse().ok(), |h| u32::from_str_radix(h, 16).ok())
+}
+
 /// Run segment `from -> to`.
 pub(super) fn run_segment(
     inp: &Inputs,
@@ -683,11 +694,7 @@ pub(super) fn run_segment(
                 // so a re-seeded run is how a pad route is checked for
                 // depending on one stream's luck (see "A pad wipe that moves
                 // with an unrelated change" in the ladder docs).
-                if let Some(s) = std::env::var("LEGAIA_FGL_RNG_SEED").ok().and_then(|s| {
-                    let s = s.trim();
-                    s.strip_prefix("0x")
-                        .map_or_else(|| s.parse().ok(), |h| u32::from_str_radix(h, 16).ok())
-                }) {
+                if let Some(s) = rng_seed_override() {
                     session.host.world.rng_state = s;
                 }
                 // A reload other than the guard retry plays another hand:

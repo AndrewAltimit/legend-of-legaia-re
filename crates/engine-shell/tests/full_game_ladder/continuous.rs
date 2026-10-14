@@ -299,6 +299,9 @@ fn part_c_continuous_run() {
     // `LEGAIA_FGL_CHECKPOINT_DIR`: the party is the run's, the picker
     // rotation and the shopping memory are not, so it is a probe as well.
     let resume_id = std::env::var("LEGAIA_FGL_CONTINUOUS_RESUME").ok();
+    // `LEGAIA_FGL_CONTINUOUS_UNTIL=<milestone>` ends the run once it reaches
+    // that milestone: a probe of one stretch, so the baseline is not asserted.
+    let until = std::env::var("LEGAIA_FGL_CONTINUOUS_UNTIL").ok();
     let from_id = resume_id
         .clone()
         .or_else(|| std::env::var("LEGAIA_FGL_CONTINUOUS_FROM").ok());
@@ -329,6 +332,11 @@ fn part_c_continuous_run() {
         }
         checkpoint(&mut session)
     };
+    // Another hand of the rand stream from the first frame (or from the
+    // resumed checkpoint): how a score is checked for resting on one deal.
+    if let Some(s) = rng_seed_override() {
+        session.host.world.rng_state = s;
+    }
 
     let mut reached_count = 0usize;
     let mut reloads = 0u32;
@@ -389,6 +397,9 @@ fn part_c_continuous_run() {
                         to.id,
                         t0.elapsed().as_secs_f32()
                     );
+                    if until.as_deref() == Some(to.id.as_str()) {
+                        break 'spine;
+                    }
                     continue 'spine;
                 }
                 Ok(Err(e)) => e,
@@ -442,6 +453,12 @@ fn part_c_continuous_run() {
                     .rng_state
                     .wrapping_add((attempt + 1).wrapping_mul(0x9E37_79B9));
             }
+            // A dealt hand reaches the reloads too: the reload's stream is
+            // the save's, the same under every deal otherwise.
+            if let Some(s) = rng_seed_override() {
+                let w = &mut session.host.world;
+                w.rng_state ^= s;
+            }
         }
     }
 
@@ -458,7 +475,7 @@ fn part_c_continuous_run() {
         eprintln!("[stall] {s}");
     }
     eprintln!();
-    if from_id.is_some() {
+    if from_id.is_some() || until.is_some() {
         return;
     }
     eprintln!("# paste into scripts/replays/full_game_baseline.toml when the score rises:");
