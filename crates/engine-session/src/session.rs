@@ -44,7 +44,7 @@ mod scene_entry;
 
 use disc_tables::*;
 pub use disc_tables::{BATTLE_XA_CLIP_SLOTS, attach_escape_icons};
-pub use frame_steps::step_npc_clip_players;
+pub use frame_steps::{CUE_FOOTSTEP, step_npc_clip_players};
 
 /// What one menu-button press did ([`BootSession::press_field_menu`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -294,10 +294,11 @@ pub struct BootSession<S: AudioSink> {
     /// [`Self::tick`] neither auto-opens [`Self::field_menu`] on Start nor
     /// ticks it.
     host_owns_pause_menu: bool,
-    /// `true` when the host plays the field's CD-XA cues on a lane of its own
-    /// (the browser page stages clips asynchronously and needs the prestage
-    /// list), so [`Self::tick`] leaves both XA queues on the world.
-    host_stages_field_xa: bool,
+    /// The footstep / ambient cadence (`FUN_80018db0`), stepped once per sim
+    /// tick by [`Self::step_footstep_cadence`].
+    footstep: legaia_engine_audio::footstep::FootstepCadence,
+    /// Last tick's player XZ, for the movement magnitude the cadence reads.
+    footstep_prev_pos: Option<(i32, i32)>,
 }
 
 /// How much of each per-tick world queue a tick left behind.
@@ -472,20 +473,21 @@ mod tests {
         assert_eq!(s.camera_azimuth_override, None);
     }
 
-    /// A host that plays field CD-XA itself finds the cues still queued after
-    /// the session's tick; otherwise the session drains them.
+    /// The session's tick drains the field CD-XA queues for every host: a
+    /// cue never outlives its tick, with or without a director.
     #[test]
-    fn a_host_staged_xa_lane_keeps_the_field_xa_queue() {
-        for (host_stages, left) in [(true, 1), (false, 0)] {
-            let mut s = headless_session();
-            s.set_host_stages_field_xa(host_stages);
-            s.host.world.push_field_xa_cue(6, 4, 120);
-            s.tick().expect("tick");
-            assert_eq!(
-                s.host.world.drain_field_xa_cues().len(),
-                left,
-                "host_stages_field_xa = {host_stages}"
-            );
-        }
+    fn the_tick_drains_the_field_xa_queues() {
+        let mut s = headless_session();
+        s.host.world.push_field_xa_cue(6, 4, 120);
+        s.host
+            .world
+            .queue_xa_prestage([legaia_engine_system::sound_state::XaVoiceClip {
+                clip: 6,
+                channel: 4,
+                duration_sectors: 120,
+            }]);
+        s.tick().expect("tick");
+        assert!(s.host.world.drain_field_xa_cues().is_empty());
+        assert!(s.host.world.drain_field_xa_prestage().is_empty());
     }
 }

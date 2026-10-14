@@ -158,7 +158,7 @@
     <li id="status-effects"><strong>Status effects</strong> are bits in one halfword on the actor, set only by the battle overlay's two infliction legs. Poison ticks never kill (they bottom out at 1 HP); Stone counts as defeated. Per-status table on <a href="battle-internals.html#status-effects">internals</a>.</li>
     <li id="ap-gauge"><strong>AP</strong> is two gauges. The arts bar's per-turn pool is the character's AGL, spent by direction presses; a named art is paid from the <em>Spirit</em> gauge, which Spirit charges and which carries from fight to fight. A Spirit turn also lengthens the next arts bar and raises a guard stance. Both are on <a href="arts-command-gauge.html">arts command gauge</a>.</li>
     <li id="inventory"><strong>Items</strong> come from the same 256-slot bag the field menu uses - there is no battle inventory. The bag and its "split bag" window are on <a href="inventory.html">inventory</a>.</li>
-    <li><strong>Capture-class casts</strong> (Seru capture, the Amulet, the Delilas signature attacks) page a small dedicated module into the side overlay window and tick it every frame until it reports done. See <a href="battle-internals.html#cast-modules">internals</a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md">cast modules</a>.</li>
+    <li><strong>Capture-class casts</strong> (Seru capture, the Amulet, the Delilas signature attacks) page a small dedicated module into the side overlay window and tick it every frame until it reports done. See <a href="battle-internals.html#cast-modules">internals</a> and <a href="cast-module.html">cast modules</a>.</li>
   </ul>
 </section>
 
@@ -234,10 +234,15 @@
     <a href="battle-internals.html">Battle internals</a>
     <a href="history-battle.html">Battle capture notes</a>
     <a href="battle-action.html">Battle action SM</a>
+    <a href="battle-round-loop.html">Round loop</a>
+    <a href="battle-command-flow.html">Command flow</a>
+    <a href="battle-action-queue.html">Action queue</a>
+    <a href="battle-stage-camera.html">Stage and camera</a>
+    <a href="battle-hud.html">Battle HUD</a>
     <a href="battle-formulas.html">Battle formulas</a>
     <a href="arts-command-gauge.html">Arts command gauge</a>
     <a href="inventory.html">Inventory</a>
-    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md">Cast modules</a>
+    <a href="cast-module.html">Cast modules</a>
     <a href="effect-vm.html">Effect VM</a>
     <a href="move-vm.html">Move VM</a>
     <a href="level-up.html">Level-up</a>

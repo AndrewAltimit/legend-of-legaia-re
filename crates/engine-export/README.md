@@ -36,7 +36,7 @@ viewers render with, so an exported file matches the on-screen scene. What
 this crate adds is the part that needs the simulation: it steps a scratch
 `World` to sample ambient animation lanes and to resolve the traversal data
 against a scene staged at its free-roam visit, and it reads NPC placements
-through `engine-core::npc_catalog`.
+through `engine-scene::npc_catalog`.
 
 Nothing in `engine-core` or below names this crate, so the play hosts'
 library builds and the wasm bundle do not link it; the native `legaia-engine`

@@ -601,8 +601,8 @@ impl World {
                                 host.world.npcs.positions.insert(
                                     s,
                                     (
-                                        crate::world::FIELD_OFFMAP_HIDE_XZ,
-                                        crate::world::FIELD_OFFMAP_HIDE_XZ,
+                                        legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ,
+                                        legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ,
                                     ),
                                 );
                                 tl.pc = pc + 5;

@@ -176,8 +176,12 @@ reach = "scene"
 # (the Star Pearl); throwing it into the Stone Flower (stone P1[4]) raises
 # 0x1E9, the gate of stone P2[4], the door to tunnela. The cheapest route
 # rides ropeway2's elevator P2[21] instead, whose door P0[16] opens only
-# on 0x1D5 (Xain's defeat, later).
-via = ["teien", "geremi", "balden", "geremi", "stone"]
+# on 0x1D5 (Xain's defeat, later). Zalan hands the pearl over only once
+# 0x321 is up (P2[16], or P2[17] on a later talk): Cara's meeting, which
+# that same door P0[16] spawns (P2[18]) while 0x321 is clear. The retail
+# run met her before Sky Gardens (the sky_gardens anchor holds 0x321), so
+# a run of its own visits ropeway2 before going back to Zalan.
+via = ["teien", "geremi", "balden", "ropeway2", "geremi", "stone"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-05" }
 
 [[milestone]]

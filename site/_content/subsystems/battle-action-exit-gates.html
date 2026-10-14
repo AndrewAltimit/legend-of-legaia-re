@@ -1,0 +1,101 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle exit gates</div>
+  <h1>Battle action exit gates and softlock classes</h1>
+  <p class="lede">The <a href="battle-action.html">action state machine</a> has two states that wait on a condition with <strong>no timeout</strong>. State <code>0x51</code> waits for the party's HP readouts to finish counting; state <code>0x19</code> waits for the attacker to come within reach. When the thing each waits on can no longer happen, the battle never advances - and because the camera's idle sweep runs regardless, both look the same on screen: the camera orbits the acting actor forever.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th></th><th><code>0x51</code> HP-readout park</th><th><code>0x19</code> approach park</th></tr></thead>
+    <tbody>
+      <tr><td>Waits on</td><td>settle check <code>FUN_801E7250</code> answering &ldquo;settled&rdquo;</td><td>range check <code>FUN_8004E2F0</code> returning 0</td></tr>
+      <tr><td>Invariant</td><td>displayed HP minus live HP equals the pending accumulator, on every party slot</td><td>a clip with root motion is playing while the poll fails</td></tr>
+      <tr><td>Broken by</td><td>a displayed / live mismatch left with a zero accumulator</td><td>a stale exit-to-idle flag ending the approach clip</td></tr>
+      <tr><td>Retail trigger</td><td>a restore's assigning seed landing on a drain still in flight</td><td>a monster with no walk tag starting a melee while its flinch clip still plays</td></tr>
+      <tr><td>Caught in unmodified play</td><td>no capture; a pad-reachable trigger is read from the code</td><td>yes - the second Gaza fight</td></tr>
+      <tr><td>Self-recovers</td><td>on a poison or regen tick of the affected member</td><td>never</td></tr>
+      <tr><td>Disc patch</td><td>none</td><td><code>legaia-patcher --approach-softlock-fix</code></td></tr>
+      <tr><td>Port</td><td>same conventions, seeds paired at every call site</td><td>cannot park: the approach drive does not depend on a live clip</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="hp-gate">
+  <h2>The <code>0x51</code> gate: waiting for the HP readout</h2>
+  <p>The party HUD counts HP down over several frames after a hit, and the Done band exists partly to let that count finish. State <code>0x50</code> seeds a countdown; state <code>0x51</code> decrements it and leaves when it is negative and the menu flag is clear. The decrement is gated on the settle check: &ldquo;not settled&rdquo; skips the store and nothing else. The signature of the park is therefore state <code>0x51</code> with the countdown frozen at the value <code>0x50</code> seeded.</p>
+  <p>Only the party side waits. Retail draws no HP readout for monsters; their displayed-HP mirror is maintained but never drawn or animated.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="HP readout invariant: live HP at actor plus 0x14C and displayed HP at plus 0x172 are linked by the pending accumulator at plus 0x10, which the per-actor tick drains a quarter per frame into the readout. The drain is guarded off when the accumulator is zero. An accumulating seed adds to the accumulator and preserves the invariant; an assigning seed overwrites it and, if it lands mid-drain, leaves displayed HP above live HP with a zero accumulator, which nothing can move.">
+      <defs><marker id="beg-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="30" y="40" width="200" height="60" rx="4"/>
+      <text class="dg-label" x="130" y="64">Live HP</text><text class="dg-sub" x="130" y="82">actor +0x14C</text>
+      <rect class="dg-node-accent" x="340" y="40" width="200" height="60" rx="4"/>
+      <text class="dg-label" x="440" y="64">Pending accumulator</text><text class="dg-sub" x="440" y="82">actor +0x10, signed</text>
+      <rect class="dg-node" x="690" y="40" width="180" height="60" rx="4"/>
+      <text class="dg-label" x="780" y="64">Displayed HP</text><text class="dg-sub" x="780" y="82">actor +0x172, the HUD</text>
+      <path class="dg-edge" d="M540 70 L688 70" marker-end="url(#beg-arrow)"/>
+      <text class="dg-edge-label" x="548" y="60">drain: 1/4 per frame</text>
+      <text class="dg-edge-label" x="548" y="90">skipped when zero</text>
+      <text class="dg-sub" x="440" y="26">invariant: displayed - live = accumulator</text>
+      <rect class="dg-node-ok" x="30" y="180" width="380" height="80" rx="4"/>
+      <text class="dg-label" x="220" y="204">Accumulating seed (hit resolver)</text>
+      <text class="dg-sub" x="220" y="224">accumulator += delta, paired with the live-HP write</text>
+      <text class="dg-sub" x="220" y="242">overlapping hits compose; invariant holds</text>
+      <rect class="dg-node-warn" x="470" y="180" width="380" height="80" rx="4"/>
+      <text class="dg-label" x="660" y="204">Assigning seed (item / restore applier)</text>
+      <text class="dg-sub" x="660" y="224">accumulator = -amount; the old value is never read</text>
+      <text class="dg-sub" x="660" y="242">lands mid-drain: the remainder is discarded</text>
+      <path class="dg-edge" d="M300 180 L400 104" marker-end="url(#beg-arrow)"/>
+      <path class="dg-edge-dim" d="M600 180 L490 104" marker-end="url(#beg-arrow)"/>
+    </svg>
+    <figcaption>A restore of <code>H</code> that lands while the readout still has <code>A</code> to fall leaves live HP at <code>L + H</code> and ramps the readout from <code>D</code> to <code>D + H</code>: it settles exactly <code>A</code> above live HP with a zero accumulator. The drain is the only thing that moves the readout and it is guarded off, so every later action targeting that member is told &ldquo;not settled&rdquo;.</figcaption>
+  </figure>
+  <h3>The drain</h3>
+  <ul>
+    <li><strong>Party slot:</strong> a quarter of the accumulator per game frame, biased so the step is never zero. A full readout drains in a size-insensitive number of frames - 600 in 20, 1289 in 23, 9999 in 30.</li>
+    <li><strong>Monster slot:</strong> the whole delta in one frame.</li>
+    <li><strong>No max clamp:</strong> the drain never reads max HP and the HUD draws the readout raw, so a readout seeded above max is drawn above max.</li>
+  </ul>
+  <h3>Where the park can come from</h3>
+  <p>Every writer of the accumulator follows one of the two conventions above. The hit resolver <code>FUN_801EC3E4</code> accumulates at every site; the item / restore applier <code>FUN_800402F4</code> assigns at all three of its seeds. The streamed cast modules carry their own HP writers and follow the safe convention.</p>
+  <p>A menu restore cannot land mid-drain: a party-targeted action holds its own <code>0x51</code> open until every party readout settles, so the drain has always finished before the menu can act. The one path that can is the <strong>Lost Grail's Final Heal</strong> auto-revive, which the Done band runs itself on a member whose HP has just reached zero. Measured across many auto-revives it has always landed on an already-drained accumulator, with a comfortable margin at mid-game HP totals; the margin shrinks as max HP grows, because a bigger readout takes more frames to drain. A second paper trigger is the Point Card aimed at a party member, whose discharge writes live HP and seeds neither side (see the <a href="../writeups/glitches/items-and-equipment.html">items glitch write-up</a>).</p>
+  <p>The one re-sync in the battle code is the per-round status ticker, which force-assigns displayed HP to live HP after each of its own writes. A poison or regen tick on the affected member clears the park.</p>
+  <h3>The exit tests the value, not the crossing</h3>
+  <p>Nothing records &ldquo;the countdown crossed zero this frame&rdquo;. The exit reads the countdown fresh every pass and holds while the menu flag is up, which also pins a floor of twelve frames. A port that conditions the exit on the crossing loses it for good if the menu flag is up on that one frame.</p>
+</section>
+
+<section class="doc-section" id="approach-park">
+  <h2>The <code>0x19</code> approach park</h2>
+  <p>State <code>0x19</code> recomputes facing, calls the range check, and advances to the strike loop only when it returns in-range. It contains <strong>no movement code and no timeout</strong>. The movement comes from somewhere else entirely: the per-actor animation tick adds a root-motion term to the actor's position while a clip with a non-zero speed is playing.</p>
+  <p>The walk states <code>0x15..0x18</code> run only for a monster whose action table carries walk tag <code>0x20</code>. Of the 186 monster records, 180 have none, and fall back to state <code>0x19</code> with the generic Move clip staged - so for almost every monster the approach depends entirely on that clip staying alive.</p>
+  <ol class="steps">
+    <li><b>Flinch</b><span>a hit flinches the monster; the applier sets anim-event flag bit 2, &ldquo;exit to idle at clip end&rdquo;</span></li>
+    <li><b>Melee begins</b><span>the monster's turn starts while the flinch still plays; state <code>0x14</code> stages the Move clip</span></li>
+    <li><b>Event commit</b><span>the Move clip is installed through the mid-clip commit path, which clears bits 0-1 and <em>preserves bit 2</em></span></li>
+    <li><b>First loop end</b><span>about twelve frames in, the natural-end path sees bit 2, stages idle over the queued clip and clears the bit</span></li>
+    <li><b>Park</b><span>idle has zero root motion: the position freezes out of reach and the poll fails forever</span></li>
+  </ol>
+  <p>Any action between the flinch and the melee gives the flinch time to end and consume the bit, which is why only a directly-following melee parks - in the caught case, a summon immediately followed by the boss's own attack. A parked save reads the flag byte as zero: the commit that killed the clip consumed the bit, so the stale flag is visible only in flight. The causal check re-arms the bit by hand and the clip dies at its first natural end; without it the same re-stage walks in and strikes.</p>
+  <p>A party attacker's reach comes from a three-entry static table; a monster's is size-scaled. The range check returns &ldquo;out of range&rdquo; for any target code of 8 or more, so an all-target action can never satisfy a range poll.</p>
+  <h3>The disc patch</h3>
+  <p><code>legaia-patcher --approach-softlock-fix</code> (off by default; also offered by the <a href="../tooling/rom-patcher.html">in-browser ROM patcher</a>) replaces nine redundant words in the <code>0x19</code> arm - a per-frame facing re-derivation the neighbouring states already do - with a guard: if the staged clip is dead while the poll still fails, set the state back to <code>0x14</code>. Retail's own arm then re-stages the clip and the monster resumes walking. Healthy approaches never see a dead clip and are unaffected.</p>
+  <h3>The port</h3>
+  <p>The engine walks and cannot reproduce this park. Its approach drive is the same root-motion term, run in every approach state whether or not a clip is playing. Every tag search in the action state machine runs over the monster's real action table, so the 180 records without tag <code>0x20</code> take <code>0x19</code> as in retail and the six that carry one play their own approach clips. A disc-gated sweep fights every one of the 186 records.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The narrative version of the approach park is the <a href="../writeups/gaza-orbit-softlock.html">Gaza softlock write-up</a>. The full reference - field tables, both seeding conventions store by store, the Final Heal measurements, the Done-band teardown and the item applier's arms - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-action-exit-gates.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-action-exit-gates.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="battle-action.html">Action state machine</a>
+    <a href="battle-round-loop.html">Round loop</a>
+    <a href="battle-formulas.html">Battle formulas</a>
+    <a href="../formats/monster-animation.html">Monster animation</a>
+    <a href="../writeups/gaza-orbit-softlock.html">Gaza softlock write-up</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher</a>
+  </div>
+</section>

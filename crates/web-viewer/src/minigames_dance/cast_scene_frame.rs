@@ -23,7 +23,7 @@ impl LegaiaMinigames {
     }
 
     /// Pose the floor's bodies for this frame through the engine's cast
-    /// surface ([`legaia_engine_core::dance_cast_scene::DanceCastSurface::frame`]
+    /// surface ([`legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface::frame`]
     /// over this page's run - the call the native window and the play page
     /// make) and return its generation, or `-1` when no run is live or the
     /// cast did not decode. A generation the page has not seen means the

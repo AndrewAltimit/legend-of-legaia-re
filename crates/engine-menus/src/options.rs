@@ -230,6 +230,23 @@ impl OptionsState {
         self.enhanced_lighting = false;
     }
 
+    /// What to persist while [`Self::pin_retail`] holds for the session:
+    /// `self` with every knob the pin writes taken back from `stored`, the
+    /// state as it was before the pin. The rows the pin leaves alone (the
+    /// player's own options, time of day) keep this session's edits, so a
+    /// `--retail` session never writes its pinned values over the player's.
+    pub fn unpinned_over(&self, stored: &OptionsState) -> OptionsState {
+        let mut out = self.clone();
+        out.camera_distance = stored.camera_distance;
+        out.precise_movement = stored.precise_movement;
+        out.reduce_flashing = stored.reduce_flashing;
+        out.retail_static_window = stored.retail_static_window;
+        out.retail_view_window = stored.retail_view_window;
+        out.volumetric_fog = stored.volumetric_fog;
+        out.enhanced_lighting = stored.enhanced_lighting;
+        out
+    }
+
     /// The engine-only knobs currently off their retail value, by field
     /// name. Empty after [`Self::pin_retail`].
     pub fn retail_deviations(&self) -> Vec<&'static str> {
@@ -1017,6 +1034,24 @@ mod tests {
         assert!(o.retail_deviations().is_empty());
         // The rows retail's own options screen carries stay the player's.
         assert_eq!((o.battle_camera, o.field_move, o.audio), rows);
+    }
+
+    /// A `--retail` session's save keeps the player's stored engine knobs and
+    /// this session's edits to the rows the pin leaves alone.
+    #[test]
+    fn unpinned_over_restores_only_the_pinned_knobs() {
+        let stored = OptionsState::default();
+        let mut live = stored.clone();
+        live.pin_retail();
+        live.lighting_time_of_day = "night".to_string();
+        live.message_speed = 2;
+        live.volumetric_fog = !live.volumetric_fog;
+        let saved = live.unpinned_over(&stored);
+        assert_eq!(saved.retail_deviations(), stored.retail_deviations());
+        assert_eq!(saved.camera_distance, stored.camera_distance);
+        assert_eq!(saved.volumetric_fog, stored.volumetric_fog);
+        assert_eq!(saved.lighting_time_of_day, "night");
+        assert_eq!(saved.message_speed, 2);
     }
 
     /// The cycle steps the stored option - the value an options apply

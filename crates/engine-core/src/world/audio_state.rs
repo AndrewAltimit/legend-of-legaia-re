@@ -402,11 +402,11 @@ impl World {
     /// this into their runtime-row resolver every tick.
     /// The slot machine overlay's init points the slot at the machine's own
     /// `efect.dat` (extraction PROT 1199), which the scene host stages on the
-    /// warp ([`crate::world::MinigameState::slot_sfx_bundle`]); the Muscle
+    /// warp ([`legaia_engine_minigame_scenes::minigame_state::MinigameState::slot_sfx_bundle`]); the Muscle
     /// Dome's arena init points it at the arena's own bundle
-    /// ([`crate::world::MinigameState::muscle_sfx_bundle`]); the dance
+    /// ([`legaia_engine_minigame_scenes::minigame_state::MinigameState::muscle_sfx_bundle`]); the dance
     /// overlay's init at its own `efect.dat`
-    /// ([`crate::world::MinigameState::dance_sfx_bundle`]).
+    /// ([`legaia_engine_minigame_scenes::minigame_state::MinigameState::dance_sfx_bundle`]).
     // REF: FUN_8001FA88, FUN_8001F7C0
     pub fn runtime_sfx_bundle(&self) -> &[u8] {
         match (&self.mode, self.audio.battle_sfx_bank.as_deref()) {

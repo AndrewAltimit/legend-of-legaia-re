@@ -129,14 +129,15 @@ pub struct DropShadowQuad {
 }
 
 /// The four cells of one actor's blob from its transformed grid - the
-/// packet half of `FUN_8001C394`. `overworld` is `_DAT_1F800394 & 1`,
-/// `ot_shift` the OT-resolution byte `DAT_1F8003A4`, `near` the actor's
-/// `0x800000` bit.
+/// packet half of `FUN_8001C394`. `curve_bias` is `Some` while the overworld
+/// bit `_DAT_1F800394 & 1` is up, carrying the curvature table's build
+/// offset ([`crate::overworld_curvature::REBUILD_BIAS`] or `0`); `ot_shift`
+/// the OT-resolution byte `DAT_1F8003A4`, `near` the actor's `0x800000` bit.
 ///
 /// PORT: FUN_8001C394
 pub fn shadow_quads(
     grid: &[ShadowVertex; 9],
-    overworld: bool,
+    curve_bias: Option<i16>,
     ot_shift: u8,
     near: bool,
 ) -> [DropShadowQuad; 4] {
@@ -159,12 +160,10 @@ pub fn shadow_quads(
             ];
             let sum: i32 = corners.iter().map(|v| i32::from(v.sz)).sum();
             // 0x8001C4A4..0x8001C504: one curvature entry for all four `SY`s.
-            let bend = if overworld {
+            let bend = curve_bias.map_or(0, |bias| {
                 let i = (((sum >> 2) >> 5).max(0) as usize).min(curvature_table().len() - 1);
-                curvature_table()[i]
-            } else {
-                0
-            };
+                curvature_table()[i] + bias
+            });
             let (u0, v0) = (SHADOW_U0 + 8 * c as u8, 8 * r as u8);
             let mut slot = (((sum + SHADOW_OT_BIAS) >> 4) >> (ot_shift & 0x1F)).max(0) as u32;
             if near {
@@ -192,7 +191,7 @@ pub fn shadow_quads(
 /// overflow - the port drops the whole blob), then [`shadow_quads`].
 pub fn drop_shadow(
     pos: [i32; 3],
-    overworld: bool,
+    curve_bias: Option<i16>,
     ot_shift: u8,
     near: bool,
     project: impl Fn([i32; 3]) -> Option<ShadowVertex>,
@@ -207,7 +206,7 @@ pub fn drop_shadow(
     for (g, p) in grid.iter_mut().zip(pts) {
         *g = project(p)?;
     }
-    Some(shadow_quads(&grid, overworld, ot_shift, near))
+    Some(shadow_quads(&grid, curve_bias, ot_shift, near))
 }
 
 #[cfg(test)]
@@ -237,7 +236,7 @@ mod tests {
         for (i, v) in grid.iter_mut().enumerate() {
             *v = flat((i % 3) as i16 * 10, (i / 3) as i16 * 10, 1000);
         }
-        let q = shadow_quads(&grid, false, 0, false);
+        let q = shadow_quads(&grid, None, 0, false);
         assert_eq!(q[0].xy, [(0, 0), (10, 0), (0, 10), (10, 10)]);
         assert_eq!(q[3].xy, [(10, 10), (20, 10), (10, 20), (20, 20)]);
         assert_eq!(q[0].uv, [(0xE0, 0), (0xE7, 0), (0xE0, 7), (0xE7, 7)]);
@@ -245,7 +244,7 @@ mod tests {
         assert_eq!(q[2].uv[3], (0xE7, 15));
         // (4 * 1000 + 0xA0) >> 4.
         assert!(q.iter().all(|c| c.ot_index == 260));
-        let near = shadow_quads(&grid, false, 3, true);
+        let near = shadow_quads(&grid, None, 3, true);
         assert_eq!(near[0].ot_index, (260 >> 3) - 10);
         assert!(
             q.iter()
@@ -256,10 +255,14 @@ mod tests {
     #[test]
     fn the_overworld_bends_every_corner_by_one_unshifted_entry() {
         let grid = [flat(0, 50, 0x2000); 9];
-        let q = shadow_quads(&grid, true, 0, false);
+        let q = shadow_quads(&grid, Some(0), 0, false);
         let bend = curvature_table()[0x2000 >> 5];
         assert!(bend > 0);
         assert!(q[0].xy.iter().all(|&(_, y)| y == 50 + bend));
+        // A table the map display rebuilt lifts the blob with the ground.
+        let bias = crate::overworld_curvature::REBUILD_BIAS;
+        let q = shadow_quads(&grid, Some(bias), 0, false);
+        assert!(q[0].xy.iter().all(|&(_, y)| y == 50 + bend + bias));
     }
 
     #[test]

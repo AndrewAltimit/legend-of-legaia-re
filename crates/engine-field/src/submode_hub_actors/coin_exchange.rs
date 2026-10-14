@@ -279,7 +279,7 @@ pub fn coin_exchange(
 
 /// D-pad bits of the auto-repeating word `_DAT_8007BB84`, in the **packed**
 /// Legaia layout (`legaia_engine_system::retail_pad`-shaped, the same bits
-/// `legaia_engine_core::dev_menu::PACK_*` names).
+/// `legaia_engine_system::pad::PACK_*` names).
 ///
 /// The cell index counts **right to left** - cell `0` is the units digit, the
 /// rightmost on screen - so pressing right walks the index down and wraps it

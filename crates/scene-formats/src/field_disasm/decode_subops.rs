@@ -278,10 +278,14 @@ pub(super) fn decode_state_resume(
             )
         }
         0 => {
-            // [49, 0, length, ...length args..., ...mes_bytes]
-            need(2)?;
-            let length = bytecode[operand + 1];
-            let mes_start = operand + 2 + length as usize;
+            // [49, 0, x, length, ...length args..., ...mes_bytes]. The Done
+            // arm (FUN_801DE840, 0x801E08DC..0x801E0910) runs with `s6` the
+            // operand pointer: `length = s6[2]` (`lbu a0,0x2(s6)`), the MES
+            // walk from `s6 + length + 3`, PC += `length + 5 + walked`.
+            // `s6[1]` is not read.
+            need(3)?;
+            let length = bytecode[operand + 2];
+            let mes_start = operand + 3 + length as usize;
             if mes_start > bytecode.len() {
                 return Err(DisasmError::Truncated { pc, opcode });
             }

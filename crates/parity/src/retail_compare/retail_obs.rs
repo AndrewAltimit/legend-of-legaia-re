@@ -140,6 +140,10 @@ pub struct RetailObs {
     /// (`0x8007BF5D..5F`) - handed to the image child as `LEGAIA_SEAT_CLEAR`
     /// ([`retail_clear_rgb`]).
     pub clear_rgb: Option<[u8; 3]>,
+    /// The overworld curvature table's build offset ([`retail_curve_bias`]),
+    /// handed to the image child as `LEGAIA_SEAT_CURVE_BIAS` when the map
+    /// display has left one.
+    pub curve_bias: Option<i16>,
     /// The dialogue page mark's displayed strip frame ([`retail_page_mark`]),
     /// handed to the image child as `LEGAIA_SEAT_PAGE_MARK`.
     pub page_mark: Option<u8>,
@@ -305,6 +309,9 @@ impl RetailObs {
                 Vec::new()
             },
             clear_rgb: matches!(class, StateClass::Field).then(|| retail_clear_rgb(ram)),
+            curve_bias: matches!(class, StateClass::WorldMap)
+                .then(|| retail_curve_bias(ram))
+                .flatten(),
             page_mark: matches!(class, StateClass::Field | StateClass::WorldMap)
                 .then(|| retail_page_mark(ram))
                 .flatten(),
@@ -439,6 +446,9 @@ impl RetailObs {
         }
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
+        }
+        if let Some(bias) = self.curve_bias.filter(|&b| b != 0) {
+            env.push(("LEGAIA_SEAT_CURVE_BIAS", bias.to_string()));
         }
         env.push(("LEGAIA_SEAT_FRAME_STEP", self.frame_step().to_string()));
         if let Some(f) = self.page_mark {

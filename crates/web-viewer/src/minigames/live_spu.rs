@@ -167,7 +167,7 @@ impl LegaiaMinigames {
             let from = self.muscle_tally_voiced_steps;
             let mut attrs = Vec::new();
             for step_idx in 0..target {
-                let step = ramp.tick(1, false, volume_word);
+                let step = ramp.tick(1, self.muscle_tally_boost_at(step_idx), volume_word);
                 if step_idx >= from {
                     // Re-resolve through the kernel rather than reusing the
                     // replayed step's own cue: the replay restarts the ramp's
@@ -222,10 +222,13 @@ impl LegaiaMinigames {
         }
     }
 
-    /// Forget how far the tally has been voiced - called when a fresh INTERVAL
-    /// screen opens, so the next screen keys its lanes again.
+    /// Forget how far the tally has been voiced and lower its fast-forward
+    /// latch - called when a fresh INTERVAL screen opens, so the next screen
+    /// keys its lanes again and rolls at the slow rate (the arena init's
+    /// clear of `DAT_801D1AB4`, `0x801CEB1C`).
     pub fn muscle_tally_voice_reset(&mut self) {
         self.muscle_tally_voiced_steps = 0;
+        self.muscle_tally_boost_from = None;
     }
 }
 

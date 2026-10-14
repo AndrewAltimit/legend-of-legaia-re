@@ -181,7 +181,7 @@ pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) 
     let scene = Scene::load(&index, &pack.name).ok();
     pack.scene_anm = scene
         .as_ref()
-        .and_then(legaia_engine_core::npc_catalog::scene_anm_bundle);
+        .and_then(legaia_engine_scene::npc_catalog::scene_anm_bundle);
     let binds = scene
         .as_ref()
         .and_then(|s| s.field_object_binds(&index).ok().flatten());
@@ -1236,7 +1236,7 @@ impl LegaiaViewer {
 
     /// The off-map hide-box coordinate the actor draw skips.
     pub fn field_offmap_hide_xz(&self) -> i32 {
-        legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ as i32
+        legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ as i32
     }
 }
 

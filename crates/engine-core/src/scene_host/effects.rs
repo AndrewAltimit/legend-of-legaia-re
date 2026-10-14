@@ -134,7 +134,7 @@ pub(crate) fn seed_global_tmd_pool_from_befect_data(
                 continue;
             }
         };
-        let g = std::sync::Arc::new(crate::world::GlobalTmd {
+        let g = std::sync::Arc::new(legaia_engine_scene::model_bank::GlobalTmd {
             tmd,
             raw: body.to_vec(),
         });
@@ -199,7 +199,7 @@ pub(crate) fn seed_effect_model_library_from_etmd(
         };
         world.set_global_tmd(
             EFFECT_MODEL_LIBRARY_BASE + i,
-            std::sync::Arc::new(crate::world::GlobalTmd {
+            std::sync::Arc::new(legaia_engine_scene::model_bank::GlobalTmd {
                 tmd,
                 raw: body.to_vec(),
             }),
@@ -227,7 +227,7 @@ pub(crate) fn seed_battle_vdf(index: &ProtIndex, world: &mut crate::world::World
         .entry_bytes(PROT_BATTLE_VDF_ENTRY)
         .with_context(|| format!("read PROT entry {PROT_BATTLE_VDF_ENTRY} (vdf.dat)"))?;
     anyhow::ensure!(
-        crate::world::vdf_entry(&raw, 0).is_some(),
+        legaia_engine_scene::scene_bundle::vdf_entry(&raw, 0).is_some(),
         "PROT {PROT_BATTLE_VDF_ENTRY} is not a VDF offset pack"
     );
     world.tables.battle_vdf = Some(std::sync::Arc::from(raw.as_slice()));

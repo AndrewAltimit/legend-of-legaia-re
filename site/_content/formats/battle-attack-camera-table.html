@@ -1,0 +1,78 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; attack-camera table</div>
+  <h1>Battle attack-camera track table <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">When a party member swings a Tactical Art, the camera cuts in close and from an angle that differs from art to art - and from turn to turn. The angles are a small table in the battle overlay: twenty rows of two signed halfwords. The two columns are not two phases of a swing; they are <strong>two alternative offsets, and the game flips a coin between them</strong>.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>Battle overlay (PROT entry 0898) data tail, file offset <code>0x265F8</code>; runtime address <code>0x801F4E10</code></dd>
+    <dt>Shape</dt><dd>20 rows &times; 2 signed little-endian halfwords, <code>0x50</code> bytes</dd>
+    <dt>Addressing</dt><dd><code>value(row, column) = base[row &times; 4 + column &times; 2]</code></dd>
+    <dt>Column select</dt><dd><code>ctx[+0x26D]</code>, written only as <code>rand() % 2</code></dd>
+    <dt>Reader</dt><dd>The per-art attack camera <code>FUN_801D71B8</code></dd>
+    <dt>Parser / engine</dt><dd><code>legaia_game_tables::battle_attack_camera_table</code>, <code>engine-battle-vm::battle_attack_camera</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="coin-flip">
+  <h2>The column is a coin flip</h2>
+  <p>The byte that selects the column has exactly one writer on the disc, a routine in the executable that stores <code>rand() % 2</code> on every call. It is called from the animation commit whenever the committed clip's header marks it as a camera-relevant clip. So a row holds two alternatives and retail picks one at each such commit - which is why the same swing is framed from two visibly different angles on successive turns. One character is the exception: for Gala the column is forced to zero.</p>
+  <div class="byte-map" role="img" aria-label="One table row, four bytes: column 0 halfword and column 1 halfword">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0</span><span class="bm-name">column 0</span><span class="bm-size">s16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+2</span><span class="bm-name">column 1</span><span class="bm-size">s16</span></div>
+  </div>
+  <p class="dg-note">One of twenty rows. An arm forms <code>base + column &times; 2</code> once, then reads fixed 4-byte steps off it.</p>
+</section>
+
+<section class="doc-section" id="row-map">
+  <h2>Row map</h2>
+  <p>Each arm of the camera routine picks its own rows <em>and</em> its own destination, so the table is not a column-typed record. Most rows fold into the yaw; a few into pitch or an eye-space axis.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Rows</th><th>Folded into</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>pitch</td></tr>
+      <tr><td>1, 2, 4..8, 10..14, 17, 18</td><td>yaw</td></tr>
+      <tr><td>9</td><td>yaw, <strong>subtracted</strong> (summed with a ramp accumulator first)</td></tr>
+      <tr><td>3</td><td>eye-space Z</td></tr>
+      <tr><td>15, 16</td><td>eye-space X</td></tr>
+      <tr><td>19</td><td>eye-space Z, <strong>subtracted</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Two dispatched arms read no row at all and are built from literals and multiples of a ramp counter. One read escapes the coin flip entirely: one of Gala's arms reads row 18, column 0, at a fixed address.</p>
+  <p>The extent is measured two ways that agree on twenty rows: sweeping every base computation in the reader yields a dense set of displacements with nothing past row 19, and the halfword pair after the last row is zero and addressed by no arm.</p>
+</section>
+
+<section class="doc-section" id="dispatch">
+  <h2>Who reads which rows: three jump tables</h2>
+  <p>The reader dispatches on the acting character and then on the <strong>latched battle-animation id</strong> minus <code>0x1A</code>, through a table that is per character. The latched id is the clip that is playing, not a Tactical-Arts constant: the arm that runs is chosen by the animation, and the band <code>0x1A..=0x2D</code> is art-animation bank records <code>0x0A..=0x1D</code>.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Character</th><th>Bound</th><th>Jump table</th><th>Live arms</th></tr></thead>
+    <tbody>
+      <tr><td>Vahn</td><td><code>0x11</code></td><td><code>0x801CEA88</code></td><td><code>0x1A</code>, <code>0x1C</code>, <code>0x1D</code>, <code>0x1E</code> / <code>0x2A</code></td></tr>
+      <tr><td>Noa</td><td><code>0x14</code></td><td><code>0x801CEAD0</code></td><td><code>0x1A</code>, <code>0x1D</code> / <code>0x2C</code>, <code>0x1E</code> / <code>0x2D</code>, <code>0x1F</code>, <code>0x20</code></td></tr>
+      <tr><td>Gala</td><td><code>0x11</code></td><td><code>0x801CEB20</code></td><td><code>0x1A</code>, <code>0x1C</code>, <code>0x1D</code>, <code>0x1E</code> / <code>0x2A</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Most slots in every table are the shared epilogue: an art with no arm keeps the ordinary framing. Thirteen distinct arm bodies exist and they cover the live slots exactly - no arm is reached from two different characters' tables, and there is no spare arm. &ldquo;Seventeen per-art arms&rdquo; is one character's table bound, not a property of all three.</p>
+  <p>Because the dispatch byte only ever falls in this band when an art constant was staged, an action made of plain direction swings never reaches the table - see <a href="../subsystems/battle-action-queue.html#consume">the action queue</a>. How the override sits over the ordinary framings is on the <a href="../subsystems/battle-stage-camera.html#camera">battle camera</a> page.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>Source of record, with every arm's entry address and fold site: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/battle-attack-camera-table.md" target="_blank" rel="noopener"><code>docs/formats/battle-attack-camera-table.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/battle-stage-camera.html">Battle stage and camera</a>
+    <a href="../subsystems/battle-action-queue.html">Action queue</a>
+    <a href="move-power.html">Move-power table</a>
+    <a href="art-data.html">Art records</a>
+    <a href="character-mesh.html">Character meshes</a>
+    <a href="../arts.html">Arts browser</a>
+  </div>
+</section>

@@ -27,8 +27,8 @@ use crate::field_scene::FieldScenePack;
 use legaia_engine_scene::scene::ProtIndex;
 
 // One catalogued placement - the shared kernel's record
-// (`legaia_engine_core::npc_catalog::NpcEntry`).
-use legaia_engine_core::npc_catalog::NpcEntry;
+// (`legaia_engine_scene::npc_catalog::NpcEntry`).
+use legaia_engine_scene::npc_catalog::NpcEntry;
 
 /// The NPC catalog for one loaded field scene. Built by
 /// [`LegaiaViewer::set_scene_npcs`]; the meshes resolve against the
@@ -117,7 +117,7 @@ pub fn build_npc_catalog_play(
     index: &ProtIndex,
     name: &str,
     res: &legaia_engine_scene::scene_resources::SceneResources,
-    global_pool: &[Option<std::sync::Arc<legaia_engine_core::world::GlobalTmd>>],
+    global_pool: &[Option<std::sync::Arc<legaia_engine_scene::model_bank::GlobalTmd>>],
 ) -> Result<FieldNpcPack, String> {
     build_npc_catalog_impl(index, name, res, Some(global_pool))
 }
@@ -129,15 +129,15 @@ fn build_npc_catalog_impl(
     index: &ProtIndex,
     name: &str,
     res: &legaia_engine_scene::scene_resources::SceneResources,
-    play_pool: Option<&[Option<std::sync::Arc<legaia_engine_core::world::GlobalTmd>>]>,
+    play_pool: Option<&[Option<std::sync::Arc<legaia_engine_scene::model_bank::GlobalTmd>>]>,
 ) -> Result<FieldNpcPack, String> {
-    let legaia_engine_core::npc_catalog::NpcCatalog {
+    let legaia_engine_scene::npc_catalog::NpcCatalog {
         scene,
         entries,
         anm_prot,
         special_count,
         unposable_count,
-    } = legaia_engine_core::npc_catalog::catalog_scene_npcs(index, name, res, play_pool)?;
+    } = legaia_engine_scene::npc_catalog::catalog_scene_npcs(index, name, res, play_pool)?;
     Ok(FieldNpcPack {
         scene,
         entries,

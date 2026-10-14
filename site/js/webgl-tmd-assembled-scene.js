@@ -421,6 +421,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     if (this.locNclipCull) gl.uniform1i(this.locNclipCull, this.nclipCull);
     /* Overworld curvature (0 = flat unless the play page staged a scale). */
     if (this.locCurve) gl.uniform1f(this.locCurve, this.overworldCurve);
+    if (this.locCurveBias) gl.uniform1f(this.locCurveBias, this.overworldCurveBias || 0);
     /* Retail's per-primitive near reject (off unless the play page staged it). */
     if (this.locPrimNear) gl.uniform4fv(this.locPrimNear, this.primNear);
     /* Prologue grade + depth cue (identity / off unless the play page

@@ -225,7 +225,7 @@ impl FieldActors {
         (rec.bone_count > 0).then_some(rec.bone_count as usize)
     }
 
-    fn entry(&self, i: u32) -> Option<&legaia_engine_core::npc_catalog::NpcEntry> {
+    fn entry(&self, i: u32) -> Option<&legaia_engine_scene::npc_catalog::NpcEntry> {
         self.npcs.as_ref()?.pack.entries.get(i as usize)
     }
 
@@ -286,7 +286,7 @@ impl FieldActors {
         &self,
         host: &SceneHost,
         banks: ActorBanks<'_>,
-        e: &legaia_engine_core::npc_catalog::NpcEntry,
+        e: &legaia_engine_scene::npc_catalog::NpcEntry,
     ) -> Option<usize> {
         let slot = e.placement.index as u8;
         match self.clips.get(&slot) {
@@ -614,7 +614,7 @@ impl FieldActors {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(n.pack.entries.len() * 4);
-        let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         for e in &n.pack.entries {
             let slot = e.placement.index as u8;
             let (mut x, mut z) = host

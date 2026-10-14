@@ -93,16 +93,7 @@ impl XaDiscSource {
         let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
         let mut map = BTreeMap::new();
         for (path, rec) in &files {
-            let base = path.rsplit('/').next().unwrap_or(path);
-            let base = base.split(';').next().unwrap_or(base).to_ascii_uppercase();
-            let Some(n) = base
-                .strip_prefix("XA")
-                .and_then(|s| s.strip_suffix(".XA"))
-                .and_then(|s| s.parse::<u32>().ok())
-            else {
-                continue;
-            };
-            let Ok(slot) = u8::try_from(n.checked_sub(1)?) else {
+            let Some(slot) = crate::xa_banks::clip_slot_of(path) else {
                 continue;
             };
             let sectors = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);

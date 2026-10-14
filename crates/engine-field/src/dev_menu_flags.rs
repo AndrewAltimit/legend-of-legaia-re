@@ -44,7 +44,7 @@
 //! [`PACK_*`](PACK_UP) constants below are that layout; do not substitute
 //! `PadButton::*.mask()` here.
 //!
-//! Wired: [`crate::dev_menu_host::DevMenuSession`]'s `EVENT_FLAG` page
+//! Wired: `legaia_engine_core::dev_menu_host::DevMenuSession`'s `EVENT_FLAG` page
 //! drives all three kernels. The **flag-list table** is the field overlay's
 //! own data (`DAT_801f2e94` in extraction entry `0897`, stride `0xA`: a
 //! `u16` flag id then an 8-byte NUL-padded name, ended by a record whose name
@@ -74,13 +74,13 @@ pub const FLAG_LIST_VA: u32 = 0x801F_2E94;
 
 /// The per-entry `+2` projection [`flag_list_prev`] / [`flag_list_next`]
 /// walk, read off the field overlay's image (`field_overlay` = extraction
-/// entry `0897`, loaded at [`crate::field_submode_flag_window::FIELD_OVERLAY_BASE`]).
+/// entry `0897`, loaded at [`legaia_overlay_images::static_overlay::SLOT_A_BASE`]).
 ///
 /// The projection ends **with** the `'X'` sentinel, the shape both kernels
 /// expect. Empty when the table is out of range or no sentinel is found
 /// inside the image - an empty list is the host's "no table" state.
 pub fn flag_list_tags(field_overlay: &[u8]) -> Vec<u8> {
-    let base = crate::field_submode_flag_window::FIELD_OVERLAY_BASE;
+    let base = legaia_overlay_images::static_overlay::SLOT_A_BASE;
     let start = FLAG_LIST_VA.wrapping_sub(base) as usize;
     let mut tags = Vec::new();
     let mut off = start;
@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn the_flag_list_projection_ends_on_the_sentinel() {
-        let base = crate::field_submode_flag_window::FIELD_OVERLAY_BASE;
+        let base = legaia_overlay_images::static_overlay::SLOT_A_BASE;
         let start = (FLAG_LIST_VA - base) as usize;
         let mut img = vec![0u8; start + 4 * FLAG_ENTRY_STRIDE];
         for (i, name) in [b"M01", b"M02", b"XXX"].iter().enumerate() {

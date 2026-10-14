@@ -36,6 +36,30 @@
 //!
 //! Pinned entry for entry against the `keikoku_chest_preload` capture by
 //! `crates/parity/tests/fog_sheet_colour_retail_capture_disc.rs`.
+//!
+//! # The table carries the `OFY` it was built under
+//!
+//! The builder sets `H` and the matrix but not the screen offset, and stores
+//! `SY - 0x78`, so every entry is offset by the GTE's `OFY` at the call less
+//! `120`. Three call sites build the table disc-wide (`jal 0x800271A8`):
+//!
+//! - the MAN installer `FUN_8003AEB0` (`0x8003AF98`), whose one caller is
+//!   the field init `FUN_801D6704` (`0x801D6DA8`). The init has just run
+//!   the display-env setup `FUN_8001DAF8(0x140)` (`0x801D6954`), which ends
+//!   on `SetGeomOffset(160, 0x78)` (`0x8001DCD0`): the table is unbiased.
+//! - the map display's mode-`1` arm (`0x801CE958`, `FUN_800271A8(0, 0)`: a
+//!   flat table) and its mode-`3` arm (`0x801CEB88`, the saved coefficients
+//!   back). Both run inside a mode-`0x0D` frame, after the frame prologue
+//!   `FUN_8001698C` has set `OFY` to half the draw height (`0x1F80038E >> 1`
+//!   at `0x80016A3C..0x80016A50`, `114` on the field's `228` rows), and
+//!   nothing between sets it again: every entry is [`REBUILD_BIAS`] lower.
+//!
+//! So opening the map display lifts every bent overworld draw six rows, and
+//! the lift outlasts the display - it holds until the next scene load
+//! rebuilds the table. `sebucus_overworld_resident` is a capture of that
+//! state (entry `0` reads `-6`). The bias is a constant on every entry short
+//! of the saturated tail, so consumers add it to [`curvature_at`] /
+//! [`curvature_closed_form`] rather than keep a second table.
 
 use std::sync::OnceLock;
 
@@ -51,6 +75,17 @@ const BUILD_H: i32 = 0x3C0;
 const BUILD_Z: i32 = 0x7D0;
 /// The screen centre the entries are measured from (`addiu v0,v0,-0x78`).
 const BUILD_OFY: i32 = 0x78;
+
+/// `OFY` on a field or overworld frame: half the `228`-row draw area
+/// (`FUN_8001698C`, `0x80016A3C..0x80016A50`).
+const FRAME_OFY: i32 = 114;
+
+/// What a table rebuilt inside a running frame carries on every entry: the
+/// frame's `OFY` less the `120` the builder subtracts. The map display's
+/// two rebuilds (`0x801CE958`, `0x801CEB88`) are the only ones.
+///
+/// REF: FUN_801CE850
+pub const REBUILD_BIAS: i16 = (FRAME_OFY - BUILD_OFY) as i16;
 
 /// The table, built once.
 ///
@@ -110,13 +145,16 @@ pub const CURVATURE_REACHABLE: usize = (0xFFFF >> 5) + 1;
 /// clip-space `w` is `clip_w` under a frame with `scale` from
 /// `legaia_engine_core::camera_view::frame_curve_scale` - the CPU twin of the shaders' per-vertex term, for
 /// the screen-space draws that must land on the bent ground (the overworld
-/// markers). `0` when `scale` is `0`.
-pub fn clip_bend_rows(clip_w: f32, scale: f32) -> f32 {
+/// markers). `bias` is the table's build offset ([`REBUILD_BIAS`] once the
+/// map display has rebuilt it, else `0`), which a flat table (`scale` `0`)
+/// still carries.
+pub fn clip_bend_rows(clip_w: f32, scale: f32, bias: i16) -> f32 {
+    let bias = f32::from(bias);
     if scale <= 0.0 || clip_w <= 0.0 {
-        return 0.0;
+        return bias;
     }
     let sz = ((clip_w * scale).round() as i32).clamp(0, 0xFFFF);
-    curvature_closed_form(((sz >> 5) + 1) as usize) as f32
+    curvature_closed_form(((sz >> 5) + 1) as usize) as f32 + bias
 }
 
 #[cfg(test)]
@@ -144,9 +182,20 @@ mod tests {
     #[test]
     fn the_bend_rows_follow_the_scale() {
         assert_eq!(
-            clip_bend_rows(0x1000 as f32, 1.0),
+            clip_bend_rows(0x1000 as f32, 1.0, 0),
             curvature_at(0x1000) as f32
         );
-        assert_eq!(clip_bend_rows(100.0, 0.0), 0.0);
+        assert_eq!(clip_bend_rows(100.0, 0.0, 0), 0.0);
+    }
+
+    #[test]
+    fn a_rebuilt_table_lifts_every_entry_six_rows() {
+        assert_eq!(REBUILD_BIAS, -6);
+        // The flat table the map display builds is the bias alone.
+        assert_eq!(clip_bend_rows(100.0, 0.0, REBUILD_BIAS), -6.0);
+        assert_eq!(
+            clip_bend_rows(0x1000 as f32, 1.0, REBUILD_BIAS),
+            curvature_at(0x1000) as f32 - 6.0
+        );
     }
 }

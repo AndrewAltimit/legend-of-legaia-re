@@ -169,7 +169,7 @@ impl SceneHost {
         // The scene ANM bundle's per-record end-latch lengths: how long any
         // scene-bank clip a cutscene record pokes onto the player plays, at
         // the record's own step (a gated record's scaled step included).
-        let scene_anm = crate::npc_catalog::scene_anm_bundle(&scene);
+        let scene_anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
         self.world.locomotion.scene_clip_meta = scene_anm
             .as_ref()
             .map(|b| {

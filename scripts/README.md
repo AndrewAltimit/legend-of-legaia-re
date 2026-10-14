@@ -76,6 +76,7 @@ in the hook, and must self-skip everywhere else.
 - `check-site-shared-helpers.py` - hard gate: a function definition under one of `site/js/site-util.js`'s shared names (`escapeHtml`, `rgbaCanvas`, `downloadFile`, `poseClipInto`, or the old local names `triggerDownload` / `escHtml`) anywhere else in the site sources. Waive a line with `// shared-helper-ok: <reason>`. Self-tests its detector on every run. See [`docs/tooling/site-shell.md`](../docs/tooling/site-shell.md).
 - `check-port-tags.py` - `// PORT:` / `// REF:` tag drift checker (warn-only in the hook).
 - `port_tag_reader.py` - the one `// PORT:` / `// REF:` marker reader shared by `port-catalog.py`, `check-port-tags.py` and `check-port-provenance.py`, so a wrapped address list reads the same in all three.
+- `check-register-address-cites.py` - warn-only worklist of settled-register rows graded `disassembly` that cite no instruction address (the cell or its `[details]` section). See [`docs/tooling/port-provenance.md`](../docs/tooling/port-provenance.md#the-sibling-question-for-the-register-does-a-disassembly-row-cite-an-address).
 - `check-port-provenance.py` - asks whether a `// PORT:` address names the right
   routine, which no other gate does. Ranked worklist off the disassembly; not in
   the hook. Reviewed findings live in `port-provenance-waivers.toml`, each with

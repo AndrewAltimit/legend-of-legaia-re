@@ -21,7 +21,7 @@ impl World {
 
     /// Leave the slot machine and restore the interrupted mode, committing
     /// the session's final balance into the casino coin bank
-    /// ([`crate::world::MinigameState::casino_coins`] - the retail state-100 assignment
+    /// ([`legaia_engine_minigame_scenes::minigame_state::MinigameState::casino_coins`] - the retail state-100 assignment
     /// `_DAT_800845A4 = DAT_801d4114`). Returns the session so the host can
     /// read the final state. No-op when the machine isn't active.
     pub fn exit_slot_machine(

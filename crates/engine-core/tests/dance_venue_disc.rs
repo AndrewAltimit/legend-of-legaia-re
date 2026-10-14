@@ -27,12 +27,12 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
-use legaia_engine_core::dance_venue::{
-    DanceVenue, DanceVenueEdge, sync_dance_venue, venue_camera, venue_cdname_stub,
-    venue_sfx_vab_index,
-};
+use legaia_engine_core::dance_venue::sync_dance_venue;
 use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::camera::Camera;
+use legaia_engine_minigame_scenes::dance_venue::{
+    DanceVenue, DanceVenueEdge, venue_camera, venue_cdname_stub, venue_sfx_vab_index,
+};
 use legaia_engine_minigames::dance::{DanceGame, DanceMode, dance_scene_entry};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::scene::ProtIndex;
@@ -196,7 +196,7 @@ fn entering_the_dance_stages_the_venue_and_leaving_restores_the_scene() {
 /// dance camera then follows it beat by beat.
 #[test]
 fn the_dance_camera_follows_the_overlay_keyframe_track() {
-    use legaia_engine_core::dance_venue::venue_camera_at;
+    use legaia_engine_minigame_scenes::dance_venue::venue_camera_at;
     use legaia_engine_minigames::dance::{DANCE_CAMERA_SEGMENT, DanceCameraPose, DanceCameraTrack};
     let Some(dir) = gate() else { return };
     let mut host = SceneHost::open_extracted(&dir).expect("host");
@@ -309,7 +309,7 @@ fn the_dance_camera_follows_the_overlay_keyframe_track() {
 /// on the real hall.
 #[test]
 fn the_far_camera_poses_leave_the_curtain_to_the_gpu_limit() {
-    use legaia_engine_core::dance_venue::{psx_gpu_visible_indices, psx_screen_xy};
+    use legaia_engine_minigame_scenes::dance_venue::{psx_gpu_visible_indices, psx_screen_xy};
     use legaia_engine_minigames::dance::DanceCameraTrack;
     let Some(dir) = gate() else { return };
     let index = ProtIndex::open_extracted(&dir).expect("prot index");
@@ -376,7 +376,7 @@ fn the_far_camera_poses_leave_the_curtain_to_the_gpu_limit() {
         lo(0) < 320 && hi(0) >= 0 && lo(1) < 240 && hi(1) >= 0
     };
     // Key 1 is the far pose (`eye z = 0x1810`).
-    let far = legaia_engine_core::dance_venue::venue_camera_at(
+    let far = legaia_engine_minigame_scenes::dance_venue::venue_camera_at(
         &e,
         track.key_pose(DanceMode::Qualifier, 1).unwrap(),
     );
@@ -422,7 +422,8 @@ fn the_choreography_bank_times_every_judge_move() {
     let Some(dir) = gate() else { return };
     let index = ProtIndex::open_extracted(&dir).expect("prot index");
     let overlay = dance_overlay(&index);
-    let bank = legaia_engine_core::dance_venue::dance_clip_bank(&index).expect("bank loads");
+    let bank =
+        legaia_engine_minigame_scenes::dance_venue::dance_clip_bank(&index).expect("bank loads");
     let cast = legaia_minigame_formats::dance_cast::parse(&overlay).expect("cast parses");
     let mut game =
         DanceGame::from_overlay_for_mode(&overlay, DanceMode::Qualifier, false).expect("run");

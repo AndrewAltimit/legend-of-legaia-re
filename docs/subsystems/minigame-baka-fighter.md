@@ -224,7 +224,7 @@ The tally screen and the "NEXT GAME / PAY OUT" menu draw no duel HUD. Both passe
 <a id="the-cabinets-pad-masks"></a>
 ### Pad masks
 
-The cabinet reads the **packed** Legaia pad word, not the raw PSX layout (the `PACK_*` bits in `engine-core::dev_menu`, the pump in `engine-system::retail_pad`). Every mask in this overlay reads against that packing:
+The cabinet reads the **packed** Legaia pad word, not the raw PSX layout (the `PACK_*` bits in `engine-system::pad`, the pump in `engine-system::retail_pad`). Every mask in this overlay reads against that packing:
 
 | Mask | Meaning |
 |---|---|

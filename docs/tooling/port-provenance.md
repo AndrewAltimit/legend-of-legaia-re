@@ -606,3 +606,19 @@ in and the `--funcs` flag that fixes it. `--allow-vacuous` restores the old exit
 0 for a caller that genuinely wants the no-op. Nothing in CI or pre-commit runs
 this checker, so the new exit code cannot turn a passing gate red; it only stops
 a hand-run from reading as a pass.
+
+## The sibling question for the register: does a `disassembly` row cite an address
+
+The same gap exists one level up, in prose. A row of
+[`re-settled-threads/`](../reference/re-settled-threads.md) graded `disassembly`
+may name only a `FUN_x` and a behaviour, and then reads exactly like a row that
+was checked against the listing.
+`scripts/ci/check-register-address-cites.py` lists every such row: a row counts
+as cited when its answer cell, or the `###` section its `[details ↓]` link
+names, holds at least one instruction-shaped address. It is a worklist and
+always exits zero, because many of the rows it prints are not code claims at
+all - a disc census, a tool's behaviour, a capture graded beside the listing -
+and want a different grade rather than an address. `--summary` prints the
+per-page counts, which is what makes the unchecked bucket a number rather than
+an impression. A cited row is not thereby a correct one: the tool answers
+whether a claim can be re-read, and re-reading it is still the work.

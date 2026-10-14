@@ -792,6 +792,15 @@ window.MgMuscle = (function () {
         artsBanner = null;
         finishPlayback();
       } else if (mode === 'interval' || mode === 'decided') {
+        /* The first press while the tally's lanes are still counting is the
+         * roll's: retail's hub latches its fast-forward on it (DAT_801D1AB4)
+         * and the rest of the tally rolls out at once. The next press moves
+         * on. */
+        if (mode === 'interval' && api.muscle_tally_press) {
+          let taken = false;
+          try { taken = !!api.muscle_tally_press(intervalT); } catch (e) { taken = false; }
+          if (taken) return;
+        }
         /* A contest still mid-ladder stages its NEXT leg rather than
          * restarting: the ladder has already advanced, so `continueRun`
          * keeps it and lets `start` read the staged foe off it. */
@@ -896,7 +905,9 @@ window.MgMuscle = (function () {
             /* A fresh INTERVAL screen rolls its lanes again, so the engine's
              * "already voiced up to step N" high-water mark has to drop with
              * the tick it counts. */
-            if (window.MgSpu) MgSpu.tallyVoiceReset(api);
+            if (api.muscle_tally_voice_reset) {
+              try { api.muscle_tally_voice_reset(); } catch (e) {}
+            }
             banner = null;
             legCaption = sub;
             playCue('confirm', 0.5);

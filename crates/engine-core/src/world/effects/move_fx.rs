@@ -545,7 +545,7 @@ impl World {
     pub fn morphed_part_tmd(
         &self,
         draw: &legaia_engine_effects::summon::SummonPartDraw,
-    ) -> Option<crate::world::GlobalTmd> {
+    ) -> Option<legaia_engine_scene::model_bank::GlobalTmd> {
         let lanes = draw.morph.lanes();
         if lanes.is_empty() {
             return None;
@@ -553,7 +553,10 @@ impl World {
         let rest = self.global_tmd(draw.model_index as i16)?;
         let resolve = |idx: u8| -> Option<&[u8]> {
             if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
-                crate::world::vdf_entry(self.tables.battle_vdf.as_deref()?, idx)
+                legaia_engine_scene::scene_bundle::vdf_entry(
+                    self.tables.battle_vdf.as_deref()?,
+                    idx,
+                )
             } else {
                 self.vdf_record_bytes(idx)
             }
@@ -578,7 +581,7 @@ impl World {
                 v.z = v.z.wrapping_add(d[2]);
             }
         }
-        Some(crate::world::GlobalTmd {
+        Some(legaia_engine_scene::model_bank::GlobalTmd {
             tmd,
             raw: rest.raw.clone(),
         })

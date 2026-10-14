@@ -123,14 +123,6 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Exit: a ladder that has run out settles into the coin bank (a no-op
-    /// mid-ladder, and a no-op after the engine's own Won/Lost settle).
-    pub(crate) fn exit_muscle_ui(&mut self) {
-        if let Some(host) = self.scene_host.host_mut() {
-            host.world.settle_muscle_contest();
-        }
-    }
-
     /// Advance the Muscle Dome leg's round time meter one sim tick - the
     /// session's step (`BootSession::step_muscle_time_meter`; retail's
     /// per-frame arena driver step, which the engine's pad tick does not
@@ -156,28 +148,11 @@ impl LegaiaRuntime {
     /// Sound what the arena hub fired. The screen timers are the world's
     /// own (`World::tick_muscle_hub`, run by the shared scene host every
     /// tick, which also hands the next leg its fight), so this host - like
-    /// the native window - only drains the CD-XA line and the tally keys.
+    /// the native window - only sounds the CD-XA line and the tally keys,
+    /// through the session's step (`BootSession::sound_muscle_hub`).
     pub(crate) fn tick_muscle_hub(&mut self) {
-        let Some(host) = self.scene_host.host_mut() else {
-            return;
-        };
-        let frame = host.world.take_muscle_hub_sounds();
-        let hub_xa = frame.xa;
-        let voice_cues = frame.voice_cues;
-        if let Some(c) = hub_xa {
-            self.play_xa_clip(
-                u32::from(c.clip),
-                u32::from(c.channel),
-                u32::from(c.duration_sectors),
-            );
-        }
-        for cue in voice_cues {
-            self.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
-                cue.voice,
-                cue.vab_program_tone,
-                cue.note_and_fine,
-                cue.volume,
-            ));
+        if let Some(s) = self.scene_host.session_mut() {
+            s.sound_muscle_hub();
         }
     }
 
@@ -390,15 +365,10 @@ impl LegaiaRuntime {
             .session_mut()
             .map_or(0, |s| s.enqueue_baka_sfx_cues());
         self.sfx.queued += queued;
-        let xa = self
-            .scene_host
-            .host_mut()
-            .and_then(|h| h.world.minigames.baka_fighter.as_mut())
-            .and_then(|f| f.chrome_frame().xa);
-        // The round chrome's announcer line (`FUN_8003D53C`), the native
-        // window's `tick_baka_chrome` twin.
-        if let Some(xa) = xa {
-            self.play_xa_clip(u32::from(xa.clip), u32::from(xa.chan), u32::from(xa.dur));
+        // The round chrome's announcer line (`FUN_8003D53C`): the session's
+        // step, the native window's `tick_baka_chrome` call.
+        if let Some(s) = self.scene_host.session_mut() {
+            s.sound_baka_announcer();
         }
     }
 
@@ -812,7 +782,7 @@ impl LegaiaRuntime {
     // ---------------------------------------------------------- Fishing
 
     /// Pose the fishing pond surface for this frame
-    /// (`legaia_engine_core::fishing_scene::FishingSurface::frame`, the call
+    /// (`legaia_engine_minigame_scenes::fishing_scene::FishingSurface::frame`, the call
     /// the native window makes too) and return its generation - or `-1`
     /// outside a fishing session or when the pond does not decode. A new
     /// generation means the static buffers and the VRAM changed.
@@ -1144,7 +1114,7 @@ impl LegaiaRuntime {
     }
 
     /// Pose the dance floor's bodies for this frame through the engine's
-    /// cast surface (`legaia_engine_core::dance_cast_scene::DanceCastSurface::frame`
+    /// cast surface (`legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface::frame`
     /// over the world's run - the call the native window makes too) and
     /// return its generation, or `-1` when no run is live. A generation the
     /// page has not seen means the static buffers changed (a run on another

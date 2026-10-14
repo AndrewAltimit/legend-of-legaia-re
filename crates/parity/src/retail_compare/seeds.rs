@@ -113,6 +113,28 @@ pub fn retail_clear_rgb(ram: &[u8]) -> [u8; 3] {
     [0, 1, 2].map(|i| game_anchors::u8_at(ram, DRAW_ENV_CLEAR + i))
 }
 
+/// The pointer to the overworld curvature table (`FUN_800271A8`'s first
+/// buffer).
+const CURVATURE_TABLE_PTR: u32 = 0x8007_BB04;
+
+/// The build offset of a state's overworld curvature table, in screen rows:
+/// its entry `0`, the zero vector's `SY - 0x78`, which is the `OFY` the
+/// table was built under less `120`. `0` after a scene load; `-6` in a state
+/// whose player has opened the map display since
+/// (`legaia_render_kernels::overworld_curvature::REBUILD_BIAS`,
+/// `sebucus_overworld_resident`). That is pad history the seat does not
+/// replay, so the image child takes it as `LEGAIA_SEAT_CURVE_BIAS`. `None`
+/// when no table is allocated.
+pub fn retail_curve_bias(ram: &[u8]) -> Option<i16> {
+    let ptr = game_anchors::u32_at(ram, CURVATURE_TABLE_PTR);
+    let end = 0x8000_0000u32 + ram.len() as u32;
+    if !(0x8001_0000..end.saturating_sub(2)).contains(&ptr) {
+        return None;
+    }
+    let bias = game_anchors::i16_at(ram, ptr);
+    (-16..=16).contains(&bias).then_some(bias)
+}
+
 /// The field pager's state word `_DAT_801F2734` (`0x19` = a page waits).
 const PAGER_STATE: u32 = 0x801F_2734;
 /// The pager's automatic-press countdown `_DAT_80073F00`.

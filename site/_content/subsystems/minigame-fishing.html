@@ -1,0 +1,178 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; fishing</div>
+  <h1>Fishing minigame</h1>
+  <p class="lede">The party stands on a pond shore, casts with a power meter, coaxes a bite by reeling in a rhythm, then fights the hooked fish on a tension gauge. A landed fish pays fishing points, which the venue&rsquo;s prize counter trades for items. All three hosts of the port run the whole game as one session type.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Overlay</dt><dd>PROT 0972 at base <code>0x801CE818</code>; venue scene bundle <code>other1</code></dd>
+    <dt>Mode driver</dt><dd><code>FUN_801CF3BC</code>, state word <code>DAT_801D926C</code>, jump table <code>0x801CEBE0</code></dd>
+    <dt>Lure / bite tick</dt><dd><code>FUN_801D26CC</code>: band roll, strike roll, species pick, line-break and reel-in exits</dd>
+    <dt>Fish AI + tension</dt><dd><code>FUN_801D4004</code>, gauge <code>DAT_801D9168</code>, <code>0..0x1000</code></dd>
+    <dt>Cadence recogniser</dt><dd><code>FUN_801D3DB4</code> over the templates at <code>DAT_801D87D4</code></dd>
+    <dt>Tables</dt><dd>Species <code>0x801D81A4</code> (10 records, stride <code>0x28</code>); spawn <code>0x801D8334</code> / <code>0x801D8434</code>; prizes <code>0x801D8088</code> / <code>0x801D80D0</code></dd>
+    <dt>Saved state</dt><dd><code>0x8008444C..0x8008446C</code>: points, best catch, lure, rod, cast counter, one-time prize bits</dd>
+    <dt>Port</dt><dd>Rules crate <code>engine-fishing</code> (<code>PondSession</code>); draws in <code>engine-ui::fishing</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="entry">
+  <h2>Getting there</h2>
+  <p>The door is the <strong>mode-24 minigame warp</strong>: field-VM op <code>0x3E</code> with <code>op0 = 100</code> (sub-id 0) sets game mode <code>0x18</code> and loads the overlay. It is the ordinary scene-backup, overlay-load, return-to-field sequence, so the game returns to the exact field state it suspended. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
+  <p>A disc-wide walk finds the door at exactly two sites, both signboards on the overworld. Which one the party came from picks the venue: state 1 compares the departure scene&rsquo;s id against two immediates and selects <strong>Buma</strong> or <strong>Vidna</strong>, which in turn selects the prize page and the spawn page. Both pond areas are in the bundle&rsquo;s one map.</p>
+  <p>Fishing loads no music of its own; it keeps whatever the departure scene was playing. The driver has no direct caller either - it is the tick word of an actor template the init spawns.</p>
+</section>
+
+<section class="doc-section" id="states">
+  <h2>State machine</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fishing state machine. From the idle shore, Cross or Square starts the wind-up, then the power meter, then the lure flies and lands in the water. In the water there are three exits: reeled in with no fish returns to the run loop, reeled in with a fish on leads to rod recover and the landing and result screens, and a line break shows a banner. Triangle or Select from the idle shore opens the hub menu, which can leave through the exit fade.">
+      <defs><marker id="fsh-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="200" y="10" width="150" height="46" rx="4"/>
+      <text class="dg-label" x="275" y="30">0x64.. Hub menu</text>
+      <text class="dg-sub" x="275" y="46">rod, lure, prizes</text>
+      <rect class="dg-node" x="400" y="10" width="150" height="46" rx="4"/>
+      <text class="dg-label" x="475" y="37">0xC8 Exit fade</text>
+      <path class="dg-edge" d="M350 33 L398 33" marker-end="url(#fsh-arrow)"/>
+      <rect class="dg-node" x="20" y="90" width="150" height="46" rx="4"/>
+      <text class="dg-label" x="95" y="110">0x0A / 0x0B</text>
+      <text class="dg-sub" x="95" y="126">init, fade in</text>
+      <rect class="dg-node-accent" x="200" y="90" width="150" height="46" rx="4"/>
+      <text class="dg-label" x="275" y="117">0x0C Idle shore</text>
+      <rect class="dg-node" x="380" y="90" width="150" height="46" rx="4"/>
+      <text class="dg-label" x="455" y="110">0x0D Wind-up</text>
+      <text class="dg-sub" x="455" y="126">about 12 frames</text>
+      <rect class="dg-node" x="560" y="90" width="150" height="46" rx="4"/>
+      <text class="dg-label" x="635" y="110">0x14 Power meter</text>
+      <text class="dg-sub" x="635" y="126">bounces to 0x1000</text>
+      <rect class="dg-node" x="730" y="90" width="130" height="46" rx="4"/>
+      <text class="dg-label" x="795" y="117">0x15 In flight</text>
+      <path class="dg-edge" d="M170 113 L198 113" marker-end="url(#fsh-arrow)"/>
+      <path class="dg-edge" d="M350 113 L378 113" marker-end="url(#fsh-arrow)"/>
+      <path class="dg-edge" d="M530 113 L558 113" marker-end="url(#fsh-arrow)"/>
+      <path class="dg-edge" d="M710 113 L728 113" marker-end="url(#fsh-arrow)"/>
+      <text class="dg-edge-label" x="364" y="106" text-anchor="middle">cast</text>
+      <path class="dg-edge-dim" d="M275 90 L275 58" marker-end="url(#fsh-arrow)"/>
+      <text class="dg-edge-label" x="282" y="78">Triangle</text>
+      <rect class="dg-node-accent" x="680" y="190" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="770" y="212">0x19 Lure in water</text>
+      <text class="dg-sub" x="770" y="228">band roll, strike, fight</text>
+      <path class="dg-edge" d="M795 136 L795 188" marker-end="url(#fsh-arrow)"/>
+      <rect class="dg-node" x="440" y="190" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="530" y="212">0x1E Rod recover</text>
+      <text class="dg-sub" x="530" y="228">fish on</text>
+      <path class="dg-edge" d="M680 215 L622 215" marker-end="url(#fsh-arrow)"/>
+      <rect class="dg-node-ok" x="20" y="190" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="110" y="212">0x20..0x22 Landing</text>
+      <text class="dg-sub" x="110" y="228">result plate, points</text>
+      <path class="dg-edge" d="M440 215 L202 215" marker-end="url(#fsh-arrow)"/>
+      <path class="dg-edge" d="M70 190 L70 138" marker-end="url(#fsh-arrow)"/>
+      <text class="dg-edge-label" x="78" y="168">accepted</text>
+      <path class="dg-edge-dim" d="M700 240 L700 262 L230 262 L230 160 L150 160 L150 138" marker-end="url(#fsh-arrow)"/>
+      <text class="dg-edge-label" x="460" y="256" text-anchor="middle">reeled in, no fish</text>
+      <rect class="dg-node-warn" x="680" y="290" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="770" y="312">0x28 Line break</text>
+      <text class="dg-sub" x="770" y="328">one lure consumed</text>
+      <path class="dg-edge" d="M770 240 L770 288" marker-end="url(#fsh-arrow)"/>
+      <path class="dg-edge-dim" d="M680 315 L8 315 L8 113 L18 113" marker-end="url(#fsh-arrow)"/>
+      <text class="dg-edge-label" x="340" y="309" text-anchor="middle">banner done</text>
+    </svg>
+    <figcaption>State values are sparse and many states simply add one to advance. The mode driver is half the machine: the lure tick runs from the actor side of the loop and writes the same state word, which is how the in-water state ends.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="reel">
+  <h2>Reel input</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Input</th><th>Retail meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Cross</td><td>reel A; also casts and locks the power meter</td></tr>
+      <tr><td>Square</td><td>reel B; also casts and locks the power meter</td></tr>
+      <tr><td>R2</td><td>reel-direction mirror, read alongside the reel buttons</td></tr>
+      <tr><td>Circle, L2</td><td>the abandon edge - not a cast</td></tr>
+      <tr><td>Triangle, Select</td><td>open the hub menu from the idle shore</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Holding both reel buttons resolves to reel A. The <strong>cadence recogniser</strong> keeps a 16-entry ring of <code>{button, held frames}</code> and matches a window of that history against the rhythm templates decoded from the disc. A match selects a cast band directly; with no match the band is the current frame&rsquo;s random roll.</p>
+  <p>The port&rsquo;s cast input differs from retail by choice: Circle casts and locks the meter, Cross and Square only reel.</p>
+</section>
+
+<section class="doc-section" id="bite">
+  <h2>Which fish bites</h2>
+<pre><code>species = spawn_table[lure * 8 + band]     lure 0..2, band 0..4</code></pre>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Roll (12 bits)</th><th>Band</th><th>Share</th></tr></thead>
+    <tbody>
+      <tr><td><code>r &lt;= 0xC00</code></td><td>3</td><td>about 75.0%</td></tr>
+      <tr><td><code>0xC00 &lt; r &lt;= 0xE70</code></td><td>2</td><td>about 15.2%</td></tr>
+      <tr><td><code>0xE70 &lt; r &lt;= 0xF38</code></td><td>1</td><td>about 4.9%</td></tr>
+      <tr><td><code>0xF38 &lt; r</code></td><td>0</td><td>about 4.9%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>No roll and no template maps to band 4.</strong> The rarest band has its own gate, which is what the <a href="../writeups/spirit-fish.html">Spirit Fish write-up</a> follows. A matched template holds its band for the next 64 frame-steps.</p>
+</section>
+
+<section class="doc-section" id="tension">
+  <h2>The fight</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The tension gauge runs from 0 to 0x1000. Holding reel A or reel B raises it by the fish pull divided by a rod-dependent divisor; releasing lowers it by a rod-dependent amount. At the ceiling each frame rolls a one in ten chance of the line breaking. A fish run far out adds strain on its own.">
+      <defs><marker id="fsh2-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="60" y="70" width="760" height="40" rx="4"/>
+      <rect class="dg-node-accent" x="60" y="70" width="470" height="40" rx="4"/>
+      <rect class="dg-node-warn" x="790" y="70" width="30" height="40" rx="2"/>
+      <text class="dg-sub dg-start" x="60" y="60">0</text>
+      <text class="dg-sub" x="820" y="60" text-anchor="end">0x1000</text>
+      <text class="dg-label" x="295" y="95">tension DAT_801D9168</text>
+      <path class="dg-edge" d="M540 90 L700 90" marker-end="url(#fsh2-arrow)"/>
+      <text class="dg-sub" x="620" y="82">reel held</text>
+      <path class="dg-edge-dim" d="M520 124 L380 124" marker-end="url(#fsh2-arrow)"/>
+      <text class="dg-sub" x="450" y="142">released</text>
+      <text class="dg-sub dg-start" x="60" y="170">reel A (Cross):   + pull * step / (rod * 9 + 0x23)</text>
+      <text class="dg-sub dg-start" x="60" y="190">reel B (Square):  + pull * step / (rod * 6 + 0x19)</text>
+      <text class="dg-sub dg-start" x="480" y="170">released:  - (rod * 0x40 + 0x4A) * step</text>
+      <text class="dg-sub dg-start" x="480" y="190">at the ceiling:  rand % 10 == 0 breaks the line</text>
+    </svg>
+    <figcaption>A better rod softens both directions: it raises the divisors and the release rate. Reel B pulls harder than reel A for the same fish.</figcaption>
+  </figure>
+  <p>While hooked, a small behaviour machine (run, dart left, dart right, dive) moves the fish and modulates its pull, re-rolling from the species record&rsquo;s cutoffs when each behaviour&rsquo;s timer runs out.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Condition</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>the line&rsquo;s screen position leaves the play area</td><td>line-break latch</td></tr>
+      <tr><td>hooked and the fish has run far out</td><td>tension rises by <code>step * 300</code> on its own</td></tr>
+      <tr><td>tension at the ceiling</td><td>one-in-ten roll per frame to break</td></tr>
+      <tr><td>latch set while the lure is in the water</td><td><strong>line breaks</strong>: one lure is consumed</td></tr>
+      <tr><td>reeled all the way in with a fish on</td><td>the catch</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="scoring">
+  <h2>Scoring and the prize counter</h2>
+<pre><code>points = fish_base_value * (strength + 0x9C0) / 0x32000</code></pre>
+  <p>The points are added to the saved counter, clamped to 999999, and a catch that beats the saved best replaces it. A per-catch latch scores a fish once.</p>
+  <p>The prize counter spends the pool on six rows per venue. A row is a 12-byte record with a limit - <code>1</code> for a one-time prize latched in a saved bitfield, <code>99</code> for a repeatable one. <strong>Row 0 is hidden until strictly affordable</strong>, so each venue&rsquo;s top prize only appears once the pool exceeds its price.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The species table column by column, the cadence templates, the fish-weight sum, the venue spawn tables, the line, rod and shore actors and the whole HUD are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-fishing.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="script-vm.html">Field / event VM</a>
+    <a href="minigame-slot-machine.html">Slot machine</a>
+    <a href="minigame-baka-fighter.html">Baka Fighter</a>
+    <a href="minigame-dance.html">Dance</a>
+    <a href="minigame-muscle-dome.html">Muscle Dome</a>
+    <a href="../writeups/spirit-fish.html">Spirit Fish write-up</a>
+    <a href="../minigames.html">Minigames page</a>
+  </div>
+</section>

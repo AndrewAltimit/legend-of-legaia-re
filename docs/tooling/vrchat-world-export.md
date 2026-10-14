@@ -74,7 +74,7 @@ with, so the export matches the on-screen pages:
   film instead of a glow. Rate 0 is alpha blending exactly, and the
   blended queue's depth-write skip is also what keeps retail's coincident
   water scroll layers from z-fighting in depth-buffered engines.
-- **NPC glbs** - `engine-core::npc_catalog` (the MAN partition-1 placement
+- **NPC glbs** - `engine-scene::npc_catalog` (the MAN partition-1 placement
   walk shared with the NPC browser page) + `legaia_actor_formats::character_gltf`:
   the scene TMD with its spawn clip first and every other
   bone-count-matching scene-ANM record baked as a named glTF animation

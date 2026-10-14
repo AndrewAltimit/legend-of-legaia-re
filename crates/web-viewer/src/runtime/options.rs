@@ -17,7 +17,7 @@ pub const OPTIONS_STORAGE_KEY: &str = "legaia.options";
 /// Read the persisted options, falling back to [`Default`] when nothing is
 /// stored, the store is unavailable (private mode, non-browser target) or the
 /// stored JSON no longer parses. Mirrors `OptionsState::load_or_default`.
-pub(super) fn load_persisted_options() -> legaia_engine_menus::options::OptionsState {
+pub(crate) fn load_persisted_options() -> legaia_engine_menus::options::OptionsState {
     #[cfg(target_arch = "wasm32")]
     {
         if let Some(raw) = options_storage().and_then(|s| s.get_item(OPTIONS_STORAGE_KEY).ok())
@@ -43,8 +43,12 @@ impl LegaiaRuntime {
     /// called from the same place (an Options sub-session closing).
     pub(crate) fn persist_and_apply_options(&mut self) {
         self.apply_options_side_effects();
+        // Retail-faithful mode (`crate::play_toggles`) pins the options for
+        // the session only: the pinned values are not the player's, so the
+        // store keeps what it held and lifting the mode gets it back.
         #[cfg(target_arch = "wasm32")]
-        if let Some(store) = options_storage()
+        if !self.page_toggles.retail
+            && let Some(store) = options_storage()
             && let Ok(json) = serde_json::to_string(&self.options_state)
             && store.set_item(OPTIONS_STORAGE_KEY, &json).is_err()
         {

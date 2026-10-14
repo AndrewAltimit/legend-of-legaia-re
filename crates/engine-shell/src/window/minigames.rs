@@ -32,7 +32,7 @@ pub(super) struct BakaDuelGpu {
 }
 
 /// The dance venue on the GPU: the `other7` hall the dance overlay's entry
-/// loads (`legaia_engine_core::dance_venue::DanceVenue`), drawn in place of
+/// loads (`legaia_engine_minigame_scenes::dance_venue::DanceVenue`), drawn in place of
 /// the walked-in scene for as long as the entry's globals are staged. Its own
 /// VRAM (the venue upload plus the HUD page and the five entry face stamps),
 /// so the field VRAM is never touched and needs no restore.
@@ -58,7 +58,7 @@ pub(super) struct DanceVenueGpu {
     /// The floor's body meshes + choreography bank off this venue, handed to
     /// the cast surface when this copy is installed.
     pub(super) cast_assets:
-        Option<std::sync::Arc<legaia_engine_core::dance_cast_scene::DanceCastAssets>>,
+        Option<std::sync::Arc<legaia_engine_minigame_scenes::dance_cast_scene::DanceCastAssets>>,
 }
 
 /// The venue's textured half in world space, kept CPU-side so each frame can
@@ -83,7 +83,7 @@ pub(super) struct VenueColorBake {
 }
 
 /// The dance floor's posed bodies on the GPU for this frame
-/// ([`legaia_engine_core::dance_cast_scene::DanceCastSurface::frame`]). They
+/// ([`legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface::frame`]). They
 /// sample the venue's VRAM and draw under the venue camera.
 pub(super) struct DanceCastGpu {
     pub(super) textured: Option<UploadedVramMesh>,
@@ -127,11 +127,11 @@ impl PlayWindowApp {
     /// Re-upload `cpu_vram_base` to the GPU. Silent when the renderer is not
     /// up yet (a headless tick), which is the same guard every other VRAM
     /// mutation in this window carries.
-    fn upload_cpu_vram(&mut self) {
+    pub(in crate::window) fn upload_cpu_vram(&mut self) {
         if let (Some(r), Some(base)) = (self.win.renderer.as_ref(), self.cpu_vram_base.as_ref()) {
             match r.upload_vram(base) {
                 Ok(v) => self.uploaded_vram = Some(v),
-                Err(e) => log::error!("play-window: dance VRAM upload: {e:#}"),
+                Err(e) => log::error!("play-window: VRAM upload: {e:#}"),
             }
         }
     }
@@ -139,11 +139,17 @@ impl PlayWindowApp {
 
 impl PlayWindowApp {
     /// Per-frame driver for every minigame side-channel this window hosts:
-    /// the minigame cue queue, the fishing venue actors, the Baka round
-    /// chrome and the Muscle Dome hub-screen timers. The effect pool itself
-    /// is aged by `World::tick`, where every host reaches it.
+    /// the minigame and Baka duel cue queues, the dance auto-end and venue,
+    /// the fishing venue actors, the Baka round chrome and the Muscle Dome
+    /// hub-screen sounds. The effect pool itself is aged by `World::tick`,
+    /// where every host reaches it.
     pub(super) fn tick_minigame_extras(&mut self) {
         self.drain_minigame_sfx_cues();
+        // The Baka Fighter exchange hit (`BAKA_CUE_HIT`, written by the rules
+        // kernel's damage step): the session's step, which self-gates to the
+        // duel. The tick's audio frame fires it against the resident class-2
+        // bank the same tick.
+        let _ = self.session.enqueue_baka_sfx_cues();
         self.sync_dance_venue();
         self.stage_dance_hud_art();
         self.tick_fishing_actors();

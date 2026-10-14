@@ -39,9 +39,10 @@ impl PlayWindowApp {
         }
     }
 
-    /// Lazily read the spell/seru display-name table from the boot SCUS so the
-    /// seru-trade overlay can label each offer. Cached after the first read;
-    /// a disc-free run leaves it `None` (offers fall back to "Seru NN").
+    /// Read the spell/seru display-name table from the boot SCUS so the
+    /// seru-trade overlay can label each offer. Called once at launch
+    /// (`window/run.rs`); a disc-free run leaves it `None` (offers fall back
+    /// to "Seru NN").
     pub(in crate::window) fn ensure_seru_names(&mut self) {
         if self.seru_names.is_some() {
             return;

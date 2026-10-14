@@ -1,0 +1,166 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; cast modules</div>
+  <h1>Cast modules: summons and capture-class casts</h1>
+  <p class="lede">Every summon and every capture-class cast - Seru capture, the capture item, the boss cinematic specials - runs its choreography from its own small overlay program, a <strong>cast module</strong>. There are 64, one per special. The battle overlay pages one into a side window of RAM and re-enters it every frame until it reports done. A module owns the cast's phase machine, its camera, its particle spawns, its voice cue and its damage constants, so anything that edits or ports a special attack ends up here.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Module band</dt><dd>PROT entries <code>0903..=0966</code>, 64 images</dd>
+    <dt>Load base</dt><dd>Slot B, <code>0x801F69D8</code> - shared by all 64, so an address needs its owning entry to mean anything</dd>
+    <dt>Pager</dt><dd><code>FUN_8003EC70(arg)</code>; TOC index = <code>arg + 0x381</code></dd>
+    <dt>Summon dispatch</dt><dd><code>FUN_801F1ED4</code> through table <code>0x801CF4EC</code>, row <code>id - 0x81</code></dd>
+    <dt>Capture dispatch</dt><dd><code>FUN_801F2160</code> through table <code>0x801CF56C</code>, row = the spell record's sub-id</dd>
+    <dt>Stager table</dt><dd><code>0x801F6734</code>, 64 words, called by move-VM opcode <code>0x20</code></dd>
+    <dt>Phase byte</dt><dd><code>ctx+0x279</code>, a module-local space under the battle state</dd>
+    <dt>Port</dt><dd><code>engine-battle-vm</code> (<code>cast_module_ticks</code>, <code>cast_arm_ticks</code>, <code>seru_magic_ticks</code>, <code>cast_module_camera</code>); spawn pool <code>overlay-images::cast_effect_pool</code></dd>
+  </dl>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>PROT</th><th>Class</th><th>Reached by</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td><code>0903..=0913</code></td><td>player Seru magic</td><td>action ids <code>0x81..=0x8B</code></td><td>the eleven base Seru, Gimard to Nova</td></tr>
+      <tr><td><code>0914..=0934</code></td><td>evolved summons and item casts</td><td>ids <code>0x8C..=0xA0</code></td><td>the high summons; one entry is a null stub with no tick arm</td></tr>
+      <tr><td><code>0935..=0966</code></td><td>capture class</td><td>spell sub-id <code>0x00..=0x1F</code></td><td>monster specials and boss cinematics</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="reaching">
+  <h2>How an action reaches a module</h2>
+  <p>A module is a <strong>library, not a program</strong>: nothing inside it names its own entry points. Each has two callable routines, a <em>tick</em> and a <em>stager</em>, and three tables in the battle overlay name them - fixed at link time.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cast dispatch: the queued action id is classified by the spell class byte. A summon uses row id minus 0x81; a capture-class cast uses the spell sub-id. The pager loads the matching PROT entry into slot B. The stager table row is copied for the move VM, whose opcode 0x20 calls the stager. Each frame the band dispatcher calls the module tick, directly for a summon or through a trampoline for a capture cast; the tick returns non-zero while busy and zero when done, which exits the band.">
+      <defs><marker id="cm-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="330" y="14" width="220" height="50" rx="4"/>
+      <text class="dg-label" x="440" y="35">Queued action id</text><text class="dg-sub" x="440" y="52">caster +0x1DF</text>
+      <rect class="dg-node" x="120" y="100" width="240" height="50" rx="4"/>
+      <text class="dg-label" x="240" y="121">Summon: row = id - 0x81</text><text class="dg-sub" x="240" y="138">PROT 903 + row</text>
+      <rect class="dg-node" x="520" y="100" width="240" height="50" rx="4"/>
+      <text class="dg-label" x="640" y="121">Capture class: row = sub-id</text><text class="dg-sub" x="640" y="138">PROT 935 + row</text>
+      <path class="dg-edge" d="M400 64 L270 98" marker-end="url(#cm-arrow)"/>
+      <path class="dg-edge" d="M480 64 L610 98" marker-end="url(#cm-arrow)"/>
+      <rect class="dg-node-accent" x="300" y="186" width="280" height="50" rx="4"/>
+      <text class="dg-label" x="440" y="207">Pager loads the module into slot B</text><text class="dg-sub" x="440" y="224">0x801F69D8</text>
+      <path class="dg-edge" d="M240 150 L400 184" marker-end="url(#cm-arrow)"/>
+      <path class="dg-edge" d="M640 150 L480 184" marker-end="url(#cm-arrow)"/>
+      <rect class="dg-node" x="40" y="280" width="250" height="56" rx="4"/>
+      <text class="dg-label" x="165" y="302">Stager</text><text class="dg-sub" x="165" y="320">table row &#8594; move-VM opcode 0x20</text>
+      <rect class="dg-node-accent" x="330" y="280" width="250" height="56" rx="4"/>
+      <text class="dg-label" x="455" y="302">Tick, every frame</text><text class="dg-sub" x="455" y="320">phase machine on ctx+0x279</text>
+      <path class="dg-edge" d="M380 236 L190 278" marker-end="url(#cm-arrow)"/>
+      <path class="dg-edge" d="M448 236 L452 278" marker-end="url(#cm-arrow)"/>
+      <path class="dg-edge-dim" d="M580 296 L620 296 L620 262 L540 262 L540 278" marker-end="url(#cm-arrow)"/>
+      <text class="dg-edge-label" x="628" y="282">returns non-zero: busy</text>
+      <rect class="dg-node-ok" x="330" y="370" width="250" height="46" rx="4"/>
+      <text class="dg-label" x="455" y="398">returns 0: the band exits</text>
+      <path class="dg-edge" d="M455 336 L455 368" marker-end="url(#cm-arrow)"/>
+      <rect class="dg-node-warn" x="640" y="370" width="220" height="46" rx="4"/>
+      <text class="dg-label" x="750" y="390">no timer, no bail-out</text><text class="dg-sub" x="750" y="406">a gate that never opens parks</text>
+    </svg>
+    <figcaption>The tick is re-entered every frame and the battle advances <strong>only when it returns zero</strong>. A capture-class row may point at a trampoline inside the module that picks a body by action id; an id the trampoline does not name returns zero and nothing ticks.</figcaption>
+  </figure>
+  <p>While a module is resident, the word at the slot-B base is the module's own first word - a third meaning for an address the corpus maps twice already. It is not an entry address: it is arm 0 of the head jump table where the image has one, and the first instruction where it does not.</p>
+</section>
+
+<section class="doc-section" id="anatomy">
+  <h2>Image anatomy</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Region</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td>head</td><td>the jump table of one switch, 0 to 256 words; the first function's prologue is the first word past it</td></tr>
+      <tr><td>tick</td><td>the phase machine</td></tr>
+      <tr><td>stager</td><td>the spawn switch</td></tr>
+      <tr><td>tail</td><td>data: the spawn and emitter records, plus the module's scratch words</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>Which switch owns the head table varies - read the bound.</strong> In some images the head table is the tick's, in others the stager's, and many head with code and no table. A function in these images is recovered by frame matching: it starts where the stack is lowered and ends at the first return whose delay slot restores the same amount. That recovers 196 framed functions across the band, between one and eight per image. Most images call only the executable and the resident battle overlay, so dumps have to be driven from an address list rather than a call graph.</p>
+  <p>Some images carry an <em>inherited tail</em>: bytes of the previous, larger module left behind in the window. A call site found there belongs to the neighbour, not to the image being read. The byte-level layout is on the <a href="../formats/slot-b-module-layout.html">slot-B module layout</a> page.</p>
+</section>
+
+<section class="doc-section" id="phase">
+  <h2>The module phase machine</h2>
+  <p>A tick body is a dispatcher over its own phase byte. The tick seeds its result with &ldquo;busy&rdquo; and returns it, so busy is the default answer; only a terminal arm clears it.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Phase</th><th>What the arm does</th><th>Exits</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>first tick: typically the opening camera cut</td><td>advances to <code>1</code></td></tr>
+      <tr><td><code>1..=N</code></td><td>stage clips, spawn records, move the camera, roll damage, write stats</td><td>holds while its gate is closed; then <code>+1</code>, or a literal store that skips arms</td></tr>
+      <tr><td>in-range terminal arm</td><td>spends the countdown, tests the settle state, clears busy; stores <strong>no</strong> phase</td><td>tick returns 0</td></tr>
+      <tr><td>past the bound</td><td>the default arm: nothing</td><td>returns busy forever</td></tr>
+      <tr><td><code>0xFF</code></td><td>the Done latch of chain-dispatched bodies</td><td>tick returns 0 after exactly one tick</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul>
+    <li><strong>Out of range is busy, not done.</strong> A port that advances through a terminal arm walks into the parked state.</li>
+    <li><strong>Two store forms write the phase.</strong> Many ticks materialise a pointer to the byte in their prologue and write through that register; a store census has to count both forms.</li>
+    <li><strong>An arm holds on</strong> a clip state, a progress halfword, the shared settle loop (no live actor playing anything but the settle clip), or a module countdown seeded from the speed scalar and drained by the frame delta.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="abi">
+  <h2>Tick ABI</h2>
+  <dl class="kv">
+    <dt>Caster</dt><dd><code>actor_table[ctx+0x13]</code>, with the table at <code>0x801C9370</code></dd>
+    <dt>Victim</dt><dd><code>actor_table[caster+0x1DD]</code></dd>
+    <dt>Staging</dt><dd>Store a clip id to <code>+0x1DA</code> and bump <code>+0x1DC</code>; victim reactions come from the victim's own reaction map</dd>
+    <dt>Counts</dt><dd><code>ctx[+0]</code> is the <em>party</em> count and <code>ctx[+1]</code> the monster count - two bounds over disjoint halves of the table</dd>
+    <dt>Seats</dt><dd>Party <code>0..2</code>, monsters <code>3..7</code> whatever the party size; the summoned creature takes seat <code>7</code></dd>
+    <dt>Return</dt><dd>Non-zero = busy, <code>0</code> = done</dd>
+  </dl>
+  <p><strong>The seat-0 hardcode.</strong> In the boss-cinematic exemplars every damage apply site loads <code>actor_table[0]</code> instead of the derived victim. Retail never notices, because a boss cinematic's victim is the party's first seat. Any reuse that points the cast at a monster inherits friendly fire from those sites - the main thing a player-caster port of a module has to change.</p>
+</section>
+
+<section class="doc-section" id="damage">
+  <h2>Damage</h2>
+  <p>Each hit is one call into a roll wrapper with a <strong>power baked into the module image</strong>, then an apply: clamp the roll against the victim's HP, accumulate into the damage-popup word, write HP back. A cast never reads the <a href="../formats/move-power.html">move-power table</a> for its magnitude. The capture-class wrappers differ in the stat they read and in the resist ladder: <code>FUN_801DD4B0</code> reads the INT word (<code>+0x168</code>) and respects the party's elemental resists, <code>FUN_801DD6B4</code> reads the ATK word (<code>+0x158</code>) and bypasses them (see <a href="battle-formulas.html">battle formulas</a>).</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Clamp shape</th><th>Cap</th><th>Compare</th><th>Can kill</th><th>Negative roll</th></tr></thead>
+    <tbody>
+      <tr><td>A (most sites)</td><td>live HP</td><td>unsigned</td><td>yes</td><td>reads as huge, rewritten to the whole bar: kills</td></tr>
+      <tr><td>B (two stagers)</td><td><code>HP - 1</code></td><td>signed</td><td>no, leaves 1 HP</td><td>passes unclamped: the subtract raises HP</td></tr>
+      <tr><td>C (seven tick sites)</td><td><code>HP - 1</code></td><td>unsigned</td><td>no</td><td>rewritten to <code>HP - 1</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>These modules write HP with the paired accumulate convention, so they keep the invariant the <a href="battle-action-exit-gates.html#hp-gate">HP-readout gate</a> depends on.</p>
+</section>
+
+<section class="doc-section" id="camera">
+  <h2>The module owns the camera</h2>
+  <p>Neither band's tick state calls a framing case of the action state machine. The camera is the module's, moved with two kernels: a <strong>shot</strong> - pitch / yaw / roll, translation and a negated focus handed to the same tween builder the <a href="battle-stage-camera.html">battle camera</a> uses - and <strong>drifts</strong>, values added straight into the pose globals on every pass an arm runs. A module with no camera arms leaves the held pose alone.</p>
+</section>
+
+<section class="doc-section" id="data-vs-code">
+  <h2>What is data and what is code</h2>
+  <p>A signature cast is half data. Its particle layer is a set of records in the module's tail - the summon part-record shape, a model selector followed by move-VM bytecode - each handed to the pool spawner from a hardcoded call site with a constant pointer and a scale literal. Its lift, timing and camera are module instructions. Editing the look of a cast can therefore be a data edit; changing who it hits or when is a code edit.</p>
+</section>
+
+<section class="doc-section" id="port">
+  <h2>What the port runs</h2>
+  <p>Both hosts run the band through one seam. The spawn pool indexes all 64 entries and parses each image's spawn records off the user's disc. The tick bodies are ported one function per address: dispatch bound, simulation-state writes, the damage step (baked power, wrapper, clamp shape, accumulate, HP write, reaction stage) and the phase advance. Camera directors exist per module. Left out, per function: most GPU-packet arms, and the camera arms and per-arm frame gating of modules with no director.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The full write-up - the three tables row by row, the capture trampolines, inherited tails, the routine catalogue, per-module notes, the cast voice cues and measured arm timing - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener"><code>docs/subsystems/cast-module.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="battle-action.html">Action state machine</a>
+    <a href="battle-formulas.html">Battle formulas</a>
+    <a href="battle-stage-camera.html">Stage and camera</a>
+    <a href="move-vm.html">Move-table VM</a>
+    <a href="../formats/slot-b-module-layout.html">Slot-B module layout</a>
+    <a href="../formats/summon-readef.html">Summon / readef slots</a>
+    <a href="../formats/spell-table.html">Spell table</a>
+    <a href="../formats/monster-animation.html">Monster animation</a>
+    <a href="../magic.html">Magic browser</a>
+  </div>
+</section>

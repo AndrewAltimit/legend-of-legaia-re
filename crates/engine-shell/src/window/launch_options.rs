@@ -24,6 +24,11 @@ pub struct LaunchFidelity {
     /// session (`OptionsState::pin_retail`): the framing, the movement
     /// decode, the photosensitivity slew, the tile windows.
     pub retail: bool,
+    /// PSX-faithful rasterisation (vertex jitter + 15-bit dither,
+    /// `Renderer::set_psx_mode`), `--psx-render`. Opt-in on both settings:
+    /// rasterisation defaults to clean, and retail-faithful *shading* does
+    /// not imply it.
+    pub psx_render: bool,
 }
 
 impl LaunchFidelity {
@@ -37,6 +42,7 @@ impl LaunchFidelity {
             occlusion_fade: true,
             volumetric_fog: true,
             retail: false,
+            psx_render: false,
         }
     }
 
@@ -50,6 +56,7 @@ impl LaunchFidelity {
             occlusion_fade: false,
             volumetric_fog: false,
             retail: true,
+            psx_render: false,
         }
     }
 }
@@ -181,6 +188,11 @@ pub struct ScreenshotConfig {
     /// draw environment's `r0 / g0 / b0`), written over the engine's on the
     /// capture frame - the system script's op-`4C 13` history.
     pub seat_clear: Option<[u8; 3]>,
+    /// `LEGAIA_SEAT_CURVE_BIAS=rows`: a retail state's overworld curvature
+    /// build offset (`legaia_parity::retail_compare::retail_curve_bias`),
+    /// written over the engine's on the capture frame - `-6` in a state
+    /// whose player had opened the map display since the scene loaded.
+    pub seat_curve_bias: Option<i16>,
     /// `LEGAIA_SEAT_PAGE_MARK=frame`: which frame of the dialogue page
     /// mark's two-frame strip a retail state's displayed frame shows
     /// (`legaia_parity::retail_compare::retail_page_mark`), seated on the
@@ -497,6 +509,9 @@ impl ScreenshotConfig {
                 let c: Vec<u8> = v.split(',').filter_map(|e| e.trim().parse().ok()).collect();
                 <[u8; 3]>::try_from(c).ok()
             }),
+            seat_curve_bias: std::env::var("LEGAIA_SEAT_CURVE_BIAS")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             seat_page_mark: std::env::var("LEGAIA_SEAT_PAGE_MARK")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),

@@ -166,6 +166,104 @@
   <p>Pressing the action button probes a point ahead of the player against every actor's box, and the hit is a conversation when the actor carries the talk flag. An undrawn placement can stand in for a speaker the probe cannot reach: its record only marks another actor as touched, and the context runner then plays that actor's conversation. Conkram's gate guards (<code>concnow</code>) are spoken to this way. The port reads such stand-ins at scene entry and answers a hit on one with its target.</p>
 </section>
 
+<section class="doc-section" id="hop-arc">
+  <h2>The ledge hop is its own little machine</h2>
+  <p>When the floor ahead rises a ledge, the walk does not climb it: a setup routine spawns two helper actors, raises the movement lock and hands the player to an arc controller with its own cursor, separate from the clip system.</p>
+  <figure class="diagram dg-fit">
+    <svg viewBox="0 0 860 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ledge hop in three stages over a side view of a step. Setup spawns the helpers, raises the movement lock, sets the take-off clip and plays the jump sound. Flight: the arc helper carries the player along a curve from the lower floor and seats it exactly on the landing; the clip changes when the cursor crosses 0x10. Recovery: six more frames on the landing clip, then at cursor 0x16 the walk clip returns, the landing sound plays and the lock is released.">
+      <defs><marker id="fl-hop-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <path class="dg-edge-dim" d="M20 160 L330 160 L330 110 L840 110"/>
+      <text class="dg-edge-label" x="24" y="178">lower floor</text>
+      <text class="dg-edge-label" x="760" y="128">upper floor</text>
+      <path class="dg-edge" d="M210 156 C250 40 360 30 440 104" marker-end="url(#fl-hop-arrow)"/>
+      <circle class="dg-node-accent" cx="210" cy="152" r="7"/>
+      <circle class="dg-node-ok" cx="446" cy="104" r="7"/>
+      <rect class="dg-node" x="20" y="20" width="170" height="74" rx="5"/>
+      <text class="dg-label" x="105" y="42">setup</text>
+      <text class="dg-sub" x="105" y="60">lock on, two helpers,</text>
+      <text class="dg-sub" x="105" y="76">take-off clip, jump cue</text>
+      <rect class="dg-node" x="250" y="118" width="64" height="30" rx="5"/>
+      <text class="dg-sub" x="282" y="138">flight</text>
+      <rect class="dg-node" x="470" y="20" width="170" height="74" rx="5"/>
+      <text class="dg-label" x="555" y="42">cursor 0x10</text>
+      <text class="dg-sub" x="555" y="60">seated on the landing</text>
+      <text class="dg-sub" x="555" y="76">landing clip</text>
+      <rect class="dg-node" x="670" y="20" width="170" height="74" rx="5"/>
+      <text class="dg-label" x="755" y="42">cursor 0x16</text>
+      <text class="dg-sub" x="755" y="60">walk clip, landing cue</text>
+      <text class="dg-sub" x="755" y="76">lock off</text>
+      <path class="dg-edge" d="M640 57 L668 57" marker-end="url(#fl-hop-arrow)"/>
+    </svg>
+    <figcaption>The arc seats the player <em>exactly</em> on the landing point before recovery begins, so a hop never leaves a rounding error for the walk to inherit.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>The probe looks along the last step.</strong> The settle controller keeps the direction of the last committed step in two globals; the hop probe samples the floor a step ahead in that direction and posts the hop only when the rise is a ledge.</li>
+    <li><strong>The lock is the same bit a cutscene holds,</strong> which is why the pad opens no menu in mid-air. The take-off also raises the flag that hides the player's ground shadow (<a href="renderer.html#battle-draw">renderer</a>).</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="touch-interact">
+  <h2>Touching and talking</h2>
+  <p>Collision asks two questions at once: is there a wall, and is there somebody. Before the wall probes, each step tests three points against every other actor - a wider sweep than the wall edge, 64 units ahead and 32 to either side, because actors block with a body box. The same step then decides whether the contact means anything.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Contact</th><th>Needs a press?</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>Walking into a static prop of the touch class</td><td>no</td><td>The prop's event is posted on the spot, on every contact step</td></tr>
+      <tr><td>Anything else - an NPC, a cupboard, a sign</td><td>yes, a fresh press of the interact button</td><td>One probe at a single point 64 units ahead in the facing's 45-degree sector, box-tested against the whole actor list</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul class="bullets">
+    <li><strong>Talking is not an opcode.</strong> A talk is this button probe posting an event to the actor it found; the actor's own script takes it from there (<a href="script-vm.html">script VM</a>).</li>
+    <li><strong>The event goes to the last actor hit, not the first.</strong> The list walk has no early exit and overwrites the partner pointer on every box hit. Scene init appends story actors before placed props, so a point inside both an NPC's box and a prop's box is delivered to the prop. It is an oversight a port has to keep to match which thing answers.</li>
+    <li><strong>All of it is off while the player is engaged</strong> - the same flag that gates movement - or while a dialog owns field control.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="spawn-seat">
+  <h2>Where you stand when a scene starts</h2>
+  <p>The locomotion controller never places the player. The scene initializer does, and it picks between two behaviours from a one-shot word the <em>departing</em> mode leaves behind and the initializer clears on its way out.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Entry word</th><th>Meaning</th><th>Reached by</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td><strong>Cold</strong>: a fresh player actor, seated on the destination's entry coordinates</td><td>every door, New Game, movie exits that name a scene</td></tr>
+      <tr><td>2</td><td><strong>Warp</strong>: the existing actor reused, standing where the party left</td><td>the return from a battle, a minigame or a resumed movie</td></tr>
+      <tr><td>1</td><td>transient - renormalised to 2 before the initializer runs</td><td>the mode-transition pass on the way out of the field, which also snapshots the player's X and Z</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Retail never enters a scene without a door operand, but the port's scene picker can. For that case it synthesises a seat: retail's own fallback coordinate when it is standable, inside the scene's main walkable region and not on a teleport pad; otherwise a door-arrival anchor, then the region's centroid.</p>
+  <ul class="bullets">
+    <li><strong>The main region is not simply the largest.</strong> On the three kingdom maps the collision grid leaves the sea open - the coast is a closed wall ring and retail only arrives by door onto land - and the sea is about four times the continent. The rule excludes a region that reaches three or more map edges, which is exactly those three seas.</li>
+    <li><strong>A door arrival is never nudged.</strong> A standable tile is taken exactly as given, so every authored arrival lands byte-exact on its operand; only a derived tile the grid does not cover is moved to the nearest open sub-cell.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="authored-octant">
+  <h2>The camera turn is authored, not computed</h2>
+  <p>The pad remap rotates the held direction by an eighth-turn index. Nothing in retail derives that index from the camera. Its writers across the whole disc are two, and both are content: a field-VM op that sets it to a literal, and the tile-board walker. A scene author picks the octant to match the fixed camera the same script installs; a bare tile crossing never changes it.</p>
+  <ul class="bullets">
+    <li><strong>The op turns the player with it.</strong> Under one condition the same arm rewrites the facing by the delta it applied, so the character keeps facing the same way on screen across a camera cut.</li>
+    <li><strong>The port departs here on purpose.</strong> Its camera can be dragged, so an authored constant goes stale the moment the view moves; it rounds the live camera azimuth to the nearest of the eight steps instead. On every axis-aligned camera the two agree.</li>
+    <li><strong>The slide is measured.</strong> A probe on the resolver's return in a retail town shows it answering the held direction on 261 of 276 calls and widening it on 15 - one held-left run down a wall, where &ldquo;left&rdquo; becomes &ldquo;left and up&rdquo;. Six of those rows are the pin the port's resolver is tested against.</li>
+  </ul>
+  <h3 id="base-step">The four base steps</h3>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Step</th><th>When</th></tr></thead>
+    <tbody>
+      <tr><td>5</td><td>Forced slow: the per-scene flag set on exactly the three kingdom maps. With the overworld's three-quarter scale that is 3 units per vsync, and the player never runs there</td></tr>
+      <tr><td>12</td><td>Run</td></tr>
+      <tr><td>24</td><td>A debug turbo behind two dev flags; never taken in retail</td></tr>
+      <tr><td>8</td><td>Plain walk</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The walk clip is chosen the same way the step is: no direction held is the idle base, a direction under the plain walk step is the walk base, and any other step is the run base. The run button word is one of four button masks the new-game init seeds into the save block; that init is their only writer anywhere, so retail has no way to rebind them.</p>
+</section>
+
 <section class="doc-section" id="npc-motion">
   <h2>NPCs: facing and glide speed</h2>
   <h3 id="npc-initial-facing">Initial facing</h3>
@@ -294,7 +392,7 @@
     <a href="motion-vm.html">Motion VMs (NPC walking)</a>
     <a href="world-map.html">World map</a>
     <a href="cutscene.html">Cutscenes</a>
-    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-map.md" target="_blank" rel="noopener">Field map (.MAP) format</a>
+    <a href="../formats/field-map.html">Field map (.MAP) format</a>
     <a href="../formats/scene-bundles.html">Scene bundles</a>
     <a href="../formats/encounter.html">Encounter record</a>
     <a href="../formats/scene-v12-table.html">Scene v12 table</a>

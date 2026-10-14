@@ -518,7 +518,7 @@ pub enum FieldCameraFrame {
     /// Field free-roam: the retail follow camera.
     Follow(FieldCameraView),
     /// A minigame venue's own staged camera - the dance floor's, from the
-    /// overlay entry's record ([`crate::dance_venue::venue_camera`]). A fixed
+    /// overlay entry's record ([`legaia_engine_minigame_scenes::dance_venue::venue_camera`]). A fixed
     /// retail pose in the field frame; no follow knob reaches it.
     Venue(FieldCameraView),
     /// No player actor to follow and no scripted shot - the host frames the

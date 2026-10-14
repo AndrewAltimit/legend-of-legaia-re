@@ -169,6 +169,7 @@ class TmdRenderer {
     this.locPairFront = gl.getUniformLocation(this.program, 'u_pair_front');
     this.locNclipCull = gl.getUniformLocation(this.program, 'u_nclip_cull');
     this.locCurve = gl.getUniformLocation(this.program, 'u_curve');
+    this.locCurveBias = gl.getUniformLocation(this.program, 'u_curve_bias');
     this.locPrimNear = gl.getUniformLocation(this.program, 'u_prim_near');
     this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
     this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
@@ -289,6 +290,7 @@ class TmdRenderer {
      * sides, the default every other page keeps. */
     this.nclipCull = 0;
     this.overworldCurve = 0;
+    this.overworldCurveBias = 0;
     /* Retail's per-primitive near reject for the assembled scene pass:
      * [enable, sz_per_w, ot_shift, near_otz] (setPrimNear), and the hook
      * that builds a mesh's per-vertex primitive-corner stream

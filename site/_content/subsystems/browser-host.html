@@ -1,0 +1,153 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; browser host</div>
+  <h1>The browser host</h1>
+  <p class="lede">What the WebAssembly bundle exports to this site: the play runtime behind the <a href="../play.html">play page</a>, the standalone <a href="../minigames.html">minigames page</a>, the viewer pages and the ROM patcher. Nothing is uploaded - the disc image a visitor supplies is read in their browser.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Crate</dt><dd><code>legaia-web-viewer</code>, one wasm target serving three products</dd>
+    <dt>Session</dt><dd><code>legaia_engine_session::BootSession</code> over the page&rsquo;s audio output - the type the native window runs</dd>
+    <dt>Frame</dt><dd><code>tick_frame()</code> calls the session&rsquo;s tick in the native frame order and returns the scene a door just walked into</dd>
+    <dt>Draw side</dt><dd>Resolved against the <em>same</em> scene resources the host built at scene entry; nothing is decoded twice</dd>
+    <dt>Parity</dt><dd>Disc-gated tests pair this host against the native window; a source-derived gate fails when a screen reaches one host only</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="modules">
+  <h2>Module map</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Module map of the browser host. One engine session, BootSession, sits at the centre, shared with the native window. The play runtime modules wrap it for the play page: runtime, play, dialog, cutscene and FMV, camera, menu, battle, shop, sound. The minigames page, the viewer pages and the ROM patcher are three more product surfaces in the same wasm bundle that do not go through the session.">
+      <defs><marker id="bh-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="330" y="16" width="220" height="56" rx="4"/>
+      <text class="dg-label" x="440" y="41">engine-session::BootSession</text>
+      <text class="dg-sub" x="440" y="57">the native window&#x27;s own session</text>
+      <rect class="dg-group" x="10" y="110" width="500" height="300" rx="6"/>
+      <text class="dg-sub dg-start" x="20" y="126">play page: wraps the session</text>
+      <rect class="dg-node" x="24" y="136" width="230" height="44" rx="4"/>
+      <text class="dg-label" x="139" y="155">runtime</text>
+      <text class="dg-sub" x="139" y="171">load, pad, tick, state</text>
+      <rect class="dg-node" x="268" y="136" width="230" height="44" rx="4"/>
+      <text class="dg-label" x="383" y="155">play</text>
+      <text class="dg-sub" x="383" y="171">map, player, NPC draws</text>
+      <rect class="dg-node" x="24" y="188" width="230" height="44" rx="4"/>
+      <text class="dg-label" x="139" y="207">play_dialog</text>
+      <text class="dg-sub" x="139" y="223">reading box</text>
+      <rect class="dg-node" x="268" y="188" width="230" height="44" rx="4"/>
+      <text class="dg-label" x="383" y="207">play_cutscene / play_fmv</text>
+      <text class="dg-sub" x="383" y="223">prologue, movies</text>
+      <rect class="dg-node" x="24" y="240" width="230" height="44" rx="4"/>
+      <text class="dg-label" x="139" y="259">play_camera</text>
+      <text class="dg-sub" x="139" y="275">follow + orbit</text>
+      <rect class="dg-node" x="268" y="240" width="230" height="44" rx="4"/>
+      <text class="dg-label" x="383" y="259">play_menu</text>
+      <text class="dg-sub" x="383" y="275">pause menu</text>
+      <rect class="dg-node" x="24" y="292" width="230" height="44" rx="4"/>
+      <text class="dg-label" x="139" y="311">play_battle*</text>
+      <text class="dg-sub" x="139" y="327">live fights, 3D, effects</text>
+      <rect class="dg-node" x="268" y="292" width="230" height="44" rx="4"/>
+      <text class="dg-label" x="383" y="311">play_shop</text>
+      <text class="dg-sub" x="383" y="327">merchant, banners</text>
+      <rect class="dg-node" x="24" y="344" width="230" height="44" rx="4"/>
+      <text class="dg-label" x="139" y="363">play_sfx / bgm / xa</text>
+      <text class="dg-sub" x="139" y="379">sound</text>
+      <rect class="dg-node" x="268" y="344" width="230" height="44" rx="4"/>
+      <text class="dg-label" x="383" y="363">play_minigames</text>
+      <text class="dg-sub" x="383" y="379">in-world minigames</text>
+      <path class="dg-edge" d="M440 72 L440 92 L260 92 L260 108" marker-end="url(#bh-arrow)"/>
+      <rect class="dg-group" x="530" y="110" width="340" height="300" rx="6"/>
+      <text class="dg-sub dg-start" x="540" y="126">same bundle, no session</text>
+      <rect class="dg-node" x="546" y="136" width="308" height="44" rx="4"/>
+      <text class="dg-label" x="700" y="155">minigames</text>
+      <text class="dg-sub" x="700" y="171">standalone playable page</text>
+      <rect class="dg-node" x="546" y="188" width="308" height="44" rx="4"/>
+      <text class="dg-label" x="700" y="207">field_scene / field_npc</text>
+      <text class="dg-sub" x="700" y="223">assembled maps, NPC catalog</text>
+      <rect class="dg-node" x="546" y="240" width="308" height="44" rx="4"/>
+      <text class="dg-label" x="700" y="259">arts_view / equipment_view</text>
+      <text class="dg-sub" x="700" y="275">viewer pages</text>
+      <rect class="dg-node" x="546" y="292" width="308" height="44" rx="4"/>
+      <text class="dg-label" x="700" y="311">scene_export</text>
+      <text class="dg-sub" x="700" y="327">.glb export</text>
+      <rect class="dg-node" x="546" y="344" width="308" height="44" rx="4"/>
+      <text class="dg-label" x="700" y="363">rom_patcher</text>
+      <text class="dg-sub" x="700" y="379">client-side, nothing uploaded</text>
+    </svg>
+    <figcaption>The play runtime is the engine, not a re-implementation of it: it holds the same session type the native window runs, built over a scene host assembled in memory from the visitor&rsquo;s own disc image. The other surfaces share the format crates and the render kernels but run no session.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="runtime">
+  <h2>Simulation and draw are split on purpose</h2>
+  <ul class="bullets">
+    <li><strong><code>runtime</code></strong> is the simulation: load a disc, enter a field scene, set the pad word, set the camera azimuth so the D-pad remaps camera-relative, tick a frame, read state. It runs the ported field VM, free movement against the walkability grid, the NPC motion VMs and the dialogue runner.</li>
+    <li><strong><code>play</code></strong> is what the page draws: the assembled map, the lead&rsquo;s mesh posed from the world&rsquo;s live pose frame, and the scene&rsquo;s placed NPCs at their live positions.</li>
+  </ul>
+  <p>The map and NPC layers make the native window&rsquo;s exact resolver calls. NPC clip playback runs in <strong>simulation-tick time</strong> - one clip player per placed slot, advanced once per tick - so cadence does not depend on the display&rsquo;s refresh rate and scripted actors perform their cued beats.</p>
+</section>
+
+<section class="doc-section" id="surfaces">
+  <h2>What each play module carries</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Module</th><th>Covers</th></tr></thead>
+    <tbody>
+      <tr><td><code>play_dialog</code></td><td>the retail dialog reading box</td></tr>
+      <tr><td><code>play_cutscene</code> / <code>play_fmv</code></td><td>the opening prologue chain and the movie beats</td></tr>
+      <tr><td><code>play_camera</code></td><td>the follow camera and the debug orbit</td></tr>
+      <tr><td><code>play_menu</code></td><td>the retail pause menu</td></tr>
+      <tr><td><code>play_battle</code>, <code>play_battle_render</code>, <code>play_battle_fx</code></td><td>live battles: rules tick, the 3D scene, effects</td></tr>
+      <tr><td><code>play_shop</code></td><td>field merchants, the inn prompt, banners</td></tr>
+      <tr><td><code>play_sfx</code> / <code>play_bgm</code> / <code>play_xa</code></td><td>sound effects, scene music, voice clips</td></tr>
+      <tr><td><code>play_minigames</code>, <code>play_fishing</code></td><td>the in-world minigames reached through the scene&rsquo;s own door warps</td></tr>
+      <tr><td><code>boot_title</code>, <code>play_name_entry</code></td><td>the boot title screen and name entry</td></tr>
+      <tr><td><code>session_save</code>, <code>cards</code></td><td>session saves and the two memory-card ports</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="drift">
+  <h2>Keeping two hosts in step</h2>
+  <p>The play page and the native window are two framebuffers over one engine, and the failure that costs most is quiet: a screen is wired natively and the web host drifts behind with nothing in any diff to say so.</p>
+  <p>Every screen&rsquo;s geometry is a draw-list builder in <code>engine-ui</code>, and a host <em>has</em> that screen exactly when it calls the builder. So the feature surface can be derived from source, and a gate fails when a builder reaches the native window but not this crate. One-host cases live in a waiver file, each with a reason, validated in both directions so it cannot decay into a stale list.</p>
+  <p><strong>A screen can be fully wired and connected to nothing.</strong> The gate answers &ldquo;does this host call the builder&rdquo;; it cannot answer &ldquo;does this host feed it the same model&rdquo;. The options screen was drawn on both hosts with the gate green while one of them rebuilt its session from defaults on every open and dropped the result on close.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Area</th><th>State against the native window</th></tr></thead>
+    <tbody>
+      <tr><td>Seru-trade shop screens</td><td>closed: one shared composition</td></tr>
+      <tr><td>Options screen</td><td>half closed: edits persist for the session; a reload starts from defaults</td></tr>
+      <tr><td>Inn prompt</td><td>closed</td></tr>
+      <tr><td>Load / Save rows</td><td>closed at the model: this host browses two memory-card ports, the native window writes save files, both from one summary</td></tr>
+      <tr><td>In-world minigames</td><td>closed: both hosts enter them from the scene&rsquo;s door warps</td></tr>
+      <tr><td>Field music, effects, voice</td><td>closed</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="other">
+  <h2>The other surfaces</h2>
+  <ul class="bullets">
+    <li><strong>Viewer pages</strong> - assembled full-scene maps, the field-NPC catalog, the Tactical Arts and equipment viewers, summon and battle-stage previews - read the same format crates the extractor does.</li>
+    <li><strong>Scene export</strong> builds a textured <code>.glb</code> of a scene in the browser.</li>
+    <li><strong>The ROM patcher</strong> runs the randomizer and mod pipeline client-side over the visitor&rsquo;s disc and hands back a patch file. See <a href="../tooling/rom-patcher.html">ROM patcher</a>.</li>
+    <li><strong>The translation workbench</strong> is the in-browser language-pack editor.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>Every module family with its exports, the parity tests, the texture-replacement registry and the long tail of helper modules are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/browser-host.md" target="_blank" rel="noopener"><code>docs/subsystems/browser-host.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="engine.html">Engine port</a>
+    <a href="renderer-port.html">Port renderer</a>
+    <a href="vr-mode.html">VR mode</a>
+    <a href="../play.html">Play page</a>
+    <a href="../minigames.html">Minigames page</a>
+    <a href="../tooling/rom-patcher.html">ROM patcher</a>
+  </div>
+</section>

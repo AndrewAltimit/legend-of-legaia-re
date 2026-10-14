@@ -347,6 +347,21 @@ engine routes a system-script `MOVE_TO` to any resolved channel and the
 clip-control writes (`AB` / `AC <id> <bit>`, `CC <id> 35` / `36`) to a resolved
 object's channel and its prop clip (`World::step_field_cross_context_actor_op`).
 
+The player is one more target of the same resolve: `FUN_8003C83C(0xF8)`
+returns the player object `*0x8007C364`, so a system-script `A3 F8 <x> <z>`
+seats the **player**, and the identity compare at `0x801DEC7C` (the resolved
+object against `*(0x8007C348 + 0x1C)`) takes the player arm, the camera
+re-centre `FUN_80017EC8` on the operand tile. The inn dreams depend on it.
+An inn that plays a dream raises a return latch and changes scene to `dream`
+(`retock` `P1[26]`: `55 88`, then `3F .. DREAM 40 40`); `dream` `P2[5]` reads
+the latch and hands the party back with a `0x3F` whose entry tile is the
+off-map `(0x7F, 0x7F)`, and the destination's entry script does the seating:
+`retock` `P1[0]` tests `0x588`, raises `0x57F`, clears `0x588` and runs
+`A3 F8 F4 8B`, the inn bed at world `(14976, 1536)`. Stepped on the system
+context, the seat landed on the system context's own words and the party
+woke on the hide tile. The engine steps the op on a player stand-in context
+(`World::step_field_player_move_to`).
+
 A mid-talk glide on the talker itself (`37` / `41` / `47` with no target
 byte) parks the record (`+0x10 |= 0x400`) until the walk kernel's terminal
 frame clears the bit (`FUN_8003774C`). The engine's talk runner plays no walk
@@ -1451,18 +1466,23 @@ A tristate state machine on `_DAT_8007B450`, with sub-cases 0..0xD:
 - **Armed** (`!= 0, != 1`): `return param_2` - re-enters the SAME PC each frame until the actor writes `_DAT_8007B450 = 1` (the Done writer is field-overlay `FUN_801F159C`-class).
 - **Done** (`== 1`): clears it and advances the PC.
 
-Done sub-6/8/9/C/D jump through `LAB_801df898` (PC += 5). Done sub-0 walks an inline
-MES-shape payload via `func_0x8003CA38` (`length = pbVar47[2]`, PC +=
-`5 + length + walked`).
+Done sub-6/8/9/C/D jump through `LAB_801df898` (PC += 5). Done sub-0
+(`0x801E08DC..0x801E0910`) reads its length from the **third** operand byte:
+with `s6` the operand pointer (`s6 = op + 1`, the sub-op at `s6[0]`), it loads
+`length = s6[2]`, walks an inline MES-shape payload from `s6 + length + 3`
+with `FUN_8003CA38` (bytes above `0x1E`, a `0xCx` prefix taking its pair
+byte) and advances PC by `5 + length + walked`. `s6[1]` is not read.
 
-The town-shop form of the sub-0 payload - `[count][ids..][ASCII name\0]`
+The town-shop form of the sub-0 payload - `49 00 00 [count][ids..][ASCII name\0]`
 ([`shop.md`](shop.md#gold-shop-stock-source), parser `legaia_scene_formats::shop_stock`)
-- is **not** measured by that walk: its count byte is a terminator to the glyph
-walker, so the arithmetic above stops at zero. The menu overlay that runs the
-shop is what moves the script past the record. The disassembler recognises the
-record by shape (the same validation the shop scanner uses) and sizes it to the
-name's terminator, so a linear walk reaches the shop's "Welcome" / "Thank you"
-dialogue behind it.
+- is that layout: `length` is the id count (padding ids included) and the walk
+is the shop name, so the Done arm itself resumes the talk on the line after
+the record ("Thank you!"). `ropeway` P1[24] (`49 00 00 11`, seventeen ids,
+"Items Shop") resumes 32 bytes on. Reading the length from `s6[1]` (`00` in
+every shop) resumed five bytes in, inside the id list, where the second id
+onward decodes as an extended `SysFlag.Set` (`DE DF E0`, index `0x8EE0`). The
+disassembler recognises the record by shape (the same validation the shop
+scanner uses) and sizes it the same way.
 
 The Armed park is the town01 name-entry hand-off (P2[3] `+0x02C6`); see
 [`playthrough-coverage.md`](../tooling/playthrough-coverage.md#s3-captured-the-town01-opening-is-the-name-entry-screen).

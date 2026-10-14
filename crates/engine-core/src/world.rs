@@ -53,8 +53,9 @@ use legaia_engine_battle_vm::battle_action::{
     BattleActionCtx, BattleActor, BattleEndCause, StepOutcome,
 };
 use legaia_engine_field::field_events::FieldEvent;
-use legaia_engine_field::man_field_scripts::WalkTouchEvent;
+use legaia_engine_field::man_field_scripts::{FIELD_OFFMAP_HIDE_XZ, WalkTouchEvent};
 use legaia_engine_field::world_map::WorldMapController;
+use legaia_engine_scene::model_bank::GlobalTmd;
 use legaia_engine_system::input;
 use legaia_engine_vm as vm;
 use legaia_engine_vm::MAX_ACTORS;
@@ -87,7 +88,6 @@ mod field_terrain;
 mod field_vm_state;
 mod frame_step_floor;
 mod menu_state;
-mod minigame_state;
 mod screen_fx_state;
 mod state;
 mod types;
@@ -126,12 +126,12 @@ use legaia_engine_field::move_vm_globals::{FieldNpcMotion, MoveVmGlobals};
 use legaia_engine_field::world_map_entity_config::{WorldMapEncounterState, WorldMapEntityConfig};
 use legaia_engine_menus::party_state::PartyState;
 use legaia_engine_menus::shop_state::ShopState;
+use legaia_engine_minigame_scenes::minigame_state::MinigameState;
 use legaia_engine_minigames::tile_board_state::TileBoardState;
 use legaia_engine_system::sound_state::SfxRingOp;
 use legaia_engine_system::story_flag_state::StoryFlagState;
 use legaia_engine_vm::frame_clock::FrameClock;
 pub use menu_state::MenuState;
-pub use minigame_state::{FishingCaptionText, MinigameState, pond_event_cues};
 pub use screen_fx_state::{ClearColourRamp, ScreenFxState};
 pub use state::*;
 pub use types::*;
@@ -154,7 +154,6 @@ pub use cutscene_elements::{
     ElementKind, WorldRng,
 };
 mod assets_events;
-pub use assets_events::vdf_entry;
 mod bag_rows;
 pub use bag_rows::BagRow;
 mod battle;

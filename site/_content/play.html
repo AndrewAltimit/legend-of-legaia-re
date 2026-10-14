@@ -431,6 +431,22 @@
                  title="Ground fog: a low drifting mist bank over the scenes that read as misty or night (Rim Elm under the Mist, Drake Castle, the Voz forests, the Ravine, and any scene whose own fog puffs are live), parted by every character walking through it; a battle inherits its scene's bank (the native window's F9, persisted like its other options). Not retail - the game draws only its fog puffs. Presentation only.">
             <input type="checkbox" id="play-ground-fog" checked> Ground fog
           </label>
+          <label class="play-dev-menu"
+                 title="Retail-faithful for this session (the native --retail): every enhancement off - enhanced lighting and its shadows, ground fog, see-through walls, the scene-entry pulse - and every engine-only option pinned to retail (camera distance, 8-way movement, no flash slew, retail tile windows). Nothing is stored; untick to get your own settings back.">
+            <input type="checkbox" id="play-retail-mode"> Retail-faithful
+          </label>
+          <label class="play-dev-menu"
+                 title="Retail's visible-tile crop: at retail framing, draw only the terrain tiles the PS1's camera window covers (the retail_view_window option, persisted like the native config). Off draws the whole scene.">
+            <input type="checkbox" id="play-retail-view-window" checked> Retail tile crop
+          </label>
+          <label class="play-dev-menu"
+                 title="Retail static-object windowing: placed objects outside the camera's tile window are not drawn (the retail_static_window option, persisted like the native config). Off draws every placement.">
+            <input type="checkbox" id="play-retail-static-window" checked> Retail object window
+          </label>
+          <label class="play-dev-menu"
+                 title="Debug overlay: mark every overworld placement (towns, caves, doors) with the port's entity marker (the native window's LEGAIA_WORLD_MAP_MARKERS). Retail draws nothing there.">
+            <input type="checkbox" id="play-world-map-markers"> Overworld markers
+          </label>
           <button id="play-camera-distance" type="button"
                   title="Cycle the follow camera's distance preset (retail, far, farther) - the native window's T key, persisted with the other options. Framing only - the simulation never changes.">Camera: far</button>
         </div>
@@ -441,6 +457,24 @@
               Party <input type="text" id="play-party" size="14" placeholder="vahn,noa,gala">
             </label>
             <button id="play-party-apply" type="button">Apply party</button>
+            <label class="play-dev-menu"
+                   title="Monsters aim single-target attacks at the weakest living party member instead of retail's uniform random pick (the native window's LEGAIA_SMART_MONSTERS). Not retail; the random stream is unchanged.">
+              <input type="checkbox" id="play-smart-monsters"> Smart monsters
+            </label>
+            <label class="play-dev-menu"
+                   title="Debug: outline every battle effect sprite so a spawn stays visible when its texture is not resident (the native window's LEGAIA_DIAG_FX). Retail draws no outline.">
+              <input type="checkbox" id="play-fx-outline"> Effect outlines
+            </label>
+            <label title="Walk straight into a minigame from this scene, through the same door warp a casino or arena door arms (the native O / B / M / K keys). Start leaves it.">
+              Minigame
+              <select id="play-mg-warp">
+                <option value="">enter...</option>
+                <option value="3">Slot machine</option>
+                <option value="4">Baka Fighter</option>
+                <option value="5">Muscle Dome</option>
+                <option value="6">Dance</option>
+              </select>
+            </label>
             <button id="play-force-battle" type="button"
                     title="Arm a fight from this scene's own encounter table right now (the native --battle first).">Start a battle here</button>
             <label title="Battle BGM id: 0 keeps the field track playing through the fight, blank restores the shipped default (2026). The native --battle-bgm flag.">
@@ -505,8 +539,28 @@
             <button id="play-cheat-item-apply" type="button">Add item</button>
           </div>
           <div class="play-btn-row">
+            <label title="Teach a spell to a party member at level 1, prepended to their list (the native --learn-spell): the Seru-magic ids are 0x81..0x8b.">
+              Learn spell
+              <select id="play-learn-slot">
+                <option value="0">Vahn</option>
+                <option value="1">Noa</option>
+                <option value="2">Gala</option>
+              </select>
+              <input type="text" id="play-learn-spell" size="5" placeholder="0x81">
+            </label>
+            <button id="play-learn-apply" type="button">Learn</button>
+            <label title="Raise or clear a story / system flag in the shared bank (the native --set-flag). Decimal or 0x hex.">
+              Flag <input type="text" id="play-flag-id" size="6" placeholder="0x142">
+            </label>
+            <button id="play-flag-set" type="button">Set</button>
+            <button id="play-flag-clear" type="button">Clear</button>
+          </div>
+          <div class="play-btn-row">
             <label title="GameShark lines (AAAAAAAA VVVV) or a Mednafen .cht file's text. Codes write through the engine's map of retail RAM cells, the same applier as the native window's --cheat-file; codes with no engine cell are counted as unmapped.">
               Codes <textarea id="play-cheat-codes" rows="2" cols="24" spellcheck="false" placeholder="80084E28 FFFF"></textarea>
+            </label>
+            <label title="Skip every write that follows a D0 / E0 conditional gate (the engine does not emulate the gate) instead of treating the gate as always true - the native --cheat-strict flag.">
+              <input type="checkbox" id="play-cheat-codes-strict"> Strict
             </label>
             <button id="play-cheat-codes-apply" type="button">Apply codes</button>
           </div>
@@ -634,7 +688,7 @@
     <li><strong>Fishing.</strong> <em>Fish here</em> starts the minigame on the spot - the same
       retail loop the <a href="minigames.html">minigames page</a> runs, with your points, casts
       and lure carried between sessions. <kbd>X</kbd> casts and locks the power meter,
-      <kbd>Z</kbd> and <kbd>V</kbd> reel (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md">fishing</a>).</li>
+      <kbd>Z</kbd> and <kbd>V</kbd> reel (<a href="subsystems/minigame-fishing.html">fishing</a>).</li>
     <li><strong>The overworld.</strong> Picking a kingdom map walks it with the world-map
       controller: step-driven encounters, ports and town doors
       (<a href="subsystems/world-map.html">world map</a>).</li>
@@ -879,6 +933,8 @@
       if (typeof window.__playSyncGroundFog === 'function') window.__playSyncGroundFog();
       if (typeof window.__playSyncRenderToggles === 'function') window.__playSyncRenderToggles();
       if (typeof window.__playSyncCameraDistance === 'function') window.__playSyncCameraDistance();
+      if (typeof window.__playApplyPageToggles === 'function') window.__playApplyPageToggles();
+      if (typeof window.__playSyncPageToggles === 'function') window.__playSyncPageToggles();
       setSaveUi(true);
       /* A fresh runtime has an empty rack: mount the browser card (and any
        * card the player picked) before anything can open a save screen. */
@@ -1370,6 +1426,7 @@
       if (typeof window.__playApplyPreciseMove === 'function') window.__playApplyPreciseMove();
       if (typeof window.__playApplyGroundFog === 'function') window.__playApplyGroundFog();
       if (typeof window.__playApplyBattleTools === 'function') window.__playApplyBattleTools();
+      if (typeof window.__playApplyPageToggles === 'function') window.__playApplyPageToggles();
       installXaBanks();
 
       /* Too many failures in a short window -> the scene itself is the problem;
@@ -2134,6 +2191,100 @@
   window.__playApplyGroundFog = applyGroundFog;
   window.__playSyncGroundFog = syncGroundFog;
 
+  /* The native launch switches the page throws at runtime
+   * (crates/web-viewer/src/play_toggles.rs) and the two persisted retail
+   * tile-window options. Retail-faithful pins the engine options for the
+   * session without storing them, then mirrors the pinned values into the
+   * boxes above and turns the page's own enhancements off. */
+  const retailModeEl = document.getElementById('play-retail-mode');
+  const viewWindowEl = document.getElementById('play-retail-view-window');
+  const staticWindowEl = document.getElementById('play-retail-static-window');
+  const markersEl = document.getElementById('play-world-map-markers');
+  const smartEl = document.getElementById('play-smart-monsters');
+  const fxOutlineEl = document.getElementById('play-fx-outline');
+  function rtCall(name, ...args) {
+    const rt = window.__playRuntime;
+    if (!rt || typeof rt[name] !== 'function') return undefined;
+    try { return rt[name](...args); } catch (e) { console.warn(name, e); return undefined; }
+  }
+  function syncPageToggles() {
+    const v = rtCall('retail_view_window');
+    if (v !== undefined) viewWindowEl.checked = !!v;
+    const st = rtCall('retail_static_window');
+    if (st !== undefined) staticWindowEl.checked = !!st;
+    const r = rtCall('retail_mode');
+    if (r !== undefined) retailModeEl.checked = !!r;
+  }
+  function applyPageToggles() {
+    rtCall('set_smart_monsters', !!smartEl.checked);
+    rtCall('set_world_map_markers', !!markersEl.checked);
+    rtCall('set_battle_fx_outline', !!fxOutlineEl.checked);
+    rtCall('set_retail_mode', !!retailModeEl.checked);
+  }
+  let retailSaved = null;
+  retailModeEl.addEventListener('change', () => {
+    const on = !!retailModeEl.checked;
+    rtCall('set_retail_mode', on);
+    /* The engine options are now pinned (or restored): mirror them. */
+    syncRenderToggles();
+    syncGroundFog();
+    syncPreciseMove();
+    syncCameraDistance();
+    syncPageToggles();
+    /* The page-side enhancements retail has no counterpart for: off while
+     * the mode holds, back to what they were when it is lifted. */
+    if (on) {
+      retailSaved = { shadows: dynShadowsEl.checked, seeThrough: seeThroughEl.checked };
+      dynShadowsEl.checked = false;
+      seeThroughEl.checked = false;
+    } else if (retailSaved) {
+      dynShadowsEl.checked = retailSaved.shadows;
+      seeThroughEl.checked = retailSaved.seeThrough;
+      retailSaved = null;
+    }
+    applySeeThrough();
+    applyRenderToggles();
+    canvas.focus();
+  });
+  viewWindowEl.addEventListener('change', () => {
+    rtCall('set_retail_view_window', !!viewWindowEl.checked);
+    canvas.focus();
+  });
+  staticWindowEl.addEventListener('change', () => {
+    rtCall('set_retail_static_window', !!staticWindowEl.checked);
+    canvas.focus();
+  });
+  markersEl.addEventListener('change', () => { rtCall('set_world_map_markers', !!markersEl.checked); canvas.focus(); });
+  smartEl.addEventListener('change', () => { rtCall('set_smart_monsters', !!smartEl.checked); canvas.focus(); });
+  fxOutlineEl.addEventListener('change', () => { rtCall('set_battle_fx_outline', !!fxOutlineEl.checked); canvas.focus(); });
+  window.__playSyncPageToggles = syncPageToggles;
+  window.__playApplyPageToggles = applyPageToggles;
+
+  /* Learn spell / story flag - the native --learn-spell / --set-flag. */
+  const parseId = (text) => {
+    const t = String(text || '').trim().toLowerCase();
+    if (!t) return NaN;
+    return t.startsWith('0x') ? parseInt(t.slice(2), 16) : parseInt(t, 10);
+  };
+  document.getElementById('play-learn-apply').addEventListener('click', () => {
+    const slot = parseInt(document.getElementById('play-learn-slot').value, 10) || 0;
+    const id = parseId(document.getElementById('play-learn-spell').value);
+    if (!(id >= 0 && id <= 0xFF)) { saveMsg('Learn spell: give a spell id 0..255 (0x81..0x8b are the Seru spells).', true); return; }
+    const ok = !!rtCall('learn_spell', slot, id);
+    saveMsg(ok ? `Spell 0x${id.toString(16)} learned.` : 'Learn spell: load a scene with that party member first.', !ok);
+    canvas.focus();
+  });
+  const flagWrite = (on) => {
+    const id = parseId(document.getElementById('play-flag-id').value);
+    if (!(id >= 0 && id <= 0xFFFF)) { saveMsg('Flag: give an index (decimal or 0x hex).', true); return; }
+    const ok = !!rtCall('set_system_flag', id, on);
+    const now = !!rtCall('system_flag', id);
+    saveMsg(ok ? `Flag 0x${id.toString(16)} is now ${now ? 'set' : 'clear'}.` : 'Flag: load a scene first.', !ok);
+    canvas.focus();
+  };
+  document.getElementById('play-flag-set').addEventListener('click', () => flagWrite(true));
+  document.getElementById('play-flag-clear').addEventListener('click', () => flagWrite(false));
+
   /* Camera-distance preset - the native window's `T`. The engine steps and
    * persists the option (`OptionsState::cycle_camera_distance`); the button
    * only shows the label it hands back. */
@@ -2191,6 +2342,20 @@
     let ok = false;
     try { ok = !!rt.debug_force_battle(-1); } catch (e) { ok = false; }
     saveMsg(ok ? 'Battle armed.' : 'This scene registers no encounter formation to start.', !ok);
+    canvas.focus();
+  });
+  /* Minigame entry: arm the mode-24 door warp for the picked game, the
+   * request a walked door makes (`World::request_minigame_warp`), so the
+   * session that opens is the one the door installs. */
+  const mgWarpEl = document.getElementById('play-mg-warp');
+  mgWarpEl.addEventListener('change', () => {
+    const sub = parseInt(mgWarpEl.value, 10);
+    mgWarpEl.value = '';
+    const rt = window.__playRuntime;
+    if (!rt || isNaN(sub) || typeof rt.play_mg_debug_warp !== 'function') return;
+    let ok = false;
+    try { ok = !!rt.play_mg_debug_warp(sub); } catch (e) { ok = false; }
+    saveMsg(ok ? 'Minigame door armed.' : 'Load a scene before entering a minigame.', !ok);
     canvas.focus();
   });
   window.__playApplyBattleTools = applyBattleTools;
@@ -2292,7 +2457,8 @@
   document.getElementById('play-cheat-codes-apply').addEventListener('click', () => {
     const text = document.getElementById('play-cheat-codes').value;
     if (!text.trim()) return;
-    runCheat((rt) => rt.cheat_apply_codes(text, false));
+    const strict = !!document.getElementById('play-cheat-codes-strict').checked;
+    runCheat((rt) => rt.cheat_apply_codes(text, strict));
   });
   window.__playSyncCheats = syncCheats;
 

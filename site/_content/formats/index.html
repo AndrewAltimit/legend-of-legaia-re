@@ -154,6 +154,14 @@
       <div class="card-title"><span>Art data - Tactical Arts records</span> <span class="tag tag-partial">Inferred</span></div>
       <div class="card-body">Per-character Tactical Art records (in each player battle file): command sequence, power bytes, hit-cue timing, impact-effect class. The menu's arrows are a separate table in the executable.</div>
     </a>
+    <a class="card" href="save-icon.html">
+      <div class="card-title"><span>Save-slot portrait sheet</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Sixteen 16x16 tiles in one 256x16 strip in the menu overlay, one 16-colour palette per tile. Tile N is the memory-card icon for save N+1.</div>
+    </a>
+    <a class="card" href="battle-attack-camera-table.html">
+      <div class="card-title"><span>Battle attack-camera table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Twenty rows of two signed halfwords in the battle overlay: the per-art swing camera offsets. The two columns are alternatives the game coin-flips between.</div>
+    </a>
     <a class="card" id="save-record" href="save-record.html">
       <div class="card-title"><span>Per-character save record</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The in-RAM record holding one party member's whole state: <code>0x414</code> bytes per slot. Cheat-database-pinned offsets for stats, level, magic rank, spells, summons and equipment.</div>
@@ -211,6 +219,10 @@
     <a class="card" href="scene-bundles.html">
       <div class="card-title"><span>Scene bundles</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The family of per-scene container shapes, each read off its retail walker: battle backdrops, BGM streams, town asset tables, move-VM stager scripts.</div>
+    </a>
+    <a class="card" href="field-map.html">
+      <div class="card-title"><span>Per-scene field map</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Slot 0 of every scene block, exactly <code>0x12000</code> bytes: object descriptors, the collision and floor grid, the per-tile object map and the trigger block.</div>
     </a>
     <a class="card" href="scene-v12-table.html">
       <div class="card-title"><span>scene_v12_table</span> <span class="tag tag-done">Confirmed</span></div>
@@ -276,6 +288,10 @@
     <a class="card" href="sfx-table.html">
       <div class="card-title"><span>SFX descriptor table</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The sound-effect lookup table in the executable: 100 8-byte rows naming a VAB program / tone, voice count, and the category that selects which of four open banks the cue plays from.</div>
+    </a>
+    <a class="card" href="bse-dat.html">
+      <div class="card-title"><span>bse.dat battle SFX bank</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The runtime half of the sound-effect descriptor table: the rows behind cue ids <code>0x200</code> and up while a battle is on screen, loaded per battle.</div>
     </a>
     <a class="card" href="sound-driver.html">
       <div class="card-title"><span>Sound-driver path strings</span> <span class="tag tag-done">Confirmed</span></div>

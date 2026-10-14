@@ -39,7 +39,7 @@ impl SceneHost {
         };
         // The scene ANM bundle resolves each posed prop's clip metadata
         // (frame count + step scaling) for the bank's end-latch timing.
-        let bundle = crate::npc_catalog::scene_anm_bundle(scene);
+        let bundle = legaia_engine_scene::npc_catalog::scene_anm_bundle(scene);
         let clip = |anim: u8| -> Option<(u16, bool, u8)> {
             let b = bundle.as_ref()?;
             let r = b.record(anim.checked_sub(1)? as usize).ok()?;
@@ -52,6 +52,7 @@ impl SceneHost {
             man_bytes,
             clip,
         );
+        self.world.props.object_shifts.clear();
         self.world.props.colliders = placements
             .iter()
             .map(|p| {
@@ -491,6 +492,7 @@ impl SceneHost {
         // stale scene's props never leak across a transition into a scene
         // whose MAN fails to parse.
         self.world.props.colliders = Vec::new();
+        self.world.props.object_shifts.clear();
         self.world.props.bank = Default::default();
         self.world.props.pending_touch = None;
         // The 16-entry floor-height LUT the collision grid's low nibble
@@ -1125,7 +1127,9 @@ impl SceneHost {
                 .map(|bytes| {
                     let raw = bytes?;
                     let tmd = legaia_tmd::parse(&raw).ok()?;
-                    Some(std::sync::Arc::new(crate::world::GlobalTmd { tmd, raw }))
+                    Some(std::sync::Arc::new(
+                        legaia_engine_scene::model_bank::GlobalTmd { tmd, raw },
+                    ))
                 })
                 .collect(),
             None => Vec::new(),

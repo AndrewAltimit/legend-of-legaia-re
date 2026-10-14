@@ -1747,7 +1747,7 @@ They read the **packed** pad words from `FUN_8001822C` (`_DAT_8007bb84` edge,
 `_DAT_8007b850` held: `0x10` Triangle, `0x1000` Up, `0x2000` Right, `0x4000`
 Down, `0x8000` Left). `FUN_801d3444` and `FUN_801d9bbc` are decompiler
 fragments of the same dispatcher (a PC-delta exit and a row-text emit), not
-functions. Port: `engine-core::dev_menu` (`edit_flag_value`, `flag_list_prev`,
+functions. Port: `engine-field::dev_menu_flags` (`edit_flag_value`, `flag_list_prev`,
 `flag_list_next`, `EventFlagEditor`); it has no draw code.
 
 ## Prize-exchange (ticket-counter) windows

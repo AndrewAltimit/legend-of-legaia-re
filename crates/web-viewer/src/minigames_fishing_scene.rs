@@ -17,13 +17,13 @@
 //!
 //! The anglers are the party's real field bodies, seated where the
 //! overlay's setup spawns them
-//! ([`legaia_engine_core::fishing_venue::party_placements`], three
+//! ([`legaia_engine_minigame_scenes::fishing_venue::party_placements`], three
 //! `FUN_80020DE0` calls in `FUN_801CF3BC`): the lead (global pack slot 0)
 //! on the venue's anchor tile playing his standing-idle clip from the party
 //! locomotion bank (PROT 0874 §1), the second and third flanking him and
 //! playing clips `0xB` / `0xC` of the venue scene's own ANM bank. The page
 //! frames them through the venue camera the same kernel composes
-//! ([`legaia_engine_core::fishing_venue::venue_camera_view`]): behind the
+//! ([`legaia_engine_minigame_scenes::fishing_venue::venue_camera_view`]): behind the
 //! party, looking with them across the water.
 
 use super::*;
@@ -122,7 +122,7 @@ pub(crate) struct FishingBody {
 /// absolute per-(frame, bone) `[tx, ty, tz, rx, ry, rz]` + `[bones, frames]`.
 pub(crate) struct FishingMember {
     body: FishingBody,
-    placement: legaia_engine_core::fishing_venue::FishingPartyMember,
+    placement: legaia_engine_minigame_scenes::fishing_venue::FishingPartyMember,
     clip_dims: [u32; 2],
     clip_frames: Vec<i32>,
     /// Whether the member's scene-bank clip matched its rig (else it plays
@@ -382,7 +382,7 @@ impl LegaiaMinigames {
 
         // The scene's own ANM bundle (for posed placements), when it carries
         // one - optional, unlike the dance's choreography bank.
-        let anm = legaia_engine_core::npc_catalog::scene_anm_bundle(&scene);
+        let anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
 
         let (env, ground) = bake_env(&index, &scene, &res, anm.as_ref());
         if env.is_empty() {
@@ -417,7 +417,7 @@ impl LegaiaMinigames {
         let locomotion = pack_raw.and_then(|b| character_pack::field_locomotion_anm(b).ok());
         let pack = pack_raw.and_then(|raw| character_pack::parse(raw).ok());
         let mut party = Vec::new();
-        for placement in legaia_engine_core::fishing_venue::party_placements(0) {
+        for placement in legaia_engine_minigame_scenes::fishing_venue::party_placements(0) {
             let Some(cslot) = pack.as_ref().and_then(|p| p.slot(placement.model as usize)) else {
                 continue;
             };
@@ -473,8 +473,7 @@ impl LegaiaMinigames {
             .field_map_index(&index)
             .and_then(|i| index.entry_bytes_extended(i).ok());
         let region_block = scene.field_map_region_block(&index).ok().flatten();
-        let rod_mesh =
-            legaia_engine_core::disc_readers::fishing_actors::rod_mesh_from_scene(&scene);
+        let rod_mesh = legaia_engine_minigame_scenes::fishing_rod::rod_mesh_from_scene(&scene);
 
         Some(FishingScene {
             env,
@@ -637,14 +636,14 @@ impl LegaiaMinigames {
     /// The shore party's seats for `venue` (`0` Buma, `1` Vidna), member by
     /// member: `[{"model":m,"x":x,"y":y,"z":z,"facing":f,"rate":r}, ...]`.
     /// `x` / `z` / `facing` are the setup's spawn words
-    /// ([`legaia_engine_core::fishing_venue::party_placements`]); `y` is the
+    /// ([`legaia_engine_minigame_scenes::fishing_venue::party_placements`]); `y` is the
     /// floor under the seat (the venue `.MAP` through the ground solver); `rate` the clip rate in sixteenths of a
     /// frame per tick.
     pub fn fishing_party_json(&self, venue: u32) -> String {
         let Some(s) = self.fishing_scene.as_ref() else {
             return "[]".to_string();
         };
-        let seats = legaia_engine_core::fishing_venue::party_placements(venue as usize);
+        let seats = legaia_engine_minigame_scenes::fishing_venue::party_placements(venue as usize);
         let rows: Vec<String> = s
             .party
             .iter()
@@ -663,15 +662,16 @@ impl LegaiaMinigames {
 
     /// The venue camera for `venue` as a column-major view-projection over
     /// the baked (world-space, Y-down) map: the lead's seat composed through
-    /// [`legaia_engine_core::fishing_venue::venue_camera_view`] at the rest
+    /// [`legaia_engine_minigame_scenes::fishing_venue::venue_camera_view`] at the rest
     /// facing. Empty when the scene did not decode.
     pub fn fishing_venue_vp(&self, venue: u32, aspect: f32) -> Vec<f32> {
         let Some(s) = self.fishing_scene.as_ref() else {
             return Vec::new();
         };
-        let lead = legaia_engine_core::fishing_venue::party_placements(venue as usize)[0];
+        let lead =
+            legaia_engine_minigame_scenes::fishing_venue::party_placements(venue as usize)[0];
         let y = s.seat_floor(lead.x, lead.z);
-        let view = legaia_engine_core::fishing_venue::venue_camera_view(
+        let view = legaia_engine_minigame_scenes::fishing_venue::venue_camera_view(
             lead.x,
             y as i16,
             lead.z,
@@ -686,22 +686,23 @@ impl LegaiaMinigames {
     }
 
     /// The pond's sky backdrop for `venue` under the venue camera (the
-    /// shared [`legaia_engine_core::fishing_scene::sky_mesh`] - retail's
+    /// shared [`legaia_engine_minigame_scenes::fishing_scene::sky_mesh`] - retail's
     /// `FUN_801D24EC` strip plus the clear colour, as world-space stand-ins
     /// that project onto the retail screen rects). Positions follow the
     /// camera; the other streams are fixed.
     fn fishing_sky(&self, venue: u32) -> Option<(legaia_tmd::mesh::VramMesh, Vec<u8>)> {
         let s = self.fishing_scene.as_ref()?;
-        let lead = legaia_engine_core::fishing_venue::party_placements(venue as usize)[0];
+        let lead =
+            legaia_engine_minigame_scenes::fishing_venue::party_placements(venue as usize)[0];
         let y = s.seat_floor(lead.x, lead.z);
-        let view = legaia_engine_core::fishing_venue::venue_camera_view(
+        let view = legaia_engine_minigame_scenes::fishing_venue::venue_camera_view(
             lead.x,
             y as i16,
             lead.z,
             lead.facing,
         );
         let yaw = legaia_engine_fishing::fishing_actors::fish_camera(0, 0, 0, lead.facing).yaw;
-        Some(legaia_engine_core::fishing_scene::sky_mesh(
+        Some(legaia_engine_minigame_scenes::fishing_scene::sky_mesh(
             &view, lead.x, yaw,
         ))
     }

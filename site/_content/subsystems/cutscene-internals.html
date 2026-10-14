@@ -178,7 +178,26 @@
     <li>Camera beats <strong>merge</strong> into a persistent parameter set - one <code>opdeene</code> beat sets only <code>H</code> - cleared on scene entry.</li>
     <li>Completion is the choreography wrap: a backward jump onto an already-executed PC. Real waits (<code>0x4A</code>, flag handshakes, the <code>0x49</code> name-entry suspend) halt at their own PC.</li>
     <li>A byte <code>&amp; 0x7F &lt; 0x20</code> at the PC is a dialog transition, not an opcode; an <code>0x80</code>-bit op whose target matches no spawned channel is skipped by width; resolved-channel busy-waits fall through because engine pokes complete synchronously.</li>
-    <li>Both the roller and the timeline step off a 60 fps sub-clock inside the 100 Hz sim, matching retail wall-time within ~4%.</li>
+    <li>One engine tick is one vsync, and record contexts are stepped on every one; the frame delta they see is the game frame's length on a game-frame vsync and zero between (<a href="#pacing">pacing</a>).</li>
+  </ul>
+
+  <h3 id="pacing">Pacing: every wait is a count of display frames</h3>
+  <p>Two clocks pace a record, and both count through the same factor. Op <code>0x4A</code> (wait frames) adds the adaptive frame-skip byte <code>DAT_1F800393</code> to a per-context sum on each visit and passes on the first visit whose sum reaches the operand; the camera mover adds the same byte to its progress. That byte is the number of display frames one logic tick spans, so every authored duration is a duration in 60&nbsp;Hz frames, to within one game frame.</p>
+  <p>That last game frame is measurable. The op credits the frame that <em>reaches</em> it as well, so a wait of <code>N</code> at step <code>s</code> holds its record for <code>s &times; (ceil(N / s) &minus; 1)</code> vsyncs:</p>
+  <table>
+    <thead><tr><th>Step</th><th>Operand &rarr; vsyncs held</th></tr></thead>
+    <tbody>
+      <tr><td>2</td><td>6 &rarr; 4, 30 &rarr; 28, 45 &rarr; 44, 90 &rarr; 88</td></tr>
+      <tr><td>3</td><td>5 &rarr; 3, 10 &rarr; 9, 30 &rarr; 27, 45 &rarr; 42</td></tr>
+      <tr><td>4</td><td>5 &rarr; 4, 15 &rarr; 12, 50 &rarr; 48, 430 &rarr; 428</td></tr>
+    </tbody>
+  </table>
+  <ul class="bullets">
+    <li><strong>Measured.</strong> Every row is read off a per-vsync capture of the zero-input opening; all 59 waits the chain holds at one step from end to end fit the formula.</li>
+    <li><strong>The step is the adaptive one.</strong> <code>opdeene</code> runs at 3 because its prescript raises the floor; <code>opstati</code> and <code>opurud</code> sit on a floor of 2 and step by 2, 3 or 4 as their frames cost. No field scene steps by 1 - that floor belongs to name entry, the menus and battle.</li>
+    <li><strong>Why crediting one per vsync is wrong.</strong> It holds a wait for <code>N &minus; 1</code> ticks, up to two vsyncs long per wait at step 3, which over the opening record's waits puts it some thirty vsyncs behind retail by its last vignette.</li>
+    <li><strong>What is not on the frame grid yet:</strong> a wait a record times through an actor. A spin on a poked clip's end latch holds for the clip's length at a per-vsync step, where retail steps the clip cursor once a game frame; the opening's four such spins differ from retail by zero to three vsyncs each.</li>
+    <li><strong>The residual is one-sided.</strong> A retail leg, measured scene label to scene label, includes the load and mode-transition window before the record's first tick; the engine's scene loads are instant, so it lands short by that window. Running <em>long</em> is the regression signal.</li>
   </ul>
   <details class="disclosure">
     <summary>Two ops that do not do what their dump suggests</summary>
@@ -296,11 +315,11 @@
     <span class="see-also-label">Reference</span>
     <a href="cutscene.html">Cutscenes (overview)</a>
     <a href="script-vm.html">Field/event VM</a>
-    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm-menuctrl.md">Op 0x4C sub-dispatchers</a>
+    <a href="script-vm-menuctrl.html">Op 0x4C sub-dispatchers</a>
     <a href="renderer.html">Renderer</a>
     <a href="battle.html">Battle</a>
     <a href="../formats/str-fmv-table.html">STR FMV table</a>
-    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-map.md">Field .MAP trigger block</a>
+    <a href="../formats/field-map.html">Field .MAP trigger block</a>
     <a href="../reference/re-do-not-re-walk.html">Do-not-re-walk</a>
   </div>
 </section>

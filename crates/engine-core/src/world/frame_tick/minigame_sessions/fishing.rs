@@ -99,7 +99,7 @@ impl World {
     /// This is the fishing bring-up's own scan
     /// ([`legaia_engine_fishing::fishing::entry_rod_index`], retail `FUN_801CF070` at
     /// `0x801cf35c..0x801cf39c`) run against the live bag: it keeps
-    /// [`crate::world::MinigameState::fishing_rod`] when that rod is held,
+    /// [`legaia_engine_minigame_scenes::minigame_state::MinigameState::fishing_rod`] when that rod is held,
     /// otherwise steps forward with wrap, and lands on `0` for a party holding
     /// no rod at all - so a stale save index never divides the tension gauge.
     /// The result is written back, exactly as retail leaves it in
@@ -122,7 +122,7 @@ impl World {
     /// the session so the host can read the final [`FishingRecord`]. Every
     /// persistent word the session carries - the point record, the cast
     /// counter, lure, rod and the one-time prize mask - is banked back into
-    /// [`crate::world::MinigameState`] (retail writes those cells in place;
+    /// [`legaia_engine_minigame_scenes::minigame_state::MinigameState`] (retail writes those cells in place;
     /// the next session seeds from them). No-op when fishing isn't active.
     ///
     /// [`FishingRecord`]: legaia_engine_fishing::fishing::FishingRecord
@@ -140,7 +140,7 @@ impl World {
     }
 
     /// Open the fishing point-exchange (prize shop) list on `exchange`.
-    /// The host renders [`crate::world::MinigameState::fishing_exchange`] and commits buys through
+    /// The host renders [`legaia_engine_minigame_scenes::minigame_state::MinigameState::fishing_exchange`] and commits buys through
     /// [`World::fishing_exchange_buy`].
     pub fn open_fishing_exchange(
         &mut self,
@@ -163,7 +163,7 @@ impl World {
     /// (`FUN_801d06c8`'s Yes arm): validates through
     /// [`legaia_engine_fishing::fishing::PrizeExchange::buy`] against the persistent pool /
     /// purchased mask / live inventory count, then deducts
-    /// [`crate::world::MinigameState::fishing_points`], latches the one-time bit, and grants the
+    /// [`legaia_engine_minigame_scenes::minigame_state::MinigameState::fishing_points`], latches the one-time bit, and grants the
     /// item into [`legaia_engine_menus::party_state::PartyState::inventory`]. While a fishing session is live its
     /// record is synced to the reduced pool so the on-screen point total
     /// matches. `None` when no exchange is open or the buy doesn't validate.
@@ -213,7 +213,7 @@ impl World {
     ///   ([`PondInput::from_engine_pad`](legaia_engine_fishing::fishing::PondInput::from_engine_pad)).
     ///
     /// The frame's [`PondEvent`](legaia_engine_fishing::fishing::PondEvent)s land in
-    /// [`crate::world::MinigameState::fishing_events`] for the hosts' banner
+    /// [`legaia_engine_minigame_scenes::minigame_state::MinigameState::fishing_events`] for the hosts' banner
     /// one-shots, and the two sound-bearing ones queue their cues here.
     ///
     /// [`Circle`]: input::PadButton::Circle
@@ -309,7 +309,7 @@ impl World {
             // queue is drained by every host.
             self.minigames
                 .pending_sfx
-                .extend(super::super::minigame_state::pond_event_cues(e));
+                .extend(legaia_engine_minigame_scenes::minigame_state::pond_event_cues(e));
         }
         self.minigames.fishing_events = events;
     }

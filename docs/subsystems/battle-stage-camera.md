@@ -218,8 +218,12 @@ and `0xC0 + (0xFE - 0xC0) * SZ / 0x4000` lands there only with `SZ` unscaled.
 
 **Port.** `battle_ground_grid::ambient_base_step` is the ramp,
 `BattleActionCtx::ambient_base` the word, and `World::tick_battle_ambient`
-runs it once a vsync, with the store-skip test over the band's and the slot-B
-module's copies of `ctx+0x278`. `battle_ground_grid::backdrop_cue_step` is the
+runs it once a vsync, after the action SM (the frame driver calls
+`FUN_801E295C` at `0x80047048` and `FUN_80050120` at `0x8004712C`), with the
+store-skip test over the band's and the slot-B module's copies of
+`ctx+0x278`. Run ahead of the SM, the ramp trailed the close-up accumulator
+the same pass advances by a frame: `theeder_summon_mid_cast` holds base
+`0x38` at accumulator `72`, the ramp's drop equal to the accumulator. `battle_ground_grid::backdrop_cue_step` is the
 pair's `+0x78` ramp, stepped in the same tick; `BattleState::stage_outdoor`
 (set by the host that resolved the stage) picks its ceiling. Both hosts build
 the grid with `battle_backdrop::build_ground_grid_rgbc` over

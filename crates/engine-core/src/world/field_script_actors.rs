@@ -106,7 +106,7 @@ impl World {
     /// parked in the off-map hide box. The anchor enhanced lighting moves a
     /// prop's lamp set to (`legaia_render_kernels::scene_lighting::place_prop_lights`).
     pub fn field_npc_live_anchor(&self, slot: u8, spawn: (i16, i16)) -> Option<[f32; 3]> {
-        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         let (x, z) = self.npcs.positions.get(&slot).copied().unwrap_or(spawn);
         if (x, z) == (hide, hide) || self.field_npc_render_scale(usize::from(slot)) == Some(0) {
             return None;
@@ -352,7 +352,7 @@ impl World {
         let hidden = match parent {
             ScriptActorRef::Player => false,
             ScriptActorRef::Npc(slot) => {
-                let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+                let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
                 (pos.0 == hide && pos.2 == hide)
                     || self.field_npc_render_scale(usize::from(slot)) == Some(0)
             }
@@ -511,7 +511,7 @@ mod npc_draw_pose_tests {
         let t = w.field_npc_draw_pose(3, (100, 200)).unwrap();
         assert!(t.tilted());
         assert_eq!(t.pitch, 4095);
-        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         w.npcs.positions.insert(3, (hide, hide));
         assert!(w.field_npc_draw_pose(3, (100, 200)).is_none());
     }

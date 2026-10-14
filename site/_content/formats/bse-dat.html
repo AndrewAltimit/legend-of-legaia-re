@@ -1,0 +1,88 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; bse.dat</div>
+  <h1><code>bse.dat</code>: the battle sound-effect bank <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">The game's sound effects are described by a table of small records: which sample, which tone, how many voices. Cue ids below <code>0x200</code> come from a <a href="sfx-table.html">table built into the executable</a>. Ids from <code>0x200</code> up come from a bank loaded at runtime - and while a battle is on screen, that bank is <code>bse.dat</code>. Same record format, different carrier.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>Extraction PROT entry 888 (raw TOC index <code>0x37A</code>); 297 records</dd>
+    <dt>Loader</dt><dd><code>FUN_8001FA88</code>, whose only caller on the disc is battle init <code>FUN_800513F0</code></dd>
+    <dt>Record</dt><dd>8 bytes, the same columns as the static SFX descriptor</dd>
+    <dt>Index</dt><dd>Row = cue id &minus; <code>0x200</code></dd>
+    <dt>Session handle</dt><dd><code>gp+0x678</code> (<code>0x8007B990</code>): pointer to this bank's record table</dd>
+    <dt>Parser</dt><dd><code>legaia_container_formats::bse_bank</code>; detection class <code>bse_bank</code></dd>
+    <dt>Used by</dt><dd>battle cue router <code>FUN_8004FE5C</code>, the sound drainer <code>FUN_80016B6C</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="when">
+  <h2>A battle load, not a boot load</h2>
+  <p>The loader looks like a sound-init routine, and it has exactly one caller anywhere on the disc: battle init, run once at battle-scene setup. So the bank is loaded for each battle rather than once at start-up.</p>
+  <p>The loader names the file two ways on a dev / retail flag - by path string in the dev branch, by archive index in the retail branch - and both write the same buffer. That is what ties the file name <code>bse.dat</code> to the archive entry.</p>
+  <h3>Two pointers, two jobs</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Pointer</th><th>What it is</th><th>Who uses it</th></tr></thead>
+    <tbody>
+      <tr><td><code>gp+0x5B8</code> (<code>0x8007B8D0</code>)</td><td>the sound subsystem's shared <em>current-bundle</em> slot; whatever loaded last owns it</td><td>the drainer <strong>reads</strong> a descriptor for a cue <code>&gt;= 0x200</code> out of whatever bundle is current</td></tr>
+      <tr><td><code>gp+0x678</code> (<code>0x8007B990</code>)</td><td>the session handle to <em>this</em> bank's record table</td><td>the battle cue router <strong>writes</strong> one descriptor column before enqueueing the cue</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The current-bundle slot holds this bank only until the next field scene loads and repoints it. Because every caller of the router is battle-side, the write and the read land on the same row.</p>
+  <p>The second pointer looks consumer-less to an ordinary address sweep: a <code>gp</code>-relative access carries no address at all. Finding its readers takes a scan for that form - see the <a href="../tooling/address-reference-scan.html">address-reference scan</a>.</p>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+  <div class="byte-map" role="img" aria-label="bse.dat header: a u16 tag, a u16 body offset, then 8-byte records until a record whose first four bytes are zero">
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">tag</span><span class="bm-size">u16 = 1</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x02</span><span class="bm-name">body offset</span><span class="bm-size">u16 = 4</span></div>
+    <div class="bm-cell" style="--w:8"><span class="bm-off">+body</span><span class="bm-name">record[0]</span><span class="bm-size">8 bytes</span></div>
+    <div class="bm-cell" style="--w:8"><span class="bm-off">&hellip;</span><span class="bm-name">record[n]</span><span class="bm-size">8 bytes each</span></div>
+  </div>
+  <p>The second header word is consumed as a <strong>byte offset</strong>, not a count. The walk ends at a record whose first four bytes are zero.</p>
+  <h3>Record columns</h3>
+  <div class="byte-map" role="img" aria-label="SFX record, 8 bytes: program, tone base, note level, voice count and sustain flag, category, three unused bytes">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">p: program</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+1</span><span class="bm-name">t: tone base</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+2</span><span class="bm-name">l: note level</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+3</span><span class="bm-name">n: voices + sustain</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+4</span><span class="bm-name">id: category</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">+5</span><span class="bm-name">unused</span><span class="bm-size">3 bytes</span></div>
+  </div>
+  <p>These are the static table's columns not by analogy but because <strong>one block of code decodes both tables</strong>: the drainer picks the static row or this bank's row on a single compare against <code>0x200</code>, then falls into the same field reads. In <code>n</code> the low five bits are the voice count and bit <code>0x20</code> marks a sustained cue. The category selects a mixer record whose own fields are the enable gate and the <a href="vab.html">VAB</a> slot the cue keys.</p>
+  <p>An earlier reading took <code>+4</code> for a 32-bit value. It is a one-byte category followed by three bytes nothing reads.</p>
+</section>
+
+<section class="doc-section" id="rewrite">
+  <h2>The category is rewritten per cue</h2>
+  <p>The authored category column is a <em>default</em>. Before it enqueues a cue, the battle cue router writes that row's category from a byte on the actor that fired it, so <strong>a live cue's sound-bank slot is chosen by the actor</strong> - which is how one cue plays from a party member's bank or a monster's. Both of the router's legs reduce to the same expression: byte <code>+4</code> of row <code>cue_id - 0x200</code>, exactly the row the drainer will resolve.</p>
+</section>
+
+<section class="doc-section" id="occupants">
+  <h2>One format, two occupants</h2>
+  <p>The <code>&gt;= 0x200</code> bank is a <em>role</em>, and this format is what fills it; which file fills it depends on the mode. In battle it is <code>bse.dat</code>. In the field it is the scene's own prescript record 0, authored per scene. A second archive entry the detector matches (extraction 1195, seven rows) is one such per-scene bank, not a rival copy of <code>bse.dat</code>.</p>
+</section>
+
+<section class="doc-section" id="residue">
+  <h2>The bytes past the table are not this bank's</h2>
+  <p>The table ends well before the entry does, and the remaining bytes are neither padding nor a second record family. They are sound-bank tone-attribute rows left in the sector by whatever occupied this disc slot before <code>bse.dat</code> was written over its head - byte-identical to a neighbouring entry's tone table at the same file offsets. Nothing in them indexes the bank above.</p>
+  <p>One consequence: the entry has no authored terminator. The walk stops on four zero bytes that are really a field of the first leftover row - a field that is structurally zero on every retail tone, so the stop is reliable, but it is a foreign row's field.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/bse-dat.md" target="_blank" rel="noopener"><code>docs/formats/bse-dat.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="sfx-table.html">SFX descriptor table</a>
+    <a href="vab.html">VAB sound bank</a>
+    <a href="sound-driver.html">Sound-driver paths</a>
+    <a href="../subsystems/audio.html">Audio</a>
+    <a href="../subsystems/battle.html">Battle</a>
+    <a href="../tooling/address-reference-scan.html">Address-reference scan</a>
+  </div>
+</section>

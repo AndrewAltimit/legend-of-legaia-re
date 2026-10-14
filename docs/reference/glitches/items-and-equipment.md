@@ -237,7 +237,8 @@ casts; it is an enemy move and has nothing to do with Elixirs.
 | `0x801DDBFC` | Japanese PROT 0898 | key seed, same code | disassembly |
 | `0x801DE048` | Japanese PROT 0898 | picker compare, through `0x801DE080` | disassembly |
 | `0x801DB524` | French PROT 0898 | picker compare, through `0x801DB55C` | disassembly |
-| one turn per living fighter | - | round length seen in every capture; the counter at `0x801F69D0` is not traced | inference |
+| one turn per seated fighter, less the skipped | PROT 0898 | `0x801E679C..0x801E67E4`: the end-of-action gate bumps the turn cursor `ctx[+0x1A]` and continues the round while it is below `ctx[+0] + ctx[+1] - ctx[+0x25]` (party seats plus monster seats, less the fighters the order dropped without acting) | disassembly |
+| `0x801F69D0` | RAM | turns begun this round: zeroed at `0x801E2ABC` and `0x801E2E08`, incremented by the seed arm at `0x801E2C24..0x801E2C38`; its one read (`0x801E2B9C`) tests it against zero to pick the wait arm's camera yaw step, so it does not hand out turns | disassembly |
 | a defeated enemy taking a turn | - | the tie list admits any key-0 seat; not captured | community report |
 | the freeze | - | not reproduced, not traced | community report |
 | `0x8004112C` | SCUS | class 6 arm (permanent stat-up); tier table `0x800151B0` | disassembly |
@@ -289,7 +290,6 @@ Intelligence), so it counts toward the same total as the Speed Elixir. The Power
   would show it: the action state byte `ctx[+0x07]` at the moment it stops advancing, and the fallen actor's
   `+0x1DE` / `+0x1DF`, name the cause.
 - A played reproduction, with real Elixirs in place of written values.
-- The exact rule for how many turns a round hands out (the reader of the counter at `0x801F69D0`).
 
 ## Story equipment removal skips the re-check
 

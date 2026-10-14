@@ -874,6 +874,15 @@ looks like beyond records, flags page and bag:
   back - a block composed from scratch must not load the all-zero pair, which
   is silence.
 
+The window also carries the **Field Move** option (`0x800846CC`, SC `+0x58C`;
+nonzero = Run), so a retail card load restores whether the player runs or
+walks by default. The engine does not: it keeps Field Move as a host option
+(`OptionsState::field_move`, pushed onto `World::locomotion.run_default` by
+`options::apply_to_world`), and neither the lift nor `World::load_full` reads
+the word. A load into the engine leaves the host's setting standing - a known
+difference from retail's block, which a timed beat can feel (`jouind`'s
+switch pair must be crossed within 50 vsyncs).
+
 The `cross_host` test in `web-viewer/src/cards.rs` pins the resume seat over
 the library cards, together with byte-identical blocks from both hosts' Save
 and each host loading the other's block to the same world.
@@ -1346,7 +1355,7 @@ directory, all sixteen on completion); `0x801F2A48` is the **class byte**.
 **The mode-`4` arm is dead code.** There is no sixteenth cell. The selector's
 only caller is `FUN_801E06C0`, called as
 `FUN_801E06C0(state[+0x1F4], state[+0x1F8])` (`0x801DFD88`) and forming the
-cell as `col + row*5` (`0x801E06D0`). The tick's stepper clamps `col` to
+cell as `col + row*5` (`0x801E06D0`). The tick's stepper wraps `col` into
 `0..=4` (`slti v0,v0,0x5` at `0x801E017C` / `0x801E0190`) and `row` to `0..=2`
 (`slti v0,v0,0x3` at `0x801E01B0` / `0x801E01C0`), so the cell tops out at 14.
 The linear seed both are re-derived from on entry (`_DAT_8007B7CC`, divided by

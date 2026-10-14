@@ -73,7 +73,7 @@ impl World {
         if !Self::fog_mode(self.mode) {
             return Vec::new();
         }
-        let overworld = self.overworld_bit();
+        let curve_bias = self.overworld_curve_bias();
         let proj = self.field_fx_view(view);
         let project = |p: [i32; 3]| {
             let (sx, sy, sz) = proj.project_gte(p)?;
@@ -85,7 +85,7 @@ impl World {
             if casts_shadow(flags)
                 && let Some(q) = drop_shadow(
                     pos,
-                    overworld,
+                    curve_bias,
                     DROP_SHADOW_OT_SHIFT,
                     flags & SHADOW_NEAR_BIT != 0,
                     project,

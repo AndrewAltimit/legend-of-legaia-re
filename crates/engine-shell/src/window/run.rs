@@ -471,6 +471,9 @@ pub(super) fn cmd_play_window_with_record(
         occlusion_fade: fidelity.occlusion_fade,
     });
     app.apply_launch_options(fidelity);
+    // The spell / seru display names off the boot SCUS, for the shop's Trade
+    // row: read once here, as the browser play page reads them at disc load.
+    app.ensure_seru_names();
 
     // On demand, not `run_app`: only `run_app_on_demand` clears the exit
     // request a phase-1 movie left on this loop. Through `run_app` the game

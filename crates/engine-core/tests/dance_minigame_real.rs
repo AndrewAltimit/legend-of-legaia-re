@@ -1,5 +1,5 @@
 //! Disc-gated: drive the **real** parsed dance step chart (PROT 0980) through
-//! the engine dance rules engine ([`legaia_engine_core::disc_readers::dance`]).
+//! the engine dance rules engine ([`legaia_engine_minigames::dance`]).
 //!
 //! The chart parser itself is pinned by `legaia-minigame-formats`' `dance_chart_real`;
 //! this closes the engine end - that [`DanceGame::from_overlay`] loads the baked

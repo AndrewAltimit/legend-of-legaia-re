@@ -92,6 +92,9 @@ impl PlayWindowApp {
                 self.session.host.world.presentation.clear_rgb = rgb;
                 self.session.host.world.presentation.clear_ramp = None;
             }
+            if due && let Some(bias) = sc.seat_curve_bias {
+                self.session.host.world.world_map.curve_bias = bias;
+            }
             if due && let Some(f) = sc.seat_page_mark {
                 self.session.host.world.seat_page_mark_frame(f);
             }

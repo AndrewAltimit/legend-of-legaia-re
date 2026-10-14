@@ -575,6 +575,14 @@ pub struct HubTimers {
     pub interval: Option<crate::muscle_dome::HubScreen>,
     /// The score tally's roll-up and the coin tally it counts from.
     pub tally: Option<(crate::other_game_overlay::ScoreTallyRamp, i32)>,
+    /// The tally's fast-forward latch, retail's `DAT_801D1AB4`. The tally arm
+    /// (`0x0B`) raises it on any newly pressed bit of [`HUB_SKIP_PAD_MASK`]
+    /// (`lw 0x8007B874` / `andi 0xf4` / `sw 1` at `0x801CFD60..0x801CFD7C`)
+    /// and nothing lowers it until the hub is entered again: its only clear
+    /// is the arena init `FUN_801CEA6C`'s `sw zero` at `0x801CEB1C`. While it is up
+    /// the step scaler hands each lane its whole remainder, so one press
+    /// rolls the rest of the tally out at once.
+    pub tally_boost: bool,
     /// The re-entered hub's backdrop.
     pub backdrop: Option<HubBackdrop>,
     /// Last frame's "a leg is open".
@@ -678,6 +686,9 @@ impl HubTimers {
             } else {
                 None
             };
+            // The arena init `FUN_801CEA6C` runs on every return to the hub
+            // and lowers the latch (`0x801CEB1C`).
+            self.tally_boost = false;
             // A hub re-entered after a leg draws the still that leg's end
             // left resident as its backdrop (retail's `_DAT_801D1AE0` arm).
             self.backdrop = world
@@ -717,10 +728,15 @@ impl HubTimers {
         }
         if let Some(interval) = self.interval.as_mut() {
             interval.tick(1, pad);
-            // `boost` is retail's bypass flag `DAT_801D1AB4`, which no host
-            // raises.
+            // Arm `0x0B` tests the pad ahead of the roll (`0x801CFD60`, then
+            // `jal 0x801CF074` at `0x801CFDBC`), so a press speeds up the
+            // same frame's step. Arm `0x0A`, the heading's fade-in, has no
+            // such test.
+            if interval.stage() != HubScreenStage::FadeIn && pad & HUB_SKIP_PAD_MASK != 0 {
+                self.tally_boost = true;
+            }
             if let Some((ramp, tally)) = self.tally.as_mut() {
-                let step = ramp.tick(1, false, volume_word);
+                let step = ramp.tick(1, self.tally_boost, volume_word);
                 *tally += step.tally_gain;
                 out.voice_cues.extend(step.cues.iter().copied());
             }
@@ -956,6 +972,65 @@ mod tests {
         assert!(floor_seen, "the tally dims the still to half");
         assert!(card_seen, "the ROUND card draws over it");
         assert!(b.done() && !b.visible());
+    }
+
+    /// Retail's arm `0x0B` latches `DAT_801D1AB4` on a pressed `0xF4` bit
+    /// (`0x801CFD60..0x801CFD7C`) and the step scaler `FUN_801D14B0` then
+    /// returns its argument unslowed, so a press shortens the roll; arm
+    /// `0x0A` carries no pad test, and the latch outlives the press.
+    #[test]
+    fn a_press_during_the_tally_latches_the_fast_roll() {
+        use crate::other_game_overlay::{LegScoreRows, ScoreTallyRamp};
+        let rows = LegScoreRows {
+            round_lane: 900,
+            turns_lane: 700,
+            outcome_lane: 500,
+            score_cell: 300,
+        };
+        let world = HubTickInputs {
+            leg_open: false,
+            contest: None,
+            ringside_still: None,
+            between_legs: true,
+        };
+        // Frames the tally keeps rolling when the pad word `pad_at(frame)`
+        // is the frame's press mask.
+        let roll = |pad_at: &dyn Fn(usize) -> u16| {
+            let mut t = HubTimers {
+                interval: Some(HubScreen::interval(4000)),
+                tally: Some((ScoreTallyRamp::arm(rows), 0)),
+                ..Default::default()
+            };
+            let mut latched_in_fade = false;
+            for frame in 0..4000 {
+                let fading = t
+                    .interval
+                    .is_some_and(|i| i.stage() == HubScreenStage::FadeIn);
+                t.tick(world, pad_at(frame), 200);
+                latched_in_fade |= fading && t.tally_boost;
+                let pending = t.tally.as_ref().map(|(r, _)| r.pending);
+                if pending == Some([0; 4]) {
+                    return (frame, t.tally_boost, latched_in_fade);
+                }
+            }
+            panic!("the tally never drained");
+        };
+        let (slow, boost, _) = roll(&|_| 0);
+        assert!(!boost, "no press, no latch");
+        // A single-frame press once the heading is up.
+        let (fast, boost, _) = roll(&|f| if f == 40 { 0x40 } else { 0 });
+        assert!(boost, "the latch outlives the press");
+        assert!(
+            fast < slow,
+            "one press rolls the rest out: {fast} vs {slow}"
+        );
+        // A bit outside the mask does nothing.
+        let (other, boost, _) = roll(&|_| 0x08);
+        assert!(!boost);
+        assert_eq!(other, slow);
+        // Arm `0x0A` does not read the pad.
+        let (_, _, in_fade) = roll(&|f| if f == 0 { 0x40 } else { 0 });
+        assert!(!in_fade, "the fade-in arm carries no pad test");
     }
 
     #[test]

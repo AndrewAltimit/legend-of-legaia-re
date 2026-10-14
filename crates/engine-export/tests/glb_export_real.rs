@@ -6,12 +6,12 @@
 //!
 //! Skips silently when `extracted/` or `LEGAIA_DISC_BIN` is missing.
 
-use legaia_engine_core::npc_catalog::catalog_scene_npcs;
 use legaia_engine_core::scene_staging::assemble_field_scene;
 use legaia_engine_export::glb_export::{
     FloorSampler, GlbExportOptions, export_animated_prop_glbs, export_npc_glbs,
     export_scene_traversal, export_world_glb, world_manifest,
 };
+use legaia_engine_scene::npc_catalog::catalog_scene_npcs;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::PathBuf;
 

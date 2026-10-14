@@ -1,0 +1,143 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle HUD</div>
+  <h1>Battle HUD and screen chrome</h1>
+  <p class="lede">Everything the battle screen draws around the fight: the actor-name plaque, the party status readout, the command chips, banners, status and element badges, the item window. Retail does not draw this per frame from game state. It keeps a list of retained text actors, rebuilds that list from <strong>disc data</strong> at every state transition, and frames each actor with sprites looked up in two static tables. Knowing those two tables is enough to derive every seat, plate and palette on the screen.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Placement table</dt><dd><code>SCUS_942.54</code> <code>0x80076C10</code>, 24-byte records, 103 initialised; parser <code>legaia_ui_formats::screen_elements</code></dd>
+    <dt>Widget-class table</dt><dd><code>SCUS_942.54</code> <code>0x800732A4</code>, 12-byte records, <code>0x9D</code> of them; parser <code>legaia_ui_formats::ui_widgets</code></dd>
+    <dt>Sub-draw script</dt><dd>Fifty steps in the battle overlay's rodata (<code>PTR_DAT_801F4D34</code>): which records are up in which phase</dd>
+    <dt>Element raiser</dt><dd><code>FUN_801D8DE8(record, mode)</code> (PROT 0898)</dd>
+    <dt>Text actors</dt><dd>Spawner <code>FUN_8003541C</code>; retained handle list <code>ctx[+0x1074]</code>, forty handles</dd>
+    <dt>Art</dt><dd>The resident system-UI sheet at VRAM page <code>(896, 256)</code>, palette row 511; text from the menu-glyph atlas at <code>(896, 0)</code>, row 510</dd>
+    <dt>Port</dt><dd>Model <code>engine-core::battle_hud</code>, draw builder <code>engine-ui::battle_hud</code>; both hosts draw one shared surface</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Screen layout</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 660" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Battle screen layout on the 320 by 228 display: the actor-name plaque or the full-width message banner at the top left; the command diamond of Item, Attack, magic and Spirit chips centred near the upper right, with the Begin and Run prompt pair in the screen centre; the move name centred lower down; the target-select plaque on the right; three roster panels along the bottom at y 164, with the combo cluster and AP plate above the active-actor bar that replaces the panels during an action.">
+      <rect class="dg-group" x="40" y="20" width="800" height="570" rx="4"/>
+      <text class="dg-sub dg-start" x="44" y="14">display window 320 &#215; 228 (drawn at 2.5&#215;)</text>
+      <rect class="dg-node-accent" x="60" y="30" width="740" height="70" rx="4"/>
+      <text class="dg-label" x="430" y="58">message banner (8, 4) 296 &#215; 28</text>
+      <text class="dg-sub" x="430" y="78">shares its seat with the actor-name plaque at (8, 8)</text>
+      <rect class="dg-node" x="530" y="110" width="110" height="40" rx="4"/><text class="dg-label" x="585" y="135">Item</text>
+      <rect class="dg-node" x="420" y="170" width="110" height="40" rx="4"/><text class="dg-label" x="475" y="195">Attack</text>
+      <rect class="dg-node" x="640" y="170" width="110" height="40" rx="4"/><text class="dg-label" x="695" y="195">magic</text>
+      <rect class="dg-node" x="530" y="250" width="110" height="40" rx="4"/><text class="dg-label" x="585" y="275">Spirit</text>
+      <text class="dg-sub" x="585" y="225">D-pad glyph, centre (228, 70)</text>
+      <rect class="dg-node" x="280" y="225" width="110" height="40" rx="4"/><text class="dg-label" x="335" y="250">Begin</text>
+      <rect class="dg-node" x="150" y="225" width="110" height="40" rx="4"/><text class="dg-label" x="205" y="250">Run</text>
+      <text class="dg-sub" x="270" y="215">round prompt, centre (160, 92)</text>
+      <text class="dg-sub" x="250" y="140">intro enemy-name labels, pen y = 48</text>
+      <text class="dg-label" x="440" y="392">move name, y = 150, centred on x = 160</text>
+      <rect class="dg-node" x="500" y="405" width="260" height="34" rx="4"/><text class="dg-sub" x="630" y="427">target-select plaque, y = 162, centred x = 232</text>
+      <rect class="dg-node-ok" x="58" y="430" width="255" height="120" rx="4"/>
+      <rect class="dg-node-ok" x="313" y="430" width="255" height="120" rx="4"/>
+      <rect class="dg-node-ok" x="568" y="430" width="255" height="120" rx="4"/>
+      <text class="dg-label" x="185" y="480">roster panel</text><text class="dg-sub" x="185" y="498">x = 7, y = 164, 102 &#215; 48</text>
+      <text class="dg-label" x="440" y="480">roster panel</text><text class="dg-sub" x="440" y="498">x = 109</text>
+      <text class="dg-label" x="695" y="480">roster panel</text><text class="dg-sub" x="695" y="498">x = 211</text>
+      <rect class="dg-node-warn" x="60" y="600" width="760" height="46" rx="4"/>
+      <text class="dg-label" x="440" y="620">active-actor bar (8, 188) 304 &#215; 20</text>
+      <text class="dg-sub" x="440" y="637">replaces the roster panels during an action; combo cluster at (168, 170), AP plate at (208, 172)</text>
+    </svg>
+    <figcaption>Seats are plate origins. The plaque and the message banner share one seat, and the roster panels and the active-actor bar are mutually exclusive (the bar is drawn below the frame here only to keep both visible). Elements park just below the visible window, at rows 230 to 236.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="pipeline">
+  <h2>How an element reaches the screen</h2>
+  <ol class="steps">
+    <li><b>State edge</b><span>the <a href="battle-command-flow.html">command flow</a> changes state, or the <a href="battle-action.html">action SM</a> seeds or finishes an action</span></li>
+    <li><b>Sub-draw step</b><span>a script step lists <code>(placement record, mode)</code> pairs; a step flagged to reset first clears the handle list, so afterwards the live elements are exactly those pairs</span></li>
+    <li><b>Raise</b><span><code>FUN_801D8DE8</code> reads the record and spawns a text actor at one seat, then arms a glide to the other</span></li>
+    <li><b>Frame</b><span>the per-frame draw dispatcher frames the actor with sprites from the widget-class record its frame-style byte names</span></li>
+  </ol>
+  <p>The action SM opens its per-action elements in its seed arms and closes every one of them in the <code>0x51</code> band of the Done states.</p>
+</section>
+
+<section class="doc-section" id="placement">
+  <h2>The placement record</h2>
+  <p>Each record is one element's <strong>pair of seats</strong> plus a shared content box. The two seats are the element's from and to: which one is the parked seat is per record, so some elements slide in from the right and others from the left or the top.</p>
+  <div class="byte-map" role="img" aria-label="Placement record, 24 bytes: two element id bytes, seat A x and y, content width, box height, seat B x and y, two frame-style bytes, node kind, three zero bytes, content string pointer">
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">ids A / B</span><span class="bm-size">2 &times; u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x02</span><span class="bm-name">seat A x, y</span><span class="bm-size">2 &times; i16</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x06</span><span class="bm-name">width, height</span><span class="bm-size">2 &times; i16</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x0A</span><span class="bm-name">seat B x, y</span><span class="bm-size">2 &times; i16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x0E</span><span class="bm-name">frame style A / B</span><span class="bm-size">2 &times; u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0x10</span><span class="bm-name">node kind</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">+0x11</span><span class="bm-name">zero</span><span class="bm-size">3 bytes</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x14</span><span class="bm-name">string</span><span class="bm-size">pointer</span></div>
+  </div>
+  <p class="dg-note">Mode bit 0 picks the spawn seat (A for 0, B for 1) and the glide runs to the other; bit 1 suppresses the glide.</p>
+  <ul>
+    <li><strong>The pen is <code>(x, y - 2)</code>.</strong> Both seat arms subtract two from the seat's y before spawning the text actor.</li>
+    <li><strong><code>+0x14</code> is the string being drawn.</strong> Name banners measure their string, write the width into <code>+0x06</code> and centre both seats on it - which is how the move name stays centred on the screen whatever its length.</li>
+    <li><strong>The plate is not stored anywhere.</strong> It is derived from the content box; one record derives every plate.</li>
+  </ul>
+  <h3>Three movers</h3>
+  <p>Three small routines copy geometry and content between records - never the id, the box height or the frame - which is how one row can borrow another's content:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Routine</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_801D5718</code></td><td><strong>lands</strong> an element: both seats become the source's seat B, so nothing is left to glide</td></tr>
+      <tr><td><code>FUN_801D57E8</code></td><td><strong>adopts</strong> a source's whole geometry into a row that keeps its identity</td></tr>
+      <tr><td><code>FUN_801D5778</code></td><td><strong>launches</strong> it: seat B becomes the source's seat B minus <code>0x140</code> - one display width, so it glides a screen to the left</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The commit log uses all three: each committed member's name, command and target are landed into a row of three records, and earlier rows are launched off as the party commits.</p>
+</section>
+
+<section class="doc-section" id="widgets">
+  <h2>The widget-class table</h2>
+  <p>Every sprite the chrome draws comes out of one array. A placement record's frame-style bytes are indices into it: style <code>0x01</code> is the blue plate body, style <code>0x02</code> the carved-gold one. The join holds for all 103 placement records.</p>
+  <div class="byte-map" role="img" aria-label="Widget-class record, 12 bytes: frame class, tile-set index, chain delta, palette byte, source rectangle u v w h, seat bias dx and dy">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x00</span><span class="bm-name">class</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0x01</span><span class="bm-name">tile set</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x02</span><span class="bm-name">chain delta</span><span class="bm-size">i8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+0x03</span><span class="bm-name">CLUT</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">source u, v, w, h</span><span class="bm-size">4 &times; u8</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">seat bias dx, dy</span><span class="bm-size">2 &times; i16</span></div>
+  </div>
+  <ul>
+    <li><strong>A widget is a run of records.</strong> The chain delta steps to the next record of the same widget; zero ends the run. A roster panel is such a chain: plate, labels and separators.</li>
+    <li><strong>The palette byte is a packed CLUT address</strong>, with bit 7 marking semi-transparency.</li>
+    <li><strong>Two readers, one difference.</strong> <code>FUN_8002C488</code> draws exactly one sprite at the caller's position and never applies the bias; <code>FUN_8002C69C</code> draws a sized widget, applies the bias, then follows the chain. The bias converts the glyph pen to the frame origin - the plate run's <code>(-8, -4)</code> takes the plaque's pen <code>(16, 12)</code> to a plate at <code>(8, 8)</code>.</li>
+  </ul>
+  <p>The table's end is structural: it runs exactly up to the frame tile-set pool the class arms read next.</p>
+</section>
+
+<section class="doc-section" id="chrome">
+  <h2>Chrome facts worth knowing</h2>
+  <ul>
+    <li><strong>One sheet, one three-slice, two palettes.</strong> The name plaque, the party bar and every command chip are the same three tiles (left cap, body, right cap) at two sheet rows: blue for the bar and chips, carved gold for the plaque. The gold row is the same art as the pause menu's title tab.</li>
+    <li><strong>Numbers are cells, names are glyphs.</strong> Every number is a run of fixed 8&times;12 cells; only names use the proportional <a href="../formats/dialog-font.html">dialog font</a>. Both halves of a current / maximum pair are right-aligned.</li>
+    <li><strong>Status and element badges</strong> are widget records too: 48&times;16 word cells for the status element, 20&times;12 cells for the element badge, which is selected by markup in the name string rather than a placement record.</li>
+    <li><strong>Four badge ids are not on the sheet at all</strong> - they resolve to the <a href="../formats/save-icon.html">save-slot portraits</a>.</li>
+    <li><strong>The intro enemy-name banner</strong> uses immediate geometry, not a placement record.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The full write-up - each plate's derivation, the per-phase sub-draw rule, the opening glides, the badge sheet, banners, the item window, the Arts announcement banner and the port's HUD model - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-hud.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-hud.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="battle.html">Battle</a>
+    <a href="battle-command-flow.html">Command flow</a>
+    <a href="battle-action.html">Action state machine</a>
+    <a href="battle-stage-camera.html">Stage and camera</a>
+    <a href="arts-command-gauge.html">Arts command gauge</a>
+    <a href="field-menu.html">Field menu</a>
+    <a href="../formats/dialog-font.html">Dialog font</a>
+    <a href="../formats/save-icon.html">Save-slot portraits</a>
+  </div>
+</section>

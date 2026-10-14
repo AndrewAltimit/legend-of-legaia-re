@@ -12,8 +12,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use legaia_engine_battle::move_power::MovePowerCatalog;
-use legaia_engine_core::world::{GlobalTmd, World};
+use legaia_engine_core::world::World;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::model_bank::GlobalTmd;
 use legaia_prot::archive::Archive;
 
 fn extracted() -> Option<PathBuf> {

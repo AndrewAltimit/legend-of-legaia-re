@@ -174,6 +174,16 @@
           nclip = rt.play_battle_actor_nclip();
         }
       } catch (e) { /* frame word only */ }
+      /* A body the defeat fade is sinking draws clipped at the stage floor
+       * (its node's `+0x42`, World::battle_actor_floor_clip): six floats per
+       * actor, `[m0, m1, m2, lo, hi, enable]`, all zero when unclipped.
+       * Guarded against a cached WASM without the export. */
+      let floorClips = null;
+      try {
+        if (typeof rt.play_battle_actor_floor_clips === 'function') {
+          floorClips = rt.play_battle_actor_floor_clips();
+        }
+      } catch (e) { /* draw unclipped */ }
       for (let i = 0; i < b.actors.length; i++) {
         const a = b.actors[i];
         const o = i * 5;
@@ -211,10 +221,12 @@
         const c = (cursor && cursor.length >= (i + 1) * 6) ? i * 6 : -1;
         draws.push({
           meshId: a.meshId,
-          /* Raw retail translation (Y-down, like the native actor_model) -
-           * the battle VP carries no world negation, its trailing Y-flip
-           * cancels the placement model's, so world Y goes through as-is. */
-          x: tf[o] * S, y: tf[o + 1] * S, z: tf[o + 2] * S,
+          /* Retail translation with the frame flip on its Y (`T(F pos)`, like
+           * the native actor_model): the battle VP ends in a Y-flip, and the
+           * placement model's own flip only turns the mesh, so a body's
+           * height `+0x36` (Y-down) is negated here - unnegated, a killed
+           * monster the defeat fade sinks rose out of the floor instead. */
+          x: tf[o] * S, y: -tf[o + 1] * S, z: tf[o + 2] * S,
           /* Every mesh rests facing +Z and turns by the live battle facing
            * `+0x46` (a seated monster's half-turn, a fleeing party's back).
            * The engine sends glam's yaw; this placement model takes it
@@ -222,6 +234,9 @@
           rotY: -tf[o + 3],
           scale: (c >= 0) ? S * cursor[c + 5] : S,
           nclip: (nclip && i < nclip.length) ? nclip[i] : undefined,
+          effectClip: (floorClips && floorClips.length >= (i + 1) * 6
+            && floorClips[i * 6 + 5] > 0.5)
+            ? floorClips.subarray(i * 6, i * 6 + 6) : undefined,
           cue: (c >= 0 && cursor[c] > 0.5)
             ? {
               far: [cursor[c + 1], cursor[c + 2], cursor[c + 3]],

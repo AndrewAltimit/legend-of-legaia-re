@@ -479,6 +479,10 @@ Waitable ops (`2D 08` until the anim tick latches the clip end, `4A` frame waits
 
 The record's own MOVE_TO (`23 <x> <z>`, no target byte) seats the prop actor itself - the op's non-player arm stores the tile into the executing actor - and the placement's contact box and collider rows move with it (`World::seat_prop`). `vozz` P0[1] is bound to every thicket across East Voz's paths: examined while `0x079` is up, it plays its cue, waits and runs `23 7F 7F`, and the thicket is on the hide tile. Each placement is its own actor, so each thicket is cut on its own.
 
+A move made **from another context** carries the box too. `FUN_801CFC40` centres a static-class box on the actor's live `+0x14` / `+0x18` plus the record's footprint offset (`0x801CFCF4..0x801CFD6C`), so whatever seats the object's actor - a cross-context `A3 <obj> <x> <z>`, a `4C C3` re-seat, a park at the hide box - moves what the player collides with on the same frame it moves what is drawn. The engine carries each placement's rows by its object-bind channel's displacement from the bind seat, the displacement the draw reads (`World::sync_prop_colliders_to_object_actors`, once per field tick).
+
+`nilboa`'s ice gate `P0[4]` is the case: the beat that raises `0x456` re-seats it off the walkable map, and a row left at the `.MAP` seat kept the way west to Koru shut until the scene was entered again.
+
 Disc-gated `engine-core/tests/field_prop_anim_disc.rs`: a closed door blocks at the retail standoff, opens on the blocked step's touch and stops blocking via its `31 00`; the cupboard blocks silently, opens only on interact, grants once under its `70 xx` guard, and swings shut when the box is dismissed.
 
 **Walk-touch events.** `man_field_scripts::placement_walk_touch_event` classifies each non-parked placement's script: a genuine `0x3E` door-warp (`Warp`, gated by `is_genuine_warp` to `op0` in `100..=106`, the mode-24 minigame sub-ids - see [`script-vm.md`](script-vm.md#0x3e-warp-mode-24-minigame-door-warp)), or a cross-context `0x23` into the player channel `0xF8` (`PlayerMoveTo` - the cave-guard throw-back / intra-scene teleport).

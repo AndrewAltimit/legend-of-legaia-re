@@ -324,6 +324,7 @@ impl Renderer {
             0.0,
             self.overworld_curve.get(),
         ];
+        let curve_bias = self.overworld_curve_bias.get();
         let (occl_env_textured, occl_env_color) = self.occl_env_counts.get();
         let light_dir = self.dyn_light_dir_uniform();
         let light_color = self.dyn_light_color_uniform();
@@ -387,7 +388,9 @@ impl Renderer {
             };
             let u = MeshUniforms {
                 // Reversed-Z applied centrally (see `reverse_z`).
-                mvp: reverse_z(mvp).to_cols_array_2d(),
+                // The model rows above were recovered from the unbiased
+                // matrix; only the staged clip matrix carries the offset.
+                mvp: reverse_z(fold_screen_rows(mvp, curve_bias)).to_cols_array_2d(),
                 depth_cue,
                 psx_params,
                 tex_window,

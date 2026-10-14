@@ -2,7 +2,7 @@
 //! play hosts route through.
 //!
 //! The sub-screen itself is state on the world
-//! ([`crate::world::MinigameState::fishing_exchange`]) and a draw
+//! ([`legaia_engine_minigame_scenes::minigame_state::MinigameState::fishing_exchange`]) and a draw
 //! (`legaia_engine_ui::fishing::exchange`). What was host-side was *holding
 //! it open*: the native window opened it on a key and kept it across frames,
 //! so its HUD composed the screen every frame, while the browser play page's
@@ -70,7 +70,7 @@ impl World {
     /// with `venues` the two decoded venue pages (Buma, Vidna).
     ///
     /// Opening banks the live session's point total into
-    /// [`crate::world::MinigameState::fishing_points`] first: retail credits
+    /// [`legaia_engine_minigame_scenes::minigame_state::MinigameState::fishing_points`] first: retail credits
     /// its pool (`_DAT_8008444C`) as each catch lands, while the port credits
     /// the pool only in [`World::exit_fishing`], and the counter is reachable
     /// only while fishing is still active - without the bank it reads the

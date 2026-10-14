@@ -1,5 +1,5 @@
 //! Host half of the **mode-24 minigame door-warp**: drain
-//! [`crate::world::MinigameState::pending_warp`], load the selected minigame's overlay off
+//! [`legaia_engine_minigame_scenes::minigame_state::MinigameState::pending_warp`], load the selected minigame's overlay off
 //! the disc, and enter it.
 //!
 //! This is the missing link between the field VM and the five minigame rules
@@ -165,9 +165,10 @@ impl SceneHost {
             .and_then(|t| t.item_names.as_ref());
         self.world.minigames.fishing_captions =
             legaia_minigame_formats::fishing_captions::parse(loaded).map(|raw| {
-                crate::world::FishingCaptionText::resolve(&raw, |id| {
-                    names.and_then(|n| n.name(id)).map(str::to_string)
-                })
+                legaia_engine_minigame_scenes::minigame_state::FishingCaptionText::resolve(
+                    &raw,
+                    |id| names.and_then(|n| n.name(id)).map(str::to_string),
+                )
                 .with_species_names(loaded)
             });
         true
@@ -177,7 +178,7 @@ impl SceneHost {
     /// the bundle whose overlay slot is PROT 0972) `.MAP` extended footprint,
     /// which is the `_DAT_1F8003EC` floor buffer, plus its `+0x10000` region block,
     /// anchored on the lead angler's seat for `venue`
-    /// ([`crate::fishing_venue::lead_spawn`]) and cast along his rest facing
+    /// ([`legaia_engine_minigame_scenes::fishing_venue::lead_spawn`]) and cast along his rest facing
     /// `0x800` - retail's lure spawn reads the lead actor's `+0x14` / `+0x18`
     /// and `+0x26` (`0x801CFC78..0x801CFC98`). `None` when the bundle does not
     /// resolve; the session then
@@ -193,20 +194,20 @@ impl SceneHost {
     ) -> Option<legaia_engine_fishing::fishing::PondVenue> {
         let scene = legaia_engine_scene::scene::Scene::load(
             &self.index,
-            crate::fishing_scene::FISHING_VENUE_SCENE,
+            legaia_engine_minigame_scenes::fishing_scene::FISHING_VENUE_SCENE,
         )
         .ok()?;
         let idx = scene.field_map_index(&self.index)?;
         let map = self.index.entry_bytes_extended(idx).ok()?;
         let region_block = scene.field_map_region_block(&self.index).ok().flatten();
-        let lead = crate::fishing_venue::party_placements(venue)[0];
+        let lead = legaia_engine_minigame_scenes::fishing_venue::party_placements(venue)[0];
         Some(legaia_engine_fishing::fishing::PondVenue {
             map,
             region_block,
             anchor_x: lead.x,
             anchor_z: lead.z,
             facing: lead.facing,
-            rod_mesh: crate::disc_readers::fishing_actors::rod_mesh_from_scene(&scene),
+            rod_mesh: legaia_engine_minigame_scenes::fishing_rod::rod_mesh_from_scene(&scene),
         })
     }
 
@@ -472,7 +473,8 @@ impl SceneHost {
         };
         // The hall's choreography bank times each judge move (retail rebinds
         // the standing loop off the clip's own end flag).
-        if let Some(bank) = crate::dance_venue::dance_clip_bank(&self.index) {
+        if let Some(bank) = legaia_engine_minigame_scenes::dance_venue::dance_clip_bank(&self.index)
+        {
             game.attach_clip_bank(&bank);
         }
         self.stage_dance_sfx_bundle();

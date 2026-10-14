@@ -1,0 +1,143 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; dance</div>
+  <h1>Dance minigame</h1>
+  <p class="lede">A rhythm game. A beat counter advances with the music, a step chart says which button to press on each beat, and a press counts only inside a timing window around the beat. Closing a chain of correct presses pays points and fills a groove gauge, which promotes the dancer to a denser, higher-scoring chart row. Two rivals play the <em>same</em> chart through the <em>same</em> judge, so their scores are real runs rather than a scripted curve.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Overlay</dt><dd>Extraction PROT 0980 at base <code>0x801CE818</code>, <code>0x8000</code> bytes; init <code>FUN_801CEF54</code></dd>
+    <dt>Per-frame tick</dt><dd><code>FUN_801CF470</code>: state machine on <code>DAT_801D5334</code>, beat clock, song end, grading</dd>
+    <dt>Judge</dt><dd><code>FUN_801D1960</code>: window <code>0xD2</code> of a <code>0x119</code>-unit beat</dd>
+    <dt>CPU input</dt><dd><code>FUN_801D1820</code> (chart lookup) into <code>FUN_801D4040</code> (symbol to pad bit)</dd>
+    <dt>Step chart</dt><dd><code>0x801D509C</code>, 3 rows of <code>0x20</code> beats, one byte per beat</dd>
+    <dt>Scoring tables</dt><dd>Bonus points <code>0x801D41A4</code>; CPU triangle schedule <code>0x801D41E4</code></dd>
+    <dt>Win flag</dt><dd>Story flag <code>0x50A</code>: set on entry, cleared on a loss</dd>
+    <dt>Port</dt><dd>Rules <code>engine-minigames::dance</code>; parsers <code>minigame-formats::dance_chart</code>, <code>dance_cast</code>, <code>dance_art</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="entry">
+  <h2>Getting there</h2>
+  <p>The door is the <strong>mode-24 minigame warp</strong>: field-VM op <code>0x3E</code> with <code>op0 = 106</code> (sub-id 6) sets game mode <code>0x18</code> and loads the overlay. It is the ordinary scene-backup, overlay-load, return-to-field sequence, so the game returns to the exact field state it suspended. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
+  <p>This is the one sub-id where the loader&rsquo;s index arithmetic steps: sub-ids of 6 and above add two, so sub-id 6 resolves to PROT 0980 rather than 0978. Every dance door on the disc is in one casino scene; the hall&rsquo;s own scene module carries no genuine warp.</p>
+</section>
+
+<section class="doc-section" id="clock">
+  <h2>The beat clock</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The dance beat clock. One beat is 0x119 phase units. The acceptance window covers phase 0 to 0xD2, the remaining 71 units are a dead zone. The accuracy weight falls linearly from 0x1000 on the beat to zero at the window edge. Below, one eight-beat bar: beats 3 and 7 are combo slots, where the triangle wildcard pays; the chain cursor is cleared at beat 0.">
+      <defs><marker id="dnc-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-ok" x="60" y="90" width="567" height="44" rx="3"/>
+      <rect class="dg-node-warn" x="627" y="90" width="193" height="44" rx="3"/>
+      <text class="dg-label" x="343" y="117">acceptance window, phase 0..0xD2</text>
+      <text class="dg-label" x="723" y="117">dead zone</text>
+      <path class="dg-edge" d="M60 30 L627 84"/>
+      <text class="dg-sub dg-start" x="66" y="26">weight 0x1000 on the beat</text>
+      <text class="dg-sub" x="627" y="76" text-anchor="end">0 at the edge</text>
+      <text class="dg-sub dg-start" x="60" y="152">phase 0</text>
+      <text class="dg-sub" x="627" y="152">0xD2</text>
+      <text class="dg-sub" x="820" y="152" text-anchor="end">0x119</text>
+      <text class="dg-sub dg-start" x="60" y="190">one 8-beat bar</text>
+      <rect class="dg-node" x="62" y="200" width="91" height="46" rx="3"/>
+      <text class="dg-label" x="107" y="228">beat 0</text>
+      <rect class="dg-node" x="157" y="200" width="91" height="46" rx="3"/>
+      <text class="dg-label" x="202" y="228">beat 1</text>
+      <rect class="dg-node" x="252" y="200" width="91" height="46" rx="3"/>
+      <text class="dg-label" x="297" y="228">beat 2</text>
+      <rect class="dg-node-accent" x="347" y="200" width="91" height="46" rx="3"/>
+      <text class="dg-label" x="392" y="228">beat 3</text>
+      <rect class="dg-node" x="442" y="200" width="91" height="46" rx="3"/>
+      <text class="dg-label" x="487" y="228">beat 4</text>
+      <rect class="dg-node" x="537" y="200" width="91" height="46" rx="3"/>
+      <text class="dg-label" x="582" y="228">beat 5</text>
+      <rect class="dg-node" x="632" y="200" width="91" height="46" rx="3"/>
+      <text class="dg-label" x="677" y="228">beat 6</text>
+      <rect class="dg-node-accent" x="727" y="200" width="91" height="46" rx="3"/>
+      <text class="dg-label" x="772" y="228">beat 7</text>
+      <text class="dg-sub" x="392" y="266">combo slot</text>
+      <text class="dg-sub" x="772" y="266">combo slot</text>
+      <text class="dg-sub" x="107" y="266">chain cleared</text>
+      <text class="dg-sub dg-start" x="60" y="300">beat &amp; 3 == 3 is a combo slot: the only place the Triangle wildcard pays its multiplier</text>
+    </svg>
+    <figcaption>Hit quality is continuous: there is no Perfect / Good tier in the judge, only the weight. It scales the <em>human&rsquo;s</em> bonus from half the table value at the window edge to the full value on the beat; a CPU dancer takes the flat table value.</figcaption>
+  </figure>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Quantity</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>Beat period</td><td><code>0x119</code> (281) phase units</td></tr>
+      <tr><td>Acceptance window</td><td>phase <code>0..=0xD2</code>; the remaining 71 units are dead</td></tr>
+      <tr><td>Chart cycle</td><td>32 beats</td></tr>
+      <tr><td>Song length</td><td>92 beats, or 60 in mode 2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The clock adds <code>frame_delta * 10</code> per frame, so it is frame-rate compensated; the hall runs at a delta of 3. It advances only in the play, finish-countdown and result-wipe states.</p>
+</section>
+
+<section class="doc-section" id="chart">
+  <h2>The chart and the lanes</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Symbol</th><th>Meaning</th><th>Pad bit</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>rest</td><td>none</td></tr>
+      <tr><td><code>1</code></td><td>Square</td><td><code>0x80</code></td></tr>
+      <tr><td><code>2</code></td><td>Circle</td><td><code>0x20</code></td></tr>
+      <tr><td><code>3</code></td><td>Triangle - produced only by the CPU feed</td><td><code>0x10</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A dancer&rsquo;s chart row is its <strong>difficulty lane</strong>, <code>gauge / 1000</code>, so the three rows are three tiers and every dancer reads the row its own gauge has promoted it to. Lane 0 places every one of its steps on a combo slot. All three tables are baked into the overlay image; nothing is loaded per song.</p>
+</section>
+
+<section class="doc-section" id="judge">
+  <h2>Judging a press</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Condition</th><th>Result</th><th>Score</th><th>Gauge</th></tr></thead>
+    <tbody>
+      <tr><td>outside the window</td><td>miss</td><td>-</td><td>-</td></tr>
+      <tr><td>in window, wrong direction</td><td>miss</td><td>-</td><td>-</td></tr>
+      <tr><td>in window, match, chain still open</td><td>hit</td><td><strong>nothing</strong></td><td>-</td></tr>
+      <tr><td>in window, match, chain closes</td><td>chain closed</td><td>the bonus points</td><td><code>+250</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A chain is <code>lane + 1</code> matched notes in a row and must close inside one 8-beat bar. So a matching press that does not close a chain scores nothing - points come from <em>completing</em> a figure, not from individual notes.</p>
+  <p><strong>The judged cell is not the fed symbol.</strong> The CPU feed can substitute a triangle on a combo slot; the judge always reads the raw cell. For anything that draws the chart, the note the player must press is the judged cell.</p>
+</section>
+
+<section class="doc-section" id="triangle">
+  <h2>The triangle wildcard</h2>
+  <p>Triangle matches no chart cell. It is a three-per-song wildcard with its own branch:</p>
+  <ul class="bullets">
+    <li>On a combo slot inside the window it pays <code>(lane + 1) * 25</code> and steps the gauge a full <code>+1000</code> - one whole lane. Anywhere else it pays <code>(lane + 1) * 3</code> and still spends a use.</li>
+    <li>The stock is set to 3 per dancer at the run reset and never replenished.</li>
+    <li>The move spins the dancer <code>lane + 1</code> full turns, and <strong>nothing that dancer presses is judged until the move&rsquo;s clip ends</strong>. At the higher lanes that lockout covers the whole next combo slot.</li>
+  </ul>
+  <p>The CPU dancers spend theirs on a schedule keyed to how many combo slots they have banked; the human&rsquo;s row of that table is all zeros, because the human presses.</p>
+</section>
+
+<section class="doc-section" id="gauge">
+  <h2>Score, gauge and the result</h2>
+  <p>Score is clamped to 999 and has exactly two sources: the triangle and a closed chain. The groove gauge is clamped to <code>[0, 2999]</code> and <strong>no path in the overlay lowers it</strong> - not a miss, not a dropped chain. The level only rises.</p>
+  <p>The result state copies the three scores out, grades the run and clears the win flag on a loss: in modes 0 and 1 when the human loses the score comparison, in mode 2 against a fixed threshold of 300. Mode 3 leaves it untouched. The field script that follows tests the flag.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The state machine state by state, the count-in, the dancer bodies and face stamps, the floor and step-marker rendering, the camera track and the HUD widget table are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-dance.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-dance.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="script-vm.html">Field / event VM</a>
+    <a href="minigame-fishing.html">Fishing</a>
+    <a href="minigame-slot-machine.html">Slot machine</a>
+    <a href="minigame-baka-fighter.html">Baka Fighter</a>
+    <a href="minigame-muscle-dome.html">Muscle Dome</a>
+    <a href="field-ambient-fx.html">Field ambient effects</a>
+    <a href="../minigames.html">Minigames page</a>
+  </div>
+</section>

@@ -16,8 +16,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::dance_cast_scene::{DanceCastAssets, DanceCastSurface, resolve_clip};
-use legaia_engine_core::dance_venue::DanceVenue;
+use legaia_engine_minigame_scenes::dance_cast_scene::{
+    DanceCastAssets, DanceCastSurface, resolve_clip,
+};
+use legaia_engine_minigame_scenes::dance_venue::DanceVenue;
 use legaia_engine_minigames::dance::{DEMO_POS, DanceBodyModel, DanceGame, DanceMode};
 use legaia_engine_scene::scene::ProtIndex;
 

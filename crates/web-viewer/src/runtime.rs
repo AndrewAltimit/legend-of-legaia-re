@@ -41,7 +41,7 @@ mod options;
 mod scene_setup;
 mod state_json;
 pub use options::OPTIONS_STORAGE_KEY;
-use options::load_persisted_options;
+pub(crate) use options::load_persisted_options;
 
 /// Default BGM output gain for the play page, parked on
 /// [`legaia_engine_audio::WebAudioOut`]'s post-mixer `GainNode` at
@@ -164,6 +164,12 @@ pub struct LegaiaRuntime {
     /// the twin of the native window's `field_hud_projected_player_y`. `None`
     /// until the page reports one.
     pub(crate) field_hud_projected_y: Option<i16>,
+    /// Whether the page has reported a projection at all
+    /// ([`Self::set_field_player_screen_y`]). Until it has, the HUD kernel
+    /// is handed the stand-in; once it has, a `None` above is the lead
+    /// genuinely not projecting, which the kernel reads as the native
+    /// window's does.
+    pub(crate) field_hud_projection_reported: bool,
     /// Actor slots a field-VM `0x4C 0xD8` spawn (`FieldEvent::ActorSpawned`)
     /// gave a TMD reference this session - the native window's
     /// `pending_dynamic_mesh_slots`. The page drains them through
@@ -367,6 +373,9 @@ pub struct LegaiaRuntime {
     /// the scene entry once the save has landed, or by the next tick when
     /// the page declined the entry.
     pub(crate) bgm_handoff_pending: bool,
+    /// The native launch switches the page throws at runtime
+    /// ([`crate::play_toggles`]), re-asserted on every scene entry.
+    pub(crate) page_toggles: crate::play_toggles::PageToggles,
 }
 
 /// Sentinel [`LegaiaRuntime::set_field_player_screen_y`] reads as "the lead
@@ -429,6 +438,7 @@ impl LegaiaRuntime {
             field_party_hud_scene: None,
             passive_hud_icons: Vec::new(),
             field_hud_projected_y: None,
+            field_hud_projection_reported: false,
             pending_dynamic_mesh_slots: Vec::new(),
             dynamic_mesh_slots: Vec::new(),
             dynamic_mesh_cur: None,
@@ -471,6 +481,7 @@ impl LegaiaRuntime {
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
             bgm_handoff_pending: false,
+            page_toggles: Default::default(),
         }
     }
 }

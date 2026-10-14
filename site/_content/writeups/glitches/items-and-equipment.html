@@ -202,7 +202,8 @@
       <tr><td><code>0x801E2C50</code></td><td>PROT 0898</td><td>Turn start, through <code>0x801E2D54</code>: seat taken unchecked, camera call</td><td>disassembly</td></tr>
       <tr><td><code>0x801DDBFC</code>, <code>0x801DE048</code></td><td>Japanese PROT 0898 (base <code>0x801D05C8</code>)</td><td>Key seed; picker compare through <code>0x801DE080</code></td><td>disassembly</td></tr>
       <tr><td><code>0x801DB524</code></td><td>French PROT 0898 (base <code>0x801CF0A8</code>)</td><td>Picker compare, through <code>0x801DB55C</code></td><td>disassembly</td></tr>
-      <tr><td>one turn per living fighter</td><td>-</td><td>Seen in every capture; the counter at <code>0x801F69D0</code> is not traced</td><td>inference</td></tr>
+      <tr><td>one turn per seated fighter, less the skipped</td><td>PROT 0898</td><td><code>0x801E679C..0x801E67E4</code>: the end-of-action gate bumps the turn cursor <code>ctx[+0x1A]</code> and continues the round while it is below <code>ctx[+0] + ctx[+1] - ctx[+0x25]</code> (party seats plus monster seats, less the fighters the order dropped without acting)</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F69D0</code></td><td>RAM</td><td>Turns begun this round: zeroed at <code>0x801E2ABC</code> and <code>0x801E2E08</code>, incremented at <code>0x801E2C38</code>; its one read (<code>0x801E2B9C</code>) is a zero test that picks a camera yaw step, so it does not hand out turns</td><td>disassembly</td></tr>
       <tr><td>a defeated enemy taking a turn; the freeze</td><td>-</td><td>The draw admits any seat with key 0; neither was captured</td><td>community report</td></tr>
       <tr><td><code>0x8004112C</code></td><td>SCUS</td><td>Permanent stat-up arm; tier table <code>0x800151B0</code></td><td>disassembly</td></tr>
       <tr><td><code>0x80041178</code></td><td>SCUS</td><td>Life Water: record <code>+0x11C</code> +16, ceiling 9999</td><td>disassembly</td></tr>
@@ -221,7 +222,7 @@
 
   <h3>Verifying it</h3>
   <p>On a poked state: at the entry of <code>0x801DA780</code>, write <code>0x8000</code> to <code>+0x164</code> and <code>+0x166</code> of the party member in seat 1. A breakpoint at <code>0x801DA84C</code> shows <code>a0</code> between <code>0x8001</code> and <code>0xC001</code>; a breakpoint at <code>0x801DAD60</code> never shows seat 0 or seat 1 as the result, and shows an empty seat once seats 2 and up have acted. Unpoked, use Speed Elixirs on one character up to the count in the table and watch the same two breakpoints.</p>
-  <p>Still open: the freeze (a battle with one enemy already defeated and a later-seated party member in the lock-out band would show where the action state stops); a played reproduction with real Elixirs; and the exact rule for how many turns a round hands out. Related reference: <a href="../../formats/item-effect-table.html">item-effect table</a>, <a href="../../subsystems/battle-action.html">battle action state machine</a>, <a href="../../subsystems/battle-formulas.html">battle formulas</a>.</p>
+  <p>Still open: the freeze (a battle with one enemy already defeated and a later-seated party member in the lock-out band would show where the action state stops); and a played reproduction with real Elixirs. Related reference: <a href="../../formats/item-effect-table.html">item-effect table</a>, <a href="../../subsystems/battle-action.html">battle action state machine</a>, <a href="../../subsystems/battle-formulas.html">battle formulas</a>.</p>
 </section>
 
 <section class="doc-section" id="story-equipment-removal">

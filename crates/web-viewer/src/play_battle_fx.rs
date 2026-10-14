@@ -1231,6 +1231,28 @@ impl LegaiaRuntime {
             })
             .collect()
     }
+
+    /// Per battle actor (mesh order, as `play_battle_actor_transforms`), the
+    /// floor clip a body the defeat fade is sinking draws under, in the
+    /// object-effect clip encoding `[m0, m1, m2, lo, hi, enable]` (keep
+    /// `lo <= m . p <= hi` over the posed mesh-space position): its node's
+    /// `+0x42` routes it through the clipping renderer under object-effect
+    /// row 0, the stage floor as battle setup seeds it. All six zero for an
+    /// unclipped body. The native window stages the same kernel,
+    /// `World::battle_actor_floor_clip`, on its draw.
+    pub fn play_battle_actor_floor_clips(&self) -> Vec<f32> {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        br.actor_slots()
+            .into_iter()
+            .flat_map(|actor_idx| {
+                host.world
+                    .battle_actor_floor_clip(actor_idx)
+                    .map_or([0.0; 6], |c| c.shader_floats())
+            })
+            .collect()
+    }
 }
 
 impl LegaiaRuntime {

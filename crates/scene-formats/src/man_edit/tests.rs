@@ -430,15 +430,15 @@ fn scene_destinations_p2_pass_rejects_text_desync_name() {
     assert!(scene_destinations(&mf, &man).is_empty());
 }
 
-/// A field-VM dialog op: `0x49 0x00 0x00 | 0x1F <text> 0x00 | <trailing>`. Its
-/// width is `6 + text.len` (header 3 + `0x1F` + text + terminator + 1 trailing),
-/// which `field_disasm` recovers by walking the mes bytes to the `0x00`, so a
-/// grown `text` keeps the fall-through decode in sync.
+/// A field-VM op `0x49` sub-0 carrying an inline line:
+/// `0x49 0x00 0x00 <length 0> | 0x1F <text> 0x00`. Its width is
+/// `6 + text.len` (header 4 + `0x1F` + text + terminator), which
+/// `field_disasm` recovers by walking the mes bytes to the `0x00`, so a grown
+/// `text` keeps the fall-through decode in sync.
 fn mes_run(text: &[u8]) -> Vec<u8> {
-    let mut v = vec![0x49, 0x00, 0x00, 0x1F];
+    let mut v = vec![0x49, 0x00, 0x00, 0x00, 0x1F];
     v.extend_from_slice(text);
-    v.push(0x00); // segment terminator
-    v.push(0x00); // trailing byte the op width consumes
+    v.push(0x00); // segment terminator, consumed by the op width
     v
 }
 

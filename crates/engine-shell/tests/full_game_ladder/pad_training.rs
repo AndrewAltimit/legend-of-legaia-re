@@ -255,9 +255,18 @@ fn pad_train_from(
                 return Ok(Some(s));
             }
         }
+        // Home has no rest that still works (`cave01`'s Terra rests the
+        // party only until the story sends Noa on, [`DRY_RESTS`]): the bag
+        // stands in for the bed. A party short of the levels the coming
+        // boss is beaten with is better served by them than by the
+        // restoratives it would otherwise carry in, and the fights it
+        // takes for them pay back gold and drops.
+        if here == home && party_hp_permille(session) < 600 && !rest_works_here(session) {
+            pad_field_heal(session, 900);
+        }
         if party_hp_permille(session) < 600 {
-            // The bed did not lift the party (an inn the purse cannot pay):
-            // the hand is done here.
+            // The bed did not lift the party (an inn the purse cannot pay)
+            // and the bag cannot either: the hand is done here.
             break;
         }
         if !walking(session) {

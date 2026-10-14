@@ -409,19 +409,6 @@ impl FieldNpcAmbient {
 /// `func_0x80024c88` call) and `docs/subsystems/field-locomotion.md`.
 pub const FIELD_COLD_SPAWN_XZ: i16 = 0x0A40;
 
-/// The off-map "hide box" world X/Z (`16320` = `0x3FC0`) a field script parks
-/// an actor at to remove it from the scene.
-///
-/// Two uses share it: a MAN placement whose spawn is already this box is a
-/// conditional actor retail hides until a script places it (skipped at NPC
-/// build time), and the `town01` opening cutscene `MoveTo`s the townsfolk here
-/// to clear the establishing shot, restoring them (via
-/// [`crate::world::FieldNpcState::positions`] fallback to the MAN spawn) when
-/// the opening timeline completes. Both the build-time skip
-/// (`legaia_engine_shell` NPC upload) and the completion restore key off this
-/// value.
-pub const FIELD_OFFMAP_HIDE_XZ: i16 = 16320;
-
 /// Free-roam picker staging: retail-frame width of the scene-entry window in
 /// which a script-issued BGM **pause** is dropped (see
 /// [`crate::world::World::seed_free_roam_story_baseline`]). Entry scripts

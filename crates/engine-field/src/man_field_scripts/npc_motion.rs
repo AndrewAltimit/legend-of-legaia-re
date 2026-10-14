@@ -17,6 +17,19 @@ pub fn grid_byte_to_world(b: u8) -> i16 {
     if b & 0x80 != 0 { base + 0x40 } else { base }
 }
 
+/// The off-map "hide box" world X/Z (`16320` = `0x3FC0`) a field script parks
+/// an actor at to remove it from the scene.
+///
+/// Two uses share it: a MAN placement whose spawn is already this box is a
+/// conditional actor retail hides until a script places it (skipped at NPC
+/// build time), and the `town01` opening cutscene `MoveTo`s the townsfolk here
+/// to clear the establishing shot, restoring them (via
+/// `FieldNpcState::positions` fallback to the MAN spawn) when
+/// the opening timeline completes. Both the build-time skip
+/// (`legaia_engine_shell` NPC upload) and the completion restore key off this
+/// value.
+pub const FIELD_OFFMAP_HIDE_XZ: i16 = 16320;
+
 /// Locality radius (world units) for an autonomous NPC-route waypoint. A
 /// placement's pre-text script mixes its local walk legs with story-flag-gated
 /// relocations to other parts of the scene (the linear walk sees every branch);
@@ -618,7 +631,7 @@ pub enum WalkTouchEvent {
     /// ordinal warps the player to an unrelated scene instead of into the
     /// venue. The field-VM arm and this walk-on arm are the same opcode
     /// reached two ways, so both post
-    /// `legaia_engine_core::world::MinigameState::pending_warp`.
+    /// `legaia_engine_minigame_scenes::minigame_state::MinigameState::pending_warp`.
     Warp { sub_id: u8 },
     /// The script teleports the **player** (cross-context `0x23 | 0x80` into
     /// the [`PLAYER_CHANNEL`]): walking into the placement snaps the player to

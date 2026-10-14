@@ -624,7 +624,7 @@ None of these produces a silent Fortress; they change how long the counter lasts
 - **Stacked rate modifiers.** Rate 18 is 9 with a Low Encounter accessory, and 4 if system flag
   `0x1E` is also set; at rate 4 the counter lasts between 122 and 365 steps. Flags `0x1D` and
   `0x1E` come from the two springs in Rogue's Tower, which is reached after the Fortress, so in a
-  normal file neither is set here. They are traced in
+  normal file neither is set here; each lasts only until the next battle ends. They are traced in
   [their own section](#rogues-tower-water-changes-the-encounter-rate).
 - **A top-up on every scene entry.** `FUN_8003AB2C` at `0x8003AC7C..0x8003AC90` adds half of a
   fresh counter roll whenever the counter is below 487 as a scene loads.
@@ -710,34 +710,41 @@ breakpoint at `0x801D2F84`, reach the exit, and read byte `0x8008575A` on the ov
 
 **Reported as:** not a glitch report. The roll traced for the Fortress reads two more flags, and
 the question came back from the community: which water does what, does it last, and why is no
-difference visible in an old save (community question, first-hand testing on a late-game file).
+difference visible in an old save. ZetaPhoenix then observed that of the three bits the springs
+set, only the shared one survives a random battle (community report, first-hand), which the
+capture below confirms.
 
 Rogue's Tower has two springs side by side. Examining one shows "It's strange green water!" or
 "It's strange blue water!" and asks whether to drink. Either one fully restores the party's HP and
-MP. Each also sets a flag that the random-battle roll reads on every step, in every area, for the
-rest of the file:
+MP. Each also sets a flag that the random-battle roll reads on every step, **until the next random
+battle is over**:
 
-| Water | Flag | Effect on the roll | In the tower's rate-20 rooms |
+| Water | Flag | Effect on the roll | Steps to the next battle in the tower's rate-20 rooms |
 |---|---|---|---|
-| neither | - | rate as written | a battle every 25 to 73 steps, 49 on average |
-| green | `0x1D` | rate doubled: twice as many battles | every 13 to 37 steps, 25 on average |
-| blue | `0x1E` | rate halved: half as many battles | every 49 to 146 steps, 98 on average |
+| neither | - | rate as written | 25 to 73, 49 on average |
+| green | `0x1D` | rate doubled: the next battle comes in half the steps | 13 to 37, 25 on average |
+| blue | `0x1E` | rate halved: the next battle takes twice the steps | 49 to 146, 98 on average |
 | both | both | doubled, then halved: exactly the written rate | as with neither |
 
-Nothing on the disc clears either flag, and both are saved with the file. The first drink of each
-colour is therefore the only one that changes anything. Drinking the same water again restores HP
-and MP and sets a flag that is already set. Drinking the other one cancels the first for good. A
-file that has tasted both - the natural thing to do with two free heals - is back at the normal
-rate permanently, and no amount of further drinking moves it. That is the likely reason an old
-save shows no difference.
+When the field comes back after a battle, the game clears both water flags. The drink is a
+one-battle charm: green pulls the next fight closer, blue pushes it away, and from the fight after
+that on the rate is back to normal. Drinking again re-arms it for one more battle, and the springs
+work on every visit. That is why an old save shows no difference: whatever was drunk wore off at
+its next battle.
 
-The effect is real but easy to miss even on a fresh file. The step count between battles is
+Both springs also set a third flag, `0x1C`, which nothing ever clears. It is the switch for the
+clean-up: the battle-return code clears the two water flags only when `0x1C` is set, and `0x1C` is
+only ever set together with one of them. A file that has drunk once keeps `0x1C` for good, and
+the bits read `0x08` after any later battle.
+
+The effect is real but easy to miss even inside its one battle. The step count between battles is
 re-rolled over a three-to-one range after every fight, so the bands for "normal" and "green"
-overlap, and so do "normal" and "blue". A fair test counts steps over twenty or more battles in
-one room, or reads the rate in a debugger.
+overlap, and so do "normal" and "blue". A fair test is to drink, count steps to the next battle,
+and repeat many times, or to read the rate in a debugger.
 
-The roll and both springs' scripts are read from the disc. Nothing here is captured: the flags
-were not watched changing in a running game.
+The roll and both springs' scripts are read from the disc. The clean-up is **captured on a poked
+state**: the two water bits were written into a Rogue's Tower save, a random battle was forced
+and won, and the write that cleared them was logged on the return to the field.
 
 ### Mechanism
 
@@ -775,8 +782,32 @@ quarter of the written rate; green water with one is the written rate; green wat
 Encounter accessory is eight times it.
 
 `FUN_801D9E1C` is the roll for every field scene and for the overworld
-([`world-map.md`](../../subsystems/world-map.md)), so the scaling is not local to the tower. It
-does nothing in rooms whose rate is 0, to scripted fights, or while Incense holds the roll.
+([`world-map.md`](../../subsystems/world-map.md)), so while a flag is set the scaling is not local
+to the tower. It does nothing in rooms whose rate is 0, to scripted fights, or while Incense holds
+the roll.
+
+#### The clean-up after a battle
+
+The scene-entry map init `FUN_8003AEB0` in `SCUS_942.54` has an arm for a field re-entry that
+stays in the current scene (`_DAT_8007B8B8 == 2`, tested at `0x8003B504..0x8003B510`), which is
+how the field resumes after a battle. With `a0 = 0x80084140`, the base of the flag bank at
+`+0x1618`:
+
+```
+8003b528  li   a3,-0x3                      ; mask 0xFD
+8003b538  addiu a2,a0,0x3                   ; flag byte 3: flags 0x18..0x1F
+8003b544  lbu  v1,0x1618(a2)
+8003b54c  andi v0,v1,0x8                    ; flag 0x1C set?
+8003b55c  beq  a1,zero,0x8003b56c           ; no: leave the byte alone
+8003b560  _andi v0,v1,0xfb                  ; clear 0x04, flag 0x1D (green)
+8003b564  and  v0,v0,a3                     ; clear 0x02, flag 0x1E (blue)
+8003b568  sb   v0,0x1618(a2)
+```
+
+The same arm clears flag `0x0E` one byte earlier (`0x8003B540`) with no condition. The arm runs on
+every re-entry of that kind, not only after a random battle; a scene change through a door takes
+the other side of the `0x8003B510` branch and leaves the water flags alone (read from the branch,
+not captured).
 
 #### The two springs
 
@@ -797,33 +828,64 @@ completely restored!", then a jump back to the prompt's entry so the spring can 
 Answering "No" writes nothing. Neither record tests a flag anywhere, so nothing gates a spring
 and it works on every visit, any number of times.
 
-Flag `0x1C` is set by both and read by nothing: no script on the disc tests it and no native call
-names it. It reads as a "has drunk" marker that was never used.
-
 Both springs stand in the part of the tower that rolls at rate 20. The colour is taken from the
 script text and the record names; the water's texture was not examined.
 
 #### Who else touches the flags
 
-| Search | Flag `0x1D` | Flag `0x1E` |
+| Search | Flag `0x1C` | Flag `0x1D` | Flag `0x1E` |
+|---|---|---|---|
+| Field-script set, clear and test ops in every scene MAN and variant | both springs set it | one set, `P1[29]` | one set, `P1[30]` |
+| Motion-VM flag ops in every scene MAN | none | none | none |
+| Native calls to the flag helpers with a constant id | none | one test, `0x801DA1E0` | one test, `0x801DA1F4` |
+| Inline byte access to the bank in code | the test at `0x8003B54C` | the clear at `0x8003B568` | the clear at `0x8003B568` |
+
+The clean-up is an inline `lbu` / `sb` on the bank through a base register pointed at byte 3, so
+a search for calls to the flag helpers, or for the absolute address of the byte, does not find it.
+
+The flag bank is inside the saved window:
+
+| | Flag `0x1C` | Green, flag `0x1D` | Blue, flag `0x1E` |
+|---|---|---|---|
+| RAM | byte `0x8008575B`, bit `0x08` | same byte, bit `0x04` | same byte, bit `0x02` |
+| Memory card | save-block `+0x161B`, bit `0x08` | same byte, bit `0x04` | same byte, bit `0x02` |
+
+The same byte holds flag `0x1F` (bit `0x01`), which scene scripts set and clear all the time, so
+test the bits and do not compare the whole byte. Every late-game save state in the project's
+library reads `0x08` in this byte, never `0x0C` or `0x0A`: a file that drank, after its next
+battle.
+
+### What was captured
+
+Probe `scripts/pcsx-redux/autorun_water_flag_clear.lua` on the catalogued state
+`rugi_field_card_boot` (Rogue's Tower, rate-20 region, a card-loaded endgame file whose byte reads
+`0x08`). **Poked:** the byte raised to `0x0E` and the step counter set to 1 once the state runs.
+The walk, the battle entry, the fight and the return are the game's own code; the fight was won by
+holding the monsters at 1 HP while Cross was pressed.
+
+| Moment | Byte `0x8008575B` | Game mode |
 |---|---|---|
-| Field-script set, clear and test ops in every scene MAN and variant | one set, `rugi` `P1[29]` | one set, `rugi` `P1[30]` |
-| Motion-VM flag ops in every scene MAN | none | none |
-| Native calls to the set, clear and test helpers with a constant id | one test, `0x801DA1E0` | one test, `0x801DA1F4` |
-| Direct loads or stores of the flag byte in code | none | none |
+| after the poke, walking | `0x0E` | `0x03` field |
+| battle entry and the whole fight | `0x0E` | `0x09`, then `0x15` battle |
+| return to the field, before the arm | `0x0E` | `0x02` field init |
+| after `sb` at `0x8003B568` (caller `0x801D6DB0`) | `0x08` | `0x02` |
+| field resumed, to the end of the run | `0x08` | `0x03` |
 
-Six native clear calls take a computed id and are not excluded one by one; none of them reads as
-reaching these ids. Starting a new game is the only other way back to a clear bank.
+No other write touched the byte during the run.
 
-The flag bank is inside the saved window, so both flags travel with the memory-card file:
+ZetaPhoenix's in-game tests in Bio Castle agree with the gate and add the escape case
+(community report, first-hand; bits named here by mask). The tests used the blue-water bit; the
+green bit is expected to behave the same but was not tested:
 
-| | Green, flag `0x1D` | Blue, flag `0x1E` |
-|---|---|---|
-| RAM | byte `0x8008575B`, bit `0x04` | byte `0x8008575B`, bit `0x02` |
-| Memory card | save-block `+0x161B`, bit `0x04` | save-block `+0x161B`, bit `0x02` |
+| Byte before the battle | Won | Escaped | Escaped with the Spikefish Flute |
+|---|---|---|---|
+| `0x08` and `0x02` set (`0x0A`) | `0x02` cleared | `0x02` cleared | the game freezes |
+| `0x02` alone | `0x02` stays | `0x02` stays | `0x02` stays |
 
-The same byte holds flag `0x1C` (bit `0x08`) and flag `0x1F` (bit `0x01`), which scene scripts
-set and clear all the time, so test the bits and do not compare the whole byte.
+A plain escape returns through the same clean-up as a win, and so does a flute escape that gets
+that far. The freeze is real, but it is not caused by the flag byte: it is a separate glitch of the
+Spikefish Flute, traced in
+[its own section](#spikefish-flute-escape-can-freeze-the-game).
 
 ### Addresses
 
@@ -833,38 +895,249 @@ set and clear all the time, so test the bits and do not compare the whole byte.
 | `0x801DA1E0..0x801DA1F0` | PROT entry 0897 | flag `0x1D` test; rate * 2 | disassembly |
 | `0x801DA1F4..0x801DA204` | PROT entry 0897 | flag `0x1E` test; rate / 2 | disassembly |
 | `0x801DA208..0x801DA21C` | PROT entry 0897 | counter subtract; `s0` is the final rate | disassembly |
-| `0x8008575B` masks `0x04`, `0x02` | RAM | system flags `0x1D`, `0x1E`; save-block `+0x161B` | disassembly |
-| `0x8008575B` mask `0x08` | RAM | system flag `0x1C`: written by both springs, read by nothing | disc data |
+| `0x8003B504..0x8003B510` | `SCUS_942.54` | `FUN_8003AEB0`: the same-scene re-entry arm, `_DAT_8007B8B8 == 2` | disassembly |
+| `0x8003B544..0x8003B568` | `SCUS_942.54` | clears flags `0x1D` and `0x1E` when flag `0x1C` is set | disassembly, capture |
+| `0x8008575B` masks `0x08`, `0x04`, `0x02` | RAM | system flags `0x1C`, `0x1D`, `0x1E`; save-block `+0x161B` | disassembly, capture |
 | PROT entry 697, `P1[29]` `+0xF1` | disc | green water: `50 1C`, `50 1D` after three `4C 82` restores | disc data |
 | PROT entry 697, `P1[30]` `+0xF0` | disc | blue water: `50 1C`, `50 1E` after three `4C 82` restores | disc data |
 | PROT entry 697, MAN section 0 | disc | tower regions: `(0..58, 0..72)` rate 0, the rest rate 20 | disc data |
-| the rate changing in a running game | - | not observed | inference |
 
 ### Scope
 
-Every scene with random battles and the overworld, from the first drink to the end of the file.
-The tower comes late, so what is left to feel it in is the tower itself, the final dungeon, the
-overworld and whatever optional areas are revisited. No other flag is read by the scaling code,
-and no other prop on the disc sets these two.
+Every scene with random battles and the overworld, from the drink to the end of the next battle;
+after a drink in the tower that battle is almost always in the tower. No other flag is read by the
+scaling code, and no other prop on the disc sets these two.
 
 ### Verifying it
 
 Read byte `0x8008575B` before and after drinking: green raises bit `0x04`, blue raises bit `0x02`,
-and either raises bit `0x08`. To see the result directly, break at `0x801DA208` while walking a
-room that rolls: `s0` is the per-step rate. In the tower it reads 20 with neither or both, 40 with
-green only and 10 with blue only.
-
-To restore a file to the normal rate without drinking, clear bits `0x04` and `0x02` of
-`0x8008575B` and save. To test one water on a file that has had both, clear the other one's bit.
-On a memory card the byte is save-block `+0x161B`, and the block is re-summed as in the Fortress
-table above.
+and either raises bit `0x08`. Break at `0x801DA208` while walking a room that rolls: `s0` is the
+per-step rate, 20 in the tower with neither or both, 40 with green only and 10 with blue only.
+Win the next battle and read the byte again: `0x04` and `0x02` are gone and `0x08` stays. A write
+watch on the byte catches the clear at `0x8003B568`.
 
 ### Open questions
 
-- The rate change is read, not captured.
+- Which other same-scene re-entries (`_DAT_8007B8B8 == 2`) besides a battle return reach the
+  clean-up, for example a scripted fight or a cutscene that resumes in place.
 - Which spring is on which side on screen: the placements give tiles, and the camera decides left
   and right.
 - Whether the colour is also visible in the water's texture.
+
+## Spikefish Flute escape can freeze the game
+
+**Status:** explained
+
+**Reported as:** escaping a battle in Bio Castle with the Spikefish Flute freezes the game, first
+noticed while testing the Rogue's Tower water flags. Narrowed down further: escaping a fight with
+three Gillium Lv3 with the flute always freezes, right after the escape sequence (community
+report, first-hand, ZetaPhoenix). The captured fight below is exactly that formation.
+
+The freeze is **captured on a poked state** (pokes listed below). It reproduces in Bio Castle with
+every value of the water byte tried, so the water flags play no part. The cause is the flute's own
+on-screen caption.
+
+The flute's attack shows a caption with the attack's name, "Blowfish". The flute's escape skips
+the end of its own attack, so the caption is never taken down. It stays on screen through the
+escape and keeps pointing at its text after the battle has freed that memory. When the game reads
+the field's data back into the freed memory, the caption's "text" becomes picture data. Drawing
+it as text can send the text routine into a copy that never ends, and the game locks up on the
+black screen after the escape. Whether a given fight hits that depends on where the caption's
+text landed and on what overwrites it, not on the water.
+
+### The runs
+
+State: a cold boot of the retail disc plus a memory-card load of the Bio Castle save
+(`playthrough-endgame-7saves.mcr` block 6, scene `jouind`), checkpointed in the field by
+`autorun_boot_continue.lua`. **Poked** once the field runs: bits `0x0E` of byte `0x8008575B` set
+to the value below (bit `0x01` kept), bag slot 0 set to the Spikefish Flute (`0x99`) x9, and the
+step counter `0x8007B5FC` set to 1. The walk, the battle (three Gillium Lv3, monster id 161 = `0xA1`, `Gilium $3` in the archive), the commands
+and the return are the game's own code, driven by the pad. Probe
+`scripts/pcsx-redux/autorun_spikefish_flee_return.lua` on the fast core.
+
+| Scene | Byte | Escape | Result |
+|---|---|---|---|
+| `jouind` | `0x0A` | Spikefish Flute | stops 165 vsyncs after the teardown, still in battle mode; two runs |
+| `jouind` | `0x02` | Spikefish Flute | the same |
+| `jouind` | `0x08` | Spikefish Flute | the same |
+| `jouind` | `0x0C` | Spikefish Flute | the same |
+| `jouind` | `0x00` | Spikefish Flute | the same |
+| `jouind` | `0x0A` | Run | back in the field; the byte reads `0x08` |
+| `rugi` | `0x0A` | Spikefish Flute | back in the field; the byte reads `0x08` |
+
+Six more `jouind` runs had the formation rows rewritten in RAM before the forced battle (a seventh
+poke), to test the prediction below. The byte was `0x0A` in each:
+
+| Formation forced in `jouind` | Field-back read | Predicted | Result |
+|---|---|---|---|
+| three Gillium Lv3 (161), the scene's own row | 127 sectors | freeze | freezes |
+| three Puera Lv3 (158), the scene's other row | 115 | survive | back in the field |
+| one Gimard Lv3 (12) | 112 | survive | back in the field |
+| three Gimard Lv3 (12) | 112 | survive | back in the field |
+| three Gizam Lv3 (57) | 115 | survive | back in the field |
+| three Barra Lv3 (143) | 116 | freeze | freezes |
+| Aluru (80) + Orb Lv2 (84) | 134 | freeze | freezes |
+
+The `rugi` row uses the catalogued `rugi_field_card_boot` state with the same pokes. It confirms
+that a flute escape which survives reaches the same clean-up as a plain one. Every Bio Castle
+flute run takes the same frames, so the flute's flee always lands at action state `0x65` on frame
+2732 or 2733.
+
+The runs disagree with one row of the community table: the blue bit alone also freezes here. The
+table's runs were each a different fight, so a fight that lays out memory differently can survive.
+
+### The mechanism
+
+1. **The caption outlives the attack** (capture). While the flute's attack runs, the retained
+   widget list `FUN_80031D00` draws a text widget every frame: `jal 0x80036888` at `0x800321E0`,
+   string pointer at widget `+0x18`. In this fight the string is `"Blowfish"` at heap address
+   `0x800B995C`. Arm 8 of `FUN_801F6A00` in PROT entry 0925 moves the action state machine to the
+   run wait `0x65` and never removes that widget. The caption is still drawn every frame through
+   states `0x65`, `0x66` and `0x67`, beside the "successfully escaped" banner.
+2. **Its text is overwritten** (capture, disassembly). At state `0x67` the teardown in
+   `FUN_8004E568` frees the enemy record buffers and the side-band stream buffer, and the loader-B
+   id `0x8007BC4C` goes from `0x1E` (PROT 0925) to `0x53` (PROT 0978, the field-back-read module).
+   PROT 0978 re-reads the scene's own data from disc into the largest free heap block, which now
+   covers the caption. From then on the widget's string at `0x800B995C` reads
+   `f8 f2 f2 ff fa ef da ...`, which is `jouind`'s PROT entry 681 at offset `0xE4BC`, with no zero
+   byte nearby.
+3. **The text routine never comes back** (capture, interpreter core). The renderer `FUN_80036888`
+   hands that "string" to the substitution expander `FUN_80036514`. The expander's first pass
+   rewrites each `0xFF` in the source to `0xCF` in place, so it also corrupts the freed memory it
+   reads. The copy loop at `0x800367E4` then follows a substitution code whose source pointer
+   `t0` lands in the expander's own output buffer (from `0x800740EC`). The read cursor trails the
+   write cursor by `0x1FE` bytes and never meets a zero. The copy runs on through `0x80074723`,
+   `0x80075E93` and `0x80079543` (logged every 2000 passes), overwriting everything after the
+   buffer. Under the fast core the emulator stops with "Unrecoverable error while running
+   recompiler" at pc `0x80036868`, the loop's tail. On hardware the game hangs.
+
+A plain escape never installs the caption, so it cannot hit this. The water flags are read only
+after the battle has ended, by which time the copy has already locked up.
+
+### Why one fight and not another
+
+The outcome is a fixed function of the scene and the formation's distinct monster species. Three
+links make it so.
+
+**Where the caption text sits** (capture). The caption string is the attack name inside the
+Spikefish's actor record. That record is streamed into the side-band slot at the bottom of the
+enemy stager buffer, so the text sits at `0x800B990C + 0x50` = `0x800B995C`. The stager buffer
+(`0x2E390` bytes) sits at `0x800B9900` in every captured fight, in both scenes.
+
+**How much the field-back read loads** (disassembly, capture). PROT 0978's routine `0x801F6B24`
+works in three steps:
+
+1. It takes the largest free heap block (`FUN_8002B790`, at `0x801F6F08`), counts whole sectors
+   in it, and caps the count at `0xC5`.
+2. It allocates that many sectors less 4 bytes (`FUN_80017888`, at `0x801F6F74`). The best-fit
+   allocator `FUN_8002B468` cuts the allocation from the top of the block, so the buffer ends at
+   `0x800E7C9C`, where the freed stager buffer ended.
+3. It reads that many sectors from 32 sectors into the scene's first PROT entry (`0x801F726C..`
+   `0x801F7298`), the scene's own field data.
+
+After the teardown the largest free block is the stager plus the monster blocks allocated directly
+below it. There is one monster block per distinct species, each the species' battle-heap cost
+(`block[+0x08]` of its PROT 867 record) plus a 12-byte header:
+
+```
+sectors = min((0x2E390 + 0xA8 + sum(cost + 12 over distinct species)) / 0x800, 0xC5)
+caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sectors up)
+```
+
+The `0xA8` is fitted: it is one more freed `0x9C` node, and without it Gizam Lv3 predicts 114
+sectors where the capture reads 115. The formula gives the measured count for all eight captured
+fights, in both scenes.
+
+**What the text routine does with those bytes** (simulation). The script
+`scripts/asset-investigation/spikefish_caption_predict.py` places the scene's disc bytes at the
+caption and runs the renderer and expander logic from the disassembly over them:
+
+- a first byte below `0x20` draws nothing;
+- otherwise it follows the normalisation pass, the token count, the `C1..C7` substitution table at
+  `0x80010EC0` and the nested name copy.
+
+A copy that runs past 64 KiB, or touches an address outside RAM and its mirrors (a bus error on
+hardware), is called a freeze. It needs a battle RAM image as a backdrop for the tables it
+dereferences; two different backdrops give identical results. The script agrees with all eight
+captured outcomes, among them the three Barra Lv3 and Aluru + Orb Lv2 freezes, which were predicted
+before those runs.
+
+#### Predicted freezes
+
+The script was run over every random formation row (encounter regions with a non-zero rate) of the
+bundle MAN of every scene in the scene table: 406 rows in 51 scenes. It predicts a freeze for 14
+rows; every other row survives:
+
+| Scene | Formation | Sectors | Failure |
+|---|---|---|---|
+| `jouind`, Bio Castle (D) | three Gillium Lv3 | 127 | runaway copy (captured) |
+| `jouinc`, Bio Castle (C) | three Barra Lv3 | 116 | bus error (the same fight froze when forced in `jouind`) |
+| `jouina`, Bio Castle (A) | three Zenoir Lv3 | 114 | runaway copy |
+| `jouina`, Bio Castle (A) | three Gola Gola Lv3 | 110 | bus error |
+| `cave01`, Snowdrift Cave | one Mushroom; one Blue Piura | 110 | runaway copy |
+| `map01`, world map (Drake Kingdom) | one or two Gobu Gobu | 117 | runaway copy |
+| `dohaty`, Dohati's Castle | Aluru + Orb Lv2; Nova Lv2 + Gola Gola | 134 | runaway copy |
+| `tunnelb`, Fire Path | Nova + Gel Frog | 139 | bus error |
+| `tunnelb`, Fire Path | Stone Lizard + two Warman | 134 | runaway copy |
+| `nilboa`, Nivora Ravine | two Amethyst + Neo Grude | 131 | bus error |
+| `nilboa`, Nivora Ravine | one Amethyst | 102 | runaway copy |
+
+Three rows sit within the fit's error of a sector boundary, where the neighbouring count gives the
+other answer:
+
+- Fire Path two Nova (117; 116 would freeze);
+- Sol Tower `koin2` Spoon + Shade (141; 142 would freeze);
+- Fire Path Stone Lizard + two Warman (134; 135 survives).
+
+The same formation can differ between rooms, because the bytes come from each room's own data:
+three Gillium Lv3 freezes in Bio Castle (D) but is predicted to survive in Bio Castle (E)
+(`jouine`).
+
+That fits both community reports. The three-Gillium-Lv3 freeze is first-hand. A Bio Castle flute
+escape that did not freeze is consistent with three Puera Lv3, the room's other formation, which
+survives here.
+
+The first two rows of the community table are first-hand play. The freeze rows above are
+**captured on a poked state** (the byte, the bag slot and the step counter, plus the formation
+row for the forced formations). Probe `scripts/pcsx-redux/autorun_spikefish_text_hang.lua` replays
+the end of a run on the interpreter from the escape-wait checkpoint, logging the renderer calls and
+the runaway loop.
+
+### Addresses
+
+| Address | Image | What | Evidence |
+|---|---|---|---|
+| `0x801F7400`, `0x801F78C4..0x801F78F8` | PROT entry 0925 | Spikefish Flute flee: outcome, survived latch, escape counter, `ctx[7] = 0x65` | disassembly |
+| `0x801E7B5C..0x801E7B84`, `0x801E8028..0x801E802C` | PROT entry 0898 | the run command's matching success stores in `FUN_801E791C` | disassembly |
+| `0x80046DD8..0x80046E60` | `SCUS_942.54` | battle-exit mode choice in `FUN_80046A20`; reads no escape kind | disassembly |
+| `0x800321E0` | `SCUS_942.54` | `FUN_80031D00`: the retained text widget's draw, string at widget `+0x18` | disassembly, capture |
+| `0x80036514`, loop `0x800367E4..0x80036868` | `SCUS_942.54` | substitution expander; the runaway copy into and past `0x800740EC` | disassembly, capture |
+
+### Scope
+
+Any Spikefish Flute escape leaves the caption behind; whether it hangs is fixed by the scene and
+the fight's distinct species. The predicted freezes are the eleven scene-and-fight pairs in the
+table above (simulated; three of them also captured in `jouind`). Everything else on the random
+tables survives. A plain Run escape never shows the caption and is safe everywhere. The prediction
+was measured with one party (the endgame card's Vahn, Noa and Gala). It covers only the bundle MAN
+of each scene, not the streamed MAN variants a scene swaps in at later story points.
+
+### Verifying it
+
+In a battle in Bio Castle, escape with the Spikefish Flute. Before the freeze, the "Blowfish"
+caption is still on screen next to the "successfully escaped" banner. In a debugger, break at
+`0x800367E4` once the action state reaches `0x67`: the loop keeps running, its write cursor
+climbing past `0x800740EC`. Escaping the same fight with Run returns to the field.
+
+### Open questions
+
+- Whether the party (members, equipment) moves the stager or the free block. Every capture used
+  one party.
+- The `0xA8` slack is fitted, not traced to the node it stands for.
+- The world-map rows (Drake Kingdom, Gobu Gobu) assume the world map's field-back read is the same
+  as a field scene's; no world-map flute escape was captured.
+- Formations in the streamed MAN variants are not evaluated.
+- Whether other summon-flute or item captions survive an escape the same way.
 
 ## Gaza 2 softlock
 

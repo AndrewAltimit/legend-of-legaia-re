@@ -156,41 +156,10 @@ impl PlayWindowApp {
         }
         // The screen timers are the world's own (`World::tick_muscle_hub`,
         // run by the shared scene host every tick, which also hands the next
-        // leg its fight); this window only sounds what they fired.
-        let frame = self.session.host.world.take_muscle_hub_sounds();
-        // The first visit's two announcer lines (`FUN_8003D53C` at arms 0 and
-        // 0x15), through the same XA path the battle clips use.
-        if let Some(c) = frame.xa
-            && let Some(bgm) = self.session.bgm.as_mut()
-        {
-            let fired = bgm
-                .play_xa_clip(
-                    u32::from(c.clip),
-                    u32::from(c.channel),
-                    u32::from(c.duration_sectors),
-                )
-                .is_some();
-            log::debug!(
-                "dome hub XA clip slot {} ch {} dur {} -> {}",
-                c.clip,
-                c.channel,
-                c.duration_sectors,
-                if fired { "playing" } else { "not staged" }
-            );
-        }
-        // Each drained tally lane keys a voice directly, with no cue id in
-        // sight (`FUN_801D1288` builds the whole attr set); the director's
-        // explicit key-on is the only path that takes it.
-        if let Some(bgm) = self.session.bgm.as_mut() {
-            for cue in frame.voice_cues {
-                bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
-                    cue.voice,
-                    cue.vab_program_tone,
-                    cue.note_and_fine,
-                    cue.volume,
-                ));
-            }
-        }
+        // leg its fight); what they fired - the first visit's two announcer
+        // lines and each tally lane's voice - is sounded by the session's
+        // step, which the browser play page runs too.
+        self.session.sound_muscle_hub();
     }
 
     /// Load the Muscle Dome hub-screen assets once: the two hub page TIMs

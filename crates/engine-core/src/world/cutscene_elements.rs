@@ -275,6 +275,7 @@ impl World {
         // and the spawner's overworld arm both key on it.
         let overworld = self.mode == SceneMode::WorldMap;
         fog.overworld = overworld;
+        fog.curve_bias = self.world_map.curve_bias;
         let window = self.terrain.region_attributes.box_bytes;
         let [player_x, _, player_z] = self.fog_player_world_pos();
         let trig = legaia_engine_battle_vm::rotation_lut::retail_rotation_lut();

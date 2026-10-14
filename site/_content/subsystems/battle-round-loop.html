@@ -1,0 +1,157 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle round loop</div>
+  <h1>Battle round loop, encounters and rewards</h1>
+  <p class="lede">One fight from the outside in: how a field step or a script op becomes a battle, how a round hands turns out, how the battle ends, and what the party walks away with. The per-state detail of an action lives on the <a href="battle-action.html">action state machine</a> page and the menu on the <a href="battle-command-flow.html">command flow</a> page; this page is the loop that holds them.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Random entry</dt><dd>Per-step region roll <code>FUN_801D9E1C</code> (field overlay) on entering a new 128-unit tile</dd>
+    <dt>Scripted entry</dt><dd>Field-VM op <code>3E FF &lt;row&gt;</code>; the row is an index into the scene's own formation table</dd>
+    <dt>Formation cell</dt><dd><code>0x8007BD0C..0F</code>, filled by the encounter confirm <code>FUN_801DA51C</code></dd>
+    <dt>Initiative</dt><dd>Key at actor <code>+0x16C</code>, seeded from speed by <code>FUN_801DA780</code>; the max-key pick is <code>FUN_801DABA4</code></dd>
+    <dt>Battle end</dt><dd>Signal <code>DAT_8007BD71 = 0xFE</code> raised at the action SM's <code>0x5A</code> gate; cause word <code>_DAT_8007BD2C</code> (<code>0</code> monsters down, <code>5</code> party down)</dd>
+    <dt>Results</dt><dd>Sequencer <code>FUN_8004E568</code> (SCUS); the battle exits when its phase halfword <code>ctx[+0x6CE]</code> reaches <code>0x43</code></dd>
+    <dt>Port</dt><dd><code>World::tick</code> &rarr; <code>live_field_tick</code> / <code>live_battle_tick</code>; kernels in <code>engine-battle</code> and <code>engine-battle-vm</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="loop">
+  <h2>The loop in one picture</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Field to battle loop: a field tick either rolls a region encounter on a new tile or runs a scripted entry op; both go through the transition bracket to battle entry, which fills the formation cell. A round alternates a command band, where each member commits, and an execution band, where the highest initiative key acts. The end-of-action gate or an escape hands off to the results sequencer; at phase 0x43 the game mode returns to main init, which reloads the field or, on an unscripted wipe, goes to the title screen with the cursor on Continue.">
+      <defs><marker id="brl-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="24" width="150" height="52" rx="4"/>
+      <text class="dg-label" x="95" y="46">Field tick</text><text class="dg-sub" x="95" y="63">walk, scripts</text>
+      <rect class="dg-node" x="230" y="10" width="180" height="40" rx="4"/>
+      <text class="dg-label" x="320" y="28">Region roll</text><text class="dg-sub" x="320" y="43">new 128-unit tile</text>
+      <rect class="dg-node" x="230" y="60" width="180" height="40" rx="4"/>
+      <text class="dg-label" x="320" y="78">Scripted entry</text><text class="dg-sub" x="320" y="93">op 3E FF row</text>
+      <path class="dg-edge" d="M170 40 L228 32" marker-end="url(#brl-arrow)"/>
+      <path class="dg-edge" d="M170 60 L228 76" marker-end="url(#brl-arrow)"/>
+      <rect class="dg-node" x="470" y="24" width="170" height="52" rx="4"/>
+      <text class="dg-label" x="555" y="46">Transition bracket</text><text class="dg-sub" x="555" y="63">shatter / fade intro</text>
+      <path class="dg-edge" d="M410 30 L468 42" marker-end="url(#brl-arrow)"/>
+      <path class="dg-edge" d="M410 80 L468 60" marker-end="url(#brl-arrow)"/>
+      <rect class="dg-node-accent" x="700" y="24" width="160" height="52" rx="4"/>
+      <text class="dg-label" x="780" y="46">Battle entry</text><text class="dg-sub" x="780" y="63">formation &#8594; 0x8007BD0C</text>
+      <path class="dg-edge" d="M640 50 L698 50" marker-end="url(#brl-arrow)"/>
+      <rect class="dg-group" x="430" y="130" width="430" height="150" rx="6"/>
+      <text class="dg-edge-label" x="444" y="148">one round</text>
+      <rect class="dg-node-accent" x="640" y="160" width="200" height="56" rx="4"/>
+      <text class="dg-label" x="740" y="182">Command band</text><text class="dg-sub" x="740" y="200">each living member commits</text>
+      <rect class="dg-node-accent" x="450" y="160" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="530" y="182">Execution band</text><text class="dg-sub" x="530" y="200">highest key acts</text>
+      <path class="dg-edge" d="M780 76 L780 158" marker-end="url(#brl-arrow)"/>
+      <path class="dg-edge" d="M640 176 L612 176" marker-end="url(#brl-arrow)"/>
+      <path class="dg-edge" d="M560 216 L560 250 L740 250 L740 218" marker-end="url(#brl-arrow)"/>
+      <text class="dg-edge-label" x="600" y="266">keys spent: next round</text>
+      <rect class="dg-node" x="150" y="160" width="230" height="56" rx="4"/>
+      <text class="dg-label" x="265" y="182">Results sequencer</text><text class="dg-sub" x="265" y="200">FUN_8004E568: pose, loot, hold, fade</text>
+      <path class="dg-edge" d="M450 188 L382 188" marker-end="url(#brl-arrow)"/>
+      <text class="dg-edge-label" x="388" y="180">0x5A gate</text>
+      <rect class="dg-node" x="150" y="300" width="230" height="52" rx="4"/>
+      <text class="dg-label" x="265" y="322">Exit: game mode 2</text><text class="dg-sub" x="265" y="339">phase halfword reaches 0x43</text>
+      <path class="dg-edge" d="M265 216 L265 298" marker-end="url(#brl-arrow)"/>
+      <rect class="dg-node-ok" x="20" y="400" width="250" height="52" rx="4"/>
+      <text class="dg-label" x="145" y="422">Field reload</text><text class="dg-sub" x="145" y="439">survived, or a scripted loss</text>
+      <rect class="dg-node-warn" x="320" y="400" width="270" height="52" rx="4"/>
+      <text class="dg-label" x="455" y="422">Title screen, cursor on Continue</text><text class="dg-sub" x="455" y="439">unscripted wipe: card-init mode 0x16</text>
+      <path class="dg-edge" d="M220 352 L160 398" marker-end="url(#brl-arrow)"/>
+      <path class="dg-edge" d="M310 352 L420 398" marker-end="url(#brl-arrow)"/>
+      <path class="dg-edge-dim" d="M60 400 L60 78" marker-end="url(#brl-arrow)"/>
+    </svg>
+    <figcaption>Random and scripted fights converge before the transition and are the same battle from there on. The exit is always the same store; what happens after a wipe is decided one game mode later.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="encounters">
+  <h2>Getting into a fight</h2>
+  <p><strong>Random.</strong> A scene whose MAN carries encounter regions rolls per step: a per-region rate counter, a formation-range pick, and a one-step anti-repeat (record layout on the <a href="../formats/encounter.html">encounter record</a> page). The roll's trigger branch is destructive - it draws RNG, latches the anti-repeat and re-seeds its counter before returning - so a roll with nothing to receive it is a fight silently thrown away. The port keeps a five-phase bracket around it (idle, transition, triggered, battling, post-battle grace) and logs every way a roll can fail to become a battle.</p>
+  <p><strong>Scripted.</strong> Boss fights enter through field-VM op <code>0x3E</code> with a first operand of <code>0xFF</code> (any value below 100 runs the same body; 100 and up is the door warp). The op points the system entity's encounter-record slot at formation row <code>op1</code> of the scene's own table and requests the battle mode switch. There is no boss battle-id global: the candidate, <code>DAT_8007B7FC</code>, has readers and no writer anywhere on the disc - it is a debug forced-battle id retail never sets.</p>
+  <p>Boss rows sit outside every region's rollable slice, so only the op reaches them, and they carry a non-zero first header byte. On that predicate the confirm ORs bit <code>0x80</code> into the per-battle flags byte <code>DAT_8007BD60</code>, which selects the boss intro style and, at battle init, becomes the scripted-fight byte <code>ctx[+0x287]</code>.</p>
+</section>
+
+<section class="doc-section" id="bands">
+  <h2>The two bands of a round</h2>
+  <p>Two state machines hand a round back and forth. In the <strong>command band</strong> the flow SM walks every living party member through the command ring while the action SM idles. In the <strong>execution band</strong> the action SM dispatches every combatant, party and monster alike, by the max-key pick, and consumes each key as its owner is dispatched.</p>
+  <p>So a monster that won initiative still waits for the last party commit: <strong>initiative orders the execution band, it never lets anyone act before the prompt.</strong> The one exception is a rolled back attack, which arms the round straight from the intro timer; with the party's keys zeroed by the side lockout, only the monsters act.</p>
+  <dl class="kv">
+    <dt>Key seed</dt><dd><code>(speed + rand() % (speed/2 + 1) + 1) &amp; 0xFFFF</code>, stored in 16 bits with no ceiling, plus a wounded bonus that grows as HP falls, then halved under Slow</dd>
+    <dt>Pick</dt><dd>Highest unspent key over seats 1 to 6. The compare is mixed-sign: a key of <code>0x8000</code> or more never wins</dd>
+    <dt>Round end</dt><dd>No living actor holds a key: the action SM's <code>0xFF</code> arm bumps the round index and returns the flow byte to <code>0x14</code></dd>
+    <dt>Round start</dt><dd>Actor sweep <code>FUN_801D88CC</code>, key re-seed if none is live, the per-round poison ticker <code>FUN_801E752C</code> on every round but the first</dd>
+  </dl>
+  <p>The pick loop carries no HP or occupancy test of its own, which is the root of a traced <a href="../writeups/glitches/turn-order-and-arts.html">turn-order oddity</a>: when every remaining key is zero the result is a draw over the seats walked.</p>
+</section>
+
+<section class="doc-section" id="status">
+  <h2>Status effects</h2>
+  <p>Each actor carries its ailments as one packed halfword at <code>+0x16E</code>, mirrored for party slots into the character record.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Status</th><th>Bits</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Venom</td><td><code>0x0001</code></td><td><code>min(max_hp/32, 128)</code> per round, never kills; combat rolls &times;9/10</td></tr>
+      <tr><td>Toxic</td><td><code>0x0002</code></td><td><code>min(max_hp/16, 256)</code> per round, never kills; rolls &times;7/10</td></tr>
+      <tr><td>Stone</td><td><code>0x0004</code></td><td>cannot act or be damaged, counts as defeated, lasts the battle</td></tr>
+      <tr><td>Rot</td><td>one of <code>0x0008</code> / <code>0x0010</code> / <code>0x0020</code></td><td>one random limb unusable (its attack command is refused)</td></tr>
+      <tr><td>AI delegation</td><td><code>0x0380</code>, as a unit</td><td>the action pick is handed to the AI (Rage passive, charm)</td></tr>
+      <tr><td>Numb</td><td><code>0x0400</code></td><td>paralysis; clears on being hit</td></tr>
+      <tr><td>Sleep</td><td><code>0x0800</code></td><td>asleep; wakes when hit</td></tr>
+      <tr><td>Curse</td><td><code>0x1000</code></td><td>blocks Magic</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The poison ticker subtracts against <code>current - 1</code> before applying the cap, so a tick that would reach zero leaves the actor at 1 HP, and it draws no RNG. Bit <code>0x0400</code> has clearers all over the battle code and <strong>no retail setter</strong>: a word-level decode of the executable and every overlay finds only clears. Faint is not a bit at all - it is current HP of zero.</p>
+</section>
+
+<section class="doc-section" id="ai">
+  <h2>Monster AI</h2>
+  <p>Two routines. The <strong>action picker</strong> <code>FUN_801E9FD4</code> counts the live magic ids in the monster record and rolls <code>rand % (1 + live_count)</code>: zero is a physical strike on a random party member, anything else picks that spell, checks the monster can afford it, and resolves the target from the spell's shape byte. A large switch on the monster id can then override the choice with bespoke scripted casts on cooldowns - each case is AI for one monster.</p>
+  <p>The <strong>target resolver</strong> <code>FUN_801E7320</code> runs only for actors with the <code>0x380</code> delegation bits set. It expands the targeting class the picker left in actor <code>+0x1DD</code>: a living monster slot (<code>rand % monster_count + 3</code> - pool slot 3 is the first monster whatever the party size), a living party slot, or an all-target code.</p>
+  <p>A data constraint hides in the cast path: after choosing magic the picker counts the rollable castable entries and divides by the count. A count of zero executes the divide-by-zero trap and the BIOS parks the machine. Retail data never has that shape; a rebuilt monster block must keep at least one rollable entry while its magic array is live.</p>
+</section>
+
+<section class="doc-section" id="battle-end">
+  <h2>How a battle ends</h2>
+  <p>The battle does not exit on the frame the <code>0x5A</code> gate raises the signal. The battle tick stops stepping the action SM and runs the results sequencer every frame instead:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Frame from the signal</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0</code></td><td>the gate sets the signal and cause</td></tr>
+      <tr><td><code>+0..+80</code></td><td>CD loads (voice clip, jingle bank); camera frames the posing actor</td></tr>
+      <tr><td><code>+80</code></td><td>results frame: pose staged, downed members floored at 1 HP, XP / gold / drop / level-ups applied, result and level-up windows raised</td></tr>
+      <tr><td><code>+80..+336</code></td><td>hold</td></tr>
+      <tr><td><code>+336</code></td><td>exit fade starts (a subtractive fade to black)</td></tr>
+      <tr><td><code>+402</code></td><td>phase halfword reaches <code>0x43</code>: <code>game_mode = 2</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The posing actor is the <strong>party leader</strong>, not whoever levelled: nothing in the battle overlay stores a seat into the pose slot, and a three-member capture shows seat 0 posing while another member takes the level. Escape runs a shorter arm with no results and the same exit gate.</p>
+  <h3>Party wipe</h3>
+  <p>The exit store is the same, wipe or no wipe. The fork lives one mode later, in the main-init scene setup <code>FUN_8003AEB0</code>: when the party-survived latch (<code>DAT_8007BD60</code> bit <code>0x80</code>) is clear and story flag 0 is clear, it switches to the card-init mode and the player lands on the <strong>title screen with the cursor on Continue</strong>. Retail's game over is a silent return to the title - no game-over art, no menu of its own. With story flag 0 set, the same wipe is a <em>scripted loss</em> and returns to the field standing, at 1 HP. The mode-18 &ldquo;game over&rdquo; overlay is a developer harness the retail path never enters.</p>
+</section>
+
+<section class="doc-section" id="capture">
+  <h2>Seru capture</h2>
+  <p>The killing-blow absorb is decided inside the hit resolver <code>FUN_801EC3E4</code> at the moment a physical hit resolves: killing blows only, by a party attacker, on a monster whose record carries a Seru id. The chance is a percent byte in the monster record, plus a flat 30 points when the attacker holds the Magic Boost passive, rolled as <code>rand() % 100 &lt; chance</code>. The roll is drawn on every Seru kill, before the check for whether the character already knows the spell. The grant lands in the same action: the Done band of the action SM reads the captured id, prepends the spell to the character's list and holds the learn banner.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The full write-up - encounter session phases, the port's host flags, the status-word writer inventory, the AP gauge, the charm softlock analysis and the port module map - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-round-loop.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-round-loop.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="battle.html">Battle</a>
+    <a href="battle-command-flow.html">Command flow</a>
+    <a href="battle-action.html">Action state machine</a>
+    <a href="battle-action-exit-gates.html">Exit gates and softlocks</a>
+    <a href="battle-formulas.html">Battle formulas</a>
+    <a href="level-up.html">Level-up</a>
+    <a href="../formats/encounter.html">Encounter record</a>
+    <a href="script-vm.html">Field / event VM</a>
+  </div>
+</section>

@@ -549,7 +549,7 @@ impl World {
                 // simplified `current_dialog` box on the field / overworld
                 // dismiss idiom (`op4c_n5_sub4_dialog_advance` /
                 // `tick_world_map_npc_dialog`).
-                if self.dialog.inline.is_some() {
+                let out = if self.dialog.inline.is_some() {
                     self.drive_inline_dialogue();
                     None
                 } else if self.dialog.current.is_some() {
@@ -579,7 +579,16 @@ impl World {
                     // the engine is already in does not.
                     // REF: FUN_801E295C (the retail action SM this drives)
                     self.live_battle_tick()
-                }
+                };
+                // The stage colour pass (`FUN_80050120`'s ambient and
+                // backdrop ramps) runs after the action SM in the frame
+                // driver (`jal 0x801E295C` at `0x80047048`, `jal 0x80050120`
+                // at `0x8004712C`), so the summon close-up's `ctx[+0x243]`
+                // dims the stage on the very pass that raises it - in step
+                // with the close-up accumulator the same pass advances.
+                // Ahead of the SM it trailed the accumulator by a frame.
+                self.tick_battle_ambient();
+                out
             }
             SceneMode::Field => {
                 // The Field arm as a whole is the engine's counterpart of

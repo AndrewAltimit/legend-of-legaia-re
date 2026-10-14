@@ -196,6 +196,7 @@ impl World {
     /// in-flight prop record run, and start a run for a movement touch posted
     /// by this tick's locomotion.
     pub fn tick_prop_interactions(&mut self) {
+        self.sync_prop_colliders_to_object_actors();
         self.tick_actor_anims();
         self.step_prop_interaction();
         if let Some(anchor) = self.props.pending_touch.take() {
@@ -715,6 +716,71 @@ impl World {
         }
     }
 
+    /// Carry every placed object's collider rows to where a script has moved
+    /// the object's actor.
+    ///
+    /// Retail has no separate collision row to move: the actor box test
+    /// `FUN_801CFC40` centres a static-class box on the actor's live
+    /// `+0x14` / `+0x18` plus the record's footprint offset
+    /// (`0x801CFCF4..0x801CFD6C`, `0x801CFDA0..0x801CFDAC`), and a
+    /// moving-class box on the live position alone. So a cross-context seat
+    /// (`A3 <obj> <x> <z>`), a `4C C3` re-seat or a park at the hide box moves
+    /// what the player collides with on the same frame it moves what is
+    /// drawn. `nilboa`'s ice gate (`P0[4]`) is the case that needs it: the
+    /// beat that raises `0x456` re-seats the gate off the walkable map
+    /// (`CC 04 C3` in `P2[11]`), and a row left at the `.MAP` seat kept the
+    /// way west shut until the scene was loaded again.
+    ///
+    /// The displacement is the object-bind channel's, measured from its bind
+    /// seat, as [`Self::object_draw_displacements`] measures it for the draw;
+    /// like the draw it carries every placement the record binds.
+    ///
+    /// REF: FUN_801CFC40
+    pub(crate) fn sync_prop_colliders_to_object_actors(&mut self) {
+        if self.props.colliders.is_empty() {
+            return;
+        }
+        let mut seeds: std::collections::HashMap<usize, (i16, i16)> = Default::default();
+        for &(record, pos) in &self.field_vm.object_channel_binds {
+            seeds.entry(record).or_insert(pos);
+        }
+        let moves: Vec<(usize, (i32, i32))> = self
+            .field_vm
+            .channels
+            .iter()
+            .filter(|c| c.object_bind)
+            .filter_map(|c| {
+                let (sx, sz) = *seeds.get(&c.placement_index)?;
+                let d = (
+                    i32::from(c.ctx.world_x as i16) - i32::from(sx),
+                    i32::from(c.ctx.world_z as i16) - i32::from(sz),
+                );
+                let applied = self
+                    .props
+                    .object_shifts
+                    .get(&c.placement_index)
+                    .copied()
+                    .unwrap_or((0, 0));
+                (d != applied).then_some((c.placement_index, (d.0 - applied.0, d.1 - applied.1)))
+            })
+            .collect();
+        for (record, (dx, dz)) in moves {
+            let shift = self.props.object_shifts.entry(record).or_insert((0, 0));
+            *shift = (shift.0 + dx, shift.1 + dz);
+            let anchors: Vec<((u8, u8), (i32, i32))> = self
+                .props
+                .bank
+                .props
+                .iter()
+                .filter(|(_, p)| p.record == record)
+                .map(|(&a, p)| (a, p.world))
+                .collect();
+            for (anchor, world) in anchors {
+                self.seat_prop(anchor, (world.0 + dx, world.1 + dz));
+            }
+        }
+    }
+
     /// Copy the executing context's actor words back onto the live prop and
     /// its collider row: `local_flags` -> `+0x62` (anim control), `field_6a`
     /// -> `+0x6A` (rate), `flags` -> `+0x10` - and when the script has set
@@ -949,6 +1015,66 @@ mod tests {
             },
         );
         (w, anchor)
+    }
+
+    /// A script that moves a placed object's actor from another context
+    /// moves what the player collides with: the collider rows follow the
+    /// object-bind channel's displacement from its bind seat, once.
+    #[test]
+    fn a_script_moved_object_takes_its_collider_along() {
+        let mut w = World::new();
+        let anchor = (16, 19);
+        w.props.bank.props.insert(
+            anchor,
+            PropAnimState {
+                anim: PropAnim::spawned(1, 4, false, 0),
+                program: PropProgram::default(),
+                world: (2112, 2496),
+                collider: (2240, 2496),
+                record: 4,
+                record_body: std::sync::Arc::new(vec![0x00, 0x00, 0x21]),
+                parked_pc: 2,
+                cflags: 0,
+            },
+        );
+        w.props.colliders.push(crate::world::FieldPropCollider {
+            anchor: Some(anchor),
+            center: (2240, 2496),
+            live: (2112, 2496),
+            moving_box: false,
+            interact: false,
+            solid: true,
+        });
+        w.field_vm.object_channel_binds = vec![(4, (2112, 2496))];
+        w.field_vm
+            .channels
+            .push(legaia_engine_field::field_channels::FieldChannel {
+                placement_index: 4,
+                ctx: FieldCtx {
+                    script_id: 4,
+                    world_x: 2112,
+                    world_z: 2496,
+                    ..FieldCtx::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: true,
+                object_bind: true,
+            });
+        // Unmoved: the rows stay on the `.MAP` seat.
+        w.sync_prop_colliders_to_object_actors();
+        assert_eq!(w.props.colliders[0].center, (2240, 2496));
+        assert!(w.field_actor_point_blocked(2240, 2496));
+        // A cross-context seat three tiles east and one south.
+        w.field_vm.channels[0].ctx.world_x = 2112 + 384;
+        w.field_vm.channels[0].ctx.world_z = 2496 + 128;
+        w.sync_prop_colliders_to_object_actors();
+        w.sync_prop_colliders_to_object_actors();
+        assert_eq!(w.props.colliders[0].center, (2240 + 384, 2496 + 128));
+        assert_eq!(w.props.colliders[0].live, (2112 + 384, 2496 + 128));
+        assert_eq!(w.props.bank.props[&anchor].world, (2112 + 384, 2496 + 128));
+        assert!(!w.field_actor_point_blocked(2240, 2496));
+        assert!(w.field_actor_point_blocked(2240 + 384, 2496 + 128));
     }
 
     /// A prop whose record parks itself (`23 7F 7F`) leaves the collision

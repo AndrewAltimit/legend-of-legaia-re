@@ -474,34 +474,35 @@
 <section class="doc-section" id="rogues-tower-water">
   <h2>Rogue's Tower water changes the encounter rate</h2>
   <dl class="kv">
-    <dt>Reported as</dt><dd>Not a glitch report. The roll traced for the Fortress reads two more flags, and the question came back from the community: which water does what, does it last, and why is no difference visible in an old save (community question, first-hand testing on a late-game file)</dd>
-    <dt>Cause</dt><dd>Drinking the green water doubles the random-battle rate for the rest of the file and the blue water halves it; a file that drank both is back to normal</dd>
-    <dt>Where</dt><dd>Rate scaling at <code>0x801DA1E0..0x801DA204</code> in <code>FUN_801D9E1C</code>, PROT entry 0897; the two springs are <code>P1[29]</code> and <code>P1[30]</code> of <code>rugi</code>, PROT entry 697</dd>
-    <dt>Affects</dt><dd>Every scene with random battles and the overworld, from the first drink to the end of the file</dd>
-    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - an intended mechanic, read from the disassembly and the scripts; the rate change was not captured in a running game</dd>
+    <dt>Reported as</dt><dd>Not a glitch report. The roll traced for the Fortress reads two more flags, and the question came back from the community: which water does what, does it last, and why is no difference visible in an old save. ZetaPhoenix then observed that of the three bits the springs set, only the shared one survives a random battle (community report, first-hand), which the capture below confirms</dd>
+    <dt>Cause</dt><dd>Green water doubles the random-battle rate and blue water halves it until the next battle ends; on the return to the field the game clears both flags again</dd>
+    <dt>Where</dt><dd>Rate scaling at <code>0x801DA1E0..0x801DA204</code> in <code>FUN_801D9E1C</code>, PROT entry 0897; clean-up at <code>0x8003B544..0x8003B568</code> in <code>FUN_8003AEB0</code>, <code>SCUS_942.54</code>; the springs are <code>P1[29]</code> and <code>P1[30]</code> of <code>rugi</code>, PROT entry 697</dd>
+    <dt>Affects</dt><dd>Every scene with random battles and the overworld, from the drink to the end of the next battle</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - an intended mechanic, read from the disassembly and the scripts; the clean-up is captured on a poked state</dd>
   </dl>
 
-  <p>Rogue's Tower has two springs side by side. Examining one shows &ldquo;It's strange green water!&rdquo; or &ldquo;It's strange blue water!&rdquo; and asks whether to drink. Either one fully restores the party's HP and MP. Each also sets a flag that the random-battle roll reads on every step, in every area, for the rest of the file.</p>
+  <p>Rogue's Tower has two springs side by side. Examining one shows &ldquo;It's strange green water!&rdquo; or &ldquo;It's strange blue water!&rdquo; and asks whether to drink. Either one fully restores the party's HP and MP. Each also sets a flag that the random-battle roll reads on every step, <strong>until the next random battle is over</strong>.</p>
   <table>
-    <thead><tr><th>Water</th><th>Flag</th><th>Effect on the roll</th><th>In the tower's rate-20 rooms</th></tr></thead>
+    <thead><tr><th>Water</th><th>Flag</th><th>Effect on the roll</th><th>Steps to the next battle, tower's rate-20 rooms</th></tr></thead>
     <tbody>
-      <tr><td>neither</td><td>-</td><td>rate as written</td><td>a battle every 25 to 73 steps, 49 on average</td></tr>
-      <tr><td><strong>green</strong></td><td><code>0x1D</code></td><td>rate doubled: <strong>twice as many battles</strong></td><td>every 13 to 37 steps, 25 on average</td></tr>
-      <tr><td><strong>blue</strong></td><td><code>0x1E</code></td><td>rate halved: <strong>half as many battles</strong></td><td>every 49 to 146 steps, 98 on average</td></tr>
+      <tr><td>neither</td><td>-</td><td>rate as written</td><td>25 to 73, 49 on average</td></tr>
+      <tr><td><strong>green</strong></td><td><code>0x1D</code></td><td>rate doubled: <strong>the next battle comes in half the steps</strong></td><td>13 to 37, 25 on average</td></tr>
+      <tr><td><strong>blue</strong></td><td><code>0x1E</code></td><td>rate halved: <strong>the next battle takes twice the steps</strong></td><td>49 to 146, 98 on average</td></tr>
       <tr><td>both</td><td>both</td><td>doubled, then halved: exactly the written rate</td><td>as with neither</td></tr>
     </tbody>
   </table>
-  <p>Nothing on the disc clears either flag, and both are saved with the file. The first drink of each colour is therefore the only one that changes anything. Drinking the same water again restores HP and MP and sets a flag that is already set. Drinking the other one cancels the first for good. <strong>A file that has tasted both</strong> - the natural thing to do with two free heals - <strong>is back at the normal rate permanently</strong>, and no amount of further drinking moves it. That is the likely reason an old save shows no difference.</p>
-  <p>The effect is real but easy to miss even on a fresh file. The step count between battles is re-rolled over a three-to-one range after every fight, so the bands for &ldquo;normal&rdquo; and &ldquo;green&rdquo; overlap, and so do &ldquo;normal&rdquo; and &ldquo;blue&rdquo;. A fair test counts steps over twenty or more battles in one room, or reads the rate in a debugger.</p>
+  <p>When the field comes back after a battle, the game clears both water flags. The drink is a <strong>one-battle charm</strong>: green pulls the next fight closer, blue pushes it away, and from the fight after that the rate is back to normal. Drinking again re-arms it for one more battle; the springs work on every visit. That is why an old save shows no difference: whatever was drunk wore off at its next battle.</p>
+  <p>Both springs also set a third flag, <code>0x1C</code>, which nothing ever clears. It is the switch for the clean-up: the battle-return code clears the two water flags only when <code>0x1C</code> is set, and <code>0x1C</code> is only ever set together with one of them. A file that has drunk once keeps <code>0x1C</code> for good, so the byte reads <code>0x08</code> after any later battle.</p>
+  <p>The effect is real but easy to miss even inside its one battle. The step count between battles is re-rolled over a three-to-one range after every fight, so the bands for &ldquo;normal&rdquo; and &ldquo;green&rdquo; overlap, and so do &ldquo;normal&rdquo; and &ldquo;blue&rdquo;. A fair test is to drink, count the steps to the next battle, and repeat many times, or to read the rate in a debugger.</p>
 
-  <h3>Check and undo</h3>
+  <h3>Check</h3>
   <table>
     <thead><tr><th></th><th>How</th></tr></thead>
     <tbody>
-      <tr><td>Check, RAM</td><td>byte <code>0x8008575B</code>: bit <code>0x04</code> is the green flag, bit <code>0x02</code> the blue one. Test the bits, not the whole byte: bit <code>0x01</code> is an unrelated flag that scene scripts toggle all the time</td></tr>
+      <tr><td>Check, RAM</td><td>byte <code>0x8008575B</code>: bit <code>0x04</code> is the green flag, <code>0x02</code> the blue one, <code>0x08</code> flag <code>0x1C</code>. Test the bits, not the whole byte: bit <code>0x01</code> is an unrelated flag that scene scripts toggle all the time</td></tr>
       <tr><td>Check, memory card</td><td>byte <code>+0x161B</code> of the save block, the same bits</td></tr>
       <tr><td>Check, the rate itself</td><td>break at <code>0x801DA208</code> while walking a room that rolls: <code>s0</code> is the per-step rate. In the tower it reads 20 with neither or both, 40 with green only, 10 with blue only</td></tr>
-      <tr><td>Undo</td><td>clear bits <code>0x04</code> and <code>0x02</code> of <code>0x8008575B</code> and save. To test one water on a file that has had both, clear the other one's bit</td></tr>
+      <tr><td>Check, the clean-up</td><td>win the next battle and read the byte again: <code>0x04</code> and <code>0x02</code> are gone, <code>0x08</code> stays. A write watch on the byte stops at <code>0x8003B568</code></td></tr>
     </tbody>
   </table>
 
@@ -516,8 +517,44 @@
 801da208  lw   v1,-0x4a04(a0)               ; the step counter 0x8007B5FC
 801da214  subu v1,v1,v0                     ; counter -= rate
 801da218  bgtz v1,0x801da360                ; still positive: no battle</code></pre>
-  <p>The two tests are independent and run in that order. With both flags set the rate is shifted left and then right by one bit, which returns the same number for every rate, odd or even. There is no cap and no floor other than the integer shift: a rate of 1 halves to 0, and a rate of 0 stays 0 whatever is set.</p>
-  <p>The same block applies the accessories first: High Encounter (Bad Luck Bell, Nemesis Gem) multiplies by four and Low Encounter (Good Luck Bell, Evil Talisman) halves. Everything stacks by plain shifts. Blue water with a Low Encounter accessory is a quarter of the written rate; green water with one is the written rate; green water with a High Encounter accessory is eight times it. The roll is the same function for every field scene and for the overworld, so the scaling is not local to the tower. It does nothing in rooms whose rate is 0, to scripted fights, or while Incense holds the roll.</p>
+  <p>The two tests are independent and run in that order. With both flags set the rate is shifted left and then right by one bit, which returns the same number for every rate, odd or even. There is no cap and no floor other than the integer shift.</p>
+  <p>The same block applies the accessories first: High Encounter (Bad Luck Bell, Nemesis Gem) multiplies by four and Low Encounter (Good Luck Bell, Evil Talisman) halves. Everything stacks by plain shifts. The roll is the same function for every field scene and for the overworld, so while a flag is set the scaling is not local to the tower. It does nothing in rooms whose rate is 0, to scripted fights, or while Incense holds the roll.</p>
+
+  <h3>The clean-up after a battle</h3>
+  <p>The scene-entry map init <code>FUN_8003AEB0</code> has an arm for a field re-entry that stays in the current scene (<code>_DAT_8007B8B8 == 2</code>, tested at <code>0x8003B504..0x8003B510</code>), which is how the field resumes after a battle. With <code>a0 = 0x80084140</code>, the base of the flag bank at <code>+0x1618</code>:</p>
+<pre><code>8003b528  li   a3,-0x3                      ; mask 0xFD
+8003b538  addiu a2,a0,0x3                   ; flag byte 3: flags 0x18..0x1F
+8003b544  lbu  v1,0x1618(a2)
+8003b54c  andi v0,v1,0x8                    ; flag 0x1C set?
+8003b55c  beq  a1,zero,0x8003b56c           ; no: leave the byte alone
+8003b560  _andi v0,v1,0xfb                  ; clear 0x04, flag 0x1D (green)
+8003b564  and  v0,v0,a3                     ; clear 0x02, flag 0x1E (blue)
+8003b568  sb   v0,0x1618(a2)</code></pre>
+  <p>The same arm clears flag <code>0x0E</code> one byte earlier with no condition. It runs on every re-entry of that kind, not only after a random battle; a scene change through a door takes the other side of the branch and leaves the water flags alone (read from the branch, not captured). The clean-up is an inline byte access through a base register pointed at byte 3, so a search for calls to the flag helpers, or for the byte's absolute address, does not find it.</p>
+
+  <h3>What was captured</h3>
+  <p>Probe <code>scripts/pcsx-redux/autorun_water_flag_clear.lua</code> on the catalogued Rogue's Tower state <code>rugi_field_card_boot</code>, a card-loaded endgame file whose byte reads <code>0x08</code>. <strong>Poked:</strong> the byte raised to <code>0x0E</code> and the step counter set to 1 once the state runs. The walk, the battle entry, the fight and the return are the game's own code; the fight was won by holding the monsters at 1 HP while Cross was pressed.</p>
+  <table>
+    <thead><tr><th>Moment</th><th>Byte <code>0x8008575B</code></th><th>Game mode</th></tr></thead>
+    <tbody>
+      <tr><td>after the poke, walking</td><td><code>0x0E</code></td><td><code>0x03</code> field</td></tr>
+      <tr><td>battle entry and the whole fight</td><td><code>0x0E</code></td><td><code>0x09</code>, then <code>0x15</code> battle</td></tr>
+      <tr><td>return to the field, before the arm</td><td><code>0x0E</code></td><td><code>0x02</code> field init</td></tr>
+      <tr><td>after the store at <code>0x8003B568</code></td><td><code>0x08</code></td><td><code>0x02</code></td></tr>
+      <tr><td>field resumed, to the end of the run</td><td><code>0x08</code></td><td><code>0x03</code></td></tr>
+    </tbody>
+  </table>
+  <p>ZetaPhoenix's in-game tests in Bio Castle agree with the gate and add the escape case (community report, first-hand; bits named by mask). The tests used the blue-water bit; the green bit is expected to behave the same but was not tested:</p>
+  <table>
+    <thead><tr><th>Byte before the battle</th><th>Won</th><th>Escaped</th><th>Escaped with the Spikefish Flute</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x08</code> and <code>0x02</code> set (<code>0x0A</code>)</td><td><code>0x02</code> cleared</td><td><code>0x02</code> cleared</td><td>the game freezes</td></tr>
+      <tr><td><code>0x02</code> alone</td><td><code>0x02</code> stays</td><td><code>0x02</code> stays</td><td><code>0x02</code> stays</td></tr>
+    </tbody>
+  </table>
+  <p>A plain escape returns through the same clean-up as a win, and so does a flute escape that gets that far. The freeze is real, but it is not caused by the flag byte: it is a separate glitch of the Spikefish Flute, traced in <a href="#spikefish-flute-freeze">its own section</a>.</p>
+
+  <p>Every late-game save state in the project's library reads <code>0x08</code> in this byte, never <code>0x0C</code> or <code>0x0A</code>: a file that drank, after its next battle.</p>
 
   <h3>The two springs</h3>
   <p>Both are placement records of <code>rugi</code> (Rogue's Tower, PROT entry 697). The developer name in each record's header is Shift-JIS for &ldquo;green water&rdquo; and &ldquo;blue water&rdquo;, matching the English line.</p>
@@ -531,39 +568,149 @@
     </tbody>
   </table>
   <p>The records are otherwise the same script: the prompt, a two-way picker, the drinking animation, the three restores, the two flag writes, a fade, &ldquo;What an amazing taste!&rdquo; and &ldquo;HP and MP are completely restored!&rdquo;, then a jump back to the prompt's entry so the spring can be used again. Answering &ldquo;No&rdquo; writes nothing. Neither record tests a flag anywhere, so nothing gates a spring and it works on every visit, any number of times.</p>
-  <p>Flag <code>0x1C</code> is set by both and read by nothing: no script on the disc tests it and no native call names it. It reads as a &ldquo;has drunk&rdquo; marker that was never used. Both springs stand in the part of the tower that rolls at rate 20. The colour is taken from the script text and the record names; the water's texture was not examined.</p>
-
-  <h3>Who else touches the flags</h3>
-  <table>
-    <thead><tr><th>Search</th><th>Flag <code>0x1D</code></th><th>Flag <code>0x1E</code></th></tr></thead>
-    <tbody>
-      <tr><td>Field-script set, clear and test ops in every scene script, variants included</td><td>one set, <code>rugi</code> <code>P1[29]</code></td><td>one set, <code>rugi</code> <code>P1[30]</code></td></tr>
-      <tr><td>Motion-script flag ops in every scene</td><td>none</td><td>none</td></tr>
-      <tr><td>Native calls to the set, clear and test helpers with a constant id</td><td>one test, <code>0x801DA1E0</code></td><td>one test, <code>0x801DA1F4</code></td></tr>
-      <tr><td>Direct loads or stores of the flag byte in code</td><td>none</td><td>none</td></tr>
-    </tbody>
-  </table>
-  <p>Six native clear calls take a computed id and are not excluded one by one; none of them reads as reaching these ids. Starting a new game is the only other way back to a clear bank.</p>
+  <p>Both springs stand in the part of the tower that rolls at rate 20. The colour is taken from the script text and the record names; the water's texture was not examined.</p>
 
   <h3>Addresses</h3>
   <table>
     <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
     <tbody>
       <tr><td><code>0x801DA1B8..0x801DA1DC</code></td><td>PROT 0897</td><td>High Encounter passive <code>0x3B</code> (rate * 4), Low Encounter passive <code>0x3C</code> (rate / 2)</td><td>disassembly</td></tr>
-      <tr><td><code>0x801DA1E0..0x801DA1F0</code></td><td>PROT 0897</td><td>flag <code>0x1D</code> test; rate * 2</td><td>disassembly</td></tr>
-      <tr><td><code>0x801DA1F4..0x801DA204</code></td><td>PROT 0897</td><td>flag <code>0x1E</code> test; rate / 2</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DA1E0..0x801DA204</code></td><td>PROT 0897</td><td>flag <code>0x1D</code> test, rate * 2; flag <code>0x1E</code> test, rate / 2</td><td>disassembly</td></tr>
       <tr><td><code>0x801DA208..0x801DA21C</code></td><td>PROT 0897</td><td>counter subtract; <code>s0</code> is the final rate</td><td>disassembly</td></tr>
-      <tr><td><code>0x8008575B</code> masks <code>0x04</code>, <code>0x02</code></td><td>RAM</td><td>system flags <code>0x1D</code>, <code>0x1E</code>; save-block <code>+0x161B</code></td><td>disassembly</td></tr>
-      <tr><td><code>0x8008575B</code> mask <code>0x08</code></td><td>RAM</td><td>system flag <code>0x1C</code>: written by both springs, read by nothing</td><td>disc data</td></tr>
-      <tr><td>PROT entry 697, <code>P1[29]</code> <code>+0xF1</code></td><td>disc</td><td>green water: <code>50 1C</code>, <code>50 1D</code> after three <code>4C 82</code> restores</td><td>disc data</td></tr>
-      <tr><td>PROT entry 697, <code>P1[30]</code> <code>+0xF0</code></td><td>disc</td><td>blue water: <code>50 1C</code>, <code>50 1E</code> after three <code>4C 82</code> restores</td><td>disc data</td></tr>
+      <tr><td><code>0x8003B504..0x8003B510</code></td><td><code>SCUS_942.54</code></td><td>same-scene re-entry arm of <code>FUN_8003AEB0</code>, <code>_DAT_8007B8B8 == 2</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x8003B544..0x8003B568</code></td><td><code>SCUS_942.54</code></td><td>clears flags <code>0x1D</code> and <code>0x1E</code> when flag <code>0x1C</code> is set</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x8008575B</code> masks <code>0x08</code>, <code>0x04</code>, <code>0x02</code></td><td>RAM</td><td>system flags <code>0x1C</code>, <code>0x1D</code>, <code>0x1E</code>; save-block <code>+0x161B</code></td><td>disassembly, capture</td></tr>
+      <tr><td>PROT entry 697, <code>P1[29]</code> <code>+0xF1</code>, <code>P1[30]</code> <code>+0xF0</code></td><td>disc</td><td>the springs' flag writes after three <code>4C 82</code> restores</td><td>disc data</td></tr>
       <tr><td>PROT entry 697, encounter section</td><td>disc</td><td>tower regions: <code>(0..58, 0..72)</code> rate 0, the rest rate 20</td><td>disc data</td></tr>
-      <tr><td>the rate changing in a running game</td><td>-</td><td>not observed</td><td>inference</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Still open</h3>
+  <ul>
+    <li>Which other same-scene re-entries besides a battle return reach the clean-up, for example a scripted fight or a cutscene that resumes in place.</li>
+    <li>Which spring is on which side on screen: the placements give tiles, and the camera decides left and right.</li>
+    <li>Whether the colour is also visible in the water's texture.</li>
+  </ul>
+</section>
+<section class="doc-section" id="spikefish-flute-freeze">
+  <h2>Spikefish Flute escape can freeze the game</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>Escaping a battle in Bio Castle with the Spikefish Flute freezes the game, first noticed while testing the Rogue&#x27;s Tower water flags ; narrowed down further, escaping three Gillium Lv3 with the flute always freezes, right after the escape sequence (community report, first-hand, ZetaPhoenix). The captured fight is exactly that formation</dd>
+    <dt>Cause</dt><dd>The flute&#x27;s escape skips the end of its attack, so its &ldquo;Blowfish&rdquo; caption stays up after the battle frees the caption&#x27;s text; once field data is read back over it, drawing it can send the text routine into a copy that never ends</dd>
+    <dt>Where</dt><dd>Arm 8 of <code>FUN_801F6A00</code>, PROT entry 0925 (the flee); text widget draw at <code>0x800321E0</code>; runaway copy at <code>0x800367E4</code> in <code>FUN_80036514</code>, <code>SCUS_942.54</code></dd>
+    <dt>Affects</dt><dd>Spikefish Flute escapes from a fixed set of scene-and-fight pairs (14 of 406 random formation rows, predicted by simulation; three Bio Castle freezes captured). Three Gillium Lv3 in Bio Castle (D) always freezes. A plain Run is safe</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - captured on a poked state; the water flags play no part</dd>
+  </dl>
+  <p>The flute's attack shows a caption with the attack's name, &ldquo;Blowfish&rdquo;. The flute's escape skips the end of its own attack, so the caption is never taken down. It stays on screen through the escape and keeps pointing at its text after the battle has freed that memory. When the game reads the field's data back into the freed memory, the caption's &ldquo;text&rdquo; becomes picture data. Drawing it as text can send the text routine into a copy that never ends, and the game locks up on the black screen after the escape. Whether a given fight hits that depends on where the caption's text landed and on what overwrites it, not on the water.</p>
+
+  <h3>The runs</h3>
+  <p>State: a cold boot of the retail disc plus a memory-card load of the Bio Castle save (<code>playthrough-endgame-7saves.mcr</code> block 6, scene <code>jouind</code>), checkpointed in the field by <code>autorun_boot_continue.lua</code>. <strong>Poked</strong> once the field runs: bits <code>0x0E</code> of byte <code>0x8008575B</code> set to the value below (bit <code>0x01</code> kept), bag slot 0 set to the Spikefish Flute (<code>0x99</code>) x9, and the step counter <code>0x8007B5FC</code> set to 1. The walk, the battle (three Gillium Lv3, monster id 161 = <code>0xA1</code>), the commands and the return are the game's own code, driven by the pad. Probe <code>scripts/pcsx-redux/autorun_spikefish_flee_return.lua</code> on the fast core.</p>
+  <table>
+    <thead><tr><th>Scene</th><th>Byte</th><th>Escape</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td><code>jouind</code></td><td><code>0x0A</code></td><td>Spikefish Flute</td><td>stops 165 vsyncs after the teardown, still in battle mode; two runs</td></tr>
+      <tr><td><code>jouind</code></td><td><code>0x02</code></td><td>Spikefish Flute</td><td>the same</td></tr>
+      <tr><td><code>jouind</code></td><td><code>0x08</code></td><td>Spikefish Flute</td><td>the same</td></tr>
+      <tr><td><code>jouind</code></td><td><code>0x0C</code></td><td>Spikefish Flute</td><td>the same</td></tr>
+      <tr><td><code>jouind</code></td><td><code>0x00</code></td><td>Spikefish Flute</td><td>the same</td></tr>
+      <tr><td><code>jouind</code></td><td><code>0x0A</code></td><td>Run</td><td>back in the field; the byte reads <code>0x08</code></td></tr>
+      <tr><td><code>rugi</code></td><td><code>0x0A</code></td><td>Spikefish Flute</td><td>back in the field; the byte reads <code>0x08</code></td></tr>
+    </tbody>
+  </table>
+  <p>Six more <code>jouind</code> runs had the formation rows rewritten in RAM before the forced battle (a seventh poke), to test the prediction below. The byte was <code>0x0A</code> in each:</p>
+  <table>
+    <thead><tr><th>Formation forced in <code>jouind</code></th><th>Field-back read</th><th>Predicted</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>three Gillium Lv3 (161), the scene's own row</td><td>127 sectors</td><td>freeze</td><td>freezes</td></tr>
+      <tr><td>three Puera Lv3 (158), the scene's other row</td><td>115</td><td>survive</td><td>back in the field</td></tr>
+      <tr><td>one Gimard Lv3 (12)</td><td>112</td><td>survive</td><td>back in the field</td></tr>
+      <tr><td>three Gimard Lv3 (12)</td><td>112</td><td>survive</td><td>back in the field</td></tr>
+      <tr><td>three Gizam Lv3 (57)</td><td>115</td><td>survive</td><td>back in the field</td></tr>
+      <tr><td>three Barra Lv3 (143)</td><td>116</td><td>freeze</td><td>freezes</td></tr>
+      <tr><td>Aluru (80) + Orb Lv2 (84)</td><td>134</td><td>freeze</td><td>freezes</td></tr>
+    </tbody>
+  </table>
+  <p>The <code>rugi</code> row uses the catalogued <code>rugi_field_card_boot</code> state with the same pokes. It confirms that a flute escape which survives reaches the same clean-up as a plain one. Every Bio Castle flute run takes the same frames, so the flute's flee always lands at action state <code>0x65</code> on frame 2732 or 2733.</p>
+  <p>The runs disagree with one row of the community table: the blue bit alone also freezes here. The table's runs were each a different fight, so a fight that lays out memory differently can survive.</p>
+
+  <h3>The mechanism</h3>
+  <ol>
+    <li><strong>The caption outlives the attack</strong> (capture). While the flute's attack runs, the retained widget list <code>FUN_80031D00</code> draws a text widget every frame: <code>jal 0x80036888</code> at <code>0x800321E0</code>, string pointer at widget <code>+0x18</code>. In this fight the string is <code>"Blowfish"</code> at heap address <code>0x800B995C</code>. Arm 8 of <code>FUN_801F6A00</code> in PROT entry 0925 moves the action state machine to the run wait <code>0x65</code> and never removes that widget. The caption is still drawn every frame through states <code>0x65</code>, <code>0x66</code> and <code>0x67</code>, beside the &ldquo;successfully escaped&rdquo; banner.</li>
+    <li><strong>Its text is overwritten</strong> (capture, disassembly). At state <code>0x67</code> the teardown in <code>FUN_8004E568</code> frees the enemy record buffers and the side-band stream buffer, and the loader-B id <code>0x8007BC4C</code> goes from <code>0x1E</code> (PROT 0925) to <code>0x53</code> (PROT 0978, the field-back-read module). PROT 0978 re-reads the scene's own data from disc into the largest free heap block, which now covers the caption. From then on the widget's string at <code>0x800B995C</code> reads <code>f8 f2 f2 ff fa ef da ...</code>, which is <code>jouind</code>'s PROT entry 681 at offset <code>0xE4BC</code>, with no zero byte nearby.</li>
+    <li><strong>The text routine never comes back</strong> (capture, interpreter core). The renderer <code>FUN_80036888</code> hands that &ldquo;string&rdquo; to the substitution expander <code>FUN_80036514</code>. The expander's first pass rewrites each <code>0xFF</code> in the source to <code>0xCF</code> in place, so it also corrupts the freed memory it reads. The copy loop at <code>0x800367E4</code> then follows a substitution code whose source pointer <code>t0</code> lands in the expander's own output buffer (from <code>0x800740EC</code>). The read cursor trails the write cursor by <code>0x1FE</code> bytes and never meets a zero. The copy runs on through <code>0x80074723</code>, <code>0x80075E93</code> and <code>0x80079543</code> (logged every 2000 passes), overwriting everything after the buffer. Under the fast core the emulator stops with &ldquo;Unrecoverable error while running recompiler&rdquo; at pc <code>0x80036868</code>, the loop's tail. On hardware the game hangs.</li>
+  </ol>
+  <p>A plain escape never installs the caption, so it cannot hit this. The water flags are read only after the battle has ended, by which time the copy has already locked up.</p>
+
+  <h3 id="why-one-fight-and-not-another">Why one fight and not another</h3>
+  <p>The outcome is a fixed function of the scene and the formation's distinct monster species. Three links make it so.</p>
+  <p><strong>Where the caption text sits</strong> (capture). The caption string is the attack name inside the Spikefish's actor record. That record is streamed into the side-band slot at the bottom of the enemy stager buffer, so the text sits at <code>0x800B990C + 0x50</code> = <code>0x800B995C</code>. The stager buffer (<code>0x2E390</code> bytes) sits at <code>0x800B9900</code> in every captured fight, in both scenes.</p>
+  <p><strong>How much the field-back read loads</strong> (disassembly, capture). PROT 0978's routine <code>0x801F6B24</code> works in three steps:</p>
+  <ol>
+    <li>It takes the largest free heap block (<code>FUN_8002B790</code>, at <code>0x801F6F08</code>), counts whole sectors in it, and caps the count at <code>0xC5</code>.</li>
+    <li>It allocates that many sectors less 4 bytes (<code>FUN_80017888</code>, at <code>0x801F6F74</code>). The best-fit allocator <code>FUN_8002B468</code> cuts the allocation from the top of the block, so the buffer ends at <code>0x800E7C9C</code>, where the freed stager buffer ended.</li>
+    <li>It reads that many sectors from 32 sectors into the scene's first PROT entry (<code>0x801F726C..0x801F7298</code>), the scene's own field data.</li>
+  </ol>
+  <p>After the teardown the largest free block is the stager plus the monster blocks allocated directly below it. There is one monster block per distinct species, each the species' battle-heap cost (<code>block[+0x08]</code> of its PROT 867 record) plus a 12-byte header:</p>
+  <pre><code>sectors = min((0x2E390 + 0xA8 + sum(cost + 12 over distinct species)) / 0x800, 0xC5)
+caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sectors up)</code></pre>
+  <p>The <code>0xA8</code> is fitted: it is one more freed <code>0x9C</code> node, and without it Gizam Lv3 predicts 114 sectors where the capture reads 115. The formula gives the measured count for all eight captured fights, in both scenes.</p>
+  <p><strong>What the text routine does with those bytes</strong> (simulation). The script <code>scripts/asset-investigation/spikefish_caption_predict.py</code> places the scene's disc bytes at the caption and runs the renderer and expander logic from the disassembly over them:</p>
+  <ul>
+    <li>a first byte below <code>0x20</code> draws nothing;</li>
+    <li>otherwise it follows the normalisation pass, the token count, the <code>C1..C7</code> substitution table at <code>0x80010EC0</code> and the nested name copy.</li>
+  </ul>
+  <p>A copy that runs past 64 KiB, or touches an address outside RAM and its mirrors (a bus error on hardware), is called a freeze. It needs a battle RAM image as a backdrop for the tables it dereferences; two different backdrops give identical results. The script agrees with all eight captured outcomes, among them the three Barra Lv3 and Aluru + Orb Lv2 freezes, which were predicted before those runs.</p>
+
+  <h4>Predicted freezes</h4>
+  <p>The script was run over every random formation row (encounter regions with a non-zero rate) of the bundle MAN of every scene in the scene table: 406 rows in 51 scenes. It predicts a freeze for 14 rows; every other row survives:</p>
+  <table>
+    <thead><tr><th>Scene</th><th>Formation</th><th>Sectors</th><th>Failure</th></tr></thead>
+    <tbody>
+      <tr><td><code>jouind</code>, Bio Castle (D)</td><td>three Gillium Lv3</td><td>127</td><td>runaway copy (captured)</td></tr>
+      <tr><td><code>jouinc</code>, Bio Castle (C)</td><td>three Barra Lv3</td><td>116</td><td>bus error (the same fight froze when forced in <code>jouind</code>)</td></tr>
+      <tr><td><code>jouina</code>, Bio Castle (A)</td><td>three Zenoir Lv3</td><td>114</td><td>runaway copy</td></tr>
+      <tr><td><code>jouina</code>, Bio Castle (A)</td><td>three Gola Gola Lv3</td><td>110</td><td>bus error</td></tr>
+      <tr><td><code>cave01</code>, Snowdrift Cave</td><td>one Mushroom; one Blue Piura</td><td>110</td><td>runaway copy</td></tr>
+      <tr><td><code>map01</code>, world map (Drake Kingdom)</td><td>one or two Gobu Gobu</td><td>117</td><td>runaway copy</td></tr>
+      <tr><td><code>dohaty</code>, Dohati's Castle</td><td>Aluru + Orb Lv2; Nova Lv2 + Gola Gola</td><td>134</td><td>runaway copy</td></tr>
+      <tr><td><code>tunnelb</code>, Fire Path</td><td>Nova + Gel Frog</td><td>139</td><td>bus error</td></tr>
+      <tr><td><code>tunnelb</code>, Fire Path</td><td>Stone Lizard + two Warman</td><td>134</td><td>runaway copy</td></tr>
+      <tr><td><code>nilboa</code>, Nivora Ravine</td><td>two Amethyst + Neo Grude</td><td>131</td><td>bus error</td></tr>
+      <tr><td><code>nilboa</code>, Nivora Ravine</td><td>one Amethyst</td><td>102</td><td>runaway copy</td></tr>
+    </tbody>
+  </table>
+  <p>Three rows sit within the fit's error of a sector boundary, where the neighbouring count gives the other answer:</p>
+  <ul>
+    <li>Fire Path two Nova (117; 116 would freeze);</li>
+    <li>Sol Tower <code>koin2</code> Spoon + Shade (141; 142 would freeze);</li>
+    <li>Fire Path Stone Lizard + two Warman (134; 135 survives).</li>
+  </ul>
+  <p>The same formation can differ between rooms, because the bytes come from each room's own data: three Gillium Lv3 freezes in Bio Castle (D) but is predicted to survive in Bio Castle (E) (<code>jouine</code>).</p>
+  <p>That fits both community reports. The three-Gillium-Lv3 freeze is first-hand. A Bio Castle flute escape that did not freeze is consistent with three Puera Lv3, the room's other formation, which survives here.</p>
+  <p>The first two rows of the community table are first-hand play. The freeze rows above are <strong>captured on a poked state</strong> (the byte, the bag slot and the step counter, plus the formation row for the forced formations). Probe <code>scripts/pcsx-redux/autorun_spikefish_text_hang.lua</code> replays the end of a run on the interpreter from the escape-wait checkpoint, logging the renderer calls and the runaway loop.</p>
+  <h3>Addresses</h3>
+  <table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801F7400</code>, <code>0x801F78C4..0x801F78F8</code></td><td>PROT 0925</td><td>Spikefish Flute flee: outcome, survived latch, escape counter, <code>ctx[7] = 0x65</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801E7B5C..0x801E7B84</code>, <code>0x801E8028..0x801E802C</code></td><td>PROT 0898</td><td>the run command's matching success stores in <code>FUN_801E791C</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80046DD8..0x80046E60</code></td><td><code>SCUS_942.54</code></td><td>battle-exit mode choice in <code>FUN_80046A20</code>; reads no escape kind</td><td>disassembly</td></tr>
+      <tr><td><code>0x800321E0</code></td><td><code>SCUS_942.54</code></td><td><code>FUN_80031D00</code>: the retained text widget's draw, string at widget <code>+0x18</code></td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x80036514</code>, loop <code>0x800367E4..0x80036868</code></td><td><code>SCUS_942.54</code></td><td>substitution expander; the runaway copy into and past <code>0x800740EC</code></td><td>disassembly, capture</td></tr>
     </tbody>
   </table>
 
   <h3>Verifying it</h3>
-  <p>Read byte <code>0x8008575B</code> before and after drinking: green raises bit <code>0x04</code>, blue raises bit <code>0x02</code>, and either raises bit <code>0x08</code>. Then break at <code>0x801DA208</code> and read <code>s0</code>. Not established: which spring is on which side on screen (the placements give tiles, and the camera decides left and right), and whether the colour is also visible in the water's texture.</p>
+  <p>In a battle in Bio Castle, escape with the Spikefish Flute. Before the freeze, the &ldquo;Blowfish&rdquo; caption is still on screen next to the &ldquo;successfully escaped&rdquo; banner. In a debugger, break at <code>0x800367E4</code> once the action state reaches <code>0x67</code>: the loop keeps running, its write cursor climbing past <code>0x800740EC</code>. Escaping the same fight with Run returns to the field.</p>
+
+  <h3>Still open</h3>
+  <ul>
+    <li>Whether the party (members, equipment) moves the stager or the free block. Every capture used one party.</li>
+    <li>The <code>0xA8</code> slack is fitted, not traced to the node it stands for.</li>
+    <li>The world-map rows (Drake Kingdom, Gobu Gobu) assume the world map's field-back read is the same as a field scene's; no world-map flute escape was captured.</li>
+    <li>Formations in the streamed MAN variants are not evaluated.</li>
+    <li>Whether other summon-flute or item captions survive an escape the same way.</li>
+  </ul>
 </section>
 <section class="doc-section" id="gaza-2-softlock">
   <h2>Gaza 2 softlock</h2>

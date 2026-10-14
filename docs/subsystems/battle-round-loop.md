@@ -520,7 +520,7 @@ Kinds `1..5` additionally latch `actor[+0x21F] = kind` and stage the effect word
 
 **Other setters.** `ori 0x4` at `0x80041CF4` / `0x80041DE4` and `ori 0x1000` at `0x80041EE8` / `0x80041F84` (SCUS band `0x80041...`); the each-frame delegation `ori 0x380` at `0x8004D118` (`FUN_8004CE2C`) and `0x80047F88` (`FUN_80047430`); and `ori 0x380` / `ori 0x1` copies of the same shapes in the slot-B battle-support images (PROT 0902 / 0903 / 0905 / 0907, e.g. `0x801F7F50` in 0907's image).
 
-**Bit `0x400` has no retail setter.** No instruction in any static image sets bit `0x400` (or `0x800`, or `0x40`): not by immediate, not through the `sllv` appliers (shift range `(rng%3)+3`, bits 3..5 only), not via the kind switch, not through `+0x6F6`, and not by an unaligned store (zero `swl` / `swr` hits near the offset). Every `0x400`-touching write is a clear:
+**Bit `0x400` has one retail setter, in a cast image.** PROT 0955's Kiss of Death **miss** arm ORs it in: `lhu v0,0x16e(s0)` at `0x801F8CF4`, `ori v0,v0,0x400` at `0x801F8CFC`, `sh v0,0x16e(s0)` at `0x801F8D04` (port: `FLAG_KISS_OF_DEATH_MARK` in `kiss_of_death_tick`). Outside that slot-B image no instruction in any static image sets bit `0x400` (or `0x800`, or `0x40`): not by immediate, not through the `sllv` appliers (shift range `(rng%3)+3`, bits 3..5 only), not via the kind switch, not through `+0x6F6`, and not by an unaligned store (zero `swl` / `swr` hits near the offset). Every `0x400`-touching write is a clear:
 
 - the accessory-passive cure `andi 0xFBFF` at `0x8004CFCC` (`FUN_8004CE2C`, keyed on char passive word `+0x6C0` bit `0x08000000`);
 - the per-round waker `FUN_801F45A4`, which loops the 7 actor slots and clears exactly bit `0x400` behind a `rng & 7 == 0` roll (`andi v0,v0,0xfbff` at `0x801F4610`, `sh` at `0x801F4614`; dump `ghidra/scripts/funcs/overlay_0898_static_801f45a4.txt`). Not `FUN_801F452C`: that is the 30-instruction magic-level-increased banner composer ending at `0x801F45A0`;
@@ -528,7 +528,7 @@ Kinds `1..5` additionally latch `actor[+0x21F] = kind` and stage the effect word
 - the on-hit strip `andi 0xF07F` at `0x801EDA5C` (`FUN_801EC3E4`) and its bit-`0x4`-gated sibling at `0x801DE2E8..0x801DE2FC` (`FUN_801DDB30`);
 - the battle-exit and KO clears above.
 
-So bit `0x400` is latent content: a complete consumer / curer lifecycle (hit-strip class, a dedicated RNG waker, an accessory immunity, item cures, a battle-exit clear) with no infliction path in the shipped images. It could only enter play through the `+0x6F6` mirror, which nothing seeds with it.
+So bit `0x400` has a complete consumer / curer lifecycle (hit-strip class, a dedicated RNG waker, an accessory immunity, item cures, a battle-exit clear) and one infliction path, the missed Kiss of Death: a static-image sweep alone reads it as latent, because the setter sits in a cast image.
 
 ## AP / Spirit gauge
 

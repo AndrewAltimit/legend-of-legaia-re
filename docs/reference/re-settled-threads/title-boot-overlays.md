@@ -89,7 +89,7 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | Slot-B overlay cluster (`0900..0969`) per-entry identity | resolved for every entry | `capture` + `disassembly` | [details ↓](#slot-b-overlay-cluster-09000969-per-entry-identity) |
 | PROT 0968 - what it is, who loads it, and how big it really is | resolved - identity and extent by disassembly, residency by capture | `capture` | [details ↓](#prot-0968---the-cort-battle-stage-overlay) |
 | `0x80010390` - the SCUS word that looked like a lead on 0968 | resolved: it is the slot-B overlay destination pointer, shared by every slot-B entry | `disassembly` | [details ↓](#0x80010390-is-the-slot-b-overlay-destination-pointer) |
-| Who registers the MDECin DMA callback wrapper `FUN_801CFE98`? | resolved (nobody - linked libpress residue; retail hooks only the MDEC-out twin) | `disassembly` (the residue reading `inference`) | Zero references in eight forms over 1234 images (SCUS, 31 based overlays, every raw PROT entry). Its twin `0x801CFEBC` - the same nine instructions with channel 1 - is what PROT 0970 calls, at `0x801CF524` (clear) and `0x801CF9C4` (install). See [`cutscene.md`](../../subsystems/cutscene.md). |
+| Who registers the MDECin DMA callback wrapper `FUN_801CFE98`? | resolved (nobody - linked libpress residue; retail hooks only the MDEC-out twin) | `disassembly` (the residue reading `inference`) | Zero references in eight forms over 1234 images (SCUS, 31 based overlays, every raw PROT entry). Its twin `0x801CFEBC` - the same nine instructions with channel 1 (the two differ only in the `jal 0x8005FDE8` delay slot, `clear a0` at `0x801CFEA8` against `li a0,1` at `0x801CFECC`) - is what PROT 0970 calls, at `0x801CF524` (clear) and `0x801CF9C4` (install). See [`cutscene.md`](../../subsystems/cutscene.md). |
 | PROT 0895 (`init.pak`) identity + base | resolved (slot A `0x801CE818`; mode 16's whole body is its `FUN_801CE9C0`) | `disassembly` | Base recovered from the image's own `jal` graph (8 votes, 22/25 pointer resolution, 7 string anchors); `0x801CE9C0` is a clean `addiu sp,sp,-0x230` entry at file `+0x1A8`, 784 bytes, building the four logo primitive records and storing mode `0x11` at `0x801CEC94`; the code region closes byte-exactly at `+0x216C` (20 functions) ahead of the first TIM at `+0x21C4`. SCUS `FUN_8002612C` (mode 16) is a frame, that `jal`, and an epilogue. |
 | Does anything draw the `init.pak` WARNING screen? | resolved-negative (the TIM is uploaded and never drawn) | `disassembly` + `capture` | PROT 0895 uploads the health-warning TIM to VRAM `(704, 0)` and gives it descriptor `1` of the six-record sprite table at `0x801F369C`, but none of the five `FUN_801CFBB8` call sites in that image passes id `1`, nothing else on the disc references the table, and a boot capture never draws from that page. The USA build loads the screen and skips it. See [`boot.md`](../../subsystems/boot.md#the-health-warning-is-never-drawn). |
 | Which title sub-mode does a cold boot show - `0x02` or `0x10`? | resolved (`0x10`, always) | `disassembly` + `capture` | [details ↓](#a-cold-boot-always-shows-title-sub-mode-0x10) |
@@ -590,11 +590,16 @@ symbol-size heuristic and is not width evidence
 ([`ghidra.md`](../../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)).
 
 - The routine holds the save-context base in `$s0` (`lui $s0, 0x8008` / `addiu $s0, $s0, 0x4140`
-  = `0x80084140`) and issues each seed write as an `sb` or `sw` at `$s0 + off`.
+  = `0x80084140`, at `0x80034A74`) and issues each seed write as an `sb` or `sw` at `$s0 + off`:
+  six `sb` over `0x454..0x45B` and nine `sw` over `0x45C..0x478` / `0x590..0x59C`, all inside
+  `0x80034A88..0x80034AE8`.
 - The C's absolute globals `DAT_80085958` / `DAT_80085959` are `sb $v0, 0x1818($s0)` /
   `sb $v0, 0x1819($s0)` - the starting-item pair at `INVENTORY_SC_OFFSET`, `SC`-relative and
   issued after the template expander, so not part of the pre-expander set.
-- The story-flag clear is a downward walk from `$s0 + 0x1FF` over `sb $zero, 0x1618($v1)`,
+- The starting-item pair is stored at `0x80034B10` / `0x80034B18`, after the `jal 0x800560B4` at
+  `0x80034AFC`.
+- The story-flag clear is a downward walk from `$s0 + 0x1FF` over `sb $zero, 0x1618($v1)`
+  (`0x80034B04..0x80034B28`, loop on `bgez`),
   covering `SC + 0x1618..0x1817` - `0x200` bytes, the port's `STORY_FLAGS_LEN`.
 - The disc-gated `new_game_seed_disc::world_state_seed_matches_the_routines_stores` re-derives
   the table from the instruction encodings in the user's executable and fails on a wrong offset,
@@ -753,7 +758,10 @@ is the closed form `delta(n) = ⌊n²/4⌋ + 1`.
 - **Reader:** the level-up applier `FUN_801E9504` (overlay-resident, called from the reward
   resolver `FUN_8004E568` at `0x8004F34C`). The running sum to the current level is scaled
   `(sum × 9999999) / 0x140FE` for `level < 0x11` (else `sum × 0x79`) and compared
-  `≤ record cumulative XP` in a multi-level `do...while` loop.
+  `≤ record cumulative XP` in a multi-level `do...while` loop. Checked against the listing: the
+  level test is `sltiu 0x11` at `0x801E95D0`, the `x 9999999` shift chain and the `0xCC2ABE13`
+  reciprocal (`>> 48`, a divide by `0x140FE`) run `0x801E95D8..0x801E9614`, and the `x 0x79` arm
+  is `0x801E9618..0x801E9624`.
 - **Not `0x8007123C` / `0x80070A3C`:** those are an off-by-`0x800` file/virtual confusion and a
   sin-LUT slice. A New Game Status capture shows "Next Level 121", the real L2 threshold, not 50.
 - **Port:** `legaia_save::RETAIL_XP_CUMULATIVE` / `retail_xp_table()` ship the derived base curve
@@ -1020,7 +1028,10 @@ descriptor table reproduces from the extracted image.
 
 `FUN_801CE9C0` (PROT 0895 `+0x1A8`) uploads the four `init.pak` TIMs through `FUN_800198E0` after
 writing their CLUT and pixel VRAM rects, selects the 640x480 display env (`FUN_8001DAF8(0x400)`)
-and spawns the two boot actors. It contains no primitive emit.
+and spawns the two boot actors. It contains no primitive emit: its `jal` set holds the four
+uploads (`0x801CEA68`, `0x801CEA9C`, `0x801CEC40`, `0x801CEC54`), the display-env call
+(`0x801CEB18`) and the two spawns (`0x801CEB60`, `0x801CEB70`), and no call to the OT linker
+`FUN_8003D2C4`.
 
 - **Quads:** a six-record, 20-byte sprite-descriptor table at `0x801F369C` (file `+0x24E84`,
   immediately after the fourth TIM):
@@ -1066,7 +1077,9 @@ hosts.
   print correctly while the body prints low. `0x801E5AE8` is the routine's own inline placer at
   `+0xE0`.
 - Class -> equipment byte: 0 -> 0, 1 -> 1, 2 -> the weapon index (`_DAT_8007B42C`, `2/3/2`),
-  3 -> 4 (an `addiu v1,zero,4` in the delay slot at `0x801E5AB0`).
+  3 -> 4 (an `addiu v1,zero,4` in the delay slot at `0x801E5AB0`). The class is bits `0x60` of
+  equipment-table byte `+7` (`0x801E5A80..0x801E5A8C`); a slot argument of 4 or more bypasses the
+  class and stores at `slot + 1` (`0x801E5A4C..0x801E5A50`, `0x801E5AE4`).
 - No `jal`, data word or `addiu` materialisation of `0x801E5A08` exists in any image. The live
   equip confirm is `FUN_801D9C14`'s candidate arm.
 
@@ -1078,7 +1091,10 @@ Port: `legaia_engine_field::dev_equip_commit::commit_equip`.
 
 `FUN_801E3F74`'s mode `4` ("Return", `0x801CF384`) is real and unreachable.
 
-- Its only caller forms the cell as `col + row*5` (`0x801E06D0`).
-- The shared stepper clamps `col` to `0..=4` and `row` to `0..=2`.
+- The selector returns `4` only for cell `0xF` (`li v0,0xf` / `bne` at `0x801E3F74..0x801E3F84`).
+- Its only caller forms the cell as `col + row*5` (`0x801E06D0..0x801E06E0`).
+- The shared stepper **wraps** rather than clamps, and the range is the same: `col < 0` becomes `4`
+  and `col >= 5` becomes `0` (`0x801E0170..0x801E019C`), `row < 0` becomes `2` and `row >= 3`
+  becomes `0` (`0x801E01A4..0x801E01CC`). The cell tops out at `14`.
 - The linear seed `_DAT_8007B7CC` has three references on the disc, all in PROT 0899; its single
   writer (`0x801DED2C`) stores the same `col + row*5`.

@@ -136,7 +136,7 @@ and took the near arm every time ([`world-map.md`](world-map.md)).
 ### The disc does ship writers of `+0x42`
 
 The census is a statement about the sampled states, not about the disc.
-Three writer families put a non-zero value in that halfword:
+Four writer families put a non-zero value in that halfword:
 
 - **The actor allocator (dev-reachable only).** `FUN_80020DE0` clears `+0x42`
   at `0x80020EAC` and, when `_DAT_8007B6D0 & 2`, writes `2` at `0x80020EC0`
@@ -161,6 +161,16 @@ Three writer families put a non-zero value in that halfword:
   around a scripted beat; several targets are the player (`F8`). Placed field
   actors are drawn by `FUN_8001ADA4` / `FUN_8001B964`, so these actors are
   drawn through the far arm while the byte is up.
+- **The battle defeat sink.** The tint SM `FUN_80050120`'s defeat-fade arm
+  sinks a killed monster (`+0x36 += (record[+0x1F] * step) >> 2`) and
+  stores `1` into its render node's `+0x42` beside the height
+  (`sh s4,0x42(a0)` at `0x800504AC`, `a0 = actor[+0x22C]`). The per-actor
+  battle draw `FUN_80048A08` then takes its far arm for every object of the
+  body, under row 0 as battle setup seeds it (`lo = -0x7FFF`, `hi = 0`):
+  the half space at and above the stage floor, so the body goes down
+  through the floor and leaves no packet once it is under it
+  (`player_steal_skeleton_banner`, skeleton `183` down). Port:
+  `World::battle_actor_floor_clip`, staged as a per-draw clip on both hosts.
 
 The `sh $v0, 0x42(...)` pairs inside the brackets themselves (`0x8001B4C8`,
 `0x80048F24`) are not writers: their base register is the scratchpad packet
@@ -316,12 +326,21 @@ Structural facts, read from the raw table:
 - **Topology is parity-based** (from `AVSZ3` vs `AVSZ4`): even kinds are
   triangles, odd kinds quads.
 - **Bank 3** (offset `0xF0`) is a depth-cued handler set like banks 1 and 2,
-  not a blend mode. It is the only bank that selects `0x80045BB4`, a
-  composite / tessellating body (emits both `POLY_G3` and `LINE_F2`, dual
-  `RTPT`). No world-map capture sets the flag that reaches it
+  not a blend mode. It is the only bank that selects `0x80045BB4` for kind
+  19, a tessellating quad leaf: it averages the four corners into a centre,
+  fans four triangles from it over the rim and splits each at its edge
+  midpoints, emitting sixteen `POLY_GT3` (code `0x34`, `0x80045DE4`) per
+  quad, each vertex depth-cued by `DPCT`. The colours are the corners'
+  interpolation; what changes on screen is the affine texture map, which
+  follows the perspective far more closely over sixteen small triangles.
+  The mode-word bit `0x20000000` selects the bank (`0x800434EC`). No
+  world-map capture sets it
   ([`world-map-overlay.md`](../formats/world-map-overlay.md) has the per-bank
-  counts); unreached in a capture is not unreachable, so it belongs in any
-  sweep of the family.
+  counts); PROT 0903's fire tunnel does (mode byte `0xE9`), and
+  `gimard_burning_attack`'s ordering table holds its rings as `GT3`s only.
+  Port: `render_kernels::sprite_arm::subdivide_quad`, which the draw-kind-4
+  default emitter (`effect_default_arm::vram_mesh`) applies when the colour
+  word carries the bit; both hosts draw that emitter's mesh.
 - **`0x80044798` is not a table entry.** It sits between the lit set and the
   cued banks and is a transform-free `mfc2`-only read-back / packet-pack
   helper. The cued bodies for kinds 12..19 are full per-kind handlers past
@@ -1245,17 +1264,25 @@ lit kinds and every overworld mesh the disc ships bends. See
 
 **The table carries the `OFY` of the frame that built it.** The builder sets
 `H` and the matrix but not the screen offset, and stores `SY - 0x78`, so
-every entry is offset by whatever `OFY` the GTE held when the installer ran,
-less `120`. The frame-begin pass `FUN_8001698C` sets `OFY` to half the draw
-height (`0x1F80038E >> 1`, `0x80016A3C..0x80016A50`), which is `114` on the
-field's `228`-row area. Every overworld state in the retail comparison corpus
-holds an unbiased table (entry `0` is `0`: built at `OFY = 120`) except
-`sebucus_overworld_resident`, whose entry `0` is `-6` (built at `OFY = 114`):
-it lifts every overworld vertex six rows over the port's closed form, and
-that state's engine frame lands about seven rows low with a camera identical
-to retail's. Which transition installs the overworld under the field's draw
-area is not pinned (that state's party is level 99, so a debug warp is a
-candidate). The port builds the common, unbiased table.
+every entry is offset by whatever `OFY` the GTE held at the call, less `120`.
+Two routines set `OFY` (`SetGeomOffset`, `FUN_8005B7F8`, has two callers
+disc-wide): the frame-begin pass `FUN_8001698C` sets half the draw height
+(`0x1F80038E >> 1`, `0x80016A3C..0x80016A50`), `114` on the field's
+`228`-row area, and the display-env setup `FUN_8001DAF8` ends on
+`(160, 0x78)` (`0x8001DCD0`). Three calls build the table disc-wide:
+
+| Call | Site | `OFY` | Entry `0` |
+|---|---|---|---|
+| MAN installer `FUN_8003AEB0` | `0x8003AF98`; its one caller, the field init `FUN_801D6704` (`0x801D6DA8`), runs `FUN_8001DAF8(0x140)` first (`0x801D6954`) | `120` | `0` |
+| map display mode `1`, flat `(0, 0)` | PROT 0981 `0x801CE958` | `114` | `-6` |
+| map display mode `3`, saved coefficients | PROT 0981 `0x801CEB88` | `114` | `-6` |
+
+The map display runs inside a mode-`0x0D` frame, after the frame-begin pass,
+so opening it lifts every bent overworld draw six rows: the display's own
+frame, and the walk frame after it until the next scene load rebuilds the
+table. Every overworld state in the retail comparison corpus holds an
+unbiased table except `sebucus_overworld_resident`, whose entry `0` is `-6`:
+its player had opened the map since the kingdom loaded.
 
 **Port.** `render-kernels::overworld_curvature`, pinned entry for entry against
 the `keikoku_chest_preload` capture. The fog sheets and the drop shadow add
@@ -1265,7 +1292,12 @@ in closed form (`OVERWORLD_CURVE_WGSL`, the page's `overworldCurve`, both
 pinned by `curvature_closed_form`) with a per-frame scale
 (`frame_curve_scale`): `1` under the walk camera, whose matrix carries the 6x
 world scale; `6` under a `1x` scripted shot; `0` under the top-view debug
-camera.
+camera. The build offset is `World::overworld_curve_bias` - `0` from the
+scene load, `REBUILD_BIAS` from the display's mode `1` - and every consumer
+adds it at any scale: the fog sheets and the drop shadow beside the entry,
+the native renderer as a constant row offset folded into each scene draw's
+clip matrix (`Renderer::set_overworld_curve_bias`), the play page as the
+GLSL `u_curve_bias`.
 
 ### `FUN_8003DAA8` is a CD driver, not a present driver
 

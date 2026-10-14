@@ -74,6 +74,13 @@ impl LegaiaRuntime {
         // `town01` re-enter through here too, and a card Load's resume is not
         // a picker visit either.
         host.world.stage_picker_entry(name, resume);
+        // The page's runtime twins of the native launch switches
+        // (`crate::play_toggles`).
+        self.apply_page_toggles();
+        let host = self
+            .scene_host
+            .host_mut()
+            .ok_or_else(|| "enter_field: call load_disc first".to_string())?;
         let world_map = legaia_engine_scene::scene::is_world_map_scene(name);
         if world_map {
             host.enter_world_map_scene(name)
@@ -211,7 +218,7 @@ impl LegaiaRuntime {
         // `find_scene_anm_bundle` calls too (`npc_catalog::scene_anm_bundle`).
         // The scene bundle poses the MAN NPCs and the bound placed props; the
         // locomotion bundle poses the global-pool specials.
-        self.scene_anm = legaia_engine_core::npc_catalog::scene_anm_bundle(scene);
+        self.scene_anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(scene);
         self.locomotion_anm = host
             .index
             .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)

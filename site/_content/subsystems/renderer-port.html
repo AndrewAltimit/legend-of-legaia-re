@@ -1,0 +1,147 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; port renderer</div>
+  <h1>The port&rsquo;s wgpu renderer</h1>
+  <p class="lede">How the Rust port draws a frame: which PlayStation rasterisation traits are always on, the two that are opt-in, how per-texel semi-transparency becomes two passes, the enhancement passes that leave the faithful render bit-identical when off, and the screen-space overlay that stands in for retail&rsquo;s ordering table. Retail&rsquo;s own renderer is on <a href="renderer.html">renderer</a>; how a pixel gets its colour is on <a href="shading.html">shading</a>.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Crate</dt><dd><code>legaia-engine-render</code>: winit + wgpu, a software VRAM page sampled in the fragment shader</dd>
+    <dt>Shared kernels</dt><dd><code>legaia-render-kernels</code> - wgpu-free GTE maths, screen primitives, VRAM capture, emitters - linked by the browser host too</dd>
+    <dt>Always on</dt><dd>Affine UVs, flat per-primitive texture page and palette, PSX texture modulation, semi-transparency</dd>
+    <dt>Opt-in</dt><dd><code>Renderer::set_psx_mode</code> gates vertex snap and 15-bit dither only</dd>
+    <dt>Enhancements</dt><dd>Enhanced lighting, light shadows, camera-occlusion fade, volumetric fog - each off <em>is</em> retail</dd>
+    <dt>Draw lists</dt><dd>Battle HUD, menus and text come from <code>engine-ui</code>, shared with the <a href="browser-host.html">browser host</a></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="frame">
+  <h2>A frame</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The port renderer frame, left to right: the software VRAM page is uploaded; the opaque scene pass draws all meshes, discarding the semi-transparent texels of blended primitives; the blend pass re-draws only those primitives far to near, one pipeline per blend mode; the screen-space overlay draws quads in ordering-table order; then the battle HUD, menu chrome and text. A capture path writes a drawn frame back into the VRAM page. Enhancement passes hang off the scene passes and are identity when off.">
+      <defs><marker id="rp-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="40" width="152" height="56" rx="4"/>
+      <text class="dg-label" x="96" y="65">Software VRAM</text>
+      <text class="dg-sub" x="96" y="81">1024 x 512 halfwords</text>
+      <rect class="dg-node-accent" x="192" y="40" width="152" height="56" rx="4"/>
+      <text class="dg-label" x="268" y="65">Opaque scene</text>
+      <text class="dg-sub" x="268" y="81">depth write on</text>
+      <rect class="dg-node-accent" x="364" y="40" width="152" height="56" rx="4"/>
+      <text class="dg-label" x="440" y="65">Blend pass</text>
+      <text class="dg-sub" x="440" y="81">far to near, 4 modes</text>
+      <rect class="dg-node-accent" x="536" y="40" width="152" height="56" rx="4"/>
+      <text class="dg-label" x="612" y="65">Screen overlay</text>
+      <text class="dg-sub" x="612" y="81">ordering-table walk</text>
+      <rect class="dg-node" x="708" y="40" width="152" height="56" rx="4"/>
+      <text class="dg-label" x="784" y="65">HUD, chrome, text</text>
+      <text class="dg-sub" x="784" y="81">engine-ui draw lists</text>
+      <path class="dg-edge" d="M172 68 L190 68" marker-end="url(#rp-arrow)"/>
+      <path class="dg-edge" d="M344 68 L362 68" marker-end="url(#rp-arrow)"/>
+      <path class="dg-edge" d="M516 68 L534 68" marker-end="url(#rp-arrow)"/>
+      <path class="dg-edge" d="M688 68 L706 68" marker-end="url(#rp-arrow)"/>
+      <rect class="dg-group" x="182" y="140" width="344" height="140" rx="6"/>
+      <text class="dg-sub dg-start" x="192" y="156">enhancements: identity when off</text>
+      <rect class="dg-node" x="196" y="170" width="150" height="44" rx="4"/>
+      <text class="dg-label" x="271" y="189">Enhanced lighting</text>
+      <text class="dg-sub" x="271" y="205">moods, lamps, halos</text>
+      <rect class="dg-node" x="360" y="170" width="150" height="44" rx="4"/>
+      <text class="dg-label" x="435" y="189">Occlusion fade</text>
+      <text class="dg-sub" x="435" y="205">screen-door discard</text>
+      <rect class="dg-node" x="196" y="224" width="150" height="44" rx="4"/>
+      <text class="dg-label" x="271" y="243">Light shadows</text>
+      <text class="dg-sub" x="271" y="259">per-light PCF</text>
+      <rect class="dg-node" x="360" y="224" width="150" height="44" rx="4"/>
+      <text class="dg-label" x="435" y="243">Volumetric fog</text>
+      <text class="dg-sub" x="435" y="259">not the retail pool</text>
+      <path class="dg-edge-dim" d="M268 140 L268 98" marker-end="url(#rp-arrow)"/>
+      <path class="dg-edge-dim" d="M440 140 L440 98" marker-end="url(#rp-arrow)"/>
+      <rect class="dg-node-ok" x="560" y="170" width="300" height="50" rx="4"/>
+      <text class="dg-label" x="710" y="192">VRAM capture</text>
+      <text class="dg-sub" x="710" y="208">drawn frame back into the page</text>
+      <path class="dg-edge-dim" d="M612 96 L612 168" marker-end="url(#rp-arrow)"/>
+      <path class="dg-edge-dim" d="M560 195 L540 195 L540 126 L96 126 L96 98" marker-end="url(#rp-arrow)"/>
+      <rect class="dg-node" x="560" y="234" width="300" height="44" rx="4"/>
+      <text class="dg-label" x="710" y="253">PSX mode (opt-in)</text>
+      <text class="dg-sub" x="710" y="269">vertex snap + 15-bit dither only</text>
+    </svg>
+    <figcaption>Retail draws 3D primitives and screen-space packets through one ordering table; the port splits them into a scene pass and an overlay pass and joins them in one compositing target. The capture path is the direction the console gets for free: on a PlayStation the framebuffer <em>is</em> VRAM, so a primitive can sample pixels drawn moments earlier.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="psx">
+  <h2>What is PlayStation about it</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Trait</th><th>Gate</th><th>What it reproduces</th></tr></thead>
+    <tbody>
+      <tr><td>Affine UV interpolation</td><td>unconditional</td><td>the texture warp on surfaces with steep depth gradients. It is the faithful behaviour, not an effect</td></tr>
+      <tr><td>Flat texture page + palette per primitive</td><td>unconditional</td><td>each triangle samples one page and one palette</td></tr>
+      <tr><td>Texture modulation</td><td>unconditional</td><td><code>texel * colour / 128</code> with the baked colour word - the game&rsquo;s whole lighting on most paths</td></tr>
+      <tr><td>Semi-transparency</td><td><code>set_semi_blend</code>, on by default</td><td>the four blend equations, per texel</td></tr>
+      <tr><td>Sub-pixel vertex snap</td><td>PSX mode</td><td>the per-vertex shimmer on slow geometry</td></tr>
+      <tr><td>15-bit ordered dither</td><td>PSX mode</td><td>the cross-hatched gradients of a 5-bit-per-channel framebuffer</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>There is no synthetic light.</strong> Retail runs no light source on the field path: shading is baked into each primitive&rsquo;s colour word and the only colour operation is the depth cue. A missing colour stream defaults to white, and white reads as <em>too bright</em>, not unlit - the usual sign that a draw lost its colours.</p>
+</section>
+
+<section class="doc-section" id="blend">
+  <h2>Semi-transparency is two passes</h2>
+  <p>Whether a texel blends is decided <em>per texel</em>: bit 15 of the palette entry picks blend or opaque inside one semi-transparent primitive. So the opaque pass draws everything and discards those texels, and a blend pass re-draws only the semi-transparent triangles, keeping only them.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Mode</th><th>Equation</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td><code>0.5 * B + 0.5 * F</code></td></tr>
+      <tr><td><code>1</code></td><td><code>B + F</code> (additive)</td></tr>
+      <tr><td><code>2</code></td><td><code>B - F</code> (subtractive)</td></tr>
+      <tr><td><code>3</code></td><td><code>B + 0.25 * F</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>Order mirrors the ordering table at per-primitive granularity.</strong> Every blended primitive is keyed by its centroid depth and the whole list blends far to near regardless of draw boundaries; equal keys draw later-submitted-first, as a bucket of the retail table does. Untextured primitives have no per-texel gate and blend every pixel.</p>
+</section>
+
+<section class="doc-section" id="enhancements">
+  <h2>Enhancement passes</h2>
+  <ul class="bullets">
+    <li><strong>Enhanced lighting</strong> shades the scene under a time-of-day mood, adds lamp point lights, draws emissive-tagged primitives at a gain and composites glow sprites and light shafts. The derivation lives in the shared kernel so both hosts light from the same values; per-light shadows are the part only wgpu has.</li>
+    <li><strong>Camera-occlusion fade</strong> dissolves environment fragments that stand between the camera and the player into a 4x4 screen-door pattern, armed only when a five-point ray-cast finds the character completely hidden. It is a fragment discard, not a per-body cull.</li>
+    <li><strong>Volumetric ground fog</strong> is separate from the retail <a href="field-ambient-fx.html#fog">fog pool</a> and never touches it.</li>
+  </ul>
+  <p>Each is identity when disabled: the shader helper returns its input when the uniform enable is zero, so the disabled path is pixel-identical to the faithful render.</p>
+</section>
+
+<section class="doc-section" id="overlay">
+  <h2>The screen-space overlay</h2>
+  <p>A screen primitive is a textured quad or a flat quad carrying an ordering-table index. The pass reproduces the retail walk - farthest bucket first, later-submitted-first inside a bucket - and draws coalesced runs by blend class. Primitives are authored in the 320x240 display space every retail emitter clamps against, and the overlay stretches over the surface.</p>
+  <p>Its consumers are the things retail draws as 2D packets into the 3D table: battle streaks and trails, the field-to-battle transition styles, billboards. The corner projection is the GTE&rsquo;s own, including its reciprocal and its saturating screen coordinates, so a corner behind the camera smears the way hardware does.</p>
+</section>
+
+<section class="doc-section" id="capture">
+  <h2>Landing a frame back in VRAM</h2>
+  <p>The renderer only ever pushed the software page <em>to</em> the GPU. The capture path is the missing direction: it quantises a readback to 15-bit colour and writes it into a rect of the CPU-side page, so the result is visible to every reader of that page. The field-to-battle transition needs it - the tile shatter and the curtain sample the field frame that was on screen when the encounter fired.</p>
+  <p>Two retail nuances are stated rather than hidden: the transition&rsquo;s depth-cue bank has no channel in the overlay, and retail <em>subtracts</em> from the display buffer each frame instead of clearing it, so its strips leave fading trails where the port&rsquo;s leave black.</p>
+</section>
+
+<section class="doc-section" id="profiler">
+  <h2>Frame profiler</h2>
+  <p><code>LEGAIA_PROFILE=1</code> prints a rolling one-second timing breakdown from the native window: frame average and percentiles, draw counts, and the tick / pose / draw-list / encode / submit / present split. It is free when off - every entry point short-circuits on one cached flag.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The blend tails and dither parity, the occlusion tunables, the transition emitter style by style, the battle HUD and menu chrome pipelines and the reference ports of retail&rsquo;s draw-decision kernels are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/renderer-port.md" target="_blank" rel="noopener"><code>docs/subsystems/renderer-port.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="renderer.html">Renderer</a>
+    <a href="renderer-internals.html">Renderer: internals</a>
+    <a href="shading.html">Shading</a>
+    <a href="browser-host.html">Browser host</a>
+    <a href="battle-hud.html">Battle HUD</a>
+    <a href="battle-stage-camera.html">Stage and camera</a>
+    <a href="engine.html">Engine port</a>
+  </div>
+</section>

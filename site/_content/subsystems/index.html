@@ -174,9 +174,21 @@
       <div class="card-title">Field / event script VM</div>
       <div class="card-body">The interpreter behind every NPC line, cutscene beat, door and story flag: 43 opcodes, plus the sub-dispatchers that open shops and menus.</div>
     </a>
+    <a class="card" href="script-vm-menuctrl.html">
+      <div class="card-title">Field VM op 0x4C</div>
+      <div class="card-body">The grab-bag opcode: sixteen sub-dispatchers that paint walls, steer the camera, heal the party, wobble the floor and schedule escape timers.</div>
+    </a>
     <a class="card" href="field-locomotion.html">
       <div class="card-title">Field locomotion</div>
       <div class="card-body">From "push the stick" to "Vahn moves": camera-relative direction, per-frame speed, 2-unit steps and per-axis collision against the scene's walkability grid.</div>
+    </a>
+    <a class="card" href="field-ambient-fx.html">
+      <div class="card-title">Field ambient effects</div>
+      <div class="card-body">Why a &ldquo;static&rdquo; map moves: palette walkers, the scene-entry effect tree, texel scrollers, vertex morphs and the fog pool.</div>
+    </a>
+    <a class="card" href="tile-board.html">
+      <div class="card-title">Tile board</div>
+      <div class="card-body">A step-per-press grid mode inside the field overlay, with procedural boards built from actors - that no shipped scene installs.</div>
     </a>
     <a class="card" href="motion-vm.html">
       <div class="card-title">Motion VM</div>
@@ -208,6 +220,42 @@
     <a class="card" href="battle-action.html">
       <div class="card-title">Battle action FSM</div>
       <div class="card-body">The state machine between &ldquo;picked Attack&rdquo; and &ldquo;HP deducted&rdquo; - swing timing, Arts chains, Magic, Summons, Spirit, Run and capture.</div>
+    </a>
+    <a class="card" href="battle-round-loop.html">
+      <div class="card-title">Battle round loop</div>
+      <div class="card-body">One fight from the outside in: encounter roll or scripted entry, the two bands of a round, initiative, monster AI, the results sequence and what a wipe really does.</div>
+    </a>
+    <a class="card" href="battle-command-flow.html">
+      <div class="card-title">Battle command flow</div>
+      <div class="card-body">The menu half of a battle: Begin / Run, the D-pad command ring, the commit log and confirm, plus the tutorial and Cort stage overlays that hook it.</div>
+    </a>
+    <a class="card" href="battle-action-queue.html">
+      <div class="card-title">Battle action queue</div>
+      <div class="card-body">The byte string every action is: swing bytes, art starters and art constants, how the builder rewrites combos, and how hit events turn it into damage.</div>
+    </a>
+    <a class="card" href="battle-action-helpers.html">
+      <div class="card-title">Battle action helpers</div>
+      <div class="card-body">Where a turn&rsquo;s arithmetic lives: the range metric, damage wrappers, escape roll, AI picks, effect spawns, pose driver and voice cues.</div>
+    </a>
+    <a class="card" href="battle-action-exit-gates.html">
+      <div class="card-title">Exit gates and softlocks</div>
+      <div class="card-body">The two states that wait with no timeout - the HP-readout settle and the attack approach - and exactly how each one parks.</div>
+    </a>
+    <a class="card" href="cast-module.html">
+      <div class="card-title">Cast modules</div>
+      <div class="card-body">The 64 small overlay programs behind every summon and capture-class special: how an action reaches one, its phase machine, damage shapes and camera.</div>
+    </a>
+    <a class="card" href="battle-stage-camera.html">
+      <div class="card-title">Battle stage and camera</div>
+      <div class="card-body">A procedural ground grid, a half-bowl backdrop drawn twice, ten camera framings and the field-to-battle transition.</div>
+    </a>
+    <a class="card" href="battle-hud.html">
+      <div class="card-title">Battle HUD</div>
+      <div class="card-body">Plaques, panels, chips and banners: two static tables and a per-phase script derive every seat, plate and palette on the battle screen.</div>
+    </a>
+    <a class="card" href="battle-actor-rendering.html">
+      <div class="card-title">Battle actor rendering</div>
+      <div class="card-body">Assembled party meshes, one staged clip byte, the clip-tag ladder, slow motion, tint through the depth cue, and the trails behind a swing.</div>
     </a>
     <a class="card" href="battle-formulas.html">
       <div class="card-title">Battle formulas</div>
@@ -276,27 +324,53 @@
   </div>
 </section>
 
-<section class="doc-section" id="more">
-  <h2>More subsystem docs (on GitHub)</h2>
-  <p>The pages above are the explainers. These subsystems are documented at reference depth in the repository only; each opens the full Markdown page.</p>
-  <h3>Minigames</h3>
+<section class="doc-section" id="minigames">
+  <h2>Minigames</h2>
   <p>All five are playable on the <a href="../minigames.html">minigames page</a> and inside the port.</p>
-  <ul class="bullets">
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md" target="_blank" rel="noopener"><strong>Fishing</strong></a> - the lure and bite tick, the tension-gauge reel, catch scoring, the point exchange and the per-venue spawn tables.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-slot-machine.md" target="_blank" rel="noopener"><strong>Slot machine</strong></a> - the reel state machine, its two RNGs and the five-payline payout; a 3D scene, not sprites.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-baka-fighter.md" target="_blank" rel="noopener"><strong>Baka Fighter</strong></a> - the duel's round loop, the rock-paper-scissors exchange and the combo damage.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-dance.md" target="_blank" rel="noopener"><strong>Dance</strong></a> - Noa's rhythm game: the beat clock, the timing-window judge, the step chart and the groove gauge.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md" target="_blank" rel="noopener"><strong>Muscle Dome</strong></a> - the arena ladder: ordinary battle rounds under a contest hub.</li>
-  </ul>
-  <h3>Field + battle detail</h3>
-  <ul class="bullets">
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm-menuctrl.md" target="_blank" rel="noopener"><strong>Script VM: MENU_CTRL</strong></a> - opcode <code>0x4C</code> and its 16 sub-dispatchers, the door into shops, menus and party changes.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md" target="_blank" rel="noopener"><strong>Field ambient effects</strong></a> - palette-walk tables, the scene-entry effect tree and the palette cycler behind pulsating floors and lightning.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/tile-board.md" target="_blank" rel="noopener"><strong>Tile board</strong></a> - a step-per-press grid mode in the field overlay that no shipped scene installs; not how towns are walked.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm-overlay-ext.md" target="_blank" rel="noopener"><strong>Move VM: overlay extension</strong></a> - opcode <code>0x2F</code> and its 61 overlay-resident sub-opcodes.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener"><strong>Cast modules</strong></a> - the per-spell code images paged in for Seru magic and summons, and the phase machine each one runs.</li>
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md" target="_blank" rel="noopener"><strong>VM inventory</strong></a> - a census of every interpreter-shaped subsystem in the game, beyond the five on this page.</li>
-  </ul>
+  <div class="card-grid">
+    <a class="card" href="minigame-fishing.html">
+      <div class="card-title">Fishing</div>
+      <div class="card-body">Cast, coax a bite with a reel rhythm, then fight the fish on a tension gauge; the band roll, species pick and prize counter.</div>
+    </a>
+    <a class="card" href="minigame-slot-machine.html">
+      <div class="card-title">Slot machine</div>
+      <div class="card-body">Three cylinder reels in a 3D scene, five paylines, two random generators and a machine that pays back what it has taken.</div>
+    </a>
+    <a class="card" href="minigame-baka-fighter.html">
+      <div class="card-title">Baka Fighter</div>
+      <div class="card-body">A rock-paper-scissors duel with stat-scaled damage, a score-gated secret ladder and a pot you can lose.</div>
+    </a>
+    <a class="card" href="minigame-dance.html">
+      <div class="card-title">Dance</div>
+      <div class="card-body">A beat clock, a timing window with continuous accuracy, chains that pay only when closed, and the three-use Triangle wildcard.</div>
+    </a>
+    <a class="card" href="minigame-muscle-dome.html">
+      <div class="card-title">Muscle Dome</div>
+      <div class="card-body">An arena ladder of ordinary battles under a contest hub: the tally that heals, the envelopes, the settlement.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="engines-and-hosts">
+  <h2>Interpreters + the port&rsquo;s hosts</h2>
+  <div class="card-grid">
+    <a class="card" href="vm-inventory.html">
+      <div class="card-title">VM inventory</div>
+      <div class="card-body">Every interpreter-shaped subsystem in the game, with its dispatcher, its op space and whether the port runs it.</div>
+    </a>
+    <a class="card" href="move-vm-overlay-ext.html">
+      <div class="card-title">Move VM: 0x2F extension</div>
+      <div class="card-body">The 61 field-only sub-opcodes behind every ambient effect tree: player tests, flag branches, self-modifying bytecode.</div>
+    </a>
+    <a class="card" href="renderer-port.html">
+      <div class="card-title">Port renderer</div>
+      <div class="card-body">How the port draws a frame: the PlayStation traits that are always on, two-pass semi-transparency, enhancement passes, the screen overlay.</div>
+    </a>
+    <a class="card" href="browser-host.html">
+      <div class="card-title">Browser host</div>
+      <div class="card-body">What the WebAssembly bundle exports: the play runtime over the native session, the viewer pages, and how two hosts are kept in step.</div>
+    </a>
+  </div>
 </section>
 
 <section class="doc-section" id="port">

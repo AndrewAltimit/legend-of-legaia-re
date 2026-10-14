@@ -100,28 +100,15 @@ impl<S: AudioSink> BootSession<S> {
     /// then plays whatever came due. With no audio the calls are dropped, as
     /// every other cue is.
     fn route_field_sfx(&mut self) {
-        if self.host_stages_field_xa {
-            // The host's own XA lane drains both queues; the rest of the
-            // routing is the director's.
-            if let Some(bgm) = self.bgm.as_mut() {
-                bgm.route_world_sfx(&mut self.host.world, &self.host.index);
-            } else {
-                let w = &mut self.host.world;
-                let _ = (
-                    w.take_sfx_ring_ops(),
-                    w.take_sfx_voice_stops(),
-                    w.take_sfx_voice_keys(),
-                );
-            }
-            return;
-        }
         // The field's CD-XA one-shots (op `0x36`'s XA arm, the scripted-scene
         // voice leg) - drained every tick so none outlives its frame.
         let field_xa = self.host.world.drain_field_xa_cues();
-        // The scene's CD-XA prestage list is for a host that decodes clips
-        // asynchronously (the browser page stages it); this director reads a
-        // clip's span synchronously on first use, so the list is dropped.
-        let _ = self.host.world.drain_field_xa_prestage();
+        // The scene's CD-XA prestage list, filled at scene load: the lines
+        // the scene's ops will ask for, staged ahead of them. A director
+        // whose host slices sectors asynchronously (the browser page) queues
+        // each span; one that reads the disc on first use stages nothing
+        // (`AudioDirector::prestage_xa_clip`).
+        let prestage = self.host.world.drain_field_xa_prestage();
         let Some(bgm) = self.bgm.as_mut() else {
             // No audio: the producer queues are dropped, as every cue is.
             let w = &mut self.host.world;
@@ -132,6 +119,9 @@ impl<S: AudioSink> BootSession<S> {
             );
             return;
         };
+        for xa in &prestage {
+            bgm.prestage_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
+        }
         for xa in &field_xa {
             let fired = bgm
                 .play_xa_clip(xa.clip, xa.channel, xa.duration_sectors)

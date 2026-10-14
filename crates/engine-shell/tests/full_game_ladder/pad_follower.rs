@@ -464,7 +464,18 @@ pub(super) fn pad_walk(
     // Landings of walk-time scripts that moved the walker, by site and the
     // flags they left.
     let mut landings: HashMap<(String, BTreeSet<u16>, Cell), u32> = HashMap::new();
-    for _ in 0..PAD_LEG_FRAMES {
+    // Cells where the action tap opened a talk that changed nothing: the
+    // stalled walker is leaning on an NPC, not on a door.
+    let mut idle_taps: HashSet<Cell> = HashSet::new();
+    // Talks an action tap opened that changed no flag, by park site; one
+    // opened that way twice and this walk taps no more. The leaning cell
+    // above misses a talk that nudges the walker a sub-cell each time
+    // (`jiji`'s inn counter, P0[8..10]: the witch's "Want to stay?" on every
+    // tap of the walk past it, two thousand frames each).
+    let mut idle_talks: HashSet<String> = HashSet::new();
+    let mut taps_off = false;
+    let mut tapped_at: Option<usize> = None;
+    for step in 0..PAD_LEG_FRAMES as usize {
         pad_budget(session)?;
         // Per overworld tile: the encounter step counter it left behind.
         if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some()
@@ -496,8 +507,17 @@ pub(super) fn pad_walk(
                 eprintln!(
                     "    [battle] {} ({}) at start: {}",
                     scene_name(session),
+                    // The label names how the hand plays it. A fight that
+                    // forbids running is fought whatever installed it (the
+                    // Cort fight is entered from a band the staged-fight
+                    // census does not list), and the continuous hand fights
+                    // the random encounters it prices as winnable.
                     if scripted_next {
                         "scripted, fought"
+                    } else if session.host.world.battle.no_escape {
+                        "no escape, fought"
+                    } else if continuous::PLAYS_ON.with(std::cell::Cell::get) {
+                        "random, fought if winnable"
                     } else {
                         "random, fled"
                     },
@@ -684,9 +704,14 @@ pub(super) fn pad_walk(
             tap_owed = false;
         } else {
             tap_owed |= since % 60 == 1;
-            if tap_owed && !(moved && walking_mode == SceneMode::Field) {
+            if tap_owed
+                && !(moved && walking_mode == SceneMode::Field)
+                && !idle_taps.contains(&cell_of(wx, wz))
+                && !taps_off
+            {
                 pad = PadButton::Cross.mask();
                 tap_owed = false;
+                tapped_at = Some(step);
             }
         }
         pressed_at = Some((wx, wz));
@@ -782,9 +807,22 @@ pub(super) fn pad_walk(
                 }
             }
             let (px, pz) = player_xz(session);
+            // The talk a tap opens owns the pad a tick or two after it.
+            if tapped_at.is_some_and(|t| step.saturating_sub(t) <= 3)
+                && site.starts_with("dialogue")
+                && before.0 == flags_of_world(session)
+                && !idle_talks.insert(site.clone())
+            {
+                taps_off = true;
+            }
             if before != (flags_of_world(session), cell_of(px, pz)) {
                 planned_from = None;
                 path.clear();
+            } else if pad == PadButton::Cross.mask() && site.starts_with("dialogue") {
+                // The tap talked to whoever the walker is pressed against
+                // and nothing came of it: tapping there again only pages
+                // the same conversation.
+                idle_taps.insert(before.1);
             }
             // A band that turns the walk back every time it is crossed
             // (`retock` P2[26], the Mt. Letona checkpoint: "Passage

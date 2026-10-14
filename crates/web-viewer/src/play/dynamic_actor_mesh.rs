@@ -138,7 +138,7 @@ impl LegaiaRuntime {
         let Some(h) = self.scene_host.host() else {
             return Vec::new();
         };
-        let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         let mut out = Vec::with_capacity(self.dynamic_mesh_slots.len() * 6);
         for &slot in &self.dynamic_mesh_slots {
             let Some(a) = h.world.actors.get(slot as usize) else {

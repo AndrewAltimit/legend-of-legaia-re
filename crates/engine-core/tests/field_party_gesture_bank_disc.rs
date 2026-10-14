@@ -98,7 +98,7 @@ fn party_gestures_bind_from_the_live_party_bank() {
             host.enter_field_scene(name, 0).expect("re-enter");
             records += 1;
             let scene_anm =
-                legaia_engine_core::npc_catalog::scene_anm_bundle(host.scene.as_ref().unwrap());
+                legaia_engine_scene::npc_catalog::scene_anm_bundle(host.scene.as_ref().unwrap());
             // What a host does at scene entry: bind each party member's
             // spawn clip, which fixes the bone count its mesh is cut to.
             for &slot in &party {

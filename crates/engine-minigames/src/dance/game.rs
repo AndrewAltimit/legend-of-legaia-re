@@ -207,7 +207,7 @@ impl DanceGame {
     }
 
     /// Attach the dance hall's choreography bank (the `other7` scene's MOVE
-    /// ANM bundle, `legaia_engine_core::dance_venue::dance_clip_bank`): every descriptor
+    /// ANM bundle, `legaia_engine_minigame_scenes::dance_venue::dance_clip_bank`): every descriptor
     /// clip's length in ticks - [`legaia_engine_vm::actor_tick::clip_end_ticks`] on the
     /// record's frame count and the rate's per-record step - so a judge move
     /// holds the dancer for exactly as long as retail's clip driver plays it.

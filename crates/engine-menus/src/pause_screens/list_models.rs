@@ -80,7 +80,7 @@ pub struct ItemsInfoModel {
     /// the whole passive / scope-pictogram block.
     ///
     /// The bank itself is not here because this model is built from the
-    /// session alone; a host reads `legaia_engine_core::world::MinigameState::point_card` and
+    /// session alone; a host reads `legaia_engine_minigame_scenes::minigame_state::MinigameState::point_card` and
     /// calls `engine-ui`'s `item_points_panel_draws`. The passive lines stay
     /// `None` on this row without needing a suppression: the Point Card's
     /// effect descriptor carries the `0x41` no-passive sentinel.

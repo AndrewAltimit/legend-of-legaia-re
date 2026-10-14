@@ -473,6 +473,11 @@ pub struct FogPool {
     /// kingdom-overworld state in the save library and clear on every other
     /// state; the spawner's world-map arm keys on it (see [`Self::spawn`]).
     pub overworld: bool,
+    /// The curvature table's build offset in screen rows
+    /// ([`legaia_render_kernels::overworld_curvature::REBUILD_BIAS`] once
+    /// the map display has rebuilt the table, else `0`), which the overworld
+    /// half-sheets take with the table entry. Unread off the overworld.
+    pub curve_bias: i16,
     /// The camera the last render step projected through, field frame. The
     /// overworld arm's depth test transforms the new particle through the
     /// GTE's resident camera matrix; this is the port's copy of it.
@@ -508,6 +513,7 @@ impl FogPool {
             pending_dt: 0,
             quads: Vec::new(),
             overworld: false,
+            curve_bias: 0,
             depth_view: None,
             view_window: None,
         };
@@ -760,7 +766,7 @@ impl FogPool {
                 // alive while either one is on screen.
                 let hw = FogParticle::half_width(rec.age);
                 let p = [sx, sy, sz];
-                let ow = self.overworld;
+                let ow = self.overworld.then_some(self.curve_bias);
                 let (l_alive, l_quad) = emit_half(view, p, -2 * hw, 0, FOG_LEFT_UV_ROW, rgb, ow);
                 let (r_alive, r_quad) = emit_half(view, p, 0, 2 * hw, FOG_RIGHT_UV_ROW, rgb, ow);
                 self.quads.extend(l_quad);
@@ -797,8 +803,9 @@ fn emit_half(
     dx1: i32,
     row: usize,
     rgb: [u8; 3],
-    overworld: bool,
+    curve_bias: Option<i16>,
 ) -> (bool, Option<FogQuad>) {
+    let overworld = curve_bias.is_some();
     let Some((sx, sy, w)) = view.project_f(p) else {
         return (false, None);
     };
@@ -815,11 +822,10 @@ fn emit_half(
     };
     // 0x8003F98C..0x8003F9A0: the overworld's curvature term, added to both
     // corners' `SY` before the row tests.
-    let nudge = if overworld {
-        legaia_render_kernels::overworld_curvature::curvature_at(sz as i32) as f32
-    } else {
-        0.0
-    };
+    let nudge = curve_bias.map_or(0.0, |bias| {
+        (legaia_render_kernels::overworld_curvature::curvature_at(sz as i32) + i32::from(bias))
+            as f32
+    });
     let k = view.h / w;
     let px = |v: f32| (v.round() as i32).clamp(-1024, 1023);
     let (x0, y0) = (

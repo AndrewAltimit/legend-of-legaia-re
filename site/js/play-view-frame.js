@@ -879,7 +879,13 @@
       if (this.renderer.setOverworldCurve && typeof rt.play_render_curve_scale === 'function') {
         let scale = 0;
         try { scale = rt.play_render_curve_scale(); } catch (_) { scale = 0; }
-        this.renderer.setOverworldCurve(scale);
+        /* The table's build offset in screen rows (World::overworld_curve_bias):
+         * -6 once the map display has rebuilt the table, at any scale. */
+        let bias = 0;
+        if (typeof rt.play_render_curve_bias === 'function') {
+          try { bias = rt.play_render_curve_bias(); } catch (_) { bias = 0; }
+        }
+        this.renderer.setOverworldCurve(scale, bias);
       }
       /* Retail's per-primitive near reject (camera_view::prim_near_cut): a
        * primitive whose mean corner depth sits near or behind the eye is not

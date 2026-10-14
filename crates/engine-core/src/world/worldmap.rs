@@ -180,6 +180,9 @@ impl World {
     /// one. Any open map display is dropped: the table it indexes is gone.
     pub fn install_world_map_locations(&mut self, man: Option<&[u8]>) {
         self.world_map.map_display = None;
+        // The installer's own `FUN_800271A8` (`0x8003AF98`) runs under the
+        // `OFY = 120` the field init's display-env setup just stored.
+        self.world_map.curve_bias = 0;
         self.world_map.locations = man
             .and_then(legaia_scene_formats::place_names::world_map_table)
             .map(|t| {
@@ -245,9 +248,30 @@ impl World {
                 0,
             );
         }
+        // Mode `1` rebuilds the curvature table flat and mode `3` rebuilds it
+        // from the saved coefficients (`jal 0x800271A8` at `0x801CE958` and
+        // `0x801CEB88`), both under the running frame's `OFY = 114`.
+        if display.camera_staged {
+            self.world_map.curve_bias = legaia_render_kernels::overworld_curvature::REBUILD_BIAS;
+        }
         if !tick.exit {
             self.world_map.map_display = Some(display);
         }
+    }
+
+    /// The overworld curvature table's build offset in screen rows, or `None`
+    /// off the overworld (the consumers gate on the overworld bit
+    /// `_DAT_1F800394 & 1`). Every consumer of the table adds it: the prim
+    /// leaves (the hosts' mesh passes), the fog sheets and the drop shadow.
+    ///
+    /// `0` after a scene load. The map display rebuilds the table twice
+    /// inside a running frame, whose `OFY` is `114` where the builder
+    /// subtracts `120`, so from its mode `1` on every bent draw sits six
+    /// rows higher - through the display and on the walk frame after it.
+    ///
+    /// REF: FUN_800271A8, FUN_801CE850
+    pub fn overworld_curve_bias(&self) -> Option<i16> {
+        self.overworld_bit().then_some(self.world_map.curve_bias)
     }
 
     /// Whether the map display, or the fade-up ramp into it, holds the pad
@@ -1307,7 +1331,7 @@ impl World {
     /// [`WorldMapEntityConfig::OverworldPortal`] surfaces a
     /// [`legaia_engine_field::field_events::FieldEvent::WorldMapTransition`], while a
     /// [`WorldMapEntityConfig::MinigameDoor`] arms
-    /// [`crate::world::MinigameState::pending_warp`] instead - its payload is a mode-24
+    /// [`legaia_engine_minigame_scenes::minigame_state::MinigameState::pending_warp`] instead - its payload is a mode-24
     /// sub-id, not a map id.
     ///
     /// Hosts can call this directly; `Self::auto_engage_world_map_portals`

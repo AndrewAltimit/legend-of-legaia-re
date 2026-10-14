@@ -67,7 +67,7 @@ pub(crate) enum ActiveGame {
     Baka,
     Muscle,
     Dance,
-    /// The fishing pond (`legaia_engine_core::fishing_scene`); its HUD rides
+    /// The fishing pond (`legaia_engine_minigame_scenes::fishing_scene`); its HUD rides
     /// `play_fishing`, so this screen only owns the 3D view.
     Fishing,
 }
@@ -122,16 +122,16 @@ pub(crate) struct MinigameUi {
     /// drives too (`legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface`).
     pub(crate) baka_surface: legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface,
     /// The dance floor's bodies - the engine cache the native window drives
-    /// too (`legaia_engine_core::dance_cast_scene::DanceCastSurface`) - and
+    /// too (`legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface`) - and
     /// the hall origin its positions are re-based on for this page.
-    pub(crate) dance_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
+    pub(crate) dance_surface: legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface,
     pub(crate) dance_origin: (f32, f32, f32),
     /// The Muscle Dome's 3D arena surface - the engine cache the native
     /// window drives too (`legaia_engine_minigame_scenes::muscle_dome_scene`).
     pub(crate) muscle_surface: legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface,
     /// The fishing pond surface - the engine cache the native window drives
-    /// too (`legaia_engine_core::fishing_scene`).
-    pub(crate) fishing_surface: legaia_engine_core::fishing_scene::FishingSurface,
+    /// too (`legaia_engine_minigame_scenes::fishing_scene`).
+    pub(crate) fishing_surface: legaia_engine_minigame_scenes::fishing_scene::FishingSurface,
 }
 
 /// The PROT entries the standalone presentation bundle reads, in extraction
@@ -280,26 +280,12 @@ impl LegaiaRuntime {
         // minigame frame runs, reading the fishing events this world tick
         // raised.
         self.tick_fishing_actors();
-        // The dance's song-over arm restores the interrupted mode but leaves
-        // the run installed so a host can read the final score; closing it is
-        // the host's job, and `World::exit_dance` is what gives the hall its
-        // own track back (`restore_minigame_bgm`) and clears the session.
-        // The native window has always closed that loop in its frame path;
-        // this page never called `exit_dance` at all, so a finished song kept
-        // playing the chart's track over the field and the run stayed
-        // installed until the player pressed Start.
-        // The poll is the one engine kernel the native window makes
-        // (`World::finish_dance_if_over`).
-        if let Some(host) = self.scene_host.host_mut() {
-            host.world.finish_dance_if_over();
-        }
-        // The dance entry's globals - block base, this page's camera window,
-        // the venue camera - staged on the first dance frame and restored on
-        // the first frame after it, through the kernel the native window
-        // runs (`FUN_801CEF54` / `FUN_801D414C`). The hall geometry itself is
-        // the minigame art's `DanceVenue` build (`play_mg_dance_*`).
-        if let Some((host, camera)) = self.scene_host.host_cam_mut() {
-            legaia_engine_core::dance_venue::sync_dance_venue(&mut host.world, camera);
+        // The dance's auto-end and the entry's venue globals: the session's
+        // step (`BootSession::step_dance_tail`), the native window's call.
+        // The hall geometry itself is the minigame art's `DanceVenue` build
+        // (`play_mg_dance_*`).
+        if let Some(s) = self.scene_host.session_mut() {
+            let _ = s.step_dance_tail();
         }
         let now = self
             .scene_host
@@ -354,9 +340,6 @@ impl LegaiaRuntime {
             | ActiveGame::Fishing => {
                 self.minigame_ui.vram_restore_pending = true;
             }
-        }
-        if game == ActiveGame::Muscle {
-            self.exit_muscle_ui();
         }
     }
 
@@ -669,8 +652,10 @@ impl LegaiaRuntime {
         };
         host.world.request_minigame_warp(sub_id);
         let lead = host.world.drain_field_xa_prestage();
-        for xa in &lead {
-            self.prestage_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
+        if let Some(d) = self.audio_director() {
+            for xa in &lead {
+                d.prestage_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
+            }
         }
         true
     }

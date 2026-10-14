@@ -189,6 +189,7 @@ impl PlayWindowApp {
             save_dir: save_dir.to_path_buf(),
             card: mounted_card,
             save_flow: legaia_engine_menus::save_screen::SaveScreenFlow::new(),
+            options_before_retail_pin: None,
             options_state: {
                 let mut o = legaia_engine_menus::options::OptionsState::load_or_default(
                     &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
@@ -222,6 +223,7 @@ impl PlayWindowApp {
             dynamic_lighting: false,
             dyn_shadows,
             occlusion_fade,
+            psx_render: std::env::var_os("LEGAIA_PSX_RENDER").is_some(),
             field_occluders: Default::default(),
             occl_fade_strength: std::cell::Cell::new(Default::default()),
             scene_point_lights: Vec::new(),
@@ -260,8 +262,10 @@ impl PlayWindowApp {
         // `--retail` pins the persisted engine-only options for this session
         // only, the way the fog override below does: nothing is written back.
         if fidelity.retail {
+            self.options_before_retail_pin = Some(self.options_state.clone());
             self.options_state.pin_retail();
         }
+        self.psx_render |= fidelity.psx_render;
         if let Some(info) = self.session.equip_restrictions.clone() {
             self.menu_runtime.install_equip_info(info);
             self.menu_runtime.retail_equipment_buy = true;

@@ -162,7 +162,12 @@ fn op49_window_census_pins_the_corpus_shape() {
     // The load-bearing negative below is untouched by either class: still no
     // covering window for any spine target, still the same 24 kor near-misses
     // at distance 3.
-    assert_eq!(sites.len(), 240, "op-0x49 site count changed");
+    //
+    // Sizing op `0x49` sub-0's inline MES from the operand's third byte, as
+    // retail's Done arm does (`lbu a0,0x2(s6)` at `0x801E08EC`), drops one
+    // more site: a walk desynced inside `edbylon` no longer lands on a
+    // `49 00` it read from the wrong length. Every clean site is unchanged.
+    assert_eq!(sites.len(), 239, "op-0x49 site count changed");
 
     // The gained family, named rather than folded into the total: a change
     // that reframes text again moves this first.

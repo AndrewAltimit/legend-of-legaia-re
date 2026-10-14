@@ -21,20 +21,6 @@ impl PlayWindowApp {
 }
 
 impl PlayWindowApp {
-    /// Drain the Baka Fighter duel's queued SFX cues into the director's SFX
-    /// scheduler, so the punch / exchange hit (`BAKA_CUE_HIT` = `0x09`,
-    /// written by the rules kernel's damage step) sounds in the live engine:
-    /// the session's step (`BootSession::enqueue_baka_sfx_cues`, which the
-    /// browser play page's `tick_baka_ui` calls too). The audio frame later in
-    /// the tick (`drain_and_log_battle_events`) fires them against the
-    /// resident class-2 SFX bank the same frame. The cues carry no gameplay
-    /// state, so nothing here affects determinism.
-    pub(in crate::window) fn drain_baka_sfx_cues(&mut self) {
-        let _ = self.session.enqueue_baka_sfx_cues();
-    }
-}
-
-impl PlayWindowApp {
     /// Consume the Baka Fighter round-chrome frame the duel produced this
     /// tick (`BakaFight` owns the [`BakaChrome`] runner and steps it inside
     /// `tick_with_input`; the round banners start at its own round ends) and
@@ -52,22 +38,9 @@ impl PlayWindowApp {
             return;
         };
         let frame = f.chrome_frame().clone();
-        // The announcer line the chrome fired (`FUN_8003D53C`), through the
-        // XA path the battle clips use - the play page plays the same one.
-        if let Some(xa) = frame.xa
-            && let Some(bgm) = self.session.bgm.as_mut()
-        {
-            let fired = bgm
-                .play_xa_clip(u32::from(xa.clip), u32::from(xa.chan), u32::from(xa.dur))
-                .is_some();
-            log::debug!(
-                "baka chrome: announcer XA clip {} chan {} ({}) -> {}",
-                xa.clip,
-                xa.chan,
-                xa.dur,
-                if fired { "playing" } else { "not staged" }
-            );
-        }
+        // The announcer line the chrome fired (`FUN_8003D53C`): the session's
+        // step, which the browser play page runs too.
+        self.session.sound_baka_announcer();
         // The overlay's HUD widget table, for the glyph-strip paging below.
         // Parsed on the first duel frame whatever opened the duel - the door
         // warp and the `B` launcher enter through the same scene-host arm,

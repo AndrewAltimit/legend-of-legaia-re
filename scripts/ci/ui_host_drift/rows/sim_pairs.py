@@ -67,16 +67,67 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["poll_field_overlay"],
     },
     {
-        "what": "dance auto-end, native vs play page - once the song-over arm "
-        "restores the interrupted mode, the run is torn down and its final "
-        "game handed back; each host spelled the `mode != Dance` poll beside "
-        "its own `exit_dance` call. Both poll `World::finish_dance_if_over`",
+        "what": "dance tail, native vs play page - the auto-end (once the "
+        "song-over arm restores the interrupted mode, the run is torn down) "
+        "and the venue globals' stage / restore were two calls each host "
+        "sequenced itself, in opposite orders. Both run the one session step "
+        "`BootSession::step_dance_tail`",
         "sites": {
-            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "native": ("crates/engine-shell/src/window/minigames/dance.rs", "sync_dance_venue"),
             "web": ("crates/web-viewer/src/play_minigames.rs", "tick_minigame_ui"),
         },
         "mode": "symbols_all",
-        "symbols": ["finish_dance_if_over"],
+        "symbols": ["step_dance_tail"],
+    },
+    {
+        "what": "battle audio routing, native vs play page - the duck target, "
+        "the strike / cast cues, the cast-voice prestage, the one-shot CD-XA "
+        "clips and the arts shouts were drained and routed once per host "
+        "(the page through a CD-XA lane of its own). Both hand the tick's "
+        "battle events to the one session step "
+        "`BootSession::route_battle_audio`",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/battle.rs", "drain_and_log_battle_events"),
+            "web": ("crates/web-viewer/src/play_battle_audio.rs", "drain_battle_audio_cues"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["route_battle_audio"],
+    },
+    {
+        "what": "the tick's audio frame, native vs play page - the footstep "
+        "cadence ran on the page alone, beside a field CD-XA lane the "
+        "session now routes for every host. Both `tick_sfx` steps are the "
+        "same two session steps",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/boot_cutscene.rs", "tick_sfx"),
+            "web": ("crates/web-viewer/src/play_sfx.rs", "tick_sfx"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["step_footstep_cadence", "step_audio_frame"],
+    },
+    {
+        "what": "Muscle Dome hub sounds, native vs play page - the first "
+        "visit's CD-XA announcer lines and each tally lane's voice were "
+        "drained and keyed once per host. Both run the session step "
+        "`BootSession::sound_muscle_hub`",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/minigames/muscle_dome.rs", "tick_muscle_hub"),
+            "web": ("crates/web-viewer/src/play_minigame_arena.rs", "tick_muscle_hub"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["sound_muscle_hub"],
+    },
+    {
+        "what": "Baka Fighter announcer line, native vs play page - the round "
+        "chrome's CD-XA line was read off the chrome frame and played once "
+        "per host. Both run the session step "
+        "`BootSession::sound_baka_announcer`",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/minigames/baka_fighter.rs", "tick_baka_chrome"),
+            "web": ("crates/web-viewer/src/play_minigame_arena.rs", "tick_baka_ui"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["sound_baka_announcer"],
     },
     {
         "what": "scene-hidden lead, native vs play page - the opening "

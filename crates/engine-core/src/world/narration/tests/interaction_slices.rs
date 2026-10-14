@@ -113,7 +113,7 @@ fn a_seat_then_walk_in_one_slice_walks_from_the_seat() {
     ];
     let mut w = World::new();
     w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
-    let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+    let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
     w.field_vm.channels = vec![FieldChannel {
         placement_index: 4,
         ctx: FieldCtx {
@@ -267,7 +267,7 @@ fn a_copy_from_player_then_walk_starts_at_the_player() {
     w.actors[0].move_state.world_x = 0x900;
     w.actors[0].move_state.world_z = 0x700;
     w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
-    let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+    let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
     w.field_vm.channels = vec![FieldChannel {
         placement_index: 4,
         ctx: FieldCtx {

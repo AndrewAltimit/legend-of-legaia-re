@@ -42,8 +42,9 @@
 //! `0xB` gate, the `0x4B0` ambient period), but a runtime capture of every cue
 //! path while walking a field scene shows retail firing **no cue at all** - and
 //! shows that kernel's own step gate never opening while walking either. So
-//! this host keeps the cadence wired (it is that port's first host caller, and
-//! its counters stay observable) and fires nothing. See [`CUE_FOOTSTEP`].
+//! the session steps the cadence on every host
+//! (`BootSession::step_footstep_cadence`) and queues nothing; this page keeps
+//! its counter observable. See `legaia_engine_session::session::CUE_FOOTSTEP`.
 //!
 //! [`FootstepCadence`]: legaia_engine_audio::footstep::FootstepCadence
 //!
@@ -52,7 +53,6 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_audio::{AudioSink, SfxBank};
-use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::audio_director::SfxFrameReport;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -142,35 +142,6 @@ const CUE_MENU_CURSOR: Option<u8> = Some(RETAIL_MENU_CURSOR_CUE);
 const CUE_MENU_CONFIRM: Option<u8> = Some(RETAIL_MENU_CONFIRM_CUE);
 /// Cancel counterpart of [`CUE_MENU_CURSOR`].
 const CUE_MENU_CANCEL: Option<u8> = Some(RETAIL_MENU_CANCEL_CUE);
-/// Cue id fired for a footstep: `None`, and pinned there by capture -
-/// **retail plays no footstep sound at all**, so the cadence runs and keys no
-/// voice because there is nothing to key.
-///
-/// The contrast that settles it is
-/// `scripts/pcsx-redux/autorun_footstep_cue.lua`, which watches every cue path
-/// at once - both ring producers (`FUN_80035B50` / `FUN_80035BD0`), the
-/// dispatcher `FUN_8004FCC8`, the per-actor trigger `FUN_800250D4`, the voice
-/// programmer `FUN_80065034`, and the four ring slots themselves - and runs one
-/// field save state twice for the same number of vsyncs, once standing still
-/// and once with the D-pad held. Standing still, a house-interior walk and a
-/// kingdom-overworld walk each fire **nothing**. The one walk that fires
-/// anything fires exactly two scene-script cues (`0x2E`, `0x2F`) hundreds of
-/// vsyncs apart, out of the field VM's script SFX op - triggers the player
-/// crossed, not a step cadence. Write-up: `docs/formats/sfx-table.md`.
-///
-/// So there is no retail id to copy, and a guessed one would not be a
-/// near-miss but an arbitrary sample: an id resolves through the descriptor
-/// table (`DAT_8006F198 + id*8`) to a `(program, tone)` pair - `0x21` is
-/// program `0`, tone `1`, not program `1` as this note previously said - and
-/// that pair selects a different sample in every resident bank. Firing `0x21`
-/// in a field scene played an impact sample: walking punched.
-///
-/// The cadence stays wired so [`FUN_80018db0`]'s timing keeps running and stays
-/// observable in the HUD counters. Giving the port a footstep is therefore an
-/// *enhancement* choice - author a cue and label it `site` - not a fidelity
-/// gap waiting on more RE.
-const CUE_FOOTSTEP: Option<u8> = None;
-
 /// One event this host is wired for: the cue id **retail** fires there, what
 /// this host actually enqueues, and where the id came from.
 ///
@@ -223,44 +194,6 @@ const PLAY_EVENTS: &[PlayCue] = &[
     },
 ];
 
-/// The footstep stays out of [`PLAY_EVENTS`] even though that table can now
-/// carry a withheld row, because its case is the opposite one: a menu row has a
-/// pinned `retail_cue` this host declines to *render*, while retail fires no
-/// footstep cue at all, so there is no id to report. Advertising one would
-/// invent the fact rather than withhold it. See [`CUE_FOOTSTEP`].
-const _: Option<u8> = CUE_FOOTSTEP;
-
-/// World-unit displacement per tick below which the player counts as still.
-/// The controller steps 2 units at a time, so anything under one unit is
-/// numerical drift rather than a walk.
-const WALK_EPSILON: i32 = 1;
-
-/// Movement magnitude handed to the footstep cadence while the player walks.
-///
-/// **This is a port pick, and it has to be, because the two engines do not
-/// carry the same quantity.** Retail feeds `FUN_80018db0` a controller speed
-/// word, and the kernel's own constants bound where that word must live for a
-/// step to fire at all: `interval = 0xF - (min(speed + 0x20, 0xFA) >> 4)` and
-/// the `interval < 0xB` gate together require `speed >= 0x30`, saturating at
-/// `0xDA`. The port has no such word - `World` exposes a walking *flag* and a
-/// 2-units-per-tick step, and feeding that raw world delta in leaves `interval`
-/// at `0xD`, i.e. permanently below the gate, so no step would ever fire.
-///
-/// A single-speed walker therefore has to be placed somewhere in retail's
-/// moving band, and `0x30` is the deliberately conservative end of it: the
-/// slowest speed retail treats as moving, so the cadence this produces is the
-/// slowest retail would ever produce for a walking player and cannot overstate
-/// the step rate.
-///
-/// Capture adds one thing worth stating plainly: retail's own speed word does
-/// **not** reach `0x30` while the player walks a field scene or the kingdom
-/// overworld - `_DAT_8007B8A4` stays pinned at `2`, the gate's else-branch, for
-/// every observed frame. Feeding `0x30` in here therefore makes the port's
-/// cadence fire where retail's stays shut, which is fine precisely because
-/// [`CUE_FOOTSTEP`] keys no voice: what runs is a timing counter, not a sound
-/// retail does not make.
-const WALK_SPEED_UNITS: i32 = 0x30;
-
 /// The page's side of the SFX channel: descriptor tables kept for before a
 /// director exists, the footstep cadence, and the readout's counters.
 #[derive(Default)]
@@ -275,14 +208,10 @@ pub struct PlaySfx {
     /// Whether the director's resident banks were staged against the loaded
     /// disc (once per director).
     pub resident_staged: bool,
-    /// Retail footstep / ambient cadence (`FUN_80018db0`).
-    pub cadence: legaia_engine_audio::footstep::FootstepCadence,
-    /// Last tick's player XZ, for the movement magnitude the cadence reads.
-    pub prev_pos: Option<(i32, i32)>,
     /// Cadence steps the ported `FUN_80018db0` kernel has fired since the page
-    /// loaded, counted **before** the cue lookup and so independent of whether
+    /// loaded (the session's `step_footstep_cadence`), counted whether or not
     /// a cue id is pinned. This is what keeps the cadence falsifiable while
-    /// [`CUE_FOOTSTEP`] is `None`: a wired kernel that produces nothing is
+    /// `CUE_FOOTSTEP` is `None`: a wired kernel that produces nothing is
     /// indistinguishable from an unwired one, and `queued` alone cannot tell
     /// them apart once the voice key is withheld.
     pub cadence_steps: u32,
@@ -367,6 +296,9 @@ impl LegaiaRuntime {
             if let Some(b) = self.sfx.xa.clip_bank.take() {
                 d.set_xa_clip_bank(b);
             }
+            // Where the disc's XA files sit, so a clip the bank lacks is
+            // deferred to the page's slicer rather than dropped.
+            d.set_xa_file_extents(self.xa_file_extents());
             self.scene_host.set_director(Some(d));
             self.sfx.resident_staged = false;
         }
@@ -409,21 +341,6 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Queue a cue to fire `frames` sim ticks from now (`0` = this frame).
-    ///
-    /// The id is the full `u16` cue space (`FUN_8004FCC8`'s, which the
-    /// battle's cast cues reach at `0x118..` / `0x20C..`); the director
-    /// classifies it at fire time, never truncated. `impl Into<u16>` so the
-    /// `u8` descriptor-id callers keep compiling unchanged. Counted whether
-    /// or not a director exists to hear it.
-    pub(crate) fn enqueue_sfx(&mut self, id: impl Into<u16>, frames: u16) {
-        self.sfx.queued += 1;
-        let id = id.into();
-        if let Some(d) = self.audio_director() {
-            d.enqueue_sfx(id, frames, 0, 0);
-        }
-    }
-
     /// Drop every queued SFX cue - the scene transition / battle abort clear
     /// the native session runs as `bgm.clear_sfx()` on every scene swap.
     /// Cues queued against the departing scene's timing must not fire into
@@ -434,109 +351,27 @@ impl LegaiaRuntime {
         }
     }
 
-    /// This tick's movement magnitude for the footstep cadence: zero when the
-    /// player is still, [`WALK_SPEED_UNITS`] when walking. See that constant
-    /// for why a walking player cannot simply be handed its world-unit delta.
-    fn player_move_magnitude(&mut self) -> i32 {
-        let host = self.scene_host.host();
-        let pos = host
-            .and_then(|h| {
-                let w = &h.world;
-                w.player_actor_slot
-                    .and_then(|s| w.actors.get(s as usize))
-                    .map(|a| (a.move_state.world_x as i32, a.move_state.world_z as i32))
-            })
-            .unwrap_or((0, 0));
-        let displaced = match self.sfx.prev_pos {
-            Some((px, pz)) => (pos.0 - px).abs().max((pos.1 - pz).abs()) >= WALK_EPSILON,
-            None => false,
-        };
-        self.sfx.prev_pos = Some(pos);
-        // The walk clip stays running when a step is blocked by a wall, which
-        // is retail's walk-in-place; take either signal as "moving".
-        let walking = host
-            .and_then(|h| h.world.locomotion.player_anim.as_ref())
-            .is_some_and(|f| f.walking);
-        if walking || displaced {
-            WALK_SPEED_UNITS
-        } else {
-            0
-        }
-    }
-
-    /// One sim tick of the SFX channel: feed the footstep cadence, play the
-    /// field's CD-XA, then the director's frame tail - the duck ramp and the
-    /// scheduler / ring drain. Called from `tick_frame`, after the session's
-    /// tick has routed the world's field-side SFX sources.
+    /// One sim tick of the SFX channel - the session's two steps, the ones
+    /// the native window's `tick_sfx` runs at the same point of its frame:
+    /// the footstep cadence (`BootSession::step_footstep_cadence`), then the
+    /// audio frame (`BootSession::step_audio_frame`: the duck ramp toward the
+    /// world's configured level - a loaded save's own; it ramps in every
+    /// mode, and the ramp back to full outlives the battle - the delay
+    /// scheduler and the matured cues). Called from `tick_frame`, after the
+    /// session's tick has routed the world's field-side SFX sources and the
+    /// frame's other steps have queued theirs.
     pub(crate) fn tick_sfx(&mut self) {
-        // The cadence only runs in field-style modes; a suspended scene (menu,
-        // minigame, cutscene) is not walking, and retail's field audio update
-        // does not run there either.
-        let walking_mode = self
-            .scene_host
-            .host()
-            .is_some_and(|h| matches!(h.world.mode, SceneMode::Field | SceneMode::WorldMap));
-        let mag = if walking_mode {
-            self.player_move_magnitude()
-        } else {
-            self.sfx.prev_pos = None;
-            0
+        let Some(session) = self.scene_host.session_mut() else {
+            return;
         };
-        let tick = self.sfx.cadence.tick_cadence(mag, mag);
-        if tick.step_fired {
+        let stepped = session.step_footstep_cadence();
+        let report = session.step_audio_frame();
+        if stepped {
             self.sfx.cadence_steps += 1;
-            // Silent until retail's footstep cue id is pinned - see CUE_FOOTSTEP.
-            if let Some(cue) = CUE_FOOTSTEP {
-                self.enqueue_sfx(cue, 0);
-            }
         }
-        self.route_field_xa();
-        // The audio frame is the session's step, the one the native window
-        // runs at the same point of its frame: the duck ramp toward the
-        // world's configured level (a loaded save's own; it ramps in every
-        // mode, and the ramp back to full outlives the battle), the delay
-        // scheduler and the matured cues.
-        let report = self
-            .scene_host
-            .session_mut()
-            .and_then(|s| s.step_audio_frame());
         if let Some(report) = report {
             self.sfx.count(report);
         }
-    }
-
-    /// Play this tick's field CD-XA on the page's XA lane: the scene's
-    /// prestage list (filled at scene load) staged ahead of the ops that will
-    /// ask for them - this page decodes a clip the bank lacks one request per
-    /// frame, and a line first asked for at its op sounded late - then the
-    /// field's one-shots (op `0x36`'s XA arm, the scripted-scene voice leg).
-    /// The rest of the field-side SFX routing is the session's
-    /// (`BootSession::tick` -> `AudioDirector::route_world_sfx`); the page
-    /// was declared as staging field XA itself, so the session leaves these
-    /// two queues for it. The native window reads a clip's span synchronously
-    /// and drops the prestage list.
-    pub(crate) fn route_field_xa(&mut self) {
-        let Some(host) = self.scene_host.host_mut() else {
-            return;
-        };
-        let field_xa = host.world.drain_field_xa_cues();
-        let prestage = host.world.drain_field_xa_prestage();
-        for xa in &prestage {
-            self.prestage_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
-        }
-        for xa in &field_xa {
-            self.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
-        }
-    }
-
-    /// Key one voice from an explicit
-    /// [`VoiceAttr`](legaia_engine_audio::VoiceAttr) set through the
-    /// director's `key_on_voice_attr` - the Muscle Dome's between-leg tally
-    /// roll, whose per-lane cue (`FUN_801D1288`) resolves a whole attr set
-    /// rather than an id. Returns whether a voice keyed on.
-    pub(crate) fn key_on_voice_attr(&mut self, attr: legaia_engine_audio::VoiceAttr) -> bool {
-        self.audio_director()
-            .is_some_and(|d| d.key_on_voice_attr(attr))
     }
 
     /// Render one cue on a throwaway SPU with its own fresh upload of the
@@ -889,7 +724,9 @@ mod tests {
     #[test]
     fn a_direct_blip_does_not_age_the_queue() {
         let mut rt = LegaiaRuntime::new();
-        rt.enqueue_sfx(0x2Eu16, 2);
+        rt.audio_director()
+            .expect("off wasm: built on first use")
+            .enqueue_sfx(0x2E, 2, 0, 0);
         let queued_before = rt.sfx.queued;
         let _ = rt.play_sfx(u32::from(RETAIL_MENU_CURSOR_CUE));
         assert_eq!(rt.sfx.queued, queued_before + 1, "the request is counted");

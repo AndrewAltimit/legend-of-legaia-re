@@ -168,7 +168,7 @@ fn cold_spawn_is_reachable_across_all_field_scenes() {
             // deliberately holding off-map.
             continue;
         }
-        let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         if player_xz(&host) == (hide, hide) {
             // The entry script parked the player at the off-map hide box and
             // ended there (the ending scenes' cinematics do this by design):

@@ -539,16 +539,10 @@ impl PlayWindowApp {
         // two drains are done below, inline in this loop.)
     }
 
-    /// Minigame side channels, the play clock, the dev menu and the dance
-    /// auto-end.
+    /// Minigame side channels, the play clock and the dev menu.
     fn tick_side_channels(&mut self) {
-        // Baka Fighter duel: drain the exchange-hit SFX cue the rules
-        // kernel queued this tick and enqueue it into the SFX scheduler
-        // (the tick's audio frame, `tick_sfx` below, fires it against the
-        // resident class-2 sound bank).
-        self.drain_baka_sfx_cues();
-        // Minigame side-channels: the dance count-in + tutorial + effect
-        // spawns, the fishing venue actors (wander / line / floor solve /
+        // Minigame side-channels: the minigame and Baka duel cue queues, the
+        // dance auto-end + venue, the fishing venue actors (wander / line / floor solve /
         // camera publish / sway), the Baka round chrome, and the shared
         // effect pool. Both it and tick_fishing_banners read the fishing
         // events this world tick raised.
@@ -577,21 +571,6 @@ impl PlayWindowApp {
         // dev tools from debug branches a player cannot; this is the
         // engine's equivalent entry point.
         self.tick_dev_menu();
-        // Dance minigame auto-end: `tick_dance` restores the scene
-        // mode when the song timer runs out but leaves the game
-        // installed for one frame. Detect that (mode no longer
-        // Dance while a game is still present), log the final grade,
-        // and clear it. `exit_dance` gives the hall its own track back
-        // itself (`restore_minigame_bgm` queues the start this host's
-        // BGM routing plays), as on the browser page; a second start
-        // here restarted the field track on top of it.
-        if let Some(g) = self.session.host.world.finish_dance_if_over() {
-            log::info!(
-                "dance: song finished - score {} (pass={})",
-                g.score(),
-                g.passed()
-            );
-        }
     }
 
     /// The frame-tail effect passes after the scene-graph tick

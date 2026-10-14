@@ -217,7 +217,10 @@ fn check(label: &str, overworld: bool) {
         for &(_, flags, pos) in &casters {
             let pts = shadow_grid(pos);
             let grid = pts.map(|v| gte.rtps(v));
-            for q in shadow_quads(&grid, overworld, 0, flags & 0x80_0000 != 0) {
+            // The overworld table's build offset is its own entry `0`.
+            let curve =
+                overworld.then(|| i16_at(ram, (u32_at(ram, 0x8007_BB04) & 0x1F_FFFF) as usize));
+            for q in shadow_quads(&grid, curve, 0, flags & 0x80_0000 != 0) {
                 set.insert((q.xy, q.uv));
             }
         }

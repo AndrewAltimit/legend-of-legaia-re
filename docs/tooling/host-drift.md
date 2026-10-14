@@ -661,7 +661,7 @@ The dance hall has a native twin of the browser venue surface: while a dance
 runs, `window/minigames.rs` draws the same venue in place of the walked-in
 scene. Both take the draw list, the coplanar lifts, the VRAM (face stamps and
 HUD page included) and the camera from one kernel,
-`engine-core::dance_venue::DanceVenue::build`, so only the mesh build and the
+`engine-minigame-scenes::dance_venue::DanceVenue::build`, so only the mesh build and the
 instance transform are per host.
 
 The reason this is not the answer everywhere: it needs the two surfaces to be
@@ -1226,6 +1226,7 @@ reverse-engineering questions, so they are not on
 | shop panel rows, inn prompt text | Written once per host over shared leaves; they agree today. |
 | level-up banner without menu chrome | Raw surface pixels natively, stage-scaled on the page; only a run with no system-UI atlas takes that path. |
 | cheats | One `World::cheat_*` call each; restore HP / MP is page-only, a GameShark file native-only, and native applies once at boot. |
+| launch switches | The native window throws `--retail`, `--set-flag`, `--learn-spell`, `LEGAIA_SMART_MONSTERS` and `LEGAIA_WORLD_MAP_MARKERS` at launch; the page throws the same engine writes at runtime (`play_toggles`, `learn_spell`). `--psx-render` is the launch twin of the page's PSX box. |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | fishing exchange panel pen | Native adds the venue overlay's idle sway (`FUN_801d03b0`). |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
@@ -1312,26 +1313,33 @@ method is the kernel call plus the single thing only that host holds.
 | Step on both frame paths | Kernel | What each host adds |
 |---|---|---|
 | `poll_game_over` | `BootSession::take_party_wipe` | where it keeps the hold: the window's `BootUiState::GameOver`, the page's `game_over` |
-| `poll_field_shop` | `MenuRuntime::poll_field_overlay` | the first step's blip; the window's boot-SCUS read for the Trade row, the page's cached screen-prim rebuild |
+| `poll_field_shop` | `BootSession::poll_field_overlay` (over `MenuRuntime::poll_field_overlay`) | nothing; the page counts the blip for its readout |
 | `tick_world_effects` | `BootSession::step_effect_scene_graphs` | the summon creature's mesh bind, ahead of the kernel |
 | `tick_muscle_time_meter` | `BootSession::step_muscle_time_meter` | nothing |
 | `tick_fishing_banners` | `engine-screens::fishing_banner_frame` | the cache its `&self` draw pass reads |
-| `tick_sfx` | `BootSession::step_audio_frame` | the page's footstep cadence and field CD-XA lane, ahead of the kernel; the window nothing |
+| `tick_sfx` | `BootSession::step_footstep_cadence`, then `BootSession::step_audio_frame` | nothing; the page counts the cadence steps for its readout |
 
 `take_party_wipe` consumes `World::game_over` on the take and is handed one
 term, whether a host screen already owns the frame. `poll_field_overlay` opens
-the requested screen *and* takes its first no-edge step, so the shop's
-tick-counted fade starts on the opening tick on both hosts; the window's
-per-tick session step (an inn prompt does not suspend the field) skips the
-tick the poll answered on.
+the requested screen, takes its first no-edge step and queues that step's blip
+on the director, so the shop's tick-counted fade starts on the opening tick on
+both hosts and its cue sounds on that tick's audio frame; both hosts poll
+after the session tick and ahead of the effect step. The window's per-tick
+session step (an inn prompt does not suspend the field) skips the tick the
+poll answered on. The Trade row's spell / seru names are read once per disc on
+both hosts: the window at launch, the page at disc load.
 
-Five more session steps run inside a host step that is named differently on
-each side, so they pair by call rather than by step name:
+More session steps run inside a host step that is named differently on each
+side, so they pair by call rather than by step name:
 
 | Kernel | Native caller | Page caller |
 |---|---|---|
 | `BootSession::enqueue_minigame_sfx_cues` | `tick_minigame_extras` | `tick_minigame_ui` |
-| `BootSession::enqueue_baka_sfx_cues` | `drain_baka_sfx_cues`, its own step | `tick_baka_ui`, inside `tick_minigame_ui` |
+| `BootSession::enqueue_baka_sfx_cues` | `tick_minigame_extras` | `tick_baka_ui`, inside `tick_minigame_ui` |
+| `BootSession::step_dance_tail` | `sync_dance_venue`, inside `tick_minigame_extras` | `tick_minigame_ui` |
+| `BootSession::sound_muscle_hub` | `tick_muscle_hub`, inside `tick_minigame_extras` | `tick_muscle_hub`, inside `tick_minigame_ui` |
+| `BootSession::sound_baka_announcer` | `tick_baka_chrome`, inside `tick_minigame_extras` | `tick_baka_ui`, inside `tick_minigame_ui` |
+| `BootSession::route_battle_audio` | `drain_and_log_battle_events` | `drain_battle_audio_cues`, inside `tick_battle_presentation` |
 | `BootSession::step_overlay_sfx` | `tick_menu_sfx`, in the arms that freeze the field | the export `play_tick_overlay_sfx`, from the page's frame loop |
 | `session::step_npc_clip_players` | `drain_anim_cues`, after the tick's re-targets | `drive_npc_clips` (`FieldActors::drive`), after the same |
 | `BootSession::pass_name_entry_frames` / `step_name_entry_frame` | the per-tick naming-prompt arm (`step_name_entry_frame`) | the export `name_entry_advance_frames`, with the frame's sim steps |
@@ -1341,8 +1349,12 @@ world's configured level, the delay scheduler, and the cues that matured
 (`AudioDirector::tick_audio_frame`). Both hosts call it after every step of
 the tick that queues a cue - the battle-event step last among them - and ahead
 of the field-event drain, so a zero-delay cue sounds on its own tick on either
-host. The battle's CD-XA requests (clips, arts shouts) are issued in the
-battle-event step, ahead of it. Under a screen that freezes the field neither
+host. The battle's audio - the duck target, the strike / cast cues, the
+cast-voice prestage, the CD-XA clips and the arts shouts - is routed in the
+battle-event step, ahead of it, by `BootSession::route_battle_audio`. The
+footstep cadence (`step_footstep_cadence`, the `FUN_80018db0` port) steps on
+every host just before it; it queues `CUE_FOOTSTEP`, which is `None` because
+retail fires no footstep cue. Under a screen that freezes the field neither
 host reaches it; `step_overlay_sfx` steps the scheduler alone there.
 
 `step_npc_clip_players` asks `World::field_npc_clips_advance` **per tick**.
@@ -1716,7 +1728,8 @@ output, and lay SPU RAM out through `legaia_engine_audio::spu_layout`.
 | pause latch | the output gate (`AudioOut::sequencer_paused`); the script's bit is mirrored as `AudioState::bgm_script_paused` |
 | direct entry restage | `BootSession::restage_audio_for_direct_entry` |
 | field CD-XA lines | `World::push_field_xa_cue`, `World::queue_xa_prestage`, `field_xa::scene_minigame_door_xa_prestage` |
-| battle XA prestage | `World::drain_battle_xa_prestage`; page `prestage_xa_clip` |
+| battle XA prestage | `World::drain_battle_xa_prestage` -> `AudioDirector::prestage_xa_clip` (inside `route_battle_audio`) |
+| CD-XA clip staging | `AudioDirector::play_xa_clip`: a synchronous `XaChannelSource`, or a deferred `XaStageRequest` the host serves through `install_xa_span` |
 | one-shot voices | `VoiceAttr::from_cue_words`, `key_on_voice_attr` |
 | off-VM cues | world-map cue `0x20` and dev-menu cues ride the ring (`FUN_80035B50` in retail) |
 
@@ -1792,9 +1805,16 @@ head cue (`battle_cast_cue::module_head_cue`) and runs it through
 `admit_voice_cue`, yielding a `(clip, channel, dur)` triple on
 `AudioState::battle_xa_cues`. Staging is lazy, one channel span per cast:
 `read_span_sectors(dur)` = `(dur * 150 + 149) / 60` sectors, decoded by
-`XaClipBank::decode_channel_span` and kept under `LAZY_CLIP_CAP`. Native reads
-the disc (`AudioDirector::set_xa_lazy_source`); the page lists what it wants
-(`play_xa_stage_requests_json`) and installs it (`play_xa_install_span`).
+`XaClipBank::decode_channel_span` and kept under `LAZY_CLIP_CAP`. The request,
+the deferral and the replay are the director's on both hosts
+(`AudioDirector::play_xa_clip`); only where the sectors come from differs.
+Native reads the disc synchronously (`AudioDirector::set_xa_lazy_source`). The
+page's disc bytes live on the JavaScript side, so its director is handed the
+files' extents (`set_xa_file_extents`) and queues an `XaStageRequest`; the
+page lists the queue (`play_xa_stage_requests_json`), slices the sectors and
+hands them back (`play_xa_install_span` -> `AudioDirector::install_xa_span`),
+and the waiting request plays. A prestage (`prestage_xa_clip`) queues the same
+request without a replay, and is a no-op on a director that reads on demand.
 
 The gates around it:
 
@@ -1831,10 +1851,12 @@ inside it. Tier 12 measures the inside, and the pair carries a
 | Native sub-step | Browser play page | Minigames page |
 |---|---|---|
 | `drain_minigame_sfx_cues` (`BootSession::enqueue_minigame_sfx_cues`) | `drain_minigame_sfx_cues_web` (the same session step) | per-game cue drain |
+| `BootSession::enqueue_baka_sfx_cues` | the same, in `tick_baka_ui` | per-game cue drain |
+| `sync_dance_venue` (`BootSession::step_dance_tail`, then the wgpu venue copy) | `BootSession::step_dance_tail` | `dance_tick` |
 | `stage_dance_hud_art` | `sync_dance_hud_residency` + `ensure_minigame_art` | `dance_art_*` exports |
 | `tick_fishing_actors` | `tick_fishing_actors` | pond session only |
-| `tick_baka_chrome` | `tick_baka_ui` | `baka_chrome_json` |
-| `tick_muscle_hub` | `tick_muscle_hub` | `muscle_*` exports |
+| `tick_baka_chrome` (`BootSession::sound_baka_announcer`, then the glyph stamps) | `tick_baka_ui` (the same session step) | `baka_chrome_json` |
+| `tick_muscle_hub` (`BootSession::sound_muscle_hub`) | `tick_muscle_hub` (the same session step) | `muscle_*` exports |
 | effect-pool ageing | `World::tick` | own pool, own tick |
 
 <a id="one-minigame-one-session-type"></a>
@@ -1845,7 +1867,7 @@ inside it. Tier 12 measures the inside, and the pair carries a
 | fishing hub (state `0x0C`) | `engine-core::world::fishing_hub_exits` (`FishingHub::lines`, `FishingHubText::from_overlay`), `engine-ui::fishing::hub`, `World::tick_fishing_hub` | The `0xCE` button escapes draw no glyph and the cursor is a `>` stand-in on every host. |
 | slot machine | `SlotMachine::frame`, `slot_machine::projected_paylines` (`FUN_801D3380`), `engine-ui::slot_cabinet`, `slot_paylines`, `SlotMarqueeClock::frame` | The minigames page rasterises the same list on the CPU (`screen_prim_raster`). |
 | Baka Fighter | `BakaFight::frame`; `baka_cabinet::BakaCabinet` (`FUN_801CF388`), `with_attract`, `cabinet_cells`, `install_rung`; `StrikeClock` (`FUN_801D6E5C`), `roster_clip_headers`; `engine-minigame-scenes::baka_duel_scene` (`BakaDuelSurface`, `DuelCamera::vp_raw`); labels `choice_sheet_labels`, `chrome_labels`, `glyph_u`, `hud_digit_placements`; `engine-minigames::baka_impact_fx` | Native resolves each glyph's cell rect without sampling it. |
-| dance | `World::enter_dance` (arms `dance_countin`), `dance::CountIn`, `FinishCountdown`, `DanceTutorial`; `DanceGame::advance_body_clips`, `DanceCastSurface::frame`; `dance_venue::DanceVenue::build`, `sync_dance_venue`; `stage_dance_hud_vram`, with `World::minigames.dance_hud_art_staged` as the one residency predicate; `World::finish_dance_if_over` | Mesh build and instance transform. |
+| dance | `World::enter_dance` (arms `dance_countin`), `dance::CountIn`, `FinishCountdown`, `DanceTutorial`; `DanceGame::advance_body_clips`, `DanceCastSurface::frame`; `dance_venue::DanceVenue::build`, `sync_dance_venue` and `World::finish_dance_if_over` (both inside `BootSession::step_dance_tail`); `stage_dance_hud_vram`, with `World::minigames.dance_hud_art_staged` as the one residency predicate | Mesh build and instance transform. |
 | Muscle Dome | `MuscleDomeSession::select_input`; `muscle_dome_scene::MuscleDomeSurface` (`frame_at`, `sim_ticks`, `DomeCamera::vp_raw`); `muscle_ringside::HubTimers::tick`, `HubBackdrop`, `FirstVisitHub`; `ringside_backdrop::ringside_still_quads`, `first_visit_hub_draw`; `SceneHost::dome_lead_fighter`; `World::leave_muscle_dome` | The minigames page keeps its own dome panel (`minigame-muscle.js`). |
 | effect parts | `legaia_engine_minigames::minigame_fx::MinigameFxPool` on `World::minigames.fx`, drawn by `engine-ui::minigame_fx::fx_part_draws` | The minigames page keeps its own instance of the type. |
 | status rows | `engine-core::minigame_status::caption` (rows as data: kind + clauses, no stage position) | where the caption shows, and `StatusHost` |

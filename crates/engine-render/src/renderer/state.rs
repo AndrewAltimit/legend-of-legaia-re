@@ -185,6 +185,10 @@ pub struct Renderer {
     /// `MeshUniforms.flags[3]`: the `clip.w`-to-`SZ` factor, `0.0` (the
     /// default) = identity. Set with [`Renderer::set_overworld_curvature`].
     pub(super) overworld_curve: std::cell::Cell<f32>,
+    /// The curvature table's build offset in screen rows, folded into every
+    /// scene draw's clip matrix (`depth::fold_screen_rows`). `0.0` (the
+    /// default) = identity. Set with [`Renderer::set_overworld_curve_bias`].
+    pub(super) overworld_curve_bias: std::cell::Cell<f32>,
     /// Retail's per-primitive near reject, staged into the scene-lights
     /// block's `prim_near` word (see [`Renderer::set_prim_near_reject`]).
     pub(super) prim_near: std::cell::Cell<[f32; 4]>,
@@ -747,6 +751,17 @@ impl Renderer {
     /// overworld (retail's overworld bit `_DAT_1F800394 & 1`) keeps.
     pub fn set_overworld_curvature(&self, sz_scale: f32) {
         self.overworld_curve.set(sz_scale.max(0.0));
+    }
+
+    /// Offset every scene draw by the curvature table's build offset, in
+    /// PSX stage rows (negative is up the screen). Retail's table carries
+    /// the `OFY` it was built under less `120` on every entry: `0` from a
+    /// scene load, `-6` once the map display has rebuilt it
+    /// (`legaia_engine_core::world::World::overworld_curve_bias`). It
+    /// applies whatever the curvature scale is - the map display's flat
+    /// table is the offset alone. `0.0` (the default) is the identity.
+    pub fn set_overworld_curve_bias(&self, rows: f32) {
+        self.overworld_curve_bias.set(rows);
     }
 
     /// Arm retail's per-primitive near reject for the scene pass

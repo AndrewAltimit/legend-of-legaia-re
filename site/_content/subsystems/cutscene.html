@@ -202,7 +202,7 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
     <li><strong>Text.</strong> Inline ASCII pages inside the timeline record, each framed <code>0x1F &hellip; 0x00</code>, introduced by <code>CC F8 80 N</code> (<code>N</code> = page count). A sibling op <code>CC F8 89</code> shows a static title card while the script continues. Parser <code>legaia_scene_formats::cutscene_text</code>; no text is committed.</li>
     <li><strong>Presentation.</strong> A bottom-up roller actor (handler <code>FUN_80037174</code>) spawned as a child, so the camera cuts authored between crawl blocks play <em>under</em> the text. Retail's per-scene geometry (window top, visible lines, scroll cadence) comes from a 10-byte config op and is tabulated on <a href="cutscene-internals.html#roller">internals</a>.</li>
     <li><strong>&ldquo;It was the Seru.&rdquo;</strong> is not text at all: a pre-rendered 112&times;32 TIM in the <code>opdeene</code> geometry pack (PROT 0749), blitted as a screen-space quad.</li>
-    <li><strong>Pacing.</strong> Retail counts every wait in display frames at 60 Hz; the engine sims at 100 Hz and drives the roller and the timeline off a 60 fps sub-clock, otherwise the crawl runs 1.67&times; fast.</li>
+    <li><strong>Pacing.</strong> Retail counts every wait in display frames at 60 Hz, through the adaptive frame-skip factor: a logic tick that spans two or three display frames credits two or three. One engine tick is one vsync, and the script's frame delta is the game frame's length on the vsyncs that are game frames and zero between them, so a wait's sum moves exactly as retail's does (<a href="cutscene-internals.html#pacing">the wait law</a>).</li>
   </ul>
   <h3 id="timeline-execution-engine-port">Camera, actors and the engine port</h3>
   <p>Camera Configure (op <code>0x45</code>) writes up to ten masked parameters - pitch, yaw, roll, an eye-space offset trio, the focus point and the GTE projection distance <code>H</code> - and either snaps or hands a mover actor a glide over <code>apply</code> display frames with one of four easing curves. The vignette actors are per-placement script channels the timeline halt-acquires and pokes beat by beat, waiting on a completion flag each raises. The port runs the record as a second field-VM context, merges each beat's parameters into a persistent camera state, spawns the channels (<code>field_channels</code>) and renders through the exact retail GTE model. The full model - record header, parameter table, mover curves, channel handshake and the engine's completion rules - is on <a href="cutscene-internals.html#timeline">cutscene internals</a>.</p>
@@ -217,6 +217,63 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
 <section class="doc-section" id="battle-intro">
   <h2>Battle intro and script helpers</h2>
   <p>The shatter or swirl before a fight is a third overlay, <strong>PROT 0979</strong>, sharing the movie player's slot. Its init picks a style from the battle flags byte, the formation's first monster id and (two arms) the scene index - style 2 is the ordinary shatter, 3 and 4 are reached by a handful of formations - and its per-frame tick owns the whole frame until the battle scene takes over. Port <code>engine-battle-vm::battle_intro_styles</code> + <code>render-kernels::battle_intro</code>. The scripted <code>op*</code> / <code>ed*</code> scenes also lean on five shared per-frame helpers in the dialogue overlay (party-leader swap, position tween, teardown, particle emitter, colour rotate); both are tabulated on <a href="cutscene-internals.html#battle-intro">internals</a>.</p>
+</section>
+
+<section class="doc-section" id="battle-transition">
+  <h2>From field to battle: one overlay owns the frame</h2>
+  <p>Between the encounter and the battle scene the screen shatters, scatters or swirls. For those two to four seconds nothing else is drawn: the transition overlay's init captures the field's last frame, switches the game to its own mode, and from then on every visible pixel is a transition primitive sampling that capture.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow of the field-to-battle transition. Init picks a style, sets the duration, captures the field frame into a texture page and sets game mode 9. The tick then runs once per frame and does three things in parallel: a phase counter steps through the start cue, battle mesh assembly, and the battle music plus scene bundle load; the chosen style emitter draws that frame's primitives; and a per-style fade ramps in near the end. When the timer reaches the duration and both ready bits are set, the tick writes game mode 0x14 and the battle begins.">
+      <defs><marker id="cs-bt-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="86" width="170" height="72" rx="5"/>
+      <text class="dg-label" x="105" y="110">init</text>
+      <text class="dg-sub" x="105" y="128">style, duration,</text>
+      <text class="dg-sub" x="105" y="144">capture frame, mode 9</text>
+      <rect class="dg-node-accent" x="250" y="86" width="130" height="72" rx="5"/>
+      <text class="dg-label" x="315" y="116">tick</text>
+      <text class="dg-sub" x="315" y="136">once per frame</text>
+      <rect class="dg-node" x="430" y="14" width="230" height="56" rx="5"/>
+      <text class="dg-label" x="545" y="38">phase 0, 1, 2</text>
+      <text class="dg-sub" x="545" y="56">cue, meshes, music + bundle</text>
+      <rect class="dg-node" x="430" y="94" width="230" height="56" rx="5"/>
+      <text class="dg-label" x="545" y="118">style emitter 0..4</text>
+      <text class="dg-sub" x="545" y="136">primitives over the capture</text>
+      <rect class="dg-node" x="430" y="174" width="230" height="56" rx="5"/>
+      <text class="dg-label" x="545" y="198">per-style fade</text>
+      <text class="dg-sub" x="545" y="216">to white or to black</text>
+      <rect class="dg-node-ok" x="744" y="86" width="96" height="72" rx="5"/>
+      <text class="dg-label" x="792" y="116">mode 0x14</text>
+      <text class="dg-sub" x="792" y="136">battle</text>
+      <path class="dg-edge" d="M190 122 L248 122" marker-end="url(#cs-bt-arrow)"/>
+      <path class="dg-edge" d="M380 104 L428 48" marker-end="url(#cs-bt-arrow)"/>
+      <path class="dg-edge" d="M380 122 L428 122" marker-end="url(#cs-bt-arrow)"/>
+      <path class="dg-edge" d="M380 140 L428 196" marker-end="url(#cs-bt-arrow)"/>
+      <path class="dg-edge" d="M660 122 L742 122" marker-end="url(#cs-bt-arrow)"/>
+      <text class="dg-edge-label" x="701" y="98" text-anchor="middle">timer done,</text>
+      <text class="dg-edge-label" x="701" y="112" text-anchor="middle">ready == 3</text>
+    </svg>
+    <figcaption>The loading happens <em>under</em> the effect: the battle's meshes, music and scene bundle are staged by the phase counter while the style plays.</figcaption>
+  </figure>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Style</th><th>Look</th><th>Length</th><th>Fade tail</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>Scatter: 1280 particles carrying patches of the field</td><td>132 frames</td><td>black (white on one sub-arm)</td></tr>
+      <tr><td>1</td><td>Spin-up</td><td>132 frames</td><td>white</td></tr>
+      <tr><td>2</td><td>Tile shatter - the default, so an ordinary random encounter shatters</td><td>132 frames</td><td>black</td></tr>
+      <tr><td>3</td><td>Curtain: the capture cut into row and column strips</td><td>132 frames</td><td>black</td></tr>
+      <tr><td>4</td><td>Swirl</td><td>252 frames</td><td>white</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul class="bullets">
+    <li><strong>Which style.</strong> The init reads the battle flags byte, the formation's first monster and, for two arms, the scene index. Three formations get the curtain and one gets the swirl. Two of its stores sit in branch delay slots and land on both arms, which is why a flagged battle defaults to style 1 and not 2.</li>
+    <li><strong>The base colour is black, not the field.</strong> The capture is taken once and the frame is cleared; a particle at rest reproduces its patch exactly only over that cleared frame, and each patch that flies away leaves black behind. Drawing the live field underneath gets both halves wrong - resting patches read at double brightness, and the tail shows a still-animating field. The port emits an opaque backdrop quad on every frame of the window to stand in for the clear.</li>
+    <li><strong>The duration is the denominator of everything.</strong> Each fade is a lead before the end, the ready bits rise 30 and 6 frames before it, and the shatter's tiles start on random delays that reach about frame 84. A transition shorter than that leaves part of the grid parked; one shorter than twenty frames draws as a whitening fade over a statically re-tiled screen.</li>
+    <li><strong>The same white ramp ends two ways.</strong> The fade helper's second argument is a blend mode: under additive it whites out, under subtractive it blacks out. Read as a depth, every style would half-blend and never reach either end.</li>
+    <li><strong>Sound.</strong> Phase 0 writes the battle-start cue straight into slot 0 of the pending effects ring, and for an ordinary fight re-applies the live music level to the field track over a ramp. Phase 2 starts the battle track during the effect, which is where the port starts it too.</li>
+  </ul>
+  <p>Port: the state machine is the encounter session's transition phase (<code>battle_intro_transition::tick_transition</code>); the per-record simulation of each style and the packet builders are shared by both hosts. Two retail nuances are not carried, because the port's screen-overlay path has no depth-cue channel: a moving tile's opaque faces and the late swirl fade toward a far colour in retail and keep their packet colours in the port.</p>
 </section>
 
 <section class="doc-section" id="see-also">

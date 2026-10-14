@@ -74,6 +74,7 @@ impl LegaiaRuntime {
     /// projection" narrowed the channel on this host only, which is exactly
     /// the shape `docs/tooling/host-drift.md` names.
     pub fn set_field_player_screen_y(&mut self, stage_y: i32) {
+        self.field_hud_projection_reported = true;
         self.field_hud_projected_y = (stage_y != NO_FIELD_PROJECTION)
             .then(|| stage_y.clamp(i16::MIN as i32, i16::MAX as i32) as i16);
     }

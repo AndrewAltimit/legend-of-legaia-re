@@ -456,6 +456,15 @@ pub struct BattleActor {
     pub action_recoil: u8,
     /// `+0x225` - capture state byte - `2` while captured.
     pub capture_state: u8,
+    /// The render node's `+0x42` (`*(actor + 0x22C) + 0x42`), raised to `1`
+    /// by the defeat fade's sink (`sh s4,0x42(a0)` at `0x800504AC`,
+    /// `FUN_80050120` arm 2). A non-zero `+0x42` sends the body's draw
+    /// through the clipping renderer (`FUN_80048A08`'s far arm,
+    /// `0x80048E84..0x80048FE4`) under object-effect row `+0x42 - 1`, which
+    /// battle setup seeds as the floor plane - so a sinking body is cut off
+    /// at the floor instead of showing through it. Nothing lowers it; the
+    /// node is rebuilt with the next fight.
+    pub floor_clip: bool,
     /// `+0x21B` - hit-count bound (script-defined; loop exits at
     /// `ctx.hit_counter >= hit_count_bound`).
     pub hit_count_bound: u8,

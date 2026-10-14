@@ -3,7 +3,7 @@
 //! shore where the overlay's setup spawns them, framed by the venue camera -
 //! the one kernel both play hosts draw while the world is in
 //! [`legaia_engine_mode::mode::SceneMode::Fishing`], the way
-//! [`legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface`] serves the dome.
+//! [`crate::muscle_dome_scene::MuscleDomeSurface`] serves the dome.
 //!
 //! Retail's fishing is a scene of its own: the mode-24 door warp
 //! (`FUN_80025980`) swaps the field for the overlay, whose setup state
@@ -33,7 +33,7 @@ use legaia_scene_formats::field_objects::FLAG_PLACED;
 use legaia_tmd::mesh::VramMesh;
 
 use crate::fishing_venue::{FishingPartyMember, party_placements, venue_camera_view};
-use crate::world::MinigameState;
+use crate::minigame_state::MinigameState;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 
@@ -146,7 +146,7 @@ impl FishingSceneAssets {
             },
         )
         .ok()?;
-        let anm = crate::npc_catalog::scene_anm_bundle(&scene);
+        let anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
         let (env, env_flat) = bake_env(index, &scene, &res, anm.as_ref());
         if env.indices.is_empty() {
             return None;

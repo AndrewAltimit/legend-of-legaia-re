@@ -381,6 +381,59 @@ impl World {
         })
     }
 
+    /// The clip a battle body draws under while its node's `+0x42` is raised
+    /// ([`legaia_engine_battle_vm::battle_action::BattleActor::floor_clip`]),
+    /// in the body's **mesh** space - the posed mesh both hosts upload, in
+    /// retail's actor-local units. `None` for a body that draws unclipped.
+    ///
+    /// Retail's per-actor draw `FUN_80048A08` tests the node's `+0x42` per
+    /// object (`lh v0,0x42(s0)` at `0x80048E84`): raised, it runs
+    /// `FUN_8001C204` over the object's posed transform and hands the object
+    /// to the clipping renderer `FUN_8002735C` (`0x80048E94..0x80048FE4`)
+    /// instead of the prim dispatcher. The clip is object-effect row
+    /// `+0x42 - 1`, which battle setup re-seeds as angles `0`,
+    /// `lo = -0x7FFF`, `hi = 0`
+    /// ([`legaia_engine_effects::object_effect::BATTLE_ROW0`]): the half
+    /// space at and above the stage floor. The one battle writer is the
+    /// defeat fade's sink (`World::tick_battle_defeat_sink`), so a killed
+    /// monster goes down through the floor and is gone once its mesh is
+    /// under it - `player_steal_skeleton_banner` holds its skeleton `183`
+    /// units down with no packet of it left on the ordering table.
+    ///
+    /// The effect point is `s * Rrow * (Ractor * v + pos)` over the posed
+    /// vertex `v`, the node position `pos` (the body's live trio) and the
+    /// render scale `s = +0x72`; the actor rotation is the facing yaw, which
+    /// the floor row's vertical normal never reads.
+    // REF: FUN_80048A08, FUN_8001C204, FUN_80027F00
+    pub fn battle_actor_floor_clip(
+        &self,
+        actor_idx: usize,
+    ) -> Option<legaia_engine_effects::object_effect::MeshClip> {
+        if self.mode != SceneMode::Battle {
+            return None;
+        }
+        let actor = self.actors.get(actor_idx)?;
+        if !actor.battle.floor_clip {
+            return None;
+        }
+        let clip = self
+            .object_effect
+            .clip_for(1, &self.sin_lut, &self.cos_lut)?;
+        let m = &actor.move_state;
+        let yaw = f32::from(actor.battle.facing_angle & 0xFFF) / 4096.0 * std::f32::consts::TAU;
+        let (s, c) = yaw.sin_cos();
+        let rows = [
+            [c, 0.0, s, f32::from(m.world_x)],
+            [0.0, 1.0, 0.0, f32::from(m.world_y)],
+            [-s, 0.0, c, f32::from(m.world_z)],
+        ];
+        let scale = match m.field_72 {
+            0 => 1.0,
+            v => f32::from(v) / 4096.0,
+        };
+        Some(clip.in_mesh_space(rows, scale))
+    }
+
     /// Every battle body's [`Self::battle_ground_shadow`], each judged by the
     /// host's own draw plan (`plan_of`, the same call its actor pass makes).
     /// Both hosts' battle FX passes draw this list after the draw-kind-4
@@ -569,18 +622,18 @@ mod tests {
         let mut world = battle_world();
         assert_eq!(world.battle_ambient_base(), [0x20; 3]);
         for _ in 0..48 {
-            world.tick_battle_animations();
+            world.tick_battle_ambient();
         }
         assert_eq!(world.battle_ambient_base(), [0x80; 3]);
         world.battle_ctx.gauge_rearm_latch = 1;
-        world.tick_battle_animations();
+        world.tick_battle_ambient();
         assert_eq!(world.battle_ambient_base(), [0x78; 3]);
         for _ in 0..20 {
-            world.tick_battle_animations();
+            world.tick_battle_ambient();
         }
         assert_eq!(world.battle_ambient_base(), [0x20; 3]);
         world.battle_ctx.gauge_rearm_latch = 0;
-        world.tick_battle_animations();
+        world.tick_battle_ambient();
         assert_eq!(world.battle_ambient_base(), [0x22; 3]);
     }
 
@@ -592,12 +645,12 @@ mod tests {
     fn the_band_latch_freezes_the_ambient_above_the_floor() {
         let mut world = battle_world();
         for _ in 0..48 {
-            world.tick_battle_animations();
+            world.tick_battle_ambient();
         }
         world.battle_ctx.gauge_rearm_latch = 1;
         world.battle_ctx.summon_staging_a = 1;
         for _ in 0..30 {
-            world.tick_battle_animations();
+            world.tick_battle_ambient();
         }
         assert_eq!(
             legaia_engine_battle_vm::battle_ground_grid::ambient_base_rgb(
@@ -607,7 +660,7 @@ mod tests {
         );
         assert_eq!(world.battle_ambient_base(), [0x28; 3]);
         world.battle_ctx.summon_staging_a = 0;
-        world.tick_battle_animations();
+        world.tick_battle_ambient();
         assert_eq!(world.battle_ambient_base(), [0x20; 3]);
     }
 
@@ -707,5 +760,30 @@ mod tests {
         world.tables.rot_limb_table = None;
         world.battle.status_effects.apply(0, StatusKind::Rot);
         assert!(world.battle_limb_dim_plan(0, 12).is_none());
+    }
+
+    /// A body the defeat sink raised `+0x42` on keeps only what stands at
+    /// or above the floor: over its posed mesh the clip is the mesh's own
+    /// `Y` against the body's height `+0x36`, so a body `183` down (Y-down)
+    /// keeps nothing above mesh `y = -183`.
+    #[test]
+    fn a_sunk_body_is_clipped_at_the_stage_floor() {
+        let mut world = World::default();
+        world.enter_battle(1, 1);
+        assert!(world.battle_actor_floor_clip(1).is_none(), "gate down");
+        world.actors[1].battle.floor_clip = true;
+        world.actors[1].battle.facing_angle = 0x800;
+        world.actors[1].move_state.world_x = 675;
+        world.actors[1].move_state.world_y = 183;
+        world.actors[1].move_state.world_z = 623;
+        let c = world.battle_actor_floor_clip(1).expect("raised");
+        assert!(
+            c.keeps([30.0, -200.0, -40.0]),
+            "a vertex still above the floor"
+        );
+        assert!(!c.keeps([30.0, -100.0, -40.0]), "a vertex sunk under it");
+        assert!(!c.keeps([0.0, 0.0, 0.0]), "the body's origin is under it");
+        world.mode = SceneMode::Field;
+        assert!(world.battle_actor_floor_clip(1).is_none(), "battle only");
     }
 }

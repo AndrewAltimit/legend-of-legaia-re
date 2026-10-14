@@ -22,7 +22,7 @@ The split is deliberate:
   returns the label of the scene a door just walked into, so the page rebuilds
   around a transition), and `state_json()` (frame / mode / player transform /
   live dialogue box). The page tells the session what it does itself (the
-  pause menu, the field CD-XA lane, the per-tick queue drains; see the
+  pause menu, the per-tick queue drains; see the
   [`engine-session` README](../../crates/engine-session/README.md)). The session holds
   the port's seat at retail's **mode table** (`engine-mode::mode::ModeSeat`),
   reconciled once per frame, plus the two INIT modes a host enters by hand
@@ -1196,5 +1196,6 @@ reference TIMs sitting in other PROT entries.
 | [`host_slot`](../../crates/web-viewer/src/host_slot.rs) | The page's slot for its `BootSession` over `play_sfx::PageSink`; every page module reaches the scene host through it. |
 | [`play_lighting`](../../crates/web-viewer/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-viewer/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
 | [`play_cheats`](../../crates/web-viewer/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-core::cheats`. |
+| [`play_toggles`](../../crates/web-viewer/src/play_toggles.rs) | Runtime twins of native launch switches: `--retail` (session-only `OptionsState::pin_retail`; the store is not written while it holds), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`. |
 | [`audio_api`](../../crates/web-viewer/src/audio_api.rs) | `LegaiaAudio`, the media page's audio bindings. |
 | [`play_host_parity`](../../crates/web-viewer/src/play_host_parity.rs) | Read-only probes over the live `World` for the tests pairing this host against the native window; not wasm exports. |

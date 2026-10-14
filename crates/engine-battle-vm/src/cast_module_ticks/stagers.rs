@@ -260,7 +260,7 @@ pub fn juggernaut_stager(
     hits
 }
 
-/// PROT 0966 (Evil Seru Magic) spawn stager - the whole-table sweep.
+/// PROT 0966 (Evil Seru Magic) spawn stager - the party-row sweep.
 ///
 /// Nine arms behind `sltiu a1, 9` through the table at `0x801F6A50`. Its
 /// working arm (arm `4`, `0x801F8E4C`) walks the actor table from seat `0`
@@ -280,8 +280,10 @@ pub fn juggernaut_stager(
 ///     victim[+0x21D]  = 2                           ; slow-motion
 /// ```
 ///
-/// So Cort's ESM hits **every seat in the table**, party and monsters alike,
-/// and leaves each at 1 HP at worst.
+/// The bound is `ctx[+0]`, the party count, read from seat `0`
+/// (`0x801F8EB4`, loop test `0x801F8FB4..0x801F8FC0`), so Cort's ESM sweeps
+/// the **party row** and never reaches a monster seat; the `slt` at
+/// `0x801F8F38` leaves each victim at 1 HP at worst.
 ///
 /// Wired: `World::run_cast_module_aoe`.
 ///

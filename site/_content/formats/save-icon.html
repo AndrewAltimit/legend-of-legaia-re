@@ -1,0 +1,98 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; save-slot portraits</div>
+  <h1>Save-slot portrait sheet <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">The small 16&times;16 faces the save screen draws, and the icon a PlayStation memory-card browser shows for each Legaia save, come from one image: a single horizontal strip of sixteen tiles in the menu overlay. Each tile has its own 16-colour palette, and the tile a save gets is simply its card slot number.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>PROT entry 899 (the menu overlay), TIM header at offset <code>0x1F908</code>; overlay address <code>0x801EE120</code></dd>
+    <dt>Image</dt><dd>4bpp, 256 &times; 16 texels, uploaded to VRAM <code>(960, 224)</code></dd>
+    <dt>Palettes</dt><dd>One 256-entry CLUT row at VRAM <code>(0, 1)</code> = sixteen 16-colour palettes</dd>
+    <dt>Tiles</dt><dd>Sixteen 16&times;16 tiles; fifteen portraits and one blank</dd>
+    <dt>Parser</dt><dd><code>legaia_ui_formats::save_icon</code> (finds the sheet by scanning for its two rects, not by offset)</dd>
+    <dt>Modding</dt><dd><code>legaia-patcher save-icon-list</code> / <code>save-icon-export</code> / <code>save-icon-replace</code></dd>
+    <dt>Used by</dt><dd><a href="../subsystems/save-screen.html">save screen</a>, memory-card block writer</dd>
+  </dl>
+  <p>The image's flag word sets a reserved bit, so a strict <a href="tim.html">TIM</a> reader rejects it; a lenient reader plus the rect fingerprint is the parse path.</p>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>The strip</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Save-icon strip: sixteen 16 by 16 tiles side by side in one 256 by 16 image. Each image row is 128 bytes and tile t owns bytes t times 8 to t times 8 plus 8 of every row, so a tile's pixels are sixteen 8-byte runs spaced 128 bytes apart. Below, the 256-entry palette row is sixteen 16-colour palettes, palette t belonging to tile t. Tile 15 is blank.">
+      <text class="dg-sub dg-start" x="20" y="22">image: 256 &#215; 16 texels, row = 128 bytes</text>
+      <rect class="dg-node-accent" x="20" y="32" width="50" height="50"/><text class="dg-label" x="45" y="62">0</text>
+      <rect class="dg-node" x="72" y="32" width="50" height="50"/><text class="dg-label" x="97" y="62">1</text>
+      <rect class="dg-node" x="124" y="32" width="50" height="50"/><text class="dg-label" x="149" y="62">2</text>
+      <rect class="dg-node" x="176" y="32" width="50" height="50"/><text class="dg-label" x="201" y="62">3</text>
+      <rect class="dg-node" x="228" y="32" width="50" height="50"/><text class="dg-label" x="253" y="62">4</text>
+      <rect class="dg-node" x="280" y="32" width="50" height="50"/><text class="dg-label" x="305" y="62">5</text>
+      <rect class="dg-node" x="332" y="32" width="50" height="50"/><text class="dg-label" x="357" y="62">6</text>
+      <rect class="dg-node" x="384" y="32" width="50" height="50"/><text class="dg-label" x="409" y="62">7</text>
+      <rect class="dg-node" x="436" y="32" width="50" height="50"/><text class="dg-label" x="461" y="62">8</text>
+      <rect class="dg-node" x="488" y="32" width="50" height="50"/><text class="dg-label" x="513" y="62">9</text>
+      <rect class="dg-node" x="540" y="32" width="50" height="50"/><text class="dg-label" x="565" y="62">10</text>
+      <rect class="dg-node" x="592" y="32" width="50" height="50"/><text class="dg-label" x="617" y="62">11</text>
+      <rect class="dg-node" x="644" y="32" width="50" height="50"/><text class="dg-label" x="669" y="62">12</text>
+      <rect class="dg-node" x="696" y="32" width="50" height="50"/><text class="dg-label" x="721" y="62">13</text>
+      <rect class="dg-node" x="748" y="32" width="50" height="50"/><text class="dg-label" x="773" y="62">14</text>
+      <rect class="dg-node-warn" x="800" y="32" width="50" height="50"/><text class="dg-label" x="825" y="62">15</text>
+      <text class="dg-sub" x="825" y="98">blank</text>
+      <text class="dg-sub dg-start" x="20" y="110">tile t = bytes t&#215;8 .. t&#215;8+8 of every row</text>
+      <text class="dg-sub dg-start" x="20" y="160">palette row: 256 entries = 16 palettes of 16</text>
+      <rect class="dg-node-accent" x="20" y="170" width="50" height="26"/>
+      <rect class="dg-node" x="72" y="170" width="50" height="26"/><rect class="dg-node" x="124" y="170" width="50" height="26"/><rect class="dg-node" x="176" y="170" width="50" height="26"/>
+      <rect class="dg-node" x="228" y="170" width="50" height="26"/><rect class="dg-node" x="280" y="170" width="50" height="26"/><rect class="dg-node" x="332" y="170" width="50" height="26"/><rect class="dg-node" x="384" y="170" width="50" height="26"/>
+      <rect class="dg-node" x="436" y="170" width="50" height="26"/><rect class="dg-node" x="488" y="170" width="50" height="26"/><rect class="dg-node" x="540" y="170" width="50" height="26"/><rect class="dg-node" x="592" y="170" width="50" height="26"/>
+      <rect class="dg-node" x="644" y="170" width="50" height="26"/><rect class="dg-node" x="696" y="170" width="50" height="26"/><rect class="dg-node" x="748" y="170" width="50" height="26"/><rect class="dg-node-warn" x="800" y="170" width="50" height="26"/>
+      <path class="dg-edge-dim" d="M45 84 L45 96"/><path class="dg-edge-dim" d="M45 118 L45 168"/>
+      <text class="dg-sub dg-start" x="20" y="222">palette t belongs to tile t: texture u = t &#215; 16, CLUT id = 0x40 + t</text>
+    </svg>
+    <figcaption>Every consumer derives both the texture coordinate and the palette from one index. That is why the sheet cannot go through a generic single-palette texture replacer: a new colour for one portrait has to land in that portrait's palette and no other.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="index-rules">
+  <h2>Two consumers, two indices</h2>
+  <p>The tile space is a character space - fifteen different faces - and its two consumers index it by different quantities.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Consumer</th><th>Index</th><th>How</th></tr></thead>
+    <tbody>
+      <tr><td>Memory-card block icon (<code>FUN_801E1934</code>)</td><td><strong>card slot</strong></td><td>grabs the tile and its palette back <em>out of VRAM</em> into the save block; no modulo, no clamp - a card holds 15 blocks</td></tr>
+      <tr><td>Save-screen info panel (<code>FUN_801E08D8</code>)</td><td><strong>party id</strong> (0 Vahn, 1 Noa, 2 Gala)</td><td>one portrait per party member in the slot summary</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>So the save the game shows as number <code>N</code> carries tile <code>N - 1</code>, checked against real cards.</p>
+</section>
+
+<section class="doc-section" id="deinterleave">
+  <h2>Why a byte search finds the palette and not the pixels</h2>
+  <p>A save block stores its icon as one contiguous 16&times;16 tile. The strip stores the same tile as sixteen 8-byte runs spaced 128 bytes apart. Retail never converts in software - it reads a rectangle back out of VRAM, and a rectangular read is contiguous by construction. So searching the disc for a real save's icon finds its <strong>palette</strong> verbatim in the overlay and its <strong>pixels</strong> nowhere. That asymmetry is the layout difference, not a missing asset.</p>
+  <p>All four header bytes of a save block are part of the icon's contract. A writer that stamps only the two magic bytes leaves the icon-frame descriptor as found - zero in a previously free block - and the BIOS card browser reads the block as malformed. The port stamps the whole header.</p>
+  <h3>The second copy</h3>
+  <p>Tiles 0, 1 and 2 also ship as three standalone 16&times;16 images in the boot-resident system-UI <a href="tim-pack.html">TIM-pack</a>, already contiguous because each is its own image. Their bytes match strip tiles 0 to 2 exactly, which makes them an independent check on the de-interleave. They live in the head region of the archive that the extraction index space skips, which is why no extracted file contains them - the same +2 numbering skew the <a href="cdname.html">CDNAME</a> page documents.</p>
+</section>
+
+<section class="doc-section" id="tile-15">
+  <h2>Tile 15 and modding</h2>
+  <p>Tile 15 is blank - one flat pixel index and an all-zero palette. It is width padding that rounds the strip to a whole number of VRAM words, and no code path selects it: both index rules are bounded below 15. The patcher therefore exposes 15 slots, not 16.</p>
+  <p>Replacing one portrait is 17 same-size in-place writes - the tile's palette plus its sixteen pixel runs - so every other portrait stays byte-identical.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/save-icon.md" target="_blank" rel="noopener"><code>docs/formats/save-icon.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/save-screen.html">Save screen</a>
+    <a href="save-record.html">Per-character save record</a>
+    <a href="tim.html">PSX TIM</a>
+    <a href="tim-pack.html">TIM-pack</a>
+    <a href="../subsystems/battle-hud.html">Battle HUD</a>
+    <a href="../tooling/randomizer.html">Disc patcher</a>
+  </div>
+</section>

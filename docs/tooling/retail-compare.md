@@ -442,6 +442,16 @@ engine verdict:
   seed's settle window ran the loop before the resume, the engine cleared
   brown, and the semi-transparent sea (`(B + F) / 2`) blended into it.
 
+  So is the overworld curvature table's build offset. Opening the map
+  display rebuilds the table under the running frame's `OFY`, which lifts
+  every bent overworld draw six rows until the next scene load
+  ([renderer](../subsystems/renderer.md#the-overworld-curvature-table-fun_800271a8)),
+  and that is pad history: `sebucus_overworld_resident`'s player had opened
+  the map, its table's entry `0` reads `-6`, and a seat drawn from the
+  fresh load sat six rows under retail's frame. The entry goes to the child
+  as `LEGAIA_SEAT_CURVE_BIAS` (`retail_curve_bias`) and is written over
+  the engine's offset on the frame it captures.
+
   So is the dialogue page mark, the two-frame "press" icon at a waiting
   box's rim (`FUN_8002B994` kind 1). Which frame is up is vsyncs since the
   box first waited, sixteen a frame; the state's frame index and timer
@@ -1265,11 +1275,14 @@ an orbit clock. `evil_medallion_rage_battle` is one.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on a
   given seat) can run out of budget or end the fight first.
 - **A fading body retail does not draw.** `player_steal_skeleton_banner` holds
-  the killed skeleton in its defeat fade - lanes `0xF0`, mode word
-  `0x81000000`, node colour `0x3C3C3C`, sunk `183` - and the frame's ordering
-  table carries no packet for it: every monster packet is the standing
-  skeleton's, opaque at colour `0x44`. The engine draws the body lying at
-  those lanes. Which test drops it in retail is open.
+  the killed skeleton in its defeat fade - lanes `0xF0`, node colour
+  `0x3C3C3C`, sunk `183` - and the frame's ordering table carries no packet
+  for it. Its render node's `+0x42` reads `1`: the defeat sink raises it
+  beside the height (`0x800504AC`), and the battle draw clips such a body at
+  the stage floor ([renderer](../subsystems/renderer.md#the-disc-does-ship-writers-of-0x42)),
+  so a lying body `183` down is wholly under it. Both hosts clip it now; the
+  engine's body had also been drawn **raised** by its sink, its height going
+  into the placement unflipped.
 
 ### Replayed casts
 

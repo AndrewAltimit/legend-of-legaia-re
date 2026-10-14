@@ -1,0 +1,172 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; Muscle Dome</div>
+  <h1>Muscle Dome</h1>
+  <p class="lede">An arena contest fought as a ladder of <strong>ordinary battles</strong>. The player picks one of three courses and fights its fixed sequence of rounds, one real monster per round, with one party character. Between rounds the arena shows a tally that heals the fighter and banks casino coins; a finished contest pays the coins out.</p>
+</header>
+
+<section class="doc-section" id="not">
+  <h2>Three things it is not</h2>
+  <ul class="bullets">
+    <li><strong>Not a card battle.</strong> The four &ldquo;cards&rdquo; are the four direction commands, always the same four, each at that fighter&rsquo;s own AP cost. Nothing is drawn, discarded or reshuffled.</li>
+    <li><strong>Not turn-limited.</strong> A leg ends on a knockout and on nothing else. The &ldquo;Turns Left&rdquo; strip in the same overlay belongs to a timed boss fight.</li>
+    <li><strong>Not part of the minigame-hub family.</strong> It shares no controller library with fishing, the slot machine, dance or Baka Fighter.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Contest init / re-entry</dt><dd><code>FUN_801CEA6C</code>, PROT 0977 at base <code>0x801CE818</code></dd>
+    <dt>Contest hub</dt><dd><code>FUN_801CF870</code>, state byte <code>DAT_801D1A78</code>, 51-entry jump table <code>0x801CE990</code> (fourteen real states)</dd>
+    <dt>Opponent installer</dt><dd><code>FUN_801D1510</code></dd>
+    <dt>Tally screen / row maths</dt><dd><code>FUN_801CF074</code> / <code>FUN_801D1184</code></dd>
+    <dt>Settlement</dt><dd><code>FUN_801D0F60</code></dd>
+    <dt>Leg</dt><dd>The shared battle round driver <code>FUN_801D0748</code> and action SM <code>FUN_801E295C</code>, PROT 0898</dd>
+    <dt>Contest cursor</dt><dd><code>_DAT_8007BAC0</code>: low byte packs <code>(course, round)</code>; bits <code>0x100</code> / <code>0x200</code> restrict items / Ra-Seru</dd>
+    <dt>Coins</dt><dd>Running tally <code>_DAT_80084440</code>, coin bank <code>0x800845A4</code></dd>
+    <dt>Tables</dt><dd>Roster <code>0x801D1920</code>, course descriptors <code>0x801D1A08</code>, score table <code>0x801D1860</code></dd>
+    <dt>Port</dt><dd><code>engine-minigames::muscle_dome</code>, <code>muscle_ringside</code>; <code>engine-menus::muscle_dome_session</code>; <code>engine-minigame-scenes::muscle_dome_scene</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="entry">
+  <h2>Getting there</h2>
+  <p>The door is the <strong>mode-24 minigame warp</strong>: field-VM op <code>0x3E</code> with <code>op0 = 105</code> (sub-id 5) sets game mode <code>0x18</code> and loads the overlay. It is the ordinary scene-backup, overlay-load, return-to-field sequence, so the game returns to the exact field state it suspended. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
+  <p>Every dome door on the disc is in one casino record - the <strong>course menu</strong>. Each arm debits its entry fee and latches a course flag before its own warp. The battle exit selector is the second of only two writers of game mode 24: with the contest bit set it stores the arena mode instead of the field&rsquo;s, which is what returns a finished round to the arena.</p>
+</section>
+
+<section class="doc-section" id="hub">
+  <h2>The contest hub</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The Muscle Dome contest hub. A fresh contest runs the welcome strip, the title zoom, the course card and the wall drain. A survived leg with the course continuing re-enters at the INTERVAL heading, the tally roll and the HP restore. Both paths reach the backdrop return and the ROUND card, whose fade-out starts the fight. The fight is an ordinary battle on the shared round driver, and its end re-enters the hub. A loss, a flee or an exhausted course goes to the settle state, which pays out and leaves the arena.">
+      <defs><marker id="mdm-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-group" x="10" y="10" width="420" height="166" rx="6"/>
+      <text class="dg-sub dg-start" x="20" y="26">fresh contest</text>
+      <rect class="dg-node" x="24" y="36" width="190" height="46" rx="4"/>
+      <text class="dg-label" x="119" y="56">0..2 Welcome</text>
+      <text class="dg-sub" x="119" y="72">strip in, hold, out</text>
+      <rect class="dg-node" x="226" y="36" width="190" height="46" rx="4"/>
+      <text class="dg-label" x="321" y="56">3 Title zoom</text>
+      <text class="dg-sub" x="321" y="72">scale 0x1640 to 0x1000</text>
+      <rect class="dg-node" x="24" y="106" width="190" height="46" rx="4"/>
+      <text class="dg-label" x="119" y="126">4..5 Course card</text>
+      <text class="dg-sub" x="119" y="142">hold 0xB4, skippable</text>
+      <rect class="dg-node" x="226" y="106" width="190" height="46" rx="4"/>
+      <text class="dg-label" x="321" y="126">6 Wall drain</text>
+      <text class="dg-sub" x="321" y="142">kicks the battle load</text>
+      <path class="dg-edge" d="M214 59 L224 59" marker-end="url(#mdm-arrow)"/>
+      <path class="dg-edge" d="M321 82 L321 94 L119 94 L119 104" marker-end="url(#mdm-arrow)"/>
+      <path class="dg-edge" d="M214 129 L224 129" marker-end="url(#mdm-arrow)"/>
+      <rect class="dg-group" x="450" y="10" width="420" height="166" rx="6"/>
+      <text class="dg-sub dg-start" x="460" y="26">leg survived, course continues</text>
+      <rect class="dg-node" x="464" y="36" width="190" height="46" rx="4"/>
+      <text class="dg-label" x="559" y="56">0x0A INTERVAL</text>
+      <text class="dg-sub" x="559" y="72">heading fades in</text>
+      <rect class="dg-node-accent" x="666" y="36" width="190" height="46" rx="4"/>
+      <text class="dg-label" x="761" y="56">0x0B Tally roll</text>
+      <text class="dg-sub" x="761" y="72">pad latches fast roll</text>
+      <rect class="dg-node" x="464" y="106" width="190" height="46" rx="4"/>
+      <text class="dg-label" x="559" y="126">0x0C HP restore</text>
+      <text class="dg-sub" x="559" y="142">the three healing lanes</text>
+      <path class="dg-edge" d="M654 59 L664 59" marker-end="url(#mdm-arrow)"/>
+      <path class="dg-edge" d="M761 82 L761 94 L559 94 L559 104" marker-end="url(#mdm-arrow)"/>
+      <rect class="dg-node" x="240" y="210" width="180" height="46" rx="4"/>
+      <text class="dg-label" x="330" y="237">0x14 Backdrop return</text>
+      <rect class="dg-node" x="460" y="210" width="180" height="46" rx="4"/>
+      <text class="dg-label" x="550" y="230">0x15 ROUND card</text>
+      <text class="dg-sub" x="550" y="246">hold 0x3D, skippable</text>
+      <rect class="dg-node-ok" x="680" y="210" width="180" height="46" rx="4"/>
+      <text class="dg-label" x="770" y="230">0x16 Card fade-out</text>
+      <text class="dg-sub" x="770" y="246">starts the fight</text>
+      <path class="dg-edge" d="M321 152 L321 208" marker-end="url(#mdm-arrow)"/>
+      <path class="dg-edge" d="M559 152 L559 188 L350 188 L350 208" marker-end="url(#mdm-arrow)"/>
+      <path class="dg-edge" d="M420 233 L458 233" marker-end="url(#mdm-arrow)"/>
+      <path class="dg-edge" d="M640 233 L678 233" marker-end="url(#mdm-arrow)"/>
+      <rect class="dg-node-accent" x="560" y="300" width="300" height="56" rx="4"/>
+      <text class="dg-label" x="710" y="325">The leg: an ordinary battle</text>
+      <text class="dg-sub" x="710" y="341">round driver FUN_801D0748, PROT 0898</text>
+      <path class="dg-edge" d="M770 256 L770 298" marker-end="url(#mdm-arrow)"/>
+      <rect class="dg-node" x="240" y="300" width="260" height="56" rx="4"/>
+      <text class="dg-label" x="370" y="325">Arena re-entry FUN_801CEA6C</text>
+      <text class="dg-sub" x="370" y="341">reads &quot;survived&quot; and the course length</text>
+      <path class="dg-edge" d="M560 328 L502 328" marker-end="url(#mdm-arrow)"/>
+      <text class="dg-edge-label" x="506" y="320">knockout</text>
+      <path class="dg-edge-dim" d="M440 300 L440 280 L444 280 L444 59 L462 59" marker-end="url(#mdm-arrow)"/>
+      <rect class="dg-node-warn" x="20" y="300" width="180" height="56" rx="4"/>
+      <text class="dg-label" x="110" y="325">0x32 Settle</text>
+      <text class="dg-sub" x="110" y="341">pay out, leave the arena</text>
+      <path class="dg-edge" d="M240 328 L202 328" marker-end="url(#mdm-arrow)"/>
+      <text class="dg-sub dg-start" x="20" y="380">lost, ran, or course exhausted</text>
+    </svg>
+    <figcaption>Two state machines are stacked. The inner one is the battle, with exactly one contest-gated arm (the flee). The outer one is the contest, entirely in PROT 0977, re-entered after <em>every</em> leg. No turn boundary reaches the hub: the intermission is per fight, not per turn.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="routing">
+  <h2>What a leg&rsquo;s end routes to</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Leg</th><th>Next hub state</th></tr></thead>
+    <tbody>
+      <tr><td>survived, course not exhausted</td><td><code>0x0A</code> - the between-leg tally</td></tr>
+      <tr><td>survived, course exhausted</td><td><code>0x32</code> - settle, continuing</td></tr>
+      <tr><td>not survived</td><td><code>0x32</code> - settle</td></tr>
+      <tr><td>ran</td><td><code>0x32</code> - settle, gave up</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>&ldquo;Survived&rdquo; is a single bit test on re-entry. &ldquo;Continuing&rdquo; is <strong>derived</strong>, not prompted - there is no continue prompt; the latch is raised on the one path where the course is exhausted and the fighter survived.</p>
+</section>
+
+<section class="doc-section" id="tally">
+  <h2>The tally heals</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Row</th><th>Value</th><th>Drains into</th></tr></thead>
+    <tbody>
+      <tr><td>round</td><td><code>round * 2 * max_hp / 100</code></td><td>the HP accumulator</td></tr>
+      <tr><td>turns</td><td><code>min(turns_taken, 8) * max_hp / 100</code></td><td>the HP accumulator</td></tr>
+      <tr><td>outcome</td><td><code>[8, 12, 4, 2][min(outcome, 3)] * max_hp / 100</code></td><td>the HP accumulator</td></tr>
+      <tr><td>score</td><td><code>score_table[course][round - 1]</code></td><td>the coin tally</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Three of the four lanes are <strong>healing</strong>, not score; only the fourth is coins. So a contest costs no permanent HP. The lanes drain one after another, one scaled step per frame with a voice blip per step.</p>
+  <p><strong>The roll can be fast-forwarded.</strong> The tally arm opens by testing the press mask against <code>0xF4</code> and latching <code>DAT_801D1AB4</code> (<code>0x801CFD60..0x801CFD7C</code>). That word is the step scaler&rsquo;s bypass: while it is up a lane moves its whole remainder in one step, so one press rolls out everything left. Its only clear is the arena init.</p>
+</section>
+
+<section class="doc-section" id="screens">
+  <h2>Hub screens are envelopes</h2>
+  <p>Each hub screen is a fade-in at its own rate, a hold and a fade-out. The counters are <strong>brightness levels</strong> clamped at <code>0x80</code> - a textured primitive&rsquo;s neutral modulation - not durations, and every step is scaled by the adaptive frame-skip factor. The two card holds end early on any bit of <code>pad &amp; 0xF4</code>. A port that counts frames ends the screens at the wrong instants and cannot be ended early by a button; one that draws them at <code>0x100</code> is twice retail&rsquo;s brightness.</p>
+</section>
+
+<section class="doc-section" id="settle">
+  <h2>Settlement</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Case</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Continuing</td><td>keeps the tally and adds the final score cell</td></tr>
+      <tr><td>Not continuing</td><td>halves the tally</td></tr>
+      <tr><td>Gave up</td><td>zeroes the tally</td></tr>
+      <tr><td>Gave up on round 1</td><td>also sets a per-course flag - the trigger for running from the first battle in all three difficulties</td></tr>
+      <tr><td>Master course final fight, first time</td><td>awards the War God Icon, once per save</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The cursor packing, the course ladder, both restores, the arena data file and ringside stills, the round driver&rsquo;s phases, the command input and the sound are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-muscle-dome.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="battle.html">Battle</a>
+    <a href="battle-command-flow.html">Battle command flow</a>
+    <a href="battle-round-loop.html">Battle round loop</a>
+    <a href="minigame-baka-fighter.html">Baka Fighter</a>
+    <a href="arts-command-gauge.html">Arts command gauge</a>
+    <a href="../formats/ringside-still.html">Ringside stills</a>
+    <a href="../minigames.html">Minigames page</a>
+  </div>
+</section>

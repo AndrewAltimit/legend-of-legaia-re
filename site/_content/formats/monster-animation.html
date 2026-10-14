@@ -115,7 +115,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
     <tbody>
       <tr><td>action phase <code>0x28 &rarr; 0x29</code></td><td>spell class <code>&ge; 0x14</code> (or id <code>&ge; 0x65</code>), not <code>0x63</code></td><td><code>+0x1E0</code></td></tr>
       <tr><td>Spirit band <code>0x3C</code></td><td>class <code>&lt; 0x14</code> and id <code>&lt; 0x65</code> - heals and buffs</td><td><code>+0x1E7</code></td></tr>
-      <tr><td>capture band <code>0x28 &rarr; 0x6E</code></td><td>class <code>0x63</code> - most monster specials</td><td>neither: the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast module</a> stages literal entry indices of its own</td></tr>
+      <tr><td>capture band <code>0x28 &rarr; 0x6E</code></td><td>class <code>0x63</code> - most monster specials</td><td>neither: the <a href="../subsystems/cast-module.html">cast module</a> stages literal entry indices of its own</td></tr>
     </tbody>
   </table>
   <p>Because the capture modules hard-code entry indices, a module only lines up with the monsters built for it; some stage nothing on the caster, which then holds its idle through the cast in retail too.</p>
@@ -124,7 +124,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
   <details class="disclosure">
     <summary>A special attack can be a chain of entries</summary>
     <div class="disclosure-body">
-      <p>An action id is one entry, but a <em>move</em> need not be. The per-spell <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast modules</a> write <code>actor[+0x1DA]</code> directly, so a boss signature attack is several entries staged in sequence. Nothing in the archive marks the grouping; the chain lives in the module's code.</p>
+      <p>An action id is one entry, but a <em>move</em> need not be. The per-spell <a href="../subsystems/cast-module.html">cast modules</a> write <code>actor[+0x1DA]</code> directly, so a boss signature attack is several entries staged in sequence. Nothing in the archive marks the grouping; the chain lives in the module's code.</p>
       <table>
         <thead><tr><th>Module</th><th>Cast</th><th>Caster stages (entry indices)</th><th>Closing entry</th></tr></thead>
         <tbody>

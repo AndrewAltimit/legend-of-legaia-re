@@ -623,8 +623,9 @@ fn state_resume_sub0_shop_record_spans_the_ids_and_the_name() {
     ));
     assert_eq!(s.size, buf.len() - 1);
     assert!(matches!(decode(&buf, s.size).unwrap().info, InsnInfo::Nop));
-    // The MES form is unchanged: `49 00 00 1F "hi" 00 00` is 8 bytes.
-    let buf = [0x49, 0x00, 0x00, 0x1F, b'h', b'i', 0x00, 0x00, 0x21];
+    // The MES form: `49 00 00 00 1F "hi" 00` - the length (0) is the
+    // operand's third byte - is 8 bytes, through the line's terminator.
+    let buf = [0x49, 0x00, 0x00, 0x00, 0x1F, b'h', b'i', 0x00, 0x21];
     let m = decode(&buf, 0).unwrap();
     assert_eq!(m.size, 8);
     assert!(matches!(
@@ -659,8 +660,8 @@ fn text_lead_names_the_lead_byte_of_every_text_carrying_shape() {
     let bare = [0x21, 0x1F, b'h', 0x00];
     assert_eq!(text_lead(&bare, &decode(&bare, 1).unwrap()), Some(1));
     assert_eq!(text_lead(&bare, &decode(&bare, 0).unwrap()), None);
-    let mes = [0x49, 0x00, 0x00, 0x1F, b'h', 0x00, 0x00];
-    assert_eq!(text_lead(&mes, &decode(&mes, 0).unwrap()), Some(3));
+    let mes = [0x49, 0x00, 0x00, 0x00, 0x1F, b'h', 0x00];
+    assert_eq!(text_lead(&mes, &decode(&mes, 0).unwrap()), Some(4));
     let balloon = [0x4C, 0xE1, 0x1F, b'h', b'i', 0x00, 0x21];
     let b = decode(&balloon, 0).unwrap();
     assert_eq!(b.size, 6);

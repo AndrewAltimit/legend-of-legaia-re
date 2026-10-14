@@ -1,7 +1,8 @@
 //! Scene-level gates: the hidden-NPC restore and the prologue colour grade and
 //! depth cue.
 
-use crate::world::{FIELD_OFFMAP_HIDE_XZ, World};
+use crate::world::World;
+use legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
 
 #[test]
 fn restore_hidden_field_npcs_unparks_only_the_hide_box() {
