@@ -1,0 +1,403 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; builds</div>
+  <h1>Builds and debug features</h1>
+  <p class="lede">Which <em>Legend of Legaia</em> discs exist and how their executables differ, and the build-level facts that matter when testing against a running game: the debug flags and their pad chords, the developer menus behind them and how to reach them in the port, and the RAM cells that published cheat codes poke. The anchor build is the North American retail disc, <code>SCUS-94254</code>; every address on this page is that build's unless a column says otherwise.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Anchor build</dt><dd><code>SCUS-94254</code>, the NA retail disc (executable <code>SCUS_942.54</code>).</dd>
+    <dt>Debug menu</dt><dd>Set the byte <code>0x8007B98F</code> (GameShark <code>8007B98F 0001</code>), then press SELECT + &#9651; on <strong>controller port 2</strong>.</dd>
+    <dt>In the port</dt><dd><code>LEGAIA_DEV_MENU=1</code> for <code>play-window</code>; the Dev-menu checkbox on the browser play page.</dd>
+    <dt>Sources</dt><dd>Public cheat-code databases and save-state guides, cross-checked against the disassembly where a row cites a function or an instruction address.</dd>
+    <dt>Terms</dt><dd><code>PROT</code> is the disc's main archive (<code>PROT.DAT</code>); an <em>overlay</em> is a code image the game loads from it into RAM at runtime.</dd>
+  </dl>
+  <table>
+    <thead><tr><th>If you want</th><th>Go to</th></tr></thead>
+    <tbody>
+      <tr><td>Which discs exist, and how their executables differ</td><td><a href="#known-builds">Known builds</a>, <a href="#region-enum">region enum</a></td></tr>
+      <tr><td>How to switch on the debug menu and what it offers</td><td><a href="#debug-flags">Debug flags</a>, <a href="#debug-input-bindings">pad chords</a>, <a href="#developer-menus">developer menus</a></td></tr>
+      <tr><td>What a <code>CDNAME.TXT</code> block label covers</td><td><a href="#cdname-subsystem-semantics">CDNAME subsystem semantics</a></td></tr>
+      <tr><td>Cheat-pinned RAM cells</td><td><a href="#dispatch-ram-addresses">Dispatch addresses</a>, <a href="#mini-game-state-regions">mini-game state</a>, <a href="#character-struct">character struct</a></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="known-builds" data-doc="known-builds">
+  <h2>Known builds</h2>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>ID</th><th>Date</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>PAPX-90040</code></td><td>1996-06-02</td><td>Trial on PrePre Vol. 14 demo disc</td></tr>
+      <tr><td><code>PAPX-90055</code></td><td>1998-08-19</td><td>Demo 2 (JP)</td></tr>
+      <tr><td><code>PCPX-96130</code></td><td>1998-08-18</td><td>Demo 1 / store kiosk video (JP)</td></tr>
+      <tr><td><code>SCPS-10059</code></td><td>1998-09-09</td><td>JP retail (Regaia Densetsu)</td></tr>
+      <tr><td><code>SCPS-10059</code></td><td>1998-11-16</td><td>NA prototype (uses the JP serial)</td></tr>
+      <tr><td><code>SCUS-94366</code></td><td>1998-12-21</td><td>NA demo</td></tr>
+      <tr><td><strong><code>SCUS-94254</code></strong></td><td>1999-01-29</td><td><strong>NA retail - the project's anchor build</strong></td></tr>
+      <tr><td><code>SCES-01752</code></td><td>1999-09-27</td><td>EU English retail</td></tr>
+      <tr><td><code>SCES-01944</code></td><td>2000-04-05</td><td>French</td></tr>
+      <tr><td><code>SCES-01945</code></td><td>2000-05-10</td><td>German</td></tr>
+      <tr><td><code>SCES-01946</code></td><td>2000-04-26</td><td>Italian</td></tr>
+      <tr><td><code>SCES-01947</code></td><td>2000 (day unknown)</td><td>Spanish</td></tr>
+      <tr><td><code>SCPS-91246</code></td><td>unknown</td><td>"PlayStation The Best" reissue</td></tr>
+      <tr><td><code>SCPS-45340</code></td><td>unknown</td><td>Unknown JP variant</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <h3 id="regional-differences">What differs between the retail executables</h3>
+  <p>The French, German and Italian discs are container-identical to the USA disc - same <code>PROT</code> layout, same monster records - but their executables are <strong>not</strong> the NTSC-U engine with swapped text. Two gameplay differences:</p>
+  <ul class="bullets">
+    <li><strong>No battle-load stat boost.</strong> NTSC-U boosts stats at battle load; the PAL executables do not.</li>
+    <li><strong>Different battle spoils.</strong> PAL pays half the record's gold and the whole record's EXP; NTSC-U pays a quarter of the gold and three quarters of the EXP.</li>
+  </ul>
+  <p>The JP original (<code>SCPS-10059</code>) matches the PAL behaviour on both counts, so both are NTSC-U additions. The Spanish disc and the EU English disc are unmeasured. Details: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md#what-the-executables-do-not-share" target="_blank" rel="noopener">PAL localizations</a>.</p>
+  <p class="hint">Cross-region testing priority: <code>SCPS-10059</code> (original JP), then <code>SCUS-94254</code> (anchor), then <code>SCES-01752</code> (EU English).</p>
+</section>
+
+<section class="doc-section" id="region-enum" data-doc="region-enum">
+  <h2>Region enum</h2>
+  <p><code>legaia_prot::Region</code> captures the three retail regions. <code>ProtIndex</code> carries it as metadata only - the TOC formula and the CDNAME layout are the same in every region.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Variant</th><th>Product codes</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>Region::Na</code></td><td><code>SCUS-94254</code></td><td>NA retail; the anchor build and the default.</td></tr>
+      <tr><td><code>Region::Jp</code></td><td><code>SCPS-10059</code>, <code>SCPS-91246</code></td><td>JP retail and the "PlayStation The Best" reissue. A separate compile: the <code>+0x1B90</code> shift against NA holds only for the cells it was derived from.</td></tr>
+      <tr><td><code>Region::Eu</code></td><td><code>SCES-01752</code>, <code>SCES-01944</code>..<code>01947</code></td><td>EU English plus the FR / DE / IT / ES localisations. Same <code>PROT.DAT</code> layout as NA with the text swapped; the executables differ in spoils and stat boost. No address shift is applied.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><code>Region::from_product_code(code)</code> maps a disc-ID prefix to its variant; <code>Region::translate_addr(na_addr)</code> applies the per-region shift to an NA-anchor address.</p>
+</section>
+
+<section class="doc-section" id="developer-attribution" data-doc="developer-attribution">
+  <h2>Developer attribution</h2>
+  <dl class="kv">
+    <dt>Primary studio</dt><dd><strong>Prokion</strong> (also styled "Procyon"; ぷろきおん in Japanese).</dd>
+    <dt>Co-credited</dt><dd><strong>Contrail</strong>.</dd>
+    <dt>Publisher</dt><dd>SCEI (JP), SCEA (US), SCEE (EU).</dd>
+  </dl>
+  <p>That explains the developer paths visible in <code>SCUS_942.54</code> strings (<code>H:\PROT\FIELD\&lt;stage&gt;\tim.dat</code> and similar): Sony PsyQ on a Windows host with <code>H:</code> mapped to the project tree.</p>
+</section>
+
+<section class="doc-section" id="debug-flags" data-doc="debug-flags">
+  <h2>Debug flags</h2>
+  <p>Three flags in the same RAM page decide how much of the developer build the retail disc exposes.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Flag</th><th>JP address</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x8007B8C2</code></td><td>shifted by <code>0x1B90</code></td><td>Dev / retail <strong>loader-path</strong> flag. Retail boots it to <code>1</code> (the store at <code>0x80015F08</code>), selecting the PROT-index path; the <code>== 0</code> path is the <code>h:\PROT\FIELD\&lt;stage&gt;\&hellip;</code> developer branch in <code>FUN_800255B8</code> and its sisters.</td></tr>
+      <tr><td><code>0x8007B9B0</code></td><td>-</td><td>Overlay <strong>print flag</strong>, separate from the menu enable. The slot-A minigame overlays gate their <code>printf</code>-style readouts on it, several of them also on held pad bit <code>0x2</code>; in the fishing overlay that pair also swaps the bite cadence for a debug value.</td></tr>
+      <tr><td><code>0x8007B98F</code></td><td><code>0x8007D51F</code></td><td>In-game <strong>debug menu enable</strong>. Read as the high byte of the word at <code>0x8007B98C</code>: the GameShark byte write <code>8007B98F 0001</code> makes that little-endian word non-zero (<code>0x01000000</code>), enabling every debug branch with one check.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>All three have static writers in <code>SCUS_942.54</code>, reached <code>$gp</code>-relative (<code>$gp = 0x8007B318</code>) - which is why a cross-reference sweep that only looks for <code>lui</code> pairs reports none. Published GameShark codes also prove all three are writable at runtime.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Cell</th><th>Writer(s)</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x8007B8C2</code></td><td><code>sh</code> at <code>0x80015F08</code> (<code>gp+0x5AA</code>) - the retail boot-to-1 store</td></tr>
+      <tr><td><code>0x8007B98C</code></td><td><code>sw</code> at <code>0x8001D444</code> (clear), <code>0x8001D490</code>, <code>0x8001D4B0</code> (<code>gp+0x674</code>)</td></tr>
+      <tr><td><code>0x8007B9B0</code></td><td><code>sw zero</code> at <code>0x8001D448</code> (<code>gp+0x698</code>)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Only the byte <code>0x8007B98F</code> has no accessor of its own; it is reached as the top byte of the word at <code>0x8007B98C</code>.</p>
+  <h3 id="jp-addresses">JP addresses are not one shift away</h3>
+  <p>The <code>0x1B90</code>-byte shift between the JP and NA debug-menu byte is what <code>Region::translate_addr</code> applies, and it holds for the cells it was derived from (the published cheat pair), not for the build as a whole. <code>SCPS_100.59</code> is a separate compile, and no single shift maps NA addresses onto it:</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>What</th><th>JP</th><th>NA</th></tr></thead>
+    <tbody>
+      <tr><td>Inventory bag</td><td><code>0x801CBFC8</code></td><td><code>0x80085958</code></td></tr>
+      <tr><td>Gold</td><td><code>0x801CAC0C</code></td><td><code>0x8008459C</code></td></tr>
+      <tr><td>Coins</td><td><code>0x801CAC14</code></td><td><code>0x800845A4</code></td></tr>
+      <tr><td>Overlay slot A (PROT 0897 / 0898 / 0899)</td><td><code>0x801D05C8</code></td><td><code>0x801CE818</code> (shift <code>0x1DB0</code>)</td></tr>
+      <tr><td>Slot-B cast modules (PROT 0903..0966)</td><td><code>0x801F9DB0</code></td><td><code>0x801F69D8</code> (shift <code>0x33D8</code>)</td></tr>
+      <tr><td>Scripted-fight flag</td><td><code>ctx[+0x1E7]</code></td><td><code>ctx[+0x287]</code></td></tr>
+      <tr><td>Cast phase</td><td><code>ctx[+0x1D9]</code></td><td><code>ctx[+0x279]</code></td></tr>
+      <tr><td>Round counter</td><td><code>ctx[+0x1EA]</code></td><td><code>ctx[+0x28A]</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The battle-context fields sit <code>0xA0</code> lower in JP. The French <code>SCES_019.44</code>, by contrast, is the NA code relocated, with slot A at <code>0x801CF0A8</code> and slot B at <code>0x801F7400</code>.</p>
+</section>
+
+<section class="doc-section" id="debug-input-bindings" data-doc="debug-input-bindings">
+  <h2>Debug pad chords</h2>
+  <p>Once <code>0x8007B98F</code> is set, these chords are live. The dispatcher is <code>FUN_8001822C</code>.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Chord</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>SELECT + &#9651;</td><td>Open the debug menu (item give, map change, stats, event flags, &hellip;)</td></tr>
+      <tr><td>SELECT + START</td><td>Start the game in Debug Mode - the full-screen configuration tester in PROT 0971, reached as game mode 0 / <code>CONFIG INIT</code> (see <a href="../subsystems/boot.html#game-mode">boot</a>)</td></tr>
+      <tr><td>R1 + R2 + &#10005;</td><td>Coordinates debug overlay + free camera</td></tr>
+      <tr><td>&#9675; (in coordinates mode)</td><td>Dim lighting</td></tr>
+      <tr><td>&#9634; (in coordinates mode)</td><td>Toggle the verbose overlay</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Each frame <code>FUN_8001822C</code> reads the BIOS pad data at <code>0x800840F8</code> and builds a 32-bit button mask, <code>_DAT_8007B850</code>. If the debug word <code>_DAT_8007B98C</code> is zero it strips the upper 16 bits - the controller-2 / debug half - and that is <strong>the master gate</strong>. A large block guarded by <code>_DAT_8007B98C != 0</code> then handles the chords.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The 32-bit button mask: the low 16 bits come from controller port 1 and always pass; the high 16 bits are controller port 2 and the debug chords, and are masked off when the debug word is zero.">
+      <text class="dg-sub" x="380" y="20">button mask <tspan font-family="monospace">_DAT_8007B850</tspan> (32 bits)</text>
+      <rect class="dg-node-accent" x="40" y="34" width="340" height="56" rx="5"/>
+      <text class="dg-label" x="210" y="58">bits 31..16</text><text class="dg-sub" x="210" y="76">port 2 - the debug chords</text>
+      <rect class="dg-node" x="380" y="34" width="340" height="56" rx="5"/>
+      <text class="dg-label" x="550" y="58">bits 15..0</text><text class="dg-sub" x="550" y="76">port 1 - normal play</text>
+      <rect class="dg-node" x="40" y="128" width="340" height="52" rx="5"/>
+      <text class="dg-label" x="210" y="150">debug word == 0</text><text class="dg-sub" x="210" y="168">mask &amp;= 0xFFFF: half stripped</text>
+      <rect class="dg-node" x="380" y="128" width="340" height="52" rx="5"/>
+      <text class="dg-label" x="550" y="150">always kept</text><text class="dg-sub" x="550" y="168">a chord here is ignored by the debug block</text>
+    </svg>
+    <figcaption>The debug block reads the upper half of the mask, so a chord must arrive on the second controller port; the same buttons on port 1 land in the lower half and do nothing.</figcaption>
+  </figure>
+  <p>Two consequences matter when driving the menu externally:</p>
+  <ul class="bullets">
+    <li><strong>The chords are port-2 bindings.</strong> The same chord on port 1 is ignored.</li>
+    <li><strong>The gate does not latch for the session.</strong> The debug word's only <code>sw</code> writer is the shared menu / title / save-init routine, which scene transitions run, so entering a scene can clear <code>_DAT_8007B98C</code> mid-session. Re-assert it rather than setting it once.</li>
+  </ul>
+  <h3 id="d-code-globals">Globals behind GameShark D-codes</h3>
+  <dl class="kv">
+    <dt><code>0x8007B7C0</code></dt><dd>Previous-frame button mask, so <code>D007B7C0 XXXX</code> means "wait for the player to press XXXX".</dd>
+    <dt><code>_DAT_8007B874</code></dt><dd><code>mask &amp; ~prev</code> - newly pressed this frame.</dd>
+    <dt><code>0x8007B7C4</code></dt><dd><code>mask ^ prev</code> - buttons that changed.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="developer-menus" data-doc="developer-menus">
+  <h2>Developer menus</h2>
+  <p>SELECT + &#9651; opens the in-game debug menu, but it is not one screen: it is four tools, each resident in a different overlay, that the retail debug branches reach.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Tool</th><th>Retail entry</th><th>Lives in</th></tr></thead>
+    <tbody>
+      <tr><td>Row list (<code>MAP CHANGE</code>, <code>CAMERA</code>, <code>ENCOUNT</code>, &hellip; 24 rows)</td><td><code>FUN_801EAD98</code> draws it; <code>FUN_801E9F64</code> applies each row's pad edits</td><td>Field overlay (PROT 0897) - the world map is a 0897-hosted mode, not an overlay of its own</td></tr>
+      <tr><td>EVENT FLAG editor</td><td><code>FUN_801DBD04</code> value step; <code>FUN_801DB8B4</code> / <code>FUN_801DB8F4</code> list cursor</td><td>Field overlay (0897)</td></tr>
+      <tr><td>Character-parameter editor</td><td><code>FUN_801D6E18</code></td><td>Menu overlay (0899)</td></tr>
+      <tr><td>Equip commit</td><td><code>FUN_801E5A08</code></td><td>Field overlay (0897)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>Controls.</strong> In the row list, Right steps the hovered row's value up and Left steps it down (the cursor lives at <code>ctx + 0x9E</code>; <code>FUN_801E9F64</code> dispatches on <code>cursor - 3</code>). The two editors take the whole pad: Up / Down walk their own cursor and Left / Right edit the hovered value, read from the packed words <code>_DAT_8007BB84</code> (newly pressed) and <code>_DAT_8007B850</code> (held).</p>
+  <p>The character editor is worth knowing about even outside a debug build: at the end of <strong>every</strong> tick it runs a two-stage clamp over all four party records, whichever row is hovered. That clamp is the game's own statement of its stat caps; the records themselves are described on the <a href="../subsystems/save-screen.html">save screen</a> page.</p>
+
+  <h3 id="reaching-the-menus-in-the-engine" data-doc="reaching-the-menus-in-the-engine">Reaching the menus in the port</h3>
+  <p>The Rust port carries all four tool families, and both play hosts mount them only behind an explicit opt-in:</p>
+  <dl class="kv">
+    <dt>Native <code>play-window</code></dt><dd>Set <code>LEGAIA_DEV_MENU=1</code> in the environment.</dd>
+    <dt>Browser play page</dt><dd>Tick the Dev-menu checkbox. It starts unchecked on every load and is neither persisted nor readable from the URL, so a shared link can never switch it on.</dd>
+    <dt>Square</dt><dd>Swaps the row list for the battle-records page, on both hosts.</dd>
+  </dl>
+  <p>With the opt-in taken, the row list is drawn and driven once a frame off the same packed pad words retail's developer code reads. Without it nothing runs and nothing is drawn, so a default build or page is unchanged.</p>
+  <p>The port's list carries the subset of retail's rows whose backing state the engine owns - <code>MAP_CHANGE</code>, <code>ENCOUNT</code>, <code>EVENT_FLAG</code>, <code>PLAYER_PARAM</code>, <code>EQUIP</code> - so that no row steps a value nothing reads. The missing rows need overlay-resident state the engine never loads. The clearest case is the flag-list table (<code>DAT_801F2E94</code>, stride <code>0xA</code> with an <code>'X'</code> sentinel): without it, the EVENT FLAG page edits a raw index only.</p>
+</section>
+
+<section class="doc-section" id="camera-control-axes" data-doc="camera-control-axes">
+  <h2>Camera control axes</h2>
+  <p>The coordinates debug overlay names its camera axes in film-crew terms - a handy string-search anchor for finding the camera-debug renderer.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Label</th><th>Axis</th><th>Label</th><th>Axis</th><th>Label</th><th>Axis</th></tr></thead>
+    <tbody>
+      <tr><td><code>VX</code></td><td>truck</td><td><code>WX</code></td><td>track</td><td><code>AX</code></td><td>crane</td></tr>
+      <tr><td><code>VY</code></td><td>pedestal</td><td><code>WY</code></td><td>-</td><td><code>AY</code></td><td>tongue / pan</td></tr>
+      <tr><td><code>VZ</code></td><td>zoom</td><td><code>WZ</code></td><td>dolly</td><td><code>AZ</code></td><td>roll</td></tr>
+      <tr><td><code>SC</code></td><td>field of view</td><td></td><td></td><td></td><td></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The labels live in the <strong>field overlay</strong> (PROT 0897), not in <code>SCUS_942.54</code>. The block starts at <code>0x801CF1E4</code> and runs <code>VX VY VZ AX AY AZ WX WZ SC WY</code>, then <code>DCX</code> / <code>DCY</code> / <code>DCZ</code>, <code>MX0</code> / <code>MY0</code> / <code>MX1</code> / <code>MY1</code>, and <code>PLAYER_STAT</code> / <code>HEIGHT_STAT</code> / <code>FREEZE_STAT</code> / <code>ANM_FREEZE_FLAG</code>. Search the extracted PROT entry, not the executable.</p>
+</section>
+
+<section class="doc-section" id="cdname-subsystem-semantics" data-doc="cdname-subsystem-semantics">
+  <h2>CDNAME subsystem semantics</h2>
+  <p>The block labels of <code>CDNAME.TXT</code> past the per-scene blocks. The numbers are the file's own <code>#define</code> values, which are raw in-RAM TOC indices: the extraction entry (the <code>NNNN</code> in a "PROT entry NNNN" citation) is the define <strong>minus 2</strong> (see <a href="../formats/cdname.html">CDNAME</a>). A label is a hint, not a verdict - several blocks hold something other than their name suggests.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th><code>#define</code></th><th>Label</th><th>Extraction</th><th>What the entries hold</th></tr></thead>
+    <tbody>
+      <tr><td>0..864</td><td>per-scene names</td><td>-</td><td>Stage / field blocks (towns, dungeons, world maps, cutscenes), one block per scene name - named on <a href="scene-names.html">scene names</a></td></tr>
+      <tr><td>865..868</td><td><code>battle_data</code></td><td>863..866</td><td>The four player battle files <code>PLAYER1..4</code> (<a href="../formats/battle-data-pack.html">battle data pack</a>)</td></tr>
+      <tr><td>869</td><td><code>monster_data</code></td><td>867</td><td>Monster archive: stat records, meshes, animations</td></tr>
+      <tr><td>870..871</td><td><code>sound_data</code></td><td>868..869</td><td>Sound-driver data</td></tr>
+      <tr><td>872..875</td><td><code>befect_data</code></td><td>870..873</td><td>Battle effects <code>etim</code> / <code>etmd</code> / <code>vdf</code> / <code>efect</code> (<a href="../formats/effect.html">effect bundle</a>)</td></tr>
+      <tr><td>876</td><td><code>player_data</code></td><td>874</td><td>Player character pack (<a href="../formats/character-mesh.html">character mesh</a>)</td></tr>
+      <tr><td>877..890</td><td><code>sound_data2</code></td><td>875..888</td><td>Sound-driver data</td></tr>
+      <tr><td>891..892</td><td><code>level_up</code></td><td>889..890</td><td>Level-up block; entry 890 is the title TIM</td></tr>
+      <tr><td>893</td><td><code>monster_se</code></td><td>891</td><td>Monster sound effects</td></tr>
+      <tr><td>894</td><td><code>card_data</code></td><td>892</td><td>Memory-card screen kanji font</td></tr>
+      <tr><td>895..896</td><td><code>bat_back_dat</code></td><td>893..894</td><td><code>summon.dat</code> / <code>readef.DAT</code> battle side-band (<a href="../formats/summon-readef.html">summon / readef</a>)</td></tr>
+      <tr><td>897..971</td><td><code>xxx_dat</code></td><td>895..969</td><td>Code overlays: boot <code>init.pak</code> (895), the field / battle / menu images (897..899), the slot-B band (900..966) and the battle stage modules (967..969)</td></tr>
+      <tr><td>972..973</td><td><code>move_program_no</code></td><td>970..971</td><td>STR / MDEC movie player (970) and the debug-menu overlay (971)</td></tr>
+      <tr><td>974..979</td><td><code>other_game</code></td><td>972..977</td><td>Mini-game overlays: fishing (972), dev modules (973 / 974), slot machine (975), Baka Fighter (976), Muscle Dome hub (977)</td></tr>
+      <tr><td>980..989</td><td><code>monster_test</code></td><td>978..987</td><td>More overlays, among them FIELD BACK READ (978), dance (980) and the world-map top view (981)</td></tr>
+      <tr><td>990..1071</td><td><code>music_test</code> / <code>music_01</code></td><td>988..1069</td><td>BGM sequences + banks (<a href="music-tracks.html">music tracks</a>)</td></tr>
+      <tr><td>1072..1194</td><td><code>vab_01</code></td><td>1070..1192</td><td>VAB instrument banks</td></tr>
+      <tr><td>1195..1232</td><td><code>other1</code> / <code>4</code> / <code>5</code> / <code>6</code> / <code>7</code></td><td>1193..1230</td><td>Mini-game and contest assets (e.g. the ringside stills at 1221 / 1222)</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="dispatch-ram-addresses" data-doc="dispatch-ram-addresses-gamehackingorg">
+  <h2>Dispatch RAM addresses (GameHacking.org)</h2>
+  <p>PSX RAM cells (KSEG0, <code>0x80000000</code> base) that published cheats use - useful anchors for runtime tracing.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Address</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x80084540</code></td><td>Current map ID (writable; "Map Modifier" and "View Credits" use it)</td></tr>
+      <tr><td><code>0x8007B6F4</code></td><td>"Small maps" debug mode flag</td></tr>
+      <tr><td><code>0x8007B7C0</code></td><td><strong>Previous-frame button mask</strong> - what <code>D0</code> / <code>E0</code> conditional codes compare against. <code>FUN_8001822C</code> loads it, XORs it with the fresh mask into the edge words <code>0x8007B7C4</code> / <code>0x8007B874</code>, then stores the fresh mask back. Not a dispatch selector.</td></tr>
+      <tr><td><code>0x8007B450</code></td><td>Debug-dispatch parameter slot - the menu-request register the menu overlay polls each frame</td></tr>
+      <tr><td><code>0x800422F4</code></td><td><strong>Not a RAM cell</strong> - a branch inside the executable's inventory-add clamp. The "99 quantity" cheat writes <code>0001</code> there, shortening the branch so the clamp always runs (see <a href="cheats.html">cheat databases</a>).</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Sample values the cheats write to <code>0x8007B450</code>:</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Value</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x0001</code></td><td>Open the Status Modifier menu</td></tr>
+      <tr><td><code>0x000D</code></td><td>Open the name modifier for Gala</td></tr>
+      <tr><td><code>0x0011</code></td><td>Open the name modifier for Vahn</td></tr>
+      <tr><td><code>0x0085</code></td><td>Show the end-of-game stat page</td></tr>
+      <tr><td><code>0x4097</code></td><td>"Save Anywhere" prompt</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>When the trigger is <code>0x0003</code>, writing a map ID to <code>0x80084540</code> warps there.</p>
+</section>
+
+<section class="doc-section" id="mini-game-state-regions" data-doc="mini-game-state-regions">
+  <h2>Mini-game state regions</h2>
+  <p>Each mini-game is a slot-A overlay image: the mode-24 warp streams its PROT entry (fishing 0972, slot machine 0975, Baka Fighter 0976, Muscle Dome 0977, dance 0980) to <code>0x801CE818</code> over whatever was resident. The addresses below name mini-game state only while that mini-game's image is loaded; per-image extents are on the <a href="memory-map.html">RAM map</a>.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Address</th><th>Mini-game</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801D9168</code></td><td>Fishing</td><td>Tension</td></tr>
+      <tr><td><code>0x801D9274</code></td><td>Fishing</td><td>Casting power</td></tr>
+      <tr><td><code>0x801D9298</code></td><td>Fishing</td><td>Life</td></tr>
+      <tr><td><code>0x801D91CC</code></td><td>Fishing</td><td>Fish ID modifier</td></tr>
+      <tr><td><code>0x801D53CC</code></td><td>Dancing</td><td>Dance points</td></tr>
+      <tr><td><code>0x801DBFC4</code></td><td>Baka Fighter</td><td>Player life</td></tr>
+      <tr><td><code>0x801DC06C</code></td><td>Baka Fighter</td><td>Computer life</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="character-struct" data-doc="character-struct">
+  <h2>Character struct</h2>
+  <p>Stride <strong><code>0x414</code> bytes</strong> (1044), confirmed by file-offset deltas in ePSXe save states (Vahn / Noa / Gala). Four slots (Vahn / Noa / Gala / Terra the wolf) make a party block of about 4096 bytes - one PSX RAM page. Offsets are relative to the Level field, all <code>u16</code> little-endian unless noted.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Offset</th><th>Field</th></tr></thead>
+    <tbody>
+      <tr><td><code>-0x2C</code> / <code>-0x2A</code></td><td>HP max / HP current</td></tr>
+      <tr><td><code>-0x28</code> / <code>-0x26</code></td><td>MP max / MP current</td></tr>
+      <tr><td><code>-0x20..-0x16</code></td><td>AGL / ATK / UDF / LDF / SPD / INT, current</td></tr>
+      <tr><td><code>-0x14</code> / <code>-0x12</code></td><td>HP / MP unequipped (base)</td></tr>
+      <tr><td><code>-0x0E..-0x04</code></td><td>AGL / ATK / UDF / LDF / SPD / INT, unequipped (base)</td></tr>
+      <tr><td><code>+0x00</code></td><td>Level</td></tr>
+      <tr><td><code>+0x55</code></td><td>Moves-learned count (<code>u8</code>)</td></tr>
+      <tr><td><code>+0x56..</code></td><td>Moves array (<code>u8</code> IDs, contiguous)</td></tr>
+      <tr><td><code>+0x177</code></td><td>Name (string)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>"Current" stats are post-equipment; "unequipped" are the base values. The stat order is fixed across both blocks and all four slots. The full record is on <a href="../formats/save-record.html">per-character save record</a>.</p>
+</section>
+
+<section class="doc-section" id="money-and-inventory" data-doc="money-and-inventory">
+  <h2>Money and inventory</h2>
+  <dl class="kv">
+    <dt>Money</dt><dd>24-bit (three consecutive <code>u8</code> bytes, little-endian). Cap <code>0x00FFFFFF</code> = 16,777,215 G.</dd>
+    <dt>Inventory</dt><dd>One shared list, 2 bytes per entry <code>[item_id, quantity]</code>. Weapons, armor, items and Ra-Seru levels all live in it.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="item-id-table" data-doc="item-id-table">
+  <h2>Item ID table</h2>
+  <p>Up to 256 IDs. Canonical NA assignments:</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Range</th><th>Class</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x65..0x9A</code>, <code>0xA3</code></td><td>Items (consumables, books, flutes)</td></tr>
+      <tr><td><code>0x01..0x19</code></td><td>Ra-Seru weapons per character &times; level (Meta = Vahn 1-9, Terra = Noa 1-8, Ozma = Gala 1-7, plus <code>0x12</code> = empty Noa slot)</td></tr>
+      <tr><td><code>0x1A..0x33</code>, <code>0x52</code> (empty), <code>0xBA</code> (Astral Sword)</td><td>Normal weapons</td></tr>
+      <tr><td><code>0x34..0x42</code></td><td>Helmets</td></tr>
+      <tr><td><code>0x43..0x57</code></td><td>Armors</td></tr>
+      <tr><td><code>0x58</code>+</td><td>Boots</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>ID <code>0x12</code> is "empty wp. for Noa" and <code>0x52</code> is "empty wp. for Vahn" - reserved-but-empty slots.</p>
+</section>
+
+<section class="doc-section" id="move-tables" data-doc="move-tables-tactical-arts">
+  <h2>Move tables (Tactical Arts)</h2>
+  <p>Slot <code>0x00</code> is the Miracle Art starter on every character (action constant <code>0x1B</code> = Vahn's Craze / Noa's Ark / Biron Rage, gated by a story flag). Vahn and Gala carry their 14 regular arts at slots <code>0x01..0x0E</code>. Noa's table runs to slot <code>0x10</code> with holes at <code>0x02</code> / <code>0x03</code> - her Hurricane Kick covers three on-disc levels through one slot - so her slot <code>0x0F</code> is the ordinary art Acrobatic Blitz, not a Miracle Art. Mirror: <code>legaia_art::tables</code>.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Character</th><th>Arts</th></tr></thead>
+    <tbody>
+      <tr><td>Vahn (slots <code>0x01..0x0E</code>)</td><td>Burning Flare, Fire Blow, Tornado Flame, Cyclone, Hurricane, PK Combo, Spin Combo, Pyro Pummel, Cross-Kick, Power Punch, Slash Kick, Somersault, Charging Scorch, Hyper Elbow</td></tr>
+      <tr><td>Noa (display order)</td><td>Lizard Tail, Acrobatic Blitz, Sonic Javelin, Blizzard Bash, Mirage Lancer, Dolphin Attack, Bird Step, Swan Driver, Tough Love, Rushing Gale, Tempest Break, Frost Breath, Vulture Blade, Hurricane Kick</td></tr>
+      <tr><td>Gala</td><td>Flying Knee Attack, Battering Ram, Ironhead, Back Punch, Guillotine, Head-Splitter, Side Kick, Black Rain, Neo Raising, Electro Thrash, Bull Horns, Thunder Punch, Lightning Storm, Explosive Fist</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The field VM's <code>EXEC_MOVE</code> (op <code>0x22</code>, see <a href="../subsystems/script-vm.html">script VM</a>) feeds these IDs into the move-table consumer at <code>FUN_800204F8</code>; the file format is on <a href="../formats/mdt.html">MDT</a>.</p>
+</section>
+
+<section class="doc-section" id="translation-notes" data-doc="translation-notes">
+  <h2>Translation notes</h2>
+  <p>Character names that differ between the JP and NA scripts - they matter when comparing MES text across regions:</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>NA</th><th>JP</th></tr></thead>
+    <tbody>
+      <tr><td>Gala</td><td>Gaara</td></tr>
+      <tr><td>Vahn</td><td>Vann</td></tr>
+      <tr><td>Noa</td><td>Noah</td></tr>
+      <tr><td>Tetsu</td><td>Todd</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="unused-content" data-doc="unused-content">
+  <h2>Unused content</h2>
+  <p>Useful as fixtures for validating extractors:</p>
+  <ul class="bullets">
+    <li><strong>Unused enemies:</strong> index 78 ("Comm") and 140 ("Evil Bat") in the monster table.</li>
+    <li><strong>Unused items:</strong> "Something Good" (sells for 50,000 G) and an unnamed accessory that forces Seru-only encounters.</li>
+    <li><strong>Placeholder battle background:</strong> a graphic containing ぷろきおん in hiragana, loaded when a real battle background is missing.</li>
+    <li><strong>Placeholder music:</strong> tracks copied from Alundra (the Zazan battle theme) and Wild ARMs (battle theme) sit in the SEQ / VAB data.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="gamedata.html">Curated game-data tables</a>
+    <a href="memory-map.html">PSX RAM map</a>
+    <a href="cheats.html">Cheat databases</a>
+    <a href="scene-names.html">Scene names</a>
+    <a href="../subsystems/boot.html#debug-flags">Boot: debug flags</a>
+    <a href="../formats/cdname.html">CDNAME name map</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/builds.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

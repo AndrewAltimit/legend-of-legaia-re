@@ -275,6 +275,7 @@ const NAV = [
       { href: 'reference/gamedata.html',        text: 'Curated game-data tables', key: 'reference/gamedata' },
       { href: 'reference/music-tracks.html',    text: 'Music tracks',             key: 'reference/music-tracks' },
       { href: 'reference/scene-names.html',     text: 'Scene names',              key: 'reference/scene-names' },
+      { href: 'reference/builds.html',          text: 'Builds + debug features',  key: 'reference/builds' },
       { heading: 'Research threads' },
       { href: 'reference/open-rev-eng-threads.html', text: 'Open RE threads',     key: 'reference/open-rev-eng-threads' },
       { href: 'reference/re-settled-threads.html', text: 'Settled RE threads',   key: 'reference/re-settled-threads' },
