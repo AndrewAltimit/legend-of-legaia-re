@@ -364,6 +364,7 @@ mod sparring_solo;
 mod spirit_gauge;
 mod summon_final_heal;
 mod take_item;
+mod three_tunnels_swap_redress_disc;
 mod tile_board;
 mod worldmap;
 

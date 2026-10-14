@@ -61,7 +61,8 @@ impl World {
     ///   `0x10..=0x12` are re-pointed at the new leader, the player takes
     ///   the incoming participant's pose (+ the negated map origin
     ///   `_DAT_80089118/20` = [`crate::world::FieldTerrain::map_origin_xz`]), the incoming NPC is
-    ///   parked at the `0x3F80` sentinel, and the fade-back-in spawns.
+    ///   parked at the `0x3F80` sentinel, the fade-back-in spawns, and the
+    ///   talk's own record is queued as an op-`0x44` spawn (`FUN_8003BDE0`).
     /// - **3** - release the fade object (engine: [`crate::world::ScreenFxState::fade`]
     ///   steps itself; nothing to do).
     /// - **4** - hold the fade-in, then clear the camera-busy latch and
@@ -70,10 +71,9 @@ impl World {
     ///   retail's one-frame 0 -> 5 despawn delay into the same tick.
     ///
     /// Not modelled: `FUN_801DE190` (party-display rebuild - the engine
-    /// derives the display from `party_actor_slots`), the grid re-anchor
+    /// derives the display from `party_actor_slots`) and the grid re-anchor
     /// pair `FUN_801DE3E0`/`FUN_801DB8EC`/`FUN_801DAA50` (the engine camera
-    /// follows the player actor), and the `FUN_8003BDE0` spawn-condition
-    /// re-check at the new tile.
+    /// follows the player actor).
     pub(crate) fn tick_three_actor_talk(&mut self) {
         use legaia_engine_field::leader_swap::{
             LEADER_ACTOR_POSE_SENTINEL, LEADER_SWAP_REQUEST_BIT, LeaderSwapEffect, LeaderSwapWorld,
@@ -236,6 +236,23 @@ impl World {
                             mode: [0, 0, 0],
                         },
                     ));
+                    // `801d2c58..801d2c78`: `FUN_8003BDE0(x, z, +0x72, 1)`,
+                    // the talk's own record spawn. `+0x72` is the
+                    // instruction's record byte less the MAN header's first
+                    // two partition counts (`FUN_801D2D38`, `0x801D2DA8..
+                    // 0x801D2DD0`), and the spawner's index mode adds those
+                    // counts back (`0x8003BE74..0x8003BEBC`), so the record
+                    // spawned is the byte as written: a global index, the
+                    // op-`0x44` space. `nilboa`'s Three Tunnels name `0x5F`,
+                    // P2[17], which re-dresses the map for the incoming
+                    // leader's ravine - the boulders stand only in the Fire
+                    // Ravine. The spawner checks the record's gates itself.
+                    // REF: FUN_8003BDE0
+                    if self.field_vm.pending_record_spawns.len()
+                        < crate::world::SPAWNED_CONTEXT_SLOTS
+                    {
+                        self.field_vm.pending_record_spawns.push(talk.duration);
+                    }
                 }
                 LeaderSwapEffect::ReleaseFadeObject | LeaderSwapEffect::ClearCameraBusy => {
                     // The engine fade steps + drops itself
