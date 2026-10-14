@@ -18,6 +18,11 @@ thread_local! {
         const { std::cell::RefCell::new((String::new(), Vec::new(), Vec::new())) };
 }
 
+/// Axis-sign bits per compass index, the table at `0x80073F14` the compass
+/// walk indexes with `d & 7` (`engine-motion-vm`'s `COMPASS_AXIS_SIGNS`):
+/// bit 0 `+Z`, bit 1 `-Z`, bit 2 `+X`, bit 3 `-X`.
+const COMPASS_AXIS_SIGNS: [u8; 8] = [0x2, 0xA, 0x8, 0x9, 0x1, 0x5, 0x4, 0x6];
+
 /// One ledge hop: trigger tile, landing cell, and the record's C1 / C2
 /// story gates (retail `FUN_8003BDE0`).
 pub(super) type LedgeHop = ((i32, i32), Cell, Vec<u16>, Vec<u16>);
@@ -63,6 +68,14 @@ pub(super) fn ledge_hops(session: &NativeSession) -> WarpMap {
                     // (`deroa` P2[12] / P2[14], the platforms between its
                     // shaft rooms).
                     let mut walks = Vec::new();
+                    // Compass legs on the player (`B7 F8 d n` / `C1 F8 d n`,
+                    // ops `0x37` / `0x41`, the kernel `FUN_8003774C` arm
+                    // ported as `engine_motion_vm::compass_walk`): each moves
+                    // the player `rate * (n & 0x3F)` units along compass `d`,
+                    // rate `0x80` for `0x37` and `0x40` for `0x41`. A lift
+                    // band carries the walker this way (`dohaty` P2[3..8],
+                    // the castle's stairs between its floors).
+                    let mut compass: Option<(i32, i32)> = None;
                     // Story flags the record raises and lowers: a transport
                     // lowers every one it raises (its hold), a story beat
                     // leaves its mark.
@@ -85,6 +98,29 @@ pub(super) fn ledge_hops(session: &NativeSession) -> WarpMap {
                                 (body.get(insn.pc + 2), body.get(insn.pc + 3))
                         {
                             walks.push((x, z));
+                        }
+                        if matches!(insn.opcode, 0x37 | 0x41)
+                            && insn.extended == Some(0xF8)
+                            && let (Some(&d), Some(&n)) =
+                                (body.get(insn.pc + 2), body.get(insn.pc + 3))
+                        {
+                            let rate = if insn.opcode == 0x37 { 0x80 } else { 0x40 };
+                            let len = rate * i32::from(n & 0x3F);
+                            let signs = COMPASS_AXIS_SIGNS[usize::from(d & 7)];
+                            let (mut dx, mut dz) = compass.unwrap_or((0, 0));
+                            if signs & 1 != 0 {
+                                dz += len;
+                            }
+                            if signs & 2 != 0 {
+                                dz -= len;
+                            }
+                            if signs & 4 != 0 {
+                                dx += len;
+                            }
+                            if signs & 8 != 0 {
+                                dx -= len;
+                            }
+                            compass = Some((dx, dz));
                         }
                         match insn.info {
                             InsnInfo::ActorCtrl {
@@ -148,8 +184,31 @@ pub(super) fn ledge_hops(session: &NativeSession) -> WarpMap {
                         }
                         // A fork-free run of player walk legs ends where its
                         // last leg does.
-                        ([], []) if !forks && !leaves => {
+                        ([], []) if !forks && !leaves && !walks.is_empty() => {
                             walks.last().map(|&(x, z)| cell_of(at(x), at(z)))
+                        }
+                        // A fork-free run of compass legs that lowers every
+                        // flag it raises (its hold) lands its summed
+                        // displacement from the band tile it was stepped on;
+                        // one that ends inside a tile of where it began (a
+                        // step back off a band) carries the walker nowhere.
+                        ([], [])
+                            if !forks
+                                && !leaves
+                                && sets.is_subset(&clears)
+                                && compass
+                                    .is_some_and(|(dx, dz)| dx.abs().max(dz.abs()) >= 128) =>
+                        {
+                            compass.map(|(dx, dz)| {
+                                let (x, z) = tile_center((tr.tile_x.into(), tr.tile_z.into()));
+                                open_landing(
+                                    &session.host.world,
+                                    cell_of(
+                                        (i32::from(x) + dx).clamp(0, 0x3FFF) as i16,
+                                        (i32::from(z) + dz).clamp(0, 0x3FFF) as i16,
+                                    ),
+                                )
+                            })
                         }
                         _ => None,
                     };
