@@ -1724,6 +1724,17 @@ it, the child also writes that family's triangles one per line
 (`<path>.tris`: draw index, screen corners, clip `w`, mesh-space corners), the per-packet level
 to match against the display list's corners when a family's count parts.
 
+A battle frame's residual is read against the state the child captured, not
+the one the headless seed scored. `LEGAIA_DIAG_CAPTURE_STATE=1` in a kept
+`cmd.sh` prints it on the screenshot frame: the action state, the
+`ctx[+0x243]` marker, the stage ambient and backdrop cue, each roster
+member's equipment, each actor's seat, heading, mode word and tint, and every
+live effect sprite. `LEGAIA_DIAG_CAPTURE_VRAM=<path>` beside it writes the
+battle VRAM for a byte comparison against `mednafen-state vram-dump
+--out-bin`, and `LEGAIA_DIAG_FX_ALL=1` prints every effect sprite's projected
+screen centre each frame, the engine side of the display list's effect
+packets.
+
 ### The frames either side of a gated capture
 
 A gated child captures one frame, and a draw the retail frame shows may be

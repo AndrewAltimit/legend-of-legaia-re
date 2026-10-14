@@ -221,6 +221,7 @@ impl PlayWindowApp {
         });
         if capture_due {
             eprintln!("capture at tick {}", self.tick_no);
+            self.diag_capture_state();
             let path = self
                 .screenshot
                 .as_ref()

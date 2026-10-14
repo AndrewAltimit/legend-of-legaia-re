@@ -149,6 +149,56 @@ impl PlayWindowApp {
         ))
     }
 
+    /// `LEGAIA_DIAG_CAPTURE_STATE=1` instrument: on the screenshot frame,
+    /// print the battle state a retail-compare residual is read against -
+    /// the action state, the `ctx[+0x243]` marker, the stage ambient and
+    /// backdrop cue, each roster member's equipment, each actor's seat,
+    /// heading, mode word and tint, and every live effect sprite.
+    /// `LEGAIA_DIAG_CAPTURE_VRAM=<path>` beside it writes the battle VRAM
+    /// (1 MiB, BGR555) for a byte comparison with `mednafen-state vram-dump
+    /// --out-bin`.
+    pub(super) fn diag_capture_state(&self) {
+        if std::env::var_os("LEGAIA_DIAG_CAPTURE_STATE").is_none() {
+            return;
+        }
+        let w = &self.session.host.world;
+        eprintln!(
+            "capture state: action 0x{:02X} ctx243 {} ambient {:?} backdrop_cue {:?} sprites {}",
+            w.battle_ctx.action_state,
+            w.battle_ctx.gauge_rearm_latch,
+            w.battle_ambient_base(),
+            w.battle_backdrop_cue(),
+            w.active_effect_sprites().len(),
+        );
+        if let (Some(path), Some(v)) = (
+            std::env::var_os("LEGAIA_DIAG_CAPTURE_VRAM"),
+            self.battle_vram.as_ref(),
+        ) {
+            let _ = std::fs::write(path, v.as_bytes());
+        }
+        for (i, m) in w.party.roster.members.iter().enumerate() {
+            eprintln!("capture roster {i}: equip {:?}", m.equipment().slots);
+        }
+        for (i, a) in w.actors.iter().enumerate().take(8) {
+            eprintln!(
+                "capture actor {i}: xz ({},{}) y {} facing {} flag {:#010x} colour {:#010x} blend {:#x}",
+                a.move_state.world_x,
+                a.move_state.world_z,
+                a.move_state.world_y,
+                a.battle.facing_angle,
+                a.battle.flag_word,
+                a.battle.render_color,
+                a.battle.render_blend,
+            );
+        }
+        for s in w.active_effect_sprites() {
+            eprintln!(
+                "capture sprite: pos {:?} size {:?} page {:#04x} clut {:#06x} uv {:?}+{:?} bright {:#04x}",
+                s.world_pos, s.size, s.page, s.clut, s.uv, s.uv_size, s.brightness
+            );
+        }
+    }
+
     /// `LEGAIA_DIAG_FX=1` instrument: report where each live effect billboard
     /// actually lands, in the frame's own FX camera.
     ///
@@ -159,6 +209,28 @@ impl PlayWindowApp {
     /// uploaded (the quad draws, but every texel discards). Off by default -
     /// the log is per-frame per-sprite.
     pub(super) fn diag_effect_billboards(&self, cam: Mat4) {
+        if std::env::var_os("LEGAIA_DIAG_FX_ALL").is_some() {
+            let battle = self.session.host.world.mode == SceneMode::Battle;
+            for s in self.session.host.world.active_effect_sprites() {
+                let c = if battle {
+                    legaia_render_kernels::effect_billboard::battle_billboard_centre(s.world_pos)
+                } else {
+                    s.world_pos
+                };
+                let p = cam * glam::Vec4::new(c[0], c[1], c[2], 1.0);
+                if p.w > 0.01 {
+                    eprintln!(
+                        "DIAG fx-all: tick {} page {:#04x} centre ({:.0},{:.0}) w {:.0} size {:?}",
+                        self.tick_no,
+                        s.page,
+                        (p.x / p.w * 0.5 + 0.5) * 320.0,
+                        (0.5 - p.y / p.w * 0.5) * 240.0,
+                        p.w,
+                        s.size
+                    );
+                }
+            }
+        }
         if std::env::var_os("LEGAIA_DIAG_FX").is_none() {
             return;
         }
