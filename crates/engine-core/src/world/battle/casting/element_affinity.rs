@@ -13,10 +13,9 @@ impl World {
     ///
     /// The attacker (enemy) element is its monster record's `+0x1D` byte
     /// (carried on [`legaia_engine_battle::monster_catalog::MonsterDef::element`]); the defender
-    /// (party member) element is the per-character table entry for the active
-    /// party. The engine models the active party as `char_id == party slot`
-    /// (0-based), so a party actor at slot `target` is the 1-based char id
-    /// `target + 1` the affinity table indexes. Reading the enemy element off
+    /// (party member) element is the per-character table entry for the seat's
+    /// roster id `DAT_8007BD10[slot]` ([`Self::battle_party_char_id`]), not
+    /// the seat plus one: a party without Noa seats Gala on seat 1. Reading the enemy element off
     /// `MonsterDef::element` is faithful to the retail read: `FUN_801dd864`
     /// fetches it record-direct (`0x801C9348[slot-3]` → `+0x1d`), not from a
     /// copied live-actor field.
@@ -31,7 +30,7 @@ impl World {
         let Some(enemy_elem) = self.monster_seat_element(attacker as usize) else {
             return 100;
         };
-        let Some(party_elem) = aff.character_element(target + 1) else {
+        let Some(party_elem) = aff.character_element(self.battle_party_char_id(target)) else {
             return 100;
         };
         aff.affinity_pct(enemy_elem, party_elem).unwrap_or(100)
@@ -47,10 +46,17 @@ impl World {
     pub(in crate::world) fn battle_slot_element(&self, slot: u8) -> Option<u8> {
         let aff = self.tables.element_affinity.as_ref()?;
         if (slot as usize) < self.party.party_count as usize {
-            aff.character_element(slot + 1)
+            aff.character_element(self.battle_party_char_id(slot))
         } else {
             self.monster_seat_element(slot as usize)
         }
+    }
+
+    /// The 1-based roster id seated on party seat `slot` - retail's
+    /// `DAT_8007BD10[slot]`, which every per-character table (element,
+    /// summon power, camera height) indexes. Only meaningful for a party seat.
+    pub(in crate::world) fn battle_party_char_id(&self, slot: u8) -> u8 {
+        (self.party_roster_slot(usize::from(slot)) as u8).wrapping_add(1)
     }
 
     /// A monster seat's element this fight: the seat's own copy
