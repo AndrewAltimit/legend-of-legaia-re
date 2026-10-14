@@ -1081,8 +1081,8 @@ runs both hosts and compares what they leave.
 | Piece | What it is |
 |---|---|
 | native side | `window::HeadlessPlayWindow`: the app `play-window` assembles (`assemble_play_window`, the launch stages after the intro movie) with no renderer, driven one display frame at a time - the redraw's sim ticks (`run_sim_ticks`), then the draw path's world-moving steps (`headless_frame_prep`) |
-| page side | the real `LegaiaRuntime`, driven the way `site/js/play-view-frame.js` drives it: the per-tick owners, the prologue skip, the cutscene pad lock, the persistent tap set |
-| sample | `engine-session::host_trace`: scene, mode, seat word and edges, `World::frame`, the world `rand()` state, field-VM pc, actor slots, field NPC positions, the retail camera globals, flag / roster / bag digests, dialogue, battle and field-VM contexts, the pause menu and its wipe, the merchant gate, the naming prompt, and the host-held overlay screen (`sample_with_overlay`) |
+| page side | the real `LegaiaRuntime`, driven the way `site/js/play-view-frame.js` drives it: the frame's ticks through `play_frame_ticks` (the export that owns their order on the page), the persistent tap set, the card-load take |
+| sample | `engine-session::host_trace`: scene, mode, seat word and edges, `World::frame`, the world `rand()` state, field-VM pc, actor slots, field NPC positions, the retail camera globals, flag / roster / bag digests, dialogue, battle and field-VM contexts, the pause menu and its wipe, the merchant gate, the naming prompt, the host-held overlay screen (`sample_with_overlay`), and the four channels below |
 | verdict | per channel, the first display frame the two traces part on |
 
 Each scenario runs at three cadences - one tick per display frame, two (a
@@ -1093,16 +1093,49 @@ naming prompt came up, a dialogue opened), so agreement on a world that never
 moved fails. A pad that steers off the world comes from the native run and is
 replayed to the page.
 
-With no renderer, the window's `upload_assets` runs its world-side half (the
-CPU VRAM base, the scene box, the floor snap) at once and keeps the GPU half
-for when one opens: the scripted VRAM effects step against that base and are
-not presentation-only.
+| Channel | What it holds | What parted it before the shared step |
+|---|---|---|
+| `bindings` | which actor slots are bound, each idle clip and pose, the lead's locomotion clip, every placed NPC's clip cursor | frame 0 of every scenario: the window bound these from its GPU upload |
+| `battle_stage` | the stage class, the backdrop depth-cue weight, the fog's stage cap, each actor's battle texture slot | the battle-entry frame: each host wrote them from its battle mesh build |
+| `audio` | the director's command record (`AudioCommandLog`): what the routing asked for, not what an output sounded | the first menu or shop press: the window queued a screen's blip, the page fired it at once, and the page's open blip lived in JS |
+| `switches` | the world toggles, locomotion rules, NPC switches, frame grab and camera distance a launch sets | frame 0: the window pushed its options into the world only from its first tick |
 
-What it does not see: anything a renderer owns, the audio director (the
-headless window runs with audio off), and the page's JavaScript beyond the
-arms its driver replays - a change to those arms in `play-view-frame.js` /
-`play-view-input.js` has to be mirrored in the driver, which is the one
-place this check trusts a transcription.
+World state does not hang off the renderer. The steps that bind it are
+session steps both hosts call before building any mesh:
+`engine-session::scene_actors::bind_scene_actors` at scene entry (the lead's
+clips, the NPC clip cursors, the floor snap; `bind_lead_rig` again on a rig
+change), `battle_stage::stage_battle_world` on the battle edge and
+`battle_stage::seat_summon_creature` on a summon cast. A host's draw half may
+re-point a bound slot at its own mesh handle; it does not bind, unbind or
+seat. With no renderer the window's `upload_assets` still sets the CPU VRAM
+base and the scene box, which the scripted VRAM effects step against. The
+headless window's audio director runs over `AudioOut::detached`, an output
+with no device.
+
+What it does not see: anything a renderer owns, what an audio output
+sounds, and the page's JavaScript beyond `_frameTicks`' bookkeeping (the
+tap set, the menu's card-load take), which is all its driver replays.
+A summon cast and a native-only launch switch are not in any scenario.
+
+### Launch switches against page settings
+
+The `switches` channel checks that both hosts start from the same world at
+their defaults. Which `play-window` switches a page setting can reach is this
+table; a switch with no page twin is a host difference, not a world default.
+
+| Native switch | Page twin |
+|---|---|
+| `--retail`, `--psx-render`, `--no-dynamic-lighting`, `--no-dyn-shadows`, `--no-occlusion-fade`, `--no-volumetric-fog` | the retail box (`set_retail_mode`) and the render checkboxes |
+| `--learn-spell`, `--set-flag` | `learn_spell`, `set_system_flag` at runtime |
+| `--cheat-*`, `--cheat-file` | `cheat_*`, `cheat_apply_codes` |
+| `--battle-bgm` | `set_battle_bgm` |
+| `--no-live-loop` | `set_live_battles` |
+| `--party` | `set_active_party_spec` |
+| `--card`, `--resume-save`, `--boot-ui`, `--world-map` | the card rack, a card Load, the boot title, the scene picker |
+| `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers` |
+| `--no-entry-pulse` | only through the retail box, which also pins the options |
+| `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
+| `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling |
 
 ## Pairing frames: what a screenshot adds
 
@@ -1259,13 +1292,13 @@ reverse-engineering questions, so they are not on
 | shading law | One law in WGSL and GLSL; nothing pairs the shader bodies. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
 | battle body blend | Native keys the posed override by TMD index (two bodies sharing a TMD share one); the page orders blend passes per mesh, not per prim. |
 | save rack port 1 | Native mounts its `.lgsf` directory as port 1 and `--card` as port 2; the page mounts two card images and resumes `.lgsf` through the save bar. Closing it is storage work. |
-| per-tick screen owners | Each sim tick goes to the pause menu, then the naming prompt, then a menu-overlay screen, then the field, on both hosts: the window's `sim_tick` arms, the page's tick loop asking `play_menu_tick` / `play_name_entry_tick` / `play_shop_tick`. The order is still spelt once per host, and the JS half is checked only by the [frame-body trace](#output-level-the-frame-body-trace)'s replay of it. |
+| per-tick screen owners | Each sim tick goes to the pause menu, then the naming prompt, then the intro skip, the wipe hold, a menu-overlay screen, then the field: the window's `sim_tick` arms, the page's `play_frame_ticks`. The order is spelt once per host, both in Rust; the [frame-body trace](#output-level-the-frame-body-trace) drives the page's through the export itself. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
 | STR decoders | The page counts assembled frames and assumes 4-bit XA; native counts decoded frames and reads the bit depth. |
 | shop panel rows, inn prompt text | Written once per host over shared leaves; they agree today. |
 | level-up banner without menu chrome | Raw surface pixels natively, stage-scaled on the page; only a run with no system-UI atlas takes that path. |
-| cheats | One `World::cheat_*` call each; restore HP / MP is page-only, a GameShark file native-only, and native applies once at boot. |
-| launch switches | The native window throws `--retail`, `--set-flag`, `--learn-spell`, `LEGAIA_SMART_MONSTERS` and `LEGAIA_WORLD_MAP_MARKERS` at launch; the page throws the same engine writes at runtime (`play_toggles`, `learn_spell`). `--psx-render` is the launch twin of the page's PSX box. |
+| cheats | One `World::cheat_*` call each; restore HP / MP is page-only; a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`); native applies once at boot. |
+| launch switches | See [launch switches](#launch-switches-against-page-settings). |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | fishing exchange panel pen | Native adds the venue overlay's idle sway (`FUN_801d03b0`). |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |

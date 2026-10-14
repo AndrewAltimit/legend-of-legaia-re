@@ -30,7 +30,8 @@ The split is deliberate:
   the front-end entry word and the seat's edge count; the cross-host oracle is
   `engine-shell/tests/mode_seat_host_parity.rs`, which drives **both** hosts
   over one ladder and compares the chains and the edge counts. The whole
-  frame body - this page's tick loop against the native window's - is
+  frame body - this page's ticks (`play_frame_ticks`) against the native
+  window's - is
   compared state by state in `engine-shell/tests/host_frame_parity.rs`
   ([`host-drift.md`](../tooling/host-drift.md#output-level-the-frame-body-trace)).
 - **`play`** - what the page draws, resolved against the **same**
@@ -249,10 +250,11 @@ cursor is this crate's, not the session's - `SelectPhase::SlotPreview` ignores
 directions by design (see `docs/subsystems/save-screen.md`).
 
 The menu is **not purely input-driven**: its timers count 60 Hz frames, so it
-steps on the sim tick, not the animation frame. The page's tick loop asks
-`play_menu_tick` once per tick, which answers as the native window's per-tick
+steps on the sim tick, not the animation frame. The page's frame hands its
+sim ticks to `play_frame_ticks` (`runtime/frame_ticks.rs`), which asks
+`play_menu_tick` first on each tick; it answers as the native window's per-tick
 arms do: a Start edge (or a script's save point) opens the menu and takes the
-tick, the field keeps ticking under the wipe until the menu spawns, the
+tick (a Start open queues the confirm blip itself), the field keeps ticking under the wipe until the menu spawns, the
 hand-over takes one tick, and from then on each tick is one menu step
 (`play_menu_input`). A tick after the menu closes goes back to the field. Parity is asserted by the disc-gated `crates/web-viewer/tests/menu_parity.rs`
 oracle, which walks the whole card flow.
