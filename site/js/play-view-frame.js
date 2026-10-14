@@ -20,6 +20,60 @@
 
   window.LegaiaUtil.installMethods(window.PlayView, class {
 
+    /* One display frame's sim ticks through the engine's `play_frame_ticks`,
+     * then the page's follow-up its report names. Returns `false` after an
+     * engine trap (the loop is already stopped). */
+    _frameTicks(rt, steps) {
+      /* The page speaks over the engine camera's compass azimuth only where
+       * it has something the engine cannot know: the VR gaze, and its own
+       * orbit vantage (`F3`, or a frame the engine handed no matrix). */
+      let pad = this.pad;
+      if (this._vrDrive) {
+        rt.set_camera_azimuth(this._vrDrive.azimuth);
+        pad = this.pad | this._vrDrive.pad;
+      } else if (this.debugCamera || !this.cam.vp) {
+        rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
+      }
+      let r;
+      try { r = JSON.parse(rt.play_frame_ticks(steps, padMaskOf(this.pulse), pad)); } catch (e) {
+        this._onEngineTrap('engine tick', e);
+        return false;
+      }
+      /* A frame that ran a tick spent its edges; one that ran none keeps
+       * them for the next. */
+      if (r.ticks > 0) {
+        this.pulse.clear();
+        this._repack();
+      }
+      if (r.menu_opened) this._ensureMenuBlitters();
+      if (r.name_committed) this._nameCommitted();
+      this._serveXaStage(rt);
+      /* The post-tick presentation state: the grade, tint and depth cue
+       * this frame stages are the ones the ticks left. */
+      if (typeof rt.play_cutscene_state_json === 'function') {
+        try { this._cut = JSON.parse(rt.play_cutscene_state_json()); }
+        catch (e) { /* keep the pre-tick read */ }
+      }
+      /* The engine entered a scene (the intro skip's hand-off, a door): its
+       * geometry swapped under the page. */
+      if (r.scenes && r.scenes.length) {
+        try {
+          this.scene = r.scenes[r.scenes.length - 1];
+          this._rebuild();
+          if (this.vr) this.vr.respawn();
+          if (this.opts.onScene) for (const sc of r.scenes) this.opts.onScene(sc);
+        } catch (e) {
+          this._onEngineTrap('scene rebuild', e);
+          return false;
+        }
+      }
+      /* The party wipe returned to the title (the engine started the title
+       * theme): hand back to the page, which re-runs the boot title. */
+      if (r.quit && this.opts.onQuit) this.opts.onQuit();
+      if (r.menu_ticked) this._afterMenuTicks();
+      return true;
+    }
+
     _frame(skipDraw) {
       const rt = this.rt;
       /* Gamepad buttons enter the same held / pulse sets the keyboard
@@ -121,7 +175,17 @@
           try { rt.play_tick_overlay_sfx(); } catch (e) { break; }
         }
       }
-      if (advance && !menuFreezes && !shopOpen && !namingOpen) {
+      if (advance && !menuFreezes && !shopOpen && !namingOpen
+          && typeof rt.play_frame_ticks === 'function') {
+        /* The frame's ticks, owner by owner, in the engine
+         * (`play_frame_ticks`, the native window's `sim_tick` order): the
+         * pause menu, the naming prompt, the intro skip, the party-wipe hold,
+         * a menu-overlay screen, then the field. What follows here is the
+         * page's own part. */
+        if (!this._frameTicks(rt, simSteps)) return;
+      } else if (advance && !menuFreezes && !shopOpen && !namingOpen) {
+        /* A cached bundle without `play_frame_ticks`: the same order, spelt
+         * here. */
         const steps = simSteps;
         let menuTicked = false;
         for (let s = 0; s < steps; s++) {

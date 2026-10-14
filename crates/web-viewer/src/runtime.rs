@@ -36,10 +36,12 @@ use crate::play::{FieldRender, PlayerRig};
 mod audio_exports;
 mod disc_load;
 mod frame;
+mod frame_ticks;
 mod input_exports;
 mod options;
 mod scene_setup;
 mod state_json;
+pub use frame_ticks::FrameTicksReport;
 pub use options::OPTIONS_STORAGE_KEY;
 pub(crate) use options::load_persisted_options;
 

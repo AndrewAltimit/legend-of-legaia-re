@@ -7,12 +7,12 @@
 //! arms, the steps before and after the tick, the draw path's world-moving
 //! steps - is where the two drift. So this drives the window itself
 //! (`window::HeadlessPlayWindow`: the app `play-window` assembles, minus the
-//! renderer) against the page's `LegaiaRuntime` the way
-//! `site/js/play-view-frame.js` and `play-view-input.js` drive it (the pause
-//! menu, naming prompt and shop arms, the prologue skip, the cutscene pad
-//! lock, the modal break), and compares a host-agnostic sample of the session
-//! (`legaia_engine_session::host_trace`) after every display frame, channel
-//! by channel.
+//! renderer, with its audio director over a device-less output) against the
+//! page's `LegaiaRuntime` the way `site/js/play-view-frame.js` drives it -
+//! the frame's ticks through `play_frame_ticks`, the export that owns their
+//! order on the page - and compares a host-agnostic sample of the session
+//! (`legaia_engine_session::host_trace`, the audio director's command record
+//! included) after every display frame, channel by channel.
 //!
 //! Each scenario runs at more than one display rate. A display frame that
 //! runs two sim ticks (a 30 Hz display) or none (a redraw between two ticks
@@ -20,10 +20,9 @@
 //! per tick parts them; a 60 Hz run cannot see it.
 //!
 //! What the comparison cannot see: anything a renderer owns (both drivers
-//! draw nothing), the audio director (the headless window runs with audio
-//! off), and the page's JavaScript beyond the arms replayed in
-//! [`PageDriver::frame`] - a change to those JS arms has to be mirrored
-//! there.
+//! draw nothing), what an audio output sounds (the record is of what each
+//! host asked for), and the page's JavaScript beyond the bookkeeping
+//! replayed in [`PageDriver::frame`].
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
@@ -202,91 +201,43 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
     }
 }
 
-/// The play page's frame, replayed from `site/js/play-view-frame.js::_frame`
-/// and the modal steps in `play-view-input.js`, with the JS pad bookkeeping
-/// reduced to a held word and this frame's just-pressed edges.
+/// The play page's frame: `site/js/play-view-frame.js::_frame` hands the
+/// frame's ticks to the one export that owns their order
+/// (`LegaiaRuntime::frame_ticks`, behind `play_frame_ticks`) and keeps only
+/// its own follow-up, of which the parts that reach the engine are replayed
+/// here: the pad bookkeeping (a held word, and the just-pressed edges a frame
+/// that runs no tick keeps), the menu's card-load take, and the draw's camera
+/// read.
 struct PageDriver {
     rt: LegaiaRuntime,
     prev: u16,
     /// `this.pulse`: keys pressed since the last consumer cleared them. A
     /// frame that drains no sim tick keeps them for the next one.
     pulse: u16,
-    /// `this._cut`: the post-tick re-read of `play_cutscene_state_json`.
-    cut_locked: bool,
-    cut_chain: bool,
 }
 
 impl PageDriver {
-    fn read_cut(&mut self) {
-        let v: serde_json::Value =
-            serde_json::from_str(&self.rt.play_cutscene_state_json()).unwrap_or_default();
-        self.cut_locked = v["locked"].as_bool().unwrap_or(false);
-        self.cut_chain = v["chain"].as_bool().unwrap_or(false);
-    }
-
     fn frame(&mut self, pad: u16, steps: u32) {
         self.pulse |= pad & !self.prev;
         self.prev = pad;
-        let mut pulse = self.pulse;
-        // `_updateFieldMenu` / `_updateNameEntry` / `_updateFieldShop`: with
-        // the per-tick exports the frame level only stages blitters; the
-        // screens' ticks run in the loop.
-        {
-            let mut menu_ticked = false;
-            for _ in 0..steps {
-                // `play_menu_tick`: the pause menu's per-tick arms.
-                if self.rt.play_menu_tick(pulse) != 0 {
-                    menu_ticked = true;
-                    pulse = 0;
-                    self.rt.play_tick_overlay_sfx();
-                    continue;
-                }
-                // `play_name_entry_tick`: the naming prompt's per-tick arm.
-                if self.rt.play_name_entry_tick(pulse) != 0 {
-                    pulse = 0;
-                    continue;
-                }
-                if self.cut_chain && pulse & CROSS != 0 {
-                    let target = self.rt.play_take_prologue_handoff(true);
-                    if !target.is_empty() {
-                        self.rt.enter_field(&target).expect("prologue hand-off");
-                        pulse = 0;
-                        self.read_cut();
-                        continue;
-                    }
-                }
-                if self.rt.is_game_over() {
-                    let _ = self.rt.game_over_input(pulse);
-                    break;
-                }
-                // `play_shop_tick`: a suspending screen takes the tick; the
-                // inn holds the pad neutral and steps after it.
-                let tick_edge = pulse;
-                let shop = self.rt.play_shop_tick(tick_edge);
-                if shop == 1 {
-                    pulse = 0;
-                    self.rt.play_tick_overlay_sfx();
-                    continue;
-                }
-                let word = if self.cut_locked || shop == 2 { 0 } else { pad };
-                self.rt.set_pad(word);
-                pulse = 0;
-                self.rt.tick_frame().expect("tick_frame");
-                self.rt.play_shop_after_tick(tick_edge);
-                self.read_cut();
-            }
-            // `_afterMenuTicks`.
-            if menu_ticked {
-                let _ = self.rt.play_menu_take_load();
-            }
+        let r = self
+            .rt
+            .frame_ticks(steps, self.pulse, pad)
+            .expect("play_frame_ticks");
+        if r.ticks > 0 {
+            self.pulse = 0;
         }
-        self.pulse = pulse;
+        // `_afterMenuTicks`.
+        if r.menu_ticked {
+            let _ = self.rt.play_menu_take_load();
+        }
         // The draw: the engine camera the page draws through, which advances
         // the cutscene glide.
         let _ = self.rt.play_camera_vp(320.0, 240.0);
     }
 }
 
+/// The director's last commands, for a divergence report.
 fn audio_recent<S: legaia_engine_audio::AudioSink>(
     s: &legaia_engine_session::BootSession<S>,
 ) -> Vec<String> {
@@ -312,10 +263,7 @@ fn page_trace(
         rt,
         prev: 0,
         pulse: 0,
-        cut_locked: false,
-        cut_chain: false,
     };
-    d.read_cut();
     let mut out = vec![host_trace::sample_with_overlay(
         d.rt.debug_session().expect("session"),
         d.rt.debug_menu_runtime(),
