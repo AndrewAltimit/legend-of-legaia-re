@@ -255,6 +255,7 @@ mod playable_shell_e2e;
 mod prize_exchange_disc;
 mod prize_exchange_wiring;
 mod prop_ride_player_walk_disc;
+mod prop_run_npc_walk_disc;
 mod raseru_cross_out_atlas_disc;
 mod recomp_facing_trace;
 mod region_battle_setup_disc;

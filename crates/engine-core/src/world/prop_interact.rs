@@ -634,7 +634,28 @@ impl World {
                             break;
                         }
                     }
-                    FieldStepResult::Yield { resume_pc } => id.pc = resume_pc,
+                    FieldStepResult::Yield { resume_pc } => {
+                        id.pc = resume_pc;
+                        // A walk leg on another actor (`C7 <id> x z mode`,
+                        // `B7` / `C1 <id> ..`) runs on the record's own
+                        // context here, which stands in for the target, so
+                        // the leg's park (`+0x10 |= 0x400`) lands on it. In
+                        // retail the target's walk kernel clears that bit on
+                        // the leg's terminal frame (`FUN_8003774C`, the
+                        // 0x37 / 0x41 / 0x47 arms); the runner plays no leg
+                        // for it, so the bit stayed up and the dispatcher's
+                        // halted-target early-out held the record's next op
+                        // on that actor until the park timeout. `jiji`'s
+                        // counters (P0[5] / P0[7] / P0[8]) walk their keeper
+                        // to the counter before the greeting, and every
+                        // touch froze the player for the timeout and greeted
+                        // no one. The leg is taken as done, as the talk
+                        // runner takes its talker's.
+                        // REF: FUN_8003774C, FUN_801DE840 (0x801DE90C..0x801DE944)
+                        if !player_target && matches!(b & 0x7F, 0x37 | 0x41 | 0x47) {
+                            id.ctx.flags &= !0x400;
+                        }
+                    }
                     // Waitable ops park the run and re-test next frame - the
                     // `2D 08` end-latch spin while the swing plays, a `4A`
                     // frame wait, a busy fade. Retail's SM does exactly this
