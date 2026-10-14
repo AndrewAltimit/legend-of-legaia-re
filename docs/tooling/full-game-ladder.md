@@ -118,7 +118,7 @@ A milestone may also name `via` scenes: story waypoints the anchors show the ret
 
 | Milestone | Waypoints | Why the cheapest route is not the story's |
 |---|---|---|
-| Fire Path | `geremi`, Vidna, `stone` | `stone` holds the Star Pearl that opens the `tunnela` door; the cheapest route rides `ropeway2`'s elevator, whose door opens only after Xain. |
+| Fire Path | `geremi`, Vidna, `ropeway2`, `geremi`, `stone` | `stone` holds the Star Pearl that opens the `tunnela` door; the cheapest route rides `ropeway2`'s elevator, whose door opens only after Xain. Zalan hands the pearl over only once `0x321` is up: Cara's meeting, which `ropeway2` P0[16] spawns (P2[18]). |
 | Rogue Tower | `conc3` | Its P2[10] sets the `0x3E5` the `juui1` hand-off in `conc2` waits on. |
 | Zora Castle | `nilboa` (its own start scene), then `deene` and `son` | Koru's fight thaws the overworld's way south ([route notes](#route-notes)). |
 | Noaru Valley | `chitei2` (its own start scene), then `concend`, `jou` and `retockin` | `chitei2`'s chain ends on the `0x4C8` that opens the `map03` portal to `concend`; the way back from Drake was by land and cart, not the Uru Mais warp. |
@@ -128,7 +128,7 @@ A milestone may also name `via` scenes: story waypoints the anchors show the ret
 | Ratayu | `retona` (its own start scene) | A run that arrives at Mt. Letona's trailhead has reached the `mt_letona` milestone on its first step and would turn round; the anchor gained the summit chain (`0x354`..`0x357`, `0x367`). |
 | Dohati Castle | `retock` (its own start scene), then `jagaroom` twice | Ratayu's west gate (`retock` P2[27]) turns the party back until `0x33E` is set. `jagaroom`'s entry script raises it only once Eliza's scene (`retock` P2[33], `0x33C`), the talk `jagaroom` P1[8] (`0x351`), the door cutscene `jagaroom` P2[8] (`0x33B`) and the return `jagaroom` P2[9] (`0x34F`) have played in that order. |
 
-A waypoint whose own arrival script carries the party on counts as visited: `concend`'s P2[0] is its beat, and it ends in the hop to `town0d`. Part A checks every waypoint is a disc scene.
+A waypoint whose own arrival script carries the party on counts as visited: `concend`'s P2[0] is its beat, and it ends in the hop to `town0d`. One that carries it straight back to the scene it came from was a stay, not a visit: `jiji`'s inn sleeps the party over in `ropeway`, whose arrival cutscene returns it to `jiji`. Part A checks every waypoint is a disc scene.
 
 ## Segments and tiers
 
@@ -237,7 +237,7 @@ one upkeep pass, in this order:
    gold back for the counter that does. A merchant is visited again only
    with a different purse or bag, or once a counter the story had closed
    has opened ([below](#a-counter-the-story-has-closed)).
-2. **Equipment.** Start, Equip, each member, the Best Equipment row.
+2. **Equipment.** Start, Equip, each member, the Best Equipment row. That row ranks only the four armament slots, so the hand then fills each member's empty Goods slots from the bag, best passive first (HP, attack and arts boosts ahead of guards), never two of one passive on a member and never Rage, Zero Defense, Last Attack or No Escape.
 3. **Rest.** Under four fifths of its HP in a scene that rolls no
    encounters, it takes the scene's rest: a bed's walk-on band, or a
    keeper whose record runs the `4C 82` restore. A keeper's offer is a
@@ -1072,7 +1072,18 @@ clips and matches the same arts a windowed one does. Beyond that:
   offset across every talk of the run (the modal timeline's, else the first spawned
   record holding one). Option 0 is often "tell me again", a branch back to
   the same speech, so always confirming the default loops a talk forever
-  (`town0d` P1[5], Tetsu's sparring offer).
+  (`town0d` P1[5], Tetsu's sparring offer). On a picker's first opening,
+  when exactly one option's branch raises a still-clear flag the next
+  anchor carries, that option is taken instead: `stone`'s four statues
+  (P0[2..5]) each ask a four-way question whose options raise their own
+  flags, and only the four right answers spawn the P2[5] that opens the
+  Stone Flower. A reopened picker goes back to the rotation, since a staged
+  conversation can want another answer first (`tunnelc` P1[4], Xain).
+- The continuous hand does not walk to a talk side off the scene's
+  walk-visible floor. Retail's locomotion reads only the wall bits, so the
+  black between a town's interior cutaways is open ground: `geremi` P1[68]
+  stands in the gap in a house's south wall, and stepping round it put the
+  party in the void.
 - A record polling the held pad (`42 01 <i>`, the compass table - Rim Elm's
   "stand here and press Down" doors) gets that direction held.
   A band whose record polls once, on the tick it spawns, and that the pad
